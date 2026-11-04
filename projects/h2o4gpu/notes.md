@@ -75,3 +75,10 @@ merge process, so budget for a fork-only outcome by default and treat an actual
 upstream merge as a pleasant surprise rather than the plan. Also flag for whoever
 plans this: the `h2oai/cub` submodule is a dead link right now, so the CUDA baseline
 itself needs a workaround (or `hipCUB` swap-in makes it moot) before anything else.
+
+## Planning (2026-11-04, windows-gfx1151 host)
+
+- Plan written: Strategy A (shim headers + 7 `__CUDACC__` gate edits + HIP `get_gpu_info_c` in place of NVML). See plan.md.
+- Corrections to intake: upstream is active again (8 merges 2026-09..10, driven by Driverless AI); the dead `h2oai/cub` submodule was dropped upstream in #892; upstream deleted its Python KMeans/TSVD/PCA/GLM tests in #879 (recover from `a22da27^` for out-of-tree validation).
+- Fork `AMD-Ecosystem/h2o4gpu` has only `master` at 5e733c6 (upstream tip 97279de); record says `fork_default_branch: main` -- needs a person's `set-base-branch ... master`.
+- Licence: of the 12 EULA-notice files, only `bwcheck.cu`/`p2pbwcheck.cu` include the helper headers, and nothing calls `bwcheck()`/`p2pbwcheck()`; plan deletes all 13 as the first moat-port commit.

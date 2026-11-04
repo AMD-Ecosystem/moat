@@ -1,0 +1,336 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "97279defc473",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "examples\\cpp\\elastic_net.cpp",
+      "examples\\cpp\\elastic_net_ptr_driver.cpp",
+      "examples\\cpp\\test_utilities.h",
+      "src\\gpu\\arima\\arima.cu",
+      "src\\gpu\\arima\\arima.h",
+      "src\\gpu\\bwcheck.cu",
+      "src\\gpu\\data\\matrix.cu",
+      "src\\gpu\\data\\matrix.cuh",
+      "src\\gpu\\device\\device_context.cuh",
+      "src\\gpu\\factorization\\als.h",
+      "src\\gpu\\factorization\\device_utilities.cu",
+      "src\\gpu\\factorization\\device_utilities.h",
+      "src\\gpu\\factorization\\factorization.cu",
+      "src\\gpu\\factorization\\utils.h",
+      "src\\gpu\\h2o4gpuglm.cu",
+      "src\\gpu\\include\\cgls.cuh",
+      "src\\gpu\\include\\cml\\cml_blas.cuh",
+      "src\\gpu\\include\\cml\\cml_defs.cuh",
+      "src\\gpu\\include\\cml\\cml_linalg.cuh",
+      "src\\gpu\\include\\cml\\cml_matrix.cuh",
+      "src\\gpu\\include\\cml\\cml_rand.cuh",
+      "src\\gpu\\include\\cml\\cml_spblas.cuh",
+      "src\\gpu\\include\\cml\\cml_spmat.cuh",
+      "src\\gpu\\include\\cml\\cml_utils.cuh",
+      "src\\gpu\\include\\cml\\cml_vector.cuh",
+      "src\\gpu\\include\\equil_helper.cuh",
+      "src\\gpu\\include\\projector_helper.cuh",
+      "src\\gpu\\include\\test_utilities.h",
+      "src\\gpu\\include\\utils.cuh",
+      "src\\gpu\\kmeans\\kmeans_centroids.h",
+      "src\\gpu\\kmeans\\kmeans_h2o4gpu.cu",
+      "src\\gpu\\kmeans\\kmeans_h2o4gpu.h",
+      "src\\gpu\\kmeans\\kmeans_impl.h",
+      "src\\gpu\\kmeans\\kmeans_labels.cu",
+      "src\\gpu\\kmeans\\kmeans_labels.h",
+      "src\\gpu\\matrix\\matrix_dense.cu",
+      "src\\gpu\\matrix\\matrix_sparse.cu",
+      "src\\gpu\\matrix\\utilities.cu",
+      "src\\gpu\\matrix\\utlities.cuh",
+      "src\\gpu\\p2pbwcheck.cu",
+      "src\\gpu\\pca\\pca.cu",
+      "src\\gpu\\projector\\projector_cgls.cu",
+      "src\\gpu\\projector\\projector_direct_dense.cu",
+      "src\\gpu\\tsvd\\tsvd.cu",
+      "src\\gpu\\utils.cu",
+      "src\\gpu\\warmstart.cu",
+      "src\\include\\helper_cuda.h",
+      "src\\include\\helper_cuda_drvapi.h",
+      "src\\include\\helper_cusolver.h",
+      "src\\include\\helper_image.h",
+      "src\\include\\helper_math.h",
+      "src\\include\\prox_lib.h",
+      "src\\include\\solver\\glm.h",
+      "src\\include\\solver\\kmeans.h",
+      "src\\include\\solver\\tsvd.h",
+      "tests\\cpp\\gpu\\arima\\test_arima.cu",
+      "tests\\cpp\\gpu\\arima\\test_least_squares_solver.cu",
+      "tests\\cpp\\gpu\\factorization\\test_als.cu",
+      "tests\\cpp\\gpu\\kmeans\\test_kmeans_centroids.cu",
+      "tests\\cpp\\gpu\\kmeans\\test_kmeans_h2o4gpu.cu",
+      "tests\\cpp\\gpu\\kmeans\\test_kmeans_labels.cu",
+      "tests\\cpp\\test_main.cu"
+    ],
+    "markers": {
+      "kernel": 64,
+      "device_code": 391,
+      "launch": 93,
+      "driver_api": 26,
+      "warp_intrinsic": 2
+    },
+    "libraries": {
+      "nccl": 219,
+      "curand": 65,
+      "cublas": 405,
+      "thrust": 745,
+      "cufft": 1,
+      "cusparse": 152,
+      "cusolver": 106,
+      "cub": 13
+    }
+  },
+  "components": [
+    {
+      "id": "library:ch2o4gpu_cpu",
+      "kind": "library",
+      "where": "CMakeLists.txt",
+      "note": "SWIG CPU module; non-GPU regression set, must build unchanged"
+    },
+    {
+      "id": "library:ch2o4gpu_gpu",
+      "kind": "library",
+      "where": "CMakeLists.txt",
+      "note": "SWIG GPU Python module _ch2o4gpu_gpu.so; the artifact the Python solvers load via GPUlib"
+    },
+    {
+      "id": "library:commonh2o4gpu",
+      "kind": "library",
+      "where": "CMakeLists.txt",
+      "note": "host-only object lib (src/common, src/interface_c); compiled with -DHAVECUDA into the GPU lib; CUDA_MAJOR must be defined on the HIP build"
+    },
+    {
+      "id": "library:cpuh2o4gpu",
+      "kind": "library",
+      "where": "CMakeLists.txt",
+      "note": "CPU solver library; non-GPU regression set, must build unchanged"
+    },
+    {
+      "id": "library:gpuh2o4gpu",
+      "kind": "library",
+      "where": "CMakeLists.txt",
+      "note": "the GPU solver library (all src/*.cu minus factorization/); the HIP branch compiles these LANGUAGE HIP against hipBLAS/hipSPARSE/hipSOLVER/hipRAND/rocThrust/hipCUB"
+    },
+    {
+      "id": "test:h2o4gpu_test",
+      "kind": "test",
+      "where": "CMakeLists.txt",
+      "note": "googletest GPU suite tests/cpp (arima, kmeans; factorization excluded as upstream does)"
+    },
+    {
+      "id": "build:cmake-use-hip",
+      "kind": "build_path",
+      "where": "CMakeLists.txt",
+      "added_by": "planner",
+      "note": "new USE_HIP branch beside the FindCUDA USE_CUDA block: enable_language(HIP), shim include dir, hip::host + roc::hipblas/hipsparse/hipsolver + hip::hiprand + hip::hipcub + roc::rocthrust, no pinned arch"
+    },
+    {
+      "id": "build:make-cpp-testunit",
+      "kind": "build_path",
+      "where": "Makefile (cpp, testunit), scripts/verify_gpu_lib.sh",
+      "added_by": "planner",
+      "note": "pass USE_HIP through to cmake; verify_gpu_lib.sh uses cuobjdump and needs a HIP branch or a skip"
+    },
+    {
+      "id": "build:python-wheel",
+      "kind": "build_path",
+      "where": "src/interface_py/setup.py",
+      "added_by": "planner",
+      "note": "GPU lib is only packaged when \"which nvcc\" succeeds; must also accept a ROCm build"
+    },
+    {
+      "id": "runtime:gpu-info-nvml",
+      "kind": "runtime_api",
+      "where": "src/gpu/utils.cu get_gpu_info_c",
+      "added_by": "planner",
+      "note": "NVML device count/memory/name/usage; Python device_count() depends on it, so without a HIP path every solver silently falls back to CPU. Replace on ROCm with HIP runtime queries"
+    },
+    {
+      "id": "source:cudacc-gates",
+      "kind": "source",
+      "where": "src/include/prox_lib.h, src/include/util.h, src/include/solver/glm.h",
+      "added_by": "planner",
+      "note": "7 __CUDACC__ gates that HIP-Clang does not satisfy; must also accept __HIPCC__"
+    },
+    {
+      "id": "solver:kmeans",
+      "kind": "gpu_module",
+      "where": "src/gpu/kmeans",
+      "added_by": "planner",
+      "note": "KMeans: cuBLAS gemm, CUB radix sort/reduce, thrust, per-device streams"
+    },
+    {
+      "id": "solver:tsvd-pca",
+      "kind": "gpu_module",
+      "where": "src/gpu/tsvd, src/gpu/pca",
+      "added_by": "planner",
+      "note": "TruncatedSVD/PCA: cuSOLVER gesvd/syevd, cuBLAS; the path Driverless AI consumes"
+    },
+    {
+      "id": "solver:glm-pogs",
+      "kind": "gpu_module",
+      "where": "src/gpu/h2o4gpuglm.cu, src/gpu/matrix, src/gpu/projector, src/gpu/include/cml, src/gpu/data",
+      "added_by": "planner",
+      "note": "ElasticNet/POGS: cuBLAS, cuSPARSE generic SpMV + Csr2cscEx2, cuSOLVER geqrf/ormqr, cuRAND device API, complex CGLS, CUB segmented reduce"
+    },
+    {
+      "id": "solver:arima",
+      "kind": "gpu_module",
+      "where": "src/gpu/arima",
+      "added_by": "planner",
+      "note": "ARIMA: cuSOLVER QR least squares, simple kernels"
+    },
+    {
+      "id": "solver:factorization-als",
+      "kind": "gpu_module",
+      "where": "src/gpu/factorization",
+      "added_by": "planner",
+      "note": "ALS: cuSPARSE csrmm2 (removed in CUDA 12), hardcoded WARP_SIZE 32 + __shfl. Upstream excludes it from the build"
+    },
+    {
+      "id": "test:factorization-test_als",
+      "kind": "test",
+      "where": "tests/cpp/gpu/factorization/test_als.cu",
+      "added_by": "planner",
+      "note": "excluded by upstream with the solver"
+    },
+    {
+      "id": "test:python-pytest",
+      "kind": "test",
+      "where": "tests/python/{small,big,open_data}",
+      "added_by": "planner",
+      "note": "pytest suite; GLM tests need S3 datasets; open_data/gbm needs bundled xgboost/LightGBM; open_data/system is non-GPU"
+    },
+    {
+      "id": "validation:historic-python-solver-tests",
+      "kind": "test",
+      "where": "upstream a22da27^ tests/python/open_data/{kmeans,svd,glm}",
+      "added_by": "planner",
+      "note": "KMeans/TSVD/PCA/GLM pytest files deleted upstream in #879; run out-of-tree as the Python-level GPU oracle, not shipped"
+    },
+    {
+      "id": "vendored:nvidia-eula-helpers",
+      "kind": "vendored",
+      "where": "src/include/helper_*.h (10), src/include/exception.h, src/gpu/bwcheck.cu, src/gpu/p2pbwcheck.cu",
+      "added_by": "planner",
+      "note": "pre-2017 CUDA Samples EULA notice; counsel ruling (deferred.json h2o4gpu-nvidia-proprietary-rescan): remove from our tip. bwcheck/p2pbwcheck are compiled but never called; the headers are reached only through them"
+    },
+    {
+      "id": "optional:nccl",
+      "kind": "optional",
+      "where": "src/gpu/h2o4gpuglm.cu, src/gpu/warmstart.cu, src/include/solver/glm.h",
+      "added_by": "planner",
+      "note": "USE_NCCL / USE_NCCL2 multi-GPU GLM path; no build path defines either macro"
+    },
+    {
+      "id": "optional:nvtx",
+      "kind": "optional",
+      "where": "CMakeLists.txt ($ENV{USENVTX}), USE_NVTX blocks",
+      "added_by": "planner",
+      "note": "USENVTX only adds -lnvToolsExt; USE_NVTX is never defined by any build path"
+    },
+    {
+      "id": "submodule:xgboost-lightgbm-gpu",
+      "kind": "submodule",
+      "where": "xgboost, xgboost_prev, LightGBM (+ Makefile xgboost/lightgbm_gpu targets)",
+      "added_by": "planner",
+      "note": "separate upstream projects (h2oai forks) with their own, much larger CUDA surfaces; bundled into the wheel"
+    },
+    {
+      "id": "interface:r",
+      "kind": "binding",
+      "where": "src/interface_r",
+      "added_by": "planner",
+      "note": "reticulate wrapper over the Python package; no native or CUDA code, inherits the port"
+    },
+    {
+      "id": "examples:cpp",
+      "kind": "example",
+      "where": "examples/cpp",
+      "added_by": "planner",
+      "note": "standalone drivers, not built by any build system"
+    },
+    {
+      "id": "build:docker-cuda12",
+      "kind": "build_path",
+      "where": "Dockerfile.build-cuda12, Dockerfile-*, Makefile docker-* targets",
+      "added_by": "planner",
+      "note": "CUDA builder/runtime images"
+    },
+    {
+      "id": "ci:jenkins-actions",
+      "kind": "ci",
+      "where": "ci/Jenkinsfile-*, .github/workflows/secret-scanning-alert.yml",
+      "added_by": "planner",
+      "note": "upstream NVIDIA Jenkins + secret scanning"
+    },
+    {
+      "id": "platform:windows",
+      "kind": "build_path",
+      "where": "(none upstream)",
+      "added_by": "planner",
+      "note": "upstream is Linux-only (Rocky 8/glibc, Makefile+bash, sys/time.h/unistd.h in CPU and kmeans sources, .so SWIG modules)"
+    },
+    {
+      "id": "doc:readme-build",
+      "kind": "doc",
+      "where": "README.md / DEVEL.md",
+      "added_by": "planner",
+      "note": "add a ROCm build subsection"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "solver:factorization-als",
+      "reason": "PROPOSED, pending jeff (plan.md OQ 2). Mirrors upstream: CMakeLists.txt excludes src/gpu/factorization from the CUDA build (csrmm2 removed in CUDA 12, TODO(blackwell)). Porting it means a rewrite to the generic SpMM API plus wave64 WARP_SIZE/__shfl fixes, feature work upstream has not done."
+    },
+    {
+      "id": "test:factorization-test_als",
+      "reason": "PROPOSED, pending jeff (plan.md OQ 2). Excluded with the solver, as upstream does."
+    },
+    {
+      "id": "optional:nccl",
+      "reason": "Not a cut: no upstream build path defines USE_NCCL or USE_NCCL2, so this code is compiled out of every configuration. If ever enabled, NCCL maps to RCCL."
+    },
+    {
+      "id": "optional:nvtx",
+      "reason": "PROPOSED, pending jeff (plan.md OQ 5). USE_NVTX is never defined, so the only effect of USENVTX is linking nvToolsExt; the HIP branch ignores it rather than mapping to roctx."
+    },
+    {
+      "id": "submodule:xgboost-lightgbm-gpu",
+      "reason": "PROPOSED, pending jeff (plan.md OQ 1). Separate upstream codebases (h2oai/xgboost, h2oai/LightGBM forks) with their own GPU surfaces; not compiled by the CMake build that produces the h2o4gpu solvers."
+    },
+    {
+      "id": "examples:cpp",
+      "reason": "Not built by any upstream build system; the drivers include the NCCL test_utilities header and are stale. Nothing to port."
+    },
+    {
+      "id": "build:docker-cuda12",
+      "reason": "PROPOSED, pending jeff (plan.md OQ 6). CUDA image tooling; a ROCm builder Dockerfile would be additive packaging, not part of the minimal port."
+    },
+    {
+      "id": "ci:jenkins-actions",
+      "reason": "MOAT adds no fork CI (CPU-only CI cannot observe GPU correctness) and leaves upstream CI untouched."
+    },
+    {
+      "id": "platform:windows",
+      "reason": "PROPOSED, pending jeff (plan.md OQ 3). Upstream builds only on Linux; a Windows build would be a POSIX-to-Win32 port of host code, not a HIP port. Suggest a windows gate waiver (an agent may only suggest it)."
+    }
+  ],
+  "removed_from_floor": [
+    {
+      "id": "marker:driver_api",
+      "reason": "false hit: all matches are in src/include/helper_cuda_drvapi.h and helper_cuda.h, unreferenced CUDA Samples headers being deleted under the licence ruling; no project source uses the driver API"
+    },
+    {
+      "id": "library:cufft",
+      "reason": "false hit: one error-string overload in src/include/helper_cuda.h behind a cufft header-guard #ifdef; the project never includes or calls cuFFT"
+    }
+  ]
+}
