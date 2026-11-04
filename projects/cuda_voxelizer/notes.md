@@ -178,3 +178,49 @@ cmake --build b -j8
 ```
 
 All three configure, build, link and run to completion (exit 0). The GPU runs print `[CUDA] CUDA device(s) found, picking best one` and the same bounding box `(-2.966815,0.033993,-2.477184)-(1.915775,4.916584,2.405406)` at grid 64; total runtime 393-441 ms (GPU) and 100-117 ms (`-solid`). The Test Plans of 94d1340 and 8b84b91 are now true in full (build and run on an NVIDIA GPU). USE_HIP stayed at its default OFF.
+
+## Validation 2026-11-04 (linux-gfx1201, validator, moat-port 689b885)
+
+Verdict: completed. Satisfies the wave32 gate at head 689b885.
+
+Host: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32, discrete PCIe, xnack off), one GPU pinned with `HIP_VISIBLE_DEVICES`. TheRock ROCm 10.1.0 pip SDK (`rocm-sdk path --root`), AMD clang 24.0.0git, amdgpu 6.19.14, CMake 3.31.6, g++ 13.3.0 host. All GPU runs under `ulimit -c 0`. Fork clone tree clean at 689b885 (`git status --porcelain` empty); `utils/jargon.py --port cuda_voxelizer` clean. README documents the ROCm build for Linux and Windows next to the CUDA build. CUDA no-regression gate not rerun: recorded at this head already (nvcc 12.8 build above, V100 run above).
+
+### Build
+
+Trimesh2 `2022.03.04` (`0b3d9e2`): `make -C trimesh2/libsrc -j24` -> `lib.Linux64/libtrimesh.a`, 0 errors. The README Linux recipe, verbatim apart from the ROCm prefix (no `/opt/rocm` on this host):
+
+```
+mkdir build && cd build
+cmake -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DTrimesh2_INCLUDE_DIR:PATH=<trimesh2>/include -DTrimesh2_LINK_DIR:PATH=<trimesh2>/lib.Linux64 <src>
+cmake --build . --parallel 24
+```
+
+Exit 0; warnings only from upstream (`main.cpp:28` -Wwrite-strings, `%llu` -Wformat in `main.cpp:67`/`util_cuda.cpp:34`) and Trimesh2's `mathutil.h`. Also built: `-G Ninja -DCMAKE_BUILD_TYPE=Release`, `-DCMAKE_BUILD_TYPE=Debug`, and Debug with `-DCMAKE_CXX_FLAGS=-D_DEBUG -DCMAKE_HIP_FLAGS=-D_DEBUG` (Linux Debug does not define `_DEBUG`, so this is the only way to cover the device counters on Linux). All exit 0.
+
+### GPU-vs-CPU differential
+
+Harness: `agent_space/scripts/cuvox_diff.py <exe> test_models/bunny.OBJ <work> --sizes .. --repeat 3`. Each run is in its own directory with a copy of the model. The GPU log must show `## GPU VOXELISATION` and no CPU fallback. binvox RLE, the morton `.bin` bitset and obj_points are decoded to voxel sets and compared, giving GPU-only and CPU-only counts. Bunny has 5110 triangles. The GPU log names the device `AMD Radeon AI PRO R9700` and prints the known cosmetic "MapSMtoCores for SM 12.0 is undefined".
+
+Release build (`-DCMAKE_BUILD_TYPE=Release`), 18 cases, diff identical across binvox / morton / obj_points:
+
+| mode | size | filled (CPU) | filled (GPU) | diff (GPU-only / CPU-only) |
+|---|---|---|---|---|
+| surface | 64 | 13,802 | 13,802 | 0 |
+| surface | 256 | 221,760 | 221,760 | 0 |
+| surface | 512 | 887,315 | 887,312 | 9 (3 / 6) |
+| solid | 64 | 52,258 | 52,258 | 0 |
+| solid | 256 | 3,345,384 | 3,345,384 | 0 |
+| solid | 512 | 26,763,628 | 26,763,629 | 1 (1 / 0) |
+
+README-recipe build (no `CMAKE_BUILD_TYPE`), the same 18 cases: 64 and 256 are 0 everywhere; 512 surface 4 (2 / 2), 512 solid 0, for all three formats.
+
+- 512 residual is the accepted FP class, same counts as gfx1151 Release (9 surface, 1 solid). Triangulation on Release, binvox: `-DCMAKE_HIP_FLAGS=-ffp-contract=off` -> surface 4 (2 / 2), solid 0; plus `rsqrtf` -> `1.0f / sqrtf` in helper_math `normalize()` (scratch copy, not the fork) -> surface 0, solid 0.
+- Repeat stability: 3 extra GPU runs per 512 case (surface + solid x binvox / morton / obj_points, both builds = 36 repeats): 0 voxels differ from the first GPU run in every one.
+- Debug build at 64, surface + solid, binvox + morton: 0 diff. `-D_DEBUG` build at 64: 0 diff, and the surface counters read back through `cudaMemcpyFromSymbol` (`Processed 5110 triangles`, `Tested 117367 voxels`, `Marked 45229 voxels`); solid prints 0 for all three because upstream's solid kernel never increments its counters. So the duplicate `__device__` names in two TUs link and resolve per TU.
+- `-o obj` at 64: GPU and CPU files byte-identical (`cmp`). `-o vox` at 64: GPU and CPU files differ only in the last 4 bytes, and so do two CPU runs of the same binary. Cause is upstream: `VoxWriter.cpp` fills the palette with `for (i = 0; i < 255; i++)`, leaving `colors[255]` uninitialized stack memory, which is then written as the final RGBA entry. The first 56,469 of 56,473 bytes are identical across 3 GPU and 3 CPU runs. Not a port defect; the gfx1151 byte-identity was luck.
+- Upstream CI smoke `cuda_voxelizer -f bunny.OBJ -s 64 -cpu`: exit 0, writes `bunny.OBJ_64.vox`, on both the README and Release builds.
+- Timings (Release, 512, GPU vs `-cpu`, wall including I/O): surface binvox 0.46 s vs 0.60 s; solid binvox 0.47 s vs 14.4 s.
+
+### Plan risk 2 (bitwise atomics on managed memory, discrete card)
+
+Does not fire on this discrete PCIe gfx1201. The differential is exact at 64/256 and the 512 residual is fully explained by FP. Standalone probe `agent_space/scripts/managed_atomics.hip` (`hipcc --offload-arch=gfx1201 -O2`): `hipMallocManaged` 8 MiB, `hipMemset`, then one thread per bit doing `atomicOr` (and `atomicXor` x3 on a second buffer), then again after a host `memset` of the managed buffer. Results: atomicOr 0 of 2,097,152 words wrong, atomicXor 0 of 2,097,152, atomicOr after host touch 0 of 2,097,152. Device reports `ManagedMemory=1`, `ConcurrentManagedAccess=1`, `PageableMemoryAccess=0`, `Integrated=0`; pointer type managed. gfx90a (wave64 discrete without MI300-class coherence) is still unmeasured.
