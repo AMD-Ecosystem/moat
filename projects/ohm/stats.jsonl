@@ -88,3 +88,5 @@
 {"kind":"phase","ts":"2026-11-04T07:36:07Z","phase":"test","seconds":3.292,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261103-232530-review-ohm/moat/agent_space/ohm-hip/bin/ohmtestheightmap"}
 {"kind":"phase","ts":"2026-11-04T07:36:07Z","phase":"test","seconds":0.034,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261103-232530-review-ohm/moat/agent_space/ohm-hip/bin/slamiotest"}
 {"kind":"session","ts":"2026-11-04T07:39:22Z","epoch":1793777962.184939456,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-04T17:05:27Z","epoch":1793811927.385751863,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-04T17:07:02Z","epoch":1793812022.596582080,"event":"end","platform":"linux-gfx90a"}
