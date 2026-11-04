@@ -125,3 +125,8 @@ tornado --devices
 - FMHA-only compile flags (`-fgpu-flush-denormals-to-zero`, FAST_EXP2, API toggles) are now per-source on the attention files only.
 - Results on gfx950 at `cf3563f72`: TestCutlass 26/26, TestCuDnn 18/18; standalone harness (`agent_space/ckproto/gemmtest.cpp`, operands at +24 bytes like TornadoVM arrays) passes all 21 cases on the XDL path and the FP32 DL path (forced on gfx950 with a prototype-only switch). WMMA/DL-on-RDNA are compile-checked only: the wave32 validator should run TestCutlass.
 - Build: the HIP build is about 2.5 min at 128 jobs; libtornado-ck ~25 MB with nine architectures.
+
+### Commit 11 pushed: amd-smi power (`180fa32eb`)
+
+- `AMDSMIAPI` (FFM, libamd_smi.so.27/26/25 via ROCmLibraries; no Windows library) + `HIPAMDPowerMetricHandler`, lazy init like the NVML handler. GPU located by PCI BDF (hipDeviceAttributePciDomainId 69 / PciBusId 67 / PciDeviceId 68, verified with a C probe) -> `amdsmi_get_processor_handle_from_bdf` (bdf union passed by value as uint64: function bits 0-2, device 3-7, bus 8-15, domain 16+). `amdsmi_power_info_t` 192 bytes: socket_power u64 @0 (W on bare metal), current_socket_power u32 @8 (W, MI300+), average_socket_power u32 @12 (UINT32_MAX on MI355X). Probe: `agent_space/smi/smi.cpp`.
+- Results: profiler `POWER_USAGE_mW` 286000 on gfx950 (MatrixMultiplication2D example); TestProfiler 9/9.
