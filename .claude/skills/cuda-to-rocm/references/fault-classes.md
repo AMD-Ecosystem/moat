@@ -311,8 +311,12 @@ depend on a capturing blocking stream") while any blocking stream on the device 
 in another thread, in thread-local capture mode, and even when the capturing stream was created
 non-blocking. The process then exits with status 1 inside the call, so there is no status to
 check. `miopenCreate`
-creates a hipBLASLt handle and fails the same way. `hipblasCreate`, `hipsolverDnCreate`,
-`hipblasLtDestroy` and `hipFree` were fine (ROCm 10.1, hipBLASLt 1.4.1, MIOpen 3.6.1). cuBLASLt
+creates a hipBLASLt handle and fails the same way, and so do `hipblasCreate` and
+`hipsolverDnCreate` whenever rocBLAS uses hipBLASLt (`ROCBLAS_USE_HIPBLASLT=1`, or by default on
+GPUs where rocBLAS routes GEMMs to it): rocBLAS creates its hipBLASLt handle eagerly at handle
+creation, not at the first GEMM. Test with that variable set even where it is off by default, or
+the rocBLAS and hipSOLVER creation sites look safe. `hipblasLtDestroy` and `hipFree` were fine
+(ROCm 10.1, hipBLASLt 1.4.1, MIOpen 3.6.1). cuBLASLt
 and cuDNN never touch the null stream at creation, so a CUDA framework that creates handles
 lazily (a new eager stream, an op's kernel state) while a graph runner captures on another
 thread breaks only on HIP. Switching the creating thread to relaxed capture mode does not help.
@@ -324,12 +328,15 @@ those threads draw from; PyTorch does this (`ensureCublasLtHandlesAvailable`, ca
 error. If unrelated threads create handles while another thread captures (an eager worker next
 to a graph runner in thread-local mode), nothing at capture begin can know how many handles they
 will need, so serialize instead: a process-wide shared mutex that each capture holds shared from
-begin to end, while the compat `cublasLtCreate` and `cudnnCreate` hold it exclusively. Skip the
+begin to end, while every creation of a hipBLASLt, MIOpen, rocBLAS or hipSOLVER handle holds it
+exclusively. Skip the
 wait on a thread that is itself capturing, or it deadlocks. The mutex is deadlock-free only while
 no thread blocks on another thread inside its capture window; check that for every capture site. To find who creates the handle, break on `hipMemset` in gdb
 and read the backtrace: a log ordered by time alone suggests a lazy allocation inside the
 captured call, but here the call came from another thread. (oneflow, 021f4ad34: an eager fused
-MLP backward run right after an nn.Graph training step under `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`.)
+MLP backward run right after an nn.Graph training step under `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`;
+and, with `ROCBLAS_USE_HIPBLASLT=1`, the first eager device-to-host copy after one, which
+constructs a stream with its rocBLAS and hipSOLVER handles.)
 
 ## Textures
 
@@ -616,6 +623,18 @@ TU.** A wave-width gate in a header included BEFORE the runtime header silently 
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which
 masks the bug -- so the gate is correct only by accident and breaks for anyone building
 without hipify. Verify include order rather than trusting the prepend. (LC-framework)
+
+**With the ROCm clang as the host compiler, a found system libunwind links but does not load.**
+The ROCm clang searches the `include/` directory next to its LLVM install ahead of the system
+include directories, so `<libunwind.h>` resolves to LLVM's header, while a `FindUnwind` module
+links the system GNU `libunwind.so`. GNU's header maps `unw_getcontext`, `unw_init_local`,
+`unw_step` and `unw_get_reg` to `_Ux86_64_*` through macros; LLVM's declares the plain names. The
+build succeeds and the library then fails to load with `undefined symbol: unw_getcontext`, but
+only on machines with `libunwind-dev` installed, so it hides until a host gains the package.
+Check `nm -D <lib> | grep ' U unw_'`. A bare `clang++ -E` may resolve the system header; run
+`-E -H` on the real compile command from `compile_commands.json`. glog also links libunwind when
+it finds it. Under the HIP option, set `CMAKE_DISABLE_FIND_PACKAGE_Unwind ON` before the
+dependencies are configured; backtrace code falls back to `_Unwind_Backtrace`. (oneflow)
 
 **Missing-include errors are usually pre-existing upstream omissions**, not port breakage:
 CUDA's headers supplied them transitively and the narrower HIP include graph unmasks them.
