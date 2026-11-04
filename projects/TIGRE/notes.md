@@ -1071,3 +1071,48 @@ gfx1100 never reproduced the race (here or at 5a3da55), so this shows the fix re
 - `git -C projects/TIGRE/src status --porcelain`: no modified tracked files, untracked build output only.
 
 Outcome: linux-gfx1100 -> **completed** at 34f31a6. This satisfies the wave32 gate at this head. wave64 (gfx90a revalidation, with the 5a3da55 repro) and windows still owe records at 34f31a6.
+## Validation 2026-11-04 (linux-gfx90a, validator, moat-fix-747 @ 34f31a6 -> completed)
+
+jeff asked for this run. GPU: MI250X / MI250 gfx90a, TheRock ROCm SDK 10.1, `HIP_VISIBLE_DEVICES=3` (dispatcher pin), all GPU work under `ulimit -c 0`. Head `34f31a6e0436afbe9af6b9763d1b663c7639c9d0`, checked out from `moat-fix-747` in a fresh fork clone; control tree `5a3da55948d954ca9184c0b4793bbb2be95490e9` as a `git worktree` of the same clone (`projects/TIGRE/src-5a3da55`, host-local).
+
+### Verdict: completed
+Every gate passes at 34f31a6 and every repeat is bitwise identical (480 of 480). The same harness at 5a3da55 on this host still reproduces the parallel Siddon race (28 of 120 runs differ), so the two `cudaStreamSynchronize(stream[1])` lines are what removes it on gfx90a.
+
+### Build (both shas, same recipe)
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH BUILD_WITH_HIP=1 HIP_ARCH=gfx90a ROCM_PATH=$(rocm-sdk path --root)
+utils/timeit.sh TIGRE compile -- bash -c "cd projects/TIGRE/src && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16"
+```
+(job venv python 3.11: `pip install numpy==1.26.4 scipy==1.10.1 Cython matplotlib h5py tqdm pytest`; Cython 3.3.1.) Both rc 0, 0 `error:` lines, 8/8 `.so`, 20 hipcc compiles at `-std=c++14`; `llvm-objdump --offloading` shows gfx90a in all 8 head `.so`. Self-test: `fp32 hardware linear texture filtering on AMD Instinct MI250X / MI250: unsupported (software trilinear fallback)`.
+
+### Tests at 34f31a6
+Scripts: `tigre_validate.py`, `tigre_solvers.py`, `tigre_parallel.py`, `repeat_par.py`, `repeat_par_interp.py`, copied unchanged from the earlier gfx90a jobs' `agent_space/scripts/` on this host (host-local, not committed). Driver: `utils/timeit.sh TIGRE test -- bash agent_space/run_head.sh <tree> agent_space/scripts`, which runs, with `PYTHONPATH=<tree>/Python MPLBACKEND=Agg`:
+```
+cd <tree>/Python && $FLEET_VENV/bin/python -m pytest -q -p no:cacheprovider tests/<file>.py   # each of the 7 files
+$FLEET_VENV/bin/python tigre_validate.py; $FLEET_VENV/bin/python tigre_solvers.py
+$FLEET_VENV/bin/python tigre_parallel.py                                       # 3 passes
+$FLEET_VENV/bin/python repeat_par.py {parallel,cone}; $FLEET_VENV/bin/python repeat_par_interp.py {parallel,cone}   # 3 passes each
+```
+- Upstream pytest: compute_cor 6, demo_angles 1, denoise_2d_guard 3, filtering_workers 37, gpuids_default 5, krylov_restart_and_norms 9, krylov_smoke 9 -> **70 passed, 0 failed** (porter 70/70 at 34f31a6, this platform 70/70 at 5a3da55).
+- Cone gates (`tigre_validate.py`): Siddon mean/max 27.46/111.2, interp vs Siddon 0.0040, FDK 0.2864, OS-SART-20 0.1929, adjointness 1.004e-05 / 6.076e-05. RESULT PASS.
+- Solvers (`tigre_solvers.py`): sart 4.9635, ossart 3.7197, sirt 6.2263, cgls 0.9609, fista 0.9505, asd_pocs 4.7643, awasd_pocs 4.7777, os_asd_pocs 3.5631, ossart_tv 3.4159; all finite, RESULT PASS. Cone and solver numbers equal the porter's 34f31a6 values and this platform's 5a3da55 values to every printed digit.
+- Parallel gate (`tigre_parallel.py`), 3 passes, identical output each time: axis 0.0043 / Siddon adj 2.030e-05 / interp adj 1.973e-06; offset 0.0041 / 6.078e-05 / 1.322e-06; Euler 0.0056 / 1.323e-05 / 1.894e-06; FBP 0.0833; SIRT-20 0.1952; missed rays 0.01 s, finite, zero fraction 0.861 / 0.855. RESULT PASS. These match the porter's 34f31a6 values exactly. At 5a3da55 this platform's runs had moved between passes (axis Siddon adj 2.03e-05 / 1.99e-04, offset interp vs Siddon 0.0058 / 0.0041).
+- Repeats (20 repeated calls vs the first, phantom and seeded random, 128^3, `linspace(0,pi,64,endpoint=False)+0.3`), 3 passes each: `repeat_par.py parallel`, `repeat_par.py cone`, `repeat_par_interp.py parallel`, `repeat_par_interp.py cone` -> **0/20 differ in all 24 cases (480 repeats bitwise identical)**.
+
+### Control: `repeat_par.py parallel` at 5a3da55, same host, GPU, flags and script
+`utils/timeit.sh TIGRE test -- bash agent_space/run_base.sh projects/TIGRE/src-5a3da55 agent_space/scripts 3`
+| pass | phantom | random |
+|---|---|---|
+| 1 | 0/20 | 11/20, worst 43.6% of max\|ref\|, 93 px, projections 0-5 |
+| 2 | 5/20, worst 43.9%, 1049 px, projections 0-8 | 7/20, worst 6.2%, 76 px, projections 0-4 |
+| 3 | 2/20, worst 16.1%, 151 px, projections 0-3 | 3/20, worst 5.1%, 57 px, projections 0-5 |
+
+28 of 120 runs differ; every differing pixel is in the first kernel batch (projections 0 to 8), as before. The fix removes it: 0 of 60 parallel Siddon repeats differ at 34f31a6 with the same harness.
+
+**For jeff, on the drafted fix review PR body:** its race paragraph says "errors up to 22% of the maximum" and "in roughly 1 run in 7". This run saw errors up to 44% of the maximum and 28 differing runs in 120 (about 1 in 4). Suggest "errors above 40% of the maximum" and "in up to 11 of 20 runs", or dropping the magnitudes. The gfx90a retest paragraph can now name this record: 70 tests, cone 0.40% / 0.286 / 0.193 / 1.0e-05, solvers finite, parallel 0.43% / 0.41% / 0.56%, FBP 0.083, SIRT 0.195, 480 repeats bitwise identical where parallel Siddon at the previous commit differed in up to 11 of 20.
+
+### Other gates
+- `jargon.py --port TIGRE`: clean.
+- Documentation: `Frontispiece/python_installation.md` has the `AMD GPU (ROCm/HIP)` section; unchanged by this round, which changes no build knob.
+- Integrity: `git -C projects/TIGRE/src status --porcelain` shows untracked build output only at 34f31a6.
+- CUDA compile gate: `cuda-not-validated: no CUDA toolkit on this host` (no `/opt/conda`; fetching a micromamba binary to create the env was refused by this job's permission policy, so I did not create one). The delta 5a3da55..34f31a6 adds only the two `cudaStreamSynchronize(stream[1]);` lines, both runtime API calls on the CUDA path. The gate is still owed at 34f31a6 by a Linux host that has the toolkit.

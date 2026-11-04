@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
   "adopted_at": "2026-06-04T01:07:42Z",
-  "updated_at": "2026-11-04T19:34:54Z",
+  "updated_at": "2026-11-04T19:36:43Z",
   "head_sha": "34f31a6e0436afbe9af6b9763d1b663c7639c9d0",
   "depends_on": [],
   "pr_url": "https://github.com/CERN/TIGRE/pull/747",
@@ -19,58 +19,6 @@
   "upstream_repo_id": 61034131,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx90a": {
-      "state": "validation-failed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "cf873a288e8469d7292470c96272f825dc355dba",
-      "started_at": "2026-06-04T01:41:19Z",
-      "completed_at": "2026-06-19T22:54:42Z",
-      "updated_at": "2026-11-04T19:08:50Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "cf873a288e8469d7292470c96272f825dc355dba",
-        "method": "binary-equiv",
-        "detail": "PR-prep cleanup only: removed gpuUtils.cu attribution comment + inlined a single-use bool in the host CreateTextureInterp; device code objects identical, executed behavior unchanged",
-        "at": "2026-06-19T22:54:42Z"
-      },
-      "failed_sha": "5a3da55948d954ca9184c0b4793bbb2be95490e9"
-    },
-    "windows-gfx1101": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "cf873a288e8469d7292470c96272f825dc355dba",
-      "started_at": null,
-      "completed_at": "2026-06-20T07:52:27Z",
-      "updated_at": "2026-06-20T07:52:27Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
@@ -116,6 +64,30 @@
       },
       "last_agent": "validator"
     },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "34f31a6e0436afbe9af6b9763d1b663c7639c9d0",
+      "started_at": "2026-06-04T01:41:19Z",
+      "completed_at": "2026-11-04T19:36:43Z",
+      "updated_at": "2026-11-04T19:36:43Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "failed_sha": "5a3da55948d954ca9184c0b4793bbb2be95490e9"
+    },
     "windows-gfx1201": {
       "state": "completed",
       "blocked": false,
@@ -144,6 +116,28 @@
         "detail": "PR-prep cleanup only: removed gpuUtils.cu attribution comment + inlined a single-use bool in the host CreateTextureInterp; device code objects identical, executed behavior unchanged",
         "at": "2026-06-19T22:54:42Z"
       }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "cf873a288e8469d7292470c96272f825dc355dba",
+      "started_at": null,
+      "completed_at": "2026-06-20T07:52:27Z",
+      "updated_at": "2026-06-20T07:52:27Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   },
   "published_sha": "cf873a288e8469d7292470c96272f825dc355dba",
@@ -157,6 +151,5 @@
     "arch": "linux-gfx1100",
     "since": "2026-11-04T19:12:53Z",
     "at": "2026-11-04T19:19:15Z"
-  },
-  "porting": null
+  }
 }
