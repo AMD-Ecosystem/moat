@@ -5,20 +5,53 @@
   "fork_url": "https://github.com/ROCm/cupy",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "unclaimed",
+  "ext_type": "setuptools-cuda",
+  "stage": "screened",
   "adopted_at": "2026-11-04T22:34:29Z",
-  "updated_at": "2026-11-04T22:35:00Z",
+  "updated_at": "2026-11-04T22:41:45Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {},
+  "platforms": {
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-04T22:41:45Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
   "fork_url_ruling": {
     "url": "https://github.com/ROCm/cupy",
     "previous": null,
     "by": "jeffdaily",
     "at": "2026-11-04T22:35:00Z",
     "reason": "ROCm/cupy is AMD's staging fork for upstream CuPy PRs; a second fork would duplicate it"
+  },
+  "license_spdx": "MIT",
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none for Windows; ROCm/cupy (fork_url) holds AMD's Linux HIP work, upstream #8374 closed",
+    "viable": true,
+    "summary": "CuPy (MIT) Windows ROCm build only: Linux HIP is upstream; Windows device compiler raises for HIP, needs hipcc/clang-cl path, hiprtc DLL name, no roctracer/rccl, DLL dirs; unblocks gpu4pyscf windows",
+    "at": "2026-11-04T22:41:45Z"
   }
 }
