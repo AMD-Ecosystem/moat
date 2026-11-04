@@ -921,3 +921,31 @@ Total 547 checks, 0 failures. Matches the 90a711b laptop run and the Linux c7ae2
 
 ### Checks
 CUDA gate: not run on this host; recorded PASS at 90a711b, and c7ae2c5 changes setup.py only under `IS_ROCM and os.name == "nt"`. `python3 utils/jargon.py --port llm-awq` clean; README.md:127 documents the ROCm build; fork tree clean.
+
+## Validation 2026-11-04 (linux-gfx1201, c7ae2c5)
+
+Verdict: completed at fork `moat-port` c7ae2c57d3c642ae25e88f9d8402481b8273ff1e (head_sha, review-passed; upstream PR #354 open at the same sha). jeff asked for this revalidation of 90a711b -> c7ae2c5. Host: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32), ROCm 7.16 (TheRock SDK in the image venv, HIP 7.16.26385), torch 2.16.0a0+git6c3af02, Python 3.11. `HIP_VISIBLE_DEVICES=0` pinned by the dispatcher; everything under `ulimit -c 0`. Fresh fork clone (its GitHub default branch is now `moat-port`; `main` fetched locally for jargon.py), `git status --porcelain` empty before and after.
+
+Carry-forward not used: `moatlib.py classify llm-awq 90a711b c7ae2c5` -> `mixed` (setup.py token count differs), so a full real-GPU run.
+
+Build from a `git archive` copy (hipify writes into the tree; ninja `[14/14]`, 0 errors; link line still `-lhipblaslt`, the Linux path is unchanged; `llvm-objdump --offloading` from `_rocm_sdk_devel/lib/llvm/bin` shows only gfx1201):
+```
+git -C projects/llm-awq/src archive c7ae2c5 | tar -x -C /tmp/awq_c7ae2c5
+utils/timeit.sh llm-awq compile -- bash -c "cd /tmp/awq_c7ae2c5/awq/kernels && PYTORCH_ROCM_ARCH=gfx1201 MAX_JOBS=24 python setup.py build_ext --inplace"
+```
+
+Tests (from /tmp, `PYTHONPATH=/tmp/awq_c7ae2c5/awq/kernels`, `TORCH_EXTENSIONS_DIR=/tmp/awq_torch_ext`, each wrapped `utils/timeit.sh llm-awq test -- python projects/llm-awq/tests/<script> [arg]`, scripts unmodified), every script exit 0, 0 FAIL lines, 518 checks:
+- `attn_test.py`: 443/443, worst out err 1.91e-02 (bf16; 90a711b here: 2.54e-3 fp16 / 1.91e-2 bf16). fp32 D=128 t=16240 (65552 B) and t=20000 (80592 B) refused against 65536 B LDS. bf16 D=64 refuses from t=10888 (65544 B), the same as gfx1100, gfx942 and gfx1151 recorded at c7ae2c5; monotone refusal is what the test requires.
+- `tinychat_e2e.py /tmp/awq_c7ae2c5`: 4/4; argmax 40/40, 40/40, 64/64, 40/40; max |dlogit| 2.930e-03 (MQA 1.465e-03), min cos 0.999999.
+- `w8a8_test.py`: 25/25, paths {'hipblaslt': 24}, side-stream ordering PASS; worst max err 7.181e-03 (M=17 N=4096 K=11008 with bias, max |out| 18.48).
+- `w8a8_simt_test.py <w8a8_gemm_cuda.cu>`: 7/7 exact.
+- `legacy_gemm_test.py`: 8/8, max err 3.966e-03 vs dequant ref, 7.812e-03 vs legacy gemv.
+- `w4a16_test.py /tmp/awq_c7ae2c5`: 30/30 (fp16), max err 3.875e-03.
+- `w8a8_handle_test.py <w8a8_gemm_cuda.cu>` (reviewer-fixed helper, Linux branch): PASS, 16 threads over 1 device, one handle.
+All match the 90a711b gfx1201 run and the gfx1100 / gfx942 runs at c7ae2c5 within fp16/bf16 rounding.
+
+CUDA gate: not rerun (no nvcc on this host). Recorded PASS at 90a711b (V100 node, sm_80); c7ae2c5 changes setup.py only under `IS_ROCM and os.name == "nt"` plus `extra_link_args=[]`, shown equal to setuptools' default in the c7ae2c5 review.
+
+Checks: `python3 utils/jargon.py --port llm-awq` clean; README.md:127 documents the ROCm build; fork tree clean.
+
+Records note: the 2026-10-30 linux-gfx1201 entry above was interleaved with the linux-gfx942 entry by a union merge (its build block and test list sit under the gfx942 heading). Left as is.

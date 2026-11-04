@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-08T13:34:13Z",
-  "updated_at": "2026-11-03T23:37:38Z",
+  "updated_at": "2026-11-04T07:29:22Z",
   "head_sha": "c7ae2c57d3c642ae25e88f9d8402481b8273ff1e",
   "depends_on": [],
   "waivers": {},
@@ -89,11 +89,11 @@
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "90a711be48b58046448fd7e036b5ecc765cd677b",
+      "validated_sha": "c7ae2c57d3c642ae25e88f9d8402481b8273ff1e",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-10-30T00:52:47Z",
-      "updated_at": "2026-10-30T00:52:47Z",
+      "completed_at": "2026-11-04T07:29:22Z",
+      "updated_at": "2026-11-04T07:29:22Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
