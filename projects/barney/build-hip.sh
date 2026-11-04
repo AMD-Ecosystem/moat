@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 # Repeatable Backend-1 (software tracer -> HIP) build for barney on Linux gfx90a.
 # Consumes the ported cuBQL from _deps/cuBQL (AMD-Ecosystem/cuBQL @ moat-port).
 set -euo pipefail

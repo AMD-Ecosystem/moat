@@ -1,0 +1,137 @@
+{
+  "schema_version": 3,
+  "name": "FLAMEGPU2",
+  "upstream_url": "https://github.com/FLAMEGPU/FLAMEGPU2",
+  "fork_url": "https://github.com/AMD-Ecosystem/FLAMEGPU2",
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-05T01:16:31Z",
+  "updated_at": "2026-08-20T05:37:54Z",
+  "head_sha": "a290861",
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  },
+  "license_spdx": "AGPL-3.0",
+  "upstream_repo_id": 34064755,
+  "stage": "porting",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a290861",
+      "started_at": "2026-06-05T05:06:43Z",
+      "completed_at": "2026-06-08T00:38:47Z",
+      "updated_at": "2026-08-20T00:11:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "a290861",
+        "method": "binary-equiv",
+        "detail": "#include <windows.h> inside #ifdef _MSC_VER; linux clang does not define _MSC_VER, no compiled diff",
+        "at": "2026-06-08T00:38:47Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a290861",
+      "started_at": null,
+      "completed_at": "2026-06-08T00:39:02Z",
+      "updated_at": "2026-06-08T00:39:02Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "a290861",
+        "method": "binary-equiv",
+        "detail": "#include <windows.h> inside #ifdef _MSC_VER; linux clang does not define _MSC_VER, no compiled diff",
+        "at": "2026-06-08T00:39:02Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a290861",
+      "started_at": null,
+      "completed_at": "2026-06-20T00:21:53Z",
+      "updated_at": "2026-06-20T00:21:53Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a290861",
+      "started_at": null,
+      "completed_at": "2026-06-08T00:58:21Z",
+      "updated_at": "2026-06-08T00:58:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    }
+  },
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-08-20T00:11:42Z",
+    "at": "2026-08-20T00:26:32Z"
+  },
+  "on_hold": true,
+  "on_hold_reason": "Parked by Jeff Daily until ptheywood replies on upstream draft PR #1379 (amdgpu branch): waiting to learn whether he wants a PR against amdgpu or a cherry-pick of amdgpu-fixes @ 2ecf5a01. Port itself is complete on all four platforms at a290861."
+}
