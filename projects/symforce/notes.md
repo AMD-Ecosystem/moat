@@ -1858,7 +1858,7 @@ Pushed as a fast-forward `f82e4abf..e7e0b00c` on `moat-fix-465` only (strict des
   - Added "Without it, CMake builds for the GPU it detects on the build machine" for `hip_arch` unset: `compile()` then passes no `CMAKE_HIP_ARCHITECTURES`; configuring the generated library with `-DUSE_HIP=ON` only gave `CMAKE_HIP_ARCHITECTURES=gfx90a;...` in the cache.
   - Kept, verified: `hip`/`hipcub` packages (`find_package(hip)`, `find_package(hipcub)` in CMakeLists.txt.jinja); "`use_hip` off: unchanged, uses CUDA" (`compile()` else-branch sets `CMAKE_CUDA_ARCHITECTURES` only).
 - pybind_array_tools.cc:177-179 comment -> "This host translation unit calls the HIP runtime directly rather than including cuda_to_hip.h, which also pulls in hipcub." (The header it includes, pybind_array_tools.h, includes `hip/hip_runtime.h` only.) clang-format 21.1.2 clean.
-- `jargon.py --port symforce`: clean. Commit: title 59 chars, "Authored with Claude.", fenced Test Plan, no Co-Authored-By. Fork worktree clean.
+- `jargon.py --port symforce`: clean. Commit: title 60 chars, "Authored with Claude.", fenced Test Plan, no Co-Authored-By. Fork worktree clean.
 
 ### Tests at e7e0b00c (gfx90a)
 
