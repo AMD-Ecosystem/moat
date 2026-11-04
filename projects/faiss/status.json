@@ -7,13 +7,13 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-05-31T16:36:35Z",
-  "updated_at": "2026-08-20T07:32:59Z",
+  "updated_at": "2026-11-04T23:52:12Z",
   "head_sha": "01a09e824b4792d1ef4f14ef5cdb99c37737c353",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 81227005,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "windows-gfx1101": {
       "state": "completed",
@@ -128,6 +128,28 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-04T23:52:12Z",
+      "completed_at": null,
+      "updated_at": "2026-11-04T23:52:12Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   },
   "porting_released": {
@@ -135,5 +157,9 @@
     "since": "2026-08-20T05:52:53Z",
     "at": "2026-08-20T05:57:55Z"
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/faiss/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/faiss/pull/1",
+  "porting": {
+    "arch": "linux-gfx1201",
+    "since": "2026-11-04T23:52:12Z"
+  }
 }
