@@ -814,3 +814,18 @@ Not rerun: no CUDA toolkit on this host. The compiled sources are unchanged sinc
 
 ### Pre-completion checks
 `python3 utils/jargon.py --port gpuRIR`: clean. README documents the ROCm build next to the CUDA one (Linux and Windows `CMAKE_ARGS` forms). Fork clone and both build clones: `git status --porcelain` empty.
+
+## Validation 2026-11-03 (windows-gfx1151, Radeon 8060S, TheRock ROCm 7.14.0a20260612): cf0acba
+
+Fresh clone of `moat-port` at cf0acba (src tree `status --porcelain` empty). Delta 39a7a9d..cf0acba is setup.py (Ninja route) and README only. `ulimit -c 0`, one GPU process at a time, cp313 torch_venv python.
+```
+source agent_space/win_rocm_env.sh; unset CC CXX; export PATH=/d/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin:$PATH
+CMAKE_ARGS="-G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_HIP_COMPILER=clang++ -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151" \
+utils/timeit.sh gpuRIR compile -- <python> -m pip install -v --no-deps --no-build-isolation --target <abs target> <abs clone>
+GPURIR_PIP_TARGET=<target> utils/timeit.sh gpuRIR test -- python agent_space/gpurir_win/validate.py
+bash agent_space/gpurir_win/runall_pip7.sh
+```
+- Build: README form (no C compiler), exit 0, no "not used" CMake warning, .pyd produced.
+- Harness against the installed module (confirmed from target): **49/49 PASS**, f64 table identical to earlier runs (exact 5.3e-8/5.2e-8/1.46e-7/4.3e-8).
+- Upstream examples: example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, example.py mp on / LUT off: **6/6 exit 0**.
+- No environment failures. CUDA gate not run (no toolkit on this host); recorded at 39a7a9d, delta has no compiled-source change. jargon.py clean; README documents the ROCm build.

@@ -7,7 +7,7 @@
   "priority": 4.22,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-03T18:45:57Z",
+  "updated_at": "2026-11-04T06:59:53Z",
   "head_sha": "cf0acba47dd137bbb7663d2f51fc3e955ebeb724",
   "waivers": {},
   "license_clearance": {
@@ -76,10 +76,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "39a7a9d93592cb78b5913b974b6aaf8aa86ca1a0",
+      "validated_sha": "cf0acba47dd137bbb7663d2f51fc3e955ebeb724",
       "started_at": "2026-11-02T21:03:10Z",
-      "completed_at": "2026-10-31T20:47:59Z",
-      "updated_at": "2026-11-02T21:37:06Z",
+      "completed_at": "2026-11-04T06:59:53Z",
+      "updated_at": "2026-11-04T06:59:53Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -93,7 +93,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter"
+      "last_agent": "validator"
     },
     "windows-gfx1101": {
       "state": "completed",
