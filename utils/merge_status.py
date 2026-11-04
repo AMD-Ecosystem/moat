@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """git merge driver for projects/*/status.json (merge=moat-status in
 .gitattributes). Deterministic so concurrent CLIs never hard-conflict.
 
@@ -67,10 +69,21 @@ except Exception:  # a merge must still resolve if moatlib will not import
 _TERMINAL_PR = {"merged", "closed"}
 _PR_RANKABLE = set(PR_STATES) == {"open"} | _TERMINAL_PR
 
+# `maintained` is STICKY, not RESET like on_hold, though both are person-recorded
+# standing rulings that a person clears: under RESET, any newer write from a host
+# whose copy predates the ruling would silently erase it, and an erased ruling
+# re-arms the upstream-PR machinery against a maintainer's explicit no. A
+# resurrected clear (the STICKY failure mode) just needs re-clearing.
+# `no_upstream` is STICKY for the same reason: erasing it re-lists a port for a
+# pull request its archived upstream cannot take.
+# `base_branch_ruling` is STICKY and, where it stands, decides fork_default_branch:
+# a host whose copy predates the ruling would otherwise restore the old PR base
+# just by writing something newer.
 STICKY = ("upstream_repo_id", "fork_url", "review_pr", "pr_approval",
           "license_clearance", "license_spdx", "pr_number", "pr_url",
           "pr_opened_at", "pr_merged_at", "pr_closed_at", "pr_closed_note",
-          "adopted_at")
+          "adopted_at", "maintained", "no_upstream", "fix_abandoned",
+          "base_branch_ruling")
 UNION = ("platforms", "waivers")
 RESET = ("on_hold", "on_hold_reason")
 # Every field that describes the CURRENT upstream-PR round. When the two sides
@@ -79,7 +92,7 @@ RESET = ("on_hold", "on_hold_reason")
 PR_ROUND_FIELDS = ("pr_state", "pr_url", "pr_number", "pr_opened_at",
                    "pr_merged_at", "pr_closed_at", "pr_closed_note",
                    "published_sha", "review_pr", "pr_approval", "fix",
-                   "fix_merged_at", "pr_history", "pr_round")
+                   "fix_merged_at", "fix_abandoned", "pr_history", "pr_round")
 
 
 def _round_of(x):
@@ -201,6 +214,8 @@ def merge(a, b):
             out[k] = a.get(k) if a.get(k) is not None else b.get(k)
         if k in out and out[k] is None:
             del out[k]
+    if out.get("base_branch_ruling"):
+        out["fork_default_branch"] = out["base_branch_ruling"]["branch"]
 
     for k in RESET:
         out.pop(k, None)

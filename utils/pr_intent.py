@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Say what a pull request is FOR, from what it changes.
 
 Two kinds of change arrive here and they want different review. A PROJECT pull
