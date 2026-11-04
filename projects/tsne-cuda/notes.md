@@ -155,3 +155,32 @@ GPU evidence at `4fedca7` (gfx1201, `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`): FAI
 - `ctest --test-dir build --output-on-failure`: 1/1; `./build/tsnecuda_test` 10 consecutive runs, all `PASSED 8 tests`.
 - `cd build/python && python -c "import tsnecuda; tsnecuda.test()"`: rc 0, total_time 2.79 s.
 - `python -m pytest -v build/python/tsnecuda/test` (INSTALL.md form, from the source root): 7 passed in 23.74 / 23.68 / 23.55 s, 3 runs, including `test_digits_quality_synchronized_kernels` and `test_digits_quality_launch_overrides`.
+
+## CUDA compile check 2026-11-04
+
+Requested CUDA no-regression compile check (no role taken, no state changed) on the mi355 fleet host, fork `moat-port` `4fedca7`. **Result: not completed -- blocked before any `.cu` compiled, on the missing CUDA GPU FAISS dependency. This says nothing about a CUDA regression either way.**
+
+Toolchain: `/usr/local/cuda-12.8/bin/nvcc` (not on `PATH` by default), `Cuda compilation tools, release 12.8, V12.8.93`, host GCC 13.3.0, CMake 3.31.6. The toolkit has cuBLAS, cuFFT, cuSPARSE and Thrust.
+
+```
+git clone https://github.com/AMD-Ecosystem/tsne-cuda.git tsne-cuda-cudacheck
+cd tsne-cuda-cudacheck && git checkout 4fedca7
+export PATH=/usr/local/cuda-12.8/bin:$PATH
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
+  -DCMAKE_CUDA_ARCHITECTURES=90 -DBUILD_TESTS=ON
+```
+
+Configure, rc 1: CUDA 12.8.93 detected, `tsnecuda: honoring CMAKE_CUDA_ARCHITECTURES=90`, OpenMP found, then
+
+```
+CMake Error at .../FindPackageHandleStandardArgs.cmake:233 (message):
+  Could NOT find FAISS (missing: FAISS_INCLUDE_DIR FAISS_GPU_INCLUDE_DIR
+  FAISS_LIBRARY)
+  cmake/Modules/FindFAISS.cmake:21 (find_package_handle_standard_args)
+  CMakeLists.txt:197 (find_package)
+```
+
+Cause: `find_package(FAISS REQUIRED)` needs a CUDA GPU FAISS (headers `faiss/gpu/*.h` plus `libfaiss`); `src/include/util/distance_utils.h` includes `faiss/gpu/GpuIndexFlat.h`, `StandardGpuResources.h` and `GpuCloner.h`, so a CPU-only FAISS would not do. None is installed on this host and there is no conda (upstream INSTALL.md recommends `conda install -c conda-forge libfaiss`). Building upstream FAISS v1.15.1 from source with nvcc 12.8 (`-DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_PYTHON=OFF -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON -DCMAKE_CUDA_ARCHITECTURES=90`, `cmake --build build --target faiss`, `cmake --install`) was refused by this session's permission policy as building third-party code the task did not name, so it was not run. No fork change is indicated; nothing was pushed to the fork.
+
+To finish: provide a CUDA GPU FAISS (conda-forge `libfaiss` built for CUDA 12, or the source build above), then rerun the configure with `-DCMAKE_PREFIX_PATH=<faiss prefix>` (or `-DFAISS_ROOT_DIR`, `-DFAISS_INCLUDE_DIR`/`-DFAISS_LIBRARY`) and `cmake --build build -j 64`, which compiles the 16 library sources and `tsnecuda_test` (`src/test/test.cu`, `cuda_utils.cu`, `reduce_utils.cu`, GoogleTest v1.15.2 via FetchContent).
