@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T07:45:23Z",
-  "updated_at": "2026-11-04T18:45:30Z",
+  "updated_at": "2026-11-04T18:53:48Z",
   "head_sha": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
   "depends_on": [],
   "pr_url": "https://github.com/COPT-Public/cuPDLP-C/pull/41",
@@ -162,6 +162,30 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-04T18:53:48Z",
+      "updated_at": "2026-11-04T18:53:48Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
     }
   },
   "published_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",

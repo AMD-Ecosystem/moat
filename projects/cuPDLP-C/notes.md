@@ -687,3 +687,29 @@ Retested at 8f43bf8 on AMD Instinct MI250X (gfx90a) and AMD Radeon Pro W7800 (gf
 
 I merged current main into this branch, so it no longer conflicts, and every file the port touches keeps the line endings the repository uses for it. I retested on an AMD Instinct MI250X (gfx90a) and an AMD Radeon Pro W7800 (gfx1100): testcudalin, testcublas, afiro, and your new CTest suite and NumPy checker all pass. build.sh also gains a `MODE=hip` option, documented in INSTALL, and I removed the per-file copyright and author lines the port had added, since the project records attribution in AUTHORS and OWNERSHIP.txt.
 ```
+
+## Validation 2026-11-04 (windows-gfx1151, moat-fix-41 at f56941f)
+
+Platform: windows-gfx1151, AMD Radeon 8060S (gfx1151, RDNA3.5, wave32), TheRock pip SDK 7.14.0a20260612, Ninja, `ulimit -c 0`, 8 jobs. This platform had no record at the sync-round tree (windows-gfx1101/1201 sit at d380bca), so this is a full run, no carry-forward. Fresh fork clone, `git fetch origin moat-fix-41`, `git checkout f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2`; nothing modified in the tree.
+
+Environment (all outside the source tree, none of it a port defect):
+- Compilers: `CC=<sdk>/lib/llvm/bin/clang.exe CXX=...clang++.exe HIPCXX=...clang++.exe CMAKE_GENERATOR=Ninja HIPFLAGS=--rocm-device-lib-path=<sdk>/lib/llvm/amdgcn/bitcode GPU_ARCH=gfx1151 MODE=hip`, `source agent_space/win_rocm_env.sh`. Never put `D:/...` paths in PATH (colon splits it); use `/d/...`.
+- Bundled HiGHS 1.6.0 cannot be built by build.sh as is on this toolchain: the SDK clang++ (23.0.0git) ICEs (signal) on `presolve/HighsSymmetry.cpp` at the default -O3. Built HiGHS by hand with `-DCMAKE_CXX_FLAGS_RELEASE="-O1 -DNDEBUG" -DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=ON -DCMAKE_PREFIX_PATH=D:/Develop/vcpkg/installed/x64-windows -DZLIB_ROOT=<same> -DBUILD_SHARED_LIBS=ON -DFAST_BUILD=ON`, installed to `.coinor-deps/highs`, then `HIGHS_HOME=$PWD/.coinor-deps/highs` so build.sh skips its HiGHS step. Without export-all the shared highs.dll exports nothing (examples fail to link); without zlib the compressed_mps case fails ("HiGHS build without zlib support"). vcpkg `z.dll` copied beside highs.dll.
+- Runtime: `rocm_stage_runtime` (amdhip64_7, amd_comgr, hiprtc, rocm_kpack) next to the exes, plus hipsparse/hipblas/rocblas dirs on PATH. build.sh's own CTest step runs before any DLL is staged, so on this host it fails 4/4 with 0xC0000005 (System32 hip runtime); the build itself succeeded. Staged the DLLs and ran the remaining build.sh steps by hand.
+- numpy installed into the Python 3.12 used by the checker (`pip install numpy`).
+
+Commands after staging:
+```bash
+cmake --build build-coinor-hip --target test
+cmake --install build-coinor-hip     # plus DLLs copied beside installed plc.exe
+python .coinor-deps/cupdlp-hip-install/share/cupdlp/tests/run_tests.py --solver .coinor-deps/cupdlp-hip-install/bin/plc.exe
+python tests/run.py --project cuPDLP-C --mode gpu --binary .coinor-deps/cupdlp-hip-install/bin/plc.exe --output tests/logs/hip
+python tests/check_checker.py --project cuPDLP-C
+```
+Results: CTest 4/4 passed. Installed suite 4/4 (bounded -10, equality 3, mixed_bounds -1.000000015, compressed_mps -10, all OPTIMAL). NumPy checker `--mode gpu` pass=true, x=(1.00000001, 1.99999999), objective 7.99999999, primal residual 1.08e-08, gap 1.05e-08. Both regression controls PASS (stale_success_with_noop, incorrect_fresh_solution). testcudalin 0..81 rc=0. testcublas `2-norm is :0.000000` rc=0. plc afiro (installed): `Cuda device 0: AMD Radeon(TM) 8060S Graphics`, Optimal, primal -4.64750896e+02, dual -4.64831392e+02, rel primal infeas 3.21e-05, rel dual infeas 3.60e-06, rel gap 8.65e-05, 200 iterations, rc=0.
+
+Comparison with gfx1100 Linux: identical objective, residuals and iteration count; CTest 4/4, installed 4/4, checker pass with both controls. Only differences are the Windows environment items above (HiGHS -O1 build, zlib, DLL staging).
+
+Jargon: `jargon.py --port cuPDLP-C` shows the same 2 known false positives ('strategy a' in bundled HiGHS comments from the stale fork main mirror), nothing from the port. Docs: ROCm build in README, INSTALL and build.sh `MODE=hip`. Tree clean (untracked `.coinor-deps/`, `build-coinor-hip/`, `tests/logs/` only). cuda-not-validated: no CUDA toolkit on this host.
+
+Result: completed at f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2 (windows-gfx1151, wave32).
