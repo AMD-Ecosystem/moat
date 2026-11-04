@@ -7,14 +7,17 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-11-04T07:39:22Z",
+  "updated_at": "2026-11-04T16:56:28Z",
   "head_sha": "ea8bbea28270871f3c32ac61c49789b13b60c3f6",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-04T16:56:28Z"
+  },
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 150693169,
-  "stage": "changes-requested",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -153,6 +156,29 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-04T16:56:28Z",
+      "completed_at": null,
+      "updated_at": "2026-11-04T16:56:28Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/ohm/pull/1",
