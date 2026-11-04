@@ -1794,3 +1794,26 @@ d2112b6/b37ca0a ratios, project / backproject: r1 0.984-1.083 / 0.989-1.861; r2 
 - No fork push, no `gh` write.
 
 validated_sha: d2112b63f025446cd519453423679c5cd8740bf5
+
+## Validation 2026-11-04 (validator, windows-gfx1151, revalidate, moat-port @ d2112b6)
+
+Verdict: completed at d2112b63f025446cd519453423679c5cd8740bf5. The unmodified dump_point.py now runs to the end on gfx1151: BilateralFilter and PriorBilateralFilter complete, no hipErrorLaunchFailure, no dead context. This closes the fault recorded in the b37ca0a entry above.
+
+Host: Windows 11, Radeon 8060S (gfx1151, wave32, APU), torch 2.12.0+rocm7.14.0a20260519, Python 3.12 venv, clang-cl host, MSVC link.exe first in PATH, `ulimit -c 0`, MAX_JOBS=8. Source: agent_space/leap-win detached at d2112b6, tracked tree clean.
+
+### Commands
+```
+bash utils/timeit.sh LEAP compile -- bash agent_space/leap_win_build.sh   # rc=0 (setup_AMD.py build_ext --inplace after clean of src/build; pyd copied to .dll)
+python run.py unitTests/gpu_vs_cpu_validate.py    # rc=0, OVERALL: PASS, 12/12, 0 "Error: GPU" lines
+python run.py leak_check.py <src>                 # delta 0 bytes (sum(g)=374102)
+python run.py dump_point.py <src> pt.npz          # rc=0, scripts unmodified, no source patch
+python compare_outputs.py pt_leap-b37fix.npz pt.npz   # ALL BIT-IDENTICAL (20 arrays) incl. bilateral_out, priorbilateral_out (0/2179072 differ)
+```
+The earlier record's patched-copy output (b37fix) and this unpatched d2112b6 run give identical ok/FAILED lines. As on every platform, `upsample` fails in the script (ctypes dtype); `dictionary` ran without a fault.
+
+### Not done
+- CUDA gate: cuda-not-validated on this host (no CUDA toolkit; Windows skips by procedure).
+- Jargon: clean for b37ca0a..d2112b6 scan here and recorded clean by the Linux validators. Documentation unchanged by this commit.
+- No fork push, no gh write.
+
+validated_sha: d2112b63f025446cd519453423679c5cd8740bf5

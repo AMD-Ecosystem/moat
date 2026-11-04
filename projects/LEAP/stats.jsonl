@@ -149,3 +149,4 @@
 {"kind":"phase","ts":"2026-11-04T20:34:04Z","phase":"test","seconds":5.084,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261104-122345-v-leap2/moat/agent_space/cmp/b37ca0a && python unitTests/gpu_vs_cpu_validate.py"}
 {"kind":"phase","ts":"2026-11-04T20:34:09Z","phase":"test","seconds":5.054,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261104-122345-v-leap2/moat/agent_space/cmp/d2112b6 && python unitTests/gpu_vs_cpu_validate.py"}
 {"kind":"session","ts":"2026-11-04T20:37:32Z","epoch":1793824652.888283159,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-04T20:56:25Z","phase":"compile","seconds":20.783,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/leap_win_build.sh"}
