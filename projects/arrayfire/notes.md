@@ -2703,3 +2703,71 @@ The other GPUs are re-tested at this commit before the merge.
 
 Delivery: this moves only the fork branch. Upstream hosts the same commits on `arrayfire/arrayfire` `experimental/hip`, still at 950dcdd02, so carrying this round there needs a separate pull request against that branch, opened by hand after approval.
 ~~~
+
+## Debug 2026-11-04 (porter, linux-gfx1100) -- reduce_by_key failures on ROCm 7.16: root cause found, fix validated, NOT committed
+
+Asked by jeff: explain the 479 `test_reduce_cuda` failures at 5d09b5c0f (and 950dcdd02) on gfx1100 with the ROCm 7.16.26385 SDK wheel.
+
+### Characterization
+Unpatched `test/reduce_cuda` (5d09b5c0f, 7.16): 583/1062 pass. All 479 failures are by-key: `UniqueKeyTests/ReduceByKeyP.SumDim0|SumDim2` (280), `ReduceByKey/<0..11>.*` (135), `TEMP_FORMAT.*ByKey` (49), `Reduce.SNIPPET_*_by_key[_dim]` (14), `Reduce.nanval_issue_3255`. Every key type (s32/u32) and value type (f16/f32/f64/c32/c64). The size split is the tell: `UniqueKeyTests` sizes 128, 1024 and 1049600 pass, and 31, 32, 33, 127, 129, 1025 and 131200 fail, i.e. any input whose last 128-thread block is partial. Failures are wrong reduced-key counts that then throw `seq.end < parentDim` in `createSubArray`.
+
+### Root cause: undefined behaviour in the kernel source, first exploited by the ROCm 7.16 compiler
+`src/backend/hip/kernel/reduce_by_key.hpp` (same code as upstream's CUDA kernel): in `reduce_blocks_by_key`, `reduce_blocks_dim_by_key` and `test_needs_reduction`, `k` is declared uninitialized and assigned only under `if (tidx < n)`, then passed by value to the `shfl_up_sync`/`shfl_down_sync` wrappers in `shfl_intrinsics.hpp` and compared. Clang marks by-value parameters `noundef` (the wrapper is `shfl_up_syncIi(i32 noundef %0, ...)` in the IR of both 7.14 and 7.16; the HIP header's own `__shfl_*_sync` has `__attribute__((maybe_undef))`, the arrayfire wrapper does not), so an out-of-range lane passing its indeterminate `k` is UB.
+
+Evidence (device IR of `sum.cu`, `reduce_blocks_by_key<float,int,float,af_add_t,128>`, exact build command from `ninja -t commands` plus `--cuda-device-only -S -emit-llvm`):
+- ROCm 7.16 (AMD clang 24.0.0git d6f6cb69): `%55 = icmp slt i32 %tidx, %n` / `call void @llvm.assume(i1 %55)`, then an unconditional load of `keys.ptr[tidx]`, and `unique_flag` computed as `laneid == 0 || k != shfl_up(k)` with the `tidx < n` term gone. 99 `llvm.assume` in the TU.
+- ROCm 7.14.0a20260612 (AMD clang 23.0.0git 52226beb, installed into this job's venv from the gfx110X-all nightly index), same unpatched source: `br i1 %55` -- the guard is a real branch. 3 `llvm.assume` in the TU, none in this kernel.
+- 7.16 with `k` value-initialized: guard is a branch again, 0 `llvm.assume`.
+- `opt -passes='default<O3>' -print-changed` on the 7.16 pre-optimization IR: the assume first appears after the SimplifyCFG run that follows the inliner (undef-introducing-predecessor elimination). 7.16 also lowers `__shfl_up`/`__shfl_down` to the new `llvm.amdgcn.wave.shuffle` intrinsic where 7.14 used `ds.bpermute`; which of the two changes enables the fold was not isolated.
+So out-of-range lanes of a partial block are counted as unique keys and the per-block sizes go wrong (the 9 -> 2 -> 2 -> -2 count the sync round saw). This is a latent bug in the port's kernel (inherited from upstream), not a ROCm regression: no conforming compiler owes the old behaviour. Two small standalone HIP reproductions of the pattern (agent_space only) did NOT trigger the fold on 7.16, so the evidence is the arrayfire TU itself, not a standalone reproducer. The CUDA backend has the identical UB; nvcc does not exploit it; left untouched (CUDA path preserved).
+
+Not involved: wave32/wave64 constants (`kWarpSize` is 32 on gfx1100 and is used throughout; the remaining literal `32` in `tid_next_warp` is wave64-only and irrelevant here), `__all_sync`/`__shfl_*_sync` mask handling (7.16 header masks to 32 bits on wave32), hipCUB scans, shared-memory initialization, test data.
+
+### Fix (validated locally, not committed)
+```diff
+--- a/src/backend/hip/kernel/reduce_by_key.hpp
++++ b/src/backend/hip/kernel/reduce_by_key.hpp
+@@ test_needs_reduction
+-    Tk k;
++    Tk k{};
+@@ reduce_blocks_by_key
+-    compute_t<Tk> k;
++    compute_t<Tk> k{};
+@@ reduce_blocks_dim_by_key
+-    Tk k;
++    Tk k{};
+```
+The value is never used: the existing `tidx < n` / `(tidx + delta) < n` checks still exclude those lanes. `reduce_by_key.hpp` is the only HIP kernel using the shuffle wrappers.
+
+Build (same configure as the sync round entry above, fresh clone of `moat-sync-64c88d9` at 5d09b5c0f in this job's moat clone): 1643/1643, then the incremental rebuild after the edit recompiled `all/any/count/max/min/product/sum.cu`, exit 0.
+```
+ROCM_PATH=$R build-hip-gfx1100/test/reduce_cuda      # 1062/1062 PASS (was 583/1062)
+ROCM_PATH=$R utils/timeit.sh arrayfire test -- ctest --test-dir projects/arrayfire/src/build-hip-gfx1100 -R '_cuda$' -j1 --output-on-failure
+```
+Run 1: 130/132 -- `confidence_connected` (Image IO off) and `inverse_dense` (`Inverse/0.SquareMultiplePowerOfTwo` float, max |I - A*inv(A)| 0.0134 vs eps 0.01). `inverse_dense` is a pre-existing random-input flake: the patched binary passed 6/6 reruns and the UNPATCHED 5d09b5c0f binary failed it 1 of 3 (it uses unseeded `randu`). Run 2: **131/132**, only `confidence_connected`, `reduce` passed (3.1 s). Bar met.
+
+Proposed commit (title 51 chars; `jargon.py -` clean, `prose.py` clean):
+~~~
+[ROCm] Initialize keys in the reduce-by-key kernels
+
+Threads past the end of the input leave their key uninitialized in reduce_blocks_by_key, reduce_blocks_dim_by_key and test_needs_reduction, then pass it to the shuffle wrappers and compare it. Passing an indeterminate value by value is undefined behaviour, and the HIP compiler in ROCm 7.16 acts on it: after inlining, SimplifyCFG replaces the `tidx < n` branch around the key load with an assumption that it is always taken, so the key is loaded unconditionally and the `tidx < n` term disappears from the unique-key flag. Every block with fewer valid elements than threads then counts its out-of-range lanes as keys, and reduce-by-key returns wrong sizes or throws `seq.end < parentDim`. ROCm 7.14 compiles the same source with the branch intact.
+
+Value-initialize the keys. The existing bounds checks still exclude the out-of-range lanes, so the value is never used.
+
+Authored with Claude.
+
+Test Plan:
+
+```
+cmake --build build-hip-gfx1100
+build-hip-gfx1100/test/reduce_cuda
+ctest --test-dir build-hip-gfx1100 -R '_cuda$' -j1 --output-on-failure
+```
+
+On a Radeon Pro W7800 (gfx1100) with ROCm 7.16, reduce_cuda goes from 583/1062 to 1062/1062.
+~~~
+
+### Why it is not committed, and what is needed
+The stage is `ported`, and the state machine has no `ported -> porting` edge (`set-state arrayfire linux-gfx1100 porting` raises `illegal transition ported -> porting`), so the fork-write lock cannot be taken by a transition. The lock was free (`porting: null`); `port-lock arrayfire --take linux-gfx1100` was attempted and refused by this session's permission layer as a shared-state change. Without the lock no commit or push was made: `moat-sync-64c88d9` is still at 5d09b5c0f, `head_sha` unchanged, stage left `ported`, and the working tree was reverted after saving the diff above. jeff's call: either take the lock (`port-lock arrayfire --take linux-gfx1100`) and have a porter apply the diff above as one commit on `moat-sync-64c88d9`, then `advance-head`, or route it through the reviewer (the round is at `ported`, so a review returning changes-requested is the in-machine path to `porting`). Deferred item `arrayfire-reduce-by-key-rocm716` stays open until the commit lands; its root cause is now this entry.
+
+Side effect to know about: this job's `$FLEET_VENV` now carries ROCm 7.14.0a20260612 (`rocm`, `rocm-sdk-core`, `rocm-sdk-devel`, `rocm-sdk-libraries-gfx110X-all`, expanded with `rocm-sdk init`) over its 10.1.0 copy; the shared image Python is untouched.
