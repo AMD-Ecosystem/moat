@@ -2624,3 +2624,82 @@ a source or CMake edit.
 `port-ready -> completed` (this platform's first validation at any head), `validated_sha =
 950dcdd02f348c74d29f4de8199bca38a7e7a245`.
 `python3 utils/moatlib.py set-state arrayfire windows-gfx1151 completed --agent validator`.
+
+## Sync round 2026-11-04 (porter, linux-gfx1100) -- moat-sync-64c88d9, merge 5d09b5c0f
+
+Round staged with `moatlib.py sync-branch arrayfire` (base 950dcdd02 = published tip, absorbing upstream `master` 64c88d932, 23 commits: 3.10.1 release prep, CUDA 13 / CCCL 3 support, NVRTC SASS path, cuDNN 9, new CI scripts, clang-format 15 over src/test/examples). `sync-branch` first had to cut `port/arrayfire` from trunk, and that push was refused by the moat pre-push gate because the trunk README status table was stale; regenerated it (`utils/gen_readme.py`) on `port/arrayfire` and pushed the branch by hand, then `sync-branch` succeeded. Worth fixing on trunk: a stale README there blocks every re-home.
+
+`experimental/hip` on arrayfire/arrayfire: read-only check `git ls-remote` / fetch on 2026-11-04 -- still at 950dcdd02f348c74d29f4de8199bca38a7e7a245, has NOT moved since the 2026-09-10 adoption.
+
+### Merge
+`git merge -m "Merge branch 'master' of https://github.com/arrayfire/arrayfire" upstream/master` on `moat-sync-64c88d9` (cut from 950dcdd02). Merge commit `5d09b5c0fb74af5c51e5bc234323fd218e9f5a20`, parents 950dcdd02 + 64c88d932. No conflicts. The first attempt kept git's default subject `Merge remote-tracking branch 'upstream/master' into moat-sync-64c88d9`, which `jargon.py --port` flags (branch name); it was redone locally before any push with the subject `git pull` would write. `git diff 950dcdd02 5d09b5c0f -- src/backend/hip` is empty and `git diff upstream/master 5d09b5c0f` touches only the port's own files.
+
+The 3 overlapping files:
+- `CMakeLists.txt`: upstream added the CUDA compiler/toolkit match check, `af_fmt` (fmt header-only target, used by common and unified), the Windows `AF_INSTALL_STANDALONE` runtime-DLL collection over `built_backends`, the oneAPI MKL TBB check, version 3.10.1. Port side (`AF_BUILD_HIP` option, the HIP block with the ROCm 7.0 floor comment, `conditional_directory(AF_BUILD_HIP ...)`) intact. HIP builds as target `afcuda`, so `built_backends` and the standalone step include it; HIP's CMakeLists does not link fmt directly, it inherits `${af_fmt}` through `afcommon_interface`. Windows hosts should still eyeball the new `GET_RUNTIME_DEPENDENCIES` step with `AF_INSTALL_STANDALONE` (it pre-excludes cu*/nv* names but not amdhip/hipblas/rocm DLLs -- they would be collected, which is probably what you want) and the new `/fp:precise` check in InternalUtils.cmake.
+- `README.md`: upstream's new "Experimental backends" table (links `experimental/hip`, credits @jeffdaily) plus the port's "AMD GPUs via ROCm/HIP" feature-list line; both kept.
+- `src/backend/common/half.hpp`: upstream change is clang-format only (`else { return __half2uint_rn(value); }` collapsed to one line in `half2int`). It lands inside the port's `__DH__` `half2int`; the `__HIP_RTC__` traits/numeric_limits block and every device conversion path are unchanged.
+
+### New CUDA code vs the HIP sibling -- no port commits needed
+Upstream's semantic CUDA-backend changes and why none has a HIP counterpart: `compile_module.cpp` (NVRTC emits SASS when it supports the device arch; NVIDIA driver PTX issue -- HIP JIT is hipRTC + code objects), `device_manager.cpp/.hpp` (NVRTC arch query, CUDA 13 tables, `cudaDevAttrClockRate` because `cudaDeviceProp::clockRate` was removed in CUDA 13 -- HIP keeps `hipDeviceProp_t::clockRate`, builds clean), `cudnnModule.cpp` (cuDNN 9), `cufft.cu` (enums removed in CUDA 13 -- hipFFT still has them), `kernel/regions.hpp` (`thrust::unary_function` removed in CCCL 3, `detail/par.h` -> `execution_policy.h`), `ThrustArrayFirePolicy.hpp`/`set.cu` (explicit `thrust/pair.h`, `thrust/distance.h`). rocThrust in ROCm 7.16 (THRUST_VERSION 200805) still provides `thrust::unary_function` and `thrust/system/hip/detail/par.h`, so the HIP files compile unchanged; revisit when rocThrust drops them. Shared code the HIP build compiles: `common/Transform.hpp` `scalar<Ti>(0.)` -> `scalar<Ti>(0)` (oneAPI fp64) is neutral on HIP (`scalar<T>(double)`); `api/c/*`, `common/moddims.cpp`, `jit/*` are format-only.
+
+### Build (gfx1100 W7800, ROCm 7.16.26385 SDK wheel, no /opt/rocm)
+`liblapacke-dev` was missing (apt-installed). New: sparse.tamu.edu returns HTTP 403 for every Matrix Market download, so a plain configure with tests fails in `download_sparse_datasets.cmake`. Upstream's c6f333cdf added the fix; use it:
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel   # this host's SDK
+python3 -I projects/arrayfire/src/.github/scripts/check-matrix-data.py projects/arrayfire/src projects/arrayfire/src/build-hip-gfx1100
+AF_CI_MTX_FILES=ON utils/timeit.sh arrayfire compile -- cmake -C projects/arrayfire/src/.github/scripts/matrixmarket.cmake \
+  -S projects/arrayfire/src -B projects/arrayfire/src/build-hip-gfx1100 -GNinja -DCMAKE_BUILD_TYPE=Release \
+  -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF -DAF_BUILD_CPU=ON -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF \
+  -DAF_BUILD_UNIFIED=ON -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF \
+  -DAF_BUILD_DOCS=OFF -DAF_BUILD_TESTS=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++
+utils/timeit.sh arrayfire compile -- cmake --build projects/arrayfire/src/build-hip-gfx1100 -j 16
+```
+Configure exit 0; build 1643/1643, exit 0.
+
+### Tests (HIP_VISIBLE_DEVICES=3, ulimit -c 0)
+First run without `ROCM_PATH`: 20/132 -- every JIT kernel fails in hipRTC with `'hip/hip_complex.h' file not found` (the JIT adds `-I$ROCM_PATH/include`, default `/opt/rocm/include`, which does not exist here). Environment, already documented in the Gotchas log; validators on SDK-wheel hosts must export `ROCM_PATH`.
+```
+ROCM_PATH=$R utils/timeit.sh arrayfire test -- ctest --test-dir projects/arrayfire/src/build-hip-gfx1100 -R '_cuda$' -j1 --output-on-failure
+```
+**130/132 PASS** (1514 s). Failures: `test_confidence_connected_cuda` (Image IO not configured, the standing `AF_WITH_IMAGEIO=OFF` disposition) and `test_reduce_cuda` (583/1062 pass, 479 fail, all `*_by_key` plus `Reduce.nanval_issue_3255`: `Invalid dimension for argument 1, Expected: seq.end < parentDim` from `createSubArray` in `reduce_by_key_first/dim`).
+
+Is `reduce` caused by the merge? No. Built 950dcdd02 in a throwaway worktree on this host with the identical configure (`--target test_reduce_cuda`) and ran `test/reduce_cuda` from both builds: 583 pass / 479 fail each, failing test lists identical (`diff` empty). So relative to 950dcdd02 on the same toolchain the merge regresses nothing. Versus the recorded bar (131/132 at 950dcdd02, ROCm 7.2.1 /opt/rocm) this host is one binary short, and the shortfall is the toolchain (ROCm 7.16 SDK), not the round. Bounded probe of the cause (not resolved): instrumented `reduce_impl.hpp` in the throwaway tree -- for the 9-element `SNIPPET_sum_by_key` the reduced-key count read back goes 9 -> 2 -> 2 -> -2, so the block kernels produce wrong counts. Ruled out on this toolchain with standalone gfx1100 tests: hipcub `DeviceScan::InclusiveSum` in place (correct for n=1..5000) and `__shfl_down_sync`/`__any_sync` with the 64-bit all-lanes mask on wave32 (correct). Registered as deferred `arrayfire-reduce-by-key-rocm716` (kind other). A ROCm 7.2 host would show whether the merged head still reaches 131/132 there.
+
+### State
+Pushed only `moat-sync-64c88d9` (fork pre-push hook installed via `protect-fork`; `moat-port` untouched at 950dcdd02). `advance-head arrayfire 5d09b5c0f...` -> all completed platforms now read revalidate. `set-state arrayfire linux-gfx1100 ported`. `jargon.py --port arrayfire`: only the known `commit 6800d5586 'MOAT'` leftover plus two `head_sha` hits in upstream's own `.github/scripts/code-changes*.py` (upstream code, GitHub API field names; not ours, leave them). `git -C projects/arrayfire/src status --porcelain` clean apart from the gitignored build dir.
+
+### Proposed fix review PR body (for jeff)
+Title: `[ROCm] Merge upstream master (3.10.1) into the HIP backend branch`
+Branch `moat-sync-64c88d9` -> `moat-port`. No `## Upstream reply` section (no open upstream PR). `prose.py`: clean; `jargon.py -`: clean.
+
+~~~markdown
+Merge upstream `master` at 64c88d932 (23 commits past the 3.10.0 base, including the 3.10.1 release prep and clang-format 15 pass) into the HIP port branch. Merge, not rebase, so the published commits stay as they are.
+
+The merge has no textual conflicts. Three files changed on both sides:
+
+- `CMakeLists.txt`: upstream adds the CUDA compiler/toolkit check, the `af_fmt` header-only target, the Windows standalone runtime collection and the 3.10.1 version bump. The `AF_BUILD_HIP` option, its block and `conditional_directory(AF_BUILD_HIP ...)` are untouched. The HIP backend builds as target `afcuda`, so it is covered by `built_backends` and the new standalone install step, and it takes fmt through `afcommon_interface`, which now links `${af_fmt}`.
+- `README.md`: upstream's new "Experimental backends" table (pointing at `experimental/hip`) and the port's feature-list line both stay.
+- `src/backend/common/half.hpp`: upstream's only change is clang-format collapsing the `__half2uint_rn` else branch in `half2int`. It lands inside the port's `__DH__` version of that function; the hipRTC traits block and the device conversion paths are unchanged.
+
+The other upstream changes to the CUDA backend (NVRTC arch query, SASS instead of PTX, cuDNN 9, CUDA 13 thrust and cuFFT guards, compute-capability tables) are NVIDIA-specific and have no HIP counterpart: the HIP backend compiles kernels with hipRTC, and the ROCm Thrust here still provides `thrust::unary_function` and `thrust/system/hip/detail/par.h`. Nothing under `src/backend/hip` changes, and there are no extra port commits.
+
+Test data: sparse.tamu.edu now refuses downloads (HTTP 403). The build used upstream's own replacement, `.github/scripts/check-matrix-data.py` plus `cmake -C .github/scripts/matrixmarket.cmake`, which restores the same nine Matrix Market files from the pinned arrayfire-data commit.
+
+## Test plan
+
+gfx1100 (Radeon Pro W7800), ROCm 7.16:
+
+```
+python3 -I .github/scripts/check-matrix-data.py . build-hip-gfx1100
+AF_CI_MTX_FILES=ON cmake -C .github/scripts/matrixmarket.cmake -S . -B build-hip-gfx1100 -GNinja -DCMAKE_BUILD_TYPE=Release -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF -DAF_BUILD_CPU=ON -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF -DAF_BUILD_UNIFIED=ON -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF -DAF_BUILD_DOCS=OFF -DAF_BUILD_TESTS=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100
+cmake --build build-hip-gfx1100
+ctest --test-dir build-hip-gfx1100 -R '_cuda$' -j1 --output-on-failure
+```
+
+Result: 130/132 test binaries pass. The two failures are `confidence_connected` (every case skips with Image IO not configured, as in every run with `AF_WITH_IMAGEIO=OFF`) and `reduce`, whose 479 `*_by_key` failures are identical when 950dcdd02 is built and run on the same machine with the same toolchain (ROCm 7.16), so they are not caused by this merge. They did not occur on ROCm 7.2 and are tracked separately. The HIP runtime compiler needs `ROCM_PATH` set when ROCm is not installed in `/opt/rocm`.
+
+The other GPUs are re-tested at this commit before the merge.
+
+Delivery: this moves only the fork branch. Upstream hosts the same commits on `arrayfire/arrayfire` `experimental/hip`, still at 950dcdd02, so carrying this round there needs a separate pull request against that branch, opened by hand after approval.
+~~~

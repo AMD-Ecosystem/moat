@@ -32,6 +32,19 @@
         "at": "2026-11-03T16:33:28Z",
         "note": "Rare in practice (f16, long K, tiny output, 10.1 only); a fix round on the open upstream PR is not worth it for a case 10.2 removes."
       }
+    },
+    {
+      "id": "arrayfire-reduce-by-key-rocm716",
+      "kind": "other",
+      "component": null,
+      "summary": "reduce_by_key (test_reduce_cuda, 479/1062 cases) fails on gfx1100 with the ROCm 7.16 SDK at both 950dcdd02 and the sync merge 5d09b5c0f: the block reduction returns a wrong reduced-key count (9-element snippet goes 9->2->2->-2) and createSubArray throws. Passed on ROCm 7.2/7.14. Not caused by the sync; root cause (port kernel exposed by a newer compiler vs ROCm regression) not yet found. hipcub in-place InclusiveSum and __shfl_down_sync/__any_sync with the 64-bit mask verified correct on this toolchain.",
+      "refs": [
+        "projects/arrayfire/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-04T19:52:55Z",
+      "decided": null
     }
   ]
 }
