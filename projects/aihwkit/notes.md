@@ -980,3 +980,124 @@ upstream's code, copied unchanged into the `#else` branch.
 Fork tree: tracked files unmodified (only untracked build_cuda_head/).
 
 Verdict: CUDA gate PASS (compile and link) at eb4d017.
+
+## Sync round, second merge 2026-11-04 (porter, linux-gfx90a) -- absorb upstream at 14d4783
+
+Why: `upstream.py --fix-review` could no longer open the round's review PR --
+the staged tip eb4d017 conflicted with the upstream base in CMakeLists.txt,
+because upstream master advanced 39 commits past 60ffe9e to 14d4783 (aihwkit
+1.2.0: Python >= 3.12, cibuildwheel, sm_120 build, #792 C++ standard
+detection, #821 ChoppedTransfer fix, #827 torch >= 2.14 clamp-gradient fix).
+Merged 14d4783 into the EXISTING staging branch moat-sync-60ffe9e (merge, no
+rebase, no force-push; fast-forward push eb4d017..ea1185e). The branch name
+and `fix.upstream_sha` still read 60ffe9e: sync-branch refuses a second round
+while one is in flight and `upstream_sha` is informational only, so the round
+keeps its name and now absorbs up to 14d4783. moat-port untouched (70577b5).
+Fork master mirror NOT fast-forwarded this time (`--drift --apply` writes the
+fork's default branch, outside what this headless job may push); the next
+checkup should run it so `--fix-review` compares against 14d4783.
+
+Merge commit ea1185e, parents eb4d017 + 14d4783. One conflict, CMakeLists.txt.
+Upstream #792 introduced the same knob this port had added (RPU_CXX_STANDARD),
+but with an empty cache default resolved from torch's ATen.h guard in
+cmake/dependencies.cmake, and therefore moved CUDA_TARGET_PROPERTIES below the
+dependency includes (adding CUDA_STANDARD). Resolution:
+- took upstream's empty-default RPU_CXX_STANDARD + detection; dropped the
+  port's fixed `"17"` cache default (git had left it outside the hunk, which
+  would have duplicated the cache variable);
+- took upstream's RPU_CUDA_ARCHITECTURES "75;80;89;120", kept the port's
+  CMAKE_HIP_ARCHITECTURES comment;
+- moved HIP_TARGET_PROPERTIES next to the relocated CUDA_TARGET_PROPERTIES so
+  it sees the detected standard;
+- WIN32 block: kept the port's split (/O2 under `if(MSVC)`, so clang-based
+  Windows HIP builds do not get an MSVC-only flag), dropping upstream's
+  re-added WIN32 /O2 line, which is the same flag the port already moved.
+Fidelity check: the port's own diff vs upstream (`git diff 60ffe9e eb4d017` vs
+`git diff 14d4783 ea1185e`) differs only by the C++-standard lines and the
+SoftBoundsRPUDeviceMetaParameter ctor fix that upstream now carries itself;
+nothing of the HIP port dropped. Auto-merged without conflict: cuda_util.h,
+pwu_kernel_parameter_base.h, rpu_cub.h, rpu_linearstep_device.h.
+
+C++ standard: configuring WITHOUT `-DRPU_CXX_STANDARD` now prints
+`Using C++20 (required by .../torch/include/ATen/ATen.h)` and all 75 compile
+lines in build.ninja carry `-std=gnu++20`, HIP translation units included, so
+the HIP path needs no HIP_STANDARD addition and the old `-DRPU_CXX_STANDARD=20`
+in the recipe is now optional with torch >= 2.14.
+
+Environment (changed since the 2026-09-09 gfx90a run; same image as the
+2026-11-04 gfx1100 run): ROCm from the pip rocm-sdk-devel package in
+/opt/python-3.11-venv (no /opt/rocm, no conda), torch 2.16.0a0+git6c3af02
+(HIP 7.16.26385), Python 3.11.17, numpy 1.26.4 (no numpy<2 scratch venv
+needed), cmake 3.31.6, OpenBLAS 0.3.26 from apt. GPU: AMD Instinct MI250X /
+MI250 (gfx90a, wave64), HIP_VISIBLE_DEVICES=0.
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+TORCH_CMAKE=$(python -c "import torch,os;print(os.path.dirname(torch.__file__))")/share/cmake
+cmake -S . -B build_hip -GNinja -DUSE_HIP=ON -DUSE_CUDA=OFF \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++ \
+  -DROCM_PATH=$R -DCMAKE_PREFIX_PATH="$TORCH_CMAKE;$R" -DRPU_BLAS=OpenBLAS \
+  -DBUILD_TEST=OFF -DRPU_USE_TORCH_BUFFERS=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build_hip -j64      # 78/78, rc=0, warnings only
+cp build_hip/src/aihwkit/simulator/rpu_base.cpython-311-x86_64-linux-gnu.so src/aihwkit/simulator/
+```
+
+Tests at ea1185e (`ulimit -c 0; PYTHONPATH=src python -m pytest -q -p no:cacheprovider -n 8 ...`),
+the same suites as the 2026-09-09 revalidation:
+- test_specific_tiles + test_simulator_tiles + test_bindings_tiles (FULL):
+  **577 passed, 60 skipped, 0 failed** (568/57 at eb4d017; upstream added cases).
+- test_torch_tiles + test_inference_tiles (FULL): **406 passed, 55 skipped,
+  0 failed** (405/55/1 at eb4d017).
+- test_layers_linear + test_layers_convolution: **566 passed, 216 skipped**
+  (unchanged).
+- test_analog_ctx: **179 passed, 29 skipped** (177/29 at eb4d017).
+
+test_input_range_grad and the deferral aihwkit-input-range-grad-drift:
+- At ea1185e on torch 2.16: `pytest -v tests/test_torch_tiles.py -k
+  test_input_range_grad` -> 4 passed, including
+  TorchInferenceTest_TorchInferenceCuda::test_input_range_grad.
+- Same tree with ONLY upstream's dba3bc3 (#827) reverted in
+  src/aihwkit/simulator/tiles/analog_mvm.py (Python only, no rebuild; restored
+  afterwards, tree clean): TorchInferenceCuda::test_input_range_grad FAILS
+  with the deferral's exact numbers -- x=-0.0005, y=-0.0187, max abs diff
+  0.01819531 -- and the other three variants pass.
+- #827's message: torch 2.14 zeroes the clamp gradient at exactly the bound;
+  clipped inputs sit at exactly +-1, so the input-range gradient lost its
+  clipping term, "test_input_range_grad failed on CUDA" too. It replaces the
+  clamp with a where-based clip.
+- Finding (for the person who rules on the deferral; not a ruling): the
+  deferral is explained by #827. The failure was a torch >= 2.14 autograd
+  change in upstream Python code, not ROCm toolchain drift or a HIP tile
+  defect -- consistent with it reproducing identically on gfx90a/ROCm 7.14/
+  torch 2.14 and gfx1100/ROCm 10.1/torch 2.16, at the old head 70577b5 too,
+  and passing on windows-gfx1151 with torch 2.12 (< 2.14). With 14d4783
+  merged it passes on this host. The deferral's summary ("toolchain drift")
+  is therefore inaccurate; status left `open`, unruled.
+
+Python >= 3.12 floor (upstream 49cc391, `requires-python = ">=3.12"`):
+- The port's delta has no Python content (CMake, C++/HIP sources, README,
+  developer_install.rst); the docs it adds name no Python version, so nothing
+  in the HIP path conflicts with the new floor.
+- This host's only torch is cp311 (Python 3.11.17, below the new floor), so
+  this round's GPU runs used 3.11. A 3.12 runtime check here was attempted --
+  a scratch /usr/bin/python3.12 venv with the torch nightly rocm7.2 cp312
+  wheel -- and was refused by the fleet job guard (pip into an environment it
+  treats as shared). A cp312 compile-only build is not meaningful either:
+  dependencies.cmake runs the same interpreter to import pybind11 and
+  dependencies_hip.cmake to import torch.utils.hipify (a failed probe would
+  silently pick the v1 stream API).
+- Existing 3.12 evidence: the windows-gfx1151 validation (2026-11-04, eb4d017)
+  built and passed under Python 3.12.10. Not yet shown at ea1185e: a HIP
+  build + GPU run under Python >= 3.12 on Linux. The validators of this round
+  should use a Python >= 3.12 environment where one exists.
+
+CUDA path: the merge changes only CMake lines the CUDA build also reads (the
+standard detection is upstream's own, RPU_CUDA_ARCHITECTURES gains 120); not
+compiled with nvcc here (no CUDA toolkit on this host). The round needs a CUDA
+compile at ea1185e before it is brought to a person.
+
+Jargon: `python3 utils/jargon.py --port aihwkit` -> clean. Fork tree: tracked
+files unmodified (only untracked build_hip/).
+
+Next: reviewer on the delta eb4d017..ea1185e; then every platform revalidates
+at ea1185e (advance-head flipped them); CUDA compile gate; `--drift --apply`
+for the fork mirror; then `upstream.py --fix-review`.
