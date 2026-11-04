@@ -67,3 +67,10 @@
 {"kind":"phase","ts":"2026-11-04T16:51:03Z","phase":"test","seconds":0.566,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match"}
 {"kind":"phase","ts":"2026-11-04T16:51:03Z","phase":"test","seconds":0.490,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography"}
 {"kind":"session","ts":"2026-11-04T16:51:37Z","epoch":1793811097.615715366,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-04T16:59:40Z","epoch":1793811580.519574603,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T16:59:59Z","phase":"compile","seconds":2.610,"exit":0,"cmd":"cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DCMAKE_BUILD_TYPE=Release"}
+{"kind":"phase","ts":"2026-11-04T17:00:03Z","phase":"compile","seconds":3.751,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j32"}
+{"kind":"phase","ts":"2026-11-04T17:00:07Z","phase":"test","seconds":0.640,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_extract"}
+{"kind":"phase","ts":"2026-11-04T17:00:08Z","phase":"test","seconds":0.745,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match"}
+{"kind":"phase","ts":"2026-11-04T17:00:08Z","phase":"test","seconds":0.631,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography"}
+{"kind":"session","ts":"2026-11-04T17:00:39Z","epoch":1793811639.511399526,"event":"end","platform":"linux-gfx90a"}

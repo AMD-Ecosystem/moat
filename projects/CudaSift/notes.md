@@ -728,3 +728,29 @@ CUDA no-regression gate: not re-run (no CUDA toolkit on this host). The delta 6d
 Pre-completion checks: `python3 utils/jargon.py --port CudaSift` clean; README documents the ROCm build (`### Build for AMD GPUs (ROCm/HIP)`); `git status --porcelain` in src: only `?? build-hip/`.
 
 State: linux-gfx1100 `revalidate` -> `completed` at db7c163.
+
+## Validation 2026-11-04 (linux-gfx90a) at db7c163 -- fix round 97
+
+GPU: AMD Instinct MI250X / MI250, gfx90a (wave64), `HIP_VISIBLE_DEVICES=1` pinned by the dispatcher (one visible device, tests use devNum=0). ROCm 7.16 from the `rocm` pip wheel SDK at `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`. OpenCV 4.6.0. Fresh fork clone, `moat-fix-97` checked out at db7c163aa8f48c939ef5e03afaf1a7823173eb3f (moat-port untouched: upstream PR open). The #97+#99 merge was not built.
+
+Build (fresh `build-hip/`):
+    ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+    utils/timeit.sh CudaSift compile -- cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DCMAKE_BUILD_TYPE=Release
+    utils/timeit.sh CudaSift compile -- cmake --build projects/CudaSift/src/build-hip -j32
+Configure exit 0 (2.5 s), build exit 0, 21/21 steps, 158 warnings (same count as gfx90a at 6d1429a and gfx1100 at db7c163; pre-existing nodiscard `hipError_t` / fast-math ones), 0 errors. `llvm-objdump --offloading` on the three test binaries: only `hip-amdgcn-amd-amdhsa--gfx90a`.
+
+Tests, each `utils/timeit.sh CudaSift test -- bash -c 'cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/<bin>'`:
+
+| test            | exit | result            | key numbers |
+|-----------------|------|-------------------|-------------|
+| test_extract    | 0    | 10 passed, 0 fail | basic 1910; thresh 7079/1910/542/6; octaves 1740/1876/1910/1919; reproducibility pass; scaleUp 3104 |
+| test_match      | 0    | 11 passed, 0 fail | self-match 1899/1910 >0.95; cross 1910 valid / 1909 good; RANSAC 852 / 828 refined; match 0.56 ms |
+| test_homography | 0    | 8 passed, 0 fail  | translation h[2]=30.1342 h[5]=20.2742, 1645 matches; rotation 1195; scale 945; stereo L1452/R2082, 752 RANSAC |
+
+PASS: 29/29, all exit 0, no HIP fault or `safeCall` abort. Matches the porter's counts at db7c163 (10/11/8, keypoints unchanged from 6d1429a) and this platform's record at 6d1429a: keypoints 1910, 7079/1910/542/6, 1740/1876/1910/1919, 3104, 1452/2082 identical; self-match 1899/1910 and 828 refined inliers identical; RANSAC-dependent counts within run-to-run noise (852 vs 851, translation 1645 vs 1646, scale 945 vs 944, stereo 752 vs 753).
+
+CUDA no-regression gate: not re-run. The delta 6d1429a..db7c163 is two `#define`s in `cuda_to_hip.h`, reached only through the HIP-only `-include`, so every CUDA translation unit is source-identical to 6d1429a, where the gate passed on linux-gfx90a.
+
+Pre-completion checks: `python3 utils/jargon.py --port CudaSift` clean; README documents the ROCm build (`### Build for AMD GPUs (ROCm/HIP)`, `USE_HIP` row); `git status --porcelain` in src: only `?? build-hip/`.
+
+State: linux-gfx90a `revalidate` -> `completed` at db7c163.
