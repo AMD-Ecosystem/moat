@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-11-04T08:45:33Z",
+  "updated_at": "2026-11-04T08:51:55Z",
   "head_sha": "640a8b5974e69a720454b1005e491b306e87e16d",
   "depends_on": [],
   "waivers": {},
@@ -39,13 +39,13 @@
       "last_agent": "reviewer",
       "state": "completed"
     },
-    "linux-gfx90a": {
+    "linux-gfx1100": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "542ea1a127e7b963f92ca7a6c88d96cbbfbef439",
-      "started_at": "2026-06-05T05:28:40Z",
-      "completed_at": "2026-08-19T23:44:57Z",
-      "updated_at": "2026-11-04T08:20:36Z",
+      "validated_sha": "640a8b5974e69a720454b1005e491b306e87e16d",
+      "started_at": "2026-08-08T17:50:20Z",
+      "completed_at": "2026-11-04T08:45:33Z",
+      "updated_at": "2026-11-04T08:45:33Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -62,13 +62,13 @@
       "last_agent": "validator",
       "state": "completed"
     },
-    "linux-gfx1100": {
+    "linux-gfx90a": {
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "640a8b5974e69a720454b1005e491b306e87e16d",
-      "started_at": "2026-08-08T17:50:20Z",
-      "completed_at": "2026-11-04T08:45:33Z",
-      "updated_at": "2026-11-04T08:45:33Z",
+      "started_at": "2026-06-05T05:28:40Z",
+      "completed_at": "2026-11-04T08:51:55Z",
+      "updated_at": "2026-11-04T08:51:55Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -118,7 +118,6 @@
       }
     }
   },
-  "porting": null,
   "review_pr": "https://github.com/AMD-Ecosystem/HEonGPU/pull/1",
   "porting_released": {
     "arch": "linux-gfx942",

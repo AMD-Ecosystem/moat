@@ -7381,3 +7381,44 @@ Matches the porter's MI250X counts at `2e51886` (static 301/301, shared 296/296;
 - Integrity: `git -C projects/HEonGPU/src status --porcelain` empty; HEAD `640a8b5`.
 
 Verdict: `linux-gfx1100` **completed** at `640a8b5974e69a720454b1005e491b306e87e16d`.
+## Validation 2026-11-04 (linux-gfx90a, MI250X, ROCm 7.16 pip SDK) -- completed at `640a8b5`
+
+Dispatched by Jeff Daily: full real-GPU revalidation at `640a8b5974e69a720454b1005e491b306e87e16d` (stage `review-passed`). Fresh clone of `AMD-Ecosystem/HEonGPU`, detached at that sha (contained in `origin/moat-port`), `submodule update --init --recursive`. Toolchain: ROCm 7.16 pip SDK (`hipconfig --version` 7.16.26385), CMake 4.1.3 pip-installed into this job's venv (the image has 3.31.6; upstream needs >= 4.0), `libgmp-dev`/`libntl-dev` already present. GPU pinned by the dispatcher (`HIP_VISIBLE_DEVICES=2`, one MI250X GCD, gfx90a, wave64); all GPU work under `ulimit -c 0`.
+
+```bash
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+common="-DCMAKE_PREFIX_PATH=$R -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DGPU_TARGETS=gfx90a -DAMDGPU_TARGETS=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON"
+cmake -S projects/HEonGPU/src -B agent_space/val-640a8b5/static $common -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+cmake --build agent_space/val-640a8b5/static -j42
+cmake -S projects/HEonGPU/src -B agent_space/val-640a8b5/shared $common -DHEonGPU_BUILD_SHARED=ON
+cmake --build agent_space/val-640a8b5/shared -j21
+ctest --test-dir agent_space/val-640a8b5/static --output-on-failure   # twice
+ctest --test-dir agent_space/val-640a8b5/shared --output-on-failure   # once
+```
+
+All wrapped in `utils/timeit.sh HEonGPU compile|test`. Both builds rc=0, 0 `error:` lines. Static: 49 test, 28 example, 3 benchmark executables; shared: 49 test executables. Same counts as the porter's `2e51886` record.
+
+| Run | Result | Time |
+|---|---|---|
+| static, serial, run 1 | **301/301 passed** | 341.25 s |
+| static, serial, run 2 | **301/301 passed** | 343.78 s |
+| shared (`HEonGPU_BUILD_SHARED=ON`), serial | **296/296 passed**, incl. `HEonGPU.Shared_Library_Users_Share_The_Memory_Pool` and `..._Share_The_Random_Number_Generator` | 339.88 s |
+
+These match the porter's record at `2e51886` (static 301/301 twice at 341.86/341.72 s, shared 296/296 at 340.44 s). This platform's previous record (`542ea1a`, 20/20 ctest entries) predates upstream's switch to `gtest_discover_tests`, so the counts are not comparable; nothing failed then or now.
+
+Examples and benchmark (static build, one at a time, `agent_space/run_examples.sh`), each exit 0, values checked:
+
+- `1_basic_bfv`: squares `1,144,529,961,64,...` / `49,2916,36,10000,...`; second result `6,864,3174,5766,384,...`.
+- `2_basic_ckks`: `100,400,900,1600,...,9`, then `50,200,450,800,...,4.5`.
+- `3_basic_memorypool_config`: device pool `Total 54873239552 / Used 657248`, host pool `Total 268435456 / Used 0`.
+- `9_multi_stream_usage_way1`: ran to "Done." (prints no values).
+- `17_ckks_session`: maximum error 3.20e-08; `Slot 0: 1.005, expected 1.005`.
+- `15_basic_tfhe`: inputs `1,1,0,1,0,1,0,0` / `1,0,1,0,1,1,1,0`, control `0,0,0,0,1,1,1,1`; NAND, AND, NOR, OR, XNOR, XOR, NOT and MUX all match the truth table bit for bit.
+- `bootstrapping/3_ckks_bit_bootstrapping`: every slot matches its expected 0/1, imaginary and real residue at most ~1.1e-09; 145 ms.
+- `bootstrapping/1_ckks_regular_bootstrapping`: `EXPECTED:0.2 + 0.4i` vs `ACTUAL:0.199998..0.2 + 0.39999..0.399995i`; 193 ms.
+- `mpc/1_multiparty_computation_bfv`: ran to completion, decoded matrix printed (`230,20300,65,...`); the example checks nothing itself.
+- `benchmark/tfhe_benchmark`: XOR 15.76 ms, MUX 28.25 ms avg (porter: 15.92 / 28.56).
+
+Other gates: CUDA no-regression compile not rerun (no nvcc on this host). It passed at `2e51886` (nvcc 12.8, fleet job mi355-20261104-001208-cuda-compile), and `2e51886..640a8b5` changes only `#` comment lines in five CMake files, so it carries over. `python3 utils/jargon.py --port HEonGPU` -> `jargon: clean` (with a local `main` branch made in the fresh clone: `git branch main origin/main`). Documentation of the ROCm build is unchanged since the reviewed docs rounds. Fork `git status --porcelain` empty at `640a8b5`.
+
+linux-gfx90a: **completed** at `640a8b5974e69a720454b1005e491b306e87e16d`.
