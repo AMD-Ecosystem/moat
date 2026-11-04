@@ -15,3 +15,5 @@
 {"kind":"phase","ts":"2026-11-04T20:26:41Z","phase":"compile","seconds":54.699,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi200-20261104-113338-h2o-port/moat/projects/h2o4gpu/src/LightGBM_rocm/build-rocm -j42"}
 {"kind":"phase","ts":"2026-11-04T20:41:31Z","phase":"compile","seconds":150.100,"exit":2,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi200-20261104-113338-h2o-port/moat/projects/h2o4gpu/src/xgboost_rocm/build-rocm -j42 -- -k"}
 {"kind":"phase","ts":"2026-11-04T20:44:46Z","phase":"compile","seconds":151.027,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi200-20261104-113338-h2o-port/moat/projects/h2o4gpu/src/xgboost_rocm/build-rocm -j42 -- -k"}
+{"kind":"phase","ts":"2026-11-04T21:15:18Z","phase":"compile","seconds":40.961,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi200-20261104-113338-h2o-port/moat/projects/h2o4gpu/src/build-final -j42"}
+{"kind":"phase","ts":"2026-11-04T21:15:18Z","phase":"test","seconds":0.479,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261104-113338-h2o-port/moat/projects/h2o4gpu/src/build-final/h2o4gpu_test"}
