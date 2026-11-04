@@ -47,3 +47,6 @@
 {"kind":"phase","ts":"2026-11-04T00:21:05Z","phase":"compile","seconds":0.024,"exit":2,"cmd":"python setup_AMD.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-04T00:21:28Z","phase":"compile","seconds":17.298,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261103-161453-leap-fix-arch/moat/projects/LEAP/src && python setup_AMD.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-04T00:22:31Z","phase":"test","seconds":9.350,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261103-161453-leap-fix-arch/moat/projects/LEAP/src && AMD_LOG_LEVEL=3 python unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"session","ts":"2026-11-04T07:17:54Z","epoch":1793776674.007416391,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-04T07:19:16Z","phase":"compile","seconds":0.019,"exit":2,"cmd":"python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T07:19:39Z","phase":"compile","seconds":8.695,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261103-231546-review-leap/moat/agent_space/leap-build && python setup_AMD.py build_ext --inplace"}
