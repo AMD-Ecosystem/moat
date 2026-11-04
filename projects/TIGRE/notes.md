@@ -1448,3 +1448,10 @@ Outcome: windows-gfx1151 -> completed at b61ff14c87689beb1b08e2bcd8223c29ce85a83
 - With both fixes, 2 and 3 chunks (3 = gpuids [0,1,0]) are bitwise equal to 1 GPU at 8x32^2, 63x64^2, 64x128^2, 100x96x80, 256^3, 512^3 (20 iters) and at 1, 2, 50 iters; a numpy model of the padded scheme matches the GPU to <=8.8e-7 in all four fix combinations. The edge fix changes single-GPU output in the last 3 slices only.
 - Same halo-to-halo pattern in `GD_TV.cu` lines 612-620 (and GD_AwTV.cu): not tested.
 - Draft upstream issue is in the plan; nothing posted. No state changed.
+
+## 2026-11-04: GD_TV / GD_AwTV multi-GPU halo offsets tested (fleet worker, 2x MI300X)
+
+- Full record: `~/.claude/plans/tigre-multigpu-tv-split-difference.md` ("Follow-up results" and "Revised draft issue"). Fork untouched; scratch trees only at b61ff14 plus the #802 syncs.
+- Same bug as tv_proximal: the `splits==1` exchange in `GD_TV.cu` (master 69bdd9f lines 605-622) and `GD_AwTV.cu` (621-638) copies `d_image[dev+1]` at offset 0 (should be `+buffer_pixels`) and `d_image[dev-1]+total_pixels+buffer_pixels` (should be `+slices_per_split*image_size[0]*image_size[1]`; `total_pixels` is the receiver's size). B=2 here, one iteration per exchange. A dump shows that both split halos stay at the input image for the whole call, and the first device's trailing halo holds slices S-2,S-1 instead of S,S+1.
+- Unfixed 2-GPU vs 1-GPU error: 38-99% of the per-call TV step (3.8e-06 to 7.1e-03 of max), peaking at the split, at sizes 8x32^2 to 512^3 and alpha 0.002 / 0.2. Fixed, plus a scratch deterministic host norm: 2 chunks and [0,1,0] are bitwise equal to 1 GPU everywhere. The fixed production code differs only through the per-device float norm (<=1e-07 of max at alpha 0.002).
+- No fill slip: both outer halos are zero on any device count. Draft issue revised to cover all three files; nothing posted. No state changed.
