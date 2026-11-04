@@ -1979,3 +1979,32 @@ ctest --test-dir build -R caspar_
 
 The Caspar GPU tests (padding lane, solver, tridiagonal, backend coverage) and `symforce_caspar_codegen_test` pass on <AMD GPUs with a validator record at the final head>. The Caspar test targets also compile and link with CUDA 12.8.
 ````
+
+## Review 2026-11-04 #3 (fix round moat-fix-465, tip e7e0b00c; reviewer, linux-gfx1100)
+
+Verdict: review-passed. Both items from Review #2 are fixed, every claim in the new README text was checked against the code and against CMake, and the README example runs on gfx1100. The final drafts in "Porter response to Review 2026-11-04 #2" are true at e7e0b00c and need no correction.
+
+Scope: delta f82e4abf..e7e0b00c (2 files, +6/-6), the full PR diff `upstream/main...e7e0b00c` for the drafts' claims (upstream main re-fetched; it is an ancestor of e7e0b00c, so no new conflict), and the two final drafts.
+
+### Delta f82e4abf..e7e0b00c: verified
+
+- README example `caslib.generate(out_dir)` then `caslib.compile(out_dir, use_hip=True, hip_arch="gfx90a")`: `generate(self, out_dir, use_symlinks=False, python_bindings=True)` (library.py:158) and the static `compile(out_dir, debug, cuda_arch, jobs, use_hip, hip_arch)` (library.py:177-185) exist with those keywords; `use_hip` adds `-DUSE_HIP=ON`, `hip_arch` adds `-DCMAKE_HIP_ARCHITECTURES` (library.py:195-198). `compile_caspar_library` has no remaining occurrence.
+- Ran it on gfx1100: `examples/kernel_example/gen_and_run.py` copied to `agent_space/kex/` with only the compile line changed to `caslib.compile(out_dir, use_hip=True, hip_arch="gfx1100")`, `CMAKE_PREFIX_PATH=$(rocm-sdk path --root)` (TheRock SDK 7.16, clang 24), `HIP_VISIBLE_DEVICES=2`, `ulimit -c 0`. The generated library (incl. `pybind_array_tools.cc` as HIP) built, and both result asserts passed ("Success!"). Environment for repeating it, all in the job venv: SymForce's SymEngine fork (the PyPI `symforce` wheel installed with `--no-deps` provides it; the PyPI `symengine` 0.15 lacks `Mod` and fails at `symforce.internal.symbolic`), `clang-format`, `jinja2`, `sympy==1.13.3`, and the image torch on PYTHONPATH.
+- Header description ("maps the CUDA runtime calls Caspar emits (`cudaMalloc`, `cudaMemcpy`, `cudaFuncSetAttribute`, and friends) and the `cub` namespace"): matches cuda_to_hip.h:21-52. No `__syncthreads` or cooperative-groups mapping remains claimed.
+- "CMake does not accept the `hipcc` wrapper": configuring the generated library with `-DUSE_HIP=ON -DCMAKE_HIP_COMPILER=$(which hipcc)` under CMake 3.31.6 fails at CMakeDetermineHIPCompiler.cmake:73, "CMAKE_HIP_COMPILER is set to the hipcc wrapper". With `$(which amdclang++)` it identifies Clang 24.0.0 and configures. With no compiler given, CMake picks the SDK's `lib/llvm/bin/clang++` itself.
+- "Without it, CMake builds for the GPU it detects on the build machine": configuring with `-DUSE_HIP=ON` and no arch gives `CMAKE_HIP_ARCHITECTURES:STRING=gfx1100;gfx1100;gfx1100;gfx1100` on this host (one entry per detected agent). True; on a host with mixed GPUs it is every detected arch.
+- `hip`/`hipcub` packages: `find_package(hip REQUIRED)`, `find_package(hipcub REQUIRED)` in CMakeLists.txt.jinja:17-18. `use_hip` off: `compile()` sets only `CMAKE_CUDA_ARCHITECTURES`, and the template's else-branch is the CUDA build.
+- pybind_array_tools.cc:177-178 comment: the code below calls `hipPointerGetAttributes` directly; the file includes pybind_array_tools.h, which includes only `hip/hip_runtime.h` on HIP; cuda_to_hip.h does include `hipcub/hipcub.hpp` (:18). The template compiles pybind sources as LANGUAGE HIP, but they carry no device code, so "host translation unit" is accurate.
+- Commit: `[ROCm]` title, 60 chars; body explains each change, "Authored with Claude.", fenced Test Plan, no Co-Authored-By. `jargon.py --port symforce` clean. Fork worktree clean.
+
+### Drafts at e7e0b00c
+
+Checked the two blocks under "Final drafts" in the porter's response. `jargon.py -` and `prose.py` clean on both, ASCII only. The e7e0b00c bullet ("No code change outside that comment") matches the diff. The PR body's example and compiler sentence match the README and were verified above. The claims carried over from Review #2 were re-read against e7e0b00c and still hold (header contents, `__CUDACC__` guard, fallbacks in memops.cuh/shared_indices.cu, template `USE_HIP` branch, test/CMakeLists.txt HIP fallback). The gfx90a and CUDA Evidence lines are the porter's evidence; this host has neither. Placeholders `<MI250X>`, `<W7800>` and the validator lists remain correct to leave until validator records exist at e7e0b00c.
+
+Optional addition to the Fix review body's linux-gfx1100 Evidence line, if jeff wants it: "At e7e0b00c the README example builds with `hip_arch="gfx1100"` and its checks pass."
+
+### Observation for jeff (not a blocker, pre-existing)
+
+The generated CMakeLists.txt.jinja:5 keeps upstream's `cmake_minimum_required(VERSION 3.18)`, but `project(... LANGUAGES CXX HIP)` needs CMake 3.21 or newer, so a `USE_HIP=ON` configure on CMake 3.18-3.20 fails at `project()`. The CUDA path is unaffected. It has been in the PR since it opened; raising the minimum inside the `USE_HIP` branch, or leaving it, is jeff's call.
+
+The earlier observation (AMD copyright and `Author:` lines in cuda_to_hip.h) stands unchanged.
