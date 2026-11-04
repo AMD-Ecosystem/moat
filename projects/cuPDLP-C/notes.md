@@ -584,3 +584,31 @@ Jargon: `jargon.py --port cuPDLP-C` (local `main` and `moat-fix-41` branches cre
 cuda-not-validated: no CUDA toolkit on this host (no conda; the fleet guard refuses pip installing nvidia-cuda-nvcc into a venv). The CUDA gate is still owed at 8f43bf8; the only CUDA-path change since the 2026-06-12 nvcc gate is upstream's own `${CMAKE_CUDA_PATH}/include` taken in the merge.
 
 Result: completed at 8f43bf8401712e7ce342cc52a412872f09f22069 (wave64).
+
+## Validation 2026-11-04 (linux-gfx1100, moat-fix-41 at 8f43bf8)
+
+Platform: linux-gfx1100, AMD Radeon Pro W7800 48GB (gfx1100, wave32, RDNA3), TheRock pip SDK (`hipconfig --rocmpath`), HIP_VISIBLE_DEVICES=1, `ulimit -c 0`. Full run: this platform's previous `validated_sha` was d380bca, before the sync merge changed the tree, so no carry-forward. Fresh clone of the fork into `projects/cuPDLP-C/src`, `git fetch origin moat-fix-41`, `git checkout 8f43bf8401712e7ce342cc52a412872f09f22069`; CRLF files left as checked out.
+
+Build and upstream suites (bundled HiGHS built by build.sh, no HIGHS_HOME):
+```bash
+export ROCM_PATH=$(hipconfig --rocmpath)
+GPU_ARCH=gfx1100 MODE=hip bash projects/cuPDLP-C/src/build.sh
+```
+exit 0, `CMAKE_HIP_ARCHITECTURES: gfx1100`. CTest 4/4 passed (installation_bounded, equality, mixed_bounds, compressed_mps). Installed suite 4/4 (bounded -10, equality 3, mixed_bounds -1.000000015, compressed_mps -10, all OPTIMAL). NumPy checker `--mode gpu` pass=true, x=(1.00000001, 1.99999999), objective 7.99999999, primal residual 1.08e-08. Both checker-regression controls PASS (stale_success_with_noop, incorrect_fresh_solution).
+
+Direct GPU tests:
+```bash
+cd build-coinor-hip/bin && ./testcudalin && ./testcublas
+cd ../.. && .coinor-deps/cupdlp-hip-install/bin/plc -fname ThirdParty/HiGHS/check/instances/afiro.mps -nIterLim 5000
+```
+- testcudalin: 0,1,4,...,81, rc=0. PASS
+- testcublas: `2-norm is :0.000000`, rc=0. PASS
+- plc afiro (installed binary, rpath, no LD_LIBRARY_PATH): `Cuda device 0: AMD Radeon Pro W7800 48GB`, Optimal, primal -4.64750896e+02, dual -4.64831392e+02, rel primal infeas 3.21e-05, rel dual infeas 3.60e-06, rel gap 8.65e-05, 200 iterations, rc=0. PASS
+
+Comparison: identical figures to the porter's gfx1100 run at 8f43bf8 (CTest 4/4, installed 4/4, checker pass, afiro -464.750896 in 200 iterations) and to this platform's earlier records at 503569a and d380bca (3/3 direct tests, same afiro objective and residuals). No regressions.
+
+Jargon: `jargon.py --port cuPDLP-C` (local `main` created at origin/main in the clone) gives the same 2 known false positives in bundled `ThirdParty/HiGHS` comments from the stale fork `main` mirror. Docs: ROCm build documented in README, INSTALL and build.sh `MODE=hip`. Tree clean (only untracked `.coinor-deps/`, `tests/logs/`).
+
+cuda-not-validated: no CUDA toolkit on this host (no conda, no nvcc). The CUDA compile gate is still owed at 8f43bf8.
+
+Result: completed at 8f43bf8401712e7ce342cc52a412872f09f22069 (wave32).
