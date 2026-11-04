@@ -1184,3 +1184,37 @@ ohmtest 53/53, ohmtestheightmap 19/19, slamiotest 4/4.
 Checks: `python3 utils/jargon.py --port ohm` clean (after creating local `master`/`moat-port` refs from origin in the fresh clone). readme.md has the "Building for AMD GPUs" section next to the CUDA build instructions.
 
 CUDA gate: cuda-not-validated on this host. There is no CUDA toolkit, and the fleet guard refused installing pip nvcc wheels into the job venv. The CUDA path evidence at this tree remains the 18/18 byte-identical preprocessing check (porter and gfx90a reviewer; the tree of 7c09435 equals ea8bbea). An nvcc compile with `-DCMAKE_CUDA_ARCHITECTURES=80` is still owed by a host that has the toolkit.
+## Validation 2026-11-04 (linux-gfx90a, moat-port 7c09435)
+
+**GPU**: AMD Instinct MI250X (gfx90a), one GCD pinned by the dispatcher (`HIP_VISIBLE_DEVICES` kept), `ulimit -c 0`. **Toolchain**: ROCm 10.1 TheRock pip SDK (`_rocm_sdk_devel`, HIP clang 24.0.0), CMake 3.31.6, Ninja, g++ 13.3, glm 1.0.1 headers downloaded to agent_space. Fork clone checked out detached at 7c09435fcf06ec3351ae6757c25d1b3b201a2134 (== `origin/moat-port` per `git ls-remote`); `git status --porcelain` empty after both builds.
+
+HIP build (arch auto-detected: `CMAKE_HIP_ARCHITECTURES=gfx90a;gfx90a;gfx90a;gfx90a`):
+
+```bash
+ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+cmake -B agent_space/build-hip -S projects/ohm/src -G Ninja -DCMAKE_BUILD_TYPE=Release -DOHM_FEATURE_HIP=ON -DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DGLM_INCLUDE_DIRS=$PWD/agent_space/dl/glm-1.0.1
+utils/timeit.sh ohm compile -- cmake --build agent_space/build-hip -j 64     # 231/231
+export LD_LIBRARY_PATH=$ROCM/lib   # TheRock soname quirk, see the masquerade port section
+utils/timeit.sh ohm test -- $PWD/agent_space/build-hip/bin/<suite>
+```
+
+| Suite | Result |
+|-------|--------|
+| gputiltestcuda | 8/8 PASSED (3 suites, 3.5 s) |
+| ohmtestcuda | 58/58 PASSED (16 suites, 70.1 s) |
+| ohmtest | 53/53 PASSED (18 suites) |
+| ohmtestheightmap | 19/19 PASSED |
+| slamiotest | 4/4 PASSED |
+
+Matches the porter's counts at the same tree (ea8bbea, tree c13dfc8) and this platform's earlier record (66/66 GPU at 141e356).
+
+CPU-only build (no GPU feature; cache shows `OHM_FEATURE_CUDA/HIP/OPENCL=OFF`):
+
+```bash
+cmake -B agent_space/build-cpu -S projects/ohm/src -G Ninja -DCMAKE_BUILD_TYPE=Release -DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON -DGLM_INCLUDE_DIRS=$PWD/agent_space/dl/glm-1.0.1
+utils/timeit.sh ohm compile -- cmake --build agent_space/build-cpu -j 48     # 161/161
+```
+
+ohmtest 53/53, ohmtestheightmap 19/19, slamiotest 4/4 PASSED.
+
+Checks: `python3 utils/jargon.py --port ohm` clean (needed local `master`/`moat-port` branches in a fresh clone). readme.md has the "Building for AMD GPUs" section. CUDA gate: cuda-not-validated on this host (no CUDA toolkit and no conda); the reviewer's 18/18 byte-identical preprocessing check at 7c09435 is the CUDA evidence for this head.
