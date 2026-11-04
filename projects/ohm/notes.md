@@ -1218,3 +1218,28 @@ utils/timeit.sh ohm compile -- cmake --build agent_space/build-cpu -j 48     # 1
 ohmtest 53/53, ohmtestheightmap 19/19, slamiotest 4/4 PASSED.
 
 Checks: `python3 utils/jargon.py --port ohm` clean (needed local `master`/`moat-port` branches in a fresh clone). readme.md has the "Building for AMD GPUs" section. CUDA gate: cuda-not-validated on this host (no CUDA toolkit and no conda); the reviewer's 18/18 byte-identical preprocessing check at 7c09435 is the CUDA evidence for this head.
+
+## CUDA compile check (nvcc 12.8) at 7c09435
+
+Compile-only, Linux x86_64 host with NVIDIA's apt CUDA toolkit and no NVIDIA GPU. Toolkit: nvcc `release 12.8, V12.8.93`; host compiler GNU 13.3.0; CMake 3.31.6; Ninja 1.11.1. Two fresh clones of AMD-Ecosystem/ohm: `port` at 7c09435fcf06ec3351ae6757c25d1b3b201a2134 and `base` at 4e2e769 (`master`). readme apt packages installed: `cmake zlib1g-dev libglm-dev googletest libgtest-dev ninja-build libtbb-dev libeigen3-dev`.
+
+In each tree:
+
+```bash
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOHM_FEATURE_CUDA=ON -DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc
+cmake --build build -j 48 -- -k 0
+```
+
+`cmake/OhmCuda.cmake` overwrites `CMAKE_CUDA_ARCHITECTURES` with `OHM_CUDA_ARCHITECTURES`, whose default for CUDA > 11 is `50;52;53;60;61;62;70;72;75;80;86`; so `-DCMAKE_CUDA_ARCHITECTURES=80` has no effect (cache shows it UNINITIALIZED) and both trees compiled all 11 archs, a superset of sm_80. Use `-DOHM_CUDA_ARCHITECTURES=80` to narrow it.
+
+| | base 4e2e769 | base 4e2e769 + `-DCMAKE_CXX_FLAGS="-include utility"` | port 7c09435 |
+|---|---|---|---|
+| configure rc | 0 | 0 | 0 |
+| build rc | 1 | 0 | 0 |
+| FAILED steps | 2 | 0 | 0 (227/227) |
+| warning lines | 12 | 12 | 12 |
+| `.cu` objects built by nvcc | 9 | 9 | 9 |
+
+Base failures (environment: GCC 13 libstdc++ no longer pulls in `<utility>` transitively, not the port): `ohmutil/PlyPointStream.cpp:112` and `ohm/VoxelBuffer.cpp:24`, `'exchange' is not a member of 'std'`. The port's two `#include <utility>` fixes clear exactly these. With `-include utility` the baseline builds 227/227 and its warning list is identical to the port's (sorted diff empty): 9x `nvcc warning : Support for offline compilation for architectures prior to '<compute/sm/lto>_75' will be removed` (one per `.cu`, from the upstream default arch list), 1x `ohm/VoxelLayout.cpp:216 -Wstringop-truncation`, plus two CMake dev-warning lines. No new warning in the port. Built binaries and libraries are identical lists in both trees: bin `gputiltestcuda ohm2ply ohmcmp ohmfilter ohmheightmap ohminfo ohmpopcpu ohmpopcuda ohmprob ohmquerycuda ohmsubmap ohmtest ohmtestcuda ohmtestheightmap slamiotest`; lib `libgputilcuda libohm libohmapp libohmappcuda libohmcuda libohmheightmap libohmtestcommon libohmtools libohmutil libslamio liblogutil` (.a).
+
+nvcc really compiled the kernels: `ninja -t commands` shows 9 `/usr/local/cuda-12.8/bin/nvcc` invocations with `--generate-code=arch=compute_XX,code=[compute_XX,sm_XX]` for each of the 11 archs (8 `ohmgpu/gpu/*.cu`, `tests/gputiltest/cuda/matrix_kernel.cu`), and `cuobjdump --list-elf build/lib/libohmcuda.a` lists 8 ELF images for each of sm_50..sm_86 (88 total). No compile command in the port's CUDA build references `hip_compat`, `OHM_FEATURE_HIP` or `__HIP`, so the HIP shims stay out of the CUDA path. No GPU run (no NVIDIA GPU); no platform state changed.
