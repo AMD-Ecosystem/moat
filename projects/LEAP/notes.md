@@ -20,6 +20,7 @@ python setup_AMD.py build_ext --inplace
   `*leapct*.so` in src/), NOT `import leapct`.
 
 ## The dominant fix: HW linear texture filtering -> software interpolation
+(Superseded at dd50ccc: on HIP no texture is created any more and the corners are read from linear memory; see "Port 2026-11-04 ... gfx94x+ support" below. The routing rules here still hold.)
 ~617 `tex3D/tex2D/tex1D<float>` fetches at fractional coords relied on
 `cudaFilterModeLinear` on float element-read textures, which HIP rejects at
 create time. Fix:
@@ -625,4 +626,215 @@ This pull request was prepared with the help of an AI assistant acting as a codi
 If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
 
 
+~~~~
+
+## Port 2026-11-04 (porter, linux-gfx942, moat-port 5f6816f -> e503672): gfx94x+ support
+
+jeff ruled option (a) of review finding 1: support gfx94x+ (every AMD GPU, as every NVIDIA GPU supports textures). Two new commits on moat-port:
+- dd50ccc `[ROCm] Read projector inputs from linear memory instead of textures`
+- e503672 `[ROCm] Correct the GPU test docstring about the CPU projectors`
+
+### Precondition checked: no binding uses hardware filtering on HIP
+At 5f6816f every `loadTexture*` on HIP already forced `cudaFilterModePoint` (the three `#if __HIP_PLATFORM_AMD__` blocks in cuda_utils.cu), and the only `cudaCreateTextureObject` / `cudaMalloc3DArray` / `cudaMallocArray` calls in the tree are in those three functions (`grep -rn` over src/). No `tex1Dfetch`, surface, or legacy texture reference exists. So every fetch on HIP was a point fetch (raw `tex*D<float>` or a `leapTex*` corner), which is what makes an exact emulation possible. Address modes: Clamp when `useExtrapolation`, else Border, same on all axes; coordinates always unnormalized. Texture layout: 3D extent (N.z, N.y, N.x), texel (x, y, z) at `(z*N.y + y)*N.z + x`; 1D extent N. `loadTexture2D` is a stub returning NULL and `leapTex2D` has no callers.
+
+### Design
+- `cuda_utils.h`, HIP only: `struct leapTextureHeader { int n[3]; int clamp; }`. The `cudaTextureObject_t` handle is a pointer to one cudaMalloc buffer holding the header followed by the dense data. `leapTexel(t, i, j, k)` applies the address mode in float (Clamp: fminf/fmaxf to [0, n-1]; Border: any axis out of [0, n) returns 0) and reads `data[(k*n1 + j)*n0 + i]` with 64-bit indexing. The header and data pointers are cast to `address_space(4)` (constant, read-only), so the header is read with one hoisted `s_load_dwordx4` per kernel (18 in projectors_Siddon gfx942 ISA) and texels with `global_load_dword`.
+- `leapTex3D/2D/1D(t, coords, linear)`: linear blend unchanged from 5f6816f (same xs = c - 0.5, floor, weights, blend expression, isfinite guard); only the corner fetch changed from HW point `tex*D(t, k + 0.5)` to `leapTexel(t, k)`. `linear = false` is a point fetch `leapTexel(floor(c))`, with a non-finite coordinate mapped to 0 (finite result; at the known NaN site, attenuated cylindrical `f`, it is multiplied by a zero weight).
+- All 233 raw `tex1D/tex3D<float>(t, ...)` fetches outside comments (Siddon 154, attenuated 20, extendedSF 20, ramp_filter 16, noise_filters 8, scatter 8, bilateral 4, matching_pursuit 2, resample 1) became `leapTex*D(t, ..., false)` (mechanical rewrite with a paren-matching script). On CUDA these forward to `tex*D<float>` and ignore the flag, so CUDA codegen is unchanged.
+- `cuda_utils.cu`: the three HIP point-filter override blocks were removed (bodies are upstream-verbatim again); on HIP each of `loadTexture_from_cpu`, `loadTexture`, `loadTexture1D` returns early through `loadLinearTexture` (cudaMalloc header + data, H2D header copy, data copy with H2D / D2D / Default respectively; returns the buffer as both the `cudaArray*` and the handle). No hipArray or texture object is ever created on HIP.
+- `cudaFreeArray` / `cudaDestroyTextureObject` are `#define`d on HIP (in cuda_utils.h, hipified to the hip names) to `leapFreeArray` (cudaFree) / `leapDestroyTextureObject` (no-op), so the ~50 free/destroy call-site pairs are untouched.
+
+### Path choice (step 3): one path on every AMD GPU, provisional
+This host has only gfx942 (8x MI300X, no image support), so the texture path cannot run here and neither bit-identity nor speed against textures could be measured. Provisional choice: the linear-memory path unconditionally on HIP. Reasons: (1) for every linear-bound site the corners are fetched at exact texel centres, where a HW point fetch returns the stored texel, and the blend arithmetic is the same source expression, so those outputs should be bit-identical; (2) the only place the two could differ is a raw point fetch at a fractional coordinate (extendedSF `f`, attenuated `f`), where `leapTexel` uses exact `floor(c)` (the CUDA point-sampling definition) while the AMD sampler may quantize the coordinate first; (3) gfx942 prints exactly the gfx90a texture-path numbers for all 12 gpu_vs_cpu_validate tests (fbp_interior and adjoint, 3 significant digits), which is consistent with (1). If the gfx90a comparison below is not bit-identical, or the linear path is more than ~10% slower, the fallback is the dual path jeff described (textures where `hipDeviceAttributeImageSupport` is 1, linear only under `__HIP_NO_IMAGE_SUPPORT` / attribute 0); that needs a runtime handle tag in `leapDestroyTextureObject`/`leapFreeArray` and an `#ifdef __HIP_NO_IMAGE_SUPPORT` in the helpers.
+
+What a gfx90a (texture-capable) validator must compare, same host, same GPU, same inputs:
+1. Build 5f6816f (old, texture path) and e503672 (new) separately, each with `python setup_AMD.py build_ext --inplace` from its own clean checkout, PYTORCH_ROCM_ARCH unset or `gfx90a` (5f6816f does not compile for gfx94x).
+2. With each build, run the dump script below: `python dump_outputs.py <checkout>/src old.npz 256` and `... new.npz 256`. It writes forward (`project` of FORBILD + 0.1 uniform noise inside the object), back (`backproject` of the analytic `rayTrace` sinogram) and FBP for 6 geometries x {VD, SF}, plus median-of-5 project/backproject times with device-resident torch tensors.
+3. `python compare_outputs.py old.npz new.npz`: per-array `bit_identical` (uint32 view equality), differing count, max abs/rel, and new/old time ratios. Pass criterion for keeping one path: ALL BIT-IDENTICAL and every time ratio <= ~1.10. Also run `unitTests/gpu_vs_cpu_validate.py` on the new build.
+Record the result here; jeff sees the choice.
+
+dump_outputs.py:
+```python
+"""usage: python dump_outputs.py <leap src dir> <out.npz> [numCols]"""
+import sys, time
+import numpy as np
+import torch
+sys.path.insert(0, sys.argv[1])
+from leapctype import tomographicModels
+numCols = int(sys.argv[3]) if len(sys.argv) > 3 else 256
+numRows = int(numCols * 25.0 / 24.0); numAngles = 360
+pixelSize = 1.03 * 2.0 * 250.0 / 512 * (512.0 / numCols)
+cR = 0.5 * (numRows - 1); cC = 0.5 * (numCols - 1)
+sdd = 765.0; sod = 0.5 * sdd; tau = 0.0; tiltAngle = 1.0; pitch = 0.0
+names = ["parallel", "fan", "coneparallel", "cone-flat", "cone-curved", "modular"]
+def set_geometry(lc, igeom):
+    lc.reset(); ang = lc.setAngleArray(numAngles, 360.0)
+    if igeom == 0: lc.set_parallelbeam(numAngles, numRows, numCols, sod/sdd*pixelSize, sod/sdd*pixelSize, cR, cC, ang)
+    elif igeom == 1: lc.set_fanbeam(numAngles, numRows, numCols, sod/sdd*pixelSize, pixelSize, cR, cC, ang, sod, sdd, tau)
+    elif igeom == 2: lc.set_coneparallel(numAngles, numRows, numCols, pixelSize, sod/sdd*pixelSize, cR, cC, ang, sod, sdd, tau, pitch)
+    elif igeom == 3: lc.set_conebeam(numAngles, numRows, numCols, pixelSize, pixelSize, cR, cC, ang, sod, sdd, tau, pitch, tiltAngle)
+    elif igeom == 4: lc.set_conebeam(numAngles, numRows, numCols, pixelSize, pixelSize, cR, cC, ang, sod, sdd, tau, pitch); lc.set_curvedDetector()
+    elif igeom == 5: lc.set_conebeam(numAngles, numRows, numCols, pixelSize, pixelSize, cR, cC, ang, sod, sdd, tau, 0.0, tiltAngle); lc.convert_to_modularbeam()
+    lc.set_default_volume()
+def timed(fn, n=5):
+    ts = []
+    for _ in range(n):
+        t = time.perf_counter(); fn(); ts.append(time.perf_counter() - t)
+    return float(np.median(ts))
+res = {}
+rng = np.random.default_rng(0)
+for ig, nm in enumerate(names):
+    for meth in ["VD", "SF"]:
+        lc = tomographicModels(); set_geometry(lc, ig); lc.set_projector(meth); lc.set_gpu(0)
+        f = lc.allocate_volume(); lc.set_FORBILD(f, False)
+        f += 0.1 * rng.random(f.shape, dtype=np.float32) * (f > 0)
+        g = lc.allocate_projections(); lc.set_FORBILD(None, False); lc.rayTrace(g)
+        gp = lc.allocate_projections(); lc.project(gp, f.copy())
+        fb = lc.allocate_volume(); lc.backproject(g.copy(), fb)
+        fr = lc.allocate_volume(); lc.FBP(g.copy(), fr)
+        fd = torch.from_numpy(f).cuda(); gd = torch.from_numpy(g).cuda()
+        gpd = torch.zeros_like(gd); fbd = torch.zeros_like(fd)
+        sync = torch.cuda.synchronize
+        tp = timed(lambda: (lc.project(gpd, fd), sync()))
+        tb = timed(lambda: (lc.backproject(gd, fbd), sync()))
+        k = f"{nm}_{meth}"
+        res[k + "_fwd"] = gp; res[k + "_back"] = fb; res[k + "_fbp"] = fr
+        res[k + "_t"] = np.array([tp, tb])
+        print(f"{nm:13s} {meth}  project {tp*1e3:8.2f} ms  backproject {tb*1e3:8.2f} ms  nonzero fwd {np.count_nonzero(gp)}/{gp.size}", flush=True)
+np.savez(sys.argv[2], **res)
+```
+
+compare_outputs.py:
+```python
+"""usage: python compare_outputs.py old.npz new.npz"""
+import sys, numpy as np
+a, b = np.load(sys.argv[1]), np.load(sys.argv[2])
+same = True
+for k in sorted(a.files):
+    if k.endswith("_t"):
+        r = b[k] / a[k]
+        print(f"{k[:-2]:16s} time new/old project {r[0]:.3f} backproject {r[1]:.3f}")
+        continue
+    x, y = a[k], b[k]
+    eq = np.array_equal(x.view(np.uint32), y.view(np.uint32))
+    same &= eq
+    d = np.abs(x.astype(np.float64) - y); m = np.abs(x).max()
+    print(f"{k:22s} bit_identical={eq} max_abs={d.max():.3e} rel={d.max()/m if m else 0:.3e} differing={np.count_nonzero(x.view(np.uint32) != y.view(np.uint32))}/{x.size}")
+print("ALL BIT-IDENTICAL" if same else "NOT BIT-IDENTICAL")
+```
+
+### Build (gfx942, HIP_VISIBLE_DEVICES=2 from the dispatcher, PYTORCH_ROCM_ARCH unset)
+Python /opt/python-3.11-venv (torch 2.16.0a0+git6c3af02); fresh clone in this job's own directory.
+```
+env -u PYTORCH_ROCM_ARCH bash utils/timeit.sh LEAP compile -- bash -c "cd projects/LEAP/src && python setup_AMD.py build_ext --inplace"   # rc=0, first attempt
+# cpp_extension.py: ... all archs for visible cards are included for compilation (gfx942).
+# 20 hipcc invocations, all --offload-arch=gfx942; no errors; warnings are the pre-existing nodiscard/omp/unused ones
+```
+
+### Tests (gfx942, MI300X, under ulimit -c 0)
+```
+AMD_LOG_LEVEL=3 python unitTests/gpu_vs_cpu_validate.py    # rc=0, Gfx Major/Minor/Stepping: 9/4/2, 0 error lines in the log
+```
+12/12 PASS, OVERALL: PASS. Every printed value equals the 2026-11-04 gfx90a texture-path run at 5f6816f:
+```
+parallel      VD  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=2.54e-05  PASS
+parallel      SF  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=1.64e-05  PASS
+fan           VD  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=2.44e-04  PASS
+fan           SF  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=1.85e-04  PASS
+coneparallel  VD  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=1.24e-03  PASS
+coneparallel  SF  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=5.07e-05  PASS
+cone-flat     VD  finite=True  fbp_interior=0.9998 (err 0.000)  adjoint=1.42e-04  PASS
+cone-flat     SF  finite=True  fbp_interior=0.9998 (err 0.000)  adjoint=1.46e-04  PASS
+cone-curved   VD  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=8.54e-05  PASS
+cone-curved   SF  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=1.30e-04  PASS
+modular       VD  finite=True  fbp_interior=0.9998 (err 0.000)  adjoint=3.39e-03  PASS
+modular       SF  finite=True  fwd-vs-VD (err 0.000)  adjoint=n/a  PASS
+```
+
+GPU vs LEAP CPU projectors (agent_space script, not committed): 96 cols x 100 rows x 60 views, pixel 4x the test's, default volume, f = FORBILD + 0.1 uniform noise inside the object, then zeroed outside an inner cylinder (r < 0.35 min(nx,ny), |z| < 0.3 nz) so detector/FOV-edge model differences stay out; back input = analytic `rayTrace` sinogram (non-zero). CPU through `project_cpu`/`backproject_cpu`. rel = max abs diff / max abs CPU value. All outputs finite; non-zero counts shown are the CPU reference.
+```
+geometry      model fwd max_abs  fwd rel   back max_abs back rel  (fwd nz / back nz)
+parallel      SF    4.311e-04    3.789e-05 1.648e-03    2.889e-06 (247536/576000, 708000/921600)
+parallel      VD    4.206e-04    3.741e-05 1.271e+00    2.227e-03
+fan           SF    1.154e-02    1.029e-03 1.007e-03    1.737e-06 (251952, 667600)
+fan           VD    1.178e-02    1.045e-03 7.957e-01    1.372e-03
+cone (no tilt) SF   2.293e-01    2.026e-02 5.341e-02    9.001e-05 (299824, 667600)
+cone (no tilt) VD   2.382e-01    2.124e-02 3.952e+00    6.660e-03
+cone-curved   SF    2.366e-01    2.090e-02 5.261e-02    9.017e-05
+cone-curved   VD    2.112e-01    1.883e-02 4.050e+00    6.942e-03
+cone-flat tilt=1 SF 1.351e+00    1.194e-01 5.325e+00    8.976e-03
+modular       SF    3.809e-01    3.431e-02 (back: no matching CPU model, see below)
+modular       VD    4.894e-01    4.411e-02
+coneparallel        no CPU projector ("CPU-based projector not yet implemented for this geometry")
+```
+Reading it: the CPU always runs SF for parallel/fan/cone (`parameters::useSF()` is true for VD), so the SF rows are the like-for-like comparison and the VD rows show the VD-vs-SF model gap. Parallel and fan agree to 4e-5 / 1e-3 forward and 2e-6 back. Cone forward differs by 2% with the same value for GPU VD and SF; in a cone-beam debug run (`fwd_dbg.py`) the gap is a ~2% uniform gain in the interior plus the axial edges of the truncated object (rows 15-23 and 76-84), so it is a GPU-vs-CPU cone model difference, not a sampling error (a sampling error would show in parallel beam too, which uses the same accessor). The tilt=1 cone case adds ~10% because the CPU cone SF does not match the GPU's tilt handling. Modular: CPU and GPU use different Joseph implementations; on random full-volume inputs GPU modular VD is adjoint to 6.3e-3 (tilt 1) and 4.7e-3 (tilt 0), GPU modular SF is not adjoint (7.7e-1, the known non-adjoint pair in the test docstring), and the CPU modular pair is adjoint to 1.6e-2 but its forward differs from the GPU by 25% in <Af,g>. Whether the 2% cone gap existed before this change is settled by the gfx90a bit-for-bit comparison above.
+
+The earlier "CPU projectors return NaN/garbage" record (and the old test docstring, corrected in e503672) came from `set_gpu(-1)`: `set_GPU` pushes -1 into `whichGPUs`, then `project`/`backproject` go through `project_multiGPU`, which calls `hipSetDevice(-1)` ("invalid device ordinal") and returns an uninitialized forward and an all-zero back. That is upstream host code shared with CUDA, untouched by the port. `project_cpu`/`backproject_cpu` set `whichGPU = -1` directly and work.
+
+Attenuated detector-edge NaN check that the 2026-11-04 review asked for (parallel beam, cylindrical model `set_cylindircalAttenuationMap(0.01, 0.45*numCols*pixel)`, FORBILD f, 128 cols x 133 rows x 360 views): GPU forward 0/6128640 non-finite, 3814836 non-zero, max 2.3854; back 0 non-finite. CPU forward max 2.3736. GPU vs CPU (unmasked phantom, so edge differences included): fwd rel 1.56e-1, back rel 2.85e-2.
+
+gfx942 timings (dump_outputs.py, 256 cols x 266 rows x 360 views, default volume, device-resident tensors, median of 5): project 121-247 ms, backproject 32-254 ms; e.g. parallel SF 127.7 / 34.0 ms, cone-flat SF 228.7 / 253.7 ms, modular VD 223.1 / 42.6 ms. No texture baseline exists on gfx942, so these are reference figures only.
+
+### Not done
+- Step 9 of porter.md (reply on review PR #1 and resolve threads): fleet job, every `gh` write is forbidden.
+- No texture-capable GPU here, so the path-choice comparison above is left to a gfx90a validator.
+- The CPU/GPU modular and tilted-cone model differences are upstream behaviour and were not investigated further.
+
+### Corrected review PR body at e503672 (for jeff)
+Changes from the 2026-11-04 corrected body: the gfx94x+ limitation paragraph is gone; the texture paragraphs describe the linear-memory path; the CPU-projector sentence is replaced (it was wrong, see above); the Validation section has placeholders, because no GPU has a validator record at e503672 yet. `PYTORCH_ROCM_ARCH` example now includes gfx942. Checked: `python3 utils/prose.py` clean, `python3 utils/jargon.py -` clean, ASCII only. The PR is not edited.
+
+~~~~markdown
+## Summary
+
+This PR adds AMD GPU support to LEAP by making the CUDA projector, filter, and scatter kernels build and run correctly on ROCm through HIP. It uses the existing torch extension build (`setup_AMD.py`): on a ROCm install, PyTorch's build machinery hipifies the canonical `.cu` sources at build time, so a single set of sources serves both vendors and no file is renamed or duplicated for HIP.
+
+To build on ROCm, from the repository root:
+
+```
+python setup_AMD.py build_ext --inplace
+```
+
+The build compiles for the GPU architectures PyTorch's extension build selects by default: with PyTorch 2.12 and later, those of the GPUs visible at build time; with earlier releases, those the installed PyTorch was built for. Set `PYTORCH_ROCM_ARCH` (for example `PYTORCH_ROCM_ARCH="gfx90a;gfx942;gfx1100"`) to choose the architectures explicitly.
+
+The resulting `leapct` shared library is loaded by `leapctype.py` via ctypes exactly as before.
+
+## What is implemented
+
+Texture sampling is the central piece of the port. LEAP's projectors read their volume or sinogram through texture objects, with several hundred `tex3D`/`tex2D`/`tex1D<float>` fetches, many at fractional coordinates relying on `cudaFilterModeLinear` hardware interpolation. HIP does not offer linear filtering on float element-read textures, and on gfx942 and gfx950 it offers no texture objects at all: the API is disabled at compile time and the runtime reports no image support. So on ROCm no texture is created. `loadTexture`, `loadTexture_from_cpu` and `loadTexture1D` (`cuda_utils.cu`) copy the data into one linear device buffer behind a small header holding the extents and the bound address mode, and the texture handle points at that buffer. Device-only helpers `leapTex3D`/`leapTex2D`/`leapTex1D` (`cuda_utils.h`) read the buffer the way the bound texture samples: unnormalized coordinates, point sampling, and the bound address mode (border returns zero, clamp repeats the edge texel), so out-of-range neighbors behave exactly as with a texture and no read goes past the buffer. Where the texture is bound with linear filtering, the helpers do the trilinear/bilinear/linear blend in software from the corner texels with the CUDA unnormalized -0.5 texel-center convention. `cudaFreeArray` and `cudaDestroyTextureObject` are redirected on ROCm so the existing call sites free the buffer unchanged. On CUDA the helpers forward straight to the texture builtins, preserving hardware filtering, and `loadTexture*` keep their original bodies.
+
+Fetch sites whose texture is bound with linear filtering call the helpers with linear interpolation; point-bound fetch sites (for example the Siddon projectors, which fetch at integer coordinates) call them with `linear = false`, a plain point fetch. The Joseph modular-beam path chooses its filter mode at runtime, so those kernels take a `linearInterp` flag and pass it through, keeping both modes correct with one kernel. The same code path runs on every AMD GPU, with or without texture hardware.
+
+Detector-edge footprint weights can compute coordinates of the form `0/0 = NaN`; CUDA hardware texturing returns a finite border/clamped value for a non-finite coordinate, which the call site then multiplies by the zero weight. The helpers map non-finite input coordinates to finite ones to reproduce that, keeping cone/fan/modular projections finite at the detector edges.
+
+The GPU FFT filter path (ramp and Hilbert filtering in `ramp_filter.cu`) is enabled on ROCm by defining `__INCLUDE_CUFFT`; the cuFFT calls map to hipFFT during hipify and the extension links `hipfft`.
+
+Build-system and cleanup changes: `setup_AMD.py` gains a ROCm branch (defines and hipFFT linkage) and leaves GPU architecture selection to PyTorch's extension build; three stale one-shot hipify dumps (`src/hip_utils.h`, `src/projectors_Joseph_cpu_hip.h`, `src/ramp_filter_hip.cuh`) are removed because they are unreferenced and collide with the names the build-time hipify generates, and those generated outputs are now gitignored; `src/analytic_ray_tracing_gpu.cu` includes `cuda_runtime.h` before its `.cuh` so `float3`/`float2` resolve on HIP.
+
+Windows/MSVC support required four guarded fixes: `leap_defines.h` skips its `uint8`/`uint16` typedefs when they would clash with HIP's vector types under MSVC (`file_io.cpp` gets a local cstdint-based typedef under the same guard); a minimal `PYBIND11_MODULE` stub satisfies the `/EXPORT:PyInit_leapct` symbol the torch extension linker requires; `PROJECTOR_EXPORTS` is defined so the C interface exports rather than imports; and `leapct_exports.def` lists the 207 exported symbols so MSVC link-time code generation does not strip them.
+
+A new test, `unitTests/gpu_vs_cpu_validate.py`, exercises 6 geometries (parallel, fan, cone-parallel, cone-flat, cone-curved, modular) with both the VD and SF projector models, checking that forward/backprojection/FBP are finite, that FBP of a uniform cylinder recovers an interior value of 1.0 (which also exercises the hipFFT ramp-filter path), and that the forward/backprojection adjoint identity `<Af,g> == <f,A^T g>` holds.
+
+## Effect on the CUDA/NVIDIA path
+
+CUDA behavior is unchanged. The texture helpers compile to the original hardware `tex*D` builtins under nvcc, so NVIDIA builds keep their textures and hardware linear filtering; the linear-memory texture path, the `cudaFreeArray`/`cudaDestroyTextureObject` redirection, hipFFT linkage, and ROCm build flags are guarded to HIP; the vector-type guard requires both MSVC and the HIP platform. The CPU projectors (`*_cpu.cpp`) are not touched. On Linux, the only CUDA-visible source change is mechanical: texture fetch sites call the forwarding helpers, and the Joseph modular-beam kernels carry the extra `linearInterp` parameter. The other three Windows fixes (the `PyInit_leapct` stub, `PROJECTOR_EXPORTS`, and the `.def` export list) depend only on Windows, so they also apply to a CUDA build of `setup_AMD.py` on Windows; that build was not tested.
+
+## Validation
+
+All testing was done on real AMD GPUs. `unitTests/gpu_vs_cpu_validate.py` (12 tests: 6 geometries x {VD, SF}) passed 12/12 on each of:
+
+- <GPU, gfx target, Linux or Windows, and any notes, for each GPU validated at the final commit>
+
+<Summary of the per-test results at the final commit: finite outputs, FBP interior recovery, adjoint relative error, and whether the results agree across GPUs.>
+
+<If a GPU with texture hardware compared this change against the previous texture-based build: whether forward, backprojection and FBP outputs are bit-identical, and the change in projection time.>
+
+One pre-existing upstream behavior was reproduced, not introduced: modular-beam SF FBP does not converge (tilted-detector separable footprint), while modular SF forward projection matches modular VD and modular VD FBP recovers 1.0. No `*_cpu.cpp` file is modified.
+
+This work was authored with the assistance of Claude, an AI assistant.
+
+---
+
+This pull request was prepared with the help of an AI assistant acting as a coding agent and was read and approved by a person before it was opened. It comes from an ongoing effort to add AMD GPU support to widely used CUDA projects, one repository at a time: https://github.com/AMD-Ecosystem/moat -- that repository describes how the work is done and what a person checks before anything is submitted.
+
+If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
 ~~~~

@@ -51,3 +51,5 @@
 {"kind":"phase","ts":"2026-11-04T07:19:16Z","phase":"compile","seconds":0.019,"exit":2,"cmd":"python setup_AMD.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-04T07:19:39Z","phase":"compile","seconds":8.695,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261103-231546-review-leap/moat/agent_space/leap-build && python setup_AMD.py build_ext --inplace"}
 {"kind":"session","ts":"2026-11-04T07:21:57Z","epoch":1793776917.864977721,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-04T17:15:32Z","phase":"compile","seconds":17.880,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261104-090718-port-leap-gfx94/moat/projects/LEAP/src && python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T17:20:19Z","phase":"test","seconds":49.677,"exit":0,"cmd":"python agent_space/leap/dump_outputs.py projects/LEAP/src/src agent_space/leap/new_gfx942.npz 256"}
