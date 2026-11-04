@@ -429,7 +429,10 @@ FP16 generate ck_tile FMHA instances: fetch CK's `include` and `example/ck_tile/
 matches the kernel name WITHOUT the `_gfx950` suffix (end the pattern at `_nsink`, or it
 matches nothing); release tag rocm-7.2.4 generates no gfx11 forward kernels (develop does);
 cuDNN's `set_causal_mask` is CK `mask_top_left` (window left -1, right 0); keep
-`-fgpu-flush-denormals-to-zero` on the FMHA sources only. 139 FP16 inference instances for
+`-fgpu-flush-denormals-to-zero` on the FMHA sources only; for one build spanning gfx9 and gfx11
+define `USE_NEW_UNIFIED_FRAMEWORK=0` (CK develop's unified framework needs a single host-side
+target, and `CK_CMAKE_GPU_TARGET_IDS` takes the first for every pass, failing the gfx11
+device pass). 139 FP16 inference instances for
 nine architectures build in about 2.5 minutes at 128 jobs. (TornadoVM)
 
 **Generic GEMM on CK device operations.** For CUTLASS-style row-major GEMMs with fused
