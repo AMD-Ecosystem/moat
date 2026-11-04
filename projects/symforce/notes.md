@@ -1695,3 +1695,150 @@ ctest --test-dir build -R caspar_
 
 The Caspar GPU tests (padding lane, solver, tridiagonal, backend coverage) and `symforce_caspar_codegen_test` pass on <AMD GPUs with a validator record at the final head>. The Caspar test targets also compile and link with CUDA 12.8.
 ````
+
+## Review 2026-11-04 #2 (fix round moat-fix-465, tip f82e4abf; reviewer, linux-gfx1100)
+
+Verdict: changes-requested. f82e4abf itself is correct. One upstream-visible doc defect is new to this review (item 1, pre-existing since d93d7bbe). One comment went stale because of f82e4abf (item 2). The drafts need corrections, given in full below.
+
+Scope: delta d5eb335d..f82e4abf, the full PR diff upstream/main...f82e4abf for the claims the drafts make, and the three final drafts in "Porter response to Review 2026-11-04".
+
+### Delta d5eb335d..f82e4abf: verified
+
+- `git diff --stat`: one file, `cuda_to_hip.h`, 78 deletions, 0 insertions. Removed: `namespace caspar_hip` (`reduce_sum`, `reduce_max`, `match_any_mask`, `labeled_reduce_sum`) and its two lead-in comment lines, the HIP `CG_REDUCE_SUM` / `CG_LABELED_REDUCE_SUM`, and the CUDA `CG_REDUCE_SUM` with its comment. Nothing else changed. `namespace cg` remains on the CUDA path. memops.cuh:13 and shared_indices.cu:9 define it for both paths.
+- `grep -rnI 'caspar_hip\|CG_REDUCE_SUM\|CG_LABELED\|labeled_reduce_sum\|match_any_mask\|reduce_max\b' . --exclude-dir=.git` at f82e4abf: 0 hits.
+- Code objects, gfx1100 spot-check (TheRock ROCm SDK 7.16 hipcc). All 78 `.cu` files the HIP test build compiles: 3 runtime files, plus the backend_coverage, codegen (padding lane), solver and tridiagonal data dirs. Each was compiled with `hipcc -x hip -std=c++17 -O3 -DUSE_HIP -ffp-contract=fast -fno-math-errno --offload-arch=gfx1100 -I<runtime> -I<file dir> -I<data root> -c`. The same worktree and the same output path were used at d5eb335d and at f82e4abf. Then `llvm-objcopy --dump-section .hip_fatbin` and `clang-offload-bundler --unbundle --targets=hipv4-amdgcn-amd-amdhsa--gfx1100`. Result: 78/78 code objects identical (2.2 MB total, none empty), and 78/78 whole `.o` files (host + device) byte-identical. So the porter's gfx90a claim holds on gfx1100 too. Caveat for anyone repeating this: build into the same `-o` path. With a different output directory, even the same commit gives different code objects, because the default `-fuse-cuid=hash` hashes the command line. My first attempt hit this.
+- The CUDA SASS claim (nvcc 12.8, 78 objects) was not re-run here: this host has no nvcc. It is the porter's evidence alone.
+- Commit message: `[ROCm]` title of 56 chars, AI disclosure, fenced Test Plan, no Co-Authored-By. `jargon.py --port symforce` clean. Fork worktree clean.
+
+### 1. README documents a function that does not exist (code, upstream-visible)
+
+`symforce/caspar/README.md:120` (added in d93d7bbe, in the PR since it opened) says:
+
+```python
+compile_caspar_library(caslib, output_dir, use_hip=True, hip_arch="gfx90a")
+```
+
+No `compile_caspar_library` exists anywhere in the tree (`grep -rn compile_caspar_library` finds only this README line). The API is the static method `CasparLibrary.compile(out_dir, debug=False, cuda_arch=None, jobs=None, use_hip=False, hip_arch=None)` (library.py:178-185). The examples call it as `caslib.compile(out_dir)` (examples/kernel_example/gen_and_run.py:45, bal/gen_and_run.py:63). Fix: `caslib.compile(out_dir, use_hip=True, hip_arch="gfx90a")`.
+
+On the same README paragraph (:116): the header does not map `__syncthreads` (HIP has it natively), and it maps no cooperative-groups spelling; it only includes `hip/hip_cooperative_groups.h`. After f82e4abf it maps the runtime API, `atomicAdd_block` and the `cub` namespace. Suggested: "...via a small `cuda_to_hip.h` compatibility header that maps the CUDA runtime calls Caspar emits (`cudaMalloc`, `cudaMemcpy`, `cudaFuncSetAttribute`, and friends) and the `cub` namespace onto their HIP equivalents...".
+
+The PR-body drafts repeat `compile_caspar_library`. Corrected below.
+
+### 2. Stale comment after f82e4abf (code)
+
+`symforce/caspar/source/runtime/pybind_array_tools.cc:177-179`: "uses local cuda*->hip* aliases here rather than the device-side cuda_to_hip.h (which pulls in hipcub and __device__ helpers intended for the .cu sources)". f82e4abf removed the only `__device__` helpers, and the code below the comment spells the HIP calls directly rather than defining aliases. Fix the comment in the same commit as item 1. For example: "This host translation unit calls the HIP runtime directly rather than including cuda_to_hip.h, which also pulls in hipcub."
+
+### 3. Drafts: corrections (text)
+
+- Upstream reply, GPU names. The reply names the MI250X and the W7800, and no platform has a validator record at f82e4abf: `validated_sha` is 1a9e9770 for gfx90a, gfx1100 and gfx1151, and e994ef0b for gfx1101 and gfx1201. jeff's rule for this round is that a GPU named in the reply has a validator record at the final head or carries a placeholder. The porter kept the names on the grounds that they are "experiment hardware". That conflicts with the rule, so the corrected reply carries placeholders. Fill in `<MI250X>` only once linux-gfx90a has a validator record at the final head, and `<W7800>` only once linux-gfx1100 has one.
+- Upstream reply: "and a W7800 (wave32) gives the same result" overstates. On gfx1100 the earlier review measured exact-reference matches for the back-to-back alpha kernel and no NaN for the padding-lane kernel. It did not measure padding-lane per-block partials. Reworded to what was measured.
+- Upstream reply and PR body: "compile every checked-in kernel and solver" overclaims. The HIP test build compiles the four Caspar data dirs, not the 12 `.cu` files in each `symforce_cuda_codegen_test` data dir. Now "every checked-in Caspar kernel and solver".
+- PR body: `compile_caspar_library` (item 1). The header description also gets `atomicAdd_block`. "The header provides no device-side fallbacks of its own" is kept: the `atomicAdd_block` alias is a spelling, not a fallback.
+- Fix review body: the f82e4abf bullet now cites both arches' code-object checks. A bullet is added for the item 1/2 commit (`<sha>`). The Evidence section gets this review's gfx1100 result.
+
+Checked and true at f82e4abf: 2ee29780 is an upstream commit and an ancestor of e994ef0b. e994ef0b's solver.cc.jinja:96 calls `cudaGetDeviceCount`, and its `cuda_to_hip.h` has no mapping. 38f16ea3's body does say "Upstream now ... checks cudaGetDeviceCount". daa1a7bf's body does name beta and "Freshly allocated device memory". `USE_HIP` is an option in CMakeLists.txt.jinja:10. The HIP fallbacks the PR body names are at memops.cuh:261/:384 and shared_indices.cu:125. The pybind change is a host-side `hipPointerGetAttributes`. The Windows fixes are `CMAKE_CXX_STANDARD 17` in the template and the `\\`->`/` replacement in cmake/rerun_if_needed.py.
+
+### Observation for jeff (not a blocker)
+
+`cuda_to_hip.h:3,6` carries `Copyright (c) 2026 Advanced Micro Devices, Inc.` and `Author: Jeff Daily <jeff.daily@amd.com>`. It is the only `Author:` line in the tree; upstream files carry only the Skydio line. AGENTS.md defaults to no new copyright or author lines unless upstream style expects them. The lines have been in the published PR since it opened, so keeping or dropping them is jeff's call.
+
+### For the porter
+
+1. One new commit on moat-fix-465 (no amend): README.md:116-120 per item 1, and the pybind_array_tools.cc:177-179 comment per item 2. No device code changes. A HIP build of the pybind TU plus `jargon.py --port symforce` is enough.
+2. Fill `<sha>` in the drafts below. Leave the validator and GPU placeholders until validator records exist at the final head.
+
+### Fix review PR body (for jeff; replaces the porter's 2026-11-04 draft)
+
+`jargon.py -` and `prose.py` clean on both drafts below. Placeholders: `<sha>` (item 1/2 commit), `<final head>`, `<MI250X>`/`<W7800>` (see item 3), and the validator lists.
+
+````markdown
+Fix round for symforce-org/symforce#465, refreshed on 2026-11-04. The staging branch is now at <final head> (it was at 1a9e9770).
+
+## What the maintainer asked
+
+aaron-skydio (2026-09-14) is willing to merge and wants tests that cover at least the codegen part and preferably the build, and AMD GPU testing where we can manage it. The PR also conflicted with main (`sort_indices.h`), and the 2026-08-19 reply to bjoernellens1 promised results on their SumStore report.
+
+## What changed since the published PR head
+
+- `ce4f2532` merges upstream main at acdedd0b. The one conflict was `runtime/sort_indices.h`: upstream added `#include <sys/types.h>` where the branch selects the HIP or CUDA runtime header, and the resolution keeps both.
+- `38f16ea3` maps `cudaFuncSetAttribute` and `cudaFuncAttributeMaxDynamicSharedMemorySize` in `cuda_to_hip.h` for upstream's new dynamic-shared-memory launch code (78e380a), and `cudaGetDeviceCount`, which the generated solver has called since 2ee29780 (GPU device selection). That mapping was already missing at the published head e994ef0b, so a HIP build of any generated solver failed there. The new HIP build of the tests (`9ef7a6a3`) is what caught it. The 38f16ea3 commit body says upstream "now" uses `cudaGetDeviceCount`; that is wrong, and the commit is pushed, so it stays.
+- `1a984fc0` drops the trailing `SumStore` barrier added in 1a9e9770. See the reconciliation below.
+- `5256d2ad` regenerates the checked-in codegen test data with `symforce_caspar_codegen_test.py --update`. The templates emit `cuda_to_hip.h`, so the test failed 4/4 right after the merge.
+- `daa1a7bf` zeroes `r_kp1_norm2_tot` in the solver template's `DoUpdateRFirst()`. Only `DoUpdateR()` zeroed it, so the first PCG step of every solver iteration added the new residual norm to whatever the accumulator held: the previous iteration's last value, or uninitialized memory on the first iteration. The value feeds only the PCG exit test (`DoBeta()` reads `beta_numerator` and `alpha_numerator`, not this). The new tridiagonal test exposed it on ROCm, and it is not specific to ROCm. The daa1a7bf commit body also names beta and "freshly allocated memory"; the commit is pushed, so it stays.
+- `9ef7a6a3` is the build test. `test/CMakeLists.txt` builds the `*_cuda_test.cc` Caspar GPU tests with HIP when CMake finds no CUDA compiler but finds a HIP compiler. With `-DCMAKE_HIP_ARCHITECTURES` set, the tests build with no AMD GPU present.
+- `92ec5462` is the codegen test. `test_generate_build_files` checks in the generated `CMakeLists.txt` (with and without Python bindings), which is where the HIP-specific generated output lives.
+- `1ee93b2c` includes cooperative_groups and CUB from `cuda_to_hip.h` only when compiling CUDA (`__CUDACC__`). A CUDA 12.8 build of the test targets failed under g++ without this.
+- `d5eb335d` applies clang-format to `cuda_to_hip.h`, which `make lint` requires.
+- `f82e4abf` removes the unused reduction helpers (`caspar_hip::reduce_sum`, `reduce_max`, `match_any_mask`, `labeled_reduce_sum`) and the `CG_*` macros from `cuda_to_hip.h`. Nothing called them, and the labeled reduction gave wrong sums for lanes whose labels are not contiguous. The HIP code objects of all 78 compiled `.cu` files are byte-identical before and after, for gfx90a and for gfx1100.
+- `<sha>` fixes the README's ROCm example, which called a `compile_caspar_library` function that does not exist (the API is `caslib.compile(out_dir, use_hip=True, hip_arch=...)`), corrects what the README says `cuda_to_hip.h` maps, and updates a comment in `pybind_array_tools.cc` that still referred to the removed helpers.
+
+## SumStore reconciliation
+
+Upstream a768308 (#469) and our barrier aimed at the same symptoms (NaN and run-to-run variation in `SumStore` sums on AMD), but they are different changes. `SumStore` and `SumFlushFinal` open with a block-wide barrier, and every other store into the scratch buffer below element 32 comes from a lane of the tile that reads it, so back-to-back calls are ordered without a trailing barrier on wave32 and wave64 alike. Using upstream's checked-in kernels:
+- On an MI250X (gfx90a), without a768308's register zeroing, the padding-lane score is NaN at every size that leaves padding lanes, with or without the barrier.
+- With zeroing, on an MI250X (gfx90a), per-block partial sums are bit-identical over 200 runs at sizes from 1000 to 1000003, with and without the barrier. This covers the padding-lane kernel, and the alpha numerator/denominator kernel that bjoernellens1 named (two `SumStore` calls back to back into one buffer), whose sums with integer inputs equal an exact host reference in every run.
+- On a Radeon PRO W7800 (gfx1100), the alpha kernel matches the exact reference in 200 of 200 runs at every size, and the padding-lane score has no NaN, with and without the barrier. A control kernel that does overwrite the scratch window from another wave right after `SumStore` fails in 159 and 200 of 200 runs at the two largest sizes without the barrier and in none with it, so this check can see a race when there is one.
+- The remaining 1 to 2 ulp variation in final scores at multi-block sizes comes from the order of cross-block float atomics in `SumFlushFinal`. It is the same with and without the barrier.
+
+So no race remains for the barrier to fix, and it is removed. bjoernellens1's commit stays in the branch history.
+
+## Evidence
+
+These are porter and reviewer builds, not validator records. Validators still have to run at <final head>.
+- linux-gfx90a (porter build at f82e4abf): ctest 209/212 pass. All six Caspar tests pass (backend coverage 302/302, padding lane 6/6, solver 24/24, tridiagonal 140/140 in 5 of 5 runs, both codegen tests). The three failures are environmental: `rustfmt` missing (2 Rust codegen tests) and `nbsphinx` missing `jsonschema` (docs). The gfx90a code objects of all 78 HIP object files are byte-identical to d5eb335d.
+- linux-gfx1100 (review build at d5eb335d): the four Caspar GPU tests and both codegen tests pass; `caspar_tridiagonal_cuda_test` passes 5/5 runs. Without the daa1a7bf line, 15 of 140 tridiagonal assertions fail in 5 of 5 runs. At f82e4abf, the gfx1100 code objects and whole object files of the same 78 `.cu` files are byte-identical to d5eb335d.
+- CUDA: CUDA 12.8 compile and link of the four Caspar test targets at f82e4abf (no NVIDIA GPU). The SASS of all 78 nvcc object files is identical to d5eb335d.
+- `make lint` is clean, and `jargon.py --port symforce` is clean.
+- <validator records at the final head>
+
+## Upstream reply
+
+Merged current main into the branch. The only conflict was an include in `sort_indices.h`.
+
+On SumStore: after a768308 the trailing barrier from bjoernellens1's report isn't needed, so I took it back out. The NaN and run-to-run variation they saw fit #469. On an <MI250X> the padding-lane kernel without the register zeroing gives NaN at every padded size, with or without the barrier. With the zeroing, per-block sums are bit-identical over 200 runs whether or not the barrier is there, including the back-to-back `SumStore` kernel they pointed at. On a <W7800> (wave32) that kernel matches an exact reference in every run, with or without the barrier. Thanks @bjoernellens1 for the report and the reproduction.
+
+Tests: the `*_cuda_test.cc` tests now also build with HIP when CMake finds no CUDA compiler. With `-DCMAKE_HIP_ARCHITECTURES` set they build without an AMD GPU, so a ROCm container can compile every checked-in Caspar kernel and solver. `symforce_caspar_codegen_test` now also checks in the generated `CMakeLists.txt`, which is where the HIP build differs.
+
+At the head I pushed before, a HIP build of a generated solver failed. The solver calls `cudaGetDeviceCount` (since the GPU device selection change, 2ee29780), and `cuda_to_hip.h` never mapped it. The new HIP build of the tests is what caught it, and it is mapped now. Running the tests on ROCm turned up one more bug: `DoUpdateRFirst()` never zeroed `r_kp1_norm2_tot`, so the first PCG step of each solver iteration added onto the previous iteration's value (or uninitialized memory on the first) before the PCG exit test read it. That's fixed in the template, and it affects CUDA too. A CUDA build of the tests also showed that host `.cc` files including the generated headers failed under g++, so `cuda_to_hip.h` now includes cooperative_groups and CUB only when compiling CUDA. I also removed some reduction helpers from `cuda_to_hip.h` that nothing used, and fixed the README's ROCm example, which called a function that doesn't exist.
+
+Tested on <AMD GPUs with a validator record at the final head>.
+````
+
+### Upstream PR body revision (for jeff; replaces the porter's 2026-11-04 draft)
+
+````markdown
+This PR adds AMD GPU support to Caspar, so its generated kernels and runtime build and run on AMD GPUs through ROCm/HIP. The default NVIDIA CUDA build is unchanged. It is enabled with `caslib.compile(out_dir, use_hip=True, hip_arch=...)`, or with `-DUSE_HIP=ON` in the generated build.
+
+The CUDA runtime spellings Caspar emits and uses (`cudaMalloc`, `cudaFuncSetAttribute`, error handling and the rest of the runtime API, plus `atomicAdd_block` and the `cub` namespace) are mapped to their HIP equivalents in one compatibility header, `source/runtime/cuda_to_hip.h`. In a CUDA build the header includes the CUDA runtime, and also cooperative_groups and CUB when compiling CUDA, so host-only `.cc` files can include it. The header provides no device-side fallbacks of its own. The code generation templates emit this header, so the symbolic kernel definitions are unchanged.
+
+The code generation gains a HIP path. `CasparLibrary.compile()` in `code_generation/library.py` takes `use_hip` and `hip_arch`, and the generated `CMakeLists.txt` has a `USE_HIP` branch that compiles the sources as HIP against `hip` and `hipcub`. The runtime sources get the matching HIP changes: shuffle-based tile reductions where HIP lacks `cg::reduce`, shared-memory atomics where it lacks `cg::labeled_partition` and coalesced-group shuffles (`memops.cuh`), a block-strided copy where it lacks `cg::memcpy_async` (`shared_indices.cu`), and a host-side pointer-attribute lookup in the pybind layer. A small Windows build fix (C++17, git path separator) is included for the all-clang ROCm toolchain.
+
+The PR also fixes a solver bug that ROCm exposed: `DoUpdateRFirst()` did not zero `r_kp1_norm2_tot` before accumulating into it, so the first PCG step of each solver iteration added onto the previous iteration's value (or uninitialized memory on the first) before the PCG exit test read it. The bug is not specific to ROCm.
+
+### Tests
+
+- `symforce_caspar_codegen_test` regenerates its checked-in kernels and solvers through the HIP-aware templates. It also checks in the generated `CMakeLists.txt`, with and without Python bindings, so changes to the HIP (or CUDA) build branch show up in review like other codegen changes.
+- `test/CMakeLists.txt` builds the `*_cuda_test.cc` Caspar GPU tests with HIP when CMake finds a HIP compiler and no CUDA compiler. With `-DCMAKE_HIP_ARCHITECTURES` set the build needs no AMD GPU, so a ROCm-only machine or container compiles every checked-in Caspar kernel and solver. Running them needs an AMD GPU, as the CUDA tests need an NVIDIA one.
+
+### How to build for AMD GPUs
+
+Pass `use_hip=True` and the target architecture when compiling a generated library:
+
+```python
+caslib.compile(out_dir, use_hip=True, hip_arch="gfx90a")
+```
+
+Set `hip_arch` to the target AMD GPU (for example `gfx90a` for CDNA2 or `gfx1100` for RDNA3). The ROCm build needs a HIP-enabled compiler (`hipcc` or `amdclang++`) and the `hip` and `hipcub` packages.
+
+To build the Caspar GPU tests for ROCm:
+
+```
+cmake -B build -DCMAKE_HIP_ARCHITECTURES=gfx90a
+cmake --build build --target bin.tests.caspar_padding_lane_cuda_test bin.tests.caspar_solver_cuda_test bin.tests.caspar_tridiagonal_cuda_test bin.tests.caspar_backend_coverage_cuda_test
+ctest --test-dir build -R caspar_
+```
+
+### Validation
+
+The Caspar GPU tests (padding lane, solver, tridiagonal, backend coverage) and `symforce_caspar_codegen_test` pass on <AMD GPUs with a validator record at the final head>. The Caspar test targets also compile and link with CUDA 12.8.
+````
