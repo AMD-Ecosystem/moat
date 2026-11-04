@@ -2228,3 +2228,113 @@ head_sha (linux-gfx90a and linux-gfx1100 already `completed` here; the
 windows-gfx1201 remain `completed` but stale at `f84b39ae` -- no gate is open
 on them since gfx1151 already satisfies `windows`, but they will show
 `revalidate` if anyone dispatches them. No anomalies, no code changes needed.
+
+## Fix round 2026-11-04 (porter, linux-gfx90a) -- merge upstream main into moat-fix-1399 (#1399 revival)
+
+Why: apache/mahout#1399 (head `moat-port` @ 9a3a08e0f) was closed by GitHub's stale bot on 2026-10-25 with no maintainer decline (committer 400Ping had said on 09-17 he would review it). jeff ruled the PR alive: bring the port onto current upstream main in a staged round, review + revalidate, then jeff reopens #1399 and the approved round fast-forwards its branch. The record keeps `pr_state: open` on purpose (keeps `moat-port` frozen; the PR is about to be reopened).
+
+Staging: `moat-fix-1399` cut from the published tip 9a3a08e0f, then MERGED (never rebased) with upstream/main 6f354a5cf (#1582). New staging tip / head_sha: **95845611e6f2baaeb80cf876b493678a97017135**.
+- 667f76ff977f972b183e045e80cb8110f739ba4e -- the merge (parents 9a3a08e0f, 6f354a5cf). Message is git's default per jeff's instruction for this round ("the merge commit keeps git's default message"), which overrides the 2026-08-13 reviewer finding that asked for a `[ROCm]` prefix on the merge. git's default here would have been `Merge remote-tracking branch 'upstream/main' into moat-fix-1399`, which names the staging branch (jargon.py flags `moat`); the merge was therefore redone (local only, never pushed) with `git config merge.suppressDest moat-fix-1399` so git's own default omits the destination: `Merge remote-tracking branch 'upstream/main'` plus git's default `# Conflicts:` trailer. Tree identical to the first attempt.
+- 95845611e -- `[ROCm] Read back DLPack test tensors through the vendor-neutral copy` (port fix, test-only).
+
+Env: AMD Instinct MI250X (gfx90a, wave64), HIP_VISIBLE_DEVICES=2 (dispatcher-pinned), ROCm 10.1 `rocm-sdk` pip packages in the image's Python (HIP 7.16.26385, AMD clang 24.0.0git), cargo/rustc 1.97.1, torch 2.16.0a0 (ROCm build, image env), Python 3.11.17, pytest 7.3.2, maturin 1.16.0.
+
+### What upstream changed (9a3a08e0f's upstream base 206ff2fe8 .. 6f354a5cf, 25 commits)
+QDP-relevant: #1464 streaming H2D copy size, #1475 loader encoding-name normalisation, #1505 builder backends name GPUs only / every encode result is a QdpTensor (Python API + new tests/test_amd_builders.py, testing/qdp_python/test_backend_selection.py; test_fallback.py removed), #1551 return an error instead of aborting when no CUDA device exists (`QdpEngine::new_with_precision` checks `cuda_runtime_available()` first; new tests/engine_init.rs and testing/qdp_python/test_engine_init.py), #1568 IO-channel shutdown before join in stream_encode, #1569 bound Parquet-driven GPU writes against the allocated state (`ensure_within_capacity`, new lib tests + a new GPU angle-from-Parquet test with the `download_dlpack_complex_f64` helper), #1581 CI fix after #1505. The rest is CI, website, docs and qumat. **No `.cu` or qdp-kernels file changed**, no new cuda* runtime entry point in cuda_ffi.rs, no warp-size or lane-mask code.
+
+### Conflicts (1) and resolution
+1. `qdp/qdp-core/tests/common/mod.rs`, `cuda_device()`: upstream added a doc paragraph and a `cuda_runtime_available()` early return under `#[cfg(target_os = "linux")]`; our side carries `#[cfg(qdp_gpu_platform)]` on the same line. Took upstream's doc + early return, kept our cfg.
+Everything else auto-merged (DEVELOPMENT.md, encoding/angle.rs, encoding/mod.rs, lib.rs, gpu_angle_encoding.rs); checked each by hand.
+
+### Port fix after the merge (95845611e)
+Upstream's new `download_dlpack_complex_f64` helper (tests/common/mod.rs) was NVIDIA-only three ways: raw `cudarc::driver::sys::lib().cuMemcpyDtoH_v2`, `assert_eq!(device_type, kDLCUDA)`, and `#[cfg(target_os = "linux")]`. The HIP build would not compile the test crate. Now: copy via `qdp_core::gpu::download_complex_f64` (the cuda_ffi `cudaMemcpy` D2H the metrics helpers already use on both backends -- hipMemcpy on HIP), expected tag `kDLCUDA` / `kDLROCM` by `feature = "hip"` (same pattern as gpu_api_workflow's DLPack test), gate `qdp_gpu_platform`. Shape/dtype/pointer asserts unchanged; dropped the now-unused byte_count/host_len locals.
+No new HIP mapping was needed: `cuda_runtime_available()` (upstream #1416, mapped to `hipGetDeviceCount` in the 2026-08-13 round) is what #1551's new check calls, and the HIP shim's `CudaDevice::new` already returns `Err` rather than panicking.
+
+### No-device path (#1551) on the HIP build
+Exercised by hiding all GPUs from the test process only. `HIP_VISIBLE_DEVICES=-1` is NOT usable on this ROCm 10.1 image: torch's ROCm agent aborts at import (`agent.cpp:208] Sequence '-1' in HIP_VISIBLE_DEVICES=-1 not recognized`, SIGABRT, rc 134) -- an environment quirk, not the port; `_qdp` alone handles it fine. Use an empty `HIP_VISIBLE_DEVICES=` instead.
+- `HIP_VISIBLE_DEVICES= cargo test ... --test engine_init` -> 3 passed (engine returns `MahoutError::Cuda("no usable CUDA device ...")`, no panic).
+- `HIP_VISIBLE_DEVICES= pytest testing/qdp_python/test_engine_init.py` -> 2 passed (`RuntimeError` matching "no usable CUDA device", no abort). These two skip on a GPU host by design.
+- gpu_angle_encoding / parquet_f32_fidelity GPU cases print `SKIP: No GPU available` and pass, as upstream intends.
+- `_qdp.cuda_available()` -> False with GPUs hidden, True on the pinned GCD.
+The error text still says "no NVIDIA driver or GPU detected"; left as upstream wrote it (the Python test matches on "no usable CUDA device"). Reviewer may judge whether AMD wording is wanted; it would be a message-only change.
+
+### Build + test (exact commands)
+```
+# agent_space/mahout_env.sh
+export CARGO_HOME=$PWD/agent_space/cargo-home RUSTUP_HOME=/opt/rust PATH=/opt/rust/bin:$PATH
+export ROCM_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+export QDP_USE_HIP=1 QDP_HIP_ARCH_LIST=gfx90a
+export LD_LIBRARY_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_core/lib
+ulimit -c 0     # HIP_VISIBLE_DEVICES=2 from the dispatcher
+utils/timeit.sh mahout compile -- cargo build --manifest-path projects/mahout/src/qdp/Cargo.toml \
+  -p qdp-core -p qdp-kernels --no-default-features --features hip -j 64
+utils/timeit.sh mahout test -- cargo test --manifest-path projects/mahout/src/qdp/Cargo.toml \
+  -p qdp-core -p qdp-kernels --no-default-features --features hip -j 64 -- --test-threads=1
+```
+- Host gotcha: with the pip `rocm-sdk` layout, `libamdhip64.so.7` lives in `_rocm_sdk_core/lib`, not under ROCM_PATH (`_rocm_sdk_devel`); test binaries fail to load (exit 127, "libamdhip64.so.7: cannot open shared object file") until LD_LIBRARY_PATH names it. Environment, not the port.
+- build: exit 0 (19.4s). Same pre-existing warnings as earlier rounds.
+- test: exit 0, **385 passed, 0 failed, 4 ignored** (same 4 ignored doctest fixtures). Per suite: lib 114, arrow_ipc_io 5, engine_init 3, estimate 9, gpu_angle_encoding 12, gpu_api_workflow 8, gpu_basis_encoding 7, gpu_dlpack 9, gpu_fidelity 17, gpu_iqp_encoding 22, gpu_memory_safety 4, gpu_norm_f32 2, gpu_ptr_encoding 69, gpu_validation 8, null_handling 6, numpy 4, parquet_f32 7, parquet_f32_fidelity 4, parquet_io 8, preprocessing 14, reader 3, tensorflow_io 9, torch_io 3, types 6, qdp-kernels lib 0, amplitude_encode 21, angle_encode 10, doctests 1 = 385.
+- Reconciliation vs 368 at 9a3a08e0f (all three platforms): +17 = exactly upstream's added `#[test]` functions (`git grep -c '#\[test\]' <rev> -- qdp/qdp-core/tests qdp/qdp-core/src qdp/qdp-kernels` sums to 381 at 9a3a08e0f and 398 at 95845611e): lib 100 -> 114 (+14: #1568 shutdown_io_thread, #1569 ensure_within_capacity and parquet reader cases), engine_init 0 -> 3 (new). gpu_angle_encoding stays 12 (#1569 changed cases in place).
+- Rerun with `--nocapture`: zero `SKIP` lines, i.e. every GPU test actually ran on the GCD (passing tests' stdout is otherwise captured, so a silent early-return skip would be invisible).
+
+Python (extension wheel built into the job's own venv; the image's torch is read via PYTHONPATH, nothing installed into the shared env):
+```
+$FLEET_VENV/bin/python -m pip install maturin
+utils/timeit.sh mahout compile -- $FLEET_VENV/bin/maturin build \
+  --manifest-path projects/mahout/src/qdp/qdp-python/Cargo.toml --features hip --profile dev \
+  --compatibility linux --interpreter $FLEET_VENV/bin/python --out agent_space/mahout_wheels
+$FLEET_VENV/bin/python -m pip install --no-deps --force-reinstall \
+  agent_space/mahout_wheels/qumat_qdp-0.3.0.dev0-cp311-cp311-linux_x86_64.whl
+export PYTHONPATH=/opt/python-3.11-venv/lib/python3.11/site-packages
+S=$PWD/projects/mahout/src
+utils/timeit.sh mahout test -- $FLEET_VENV/bin/python -m pytest --rootdir $S \
+  $S/testing/qdp $S/testing/qdp_python $S/qdp/qdp-python/tests -q -rs -p no:cacheprovider
+```
+(timeit.sh changes directory, so pass absolute test paths.)
+- wheel: exit 0 (16.8s, dev profile per the release-LTO caveat).
+- pytest: exit 0, **321 passed, 14 skipped, 0 failed** (335 collected). Skips: 2 multi-GPU, 1 tensorflow absent, 1 loader path-validation timing, 5 test_torch_ref sm_-arch reference checks (CUDA-only reference path, as in every earlier round), 2 test_engine_init (GPU present -- run separately above with GPUs hidden, 2 passed), 2 AmdQdpEngine not built, 1 test_triton_amd_backend NVIDIA reference absent. Upstream's new suites all ran and passed: test_amd_builders.py 16, test_backend_selection.py 17, test_loader_encoding.py 12, plus updated test_backend_routing / test_triton_amd_backend.
+
+### Other backends of the changed code
+- `qdp_no_cuda` stub (default cuda feature, nvcc absent): `env -u QDP_USE_HIP -u QDP_HIP_ARCH_LIST -u ROCM_PATH QDP_NO_CUDA=1 CARGO_TARGET_DIR=agent_space/mahout-nocuda-target cargo check -p qdp-core --tests -j 64` -> exit 0 (type-checks the helper's cudarc/kDLCUDA arm and the cuda path of qdp-core), and `cargo test -p qdp-core --test engine_init --test gpu_angle_encoding` on the same config -> 3 + 12 passed (stub engine returns Err).
+- Real-nvcc CUDA build: NOT run -- this host has no CUDA toolkit (`which nvcc` empty, no /usr/local/cuda or conda cuda env). Owed by whichever host has nvcc (the 2026-08-13 gfx1100 host had nvcc 12.8). The round changes no `.cu`, no build.rs, and no CUDA-side non-test source beyond upstream's own code; the CUDA arm of the one port change is type-checked above.
+
+### Gates
+- `git merge-base --is-ancestor` upstream/main and 9a3a08e0f against 95845611e: both yes. `git merge-tree --write-tree upstream/main moat-fix-1399`: clean. So the later fast-forward of #1399's branch is possible and the PR is conflict-free against current main.
+- Jargon: `python3 utils/jargon.py -C projects/mahout/src --commits upstream/main..moat-fix-1399 --diff upstream/main..moat-fix-1399` -> clean. `--port mahout` reports 5 `HEAD_SHA` hits, all in upstream's own `.github/scripts/automerge_gate.py` and `.github/workflows/automerge-gate.yml` (the fork's `main` mirror is at ac30a8c95, 2026-05-18, so the range includes upstream commits); `git diff upstream/main moat-fix-1399 | grep -c HEAD_SHA` = 0.
+- Docs: unchanged by this round; qdp/DEVELOPMENT.md "### AMD GPU build (ROCm / HIP)" and qdp/qdp-python/README.md "### AMD ROCm Usage" present and accurate.
+- Fork worktree clean. Pushed ONLY `moat-fix-1399` (95845611e); `moat-port` still 9a3a08e0f (`git ls-remote`).
+- Commit titles: 68 chars (`[ROCm] ...`), merge 44 chars.
+
+### Control-plane notes from this round
+- `set-state ... porting` run from a `main` checkout commits the lock to local main and fails to push (trunk protected). Run `fix-branch` first (or be on `port/<name>`); I reset the unpushed local main commit.
+- `fix-branch`'s re-home (`ensure_port_branch`) pushes origin/main's sha to `port/<name>`, and the pre-push hook runs check.py on the local tree, whose `readme` gate failed because the trunk README table was stale against other branches. Worked around by cutting `port/mahout` by hand from origin/main plus one `README: regenerate status table` commit (785f6b28), after which `fix-branch` found the branch and only wrote the round.
+- `fix-branch` left status.json modified but uncommitted; committed with `commit-project`.
+
+### Owed next
+- Reviewer: review the delta `9a3a08e0f..95845611e` (the merge with `git show --cc`, plus 95845611e).
+- Revalidation: linux-gfx90a (this host's run above is porter evidence; the validator records the platform), linux-gfx1100, windows-gfx1151. A CUDA nvcc compile check on a host with a toolkit.
+- Then `upstream.py --fix-review` with the body below, approval, jeff reopens #1399, `--merge-fix --apply`.
+
+### Proposed fix review PR body (for jeff)
+Title: `[ROCm] Merge current upstream main into the AMD GPU build`
+
+```
+apache/mahout#1399 was closed by the stale bot on 2026-10-25 with no maintainer decline; the plan is to reopen it once this round is approved. Since 9a3a08e, upstream main moved through the code the port touches (#1505, #1551, #1568, #1569, #1581), so this round merges current main (6f354a5) into the PR branch. It is a merge, not a rebase, so the existing review history on #1399 stays valid.
+
+What changed:
+- 667f76f: merge of upstream main. One conflict, in qdp-core/tests/common/mod.rs (`cuda_device()`): upstream's new `cuda_runtime_available()` early return and doc kept, the port's `qdp_gpu_platform` cfg kept. Everything else merged cleanly.
+- 9584561: upstream's new `download_dlpack_complex_f64` test helper (used by #1569's angle-from-Parquet GPU test) used cudarc's raw `cuMemcpyDtoH_v2`, asserted `kDLCUDA` and was gated on `target_os = "linux"`. It now copies through `qdp_core::gpu::download_complex_f64`, expects `kDLROCM` on the HIP build, and uses the `qdp_gpu_platform` gate. Test-only.
+
+No kernel source, build script or runtime binding changed. #1551's no-device check calls `cuda_runtime_available()`, which already maps to `hipGetDeviceCount` on the HIP build, so a machine with no AMD GPU gets the same `Err`/`RuntimeError` as one with no NVIDIA GPU (checked with all GPUs hidden: Rust engine_init 3 passed, Python test_engine_init 2 passed).
+
+Validation at 9584561 (fill in from the validator records before opening):
+- linux-gfx90a (MI250X, ROCm 10.1): Rust 385 passed, 0 failed, 4 ignored (368 + upstream's 17 new tests); Python 321 passed, 14 skipped, 0 failed.
+- linux-gfx1100: <pending>
+- windows-gfx1151: <pending>
+- CUDA (nvcc) compile check: <pending>
+
+## Upstream reply
+
+This branch is now merged with current main (through #1582), with one test-helper change so the new Parquet angle test also runs on the HIP build. The Rust and Python QDP test suites, including the new engine-init and Parquet capacity tests, pass on AMD Instinct MI250X, Radeon PRO W7800 and Radeon 8060S GPUs, and the no-GPU error path behaves the same as on CUDA.
+```
+The `## Upstream reply` names gfx1100 (W7800) and gfx1151 (8060S) on the assumption they revalidate; edit it if either does not before the PR is opened.
