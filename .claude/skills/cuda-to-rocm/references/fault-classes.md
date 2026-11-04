@@ -316,9 +316,17 @@ creates a hipBLASLt handle and fails the same way. `hipblasCreate`, `hipsolverDn
 and cuDNN never touch the null stream at creation, so a CUDA framework that creates handles
 lazily (a new eager stream, an op's kernel state) while a graph runner captures on another
 thread breaks only on HIP. Switching the creating thread to relaxed capture mode does not help.
-What works: a process-wide shared mutex that each capture holds shared from begin to end, while
-the compat `cublasLtCreate` and `cudnnCreate` hold it exclusively. Skip the wait on a thread that
-is itself capturing, or it deadlocks. To find who creates the handle, break on `hipMemset` in gdb
+Tracked as ROCm/rocm-libraries#11838; do not file it again. Pick the workaround by who creates
+the handle. If it is the capturing thread or a thread that issues work into the same capture
+(PyTorch's autograd worker), create the handles before capture begins and stock a shared pool
+those threads draw from; PyTorch does this (`ensureCublasLtHandlesAvailable`, called from
+`CUDAGraph::capture_begin`, pytorch #196399) and refuses creation under capture with a clear
+error. If unrelated threads create handles while another thread captures (an eager worker next
+to a graph runner in thread-local mode), nothing at capture begin can know how many handles they
+will need, so serialize instead: a process-wide shared mutex that each capture holds shared from
+begin to end, while the compat `cublasLtCreate` and `cudnnCreate` hold it exclusively. Skip the
+wait on a thread that is itself capturing, or it deadlocks. The mutex is deadlock-free only while
+no thread blocks on another thread inside its capture window; check that for every capture site. To find who creates the handle, break on `hipMemset` in gdb
 and read the backtrace: a log ordered by time alone suggests a lazy allocation inside the
 captured call, but here the call came from another thread. (oneflow, 021f4ad34: an eager fused
 MLP backward run right after an nn.Graph training step under `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`.)

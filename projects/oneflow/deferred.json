@@ -196,12 +196,12 @@
       "id": "hipblaslt-create-null-stream-memset-during-capture",
       "kind": "rocm-bug-report",
       "component": "hipBLASLt",
-      "summary": "hipblasLtCreate zero-fills its buffers with a synchronous null-stream hipMemset; while any thread captures a blocking stream that fails with hipErrorStreamCaptureImplicit (906) and the process exits with status 1 inside the call (miopenCreate too, via its hipBLASLt handle). cuBLASLt does not. Standalone repro and draft report in notes (not filed; jeff's call). oneflow works around it in 021f4ad34 by serializing handle creation against capture.",
+      "summary": "hipblasLtCreate zero-fills its buffers with a synchronous null-stream hipMemset; while any thread captures a blocking stream that fails with hipErrorStreamCaptureImplicit (906) and the process exits with status 1 inside the call (miopenCreate too, via its hipBLASLt handle). cuBLASLt does not. Already tracked upstream as ROCm/rocm-libraries#11838 (no new report). oneflow works around it in 021f4ad34 by serializing handle creation against capture.",
       "refs": [
         "projects/oneflow/notes.md#porter-round-2026-11-04"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-libraries/issues/11838",
       "created_at": "2026-11-04T08:29:54Z",
       "decided": null
     }
