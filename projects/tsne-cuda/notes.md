@@ -184,3 +184,41 @@ CMake Error at .../FindPackageHandleStandardArgs.cmake:233 (message):
 Cause: `find_package(FAISS REQUIRED)` needs a CUDA GPU FAISS (headers `faiss/gpu/*.h` plus `libfaiss`); `src/include/util/distance_utils.h` includes `faiss/gpu/GpuIndexFlat.h`, `StandardGpuResources.h` and `GpuCloner.h`, so a CPU-only FAISS would not do. None is installed on this host and there is no conda (upstream INSTALL.md recommends `conda install -c conda-forge libfaiss`). Building upstream FAISS v1.15.1 from source with nvcc 12.8 (`-DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_PYTHON=OFF -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON -DCMAKE_CUDA_ARCHITECTURES=90`, `cmake --build build --target faiss`, `cmake --install`) was refused by this session's permission policy as building third-party code the task did not name, so it was not run. No fork change is indicated; nothing was pushed to the fork.
 
 To finish: provide a CUDA GPU FAISS (conda-forge `libfaiss` built for CUDA 12, or the source build above), then rerun the configure with `-DCMAKE_PREFIX_PATH=<faiss prefix>` (or `-DFAISS_ROOT_DIR`, `-DFAISS_INCLUDE_DIR`/`-DFAISS_LIBRARY`) and `cmake --build build -j 64`, which compiles the 16 library sources and `tsnecuda_test` (`src/test/test.cu`, `cuda_utils.cu`, `reduce_utils.cu`, GoogleTest v1.15.2 via FetchContent).
+
+## Validation 2026-11-04 (validator, linux-gfx1201) -> validation-failed at 4fedca7
+
+Radeon gfx1201 (`rocm_agent_enumerator`: gfx1201), `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, ROCm SDK 10.1.0 (TheRock pip, no `/opt/rocm`). Fresh clone of `AMD-Ecosystem/tsne-cuda` at `4fedca7`, tree clean. FAISS `moat-port` `01a09e8` install for gfx1201 (the earlier gfx1201 review's build, recipe above; 168 gfx1201 code objects in `libfaiss.so`).
+
+Build, INSTALL.md Linux form with the SDK root in place of `/opt/rocm` and the documented `-DCMAKE_HIP_COMPILER` hint (system GCC 13.3 for C/CXX, SDK clang 24 for HIP), rc 0, warnings only (`-Wunused-value` 52, `-Wswitch` 12, `-Wignored-pragmas` 12, `-Wmacro-redefined` 6):
+```
+SDK=$(rocm-sdk path --root); FAISS_PREFIX=<faiss install>
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 \
+  -DCMAKE_HIP_COMPILER=$SDK/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH="$SDK;$FAISS_PREFIX" -DBUILD_TESTS=ON
+cmake --build build -j 24
+```
+Runtime: Python 3.11 venv, scikit-learn 1.9.1, numpy 1.26.4, pytest 7.3.2; `PYTHONPATH` unset, package not installed (`import tsnecuda` from the source root -> `ModuleNotFoundError`, `pip show tsnecuda` -> not found).
+
+### Why it failed: `tsnecuda_test` is flaky (test reference, not the GPU)
+
+- First `./build/tsnecuda_test` x10: 8 `PASSED 8 tests`, 2 failed (`Reductions.ReduceSum_Row_512x512`). Then x30: 30 passed; x100: 98 passed, 2 failed (`Reductions.ReduceSum_Col_512x512`: `cpu -75.362464905` vs `gpu -75.362594604`, difference 1.297e-4 > 1e-4). Final x10: 10 passed. Failures come in adjacent pairs because the inputs are seeded with `time(NULL)` (one seed per second).
+- Seed pinned with an `LD_PRELOAD` `time()` shim (`agent_space/seedshim`): seeds 1..300 -> only seed 217 fails (`ReduceSum_Row_512x512`, difference 1.068e-4), and it fails 10/10 times, seed 216 passes 5/5. Deterministic in the data, not a race.
+- Seed 217, row 228, against a double-precision sum of the same inputs: CPU float sequential reference -59.540256500 (off by 1.06e-4), GPU (hipBLAS) -59.540149689 (off by 5.1e-7), double -59.540150203. The GPU is right; the test's float sequential CPU reference drifts past the 1e-4 absolute tolerance on some row/column sums of 512 N(0,1) values.
+- The 1e-4 `EXPECT_NEAR` and the float CPU accumulation are upstream's (`src/include/test/test_reduce.h`); upstream never built these tests, and `b11946a` builds them, so the port now ships a test that fails at random on wall-clock seeds. Fix for the porter, as a new commit in the gtest topic: accumulate the CPU reference in `double` in the sum/mean tests (or compare with a tolerance relative to the magnitude). Every arch validates that commit, gfx942 included (its validation at this head is in flight).
+
+### Everything else passed at 4fedca7
+
+- `ctest --test-dir build --output-on-failure`: 1/1 (twice).
+- `cd build/python && python -c "import tsnecuda; tsnecuda.test()"`: rc 0, total_time 2.90 s.
+- `python -m pytest -v build/python/tsnecuda/test` from the source root: 7 passed in 23.41 / 23.48 / 23.54 s (3 runs).
+- Metric harness (the `test_tsne.py` helpers called directly, `agent_space/metrics.py`), against the file's thresholds: digits trustworthiness 0.99297 (min 0.97; scikit-learn TSNE 0.99330, allowed gap 0.02), 5-fold 10-NN 0.96941 (min 0.95); `TSNE_SYNC_KERNELS=1` 0.99219 / 0.96831; launch overrides (FFT 64, ATTR/REP/INTEG 256) 0.99255 / 0.96607; blobs 50000 ARI 1.0 (min 0.95); blobs 10000 k=1024 CPU FAISS ARI 1.0 (min 0.9).
+- `utils/jargon.py --port tsne-cuda`: clean (needs local `main` and `moat-port` branches in a fresh clone).
+
+### Runtime finding: `libomp.so` with the documented GCC recipe
+
+With the INSTALL.md form, `libtsnecuda.so` links GCC's `libgomp.so.1`, but a FAISS built with the ROCm clang needs `libomp.so` (from `$SDK/llvm/lib`) and its RUNPATH holds only `$SDK/lib`. Every Python test then fails at import: `OSError: libomp.so: cannot open shared object file` (7 pytest failures, `tsnecuda.test()` rc 1). The earlier runs built tsne-cuda with the SDK clang for C/CXX, whose libomp RUNPATH happened to satisfy FAISS. Worked around by `LD_LIBRARY_PATH=$FAISS_PREFIX/lib:$SDK/llvm/lib`; all results above use that. It is a property of the FAISS install, but the INSTALL.md recipe is what hits it: the porter may want one sentence there (make FAISS's OpenMP runtime loadable, or use the ROCm clang for C/CXX as well). That process also loads both libgomp and libomp; no problem seen in these runs.
+
+### CUDA gate
+
+`cuda-not-validated`: no CUDA toolkit or conda on this host, and the CUDA build also needs a CUDA-built GPU FAISS (`find_package(FAISS REQUIRED)`), which the conda toolkit does not provide. Still owed on the mi355 host before the port goes to jeff.
