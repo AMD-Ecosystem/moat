@@ -2471,3 +2471,41 @@ cuda-not-validated on this host: no CUDA toolkit (`which nvcc` empty, no /usr/lo
 
 ### Result
 `python3 utils/moatlib.py set-state mahout linux-gfx90a completed --agent validator` at head_sha 95845611e6f2baaeb80cf876b493678a97017135. For the fix review PR body: "linux-gfx90a (MI250X, ROCm 10.1): Rust 385 passed, 0 failed, 4 ignored; Python 321 passed, 14 skipped, 0 failed."
+
+## Validation 2026-11-04 (validator, windows-gfx1151) -- fix round 1399 at 95845611e, PASS
+
+Full real-GPU revalidation at the staged fix round's tip. Checkout: `projects/mahout/src` (fork clone), `git fetch origin moat-fix-1399 && git checkout 95845611e6f2baaeb80cf876b493678a97017135`; `git status --porcelain` empty before and after; `git ls-remote`: `moat-fix-1399` 95845611e, `moat-port` still 9a3a08e0f (freeze intact). Nothing pushed to the fork.
+
+Platform: AMD Radeon(TM) 8060S (gfx1151, RDNA3.5 wave32), Windows 11, TheRock ROCm 7.14 (`D:/Develop/TheRock/.venv`), torch venv `agent_space/torch_venv` (Python 3.13), cargo msvc, clang-cl host via `agent_space/win_rocm_env.sh`, `-j6` (host-capped), `ulimit -c 0`. No large-allocation tests excluded; nothing needed excluding.
+
+### Rust (same recipe as the 2026-08-14 windows section)
+```
+source agent_space/win_rocm_env.sh; export CARGO_HOME=/d/Develop/.cargo RUSTUP_HOME=/d/Develop/.rustup PATH=$CARGO_HOME/bin:$PATH
+export QDP_USE_HIP=1 QDP_HIP_ARCH_LIST=gfx1151 QDP_HIPCC="$(cygpath -w $ROCM_ROOT/bin/hipcc.exe)"
+utils/timeit.sh mahout compile -- cargo build --manifest-path projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -j6
+cargo build ... --tests -j6 ; rocm_stage_runtime projects/mahout/src/qdp/target/debug/deps ; mkdir -p D:/tmp
+utils/timeit.sh mahout test -- cargo test --manifest-path projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -j6 -- --test-threads=1 --nocapture
+```
+- build exit 0 (same pre-existing warnings). test exit 0: **385 passed, 0 failed, 4 ignored** over 29 `test result:` lines; zero `SKIP` lines with `--nocapture`, so every GPU test ran on the card. Identical to gfx90a/gfx1100 at this sha. Versus this platform's earlier record (368 at 9a3a08e0f): +17 = upstream's added tests (lib +14, engine_init +3).
+
+### No-GPU engine init (empty `HIP_VISIBLE_DEVICES=`)
+- `HIP_VISIBLE_DEVICES= cargo test -p qdp-core --no-default-features --features hip --test engine_init --test gpu_angle_encoding -- --test-threads=1 --nocapture`: engine_init 3 passed; gpu_angle_encoding 12 passed, GPU cases print `SKIP: No GPU available`, no panic.
+- `HIP_VISIBLE_DEVICES= pytest testing/qdp_python/test_engine_init.py`: 2 passed. `_qdp.cuda_available()` False hidden, True with the GPU visible.
+
+### Python
+```
+agent_space/torch_venv/Scripts/python.exe -m maturin build --manifest-path projects/mahout/src/qdp/qdp-python/Cargo.toml --features hip --profile dev --out agent_space/mahout_wheels_win --interpreter agent_space/torch_venv/Scripts/python.exe
+python.exe -m pip install --no-deps --force-reinstall --ignore-requires-python <wheel>; rocm_stage_runtime agent_space/torch_venv/Lib/site-packages/_qdp
+utils/timeit.sh mahout test -- python.exe -m pytest projects/mahout/src/testing/qdp projects/mahout/src/testing/qdp_python projects/mahout/src/qdp/qdp-python/tests -q -rs -p no:cacheprovider
+```
+- wheel exit 0; pytest exit 0: **286 passed, 49 skipped, 0 failed** (335 collected, same as the 321+14 on Linux). Difference from Linux (321/14): 35 tests skipped here because the Triton AMD backend is not installed in this Windows venv ("Triton AMD backend unavailable"); on Linux they ran. 286 + 35 = 321. The other 14 skips are the same set as Linux (2 multi-GPU, 1 tensorflow absent, 1 loader path-validation, 5 test_torch_ref CUDA-only reference with this torch wheel lacking a gfx1151 arch entry, 2 test_engine_init with a GPU present (run above hidden), 2 AmdQdpEngine not built, 1 NVIDIA triton reference absent). Previous record here 286/31 at 9a3a08e0f: same passed count; the extra skips are upstream's added Triton-backend tests.
+
+### CUDA gate
+Not run: no CUDA toolkit on this host; not re-claimed (the linux-gfx90a/gfx1100 sections record the state at this sha).
+
+### Gates
+- Jargon: `jargon.py -C projects/mahout/src --commits origin/main..95845611e --diff origin/main..95845611e` reports only the 5 known `HEAD_SHA` hits in upstream's own automerge-gate code (identical to the other validators' finding; not port text).
+- Docs: unchanged this round; qdp/DEVELOPMENT.md and qdp-python/README.md ROCm sections present.
+
+### Result
+`set-state mahout windows-gfx1151 completed --agent validator` at head_sha 95845611e6f2baaeb80cf876b493678a97017135.
