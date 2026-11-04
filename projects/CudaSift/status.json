@@ -7,7 +7,7 @@
   "priority": 5.346,
   "ext_type": "unknown",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-11-04T17:09:30Z",
+  "updated_at": "2026-11-04T23:16:20Z",
   "head_sha": "db7c163aa8f48c939ef5e03afaf1a7823173eb3f",
   "pr_url": "https://github.com/Celebrandil/CudaSift/pull/97",
   "pr_number": 97,
@@ -147,13 +147,8 @@
       "last_agent": "validator"
     }
   },
-  "published_sha": "6d1429a1988aab428b91f9113199eed5371712b7",
-  "fix": {
-    "branch": "moat-fix-97",
-    "base_sha": "6d1429a1988aab428b91f9113199eed5371712b7",
-    "review_pr": "https://github.com/AMD-Ecosystem/CudaSift/pull/2",
-    "opened_at": "2026-11-04T16:37:08Z"
-  },
+  "published_sha": "db7c163aa8f48c939ef5e03afaf1a7823173eb3f",
+  "fix": null,
   "porting_released": {
     "arch": "linux-gfx90a",
     "since": "2026-11-04T16:44:12Z",
@@ -161,10 +156,10 @@
   },
   "pr_approval": {
     "approved_by": "jeffdaily",
-    "at": "2026-10-16T18:04:33Z",
-    "head_sha": "6d1429a1988aab428b91f9113199eed5371712b7",
-    "content_sha256": "341dd0e619cbdee3e419ef97036cd1c20784ce3bb77bb43b459df44f6c06946b",
-    "review_pr": "https://github.com/AMD-Ecosystem/CudaSift/pull/1"
+    "at": "2026-11-04T17:10:28Z",
+    "head_sha": "db7c163aa8f48c939ef5e03afaf1a7823173eb3f",
+    "content_sha256": "e7634029dfdac2171c7ec152e664f00b41909ee6e1e787a40849325a01bebdc2",
+    "review_pr": "https://github.com/AMD-Ecosystem/CudaSift/pull/2"
   },
-  "fix_merged_at": "2026-10-16T18:06:12Z"
+  "fix_merged_at": "2026-11-04T23:16:20Z"
 }
