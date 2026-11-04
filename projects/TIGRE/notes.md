@@ -1434,3 +1434,9 @@ Run from `tigre-win/Python` with `PYTHONPATH=<that dir> MPLBACKEND=Agg` (`agent_
 - CUDA compile gate: `cuda-not-validated: no CUDA toolkit on this Windows host`. Owed by a Linux host with nvcc at b61ff14 (the delta only touches the CUDA path's includes).
 
 Outcome: windows-gfx1151 -> completed at b61ff14c87689beb1b08e2bcd8223c29ce85a83d. This satisfies the windows gate at this head.
+
+## 2026-11-04: upstream issue and fix review PR (orchestrator)
+
+- Upstream issue https://github.com/CERN/TIGRE/issues/802 (jeff approved and posted): multi-GPU halo uploads in `tv_proximal.cu` are unsynchronized; reproduced on 2x MI300X (18/20 distinct outputs at 512^3) and fixed by one `cudaDeviceSynchronize()`. The same pattern in `GD_TV.cu`/`GD_AwTV.cu` is from code reading only (0/240 reproduced). None of these syncs are in #747, per jeff.
+- The deterministic ~5% 1-GPU vs 2-GPU tv_proximal difference is under investigation: `~/.claude/plans/tigre-multigpu-tv-split-difference.md`.
+- Fork review PR https://github.com/AMD-Ecosystem/TIGRE/pull/1 (`moat-fix-747` -> `moat-port` at b61ff14), body as jeff approved.
