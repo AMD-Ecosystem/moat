@@ -1,0 +1,104 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "f9fc9a936e3f",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "src\\libs\\cuda\\helper_cuda.h",
+      "src\\libs\\cuda\\helper_math.h",
+      "src\\util.h",
+      "src\\voxelize.cu",
+      "src\\voxelize.cuh",
+      "src\\voxelize_solid.cu"
+    ],
+    "markers": {
+      "device_code": 300,
+      "kernel": 2
+    },
+    "libraries": {}
+  },
+  "components": [
+    {
+      "id": "executable:cuda_voxelizer",
+      "kind": "executable",
+      "where": "CMakeLists.txt",
+      "added_by": "planner",
+      "note": "declared via ${CUDA_VOXELIZER_EXECUTABLE}, invisible to the scanner; GPU path = voxelize.cu (surface) + voxelize_solid.cu (-solid), linear and morton indexing"
+    },
+    {
+      "id": "path:cpu-fallback",
+      "kind": "non_gpu_path",
+      "where": "src/cpu_voxelizer.cpp",
+      "added_by": "planner",
+      "note": "-cpu OpenMP path; must build and not regress in the HIP build; oracle for the GPU differential test"
+    },
+    {
+      "id": "vendored:nvidia-helper-headers",
+      "kind": "vendored",
+      "where": "src/libs/cuda/helper_cuda.h, src/libs/cuda/helper_string.h",
+      "added_by": "planner",
+      "note": "replace pre-2018 CUDA Samples EULA-notice copies with NVIDIA's BSD-3-Clause versions (counsel ruling, deferred.json cuda-voxelizer-nvidia-proprietary-rescan)"
+    },
+    {
+      "id": "vendored:helper_math",
+      "kind": "vendored",
+      "where": "src/libs/cuda/helper_math.h",
+      "added_by": "planner",
+      "note": "BSD-3 2022; host+device vector math; must compile under HIP"
+    },
+    {
+      "id": "build:msvc-vs2022",
+      "kind": "build_path",
+      "where": "msvc/vs2022/cuda_voxelizer.vcxproj",
+      "added_by": "planner",
+      "note": "NVIDIA-only Visual Studio project using the CUDA MSBuild customization"
+    },
+    {
+      "id": "ci:github-actions-autobuild",
+      "kind": "ci",
+      "where": ".github/workflows/autobuild.yml",
+      "added_by": "planner",
+      "note": "upstream NVIDIA build + -cpu smoke"
+    },
+    {
+      "id": "doc:readme-build",
+      "kind": "doc",
+      "where": "README.md",
+      "added_by": "planner",
+      "note": "add a ROCm build subsection"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "build:msvc-vs2022",
+      "reason": "Alternative NVIDIA-only build path; the CMake build (ported) already covers Windows and is what upstream's own Windows CI uses. Proposed cut, pending jeff's confirmation (plan.md open question 1)."
+    },
+    {
+      "id": "ci:github-actions-autobuild",
+      "reason": "MOAT adds no fork GitHub Actions (CPU-only CI cannot observe GPU correctness) and leaves upstream's NVIDIA workflow untouched."
+    }
+  ],
+  "removed_from_floor": [
+    {
+      "id": "library:cublas",
+      "reason": "false hit: only an error-string overload of _cudaGetErrorEnum in src/libs/cuda/helper_cuda.h behind an #ifdef on that library's header guard; the project never includes or calls the library"
+    },
+    {
+      "id": "library:cufft",
+      "reason": "false hit: only an error-string overload of _cudaGetErrorEnum in src/libs/cuda/helper_cuda.h behind an #ifdef on that library's header guard; the project never includes or calls the library"
+    },
+    {
+      "id": "library:curand",
+      "reason": "false hit: only an error-string overload of _cudaGetErrorEnum in src/libs/cuda/helper_cuda.h behind an #ifdef on that library's header guard; the project never includes or calls the library"
+    },
+    {
+      "id": "library:cusolver",
+      "reason": "false hit: only an error-string overload of _cudaGetErrorEnum in src/libs/cuda/helper_cuda.h behind an #ifdef on that library's header guard; the project never includes or calls the library"
+    },
+    {
+      "id": "library:cusparse",
+      "reason": "false hit: only an error-string overload of _cudaGetErrorEnum in src/libs/cuda/helper_cuda.h behind an #ifdef on that library's header guard; the project never includes or calls the library"
+    }
+  ]
+}
