@@ -81,12 +81,20 @@ Integration facts from the HEonGPU swap:
   version 4.0.0) still has the RMM 25.x resource API: templated
   `pool_memory_resource<Upstream>` / `statistics_resource_adaptor<Upstream>`
   under `rmm/mr/device/`, `allocate_async(bytes, alignment, stream)`, and
-  `set_current_device_resource_ref`. RMM 26.06 made those non-templates under
-  `rmm/mr/`, reordered allocation to `allocate(stream, bytes, alignment)`, and
-  made `set_current_device_resource` return an owning
-  `cuda::mr::any_resource`. When upstream moves to RMM 26.x first, no hipMM
-  pin can match: keep the newest hipMM commit and confine the difference to
-  the resource types (`#if defined(__HIP_PLATFORM_AMD__)` in the header,
+  `set_current_device_resource_ref`. Upstream RMM changed this in steps, so
+  check the tag the project pins rather than its major version (checked
+  against the rapidsai/rmm release tags): 25.12 ships the resource headers
+  under both `rmm/mr/` and `rmm/mr/device/`, and 26.02 drops `rmm/mr/device/`;
+  26.02 also switches to stream-first `allocate(stream, bytes, alignment)`
+  plus `allocate_sync`; `pool_memory_resource` and
+  `statistics_resource_adaptor` stay templates through 26.04, and 26.06 is
+  the first release where they are non-templates and
+  `set_current_device_resource` returns an owning `cuda::mr::any_resource`.
+  So an upstream at 26.02-26.04 needs the header paths and the allocation
+  helpers on HIP but not the resource-type branches, and one at 25.12 that
+  uses `rmm/mr/device/` needs neither. When upstream reaches RMM 26.06+
+  first, no hipMM pin can match: keep the newest hipMM commit and confine
+  the difference to the resource types (`#if defined(__HIP_PLATFORM_AMD__)` in the header,
   which consumers compiled as HIP also see) and to two or three call-site
   helpers whose CUDA arms are verbatim the calls they replace. Tell the
   maintainer the HIP arms go away once a hipMM with the 26.x API exists.
