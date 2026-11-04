@@ -172,6 +172,17 @@ overwrite, and the failing set varies run to run. This is a use-after-free that 
 on CUDA, not an allocator defect -- confirm by keeping the source alive and watching the
 failures vanish. (CV-CUDA: InterpolationVarShapeWrap.)
 
+The same staging difference hides a **cross-stream race** with no free involved: an upload
+by `cudaMemcpy*Async` from pageable memory on one stream, then a consumer kernel on ANOTHER
+stream with no event or stream sync between them. On CUDA the copy has effectively landed
+before the launch; on ROCm the first kernel batch can read a partly written array.
+Fingerprint: an intermittent wrong result confined to the first launch's outputs, while a
+sibling code path that ends its setup with a device sync stays bitwise stable. Detect it by
+running the same call 20 times and comparing bitwise with the first; one
+`hipStreamSynchronize` on the upload stream makes it stable. (TIGRE: parallel-beam Siddon
+`CreateTextureParallel`, wrong pixels up to 22% of max in projections 0 to 8, 2 to 7 runs
+in 20 on gfx90a.)
+
 **A functor returning a reference to a by-value or forwarded parameter** binds to a
 temporary that expires at the return. nvcc and CUB happen to keep the value live in
 registers; rocPRIM block-loads the dangling reference and reads garbage. Return BY VALUE --
