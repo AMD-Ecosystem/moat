@@ -118,3 +118,7 @@
 {"kind":"phase","ts":"2026-11-04T20:18:18Z","phase":"cuda-compile","seconds":15.581,"exit":0,"cmd":"bash -c cmake -S /var/lib/jenkins/fleet/jobs/mi355-20261104-121609-cuda-tigre-leap/moat/agent_space/cuda/leap-port -B /var/lib/jenkins/fleet/jobs/mi355-20261104-121609-cuda-tigre-leap/moat/agent_space/cuda/leap-port/build -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release && cmake --build /var/lib/jenkins/fleet/jobs/mi355-20261104-121609-cuda-tigre-leap/moat/agent_space/cuda/leap-port/build -j 42"}
 {"kind":"session","ts":"2026-11-04T20:19:35Z","epoch":1793823575.190510460,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-11-04T20:21:22Z","epoch":1793823682.544839924,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-04T20:26:22Z","epoch":1793823982.176678116,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T20:26:50Z","phase":"compile","seconds":19.711,"exit":0,"cmd":"bash -c cd projects/LEAP/src && python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T20:31:28Z","phase":"test","seconds":260.441,"exit":0,"cmd":"bash agent_space/run/run.sh"}
+{"kind":"session","ts":"2026-11-04T20:33:05Z","epoch":1793824385.562481897,"event":"end","platform":"linux-gfx90a"}

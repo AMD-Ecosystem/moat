@@ -1626,3 +1626,56 @@ Verdict: review-passed. The delta is exactly the four bounds checks in `src/bila
 
 ### Review PR body at d2112b6
 The "Corrected review PR body at d2112b6" in the porter entry above is accurate against head: the new sentence ("tested `i > N.x` ... read and wrote one slice past the volume ... leaves every in-range output unchanged") holds because the launched kernels both read `f[ind]` and write `f_filtered[ind]` at `i == N.x`; the `.def` still lists 207 symbols; no `*_cpu.cpp` change in 0c8846f..d2112b6. `python3 utils/jargon.py - < body`: clean; `python3 utils/prose.py body`: clean. No further correction needed; the placeholders are for the validators' results at d2112b6.
+
+## Validation 2026-11-04 (validator, linux-gfx90a, revalidate, moat-port @ d2112b6)
+
+Result: completed at d2112b63f025446cd519453423679c5cd8740bf5. On gfx90a (the texture path) every output is bit-identical to 5f6816f (36/36 dump arrays, 20/20 point arrays including `bilateral_out` and `priorbilateral_out`), gpu_vs_cpu_validate is 12/12, 0 bytes leak, and BilateralFilter and PriorBilateralFilter complete with no fault. Times match 5f6816f and this platform's b37ca0a table.
+
+Host: AMD Instinct MI250X GCD (gfx90a), HIP_VISIBLE_DEVICES=1 (pinned by the dispatcher), torch 2.16.0a0+git6c3af02, HIP 7.16.26385, numpy 1.26.4, /opt/python-3.11-venv. All GPU runs under `ulimit -c 0`. Fresh fork clone at `projects/LEAP/src` checked out at d2112b6 (= origin/moat-port tip). Baseline: `git archive 5f6816f` in `agent_space/cmp/5f6816f`. Scripts `dump_outputs.py`, `compare_outputs.py`, `dump_point.py`, `leak_check.py` extracted unchanged from this file.
+
+### Build (both rc=0, `all archs for visible cards are included for compilation (gfx90a)`, 0 errors)
+```
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=32 bash utils/timeit.sh LEAP compile -- bash -c "cd projects/LEAP/src && python setup_AMD.py build_ext --inplace"   # 19.7 s
+(cd agent_space/cmp/5f6816f && env -u PYTORCH_ROCM_ARCH MAX_JOBS=32 python setup_AMD.py build_ext --inplace)
+```
+
+### Tests (one wrapped run, `utils/timeit.sh LEAP test`, 260.4 s for both builds)
+```
+python dump_outputs.py <build>/src <x>.npz 256      # interleaved: 5f6816f r1, d2112b6 r1, 5f6816f r2, d2112b6 r2
+python compare_outputs.py old_r1.npz new_r1.npz     # ALL BIT-IDENTICAL (36/36)
+python compare_outputs.py old_r2.npz new_r2.npz     # ALL BIT-IDENTICAL (36/36)
+python compare_outputs.py old_r1.npz old_r2.npz     # ALL BIT-IDENTICAL (run-to-run); same for new_r1 vs new_r2
+python dump_point.py <build>/src pt_<x>.npz         # 5f6816f, d2112b6
+python compare_outputs.py pt_old.npz pt_new.npz     # ALL BIT-IDENTICAL (20 arrays); bilateral_out, priorbilateral_out 0/2179072 differ
+(cd <build> && AMD_LOG_LEVEL=3 python unitTests/gpu_vs_cpu_validate.py)   # rc=0 both; 12/12 PASS, OVERALL: PASS; result lines identical between builds
+python leak_check.py <build>/src                    # delta 0 bytes over 200 iterations, both builds (sum(g)=377330)
+```
+gpu_vs_cpu_validate values equal the gfx90a record at b37ca0a: parallel VD/SF adjoint 2.54e-05/1.64e-05; fan 2.44e-04/1.85e-04; coneparallel 1.24e-03/5.07e-05; cone-flat 1.42e-04/1.46e-04 (fbp 0.9998); cone-curved 8.54e-05/1.30e-04; modular VD 3.39e-03 (fbp 0.9998), modular SF fwd-vs-VD err 0.000; every other fbp_interior 1.0000. 61 `hsa_amd_pointer_info() failed` log lines per build (pre-existing). 0 `Error: GPU` lines in any log.
+
+Bilateral filters (`dump_point.py` filter cases, volume N.x = 133): `bilateral ok {'out': (2179072, 0)}` and `priorbilateral ok {'out': (2179072, 0)}` in both builds, no fault and no non-finite value. On gfx90a the old `i > N.x` check never faulted, so the expected effect of d2112b6 here is no output change, which is what was seen. As before, `upsample` fails in the script (ctypes dtype) and `dictionary` memory-faults in the OMP kernel (`HSA_STATUS_ERROR_MEMORY_FAULT`, then `hipSetDevice Error: an illegal memory access`) in both builds; pre-existing, not counted. The `ok`/`FAILED` lines of the two dump_point runs are identical.
+
+Timings, median of 5, 256 cols x 266 rows x 360 views, device-resident tensors, ms, project / backproject. d2112b6/5f6816f ratios 0.994-1.036 (the one outlier is coneparallel_VD backproject r2, 77.2 vs 74.5, on a shared host; its r1 ratio is 1.004); every other ratio is 0.994-1.006. Matches this platform's b37ca0a table (within 0.6%, the same outlier aside):
+```
+geometry_model   5f6816f r1       d2112b6 r1       5f6816f r2       d2112b6 r2
+parallel_VD      168.0 /  71.9    168.3 /  71.6    168.3 /  71.8    167.3 /  71.6
+parallel_SF      167.7 /  72.0    167.5 /  71.7    168.3 /  72.2    168.2 /  71.8
+fan_VD           158.5 /  70.8    158.6 /  70.8    158.7 /  70.6    159.1 /  70.6
+fan_SF           158.7 / 138.1    159.5 / 138.2    158.3 / 137.9    159.2 / 138.1
+coneparallel_VD  332.0 /  74.2    332.4 /  74.5    332.4 /  74.5    334.9 /  77.2
+coneparallel_SF  332.4 / 140.3    332.5 / 140.8    332.4 / 140.3    332.4 / 140.3
+cone-flat_VD     299.0 /  72.5    298.5 /  72.6    298.8 /  72.8    298.8 /  72.9
+cone-flat_SF     298.5 / 398.7    298.9 / 399.5    298.9 / 399.5    298.5 / 399.7
+cone-curved_VD   327.1 /  74.0    327.2 /  73.9    327.1 /  73.6    327.2 /  74.3
+cone-curved_SF   327.1 / 250.6    327.1 / 250.3    327.1 / 250.6    327.1 / 250.7
+modular_VD       303.4 /  72.5    303.5 /  72.8    303.4 /  72.4    303.4 /  72.5
+modular_SF       303.0 / 375.9    303.4 / 376.6    303.4 / 376.3    303.0 / 378.0
+```
+Comparison: the porter's d2112b6 gfx90a run (entry above) found dump_point bit-identical to b37ca0a and 12/12; this run agrees and adds the full dump, the 5f6816f comparison, timings and the leak check. This platform's b37ca0a record (bit-identical to 5f6816f, 12/12, 0 bytes) is reproduced at d2112b6.
+
+### Completion checks
+- `python3 utils/jargon.py --port LEAP`: clean (local `main`/`moat-port` branches created from origin in the fresh clone).
+- Documentation: unchanged from the b37ca0a record (upstream documents installation only on its external wiki; the PR body carries the build command).
+- `git -C projects/LEAP/src status --porcelain`: empty.
+
+### CUDA gate
+Already recorded at d2112b6 ("CUDA compile check (nvcc 12.8) at d2112b6" above: rc=0, warnings identical to upstream). Not repeated; no nvcc on this host.
