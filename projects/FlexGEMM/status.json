@@ -8,7 +8,7 @@
   "ext_type": "setuptools-cuda-extension",
   "stage": "awaiting-fork",
   "adopted_at": "2026-08-27T02:01:36Z",
-  "updated_at": "2026-11-04T07:23:33Z",
+  "updated_at": "2026-11-04T18:05:40Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -45,6 +45,11 @@
     "duplicate_effort": "Linux: upstream itself (JeffreyXiang/FlexGEMM#18 merged 2026-04-20, MI300X-only evidence). Windows ROCm: none. Open #31 (Windows/MSVC build) edits the same setup.py Windows block; coordinate. No AMD-Ecosystem/ROCm repo.",
     "viable": true,
     "summary": "Reverses the Aug decline because TRELLIS.2 (now forked) needs FlexGEMM on the windows gate: Linux ROCm is upstream already (#18), but setup.py's Windows branch hands nvcc-only -Xcompiler flags to hipcc, GEMM is Triton via experimental triton-windows AMD, no wave32/RDNA evidence; MIT tier 1, small setup.py delta plus 3-gate validation.",
-    "at": "2026-11-04T07:23:32Z"
+    "at": "2026-11-04T07:23:32Z",
+    "decided": {
+      "choice": "fork",
+      "by": "jeffdaily",
+      "at": "2026-11-04T18:05:40Z"
+    }
   }
 }
