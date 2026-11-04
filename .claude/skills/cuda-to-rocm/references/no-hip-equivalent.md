@@ -77,3 +77,17 @@ Integration facts from the HEonGPU swap:
   the search path: rapids-cmake then finds the just-installed hipccl config,
   which fails promoting `roc::rocthrust` to global scope. Fresh tree.
 - hipMM's README says Linux-only; a Windows gate needs its own evidence.
+- hipMM lags RMM's API. Its newest line (`release/rocmds-26.03`, package
+  version 4.0.0) still has the RMM 25.x resource API: templated
+  `pool_memory_resource<Upstream>` / `statistics_resource_adaptor<Upstream>`
+  under `rmm/mr/device/`, `allocate_async(bytes, alignment, stream)`, and
+  `set_current_device_resource_ref`. RMM 26.06 made those non-templates under
+  `rmm/mr/`, reordered allocation to `allocate(stream, bytes, alignment)`, and
+  made `set_current_device_resource` return an owning
+  `cuda::mr::any_resource`. When upstream moves to RMM 26.x first, no hipMM
+  pin can match: keep the newest hipMM commit and confine the difference to
+  the resource types (`#if defined(__HIP_PLATFORM_AMD__)` in the header,
+  which consumers compiled as HIP also see) and to two or three call-site
+  helpers whose CUDA arms are verbatim the calls they replace. Tell the
+  maintainer the HIP arms go away once a hipMM with the 26.x API exists.
+  (HEonGPU, RMM 26.08 sync)
