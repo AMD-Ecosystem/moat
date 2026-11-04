@@ -612,3 +612,44 @@ Jargon: `jargon.py --port cuPDLP-C` (local `main` created at origin/main in the 
 cuda-not-validated: no CUDA toolkit on this host (no conda, no nvcc). The CUDA compile gate is still owed at 8f43bf8.
 
 Result: completed at 8f43bf8401712e7ce342cc52a412872f09f22069 (wave32).
+
+## Fix round 2026-11-04 (moat-fix-41 -> f56941f, linux-gfx1100): copyright/author lines
+
+jeff's rulings on the two open questions: keep 09bb532 (build.sh `MODE=hip` + INSTALL) unchanged; remove the AMD copyright and author lines the port added.
+
+Search: `git diff upstream/main 8f43bf8 | grep -niE '^\+.*(copyright|author|\(c\)|daily|amd\.com|rights|license|spdx|contributor)'` finds exactly six added lines, the copyright and author pair in each of `FindHIPConf.cmake`, `cupdlp/cuda/cuda_to_hip.h` and `cupdlp/cuda/cupdlp_cuda_kernels.cu`. All three headers are port-added: `FindHIPConf.cmake` and `cuda_to_hip.h` are new files, and upstream's `cupdlp_cuda_kernels.cu` starts with `#include` and has no comment block. AUTHORS, OWNERSHIP.txt and THIRD_PARTY_NOTICES are untouched by the port.
+
+f56941f `[ROCm] Drop per-file copyright and author lines from HIP files`, a new commit on top of 8f43bf8 (no amend, no rebase), removes the copyright line, the author line and the empty comment separator after them in each file. The description comments stay (`# Locate the ROCm/HIP toolchain...`, `CUDA-to-HIP compatibility header...`, `AMD GPU (HIP/ROCm) support for the cuPDLP-C CUDA kernels.`). Each of the three files is still all CRLF (62/62, 108/108, 474/474 lines).
+
+`moatlib.py classify cuPDLP-C 8f43bf8 f56941f`: `class=comment-only arch_independent=True inert=True`, all three files comment-only. advance-head carried linux-gfx90a and linux-gfx1100 forward to f56941f (method source-class, class comment-only). The windows gate still owes a run (both Windows records are at d380bca, as they were at 8f43bf8), so `fix-ready` is False until then.
+
+Rebuild and rerun at f56941f (AMD Radeon Pro W7800 48GB gfx1100, TheRock pip SDK, HIP_VISIBLE_DEVICES=1, `ulimit -c 0`), in the fresh clone:
+```bash
+export ROCM_PATH=$(hipconfig --rocmpath)
+GPU_ARCH=gfx1100 MODE=hip bash build.sh
+build-coinor-hip/bin/testcudalin
+build-coinor-hip/bin/testcublas
+.coinor-deps/cupdlp-hip-install/bin/plc -fname ThirdParty/HiGHS/check/instances/afiro.mps -nIterLim 5000
+```
+build.sh exit 0 (`CMAKE_HIP_ARCHITECTURES: gfx1100`), CTest 4/4, installed suite 4/4 (bounded -10, equality 3, mixed_bounds -1.000000015, compressed_mps -10), NumPy checker pass=true, both checker-regression controls PASS. testcudalin 0..81 rc=0; testcublas `2-norm is :0.000000` rc=0; afiro Optimal, primal -4.64750896e+02, dual -4.64831392e+02, rel infeas 3.21e-05 / 3.60e-06, rel gap 8.65e-05, 200 iterations. Identical to 8f43bf8. This is the porter's run.
+
+Jargon: `jargon.py --port cuPDLP-C` gives the same 2 known false positives in bundled `ThirdParty/HiGHS` comments (stale fork `main` mirror). Pushed only `moat-fix-41` (8f43bf8..f56941f); `moat-port` stays at d380bca. Stage ported.
+
+### Fix review PR body at f56941f (for jeff)
+
+Supersedes the earlier drafts. prose.py clean, `jargon.py -` clean, ASCII. The GPUs named are the platforms with a completed record at f56941f: linux-gfx90a (MI250X) and linux-gfx1100 (W7800), both validated at 8f43bf8 and carried forward to f56941f as comment-only. If a Windows platform completes at f56941f before the PR opens, its GPU may be added; if the head moves again, re-check. Title unchanged: `[ROCm] Merge current upstream main into the HIP port`
+
+```
+Upstream PR COPT-Public/cuPDLP-C#41 showed as conflicting after upstream landed its COIN-OR preparation commit (b196976, merged in f81f459). That commit bundles HiGHS 1.6.0, adds build.sh, INSTALL and a tests/ suite, rewrites the README, and converts most source and CMake files to CRLF. No maintainer has commented on the PR; this round only brings it up to date.
+
+What changed on this branch:
+- f10a1e8: merge of upstream main (`-X ignore-cr-at-eol`). The three real conflicts were resolved keeping both sides: the HIP branches stay, the CUDA branches take upstream's `${CMAKE_CUDA_PATH}/include`, and the README takes upstream's text plus one AMD line. Every file the port adds or changes keeps upstream's line endings for that file (CRLF for the CMake files and CUDA sources, LF for README.md, INSTALL and build.sh); all other files are byte-identical to upstream, so the PR diff stays the port only.
+- 09bb532 and 8f43bf8: `MODE=hip` for build.sh, with INSTALL documenting it, listing where the hip install lands (`.coinor-deps/cupdlp-hip-install/bin/plc`) and noting that it needs the ROCm libraries kept in place.
+- f56941f: removes the AMD copyright and author lines from FindHIPConf.cmake, cuda_to_hip.h and cupdlp_cuda_kernels.cu, because the project keeps no per-file headers and records attribution in AUTHORS and OWNERSHIP.txt. Comment-only; each file keeps its description comment.
+
+Retested at 8f43bf8 on AMD Instinct MI250X (gfx90a) and AMD Radeon Pro W7800 (gfx1100): testcudalin, testcublas and plc on afiro (Optimal, -464.75, 200 iterations), upstream's CTest suite 4/4, the installed suite 4/4, the NumPy checker, and `MODE=hip bash build.sh` end to end. f56941f changes only comments; the W7800 rebuild and rerun at f56941f gave the same results.
+
+## Upstream reply
+
+I merged current main into this branch, so it no longer conflicts, and every file the port touches keeps the line endings the repository uses for it. I retested on an AMD Instinct MI250X (gfx90a) and an AMD Radeon Pro W7800 (gfx1100): testcudalin, testcublas, afiro, and your new CTest suite and NumPy checker all pass. build.sh also gains a `MODE=hip` option, documented in INSTALL, and I removed the per-file copyright and author lines the port had added, since the project records attribution in AUTHORS and OWNERSHIP.txt.
+```
