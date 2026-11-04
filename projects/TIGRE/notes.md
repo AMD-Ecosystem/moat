@@ -1243,3 +1243,30 @@ jeff's plan `tigre-multigpu-halo-race-verification.md` in claude-shared plans; f
 - **GD_TV / GD_AwTV halo race not reproduced** in 240 two-GPU runs (up to 512^3 and 64x2048x2048, also `GPU_MAX_HW_QUEUES=16`); analysis only.
 - Separate deterministic finding: 2-GPU tv_proximal differs from 1-GPU by about 5% of max at the split slices and the last slice, in every run and with or without the fix. Cause not confirmed.
 - All 1-GPU controls were bitwise stable.
+
+## CUDA compile check (nvcc 12.8) at b61ff14
+
+Compile-only helper run (fleet job on a Linux host with the CUDA 12.8 toolkit and no NVIDIA GPU), requested by jeff. No platform state changed. Answers "CUDA compile check is owed at b61ff14" in the cuRAND include fix round above. Result: **the CUDA build passes at b61ff14: rc=0, 8/8 extensions, 629 ptxas entry functions, nvcc and host warnings identical per compile to the upstream baseline.**
+
+Toolchain (same as the 34f31a6 check): nvcc `release 12.8, V12.8.93`, gcc 13.3.0, Python 3.11.17, numpy 1.26.4, Cython 3.3.1 (pip-installed into the job venv), setuptools 79.0.1. 17 `-gencode` pairs per `.cu`.
+
+Commands (fresh clones; `port` = AMD-Ecosystem/TIGRE `moat-fix-747` at b61ff14c87689beb1b08e2bcd8223c29ce85a83d, `base` = CERN/TIGRE master at 69bdd9f728e02095f38d27a9746a88eb79fc5e09):
+```
+export CUDA_HOME=/usr/local/cuda-12.8 PATH=/usr/local/cuda-12.8/bin:$PATH
+cd base && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16   # rc=0
+bash utils/timeit.sh TIGRE cuda-compile -- bash -c "cd port && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16"   # rc=0, 35.3 s
+```
+
+| tree | rc | extensions built | nvcc compiles | `-std` on nvcc lines | ptxas entry functions |
+|---|---|---|---|---|---|
+| base 69bdd9f | 0 | 8/8 | 19 (13 unique `.cu`) | 19x `-std=c++11` | 629 |
+| port b61ff14 | 0 | 8/8 | 20 (13 unique `.cu`) | 20x `-std=c++11` | 629 |
+
+- Extensions in both: `_Atb _AwminTV _Ax _RandomNumberGenerator _gpuUtils _minPICCS _minTV _tv_proximal`.
+- `RandomNumberGenerator.cu` compiles: the delta 34f31a6..b61ff14 is that file only (+5 lines), restoring `#include <curand_kernel.h>` and `<curand.h>` on the CUDA path.
+- The extra nvcc compile is `gpuUtils.cu` (8x vs 7x), which setup.py adds to `_Ax`, as at 34f31a6.
+- `c++14` appears nowhere in the CUDA build log.
+- nvcc warnings per file: `#177-D` in Siddon_projection_parallel.cu (17), ray_interpolated_projection_parallel.cu (17), voxel_backprojection_parallel.cu (102) in both trees; `#550-D` in gpuUtils.cu 238 in base and 272 in port, i.e. 34 per compile times 7 vs 8 compiles. No other nvcc warning, no `#12-D` / `#1835-D` left.
+- Host g++ warnings (NumPy deprecated API, `malloc` return ignored in GpuIds.cpp, zero-length printf format in TIGRE_common.cpp) identical in count to the baseline.
+
+The CUDA compile gate is satisfied at b61ff14. No CUDA runtime behaviour is claimed (no NVIDIA GPU).
