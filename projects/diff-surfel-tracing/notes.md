@@ -3209,3 +3209,48 @@ Checklist (the e24c44c port-fix entry):
 5. `ext_winhip.cu` / `trace_surfels_winhip.cu` hipify to `.hip` and compile as before; link line unchanged (`hiprt0300164.lib`, no extra args).
 
 No fork edit was needed. CUDA gate: not run (Windows, no CUDA toolkit); covered by the Linux validators. `jargon.py --port diff-surfel-tracing` clean. After the run the HIP RT submodule patch was reverted and ignored build output cleaned: `git status --porcelain` empty in the fork and in the submodule.
+
+## CUDA compile check 2026-11-04 (setup.py, OptiX)
+
+linux-gfx950 host with the CUDA 12.8 toolkit (`/usr/local/cuda`, nvcc V12.8.93, gcc 13.3.0, cmake 3.31.6, Python 3.11.17). No NVIDIA GPU, so compile, link and import only. No role taken and no state touched; this closes the `cuda-not-validated` gap every earlier entry left for the `setup.py` CUDAExtension branch, which needs a CUDA build of torch.
+
+Setup, in scratch:
+
+```
+git clone --recursive -b moat-port https://github.com/AMD-Ecosystem/diff-surfel-tracing.git port   # e24c44c, optix 7b5c4e8 (v7.7.0), hiprt 8602b8c
+git clone --recursive -b main https://github.com/AMD-Ecosystem/diff-surfel-tracing.git main        # ef6f24b, optix 7b5c4e8
+git clone --depth 1 -b v7.7.0 https://github.com/NVIDIA/optix-dev.git optix-sdk                    # 7b5c4e8; include/ identical to third_party/optix/include
+python3 -m venv $FLEET_VENV/cuda-torch
+$FLEET_VENV/cuda-torch/bin/pip install --upgrade pip setuptools wheel ninja numpy                  # pip 26.3, setuptools 78.1.0
+$FLEET_VENV/cuda-torch/bin/pip install torch --index-url https://download.pytorch.org/whl/cu128     # torch 2.11.0+cu128, torch.version.cuda 12.8, torch.version.hip None
+source $FLEET_VENV/cuda-torch/bin/activate
+export PATH=/usr/local/cuda/bin:$PATH LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH CUDA_HOME=/usr/local/cuda   # README's CUDA env block
+export OPTIX_HOME=<scratch>/optix-sdk TORCH_CUDA_ARCH_LIST=8.0 CUDAARCHS=80 MAX_JOBS=64
+```
+
+The README pins no OptiX version; the submodule gitlink is the `v7.7.0` tag, so that tag was used. `setup.py` takes `third_party/optix` when it is checked out (it was) and the CMake `FindOptiX7` searches `ENV OPTIX_HOME` first, so the host glue compiled against the submodule copy and the PTX against `optix-sdk`; the two header trees are identical (`diff -r` empty).
+
+Build, in each clone (`setup.py`'s `build_extensions` runs the CMake PTX step itself, `cmake .. && make` in `build/`, and copies `build/ptx/*.ptx` into site-packages):
+
+```
+pip install -v .                        # README literal: exit 1 on BOTH port and main, "ModuleNotFoundError: No module named 'torch'" (build isolation; pre-existing upstream, not a port regression)
+pip install -v --no-build-isolation .   # exit 0 on both
+cd /tmp && python -c "import diff_surfel_tracing, diff_surfel_tracing._C as C; print(C.__file__, dir(C))"
+```
+
+Results at `e24c44c`:
+
+- Host extension: ninja `[1/4]`..`[4/4]` compiled `optix_tracer/common.cpp`, `trace_surfels.cpp`, `ext.cpp`, `optix_tracer/optix_wrapper.cpp` with g++, linked `_C.cpython-311-x86_64-linux-gnu.so` against `-lc10 -ltorch -ltorch_cpu -ltorch_python -lcudart -lc10_cuda -ltorch_cuda`. 0 errors. 101 exported dynamic symbols, same as main.
+- CMake PTX step: configure found nvcc 12.8.93, OptiX7 at `optix-sdk/include`, torch's cmake prefix; torch's `cuda.cmake` ignores `CMAKE_CUDA_ARCHITECTURES` (CMake Warning) and took `TORCH_CUDA_ARCH_LIST`: `Added CUDA NVCC flags for: -gencode;arch=compute_80,code=sm_80`. `optix_tracer_forward` and `optix_tracer_backward` built, both copied to `build/ptx/` and site-packages; `.version 8.7`, `.target sm_80`.
+- `forward.ptx` (1045 lines) and `backward.ptx` (2166 lines) are byte-identical to main's (`diff` empty).
+- Import from `/tmp`: `diff_surfel_tracing/__init__.py` and `_C` load from the venv's site-packages; `_C` exposes `OptiXStateWrapper`, `build_acceleration_structure`, `trace_surfels`, `trace_surfels_backward`. `torch.cuda.is_available()` False (no GPU), as expected.
+- Installed package: `_C*.so`, `__init__.py`, `forward.ptx`, `backward.ptx`, the same file list as main. No HIP-branch file (headers, `hiprt_root`, libhiprt) ships on CUDA.
+
+Warning comparison (paths normalized, `sort | uniq -c`): port 40 warning lines in 11 distinct, main 42 in 12. Identical apart from:
+
+- main only: `optix_tracer/auxiliary.h(429): warning #940-D: missing return statement at end of non-void function "quat_to_rotmat_transpose"` (x2, once per `.cu`). The port's unconditional UB fix removes it.
+- `trace_surfels.cpp` warnings shift lines (main 24/220/221 to port 32/252/253) for the same source lines (`x.type().is_cuda()` deprecated x29, unused `int_opts`/`bool_opts`); the shift is the `USE_ROCM` blocks added above them.
+
+No new warning on the port. Shared pre-existing ones: `tidx` unused (`forward.cu:160`, `backward.cu:372`), `memset` on non-trivial `OptiXState` (`optix_wrapper.cpp:170`), two pybind11 visibility warnings, torch CMake warnings (`CMAKE_CUDA_ARCHITECTURES` ignored, kineto not found). CMake's `find_package(Python3 Development)` picked system `/usr/include/python3.12` headers over the venv's 3.11; that is upstream's `CMakeLists.txt`, the same on main, and harmless because the PTX targets do not include Python headers.
+
+Verdict: the CUDA no-regression gate PASSES at `e24c44c` for the full README route: host glue, `ext.cpp`, link, both PTX kernels and the import. Nothing to fix. Neither the port nor the main tree has any modified tracked file after the builds (`git status --porcelain` empty; build output is ignored). Nothing pushed to the fork.
