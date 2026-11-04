@@ -101,3 +101,9 @@ tornado --devices
 - hipSPARSE under HIP graph capture: `hipsparseDestroySpMat` calls `hipDeviceSynchronize` (invalidates capture), the default SpMV CSR algorithm analyses on first use (INTERNAL_ERROR in capture), and a non-null external buffer with a queried size of 0 gives INVALID_VALUE once descriptors are reused. Fix: cache descriptors per operand set in the context, `HIPSPARSE_SPMV_CSR_ALG2`, NULL buffer when size is 0. Diagnosed with `AMD_LOG_LEVEL=3` and a standalone probe (`agent_space/probe-java/GraphProbe.java`, run with `tornado -cp ...`), because tornado-test prints only the outer bailout message.
 - Results on gfx950: TestCuBlas 27/27, TestCuBlasLt 10/10 (FP8 E4M3 included), TestCuFft 9/9, TestCuRand 7/7, TestCusparse 17/17. `make jdk21 BACKEND=cuda` and `make test-nogpu` pass after the hipBLAS commit.
 - Host note: this image also has NVIDIA's CUDA libraries installed (`/usr/local/cuda`), so the CUDA providers' `isAvailable()` returns true here; irrelevant to HIP devices but explains why CUDA-only library tests reach the library task on HIP before being gated.
+
+### Commit 7 pushed: NCCL on RCCL (`dffb8db92`)
+
+- `NcclNativeLib` picks the vendor once: `-Dtornado.nccl.library=rccl|nccl`, else RCCL when the HIP backend is installed without CUDA or is the default backend. RCCL binds librccl plus amdhip64 (`hipSetDevice`, `hipStreamCreate`, ... same signatures as the four CUDA runtime calls). Unique id 128 bytes, data types and reduction ops identical.
+- Results on gfx950 (one GPU pinned): TestNccl 20 pass / 10 unsupported (two GPUs needed), TestNcclMultiProcess 3 pass / 1 unsupported. Multi-GPU cases remain for a host with two visible AMD GPUs. `make jdk21 BACKEND=cuda` passes.
+- Next: cuDNN on MIOpen (softmax, activations, max pooling, convolution fwd/bwd via immediate mode), then the SDPA shim against MIOpen's MHA problem API (`miopenCreateMhaProblem`, present in this SDK's miopen.h) or CK.
