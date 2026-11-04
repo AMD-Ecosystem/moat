@@ -380,6 +380,24 @@ by Clang and GCC. Expect missing `typename`/`template` disambiguators, two-phase
 failures and narrowing conversions. Fixes are additive and arch-independent, so they help
 the CUDA build too and are not HIP-specific hacks. (Velvet)
 
+**nvcc accepts a spaced-out launch, `kernel << <grid, block >> > (...)`; clang does not.**
+Visual Studio's auto-formatter produces it, and clang reports only "expected expression" at
+the launch line. Rewrite it as `kernel<<<grid, block>>>(...)`, valid for both. (cuda_voxelizer)
+
+**The CUDA Samples `helper_math.h` makes vector arithmetic ambiguous under HIP.** HIP's
+`float3`/`int3`/... are `HIP_vector_type`, which already defines element-wise operators: the
+vector-vector compound assignments as non-template MEMBERS and vector-vector `*`, `/` as
+non-template FRIENDS, the rest as templates. helper_math's free non-template
+`operator+=(float3&, float3)`, `operator*(float3, float3)`, ... tie with those, so every such
+expression fails as ambiguous, on host and device, including inside helper_math itself
+(`smoothstep`). Do not guard the colliding functions one by one (about 40 of them): wrap the
+whole negate/add/subtract/multiply/divide block in `#if !defined(__HIP_PLATFORM_AMD__)` and
+let HIP's operators, which compute the same per-component results, take every case. Its
+host `min`/`max`/`fminf`/`fmaxf`/`rsqrtf` block is guarded on `#ifndef __CUDACC__`; extend it
+to `&& !defined(__HIPCC__)`, since clang's HIP math header defines host+device `min`/`max`
+and the copies become redefinitions in `.hip`/`LANGUAGE HIP` TUs. Host `.cpp` files still need
+the block. (cuda_voxelizer)
+
 ## Types, dispatch and platform limits
 
 **Library swaps.** cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE ->
