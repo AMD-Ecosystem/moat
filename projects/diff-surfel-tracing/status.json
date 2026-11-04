@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-11-04T11:19:13Z",
+  "updated_at": "2026-11-04T23:08:22Z",
   "head_sha": "e24c44cba2463988f011d582a7d2998f936bd371",
   "depends_on": [],
   "waivers": {},
@@ -124,5 +124,6 @@
     "arch": "linux-gfx942",
     "since": "2026-11-04T10:03:18Z",
     "at": "2026-11-04T10:07:50Z"
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/diff-surfel-tracing/pull/1"
 }
