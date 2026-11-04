@@ -754,3 +754,20 @@ CUDA no-regression gate: not re-run. The delta 6d1429a..db7c163 is two `#define`
 Pre-completion checks: `python3 utils/jargon.py --port CudaSift` clean; README documents the ROCm build (`### Build for AMD GPUs (ROCm/HIP)`, `USE_HIP` row); `git status --porcelain` in src: only `?? build-hip/`.
 
 State: linux-gfx90a `revalidate` -> `completed` at db7c163.
+
+## Validation 2026-11-04 (windows-gfx1151) at db7c163 -- fix round 97
+
+GPU: AMD Radeon 8060S (gfx1151, CC 11.5, 20 CUs), HIP_VISIBLE_DEVICES=0. TheRock ROCm 7.14, OpenCV 4.9.0 (agent_space/opencv_install, no videoio, so demo_video is not built). Fork clone at `moat-fix-97` detached at db7c163 (delta over 6d1429a: two `#define`s in `cuda_to_hip.h`, mapping cudaGetDevice and cudaMemcpy2DFromArray); tracked tree clean, only untracked `build-hip/`.
+
+Build (existing configure from the 2026-10-16 recipe above, incremental):
+    utils/timeit.sh CudaSift compile -- cmake --build build-hip -j16 --target cudasift_lib cudasift test_extract test_match test_homography
+Exit 0, 12/12 steps.
+
+Tests, each `utils/timeit.sh CudaSift test -- bash -c 'cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/<bin>.exe'` (cwd src/ for data/):
+| test            | exit | result            | key numbers |
+|-----------------|------|-------------------|-------------|
+| test_extract    | 0    | 10 passed, 0 fail | basic 1910 kpts; thresh 7077/1910/542/6; octaves 1740/1876/1910/1919 |
+| test_match      | 0    | 11 passed, 0 fail | 1910 kpts; RANSAC 852 / 828 inliers; match 1.48 ms |
+| test_homography | 0    | 8 passed, 0 fail  | translation h[2]=30.13 h[5]=20.27; stereo 752 RANSAC / 675 inliers |
+
+PASS 29/29, no HIP fault. Keypoint counts identical to 6d1429a and to gfx90a/gfx1100 (1910, 7077/1910/542/6, 1740/1876/1910/1919); RANSAC counts within run-to-run variation (stereo 752 vs 753). CUDA gate and CopyToTexture check already recorded at 6d1429a; the delta is HIP-only defines.
