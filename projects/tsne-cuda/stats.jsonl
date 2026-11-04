@@ -42,3 +42,5 @@
 {"kind":"phase","ts":"2026-11-04T21:30:11Z","phase":"test","seconds":79.901,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261104-131934-tsne-val/venv/bin/python -m pytest -v /var/lib/jenkins/fleet/jobs/mi200-20261104-131934-tsne-val/moat/projects/tsne-cuda/src/build/python/tsnecuda/test"}
 {"kind":"phase","ts":"2026-11-04T21:31:20Z","phase":"test","seconds":69.584,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261104-131934-tsne-val/venv/bin/python -m pytest -v /var/lib/jenkins/fleet/jobs/mi200-20261104-131934-tsne-val/moat/projects/tsne-cuda/src/build/python/tsnecuda/test"}
 {"kind":"session","ts":"2026-11-04T21:34:03Z","epoch":1793828043.015370390,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T23:08:02Z","phase":"compile","seconds":12.605,"exit":0,"cmd":"agent_space/build.sh"}
+{"kind":"phase","ts":"2026-11-04T23:11:29Z","phase":"test","seconds":189.609,"exit":0,"cmd":"agent_space/seedscan.sh"}

@@ -256,3 +256,25 @@ Results (Python 3.11.17 venv, numpy 1.26.4, scikit-learn 1.9.1, pytest 7.3.2; `P
 
 - `utils/jargon.py --port tsne-cuda`: clean. Documentation: INSTALL.md "Building for AMD GPUs (ROCm)" (Linux and Windows), linked from README.
 - CUDA gate: `cuda-not-validated: no CUDA toolkit on this host (no conda, no nvcc)`; also needs a CUDA-built FAISS for `find_package(FAISS REQUIRED)`. Still owed on a CUDA-capable host at `4fedca7`.
+
+## Fix round 2026-11-04 (porter, linux-gfx1201) -> ported
+
+Answers the linux-gfx1201 validation failure at `4fedca7`, as two new commits on top (no amend, no force-push):
+
+| commit | title | answers |
+|---|---|---|
+| `edff77b` | [ROCm] Accumulate the reduction test reference in double | flaky `tsnecuda_test` (gtest topic, follows `b11946a`) |
+| `33f708d` | [ROCm] Note where the OpenMP runtime of a ROCm FAISS is found | validators' `libomp.so` runtime finding (INSTALL.md) |
+
+- `src/include/test/test_reduce.h`: `cpu_result` is `std::vector<double>` in all six sum/mean/alpha tests; tolerance stays `1e-4`. Nothing else changed.
+- INSTALL.md, HIP build section, one sentence after the Linux recipe: a FAISS built with the ROCm clang links `libomp.so`; if using `tsnecuda` fails with `OSError: libomp.so: cannot open shared object file`, add `/opt/rocm/llvm/lib` to `LD_LIBRARY_PATH`. (The library loads at `TSNE()` construction, not at `import tsnecuda`: a bare import succeeds without libomp, so the sentence says "using".)
+
+Evidence (Radeon gfx1201, `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, ROCm SDK 10.1.0 TheRock pip): FAISS `moat-port` `01a09e8` gfx1201 install copied from the earlier gfx1201 validation job. tsne-cuda built per INSTALL.md (system GCC 13.3 for C/CXX, SDK clang for HIP) with `-DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_HIP_COMPILER=$SDK/llvm/bin/clang++ -DCMAKE_PREFIX_PATH="$SDK;$FAISS_PREFIX" -DBUILD_TESTS=ON`, rc 0, 94 warnings (same classes as before). Runtime `LD_LIBRARY_PATH=$FAISS_PREFIX/lib`.
+
+- Seed shim (`LD_PRELOAD` of a `time()` that returns `$SEED`), `./build/tsnecuda_test` per seed 1..300: **0 failed**. Then 100 unpinned runs: **100 passed, 0 failed**.
+- Control, same shim, test binary rebuilt from the `4fedca7` `test_reduce.h`: seed 216 passes, seed 217 fails `Reductions.ReduceSum_Row_512x512` (difference 1.068e-4 > 1e-4), reproducing the validator's result; so the shim is effective and the change is what fixes 217.
+- `ctest --test-dir build`: 1/1 at `33f708d`.
+- `cd build/python && LD_LIBRARY_PATH=$FAISS_PREFIX/lib python -c "import tsnecuda; tsnecuda.test()"`: `OSError: libomp.so: cannot open shared object file`; with `$SDK/llvm/lib` appended: rc 0, total_time 3.07 s. (`$SDK/llvm` is a symlink to `$SDK/lib/llvm`, so both spellings in the earlier notes are the same directory.)
+- pytest suite not rerun in this round (no Python source changed; no scikit-learn in the image Python). Validators rerun it.
+- `utils/jargon.py --port tsne-cuda`: clean; `utils/prose.py` on both bodies: clean; titles 56 and 61 chars.
+- The first local commit of `edff77b` was missing the blank line after its title; it was redone with `git reset --soft` before anything was pushed.
