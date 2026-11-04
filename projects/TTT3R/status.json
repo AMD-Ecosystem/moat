@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-04T23:49:50Z",
-  "updated_at": "2026-11-04T06:47:29Z",
+  "updated_at": "2026-11-04T06:47:44Z",
   "head_sha": "d064cc9a55b88763e5a3873dfa4a6b45e2751e00",
   "depends_on": [],
   "porting": null,
@@ -128,11 +128,9 @@
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/TTT3R/pull/1",
-  "pr_approval": {
-    "approved_by": "jeffdaily",
-    "at": "2026-11-04T00:01:41Z",
-    "head_sha": "d064cc9a55b88763e5a3873dfa4a6b45e2751e00",
-    "content_sha256": "53ef11228e78d8aed85354333844e96fd51ae0ce1ba701bc7c49d577c4ac077b",
-    "review_pr": "https://github.com/AMD-Ecosystem/TTT3R/pull/1"
-  }
+  "pr_url": "https://github.com/Inception3D/TTT3R/pull/31",
+  "pr_number": 31,
+  "pr_opened_at": "2026-11-04T06:47:44Z",
+  "pr_state": "open",
+  "published_sha": "d064cc9a55b88763e5a3873dfa4a6b45e2751e00"
 }
