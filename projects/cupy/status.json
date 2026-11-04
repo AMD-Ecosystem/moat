@@ -2,16 +2,23 @@
   "schema_version": 3,
   "name": "cupy",
   "upstream_url": "https://github.com/cupy/cupy",
-  "fork_url": null,
+  "fork_url": "https://github.com/ROCm/cupy",
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-04T22:34:29Z",
-  "updated_at": "2026-11-04T22:34:29Z",
+  "updated_at": "2026-11-04T22:35:00Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "fork_url_ruling": {
+    "url": "https://github.com/ROCm/cupy",
+    "previous": null,
+    "by": "jeffdaily",
+    "at": "2026-11-04T22:35:00Z",
+    "reason": "ROCm/cupy is AMD's staging fork for upstream CuPy PRs; a second fork would duplicate it"
+  }
 }
