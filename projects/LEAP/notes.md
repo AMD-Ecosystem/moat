@@ -1594,3 +1594,23 @@ This pull request was prepared with the help of an AI assistant acting as a codi
 If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
 ~~~~
 
+
+## CUDA compile check (nvcc 12.8) at d2112b6
+
+Compile-only helper run (fleet job on a Linux host with the CUDA 12.8 toolkit and no NVIDIA GPU), requested by jeff. No platform state changed. Result: **the upstream CMake CUDA build passes at d2112b6 (rc=0, `Built target leapct`), with warnings identical per file to upstream main 0c8846f.** The delta b37ca0a..d2112b6 is `src/bilateral_filter.cu` only (the four `i > N.x` -> `i >= N.x` bounds checks).
+
+Toolchain: nvcc `release 12.8, V12.8.93` at /usr/local/cuda-12.8, host GNU 13.3.0, CMake 3.31.6. Fresh clones: `port` = AMD-Ecosystem/LEAP `moat-port` at d2112b63f025446cd519453423679c5cd8740bf5, `base` = LLNL/LEAP main at 0c8846f42b2e59340d5559fc1271d590a292f9a0.
+```
+CUDACXX=/usr/local/cuda-12.8/bin/nvcc bash -c "cmake -S base -B base/build -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release && cmake --build base/build -j 42"   # rc=0
+CUDACXX=/usr/local/cuda-12.8/bin/nvcc bash utils/timeit.sh LEAP cuda-compile -- bash -c "cmake -S port -B port/build -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release && cmake --build port/build -j 42"   # rc=0, 15.6 s
+cuobjdump --list-elf <tree>/build/lib/libleapct.so
+```
+
+| tree | rc | CUDA objects | CXX objects | ELF per arch (sm_50/60/70/80/90/100/120) |
+|---|---|---|---|---|
+| base 0c8846f | 0 | 20 | 21 | 20 each |
+| port d2112b6 | 0 | 20 | 21 | 20 each |
+
+As recorded at b37ca0a, `src/CMakeLists.txt` sets `CUDA_ARCHITECTURES all-major` (CMake > 3.23), which overrides the `-D` pin.
+
+Warnings, grouped by file and message, are the same set with the same counts in both trees: nvcc `#550-D` (`cudaStatus` in analytic_ray_tracing_gpu.cu 7, cuda_utils.cu 21, ramp_filter.cu 14; `result` in ramp_filter.cu 35), `#177-D` in scatter_models.cu 7; host `-Wconversion-null` on `cudaTextureObject_t` from NULL in 15 files (bilateral_filter.cu 5, unchanged by the bounds fix), `cudaMemcpyToArray` deprecated in cuda_utils.cu 1, `fread` unused result in file_io.cpp 14; 20 nvcc "offline compilation for architectures prior to sm_75" notices (one of them interleaved with a progress line in the base log, hence 192 vs 191 raw `warning` lines); one CMake dev warning at `src/CMakeLists.txt:14`. No new warning in the port. No CUDA runtime behaviour is claimed (no NVIDIA GPU).
