@@ -156,3 +156,11 @@ Non-GPU regression set: there are no CPU tests upstream. The regression gate is 
 2. Windows in the same port: plan includes Windows (required gate, and it answers upstream issues #139/#131/#55). Confirm, versus validating Linux only and seeking a windows waiver.
 3. The Windows fixes (`long`->`int64_t`, `ssize_t`, `<sys/time.h>`, CMake WIN32 guards, DLL prefix/exports) are not HIP-specific -- they are what any Windows build needs. Upstream is active (four commits 2026-07-22). Carry them on `moat-port` as separate commits in the one PR (recommended: Windows is only reachable through the HIP build, since upstream's CUDA build is Linux-only), or split them into a separate upstream PR first?
 4. Test harness location: keep the metric harness out of the fork (recommended; recorded in notes.md), or add a small pytest under the existing empty `src/python/tsnecuda/test/` package so upstream gains a real test?
+
+## Rulings (jeff, 2026-11-04)
+
+1. Scope: the C++ CLI (`src/exe/main.cu`) stays out (no GPU coverage beyond the Python path, which calls the same `RunTsne`). The CUDA packaging pipeline is out of scope for this pass. The ZMQ viewers are not a scope question (CPU-only, compiled out); untouched. The gtest suite is NOT scoped out: revive the reduce tests (`test_reduce.h`, 8 GPU-vs-CPU reductions of live `ReduceSum`/`ReduceMean`/`ReduceAlpha`, which go through hipBLAS) as an opt-in CMake test target (`-DBUILD_TESTS=ON`, default OFF), in a separate commit. Drop from it what tests deleted or dead APIs (`naive_tsne.h`/`bh_tsne.h` includes, ComputePIJ, `test_tsne.h`, `PairwiseDistance`).
+2. Windows is in scope. Keep it as a separate commit (or commits) unless it is too intertwined with the HIP port to separate cleanly; if so, say why in notes.md.
+3. Non-HIP Windows fixes go as separate commits on `moat-port` in the one PR, so a reviewer can ask for them as a separate PR.
+4. The metric harness goes into upstream's empty `src/python/tsnecuda/test/` package as a pytest file, in a separate commit (thresholds as in the Test plan; the 50k-point case sized down on the gfx1151 laptop).
+
