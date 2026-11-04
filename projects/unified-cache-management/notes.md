@@ -922,3 +922,44 @@ The branch is merged with current `develop` and the conflicts are resolved. The 
 
 The reply above should be updated with any other GPUs that revalidate this head before `/moat approve`.
 ====
+
+## Review 2026-11-04 (reviewer, linux-gfx942) -- changes requested
+
+Scope: sync round `moat-fix-1021`, `git diff 8545865f...af3eb74b` (merge 80be85e + 26b0b3e, 91185a3, af3eb74), plus the full PR diff `git diff f366bfa1 af3eb74b` (26 files, +583/-14). Upstream `develop` is still f366bfa1, so the PR diff is exactly the port.
+
+Verified clean (no action): all five conflict resolutions keep both sides (`git show --remerge-diff 80be85e`); `moat-port` (8545865) is an ancestor of the head; the new GDR sources reach the ROCm `trans` target through the existing `NOT cuda` arm in `ucm/shared/trans/CMakeLists.txt:16`, so 26b0b3e's source list matches the CUDA target; the `cuda_event.cc` aliases are complete (built); a ROCm build with upstream's default `-Werror` flags (no `-Wno-error=unused-result`, unit tests off) builds cleanly on gfx942; commit titles are at most 72 chars; there are no hard wraps; `jargon.py -` on the three commit messages, the merge subject and the PR diff is clean; `check_bilingual_docs.py` passes. HIP behaviour behind 91185a3 reproduced standalone on MI300X (`agent_space/probe_rv/p.cpp`): `hipMemcpyAsync` with an explicit D2H or H2D kind on two `malloc` buffers returns `invalid argument`; `hipMemcpyDefault` copies correctly.
+
+### Findings
+
+1. **The CUDA-behaviour claim in 91185a3 is unverified and contradicts the documented contract** (`ucm/shared/vendor/hip_compat/cuda_runtime.h:51-52`, the 91185a3 title "like the CUDA runtime does" and body, and the PR body's "(CUDA's runtime does not)"). The CUDA runtime API documents a `cudaMemcpy` whose dst/src do not match the kind as undefined behaviour, and nothing here shows that CUDA accepts it. Upstream CI runs the unit tests only with `-DRUNTIME_ENVIRONMENT=simu` (`.github/workflows/lint-and-test.yml:106`), where the "device" is host memory. So the cache2 `DumpThenLoad*` tests, which pass `malloc` buffers (`ucm/store/test/case/detail/data_generator.h:49`) as device addresses, were written against the simulated backend, and nothing shows they pass on a CUDA GPU. All of this text goes upstream. Fix: state only what was observed. Suggested comment: "The cache2 tests pass host buffers as device addresses; hipMemcpyDefault lets HIP pick the direction from the pointers instead of rejecting the explicit kind." A staging branch is never rebased, so the 91185a3 message cannot be amended. The porter should either revert 91185a3 and re-apply the same change under a corrected title and body, or (decision for jeff) drop the shim change and record the four `DumpThenLoad*` cases as tests written for the simulated backend. The code change itself is functionally sound: correctly placed copies are unaffected.
+2. **zh docs-site counterparts not updated** (af3eb74). `docs/docs-site/docs/en/user-guide/support-matrix/index.md` gains the ROCm row and `docs/docs-site/docs/en/developer-guide/build_from_source.md` gains the PLATFORM=rocm paragraph, but `docs/docs-site/docs/zh/...` (same paths) are untouched. Upstream changes en and zh in the same commit (each of the last 8 upstream commits touching `docs/docs-site/docs/en` changes the same number of zh pages), and `docs/docs-site/docs/en/developer-guide/contribute.md:132` asks for matching English/Chinese updates. Fix: add the identical table row to the zh support matrix and a Chinese version of the paragraph under `## vLLM（CUDA）` in the zh build guide, and mention zh in the commit body.
+3. (minor, non-blocking; text carried from the published PR) The ROCm note says to "pass `-DCMAKE_HIP_ARCHITECTURES=<arch>`" right after the setup.py install command, but `setup.py` forwards no user CMake arguments (`setup.py:185-209`), and CMake 3.31 has no environment fallback for it. Consider: "The GPU architecture is detected from the build host; to target a different GPU, configure with CMake directly and pass `-DCMAKE_HIP_ARCHITECTURES=<arch>`." Also, `docs/source/developer-guide/build_from_source.md:56` says "Validated on gfx90a and gfx1100" while both support matrices list five GPUs.
+
+### PR body and upstream reply
+
+The draft body has 3 jargon hits (`revalidate` x2, `/moat`, lines "Other platforms revalidate..." and "Notes for approval") and repeats finding 1's CUDA claim. Prose is clean. The reply section ends correctly at `## Notes for approval` (`upstream.py fix_reply_of`). The reply names only MI300X, which matches the porter's run at af3eb74. However, linux-gfx942 has no completed validation recorded at any sha, so the reply may not be approved until the validator records it at the final head. Once the porter's fixes move the head, every GPU named must have validated that new head. Corrected body below (true at af3eb74). The porter must update the follow-up list and test line after addressing findings 1-2.
+
+Title: `[ROCm] Merge current upstream develop into the ROCm port`
+
+====
+Upstream PR #1021 was reported as conflicting with `develop` (190 upstream commits since the PR's base). This round merges the current `develop` tip (f366bfa) into the branch. It is a merge, not a rebase, so the published PR commits stay as they are.
+
+Conflicts (5 files, both sides kept): platform lists in `setup.py` and `ucm/store/nfsstore/device/CMakeLists.txt` (upstream added `ascend-a5`, the PR added `rocm`); the WIN32 flag block in `CMakeLists.txt`; the test glob in `ucm/shared/test/CMakeLists.txt` (upstream's `CONFIGURE_DEPENDS` and `router_perf` exclude plus the PR's WIN32 exclude); and `quickstart_vllm.md`, where upstream moved the build-from-source section into the developer guide.
+
+Follow-up commits:
+- 26b0b3e: upstream's CUDA transfer backend gained `cuda_event.cc` and a few more runtime calls; the ROCm target now builds `cuda_event.cc` and the compat header aliases the new names.
+- 91185a3: HIP rejects `hipMemcpyAsync` with an explicit host/device kind when a buffer is pageable host memory. Upstream's new cache2 dump/load tests pass `malloc` buffers as device addresses (upstream CI runs them on the simulated backend), so the compat header now maps the copy kinds to `hipMemcpyDefault` and HIP infers the direction from the pointers. This changes existing behaviour of the shim for the reviewer to judge; correctly placed copies are unaffected.
+- af3eb74: the `PLATFORM=rocm` note moves to `build_from_source.md` (both doc trees), plus the ROCm row in the docs-site support matrix.
+
+Upstream #1566 stopped compiling nfsstore, so the nfsstore ROCm device arm is now dormant, the same as its CUDA counterpart.
+
+Tested on AMD Instinct MI300X (gfx942), ROCm 7.16: ctest 330/337 (the copy-kernel, event, memset/D2D and cache2 dump/load tests all pass; 6 DataStrategyTest cases need two visible GPUs and one logger perf test is a known timing flake), Hamming kernel reference test mla/gqa/determinism all pass. The other GPUs are tested again at this head before approval.
+
+## Upstream reply
+
+The branch is merged with current `develop` and the conflicts are resolved. The C++ unit tests and the Hamming kernel test were rerun on an AMD Instinct MI300X (gfx942).
+
+## Before approving
+
+Add any other GPU tested at this exact head to the reply above, and name only GPUs that were tested at this exact head.
+====
