@@ -3075,3 +3075,39 @@ utils/timeit.sh arrayfire cuda-compile -- cmake --build build-$T -j 32 -- -k 0
 - Device code is identical: `cuobjdump -xelf all` pulls 50 sm_80 cubins from each `libafcuda`. They have the same sizes and the same symbol tables (after dropping nvcc's per-path module-id hash). All 7081 `.text.*` kernel sections hash identically (agent_space `textcmp.py`). The few hundred bytes that differ per cubin are outside `.text`, in the path-derived module ids.
 - `half.hpp` is the port's only shared header change that reaches CUDA. Run through `unifdef -U__HIP_RTC__`, it differs from upstream only by comments, blank lines and `__DH__` on `half2int` and `half::infinity()`. The nvcc build shows no effect: no new warning and the same device `.text`. NVRTC (the CUDA runtime JIT, which embeds `half.hpp`) was checked without a GPU through libnvrtc 12.8 (`--gpu-architecture=sm_80 --std=c++17 --device-as-default-execution-space`, the backend's own options). Each `src/backend/cuda/kernel/*.cuh` and `common/half.hpp` was compiled, with empty stubs for the five dummy headers `compile_module.cpp` substitutes. The outcome is identical in both trees: 45/56 compile, including `half.hpp` and the half-using `jit.cuh`, `copy.cuh`, `medfilt.cuh`, `fftconvolve.cuh` and `anisotropic_diffusion.cuh`. The other 11 fail the same way in both because the harness does not supply the launcher-defined macros (`MAX_CONV1_FILTER_LEN`, `SCONV_THREADS_Y`) or the generated `optypes.hpp`.
 - Not run: the tests (no GPU). Even `ctest -N` cannot run the `print_info` post-test hook without `libcuda.so.1`, in both trees (environment).
+
+## Validation 2026-11-04 (validator, linux-gfx1100, revalidate) -- RESULT: COMPLETED (131/132)
+
+Head `83f66a50732a47f4b6d654ef031f71ae208bfbc7` on `moat-sync-64c88d9` (merge of upstream master 64c88d932 plus the reduce-by-key key-initialization / kWarpSize fix). Platform was `revalidate` (validated_sha 950dcdd02). Fresh clone of `AMD-Ecosystem/arrayfire` `moat-sync-64c88d9`, `git checkout 83f66a507...`; `git rev-parse HEAD` confirmed, `git status --porcelain` empty before and after (only the gitignored build dir).
+
+GPU: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), `HIP_VISIBLE_DEVICES=0` as pinned by the dispatcher, `ulimit -c 0`. ROCm: 7.16.26385 SDK wheel (`hipconfig --version` 7.16.26385-0000000; pip package `rocm` 10.1.0), no `/opt/rocm`. Same toolchain as the porter's run at this head. Host packages `libfftw3-dev`, `liblapacke-dev`, `libopenblas-dev` already present.
+
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+S=projects/arrayfire/src; B=$S/build-hip-gfx1100
+python3 -I $S/.github/scripts/check-matrix-data.py $S $B      # ON, 9 matrices restored from arrayfire-data 2723164f7
+AF_CI_MTX_FILES=ON utils/timeit.sh arrayfire compile -- cmake -C $S/.github/scripts/matrixmarket.cmake \
+  -S $S -B $B -GNinja -DCMAKE_BUILD_TYPE=Release \
+  -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF -DAF_BUILD_CPU=ON -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF \
+  -DAF_BUILD_UNIFIED=ON -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF \
+  -DAF_BUILD_DOCS=OFF -DAF_BUILD_TESTS=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++
+utils/timeit.sh arrayfire compile -- cmake --build $B -j 32
+export ROCM_PATH=$R
+utils/timeit.sh arrayfire test -- $PWD/$B/test/reduce_cuda
+utils/timeit.sh arrayfire test -- ctest --test-dir $PWD/$B -R '_cuda$' -j1 --output-on-failure
+```
+Configure exit 0. Build 1643/1643, exit 0, 0 errors.
+
+Results:
+- `reduce_cuda` standalone: **1062/1062 PASS** (2.2 s). Was 583/1062 at 5d09b5c0f / 950dcdd02 on this toolchain.
+- ctest `_cuda$`: **131/132 PASS**, 208 s. Only failure `test_confidence_connected_cuda`: 36 cases, 21 fail (`Function not configured to build:302`, `imageio.cpp:1070` compiled without FreeImage), 12 skip (Image IO Not Configured), 3 pass -- the standing `AF_WITH_IMAGEIO=OFF` disposition. `test_reduce_cuda` passed in ctest (2.85 s); `inverse_dense` (known random-input flake) passed this run; `jit`, `blas`, `sparse`, `where` passed.
+- JIT cache in `~/.arrayfire` holds `KER*_HIP_gfx1100_AF_310.bin` code objects, so kernels ran on the GPU.
+
+Comparison: identical to the porter's 131/132 at this head (same toolchain, same sole failure), and equal to this platform's 2026-08-11 record at 950dcdd02 (131/132 on ROCm 7.2, sole failure confidence_connected). The 7.16 `reduce` regression the sync round found is gone.
+
+CUDA no-regression gate: skipped, already recorded at this head (the 2026-11-04 nvcc 12.8 entry above: PASS, identical device code vs 64c88d932).
+
+Pre-completion checks: `python3 utils/jargon.py --port arrayfire` (after fetching local `master` and `moat-port` refs) -> the 3 standing hits only (published `6800d5586` 'MOAT', upstream's own `head_sha` x2 in `.github/scripts`); nothing from this round. Documentation: no build-doc change in this round; the `AF_BUILD_HIP` documentation in `CMakeLists.txt`/README is intact after the merge.
+
+State: `set-state arrayfire linux-gfx1100 completed --agent validator` at head 83f66a507. Nothing pushed to the fork.
