@@ -292,3 +292,39 @@ Fix options for the porter (each also correct on CUDA):
 Option 1 matches the plan and keeps the kernels untouched. After the fix, a validator should repeat this matrix and the device `-O0` build on gfx90a.
 
 The fault class is promoted to the `cuda-to-rocm` skill (`references/fault-classes.md` Memory and lifetime, plus the SKILL.md index line) on this branch.
+
+## Porter round 2026-11-04 (linux-gfx90a, answering the gfx90a validation-failed at 689b885)
+
+Fix: `3625a1e` "[ROCm] Keep the voxel table in device memory", the plan's risk-2 remedy (validator's option 1). `src/main.cpp`: the GPU path allocates `device_vtable` with `cudaMalloc` + `cudaMemset`, passes it to `voxelize`/`voxelize_solid`, then `malloc`s the host `vtable`, `cudaMemcpy` DeviceToHost, and `cudaFree`s the device table before the writers. The log line now says "CUDA device memory". `hip_compat/cuda_runtime.h`: added `cudaMalloc`, `cudaFree`, `cudaMemcpy` mappings. Triangles stay in managed memory (kernels only read them; no atomics). No `#ifdef`: the change is portable and smaller than the `_system` alternative, which would edit both kernel files and need a HIP guard (CUDA `_system` atomics need sm_60). Kernels untouched. The file keeps its CRLF line endings.
+
+**CUDA-visible change**: `src/main.cpp` is compiled by the CUDA build. No nvcc on this host, so the CUDA build was not compiled here. The primary should re-run the V100 check (build + `-s 64`, `-s 64 -solid`, `-s 64 -cpu`) at `3625a1e`.
+
+Host: AMD Instinct MI250X/MI250 (gfx90a:sramecc+:xnack-), one GCD (`HIP_VISIBLE_DEVICES=0`). TheRock ROCm 10.1.0 pip SDK, CMake 3.31.6 + Ninja, g++ 13.3. Trimesh2 2022.03.04 `make -C libsrc`. All GPU runs under `ulimit -c 0`.
+
+Builds (both exit 0, upstream warnings only):
+
+```
+cmake -S <src> -B b-rel  -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DTrimesh2_INCLUDE_DIR:PATH=<tm2>/include -DTrimesh2_LINK_DIR:PATH=<tm2>/lib.Linux64
+cmake -S <src> -B b-dbg0 -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0" (rest as above)
+cmake --build <dir> --parallel 64
+```
+
+Emitted atomics (`llvm-objdump --offloading`, then `llvm-objdump -d` on each gfx90a bundle): Release has one `global_atomic_cmpswap` per kernel (as before); the -O0 Debug build has `flat_atomic_or` (voxelize.cu) and `flat_atomic_xor` (voxelize_solid.cu), the native instructions that set no bits on managed memory at 689b885. They now target `hipMalloc` memory, and the -O0 table below shows they set the bits.
+
+GPU-vs-CPU differential, `test_models/bunny.OBJ`, validator's harness (`cuvox_compare.py <exe> <model> <work> --repeat 3`: GPU then `-cpu`, GPU log must show `## GPU VOXELISATION` and the GPU time, no fallback; binvox/morton/obj_points decoded to voxel sets). Counts identical across the three formats in every case; 3 repeats per case byte-identical to the first GPU run (36 cases + 108 repeats total):
+
+| mode | size | filled CPU | Release GPU diff (GPU-only/CPU-only) | Release GPU ms (binvox) | -O0 GPU diff | -O0 GPU ms |
+|---|---|---|---|---|---|---|
+| surface | 64 | 13,802 | 0 | 0.4 | 0 | 24.7 |
+| surface | 256 | 221,760 | 0 | 9.9 | 0 | 577 |
+| surface | 512 | 887,315 | 8 (3/5) | 61.9 | 4 (2/2) | 3,878 |
+| solid | 64 | 52,258 | 0 | 1.0 | 0 | 18.1 |
+| solid | 256 | 3,345,384 | 0 | 50.6 | 0 | 698 |
+| solid | 512 | 26,763,628 | 1 (1/0) | 395 | 0 | 5,497 |
+
+- At 689b885 the -O0 build gave 0 filled voxels (surface and solid, size 64). Now it is exact at 64/256.
+- 512 residual is the accepted FP class. Release matches the validator's 689b885 numbers exactly (8 / 1). -O0 matches the validator's `-ffp-contract=off` triangulation (4 / 0), as expected because -O0 does no FMA contraction.
+- Solid 512 GPU kernel time fell from 9.3 s (managed table, CAS loop over PCIe) to 0.4 s with the table in device memory.
+- Upstream CI smoke `-s 64 -cpu` (Release build): exit 0, writes `bunny.OBJ_64.vox`.
+- `utils/jargon.py --port cuda_voxelizer` clean; `utils/prose.py` on the commit message clean; fork tree clean at 3625a1e.
+- Not rerun: the `-D_DEBUG` device-counter build (counters and `cudaMemcpyFromSymbol` are untouched by this change), Windows, and the other arches. 3625a1e advances head, so every arch revalidates.
