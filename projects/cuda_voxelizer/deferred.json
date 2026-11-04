@@ -17,6 +17,19 @@
         "by": "jeffdaily",
         "at": "2026-08-13T18:52:24Z"
       }
+    },
+    {
+      "id": "cuda-voxelizer-nvidia-gpu-run-before-pr",
+      "kind": "other",
+      "component": null,
+      "summary": "Before the upstream PR: run the CUDA build (USE_HIP OFF, CUDAARCHS matching the GPU) on a real NVIDIA GPU at head and confirm -s 64 takes the GPU path and matches -cpu, so the Test Plans of 94d1340 and 8b84b91 (which show ./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 as a GPU run) are true. nvcc 12.8 build+link is already done at 689b885, 94d1340, 8b84b91 with no GPU. If no NVIDIA run is possible, correct those two Test Plans at the PR-prep squash instead.",
+      "refs": [
+        "projects/cuda_voxelizer/notes.md Review 2026-11-04 (re-review)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-04T08:33:25Z",
+      "decided": null
     }
   ]
 }
