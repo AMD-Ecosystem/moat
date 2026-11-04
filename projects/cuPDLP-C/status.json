@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T07:45:23Z",
-  "updated_at": "2026-11-04T19:40:23Z",
+  "updated_at": "2026-11-04T23:18:22Z",
   "head_sha": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
   "depends_on": [],
   "pr_url": "https://github.com/COPT-Public/cuPDLP-C/pull/41",
@@ -188,16 +188,19 @@
       "last_agent": "validator"
     }
   },
-  "published_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
-  "fix": {
-    "branch": "moat-fix-41",
-    "base_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
-    "review_pr": "https://github.com/AMD-Ecosystem/cuPDLP-C/pull/1",
-    "opened_at": "2026-11-04T07:38:23Z"
-  },
+  "published_sha": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
+  "fix": null,
   "porting_released": {
     "arch": "linux-gfx90a",
     "since": "2026-11-04T18:43:54Z",
     "at": "2026-11-04T18:45:30Z"
-  }
+  },
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-04T23:11:04Z",
+    "head_sha": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
+    "content_sha256": "3f1f44b1247d713f09ddbb4c6f80ae8f71d7ac310daff3574798238ac7ed3676",
+    "review_pr": "https://github.com/AMD-Ecosystem/cuPDLP-C/pull/1"
+  },
+  "fix_merged_at": "2026-11-04T23:18:22Z"
 }
