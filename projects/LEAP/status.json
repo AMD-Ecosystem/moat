@@ -7,13 +7,16 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-04T00:24:38Z",
+  "updated_at": "2026-11-04T07:17:54Z",
   "head_sha": "5f6816fd91ef4a485dab46786682dc7a11dd0c02",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-04T07:17:54Z"
+  },
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 644559794,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -123,6 +126,29 @@
         "detail": "Comment-only docstring reword in host-side validation script unitTests/gpu_vs_cpu_validate.py (bit-identical -> identical); no device code, no compiled artifact, arch-independent",
         "at": "2026-06-16T06:33:12Z"
       }
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-04T07:17:54Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/1",
