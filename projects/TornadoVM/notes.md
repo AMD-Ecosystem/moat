@@ -146,3 +146,9 @@ tornado --devices
 - Vendor choice in `CuVSNativeLib` follows the NCCL rule; `-Dtornado.cuvs.library=hipvs|cuvs`.
 - Results gfx950: TestCuVS 7/7. `make jdk21 BACKEND=cuda` passes.
 - hipVS/hipDF wheels are x86_64 Linux and target gfx90a/gfx942/gfx950; on RDNA and Windows these tasks report unsupported (library absent).
+
+### Commits 14-15 pushed: docs (`7096165e2`), CK legacy framework (`ebb89fdf0`)
+
+- `7096165e2`: native-libs README module table names the ROCm library per module on HIP and lists ck-hip/cudf-hip; HYBRID_API_GUIDE intro paragraph for AMD GPUs.
+- `ebb89fdf0`: the pinned CK develop commit defaults to `USE_NEW_UNIFIED_FRAMEWORK=1`, whose host code wants the GPU target at compile time; without `CK_CMAKE_GPU_TARGET_IDS` every source printed "ck_tile: no GPU target known at compile time ... host pass sees HOST". Defining the IDs (as CK's CMake does, first target wins) fails the gfx1100 device pass of a gfx9+gfx11 build (static assert in `warp_wmma_gemm_gfx11_utils.hpp:22`). `USE_NEW_UNIFIED_FRAMEWORK=0` (legacy WarpGemm, what CK forces for gfx1250) builds clean for all nine targets; TestCuDnn 18/18, TestCutlass 26/26 on gfx950 after the change.
+- Skill lessons committed on this branch (`6efd3f07`): fault-classes entries for CK FMHA, CK GEMM device ops, ROCm-DS wheels, hipSPARSE under capture, AMD SMI; SKILL.md index lines.
