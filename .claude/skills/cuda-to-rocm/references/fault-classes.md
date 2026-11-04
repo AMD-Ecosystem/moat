@@ -516,6 +516,19 @@ and launch via `hipModuleLaunchKernel`. Two cgo-specific traps: `hiprand.h` does
 `import "C"`); and `hipCtxSynchronize`/`hipCtxGetApiVersion` return `hipErrorNotSupported` on ROCm 7.2.1, so
 synchronize via `hipStreamSynchronize`. (mumax3: Go + cgo + runtime code-object loading.)
 
+The same class with NVRTC instead of embedded PTX (CUDA C++ generated at run time) ports to hipRTC.
+Bind it by absolute path under `ROCM_PATH`/`HIP_PATH` before any bare name (on Windows the hipRTC DLL
+carries the version, `hiprtc0702.dll`, so scan `bin`). hipRTC declares `half`, `__hip_bfloat16` and
+the fp16/bf16 intrinsics itself, but `#include <hip/hip_fp16.h>` fails without `-I<rocm>/include`:
+guard any include with `__has_include`. Spellings that differ or are missing in hipRTC:
+`__float2bfloat16` (no `_rn`), no `__double2half`, `__dp4a` or `llmin`/`llmax`. Pass
+`--offload-arch=<gcnArchName>` explicitly (read `gcnArchName` from `hipDeviceProp_t` through the
+versioned `hipGetDevicePropertiesR0600`, whose layout that version fixes), and read device attributes
+by their HIP enum values, which differ from CUDA's. HIP's context API is deprecated: a backend built
+around primary contexts can stand the device in for the context and make it current with
+`hipSetDevice`. clang contracts `a * b + c` by default as NVRTC does; `-ffp-contract=off` is the
+`--fmad=false` equivalent. (TornadoVM: Java FFM bindings, TC-generated HIP C++.)
+
 **Compute-only CDNA has no graphics pipeline**, so OpenGL/Vulkan-interop apps build but
 cannot run on gfx90a. Datacenter parts have no display engine: radeonsi refuses a GL context
 on a compute chip, only software GL is available, and a software-GL buffer cannot be
