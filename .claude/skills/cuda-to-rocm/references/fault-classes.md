@@ -138,6 +138,23 @@ slots. (dietgpu)
 faults. Kernels reading index +/-1 or +/-width at edges (stencils, neighbour gathers) must
 clamp. (colmap ComputeDOG.)
 
+**A latent OOB that stopped reproducing is still there, and index math on `size_t` operands
+overshoots UPWARD, not past-the-end.** Two traps, usually together. First, whether a wild
+read faults depends on what the driver happens to have mapped, so the same kernel can abort
+on one tree and complete on the next with no relevant change; absence of a fault is not
+evidence the bug is gone, and "it no longer crashes" must never close an OOB finding.
+Instrument instead: a `printf` in the trailing threads of the last block, printing the
+decoded indices and the sizes they are checked against, decides it in one run. Second, when
+padded threads decode an index through arithmetic whose operands are `size_t` -- closed-form
+inverses of triangular pair indices are the classic shape -- the intended "negative"
+excursion is computed in UNSIGNED 64-bit and wraps to nearly 2^64 instead. The out-of-range
+indices are then astronomical rather than slightly too large, and a `sqrt` of the wrapped
+value returns a real number where a signed evaluation would have produced a NaN, so the
+symptom does not look like the sign error it is. (gRASPA `TotalVDWRealCoulomb`: the trailing
+thread decoded `AtomA 2147484974` and `AtomB 2305843010287440402` against a size of 1327 --
+an 18-exabyte offset from a `size_t*` base -- and the fix was moving the bounds test that
+already existed above the two loads it followed.)
+
 **Rule-of-five on resource handles.** CUDA tolerates a default-constructed or
 double-destroyed texture/stream/event handle; AMD faults. Give RAII wrappers explicit
 default init (`handle = 0`), move-only semantics, and a guarded destructor. (colmap
@@ -385,6 +402,15 @@ failures and narrowing conversions. Fixes are additive and arch-independent, so 
 the CUDA build too and are not HIP-specific hacks. (Velvet)
 
 ## Types, dispatch and platform limits
+
+**`clock64()` is a 20-bit counter on gfx11.** On RDNA3/3.5 it compiles to
+`s_getreg_b32 hwreg(HW_REG_SHADER_CYCLES, 0, 20)`, which wraps about every million cycles;
+gfx9 uses the 64-bit `s_memtime`. A spin-wait or timeout written `while (clock64() - start
+< n)` never terminates when the counter wraps first, so the kernel hangs -- intermittently,
+because it depends on where the counter stood at `start`. Elapsed-time measurements are
+silently wrong the same way. Use `wall_clock64()` (a 64-bit constant-rate counter on both,
+rate from `hipDeviceAttributeWallClockRate` in kHz) for any interval. Grep a port for
+`clock64` and `clock()` in device code. (FLAMEGPU2, found in a test probe)
 
 **Library swaps.** cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE ->
 hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Mostly 1:1; watch handle types
