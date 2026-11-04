@@ -90,3 +90,20 @@
 {"kind":"session","ts":"2026-11-04T07:39:22Z","epoch":1793777962.184939456,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-04T17:05:27Z","epoch":1793811927.385751863,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-11-04T17:07:02Z","epoch":1793812022.596582080,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-04T17:11:32Z","epoch":1793812292.891255641,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-04T17:12:03Z","phase":"compile","seconds":11.248,"exit":0,"cmd":"cmake --build agent_space/build-hip -j 32"}
+{"kind":"phase","ts":"2026-11-04T17:12:10Z","phase":"test","seconds":0.002,"exit":127,"cmd":"./gputiltestcuda"}
+{"kind":"phase","ts":"2026-11-04T17:12:10Z","phase":"test","seconds":0.002,"exit":127,"cmd":"./ohmtestcuda"}
+{"kind":"phase","ts":"2026-11-04T17:12:10Z","phase":"test","seconds":0.002,"exit":127,"cmd":"./ohmtest"}
+{"kind":"phase","ts":"2026-11-04T17:12:10Z","phase":"test","seconds":0.002,"exit":127,"cmd":"./ohmtestheightmap"}
+{"kind":"phase","ts":"2026-11-04T17:12:10Z","phase":"test","seconds":0.002,"exit":127,"cmd":"./slamiotest"}
+{"kind":"phase","ts":"2026-11-04T17:12:22Z","phase":"test","seconds":4.181,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-090832-v-ohm/moat/agent_space/build-hip/bin/gputiltestcuda"}
+{"kind":"phase","ts":"2026-11-04T17:12:23Z","phase":"compile","seconds":11.728,"exit":0,"cmd":"cmake --build agent_space/build-cpu -j 16"}
+{"kind":"phase","ts":"2026-11-04T17:13:06Z","phase":"test","seconds":43.798,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-090832-v-ohm/moat/agent_space/build-hip/bin/ohmtestcuda"}
+{"kind":"phase","ts":"2026-11-04T17:13:15Z","phase":"test","seconds":9.056,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-090832-v-ohm/moat/agent_space/build-hip/bin/ohmtest"}
+{"kind":"phase","ts":"2026-11-04T17:13:18Z","phase":"test","seconds":3.148,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-090832-v-ohm/moat/agent_space/build-hip/bin/ohmtestheightmap"}
+{"kind":"phase","ts":"2026-11-04T17:13:18Z","phase":"test","seconds":0.033,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-090832-v-ohm/moat/agent_space/build-hip/bin/slamiotest"}
+{"kind":"phase","ts":"2026-11-04T17:13:36Z","phase":"test","seconds":9.105,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-090832-v-ohm/moat/agent_space/build-cpu/bin/ohmtest"}
+{"kind":"phase","ts":"2026-11-04T17:13:39Z","phase":"test","seconds":3.094,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-090832-v-ohm/moat/agent_space/build-cpu/bin/ohmtestheightmap"}
+{"kind":"phase","ts":"2026-11-04T17:13:39Z","phase":"test","seconds":0.033,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-090832-v-ohm/moat/agent_space/build-cpu/bin/slamiotest"}
+{"kind":"session","ts":"2026-11-04T17:14:15Z","epoch":1793812455.550061617,"event":"end","platform":"linux-gfx1100"}

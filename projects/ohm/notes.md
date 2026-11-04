@@ -1146,3 +1146,41 @@ Re-review of the commit-message rewrite (ea8bbea -> 7c09435). Both findings of t
 - 2e21f04 Test Plan is literal and runs: the fenced block was extracted verbatim from `git log -1 --format=%B 2e21f04` and run with `bash -e` (GNU g++, Linux) on a detached checkout of 2e21f04. Exit 0, 18 files in each of `/tmp/pp-before` and `/tmp/pp-after`, none empty, `diff -r` printed nothing, and HEAD ended back at 2e21f04. Host and device outputs differ (e.g. RaysQuery.cu), so the device pass does apply `__CUDA_ARCH__`.
 - `jargon.py -` is clean on all four commit messages, and `jargon.py --port ohm` is clean. Titles are 38/47/65/52 characters, each starts with `[ROCm]`, each body has "Authored with Claude.", and none has a trailer or non-ASCII text.
 - The proposed review PR body (2026-11-04 review section) was checked against the code at 7c09435. Its claims hold: the OhmCuda.cmake early return into OhmHip.cmake, `OHM_FEATURE_CUDA` set, `enable_language(HIP)`, `hip::host` in `OHM_CUDA_LIBRARY` (which gputilcuda and ohmcuda link where the CUDA build has `CUDA::cudart`), `ohm_hip_sources` on the ohmgpu and gputiltest `.cu` lists, `-include cuda_runtime.h`, hip_compat on HIP-only include paths and install, guards in gpu_ext.h/cutil_atomic.h/MapCoord.h/cutil_decl.h/cutil_math.h, the root CMakeLists and ohm-config changes, `<utility>` in two files and `<iomanip>` in six, and nine `.cu` files. MI250X matches this host's gfx90a market name. `jargon.py -` and `prose.py` are clean on it, and it is ASCII. No corrected body is needed. Its "Before opening" note should be read as at 7c09435: the tree is identical, so the MI250X and MI300X rows still describe the code, but the validated-at sha for every gate must be 7c09435 (or a later head) before the PR opens.
+
+## Validation 2026-11-04 (linux-gfx1100, moat-port 7c09435)
+
+Full real-GPU run (the earlier gfx1100 record at 141e356 was the separate-directory port, so nothing carries forward). AMD Radeon PRO W7900 (gfx1100, wave32), ROCm 10.1 TheRock pip SDK, CMake 3.31.6, Ninja, g++ 13.3, glm 1.0.1 headers downloaded to agent_space. One GPU pinned by the dispatcher (`HIP_VISIBLE_DEVICES` kept), `ulimit -c 0`. Fork clone checked out detached at 7c09435fcf06ec3351ae6757c25d1b3b201a2134; `git status --porcelain` empty afterwards.
+
+```bash
+ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+GLM=agent_space/glm-dl/glm-1.0.1
+cmake -B agent_space/build-hip -S projects/ohm/src -G Ninja -DCMAKE_BUILD_TYPE=Release -DOHM_FEATURE_HIP=ON -DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DGLM_INCLUDE_DIRS=$GLM
+utils/timeit.sh ohm compile -- cmake --build agent_space/build-hip -j 32     # 231/231, no errors
+export LD_LIBRARY_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_core/lib
+for t in gputiltestcuda ohmtestcuda ohmtest ohmtestheightmap slamiotest; do utils/timeit.sh ohm test -- agent_space/build-hip/bin/$t; done
+```
+
+Arch was auto-detected: `CMAKE_HIP_ARCHITECTURES=gfx1100;gfx1100;gfx1100;gfx1100` (one entry per GPU on the host). The `LD_LIBRARY_PATH` is the TheRock pip-layout RPATH quirk the porter recorded; without it the binaries exit 127.
+
+| Suite | gfx1100 at 7c09435 | porter, gfx90a at ea8bbea (same tree) |
+|-------|--------------------|----------------------------------------|
+| gputiltestcuda | 8/8 (4.1 s) | 8/8 |
+| ohmtestcuda | 58/58 (43.5 s) | 58/58 (70.4 s) |
+| ohmtest | 53/53 | 53/53 |
+| ohmtestheightmap | 19/19 | 19/19 |
+| slamiotest | 4/4 | 4/4 |
+
+GPU 66/66, CPU 76/76. Matches the porter, the gfx942 reviewer corroboration, and this platform's 2026-06-05 counts for the first port (gputiltesthip 8/8, ohmtesthip 58/58).
+
+CPU-only build (no GPU feature; cache shows `OHM_FEATURE_CUDA=OFF`, `OHM_FEATURE_HIP=OFF`, no cuda targets built):
+
+```bash
+cmake -B agent_space/build-cpu -S projects/ohm/src -G Ninja -DCMAKE_BUILD_TYPE=Release -DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON -DGLM_INCLUDE_DIRS=$GLM
+utils/timeit.sh ohm compile -- cmake --build agent_space/build-cpu -j 16   # 161/161
+```
+
+ohmtest 53/53, ohmtestheightmap 19/19, slamiotest 4/4.
+
+Checks: `python3 utils/jargon.py --port ohm` clean (after creating local `master`/`moat-port` refs from origin in the fresh clone). readme.md has the "Building for AMD GPUs" section next to the CUDA build instructions.
+
+CUDA gate: cuda-not-validated on this host. There is no CUDA toolkit, and the fleet guard refused installing pip nvcc wheels into the job venv. The CUDA path evidence at this tree remains the 18/18 byte-identical preprocessing check (porter and gfx90a reviewer; the tree of 7c09435 equals ea8bbea). An nvcc compile with `-DCMAKE_CUDA_ARCHITECTURES=80` is still owed by a host that has the toolkit.
