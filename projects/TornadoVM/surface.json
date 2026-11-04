@@ -258,7 +258,136 @@
       "note": "untouched; CUDA backend build + make test-nogpu must still pass"
     }
   ],
-  "covered": [],
+  "covered": [
+    {
+      "id": "library:tornado-cudf",
+      "evidence": "cudf-hip builds the unchanged shim against hipDF into libtornado-hipdf (999bff725); TestCudf 24/24, TestCudfColumns 20+3 unsupported (hipDF has no ZSTD writer)"
+    },
+    {
+      "id": "library:tornado-cudnn",
+      "evidence": "SDPA shim replaced on HIP by CK tile FMHA in ck-hip/libtornado-ck (de819cd13, ebb89fdf0); TestCuDnn SDPA x3 pass; MIOpen MHA has no FP16 solution (notes)"
+    },
+    {
+      "id": "library:tornado-cutlass",
+      "evidence": "CUTLASS GEMMs on CK device ops in libtornado-ck (cf3563f72); TestCutlass 26/26"
+    },
+    {
+      "id": "backend:hip-driver",
+      "evidence": "tornado-drivers/hip (94b5c8c88); quickPass 1485 pass / 2 known fails at ebb89fdf0"
+    },
+    {
+      "id": "codegen:tc-hip-dialect",
+      "evidence": "HipDialect + TargetCaps HIP (94b5c8c88, e0b31b746); lit 60/60, selftest 20/1 skip"
+    },
+    {
+      "id": "feature:cuda-graphs",
+      "evidence": "hipGraph capture/replay (94b5c8c88); TestCUDAStreams graph tests and graph-captured library tests pass on HIP"
+    },
+    {
+      "id": "feature:nvtx",
+      "evidence": "ROCTXAPI (rocprofiler-sdk-roctx), optional (94b5c8c88)"
+    },
+    {
+      "id": "feature:pinned-memory",
+      "evidence": "hipHostRegister/hipHostMalloc (94b5c8c88); covered by quickPass"
+    },
+    {
+      "id": "feature:prebuilt-tasks",
+      "evidence": "add.hip / add_uncompressed.hip prebuilt sources (94b5c8c88); prebuilt tests pass"
+    },
+    {
+      "id": "feature:virtual-devices",
+      "evidence": "ported cheaply against HIP_GFX942 (94b5c8c88); virtual-device tests in quickPass"
+    },
+    {
+      "id": "feature:power-metrics",
+      "evidence": "AMD SMI handler (180fa32eb); profiler reports 286000 mW, TestProfiler 9/9"
+    },
+    {
+      "id": "feature:tensor-core-mma",
+      "evidence": "MFMA (CDNA) / WMMA (RDNA3/4) lowering (e0b31b746); MMA classes 65/65; gfx1250 refused with reason"
+    },
+    {
+      "id": "library-task:tornado-cublas",
+      "evidence": "HipBlas/HipBlasLt providers (d171cc86b); TestCuBlas 27/27, TestCuBlasLt 10/10"
+    },
+    {
+      "id": "library-task:tornado-cufft",
+      "evidence": "HipFft provider (de638ad9a); TestCuFft 9/9"
+    },
+    {
+      "id": "library-task:tornado-curand",
+      "evidence": "HipRand provider (4a1ebfb68); TestCuRand 7/7"
+    },
+    {
+      "id": "library-task:tornado-cusparse",
+      "evidence": "Hipsparse provider (85b92503d); TestCusparse 17/17"
+    },
+    {
+      "id": "library-task:tornado-nccl",
+      "evidence": "RCCL binding (dffb8db92); TestNccl 20 + 10 unsupported (2 GPUs), TestNcclMultiProcess 3 + 1"
+    },
+    {
+      "id": "library-task:tornado-cudnn",
+      "evidence": "MIOpenLibraryProvider (71627fa6e) + CK SDPA (de819cd13); TestCuDnn 18/18"
+    },
+    {
+      "id": "library-task:tornado-cudf",
+      "evidence": "CudfNativeLib binds libtornado-hipdf on HIP (999bff725); see library:tornado-cudf"
+    },
+    {
+      "id": "library-task:tornado-cuvs",
+      "evidence": "hipVS through the same C API (0185c7f40); TestCuVS 7/7"
+    },
+    {
+      "id": "library-task:tornado-cutlass",
+      "evidence": "ComposableKernelLibraryProvider (cf3563f72); TestCutlass 26/26"
+    },
+    {
+      "id": "build:backend-wiring",
+      "evidence": "make BACKEND=hip, hip-backend profiles, installer, launcher (94b5c8c88 and library commits)"
+    },
+    {
+      "id": "build:windows",
+      "evidence": "HIP_PATH DLL discovery and tornado.bat/tornado.py paths (94b5c8c88); ck-hip/cudf-hip skip on Windows; awaits the Windows validator"
+    },
+    {
+      "id": "tool:tc-emit",
+      "evidence": "tc emit --target hip (94b5c8c88)"
+    },
+    {
+      "id": "tool:tornado-selftest",
+      "evidence": "HIP target line; 20 pass / 1 skip on gfx950"
+    },
+    {
+      "id": "test:tc-lit-and-unit",
+      "evidence": "make test-nogpu pass; lit 60/60 incl. 15 HIP tests compiled with hipRTC"
+    },
+    {
+      "id": "test:tornado-unittests",
+      "evidence": "quickPass 1485 pass, 695 unsupported, 2 known fails (Mandelbrot/Julia); CUDA-only tests gated for HIP"
+    },
+    {
+      "id": "test:native-api",
+      "evidence": "TestCUDAJITCompiler/TestCUDATornadoCompiler do not exist at develop f8e3ac907; the native stream/graph API is exercised on HIP by TestCUDAStreams (12/12 in quickPass)"
+    },
+    {
+      "id": "example:tornado-examples",
+      "evidence": "MatrixMultiplication2D example runs on HIP with the profiler"
+    },
+    {
+      "id": "benchmark:library-benchmarks",
+      "evidence": "BenchmarkCuVSKnn, BenchmarkFft, BenchmarkConv2d(+Layouts), BenchmarkSdpa, BenchmarkSgemm, BenchmarkLtFusedMlp, BenchmarkCutlassGemm, BenchmarkNcclAllReduce run on HIP (Results match where checked)"
+    },
+    {
+      "id": "doc:readme-install",
+      "evidence": "README/INSTALL_FROM_SOURCE/developer docs (94b5c8c88); native-libs README + guide (7096165e2); cudf/cuvs READMEs"
+    },
+    {
+      "id": "path:opencl-metal-cuda-noregress",
+      "evidence": "git diff develop -- tornado-drivers/{cuda,opencl,metal,cuda-jni,opencl-jni} and the CUDA shims is empty; BACKEND=cuda (nvcc) and opencl build; test-nogpu pass"
+    }
+  ],
   "scoped_out": [
     {
       "id": "feature:cuda-tile",
