@@ -1126,3 +1126,11 @@ No CUDA toolchain was available, so the CUDA build was checked by preprocessing:
 
 This change was prepared with the help of an AI coding agent.
 ~~~~
+
+## 2026-11-04 (windows-gfx1151, porter by orchestrator) -- commit-message rewrite, ea8bbea -> 7c09435
+
+jeff approved rewriting the two commit messages the 2026-11-04 review flagged (no upstream PR open, nothing validated at ea8bbea), and ran the `--force-with-lease=moat-port:ea8bbea` push himself. 19dc171 and ea8bbea were re-created on da4f062 with `git cherry-pick -n` + `git commit -F`, same author and author date:
+- 2e21f04 (was 19dc171): Test Plan replaced with a literal script (stub headers in /tmp/stub, `pp()` preprocessing host and device passes, `git checkout HEAD~1` / `git checkout -`, `diff -r /tmp/pp-before /tmp/pp-after`). Run on this host with Strawberry g++ at 19dc171: 18 outputs, `diff -r` identical.
+- 7c09435 (was ea8bbea): "cuda_runtime.h maps the CUDA runtime names gputil uses to HIP, cuda.h forwards to it, and math_constants.h forwards to <hip/hip_math_constants.h>."
+
+`git rev-parse 7c09435^{tree}` == `ea8bbea^{tree}` == c13dfc817c494b5fe5c76c031b692b2fdfbddf29: no content change. `jargon.py -` on both messages: clean.
