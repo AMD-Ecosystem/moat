@@ -527,3 +527,19 @@ jeff ruled `now` (recorded with `deferred.py decide`). The change is a single wo
 `python3 utils/moatlib.py classify cuda_voxelizer 3625a1e 4804d34` -> `class=doc-only arch_independent=True inert=True`. So `advance-head` carries every completed platform forward through its source-class path, and no revalidation is needed.
 
 To finish: on a host where the Trimesh2 build is allowed, recreate the same one-line edit on `3625a1e`, build with the README Linux command (`/opt/rocm` replaced by `$(rocm-sdk path --root)` when only the pip SDK is installed), run `ulimit -c 0; ./cuda_voxelizer -f <src>/test_models/bunny.OBJ -s 512` and check for `## GPU VOXELISATION`, then commit with the Test Plan, run `utils/jargon.py --port cuda_voxelizer`, push `moat-port`, run `advance-head`, and run `deferred.py set-status cuda-voxelizer-readme-linux-release-build-type done`.
+
+## Porter round 2026-11-04 (linux-gfx1100, deferral cuda-voxelizer-readme-linux-release-build-type) -- completed
+
+Finishes the incomplete round above. The local `4804d34` was never pushed; the same one-word edit was recreated on `3625a1e` and committed as `ccc2950` (`[ROCm] Build Release in the Linux ROCm README command`, body with Test Plan), pushed to `moat-port` (`3625a1e..ccc2950`). `utils/prose.py` on the body: clean. `utils/jargon.py --port cuda_voxelizer`: clean (needed a local `main` branch tracking `origin/main` in the fresh fork clone).
+
+Host: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), `HIP_VISIBLE_DEVICES=0`. TheRock ROCm 10.1.0 pip SDK, HIP 7.16.26385, CMake 3.31.6, g++ 13.3.0, no `/opt/rocm`. Trimesh2 2022.03.04 (`0b3d9e2`), `make -C trimesh2/libsrc -j16` -> `lib.Linux64/libtrimesh.a`, exit 0. The new README Linux command, verbatim apart from the prefix and the target, run from `<src>/build` (default Unix Makefiles generator):
+
+```
+cmake -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DTrimesh2_INCLUDE_DIR:PATH=<tm2>/include -DTrimesh2_LINK_DIR:PATH=<tm2>/lib.Linux64 ..
+cmake --build . --parallel 16
+ulimit -c 0; ./cuda_voxelizer -f ../test_models/bunny.OBJ -s 512
+```
+
+Configure and build exit 0, `CMAKE_BUILD_TYPE:STRING=Release` in the cache, upstream warnings only (`nodiscard` on unchecked `hipError_t` in the `.cu` files, -Wwrite-strings, -Wformat). Run exit 0: `Best device: AMD Radeon Pro W7800 48GB`, `## GPU VOXELISATION`, GPU time 27.8 ms, wrote `bunny.OBJ_512.vox` (3,557,750 bytes; moved out of the source tree). Fork `git status --porcelain` empty after the run.
+
+`python3 utils/moatlib.py classify cuda_voxelizer 3625a1e ccc2950` -> `class=doc-only arch_independent=True inert=True`. `advance-head cuda_voxelizer ccc2950` carried linux-gfx90a, linux-gfx1201 and windows-gfx1151 forward to `ccc2950` (validated_sha now `ccc2950`, still completed); stage stays review-passed. Deferral marked done with `deferred.py set-status`. The `cuda-voxelizer-3625a1e-body-wording` deferral is still unruled.
