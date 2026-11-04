@@ -50,3 +50,4 @@
 {"kind":"session","ts":"2026-11-04T07:17:54Z","epoch":1793776674.007416391,"event":"start","platform":"linux-gfx942"}
 {"kind":"phase","ts":"2026-11-04T07:19:16Z","phase":"compile","seconds":0.019,"exit":2,"cmd":"python setup_AMD.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-04T07:19:39Z","phase":"compile","seconds":8.695,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261103-231546-review-leap/moat/agent_space/leap-build && python setup_AMD.py build_ext --inplace"}
+{"kind":"session","ts":"2026-11-04T07:21:57Z","epoch":1793776917.864977721,"event":"end","platform":"linux-gfx942"}
