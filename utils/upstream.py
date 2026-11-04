@@ -1068,20 +1068,20 @@ def _delta_hits_local(clone, base, head, terms, allow):
     # A sync round merges upstream's tip, so the delta also carries upstream's own
     # commits and code, which upstream already has and which are not ours to word.
     # Scan only what is new relative to every merged-in upstream parent.
-    merges = subprocess.run(["git", "-C", str(clone), "rev-list", "--merges", "--parents",
-                             f"{base}..{head}"], capture_output=True, text=True)
+    merges = _run(["git", "-C", str(clone), "rev-list", "--merges", "--parents",
+                   f"{base}..{head}"], capture_output=True, text=True)
     if merges.returncode:
         return None
     theirs = sorted({p for l in merges.stdout.splitlines() for p in l.split()[2:]})
     if theirs:
-        msgs = subprocess.run(["git", "-C", str(clone), "log", "--format=%B",
-                               f"{base}..{head}", "--not", *theirs],
-                              capture_output=True, text=True)
+        msgs = _run(["git", "-C", str(clone), "log", "--format=%B",
+                     f"{base}..{head}", "--not", *theirs],
+                    capture_output=True, text=True)
         if msgs.returncode:
             return None
         for parent in theirs:
-            ours = subprocess.run(["git", "-C", str(clone), "diff", f"{parent}...{head}"],
-                                  capture_output=True, text=True)
+            ours = _run(["git", "-C", str(clone), "diff", f"{parent}...{head}"],
+                        capture_output=True, text=True)
             if ours.returncode:
                 return None
             mine = {l[1:] for l in ours.stdout.splitlines()
