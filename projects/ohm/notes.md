@@ -1042,3 +1042,87 @@ index b6a7fd3..ac8d2be 100644
 ### Fork updated 2026-11-04: moat-port at ea8bbea, stage ported
 
 jeffdaily confirmed that the guard resolves the remote with `git -C <dir> remote get-url --push origin`, which printed `https://github.com/AMD-Ecosystem/ohm`. On the remote, `moat-port` was still 4e2e769 (`git ls-remote`). The local branch was a fast-forward from 4e2e769, and the clone's working tree was clean. A plain update ran with the literal clone path and `origin moat-port` and gave `4e2e769..ea8bbea  moat-port -> moat-port`. `git ls-remote` then showed ea8bbea28270871f3c32ac61c49789b13b60c3f6. After that, `advance-head ohm ea8bbea28270871f3c32ac61c49789b13b60c3f6` and `set-state ohm linux-gfx90a ported` ran, releasing the lock. The "Fork update blocked" section above is now resolved; its `git am` series stays as the record of the content.
+
+## Review 2026-11-04 (linux-gfx942 reviewer, moat-port ea8bbea vs master 4e2e769)
+
+### Summary
+The port builds ohm's existing CUDA backend through HIP (an `OHM_FEATURE_HIP` option, a three-file shim include directory, macro guards in five headers, two include fixes) with no copied source. Two upstream-visible commit messages are wrong or not literal; the code itself has no defects found. **Request Changes** (commit messages only).
+
+### Commit Hygiene
+1. **ea8bbea body misstates the shim.** It says "cuda.h and math_constants.h forward to it" (to `cuda_runtime.h`). `gputil/cuda/hip_compat/math_constants.h:2` is `#include <hip/hip_math_constants.h>`; only `cuda.h` forwards to `cuda_runtime.h`. Reword to: "cuda_runtime.h maps the CUDA runtime names gputil uses to HIP, cuda.h forwards to it, and math_constants.h forwards to <hip/hip_math_constants.h>."
+2. **19dc171 Test Plan is not a literal command.** It shows `g++ ... [-D__CUDA_ARCH__=700] <include dirs> $f`, with an optional-argument bracket and a placeholder (AGENTS.md: a Test Plan has literal commands). Replace with this, which the reviewer ran from the repository root at 4e2e769 and at ea8bbea (18 files each, `diff -r` identical):
+
+```
+mkdir -p /tmp/stub /tmp/pp && touch /tmp/stub/cuda_runtime.h /tmp/stub/cuda.h /tmp/stub/math_constants.h
+for f in ohmgpu/gpu/*.cu tests/gputiltest/cuda/matrix_kernel.cu; do
+  g++ -std=c++14 -E -P -x c++ -D__CUDACC__ -I/tmp/stub -I. -Igputil -Igputil/cuda -Iohm -Iohmgpu -Iohmgpu/gpu -Itests/gputiltest $f > /tmp/pp/$(basename $f).host.i
+  g++ -std=c++14 -E -P -x c++ -D__CUDACC__ -D__CUDA_ARCH__=700 -I/tmp/stub -I. -Igputil -Igputil/cuda -Iohm -Iohmgpu -Iohmgpu/gpu -Itests/gputiltest $f > /tmp/pp/$(basename $f).device.i
+done
+# run before and after the change into two directories, then: diff -r <before> <after>
+```
+
+Fixing both rewrites two commit messages on `moat-port` (no upstream PR is open, so a `--force-with-lease` push is allowed), then `advance-head`. No code changes. No platform has validated ea8bbea yet, so no evidence is lost.
+
+### Reviewer checks (evidence for the record; no finding)
+- CUDA build is upstream's code: the 9 `.cu` files, host and device pass, preprocess byte-identically at 4e2e769 and ea8bbea (18/18, command above); a control with `-D__HIPCC__ -D__HIP_PLATFORM_AMD__` does differ, so the check detects guard changes. Host C++ in a CUDA build defines neither `__CUDACC__` nor `__HIPCC__`, so the changed headers are unchanged there. All CMake additions sit behind `OHM_FEATURE_HIP` or the `OhmCuda.cmake` early return.
+- No copied source: `git diff --diff-filter=A` adds only `cmake/OhmHip.cmake` and `gputil/cuda/hip_compat/{cuda.h,cuda_runtime.h,math_constants.h}` (81 lines).
+- Macro claims: `clang++ -x hip -dM -E` (ROCm 10.1 TheRock) defines `__HIPCC__` on both passes, `__HIP_DEVICE_COMPILE__` on the device pass, and never `__CUDACC__`/`__CUDA_ARCH__`.
+- `cutil_math.h` operator skip: HIP's mixed vector/scalar operators convert the scalar to the element type first, while the skipped CUDA templates compute `a.x * scalar` in the promoted type. An AST dump of every `.cu` device pass lists the HIP operator instantiations used: every scalar operand matches the element type except `unsigned int * float3` in CovarianceHitNdt.cu, which converts to float either way. No result changes.
+- Fault classes: no warp-size, lane-mask, shuffle or ballot use in `gputil/cuda`, `ohmgpu/gpu` or the test kernel; `cudaHostAlloc(..., 0)` maps to `hipHostMalloc(..., 0)` (default flags), with no deprecation warnings in the build.
+- `jargon.py --port ohm`: clean. Commits: `[ROCm]` titles of 72 characters or fewer, "Authored with Claude.", no trailer.
+- Skill lesson f54724a2 (`strategy-a-cmake.md`, "A per-backend directory..."): matches the code; the `-include` snippet is the form that builds.
+
+### Reviewer corroboration on gfx942 (not a validation record)
+Built ea8bbea on an AMD Instinct MI300X (gfx942, ROCm 10.1 TheRock pip SDK, CMake 3.31.6, glm 1.0.1), arch auto-detected (CMake listed gfx942 once per visible GPU), one GPU pinned, `ulimit -c 0`, `LD_LIBRARY_PATH=<sdk>/_rocm_sdk_core/lib`:
+
+```
+cmake -B agent_space/ohm-hip -S projects/ohm/src -G Ninja -DCMAKE_BUILD_TYPE=Release -DOHM_FEATURE_HIP=ON -DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DGLM_INCLUDE_DIRS=<glm-1.0.1>
+cmake --build agent_space/ohm-hip -j 22     # 227/227
+gputiltestcuda 8/8, ohmtestcuda 58/58 (71.9 s), ohmtest 53/53, ohmtestheightmap 19/19, slamiotest 4/4
+```
+
+A first attempt with a newer glm from another job's vcpkg tree failed in `CovarianceVoxel.h` (`glm::dquat` not declared): an environment issue (glm version), unrelated to the port.
+
+### Proposed review PR title and body (for jeff)
+
+Title: `[ROCm] Build the CUDA backend for AMD GPUs with HIP`
+
+Before opening: the Testing table lists only the GPUs run at ea8bbea (MI250X by the porter, MI300X by this review). Add the wave32 and Windows rows (with GPU names and counts) once those validations pass at the final head, and update the sha-specific numbers if the head moves. The `<iomanip>` Windows claim comes from the first port's Windows validation and must still hold on the Windows run of this head. `jargon.py -` and `prose.py` are clean on the body below.
+
+~~~~
+This adds an `OHM_FEATURE_HIP` CMake option that builds ohm's existing CUDA backend for AMD GPUs with HIP from ROCm, so GPU map population and queries run on AMD GPUs. No CUDA source is copied or renamed: the CUDA targets, source lists and options are reused, and the libraries, utilities and tests keep their `cuda` names (`gputilcuda`, `ohmcuda`, `gputiltestcuda`, `ohmtestcuda`). With the option off, the CUDA and OpenCL builds compile the same code with the same options as before.
+
+## Changes
+
+- `cmake/OhmHip.cmake` (new): when `OHM_FEATURE_HIP` is on, `OhmCuda.cmake` hands over to it before any CUDA detection. It sets `OHM_FEATURE_CUDA` so the CUDA targets are configured, enables the HIP language, and links `hip::host` where the CUDA build links cudart. The `.cu` files in the existing source lists compile as HIP; the `gputil/cuda/*.cpp` files stay host C++, as in the CUDA build. As nvcc does, every `.cu` file implicitly includes `cuda_runtime.h`. The GPU architecture comes from `CMAKE_HIP_ARCHITECTURES`, or is detected from the GPUs present when that is unset.
+- `gputil/cuda/hip_compat/` (new, HIP builds only): `cuda_runtime.h` maps the CUDA runtime names gputil uses to HIP, `cuda.h` forwards to it, and `math_constants.h` forwards to `<hip/hip_math_constants.h>`. The directory is on the include path of HIP builds only and is installed with them.
+- Device code checks: `__CUDACC__` checks in `gpu_ext.h`, `cutil_atomic.h` and `MapCoord.h` also accept `__HIPCC__`, and the `__CUDA_ARCH__` check in `cutil_decl.h` also tests `__HIP_DEVICE_COMPILE__`. HIP's vector types on AMD GPUs already define the arithmetic and comparison operators, so the `cutil_math.h` operator definitions are skipped there; the other helpers are kept.
+- The root `CMakeLists.txt` skips the CUDA toolkit lookup for HIP builds, and `ohm-config.cmake` finds hip for consumers of a HIP build.
+- Missing standard includes: `<utility>` in `PlyPointStream.cpp` and `VoxelBuffer.cpp` (GCC 13 fails with "'exchange' is not a member of 'std'", with or without a GPU feature), and `<iomanip>` in six test files (needed by the Windows ROCm toolchain).
+- `readme.md` documents the build.
+
+## Testing
+
+Built with `-DOHM_FEATURE_HIP=ON -DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON`, GPU architecture auto-detected:
+
+| GPU | Architecture | gputiltestcuda | ohmtestcuda | ohmtest | ohmtestheightmap | slamiotest |
+|-----|--------------|----------------|-------------|---------|------------------|------------|
+| AMD Instinct MI250X (Linux) | gfx90a | 8/8 | 58/58 | 53/53 | 19/19 | 4/4 |
+| AMD Instinct MI300X (Linux) | gfx942 | 8/8 | 58/58 | 53/53 | 19/19 | 4/4 |
+
+```
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOHM_FEATURE_HIP=ON -DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON -DCMAKE_PREFIX_PATH=/opt/rocm
+cmake --build build -j
+./build/bin/gputiltestcuda
+./build/bin/ohmtestcuda
+./build/bin/ohmtest
+./build/bin/ohmtestheightmap
+./build/bin/slamiotest
+```
+
+A CPU-only build (`-DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON`) builds with GCC 13.3 and passes ohmtest 53/53, ohmtestheightmap 19/19 and slamiotest 4/4.
+
+No CUDA toolchain was available, so the CUDA build was checked by preprocessing: each of the nine `.cu` files, for the host pass (`-D__CUDACC__`) and the device pass (`-D__CUDACC__ -D__CUDA_ARCH__=700`), produces byte-identical output before and after this change (18 of 18).
+
+This change was prepared with the help of an AI coding agent.
+~~~~
