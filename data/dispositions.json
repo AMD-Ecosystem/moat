@@ -1391,6 +1391,15 @@
     "reason": "license-blocked",
     "repo_id": 309488075
   },
+  "nvlabs/nvdiffrec": {
+    "by": "jeffdaily",
+    "decided": "2026-11-04T18:18:37Z",
+    "disposition": "skip",
+    "full_name": "NVlabs/nvdiffrec",
+    "note": "Jeff Daily decided 2026-11-04: decline, license-blocked. nvdiffrec is wholly under the NVIDIA Source Code License (non-commercial, research-only, tier 4) and hard-depends on nvdiffrast, already declined license-blocked. Intake write-up: git show a043bed0ecc2:projects/nvdiffrec/notes.md",
+    "reason": "license-blocked",
+    "repo_id": 431420791
+  },
   "oneapi-src/oneapi-samples": {
     "decided": "2026-05-29T23:13:18Z",
     "disposition": "skip",
