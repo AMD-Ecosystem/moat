@@ -39,3 +39,51 @@ python3 utils/moatlib.py set-intake cuda_voxelizer fork \
   --summary "Small, actively-maintained MIT CUDA mesh voxelizer with a real GPU kernel path and no existing AMD/ROCm port; two vendored NVIDIA CUDA-Samples helper headers (helper_cuda.h, helper_string.h) carry old restrictive EULA-style text and should be reviewed/replaced during the port even though the project's own code is clean MIT." \
   --duplicate "none" --viable yes
 ```
+
+## Port (windows-gfx1151, 2026-11-03)
+
+Fork: AMD-Ecosystem/cuda_voxelizer, branch `moat-port` cut from the mirror `main` (f9fc9a9). Per jeff's ruling the fork's GitHub default branch is now `moat-port` (`gh repo edit --default-branch moat-port`, confirmed with `gh repo view`); `status.json.fork_default_branch` stays `main`, the upstream mirror and PR base. Local clone remotes: `origin` = fork, `upstream` = Forceflow; protect-fork hook installed.
+
+Commits on `moat-port` (all on top, none amended):
+
+1. `94d1340` helper_cuda.h / helper_string.h replaced with NVIDIA/cuda-samples `v12.2` `Common/` (commit 1fa9c59db4ee8b34c4efa5b6e8fbd2a8c72a93ce), BSD-3-Clause 2022 headers. v12.2 chosen because upstream CI builds with CUDA 12.2. One local edit kept from the previous copy: `#include "helper_string.h"` (cuda-samples uses `<helper_string.h>`, which needs Common/ on the include path and would break the CUDA build). API used by the project -- `checkCudaErrors`, `findCudaDevice(int, const char**)` (which calls `checkCmdLineFlag`/`getCmdLineArgumentInt`) -- unchanged in signature and guards (`__DRIVER_TYPES_H__`, `__CUDA_RUNTIME_H__`); diff vs the old copy is the licence block, Ada/Hopper table rows, one printf newline. `utils/licenses.py scan-nvidia` on the tree: clean. Pushed alone first; deferred item `cuda-voxelizer-nvidia-proprietary-rescan` set `done`. Not verified with nvcc (no CUDA toolkit on this host) -- the CUDA no-regression compile is still owed by a host that has nvcc.
+2. `8b84b91` `kernel << <g, b >> > (...)` -> `kernel<<<g, b>>>(...)` in both .cu files (clang: "expected expression").
+3. `c593413` helper_math.h: arithmetic operator block (negate..divide) under `#if !defined(__HIP_PLATFORM_AMD__)` -- HIP_vector_type's member compound ops and friend vec*vec, vec/vec tie with helper_math's non-template free ones (ambiguous in util.h, cpu_voxelizer.cpp, voxelize.cu, smoothstep). Host math block guard extended to `!__CUDACC__ && !__HIPCC__` (clang HIP math header defines host+device min/max -> redefinition).
+4. `527b087` `USE_HIP` option, `hip_compat/{cuda.h,cuda_runtime.h,device_launch_parameters.h}` shim on the include path (BEFORE), `.cu` as `LANGUAGE HIP`, `HIP_ARCHITECTURES ${CMAKE_HIP_ARCHITECTURES}`, `LINKER_LANGUAGE CXX`, `hip::host`. No `static` was needed on the `__constant__` LUTs or `_DEBUG` `__device__` counters: Release and Debug both link and the morton path (cudaMemcpyToSymbol per TU) is correct.
+5. `5cd065b` `cudaMemset(vtable, 0, vtable_size)` after `cudaMallocManaged` (risk 1). Garbage was not observed on gfx1151 before the fix; it is a correctness fix, not a reproduced failure.
+6. `316616d` README "Build for AMD GPUs using CMake (ROCm)" subsection (Linux + Windows) + dependency line.
+
+Risk 2/3 (bitwise atomics on managed memory, managed memory on Windows): hipMallocManaged works on gfx1151 Windows (APU) and atomicOr/atomicXor results match the CPU; no device-memory fallback was needed here. Risk 2 is still open for the wave64 gate (gfx90a discrete).
+
+### Build recipe (Windows gfx1151, TheRock HIP 7.14, CMake 4.3.2 from the TheRock venv)
+
+Trimesh2 2022.03.04 `libsrc` (minus GLCamera/GLManager) compiled with TheRock `clang-cl -MD -O2 -EHsc -std:c++17` into `trimesh.lib` (a `-MDd -Od` copy for the Debug build). Then (`agent_space/cuvox_build.sh`):
+
+```
+source agent_space/win_rocm_env.sh
+cmake -S . -B build-hip -G Ninja -DUSE_HIP=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_C_COMPILER=$ROCM_LLVM_BIN/clang-cl.exe -DCMAKE_CXX_COMPILER=$ROCM_LLVM_BIN/clang-cl.exe -DCMAKE_HIP_COMPILER=$ROCM_LLVM_BIN/clang-cl.exe \
+  -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DTrimesh2_INCLUDE_DIR=<trimesh2>/include -DTrimesh2_LINK_DIR=<trimesh2>/lib.win64
+cmake --build build-hip -j16
+```
+
+Gotchas: in Git Bash pass clang-cl flags as `-MD`/`-Fo` (a `/MD` is path-converted to `C:/Program Files/Git/MD`). FindOpenMP with clang-cl picks MSVC's `libomp.lib` (`-Xclang -fopenmp`); the exe then imports `libomp140.x86_64.dll`, found only under VC Redist `debug_nonredist/x64/Microsoft.VC143.OpenMP.LLVM/` -- stage it next to the exe along with `rocm_stage_runtime`. The HIP compile with clang-cl drops small `voxelize.exe`/`voxelize_solid.exe` files in the build dir (harmless side artifacts). `findCudaDevice` prints "MapSMtoCores for SM 11.5 is undefined" and names the device "Hopper" (the BSD-3 header's fallback); cosmetic, per plan no CC-keyed logic was added. clang warns `nodiscard` on the unchecked `cudaDeviceSynchronize`/`cudaOccupancyMaxPotentialBlockSize` returns (upstream code, left as-is).
+
+### GPU-vs-CPU differential (porter sanity check, gfx1151, HEAD 316616d)
+
+`python3 agent_space/cuvox_compare.py <exe> test_models/bunny.OBJ <workdir> [--sizes] [--formats] [--repeat]` runs GPU then `-cpu` on the same binary and compares voxel sets (binvox RLE decoded, morton .bin bits, obj_points vertex lines). Bunny: 5110 triangles.
+
+| mode | size | filled (CPU) | diff (binvox = morton = obj_points) |
+|---|---|---|---|
+| surface | 64 | 13,802 | 0 |
+| surface | 256 | 221,760 | 0 |
+| surface | 512 | 887,315 | 9 (3 GPU-only, 6 CPU-only) |
+| solid | 64 | 52,258 | 0 |
+| solid | 256 | 3,345,384 | 0 |
+| solid | 512 | 26,763,628 | 1 (GPU-only) |
+
+- 3x repeated GPU runs at 512 surface + solid: identical run to run.
+- `-o vox` and `-o obj` at 64: GPU and CPU files byte-identical (`cmp`).
+- Debug build (`_DEBUG` device counters, cudaMemcpyFromSymbol) at 64, surface + solid, binvox + morton: 0 diff.
+- Upstream CI smoke `-s 64 -cpu`: exit 0.
+- Triangulation of the 512 residual (risk 8): `-DCMAKE_HIP_FLAGS=-clang:-ffp-contract=off` -> solid 0, surface 4 (2/2). Additionally replacing `rsqrtf` in helper_math `normalize()` with `1.0f / sqrtf()` (experiment build only, reverted) -> surface 0. So the residual is entirely FP: FMA contraction in the HIP TUs plus the device's approximate rsqrtf (host helper_math uses 1/sqrtf). Both apply on NVIDIA too (nvcc `--fmad=true`, approximate `rsqrtf`); not a port defect, and no flag change is shipped. Validators should expect exactly this class of tiny 512 residual; 64/256 must be 0.

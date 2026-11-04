@@ -68,7 +68,13 @@
       "note": "add a ROCm build subsection"
     }
   ],
-  "covered": [],
+  "covered": [
+    "executable:cuda_voxelizer",
+    "path:cpu-fallback",
+    "vendored:nvidia-helper-headers",
+    "vendored:helper_math",
+    "doc:readme-build"
+  ],
   "scoped_out": [
     {
       "id": "build:msvc-vs2022",
