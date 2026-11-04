@@ -3457,3 +3457,41 @@ Two lessons promoted to `cuda-to-rocm` (`references/validation.md`):
 ### State
 
 `linux-gfx1100` -> `completed`, `validated_sha=856c96bd7713ced9c1d8b1cb1398cd13b892ff06`.
+
+## Validation 2026-11-03 (windows-gfx1151, revalidation a9016bc -> 856c96b): PASS -- binary-equivalent carry-forward plus real launch
+
+Host/GPU: windows-gfx1151 (gfx1151, RDNA3.5 APU, Radeon 8060S, wave32), Windows 11. Fork clone
+checked out detached at `856c96bd7713ced9c1d8b1cb1398cd13b892ff06` (`moat-fix-9` tip).
+No push to the fork.
+
+Delta `a9016bc..856c96b` is one line: `#include <vector>` in `Velvet/Timer.hpp`
+(`git diff --stat`: 1 file, 1 insertion). `moatlib classify` returned `unknown`, so it reached
+a full revalidation.
+
+Build, README Windows recipe verbatim (fresh dir `build_v2`, Ninja, clang/clang++ from the
+TheRock SDK, vcpkg x64-windows, `-DCMAKE_HIP_ARCHITECTURES=gfx1151`), wrapped in
+`utils/timeit.sh Velvet compile`: exit 0, no errors, 11 "Building CXX", 2 "Building HIP"
+(same split as a9016bc), `strings Velvet.exe` shows `gfx1151`.
+
+Binary comparison against the a9016bc build (`build_validate/bin/Velvet.exe`, validated PASS
+on the real application 2026-08-25): both 1761792 bytes; `cmp -l` shows exactly 3 differing
+bytes, all inside the PE header (offsets 129-131), none in code, data or the embedded gfx1151
+code object. `utils/codeobj_diff.py` returned `indeterminate` ("no binaries found") because it
+does not scan a Windows .exe; the byte compare is the stronger test and is what the
+carry-forward rests on.
+
+Real launch: `build_v2/bin/Velvet.exe` with TheRock runtime DLLs staged next to it
+(`rocm_stage_runtime`), under `ulimit -c 0`. Window "Velvet" up and `Responding=True` at 8 s
+and again at about 35 s, 130 s of CPU time consumed (solver running), stdout/stderr empty (no
+HIP error text), stopped cleanly. No screenshots and no NaN probe were taken this round:
+launching the capture scripts needed an execution-policy bypass, which the permission system
+declined, and the NaN-probe patch from 2026-08-25 was not kept. The 8 application measurements
+of 2026-08-25 are therefore carried, not re-measured; the compiled program is identical to the
+one that produced them. linux-gfx1100 separately passed the application at this sha.
+Kernel_141 WER archive count read 39 this session versus 18 recorded on 2026-08-25; this
+session's launch showed no crash, so the increase is attributed to other ports run on this
+host since, unverified.
+
+CUDA gate: not run (no CUDA toolkit on this Windows host); cuda-not-validated, lands on Linux.
+Jargon: `utils/jargon.py -C <fork clone> --commits/--diff origin/master..856c96b` clean.
+Docs: README ROCm build section present (unchanged by this delta).

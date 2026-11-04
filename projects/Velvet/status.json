@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-27T06:23:17Z",
+  "updated_at": "2026-11-04T07:04:24Z",
   "head_sha": "856c96bd7713ced9c1d8b1cb1398cd13b892ff06",
   "depends_on": [],
   "pr_url": "https://github.com/vitalight/Velvet/pull/9",
@@ -141,11 +141,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "a9016bcb5efb7a328785f428ba5e609cf98513c2",
+      "validated_sha": "856c96bd7713ced9c1d8b1cb1398cd13b892ff06",
       "failed_sha": "7ccd4a98451e144e05f5bdf19827a28471f787e0",
       "started_at": "2026-08-24T22:03:16Z",
-      "completed_at": "2026-08-25T15:41:44Z",
-      "updated_at": "2026-08-25T15:41:44Z",
+      "completed_at": "2026-11-04T07:04:24Z",
+      "updated_at": "2026-11-04T07:04:24Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -160,7 +160,13 @@
         "last_session_at": null
       },
       "state": "completed",
-      "last_agent": "validator"
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "856c96bd7713ced9c1d8b1cb1398cd13b892ff06",
+        "method": "binary-equiv",
+        "detail": "856c96b Timer.hpp +#include <vector>; Velvet.exe built for gfx1151 byte-identical to a9016bc build except 3 PE-header bytes; real launch responsive 35s, no HIP errors",
+        "at": "2026-11-04T07:04:24Z"
+      }
     }
   },
   "published_sha": "a9016bcb5efb7a328785f428ba5e609cf98513c2",
