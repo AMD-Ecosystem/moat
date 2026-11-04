@@ -746,6 +746,13 @@ def set_state(name, platform, new_state, agent=None, save=True):
                    and not same_commit(
                        (obj["platforms"].get(platform) or {}).get("validated_sha"),
                        obj.get("head_sha")))
+    # Its mirror: a `validation-failed` arch failing a NEWER head. failure_stands reads
+    # an old failed_sha as stale and derives `port-ready`, so short-circuiting here left
+    # the new failure unrecorded and sent the next validator to the same head again.
+    refailed = (not is_stage and new_state == cur == "validation-failed"
+                and not same_commit(
+                    (obj["platforms"].get(platform) or {}).get("failed_sha"),
+                    obj.get("head_sha")))
     # The other same-state call that is not a no-op: entering an exclusive stage the
     # project is ALREADY in while holding no lock. That is the ordinary case of picking
     # up work another host put down, and it is the half the exclusivity check above does
@@ -760,7 +767,7 @@ def set_state(name, platform, new_state, agent=None, save=True):
     acquires = (new_state in EXCLUSIVE_STAGES
                 and (obj.get("porting") or {}).get("arch") != platform)
     same = new_state == cur
-    if same and not (revalidated or acquires):
+    if same and not (revalidated or refailed or acquires):
         return obj
     table = STAGE_TRANSITIONS if is_stage else ARCH_TRANSITIONS
     # Reached only when the state really changes, or when one of the cases above
@@ -2590,6 +2597,12 @@ def advance_head(name, new_sha, repo=None):
         print(why, file=sys.stderr)
     obj = load_status(name)
     repo = repo or _fork_repo(name)
+    if Path(repo, ".git").exists():
+        r = subprocess.run(["git", "cat-file", "-e", f"{new_sha}^{{commit}}"],
+                           cwd=str(repo), capture_output=True, text=True)
+        if r.returncode != 0:
+            raise ValueError(f"{name}: {new_sha} is not a commit in {repo}; "
+                             "push the fork commit and fetch before advancing the head")
     new_sha = full_sha(new_sha, repo)
     _move_head(obj, new_sha, repo)
     if moved:
