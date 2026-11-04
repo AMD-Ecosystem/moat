@@ -2338,3 +2338,44 @@ Validation at 9584561 (fill in from the validator records before opening):
 This branch is now merged with current main (through #1582), with one test-helper change so the new Parquet angle test also runs on the HIP build. The Rust and Python QDP test suites, including the new engine-init and Parquet capacity tests, pass on AMD Instinct MI250X, Radeon PRO W7800 and Radeon 8060S GPUs, and the no-GPU error path behaves the same as on CUDA.
 ```
 The `## Upstream reply` names gfx1100 (W7800) and gfx1151 (8060S) on the assumption they revalidate; edit it if either does not before the PR is opened.
+
+## Review 2026-11-04 (reviewer, linux-gfx942) -- fix round 1399 delta 9a3a08e0f..95845611e, PASS (body corrected)
+
+Scope: `git show --cc 667f76ff9` (merge of upstream/main 6f354a5cf) and 95845611e, plus the full PR diff `upstream/main..95845611e`. upstream/main has not moved since the merge (still 6f354a5cf), so the round is current.
+
+Code: no findings.
+- Merge resolution: the only conflict (`tests/common/mod.rs` `cuda_device()`) keeps upstream's doc and `cuda_runtime_available()` early return under the port's `qdp_gpu_platform` cfg. The auto-merged files that both sides touched (encoding/angle.rs, encoding/mod.rs, lib.rs, gpu_angle_encoding.rs, DEVELOPMENT.md) carry no `--cc` hunk beyond the angle.rs/mod.rs cfg+import lines, and are correct. `git grep 'target_os = "linux"'` at 95845611e: only the explanatory comment in qdp-core/build.rs, so no upstream gate slipped through unconverted (which would have silently skipped tests on Windows HIP). The port diff against upstream touches no Python package file, so #1505/#1581's Python API changes needed nothing.
+- 95845611e: `qdp_core::gpu::download_complex_f64` (gpu/metrics.rs:156) is the cuda_ffi `cudaMemcpy` D2H, which is `hipMemcpy` on HIP, returns interleaved f64 of length 2*n, and is re-exported from `gpu`; the `kDLCUDA`/`kDLROCM` selection mirrors gpu_api_workflow.rs:282. Dropping upstream's `checked_mul` byte-count guard is harmless in a test helper (the tensor already exists at that size). `cuda_runtime_available()` maps to `hipGetDeviceCount` (cuda_ffi.rs:431). Commit title 68 chars, `[ROCm]`, no Co-Authored-By trailer, Test Plan present.
+- Jargon: `jargon.py -C src --commits 667f76ff9^2..95845611e --diff upstream/main..95845611e` clean; the 5 `HEAD_SHA` hits over `9a3a08e0f..95845611e` are all upstream's own automerge-gate code (`git diff upstream/main 95845611e | grep -ci head_sha` = 0).
+- Reviewer smoke check (not platform validation), MI300X GCD, HIP_VISIBLE_DEVICES=4, `ulimit -c 0`, QDP_HIP_ARCH_LIST=gfx942, separate CARGO_TARGET_DIR under agent_space: `cargo test -p qdp-core --no-default-features --features hip --test gpu_angle_encoding --test engine_init --test gpu_api_workflow -- --test-threads=1 --nocapture` -> 12 + 3 + 8 passed, no `SKIP` lines; `test_angle_successful_encoding_from_parquet` ok.
+
+Body findings (fixed in the corrected body below):
+1. Wrong upstream attribution. `download_dlpack_complex_f64` and its use in `test_angle_successful_encoding_from_parquet` came from #1464 (678d22d12, "Fix streaming host-to-device copy size"), not #1569 (`git log -S download_dlpack_complex_f64 upstream/main`); the test itself dates from #1204, so it is not "new". The porter section above repeats the #1569 attribution. Also, of the PRs the body lists as moving "through the code the port touches", #1505 and #1581 touch no file in the port diff; the ones that do are #1464, #1551, #1568, #1569 (and #1521 for DEVELOPMENT.md).
+2. The `## Upstream reply` names MI250X, W7800 and 8060S, but no platform has validated 95845611e: linux-gfx90a, linux-gfx1100 and windows-gfx1151 all record `validated_sha` 9a3a08e0f. The MI250X run in the porter section is porter evidence, not a validator record. The reply is posted verbatim, so it must not name a GPU until its validator record is at 95845611e. The corrected reply carries a placeholder for exactly that.
+3. "the no-GPU error path behaves the same as on CUDA" claims a CUDA observation nobody made this round (no nvcc host). Reworded to what was checked.
+
+Not a finding: the no-device message still says "no NVIDIA driver or GPU detected" on the HIP build. It is upstream's text, upstream's Python test matches only "no usable CUDA device", and changing it would be scope creep in a sync round.
+
+### Corrected fix review PR body (for jeff)
+Title: `[ROCm] Merge current upstream main into the AMD GPU build`
+
+```
+apache/mahout#1399 was closed by the stale bot on 2026-10-25 with no maintainer decline; the plan is to reopen it once this round is approved. Since 9a3a08e, upstream main changed code the port also touches (#1464, #1551, #1568, #1569), so this round merges current main (6f354a5) into the PR branch. It is a merge, not a rebase, so the existing review history on #1399 stays valid.
+
+What changed:
+- 667f76f: merge of upstream main. One conflict, in qdp-core/tests/common/mod.rs (`cuda_device()`): upstream's new `cuda_runtime_available()` early return and doc kept, the port's `qdp_gpu_platform` cfg kept. Everything else merged cleanly.
+- 9584561: the `download_dlpack_complex_f64` test helper that #1464 added for the angle-from-Parquet GPU test used cudarc's raw `cuMemcpyDtoH_v2`, asserted `kDLCUDA` and was gated on `target_os = "linux"`. It now copies through `qdp_core::gpu::download_complex_f64`, expects `kDLROCM` on the HIP build, and uses the `qdp_gpu_platform` gate. Test-only.
+
+No kernel source, build script or runtime binding changed. #1551's no-device check calls `cuda_runtime_available()`, which already maps to `hipGetDeviceCount` on the HIP build, so a machine with no AMD GPU gets an `Err`/`RuntimeError` instead of an abort (checked with all GPUs hidden: Rust engine_init 3 passed, Python test_engine_init 2 passed).
+
+Validation at 9584561 (fill in from the validator records before opening):
+- linux-gfx90a (MI250X, ROCm 10.1): <pending>
+- linux-gfx1100 (W7800): <pending>
+- windows-gfx1151 (8060S): <pending>
+- CUDA (nvcc) compile check: <pending>
+
+## Upstream reply
+
+This branch is now merged with current main (through #1582), with one test-helper change so the Parquet angle test's readback also runs on the HIP build. The Rust and Python QDP test suites, including the new engine-init and Parquet capacity tests, pass on <AMD GPUs whose validator record is at 9584561, e.g. AMD Instinct MI250X, Radeon PRO W7800 and Radeon 8060S>, and with no GPU present the engine returns an error instead of aborting.
+```
+Before `upstream.py --fix-review`: replace the placeholder with only the GPUs whose platform record shows `validated_sha` 95845611e (`moatlib.py show mahout`), and fill the four validation lines. The porter's gfx90a counts (Rust 385/0/4 ignored, Python 321 passed/14 skipped) are the expected numbers for that line once the validator confirms them. `jargon.py -` and `prose.py` were clean on the original draft; rerun them on the filled-in body.
