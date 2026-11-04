@@ -7334,3 +7334,50 @@ The CUDA build (`USE_HIP` off, the default) compiles with nvcc 12.8 at the curre
 The rest of the body (in the `2f4de2d` review above) is unchanged. `jargon.py -` and `prose.py` are clean on the full body with this sentence swapped in.
 
 Still owed: revalidation at `640a8b5` on wave64, wave32 (`linux-gfx1100`) and Windows (`windows-gfx1151`); the hipMM decision stays with Jeff.
+
+## Validation 2026-11-04 (linux-gfx1100, Radeon Pro W7800, ROCm 10.1.0 pip SDK) -- completed at `640a8b5`
+
+Revalidation from this arch's `validated_sha` `542ea1a` to head `640a8b5974e69a720454b1005e491b306e87e16d` (the 156-commit upstream sync plus the hipMM RMM-25.x bridge and shared-build rounds): real code changes, so a full real-GPU run, no carry-forward. GPU: AMD Radeon Pro W7800 48GB (gfx1100, wave32), `HIP_VISIBLE_DEVICES=0` as pinned by the dispatcher; ROCm 10.1.0 pip SDK (`hipconfig --version` 7.16.26385). Fresh clone of `AMD-Ecosystem/HEonGPU`, `git checkout 640a8b5`, `git submodule update --init --recursive` (GPU-FFT `b743607`, GPU-NTT `8a4daf1`, RNGonGPU `e2f4a85`). Host prerequisites: CMake 4.1.3 from PyPI into this job's venv (host has 3.31.6; upstream needs >= 4.0), `apt-get install libgmp-dev libntl-dev`.
+
+```bash
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+common="-DCMAKE_PREFIX_PATH=$R -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DGPU_TARGETS=gfx1100 -DAMDGPU_TARGETS=gfx1100 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON"
+cmake -S projects/HEonGPU/src -B agent_space/heon/static $common -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+cmake --build agent_space/heon/static -j16
+cmake -S projects/HEonGPU/src -B agent_space/heon/shared $common -DHEonGPU_BUILD_SHARED=ON
+cmake --build agent_space/heon/shared -j16
+ulimit -c 0
+ctest --test-dir agent_space/heon/static --output-on-failure   # twice
+ctest --test-dir agent_space/heon/shared --output-on-failure   # once
+```
+
+All configure/build steps wrapped in `utils/timeit.sh HEonGPU compile`, ctest in `utils/timeit.sh HEonGPU test`. Both builds rc=0, 0 `error:` lines. Static: 49 test, 28 example, 3 benchmark executables; shared: 49 test executables. Same counts as the porter's gfx90a record at `2e51886`.
+
+### Tests (serial)
+
+- Static run 1: **301/301 passed**, 123.05 s. Static run 2: **301/301 passed**, 122.45 s.
+- Shared (`HEonGPU_BUILD_SHARED=ON`) run 1: **296/296 passed**, 122.19 s, including `HEonGPU.Shared_Library_Users_Share_The_Memory_Pool` and `HEonGPU.Shared_Library_Users_Share_The_Random_Number_Generator`.
+
+Matches the porter's MI250X counts at `2e51886` (static 301/301, shared 296/296; `640a8b5` is comment-only on top). This platform's earlier record was 20/20 at `542ea1a` (pre-sync, ctest entries per program rather than per gtest case). No failures, no timeouts.
+
+### Examples and benchmark (static build, each exit 0, values checked)
+
+- `1_basic_bfv`: squares `1,144,529,961,64,...` / `49,2916,36,10000,...` of input `1,12,23,31,8` / `7,54,6,100,8`.
+- `2_basic_ckks`: `100,400,900,1600,...,9` then `50,200,450,800,...,4.5`.
+- `3_basic_memorypool_config`: device pool `Total 38592630784 / Used 657248 / Free 38591973536`, host pool `268435456`.
+- `9_multi_stream_usage_way1`: ran to "Done." (prints no values).
+- `17_ckks_session`: maximum error 3.55e-08.
+- `15_basic_tfhe`: inputs `1,1,0,1,0,1,0,0` / `1,0,1,0,1,1,1,0`, control `0,0,0,0,1,1,1,1`; NAND/AND/NOR/OR/XNOR/XOR/NOT/MUX all match the truth table bit for bit.
+- `bootstrapping/3_ckks_bit_bootstrapping`: `EXPECTED:1 - ACTUAL:1 + 3.2e-11i` etc., `EXPECTED:0 - ACTUAL:4.35e-11`; 197 ms.
+- `bootstrapping/1_ckks_regular_bootstrapping`: `EXPECTED:0.2 + 0.4i - ACTUAL:0.200002 + 0.399993i`; 275 ms.
+- `mpc/1_multiparty_computation_bfv`: alice*bob+charlie rotated by one row slot: `230,20300,65,...,65,5` from inputs `1,10,100,7..` / `2,20,200,8..` / `3,30,300,9..` -- correct.
+- `benchmark/tfhe_benchmark`: XOR 11.10 ms, MUX 22.78 ms avg.
+
+### Gates
+
+- CUDA no-regression: already recorded at `2e51886` (nvcc 12.8, 0 errors, 0 warnings); `640a8b5` is CMake-comment-only. Not re-run (no nvcc here).
+- `python3 utils/jargon.py --port HEonGPU` -> clean (needed `git branch main origin/main` in the fresh clone).
+- Documentation: README "AMD GPUs" section (`USE_HIP=ON`, hipMM at RMM 25.x API level) and `docs/getting_started.rst` / `docs/advanced_topics.rst` present.
+- Integrity: `git -C projects/HEonGPU/src status --porcelain` empty; HEAD `640a8b5`.
+
+Verdict: `linux-gfx1100` **completed** at `640a8b5974e69a720454b1005e491b306e87e16d`.
