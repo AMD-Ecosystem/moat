@@ -278,3 +278,43 @@ Evidence (Radeon gfx1201, `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, ROCm SDK 10.1.
 - pytest suite not rerun in this round (no Python source changed; no scikit-learn in the image Python). Validators rerun it.
 - `utils/jargon.py --port tsne-cuda`: clean; `utils/prose.py` on both bodies: clean; titles 56 and 61 chars.
 - The first local commit of `edff77b` was missing the blank line after its title; it was redone with `git reset --soft` before anything was pushed.
+
+## CUDA compile check 2026-11-04
+
+Second attempt on the mi355 fleet host, superseding the blocked attempt recorded under the same heading above; jeff authorized the FAISS source build this time. No role taken, no state changed, no GPU work. Fork `moat-port` at the recorded `head_sha` `33f708d` (`[ROCm] Note where the OpenMP runtime of a ROCm FAISS is found`), which is past `4fedca7`. **Result: CUDA path builds cleanly, rc 0, no errors**, library and the revived `tsnecuda_test` gtest target both.
+
+Toolchain: `/usr/local/cuda-12.8/bin/nvcc`, `Cuda compilation tools, release 12.8, V12.8.93` (`cuda_12.8.r12.8/compiler.35583870_0`), host GCC 13.3.0, CMake 3.31.6, OpenBLAS from the distro for FAISS.
+
+FAISS dependency (upstream v1.15.1, `75c755c`, GPU on, CUDA, shared, installed into a prefix inside the job's `agent_space`):
+
+```
+git clone --depth 1 -b v1.15.1 https://github.com/facebookresearch/faiss.git faiss-src
+export PATH=/usr/local/cuda-12.8/bin:$PATH
+cmake -S faiss-src -B faiss-build -DCMAKE_BUILD_TYPE=Release \
+  -DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_CUVS=OFF -DFAISS_ENABLE_PYTHON=OFF \
+  -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON -DFAISS_OPT_LEVEL=generic \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=90 \
+  -DCMAKE_INSTALL_PREFIX=$PWD/faiss-install
+cmake --build faiss-build --target faiss -j 64
+cmake --install faiss-build
+```
+
+Configure, build (1m24s wall at `-j 64`) and install all rc 0; `faiss-install/lib/libfaiss.so` plus `include/faiss/gpu/*.h`.
+
+tsne-cuda, as INSTALL.md documents the CUDA build, with an explicit arch and the tests on:
+
+```
+git clone https://github.com/AMD-Ecosystem/tsne-cuda.git tsne-cuda-cudacheck
+cd tsne-cuda-cudacheck && git checkout 33f708d1ac8c4fae8cc7c8d31a5ca58238dfdf5b
+export PATH=/usr/local/cuda-12.8/bin:$PATH
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
+  -DCMAKE_CUDA_ARCHITECTURES=90 -DBUILD_TESTS=ON \
+  -DCMAKE_PREFIX_PATH=<faiss-install>
+cmake --build build -j 64
+```
+
+- Configure rc 0: `tsnecuda: honoring CMAKE_CUDA_ARCHITECTURES=90`, FAISS found at the prefix, GoogleTest fetched. Only diagnostics are the CMP0148 dev warnings for `find_package(PythonInterp/PythonLibs)`, which is upstream code.
+- Build rc 0, 16 s wall: all 19 CUDA objects (16 library sources, plus `src/test/test.cu`, `cuda_utils.cu`, `reduce_utils.cu` for the test), targets `tsnecuda_test`, `tsnecuda` (`libtsnecuda.so`), `python_source_files`, `write_version_string_to_python`. `cuobjdump --list-elf` shows `sm_90` cubins in both `libtsnecuda.so` and `tsnecuda_test`.
+- Zero errors. Warnings come only from FAISS headers and are not introduced by the port: `VERSION_STRING redefined` (6, `faiss/Index.h:29` versus the upstream `ADD_DEFINITIONS(-DVERSION_STRING=...)`, present on the fork's unmodified `main`) and nvcc `#3288-D` explicit lambda template parameters in `faiss/impl/Panorama.h` (3).
+- The fork clone's tracked files are unmodified; no fork change is indicated and nothing was pushed to the fork. `tsnecuda_test` was not run (no GPU work requested).
