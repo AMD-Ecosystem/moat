@@ -2885,3 +2885,20 @@ This host has no `/opt/conda` and no CUDA toolkit, so per the validator role the
 ### Integrity
 
 After the build, `third_party/hiprt` was reset (`git -C third_party/hiprt checkout -- . && git -C third_party/hiprt clean -fdx`). `git status --porcelain --ignore-submodules=none` is then empty at `21f62d0`. No source or build file was edited on this arch, so there is nothing to commit to the fork.
+
+## Validation 2026-11-04 (windows-gfx1151, Radeon 8060S, TheRock HIP 7.13.26190)
+
+Full validation at `moat-port` `21f62d0` (= head_sha), after the 2026-11-03 hiprtc DLL discovery fix (`892f41a`). Fork clone checked out at exactly `21f62d0`; the HIP RT submodule (pin `8602b8c`) was reset, the committed patch applied clean, all build output removed first, so this is a from-scratch build. Env: `agent_space/win_torch_env.sh` (torch 2.12.0+rocm7.14.0a20260519, `PYTORCH_ROCM_ARCH=gfx1151`, clang-cl, `ROCM_PATH`/`HIP_PATH` exported at run time).
+
+```
+git -C third_party/hiprt apply "$(pwd)/third_party/hiprt-rocm-fixes.patch"
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON -DHIP_PATH=$ROCM_ROOT -S third_party/hiprt -B <scratch>/dst_build
+cmake --build <scratch>/dst_build --config Release --target hiprt03001 -- -m:12      # clean
+MAX_JOBS=16 "$TORCH_PY" setup.py build_ext --inplace                                   # clean
+rm -rf diff_surfel_tracing/hiprt_cache            # cold JIT cache before each run
+PYTHONPATH="$PWD" "$TORCH_PY" -X faulthandler example/validate_rocm.py                 # ulimit -c 0
+```
+
+Result: run 1 and run 2, each from a cold cache, exit 0, `50/50 checks passed`, including the in-script cold-cache bit-for-bit reproduction; traced geometry 62/64 (missing [5, 25]), P=4096 1343 traced, P=16384 3309 traced, identical to the Linux gates. The project has no other test suite (README lists none; validate_rocm.py is the GPU gate recorded on the Linux validations). The original crash (null `hiprtcCreateProgram` in `hiprtBuildTraceKernels`) is gone.
+
+CUDA no-regression gate: not run on this host (Windows, no CUDA toolkit); carried by the Linux validators. `jargon.py --port diff-surfel-tracing` clean; README documents the ROCm build and run-time `ROCM_PATH`/`HIP_PATH` requirement. Fork tree clean after resetting the submodule patch and removing build output.
