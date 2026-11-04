@@ -133,3 +133,5 @@
 {"kind":"phase","ts":"2026-08-19T05:48:24Z","phase":"test","seconds":1.341,"exit":0,"cmd":"bash -c \ncd /tmp/claude-1000/-var-lib-jenkins-moat/5173df81-c10e-4bf6-9eb9-09db9ecd4c84/scratchpad\necho \"== run 1, GPU 0 ==\"\nHIP_VISIBLE_DEVICES=0 ./sgm_aloe_gfx1100 aloe/aloeL.jpg aloe/aloeR.jpg 128\necho \"RC=$?\"\necho \"== run 2, GPU 0 ==\"\nHIP_VISIBLE_DEVICES=0 ./sgm_aloe_gfx1100 aloe/aloeL.jpg aloe/aloeR.jpg 128\necho \"RC=$?\"\n"}
 {"kind":"session","ts":"2026-08-19T05:50:05Z","epoch":1787118605.733440901,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-19T05:50:05Z","epoch":1787118605.748657526,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-04T08:04:04Z","phase":"compile","seconds":0.329,"exit":1,"cmd":"cmake --build . --target install -j 12"}
+{"kind":"session","ts":"2026-11-04T08:05:12Z","epoch":1793779512.217832900,"event":"start","platform":"windows-gfx1151"}
