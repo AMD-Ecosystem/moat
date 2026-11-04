@@ -58,3 +58,5 @@
 {"kind":"phase","ts":"2026-11-04T16:37:40Z","phase":"test","seconds":0.582,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_extract"}
 {"kind":"phase","ts":"2026-11-04T16:37:41Z","phase":"test","seconds":0.567,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match"}
 {"kind":"phase","ts":"2026-11-04T16:37:41Z","phase":"test","seconds":0.490,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography"}
+{"kind":"session","ts":"2026-11-04T16:44:12Z","epoch":1793810652.844350512,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-04T16:46:29Z","epoch":1793810789.988977893,"event":"end","platform":"linux-gfx90a"}

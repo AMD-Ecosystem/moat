@@ -667,3 +667,38 @@ gfx90a and the remaining gates revalidate at db7c163 before this merges.
 
 Thanks for working through the conflicts. I built #99 merged into this PR with your resolution on two AMD GPUs (gfx90a and gfx1100). It needs two more HIP mappings, which #99's new code uses and this PR's `cuda_to_hip.h` lacked: `cudaGetDevice` (for `CurrentDeviceState()`) and `cudaMemcpy2DFromArray` (for the new CopyToTexture test). I've added both here. With them, the merge builds and passes `test_extract` (21 passed, 1 skipped, which needs two GPUs), `test_match` (11/11) and `test_homography` (9/9) on both GPUs. Keypoint counts are identical to this PR alone, and `TestCopyToTextureFromHost` finds 0 of 700,000 values wrong.
 ```
+
+## Review 2026-11-04 (fix round moat-fix-97, delta 6d1429a..db7c163, linux-gfx90a)
+
+Verdict: review-passed on the code. One finding against the draft fix review PR body (wording only; corrected body below). One records gap.
+
+Code checked: `cuda_to_hip.h:32` `cudaGetDevice -> hipGetDevice` (`hipError_t hipGetDevice(int*)`, `hip_runtime_api.h:2449`, same as CUDA's `cudaGetDevice(int*)`); `cuda_to_hip.h:76` `cudaMemcpy2DFromArray -> hipMemcpy2DFromArray` (`(void*, size_t dpitch, hipArray_const_t, size_t wOffset, size_t hOffset, size_t width, size_t height, hipMemcpyKind)`, `hip_runtime_api.h:6063`, same order and types as CUDA's). #99's call site (`tests/test_extract.cpp:434,449`, cast `(cudaArray *)img.t_data`, `cudaMemcpyDeviceToHost`) uses only names the header already maps (`cudaArray`, `cudaMemcpyDeviceToHost`). No caller on the branch itself (grep), so the branch's HIP and CUDA builds are unchanged; the header is only force-included under `USE_HIP`. Placement and column alignment match the neighbouring blocks. Commit db7c163: `[ROCm]` title 57 chars, no trailer, AI disclosure, fenced Test Plan; `python3 utils/jargon.py --port CudaSift` clean, commit message jargon clean. Reviewer sanity build at db7c163 on gfx90a (ROCm 7.16 wheel SDK, `HIP_VISIBLE_DEVICES=1`, `ulimit -c 0`): build exit 0, test_extract 10/0, test_match 11/0, test_homography 8/0. Not the validator record.
+
+Upstream reply (approved, not edited): every claim checked against both merge runs and holds.
+- gfx1100: plan `cudasift-pr97-pr99-merged-hip-check.md` gfx1100 section and the porter's Build 2 above (21 passed / 1 skipped, 11/0, 9/0; keypoints identical to #97 alone; CopyToTexture 0 of 700000 host and device).
+- gfx90a: fleet job `mi200-20261103-230856-cudasift-merge` (exit 0). Raw logs in its scratch dir: `m_test_extract.log` "21 passed, 0 failed, 1 skipped" with the 2-GPU SKIP, `m_test_match.log` 11/0, `m_test_homography.log` 9/0, lines 470/475 "0 of 700000 texture values differ" (host and device copy); baseline logs 10/11/8; keypoints 7079/1910/542/6, 1740/1876/1910/1919, 3104, 1452/2082 identical to pr97. Its shim commit `df6e63d` adds exactly the same two `#define`s as db7c163 (cudaGetDevice placed after cudaSetDevice instead of before cudaGetDeviceCount; same tokens).
+- Both runs used #97 at 6d1429a plus the two lines, not db7c163 itself; the tree content is the same, so "I've added both here" and "with them, the merge builds and passes ... on both GPUs" are true. gfx90a, gfx1100 and Windows still owe validator runs at db7c163 before the fix review PR opens or `--merge-fix` runs.
+
+Records gap (not a code finding): the gfx90a section of `~/.claude/plans/cudasift-pr97-pr99-merged-hip-check.md` is not on claude-shared `main`. It exists only on `conflict/e604d8c8-20261104T071512Z` (commit fbbdd1e, sync 07:15:11Z); the gfx1100 section won the race on main, and the plan never got `DONE`. The porter note above ("evidence comes from the gfx90a job in the plan file") points at a file that lacks it. jeff: restore the gfx90a section from that branch onto main. The job's scratch logs are container-local and will be swept.
+
+Finding 1 (draft fix review PR body, last line): "gfx90a and the remaining gates revalidate at db7c163 before this merges." `python3 utils/jargon.py -` flags `revalidate`, and "gates" is also in-house vocabulary. It also leaves gfx1100 out, though the gfx1100 numbers in the body are a porter run, not a validator record. `utils/prose.py` clean. Corrected body (only that line changed; the `## Upstream reply` is untouched; jargon and prose clean):
+
+Title: `[ROCm] Map cudaGetDevice and cudaMemcpy2DFromArray to HIP`
+
+```
+f-dy, who has the overlapping bug-fix PR Celebrandil/CudaSift#99, posted on Celebrandil/CudaSift#97 how to resolve the two conflicts between the PRs (CMakeLists.txt CUDA arch default; Laplace kernel upload size) and said they could not test the HIP build.
+
+We built #99 merged into #97 with that resolution. It did not build with HIP: #99 adds calls to `cudaGetDevice` (`CurrentDeviceState()` in `cudaSiftH.cu`) and `cudaMemcpy2DFromArray` (the new CopyToTexture test in `tests/test_extract.cpp`), and `cuda_to_hip.h` mapped neither.
+
+Change: one commit, db7c163, adds `#define cudaGetDevice hipGetDevice` and `#define cudaMemcpy2DFromArray hipMemcpy2DFromArray` to `cuda_to_hip.h`. Nothing else changes, and nothing on this branch calls either yet, so the branch's own behaviour is unchanged; whichever of #97 and #99 merges second builds with HIP.
+
+Retested on gfx1100 (ROCm 7.16):
+- this branch alone: test_extract 10/10, test_match 11/11, test_homography 8/8, keypoint counts unchanged from 6d1429a;
+- #99 (7db1a84) merged into this branch with f-dy's resolution (scratch only, not pushed): builds; test_extract 21 passed, 1 skipped (needs two GPUs), test_match 11/11, test_homography 9/9; keypoint counts identical to this branch alone; TestCopyToTextureFromHost 0 of 700000 values wrong.
+
+gfx90a, gfx1100 and the Windows GPUs are re-tested at db7c163 before this merges.
+
+## Upstream reply
+
+Thanks for working through the conflicts. I built #99 merged into this PR with your resolution on two AMD GPUs (gfx90a and gfx1100). It needs two more HIP mappings, which #99's new code uses and this PR's `cuda_to_hip.h` lacked: `cudaGetDevice` (for `CurrentDeviceState()`) and `cudaMemcpy2DFromArray` (for the new CopyToTexture test). I've added both here. With them, the merge builds and passes `test_extract` (21 passed, 1 skipped, which needs two GPUs), `test_match` (11/11) and `test_homography` (9/9) on both GPUs. Keypoint counts are identical to this PR alone, and `TestCopyToTextureFromHost` finds 0 of 700,000 values wrong.
+```
