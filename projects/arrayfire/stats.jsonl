@@ -126,3 +126,5 @@
 {"kind":"phase","ts":"2026-11-04T20:07:23Z","phase":"compile","seconds":83.232,"exit":0,"cmd":"cmake --build projects/arrayfire/src/build-hip-gfx1100 -j 16"}
 {"kind":"phase","ts":"2026-11-04T20:11:21Z","phase":"test","seconds":219.258,"exit":8,"cmd":"ctest --test-dir projects/arrayfire/src/build-hip-gfx1100 -R _cuda$ -j1 --output-on-failure"}
 {"kind":"phase","ts":"2026-11-04T20:15:53Z","phase":"test","seconds":224.353,"exit":8,"cmd":"ctest --test-dir projects/arrayfire/src/build-hip-gfx1100 -R _cuda$ -j1 --output-on-failure"}
+{"kind":"session","ts":"2026-11-04T20:20:08Z","epoch":1793823608.881954061,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-04T20:27:56Z","epoch":1793824076.861443131,"event":"end","platform":"linux-gfx1100"}

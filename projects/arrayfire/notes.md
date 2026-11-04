@@ -2771,3 +2771,125 @@ On a Radeon Pro W7800 (gfx1100) with ROCm 7.16, reduce_cuda goes from 583/1062 t
 The stage is `ported`, and the state machine has no `ported -> porting` edge (`set-state arrayfire linux-gfx1100 porting` raises `illegal transition ported -> porting`), so the fork-write lock cannot be taken by a transition. The lock was free (`porting: null`); `port-lock arrayfire --take linux-gfx1100` was attempted and refused by this session's permission layer as a shared-state change. Without the lock no commit or push was made: `moat-sync-64c88d9` is still at 5d09b5c0f, `head_sha` unchanged, stage left `ported`, and the working tree was reverted after saving the diff above. jeff's call: either take the lock (`port-lock arrayfire --take linux-gfx1100`) and have a porter apply the diff above as one commit on `moat-sync-64c88d9`, then `advance-head`, or route it through the reviewer (the round is at `ported`, so a review returning changes-requested is the in-machine path to `porting`). Deferred item `arrayfire-reduce-by-key-rocm716` stays open until the commit lands; its root cause is now this entry.
 
 Side effect to know about: this job's `$FLEET_VENV` now carries ROCm 7.14.0a20260612 (`rocm`, `rocm-sdk-core`, `rocm-sdk-devel`, `rocm-sdk-libraries-gfx110X-all`, expanded with `rocm-sdk init`) over its 10.1.0 copy; the shared image Python is untouched.
+
+## Review 2026-11-04 (reviewer, linux-gfx1100, /pr-review, delta 950dcdd02..5d09b5c0f on moat-sync-64c88d9) -- VERDICT: CHANGES REQUESTED
+
+Scope: `fix.base_sha` 950dcdd02..5d09b5c0f (sync merge), the 3 files both sides touched, the debug entry's reduce-by-key diagnosis, and the proposed review PR body. The full `master..moat-sync-64c88d9` diff has no new port content beyond what the 2026-08-11 reviews passed; the merge adds only upstream content.
+
+### Merge delta: clean
+- Merge base 492718b5a is the `v3.10.0` tag; 23 upstream commits to 64c88d932. The `+/-` line set of `git diff 492718b5a 950dcdd02` equals that of `git diff 64c88d932 5d09b5c0f`, and the line set of `git diff 492718b5a 64c88d932` equals that of `git diff 950dcdd02 5d09b5c0f`: neither side's change was lost or altered. `git diff 950dcdd02 5d09b5c0f -- src/backend/hip` is empty.
+- `CMakeLists.txt`, `README.md`, `src/backend/common/half.hpp`: read the three-way result; port lines (`AF_BUILD_HIP` block, `conditional_directory`, feature-list line, `__DH__ half2int`, hipRTC traits) intact. `afcuda` is in `built_backends` (CMakeLists.txt:461); `afcommon_interface` links `${af_fmt}` (src/backend/common/CMakeLists.txt:101).
+- Upstream's CUDA-backend `kernel/reduce_by_key.hpp`, `shfl_intrinsics.hpp`, `ireduce.hpp`, `err_cuda.hpp`, `qr.cpp`, `types.hpp` changes are clang-format only; `thrust_utils.hpp` swaps `detail/par.h` for `execution_policy.h` (CUDA-only). Nothing the HIP sibling must mirror. ROCm 7.16 SDK has `thrust/system/hip/detail/par.h`, `thrust::unary_function` (`thrust/functional.h`), `THRUST_VERSION 200805`.
+- Merge subject `Merge branch 'master' of https://github.com/arrayfire/arrayfire`; `jargon.py --port arrayfire`: only the known published `6800d5586` hit and upstream's own `head_sha` in `.github/scripts`, as the porter recorded.
+
+### Diagnosis of the 479 reduce-by-key failures: confirmed independently
+Read `src/backend/hip/kernel/reduce_by_key.hpp` at 5d09b5c0f. `k` is declared without an initializer at :73 (`test_needs_reduction`), :243 (`reduce_blocks_by_key`), :468 (`reduce_blocks_dim_by_key`) and assigned only under `tid(x) < n` (:75, :245-249, :470-476). Every lane then reads it unconditionally: `shfl_down_sync(k, 1)` and `k ==` at :77, `k != shfl_up_sync(k, 1)` at :256/:483, `k == shfl_down_sync(k, 1)` at :270/:497. Lvalue-to-rvalue conversion of an indeterminate `int`/`uint` is UB, and the wrapper's by-value `T var` (shfl_intrinsics.hpp:48, :69) is `noundef`, so the path `tidx >= n` is provably UB to LLVM.
+
+Reproduced the IR evidence on this host with the ROCm 7.16 SDK compiler (AMD clang 24.0.0git d6f6cb69), using `sum.cu`'s exact compile command from the sync job's build tree (`ninja -t commands`), pointed at this job's clone, plus `--cuda-device-only -S -emit-llvm`, output in `agent_space` only:
+- unpatched: 99 `llvm.assume` in the TU. In `reduce_blocks_by_key<float,int,float,af_add_t,128>`: `%55 = icmp slt i32 %tidx, %n` / `call void @llvm.assume(i1 %55)`, then unconditional `load i32` of the key and `load float` of the value (out-of-range lanes read past the end of both inputs), and `unique_flag = (laneid == 0) | (k != wave.shuffle(k))` with no `tidx < n` term. `test_needs_reduction<int>` has the same assume and unconditional key load.
+- patched (the three `{}` initializers): 0 `llvm.assume`; `br i1 %55` is a real branch again, the merge block has `phi i32 [k, in-range], [0, out-of-range]` and `phi float [v, in-range], [0.0 = init, out-of-range]`, and `unique_flag` is `and i1 %55, ...`. Same in `test_needs_reduction`.
+So the cause is the kernel's UB, exposed by 7.16; the porter's 1062/1062 `reduce_cuda` result with the patch (debug entry above) is consistent. Not re-run on the GPU here: the IR settles the mechanism and the validator runs the tests at the new head.
+
+Is `k{}` sufficient, so out-of-range lanes never contribute a key or a value? Traced each use with `k = 0`, `v = init` for `tidx >= n`:
+- `unique_flag` (:258/:485) keeps `&& (tidx < n)`, so an out-of-range lane is never a unique key; the scan at :261-266 then counts only in-range keys, and `warpReduceSizes` (:299) is correct. No write keyed on `unique_flag` (:302-344) can come from such a lane. In-range lanes compare only against lower lanes in `eq_check`, which are in range.
+- Segmented path: `update_key` includes `(tidx + delta) < n` (:286/:513), so no out-of-range `v` is pulled in.
+- All-equal fast path (:270-275): out-of-range `k = 0` can match a warp whose real keys are all 0 and take the unconditional shuffle-down reduction, but those lanes hold `init`, so they add the identity. Correct, but it means the porter's "the value is never used" is not literally true; the commit body below rewords it.
+- `test_needs_reduction`: `update_key` has `tid < n - 1` (:78) and the boundary check has `(tid + 1) < n` (:91); `k` is only consulted for in-range lanes.
+- Keys are only `s32`/`u32` (`src/api/c/reduce.cpp:71/75`), so `{}` is 0 for both.
+
+### Sweep of `src/backend/hip/kernel/` for an indeterminate value passed to a shuffle or compared
+- Shuffle/vote users: only `reduce_by_key.hpp` calls the `shfl_*_sync`/`any_sync`/`all_sync` wrappers; no other HIP kernel or hipRTC `.cuh` calls `__shfl*`/`__ballot*`/`__any*`/`__all*`. hipCUB `WarpReduce` (`reduce.hpp:265/330`) and `BlockReduce` (`fast.hpp:275`) inputs are initialized on every path (`out_val = init`, `count` accumulated); `topk.hpp` pads out-of-range keys with min/max before `BlockRadixSort`.
+- Every uninitialized local declaration in the directory (`where.hpp:73`, `fast.hpp:425`, `harris.hpp:113`, `susan.cuh:101`, `wrap.cuh:138`, `homography.hpp:529/536`, `pad_array_borders.cuh:19`, `orb.hpp:97`, `sift.hpp:642`, `unwrap.hpp:32`, ...) is assigned on every path before use.
+- Sites, all in `reduce_by_key.hpp`: the three `k` declarations above (:73, :243, :468), and a fourth of the same class found here, the stale shared-memory compare at :320-322 and :547-549 (finding 2).
+- Not this class: `compact`/`compact_dim` (:125-126, :165-166) load `keys_in.ptr[tidx]` / `vals_in` without a bound, but the values are used only under `threadIdx.x < nwrite`; same as upstream, a possible read past the buffer end, not an indeterminate value.
+
+### Findings
+
+1. **CONFIRMED -- uninitialized key passed to the shuffle wrappers (UB), exploited by ROCm 7.16.** `src/backend/hip/kernel/reduce_by_key.hpp:73`, `:243`, `:468`. Out-of-range lanes of every partial last block become unique keys; 479 `reduce_cuda` failures on gfx1100 at both 950dcdd02 and 5d09b5c0f. Fix as one commit on `moat-sync-64c88d9`:
+   ```diff
+   @@ test_needs_reduction (:73)
+   -    Tk k;
+   +    Tk k{};
+   @@ reduce_blocks_by_key (:243)
+   -    compute_t<Tk> k;
+   +    compute_t<Tk> k{};
+   @@ reduce_blocks_dim_by_key (:468)
+   -    Tk k;
+   +    Tk k{};
+   ```
+   The CUDA backend has the same code (`src/backend/cuda/kernel/reduce_by_key.hpp`); leave it untouched (CUDA path preserved). Whether to tell upstream is jeff's call.
+
+2. **CONFIRMED (code), latent on wave64 -- `tid_next_warp` uses a literal 32.** `src/backend/hip/kernel/reduce_by_key.hpp:320` and `:547`: `int tid_next_warp = (blockIdx.x * blockDim.x + (warpid + 1) * 32);`. The 2026-05 port converted every other warp constant in this kernel to `kWarpSize` and missed these two. With `DIMX = 128` (`reduce_impl.hpp:80/229`) and `kWarpSize = 64` (`kernel/config.hpp:30`) there are 2 warps; for warp 0 the computed index is block start + 32, inside warp 0. In a last block whose valid elements number 33..64, `tid_next_warp < n` passes although warp 1 is entirely out of range, and `k == warpReduceLeftBoundaryKeys[1]` reads a shared slot this block never wrote (written only by a `unique_flag` lane, :303/:530). On a stale match with more than one key in warp 0, `unique_flag = 0` (:324/:551) drops warp 0's last key while `warpReduceSizes[0]` still counts it, so one output slot comes from unwritten `warpReduceKeys`. gfx90a/gfx942 passed 1062/1062 because the stale value did not happen to match, not because the path is unreachable. On wave32 `kWarpSize == 32`, so gfx1100 code is unchanged. Fix as a second commit:
+   ```diff
+   -        int tid_next_warp = (blockIdx.x * blockDim.x + (warpid + 1) * 32);
+   +        int tid_next_warp = (blockIdx.x * blockDim.x + (warpid + 1) * kWarpSize);
+   ```
+   (both sites). No test fails today, so no new test is required; the wave64 validators re-run `reduce_cuda` at the new head.
+
+3. **Proposed commit body for finding 1 overstates.** The debug entry's body says "the value is never used"; out-of-range keys do steer the all-equal fast path (:270-271), harmlessly. Use the corrected messages below.
+
+4. **Proposed review PR body is stale once 1 and 2 land, and has one inaccuracy.** "the `af_fmt` header-only target": `af_fmt` is a variable naming `fmt::fmt-header-only` when that target exists, else `fmt::fmt` (CMakeLists.txt:304, :312). "there are no extra port commits", "130/132" and "`reduce` ... tracked separately" become false. Every other claim checked true: base is `v3.10.0` + 23 commits; nothing under `src/backend/hip` changes in the merge; the three overlap descriptions; NVRTC/SASS/cuDNN 9/CUDA 13 changes are CUDA-only; rocThrust provides both names; nine matrices in `.github/scripts/matrixmarket.cmake`; `git ls-remote` shows `experimental/hip` still at 950dcdd02 (2026-11-04). Corrected body below.
+
+### Corrected commit messages (`jargon.py -` clean, `prose.py` clean)
+Commit 1 (title 51 chars); keep the porter's Test Plan block from the debug entry after the attribution line:
+~~~
+[ROCm] Initialize keys in the reduce-by-key kernels
+
+Threads past the end of the input leave their key uninitialized in reduce_blocks_by_key, reduce_blocks_dim_by_key and test_needs_reduction, then pass it to the shuffle wrappers and compare it. Passing an indeterminate value by value is undefined behaviour, and the HIP compiler in ROCm 7.16 acts on it: after inlining, SimplifyCFG replaces the `tidx < n` branch around the key load with an assumption that it is always taken, so the key and value are loaded unconditionally and the `tidx < n` term disappears from the unique-key flag. Every block with fewer valid elements than threads then counts its out-of-range lanes as keys, and reduce-by-key returns wrong sizes or throws `seq.end < parentDim`. ROCm 7.14 compiles the same source with the branch intact.
+
+Value-initialize the keys. Out-of-range lanes then keep the reduction's identity value, and the existing bounds checks keep them out of the unique-key flags and the segmented reduction, so the key value given to them does not change any result.
+
+Authored with Claude.
+~~~
+
+Commit 2 (title 64 chars); Test Plan: rebuild and `build-hip-<arch>/test/reduce_cuda` on a wave64 host, then the full ctest:
+~~~
+[ROCm] Use the wavefront size for the next warp in reduce-by-key
+
+The warp-boundary check in reduce_blocks_by_key and reduce_blocks_dim_by_key computes the first index of the next warp as `(warpid + 1) * 32`. On a 64-wide wavefront that index lies inside the current warp, so when a block's valid elements end in its first wavefront the bounds check passes and the key is compared with the next warp's left-boundary key in shared memory, which that block never wrote. A stale match drops the last key of a warp that holds more than one key. Use kWarpSize, as the rest of the kernel does; 32-wide wavefronts compile to the same code.
+
+Authored with Claude.
+~~~
+
+### Corrected review PR body (for jeff, after commits 1 and 2 land)
+Title: `[ROCm] Merge upstream master (3.10.1), fix HIP reduce-by-key keys` (65 chars). Branch `moat-sync-64c88d9` -> `moat-port`; no `## Upstream reply` section. `jargon.py -` clean, `prose.py` clean. The test-result paragraph uses the porter's measurements of exactly commit 1's diff on top of 5d09b5c0f (gfx1100, ROCm 7.16); re-check it against the run at the new head before posting.
+
+~~~markdown
+Merge upstream `master` at 64c88d932 (the 23 commits after v3.10.0, including the 3.10.1 release prep and the clang-format 15 pass) into the HIP port branch, plus two fixes to the HIP reduce-by-key kernels. Merge, not rebase, so the published commits stay as they are.
+
+The merge has no textual conflicts. Three files changed on both sides:
+
+- `CMakeLists.txt`: upstream adds the CUDA compiler/toolkit check, the `af_fmt` variable (`fmt::fmt-header-only` when that target exists, otherwise `fmt::fmt`), the Windows standalone runtime collection and the 3.10.1 version bump. The `AF_BUILD_HIP` option, its block and `conditional_directory(AF_BUILD_HIP ...)` are untouched. The HIP backend builds as target `afcuda`, so it is covered by `built_backends` and the new standalone install step, and it takes fmt through `afcommon_interface`, which now links `${af_fmt}`.
+- `README.md`: upstream's new "Experimental backends" table (pointing at `experimental/hip`) and the port's feature-list line both stay.
+- `src/backend/common/half.hpp`: upstream's only change is clang-format collapsing the `__half2uint_rn` else branch in `half2int`. It lands inside the port's `__DH__` version of that function; the hipRTC traits block and the device conversion paths are unchanged.
+
+The other upstream changes to the CUDA backend (NVRTC arch query, SASS instead of PTX, cuDNN 9, CUDA 13 thrust and cuFFT guards, compute-capability tables) are NVIDIA-specific and have no HIP counterpart: the HIP backend compiles kernels with hipRTC, and the ROCm Thrust here still provides `thrust::unary_function` and `thrust/system/hip/detail/par.h`. The merge itself changes nothing under `src/backend/hip`.
+
+The two commits after the merge, both in `src/backend/hip/kernel/reduce_by_key.hpp`:
+
+- Initialize the keys in `reduce_blocks_by_key`, `reduce_blocks_dim_by_key` and `test_needs_reduction`. Threads past the end of the input left `k` uninitialized and then passed it to the shuffle wrappers, which is undefined behaviour. The ROCm 7.16 compiler acts on it: SimplifyCFG turns the `tidx < n` branch around the key load into an assumption, so out-of-range threads load past the end of the input and count as unique keys, and every input whose last block is partial gets wrong reduce-by-key sizes (479 failures in `reduce_cuda` on gfx1100). With the keys value-initialized the branch is kept and out-of-range threads keep the reduction's identity value.
+- Use the wavefront size, not 32, for the first index of the next warp in the warp-boundary check. On 64-wide wavefronts the old index let a block whose valid elements end in its first wavefront compare a key against shared memory that block never wrote. 32-wide wavefronts compile to the same code as before.
+
+Test data: sparse.tamu.edu now refuses downloads (HTTP 403). The build used upstream's own replacement, `.github/scripts/check-matrix-data.py` plus `cmake -C .github/scripts/matrixmarket.cmake`, which restores the same nine Matrix Market files from the pinned arrayfire-data commit.
+
+## Test plan
+
+gfx1100 (Radeon Pro W7800), ROCm 7.16:
+
+```
+python3 -I .github/scripts/check-matrix-data.py . build-hip-gfx1100
+AF_CI_MTX_FILES=ON cmake -C .github/scripts/matrixmarket.cmake -S . -B build-hip-gfx1100 -GNinja -DCMAKE_BUILD_TYPE=Release -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF -DAF_BUILD_CPU=ON -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF -DAF_BUILD_UNIFIED=ON -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF -DAF_BUILD_DOCS=OFF -DAF_BUILD_TESTS=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100
+cmake --build build-hip-gfx1100
+build-hip-gfx1100/test/reduce_cuda
+ctest --test-dir build-hip-gfx1100 -R '_cuda$' -j1 --output-on-failure
+```
+
+Result: `reduce_cuda` 1062/1062 (583/1062 at the merge alone), and 131/132 test binaries pass. The one failure is `confidence_connected`, where every case skips with Image IO not configured, as in every run with `AF_WITH_IMAGEIO=OFF`. The HIP runtime compiler needs `ROCM_PATH` set when ROCm is not installed in `/opt/rocm`.
+
+The other GPUs are re-tested at this commit before the merge.
+
+Delivery: this moves only the fork branch. Upstream hosts the same commits on `arrayfire/arrayfire` `experimental/hip`, still at 950dcdd02, so carrying this round there needs a separate pull request against that branch, opened by hand after approval.
+~~~
+
+### Handoff
+`set-state arrayfire linux-gfx1100 changes-requested`. Porter: take findings 1 and 2 as two commits on `moat-sync-64c88d9` with the messages above, rebuild, run `reduce_cuda` and the full `_cuda$` ctest on gfx1100 (`ROCM_PATH` exported on SDK-wheel hosts), `advance-head` (no CUDA file changes, so the CUDA path is untouched). Then a reviewer on the new delta. Deferred `arrayfire-reduce-by-key-rocm716` closes when commit 1 lands. Nothing pushed to the fork by this review.
