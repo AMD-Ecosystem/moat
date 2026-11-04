@@ -1289,3 +1289,56 @@ This pull request was prepared with the help of an AI assistant acting as a codi
 
 If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
 ~~~~
+
+## Validation 2026-11-04 (validator, linux-gfx90a, moat-port @ b37ca0a)
+
+Result: completed at b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd. On gfx90a (the texture path) every output is bit-identical to 5f6816f, times are within 0.4%, gpu_vs_cpu_validate is 12/12, and 0 bytes leak.
+
+Host: AMD Instinct MI250X GCD (gfx90a, Gfx 9/0/10), HIP_VISIBLE_DEVICES=1 (pinned by the dispatcher), torch 2.16.0a0+git6c3af02, HIP 7.16.26385, numpy 1.26.4, /opt/python-3.11-venv. All GPU runs under `ulimit -c 0`. Fresh fork clone at `projects/LEAP/src` checked out at b37ca0a (= origin/moat-port tip). Baseline: `git archive 5f6816f` in `agent_space/cmp/5f6816f`. Scripts `dump_outputs.py`, `compare_outputs.py`, `dump_point.py`, `leak_check.py` extracted unchanged from this file.
+
+### Build (both rc=0, `all archs for visible cards are included for compilation (gfx90a)`, 0 errors)
+```
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=32 bash utils/timeit.sh LEAP compile -- bash -c "cd projects/LEAP/src && python setup_AMD.py build_ext --inplace"   # 17.7 s
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=32 bash -c "cd agent_space/cmp/5f6816f && python setup_AMD.py build_ext --inplace"
+```
+
+### Tests (one wrapped run, `utils/timeit.sh LEAP test`, 234.6 s for both builds)
+```
+python dump_outputs.py <build>/src <x>.npz 256      # interleaved: 5f6816f r1, b37ca0a r1, 5f6816f r2, b37ca0a r2
+python compare_outputs.py old_r1.npz new_r1.npz     # ALL BIT-IDENTICAL (36/36)
+python compare_outputs.py old_r2.npz new_r2.npz     # ALL BIT-IDENTICAL (36/36)
+python compare_outputs.py old_r1.npz old_r2.npz     # ALL BIT-IDENTICAL (run-to-run)
+python dump_point.py <build>/src pt_<x>.npz         # 5f6816f, b37ca0a
+python compare_outputs.py pt_old.npz pt_new.npz     # ALL BIT-IDENTICAL (20 arrays)
+(cd <build> && AMD_LOG_LEVEL=3 python unitTests/gpu_vs_cpu_validate.py)   # rc=0 both; 12/12 PASS, OVERALL: PASS; the 12 result lines identical between builds
+python leak_check.py <build>/src                    # delta 0 bytes over 200 iterations, both builds (sum(g)=377330)
+```
+gpu_vs_cpu_validate values equal the earlier gfx90a and gfx942 records: parallel VD/SF adjoint 2.54e-05/1.64e-05; fan 2.44e-04/1.85e-04; coneparallel 1.24e-03/5.07e-05; cone-flat 1.42e-04/1.46e-04 (fbp 0.9998); cone-curved 8.54e-05/1.30e-04; modular VD 3.39e-03 (fbp 0.9998), modular SF fwd-vs-VD err 0.000; every other fbp_interior 1.0000. 61 `hsa_amd_pointer_info() failed` log lines in each build (pre-existing, as recorded). 0 `Error: GPU` lines in any log, so the texture/buffer selection agrees with the device code on gfx90a.
+
+`dump_point.py`: as before, `upsample` fails in the script (ctypes dtype) and `dictionary` memory-faults in the OMP kernel (`HSA_STATUS_ERROR_MEMORY_FAULT`, then `hipSetDevice Error: an illegal memory access`) in both builds, 5f6816f included; pre-existing, not counted. Its 1-value output is in the 20 compared arrays but carries no meaning.
+
+Timings, median of 5, 256 cols x 266 rows x 360 views, device-resident tensors, ms, project / backproject. b37ca0a/5f6816f ratios 0.997-1.004 in both rounds; same-build r1/r2 0.997-1.002. Matches the porter's gfx90a table (within 0.3%):
+```
+geometry_model   5f6816f r1       b37ca0a r1       5f6816f r2       b37ca0a r2
+parallel_VD      167.5 /  71.5    167.4 /  71.5    167.4 /  71.5    167.4 /  71.4
+parallel_SF      167.6 /  71.6    167.5 /  71.7    167.7 /  71.6    167.6 /  71.9
+fan_VD           158.1 /  70.3    158.2 /  70.3    158.1 /  70.4    158.3 /  70.2
+fan_SF           158.5 / 137.5    158.8 / 137.7    158.5 / 137.4    158.3 / 137.5
+coneparallel_VD  331.9 /  74.0    331.9 /  74.1    331.9 /  74.0    331.8 /  74.0
+coneparallel_SF  332.0 / 139.5    331.8 / 139.5    331.9 / 139.8    331.8 / 139.5
+cone-flat_VD     298.4 /  72.5    298.4 /  72.4    298.4 /  72.4    298.3 /  72.4
+cone-flat_SF     298.3 / 398.7    298.4 / 398.4    298.4 / 398.3    298.4 / 398.4
+cone-curved_VD   326.6 /  73.7    326.6 /  73.7    326.9 /  73.5    326.7 /  73.8
+cone-curved_SF   326.7 / 249.7    326.6 / 249.8    327.0 / 249.8    326.6 / 249.8
+modular_VD       302.9 /  72.0    302.9 /  71.9    302.9 /  71.9    302.9 /  72.0
+modular_SF       302.8 / 375.8    302.9 / 375.9    302.9 / 375.7    302.9 / 375.8
+```
+Comparison with this platform's earlier record: the last gfx90a validation is at c77df45 (carried to 4e102c9); its device code is the 5f6816f texture path less a deleted shell script, and b37ca0a is bit-identical to 5f6816f here, so the result agrees with it.
+
+### Completion checks
+- `python3 utils/jargon.py --port LEAP`: clean (after creating local `main`/`moat-port` branches from origin in the fresh clone; without them it cannot resolve the range).
+- Documentation: upstream documents installation only on its external wiki (`README.md` "Installation and Usage" and `docs/source/install.rst` both link to https://github.com/LLNL/LEAP/wiki); no in-repo CUDA build instructions exist to mirror, so there is no in-repo place for the ROCm build that the house style asks for. The PR body carries the build command.
+- `git -C projects/LEAP/src status --porcelain`: empty (build output is untracked/ignored).
+
+### CUDA gate: cuda-not-validated
+cuda-not-validated: no CUDA toolkit on this host (no `/opt/conda`, no nvcc). `nvidia-cuda-nvcc-cu12==12.8.*` from pip into `$FLEET_VENV` ships only `ptxas`, not `nvcc` (uninstalled again). Fetching micromamba to build a local CUDA 12.8 env was refused by the session's permission policy. No CUDA compile has been recorded at b37ca0a on any host; the reviewers' by-eye argument (all additions HIP-guarded, 0 removed lines in `cuda_utils.cu`) is the only CUDA evidence at this head.

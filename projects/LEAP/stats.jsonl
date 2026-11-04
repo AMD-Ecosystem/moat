@@ -69,3 +69,7 @@
 {"kind":"phase","ts":"2026-11-04T18:31:24Z","phase":"compile","seconds":14.627,"exit":0,"cmd":"bash -c cd agent_space/cmp/b37ca0a && python setup_AMD.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-04T18:31:47Z","phase":"compile","seconds":22.567,"exit":0,"cmd":"bash -c cd agent_space/cmp/fat && python setup_AMD.py build_ext --inplace"}
 {"kind":"session","ts":"2026-11-04T18:39:02Z","epoch":1793817542.452965323,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-04T18:42:08Z","epoch":1793817728.435386065,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T18:42:40Z","phase":"compile","seconds":17.704,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261104-104019-v-leap/moat/projects/LEAP/src && python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T18:46:53Z","phase":"test","seconds":234.575,"exit":0,"cmd":"bash agent_space/scripts/run_all.sh"}
+{"kind":"session","ts":"2026-11-04T18:49:28Z","epoch":1793818168.738820489,"event":"end","platform":"linux-gfx90a"}

@@ -7,7 +7,7 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-04T18:39:02Z",
+  "updated_at": "2026-11-04T18:49:28Z",
   "head_sha": "b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd",
   "porting": null,
   "waivers": {},
@@ -19,10 +19,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "c77df45b3fcd9d659b3a9f77cc2fdfef673a19e0",
+      "validated_sha": "b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd",
       "started_at": "2026-06-02T08:08:39Z",
-      "completed_at": "2026-06-16T06:33:12Z",
-      "updated_at": "2026-11-04T18:26:43Z",
+      "completed_at": "2026-11-04T18:49:28Z",
+      "updated_at": "2026-11-04T18:49:28Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -36,13 +36,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
-      "carry_forward": {
-        "to": "4e102c9cfd371b5900c68461bdc8f2a320d71017",
-        "method": "source-class",
-        "detail": "Comment-only docstring reword in host-side validation script unitTests/gpu_vs_cpu_validate.py (bit-identical -> identical); no device code, no compiled artifact, arch-independent",
-        "at": "2026-06-16T06:33:12Z"
-      }
+      "last_agent": "validator"
     },
     "linux-gfx1100": {
       "state": "completed",
