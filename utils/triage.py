@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Triage discovery candidates: mark projects you will NOT port (already ported,
 already supported, can't port, not a target) with a reason, and review the
 remaining actionable candidates. Decisions persist in data/dispositions.json and
