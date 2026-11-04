@@ -713,3 +713,21 @@ Comparison with gfx1100 Linux: identical objective, residuals and iteration coun
 Jargon: `jargon.py --port cuPDLP-C` shows the same 2 known false positives ('strategy a' in bundled HiGHS comments from the stale fork main mirror), nothing from the port. Docs: ROCm build in README, INSTALL and build.sh `MODE=hip`. Tree clean (untracked `.coinor-deps/`, `build-coinor-hip/`, `tests/logs/` only). cuda-not-validated: no CUDA toolkit on this host.
 
 Result: completed at f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2 (windows-gfx1151, wave32).
+
+## CUDA compile check (nvcc 12.8) at f56941f
+
+Compile-only check on a Linux host with NVIDIA CUDA 12.8.93 (`/usr/local/cuda-12.8`, apt toolkit with cuBLAS/cuSPARSE dev) and no NVIDIA GPU; GCC 13.3.0, CMake 3.31.6. Port: fork `moat-fix-41` at f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2. Baseline: upstream COPT-Public/cuPDLP-C `main` at f81f459235c948b4a53fc96f359847eaedd4f0a9 (the merge base of the port). Both trees fresh clones, nothing modified.
+
+Upstream's documented path, identical for both trees (`GPU_ARCH=80` because `native` needs a visible GPU):
+```bash
+MODE=gpu GPU_ARCH=80 CUDA_HOME=/usr/local/cuda-12.8 PYTHON=<venv>/bin/python VERBOSE=1 bash build.sh
+```
+- Configure and build: success on both. nvcc compiled `cupdlp/cuda/cupdlp_cuda_kernels.cu` and `cupdlp/cuda/cupdlp_cudalinalg.cu` (`-x cu -rdc=true --generate-code=arch=compute_80,code=[compute_80,sm_80]`) plus the `-dlink` step; `cuobjdump --list-elf lib/libcudalin.so` shows `sm_80.cubin` on both, 26 kernel functions on both.
+- Include path: `includes_CUDA.rsp` for cudalin is `-I"/usr/local/cuda-12.8/include"` and `cupdlp` C_INCLUDES is `-I/usr/local/cuda-12.8/include` on both trees, so the merged `${CMAKE_CUDA_PATH}/include` resolves exactly as upstream does.
+- Targets built, identical: cudalin, testcudalin, testcublas, cupdlp, wrapper_lp, wrapper_highs, plc (+ HiGHS highs, highs-bin, call_highs_from_c/cpp).
+- Warnings in project sources, identical: 11 `-Wunused-result` (fgets) in `cupdlp/cupdlp_mps.c`. No nvcc warnings or errors on either side; no new warnings from the port.
+- build.sh then stops at its CTest step with rc=2 on both: 4/4 fail with `cusparseCreate(): CUDA context cannot be initialized` (no NVIDIA GPU or driver). Environment, identical on baseline.
+
+Extra configuration (not in build.sh): `cmake -DBUILD_CUDA=ON -DBUILD_APPS=ON -DBUILD_TESTING=ON -DCMAKE_CUDA_ARCHITECTURES=80` with `HIGHS_HOME` set. Baseline fails at configure (`apps/CMakeLists.txt:24`, `target_compile_definitions` on the nonexistent `wrapper_clp`); the port removes that line, configures, builds all library targets, then stops at `apps/onlinelp.cpp:160` (`too few arguments to function LP_SolvePDHG`). onlinelp.cpp is untouched by the port, so that is a pre-existing upstream break, not a regression; build.sh uses `BUILD_APPS=OFF`.
+
+Result: no CUDA regression at f56941f. Platform states unchanged.
