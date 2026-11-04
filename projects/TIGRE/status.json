@@ -7,18 +7,21 @@
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
   "adopted_at": "2026-06-04T01:07:42Z",
-  "updated_at": "2026-11-04T18:28:35Z",
+  "updated_at": "2026-11-04T18:36:23Z",
   "head_sha": "5a3da55948d954ca9184c0b4793bbb2be95490e9",
   "depends_on": [],
   "pr_url": "https://github.com/CERN/TIGRE/pull/747",
   "pr_number": 747,
   "pr_opened_at": "2026-06-19T22:58:31Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-04T18:36:23Z"
+  },
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 61034131,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "windows-gfx1101": {
       "state": "completed",
@@ -49,7 +52,7 @@
       "validated_sha": "cf873a288e8469d7292470c96272f825dc355dba",
       "started_at": null,
       "completed_at": "2026-06-19T22:54:42Z",
-      "updated_at": "2026-06-19T22:54:42Z",
+      "updated_at": "2026-11-04T18:36:23Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -63,7 +66,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "reviewer",
       "carry_forward": {
         "to": "cf873a288e8469d7292470c96272f825dc355dba",
         "method": "binary-equiv",
