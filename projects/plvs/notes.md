@@ -2256,3 +2256,163 @@ Scope: `git diff bab4052..e0dcda3` (6ac02a3, e0dcda3; 4 files, +24/-8), plus the
   - `Thirdparty/voxblox` (`--target voxblox voxblox_proto`): RC=0 at both; 20/20 objects identical; build.ninja identical after path normalization.
   - The main plvs library was NOT configured or built here: Pangolin is not packaged for Ubuntu 24.04, and building it from upstream source was refused by this session's permission policy. The two main-CMakeLists hunks are therefore cleared by reading only (both are inside a WIN32 condition, shown above), not by a configure diff.
 - `python3 utils/jargon.py --port plvs` -> clean (after `git fetch origin master:master` in the fresh clone). Titles are `[ROCm]`, 56 and 63 chars; no Co-Authored-By; AI assistance disclosed; Test Plans fenced.
+
+## Fix round 2026-11-04 (linux-gfx90a, porter): libelas-gpu HIP build now compiles and runs the GPU ELAS. Head b9c257a
+
+Answers Finding 1 of the 2026-11-04 review (no review PR recorded; the finding lives only in this file). Host: MI250X (gfx90a, wave64), TheRock pip SDK 7.16 (`_rocm_sdk_devel`, amdclang 24.0.0git), CMake 3.31.6, Ninja, g++ 13; GPU pinned with `HIP_VISIBLE_DEVICES=1`, runs under `ulimit -c 0`.
+
+### Change (fork commit b9c257a `[ROCm] Run libelas on the GPU in HIP builds`, 3 files, +9/-3)
+- `Thirdparty/libelas-gpu/CMakeLists.txt`: inside the existing `if(USE_HIP)` block, `set(sources_gpu GPU/elas_gpu.cu)`, and the `LANGUAGE HIP` property now covers `${sources_gpu} GPU/ElasInterface.cpp`.
+- `Thirdparty/libelas-gpu/GPU/ElasInterface.cpp:2,12`: `#ifdef USE_CUDA` -> `#if defined(USE_CUDA) || defined(USE_HIP)`.
+- `CMakeLists.txt` (top level, WITH_LIBELAS block): `elseif(USE_HIP)` prints "building with libelas HIP" instead of the misleading "libelas CPU".
+- A third edit was needed beyond the review's two. ElasInterface.cpp now includes elas_gpu.h -> `<hip/hip_runtime.h>`, and as a g++ TU it failed (`fatal error: hip/hip_runtime.h: No such file or directory`). The CUDA branch gets this include path from `include_directories(${CUDA_INCLUDE_DIRS})`; under HIP, building that one TU as HIP is the smallest equivalent. plvs's own consumer (`src/PointCloudKeyFrame.cc`) includes only `ElasInterface.h`, which has no GPU headers, so plvs TUs need nothing. The test executables now link with the HIP linker, so on this pip-SDK host `build/test_*` need `LD_LIBRARY_PATH` set to the SDK lib dir; this is host environment, and they are not used by plvs.
+- All edits are inside `USE_HIP` (or a new `elseif(USE_HIP)` after the `CUDA_FOUND` branch), so the CUDA and CPU builds are unchanged. The WIN32 changes from 6ac02a3 and e0dcda3 are untouched (`-regalloc=basic` on elas.cpp still applies). On Windows, elas_gpu.cu and ElasInterface.cpp now compile as HIP with the GNU-driver clang; this is not exercised on this host, so the windows-gfx1151 validator must rebuild libelas-gpu.
+- The CMake branch was checked in script mode: the extracted WITH_LIBELAS block prints "libelas HIP" with USE_HIP=ON/CUDA_FOUND=FALSE, "libelas CUDA" with CUDA_FOUND=TRUE (with or without USE_HIP), and "libelas CPU" otherwise. A full top-level configure is not possible on this host because it stops at Boost components and Pangolin is missing.
+
+### Build (gfx90a)
+```
+L=projects/plvs/src/Thirdparty/libelas-gpu
+utils/timeit.sh plvs compile -- bash -c "cmake -S $L -B $L/build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release && cmake --build $L/build -j 32"
+```
+RC=0, 14/14 steps. `build.ninja` carries `--offload-arch=gfx90a` 6x (none before). `lib/liblibelas_gpu.a` members: elas_gpu.cu.o, descriptor, elas, filter, matrix, triangle, ElasInterface (before: no elas_gpu.cu.o). `readelf -SW elas_gpu.cu.o` -> `.hip_fatbin` (0x4510 B) + `.hipFatBinSegment`. `clang-offload-bundler --list` on the extracted fatbin -> `hip-amdgcn-amd-amdhsa--gfx90a`. Its code object has `amdhsa.target amdgcn-amd-amdhsa-unknown-gfx90a` and kernels `libelas::findMatch_GPU`, `libelas::adaptiveMeanGPU8`. `nm -C build/test_interface | grep -c ElasGPU` = 8.
+
+### GPU-vs-CPU ELAS disparity comparison (real MI250X)
+Harness `agent_space/plvs/elas_cmp.cpp` (source below). It runs CPU `Elas` and then `ElasGPU` twice, with identical `Elas::Parameters` (ROBOTICS defaults), on all 7 bundled pairs in `Thirdparty/libelas-gpu/input/`. "valid" means disparity >= 0. max/mean |d| are taken over pixels valid in both outputs; ">1px" counts those pixels with |d| > 1; "vmis" counts pixels valid in one output only. Build: `amdclang++ -x hip --offload-arch=gfx90a -std=c++17 -O2 -DUSE_HIP -I$L/CPU -I$L/GPU elas_cmp.cpp -x none $L/lib/liblibelas_gpu.a -pthread -o elas_cmp`; run `./elas_cmp $L/input <mode>`.
+
+Mode 0, full resolution, both images postprocessed (the upstream main_gpu.cpp settings):
+
+| pair | D | max\|d\| | mean\|d\| | >1px | invalid cpu / gpu | vmis |
+|---|---|---|---|---|---|---|
+| cones 900x750 | L | 0.53 | 0.0042 | 0 | 109731 / 109732 | 1 |
+| | R | 24.80 | 0.0045 | 3 | 111568 / 111568 | 2 |
+| aloe 1282x1110 | L | 4.35 | 0.0062 | 5 | 257247 / 257254 | 25 |
+| | R | 9.19 | 0.0060 | 7 | 269397 / 269398 | 1 |
+| raindeer 1342x1110 | L | 0.82 | 0.0056 | 0 | 342534 / 342536 | 8 |
+| | R | 22.73 | 0.0061 | 5 | 374791 / 374784 | 9 |
+| urban1 1344x391 | L | 0.60 | 0.0069 | 0 | 107109 / 107117 | 16 |
+| | R | 0.78 | 0.0071 | 0 | 119832 / 119842 | 12 |
+| urban2 | L | 0.60 | 0.0059 | 0 | 133108 / 133115 | 7 |
+| | R | 14.86 | 0.0061 | 1 | 145092 / 145098 | 6 |
+| urban3 | L | 1.00 | 0.0062 | 1 | 167581 / 167585 | 4 |
+| | R | 3.45 | 0.0064 | 1 | 165496 / 165500 | 6 |
+| urban4 | L | 0.72 | 0.0064 | 0 | 141672 / 141676 | 4 |
+| | R | 0.50 | 0.0062 | 0 | 141483 / 141490 | 7 |
+
+Mode 1 (the plvs settings: `postprocess_only_left=true`, no subsampling), D1 only: mean |d| 0.0042-0.0069, >1px 0-5, vmis 1-25, max |d| 0.53-4.35. The figures are within noise of mode 0's left column.
+
+Mode 2 (plvs with `subsampling=true`), D1: GPU reruns are BIT-EXACT. cones and aloe are identical to the CPU (max 0, vmis 0). raindeer max 0.50 / vmis 4, urban1 0.44 / 2, urban2 0.66 / 0, urban3 1.23 (1 px > 1) / 0, urban4 0.68 / 0; mean |d| <= 0.000045 everywhere.
+
+Timing, mode 0 (CPU single thread, GPU first-call wall incl. setup): aloe CPU 461 ms vs GPU 251 ms; urban* ~145 ms vs ~67 ms; cones 216 ms vs 233 ms (first call pays init).
+
+### The residual difference and nondeterminism are upstream design, not the port
+Without subsampling, two GPU runs are not bit-identical. Two upstream causes were found, and both apply equally to CUDA:
+1. `findMatch_GPU` duplicate writes. The host builds the (u,v) work list per triangle, and pixels on shared triangle edges are listed more than once, each time with a different plane prior. On the CPU the last triangle wins; on the GPU the order is arbitrary. Measured with an instrumented copy of elas_gpu.cu (`agent_space/plvs/dup/`): duplicates L/R per image are cones 10/106, aloe 48/246, raindeer 46/286. The larger right-image counts match the larger D2 outliers. Mode 3 (mode 0 with `filter_adaptive_mean=false`) isolates this: diffs become whole disparity steps (max 2-67), with a mean of only 5e-5 - 1.9e-4 px and 1-13 pixels > 1 px.
+2. `adaptiveMeanGPU8` filters `D` in place in global memory and reads 3-4 pixel halos from neighbouring blocks, which may or may not have written yet. This gives the sub-pixel mean differences (~0.005 px) in modes 0/1. Subsampled builds use the CPU SSE adaptiveMean (`ElasGPU::adaptiveMean` subsampling branch), which is why mode 2 is bit-exact.
+Neither depends on the wavefront size (findMatch blocks are 32x1, adaptiveMean 8x8 = 64 threads; no warp intrinsics, shuffles or ballots). The upstream reference outputs in `GPU_test/2016_12_06_{cpu,gpu}` (CUDA vs CPU, 8-bit scaled) show the same signature: 200-500 differing pixels per image (0.02-0.10%), isolated max outliers of 137-249 grey levels, zero-pixel counts differing by up to 38. HIP-vs-CPU agreement is at or better than the upstream CUDA-vs-CPU agreement. No fix belongs in this port.
+
+### Consumer path check
+`agent_space/plvs/iface.cpp` is a g++-compiled program that includes only `ElasInterface.h`, mirroring PointCloudKeyFrame. It was linked with `g++ ... liblibelas_gpu.a -lamdhip64` (like the top-level `EXTERNAL_CORE_LIBS` HIP_RUNTIME_LIB link). It runs aloe with plvs params: valid=1165766. `AMD_LOG_LEVEL=3` shows `findMatch_GPU` x2 (left and right), `adaptiveMeanGPU8` x1, and rocclr copyBuffer x7, so the kernels run on the device through ElasInterface.
+
+### Upstream bug noticed, not fixed (out of scope)
+`CPU/image.h` `loadPGM`/`pnm_read` (upstream commit 95b1162) reads each header field with `getline`, so it segfaults on single-line headers (`P5 1282 1110 255\n`, used by cones/aloe/raindeer) and only works on one-field-per-line files. With loadPGM, the first harness version segfaulted inside loadPGM on cones (gdb: `libelas::loadPGM` <- main). The bundled demos read the same files the same way, so they presumably crash on those three pairs on every platform (not run here). The harness uses its own reader. plvs itself does not call loadPGM.
+
+### Not done / for the validator
+- The main plvs binary was not rebuilt or run here. This fleet job's fresh container has no Pangolin, boost components or OpenCV-with-HIP, and rebuilding that stack is beyond this round. The library-level and consumer-link evidence above covers the change, but a validator with a full plvs build should run a stereo sequence with `StereoDense.type` = libelas and confirm the ELAS kernels in an `AMD_LOG_LEVEL=3` trace.
+- wave32 (gfx1100 / gfx1151) needs the same elas_cmp run; expect the same magnitudes (mode 2 bit-exact).
+
+Harness source (`elas_cmp.cpp`):
+```cpp
+// GPU (ElasGPU) vs CPU (Elas) disparity comparison on the bundled stereo pairs.
+#include <cctype>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <chrono>
+#include <string>
+#include <vector>
+#include "elas.h"
+#include "elas_gpu.h"
+#include <fstream>
+#include "image.h"
+using namespace libelas;
+
+// The bundled loadPGM expects one header field per line; these files use "P5 w h 255\n".
+static image<uchar>* readPGM(const std::string& f) {
+  std::ifstream in(f, std::ios::binary);
+  auto field = [&in]() {
+    for (;;) {
+      int c = in.peek();
+      if (c == '#') { std::string skip; std::getline(in, skip); }
+      else if (isspace(c)) in.get();
+      else break;
+    }
+    std::string t; in >> t; return t;
+  };
+  std::string magic = field();
+  int w = atoi(field().c_str()), h = atoi(field().c_str()), mx = atoi(field().c_str());
+  in.get();
+  (void)mx;
+  if (magic != "P5" || !in) { fprintf(stderr, "bad pgm %s\n", f.c_str()); exit(2); }
+  image<uchar>* im = new image<uchar>(w, h);
+  in.read((char*)im->data, (long)w * h);
+  return im;
+}
+
+struct Stat { double maxd=0, sumd=0; long n=0, gt1=0, inv_c=0, inv_g=0, inv_mismatch=0, total=0; };
+
+static Stat cmp(const float* c, const float* g, long n) {
+  Stat s; s.total = n;
+  for (long i = 0; i < n; i++) {
+    bool vc = c[i] >= 0, vg = g[i] >= 0;
+    if (!vc) s.inv_c++;
+    if (!vg) s.inv_g++;
+    if (vc != vg) { s.inv_mismatch++; continue; }
+    if (!vc) continue;
+    double d = std::fabs((double)c[i] - (double)g[i]);
+    s.maxd = std::max(s.maxd, d); s.sumd += d; s.n++; if (d > 1.0) s.gt1++;
+  }
+  return s;
+}
+
+static void pr(const char* tag, const char* img, const Stat& s) {
+  printf("%-9s %-10s px=%7ld both_valid=%7ld max|d|=%8.4f mean|d|=%.6f >1px=%6ld invalid_cpu=%6ld invalid_gpu=%6ld validity_mismatch=%5ld\n",
+         tag, img, s.total, s.n, s.maxd, s.n ? s.sumd / s.n : 0.0, s.gt1, s.inv_c, s.inv_g, s.inv_mismatch);
+}
+
+int main(int argc, char** argv) {
+  const char* dir = argv[1];
+  const char* names[] = {"cones", "aloe", "raindeer", "urban1", "urban2", "urban3", "urban4"};
+  int mode = argc > 2 ? atoi(argv[2]) : 0;  // 0: both images postprocessed; 1: plvs settings (left only); 2: plvs + subsampling; 3: mode 0 without adaptive mean
+  int fails = 0;
+  for (const char* nm : names) {
+    std::string f1 = std::string(dir) + "/" + nm + "_left.pgm", f2 = std::string(dir) + "/" + nm + "_right.pgm";
+    image<uchar>* I1 = readPGM(f1);
+    image<uchar>* I2 = readPGM(f2);
+    int32_t w = I1->width(), h = I1->height();
+    const int32_t dims[3] = {w, h, w};
+    Elas::Parameters p;
+    p.postprocess_only_left = (mode == 0 || mode == 3) ? false : true;
+    if (mode == 3) p.filter_adaptive_mean = false;
+    p.subsampling = (mode == 2);
+    long n = (long)w * h;
+    std::vector<float> c1(n, -99), c2(n, -99), g1(n, -99), g2(n, -99), g1b(n, -99), g2b(n, -99);
+    auto t0 = std::chrono::steady_clock::now();
+    { Elas e(p); e.process(I1->data, I2->data, c1.data(), c2.data(), dims); }
+    auto t1 = std::chrono::steady_clock::now();
+    { ElasGPU e(p); e.process(I1->data, I2->data, g1.data(), g2.data(), dims); }
+    auto t2 = std::chrono::steady_clock::now();
+    { ElasGPU e(p); e.process(I1->data, I2->data, g1b.data(), g2b.data(), dims); }
+    long outn = p.subsampling ? (long)(w / 2) * (h / 2) : n;
+    printf("%s %dx%d mode=%d cpu=%.1fms gpu(1st)=%.1fms gpu_rerun_bitexact=%d\n", nm, w, h, mode,
+           std::chrono::duration<double, std::milli>(t1 - t0).count(),
+           std::chrono::duration<double, std::milli>(t2 - t1).count(),
+           (int)(memcmp(g1.data(), g1b.data(), outn * 4) == 0 && memcmp(g2.data(), g2b.data(), outn * 4) == 0));
+    Stat s1 = cmp(c1.data(), g1.data(), outn);
+    pr("D1(left)", nm, s1);
+    if (mode == 0 || mode == 3) { Stat s2 = cmp(c2.data(), g2.data(), outn); pr("D2(right)", nm, s2); }
+    delete I1; delete I2;
+  }
+  return fails;
+}
+```
