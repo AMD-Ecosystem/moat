@@ -1116,3 +1116,49 @@ $FLEET_VENV/bin/python repeat_par.py {parallel,cone}; $FLEET_VENV/bin/python rep
 - Documentation: `Frontispiece/python_installation.md` has the `AMD GPU (ROCm/HIP)` section; unchanged by this round, which changes no build knob.
 - Integrity: `git -C projects/TIGRE/src status --porcelain` shows untracked build output only at 34f31a6.
 - CUDA compile gate: `cuda-not-validated: no CUDA toolkit on this host` (no `/opt/conda`; fetching a micromamba binary to create the env was refused by this job's permission policy, so I did not create one). The delta 5a3da55..34f31a6 adds only the two `cudaStreamSynchronize(stream[1]);` lines, both runtime API calls on the CUDA path. The gate is still owed at 34f31a6 by a Linux host that has the toolkit.
+
+## CUDA compile check (nvcc 12.8) at 34f31a6
+
+Compile-only helper run (fleet job on a Linux host with the CUDA 12.8 toolkit and no NVIDIA GPU), requested by jeff. No platform state changed. Result: **the CUDA build fails at 34f31a6, and the defect has been there since cf873a2 (the published head of the open upstream PR).** `Common/CUDA/RandomNumberGenerator.cu` does not compile under nvcc. The baseline (upstream master 69bdd9f) builds cleanly with the same command.
+
+Toolchain: nvcc `release 12.8, V12.8.93`, gcc 13.3.0, Python 3.11.17, numpy 1.26.4, Cython 3.3.1 (pip-installed into the job venv), setuptools 79.0.1. `nvcc --list-gpu-arch` gives 17 targets (compute_50 to compute_120), so setup.py emits 17 `-gencode` pairs per `.cu`.
+
+Commands (fresh clones; `port` = AMD-Ecosystem/TIGRE at 34f31a6e0436afbe9af6b9763d1b663c7639c9d0, `base` = CERN/TIGRE at 69bdd9f):
+```
+export CUDA_HOME=/usr/local/cuda-12.8 PATH=/usr/local/cuda-12.8/bin:$PATH
+cd base && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16   # rc=0
+cd port && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16   # rc=1
+```
+
+| tree | rc | extensions built | nvcc compiles | `-std` on nvcc lines |
+|---|---|---|---|---|
+| base 69bdd9f | 0 | 8/8 | 19 (13 unique `.cu`) | 19x `-std=c++11` |
+| port 34f31a6 | 1 | 7/8, `_RandomNumberGenerator` missing | 19 (13 unique `.cu`) | 19x `-std=c++11` |
+
+Error (33 errors, all in one TU, first ones):
+```
+Common/CUDA/RandomNumberGenerator.cu(63): error: incomplete type "void" is not allowed
+Common/CUDA/RandomNumberGenerator.cu(63): error: identifier "curandState" is undefined
+Common/CUDA/RandomNumberGenerator.cu(63): error: identifier "state" is undefined
+error: command '/usr/local/cuda-12.8/bin/nvcc' failed with exit code 2
+```
+
+Cause: cf873a2 replaced `#include <cuda.h>`, `<curand_kernel.h>` and `<curand.h>` in RandomNumberGenerator.cu with `#include "cuda_to_hip.h"`. The header's `USE_HIP` branch pulls `<hiprand/hiprand_kernel.h>`, but its `#else /* CUDA */` branch includes only `<cuda_runtime_api.h>` and `<cuda.h>`, so on the CUDA path nothing declares `curandState`, `curand_init`, `curand_poisson` or `curand_normal`. The "cuRAND -> hipRAND" section above describes the HIP side only. Not related to this round's two `cudaStreamSynchronize(stream[1])` lines.
+
+Confirmation (scratch copy only, nothing committed or pushed): adding to the CUDA branch of `cuda_to_hip.h`, after `#include <cuda.h>`,
+```
+#if defined(__CUDACC__)
+#include <curand_kernel.h>
+#include <curand.h>
+#endif
+```
+gives rc=0 and 8/8 extensions. A narrower fix (restore `#include <curand_kernel.h>` under `#ifndef USE_HIP` in RandomNumberGenerator.cu) would also do; the choice is the porter's. The fix needs a porter round on `moat-fix-747` and, because cf873a2 is what PR #747 shows, it belongs in the delta jeff approves for the upstream branch.
+
+Other comparisons (port vs base, using the fixed scratch build for the full set):
+- Every `.cu` reached nvcc: 13 unique sources in both trees. The port compiles `gpuUtils.cu` once more (20 nvcc commands vs 19) because setup.py adds it to `_Ax`.
+- `-std=c++14` appears nowhere in the CUDA build log; every nvcc command and every host g++ command carries `-std=c++11`. The HIP-only flag stays on the HIP path.
+- nvcc warnings: identical per compile to the baseline (`#177-D` unused variables in the three `*_parallel.cu` files, `#550-D` `err` set but never used in gpuUtils.cu at 34 per compile). No new nvcc warning in the port, including the two files with the new `cudaStreamSynchronize(stream[1])` lines. The only extra warnings in the failing port build are `#12-D` / `#1835-D` from the RandomNumberGenerator parse failure.
+- ptxas entry functions: 629 in base and in the fixed port build (578 in the failing port build, short by the RNG kernels).
+- Host g++ warnings (NumPy deprecated API, `malloc` return ignored in GpuIds.cpp, zero-length printf format in TIGRE_common.cpp) are identical to the baseline.
+
+The CUDA compile gate stays owed at the next head, once the curand include is restored.
