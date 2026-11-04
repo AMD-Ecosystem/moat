@@ -1404,3 +1404,33 @@ $FLEET_VENV/bin/python repeat_par.py {parallel,cone}; $FLEET_VENV/bin/python rep
 - Documentation: `Frontispiece/python_installation.md` keeps its `AMD GPU (ROCm/HIP)` section; this round changes no build knob.
 - Integrity: `git -C projects/TIGRE/src status --porcelain` shows untracked build output only.
 - CUDA compile gate: already satisfied at b61ff14 (nvcc 12.8, rc 0, 8/8, see "CUDA compile check (nvcc 12.8) at b61ff14"); not re-run here.
+## Validation 2026-11-04 (windows-gfx1151, validator, moat-fix-747 @ b61ff14 -> completed)
+
+jeff asked for this run (first gfx1151 run). GPU: AMD Radeon 8060S / gfx1151 (RDNA3.5, wave32 APU), TheRock ROCm 7.14.0a20260519 (`D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel`), Windows 11, MSVC 14.44, host driver 32.0.32015.7029. All GPU runs under `ulimit -c 0`, volumes 128^3.
+
+The run began at 34f31a6 and the head moved to b61ff14 (restores the cuRAND includes under `#ifndef USE_HIP` in `RandomNumberGenerator.cu`; a CUDA-path-only delta) before it finished. The reported result is at b61ff14: rebuilt (only `_RandomNumberGenerator` relinked; the other 7 `.pyd` are the 34f31a6 outputs of identical sources) and the whole GPU suite re-run. The 34f31a6 evidence below is supplementary.
+
+### Build
+Fresh fork clone `D:/Develop/moat/agent_space/tigre-win` (detached at `origin/moat-fix-747`), Python 3.12 venv `agent_space/tigre_venv` (numpy 1.26.4, scipy 1.17.1, Cython 3.3.1, setuptools 71.x, pytest). `agent_space/tigre_build_win1151.sh`:
+```
+source agent_space/win_rocm_env.sh
+export BUILD_WITH_HIP=1 HIP_ARCH=gfx1151 HIPCC="$ROCM_ROOT/lib/llvm/bin/clang++.exe"; unset CC CXX
+python setup.py build_ext --inplace        # wrapped: utils/timeit.sh TIGRE compile -- bash ...
+```
+rc 0, 0 `error:` lines, 8/8 `.pyd`, 20 device compiles with `--offload-arch=gfx1151`, no `-std` passed (Windows path). Windows build traps, both toolchain/setuptools and not caused by the port: (1) setuptools >= ~75 (vendored distutils msvc `compile` uses `self.call`, not `spawn`) bypasses `win_wrap_compile`, so `.cu` files go to cl.exe and fail (`blockIdx` undeclared); pin `setuptools<72`. (2) `-j N` races on the shared monkey-patched `spawn` and on `GpuIds.obj` ("Permission denied"); build serially. The unmodified `setup.py` is used, no tracked file changed (`git status --porcelain`: untracked build output only). Runtime: `rocm_stage_runtime` copied amdhip64_7.dll, amd_comgr*, rocm_kpack, hiprtc next to the `.pyd`s and `_rocm_sdk_devel/bin` is on PATH. Self-test: `fp32 hardware linear texture filtering on AMD Radeon(TM) 8060S Graphics: supported (hardware trilinear)`.
+
+### Tests at b61ff14
+Run from `tigre-win/Python` with `PYTHONPATH=<that dir> MPLBACKEND=Agg` (`agent_space/tigre_all.sh`, via `utils/timeit.sh TIGRE test -- bash ...`).
+- Upstream pytest, 7 files: compute_cor 6, demo_angles 1, denoise_2d_guard 3, filtering_workers 37, gpuids_default 5, krylov_restart_and_norms 9, krylov_smoke 9 -> **70 passed, 0 failed** (also 70/70 at 34f31a6).
+- Scripts recreated from the descriptions in this file (none existed on this host) in `agent_space/tigre-scripts/` (host-local): `gates.py`, `tigre_parallel.py`, `solvers.py`, `repeat_par.py <parallel|cone> [alg]`, `repeat_par_interp.py <mode>`. Numbers are therefore not comparable digit-for-digit with other platforms' records.
+- `gates.py` (cone, 64^3, 64 angles): Siddon mean/max 26.647/113.343, interp vs Siddon 0.0190, FDK nRMSE 0.1481, OS-SART-20 0.1200, adjointness (matched Atb) Siddon 1.527e-05, interp 4.255e-04. RESULT PASS. Same at 34f31a6.
+- `tigre_parallel.py`: axis interp vs Siddon 0.0087, offset 0.0087 (adjointness 6.5e-05/4.3e-05 and 3.7e-05/8.1e-06), FBP 0.1538, SIRT-20 0.2112, missed rays 0.02 s finite. RESULT PASS.
+- `solvers.py` (32^3, 3 iterations, finiteness only; the quality numbers are not meaningful at that size): sart, ossart, sirt, cgls, fista, asd_pocs, awasd_pocs, os_asd_pocs, ossart_tv all finite. RESULT PASS.
+- Repeats at b61ff14, **2 passes** of {parallel Siddon, parallel interpolated, cone Siddon, cone interpolated} x {phantom, seeded random}, 20 repeats each vs the first, 128^3, `linspace(0,pi,64,endpoint=False)+0.3`: **0/20 differ in all 16 cases (320 repeats bitwise identical)**. At 34f31a6, pass 1 of the same four: 0/20 in all 8 cases (160 repeats). Parallel Siddon takes ~8 s per call on this APU (cone ~1 s, interpolated <1 s), which is why only two passes were run in the budget.
+- This host did not reproduce the race at any point, but it was not expected to (gfx90a is the fault-reproducing arch); this shows the fix regresses nothing on RDNA3.5 under HIP-on-Windows.
+
+### Other gates
+- `jargon.py --port TIGRE`: clean. Docs: `Frontispiece/python_installation.md` has the AMD GPU (ROCm/HIP) section; the delta changes no build knob.
+- CUDA compile gate: `cuda-not-validated: no CUDA toolkit on this Windows host`. Owed by a Linux host with nvcc at b61ff14 (the delta only touches the CUDA path's includes).
+
+Outcome: windows-gfx1151 -> completed at b61ff14c87689beb1b08e2bcd8223c29ce85a83d. This satisfies the windows gate at this head.

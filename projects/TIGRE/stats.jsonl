@@ -191,3 +191,11 @@
 {"kind":"phase","ts":"2026-11-04T20:44:11Z","phase":"compile","seconds":23.568,"exit":0,"cmd":"bash agent_space/build.sh projects/TIGRE/src"}
 {"kind":"phase","ts":"2026-11-04T20:46:04Z","phase":"test","seconds":97.265,"exit":0,"cmd":"bash agent_space/run_head.sh /var/lib/jenkins/fleet/jobs/mi200-20261104-123957-v-tigre3/moat/projects/TIGRE/src /var/lib/jenkins/fleet/jobs/mi200-20261104-123957-v-tigre3/moat/agent_space/scripts"}
 {"kind":"session","ts":"2026-11-04T20:46:50Z","epoch":1793825210.704669008,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T19:41:17Z","phase":"compile","seconds":3.499,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/tigre_build_win1151.sh"}
+{"kind":"phase","ts":"2026-11-04T19:41:38Z","phase":"compile","seconds":1.446,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/tigre_build_win1151.sh"}
+{"kind":"phase","ts":"2026-11-04T19:43:06Z","phase":"compile","seconds":48.839,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/tigre_build_win1151.sh"}
+{"kind":"phase","ts":"2026-11-04T19:45:18Z","phase":"test","seconds":98.457,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/tigre_pytest.sh"}
+{"kind":"phase","ts":"2026-11-04T20:22:14Z","phase":"compile","seconds":6.257,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/tigre_build_win1151.sh"}
+{"kind":"phase","ts":"2026-11-04T20:22:43Z","phase":"compile","seconds":9.859,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/tigre_build_win1151.sh"}
+{"kind":"phase","ts":"2026-11-04T20:23:24Z","phase":"compile","seconds":7.323,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/tigre_build_win1151.sh"}
+{"kind":"phase","ts":"2026-11-04T20:51:02Z","phase":"test","seconds":1648.240,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/tigre_all.sh"}
