@@ -935,3 +935,48 @@ master and moat-sync-60ffe9e refs). Docs: README "Running on AMD GPUs" present.
 Fork tree: tracked files unmodified (only untracked build_hip/).
 
 Verdict: PASS at eb4d017. Transitioning windows-gfx1151 to completed.
+
+## CUDA no-regression gate 2026-11-04 (validator, Linux host without NVIDIA GPU, sync tip eb4d017)
+
+Scope: compile and link only; no NVIDIA GPU, so nothing runs. No AMD platform
+record changed. Fork cloned fresh and checked out detached at
+eb4d017a4ae7b32926aca97db1223fc443aae490 (moat-port is frozen; nothing pushed).
+
+Toolchain: CUDA 12.8 from the NVIDIA apt packages (/usr/local/cuda-12.8, nvcc
+V12.8.93, cuda-cccl-12-8 12.8.90 = CUB_VERSION 200700), GCC 13.3.0 host
+compiler, cmake 3.31.6, Ninja, Python 3.11.17 in a job-private venv with
+pip-installed `torch==2.11.0+cu128` (CUDA wheel, same as the 70577b5 gate),
+pybind11 3.0.1, numpy 1.26.4. OpenBLAS: apt `libopenblas-dev` 0.3.26.
+
+Gotcha: the project's cmake/Modules/FindTorch.cmake calls `find_package(Python)`
+(not Python3), so `-DPython3_EXECUTABLE` alone let it pick the system
+interpreter and its (ROCm) torch headers. Pass `-DPython_EXECUTABLE` too and
+check that the "Found Torch:" line points at the CUDA wheel.
+```
+export PATH=$VENV/bin:/usr/local/cuda-12.8/bin:$PATH
+TORCH_CMAKE=$(python -c "import torch;print(torch.utils.cmake_prefix_path)")
+PB=$(python -c "import pybind11;print(pybind11.get_cmake_dir())")
+cmake -S . -B build_cuda_head -GNinja -DUSE_CUDA=ON -DUSE_HIP=OFF -DRPU_CXX_STANDARD=17 \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_PREFIX_PATH="$TORCH_CMAKE;$PB" -DPython3_EXECUTABLE=$VENV/bin/python \
+  -DPython_EXECUTABLE=$VENV/bin/python -DRPU_BLAS=OpenBLAS -DBUILD_TEST=OFF \
+  -DRPU_USE_TORCH_BUFFERS=OFF
+cmake --build build_cuda_head -j64
+```
+Result: configure clean; build **79/79, exit 0**, zero compiler errors or
+warnings in the build log. All 37 CUDA objects compiled (RPU_GPU incl.
+bit_line_maker.cu and the five sources that include rpu_cub.h), device link
+OK, rpu_base.cpython-311-x86_64-linux-gnu.so linked (198 MB, same size class
+as the 70577b5 gate). `cuobjdump --list-elf bit_line_maker.cu.o` shows sm_75,
+sm_80 and sm_89 (RPU_CUDA_ARCHITECTURES "75;80;89").
+
+What this covers in the rpu_cub.h resolution: the `#if defined(USE_HIP) /
+#else / #endif` nesting with the CCCL shim placed in the CUDA `#else` branch
+preprocesses and compiles on the CUDA path. CUDA 12.8 ships CUB 2.7.0, so the
+shim body itself (`CUB_VERSION >= 300000`) is skipped by the preprocessor
+here; only a CUDA 13 toolkit (CCCL 3.x) would compile it. That body is
+upstream's code, copied unchanged into the `#else` branch.
+
+Fork tree: tracked files unmodified (only untracked build_cuda_head/).
+
+Verdict: CUDA gate PASS (compile and link) at eb4d017.
