@@ -7119,3 +7119,97 @@ This pull request was prepared with the help of an AI assistant acting as a codi
 
 If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
 ====
+
+## Review 2026-11-04 (reviewer, linux-gfx942) -- full diff `main...2f4de2d`, delta `542ea1a..2f4de2d`
+
+Scope: `git diff main...moat-port` on the fork (fork `main` = upstream tip `837ffc8`, head `2f4de2d`, 41 files +1839/-387), with the upstream-sync merge `d232323` and the two new commits `039bc22` and `2f4de2d` read in full, plus MOAT commit `26c7bba1` (the `no-hip-equivalent.md` hipMM lesson) and the proposed review PR body. Questions settled in earlier rounds were not reopened. Verdict: **changes-requested**. Three findings, all fact-checked against the tree at `2f4de2d`.
+
+Checked with no finding: `small_ntt.cuh` body matches upstream's `small_ntt.cu` at `837ffc8` apart from `inline` and the `__CUDACC__ || __HIPCC__` guard (whitespace-insensitive diff); the `__syncwarp()` there syncs 32-thread butterfly groups (t <= 32) that sit inside one wavefront at both widths, and HIP 7.x provides it by default (`amd_warp_sync_functions.h`, opt-out macro only). All three patches apply with `git apply --check` at the pinned submodule commits (`8a4daf1`, `b743607`, `e2f4a85`). Every `cuda[A-Z]*` identifier in src/test/example/benchmark and the GPU-NTT/GPU-FFT/RNGonGPU sources has a shim alias (`comm -23` of used vs defined: empty). RNGonGPU `d9aaa6b..e2f4a85` adds no shuffle, ballot, lane-mask or `/32` code. The new TFHE encryptor `smem = (threads / 32 + 1) * sizeof(uint32_t)` over-allocates on wave64 against the `warpSize`-based reduction in `encryption.cu:278-302`, which is safe. The `memorypool.cu` helpers: the CUDA arms reproduce the replaced calls (`nullptr` reaches `cuda::stream_ref` via the `cudaStream_t` parameter, so the deleted `stream_ref(nullptr_t)` overload is not hit); the HIP non-owning previous default only differs from upstream's owning `any_resource` for an application resource that dies before HEonGPU restores it, which is the RMM 25.x contract. No new `mpz_*_ui` or NTL `long` conversion carries a modulus. `jargon.py --port HEonGPU` clean; no `Co-Authored-By`; fork `status --porcelain` clean.
+
+### 1. `HEonGPU_BUILD_SHARED=ON` with tests cannot build on HIP: the plugin targets have no HIP arm
+
+`test/CMakeLists.txt:143-154` (upstream code, shared builds only) builds `heongpu_test_plugin_a/b` from `shared_state_plugin.cpp` with a plain `add_library(... SHARED ...)` and `target_link_libraries(... PRIVATE heongpu)`. Under `USE_HIP` nothing gives these targets `thirdparty/hip_compat` on the include path: `heongpu_set_gpu_properties` adds it PRIVATE to the object libraries, `thirdparty/CMakeLists.txt` adds it directory-scoped to `thirdparty/`, the `heongpu` target exports it only as `$<INSTALL_INTERFACE:include/hip_compat>` (`src/CMakeLists.txt:323-326`), and the three patches add no such include. `shared_state_plugin.cpp` includes `heongpu/heongpu.hpp`, which reaches `#include <cuda_runtime.h>` (`util.cuh:12`, added by the port), and an AMD host has no `cuda_runtime.h` but the shim. So `-D USE_HIP=ON -D HEonGPU_BUILD_SHARED=ON -D HEonGPU_BUILD_TESTS=ON` fails to compile. More broadly, the shared library on HIP (`HEonGPU_BUILD_SHARED`, new upstream in 2.0, documented in README.md:603 and docs/advanced_topics.rst:121 with the plugin test as its check) was never built (porter notes, "Not done this round"), and nothing in the docs says it is unsupported on AMD GPUs.
+
+Fix: give the plugin targets the same HIP arm `add_test` has (LANGUAGE HIP on `shared_state_plugin.cpp`, `hip::host`, `hip_compat` include, `USE_HIP` definition, `HIP_ARCHITECTURES`), build `-D USE_HIP=ON -D HEonGPU_BUILD_SHARED=ON -D HEonGPU_BUILD_TESTS=ON` and run ctest including `shared_state_testcases`. The `--exclude-libs` link and PIC of the static `ntt`/`fft`/`rngongpu` archives (the patches set `POSITION_INDEPENDENT_CODE ON`) are the parts most likely to need attention. If it cannot be made to work in this round, refuse the combination at configure time (`if(USE_HIP AND HEonGPU_BUILD_SHARED) message(FATAL_ERROR ...)`) and say so in the README AMD section and the PR body, which jeff then decides on.
+
+### 2. The stated reason for compiling consumer sources as HIP is false, in five CMake comments and the docs
+
+`test/CMakeLists.txt:85-88`, `example/basic/CMakeLists.txt:34-36`, `example/bootstrapping/CMakeLists.txt:20-22`, `example/mpc/CMakeLists.txt:19-21` and `benchmark/CMakeLists.txt:18-20` say the sources must be compiled as HIP "the same reason they need nvcc on the CUDA side", and `docs/advanced_topics.rst:131` says "the same reason those headers require nvcc in a CUDA build". On the CUDA side these sources do not go through nvcc: they are `.cpp` files, CMake assigns them to CXX, and upstream sets no `LANGUAGE CUDA` anywhere (`git grep "LANGUAGE CUDA" origin/main` is empty). Upstream's host compiler builds every test and example `.cpp` against `heongpu.hpp`, and upstream 2.0 states it outright: a shared-library consumer needs no CUDA language (`docs/advanced_topics.rst:121`, `test/package/CMakeLists.txt` with `HEONGPU_PACKAGE_TEST_CUDA=OFF`, `shared_state_plugin.cpp`). The docs sentence now contradicts the paragraph directly above it. The HIP requirement itself may well be real (for example, `warp_reduce` in `util.cuh` is a non-template `__device__` function using `warpSize`, which a host-only HIP compile does not declare); the comparison with CUDA is what is wrong. Reword all six to give the HIP-side reason without the CUDA comparison. A maintainer who reads "they need nvcc on the CUDA side" and knows their own build will distrust the rest.
+
+Same class, smaller: upstream's comment at `thirdparty/CMakeLists.txt:7-8` ("Configuring ... does not change the source tree") is no longer true in a HIP build, since the block the port added right below it applies the patches to the submodule checkouts at configure time. Add "except that a HIP build applies the patches below to them" or move the patch step's own comment to say it is the exception.
+
+### 3. Skill lesson `26c7bba1` dates the RMM header move wrongly
+
+`.claude/skills/cuda-to-rocm/references/no-hip-equivalent.md`, last bullet: "RMM 26.06 made those non-templates under `rmm/mr/`". Checked against rapidsai/rmm tags: `cpp/include/rmm/mr/pool_memory_resource.hpp` already exists in v25.12.00, v26.02.00 and v26.04.00, where it is still a template (`template <typename Upstream` present); v26.06.00 is the first non-template, and the first where `set_current_device_resource` returns `cuda::mr::any_resource` (v26.04.00 still has `device_memory_resource* set_current_device_resource(device_memory_resource*)` plus `set_current_device_resource_ref`). Say that 26.06 made them non-templates and changed allocation and the default-resource calls, and that the `rmm/mr/` header location predates it, so a reader with a 25.12-26.04 upstream does not conclude they need the HIP branches.
+
+### Proposed review PR body: corrections
+
+`jargon.py -` and `prose.py` are clean on the porter's draft; the problems are claims that are not true at `2f4de2d`:
+
+- "Everything new is behind `-D USE_HIP=ON`; with the option off ... the CUDA build configures and compiles as before." Not everything is behind the option: `small_ntt.cu` is deleted and its definitions moved into `small_ntt.cuh` for both builds, `HostVector`/`DeviceVector` changed, `memorypool.cu`'s CUDA calls go through new helpers, and the GMP/NTL conversions apply to both builds. "Compiles as before" is also unverified at this head (no nvcc compile since the merge, as the Testing section itself says).
+- "hipMM keeps RMM's ... headers ..., so nothing else in the build or the installed package changes": the header paths differ (`rmm/mr/device/`) and the next paragraph describes the code that had to change.
+- The HIP branches to remove later include `test/test_rmm_default.cpp`, not only `memorypool.cuh`/`.cu`.
+- `<sys/sysinfo.h>`: one header include is guarded; the one in `random.cuh` was removed, not guarded.
+- The LLP64 bullet omits the NTL `long` conversions in `operator.cu` (`zz_from_u64`/`u64_from_zz`), which the port also changed.
+- "run twice from a clean build": the porter's notes show one fresh build and two serial runs.
+- Nothing says `HEonGPU_BUILD_SHARED=ON` is unbuilt on AMD GPUs (finding 1).
+
+Corrected body below, true at `2f4de2d`. The porter must update the `HEonGPU_BUILD_SHARED` sentence after fixing finding 1, and the Testing section after the round. `jargon.py -` and `prose.py` are clean on it. Title unchanged: "Add HIP support for AMD GPUs".
+
+====
+This adds a HIP build so HEonGPU runs on AMD GPUs through ROCm, alongside the existing CUDA build. The HIP build is selected with `-D USE_HIP=ON`. With the option off (the default) the CUDA build configures as before; the few source changes it shares with the HIP build are listed below under "Changes that also reach the CUDA build".
+
+```
+git submodule update --init --recursive
+cmake -S . -B build -D USE_HIP=ON -D CMAKE_HIP_ARCHITECTURES=gfx942 -D HEonGPU_BUILD_TESTS=ON
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+The kernel and host sources keep their CUDA spelling. `thirdparty/hip_compat/` holds shims for `cuda_runtime.h`, `curand_kernel.h` and the other CUDA headers the sources include; in a HIP build that directory comes first on the include path, so each CUDA runtime and cuRAND name resolves to its HIP or hipRAND counterpart, and the shims are installed with the library for projects that use the installed headers. `src/CMakeLists.txt` and the test, example and benchmark lists grow a HIP branch next to the CUDA one. The pinned GPU-NTT, GPU-FFT and RNGonGPU submodules are built for AMD GPUs from patches under `thirdparty/patches/`, which configuring applies only when `USE_HIP` is on. `cmake/Config.cmake.in` carries the same choice into the installed package. Hardcoded warp sizes are replaced with `warpSize` where the value has to follow the hardware, since AMD GPUs run 64-lane wavefronts on CDNA and 32-lane ones on RDNA. `-D HEonGPU_BUILD_SHARED=ON` has not been built for AMD GPUs yet.
+
+## Changes that also reach the CUDA build
+
+- The definitions of `SmallForwardNTT` and `SmallInverseNTT` move from `src/lib/kernel/small_ntt.cu` into `small_ntt.cuh`, guarded so that only a device compiler sees them. The HIP build compiles without relocatable device code, where a `__device__` function defined in another translation unit does not link. The function bodies are unchanged apart from `inline`.
+- `HostVector` declares its copy and move operations explicitly, which clang requires where nvcc accepted the inherited ones, and `DeviceVector` gains a `shrink_to_fit(stream)` overload that forwards to `rmm::device_uvector`.
+- `MemoryPool` calls its RMM resources through three helpers, described in the next section; on CUDA each helper is exactly the call it replaces.
+- The GMP and NTL conversions described under "Defects found while porting" apply to both builds and leave LP64 results bit for bit unchanged.
+
+## RMM on AMD GPUs: hipMM
+
+RMM does not build for AMD GPUs. The HIP build fetches hipMM (https://github.com/AMD-Ecosystem/hipMM) instead, the ROCm-DS port of RMM, pinned by commit, from the same FetchContent block that fetches RMM for CUDA. hipMM keeps RMM's `rmm` target and `rmm::` namespace and installs an `rmm` CMake package, so the build and the installed package need no other change, and no RMM replacement code is carried in this repository. `HEonGPU_USE_SYSTEM_RMM` and `HEonGPU_INSTALL_RMM` work the same way with hipMM, which has its own version numbers (4.0).
+
+hipMM's newest release has the RMM 25.x API, while this repository now uses RMM 26.08. `MemoryPool` therefore selects the 25.x headers and resource types on AMD GPUs (the resource headers live under `rmm/mr/device/`, `pool_memory_resource` and `statistics_resource_adaptor` are templates there, and the default resource is set by reference), and calls the resources through three small helpers whose CUDA versions are exactly the calls they replace. The pool logic is shared. Once hipMM ships the RMM 26.x API, the HIP branches in `memorypool.cuh`, `memorypool.cu` and `test/test_rmm_default.cpp` can be removed.
+
+## Defects found while porting
+
+Two of these also affect NVIDIA GPUs and need your attention first.
+
+**The Box-Muller error sampler is undefined behaviour, and fixing it for NVIDIA would change NVIDIA results.** The sampler in RNGonGPU wrote `static_cast<T>(z)` where `T` is the unsigned residue type and `z` is a signed sample, relying on the following `+ (flag & modulus)` to turn a negative sample into its representative. Converting an out-of-range floating-point value to an unsigned integer is undefined, and the two back ends resolve it differently: NVIDIA's `cvt.rzi.u64.f64` saturates a negative source to zero, while the AMD lowering of a 64-bit `fptoui` keeps the low 32 bits of the two's-complement value. On AMD that turned roughly half of every error polynomial into values near 2^32, so every ciphertext decrypted to noise. Routing the truncation through the signed type first makes it well defined on both back ends. **Applied to the CUDA build, this would deliberately not be behaviour-neutral**: it replaces the saturated zero with the correct negative representative, which is the value the surrounding arithmetic already assumes. Since a saturated zero makes the sample congruent to zero rather than `q - 2`, the CUDA build has been drawing from a thinner error distribution than intended, which is a security-relevant property of an RLWE scheme rather than a cosmetic difference. The fix is in `thirdparty/patches/RNGonGPU.patch`, so today it only applies to HIP builds; please decide how the CUDA build should behave rather than have us pick for you.
+
+**128-bit Barrett reduction produced wrong results for moduli of 61 bits or more** in the pinned GPU-NTT submodule. Fixed in `thirdparty/patches/GPU-NTT.patch`, again only applied to HIP builds.
+
+The remaining fixes are AMD-only or Windows-only:
+
+- `MemoryPool::get_host_avaliable_memory()` used `<sys/sysinfo.h>`, which is Linux-only, and `memorypool.cuh` and `random.cuh` included it. The call and the `memorypool.cuh` include are guarded, with `GlobalMemoryStatusEx` on Windows, and the unused include in `random.cuh` is removed.
+- GMP's `mpz_*_ui` entry points take `unsigned long`, which is 32 bits under LLP64. Every coefficient modulus wider than 32 bits was silently truncated before GMP saw it, so on Windows the CRT constants described a different modulus chain than the one in use. Values now go through `mpz_import`, which is exact under both data models and leaves LP64 results bit for bit unchanged. The NTL `long` conversions in the CKKS constant encoding had the same truncation and now go through NTL's byte conversions.
+- On Windows, hipMM and its logging library are built static: as shared libraries they export no symbols under an MSVC-style toolchain.
+
+## Testing
+
+At the current head, on an AMD Instinct MI250X (gfx90a, wave64) with ROCm 7.16 on Linux: the HIP build compiles all 49 test, 28 example and 3 benchmark programs, and `ctest` passes 301 of 301 test cases. The suite was run twice in a row on a fresh build with no failures, and the BFV, CKKS, TFHE, bootstrapping, session, multi-stream and multiparty examples were run with their decrypted values checked; the eight TFHE gate outputs match their truth tables bit for bit.
+
+Earlier revisions of this branch, before the merge of the 2.0 changes, passed the then 20 test programs twice from a clean build on an AMD Instinct MI300X (gfx942, ROCm 7.14, Linux), an AMD Radeon Pro W7800 (gfx1100, RDNA3, wave32, ROCm 7.2.3, Linux) and an AMD Radeon 8060S (gfx1151, RDNA3.5, wave32, ROCm 7.14, Windows 11). Those platforms are being rerun at the current head and this description will be updated with the results.
+
+The CUDA build was compiled with nvcc 12.8 at the revision before the merge; it will be compiled again at the current head.
+
+## Note on authorship
+
+This port was prepared with the assistance of an AI coding agent, with the results above measured on the listed hardware. Please review it as you would any other outside contribution.
+
+---
+
+This pull request was prepared with the help of an AI assistant acting as a coding agent and was read and approved by a person before it was opened. It comes from an ongoing effort to add AMD GPU support to widely used CUDA projects, one repository at a time: https://github.com/AMD-Ecosystem/moat -- that repository describes how the work is done and what a person checks before anything is submitted.
+
+If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
+====
