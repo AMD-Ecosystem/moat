@@ -7,15 +7,15 @@
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
   "adopted_at": "2026-06-04T01:07:42Z",
-  "updated_at": "2026-11-04T07:39:26Z",
+  "updated_at": "2026-11-04T18:13:54Z",
   "head_sha": "cf873a288e8469d7292470c96272f825dc355dba",
   "depends_on": [],
   "pr_url": "https://github.com/CERN/TIGRE/pull/747",
   "pr_number": 747,
   "pr_opened_at": "2026-06-19T22:58:31Z",
   "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-04T07:39:26Z"
+    "arch": "linux-gfx90a",
+    "since": "2026-11-04T18:13:54Z"
   },
   "waivers": {},
   "pr_state": "open",
@@ -161,5 +161,10 @@
     "base_sha": "cf873a288e8469d7292470c96272f825dc355dba",
     "review_pr": null,
     "opened_at": "2026-11-04T07:38:06Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-04T07:39:26Z",
+    "at": "2026-11-04T18:13:54Z"
   }
 }
