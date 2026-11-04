@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """MOAT deferred-work registry: the answer to "what did we defer, and where do
 we resume it?"
 
