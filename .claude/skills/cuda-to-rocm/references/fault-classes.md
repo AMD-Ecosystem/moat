@@ -397,6 +397,12 @@ by Clang and GCC. Expect missing `typename`/`template` disambiguators, two-phase
 failures and narrowing conversions. Fixes are additive and arch-independent, so they help
 the CUDA build too and are not HIP-specific hacks. (Velvet)
 
+**rocRAND's device headers need C++14 from ROCm 10.1.** `rocrand_threefry_common.h` uses
+`std::enable_if_t`, so a TU that includes `hiprand_kernel.h` under `-std=c++11` fails with
+`no template named 'enable_if_t' in namespace 'std'`. ROCm 7.2 still accepted C++11, so a
+port validated there breaks only on a newer SDK. Look for a build script that pins
+`-std=c++11` for nvcc and reuses it for hipcc; raise it on the HIP path only. (TIGRE)
+
 ## Types, dispatch and platform limits
 
 **`clock64()` is a 20-bit counter on gfx11.** On RDNA3/3.5 it compiles to
