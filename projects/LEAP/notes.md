@@ -1148,3 +1148,144 @@ This pull request was prepared with the help of an AI assistant acting as a codi
 
 If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
 ~~~~
+
+## Review 2026-11-04 (reviewer, linux-gfx942, moat-port @ b37ca0a vs base 0c8846f; delta e503672..b37ca0a)
+
+Verdict: review-passed. No blocking finding. On gfx942, where the buffer path is live, b37ca0a is bit-identical to e503672 with times within noise, the fat build selects the buffer path at run time, and there is no leak. Device/host agreement holds. The CUDA path is unchanged. PR prep must fix the PR body (three sentences, corrected body below) and the commit history (below).
+
+Host: AMD Instinct MI300X (gfx942), torch 2.16.0a0+git6c3af02, HIP 7.16.26385, numpy 1.26.4, HIP_VISIBLE_DEVICES=2 (pinned by the dispatcher), all GPU runs under `ulimit -c 0`. Each build is a `git archive` of its commit in its own directory under agent_space/cmp. Scripts: `dump_outputs.py`, `compare_outputs.py` (gfx942 port entry), `dump_point.py`, `leak_check.py` (dual-path port entry), extracted unchanged from this file.
+
+### Builds (all rc=0)
+```
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=32 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/e503672 && python setup_AMD.py build_ext --inplace"   # "all archs for visible cards ... (gfx942)"
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=32 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/b37ca0a && python setup_AMD.py build_ext --inplace"
+PYTORCH_ROCM_ARCH="gfx90a;gfx942" MAX_JOBS=32 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/fat && python setup_AMD.py build_ext --inplace"
+```
+Fat build, `llvm-objdump --offloading` then `-d` on `projectors_SF.o`: gfx90a 808 `image_*` / 28 `global_load`, gfx942 0 / 836, matching the porter's gfx90a-host figures.
+
+### gfx942 checks (the porter's list, steps 1-7)
+```
+python dump_outputs.py e503672/src old_r1.npz 256; ... b37ca0a new_r1; e503672 old_r2; b37ca0a new_r2; fat fat_r1   # interleaved
+python compare_outputs.py old_r1.npz new_r1.npz   # ALL BIT-IDENTICAL (36/36)
+python compare_outputs.py old_r2.npz new_r2.npz   # ALL BIT-IDENTICAL (36/36)
+python compare_outputs.py new_r1.npz fat_r1.npz   # ALL BIT-IDENTICAL (36/36): the fat binary takes the buffer path on gfx942
+python compare_outputs.py old_r1.npz old_r2.npz   # ALL BIT-IDENTICAL (run-to-run determinism)
+python dump_point.py <build>/src pt_<x>.npz       # e503672, b37ca0a, fat
+python compare_outputs.py pt_old.npz pt_new.npz   # ALL BIT-IDENTICAL (20 arrays)
+python compare_outputs.py pt_new.npz pt_fat.npz   # ALL BIT-IDENTICAL (20 arrays)
+(cd <build> && python unitTests/gpu_vs_cpu_validate.py)   # 12/12, OVERALL: PASS for e503672, b37ca0a and fat; printed lines identical across the three; 0 "Error: GPU" lines
+python leak_check.py <build>/src                  # delta 0 bytes over 200 iterations, all three builds
+```
+`dump_point.py`: `upsample` fails in the script (ctypes dtype) in every build, as before. `dictionary` did not fault on gfx942 (it faulted in every gfx90a build); its 1-value output agrees across the three builds. Each dump prints `Unknown device type` 12 times in every build: upstream `getSPcores` (`cuda_utils.cu:571`) knows only NVIDIA compute capabilities and gfx942 reports 9.4; its callers clamp with `max(1024, ...)`, so the line is cosmetic and predates the port.
+
+gfx942 times, median of 5, 256 cols x 266 rows x 360 views, device-resident tensors, ms, project / backproject:
+```
+geometry_model   e503672 r1       b37ca0a r1       e503672 r2       b37ca0a r2       fat (b37ca0a)
+parallel_VD      127.5 /  33.4    127.6 /  33.6    127.6 /  33.5    127.6 /  33.7    127.7 /  33.7
+parallel_SF      127.4 /  33.9    127.6 /  33.7    127.6 /  33.9    128.0 /  34.1    128.2 /  33.9
+fan_VD           121.7 /  31.9    121.5 /  32.0    121.5 /  32.1    122.0 /  32.1    121.6 /  32.1
+fan_SF           121.7 /  60.2    121.7 /  60.2    121.5 /  60.1    122.0 /  60.2    122.1 /  60.4
+coneparallel_VD  242.4 /  36.4    242.6 /  36.3    242.7 /  36.4    243.1 /  36.3    242.9 /  36.4
+coneparallel_SF  242.4 /  85.2    243.0 /  85.3    243.0 /  85.1    243.1 /  85.5    243.0 /  85.2
+cone-flat_VD     227.9 /  42.4    228.1 /  42.6    228.3 /  42.5    228.2 /  42.6    228.1 /  42.6
+cone-flat_SF     228.2 / 252.1    228.4 / 251.4    228.4 / 252.1    228.6 / 252.6    228.7 / 252.8
+cone-curved_VD   242.2 /  35.8    242.2 /  35.7    242.3 /  35.6    242.7 /  35.6    242.3 /  35.7
+cone-curved_SF   242.6 / 160.6    242.5 / 160.1    242.5 / 161.2    242.5 / 160.4    242.9 / 160.5
+modular_VD       222.8 /  42.3    222.8 /  42.4    222.9 /  42.5    223.0 /  42.4    223.2 /  42.4
+modular_SF       223.1 /  94.2    223.1 /  94.2    223.2 /  94.3    223.3 /  94.4    223.3 /  94.4
+```
+b37ca0a/e503672 ratios 0.994-1.006 in both rounds. These are the gfx942 figures for the PR body's image-less placeholder once a validator records gfx942 at the final commit.
+
+gpu_vs_cpu_validate.py on gfx942 (same for all three builds): parallel VD/SF adjoint 2.54e-05/1.64e-05; fan 2.44e-04/1.85e-04; coneparallel 1.24e-03/5.07e-05; cone-flat 1.42e-04/1.46e-04 (fbp 0.9998); cone-curved 8.54e-05/1.30e-04; modular VD 3.39e-03 (fbp 0.9998), modular SF fwd-vs-VD err 0.000; every other fbp_interior 1.0000.
+
+### Device/host agreement (priority 2): no possible mismatch found
+- Device side: `__HIP_NO_IMAGE_SUPPORT` is set only in `amd_device_functions.h:799-807`, from `__gfx942__`/`__gfx950__`, i.e. only in those device passes. `cuda_utils.h` tests it after `#include "cuda_runtime.h"`, which pulls that header in, so the test is never evaluated before the definition. The host pass and every other target see 0 and compile the texture helpers, which is what the fat-build ISA shows.
+- Host side: `leapUseLinearTexture()` gets the current device with `cudaGetDevice`, then reads `hipDeviceAttributeImageSupport` for that device and reads `leapLinearTextureCode` with `cudaMemcpyFromSymbol`. The runtime resolves the symbol in the code object loaded for the current device, so in a mixed gfx90a+gfx942 process each ordinal gets its own answer (the cache is keyed by ordinal). A handle is created only when both answers agree. Otherwise it returns nullptr. The only symbol is in `cuda_utils.cu`'s module, and it speaks for the other modules because `setup_AMD.py` gives every `.cu` the same flags and arch list.
+- Call sites: every `.cu` entry point that calls `loadTexture*` first calls `cudaSetDevice(params->whichGPU)` (all `cudaSetDevice` calls outside `cuda_utils.cu` take `whichGPU`). Each texture is created and used inside one function on that device, and multi-GPU splitting happens above this layer, one device per call. No texture or buffer handle is passed between devices, so neither kind can reach a kernel compiled for the other kind.
+- Free/destroy: the registry is keyed by address, not device. A texture object is a different allocation from any live buffer, so its address cannot match a registered buffer, and a buffer leaves the registry only after both halves are released. `cudaFreeArray(` and `cudaDestroyTextureObject(` counts are equal in every file that loads a texture. The only non-call spellings are the two parenthesized runtime calls in `leapFreeArray`/`leapDestroyTextureObject` (`cuda_utils.cu:1118,1126`), plus comments.
+- Measured on this host: no `Error: GPU` line in any run, so gfx942 reports image support 0 and its code reads buffers. The fat build's outputs equal the default build's.
+- Observation, not a finding: when the two answers disagree, the refusal returns nullptr and upstream callers do not check it, so the kernel faults at address 0 (the porter's forced copy A). Upstream behaves the same way when `loadTexture*` fails for any other reason. No shipping arch can reach this: the attribute and the macro come from the same target list.
+
+### CUDA path (priority 3): unchanged
+`git diff 0c8846f b37ca0a -- src/cuda_utils.cu`: 0 removed lines, and every added block is inside `#if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)` (the CUDA `#else` arms of the three filter-mode blocks are the upstream text). In `cuda_utils.h`, the new code is either HIP-guarded or the unchanged CUDA forwarders. The delta e503672..b37ca0a touches only these two files. The other files' CUDA-visible changes were accepted in the e503672 review and are unchanged. In `setup_AMD.py` the CUDA branch gains only `win_extra`, which is empty off Windows. No nvcc here, so no CUDA compile.
+
+### Skill lesson (port/LEAP, `references/fault-classes.md`): accurate
+I checked it against the code and the measurements: the macro source and its per-target scope; `hipMemcpyFromSymbol` resolving to the current device's code object; the function-like-macro trick; the two-bit registry rationale; the gfx90a figures (the e503672 review's table). It also matches the forced-copy test recipe. No change needed. A sentence giving the gfx942 result (buffer path exact against itself, times within 0.6%) would add little.
+
+### 1. PR body at b37ca0a: three sentences to correct (PR prep)
+`jargon.py -` and `prose.py` are both clean on the porter's body, and it is ASCII only. Checked true against the tree: the loader and header description, the run-time choice and refusal, the free/destroy redirection, "loadTexture* keep their original bodies" on CUDA, the Siddon integer-coordinate fetches (`projectors_Siddon.cu:44`), `linearInterp` only in `projectors_Joseph.cu`, 207 symbols in `leapct_exports.def`, the three removed dumps and the gitignore entries, the `analytic_ray_tracing_gpu.cu` include move, and "gfx942 reports no image support at run time" (no `Error: GPU` line here). Corrections:
+- "(the compiler defines `__HIP_NO_IMAGE_SUPPORT` for them)": ROCm's HIP header defines it in the device pass, not the compiler. Reworded to "ROCm's HIP headers define `__HIP_NO_IMAGE_SUPPORT` in device code for them".
+- "two to three times slower where it feeds the software blend": the measured range is projection 3.0-3.3x and backprojection 1.8-2.5x on gfx90a. Reworded with those figures and the GPU named.
+- "`setup_AMD.py` gains a ROCm branch (defines and hipFFT linkage) and leaves GPU architecture selection to PyTorch's extension build": upstream already has the `if rocm:` branch and already leaves arch selection to PyTorch (net of 5f6816f the port does not touch it). Reworded to "the ROCm branch of `setup_AMD.py` gains the `__INCLUDE_CUFFT` define and hipFFT linkage, and GPU architecture selection stays with PyTorch's extension build".
+The Validation placeholders stay as placeholders, because no validator record exists at the final commit. The gfx942 times above and the porter's gfx90a times are what they will report. The corrected body follows the commit-history section and passes `jargon.py -`, `prose.py` and the ASCII check.
+
+### 2. Commit history: PR prep must squash (non-blocking now)
+`jargon.py --port LEAP`: clean. No `Co-Authored-By` in any commit. Every title has `[ROCm]`. Problems the squash must remove:
+- `71b42b3`: 77-character title (limit 72), no Test Plan, hard-wrapped body.
+- `c77df45`: the title says "port comments" but the commit changes a docstring in the test script; its Test Plan is not in a fenced block; the body is hard-wrapped.
+- `319e120`: the body describes a design that later commits replaced ("point-bound textures keep tex*D<float>"; all fetches now go through `leapTex*D(..., false)`) and says "byte-for-byte unchanged". It is hard-wrapped.
+What PR prep must do: squash 0c8846f..b37ca0a into one commit whose tree equals b37ca0a, so `squash-carry-forward` applies. The message needs a `[ROCm]` title of 72 characters or fewer, a body describing the final design (the corrected PR body's "What is implemented" is the model), one line per paragraph, an AI-assistance disclosure, and a Test Plan with the literal commands in fenced blocks. Run `jargon.py --port LEAP` before pushing.
+
+### Nit (optional; a comment-only change if anyone touches the file)
+`cuda_utils.h:45-46` says "the device compiler defines __HIP_NO_IMAGE_SUPPORT for them". As with the PR body, the HIP header defines it. This does not justify a code change at review time.
+
+### Corrected review PR body at b37ca0a (for jeff)
+Changed from the porter's body: the three sentences in finding 1, nothing else. The PR is not edited.
+
+~~~~markdown
+## Summary
+
+This PR adds AMD GPU support to LEAP by making the CUDA projector, filter, and scatter kernels build and run correctly on ROCm through HIP. It uses the existing torch extension build (`setup_AMD.py`): on a ROCm install, PyTorch's build machinery hipifies the canonical `.cu` sources at build time, so a single set of sources serves both vendors and no file is renamed or duplicated for HIP.
+
+To build on ROCm, from the repository root:
+
+```
+python setup_AMD.py build_ext --inplace
+```
+
+The build compiles for the GPU architectures PyTorch's extension build selects by default: with PyTorch 2.12 and later, those of the GPUs visible at build time; with earlier releases, those the installed PyTorch was built for. Set `PYTORCH_ROCM_ARCH` (for example `PYTORCH_ROCM_ARCH="gfx90a;gfx942;gfx1100"`) to choose the architectures explicitly.
+
+The resulting `leapct` shared library is loaded by `leapctype.py` via ctypes exactly as before.
+
+## What is implemented
+
+Texture sampling is the central piece of the port. LEAP's projectors read their volume or sinogram through texture objects, with several hundred `tex3D`/`tex2D`/`tex1D<float>` fetches, many at fractional coordinates relying on `cudaFilterModeLinear` hardware interpolation. HIP does not offer linear filtering on float element-read textures, so on ROCm every texture is created with point filtering, and device-only helpers `leapTex3D`/`leapTex2D`/`leapTex1D` (`cuda_utils.h`) do the trilinear/bilinear/linear blend in software from the corner texels with the CUDA unnormalized -0.5 texel-center convention. The corners are point fetches at texel centers, so the bound address mode (border or clamp) governs out-of-range neighbors exactly as with hardware filtering. On CUDA the helpers forward straight to the texture builtins, preserving hardware filtering.
+
+On gfx942 and gfx950 the texture API is disabled at compile time, and gfx942 reports no image support at run time. For those GPUs `loadTexture`, `loadTexture_from_cpu` and `loadTexture1D` (`cuda_utils.cu`) copy the data into one linear device buffer behind a small header holding the extents and the bound address mode, and the texture handle points at that buffer. The helpers compiled for those targets (ROCm's HIP headers define `__HIP_NO_IMAGE_SUPPORT` in device code for them) read the buffer the way the bound texture samples: unnormalized coordinates, point sampling, and the bound address mode (border returns zero, clamp repeats the edge texel), so no read goes past the buffer. Every other GPU keeps real texture objects, because the buffer is exact but, on an AMD Instinct MI250X (gfx90a), made projection 3.0 to 3.3 times and backprojection 1.8 to 2.5 times slower where it feeds the software blend. The loaders choose at run time from the current device's `hipDeviceAttributeImageSupport` and check that choice against a flag compiled into each target's device code, refusing to create a handle if they disagree, so a multi-architecture build hands every GPU the representation its code reads. `cudaFreeArray` and `cudaDestroyTextureObject` are redirected on ROCm so the existing call sites release either kind unchanged. On CUDA, `loadTexture*` keep their original bodies.
+
+Fetch sites whose texture is bound with linear filtering call the helpers with linear interpolation; point-bound fetch sites (for example the Siddon projectors, which fetch at integer coordinates) call them with `linear = false`, a plain point fetch. The Joseph modular-beam path chooses its filter mode at runtime, so those kernels take a `linearInterp` flag and pass it through, keeping both modes correct with one kernel.
+
+Detector-edge footprint weights can compute coordinates of the form `0/0 = NaN`; CUDA hardware texturing returns a finite border/clamped value for a non-finite coordinate, which the call site then multiplies by the zero weight. The helpers map non-finite input coordinates to finite ones to reproduce that, keeping cone/fan/modular projections finite at the detector edges.
+
+The GPU FFT filter path (ramp and Hilbert filtering in `ramp_filter.cu`) is enabled on ROCm by defining `__INCLUDE_CUFFT`; the cuFFT calls map to hipFFT during hipify and the extension links `hipfft`.
+
+Build-system and cleanup changes: the ROCm branch of `setup_AMD.py` gains the `__INCLUDE_CUFFT` define and hipFFT linkage, and GPU architecture selection stays with PyTorch's extension build; three stale one-shot hipify dumps (`src/hip_utils.h`, `src/projectors_Joseph_cpu_hip.h`, `src/ramp_filter_hip.cuh`) are removed because they are unreferenced and collide with the names the build-time hipify generates, and those generated outputs are now gitignored; `src/analytic_ray_tracing_gpu.cu` includes `cuda_runtime.h` before its `.cuh` so `float3`/`float2` resolve on HIP.
+
+Windows/MSVC support required four guarded fixes: `leap_defines.h` skips its `uint8`/`uint16` typedefs when they would clash with HIP's vector types under MSVC (`file_io.cpp` gets a local cstdint-based typedef under the same guard); a minimal `PYBIND11_MODULE` stub satisfies the `/EXPORT:PyInit_leapct` symbol the torch extension linker requires; `PROJECTOR_EXPORTS` is defined so the C interface exports rather than imports; and `leapct_exports.def` lists the 207 exported symbols so MSVC link-time code generation does not strip them.
+
+A new test, `unitTests/gpu_vs_cpu_validate.py`, exercises 6 geometries (parallel, fan, cone-parallel, cone-flat, cone-curved, modular) with both the VD and SF projector models, checking that forward/backprojection/FBP are finite, that FBP of a uniform cylinder recovers an interior value of 1.0 (which also exercises the hipFFT ramp-filter path), and that the forward/backprojection adjoint identity `<Af,g> == <f,A^T g>` holds.
+
+## Effect on the CUDA/NVIDIA path
+
+CUDA behavior is unchanged. The texture helpers compile to the original hardware `tex*D` builtins under nvcc, so NVIDIA builds keep their textures and hardware linear filtering; the linear-memory texture path, the `cudaFreeArray`/`cudaDestroyTextureObject` redirection, hipFFT linkage, and ROCm build flags are guarded to HIP; the vector-type guard requires both MSVC and the HIP platform. The CPU projectors (`*_cpu.cpp`) are not touched. On Linux, the only CUDA-visible source change is mechanical: texture fetch sites call the forwarding helpers, and the Joseph modular-beam kernels carry the extra `linearInterp` parameter. The other three Windows fixes (the `PyInit_leapct` stub, `PROJECTOR_EXPORTS`, and the `.def` export list) depend only on Windows, so they also apply to a CUDA build of `setup_AMD.py` on Windows; that build was not tested.
+
+## Validation
+
+All testing was done on real AMD GPUs. `unitTests/gpu_vs_cpu_validate.py` (12 tests: 6 geometries x {VD, SF}) passed 12/12 on each of:
+
+- <GPU, gfx target, Linux or Windows, and any notes, for each GPU validated at the final commit>
+
+<Summary of the per-test results at the final commit: finite outputs, FBP interior recovery, adjoint relative error, and whether the results agree across GPUs.>
+
+<For a GPU with texture hardware: whether forward, backprojection and FBP outputs are bit-identical to the texture-only build that preceded gfx942 support, and the change in projection time. For a GPU without image support: the projection and backprojection times measured there.>
+
+One pre-existing upstream behavior was reproduced, not introduced: modular-beam SF FBP does not converge (tilted-detector separable footprint), while modular SF forward projection matches modular VD and modular VD FBP recovers 1.0. No `*_cpu.cpp` file is modified.
+
+This work was authored with the assistance of Claude, an AI assistant.
+
+---
+
+This pull request was prepared with the help of an AI assistant acting as a coding agent and was read and approved by a person before it was opened. It comes from an ongoing effort to add AMD GPU support to widely used CUDA projects, one repository at a time: https://github.com/AMD-Ecosystem/moat -- that repository describes how the work is done and what a person checks before anything is submitted.
+
+If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
+~~~~
