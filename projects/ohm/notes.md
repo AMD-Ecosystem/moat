@@ -1038,3 +1038,7 @@ index b6a7fd3..ac8d2be 100644
 ~~~~
 
 </details>
+
+### Fork updated 2026-11-04: moat-port at ea8bbea, stage ported
+
+jeffdaily confirmed that the guard resolves the remote with `git -C <dir> remote get-url --push origin`, which printed `https://github.com/AMD-Ecosystem/ohm`. On the remote, `moat-port` was still 4e2e769 (`git ls-remote`). The local branch was a fast-forward from 4e2e769, and the clone's working tree was clean. A plain update ran with the literal clone path and `origin moat-port` and gave `4e2e769..ea8bbea  moat-port -> moat-port`. `git ls-remote` then showed ea8bbea28270871f3c32ac61c49789b13b60c3f6. After that, `advance-head ohm ea8bbea28270871f3c32ac61c49789b13b60c3f6` and `set-state ohm linux-gfx90a ported` ran, releasing the lock. The "Fork update blocked" section above is now resolved; its `git am` series stays as the record of the content.
