@@ -7,7 +7,7 @@
   "priority": 4.879,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-11-04T19:13:17Z",
+  "updated_at": "2026-11-04T19:14:16Z",
   "head_sha": "eda03f156a96c7d5f8cf04bb47cf279e81eade53",
   "pr_url": "https://github.com/ModelEngine-Group/unified-cache-management/pull/1021",
   "pr_number": 1021,
@@ -18,30 +18,6 @@
   "upstream_repo_id": 1017089821,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "eda03f156a96c7d5f8cf04bb47cf279e81eade53",
-      "failed_sha": null,
-      "started_at": "2026-11-04T07:39:29Z",
-      "completed_at": "2026-11-04T19:13:17Z",
-      "updated_at": "2026-11-04T19:13:17Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "state": "completed"
-    },
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
@@ -69,10 +45,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "dff17aeab09bf9c279dc1be42a5bdedc4368574a",
+      "validated_sha": "eda03f156a96c7d5f8cf04bb47cf279e81eade53",
       "started_at": null,
-      "completed_at": "2026-11-04T08:33:48Z",
-      "updated_at": "2026-11-04T19:00:26Z",
+      "completed_at": "2026-11-04T19:14:16Z",
+      "updated_at": "2026-11-04T19:14:16Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -86,7 +62,36 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer"
+      "last_agent": "validator"
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "57b2443",
+      "started_at": null,
+      "completed_at": "2026-06-23T21:15:41Z",
+      "updated_at": "2026-07-02T18:40:08Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "57b2443",
+        "method": "source-class",
+        "detail": "CMake default-path simplification (drop dead gfx90a fallback + dedup; rely on enable_language); explicit -D builds byte-identical",
+        "at": "2026-06-23T21:15:41Z"
+      }
     },
     "linux-gfx90a": {
       "state": "completed",
@@ -117,14 +122,14 @@
         "at": "2026-07-02T18:44:31Z"
       }
     },
-    "windows-gfx1101": {
-      "state": "completed",
+    "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "57b2443",
-      "started_at": null,
-      "completed_at": "2026-06-23T21:15:41Z",
-      "updated_at": "2026-07-02T18:40:08Z",
+      "validated_sha": "eda03f156a96c7d5f8cf04bb47cf279e81eade53",
+      "failed_sha": null,
+      "started_at": "2026-11-04T07:39:29Z",
+      "completed_at": "2026-11-04T19:13:17Z",
+      "updated_at": "2026-11-04T19:13:17Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -139,12 +144,7 @@
         "last_session_at": null
       },
       "last_agent": "validator",
-      "carry_forward": {
-        "to": "57b2443",
-        "method": "source-class",
-        "detail": "CMake default-path simplification (drop dead gfx90a fallback + dedup; rely on enable_language); explicit -D builds byte-identical",
-        "at": "2026-06-23T21:15:41Z"
-      }
+      "state": "completed"
     },
     "windows-gfx1201": {
       "state": "completed",
@@ -187,6 +187,5 @@
     "arch": "linux-gfx1100",
     "since": "2026-11-04T18:52:42Z",
     "at": "2026-11-04T19:00:26Z"
-  },
-  "porting": null
+  }
 }

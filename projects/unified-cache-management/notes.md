@@ -1236,3 +1236,40 @@ CUDA no-regression gate at eda03f1 (compile-only, `/usr/local/cuda` nvcc 12.8.93
 Pre-completion: `git -C $P/src status --porcelain` empty. `python3 utils/jargon.py --port unified-cache-management`: clean (local `develop` pointed at upstream develop cc99d52, local ref only). ROCm build docs unchanged since dff17ae (reviewer-verified).
 
 Result: linux-gfx942 COMPLETED at eda03f156a96c7d5f8cf04bb47cf279e81eade53. AMD Instinct MI300X may be named in the fix review PR's `## Upstream reply`.
+## Validation 2026-11-04 (linux-gfx1100, RDNA3 / AMD Radeon Pro W7800 48GB, revalidate) -- PASS at eda03f1
+
+GPU: AMD Radeon Pro W7800 48GB (gfx1100), ROCm 7.16 pip SDK (`hipconfig --version` 7.16.26385), one visible GPU (dispatcher pin `HIP_VISIBLE_DEVICES=1` kept), `ulimit -c 0`. Fork clone checked out detached at `eda03f156a96c7d5f8cf04bb47cf279e81eade53` from `origin/moat-fix-1021` (not `moat-port`); `git status --porcelain` shows no modified tracked files. Validated under jeff's ruling that the shim honours the caller's copy kind, so the 4 cache2 `DumpThenLoad*` tests are expected GPU-build failures and are gated in the simu build.
+
+Commands (`P=$PWD/projects/unified-cache-management; R=$(hipconfig --rocmpath)`, each wrapped in `utils/timeit.sh`):
+```
+cmake -S $P/src -B $P/build_rocm -DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_STORE=ON -DBUILD_UNIT_TESTS=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Wno-error=unused-result
+cmake --build $P/build_rocm -j32
+ctest --test-dir $P/build_rocm -j1 --timeout 600 --output-on-failure
+cmake -S $P/src -B $P/build_simu -DCMAKE_BUILD_TYPE=Debug -DBUILD_UCM_SPARSE=OFF -DBUILD_UNIT_TESTS=ON \
+  -DRUNTIME_ENVIRONMENT=simu -DBUILD_UCM_ASU=ON
+cmake --build $P/build_simu -j16
+ctest --test-dir $P/build_simu -j1 --timeout 600 --output-on-failure
+cmake -S $P/src -B $P/build_sparse -DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_STORE=OFF -DBUILD_UCM_SPARSE=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=/opt/python-3.11-venv/bin/python3 -DCMAKE_CXX_FLAGS=-Wno-error=unused-result
+cmake --build $P/build_sparse -j32 --target hamming
+HAMMING_DIR=$P/build_sparse/ucm/sparse/gsa_on_device/csrc/rocm/ham_dist \
+  /opt/python-3.11-venv/bin/python3 $P/src/ucm/sparse/test/gsa/test_hamming_rocm_ref.py
+```
+All three builds clean. `llvm-objdump --offloading`: `cuda_sm_kernel.cu.o` and `hamming.cpython-311-x86_64-linux-gnu.so` both `amdgcn-amd-amdhsa--gfx1100`.
+
+- GPU build ctest: 338 discovered, 1 disabled (UCMetricsStress.TenWritersOneCollector), **326/337 pass** (155 s). Same count and same 11 failures as the porter's gfx942 one-GPU run at eda03f1 (326/337); the reviewer's gfx1100 run here was 325/337 because a second logger sibling flaked. This platform's earlier record was 330/337 at dff17ae; the difference is exactly the 4 expected `DumpThenLoad*` failures. Failures, all in the allowed set:
+  - UCCache2TransManagerIntegrationTest.{DumpThenLoad, DumpThenLoadWithLayerWise, DumpThenLoadWithLayerAndChunk, DumpThenLoadWithVariableLengthIo}: each `Failed(1, invalid argument) to copy shard for dump task(1)` at dump_queue.h:215 (GatherShards). Expected: host malloc buffers passed as device memory.
+  - DataStrategyTest x6 (SetupPublishesAndImportsAllRanks, SegmentsAreSharedAcrossRanks, SecondSetupIsRejected, MissingPeerTimesOut, PeerHandleMismatchIsRejected, PeerPollingWaitsForDelayedPublish): `memfd device setup failed: device=1 status=101, invalid device ordinal` (data_backend_memfd.cc:407). Need a second visible GPU; they passed on gfx942 with two GPUs at dff17ae.
+  - UCLoggerPerfTest.MultiThreadPerfUCInfoVsRateLimitRandomContent: ratio 1.169 > 1.1. Known CPU timing flake.
+  - Copy-kernel and alias gates pass: UCTransUnitTest.{CopyDataWithCE, CopyDataWithSM, CopyDataBatchWithSM, EmptyEventIsSafe, MemsetAndDeviceToDevice}, UCPosixTrans{Manager,Queue}Test.TransBlock[LayerWise] 4/4, UCCache2TransManagerIntegrationTest.Backend{,Submit}NotFoundIsPreserved (11/11).
+- Simu build ctest (upstream `cpp_gtest` configuration): 1115 discovered, 1 disabled, **1114/1114 pass** (146 s), including all 4 `DumpThenLoad*` (#663, #666, #667, #668). Matches the reviewer's 1114/1114 here; the porter's 1113/1114 on gfx942 differed only by the logger flake.
+- Hamming: mla PASS (max_abs_err=42.0, max_rel_err=1.25e-03), gqa PASS (max_abs_err=0.0), determinism PASS bit-identical. Same as every earlier platform.
+
+CUDA gate: `cuda-not-validated: no CUDA toolkit on this host` (no `nvcc`, no `/usr/local/cuda`, no conda cuda-12.8 env). The gate passed on gfx942 at dff17ae, and `git diff --stat dff17ae eda03f1` is only `ucm/shared/vendor/hip_compat/cuda_runtime.h` (+3/-5), a HIP-only header the CUDA build does not include.
+
+Pre-completion: `python3 utils/jargon.py --port unified-cache-management` clean (local `develop` pointed at upstream `develop` cc99d52 and local `moat-fix-1021` at origin; local refs only). `git merge-tree --write-tree eda03f1 develop` clean against cc99d52. ROCm build documented at `docs/source/developer-guide/build_from_source.md:56`.
+
+Result: linux-gfx1100 COMPLETED at eda03f156a96c7d5f8cf04bb47cf279e81eade53. For the fix-review `## Upstream reply`, the GPU name is "AMD Radeon Pro W7800 (gfx1100)".
