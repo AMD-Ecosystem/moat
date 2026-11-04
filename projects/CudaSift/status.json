@@ -7,7 +7,7 @@
   "priority": 5.346,
   "ext_type": "unknown",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-11-04T16:46:29Z",
+  "updated_at": "2026-11-04T16:51:34Z",
   "head_sha": "db7c163aa8f48c939ef5e03afaf1a7823173eb3f",
   "pr_url": "https://github.com/Celebrandil/CudaSift/pull/97",
   "pr_number": 97,
@@ -46,10 +46,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "fa25871",
+      "validated_sha": "db7c163aa8f48c939ef5e03afaf1a7823173eb3f",
       "started_at": "2026-11-04T16:37:01Z",
-      "completed_at": "2026-06-23T22:18:21Z",
-      "updated_at": "2026-11-04T16:39:24Z",
+      "completed_at": "2026-11-04T16:51:34Z",
+      "updated_at": "2026-11-04T16:51:34Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -63,13 +63,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "fa25871",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:18:21Z"
-      }
+      "last_agent": "validator"
     },
     "windows-gfx1101": {
       "state": "completed",

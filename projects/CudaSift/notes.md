@@ -702,3 +702,29 @@ gfx90a, gfx1100 and the Windows GPUs are re-tested at db7c163 before this merges
 
 Thanks for working through the conflicts. I built #99 merged into this PR with your resolution on two AMD GPUs (gfx90a and gfx1100). It needs two more HIP mappings, which #99's new code uses and this PR's `cuda_to_hip.h` lacked: `cudaGetDevice` (for `CurrentDeviceState()`) and `cudaMemcpy2DFromArray` (for the new CopyToTexture test). I've added both here. With them, the merge builds and passes `test_extract` (21 passed, 1 skipped, which needs two GPUs), `test_match` (11/11) and `test_homography` (9/9) on both GPUs. Keypoint counts are identical to this PR alone, and `TestCopyToTextureFromHost` finds 0 of 700,000 values wrong.
 ```
+
+## Validation 2026-11-04 (linux-gfx1100) at db7c163 -- fix round 97
+
+GPU: AMD Radeon Pro W7800 48GB, gfx1100 (wave32), `HIP_VISIBLE_DEVICES=1` pinned by the dispatcher (one visible device, tests use devNum=0). ROCm 7.16 from the `rocm` pip wheel SDK at `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`. OpenCV 4.6.0. Fresh fork clone, `moat-fix-97` checked out at db7c163aa8f48c939ef5e03afaf1a7823173eb3f (moat-port untouched: upstream PR open). The #97+#99 merge was not built.
+
+Build (fresh `build-hip/`):
+    ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+    utils/timeit.sh CudaSift compile -- cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DCMAKE_BUILD_TYPE=Release
+    utils/timeit.sh CudaSift compile -- cmake --build projects/CudaSift/src/build-hip -j32
+Configure exit 0, build exit 0, 21/21 steps, 158 warnings (same count as the porter build at db7c163 and gfx90a at 6d1429a; pre-existing nodiscard `hipError_t` / fast-math ones), no errors. `llvm-objdump --offloading` on the three test binaries: only `hip-amdgcn-amd-amdhsa--gfx1100`.
+
+Tests, each `utils/timeit.sh CudaSift test -- bash -c 'cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/<bin>'`:
+
+| test            | exit | result            | key numbers |
+|-----------------|------|-------------------|-------------|
+| test_extract    | 0    | 10 passed, 0 fail | basic 1910; thresh 7077/1910/542/6; octaves 1740/1876/1910/1919; reproducibility 1910/1910; scaleUp 3104 |
+| test_match      | 0    | 11 passed, 0 fail | self-match 1902/1910 >0.95; cross 1910 vs 2084, 1910 valid / 1909 good; RANSAC 851 / 828 refined; match 0.32 ms |
+| test_homography | 0    | 8 passed, 0 fail  | translation h[2]=30.1347 h[5]=20.2747, 1643 matches; rotation 1195; scale 942; stereo L1452/R2082, 753 RANSAC / 675 inliers |
+
+PASS: 29/29, all exit 0, no HIP fault or `safeCall` abort. Matches the porter's run at db7c163 (10/11/8; keypoints 1910, 7077/1910/542/6, 1740/1876/1910/1919, 3104, 1452/2082 identical; RANSAC counts within run-to-run noise: 851/828 vs 849/826, stereo 753 vs 750, translation 1643 vs 1644, scale 942 vs 944) and this platform's earlier record at 0523b54 / carried to fa25871 (same 10/11/8 and same keypoint counts; stereo 675 inliers identical).
+
+CUDA no-regression gate: not re-run (no CUDA toolkit on this host). The delta 6d1429a..db7c163 is two `#define`s in `cuda_to_hip.h`, which is reached only by the HIP-only `-include` in CMakeLists.txt and the `hip_compat/` shims (HIP include path only), so every CUDA translation unit is source-identical to 6d1429a, where the gate passed on linux-gfx90a.
+
+Pre-completion checks: `python3 utils/jargon.py --port CudaSift` clean; README documents the ROCm build (`### Build for AMD GPUs (ROCm/HIP)`); `git status --porcelain` in src: only `?? build-hip/`.
+
+State: linux-gfx1100 `revalidate` -> `completed` at db7c163.
