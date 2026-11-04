@@ -83,7 +83,7 @@ STICKY = ("upstream_repo_id", "fork_url", "review_pr", "pr_approval",
           "license_clearance", "license_spdx", "pr_number", "pr_url",
           "pr_opened_at", "pr_merged_at", "pr_closed_at", "pr_closed_note",
           "adopted_at", "maintained", "no_upstream", "fix_abandoned",
-          "base_branch_ruling")
+          "base_branch_ruling", "fork_url_ruling")
 UNION = ("platforms", "waivers")
 RESET = ("on_hold", "on_hold_reason")
 # Every field that describes the CURRENT upstream-PR round. When the two sides
