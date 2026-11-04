@@ -13,6 +13,25 @@
       "upstream_issue": null,
       "created_at": "2026-06-07T18:21:59Z",
       "decided": null
+    },
+    {
+      "id": "hipblaslt-du192-f16-batched-matmul-rocm101",
+      "kind": "other",
+      "component": null,
+      "summary": "On ROCm 10.1.x, af::matmul on f16 arrays with 3+ dims (hipblasHgemmBatched, src/backend/hip/blas.cu:300) with the lhs transposed, K >= 163840 and a small output (about M <= 8, or M x N up to 32x8) returns wrong or inf results with no error on gfx1201: rocBLAS hands pointer-array batched calls to hipBLASLt, whose DepthU-192 kernels overflow a 32-bit division of k (fixed in hipBLASLt 1.5.0 / ROCm 10.2 by ROCm/rocm-libraries#11961, no 10.1 backport). The identical library call measured 85.85 fp16 ulp at K = 200000; arrayfire itself was not built or run. Remedy if needed: on HIP, call hipblasGemmBatchedEx with an f32 output (COMPUTE_32F) and cast to f16; HSS is never offered a DepthU-192 kernel. The 2-D path and af::dot are clean.",
+      "refs": [
+        "https://github.com/ROCm/rocm-libraries/pull/11961",
+        "claude-shared plans/hipblaslt-du192-gfx12-port-exposure-audit.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-03T16:33:12Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-11-03T16:33:28Z",
+        "note": "Rare in practice (f16, long K, tiny output, 10.1 only); a fix round on the open upstream PR is not worth it for a case 10.2 removes."
+      }
     }
   ]
 }
