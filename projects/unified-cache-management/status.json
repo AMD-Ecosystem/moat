@@ -7,17 +7,20 @@
   "priority": 4.879,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-11-04T08:05:52Z",
+  "updated_at": "2026-11-04T08:08:44Z",
   "head_sha": "af3eb74b22bfe612123a8ed606baf34ccbe80b0c",
   "pr_url": "https://github.com/ModelEngine-Group/unified-cache-management/pull/1021",
   "pr_number": 1021,
   "pr_opened_at": "2026-06-11T22:34:50Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-04T08:08:44Z"
+  },
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "MIT",
   "upstream_repo_id": 1017089821,
-  "stage": "changes-requested",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -159,7 +162,7 @@
       "failed_sha": null,
       "started_at": "2026-11-04T07:39:29Z",
       "completed_at": null,
-      "updated_at": "2026-11-04T08:05:52Z",
+      "updated_at": "2026-11-04T08:08:44Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
