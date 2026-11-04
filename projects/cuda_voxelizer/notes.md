@@ -494,3 +494,28 @@ Harness `agent_space/cvdiff.py <exe> <model> <work> <tag> --repeat 3`: each run 
 - Upstream CI smoke `./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu` (README and Release builds): exit 0, CPU path, writes `bunny.OBJ_64.vox`. CPU counts match every other arch.
 - `utils/jargon.py --port cuda_voxelizer`: clean. ROCm build documented in the README next to the CUDA build.
 - Generalizable part promoted to the `cuda-to-rocm` skill (`references/fault-classes.md`, managed-memory bitwise atomics entry): a CMake HIP build with no `CMAKE_BUILD_TYPE` compiles device code at -O0.
+## Validation 2026-11-04 (windows-gfx1151, validator, moat-port 3625a1e)
+
+Verdict: completed. Satisfies the windows gate at head 3625a1e. Device-memory voxel table, native bitwise atomics, GPU path taken in every case, GPU results match the CPU oracle exactly at 64 and 256 and within the accepted FP residual at 512.
+
+Host: AMD Radeon 8060S (gfx1151, RDNA3.5, wave32, APU), Windows 11. TheRock pip SDK HIP 7.14 (`D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel`), clang-cl for C, CXX and HIP, CMake 4.3.2 (TheRock venv), Ninja. Trimesh2 2022.03.04 (`0b3d9e2`) libsrc minus GLCamera/GLManager built with clang-cl `-MD -O2` into `trimesh.lib` (as in the porter section). Fork clone fast-forwarded to 3625a1e; `git status --porcelain` shows only untracked old build dirs, no modified tracked files. TheRock `amdhip64_7.dll`, `amd_comgr.dll`, `rocm_kpack.dll`, `hiprtc*.dll` and VS `libomp140.x86_64.dll` staged next to the exe. CUDA gate not rerun (recorded at 3625a1e). `utils/jargon.py --port cuda_voxelizer` clean.
+
+Build (clean dir `agent_space/cuvox_val`, README Windows command with Ninja/Release, all-clang-cl, via `agent_space/cuvox_build.sh <dir> Release`; exit 0, upstream warnings only):
+```
+cmake -S . -B <dir> -G Ninja -DUSE_HIP=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_C_COMPILER=clang-cl.exe -DCMAKE_CXX_COMPILER=clang-cl.exe -DCMAKE_HIP_COMPILER=clang-cl.exe -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DTrimesh2_INCLUDE_DIR=<tm2>/include -DTrimesh2_LINK_DIR=<tm2>/lib.win64
+cmake --build <dir> -j16
+```
+GPU log: `Best device: AMD Radeon(TM) 8060S Graphics`, `Allocating ... of CUDA device memory for Voxel Grid`, `## GPU VOXELISATION`.
+
+Differential: `agent_space/cuvox_compare.py <exe> bunny.OBJ <work> --repeat 3` (GPU vs `-cpu` same binary; binvox, morton, obj_points decoded to voxel sets; 3 GPU repeats compared), `ulimit -c 0`, sizes 64/256/512, surface + solid, 18 cases, 54 GPU runs. Counts identical across the three formats; all repeats identical (18 of 18).
+
+| mode | size | filled CPU | diff (GPU-only/CPU-only) | GPU ms (binvox) |
+|---|---|---|---|---|
+| surface | 64 | 13,802 | 0 | 0.3 |
+| surface | 256 | 221,760 | 0 | 4.6 |
+| surface | 512 | 887,315 | 9 (3/6) | 26.2 |
+| solid | 64 | 52,258 | 0 | 0.5 |
+| solid | 256 | 3,345,384 | 0 | 21.8 |
+| solid | 512 | 26,763,628 | 1 (1/0) | 170.2 |
+
+512 residual equals the gfx1201 Release numbers exactly (9 / 1): the accepted FP contraction class. The harness prints FAIL for any nonzero diff, so its TOTAL_FAILS=6 is exactly these six 512 rows. Upstream CI smoke `cuda_voxelizer -f bunny.OBJ -s 64 -cpu`: exit 0, CPU path, writes `bunny.OBJ_64.vox`. Not rerun here: `_DEBUG` device-counter build and writers (covered at 689b885 on this host and on other arches at 3625a1e). Note: python decoding of the solid 512 obj_points case peaked near 10 GB of RAM in the harness.
