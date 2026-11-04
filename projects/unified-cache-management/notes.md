@@ -1215,3 +1215,24 @@ PLACEHOLDER: fill in only after validators record completed platforms at eda03f1
 
 Replace the placeholder above. Name only GPUs whose platform record shows a completed validation at this exact head. Upstream `develop` has moved two commits past f366bfa (to cc99d52); a trial merge is clean.
 ====
+
+## Validation 2026-11-04 (linux-gfx942, AMD Instinct MI300X, ROCm 7.16 pip SDK, revalidate) -- PASS at eda03f1
+
+Fork clone checked out at `eda03f156a96c7d5f8cf04bb47cf279e81eade53` from `origin/moat-fix-1021` (not `moat-port`; 8545865 is an ancestor). One pinned GPU (dispatcher `HIP_VISIBLE_DEVICES`), `ulimit -c 0`, `R=$(hipconfig --rocmpath)`, `P=$PWD/projects/unified-cache-management`. Configure/build lines identical to the porter's eda03f15 entry (GPU build `build_rocm`, simu build `build_simu`, with `-j28`), plus the Hamming `build_sparse` and CUDA lines from the dff17ae validation entry. `cuda_sm_kernel.cu.o` carries `amdgcn-amd-amdhsa--gfx942`.
+
+Tests:
+```
+ctest --test-dir $P/build_rocm -j1 --timeout 600 --output-on-failure
+ctest --test-dir $P/build_simu -j1 --timeout 600 --output-on-failure
+HAMMING_DIR=$P/build_sparse/ucm/sparse/gsa_on_device/csrc/rocm/ham_dist \
+  python3 $P/src/ucm/sparse/test/gsa/test_hamming_rocm_ref.py
+```
+- GPU build: 338 discovered, 1 disabled (UCMetricsStress.TenWritersOneCollector), **326/337 pass** (155 s). Same count and same failure set as the porter at eda03f1: the 4 expected UCCache2TransManagerIntegrationTest.{DumpThenLoad, DumpThenLoadWithLayerWise, DumpThenLoadWithLayerAndChunk, DumpThenLoadWithVariableLengthIo}, each `Failed(1, invalid argument) to copy shard for dump task(1)` at dump_queue.h:215 GatherShards; DataStrategyTest x6 (`invalid device ordinal`, one visible GPU); UCLoggerPerfTest.MultiThreadPerfUCInfoVsRateLimitRandomContent (ratio 1.37 > 1.1, timing flake). No other failures. This platform's dff17ae record was 337/337 with two GPUs; the difference is the six two-GPU cases plus the logger flake plus the 4 simu-only tests. Copy-kernel gates pass: UCTransUnitTest x5 (CopyDataWithCE, CopyDataWithSM, CopyDataBatchWithSM, EmptyEventIsSafe, MemsetAndDeviceToDevice), UCPosixTrans{Manager,Queue}Test x6 (incl. TransBlock[LayerWise]), UCCache2TransManagerIntegrationTest.Backend{,Submit}NotFoundIsPreserved.
+- Simu build (upstream `cpp_gtest` configuration): 1115 discovered, 1 disabled, **1114/1114 pass** (153 s), including all 4 `DumpThenLoad*` (#663, #666-668). Porter 1113/1114 (logger flake), reviewer 1114/1114.
+- Hamming: mla PASS (max_abs_err=42.0, max_rel_err=1.25e-03), gqa PASS (0.0), determinism PASS bit-identical. Same as every earlier run.
+
+CUDA no-regression gate at eda03f1 (compile-only, `/usr/local/cuda` nvcc 12.8.93, `-DCMAKE_CUDA_ARCHITECTURES=80`, same configure as the dff17ae entry): `cmake --build $P/build_cuda -j28` EXIT 0 incl. `ucmstore.test`. PASS.
+
+Pre-completion: `git -C $P/src status --porcelain` empty. `python3 utils/jargon.py --port unified-cache-management`: clean (local `develop` pointed at upstream develop cc99d52, local ref only). ROCm build docs unchanged since dff17ae (reviewer-verified).
+
+Result: linux-gfx942 COMPLETED at eda03f156a96c7d5f8cf04bb47cf279e81eade53. AMD Instinct MI300X may be named in the fix review PR's `## Upstream reply`.
