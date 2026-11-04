@@ -1012,3 +1012,49 @@ Wall-clock note: the slow sweeps were 69 s and 118 s here (gfx1201: 47.6 s / 96 
 - Integrity: `git -C projects/qrack/src status --porcelain` empty (untracked _build/ only).
 
 Result: everything that ran passed; the exclusions are the pre-agreed ones. windows-gfx1151 -> completed at b06652a8.
+
+## Validation 2026-11-04 (linux-gfx90a, revalidate 3bf7a75e -> b06652a8 -- full GPU run)
+Full real-GPU run, no carry-forward: the delta from this arch's last validated_sha (3bf7a75e) includes the fb20e069 source revert of 42bdc3d6 plus the b06652a8 `endif ()` fix.
+Platform: MI250X gfx90a (wave64), every run printed "CUDA device #0: AMD Instinct MI250X / MI250", HIP_VISIBLE_DEVICES=1 (dispatcher pin). TheRock ROCm SDK 10.1.0 pip wheels, CMake and Ninja from /opt/python-3.11-venv. Fresh clone of AMD-Ecosystem/qrack, `moat-port` at b06652a8fdc198ce80147efa4b05b0777b874144 (= origin/moat-port tip).
+
+### Build
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+S=<abs>/projects/qrack/src
+cmake -S $S -B $S/_build -G Ninja -DENABLE_CUDA=ON -DENABLE_OPENCL=OFF -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$R -DENABLE_TESTS=ON
+cmake --build $S/_build -j42 --target unittest
+```
+Wrapped in `utils/timeit.sh qrack compile --`. Configure: OpenCL OFF / CUDA ON / HIP ON, 0 CMake warnings. Build exit 0, 39/39, 0 compiler warnings, only --offload-arch=gfx90a.
+
+### Tests (`ulimit -c 0`, `LD_LIBRARY_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_core/lib`)
+Each: `utils/timeit.sh qrack test -- $S/_build/unittest --proc-<p> --layer-<l> -d yes > <log> 2>&1`.
+
+| proc/layer | b06652a8 (this run) | 3bf7a75e (2026-10-30, with 42bdc3d6) | wall |
+|---|---|---|---|
+| cuda/qengine | All passed, 9612 / 213 | same | 52s |
+| cuda/qpager | 212 passed, 1 failed: test_cswap (tests.cpp:715), 9607/9608 assertions | All passed, 9609 / 213 | 68s |
+| cuda/qunit | All passed, 9613 / 213 | same | 1s |
+| cuda/qunit-qpager | All passed, 9613 / 213 | same | 2s |
+| cuda/qunit-multi | All passed, 9610 / 213 | same | 1s |
+| cuda/qunit-multi-qpager | exit 0, 0 test cases (not wired in test_main.cpp) | same | 0s |
+| cuda/qtensornetwork | 209 passed, 4 failed (9367/9371) | same 209/4 | 1s |
+| hybrid/qunit | All passed, 9613 / 213 | same | 0s |
+| hybrid/qengine | exit 0, 0 test cases (not wired) | same | 1s |
+| cpu/qengine | All passed, 9612 / 213 | same | 102s |
+| cpu/qpager | All passed, 9609 / 213 | same | 122s |
+| cpu/qtensornetwork | 209 passed, 4 failed (9367/9371) | same 209/4 | 0s |
+
+- cuda/qpager test_cswap: tests.cpp:715 `REQUIRE_THAT(qftReg2, HasProbability(0, 12, (1U << 9U) | (1U << 11U)))`, expansion `/00000000000000000000:0 matches bit pattern [0,12]: 12/101000000000`. The recorded known upstream failure (SetAmplitudePage, upstream PR #1044), restored by the fb20e069 revert; same assertion as on gfx1100 and gfx942 at b06652a8.
+- qtensornetwork (cuda and cpu): test_mulmodnout, test_imulmodnout, test_cmulmodnout, test_cimulmodnout (tests.cpp:4628/4649/4747/4774), "QInterface::{MUL,IMUL,CMUL}ModNOut not implemented!". Known, engine-independent.
+- Repeats (`$S/_build/unittest --proc-cuda --layer-<l> <test>`, no -d, 10 each): qpager test_cswap 0/10 (expected); qengine test_cswap 10/10; qengine test_ucmtrx 10/10 (deferred-free fix).
+- The only per-test change against this arch's 3bf7a75e run is cuda/qpager test_cswap pass -> fail, the expected effect of the revert. CPU regression layers unchanged.
+
+### Other gates
+- CUDA compile gate: already recorded PASS at b06652a8 (nvcc 12.8.93, "Porter 2026-11-01" entry); not rerun (no CUDA toolkit on this host).
+- `python3 utils/jargon.py --port qrack`: clean.
+- Documentation: README.md "Optional HIP (AMD ROCm) instead of OpenCL" section, next to the CUDA build section; still accurate.
+- Integrity: `git -C projects/qrack/src status --porcelain` empty (untracked _build/ only).
+
+Result: linux-gfx90a revalidate -> completed at b06652a8 (only failures are the two recorded known upstream failure sets).
