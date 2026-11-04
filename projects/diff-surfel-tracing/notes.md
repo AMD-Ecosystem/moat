@@ -3038,3 +3038,55 @@ rm -rf <site-packages>/diff_surfel_tracing/hiprt_cache; python3 -X faulthandler 
 ### Note for PR prep (pre-existing, outside this delta, not blocking)
 
 `README.md` (the `validate_rocm.py` block, from `07c8742`) runs the example as `HIP_VISIBLE_DEVICES=0 python3 example/validate_rocm.py`. README run commands should not carry a device-selection variable; drop the prefix at the next README touch or the PR-prep squash.
+
+## Validation 2026-11-04 (linux-gfx1100, Radeon Pro W7800, HIP 7.16.26385) -- e24c44c, README install route
+
+Revalidation at `moat-port` `e24c44c` (`revalidate`; this platform last passed at `21f62d0`). The delta (`setup.py`, `README.md`) changes how the package is built and installed, so no carry-forward: a full build from a fresh recursive clone, following the README's `### AMD GPUs` block literally, then the GPU gate against the installed package with the clone moved away, then the in-place route as a regression check. Host: torch 2.16.0a0+git6c3af02 (ROCm), ROCm SDK wheel `_rocm_sdk_devel` (HIP 7.16.26385), no /opt/rocm, pip 26.3, setuptools 79.0.1. Installed into the job's private venv (a `.pth` to the host site-packages for torch); the shared environment was not touched.
+
+### Build: the README route
+
+The only departure from the README is the SDK location. Following the README, only `HIP_PATH` was exported (no `ROCM_PATH`, no `PATH` change), at build time and at run time.
+
+```
+git clone --recursive -b moat-port https://github.com/AMD-Ecosystem/diff-surfel-tracing.git fresh && cd fresh   # e24c44c, hiprt 8602b8c, tree clean
+git -C third_party/hiprt apply ../../third_party/hiprt-rocm-fixes.patch          # applies clean
+export HIP_PATH=<site-packages>/_rocm_sdk_devel
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON -DHIP_PATH=$HIP_PATH -S third_party/hiprt -B third_party/hiprt/build
+cmake --build third_party/hiprt/build --target hiprt03001 -j16                  # clean, 1 pre-existing warning, libhiprt0300164.so
+export PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=16
+pip install -v --no-build-isolation .                                            # $FLEET_VENV/bin/pip; exit 0, 0 errors, 49 pre-existing warnings
+```
+
+- Install log: `running build_py` (line 49), `copying` `kernels.h`, `params.h`, `config.h`, `auxiliary.h` (52-55), the `hiprt_root` tree, `libhiprt0300164.so` (135), all before `running build_ext` (136).
+- Installed `site-packages/diff_surfel_tracing/`: `_C*.so`, `__init__.py`, the four headers, `hiprt_root/` (74 files), `libhiprt0300164.so`; 19 MB. `readelf -d _C*.so`: `NEEDED libhiprt0300164.so`, `RUNPATH [$ORIGIN]`. No file in the package mentions the clone path.
+
+### GPU gate on the installed package, clone moved away: 50/50, twice, each from a cold cache
+
+```
+cp example/validate_rocm.py <scratch>/run/ && mv fresh moved-away     # clone path gone
+cd /tmp; ulimit -c 0; export HIP_PATH=<site-packages>/_rocm_sdk_devel
+python3 -X faulthandler <scratch>/run/validate_rocm.py                  # run 1, hiprt_cache absent (fresh install)
+rm -rf <site-packages>/diff_surfel_tracing/hiprt_cache
+AMD_LOG_LEVEL=3 python3 -X faulthandler <scratch>/run/validate_rocm.py  # run 2, stdout and stderr captured separately
+```
+
+- Both runs exit 0, `50/50 checks passed`; run 2's stdout is byte-identical to run 1's. Cache repopulated (6 files). In a separate check `diff_surfel_tracing.__file__` and `_C.__file__` resolve to the venv site-packages, and `/proc/self/maps` shows `libhiprt0300164.so` loaded from the package directory.
+- Numbers equal this platform's `21f62d0` and `173f32a` runs: device `AMD Radeon Pro W7800 48GB`, covered 0.241, depth [1.820, 4.574], 62/64 traced (missing [5, 25]), grads3D median cosine 0.9825, fd colors 1.0000/1.0021, opacities 0.9999/0.7429, means3D 0.9993/0.9391, scales 0.9923/0.8854, bounce delta 3.627e-01, P=4096 rgb mean 0.19876 / covered 0.386 / 1343 traced, P=16384 rgb mean 0.25417 / covered 0.457 / 3309 traced, cold-cache image bit-identical.
+- Real dispatch (run 2 stderr): 6,099 `hipLaunchKernel`, 747 `hipModuleLaunchKernel`, 73 `hipExtModuleLaunchKernel`, 75,649 `Returned hipSuccess` and no other `Returned` status, on `Gfx Major/Minor/Stepping: 11/0/0`.
+- `HIP_PATH` alone (no `ROCM_PATH`) was enough at run time, confirming the README's "`ROCM_PATH` (or `HIP_PATH`)".
+
+### In-place route regression check (in the moved clone)
+
+```
+PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=16 python3 setup.py build_ext --inplace   # exit 0, 0 errors, RUNPATH [$ORIGIN], libhiprt0300164.so staged beside _C
+PYTHONPATH=$PWD python3 example/validate_rocm.py                               # from the clone root, cold cache; imports the clone's package
+50/50 checks passed                                                            # output identical to run 1
+```
+
+### CUDA no-regression gate: not run here
+
+`cuda-not-validated at e24c44c: no CUDA toolkit on this host (no /opt/conda, no nvcc, no /usr/local/cuda).` The `21f62d0..e24c44c` delta is `setup.py` and `README.md`; the CUDA branch sees only the `build_py` import and `_cmdclass = {}` spread into `cmdclass` (the same dict as before). `optix_tracer/`, `CMake*`, `ext.cpp` and `trace_surfels.*` are unchanged, so the CUDA gate PASS at `173f32a` still covers every CUDA-compiled file.
+
+### Jargon, documentation, integrity
+
+`python3 utils/jargon.py --port diff-surfel-tracing`: clean (run with the clone linked at `projects/diff-surfel-tracing/src` and `main` fetched into it; link removed afterwards). README `### AMD GPUs` documents exactly the route run above, and it worked as written. The pre-existing `HIP_VISIBLE_DEVICES=0` prefix on the README's `validate_rocm.py` command (round-10 review note) is still there; for the PR-prep squash, not a gate. Afterwards `git -C third_party/hiprt checkout -- . && git -C third_party/hiprt clean -fdx` undid the documented patch, and `git status --porcelain --ignore-submodules=none` in the fork clone is empty at `e24c44c`. No source or build file was edited on this arch.
