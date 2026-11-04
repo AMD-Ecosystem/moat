@@ -2008,3 +2008,62 @@ Optional addition to the Fix review body's linux-gfx1100 Evidence line, if jeff 
 The generated CMakeLists.txt.jinja:5 keeps upstream's `cmake_minimum_required(VERSION 3.18)`, but `project(... LANGUAGES CXX HIP)` needs CMake 3.21 or newer, so a `USE_HIP=ON` configure on CMake 3.18-3.20 fails at `project()`. The CUDA path is unaffected. It has been in the PR since it opened; raising the minimum inside the `USE_HIP` branch, or leaving it, is jeff's call.
 
 The earlier observation (AMD copyright and `Author:` lines in cuda_to_hip.h) stands unchanged.
+
+## Validation linux-gfx90a 2026-11-04 (fix round moat-fix-465, tip e7e0b00c)
+
+Validator, jeff's request. Fresh fork clone `projects/symforce/src`, `git checkout -B moat-fix-465 origin/moat-fix-465`, HEAD == `e7e0b00c5e343e57724226aca38b92438868cc6b` == head_sha; `protect-fork` installed; `git branch main origin/main` for `jargon.py --port`. Job venv with `requirements/dev_py311.txt` (venv `bin` first on PATH). ROCm: TheRock SDK 7.16 (clang 24.0.0), `CMAKE_PREFIX_PATH=$(rocm-sdk path --root)`. GPU: AMD Instinct MI250X GCD (gfx90a:sramecc+:xnack-), pinned `HIP_VISIBLE_DEVICES=0` (all 4 GCDs idle per `amd-smi metric -u`), GPU work under `ulimit -c 0`. Full real-GPU run (previous validated_sha 1a9e9770; device code changed since).
+
+### Build
+
+```
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$FLEET_VENV/bin/python -DSYMFORCE_PYTHON=$FLEET_VENV/bin/python -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root)
+cmake --build build -j42
+```
+
+rc=0. CMake found HIP (no CUDA compiler) and built the 4 Caspar GPU test targets as HIP. Warnings in Caspar/runtime/test sources: only the pre-existing `-Wunused-value` on ignored `hipError_t` returns (282); the remaining warnings are in third_party symengine and metis.
+
+### Caspar tests
+
+```
+PYTHONPATH=$PWD:$PWD/build/lcmtypes/python2.7:$PWD/gen/python:$PWD/third_party/skymarshal ctest --test-dir build -R caspar --output-on-failure
+build/bin/tests/caspar_{backend_coverage,padding_lane,solver}_cuda_test
+for i in 1 2 3 4 5; do build/bin/tests/caspar_tridiagonal_cuda_test; done
+```
+
+6/6 pass: backend_coverage 302/302 assertions; padding_lane 6/6; solver 24/24 in 5 cases; tridiagonal 140/140 in 2 cases, 5 of 5 runs; symengine and sympy caspar codegen tests pass. Identical to the porter's counts at e7e0b00c.
+
+### Full ctest
+
+```
+PYTHONPATH=... ctest --test-dir build -j16
+```
+
+209/212 pass. Failures, all environmental and the same as the porter's run at this head: symengine/sympy_symforce_rust_codegen_test (`rustfmt` not installed for toolchain 1.97.1) and symengine_symforce_docs_test (sphinx: could not import nbsphinx, no module `jsonschema`, although `jsonschema` 4.26 is in the job venv; the docs build resolves a different interpreter). Both linter tests pass. Earlier gfx90a record (1a9e9770) ran only the runtime build and the SumStore harness, so this is a strictly larger bar.
+
+### SumStore reproduction (200 runs per size)
+
+The porter's harness lived in gitignored scratch, so it was rewritten at `agent_space/sumstore/harness.cu` (not durable). It includes the tip's `memops.cuh`/`cuda_to_hip.h` and links the checked-in generated `test/symforce_function_codegen_test_data/symengine/symforce_caspar_solver_test/kernel_Matrix21_alpha_numerator_denominator.cu`. Per size n in {1000, 1024, 1500, 2049, 5000, 65537, 1000003} (1 to 977 blocks of 1024), 200 runs each:
+1. The generated `Matrix21AlphaNumeratorDenominator` (two back-to-back SumStore into one scratch buffer, then SumFlushFinal atomics), integer-valued double inputs in [-8, 8] so every sum is exact in any order: both totals equal the host reference in 200/200 runs.
+2. A copy of that kernel body with SumFlushFinal replaced by a per-block store (output poisoned with 0xFF before each launch), integer inputs: per-block (ag, ac) partials equal the host per-block reference bit for bit in 200/200 runs.
+3. The same per-block kernel with uniform real inputs in [-1, 1]: per-block partials bit-identical across all 200 runs (0 differing runs).
+4. Single SumStore whose padding lanes carry NaN in `data` (testing the `valid ? data : 0` mask directly): 0 NaN, per-block sums bit-identical across 200 runs.
+
+```
+hipcc -x hip -std=c++17 -O3 -DUSE_HIP -ffp-contract=fast -fno-math-errno --offload-arch=gfx90a -I<src>/symforce/caspar/source/runtime -I<solver_test data dir> agent_space/sumstore/harness.cu <solver_test data dir>/kernel_Matrix21_alpha_numerator_denominator.cu -o agent_space/sumstore/harness
+agent_space/sumstore/harness
+```
+
+Every size OK, `=== PASSED ===` (a first run failed checks 1-2 at every size because the harness's host reference for `ac` swapped the w components; corrected to match the kernel's `ReadIdx2` order, then exact).
+
+### README HIP example
+
+`symforce/caspar/examples/kernel_example/gen_and_run.py` copied to `agent_space/kex/`, only `caslib.compile(out_dir)` changed to `caslib.compile(out_dir, use_hip=True, hip_arch="gfx90a")`; run with the venv python, `PYTHONPATH=<src>:<src>/build/lcmtypes/python2.7:<src>/gen/python:<image site-packages for torch>`, `CMAKE_PREFIX_PATH=$(rocm-sdk path --root)`. The generated library configured with `CMAKE_HIP_ARCHITECTURES=gfx90a`, built (incl. `pybind_array_tools.cc` as HIP), ran on the GPU, and both result asserts passed ("Success!"). symforce's SymEngine came from this build tree; no PyPI wheel was needed.
+
+### Gates
+
+- CUDA no-regression: already recorded at this head_sha (porter, nvcc 12.8, 4 Caspar test targets build and link, 78 nvcc compiles, 0 warnings); not re-run per the once-per-head rule.
+- `python3 utils/jargon.py --port symforce`: clean.
+- Documentation: ROCm build documented in `symforce/caspar/README.md` "AMD GPUs (ROCm/HIP)", and the example there was run above.
+- Fork worktree `git status --porcelain`: empty (build/ ignored).
+
+VALIDATION PASSED on gfx90a (MI250X) at e7e0b00c. State set to completed.
