@@ -1817,3 +1817,96 @@ The earlier record's patched-copy output (b37fix) and this unpatched d2112b6 run
 - No fork push, no gh write.
 
 validated_sha: d2112b63f025446cd519453423679c5cd8740bf5
+
+
+## Squash message check 2026-11-04 (reviewer, linux-gfx90a, fork 0c8846f..d2112b6 squashed to two commits)
+
+jeff asked for a check of the two drafted squash messages (commit 1 = 0c8846f..b37ca0a, commit 2 = b37ca0a..d2112b6, tree identical to d2112b6). Each claim was checked against `git diff 0c8846f b37ca0a`, `git diff b37ca0a d2112b6` and the records above. d2112b6 was built here (fresh clone of AMD-Ecosystem/LEAP, `env -u PYTORCH_ROCM_ARCH MAX_JOBS=32 python setup_AMD.py build_ext --inplace`, rc=0, gfx90a, HIP_VISIBLE_DEVICES=1, torch 2.16.0a0+git6c3af02, /opt/python-3.11-venv, every GPU run under `ulimit -c 0`), as was b37ca0a from `git archive` for comparison. The fork was not pushed, and its clone stays clean (`git status --porcelain` shows only untracked build output).
+
+### Corrections to message 1
+- "hipDeviceAttributeImageSupport = 0 at run time" was stated for gfx942 and gfx950. Only gfx942 was measured. The message now says so, matching the PR body.
+- "2-3x slower" is now the measured 3.0-3.3x (projection) and 1.8-2.5x (backprojection) from the e503672 review.
+- Non-finite coordinate sanitizing: on the texture path a point fetch (`linear = false`) passes the raw coordinate to `tex*D`, so the sanitizing is scoped to "before the software blend".
+- Added two code changes the draft omitted: the Joseph modular-beam `linearInterp` flag and the `analytic_ray_tracing_gpu.cu` include move. The test bullet now also names FBP. The "20 point-sampled" outputs are worded as dump_point's projectors, filters and resampling.
+- Unchanged and verified: point filtering forced on HIP, the helpers and their -0.5 convention, the address modes, the per-target `__HIP_NO_IMAGE_SUPPORT` path and run-time refusal, the free/destroy redirection, hipFFT, the four Windows fixes, the three removed dumps plus gitignore, no arch pin, 12/12 on gfx90a/gfx942/gfx1100/gfx1151 at b37ca0a, gfx90a texture-vs-buffer bit-identity (5f6816f/b37ca0a vs e503672/forceB, 36 and 20 arrays), nvcc 12.8 warnings equal to upstream.
+
+### Corrections to message 2
+- The Test Plan snippet, run exactly as written from the repository root, fails: `ModuleNotFoundError: No module named 'leapctype'` (the module is in `src/`). The API names and signatures are right (`BilateralFilter(f, spatialFWHM, intensityFWHM, scale=1.0)`, `PriorBilateralFilter(f, spatialFWHM, intensityFWHM, prior)`). With `PYTHONPATH=src` it prints `True True`, but that check cannot fail. `bilateralFilter` returns true even after a launch fault (`bilateral_filter.cu:333`), and a failed copy-back leaves the input untouched, which is finite.
+- The draft's arguments make the filter a no-op on ROCm. On HIP, `max(1.0e-8, min(1.0e8, intensityFWHM))` truncates to int (see the port defect below), so intensityFWHM 0.1 becomes 0 and the output equals the input in all 2179072 voxels. Measured here: intensityFWHM 0.5-0.9 changes 0 voxels, and 1.0 changes 2179072. The corrected snippet uses integer FWHMs on data in [0, 100), checks that each output changed, and adds the scaled variant (scale 2.0). Run exactly as below at d2112b6 on gfx90a, it prints `[True, True, True]`, rc=0. The same three calls (agent_space/bil.py) at b37ca0a and d2112b6 change 2179067/2179067/2179072 voxels each, and the outputs are bit-identical between the two builds (0 differing voxels each).
+- "On CUDA it is latent: the out-of-range accesses usually land in allocator slack" has no CUDA runtime evidence (the CUDA gate is compile-only). Replaced with what was observed on the AMD GPUs.
+- "on ... MI300X and ... W7800 the outputs are bit-identical to before": those records (and the earlier gfx90a ones) used `BilateralFilter(f, 3.0, 0.1)`, which is the identity on HIP, so they compared unfiltered copies. The claim now rests on this run's gfx90a comparison only. The gfx1151 fault-then-pass result stands, because the out-of-range access does not depend on the weights.
+- "scaledBilateralFilter" is the C++ entry point, not a Python API name; reworded to "BilateralFilter (with or without its scale argument)".
+
+### Port defect found (for jeff; not fixed; a squash keeping the d2112b6 tree carries it)
+ROCm's `__clang_hip_math.h` defines host `min`/`max` only for `(int, int)`. The float and double host overloads sit behind `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__`, which defaults to 0. CUDA provides host `min`/`max(double, double)`. So host code in the `.cu` files that calls `min`/`max` on floating-point values silently truncates to int under hipcc. A host-only `-fsyntax-only -Wfloat-conversion` pass over the hipified sources finds these call sites:
+- `bilateral_filter.cu:246-247, 343-344, 455-456` (`bilateralFilter`, `priorBilateralFilter`, `scaledBilateralFilter`): spatialFWHM and intensityFWHM are truncated (measured: spatialFWHM 2.0, 2.5 and 2.9 give identical output), and intensityFWHM < 1 turns the filter into the identity.
+- `projectors_Joseph.cu:2349-2350` (`backproject_Joseph_modular`): `alpha = max(atan(...), atan(...))` and `rFOV = max(...)` become ints. For detectors under 1 rad half-angle, alpha becomes 0, so `maxDivergence` is 0 and `isParallel` is chosen whenever `truncatedScan` is false. Not measured. It may bear on the modular VD adjoint error (3.39e-03, an order above the other geometries), which no record has explained.
+- `ramp_filter.cu:843` (`HilbertTransformFrequencyResponse`) and `:934` (`rampFilterFrequencyResponseMagnitude`): `pow(max(0.0, cos(omega)), ...)` truncates cos to 0, so with `FBPlowpass` set every frequency weight past i = 0 is 0. Not measured; gpu_vs_cpu_validate does not set FBPlowpass.
+Candidate fixes, jeff's call: define `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__=1` in the ROCm compile flags of `setup_AMD.py` (one line, no source change), or use `fmax`/`fmin`/`std::max` at the sites. Either one changes the tree, so commit 1's tree would no longer be the approved d2112b6. That also needs the porter/reviewer/validator cycle. Whether to squash first or fix first is jeff's decision.
+
+### Mechanical checks (corrected messages)
+Titles 66 and 51 characters; `[ROCm]` on commit 1 only; "Authored with Claude." in both; no Co-Authored-By; fenced Test Plans; ASCII only; `python3 utils/jargon.py -`: clean for both; `python3 utils/prose.py`: clean for both.
+
+### Squash messages (checked)
+
+Commit 1 (0c8846f..b37ca0a):
+
+~~~~
+[ROCm] Port LEAP to HIP, reading through textures or linear memory
+
+Build LEAP's GPU code with HIP for AMD GPUs through the existing setup_AMD.py torch extension. Torch hipifies the .cu sources at build time; no source is hand-renamed. The CUDA build is unchanged.
+
+Texture sampling. LEAP binds its volumes and sinograms to float textures and relies on cudaFilterModeLinear hardware interpolation, which HIP does not support for element-read float textures. On HIP every texture is created with point filtering, and new device helpers leapTex3D/leapTex2D/leapTex1D in cuda_utils.h do the linear blend in software from point-fetched corner texels, using the bound address mode (border-zero or clamp) and the unnormalized -0.5 texel-centre convention. Point-bound fetch sites call the same helpers with linear = false, and the Joseph modular-beam kernels, which pick their filter mode at run time, pass it through a new linearInterp flag. A coordinate that is not finite (detector-edge footprint weights give 0/0) is mapped to a finite one before the software blend, so projections stay finite, as CUDA's hardware path effectively did. On CUDA the helpers forward to the texture builtins.
+
+GPUs without image support. ROCm disables the texture API for gfx942 and gfx950 at compile time (__HIP_NO_IMAGE_SUPPORT in device code), and gfx942 reports hipDeviceAttributeImageSupport = 0 at run time. For those targets the helpers read a linear device buffer that loadTexture, loadTexture_from_cpu and loadTexture1D fill instead of an array and texture object, with the same sampling rules. Device code selects the path per target, so a fat binary carries texture code for gfx90a and buffer code for gfx942; the loaders select per device at run time from the image-support attribute, check it against a flag recorded by that device's code, and refuse to create a mismatched handle. cudaFreeArray and cudaDestroyTextureObject are redirected on HIP to release either kind. On GPUs with texture hardware the texture path is kept, because the buffer path, while bit-identical, made projection 3.0-3.3x and backprojection 1.8-2.5x slower on an MI250X.
+
+Other changes:
+- cuFFT maps to hipFFT (`-D__INCLUDE_CUFFT`, link hipfft), so the GPU ramp and Hilbert filters run on ROCm.
+- analytic_ray_tracing_gpu.cu includes cuda_runtime.h before its own header so float2/float3 resolve on HIP.
+- Windows (MSVC host, TheRock ROCm): guard LEAP's uint8/uint16 typedefs that collide with HIP vector types; add a stub PYBIND11_MODULE for the extension's exported init symbol; define PROJECTOR_EXPORTS; and export the C interface through leapct_exports.def so link-time code generation keeps it.
+- Remove the unreferenced one-off hipify outputs (hip_utils.h, projectors_Joseph_cpu_hip.h, ramp_filter_hip.cuh), whose names collide with the build's generated files, and ignore the generated files.
+- Add unitTests/gpu_vs_cpu_validate.py, which checks GPU projections, backprojections and FBP for finiteness, FBP recovery and adjointness across geometries and models.
+- The GPU architectures come from PyTorch's extension build (PYTORCH_ROCM_ARCH, or the visible GPUs); nothing is pinned.
+
+Authored with Claude.
+
+Test Plan:
+
+```
+python setup_AMD.py build_ext --inplace
+python unitTests/gpu_vs_cpu_validate.py
+PYTORCH_ROCM_ARCH="gfx90a;gfx942" python setup_AMD.py build_ext --inplace
+```
+
+gpu_vs_cpu_validate.py passes 12/12 on AMD Instinct MI250X (gfx90a), AMD Instinct MI300X (gfx942), AMD Radeon PRO W7800 (gfx1100) and AMD Radeon 8060S (gfx1151, Windows). On gfx90a the forward, back and FBP outputs for 6 geometries x {VD, SF} and 20 outputs of point-sampled projectors, filters and resampling are bit-identical between the texture and buffer paths. The CUDA build compiles with nvcc 12.8 with the same warnings as upstream.
+~~~~
+
+Commit 2 (b37ca0a..d2112b6):
+
+~~~~
+Fix off-by-one bounds checks in bilateral_filter.cu
+
+The four kernels in src/bilateral_filter.cu return early with `if (i > N.x || j >= N.y || k >= N.z)`. `i` is a 0-based index, so a thread with `i == N.x` passes the check, reads its own voxel one slice past the end of the input and writes `f_filtered` one slice past the end of the output. Such threads exist whenever `N.x` is not a multiple of the block's x dimension. This changes the check to `i >= N.x`, matching the `j` and `k` checks and the other filter kernels. BilateralFilter (with or without its scale argument) and PriorBilateralFilter use these kernels.
+
+The bug is not specific to any GPU vendor. The stray accesses went unnoticed on an AMD Instinct MI250X, an AMD Instinct MI300X and an AMD Radeon PRO W7800; on an AMD Radeon 8060S they are a hard fault, so BilateralFilter and PriorBilateralFilter fail with a launch failure and leave the device context unusable. In-range outputs are unchanged.
+
+Authored with Claude.
+
+Test Plan:
+
+```
+python setup_AMD.py build_ext --inplace
+PYTHONPATH=src python -c "
+import numpy as np
+from leapctype import tomographicModels
+leapct = tomographicModels()
+f = 100 * np.random.default_rng(0).random((133, 128, 128), dtype=np.float32)
+g = f.copy(); leapct.BilateralFilter(g, 3.0, 20.0)
+h = f.copy(); leapct.PriorBilateralFilter(h, 3.0, 20.0, f.copy())
+s = f.copy(); leapct.BilateralFilter(s, 3.0, 20.0, 2.0)
+print([bool(np.isfinite(a).all() and (a != f).any()) for a in (g, h, s)])
+"
+```
+
+This prints `[True, True, True]` on an AMD Instinct MI250X, where the three outputs are bit-identical before and after the change. On an AMD Radeon 8060S, BilateralFilter and PriorBilateralFilter on a 133 x 128 x 128 volume fault before the change and complete after it.
+~~~~
