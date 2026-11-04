@@ -919,3 +919,61 @@ For the porter:
 - CUDA compile gate: skipped. The head is going back to the porter, so the gate is owed at the next head.
 - `jargon.py --port TIGRE`: clean (needs local `master` and `moat-fix-747` refs in the fork clone).
 - Fork clone tracked tree clean at 5a3da55 (`git status --porcelain`: untracked build output only).
+
+## Fix round 2026-11-04 continued (linux-gfx90a porter, moat-fix-747) -- parallel upload race fix, stage -> ported
+
+Answers the linux-gfx90a `validation-failed` at 5a3da55 ("The fault: parallel Siddon is nondeterministic"). jeff asked for this run. Lock: `set-state TIGRE linux-gfx90a porting`; fresh fork clone, `protect-fork TIGRE` (hook installed), `fix-branch TIGRE` confirmed `moat-fix-747` with base cf873a28.
+
+### Commit
+- **34f31a6e0436afbe9af6b9763d1b663c7639c9d0** `[ROCm] Wait for the volume upload in the parallel-beam projectors` (65 chars) on top of 5a3da55. +2 lines, CRLF kept, nothing rebased or amended:
+  - `Common/CUDA/Siddon_projection_parallel.cu` `CreateTextureParallel`: `cudaStreamSynchronize(stream[1]);` after `cudaMemcpy3DAsync(&copyParams,stream[1]);` (the observed fault).
+  - `Common/CUDA/ray_interpolated_projection_parallel.cu` `CreateTextureParallelInterp`: the same line after the identical upload (line 429). Latent: never observed to fail, same ordering.
+- Body: explains the race, why CUDA masks it (pageable-source async copy staged synchronously), that CUDA results are unchanged; "Authored with Claude."; Test Plan with literal commands, including a 20x repeat snippet that I ran as written (Siddon 0/20, interpolated 0/20). No Co-Authored-By. `prose.py` on the message: clean. `jargon.py --port TIGRE`: clean before the push.
+- Pushed `moat-fix-747` 5a3da55..34f31a6. `moat-port` untouched at cf873a28 (ls-remote). `advance-head TIGRE 34f31a6...`, then `set-state TIGRE linux-gfx90a ported` (released the lock).
+
+### Audit of every async copy in the built .cu sources
+Built sources (setup.py): Siddon_projection, Siddon_projection_parallel, ray_interpolated_projection, ray_interpolated_projection_parallel, voxel_backprojection, voxel_backprojection2, voxel_backprojection_parallel, tv_proximal, GD_TV, PICCS, GD_AwTV, RandomNumberGenerator, gpuUtils. `grep -c 'Memcpy[A-Za-z0-9]*Async'`: 64 calls in 10 files (PICCS, RandomNumberGenerator, gpuUtils have none). Upload consumed by a kernel on another stream:
+- Fixed: the two parallel texture uploads above.
+- Already ordered: cone `CreateTexture` (Siddon_projection.cu, null stream + `cudaDeviceSynchronize`); cone `CreateTextureInterp` (ray_interpolated_projection.cu, legacy null stream, which orders against the blocking `cudaStreamCreate` streams the kernels use); voxel_backprojection / voxel_backprojection2 (`cudaStreamSynchronize(stream[dev*nStreamDevice+1])` after `CreateTexture`/`CreateTexture2`); voxel_backprojection_parallel (`cudaStreamSynchronize(stream[0+1])`); cone `dProjection_accum` H2D (`cudaStreamSynchronize(stream[dev*2+1])` before `vecAddInPlace*`); `cudaMemcpyToSymbolAsync` everywhere (same stream as the kernel, plus a stream sync); GD_TV / GD_AwTV H2D and D2D (`cudaDeviceSynchronize` or `cudaStreamSynchronize(+1)` before the consuming kernel; halo exchange on the null stream followed by a per-device sync); tv_proximal `cpy_from_host` and D2D (`cudaDeviceSynchronize` after).
+- Not changed, D2H read vs next kernel write: in all four projectors the D2H of batch i-1 on stream[1] reads the buffer that batch i+1's kernel on stream[0] overwrites, and only stream[0] is synchronized in between. The destination is the pageable `malloc` result buffer from `_Ax.pyx`, so the copy has completed when `cudaMemcpyAsync` returns on CUDA and, empirically, on HIP: every wrong pixel the validator saw was in projections 0 to 8, never a later batch, and cone Siddon (same loop shape) and parallel interpolated were 0/20 throughout. Not the masked-upload class; left alone.
+- **Not changed, needs jeff (multi-GPU only, not HIP-specific): tv_proximal.cu halo exchange, `splits==1`, 2+ GPUs.** In the `dev>0` block (around line 545) the halo H2D copies into `d_u/d_px/d_py/d_pz[dev]` on `stream[dev*nStream_device+1..4]` come from pinned `cudaMallocHost` buffers, so they are truly async on CUDA too. Nothing syncs device `dev` afterwards: the next loop iteration's `cudaDeviceSynchronize()` runs on device dev+1 (or dev-1 for the last device), so the last device's halo upload is never synchronized before the next outer iteration's `update_u` on `stream[dev*nStream_device]`, and the next iteration's D2H into the same `buffer_*` can overwrite them while the H2D still reads (WAR). This is a race on CUDA as well, cannot be tested with the single GPU this job is pinned to, and does not fit this commit's "CUDA masks it" rationale or its "CUDA results unchanged" claim, so I kept it out of the commit rather than push an untested upstream-visible change to CUDA behaviour. Candidate fix if jeff wants it: a `cudaDeviceSynchronize()` on `gpuids[dev]` at the end of the `dev>0` block. Whether it joins this round, goes upstream separately, or is dropped is jeff's call.
+
+### Build (MI250X gfx90a, TheRock ROCm SDK 10.1, HIP_VISIBLE_DEVICES=3 pinned by the dispatcher)
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH BUILD_WITH_HIP=1 HIP_ARCH=gfx90a ROCM_PATH=$(rocm-sdk path --root)
+utils/timeit.sh TIGRE compile -- bash -c "cd projects/TIGRE/src && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16"
+```
+(job venv: `pip install numpy==1.26.4 scipy==1.10.1 Cython matplotlib h5py tqdm pytest`; Cython 3.3.1.) rc 0, 0 `error:` lines, 8/8 `.so`, 20 hipcc compiles at `-std=c++14`.
+
+### Tests at 34f31a6 (all under `ulimit -c 0`, HIP_VISIBLE_DEVICES=3)
+Scripts copied from the gfx90a validator job's `agent_space/scripts/` on this host (`tigre_validate.py`, `tigre_solvers.py`, `tigre_parallel.py`, `repeat_par.py`, `repeat_par_interp.py`); host-local, not committed.
+- Upstream pytest (`cd Python && PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q -p no:cacheprovider tests/<file>.py`): compute_cor 6, demo_angles 1, denoise_2d_guard 3, filtering_workers 37, gpuids_default 5, krylov_restart_and_norms 9, krylov_smoke 9 -> **70 passed, 0 failed**.
+- Cone gates (`tigre_validate.py`): Siddon mean/max 27.46/111.2, interp vs Siddon 0.0040, FDK 0.2864, OS-SART-20 0.1929, adjointness 1.004e-05 / 6.076e-05. RESULT PASS, identical to the validator's 5a3da55 numbers.
+- Solvers (`tigre_solvers.py`): sart 4.9635, ossart 3.7197, sirt 6.2263, cgls 0.9609, fista 0.9505, asd_pocs 4.7643, awasd_pocs 4.7777, os_asd_pocs 3.5631, ossart_tv 3.4159; all finite, PASS, identical to 5a3da55.
+- Parallel gate (`tigre_parallel.py`), run 3 times with identical output: axis 0.0043 / Siddon adj 2.030e-05 / interp adj 1.973e-06; offset 0.0041 / 6.078e-05 / 1.322e-06; Euler 0.0056 / 1.323e-05 / 1.894e-06; FBP 0.0833; SIRT-20 0.1952; missed rays 0.01 s, zero fraction 0.861 / 0.855. RESULT PASS each time. These are the validator's "stable" values with its scratch fix.
+- `repeat_par.py` (Siddon, 20 repeats vs the first, phantom and random): parallel 3 runs, cone 3 runs -> **0/20 in all 12 cases** (240 repeats). `repeat_par_interp.py` (interpolated): parallel 2 runs, cone 2 runs -> **0/20 in all 8 cases** (160 repeats). Before the fix the validator saw parallel Siddon at 2/20 to 7/20.
+
+### What remains
+- Review of 34f31a6 (stage `ported`), then validators on every gate at 34f31a6: linux-gfx90a reads revalidate (its failure was at 5a3da55); linux-gfx1100's 5a3da55 completion and windows-gfx1101 are behind the head. Validators should repeat `repeat_par.py` / `repeat_par_interp.py` for parallel and cone, not single runs.
+- CUDA compile gate still owed at the new head by a host with the toolkit.
+- jeff: the tv_proximal multi-GPU halo race above.
+
+### Proposed fix review PR body (for jeff)
+Title: `[ROCm] Merge upstream master, fix the HIP build and a parallel-beam race`
+
+Not opened. Supersedes the reviewer's corrected draft above: adds the race-fix paragraph, moves the retest to 34f31a6 with the repeat evidence, and adds one sentence on the race to `## Upstream reply`. GPU names stay placeholders because no validator record exists at 34f31a6 yet (this porter run is not one). `prose.py`: clean. `jargon.py -`: clean.
+```
+Upstream PR CERN/TIGRE#747 conflicts with master (98 commits since the PR's base). This round merges upstream master at 69bdd9f into the port, adds one build fix, and fixes an upload/kernel ordering race in the parallel-beam projectors that the round's new parallel-beam checks exposed.
+
+Merge (cfc014e): one conflicting hunk in Common/CUDA/Siddon_projection_parallel.cu. Upstream rewrote the parallel Siddon projector (full Euler angles, missed-ray return, per-axis intersection counts with a z term). Resolved by taking upstream's kernel and re-applying the port's intersection-count cap on the new Npx + Npy + Npz sum, widened to nVoxelX + nVoxelY + nVoxelZ + 3 to match the cone kernel. Everything else auto-merged; upstream's new CUDA code uses only runtime calls and point-filtered texture reads that the compatibility header already covers.
+
+Build fix (5a3da55): setup.py compiled the HIP sources with -std=c++11. Current rocRAND device headers use std::enable_if_t, so the .cu sources no longer compile on current ROCm; C++14 is the lowest standard they accept. The HIP compile now uses -std=c++14. The nvcc flags, the host C++ flags and the Windows HIP path are unchanged.
+
+Race fix (34f31a6): CreateTextureParallel and CreateTextureParallelInterp upload the volume with cudaMemcpy3DAsync on stream[1] from a pageable host buffer, and the first projection kernel then runs on stream[0] with nothing ordering the two streams. CUDA stages a pageable async copy synchronously, which hides the race; HIP does not, and on gfx90a (MI250X) the parallel Siddon projector returned wrong values in the first kernel batch (projections 0 to 8, errors up to 22% of the maximum) in roughly 1 run in 7, at this round's head, at the published tip and in upstream master. Both functions now call cudaStreamSynchronize(stream[1]) after the upload, as the cone projector and the parallel backprojector already do. The interpolated case was not observed to fail but has the same ordering. On CUDA the copy is complete before the sync is reached, so CUDA results are unchanged. An audit of every async copy in the built .cu sources found no other upload consumed by a kernel on another stream without a sync.
+
+Retested on gfx90a (MI250X), ROCm 10.1, at 34f31a6: all 8 extensions build; the 7 new upstream test files pass (70 tests); cone beam: interpolated vs Siddon projection 0.40%, FDK nRMSE 0.286, OS-SART 0.193, adjointness residual 1.0e-05, and all 9 iterative solvers finite; parallel beam: Siddon vs interpolated 0.43%, 0.41% and 0.56% at axis-aligned, offset and full Euler angle sets, FBP 0.083, SIRT 0.195, and missed rays return promptly. Repeating each projector 20 times on identical input gives bitwise identical output in every run (parallel and cone, Siddon and interpolated, 400 repeats in total), where parallel Siddon previously differed in up to 7 of 20. Compared with the published tip built the same way, cone Ax, FDK and adjointness are identical; the SART-family numbers moved, and swapping only iterative_recon_alg.py between the two trees restores them to four digits, so that change comes from upstream's new SART weight (a675320), not from the HIP code. <other GPUs: fill in from their validation at 34f31a6>.
+
+## Upstream reply
+
+I merged current master into this branch, keeping the new parallel Siddon projector from master where it conflicted with the port. I also added a small setup.py fix so the HIP build works with current ROCm, whose rocRAND headers need C++14. The branch also fixes an upload/kernel ordering race in the parallel-beam projectors, which shows up on AMD GPUs. I re-ran the cone and parallel-beam projection, reconstruction and adjointness checks on <GPUs validated at the final head>.
+```
