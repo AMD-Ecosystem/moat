@@ -7,18 +7,21 @@
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
   "adopted_at": "2026-06-04T01:07:42Z",
-  "updated_at": "2026-11-04T07:38:06Z",
+  "updated_at": "2026-11-04T07:39:26Z",
   "head_sha": "cf873a288e8469d7292470c96272f825dc355dba",
   "depends_on": [],
   "pr_url": "https://github.com/CERN/TIGRE/pull/747",
   "pr_number": 747,
   "pr_opened_at": "2026-06-19T22:58:31Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-04T07:39:26Z"
+  },
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 61034131,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "windows-gfx1101": {
       "state": "completed",
@@ -127,6 +130,28 @@
         "method": "binary-equiv",
         "detail": "PR-prep cleanup only: removed gpuUtils.cu attribution comment + inlined a single-use bool in the host CreateTextureInterp; device code objects identical, executed behavior unchanged",
         "at": "2026-06-19T22:54:42Z"
+      }
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-04T07:39:26Z",
+      "completed_at": null,
+      "updated_at": "2026-11-04T07:39:26Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
       }
     }
   },
