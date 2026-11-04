@@ -160,6 +160,18 @@ compat header with `-include`.
   the build configures cleanly and dies at link. Widen each such gate to
   `[ $CUDA_FOUND -eq 1 ] || [ $USE_HIP -eq 1 ]` and run the script on a CUDA-free machine.
   (plvs, its `Thirdparty/libsgm`)
+- **Then prove each GPU component actually has device code in the HIP build.** Two more
+  CUDA-only gates make a HIP build quietly CPU-only, and nothing fails: a source list that
+  names the `.cu` files only inside `if(USE_CUDA)` (the HIP branch's
+  `set_source_files_properties(${sources_gpu} ... LANGUAGE HIP)` then applies to an empty
+  list), and a runtime selector such as `#ifdef USE_CUDA new ElasGPU #else new Elas` that the
+  HIP build, defining only `USE_HIP`, never takes. The library builds, links, and passes every
+  test on the CPU implementation, and the review and validation rounds accept it. Check for
+  `--offload-arch` in `build.ninja`, a `.hip_fatbin` section in the archive members
+  (`readelf -SW`), and the kernel names in an `AMD_LOG_LEVEL=3` trace. A file that includes
+  the GPU header for the selector also needs the HIP headers, so build it as HIP (the CUDA
+  branch gets them from `include_directories(${CUDA_INCLUDE_DIRS})`). (plvs, its
+  `Thirdparty/libelas-gpu`, which ran CPU ELAS on every AMD platform for five months)
 - **hipify-perl, when that is the mechanism rather than CMake HIP language:** run it
   synchronously -- `-inplace` in a backgrounded or `&&`-chained loop silently skips files --
   and always re-grep the whole tree for `cudaMalloc|cudaSuccess|include <cub|include <cuda.h`
