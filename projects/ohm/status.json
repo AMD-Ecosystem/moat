@@ -7,14 +7,17 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-11-04T07:15:47Z",
+  "updated_at": "2026-11-04T07:29:30Z",
   "head_sha": "ea8bbea28270871f3c32ac61c49789b13b60c3f6",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-04T07:29:30Z"
+  },
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 150693169,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -130,6 +133,29 @@
         "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
         "at": "2026-06-23T22:44:43Z"
       }
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-04T07:29:30Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/ohm/pull/1",
