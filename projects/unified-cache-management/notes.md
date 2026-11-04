@@ -1055,3 +1055,49 @@ CUDA gate: `cuda-not-validated: no CUDA toolkit and no conda on this host` (no `
 Jargon: `python3 utils/jargon.py --port unified-cache-management` clean. The fork clone's local `develop` was pointed at upstream tip f366bfa1 and the local `moat-fix-1021` ref at dff17ae, both local only; the stale fork `develop` mirror otherwise makes the range unresolvable. Docs: `docs/source/developer-guide/build_from_source.md:56` carries the ROCm note.
 
 Result: linux-gfx1100 COMPLETED at dff17aeab09bf9c279dc1be42a5bdedc4368574a. For the fix-review reply, the GPU name is "AMD Radeon Pro W7800 (gfx1100)".
+## Validation 2026-11-04 (linux-gfx942, AMD Instinct MI300X, ROCm 7.16 pip SDK) -- PASS at dff17ae
+
+Fork clone checked out at `dff17aeab09bf9c279dc1be42a5bdedc4368574a` from `origin/moat-fix-1021` (not `moat-port`). Two pinned GPUs (`HIP_VISIBLE_DEVICES` from the dispatcher, two devices), `ulimit -c 0`, hipconfig 7.16.26385. `R=$(hipconfig --rocmpath)`; absolute paths because `utils/timeit.sh` changes into the repo root (a relative `-S src` there configures nothing).
+
+Build (both clean; code objects `amdgcn-amd-amdhsa--gfx942` in `cuda_sm_kernel.cu.o` and `hamming.cpython-311-x86_64-linux-gnu.so`):
+```
+P=$PWD/projects/unified-cache-management
+cmake -S $P/src -B $P/build_rocm -DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_STORE=ON \
+  -DBUILD_UNIT_TESTS=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Wno-error=unused-result
+cmake --build $P/build_rocm -j56
+cmake -S $P/src -B $P/build_sparse -DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_STORE=OFF \
+  -DBUILD_UCM_SPARSE=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=/opt/python-3.11-venv/bin/python3 \
+  -DCMAKE_CXX_FLAGS=-Wno-error=unused-result
+cmake --build $P/build_sparse -j28 --target hamming
+```
+
+Tests:
+```
+ctest --test-dir $P/build_rocm -j1 --timeout 600
+HAMMING_DIR=$P/build_sparse/ucm/sparse/gsa_on_device/csrc/rocm/ham_dist \
+  python3 $P/src/ucm/sparse/test/gsa/test_hamming_rocm_ref.py
+```
+- ctest: 338 discovered, 1 disabled (UCMetricsStress.TenWritersOneCollector), **337/337 pass** (151 s). The porter's one-GPU runs at af3eb74/dff17ae were 330/337.
+- DataStrategyTest, with two visible GPUs this time: all 7 pass, including the six that need a second device: SetupPublishesAndImportsAllRanks, SegmentsAreSharedAcrossRanks, SecondSetupIsRejected, MissingPeerTimesOut, PeerHandleMismatchIsRejected, PeerPollingWaitsForDelayedPublish (InvalidGeometryIsRejected also passes).
+- Copy-kernel and new-alias tests pass: UCTransUnitTest.{CopyDataWithCE, CopyDataWithSM, CopyDataBatchWithSM, EmptyEventIsSafe, MemsetAndDeviceToDevice}, UCPosixTrans{Manager,Queue}Test.TransBlock[LayerWise] 4/4, UCCache2TransManagerIntegrationTest.DumpThenLoad* 4/4 (the case behind the `hipMemcpyDefault` shim mapping).
+- UCLoggerPerfTest.MultiThreadPerfUCInfoVsRateLimit[RandomContent] and UCMetricsUT.ConcurrentUpdateAndCollect also passed this run (both previously seen as host-timing flakes).
+- Hamming at dff17ae: mla PASS (max_abs_err=42.0, max_rel_err=1.25e-03), gqa PASS (max_abs_err=0.0), determinism PASS bit-identical. Same numbers as gfx90a/gfx1100 and the porter's af3eb74 run.
+
+CUDA no-regression gate at dff17ae (compile-only, `/usr/local/cuda` nvcc 12.8.93, no NVIDIA GPU):
+```
+cmake -S $P/src -B $P/build_cuda -DRUNTIME_ENVIRONMENT=cuda -DBUILD_UCM_STORE=ON \
+  -DBUILD_UNIT_TESTS=ON -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
+  -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Wno-error=unused-result
+cmake --build $P/build_cuda -j56                     # EXIT 0, incl. cuda_event.cc and ucmstore.test
+nvcc -arch=sm_80 -std=c++17 -ptx ucm/shared/trans/cuda/cuda_sm_kernel.cu -I ucm/shared/trans/cuda
+grep -cE 'ld.global.cs|st.volatile.global' cuda_sm_kernel.ptx   # = 12, unchanged
+```
+PASS. The trans kernel target sets its own arch list (the cubin carries sm_75/80/86), so the `-D` pin is not what selects the arch there; it is a real list, not a degraded `native`.
+
+Pre-completion checks: `git -C projects/unified-cache-management/src status --porcelain` empty. `python3 utils/jargon.py --port unified-cache-management`: clean (local `develop` pointed at upstream `develop` f366bfa, local `moat-fix-1021` at origin; local refs only). `git diff --stat develop dff17ae`: 28 files, +587/-14, matching the reviewer's scope. ROCm build docs present in both doc trees (reviewer-verified at this head).
+
+Result: linux-gfx942 COMPLETED at dff17aeab09bf9c279dc1be42a5bdedc4368574a. This is the first validator record for gfx942 at any sha, so MI300X may now be named in the fix review PR's `## Upstream reply`. The open question for jeff on keeping the `hipMemcpyDefault` mapping (see the porter's review-fixes entry) is unchanged.
