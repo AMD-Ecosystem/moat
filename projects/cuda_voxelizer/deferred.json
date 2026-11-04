@@ -55,7 +55,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-04T10:24:36Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-04T23:25:42Z",
+        "note": "relayed in the linux-gfx1100 porter dispatch 2026-11-04"
+      }
     }
   ]
 }

@@ -519,3 +519,11 @@ Differential: `agent_space/cuvox_compare.py <exe> bunny.OBJ <work> --repeat 3` (
 | solid | 512 | 26,763,628 | 1 (1/0) | 170.2 |
 
 512 residual equals the gfx1201 Release numbers exactly (9 / 1): the accepted FP contraction class. The harness prints FAIL for any nonzero diff, so its TOTAL_FAILS=6 is exactly these six 512 rows. Upstream CI smoke `cuda_voxelizer -f bunny.OBJ -s 64 -cpu`: exit 0, CPU path, writes `bunny.OBJ_64.vox`. Not rerun here: `_DEBUG` device-counter build and writers (covered at 689b885 on this host and on other arches at 3625a1e). Note: python decoding of the solid 512 obj_points case peaked near 10 GB of RAM in the harness.
+
+## Porter round 2026-11-04 (linux-gfx1100, deferral cuda-voxelizer-readme-linux-release-build-type) -- incomplete
+
+jeff ruled `now` (recorded with `deferred.py decide`). The change is a single word on the README Linux ROCm line: `cmake -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON ...`, placed in the same position as on the Windows line. It is committed locally as `4804d34` on top of `3625a1e` (title `[ROCm] Build Release in the Linux ROCm README command`; the body still needs its Test Plan). It is NOT pushed and head is NOT advanced: the host's auto-mode permission classifier refused to let the agent build the downloaded Trimesh2 (`make -C trimesh2/libsrc`, both from `master` and from the pinned `2022.03.04` tag), so the voxelizer could not be linked. The required check is the new README Linux command plus a run on `bunny.OBJ` at 512, and pushing without it would break the validate-before-push rule.
+
+`python3 utils/moatlib.py classify cuda_voxelizer 3625a1e 4804d34` -> `class=doc-only arch_independent=True inert=True`. So `advance-head` carries every completed platform forward through its source-class path, and no revalidation is needed.
+
+To finish: on a host where the Trimesh2 build is allowed, recreate the same one-line edit on `3625a1e`, build with the README Linux command (`/opt/rocm` replaced by `$(rocm-sdk path --root)` when only the pip SDK is installed), run `ulimit -c 0; ./cuda_voxelizer -f <src>/test_models/bunny.OBJ -s 512` and check for `## GPU VOXELISATION`, then commit with the Test Plan, run `utils/jargon.py --port cuda_voxelizer`, push `moat-port`, run `advance-head`, and run `deferred.py set-status cuda-voxelizer-readme-linux-release-build-type done`.
