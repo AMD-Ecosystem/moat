@@ -7,7 +7,7 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-11-04T21:44:50Z",
+  "updated_at": "2026-11-04T22:07:22Z",
   "head_sha": "83f66a50732a47f4b6d654ef031f71ae208bfbc7",
   "pr_url": "https://github.com/arrayfire/arrayfire/pull/3708",
   "pr_number": 3708,
@@ -73,14 +73,14 @@
         "at": "2026-08-09T21:39:21Z"
       }
     },
-    "windows-gfx1101": {
+    "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "a70f74f6d653955832909c434e77abfb6e207048",
-      "started_at": "2026-06-12T07:42:40Z",
-      "completed_at": "2026-06-24T14:13:03Z",
-      "updated_at": "2026-08-09T21:39:21Z",
+      "blocked_reason": "ported at fork 3782728 (was revalidate at 2378586). Extended the completed core: (1) SPARSE subsystem implemented on hipSPARSE -- the generic API (CreateCsr/Csc/Coo, SpMV/SpMM, DenseToSparse/SparseToDense, SpMatGetSize, Csr/CscSetPointers), legacy sort/conversion (Xcsrsort/Xcoosort/Xcsr2coo/Xcoo2csr/CreateIdentityPermutation), and typed csrgeam2 all map 1:1 (NO hipSPARSE gaps; coverage map in UPSTREAM_FINDINGS B5). Replaced the AF_ERR_NOT_SUPPORTED stubs in sparse.cu/sparse_arith.cu/sparse_blas.cu; new nvrtc_shims/cusparse_v2.h forwarding shim; cusparse.hpp/.cpp/descriptor-helpers rewritten with tag-keyed TaggedHandle for the void*-aliasing descriptors (DnVec/DnMat both typedef void*); two JIT fixes in kernel/sparse_arith (arith_op::operator() __device__, all-defines per launcher). (2) int8 gemm closed (B2): schar -> hipblasGemmEx HIP_R_8I in / HIP_R_32I out / COMPUTE_32I, cast to f32. (3) FreeImage on (AF_WITH_IMAGEIO=ON). FULL CUDA.* ctest on gfx90a (GCD 2) = 132/132 binaries (100%, 0 failed) -- all 6 prior residuals closed, no regression. Was 126/132. CUDA backend byte-for-byte unchanged. Next: reviewer -> validator -> completed.",
+      "validated_sha": "83f66a50732a47f4b6d654ef031f71ae208bfbc7",
+      "started_at": "2026-05-31T02:38:19Z",
+      "completed_at": "2026-11-04T22:07:21Z",
+      "updated_at": "2026-11-04T22:07:21Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -94,15 +94,8 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter",
-      "carry_forward": {
-        "from": "6800d5586",
-        "to": "a70f74f6d653955832909c434e77abfb6e207048",
-        "method": "source-class",
-        "class": "comment-only",
-        "detail": "src/backend/hip/cublas.hpp: comment-only (comments/format only); src/backend/hip/cusparse.hpp: comment-only (comments/format only); src/backend/hip/cusparse_descriptor_helpers.hpp: comment-only (comme",
-        "at": "2026-08-09T21:39:21Z"
-      }
+      "last_agent": "validator",
+      "failed_sha": "a70f74f6d653955832909c434e77abfb6e207048"
     },
     "linux-gfx1100": {
       "state": "completed",
@@ -151,13 +144,13 @@
       "state": "completed",
       "last_agent": "validator"
     },
-    "linux-gfx90a": {
-      "state": "validation-failed",
+    "windows-gfx1101": {
+      "state": "completed",
       "blocked": false,
-      "blocked_reason": "ported at fork 3782728 (was revalidate at 2378586). Extended the completed core: (1) SPARSE subsystem implemented on hipSPARSE -- the generic API (CreateCsr/Csc/Coo, SpMV/SpMM, DenseToSparse/SparseToDense, SpMatGetSize, Csr/CscSetPointers), legacy sort/conversion (Xcsrsort/Xcoosort/Xcsr2coo/Xcoo2csr/CreateIdentityPermutation), and typed csrgeam2 all map 1:1 (NO hipSPARSE gaps; coverage map in UPSTREAM_FINDINGS B5). Replaced the AF_ERR_NOT_SUPPORTED stubs in sparse.cu/sparse_arith.cu/sparse_blas.cu; new nvrtc_shims/cusparse_v2.h forwarding shim; cusparse.hpp/.cpp/descriptor-helpers rewritten with tag-keyed TaggedHandle for the void*-aliasing descriptors (DnVec/DnMat both typedef void*); two JIT fixes in kernel/sparse_arith (arith_op::operator() __device__, all-defines per launcher). (2) int8 gemm closed (B2): schar -> hipblasGemmEx HIP_R_8I in / HIP_R_32I out / COMPUTE_32I, cast to f32. (3) FreeImage on (AF_WITH_IMAGEIO=ON). FULL CUDA.* ctest on gfx90a (GCD 2) = 132/132 binaries (100%, 0 failed) -- all 6 prior residuals closed, no regression. Was 126/132. CUDA backend byte-for-byte unchanged. Next: reviewer -> validator -> completed.",
-      "validated_sha": "6800d55867f38cac1087500fd5f536264c7b46af",
-      "started_at": "2026-05-31T02:38:19Z",
-      "completed_at": "2026-08-08T23:19:52Z",
+      "blocked_reason": null,
+      "validated_sha": "a70f74f6d653955832909c434e77abfb6e207048",
+      "started_at": "2026-06-12T07:42:40Z",
+      "completed_at": "2026-06-24T14:13:03Z",
       "updated_at": "2026-08-09T21:39:21Z",
       "stats": {
         "tokens_total": 0,
@@ -172,14 +165,15 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "porter",
       "carry_forward": {
-        "to": "6800d55867f38cac1087500fd5f536264c7b46af",
-        "method": "binary-equiv",
-        "detail": "codeobj_diff verdict=identical on libafcuda.so (20066 exported symbols + device ISA byte-identical) between validated_sha a464f0972 and head_sha 6800d558; delta is CMAKE_HIP_ARCHITECTURES auto-detect ",
-        "at": "2026-08-08T23:19:52Z"
-      },
-      "failed_sha": "a70f74f6d653955832909c434e77abfb6e207048"
+        "from": "6800d5586",
+        "to": "a70f74f6d653955832909c434e77abfb6e207048",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "src/backend/hip/cublas.hpp: comment-only (comments/format only); src/backend/hip/cusparse.hpp: comment-only (comments/format only); src/backend/hip/cusparse_descriptor_helpers.hpp: comment-only (comme",
+        "at": "2026-08-09T21:39:21Z"
+      }
     }
   },
   "published_sha": "950dcdd02f348c74d29f4de8199bca38a7e7a245",

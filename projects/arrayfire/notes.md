@@ -3086,11 +3086,23 @@ GPU: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), `HIP_VISIBLE_DEVICES=0`
 R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
 S=projects/arrayfire/src; B=$S/build-hip-gfx1100
 python3 -I $S/.github/scripts/check-matrix-data.py $S $B      # ON, 9 matrices restored from arrayfire-data 2723164f7
+## Validation 2026-11-04 (validator, linux-gfx90a, sync round head 83f66a507) -- RESULT: COMPLETED (131/132)
+
+Asked for by jeff. Fork `AMD-Ecosystem/arrayfire` branch `moat-sync-64c88d9`, checked out at `83f66a50732a47f4b6d654ef031f71ae208bfbc7` (the recorded `head_sha`; upstream master 64c88d932 merged, plus the reduce-by-key `k{}` / `kWarpSize` fix). Fresh clone, `protect-fork` installed, nothing pushed. GPU: AMD Instinct MI250X/MI250 (gfx90a, sramecc+ xnack-, wave64), `HIP_VISIBLE_DEVICES=3` as pinned by the dispatcher, `ulimit -c 0`.
+
+Toolchain: no /opt/rocm. ROCm SDK wheels 10.1.0 (`rocm-sdk-devel`/`-core`/`-libraries`/`-device-gfx90a` 10.1.0) in `/opt/python-3.11-venv`; compiler `AMD clang version 24.0.0git (ROCm/llvm-project d6f6cb691863)`, the same LLVM commit the gfx1100 entries label "ROCm 7.16.26385". So this run uses the same compiler that exposed the reduce-by-key UB. `liblapacke-dev` apt-installed.
+
+### Commands
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+S=projects/arrayfire/src; B=$S/build-hip-gfx90a
+python3 -I $S/.github/scripts/check-matrix-data.py $S $B        # ON, 9 matrices restored from arrayfire-data 2723164f
 AF_CI_MTX_FILES=ON utils/timeit.sh arrayfire compile -- cmake -C $S/.github/scripts/matrixmarket.cmake \
   -S $S -B $B -GNinja -DCMAKE_BUILD_TYPE=Release \
   -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF -DAF_BUILD_CPU=ON -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF \
   -DAF_BUILD_UNIFIED=ON -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF \
   -DAF_BUILD_DOCS=OFF -DAF_BUILD_TESTS=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DAF_BUILD_DOCS=OFF -DAF_BUILD_TESTS=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
   -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++
 utils/timeit.sh arrayfire compile -- cmake --build $B -j 32
 export ROCM_PATH=$R
@@ -3140,3 +3152,19 @@ ROCM_PATH=$R projects/arrayfire/src/build-hip-gfx942/test/confidence_connected_c
 **131/132 PASS** (1351 s), first run, no reruns. The one failure is `test_confidence_connected_cuda`: 3 passed, 12 skipped, 21 failed, all "Image IO Not Configured" (`AF_WITH_IMAGEIO=OFF`), the standing disposition. `reduce_cuda` direct: **1062/1062 PASS** (ctest 24.3 s). No SegFault, timeout, OOM or HIP fault anywhere; `inverse_dense` (the gfx1100 random-input flake) passed.
 
 Comparison: matches the porter's gfx1100 result at this head (131/132, `reduce` 1062/1062, ROCm 7.16) and this platform's previous record (131/132 at 950dcdd02, ROCm 7.14). The 479 by-key failures the porter saw at 5d09b5c0f on ROCm 7.16 do not appear here with the fix, on wave64 with the same 7.16 compiler. CUDA gate: already recorded at 83f66a507 (nvcc 12.8, mi355 host, PASS), not repeated. `jargon.py --port arrayfire`: only the 3 standing hits (published `6800d5586` 'MOAT', upstream's own `head_sha` x2 in `.github/scripts`), as accepted by the reviewer. Documentation unchanged by this round apart from upstream's merge.
+
+### Results
+- Configure exit 0; build 1652/1652, exit 0, 0 errors.
+- `reduce_cuda` standalone: **1062/1062 PASS** (exit 0). In ctest, `test_reduce_cuda` Passed 3.20 s. Under the same compiler the gfx1100 merge-only head 5d09b5c0f had 583/1062, so the fix holds on wave64 and the `kWarpSize` change regresses nothing.
+- Full ctest: **131/132 PASS** (99%), 2122.6 s. Only failure: `test_confidence_connected_cuda`, 36 cases: 3 pass, 21 fail (`Function not configured to build:302`, Image IO off), 12 skip. This is the standing `AF_WITH_IMAGEIO=OFF` disposition, same as gfx1100 at this head. No NaN, HIP fault or timeout.
+- Slowest binaries on this host, all JIT-heavy: jit 158 s, binary 130 s, convolve 123 s, fftconvolve 89 s, fft 61 s.
+
+### Comparison
+- Porter at this head (gfx1100, same compiler): 131/132, the same single failure, `reduce` 1062/1062. Identical.
+- Last gfx90a GPU run: 132/132 at 3782728 with `AF_WITH_IMAGEIO=ON` (FreeImage). The single difference is `confidence_connected`, due to the Image IO configuration; it is not a regression. The recorded gfx90a `failed_sha` a70f74f6d was the texture-object build break, fixed in 950dcdd02 before this round.
+
+### Gates
+- CUDA compile gate: already recorded at 83f66a507 (nvcc 12.8, entry above), so it was skipped here.
+- `jargon.py --port arrayfire`: the 3 standing hits only (published `6800d5586` 'MOAT', and upstream's own `head_sha` x2 in `.github/scripts`). Porter and reviewer accepted these this round.
+- Documentation: this round does not change the ROCm build docs, which were accepted in earlier rounds.
+- `git -C projects/arrayfire/src status --porcelain`: empty (the build dir is gitignored), HEAD 83f66a507.
