@@ -201,6 +201,7 @@ def build():
                         # starts from.
                         "published_sha": {"type": "string"},
                         "review_pr": {"type": "string"},
+                        "fix_abandoned": {"$ref": "#/$defs/fix_abandoned"},
                         "archived_at": {"type": "string"},
                     },
                 },
@@ -224,6 +225,9 @@ def build():
                 },
             },
             "fix_merged_at": {"type": "string"},
+            # Rounds a person ruled will never merge (moatlib.abandon_fix), with
+            # the staging tip that was dropped and why. Append-only.
+            "fix_abandoned": {"$ref": "#/$defs/fix_abandoned"},
             # A person's ruling that upstream adopted the fork BY REFERENCE: the
             # PR closed unmerged and upstream points its users at the port
             # branch, which is now a long-lived public deliverable. pr_ready
@@ -254,6 +258,21 @@ def build():
                     "by": {"type": "string", "minLength": 1},
                     "at": {"type": "string"},
                     "note": {"type": "string"},
+                },
+            },
+            # A person's ruling that the upstream PR targets a branch other than
+            # the default recorded at scaffold (upstream asks for PRs against
+            # `development`, say). fork_default_branch carries the value; this
+            # records who changed it, from what, and why.
+            "base_branch_ruling": {
+                "type": ["object", "null"],
+                "required": ["branch", "by", "at"],
+                "properties": {
+                    "branch": {"type": "string", "minLength": 1},
+                    "previous": {"type": ["string", "null"]},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "reason": {"type": "string"},
                 },
             },
             # The review PR on our own fork: where a maintainer sees the code, title
@@ -306,6 +325,23 @@ def build():
             # Only what an ARCHITECTURE can record. port-ready and revalidate are
             # derived from (stage, validated_sha, head_sha) and never stored.
             "archstate": {"enum": sorted(m.ARCH_STATES)},
+            "fix_abandoned": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["branch", "base_sha", "by", "reason", "at"],
+                    "properties": {
+                        "branch": {"type": "string", "minLength": 1},
+                        "base_sha": {"type": "string", "minLength": 1},
+                        "tip_sha": {"type": ["string", "null"]},
+                        "review_pr": {"type": "string"},
+                        "kind": {"enum": ["sync"]},
+                        "by": {"type": "string", "minLength": 1},
+                        "reason": {"type": "string", "minLength": 1},
+                        "at": {"type": "string"},
+                    },
+                },
+            },
             "arch": {
                 "type": "object",
                 # `state` is not required: a migrated block holds only what this arch
