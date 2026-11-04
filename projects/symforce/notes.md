@@ -2012,6 +2012,9 @@ The earlier observation (AMD copyright and `Author:` lines in cuda_to_hip.h) sta
 ## Validation linux-gfx90a 2026-11-04 (fix round moat-fix-465, tip e7e0b00c)
 
 Validator, jeff's request. Fresh fork clone `projects/symforce/src`, `git checkout -B moat-fix-465 origin/moat-fix-465`, HEAD == `e7e0b00c5e343e57724226aca38b92438868cc6b` == head_sha; `protect-fork` installed; `git branch main origin/main` for `jargon.py --port`. Job venv with `requirements/dev_py311.txt` (venv `bin` first on PATH). ROCm: TheRock SDK 7.16 (clang 24.0.0), `CMAKE_PREFIX_PATH=$(rocm-sdk path --root)`. GPU: AMD Instinct MI250X GCD (gfx90a:sramecc+:xnack-), pinned `HIP_VISIBLE_DEVICES=0` (all 4 GCDs idle per `amd-smi metric -u`), GPU work under `ulimit -c 0`. Full real-GPU run (previous validated_sha 1a9e9770; device code changed since).
+## Validation linux-gfx1100 2026-11-04 (fix round moat-fix-465, tip e7e0b00c)
+
+Validator, jeff's request. Fresh fork clone `projects/symforce/src`, `git checkout -B moat-fix-465 origin/moat-fix-465`, HEAD = e7e0b00c5e343e57724226aca38b92438868cc6b (= status.json head_sha), `protect-fork` installed. GPU: AMD Radeon Pro W7800 48GB (gfx1100, wave32), `HIP_VISIBLE_DEVICES=0` as pinned by the dispatcher, all GPU work under `ulimit -c 0`. ROCm: TheRock SDK 10.1.0 (`rocm-sdk version`), HIP compiler Clang 24.0.0 (`$(rocm-sdk path --root)/lib/llvm/bin/clang++`, picked by CMake). Job venv with `requirements/dev_py311.txt` (cmake 4.2.1), venv `bin` first on PATH. Note the SDK differs from the 7.16 used by the reviewer at d5eb335d/e7e0b00c on this platform.
 
 ### Build
 
@@ -2067,3 +2070,51 @@ Every size OK, `=== PASSED ===` (a first run failed checks 1-2 at every size bec
 - Fork worktree `git status --porcelain`: empty (build/ ignored).
 
 VALIDATION PASSED on gfx90a (MI250X) at e7e0b00c. State set to completed.
+cmake -S <src> -B <src>/build -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$FLEET_VENV/bin/python -DSYMFORCE_PYTHON=$FLEET_VENV/bin/python -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root)
+cmake --build <src>/build -j16
+```
+
+rc=0. Warnings: only the pre-existing `-Wunused-value` on ignored `hipError_t` returns.
+
+### Tests
+
+```
+export PYTHONPATH=<src>:<src>/build/lcmtypes/python2.7:<src>/gen/python:<src>/third_party/skymarshal
+ctest --test-dir <src>/build -R caspar --output-on-failure
+for t in padding_lane solver backend_coverage tridiagonal; do for i in 1 2 3 4 5; do <src>/build/bin/tests/caspar_${t}_cuda_test; done; done
+ctest --test-dir <src>/build -j16 --output-on-failure
+```
+
+- Caspar ctest: 6/6. backend_coverage 302/302 (1 case), padding_lane 6/6 (1 case), solver 24/24 (5 cases), tridiagonal 140/140 (2 cases), symengine and sympy symforce_caspar_codegen_test pass.
+- Each of the four GPU test binaries run 5 more times: all pass 5 of 5, same counts.
+- Full ctest: 209/212. The 3 failures are the known environmental ones: symengine/sympy_symforce_rust_codegen_test (`rustfmt` not installed for toolchain 1.97.1) and symengine_symforce_docs_test (nbsphinx: no module named `jsonschema`). Same as the porter's gfx90a run at e7e0b00c and the gfx1100 review at d5eb335d (209/212, same three).
+
+### SumStore reproduction (200 runs)
+
+Harness rewritten (the earlier one was scratch): `agent_space/sumstore/harness.hip.cpp` plus `build.sh`, not durable. It links the unmodified checked-in `kernel_Matrix21_alpha_numerator_denominator.cu` (two `SumStore` back to back into one buffer, then two `SumFlushFinal`) and `kernel_caspar_padding_lane_score.cu` against a copy of the head runtime, in four variants: {head `memops.cuh`, head plus the trailing `SumStore` barrier restored} x {`SumFlushFinal` atomicAdd, per-block store `output[blockIdx.x * dim + threadIdx.x]`}. Device asm confirms the barrier variants differ: alpha kernel 6 vs 8 `s_barrier`, padding-lane 18 vs 19 (same counts as the review at d5eb335d).
+
+```
+hipcc -x hip -std=c++17 -O3 -DUSE_HIP -DPERBLOCK=<0|1> -ffp-contract=fast -fno-math-errno --offload-arch=gfx1100 -I<variant runtime> harness.hip.cpp kernel_Matrix21_alpha_numerator_denominator.cu kernel_caspar_padding_lane_score.cu shared_indices.cu -o h_<variant>
+./h_<variant> 200
+```
+
+Sizes 1000, 1024, 1500, 2049, 5000, 65537, 1000003; inputs for the padding lane as in `caspar_padding_lane_cuda_test`, alpha inputs integer-valued doubles so the exact host reference is a strict check.
+
+- Alpha kernel (back-to-back SumStore): 0/200 mismatches against the exact reference at every size, in all four variants (final totals and per-block sums).
+- Padding-lane score: 0 NaN in all variants at every size. Per-block sums: exactly 1 distinct vector over 200 runs at every size, with and without the barrier (bit-identical). Final scores via atomics: 1 distinct at sizes up to 2049, 2 at 5000, 8 at 65537 and 1000003, identical counts with and without the barrier (cross-block float atomic ordering).
+- Control kernel (not an emitted pattern; threads >= 32 overwrite the 32-element window right after `SumStore`): 0/200 bad runs at every size, with and without the barrier, in two designs (static 32-float window, one store; dynamic 40 KB shared buffer, 8 stores). Unlike the review's control at d5eb335d (159/200 and 200/200 at the two largest sizes without the barrier), this control did not provoke the race on SDK 10.1, so this run does not show the harness's sensitivity on its own; the review's control result stands as that evidence. Not a gate.
+
+### README HIP example
+
+`symforce/caspar/examples/kernel_example/gen_and_run.py` copied to `agent_space/kex/` with only `caslib.compile(out_dir)` -> `caslib.compile(out_dir, use_hip=True, hip_arch="gfx1100")` (it already calls `caslib.generate(out_dir)` first), run with the venv python, `CMAKE_PREFIX_PATH=$(rocm-sdk path --root)`, PYTHONPATH as above plus the image site-packages for torch. The generated library built (`CMAKE_HIP_ARCHITECTURES=gfx1100` in its cache, `hip-amdgcn-amd-amdhsa--gfx1100` bundles in its objects), ran on the GPU, and both result asserts passed ("Success!").
+
+### Gates
+
+- CUDA compile gate: already recorded at e7e0b00c (porter, nvcc 12.8, 4 Caspar test targets, 78 compiles, 0 warnings); not rerun per the once-per-head rule.
+- `python3 utils/jargon.py --port symforce`: clean.
+- Documentation: ROCm build documented in `symforce/caspar/README.md` "AMD GPUs (ROCm/HIP)"; the example there is the one run above.
+- Fork worktree: `git status --porcelain` empty.
+
+Compared with this platform's earlier record (completed at 1a9e9770: runtime build plus the SumStore harness), this run covers more: the upstream Caspar GPU tests, codegen tests, full ctest and the README example. No regression.
+
+VALIDATION PASSED on linux-gfx1100 (Radeon Pro W7800) at e7e0b00c.
