@@ -7,7 +7,7 @@
   "priority": 5.142,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:36:14Z",
-  "updated_at": "2026-11-04T06:46:52Z",
+  "updated_at": "2026-11-04T06:47:08Z",
   "head_sha": "4f82bf2ca1097cc9a4315e15381b476f6b958d36",
   "porting": null,
   "waivers": {},
@@ -139,11 +139,9 @@
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/ElasticFusion/pull/1",
-  "pr_approval": {
-    "approved_by": "jeffdaily",
-    "at": "2026-11-04T00:13:57Z",
-    "head_sha": "4f82bf2ca1097cc9a4315e15381b476f6b958d36",
-    "content_sha256": "1d7099881192aec6c4673ebf6b2baa1c4636868c590060efb0536aa15f759db9",
-    "review_pr": "https://github.com/AMD-Ecosystem/ElasticFusion/pull/1"
-  }
+  "pr_url": "https://github.com/mp3guy/ElasticFusion/pull/251",
+  "pr_number": 251,
+  "pr_opened_at": "2026-11-04T06:47:08Z",
+  "pr_state": "open",
+  "published_sha": "4f82bf2ca1097cc9a4315e15381b476f6b958d36"
 }
