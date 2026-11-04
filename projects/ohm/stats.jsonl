@@ -124,3 +124,18 @@
 {"kind":"phase","ts":"2026-11-04T17:15:08Z","phase":"test","seconds":3.683,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261104-090827-v-ohm/moat/agent_space/build-cpu/bin/ohmtestheightmap"}
 {"kind":"phase","ts":"2026-11-04T17:15:08Z","phase":"test","seconds":0.063,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261104-090827-v-ohm/moat/agent_space/build-cpu/bin/slamiotest"}
 {"kind":"session","ts":"2026-11-04T17:15:44Z","epoch":1793812544.073215225,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T17:21:18Z","phase":"compile","seconds":27.709,"exit":1,"cmd":"cmake --build /d/Develop/moat/agent_space/ohm-win-build -j 12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-04T17:22:24Z","phase":"compile","seconds":28.096,"exit":1,"cmd":"cmake --build D:/Develop/moat/agent_space/ohm-win-build -j 12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-04T17:23:03Z","phase":"compile","seconds":24.376,"exit":1,"cmd":"cmake --build D:/Develop/moat/agent_space/ohm-win-build -j 12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-04T17:25:08Z","phase":"compile","seconds":30.385,"exit":1,"cmd":"cmake --build D:/Develop/moat/agent_space/ohm-win-build -j 12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-04T17:25:44Z","phase":"compile","seconds":28.033,"exit":0,"cmd":"cmake --build D:/Develop/moat/agent_space/ohm-win-build -j 12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-04T17:25:52Z","phase":"test","seconds":0.255,"exit":127,"cmd":"./gputiltestcuda.exe"}
+{"kind":"phase","ts":"2026-11-04T17:25:53Z","phase":"test","seconds":0.222,"exit":127,"cmd":"./ohmtest.exe"}
+{"kind":"phase","ts":"2026-11-04T17:25:54Z","phase":"test","seconds":0.186,"exit":127,"cmd":"./ohmtestheightmap.exe"}
+{"kind":"phase","ts":"2026-11-04T17:25:56Z","phase":"test","seconds":0.194,"exit":127,"cmd":"./slamiotest.exe"}
+{"kind":"phase","ts":"2026-11-04T17:25:58Z","phase":"test","seconds":0.356,"exit":127,"cmd":"./ohmtestcuda.exe"}
+{"kind":"phase","ts":"2026-11-04T17:26:10Z","phase":"test","seconds":6.558,"exit":0,"cmd":"D:/Develop/moat/agent_space/ohm-win-build/bin/gputiltestcuda.exe"}
+{"kind":"phase","ts":"2026-11-04T17:26:24Z","phase":"test","seconds":13.151,"exit":0,"cmd":"D:/Develop/moat/agent_space/ohm-win-build/bin/ohmtest.exe"}
+{"kind":"phase","ts":"2026-11-04T17:26:29Z","phase":"test","seconds":3.711,"exit":0,"cmd":"D:/Develop/moat/agent_space/ohm-win-build/bin/ohmtestheightmap.exe"}
+{"kind":"phase","ts":"2026-11-04T17:26:30Z","phase":"test","seconds":0.246,"exit":0,"cmd":"D:/Develop/moat/agent_space/ohm-win-build/bin/slamiotest.exe"}
+{"kind":"phase","ts":"2026-11-04T17:27:45Z","phase":"test","seconds":74.051,"exit":0,"cmd":"D:/Develop/moat/agent_space/ohm-win-build/bin/ohmtestcuda.exe"}

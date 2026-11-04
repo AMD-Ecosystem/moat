@@ -1243,3 +1243,33 @@ cmake --build build -j 48 -- -k 0
 Base failures (environment: GCC 13 libstdc++ no longer pulls in `<utility>` transitively, not the port): `ohmutil/PlyPointStream.cpp:112` and `ohm/VoxelBuffer.cpp:24`, `'exchange' is not a member of 'std'`. The port's two `#include <utility>` fixes clear exactly these. With `-include utility` the baseline builds 227/227 and its warning list is identical to the port's (sorted diff empty): 9x `nvcc warning : Support for offline compilation for architectures prior to '<compute/sm/lto>_75' will be removed` (one per `.cu`, from the upstream default arch list), 1x `ohm/VoxelLayout.cpp:216 -Wstringop-truncation`, plus two CMake dev-warning lines. No new warning in the port. Built binaries and libraries are identical lists in both trees: bin `gputiltestcuda ohm2ply ohmcmp ohmfilter ohmheightmap ohminfo ohmpopcpu ohmpopcuda ohmprob ohmquerycuda ohmsubmap ohmtest ohmtestcuda ohmtestheightmap slamiotest`; lib `libgputilcuda libohm libohmapp libohmappcuda libohmcuda libohmheightmap libohmtestcommon libohmtools libohmutil libslamio liblogutil` (.a).
 
 nvcc really compiled the kernels: `ninja -t commands` shows 9 `/usr/local/cuda-12.8/bin/nvcc` invocations with `--generate-code=arch=compute_XX,code=[compute_XX,sm_XX]` for each of the 11 archs (8 `ohmgpu/gpu/*.cu`, `tests/gputiltest/cuda/matrix_kernel.cu`), and `cuobjdump --list-elf build/lib/libohmcuda.a` lists 8 ELF images for each of sm_50..sm_86 (88 total). No compile command in the port's CUDA build references `hip_compat`, `OHM_FEATURE_HIP` or `__HIP`, so the HIP shims stay out of the CUDA path. No GPU run (no NVIDIA GPU); no platform state changed.
+## Validation 2026-11-04 (windows-gfx1151, moat-port 7c09435)
+
+**GPU**: AMD Radeon 8060S (gfx1151, RDNA3.5, wave32, 20-CU APU). **Toolchain**: TheRock pip SDK ROCm 7.14 (`D:/Develop/TheRock/.venv/.../_rocm_sdk_devel`, clang/clang++ 23.0.0, GNU driver for C, CXX and HIP), CMake 3.31.0, Ninja 1.13.2, MSVC link from BuildTools 14.44. Dependencies: vcpkg `D:/Develop/vcpkg` (gtest, eigen3, zlib) plus glm 1.0.1 headers (see below). Fork clone checked out detached at 7c09435fcf06ec3351ae6757c25d1b3b201a2134; `git status --porcelain` empty. `ulimit -c 0`. No large-memory test excluded; ohmtestcuda ran in full.
+
+Configure and build (env from `agent_space/win_rocm_env.sh`; `$V=D:/Develop/vcpkg/installed/x64-windows`, `$L=$ROCM_ROOT/lib/llvm/bin`):
+
+```bash
+cmake -B $B -S ohm-win -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=$L/clang.exe -DCMAKE_CXX_COMPILER=$L/clang++.exe -DCMAKE_HIP_COMPILER=$L/clang++.exe -DCMAKE_PREFIX_PATH="$ROCM_ROOT;$ROCM_ROOT/../_rocm_sdk_core" -DOHM_FEATURE_HIP=ON -DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON -DOHM_FEATURE_THREADS=OFF -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DGLM_INCLUDE_DIRS=<glm-1.0.1> -DOHM_SYSTEM_GTEST=ON -DGTest_DIR=$V/share/gtest -DEigen3_DIR=$V/share/eigen3 -DZLIB_ROOT=$V "-DCMAKE_CXX_FLAGS=-D_USE_MATH_DEFINES -DNOMINMAX -DWIN32 -I<copy-of-glm-1.0.1>" -DCMAKE_C_FLAGS=-D_USE_MATH_DEFINES
+sed -i 's/-fuse-ld=lld-link//g' $B/build.ninja     # CMake 3.31 injects it; the GNU-driver HIP link rejects it
+utils/timeit.sh ohm compile -- cmake --build $B -j 12     # 191/191
+```
+
+Runtime: `rocm_stage_runtime` copied amdhip64_7.dll, amd_comgr.dll, hiprtc*.dll, rocm_kpack.dll next to the exes, gtest.dll and gtest_main.dll from vcpkg. Each suite run as `utils/timeit.sh ohm test -- $B/bin/<suite>.exe` with the vcpkg bin and ROCm bin on PATH.
+
+| Suite | windows-gfx1151 at 7c09435 | linux gfx90a / gfx1100 at same tree |
+|-------|----------------------------|--------------------------------------|
+| gputiltestcuda | 8/8 (6.0 s) | 8/8 |
+| ohmtestcuda | 58/58 (73.4 s) | 58/58 |
+| ohmtest | 53/53 (12.9 s) | 53/53 |
+| ohmtestheightmap | 19/19 | 19/19 |
+| slamiotest | 4/4 | 4/4 |
+
+GPU 66/66, CPU 76/76: identical counts to Linux. Windows build needed no source change; the readme's AMD section is Linux-flavoured (`/opt/rocm`) but its option names are right.
+
+Windows-specific build facts (environment, not port defects):
+- `-fuse-ld=lld-link` strip in build.ninja (as at gfx1101); hipcc is used by the HIP language via CMake's relative-path discovery, all three languages on clang++.
+- Dependency finding: vcpkg's glm 1.0.3 breaks `ohm/CovarianceVoxel.h` (`glm::dquat` not declared; the header relies on glm 1.0.1 pulling in `ext/quaternion_double.hpp` transitively). This is a latent missing include in upstream ohm, independent of the port, and not Windows-specific; it surfaces with any glm >= 1.0.2. Worked around with glm 1.0.1 headers, as on the Linux hosts. Also, `GLM_INCLUDE_DIRS` is passed as `-isystem` and clang drops an identical `-I` as a duplicate, so vcpkg's `include/` (also isystem, listed first via gtest/zlib) shadowed glm 1.0.1 until a byte-identical copy of the glm tree at a different path was given via `-I`. Also vcpkg's glm CONFIG package leaves `GLM_INCLUDE_DIRS` empty in Findglm.cmake, so keep vcpkg out of `CMAKE_PREFIX_PATH` and give gtest/eigen paths directly.
+- No `-fgpu-rdc` bundler fault, no 719, no DLL faults after staging.
+
+Checks: `python3 utils/jargon.py --port ohm` could not run here (no fork clone under the worktree); the 7c09435 tree and commit messages were scanned clean by the gfx90a and gfx1100 validators and nothing has changed since. readme.md has the "Building for AMD GPUs" section. CUDA gate: cuda-not-validated on this host (no CUDA toolkit; Windows).
