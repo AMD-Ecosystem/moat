@@ -7,10 +7,13 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-10-29T22:07:22Z",
+  "updated_at": "2026-11-04T07:19:38Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-04T07:19:38Z"
+  },
   "waivers": {},
   "license_spdx": "Apache-2.0 OR MIT OR GPL-2.0-only WITH Classpath-exception-2.0",
   "intake": {
@@ -26,6 +29,30 @@
       "at": "2026-08-07T15:41:21Z"
     }
   },
-  "stage": "screened",
-  "platforms": {}
+  "stage": "planning",
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-04T07:19:38Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "planner"
+    }
+  }
 }
