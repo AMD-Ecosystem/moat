@@ -1,2 +1,9 @@
 {"kind":"session","ts":"2026-11-04T07:19:37Z","epoch":1793776777.894170800,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-04T07:29:23Z","epoch":1793777363.751747000,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-04T19:14:47Z","epoch":1793819687.606568365,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-04T19:35:16Z","phase":"compile","seconds":0.002,"exit":2,"cmd":"make jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-04T19:35:35Z","phase":"compile","seconds":12.537,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-111219-tvm-port/moat/projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-04T19:47:42Z","phase":"test","seconds":585.861,"exit":1,"cmd":"timeout 7200 tornado-test --verbose --quickPass"}
+{"kind":"phase","ts":"2026-11-04T19:57:56Z","phase":"test","seconds":403.591,"exit":1,"cmd":"timeout 7200 tornado-test --verbose --quickPass"}
+{"kind":"phase","ts":"2026-11-04T19:58:39Z","phase":"cuda-compile","seconds":17.532,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-111219-tvm-port/moat/projects/TornadoVM/src jdk21 BACKEND=cuda"}
+{"kind":"phase","ts":"2026-11-04T19:59:08Z","phase":"compile","seconds":28.753,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-111219-tvm-port/moat/projects/TornadoVM/src jdk21 BACKEND=opencl"}
