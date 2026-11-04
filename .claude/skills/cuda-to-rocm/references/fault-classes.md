@@ -164,6 +164,25 @@ The reliance is a latent upstream bug, not a ROCm defect: zero explicitly
 (`hipMemsetAsync`) before the partial-write kernel, and audit any kernel whose write set is
 smaller than its output allocation. (opencv_contrib: cudastereo census_transform border.)
 
+**Bitwise and min/max atomics on `hipMallocManaged` memory are silently dropped on a
+discrete xnack- card.** There, managed memory is host-resident fine-grained memory, and
+the device reaches it over PCIe, whose AtomicOps cover only add, swap and CAS. A native
+`global_atomic_or`/`xor`/`smin`/`umax` into it completes with no error and changes nothing;
+`atomicAdd`, `atomicCAS`, plain stores and `hipMalloc` memory are all fine. Whether the
+port is hit depends on CODEGEN, not on the source: HIP's `atomicOr` marks the operation
+`!amdgpu.no.fine.grained.memory`, which permits the native instruction, but the inliner can
+drop that metadata when the atomic sits in a helper inlined into the kernel, and without it
+the backend emits a CAS retry loop that works. So one program can pass at `-O3` and come out
+entirely empty at device `-O0`, and a standalone probe can contradict the application.
+Disassemble the APPLICATION's code object (`llvm-objdump --offloading <exe>`, then
+`llvm-objdump -d` on the gfx bundle): a native `global_atomic_or` or `flat_atomic_or` means
+it fails; only `global_atomic_cmpswap` means it is passing by accident. A passing
+CPU-vs-GPU differential does not clear this risk. Fix it in the source, never by optimization
+level: put the atomically written buffer in `hipMalloc` memory and copy it back, or use the
+`_system` atomic variants. (cuda_voxelizer on gfx90a/MI250X: `atomicOr`/`atomicXor` voxel
+table, exact at default `-O3` and Debug, 0 of 13,802 / 52,258 voxels at device `-O0`;
+gfx942 and the gfx1151 APU do not drop them. cudaKDTree: int `atomicMin`/`atomicMax`.)
+
 **`cudaMemcpy*Async` from a soon-freed pageable host buffer.** CUDA stages pageable async
 copies synchronously, so a test that copies from a local `std::vector` and lets it go out of
 scope still works. ROCm's is genuinely asynchronous, so the freed and reused buffer is read
