@@ -456,6 +456,39 @@
         }
       }
     },
+    "fork_url_ruling": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "url",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "previous": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
     "base_branch_ruling": {
       "type": [
         "object",
