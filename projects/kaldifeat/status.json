@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-11T15:50:21Z",
-  "updated_at": "2026-08-19T23:41:01Z",
+  "updated_at": "2026-11-04T06:49:17Z",
   "head_sha": "aa90013",
   "depends_on": [],
   "porting": null,
@@ -126,5 +126,12 @@
       }
     }
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/kaldifeat/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/kaldifeat/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-03T23:52:39Z",
+    "head_sha": "aa900135dc1c70606e74f107125fdbe919e4f3fe",
+    "content_sha256": "977950b73b0c2d1e473fb4789b4e95dc3da56b75640f2599a760cafa96c4ea70",
+    "review_pr": "https://github.com/AMD-Ecosystem/kaldifeat/pull/1"
+  }
 }
