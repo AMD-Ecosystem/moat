@@ -7,18 +7,21 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T01:19:43Z",
-  "updated_at": "2026-11-04T23:39:56Z",
+  "updated_at": "2026-11-04T23:44:14Z",
   "head_sha": "ea1185efa2caa08024bc12c4da242e14becb9f3c",
   "depends_on": [],
   "pr_url": "https://github.com/IBM/aihwkit/pull/770",
   "pr_number": 770,
   "pr_opened_at": "2026-06-08T22:00:49Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-04T23:44:14Z"
+  },
   "waivers": {},
   "pr_state": "closed",
   "license_spdx": "MIT",
   "upstream_repo_id": 296369718,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -145,6 +148,29 @@
         "last_session_at": null
       },
       "state": "completed"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-04T23:44:14Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
     }
   },
   "published_sha": "70577b578b7faa661611e905c0b9ec1a1d85bf33",
