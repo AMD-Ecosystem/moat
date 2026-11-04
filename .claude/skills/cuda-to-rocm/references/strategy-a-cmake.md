@@ -98,6 +98,28 @@ Prefer this when the project includes CUDA headers by name. It does not apply wh
 use CUDA symbols without including a CUDA header, or where the build already injects a
 compat header with `-include`.
 
+### A per-backend directory is not a reason to add a HIP directory
+
+Projects with a GPU abstraction often keep one directory per backend (`gpu/cl/`, `gpu/cuda/`)
+and a target per backend. Do not add a third, copied `hip/` directory and `.hip` copies of the
+`.cu` files: that is thousands of lines of hipify output that must track every CUDA change.
+Masquerade the CUDA backend instead. A HIP option configures the existing CUDA targets, marks
+their `.cu` files `LANGUAGE HIP`, links `hip::host` where the CUDA build links cudart, and puts
+a shim directory on the HIP include path. Keep the CUDA target and type names; renaming them
+for HIP adds a diff and no behaviour. Three things nvcc did silently need stating:
+
+- nvcc implicitly includes `cuda_runtime.h` in every `.cu` file, so device code may use
+  `threadIdx` before any include. Add `$<$<COMPILE_LANGUAGE:HIP>:SHELL:-include cuda_runtime.h>`
+  so the HIP build does the same, through the shim.
+- The backend's `.cpp` files are host C++ under CUDA. Leave them `CXX`; marking them HIP adds a
+  device pass where `__HIP_DEVICE_COMPILE__` guards hide host-only declarations they use.
+- Every `__CUDACC__` check gains `|| defined(__HIPCC__)`, and every `__CUDA_ARCH__` device-pass
+  check gains `__HIP_DEVICE_COMPILE__`. Preprocess the `.cu` files before and after with
+  `-D__CUDACC__` (and `-D__CUDA_ARCH__=700`) to show the CUDA build sees identical code.
+
+ohm's first port added such a directory (~3,800 lines). The masquerade was +157/-16 over
+24 files and passed the same GPU tests (8/8 and 58/58 on gfx90a). (ohm)
+
 ## Build hygiene
 
 - **Do not pin `--offload-arch` or `CMAKE_HIP_ARCHITECTURES` in the committed build.** Pass

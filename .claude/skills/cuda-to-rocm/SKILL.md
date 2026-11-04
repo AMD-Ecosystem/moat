@@ -48,8 +48,10 @@ what.
 Strategy A is the minimal-footprint model: the compat header is a no-op on NVIDIA, so the
 CUDA build is untouched. Where the project includes CUDA headers by name, prefer the
 **shim-header method** -- shadow headers on the HIP include path only -- which leaves the
-source tree byte-identical to upstream and produces a far more mergeable diff. Full recipes: `references/strategy-a-cmake.md`,
-`references/strategy-b-torch.md`.
+source tree byte-identical to upstream and produces a far more mergeable diff. A project with a
+directory per GPU backend (OpenCL, CUDA) still gets no copied HIP directory: build the CUDA
+backend through HIP (see "A per-backend directory" in `references/strategy-a-cmake.md`).
+Full recipes: `references/strategy-a-cmake.md`, `references/strategy-b-torch.md`.
 
 ## Before porting
 
