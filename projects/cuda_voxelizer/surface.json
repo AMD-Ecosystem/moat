@@ -72,7 +72,7 @@
   "scoped_out": [
     {
       "id": "build:msvc-vs2022",
-      "reason": "Alternative NVIDIA-only build path; the CMake build (ported) already covers Windows and is what upstream's own Windows CI uses. Proposed cut, pending jeff's confirmation (plan.md open question 1)."
+      "reason": "Alternative NVIDIA-only build path; the CMake build (ported) already covers Windows and is what upstream's own Windows CI uses. Cut confirmed by jeff on 2026-11-03 (plan.md open question 1)."
     },
     {
       "id": "ci:github-actions-autobuild",
