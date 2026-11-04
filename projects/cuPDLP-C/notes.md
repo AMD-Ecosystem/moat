@@ -458,3 +458,41 @@ I merged current main into this branch, so it no longer conflicts, and every fil
 
 Evidence and commands: projects/cuPDLP-C/notes.md, "Upstream sync round 2026-11-04".
 ```
+
+## Review 2026-11-04 (moat-fix-41 at 09bb532, linux-gfx942)
+
+Scope: `git diff d380bca...09bb532` (merge f10a1e8 plus 09bb532), and the full port `git diff upstream/main...09bb532` (14 files). Method: compared the CR-stripped added/removed lines of the pre-sync port delta (`git diff --ignore-cr-at-eol 7b94c41 d380bca`) with the post-sync delta (`git diff --ignore-cr-at-eol upstream/main 09bb532`). The only differences are the README text change, the INSTALL/build.sh additions and the two `/usr/local/cuda/include` -> `${CMAKE_CUDA_PATH}/include` resolutions, so the merge resolution is confirmed. The notes' line-ending and byte-identity claims also check out: all 14 touched files use upstream's convention for that file, nothing has mixed endings, and every other file equals upstream/main.
+
+Verdict: changes requested (one finding).
+
+1. `INSTALL:37-38` (09bb532) still says "Installed executables: .coinor-deps/cupdlp-cpu-install/bin/plc and/or .coinor-deps/cupdlp-gpu-install/bin/plc". With `MODE=hip`, build.sh installs to `.coinor-deps/cupdlp-hip-install` (`build.sh` `prefix="$PWD/.coinor-deps/cupdlp-$mode-install"`), so an AMD user is pointed at a directory that does not exist. Fix: list `.coinor-deps/cupdlp-hip-install/bin/plc` alongside the other two. In the same edit, `INSTALL:41` "Keep the external HiGHS and CUDA libraries at their configured locations" should read "CUDA or ROCm libraries", because the hip install depends on ROCm libraries through its install rpath in the same way. LF line endings, as in the rest of INSTALL.
+
+Checked, not a finding: upstream's `SOURCE_MANIFEST.sha256` fails for the 12 port-modified files at head (on upstream/main every entry passes except the uninitialized pybind11 submodule). The file records the hashes of upstream's 20261001-r2 release archive (VALIDATION.md:4-6, SOURCE_PROVENANCE.json), and no build, test or CI step reads it. Regenerating it would rewrite upstream's release record, so the port leaves it alone. Mention it only if the maintainer asks.
+
+Jargon: `jargon.py --port cuPDLP-C` (after creating a local `main` at origin/main in the clone) gives the same 2 hits as the porter, both in HiGHS comments under `ThirdParty/HiGHS` ("simplex strategy and", "weight strategy as"). They are false positives that come from the stale fork mirror.
+
+### Proposed fix review PR body: review
+
+The draft in "Upstream sync round 2026-11-04" fails `jargon.py -`: "moat-fix-41" (line 3) and "revalidation" (line 7). Other problems:
+- "converts all source and CMake files to CRLF" is false. On upstream/main, `cupdlp/cupdlp_cs.c`, `cupdlp/cupdlp_cs.h`, `tests/CMakeLists.txt`, `third-party/CMakeLists.txt` and `cupdlp/test/CMakeLists.txt` are still LF. The notes' "converts every source and CMake file to CRLF" has the same error.
+- The "## Notes" section and "(see notes)" point at this repository's records, which a fork reader cannot see.
+- It names 09bb532 as the only build.sh/INSTALL commit, but finding 1 adds another.
+- GPU naming: at 09bb532 no platform has a validation recorded. status.json gives linux-gfx1100 `validated_sha` = d380bca, the published tip, and the gfx1100 run at 09bb532 was the porter's own run, not a validation. The head also moves when finding 1 is fixed. Post the body and its `## Upstream reply` only after validation completes at the final head, and name only the GPUs whose platforms completed there. If linux-gfx1100 has not completed by then, take out the W7800 sentence. If wave64 (this host, gfx942) or Windows completes, those GPUs can be added.
+
+Corrected body (jargon.py - clean, prose.py clean, ASCII). Title unchanged: `[ROCm] Merge current upstream main into the HIP port`
+
+```
+Upstream PR COPT-Public/cuPDLP-C#41 showed as conflicting after upstream landed its COIN-OR preparation commit (b196976, merged in f81f459). That commit bundles HiGHS 1.6.0, adds build.sh, INSTALL and a tests/ suite, rewrites the README, and converts most source and CMake files to CRLF. No maintainer has commented on the PR; this round only brings it up to date.
+
+What changed on this branch:
+- f10a1e8: merge of upstream main (`-X ignore-cr-at-eol`). The three real conflicts were resolved keeping both sides: the HIP branches stay, the CUDA branches take upstream's `${CMAKE_CUDA_PATH}/include`, and the README takes upstream's text plus one AMD line. Every file the port adds or changes keeps upstream's line endings for that file (CRLF for the CMake files and CUDA sources, LF for README.md, INSTALL and build.sh); all other files are byte-identical to upstream, so the PR diff stays the port only.
+- `MODE=hip` for build.sh, with INSTALL documenting it (including where the hip install lands), since those are now upstream's documented build path. Separate commits, so they can be dropped.
+
+Retested on AMD Radeon Pro W7800 (gfx1100): testcudalin, testcublas and plc on afiro (Optimal, -464.75, 200 iterations, same figures as before), upstream's CTest suite 4/4, the NumPy checker pass, and `MODE=hip bash build.sh` end to end.
+
+Open for you: whether to keep the build.sh/INSTALL commits, and the AMD copyright/author headers on three port files (FindHIPConf.cmake, cuda_to_hip.h, cupdlp_cuda_kernels.cu); unchanged here.
+
+## Upstream reply
+
+I merged current main into this branch, so it no longer conflicts, and every file the port touches keeps the line endings the repository uses for it. I retested on an AMD Radeon Pro W7800 (gfx1100): testcudalin, testcublas, afiro, and your new CTest suite and NumPy checker all pass. build.sh also gains a `MODE=hip` option, documented in INSTALL.
+```
