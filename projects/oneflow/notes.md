@@ -4425,6 +4425,8 @@ The review recorded "hipBLASLt runs a lazy hipMalloc and a synchronous hipMemset
 ### Not done: publishing 021f4ad34 to the fork
 Publishing `moat-port` to the fork would be a fast-forward of 1a6bc2149 -> 021f4ad34 (`origin/moat-port` was 1a6bc2149, and no upstream PR is open). This session's permission classifier refused it ("Create Public Surface"), and it was not retried or routed around. Without it, `advance-head` would point every validator at a sha the fork does not have. So this round stops at `porting`, with the lock held by linux-gfx1100. To finish (jeff, or a rerun on this host): publish `moat-port` from this job's clone, where commit 021f4ad34 is the only copy (`/var/lib/jenkins/fleet/jobs/rx7900-20261103-234023-oneflow-fix23/moat/projects/oneflow/src`). Then run `moatlib.py advance-head oneflow <021f4ad34 full sha>` and `set-state oneflow linux-gfx1100 ported`.
 
+**Done 2026-11-04, after jeff approved publishing:** `pr-state oneflow` none again; `origin/moat-port` was 1a6bc2149, the parent of 021f4ad34, so it was a plain fast-forward (no force, no `--no-verify`, pre-push hook ran): `1a6bc2149..021f4ad34 moat-port -> moat-port`, and a fresh fetch shows `origin/moat-port` = 021f4ad34eba3d1e7c411ff7415380697aa9ad83. `advance-head oneflow 021f4ad34eba3d1e7c411ff7415380697aa9ad83`, then `set-state oneflow linux-gfx1100 ported` (lock released). Next: review of 1a6bc2149..021f4ad34, then revalidation on every gate.
+
 ### Lesson promoted
 `cuda-to-rocm` `references/fault-classes.md`, "Memory and lifetime": creating a hipBLASLt or MIOpen handle while any thread captures a graph exits the process. The entry gives the shared-mutex shape, and says to find the creator by breaking on `hipMemset`, not from a time-ordered log.
 
