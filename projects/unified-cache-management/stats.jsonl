@@ -82,3 +82,10 @@
 {"kind":"phase","ts":"2026-11-04T08:14:09Z","phase":"test","seconds":159.510,"exit":8,"cmd":"bash -c ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261104-000728-fix-unified-cache-management/moat/projects/unified-cache-management/build_rocm -j1 --timeout 600 > /var/lib/jenkins/fleet/jobs/mi300-20261104-000728-fix-unified-cache-management/moat/projects/unified-cache-management/../../agent_space/ctest.log 2>&1"}
 {"kind":"session","ts":"2026-11-04T08:19:24Z","epoch":1793780364.783451879,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-04T08:21:27Z","epoch":1793780487.220754552,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-04T08:27:55Z","epoch":1793780875.471749763,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-04T08:27:55Z","phase":"compile","seconds":0.057,"exit":1,"cmd":"bash /tmp/ucm_build.sh"}
+{"kind":"phase","ts":"2026-11-04T08:29:37Z","phase":"compile","seconds":95.592,"exit":0,"cmd":"bash /tmp/ucm_build.sh"}
+{"kind":"phase","ts":"2026-11-04T08:32:18Z","phase":"test","seconds":156.436,"exit":8,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/rx7900-20261104-002446-v-ucm/moat/projects/unified-cache-management/build_rocm -j1 --timeout 600"}
+{"kind":"phase","ts":"2026-11-04T08:32:32Z","phase":"test","seconds":0.012,"exit":2,"cmd":"/opt/python-3.11-venv/bin/python3 ucm/sparse/test/gsa/test_hamming_rocm_ref.py"}
+{"kind":"phase","ts":"2026-11-04T08:33:04Z","phase":"test","seconds":25.206,"exit":0,"cmd":"/opt/python-3.11-venv/bin/python3 /var/lib/jenkins/fleet/jobs/rx7900-20261104-002446-v-ucm/moat/projects/unified-cache-management/src/ucm/sparse/test/gsa/test_hamming_rocm_ref.py"}
+{"kind":"session","ts":"2026-11-04T08:33:52Z","epoch":1793781232.959707351,"event":"end","platform":"linux-gfx1100"}

@@ -1023,3 +1023,35 @@ Previous findings:
 New commits: no findings. Titles 52-66 chars with `[ROCm]`; no `Co-Authored-By`/noreply in the first-parent port commits; `jargon.py -` clean on the commit messages and on the PR diff; `moat-port` 8545865 is an ancestor of dff17ae. The `cuda-to-rocm` fault-classes rewording on this branch is accurate.
 
 Fix review PR body ("true at dff17aea" draft above): every claim checked against the code (190 commits from merge-base 8e3a29e3 to f366bfa1; #1566 is 55a72eb and `ucm/store/CMakeLists.txt` no longer adds `nfsstore`; per-commit descriptions match the diffs; Hamming last run at af3eb74 and only a header comment changed since). `jargon.py -` and `prose.py` clean. No correction needed. The `## Upstream reply` is still a placeholder, which is correct: no platform has a completed validation at dff17ae (linux-gfx942 has none at any sha; the others are at 8545865 or 57b2443). It must not be approved until it is replaced with GPUs whose validation is recorded at the exact final head.
+
+## Validation 2026-11-04 (linux-gfx1100, RDNA3 / AMD Radeon Pro W7800 48GB, revalidate) -- PASS at dff17ae
+
+GPU: AMD Radeon Pro W7800 48GB (gfx1100), ROCm 7.16 pip SDK (`hipconfig --version` 7.16.26385), no `/opt/rocm` on this host. Fork `moat-fix-1021` @ dff17aeab09bf9c279dc1be42a5bdedc4368574a, fresh clone, detached at that sha, `git status --porcelain` clean. `ulimit -c 0`.
+
+**Only one GPU was visible** (dispatcher pin `HIP_VISIBLE_DEVICES=3`; the host has four gfx1100), so the six DataStrategyTest cases still could not run as two-rank tests here. The pin was kept, as other jobs share the host. They still need a validator with two visible GPUs.
+
+Build (absolute paths; `R=$(hipconfig --rocmpath)`):
+```
+cmake -S src -B build_rocm -DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_STORE=ON -DBUILD_UNIT_TESTS=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Wno-error=unused-result
+cmake --build build_rocm -j10
+cmake -S src -B build_sparse -DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_STORE=OFF -DBUILD_UCM_SPARSE=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=/opt/python-3.11-venv/bin/python3 -DCMAKE_CXX_FLAGS=-Wno-error=unused-result
+cmake --build build_sparse -j10 --target hamming
+```
+Both build. `llvm-objdump --offloading`: `cuda_sm_kernel.cu.o` and `hamming.cpython-311-x86_64-linux-gnu.so` both `amdgcn-amd-amdhsa--gfx1100`.
+
+`ctest --test-dir build_rocm -j1 --timeout 600`: 338 discovered, 1 disabled (UCMetricsStress.TenWritersOneCollector), **330/337 pass**. That matches the porter's gfx942 count at this head and the same 7 failures. This platform's earlier record was 85/87 at 8545865 (the suite was 87 tests then).
+- Copy-kernel and new-surface tests all pass: UCTransUnitTest.{EmptyEventIsSafe, MemsetAndDeviceToDevice, CopyDataWithCE, CopyDataWithSM, CopyDataBatchWithSM}; UCCache2TransManagerIntegrationTest.DumpThenLoad{,WithLayerWise,WithLayerAndChunk,WithVariableLengthIo} 4/4 (exercise the hipMemcpyDefault shim) plus BackendNotFoundIsPreserved and BackendSubmitNotFoundIsPreserved; UCPosixTrans{Manager,Queue}Test.TransBlock[LayerWise] 4/4. UCMetricsUT.ConcurrentUpdateAndCollect passed.
+- DataStrategyTest x6 (SetupPublishesAndImportsAllRanks, SegmentsAreSharedAcrossRanks, SecondSetupIsRejected, MissingPeerTimesOut, PeerHandleMismatchIsRejected, PeerPollingWaitsForDelayedPublish): `memfd device setup failed: device=1 status=101, invalid device ordinal` (data_backend_memfd.cc:407). Rank 1 needs a second visible GPU. Environment limit, not run.
+- UCLoggerPerfTest.MultiThreadPerfUCInfoVsRateLimitRandomContent: ratio 1.19 > 1.1. An isolated rerun `ctest -R UCLoggerPerfTest` failed both siblings (ratios 1.23 and 1.21). This is a CPU-only timing test. The port's only logger change is Windows-guarded `#include`s (`git diff f366bfa1 dff17aea -- ucm/shared/infra/logger/`), so on Linux the code is identical to upstream. It failed the same way on this platform at 8545865 (ratio 1.24). Known flake, not a regression.
+
+Hamming (`HAMMING_DIR=<abs build_sparse>/ucm/sparse/gsa_on_device/csrc/rocm/ham_dist python3 src/ucm/sparse/test/gsa/test_hamming_rocm_ref.py`): mla PASS (max_abs_err=42.0, max_rel_err=1.25e-03), gqa PASS (exact), determinism PASS. Identical to the earlier gfx90a, gfx1100 and gfx942 numbers.
+
+CUDA gate: `cuda-not-validated: no CUDA toolkit and no conda on this host` (no `/opt/conda`, no `nvcc`). No CUDA gate is recorded at dff17ae yet; it remains owed by a Linux host with the cuda-12.8 env. The [ROCm] commits since 8545865 do not touch CUDA sources; the merge took upstream's CUDA files as-is.
+
+Jargon: `python3 utils/jargon.py --port unified-cache-management` clean. The fork clone's local `develop` was pointed at upstream tip f366bfa1 and the local `moat-fix-1021` ref at dff17ae, both local only; the stale fork `develop` mirror otherwise makes the range unresolvable. Docs: `docs/source/developer-guide/build_from_source.md:56` carries the ROCm note.
+
+Result: linux-gfx1100 COMPLETED at dff17aeab09bf9c279dc1be42a5bdedc4368574a. For the fix-review reply, the GPU name is "AMD Radeon Pro W7800 (gfx1100)".
