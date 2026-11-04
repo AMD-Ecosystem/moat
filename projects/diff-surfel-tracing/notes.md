@@ -2962,3 +2962,43 @@ Rounds 1 and 2 on this platform hung in HIP RT's `Collapse` at 46, 48 and 64 sur
 ### CUDA gate, jargon, integrity
 
 `cuda-not-validated: no CUDA toolkit on this host (no /opt/conda, no nvcc)`; the 173f32a..21f62d0 delta has no CUDA-compiled file (see the gfx1100 entry above). `python3 utils/jargon.py --port diff-surfel-tracing` clean. No source or build file was edited; afterwards the submodule patch application was undone and the fork tree checked clean.
+
+## Port fix 2026-11-04 (linux-gfx942, MI300X, HIP 7.16.26385): a self-contained package from the README install
+
+Answers the gfx942 validation failure at `21f62d0` (Findings 1 and 2 above). Fork commit `e24c44c` on top of `21f62d0`, touching `setup.py` and `README.md` only.
+
+- **Staging moved before `build_py`.** A `CustomBuildPy(build_py)` calls `_stage_runtime_files_into_pkg()` and then drops the lazily cached `data_files` (`self.__dict__.pop("data_files", None)`) so `package_data` is resolved against the staged files, then runs the stock `build_py`. It is registered only when `USE_HIP` (`_cmdclass`); the CUDA branch gets `_cmdclass = {}`, so the CUDA `cmdclass` is exactly `{'build_ext': CustomBuildExtension}` as before. `build_ext` still stages too, so `build_ext --inplace` (every earlier validation's route) is unchanged.
+- **HIP RT library shipped on Linux.** Staging copies `libhiprt0300164.so` (single file, SONAME `libhiprt0300164.so`, no symlinks) into the package; `package_data` lists `"lib" + HIPRT_LIB + ".so"` (named, not `*.so`, so a stale in-place `_C*.so` is never picked up as data); the Linux link uses `-Wl,-rpath,$ORIGIN` in place of the rpath into `third_party/hiprt/dist/bin/Release`. Linking is done by setuptools without a shell, so `$ORIGIN` reaches the linker literally: `readelf -d _C*.so` shows `RUNPATH [$ORIGIN]`. The in-place build works with it too, because staging puts the library next to the in-place `_C`.
+- **README.** The AMD block's command is now `pip install -v --no-build-isolation .`, with one paragraph saying why (setup.py imports torch; an isolated build environment has none) and that the clone is not needed after install. Upstream's CUDA instructions are untouched; they need the same flag on a current pip (no `pyproject.toml`), but that is upstream's text.
+
+### Verification on this host (gfx942, torch 2.16.0a0+git6c3af02, ROCm SDK wheel, no /opt/rocm, pip 26.3, setuptools 79.0.1)
+
+Installed into the job's own venv (`$FLEET_VENV` plus a `.pth` to the host site-packages for torch); the shared environment was not touched.
+
+```
+git clone --recursive -b moat-port <fork at e24c44c> fresh && cd fresh
+git -C third_party/hiprt apply ../../third_party/hiprt-rocm-fixes.patch
+export ROCM_PATH=<venv>/site-packages/_rocm_sdk_devel HIP_PATH=$ROCM_PATH PATH=$ROCM_PATH/bin:$PATH
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON -DHIP_PATH=$ROCM_PATH -S third_party/hiprt -B third_party/hiprt/build
+cmake --build third_party/hiprt/build --target hiprt03001 -j56
+PYTORCH_ROCM_ARCH=gfx942 pip install -v --no-build-isolation .     # first install from the fresh clone
+cp example/validate_rocm.py <scratch>/run/ && rm -rf fresh            # clone deleted
+cd /tmp; ulimit -c 0; export ROCM_PATH=...
+rm -rf <site-packages>/diff_surfel_tracing/hiprt_cache; python3 <scratch>/run/validate_rocm.py   # twice
+```
+
+- Install log: `running build_py` (line 49), then `copying diff_surfel_tracing/kernels.h`, `params.h`, `config.h`, `auxiliary.h`, 235 `hiprt_root` lines and `libhiprt0300164.so` into `build/lib...`, then `running build_ext` (line 136). Installed package: `_C*.so`, `__init__.py`, the four headers, `hiprt_root/`, `libhiprt0300164.so` (19 MB total). No file in it references the clone path.
+- GPU gate with the clone deleted, each run from a cold cache: **50/50, twice** (16 s, then 7 s), logs byte-identical, cache repopulated (6 files). Numbers equal the 21f62d0 gfx942 entry: covered 0.241, 62/64 traced (missing [5, 25]), grads3D cosine 0.9825, fd slopes 1.0021 / 0.7428 / 0.9390 / 0.8855, bounce 3.627e-01, P=4096 rgb 0.19876 / 1343 traced, P=16384 rgb 0.25417 / 3309 traced. Device `AMD Instinct MI300X HF`.
+- In-place route regression check in the dev clone: `PYTORCH_ROCM_ARCH=gfx942 python3 setup.py build_ext --inplace` clean, `RUNPATH [$ORIGIN]`, `PYTHONPATH=$PWD python3 example/validate_rocm.py` 50/50.
+- CUDA: `cuda-not-validated: no CUDA toolkit on this host`. The CUDA branch's only change is `_cmdclass = {}` spread into `cmdclass`, which yields the same dict as before; `optix_tracer/`, `CMake*`, `ext.cpp`, `trace_surfels.*` unchanged.
+- `jargon.py --port diff-surfel-tracing` clean; `prose.py` clean on the commit message; fork tree clean after undoing the submodule patch.
+
+### What the Windows validator must re-check (windows-gfx1151)
+
+The Windows code paths themselves did not change (`extra_link_args` stays `[]` there, the DLL copy and `__init__.py`'s `add_dll_directory` are as before), but WHEN the files are staged did, and Windows has only ever been validated with `build_ext --inplace`. Re-check:
+
+1. From a fresh clone, the README route: `pip install -v --no-build-isolation .` (with `PYTORCH_ROCM_ARCH=gfx1151` and HIP RT built at `third_party/hiprt/dist/bin/Release` as the README's cmake lines produce; on Windows that is the multi-config `Release` dir). The install log must show `running build_py` followed by `copying` lines for `kernels.h`, `params.h`, `config.h`, `auxiliary.h`, `hiprt_root/...` and `hiprt0300164.dll` BEFORE `running build_ext`.
+2. The installed `site-packages\diff_surfel_tracing\` holds `hiprt0300164.dll`, the four headers and `hiprt_root\`. If the DLL is missing, HIP RT was built somewhere the staging step did not find it (the Windows copy is `if os.path.exists`, silent by design, unchanged), and `_C` import will fail with a DLL-load error.
+3. Rename or delete the clone, then run `example/validate_rocm.py` (copied elsewhere) twice from a cold cache with `ROCM_PATH`/`HIP_PATH` set: 50/50 both times.
+4. `build_ext --inplace` still builds and passes (the route recorded on 2026-11-04), since `build_ext` keeps staging.
+5. The `_winhip.cu` copies still appear and compile (module-level code, untouched; this only confirms nothing moved).
