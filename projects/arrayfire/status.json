@@ -7,20 +7,17 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-11-04T20:33:38Z",
-  "head_sha": "5d09b5c0fb74af5c51e5bc234323fd218e9f5a20",
+  "updated_at": "2026-11-04T20:48:43Z",
+  "head_sha": "83f66a50732a47f4b6d654ef031f71ae208bfbc7",
   "pr_url": "https://github.com/arrayfire/arrayfire/pull/3708",
   "pr_number": 3708,
   "pr_opened_at": "2026-06-08T21:24:15Z",
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-04T20:33:38Z"
-  },
+  "porting": null,
   "waivers": {},
   "pr_state": "closed",
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 25889802,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "validation-failed",
@@ -59,7 +56,7 @@
       "validated_sha": "950dcdd02f348c74d29f4de8199bca38a7e7a245",
       "started_at": "2026-05-31T21:00:00Z",
       "completed_at": "2026-08-11T23:29:32Z",
-      "updated_at": "2026-11-04T20:33:38Z",
+      "updated_at": "2026-11-04T20:48:43Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -205,7 +202,7 @@
   },
   "porting_released": {
     "arch": "linux-gfx1100",
-    "since": "2026-11-04T20:20:08Z",
-    "at": "2026-11-04T20:27:51Z"
+    "since": "2026-11-04T20:33:38Z",
+    "at": "2026-11-04T20:48:43Z"
   }
 }

@@ -2893,3 +2893,64 @@ Delivery: this moves only the fork branch. Upstream hosts the same commits on `a
 
 ### Handoff
 `set-state arrayfire linux-gfx1100 changes-requested`. Porter: take findings 1 and 2 as two commits on `moat-sync-64c88d9` with the messages above, rebuild, run `reduce_cuda` and the full `_cuda$` ctest on gfx1100 (`ROCM_PATH` exported on SDK-wheel hosts), `advance-head` (no CUDA file changes, so the CUDA path is untouched). Then a reviewer on the new delta. Deferred `arrayfire-reduce-by-key-rocm716` closes when commit 1 lands. Nothing pushed to the fork by this review.
+
+## Port fix 2026-11-04 (porter, linux-gfx1100) -- reduce-by-key UB fix, fork head 83f66a507 on moat-sync-64c88d9
+
+Answers the 2026-11-04 review (changes-requested) above. jeff asked for one commit carrying the three `k{}` initializers plus every other site the review's sweep listed, so findings 1 and 2 (the `tid_next_warp` literal 32 at :320 and :547) are combined in a single commit instead of the review's two. Fresh fork clone in this job's moat clone, `protect-fork` run, `set-state arrayfire linux-gfx1100 porting` took the lock (it was free).
+
+Commit `83f66a50732a47f4b6d654ef031f71ae208bfbc7` `[ROCm] Fix undefined key reads in the reduce-by-key kernels` (59 chars), parent 5d09b5c0f, appended (no amend/rebase). Only `src/backend/hip/kernel/reduce_by_key.hpp`, 5 lines: `Tk k{};` (:73, :468), `compute_t<Tk> k{};` (:243), `(warpid + 1) * kWarpSize` (:320, :547). CUDA backend untouched. The body uses the review's corrected wording (out-of-range lanes keep the identity value, not "never used"), explains why 7.14 did not show it, and does NOT claim the new `llvm.amdgcn.wave.shuffle` lowering is the trigger because the debug entry never isolated that. `jargon.py -` and `prose.py` clean on the message; `jargon.py --port arrayfire`: only the 3 standing hits (published `6800d5586` 'MOAT', upstream's own `head_sha` x2 in `.github/scripts`). The two kWarpSize lines are 81 chars, like the port's other kWarpSize lines in this file (:78, :286, :513); the fork has no `.clang-format`.
+
+Build: same configure as the sync-round entry (`R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`, `-DCMAKE_HIP_ARCHITECTURES=gfx1100`, `AF_WITH_IMAGEIO=OFF`, matrixmarket restore via `check-matrix-data.py` + `-C matrixmarket.cmake`), `cmake --build ... -j $MAX_JOBS` (10): 1643/1643, exit 0.
+
+Tests (`HIP_VISIBLE_DEVICES=3` as pinned, `ulimit -c 0`, `ROCM_PATH=$R`):
+```
+utils/timeit.sh arrayfire test -- $B/test/reduce_cuda          # run 1: 1062/1062 PASS; run 2: 1062/1062 PASS
+utils/timeit.sh arrayfire test -- ctest --test-dir $B -R '_cuda$' -j1 --output-on-failure
+```
+(`timeit.sh` changes directory, so pass the binary by absolute path; a relative `./reduce_cuda` exits 127.) ctest: **131/132**, 206.6 s; only `test_confidence_connected_cuda` fails (`Function not configured to build:302`, Image IO off). `test_reduce_cuda` Passed 2.88 s. `inverse_dense` passed this run (random-input flake noted in the debug entry). Bar met.
+
+Pushed only `moat-sync-64c88d9` (5d09b5c0f..83f66a507); `moat-port` still 950dcdd02 (ls-remote). `advance-head arrayfire 83f66a507...`; `set-state arrayfire linux-gfx1100 ported` (lock released). Deferred `arrayfire-reduce-by-key-rocm716` closed: `deferred.py set-status arrayfire-reduce-by-key-rocm716 done`. `experimental/hip` on arrayfire/arrayfire still 950dcdd02 (ls-remote, 2026-11-04). Worktree clean apart from the build dir. Next: reviewer on the delta 5d09b5c0f..83f66a507, then validators (the wave64 hosts exercise the kWarpSize change).
+
+Whether to tell upstream about the same UB in `src/backend/cuda/kernel/reduce_by_key.hpp` is jeff's call (review finding 1); nothing was posted.
+
+### Proposed fix review PR body (for jeff) -- supersedes the two earlier drafts
+Title: `[ROCm] Merge upstream master (3.10.1), fix HIP reduce-by-key keys` (65 chars). Branch `moat-sync-64c88d9` -> `moat-port`; no `## Upstream reply` section. `jargon.py -` clean, `prose.py` clean, ASCII only. Results are this run's at 83f66a507.
+
+~~~markdown
+Merge upstream `master` at 64c88d932 (the 23 commits after v3.10.0, including the 3.10.1 release prep and the clang-format 15 pass) into the HIP port branch, plus one fix to the HIP reduce-by-key kernels. Merge, not rebase, so the published commits stay as they are.
+
+The merge has no textual conflicts. Three files changed on both sides:
+
+- `CMakeLists.txt`: upstream adds the CUDA compiler/toolkit check, the `af_fmt` variable (`fmt::fmt-header-only` when that target exists, otherwise `fmt::fmt`), the Windows standalone runtime collection and the 3.10.1 version bump. The `AF_BUILD_HIP` option, its block and `conditional_directory(AF_BUILD_HIP ...)` are untouched. The HIP backend builds as target `afcuda`, so it is covered by `built_backends` and the new standalone install step, and it takes fmt through `afcommon_interface`, which now links `${af_fmt}`.
+- `README.md`: upstream's new "Experimental backends" table (pointing at `experimental/hip`) and the port's feature-list line both stay.
+- `src/backend/common/half.hpp`: upstream's only change is clang-format collapsing the `__half2uint_rn` else branch in `half2int`. It lands inside the port's `__DH__` version of that function; the hipRTC traits block and the device conversion paths are unchanged.
+
+The other upstream changes to the CUDA backend (NVRTC arch query, SASS instead of PTX, cuDNN 9, CUDA 13 thrust and cuFFT guards, compute-capability tables) are NVIDIA-specific and have no HIP counterpart: the HIP backend compiles kernels with hipRTC, and the ROCm Thrust here still provides `thrust::unary_function` and `thrust/system/hip/detail/par.h`. The merge itself changes nothing under `src/backend/hip`.
+
+The commit after the merge, 83f66a507, changes only `src/backend/hip/kernel/reduce_by_key.hpp`:
+
+- Initialize the keys in `reduce_blocks_by_key`, `reduce_blocks_dim_by_key` and `test_needs_reduction`. Threads past the end of the input left `k` uninitialized and then passed it to the shuffle wrappers, which is undefined behaviour. The ROCm 7.16 compiler acts on it: SimplifyCFG turns the `tidx < n` branch around the key load into an assumption, so out-of-range threads load past the end of the input and count as unique keys, and every input whose last block is partial gets wrong reduce-by-key sizes (479 failures in `reduce_cuda` on gfx1100). ROCm 7.14 kept the branch. With the keys value-initialized the branch is kept and out-of-range threads keep the reduction's identity value.
+- Use the wavefront size, not 32, for the first index of the next warp in the warp-boundary check. On 64-wide wavefronts the old index let a block whose valid elements end in its first wavefront compare a key against shared memory that block never wrote. 32-wide wavefronts compile to the same code as before.
+
+The CUDA backend's copy of these kernels is left as upstream has it.
+
+Test data: sparse.tamu.edu now refuses downloads (HTTP 403). The build used upstream's own replacement, `.github/scripts/check-matrix-data.py` plus `cmake -C .github/scripts/matrixmarket.cmake`, which restores the same nine Matrix Market files from the pinned arrayfire-data commit.
+
+## Test plan
+
+gfx1100 (Radeon Pro W7800), ROCm 7.16:
+
+```
+python3 -I .github/scripts/check-matrix-data.py . build-hip-gfx1100
+AF_CI_MTX_FILES=ON cmake -C .github/scripts/matrixmarket.cmake -S . -B build-hip-gfx1100 -GNinja -DCMAKE_BUILD_TYPE=Release -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF -DAF_BUILD_CPU=ON -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF -DAF_BUILD_UNIFIED=ON -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF -DAF_BUILD_DOCS=OFF -DAF_BUILD_TESTS=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100
+cmake --build build-hip-gfx1100
+build-hip-gfx1100/test/reduce_cuda
+ctest --test-dir build-hip-gfx1100 -R '_cuda$' -j1 --output-on-failure
+```
+
+Result at 83f66a507: `reduce_cuda` 1062/1062 in two runs (583/1062 at the merge alone), and 131/132 test binaries pass. The one failure is `confidence_connected`, where every case fails with Image IO not configured, as in every run with `AF_WITH_IMAGEIO=OFF`. The HIP runtime compiler needs `ROCM_PATH` set when ROCm is not installed in `/opt/rocm`.
+
+The other GPUs are re-tested at this commit before the merge.
+
+Delivery: this moves only the fork branch. Upstream hosts the same commits on `arrayfire/arrayfire` `experimental/hip`, still at 950dcdd02, so carrying this round there needs a separate pull request against that branch, opened by hand after approval.
+~~~
