@@ -7260,3 +7260,34 @@ Updated in place in the gfx942 review's corrected body above: the `HEonGPU_BUILD
 
 - CUDA no-regression compile at the new head: no nvcc on this host. The two commits here touch only `USE_HIP` arms and comments, but `2f4de2d`'s `memorypool.cu` CUDA arm is still uncompiled.
 - wave32 (`linux-gfx1100`) and Windows (`windows-gfx1151`) revalidation at `2e51886`.
+
+## Review 2026-11-04 (reviewer, linux-gfx942) -- re-review at `2e51886`, delta `2f4de2d..2e51886`
+
+Scope: the delta `2f4de2d..2e51886` (`cabdf02`, `2e51886`; 7 files +33/-18) read in full, the full diff `main...2e51886` (41 files +1855/-388) for anything the delta touches, MOAT commit `7835516d` (skill RMM history), and the proposed review PR body against the tree at `2e51886`. The hipMM bridge was not reopened (jeff's pending decision). Verdict: **changes-requested**, one finding, fact-checked against the tree.
+
+Verified with no finding:
+
+- Finding 1 (shared HIP build): `test/CMakeLists.txt:142-164` gives `heongpu_test_plugin_a/b` the same HIP arm as `add_test` (`hip::host`, `hip_compat` SYSTEM BEFORE, `USE_HIP`, `HIP_ARCHITECTURES`, and `LANGUAGE HIP` on `shared_state_plugin.cpp`, set directory-scoped after the loop, which CMake honours at generate time). The CUDA path is untouched. Not rebuilt here; the porter's record (fresh shared tree, 296/296 twice) is the evidence and the validator reruns it.
+- Finding 2 (nvcc rationale): all five CMake comments and `docs/advanced_topics.rst:131` drop the nvcc comparison. The new HIP-side reason is right in substance: `amd_hip_runtime.h` includes `amd_device_functions.h` (where `__umul64hi` and `warpSize` live) only under `#if __HIP_CLANG_ONLY__`, and the three uses the porter measured exist (`util.cuh:416`, `bigintegerarith.cuh:229`, patched `modular_arith.cuh:352`). The `thirdparty/CMakeLists.txt:7-9` exception is true: the patch block is inside `if(USE_HIP)` at line 25.
+- Finding 3 (skill): every version claim in the corrected `no-hip-equivalent.md` bullet checked against raw headers at rapidsai/rmm tags: `rmm/mr/device/*` 200 at v25.12.00 and 404 at v26.02.00/v26.04.00/v26.06.00 alongside `rmm/mr/*` 200 at all four; `device_memory_resource.hpp` has `allocate(bytes, stream)`/`allocate_async` at 25.12 and stream-first `allocate(stream, bytes, alignment)` at 26.02 and 26.04; `pool_memory_resource` and `statistics_resource_adaptor` are `template <typename Upstream>` at 26.04 and `class RMM_EXPORT ...` at 26.06; `set_current_device_resource` returns `device_memory_resource*` at 26.04 and `cuda::mr::any_resource<cuda::mr::device_accessible>` at 26.06.
+- Commits: titles `[ROCm]`, 57 and 59 chars, "Authored with Claude.", no `Co-Authored-By`, Test Plan fenced. `jargon.py --port HEonGPU` clean. Fork clone `status --porcelain` clean.
+
+### 1. "non-template device functions" is false for the GPU-NTT example the comments cite
+
+`test/CMakeLists.txt:85-86`, `example/basic/CMakeLists.txt:34-35`, `example/bootstrapping/CMakeLists.txt:20-21`, `example/mpc/CMakeLists.txt:19-20` and `benchmark/CMakeLists.txt:18-19` say the headers "use __umul64hi and warpSize in non-template device functions (GPU-NTT's modular_arith.cuh, util.cuh)", and the `2e51886` commit body repeats it. The `modular_arith.cuh` use (line 352 after `GPU-NTT.patch`) is in `mult128`, a static member of `template <typename T1> class BarrettOperations` (line 176): a member of a class template, not a non-template function. It still fails a host-only compile because the call's arguments (`const Data64&`) are not dependent, so the name is looked up at definition, not at instantiation; the porter's measured error there is consistent with that. The `util.cuh` (`warp_reduce`, `util.cuh:411`) and `bigintegerarith.cuh` (`multiply`, `bigintegerarith.cuh:203`, in `namespace heongpu::biginteger`, no template) uses are genuinely non-template. GPU-NTT is the maintainer's own library, so this is the one example they will check.
+
+Fix (comments only, all five): either cite the non-template sites ("in non-template device functions (util.cuh, bigintegerarith.cuh)"), or keep the GPU-NTT example and say "in device code that does not depend on a template parameter (GPU-NTT's modular_arith.cuh, util.cuh)". `docs/advanced_topics.rst:131` says only "in device functions" and is fine as is. Nothing compiled changes, so the porter's `2e51886` build and test record carries over to the fix commit unchanged.
+
+### Proposed review PR body: one correction
+
+`jargon.py -` and `prose.py` are clean on the body as updated by the porter. Every claim checked against `2e51886` and the notes record holds (49 test programs = 48 listed + `bfv_noise_budget_testcases`; 28 examples = 19 + 5 + 4; 3 benchmarks; 7 `TEST` cases in `test_bfv_noise_budget.cu`, excluded under `HEonGPU_BUILD_SHARED` at `test/CMakeLists.txt:124-128`; patch step only under `USE_HIP`; shims installed by `thirdparty/CMakeLists.txt:205` and exported via `src/CMakeLists.txt:326`; earlier MI300X/W7800/8060S runs were 20/20 twice from clean builds; the last nvcc 12.8 compile was the gfx90a gate at `542ea1a`), except one:
+
+- "The BFV, CKKS, TFHE, bootstrapping, session and multiparty examples were run with their decrypted values checked": the porter's record lists `mpc/1_multiparty_computation_bfv` with no values, only that it ran, while every other example listed has its decrypted values recorded. The example prints the decoded matrix (`display_matrix(check_result, ...)`) and checks nothing itself. Move multiparty to "ran to completion" (below), or record its values in the next porter round and keep the sentence.
+
+Corrected Testing paragraph (the rest of the body is unchanged from the one in the 2f4de2d review above; `jargon.py -` and `prose.py` are clean on the full body with this paragraph):
+
+====
+At the current head, on an AMD Instinct MI250X (gfx90a, wave64) with ROCm 7.16 on Linux: the static HIP build compiles all 49 test, 28 example and 3 benchmark programs, and `ctest` passes 301 of 301 test cases. The shared build (`-D HEonGPU_BUILD_SHARED=ON`) compiles its 49 test programs and `ctest` passes 296 of 296, including both shared-state cases; it leaves out the seven noise-budget cases that launch a library kernel directly, as the test CMake file does for any shared build. Each suite was run twice in a row on a fresh build with no failures. The BFV, CKKS, TFHE, bootstrapping and session examples were run with their decrypted values checked, and the multiparty and multi-stream examples ran to completion; the eight TFHE gate outputs match their truth tables bit for bit.
+====
+
+Still owed after the fix (unchanged from the porter round): a CUDA compile at the new head (`2f4de2d`'s `memorypool.cu` CUDA arm is still uncompiled under nvcc), and wave32/Windows revalidation.
