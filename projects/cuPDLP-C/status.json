@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T07:45:23Z",
-  "updated_at": "2026-11-04T18:53:48Z",
+  "updated_at": "2026-11-04T19:40:23Z",
   "head_sha": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
   "depends_on": [],
   "pr_url": "https://github.com/COPT-Public/cuPDLP-C/pull/41",
@@ -192,7 +192,7 @@
   "fix": {
     "branch": "moat-fix-41",
     "base_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
-    "review_pr": null,
+    "review_pr": "https://github.com/AMD-Ecosystem/cuPDLP-C/pull/1",
     "opened_at": "2026-11-04T07:38:23Z"
   },
   "porting_released": {
