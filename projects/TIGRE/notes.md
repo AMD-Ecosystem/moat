@@ -1371,3 +1371,36 @@ Already recorded at b61ff14 ("CUDA compile check (nvcc 12.8) at b61ff14" above: 
 - `git -C projects/TIGRE/src status --porcelain`: no modified tracked files, only untracked build output.
 
 Outcome: linux-gfx1100 -> **completed** at b61ff14. This satisfies the wave32 gate at this head.
+## Validation 2026-11-04 (linux-gfx90a, validator, moat-fix-747 @ b61ff14 -> completed)
+
+jeff asked for this run. GPU: AMD Instinct MI250X / MI250 gfx90a, TheRock ROCm SDK 10.1, `HIP_VISIBLE_DEVICES=1` (dispatcher pin), all GPU work under `ulimit -c 0`. Head `b61ff14c87689beb1b08e2bcd8223c29ce85a83d`, checked out detached from `origin/moat-fix-747` in a fresh fork clone (`projects/TIGRE/src`).
+
+### Verdict: completed
+Every gate passes at b61ff14 and every repeat is bitwise identical (480 of 480). All numbers equal this platform's 34f31a6 record and the porter's b61ff14 run to every printed digit, as expected from a delta (34f31a6..b61ff14) that the porter showed leaves the HIP translation unit unchanged.
+
+### Build
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH BUILD_WITH_HIP=1 HIP_ARCH=gfx90a ROCM_PATH=$(rocm-sdk path --root)
+utils/timeit.sh TIGRE compile -- bash -c "cd projects/TIGRE/src && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16"
+```
+Job venv python 3.11.17, numpy 1.26.4, scipy 1.10.1, Cython 3.3.1 (`pip install Cython matplotlib h5py tqdm`), pytest 7.3.2. rc 0, 0 `error:` lines, 8/8 `.so`, 20 hipcc compiles at `-std=c++14`; `llvm-objdump --offloading` shows gfx90a in all 8 `.so`. Self-test: `fp32 hardware linear texture filtering on AMD Instinct MI250X / MI250: unsupported (software trilinear fallback)`.
+
+### Tests
+Scripts `tigre_validate.py`, `tigre_solvers.py`, `tigre_parallel.py`, `repeat_par.py`, `repeat_par_interp.py` and the driver `run_head.sh` copied unchanged from the 34f31a6 gfx90a validation job on this host (host-local, not committed). Driver: `utils/timeit.sh TIGRE test -- bash agent_space/run_head.sh <tree> agent_space/scripts`, which runs, with `PYTHONPATH=<tree>/Python MPLBACKEND=Agg`:
+```
+cd <tree>/Python && $FLEET_VENV/bin/python -m pytest -q -p no:cacheprovider tests/<file>.py   # each of the 7 files
+$FLEET_VENV/bin/python tigre_validate.py; $FLEET_VENV/bin/python tigre_solvers.py
+$FLEET_VENV/bin/python tigre_parallel.py                                       # 3 passes
+$FLEET_VENV/bin/python repeat_par.py {parallel,cone}; $FLEET_VENV/bin/python repeat_par_interp.py {parallel,cone}   # 3 passes each
+```
+- Upstream pytest: compute_cor 6, demo_angles 1, denoise_2d_guard 3, filtering_workers 37, gpuids_default 5, krylov_restart_and_norms 9, krylov_smoke 9 -> **70 passed, 0 failed** (porter 70/70 at b61ff14; this platform 70/70 at 34f31a6).
+- Cone gates (`tigre_validate.py`): Siddon mean/max 27.46/111.2, interp vs Siddon 0.0040, FDK 0.2864, OS-SART-20 0.1929, adjointness 1.004e-05 / 6.076e-05. RESULT PASS.
+- Solvers (`tigre_solvers.py`): sart 4.9635, ossart 3.7197, sirt 6.2263, cgls 0.9609, fista 0.9505, asd_pocs 4.7643, awasd_pocs 4.7777, os_asd_pocs 3.5631, ossart_tv 3.4159; all finite, RESULT PASS.
+- Parallel gate (`tigre_parallel.py`), 3 passes, identical output each time: axis 0.0043 / Siddon adj 2.030e-05 / interp adj 1.973e-06; offset 0.0041 / 6.078e-05 / 1.322e-06; Euler 0.0056 / 1.323e-05 / 1.894e-06; FBP 0.0833; SIRT-20 0.1952; missed rays 0.01 s, finite, zero fraction 0.861 / 0.855. RESULT PASS.
+- Repeats (20 repeated calls vs the first, phantom and seeded random), 3 passes each of `repeat_par.py parallel`, `repeat_par.py cone`, `repeat_par_interp.py parallel`, `repeat_par_interp.py cone` -> **0/20 differ in all 24 cases (480 repeats bitwise identical)**, worst max|diff|/max|ref| 0.000e+00 everywhere. No 5a3da55 control run (the race fix was already proven on this platform at 34f31a6).
+
+### Other gates
+- `jargon.py --port TIGRE`: clean (needed local `master` and `moat-fix-747` branches in the fresh clone: `git branch master origin/master; git branch moat-fix-747 origin/moat-fix-747`).
+- Documentation: `Frontispiece/python_installation.md` keeps its `AMD GPU (ROCm/HIP)` section; this round changes no build knob.
+- Integrity: `git -C projects/TIGRE/src status --porcelain` shows untracked build output only.
+- CUDA compile gate: already satisfied at b61ff14 (nvcc 12.8, rc 0, 8/8, see "CUDA compile check (nvcc 12.8) at b61ff14"); not re-run here.
