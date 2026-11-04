@@ -1398,3 +1398,60 @@ PATH=/usr/local/cuda/bin:$PATH CUDACXX=/usr/local/cuda/bin/nvcc bash utils/timei
 - `python3 utils/jargon.py --port LEAP`: clean (after `git fetch origin main:main moat-port:moat-port` in the clone).
 - Docs: upstream documents installation on its wiki; the ROCm build is the pre-existing `setup_AMD.py`, as at earlier validations. No change.
 - `git -C projects/LEAP/src status --porcelain`: no modified tracked files (untracked build output only).
+## Validation 2026-11-04 (validator, linux-gfx1100, revalidate, moat-port @ b37ca0a)
+
+Verdict: completed at b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd. On gfx1100 (image support, texture path live) b37ca0a is bit-identical to 5f6816f in every dumped output, gpu_vs_cpu_validate is 12/12 with lines identical to 5f6816f and to this platform's earlier record, no `Error: GPU` line, 0 bytes leaked, and times are within noise.
+
+Host: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), `AMD_LOG_LEVEL=3` shows `Gfx Major/Minor/Stepping: 11/0/0`. torch 2.16.0a0+git6c3af02, HIP 7.16.26385, numpy 1.26.4, Python /opt/python-3.11-venv. HIP_VISIBLE_DEVICES=3 (pinned by the dispatcher); all GPU runs under `ulimit -c 0`. Each build is a `git archive` of its commit in its own directory under agent_space/cmp; the fork clone at projects/LEAP/src is checked out at b37ca0a and clean. Scripts: `dump_outputs.py`, `compare_outputs.py` (gfx942 port entry), `dump_point.py`, `leak_check.py` (dual-path port entry), extracted unchanged from this file.
+
+### Builds (both rc=0, first attempt)
+```
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=8 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/b37ca0a && python setup_AMD.py build_ext --inplace"
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=8 bash -c "cd agent_space/cmp/5f6816f && python setup_AMD.py build_ext --inplace"
+# both: cpp_extension.py:2909] ... all archs for visible cards are included for compilation (gfx1100); 20 hipcc invocations, --offload-arch=gfx1100
+llvm-objdump --offloading projectors_SF.o; llvm-objdump -d <gfx1100 bundle>   # b37ca0a: 776 image_* / 28 global_load (texture path compiled for gfx1100)
+```
+
+### Tests
+```
+python dump_outputs.py <build>/src <x>.npz 256   # order: 5f6816f, b37ca0a (r1); 5f6816f, b37ca0a (r2); 5f6816f, b37ca0a (r3); b37ca0a, 5f6816f (r4, reversed)
+python compare_outputs.py old_rN.npz new_rN.npz   # N=1..4: ALL BIT-IDENTICAL (36/36) every round
+python compare_outputs.py old_r1.npz old_r2.npz   # ALL BIT-IDENTICAL (run-to-run determinism)
+python compare_outputs.py new_r1.npz new_r4.npz   # ALL BIT-IDENTICAL
+python dump_point.py <build>/src pt_<x>.npz       # 5f6816f, b37ca0a
+python compare_outputs.py pt_5f6816f.npz pt_b37ca0a.npz   # ALL BIT-IDENTICAL (20 arrays)
+(cd <build> && AMD_LOG_LEVEL=3 bash utils/timeit.sh LEAP test -- python unitTests/gpu_vs_cpu_validate.py)   # both builds rc=0, 12/12, OVERALL: PASS
+python leak_check.py <build>/src                  # both builds: delta 0 bytes over 200 iterations
+```
+- `dump_point.py`: `upsample` fails in the script (ctypes dtype error) in both builds, as on every platform. `dictionary` ran (no fault, as on gfx942; it faulted on gfx90a) and its 1-value output agrees. `Unknown device type` lines are the upstream `getSPcores` message, cosmetic.
+- gpu_vs_cpu_validate: the 12 printed lines are identical between 5f6816f and b37ca0a and equal this platform's 2026-06-02 record and the gfx90a/gfx942 records at this head (parallel adjoint 2.54e-05/1.64e-05; fan 2.44e-04/1.85e-04; coneparallel 1.24e-03/5.07e-05; cone-flat 1.42e-04/1.46e-04, fbp 0.9998; cone-curved 8.54e-05/1.30e-04; modular VD 3.39e-03, fbp 0.9998; modular SF fwd-vs-VD err 0.000). 61 `hsa_amd_pointer_info() failed` log lines in both builds (pre-existing, as on gfx90a). 0 `Error: GPU` lines, so gfx1100 reports image support and its code reads textures.
+- Earlier record on this platform: completed at c77df45 (carried forward from 1753479/0e75025); the 12 lines are unchanged from it.
+
+gfx1100 times, median of 5, 256 cols x 266 rows x 360 views, device-resident tensors, ms, project / backproject:
+```
+geometry_model  5f6816f r1      b37ca0a r1      5f6816f r2      b37ca0a r2      5f6816f r3      b37ca0a r3      b37ca0a r4      5f6816f r4
+parallel_VD     115.6 /  58.8   119.9 /  60.9   123.2 /  60.8   124.4 /  60.8   118.4 /  60.3   126.4 /  61.3   118.4 /  60.4   124.4 /  61.0
+parallel_SF     115.8 /  59.5   120.1 /  61.1   122.9 /  61.5   124.5 /  61.4   118.9 /  60.7   125.4 /  62.0   119.1 /  61.0   124.2 /  61.7
+fan_VD          115.6 /  54.3   120.5 /  55.6   123.2 /  56.1   124.3 /  56.1   119.5 /  55.8   125.1 /  55.8   119.5 /  55.5   124.0 /  56.2
+fan_SF          115.9 / 103.3   121.0 / 107.1   122.5 / 107.8   123.9 / 108.6   120.1 / 107.3   125.5 / 108.4   120.1 / 106.7   124.4 / 108.3
+coneparallel_VD 255.9 /  62.5   261.7 /  64.2   263.3 /  64.7   263.8 /  64.9   261.6 /  64.6   264.7 /  65.3   261.2 /  64.3   265.5 /  64.8
+coneparallel_SF 256.8 / 112.6   262.1 / 115.4   263.8 / 116.3   264.8 / 116.3   262.6 / 115.9   265.5 / 117.1   261.4 / 115.4   265.4 / 117.1
+cone-flat_VD    237.1 /  59.6   243.6 /  60.9   245.4 /  61.2   245.7 /  61.8   244.7 /  61.2   247.1 /  61.7   243.1 /  60.5   246.0 /  61.6
+cone-flat_SF    237.5 / 319.9   244.3 / 327.1   245.2 / 326.8   246.3 / 326.9   245.7 / 326.5   246.6 / 328.4   243.8 / 325.6   257.6 / 328.3
+cone-curved_VD  259.2 /  61.5   265.9 /  63.0   268.3 /  63.6   268.7 /  63.6   268.9 /  64.1   269.0 /  63.9   265.5 /  62.9   268.6 /  63.8
+cone-curved_SF  259.8 / 197.9   265.4 / 200.3   267.2 / 201.1   268.0 / 202.3   269.3 / 202.7   268.3 / 202.5   266.4 / 200.3   267.8 / 202.3
+modular_VD      240.7 /  60.4   244.5 /  61.5   245.5 /  61.7   246.6 /  61.5   249.4 /  62.2   248.1 /  61.6   244.4 /  61.3   247.3 /  61.6
+modular_SF      240.8 / 309.8   243.9 / 314.2   245.7 / 315.3   245.8 / 315.8   247.9 / 318.9   246.7 / 319.0   245.3 / 314.5   246.9 / 318.1
+```
+b37ca0a/5f6816f ratios, project / backproject: r1 1.013-1.044 / 1.012-1.037; r2 1.000-1.013 / 0.998-1.011; r3 0.995-1.068 / 0.991-1.021; r4 (b37ca0a run first) 0.946-0.995 / 0.982-0.994. Mean of the four rounds per case: project 0.996-1.017, backproject 1.000-1.010. The small parallel/fan project excess in r1 and r3 (up to 1.07) flips sign when the order is reversed (r4, 0.95-0.97), and 5f6816f against itself drifts by up to 1.066 between r1 and r2 (times rise slowly over the session), so the difference is run-order drift, not the code. No other process was on the GPU (`amd-smi process`).
+
+These are the gfx1100 figures for the PR body's texture-hardware placeholder, next to the porter's gfx90a table (b37ca0a/5f6816f 0.996-1.004) and the gfx942 reviewer table (b37ca0a/e503672 0.994-1.006).
+
+### Other gates
+- Jargon: `python3 utils/jargon.py --port LEAP` -> `jargon: clean` (after creating local `main`/`moat-port` branches in the fresh clone).
+- Documentation: upstream documents installation only on its external wiki and readthedocs (`README.md`, `docs/source/install.rst` link out; no in-tree CUDA build instructions), and `setup_AMD.py` is upstream's own file. The ROCm build is documented in the PR body, as the earlier reviews accepted. Nothing in-tree to mirror.
+- CUDA gate: cuda-not-validated on this host: no CUDA toolkit and no conda (`/opt/conda` absent); installing one would change the environment other jobs on this host share. No earlier record has run the CUDA compile at any head; the reviews checked the CUDA path by diff only (all additions HIP-guarded). A Linux host with the cuda-12.8 conda env should run it before the PR.
+- Integrity: `git -C projects/LEAP/src status --porcelain` empty; HEAD b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd equals the fork's `moat-port`.
+- No fork push, no `gh` write.
+
+validated_sha: b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd

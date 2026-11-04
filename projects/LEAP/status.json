@@ -7,36 +7,13 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-04T18:52:51Z",
+  "updated_at": "2026-11-04T18:55:04Z",
   "head_sha": "b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd",
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 644559794,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd",
-      "started_at": "2026-06-02T08:08:39Z",
-      "completed_at": "2026-11-04T18:49:28Z",
-      "updated_at": "2026-11-04T18:49:28Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator"
-    },
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
@@ -61,14 +38,14 @@
       "last_agent": "validator",
       "state": "completed"
     },
-    "windows-gfx1101": {
+    "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "c77df45b3fcd9d659b3a9f77cc2fdfef673a19e0",
-      "started_at": null,
-      "completed_at": "2026-06-16T09:52:08Z",
-      "updated_at": "2026-08-20T00:08:22Z",
+      "validated_sha": "b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd",
+      "started_at": "2026-06-02T08:08:39Z",
+      "completed_at": "2026-11-04T18:49:28Z",
+      "updated_at": "2026-11-04T18:49:28Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,7 +58,31 @@
         "session_count": 0,
         "first_session_at": null,
         "last_session_at": null
-      }
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd",
+      "started_at": "2026-06-02T13:30:00Z",
+      "completed_at": "2026-11-04T18:55:04Z",
+      "updated_at": "2026-11-04T18:55:04Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T13:30:00Z",
+        "last_session_at": "2026-06-02T14:00:00Z"
+      },
+      "last_agent": "validator"
     },
     "windows-gfx1201": {
       "state": "completed",
@@ -112,13 +113,13 @@
         "at": "2026-06-16T06:33:12Z"
       }
     },
-    "linux-gfx1100": {
+    "windows-gfx1101": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "c77df45b3fcd9d659b3a9f77cc2fdfef673a19e0",
-      "started_at": "2026-06-02T13:30:00Z",
-      "completed_at": "2026-06-16T06:33:12Z",
+      "started_at": null,
+      "completed_at": "2026-06-16T09:52:08Z",
       "updated_at": "2026-08-20T00:08:22Z",
       "stats": {
         "tokens_total": 0,
@@ -129,16 +130,9 @@
           "test": 0,
           "misc": 0
         },
-        "session_count": 1,
-        "first_session_at": "2026-06-02T13:30:00Z",
-        "last_session_at": "2026-06-02T14:00:00Z"
-      },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "4e102c9cfd371b5900c68461bdc8f2a320d71017",
-        "method": "source-class",
-        "detail": "Comment-only docstring reword in host-side validation script unitTests/gpu_vs_cpu_validate.py (bit-identical -> identical); no device code, no compiled artifact, arch-independent",
-        "at": "2026-06-16T06:33:12Z"
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
       }
     }
   },
