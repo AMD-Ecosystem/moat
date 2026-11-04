@@ -105,7 +105,11 @@ Scan this list against what you are doing. If any line could apply, open
 
 **Types, dispatch and platform limits**
 - Never name the pointee struct of an opaque handle (`CUstream_st`); use `std::remove_pointer_t<cudaStream_t>`.
-- CUPTI has no ROCm analogue; ck_tile fmha ships headers but no instance library.
+- CUPTI has no ROCm analogue; ck_tile fmha ships headers but no instance library (generate the instances; MIOpen's MHA has no FP16 path).
+- CUTLASS-style GEMMs map to CK device ops (XDL on CDNA, WMMA on RDNA, DL for RDNA FP32 with padded copies).
+- cuDF/cuVS/RMM: hipDF, hipVS, hipMM ship as C++ wheels on AMD's package index, with a few API gaps.
+- hipSPARSE breaks HIP graph capture where cuSPARSE does not (destroy syncs, default-algorithm analysis, size-0 buffers).
+- NVML -> AMD SMI, keyed by PCI address, not device index.
 - `char` vs `signed char` vector base types differ between HIP and CUDA.
 - AMD compute-capability values COLLIDE with NVIDIA arch numbers, so CC-keyed dispatch picks the wrong path.
 - Library swaps: cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE -> hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Handle types and v2-enum signatures differ.
