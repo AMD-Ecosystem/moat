@@ -121,3 +121,23 @@ FAISS `moat-port` `01a09e8` built for gfx1201 with the SDK clang and the two wor
 - `python -c "import tsnecuda; tsnecuda.test()"`: rc 0, total_time 3.07 s.
 - `PYTHONPATH=build/python python -m pytest -v build/python/tsnecuda/test` (scikit-learn 1.9.1, numpy 1.26.4, pytest 7.3.2): 7 passed in 23.6-23.8 s, 3 runs. Digits trustworthiness 0.9929 (scikit-learn 0.9933), 10-NN 0.9666; blobs 50000 ARI 1.0 (2.8 s incl. KMeans); blobs 10000 k=1024 ARI 1.0.
 - With the image's Python (no scikit-learn) the module skips as designed (`1 skipped`).
+
+## Fix round 2026-11-04 (porter, linux-gfx942) -> ported
+
+Answers the two must-fix findings of the 2e948b4 review, as new commits on top (no amend), one per topic:
+
+| commit | title | answers |
+|---|---|---|
+| `ab87296` | [ROCm] Keep GNU compiler flags out of clang-cl C++ builds on Windows | finding 2 (Windows HIP build topic, follows `2b32cb8`) |
+| `4fedca7` | [ROCm] Let the subprocess tests find the package without PYTHONPATH | finding 1 (pytest topic, follows `2e948b4`) |
+
+- `CMakeLists.txt`: the `string(REPLACE ...)`/`set(CMAKE_CXX_FLAGS ...)` append of `OPT_FLAGS` is now inside `if(NOT MSVC)`; `-fopenmp -fPIC` stay under `NOT WIN32`. On Linux with the SDK clang++ the googletest C++ objects still compile with `-std=c++17 -Wno-sign-compare -O3 -Wall -Wextra -DFINTEGER=int -fopenmp -fPIC -m64 -mpopcnt -msse4` (8 `FLAGS =` lines in `build/build.ninja`). The clang-cl path itself is not compiled here (no Windows host); the windows validator should build with `-DBUILD_TESTS=ON`.
+- `test_tsne.py::_digits_in_subprocess`: prepends `dirname(dirname(dirname(abspath(__file__))))` (the directory holding `tsnecuda/`) to the child's `PYTHONPATH`, joined with any existing value by `os.pathsep`.
+
+Rebuilt clean at `4fedca7` with the recipe above (`-DBUILD_TESTS=ON`, gfx942, FAISS `01a09e8` install), warnings only. MI300X, `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, `LD_LIBRARY_PATH=$FAISS_PREFIX/lib`, Python 3.11 venv with scikit-learn 1.9.1, numpy 1.26.4, pytest 7.3.2:
+
+- `ctest --test-dir build --output-on-failure`: 1/1; `./build/tsnecuda_test` 10 consecutive runs, all `PASSED 8 tests`.
+- `cd build/python && PYTHONPATH= python -c "import tsnecuda; tsnecuda.test()"`: rc 0, total_time 2.35 s.
+- INSTALL.md command from the source root, `PYTHONPATH` unset, package not installed (`python -c "import tsnecuda"` -> `ModuleNotFoundError`): `python -m pytest -v build/python/tsnecuda/test` 7 passed in 18.8 / 16.1 / 15.5 s (3 runs).
+- Same setup with the 2e948b4 `test_tsne.py` copied into `build/python`: `-k "synchronized or overrides"` 2 failed, `ModuleNotFoundError: No module named 'tsnecuda'` in the child (the reviewer's reproduction, confirmed on gfx942). Build copy restored by `cmake --build build` and checked identical to the source.
+- `utils/jargon.py --port tsne-cuda`: clean; `utils/prose.py` on both bodies: clean.

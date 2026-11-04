@@ -21,3 +21,4 @@
 {"kind":"phase","ts":"2026-11-04T19:36:51Z","phase":"test","seconds":0.247,"exit":5,"cmd":"python -m pytest -v /var/lib/jenkins/fleet/jobs/gfx1201-20261104-112808-tsne-review/moat/agent_space/tsne/build_head/python/tsnecuda/test"}
 {"kind":"phase","ts":"2026-11-04T19:37:21Z","phase":"test","seconds":24.262,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261104-112808-tsne-review/venv/bin/python -m pytest -v -p no:cacheprovider /var/lib/jenkins/fleet/jobs/gfx1201-20261104-112808-tsne-review/moat/agent_space/tsne/build_head/python/tsnecuda/test"}
 {"kind":"session","ts":"2026-11-04T19:40:41Z","epoch":1793821241.385363102,"event":"end","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-04T19:47:19Z","phase":"compile","seconds":17.430,"exit":0,"cmd":"bash agent_space/tsne_build.sh"}
