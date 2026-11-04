@@ -1010,3 +1010,16 @@ PLACEHOLDER: fill in only after validators record completed platforms at dff17ae
 
 Replace the placeholder above. Name only GPUs whose platform record shows a completed validation at this exact head.
 ====
+
+## Review 2026-11-04 (reviewer, linux-gfx942, re-review) -- passed
+
+Scope: the four commits since the changes-requested review, `git diff af3eb74b...dff17aea` (e3adb40, 98ba91b, c767753, dff17ae); upstream `develop` is still f366bfa1, so `git diff f366bfa1 dff17aea` (28 files, +587/-14) is exactly the PR.
+
+Previous findings:
+1. Addressed. e3adb40 is an exact revert of 91185a3 (`git diff 91185a3^ e3adb40` shows only af3eb74's docs). 98ba91b re-applies the same three `hipMemcpyDefault` mappings; against af3eb74 the only non-doc change is the comment at `ucm/shared/vendor/hip_compat/cuda_runtime.h:51-52`. Title, body and comment now describe only the observed HIP behaviour. Header compiles and `cudaMemcpyDeviceToHost == hipMemcpyDefault` holds (hipcc, ROCm 7.16). The keep-or-drop question for jeff stays open as recorded above.
+2. Addressed. c767753 adds the identical ROCm row to the zh support matrix and a Chinese paragraph after the `## vLLM（CUDA）` block; `check_bilingual_docs.py` passes.
+3. Addressed. dff17ae rewrites the note in `docs/source/developer-guide/build_from_source.md:56`, `docs/source/getting-started/quickstart_sglang.md:88` and the en docs-site guide. Its claims hold: `setup.py` `build_cmake` builds a fixed `cmake_args` list with no user passthrough, CMake 3.31.6 has no `HIPARCHS` environment fallback (not in its module tree), the three ROCm CMakeLists rely on `enable_language(HIP)` auto-detection, and `docs/source/user-guide/support-matrix/support_matrix.md:73` carries the ROCm row the note points to.
+
+New commits: no findings. Titles 52-66 chars with `[ROCm]`; no `Co-Authored-By`/noreply in the first-parent port commits; `jargon.py -` clean on the commit messages and on the PR diff; `moat-port` 8545865 is an ancestor of dff17ae. The `cuda-to-rocm` fault-classes rewording on this branch is accurate.
+
+Fix review PR body ("true at dff17aea" draft above): every claim checked against the code (190 commits from merge-base 8e3a29e3 to f366bfa1; #1566 is 55a72eb and `ucm/store/CMakeLists.txt` no longer adds `nfsstore`; per-commit descriptions match the diffs; Hamming last run at af3eb74 and only a header comment changed since). `jargon.py -` and `prose.py` clean. No correction needed. The `## Upstream reply` is still a placeholder, which is correct: no platform has a completed validation at dff17ae (linux-gfx942 has none at any sha; the others are at 8545865 or 57b2443). It must not be approved until it is replaced with GPUs whose validation is recorded at the exact final head.
