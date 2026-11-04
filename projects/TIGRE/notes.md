@@ -854,3 +854,68 @@ Why head and base differ, all from upstream:
 - `git -C projects/TIGRE/src status --porcelain`: no modified tracked files at 5a3da55, only untracked build output.
 
 Outcome: linux-gfx1100 -> **completed** at 5a3da55. This satisfies the wave32 gate at this head. wave64 (gfx90a) and windows still need validator records at 5a3da55; the porter's gfx90a run is not one.
+## Validation 2026-11-04 (linux-gfx90a, real GPU) -> validation-failed at 5a3da55
+
+GPU: MI250X / MI250 gfx90a, TheRock ROCm SDK 10.1, `HIP_VISIBLE_DEVICES=3` (dispatcher pin), all GPU work under `ulimit -c 0`. Head `5a3da55948d954ca9184c0b4793bbb2be95490e9` from `moat-fix-747`; A/B base = published tip `cf873a288e8469d7292470c96272f825dc355dba` with the 5a3da55 setup.py hunk applied (`git apply`, so it builds on ROCm 10.1), same toolchain.
+
+### Verdict
+Every recorded gate passes at the head, and the merge regresses nothing against the published tip. **But the parallel-beam Siddon projector (`Ax(..., "Siddon")` with `geo.mode="parallel"`) returns wrong values intermittently on gfx90a, at the head AND at the published tip cf873a2**: the volume upload races the first kernel batch. This is a real GPU correctness fault in shipped code that this round's parallel check exposed, and it has a validated one-line fix, so it goes back to the porter rather than being passed as "pre-existing". Not introduced by the merge: upstream master 69bdd9f has the same code.
+
+### Build
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH BUILD_WITH_HIP=1 HIP_ARCH=gfx90a ROCM_PATH=$(rocm-sdk path --root)
+cd projects/TIGRE/src && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16
+```
+(job venv python 3.11, numpy 1.26.4, scipy 1.10.1, Cython 3.3.1.) rc 0, 0 `error:` lines, 8/8 `.so`, `llvm-objdump --offloading` shows gfx90a in all 8. Build log: 20 hipcc compiles at `-std=c++14`, 23 host compiles at `-std=c++11`. Self-test: `fp32 hardware linear texture filtering on AMD Instinct MI250X / MI250: unsupported (software trilinear fallback)`. Base built the same way: rc 0, 8/8.
+
+### Upstream pytest (head)
+`cd Python && PYTHONPATH=. MPLBACKEND=Agg $FLEET_VENV/bin/python -m pytest -q -p no:cacheprovider tests/<file>.py`: test_compute_cor 6, test_demo_angles 1, test_denoise_2d_guard 3, test_filtering_workers 37, test_gpuids_default 5, test_krylov_restart_and_norms 9, test_krylov_smoke 9 -> **70 passed, 0 failed** (porter 70/70, reviewer 70/70).
+
+### Cone-beam gates and solver sweep (porter's scripts, copied from the porter job's `agent_space/tigre/`)
+`PYTHONPATH=<tree>/Python $FLEET_VENV/bin/python tigre_validate.py` and `tigre_solvers.py`, both exit 0 at head and base.
+
+| gate | head 5a3da55 | base cf873a2 | porter at 5a3da55 |
+|---|---|---|---|
+| Ax Siddon mean / max | 27.46 / 111.2 | 27.46 / 111.2 | 27.46 / 111.2 |
+| interp vs Siddon | 0.0040 | 0.0040 | 0.0040 |
+| FDK nRMSE | 0.2864 | 0.2864 | 0.2864 |
+| OS-SART 20 iter | 0.1929 | 0.1506 | 0.1929 |
+| adjointness random / phantom | 1.004e-05 / 6.076e-05 | 1.004e-05 / 6.076e-05 | 1.004e-05 / 6.08e-05 |
+| sart / ossart / sirt | 4.9635 / 3.7197 / 6.2263 | 1.2338 / 1.1800 / 1.3384 | 4.96 / 3.72 / 6.23 |
+| cgls / fista | 0.9609 / 0.9505 | 0.9529 / 0.9925 | 0.961 / 0.951 |
+| asd_pocs / awasd / os_asd / ossart_tv | 4.7643 / 4.7777 / 3.5631 / 3.4159 | 1.2305 / 1.2336 / 1.1765 / 1.1388 | 4.76 / 4.78 / 3.56 / 3.42 |
+
+Matches the porter's numbers to every printed digit; the SART-family shift is upstream's a675320 W change, as the porter showed. Cone Siddon is deterministic: 20 repeated `Ax(Siddon)` calls bitwise identical, phantom and random input, head and base.
+
+### Parallel-beam gates (new script `tigre_parallel.py`, this host's `agent_space/scripts/` only)
+`tigre.geometry(mode="parallel", nVoxel=[128]*3, default=True)`, head phantom. Angle sets: `linspace(0,pi,64)` (contains 0, pi/2, pi), `linspace(0,pi,64,endpoint=False)+0.3`, and Euler (that alpha sweep, theta 0.4, psi 0.2). Per set: interp vs Siddon < 1%, Ax(Siddon)/Atb(matched) and Ax(interp)/Atb(matched) adjointness < 0.05 on a random x. Then FBP and SIRT-20 at 180 angles, plus missed rays (64^3, 129^2 detector, offOrigin (0, 7.3, -5.1), 5 angles, must return in < 30 s, finite).
+
+Head, first run: axis 0.0043 (adj Siddon 2.03e-05, interp 1.97e-06); offset 0.0058 (6.08e-05, 1.32e-06); Euler 0.0056 (1.32e-05, 1.89e-06); FBP nRMSE 0.0833; SIRT-20 0.1952; missed rays 0.01 s, finite, zero fraction 0.861 Siddon / 0.855 interp. RESULT PASS.
+Base: the same except Euler interp vs Siddon 0.1644 and adjointness 6.9e-02 (FAIL). The base's parallel Siddon ignores theta/psi (its Euler mean is 14.66, the unrotated value); upstream b1e6e61 added Euler support, so this is expected and is not a port fault. Missed-ray zero fraction at the base is 0.809 (upstream 7549d41 changed the missed-ray return).
+
+Conflict resolution: a scratch head build without the port's `if (Np>Np_max) Np=Np_max;` line gives parallel Siddon output **bitwise identical** to the head on all three angle sets, so the cap is a no-op, as the reviewer argued. Head vs base parallel output: Siddon bitwise identical at the axis and offset sets (differs only at Euler, see above); interpolated bitwise identical at all three.
+
+### The fault: parallel Siddon is nondeterministic (head and base)
+Re-running `tigre_parallel.py` gave different Siddon numbers each run: axis-set Siddon adjointness 2.03e-05 / 1.99e-04 (head) and 5.73e-04 / 2.03e-05 (base); offset 6.08e-05 / 3.26e-05 / 1.14e-04 (head) and 6.03e-03 (base); offset interp vs Siddon 0.0058 once and 0.0041 otherwise. Interpolated numbers never moved. `repeat_par.py` (128^3, the offset angle set, 20 repeated `Ax(Siddon)` calls compared bitwise with the first):
+- parallel, head: phantom 2/20 runs differ, random 3/20; worst per-pixel error 13.2% / 11.8% of max|ref|; 110 to 129 differing pixels, all in projections 0 to 8.
+- parallel, base: phantom 0/20, random 7/20; worst 21.9% of max|ref|; up to 22524 pixels, projections 0 to 8.
+- cone, head and base: 0/20 in every case. Parallel interpolated, head: 0/20 in every case (two runs of 20).
+
+Projections 0 to 8 are the first kernel batch (`PROJ_PER_BLOCK 9`). Cause: `CreateTextureParallel` in `Common/CUDA/Siddon_projection_parallel.cu` uploads the volume with `cudaMemcpy3DAsync(&copyParams, stream[1])` from a pageable host buffer, then the first `kernelPixelDetector_parallel` launches on `stream[0]` with no synchronization against `stream[1]` (the cone `CreateTexture` ends with `cudaDeviceSynchronize()`; `voxel_backprojection_parallel.cu` syncs `stream[0+1]`). CUDA's pageable async copy is staged synchronously, which masks the race; HIP's is not.
+
+Fix, validated in a scratch worktree (not committed or pushed anywhere): one line after the upload, CRLF kept:
+```
+        cudaMemcpy3DAsync(&copyParams,stream[1]);
+        cudaStreamSynchronize(stream[1]);
+```
+With it: `repeat_par.py parallel` twice, 0/20 differing runs for phantom and random (80/80 bitwise stable), and `tigre_parallel.py` PASS with the stable values: axis 0.0043 / 2.030e-05, offset 0.0041 / 6.078e-05, Euler 0.0056 / 1.323e-05.
+
+For the porter:
+1. Add that sync as its own `[ROCm]` commit on `moat-fix-747`. The bug is in upstream code (69bdd9f has it), but only HIP exposes it. Hold the commit to that one line; the race is in shared CUDA source and is harmless on CUDA.
+2. `ray_interpolated_projection_parallel.cu` `CreateTextureParallelInterp` has the same unsynchronized `cudaMemcpy3DAsync(&copyParams,stream[1])` before the first `stream[0]` launch (line ~429). It was stable in 80/80 runs here, so it is latent, not observed; the porter decides whether the same line belongs there.
+3. The reviewer's gfx1100 parallel numbers (0.0040 / 3.2e-05, 0.0041 / 5.5e-05) are consistent with the stable values but were single runs; validators should repeat the parallel check (`repeat_par.py`) at the next head.
+
+### Not run at this head
+- CUDA compile gate: skipped. The head is going back to the porter, so the gate is owed at the next head.
+- `jargon.py --port TIGRE`: clean (needs local `master` and `moat-fix-747` refs in the fork clone).
+- Fork clone tracked tree clean at 5a3da55 (`git status --porcelain`: untracked build output only).
