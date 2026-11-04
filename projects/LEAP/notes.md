@@ -1734,3 +1734,63 @@ Not rerun: already recorded at d2112b6 ("CUDA compile check (nvcc 12.8) at d2112
 - `python3 utils/jargon.py --port LEAP`: clean (after `git fetch origin main:main` and `git branch -f moat-port origin/moat-port` in the clone).
 - Docs: the ROCm build is the pre-existing `setup_AMD.py`, as at earlier validations. No change.
 - `git -C projects/LEAP/src status --porcelain`: no modified tracked files (untracked build output only).
+## Validation 2026-11-04 (validator, linux-gfx1100, revalidate, moat-port @ d2112b6)
+
+Verdict: completed at d2112b63f025446cd519453423679c5cd8740bf5. On gfx1100 (image support, texture path live) d2112b6 is bit-identical to b37ca0a in every dumped output (36/36 in three interleaved rounds; 20/20 dump_point arrays, `bilateral_out` and `priorbilateral_out` included). gpu_vs_cpu_validate is 12/12 with the 12 lines identical to b37ca0a and to this platform's b37ca0a record. No `Error: GPU` line, 0 bytes leaked, and times are within noise. `BilateralFilter` and `PriorBilateralFilter` complete with no fault, and a follow-on GPU call in the same process still succeeds.
+
+Host: AMD Radeon PRO W7800-class (gfx1100, RDNA3, wave32, Device ID 0x7449); `AMD_LOG_LEVEL=3` shows `Gfx Major/Minor/Stepping: 11/0/0`. torch 2.16.0a0+git6c3af02, HIP 7.16.26385, numpy 1.26.4, Python /opt/python-3.11-venv (the job venv has no torch). All GPU runs were under `ulimit -c 0`.
+
+GPU pin: the dispatcher set `HIP_VISIBLE_DEVICES=4`, but this container exposes HIP devices 0-3 only (four gfx1100 GPUs; `/dev/dri` has card0-card4, and card0 is the `ast` BMC VGA, which is probably where the 5th index came from). With 4, torch sees 0 devices, and `setup_AMD.py` silently takes its CPU-only branch (`-D__USE_CPU`; the build then fails with `zeroPadForOffsetScan_GPU was not declared`). The concurrent jobs on the host were pinned to 0,1 (oneflow-val) and 3 (arrayfire review), so this run used `HIP_VISIBLE_DEVICES=2`, the one index no job held. `amd-smi process -g 2` showed no other process before or after the runs. The dispatcher's GPU numbering on this host should be checked.
+
+Each build is a `git archive` of its commit in its own directory under agent_space/cmp. The fork clone at projects/LEAP/src is checked out at d2112b6, was never built, and is clean. Scripts: `dump_outputs.py` and `compare_outputs.py` (gfx942 port entry), `dump_point.py` and `leak_check.py` (dual-path port entry), extracted unchanged from this file.
+
+### Builds (both rc=0)
+```
+export HIP_VISIBLE_DEVICES=2
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=8 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/d2112b6 && python setup_AMD.py build_ext --inplace"
+(cd agent_space/cmp/b37ca0a && env -u PYTORCH_ROCM_ARCH MAX_JOBS=8 python setup_AMD.py build_ext --inplace)
+# both: cpp_extension.py:2909] ... all archs for visible cards are included for compilation (gfx1100); 20 hipcc invocations with --offload-arch=gfx1100
+```
+
+### Tests
+```
+python dump_outputs.py <build>/src <x>.npz 256   # order: b37ca0a, d2112b6 (r1); b37ca0a, d2112b6 (r2); d2112b6, b37ca0a (r3, reversed)
+python compare_outputs.py old_rN.npz new_rN.npz   # N=1..3: ALL BIT-IDENTICAL (36/36) every round
+python compare_outputs.py old_r1.npz old_r2.npz   # ALL BIT-IDENTICAL (run-to-run determinism)
+python compare_outputs.py new_r1.npz new_r3.npz   # ALL BIT-IDENTICAL
+python dump_point.py <build>/src pt_<sha>.npz     # b37ca0a, d2112b6; rc=0 both
+python compare_outputs.py pt_b37ca0a.npz pt_d2112b6.npz   # ALL BIT-IDENTICAL (20 arrays); bilateral_out, priorbilateral_out 0/2179072 differ
+AMD_LOG_LEVEL=3 bash utils/timeit.sh LEAP test -- bash -c "cd <build> && python unitTests/gpu_vs_cpu_validate.py"   # both rc=0, 12/12, OVERALL: PASS
+python leak_check.py <build>/src                  # both: sum(g)=377330, delta 0 bytes over 200 iterations
+```
+- gpu_vs_cpu_validate (both builds, identical): parallel adjoint 2.54e-05/1.64e-05; fan 2.44e-04/1.85e-04; coneparallel 1.24e-03/5.07e-05; cone-flat 1.42e-04/1.46e-04, fbp 0.9998; cone-curved 8.54e-05/1.30e-04; modular VD 3.39e-03, fbp 0.9998; modular SF fwd-vs-VD err 0.000. These match this platform's b37ca0a record and the gfx90a values at d2112b6. 0 `Error: GPU` lines.
+- The `ok`/`FAILED` lines of the two dump_point runs are identical. `upsample` fails in the script (ctypes dtype error), as on every platform.
+- Bilateral filters in isolation (dump_point with only the filter cases kept: the five projector cases, then `bilateral`, `priorbilateral`, and a `MedianFilter` afterwards to detect a dead context; agent_space/scripts/pt_bilateral.py): rc=0 in both builds, every case `ok`, no HIP error line, outputs bit-identical between builds and to the full dump_point run. On gfx1100 the old `i > N.x` check never faulted, so as on gfx90a the only observable effect is that nothing changes.
+- `dictionary` correction to this platform's b37ca0a entry: it does fault on gfx1100, in both builds. In the full dump_point run, `dictionary` prints `ok` with its 1-value output, and then the log ends with `hipSetDevice Error: an illegal memory access was encountered`. Run alone (pt_dictionary.py: `dictionary`, then `MedianFilter`), the next call prints `hipMalloc(volume 133 x 128 x 128) failed!` and two `hipSetDevice Error: an illegal memory access` lines. This is the same pre-existing fault as on gfx90a. It is not a ported path, it is not in the 12-test gate, and it is identical at b37ca0a. The b37ca0a entry's "ran (no fault)" judged from the `ok` line alone, but the fault is reported asynchronously after it.
+
+gfx1100 times, median of 5, 256 cols x 266 rows x 360 views, device-resident tensors, ms, project / backproject:
+```
+geometry_model  b37ca0a r1      d2112b6 r1      b37ca0a r2      d2112b6 r2      d2112b6 r3      b37ca0a r3
+parallel_VD      116.1 /  59.3   119.1 /  60.8   119.7 /  61.0   120.0 /  61.0   121.1 /  61.0   121.6 /  61.2
+parallel_SF      116.5 /  60.0   119.8 /  61.2   120.1 /  61.3   119.8 /  61.4   120.7 /  61.7   121.1 /  61.8
+fan_VD           116.9 /  55.9   119.9 /  55.9   119.8 /  56.0   120.6 /  56.1   121.2 /  56.1   122.3 /  56.4
+fan_SF           122.6 / 105.0   120.7 / 107.3   119.8 / 107.9   120.5 / 107.9   122.3 / 108.4   123.7 / 108.6
+coneparallel_VD  258.2 /  63.0   262.8 /  64.4   263.2 /  64.6   263.7 /  64.7   263.9 /  64.9   265.5 /  65.0
+coneparallel_SF  259.6 / 114.0   262.4 / 115.3   263.3 / 116.0   264.1 / 116.4   264.2 / 116.6   264.3 / 116.6
+cone-flat_VD     239.3 /  60.0   243.1 /  62.0   245.3 /  61.1   244.7 /  61.3   246.0 /  61.6   246.8 /  61.9
+cone-flat_SF     240.1 / 323.2   243.6 / 601.5   244.5 / 327.3   244.9 / 327.3   245.6 / 328.1   246.1 / 328.5
+cone-curved_VD   261.4 /  62.1   265.1 /  63.0   266.0 /  63.3   266.7 /  63.7   266.8 /  63.7   267.8 /  63.7
+cone-curved_SF   261.8 / 199.2   265.1 / 201.4   266.5 / 201.2   267.1 / 201.3   267.5 / 201.3   268.1 / 201.8
+modular_VD       241.8 /  60.4   261.9 /  59.8   245.0 /  61.1   245.6 /  61.4   245.5 /  61.7   246.6 /  61.7
+modular_SF       242.5 / 311.3   244.1 / 314.0   244.2 / 314.1   244.9 / 314.7   245.4 / 317.8   246.1 / 317.0
+```
+d2112b6/b37ca0a ratios, project / backproject: r1 0.984-1.083 / 0.989-1.861; r2 0.997-1.007 / 1.000-1.006; r3 (d2112b6 run first) 0.988-1.000 / 0.994-1.002. Two r1 outliers (cone-flat_SF backproject 601.5 ms, modular_VD project 261.9 ms) do not repeat in r2 or r3, and they are in the projectors, which the delta does not touch. Times rise slowly over the session, as in the b37ca0a entry: b37ca0a r2/r1 is 0.977-1.031. Excluding r1, every ratio is within 0.988-1.007, so no performance change. The figures sit within about 1-3% of this platform's b37ca0a table (e.g. parallel_VD 115.6-126.4 / 58.8-61.3 there).
+
+### Other gates
+- Jargon: `python3 utils/jargon.py --port LEAP` -> `jargon: clean` (after creating local `main`/`moat-port` branches in the fresh clone).
+- Documentation: unchanged since b37ca0a (the delta is `src/bilateral_filter.cu` only); as recorded there, the ROCm build is documented in the PR body.
+- CUDA gate: already recorded at d2112b6 ("CUDA compile check (nvcc 12.8) at d2112b6", rc=0); not repeated.
+- Integrity: `git -C projects/LEAP/src status --porcelain` empty; HEAD d2112b63f025446cd519453423679c5cd8740bf5 equals the fork's `moat-port`. The built d2112b6 tree's `src/bilateral_filter.cu` matches the commit (4 `i >= N.x` sites).
+- No fork push, no `gh` write.
+
+validated_sha: d2112b63f025446cd519453423679c5cd8740bf5

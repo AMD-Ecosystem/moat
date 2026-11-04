@@ -141,3 +141,11 @@
 {"kind":"phase","ts":"2026-11-04T20:31:42Z","phase":"test","seconds":2.867,"exit":0,"cmd":"python /var/lib/jenkins/fleet/jobs/mi300-20261104-122353-v-leap2/moat/agent_space/scripts/leak_check.py agent_space/cmp/b37ca0a/src"}
 {"kind":"phase","ts":"2026-11-04T20:31:46Z","phase":"test","seconds":3.956,"exit":0,"cmd":"python /var/lib/jenkins/fleet/jobs/mi300-20261104-122353-v-leap2/moat/agent_space/scripts/leak_check.py agent_space/cmp/e503672/src"}
 {"kind":"session","ts":"2026-11-04T20:33:52Z","epoch":1793824432.524805834,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-04T20:26:27Z","epoch":1793823987.207588385,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-04T20:26:39Z","phase":"compile","seconds":4.480,"exit":1,"cmd":"bash -c cd agent_space/cmp/d2112b6 && python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T20:27:58Z","phase":"compile","seconds":14.488,"exit":0,"cmd":"bash -c cd agent_space/cmp/d2112b6 && python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T20:33:38Z","phase":"test","seconds":0.012,"exit":2,"cmd":"python unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-04T20:33:38Z","phase":"test","seconds":0.011,"exit":2,"cmd":"python unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-04T20:34:04Z","phase":"test","seconds":5.084,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261104-122345-v-leap2/moat/agent_space/cmp/b37ca0a && python unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-04T20:34:09Z","phase":"test","seconds":5.054,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261104-122345-v-leap2/moat/agent_space/cmp/d2112b6 && python unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"session","ts":"2026-11-04T20:37:32Z","epoch":1793824652.888283159,"event":"end","platform":"linux-gfx1100"}
