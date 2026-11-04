@@ -87,3 +87,43 @@ Gotchas: in Git Bash pass clang-cl flags as `-MD`/`-Fo` (a `/MD` is path-convert
 - Debug build (`_DEBUG` device counters, cudaMemcpyFromSymbol) at 64, surface + solid, binvox + morton: 0 diff.
 - Upstream CI smoke `-s 64 -cpu`: exit 0.
 - Triangulation of the 512 residual (risk 8): `-DCMAKE_HIP_FLAGS=-clang:-ffp-contract=off` -> solid 0, surface 4 (2/2). Additionally replacing `rsqrtf` in helper_math `normalize()` with `1.0f / sqrtf()` (experiment build only, reverted) -> surface 0. So the residual is entirely FP: FMA contraction in the HIP TUs plus the device's approximate rsqrtf (host helper_math uses 1/sqrtf). Both apply on NVIDIA too (nvcc `--fmad=true`, approximate `rsqrtf`); not a port defect, and no flag change is shipped. Validators should expect exactly this class of tiny 512 residual; 64/256 must be 0.
+
+## Review 2026-11-04 (linux-gfx942, reviewer, moat-port 316616d vs main f9fc9a9)
+
+Scope as ruled by jeff 2026-11-03: CMake-only (`.vcxproj` untouched), BSD-3-Clause v12.2 helpers as the first commit, fork default branch `moat-port`. Checked: `src/libs/cuda/helper_cuda.h` and `helper_string.h` are byte-identical to NVIDIA/cuda-samples `1fa9c59` `Common/` except the quoted `#include "helper_string.h"` (`helper_cuda.h:41`); `utils/jargon.py --port cuda_voxelizer` clean; fork tree clean at 316616d.
+
+### Findings (must fix)
+
+1. `README.md:71-74` (Windows build paragraph): it does not say the built executable needs `libomp140.x86_64.dll` at run time. With clang-cl, FindOpenMP selects MSVC's LLVM `libomp.lib`, so `cuda_voxelizer.exe` imports `libomp140.x86_64.dll`, which Visual Studio ships only under `VC\Redist\MSVC\<version>\debug_nonredist\x64\Microsoft.VC143.OpenMP.LLVM\` and puts on no search path (porter's gfx1151 notes above). A user who follows the README gets an executable that does not start. Ruling on the porter's open item: yes, the README should mention it. Add one sentence after the Windows command, for example: "The executable needs the ROCm runtime DLLs from ROCm's `bin` directory and `libomp140.x86_64.dll` (Visual Studio's LLVM OpenMP runtime, in `VC\Redist\MSVC\<version>\debug_nonredist\x64\Microsoft.VC143.OpenMP.LLVM`) on `PATH` or next to `cuda_voxelizer.exe`." This is a new commit on top (no amend).
+2. CUDA no-regression build never run, while two commit Test Plans present it as run. `94d1340` (helper headers) shows `cmake -S . -B build ...` without `USE_HIP` plus a run at `-s 64`, and `8b84b91` (launch syntax) shows `cmake --build build` and a run; the porter's notes say the nvcc compile was not done (no CUDA toolkit on gfx1151). The plan's CUDA no-regression step (`CUDAARCHS=60`, upstream recipe, `USE_HIP` OFF) must be run at the head on an NVIDIA host before the upstream PR, so those Test Plans are true as written; if it cannot be run, correct the two Test Plans at PR-prep squash instead of shipping them. This cannot be done on an AMD host; it needs an nvcc host dispatched for it.
+
+### Rulings on the porter's open items
+
+- libomp140 in the README: yes (finding 1).
+- 512 residual (gfx1151: 9 surface / 1 solid): acceptable, no code or flag change. Reproduced on gfx942 with the same class of residual and the same triangulation (below): `-ffp-contract=off` alone leaves 4 surface voxels, adding `1.0f / sqrtf` in `normalize()` leaves 0. Both factors exist in upstream's CUDA build too (nvcc `--fmad=true` by default, approximate device `rsqrtf` against the host `1.0f / sqrtf` in `helper_math.h:78`), so a GPU-vs-CPU boundary difference at fine grids is upstream behaviour, not a port defect. Validators: 64 and 256 must be 0 diff; at 512 expect single-digit boundary voxels whose count can differ by arch (gfx1151 9 surface, gfx942 7 surface), each disappearing under the triangulation.
+
+### Reviewer evidence (linux-gfx942, MI300X, xnack-, TheRock ROCm 10.1.0 pip SDK, HIP 7.16.26385, CMake 3.31.6, g++ 13.3 host)
+
+Not validation evidence; the validator still owns the gate. Trimesh2 2022.03.04 (`0b3d9e2`) `libsrc` minus GLCamera/GLManager compiled with `g++ -O2 -fPIC -fopenmp` into `libtrimesh.a`. The README Linux recipe with the default g++ host compiler builds clean (only upstream warnings):
+
+```
+cmake -S . -B build-hip -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DCMAKE_BUILD_TYPE=Release -DTrimesh2_INCLUDE_DIR=<trimesh2>/include -DTrimesh2_LINK_DIR=<tm2build>
+cmake --build build-hip -j28
+```
+
+Without `-DCMAKE_HIP_ARCHITECTURES`, CMake detected gfx942 (README and `527b087` claim confirmed). GPU-vs-CPU differential on `test_models/bunny.OBJ` (same binary, GPU then `-cpu`), all GPU logs show `## GPU VOXELISATION` and `Voxelization GPU time`:
+
+| mode | size | filled (CPU) | diff, binvox = morton = obj_points |
+|---|---|---|---|
+| surface | 64 | 13,802 | 0 |
+| surface | 256 | 221,760 | 0 |
+| surface | 512 | 887,315 | 7 (3 GPU-only, 4 CPU-only) |
+| solid | 64 | 52,258 | 0 |
+| solid | 256 | 3,345,384 | 0 |
+| solid | 512 | 26,763,628 | 1 (GPU-only) |
+
+- 512 triangulation: `-DCMAKE_HIP_FLAGS=-ffp-contract=off` -> surface 4 (2/2), solid 0; plus `rsqrtf` -> `1.0f / sqrtf` in `normalize()` (copy of the tree in agent_space, not the fork) -> surface 0, solid 0.
+- 3 repeated GPU runs at 512, surface + solid, binvox + morton: identical.
+- Plan risk 2 (bitwise atomics on managed memory, discrete wave64) does not fire on gfx942: the differential above is exact at 64/256, and a standalone probe (`hipMallocManaged` 8 MiB, `hipMemset`, then atomicOr/atomicXor setting every bit) left 0 of 2,097,152 words wrong; the device reports `hipDeviceAttributeManagedMemory=1`, `ConcurrentManagedAccess=1`, `PageableMemoryAccess=0`, pointer type managed. gfx90a (no MI300-class coherence) is still unmeasured.
+- Timings: surface 512 GPU 109 ms vs CPU 2.45 s; solid 512 GPU 4.8 s vs CPU 137 s.
+- A Linux `CMAKE_BUILD_TYPE=Debug` does not define `_DEBUG` (only MSVC does), so the `_DEBUG` device counters and `cudaMemcpyFromSymbol` are covered only by the Windows Debug run.
