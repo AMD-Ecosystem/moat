@@ -3184,3 +3184,28 @@ In the moved clone: `PYTORCH_ROCM_ARCH=gfx90a python3 setup.py build_ext --inpla
 ### Jargon, documentation, integrity
 
 `python3 utils/jargon.py --port diff-surfel-tracing` clean (clone at `e24c44c`, `main` fetched). README `### AMD GPUs` documents exactly the route run above, including the run-time `ROCM_PATH` note, which this run follows. The pre-existing `HIP_VISIBLE_DEVICES=0` prefix on the README's `validate_rocm.py` command (round-10 review note) is still there; PR-prep item, not a gate. After the runs, `git -C third_party/hiprt checkout -- . && git -C third_party/hiprt clean -fdx`; `git status --porcelain --ignore-submodules=none` in the clone is empty at `e24c44c`. No source or build file was edited on this arch.
+
+## Validation 2026-11-04 (windows-gfx1151, Radeon 8060S, TheRock HIP 7.13.26190) -- PASSED at `e24c44c`, README package-install route
+
+Fork clone at exactly `e24c44c` (HIP RT submodule pin `8602b8c`, committed patch applied, all build output removed first). Env: `agent_space/win_torch_env.sh` (torch 2.12.0+rocm7.14.0a20260519, `PYTORCH_ROCM_ARCH=gfx1151`, clang-cl, `ROCM_PATH`/`HIP_PATH` = the SDK). Fresh venv `agent_space/dst_fresh_venv` (Python 3.13, pip 26.0.1, setuptools 81 and torch supplied by a `.pth` to the torch venv's site-packages; nothing else installed). Pip builds from the fork clone, which is then not on any path.
+
+```
+git -C third_party/hiprt apply "$(pwd)/third_party/hiprt-rocm-fixes.patch"
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON -DHIP_PATH="$ROCM_ROOT" -S third_party/hiprt -B third_party/hiprt/build     # exit 0
+cmake --build third_party/hiprt/build --config Release --target hiprt03001 -- -m:12                                                          # exit 0, dist/bin/Release/hiprt0300164.dll
+PYTORCH_ROCM_ARCH=gfx1151 MAX_JOBS=16 dst_fresh_venv/Scripts/python.exe -m pip install -v --no-build-isolation .                              # exit 0, 47 s
+mv src src.moved                                   # clone out of the way; validate_rocm.py was copied to a scratch dir first
+cd <scratch>; ulimit -c 0
+rm -rf <venv>/Lib/site-packages/diff_surfel_tracing/hiprt_cache; dst_fresh_venv/Scripts/python.exe -X faulthandler validate_rocm.py     # twice
+mv src.moved src; python setup.py build_ext --inplace; rm -rf diff_surfel_tracing/hiprt_cache; PYTHONPATH=<clone> python validate_rocm.py
+```
+
+Checklist (the e24c44c port-fix entry):
+
+1. Install log order: `running build_py` (line 49), `copying` of `kernels.h`, `params.h`, `config.h`, `auxiliary.h` (52-55), the `hiprt_root` tree, and `hiprt0300164.dll` (135), then `running build_ext` (136). Correct.
+2. Installed `site-packages\diff_surfel_tracing\` holds: `_C.cp313-win_amd64.pyd` (547 KB), `__init__.py`, `auxiliary.h`, `config.h`, `kernels.h`, `params.h`, `hiprt0300164.dll` (754 KB), `hiprt_root\` (74 files); 2.4 MB total, `hiprt_cache` created on first run (6 files). The HIP RT DLL did land in the package (it was built at `third_party/hiprt/dist/bin/Release`, where the staging step looks). No installed .py/.h file references the clone path; `diff_surfel_tracing.__file__` resolves into the fresh venv.
+3. Clone moved away, run from a scratch directory outside it, cold cache each time: run 1 exit 0, 15 s, `50/50 checks passed`; run 2 exit 0, 5 s, `50/50`; logs identical apart from timings. Device `AMD Radeon(TM) 8060S Graphics`. Numbers equal the 21f62d0 and Linux entries: covered 0.241, 62/64 traced (missing [5, 25]), grads3D cosine 0.9825, P=4096 1343 traced, P=16384 3309 traced.
+4. `build_ext --inplace` (clone restored): exit 0, staging puts `hiprt0300164.dll`, headers and `hiprt_root` into the source package; `validate_rocm.py` cold cache: exit 0, `50/50 checks passed`.
+5. `ext_winhip.cu` / `trace_surfels_winhip.cu` hipify to `.hip` and compile as before; link line unchanged (`hiprt0300164.lib`, no extra args).
+
+No fork edit was needed. CUDA gate: not run (Windows, no CUDA toolkit); covered by the Linux validators. `jargon.py --port diff-surfel-tracing` clean. After the run the HIP RT submodule patch was reverted and ignored build output cleaned: `git status --porcelain` empty in the fork and in the submodule.
