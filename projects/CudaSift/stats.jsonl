@@ -74,3 +74,9 @@
 {"kind":"phase","ts":"2026-11-04T17:00:08Z","phase":"test","seconds":0.745,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match"}
 {"kind":"phase","ts":"2026-11-04T17:00:08Z","phase":"test","seconds":0.631,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography"}
 {"kind":"session","ts":"2026-11-04T17:00:39Z","epoch":1793811639.511399526,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T17:02:18Z","phase":"test","seconds":0.211,"exit":127,"cmd":"./build-hip/test_extract.exe"}
+{"kind":"phase","ts":"2026-11-04T17:02:20Z","phase":"test","seconds":0.207,"exit":127,"cmd":"./build-hip/test_match.exe"}
+{"kind":"phase","ts":"2026-11-04T17:02:21Z","phase":"test","seconds":0.175,"exit":127,"cmd":"./build-hip/test_homography.exe"}
+{"kind":"phase","ts":"2026-11-04T17:02:31Z","phase":"test","seconds":0.770,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_extract.exe"}
+{"kind":"phase","ts":"2026-11-04T17:02:34Z","phase":"test","seconds":1.329,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match.exe"}
+{"kind":"phase","ts":"2026-11-04T17:02:36Z","phase":"test","seconds":0.800,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography.exe"}
