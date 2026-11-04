@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:05:27Z",
-  "updated_at": "2026-11-04T19:54:16Z",
-  "head_sha": "ac069e206b764b2cec83d06ca3d823412500c8b2",
+  "updated_at": "2026-11-04T20:20:37Z",
+  "head_sha": "2012add1ce6301799665831d9985acf5eacd4d7c",
   "depends_on": [],
   "porting": {
     "arch": "linux-gfx90a",

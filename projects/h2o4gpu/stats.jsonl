@@ -10,3 +10,5 @@
 {"kind":"phase","ts":"2026-11-04T19:48:35Z","phase":"test","seconds":0.473,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261104-113338-h2o-port/moat/projects/h2o4gpu/src/build-hip/h2o4gpu_test"}
 {"kind":"phase","ts":"2026-11-04T19:50:21Z","phase":"compile","seconds":7.917,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi200-20261104-113338-h2o-port/moat/projects/h2o4gpu/src/build-hip -j42"}
 {"kind":"phase","ts":"2026-11-04T19:53:36Z","phase":"compile","seconds":45.428,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi200-20261104-113338-h2o-port/moat/projects/h2o4gpu/src cpp USE_HIP=ON"}
+{"kind":"phase","ts":"2026-11-04T20:15:45Z","phase":"compile","seconds":36.085,"exit":2,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi200-20261104-113338-h2o-port/moat/projects/h2o4gpu/src/build-nvtx -j42"}
+{"kind":"phase","ts":"2026-11-04T20:16:20Z","phase":"compile","seconds":14.267,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi200-20261104-113338-h2o-port/moat/projects/h2o4gpu/src/build-nvtx -j42"}
