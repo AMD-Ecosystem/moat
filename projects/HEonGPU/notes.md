@@ -7311,3 +7311,26 @@ The CUDA nvcc 12.8 compile of `2e51886` passed on 2026-11-04: 387 ninja steps, 0
 ### Still owed
 
 - wave32 (`linux-gfx1100`) and Windows (`windows-gfx1151`) revalidation, and gfx90a/gfx942 revalidation at `640a8b5` per `advance-head`.
+
+## Review 2026-11-04 (reviewer, linux-gfx942) -- re-review at `640a8b5`, delta `2e51886..640a8b5`
+
+Scope: the delta `2e51886..640a8b5` (one commit, `640a8b5`), the proposed review PR body against the tree at `640a8b5`, and the CUDA compile record in Jeff's plan `moat-cuda-compile-checks-mahout-heongpu.md`. The hipMM bridge was not reopened (Jeff's pending decision). Verdict: **review-passed**. No code findings; one PR body correction below.
+
+Verified:
+
+- Comments only: `git diff 2e51886 640a8b5` is 5 files +9/-9 (`test/`, `example/basic/`, `example/bootstrapping/`, `example/mpc/`, `benchmark/` `CMakeLists.txt`), and every changed line is a `#` comment inside the `if(USE_HIP)` arm. No compiled input changes, so the `2e51886` MI250X record (static 301/301, shared 296/296, each twice) and the nvcc 12.8 compile at `2e51886` both carry over.
+- The fix is accurate: `warp_reduce` (`src/include/heongpu/util/util.cuh:412`, `warpSize` at 416) is a namespace-scope `static __device__` function in `namespace heongpu` with no template, and `multiply` (`src/include/heongpu/util/bigintegerarith.cuh:203`, `__umul64hi` at 229) is a non-template function in `namespace heongpu::biginteger`. `bigintegerarith.cuh` is reached from the public headers through `kernel/encoding.cuh` and `kernel/decryption.cuh`. The commit body's account of `BarrettOperations::mult128` (non-dependent arguments, looked up at definition) is correct.
+- Commit: title `[ROCm]`, 60 chars; "Authored with Claude."; no `Co-Authored-By`; Test Plan fenced. `jargon.py --port HEonGPU` clean. Fork clone `status --porcelain` clean.
+- PR body Testing paragraph (MI250X): true at `640a8b5`. The 49/28/3 program counts, 301/296 case counts, the seven noise-budget cases left out of shared builds, the multiparty move to "ran to completion", and the TFHE truth-table claim were all checked in the `2e51886` re-review and the delta touches none of them.
+
+### Proposed review PR body: one correction
+
+The last paragraph of the Testing section is out of date: "The CUDA build was compiled with nvcc 12.8 at the revision before the merge; it will be compiled again at the current head." The nvcc 12.8 compile of `2e51886` passed (fleet job mi355-20261104-001208-cuda-compile: `USE_HIP` off, tests/examples/benchmarks on, 387 ninja steps, rc=0, 0 errors, 0 warnings), and `640a8b5` changes only comments. Replace that sentence with:
+
+====
+The CUDA build (`USE_HIP` off, the default) compiles with nvcc 12.8 at the current head, including the tests, examples and benchmarks, with no errors and no warnings.
+====
+
+The rest of the body (in the `2f4de2d` review above) is unchanged. `jargon.py -` and `prose.py` are clean on the full body with this sentence swapped in.
+
+Still owed: revalidation at `640a8b5` on wave64, wave32 (`linux-gfx1100`) and Windows (`windows-gfx1151`); the hipMM decision stays with Jeff.
