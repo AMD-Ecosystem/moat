@@ -171,10 +171,36 @@ reset and `hipStreamDestroy` then uses it again (valgrind: use-after-free on Lin
 where glibc aborts only some runs). The port-side fix is to destroy the owning object
 before the reset; whether to change the project is the upstream maintainer's call when
 a test exercises the order on purpose. Stale `hipFree` and `hipHostFree` fail cleanly
-with `hipErrorInvalidValue`; stale `hipEventDestroy` returns `hipSuccess` and was not
+with `hipErrorInvalidValue` in a single-threaded process (in a multithreaded one, see the
+next section); stale `hipEventDestroy` returns `hipSuccess` and was not
 checked under valgrind. Tell it apart from a missing DLL (which dies before `main`
 prints anything) by the work having completed first. A 12-line repro and a parity
 request to HIP are on FLAMEGPU2.
+
+## An intermittent crash after a GPU path is switched on: count runs against controls
+
+**A duplicate `hipFree` in one thread can crash a different thread.** When a library
+frees the same device pointer twice and another thread allocates between the two frees,
+the second free can release that thread's buffer. The failure then shows up somewhere
+unrelated, such as an OpenCV `cv::cuda` call aborting with `(-217) invalid argument`
+from `cudaGetLastError()`, or a jump to address 0, and only in some runs. plvs hit this
+once its libelas GPU path was enabled: the upstream code freed two buffers twice, and
+4-5 of 13 dense-stereo SLAM runs died that way. None of 26 control runs did.
+
+Run it as an experiment, because a single crash stack in a threaded application tells
+you little:
+- Repeat the identical run 6-12 times per build and record exit code and stack. Without
+  core dumps (`ulimit -c 0`) and with gdb too slow, a 15-line `LD_PRELOAD` handler that
+  calls `backtrace_symbols_fd` on SIGSEGV/SIGABRT is enough.
+- Build controls in a scratch copy of the tree, never the fork: the suspected fix
+  applied, the CPU fallback of the same component, and a build with no GPU code at all.
+- Count each crash kind (by stack) per build. A crash kind that also appears in the
+  no-GPU build is upstream and does not gate the port. Here an upstream null-KeyFrame
+  race appeared in every build. A crash kind seen only where the suspect code runs is the
+  finding.
+- Expect your first hypothesis to fail some of these controls. In plvs, removing the
+  double free left the upstream race in place, and only the no-GPU build showed it was
+  upstream.
 
 ## Two GPUs visible to one process can crash the runtime
 

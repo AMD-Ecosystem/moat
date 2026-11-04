@@ -2534,3 +2534,57 @@ linux-gfx90a: `revalidate` -> `completed` at `b9c257a`.
 - Upstream: `fastfusion` does not compile with g++ 13 (missing `<deque>`).
 - The deferred `plvs-libelas-gpu-dvalids-leak-double-free` ruling (reviewer 2026-11-04b). The leak did not stop the 305-keyframe run; device memory use was not measured here.
 - wave32 (linux-gfx1100) and windows-gfx1151 still owe runs at b9c257a.
+## Validation 2026-11-04 (linux-gfx1100, revalidate): validation-failed at b9c257a -- GPU ELAS is correct, but the upstream double `hipFree` it now runs aborts the dense-stereo pipeline
+
+Trigger: head `bab4052` (this arch's `validated_sha`) -> `b9c257a` (6ac02a3, e0dcda3 WIN32-only; b9c257a turns ELAS on the GPU in HIP builds). Full run, no carry-forward: b9c257a changes the Linux HIP build. Host: Ubuntu 24.04, TheRock pip SDK (`_rocm_sdk_devel`, ROCm 7.16.26385, amdclang 24.0.0git), CMake 3.31.6, g++ 13, PCL 1.14.0 / Boost / glog / protobuf / octomap from apt. GPU: Radeon Pro W7800 (gfx1100, wave32), `HIP_VISIBLE_DEVICES=2`, every GPU run under `ulimit -c 0`. Fork at `b9c257a` (== `origin/moat-port`); `git status --porcelain` empty throughout.
+
+### Full Linux build (this host had nothing; all from source)
+- OpenCV-with-HIP: `AMD-Ecosystem/opencv@50f05b1` + `opencv_contrib@041d552` (moat-port), `-DWITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=<sdk>/bin/amdclang++ -DCMAKE_PREFIX_PATH=<sdk> -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_GTK=ON -DBUILD_LIST=core,imgproc,imgcodecs,highgui,videoio,features2d,flann,calib3d,video,ximgproc,cudev,cudaarithm,cudawarping,cudaimgproc,cudastereo,cudafilters,cudafeatures2d,cudabgsegm`, 650/650, installed to scratch. The installed `OpenCVConfig.cmake` still carries the `find_host_package(CUDA ...)` / `find_cuda_helper_libs` block; removed it in the scratch install (same shim as every earlier session).
+- Pangolin `fe57db532` + `Thirdparty/pangolin.patch`, then g2o, DBoW2, volumetric_mapping, open_chisel, chisel_server, voxblox, voxblox_server, libsgm, line_descriptor and libelas-gpu in `build_thirdparty.sh` order with its options (`-DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 -DOpenCV_DIR=<ocv> -DUSE_HIP=ON -DOPENCV_VERSION=4 -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_POLICY_VERSION_MINIMUM=3.5`). All RC=0.
+- plvs: `cmake -S . -B build-hip -DWITH_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DWITH_LIBSGM=ON -DWITH_LIBELAS=ON -DWITH_G2O_NEW=OFF -DWITH_FASTFUSION=OFF -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 -DOPENCV_VERSION=4 -DOpenCV_DIR=<ocv> -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 && cmake --build build-hip -j 32`: RC=0, configure prints `building with libelas HIP`. `lib/libplvs.so` has `.hip_fatbin`, 8 `ElasGPU` dynamic symbols, links `libamdhip64.so.7` and the HIP OpenCV.
+- libelas-gpu alone (porter's command, gfx1100): 14/14, `--offload-arch=gfx1100` 6x in build.ninja, archive has `elas_gpu.cu.o` with `.hip_fatbin`; bundle `hip-amdgcn-amd-amdhsa--gfx1100`; code object `amdhsa.target amdgcn-amd-amdhsa-unknown-gfx1100`, kernels `libelas::findMatch_GPU` and `libelas::adaptiveMeanGPU8` (group segment 6084), both `.wavefront_size: 32`.
+
+### ELAS GPU-vs-CPU (porter's `elas_cmp.cpp`, extracted verbatim from this file), wave32
+`amdclang++ -x hip --offload-arch=gfx1100 -std=c++17 -O2 -DUSE_HIP -I$L/CPU -I$L/GPU elas_cmp.cpp -x none $L/lib/liblibelas_gpu.a -pthread -o elas_cmp`, `./elas_cmp $L/input <mode>`, all four modes RC=0.
+- Mode 2 (plvs with subsampling): GPU reruns bit-exact on all 7 pairs; cones, aloe identical to the CPU (max 0, vmis 0); raindeer 0.50 / vmis 4, urban1 0.44 / 2, urban2 0.66 / 0, urban3 1.23 (1 px > 1) / 0, urban4 0.68 / 0. Identical to the gfx90a and gfx942 figures.
+- Mode 0 (both postprocessed): max |d| per image equal to gfx90a/gfx942 (cones R 24.80, aloe L 4.35 / R 9.19, raindeer R 67.0, urban2 R 14.86 ...), >1px 0-7, vmis 1-25, mean |d| 0.016-0.025 (gfx90a 0.004-0.007, gfx942 0.0024-0.030). Not bit-exact between runs, as on wave64: the in-place `adaptiveMeanGPU8` halo race and findMatch duplicate writes, upstream design.
+- Mode 1: mean |d| 0.016-0.025, >1px 0-5, vmis 1-25. Mode 3: integer steps (max 2-67), mean 5e-5 to 1.9e-4, >1px 1-13; aloe and urban3 reruns happened to be bit-exact.
+- wave32 (two waves per 8x8 adaptiveMean block, `__syncthreads` after the early return) runs to completion with wave64-equal magnitudes.
+
+### Recorded SLAM validation: mono TUM RGB-D freiburg1_xyz -- PASS
+`xvfb-run -a -s '-screen 0 1280x1024x24' Examples/Monocular/mono_tum ORBvoc.txt Examples/Monocular/TUM1.yaml rgbd_dataset_freiburg1_xyz` (stock binary, viewer on under Xvfb; full 798-frame download). Run 1: map at 389 points, 50 KFs spanning 1305031102.18 -> 1305031128.65, clean Shutdown, RC=0. Run 2 with `AMD_LOG_LEVEL=3`: 356 points, 54 KFs, RC=0; `PLVS2::cuda::IC_Angle_kernel`, `calcOrb_kernel`, `tileCalcKeypoints_kernel`, `addBorder_kernel` x6384 each (798 frames x 8 levels), plus OpenCV `resize_linear` / `linearRowFilter` / `linearColumnFilter`.
+
+### Stereo with libelas: TUM-VI room1 (512_16), `Examples/Stereo/TUM-VI.yaml` with `PointCloudMapping.on: 1`
+No EuRoC mirror answered (robotics.ethz.ch empty, research-collection 429); TUM-VI is the stock stereo config whose `StereoDense.type` is already `libelas` (fisheye, `needRectification: 1`, `libelasEnableSubsampling: 0`). The yaml copy differs from the tracked file only in `PointCloudMapping.on` (0 -> 1); with 0, ELAS is never called.
+```
+xvfb-run -a -s '-screen 0 1280x1024x24' Examples/Stereo/stereo_tum_vi ORBvoc.txt TUM-VI_pcm.yaml \
+  dataset-room1_512_16/mav0/cam0/data dataset-room1_512_16/mav0/cam1/data \
+  Examples/Stereo/TUM_TimeStamps/dataset-room1_512.txt room1_runN
+```
+- ELAS on the GPU through ElasInterface, confirmed: the `AMD_LOG_LEVEL=3` run logged 367 `stereo processing (libelas)` calls, `libelas::findMatch_GPU` x734 (left + right) and `libelas::adaptiveMeanGPU8` x366, plus the plvs ORB kernels x41136.
+- When a run completes, the result is good: 2821/2821 frames, one map (111-117 KFs), ~400-465 libelas calls, ATE RMSE against mocap 0.0764 / 0.0767 / 0.0770 / 0.0776 m over four completed runs (rigid alignment, camera-to-IMU offset not compensated; sanity check, not a benchmark).
+- **But 6 of 13 runs at b9c257a died.** Crash backtraces came from an `LD_PRELOAD` SIGSEGV/SIGABRT handler that prints `backtrace_symbols_fd`; cores stay off and gdb was too slow to finish a run.
+
+| build (same host, data, yaml) | runs | clean | `-217` abort, tracking thread | SEGV at address 0 | SEGV in `MapLine::UpdateNormalAndDepth` | crash, no stack |
+|---|---|---|---|---|---|---|
+| fork at b9c257a (GPU ELAS) | 13 | 7 | 3 | 1 | 1 | 1 (traced run, before the handler) |
+| scratch copy, b9c257a minus the duplicate `cudaFree(d_u_vals/d_v_vals)`, plus `cudaFree(d_valids)` | 6 | 3 | 0 | 0 | 3 | 0 |
+| scratch copy, ElasInterface back to `#ifdef USE_CUDA` (CPU ELAS, the bab4052 behaviour) | 12 | 11 | 0 | 0 | 1 | 0 |
+| scratch copy, `-DUSE_HIP=OFF -DWITH_LIBSGM=OFF` (no device code in libplvs) | 8 | 7 | 0 | 0 | 1 | 0 |
+
+Two separate defects:
+1. **`MapLine::UpdateNormalAndDepth` -> `KeyFrame::GetCameraCenter` on a null KeyFrame** (`addr=0x1378`, LocalMapping thread, `LocalMapping::ProcessNewKeyFrame`): upstream, CPU-only. It reproduces in the build with no GPU code at all (1/8), with CPU ELAS (1/12), and with GPU ELAS. `src/MapLine.cc:660` uses `pRefKF->GetCameraCenter()` with no null check after copying `mpRefKF` under the lock. Not a port defect; it does not gate this port.
+2. **`cv::cuda::resize` aborts with `(-217:Gpu API call) invalid argument` at `cudawarping/src/cuda/resize.cu:337`** in the tracking thread (`PLVS2::Frame::ExtractORB` -> `ORBextractor::ComputePyramid` -> `cv::cuda::resize` -> `cudaSafeCall(cudaGetLastError())`), while the PointCloudMapping thread is inside libelas. One SEGV that jumped to address 0 also appears only in this build. Both crash kinds come only from the build that runs upstream `ElasGPU::computeDisparity` as it stands, which frees `d_u_vals`/`d_v_vals` twice (`elas_gpu.cu:581-582` and `:594-595`). The trace shows those second frees returning `hipErrorInvalidValue` (1465 such returns in 367 calls). The crashes occur in 4-5 of 13 runs of that build and in 0 of the 26 runs without it (one-sided Fisher p ~ 0.002-0.009). Likely mechanism, inferred and not proven: between the first and second free, another thread is handed the same device address, so the second free releases that thread's live buffer and the error turns up later in the tracking thread. The validation reference's "stale `hipFree` fails cleanly" holds only for a single-threaded process.
+
+Before b9c257a no HIP build reached that code, so the HIP build at this head newly crashes in the dense-stereo path. CUDA builds run the same upstream code. The fix is the 3-line change registered as deferred item `plvs-libelas-gpu-dvalids-leak-double-free` (free `d_valids`, drop the duplicate frees); the scratch copy above is exactly that change. That item has no defer/now ruling yet. This validation adds crash evidence to it, beyond the leak and the sticky error. Whether to make the change in this port is jeff's ruling, not this session's.
+
+### Gate checks
+- `python3 utils/jargon.py --port plvs` -> clean (after `git fetch origin master:master` in the fresh clone).
+- ROCm build documentation: `config.sh` HIP/ROCm section, `USE_HIP` forwarding in `build_plvs.sh` / `build_thirdparty.sh`, `new_features.md` -- present, unchanged since bab4052.
+- CUDA no-regression gate: `cuda-not-validated: no CUDA toolkit on this host` (no conda; the pip `nvidia-cuda-nvcc-cu12` 12.8 wheel ships only `ptxas`; fetching a micromamba binary for a CUDA env was refused by this session's permission policy). Read instead: in `bab4052..b9c257a`, everything nvcc could see under `USE_CUDA` is unchanged: `ElasInterface.cpp` `#if defined(USE_CUDA) || defined(USE_HIP)` is the old `#ifdef USE_CUDA` when `USE_HIP` is undefined (config.sh resets `USE_HIP` when `USE_CUDA` is on), and the libelas-gpu CUDA branch and top-level `CUDA_FOUND` branch are byte-unchanged. The other hunks are `WIN32`- or PCL-1.15-guarded. A Linux host with nvcc should still compile it once at this head.
+
+### State
+linux-gfx1100: `revalidate` -> `validation-failed` (`failed_sha = b9c257a`). Not a GPU-correctness failure: the ELAS kernels compute the CPU algorithm on wave32 as on wave64, and the mono SLAM and completed stereo runs are good. The failure is a crash that the head's own change exposes in HIP builds. Next step: jeff rules on `plvs-libelas-gpu-dvalids-leak-double-free`; if "now", the porter applies the 3-line fix, and this arch reruns the TUM-VI table row 1 (expect only the upstream MapLine crash).
+
+### Reproduce
+Scripts in `agent_space/plvs/` (gitignored): `build_tp.sh` (third-party order above), `elas_cmp.cpp`, `segv.c` (backtrace handler; `gcc -shared -fPIC segv.c -o libsegvbt.so`, run with `LD_PRELOAD`), `runs_head.sh` / `runs_fix.sh` (repeated stereo runs), `ate.py` (rigid-aligned ATE against `mocap0/data.csv`). Datasets: `https://cvg.cit.tum.de/rgbd/dataset/freiburg1/rgbd_dataset_freiburg1_xyz.tgz`, `https://cdn3.vision.in.tum.de/tumvi/exported/euroc/512_16/dataset-room1_512_16.tar`. Note: `utils/timeit.sh` changes into the MOAT root before running the command, so wrap runs as `timeit.sh ... -- bash -c "cd <rundir> && ..."` or their output files land in the MOAT checkout.

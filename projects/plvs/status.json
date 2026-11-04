@@ -7,12 +7,11 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-11-04T11:24:34Z",
+  "updated_at": "2026-11-04T12:05:27Z",
   "head_sha": "b9c257afb6e25fb68c49737f00f675dfd265a10f",
   "depends_on": [
     "opencv_contrib"
   ],
-  "porting": null,
   "waivers": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
@@ -24,29 +23,6 @@
   "upstream_repo_id": 693793222,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx1100": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "bab4052335d06b97adf91316892ece249c763037",
-      "started_at": "2026-08-13T21:21:31Z",
-      "completed_at": "2026-08-19T05:49:48Z",
-      "updated_at": "2026-08-19T05:49:48Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator"
-    },
     "windows-gfx1101": {
       "blocked": true,
       "blocked_reason": "Same host-wide Windows toolchain blocker as windows-gfx1201 (same physical machine, same TheRock clang-cl): full-SLAM binary crashes at startup in boost.serialization static type-registration (0xC00000FD infinite recursion in oserializer<KeyFrame>::save_object_data) BEFORE any GPU call. Confirmed GPU-independent and host-wide (independent of static/dynamic boost, -O0, and the Pangolin viewer). gfx1101 GPU itself is proven by other passes (e.g. libSGM). Not a port defect; needs a boost-header patch for the clang-MSVC ABI, MSVC cl.exe for the serialization TUs, or a fixed ROCm clang.",
@@ -67,6 +43,54 @@
         "first_session_at": null,
         "last_session_at": null
       }
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": "bab4052335d06b97adf91316892ece249c763037",
+      "started_at": "2026-11-04T08:04:09Z",
+      "completed_at": null,
+      "updated_at": "2026-11-04T09:03:09Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "validation-failed",
+      "last_agent": "validator"
+    },
+    "linux-gfx1100": {
+      "state": "validation-failed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "bab4052335d06b97adf91316892ece249c763037",
+      "started_at": "2026-08-13T21:21:31Z",
+      "completed_at": "2026-08-19T05:49:48Z",
+      "updated_at": "2026-11-04T12:05:27Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "failed_sha": "b9c257afb6e25fb68c49737f00f675dfd265a10f"
     },
     "linux-gfx90a": {
       "state": "completed",
@@ -112,30 +136,6 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator"
-    },
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": "bab4052335d06b97adf91316892ece249c763037",
-      "started_at": "2026-11-04T08:04:09Z",
-      "completed_at": null,
-      "updated_at": "2026-11-04T09:03:09Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "validation-failed",
       "last_agent": "validator"
     },
     "linux-gfx942": {
