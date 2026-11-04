@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-08-13T02:46:29Z",
+  "updated_at": "2026-08-21T04:36:05Z",
   "head_sha": "50f05b150687734a0d0d7084f6215de6cd3a5b95",
   "depends_on": [],
   "porting": null,
@@ -113,6 +113,28 @@
       "started_at": null,
       "completed_at": null,
       "updated_at": "2026-08-13T02:46:29Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1151": {
+      "blocked": true,
+      "blocked_reason": "no standalone test suite: this fork is exercised only through opencv_contrib, whose build configures cmake against this repo with OPENCV_EXTRA_MODULES_PATH. Validation evidence lives with opencv_contrib (4 platforms completed at contrib 041d5528). Do not dispatch a standalone validator here; revalidate opencv_contrib instead. Applied to windows-gfx1151 on 2026-08-20 for consistency with every other platform: this arch had no record, so the selector was deriving it as port-ready and routing a validator at a project that cannot be validated standalone.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-21T04:36:05Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
