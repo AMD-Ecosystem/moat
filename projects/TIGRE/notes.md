@@ -1440,3 +1440,11 @@ Outcome: windows-gfx1151 -> completed at b61ff14c87689beb1b08e2bcd8223c29ce85a83
 - Upstream issue https://github.com/CERN/TIGRE/issues/802 (jeff approved and posted): multi-GPU halo uploads in `tv_proximal.cu` are unsynchronized; reproduced on 2x MI300X (18/20 distinct outputs at 512^3) and fixed by one `cudaDeviceSynchronize()`. The same pattern in `GD_TV.cu`/`GD_AwTV.cu` is from code reading only (0/240 reproduced). None of these syncs are in #747, per jeff.
 - The deterministic ~5% 1-GPU vs 2-GPU tv_proximal difference is under investigation: `~/.claude/plans/tigre-multigpu-tv-split-difference.md`.
 - Fork review PR https://github.com/AMD-Ecosystem/TIGRE/pull/1 (`moat-fix-747` -> `moat-port` at b61ff14), body as jeff approved.
+
+## 2026-11-04: multi-GPU tv_proximal 1-GPU vs 2-GPU difference explained (fleet worker, 2x MI300X)
+
+- Full record: `~/.claude/plans/tigre-multigpu-tv-split-difference.md` (Results). Fork untouched; scratch trees only at b61ff14 plus the #802 sync.
+- Not by design; two upstream bugs in `Common/CUDA/tv_proximal.cu` (master 69bdd9f): (1) the `splits==1` halo exchange (lines 521-560) reads the neighbour's halo slot instead of its boundary interior slice (`d_X[dev+1]` should be `+buffer_pixels`; `d_X[dev-1]+slices_per_split*pixels_per_slice+buffer_pixels` should drop `+buffer_pixels`), so the right halo of dev gets global slice S-1 instead of S and the left halo of dev+1 is never refreshed; (2) `cpy_from_host` line 688 writes the trailing mirror halo at `bytes_device` instead of `offset_device+bytes_device`, which only matters when one chunk is both first and last (single GPU, no split): the mirror lands on the last interior slot, is overwritten, and the trailing halo stays zero. So at the far end the 1-GPU result is the wrong one (last-slice mean 0.1442 vs input 0.1008; 0.1016 fixed).
+- With both fixes, 2 and 3 chunks (3 = gpuids [0,1,0]) are bitwise equal to 1 GPU at 8x32^2, 63x64^2, 64x128^2, 100x96x80, 256^3, 512^3 (20 iters) and at 1, 2, 50 iters; a numpy model of the padded scheme matches the GPU to <=8.8e-7 in all four fix combinations. The edge fix changes single-GPU output in the last 3 slices only.
+- Same halo-to-halo pattern in `GD_TV.cu` lines 612-620 (and GD_AwTV.cu): not tested.
+- Draft upstream issue is in the plan; nothing posted. No state changed.
