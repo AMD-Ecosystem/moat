@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T01:19:43Z",
-  "updated_at": "2026-11-04T07:32:39Z",
+  "updated_at": "2026-11-04T09:32:33Z",
   "head_sha": "eb4d017a4ae7b32926aca97db1223fc443aae490",
   "depends_on": [],
   "pr_url": "https://github.com/IBM/aihwkit/pull/770",
@@ -122,6 +122,29 @@
         "last_session_at": null
       },
       "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "eb4d017a4ae7b32926aca97db1223fc443aae490",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-04T09:32:33Z",
+      "updated_at": "2026-11-04T09:32:33Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed"
     }
   },
   "published_sha": "70577b578b7faa661611e905c0b9ec1a1d85bf33",

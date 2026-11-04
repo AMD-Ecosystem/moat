@@ -861,3 +861,77 @@ local master / moat-sync-60ffe9e refs in the fresh clone). Docs: README
 build_hip/).
 
 Verdict: PASS at eb4d017. Transitioning linux-gfx1100 to completed.
+
+## Validation 2026-11-04 (validator, windows-gfx1151, sync tip eb4d017)
+
+State: port-ready (first validation on this platform). GPU: AMD Radeon 8060S
+(gfx1151, RDNA3.5, wave32 native, APU), HIP_VISIBLE_DEVICES=0. Toolchain:
+TheRock ROCm 7.14.0a20260519 (HIP 7.13) with torch 2.12.0+rocm7.14.0a20260519,
+Python 3.12.10, scratch venv with numpy 1.26.4 (torch312 venv on a .pth for
+torch; shared env untouched), pybind11 3.1.0, cmake 4.4.4, Ninja. Fork cloned
+fresh; built the detached sync tip eb4d017 (moat-port itself is frozen at
+70577b5 and was not touched; no push to the fork).
+
+Build (all-clang-cl, per the Windows recipe; no source changes):
+```
+cmake -S . -B build_hip -GNinja -DUSE_HIP=ON -DUSE_CUDA=OFF -DRPU_CXX_STANDARD=20 \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_C_COMPILER=$R/lib/llvm/bin/clang-cl.exe \
+  -DCMAKE_CXX_COMPILER=<same> -DCMAKE_HIP_COMPILER=<same> -DCMAKE_HIP_STANDARD=20 \
+  -DPython3_EXECUTABLE/-DPython_EXECUTABLE/-DPYTHON_EXECUTABLE=<scratch venv python> \
+  -DCMAKE_PREFIX_PATH="$TORCH/share/cmake;$R;$R/lib/cmake" -DROCM_PATH=$R -DRPU_BLAS=OpenBLAS \
+  -DOpenBLAS_INCLUDE_DIR=$R/lib/host-math/include/openblas \
+  -DOpenBLAS_LIB=$R/lib/host-math/lib/rocm-openblas.lib -DRPU_USE_TORCH_BUFFERS=OFF \
+  -DBUILD_TEST=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_HIP_FLAGS='-DWIN32 -D_WINDOWS -GR -EHsc'
+cmake --build build_hip -j6        # 78/78
+```
+Same three class of local build.ninja edits as the earlier Windows platforms for
+the final rpu_base.pyd link (lld-link directly): append c10_hip.lib torch_hip.lib
+and a libomp140.lib generated from torch's libomp140.x86_64.dll (llvm-readobj
+--coff-exports -> .def -> llvm-dlltool), add /WHOLEARCHIVE:RPU_GPU.lib to
+LINK_FLAGS, give POST_BUILD stubgen its full path. Without c10_hip/torch_hip the
+link fails on c10::cuda::getCurrentCUDAStream / CUDAStream::stream; without
+libomp140 on __kmpc_*.
+
+New fault class found with all-clang-cl (build configuration, not a port bug):
+CMake gives HIP-language TUs no /EHsc or /GR (CMAKE_HIP_FLAGS defaults to
+/DWIN32 /D_WINDOWS), and the rpu_base binding TUs are LANGUAGE HIP. Compiled
+without exception handling, every C++ exception thrown into pybind11 (e.g.
+load_extra with a missing key, set_weights with a wrong shape) goes to
+terminate: "Fatal Python error: Aborted", exit 127 under bash, killing the whole
+pytest run at TileTest_FloatingPoint::test_dump_extra. Fix is the
+CMAKE_HIP_FLAGS above on the configure line (use dash spelling; MSYS rewrites a
+leading /X argument into a path). The earlier gfx1201/gfx1101 builds used the
+gcc-driver amdclang++, where exceptions are on by default, which is why they
+never saw it. If a maintainer wants the Windows recipe to be clang-cl, the
+project's CMake could add EHsc to the HIP flags itself; not changed here (the
+branch is frozen and the flag fits the recipe).
+
+Runtime: TheRock amdhip64_7.dll, amd_comgr0713.dll, hiprtc*.dll, rocm_kpack.dll
+copied next to the pyd (removed afterwards; untracked). ROCBLAS_USE_HIPBLASLT=0.
+Tests (`ulimit -c 0; PYTHONPATH=src python -m pytest -q -p no:cacheprovider ...`):
+- test_specific_tiles: **36 passed** (bit_line_maker / pulsed-update warp-size
+  gate on native wave32; suite grew 18 -> 36 upstream).
+- test_simulator_tiles + test_bindings_tiles: **532 passed, 57 skipped, 0 failed**
+  (gfx1100 Linux: 568/57 for these two plus specific = same 532 + 36).
+- test_torch_tiles + test_inference_tiles: **406 passed, 55 skipped, 0 failed**.
+  This includes TorchInferenceCuda::test_input_range_grad, which PASSES here
+  (also re-run alone: 4 passed under -k test_input_range_grad). Deferral
+  aihwkit-input-range-grad-drift (not ruled on) failed on gfx90a (ROCm 7.14 /
+  torch 2.14) and gfx1100 (ROCm 10.1 / torch 2.16); here torch is 2.12 with
+  ROCm 7.13 runtime, matching the toolchain-drift hypothesis, not an arch effect.
+- test_layers_linear + test_layers_convolution: **566 passed, 216 skipped**
+  (identical to gfx90a and gfx1100).
+- test_analog_ctx: **177 passed, 29 skipped, 113 subtests passed**.
+Earlier Windows: gfx1201 (June, 70577b5-era) 1520 passed / 1 stochastic fail,
+gfx1101 1521 passed / 0 failed; those predate the sync round, so counts differ
+by the new upstream cases only.
+
+CUDA gate: not run on this host. cuda-not-validated: no CUDA toolkit on the
+Windows host (last recorded at 70577b5; the eb4d017 rpu_cub.h `#else` branch
+change still wants a Linux host with /opt/conda/envs/cuda-12.8).
+Jargon: `python3 utils/jargon.py --port aihwkit` clean (after creating local
+master and moat-sync-60ffe9e refs). Docs: README "Running on AMD GPUs" present.
+Fork tree: tracked files unmodified (only untracked build_hip/).
+
+Verdict: PASS at eb4d017. Transitioning windows-gfx1151 to completed.
