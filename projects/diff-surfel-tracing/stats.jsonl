@@ -118,3 +118,7 @@
 {"kind":"phase","ts":"2026-11-04T09:32:11Z","phase":"compile","seconds":0.096,"exit":1,"cmd":"cmake --build third_party/hiprt/build --target hiprt03001 -j56"}
 {"kind":"phase","ts":"2026-11-04T09:32:25Z","phase":"compile","seconds":5.468,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261104-012853-dst-fix2/moat/projects/diff-surfel-tracing/src/third_party/hiprt/build --target hiprt03001 -j56"}
 {"kind":"phase","ts":"2026-11-04T09:34:15Z","phase":"compile","seconds":38.394,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261104-012853-dst-fix2/moat/agent_space/dst/fresh && /var/lib/jenkins/fleet/jobs/mi300-20261104-012853-dst-fix2/venv/bin/pip install -v --no-build-isolation ."}
+{"kind":"session","ts":"2026-11-04T10:03:18Z","epoch":1793786598.714414265,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-04T10:05:51Z","phase":"compile","seconds":49.662,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261104-020043-dst-review3/moat/agent_space/rv/build.sh /var/lib/jenkins/fleet/jobs/mi300-20261104-020043-dst-review3/moat/agent_space/rv"}
+{"kind":"phase","ts":"2026-11-04T10:06:42Z","phase":"test","seconds":23.828,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261104-020043-dst-review3/moat/agent_space/rv/gate.sh"}
+{"kind":"session","ts":"2026-11-04T10:07:50Z","epoch":1793786870.807763461,"event":"end","platform":"linux-gfx942"}

@@ -3002,3 +3002,39 @@ The Windows code paths themselves did not change (`extra_link_args` stays `[]` t
 3. Rename or delete the clone, then run `example/validate_rocm.py` (copied elsewhere) twice from a cold cache with `ROCM_PATH`/`HIP_PATH` set: 50/50 both times.
 4. `build_ext --inplace` still builds and passes (the route recorded on 2026-11-04), since `build_ext` keeps staging.
 5. The `_winhip.cu` copies still appear and compile (module-level code, untouched; this only confirms nothing moved).
+
+## Review 2026-11-04 (round 10, linux-gfx942, `moat-port` e24c44c vs 21f62d0) -- PASSED
+
+Delta reviewed: `git diff 21f62d0..e24c44c` (`setup.py`, `README.md`), the answer to the gfx942 README-install failure at `21f62d0`. No defects found.
+
+Read and fact-checked:
+
+- `setup.py:173-179` `CustomBuildPy`: setuptools 79 `build_py` computes `data_files` lazily through `__getattr__` and caches it in `__dict__` (`setuptools/command/build_py.py:48-49,86-88`), so popping it after staging makes `package_data` resolve against the staged files even if `bdist_wheel` touched `data_files` earlier. `build_ext` still stages (`setup.py:189`), so `build_ext --inplace` is unchanged.
+- `setup.py:169-170`: on Linux the `.so` copy is unconditional, so a missing HIP RT build fails the install loudly instead of shipping a broken package. `package_data` names the library exactly (`setup.py:239`); `.gitignore` already covers `*.so`, so the staged copy never shows as a tracked change.
+- `setup.py:234`: `-Wl,-rpath,$ORIGIN` reaches the linker literally (torch's ninja path compiles only; the link goes through setuptools without a shell).
+- CUDA/OptiX path: the only change it sees is `_cmdclass = {}` spread into `cmdclass` (same dict as before) and the `build_py` import; `CustomBuildExtension`'s CUDA branch, `optix_tracer/`, `ext.cpp`, `trace_surfels.*` and the CUDA README block are untouched.
+- Windows: handled, not changed in kind. The DLL copy (`setup.py:165-168`), the `*.dll` package glob and `__init__.py:13-14` `os.add_dll_directory(_pkg_dir)` are as before; the new `lib*.so` entry matches nothing there and `extra_link_args` stays `[]`. Only the staging time moved (now also in `build_py`), and Windows has only been validated with `build_ext --inplace`, so the package-install route there is left to the windows-gfx1151 validator, per the checklist in the Port fix entry above. The Windows DLL copy stays silent when the DLL is missing while Linux now raises; pre-existing and covered by that checklist's item 2.
+- Commit `e24c44c`: `[ROCm]` title, 63 chars, AI disclosure, fenced Test Plan, no trailer. `python3 utils/jargon.py --port diff-surfel-tracing`: clean.
+
+### GPU verification on this host (MI300X HF, gfx942, torch 2.16.0a0+git6c3af02, ROCm SDK wheel HIP 7.16.26385, no /opt/rocm, pip 26.3, setuptools 79.0.1)
+
+Installed into the job's private venv (a `.pth` to the host site-packages for torch); the shared environment was not touched.
+
+```
+git clone --recursive -b moat-port https://github.com/AMD-Ecosystem/diff-surfel-tracing.git fresh && cd fresh   # e24c44c, hiprt 8602b8c
+git -C third_party/hiprt apply ../../third_party/hiprt-rocm-fixes.patch
+export ROCM_PATH=<site-packages>/_rocm_sdk_devel HIP_PATH=$ROCM_PATH
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON -DHIP_PATH=$ROCM_PATH -S third_party/hiprt -B third_party/hiprt/build
+cmake --build third_party/hiprt/build --target hiprt03001 -j56
+PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=56 pip install -v --no-build-isolation .   # exit 0
+cp example/validate_rocm.py <scratch>/run/ && rm -rf fresh                   # clone deleted
+cd /tmp; ulimit -c 0
+rm -rf <site-packages>/diff_surfel_tracing/hiprt_cache; python3 -X faulthandler <scratch>/run/validate_rocm.py   # twice
+```
+
+- Install log: `running build_py` (line 49), `copying` the four headers (52-55), 235 `hiprt_root` lines and `libhiprt0300164.so` (135), all before `running build_ext` (136). Installed package: `_C*.so`, `__init__.py`, four headers, `hiprt_root/`, `libhiprt0300164.so`, 19 MB. `readelf -d _C*.so`: `NEEDED libhiprt0300164.so`, `RUNPATH [$ORIGIN]`; `LD_DEBUG=libs` shows the loader searching the package directory.
+- With the clone deleted, each from a cold cache: run 1 exit 0, 16 s, `50/50 checks passed`; run 2 exit 0, 7 s, `50/50`; logs byte-identical; cache repopulated (6 files). Device `AMD Instinct MI300X HF`. Numbers equal the 21f62d0 entries: covered 0.241, 62/64 traced (missing [5, 25]), grads3D cosine 0.9825, fd slopes 1.0021 / 0.7428 / 0.9390 / 0.8855, bounce 3.627e-01, P=4096 rgb 0.19876 / 1343 traced, P=16384 rgb 0.25417 / 3309 traced.
+
+### Note for PR prep (pre-existing, outside this delta, not blocking)
+
+`README.md` (the `validate_rocm.py` block, from `07c8742`) runs the example as `HIP_VISIBLE_DEVICES=0 python3 example/validate_rocm.py`. README run commands should not carry a device-selection variable; drop the prefix at the next README touch or the PR-prep squash.
