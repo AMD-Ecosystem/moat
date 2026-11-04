@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "cupy",
+  "upstream_url": "https://github.com/cupy/cupy",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-04T22:34:29Z",
+  "updated_at": "2026-11-04T22:34:29Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
