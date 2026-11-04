@@ -7,12 +7,15 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-20T19:10:58Z",
+  "updated_at": "2026-11-04T08:04:09Z",
   "head_sha": "bab4052335d06b97adf91316892ece249c763037",
   "depends_on": [
     "opencv_contrib"
   ],
-  "porting": null,
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-04T08:04:09Z"
+  },
   "waivers": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
@@ -22,7 +25,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 693793222,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -119,9 +122,9 @@
       "blocked_reason": null,
       "validated_sha": null,
       "failed_sha": "bab4052335d06b97adf91316892ece249c763037",
-      "started_at": null,
+      "started_at": "2026-11-04T08:04:09Z",
       "completed_at": null,
-      "updated_at": "2026-08-20T19:10:58Z",
+      "updated_at": "2026-11-04T08:04:09Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
