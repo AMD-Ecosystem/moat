@@ -1300,3 +1300,22 @@ ctest --test-dir ucm_simu -j1 --timeout 300 --output-on-failure
 CUDA gate: not run (Windows host, no CUDA toolkit). Pre-completion: `PYTHONUTF8=1 python3 utils/jargon.py --port unified-cache-management` clean (local `develop` set to upstream cc99d52 in the scratch clone); ROCm build docs unchanged since the reviewed docs commits.
 
 Result: windows-gfx1151 COMPLETED at eda03f156a96c7d5f8cf04bb47cf279e81eade53.
+
+## CUDA compile check (nvcc 12.8) at eda03f1
+
+Compile-only check on a Linux host with NVIDIA CUDA 12.8.93 (`/usr/local/cuda-12.8`, apt toolkit) and no NVIDIA GPU; GCC 13.3.0, CMake 3.31.6. Port: fork `moat-fix-1021` at eda03f156a96c7d5f8cf04bb47cf279e81eade53. Baselines: upstream ModelEngine-Group/unified-cache-management `develop` tip cc99d525151c93f3177c4559649a5a7e653c47ab, and the port's merge base f366bfa1f74aa790e79349b51dba39a06c8c2333 (develop has 2 commits the port has not merged), so a difference can be pinned to the port rather than to upstream drift. Fresh clones, nothing modified.
+
+Same command for all three trees:
+```bash
+cmake -S . -B build-cuda -DCMAKE_BUILD_TYPE=Release -DRUNTIME_ENVIRONMENT=cuda -DBUILD_UNIT_TESTS=ON -DCUDA_ROOT=/usr/local/cuda-12.8 -DPython_EXECUTABLE=<venv>/bin/python
+VERBOSE=1 cmake --build build-cuda -j20
+cd build-cuda && ctest -j16 --timeout 120
+```
+- Configure rc=0 and build rc=0 on port, merge base and develop tip. `-Wall -Werror` holds: zero warnings on all three.
+- nvcc compiled `ucm/shared/trans/cuda/cuda_sm_kernel.cu` (`-x cu`, compute/sm 75, 80, 86, 89, 90) on all three. The extracted cubins and PTX for all five arches (`cuobjdump -xelf all -xptx all` on `kernel.dir/cuda_sm_kernel.cu.o`) are byte-identical between the port and the merge base, so the `#if defined(__CUDA_ARCH__)` guard leaves the CUDA device code unchanged.
+- Targets: port builds 32 "Built target" lines and the baselines 35; the difference is `infra_template`, `infra_thread`, `infra_time`, which the port turns from OBJECT into INTERFACE libraries (their directories hold only headers), so they no longer print a build line. No other target difference.
+- `ucm/store/nfsstore/device/cuda/cuda_device.cu` (changed by the port) is not reached by any `add_subdirectory` upstream, so the CMake build never compiles it. Compiled it standalone with the build's nvcc flags (`-O3 -std=c++17 --generate-code` sm_75/80/90, `--diag-suppress=128,2417,2597 -Wall`, includes for nfsstore/device, shared/infra and the fetched fmt/spdlog): rc=0 for port and develop tip, no diagnostics, and the extracted sm_75/80/90 cubins are byte-identical between the two.
+- ctest: 337 tests on each tree. The same 17 GPU-dependent tests fail on all three (UCTransUnitTest x5, UCCache2TransManagerIntegrationTest x6, DataStrategyTest x6; no NVIDIA driver), and the same Skipped/Disabled set. The only difference at -j16 was in timing-sensitive UCLogger tests (port: LogEventuallyReachesUcmFile and MultiThreadPerfUCInfoVsRateLimitRandomContent; merge base: FileOnlyLogEventuallyReachesVllmFile). `ctest -R UCLogger` run serially twice on each tree: 6/6 pass every time on all three, so those were load flakes, not port effects.
+- Not compiled: the sparse `gsa_on_device` CUDA extension (`BUILD_UCM_SPARSE`, off by default). It needs a CUDA build of PyTorch, and installing one into this host's environment was refused by the host guard. The port's edits there (`csrc/cuda/ham_dist/operator.h`, `paged_ham_dist_mla.cu`) are `#ifdef USE_ROCM` / `#ifndef USE_ROCM` wrappers whose non-ROCm branch is the original upstream text, and nothing in the CUDA CMake path defines `USE_ROCM`, so the CUDA preprocessed source is unchanged; an nvcc compile of that extension still needs a host with CUDA torch.
+
+Result: no CUDA regression at eda03f1 in the default CUDA build with unit tests. Platform states unchanged.
