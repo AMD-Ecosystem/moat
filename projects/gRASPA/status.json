@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-08-20T08:05:02Z",
+  "updated_at": "2026-11-04T06:48:41Z",
   "head_sha": "7e3c08b33df60cf2a970e2d9647a7a6922514458",
   "depends_on": [],
   "porting": null,
@@ -150,5 +150,12 @@
     "since": "2026-08-20T02:10:23Z",
     "at": "2026-08-20T02:14:30Z"
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/gRASPA/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/gRASPA/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-03T23:55:17Z",
+    "head_sha": "7e3c08b33df60cf2a970e2d9647a7a6922514458",
+    "content_sha256": "95c141896ac732f9472ae3a5763aace81b7426b31e254bae8aa819259886ba8c",
+    "review_pr": "https://github.com/AMD-Ecosystem/gRASPA/pull/1"
+  }
 }
