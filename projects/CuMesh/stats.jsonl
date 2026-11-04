@@ -153,3 +153,7 @@
 {"kind":"phase","ts":"2026-10-20T22:56:12Z","phase":"compile","seconds":172.899,"exit":0,"cmd":"bash -c cd projects/CuMesh/src && GPU_ARCHS=gfx90a MAX_JOBS=64 /var/lib/jenkins/fleet/jobs/mi200-20261020-154900-cumesh-gfx90a-validator-prompt/venv/bin/python -m pip install . --no-build-isolation -v"}
 {"kind":"phase","ts":"2026-10-20T22:57:21Z","phase":"test","seconds":57.493,"exit":0,"cmd":"bash agent_space/run_examples.sh"}
 {"kind":"session","ts":"2026-10-20T23:06:40Z","epoch":1792537600.358180025,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-04T07:24:16Z","epoch":1793777056.616116910,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-04T07:27:27Z","phase":"compile","seconds":126.040,"exit":0,"cmd":"bash -c cd projects/CuMesh/src && BUILD_TARGET=rocm GPU_ARCHS=gfx942 MAX_JOBS=28 /var/lib/jenkins/fleet/jobs/mi300-20261103-232152-cumesh-gfx942/venv/bin/python setup.py build --build-base /var/lib/jenkins/fleet/jobs/mi300-20261103-232152-cumesh-gfx942/moat/agent_space/CuMesh-validator-gfx942-1153341 --force"}
+{"kind":"phase","ts":"2026-11-04T07:29:54Z","phase":"test","seconds":116.797,"exit":0,"cmd":"bash agent_space/run_examples.sh"}
+{"kind":"session","ts":"2026-11-04T07:30:51Z","epoch":1793777451.195516404,"event":"end","platform":"linux-gfx942"}

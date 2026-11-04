@@ -2780,3 +2780,46 @@ person already ruled stays. README documents `BUILD_TARGET=rocm GPU_ARCHS=...` n
 **Result**: linux-gfx90a -> completed at 11533412aaaa8f21f26d7e46d8a468562c41ff96 (closes wave64 for
 this round). The uv_unwrap chart-count difference is benign per-arch FP contraction (see the correction
 above); it reproduces on the already-published tip and is not caused by this round.
+
+## Validation 2026-11-04 (linux-gfx942 revalidate at 1153341) -- PASS
+
+**Platform**: linux-gfx942 (AMD Instinct MI300X HF, `gfx942:sramecc+:xnack-`, wave64), one device pinned by `HIP_VISIBLE_DEVICES=1` (dispatcher pin). Python 3.11.17, torch `2.16.0a0+git6c3af02` (git `6c3af026fb597f8c9a571362f475097e4c39d6ed`), `torch.version.hip` `7.16.26385`, hipcc from the image's `_rocm_sdk_devel`. Same image and toolchain as the 2026-10-20 linux-gfx90a run.
+
+**Why a full run**: `classify CuMesh 392b4dd 1153341` -> `class=unknown` (revalidate). The delta includes the cubvh core rewrite (`de1badf`), so no carry-forward was attempted.
+
+**Environment**: the job's isolated venv; `$FLEET_VENV/bin/python -m pip install --no-deps /var/lib/jenkins/pytorch/dist/torch-2.16.0a0+git6c3af02-cp311-cp311-linux_x86_64.whl`, then `pip install fsspec trimesh numpy typing_extensions sympy filelock jinja2 networkx setuptools wheel ninja pybind11` (trimesh 5.2.0). Nothing installed into the shared image Python.
+
+**Commit**: fresh clone of `AMD-Ecosystem/CuMesh`, checked out `11533412aaaa8f21f26d7e46d8a468562c41ff96` (head_sha; `origin/moat-port` resolves to the same sha, fix round merged; the fork's GitHub default branch is `moat-port`). Submodules `third_party/cubvh` `de1badf89b54`, nested eigen `e63d9f6ccb7f`, matching the recorded pins. `protect-fork` run.
+
+**Build**:
+```bash
+utils/timeit.sh CuMesh compile -- bash -c "cd projects/CuMesh/src && BUILD_TARGET=rocm GPU_ARCHS=gfx942 MAX_JOBS=28 $FLEET_VENV/bin/python setup.py build --build-base agent_space/CuMesh-validator-gfx942-1153341 --force"
+```
+PASS, exit 0, 126s, zero `error:` lines, 13 `--offload-arch=gfx942` compiles, all three extensions (`_C`, `_cubvh`, `_cumesh_xatlas`). Warning set unchanged (pybind11 `-Wattributes` and the previously recorded ones).
+
+**Examples** (`utils/timeit.sh CuMesh test -- bash agent_space/run_examples.sh`: `ulimit -c 0`, examples copied to a scratch dir, bunny downloaded fresh, `PYTHONPATH=<build-base>/lib.linux-x86_64-cpython-311`, uv_unwrap run 3 times): 8/8 runs exit 0, 117s.
+
+| example | linux-gfx942 (this run) |
+|---|---|
+| simplify | 34834/69451 -> 4977 v / 9880 f (varies run to run) |
+| fill_holes | -> 34838 / 69594 |
+| remove_duplicate_faces | 34834 / 69451 unchanged |
+| unify_orientations | 34834 / 69451 unchanged |
+| remesh | -> 102396 / 204916 |
+| uv_unwrap (x3) | 90 clusters, 45110 v / 69451 f, `uv_unwrap.ply` md5 `af98b1598088f48c01c2a1a3ed473402` all 3 runs |
+
+The uv_unwrap md5 equals the gfx942/gfx1100 hash recorded in the 2026-10-21 root-cause correction above.
+
+**Atlas structure** (per the uv_unwrap criterion above; `agent_space/chart_check.py`, scratch): 90 charts over 69451 faces, chart ids 0..89, face offsets cover all faces, every chart nonempty, 0 charts with more than one edge-connected component (32 single-face charts, 17 charts >1000 faces, largest 11021). uv_unwrap UVs finite in [0, 0.99854].
+
+**BVH contract check** (`agent_space/bvh_check.py`, scratch; torch seed 0; run from `/tmp`): icosphere subdiv 4, 2562 v / 5120 f, 20000 random points in [-1.5,1.5]^3. unsigned max err 1.134e-3, all finite, all face_id >= 0; signed (watertight) max err 1.134e-3, sign match 19971/19971 beyond 2e-3; ray_trace toward the origin 14683/14683 hit, radius [0.99886, 0.99999]. Degenerate mesh (1 vertex, 9 zero-area faces, queries [0,0,0] and [1,2,3]): unsigned, signed watertight and signed raystab all return +inf / face_id -1 / uvw 0. Identical to gfx1100 and gfx90a.
+
+**CUDA gate**: closed at this head_sha by linux-gfx1100 (2026-08-27); not rerun.
+
+**Jargon/docs**: `python3 utils/jargon.py --port CuMesh` (after `git fetch origin main:main moat-port:moat-port` in the fork clone; `moat-fix-36` no longer exists on the fork) reports only the 2 known hits in the published `d5c1355` message, already ruled to stay by a person. README documents `BUILD_TARGET=rocm GPU_ARCHS=gfx942` next to the CUDA build.
+
+**Integrity**: `git -C projects/CuMesh/src status --porcelain` empty, HEAD `1153341`.
+
+**Housekeeping**: orient's merge of `origin/main` into `port/CuMesh` conflicts outside the project folder (`.claude/skills/cuda-to-rocm/references/strategy-b-torch.md`, `references/validation.md`); left for a control-plane session, not resolved here.
+
+**Result**: linux-gfx942 -> completed at 11533412aaaa8f21f26d7e46d8a468562c41ff96.
