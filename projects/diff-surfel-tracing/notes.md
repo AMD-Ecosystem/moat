@@ -2762,3 +2762,32 @@ Still unfixed, by design: HIP RT gives no clean error when hiprtc is absent (the
 null call). A guard needs to be API-aware (on the CUDA path `hiprtcCreateProgram`
 is legitimately null), so it is left for the HIP RT report rather than this port.
 The fixed-name-list defect is one more item for the existing HIPRT#67 report.
+
+## Review 2026-11-04 (round 8, linux-gfx90a, `moat-port` 892f41a vs 173f32a) -- CHANGES REQUESTED
+
+Delta reviewed: `git diff 173f32a..892f41a` (`.gitignore`, `README.md`, `hiprt_tracer/hiprt_wrapper.cpp`, `third_party/hiprt-rocm-fixes.patch`). Fact-checked inline: the patched `hiprt.cpp` was read in a fresh HIPRT `3.1.0.cb09c56` clone (`8602b8c`, the submodule pin) with the patch applied; Orochi `hipew.cpp:627` and `hiprt_libpath.h:40` do carry the fixed `hiprtc0714.dll`..`hiprtc0503.dll` lists the commit names; `hipewInit` uses a custom list in place of its defaults (`hipew.cpp:740`), so the scan result is what actually loads.
+
+### Finding 1 (README.md:81): the run-time `ROCM_PATH` note is scoped to Windows, but Linux needs it too when ROCm is not at /opt/rocm
+
+The new paragraph says that on Windows `ROCM_PATH`/`HIP_PATH` must stay set at run time, not only at build time, which implies Linux needs nothing at run time. It does: `hiprt_tracer/hiprt_wrapper.cpp:164-167` builds the runtime compiler's `-I<rocm>/include` from `ROCM_PATH`/`HIP_PATH`, defaulting to `/opt/rocm`, on every OS. A Linux user with a pip-installed ROCm SDK sets `ROCM_PATH` for the build (`setup.py:59` needs it), and per this paragraph has no reason to keep it set. Reproduced on this host (ROCm SDK wheel at `site-packages/_rocm_sdk_devel`, no /opt/rocm): the same build run without `ROCM_PATH` fails at the first trace with `kernels.h:59:10: fatal error: 'hip/hip_runtime.h' file not found`, `hiprt_wrapper.cpp:184 HIPRT error 2`, then `torch.AcceleratorError: ... invalid resource handle`. With `ROCM_PATH` exported, 50/50 checks pass. Fix: state the run-time requirement for both OSes (on Linux, whenever ROCm is not installed at /opt/rocm, because the runtime compiler's HIP include path comes from it), and keep the Windows DLL-search reason as the Windows-specific half. This is a README-only change; `advance-head` classifies a doc-only delta and carries the existing validations forward.
+
+### Reviewer evidence on linux-gfx90a (MI250X, torch 2.16.0a0+git6c3af02, HIP 7.16.26385)
+
+```
+git clone --recursive --depth 1 -b 3.1.0.cb09c56 https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT.git <scratch>/HIPRT
+git -C <scratch>/HIPRT apply <fork>/third_party/hiprt-rocm-fixes.patch      # applies clean
+export ROCM_PATH=<venv>/site-packages/_rocm_sdk_devel HIP_PATH=$ROCM_PATH PATH=$ROCM_PATH/bin:$PATH
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON -DHIP_PATH=$ROCM_PATH -S <scratch>/HIPRT -B <scratch>/HIPRT/build
+cmake --build <scratch>/HIPRT/build --target hiprt03001 -j42                 # clean; libhiprt0300164.so
+export HIPRT_HOME=<scratch>/HIPRT PYTORCH_ROCM_ARCH=gfx90a
+python3 setup.py build_ext --inplace                                          # clean
+rm -rf diff_surfel_tracing/hiprt_cache
+ROCM_PATH=$ROCM_PATH PYTHONPATH=$PWD python3 example/validate_rocm.py         # ulimit -c 0
+50/50 checks passed
+```
+
+So the patched HIP RT still builds on Linux with the new `#include <filesystem>` and defaulted parameter, and the Linux path is unchanged in behavior. The numbers match the 2026-08-14 gfx90a validation (covered 0.241, depth [1.820, 4.574], 62/64 traced, missing [5, 25], grads3D cosine 0.9825, P=4096 rgb mean 0.19876 / 1343 traced, P=16384 rgb mean 0.25417 / 3309 traced, bounce delta 3.627e-01), except finite-difference slopes for colors (1.0043 vs 1.0021) and means3D (0.9388 vs 0.9387), within harness tolerance on the newer HIP. The fork tree stayed clean (`git status --porcelain` empty).
+
+The Windows-only code cannot run here, so its logic was host-compiled with `g++ -std=c++17 -Wall -Wextra` (no warnings) from the patch's `DllPathList::build` and the wrapper loop, against a fake `bin` holding `hiprtc07013.dll`, `hiprtc-builtins07013.dll`, `hiprtc07013.pdb` and `amdhip64_7.dll`. Both pick `hiprtc07013.dll` and nothing else, and HIP RT keeps its full-path and bare-name fallbacks behind it. A missing `bin` directory yields only the old lists, and the wrapper then passes `nullptr`, letting Orochi use its defaults (before the delta it passed a nonexistent full path, which disabled that fallback). `python3 utils/jargon.py --port diff-surfel-tracing` and `--commits/--diff 173f32a..892f41a` are clean.
+
+Records: the earlier gfx90a validator left `completed` at `173f32a` and no lock; nothing to reconcile. `moatlib` derives revalidation from `head_sha`.
