@@ -746,6 +746,13 @@ def set_state(name, platform, new_state, agent=None, save=True):
                    and not same_commit(
                        (obj["platforms"].get(platform) or {}).get("validated_sha"),
                        obj.get("head_sha")))
+    # Its mirror: a `validation-failed` arch failing a NEWER head. failure_stands reads
+    # an old failed_sha as stale and derives `port-ready`, so short-circuiting here left
+    # the new failure unrecorded and sent the next validator to the same head again.
+    refailed = (not is_stage and new_state == cur == "validation-failed"
+                and not same_commit(
+                    (obj["platforms"].get(platform) or {}).get("failed_sha"),
+                    obj.get("head_sha")))
     # The other same-state call that is not a no-op: entering an exclusive stage the
     # project is ALREADY in while holding no lock. That is the ordinary case of picking
     # up work another host put down, and it is the half the exclusivity check above does
@@ -760,7 +767,7 @@ def set_state(name, platform, new_state, agent=None, save=True):
     acquires = (new_state in EXCLUSIVE_STAGES
                 and (obj.get("porting") or {}).get("arch") != platform)
     same = new_state == cur
-    if same and not (revalidated or acquires):
+    if same and not (revalidated or refailed or acquires):
         return obj
     table = STAGE_TRANSITIONS if is_stage else ARCH_TRANSITIONS
     # Reached only when the state really changes, or when one of the cases above
@@ -1816,6 +1823,47 @@ def set_no_upstream(name, evidence, by, note=None, clear=False):
     return obj
 
 
+def set_base_branch(name, branch, by, reason=None):
+    """Record a person's ruling that the upstream PR targets `branch` rather than
+    the default branch recorded at scaffold. GOMC is the origin case: upstream's
+    CONTRIBUTING.md asks for pull requests against `development`, not `main`.
+
+    `fork_default_branch` is both the PR base and the fork branch kept as a clean
+    mirror of upstream's, so the branch must already exist on the fork -- a
+    person mirrors it there first, and this checks with a read-only ls-remote.
+    An open upstream PR already has its base, and a recorded approval was given
+    on a diff against the old one, so both refuse."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if obj.get("pr_state") == "open":
+        raise ValueError(f"{name}: an upstream PR is open -- its base is set on "
+                         f"GitHub, not here")
+    if obj.get("pr_approval"):
+        raise ValueError(f"{name}: a PR approval is recorded against the diff from "
+                         f"{obj.get('fork_default_branch')!r}; a new base needs a "
+                         f"new approval -- clear it first")
+    fork = obj.get("fork_url")
+    if not fork:
+        raise ValueError(f"{name}: no fork recorded -- the base must exist on it")
+    r = subprocess.run(["git", "ls-remote", fork, f"refs/heads/{branch}"],
+                       capture_output=True, text=True, timeout=60)
+    if r.returncode or not r.stdout.strip():
+        raise ValueError(f"{name}: no branch {branch!r} on {fork} -- mirror "
+                         f"upstream's {branch} to the fork first")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    old = obj.get("fork_default_branch")
+    obj["fork_default_branch"] = branch
+    obj["base_branch_ruling"] = {"branch": branch, "previous": old,
+                                 "by": by, "at": now_iso()}
+    if reason:
+        obj["base_branch_ruling"]["reason"] = reason
+    save_record(name, obj, f"{name}: PR base {old} -> {branch}, ruled by {by}")
+    return obj
+
+
 def archive_pr(name):
     """Move a finished (merged or closed) upstream PR into pr_history, freeing the
     pr_* fields for a follow-up round.
@@ -2578,6 +2626,12 @@ def advance_head(name, new_sha, repo=None):
         print(why, file=sys.stderr)
     obj = load_status(name)
     repo = repo or _fork_repo(name)
+    if Path(repo, ".git").exists():
+        r = subprocess.run(["git", "cat-file", "-e", f"{new_sha}^{{commit}}"],
+                           cwd=str(repo), capture_output=True, text=True)
+        if r.returncode != 0:
+            raise ValueError(f"{name}: {new_sha} is not a commit in {repo}; "
+                             "push the fork commit and fetch before advancing the head")
     new_sha = full_sha(new_sha, repo)
     _move_head(obj, new_sha, repo)
     if moved:
@@ -4201,6 +4255,61 @@ def squash_carry_forward(name, new_sha, repo=None):
                    "skipped": skipped, "optional": optional, "stale": stale})
 
 
+def adds_nothing_to_upstream(name, obj):
+    """Does head_sha's tree already exist in upstream's history?
+
+    After a merged PR the port branch can move to upstream itself: upstream lands
+    its own fix for what a follow-up would have carried, and the branch is
+    re-pointed by a merge whose tree is upstream's (lc0, 2026-10-20). head_sha
+    then differs from published_sha while offering nothing, and only a tree
+    comparison can tell. True when head_sha, or a parent with the same tree, is
+    an ancestor of upstream's default branch tip.
+
+    Needs the local fork clone and a reachable upstream; without either it
+    returns False, so the follow-up stays listed rather than being hidden. A
+    worktree from make_worktree has no clone of its own, so the main checkout's
+    is used when this tree lacks one."""
+    sha, url = obj.get("head_sha"), obj.get("upstream_url")
+    repo = _fork_repo(name)
+    if not (repo / ".git").exists():
+        common = _git("rev-parse", "--path-format=absolute", "--git-common-dir",
+                      check=False).stdout.strip()
+        if common:
+            repo = Path(common).parent / "projects" / name / "src"
+    if not sha or not url or not (repo / ".git").exists():
+        return False
+    branch = obj.get("fork_default_branch") or "main"
+
+    def git(*args, timeout=60):
+        try:
+            return subprocess.run(["git", *args], cwd=str(repo), capture_output=True,
+                                  text=True, timeout=timeout)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+
+    r = git("ls-remote", url, f"refs/heads/{branch}")
+    tip = (r.stdout.split() or [""])[0] if r and not r.returncode else ""
+    if not tip:
+        return False
+    have = git("cat-file", "-e", f"{tip}^{{commit}}")
+    if not have or have.returncode:
+        f = git("fetch", "--quiet", url, f"refs/heads/{branch}", timeout=300)
+        have = git("cat-file", "-e", f"{tip}^{{commit}}")
+        if not f or f.returncode or not have or have.returncode:
+            return False
+    trees = git("rev-parse", f"{sha}^{{tree}}")
+    parents = git("rev-parse", f"{sha}^@")
+    if not trees or trees.returncode or not parents or parents.returncode:
+        return False
+    tree = trees.stdout.strip()
+    for c in [sha, *parents.stdout.split()]:
+        t = git("rev-parse", f"{c}^{{tree}}")
+        a = git("merge-base", "--is-ancestor", c, tip)
+        if t and t.stdout.strip() == tree and a and a.returncode == 0:
+            return True
+    return False
+
+
 def pr_ready(name):
     """Is a port ready for its next upstream PR?
 
@@ -4301,6 +4410,12 @@ def pr_ready(name):
                              f"the upstream PR is already {pr_state} and the branch "
                              f"has nothing past what it shipped -- a follow-up "
                              f"starts when new reviewed commits land")], [])
+        if adds_nothing_to_upstream(name, obj):
+            return (False, [("pr-exists",
+                             f"the upstream PR is already {pr_state} and head_sha "
+                             f"{obj['head_sha'][:12]} carries upstream's own tree "
+                             f"-- upstream absorbed the port, so a follow-up "
+                             f"would offer nothing")], [])
         # A follow-up delta exists; the gates below judge it at head_sha exactly
         # as they judge a first PR.
     elif obj.get("pr_url"):
@@ -4712,6 +4827,15 @@ def main(argv=None):
     s.add_argument("--note")
     s.add_argument("--clear", action="store_true",
                    help="withdraw the ruling (upstream takes pull requests again)")
+
+    s = sub.add_parser("set-base-branch",
+                       help="record a person's ruling that the upstream PR targets "
+                            "BRANCH (sets fork_default_branch; the branch must "
+                            "already exist on the fork)")
+    s.add_argument("name")
+    s.add_argument("branch")
+    s.add_argument("--by", help="who ruled it; required, never defaulted")
+    s.add_argument("--reason")
 
     s = sub.add_parser("sync-branch",
                        help="establish the staging branch for a sync round on a "
@@ -5164,6 +5288,14 @@ def main(argv=None):
                   f"({obj['no_upstream']['evidence']}). No upstream PR will be "
                   f"offered; the fork's {obj.get('fork_branch') or PORT_BRANCH} "
                   f"branch is the deliverable.")
+    elif args.cmd == "set-base-branch":
+        if not args.by:
+            print("set-base-branch: --by is required -- this records a person's "
+                  "ruling", file=sys.stderr)
+            return 2
+        obj = set_base_branch(args.name, args.branch, args.by, reason=args.reason)
+        print(f"{args.name}: PR base is now {obj['fork_default_branch']} "
+              f"(was {obj['base_branch_ruling']['previous']})")
     elif args.cmd == "sync-branch":
         fix = sync_branch(args.name)
         print(f"{args.name}: sync round on {fix['branch']} "

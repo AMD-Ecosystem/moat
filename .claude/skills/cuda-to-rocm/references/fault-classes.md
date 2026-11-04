@@ -134,6 +134,23 @@ slots. (dietgpu)
 faults. Kernels reading index +/-1 or +/-width at edges (stencils, neighbour gathers) must
 clamp. (colmap ComputeDOG.)
 
+**A latent OOB that stopped reproducing is still there, and index math on `size_t` operands
+overshoots UPWARD, not past-the-end.** Two traps, usually together. First, whether a wild
+read faults depends on what the driver happens to have mapped, so the same kernel can abort
+on one tree and complete on the next with no relevant change; absence of a fault is not
+evidence the bug is gone, and "it no longer crashes" must never close an OOB finding.
+Instrument instead: a `printf` in the trailing threads of the last block, printing the
+decoded indices and the sizes they are checked against, decides it in one run. Second, when
+padded threads decode an index through arithmetic whose operands are `size_t` -- closed-form
+inverses of triangular pair indices are the classic shape -- the intended "negative"
+excursion is computed in UNSIGNED 64-bit and wraps to nearly 2^64 instead. The out-of-range
+indices are then astronomical rather than slightly too large, and a `sqrt` of the wrapped
+value returns a real number where a signed evaluation would have produced a NaN, so the
+symptom does not look like the sign error it is. (gRASPA `TotalVDWRealCoulomb`: the trailing
+thread decoded `AtomA 2147484974` and `AtomB 2305843010287440402` against a size of 1327 --
+an 18-exabyte offset from a `size_t*` base -- and the fix was moving the bounds test that
+already existed above the two loads it followed.)
+
 **Rule-of-five on resource handles.** CUDA tolerates a default-constructed or
 double-destroyed texture/stream/event handle; AMD faults. Give RAII wrappers explicit
 default init (`handle = 0`), move-only semantics, and a guarded destructor. (colmap
@@ -182,6 +199,39 @@ move, no API call) and drain it from a user thread that already issues runtime c
 the existing queue mutex, draining on teardown too. Only the op that hands per-call
 allocations into a callback-retired queue trips this, which is why one gate hangs while
 everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`.)
+
+**An init-time kernel launched on the legacy null stream is NOT ordered against streams
+created `cudaStreamNonBlocking`/`hipStreamNonBlocking`.** A weight/constant upload helper
+that stages through a SHARED scratch buffer, launches an async conversion kernel on stream
+0, and returns without synchronizing is racing the first real evaluation, which overwrites
+the same scratch from a non-blocking compute stream. Only the LAST upload before the first
+evaluation is exposed, because each earlier one is flushed by the next helper call's
+synchronous H2D `hipMemcpy` into the same scratch -- so the corruption lands on whatever
+tensor the last-constructed layer uploaded last, and looks deceptively like "that one layer
+is numerically broken". Fingerprint: exactly one CONSTANT tensor wrong while every COMPUTED
+tensor around it matches a CPU reference to ~1e-7, the wrong values being
+plausible-magnitude foreign floats, and the bug VANISHING the moment you add a debug
+readback (whose `hipDeviceSynchronize` supplies the missing ordering). Windows loses this
+race deterministically -- its KMD batches/defers submission -- where Linux HIP and CUDA
+land the tiny copy immediately and win it, so it presents as an OS-specific defect and
+invites a toolchain hunt. It is latent UB on CUDA too, so fix it unconditionally, never behind a
+platform guard -- but fix it at the BOUNDARY, not in the helper you caught it in. Such a
+codebase usually has several upload paths sharing the shape (lc0 has six: `allocAndUpload`
+plus five `LoadWeights`/positional-encoding variants), and whichever one happens to run
+last depends on the network shape and the precision, so synchronizing the single helper
+your reproducer exercised leaves the same bug live for another input. Construction is
+single-threaded and every upload is null-stream ordered against every other, so ONE
+device-wide synchronize at the end of construction covers all of them in the same one
+line. Put it after the LAST null-stream operation, not merely after the uploads: an async
+`hipMemset` that zeroes the evaluation's own buffers is the same race, so a sync placed
+before that allocation loop leaves it open. (lc0: `allocAndUpload` in
+`neural/backends/cuda/layers.cc` corrupting the value head's `ip2_val_b_`; the same 4.4e-02
+value error on gfx1101, gfx1151 and gfx1201 under Windows and absent on linux-gfx90a and
+linux-gfx1100, which had been misread as a rocBLAS/Tensile problem for two months. The
+first fix synchronized `allocAndUpload` alone; on a net WITH a moves-left head the last
+fp16 upload is `FCLayer<half>::LoadWeights` instead, which still corrupted the moves-left
+head while the value/policy gate passed 34/34. Upstream's own fix, lc0 #2454, is the
+reference shape: one `cudaDeviceSynchronize()` after the `tensor_mem_` malloc/memset loop.)
 
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
@@ -348,6 +398,15 @@ failures and narrowing conversions. Fixes are additive and arch-independent, so 
 the CUDA build too and are not HIP-specific hacks. (Velvet)
 
 ## Types, dispatch and platform limits
+
+**`clock64()` is a 20-bit counter on gfx11.** On RDNA3/3.5 it compiles to
+`s_getreg_b32 hwreg(HW_REG_SHADER_CYCLES, 0, 20)`, which wraps about every million cycles;
+gfx9 uses the 64-bit `s_memtime`. A spin-wait or timeout written `while (clock64() - start
+< n)` never terminates when the counter wraps first, so the kernel hangs -- intermittently,
+because it depends on where the counter stood at `start`. Elapsed-time measurements are
+silently wrong the same way. Use `wall_clock64()` (a 64-bit constant-rate counter on both,
+rate from `hipDeviceAttributeWallClockRate` in kHz) for any interval. Grep a port for
+`clock64` and `clock()` in device code. (FLAMEGPU2, found in a test probe)
 
 **Library swaps.** cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE ->
 hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Mostly 1:1; watch handle types
