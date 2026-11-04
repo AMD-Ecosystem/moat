@@ -141,3 +141,17 @@ Rebuilt clean at `4fedca7` with the recipe above (`-DBUILD_TESTS=ON`, gfx942, FA
 - INSTALL.md command from the source root, `PYTHONPATH` unset, package not installed (`python -c "import tsnecuda"` -> `ModuleNotFoundError`): `python -m pytest -v build/python/tsnecuda/test` 7 passed in 18.8 / 16.1 / 15.5 s (3 runs).
 - Same setup with the 2e948b4 `test_tsne.py` copied into `build/python`: `-k "synchronized or overrides"` 2 failed, `ModuleNotFoundError: No module named 'tsnecuda'` in the child (the reviewer's reproduction, confirmed on gfx942). Build copy restored by `cmake --build build` and checked identical to the source.
 - `utils/jargon.py --port tsne-cuda`: clean; `utils/prose.py` on both bodies: clean.
+
+## Review 2026-11-04 (reviewer, linux-gfx1201, re-review) -> review-passed
+
+Re-reviewed the fix delta `2e948b4..4fedca7` (`ab87296`, `4fedca7`) with the pr-review skill, fact-checked inline. No findings; both must-fix items of the previous review are resolved.
+
+- Finding 2 (`ab87296`): `CMakeLists.txt:58` guards the `OPT_FLAGS` append with `if(NOT MSVC)`; `-fopenmp -fPIC` stay under `NOT WIN32`. The only C++ sources in the build are googletest (the library and `tsnecuda_test` sources are all HIP), so under clang-cl googletest now gets only its own MSVC flags. Checked with the SDK's `clang-cl --no-default-config --target=x86_64-pc-windows-msvc -### -c -GS -W4 -WX`: no error, default `-std=c++14`, which googletest v1.15.2 accepts. (Without `--no-default-config` the Linux SDK's `clang-cl.cfg` injects `-frtlib-add-rpath`, which `-WX` rejects; that is a Linux-SDK host artifact, not the port, and the Windows SDK has its own config.) Linux unchanged: 8 googletest `FLAGS = -std=c++17 ... -msse4` lines in `build/build.ninja`. Still not compiled on Windows; the windows validator should build with `-DBUILD_TESTS=ON`.
+- Finding 1 (`4fedca7`): `test_tsne.py:_digits_in_subprocess` prepends the directory holding `tsnecuda/` (three `dirname`s of `__file__`) to the child's `PYTHONPATH`, keeping any existing value.
+- Commit hygiene: titles 68 and 67 chars, `[ROCm]`, no trailer, ASCII; `utils/jargon.py --port tsne-cuda` clean (needed a local `main` branch from `origin/main` in the fresh clone first).
+
+GPU evidence at `4fedca7` (gfx1201, `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`): FAISS `moat-port` `01a09e8` install from the earlier gfx1201 review (built per the recipe above), fresh tsne-cuda build with the porter's recipe, `-DCMAKE_HIP_ARCHITECTURES=gfx1201 -DBUILD_TESTS=ON`, rc 0. Runtime `LD_LIBRARY_PATH=$FAISS_PREFIX/lib`, `PYTHONPATH` unset, package not installed (`import tsnecuda` from the source root -> `ModuleNotFoundError`), Python 3.11 venv with scikit-learn 1.9.1, numpy 1.26.4, pytest 7.3.2.
+
+- `ctest --test-dir build --output-on-failure`: 1/1; `./build/tsnecuda_test` 10 consecutive runs, all `PASSED 8 tests`.
+- `cd build/python && python -c "import tsnecuda; tsnecuda.test()"`: rc 0, total_time 2.79 s.
+- `python -m pytest -v build/python/tsnecuda/test` (INSTALL.md form, from the source root): 7 passed in 23.74 / 23.68 / 23.55 s, 3 runs, including `test_digits_quality_synchronized_kernels` and `test_digits_quality_launch_overrides`.

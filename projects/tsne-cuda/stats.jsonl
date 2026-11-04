@@ -22,3 +22,7 @@
 {"kind":"phase","ts":"2026-11-04T19:37:21Z","phase":"test","seconds":24.262,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261104-112808-tsne-review/venv/bin/python -m pytest -v -p no:cacheprovider /var/lib/jenkins/fleet/jobs/gfx1201-20261104-112808-tsne-review/moat/agent_space/tsne/build_head/python/tsnecuda/test"}
 {"kind":"session","ts":"2026-11-04T19:40:41Z","epoch":1793821241.385363102,"event":"end","platform":"linux-gfx1201"}
 {"kind":"phase","ts":"2026-11-04T19:47:19Z","phase":"compile","seconds":17.430,"exit":0,"cmd":"bash agent_space/tsne_build.sh"}
+{"kind":"session","ts":"2026-11-04T20:01:05Z","epoch":1793822465.063478249,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-04T20:02:28Z","phase":"compile","seconds":10.057,"exit":0,"cmd":"bash agent_space/build.sh"}
+{"kind":"phase","ts":"2026-11-04T20:04:01Z","phase":"test","seconds":80.902,"exit":0,"cmd":"bash agent_space/tests.sh"}
+{"kind":"session","ts":"2026-11-04T20:04:43Z","epoch":1793822683.261546440,"event":"end","platform":"linux-gfx1201"}
