@@ -6,21 +6,45 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "setuptools-cuda-extension",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-08-27T02:01:36Z",
-  "updated_at": "2026-08-27T15:05:23Z",
+  "updated_at": "2026-11-04T07:23:33Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {},
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-04T07:23:33Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
   "license_spdx": "MIT",
   "intake": {
-    "verdict": "decline",
-    "reason": "already-supported",
-    "duplicate_effort": "Upstream itself: JeffreyXiang/FlexGEMM#18 'Add AMD ROCm/HIP support' merged 2026-04-20; ATLAS-0321/FlexGEMM-rocm is a never-upstreamed duplicated kernels/hip tree, superseded. No AMD-Ecosystem or ROCm org repo.",
-    "viable": false,
-    "summary": "Triton-based sparse-conv GEMM backend, not CUTLASS: upstream already runs on ROCm (PR #18 merged 2026-04-20, `BUILD_TARGET=rocm` in setup.py, MI300X Triton MFMA configs since the first commit, ~18.5k MI300X autotune entries shipped) so there is no port left to write; also unblocks TRELLIS.2 as a satisfied dependency.",
-    "at": "2026-08-27T15:05:23Z"
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "Linux: upstream itself (JeffreyXiang/FlexGEMM#18 merged 2026-04-20, MI300X-only evidence). Windows ROCm: none. Open #31 (Windows/MSVC build) edits the same setup.py Windows block; coordinate. No AMD-Ecosystem/ROCm repo.",
+    "viable": true,
+    "summary": "Reverses the Aug decline because TRELLIS.2 (now forked) needs FlexGEMM on the windows gate: Linux ROCm is upstream already (#18), but setup.py's Windows branch hands nvcc-only -Xcompiler flags to hipcc, GEMM is Triton via experimental triton-windows AMD, no wave32/RDNA evidence; MIT tier 1, small setup.py delta plus 3-gate validation.",
+    "at": "2026-11-04T07:23:32Z"
   }
 }
