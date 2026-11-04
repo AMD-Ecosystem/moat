@@ -802,3 +802,55 @@ Retested on gfx90a (MI250X), ROCm 10.1: all 8 extensions build; the 7 new upstre
 
 I merged current master into this branch, keeping the new parallel Siddon projector from master where it conflicted with the port. I also added a small setup.py fix so the HIP build works with current ROCm, whose rocRAND headers need C++14. I re-ran the cone and parallel-beam projection, reconstruction and adjointness checks on <GPUs validated at the final head>.
 ```
+
+## Validation 2026-11-04 (linux-gfx1100, validator, moat-fix-747 @ 5a3da55 -> completed)
+
+GPU: AMD Radeon Pro W7800 48GB / gfx1100, TheRock ROCm SDK 10.1 (`rocm-sdk path --root`), HIP_VISIBLE_DEVICES=2 (pinned by the dispatcher), all GPU runs under `ulimit -c 0`. Job venv: python 3.11.17, numpy 1.26.4, scipy 1.10.1, Cython 3.3.1. Head checked out detached at 5a3da55948d954ca9184c0b4793bbb2be95490e9 from `origin/moat-fix-747`. The A/B base is a worktree at the published tip cf873a28 with the 5a3da55 setup.py hunk applied uncommitted (it does not build on ROCm 10.1 otherwise). Device code changed in the merge, so this was a full GPU run with no carry-forward.
+
+### Build
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH BUILD_WITH_HIP=1 HIP_ARCH=gfx1100 ROCM_PATH=$(rocm-sdk path --root)
+utils/timeit.sh TIGRE compile -- bash -c "cd projects/TIGRE/src && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16"
+```
+Head: rc 0, 0 errors, 8/8 extensions (`_Ax _Atb _minTV _minPICCS _AwminTV _tv_proximal _gpuUtils _RandomNumberGenerator`), and `llvm-objdump --offloading` shows a gfx1100 code object in each. Build log: 20 hipcc compiles at `-std=c++14`, 23 host compiles at `-std=c++11`. Base built the same way: rc 0, 8/8, gfx1100 in each. Self-test on both: `fp32 hardware linear texture filtering on AMD Radeon Pro W7800 48GB: supported (hardware trilinear)`.
+
+### Upstream pytest (head)
+`cd projects/TIGRE/src/Python && PYTHONPATH=. MPLBACKEND=Agg $FLEET_VENV/bin/python -m pytest -q -p no:cacheprovider tests/<file>.py`: test_compute_cor 6, test_demo_angles 1, test_denoise_2d_guard 3, test_filtering_workers 37, test_gpuids_default 5, test_krylov_restart_and_norms 9, test_krylov_smoke 9 -> **70 passed, 0 failed**, the same as the porter (gfx90a) and the reviewer (gfx1100). The base has none of these files.
+
+### GPU gates (head vs base)
+Scripts: the reviewer's `gates.py` (cone gates plus parallel-beam gates) and `miss.py`, copied from that job, and a `solvers.py` rebuilt from the porter's description (default low-res 64^3 geometry, 60 angles, 5 iterations, nRMSE vs the head phantom). All are host-local in `agent_space/scripts/`. Each was run as `cd <tree>/Python && PYTHONPATH=. MPLBACKEND=Agg $FLEET_VENV/bin/python <script>`, wrapped in `utils/timeit.sh TIGRE test`.
+
+| gate | head 5a3da55 | base cf873a2 |
+|---|---|---|
+| cone Siddon mean / max | 27.457 / 111.229 | identical |
+| cone interp vs Siddon | 0.003997 | identical |
+| cone FDK nRMSE | 0.27626 | identical |
+| cone OS-SART 20 nRMSE | 0.19358 | 0.15145 |
+| cone adjointness random / phantom | 1.234e-05 / 6.267e-05 | identical |
+| parallel 64 ang [0,pi) incl. 0, pi/2: interp vs Siddon / Siddon adj | 0.004019 / 3.227e-05 | identical |
+| parallel 64 ang +0.3: interp vs Siddon / Siddon adj | 0.004087 / 5.504e-05 | identical |
+| parallel Euler (alpha sweep, theta 0.4, psi 0.2): interp vs Siddon | 0.005590 | 0.1643 |
+| parallel FBP nRMSE (Siddon proj, 64 ang +0.3) | 0.10503 | identical |
+| parallel SIRT 20 nRMSE | 0.19545 | identical |
+| parallel missed rays (64^3, 129^2 det, offOrigin 0,7.3,-5.1): Siddon zero frac / max | 0.8614 / 27.096, finite, no hang | 0.8089 / 27.096 |
+| same, interpolated zero frac / max | 0.8547 / 26.423 | identical |
+| solvers sart / ossart / sirt | 0.0406 / 0.2972 / 0.4828 | 0.2820 / 0.2258 / 0.3760 |
+| solvers cgls / fista | 0.1916 / 0.2855 | 0.1916 / 0.9909 |
+| solvers asd_pocs / awasd_pocs / os_asd_pocs / ossart_tv | 0.0469 / 0.0387 / 0.3091 / 0.3153 | 0.2826 / 0.2816 / 0.2379 / 0.2529 |
+
+Every head value is finite. Every head cone and parallel value matches the reviewer's gfx1100 check at this sha to the printed digits (interp vs Siddon 0.0040 / 0.0041 / 0.0056, FBP 0.105, SIRT 0.195, FDK 0.276, OS-SART 0.194, adj 1.23e-05). Interp vs Siddon stays under 1% at all three parallel angle sets.
+
+Why head and base differ, all from upstream:
+- **Parallel Euler 0.0056 vs 0.164.** At cf873a2 the parallel Siddon projector ignores theta/psi (full Euler support is upstream b1e6e61, host `computeDeltas_Siddon_parallel`), so it disagrees with the interpolated projector. After the merge the two agree. With alpha-only angles the two trees agree: the saved parallel Siddon projection (64 angles +0.3, shape 64x128x128) is `np.array_equal` between head and base, max abs diff 0.0.
+- **Missed-ray Siddon zero fraction 0.861 vs 0.809.** Upstream's per-axis counts and its missed-ray return (7549d41, 9f0b669) now leave exactly-missed rays at zero, which moves Siddon closer to the interpolated projector's 0.855. The max value is unchanged.
+- **Solver and OS-SART shifts.** To check this, I ran the head's `Python/` tree with all 8 `.so` swapped for the base build's (each `cmp`-identical to the base files): the solver sweep reproduced the head numbers exactly (sart 0.0406 ... ossart_tv 0.3153). Device output feeding the solvers is therefore unchanged, and the shift is upstream's Python (a675320 SART weight and the pocs/krylov/ista edits), as the porter found on gfx90a. My solver nRMSEs do not match the porter's absolute values because the solver script was rebuilt from a description, not copied; the recorded bar is finite, and it holds.
+
+### CUDA no-regression gate
+`cuda-not-validated: no CUDA toolkit on this host` (no `/opt/conda`; the `nvidia-cuda-nvcc-cu12==12.8.93` wheel ships only `ptxas`, no `nvcc` driver; I installed it into the job venv and then uninstalled it). The reviewer verified that the nvcc branch, `COMMON_NVCC_FLAGS` and `win_wrap_compile` in setup.py are byte-identical to cf873a2, and the merge's only `.cu` edit beyond upstream is the 5-line Np cap. The gate is still owed at 5a3da55 by a Linux host that has the toolkit.
+
+### Completion checks
+- `python3 utils/jargon.py --port TIGRE`: clean. It needs local `master`, `moat-fix-747` and `moat-port` refs in the clone: `git branch -f master upstream/master` and so on.
+- Docs: `Frontispiece/python_installation.md` keeps the "AMD GPU (ROCm/HIP)" section after the merge. Its ROCm `>=7.2` line is still accurate, and the C++14 change needs no user-visible doc change.
+- `git -C projects/TIGRE/src status --porcelain`: no modified tracked files at 5a3da55, only untracked build output.
+
+Outcome: linux-gfx1100 -> **completed** at 5a3da55. This satisfies the wave32 gate at this head. wave64 (gfx90a) and windows still need validator records at 5a3da55; the porter's gfx90a run is not one.
