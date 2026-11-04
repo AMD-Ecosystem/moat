@@ -84,3 +84,7 @@
 {"kind":"phase","ts":"2026-11-04T18:25:03Z","phase":"test","seconds":11.807,"exit":0,"cmd":"timeout 2400 /var/lib/jenkins/fleet/jobs/mi200-20261104-101547-sync2-tigre/venv/bin/python agent_space/tigre/tigre_validate.py"}
 {"kind":"phase","ts":"2026-11-04T18:25:27Z","phase":"test","seconds":23.121,"exit":1,"cmd":"timeout 2400 /var/lib/jenkins/fleet/jobs/mi200-20261104-101547-sync2-tigre/venv/bin/python agent_space/tigre/tigre_solvers.py"}
 {"kind":"phase","ts":"2026-11-04T18:27:31Z","phase":"test","seconds":27.487,"exit":0,"cmd":"timeout 1200 /var/lib/jenkins/fleet/jobs/mi200-20261104-101547-sync2-tigre/venv/bin/python agent_space/tigre/tigre_solvers.py"}
+{"kind":"session","ts":"2026-11-04T18:36:23Z","epoch":1793817383.508416272,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-04T18:38:36Z","phase":"compile","seconds":0.011,"exit":2,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-103044-review-tigre/venv/bin/python setup.py build_ext --inplace -j 16"}
+{"kind":"phase","ts":"2026-11-04T18:39:08Z","phase":"compile","seconds":14.309,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261104-103044-review-tigre/moat/agent_space/tigre/head && /var/lib/jenkins/fleet/jobs/rx7900-20261104-103044-review-tigre/venv/bin/python setup.py build_ext --inplace -j 16"}
+{"kind":"session","ts":"2026-11-04T18:42:11Z","epoch":1793817731.126805614,"event":"end","platform":"linux-gfx1100"}

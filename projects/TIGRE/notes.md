@@ -749,3 +749,56 @@ Retested on gfx90a (MI250X), ROCm 10.1: all 8 extensions build; the 7 new upstre
 
 I merged current master into this branch, keeping your rewrite of the parallel Siddon projector where it conflicted. I also added a small setup.py fix so the HIP build works with current ROCm, whose rocRAND headers need C++14. I re-ran the projection, reconstruction and adjointness checks on <GPUs validated at the final head>.
 ```
+
+## Review 2026-11-04 (reviewer, linux-gfx1100 -> review-passed)
+
+Scope: fix round `moat-fix-747`, delta cf873a2..5a3da55 (merge cfc014e of upstream 69bdd9f, then 5a3da55 C++14). Read the full port diff against upstream 69bdd9f as well.
+
+### Verdict: review-passed. No code findings.
+
+Verified, so the next role does not redo it:
+- **Merge is faithful.** `git merge-tree --write-tree cf873a2 69bdd9f` reports exactly one conflict (Common/CUDA/Siddon_projection_parallel.cu, one marker block). `git diff <merge-tree> 5a3da55` touches only that file (the resolution) and setup.py (the C++14 commit): no other edits are hidden in the merge. (The gfx942 entry lists setup.py as auto-merged; upstream did not touch setup.py in this range.)
+- **The port diff is unchanged apart from the two intended edits.** Comparing `git diff <old merge-base> cf873a2` with `git diff 69bdd9f 5a3da55` at -U0, the only differences are the parallel `Np_max` gaining `+ nVoxelZ` and the three setup.py lines. Same 17 files, and the include swaps, reduction guards, launch-chevron fixes and texture changes are all intact.
+- **The conflict resolution is correct.** The result is upstream's kernel verbatim plus the 5-line cap. The bound holds because each per-axis count is at most nVoxel+1 (imin >= 0 or 1 and imax <= nVoxel), so the sum is at most nX+nY+nZ+3. The cap therefore never truncates a valid ray, and keeping it matches Siddon_projection.cu. Upstream's new `am>=aM` return in both Siddon kernels makes the NaN-to-unsigned case unreachable for missed rays.
+- **New upstream CUDA in built files needs no port.** That code is: point-filtered `tex3D<float>` (the new z branch), `isinf`/`INFINITY`/`fminf`, an early return in PICCS `gradientTV`, `cudaFree(d_dimgTV)`, the commented-out `cudaDeviceReset`, and host-side `eulerZYZ` in `computeDeltas_Siddon_parallel` (already defined in ray_interpolated_projection.cu). It adds no linear-filtered texture, warp intrinsic, launch, new .cu or new extension.
+- **C++14 change.** The only lines added are inside the `_is_cuda_file(src) and BUILD_WITH_HIP` branch; the nvcc branch, `COMMON_NVCC_FLAGS` and `win_wrap_compile` are byte-identical to cf873a2. The build log on this host shows 20 hipcc compiles, all `-std=c++14`, and 23 host g++ compiles, all `-std=c++11`. With ROCm 10.1 at `rocrand_threefry_common.h:133`, `hipcc --offload-arch=gfx1100 ... -c Common/CUDA/RandomNumberGenerator.cu` gives 4 errors at `-std=c++11` and 0 at `-std=c++14`.
+- **Commits.** 5a3da55 has a `[ROCm]` title (58 chars), an AI disclosure in prose, no Co-Authored-By, and a Test Plan in a fenced block. `jargon.py --port TIGRE` is clean.
+
+### Check run on this host (Radeon Pro W7800, gfx1100, TheRock ROCm SDK 10.1, HIP_VISIBLE_DEVICES=2, `ulimit -c 0`)
+This is a reviewer check, not validator evidence. Worktree `agent_space/tigre/head` at 5a3da55; scripts are in `agent_space/tigre-scripts/` (host-local).
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH BUILD_WITH_HIP=1 HIP_ARCH=gfx1100 ROCM_PATH=$(rocm-sdk path --root)
+$FLEET_VENV/bin/python setup.py build_ext --inplace -j 16      # rc 0, 8/8 .so, 0 errors
+cd Python && PYTHONPATH=. MPLBACKEND=Agg $FLEET_VENV/bin/python -m pytest -q -p no:cacheprovider tests/<file>
+```
+- Self-test: `fp32 hardware linear texture filtering on AMD Radeon Pro W7800 48GB: supported (hardware trilinear)`.
+- pytest: compute_cor 6, demo_angles 1, denoise_2d_guard 3, filtering_workers 37, gpuids_default 5, krylov_restart_and_norms 9, krylov_smoke 9: **70 passed, 0 failed**.
+- Cone gates (porter's recipe: 256^3, dDetector 1.6, 32 angles + 0.3): Siddon mean/max 27.46/111.2, interp vs Siddon 0.0040, FDK 0.2763, OS-SART20 0.1936, adjointness 1.23e-05 (random) / 6.27e-05 (phantom).
+- **Parallel-beam gates, added by this review** (`tigre.geometry(mode="parallel", nVoxel=128^3, default=True)`, head phantom). The porter's gates and every upstream test use cone geometry only, so none of them reach `kernelPixelDetector_parallel`, the kernel this round's conflict was resolved in. Results: 64 angles over [0, pi) including 0 and pi/2 (axis-parallel rays), interp vs Siddon 0.0040, Siddon adjointness vs matched Atb 3.2e-05; the same with +0.3 offset 0.0041 / 5.5e-05; full Euler angles (alpha sweep, theta 0.4, psi 0.2) interp vs Siddon 0.0056; FBP nRMSE 0.105, SIRT 20 iter 0.195; all finite.
+- Missed rays: parallel, 129^2 detector over a 64^3 volume, offOrigin (0, 7.3, -5.1), angles 0, pi/2, pi, 3pi/2, 0.3. Siddon and interpolated both return promptly, all finite (86% zero pixels from rays outside the volume). No hang.
+
+### For the validators at 5a3da55
+Add a parallel-beam gate alongside the cone gates, because the round changed device code only in the parallel Siddon kernel. Bar: `mode="parallel"` 128^3 head phantom, Siddon vs interpolated < 1% at axis-aligned, offset and Euler angle sets, and everything finite (`agent_space/tigre-scripts/gates.py` on this host is one implementation of it).
+
+### Proposed fix review PR body: corrections
+The previous draft passes `jargon.py -` and `prose.py`, but four statements in it were not accurate:
+1. "Upstream rewrote the parallel Siddon kernel (full Euler angles, ...)": the Euler-angle change (b1e6e61) is host code in `computeDeltas_Siddon_parallel`, not the kernel. Reworded to "projector".
+2. "upstream's new device code uses only runtime calls": runtime calls are host code. Reworded to "new CUDA code".
+3. "moves them back exactly": the porter's evidence matches to 4 digits. Reworded.
+4. The retest paragraph did not say whether the conflicted (parallel) kernel was exercised; the gfx90a run never reached it. Added the parallel-beam check, attributed to the gfx1100 run, with the gfx90a numbers left as the porter's.
+In `## Upstream reply`, "keeping your rewrite" misattributes the work: the parallel Siddon rewrite came from three outside contributors (b1e6e61 Koh Hashimoto, 7549d41 yliu88au, 9f0b669 Param), not the maintainer. Reworded. The reply's GPU list stays a placeholder until validator records exist at 5a3da55; neither the porter's gfx90a run nor this review's gfx1100 run is one.
+
+Corrected draft (`jargon.py -`: clean, `prose.py`: clean). Title: `[ROCm] Merge current upstream master and fix the HIP build on current ROCm`
+```
+Upstream PR CERN/TIGRE#747 conflicts with master (98 commits since the PR's base). This round merges upstream master at 69bdd9f into the port and adds one build fix.
+
+Merge (cfc014e): one conflicting hunk in Common/CUDA/Siddon_projection_parallel.cu. Upstream rewrote the parallel Siddon projector (full Euler angles, missed-ray return, per-axis intersection counts with a z term). Resolved by taking upstream's kernel and re-applying the port's intersection-count cap on the new Npx + Npy + Npz sum, widened to nVoxelX + nVoxelY + nVoxelZ + 3 to match the cone kernel. Everything else auto-merged; upstream's new CUDA code uses only runtime calls and point-filtered texture reads that the compatibility header already covers.
+
+Build fix (5a3da55): setup.py compiled the HIP sources with -std=c++11. Current rocRAND device headers use std::enable_if_t, so the .cu sources no longer compile on current ROCm; C++14 is the lowest standard they accept. The HIP compile now uses -std=c++14. The nvcc flags, the host C++ flags and the Windows HIP path are unchanged.
+
+Retested on gfx90a (MI250X), ROCm 10.1: all 8 extensions build; the 7 new upstream test files pass (70 tests); cone beam: interpolated vs Siddon projection 0.40%, FDK nRMSE 0.286, OS-SART 0.193, adjointness residual 1.0e-05, and all 9 iterative solvers finite. Compared with the published tip built the same way, Ax, FDK and adjointness are identical; the SART-family numbers moved, and swapping only iterative_recon_alg.py between the two trees restores them to four digits, so the change comes from upstream's new SART weight (a675320), not from the HIP code. Checked on gfx1100 (Radeon Pro W7800), ROCm 10.1: the same 70 tests pass and the cone checks give interpolated vs Siddon 0.40%, FDK 0.276, OS-SART 0.194 and adjointness 1.2e-05; the merged parallel Siddon projector agrees with the interpolated projector to 0.40% at axis-aligned angles, 0.41% at offset angles and 0.56% with full Euler angles, and rays that miss the volume return without hanging. <other GPUs: fill in from their validation at 5a3da55>.
+
+## Upstream reply
+
+I merged current master into this branch, keeping the new parallel Siddon projector from master where it conflicted with the port. I also added a small setup.py fix so the HIP build works with current ROCm, whose rocRAND headers need C++14. I re-ran the cone and parallel-beam projection, reconstruction and adjointness checks on <GPUs validated at the final head>.
+```
