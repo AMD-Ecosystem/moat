@@ -1679,3 +1679,58 @@ Comparison: the porter's d2112b6 gfx90a run (entry above) found dump_point bit-i
 
 ### CUDA gate
 Already recorded at d2112b6 ("CUDA compile check (nvcc 12.8) at d2112b6" above: rc=0, warnings identical to upstream). Not repeated; no nvcc on this host.
+## Validation 2026-11-04 (validator, linux-gfx942, revalidate, moat-port @ d2112b6)
+
+Verdict: completed at d2112b63f025446cd519453423679c5cd8740bf5 (tip of `moat-port`, no upstream PR open; delta from this platform's validated b37ca0a is the `src/bilateral_filter.cu` bounds fix only). Every check matches the porter's and reviewer's counts and this platform's record at b37ca0a: 12/12 PASS, all dumps bit-identical to b37ca0a and to e503672, 0 bytes leaked, bilateral and prior-bilateral filters complete with no fault and bit-identical output.
+
+Host: AMD Instinct MI300X HF (gfx942), torch 2.16.0a0+git6c3af02, HIP 7.16.26385, numpy 1.26.4, /opt/python-3.11-venv, HIP_VISIBLE_DEVICES=0 (pinned by the dispatcher), every GPU run under `ulimit -c 0`. Fresh fork clone at projects/LEAP/src checked out at d2112b6 (= origin/moat-port). b37ca0a and e503672 are `git archive`s under agent_space/cmp. Scripts `dump_outputs.py`, `compare_outputs.py` (gfx942 port entry), `dump_point.py`, `leak_check.py` (dual-path port entry) extracted unchanged from this file.
+
+### Builds (all rc=0, `all archs for visible cards are included for compilation (gfx942)`, 20 hipcc lines with `--offload-arch=gfx942`)
+```
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=28 bash utils/timeit.sh LEAP compile -- bash -c "cd projects/LEAP/src && python setup_AMD.py build_ext --inplace"      # d2112b6, 14.3 s
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=28 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/b37ca0a && python setup_AMD.py build_ext --inplace"  # 13.3 s
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=28 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/e503672 && python setup_AMD.py build_ext --inplace"  # 13.9 s
+```
+
+### Tests (all rc=0)
+```
+AMD_LOG_LEVEL=3 bash utils/timeit.sh LEAP test -- bash -c "cd <build> && python unitTests/gpu_vs_cpu_validate.py"   # d2112b6 7.2 s, b37ca0a 6.1 s, e503672 5.6 s
+python dump_outputs.py <build>/src <x>.npz 256    # interleaved e503672 r1, b37ca0a r1, d2112b6 r1, e503672 r2, d2112b6 r2; 40.4-41.7 s each
+python compare_outputs.py e503672_r1.npz d2112b6_r1.npz   # ALL BIT-IDENTICAL (36/36), time ratios 0.995-1.009
+python compare_outputs.py e503672_r2.npz d2112b6_r2.npz   # ALL BIT-IDENTICAL (36/36), 0.990-1.006
+python compare_outputs.py b37ca0a_r1.npz d2112b6_r1.npz   # ALL BIT-IDENTICAL (36/36), 0.994-1.009
+python compare_outputs.py d2112b6_r1.npz d2112b6_r2.npz   # ALL BIT-IDENTICAL (36/36), 0.990-1.007 (run-to-run)
+python compare_outputs.py e503672_r1.npz e503672_r2.npz   # ALL BIT-IDENTICAL (36/36), 0.996-1.008 (run-to-run)
+python dump_point.py <build>/src pt_<x>.npz       # d2112b6, b37ca0a, e503672: 15 ok each (5.2-5.6 s); upsample FAILED (ctypes dtype, pre-existing, every build); dictionary ok
+python compare_outputs.py pt_e503672.npz pt_d2112b6.npz   # ALL BIT-IDENTICAL (20 arrays)
+python compare_outputs.py pt_b37ca0a.npz pt_d2112b6.npz   # ALL BIT-IDENTICAL (20 arrays)
+python leak_check.py <build>/src                  # delta 0 bytes over 200 iterations for d2112b6, b37ca0a, e503672 (2.9-4.0 s); sum(g)=377330 in all three
+```
+`gpu_vs_cpu_validate.py`: 12/12 PASS, OVERALL: PASS for all three builds; the PASS/FAIL result lines have the same md5 across the builds and equal the gfx942 record at b37ca0a (parallel VD/SF adjoint 2.54e-05/1.64e-05, fan 2.44e-04/1.85e-04, coneparallel 1.24e-03/5.07e-05, cone-flat 1.42e-04/1.46e-04 fbp 0.9998, cone-curved 8.54e-05/1.30e-04, modular VD 3.39e-03 fbp 0.9998, modular SF fwd-vs-VD err 0.000). 0 `Error: GPU` lines and 0 lines containing "error" in each log.
+
+Bilateral filters (dump_point.py `bilateral` = `BilateralFilter(f, 3.0, 0.1)`, `priorbilateral` = `PriorBilateralFilter(f, 3.0, 0.1, vol)`, volume N.x = 133, not a block multiple): both `ok` in all three builds, `bilateral_out` and `priorbilateral_out` 0/2179072 differ between d2112b6 and both baselines; no `fault`, `HSA_STATUS` or `abort` line in any dump_point log. On gfx942 the old `i > N.x` check did not fault either, so the fix changes nothing observable here, as on gfx90a.
+
+gfx942 times, median of 5, 256 cols x 266 rows x 360 views, device-resident tensors, ms, project / backproject. All five runs sit 0.5-1% above the b37ca0a record (e.g. parallel SF 128.0 / 34.1 there) in the baseline builds as much as in d2112b6, so that is host load, not the change:
+```
+geometry_model  e503672 r1      b37ca0a r1      d2112b6 r1      e503672 r2      d2112b6 r2
+parallel_VD     128.3 /  34.0   128.9 /  34.1   128.7 /  34.1   128.6 /  33.9   128.6 /  34.1
+parallel_SF     128.3 /  34.3   128.9 /  34.3   129.0 /  34.6   128.7 /  34.2   129.0 /  34.3
+fan_VD          122.1 /  32.2   122.6 /  32.3   122.4 /  32.1   122.8 /  32.2   122.9 /  32.3
+fan_SF          122.4 /  60.5   122.5 /  60.6   122.7 /  60.7   122.5 /  60.7   123.1 /  60.1
+coneparallel_VD 243.4 /  36.4   244.3 /  36.5   244.0 /  36.5   244.5 /  36.5   244.2 /  36.6
+coneparallel_SF 243.5 /  85.7   244.3 /  85.5   244.4 /  85.8   244.3 /  86.4   244.3 /  86.0
+cone-flat_VD    228.8 /  42.8   229.4 /  42.8   229.3 /  42.8   229.5 /  42.9   229.2 /  42.8
+cone-flat_SF    229.2 / 254.1   229.8 / 255.6   229.4 / 254.1   229.5 / 254.4   229.6 / 255.9
+cone-curved_VD  243.6 /  35.8   244.2 /  36.0   243.8 /  35.8   243.9 /  35.9   244.3 /  35.9
+cone-curved_SF  243.5 / 161.3   244.2 / 160.7   244.2 / 161.0   244.1 / 160.6   244.2 / 161.3
+modular_VD      224.3 /  42.7   224.3 /  42.6   224.1 /  42.6   224.4 /  42.6   224.3 /  42.7
+modular_SF      224.2 /  95.0   224.7 /  95.0   224.5 /  95.0   224.5 /  95.0   224.3 /  95.0
+```
+
+### CUDA compile gate
+Not rerun: already recorded at d2112b6 ("CUDA compile check (nvcc 12.8) at d2112b6", rc=0, warnings identical to upstream).
+
+### Completion checks
+- `python3 utils/jargon.py --port LEAP`: clean (after `git fetch origin main:main` and `git branch -f moat-port origin/moat-port` in the clone).
+- Docs: the ROCm build is the pre-existing `setup_AMD.py`, as at earlier validations. No change.
+- `git -C projects/LEAP/src status --porcelain`: no modified tracked files (untracked build output only).
