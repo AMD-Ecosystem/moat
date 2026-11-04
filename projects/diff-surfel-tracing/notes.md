@@ -3093,6 +3093,9 @@ PYTHONPATH=$PWD python3 example/validate_rocm.py                               #
 ## Validation 2026-11-04 (linux-gfx942, MI300X HF, HIP 7.16.26385) -- PASSED at `e24c44c`
 
 Fresh validator run at head `e24c44c` (review-passed), following the README's own `### AMD GPUs` install route. Host: AMD Instinct MI300X HF (gfx942), torch 2.16.0a0+git6c3af02 (ROCm build), ROCm SDK wheel `_rocm_sdk_devel` (HIP 7.16.26385), no /opt/rocm, pip 26.3, setuptools 79.0.1. The package was installed into the job's private venv (`$FLEET_VENV`, with a `.pth` to the host site-packages for torch); the shared environment was not touched. One GPU pinned by `HIP_VISIBLE_DEVICES`; every GPU run under `ulimit -c 0`.
+## Validation 2026-11-04 (linux-gfx90a, MI250X, HIP 7.16.26385) -- e24c44c, README package-install route
+
+Revalidation of `moat-port` `e24c44c` (`review-passed`; this platform last passed at `21f62d0`). The delta (`setup.py`: staging in a `CustomBuildPy`, `libhiprt0300164.so` shipped, `-Wl,-rpath,$ORIGIN`; `README.md`) changes how the Linux package is built and linked, so no carry-forward: full rebuild of the patched HIP RT and the extension, through the README's own install route, then the GPU gate against the installed package with the clone moved away. Host: AMD Instinct MI250X / MI250 (`Gfx Major/Minor/Stepping: 9/0/10`), torch 2.16.0a0+git6c3af02 (ROCm build), ROCm SDK wheel `_rocm_sdk_devel` (HIP 7.16.26385), no /opt/rocm, pip 26.3, setuptools 79.0.1. Installed into the job's private venv (a `.pth` to the host site-packages supplies torch); the shared environment was not touched.
 
 ### Build: fresh recursive clone, patched HIP RT, README pip install
 
@@ -3145,3 +3148,39 @@ Configure and build exit 0; `optix_tracer_forward` and `optix_tracer_backward` c
 - `python3 utils/jargon.py --port diff-surfel-tracing`: clean.
 - Documentation: the AMD build and install is documented in README `### AMD GPUs` beside the CUDA instructions, and this run reproduced it literally (HIP RT cmake lines, `pip install -v --no-build-isolation .`). The reviewer's round-10 PR-prep note still stands (the `HIP_VISIBLE_DEVICES=0` prefix on the README's `validate_rocm.py` command); not a gate.
 - Fork clone at `e24c44c`, submodule patch undone afterwards (`git -C third_party/hiprt checkout -- .`); `git status --porcelain` empty (only ignored build output and staged package files remain).
+git clone --recursive -b moat-port https://github.com/AMD-Ecosystem/diff-surfel-tracing.git fresh && cd fresh   # HEAD e24c44c, hiprt 8602b8c, optix 7b5c4e8, tree clean
+git -C third_party/hiprt apply ../../third_party/hiprt-rocm-fixes.patch   # applies clean
+export ROCM_PATH=<site-packages>/_rocm_sdk_devel HIP_PATH=$ROCM_PATH PATH=$ROCM_PATH/bin:$PATH
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON -DHIP_PATH=$ROCM_PATH -S third_party/hiprt -B third_party/hiprt/build
+cmake --build third_party/hiprt/build --target hiprt03001 -j64          # clean (1 pre-existing warning), libhiprt0300164.so
+export PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=64
+pip install -v --no-build-isolation .                                    # exit 0, "Successfully installed diff_surfel_tracing-0.0.1"
+```
+
+- Install log: `running build_py` (line 49), `copying` `kernels.h`, `params.h`, `config.h`, `auxiliary.h` (52-55), 79 `hiprt_root` file copies, `libhiprt0300164.so` (135), all before `running build_ext` (136). 0 errors; 49 warnings, all pre-existing upstream ones.
+- Installed `site-packages/diff_surfel_tracing/`: `_C.cpython-311-x86_64-linux-gnu.so`, `__init__.py`, the four headers, `hiprt_root/`, `libhiprt0300164.so`; 19 MB. `readelf -d _C*.so`: `NEEDED libhiprt0300164.so`, `RUNPATH [$ORIGIN]`. No installed file references the clone path (`grep -rl` over the package is empty).
+
+### GPU gate against the installed package, clone moved away: 50/50, twice, each from a cold cache
+
+```
+mkdir run && cp fresh/example/validate_rocm.py run/ && mv fresh fresh-moved
+ulimit -c 0; export ROCM_PATH=<site-packages>/_rocm_sdk_devel HIP_PATH=$ROCM_PATH
+rm -rf <site-packages>/diff_surfel_tracing/hiprt_cache; cd /tmp
+python3 -X faulthandler <scratch>/run/validate_rocm.py                     # run 1: exit 0, 50/50 checks passed
+rm -rf <site-packages>/diff_surfel_tracing/hiprt_cache
+AMD_LOG_LEVEL=3 python3 -X faulthandler <scratch>/run/validate_rocm.py     # run 2: exit 0, 50/50 checks passed
+```
+
+Pinned GPU (`HIP_VISIBLE_DEVICES` set by the dispatcher). All 50 check lines, values included, are textually identical between the two runs, and equal this platform's `21f62d0` entry: covered 0.241, depth [1.820, 4.574], 62/64 traced (missing [5, 25]), grads3D median cosine 0.9825, fd colors 1.0000/1.0043, opacities 0.9999/0.7428, means3D 0.9993/0.9388, scales 0.9923/0.8856, bounce delta 3.627e-01, P=4096 rgb mean 0.19876 / covered 0.386 / 1343 traced, P=16384 rgb mean 0.25417 / covered 0.457 / 3309 traced, cold-cache image bit-identical, cache repopulated (6 files after each run). Real dispatch: run 2 logs 6,099 `hipLaunchKernel`, 747 `hipModuleLaunchKernel` and 73 `hipExtModuleLaunchKernel` calls and 75,674 `Returned hipSuccess`, with no other `Returned hip*` status.
+
+### In-place route regression check (the route of every earlier validation)
+
+In the moved clone: `PYTORCH_ROCM_ARCH=gfx90a python3 setup.py build_ext --inplace` clean; `_C` has `RUNPATH [$ORIGIN]` and `libhiprt0300164.so` is staged next to it; `PYTHONPATH=$PWD python3 example/validate_rocm.py` from a cold cache imports the in-tree package and gives 50/50, check lines identical to the installed-package runs.
+
+### CUDA no-regression gate: not run here
+
+`cuda-not-validated at e24c44c: no CUDA toolkit on this host (no /opt/conda, no nvcc, no /usr/local/cuda).` The CUDA branch's only change in `21f62d0..e24c44c` is `_cmdclass = {}` spread into `cmdclass` (the same dict as before) and the `build_py` import; `optix_tracer/`, `CMake*`, `ext.cpp`, `trace_surfels.*` are unchanged, so the `173f32a` PASS still covers every CUDA-compiled source.
+
+### Jargon, documentation, integrity
+
+`python3 utils/jargon.py --port diff-surfel-tracing` clean (clone at `e24c44c`, `main` fetched). README `### AMD GPUs` documents exactly the route run above, including the run-time `ROCM_PATH` note, which this run follows. The pre-existing `HIP_VISIBLE_DEVICES=0` prefix on the README's `validate_rocm.py` command (round-10 review note) is still there; PR-prep item, not a gate. After the runs, `git -C third_party/hiprt checkout -- . && git -C third_party/hiprt clean -fdx`; `git status --porcelain --ignore-submodules=none` in the clone is empty at `e24c44c`. No source or build file was edited on this arch.
