@@ -1101,3 +1101,69 @@ PASS. The trans kernel target sets its own arch list (the cubin carries sm_75/80
 Pre-completion checks: `git -C projects/unified-cache-management/src status --porcelain` empty. `python3 utils/jargon.py --port unified-cache-management`: clean (local `develop` pointed at upstream `develop` f366bfa, local `moat-fix-1021` at origin; local refs only). `git diff --stat develop dff17ae`: 28 files, +587/-14, matching the reviewer's scope. ROCm build docs present in both doc trees (reviewer-verified at this head).
 
 Result: linux-gfx942 COMPLETED at dff17aeab09bf9c279dc1be42a5bdedc4368574a. This is the first validator record for gfx942 at any sha, so MI300X may now be named in the fix review PR's `## Upstream reply`. The open question for jeff on keeping the `hipMemcpyDefault` mapping (see the porter's review-fixes entry) is unchanged.
+
+## Drop the hipMemcpyDefault shim change (2026-11-04, porter, linux-gfx942)
+
+jeff ruled on the open question from the review-fixes entry: **drop the shim change.** The HIP `cudaMemcpy` shim must honour the caller's `cudaMemcpyKind`, as CUDA's API contract says; upstream's tests are not modified.
+
+Commit on `moat-fix-1021` (pushed; `moat-port` still 8545865f; head_sha dff17aea -> eda03f15):
+- `eda03f1` [ROCm] Keep the caller's copy kind in the HIP compat header. A `git revert` of 98ba91b (the re-applied mapping) with a custom `[ROCm]` title, because git's default `Revert "[ROCm] Map the copy kinds to hipMemcpyDefault in the compat header"` is over 72 chars. `git diff 8545865 eda03f1 -- ucm/shared/vendor/hip_compat/cuda_runtime.h` now has no `hipMemcpyDefault`: H2D/D2H keep their HIP kinds as at the published tip, and the D2D alias from 26b0b3e maps to `hipMemcpyDeviceToDevice`. No fork doc mentioned the mapping (`git grep -i hipMemcpyDefault -- docs README*` empty at dff17ae), so no doc change.
+- Skill: the `cuda-to-rocm` fault-classes entry now says not to remap the kinds in a compat header, and to run such tests in the project's simulated-backend build.
+
+### Why the four cache2 `DumpThenLoad*` tests are run in the simu build, not on the GPU
+They are simulated-backend tests that pass host memory as device memory:
+- `ucm/store/test/case/detail/data_generator.h:49` `this->data_ = malloc(this->Size());` and these buffers are handed to the trans manager as device tensors in `ucm/store/test/case/cache/v2/cache2_trans_manager_integration_test.cc`.
+- Upstream CI builds unit tests only for `simu`: `.github/workflows/lint-and-test.yml:106` (`cpp_gtest`: `-DRUNTIME_ENVIRONMENT=simu -DBUILD_UCM_ASU=ON`) and `:124` (`cpp_v2_gtest`: `-DUCM_MAJOR_VERSION=2`, no `RUNTIME_ENVIRONMENT`, so the `CMakeLists.txt:20` default `simu`). The cache2 tests are in the legacy `ucm/store/test` tree, so `cpp_gtest`'s configuration covers them; `UCM_MAJOR_VERSION=2` was not needed.
+On a real GPU HIP rejects the explicit D2H/H2D kind with a pageable source; on the simu backend device memory is host memory and they pass. Validators: these 4 are expected GPU failures; run them in a simu build.
+
+### Build and test at eda03f15 (gfx942 / MI300X, ROCm 7.16 pip SDK, `HIP_VISIBLE_DEVICES` pinned to one GPU, `ulimit -c 0`)
+```
+P=$PWD/projects/unified-cache-management; R=$(hipconfig --rocmpath)
+cmake -S $P/src -B $P/build_rocm -DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_STORE=ON \
+  -DBUILD_UNIT_TESTS=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Wno-error=unused-result
+cmake --build $P/build_rocm -j28
+ctest --test-dir $P/build_rocm -j1 --timeout 600 --output-on-failure
+cmake -S $P/src -B $P/build_simu -DCMAKE_BUILD_TYPE=Debug -DBUILD_UCM_SPARSE=OFF \
+  -DBUILD_UNIT_TESTS=ON -DRUNTIME_ENVIRONMENT=simu -DBUILD_UCM_ASU=ON
+cmake --build $P/build_simu -j56
+ctest --test-dir $P/build_simu -j1 --timeout 600 --output-on-failure
+```
+- GPU build: 338 discovered, 1 disabled (UCMetricsStress.TenWritersOneCollector), **326/337 pass** (dff17ae on one GPU: 330/337). The 11 failures are the 7 known one-GPU ones (DataStrategyTest x6 `memfd device setup failed: device=1 status=101, invalid device ordinal`, data_backend_memfd.cc:407; UCLoggerPerfTest.MultiThreadPerfUCInfoVsRateLimitRandomContent, ratio 1.17 > 1.1) plus exactly the 4 expected: UCCache2TransManagerIntegrationTest.{DumpThenLoad, DumpThenLoadWithLayerWise, DumpThenLoadWithLayerAndChunk, DumpThenLoadWithVariableLengthIo}, each `Failed(1, invalid argument) to copy shard for dump task(1)` (dump_queue.h:215, GatherShards), then the Status assertion (integration_test.cc:80/214/291/370) and unsatisfied `EXPECT_CALL(backend, Dump/Wait)`. No other new failures. Copy-kernel gates pass: UCTransUnitTest.{CopyDataWithCE, CopyDataWithSM, CopyDataBatchWithSM, EmptyEventIsSafe, MemsetAndDeviceToDevice}, UCPosixTrans{Manager,Queue}Test.TransBlock[LayerWise] 4/4, UCCache2TransManagerIntegrationTest.Backend{,Submit}NotFoundIsPreserved.
+- Simu build (upstream `cpp_gtest` configuration): 1115 discovered, 1 disabled, **1113/1114 pass**; all 4 `DumpThenLoad*` pass. The only failure is the same UCLoggerPerfTest timing flake.
+- Hamming not rebuilt: no kernel code changed since af3eb74.
+- `jargon.py --port unified-cache-management`: clean. Upstream `develop` has advanced to cc99d525 (2 commits past f366bfa1); the local `develop` ref was pointed there for the scan (local only), and `git merge-tree --write-tree eda03f1 develop` is clean.
+
+linux-gfx942 and linux-gfx1100 were completed at dff17ae and now owe revalidation at eda03f1. Validators must expect the 4 `DumpThenLoad*` GPU failures and run the simu build for them. Stage -> `ported` (re-review owed).
+
+### Fix review PR body (true at eda03f15; supersedes the earlier drafts above)
+Title: `[ROCm] Merge current upstream develop into the ROCm port`
+Head `moat-fix-1021` -> base `moat-port`. Not opened.
+
+====
+Upstream PR #1021 was reported as conflicting with `develop` (190 upstream commits since the PR's base). This round merges the `develop` tip f366bfa into the branch. It is a merge, not a rebase, so the published PR commits stay as they are.
+
+Conflicts (5 files, both sides kept): platform lists in `setup.py` and `ucm/store/nfsstore/device/CMakeLists.txt` (upstream added `ascend-a5`, the PR added `rocm`); the WIN32 flag block in `CMakeLists.txt`; the test glob in `ucm/shared/test/CMakeLists.txt` (upstream's `CONFIGURE_DEPENDS` and `router_perf` exclude plus the PR's WIN32 exclude); and `quickstart_vllm.md`, where upstream moved the build-from-source section into the developer guide.
+
+Follow-up commits:
+- 26b0b3e: upstream's CUDA transfer backend gained `cuda_event.cc` and a few more runtime calls; the ROCm target now builds `cuda_event.cc` and the compat header aliases the new names.
+- 91185a3, e3adb40, 98ba91b and eda03f1: a change that mapped the compat header's copy kinds to `hipMemcpyDefault` was added, reworded, and then reverted. The net effect on the compat header is only the aliases from 26b0b3e; the header still passes the caller's copy kind through, as at the published PR head.
+- af3eb74: the `PLATFORM=rocm` note moves to `build_from_source.md` (`docs/source` and the English docs site), plus the ROCm row in the English docs-site support matrix.
+- c767753: the same row and a Chinese version of the note on the Chinese docs site.
+- dff17ae: the note no longer suggests passing `-DCMAKE_HIP_ARCHITECTURES` to the setup.py build (it does not forward CMake arguments); it says the architecture is detected from the build host and points to the support matrix for the tested GPUs.
+
+Upstream's new cache2 `DumpThenLoad*` integration tests pass `malloc` buffers as device addresses (`ucm/store/test/case/detail/data_generator.h:49`). That matches the simulated backend, where device memory is host memory, and upstream CI builds the unit tests only that way (`.github/workflows/lint-and-test.yml:106` passes `-DRUNTIME_ENVIRONMENT=simu`; line 124 relies on the CMake default, `simu`). On a real GPU these four tests fail with "invalid argument" while copying a shard, so they are run in a simu build, where they pass. The tests are unchanged.
+
+Upstream #1566 stopped compiling nfsstore, so the nfsstore ROCm device arm is now dormant, the same as its CUDA counterpart.
+
+Tested on AMD Instinct MI300X (gfx942), ROCm 7.16, at eda03f1, one visible GPU: GPU build ctest 326/337. The copy-kernel, event and memset/D2D tests pass. The failures are the four cache2 `DumpThenLoad*` tests above, six DataStrategyTest cases that need two visible GPUs, and one logger perf test that is a known timing flake. Simu build (upstream CI's configuration): ctest 1113/1114, including all four `DumpThenLoad*` tests; the only failure is the same logger perf flake. The Hamming kernel reference test passed mla/gqa/determinism at af3eb74; no kernel code changed since. Each GPU is tested again at this head before approval.
+
+## Upstream reply
+
+PLACEHOLDER: fill in only after validators record completed platforms at eda03f1. Draft once they do: "The branch is merged with current `develop` and the conflicts are resolved. The C++ unit tests and the Hamming kernel test were rerun on <GPUs whose platform record shows completed at eda03f1>."
+
+## Before approving
+
+Replace the placeholder above. Name only GPUs whose platform record shows a completed validation at this exact head. Upstream `develop` has moved two commits past f366bfa (to cc99d52); a trial merge is clean.
+====
