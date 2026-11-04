@@ -2803,3 +2803,43 @@ Delta reviewed: `git diff 173f32a..21f62d0` (892f41a hiprtc DLL discovery, revie
 Round-8 Finding 1 is resolved: `README.md:81` now states the run-time requirement for every OS unless ROCm is at `/opt/rocm` on Linux. Fact-checked against the code: `hiprt_tracer/hiprt_wrapper.cpp:164-167` takes `ROCM_PATH`, else `HIP_PATH`, else `/opt/rocm` for the runtime compiler's `-I.../include` on every OS (matches "falling back to `/opt/rocm/include`"); the named symptom is the one reproduced in round 8; the Windows half matches the `#ifdef _WIN32` loader block at `hiprt_wrapper.cpp:97-110` and the patch's `hiprtc_paths.build(..., rocm, "hiprtc0")`. Considered and dropped: `diff_surfel_tracing/__init__.py:24-26` sets `ROCM_PATH` to a venv's `_rocm_sdk_devel` on Windows when unset, which makes "always needed" redundant for that layout; every Windows run on record exported `ROCM_PATH` (`win_torch_env.sh`), so the auto-fill is untested and the README states the tested requirement, which is safe advice rather than a defect.
 
 Hygiene: titles 47 and 61 chars with `[ROCm]`, no `Co-Authored-By`, AI disclosure and fenced Test Plan present; `jargon.py --port diff-surfel-tracing` clean; `prose.py` clean on the 21f62d0 message; the delta adds no non-ASCII (the README's non-ASCII is upstream text); fork tree clean. 892f41a's body still says the README note is Windows-only, which 21f62d0 supersedes; history only, not a defect.
+
+## Validation 2026-11-04 (linux-gfx90a, MI250X, HIP 7.16.26385)
+
+Revalidation of `moat-port` `21f62d0` (`review-passed`; this platform last passed at `173f32a`). The delta is `892f41a` (hiprtc DLL discovery: `#ifdef _WIN32` code in `hiprt_tracer/hiprt_wrapper.cpp` and in the HIP RT patch's `hiprt.cpp`, plus `#include <filesystem>` and a defaulted `DllPathList::build` parameter that compile on Linux) and `21f62d0` (README). No carry-forward attempted: the delta changes compiled code on Linux, so this was a full rebuild of the patched HIP RT and the extension, then the full GPU gate.
+
+### Build, from a fresh fork clone, following the README's in-tree submodule recipe
+
+Fork clone at `21f62d0` = `origin/moat-port`, `git status --porcelain` empty. Host torch 2.16.0a0+git6c3af02 (ROCm build), ROCm SDK wheel, no /opt/rocm. The only change from the README is the `ROCM_PATH`/`HIP_PATH` location, and `build_ext --inplace` instead of the README's package install, so nothing is installed into the shared Python environment.
+
+```
+git clone -b moat-port https://github.com/AMD-Ecosystem/diff-surfel-tracing.git src && cd src
+git submodule update --init --recursive third_party/hiprt          # 8602b8c, the pin
+git -C third_party/hiprt apply ../../third_party/hiprt-rocm-fixes.patch   # applies clean
+export ROCM_PATH=<venv>/site-packages/_rocm_sdk_devel HIP_PATH=$ROCM_PATH PATH=$ROCM_PATH/bin:$PATH
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON -DHIP_PATH=$ROCM_PATH \
+    -S third_party/hiprt -B third_party/hiprt/build
+cmake --build third_party/hiprt/build --target hiprt03001 -j128     # clean, libhiprt0300164.so
+PYTORCH_ROCM_ARCH=gfx90a python3 setup.py build_ext --inplace       # clean; "Using HIP RT SDK at .../third_party/hiprt"
+```
+
+Both stages built with no errors. The only warnings were the pre-existing upstream ones: 1 in HIP RT and 49 in the extension build, none in the delta's lines.
+
+### GPU gate: 50/50, cold cache and warm cache
+
+```
+cd src                                    # diff_surfel_tracing/hiprt_cache absent (fresh build) = cold cache
+ulimit -c 0
+ROCM_PATH=$ROCM_PATH HIP_VISIBLE_DEVICES=1 PYTHONPATH=$PWD python3 example/validate_rocm.py
+50/50 checks passed
+```
+
+Device `AMD Instinct MI250X / MI250`. The numbers match the round-8 reviewer run on this host exactly: covered 0.241, depth [1.820, 4.574], 62/64 traced (missing [5, 25]), median grads3D cosine 0.9825, fd slopes colors 1.0043 / opacities 0.7428 / means3D 0.9388 / scales 0.8856, bounce delta 3.627e-01, P=4096 rgb mean 0.19876 / covered 0.386 / 1343 traced, P=16384 rgb mean 0.25417 / covered 0.457 / 3309 traced. The cold-cache check was bit-identical and the cache repopulated. A second warm-cache run under `AMD_LOG_LEVEL=3` also gave 50/50 and logged 6099 `hipLaunchKernel`, 747 `hipModuleLaunchKernel` and 73 `hipExtModuleLaunchKernel` calls, all `Returned hipSuccess`, so the kernels really ran on the GPU. (August's 15,769 count was taken on a different torch/HIP and only counted `hipLaunchKernel`, so the two counts cannot be compared.)
+
+### CUDA no-regression gate: not re-run
+
+`cuda-not-validated: this host has no CUDA toolkit (no /opt/conda, no nvcc, no /usr/local/cuda).` The skip is safe because `git diff --stat 173f32a..21f62d0 -- optix_tracer CMake CMakeLists.txt ext.cpp trace_surfels.cpp trace_surfels.h setup.py` is empty. Every changed file is ROCm-only: `hiprt_tracer/hiprt_wrapper.cpp` is only in `setup.py`'s HIP-branch `GLUE_SOURCES`, `third_party/hiprt-rocm-fixes.patch` only touches HIP RT, and the other two files are `.gitignore` and `README.md`. So the CUDA gate passed at `173f32a` (2026-08-14 entry) still covers every CUDA-compiled file.
+
+### Jargon, documentation, integrity
+
+`python3 utils/jargon.py --port diff-surfel-tracing` is clean (after `git fetch origin main:main` in the clone; without it the tool cannot resolve `main..moat-port`). README `### AMD GPUs` documents the build that was run, and its run-time `ROCM_PATH` note (`21f62d0`) holds here: the run exported `ROCM_PATH` because ROCm is not at /opt/rocm. Afterwards `git -C third_party/hiprt checkout -- .` undid the documented patch application in the submodule, and `git status --porcelain` in the fork clone is empty (build output is untracked/ignored). No source or build file was edited on this arch.
