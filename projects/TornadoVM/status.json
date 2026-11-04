@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-04T20:09:22Z",
-  "head_sha": "e0b31b7461187f0dc6c174d47c5407e51bf1083b",
+  "updated_at": "2026-11-04T20:27:15Z",
+  "head_sha": "85b92503d62fd65f9c926d34ef393052f2cc65d9",
   "depends_on": [],
   "porting": {
     "arch": "linux-gfx950",
