@@ -2379,3 +2379,49 @@ Validation at 9584561 (fill in from the validator records before opening):
 This branch is now merged with current main (through #1582), with one test-helper change so the Parquet angle test's readback also runs on the HIP build. The Rust and Python QDP test suites, including the new engine-init and Parquet capacity tests, pass on <AMD GPUs whose validator record is at 9584561, e.g. AMD Instinct MI250X, Radeon PRO W7800 and Radeon 8060S>, and with no GPU present the engine returns an error instead of aborting.
 ```
 Before `upstream.py --fix-review`: replace the placeholder with only the GPUs whose platform record shows `validated_sha` 95845611e (`moatlib.py show mahout`), and fill the four validation lines. The porter's gfx90a counts (Rust 385/0/4 ignored, Python 321 passed/14 skipped) are the expected numbers for that line once the validator confirms them. `jargon.py -` and `prose.py` were clean on the original draft; rerun them on the filled-in body.
+
+## Validation 2026-11-04 (validator, linux-gfx1100) -- fix round 1399 revalidation at 95845611e, PASS
+
+Full real-GPU revalidation of the staged round (no carry-forward: the delta adds upstream code and tests). Checkout: fresh clone of AMD-Ecosystem/mahout, `moat-fix-1399` @ **95845611e6f2baaeb80cf876b493678a97017135** (`git rev-parse HEAD`), upstream/main 6f354a5cf (unchanged since the merge). `git status --porcelain` empty before and after.
+
+Env: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3 wave32), HIP_VISIBLE_DEVICES=3 (dispatcher-pinned), `ulimit -c 0`, ROCm 10.1 `rocm-sdk` pip packages in the image's Python (HIP 7.16.26385), rustc/cargo 1.97.1, torch 2.16.0a0 (image env, via PYTHONPATH), Python 3.11.17, maturin into the job's own venv. Same pip-layout recipe as the 2026-11-04 gfx90a porter section (`agent_space/mahout_env.sh` with `QDP_HIP_ARCH_LIST=gfx1100` and `LD_LIBRARY_PATH=.../_rocm_sdk_core/lib`).
+
+### Rust
+```
+utils/timeit.sh mahout compile -- cargo build --manifest-path projects/mahout/src/qdp/Cargo.toml \
+  -p qdp-core -p qdp-kernels --no-default-features --features hip -j 10
+utils/timeit.sh mahout test -- cargo test --manifest-path projects/mahout/src/qdp/Cargo.toml \
+  -p qdp-core -p qdp-kernels --no-default-features --features hip -j 10 -- --test-threads=1 --nocapture
+```
+- build: exit 0 (18.9s), same pre-existing warnings.
+- test: exit 0, **385 passed, 0 failed, 4 ignored** (same 4 doctest fixtures), summed from the `test result:` lines. Per suite identical to the gfx90a porter list: lib 114, arrow_ipc_io 5, engine_init 3, estimate 9, gpu_angle_encoding 12, gpu_api_workflow 8, gpu_basis_encoding 7, gpu_dlpack 9, gpu_fidelity 17, gpu_iqp_encoding 22, gpu_memory_safety 4, gpu_norm_f32 2, gpu_ptr_encoding 69, gpu_validation 8, null_handling 6, numpy 4, parquet_f32 7, parquet_f32_fidelity 4, parquet_io 8, preprocessing 14, reader 3, tensorflow_io 9, torch_io 3, types 6, qdp-kernels lib 0, amplitude_encode 21, angle_encode 10, doctests 1.
+- With `--nocapture`: zero `SKIP` lines, so every GPU test ran on the card.
+- vs this platform's previous record (368 / 0 / 4 at 9a3a08e0f, 2026-08-13): +17 = upstream's added tests (lib +14, engine_init +3), as reconciled in the porter section.
+
+### Python
+```
+utils/timeit.sh mahout compile -- $FLEET_VENV/bin/maturin build \
+  --manifest-path projects/mahout/src/qdp/qdp-python/Cargo.toml --features hip --profile dev \
+  --compatibility linux --interpreter $FLEET_VENV/bin/python --out agent_space/mahout_wheels
+$FLEET_VENV/bin/python -m pip install --no-deps --force-reinstall \
+  agent_space/mahout_wheels/qumat_qdp-0.3.0.dev0-cp311-cp311-linux_x86_64.whl
+export PYTHONPATH=/opt/python-3.11-venv/lib/python3.11/site-packages; S=$PWD/projects/mahout/src
+utils/timeit.sh mahout test -- $FLEET_VENV/bin/python -m pytest --rootdir $S \
+  $S/testing/qdp $S/testing/qdp_python $S/qdp/qdp-python/tests -q -rs -p no:cacheprovider
+```
+- wheel: exit 0 (13.5s). pytest: exit 0, **321 passed, 14 skipped, 0 failed**: same 14 skips as gfx90a (2 multi-GPU, 1 tensorflow absent, 1 loader path-validation, 5 test_torch_ref CUDA-only reference, 2 test_engine_init with a GPU present, 2 AmdQdpEngine not built, 1 NVIDIA triton reference absent).
+
+### No-GPU engine init (#1551), all GPUs hidden with empty `HIP_VISIBLE_DEVICES=`
+- `HIP_VISIBLE_DEVICES= cargo test ... -p qdp-core --test engine_init -- --test-threads=1` -> 3 passed (new_agrees_with_runtime_probe, new_with_precision_never_panics, out_of_range_device_is_an_error).
+- `HIP_VISIBLE_DEVICES= pytest testing/qdp_python/test_engine_init.py` -> 2 passed.
+- `import _qdp; _qdp.cuda_available()` -> False hidden, True with HIP_VISIBLE_DEVICES=3.
+
+### CUDA no-regression gate
+`cuda-not-validated: no CUDA toolkit on this host` (no nvcc, no /usr/local/cuda, no conda). Tried NVIDIA's pip wheels (`nvidia-cuda-nvcc-cu12==12.8.*`): they ship `ptxas` and headers but no `nvcc` driver, so unusable for the build. A standalone micromamba download was refused by this session's permission policy, so not pursued. Still owed at 95845611e by a host with nvcc. Partial evidence: `QDP_NO_CUDA=1 cargo check -p qdp-core --tests` (default cuda feature, stub path) exit 0, type-checking the CUDA arm of 95845611e's helper.
+
+### Gates
+- Jargon: `jargon.py -C projects/mahout/src --commits upstream/main..moat-fix-1399 --diff upstream/main..moat-fix-1399` clean. `--port mahout` gives the same 5 `HEAD_SHA` hits in upstream's own automerge-gate code as the porter and reviewer found (`git diff upstream/main moat-fix-1399 | grep -ci head_sha` = 0). (`--port` needs a local `main` in the clone: `git fetch origin main:main`.)
+- Docs: qdp/DEVELOPMENT.md "### AMD GPU build (ROCm / HIP)" and qdp/qdp-python/README.md "### AMD ROCm Usage" present; unchanged this round.
+
+### Result
+linux-gfx1100 `completed` at 95845611e6f2baaeb80cf876b493678a97017135. Fills the fix review body's `linux-gfx1100 (W7800)` line: Rust 385 passed / 0 failed / 4 ignored; Python 321 passed / 14 skipped / 0 failed.
