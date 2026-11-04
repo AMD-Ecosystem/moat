@@ -802,3 +802,62 @@ numpy<2 scratch venv (see the sync-round entry for why).
 - test_analog_ctx (new upstream suite): **177 passed, 29 skipped**.
 
 Verdict: PASS at eb4d017. Transitioning linux-gfx90a to completed.
+
+## Revalidation 2026-11-04 (validator, linux-gfx1100, sync tip eb4d017)
+
+State: revalidate (validated_sha 70577b5 -> head eb4d017, sync round
+moat-sync-60ffe9e). `classify 70577b5 eb4d017` -> class=unknown (the merge
+brings upstream device code, e.g. kernelApplyChopperCorrectionToWeights), so
+full real-GPU run, no carry-forward attempt.
+GPU: AMD Radeon Pro W7800 48GB (gfx1100, wave32 native), HIP_VISIBLE_DEVICES=2.
+Toolchain (changed since June): ROCm 10.1.0 from the pip rocm-sdk-devel
+package (no /opt/rocm), torch 2.16.0a0+git6c3af02 (HIP 7.16), Python 3.11
+venv, numpy 1.26.4 (no numpy<2 scratch venv needed here). OpenBLAS from
+`apt-get install libopenblas-dev`.
+
+Build note: this Python is a virtualenv, and upstream CMakeLists.txt
+*replaces* CMAKE_PREFIX_PATH with $VIRTUAL_ENV when VIRTUAL_ENV is set, so
+the `-DCMAKE_PREFIX_PATH=...;$R` value is lost and `find_package(hip)`
+fails. Passing `-DROCM_PATH=$R` (the knob dependencies_hip.cmake appends
+after that) fixes it. Pre-existing upstream behaviour, not a port defect.
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+TORCH_CMAKE=$(python -c "import torch,os;print(os.path.dirname(torch.__file__))")/share/cmake
+cmake -S . -B build_hip -GNinja -DUSE_HIP=ON -DUSE_CUDA=OFF -DRPU_CXX_STANDARD=20 \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++ \
+  -DROCM_PATH=$R -DCMAKE_PREFIX_PATH="$TORCH_CMAKE;$R" -DRPU_BLAS=OpenBLAS \
+  -DBUILD_TEST=OFF -DRPU_USE_TORCH_BUFFERS=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build_hip -j16      # 78/78, warnings only
+cp build_hip/src/aihwkit/simulator/rpu_base.cpython-311-x86_64-linux-gnu.so src/aihwkit/simulator/
+```
+`llvm-objdump --offloading` on the .so: 29 amdgcn-amd-amdhsa--gfx1100 bundles.
+
+Tests (`ulimit -c 0; PYTHONPATH=src python -m pytest -q -p no:cacheprovider ...`):
+- test_specific_tiles + test_simulator_tiles + test_bindings_tiles (FULL,
+  CPU+GPU): **568 passed, 57 skipped, 0 failed** (bit_line_maker /
+  pulsed-update warp-size gate on native wave32 -- PASS).
+- test_torch_tiles + test_inference_tiles (FULL): **405 passed, 55 skipped,
+  1 failed** -- TorchInferenceTest_TorchInferenceCuda::test_input_range_grad,
+  x=-0.0005 vs y=-0.0187, max abs diff 0.01819531: the same numbers gfx90a
+  reported. Rebuilt the old validated head 70577b5 in a worktree with this
+  identical toolchain and flags: the same test fails with the same
+  magnitudes there, and the CPU variant passes at both heads. Not a sync
+  regression; deferral aihwkit-input-range-grad-drift covers it (now seen
+  on wave64 ROCm 7.14 and wave32 ROCm 10.1 with identical values, which
+  points away from a device-arch cause).
+- test_layers_linear + test_layers_convolution (review directive):
+  **566 passed, 216 skipped**, matching gfx90a exactly.
+- test_analog_ctx (new upstream suite): **177 passed, 29 skipped**.
+
+CUDA gate at eb4d017: NOT run (last recorded at 70577b5). This host has no
+CUDA toolkit and no conda; installing Miniforge here was refused by the
+session sandbox. cuda-not-validated: no CUDA toolkit on this host. The
+delta's rpu_cub.h conflict resolution touches the CUDA-side `#else` branch,
+so the next Linux host with /opt/conda/envs/cuda-12.8 should run it.
+
+Jargon: `python3 utils/jargon.py --port aihwkit` -> clean (after creating
+local master / moat-sync-60ffe9e refs in the fresh clone). Docs: README
+"Running on AMD GPUs (ROCm/HIP)" present. Fork tree clean (only untracked
+build_hip/).
+
+Verdict: PASS at eb4d017. Transitioning linux-gfx1100 to completed.

@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T01:19:43Z",
-  "updated_at": "2026-09-09T04:09:37Z",
+  "updated_at": "2026-11-04T07:32:39Z",
   "head_sha": "eb4d017a4ae7b32926aca97db1223fc443aae490",
   "depends_on": [],
   "pr_url": "https://github.com/IBM/aihwkit/pull/770",
@@ -104,10 +104,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "70577b578b7faa661611e905c0b9ec1a1d85bf33",
+      "validated_sha": "eb4d017a4ae7b32926aca97db1223fc443aae490",
       "started_at": null,
-      "completed_at": "2026-06-23T22:08:02Z",
-      "updated_at": "2026-06-24T17:03:22Z",
+      "completed_at": "2026-11-04T07:32:39Z",
+      "updated_at": "2026-11-04T07:32:39Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -121,13 +121,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "f415b1d4e58bf6352c90ec8993abeb821486971f",
-        "method": "source-class",
-        "detail": "CMake default-path change; explicit -D builds byte-identical",
-        "at": "2026-06-23T22:08:02Z"
-      }
+      "last_agent": "validator"
     }
   },
   "published_sha": "70577b578b7faa661611e905c0b9ec1a1d85bf33",
