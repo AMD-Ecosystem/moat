@@ -1,0 +1,264 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "f8e3ac907b62",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "tornado-assembly/src/examples/generated/add.cu",
+      "tornado-assembly/src/examples/generated/add_uncompressed.cu",
+      "tornado-assembly/src/examples/generated/dp.cu",
+      "tornado-assembly/src/examples/generated/dp_uncompressed.cu",
+      "tornado-native-libs/cudf-jni/src/main/cpp/source/tornado_cudf.cpp",
+      "tornado-native-libs/cudnn-jni/src/main/cpp/source/tornado-cudnn-sdpa.cpp",
+      "tornado-native-libs/cutlass-jni/src/main/cpp/source/tornado-cutlass.cu"
+    ],
+    "markers": {
+      "kernel": 9,
+      "launch": 4
+    },
+    "libraries": {
+      "cudnn": 18,
+      "cutlass": 56
+    }
+  },
+  "components": [
+    {
+      "id": "library:tornado-cudf",
+      "kind": "library",
+      "where": "tornado-native-libs/cudf-jni/src/main/cpp/CMakeLists.txt",
+      "note": "cuDF JNI shim (RAPIDS libcudf); ROCm-DS equivalent unverified -- proposed out, pending jeff (plan.md OQ4)"
+    },
+    {
+      "id": "library:tornado-cudnn",
+      "kind": "library",
+      "where": "tornado-native-libs/cudnn-jni/src/main/cpp/CMakeLists.txt",
+      "note": "cuDNN frontend SDPA JNI shim; no drop-in, MIOpen/CK fmha rewrite -- proposed out, pending jeff (plan.md OQ4)"
+    },
+    {
+      "id": "library:tornado-cutlass",
+      "kind": "library",
+      "where": "tornado-native-libs/cutlass-jni/src/main/cpp/CMakeLists.txt",
+      "note": "CUTLASS JNI shim (real .cu); CK/hipBLASLt rewrite -- proposed out, pending jeff (plan.md OQ4)"
+    },
+    {
+      "id": "backend:hip-driver",
+      "kind": "library",
+      "where": "tornado-drivers/hip (new, derived from tornado-drivers/cuda)",
+      "added_by": "planner",
+      "note": "FFM bindings: CUDA driver API -> HIP module API (ffm/CUDADriverAPI.java), NVRTC -> hipRTC (ffm/NVRTCAPI.java, ffm/CUDACompiler.java); invisible to the scan: no .cu, all Java FFM"
+    },
+    {
+      "id": "codegen:tc-hip-dialect",
+      "kind": "codegen",
+      "where": "tornado-compiler/tc-codegen, tc-ir, tc-tornado",
+      "added_by": "planner",
+      "note": "TC prints CUDA C++ at runtime; HIP dialect + TargetCaps (CC collision R2, warp mask R1, option translation R5)"
+    },
+    {
+      "id": "feature:cuda-graphs",
+      "kind": "feature",
+      "where": "tornado-drivers/cuda/.../CUDACommandQueue.java",
+      "added_by": "planner",
+      "note": "withCUDAGraph stream capture -> hipGraph; cuGraphExecUpdate_v2 signature differs"
+    },
+    {
+      "id": "feature:nvtx",
+      "kind": "feature",
+      "where": "tornado-drivers/cuda/.../ffm/NVTXAPI.java",
+      "added_by": "planner",
+      "note": "-> roctx, optional library"
+    },
+    {
+      "id": "feature:pinned-memory",
+      "kind": "feature",
+      "where": "tornado-drivers/cuda/.../mm/CUDAPinnedMemoryRegistry.java",
+      "added_by": "planner",
+      "note": "cuMemHostRegister/AllocHost -> hipHostRegister/hipHostMalloc"
+    },
+    {
+      "id": "feature:prebuilt-tasks",
+      "kind": "feature",
+      "where": "tornado-assembly/src/examples/generated/*.cu, tornado-unittests/.../prebuilt",
+      "added_by": "planner",
+      "note": "HIP-source prebuilt kernels; the 4 generated .cu files are the CUDA prebuilt inputs"
+    },
+    {
+      "id": "feature:virtual-devices",
+      "kind": "feature",
+      "where": "tornado-drivers/cuda/.../virtual/*",
+      "added_by": "planner",
+      "note": "offline compile against a JSON device; port if cheap, else needs ruling (plan.md OQ8)"
+    },
+    {
+      "id": "feature:power-metrics",
+      "kind": "feature",
+      "where": "tornado-drivers/drivers-common/.../ffm/NVMLAPI.java",
+      "added_by": "planner",
+      "note": "NVML -> empty handler or amd-smi (plan.md OQ5)"
+    },
+    {
+      "id": "feature:tensor-core-mma",
+      "kind": "feature",
+      "where": "tornado-compiler/tc-codegen/.../Helpers.java, Intrinsics.java",
+      "added_by": "planner",
+      "note": "inline PTX mma.sync/ldmatrix/cp.async; refused on HIP this round; MFMA/WMMA lowering proposed later, pending jeff (OQ3)"
+    },
+    {
+      "id": "feature:cuda-tile",
+      "kind": "feature",
+      "where": "tornado-drivers/cuda/.../CUDATileCompiler.java, tc-codegen TileSpellings",
+      "added_by": "planner",
+      "note": "nvcc -tilecubin; no HIP equivalent -- proposed out, pending jeff (OQ4)"
+    },
+    {
+      "id": "feature:device-launch",
+      "kind": "feature",
+      "where": "tc-codegen CudaDialect.deviceLaunch, ffm/CUDACompiler.java -rdc",
+      "added_by": "planner",
+      "note": "dynamic parallelism; HIP has no device-side kernel launch -- proposed out (platform limit), pending jeff (OQ4)"
+    },
+    {
+      "id": "library-task:tornado-cublas",
+      "kind": "library",
+      "where": "tornado-native-libs/tornado-cublas",
+      "added_by": "planner",
+      "note": "FFM library-task provider -> hipBLAS/hipBLASLt; scope pending jeff (plan.md OQ2/OQ4)"
+    },
+    {
+      "id": "library-task:tornado-cufft",
+      "kind": "library",
+      "where": "tornado-native-libs/tornado-cufft",
+      "added_by": "planner",
+      "note": "FFM library-task provider -> hipFFT; scope pending jeff (plan.md OQ2/OQ4)"
+    },
+    {
+      "id": "library-task:tornado-curand",
+      "kind": "library",
+      "where": "tornado-native-libs/tornado-curand",
+      "added_by": "planner",
+      "note": "FFM library-task provider -> hipRAND; scope pending jeff (plan.md OQ2/OQ4)"
+    },
+    {
+      "id": "library-task:tornado-cusparse",
+      "kind": "library",
+      "where": "tornado-native-libs/tornado-cusparse",
+      "added_by": "planner",
+      "note": "FFM library-task provider -> hipSPARSE; scope pending jeff (plan.md OQ2/OQ4)"
+    },
+    {
+      "id": "library-task:tornado-nccl",
+      "kind": "library",
+      "where": "tornado-native-libs/tornado-nccl",
+      "added_by": "planner",
+      "note": "FFM library-task provider -> RCCL + HIP runtime; scope pending jeff (plan.md OQ2/OQ4)"
+    },
+    {
+      "id": "library-task:tornado-cudnn",
+      "kind": "library",
+      "where": "tornado-native-libs/tornado-cudnn",
+      "added_by": "planner",
+      "note": "FFM library-task provider -> MIOpen (later round proposed); scope pending jeff (plan.md OQ2/OQ4)"
+    },
+    {
+      "id": "library-task:tornado-cudf",
+      "kind": "library",
+      "where": "tornado-native-libs/tornado-cudf",
+      "added_by": "planner",
+      "note": "FFM library-task provider -> ROCm-DS, unverified; scope pending jeff (plan.md OQ2/OQ4)"
+    },
+    {
+      "id": "library-task:tornado-cuvs",
+      "kind": "library",
+      "where": "tornado-native-libs/tornado-cuvs",
+      "added_by": "planner",
+      "note": "FFM library-task provider -> ROCm-DS, unverified; scope pending jeff (plan.md OQ2/OQ4)"
+    },
+    {
+      "id": "library-task:tornado-cutlass",
+      "kind": "library",
+      "where": "tornado-native-libs/tornado-cutlass",
+      "added_by": "planner",
+      "note": "FFM library-task provider -> CK/hipBLASLt rewrite; scope pending jeff (plan.md OQ2/OQ4)"
+    },
+    {
+      "id": "build:backend-wiring",
+      "kind": "build_path",
+      "where": "Makefile, Makefile.mak, bin/compile, bin/tornadovm-installer, bin/*.py, tornado-assembly, tornado-drivers/pom.xml",
+      "added_by": "planner",
+      "note": "BACKEND=hip / hip-backend Maven profile / installer --backend hip / launcher"
+    },
+    {
+      "id": "build:windows",
+      "kind": "build_path",
+      "where": "bin/windowsMicrosoftStudioTools2022.cmd, tornado.bat, test-native.cmd",
+      "added_by": "planner",
+      "note": "Windows install path; amdhip64/hiprtc DLL discovery from HIP_PATH (R4)"
+    },
+    {
+      "id": "tool:tc-emit",
+      "kind": "executable",
+      "where": "tornado-compiler/tc-runtime/.../tools/Tc.java",
+      "added_by": "planner",
+      "note": "tc emit --target hip"
+    },
+    {
+      "id": "tool:tornado-selftest",
+      "kind": "test",
+      "where": "tornado-compiler/tc-selftest",
+      "added_by": "planner",
+      "note": "HIP target line + all groups on a HIP device"
+    },
+    {
+      "id": "test:tc-lit-and-unit",
+      "kind": "test",
+      "where": "tornado-compiler/tc-*/src/test",
+      "added_by": "planner",
+      "note": "make test-nogpu; HIP lit RUN lines via hipRTC"
+    },
+    {
+      "id": "test:tornado-unittests",
+      "kind": "test",
+      "where": "tornado-unittests",
+      "added_by": "planner",
+      "note": "tornado-test full + quickPass; HIP gating on CUDA-only tests (R12)"
+    },
+    {
+      "id": "test:native-api",
+      "kind": "test",
+      "where": "tornado-assembly/src/bin/test-native.sh, test-native.cmd",
+      "added_by": "planner",
+      "note": "HIP twins of TestCUDAJITCompiler/TestCUDATornadoCompiler"
+    },
+    {
+      "id": "example:tornado-examples",
+      "kind": "example",
+      "where": "tornado-examples",
+      "added_by": "planner",
+      "note": "smoke a few examples on the HIP backend"
+    },
+    {
+      "id": "benchmark:library-benchmarks",
+      "kind": "benchmark",
+      "where": "tornado-native-libs/*/benchmarks, tornado-examples",
+      "added_by": "planner",
+      "note": "smoke only for in-scope library tasks; not a correctness gate"
+    },
+    {
+      "id": "doc:readme-install",
+      "kind": "doc",
+      "where": "README.md, INSTALL_FROM_SOURCE.md, docs/source",
+      "added_by": "planner",
+      "note": "backend table + HIP prerequisites"
+    },
+    {
+      "id": "path:opencl-metal-cuda-noregress",
+      "kind": "non_gpu_path",
+      "where": "tornado-drivers/{opencl,metal,cuda}",
+      "added_by": "planner",
+      "note": "untouched; CUDA backend build + make test-nogpu must still pass"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "removed_from_floor": []
+}

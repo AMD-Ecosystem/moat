@@ -29,3 +29,11 @@ So the scope is NOT enablement. AMD users can run TornadoVM today. What this por
 That makes it a third shape, neither Strategy A nor Strategy B. There are no CUDA kernels to translate: the repo has 3 `.cu` files, one generated and one a CUTLASS JNI wrapper. The CUDA-specific surface is a JIT compiler backend emitting PTX assembly text, so the equivalent work is writing a code generator rather than diffing existing kernels. The one thing that makes it tractable where mirage and pegainfer are not is that TornadoVM already abstracts its backend interface across OpenCL, PTX and Metal, so there is a defined seam to implement against instead of a rewrite of the engine.
 
 Licence note for the planner: the recorded `license_spdx` reads as an OR expression, but TornadoVM is per-MODULE licensed, which is not the same thing. What governs a contribution is the licence of the files changed, and the modules this work touches -- Tornado-Runtime and Tornado-Drivers -- are GPL-2.0 with Classpath Exception, tier 2, cleared to contribute. The Apache-2.0 and MIT modules are the user-facing API, which this work would not modify.
+
+## Planning (2026-11-03, windows-gfx1151)
+
+Planned against upstream `develop` @ f8e3ac907b62, not `master`: every upstream PR targets `develop` (CONTRIBUTING.md), which was 40 commits ahead of `master` at planning time. The fork has no `develop` mirror yet.
+
+Facts that changed since intake: upstream 8.0.0 replaced the Graal/PTX backend with TC (`tornado-compiler/`), which prints CUDA C++ and compiles it with NVRTC through Java FFM bindings; `tornado-drivers/ptx` is now a one-class stub. #1266 (merged 2026-10-23) relicensed the whole tree to Apache-2.0. Library-task modules moved under `tornado-native-libs/` (#1307).
+
+Strategy, scope, risks and the eight open questions for jeff are in plan.md. ext_type `java-ffm-driver-api`.
