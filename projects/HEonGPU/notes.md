@@ -7154,7 +7154,7 @@ Same class, smaller: upstream's comment at `thirdparty/CMakeLists.txt:7-8` ("Con
 - "run twice from a clean build": the porter's notes show one fresh build and two serial runs.
 - Nothing says `HEonGPU_BUILD_SHARED=ON` is unbuilt on AMD GPUs (finding 1).
 
-Corrected body below, true at `2f4de2d`. (Porter, 2026-11-04: the `HEonGPU_BUILD_SHARED` sentence and the Testing section are updated in place to be true at `2e51886`; see the porter round below.) The porter must update the `HEonGPU_BUILD_SHARED` sentence after fixing finding 1, and the Testing section after the round. `jargon.py -` and `prose.py` are clean on it. Title unchanged: "Add HIP support for AMD GPUs".
+Corrected body below, true at `2f4de2d`. (Porter, 2026-11-04: the `HEonGPU_BUILD_SHARED` sentence and the Testing section are updated in place to be true at `2e51886`; see the porter round below. Porter, 2026-11-04, second round: the Testing section now carries the `2e51886` re-review's corrected paragraph.) The porter must update the `HEonGPU_BUILD_SHARED` sentence after fixing finding 1, and the Testing section after the round. `jargon.py -` and `prose.py` are clean on it. Title unchanged: "Add HIP support for AMD GPUs".
 
 ====
 This adds a HIP build so HEonGPU runs on AMD GPUs through ROCm, alongside the existing CUDA build. The HIP build is selected with `-D USE_HIP=ON`. With the option off (the default) the CUDA build configures as before; the few source changes it shares with the HIP build are listed below under "Changes that also reach the CUDA build".
@@ -7197,7 +7197,7 @@ The remaining fixes are AMD-only or Windows-only:
 
 ## Testing
 
-At the current head, on an AMD Instinct MI250X (gfx90a, wave64) with ROCm 7.16 on Linux: the static HIP build compiles all 49 test, 28 example and 3 benchmark programs, and `ctest` passes 301 of 301 test cases. The shared build (`-D HEonGPU_BUILD_SHARED=ON`) compiles its 49 test programs and `ctest` passes 296 of 296, including both shared-state cases; it leaves out the seven noise-budget cases that launch a library kernel directly, as the test CMake file does for any shared build. Each suite was run twice in a row on a fresh build with no failures. The BFV, CKKS, TFHE, bootstrapping, session and multiparty examples were run with their decrypted values checked, and the multi-stream example ran to completion; the eight TFHE gate outputs match their truth tables bit for bit.
+At the current head, on an AMD Instinct MI250X (gfx90a, wave64) with ROCm 7.16 on Linux: the static HIP build compiles all 49 test, 28 example and 3 benchmark programs, and `ctest` passes 301 of 301 test cases. The shared build (`-D HEonGPU_BUILD_SHARED=ON`) compiles its 49 test programs and `ctest` passes 296 of 296, including both shared-state cases; it leaves out the seven noise-budget cases that launch a library kernel directly, as the test CMake file does for any shared build. Each suite was run twice in a row on a fresh build with no failures. The BFV, CKKS, TFHE, bootstrapping and session examples were run with their decrypted values checked, and the multiparty and multi-stream examples ran to completion; the eight TFHE gate outputs match their truth tables bit for bit.
 
 Earlier revisions of this branch, before the merge of the 2.0 changes, passed the then 20 test programs twice from a clean build on an AMD Instinct MI300X (gfx942, ROCm 7.14, Linux), an AMD Radeon Pro W7800 (gfx1100, RDNA3, wave32, ROCm 7.2.3, Linux) and an AMD Radeon 8060S (gfx1151, RDNA3.5, wave32, ROCm 7.14, Windows 11). Those platforms are being rerun at the current head and this description will be updated with the results.
 
@@ -7291,3 +7291,23 @@ At the current head, on an AMD Instinct MI250X (gfx90a, wave64) with ROCm 7.16 o
 ====
 
 Still owed after the fix (unchanged from the porter round): a CUDA compile at the new head (`2f4de2d`'s `memorypool.cu` CUDA arm is still uncompiled under nvcc), and wave32/Windows revalidation.
+
+## Porter round 2026-11-04 (linux-gfx90a) -- the `2e51886` re-review finding, `640a8b5`
+
+Dispatched by Jeff Daily at `changes-requested`, head `2e51886`. Head `2e51886` -> `640a8b5` (one commit, pushed to `moat-port` as a fast-forward; `pr-state` none). The hipMM bridge is untouched (Jeff's pending decision).
+
+### Finding 1: "non-template device functions" (`640a8b5`, comments only)
+
+The five CMake comments (`test/`, `example/basic/`, `example/bootstrapping/`, `example/mpc/`, `benchmark/` `CMakeLists.txt`) now cite the two genuinely non-template uses, `util.cuh` (`warp_reduce`, `warpSize` at line 416) and `bigintegerarith.cuh` (`multiply`, `__umul64hi` at line 229), instead of GPU-NTT's `modular_arith.cuh` (whose use is in a member of the class template `BarrettOperations`). The commit body says it corrects the wording `2e51886` introduced. `git diff --stat 2e51886 640a8b5`: 5 files, 9 insertions, 9 deletions, every changed line a `#` comment line. No rebuild: nothing compiled changes, so the `2e51886` build and test record above (static 301/301 and shared 296/296, each twice, on MI250X) carries over. `jargon.py --port HEonGPU` clean; title 61 chars; fork `status --porcelain` clean.
+
+### PR body
+
+The Testing section of the corrected body (in the gfx942 review of `2f4de2d` above) is replaced with the `2e51886` re-review's corrected paragraph: multiparty moves to "ran to completion" with multi-stream. `prose.py` and `jargon.py -` clean on the full body. Not posted; review PR #1 untouched (no `gh` writes this run, by Jeff's instruction, so no thread replies either).
+
+### CUDA compile at `2e51886`
+
+The CUDA nvcc 12.8 compile of `2e51886` passed on 2026-11-04: 387 ninja steps, 0 errors, 0 warnings, from fleet job mi355-20261104-001208-cuda-compile; details in Jeff's plan `moat-cuda-compile-checks-mahout-heongpu.md`. This covers `2f4de2d`'s `memorypool.cu` CUDA arm, previously owed. `640a8b5` changes only CMake comments, so it carries over.
+
+### Still owed
+
+- wave32 (`linux-gfx1100`) and Windows (`windows-gfx1151`) revalidation, and gfx90a/gfx942 revalidation at `640a8b5` per `advance-head`.
