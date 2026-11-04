@@ -2453,3 +2453,84 @@ Scope: `git diff bab4052..b9c257a` (6ac02a3, e0dcda3, b9c257a; 5 files, +33/-11)
 ### For the validators
 - wave32 (gfx1100, gfx1151): rebuild libelas-gpu and run `elas_cmp` modes 0-3. Expect mode 2 bit-exact and the magnitudes above. The windows-gfx1151 rebuild must also confirm that `elas_gpu.cu`/`ElasInterface.cpp` compile as HIP with the GNU-driver clang.
 - A full plvs stereo run with libelas still needs to be shown (`AMD_LOG_LEVEL=3` with findMatch_GPU/adaptiveMeanGPU8 in the trace); this host has no full plvs build.
+
+## Validation 2026-11-04 (linux-gfx90a, revalidate): PASS -> completed (head b9c257a)
+
+Trigger: head moved `bab4052` (this arch's `validated_sha`) -> `b9c257a` (6ac02a3 and e0dcda3 WIN32-only build changes, b9c257a libelas-gpu HIP device-code fix). b9c257a changes the Linux HIP build (ELAS now runs on the GPU), so this is a full rebuild and run, no carry-forward. It is the first full Linux SLAM build since 2026-06-12 and the first stereo run of plvs recorded on AMD.
+
+Host: MI250X GCD (gfx90a, wave64), `HIP_VISIBLE_DEVICES=1`, every GPU run under `ulimit -c 0`. Ubuntu 24.04, TheRock pip SDK (`_rocm_sdk_devel`, HIP 7.16.26385, amdclang++ 24.0.0git), no `/opt/rocm`, cmake 3.31.6, g++ 13.3, distro PCL 1.14.0, Boost 1.83, protobuf 3.21.12. Fork cloned fresh into `projects/plvs/src`, HEAD `b9c257a` == `origin/moat-port`.
+
+### Build (everything from scratch, all in `agent_space/plvs`)
+1. apt: `libpcl-dev libboost-all-dev libglew-dev libglfw3-dev libsuitesparse-dev libgoogle-glog-dev libprotobuf-dev protobuf-compiler liboctomap-dev libssl-dev libgtk-3-dev libepoxy-dev`, plus the ffmpeg/jpeg/png/tiff dev packages from install_dependencies.sh.
+2. OpenCV-with-HIP: `AMD-Ecosystem/opencv@moat-port` (`50f05b1`) + `AMD-Ecosystem/opencv_contrib@moat-port` (`041d552`):
+   ```
+   cmake -S core -B ocv-build -GNinja -DCMAKE_BUILD_TYPE=Release -DOPENCV_EXTRA_MODULES_PATH=<contrib>/modules \
+     -DWITH_HIP=ON -DCMAKE_HIP_COMPILER=<sdk>/bin/amdclang++ -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=<sdk> \
+     -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_PYTHON=OFF -DWITH_GTK=ON \
+     -DBUILD_LIST=core,imgproc,imgcodecs,highgui,videoio,video,features2d,flann,calib3d,ximgproc,cudev,cudaarithm,cudawarping,cudaimgproc,cudastereo,cudafilters,cudafeatures2d,cudabgsegm \
+     -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX=<scratch>/ocv-install
+   cmake --build ocv-build -j 64 && cmake --install ocv-build      # 650/650
+   ```
+   The installed `OpenCVConfig.cmake` still carries the `find_host_package(CUDA ... EXACT REQUIRED)` + NPP/cuBLAS block. I deleted lines 106-143 and set `OpenCV_CUDA_LIBS_{ABS,REL}PATH ""`, the same install-tree shim every earlier session used. The fix belongs in OpenCV's WITH_HIP config generation, not in plvs.
+3. Pangolin `fe57db532` + `Thirdparty/pangolin.patch`, built outside the fork and symlinked as `Thirdparty/Pangolin` (removed afterwards).
+4. `config.sh` edited the documented way (`USE_HIP=1`, `USE_LOCAL_OPENCV=0`, `export OpenCV_DIR=<ocv-install>/lib/cmake/opencv4`), then reverted with `git checkout config.sh` at the end. The thirdparty libraries were built by a driver (`agent_space/plvs/build_tp.sh`) that sources `config.sh` and runs the same per-library `cmake .. $EXTERNAL_OPTIONS; make` steps as `build_thirdparty.sh`. The driver leaves out two blocks: rerun (`WITH_RERUN` is OFF by default) and the evo evaluation-tool Python package step, because the fleet guard forbids changing the shared Python environment. So `build_thirdparty.sh` itself was not run as-is. `EXTERNAL_OPTIONS` = `-DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 -DOpenCV_DIR=... -DUSE_HIP=ON -DOPENCV_VERSION=4`. DBoW2, g2o, g2o_new (`install_local_g2o_new.sh`, 20230223_git + patch), volumetric_mapping, open_chisel, chisel_server, voxblox, voxblox_server, libelas-gpu, libsgm and line_descriptor all build. **fastfusion fails** with g++ 13 (`geometryfusion_mipmap_cpu.hpp:478: 'deque' in namespace 'std' does not name a template type`, a missing `<deque>` in upstream CPU code). It is pre-existing and not port-related; plvs is built with `-DWITH_FASTFUSION=OFF`, as in every earlier session.
+5. libelas-gpu (the b9c257a change): the log shows `Building HIP object CMakeFiles/libelas_gpu.dir/GPU/elas_gpu.cu.o`; `ar t lib/liblibelas_gpu.a` = elas_gpu.cu.o, descriptor, elas, filter, matrix, triangle, ElasInterface.
+6. plvs: `cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_HIP_ARCHITECTURES=gfx90a -DWITH_FASTFUSION=OFF -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 -DOpenCV_DIR=... -DUSE_HIP=ON -DOPENCV_VERSION=4 -DWITH_G2O_NEW=ON && make -j 48`, RC=0, producing `lib/libplvs.so` and all examples. Configure prints `USE_HIP: ON`, `building with libelas HIP` (the new b9c257a message) and `building with stereo libsgm GPU`. The project's own `./build_plvs.sh "-DCMAKE_HIP_ARCHITECTURES=gfx90a -DWITH_FASTFUSION=OFF"` was then run over the tree, RC=0 (`external options: ... -DUSE_HIP=ON ... -DWITH_G2O_NEW=ON`, `Built target plvs`). `./gen_bin_vocabulary.sh` RC=0.
+
+### Test 1: mono TUM RGB-D SLAM (the recorded validation), full freiburg1_xyz, 798 frames
+The full 448 MB tgz downloaded intact this time; earlier sessions had truncated downloads. I ran the stock `Examples/Monocular/mono_tum` under `xvfb-run` with the Pangolin viewer on, so no headless driver was needed:
+```
+xvfb-run -a -s "-screen 0 1280x1024x24" Examples/Monocular/mono_tum Vocabulary/ORBvoc.txt Examples/Monocular/TUM1.yaml <data>/rgbd_dataset_freiburg1_xyz
+```
+- Run 1: `Images in the sequence: 798`, `New Map created with 370 points`, median tracking 16.7 ms, clean Shutdown, EXIT=0, 43 KFs. ATE (Sim3/Umeyama alignment of KeyFrameTrajectory to groundtruth, `agent_space/plvs/ate.py`): **0.0089 m RMSE** over 0.69 m of motion.
+- Run 2 with `AMD_LOG_LEVEL=3`: EXIT=0, map 314 points, ATE **0.0092 m**. Each of `PLVS2::cuda::{tileCalcKeypoints_kernel, calcOrb_kernel, IC_Angle_kernel, addBorder_kernel}` was dispatched **6384 times = 798 frames x 8 pyramid levels**, so the GPU ORB/FAST path ran on every frame.
+
+### Test 2: stereo SLAM with StereoDense.type = libelas (new; confirms the b9c257a ELAS kernels inside plvs)
+Dataset: TUM-VI `dataset-room1_512_16` (euroc export, 2821 stereo frames, mocap ground truth); the EuRoC ETH server is still unreachable. `Examples/Stereo/stereo_tum_vi` + `Examples/Stereo/TUM-VI.yaml` (KannalaBrandt8 fisheye, `StereoDense.type: "libelas"`, `needRectification: 1`, `libelasEnableSubsampling: 0`), using a scratch copy with `PointCloudMapping.on: 1` (the ELAS consumer) and `Viewer.on: 0`:
+```
+Examples/Stereo/stereo_tum_vi Vocabulary/ORBvoc.txt TUM-VI-elas.yaml <room1>/mav0/cam0/data <room1>/mav0/cam1/data Examples/Stereo/TUM_TimeStamps/dataset-room1_512.txt room1
+```
+- `AMD_LOG_LEVEL=3` trace: **`libelas::findMatch_GPU` x610 and `libelas::adaptiveMeanGPU8` x305**, one pair per `stereo processing (libelas)` keyframe (305 log lines), alongside the ORB kernels. So `PointCloudKeyFrame` -> `ElasInterface` -> `ElasGPU` runs on the device inside plvs.
+- `TUM-VI_rectified.yaml` (rectified to pinhole) sends tracking through `Frame::ComputeStereoMatches`, which reads the `cuda::gpu_mat_allocator` (`hipMallocManaged`) pyramid on the host. Result: 2/2 EXIT=0, 2821 frames, `findMatch_GPU` x356 / `adaptiveMeanGPU8` x178 in the traced run, ATE 0.0721 / 0.0731 m.
+- Trajectory accuracy over all full runs (ATE of f_room1 against mocap0, Sim3). The ~7 cm floor is the mocap-body-to-cam0 lever arm, which I did not apply, so compare the runs with each other, not with published numbers. HIP fisheye ELAS-on 0.0716; HIP ELAS-off 0.0716-0.0727 (7 runs); **CPU-only build 0.0711-0.0720 (6 runs)**. The GPU and CPU builds track identically.
+
+### Intermittent stereo segfault: upstream, also seen in the CPU-only build (not a port defect)
+In the fisheye runs the HIP build crashed (EXIT=139) **4 times in 15 runs**: 2 of 4 runs with ELAS on, and 2 of 11 runs with `PointCloudMapping.on: 0`, which runs no ELAS at all. gdb backtrace (`gdb -batch -ex run -ex bt`):
+```
+#0 pthread_mutex_lock (mutex=0x1368)            <- null KeyFrame
+#1 PLVS2::KeyFrame::GetCameraCenter()
+#2 PLVS2::MapLine::UpdateNormalAndDepth()
+#3 PLVS2::LocalMapping::ProcessNewKeyFrame()
+#4 PLVS2::LocalMapping::Run()
+```
+This is the CPU line-feature mapping on the LocalMapping thread: a `MapLine` observation holds a null `KeyFrame*`. Control: I copied the same tree to `agent_space/plvs/plvs-cpu` and built it with `-DUSE_HIP=OFF -DWITH_LIBELAS=OFF -DWITH_LIBSGM=OFF` (`nm -DC libplvs.so | grep -c 'cuda::\|hipLaunch'` = 0), using the same yaml. The first 6 CPU runs were clean, which looked like a HIP-only fault. I then ran six more of each side by side under the same load: **HIP 0/6, CPU 1/6**. CPU run 11 segfaulted right after `ComputeStereoFishEyeLineMatches`, at the same point as the HIP crashes. Totals: HIP 4/15, CPU 1/12. The crash happens without any GPU code, so it is an upstream race whose timing the GPU path only shifts, and the rate gap is not significant at these counts. It is not a port defect and I did not chase it further. The diagnostic method is promoted to the skill (validation.md, "Diagnosing a suspected AMD fault before escalating").
+
+### Test 3: ELAS GPU-vs-CPU disparity (porter's `elas_cmp.cpp`, extracted verbatim from this file)
+Built against the libelas archive from the plvs build (steps 4/5 above): `amdclang++ -x hip --offload-arch=gfx90a -std=c++17 -O2 -DUSE_HIP -I$L/CPU -I$L/GPU elas_cmp.cpp -x none $L/lib/liblibelas_gpu.a -pthread`; `./elas_cmp $L/input <mode>`, RC=0 in all modes, on all 7 pairs:
+- Mode 0 (both images postprocessed): mean |d| 0.0042-0.0075, >1px 0-13 per image (out of 360k-1.17M valid pixels), validity mismatch 4-38, max |d| 0.68-7.29. GPU reruns are not bit-exact (expected).
+- Mode 1 (plvs settings, D1): mean |d| 0.0043-0.0073, >1px 0-13, the same as the mode 0 left image.
+- Mode 2 (plvs settings + subsampling): **GPU reruns bit-exact on all 7**; mean |d| 0.00018-0.00092, >1px 0-3, max 0.52-1.88.
+- Mode 3 (no adaptive mean): whole-step differences, mean |d| 1.3e-4 - 5.6e-4, max up to 67 (raindeer D2, the same outlier the porter and reviewer saw), >1px 8-36.
+
+The magnitudes match the porter's gfx90a and the reviewer's gfx942 tables, with one difference. The porter had mode 2 cones and aloe identical to the CPU; here they differ by max 0.69 / 0.52 with mean <= 0.0003. The cause is the build flags. The plvs build passes `BUILD_WITH_MARCH_NATIVE=OFF` (the Ubuntu 24.04 default in config.sh), so the CPU `elas.cpp` here is compiled without `-march=native` (flags.make: `-O3 -pthread -ftree-vectorize -funroll-loops -fPIC`), while the porter's standalone libelas build used it. The reviewer showed that the CPU-vs-GPU difference comes from FP contraction of the plane prior, and a CPU build without FMA contracts differently. This is a CPU-side build difference, not a GPU code issue. Timing: aloe CPU 518 ms vs GPU 259 ms; urban ~175 ms vs ~70 ms.
+
+### CUDA no-regression gate (this head_sha)
+This host has no conda env. I used NVIDIA's CUDA 12.8 redist archives (`cuda_nvcc` 12.8.93, `cuda_cudart`, `cuda_cccl`, `cuda_nvrtc` from developer.download.nvidia.com/compute/cuda/redist), extracted into one scratch prefix; the `nvidia-cuda-nvcc-cu12` wheel ships only ptxas. The only CUDA-visible files in `bab4052..b9c257a` are `Thirdparty/libelas-gpu/{CMakeLists.txt, GPU/ElasInterface.cpp}`, so the gate built libelas-gpu's own CUDA branch at both shas (git worktrees):
+```
+cmake -S <wt>/Thirdparty/libelas-gpu -B <b> -DCUDA_TOOLKIT_ROOT_DIR=<prefix> -DCUDA_ARCH_BIN=8.0 -DCMAKE_BUILD_TYPE=Release && cmake --build <b> -j 16
+```
+Configure reports `USE_CUDA true`, the CXX flags carry `-DUSE_CUDA`, and the gencode list includes sm_80 (FindCUDA's automatic list). All 4 targets built: **RC=0 at bab4052 and at b9c257a**. The normalized disassembly (md5 of `objdump -d --no-show-raw-insn`) of `ElasInterface.cpp.o`, `elas.cpp.o` and the nvcc `elas_gpu.cu.o` is **identical between the two shas**, so b9c257a leaves the CUDA path unchanged, as the review said. The other files in the delta (WIN32 blocks, PCL-version guard) are not CUDA code. CUDA gate: PASS.
+
+### Gates (validator step 4)
+- `python3 utils/jargon.py --port plvs` -> `jargon: clean`.
+- Documentation: I followed the ROCm build documented in `config.sh` / `new_features.md` for real (edit config.sh, run `build_plvs.sh`). The documented procedure builds the full stack, apart from the upstream fastfusion compile error and the skipped evo step noted above.
+- Integrity: `git -C projects/plvs/src status --porcelain` is empty after reverting `config.sh` and removing the Pangolin symlink; HEAD `b9c257a` == `origin/moat-port`.
+
+### Result
+linux-gfx90a: `revalidate` -> `completed` at `b9c257a`.
+
+### Still open, for jeff (unchanged by this round)
+- Upstream: the intermittent null-KeyFrame segfault in `MapLine::UpdateNormalAndDepth` in stereo runs (CPU code, seen in both builds). I did not register it as a deferred item: it is upstream behaviour the port does not touch.
+- Upstream: `fastfusion` does not compile with g++ 13 (missing `<deque>`).
+- The deferred `plvs-libelas-gpu-dvalids-leak-double-free` ruling (reviewer 2026-11-04b). The leak did not stop the 305-keyframe run; device memory use was not measured here.
+- wave32 (linux-gfx1100) and windows-gfx1151 still owe runs at b9c257a.
