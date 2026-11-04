@@ -1455,3 +1455,43 @@ These are the gfx1100 figures for the PR body's texture-hardware placeholder, ne
 - No fork push, no `gh` write.
 
 validated_sha: b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd
+
+## Validation 2026-11-04 (validator, windows-gfx1151, moat-port @ b37ca0a)
+
+Verdict: completed at b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd. gpu_vs_cpu_validate is 12/12 PASS on gfx1151 (texture path; 0 `Error: GPU` lines), b37ca0a is bit-identical to 5f6816f in all 36 dumped arrays in two interleaved rounds, leak_check delta 0 bytes. One failure found, in code the port did not touch: `BilateralFilter`/`PriorBilateralFilter` fault on gfx1151 at 5f6816f and b37ca0a alike (below).
+
+Host: Windows 11, AMD Radeon 8060S (gfx1151, RDNA3.5, wave32, APU), torch 2.12.0+rocm7.14.0a20260519 (HIP 7.13.26190), Python 3.12 (agent_space/torch312_venv, `pip install pybind11 imageio` added), numpy 2.5.2, clang-cl host, MSVC 14.44 link.exe first in PATH. All runs under `ulimit -c 0`, MAX_JOBS=8.
+
+### Build (first attempt failed on missing pybind11 in the venv; second rc=0, 21 s via timeit)
+```
+source agent_space/win_torch312_env.sh; unset PYTORCH_ROCM_ARCH; MAX_JOBS=8
+cd agent_space/leap-win          # fresh clone of AMD-Ecosystem/LEAP at b37ca0a, clean
+python setup_AMD.py build_ext --inplace
+cp src/leapct.cp312-win_amd64.pyd src/leapct.cp312-win_amd64.dll     # leapctype.py globs *leapct*.dll on win32
+strings src/leapct.cp312-win_amd64.pyd | grep -o hipv4-amdgcn[a-z0-9-]*   # 20 x hipv4-amdgcn-amd-amdhsa--gfx1151
+```
+Tests run through a wrapper that imports torch first (`runpy` of the script) so amdhip64 and its chain load before the ctypes DLL. No DLL staging was needed.
+
+### Tests
+```
+python run.py unitTests/gpu_vs_cpu_validate.py     # rc=0, 12/12, OVERALL: PASS
+python run.py leak_check.py <src>                  # delta 0 bytes over 200 iterations (sum(g)=374102)
+python run.py dump_outputs.py <src> x.npz 256      # 5f6816f r1, b37ca0a r1, 5f6816f r2, b37ca0a r2 (5f6816f built from git archive, same recipe)
+python compare_outputs.py old_rN.npz new_rN.npz    # N=1,2: ALL BIT-IDENTICAL (36/36); 5f6816f r1 vs r2 also identical
+python run.py dump_point.py <src> pt.npz           # see below
+```
+gpu_vs_cpu_validate lines equal the earlier Windows gfx1101 record and the Linux records: parallel adjoint 2.55e-05/1.59e-05; fan 2.45e-04/1.86e-04; coneparallel 1.24e-03/5.05e-05; cone-flat 1.42e-04/1.46e-04 (fbp 0.9998); cone-curved 8.51e-05/1.29e-04; modular VD 3.39e-03 (fbp 0.9998); modular SF fwd-vs-VD err 0.000.
+
+Times (ms, project / backproject, median of 5, 256 cols; the APU is shared and drifts) e.g. parallel_VD 5f6816f 265.8/119.6, b37ca0a 288.1/136.0 (r1); 274.4/124.4 vs 276.4/126.3 (r2); 5f6816f against itself r1 vs r2 ratio up to 1.04. cone-flat_SF 524.2/677.3 vs 524.8/676.9; modular_SF 524.2/722.4 vs 512.7/691.6. New/old ratios 0.97-1.14 in r1 (order drift), 0.99-1.02 in r2: run-order drift on a shared APU, not code. Not a clean performance measurement.
+
+### BilateralFilter fault on gfx1151 (pre-existing upstream bug, not the port)
+`dump_point.py` on the unmodified b37ca0a build: `BilateralFilter` fails with `failed to copy volume data back to host! hipErrorLaunchFailure`, the context is then dead (later calls `hipMalloc(volume 133 x 128 x 128) failed!`, `hipSetDevice Error`). Reproduced in a fresh process with a single `BilateralFilter` (and `PriorBilateralFilter`), identically at 5f6816f. `MedianFilter` alone is fine. Cause: `src/bilateral_filter.cu` guards the kernels with `if (i > N.x || j >= N.y || k >= N.z) return;` (4 sites, lines 27/82/139/193); `i > N.x` should be `i >= N.x`, so the last-plus-one slice reads and writes one slice past the buffer. The same line is in the upstream base 0c8846f. On the Linux hosts the allocator's slack hides it; on gfx1151 it is a hard fault. With `i >= N.x` in throwaway copies (agent_space/leap-5f68, agent_space/leap-b37fix; NOT the fork clone, which stays clean) `dump_point.py` runs to the end on both, every printed line identical and `compare_outputs.py pt_5f6816f.npz pt_b37ca0a.npz`: ALL BIT-IDENTICAL (20 arrays). Also there, `dictionary` ran without a fault (it faulted on gfx90a) and `upsample` fails in the script (ctypes dtype) as on every platform.
+Not a port regression and not in the 12-test gate, so not a validation failure; it is a non-ROCm upstream defect (one-character fix) that a person may want sent to llnl/LEAP separately (scope-separate rule), or carried on moat-port as its own commit. Not committed here.
+
+### Not done
+- `compare_outputs.py` between the Linux dumps and Windows dumps: not applicable (different GPUs, no npz shared); the comparison is 5f6816f vs b37ca0a built here, which is the one the task asked for.
+- Fat build and image-less forced copies: gfx90a/gfx942 work, no counterpart on gfx1151.
+- CUDA gate: cuda-not-validated (no CUDA toolkit on this host; Windows hosts skip it by procedure). Still unrecorded on any host at this head.
+- Jargon and documentation checks were recorded clean at this head by the Linux validators (same commit); not repeated. Integrity: `git -C agent_space/leap-win status --porcelain` empty, HEAD b37ca0a. No fork push, no `gh` write.
+
+validated_sha: b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd

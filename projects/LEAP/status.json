@@ -7,7 +7,7 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-04T18:55:04Z",
+  "updated_at": "2026-11-04T19:07:27Z",
   "head_sha": "b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd",
   "waivers": {},
   "license_spdx": "MIT",
@@ -134,6 +134,30 @@
         "first_session_at": null,
         "last_session_at": null
       }
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-04T19:07:27Z",
+      "updated_at": "2026-11-04T19:07:27Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/1",
