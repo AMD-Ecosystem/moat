@@ -397,6 +397,34 @@ by Clang and GCC. Expect missing `typename`/`template` disambiguators, two-phase
 failures and narrowing conversions. Fixes are additive and arch-independent, so they help
 the CUDA build too and are not HIP-specific hacks. (Velvet)
 
+**Never define `CUDART_VERSION` in a HIP compat header.** hipSPARSE, hipSOLVER and other
+hip* headers test `#if defined(CUDART_VERSION)` to select their NVIDIA backend; with it
+defined on AMD they skip their own type definitions (`hipsparseStatus_t` became an
+"unknown type"). If upstream code gates on `CUDART_VERSION`, guard that code, not the macro.
+(h2o4gpu)
+
+**rocThrust's `thrust/system/cuda/error.h` is CUDA-only.** It exists (so the include
+resolves) but its `errc_t` uses `cudaErrorXxx` enums. Shim it to `thrust/system/hip/error.h`
+plus `cuda_category() -> hip_category()` inside `THRUST_NAMESPACE_BEGIN`. Likewise never
+reopen `namespace thrust { namespace hip {} }` to alias `thrust::cuda`: current rocThrust
+declares its systems in a versioned inline namespace, so the empty one makes every
+`thrust::hip` ambiguous (AMD's xgboost 2.1.3 ROCm branch hit this). (h2o4gpu)
+
+**`hip::hipcub`/`roc::rocthrust`/`roc::rocprim` targets carry device flags.** Linking them
+to a target that also has g++ host sources puts `--offload-arch=...` on the g++ command
+line ("unrecognized command-line option"). These libraries are header-only; for a mixed
+target add their `INTERFACE_INCLUDE_DIRECTORIES` instead of linking the targets. (h2o4gpu)
+
+**OpenMP in a mixed g++/HIP library: one runtime only.** g++ objects call libgomp
+(`GOMP_*`); clang `-fopenmp` emits libomp (`__kmpc_*`). A target containing HIP objects is
+LINKED by clang, so an `-fopenmp` link flag there adds `libomp.so` + `libomptarget.so`
+next to libgomp -- two OpenMP runtimes in one process. Link `OpenMP::OpenMP_CXX` (libgomp)
+and drop `-fopenmp` from the HIP-linked target's link flags; compile the HIP TUs without
+OpenMP (their pragmas run serially) unless the whole build uses clang. Side effect to
+expect: clang's `-fopenmp` link had also injected RUNPATHs to the ROCm lib dirs, so after
+the fix a pip-installed ROCm SDK needs `LD_LIBRARY_PATH` (a `/opt/rocm` install registers
+its lib dir with ld.so.conf). Check with `readelf -d <lib> | grep NEEDED`. (h2o4gpu)
+
 ## Types, dispatch and platform limits
 
 **`clock64()` is a 20-bit counter on gfx11.** On RDNA3/3.5 it compiles to
