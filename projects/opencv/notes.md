@@ -127,3 +127,7 @@ Integrity gate: no `projects/opencv/src` checkout exists, so no tracked edits.
 Consumed through opencv_contrib's two-repo build, not on its own -- see the
 `## Install as a dependency` section of `projects/opencv_contrib/notes.md`. A dependent
 that needs `cv::cuda` depends on **opencv_contrib**; this fork comes with it.
+
+## Validation 2026-11-04 (linux-gfx950)
+
+No standalone run: this fork has no test suite of its own and is exercised only through opencv_contrib (jeff 2026-08-12). A fleet validator on gfx950 found nothing to run; linux-gfx950 is blocked with the same reason as the other rows. Revalidate opencv_contrib instead.
