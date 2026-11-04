@@ -7,12 +7,15 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-08-07T06:47:29Z",
-  "updated_at": "2026-10-29T22:07:35Z",
+  "updated_at": "2026-11-04T07:19:37Z",
   "head_sha": null,
   "depends_on": [
     "faiss"
   ],
-  "porting": null,
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-04T07:19:37Z"
+  },
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
   "intake": {
@@ -28,6 +31,30 @@
       "at": "2026-08-07T15:27:20Z"
     }
   },
-  "stage": "screened",
-  "platforms": {}
+  "stage": "planning",
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-04T07:19:37Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "planner"
+    }
+  }
 }
