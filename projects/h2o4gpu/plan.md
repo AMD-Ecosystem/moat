@@ -157,3 +157,14 @@ Platform order: Linux wave64 and wave32 first; Windows only per open question 3.
 6. **Docker/packaging: proposed out of scope, pending jeff.** No ROCm counterpart to `Dockerfile.build-cuda12` / `make docker-build-cuda12`. The README documents the native ROCm build instead.
 7. **`fork_default_branch` correction.** The record says `main`; upstream and fork use `master`. Needs `python3 utils/moatlib.py set-base-branch h2o4gpu master --by jeffdaily` (a person's ruling by design). Separately, under the standing rule the fork's GitHub default branch becomes `moat-port` once the porter creates it. That is a fork setting for a person; the recorded mirror field stays `master`.
 8. **Upstream reception.** h2oai is active again, but its current work is driven by DAI's NVIDIA packaging, and an AMD path is an added maintenance surface for them. Proceed toward an upstream PR as usual; it is flagged here only so the expectation is set.
+
+## Rulings (jeff, 2026-11-04)
+
+1. Bundled GBM libraries are in scope, without disturbing the CUDA build. LightGBM: upstream (lightgbm-org/LightGBM) has `USE_ROCM`; use it, bumping or rebasing the ROCm build onto a version that has it if h2oai's fork predates it. xgboost: upstream dmlc/xgboost has no HIP build, so under `USE_HIP=ON` only, build xgboost from AMD-Ecosystem/xgboost (AMD's ROCm fork; ROCm branches `release_3.0.0-rocm`, `dev-rocm`, ...) instead of the h2oai submodule. Check whether h2oai's xgboost fork carries h2o-specific patches the ROCm branch lacks, and port them if so. The CUDA path keeps the existing submodules unchanged. Validate the gbm/xgboost Python tests on the GPU.
+2. Factorization/ALS: mirror upstream's exclusion.
+3. Windows: attempt last, when it is the only thing left. If it changes too much or is too cumbersome, stop and report. Otherwise it lands as one final commit on moat-port (a nice-to-have that can be split into its own PR if asked).
+4. The 12 EULA-notice dead files: delete them in the first commit on moat-port.
+5. NVTX: map to roctx (`roctxRangePushA`/`roctxRangePop`, link `roctx64`) under the same `USE_NVTX`/`USENVTX` switch, and test it: build with the switch on, run a GLM solve under rocprofv3 (or rocprof) with marker tracing, and confirm the ranges appear in the trace.
+6. Docker/packaging: out of scope.
+7. Done: `fork_default_branch` corrected to `master` (`set-base-branch`).
+

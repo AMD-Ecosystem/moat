@@ -3,11 +3,11 @@
   "name": "h2o4gpu",
   "upstream_url": "https://github.com/h2oai/h2o4gpu",
   "fork_url": "https://github.com/AMD-Ecosystem/h2o4gpu",
-  "fork_default_branch": "main",
+  "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:05:27Z",
-  "updated_at": "2026-11-04T07:30:15Z",
+  "updated_at": "2026-11-04T19:32:26Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -56,5 +56,12 @@
     "arch": "windows-gfx1151",
     "since": "2026-11-04T07:19:52Z",
     "at": "2026-11-04T07:30:15Z"
+  },
+  "base_branch_ruling": {
+    "branch": "master",
+    "previous": "main",
+    "by": "jeffdaily",
+    "at": "2026-11-04T19:32:26Z",
+    "reason": "Upstream h2oai/h2o4gpu's branch is master; there is no main (jeff 2026-11-04)"
   }
 }

@@ -232,14 +232,14 @@
       "kind": "optional",
       "where": "CMakeLists.txt ($ENV{USENVTX}), USE_NVTX blocks",
       "added_by": "planner",
-      "note": "USENVTX only adds -lnvToolsExt; USE_NVTX is never defined by any build path"
+      "note": "jeff 2026-11-04: map to roctx (roctxRangePushA/roctxRangePop, link roctx64 under the same USE_NVTX/USENVTX switch) and test that the ranges appear in a rocprof trace."
     },
     {
       "id": "submodule:xgboost-lightgbm-gpu",
       "kind": "submodule",
       "where": "xgboost, xgboost_prev, LightGBM (+ Makefile xgboost/lightgbm_gpu targets)",
       "added_by": "planner",
-      "note": "separate upstream projects (h2oai forks) with their own, much larger CUDA surfaces; bundled into the wheel"
+      "note": "jeff 2026-11-04: in scope. LightGBM: use upstream USE_ROCM support. xgboost: under USE_HIP only, build from AMD-Ecosystem/xgboost ROCm branch; CUDA build keeps the h2oai submodules untouched."
     },
     {
       "id": "interface:r",
@@ -274,7 +274,7 @@
       "kind": "build_path",
       "where": "(none upstream)",
       "added_by": "planner",
-      "note": "upstream is Linux-only (Rocky 8/glibc, Makefile+bash, sys/time.h/unistd.h in CPU and kmeans sources, .so SWIG modules)"
+      "note": "jeff 2026-11-04: attempt last, as one final commit, only when everything else is done; report then if it is too invasive."
     },
     {
       "id": "doc:readme-build",
@@ -288,23 +288,15 @@
   "scoped_out": [
     {
       "id": "solver:factorization-als",
-      "reason": "PROPOSED, pending jeff (plan.md OQ 2). Mirrors upstream: CMakeLists.txt excludes src/gpu/factorization from the CUDA build (csrmm2 removed in CUDA 12, TODO(blackwell)). Porting it means a rewrite to the generic SpMM API plus wave64 WARP_SIZE/__shfl fixes, feature work upstream has not done."
+      "reason": "Ruled by jeff 2026-11-04: mirror upstream. Mirrors upstream: CMakeLists.txt excludes src/gpu/factorization from the CUDA build (csrmm2 removed in CUDA 12, TODO(blackwell)). Porting it means a rewrite to the generic SpMM API plus wave64 WARP_SIZE/__shfl fixes, feature work upstream has not done."
     },
     {
       "id": "test:factorization-test_als",
-      "reason": "PROPOSED, pending jeff (plan.md OQ 2). Excluded with the solver, as upstream does."
+      "reason": "Ruled by jeff 2026-11-04: mirror upstream. Excluded with the solver, as upstream does."
     },
     {
       "id": "optional:nccl",
       "reason": "Not a cut: no upstream build path defines USE_NCCL or USE_NCCL2, so this code is compiled out of every configuration. If ever enabled, NCCL maps to RCCL."
-    },
-    {
-      "id": "optional:nvtx",
-      "reason": "PROPOSED, pending jeff (plan.md OQ 5). USE_NVTX is never defined, so the only effect of USENVTX is linking nvToolsExt; the HIP branch ignores it rather than mapping to roctx."
-    },
-    {
-      "id": "submodule:xgboost-lightgbm-gpu",
-      "reason": "PROPOSED, pending jeff (plan.md OQ 1). Separate upstream codebases (h2oai/xgboost, h2oai/LightGBM forks) with their own GPU surfaces; not compiled by the CMake build that produces the h2o4gpu solvers."
     },
     {
       "id": "examples:cpp",
@@ -312,15 +304,11 @@
     },
     {
       "id": "build:docker-cuda12",
-      "reason": "PROPOSED, pending jeff (plan.md OQ 6). CUDA image tooling; a ROCm builder Dockerfile would be additive packaging, not part of the minimal port."
+      "reason": "Ruled by jeff 2026-11-04: packaging is out of scope. CUDA image tooling; a ROCm builder Dockerfile would be additive packaging."
     },
     {
       "id": "ci:jenkins-actions",
       "reason": "MOAT adds no fork CI (CPU-only CI cannot observe GPU correctness) and leaves upstream CI untouched."
-    },
-    {
-      "id": "platform:windows",
-      "reason": "PROPOSED, pending jeff (plan.md OQ 3). Upstream builds only on Linux; a Windows build would be a POSIX-to-Win32 port of host code, not a HIP port. Suggest a windows gate waiver (an agent may only suggest it)."
     }
   ],
   "removed_from_floor": [
