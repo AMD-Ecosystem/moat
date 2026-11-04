@@ -1167,3 +1167,51 @@ PLACEHOLDER: fill in only after validators record completed platforms at eda03f1
 
 Replace the placeholder above. Name only GPUs whose platform record shows a completed validation at this exact head. Upstream `develop` has moved two commits past f366bfa (to cc99d52); a trial merge is clean.
 ====
+
+## Review 2026-11-04 (reviewer, linux-gfx1100, re-review of eda03f1) -- passed
+
+Scope: `git diff dff17ae...eda03f1` (eda03f1 only, `ucm/shared/vendor/hip_compat/cuda_runtime.h`, +3/-5), plus the cumulative fix-round delta `git diff 8545865 eda03f1` and the `cuda-to-rocm` skill edit 32c33c42 on this branch.
+
+Checked, no findings:
+- Shim: `git diff 8545865 eda03f1 -- ucm/shared/vendor/hip_compat/cuda_runtime.h` keeps `cudaMemcpyHostToDevice = hipMemcpyHostToDevice` and `cudaMemcpyDeviceToHost = hipMemcpyDeviceToHost` exactly as at the published tip. The only additions are 26b0b3e's aliases, including `cudaMemcpyDeviceToDevice = hipMemcpyDeviceToDevice`. `git diff 26b0b3e eda03f1 -- ucm/shared/vendor/hip_compat/` is empty, so 91185a3/e3adb40/98ba91b/eda03f1 net to nothing. eda03f1 is an exact revert of 98ba91b: `git diff 98ba91b^ eda03f1` touches only c767753/dff17ae docs.
+- No leftover text: `git grep -I -i 'memcpyDefault\|infer.*direction\|pick the direction' eda03f1` (excluding svg) is empty, covering docs, comments and code.
+- Test-side claims: `data_generator.h:49` mallocs the buffers; `lint-and-test.yml:106` configures `-DRUNTIME_ENVIRONMENT=simu`; `:124` sets no runtime, so it falls back to the `CMakeLists.txt:20` default `simu`; for non-a5 runtimes `ucm/store/cache/CMakeLists.txt` selects the `v2` core, so the cache2 tests are compiled into `ucmstore.test`.
+- Commit: title 59 chars with `[ROCm]`, no trailer, `jargon.py -` clean on the message. First-parent port commits 26b0b3e..eda03f1 carry no `Co-Authored-By`; the one Anthropic trailer in the range is upstream's own 55a72eb (#1566). `moat-port` 8545865 is an ancestor of eda03f1.
+- Skill edit 32c33c42: accurate; it says not to remap the kinds and to run host-as-device tests in the simulated build.
+
+Independent reproduction of the porter's evidence on gfx1100 (W7800, ROCm 7.16 pip SDK, dispatcher pin `HIP_VISIBLE_DEVICES` kept, one GPU, `ulimit -c 0`). Reviewer evidence only, not a validator record. Same configure lines as the porter's eda03f1 entry with `-DCMAKE_HIP_ARCHITECTURES=gfx1100`, out-of-tree in `agent_space/`:
+- GPU build ctest: **325/337** (1 disabled). Failures: the 4 `UCCache2TransManagerIntegrationTest.DumpThenLoad*`, each `Failed(1, invalid argument) to copy shard for dump task(1)` at dump_queue.h:215; DataStrategyTest x6 (`invalid device ordinal`, one visible GPU); and **both** UCLoggerPerfTest siblings (ratios 1.19 and 1.14 > 1.1). The extra logger sibling relative to the porter's 326 is the CPU timing flake this platform's validator also saw at dff17ae, so the 4 `DumpThenLoad*` tests are the only new failures. UCTransUnitTest x5, UCPosixTrans{Manager,Queue} x4 and Backend{,Submit}NotFoundIsPreserved pass.
+- Simu build (upstream `cpp_gtest` configuration): **1114/1114** (1 disabled), including all 4 `DumpThenLoad*` (#663, #666-668). The logger flake did not fire this time.
+
+Fix review PR body (the "true at eda03f15" draft): one correction. "On a real GPU these four tests fail" is wider than the evidence, which comes only from ROCm GPU builds (MI300X and, in this review, W7800). A CUDA GPU has not been tried, and the previous review asked for exactly this distinction. The corrected body below says "In the ROCm GPU build". The eda03f1 commit body uses the same phrase. It cannot be amended on a staging branch, and in a `[ROCm]` commit whose Test Plan is the ROCm build it reads as that build, so no new commit is requested. Every other claim checks out: 190 commits 8e3a29e3..f366bfa1; the per-commit bullets match the diffs; the net shim effect is as stated; the Hamming line is accurate, since no `.cu`/sparse kernel changed after af3eb74 (validators also reran it at dff17ae). `jargon.py -` and `prose.py` are clean on both the draft and the corrected body. The `## Upstream reply` placeholder is correct as a placeholder: no platform has a completed validation at eda03f1. linux-gfx942 and linux-gfx1100 are at dff17ae; the rest are at 8545865 or 57b2443.
+
+### Fix review PR body (true at eda03f15; supersedes the porter's eda03f15 draft)
+Title: `[ROCm] Merge current upstream develop into the ROCm port`
+Head `moat-fix-1021` -> base `moat-port`. Not opened.
+
+====
+Upstream PR #1021 was reported as conflicting with `develop` (190 upstream commits since the PR's base). This round merges the `develop` tip f366bfa into the branch. It is a merge, not a rebase, so the published PR commits stay as they are.
+
+Conflicts (5 files, both sides kept): platform lists in `setup.py` and `ucm/store/nfsstore/device/CMakeLists.txt` (upstream added `ascend-a5`, the PR added `rocm`); the WIN32 flag block in `CMakeLists.txt`; the test glob in `ucm/shared/test/CMakeLists.txt` (upstream's `CONFIGURE_DEPENDS` and `router_perf` exclude plus the PR's WIN32 exclude); and `quickstart_vllm.md`, where upstream moved the build-from-source section into the developer guide.
+
+Follow-up commits:
+- 26b0b3e: upstream's CUDA transfer backend gained `cuda_event.cc` and a few more runtime calls; the ROCm target now builds `cuda_event.cc` and the compat header aliases the new names.
+- 91185a3, e3adb40, 98ba91b and eda03f1: a change that mapped the compat header's copy kinds to `hipMemcpyDefault` was added, reworded, and then reverted. The net effect on the compat header is only the aliases from 26b0b3e; the header still passes the caller's copy kind through, as at the published PR head.
+- af3eb74: the `PLATFORM=rocm` note moves to `build_from_source.md` (`docs/source` and the English docs site), plus the ROCm row in the English docs-site support matrix.
+- c767753: the same row and a Chinese version of the note on the Chinese docs site.
+- dff17ae: the note no longer suggests passing `-DCMAKE_HIP_ARCHITECTURES` to the setup.py build (it does not forward CMake arguments); it says the architecture is detected from the build host and points to the support matrix for the tested GPUs.
+
+Upstream's new cache2 `DumpThenLoad*` integration tests pass `malloc` buffers as device addresses (`ucm/store/test/case/detail/data_generator.h:49`). That matches the simulated backend, where device memory is host memory, and upstream CI builds the unit tests only that way (`.github/workflows/lint-and-test.yml:106` passes `-DRUNTIME_ENVIRONMENT=simu`; line 124 relies on the CMake default, `simu`). In the ROCm GPU build these four tests fail with "invalid argument" while copying a shard, so they are run in a simu build, where they pass. The tests are unchanged.
+
+Upstream #1566 stopped compiling nfsstore, so the nfsstore ROCm device arm is now dormant, the same as its CUDA counterpart.
+
+Tested on AMD Instinct MI300X (gfx942), ROCm 7.16, at eda03f1, one visible GPU: GPU build ctest 326/337. The copy-kernel, event and memset/D2D tests pass. The failures are the four cache2 `DumpThenLoad*` tests above, six DataStrategyTest cases that need two visible GPUs, and one logger perf test that is a known timing flake. Simu build (upstream CI's configuration): ctest 1113/1114, including all four `DumpThenLoad*` tests; the only failure is the same logger perf flake. The Hamming kernel reference test passed mla/gqa/determinism at af3eb74; no kernel code changed since. Each GPU is tested again at this head before approval.
+
+## Upstream reply
+
+PLACEHOLDER: fill in only after validators record completed platforms at eda03f1. Draft once they do: "The branch is merged with current `develop` and the conflicts are resolved. The C++ unit tests and the Hamming kernel test were rerun on <GPUs whose platform record shows completed at eda03f1>."
+
+## Before approving
+
+Replace the placeholder above. Name only GPUs whose platform record shows a completed validation at this exact head. Upstream `develop` has moved two commits past f366bfa (to cc99d52); a trial merge is clean.
+====
