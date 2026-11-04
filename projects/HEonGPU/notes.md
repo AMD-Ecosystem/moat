@@ -6989,3 +6989,133 @@ already recorded at this `head_sha` by gfx90a, not re-run; jargon and docs clean
 finding (host-population `GPU_TARGETS` mismatch on a multi-GPU rapids-cmake HIP configure)
 worked around at the configure invocation with no source or fork-branch change, and
 promoted to the `cuda-to-rocm` skill.
+
+## Porter round 2026-11-04 (linux-gfx90a) -- sync with upstream main, 156 commits
+
+Dispatched by Jeff Daily: `review-passed` at `542ea1a`, no upstream PR open (`moatlib.py pr-state HEonGPU` -> `none`), upstream main 156 commits ahead (2.0 API overhaul, upstream PR #39 RMM 26.08 upgrade, CMake 4.0, C++20). Head `542ea1a` -> `2f4de2d` (three commits, pushed as a fast-forward). Fork default-branch mirror `main` fast-forwarded `1928a14` -> `837ffc8` (upstream tip; `upstream.py --drift` covers maintained forks only, so a plain fast-forward push).
+
+### Control-plane housekeeping first
+
+`set-state ... porting` committed the lock but its push failed: the MOAT pre-push hook (`check.py --fast`) failed under the image's Python 3.11 (argparse `invalid choice: []`), and once that was sidestepped, the `states` gate failed on Velvet's approved `wave64` waiver because `port/HEonGPU` carried a pre-2026-08-25 `config/arches.toml` (`waivable = ["windows"]`). `orient.sh` had skipped its trunk sync because `stats.jsonl` was dirty. Merged `origin/main` into `port/HEonGPU` (`dde3d99a`): skill-file conflicts were additive on both sides (kept both), `data/deferred.json` merged by id (trunk's list plus the two items only this branch had: `deferred-py-no-edit-or-supersede-path`, `moat-gh-guard-gate-path-sensitive`), README taken from trunk. After that, `check.py --fast` passes under the default Python with `~/.local/bin` first on PATH, and the lock pushed.
+
+### Merge `d232323` (parents `542ea1a`, `837ffc8`)
+
+18 conflicts. Resolutions (also in the merge commit body):
+
+- `CMakeLists.txt`: upstream's CMake 4.0 / 2.1.1 / C++20 / new CUDA arch detection kept; the CUDA 12.8 check and arch detection run only when `USE_HIP` is OFF; HIP standard raised 17 -> 20.
+- `src/CMakeLists.txt`: upstream link lists (`GMP::GMP`, `NTL::NTL`, `OpenSSL::Crypto`, `rmm::rmm`) and `HEonGPU_BUILD_SHARED` kept; `heongpu_set_gpu_properties` helper kept, its CUDA arm follows upstream's switch to `CUDA_RUNTIME_LIBRARY Shared`; `CUDA::cudart`/`CUDA::curand` in both link variants selected against `hip::host`/`hip::hiprand` by genex.
+- `thirdparty/build.sh`: upstream deleted it (configure no longer touches the source tree or the network for submodules). Deleted here too; the AMD submodule patch step moved into `thirdparty/CMakeLists.txt` as the same idempotent `git apply --reverse --check` / `git apply` loop, `USE_HIP` only. The CUDA configure therefore matches upstream's "configuring does not change the source tree".
+- `thirdparty/CMakeLists.txt`: upstream's `HEonGPU_USE_SYSTEM_RMM` / `HEonGPU_INSTALL_RMM` options and reconfigure guards kept for both platforms; HIP fetch is hipMM at the existing pin; upstream's CCCL override block skipped on HIP; the version the system-RMM lookup and the prefix warning check is `_heongpu_rmm_version` (26.08 CUDA, 4.0 hipMM). Windows static block and hip_compat include/install kept.
+- `cmake/Config.cmake.in` (auto-merged CLEANLY into a broken state -- the upstream-sync trap): upstream's new unconditional `find_dependency(CUDAToolkit REQUIRED)` and `find_dependency(rmm 26.08 REQUIRED)` would break every installed HIP consumer; both now CUDA-only, HIP asks for unversioned `rmm`.
+- `src/lib/kernel/small_ntt.cu` (modify/delete): the port keeps the definitions in `small_ntt.cuh`. Upstream's race fix (`__syncwarp(); if (lp < 5) in_shared_address = ...` in the second forward loop) carried into the header; the header body is now textually identical to upstream's `.cu` apart from `inline` (diffed). `__syncwarp()` is native in HIP 7.x (`amd_warp_sync_functions.h`: wavefront release fence, wave barrier, acquire fence); the synchronised groups are 32 threads, always inside one wave32 or wave64 wavefront, so it is correct at both widths.
+- test/example/benchmark `CMakeLists.txt`: HIP arms kept; CUDA arms follow upstream (shared runtime, `GTest::gtest_main`, per-test link additions now apply on both platforms).
+- `src/lib/host/tfhe/encryptor.cu`: upstream moved the curand state setup out of the constructor; upstream taken. The port's earlier "TFHE encryptor allocated fewer random states than consumed" fix is therefore obsolete.
+- `defines.h`: upstream taken (initial device pool now 0.5; upstream fixed the stale comments itself).
+- `evaluationkey.cuh` (`uint32_t` kept over `u_int32_t`), `memorypool.cuh` (`<unordered_set>` added, `sys/sysinfo.h` kept off Windows), `random.cuh` (upstream's `error.h`, no `sys/sysinfo.h`).
+- README / docs: requirements merged (CMake 4.0, CUDA 12.8, ROCm 7.2, NTL, OpenSSL 1.1.1); AMD sections kept; shared-memory pool guidance rewritten for the 50% default (72 GB idle APU -> ~36 GB). The "observed to slow down markedly" sentence was dropped: the only measurement (`heongpu-hipmm-pool-slowdown-gfx1151`) was at the old 90% default.
+- `test/test_bfv_addition.cpp`: no longer differs from upstream -- upstream landed the identical `>=` boundary fix (`50db7bb`).
+- RNGonGPU gitlink: upstream's `e2f4a85`; `thirdparty/patches/RNGonGPU.patch` (incl. the Box-Muller `truncate_signed` fix) applies cleanly at it; GPU-NTT and GPU-FFT pins unchanged.
+
+The merge commit was first created with git's default "... into moat-port" subject, which `jargon.py --port` rejects. Nothing had been pushed, so the three local commits were recreated (`git commit-tree` on the identical merge tree with subject "Merge remote-tracking branch 'upstream/main'", the two fixes cherry-picked); `git diff 7176e54 2f4de2d` empty.
+
+### hipMM pin: no hipMM pairs with RMM 26.08 -- needs Jeff's eye
+
+`git ls-remote` of AMD-Ecosystem/hipMM and ROCm-DS/hipMM (same refs): the newest line is `release/rocmds-26.03` at `22732e49aa00` -- the commit already pinned since 2026-08-18; nothing newer exists (ROCm/hipMM is `deprecated-repo`). Its `cpp/CMakeLists.txt` is `project(... VERSION 4.0.0)` and its API is the RMM 25.x one. Upstream's memory pool now uses the RMM 26.06+ API. So the requested "hipMM version that matches the RMM version upstream pins" does not exist; the pin stays at `22732e49aa00` and the gap is bridged in code:
+
+- `039bc22` `[ROCm] Map the stream-ordered pool and stream flags to HIP`: `thirdparty/hip_compat/cuda_runtime.h` gains `cudaMemPool_t`, `cudaMemPoolProps`, `cudaMemPoolCreate/Destroy/SetAttribute`, `cudaMemPoolAttrReleaseThreshold`, `cudaMallocFromPoolAsync`, `cudaMemAllocationTypePinned`, `cudaMemLocationTypeDevice` (RNGonGPU's new scratch pool), `cudaStreamCreateWithFlags`, `cudaStreamNonBlocking`, `cudaStreamPerThread`, `cudaStreamWaitEvent`, `cudaLaunchHostFunc`, `cudaEventCreateWithFlags`, `cudaEventDisableTiming`, `cudaDeviceGetLimit` (found by diffing every `cuda[A-Z]*` identifier in src/test/example/benchmark and RNGonGPU against the shim).
+- `2f4de2d` `[ROCm] Build the memory pool against hipMM's RMM 25.x API`: in `memorypool.cuh`, under `__HIP_PLATFORM_AMD__`, the `rmm/mr/device/*` include paths, templated `pool_memory_resource<...>` / `statistics_resource_adaptor<...>`, and `RmmDefaultResource = rmm::device_async_resource_ref` (vs `cuda::mr::any_resource<device_accessible>`); in `memorypool.cu`, three helpers (`rmm_allocate`, `rmm_deallocate`, `set_rmm_default`) whose CUDA arms are verbatim the replaced calls; `test_rmm_default.cpp` maps `set_current_device_resource`/`reset_current_device_resource` to the `_ref` names on HIP. Pool logic unchanged and shared. Docs say hipMM is at the RMM 25.x API level. Semantics difference worth knowing: on hipMM the saved previous default is a non-owning reference (upstream's 26.x keeps an owning `any_resource`); the restore tests pass.
+
+Alternative Jeff may prefer: hold the sync until hipMM publishes an RMM 26.x line, or ask ROCm-DS for one. The adapter is small (net +82/-24 in memorypool.cu, +29 in memorypool.cuh) and isolated. Lesson promoted to `cuda-to-rocm/references/no-hip-equivalent.md` (RMM -> hipMM section).
+
+### Warp-size audit of upstream's delta
+
+`git diff 1928a14 upstream/main -- src test | grep '^+'` for shuffles, ballots, masks, `warpSize`, `& 31`, `>> 5`, `/ 32`: only the small-NTT `__syncwarp` above, and `smem = (threads / 32 + 1) * sizeof(uint32_t)` in the new TFHE encryptor path -- same pattern as the existing decryptor/keygenerator lines the port already kept: it sizes for 32-lane warps, so on wave64 it over-allocates, which is safe. The port's `warp_reduce` and `idx / warpSize` changes in `util.cuh`, `encryption.cu`, `decryption.cu`, `keygeneration.cu` survived the merge. New `mpz_*_ui` calls only pass the constant 1 (no LLP64 issue).
+
+### Build (linux-gfx90a, MI250X, ROCm 7.16 pip SDK `HIP version: 7.16.26385`, amdclang 24.0.0git)
+
+Upstream now requires CMake >= 4.0; the host has 3.31.6, so CMake 4.1.3 was installed from PyPI into this job's own venv (`$FLEET_VENV/bin/cmake`). `libgmp-dev` and `libntl-dev` installed with apt (NTL is now a hard `find` in upstream's CMake). The pip SDK needs `CMAKE_PREFIX_PATH` for `find_package(hip)`.
+
+```bash
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+git -C projects/HEonGPU/src submodule update --init --recursive
+cmake -S projects/HEonGPU/src -B agent_space/heongpu-sync/build -DCMAKE_PREFIX_PATH=$R \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DGPU_TARGETS=gfx90a -DAMDGPU_TARGETS=gfx90a \
+  -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+cmake --build agent_space/heongpu-sync/build -j42
+```
+
+Configure rc=0, build rc=0, 0 `error:` lines. Executables: 49 test, 28 example, 3 benchmark (80; was 15/24/3 at `542ea1a`). Both wrapped in `utils/timeit.sh HEonGPU compile`.
+
+### Tests (HIP_VISIBLE_DEVICES=0, `ulimit -c 0`, wrapped in `utils/timeit.sh HEonGPU test`)
+
+ctest now discovers 301 gtest cases (upstream switched to `gtest_discover_tests`, one ctest entry per TEST; was 20 entries at `542ea1a`).
+
+- `ctest -j4` (exploratory): 294/301; 6 bootstrapping cases (`BootstrappingPresets.*` x4, `CKKSSession.Slim_And_Bit_Bootstrapping`, `CKKSSession.Gate_Bootstrapping`) failed and `HEonGPU.BFV_To_String` hit the 30 s per-test timeout. `--rerun-failed` serially: 7/7 pass. Four processes each sizing a pool from 50% of the free memory of one GPU is the likely cause; not a port defect, but not proven either (the -j4 run did not keep the failure output).
+- Serial run 1: **301/301 passed**, 342.09 s.
+- Serial run 2: **301/301 passed**, 342.45 s. No case failed or timed out in either serial run.
+
+Examples and benchmark run after the tests, each exit 0, values checked: `1_basic_bfv`, `2_basic_ckks`, `3_basic_memorypool_config` (hipMM device pool `Total 54873239552 / Used 657248`, the example's 80% config), `9_multi_stream_usage_way1`, `17_ckks_session` (new HESession API), `15_basic_tfhe` (all eight gates match the truth table bit for bit -- same table as the gfx942/gfx1100/gfx90a runs at earlier heads: `Input1: 1,1,0,1,0,1,0,0`, `Input2: 1,0,1,0,1,1,1,0`, control `0,0,0,0,1,1,1,1`), `bootstrapping/3_ckks_bit_bootstrapping` (`EXPECTED:1 - ACTUAL:1 + 2.2e-10i`), `bootstrapping/1_ckks_regular_bootstrapping` (`EXPECTED:0.2 + 0.4i - ACTUAL:0.200003 + 0.399991i`), `mpc/1_multiparty_computation_bfv`, `benchmark/tfhe_benchmark` (XOR 15.78 ms, MUX 28.28 ms avg).
+
+Checks: `python3 utils/jargon.py --port HEonGPU` -> clean (after recreating the merge subject, above); `utils/prose.py` clean on all three commit bodies and on the proposed PR body; `git merge-base --is-ancestor 837ffc8 2f4de2d` (upstream contained) and `--is-ancestor 542ea1a 2f4de2d` (published tip still an ancestor) both true; fork `git status --porcelain` clean (submodule working trees carry the applied patches, hidden by `ignore = dirty` as designed).
+
+### Not done this round
+
+- CUDA no-regression compile: no nvcc on this host any more (earlier rounds used nvcc 12.8 here). `memorypool.cu`'s CUDA arm changed shape (helpers), and the CUDA side now also requires CMake 4.0 + CUDA 12.8 + the RMM 26.08 fetch. The next host with CUDA >= 12.8 must run it at `2f4de2d`.
+- `HEonGPU_BUILD_SHARED=ON` on HIP (new upstream option, plus the shared-state plugin test) was not built. `test/package` (a standalone installed-package consumer, not part of the main build) is CUDA-only as upstream wrote it; not adapted.
+- Windows (`windows-gfx1151`) and wave32 (`linux-gfx1100`) revalidation: owed at the new head; RNGonGPU's new stream-ordered pool (`hipMemPoolCreate`, `hipMallocFromPoolAsync`) is untested on Windows.
+- Open deferrals untouched by this sync: `heongpu-tfhe-torus32-saturates` (ruled now), `heongpu-hip-link-interface-option` (ruled now), `heongpu-rmm-stub-vs-hipmm` (ruled now, implemented in round 2026-08-18 but still `open`).
+
+### Proposed review PR body (for jeff)
+
+Not posted. Fork PR https://github.com/AMD-Ecosystem/HEonGPU/pull/1 still describes `src/include/heongpu/cuda_to_hip.h` (deleted 2026-08-18), never mentions that the bundled RMM stub was removed or that hipMM replaced it, the test counts predate upstream's 2.0 test suite, and two of the listed defects are gone (the TFHE encryptor fix is obsolete after upstream's rewrite; the BFV addition test fix landed upstream). Proposed full replacement body (title unchanged, "Add HIP support for AMD GPUs"):
+
+====
+This adds a HIP build so HEonGPU runs on AMD GPUs through ROCm, alongside the existing CUDA build. Everything new is behind `-D USE_HIP=ON`; with the option off (the default) the CUDA build configures and compiles as before.
+
+```
+git submodule update --init --recursive
+cmake -S . -B build -D USE_HIP=ON -D CMAKE_HIP_ARCHITECTURES=gfx942 -D HEonGPU_BUILD_TESTS=ON
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+The kernel and host sources keep their CUDA spelling. `thirdparty/hip_compat/` holds shims for `cuda_runtime.h`, `curand_kernel.h` and the other CUDA headers the sources include; in a HIP build that directory comes first on the include path, so each CUDA runtime and cuRAND name resolves to its HIP or hipRAND counterpart, and the shims are installed with the library for projects that use the installed headers. `src/CMakeLists.txt` and the test, example and benchmark lists grow a HIP branch next to the CUDA one. The pinned GPU-NTT, GPU-FFT and RNGonGPU submodules are built for AMD GPUs from patches under `thirdparty/patches/`, which configuring applies only when `USE_HIP` is on. `cmake/Config.cmake.in` carries the same choice into the installed package. Hardcoded warp sizes are replaced with `warpSize` where the value has to follow the hardware, since AMD GPUs run 64-lane wavefronts on CDNA and 32-lane ones on RDNA.
+
+## RMM on AMD GPUs: hipMM
+
+RMM does not build for AMD GPUs. The HIP build fetches hipMM (https://github.com/AMD-Ecosystem/hipMM) instead, the ROCm-DS port of RMM, pinned by commit, from the same FetchContent block that fetches RMM for CUDA. hipMM keeps RMM's `rmm` target, `rmm::` namespace and headers and installs an `rmm` CMake package, so nothing else in the build or the installed package changes, and no RMM replacement code is carried in this repository. `HEonGPU_USE_SYSTEM_RMM` and `HEonGPU_INSTALL_RMM` work the same way with hipMM, which has its own version numbers (4.0).
+
+hipMM's newest release has the RMM 25.x API, while this repository now uses RMM 26.08. `MemoryPool` therefore selects the 25.x resource types on AMD GPUs (`pool_memory_resource` and `statistics_resource_adaptor` are templates there, and the default resource is set by reference), and calls the resources through three small helpers whose CUDA versions are exactly the calls they replace. The pool logic is shared. Once hipMM ships the RMM 26.x API, the HIP branches in `memorypool.cuh` and `memorypool.cu` can be removed.
+
+## Defects found while porting
+
+Two of these also affect NVIDIA GPUs and need your attention first.
+
+**The Box-Muller error sampler is undefined behaviour, and fixing it for NVIDIA would change NVIDIA results.** The sampler in RNGonGPU wrote `static_cast<T>(z)` where `T` is the unsigned residue type and `z` is a signed sample, relying on the following `+ (flag & modulus)` to turn a negative sample into its representative. Converting an out-of-range floating-point value to an unsigned integer is undefined, and the two back ends resolve it differently: NVIDIA's `cvt.rzi.u64.f64` saturates a negative source to zero, while the AMD lowering of a 64-bit `fptoui` keeps the low 32 bits of the two's-complement value. On AMD that turned roughly half of every error polynomial into values near 2^32, so every ciphertext decrypted to noise. Routing the truncation through the signed type first makes it well defined on both back ends. **Applied to the CUDA build, this would deliberately not be behaviour-neutral**: it replaces the saturated zero with the correct negative representative, which is the value the surrounding arithmetic already assumes. Since a saturated zero makes the sample congruent to zero rather than `q - 2`, the CUDA build has been drawing from a thinner error distribution than intended, which is a security-relevant property of an RLWE scheme rather than a cosmetic difference. The fix is in `thirdparty/patches/RNGonGPU.patch`, so today it only applies to HIP builds; please decide how the CUDA build should behave rather than have us pick for you.
+
+**128-bit Barrett reduction produced wrong results for moduli of 61 bits or more** in the pinned GPU-NTT submodule. Fixed in `thirdparty/patches/GPU-NTT.patch`, again only applied to HIP builds.
+
+The remaining fixes are AMD-only or Windows-only:
+
+- `MemoryPool::get_host_avaliable_memory()` and two headers used `<sys/sysinfo.h>`, which is Linux-only. Guarded, with `GlobalMemoryStatusEx` on Windows.
+- GMP's `mpz_*_ui` entry points take `unsigned long`, which is 32 bits under LLP64. Every coefficient modulus wider than 32 bits was silently truncated before GMP saw it, so on Windows the CRT constants described a different modulus chain than the one in use. Values now go through `mpz_import`, which is exact under both data models and leaves LP64 results bit for bit unchanged.
+- On Windows, hipMM and its logging library are built static: as shared libraries they export no symbols under an MSVC-style toolchain.
+
+## Testing
+
+At the current head, on an AMD Instinct MI250X (gfx90a, wave64) with ROCm 7.16 on Linux: the HIP build compiles all 49 test, 28 example and 3 benchmark programs, and `ctest` passes 301 of 301 test cases. The suite was run twice from a clean build with no failures, and the BFV, CKKS, TFHE, bootstrapping, session, multi-stream and multiparty examples were run with their decrypted values checked; the eight TFHE gate outputs match their truth tables bit for bit.
+
+Earlier revisions of this branch, before the merge of the 2.0 changes, passed the then 20 test programs twice from a clean build on an AMD Instinct MI300X (gfx942, ROCm 7.14, Linux), an AMD Radeon Pro W7800 (gfx1100, RDNA3, wave32, ROCm 7.2.3, Linux) and an AMD Radeon 8060S (gfx1151, RDNA3.5, wave32, ROCm 7.14, Windows 11). Those platforms are being rerun at the current head and this description will be updated with the results.
+
+The CUDA build was compiled with nvcc 12.8 at the revision before the merge; it will be compiled again at the current head.
+
+## Note on authorship
+
+This port was prepared with the assistance of an AI coding agent, with the results above measured on the listed hardware. Please review it as you would any other outside contribution.
+
+---
+
+This pull request was prepared with the help of an AI assistant acting as a coding agent and was read and approved by a person before it was opened. It comes from an ongoing effort to add AMD GPU support to widely used CUDA projects, one repository at a time: https://github.com/AMD-Ecosystem/moat -- that repository describes how the work is done and what a person checks before anything is submitted.
+
+If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
+====
