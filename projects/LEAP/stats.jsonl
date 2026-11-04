@@ -53,3 +53,9 @@
 {"kind":"session","ts":"2026-11-04T07:21:57Z","epoch":1793776917.864977721,"event":"end","platform":"linux-gfx942"}
 {"kind":"phase","ts":"2026-11-04T17:15:32Z","phase":"compile","seconds":17.880,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261104-090718-port-leap-gfx94/moat/projects/LEAP/src && python setup_AMD.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-04T17:20:19Z","phase":"test","seconds":49.677,"exit":0,"cmd":"python agent_space/leap/dump_outputs.py projects/LEAP/src/src agent_space/leap/new_gfx942.npz 256"}
+{"kind":"session","ts":"2026-11-04T17:46:39Z","epoch":1793814399.356675382,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T17:47:29Z","phase":"compile","seconds":0.023,"exit":2,"cmd":"python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T17:47:29Z","phase":"compile","seconds":0.024,"exit":2,"cmd":"python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T17:48:11Z","phase":"compile","seconds":17.721,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261104-094317-review2-leap/moat/agent_space/cmp/5f6816f && python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T17:48:11Z","phase":"compile","seconds":17.739,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261104-094317-review2-leap/moat/agent_space/cmp/e503672 && python setup_AMD.py build_ext --inplace"}
+{"kind":"session","ts":"2026-11-04T18:01:47Z","epoch":1793815307.187980890,"event":"end","platform":"linux-gfx90a"}

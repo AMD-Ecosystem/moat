@@ -838,3 +838,82 @@ This pull request was prepared with the help of an AI assistant acting as a codi
 
 If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
 ~~~~
+
+## Review 2026-11-04 (reviewer, linux-gfx90a, moat-port @ e503672 vs base 0c8846f; delta 5f6816f..e503672)
+
+Verdict: changes-requested. On a texture-capable GPU the accessor reproduces every fetch exactly (sampling is exact). It fails the speed half of the pass rule this round set itself: projection is 3.0-3.3x slower and backprojection 1.8-2.5x slower than the texture path, against a limit of about 1.10. By that rule the fix is the dual path: textures where the device has image support, the linear buffer only where it has none.
+
+Host: AMD Instinct MI250X (gfx90a), torch 2.16.0a0+git6c3af02, HIP_VISIBLE_DEVICES=1 (pinned by the dispatcher), all GPU runs under `ulimit -c 0`. Both commits were built from `git archive` copies in agent_space, each in its own directory. Both builds returned rc=0:
+```
+PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/<sha> && python setup_AMD.py build_ext --inplace"
+python dump_outputs.py agent_space/cmp/<sha>/src <sha>.npz 256      # porter's script from this file, unchanged
+python compare_outputs.py 5f6816f.npz e503672.npz
+```
+
+### 1. Linear-memory path is 2-3x slower than textures on gfx90a (blocking; the recorded fallback applies)
+
+Run twice, interleaved old/new/old. Timings are identical to within 0.5%, so the GPU was not contended. Median of 5, device-resident tensors, 256 cols x 266 rows x 360 views:
+```
+geometry_model   project old -> new (ratio)          back old -> new (ratio)
+parallel_VD      167.3 ->  548.7 ms (3.28x)          71.5 ->  138.8 ms (1.94x)
+parallel_SF      167.3 ->  547.9 ms (3.27x)          71.7 ->  140.5 ms (1.96x)
+fan_VD           158.3 ->  523.2 ms (3.30x)          70.4 ->  131.0 ms (1.86x)
+fan_SF           158.4 ->  522.6 ms (3.30x)         137.4 ->  249.1 ms (1.81x)
+coneparallel_VD  332.1 -> 1002.4 ms (3.02x)          74.1 ->  150.2 ms (2.03x)
+coneparallel_SF  332.1 -> 1002.1 ms (3.02x)         139.8 ->  332.4 ms (2.38x)
+cone-flat_VD     298.6 ->  929.7 ms (3.11x)          72.6 ->  162.4 ms (2.24x)
+cone-flat_SF     298.6 ->  929.5 ms (3.11x)         398.7 ->  974.2 ms (2.44x)
+cone-curved_VD   326.8 ->  995.3 ms (3.05x)          73.7 ->  147.6 ms (2.00x)
+cone-curved_SF   326.7 ->  995.4 ms (3.05x)         249.9 ->  623.3 ms (2.49x)
+modular_VD       303.0 ->  919.3 ms (3.03x)          72.1 ->  160.2 ms (2.22x)
+modular_SF       303.0 ->  919.0 ms (3.03x)         376.0 ->  386.7 ms (1.03x)
+```
+The one ratio near 1.0, modular SF back, is the Joseph modular back with `linearInterp = false` (tilted, so it takes point fetches). So a single `leapTexel` point read costs about what a hardware point fetch did. The loss is in the linear blend: eight independent `leapTexel` calls, each with its own address-mode test and a 64-bit index, read from a row-major buffer, where the old path issued eight `image_sample` instructions against the tiled image. Device ISA of `backprojectors_VD` (`hipcc -S --cuda-device-only`, same flags as the build), `modularBeamBackprojectorKernel_vox`: 396 -> 1017 lines; 8 `image_*` -> 9 `global_load`.
+
+What the porter should do (recorded in this file as the fallback when the ratio exceeds about 1.10, the dual path jeff described): keep hardware textures, created point-mode as at 5f6816f, on devices with `hipDeviceAttributeImageSupport = 1`. Use the linear buffer only where image support is absent: the device side under `__HIP_NO_IMAGE_SUPPORT`, the host side in `loadTexture*` by the runtime attribute. The handle then needs a tag, or a lookup, so that `leapFreeArray`/`leapDestroyTextureObject` free the right kind. A fat binary holding both gfx90a and gfx942 has to work. If the porter would rather first try to make the accessor cheap enough to stay unconditional (one address-mode computation per axis per blend instead of per corner, for example), the same gfx90a comparison with the same 1.10 limit decides it. Either way, gfx942 still needs its own timing record for the PR body.
+
+### Exactness (priority 1): sampling exact; two ULP-level differences from codegen, not from texel selection
+
+`compare_outputs.py`: 34 of 36 arrays are bit-identical (forward, back and FBP for 6 geometries x {VD, SF}). They are not: `modular_VD_back` (6974042/17432576 differ, max abs 8.5e-4, rel 4.8e-7) and from it `modular_VD_fbp` (rel 6.7e-6). The porter's dump does not reach the point-bound kernels, so I added `agent_space/cmp/dump_point.py` (inputs use fractional detector centres 0.3/0.27 so the coordinates are not texel-aligned): extended SF (voxel scale 0.5; parallel, fan and cone; forward and back), attenuated parallel with a voxel `mu` map and with the cylindrical model, BilateralFilter, PriorBilateralFilter, MedianFilter 3 and 5, LowSignalCorrection, both 2D variants, and down_sample by (2,2,2) and (3,1.5,2.5). All are bit-identical, including `att_cyl` forward and back. That is the fractional-coordinate point fetch of `f` in `cylindricalAttenuatedProjectorKernel_SF`, the case the porter suspected the sampler might quantize; it does not on gfx90a, and the eSF `f` fetches agree as well. The one other difference is `att_map` (forward rel 2.3e-7, 15618 values; back rel 1.6e-7).
+
+Why the two differ: both are rounding-level. A different texel would change a value by roughly the 0.1 noise amplitude times a path length (rel about 1e-2), not by 1e-7. In `backprojectors_VD` the `modularBeamBackprojectorKernel_vox_stack` ISA goes from 56 to 67 `v_fma_f32/v_fmac_f32` (55 -> 39 `v_mul_f32`), so the compiler contracts the inlined arithmetic differently once the opaque image intrinsic is gone. Such differences come with any change to the inlined helper, and they would also come with the dual path on gfx942 against gfx90a. They do not decide the path choice; the speed does.
+
+Not reachable at run time: the 154 `projectors_Siddon.cu` sites (no caller of `project_Siddon`/`backproject_Siddon` or the `project_parallel/fan/cone/modular` wrappers outside that file; the library never dispatches the GPU Siddon projectors); `explicit_convolution` in `ramp_filter.cu` (launched only from the `#ifndef __INCLUDE_CUFFT` `conv1D`, compiled out on ROCm). `scatter_model` was not run (it needs spectra/cross-section tables). `DictionaryDenoising` with a random 16x4x4x4 dictionary faulted (`OMP` kernel, illegal address) in BOTH builds, so the fault predates this change and the input is probably malformed; it is not a finding against this change. `unitTests/gpu_vs_cpu_validate.py` on the e503672 gfx90a build: 12/12 PASS, OVERALL: PASS.
+
+### Border/clamp (priority 2): verified
+
+- Rewrite: `agent_space/cmp/rewrite_check.py` applied `tex{1,2,3}D<float>(args)` -> `leapTex{n}D(args, false)` with paren matching to every non-comment fetch in each 5f6816f file. The result equals e503672 exactly in all 9 files (bilateral 4, matching_pursuit 2, noise_filters 8, Siddon 154, attenuated 20, extendedSF 20, ramp_filter 16, resample 1, scatter 8 = 233). No raw `tex*D<float>` remains outside comments and the CUDA branch of `cuda_utils.h`.
+- Texture creation: `cudaCreateTextureObject`, `cudaMalloc3DArray`, `cudaMallocArray`, array memcpys, `tex1Dfetch` and surfaces appear only in `cuda_utils.cu` `loadTexture*`. Every file that frees a handle includes `cuda_utils.h`, so the `cudaFreeArray`/`cudaDestroyTextureObject` redirection reaches every call site.
+- Address mode and convention: the header records `useExtrapolation` (Clamp on all axes, else Border), the same flag that set all three `addressMode[]` entries. Extents are `(N.z, N.y, N.x)`, as in `make_cudaExtent`, with x fastest, matching the `make_cudaPitchedPtr` source layout. `loadTexture1D` gives `(N, 1, 1)`. Point fetch: `floor(c)` on unnormalized coordinates, then Border (any axis outside `[0, n)` returns 0) or Clamp (`[0, n-1]`, applied in float before the int conversion, so out-of-range and NaN coordinates never index out of the buffer). Linear: corners at `floor(c - 0.5)` and `+1`, each passed through the same address mode, the same CUDA unnormalized convention as before. The bit-identical runs above include the detector-edge and FOV-edge reads (Border) at every geometry. Clamp was not exercised (`doExtrapolation` defaults to false), but it is a three-line `fminf/fmaxf` read alongside the Border branch.
+
+### CUDA path (priority 3): unchanged
+
+`git diff 0c8846f e503672 -- src/cuda_utils.cu` has 0 removed lines, and its 4 added blocks are each inside `#if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)`. In `cuda_utils.h` the header struct, the free/destroy macros and the accessor are HIP-guarded. The CUDA `#else` branch is the three `__forceinline__` forwarders to `tex*D<float>`, which ignore `linear`. Mapping every `leapTex*D(...)` back to `tex*D<float>(...)` and dropping the `linearInterp` parameter turns bilateral, geometric_calibration, matching_pursuit, noise_filters, projectors_SF, Siddon, attenuated, symmetric, ramp_filter, resample and scatter back into upstream text exactly. The remaining hunks, checked by eye, are multi-line or commented-out fetches from the 319e120 round, which earlier reviews accepted. No nvcc on this host, so no CUDA compile.
+
+### CPU comparison (priority 4): the gaps predate this change
+
+`agent_space/cmp/cpu_cmp.py` (the porter's setup: 96 x 100 x 60, pixel 4x, FORBILD + 0.1 noise masked to an inner cylinder, SF, `project_cpu`/`backproject_cpu`), run on both builds. The GPU outputs of the two builds are bit-identical for every geometry (`compare_outputs.py cpu_5f6816f.npz cpu_e503672.npz`: ALL BIT-IDENTICAL), so the gaps are the same at 5f6816f:
+```
+geometry      fwd rel    back rel     (identical at 5f6816f and e503672)
+parallel      4.013e-05  3.726e-06
+fan           2.357e-03  1.638e-06
+cone          5.582e-02  1.376e-04
+cone-curved   4.945e-02  1.414e-04
+cone tilt=1   8.687e-02  1.324e-02
+```
+These magnitudes differ from the porter's 2% / 12% because my geometry and masking differ slightly, but what matters is the before/after equality. The change introduced no gap.
+
+### 2. cuda-to-rocm lesson on port/LEAP needs the measured result (non-blocking; fix with finding 1)
+
+The new paragraph in `references/fault-classes.md` presents the linear-buffer emulation as the recipe and ends with an unverified caution ("the sampler may quantize the coordinate where `floor` does not"). Measured here: on gfx90a, no quantization difference at fractional point fetches (cylindrical attenuated `f`, eSF), so the outputs are exact apart from FMA-contraction ULPs, and the emulation is 2-3x slower than hardware point fetches when used for software trilinear blends. The lesson should say to keep textures where the device has image support and use the buffer only on gfx94x+, give those two numbers, and drop or answer the quantization caution.
+
+### 3. PR body at e503672: one claim beyond the evidence; the texture paragraphs must change with finding 1
+
+Checked against the code: the loader, header, address-mode, free/destroy redirection, "loadTexture* keep their original bodies" (0 removed lines) and CUDA-path statements hold. `jargon.py -`: clean, `prose.py`: clean, ASCII. Corrections:
+- "on gfx942 and gfx950 it offers no texture objects at all: the API is disabled at compile time and the runtime reports no image support". The compile-time half holds for both (`__gfx94plus_clr__`). The runtime half was measured only on gfx942. Replace with: "on gfx942 and gfx950 the texture API is disabled at compile time, and gfx942 reports no image support at run time."
+- "The same code path runs on every AMD GPU, with or without texture hardware." True at e503672, but finding 1 removes it. After the dual path, the porter rewrites the third paragraph of "What is implemented" to say textures (point-mode, software blend) on GPUs with image support and the linear buffer on gfx942/gfx950. The Validation placeholder on texture-hardware comparison should then report the gfx90a timing of the final commit.
+No full corrected body is given here because the code these paragraphs describe is about to change.
+
+### Carried, minor
+- `71b42b3` title is 77 characters (limit 72); pre-existing, earlier reviews passed it. Fix at the PR-prep squash.
+- `jargon.py --port LEAP`: clean.
