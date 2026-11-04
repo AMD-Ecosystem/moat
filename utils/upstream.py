@@ -1063,10 +1063,32 @@ def _delta_hits_local(clone, base, head, terms, allow):
                           capture_output=True, text=True)
     if msgs.returncode or diff.returncode:
         return None
+    added = [l[1:] for l in diff.stdout.splitlines()
+             if l.startswith("+") and not l.startswith("+++")]
+    # A sync round merges upstream's tip, so the delta also carries upstream's own
+    # commits and code, which upstream already has and which are not ours to word.
+    # Scan only what is new relative to every merged-in upstream parent.
+    merges = subprocess.run(["git", "-C", str(clone), "rev-list", "--merges", "--parents",
+                             f"{base}..{head}"], capture_output=True, text=True)
+    if merges.returncode:
+        return None
+    theirs = sorted({p for l in merges.stdout.splitlines() for p in l.split()[2:]})
+    if theirs:
+        msgs = subprocess.run(["git", "-C", str(clone), "log", "--format=%B",
+                               f"{base}..{head}", "--not", *theirs],
+                              capture_output=True, text=True)
+        if msgs.returncode:
+            return None
+        for parent in theirs:
+            ours = subprocess.run(["git", "-C", str(clone), "diff", f"{parent}...{head}"],
+                                  capture_output=True, text=True)
+            if ours.returncode:
+                return None
+            mine = {l[1:] for l in ours.stdout.splitlines()
+                    if l.startswith("+") and not l.startswith("+++")}
+            added = [l for l in added if l in mine]
     hits = jargon.scan_text(msgs.stdout, "delta commit", terms, allow)
-    added = "\n".join(l[1:] for l in diff.stdout.splitlines()
-                      if l.startswith("+") and not l.startswith("+++"))
-    return hits + jargon.scan_text(added, "delta added lines", terms, allow)
+    return hits + jargon.scan_text("\n".join(added), "delta added lines", terms, allow)
 
 
 def _fix_delta_hits(fork, base, head, clone=None):
