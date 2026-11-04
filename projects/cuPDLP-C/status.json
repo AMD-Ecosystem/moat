@@ -7,18 +7,21 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T07:45:23Z",
-  "updated_at": "2026-11-04T18:39:01Z",
+  "updated_at": "2026-11-04T18:43:54Z",
   "head_sha": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
   "depends_on": [],
   "pr_url": "https://github.com/COPT-Public/cuPDLP-C/pull/41",
   "pr_number": 41,
   "pr_opened_at": "2026-06-12T06:41:52Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-04T18:43:54Z"
+  },
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "MIT",
   "upstream_repo_id": 730543473,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -27,7 +30,7 @@
       "validated_sha": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
       "started_at": "2026-06-05T07:50:17Z",
       "completed_at": "2026-11-04T08:30:17Z",
-      "updated_at": "2026-11-04T18:38:47Z",
+      "updated_at": "2026-11-04T18:43:54Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -41,7 +44,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "reviewer",
       "carry_forward": {
         "from": "8f43bf8401712e7ce342cc52a412872f09f22069",
         "to": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
