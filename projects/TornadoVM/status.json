@@ -3,11 +3,11 @@
   "name": "TornadoVM",
   "upstream_url": "https://github.com/beehive-lab/TornadoVM",
   "fork_url": "https://github.com/AMD-Ecosystem/TornadoVM",
-  "fork_default_branch": "master",
+  "fork_default_branch": "develop",
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-04T07:29:18Z",
+  "updated_at": "2026-11-04T19:11:23Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -56,5 +56,12 @@
     "arch": "windows-gfx1151",
     "since": "2026-11-04T07:19:38Z",
     "at": "2026-11-04T07:29:18Z"
+  },
+  "base_branch_ruling": {
+    "branch": "develop",
+    "previous": "master",
+    "by": "jeffdaily",
+    "at": "2026-11-04T19:11:23Z",
+    "reason": "Upstream PRs target develop; jeff 2026-11-04: mirror upstream develop onto the fork (pushed at f8e3ac907) and cut moat-port from it"
   }
 }

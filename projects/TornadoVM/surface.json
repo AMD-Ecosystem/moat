@@ -259,6 +259,15 @@
     }
   ],
   "covered": [],
-  "scoped_out": [],
+  "scoped_out": [
+    {
+      "id": "feature:cuda-tile",
+      "reason": "CUDA Tile (TileContext, nvcc -tilecubin) has no HIP equivalent. Ruled out by jeff 2026-11-04."
+    },
+    {
+      "id": "feature:device-launch",
+      "reason": "Device-side kernel launch needs dynamic parallelism, which HIP does not support. Ruled out by jeff 2026-11-04."
+    }
+  ],
   "removed_from_floor": []
 }

@@ -222,3 +222,15 @@ Required gates: wave64 (gfx90a or gfx942: warp ops refused cleanly, everything e
 6. **Upstream contact before the PR**: open a short issue on beehive-lab/TornadoVM asking whether a HIP backend is wanted, before the porter invests the full effort? (Upstream-visible write; jeff's approval and wording.)
 7. **Base branch and records**: the port is planned against `develop` (upstream's PR target), not the recorded default `master`. The fork has no `develop` mirror yet, and `moat-port` should be cut from upstream `develop`. Confirm, and whether `status.json` `fork_default_branch`/`license_spdx` (now plain Apache-2.0) should be corrected through moatlib.
 8. **Virtual devices** (offline compile against a JSON device description): port for HIP if it falls out of the copy cheaply, else scope out -- porter's call, or ruling needed?
+
+## Rulings (jeff, 2026-11-04)
+
+a. A new peer `hip` backend (tornado-drivers/hip, `make BACKEND=hip`) plus a TC HIP dialect. The CUDA backend stays byte-identical.
+b. Libraries now, all of them: hipBLAS/hipBLASLt, hipFFT, hipRAND, hipSPARSE, RCCL and MIOpen (no round-2 deferral).
+c. Tensor-core intrinsics now: lower the `KernelContext` MMA API (`mma.sync`/`ldmatrix`/`cp.async`) to AMD-native MFMA on CDNA and WMMA on RDNA3+, not a clean refusal. Refuse only on hardware with neither, with a reason.
+d. Out: CUDA Tile (`TileContext`, `nvcc -tilecubin`) and device-side kernel launch (HIP has no dynamic parallelism). In: the CUTLASS / cutlass-jni path, mapped to Composable Kernel. cuDF / cudf-jni maps to AMD-Ecosystem/hipDF and cuVS to AMD-Ecosystem/hipVS (both exist in the org). The cuDNN SDPA shim may have no target yet (no hipDNN): try MIOpen or CK attention first; if neither fits, stop on that item and record the gap for jeff rather than dropping it silently.
+e. Power metrics: bind amd-smi now (FFM, mirroring the NVML handler).
+f. No upstream issue first; the PR is the proposal.
+g. Done 2026-11-04: upstream `develop` (f8e3ac907) pushed to the fork as `develop`; `fork_default_branch` set to `develop` (`set-base-branch`). Cut `moat-port` from the fork's `develop`. `license_spdx` still reads the old OR expression; moatlib has no setter for it, so it needs a records fix (Apache-2.0 since #1266) before PR prep.
+h. Virtual devices: port them if cheap; otherwise record why not in notes.md.
+
