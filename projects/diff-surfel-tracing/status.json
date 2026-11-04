@@ -7,17 +7,14 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-11-04T07:41:27Z",
-  "head_sha": "173f32a9d0182452a6dcc02433e093b34311f665",
+  "updated_at": "2026-11-04T07:52:02Z",
+  "head_sha": "892f41adcd5dc6dc89c17fe0ac01af4c36bbef14",
   "depends_on": [],
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-04T07:41:27Z"
-  },
+  "porting": null,
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 911002454,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx1100": {
       "blocked": false,
@@ -97,7 +94,7 @@
       "failed_sha": "173f32a9d0182452a6dcc02433e093b34311f665",
       "started_at": "2026-11-04T07:41:27Z",
       "completed_at": null,
-      "updated_at": "2026-11-04T07:41:27Z",
+      "updated_at": "2026-11-04T07:52:02Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -123,8 +120,8 @@
     "at": "2026-08-13T03:18:42Z"
   },
   "porting_released": {
-    "arch": "linux-gfx90a",
-    "since": "2026-08-14T06:40:46Z",
-    "at": "2026-08-14T06:48:16Z"
+    "arch": "windows-gfx1151",
+    "since": "2026-11-04T07:41:27Z",
+    "at": "2026-11-04T07:52:02Z"
   }
 }

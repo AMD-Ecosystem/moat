@@ -75,3 +75,6 @@
 {"kind":"session","ts":"2026-08-20T19:23:19Z","epoch":1787253799.229964800,"event":"start","platform":"windows-gfx1151"}
 {"kind":"phase","ts":"2026-08-20T19:23:20Z","phase":"test","seconds":0.243,"exit":139,"cmd":"bash -c cd /d/Develop/moat/projects/diff-surfel-tracing/src && echo \"GPU gate reproduced: same access-violation crash inside hiprtBuildTraceKernels, verified against 2 falsified hypotheses\"; exit 139"}
 {"kind":"session","ts":"2026-08-20T19:23:20Z","epoch":1787253800.920790400,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-04T07:46:52Z","phase":"compile","seconds":20.054,"exit":0,"cmd":"cmake --build /d/Develop/moat/agent_space/wt-dst/agent_space/hiprt_build --config Release --target hiprt03001 -- -m:16"}
+{"kind":"phase","ts":"2026-11-04T07:47:48Z","phase":"compile","seconds":47.179,"exit":0,"cmd":"bash -c cd projects/diff-surfel-tracing/src && \"$TORCH_PY\" setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T07:48:17Z","phase":"test","seconds":18.032,"exit":0,"cmd":"bash -c cd projects/diff-surfel-tracing/src && PYTHONPATH=\"$PWD\" \"$TORCH_PY\" -X faulthandler -c \"import diff_surfel_tracing,sys;print(diff_surfel_tracing.__file__)\" && PYTHONPATH=\"$PWD\" timeout 900 \"$TORCH_PY\" -X faulthandler example/validate_rocm.py"}

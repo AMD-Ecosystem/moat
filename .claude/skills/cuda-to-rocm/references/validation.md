@@ -143,6 +143,21 @@ previously-reported defect in the same call chain may already be fixed in the
 project's own vendored-dependency patch, which rules it out rather than
 explaining the new crash. (diff-surfel-tracing)
 
+**Read the top frame before forming any hypothesis.** Python's `-X faulthandler`
+prints the faulting frame first; `0x0000000000000000 <unknown module>` above a
+vendored DLL means a call through a NULL function pointer, which in an
+Orochi/hipew-style loader means the library that pointer comes from was never
+loaded. That was the whole diff-surfel-tracing crash, after two retries chased
+the JIT: TheRock names the runtime compiler `hiprtc07013.dll` (HIP 7.13 -- major
+in two digits, minor in three), while HIP RT, Orochi and the port all searched a
+fixed list of four-digit names (`hiprtc0714.dll` ... `hiprtc0503.dll`), so hiprtc
+silently stayed unloaded and the first `orortcCreateProgram` jumped to address 0.
+Any project that `LoadLibrary`s hiprtc (or amdhip64, amd_comgr) by a hard-coded
+versioned name has this fault on TheRock: list `${ROCM_PATH}/bin` for the
+versioned file instead (`hiprtc0*.dll` -- the `0` excludes
+`hiprtc-builtins*.dll`), and compare the names the loader tries against
+`ls $ROCM_PATH/bin` before anything else. (diff-surfel-tracing)
+
 ## CUDA gate for torch-extension ports: the host's installed PyTorch itself can be the wall
 
 On a host whose only installed PyTorch is a ROCm dev build (e.g. built from `/var/lib/jenkins/pytorch` with `USE_ROCM=1`), nvcc-compiling a torch C++/CUDA extension fails for reasons that have nothing to do with the port. No full `CUDAExtension` link is reachable without downloading a genuine CUDA-flavored torch wheel, so the closest available check is a raw `nvcc -c` of the `.cu` against `torch.utils.cpp_extension.include_paths()` -- and that dies in the ambient install's headers. Two fingerprints of the same root cause:

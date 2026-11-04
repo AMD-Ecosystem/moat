@@ -2708,3 +2708,57 @@ attach a debugger -- porter-scope, not validator-scope) or a bisection of
 creation? a second, un-diagnosed silent-failure path elsewhere in the same
 function?) against HIP RT's own source with print-based instrumentation
 rather than a live debugger.
+
+## Port fix 2026-11-03 (windows-gfx1151): root cause of the hiprtBuildTraceKernels crash
+
+**Root cause: hiprtc was never loaded.** Every loader on the path looks for the
+runtime compiler by a fixed DLL-name list (`hiprtc0714.dll` ... `hiprtc0503.dll`:
+`hiprt/hiprt_libpath.h` `g_hiprtc_paths`, Orochi `hipew.cpp`, and the port's own
+`hiprt_tracer/hiprt_wrapper.cpp`, which hard-coded `hiprtc0714.dll`). The TheRock
+SDK in `agent_space/torch_venv` (torch 2.12.0+rocm7.14.0a20260519, HIP 7.13.26190)
+ships `hiprtc07013.dll` -- major in 2 digits, minor in 3 -- which matches no entry,
+and System32 has no hiprtc at all. `hipewInit` leaves `hiprtc_lib` NULL silently;
+`Compiler::init()` sees `hiprtcCreateProgram == nullptr` and deliberately skips its
+RTIP probe; then the first `Compiler::buildProgram` calls
+`orortcCreateProgram` -> `hiprtcCreateProgram(...)` through the null pointer.
+The faulthandler stack shows it directly once you look at the top frame:
+`0x0000000000000000 <unknown module>` above `hiprt0300164.dll + 0x252F0`
+(orortcCreateProgram) -> `+0x24959` (buildProgram) -> `+0x2D728` (buildKernels)
+-> `hiprtBuildTraceKernels() + 0x894`. This is why the 2026-08-20 retry's
+throw-on-compile-failure edit never fired: the fault is in `orortcCreateProgram`,
+before compile.
+
+**Causal check**: with the fix, `example/validate_rocm.py` 50/50 PASS from a cold
+cache (twice). Reverting only the discovery call in `hiprt.cpp` and rebuilding the
+DLL reproduces the original crash byte for byte (same `+0x252F0/+0x24959/+0x2D728`,
+`hiprtBuildTraceKernels() + 0x894`, null top frame). Restored, 50/50 again.
+
+**Fix** (fork commit `892f41a`, on top of `173f32a`): the patch's `hiprt.cpp`
+`DllPathList::build` gains an optional prefix; on Windows it first lists
+`${ROCM_PATH or HIP_PATH}\bin\hiprtc0*.dll` (the `hiprtc0` prefix excludes
+`hiprtc-builtins*.dll`), then the old full-path and bare-name lists. The wrapper
+does the same scan for the glue's own Orochi copy. Both are inside `#ifdef _WIN32`;
+on Linux only `DllPathList::build`'s defaulted extra parameter and an
+`#include <filesystem>` change (HIP RT is already C++17 and uses
+`std::filesystem` in Compiler.cpp). README gained a Windows note that
+`ROCM_PATH`/`HIP_PATH` must be set at run time; `.gitignore` gained `*_winhip.hip`
+(the hipified Windows copies). Patch round-trips: applied to a clean checkout it
+reproduces the tested `hiprt.cpp`, and the committed LF patch applies to the
+submodule index with `git apply --cached --check`.
+
+Build/run recipe used (no pip install into the shared venv):
+```
+source agent_space/win_torch_env.sh          # main checkout's env script
+git -C third_party/hiprt apply "$(pwd)/third_party/hiprt-rocm-fixes.patch"
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON -DHIP_PATH=$ROCM_ROOT -S third_party/hiprt -B <scratch>/hiprt_build
+cmake --build <scratch>/hiprt_build --config Release --target hiprt03001 -- -m:16
+MAX_JOBS=16 "$TORCH_PY" setup.py build_ext --inplace
+rm -rf diff_surfel_tracing/hiprt_cache
+PYTHONPATH="$PWD" "$TORCH_PY" -X faulthandler example/validate_rocm.py   # 50/50 PASS
+```
+Traced-geometry check reads 62/64 here, as on the Linux gates.
+
+Still unfixed, by design: HIP RT gives no clean error when hiprtc is absent (the
+null call). A guard needs to be API-aware (on the CUDA path `hiprtcCreateProgram`
+is legitimately null), so it is left for the HIP RT report rather than this port.
+The fixed-name-list defect is one more item for the existing HIPRT#67 report.
