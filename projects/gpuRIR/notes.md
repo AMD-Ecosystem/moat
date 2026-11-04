@@ -829,3 +829,10 @@ bash agent_space/gpurir_win/runall_pip7.sh
 - Harness against the installed module (confirmed from target): **49/49 PASS**, f64 table identical to earlier runs (exact 5.3e-8/5.2e-8/1.46e-7/4.3e-8).
 - Upstream examples: example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, example.py mp on / LUT off: **6/6 exit 0**.
 - No environment failures. CUDA gate not run (no toolkit on this host); recorded at 39a7a9d, delta has no compiled-source change. jargon.py clean; README documents the ROCm build.
+
+## Examples with real matplotlib/plotly, AMD vs CUDA (2026-11-04, cf0acba)
+
+Every earlier examples run replaced matplotlib/plotly with a no-op stub, so the figures were never drawn. jeff asked for a real-plot rerun before the review PR body is refreshed. Harness `gpurir_examples.py` (claude-shared `plans/gpurir-examples-ref/`): each example in its own subprocess with matplotlib Agg and real plotly; `plt.show()` saves PNG + line data, plotly `show()` writes HTML + polar trace data, first gpuRIR outputs saved; `np.random.seed(0)` before each example so the timing examples' random positions match; six runs (five examples + example.py with mixed precision on / LUT off).
+
+- V100 (CUDA 12.9, driver 575.57.08): port cf0acba vs upstream master 06da27d, all six exit 0, every saved array bit-identical (RIRs, polar traces, trajectory output, timing-example RIRs). Figures render as expected.
+- linux-gfx90a (MI250X, ROCm 10.1.0 TheRock pip SDK, HIP 7.16.26385; fleet job, plan `gpurir-examples-real-plots-gfx90a.md`): README Linux pip install into a private venv, `LD_LIBRARY_PATH` to `_rocm_sdk_libraries/lib:_rocm_sdk_core/lib` (TheRock pip layout). All six exit 0, figures sensible. Vs the V100 reference: image-source part (before Tdiff) max err/peak 1.5e-4 (example), 2.4e-4 (mp, LUT off), 9.2e-8 (polar_plots), 5.1e-6 (time_vs_T60), 1.3e-5 (time_vs_nbRIRs); polar traces 0 to 9.2e-8; diffuse tail not sample-identical (cuRAND vs hipRAND, same seed 1234, different sequences) but tail RMS ratio 0.988 to 1.009; simulate_trajectory corr 0.969 with the difference entirely from the tail (early+tail re-convolution check).
