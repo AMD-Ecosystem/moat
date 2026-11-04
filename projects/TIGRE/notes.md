@@ -683,3 +683,69 @@ I merged current master into this branch, which resolves the conflict in the par
 - Merge commit cfc014e3 (parents cf873a28 = published tip, 69bdd9f7 = upstream master).
 - Not in this round: the ROCm 10.1 rocRAND C++14 build fix (pending a ruling), and MI300 (gfx94x has no HIP texture API).
 ```
+
+## Fix round 2026-11-04 continued (linux-gfx90a porter, moat-fix-747) -- C++14 build fix, GPU retest, stage -> ported
+
+Lock: jeff ruled that linux-gfx90a takes the lock over from linux-gfx942 (recorded before this run). He also ruled that the rocRAND `-std` fix joins this round as its own `[ROCm]` commit, with only the HIP compile flags changing.
+
+### Branch
+- Continued on `moat-fix-747` at the merge cfc014e3 (parents cf873a28 = published tip, 69bdd9f7 = upstream master). Upstream `master` is still 69bdd9f7, so there was no new merge. Nothing was rebased, amended or re-merged.
+- New commit **5a3da55948d954ca9184c0b4793bbb2be95490e9** `[ROCm] Compile the HIP sources as C++14 for current rocRAND` (setup.py, +3 lines, CRLF kept). Pushed `moat-fix-747` cfc014e..5a3da55. `moat-port` untouched at cf873a28. `jargon.py --port TIGRE` clean before the push. `advance-head TIGRE 5a3da55`, then `set-state TIGRE linux-gfx90a ported`, which released the lock.
+
+### The C++ standard change and why
+- `unix_wrap_compile` appends `-std=c++11` to every compile that lacks a `-std`, including the hipcc compile of the `.cu` files. ROCm 10.1's `rocrand/rocrand_threefry_common.h:133` uses `std::enable_if_t`, so every `.cu` that pulls `hiprand_kernel.h` through `cuda_to_hip.h` fails. A header scan (`grep -rE 'enable_if_t|is_same_v|if constexpr|inline constexpr' include/rocrand include/hiprand`) finds only `enable_if_t`, and `rocrand_common.h` gates on `__cplusplus >= 201402L`, so **C++14 is the floor** (C++17 not needed).
+- Direct check on this host: `hipcc -x hip --offload-arch=gfx90a -D USE_HIP -DIS_FOR_PYTIGRE -fPIC -ICommon/CUDA/ -I<rocm>/include -std=c++11 -c Common/CUDA/RandomNumberGenerator.cu` gives 4 errors; with `-std=c++14` it compiles with 0 errors.
+- Change: inside the `_is_cuda_file(src) and BUILD_WITH_HIP` branch, append `-std=c++14` when no `-std` was passed; the shared C++11 default afterwards then sees a `-std` and does nothing. The nvcc branch and the host `.cpp` compiles (GpuIds.cpp, TIGRE_common.cpp, the Cython `.cpp`) still get `-std=c++11` (confirmed in the build log). The Windows HIP path (`win_wrap_compile`) passes no `-std` (clang's default is gnu++17), so it needed no change.
+
+### Build (this host: MI250X gfx90a, TheRock ROCm SDK 10.1, HIP_VISIBLE_DEVICES=3 pinned by the dispatcher)
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH BUILD_WITH_HIP=1 HIP_ARCH=gfx90a ROCM_PATH=$(rocm-sdk path --root)
+cd projects/TIGRE/src && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16
+```
+(job venv: python 3.11, numpy 1.26.4, scipy 1.10.1, Cython 3.3.1; `pip install Cython matplotlib h5py tqdm pytest` into the venv.) rc 0, 8/8 extensions, and `llvm-objdump --offloading` shows a gfx90a code object in all 8. The self-test prints `TIGRE: fp32 hardware linear texture filtering on AMD Instinct MI250X / MI250: unsupported (software trilinear fallback)`, as before on CDNA2.
+
+### Tests (all under `ulimit -c 0`, HIP_VISIBLE_DEVICES=3)
+Upstream pytest, `cd Python && PYTHONPATH=. MPLBACKEND=Agg $FLEET_VENV/bin/python -m pytest -q -p no:cacheprovider tests/<file>`: test_compute_cor 6, test_demo_angles 1, test_denoise_2d_guard 3, test_filtering_workers 37, test_gpuids_default 5, test_krylov_restart_and_norms 9, test_krylov_smoke 9 -> **70 passed, 0 failed** (the 20 GPU tests that crashed on gfx942 now pass). `tests/test_config_gen.py` belongs to the legacy harness and is not part of the bar; it fails at collection with `No module named 'tigre.demos'`, unrelated to the GPU.
+
+The original `agent_space/tigre_validate.py` / `tigre_solvers.py` were container-local and gone. I recreated them from the recorded description (they are in `agent_space/tigre/` on this host only):
+- validate: `geometry_default(high_resolution=False, nVoxel=[256]*3)` with `dDetector=[1.6,1.6]` so the 256-px detector covers the 256 mm object (with the default 0.8 mm the projection is truncated and FDK nRMSE is 1.84, which says nothing about the port); 32 angles `linspace(0,2pi,32,endpoint=False)+0.3`; head phantom; nRMSE = ||x-ref||/||ref||. Gates: interp-vs-Siddon < 1%, FDK finite and < 0.5, OS-SART (20 iter) finite and < FDK, adjointness (interpolated Ax, matched Atb, random x and phantom x) < 0.05.
+- solvers: 64^3 default low-res geometry, 60 angles, 5 iter; sart ossart sirt cgls fista asd_pocs awasd_pocs os_asd_pocs ossart_tv; bar = finite (as recorded).
+
+A/B against the published tip: worktree `agent_space/tigre/base` at cf873a28 with the same setup.py change applied (it does not build on ROCm 10.1 otherwise), built the same way.
+
+| gate | merged 5a3da55 | base cf873a28 | recorded 2026-06-04 (b450d56, ROCm 7.2.1) |
+|---|---|---|---|
+| Ax Siddon mean / max | 27.46 / 111.2 | 27.46 / 111.2 | 27.46 / 110.7 |
+| interp vs Siddon | 0.0040 | 0.0040 | 0.0047 |
+| FDK nRMSE | 0.2864 | 0.2864 | 0.2904 |
+| OS-SART 20 iter nRMSE | 0.1929 | 0.1506 | 0.1507 |
+| adjointness, random x | 1.004e-05 | 1.004e-05 | 1.186e-05 |
+| adjointness, phantom x | 6.08e-05 | 6.08e-05 | -- |
+| sart / ossart / sirt | 4.96 / 3.72 / 6.23 | 1.23 / 1.18 / 1.34 | 1.25 / 1.11 / 1.35 |
+| cgls / fista | 0.961 / 0.951 | 0.953 / 0.993 | 0.953 / 0.994 |
+| asd_pocs / awasd_pocs / os_asd_pocs / ossart_tv | 4.76 / 4.78 / 3.56 / 3.42 | 1.23 / 1.23 / 1.18 / 1.14 | 1.25 / 1.25 / -- / 1.13 |
+
+All gates pass on the merged head, and the base reproduces the recorded gfx90a numbers. **The SART-family shift comes from upstream, not the port.** Upstream a675320 ("Fix W computation causing PICCS to hang") changed `IterativeReconAlg.set_w` in pure Python: it sizes the weight volume from `sDetector` and caps `W` at 0.1. Swapping only `Python/tigre/algorithms/iterative_recon_alg.py` between the trees: the merged extensions with the old file give sart/ossart/sirt/ossart_tv 1.2338/1.1800/1.3384/1.1388 and OS-SART 0.1506, the base values to 4 digits; the base extensions with the new file give 4.9635/3.7197/6.2263/3.4159, the merged values. The small remaining differences (asd_pocs, cgls, fista) come from upstream's other Python edits in pocs/krylov/ista. Device-side outputs (Ax both projectors, FDK, Atb adjointness) are bit-identical between base and merged. No tolerance was loosened. The solver-sweep `< 1.0` check in my first run was my own addition, not the recorded bar, and I dropped it.
+
+### What remains
+- Review of the round (stage `ported`), then validators on every gate at 5a3da55. Device code changed in the merge (Siddon kernels), so binary-equiv carry-forward does not apply. gfx942 still cannot build TIGRE (no HIP texture API on gfx94x); that is out of scope.
+- For the reviewer: the parallel Siddon Np cap may be redundant under upstream's per-axis guards (see the gfx942 entry). The upstream W cap makes 5-iteration SART converge more slowly on the 64^3 low-res geometry, but CUDA would behave the same way.
+
+### Proposed fix review PR body (for jeff)
+Title: `[ROCm] Merge current upstream master and fix the HIP build on current ROCm`
+
+Not opened. Supersedes the draft in the gfx942 entry above. `prose.py`: clean. `jargon.py -`: clean.
+
+```
+Upstream PR CERN/TIGRE#747 conflicts with master (98 commits since the PR's base). This round merges upstream master at 69bdd9f into the port and adds one build fix.
+
+Merge (cfc014e): one conflicting hunk in Common/CUDA/Siddon_projection_parallel.cu. Upstream rewrote the parallel Siddon kernel (full Euler angles, missed-ray return, per-axis intersection counts with a z term). Resolved by taking upstream's kernel and re-applying the port's intersection-count cap on the new Npx + Npy + Npz sum, widened to nVoxelX + nVoxelY + nVoxelZ + 3 to match the cone kernel. Everything else auto-merged; upstream's new device code uses only runtime calls and point-filtered texture reads that the compatibility header already covers.
+
+Build fix (5a3da55): setup.py compiled the HIP sources with -std=c++11. Current rocRAND device headers use std::enable_if_t, so the .cu sources no longer compile on current ROCm; C++14 is the lowest standard they accept. The HIP compile now uses -std=c++14. The nvcc flags, the host C++ flags and the Windows HIP path are unchanged.
+
+Retested on gfx90a (MI250X), ROCm 10.1: all 8 extensions build; the 7 new upstream test files pass (70 tests); interpolated vs Siddon projection 0.40%, FDK nRMSE 0.286, OS-SART 0.193, adjointness residual 1.0e-05, and all 9 iterative solvers finite. Compared with the published tip built the same way, Ax, FDK and adjointness are identical; the SART-family numbers moved, and swapping only iterative_recon_alg.py between the two trees moves them back exactly, so the change comes from upstream's new SART weight (a675320), not from the HIP code. <other GPUs: fill in from their validation at 5a3da55>.
+
+## Upstream reply
+
+I merged current master into this branch, keeping your rewrite of the parallel Siddon projector where it conflicted. I also added a small setup.py fix so the HIP build works with current ROCm, whose rocRAND headers need C++14. I re-ran the projection, reconstruction and adjointness checks on <GPUs validated at the final head>.
+```
