@@ -53,6 +53,20 @@
         "by": "jeffdaily",
         "at": "2026-08-13T18:58:57Z"
       }
+    },
+    {
+      "id": "plvs-libelas-gpu-dvalids-leak-double-free",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream libelas-gpu bug now active in HIP builds (identical under CUDA): ElasGPU::computeDisparity (GPU/elas_gpu.cu:581-595) never frees d_valids and calls cudaFree on d_u_vals/d_v_vals twice. Measured on gfx942: ~4 MB device memory leaked per ElasInterface::process on aloe (80 MB over 20 calls), and hipGetLastError() reads hipErrorInvalidValue after every call. plvs calls it once per keyframe (PointCloudKeyFrame.cc:415 static pElas), so long stereo runs leak steadily. Fix is 3 lines (free d_valids, drop the duplicate frees), but it is an upstream bug fix outside the smallest port; needs a person's defer/now ruling.",
+      "refs": [
+        "projects/plvs/notes.md#review-2026-11-04b",
+        "AMD-Ecosystem/plvs@b9c257a"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-04T09:42:18Z",
+      "decided": null
     }
   ]
 }
