@@ -3111,3 +3111,32 @@ CUDA no-regression gate: skipped, already recorded at this head (the 2026-11-04 
 Pre-completion checks: `python3 utils/jargon.py --port arrayfire` (after fetching local `master` and `moat-port` refs) -> the 3 standing hits only (published `6800d5586` 'MOAT', upstream's own `head_sha` x2 in `.github/scripts`); nothing from this round. Documentation: no build-doc change in this round; the `AF_BUILD_HIP` documentation in `CMakeLists.txt`/README is intact after the merge.
 
 State: `set-state arrayfire linux-gfx1100 completed --agent validator` at head 83f66a507. Nothing pushed to the fork.
+## Validation 2026-11-04 (validator, linux-gfx942, sync round moat-sync-64c88d9) -- RESULT: COMPLETED (131/132)
+
+GPU: AMD Instinct MI300X HF (gfx942, CDNA3, wave64), `HIP_VISIBLE_DEVICES=0` (pinned by the dispatcher), `ulimit -c 0`. Toolchain: ROCm SDK wheel `rocm-sdk-devel` 10.1.0 (`hipconfig --version` 7.16.26385-0000000, AMD clang 24.0.0git d6f6cb691), no `/opt/rocm`, `R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`. Fork: fresh clone of `moat-sync-64c88d9` at `83f66a50732a47f4b6d654ef031f71ae208bfbc7` (the recorded `head_sha`); `git status --porcelain` empty before and after. Host packages added first: `sudo apt-get install -y libfftw3-dev libboost-all-dev libopenblas-dev liblapacke-dev` (first configure failed on missing fftw3/cblas).
+
+This head carries the reduce-by-key fix, including the `(warpid + 1) * kWarpSize` warp-boundary index that only changes code on 64-wide wavefronts; this is the first wave64 GPU run of it.
+
+### Build
+```
+python3 -I projects/arrayfire/src/.github/scripts/check-matrix-data.py projects/arrayfire/src projects/arrayfire/src/build-hip-gfx942   # 9 matrices restored from pinned arrayfire-data
+AF_CI_MTX_FILES=ON utils/timeit.sh arrayfire compile -- cmake -C projects/arrayfire/src/.github/scripts/matrixmarket.cmake \
+  -S projects/arrayfire/src -B projects/arrayfire/src/build-hip-gfx942 -GNinja -DCMAKE_BUILD_TYPE=Release \
+  -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF -DAF_BUILD_CPU=ON -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF \
+  -DAF_BUILD_UNIFIED=ON -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF \
+  -DAF_BUILD_DOCS=OFF -DAF_BUILD_TESTS=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++
+utils/timeit.sh arrayfire compile -- cmake --build projects/arrayfire/src/build-hip-gfx942 -j 56
+```
+Configure exit 0; build 1657/1657, exit 0. `test/info_cuda`: `ArrayFire v3.10.1 (CUDA, 64-bit Linux, build 83f66a507)`, `[0] AMD Instinct MI300X HF, 196592 MB, CUDA Compute 9.4` (the HIP backend keeps the `afcuda` name).
+
+### Tests
+```
+rm -rf ~/.arrayfire
+ROCM_PATH=$R utils/timeit.sh arrayfire test -- ctest --test-dir projects/arrayfire/src/build-hip-gfx942 -R '_cuda$' -j1 --output-on-failure
+ROCM_PATH=$R projects/arrayfire/src/build-hip-gfx942/test/reduce_cuda
+ROCM_PATH=$R projects/arrayfire/src/build-hip-gfx942/test/confidence_connected_cuda
+```
+**131/132 PASS** (1351 s), first run, no reruns. The one failure is `test_confidence_connected_cuda`: 3 passed, 12 skipped, 21 failed, all "Image IO Not Configured" (`AF_WITH_IMAGEIO=OFF`), the standing disposition. `reduce_cuda` direct: **1062/1062 PASS** (ctest 24.3 s). No SegFault, timeout, OOM or HIP fault anywhere; `inverse_dense` (the gfx1100 random-input flake) passed.
+
+Comparison: matches the porter's gfx1100 result at this head (131/132, `reduce` 1062/1062, ROCm 7.16) and this platform's previous record (131/132 at 950dcdd02, ROCm 7.14). The 479 by-key failures the porter saw at 5d09b5c0f on ROCm 7.16 do not appear here with the fix, on wave64 with the same 7.16 compiler. CUDA gate: already recorded at 83f66a507 (nvcc 12.8, mi355 host, PASS), not repeated. `jargon.py --port arrayfire`: only the 3 standing hits (published `6800d5586` 'MOAT', upstream's own `head_sha` x2 in `.github/scripts`), as accepted by the reviewer. Documentation unchanged by this round apart from upstream's merge.
