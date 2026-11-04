@@ -138,3 +138,11 @@ tornado --devices
 - Run: `LD_LIBRARY_PATH=$X/libcudf/lib64:$X/librmm/lib64:$X/rapids_logger/lib64:...`. Vendor choice in `CudfNativeLib` follows the NCCL rule; `-Dtornado.cudf.library=hipdf|cudf` overrides.
 - Results gfx950: TestCudf 24/24; TestCudfColumns 20 pass / 3 unsupported. Gap: the hipDF 3.0 Parquet writer has no ZSTD ("nvCOMP 2.4 or newer is required for Zstandard compression" from nvcomp_adapter.cpp); `LIBCUDF_HOST_COMPRESSION=ON` (+THRESHOLD=0, RATIO=100) and `LIBCUDF_NVCOMP_POLICY=ALWAYS` do not route around it (probe `agent_space/rocmds/proto/pq.cpp`: NONE and SNAPPY ok). Mapped to TornadoLibraryTaskNotSupported by matching hipDF's message. Question for jeff: accept the ZSTD-write gap until hipDF gains it?
 - hipDF officially supports gfx90a/gfx942/gfx950 only; RDNA (the wave32 gate) and Windows have no hipDF build, so cuDF tasks report unsupported there (the TestCudf* gates report unsupported when the shim is absent).
+
+### Commit 13 pushed: cuVS on hipVS (`0185c7f40`)
+
+- hipVS (wheel `amd-libhipvs` 1.0.0, no declared dependencies) ships `libcuvs/lib64/libcuvs_c.so` + `libcuvs.so` with the cuVS C API; needs librmm/rapids_logger (amd-libhipmm), ROCm's hipBLAS/hipSOLVER/hipSPARSE/hipRAND/hipBLASLt/RCCL (all in this SDK), system libopenblas, and `libomp.so` from `$ROCM_PATH/lib/llvm/lib` (not on the default path). Run: `LD_LIBRARY_PATH=$X/libcuvs/lib64:$X/libraft/lib64:$X/librmm/lib64:$X/rapids_logger/lib64:$ROCM_PATH/lib/llvm/lib:...`.
+- Findings: hipVS refuses `kDLROCM` (10) device tensors ("indices tensor must be device-compatible"); `kDLCUDA` (2) works. hipVS's `cuvsAllNeighborsBuild` on a host dataset requires device outputs (cuVS 26.08 accepts host ones): staged through `cuvsRMMAlloc`/`cuvsStreamSync`/`hipMemcpy` D2H/`cuvsRMMFree` on the hipVS path only. Struct offsets used by the bindings are identical (all tests pass).
+- Vendor choice in `CuVSNativeLib` follows the NCCL rule; `-Dtornado.cuvs.library=hipvs|cuvs`.
+- Results gfx950: TestCuVS 7/7. `make jdk21 BACKEND=cuda` passes.
+- hipVS/hipDF wheels are x86_64 Linux and target gfx90a/gfx942/gfx950; on RDNA and Windows these tasks report unsupported (library absent).
