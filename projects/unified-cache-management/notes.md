@@ -1273,3 +1273,30 @@ CUDA gate: `cuda-not-validated: no CUDA toolkit on this host` (no `nvcc`, no `/u
 Pre-completion: `python3 utils/jargon.py --port unified-cache-management` clean (local `develop` pointed at upstream `develop` cc99d52 and local `moat-fix-1021` at origin; local refs only). `git merge-tree --write-tree eda03f1 develop` clean against cc99d52. ROCm build documented at `docs/source/developer-guide/build_from_source.md:56`.
 
 Result: linux-gfx1100 COMPLETED at eda03f156a96c7d5f8cf04bb47cf279e81eade53. For the fix-review `## Upstream reply`, the GPU name is "AMD Radeon Pro W7800 (gfx1100)".
+
+## Validation 2026-11-04 (windows-gfx1151, AMD Radeon 8060S, TheRock 7.14.0a20260612 SDK, revalidate) -- PASS at eda03f1
+
+Fresh fork clone checked out detached at `eda03f156a96c7d5f8cf04bb47cf279e81eade53` from `origin/moat-fix-1021` (nothing pushed, no fork writes). `git status --porcelain` empty. cmake 4.3.2 from TheRock's venv, Ninja, clang-cl as C/CXX/HIP compiler, `ulimit -c 0`, `-j8`. Runtime DLLs staged next to `ucmshared.test.exe` (`amdhip64_7.dll`, `amd_comgr.dll`, `hiprtc*.dll`, `rocm_kpack.dll`, plus the build's `metrics.dll` and `zlib.dll`); as before, the post-build `gtest_discover_tests` step fails with 0xc0000135 until they are staged, then a second `cmake --build` links the last target.
+
+Commands (`S` = clone, `R` = SDK root):
+```
+cmake -S $S -B ucm_gpu -G Ninja -DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_STORE=OFF -DBUILD_UNIT_TESTS=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_C_COMPILER=$R/lib/llvm/bin/clang-cl.exe \
+  -DCMAKE_CXX_COMPILER=$R/lib/llvm/bin/clang-cl.exe -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang-cl.exe \
+  -DCMAKE_HIP_STANDARD=17 -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$R
+cmake --build ucm_gpu -j 8 ; (stage DLLs) ; cmake --build ucm_gpu -j 8
+ctest --test-dir ucm_gpu -j1 --timeout 300 --output-on-failure
+cmake -S $S -B ucm_simu -G Ninja -DRUNTIME_ENVIRONMENT=simu -DBUILD_UCM_STORE=OFF -DBUILD_UNIT_TESTS=ON \
+  -DCMAKE_C_COMPILER=$R/lib/llvm/bin/clang-cl.exe -DCMAKE_CXX_COMPILER=$R/lib/llvm/bin/clang-cl.exe -DCMAKE_BUILD_TYPE=Release
+cmake --build ucm_simu -j 8 -- -k 0 ; (stage DLLs) ; cmake --build ucm_simu -j 8 -- -k 0
+ctest --test-dir ucm_simu -j1 --timeout 300 --output-on-failure
+```
+`UCM trans: building HIP for arch(s): gfx1151`.
+
+- GPU build ctest: 115 discovered, 1 disabled (UCMetricsStress.TenWritersOneCollector), **112/114 pass** (10 s). Failures are exactly the two already recorded for this platform at 8545865: UCLoggerTest.LogEventuallyReachesUcmFile and UCLoggerTest.FileOnlyLogEventuallyReachesVllmFile (gtest body OK, TearDown `Failed to remove file: log_test`, the Windows spdlog async file lock). UCLoggerPerfTest and UCMetricsUT passed this time. Copy-kernel and event gates pass: UCTransUnitTest.{CopyDataWithCE, CopyDataWithSM, CopyDataBatchWithSM, EmptyEventIsSafe, MemsetAndDeviceToDevice}. The 8545865 record was 31/35; the tree now carries the merged upstream shared tests (115 discovered).
+- Simu build (`-DRUNTIME_ENVIRONMENT=simu`): 115 discovered, 1 disabled, **111/114 pass** (2.4 s). Failures: the same two UCLoggerTest TearDown file-lock cases, and UCLoggerPerfTest.MultiThreadPerfUCInfoVsRateLimitRandomContent (timing ratio, the known flake). With `-k 0` the build also reports two compile failures in `ucm/transport/p2p` (`tcp_transport.cpp`, `channel_manager.cpp`: `fatal error: 'arpa/inet.h' file not found`); that target is upstream POSIX-socket code, is not part of the `rocm` Windows build, and does not feed `ucmshared.test.exe`.
+- **The 4 `UCCache2TransManagerIntegrationTest.DumpThenLoad*` tests do not exist on Windows**, in either build. They live in the `ucm/store` tree, which this platform has never built (`BUILD_UCM_STORE=OFF` in every Windows recipe above). Tried `-DRUNTIME_ENVIRONMENT=simu -DBUILD_UCM_STORE=ON` once: CMake generate fails with `CMake can not determine linker language for target: storedetail` (the store is POSIX-only). So "all 4 pass in simu" is not observable here; it is carried by linux-gfx942 and linux-gfx1100 (1114/1114 simu at eda03f1). The only code delta since this platform's 8545865 record that reaches Windows is the merged upstream shared code plus `hip_compat/cuda_runtime.h` aliases, which the passing MemsetAndDeviceToDevice / CopyData* gates exercise.
+
+CUDA gate: not run (Windows host, no CUDA toolkit). Pre-completion: `PYTHONUTF8=1 python3 utils/jargon.py --port unified-cache-management` clean (local `develop` set to upstream cc99d52 in the scratch clone); ROCm build docs unchanged since the reviewed docs commits.
+
+Result: windows-gfx1151 COMPLETED at eda03f156a96c7d5f8cf04bb47cf279e81eade53.

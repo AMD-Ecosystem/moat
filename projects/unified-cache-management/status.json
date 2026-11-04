@@ -7,7 +7,7 @@
   "priority": 4.879,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-11-04T19:14:16Z",
+  "updated_at": "2026-11-04T19:21:42Z",
   "head_sha": "eda03f156a96c7d5f8cf04bb47cf279e81eade53",
   "pr_url": "https://github.com/ModelEngine-Group/unified-cache-management/pull/1021",
   "pr_number": 1021,
@@ -21,11 +21,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "8545865f0939361bbbebb742369e25f95fd19b36",
+      "validated_sha": "eda03f156a96c7d5f8cf04bb47cf279e81eade53",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-08-13T20:47:09Z",
-      "updated_at": "2026-08-13T20:47:09Z",
+      "completed_at": "2026-11-04T19:21:41Z",
+      "updated_at": "2026-11-04T19:21:41Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -39,7 +39,8 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "state": "completed"
+      "state": "completed",
+      "last_agent": "validator"
     },
     "linux-gfx1100": {
       "state": "completed",
