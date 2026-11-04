@@ -621,3 +621,65 @@ windows-gfx1101 -> completed at cf873a288e8469d7292470c96272f825dc355dba.
 ## Install as a dependency
 
 Not a base library for other MOAT projects (no `depends_on` consumers).
+
+## Sync round 2026-11-04 (linux-gfx942 porter, moat-fix-747) -- merged and pushed, GPU retest BLOCKED on this host
+
+Why: upstream PR CERN/TIGRE#747 conflicted with `master` (98 upstream commits since the merge-base a07589f4). Fix round staged with `moatlib.py fix-branch TIGRE` (record re-homed from main onto `port/TIGRE`; base = published cf873a28). Lock: `set-state TIGRE linux-gfx942 porting`.
+
+### Merge
+- `git merge --no-ff upstream/master` on `moat-fix-747` (cut from `moat-port` cf873a28). Upstream tip merged: 69bdd9f728e02095f38d27a9746a88eb79fc5e09.
+- Merge commit: **cfc014e36d32f686746029cd3ab8a710bd4d57cc** (parents cf873a28, 69bdd9f7). Subject rewritten from git's default "Merge remote-tracking branch 'upstream/master' into moat-fix-747" to "Merge branch 'master' of https://github.com/CERN/TIGRE" because `jargon.py --port TIGRE` flagged the branch name; the merge was unpushed when rewritten, and the tree is unchanged.
+- Pushed `moat-fix-747` -> cfc014e3 on AMD-Ecosystem/TIGRE. `moat-port` untouched at cf873a28. No `[ROCm]` follow-up commit was needed (see "New CUDA surface").
+- `jargon.py --port TIGRE`: clean (needs a local `master` ref in the clone: `git branch master upstream/master`).
+
+### Conflict (1 file, 1 hunk) and resolution
+- `Common/CUDA/Siddon_projection_parallel.cu`, the "Initialize" block before the ray loop. Upstream (b1e6e61 full Euler angles, 7549d41 missed-ray RETURN, 9f0b669 stripe-artifact fix) rewrote the parallel kernel to count crossings per axis (`Np = Npx + Npy + Npz`, each counted only when that axis's index span is non-empty) and added the z term; the port's only edit in this hunk was the Np cap.
+- Resolution: take upstream's block verbatim and re-apply the cap after it, widened to the new 3D sum: `Np_max = nVoxelX + nVoxelY + nVoxelZ + 3` (same bound as the cone kernel in Siddon_projection.cu). Still a no-op for any valid ray. With upstream's per-axis guards the cap is probably redundant in this kernel now, but it is harmless and keeps both sides; a reviewer may decide to drop it.
+- File keeps its CRLF line endings (first attempt via Python text mode had converted the file to LF; redone with `newline=''`; `git diff upstream/master` on the file is the include swap plus the 5 cap lines only).
+- Auto-merged without conflict: Siddon_projection.cu (upstream's `am>=aM` early return sits above the port's cap; both kept), GD_TV.cu, PICCS.cu, setup.py, Frontispiece/python_installation.md.
+
+### New CUDA surface from upstream
+None needing a port change. Added lines in Common/ use only `cudaDeviceReset` (now commented out upstream), `cudaFree`, `cudaErrorInvalidValue` (comment text) and point-filtered `tex3D<float>` reads, all already covered by `cuda_to_hip.h`. No new `.cu` file, extension, linear texture, spaced launch chevron, or warp intrinsic. Upstream's pyproject change (`numpy<2.5.1`) is build-requires only.
+
+### Build evidence (this host: 8x gfx942, TheRock ROCm SDK 10.1 at `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`)
+Scratch worktrees under `agent_space/tigre/{base,merged}` (base = cf873a28, merged = the same tree as cfc014e3); build driver `agent_space/tigre-scripts/build.sh <tree> <HIP_ARCH> <tag>`, which runs:
+```
+BUILD_WITH_HIP=1 ROCM_PATH=$(rocm-sdk path --root) HIP_ARCH=<arch list> \
+  $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16 -t build_<tag>
+```
+- **gfx942 cannot build at all, at the published tip or after the merge.** HIP defines `__HIP_NO_IMAGE_SUPPORT` for gfx94x and later (already in the skill, fault-classes.md "gfx94x+ disables the HIP image/texture object API"), and every TIGRE projector/backprojector reads a 3D texture: `hipcc --offload-arch=gfx942` on Siddon_projection_parallel.cu gives 11 (base) / 12 (merged) `'tex3D<float, nullptr>' is unavailable: The image/texture API not supported on the device`, Siddon_projection.cu 12/12, voxel_backprojection.cu 9/9. The extra hit in the merged parallel kernel is upstream's added z-branch `tex3D` read. Running TIGRE on MI300 would need a texture-free fetch path: new scope for a person to rule on, not part of this sync.
+- **ROCm 10.1 rocRAND needs C++14 (pre-existing, also at cf873a28).** setup.py appends `-std=c++11` on the HIP path too; `rocrand_threefry_common.h` uses `std::enable_if_t`, so RandomNumberGenerator.cu (and every TU that pulls `hiprand_kernel.h` through the compat header) fails with `no template named 'enable_if_t' in namespace 'std'`. Prior validations used ROCm 7.2.1 / TheRock 7.14, which still accepted C++11. For the compile check below I changed `-std=c++11` -> `-std=c++17` in the scratch worktrees only (uncommitted, not on any branch). Proposed fix (NOT committed; jeff's call, and it needs a GPU run): on the `BUILD_WITH_HIP` path append `-std=c++14` (or c++17) instead of c++11, leaving the nvcc path byte-identical. Lesson promoted to cuda-to-rocm `references/fault-classes.md` ("rocRAND's device headers need C++14 from ROCm 10.1").
+- Compile check `HIP_ARCH=gfx90a,gfx1100` (with the scratch c++17 edit): base 8/8 extensions, 0 errors; merged 8/8 extensions, 0 errors. `llvm-objdump --offloading` shows gfx90a + gfx1100 code objects in all 8 merged `.so` (`_Ax _Atb _minTV _minPICCS _AwminTV _tv_proximal _gpuUtils _RandomNumberGenerator`).
+
+### Tests on this host
+Host-side only, merged tree, `cd agent_space/tigre/merged/Python && PYTHONPATH=. MPLBACKEND=Agg $FLEET_VENV/bin/python -m pytest -q -p no:cacheprovider tests/<file>` (all files are new upstream tests; the base tree has none):
+- test_demo_angles.py 1 passed; test_denoise_2d_guard.py 3 passed; test_filtering_workers.py 37 passed; test_krylov_restart_and_norms.py 9 passed -> **50 passed, 0 failed**.
+- test_compute_cor.py, test_gpuids_default.py, test_krylov_smoke.py: SIGSEGV inside `tigre/utilities/Ax.py:59` (the first GPU kernel launch; the build has no gfx942 code object). Expected on this host; these are GPU tests for the retest host.
+- The GPU gates in this file (Ax Siddon vs interpolated, FDK/OS-SART nRMSE, adjointness, solver sweep) were **NOT run**: no gfx90a/gfx1100/gfx1201 GPU on this host, and gfx942 cannot run TIGRE.
+
+### What remains (stage left at `porting`, lock held by linux-gfx942)
+1. A porter on a texture-capable host (linux-gfx90a or linux-gfx1100) takes the lock (`moatlib.py port-lock TIGRE --take <platform>`, a person's decision), checks out `moat-fix-747` @ cfc014e3, builds, and runs the recorded gates plus the 7 new upstream test files. Bar = the counts in the "Revalidation 2026-06-19 (linux-gfx1100)" and "Validation 2026-06-04 (linux-gfx90a)" sections. If the host's ROCm is 10.x, the C++14 issue above blocks the build first: jeff rules whether the `-std` fix joins this round as its own `[ROCm]` commit.
+2. Then `advance-head TIGRE cfc014e36d32f686746029cd3ab8a710bd4d57cc` (or the later tip), `set-state ... ported`, `commit-project`.
+3. head_sha was deliberately NOT advanced here: nothing was GPU-tested on this host.
+
+### Proposed fix review PR body (for jeff)
+Title: `[ROCm] Merge current upstream master into the HIP port`
+
+Not opened. Retest line still to be filled in from the GPU run.
+
+```
+Upstream PR CERN/TIGRE#747 conflicts with master (98 commits since the PR's base). This round merges upstream master at 69bdd9f into the port; it changes no HIP code of its own.
+
+Conflict: one hunk in Common/CUDA/Siddon_projection_parallel.cu. Upstream rewrote the parallel Siddon kernel (full Euler angles, missed-ray return, per-axis intersection counts with a z term). Resolved by taking upstream's kernel and re-applying the port's intersection-count cap on the new Npx + Npy + Npz sum, widened to nVoxelX + nVoxelY + nVoxelZ + 3 to match the cone kernel. Everything else auto-merged; upstream's new device code uses only runtime calls and point-filtered texture reads that the compatibility header already covers.
+
+Retested: <GPU, ROCm version, gates and counts -- fill in from the retest run>. Compile-checked for gfx90a and gfx1100 on ROCm 10.1 (8/8 extensions); 50 host-side upstream tests pass.
+
+## Upstream reply
+
+I merged current master into this branch, which resolves the conflict in the parallel Siddon projector by keeping your rewrite. I re-ran the projection, FDK, OS-SART and adjointness checks on <GPU> with the same results as before.
+
+## Notes for the reviewer
+
+- Merge commit cfc014e3 (parents cf873a28 = published tip, 69bdd9f7 = upstream master).
+- Not in this round: the ROCm 10.1 rocRAND C++14 build fix (pending a ruling), and MI300 (gfx94x has no HIP texture API).
+```
