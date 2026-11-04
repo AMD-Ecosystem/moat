@@ -362,3 +362,22 @@
 {"kind":"phase","ts":"2026-11-04T08:50:51Z","phase":"test","seconds":339.961,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi200-20261104-002549-v-heon/moat/agent_space/val-640a8b5/shared --output-on-failure"}
 {"kind":"phase","ts":"2026-11-04T08:51:17Z","phase":"test","seconds":20.205,"exit":0,"cmd":"bash agent_space/run_examples.sh /var/lib/jenkins/fleet/jobs/mi200-20261104-002549-v-heon/moat/agent_space/val-640a8b5"}
 {"kind":"session","ts":"2026-11-04T08:52:00Z","epoch":1793782320.637467269,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-04T18:06:10Z","epoch":1793815570.163693200,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-04T18:06:24Z","phase":"compile","seconds":13.717,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:08:20Z","phase":"compile","seconds":78.726,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:08:33Z","phase":"compile","seconds":7.321,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:09:20Z","phase":"compile","seconds":16.334,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:09:32Z","phase":"compile","seconds":7.672,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:10:29Z","phase":"compile","seconds":22.301,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:10:51Z","phase":"compile","seconds":11.655,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:10:57Z","phase":"compile","seconds":5.240,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:11:46Z","phase":"compile","seconds":14.533,"exit":127,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:11:56Z","phase":"compile","seconds":8.133,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:11:59Z","phase":"compile","seconds":16.391,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:12:23Z","phase":"compile","seconds":23.815,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:12:52Z","phase":"compile","seconds":13.991,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:16:31Z","phase":"compile","seconds":218.220,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:17:32Z","phase":"compile","seconds":9.210,"exit":127,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:18:47Z","phase":"compile","seconds":6.431,"exit":127,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:37:57Z","phase":"test","seconds":1136.530,"exit":8,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/runtests.sh"}
+{"kind":"session","ts":"2026-11-04T18:38:51Z","epoch":1793817531.718452400,"event":"end","platform":"windows-gfx1151"}

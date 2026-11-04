@@ -7422,3 +7422,35 @@ Examples and benchmark (static build, one at a time, `agent_space/run_examples.s
 Other gates: CUDA no-regression compile not rerun (no nvcc on this host). It passed at `2e51886` (nvcc 12.8, fleet job mi355-20261104-001208-cuda-compile), and `2e51886..640a8b5` changes only `#` comment lines in five CMake files, so it carries over. `python3 utils/jargon.py --port HEonGPU` -> `jargon: clean` (with a local `main` branch made in the fresh clone: `git branch main origin/main`). Documentation of the ROCm build is unchanged since the reviewed docs rounds. Fork `git status --porcelain` empty at `640a8b5`.
 
 linux-gfx90a: **completed** at `640a8b5974e69a720454b1005e491b306e87e16d`.
+
+## Validation 2026-11-04 (windows-gfx1151, Radeon 8060S APU, TheRock ROCm 7.14.0a20260612, clang-cl 23) -- validation-failed at `640a8b5`
+
+Full run at `640a8b5974e69a720454b1005e491b306e87e16d` from a fresh clone (`agent_space/heongpu-win/src`, `core.autocrlf=false`, submodules at GPU-FFT `b743607`, GPU-NTT `8a4daf1`, RNGonGPU `e2f4a85`). CMake 4.4.4 from PyPI in `agent_space/heongpu-win/cmv`. GPU work under `ulimit -c 0`, build `-j8`, ctest serial (`-j1`).
+
+### Toolchain obstacles (environment, not port defects; the recipe that got a build)
+
+- The deps from the earlier Windows round were gone (scratchpad cleaned); rebuilt per the 2026-08-18 recipe: conda-forge gmp 6.3.0, openssl 4.0.1, zlib 1.3.2 plus `libzlib` (its `zlib.dll`; the `zlib` package alone has no DLL, which gave 0xc0000135 on 3 test executables at discovery), NTL from source with clang-cl.
+- A Windows `core.autocrlf=true` checkout makes `thirdparty/patches/RNGonGPU.patch` fail to apply (CRLF in the submodule). Clone with `-c core.autocrlf=false`.
+- hipMM's pinned fmt 11.0.2 fails under clang 23 (`FMT_STRING` consteval "not a constant expression", `base.h:779`) in C++20; fmt 11.1+/11.2 removes `basic_format_string`, which spdlog needs. Worked around with a local fmt 11.0.2 copy whose `FMT_USE_CONSTEVAL` can be forced off (`-DHEON_NO_FMT_CONSTEVAL`) via `-DFETCHCONTENT_SOURCE_DIR_FMT`.
+- gtest (FetchContent) needs `-Wno-character-conversion` (`-WX` under clang-cl).
+- `9_multi_stream_usage_way1` does not link: no OpenMP runtime in the TheRock SDK (`__kmpc_*` undefined), same known gap as before. All 3 benchmarks, 27 of 28 examples and 49 test executables built.
+- Shared build (`HEonGPU_BUILD_SHARED`) not attempted on Windows.
+
+### Test result: 190 / 295 passed, 105 failed (static build, ctest serial, 1132 s)
+
+No GPU fault in the happy paths: the encrypt/add/multiply/relinearize/rotate/bootstrapping-arithmetic cases pass (190), which includes the new stream-ordered pool path (RNGonGPU `hipMemPoolCreate`/`hipMallocFromPoolAsync`: key generation and encryption tests pass). gfx90a and gfx1100 got static 301/301 and shared 296/296 (301 vs 295 here: example 9 and the shared-only cases are absent).
+
+The 105 failures are overwhelmingly one class: tests that expect HEonGPU to throw. Example, `CKKSContextIdentity.Ciphertext_Of_Another_Context_Is_Rejected`: `EXPECT_THROW(operators_b.add(ciphertext_a, ciphertext_b, output), std::invalid_argument)` reports `unknown file: error: C++ exception with description "Ciphertext context mismatch! ..." thrown in the test body`, i.e. the exception (`ContextMismatchError : public std::invalid_argument, public Error`, error.h:78) is thrown by library code compiled as HIP and is not caught by `catch (std::invalid_argument&)` in the clang-cl test TU. Same shape for `CKKSErrors.*` (6), `*ContextIdentity.*` (10), `SerializationContext.*` (8), `SerializationFormat.*` (10), `CKKSCiphertextSerialization.*` (10, "Invalid ciphertext parameters!" / "Truncated ciphertext binary!"), `RNSSecretKey.*` (4), `CKKS/BFVParameters.*` (16), `RescaleMode.*` (7), `BootstrappingPresets.*` (7), `CKKSSession.*`/`BFVSession.*` error cases, `HEonGPU/CKKSGaloiskey.*` (4), `PrimeGeneration.InvalidRequests`, `Polynomial.Invalid_Arguments`, `CKKSEncodeDepth.Invalid_Depth_Is_Rejected`. Hypothesis, not proven: MS-ABI throw/catch of a class with two polymorphic bases across HIP-language and C++ translation units. Other failures outside that class:
+
+- SEGFAULT (3): `HEonGPU.With_Seed_Is_Not_Interrupted_By_Other_Threads`, `HEonGPU.Threads_Generate_Keys_And_Encrypt`, `CkksStreamOrder.OperandBroughtToAnotherLevel`.
+- Timeout 30 s (1): `HEonGPU.MemoryPool_Context_Generation_With_Little_Free_Device_Memory` (37.6 s). Also failed: `HEonGPU.MemoryPool_Shrinks_Initial_Size_That_Does_Not_Fit` ("device initial pool size exceeds available memory at initialization"; unified-memory APU free-memory reporting).
+- `SecretKeySecurity.SerializerHandlesHighlyCompressibleDataAndRejectsTruncation`: "Zlib decompression failed".
+- `HEonGPU.Kernel_Stack_Limit_That_Is_Too_Low_Is_Reported_When_Not_Raised`, `HEonGPU.Shutdown_Is_Refused_While_Objects_Use_The_Pool`.
+
+Full per-test log: `agent_space/heongpu-win/ctest1.log` (gitignored scratch). Not run: benchmarks (building only, per the dispatcher), examples (stopped at the failure; the budget was spent on the toolchain).
+
+Verdict: `windows-gfx1151` validation-failed at `640a8b5` (Windows-specific defect class, for a porter). jargon/doc/CUDA gates not evaluated here.
+
+### Operator incident (recorded for the fleet)
+
+During this run I mistakenly ran `git remote set-url origin https://github.com/AMD-Ecosystem/HEonGPU` and a `git fetch origin` inside the shared moat checkout (a `cd` into a non-existent `projects/HEonGPU/src` fell through to the worktree). It was restored to `https://github.com/AMD-Ecosystem/moat.git` by moat-5f; I reset local `main` back to `c99b5d9b` and the remote-tracking refs were repaired by a later fetch. No push was made from the mistaken state.
