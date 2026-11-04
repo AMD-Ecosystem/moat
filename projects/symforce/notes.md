@@ -1505,3 +1505,58 @@ ctest --test-dir build -R caspar_
 
 The Caspar GPU tests (padding lane, solver, tridiagonal, backend coverage) and `symforce_caspar_codegen_test` pass on <AMD GPUs with a validator record at the final head>. The Caspar test targets also compile and link with CUDA 12.8.
 ````
+## CUDA compile check (nvcc 12.8) at d5eb335d
+
+jeff asked for a CUDA compile-and-test-build check of the staged round `moat-fix-465` at d5eb335d (head_sha confirmed in status.json on `port/symforce`) against the merged upstream base acdedd0b. Fleet worker on a Linux host with NVIDIA's CUDA 12.8 toolkit (`/usr/local/cuda-12.8`, nvcc V12.8.93, host g++ 13.3.0) and no NVIDIA GPU. No platform state changed. No fork push.
+
+Result: no CUDA regression. The head and the baseline give identical return codes, nvcc compile counts, SASS, warnings and test results. Nothing in the port needs fixing.
+
+### Setup
+
+Two checkouts in the job directory (not `projects/symforce/src`): `sf-head` at d5eb335d (AMD-Ecosystem/symforce `moat-fix-465`) and `sf-base`, a worktree at upstream acdedd0b. Each tree has its own job-local venv built as upstream CI does it (`.github/workflows/ci.yml`, test-on-ubuntu job): pip==25.0.1 and setuptools==75.3.2, then `requirements/dev_py311.txt`, installed from inside the tree (the file has relative `-e` paths), then `build/lcmtypes/python2.7` after the build. apt deps libgmp-dev, libeigen3-dev and doxygen were already present. Benchmarks are off, so boost and glog are not needed.
+
+Upstream CI never compiles CUDA: its runners have no nvcc, so `test/CMakeLists.txt` skips the Caspar `*_cuda_test.cc` targets. This check is therefore stronger than upstream's own CI.
+
+### Commands (identical for both trees, `<T>` = tree, `<V>` = its venv)
+
+```
+export PATH=<V>/bin:$PATH   # the symenginepy sub-build finds Cython via PATH, as setup-python provides in CI
+cmake -S <T> -B <T>/build -D CMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc -D CMAKE_C_COMPILER=gcc -D CMAKE_CXX_COMPILER=g++ "-D SYMFORCE_COMPILE_OPTIONS=-Wall;-Wextra;-Wno-dangling-reference;-Wno-array-bounds;-DSYM_VALUES_DISALLOW_FROM_STORAGE_NON_EIGEN_TYPES" -D SYMFORCE_PYTHON_OVERRIDE=<V>/bin/python -D SYMFORCE_BUILD_BENCHMARKS=OFF
+cmake --build <T>/build -j64 -- -k
+cd <T> && PYTHONPATH=<T> ctest --test-dir build -j32 -E '^symengine_symforce_docs_test$'
+```
+
+`-Werror` was left out of CI's warning options so that warnings could be counted rather than stop the build.
+
+### Build
+
+- Configure rc=0 in both trees. "The CUDA compiler identification is NVIDIA 12.8.93", CUDAToolkit 12.8.93 found. In the head configure the HIP branch was not entered (`check_language(HIP)` never ran and there is no `CMAKE_HIP_COMPILER` in the cache), although hipcc was on PATH. So the round's HIP fallback does not take over when nvcc is present.
+- Full build rc=0 in both trees. Full-build warnings, normalized for path: 9 unique in each tree, the same set, all in third_party symengine and the metis dependency.
+- The Caspar targets were rebuilt with `VERBOSE=1` after their objects were deleted (`caspar_test_runtime` plus the 4 `bin.tests.caspar_*_cuda_test` targets), rc=0 in both trees. nvcc really compiled the `.cu` sources: 78 `nvcc -x cu -c` invocations per tree, with `--generate-code=arch=compute_75,code=[compute_75,sm_75]`. They break down as 3 runtime files (shared_indices, sort_indices, solver_tools), 1 backend-coverage, 1 padding-lane, 18 solver and 55 tridiagonal generated kernels. Also 6 `.cc` files went through g++ (the test sources and generated solver.cc), which exercises `cuda_to_hip.h`'s host-only CUDA branch (the 1ee93b2c guard). There is no `USE_HIP` on any command line. `cuobjdump --list-elf` gives the same sm_75 cubin counts per binary in both trees: backend_coverage 1, padding_lane 2, solver 21, tridiagonal 58. The binaries are slightly larger at head (for example tridiagonal 8.58 MB against 7.53 MB).
+- The Caspar targets do not receive `SYMFORCE_COMPILE_OPTIONS`, so all 84 recorded compile commands were replayed with `-Xcompiler=-Wall,-Wextra` added (nvcc) or `-Wall -Wextra` added (g++), writing scratch objects. rc=0 in both trees. Each tree gives the same 2 warnings: `-Wsign-compare` at `symforce_caspar_tridiagonal_test/solver.cc:560` and `:602`, in upstream's generated code. The port adds no warning.
+
+### Caspar library path (CasparLibrary.generate + compile, i.e. the CMakeLists.txt.jinja the round changed)
+
+Upstream CI does not compile this path either. A job-local wrapper ran each example's `caslib` with a stubbed `torch` import (torch is only needed to run, not to build), then `caslib.generate(out)` and `caslib.compile(out, cuda_arch="75", jobs=64)` with `CUDACXX=/usr/local/cuda-12.8/bin/nvcc`. Examples: `kernel_example/gen_and_run.py` and `bal_deployed/generate.py`.
+
+- All 4 runs (2 examples x 2 trees) rc=0. The generated CMakeLists configures with CUDA (`USE_HIP` defaults OFF).
+- kernel_example: 5 `.cu.o` and 2 `.cc.o` in each tree, 4 sm_75 cubins in the pybind `.so`. bal_deployed: 34 `.cu.o` and 3 `.cc.o`, 30 sm_75 cubins. Counts are identical between the trees. The only warnings in either tree are pybind11's CMake deprecation notice and an lto-wrapper note.
+- Both `caspar_lib` modules import with no GPU present: 12 and 15 public symbols in each tree.
+- The generated sources differ only as intended: `#include "cuda_to_hip.h"` replaces the raw `cuda_runtime.h`/cooperative_groups includes, plus the `USE_HIP` guards.
+
+### Tests (ctest, 211 tests, same in both trees)
+
+201/211 passed in each tree. The same 10 tests failed in each, all for reasons unrelated to the port:
+
+- The 4 `caspar_*_cuda_test` binaries: `REQUIRE( HaveDevice() )` is false because there is no NVIDIA GPU. Expected here; they build and link, which is the point of this check.
+- `sparse_cholesky_solver_test`, `symforce_factor_test`, `symforce_optimizer_test`: SIGABRT from an Eigen 3.4.0 assertion (`SparseMatrix::insertUncompressed`, "you cannot insert an element that already exists"). These are not Caspar or CUDA code and fail identically at upstream acdedd0b. Not investigated further.
+- `symengine_symforce_rust_codegen_test`, `sympy_symforce_rust_codegen_test`: `rustfmt` is not installed for the toolchain (the same environment gap as in the gfx90a porter run).
+- `symengine_symforce_caspar_codegen_test` (4/4 at base, 4/5 at head): environmental. This host has a stray `/tmp/.clang-format` (Google-based, ColumnLimit 100, not ours, left in place). `SymforceTestCaseMixin.make_output_dir` hardcodes `/tmp` (TMPDIR does not help), and `format_cpp` passes `-assume-filename` under it. clang-format therefore finds that file and keeps the template's 100-column comments, while the checked-in data has clang-format's fallback 80-column comment reflow. A job-local wrapper redirected `tempfile.mkdtemp(dir="/tmp")` to a job directory (`python wrapper.py <outdir> test/symforce_caspar_codegen_test.py`, `SYMFORCE_SYMBOLIC_API=symengine|sympy`) and the test passed. Base: symengine 4/4 OK, sympy OK (skipped=4). Head: symengine 5/5 OK, including the new `test_generate_build_files`; sympy OK (skipped=5). A validator on another host with a `/tmp/.clang-format` will see the same false failure.
+
+### The round's build test without ROCm
+
+Configure-only in a scratch worktree at d5eb335d, with nvcc and the pip ROCm binaries off PATH (`env -i PATH=<venv>/bin:/usr/bin:/bin /opt/python-3.11-venv/bin/cmake -S <wt> -B <wt>/build ...`): rc=0. Output: "Looking for a CUDA compiler - NOTFOUND", "Looking for a HIP compiler - NOTFOUND". No Caspar `*_cuda_test` is registered in CTest; with nvcc there are 4 entries in each tree's CTestTestfile. So the HIP fallback skips cleanly on a machine with neither toolkit.
+
+### Integrity
+
+`git status --porcelain` is empty in both checkouts. Build dirs are untracked and live outside `projects/symforce/src`, so the porter's manifest.json warning does not apply.
