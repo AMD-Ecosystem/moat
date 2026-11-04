@@ -174,6 +174,9 @@ port is hit depends on CODEGEN, not on the source: HIP's `atomicOr` marks the op
 drop that metadata when the atomic sits in a helper inlined into the kernel, and without it
 the backend emits a CAS retry loop that works. So one program can pass at `-O3` and come out
 entirely empty at device `-O0`, and a standalone probe can contradict the application.
+Device `-O0` is not exotic: a CMake HIP build configured with no `CMAKE_BUILD_TYPE` (what
+many READMEs give) has empty `CMAKE_HIP_FLAGS` and compiles device code at `-O0`, so
+validate the README recipe as written, not with `-DCMAKE_BUILD_TYPE=Release` added.
 Disassemble the APPLICATION's code object (`llvm-objdump --offloading <exe>`, then
 `llvm-objdump -d` on the gfx bundle): a native `global_atomic_or` or `flat_atomic_or` means
 it fails; only `global_atomic_cmpswap` means it is passing by accident. A passing

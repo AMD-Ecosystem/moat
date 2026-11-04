@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:03:06Z",
-  "updated_at": "2026-11-04T10:24:40Z",
+  "updated_at": "2026-11-04T10:56:52Z",
   "head_sha": "3625a1e825b9ade31a09d64dfd52f4420186665d",
   "depends_on": [],
   "waivers": {},
@@ -27,14 +27,14 @@
   },
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx1201": {
+    "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "3625a1e825b9ade31a09d64dfd52f4420186665d",
+      "validated_sha": null,
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-11-04T10:24:40Z",
-      "updated_at": "2026-11-04T10:24:40Z",
+      "completed_at": null,
+      "updated_at": "2026-11-04T09:58:42Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -48,8 +48,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "state": "completed",
-      "last_agent": "validator"
+      "last_agent": "reviewer"
     },
     "windows-gfx1151": {
       "blocked": false,
@@ -74,53 +73,6 @@
       },
       "last_agent": "planner"
     },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-11-04T09:58:42Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
-    },
-    "linux-gfx90a": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": "689b8856ccd436ee36021dc416807a212e7955f8",
-      "started_at": "2026-11-04T09:03:29Z",
-      "completed_at": null,
-      "updated_at": "2026-11-04T09:25:22Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "validation-failed",
-      "last_agent": "validator"
-    },
     "linux-gfx950": {
       "blocked": false,
       "blocked_reason": null,
@@ -142,12 +94,59 @@
         "first_session_at": null,
         "last_session_at": null
       }
+    },
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "3625a1e825b9ade31a09d64dfd52f4420186665d",
+      "failed_sha": "689b8856ccd436ee36021dc416807a212e7955f8",
+      "started_at": "2026-11-04T09:03:29Z",
+      "completed_at": "2026-11-04T10:56:52Z",
+      "updated_at": "2026-11-04T10:56:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "3625a1e825b9ade31a09d64dfd52f4420186665d",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-04T10:24:40Z",
+      "updated_at": "2026-11-04T10:24:40Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
     }
   },
   "porting_released": {
     "arch": "linux-gfx942",
     "since": "2026-11-04T09:30:49Z",
     "at": "2026-11-04T09:58:42Z"
-  },
-  "porting": null
+  }
 }

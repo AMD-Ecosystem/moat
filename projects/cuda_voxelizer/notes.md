@@ -442,3 +442,55 @@ Harness `agent_space/scripts/cuvox_diff.py <exe> <model> <work> <tag> --repeat 3
 ### README Linux recipe builds unoptimized device code (not a correctness failure; registered for a person)
 
 The README's Linux ROCm line sets no `CMAKE_BUILD_TYPE`. With an empty build type CMake passes no `-O` to the HIP compiler, and clang compiles HIP device code at -O0: the README build's gfx1201 code objects are byte-for-byte the same size as the explicit `-O0` Debug build's (15,897 / 10,976 disassembly lines vs 586 / 579 for Release), they emit the -O0 `flat_atomic_*` forms, and the differential and timings match the -O0 build row for row. A user following the README gets a GPU path 50 to 60 times slower than Release (512 surface 1,635 ms vs 25.6 ms; solid 2,245 ms vs 38.9 ms). Upstream's CUDA line also has no build type, but nvcc optimizes device code by default, so the CUDA reader does not see this. The Windows ROCm line already passes `-DCMAKE_BUILD_TYPE=Release`; the fix is the same flag on the Linux line (docs-only, carried forward automatically). The earlier gfx1201 validation's README row (512 surface 4, solid 0) was this same effect. Registered as `cuda-voxelizer-readme-linux-release-build-type`.
+## Validation 2026-11-04 (linux-gfx90a, validator, moat-port 3625a1e)
+
+Verdict: completed. Satisfies the wave64 gate at head 3625a1e. The gfx90a managed-memory atomicOr/atomicXor failure seen at 689b885 is gone: every build, including the device -O0 builds that emit the native `flat_atomic_or`/`flat_atomic_xor`, matches the CPU oracle exactly at 64 and 256 and within the accepted FP residual at 512.
+
+Host: AMD Instinct MI250X/MI250 (gfx90a:sramecc+:xnack-), one GCD (`HIP_VISIBLE_DEVICES=0`), Linux. TheRock ROCm 10.1.0 pip SDK (`rocm-sdk path --root`), HIP 7.16.26385, AMD clang 24.0.0git (d6f6cb6), CMake 3.31.6, Ninja, g++ 13.3. Trimesh2 2022.03.04 (`0b3d9e2`), `make -C libsrc` -> `lib.Linux64/libtrimesh.a`. Fork clone at 3625a1e (`origin/moat-port`), `git status --porcelain` empty at the end; build dirs are outside the clone. All GPU runs under `ulimit -c 0`. CUDA no-regression gate not rerun: already recorded at 3625a1e (V100 build and run above).
+
+### Builds (all exit 0, upstream warnings only)
+
+```
+common="-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DTrimesh2_INCLUDE_DIR:PATH=<tm2>/include -DTrimesh2_LINK_DIR:PATH=<tm2>/lib.Linux64"
+cmake -S <src> -B readme $common                                   # README Linux recipe verbatim (Unix Makefiles, no build type), prefix swapped for the pip SDK
+cmake -S <src> -B rel    -G Ninja -DCMAKE_BUILD_TYPE=Release $common
+cmake -S <src> -B dbg    -G Ninja -DCMAKE_BUILD_TYPE=Debug   $common
+cmake -S <src> -B o0     -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0" $common
+cmake -S <src> -B o0dbg  -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0 -D_DEBUG" -DCMAKE_CXX_FLAGS=-D_DEBUG $common
+cmake --build <dir> --parallel 64
+```
+
+Emitted atomics (`.hip_fatbin` section of each `voxelize*.cu.o`, `clang-offload-bundler --unbundle` to the gfx90a code object, `llvm-objdump -d`):
+
+| build | voxelize.cu | voxelize_solid.cu |
+|---|---|---|
+| rel (Release, -O3) | `global_atomic_cmpswap` | `global_atomic_cmpswap` |
+| o0 (Debug, device -O0) | `flat_atomic_or` | `flat_atomic_xor` |
+| readme (no build type) | `flat_atomic_or` | `flat_atomic_xor` |
+
+New fact: the README Linux recipe sets no `CMAKE_BUILD_TYPE`, so `CMAKE_HIP_FLAGS` is empty and the device code is built at -O0 (GPU times below match the explicit -O0 build). So a user following the README on discrete MI200 at 689b885 would have got the empty grid; the earlier gfx90a validation built "the README recipe" with `-DCMAKE_BUILD_TYPE=Release` added and did not see it. At 3625a1e the README build is exact (table below), which is the strongest evidence that the fix holds for the native OR/XOR instructions.
+
+### GPU-vs-CPU differential, `test_models/bunny.OBJ`
+
+Harness `agent_space/cvdiff.py <exe> <model> <work> <tag> --repeat 3`: each run in its own directory with a copy of the model; GPU run, then `-cpu` on the same binary; the GPU log must show `## GPU VOXELISATION` and `Voxelization GPU time` with no fallback, the `-cpu` log must not; binvox RLE, morton `.bin` bitset and obj_points vertex lines decoded to voxel sets; then 3 more GPU runs sha256-compared with the first. Logs show `Best device: AMD Instinct MI250X / MI250` and `Allocating ... of CUDA device memory for Voxel Grid` (the 3625a1e path).
+
+72 cases (4 builds x surface/solid x 64/256/512 x binvox/morton/obj_points) and 216 repeats. Counts are identical across the three formats in every case; **216 of 216 repeats byte-identical** to the first GPU run.
+
+| mode | size | filled CPU | rel diff (GPU-only/CPU-only) | readme diff | o0 diff | o0dbg diff |
+|---|---|---|---|---|---|---|
+| surface | 64 | 13,802 | 0 | 0 | 0 | 0 |
+| surface | 256 | 221,760 | 0 | 0 | 0 | 0 |
+| surface | 512 | 887,315 | 8 (3/5) | 4 (2/2) | 4 (2/2) | 4 (2/2) |
+| solid | 64 | 52,258 | 0 | 0 | 0 | 0 |
+| solid | 256 | 3,345,384 | 0 | 0 | 0 | 0 |
+| solid | 512 | 26,763,628 | 1 (1/0) | 0 | 0 | 0 |
+
+- 512 residual: at most 8 voxels of 887,315 (surface) and 1 of 26.8M (solid), the accepted FP class. Release equals the 689b885 gfx90a numbers and the porter's 3625a1e numbers exactly (8 / 1); every -O0 build equals the `-ffp-contract=off` triangulation (4 / 0), as on every arch.
+- At 689b885 the device -O0 build gave 0 filled voxels at 64 (surface and solid). At 3625a1e it gives 13,802 and 52,258, exact.
+- GPU kernel time, binvox: Release surface 64/256/512 = 0.4 / 9.9 / 61.8 ms, solid = 0.9 / 49.8 / 390.6 ms; -O0 surface 512 3.8 s, solid 512 5.2 s.
+- Default Debug (`-g -O`) build at 64, surface + solid, binvox + morton: 0 diff, repeat identical.
+- `_DEBUG` -O0 build: device counters read back through `cudaMemcpyFromSymbol` (surface `Processed 5110 triangles`, `Tested 117367 voxels`, `Marked 45229 voxels`; solid prints 0, upstream's solid kernel never increments them), same as gfx1201/gfx942/gfx90a before.
+- `-o obj` at 64 (Release): 2 GPU and 2 CPU runs byte-identical. `-o vox` at 64: all four files (56,473 bytes) identical except the last 4 bytes, the known upstream uninitialized `colors[255]` palette entry in `VoxWriter.cpp`. Not a port issue.
+- Upstream CI smoke `./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu` (README and Release builds): exit 0, CPU path, writes `bunny.OBJ_64.vox`. CPU counts match every other arch.
+- `utils/jargon.py --port cuda_voxelizer`: clean. ROCm build documented in the README next to the CUDA build.
+- Generalizable part promoted to the `cuda-to-rocm` skill (`references/fault-classes.md`, managed-memory bitwise atomics entry): a CMake HIP build with no `CMAKE_BUILD_TYPE` compiles device code at -O0.
