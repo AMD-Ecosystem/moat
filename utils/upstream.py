@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Reconcile recorded upstream-PR state with reality.
 
 A protected trunk creates a bookkeeping gap. A project's own PR merges when the port
@@ -31,6 +33,8 @@ branch and opens a PR, and a human decides -- the same path everything else take
     python3 utils/upstream.py --fix-review       # staged fix rounds needing a review PR
     python3 utils/upstream.py --merge-fix        # approved fix rounds ready to merge
     python3 utils/upstream.py --merge-fix --apply # fast-forward the open PR to the approved tip
+    python3 utils/upstream.py --drift            # maintained forks vs upstream's advance
+    python3 utils/upstream.py --drift --apply    # also fast-forward a behind fork mirror
 
 Record maintenance and one publishing step. None of it does any porting -- that needs a
 GPU host and a session. These keep the record true, tell someone, and send an approved
@@ -50,7 +54,21 @@ import subprocess
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-TODAY = subprocess.run(["date", "-u", "+%Y-%m-%d"],
+
+
+def _run(*args, **kwargs):
+    """subprocess.run, decoding text output as UTF-8 rather than the locale's code page.
+
+    gh and git emit UTF-8. On Windows the default decoder is cp1252, which raises on
+    bytes it has no mapping for (a PR thread containing an emoji is enough), and the
+    reader thread dies leaving stdout None -- `--attention` crashed that way."""
+    if kwargs.get("text"):
+        kwargs.setdefault("encoding", "utf-8")
+        kwargs.setdefault("errors", "replace")
+    return subprocess.run(*args, **kwargs)
+
+
+TODAY = _run(["date", "-u", "+%Y-%m-%d"],
                        capture_output=True, text=True).stdout.strip()
 # One stable branch, deliberately not date-stamped: see publish().
 # Named for what it carries, not for who pushes it: every run of this is a person
@@ -148,7 +166,7 @@ def all_records():
 
 
 def gh_json(args):
-    r = subprocess.run(["gh"] + args, capture_output=True, text=True, timeout=90)
+    r = _run(["gh"] + args, capture_output=True, text=True, timeout=90)
     if r.returncode:
         return None
     try:
@@ -190,7 +208,13 @@ def poll(rows):
     mechanical; --apply writes it. A pre-flow record whose head DISAGREES with the
     live PR goes to headdrift instead: there is no baseline to stamp, and inferring
     one from a record the PR contradicts is how a maintainer's push would get
-    blessed as our own."""
+    blessed as our own.
+
+    A FINISHED PR missing its published_sha rides the same backfill list (tagged
+    `finished`): its own head is the tip it shipped and outlives the merge, and
+    without the stamp a follow-up cannot be judged (pr_ready refuses to guess the
+    baseline). Stamped only when our record already agrees with GitHub about the
+    state -- a drifting record gets corrected first, not annotated."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
     drift, unreviewed, headdrift, backfill, errors = [], [], [], [], []
@@ -227,6 +251,9 @@ def poll(rows):
                 # No published_sha, and the record's head is absent or disagrees
                 # with the PR: there is no verified baseline to stamp.
                 headdrift.append({**r, "live": live, "nobaseline": True})
+        if (r["real"] in ("MERGED", "CLOSED") and live and not r.get("published")
+                and implied == r["ours"]):
+            backfill.append({**r, "live": live, "finished": True})
     return drift, unreviewed, headdrift, backfill, errors
 
 
@@ -478,7 +505,7 @@ def refresh_approval(r):
         return gh_json(["api", "-X", "PUT",
                         f"repos/{slug}/pulls/{num}/reviews/{review['id']}/dismissals",
                         "-f", f"message={msg}", "-f", "event=DISMISS"]) is not None
-    res = subprocess.run(["gh", "pr", "comment", r["url"], "--body", msg],
+    res = _run(["gh", "pr", "comment", r["url"], "--body", msg],
                          capture_output=True, text=True, timeout=90)
     return res.returncode == 0
 
@@ -558,37 +585,106 @@ def review_candidates():
 
     The gap this fills: everything after a review PR existed was automated -- fetch
     it, snapshot the approval, verify it still covers the content, publish -- and
-    nothing opened one. Twenty-eight ports sat PR-ready with none open."""
+    nothing opened one. Twenty-eight ports sat PR-ready with none open.
+
+    A finished (merged or closed) upstream PR is not terminal here: a project whose
+    branch moved past what that PR shipped is a FOLLOW-UP candidate, and its review
+    PR carries exactly that delta -- opening one archives the finished PR into
+    pr_history (moatlib.archive_pr) and the round repeats the first PR's whole
+    contract. A follow-up held only by coverage gates is reported rather than
+    silently skipped, because no other list names it; a finished PR with nothing
+    new past it stays silent, which is most of the fleet."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
 
     out = []
     for name in sorted(moatlib.all_projects()):
         d, _where = moatlib.project_record(name)
-        if d is None or d.get("review_pr") or d.get("pr_state") or d.get("pr_url"):
+        if d is None:
             continue
-        ready, blocking, _ = moatlib.pr_ready(name)
-        if not ready:
+        if d.get("maintained"):
+            # Upstream adopted the fork by reference: no follow-up PR will ever
+            # re-offer what a maintainer declined, so this is not a candidate --
+            # not a blocked one, not any kind. Sync rounds (--fix-review) carry
+            # its later work.
+            continue
+        followup = d.get("pr_state") in ("merged", "closed")
+        if not followup and (d.get("review_pr") or d.get("pr_state")
+                             or d.get("pr_url")):
             continue
         fork = (d.get("fork_url") or "").replace("https://github.com/", "")
         branch = d.get("fork_branch") or moatlib.PORT_BRANCH
         base = d.get("fork_default_branch") or "main"
+        ready, blocking, _ = moatlib.pr_ready(name)
+        if not ready:
+            # The pr-exists refusals (open PR, nothing past the finished one, no
+            # recorded baseline) are the routine fleet and stay silent, as does
+            # every first-PR project still mid-pipeline. What must not stay
+            # silent is a follow-up delta held only by gates.
+            if followup and fork and blocking \
+                    and not any(g == "pr-exists" for g, _s in blocking):
+                out.append({"name": name, "fork": fork, "branch": branch,
+                            "base": base, "followup": d.get("pr_number"),
+                            "problem":
+                                f"follow-up to {d.get('pr_state')} PR "
+                                f"#{d.get('pr_number')} (delta "
+                                f"{(d.get('published_sha') or '?')[:12]}.."
+                                f"{(d.get('head_sha') or '?')[:12]}) blocked: "
+                                + ", ".join(f"{p}={s}" for p, s in blocking)})
+            continue
         if not fork:
             continue
+        row = {"name": name, "fork": fork, "branch": branch, "base": base,
+               "problem": None}
+        if followup:
+            row["followup"] = d.get("pr_number")
+            row["prior_url"] = d.get("pr_url")
+            row["base_sha"] = d.get("published_sha")
+            # The review diff is judged against the fork's default branch, so
+            # the mirror must already contain what the finished PR shipped:
+            # behind the merge, base...branch replays the finished round in
+            # front of the reviewer -- a wrong diff, not a smaller one.
+            sync = gh_json(["api",
+                            f"repos/{fork}/compare/{base}...{row['base_sha']}",
+                            "--jq", "{status: .status}"])
+            if not sync or not sync.get("status"):
+                row["problem"] = (f"cannot compare {base}..."
+                                  f"{row['base_sha'][:12]} on the fork")
+                out.append(row)
+                continue
+            if sync["status"] not in ("behind", "identical"):
+                row["problem"] = (
+                    f"the fork's {base} does not contain {row['base_sha'][:12]}, "
+                    f"the tip PR #{row['followup']} finished with -- fast-forward "
+                    f"the mirror from upstream first (a squash-merged PR needs a "
+                    f"person: what shipped is not upstream's commits)")
+                out.append(row)
+                continue
+            tip = gh_json(["api", f"repos/{fork}/git/ref/heads/{branch}",
+                           "--jq", "{sha: .object.sha}"])
+            if not tip or not moatlib.same_commit(tip.get("sha") or "",
+                                                  d.get("head_sha") or ""):
+                row["problem"] = (
+                    f"{branch} is at {((tip or {}).get('sha') or '?')[:12]} on "
+                    f"the fork but the record says head_sha "
+                    f"{(d.get('head_sha') or '?')[:12]}")
+                out.append(row)
+                continue
+            row["tip"] = tip["sha"]
         # The port branch has to exist and differ from the base. pr_ready never
         # checked this, so a fork with no port at all could present as ready.
         cmp = gh_json(["api", f"repos/{fork}/compare/{base}...{branch}",
                        "--jq", "{commits:.total_commits,files:(.files|length)}"])
         if not cmp:
-            out.append({"name": name, "fork": fork, "branch": branch, "base": base,
-                        "problem": f"cannot compare {base}...{branch} on the fork"})
+            row["problem"] = f"cannot compare {base}...{branch} on the fork"
+            out.append(row)
             continue
         if not cmp.get("commits"):
-            out.append({"name": name, "fork": fork, "branch": branch, "base": base,
-                        "problem": f"{branch} has no commits over {base}"})
+            row["problem"] = f"{branch} has no commits over {base}"
+            out.append(row)
             continue
-        out.append({"name": name, "fork": fork, "branch": branch, "base": base,
-                    "commits": cmp["commits"], "files": cmp["files"], "problem": None})
+        row.update({"commits": cmp["commits"], "files": cmp["files"]})
+        out.append(row)
     return out
 
 
@@ -616,9 +712,19 @@ def open_review_pr(row, title, body, apply=False):
     # point where fixing it is cheap -- after the review PR, a rewrite costs every
     # architecture its validation.
     try:
-        repo, commits, diff = jargon.port_range(row["name"])
-        hits += jargon.scan_commits(repo, commits, terms, allow)
-        hits += jargon.scan_diff(repo, diff, terms, allow)
+        if row.get("followup"):
+            # A follow-up branch reaches back through commits the finished PR
+            # already shipped, so base..branch would re-judge a round that is
+            # already upstream. This round's upstream-visible content is the
+            # delta past what shipped, scanned like a fix round's -- from a
+            # local clone when one holds both commits, over the API otherwise.
+            hits += _fix_delta_hits(row["fork"], row["base_sha"],
+                                    row.get("tip") or row["branch"],
+                                    clone=REPO / "projects" / row["name"] / "src")
+        else:
+            repo, commits, diff = jargon.port_range(row["name"])
+            hits += jargon.scan_commits(repo, commits, terms, allow)
+            hits += jargon.scan_diff(repo, diff, terms, allow)
     except ValueError as e:
         # Never silently skip. A gate that cannot run is not a gate that passed.
         return ("jargon", f"cannot check the branch for in-house vocabulary: {e}")
@@ -633,8 +739,22 @@ def open_review_pr(row, title, body, apply=False):
     if not apply:
         return ("would-open",
                 f"{row['fork']}: {row['branch']} -> {row['base']} "
-                f"({row['commits']} commits, {row['files']} files)\n\n{title}\n\n{body}")
-    r = subprocess.run(["gh", "pr", "create", "--repo", row["fork"],
+                f"({row['commits']} commits, {row['files']} files"
+                + (f"; follow-up to PR #{row['followup']}, delta past "
+                   f"{row['base_sha'][:12]}" if row.get("followup") else "")
+                + f")\n\n{title}\n\n{body}")
+    if row.get("followup"):
+        # The finished PR becomes history BEFORE anything external happens: if
+        # the create below fails, the record is an ordinary review-passed
+        # candidate and a retry re-enters here, while the reverse order could
+        # open a review PR no record explains. set_review_pr below then records
+        # the new round's review PR on the archived record.
+        try:
+            moatlib.archive_pr(row["name"])
+        except Exception as e:              # noqa: BLE001 - reported, not raised
+            return ("error", f"could not archive the finished PR "
+                             f"#{row['followup']}: {e}")
+    r = _run(["gh", "pr", "create", "--repo", row["fork"],
                         "--head", row["branch"], "--base", row["base"],
                         "--title", title, "--body", body],
                        capture_output=True, text=True, timeout=90)
@@ -645,7 +765,7 @@ def open_review_pr(row, title, body, apply=False):
     # How to approve goes in a COMMENT, never in the body: the body is republished
     # verbatim as the upstream pull request, and an external maintainer has no use for
     # our approval command.
-    subprocess.run(
+    _run(
         ["gh", "pr", "comment", url, "--body",
          f"To approve this port, leave a comment containing this line by "
          f"itself:\n\n```\n{moatlib.APPROVE_COMMAND}\n```\n\n"
@@ -663,7 +783,11 @@ def open_review_pr(row, title, body, apply=False):
          f"its time against the branch tip.\n\n"
          f"The title and body above are what gets opened upstream, verbatim, so approving "
          f"here approves all three: the code, the title and the body. Anything pushed "
-         f"afterwards, or any edit to the title or body, voids it and needs a fresh one."],
+         f"afterwards, or any edit to the title or body, voids it and needs a fresh one."
+         + (f"\n\nThis is a follow-up to {row.get('prior_url') or 'the previous pull request'}, "
+            f"which is finished: only the delta since it is under review here, and "
+            f"publishing opens a new upstream pull request carrying it."
+            if row.get("followup") else "")],
         capture_output=True, text=True, timeout=90)
     return ("opened", url)
 
@@ -710,7 +834,7 @@ def publish_blockers(name, row):
     # staleness check will not catch it either -- and this is the last gate before
     # that commit ships.
     pr = row["pr"]
-    msgs = subprocess.run(
+    msgs = _run(
         ["gh", "api", "--paginate",
          f"repos/{pr['slug']}/pulls/{pr['number']}/commits",
          "--jq", ".[].commit.message"],
@@ -721,7 +845,7 @@ def publish_blockers(name, row):
                    "gate that passed")
     else:
         bhits = jargon.scan_text(msgs.stdout, "branch commits", terms, allow)
-        diff = subprocess.run(["gh", "pr", "diff", row["url"]],
+        diff = _run(["gh", "pr", "diff", row["url"]],
                               capture_output=True, text=True, timeout=180)
         if diff.returncode:
             bad.append("cannot re-check the branch's added lines for in-house "
@@ -782,7 +906,7 @@ def open_upstream(name, row):
     real = gh_guard.real_gh()
     if real is None:
         return (None, "gh is not installed")
-    r = subprocess.run(
+    r = _run(
         [real, "pr", "create", "--repo", slug, "--base", base,
          "--head", f"{fork_owner}:{branch}", "--title", row["title"],
          "--body", row["body"]],
@@ -806,7 +930,7 @@ def open_upstream(name, row):
     # keeps the review thread readable; only the branch it reviewed matters now, and
     # that branch is the upstream PR's head.
     if url:
-        subprocess.run(
+        _run(
             ["gh", "pr", "close", row["url"], "--comment",
              f"Submitted upstream as {url} with the title and body approved here. "
              f"Closing this review PR; the discussion continues on the upstream one."],
@@ -930,19 +1054,41 @@ def _delta_hits_local(clone, base, head, terms, allow):
     if not (clone / ".git").exists():
         return None
     for rev in (base, head):
-        if subprocess.run(["git", "-C", str(clone), "cat-file", "-e", f"{rev}^{{commit}}"],
+        if _run(["git", "-C", str(clone), "cat-file", "-e", f"{rev}^{{commit}}"],
                           capture_output=True, text=True).returncode:
             return None
-    msgs = subprocess.run(["git", "-C", str(clone), "log", "--format=%B",
+    msgs = _run(["git", "-C", str(clone), "log", "--format=%B",
                            f"{base}..{head}"], capture_output=True, text=True)
-    diff = subprocess.run(["git", "-C", str(clone), "diff", f"{base}...{head}"],
+    diff = _run(["git", "-C", str(clone), "diff", f"{base}...{head}"],
                           capture_output=True, text=True)
     if msgs.returncode or diff.returncode:
         return None
+    added = [l[1:] for l in diff.stdout.splitlines()
+             if l.startswith("+") and not l.startswith("+++")]
+    # A sync round merges upstream's tip, so the delta also carries upstream's own
+    # commits and code, which upstream already has and which are not ours to word.
+    # Scan only what is new relative to every merged-in upstream parent.
+    merges = _run(["git", "-C", str(clone), "rev-list", "--merges", "--parents",
+                   f"{base}..{head}"], capture_output=True, text=True)
+    if merges.returncode:
+        return None
+    theirs = sorted({p for l in merges.stdout.splitlines() for p in l.split()[2:]})
+    if theirs:
+        msgs = _run(["git", "-C", str(clone), "log", "--format=%B",
+                     f"{base}..{head}", "--not", *theirs],
+                    capture_output=True, text=True)
+        if msgs.returncode:
+            return None
+        for parent in theirs:
+            ours = _run(["git", "-C", str(clone), "diff", f"{parent}...{head}"],
+                        capture_output=True, text=True)
+            if ours.returncode:
+                return None
+            mine = {l[1:] for l in ours.stdout.splitlines()
+                    if l.startswith("+") and not l.startswith("+++")}
+            added = [l for l in added if l in mine]
     hits = jargon.scan_text(msgs.stdout, "delta commit", terms, allow)
-    added = "\n".join(l[1:] for l in diff.stdout.splitlines()
-                      if l.startswith("+") and not l.startswith("+++"))
-    return hits + jargon.scan_text(added, "delta added lines", terms, allow)
+    return hits + jargon.scan_text("\n".join(added), "delta added lines", terms, allow)
 
 
 def _fix_delta_hits(fork, base, head, clone=None):
@@ -990,14 +1136,23 @@ def _fix_delta_hits(fork, base, head, clone=None):
     return hits
 
 
+def _round_live(d, fix):
+    """Is this staged round still backed by what makes it a round? A fix round
+    needs its upstream PR open; a sync round needs the maintained ruling standing.
+    A round whose backing vanished is not silently a different kind of round."""
+    if fix.get("kind") == "sync":
+        return bool(d.get("maintained"))
+    return d.get("pr_state") == "open"
+
+
 def fix_review_rows():
-    """Staged fix rounds whose gates are met and which have no review PR yet."""
+    """Staged fix and sync rounds whose gates are met, with no review PR yet."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
     out = []
     for name, d, _where in all_records():
         fix = d.get("fix")
-        if not fix or fix.get("review_pr") or d.get("pr_state") != "open":
+        if not fix or fix.get("review_pr") or not _round_live(d, fix):
             continue
         fork = (d.get("fork_url") or "").replace("https://github.com/", "")
         if not fork:
@@ -1080,7 +1235,7 @@ def open_fix_review_pr(row, title, body, apply=False):
                 f"(base {row['base'][:12]}, tip {row['tip'][:12]}"
                 + (", carries an upstream reply" if reply else "")
                 + f")\n\n{title}\n\n{body}")
-    r = subprocess.run(["gh", "pr", "create", "--repo", row["fork"],
+    r = _run(["gh", "pr", "create", "--repo", row["fork"],
                         "--head", row["branch"], "--base", row["target"],
                         "--title", title, "--body", body],
                        capture_output=True, text=True, timeout=90)
@@ -1096,7 +1251,7 @@ def open_fix_review_pr(row, title, body, apply=False):
                 f"opened {url} but could NOT record it: {e}\n"
                 f"    record it by hand: python3 utils/moatlib.py set-fix-review-pr "
                 f"{row['name']} {url}")
-    subprocess.run(
+    _run(
         ["gh", "pr", "comment", url, "--body",
          f"To approve this fix round, leave a comment containing this line by "
          f"itself:\n\n```\n{moatlib.APPROVE_COMMAND}\n```\n\n"
@@ -1145,24 +1300,24 @@ def base_conflict(name, d, tip):
     base_ref = (pr or {}).get("baseRefName")
     if not base_ref:
         return ("unknown", f"cannot read the base branch of {up}#{num}")
-    f = subprocess.run(["git", "-C", str(clone), "fetch",
+    f = _run(["git", "-C", str(clone), "fetch",
                         f"https://github.com/{up}",
                         f"+refs/heads/{base_ref}:refs/moat/base"],
                        capture_output=True, text=True, timeout=120)
     if f.returncode:
         return ("unknown", f"cannot fetch {base_ref} from {up}")
-    have = subprocess.run(["git", "-C", str(clone), "cat-file", "-e",
+    have = _run(["git", "-C", str(clone), "cat-file", "-e",
                            f"{tip}^{{commit}}"], capture_output=True, text=True)
     if have.returncode:
         # GitHub serves any reachable commit by full sha, so the staged tip can
         # be fetched directly even when no local ref names it yet.
-        got = subprocess.run(["git", "-C", str(clone), "fetch",
+        got = _run(["git", "-C", str(clone), "fetch",
                               d.get("fork_url") or "", tip],
                              capture_output=True, text=True, timeout=120)
         if got.returncode:
             return ("unknown", f"the staged tip {tip[:12]} is not in the clone "
                                f"and could not be fetched")
-    mt = subprocess.run(["git", "-C", str(clone), "merge-tree", "--write-tree",
+    mt = _run(["git", "-C", str(clone), "merge-tree", "--write-tree",
                          "--name-only", "refs/moat/base", tip],
                         capture_output=True, text=True, timeout=120)
     if mt.returncode == 0:
@@ -1181,10 +1336,10 @@ def base_conflict(name, d, tip):
 
 
 def merge_fix_rows():
-    """Fix rounds with a recorded review PR, ready for the merge gate."""
+    """Fix and sync rounds with a recorded review PR, ready for the merge gate."""
     for name, d, _where in all_records():
         fix = d.get("fix")
-        if fix and fix.get("review_pr") and d.get("pr_state") == "open":
+        if fix and fix.get("review_pr") and _round_live(d, fix):
             yield name, d, fix
 
 
@@ -1241,7 +1396,7 @@ def merge_fix_blockers(name, d, fix, pr):
         return bad
     fork_url = d.get("fork_url")
     branch = d.get("fork_branch") or "moat-port"
-    ls = subprocess.run(["git", "-C", str(clone), "ls-remote", fork_url,
+    ls = _run(["git", "-C", str(clone), "ls-remote", fork_url,
                          f"refs/heads/{branch}"],
                         capture_output=True, text=True, timeout=60)
     remote_tip = (ls.stdout.split() or [""])[0]
@@ -1252,17 +1407,17 @@ def merge_fix_blockers(name, d, fix, pr):
                    f"published {(pub or '?')[:12]} -- the PR branch moved outside "
                    f"the fix flow; a person sorts that out first")
     if tip:
-        f = subprocess.run(["git", "-C", str(clone), "fetch", fork_url,
+        f = _run(["git", "-C", str(clone), "fetch", fork_url,
                             f"+refs/heads/{fix['branch']}:refs/moat/fix"],
                            capture_output=True, text=True, timeout=120)
-        have = subprocess.run(["git", "-C", str(clone), "rev-parse", "--verify",
+        have = _run(["git", "-C", str(clone), "rev-parse", "--verify",
                                "--quiet", "refs/moat/fix"],
                               capture_output=True, text=True)
         if f.returncode or not moatlib.same_commit(have.stdout.strip(), tip):
             bad.append(f"the fork's {fix['branch']} tip does not match the "
                        f"approved {tip[:12]} -- fetch failed or the branch moved")
         elif pub:
-            anc = subprocess.run(["git", "-C", str(clone), "merge-base",
+            anc = _run(["git", "-C", str(clone), "merge-base",
                                   "--is-ancestor", pub, tip],
                                  capture_output=True, text=True)
             if anc.returncode:
@@ -1306,18 +1461,18 @@ def _sync_local_port_branch(clone, branch, tip):
     disagrees with the open PR -- and it fails its own `published` gate for it, on
     every push, until someone works out why. Best effort and never fatal: the
     upstream write has already happened and a local ref cannot un-happen it."""
-    cur = subprocess.run(["git", "-C", str(clone), "symbolic-ref", "--quiet",
+    cur = _run(["git", "-C", str(clone), "symbolic-ref", "--quiet",
                           "--short", "HEAD"], capture_output=True, text=True)
     if cur.stdout.strip() == branch:
         # Checked out: only git may move it, and only with a clean tree.
-        r = subprocess.run(["git", "-C", str(clone), "merge", "--ff-only", tip],
+        r = _run(["git", "-C", str(clone), "merge", "--ff-only", tip],
                            capture_output=True, text=True, timeout=120)
         if r.returncode:
             return (f"the clone's {branch} still points at the old tip "
                     f"({(r.stderr or r.stdout).strip()[:80]}); `git -C {clone} "
                     f"merge --ff-only {tip[:12]}` once the tree is clean")
         return None
-    r = subprocess.run(["git", "-C", str(clone), "update-ref",
+    r = _run(["git", "-C", str(clone), "update-ref",
                         f"refs/heads/{branch}", tip], capture_output=True, text=True)
     return (f"could not fast-forward the clone's {branch}: "
             f"{(r.stderr or r.stdout).strip()[:80]}") if r.returncode else None
@@ -1343,7 +1498,7 @@ def do_merge_fix(name, d, fix, pr):
     branch = d.get("fork_branch") or "moat-port"
     tip = pr["headRefOid"]
     env = {**os.environ, "MOAT_PUBLISH": "1"}
-    push = subprocess.run(["git", "-C", str(clone), "push", fork_url,
+    push = _run(["git", "-C", str(clone), "push", fork_url,
                            f"{tip}:refs/heads/{branch}"],
                           capture_output=True, text=True, timeout=120, env=env)
     if push.returncode:
@@ -1357,7 +1512,7 @@ def do_merge_fix(name, d, fix, pr):
         if real is None:
             notes.append("gh is not installed; the approved reply was NOT posted")
         else:
-            c = subprocess.run([real, "pr", "comment", d["pr_url"],
+            c = _run([real, "pr", "comment", d["pr_url"],
                                 "--body", with_reply_note(reply)],
                                capture_output=True, text=True, timeout=90)
             notes.append("posted the approved reply" if c.returncode == 0 else
@@ -1375,10 +1530,28 @@ def do_merge_fix(name, d, fix, pr):
     stale = _sync_local_port_branch(clone, branch, tip)
     if stale:
         notes.append(stale)
+    if fix.get("kind") == "sync":
+        # A maintained branch has followers who clone it by name and get whatever
+        # the tip is that day. Tagging each approved sync gives them a fixed
+        # point to pin -- and gives us the exact tip any report is about. The
+        # date names the tag because "the sync of Sept 8" is how a person refers
+        # to it; the sha inside disambiguates a second same-day sync.
+        tag = f"rocm-{TODAY.replace('-', '')}"
+        tg = _run(["git", "-C", str(clone), "push", fork_url,
+                             f"{tip}:refs/tags/{tag}"],
+                            capture_output=True, text=True, timeout=60, env=env)
+        if tg.returncode and "already exists" in (tg.stderr or ""):
+            tag = f"rocm-{TODAY.replace('-', '')}-{tip[:7]}"
+            tg = _run(["git", "-C", str(clone), "push", fork_url,
+                                 f"{tip}:refs/tags/{tag}"],
+                                capture_output=True, text=True, timeout=60, env=env)
+        notes.append(f"tagged {tag}" if tg.returncode == 0 else
+                     f"could NOT tag the tip ({(tg.stderr or tg.stdout).strip()[:80]}); "
+                     f"push a rocm-<date> tag at {tip[:12]} by hand")
     # The branch's job is done and its commits are on the PR branch; a person
     # ruled that staging branches are deleted on merge so the next round can
     # reuse the name.
-    rm = subprocess.run(["git", "-C", str(clone), "push", fork_url,
+    rm = _run(["git", "-C", str(clone), "push", fork_url,
                          f":refs/heads/{fix['branch']}"],
                         capture_output=True, text=True, timeout=60, env=env)
     if rm.returncode:
@@ -1424,7 +1597,7 @@ def resolve_threads(name, apply):
     q = ('query($o: String!, $r: String!, $n: Int!) { repository(owner: $o, name: $r) {'
          ' pullRequest(number: $n) { author { login } reviewThreads(first: 100) { nodes {'
          ' id isResolved path comments(last: 1) { nodes { author { login } } } } } } } }')
-    r = subprocess.run([real, "api", "graphql", "-f", f"query={q}", "-f", f"o={m.group(1)}",
+    r = _run([real, "api", "graphql", "-f", f"query={q}", "-f", f"o={m.group(1)}",
                         "-f", f"r={m.group(2)}", "-F", f"n={m.group(3)}"],
                        capture_output=True, text=True, timeout=90)
     if r.returncode:
@@ -1446,7 +1619,7 @@ def resolve_threads(name, apply):
             continue
         mq = ('mutation($t: ID!) { resolveReviewThread(input: {threadId: $t}) '
               '{ thread { isResolved } } }')
-        rr = subprocess.run([real, "api", "graphql", "-f", f"query={mq}", "-f", f"t={t['id']}"],
+        rr = _run([real, "api", "graphql", "-f", f"query={mq}", "-f", f"t={t['id']}"],
                             capture_output=True, text=True, timeout=90)
         if rr.returncode:
             print(f"  FAILED     {t['path']}: {(rr.stderr or rr.stdout).strip()[:120]}")
@@ -1495,6 +1668,178 @@ def report_merge_fix(apply, only=None):
     if rows and not apply:
         print("\n  --merge-fix --apply performs the fast-forward push (and posts "
               "the approved reply, where the body carries one).")
+    return ret
+
+
+# ---- maintained forks: the drift sweep --------------------------------------
+#
+# A maintained fork (moatlib.set_maintained) is a port branch upstream points its
+# users at instead of merging. Nothing pings us when upstream moves: the PR is
+# closed, so the CONFLICTING mergeable field that --attention watches no longer
+# exists, and both branches' own records stay truthful while the combination rots.
+# This sweep is the replacement signal. It asks, per maintained fork: how far has
+# upstream's base branch moved past the last sync, would the two still merge, and
+# does upstream's advance touch files the port changed? The merge-base needs no
+# stored baseline -- a sync round MERGES upstream in (never rebases), so the
+# merge-base advances to the absorbed tip on its own and "what upstream did since
+# the last sync" is always `merge-base..base`.
+#
+# Textual cleanliness is a tripwire, not a verdict: upstream editing a CUDA file
+# the port compiles-but-never-edited merges clean and can still break the HIP
+# build, which is what sync-round validation exists to catch. So the report ranks
+# CONFLICT above OVERLAP above BEHIND, and none of them is "fine".
+
+DRIFT_CACHE = REPO / "agent_space" / "drift-cache"
+
+
+def _drift_repo(name, upstream_url, fork_url):
+    """A minimal blobless repo for the probe, cached across runs (agent_space is
+    gitignored). Named remotes rather than URL fetches, because the lazy blob
+    fetches that `diff` and `merge-tree` trigger need a configured promisor
+    remote to fetch from. Works on any host -- no fork clone required."""
+    d = DRIFT_CACHE / name
+    if not (d / ".git").exists():
+        d.mkdir(parents=True, exist_ok=True)
+        if _run(["git", "init", "-q", str(d)],
+                          capture_output=True, text=True).returncode:
+            return None
+    for remote, url in (("upstream", upstream_url), ("fork", fork_url)):
+        if _run(["git", "-C", str(d), "remote", "set-url", remote, url],
+                          capture_output=True, text=True).returncode:
+            _run(["git", "-C", str(d), "remote", "add", remote, url],
+                           capture_output=True, text=True)
+    return d
+
+
+def drift_status(name, d):
+    """(state, info) for one maintained fork.
+
+    state: "conflict" (upstream and the port edit the same lines), "overlap"
+    (merges clean, but upstream touched files the port also changed), "behind"
+    (upstream moved, nothing the port changed), "current", or "unknown" (the
+    probe could not run -- which is an answer, never silence)."""
+    up_url, fork_url = d.get("upstream_url"), d.get("fork_url")
+    base = d.get("fork_default_branch") or "main"
+    branch = d.get("fork_branch") or "moat-port"
+    repo = _drift_repo(name, up_url, fork_url)
+    if repo is None:
+        return ("unknown", {"why": "cannot create the drift cache repo"})
+
+    def git(*a, timeout=120):
+        return _run(["git", "-C", str(repo), *a],
+                              capture_output=True, text=True, timeout=timeout)
+
+    for remote, ref, local in (("upstream", base, "refs/drift/base"),
+                               ("fork", branch, "refs/drift/port")):
+        f = git("fetch", "-q", "--filter=blob:none", remote,
+                f"+refs/heads/{ref}:{local}", timeout=300)
+        if f.returncode:
+            return ("unknown", {"why": f"cannot fetch {ref} from the {remote} "
+                                       f"({(f.stderr or '').strip()[:60]})"})
+    mb = git("merge-base", "refs/drift/base", "refs/drift/port").stdout.strip()
+    if not mb:
+        return ("unknown", {"why": f"no merge base between {base} and {branch}"})
+    info = {"base": base, "branch": branch, "merge_base": mb,
+            "base_tip": git("rev-parse", "refs/drift/base").stdout.strip(),
+            "port_tip": git("rev-parse", "refs/drift/port").stdout.strip(),
+            "behind": int(git("rev-list", "--count",
+                              f"{mb}..refs/drift/base").stdout.strip() or 0)}
+    # The mirror ride-along: the fork's default branch is an unmodified upstream
+    # mirror, and letting it rot makes every compare and review diff stale.
+    # Fast-forward only, and only under --apply; a diverged mirror is a person's.
+    ls = _run(["git", "ls-remote", fork_url, f"refs/heads/{base}"],
+                        capture_output=True, text=True, timeout=60)
+    mirror_tip = (ls.stdout.split() or [""])[0]
+    if mirror_tip and mirror_tip != info["base_tip"]:
+        if git("cat-file", "-e", f"{mirror_tip}^{{commit}}").returncode == 0 \
+                and git("merge-base", "--is-ancestor", mirror_tip,
+                        "refs/drift/base").returncode == 0:
+            info["mirror_behind"] = int(git("rev-list", "--count",
+                                            f"{mirror_tip}..refs/drift/base")
+                                        .stdout.strip() or 0)
+        else:
+            info["mirror_diverged"] = mirror_tip
+    if info["behind"] == 0:
+        return ("current", info)
+    ours = set(git("diff", "--name-only", mb,
+                   "refs/drift/port").stdout.split("\n")) - {""}
+    theirs = set(git("diff", "--name-only", mb,
+                     "refs/drift/base").stdout.split("\n")) - {""}
+    info["upstream_files"] = len(theirs)
+    info["overlap"] = sorted(ours & theirs)
+    mt = git("merge-tree", "--write-tree", "--name-only",
+             "refs/drift/base", "refs/drift/port")
+    if mt.returncode == 1:
+        files = []
+        for line in mt.stdout.splitlines()[1:]:
+            if not line.strip():
+                break
+            files.append(line.strip())
+        info["conflicts"] = files
+        return ("conflict", info)
+    if mt.returncode != 0:
+        return ("unknown", {**info, "why": "git merge-tree --write-tree failed "
+                                           "(git 2.38+ required)"})
+    return ("overlap" if info["overlap"] else "behind", info)
+
+
+def report_drift(apply=False):
+    sys.path.insert(0, str(REPO / "utils"))
+    rows = [(n, d) for n, d, _w in all_records() if d.get("maintained")]
+    print(f"upstream: {len(rows)} maintained fork(s)\n")
+    ret = 0
+    for name, d in sorted(rows):
+        state, info = drift_status(name, d)
+        if state == "unknown":
+            print(f"  UNKNOWN    {name:26} {info.get('why')}")
+            ret = 1
+            continue
+        behind = info["behind"]
+        if state == "conflict":
+            print(f"  CONFLICT   {name:26} upstream {info['base']} moved {behind} "
+                  f"commit(s); the merge conflicts in: "
+                  + ", ".join(info["conflicts"][:4]))
+        elif state == "overlap":
+            print(f"  OVERLAP    {name:26} upstream {info['base']} moved {behind} "
+                  f"commit(s); merges clean but touches {len(info['overlap'])} "
+                  f"file(s) the port changed: " + ", ".join(info["overlap"][:4]))
+        elif state == "behind":
+            print(f"  BEHIND     {name:26} upstream {info['base']} moved {behind} "
+                  f"commit(s), {info['upstream_files']} file(s), none the port "
+                  f"changed -- can still break the build; judge, do not assume")
+        else:
+            print(f"  CURRENT    {name:26} the port branch contains upstream "
+                  f"{info['base']}'s tip")
+        fix = d.get("fix")
+        if fix:
+            print(f"  {'':10} {'':26} sync round already in flight on "
+                  f"{fix.get('branch')}")
+        if info.get("mirror_diverged"):
+            print(f"  MIRROR     {name:26} the fork's {info['base']} is NOT an "
+                  f"ancestor of upstream's ({info['mirror_diverged'][:12]}) -- "
+                  f"the mirror diverged; a person sorts that out")
+            ret = 1
+        elif info.get("mirror_behind"):
+            if apply:
+                p = _run(["git", "-C",
+                                    str(DRIFT_CACHE / name), "push", "fork",
+                                    f"{info['base_tip']}:refs/heads/{info['base']}"],
+                                   capture_output=True, text=True, timeout=120)
+                print(f"  MIRROR     {name:26} "
+                      + (f"fast-forwarded the fork's {info['base']} to "
+                         f"{info['base_tip'][:12]}" if p.returncode == 0 else
+                         f"could NOT fast-forward the fork's {info['base']}: "
+                         f"{(p.stderr or p.stdout).strip()[:80]}"))
+                ret |= p.returncode != 0
+            else:
+                print(f"  MIRROR     {name:26} the fork's {info['base']} mirror is "
+                      f"{info['mirror_behind']} commit(s) behind upstream -- "
+                      f"--apply fast-forwards it")
+    if rows:
+        print("\n  a CONFLICT or OVERLAP round starts with: python3 utils/moatlib.py "
+              "sync-branch <name>")
+        print("  (then the normal porter/reviewer/validator cycle and the approved "
+              "merge through --merge-fix)")
     return ret
 
 
@@ -1547,6 +1892,10 @@ def main():
                     help="fast-forward an open upstream PR to an approved fix round's tip")
     ap.add_argument("--attention", action="store_true",
                     help="open upstream PRs where a maintainer is waiting on us")
+    ap.add_argument("--drift", action="store_true",
+                    help="maintained forks: how far upstream has moved and whether "
+                         "the port branch still merges (--apply also fast-forwards "
+                         "a behind mirror)")
     ap.add_argument("--resolve-threads", action="store_true",
                     help="with --name: resolve fork review PR threads whose last "
                          "word is ours (--apply to write)")
@@ -1565,7 +1914,9 @@ def main():
                     print(f"  BLOCKED  {r['name']:22} {r['problem']}")
                 else:
                     print(f"  READY    {r['name']:22} {r['branch']} -> {r['base']} "
-                          f"({r['commits']} commits, {r['files']} files)")
+                          f"({r['commits']} commits, {r['files']} files)"
+                          + (f" [follow-up to #{r['followup']}]"
+                             if r.get("followup") else ""))
             print(f"-- {sum(1 for r in rows if not r['problem'])} port(s) need a review PR; "
                   f"{sum(1 for r in rows if r['problem'])} blocked")
             print("   open one: --review --apply --name <p> --title '<t>' --body-file <f>")
@@ -1623,6 +1974,8 @@ def main():
             print("resolve-threads: pass --name <project>")
             return 1
         return resolve_threads(a.name, apply=a.apply)
+    if a.drift:
+        return report_drift(apply=a.apply)
     if a.attention:
         return report_attention(recorded(), TODAY)
 
@@ -1654,9 +2007,15 @@ def main():
             print(f"  HEAD-MOVED {r['name']:26} PR head {r['live'][:12]} != published "
                   f"{r['published'][:12]} {r['repo']}#{r['num']}")
     for r in backfill:
-        print(f"  BACKFILL   {r['name']:26} open PR from before the fix flow; live "
-              f"head {r['live'][:12]} == recorded head -- --apply stamps "
-              f"published_sha")
+        if r.get("finished"):
+            print(f"  BACKFILL   {r['name']:26} {r['ours']} PR shipped "
+                  f"{r['live'][:12]} and the record does not say so -- --apply "
+                  f"stamps published_sha, the baseline a follow-up is judged "
+                  f"against")
+        else:
+            print(f"  BACKFILL   {r['name']:26} open PR from before the fix flow; "
+                  f"live head {r['live'][:12]} == recorded head -- --apply stamps "
+                  f"published_sha")
     if headdrift:
         # Deliberately never applied: the usual cause is a maintainer pushing to
         # our branch, which a person did on purpose. The move is to READ what
@@ -1696,7 +2055,7 @@ def main():
               f"(already pushed; not part of the record-sync PR)")
     if not local:
         return 0
-    subprocess.run([sys.executable, "utils/gen_readme.py"], cwd=str(REPO),
+    _run([sys.executable, "utils/gen_readme.py"], cwd=str(REPO),
                    capture_output=True)
     return publish(local)
 
@@ -1713,7 +2072,7 @@ def publish(applied):
     Force-pushing is safe here precisely because nobody else edits this branch -- it
     is bot-owned and fully regenerated, never appended to."""
     def git(*args, check=True):
-        r = subprocess.run(["git", *args], cwd=str(REPO), capture_output=True, text=True)
+        r = _run(["git", *args], cwd=str(REPO), capture_output=True, text=True)
         if check and r.returncode:
             print(f"upstream: git {' '.join(args)}: {r.stderr.strip()}", file=sys.stderr)
         return r
@@ -1774,14 +2133,14 @@ def publish(applied):
               "never applied automatically -- withdrawn, rejected and superseded look "
               "identical to the API and mean different things.\n")
     if existing:
-        subprocess.run(["gh", "pr", "edit", str(existing[0]["number"]), "--body", body],
+        _run(["gh", "pr", "edit", str(existing[0]["number"]), "--body", body],
                        cwd=str(REPO), capture_output=True, text=True)
         print(f"\nupstream: updated existing PR {existing[0]['url']} "
               f"({len(applied)} correction(s))")
     else:
         # Check our own title before opening: a tool that enforces a convention on
         # everyone else and exempts itself teaches people the convention is optional.
-        chk = subprocess.run([sys.executable, "utils/pr_intent.py", "--check-title",
+        chk = _run([sys.executable, "utils/pr_intent.py", "--check-title",
                               "--branch", BRANCH, "--title", subject],
                              cwd=str(REPO), capture_output=True, text=True)
         if chk.returncode:
@@ -1789,7 +2148,7 @@ def publish(applied):
             print("upstream: refusing to open a pull request with that title",
                   file=sys.stderr)
             return 1
-        subprocess.run(["gh", "pr", "create", "--fill-first", "--body", body],
+        _run(["gh", "pr", "create", "--fill-first", "--body", body],
                        cwd=str(REPO), capture_output=True, text=True)
         print(f"\nupstream: opened a PR with {len(applied)} merge(s)")
     git("checkout", "-q", started_on)                  # leave the caller where it was
