@@ -556,3 +556,31 @@ I merged current main into this branch, so it no longer conflicts, and every fil
 ```
 
 The open questions for jeff are unchanged (whether to keep the build.sh/INSTALL commits, and the AMD copyright headers).
+
+## Validation 2026-11-04 (linux-gfx90a, moat-fix-41 at 8f43bf8)
+
+Platform: linux-gfx90a, AMD Instinct MI250X / MI250 (gfx90a, wave64, CDNA2), TheRock pip SDK (hipconfig 7.16.26385), HIP_VISIBLE_DEVICES=0, `ulimit -c 0`. Full run (sync round changed the tree; no carry-forward). Fresh clone of the fork, `git checkout 8f43bf8401712e7ce342cc52a412872f09f22069` (tip of `moat-fix-41`), CRLF files left as checked out.
+
+Build and upstream suites (bundled HiGHS built by build.sh, no HIGHS_HOME):
+```bash
+export ROCM_PATH=$(hipconfig --rocmpath)
+GPU_ARCH=gfx90a MODE=hip bash build.sh
+```
+exit 0, `CMAKE_HIP_ARCHITECTURES: gfx90a`. CTest 4/4 passed (installation_bounded, equality, mixed_bounds, compressed_mps). Installed suite 4/4 (bounded -10, equality 3, mixed_bounds -1.000000015, compressed_mps -10, all OPTIMAL). NumPy checker `--mode gpu` pass=true, x=(1.00000001, 1.99999999), objective 7.99999999, primal residual 1.08e-08. Both checker-regression controls PASS (stale_success_with_noop, incorrect_fresh_solution).
+
+Direct GPU tests:
+```bash
+cd build-coinor-hip/bin && ./testcudalin && ./testcublas
+.coinor-deps/cupdlp-hip-install/bin/plc -fname ThirdParty/HiGHS/check/instances/afiro.mps -nIterLim 5000
+```
+- testcudalin: 0,1,4,...,81, rc=0. PASS
+- testcublas: `2-norm is :0.000000`, rc=0. PASS
+- plc afiro (installed binary, rpath, no LD_LIBRARY_PATH): `Cuda device 0: AMD Instinct MI250X / MI250`, Optimal, primal -4.64750884e+02, dual -4.64831390e+02, rel primal infeas 3.21e-05, rel dual infeas 3.59e-06, rel gap 8.65e-05, 200 iterations, rc=0. PASS
+
+Comparison: same 3/3 direct tests as the 2026-06-05 gfx90a validation (primal -464.75088, dual -464.83139, same relative residuals, 200 iterations) and the porter's gfx1100 run at 8f43bf8 (CTest 4/4, installed 4/4, checker pass, 200 iterations). No regressions.
+
+Jargon: `jargon.py --port cuPDLP-C` (local `main` and `moat-fix-41` branches created in the clone) gives the same 2 known false positives in bundled `ThirdParty/HiGHS` comments ("simplex strategy and", "weight strategy as") from the stale fork `main` mirror. Docs: ROCm build documented in README, INSTALL and build.sh `MODE=hip`, where upstream documents CUDA. Tree clean (only untracked `.coinor-deps/`, `tests/logs/`).
+
+cuda-not-validated: no CUDA toolkit on this host (no conda; the fleet guard refuses pip installing nvidia-cuda-nvcc into a venv). The CUDA gate is still owed at 8f43bf8; the only CUDA-path change since the 2026-06-12 nvcc gate is upstream's own `${CMAKE_CUDA_PATH}/include` taken in the merge.
+
+Result: completed at 8f43bf8401712e7ce342cc52a412872f09f22069 (wave64).

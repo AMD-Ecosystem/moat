@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T07:45:23Z",
-  "updated_at": "2026-11-04T08:21:24Z",
+  "updated_at": "2026-11-04T08:30:17Z",
   "head_sha": "8f43bf8401712e7ce342cc52a412872f09f22069",
   "depends_on": [],
   "pr_url": "https://github.com/COPT-Public/cuPDLP-C/pull/41",
@@ -24,10 +24,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
+      "validated_sha": "8f43bf8401712e7ce342cc52a412872f09f22069",
       "started_at": "2026-06-05T07:50:17Z",
-      "completed_at": "2026-06-08T15:23:53Z",
-      "updated_at": "2026-06-23T22:21:06Z",
+      "completed_at": "2026-11-04T08:30:17Z",
+      "updated_at": "2026-11-04T08:30:17Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -41,13 +41,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "planner",
-      "carry_forward": {
-        "to": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake dead-code/default-path change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:21:06Z"
-      }
+      "last_agent": "validator"
     },
     "linux-gfx1100": {
       "state": "completed",
