@@ -2482,3 +2482,62 @@ Code-object diff of the `.pyd` against a 99d68f9 build (llvm-objdump --offloadin
 
 ### Verdict
 **completed**, `windows-gfx1151`, `validated_sha=00e803dec721a28e4f9d6e060fd50dcdcf2925b9`.
+
+## Validation 2026-11-04 (linux-gfx942, revalidate at 00e803d)
+
+Requested by jeff (fleet job). Platform: AMD Instinct MI300X HF (gfx942, CDNA3, wave64), torch 2.16.0a0+git6c3af02, HIP 7.16.26385 (TheRock SDK wheels in the image venv, hipRAND 3.4.0, so the probe fails and the bundled Philox copy is compiled), `HIP_VISIBLE_DEVICES=4`, everything under `ulimit -c 0`. Fork freshly cloned, `moat-port` = `00e803dec721a28e4f9d6e060fd50dcdcf2925b9`. This platform's previous record was at 99d68f9, which is the baseline here. `classify 99d68f9 00e803d` ran before the clone existed and returned `unknown`, so this is a full real-GPU run; the device-code comparison below would also have supported a binary-equiv carry-forward.
+
+### Build
+
+```bash
+export PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=22
+git -C projects/faster-gaussian-splatting/src worktree add agent_space/fgs_old 99d68f9bfb5348c3472bd34ae46a0e57d31f2fc0
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $PWD/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"
+(cd agent_space/fgs_old/FasterGSCudaBackend && python setup.py build_ext --inplace)
+```
+Head: PASS, rc=0, 39 s, 360 `warning:` lines, 0 `error:` lines. Baseline 99d68f9: rc=0, 360 warning lines, 0 errors. `FGS_HAVE_HIPRAND_PHILOX4X32_10` absent from the head's `build.ninja` (probe fails on hipRAND 3.4.0, as expected).
+
+Device code: `utils/codeobj_diff.py` still hardcodes `/opt/rocm` and there is none in this image, so the same check by hand with the SDK `_rocm_sdk_core/lib/llvm/bin` tools on copies under `agent_space/co`: `llvm-objdump --offloading` gives 7 bundles per `_C.so`, all `hip-amdgcn-amd-amdhsa--gfx942`; `llvm-objdump -d --no-show-raw-insn` of each is **textually identical, 7/7** (3/4/3/67/72/71/71 kernels), mcmc included. `llvm-nm -D --defined-only`: 338 symbols each, identical except the 9 `__hip_cuid_*` names, which hipcc derives from the source path (the baseline was built in a different directory).
+
+### GPU tests (`projects/faster-gaussian-splatting/gpu_tests/` plus `agent_space/scripts/noise_dump.py` and `bitcmp.py`)
+
+`noise_dump.py` (rewritten, same design as the gfx90a record): add_noise for n = 37 / 100003 / 1000000 with random scales, rotations, opacities and means from a fixed CPU generator, seeds 1 / 1234567 / 2^40+99, three calls per seed (27 tensors). `bitcmp.py` compares int32 bit patterns and checks that consecutive calls differ.
+```bash
+utils/timeit.sh faster-gaussian-splatting test -- bash agent_space/run_all.sh
+# run_all.sh (ulimit -c 0), B = head build, OLD_B = 99d68f9 build:
+python noise_dump.py $OLD_B noise_old.pt; python noise_dump.py $B noise_new.pt; python bitcmp.py noise_old.pt noise_new.pt
+python $G/run_outputs.py $OLD_B old.pt; python $G/run_outputs.py $B new.pt; python $G/run_outputs.py $B new2.pt
+python $G/compare.py old.pt new.pt; python $G/compare.py new.pt new2.pt
+python $G/new_checks.py $B; python $G/train_check.py $B; python $G/det.py $B
+```
+rc=0, 38 s, every sub-step rc=0.
+
+- **add_noise bit identity vs 99d68f9: 27/27 tensors bit-identical**; 9/9 (n, seed) groups have consecutive calls that differ.
+- **new_checks.py: 31/31 PASS.** Random123 KATs; device add_noise == Philox4x32-10 + Box-Muller reference to 8.65e-7 over 228 primitives; mean |.| <= 0.0041, std 0.9982..1.0030, max |corr| 4.30e-3; wave64 lanes 0-31 vs 32-63 std 0.9983 / 1.0021; offset advances; reproducible. 4 rasterizer scenes: inference == training forward (0 diff), deterministic forward, abs-grad delta within run-to-run (200k: 2.60e-6 vs 3.08e-6), triangle inequality 0 violations, all finite, subtile coverage 0.96..1.00.
+- **train_check.py: 3/3 PASS.** FusedAdam vs torch.optim.Adam max abs 3.10e-6; relocation_adjustment sane; 300-iteration fit L1 0.1204 -> 0.0081.
+- **det.py: 3/3, 0 diff** (0 px) for training forward and inference at 200k / 100k 1920x1080 and 50k 1280x720.
+- **run_outputs 99d68f9 vs 00e803d (84 tensors):** inference, train_image, filter3d (finite values and inf masks equal, 7/7) and filter3d_vis bit-identical in all 7 scenes. Worst relL2 old-vs-new / new-vs-new2 (200k scene): grad_means 3.08e-7 / 3.03e-7, grad_scales 2.47e-6 / 1.22e-6, grad_rotations 2.03e-6 / 1.17e-6, grad_opacities 3.82e-7 / 3.71e-7, grad_sh0 3.49e-7 / 3.08e-7, grad_shrest 3.39e-7 / 3.08e-7, dinfo 2.60e-7 / 2.72e-7, pruning 5.66e-6 / 5.50e-6. Old-vs-new is within the run-to-run range this platform recorded at 99d68f9 (grad_scales same-build 1.17e-6..5.18e-6), consistent with identical device ISA.
+
+Matches gfx942 at 99d68f9 (Validation 2026-10-31) figure for figure: 8.65e-7, Adam 3.10e-6, L1 0.0081, 31/31, 3/3, 0 diff. Failures: none.
+
+### CUDA no-regression gate
+
+Not run here: no CUDA toolkit on this host (no `nvcc`, no `/opt/conda`). Already covered for this delta, as recorded in Validation 2026-11-01 (linux-gfx90a): full gate at d3e2266 (V100, CUDA 12.9), `mcmc.cu` sm_80 PTX byte-identical at 99d68f9 and fe62b19, and 00e803d only changes `hip_compiles`, which the CUDA branch of setup.py never calls.
+
+### Completion checks
+
+- `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean` (after `git -C projects/faster-gaussian-splatting/src fetch origin main:main`; the single-branch clone had no local `main` and jargon refused to resolve the range).
+- README: ROCm build in Setup (`PYTORCH_ROCM_ARCH` pip command) next to the CUDA one; Requirements carries the ROCm 7.2+ note and the hipRAND / bundled-copy bullet.
+- `git -C projects/faster-gaussian-splatting/src status --porcelain` -> empty after removing the baseline worktree.
+
+### Not covered
+
+The probe's success arm (a hipRAND declaring `hiprand_Philox4x32_10`): this image ships hipRAND 3.4.0; covered on gfx90a in the fe62b19 porter round.
+
+### Control-plane note
+
+orient reported that merging `origin/main` into `port/faster-gaussian-splatting` conflicts in `.claude/skills/cuda-to-rocm/references/strategy-b-torch.md` and `README.md`; the merge was aborted cleanly and left for a person (not a validator's change to make).
+
+### Verdict
+
+**completed**, `linux-gfx942`, `validated_sha=00e803dec721a28e4f9d6e060fd50dcdcf2925b9`.
