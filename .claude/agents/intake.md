@@ -91,6 +91,8 @@ Cheap checks only. Deep analysis is the planner's job.
   but the port itself still has value: someone looking for AMD support will find our
   fork and can build from it. Say so in notes.md and the queue write-up, so nobody
   later waits for a PR that can never be opened.
+  If the project is adopted anyway, the person who adopts it records
+  `moatlib.py set-no-upstream` so no PR is ever offered.
 
 ## 4. Claim it, then stop at the fork
 

@@ -253,6 +253,14 @@ landed, review the commit(s), and put a recommendation in front of a person; nev
 auto-absorb or revert it. If the content is accepted, a fresh fix round from the new
 tip re-enters the flow.
 
+A staged round can also become pointless before it merges: upstream lands the same fix
+itself (lc0 #2454 did, while moat-fix-2420 sat staged), the maintainer withdraws the
+request, or the PR merges or closes with the round still recorded. Whether to drop it is
+a person's call; they record it with `moatlib.py abandon-fix <name> --by <who> --reason
+"<why>"`, which clears the round, returns `head_sha` to the round's base (so evidence
+gathered on the dropped tip stops counting), and keeps the dropped branch and tip in
+`fix_abandoned`. The staging branch stays on the fork as evidence.
+
 If a maintainer signals they will not take the contribution, stop and record it rather
 than pushing. Record it with `moatlib.py set-pr-closed <name> --note "<why>"`, and if the
 project is settled for good ask for a disposition; a declined PR is a real result and
@@ -311,6 +319,17 @@ the port compiles but never edited merges clean -- which is what the round's
 revalidation exists to catch. `--drift --apply` also fast-forwards the fork's
 default-branch mirror, which must track upstream or every compare goes stale.
 
+A maintainer may also host the branch THEMSELVES: arrayfire closed #3708 and copied the
+port's commits, unchanged, onto `arrayfire/arrayfire` `experimental/hip`, and pointed the
+README there rather than at the fork. Record it the same way -- the fork's `moat-port`
+stays the writable mirror of that branch and every behavior above still holds, `--drift`
+included, as long as the two tips stay equal. What changes is DELIVERY: a sync round's
+`--merge-fix --apply` can only move the fork branch, so each round additionally needs an
+upstream PR whose base is the maintainer's branch, and `--publish` cannot open that yet
+(it targets the default branch). Until it can, that PR is a person's hand-approved
+step. Say so in the `--note` when ruling, so the next sync round does not stall at
+`pr_ready`'s refusal wondering how to reach upstream.
+
 A sync round is a fix round with upstream's advance as its content, and it rides the
 same machinery end to end: `moatlib.py sync-branch <name>` stages `moat-sync-<sha7>`
 from the published tip and pins the upstream tip being absorbed; the porter MERGES
@@ -322,6 +341,26 @@ the tip `rocm-<date>`, so followers have fixed points to pin while the branch mo
 There is rarely an `## Upstream reply` here: nobody asked for the round. The PR-flow
 states still bound the record: the project re-enters `porting` for the round and
 returns to `review-passed` after it, exactly as a fix round does.
+
+### No upstream destination
+
+A port can finish with nowhere to send it: upstream archived the repository, so GitHub
+refuses every pull request. dietgpu is the origin case -- validated on all three gates,
+then listed as ready to open for a PR that could never exist. Nothing upstream says
+anything about the fork, so this is not the maintained case above. A person records it:
+
+    python3 utils/moatlib.py set-no-upstream <name> --evidence <URL> --by <who>
+
+`pr_ready` then refuses, which takes the port off `pr-candidates` and the review-PR
+sweep. The ruling refuses a record that still carries a fork review PR: close that PR
+unmerged (approving it authorizes a publish that cannot happen; merging it destroys the
+fork's upstream mirror) and `set-review-pr <name> --clear` first. The port branch is
+not frozen and no drift sweep runs. The ruling also stands in for the PR in
+`belongs_on_branch`: once every recorded platform is current at `head_sha` and no
+deferral is ruled `now`, `misplaced` reports the branch as ready to merge to `main`.
+A later fork commit recorded with `advance-head` re-homes the folder to `port/<name>`. Check for this before asking a person to approve a
+review PR: `gh api repos/<owner>/<repo> --jq .archived`. `--clear` withdraws the ruling
+if upstream is unarchived.
 
 Upstream merging the port for real someday is the happy ending: a person records
 `set-pr-merged` and clears the ruling with `set-maintained <name> --clear --by <who>`.
