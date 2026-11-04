@@ -342,3 +342,4 @@
 {"kind":"phase","ts":"2026-11-04T08:05:38Z","phase":"test","seconds":340.819,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-232754-heongpu-fix2/venv/bin/ctest --test-dir agent_space/fix2/shared --output-on-failure"}
 {"kind":"session","ts":"2026-11-04T08:08:02Z","epoch":1793779682.167442825,"event":"end","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-11-04T08:12:15Z","epoch":1793779935.479545518,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-04T08:16:23Z","epoch":1793780183.878118893,"event":"end","platform":"linux-gfx942"}
