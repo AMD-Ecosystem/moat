@@ -332,3 +332,67 @@ GPU-vs-CPU differential, `test_models/bunny.OBJ`, validator's harness (`cuvox_co
 ## CUDA run on NVIDIA V100 at 3625a1e (2026-11-04, primary session)
 
 Same node, driver 575.57.08, CUDA 12.9, sm_70, and the same recipe as the earlier V100 section. At 3625a1e ("[ROCm] Keep the voxel table in device memory"; this changes main.cpp, which the CUDA build compiles), configure, build and link pass with USE_HIP OFF. `-s 64`, `-s 64 -solid` and `-s 64 -cpu` all exit 0, and the GPU run prints `[CUDA] CUDA device(s) found` with the same bounding box as before. The GPU `-s 64 -o binvox` output is byte-identical to the `-cpu` output (`cmp` clean). The CUDA no-regression gate holds at 3625a1e.
+
+## Review 2026-11-04 (third review, linux-gfx942, reviewer, moat-port 3625a1e; delta 689b885..3625a1e)
+
+Verdict: review-passed. The delta implements the plan's risk-2 remedy (validator's option 1) correctly; no code findings. Two upstream-visible wording corrections in the `3625a1e` commit body go to the PR-prep squash (registered as `cuda-voxelizer-3625a1e-body-wording`), because commits on the branch are never amended.
+
+### Code check (`git diff 689b885..3625a1e`: `src/main.cpp` +12/-6, `hip_compat/cuda_runtime.h` +3)
+
+- `src/main.cpp:212-229`: `device_vtable` is `cudaMalloc`ed and `cudaMemset` to 0, passed to `voxelize`/`voxelize_solid`, then a host `vtable` is `malloc`ed, filled by `cudaMemcpy` DeviceToHost and the device table is `cudaFree`d before the writers (`main.cpp:252-264`). No other host-side reader of the table exists: `voxelize.cu:192-218` and `voxelize_solid.cu:147-173` only launch and `cudaDeviceSynchronize`, and the writers in `util_io.cpp` take the host pointer. `cudaMemcpy` on the legacy stream is ordered after the kernel anyway, and it is now the first checked call after the kernels, so a sticky kernel fault surfaces through `checkCudaErrors` where before it did not. The unchecked `malloc` matches the CPU path's unchecked `calloc` (`main.cpp:236`). The device table is not leaked; the host table was never freed upstream either (process exit). CRLF line endings preserved on every changed line. No `#ifdef`; the kernels are unchanged.
+- `hip_compat/cuda_runtime.h:40-44`: `cudaMalloc`, `cudaFree`, `cudaMemcpy` -> HIP names, alongside the existing `cudaMemset`/`cudaMemcpyDeviceToHost`. Nothing else in the tree needed a new mapping (all builds below link).
+- Fault classes re-scanned for the delta: no warp-size, texture, OOB or FP surface touched. The memory-and-lifetime entries apply and are handled: fresh device allocation zeroed explicitly (`cudaMemset`), bitwise atomics now target device memory, the copy is synchronous from device to a live host buffer.
+- Commit `3625a1e`: `[ROCm]` title 44 chars, AI-assistance disclosure, no `Co-Authored-By`/noreply, Test Plan has fenced literal commands. `utils/jargon.py --port cuda_voxelizer` clean (after creating the local `main` ref the checker needs in a fresh clone), `utils/prose.py` on the body clean, fork tree clean at 3625a1e.
+
+### Wording corrections for the PR-prep squash (not blocking review)
+
+1. The Test Plan's last paragraph says the 512 boundary residual is "from floating-point contraction and rsqrtf, as in the CUDA build". The cause is measured on four AMD arches, but no CUDA run has ever gone past `-s 64` (both V100 sections above), so "as in the CUDA build" is an inference stated as an observation. Either run the 512 matrix on the V100 or reword (for example, "nvcc also contracts FMAs and uses an approximate device rsqrtf by default").
+2. The body says "on CUDA it replaces page migration of the table with one explicit copy". It omits the one CUDA behaviour change a maintainer would weigh: on Linux with Pascal or newer, a `cudaMallocManaged` table larger than free device memory oversubscribes and still runs; a `cudaMalloc` table that size now fails at `cudaMalloc` with an explicit error. Example: `-s 4096` needs an 8 GiB table (4096^3 / 8 bytes), more than the README's GTX 1050 Ti benchmark card has. Upstream does no memory-limit check (`util_cuda.cpp:33` only prints `cudaMemGetInfo`; README Todo lists "Memory limits test"), so the same grids already fail on Windows CUDA, where managed memory cannot oversubscribe. A sentence in the body is enough; whether the trade-off is acceptable or the porter should switch to validator option 2 (HIP-guarded `_system` atomics, table stays managed) is a person's call at PR prep. I do not request option 2: it edits both kernel files and still relies on a CUDA sm_60 requirement, and the extreme-grid case is untested by upstream either way.
+
+### Fact-check of the porter's gfx90a evidence
+
+Codegen reproduced from this host (no gfx90a GPU here; compile only, same TheRock 10.1.0 SDK). `llvm-objdump --offloading` then `llvm-objdump -d` on each bundle of the 3625a1e binary:
+
+| build | voxelize.cu bundle | voxelize_solid.cu bundle |
+|---|---|---|
+| gfx90a Release | `global_atomic_cmpswap` | `global_atomic_cmpswap` |
+| gfx90a Debug, `CMAKE_HIP_FLAGS_DEBUG="-g -O0"` | `flat_atomic_or` | `flat_atomic_xor` |
+| gfx942 Release | `global_atomic_or` | `global_atomic_xor` |
+| gfx942 Debug -O0 | `flat_atomic_or` | `flat_atomic_xor` |
+
+This matches the porter's and validator's gfx90a claims exactly (optimized gfx90a builds lower the RMW to a CAS loop; -O0 keeps the native OR/XOR). On gfx942, Release already emits the native OR/XOR, so this card was always exercising native bitwise atomics on managed memory, and the first review's "does not fire on gfx942" agrees with that. That those native instructions set no bits on gfx90a managed memory, and that 3625a1e makes the -O0 build exact there, can only be seen on the MI250X; it is recorded consistently by two independent sessions (validator probe table and -O0 end-to-end at 689b885, porter -O0 matrix at 3625a1e) and the gfx90a validator owns it. The porter's Release 512 counts on gfx90a (8 / 1) equal the validator's at 689b885 and the -O0 counts (4 / 0) equal the `-ffp-contract=off` triangulation, which is the expected pattern.
+
+### Fact-check of the primary's V100 run at 3625a1e
+
+Not reproducible here (no NVIDIA GPU). Consistent with everything else: the CUDA-visible delta is exactly the `main.cpp` hunk above (the `hip_compat/` header is only on the include path under `USE_HIP`), and GPU `-s 64 -o binvox` byte-identical to `-cpu` is what every AMD arch also shows at 64. The V100 sections cover `-s 64` only, which is why wording item 1 exists.
+
+### Reviewer evidence (linux-gfx942, AMD Instinct MI300X HF, one GPU pinned by `HIP_VISIBLE_DEVICES`, TheRock ROCm 10.1.0 pip SDK, HIP 7.16.26385, AMD clang 24.0.0git d6f6cb6, CMake 3.31.6, Ninja, g++ 13.3.0; all GPU runs under `ulimit -c 0`)
+
+Not validation evidence; the gfx942 validator still owns the gate. Trimesh2 `0b3d9e2` (2022.03.04), `make -C libsrc` -> `lib.Linux64/libtrimesh.a`. Builds of fork 3625a1e, all exit 0, upstream warnings only (`main.cpp:28` -Wwrite-strings, `main.cpp:67` -Wformat, `nodiscard` on unchecked returns in the `.cu` files, Trimesh2 `mathutil.h`); no warning on the new lines:
+
+```
+common="-G Ninja -DUSE_HIP=ON -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DTrimesh2_INCLUDE_DIR:PATH=<tm2>/include -DTrimesh2_LINK_DIR:PATH=<tm2>/lib.Linux64"
+cmake -S <src> -B rel942    $common -DCMAKE_BUILD_TYPE=Release -DCMAKE_HIP_ARCHITECTURES=gfx942
+cmake -S <src> -B dbg942    $common -DCMAKE_BUILD_TYPE=Debug   -DCMAKE_HIP_ARCHITECTURES=gfx942
+cmake -S <src> -B o0942     $common -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0" -DCMAKE_HIP_ARCHITECTURES=gfx942
+cmake -S <src> -B o0dbg942  $common -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0 -D_DEBUG" -DCMAKE_CXX_FLAGS=-D_DEBUG -DCMAKE_HIP_ARCHITECTURES=gfx942
+cmake -S <src> -B readme942 $common
+cmake -S <src> -B rel90a    $common -DCMAKE_BUILD_TYPE=Release -DCMAKE_HIP_ARCHITECTURES=gfx90a   # ISA only
+cmake -S <src> -B o090a     $common -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0" -DCMAKE_HIP_ARCHITECTURES=gfx90a   # ISA only
+cmake --build <dir> --parallel 56
+```
+
+GPU-vs-CPU differential (`agent_space/cv/cvdiff.py <exe> test_models/bunny.OBJ <work> <tag> --repeat 2`: each run in its own directory with a copy of the model, GPU run then `-cpu` on the same binary, GPU log must show `## GPU VOXELISATION` and `Voxelization GPU time` and no CPU section; binvox RLE, morton `.bin` bitset and obj_points decoded and compared as voxel sets; each GPU run repeated twice and sha256-compared). GPU log shows `AMD Instinct MI300X HF` and `Allocating 32 KB of CUDA device memory for Voxel Grid` (the new path).
+
+64 and 256, surface and solid, binvox / morton / obj_points, five builds (rel942, dbg942, o0942, o0dbg942, readme942): **60 of 60 cases 0 diff, 120 of 120 repeats byte-identical.** Filled counts (CPU = GPU): surface 64 13,802; surface 256 221,760; solid 64 52,258; solid 256 3,345,384 -- the same CPU counts as every earlier arch.
+
+512, binvox and morton (counts identical across the two formats, 1 repeat each identical):
+
+| build | surface diff (GPU-only/CPU-only) | solid diff | GPU kernel ms surface / solid (binvox) |
+|---|---|---|---|
+| Release | 7 (3/4) | 1 (1/0) | 44 / 85 |
+| device -O0 | 4 (2/2) | 0 | 2,644 / 3,938 |
+
+Release 512 equals the first gfx942 review's numbers at 316616d (7 / 1); -O0 equals the `-ffp-contract=off` triangulation on every arch (4 / 0), as expected since -O0 forms no FMAs. Accepted FP class.
+
+- `_DEBUG` -O0 build at 64: device counters read back through `cudaMemcpyFromSymbol` (`Processed 5110 triangles`, `Tested 117367 voxels`, `Marked 45229 voxels`), the same as gfx1201 and gfx90a; solid prints 0 (upstream's solid kernel never increments them).
