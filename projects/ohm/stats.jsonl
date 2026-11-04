@@ -51,3 +51,22 @@
 {"kind":"session","ts":"2026-06-20T04:16:00Z","epoch":1781928960.500877700,"event":"end","platform":"windows-gfx1101"}
 {"kind": "tokens", "ts": "2026-06-20T04:16:43Z", "tokens": 44542, "source": "validator (gfx1101)"}
 {"kind": "tokens", "ts": "2026-06-23T22:50:53Z", "tokens": 14704, "source": "gfx90a in-pipeline cleanup (batch 5 subagent, shared)"}
+{"kind":"session","ts":"2026-11-04T00:15:11Z","epoch":1793751311.530449308,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T00:19:42Z","phase":"compile","seconds":4.756,"exit":0,"cmd":"cmake -B agent_space/build-hip -S projects/ohm/src -G Ninja -DCMAKE_BUILD_TYPE=Release -DOHM_FEATURE_HIP=ON -DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DGLM_INCLUDE_DIRS=/var/lib/jenkins/fleet/jobs/mi200-20261103-161113-ohm-masquerade-porter/moat/agent_space/dl/glm-1.0.1"}
+{"kind":"phase","ts":"2026-11-04T00:19:56Z","phase":"compile","seconds":9.726,"exit":1,"cmd":"cmake --build agent_space/build-hip -j 64"}
+{"kind":"phase","ts":"2026-11-04T00:20:22Z","phase":"compile","seconds":6.100,"exit":0,"cmd":"cmake --build agent_space/build-hip -j 64"}
+{"kind":"phase","ts":"2026-11-04T00:20:26Z","phase":"test","seconds":0.004,"exit":127,"cmd":"./bin/gputiltestcuda"}
+{"kind":"phase","ts":"2026-11-04T00:20:32Z","phase":"test","seconds":3.791,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161113-ohm-masquerade-porter/moat/agent_space/build-hip/bin/gputiltestcuda"}
+{"kind":"phase","ts":"2026-11-04T00:20:35Z","phase":"test","seconds":0.004,"exit":127,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161113-ohm-masquerade-porter/moat/agent_space/build-hip/bin/ohmtestcuda"}
+{"kind":"phase","ts":"2026-11-04T00:22:07Z","phase":"test","seconds":73.088,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161113-ohm-masquerade-porter/moat/agent_space/build-hip/bin/ohmtestcuda"}
+{"kind":"phase","ts":"2026-11-04T00:22:23Z","phase":"test","seconds":11.952,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161113-ohm-masquerade-porter/moat/agent_space/build-hip/bin/ohmtest"}
+{"kind":"phase","ts":"2026-11-04T00:22:26Z","phase":"test","seconds":3.629,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161113-ohm-masquerade-porter/moat/agent_space/build-hip/bin/ohmtestheightmap"}
+{"kind":"phase","ts":"2026-11-04T00:22:27Z","phase":"test","seconds":0.064,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161113-ohm-masquerade-porter/moat/agent_space/build-hip/bin/slamiotest"}
+{"kind":"phase","ts":"2026-11-04T00:22:49Z","phase":"compile","seconds":2.913,"exit":1,"cmd":"cmake --build agent_space/build-cpu-upstream -j 64"}
+{"kind":"phase","ts":"2026-11-04T00:23:01Z","phase":"compile","seconds":12.537,"exit":0,"cmd":"cmake --build agent_space/build-cpu-branch -j 64"}
+{"kind":"phase","ts":"2026-11-04T00:25:07Z","phase":"test","seconds":3.726,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161113-ohm-masquerade-porter/moat/agent_space/build-hip/bin/gputiltestcuda"}
+{"kind":"phase","ts":"2026-11-04T00:26:18Z","phase":"test","seconds":70.616,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161113-ohm-masquerade-porter/moat/agent_space/build-hip/bin/ohmtestcuda"}
+{"kind":"phase","ts":"2026-11-04T00:26:30Z","phase":"test","seconds":11.951,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161113-ohm-masquerade-porter/moat/agent_space/build-hip/bin/ohmtest"}
+{"kind":"phase","ts":"2026-11-04T00:26:34Z","phase":"test","seconds":3.630,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161113-ohm-masquerade-porter/moat/agent_space/build-hip/bin/ohmtestheightmap"}
+{"kind":"phase","ts":"2026-11-04T00:26:34Z","phase":"test","seconds":0.064,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161113-ohm-masquerade-porter/moat/agent_space/build-hip/bin/slamiotest"}
+{"kind":"session","ts":"2026-11-04T00:28:59Z","epoch":1793752139.280308899,"event":"end","platform":"linux-gfx90a"}
