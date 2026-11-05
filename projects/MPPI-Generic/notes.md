@@ -1132,3 +1132,33 @@ Scope: the host min/max truncation fix, `git diff 11b61ab bee3eb6` (7 files). Th
 - Regression test on gfx90a: full HIP build at bee3eb6 (157/157); `racer_suspension_model_test`: 4 pass, 1 skipped (upstream `GTEST_SKIP`). With only racer_suspension.cu reverted to 11b61ab, `FractionalThrottleBrake` FAILS: `accel(0.5)` -0.199032 vs expected 1.299240; `accel(-0.5)` == `accel(0.0)` (-0.199032). Full ctest not re-run (validator's job).
 - Commit message: `[ROCm]` title, 67 chars, ASCII, Test Plan in a fenced block, AI disclosure in prose, no trailer. `python3 utils/jargon.py --port MPPI-Generic`: clean; `utils/prose.py` on the body: clean. Its claims match the measurements above.
 - `jargon.py --port` needs a local `main` branch in the fork clone (`git -C projects/MPPI-Generic/src branch --track main origin/main`), as the porter found.
+
+## 2026-11-05: porter fix for the review finding (linux-gfx90a, 70d2b68)
+
+Fork commit 70d2b68 on top of bee3eb6: `[ROCm] Cast the throttle command to double in RacerSuspension fmax`. `pr-state` = none, so `moat-port` was pushed directly (pre-push hook installed by `protect-fork`, push accepted). gfx90a, TheRock pip ROCm (`R=$(rocm-sdk path --root)`), `ulimit -c 0`.
+
+### Change
+racer_suspension.cu:110,111 (`__device__ __host__` computeStateDeriv): `fmax(0.0, control[...])` -> `fmax(0.0, static_cast<double>(control[...]))`, and `fmax(0.0, static_cast<double>(-control[...]))` for the brake, as the reviewer specified (CUDA's own `max(double, float)` body). Resolves to `fmax(double, double)`, which is `__host__ __device__` on nvcc and hipcc.
+
+Other calls changed in bee3eb6, checked for the same problem: the only other mixed-type `fmin`/`fmax` calls are autorally_standard_cost_test.cu:842,843 and autorally_robust_cost_test.cu:171,172, in `calculateStandardCostmapValue`/`calculateRobustCostmapValue`, plain host functions (no `__device__`). Every other changed call is `fminf`/`fmaxf`, a non-template C function that cannot resolve to the std template. Nothing else needed.
+
+### Checks
+- Build: same recipe as bee3eb6's entry with `-DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, `cmake --build ... -j $MAX_JOBS`: 157/157, 0 errors.
+- racer_suspension_model_test: 4 pass (incl. FractionalThrottleBrake), 1 skipped (upstream GTEST_SKIP CPUvsGPU).
+- Host-only min/max probe (deleted `min/max` templates, `--cuda-host-only -fsyntax-only`) on racer_suspension_model_test.cu: 0 errors.
+- Before/after, host AND device (scratch probe: same flags as the test TU, kernel calling `model_d_->computeStateDeriv(float*...)` after `GPUSetup()`, include tree swapped per revision), d(V_I_X)/dt at P_I_Z=0.2, V_I_X=1, QW=1:
+
+| throttle_brake | 11b61ab host | 11b61ab device | bee3eb6 host = device | 70d2b68 host = device |
+|---|---|---|---|---|
+| 0.00 | -0.199032 | -0.200000 | -0.200000 | -0.200000 |
+| 0.25 | -0.199032 | 0.550000 | 0.550000 | 0.550000 |
+| 0.50 | -0.199032 | 1.300000 | 1.300000 | 1.300000 |
+| 0.75 | -0.199032 | 2.050000 | 2.050000 | 2.050000 |
+| 1.00 | 2.797512 | 2.800000 | 2.800000 | 2.800000 |
+| -0.50 | -0.199032 | -5.200000 | -5.200000 | -5.200000 |
+| -1.00 | -10.197650 | -10.200000 | -10.200000 | -10.200000 |
+
+So on HIP the fix is value-identical to bee3eb6, and host now matches the device path. bicycle_slip_parametric.cu and racer_dubins_elevation.cu are untouched by this commit, so their before/after values from bee3eb6's entry stand.
+- Full ctest (`ctest --test-dir src/build-hip -j1 --timeout 120`, 219 s): 431/463 pass, 32 fail, 8 not run (same 5 Disabled + 3 Skipped). 29 failures are the deterministic set recorded at bee3eb6/11b61ab by name. The other 3 are the intermittent pool: CudaFloatStructsTests/*.VecAddVecMultScalar and CompareLikelihoodRatioCostsCPUvsGPU for Gaussian<4,3> and Gaussian<1,7>. `ctest -R 'CompareLikelihoodRatioCostsCPUvsGPU|VecAddVecMultScalar'` 5x: 2/1/2/3/4 of 14 fail, the same range recorded at bee3eb6. `ninja -t deps`: the only object depending on racer_suspension.cu is racer_suspension_model_test.cu.o.
+- `python3 utils/jargon.py --port MPPI-Generic` run on its own after the commit and BEFORE the push: clean. `utils/prose.py` on the commit body: clean.
+- CUDA compile not run here (no nvcc on this host); owed on the nvcc host. The reviewer already checked that the static_cast form compiles warning-free with nvcc 12.8. On the re-check, the 8 changed-file TUs should match the parent's warning counts (racer_suspension_model_test 9, not 17), and the runGPUDynamics<RacerSuspension> PTX should be back to about parent size.

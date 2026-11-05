@@ -7,12 +7,12 @@
   "priority": 4.766,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:14Z",
-  "updated_at": "2026-11-05T05:50:27Z",
-  "head_sha": "bee3eb6cd3fe8869904d00cce1383330b30a7c84",
+  "updated_at": "2026-11-05T05:58:31Z",
+  "head_sha": "70d2b686a037a6643d2636d8f8375919fb0325f6",
   "waivers": {},
   "license_spdx": "BSD-2-Clause",
   "upstream_repo_id": 833210393,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "windows-gfx1201": {
       "state": "completed",
@@ -101,7 +101,7 @@
       "validated_sha": "11b61ab3557126b2220f4de2163d9f317cf176e9",
       "started_at": "2026-05-30T07:04:54Z",
       "completed_at": "2026-10-29T22:39:03Z",
-      "updated_at": "2026-11-05T05:50:27Z",
+      "updated_at": "2026-11-05T05:58:31Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -120,13 +120,10 @@
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/MPPI-Generic/pull/1",
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-05T05:50:27Z"
-  },
+  "porting": null,
   "porting_released": {
     "arch": "linux-gfx90a",
-    "since": "2026-11-05T05:28:46Z",
-    "at": "2026-11-05T05:37:42Z"
+    "since": "2026-11-05T05:50:27Z",
+    "at": "2026-11-05T05:58:31Z"
   }
 }
