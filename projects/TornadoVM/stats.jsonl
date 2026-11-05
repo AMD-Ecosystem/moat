@@ -67,3 +67,8 @@
 {"kind":"session","ts":"2026-11-05T17:53:38Z","epoch":1793901218.822210793,"event":"end","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-05T17:59:13Z","epoch":1793901553.304100356,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-05T18:10:48Z","epoch":1793902249.001243157,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-05T19:02:18Z","epoch":1793905338.855341099,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-05T19:03:07Z","phase":"test","seconds":0.002,"exit":127,"cmd":"./mvnw -Pjdk21 -pl tornado-compiler/tc-runtime -am test -DskipTests=false -Dtest=TcCompilerTest -Dsurefire.failIfNoSpecifiedTests=false"}
+{"kind":"phase","ts":"2026-11-05T19:03:27Z","phase":"test","seconds":4.248,"exit":0,"cmd":"bash -c cd projects/TornadoVM/src && ./mvnw -Pjdk21 -pl tornado-compiler/tc-runtime -am test -DskipTests=false -Dtest=TcCompilerTest -Dsurefire.failIfNoSpecifiedTests=false"}
+{"kind":"phase","ts":"2026-11-05T19:03:47Z","phase":"test","seconds":8.738,"exit":0,"cmd":"bash -c cd projects/TornadoVM/src && make test-nogpu JDK=jdk21"}
+{"kind":"session","ts":"2026-11-05T19:04:17Z","epoch":1793905457.491044761,"event":"end","platform":"linux-gfx950"}
