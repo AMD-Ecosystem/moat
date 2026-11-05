@@ -546,3 +546,6 @@ Evidence (Temurin 21.0.12, ROCm 10.1 TheRock wheels, job-local Maven repository,
 - `git diff origin/develop...af27a9f4b` over `tornado-drivers/{cuda,ptx,opencl,spirv,metal,cuda-jni,opencl-jni}`, `tornado-native-libs/{cudf-jni,cudnn-jni,cutlass-jni}` is empty, and no Cuda/OpenCL/Metal dialect file is in the diff.
 - `utils/jargon.py -C projects/TornadoVM/src --commits origin/develop..HEAD` and `--diff origin/develop...HEAD` clean; `utils/prose.py` clean on the body; title 67 chars, ASCII, AI disclosure, fenced Test Plan, no Co-Authored-By. Fork tree has no modified tracked files.
 - The review's PR-prep item (the `f05b0dd01` "certain to hang" title) is left for the squash, as the review says.
+
+## Ruling 2026-11-05 (jeff): PR-prep squash authorized
+At PR prep, once every gate is satisfied at the validated head, squash moat-port into compliant commit(s) whose tree is identical to the validated head (fixing the commit-gate failures and the overstated messages recorded in notes), record it with `moatlib.py squash-carry-forward TornadoVM <new_sha>`, and replace moat-port with the squash. That one force-push of TornadoVM moat-port is authorized by this ruling (no upstream PR is open). Same terms as plvs.
