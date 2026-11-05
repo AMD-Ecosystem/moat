@@ -2976,3 +2976,7 @@ libelas-gpu exported with `git archive fde33e5` and built standalone for gfx1151
 
 ### Result
 windows-gfx1151: `port-ready`/`validation-failed` -> `completed` at fde33e5: GPU ORB (mono, 3/3 clean, 0 lost, ATE ~1 cm) and GPU ELAS (bit-exact reruns, CPU parity, no leak, no pending error, no -217 in plvs) validated on real gfx1151. The Windows stereo SLAM crash is pre-existing CPU-side and reproduces without any GPU code.
+
+## Validation 2026-11-04 (windows-gfx1151): validation-failed at fde33e5 (ruling by jeff)
+
+jeff overturned the `completed` recorded above: stereo_tum_vi example does not build on Windows; TUM-VI stereo crashes 5/5 (deferral plvs-windows-stereo-slam-crash). Both are to be fixed and the crash root-caused before windows-gfx1151 completes. A porter round on windows-gfx1151 follows.
