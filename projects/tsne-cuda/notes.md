@@ -579,3 +579,35 @@ Runtime: `LD_LIBRARY_PATH=$FAISS_PREFIX/lib:$SDK/llvm/lib` (the INSTALL.md `libo
 - `utils/jargon.py --port tsne-cuda`: clean (after creating local `main` and `moat-port` branches in the fresh clone). Documentation: INSTALL.md "Building for AMD GPUs (ROCm)", Linux and Windows, with the new `libomp.so` sentence.
 - CUDA gate: already recorded at `33f708d` (mi355 host, nvcc 12.8, library and `tsnecuda_test` build rc 0, see "CUDA compile check 2026-11-04", second attempt), so not repeated here.
 - Still owed elsewhere: the repeated `tsnecuda_test` runs on wave64 at `33f708d` (linux-gfx90a's validation is at `4fedca7`), whose hipBLAS gemv may sum in a different order.
+## Validation 2026-11-05 (validator, linux-gfx90a) -> completed at 33f708d
+
+Revalidation of `4fedca7..33f708d` (`edff77b` double reduction reference, `33f708d` INSTALL.md libomp note), full run, no carry-forward. AMD Instinct MI250X/MI250 (`rocm_agent_enumerator`: gfx90a), one GCD via `HIP_VISIBLE_DEVICES=1`, `ulimit -c 0`, TheRock pip SDK 10.1.0 (no `/opt/rocm`). Fresh clone of `AMD-Ecosystem/tsne-cuda` at `33f708d`, `git status --porcelain` empty of tracked changes after all runs. FAISS: the gfx90a `moat-port` `01a09e8` install from the 2026-11-04 gfx90a validation (168 gfx90a code objects in `libfaiss.so`), copied into this job.
+
+Build, INSTALL.md Linux recipe with its HIP-compiler hint (system GCC 13.3.0 for C/CXX, SDK clang 24.0.0 for HIP), rc 0, 94 warnings (52 `-Wunused-value`, 12 `-Wswitch`, 12 `-Wignored-pragmas`, 6 `-Wmacro-redefined`; same classes as before):
+```
+SDK=$(rocm-sdk path --root); FAISS_PREFIX=<faiss install>
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$SDK/llvm/bin/clang++ -DCMAKE_PREFIX_PATH="$SDK;$FAISS_PREFIX" -DBUILD_TESTS=ON
+cmake --build build -j 42
+```
+Runtime: `LD_LIBRARY_PATH=$FAISS_PREFIX/lib:$SDK/llvm/lib` (the INSTALL.md libomp sentence), Python 3.11.17 venv, numpy 1.26.4, scikit-learn 1.9.1, pytest 7.3.2; `PYTHONPATH` unset, package not installed (`import tsnecuda` from the source root -> `ModuleNotFoundError`; `pip show tsnecuda` -> not found).
+
+- `ctest --test-dir build --output-on-failure`: 1/1 passed (0.62 s).
+- `./build/tsnecuda_test` 10 consecutive runs (1 s apart, so 10 wall-clock seeds): 10/10 rc 0, `PASSED 8 tests` each.
+- Wave64 hipBLAS check beyond the 10 runs: `time()` pinned with an `LD_PRELOAD` shim returning `$SEED`, seeds 1..300: 0 failed. (Shim effectiveness was shown on gfx1201 with the seed-217 control; not re-controlled here.)
+- `cd build/python && python -c "import tsnecuda; tsnecuda.test()"`: rc 0, total_time 8.58 s and 9.13 s (gfx90a one-time setup cost, as on 2026-11-04).
+- `python -m pytest -v build/python/tsnecuda/test` (cwd MOAT root, absolute path): 7 passed in 72.88 / 70.78 / 70.03 s (3 runs).
+- Metric harness (`test_tsne.py` helpers called directly, run from `build/python`) against the file's thresholds:
+
+| metric | measured | threshold |
+|---|---|---|
+| digits trustworthiness | 0.99324 | >= 0.97 |
+| digits 5-fold 10-NN accuracy | 0.96996 | >= 0.95 |
+| scikit-learn TSNE trustworthiness (reference) | 0.99330 | ours >= ref - 0.02 |
+| digits, `TSNE_SYNC_KERNELS=1` | trust 0.99319, kNN 0.96552 | 0.97 / 0.95 |
+| digits, launch overrides (FFT 64, ATTR/REP/INTEG 256) | trust 0.99228, kNN 0.96330 | 0.97 / 0.95 |
+| blobs 50000, k=32 ARI | 1.0 (5.07 s) | >= 0.95 |
+| blobs 10000, k=1024 (CPU FAISS) ARI | 1.0 (12.65 s) | >= 0.9 |
+
+- `utils/jargon.py --port tsne-cuda`: clean. Documentation: INSTALL.md "Building for AMD GPUs (ROCm)" carries the Linux recipe and the new libomp sentence.
+- CUDA gate: already passed at `33f708d` (CUDA compile check 2026-11-04, mi355 host, nvcc 12.8, rc 0); not repeated.
