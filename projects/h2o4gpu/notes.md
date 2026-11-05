@@ -317,3 +317,5 @@ A HIP port of h2o4gpu's GPU solvers via `hip_compat/` CUDA-named headers and a `
 - roctx (ruling 5): `USENVTX=1` + `-DUSE_NVTX` build links `libroctx64.so.4`, default build does not; ElasticNetH2O fit with that module under `rocprofv3 --marker-trace`: 1101 `MARKER_CORE_RANGE_API` records = 1101 `START:` lines, corr 0.9999999.
 - Environment, not the port: on this 224-core host, scipy's bundled OpenBLAS 0.3.18 segfaults in `blas_shutdown` at exit about half the time with no h2o4gpu involved (a plain scikit-learn KMeans/PCA/Ridge script: 5/10 runs exit 139). `OPENBLAS_NUM_THREADS=32` stops it (10/10 exit 0). The validator should set it on large hosts so it does not mask finding 1 or a real crash.
 - Not run here: CUDA compile check at f2ecfb0 (mi355; see item 2).
+
+- 2026-11-05: jeff filed https://github.com/h2oai/h2o4gpu/issues/899 (xgboost_prev no longer builds with CUDA 12 or current setuptools).
