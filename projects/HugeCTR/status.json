@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "HugeCTR",
+  "upstream_url": "https://github.com/NVIDIA-Merlin/HugeCTR",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-05T23:20:48Z",
+  "updated_at": "2026-11-05T23:20:49Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
