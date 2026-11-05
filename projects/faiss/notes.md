@@ -1865,3 +1865,33 @@ Gates: tree restored (`git checkout -- faiss/ c_api/`, 78 hipify-modified tracke
 fresh clone: `git branch main origin/main`, otherwise it reports "cannot resolve main..moat-port");
 `audit-commits faiss` OK. Documentation: INSTALL.md documents `-DFAISS_ENABLE_ROCM=ON` /
 `-DCMAKE_HIP_ARCHITECTURES` next to the CUDA GPU build; unchanged this round and still accurate.
+
+## Validation 2026-11-04 (validator, windows-gfx1151) -> completed
+
+Device: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32), Windows 11, `HIP_VISIBLE_DEVICES=0`, `OPENBLAS_NUM_THREADS=1`, `ulimit -c 0`, each GPU suite its own process. SDK: TheRock pip ROCm 7.14.0a20260612. Platform was `revalidate`: `validated_sha=01a09e824`, `head_sha=708a879bc438e4683689839daedcadd76496e9ca`. Existing clone fast-forwarded to `HEAD == 708a879bc`, build dir wiped, full rebuild (no carry-forward: Float16.cuh is a device-header change).
+
+Recipe is the 2026-08-20 windows-gfx1151 recipe above unchanged (GNU-driver clang for C/CXX/HIP, `D:/...` drive-letter `CMAKE_PREFIX_PATH`, C API off, `-DCMAKE_HIP_ARCHITECTURES=gfx1151`). Hipify run once, manually, with the absolute path (`bash "$(pwd)/faiss/gpu/hipify.sh"`, ~5 min of wall time on this host; it reaches both `faiss/` and `c_api/`). On the 7.14 hipify-perl the reordered `Float16.cuh` comes out with `hip/hip_bf16.h` + `hip/hip_fp16.h` in BOTH branches of the `#if defined(USE_AMD_ROCM)` (7.x does not drop the repeated include; 10.x does and leaves an empty `#else`) -- compiles either way.
+
+Pitfall hit this session: a hipify run that exceeded the tool timeout was moved to the background and kept running; starting a second copy made the two clobber the shared `gpu-tmp` dir (`sed: can't read ./gpu-tmp/...`). Kill every `hipify.sh` first, `git checkout -- faiss c_api && git clean -fdx faiss c_api`, then run a single instance.
+
+```
+cmake --build build -j6 -- -k 100     # 371/371 steps; faiss.dll links; 11 FAILED = the 11 GPU test exes' post-link gtest_discover_tests (0xc0000135, no ROCm DLLs on PATH), all 11 .exe + faiss_test.exe produced
+```
+Run dir: all test exes + faiss.dll + gtest*.dll + `faiss_gpu_test_helper.dll` (new vs the 08-20 DLL list; `build/faiss/gpu/test/`, rc 127 without it) + amdhip64_7/amd_comgr/hiprtc*/rocm_kpack/hipblas/rocblas/libhipblaslt/rocsolver/rocm-openblas DLLs from `_rocm_sdk_devel/bin` staged in one dir; `ROCBLAS_TENSILE_LIBPATH=$LIBS/bin/rocblas/library`.
+
+```
+TestGpuSelect 6/6, TestCodePacking 4/4, TestGpuDistance 28/28, TestGpuIndexBinaryFlat 4/4,
+TestGpuIcmEncoder 7/7, TestGpuResidualQuantizer 1/1, TestGpuIndexFlat 18/18,
+TestGpuIndexIVFScalarQuantizer 12/12, TestGpuIndexIVFFlat 21/21,
+TestGpuIndexIVFPQ 11/13 direct; Float16Coarse and Add_IP fail in the monolithic binary and both PASS
+  in isolated --gtest_filter processes (the documented shared-RNG / 3.5% float16 PQ tolerance non-bug)
+```
+GPU total: 6+4+28+4+7+1+18+12+21+13 = 114 effective passes across 10 suites (CodePacking is CPU-only), the suite-for-suite counts of the earlier windows-gfx1151 runs.
+TestGpuMemoryException: rc 3, `Faiss assertion 'err__ == hipSuccess' ... runL2Norm ... CUDA error 719 unspecified launch failure` -- the recorded APU unified-memory OOM divergence (earlier runs hit the same 719 in `DeviceVector::append`; different site, same class). Not a port defect; no host crash.
+
+Non-GPU: `faiss_test.exe` -> 247 tests from 63 suites, 244 passed, 3 self-skipped (ScalarQuantizer.TQMSESimdDispatchSelection, TQMSESimdDistancePathParity, SIMDConfig.modern_hardware_has_simd_support; same 3 as Linux), 0 failed. (Linux counts 266 because its build had the C API tests on; C API is off in the Windows recipe.)
+
+Install-and-consume: `cmake --install build --prefix <dir>` -> `include/faiss/impl/InvertedListScannerStats.h`, `share/faiss/faiss-config.cmake`, `bin/faiss.dll`, `lib/faiss.lib`. Separate CMake project (`LANGUAGES CXX HIP`, `find_package(faiss)` + `find_package(hip)`, `USE_AMD_ROCM`, link `faiss`, gfx1151) with one `.hip` TU including installed `GpuIndexFlat.h`, `StandardGpuResources.h`, `utils/Float16.cuh`, `impl/AuxIndexStructures.h`, `impl/InvertedListScannerStats.h` built with 0 errors; run: GpuIndexFlatL2 1000x16 finds row 42 at distance 0 (ntotal=1000), `float4ToHalf4`/`half4ToFloat4` round trip of (1.5,-2,0.25,3) exact, default `InvertedListScannerStats.scan_cnt == 0`, rc 0.
+
+CUDA gate: already recorded at `708a879bc` (mi355 real-nvcc check above); not run here (no CUDA toolkit on this host).
+Pre-completion: `jargon.py --port faiss` clean, `audit-clean` OK, `audit-commits` OK; hipify artifacts restored (`git checkout -- faiss c_api; git clean -fdx faiss c_api`), 0 modified tracked files, `HEAD == 708a879bc`. INSTALL.md already documents the ROCm build next to CUDA; this round changed no build procedure.
