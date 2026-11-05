@@ -714,3 +714,16 @@ Already recorded in notes.md at this exact head_sha (444d12bbb, "PR fix-round 20
 ### Verdict
 
 PASS. windows-gfx1151: `port-ready`/absent -> `completed`, validated_sha = 444d12bbbbb625c50828cf509296c587fcdac674 (`python3 utils/moatlib.py set-state alien windows-gfx1151 completed`). The 2026-06-03 BLOCKED record is superseded -- the bundler bug that blocked it is confirmed fixed by the porter's own committed workaround (47ab2c9), not a new fix needed here.
+
+## Host min/max truncation follow-up 2026-11-05 (porter, linux-gfx1100) -- STOPPED: upstream already fixed the line
+
+Dispatched to fix `source/EngineImpl/StatisticsService.cu:106` (`rewriteHistory`: unqualified `max(DefaultTimeStepDelta, <double>)` in host code resolves to ROCm's host `max(int,int)` and drops the fraction of `_longtermTimestepDelta`) as a follow-up to the merged chrxh/alien#710. The brief said to stop if upstream had changed the line since the merge. It has, so no fork commit was made, `porting` was not entered, and the stage stays `review-passed` at 444d12bbb.
+
+Evidence (`git fetch --filter=blob:none https://github.com/chrxh/alien`, develop tip fd4043d6, 2026-10-31):
+- `git log -S'_longtermTimestepDelta = max(' up/develop` -> 7debb36e (2026-07-16, "Separate sampling of lineage statistics") removed the line and replaced it with `std::max(DefaultTimeStepDelta, (toDouble(timestep) - ...front().time) / toDouble(...size()))`. `std::max` on two doubles is well-formed under both nvcc and hipcc, so the truncation is gone upstream.
+- 1986679f (2026-07-24) then renamed `rewriteHistory` -> `setStatisticsHistory`, and 3f4eda2a moved the file to `source/Engine/Impl/StatisticsService.cu`. On develop, all three `max` calls in that file (lines 111, 116, 175) are `std::max` on doubles; there is no unqualified `min`/`max` left in it.
+- 444d12bbb is not an ancestor of upstream develop (the PR landed as a non-fast-forward merge upstream), so `moat-port` still carries the old line, but `moat-port` is no longer what users consume for this code; a follow-up PR against develop would have nothing to change here.
+
+Not done, because of the stop: the project-wide `--cuda-host-only` deleted-template re-scan and any run-time before/after. If a person wants the rest of upstream develop checked for this pattern (the sweep only probed the fork at 444d12bbb), that would be a new sweep against develop rather than a fix on `moat-port`.
+
+Side effect on the MOAT repository: `port/alien` failed to merge `origin/main` (`moatlib worktree` refused) because both sides added sections at the same spot in `.claude/skills/cuda-to-rocm/references/validation.md`. Resolved as a union of both sides (no text dropped) in merge commit dde347ba, pushed to `port/alien`.
