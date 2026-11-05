@@ -2367,3 +2367,31 @@ new/old ratios: r1 1.016-1.055 / 1.012-1.036; r2 0.997-1.009 / 0.999-1.010; r3 (
 - No fork push, no `gh` write.
 
 validated_sha: 63d272405259bc861da536e53962c5c79b1c5702
+
+## Validation 2026-11-05 (validator, windows-gfx1151, revalidate, moat-port @ 63d2724)
+
+Verdict: completed at 63d272405259bc861da536e53962c5c79b1c5702. gpu_vs_cpu_validate is 12/12 PASS on gfx1151, the bilateral filters complete with no fault, fractional FWHMs now change the volume, and every difference from the d2112b6 Windows outputs is the min/max fix.
+
+Host: Windows 11, Radeon 8060S (gfx1151, wave32, APU), torch 2.12.0+rocm7.14.0a20260519, Python 3.12 venv, clang-cl host, MSVC link.exe first in PATH, `ulimit -c 0`, MAX_JOBS=8. Source: agent_space/leap-63d, a fresh clone checked out at 63d2724, tracked tree clean. One GPU process at a time, each test run once.
+
+### Commands
+```
+bash utils/timeit.sh LEAP compile -- bash agent_space/leap_win_build_63d.sh   # rc=0; setup_AMD.py build_ext --inplace, pyd copied to .dll; 20 x hipv4-amdgcn-amd-amdhsa--gfx1151
+bash utils/timeit.sh LEAP test -- $TORCH_PY run.py unitTests/gpu_vs_cpu_validate.py   # 12/12, OVERALL: PASS, 11 s
+run.py dump_point.py <src> pt_63d.npz       # rc=0, no fault
+run.py dump_outputs.py <src> out_63d.npz 256
+compare_outputs.py d211/pt.npz pt_63d.npz ; compare_outputs.py leap-win_r1.npz out_63d.npz
+run.py frac63.py <src>   # BilateralFilter / PriorBilateralFilter on a 13x21x19 volume in [0,4), at d2112b6 (agent_space/leap-win) and 63d2724
+```
+(run.py imports torch first; scripts in agent_space/leap-scripts.)
+
+### Results
+- gpu_vs_cpu_validate: 12/12, 0 failing lines. modular VD fbp 0.9998 adjoint 3.39e-03; modular SF fbp_interior 0.9995 (err 0.000), adjoint 3.37e-03 (was 0.2251 / 3.40 before the fix per the Linux record). Other 10 lines equal the d2112b6 record (parallel 2.55e-05/1.59e-05 ... cone-flat 1.42e-04/1.46e-04).
+- dump_point.py: rc=0; bilateral, priorbilateral, median, dictionary ok; upsample FAILED (ctypes dtype) as on every platform. Against the d2112b6 Windows pt.npz: 18/20 arrays bit-identical; bilateral_out and priorbilateral_out differ (2179072/2179072, max abs 5.2e-02), the same two arrays and magnitude as Linux gfx1100: dump_point calls BilateralFilter(f, 3.0, 0.1), the identity before the fix.
+- dump_outputs.py (36 arrays), against the b37ca0a-era Windows dump (leap-win_r1.npz; d2112b6 changed no dumped array): 34 bit-identical; modular_SF_back (12209399/17432576 differ, max abs 1.40e+03) and modular_SF_fbp (12209400 differ) change. Same counts as the Linux record. modular_SF backproject time new/old 0.691 (cone kernel now taken instead of parallel); all other ratios 1.00-1.02.
+- Fractional FWHMs, voxels changed out of 5187 (before at d2112b6 -> after at 63d2724): (2.5, 0.5) 0 -> 5187; (2.0, 0.5) 0 -> 5187; (0.5, 5.0) 0 -> 5184; scaled (2.5, 0.5, 2.0) 0 -> 5187; PriorBilateralFilter (2.5, 0.5) 0 -> 5187; (2.0, 5.0) vs (2.5, 5.0) differing voxels 0 -> 5187. Integer cases (2.0, 1.0), (2.5, 1.0), (2.5, 5.0), (2.0, 5.0) changed all 5187 in both builds. All outputs finite.
+
+### Not done
+- Not repeated here: leak_check, CUDA gate (no toolkit on this host; Windows skips by procedure), jargon scan (no fork clone under projects/; Linux validators recorded it clean at this head), the Linux-only scripts minmax_check/modsf/lowpass. No fork push, no gh write.
+
+validated_sha: 63d272405259bc861da536e53962c5c79b1c5702
