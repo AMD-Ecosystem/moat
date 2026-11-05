@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "hiprtc-win-absolute-program-name",
+      "kind": "rocm-bug-report",
+      "component": "hiprtc",
+      "summary": "hiprtc on Windows (TheRock 7.14) returns HIPRTC_ERROR_COMPILATION with an empty log when hiprtcCreateProgram's name is an absolute path (C:\\...\\k.cu or C:/.../k.cu); a relative name compiles the same source. CuPy works around it (base name).",
+      "refs": [
+        "projects/cupy/notes.md#porter-round-2026-11-05"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-05T19:08:12Z",
+      "decided": null
+    },
+    {
+      "id": "hipcc-exe-unquoted-forwarded-args",
+      "kind": "rocm-bug-report",
+      "component": "hipcc",
+      "summary": "hipcc.exe on Windows rebuilds the clang command line without quoting: -DX=extern \"C\" becomes -DX=extern + file C, and -I paths with spaces are split. CuPy works around it.",
+      "refs": [
+        "projects/cupy/notes.md#porter-round-2026-11-05"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-05T19:08:39Z",
+      "decided": null
+    },
+    {
+      "id": "hiprtc-win-msvc-stl-complex-signbit",
+      "kind": "rocm-bug-report",
+      "component": "hiprtc",
+      "summary": "hiprtc on Windows with the MSVC STL include dirs: <complex> fails with 'call to signbit is ambiguous' (MSVC complex:575 vs hiprtc_runtime.h device signbit overloads). Breaks CuPy kernels that include C++ std headers (cupy/xsf, mdspan GUFunc-like kernels). Not worked around in the port.",
+      "refs": [
+        "projects/cupy/notes.md#porter-round-2026-11-05"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-05T19:09:04Z",
+      "decided": null
+    }
+  ]
+}
