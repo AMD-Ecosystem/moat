@@ -307,3 +307,56 @@ intrinsics (block __syncthreads reductions), so wave32 is correct by constructio
 
 State: windows-gfx1101 + windows-gfx1201 port-ready -> completed (validated_sha 6231243f,
 fork unchanged). All five platforms now terminal -> PR-ready.
+
+## Follow-up 2026-11-05 (linux-gfx90a, porter) -- host `max` on double/float truncates to int, 6231243f -> 15124b53
+
+Source: jeff's host min/max truncation sweep (`~/claude-shared/plans/moat-hip-host-minmax-truncation-sweep.md`, hit 5). Model fix: LEAP 63d2724. PR #1538 is merged, so `moatlib.py pr-state GPUMD` = `merged`, `moat-port` is not frozen; the push went to `moat-port` and the fork pre-push hook (protect-fork, fresh clone) allowed it. This commit is a follow-up candidate, not part of #1538.
+
+Upstream check first: brucefan1983/GPUMD master (last touch of the file 1c9916cb9e, 2026-10-23) still has `max_nep_rc = max(max_nep_rc, parambs[i].rc_radial);` at `src/force/ilp_nep.cu:221`, so upstream has not fixed it.
+
+Record re-homing: the folder was trunk-resident (finished project). `moatlib.ensure_port_branch('GPUMD')` cut `port/GPUMD` from origin/main e1e33d39, then `moatlib.py worktree GPUMD`. The first attempt from the trunk checkout was refused by the trunk pre-push `readme` gate (table stale from other ports' progress; that gate is skipped on `port/` branches). The push only created a ref at the unchanged origin/main sha, so README.md was regenerated in the working tree for that one push and then restored with `git checkout -- README.md`; nothing was committed to main.
+
+### Defect
+`max_nep_rc` is double, `rc_radial` is float. CUDA's host `max(double, float)` is `fmax(a, double(b))`. HIP's `__clang_hip_math.h` on this host (HIP 7.16.26385, clang 24.0.0git; `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__` defaults to 0) declares only host `max(int,int)`, so both arguments are converted to int: the 4.2 A NEP cutoff becomes 4. The check `if (max_nep_rc > rc)` (ILP rcut_global) at line 344 then accepts an ILP cutoff in (4, 4.2), which CUDA rejects, and the neighbour list built at the ILP cutoff is too short for NEP.
+
+Fix: `max_nep_rc = fmax(max_nep_rc, double(parambs[i].rc_radial));` One line. Lines 229-230 (`max_MN_radial`/`max_MN_angular`) and the `max_n_max_angular`/`max_dim` lines are `(int,int)` and unchanged; `min(num_atoms, CUDA_MAX_NL_ILP_NEP_TMD)` is int/int. Device `min(...)` on floats in the kernels (2106+) are device code, left alone.
+
+### Project-wide re-check (host-only poison compile)
+Forced include `template<class A,class B> void min(A,B)=delete; template<class A,class B> void max(A,B)=delete;` with this build's real flags, every `*/*.cu` file:
+
+    hipcc -x hip --cuda-host-only -fsyntax-only -O3 --offload-arch=gfx90a -DUSE_HIP -I./ -include poison.h <file>
+
+- default defines: only hit `force/ilp_nep.cu:221`.
+- second pass with `-DUSE_FIXED_NEIGHBOR -DUSE_NEPCG -DDEBUG -DUSE_FIXED_SCALER -DCG_RDF -DSTRONG_DEBUG -DOUTPUT_NEIGHBOR_FOR_TRAIN -DFINE_TUNE_DESCRIPTOR -DZHEYONG -DUSE_KEPLER`, and a third with `-DUSE_GRAPHENE_TB`: same single hit.
+- external-library regions (`USE_PLUMED`, `USE_TENSORFLOW`, `USE_NNAP`, `USE_NETCDF`, `USE_MDI`) cannot be compiled here; grep of every file carrying those macros (force/dp.cu, nnap.cu, force.cu, main_gpumd/run.cu, measure/plumed.cu, dump_netcdf.cu, main_mdi/*) finds no unqualified `min(`/`max(` at all. Bare `#if`s are CUDA_VERSION/__CUDA_ARCH__ guards with no min/max inside.
+- Judged harmless: `main_gnep/` and `main_mdi/` fail the host-only compile for unrelated reasons (raw `cuda*` API, missing `curand_kernel.h`/`add_efield.cuh`); neither directory is in `makefile.hip`, so they are not part of the HIP build and cannot carry this defect into a ROCm binary.
+After the fix the poison compile of `force/ilp_nep.cu` reports 0 errors.
+
+### Run-time before/after (real gfx90a, HIP_VISIBLE_DEVICES=1, ulimit -c 0)
+Case `tests/gpumd/ilp_nep_cutoff` (new): 480-atom AB bilayer graphene (group column = layer), `nep_ilp 1 C` with LAMMPS CH.ILP C-C parameters and rcut_global 4.1, map to `potentials/nep/C_2022_NEP4.txt` (cutoff 4.2 3.7).
+
+| binary | ILP rcut 4.1 | ILP rcut 4.3 (control) |
+|---|---|---|
+| 6231243f (before) | accepted, exit 0, 100 NVE steps ran (PE -1565.5 eV at step 10) | -- |
+| 15124b53 (after)  | rejected, exit 1, `ERROR: Please make sure cutoff of ILP is larger than it of NEP.` (CUDA behaviour) | accepted, exit 0 |
+
+Regression test added to `tests/run_tests.sh` in the harness's diff style: `../../../src/gpumd | tail -n 1 > error.out; diff -q error.out error1.out`. Before: `Files error.out and error1.out differ` (last line blank, run completed). After: identical. `run_tests.bat` not extended (Windows `fc`-only harness, cannot be exercised here).
+
+### GPU suite (the three recorded workloads), same day, before vs after binary
+Build: `utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip -j64` (zero errors; incremental rebuild touched only force/ilp_nep.o). Fresh scratch copies under /tmp with potentials symlinked.
+
+| metric | after 15124b53 | before 6231243f (today) | gfx90a record 2026-05-30 |
+|---|---|---|---|
+| carbon NVE drift (max-min)/\|mean\| | 1.20e-6 | 1.73e-6 | 2.6e-7 |
+| carbon std/\|mean\| | 3.77e-7 | 4.36e-7 | 3.8e-7 |
+| carbon T mean | 300.44 K | 300.47 K | 300.4 K |
+| carbon PE vs CUDA ref (step 10) | 1.28e-5 | 1.25e-5 | 5.8e-6 |
+| graphene_dos DOS vs CUDA ref max diff / RMSE | 7.38e-2 / 1.14e-2 | 5.00e-2 / 8.93e-3 | 5.7e-2 |
+| graphene_dos MVAC t0 / DOS finite, >=0 | 1,1,1 / yes (min 3.07e-2) | yes | yes |
+| graphene_kappa_emd T mean / HAC 50x11 finite | 297.01 K / yes | 297.20 K / yes | 297.3 K / yes |
+
+All 3 exit 0, empty stderr, no NaN, both binaries. Before and after sit in the same chaotic-MD band (run-to-run non-determinism root-caused above to atomicAdd cell binning); none of these workloads constructs ILP_NEP, so no change is expected and none is seen. PASS: 3/3 workloads + new ilp_nep_cutoff test (fails before, passes after).
+
+Commit 15124b53 `[ROCm] Fix NEP cutoff truncated to int in the ILP_NEP constructor`; `utils/jargon.py --port GPUMD` clean, `utils/prose.py` clean. Pre-existing: `audit-commits` flags 6231243f (already merged upstream) for no Test Plan; not touched.
+
+CUDA compile check not run here (no nvcc on this host); the change is plain `fmax`/`double()` and the test files are data, so it should compile unchanged with nvcc -- the dispatcher's mi355 nvcc check is still owed before presenting. All platforms now read revalidate at 15124b53 (validated_sha 6231243f).

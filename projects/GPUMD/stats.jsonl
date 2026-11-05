@@ -3,3 +3,6 @@
 {"kind":"phase","ts":"2026-05-30T07:07:33Z","phase":"test","seconds":2.056,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/GPUMD/src/tests/gpumd/carbon && HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/GPUMD/src/src/gpumd 2>&1"}
 {"kind":"phase","ts":"2026-05-30T07:08:21Z","phase":"test","seconds":4.819,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/GPUMD/src/tests/gpumd/graphene_dos && HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/GPUMD/src/src/gpumd 2>&1"}
 {"kind":"phase","ts":"2026-05-30T07:13:32Z","phase":"test","seconds":4.643,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/agent_space/gpumd_tests/graphene_kappa_emd && HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/GPUMD/src/src/gpumd 2>&1"}
+{"kind":"phase","ts":"2026-11-05T05:15:51Z","phase":"compile","seconds":11.483,"exit":0,"cmd":"make -C projects/GPUMD/src/src -f makefile.hip -j64 gpumd"}
+{"kind":"phase","ts":"2026-11-05T05:17:23Z","phase":"compile","seconds":5.850,"exit":0,"cmd":"make -C projects/GPUMD/src/src -f makefile.hip -j64"}
+{"kind":"phase","ts":"2026-11-05T05:18:30Z","phase":"test","seconds":15.701,"exit":0,"cmd":"bash /tmp/gpumdrun/run3.sh"}
