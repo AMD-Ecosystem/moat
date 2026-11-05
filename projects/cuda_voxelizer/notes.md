@@ -602,3 +602,44 @@ cmake --build <build> --parallel 64
 - The `.cu` objects and the GPU path were not compared or run here (no NVIDIA GPU). Last NVIDIA run is the V100 run at 3625a1e above. For the CUDA build the only change since then is that `main.cpp` reverts to upstream's managed table, now shown above to be code-identical.
 
 Builds, worktrees, the fork clone and Trimesh2 were deleted from the job directory afterwards.
+## Review 2026-11-05 (fourth review, linux-gfx1201, reviewer, moat-port 5a9b7cf; delta ccc2950..5a9b7cf)
+
+Verdict: review-passed. No code findings. One statement in the `5a9b7cf` commit message has no recorded evidence behind it. It is registered as `cuda-voxelizer-5a9b7cf-nvidia-managed-run` and must be made true or reworded before the upstream PR. The fork is never amended.
+
+### Finding (commit message, gates the upstream PR, not the code)
+
+1. The `5a9b7cf` body says "The managed table also works on NVIDIA GPUs: a CUDA build run at -s 64 matches the CPU voxelizer." No recorded run supports this. The three V100 runs of a managed table (689b885 with `cudaMemset`; 94d1340 and 8b84b91 with upstream's bare `cudaMallocManaged`, which is exactly what 5a9b7cf restores for CUDA) checked only exit 0, `CUDA device(s) found` and the bounding box ("CUDA run on NVIDIA V100 (2026-11-04)" above). The one NVIDIA GPU-vs-CPU comparison (`cmp` clean, `-s 64 -o binvox`) was at 3625a1e, which used the `cudaMalloc` table that 5a9b7cf removes from CUDA. The 5a9b7cf CUDA build has also not been compiled with nvcc yet (the porter's round says it runs separately on the mi355 host). To fix it with no fork change, run on the V100 at 5a9b7cf with `USE_HIP` OFF: build, then `-s 64 -o binvox` on the GPU and with `-cpu`, then `cmp`. Do the same with `-solid`. That one run also delivers the CUDA compile owed at this head. If it cannot be run, the PR body must say only that the CUDA build runs at `-s 64`, and the PR-prep squash must reword the sentence.
+
+### Checks with no finding
+
+- Guard: `__HIP_PLATFORM_AMD__` is on the command line of every TU in the HIP build, including the host-compiled `main.cpp`. It comes from the `hip::host` interface definitions; checked in `compile_commands.json` of the README-recipe build: 7 of 7 TUs. The CUDA build never links `hip::host` and never sees `hip_compat/`, so it is undefined there. This is the same guard the port uses in `helper_math.h:264`. HIP-on-NVIDIA would take the managed branch, which is the CUDA semantics.
+- CUDA side: `src/main.cpp` at 5a9b7cf, with the `__HIP_PLATFORM_AMD__` blocks resolved as undefined (scripted `#if`/`#else`/`#endif` strip, 2 guards), is byte-identical to `upstream/main:src/main.cpp`, CRLF included. So 5cd065b's `cudaMemset` is also gone from CUDA. That matches jeff's 2026-11-05 ruling ("restore upstream exactly"), and the commit message says so.
+- HIP side: the HIP-resolved `main.cpp` differs from 3625a1e only by a rename. The table is allocated, zeroed, passed to `voxelize`/`voxelize_solid` through `vtable`, and then aliased to `device_vtable` for the `cudaMemcpy` DeviceToHost and the `cudaFree`. The calls are the same, in the same order, and the writers get the host buffer.
+- Other statements in the commit message: the MI250X managed-memory OR/XOR drop, the oversubscription trade-off, and `-s 4096` = 8 GiB (4096^3 bits) all match the gfx90a records. The 512 counts (Release 8 / 1, -O0 4 / 0) and the 108 byte-identical repeats match the porter's gfx90a round. "Kernels and CPU path unchanged" is true (`git show --stat`: `src/main.cpp` only). Title `[ROCm]`, 51 chars. AI disclosure is present, with no `Co-Authored-By`/noreply. `utils/prose.py` and `utils/jargon.py --port cuda_voxelizer` are clean. The fork clone is clean at 5a9b7cf.
+
+### Reviewer evidence (linux-gfx1201, AMD Radeon AI PRO R9700, `HIP_VISIBLE_DEVICES=0`, TheRock ROCm pip SDK, CMake/Ninja from the image venv, g++ host; all GPU runs under `ulimit -c 0`)
+
+This is not validation evidence; the gfx1201 validator owns the gate. Trimesh2 `2022.03.04` (`0b3d9e2`): `make -C libsrc -j24`, exit 0. Built from a `git archive` export of 5a9b7cf in the job directory (the fork clone is untouched). The README Linux recipe was used verbatim, apart from the prefix and the target:
+
+```
+mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DTrimesh2_INCLUDE_DIR:PATH=<tm2>/include -DTrimesh2_LINK_DIR:PATH=<tm2>/lib.Linux64 ..
+cmake --build . --parallel 24
+# plus a device -O0 build
+cmake -S <src> -B b-o0 -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0" -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 <same prefix and Trimesh2 flags>
+```
+
+Both builds exited 0, with upstream warnings only: `main.cpp:28` -Wwrite-strings, `%llu` -Wformat, `nodiscard` in the `.cu` files, and Trimesh2 `mathutil.h`. None was on the changed lines. Emitted atomics: Release `global_atomic_or_b32` / `global_atomic_xor_b32`; -O0 `flat_atomic_or_b32` / `flat_atomic_xor_b32`.
+
+Differential: harness `work/scripts/cvdiff.py`, `test_models/bunny.OBJ`. Each run had its own directory, ran the GPU and then `-cpu` on the same binary, and the GPU log had to show `## GPU VOXELISATION`, `Voxelization GPU time` and `CUDA device memory for Voxel Grid`. binvox RLE, the morton bitset and obj_points were decoded to voxel sets. Each 512 case got 3 GPU repeats, sha256-compared. That makes 36 cases; counts are identical across the three formats, and 36 of 36 repeats were byte-identical.
+
+| mode | size | filled CPU | Release diff (GPU-only/CPU-only) | -O0 diff | GPU ms binvox Release / -O0 |
+|---|---|---|---|---|---|
+| surface | 64 | 13,802 | 0 | 0 | 0.3 / 12.3 |
+| surface | 256 | 221,760 | 0 | 0 | 3.9 / 266 |
+| surface | 512 | 887,315 | 9 (3/6) | 4 (2/2) | 25.7 / 1,659 |
+| solid | 64 | 52,258 | 0 | 0 | 0.2 / 9.7 |
+| solid | 256 | 3,345,384 | 0 | 0 | 5.1 / 306 |
+| solid | 512 | 26,763,628 | 1 (1/0) | 0 | 36.9 / 2,236 |
+
+These equal the gfx1201 validation at 3625a1e row for row (Release 9 / 1, -O0 4 / 0), so the HIP path behaves as validated. The upstream CI smoke `./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu` exits 0 on the CPU path and writes `bunny.OBJ_64.vox`.
