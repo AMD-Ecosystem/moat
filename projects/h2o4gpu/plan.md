@@ -168,3 +168,6 @@ Platform order: Linux wave64 and wave32 first; Windows only per open question 3.
 6. Docker/packaging: out of scope.
 7. Done: `fork_default_branch` corrected to `master` (`set-base-branch`).
 
+
+## Ruling 2026-11-04 (jeff)
+- xgboost_prev under USE_HIP: keep it, built CPU-only, so models saved by older releases still load in the ROCm wheel as they do in the CUDA wheel.
