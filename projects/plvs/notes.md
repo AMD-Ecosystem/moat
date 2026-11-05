@@ -2630,3 +2630,156 @@ OpenCV-with-HIP install copied from the earlier gfx1100 validation job on this h
 
 ### For the validators
 Every platform flips to `revalidate` at fde33e5. linux-gfx1100: the evidence above was taken by the porter; rerun the TUM-VI table (expect only the two registered upstream crashes, no `-217`). windows-gfx1151 still has its own failure at bab4052 recorded separately.
+## MapLine null KeyFrame root cause 2026-11-04
+
+Requested by jeff: root-cause the intermittent `MapLine::UpdateNormalAndDepth` null-KeyFrame segfault that both Linux validators saw in TUM-VI stereo runs (HIP 4/15, CPU-only 1/12 on gfx90a; 1/8 and 1/12 in the gfx1100 controls). This was a one-off investigation on linux-gfx942. No MOAT role was taken and no state was changed; the fork was not touched or pushed. CPU only: no GPU was used.
+
+### Result in one paragraph
+It is an upstream bug, but not a missing lock. `MapLine` counts `nObs` asymmetrically for fisheye right-camera observations: `AddObservation` adds 2 for a right index (`src/MapLine.cc:255-262`), while `EraseObservation` subtracts 1 for it (`:296-307`). So `nObs` drifts up by 1 for every KeyFrame that sees the line in its right image. When the last observation is erased, `mObservations` is empty, `nObs` is still 3-6, and the `nObs<=2` test (`:315`) does not set the line bad. `mpRefKF=mObservations.begin()->first` (`:312`) dereferences `begin()` of an empty map. In libstdc++ that reads `_M_node_count`, which is 0, so `mpRefKF` becomes null. The line stays in the map as a live, not-bad line with no observations and a null reference KF (called a "zombie" below). When Tracking matches it again and LocalMapping adds a new observation, `UpdateNormalAndDepth` passes its `observations.empty()` early return and dereferences the null `pRefKF` at `:660`. Fix: count a right-camera observation as 1 in `AddObservation`, a 2-line change. With it there were 0/140 crashes vs 11/220 unfixed, and 0/32 zombies vs 39/112 unfixed (details below).
+
+### Setup (all inside this job directory, `w/` next to the MOAT clone; container-local, wiped with the job)
+- Upstream = fork `master` = `luigifreda/plvs` HEAD `2ecb8b1` ("Added support for CUDA 13"); `git ls-remote` matched.
+- OpenCV 4.13.0 + contrib 4.13.0 (upstream `install_local_opencv.sh` version), CPU only: `cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=17 -DOPENCV_EXTRA_MODULES_PATH=<contrib>/modules -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_PYTHON=OFF -DWITH_GTK=ON -DWITH_QT=OFF -DBUILD_LIST=core,imgproc,imgcodecs,highgui,videoio,video,features2d,flann,calib3d,ximgproc,xfeatures2d,line_descriptor -DOPENCV_ENABLE_NONFREE=ON -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF`, built 620/620 and installed to scratch. The apt dependencies (PCL 1.14, Boost 1.83, glog, protobuf, octomap, suitesparse, glew) were already on the image.
+- Third-party in `build_thirdparty.sh` order with its options (`-DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 -DOpenCV_DIR=<ocv> -DOPENCV_VERSION=4 -DCMAKE_POLICY_VERSION_MINIMUM=3.5`): Pangolin `fe57db532` + `pangolin.patch`, DBoW2, g2o, volumetric_mapping, open_chisel, chisel_server, voxblox (cmake rerun after make, the script's `.pb.h` copy hack), voxblox_server, line_descriptor. All RC=0.
+- Upstream build quirk: `CMakeLists.txt:286` links the four fastfusion archives whenever `BUILD_FASTFUSION` is set (any AVX2/SSE4 CPU), even with `-DWITH_FASTFUSION=OFF`. The link then fails (`No rule to make target .../fastfusion/lib/libauxiliary.a`). I built fastfusion with `-DCMAKE_CXX_FLAGS="-include deque"`, which works around its g++ 13 missing `<deque>` without a source edit. The library is only linked, never used (`USE_FASTFUSION` is not defined).
+- plvs: `cmake .. -DCMAKE_BUILD_TYPE=Release -DWITH_CUDA=OFF -DWITH_LIBELAS=OFF -DWITH_LIBSGM=OFF -DWITH_FASTFUSION=OFF -DWITH_G2O_NEW=OFF -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 -DOPENCV_VERSION=4 -DOpenCV_DIR=<ocv> -DCMAKE_POLICY_VERSION_MINIMUM=3.5 && make -j 56`: RC=0. `nm -DC lib/libplvs.so | grep -c 'cuda::\|hipLaunch\|cudaLaunch'` = 0.
+- Run (stock example, same dataset and yaml as the validators; the yaml copy only appends `Viewer.on: 0`; `PointCloudMapping.on` is already 0 in the tracked file). Each run was under `ulimit -c 0`, with an `LD_PRELOAD` SIGSEGV/SIGABRT `backtrace_symbols_fd` handler (the same `segv.c` approach as the gfx1100 validator):
+  ```
+  ./Examples/Stereo/stereo_tum_vi Vocabulary/ORBvoc.txt TUM-VI-noviewer.yaml \
+    dataset-room1_512_16/mav0/cam0/data dataset-room1_512_16/mav0/cam1/data \
+    Examples/Stereo/TUM_TimeStamps/dataset-room1_512.txt room1
+  ```
+  A clean run takes about 180-200 s, ends with one map of 99-121 KFs and exit 0, and gives a Sim3 ATE of 0.070-0.073 m against `mocap0`, matching the gfx90a CPU-only figures.
+- Runs went 8-16 at a time. Each plvs process starts about 290 threads (OpenMP sizes itself to all 224 cores), and 40 concurrent runs pushed the host load average to about 7800. From that point I set `OMP_NUM_THREADS=4` and capped concurrency. In the tables, sets `base`/`fix`/`logfix` runs 1-32 (fix, logfix) and 1-47 (base) used the default OpenMP; everything else used `OMP_NUM_THREADS=4`.
+
+### Instrumentation (scratch copies only; upstream tree untouched)
+`dbgTrace()` in `MapLine.cc` (stderr line plus `backtrace_symbols_fd`) at four points:
+- `ERASE_LAST_ZOMBIE`/`ERASE_LAST_BAD`: `EraseObservation` empties `mObservations`, with or without `nObs<=2`.
+- `ADD_TO_NULLREF`: `AddObservation` on a line whose `mpRefKF` is null.
+- `UPDATE_NULLREF`: `UpdateNormalAndDepth` with a non-empty `observations` copy and a null `pRefKF`.
+
+Tracking: after `TrackReferenceKeyFrame`/`TrackWithMotionModel`/`TrackLocalMap`/`NeedNewKeyFrame`, log any line in `mCurrentFrame.mvpMapLines` that is not bad, has a null ref KF and has no observations (`TRACK_HAS_ZOMBIE`). Third round only: `QUEUE_KF` at `Tracking::CreateNewKeyFrame` -> `InsertKeyFrame`, `PROCESS_KF` at the top of `ProcessNewKeyFrame`, and `LOCALKF_HOLDS_ZOMBIE` in `Tracking::UpdateLocalFeatures`, naming the local KF whose `GetMapLineMatches()` handed out a zombie.
+
+### Evidence
+| build | runs | MapLine null-KF SEGV | other crash | runs with a zombie |
+|---|---|---|---|---|
+| upstream, plain (`base` 60 + `baseB` 48) | 108 | 3 (run28, run52, baseB) | 1 (`base/run46`, see below) | n/a |
+| upstream + logging (`log` 16, `log2` 48, `log3` 48) | 112 | 8 (0 + 2 + 6) | 1 (`log3/run17`) | 39 (7 + 13 + 19) |
+| fixed, plain (`fix` 60 + `fixB` 48) | 108 | 0 | 0 | n/a |
+| fixed + logging (`logfix`) | 32 | 0 | 0 | **0** |
+
+- All 11 unfixed MapLine crashes have the validators' signature: `addr 0x1378`, `pthread_mutex_lock <- KeyFrame::GetCameraCenter <- MapLine::UpdateNormalAndDepth <- LocalMapping::ProcessNewKeyFrame` (9) or `<- LocalMapping::SearchInNeighbors` (2), on the LocalMapping thread.
+- Crash rate: 11/220 unfixed vs 0/140 fixed, one-sided Fisher p = 0.004. Plain builds alone: 3/108 vs 0/108, p = 0.12, not significant by itself. The same-condition pair `baseB`/`fixB` (48 each, run concurrently with identical settings) gave 1 vs 0. Zombie lines: 39/112 vs 0/32, p = 9e-6. The logging shifts thread timing; the unfixed crash rate is 2.8% plain vs 7% logged.
+- Each of the 8 instrumented crashes was preceded, for the same line id, by `ERASE_LAST_ZOMBIE` (`nObs` 3, 4 or 6, `obsMap=0`, `refKF=(nil)`), then `ADD_TO_NULLREF`, then `UPDATE_NULLREF`, then the SEGV. No crash happened without a zombie.
+- ATE (Sim3, f_room1 vs mocap0): unfixed 0.0714-0.0715 m mean (n=57 and 47), fixed 0.0715 m (n=60 and 48). The fix makes lines eligible for culling at the intended count, and trajectory accuracy does not change.
+
+### The exact interleaving
+1. **Erase (LocalMapping thread).** `LocalMapping::KeyFrameCulling -> KeyFrame::SetBadFlag -> MapLine::EraseObservation`, or the line outlier loop at the end of `Optimizer::LocalBundleAdjustment` (`pKFi->EraseMapLineMatch(pMLi); pMLi->EraseObservation(pKFi)`, `src/Optimizer.cc:4406-4407`), removes the line's last observation. `nObs` is still > 2 because each right-camera observation was counted +2 on add and -1 on erase. Both sides of a fisheye stereo line match carry the depth marker (`Frame.cc:3164-3165`, "fake positive values ... for both left and right lines"), so `AddObservation`'s `mvuRightLineStart[idx]>=0` test is true for right indices too. Result: `mbBad=false`, `mObservations` empty, `mpRefKF=NULL`, line still in the Map.
+2. **The stale pointer is in a KeyFrame's line-match array, not in an observation map.** In `log3`, all 7 zombies that reached Tracking were handed out by a local KF (`LOCALKF_HOLDS_ZOMBIE`) that had been processed by LocalMapping well before the zombie existed. So this is not a KF waiting in the `mlNewKeyFrames` queue; that hypothesis was tested and rejected. In run26 the holder is the very KF (224) whose observation LBA just erased: `EraseMapLineMatch(pML)` cleared only the slots recorded in the line's `(left,right)` tuple, and KF 224 still listed the line in another slot of `mvpMapLines`. Inferred, not instrumented: that unrecorded slot is a second association of the same line in one KF. `AddObservation` overwrites the tuple slot, and `ProcessNewKeyFrame`'s `IsInKeyFrame` check means a second slot is never recorded. ORB-SLAM has the same kind of slot, and there it is harmless because the point is bad by then.
+3. **Re-match (Tracking thread).** `Tracking::UpdateLocalFeatures` builds `mvpLocalMapLines` from local KFs' `GetMapLineMatches()` and skips only `isBad()` lines (`src/Tracking.cc:4631-4643`). `SearchLocalLines` matches the zombie into `mCurrentFrame` (`TRACK_HAS_ZOMBIE stage=TrackLocalMap`, then `TrackWithMotionModel` on later frames). `CreateNewKeyFrame` copies it into the new KF.
+4. **Crash (LocalMapping thread), path A:** `ProcessNewKeyFrame` -> `!pML->isBad()` and `!IsInKeyFrame` -> `AddObservation` (the map is now non-empty and `mpRefKF` stays null, because only the constructor and `EraseObservation` assign it) -> `UpdateNormalAndDepth` -> `pRefKF->GetCameraCenter()` at `MapLine.cc:660` -> SEGV at `0x1378` (`&KeyFrame::mMutexPose` from null). **Path B** (log2/run16, log3/run25): `SearchInNeighbors -> LineMatcher::Fuse` finds the zombie as the line already in the KF and compares `Observations()` (`LineMatcher.cc:2304-2307`). The zombie's inflated `nObs` wins, so `pML->Replace(zombie)` moves the other line's observations onto it (`ADD_TO_NULLREF` from `MapLine::Replace`). `SearchInNeighbors` then calls `UpdateNormalAndDepth` on the KF's lines and the same SEGV follows.
+
+So the answers to the questions asked: the eraser is the LocalMapping thread (KF culling or LBA outlier removal). No lock is missing. Every step above runs under the existing mutexes, and the crash would happen even with full serialization; the cross-thread part is only whether Tracking happens to re-match a zombie before it drops out of the local map, which is why it is intermittent and why the GPU build only shifts the rate. The observation map that holds the null is the zombie's own `mObservations` (empty, with `mpRefKF` taken from `begin()` of an empty map). The live stale reference that brings it back is a slot in an older KF's `mvpMapLines`. I did not run ThreadSanitizer: the logs show a single-thread invariant violation with a complete causal chain, so TSan would not have changed the conclusion.
+
+### Comparison with ORB-SLAM2/3 `MapPoint`
+- ORB-SLAM2 `MapPoint.cc` (raulmur/ORB_SLAM2 `f2e6f51`): `AddObservation` +2 if `mvuRight[idx]>=0` (`:106`), `EraseObservation` -2 under the same test (`:120`). It has the same `mpRefKF=mObservations.begin()->first` (`:127`) and `nObs<=2 -> SetBadFlag` (`:130`). `UpdateNormalAndDepth` returns on `mbBad` (`:338`) or empty observations (`:345`), then calls `pRefKF->GetCameraCenter()` unguarded (`:359`).
+- ORB-SLAM3 `MapPoint.cc` (UZ-SLAMLab/ORB_SLAM3 `4452a3c`): the same structure, with the +2/-2 gated on `!pKF->mpCamera2` in both functions (`:162-163`, `:179-180`). A right-camera observation therefore counts 1 both ways. It also has the same `begin()` (`:191`), `nObs<=2` (`:194`) and unguarded `pRefKF->GetCameraCenter()` (`:468`).
+- plvs's own `MapPoint.cc` keeps the ORB-SLAM3 `!pKF->mpCamera2` gate in both functions (`:198`, `:216`). Only `MapLine` dropped it (the commented-out line above `MapLine.cc:255`), to let fisheye line depth count, and did so on the add side only.
+- None of them null-checks `pRefKF`. They rely on the invariant that an empty observation map implies `nObs<=2` and therefore `SetBadFlag`, and bad features are skipped everywhere. `MapLine` breaks that invariant for fisheye rigs. (The `begin()`-on-empty dereference is formally UB in all three, but it is harmless while the invariant holds, because the feature is set bad immediately.)
+
+### Proposed fix (verified)
+```diff
+--- a/src/MapLine.cc
++++ b/src/MapLine.cc
+@@ -252,7 +252,8 @@ void MapLine::AddObservation(const KeyFramePtr& pKF, int idx)
+     const bool bLineDepthAvailable = (!pKF->mvuRightLineStart.empty()) ;// && (!pKF->mvuRightLineEnd.empty());
+     //if( !pKF->mpCamera2 && ((pKF->mvuRightLineStart[idx]>=0) && (pKF->mvuRightLineEnd[idx]>=0)) )
+-    if(bLineDepthAvailable && (pKF->mvuRightLineStart[idx]>=0) && (pKF->mvuRightLineEnd[idx]>=0)) // NOTE: ...
++    const bool bRightObservation = (pKF->NlinesLeft != -1 && idx >= pKF->NlinesLeft);
++    if(!bRightObservation && bLineDepthAvailable && (pKF->mvuRightLineStart[idx]>=0) && (pKF->mvuRightLineEnd[idx]>=0)) // NOTE: ...
+     {
+         nObs+=2;
+     }
+```
+This keeps the fisheye intent (a left observation with depth counts 2) and makes add and erase symmetric. Optional hardening, not tested here and not needed for this crash: in `EraseObservation`, use `if(nObs<=2 || mObservations.empty()) bBad=true;` and assign `mpRefKF` from `begin()` only when the map is non-empty.
+
+### Other upstream crashes seen (unfixed builds only, unrelated to MapLine, not investigated)
+- `base/run46`: `terminate` on `cv::Exception` `(-215) 0 <= _rowRange.start && ... _rowRange.end <= m.rows` in `ORBmatcher::SearchForTriangulation <- LocalMapping::CreateNewMapFeatures` (point code).
+- `log3/run17`: SIGSEGV at a non-null address in `LocalMapping::CreateNewMapFeatures`.
+- Each occurred once in 220 unfixed runs and never in the 140 fixed runs. That gap is too small to attribute either crash to this bug.
+
+### For the port
+The bug is upstream CPU code that the port does not touch, and it reproduces at the same signature with no GPU code. It does not gate validation. Whether to carry the 2-line fix in `moat-port` or leave it upstream is jeff's call. I made no fork change and registered no deferred item.
+
+### Upstream issue draft (for jeff to file; not filed)
+Checked with `python3 utils/jargon.py` (clean) and `python3 utils/prose.py` (clean). ASCII only. Target: https://github.com/luigifreda/plvs/issues.
+
+====
+**Title:** Segfault in MapLine::UpdateNormalAndDepth on a null reference KeyFrame with stereo fisheye cameras
+
+### Symptom
+
+With line tracking on and a stereo fisheye camera pair (`Examples/Stereo/stereo_tum_vi` with `Examples/Stereo/TUM-VI.yaml`, TUM-VI `dataset-room1_512_16`), some full runs segfault on the LocalMapping thread. The faulting address is a small offset from zero (0x1378, the KeyFrame pose mutex), so the KeyFrame pointer is null:
+
+```
+#0 pthread_mutex_lock
+#1 PLVS2::KeyFrame::GetCameraCenter()
+#2 PLVS2::MapLine::UpdateNormalAndDepth()      src/MapLine.cc:660
+#3 PLVS2::LocalMapping::ProcessNewKeyFrame()   (or LocalMapping::SearchInNeighbors)
+#4 PLVS2::LocalMapping::Run()
+```
+
+It happens on master (2ecb8b1) in a CPU-only build (`-DWITH_CUDA=OFF -DWITH_LIBELAS=OFF -DWITH_LIBSGM=OFF`), so the GPU code is not involved.
+
+### Root cause
+
+`MapLine::AddObservation` and `MapLine::EraseObservation` count `nObs` differently for right-camera observations of a fisheye pair. As a result `nObs` drifts upwards, and a line can lose its last observation without being set bad.
+
+- `Frame::ComputeStereoFishEyeLineMatches` marks depth on both lines of a stereo match: `mvuRightLineStart[leftIdx] = 1` and `mvuRightLineStart[rightIdx+NlinesLeft] = 1` (src/Frame.cc:3164-3165).
+- `MapLine::AddObservation` (src/MapLine.cc:255-262) adds 2 whenever `mvuRightLineStart[idx] >= 0`, whether `idx` is a left index or a right index. A line seen by both cameras of one KeyFrame gets +4.
+- `MapLine::EraseObservation` (src/MapLine.cc:296-307) subtracts 2 for a left index with depth and 1 for a right index, so erasing the same KeyFrame gives -3.
+- When the last KeyFrame is erased, `mObservations` is empty but `nObs` is still 3 to 6, so the `nObs<=2` test (src/MapLine.cc:315) does not call `SetBadFlag()`. The same branch then runs `mpRefKF=mObservations.begin()->first` (src/MapLine.cc:312) on an empty map. With libstdc++ that read lands on the map's node count, which is 0, so `mpRefKF` becomes null.
+- The erase comes from the LocalMapping thread: `LocalMapping::KeyFrameCulling` -> `KeyFrame::SetBadFlag`, or the line outlier removal at the end of `Optimizer::LocalBundleAdjustment`. The line stays in the map, not bad, with no observations and a null reference KeyFrame.
+- An older KeyFrame can still list the line in its `mvpMapLines`, at a slot that the line's observation tuple does not record, so `KeyFrame::EraseMapLineMatch(pML)` does not clear it. `Tracking::UpdateLocalFeatures` collects lines from those arrays and skips only bad lines (src/Tracking.cc:4631-4643), so Tracking matches the line again. The next KeyFrame carries it, and `LocalMapping::ProcessNewKeyFrame` calls `AddObservation` and then `UpdateNormalAndDepth` (src/LocalMapping.cc:399-400). Now `observations` is not empty but `pRefKF` is null, and src/MapLine.cc:660 crashes.
+- A second path goes through `LineMatcher::Fuse` (src/LineMatcher.cc:2304-2307). It keeps this line over its duplicate because the inflated `nObs` wins the comparison, and moves the duplicate's observations onto it. `LocalMapping::SearchInNeighbors` then calls `UpdateNormalAndDepth` on it.
+
+`MapPoint` follows ORB-SLAM3 and is not affected. It counts 2 only when `!pKF->mpCamera2`, in both `AddObservation` and `EraseObservation` (src/MapPoint.cc:198 and :216), so an empty observation map always comes with `nObs<=2` and the point is set bad. `MapPoint::UpdateNormalAndDepth` in ORB-SLAM2 and ORB-SLAM3 dereferences `pRefKF` without a check as well, and the same `begin()` assignment exists there. They rely on this invariant, and once a point is bad it is skipped everywhere.
+
+The crash is intermittent because it needs two things: a line in this state, which appeared in about a third of runs, and Tracking matching that line again before the line is dropped. The second depends on the timing between the Tracking and LocalMapping threads.
+
+### Reproduction
+
+1. Build master CPU-only (`-DWITH_CUDA=OFF -DWITH_LIBELAS=OFF -DWITH_LIBSGM=OFF -DWITH_FASTFUSION=OFF`).
+2. Download https://cdn3.vision.in.tum.de/tumvi/exported/euroc/512_16/dataset-room1_512_16.tar and extract it.
+3. Append `Viewer.on: 0` to a copy of `Examples/Stereo/TUM-VI.yaml` and run it several times:
+
+```
+./Examples/Stereo/stereo_tum_vi Vocabulary/ORBvoc.txt TUM-VI.yaml \
+  dataset-room1_512_16/mav0/cam0/data dataset-room1_512_16/mav0/cam1/data \
+  Examples/Stereo/TUM_TimeStamps/dataset-room1_512.txt room1
+```
+
+In my runs, 3 of 108 plain runs crashed this way, and 8 of 112 runs with extra logging did. Other machines saw 1 crash in 8 to 12 runs. The bad state itself is easier to see than the crash: log in `MapLine::EraseObservation` when `mObservations` becomes empty while `nObs > 2`. That happened in 39 of 112 runs.
+
+### Proposed fix
+
+Count a right-camera observation as 1 in `AddObservation`, as `EraseObservation` already does:
+
+```diff
+--- a/src/MapLine.cc
++++ b/src/MapLine.cc
+@@ -252,7 +252,8 @@ void MapLine::AddObservation(const KeyFramePtr& pKF, int idx)
+     const bool bLineDepthAvailable = (!pKF->mvuRightLineStart.empty()) ;// && (!pKF->mvuRightLineEnd.empty());
+     //if( !pKF->mpCamera2 && ((pKF->mvuRightLineStart[idx]>=0) && (pKF->mvuRightLineEnd[idx]>=0)) )
+-    if(bLineDepthAvailable && (pKF->mvuRightLineStart[idx]>=0) && (pKF->mvuRightLineEnd[idx]>=0))
++    const bool bRightObservation = (pKF->NlinesLeft != -1 && idx >= pKF->NlinesLeft);
++    if(!bRightObservation && bLineDepthAvailable && (pKF->mvuRightLineStart[idx]>=0) && (pKF->mvuRightLineEnd[idx]>=0))
+     {
+         nObs+=2;
+     }
+```
+
+With this change, 0 of 140 runs crashed in `UpdateNormalAndDepth` (108 plain, 32 with the logging above), compared with 11 of 220 without it (one-sided Fisher p = 0.004). The bad state did not appear in any of the 32 logged runs, against 39 of 112 without the change (p < 1e-5). Trajectory error against the mocap ground truth did not change: Sim3-aligned ATE RMSE averaged 0.0715 m with the change and 0.0714-0.0715 m without it.
+
+Possible extra hardening, not needed for this crash: in `EraseObservation`, also set the line bad when `mObservations` becomes empty, and assign `mpRefKF` from `begin()` only when the map is not empty.
+====
