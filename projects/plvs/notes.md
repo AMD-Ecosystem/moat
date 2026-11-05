@@ -2828,3 +2828,23 @@ CUDA no-regression compile check on the mi355 fleet host, no role taken and no s
 ### Not checked here
 - The full plvs CUDA library and executables (they need OpenCV with the CUDA contrib modules, plus PCL). The host `USE_CUDA` code was checked by preprocessor equivalence, not by compiling it with g++.
 - The system OpenCV 4.6 was not re-run; earlier gates recorded identical pre-existing errors at both shas with it.
+## Review 2026-11-05 (reviewer, linux-gfx942): review-passed (delta b9c257a..fde33e5, head fde33e5)
+
+Scope: `git diff b9c257a..fde33e5`, one commit, one file (`Thirdparty/libelas-gpu/GPU/elas_gpu.cu`, +1/-2). Host: MI300X (gfx942, wave64), TheRock pip SDK (amdclang++), `HIP_VISIBLE_DEVICES=1`, GPU runs under `ulimit -c 0`. Fork clean, HEAD == `origin/moat-port` == fde33e5. No findings.
+
+Fact-checks run:
+- Allocations in `ElasGPU::computeDisparity` (`elas_gpu.cu:319-596`): no `return`, `throw` or `exit` in the function body, so there is one path. 12 `cudaMalloc` (`:506-507, 515-517, 524, 543-548`) against 12 `cudaFree` (`:581-594`), each pointer exactly once; `d_valids` (malloc `:524`) is now freed at `:594`, after the `cudaDeviceSynchronize` (`:564`) and the blocking D2H copy (`:567`), so the kernel that reads it is done. 7 host `new[]` (`:339, 354-359`) against 7 `delete[]` (`:570-578`). `adaptiveMean`'s `d_D` (`:739/:752`) is paired and unchanged.
+- CUDA path: the hunk is in shared source; `cudaFree` maps to `hipFree` only under `USE_HIP` through `GPU/cuda_to_hip.h:14`, so nvcc sees the same one-line fix and nothing else. Not compiled with nvcc here (no CUDA toolkit on this host); the mi355 CUDA compile still owes one run at this head before the port is presented.
+- Pending HIP error, measured independently on gfx942 with my own harness (`agent_space/plvs-r3/tools/elas_leak.cpp`, own PGM reader; 21 `ElasGPU::process` calls, `hipGetLastError` + `hipMemGetInfo` after each). Both commits exported with `git archive` outside the fork and built with `cmake -S $L -B $L/build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_MARCH_NATIVE=OFF && cmake --build $L/build -j 32` (RC=0, 14/14 each), harness `amdclang++ -x hip --offload-arch=gfx942 -std=c++17 -O2 -DUSE_HIP -I$L/CPU -I$L/GPU elas_leak.cpp -x none $L/lib/liblibelas_gpu.a -pthread`, run `./elas_leak $L/input/<img> 20 <subsampling>`:
+
+| source | aloe sub=0 | aloe sub=1 | cones sub=0 | cones sub=1 | calls with pending error |
+|---|---|---|---|---|---|
+| b9c257a | 80.00 MB lost / 20 calls | 20.00 MB | 26.00 MB | 8.00 MB | 21/21 `hipErrorInvalidValue` (every config) |
+| fde33e5 | 0 | 0 | 0 | 0 | 0/21 (every config) |
+
+  Matches the porter's gfx1100 figures (aloe 80 MB, cones 26 MB, 21/21 -> 0/0/21) on wave64.
+- Gates: `python3 utils/jargon.py --port plvs` clean; title `[ROCm] Free d_valids once and stop double-freeing in ElasGPU` is 60 chars; no `Co-Authored-By`/noreply trailer; AI-assistance disclosed; fenced Test Plan.
+
+Side observations, not findings against this delta:
+- The upstream `CPU/image.h` `loadPGM` (unchanged by the port) reads header fields with `getline`, one per line, and segfaults on the bundled `input/*.pgm`, whose header is one line (`P5 1282 1110 255`). That is why the harness here has its own reader; `main_gpu`/`main_cpu` built from the tree would crash the same way.
+- For the PR-prep squash: the fde33e5 body says the 12 clean TUM-VI runs had "371-470 libelas calls each", while the 2026-11-05 port round above says 413-470. Use the figure the run logs support when rewriting the message.
