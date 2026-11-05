@@ -3197,3 +3197,7 @@ Direct runs: `reduce_cuda` 1062/1062 PASS (5.0 s); in ctest `test_reduce_cuda` 4
 Comparison: 950dcdd02 here was 129/131 (confidence_connected + sparse_arith segfault; threading passed). Now 128/130 run: same confidence_connected residual, sparse_arith excluded rather than run, threading hung intermittently. Linux at this head: 131/132 on gfx90a, gfx1100, gfx942 (only confidence_connected, no ImageIO). No new deterministic failure.
 
 CUDA no-regression gate: already recorded at 83f66a507 (nvcc 12.8), not repeated (no toolkit here). `python3 utils/jargon.py --port arrayfire` (after fetching local `master` and `moat-sync-64c88d9` refs): only the standing `6800d5586` 'MOAT' hit. Documentation: unchanged by this round, intact.
+
+## Commit reword (2026-11-05)
+
+jeff approved and ran `agent_space/af-ub-reword.sh`: `moat-sync-64c88d9` 83f66a507 -> 83be19781 (identical tree), rewording only the last Test Plan sentence of the reduce-by-key commit (confidence_connected: 21 of 36 cases fail, 12 skip, 3 pass, not "skips every case"). `squash-carry-forward` carried linux-gfx942, linux-gfx90a, linux-gfx1100 and windows-gfx1151.
