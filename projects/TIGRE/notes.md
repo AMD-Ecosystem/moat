@@ -1457,3 +1457,12 @@ Outcome: windows-gfx1151 -> completed at b61ff14c87689beb1b08e2bcd8223c29ce85a83
 - No fill slip: both outer halos are zero on any device count. Draft issue revised to cover all three files; nothing posted. No state changed.
 
 - 2026-11-04: second upstream issue https://github.com/CERN/TIGRE/issues/803 (jeff approved and posted): halo exchange offsets in tv_proximal.cu, GD_TV.cu and GD_AwTV.cu, plus the single-GPU last-slice zero halo in tv_proximal.cu. Evidence: ~/.claude/plans/tigre-multigpu-tv-split-difference.md. Not carried in #747.
+
+## 2026-11-05: upstream PR branch for #802/#803 prepared and tested on 2x gfx90a (not opened)
+
+Evidence and the draft PR: ~/.claude/plans/tigre-multigpu-tv-upstream-pr.md. Branch `fix-multigpu-tv-halo` from CERN/TIGRE master 69bdd9f, two vendor-neutral commits (e803e85 syncs, Fixes #802; 7a2176c offsets + `cpy_from_host`, Fixes #803), only tv_proximal.cu, GD_TV.cu, GD_AwTV.cu. Nothing pushed; the fork's `moat-port`/`moat-fix-747` are untouched and the commits are not part of #747. Tested by cherry-picking both onto b61ff14 in a scratch branch (2x MI250X gfx90a, ROCm 10.1):
+- tvdenoise 2 GPUs and [0,1,0]: 5.2e-02..1.7e-01 of max -> bitwise equal to 1 GPU (64x128^2, 256^3, 512^3). minTV/AwminTV: <= 9.9e-08 after, bitwise with a scratch deterministic norm.
+- Race: reproduces on gfx90a only with uniform random input (base 10/3/6 distinct of 20 at 512^3; the sphere input never raced here); commit 1 alone 1/1/1.
+- Solvers end to end (128^3 head, cone, 64 angles, 10 iter): ossart_tv and fista -> bitwise 1 vs 2 GPUs; OS_ASD_POCS/OS_AwASD_POCS keep 1.1e-03/1.9e-02 of max, all of it from the per-GPU float norm sum (bitwise with the deterministic norm).
+- Single GPU: 70/70 upstream tests and all gates identical to base; only tvdenoise's last slices change (#803's documented edge fix).
+- Separate upstream Python bug found: `Ax.py`/`Atb.py` trim the caller's `GpuIds` in place, so blocksize-1 solvers (ASD_POCS, AwASD_POCS) run on one GPU after the first angle. Not filed; jeff's call. No platform state changed.
