@@ -2593,3 +2593,40 @@ Scripts in `agent_space/plvs/` (gitignored): `build_tp.sh` (third-party order ab
 
 ## Ruling 2026-11-04 (jeff): commit-message gate via PR-prep squash
 Five moat-port commits (a75da87, 7719623, 1654d89, 3b5d2e5, 3cbfef4) have a Test Plan without a fenced command block, so check.py's commits gate fails. jeff ruled option (b): at PR prep, once every gate is satisfied at the validated head, squash moat-port into compliant commit(s) whose tree is identical to the validated head, record it with `moatlib.py squash-carry-forward plvs <new_sha>`, and replace moat-port with the squash. That one force-push of plvs moat-port is authorized by this ruling (no upstream PR is open, so nothing upstream-visible moves). No per-sha exemption is added to the gate. Not yet: linux-gfx1100 and windows-gfx1151 are still validation-failed at the current head.
+
+## Port round 2026-11-05 (linux-gfx1100, porter): libelas-gpu double free and d_valids leak fixed. Head fde33e5
+
+jeff ruled `now` on deferral `plvs-libelas-gpu-dvalids-leak-double-free` (recorded with `deferred.py decide`, now `done`). Answers the linux-gfx1100 validation-failed at b9c257a. Host: Radeon Pro W7800 (gfx1100, wave32), `HIP_VISIBLE_DEVICES=1`, TheRock pip SDK (`_rocm_sdk_devel`, amdclang 24.0.0git), CMake 3.31.6, g++ 13, PCL 1.14 from apt; every GPU run under `ulimit -c 0`.
+
+### Change (fork commit fde33e5 `[ROCm] Free d_valids once and stop double-freeing in ElasGPU`, 1 file, +1/-2)
+`Thirdparty/libelas-gpu/GPU/elas_gpu.cu`, end of `ElasGPU::computeDisparity`: the second `cudaFree(d_u_vals); cudaFree(d_v_vals);` replaced by `cudaFree(d_valids);`. Allocation audit of the function (no early return between allocation and release): 12 device buffers (`d_u_vals`, `d_v_vals`, `d_planes_a/b/c`, `d_valids`, `d_disparity_grid`, `d_P`, `d_D`, `d_I1`, `d_I2`, `d_grid_dims`) now each freed exactly once; 7 host `new[]` (`P`, `planes_a/b/c`, `pixs_u`, `pixs_v`, `valids`) each with one `delete[]`, unchanged. `adaptiveMean`'s `d_D` already paired. Same source under CUDA (cudaFree spelling), so the CUDA build gets the same fix.
+
+### Build (everything from source in this job dir)
+OpenCV-with-HIP install copied from the earlier gfx1100 validation job on this host (same `opencv@50f05b1` + `opencv_contrib@041d552`, gfx1100, the `find_cuda_helper_libs` shim already applied). Pangolin `fe57db532` + `Thirdparty/pangolin.patch` cloned into the gitignored `Thirdparty/Pangolin`, then DBoW2, g2o, volumetric_mapping, open_chisel, chisel_server, voxblox, voxblox_server, libsgm, line_descriptor, libelas-gpu with `-DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 -DOpenCV_DIR=<ocv> -DUSE_HIP=ON -DOPENCV_VERSION=4 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_HIP_ARCHITECTURES=gfx1100`, then plvs with the 2026-11-04 linux-gfx1100 cmake line. All RC=0, configure prints `building with libelas HIP`. Script: `agent_space/plvs/build_all.sh`.
+
+### Leak and sticky-error check (`agent_space/plvs/elas_leak.cpp`: 21 `ElasGPU::process` calls on one pair, `hipMemGetInfo` + `hipGetLastError` after each)
+| library | aloe lost / 20 calls | cones lost / 20 calls | calls with pending error |
+|---|---|---|---|
+| b9c257a source | 80.00 MB (4.0 MB/call) | 26.00 MB (1.3 MB/call) | 21/21 `hipErrorInvalidValue` |
+| fde33e5 | 0 | 0 | 0/21 |
+
+### TUM-VI room1 stereo, libelas dense (`TUM-VI_pcm.yaml` = `Examples/Stereo/TUM-VI.yaml` with `PointCloudMapping.on: 1`), 16 sequential runs at fde33e5
+`agent_space/plvs/runs_stereo.sh` (same command as the 2026-11-04 section, `LD_PRELOAD` backtrace handler):
+- **`-217` / `invalid argument` aborts: 0 of 16** (b9c257a on gfx1100: 3 of 13, plus one SEGV at address 0 and one stackless crash, none of which recurred).
+- 12 runs clean: 2821/2821 frames, 413-470 libelas calls each, ATE RMSE 0.0746-0.0780 m (rigid alignment, as before; prior 0.0764-0.0776).
+- 3 runs (5, 9, 10): SEGV addr 0x1378, `LocalMapping::ProcessNewKeyFrame -> MapLine::UpdateNormalAndDepth -> KeyFrame::GetCameraCenter`, the upstream null-KeyFrame defect 1 of the 2026-11-04 section (reproduced there in CPU-only builds). Rate 3/16, against 3/6 for the scratch fix copy and 4/15 on gfx90a.
+- 1 run (14, after 91 libelas calls): SEGV at a heap address in the PointCloudMapping thread, `PointCloudMapOctreePointCloud<pcl::PointSurfelSegment>::UpdateMapNoSegm()+0x388 <- PointCloudMapping::UpdateMap <- Run`. Not seen in earlier tables. The function is byte-identical to upstream master and CPU-only: inside the `leaf_depth_begin()` loop it calls `octree_.deleteVoxelAtPoint(mapPoint)` where `mapPoint` is a reference into the current leaf, which invalidates the iterator (use-after-free whenever an unstable leaf is older than `kDeltaTimeForCleaningUnstablePointsUs`). Upstream, not a port defect; 1 event in 16 is no evidence for a GPU link (CPU-ELAS builds had 0 in 20 runs, Fisher p ~ 0.6).
+- Both upstream crashes registered together as deferred `plvs-upstream-stereo-mapping-crashes` for a person's ruling.
+
+### Recorded validation suite at fde33e5
+- Mono TUM RGB-D freiburg1_xyz (stock `mono_tum`, `TUM1.yaml`, Xvfb): RC=0, 286-point initial map, 50 KFs spanning 1305031102.18 -> 1305031128.68, clean Shutdown.
+- ELAS GPU-vs-CPU (`elas_cmp.cpp`), all 4 modes RC=0. **Gotcha for validators:** the plvs build passes `-DBUILD_WITH_MARCH_NATIVE=OFF`, but libelas-gpu built standalone (the porter's command in earlier sections) defaults to `-march=native`, and the CPU `Elas` reference changes with it (cones `invalid_cpu` 26728 vs 26733), so mode-2 numbers from the plvs-tree library do not match the recorded table. Compare like with like: built standalone, the fde33e5 source gives mode-2 output identical line for line to the b9c257a source (cones, aloe max 0; raindeer 0.50 / vmis 4; urban3 1.23 / >1px 1), GPU reruns bit-exact. Modes 0/1/3 inside the recorded ranges (mode 0 mean |d| 0.016-0.026, >1px 0-7, vmis 1-25; cones R 24.80, aloe L 4.35 / R 9.19, raindeer R 67.0).
+
+### Gates
+- `python3 utils/jargon.py --port plvs`: clean. `utils/prose.py` on the commit message: clean.
+- Integrity: `git -C projects/plvs/src status --porcelain` empty; HEAD fde33e5 == `origin/moat-port`.
+- CUDA compile not run here (no nvcc on this host). The hunk is a `cudaFree` call on a pointer already declared in the same function, in shared code nvcc compiles unchanged otherwise; the mi355/CUDA host should still compile it once at this head before the port is presented.
+- ROCm build documentation unchanged and still accurate (no build change).
+
+### For the validators
+Every platform flips to `revalidate` at fde33e5. linux-gfx1100: the evidence above was taken by the porter; rerun the TUM-VI table (expect only the two registered upstream crashes, no `-217`). windows-gfx1151 still has its own failure at bab4052 recorded separately.

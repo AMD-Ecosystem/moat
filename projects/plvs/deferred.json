@@ -63,7 +63,7 @@
         "projects/plvs/notes.md#review-2026-11-04b",
         "AMD-Ecosystem/plvs@b9c257a"
       ],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-11-04T09:42:18Z",
       "decided": {
@@ -72,6 +72,20 @@
         "at": "2026-11-04T23:35:26Z",
         "note": "ruled now in the linux-gfx1100 porter dispatch 2026-11-04: fix as one new [ROCm] commit on the current head"
       }
+    },
+    {
+      "id": "plvs-upstream-stereo-mapping-crashes",
+      "kind": "other",
+      "component": null,
+      "summary": "Two upstream CPU-code crashes in long stereo runs (TUM-VI room1, Examples/Stereo/TUM-VI.yaml with PointCloudMapping.on 1), neither a port defect and neither gating: (1) SEGV addr 0x1378 in LocalMapping::ProcessNewKeyFrame -> MapLine::UpdateNormalAndDepth -> KeyFrame::GetCameraCenter on a null mpRefKF (src/MapLine.cc:660, no null check); seen in CPU-only builds too; 3/16 runs at fde33e5 on gfx1100, 4/15 on gfx90a. (2) SEGV in PointCloudMapping thread, PointCloudMapOctreePointCloud<PointSurfelSegment>::UpdateMapNoSegm (src/PointCloudMapOctreePointCloud.cc:935, byte-identical to upstream): it calls octree_.deleteVoxelAtPoint(mapPoint) inside a leaf_depth iterator loop, with mapPoint a reference into the leaf being deleted (iterator invalidation / use-after-free); 1/16 runs at fde33e5. Fixing either is an upstream bug fix outside the smallest port; needs a person's defer/now ruling.",
+      "refs": [
+        "projects/plvs/notes.md#port-round-2026-11-05",
+        "AMD-Ecosystem/plvs@fde33e5"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-05T00:26:19Z",
+      "decided": null
     }
   ]
 }
