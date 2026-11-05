@@ -60,3 +60,8 @@
 {"kind":"phase","ts":"2026-11-05T08:30:39Z","phase":"test","seconds":1.301,"exit":0,"cmd":"tornado-test --verbose uk.ac.manchester.tornado.unittests.kernelcontext.api.TestUnsupportedKernelContextOps"}
 {"kind":"phase","ts":"2026-11-05T08:33:05Z","phase":"compile","seconds":23.308,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261105-001013-tvm-fix-detect/moat/agent_space/wt-cuda jdk21 BACKEND=cuda"}
 {"kind":"session","ts":"2026-11-05T08:34:05Z","epoch":1793867645.905485492,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-05T17:50:28Z","epoch":1793901028.591049622,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-05T17:52:20Z","phase":"test","seconds":0.003,"exit":127,"cmd":"./mvnw -Pjdk21 -pl tornado-compiler/tc-runtime -am test -DskipTests=false -Dtest=TcCompilerTest -Dsurefire.failIfNoSpecifiedTests=false"}
+{"kind":"phase","ts":"2026-11-05T17:52:37Z","phase":"test","seconds":4.322,"exit":0,"cmd":"bash -c cd projects/TornadoVM/src && ./mvnw -Pjdk21 -pl tornado-compiler/tc-runtime -am test -DskipTests=false -Dtest=TcCompilerTest -Dsurefire.failIfNoSpecifiedTests=false"}
+{"kind":"phase","ts":"2026-11-05T17:52:53Z","phase":"test","seconds":9.268,"exit":0,"cmd":"bash -c cd projects/TornadoVM/src && make test-nogpu JDK=jdk21"}
+{"kind":"session","ts":"2026-11-05T17:53:38Z","epoch":1793901218.822210793,"event":"end","platform":"linux-gfx950"}

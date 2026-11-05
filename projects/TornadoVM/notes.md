@@ -491,3 +491,18 @@ The proof is feasible for one-dimensional kernels, so the provable case is rejec
 - **Waits accepted that can still hang on wave64 (documented in programming.rst):** writers chosen by data or by values the evaluator does not follow; waits whose exits depend on more than one read; any kernel using a second or third dimension; a releasing write whose value is not a constant, when it runs before the wait. The remaining hang risk is that such a kernel hangs at run time instead of getting TC-E4019. This is the "accept when it cannot be proven" side of the ruling.
 
 Question for jeff: are (i) and (ii) acceptable as documented edge cases? The alternative is to stop rejecting 1D-only kernels too, which would leave `testLocalFlagWaitAcrossWarps` and the same-wavefront pattern to hang on gfx950/gfx942. Rejection (i) is the only case of a sensible launch being refused. The commit title says "certain to hang", which is slightly strong: the hazard depends on the order the compiler gives the branches (the plain HIP reproductions hang with one order and complete with the other). The body states the proven condition precisely.
+
+## Ruling round (2026-11-05, linux-gfx950, MI355X): spin-wait false positives documented
+
+Porter at `f05b0dd01` -> `5da5fbbf9` on `moat-port` (one new commit, no amend or force-push), implementing jeff's 2026-11-05 ruling in plan.md. The check is unchanged and `TcHook.compile` still gets no work-group shape. State route: the project was `ported` (f05b0dd01 not yet reviewed) and `ported -> porting` is not a legal edge, so the ruling was recorded as `reviewing -> changes-requested -> porting` under the work lock (jeff's ruling is the change request; no review was performed). The next reviewer covers `3c00e2062..5da5fbbf9`, both rounds 4 and this one.
+
+- `Legality.sameWavefrontWait` javadoc: names the two known false positives (localIdx-only kernel launched with a 2D/3D work-group where a writer in another row releases the waiters, e.g. rows of 56, writer `localIdx == 40`, waiters `localIdx < 8`; a work-group too small for any thread to reach the wait).
+- `docs/source/programming.rst`: the "Warps on 64-lane AMD wavefronts (HIP backend)" last paragraph states the same two cases.
+- `LocalWaitKernels.rowsOfFiftySix` (new, 1-D only: writer 40, waiters < 8) and `TcCompilerTest#legalityRefusesLocalWaitsOnWave64Hip` asserts `TC-E4019` for it, with a comment that it is a documented false positive.
+
+Evidence (Temurin 21.0.12, ROCm 10.1 TheRock wheels, job-local Maven repository, `ulimit -c 0`):
+- `./mvnw -Pjdk21 -pl tornado-compiler/tc-runtime -am test -DskipTests=false -Dtest=TcCompilerTest -Dsurefire.failIfNoSpecifiedTests=false`: 29/29.
+- `make test-nogpu JDK=jdk21`: BUILD SUCCESS; lit tests ir 13, lower 7, opt 16, tornado 5, frontend 12, codegen 60, HipMmaRoutingTest 1, TcCompilerTest 29, all pass.
+- No GPU run: the change is a comment, a doc paragraph and a compile-time test; no generated code changes.
+- `git diff origin/develop...5da5fbbf9` over `tornado-drivers/{cuda,ptx,opencl,spirv,metal,cuda-jni,opencl-jni}`, `tornado-native-libs/{cudf-jni,cudnn-jni,cutlass-jni}` is empty, and no Cuda/OpenCL/Metal dialect file is in the diff. The only main-source change is the Legality javadoc, so generated code is unchanged for every target.
+- `utils/jargon.py -C projects/TornadoVM/src --commits origin/develop..HEAD` and `--diff origin/develop...HEAD` clean; `utils/prose.py` clean on the body; title 63 chars, ASCII, AI disclosure, fenced Test Plan, no Co-Authored-By. Fork tree has no modified tracked files. (`jargon.py --port TornadoVM` cannot resolve `develop..moat-port` in a single-branch clone; the explicit ranges above cover it.)
