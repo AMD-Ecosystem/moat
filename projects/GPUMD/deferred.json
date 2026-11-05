@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "gpumd-hip-runtime-reseeds-rand",
+      "kind": "other",
+      "component": null,
+      "summary": "Under ROCm, comgr's embedded LLVM (createUniquePath -> Process::GetRandomNumber) calls srand() with its own seed and rand() 38 times when GPUMD's code objects load, before GPUMD's first rand(). GPUMD -DDEBUG builds rely on the default C rand() stream for fixed seeds (add_random_force, velocity without seed, lan/bao/pimd/ti curand inits), so on ROCm two DEBUG runs of the same input get different random streams. Effect: 6 tests_regression cases (replicate_velocity_unseeded, graphene_hac, graphene_nemd_shc, graphene_hnemd_shc, silicon_liquid_transport, plus noise cases) and 4 tests_pytest spin force-modifier tests fail self-comparison on gfx942; all pass with an LD_PRELOAD shim that makes srand a no-op. Options: a HIP-only fix in GPUMD (e.g. a private PRNG for seeds under DEBUG, or re-seeding after runtime init), a ROCm/comgr bug report (a runtime library should not reseed the process-global rand), or accept as an AMD test-environment difference.",
+      "refs": [
+        "projects/GPUMD/notes.md: Sync round 2026-11-05"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-05T16:55:02Z",
+      "decided": null
+    },
+    {
+      "id": "comgr-llvm-srand-perturbs-host-rand",
+      "kind": "rocm-bug-report",
+      "component": "comgr",
+      "summary": "libamd_comgr (via LLVM sys::fs::createUniquePath / sys::Process::GetRandomNumber) calls srand() and rand() on the process-global C PRNG during code-object handling at HIP module load, perturbing any host program that seeds rand() itself for reproducibility. Seen with TheRock HIP 7.16.26385 on gfx942 (gdb: srand from libLLVM.so.24.0git GetRandomNumber; 38 rand calls before the application's first). Candidate upstream report for a person to file.",
+      "refs": [
+        "projects/GPUMD/notes.md: Sync round 2026-11-05"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-05T16:55:03Z",
+      "decided": null
+    }
+  ]
+}

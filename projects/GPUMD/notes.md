@@ -513,3 +513,81 @@ Not run (beyond what the earlier Windows record covered, kept out to limit load 
 `jargon.py -` on the commit message and added lines of 15124b5: clean (the port-range scan needs a full-history clone; the Linux validators ran `--port GPUMD` clean at this head). Docs: `doc/installation.rst` ROCm section unchanged by the delta. CUDA gate: recorded at this head ("CUDA compile check (nvcc 12.8) at 15124b5"); not run on this host.
 
 State: windows-gfx1151 `revalidate` -> `completed` at 15124b53.
+
+## Sync round 2026-11-05 (linux-gfx942, porter) -- merge upstream c3d5d8ac, restore the HIP build, 15124b53 -> f3622149
+
+jeff asked for this run: one follow-up PR that brings the ROCm build up to date with upstream and carries 15124b53. `pr-state GPUMD` = `merged` (#1538, normal merge; 6231243f is an ancestor of upstream master), so `moat-port` is not frozen; `protect-fork` installed on a fresh clone; the push went to `moat-port`. Host: MI300X (gfx942), HIP 7.16.26385 / AMD clang 24.0.0git, `HIP_VISIBLE_DEVICES=0` (dispatcher-pinned), all GPU work under `ulimit -c 0`.
+
+### Merge
+Upstream master fetched by URL (no remote added): **c3d5d8ac5f605095c7c3a5a3e310ccf55a899de9** (2026-11-05, "Merge pull request #1873"), 1238 commits past 6231243f. Merged into `moat-port` with a merge commit (no rebase), so #1538's history and 15124b53 are unchanged.
+
+Conflicts: exactly one, `tests/run_tests.sh` (modify/delete: upstream 882583a7 deleted `tests/`, 15124b53 added the ilp_nep_cutoff stanza). Resolved by keeping upstream's deletion and also deleting our `tests/gpumd/ilp_nep_cutoff/` (5 files), so `tests/` is not resurrected; the case is re-expressed in `tests_regression/` below. `src/force/ilp_nep.cu` auto-merged and keeps the fmax fix (upstream line 216). After the merge the tree equals upstream c3d5d8ac plus that one line.
+
+Merge message: the first local attempt used git's default (`Merge commit '<sha>' into moat-port`), which `jargon.py` flags. Nothing had been pushed, so the merge was redone on a fresh local branch with `Merge branch 'master' of https://github.com/brucefan1983/GPUMD` plus a one-line conflict note, and the two fix commits were cherry-picked onto it (tree byte-identical to the built and tested one; no reset, `branch -f` or force push; local branches renamed only). The discarded local commits were d8d2442e/1b06890f/4c648c54 (kept locally as `moat-port-first-merge`, never pushed).
+
+Final `moat-port` (pushed 15124b53..f3622149, fast-forward):
+- 8405f15e Merge branch 'master' of https://github.com/brucefan1983/GPUMD
+- 070d3f53 [ROCm] Restore the HIP build of nep_model_file, NEP-spin and replica
+- f3622149 [ROCm] Add a regression case for the ILP_NEP cutoff check
+
+### HIP build restoration (070d3f53)
+First `make -f makefile.hip HIP_ARCH=gfx942 -k -j56` on the merge: 4 TUs failed, everything else built.
+1. `utilities/nep_model_file.cu` (new, host-only): `nep_utilities.cuh: unknown type name '__forceinline__'`. nvcc pre-includes cuda_runtime.h, hipcc does not, and the file includes nep_utilities.cuh before any runtime header. Fix: `#include "gpu_macro.cuh"` at the top of `nep_utilities.cuh` (it pulls `hip/hip_runtime.h` or the CUDA headers).
+2. `force/nep_spin/nep_spin.cu`, `main_nep/nep_spin/nep_spin.cu`, `main_nep/nep_spin/spin_evaluate.cu` (via `force/nep_spin/nep_spin3_force.cuh`): `static assertion failed ... The mask must be a 64-bit integer` from `amd_warp_sync_functions.h`. The NEP-spin kernels (upstream 76bde565 and follow-ups) tile blocks into 32-lane warps (`warp = threadIdx.x >> 5`, `lane = threadIdx.x & 31`) with 32-bit sub-masks (`atom_mask`, `center_mask`, `row_mask`/`active_mask`). On HIP the mask must be 64-bit, and without `NDEBUG` `__hip_check_mask` traps unless the mask equals the active lanes, which for the second 32-lane tile of a wave64 wavefront are lanes 32-63. Fix: `gpuLaneMask(mask)` in `gpu_macro.cuh` -- CUDA `(mask)`, HIP `(static_cast<unsigned long long>(mask) << (__lane_id() & 32))` (shift 0 on wave32) -- wrapped around all 11 masked `__syncwarp`/`__shfl_down_sync`/`__shfl_sync` call sites. `apply_ann_one_layer_warp` (main_nep) also passed no width, so the default `warpSize` (64) would broadcast lane 0 of tile 0 to tile 1 in `__shfl_sync(.., 0)`; it now passes its `warp_size` (32) to both shuffles (equals CUDA's default). Groups exit only at tile granularity (`atom`/`n1`/`active` are per tile), so no partial-tile divergence at the sync points. Two lines re-wrapped with clang-format (ColumnLimit 100).
+3. `gpumd_replica` (new `src/main_replica/`, own makefile, upstream builds it from the default `all`): missing from `makefile.hip`. Its own `utilities/gpu_macro.cuh` already maps HIP, and `make -C main_replica CC=hipcc CFLAGS="-O3 --offload-arch=gfx942 -DUSE_HIP" LIBS=-lhipfft` built it unchanged, so `makefile.hip` now has `gpumd_replica` / `clean_replica` targets mirroring the default makefile's.
+Not built, as before: `main_gnep/` (not in either makefile's `all`; raw CUDA API). `main_nep/common/nep_compile.cu` (runtime nvcc specialization) is already `#if !defined(USE_HIP)` upstream, so HIP uses the generic kernels; porting the runtime specialization to hipcc is possible later work, not needed for a complete build.
+
+Rebuild: rc 0, gpumd 14717192 B, nep 3473696 B, tb 315128 B, gpumd_replica 2401232 B; warnings only the pre-existing classes (84 `-Wunused-value` nodiscard, 12 `-Winconsistent-missing-override`). Every tracked `.cu` except the 7 in `main_gnep/` produced an object.
+
+CUDA-visible changes (all in 070d3f53; 15124b53's one line is unchanged): the extra `#include "gpu_macro.cuh"` in `nep_utilities.cuh`; `gpuLaneMask(m)` = `(m)` around 11 masks; explicit width 32 (= CUDA default) on two shuffles in `main_nep/nep_spin/nep_spin.cu`. `makefile` untouched. No nvcc here; the mi355 nvcc check is still owed (the dispatcher runs it).
+
+### Host min/max probe (deleted-template forced include), merged tree
+`hipcc -x hip --cuda-host-only -fsyntax-only -O3 --offload-arch=gfx942 -DUSE_HIP -I./ -include poison.h <file>` over all 230 tracked `.cu` outside `main_gnep/` (main_replica files compiled from `main_replica/` with `-I./ -I./integrate`). Passes: default; `-DUSE_FIXED_NEIGHBOR -DUSE_NEPCG -DDEBUG -DUSE_FIXED_SCALER -DCG_RDF -DSTRONG_DEBUG -DOUTPUT_NEIGHBOR_FOR_TRAIN -DFINE_TUNE_DESCRIPTOR -DZHEYONG -DUSE_KEPLER`; `-DUSE_GRAPHENE_TB`; `-DUSE_CJ -DGNEP_TEST_DIAGNOSTICS` (new upstream guards). Result: 230/230 rc 0, **0 deleted-function hits** in every pass (nep_model_file.cu now reachable). Control: ilp_nep.cu with the fix reverted -> `216:18: call to deleted function 'max'`. `GPUMD_WPE_ENABLED` / `NEP_SPECIALIZED_RUNTIME_BUILD` need external/generated headers; `USE_DEEPMD/NNAP/PLUMED/NETCDF` files carry one unqualified `min(` (force/nnap.cu:409, in a `__global__` kernel, device code). No new fix needed.
+
+### Regression case (f3622149)
+`tests_regression/` conventions followed: case `ilp_nep_cutoff_below_nep` (suites invalid/potential/full, `expect: failure`, `expected_returncode: 1`, `stdout_contains: "ERROR: Please make sure cutoff of ILP is larger than it of NEP."` -- ILP_NEP prints that to stdout, not via PRINT_INPUT_ERROR; `outputs: []`, `input_style: intentional_invalid`), input `cases/bugfix/ilp_nep_cutoff_below_nep.in` (ilp_nep_compute's input minus dumps), fixture `ilp_nep_graphene_short_cutoff` = `bilayer_graphene_primitive.xyz` + new `fixtures/potentials/graphene_nep_ilp_short_cutoff.txt` (graphene_nep_ilp.txt with rcut_global 16.0 -> 4.1) + new `fixtures/potentials/bilayer_graphene_map_C_2022_NEP4.txt` + `repo:potentials/nep/C_2022_NEP4.txt` (cutoff 4.2 3.7; the existing C_2024_NEP4 cutoff 7 is an integer, so it cannot show the truncation). Fixture hashes pinned in `test_manifest.py`, case added to its behaviour-contract list, counts 255 -> 256 in README.md and CONTRACT_SUITES.md. The dispatch said "ILP rcut 4.2 with NEP 4.0"; the bug needs a non-integer NEP cutoff above the ILP one, so the case is ILP 4.1 under NEP 4.2. The harness expresses expected-error cases natively; no harness change.
+- `--check-manifest`: `Manifest OK: 256 cases, 24 suites`; `test_manifest.py`: 17 pass; `unittest discover`: 29 OK.
+- After the fix: PASS (both roles exit 1 with the message, no outputs). Fix reverted (ilp_nep.cu `max(...)`, rebuilt gpumd in a scratch copy): `FAIL: ilp_nep_cutoff_below_nep:baseline: expected exit 1, got 0` -- stdout "1 steps completed.", neighbor.out written.
+
+### Upstream suites on gfx942
+Builds for the suites: scratch copies of the tree (`agent_space/gpumd/dbg2`), `make -f makefile.hip gpumd nep CFLAGS="-O3 --offload-arch=gfx942 -DUSE_HIP -DDEBUG"`, because upstream's integration CI builds with `-DDEBUG` (fixed seeds) and the README requires it for nep. Self-comparison as the README prescribes (same binaries as baseline and candidate):
+
+    python3 tests_regression/run_regression.py --repo-root $R --baseline $D/gpumd --candidate $D/gpumd --baseline-nep $D/nep --candidate-nep $D/nep --suite full
+
+| run | cases | relations | failures |
+|---|---|---|---|
+| A: release gpumd (aborted at 125 cases) | 117/125 | -- | 7 clock-seeded RNG cases (nvt_bdp, npt_scr_iso, heat_bdp, pimd_scr, deform_npt_tri, replicate_default_velocity, replicate_velocity_unseeded): `mt19937(now)`/`srand(now)` unless `-DDEBUG` -- expected, wrong build |
+| B: DEBUG (616 s) | **249/256** | 25/25 | replicate_velocity_unseeded, graphene_hac, graphene_nemd_shc, graphene_hnemd_shc, silicon_liquid_transport (byte diffs), qnep_pppm_future_bec (thermo 1.3e-7 vs atol 1e-7), predict_nep_pbte_batch (force 2.0e-7 vs atol 2e-7) |
+| B rerun of those 7 with srand shim | 7/7 | -- | none |
+| C: DEBUG + srand shim, concurrent with a pytest run on the same GPU (675 s) | 247/256 | 21 pass, 4 skipped (members failed) | float-atomic noise only: qnep_pppm_future_bec (bec 1.06e-5 vs atol 1e-5), 7 pppm_* thermo (1.2e-7..5.1e-7 vs atol 1e-7), observer_average_then_observe_control (last ulp of one force) |
+
+The new case passed in every run. Every one of the 256 cases passed in at least one of B/C, and all 25 relations passed in B.
+
+Root cause of the B byte diffs (AMD runtime, not the port): under ROCm, comgr's embedded LLVM (`createUniquePath` -> `sys::Process::GetRandomNumber`) calls `srand()` with its own seed and `rand()` 38 times when GPUMD's code objects load (gdb on `srand`/`rand`; an `LD_PRELOAD` logger shows a different seed every run), before GPUMD's first `rand()`. GPUMD's DEBUG reproducibility assumes the default C `rand()` stream (`velocity` without `seed`, `add_random_force`, curand seeds in lan/bao/pimd/ti...). With a diagnostic shim making `srand` a no-op, two runs give identical output and all 7 pass. Registered as deferrals `gpumd-hip-runtime-reseeds-rand` (fix in GPUMD or accept) and `comgr-llvm-srand-perturbs-host-rand` (candidate ROCm report) for a person to rule. Pitfall hit while diagnosing: `dump_xyz` appends, so rereading frame 1 after repeated runs in one directory looks "deterministic per directory".
+
+Float-noise failures: README says the PPPM/qNEP numeric bounds "must be checked by self-comparison on the target GPU"; on MI300X the float-atomic noise sits at or just above them (worst 5.1e-7 vs 1e-7 under a concurrent GPU load) and varies run to run. AMD baseline difference in atomic ordering, not a regression; widening a bound would need upstream's agreement and is not proposed in this PR.
+
+`tests_pytest` (calorine, ase installed in the job venv): NEP-spin tests `test_spin_*.py` -- 110/114 with the release build, the 4 `test_corrector_preserves_force_modifiers` failing on `add_random_force` streams (same rand() cause); 114/114 with the DEBUG build + srand shim. These include the FP64 oracle checks of energy/force/virial/mforce against TorchNEP references, which exercise the masked warp kernels on wave64. Rest of the suite, `-m "not slow"`, release build: **692 passed, 480 skipped** (skips: missing qnep/netCDF fixtures for some structures, netCDF4 module), 0 failed.
+
+`tests_regression/replica/test_replica.py` (gpumd_replica, release): 6/12 pass; the 6 failures all stop at `REMD/PRD explicit streams support energy NEP4/NEP5 and qNEP4 models` because upstream dd7d0ba8 (2026-10-23, "update example model files") moved `examples/nep_train/nep.txt` and `examples/qnep_train/nep.txt` to the `format_version 1` header that `main_replica` does not recognise. Upstream state, platform-independent (fails the same way on CUDA); not touched.
+
+Comparison with 15124b53: the old `tests/gpumd/` workloads (carbon, graphene_dos, graphene_kappa_emd...) no longer exist; their successors in tests_regression (e.g. graphene_hac, graphene_nemd_shc) are now byte-compared baseline vs candidate rather than against CUDA reference files, and pass in run C. The ILP_NEP behaviour matches the 15124b53 records on gfx90a/gfx1100/gfx942/gfx1151 (rejected after, accepted before).
+
+### Gates
+`python3 utils/jargon.py --port GPUMD`: 2 hits, both in upstream's own 725fe762 "Merge pull request #1538 from jeffdaily/moat-port", which is in upstream master and in range only because the fork's `master` mirror is at c5597219 (2026-05-27); the dispatcher owns the mirror. Against the real base, `jargon.py -C src --commits c3d5d8ac..moat-port --diff c3d5d8ac...moat-port`: clean. `prose.py` on both commit bodies: clean. `audit-clean`: OK; `git status --porcelain` clean. `audit-commits` asks for the mirror to be fast-forwarded first. All platforms now read revalidate at f3622149. Skill lessons added: fault-classes (64-bit masks / lane shift for 32-lane tiles), validation (runtime reseeds `rand()`).
+
+### Draft follow-up PR for jeff (title and body; not posted)
+
+Title: `[ROCm] Restore the HIP build and fix a host max() truncation in ILP_NEP`
+
+Body:
+
+This follow-up to #1538 fixes a HIP-only bug in the ILP_NEP setup and brings the HIP build back in line with current master.
+
+ILP_NEP: under HIP, the host call `max(max_nep_rc, parambs[i].rc_radial)` (double, float) resolved to the only host overload, `max(int, int)`, so a 4.2 A NEP radial cutoff became 4 and an ILP cutoff of 4.1 was accepted instead of rejected as on CUDA. It now calls `fmax`, which is what CUDA resolves the call to. A new `tests_regression` case, `ilp_nep_cutoff_below_nep`, checks the rejection; it fails with the old line and passes with the fix.
+
+HIP build: `utilities/nep_model_file.cu` reached `nep_utilities.cuh` without a runtime header (nvcc pre-includes one, hipcc does not), so the header now includes `gpu_macro.cuh`. The NEP-spin kernels pass 32-bit masks to `__syncwarp` and `__shfl_*_sync`; HIP requires 64-bit masks, and on a 64-lane wavefront the second 32-lane tile sits in lanes 32-63. A `gpuLaneMask()` macro in `gpu_macro.cuh`, the identity on CUDA, moves the mask to the right lanes, and one warp kernel now passes its 32-lane width to its shuffles explicitly. `makefile.hip` also builds `gpumd_replica` like the default makefile. The CUDA build sees only the extra include, the identity macro and an explicit width equal to the default.
+
+Testing on an AMD Instinct MI300X (gfx942) with `make -f makefile.hip HIP_ARCH=gfx942`: gpumd, nep, gpumd_replica and tb build. The full `tests_regression` suite (built with `-DDEBUG`, self-comparison) and the NEP-spin tests in `tests_pytest`, including the FP64 reference checks, pass. Cases that depend on the default `rand()` stream can differ between runs on ROCm, because the HIP runtime itself calls `srand()` while loading kernels; they pass when that call is suppressed.
+
+(Before presenting: replace the test paragraph with the final counts from every gate's revalidation at the PR head, the mi355 nvcc compile result, and jeff's ruling on the rand() deferral; the body's "pass" for tests_regression is per case across runs, see the table above.)
