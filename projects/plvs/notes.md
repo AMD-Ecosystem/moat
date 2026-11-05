@@ -3168,3 +3168,4 @@ The delta `fde33e5..970cb1f` touches no CUDA source and no build file: `git diff
 - 2026-11-05: jeff filed the MapLine issue as https://github.com/luigifreda/plvs/issues/57 (condensed draft).
 - 2026-11-05: jeff filed issue A (fisheye mvuRight/mvDepth over-read) as https://github.com/luigifreda/plvs/issues/58, without the unverified Linux ASan sentence.
 - 2026-11-05: jeff filed issue B (LoopClosing keyframe vector) as https://github.com/luigifreda/plvs/issues/59, as drafted.
+- 2026-11-05: jeff filed the same fisheye over-read on ORB-SLAM3 as https://github.com/UZ-SLAMLab/ORB_SLAM3/issues/1014 (linking #58).
