@@ -1466,3 +1466,81 @@ Evidence and the draft PR: ~/.claude/plans/tigre-multigpu-tv-upstream-pr.md. Bra
 - Solvers end to end (128^3 head, cone, 64 angles, 10 iter): ossart_tv and fista -> bitwise 1 vs 2 GPUs; OS_ASD_POCS/OS_AwASD_POCS keep 1.1e-03/1.9e-02 of max, all of it from the per-GPU float norm sum (bitwise with the deterministic norm).
 - Single GPU: 70/70 upstream tests and all gates identical to base; only tvdenoise's last slices change (#803's documented edge fix).
 - Separate upstream Python bug found: `Ax.py`/`Atb.py` trim the caller's `GpuIds` in place, so blocksize-1 solvers (ASD_POCS, AwASD_POCS) run on one GPU after the first angle. Not filed; jeff's call. No platform state changed.
+
+## Fix round 2026-11-05 (linux-gfx90a porter, moat-fix-747) -- host float max() truncation in maxdistanceCuboid, stage -> ported
+
+jeff asked for this run, from the hit his host min/max truncation sweep found by grep (`~/claude-shared/plans/moat-hip-host-minmax-truncation-sweep.md`, row 1). Fix model: LEAP 63d2724; the fault-class entry is on `port/LEAP` (`references/fault-classes.md`, "Host `min`/`max` on floating-point values truncate to int under hipcc"), so no skill edit here. Lock: `set-state TIGRE linux-gfx90a porting` (run from `moatlib.py worktree TIGRE`; from the trunk checkout `set-state` refused with "stale pre-re-home copy"). `fix-branch TIGRE`: `moat-fix-747`, base b61ff14. The previous round's staging branch had been deleted by `--merge-fix`, so `moat-fix-747` was re-cut from `origin/moat-port` (b61ff14) in a fresh clone; `protect-fork TIGRE` installed the hook.
+
+### Commit
+**f779703298570f752da7c3994db3fc9903b9bf1c** `[ROCm] Use fmaxf in maxdistanceCuboid so voxel sizes are not truncated` (70 chars), on b61ff14, nothing amended or rebased. Pushed only `moat-fix-747`; `moat-port` still b61ff14 (ls-remote).
+- `Common/CUDA/ray_interpolated_projection.cu` (CRLF kept), the 4 float `max()` calls in `maxdistanceCuboid` -> `fmaxf` (CUDA's `max(float,float)`):
+  - :769 2D-angle branch `max(<float>, 0.0f)`. Harmless in practice: the callers store `floor(maxdist)` (ray_interpolated_projection.cu:380, _parallel.cu:265) and the value is a distance, so truncate-then-clamp equals floor-of-fmaxf for every finite value. Changed anyway (same call shape, keeps CUDA's NaN handling); output did not change (below).
+  - :772 3D-angle branch `max(DSO/max(max(dVoxelX,dVoxelY),dVoxelZ) - ..., 0.0f)`: the inner pair truncated the largest voxel size. This is the defect.
+- New `Python/tests/test_interpolated_voxel_size.py` (4 cases, ~1 s): interpolated vs Siddon, dVoxel 0.8 and 1.5, theta 0.3 / psi 0.2, cone and parallel, DSO 1000 / DSD 1536, 64^3 two-sphere phantom, 12 views, rel error < 0.05. DSO is set explicitly because `ParallelGeo` defaults DSO to nVoxel[0] (64), where the truncated start still lands before the object and the parallel caller would not be exercised.
+- Body: defect, fix, test, "Authored with Claude.", Test Plan with the build and the 8 pytest files. No Co-Authored-By. `prose.py` and `jargon.py -` on the message: clean; `jargon.py --port TIGRE`: clean before the push.
+
+### Whole-project probe (hipcc host pass, this build's real defines)
+`hipcc -DIS_FOR_PYTIGRE -DUSE_HIP -D__HIP_PLATFORM_AMD__ -I<numpy> -I$ROCM/include -ICommon/CUDA/ -I/usr/include/python3.11 -x hip -fPIC --offload-arch=gfx90a -std=c++14 --cuda-host-only -fsyntax-only -include poison.h <file>` (flags from the build log), `poison.h` = `template<class A,class B> void min(A,B)=delete; template<class A,class B> void max(A,B)=delete;`. Any call that would otherwise fall to `(int,int)` with non-int arguments hits the deleted template, and clang's note names the deduced types. All 15 `.cu` files: the 13 built ones directly; `improvedForwardProjections.cu` / `_cone.cu` (MATLAB pCT only, `CompilePCT.m`, not ported, include `<cuda.h>`/`mex.h`) with stub `cuda.h`/`cuda_runtime_api.h` (-> `cuda_to_hip.h`) and a stub `mex.h`: host pass clean; their `min`/`max` calls are all inside `__device__` functions. No `.cpp` goes through hipcc (all 23 `.cpp` compiles are g++ per the build log).
+- Float/double hits: only ray_interpolated_projection.cu:769 and :772 (`A = float, B = float`). Fixed above. Re-probe after the fix: no float hits left.
+- `#if` regions: a scan of every `#if/#ifdef/#ifndef` block in `Common/CUDA/*.{cu,hpp,h,cpp}` (header guards excluded) finds no `min(`/`max(` call inside any guarded region (`IS_FOR_MATLAB_TIGRE`, `NO_PINNED_MEMORY`, `CUDART_VERSION`, `__CUDART_VERSION`, the port's `USE_HIP` blocks). The scanner was checked against the same regions with other call names (6 hits), so it does see guarded lines.
+- Integer hits judged harmless, left alone (CUDA picks `umin`/`umax` for unsigned or mixed int/unsigned; HIP converts both to int). They agree whenever both values are in [0, 2^31), which holds for every one of these counts:
+  - `buffer_length` clamps, `max(unsigned,int)`/`min(int,unsigned)`: GD_AwTV.cu:348,349; GD_TV.cu:332,333; tv_proximal.cu:252 (slice buffer counts, <= MAX_BUFFER).
+  - `projection_this_block`, `min(unsigned,unsigned)` / `min(int,unsigned)`: Siddon_projection.cu:484,502,523,556; ray_interpolated_projection.cu:420,437,458,491. Operands are remaining-projection counts; each subtraction is guarded non-negative by the surrounding `proj_global<nangles` / `i-1 < noOfKernelCallsLastDev` checks and the ceil-division of `noOfKernelCalls`.
+  - projection split sizes, `max(unsigned,int)` vs `PROJ_PER_KERNEL`: voxel_backprojection.cu:429,434,499; voxel_backprojection2.cu:453,458,525; voxel_backprojection_parallel.cu:369,373,428.
+  - **For jeff: voxel_backprojection.cu:732** `createGeoArray`: `max(geo.nVoxelZ - splitsize*sp, 0)` (`unsigned, int`). With `splitsize = ceil(nVoxelZ/image_splits)` the subtraction wraps when `sp*splitsize > nVoxelZ` (e.g. nVoxelZ 512 with 30 image splits, or 10 with 7). CUDA's `umax` then keeps ~4e9 slices for that split, while HIP's `(int,int)` gives 0, the intended value. So this is the one site where the two can differ, and HIP is the correct one: an upstream CUDA bug that only very many image splits reach. I left it alone because matching CUDA would mean copying the wrap. Your call whether it goes upstream separately (e.g. `nVoxelZ > splitsize*sp ? nVoxelZ - splitsize*sp : 0`).
+
+### Run-time evidence (MI250X gfx90a, TheRock ROCm SDK 10.1, HIP_VISIBLE_DEVICES=0 pinned, `ulimit -c 0`)
+Before = b61ff14 build (`_Ax` saved, swapped in for the run, restored and `cmp`-checked); after = f779703. Script `agent_space/scripts/case_errs.py` (host-local): 64^3 two-sphere phantom, 12 views, detector 128^2 at 1.6*dVoxel, default DSO (cone 1000, parallel 64).
+
+| case (theta 0.3, psi 0.2) | Siddon sum | interp sum before | rel err before | interp sum after | rel err after |
+|---|---|---|---|---|---|
+| cone dVoxel 0.8 | 1.11773e+05 | 1.11773e+05 | 0.0179 | 1.11773e+05 | 0.0179 |
+| cone dVoxel 1.5 | 2.09615e+05 | 0 | 1.0000 | 2.09608e+05 | 0.0179 |
+| cone dVoxel 2.5 | 3.49549e+05 | 0 | 1.0000 | 3.49522e+05 | 0.0182 |
+| parallel (DSO 64) 0.8 / 1.5 / 2.5 | | unchanged | 0.0184 each | unchanged | 0.0184 each |
+
+- dVoxel 0.8 before: `DSO/0` = inf, converted to int (undefined); on x86 that gives INT_MIN, clamped to 0, so the ray starts at the source and the result is right by accident.
+- 2D angles (theta = psi = 0): bitwise-equal sums before and after in all 6 mode/size cases (e.g. cone 1.5: 2.09827e+05, rel err 0.0465), as expected from the floor argument above.
+- `agent_space/scripts/frac_voxel.py` (head phantom, cone, 3D angles): dVoxel 1.5 interp sum 0 -> 4.918465e+05 (Siddon 4.917607e+05), 2.5 0 -> 8.251259e+05 (Siddon 8.250224e+05).
+- New test: before 2 failed (1.5-cone, 1.5-parallel, both "relative error 1.000"), 2 passed (0.8, by the accident above); after 4 passed.
+- Device code: `.hip_fatbin` of `_Ax` before vs after byte-identical (`llvm-objcopy --dump-section`, `cmp`). Only `_Ax` relinked.
+
+### Build and full suite at f779703
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH BUILD_WITH_HIP=1 HIP_ARCH=gfx90a ROCM_PATH=$(rocm-sdk path --root)
+utils/timeit.sh TIGRE compile -- bash -c "cd projects/TIGRE/src && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16"
+utils/timeit.sh TIGRE test -- bash $PWD/agent_space/run_head.sh $PWD/projects/TIGRE/src $PWD/agent_space/scripts
+cd projects/TIGRE/src/Python && PYTHONPATH=$PWD $FLEET_VENV/bin/python -m pytest -q -p no:cacheprovider tests/test_interpolated_voxel_size.py
+```
+(job venv: `pip install numpy==1.26.4 scipy==1.10.1 Cython matplotlib h5py tqdm pytest`; `run_head.sh` and scripts copied unchanged from the gfx90a validator's b61ff14 job on this host, 3 passes.)
+- Build rc 0, 0 `error:` lines, 8/8 `.so`.
+- Upstream pytest: compute_cor 6, demo_angles 1, denoise_2d_guard 3, filtering_workers 37, gpuids_default 5, krylov_restart_and_norms 9, krylov_smoke 9 -> **70 passed**; new test_interpolated_voxel_size **4 passed** (74 total, 0 failed).
+- Cone gates: Siddon 27.46/111.2, interp vs Siddon 0.0040, FDK 0.2864, OS-SART-20 0.1929, adjointness 1.004e-05 / 6.076e-05, PASS. Solvers: sart 4.9635 ... ossart_tv 3.4159, PASS. Parallel gate, 3 passes: axis 0.0043, offset 0.0041, Euler 0.0056 (dVoxel 1, unaffected), FBP 0.0833, SIRT 0.1952, PASS. Repeats: 0/20 differ in all 24 cases (480 bitwise identical).
+- **Every number equals the gfx90a validator's b61ff14 record to the printed digit.** That is expected: those gates use dVoxel 1, or theta = psi = 0, where the fix changes nothing.
+- Integrity: `git -C projects/TIGRE/src status --porcelain` shows untracked build output only.
+- CUDA path not built here (no nvcc on this host). **The CUDA compile check is owed at f779703 on the mi355 host** (nvcc 12.8; `fmaxf` is plain host `<math.h>`).
+
+### What remains
+- Review of the delta b61ff14..f779703 (stage `ported`), the nvcc compile check at f779703, revalidation at f779703 on every gate.
+- jeff: voxel_backprojection.cu:732 above (not in this commit).
+
+### Proposed fix review PR body (for jeff)
+Not opened. Title: `[ROCm] Use fmaxf in maxdistanceCuboid so voxel sizes are not truncated`. Fill the retest line from the validator records at f779703 before opening.
+```
+A host-side max() call in the interpolated forward projector truncated floats to int under hipcc. This round adds one commit (f779703) on top of the published tip b61ff14. No maintainer asked for it; we found it while checking ported projects for host min/max calls on floating-point values.
+
+Cause: maxdistanceCuboid() in Common/CUDA/ray_interpolated_projection.cu is host code and calls max() on floats. CUDA has host min/max overloads for float and double; HIP's host header only has max(int, int), so hipcc converts the floats to int without a diagnostic. With theta or psi nonzero, the largest voxel size became an integer: above 1 the projector (cone and parallel) started sampling past part or all of the object (dVoxel 1.5 and 2.5 gave all-zero projections on MI250X), and below 1 it divided by zero.
+
+Fix: the four float max() calls in that function now call fmaxf, which is what CUDA's max(float, float) resolves to, so CUDA results are unchanged. Device code is byte-identical. A new test, Python/tests/test_interpolated_voxel_size.py, compares the interpolated and Siddon projectors at voxel sizes 0.8 and 1.5 with nonzero theta and psi; on b61ff14 the two 1.5 cases fail with relative error 1.0, at f779703 all 4 pass.
+
+Audit: a host-only hipcc pass over all 15 .cu files, with deleted template min/max to catch every call that falls to (int, int), found no other float or double call. The remaining hits are unsigned or mixed int counts that agree with CUDA in their ranges; they are listed in the round's notes.
+
+Retested at f779703 on <GPUs with a validator record at f779703>: 8/8 extensions build, the 7 upstream test files pass (70) and the new file passes (4); all projection, reconstruction, adjointness and repeat checks match b61ff14 exactly. nvcc 12.8: <result of the CUDA compile check at f779703>.
+
+## Upstream reply
+
+I added a follow-up commit that fixes the interpolated forward projector on AMD GPUs for voxel sizes that are not whole numbers when theta or psi is nonzero: a host max() call rounded the voxel size to an integer, so part or all of the object was skipped. It also adds a small test that checks the interpolated projector against Siddon for that case.
+
+## Notes for the approver
+The upstream reply above is the only part posted on CERN/TIGRE#747.
+```
