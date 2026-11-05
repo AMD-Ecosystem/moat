@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-11-05T05:03:09Z",
+  "updated_at": "2026-11-05T06:12:25Z",
   "head_sha": "e7e0b00c5e343e57724226aca38b92438868cc6b",
   "depends_on": [],
   "pr_url": "https://github.com/symforce-org/symforce/pull/465",
@@ -148,16 +148,19 @@
       }
     }
   },
-  "published_sha": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
-  "fix": {
-    "branch": "moat-fix-465",
-    "base_sha": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
-    "review_pr": "https://github.com/AMD-Ecosystem/symforce/pull/2",
-    "opened_at": "2026-08-20T17:36:51Z"
-  },
+  "published_sha": "e7e0b00c5e343e57724226aca38b92438868cc6b",
+  "fix": null,
   "porting_released": {
     "arch": "linux-gfx1100",
     "since": "2026-11-04T21:33:18Z",
     "at": "2026-11-04T21:38:50Z"
-  }
+  },
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-05T06:09:29Z",
+    "head_sha": "e7e0b00c5e343e57724226aca38b92438868cc6b",
+    "content_sha256": "343ea17dd6ab8aeea0fc38200eb7b3eda0532552e2ddf8c0f2d6c1fabb22a8e2",
+    "review_pr": "https://github.com/AMD-Ecosystem/symforce/pull/2"
+  },
+  "fix_merged_at": "2026-11-05T06:12:25Z"
 }
