@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "IsaacLab",
+  "upstream_url": "https://github.com/isaac-sim/IsaacLab",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-05T22:48:53Z",
+  "updated_at": "2026-11-05T22:48:54Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
