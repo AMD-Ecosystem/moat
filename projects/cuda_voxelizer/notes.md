@@ -546,3 +546,43 @@ Configure and build exit 0, `CMAKE_BUILD_TYPE:STRING=Release` in the cache, upst
 
 ## Ruling 2026-11-05 (jeff): CUDA keeps managed memory
 The device-memory voxel table from 3625a1e becomes HIP-only in a new commit, so the CUDA build keeps upstream's cudaMallocManaged table (and its oversubscription for very large grids). The corrected statements (the 512-size boundary residual has only been observed on AMD; CUDA was run at -s 64) go in that commit's message and the PR body, not in a rewrite of 3625a1e.
+
+## Porter round 2026-11-05 (linux-gfx90a, deferral cuda-voxelizer-3625a1e-body-wording, ruled `now`)
+
+Commit `5a9b7cf` "[ROCm] Keep the managed voxel table for CUDA builds" on top of `ccc2950` (no amend, no force), pushed to `moat-port` (`ccc2950..5a9b7cf`); `advance-head` run. `classify ccc2950 5a9b7cf` -> `mixed`, so every platform revalidates and the change needs review.
+
+Change, `src/main.cpp` only (CRLF kept): the device-memory table (cudaMalloc + cudaMemset, copy back with cudaMemcpy, cudaFree) is under `#if defined(__HIP_PLATFORM_AMD__)`, the same guard the port already uses in `helper_math.h` (there is no `USE_HIP` macro; `hip::host` defines `__HIP_PLATFORM_AMD__` for host TUs). The `#else` branch is upstream's three lines verbatim, and the `voxelize`/`voxelize_solid` calls are upstream's lines again (pass `vtable`; the HIP copy-back renames it to `device_vtable` after the kernels). Check: preprocessing `src/main.cpp` with `__HIP_PLATFORM_AMD__` undefined gives a file byte-identical to `upstream/main:src/main.cpp` (scripted compare, `True`). So the CUDA side of the diff for the voxel table is empty. **Note for review:** that also drops the 5cd065b `cudaMemset` from the CUDA build. The instruction was to restore upstream's managed table exactly, with an empty CUDA diff. The commit message says so. The HIP build still clears the table. `hip_compat/cuda_runtime.h` is unchanged; the CUDA build never sees it.
+
+Commit message: explains the CUDA oversubscription trade-off (managed table larger than free device memory pages on demand on Linux/Pascal+; -s 4096 = 8 GiB table), says the managed table works on NVIDIA (-s 64 matches CPU), and says plainly that the 512 boundary residual has only been observed on AMD GPUs, with CUDA run only at -s 64. That corrects 3625a1e's "as in the CUDA build". `utils/prose.py` clean, `utils/jargon.py --port cuda_voxelizer` clean, title 51 chars. The deferral stays `open` because the PR body must also carry the corrected 512 statement (ruling note). Close it at PR prep.
+
+Not done here: the CUDA nvcc compile of `5a9b7cf`. It runs separately on the mi355 host.
+
+Host: AMD Instinct MI250X/MI250 (gfx90a:sramecc+:xnack-), one GCD (`HIP_VISIBLE_DEVICES=1`). TheRock ROCm pip SDK (`rocm-sdk path --root`), CMake/Ninja from the image venv, g++ host. Trimesh2 2022.03.04 (`0b3d9e2`) built from source in the job directory (`make -C trimesh2/libsrc`, exit 0). Build dirs outside the clone; `git status --porcelain` empty. All GPU runs under `ulimit -c 0`.
+
+Builds (all exit 0, upstream warnings only: -Wwrite-strings, -Wformat `%llu`, `nodiscard` hipError_t, -Wimplicit-const-int-float-conversion):
+
+```
+common="-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DTrimesh2_INCLUDE_DIR:PATH=<tm2>/include -DTrimesh2_LINK_DIR:PATH=<tm2>/lib.Linux64"
+cd readme && cmake -DCMAKE_BUILD_TYPE=Release $common <src>          # README Linux recipe, prefix swapped for the pip SDK
+cmake -S <src> -B o0    -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0" $common
+cmake -S <src> -B o0dbg -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0 -D_DEBUG" -DCMAKE_CXX_FLAGS=-D_DEBUG $common
+cmake --build <dir> --parallel $MAX_JOBS
+```
+
+Emitted atomics (`.hip_fatbin` dumped with llvm-objcopy, gfx90a bundle unbundled, `llvm-objdump -d`): readme `global_atomic_cmpswap` in both kernels; o0 `flat_atomic_or` (voxelize.cu) and `flat_atomic_xor` (voxelize_solid.cu). The -O0 build is the one that exercises the native bitwise atomics.
+
+Differential: `agent_space/cvdiff.py <exe> bunny.OBJ <work> <tag> --repeat 3` (fresh harness, the earlier one was wiped with the container: each run in its own dir with a model copy. It runs the GPU then `-cpu` on the same binary. The GPU log must show `## GPU VOXELISATION`, `Voxelization GPU time` and the allocation line, with no fallback. binvox RLE and morton bits are decoded to numpy bitsets, and obj_points is compared as sorted vertex lines. Then 3 GPU repeats are sha256-compared). Every GPU log shows `Best device: AMD Instinct MI250X / MI250` and `Allocating ... of CUDA device memory for Voxel Grid`. Counts are identical across binvox, morton and obj_points in every case. **108 of 108 repeats byte-identical.**
+
+| mode | size | filled CPU | readme (Release) diff GPU-only/CPU-only | readme GPU ms | o0 diff | o0 GPU ms |
+|---|---|---|---|---|---|---|
+| surface | 64 | 13,802 | 0 | 0.4 | 0 | 25 |
+| surface | 256 | 221,760 | 0 | 10.0 | 0 | 596 |
+| surface | 512 | 887,315 | 8 (3/5) | 61.7 | 4 (2/2) | 3,813 |
+| solid | 64 | 52,258 | 0 | 0.9 | 0 | 18 |
+| solid | 256 | 3,345,384 | 0 | ~50 | 0 | 694 |
+| solid | 512 | 26,763,628 | 1 (1/0) | 388 | 0 | 5,436 |
+
+Identical to the gfx90a 3625a1e validation (Release 8/1, -O0 4/0): the HIP code path is unchanged by `5a9b7cf`.
+
+- `_DEBUG` -O0 build at 64 (binvox): surface `Processed 5110 triangles`, `Tested 117367 voxels`, `Marked 45229 voxels`. Solid prints 0, which is upstream behaviour. Device-memory table in both.
+- Upstream CI smoke `./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu` (README build, layout copied to a scratch dir): exit 0, `## CPU VOXELISATION`, forced-CPU message, writes `bunny.OBJ_64.vox`.
