@@ -92,3 +92,10 @@
 {"kind":"phase","ts":"2026-11-05T05:30:01Z","phase":"compile","seconds":2.666,"exit":0,"cmd":"cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"}
 {"kind":"phase","ts":"2026-11-05T05:30:04Z","phase":"compile","seconds":3.729,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j32"}
 {"kind":"session","ts":"2026-11-05T05:36:22Z","epoch":1793856982.069272695,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-05T05:45:28Z","epoch":1793857528.970961966,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-05T05:45:53Z","phase":"compile","seconds":1.770,"exit":0,"cmd":"cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DCMAKE_BUILD_TYPE=Release"}
+{"kind":"phase","ts":"2026-11-05T05:45:57Z","phase":"compile","seconds":3.526,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j10"}
+{"kind":"phase","ts":"2026-11-05T05:46:12Z","phase":"test","seconds":0.533,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_extract"}
+{"kind":"phase","ts":"2026-11-05T05:46:12Z","phase":"test","seconds":0.572,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match"}
+{"kind":"phase","ts":"2026-11-05T05:46:13Z","phase":"test","seconds":0.488,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography"}
+{"kind":"session","ts":"2026-11-05T05:47:25Z","epoch":1793857645.596194515,"event":"end","platform":"linux-gfx1100"}
