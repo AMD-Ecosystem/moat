@@ -544,3 +544,38 @@ GPU evidence (Radeon gfx1201, `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, TheRock pi
 | one output element `+5e-5` | 8/8 pass (under the unchanged 1e-4 tolerance, as expected) |
 
 So the tests still catch a real reduction error at the 1e-4 level; the change only removed the reference's own float drift. Still owed by the validators: the repeated `tsnecuda_test` runs on wave64 hardware, whose hipBLAS gemv may accumulate differently.
+
+## Validation 2026-11-05 (validator, linux-gfx1201) -> completed
+
+Head `33f708d` (`[ROCm] Note where the OpenMP runtime of a ROCm FAISS is found`), fresh clone of `AMD-Ecosystem/tsne-cuda`, `git status --porcelain` empty at completion. Radeon gfx1201 (`rocm_agent_enumerator`: gfx1201), `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, TheRock pip SDK 10.1.0 (`rocm-sdk path --root`, no `/opt/rocm`). FAISS: the gfx1201 `moat-port` `01a09e8` install used by the earlier gfx1201 review and fix jobs, copied into this job's `agent_space`.
+
+Build, the INSTALL.md Linux recipe with the SDK root in place of `/opt/rocm`, the documented `-DCMAKE_HIP_COMPILER` hint and `-DBUILD_TESTS=ON` (system GCC 13.3.0 for C/CXX, SDK clang 24.0.0 for HIP), rc 0, 94 warnings (same classes as the earlier rounds):
+```
+SDK=$(rocm-sdk path --root); FAISS_PREFIX=<faiss install>
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 \
+  -DCMAKE_HIP_COMPILER=$SDK/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH="$SDK;$FAISS_PREFIX" -DBUILD_TESTS=ON
+cmake --build build -j 12
+```
+Runtime: `LD_LIBRARY_PATH=$FAISS_PREFIX/lib:$SDK/llvm/lib` (the INSTALL.md `libomp.so` note); Python 3.11.17 venv, scikit-learn 1.9.1, numpy 1.26.4, pytest 7.3.2; `PYTHONPATH` unset, package not installed (`import tsnecuda` from the source root -> `ModuleNotFoundError`; `pip show tsnecuda` -> not found).
+
+- `ctest --test-dir build --output-on-failure`: 1/1 passed (0.48 s).
+- `./build/tsnecuda_test` 10 consecutive runs, 1 s apart so each has its own `time(NULL)` seed: 10/10 `PASSED 8 tests`, 0 failed.
+- `cd build/python && python -c "import tsnecuda; tsnecuda.test()"`: rc 0, total_time 3.01 s.
+- `python -m pytest -v build/python/tsnecuda/test` (INSTALL.md form, from the source root): 7 passed in 23.53 / 23.78 / 24.01 s (3 runs), including `test_digits_quality_synchronized_kernels` and `test_digits_quality_launch_overrides`.
+- Metric harness (the `test_tsne.py` helpers called directly from `build/python`, script piped on stdin so `sys.path` is the cwd only), against the file's thresholds:
+
+| metric | measured | threshold |
+|---|---|---|
+| digits trustworthiness | 0.99176 | >= 0.97 |
+| digits 5-fold 10-NN accuracy | 0.96719 | >= 0.95 |
+| scikit-learn TSNE trustworthiness (reference) | 0.99330 | ours >= ref - 0.02 |
+| digits, `TSNE_SYNC_KERNELS=1` | trust 0.99096, kNN 0.96552 | 0.97 / 0.95 |
+| digits, launch overrides (FFT 64, ATTR/REP/INTEG 256) | trust 0.99186, kNN 0.96496 | 0.97 / 0.95 |
+| blobs 50000, k=32 ARI | 1.0 (3.08 s) | >= 0.95 |
+| blobs 10000, k=1024 (CPU FAISS) ARI | 1.0 (5.67 s) | >= 0.9 |
+
+- `utils/jargon.py --port tsne-cuda`: clean (after creating local `main` and `moat-port` branches in the fresh clone). Documentation: INSTALL.md "Building for AMD GPUs (ROCm)", Linux and Windows, with the new `libomp.so` sentence.
+- CUDA gate: already recorded at `33f708d` (mi355 host, nvcc 12.8, library and `tsnecuda_test` build rc 0, see "CUDA compile check 2026-11-04", second attempt), so not repeated here.
+- Still owed elsewhere: the repeated `tsnecuda_test` runs on wave64 at `33f708d` (linux-gfx90a's validation is at `4fedca7`), whose hipBLAS gemv may sum in a different order.
