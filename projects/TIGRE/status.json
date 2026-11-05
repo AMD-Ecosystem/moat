@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
   "adopted_at": "2026-06-04T01:07:42Z",
-  "updated_at": "2026-11-05T05:48:55Z",
+  "updated_at": "2026-11-05T05:54:56Z",
   "head_sha": "f779703298570f752da7c3994db3fc9903b9bf1c",
   "depends_on": [],
   "pr_url": "https://github.com/CERN/TIGRE/pull/747",
@@ -19,38 +19,14 @@
   "upstream_repo_id": 61034131,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx90a": {
-      "state": "completed",
+    "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "b61ff14c87689beb1b08e2bcd8223c29ce85a83d",
-      "started_at": "2026-06-04T01:41:19Z",
-      "completed_at": "2026-11-04T20:46:45Z",
-      "updated_at": "2026-11-05T05:33:18Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer",
-      "failed_sha": "5a3da55948d954ca9184c0b4793bbb2be95490e9"
-    },
-    "windows-gfx1101": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "cf873a288e8469d7292470c96272f825dc355dba",
-      "started_at": null,
-      "completed_at": "2026-06-20T07:52:27Z",
-      "updated_at": "2026-06-20T07:52:27Z",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-04T07:39:26Z",
+      "completed_at": null,
+      "updated_at": "2026-11-04T07:39:26Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -64,6 +40,29 @@
         "first_session_at": null,
         "last_session_at": null
       }
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "b61ff14c87689beb1b08e2bcd8223c29ce85a83d",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-04T20:53:48Z",
+      "updated_at": "2026-11-04T20:53:48Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed"
     },
     "windows-gfx1201": {
       "state": "completed",
@@ -94,14 +93,14 @@
         "at": "2026-06-19T22:54:42Z"
       }
     },
-    "linux-gfx942": {
+    "windows-gfx1101": {
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": "2026-11-04T07:39:26Z",
-      "completed_at": null,
-      "updated_at": "2026-11-04T07:39:26Z",
+      "validated_sha": "cf873a288e8469d7292470c96272f825dc355dba",
+      "started_at": null,
+      "completed_at": "2026-06-20T07:52:27Z",
+      "updated_at": "2026-06-20T07:52:27Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -115,6 +114,30 @@
         "first_session_at": null,
         "last_session_at": null
       }
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f779703298570f752da7c3994db3fc9903b9bf1c",
+      "started_at": "2026-06-04T01:41:19Z",
+      "completed_at": "2026-11-05T05:54:56Z",
+      "updated_at": "2026-11-05T05:54:56Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "failed_sha": "5a3da55948d954ca9184c0b4793bbb2be95490e9"
     },
     "linux-gfx1100": {
       "state": "completed",
@@ -138,29 +161,6 @@
         "last_session_at": null
       },
       "last_agent": "validator"
-    },
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "b61ff14c87689beb1b08e2bcd8223c29ce85a83d",
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": "2026-11-04T20:53:48Z",
-      "updated_at": "2026-11-04T20:53:48Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed"
     }
   },
   "published_sha": "b61ff14c87689beb1b08e2bcd8223c29ce85a83d",
@@ -182,6 +182,5 @@
     "content_sha256": "7fdcb56a3ec50c58a011afc0619d67046182ed5848ba9fbdf4aead8eee68cac9",
     "review_pr": "https://github.com/AMD-Ecosystem/TIGRE/pull/1"
   },
-  "fix_merged_at": "2026-11-04T23:20:07Z",
-  "porting": null
+  "fix_merged_at": "2026-11-04T23:20:07Z"
 }

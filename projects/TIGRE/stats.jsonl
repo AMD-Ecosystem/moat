@@ -220,3 +220,7 @@
 {"kind":"phase","ts":"2026-11-05T05:47:06Z","phase":"test","seconds":35.641,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-214159-v-tigre/venv/bin/python agent_space/scripts/solvers.py"}
 {"kind":"phase","ts":"2026-11-05T05:47:46Z","phase":"test","seconds":34.588,"exit":0,"cmd":"bash -c for pass in 1 2 3; do for g in parallel cone; do $P $S/repeat_par.py $g Siddon; $P $S/repeat_par_interp.py $g; done; $P $S/tigre_parallel.py; done"}
 {"kind":"session","ts":"2026-11-05T05:49:00Z","epoch":1793857740.542333103,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-05T05:49:23Z","epoch":1793857763.832115716,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-05T05:52:15Z","phase":"compile","seconds":21.603,"exit":0,"cmd":"bash -c cd projects/TIGRE/src && /var/lib/jenkins/fleet/jobs/mi200-20261104-214101-v-tigre/venv/bin/python setup.py build_ext --inplace -j 16"}
+{"kind":"phase","ts":"2026-11-05T05:53:59Z","phase":"test","seconds":94.775,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi200-20261104-214101-v-tigre/moat/agent_space/run_head.sh /var/lib/jenkins/fleet/jobs/mi200-20261104-214101-v-tigre/moat/projects/TIGRE/src /var/lib/jenkins/fleet/jobs/mi200-20261104-214101-v-tigre/moat/agent_space/scripts"}
+{"kind":"session","ts":"2026-11-05T05:54:56Z","epoch":1793858096.803779499,"event":"end","platform":"linux-gfx90a"}

@@ -1624,3 +1624,38 @@ Already recorded at f779703 ("CUDA compile check (nvcc 12.8) at f779703" above: 
 - `git -C projects/TIGRE/src status --porcelain`: no modified tracked files, only untracked build output.
 
 Outcome: linux-gfx1100 -> **completed** at f779703. This satisfies the wave32 gate at this head. For the fix review PR retest line: gfx1100 (W7800) 8/8 build, 70 + 4 pass, all gates match b61ff14 exactly.
+## Validation 2026-11-05 (linux-gfx90a, validator, moat-fix-747 @ f779703 -> completed)
+
+jeff asked for this run. GPU: AMD Instinct MI250X / MI250 gfx90a, TheRock ROCm SDK 10.1, `HIP_VISIBLE_DEVICES=0` (dispatcher pin), all GPU work under `ulimit -c 0`. Head `f779703298570f752da7c3994db3fc9903b9bf1c`, checked out detached from `origin/moat-fix-747` (tip = f779703) in a fresh fork clone (`projects/TIGRE/src`). Nothing pushed.
+
+### Verdict: completed
+Full real-GPU run (no carry-forward: `classify b61ff14 f779703` gives `mixed`). Every gate passes. The only difference from this platform's b61ff14 record is the new file `test_interpolated_voxel_size.py` (+4 passed), which is the fix's own test; every other number equals the b61ff14 record and the porter's f779703 run to the printed digit, as expected because those gates use integer voxel sizes or theta = psi = 0, where `fmaxf` and the truncating `max` agree. The new test's before/after on this platform (2 failed at b61ff14, 4 passed at f779703) is already recorded by the porter and reviewer and was not repeated.
+
+### Build
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH BUILD_WITH_HIP=1 HIP_ARCH=gfx90a ROCM_PATH=$(rocm-sdk path --root)
+utils/timeit.sh TIGRE compile -- bash -c "cd projects/TIGRE/src && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16"
+```
+Job venv python 3.11.17 (`pip install numpy==1.26.4 scipy==1.10.1 Cython matplotlib h5py tqdm pytest`): numpy 1.26.4, scipy 1.10.1, Cython 3.3.1, pytest 7.3.2. rc 0, 0 `error:` lines, 8/8 `.so`, 20 hipcc compiles at `-std=c++14`; `llvm-objdump --offloading` shows gfx90a in all 8 `.so`. Self-test: `fp32 hardware linear texture filtering on AMD Instinct MI250X / MI250: unsupported (software trilinear fallback)`.
+
+### Tests
+`run_head.sh` and the scripts (`tigre_validate.py`, `tigre_solvers.py`, `tigre_parallel.py`, `repeat_par.py`, `repeat_par_interp.py`) copied unchanged (md5-checked) from the gfx90a b61ff14 validation job on this host (host-local, not committed).
+```
+utils/timeit.sh TIGRE test -- bash $PWD/agent_space/run_head.sh $PWD/projects/TIGRE/src $PWD/agent_space/scripts
+cd projects/TIGRE/src/Python && PYTHONPATH=$PWD MPLBACKEND=Agg $FLEET_VENV/bin/python -m pytest -q -p no:cacheprovider tests/test_interpolated_voxel_size.py tests/test_compute_cor.py tests/test_demo_angles.py tests/test_denoise_2d_guard.py tests/test_filtering_workers.py tests/test_gpuids_default.py tests/test_krylov_restart_and_norms.py tests/test_krylov_smoke.py
+```
+- Upstream pytest via the driver: compute_cor 6, demo_angles 1, denoise_2d_guard 3, filtering_workers 37, gpuids_default 5, krylov_restart_and_norms 9, krylov_smoke 9 -> **70 passed, 0 failed** (b61ff14 gfx90a record 70/70; porter at f779703 70/70).
+- New `test_interpolated_voxel_size.py`: **4 passed** (porter and reviewer at f779703: 4/4). Commit Test Plan line (8 files): **74 passed in 6.77s**.
+- `pytest tests/` as a whole: 3 collection errors in the legacy harness (`algorithm_test.py`, `test_config_gen.py`: `No module named 'tigre.demos'`; `stdout_test.py`: `No module named 'StringIO'`), files unchanged from upstream master and outside the bar, as recorded earlier.
+- Cone gates (`tigre_validate.py`): Siddon mean/max 27.46/111.2, interp vs Siddon 0.0040, FDK 0.2864, OS-SART-20 0.1929, adjointness 1.004e-05 / 6.076e-05. RESULT PASS.
+- Solvers: sart 4.9635, ossart 3.7197, sirt 6.2263, cgls 0.9609, fista 0.9505, asd_pocs 4.7643, awasd_pocs 4.7777, os_asd_pocs 3.5631, ossart_tv 3.4159; RESULT PASS.
+- Parallel gate, 3 passes, identical each time: axis 0.0043 / 2.030e-05 / 1.973e-06; offset 0.0041 / 6.078e-05 / 1.322e-06; Euler (theta 0.4, psi 0.2, dVoxel 1) 0.0056 / 1.323e-05 / 1.894e-06; FBP 0.0833; SIRT-20 0.1952; missed rays zero fraction 0.861 / 0.855. RESULT PASS.
+- Repeats, 3 passes each of `repeat_par.py {parallel,cone}` and `repeat_par_interp.py {parallel,cone}`: **0/20 differ in all 24 cases (480 bitwise identical)**, worst 0.000e+00.
+- Telemetry: compile 21.6 s, test driver 94.8 s.
+
+### Other gates
+- `jargon.py --port TIGRE`: clean (local `master` and `moat-fix-747` branches created from origin in the fresh clone).
+- Documentation: `Frontispiece/python_installation.md` keeps its `AMD GPU (ROCm/HIP)` section; this round changes no build knob.
+- Integrity: `git -C projects/TIGRE/src status --porcelain` shows untracked build output only.
+- CUDA compile gate: already satisfied at f779703 (see "CUDA compile check (nvcc 12.8) at f779703"); not re-run.
+- For the fix review PR body retest line: linux-gfx90a (MI250X) at f779703: 8/8 build, 70 + 4 passed, all projection/reconstruction/adjointness/repeat checks equal b61ff14.
