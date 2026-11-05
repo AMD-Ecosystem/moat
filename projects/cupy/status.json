@@ -8,10 +8,13 @@
   "ext_type": "setuptools-cuda",
   "stage": "ported",
   "adopted_at": "2026-11-04T22:34:29Z",
-  "updated_at": "2026-11-05T19:04:00Z",
+  "updated_at": "2026-11-05T22:20:33Z",
   "head_sha": "f4f78903034c87624a36b4163b54f284fce8faf5",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-05T22:20:32Z"
+  },
   "waivers": {},
   "platforms": {
     "linux-gfx1100": {
