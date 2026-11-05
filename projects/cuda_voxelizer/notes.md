@@ -543,3 +543,6 @@ ulimit -c 0; ./cuda_voxelizer -f ../test_models/bunny.OBJ -s 512
 Configure and build exit 0, `CMAKE_BUILD_TYPE:STRING=Release` in the cache, upstream warnings only (`nodiscard` on unchecked `hipError_t` in the `.cu` files, -Wwrite-strings, -Wformat). Run exit 0: `Best device: AMD Radeon Pro W7800 48GB`, `## GPU VOXELISATION`, GPU time 27.8 ms, wrote `bunny.OBJ_512.vox` (3,557,750 bytes; moved out of the source tree). Fork `git status --porcelain` empty after the run.
 
 `python3 utils/moatlib.py classify cuda_voxelizer 3625a1e ccc2950` -> `class=doc-only arch_independent=True inert=True`. `advance-head cuda_voxelizer ccc2950` carried linux-gfx90a, linux-gfx1201 and windows-gfx1151 forward to `ccc2950` (validated_sha now `ccc2950`, still completed); stage stays review-passed. Deferral marked done with `deferred.py set-status`. The `cuda-voxelizer-3625a1e-body-wording` deferral is still unruled.
+
+## Ruling 2026-11-05 (jeff): CUDA keeps managed memory
+The device-memory voxel table from 3625a1e becomes HIP-only in a new commit, so the CUDA build keeps upstream's cudaMallocManaged table (and its oversubscription for very large grids). The corrected statements (the 512-size boundary residual has only been observed on AMD; CUDA was run at -s 64) go in that commit's message and the PR body, not in a rewrite of 3625a1e.
