@@ -439,6 +439,15 @@
     "reason": "ported-elsewhere",
     "repo_id": 932038801
   },
+  "deepspeedai/deepspeed": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-05T20:46:51Z",
+    "disposition": "skip",
+    "full_name": "deepspeedai/DeepSpeed",
+    "note": "ROCm supported upstream (per jeff 2026-11-05); ROCm/DeepSpeed fork also active",
+    "reason": "already-supported",
+    "repo_id": 235860204
+  },
   "desilo/liberate-fhe": {
     "decided": "2026-06-05T04:44:26Z",
     "disposition": "skip",
@@ -1013,6 +1022,15 @@
     "note": "Math library; multi-backend, CUDA optional",
     "reason": "not-a-target",
     "repo_id": 370833810
+  },
+  "lightgbm-org/lightgbm": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-05T20:46:53Z",
+    "disposition": "skip",
+    "full_name": "lightgbm-org/LightGBM",
+    "note": "Upstream ROCm/HIP support merged: #6086, #7039, #7185 (per jeff 2026-11-05)",
+    "reason": "already-supported",
+    "repo_id": 64991887
   },
   "llnl/aluminum": {
     "decided": "2026-06-05T01:25:53Z",
