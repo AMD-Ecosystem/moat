@@ -456,6 +456,36 @@
         }
       }
     },
+    "license_spdx_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "to",
+          "evidence",
+          "at"
+        ],
+        "properties": {
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1
+          },
+          "at": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "fork_url_ruling": {
       "type": [
         "object",
