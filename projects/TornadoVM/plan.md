@@ -249,3 +249,6 @@ Keep the pinned CK development commit (CK release tags lack the gfx11 FMHA kerne
 
 ## Ruling 2026-11-04 (jeff): ck-hip on Windows
 Try building ck-hip on Windows with Ninja (clang-cl, TheRock), limited to the gfx1151 target, and validate SDPA and GEMM on the laptop. If CK on Windows proves too cumbersome, stop and report; it then becomes a documented Windows gap. cuDF stays unsupported on Windows because hipDF ships no Windows build (jeff considers that a hipDF feature gap).
+
+## Ruling 2026-11-05 (jeff): spin-wait detection edge cases
+Keep the current check (rejects only provable same-wavefront waits in 1D kernels). Do not pass the work-group shape into TcHook.compile. Document the two known false positives next to the check and in the programming.rst paragraph: a localIdx-only kernel launched with a 2D/3D work-group where a writer in another row releases the waiters, and a work-group too small for any thread to reach the wait. Add the 56-thread-row example as a test that documents the false positive.
