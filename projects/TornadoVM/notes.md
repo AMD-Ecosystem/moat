@@ -354,3 +354,65 @@ Scope: the fix-round-3 delta `git diff 2a7075bde..08cb3c5aa` (one commit, `TestN
   The second row is a no-OpenCL failure mode of the old test that review 3 did not list; the fix covers it too.
 - Byte-identity: `git diff origin/develop...08cb3c5aa` over `tornado-drivers/{cuda,ptx,opencl,spirv,metal}`, `tornado-native-libs/{cudf-jni,cudnn-jni,cutlass-jni}` and `tc-codegen` `CudaDialect.java`/`OpenClDialect.java`/`MetalDialect.java` is empty. The delta is one Java test file compiled the same way for every backend; the porter's real-nvcc `make jdk21 BACKEND=cuda` at `08cb3c5aa` is recorded in fix round 3 and was not repeated here.
 - Commit `08cb3c5aa`: `[ROCm]` title of 64 characters, ASCII, AI disclosure, fenced Test Plan, no Co-Authored-By. `utils/jargon.py --commits 2a7075bde..08cb3c5aa` and `--diff origin/develop...08cb3c5aa` clean. Fork tree has no modified tracked files.
+
+## Rulings round (2026-11-05, linux-gfx950, MI355X): jeff's 2026-11-04 rulings
+
+Porter at `08cb3c5aa` -> `3c00e2062` on `moat-port`, one new commit per ruling, no amend or force-push. Host: ROCm 10.1 TheRock wheels (`ROCM_PATH` = the wheel's `_rocm_sdk_devel`), Temurin 21.0.12, HIP_VISIBLE_DEVICES=0, `ulimit -c 0`; hipDF/hipVS wheel libs copied from the round-1 job.
+
+| Ruling | Commit | Change |
+|---|---|---|
+| 1 32-lane warps on wave64 | `f1a63d6b5` | Emulation kept. New TC-E4019 (Legality, HIP with warpSize 64 only): a loop with no header block argument, no write/barrier/call (only loads and compare-and-swap with expected == new), every exit decided by a load or read-CAS of `ptr<shared>` in the loop, and the same local array stored/atomically written outside the loop. Global-memory waits not reported (writer may be another work-group). Docs: new "Warps on 64-lane AMD wavefronts (HIP backend)" section in `docs/source/programming.rst`. |
+| 2 gfx1250 MMA | `772b5c35b` | `MatrixCores.WMMA_GFX1250` for exactly `gfx1250`; `TC_WMMA1250` branch in the helpers: f16/bf16 -> `v_wmma_f32_16x16x32_{f16,bf16}` (k 16-31 zero), s8 -> `v_wmma_i32_16x16x64_iu8`, e4m3/e5m2 -> `v_wmma_f32_16x16x64_{fp8_fp8,bf8_bf8}` natively (k 32-63 zero), B padded with zero columns; result mapping shared with gfx12. TC-E4017 gfx12 special message removed. `v_wmma_f32_16x16x4_f32` unused: the KernelContext API has no f32/tf32 shape. |
+| 3 CK pin | `e22fcf3ff` | Reason next to `CK_COMMIT` in ck-hip `CMakeLists.txt` and in `tornado-native-libs/README.md`. `rocm-7.2.4` is the newest CK release tag (`git ls-remote --tags`, 2026-11-05). |
+| 4 ck-hip on Windows | `3c00e2062` | CMake only. Under the Visual Studio generator: ExternalProject nested Ninja build of the same source dir with ROCm `clang-cl` as CXX and HIP compiler, `tornado-ck.dll` copied to `cmake/$<CONFIG>` (where the pom's copy-binaries reads Windows DLLs). Skips with a warning when CMake < 4.0, no Ninja, no ROCm clang-cl, or `TORNADO_CK_GPU_TARGETS` unset (Windows builds only the requested GPUs). In the clang-cl build: `/Fo<OBJECT>` -> `-o <OBJECT>` in `CMAKE_HIP_COMPILE_OBJECT` (bundler input==output, TheRock#5615 / Gpufit), `-O3` and `-fgpu-flush-denormals-to-zero` via `/clang:`, generated `.def` exporting the four `tornado_ck_*` entry points. cudf-hip still skips on Windows. |
+
+Lane layout source for gfx1250 (no hardware here): CK's `WmmaTraits<gfx125_t, ...>` derive from `WmmaTraitsBase<gfx12_t, ..., K>` (`warp_gemm_attribute_wmma_impl_{16bit,8bit}_traits.hpp`), i.e. A/B element e of lane l holds k = 16(e/8) + 8(l/16) + e%8 of row/column l%16; C/D as gfx12 (lane l: rows 8(l/16)+i, column l%16). The packing in the helpers was checked by hand against that formula (k16: `aw[j]` = k-word 4(l/16)+j; 8-bit: `av[2kb+h]` = k-word 4kb + 2(l/16) + h). Only hardware can confirm CK's layout and the OCP FP8 encoding; the harness's every-byte FP8 case is the check for the latter.
+
+Evidence on gfx950:
+
+- Ruling 1 hazard reproduced in plain HIP (`agent_space/spin/halves.hip`): 64-thread block, lanes 32-63 spin on `atomicCAS(&flag,1,1)` set by lane 0: hangs (killed after 30 s) with the writer branch first in source, completes with the spin branch first, and completes when the waiters are the second wavefront of a 128-thread block. TC emits the writer-first order for the Java kernel.
+- `tc emit --target hip --all` over `tornado-unittests/target/classes` (1163 kernels) and examples (117): TC-E4019 only for the new `localFlagWaitKernel`.
+- `tc emit --all` with `08cb3c5aa` TC jars vs HEAD TC jars, targets cuda (default, `--cc 70`, `--cc 90`), opencl, metal, over unittests (1485 kernels) and examples (188): byte-identical, diagnostics included.
+- TC tests: `TcCompilerTest` 29/29 (new `legalityRefusesLocalWaitsOnWave64Hip`, `legalityAcceptsLocalSearchOnWave64Hip`, gfx1250 now in the MMA list), `HipMmaRoutingTest` 1/1, codegen `LitTest` 60/60 with `utils/hiprtccheck` built (the HIP `mma.tcir` RUN line now compiles the helpers for gfx908 gfx942 gfx950 gfx1100 gfx1201 gfx1250). `make test-nogpu JDK=jdk21` BUILD SUCCESS.
+- gfx1250 compile: the harness (TC-emitted helpers) compiled `--cuda-device-only -S` for gfx1250 has exactly one each of `v_wmma_f32_16x16x32_f16`, `_bf16`, `v_wmma_f32_16x16x64_fp8_fp8`, `_bf8_bf8`, `v_wmma_i32_16x16x64_iu8`, `.amdhsa_wavefront_size32 1`; gfx908/942/950/1100/1201 compile to their previous MFMA/WMMA forms.
+- `make jdk21 BACKEND=hip` EXIT 0 (CK module rebuilt, 9 targets). Linux ck-hip configure before/after: `flags.make` differs only in the source/binary include dirs, per-source `build.make` flags and `link.txt` identical.
+- Ruling 4 nested path exercised on Linux with a scratch copy forcing the branch (clang++ for clang-cl, `.so` for `.dll`, `TORNADO_CK_GPU_TARGETS=gfx950`): nested Ninja build compiled 76 objects and the library was copied out; with `TORNADO_CK_SOURCE_DIR=/tmp` the nested build skipped and the outer build succeeded; adding `TORNADO_CK_REQUIRED=1` failed it (fresh build). Not built on Windows (no Windows host here); CK under clang-cl (MSVC frontend), `HIP_STANDARD 20` mapping and `hip::host` from TheRock's Windows hip-config are unverified.
+- Tests at `3c00e2062` (same tree as the SDK): `tornado-test --verbose --quickPass` 1488 pass, 696 unsupported, 2 failed (whitelisted Mandelbrot/Julia, as before); `tornado-selftest` 20 pass / 1 skip (device-launch); `HeapFail#test03` (`-J"-Dtornado.device.memory=1MB"`) pass; TestCuBlas 27/27, TestCuBlasLt 10/10, TestCuFft 9/9, TestCuRand 7/7, TestCusparse 17/17, TestNccl 30 run / 10 unsupported (one GPU), TestNcclMultiProcess 5 run / 2 unsupported (one GPU; no OpenCL module in a HIP-only SDK), TestCuDnn 20/20, TestCutlass 26/26, TestCudf 24/24, TestCudfColumns 23 run / 3 unsupported (ZSTD), TestCuVS 7/7, TestProfiler 9/9, TestFP8 13/13, TestUnsupportedKernelContextOps 9 run / 3 unsupported (new `testLocalFlagWaitAcrossWarps` passes: TC-E4019 on gfx950); `projects/TornadoVM/probe/mma/run.sh`: harness 53/53, mutated reference 53/53 detected, the 8 MMA classes 65/65.
+- CUDA: `make jdk21 BACKEND=cuda` in a worktree at `3c00e2062` with real nvcc 12.8 (`/usr/local/cuda/bin/nvcc`, CUTLASS shim sm_80): BUILD SUCCESS. `git diff origin/develop...3c00e2062` over `tornado-drivers/{cuda,ptx,opencl,spirv,metal,cuda-jni,opencl-jni}`, `tornado-native-libs/{cudf-jni,cudnn-jni,cutlass-jni}` and the Cuda/OpenCl/Metal dialects is empty.
+- `utils/jargon.py -C projects/TornadoVM/src --commits 08cb3c5aa..HEAD` and `--diff origin/develop...HEAD` clean; `utils/prose.py` clean on all four bodies; titles 46-61 chars, ASCII, AI disclosure, fenced Test Plan, no Co-Authored-By.
+
+### For the gfx1250 validation (one short job, GPU idle)
+
+The independent MMA harness lives in this repository: `projects/TornadoVM/probe/mma/` (`helpers.tcir` makes the SDK's TC emit all five HIP MMA helpers; `harness.hip` builds fragments from the documented PTX m16n8 layouts, runs f16, bf16, s8, e4m3, e5m2 with 1-5 k-steps, 1-4 warps per block, idle warps, C != 0, int32 wraparound and every FP8 byte, and checks a double/int32 CPU reference; `--mutate` must fail every case; `run.sh` then runs `tornado-selftest` and the eight `kernelcontext.matrices` MMA classes). One command after building a HIP SDK at the validated sha (`TORNADO_CK_SOURCE_DIR=/tmp` skips ck-hip, which MMA does not need, keeping the build to about a minute):
+
+```bash
+cd projects/TornadoVM/src && git checkout 3c00e2062
+export ROCM_PATH=<rocm root> HIP_PATH=$ROCM_PATH JAVA_HOME=<jdk 21>
+TORNADO_CK_SOURCE_DIR=/tmp make jdk21 BACKEND=hip && source setvars.sh
+ulimit -c 0
+bash ../probe/mma/run.sh          # prints "== PASS (gfx1250)" or "== FAIL (gfx1250): <steps>"
+```
+
+Expected matrix-instruction listing on gfx1250: one each of the five `v_wmma_*` forms above. A failure only in the `e4m3`/`e5m2` cases (especially "every byte") points at the FP8 encoding; failures in every kind point at the lane layout.
+
+### For the Windows (gfx1151) validator: ck-hip with Ninja and clang-cl
+
+Prerequisites: VS 2022 developer prompt (`bin\windowsMicrosoftStudioTools2022.cmd`), TheRock ROCm venv active, `cmake --version` 4.0 or newer (TheRock's venv carries 4.3.2; CMake 3.x makes ck-hip skip with a warning), `ninja` on PATH. From the fork checkout:
+
+```bat
+set ROCM_PATH=<TheRock venv>\Lib\site-packages\_rocm_sdk_devel
+set HIP_PATH=%ROCM_PATH%
+set HIP_DEVICE_LIB_PATH=%ROCM_PATH%\lib\llvm\amdgcn\bitcode
+set TORNADO_CK_GPU_TARGETS=gfx1151
+set TORNADO_CK_REQUIRED=1
+cmake --version
+ninja --version
+nmake /f Makefile.mak jdk21 BACKEND=hip
+call setvars.cmd
+dir "%TORNADOVM_HOME%\lib\tornado-ck.dll"
+"%ROCM_PATH%\lib\llvm\bin\llvm-objdump" -p "%TORNADOVM_HOME%\lib\tornado-ck.dll" | findstr /C:"tornado_ck_"
+tornado-test -V uk.ac.manchester.tornado.unittests.cudnn.TestCuDnn
+tornado-test -V uk.ac.manchester.tornado.unittests.cutlass.TestCutlass
+```
+
+`TORNADO_CK_REQUIRED=1` turns any skip into a build error, so a silent fallback to "unsupported" cannot pass as success. Expected: the nested build under `tornado-native-libs\ck-hip\target\windows-amd64-release\cmake\ninja`, four `tornado_ck_*` exports, TestCuDnn 20/20 (SDPA via the gfx115 FMHA instances) and TestCutlass 26/26 (WMMA/DL GEMMs). If the nested build fails in CK sources under clang-cl, record the first error: the ruling says report it (a documented Windows gap) rather than work around it with more than CMake changes. Runtime: stage `amdhip64_7.dll` and `rocm_kpack.dll` per the cuda-to-rocm Windows notes if the System32 copy wins.

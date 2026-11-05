@@ -39,3 +39,11 @@
 {"kind":"phase","ts":"2026-11-05T03:55:47Z","phase":"compile","seconds":218.764,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261104-193844-tvm-review4/build.sh"}
 {"kind":"phase","ts":"2026-11-05T03:56:24Z","phase":"test","seconds":30.595,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261104-193844-tvm-review4/run-after.sh"}
 {"kind":"session","ts":"2026-11-05T03:56:41Z","epoch":1793851001.122378346,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-05T07:03:36Z","phase":"compile","seconds":0.005,"exit":2,"cmd":"make jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-05T07:06:51Z","phase":"compile","seconds":172.181,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-225531-tvm-rulings/moat/projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-05T07:17:35Z","phase":"compile","seconds":171.925,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-225531-tvm-rulings/moat/projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-05T07:28:12Z","phase":"compile","seconds":171.433,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-225531-tvm-rulings/moat/projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-05T07:40:08Z","phase":"compile","seconds":171.251,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-225531-tvm-rulings/moat/projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-05T07:42:34Z","phase":"cuda-compile","seconds":17.969,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-225531-tvm-rulings/moat/agent_space/wt-cuda jdk21 BACKEND=cuda"}
+{"kind":"phase","ts":"2026-11-05T07:48:08Z","phase":"test","seconds":456.955,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi355-20261104-225531-tvm-rulings/moat/projects/TornadoVM/src && tornado-test --verbose --quickPass"}
+{"kind":"phase","ts":"2026-11-05T07:50:30Z","phase":"test","seconds":10.329,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-225531-tvm-rulings/moat/projects/TornadoVM/src test-nogpu JDK=jdk21"}
