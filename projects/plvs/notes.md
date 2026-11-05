@@ -3244,3 +3244,5 @@ My agent came up with this analysis, but I've read and approved it.
 
 > The same pattern affects the fisheye line depth arrays. `Frame::ComputeStereoFishEyeLineMatches` allocates `mvDepthLineStart` and `mvDepthLineEnd` with `NlinesLeft` entries (src/Frame.cc, next to `mvuRightLineStart/End`, which already get `Nlines`), but `Tracking::NeedNewKeyFrame` and `Tracking::CreateNewKeyFrame` loop over all `Nlines`. With AddressSanitizer on Linux, TUM-VI room1 stereo reports heap-buffer-overflow reads at src/Tracking.cc:4018 and :4316, just past an `NlinesLeft`-float buffer. If a value past the end is positive, CreateNewKeyFrame also unprojects a right-image line with `UnprojectStereoLine`, which reads `mvKeyLinesUn[i]` out of bounds as well. Sizing both vectors to `Nlines` with -1 (and allocating them even when `NlinesLeft == 0`) fixes it the same way.
 ====
+
+- Ruling 2026-11-05 (jeff): fix the line depth arrays (Frame.cc:3037-3038 mvDepthLineStart/End sized to left lines, read over all lines at Tracking.cc:4018/:4314) on moat-port as a separate commit, and add it to luigifreda/plvs#58 as a follow-up comment.
