@@ -3201,3 +3201,7 @@ CUDA no-regression gate: already recorded at 83f66a507 (nvcc 12.8), not repeated
 ## Commit reword (2026-11-05)
 
 jeff approved and ran `agent_space/af-ub-reword.sh`: `moat-sync-64c88d9` 83f66a507 -> 83be19781 (identical tree), rewording only the last Test Plan sentence of the reduce-by-key commit (confidence_connected: 21 of 36 cases fail, 12 skip, 3 pass, not "skips every case"). `squash-carry-forward` carried linux-gfx942, linux-gfx90a, linux-gfx1100 and windows-gfx1151.
+
+## experimental/hip PR opened (2026-11-05)
+
+jeff approved: merge into moat-port first (done via merge-fix, tag rocm-20261105), then he opened https://github.com/arrayfire/arrayfire/pull/3741 from jeffdaily (head AMD-Ecosystem:moat-port 83be19781, base experimental/hip 950dcdd02, fast-forward of 25 commits). Body: `agent_space/af-exphip-body.md` (the approved review body with the disclosure line, upstream framing, and the Delivery/compare-links sections dropped). Watch that PR in checkups; it is not tracked by pr_state (the maintained record stays).
