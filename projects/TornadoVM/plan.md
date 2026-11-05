@@ -243,3 +243,6 @@ Implement the KernelContext MMA API on gfx1250 WMMA now (replacing the refusal) 
 
 ## Ruling 2026-11-04 (jeff): SDPA stays on Composable Kernel
 Keep cuDNN SDPA on the CK FMHA ck-hip module (MIOpen attention lacks FP16 on gfx950 and ignores the causal mask). Register a deferral to re-evaluate hipDNN for SDPA once it is released and its attention covers gfx950, RDNA and Windows.
+
+## Ruling 2026-11-04 (jeff): CK pin
+Keep the pinned CK development commit (CK release tags lack the gfx11 FMHA kernels). Document the reason next to the pin in the ck-hip CMake and in the README. Deferral tornadovm-ck-release-tag tracks moving to the first CK release tag that has them.
