@@ -62,3 +62,63 @@ plan.md and surface.json written against upstream main 6efc0a4 (moat-port 18b54d
 - HIP stubs resolved via `ctypes.CDLL(__file__)` need explicit export on Windows (plan risk 1).
 - `hipconfig --rocmpath` prints the devel root; `which hipcc` finds the venv shim, so the Linux root heuristic is wrong on Windows.
 Eight open questions for jeff are in plan.md.
+
+## Porter round 2026-11-05 (windows-gfx1151, Radeon 8060S, TheRock ROCm 7.14.0a20260612, Python 3.13, MSVC 14.44)
+
+moat-port 18b54de -> f4f78903 (12 commits, fast-forward push to ROCm/cupy). Plan commits 1-9 landed in order; three needed changes found while building got their own commits (8, 9, 10 below), and plan commit 8 (DLL directory) grew the editable-install case.
+
+| # | sha | title |
+|---|---|---|
+| 1 | d83e33a | Find the ROCm installation on Windows (ROCM_HOME, then `hipconfig --rocmpath`; HIP_PATH NOT honoured, Ruling 1) |
+| 2 | 2d2388d | Build host code with clang-cl for HIP on Windows (both compiler instances; `/std:c++17`) |
+| 3 | cf9406d | Compile device code with hipcc on Windows (`-fms-runtime-lib=dll`, HCC_AMDGPU_TARGET required) |
+| 4 | 186c05c | Build without roctracer and roctx on Windows (`CUPY_NO_NVTX`, `CUPY_NO_ROCTRACER`; profiler start/stop succeed as no-ops, Ruling 2) |
+| 5 | 94fa86b | Export the HIP stubs resolved at run time (`CUPY_HIP_EXPORT`: 25 cu*, cudaRuntimeGetVersion, 12 cusparse) |
+| 6 | 850bb2f | Load hiprtc by its Windows DLL name (`hiprtc0714.dll`) |
+| 7 | a331ca0 | Run hipcc on Windows for runtime compilation (os.devnull, full hipcc path, `--offload-arch=<gcnArchName>`) |
+| 8 | b2cb1b3 | NEW: Fix two HIP host headers (`<string>` for std::to_string in cupy_hipblas.h; `rocblas_stride` not `long int` for geqrf in cupy_lapack.h -- LLP64) |
+| 9 | 7eb7e38 | NEW: hipcc.exe does not quote forwarded args: drop `-DCYTHON_EXTERN_C=extern "C"` from the Windows device compile; on Windows pass hipcc's default -I dirs only to hiprtc, not to the hipcc backend (MSVC dirs under `Program Files (x86)` split) |
+| 10 | a82fe0d | NEW: hiprtc on Windows fails (HIPRTC_ERROR_COMPILATION, empty log) when the program name is an absolute path; use the base name on HIP+win32 |
+| 11 | 6fd6150 | Add the ROCm DLL directory before import (keyed on amdhip64 in `_depends.json`; no preloading needed) + copy `_depends.json` into the source tree for in-place/editable HIP builds |
+| 12 | f4f7890 | Document building for ROCm on Windows (install.rst subsection, Ruling 5) |
+
+Every change is gated on win32 / `_WIN32` / `ctx.use_hip`, or is identical on Linux (`os.devnull`; `<string>` already transitive; `rocblas_stride` == `long` on LP64; `CUPY_HIP_EXPORT` empty off Windows). CUDA branches untouched except an inserted HIP-only line in `_command.build_extensions`.
+
+### Build recipe (Git Bash inside the x64 Native Tools prompt)
+
+```bash
+PY=/c/Users/jdaily/AppData/Local/Programs/Python/Python313/python.exe
+$PY -m venv C:/Users/jdaily/cupy-work/venv
+C:/Users/jdaily/cupy-work/venv/Scripts/python.exe -m pip install --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ "rocm[libraries,devel]==7.14.0a20260612"
+C:/Users/jdaily/cupy-work/venv/Scripts/rocm-sdk.exe init
+C:/Users/jdaily/cupy-work/venv/Scripts/python.exe -m pip install "setuptools>=77" wheel "Cython>=3.2,<3.3,!=3.2.6" "numpy>=2.0,<2.7" "scipy>=1.14,<1.19" pytest "hypothesis>=6.37.2,<6.55.0" mpmath packaging
+source agent_space/cupy_rocm_env.sh   # venv Scripts + MSVC bin first on PATH, ROCM_HOME=<rocm-sdk path --root>, CUPY_INSTALL_USE_HIP=1, HCC_AMDGPU_TARGET=gfx1151, CUPY_NUM_BUILD_JOBS=12
+utils/timeit.sh cupy compile -- python -m pip install -v --no-build-isolation projects/cupy/src      # ~6 min incremental; also -e (editable) verified
+```
+
+- `HIP_DEVICE_LIB_PATH` is NOT needed: `hipcc.exe -c` from `<root>/bin` found the device libs without it. `ROCM_HOME` can be omitted (hipconfig fallback); `DISTUTILS_USE_SDK` not set.
+- Configure summary: cuda Yes (71460850), cub Yes (400400), nccl No (`rccl.h` absent, optional), random Yes, thrust Yes, dlpack Yes.
+- Exports verified: `llvm-objdump -p driver.cp313-win_amd64.pyd` lists cuLaunchKernel/cuModuleLoad..., runtime pyd exports cudaRuntimeGetVersion, cusparse pyd 15 cusparse exports.
+- Plan risk 4 (hiprtc fed MSVC STL include dirs) did NOT materialise: elementwise/reduction kernels compile with the full `hipcc -E -v` list. Risk 5: no preloading needed; `GetModuleFileNameW` shows amdhip64_7/hipblas/hiprtc0714/amd_comgr all loaded from `<root>/bin`, not System32. Risk 6: `_depends.json` lands for `pip install .`, NOT for `pip install -e .` (setuptools builds into a temp build_lib) -- fixed in commit 11 and verified (editable import + smoke).
+- Build failures hit before commits 8-9 (build1.log): `std::to_string` (cupy_hipblas.h:92), geqrf `long` vs `rocblas_stride` (cupy_lapack.h:139-143), `clang: error: no such file or directory: 'C'` (hipcc.exe quoting). Runtime failure before commit 10: every ElementwiseKernel raised CompileException with an empty log; isolated with a direct hiprtc probe (`k.cu` OK, `C:\...\k.cu` and `C:/.../k.cu` FAIL). Before the -I change in commit 9, the CUB block reduction failed with `clang: error: no such file or directory: 'Files'`.
+
+### Smoke (plan test-plan smoke, all pass, non-editable and editable)
+
+elementwise+reduction, RawKernel, CUB block reduction via runtime hipcc (`set_reduction_accelerators(['cub'])`), hipRAND, rocSOLVER eigvalsh/solve, hipFFT, hipBLAS matmul, hipSPARSE csr@vec, rocThrust sort, nvtx Mark/RangePush/RangePop, profiler start/stop, `cupy.cuda.profile()`. hiprtc compile costs ~1 s per kernel on this laptop; a runtime-hipcc CUB kernel ~1-3 min.
+
+### CUDA Windows no-regression (Ruling 4)
+
+CUDA 12.8 no-admin toolkit (`CUDA_PATH=C:\Users\jdaily\cuda-win\cuda128\Library`, `CUPY_LIBRARY_PATH=...\Library\lib`, `CUPY_NVCC_GENERATE_CODE=arch=compute_90,code=sm_90`, MSVC 14.44, separate venv `C:/Users/jdaily/cupy-work/cudavenv`, `source agent_space/cupy_cuda_env.sh`), `pip wheel -v --no-build-isolation --no-deps` of upstream 18b54de and of moat-port f4f78903 in two clones under C:/Users/jdaily/cupy-work:
+- both build (EXIT 0); identical module summary (cuda Yes 12080, cusolver Yes, cub/thrust Yes 300102, jitify Yes, random Yes, dlpack Yes; nccl/nvtx/cutensor/cusparselt No -- headers not in this toolkit);
+- identical set of 64 `.pyd` in the wheels;
+- all 134 compile/link command lines (`INFO:compilers.C.base`, nvcc `Command:`) identical after normalising the clone path, temp dirs and `CUPY_CACHE_KEY`;
+- same warning count (1684) and the same 5 LNK4098 LIBCMT warnings in both.
+No GPU run possible. The single-arch gencode is a choice for the comparison only.
+
+### Windows stage (ii) subset run in this round (CUPY_TEST_GPU_LIMIT=1, CUPY_GPU_MEMORY_LIMIT=25%, ulimit -c 0, one pytest process, `-m "not slow and not multi_gpu"`, test_texture.py always --ignore'd)
+
+- `tests/cupy_tests/cuda_tests` at f4f78903: **188 passed, 3 failed, 81 skipped, 28 deselected** (15 s). Failures, none in code this delta touches:
+  - `test_memory.py::TestSingleDeviceMemoryPool::test_get_limit` -- artefact of the test's own memory cap (`CUPY_GPU_MEMORY_LIMIT=25%` sets a pool limit; the test expects 0). Passes with the cap unset (verified).
+  - `test_memory.py::test_managed_memory_madvise_basic` -- `hipErrorInvalidValue` from the madvise call: HIP managed-memory advice on Windows/APU (plan risk 11). Compare with the linux-gfx1100 baseline.
+  - `test_runtime.py::test_pointer_get_memory_type` -- `hostAlloc` pinned memory reports `type == 2` (device) instead of 1 (host) on this Windows APU runtime (plan risk 11). Compare with the linux-gfx1100 baseline.
+- First cuda_tests attempt was killed by me before it reached test_texture.py: the `--ignore=tests/...` path was relative to the wrong cwd. The test script (agent_space/cupy_test.sh) now always ignores test_texture.py by absolute path.

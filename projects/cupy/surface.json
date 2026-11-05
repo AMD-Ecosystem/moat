@@ -249,10 +249,185 @@
       "id": "validation:cuda-windows-no-regression",
       "kind": "validation",
       "where": "no MOAT host can build it (plan Q4)"
+    },
+    {
+      "id": "build:win32-hip-header-portability (std::to_string include, rocblas_stride)",
+      "kind": "build",
+      "where": "cupy_backends/hip/cupy_hipblas.h, cupy_backends/cupy_lapack.h"
+    },
+    {
+      "id": "build:win32-hipcc-unquoted-args (CYTHON_EXTERN_C, runtime -I with spaces)",
+      "kind": "build",
+      "where": "install/cupy_builder/_compiler.py, cupy/cuda/compiler.py"
+    },
+    {
+      "id": "runtime:hiprtc-relative-program-name",
+      "kind": "runtime",
+      "where": "cupy/cuda/compiler.py _compile_using_nvrtc"
+    },
+    {
+      "id": "build:win32-editable-depends-json",
+      "kind": "build",
+      "where": "install/cupy_builder/_command.py build_extensions"
     }
   ],
-  "covered": [],
-  "scoped_out": [],
+  "covered": [
+    {
+      "id": "build:win32-rocm-root",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "build:win32-hip-host-compiler-clang-cl",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "build:win32-hip-cxx17",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "build:win32-hip-device-compiler-hipcc",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "build:win32-hip-library-set",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "extension:cuda (HIP_cuda_nvtx_cusolver: runtime, driver, cublas, curand, cusparse, nvrtc, cufft, cusolver, nvtx, _core/*)",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "extension:cub (cupy/cuda/cupy_cub.cu)",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "extension:thrust (cupy/cuda/cupy_thrust.cu)",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "extension:random (cupy/random/cupy_distributions.cu)",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "extension:dlpack",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "runtime:roctx-noop",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "runtime:roctracer-profiler-noop",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "runtime:softlink-self-exports (driver cu*, cudaRuntimeGetVersion, cusparse generic stubs)",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "runtime:hiprtc-dll-name",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "runtime:hipcc-include-dirs-probe",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "runtime:runtime-hipcc-path-and-arch (CUB block reduction, hipcc backend)",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "runtime:win32-rocm-root",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "runtime:win32-dll-directory",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "docs:install-rocm-windows",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "build:win32-hip-header-portability (std::to_string include, rocblas_stride)",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "build:win32-hipcc-unquoted-args (CYTHON_EXTERN_C, runtime -I with spaces)",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "runtime:hiprtc-relative-program-name",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "build:win32-editable-depends-json",
+      "evidence": "implemented at f4f78903; windows-gfx1151 build + smoke (non-editable and editable)"
+    },
+    {
+      "id": "test:cupy_tests/cuda_tests",
+      "evidence": "windows-gfx1151 at f4f78903: 188 passed, 3 failed (runtime/env, notes.md), 81 skipped; test_texture.py excluded per Ruling 3"
+    },
+    {
+      "id": "validation:cuda-windows-no-regression",
+      "evidence": "CUDA 12.8 Windows build of upstream 18b54de and f4f78903: same 64 extension modules, same module summary, 134 compile/link commands identical after path normalisation (notes.md)"
+    }
+  ],
+  "scoped_out": [
+    {
+      "id": "extension:nccl (RCCL, optional)",
+      "reason": "RCCL is not shipped by ROCm on Windows; the optional module drops out at configure ('rccl.h' not found) with no code change; Linux unchanged"
+    },
+    {
+      "id": "test:cupy_tests/cuda_tests/test_texture.py",
+      "reason": "not run in the porter round; owed by validation per Ruling 3 (Linux gates first, then Windows stages ii-iv). Not a scope cut."
+    },
+    {
+      "id": "test:cupy_tests/core_tests",
+      "reason": "not run in the porter round; owed by validation per Ruling 3 (Linux gates first, then Windows stages ii-iv). Not a scope cut."
+    },
+    {
+      "id": "test:cupy_tests/array-library suites (creation..functional, test_*.py)",
+      "reason": "not run in the porter round; owed by validation per Ruling 3 (Linux gates first, then Windows stages ii-iv). Not a scope cut."
+    },
+    {
+      "id": "test:cupyx_tests/{linalg,jit}_tests + test_*.py",
+      "reason": "not run in the porter round; owed by validation per Ruling 3 (Linux gates first, then Windows stages ii-iv). Not a scope cut."
+    },
+    {
+      "id": "test:cupyx_tests/scipy_tests/{linalg,sparse,special}_tests",
+      "reason": "not run in the porter round; owed by validation per Ruling 3 (Linux gates first, then Windows stages ii-iv). Not a scope cut."
+    },
+    {
+      "id": "test:cupyx_tests/scipy_tests (remaining: ndimage, signal, interpolate, ...)",
+      "reason": "not run in the porter round; owed by validation per Ruling 3 (Linux gates first, then Windows stages ii-iv). Not a scope cut."
+    },
+    {
+      "id": "test:cupyx_tests/signal_tests",
+      "reason": "not run in the porter round; owed by validation per Ruling 3 (Linux gates first, then Windows stages ii-iv). Not a scope cut."
+    },
+    {
+      "id": "test:cupyx_tests/distributed_tests",
+      "reason": "not run in the porter round; owed by validation per Ruling 3 (Linux gates first, then Windows stages ii-iv). Not a scope cut."
+    },
+    {
+      "id": "test:example_tests",
+      "reason": "not run in the porter round; owed by validation per Ruling 3 (Linux gates first, then Windows stages ii-iv). Not a scope cut."
+    },
+    {
+      "id": "test:install_tests + import_tests (non-GPU)",
+      "reason": "not run in the porter round; owed by validation per Ruling 3 (Linux gates first, then Windows stages ii-iv). Not a scope cut."
+    },
+    {
+      "id": "example:examples/",
+      "reason": "not run in the porter round; owed by validation per Ruling 3 (Linux gates first, then Windows stages ii-iv). Not a scope cut."
+    },
+    {
+      "id": "validation:cuda-linux-nvcc-no-regression",
+      "reason": "not run in the porter round; owed by validation per Ruling 3 (Linux gates first, then Windows stages ii-iv). Not a scope cut."
+    }
+  ],
   "removed_from_floor": [],
-  "planner_note": "setuptools+Cython build: scan_components finds no components, so every entry is planner-added. The CUDA census is upstream's existing Linux HIP surface; this Windows delta adds no device code. Nothing is scoped out yet: rccl/roctracer/roctx absence on Windows is handled by no-op/optional paths and texture, deferred-suite and CUDA-Windows coverage are open questions for jeff (plan.md Q3, Q4)."
+  "planner_note": "setuptools+Cython build: scan_components finds no components, so every entry is planner-added. The CUDA census is upstream's existing Linux HIP surface; this Windows delta adds no device code. Nothing is scoped out yet: rccl/roctracer/roctx absence on Windows is handled by no-op/optional paths and texture, deferred-suite and CUDA-Windows coverage are open questions for jeff (plan.md Q3, Q4).",
+  "porter_note": "Porter round 2026-11-05 (windows-gfx1151) at f4f78903. scoped_out entries whose reason says 'owed by validation' are validation stages not yet run, not permanent scope cuts; the validator moves them to covered with evidence."
 }

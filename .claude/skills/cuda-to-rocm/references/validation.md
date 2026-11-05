@@ -111,6 +111,18 @@ a forced reference into the hooks translation unit so the linker cannot drop it;
 TLS callbacks that do exist fire on `DLL_THREAD_ATTACH` and `DLL_PROCESS_ATTACH` calls
 `DisableThreadLibraryCalls`.
 
+## Windows: `hipcc.exe` and hiprtc traps for setuptools/Python builds
+
+Found porting CuPy's Windows build (cupy notes.md). Each one looks like a broken port and is not:
+
+- **`hipcc.exe -c` links the static CRT by default.** The object carries `RuntimeLibrary=MT_StaticRelease`, so linking it with setuptools' `/MD` objects is LNK2038. Pass `-fms-runtime-lib=dll`.
+- **No target means gfx906, silently.** Without `--offload-arch` or `HCC_AMDGPU_TARGET`, hipcc on Windows builds for gfx906, and `--offload-arch=native` fails. The symptom is "invalid device function" at launch. Require an explicit target at build time; at run time pass `--offload-arch=<gcnArchName>` of the current device.
+- **`hipcc.exe` does not quote what it forwards to clang.** An argument with a space or a quote is split: `-DX=extern "C"` becomes `-DX=extern` plus a file named `C`, and `-IC:\Program Files (x86)\...` becomes three arguments (`clang: error: no such file or directory: 'Files'`). Keep such arguments out of hipcc commands; hiprtc and clang-cl are not affected.
+- **hiprtc rejects an absolute program name.** `hiprtcCreateProgram(..., name="C:\...\k.cu")` then `hiprtcCompileProgram` returns `HIPRTC_ERROR_COMPILATION` with an EMPTY log; `k.cu` or `dir\k.cu` compiles the same source. Pass a base name.
+- **The hiprtc DLL is `hiprtc<MM><mm>.dll`** (`hiprtc0714.dll` for ROCm 7.14), not a soname-like name.
+- **A symbol looked up in your own extension by name must be `__declspec(dllexport)`.** `ctypes.CDLL(__file__)` / `GetProcAddress` sees only exported symbols on Windows; on Linux every non-static function is visible, so this is Windows-only and fails at first use, not at link.
+- **`os.add_dll_directory(<rocm>/bin)` is enough** for a Python extension that links the ROCm DLLs, even on a host whose System32 `amdhip64_7.dll` is broken: the extension-load search order puts the added directory before System32, and hiprtc's later by-name loads of `amd_comgr.dll` resolved from the same directory (checked with `GetModuleFileNameW`). No preloading by full path was needed. Keep the returned handle alive.
+
 ## Windows: kernels on different streams run one after another
 
 **A test that asserts a speedup from multi-stream concurrency fails on every Windows host
