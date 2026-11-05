@@ -47,3 +47,5 @@
 {"kind":"phase","ts":"2026-11-05T19:44:17Z","phase":"compile","seconds":34.063,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300-20261105-113749-fix2-gpumd/moat/agent_space/gpumd/dbg/src -f makefile.hip -j48 gpumd nep HIP_ARCH=gfx942 CFLAGS=-O3 --offload-arch=gfx942 -DUSE_HIP -DDEBUG"}
 {"kind":"phase","ts":"2026-11-05T19:44:17Z","phase":"compile","seconds":34.107,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300-20261105-113749-fix2-gpumd/moat/agent_space/gpumd/rel/src -f makefile.hip HIP_ARCH=gfx942 -j48"}
 {"kind":"phase","ts":"2026-11-05T20:41:56Z","phase":"compile","seconds":20.358,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261105-122516-nv2-sync-gpumd/moat/agent_space/nv/head/src -j64 -O"}
+{"kind":"session","ts":"2026-11-05T20:48:43Z","epoch":1793911723.053288792,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-05T21:15:35Z","phase":"compile","seconds":1384.694,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/rx7900-20261105-122424-rev2-sync-gpumd/moat/projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx1100 -j10"}
