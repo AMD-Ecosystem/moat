@@ -6587,3 +6587,40 @@ Already recorded at this head: "CUDA compile check (nvcc 12.8) at fc2cfd9d" (mi3
 
 ### Verdict: COMPLETED (linux-gfx1100) at fc2cfd9d
 Every failure is a recorded test with its recorded cause and magnitude; the new thin-prism test passes on this card; counts equal the porter's at this head except the one recorded flake, and differ from 001fc728 only by the added test and the two recorded intermittents (UndoHistoryTest crash, FusedBgBlendTest).
+## Revalidation 2026-11-05 (validator, linux-gfx90a, MI250X/MI250 GCD, wave64) -- fc2cfd9d, COMPLETED
+
+Requested by jeff. The project is `on_hold` (selector skips it), so the run was dispatched by hand; stage `review-passed`, linux-gfx90a `validated_sha` 204cdab0, delta 204cdab0..fc2cfd9d = "Porter round 2026-11-05" (host float `min`/`max` -> `fminf`/`fmaxf` in the fisheye camera constructors, the `HipToolchain.cmake` comment, the new `GutThinPrismFisheye.ProjectsAndInvertsPastOneRadian`). `classify` = mixed, so a full build and run, no carry-forward. Fresh blobless clone of `moat-port` checked out at fc2cfd9ddb07a62b93210c3f2ee87e51d00cdb2b, `protect-fork` installed, tree clean before and after (the `data/` links are gitignored). Fresh build directories. `HIP_VISIBLE_DEVICES=3` as pinned by the dispatcher = PCI 0000:32:00.0 (`agent_space/bus.py`, `hipDeviceGetPCIBusId`), amd-smi showed no process on any GPU at the start. `ulimit -c 0`, every GPU run under `timeout`, `PYTHONPATH` unset. Host and toolchain as in "Revalidation 2026-10-31b" (TheRock ROCm SDK 10.1.0 wheels, torch 2.16.0a0+git6c3af02, gcc-14, CMake 3.31.6, Ubuntu 24.04, kernel 6.8.0-101, llvmpipe only). Scripts are the val3 gfx90a job's, copied into this job's `agent_space/` with only the job path, the HIP device (1 -> 3), an extra read-only vcpkg binary cache (the val3 job's) and `-j 64` (MAX_JOBS; was 96) changed. No "Memory access fault", hipError launch failure or ring timeout in any log.
+
+### Build
+- Full application: `utils/timeit.sh LichtFeld-Studio compile -- bash agent_space/lfs_full_build.sh <src> $J/build-hip` (`-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a`, gcc-14 host, SDK clang for HIP, Release, `BUILD_TESTS=ON`, x64-linux + release-only overlay, SDK `Torch_DIR`, `-DLFS_VIDEO_TEST_FFMPEG=/usr/bin/ffmpeg`, `cmake --build -j 64`): 1405/1405, rc 0, zero errors, 384 s; 79 vcpkg packages restored (26 + 51 + 2), nothing rebuilt; "Committed stubs match generated stubs"; `LFS_HAVE_ROCDECODE` on 424 `build.ninja` lines; `--version` "v0.5.5-dev-1696-gfc2cfd9d (fc2cfd9d)".
+- Compute-only: `utils/timeit.sh LichtFeld-Studio compile -- bash agent_space/lfs_compute_build.sh $J/build-compute` (`-DLFS_HIP_COMPUTE_ONLY=ON`, deps from the full build's `vcpkg_installed`): 360/360, rc 0, zero errors, 357 s.
+- Data: `src/data/bicycle`, `src/data/garden` linked read-only to the 093744 job's `deps/data`.
+
+### lfs_compute_tests (one process, cwd src root)
+`utils/timeit.sh LichtFeld-Studio test -- agent_space/in_src.sh timeout -k 30 1800 $J/build-compute/cmake/hip_tests/lfs_compute_tests`: 2229 tests / 171 suites, 58.4 s, **2213 passed, 6 failed, 10 skipped**, identical to 001fc728 on this platform: CudaErrorDiagnostics.ForcedCudaErrorReportHasExpectedSections, AllocatorHygiene.FailedSlabReclaimRestoresOwnershipAndAccounting, TensorMultiStreamTest.TrainerViewerHandshakeYieldsConsistentSnapshots, DiscoverySweep x2, CudaTest.D1_BinaryInPlaceWaitsForGatedProducer. FusedBgBlendTest 3/0 (the recorded flake did not fire).
+
+### lichtfeld_tests, one process per suite (`utils/timeit.sh LichtFeld-Studio test -- bash agent_space/run_suites.sh $J/build-hip agent_space/runs/sweep`, cwd build dir, Xvfb, `timeout -k 30 900` each)
+753 list entries (750 suites), 1799 s: **6861 passed, 84 failed, 159 skipped, 1 suite crashed** (WindowInputDispatchTest, below). Per-suite diff against the 001fc728 sweep on this platform (6806 / 85 / 159, UndoHistoryTest aborted), joined on suite name; every other suite has identical pass/fail/skip counts and exit code:
+- GutThinPrismFisheye 1/0 -> 2/0: the new ProjectsAndInvertsPastOneRadian passes (+1, the fix). GutOpenCvFisheye 1/0, LensPriors 4/0, UndistortInverse 11/0, UndistortFisheye 4/0, UndistortCameraTest 5/0, unchanged.
+- LpipsTest 19/1 -> 20/0 (+1 pass, -1 fail): the intermittent MaskedWideImageEstimateCoversMaskBuffers recorded at 001fc728 (1 in 8 suite runs) did not fire. Upstream test, not touched by the delta.
+- UndoHistoryTest rc 139 (124 OK, aborted) -> rc 0, 125/0 (+125): the recorded upstream use-after-free at CropCommandsRespectTargetLocks is heap-layout dependent (1 in 6 passes at 001fc728); it happened to pass this run. CPU-only code, not touched by the delta.
+- WindowInputDispatchTest 72/0 -> rc 139 after 26 OK (-72): `test_ordered_input_dispatch.cpp:567` `SDL_Init(SDL_INIT_VIDEO)` returned false under Xvfb at ViewportGizmoMarkerClickSnapsAndMarkerDragOrbits, then the test segfaulted on the null window. Environmental: three reruns of the whole suite (`agent_space/gt.sh runs/wid-{1,2,3}.log 900 --gtest_filter='WindowInputDispatchTest.*'`) each 72/0, rc 0, 12 s. The suite is SDL/host input dispatch and does not include `Cameras.cuh` (only `.cu` TUs do).
+- Reconciliation: 6806 + 1 + 1 + 125 - 72 = 6861; 85 - 1 = 84. The failing-test name set is the 001fc728 set minus LpipsTest.MaskedWideImageEstimateCoversMaskBuffers, no new name (each with its recorded cause in "Revalidation 2026-10-31b": 15 recorded-list, 65 llvmpipe external-semaphore interop, 3 host RAM, 1 first-use device memory).
+- Video and rocDecode under the SDK's bundled VA driver, in the sweep: RocDecodeSelfCheck 5/0, RocDecodeVideo 3/0/1 skipped, Fixtures/RocDecodeMatchesSoftware 0/0/6 skipped, as recorded (the delta does not touch the video path; the two-driver and ProjectDocumentTest x1000 runs were not repeated).
+
+### Headless training smoke (bicycle)
+`utils/timeit.sh LichtFeld-Studio test -- bash agent_space/smoke.sh r1 /sys/bus/pci/devices/0000:32:00.0` (3000 iterations, `images_4`, `--eval`, Xvfb): rc 0, wall 107.5 s, **PSNR 23.6585, SSIM 0.6562, LPIPS 0.3611**, 549,469 splats, VRAM peak 3325 MiB (base 10), host peak RSS 3.62 GB, "JPEG Decoder: rocJPEG (GPU)", "Training completed successfully". At 001fc728 on this platform: 23.6708 / 0.6566 / 0.3608, 549,266 (bicycle is pinhole; the delta is fisheye-only).
+
+### Comparison with porter and reviewer at fc2cfd9d
+Reviewer (this platform, filter `Gut*:Undistort*:*Fisheye*`, no data links): 74/0/5 skipped; here the same suites are all-pass with the 5 bicycle UndistortCameraTest cases running (5/0) since the data is linked. Porter (gfx1100): compute 2213/6/10, the same six failures as here; its lichtfeld_tests totals differ by platform (gfx1100 has RADV interop; gfx90a has llvmpipe only, hence the 65 interop failures and different skips), as at every earlier head.
+
+### CUDA no-regression gate
+Already recorded at fc2cfd9d ("CUDA compile check (nvcc 12.8) at fc2cfd9d", mi355 host): unbroken. No nvcc on this host; not rerun.
+
+### Pre-completion checks
+- Jargon: `python3 utils/jargon.py --port LichtFeld-Studio`: clean (after `git fetch origin master:master` in the blobless clone). `moatlib.py audit-commits LichtFeld-Studio`: OK.
+- Documentation: the delta changes no build step; docs/building_and_distribution.md recipe reproduced here with only the architecture changed.
+- Integrity: `git -C projects/LichtFeld-Studio/src status --porcelain` empty, HEAD fc2cfd9d; no source or build edit.
+
+### Verdict: COMPLETED (linux-gfx90a) at fc2cfd9d
+Every difference from the 001fc728 record on this platform is the new fisheye test passing or a recorded intermittent (LpipsTest, UndoHistoryTest) not firing, except one WindowInputDispatchTest crash from a one-off SDL video init failure under Xvfb that passed 3 of 3 reruns.
