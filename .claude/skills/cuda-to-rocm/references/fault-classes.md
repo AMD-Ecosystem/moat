@@ -65,6 +65,16 @@ which are the wrong lanes for any logical warp not at the wavefront base -- with
 `blockDim (32,32)`, odd `threadIdx.y` rows sit in the high lanes. Arch-unified form:
 `(uint32_t)(__ballot(PRED) >> (__lane_id() & ~31u))`, where the shift is 0 on wave32. (cuSZ)
 
+**Masked `__syncwarp`/`__shfl*_sync` with a 32-bit mask do not compile, and a widened one
+can trap.** HIP's `*_sync` templates `static_assert` a 64-bit mask on every arch, and unless
+`NDEBUG` is defined `__hip_check_mask` traps when a mask differs from `__ballot(true)` of the
+lanes passing it. Kernels that tile a block into 32-lane warps (`warp = threadIdx.x >> 5`,
+`atom_mask = 0xf << 4*k`) therefore need the mask moved to the lanes the tile occupies:
+`(unsigned long long)mask << (__lane_id() & 32)` (shift 0 on wave32), behind a compat-header
+macro that is the identity for CUDA. Also pass the tile width explicitly: `__shfl_sync(m, v,
+0)` defaults to `warpSize`, so on wave64 lane 0 of the first tile is broadcast to both.
+(GPUMD NEP-spin)
+
 **An over-wide `__shfl*` width does not error, it silently degenerates.**
 `__shfl_up(v, delta, 64)` lowers to `__builtin_amdgcn_ds_bpermute` with a clamp of
 `self & ~(width-1)`; on wave32 that clamp is 0, so the permute domain becomes the

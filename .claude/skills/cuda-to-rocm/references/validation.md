@@ -194,6 +194,19 @@ port. Compare the assertion count against the CUDA build's, or filter the failin
 section out and watch whether the total moves. A deferral that makes a test case
 abort quietly defers the rest of the file with it. (marian-dev)
 
+## "Fixed seed" builds that rely on C `rand()` are not reproducible under ROCm
+
+Projects often get reproducible runs in a debug build by simply not calling `srand()`
+and seeding device RNGs from `rand()`. Under ROCm the runtime breaks that: when code
+objects load, comgr's embedded LLVM (`sys::fs::createUniquePath` ->
+`sys::Process::GetRandomNumber`) calls `srand()` with its own seed and then `rand()`
+(38 times for GPUMD, HIP 7.16) before the application's first call. Two runs of the
+same input then draw different random streams, and a self-comparison suite (same
+binary as baseline and candidate) fails exactly the stochastic cases. To classify,
+rerun them with an `LD_PRELOAD` shim whose `srand()` is a no-op: if they pass, it is
+this, not the port. Before trusting a single-directory rerun, check that the outputs
+are not appended to (GPUMD's `dump_xyz` appends). (GPUMD)
+
 ## One architecture gets wrong numbers while the others pass
 
 A clean build that produces wrong results on exactly one architecture -- an iterative
