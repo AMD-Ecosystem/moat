@@ -318,3 +318,205 @@ cmake --build build -j 64
 - Build rc 0, 16 s wall: all 19 CUDA objects (16 library sources, plus `src/test/test.cu`, `cuda_utils.cu`, `reduce_utils.cu` for the test), targets `tsnecuda_test`, `tsnecuda` (`libtsnecuda.so`), `python_source_files`, `write_version_string_to_python`. `cuobjdump --list-elf` shows `sm_90` cubins in both `libtsnecuda.so` and `tsnecuda_test`.
 - Zero errors. Warnings come only from FAISS headers and are not introduced by the port: `VERSION_STRING redefined` (6, `faiss/Index.h:29` versus the upstream `ADD_DEFINITIONS(-DVERSION_STRING=...)`, present on the fork's unmodified `main`) and nvcc `#3288-D` explicit lambda template parameters in `faiss/impl/Panorama.h` (3).
 - The fork clone's tracked files are unmodified; no fork change is indicated and nothing was pushed to the fork. `tsnecuda_test` was not run (no GPU work requested).
+
+## Upstream issue drafts 2026-11-04
+
+Requested by jeff after ruling `tsne-cuda-cpu-knn-missing-neighbors` and `tsne-cuda-reducemean-axis1-divisor` `defer`: confirm each against upstream CannyLab/tsne-cuda and draft an issue. No role taken, no state changed, nothing filed, nothing pushed to the fork. Drafts are for jeff's approval; neither has been posted.
+
+Setup (linux-gfx90a, MI250X one GCD, `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, TheRock pip SDK 10.1): upstream clone at master `244db8f` (2026-07-22, the fork's base); fork `moat-port` `33f708d` (= `head_sha`) built with the gfx90a recipe above (`-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DBUILD_TESTS=ON`) against a copy of the gfx90a FAISS `01a09e8` install from the earlier validator job; runtime `LD_LIBRARY_PATH=$FAISS_PREFIX/lib:$SDK/lib/llvm/lib`. `git diff 244db8f 33f708d` on `distance_utils.cu`, `math_utils.cu`, `reduce_utils.cu`, `perplexity_search.cu`, `fit_tsne.cu` is only `long` -> `int64_t` (same type on LP64), so the HIP evidence exercises upstream's code. Upstream issues/PRs searched (read-only): none covers either bug; #21, #83, #98, #112 are different and closed.
+
+### Findings: missing KNN neighbors
+
+- Confirmed, and broader than the deferred summary: both branches of `KNearestNeighbors` build the same IVFFlat (`sqrt(N)` cells, `nprobe` 20; upstream `src/util/distance_utils.cu:85-92`), so the GPU branch (k < 1024) also pads when a cluster is smaller than k. FAISS pads with index -1 and distance `FLT_MAX`.
+- Driver `agent_space/repro/knn_repro.cu` calls the library's own `KNearestNeighbors`, `PostprocessNeighborIndices` and `MaxNormalizeDeviceVector` (make_blobs, `random_state=0`):
+
+| data (n x d, centers) | k | branch | int indices == -1 | rows affected | largest real distance after MaxNormalize |
+|---|---|---|---|---|---|
+| 3000 x 50, 3 | 1024 | CPU | 24000 | 1000 / 3000 | 1.04e-35 (should be 1) |
+| 2000 x 10, 3 | 1024 | CPU | 282501 | 855 / 2000 | 1.27e-36 |
+| 1500 x 2, 5 | 1024 | CPU | 210111 | 1479 / 1500 | 4.60e-37 |
+| 2000 x 10, 3 | 1000 | GPU | 262570 | 824 / 2000 | 1.27e-36 |
+| 3000 x 50, 3 | 1000 | GPU | 0 | 0 | 1 |
+| 5000 / 10000 x 50, 3 | 1024 | CPU | 0 | 0 | 1 |
+
+- Two effects: (a) -1 reaches `pij_indices`, and `syv2k` (upstream `src/util/math_utils.cu:284-289`) reads `pij_indices[-k..-1]`; (b) the `FLT_MAX` padding becomes the max in `MaxNormalizeDeviceVector` (upstream `src/fit_tsne.cu:127`, `src/util/math_utils.cu:66-74`), crushing every real distance, including the unaffected rows'.
+- End to end (`agent_space/repro/fit.py`, `TSNE(num_neighbors=k, random_seed=0)` then KMeans ARI): 3000x50 k=1024 -> rc 188, `faulting addr ... kernel: syv2k(float*, float const*, int const*, int, int)`, `GPUassert: an illegal memory access was encountered ... cuda_utils.cu 55`; 2000x10 k=1000 (GPU branch) -> same fault, rc 188; controls 10000x50 k=1024 and 3000x50 k=512 -> ARI 1.0.
+- FAISS alone (pip `faiss-cpu` 1.15.1 in this job's venv, `agent_space/repro/faiss_only.py`, the snippet in the draft): `24000` slots, `1000` rows, pad `3.4028235e+38`, identical to the library driver.
+- Fix (exact `IndexFlatL2` re-search of rows whose last slot is -1, 31 added lines, `git apply --check` clean on `244db8f`): every row of the table above then has 0 missing and max-normalized distance 1; fits 3000x50 k=1024, 2000x10 k=1000, 10000x50 k=1024 all rc 0, ARI 1.0; `python -m pytest -q tsnecuda/test` 7 passed in 74.51 s. `RunTsne` clamps `num_neighbors` to `num_points` (upstream `src/fit_tsne.cu:84`), so the exact search always fills every row. Tested in a local scratch build only; the fork clone was reset to `33f708d` and rebuilt clean afterwards.
+
+### Findings: ReduceMean axis=1 divisor
+
+- Confirmed: upstream `src/util/reduce_utils.cu:49` `alpha = 1.f / N` for both axes; axis=1 sums M columns (lines 29-38). Driver on a 3 x 5 matrix of ones through the library's `ReduceMean`: axis=0 `1.0000` x5, axis=1 `1.6667` x3 (5/3). With `alpha = 1.f / (axis == 0 ? N : M)`: axis=1 `1.0000` x3, and `./build/tsnecuda_test` `PASSED 8 tests`.
+- No caller is affected. Every caller across the upstream tree (`grep -rn ReduceMean`): `GaussianNormalizeDeviceVector` (`src/util/math_utils.cu:17`, axis=0, correct divisor), which itself has no caller anywhere; and the test helpers `src/include/test/test_reduce.h:103` (axis 0) and `:141` (axis 1, expects /M at `:157`), whose `TEST` lines are commented out in upstream `src/test/test.cu:39-46` and were 512x512 only. The t-SNE path's reductions (`perplexity_search.cu:119,121`) use `ReduceSum`/`ReduceAlpha` with axis 0, not `ReduceMean`.
+
+Checks on both drafts: `utils/jargon.py` clean, `utils/prose.py` clean, ASCII only.
+
+### Draft 1 (for tsne-cuda-cpu-knn-missing-neighbors)
+
+====
+Title: KNearestNeighbors returns -1 neighbors on clustered data; fit then faults in syv2k
+
+**Symptom**
+
+`TSNE(num_neighbors=1024).fit_transform(X)` on a small clustered dataset (3000 x 50, three blobs) aborts with `GPUassert: an illegal memory access was encountered ... src/util/cuda_utils.cu 55`, the fault being in the `syv2k` kernel. The same data with 10000 points, or with `num_neighbors=512`, runs fine. Lower dimensions hit it at smaller k through the GPU FAISS branch as well: 2000 x 10 with `num_neighbors=1000` faults the same way.
+
+**Root cause**
+
+`tsnecuda::util::KNearestNeighbors` (src/util/distance_utils.cu:85-92) builds an `IndexIVFFlat` with `sqrt(N)` cells and searches it with `nprobe = 20`, in both the GPU branch (k < 1024, lines 94-110) and the CPU branch (k >= 1024, lines 111-120). When the 20 probed cells hold fewer than k points, which happens whenever a cluster is smaller than k, FAISS fills the rest of the row with index -1 and distance FLT_MAX. Nothing handles that (see the `TODO: Add -1 notification` at line 123):
+
+- `PostprocessNeighborIndicesKernel` copies the -1 into the int index array (src/util/distance_utils.cu:136).
+- `MaxNormalizeDeviceVector` (called at src/fit_tsne.cu:127, defined at src/util/math_utils.cu:66-74) divides every distance by the FLT_MAX padding, so all real distances become about 1e-35, including those of the rows that did get k neighbors.
+- `syv2k` (src/util/math_utils.cu:284-289) takes j = -1 and reads `pij_indices[-k .. -1]`, before the start of the buffer.
+
+**Minimal reproduction**
+
+FAISS alone (`pip install faiss-cpu`, no GPU needed), building the same index tsne-cuda builds:
+
+```python
+import faiss, numpy as np
+from sklearn.datasets import make_blobs
+X, _ = make_blobs(n_samples=3000, n_features=50, centers=3, random_state=0)
+X = X.astype(np.float32)
+quantizer = faiss.IndexFlatL2(50)
+index = faiss.IndexIVFFlat(quantizer, 50, int(np.sqrt(len(X))), faiss.METRIC_L2)
+index.nprobe = 20
+index.train(X)
+index.add(X)
+D, I = index.search(X, 1024)
+print((I == -1).sum(), (I == -1).any(1).sum(), D[I == -1].max())
+```
+
+With faiss 1.15.1 this prints `24000 1000 3.4028235e+38`: 1000 points get only 1000 of the 1024 requested neighbors. Calling tsne-cuda's own `KNearestNeighbors` and `PostprocessNeighborIndices` on the same data gives the same 24000 slots of -1 in the int index array, and after `MaxNormalizeDeviceVector` the largest real distance is 1.04e-35 instead of 1.
+
+End to end:
+
+```python
+import numpy as np
+from sklearn.datasets import make_blobs
+from tsnecuda import TSNE
+X, _ = make_blobs(n_samples=3000, n_features=50, centers=3, random_state=0)
+TSNE(n_components=2, num_neighbors=1024).fit_transform(X.astype(np.float32))
+```
+
+We found this while building tsne-cuda for ROCm and reproduced it there on an MI250X. The functions involved are master's (244db8f) apart from spelling `long` as `int64_t`, nothing in them is vendor specific, and the FAISS-only snippet above shows the -1 padding without any GPU.
+
+**Proposed fix**
+
+After the search in `KNearestNeighbors`, redo the rows whose last result is -1 (FAISS returns sorted rows, so padding is at the end) with an exact `faiss::IndexFlatL2` search and copy those rows back. Datasets where the IVF search already returns k neighbors take the same path as today, and the exact search only runs for the short rows. Because `RunTsne` already clamps `num_neighbors` to `num_points` (src/fit_tsne.cu:84), the exact search always fills every row. With the change below, both reproductions above run to completion, k-means on the 2-D embedding recovers the three blobs (ARI 1.0), and the package's Python tests still pass.
+
+<details><summary>Patch against 244db8f</summary>
+
+```diff
+--- a/src/util/distance_utils.cu
++++ b/src/util/distance_utils.cu
+@@ -118,6 +118,37 @@ void tsnecuda::util::KNearestNeighbors(tsnecuda::GpuOptions &gpu_opt,
+         cpu_index.search(num_points, points, num_near_neighbors,
+                          distances, indices);
+     }
++
++    // The probed cells can hold fewer than num_near_neighbors points, in
++    // which case FAISS pads the row with index -1. Redo those rows exactly.
++    std::vector<int64_t> short_rows;
++    for (int64_t i = 0; i < num_points; i++)
++        if (indices[(i + 1) * num_near_neighbors - 1] < 0)
++            short_rows.push_back(i);
++    if (!short_rows.empty())
++    {
++        const int64_t num_short = static_cast<int64_t>(short_rows.size());
++        std::vector<float> queries(num_short * num_dims);
++        for (int64_t r = 0; r < num_short; r++)
++            std::copy(points + short_rows[r] * num_dims,
++                      points + (short_rows[r] + 1) * num_dims,
++                      queries.begin() + r * num_dims);
++        std::vector<float> exact_distances(num_short * num_near_neighbors);
++        std::vector<int64_t> exact_indices(num_short * num_near_neighbors);
++        faiss::IndexFlatL2 exact_index(num_dims);
++        exact_index.add(num_points, points);
++        exact_index.search(num_short, queries.data(), num_near_neighbors,
++                           exact_distances.data(), exact_indices.data());
++        for (int64_t r = 0; r < num_short; r++)
++        {
++            std::copy(exact_distances.begin() + r * num_near_neighbors,
++                      exact_distances.begin() + (r + 1) * num_near_neighbors,
++                      distances + short_rows[r] * num_near_neighbors);
++            std::copy(exact_indices.begin() + r * num_near_neighbors,
++                      exact_indices.begin() + (r + 1) * num_near_neighbors,
++                      indices + short_rows[r] * num_near_neighbors);
++        }
++    }
+ }
+```
+
+</details>
+
+An alternative with the same effect is to search the short rows again with `nprobe` raised to the number of cells.
+
+====
+
+### Draft 2 (for tsne-cuda-reducemean-axis1-divisor)
+
+====
+Title: ReduceMean divides by N instead of M for axis=1
+
+**Symptom**
+
+`tsnecuda::util::ReduceMean(handle, d_matrix, N, M, 1)` on an N x M matrix returns each row's sum divided by N instead of M. On a 3 x 5 matrix of ones it returns 1.6667 for every row instead of 1.0; axis=0 returns 1.0 for every column, as expected.
+
+**Root cause**
+
+src/util/reduce_utils.cu:49 sets `alpha = 1.f / N` for both axes, but for axis=1 `ReduceAlpha` sums over the M columns (src/util/reduce_utils.cu:29-38).
+
+**Impact**
+
+None on t-SNE today. The only caller of `ReduceMean` is `GaussianNormalizeDeviceVector` (src/util/math_utils.cu:17), which uses axis=0, and nothing calls `GaussianNormalizeDeviceVector`. The test that would catch the bug, `test_reduce_mean_row` (src/include/test/test_reduce.h:123-159, which expects a divide by M at line 157), is commented out in src/test/test.cu:42, and it only used 512 x 512, where N == M hides the bug. Anyone who calls `ReduceMean(..., 1)` later on a non-square matrix gets wrong results.
+
+**Minimal reproduction**
+
+```cpp
+#include <cstdio>
+#include <vector>
+#include "include/util/reduce_utils.h"
+int main() {
+    const int N = 3, M = 5;  // column-major, element (i, j) at i + j * N
+    std::vector<float> h(N * M, 1.f);
+    thrust::device_vector<float> d(h.begin(), h.end());
+    cublasHandle_t handle;
+    cublasCreate(&handle);
+    for (int axis = 0; axis < 2; axis++) {
+        thrust::device_vector<float> r = tsnecuda::util::ReduceMean(handle, d, N, M, axis);
+        printf("axis=%d:", axis);
+        for (size_t t = 0; t < r.size(); t++) printf(" %.4f", (float)r[t]);
+        printf("\n");
+    }
+}
+```
+
+Output:
+
+```
+axis=0: 1.0000 1.0000 1.0000 1.0000 1.0000
+axis=1: 1.6667 1.6667 1.6667
+```
+
+We found this while building tsne-cuda for ROCm and ran the reproduction there on an MI250X; `reduce_utils.cu` is identical on master (244db8f) and the bug is in host code, so CUDA behaves the same.
+
+**Proposed fix**
+
+```diff
+--- a/src/util/reduce_utils.cu
++++ b/src/util/reduce_utils.cu
+@@ -46,7 +46,7 @@ thrust::device_vector<float> tsnecuda::util::ReduceMean(cublasHandle_t &handle,
+         const int N,
+         const int M,
+         const int axis) {
+-    float alpha = 1.f / N;
++    float alpha = 1.f / (axis == 0 ? N : M);
+     return tsnecuda::util::ReduceAlpha(handle, d_matrix, N, M, alpha, axis);
+ }
+```
+
+With it the reproduction prints 1.0000 for both axes. Re-enabling the reduction tests with a non-square shape (for example 512 x 128) would keep the bug from coming back.
+
+====
+
+Open for jeff: approve, edit or drop each draft before anything is posted upstream. Filing is a GitHub-visible write that this job did not make.
