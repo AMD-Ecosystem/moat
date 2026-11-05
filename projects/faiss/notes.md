@@ -1855,7 +1855,10 @@ job-local venv was refused by the fleet guard (pip blocked for headless jobs), a
 worked around. The reviewer's clang `-x cuda` preprocess comparison (byte-identical
 Float16.cuh output, cuda_fp16.h/cuda_bf16.h still included) stands as partial evidence; the
 real-nvcc compile on the mi355 host is still required before the port goes to jeff.
-`cuda-not-validated: no CUDA toolkit on linux-gfx1201 host`.
+`cuda-not-validated: no CUDA toolkit on linux-gfx1201 host`. Superseded on push: the mi355 host
+recorded the real-nvcc check at `708a879bc` concurrently (see "## CUDA compile check 2026-11-05
+(708a879bc)" above: 446/446, 0 errors, same as control `0c72755ec`), so the CUDA gate is
+satisfied at this head.
 
 Gates: tree restored (`git checkout -- faiss/ c_api/`, 78 hipify-modified tracked files -> 0);
 `audit-clean faiss` OK; `jargon.py --port faiss` clean (needed a local `main` branch in the
