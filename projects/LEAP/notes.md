@@ -2415,3 +2415,56 @@ cuobjdump --list-elf <tree>/build/lib/libleapct.so
 | port 63d2724 | 0 | 20 | 21 | 20 each | 0 | 190 |
 
 Warnings grouped by file and message (path and message, diagnostic number normalised) are the same set with the same counts in all three trees, and match the d2112b6 record: nvcc `#550-D` (`cudaStatus` in analytic_ray_tracing_gpu.cu 7, cuda_utils.cu 21, ramp_filter.cu 14; `result` in ramp_filter.cu 35), `#177-D` in scatter_models.cu 7; host `-Wconversion-null` on `cudaTextureObject_t` from NULL in 15 files (bilateral_filter.cu 5, projectors_Joseph.cu 2, ramp_filter.cu 2); `cudaMemcpyToArray` deprecated in cuda_utils.cu 1; `fread` unused result in file_io.cpp 14; 20 nvcc "offline compilation for architectures prior to sm_75" notices; one CMake dev warning at `src/CMakeLists.txt:14`. The only textual difference is one of the sm_75 notices interleaved with another in the d2112b6 log (parallel build output), the same artifact the d2112b6 record saw in its base log. Warning lines naming the three changed files: 58 at d2112b6, 58 at 63d2724. **No new warning in bilateral_filter.cu, projectors_Joseph.cu or ramp_filter.cu**, so there is nothing to explain. On the types: `fmax(double, double)`/`fmin(double, double)` take the explicit `double(...)` casts with no narrowing; in projectors_Joseph.cu `furthestFromCenter()`, `z_0()` and `z_samples()` return `float` (`src/parameters.h:202,209,269`) and C++ `fabs(float)` is `float`, so `fmaxf` gets float arguments only and its float result widens into `double rFOV`, with no conversion that `-Wall` would flag. As at d2112b6, `CUDA_ARCHITECTURES all-major` in `src/CMakeLists.txt` overrides the `-D` pin. No CUDA runtime behaviour is claimed (no NVIDIA GPU).
+## gfx90a texture vs buffer at 63d2724
+
+jeff asked for this run (helper, linux-gfx90a, no platform state changed). Claim re-measured: the squash message's "On gfx90a the forward, back and FBP outputs for 6 geometries x {VD, SF} and 20 outputs of point-sampled projectors, filters and resampling are bit-identical between the texture and buffer paths."
+
+Result: the claim does not hold, and it did not hold at e503672 either. Texture vs forced buffer at 63d2724: 32/36 dump_outputs arrays and 18/20 dump_point arrays are bit-identical (50/56). The six that differ are ULP-level: `modular_VD_back` 6974042/17432576 values, max abs 8.545e-04 (rel 4.80e-07); `modular_VD_fbp` 10236633, max abs 2.589e-07 (rel 6.66e-06); `modular_SF_back` 4902066, max abs 7.324e-04 (rel 4.12e-07); `modular_SF_fbp` 9305679, max abs 1.304e-07 (rel 3.37e-06); `att_map_fwd` 15618/3064320, max abs 3.815e-06 (rel 2.35e-07); `att_map_back` 7400/2179072, max abs 2.441e-04 (rel 1.64e-07). Largest difference anywhere: 8.5e-04 absolute, 6.7e-06 relative. Each build is run-to-run bit-identical (36/36 r1 vs r2 for both), so these are deterministic codegen differences, not noise.
+
+Where the claim came from: the gfx90a review of e503672 (texture build 5f6816f vs buffer build e503672) already recorded 34/36 with exactly the `modular_VD_back`/`modular_VD_fbp` counts above (6974042, rel 4.8e-7 / 6.7e-6) and the `att_map` difference (15618 values, rel 2.3e-7 / 1.6e-7), and explained it as FMA contraction once the image intrinsic is gone (`modularBeamBackprojectorKernel_vox_stack` 56 -> 67 fma). The b37ca0a forced-copy B result ("ALL BIT-IDENTICAL (36/36)", "(20)") compared forced buffer against the e503672 dump, i.e. buffer vs buffer, not texture vs buffer. New at 63d2724: modular SF backprojection now takes the cone kernel instead of the parallel one (the host min/max fix in modular-beam backprojection), so `modular_SF_back`/`fbp` join the differing set (34 -> 32). `dictionary_out` is counted among the 20 as at b37ca0a; it is a 1-element output of the pre-existing OMP memory fault, identical in both builds.
+
+A sentence the measurements support, for jeff to choose (the squash message is not edited here): "On gfx90a, 50 of 56 dumped forward, back, FBP, point-sampled projector, filter and resampling outputs are bit-identical between the texture and buffer paths; the other six (modular-beam back and FBP, attenuation-map projector) differ by at most 6.7e-6 relative."
+
+Host: AMD Instinct MI250X GCD (gfx90a), HIP_VISIBLE_DEVICES=2 (pinned by the dispatcher), torch 2.16.0a0+git6c3af02, /opt/python-3.11-venv, all GPU runs under `ulimit -c 0`. Fork cloned to agent_space/cmp/fork at 63d272405259bc861da536e53962c5c79b1c5702 (clean), `git archive` into agent_space/cmp/tex and agent_space/cmp/buf. Scripts `dump_outputs.py`, `compare_outputs.py` (gfx942 port entry) and `dump_point.py` (dual-path port entry) extracted unchanged from this file.
+
+### Builds
+`buf` is the b37ca0a recipe B forced copy: `#undef __HIP_NO_IMAGE_SUPPORT` / `#define __HIP_NO_IMAGE_SUPPORT 1` inserted after `#include "cuda_runtime.h"` in `src/cuda_utils.h`, and `imageSupport = 0;` inserted before `int kind = imageSupport ? 0 : 1;` in `leapUseLinearTexture()` (`src/cuda_utils.cu`). `tex` is unmodified.
+```
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=16 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/tex && python setup_AMD.py build_ext --inplace"   # rc=0
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=16 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/buf && python setup_AMD.py build_ext --inplace"   # rc=0
+```
+Both: "all archs for visible cards ... (gfx90a)", 20 `--offload-arch=gfx90a` lines, 0 errors. ISA (`llvm-objdump --offloading` then `-d` on `projectors_SF.o`, gfx90a bundle): tex 808 `image_*` / 28 `global_load`; buf 0 `image_*` / 836 `global_load` (the b37ca0a fat-build figures for gfx90a and gfx942).
+
+### Comparison (one `utils/timeit.sh LEAP test` run each for the dumps and for point+validate)
+```
+cd agent_space/cmp
+python dump_outputs.py <tex|buf>/src out_<b>_r<n>.npz 256    # interleaved: tex r1, buf r1, tex r2, buf r2
+python compare_outputs.py out_tex_r1.npz out_buf_r1.npz      # NOT BIT-IDENTICAL: 32/36 (differing arrays above); same for r2
+python compare_outputs.py out_tex_r1.npz out_tex_r2.npz      # ALL BIT-IDENTICAL (36/36); same for buf r1 vs r2
+python dump_point.py <tex|buf>/src pt_<b>.npz
+python compare_outputs.py pt_tex.npz pt_buf.npz              # NOT BIT-IDENTICAL: 18/20 (att_map_fwd, att_map_back)
+(cd <tex|buf> && AMD_LOG_LEVEL=3 python unitTests/gpu_vs_cpu_validate.py)   # rc=0, 12/12 PASS, OVERALL: PASS, both builds
+```
+- dump_point ok/FAILED lines identical in both builds: `upsample` fails in the script (ctypes dtype), `dictionary` hits `HSA_STATUS_ERROR_MEMORY_FAULT` then `hipSetDevice Error: an illegal memory access`; pre-existing, as recorded at b37ca0a and 63d2724.
+- gpu_vs_cpu_validate: the 12 printed lines are identical between tex and buf and equal this platform's 63d2724 validator record (modular SF `fbp_interior=0.9995 adjoint=3.37e-03`, modular VD `0.9998 / 3.39e-03`, ...). `Error: GPU` lines: 0 in both. `hsa_amd_pointer_info() failed` lines: 60 with tex, 0 with buf (no hipArray is created on the buffer path).
+
+### Timing (median of 5, 256 cols x 266 rows x 360 views, device-resident tensors, ms, project / backproject)
+```
+geometry_model   tex r1          buf r1          tex r2          buf r2
+parallel_VD      166.8 / 71.3    548.0 / 138.4   167.0 / 71.3    547.7 / 138.4
+parallel_SF      166.9 / 71.5    547.4 / 140.2   167.1 / 71.5    547.7 / 140.2
+fan_VD           158.6 / 70.1    521.5 / 130.7   157.9 / 70.1    522.3 / 130.6
+fan_SF           158.3 / 137.1   521.9 / 248.0   158.2 / 137.0   520.4 / 248.3
+coneparallel_VD  331.0 / 73.9    999.3 / 149.6   331.3 / 73.9    999.7 / 149.7
+coneparallel_SF  331.0 / 139.7   999.5 / 330.7   331.0 / 139.6   999.7 / 331.0
+cone-flat_VD     297.7 / 72.3    927.5 / 161.6   297.6 / 72.3    927.4 / 161.9
+cone-flat_SF     297.7 / 397.5   927.1 / 969.0   297.6 / 397.4   927.6 / 970.4
+cone-curved_VD   325.9 / 73.5    998.7 / 145.8   325.8 / 73.4    992.7 / 146.6
+cone-curved_SF   325.8 / 249.2   992.5 / 621.2   325.8 / 249.2   992.7 / 620.7
+modular_VD       302.2 / 71.9    916.2 / 160.0   302.3 / 72.1    916.3 / 160.0
+modular_SF       302.1 / 272.4   916.5 / 660.6   302.2 / 272.4   916.5 / 660.4
+```
+buf/tex ratios, both rounds: project 3.02-3.31, backproject 1.81-2.49 (modular SF back 2.42; it was about 1.0 at e503672, when tilted modular SF back took point fetches). Same range as the e503672 review (3.0-3.3x / 1.8-2.5x). The tex times match this platform's 63d2724 validator table within about 1%; the two rounds agree to 0.6%.
+
+### Not done
+- Squash message not edited; the replacement sentence above is for jeff. No fork push, no GitHub writes, no platform state change.
