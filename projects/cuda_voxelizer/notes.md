@@ -643,3 +643,14 @@ Differential: harness `work/scripts/cvdiff.py`, `test_models/bunny.OBJ`. Each ru
 | solid | 512 | 26,763,628 | 1 (1/0) | 0 | 36.9 / 2,236 |
 
 These equal the gfx1201 validation at 3625a1e row for row (Release 9 / 1, -O0 4 / 0), so the HIP path behaves as validated. The upstream CI smoke `./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu` exits 0 on the CPU path and writes `bunny.OBJ_64.vox`.
+
+## NVIDIA run 2026-11-05 (5a9b7cf, managed table, V100)
+Primary session, Tesla V100-SXM2-32GB via Slurm, CUDA 12.9, sm_70, Trimesh2 2022.03.04, `ulimit -c 0`. 5a9b7cf CUDA build (managed table, src/main.cpp:220 cudaMallocManaged). GPU vs `-cpu` output compared with `cmp` for bunny.OBJ:
+
+| mode | 64 | 256 | 512 |
+|---|---|---|---|
+| surface binvox / morton | identical | identical | 18 differing bytes |
+| solid binvox / morton | identical | identical | 2 differing bytes |
+| obj_points (surface, solid) | identical | identical | differs (text file: one moved voxel shifts every later line, so the byte count is not a voxel count) |
+
+So the managed table works on NVIDIA (64 and 256 exact), and the small 512 boundary residual also appears on CUDA, the same order as on AMD (4-9 surface voxels, 0-1 solid). The 5a9b7cf commit message's "only observed on AMD" is therefore wrong in the other direction; the PR body should say the 512 residual appears on both vendors (fp contraction / rsqrtf at voxel boundaries). This closes the gap in deferral cuda-voxelizer-5a9b7cf-nvidia-managed-run pending jeff's ruling.
