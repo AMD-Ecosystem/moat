@@ -158,3 +158,6 @@
 {"kind":"phase","ts":"2026-11-05T00:03:54Z","phase":"test","seconds":4.888,"exit":0,"cmd":"bash -c cd agent_space/cmp/fix && python unitTests/gpu_vs_cpu_validate.py"}
 {"kind":"phase","ts":"2026-11-05T00:04:47Z","phase":"test","seconds":15.154,"exit":0,"cmd":"python agent_space/scripts/dump_point.py agent_space/cmp/base/src agent_space/cmp/runs/pt_base.npz"}
 {"kind":"phase","ts":"2026-11-05T00:05:50Z","phase":"test","seconds":15.165,"exit":0,"cmd":"python agent_space/scripts/dump_point.py agent_space/cmp/fix/src agent_space/cmp/runs/pt_fix.npz"}
+{"kind":"phase","ts":"2026-11-05T00:12:54Z","phase":"compile","seconds":13.424,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261104-153655-fix-leap-minmax/moat/agent_space/cmp/fix2 && python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-05T00:14:16Z","phase":"test","seconds":5.174,"exit":0,"cmd":"bash -c cd agent_space/cmp/fix2 && python unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-05T00:14:42Z","phase":"test","seconds":15.126,"exit":0,"cmd":"python agent_space/scripts/dump_point.py agent_space/cmp/fix2/src agent_space/cmp/runs/pt_fix2.npz"}

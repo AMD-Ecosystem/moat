@@ -7,12 +7,12 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-05T00:12:14Z",
-  "head_sha": "f83ae1ae7069d7c27db0076f5186d39b00ddac61",
+  "updated_at": "2026-11-05T00:16:18Z",
+  "head_sha": "63d272405259bc861da536e53962c5c79b1c5702",
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 644559794,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
@@ -45,7 +45,7 @@
       "validated_sha": "d2112b63f025446cd519453423679c5cd8740bf5",
       "started_at": "2026-06-02T13:30:00Z",
       "completed_at": "2026-11-04T20:37:32Z",
-      "updated_at": "2026-11-05T00:12:14Z",
+      "updated_at": "2026-11-05T00:16:18Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -163,11 +163,8 @@
   "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/1",
   "porting_released": {
     "arch": "linux-gfx1100",
-    "since": "2026-11-05T00:12:11Z",
-    "at": "2026-11-05T00:12:14Z"
+    "since": "2026-11-05T00:12:14Z",
+    "at": "2026-11-05T00:16:18Z"
   },
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-05T00:12:14Z"
-  }
+  "porting": null
 }

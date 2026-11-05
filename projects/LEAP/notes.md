@@ -1958,3 +1958,35 @@ Added to `cuda-to-rocm` `references/fault-classes.md` (Floating point) and the S
 - Every platform now reads `revalidate` at f83ae1a, and the stage is `ported`, so a review comes next.
 - The drafted squash messages and the review PR body above say modular SF FBP non-convergence and non-adjointness are upstream behavior. That is wrong, and they need the correction before any PR prep. Whether f83ae1a stays a third commit or is folded into commit 1 at the squash is your call.
 - The Windows build uses the same setup_AMD.py flags, and `-D...=1` is plain, so I expect no Windows difference. The Windows validator will confirm.
+
+## Port 2026-11-05 (porter, linux-gfx1100, jeff's changes: call-site fix replaces the define, moat-port f83ae1a -> 63d2724)
+
+jeff reviewed f83ae1a and requested changes. Do not rely on `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__`: it first appears in ROCm 7.2.0 (LLVM 0248d277ca, 2025-03-31), and ROCm 7.1.x and earlier have only host `min/max(int,int)` and no macro, so the define silently does nothing there. State path: `ported -> reviewing -> changes-requested -> porting`. That records jeff's verdict, because the table has no `ported -> porting` edge. No agent review took place. After the push: `advance-head`, then `ported`.
+
+Commit 63d272405259bc861da536e53962c5c79b1c5702 "[ROCm] Call fmin/fmax for floating-point host min/max", a new commit on f83ae1a (no amend). `setup_AMD.py` is back to d2112b6 byte-for-byte (`git diff d2112b6 -- setup_AMD.py` empty). The 17 call sites now call what CUDA's host overload calls (crt/math_functions.hpp: (double,double) and the mixed forms use fmin/fmax, (float,float) uses fminf/fmaxf):
+- `bilateral_filter.cu` 246-247, 343-344, 455-456: `float(fmax(0.25, fmin(100.0, double(spatialFWHM))))`, `float(fmax(1.0e-8, fmin(1.0e8, double(intensityFWHM))))` (CUDA: max(double,double), min(double,float)).
+- `projectors_Joseph.cu:2349` `fmax(atan(..), atan(..))` (double,double); `:2350` `fmaxf(params->furthestFromCenter(), fmaxf(fabs(z_0()), fabs(z_samples(..))))` (float,float).
+- `ramp_filter.cu:843, 934` `pow(fmax(0.0, double(cos(omega))), ...)`. Under hipcc host `cos(omega)` already resolved to double (the instrumented pass saw (double,double)). The `double()` keeps the meaning if a host compiler returns float from `cos(float)`, where CUDA would take max(double,float), which is also fmax in double.
+Int sites untouched. `jargon.py --port LEAP` clean, `prose.py` clean. Pushed `f83ae1a..63d2724 moat-port`.
+
+### Evidence (agent_space/cmp/fix2 = tracked files of 63d2724, built without any define; `cmp`-identical to the commit)
+- Build rc=0, 20 hipcc, gfx1100; no `HIP_DEFINE_EXTENDED` anywhere in the log. Build warnings equal the f83ae1a build's, so the six `-Wliteral-conversion` warnings stay gone.
+- Instrumented host-only pass (flags from this build log, no define): the default-set `poison_w.h` pass now reports 60 host calls (was 77). The CUDA-like-set `poison_ext_w.h` pass reports the same 60, all `(int,int)`, 0 non-int and 0 errors, at the same file:line:col as the 60 int sites at d2112b6. No host call still truncates.
+- AST (`-ast-dump-filter` on the six host functions): every new call resolves to the host libm `fmax`/`fmin` `double (double, double)` (12 in the three bilateral functions, one in each ramp function, one in backproject_Joseph_modular), and the two rFOV calls to `fmaxf` `float (float, float)`.
+- Device code: in the 20 gfx1100 code objects, `.text`, `.rodata`, `.data` and `.bss` are byte-identical to d2112b6 (hence also to f83ae1a).
+- GPU (HIP_VISIBLE_DEVICES=2, `ulimit -c 0`), every check from the f83ae1a entry, compared with that build:
+  - gpu_vs_cpu_validate.py: rc=0, 12/12, and the 12 lines are identical to f83ae1a (modular VD adjoint 3.39e-03; modular SF fbp 0.9995, adjoint 3.37e-03).
+  - minmax_check.py: identical text (BilateralFilter(2.5, 0.5) changes 5187/5187, max|gpu-ref| 3.257e-06; modular SF GPU adjoint 4.835e-03). Its npz (17 arrays) is ALL BIT-IDENTICAL to f83ae1a.
+  - modsf.py: tilt 1 SF 0.9995 / 3.39e-03 and VD 0.9998 / 3.40e-03; tilt 0 SF 1.0000 / 2.30e-03 and VD 1.0000 / 2.58e-03. Same as f83ae1a.
+  - lowpass.py: FBPlowpass 3.0 gives 6.772e-07 / 6.760e-07, and none gives 2.164e-07 / 2.171e-07. Same as f83ae1a.
+  - dump_point.py: ALL BIT-IDENTICAL (20 arrays) vs f83ae1a, with identical ok/FAILED lines (upsample and dictionary as before). dump_outputs.py: ALL BIT-IDENTICAL (36) vs f83ae1a.
+  - Times fix2/fix: 0.971-0.996 project and 0.984-0.998 backproject (this run came later in the session; noise, since device code is identical).
+- No difference from f83ae1a in any output. So against d2112b6 the differences are still exactly the four arrays recorded in the f83ae1a entry.
+
+### Skill
+`cuda-to-rocm` fault-class entry and SKILL.md index line rewritten: fix the call sites with fmin/fmax/fminf/fmaxf as CUDA's overloads do; the macro is ROCm >= 7.2 only, defaults to 0, and is a silent no-op on 7.1.x and earlier.
+
+### Not done / for jeff
+- nvcc compile at 63d2724 is not run (no nvcc here; a fleet worker cannot dispatch). Unlike f83ae1a, this commit changes `.cu` sources the CUDA build compiles, so the mi355 nvcc compile matters this round.
+- Not tested on a ROCm < 7.2 install (none on this host). The fix uses no ROCm-version-dependent macro, and `fmin`/`fmax`/`fmaxf` come from the host C library.
+- Every platform reads `revalidate` at 63d2724, and the stage is `ported` (review next). The squash-message and PR-body corrections listed in the f83ae1a entry still apply. The squash would now fold f83ae1a and 63d2724 together, and their net effect is source-only.
