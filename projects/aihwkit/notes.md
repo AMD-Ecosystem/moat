@@ -1101,3 +1101,79 @@ files unmodified (only untracked build_hip/).
 Next: reviewer on the delta eb4d017..ea1185e; then every platform revalidates
 at ea1185e (advance-head flipped them); CUDA compile gate; `--drift --apply`
 for the fork mirror; then `upstream.py --fix-review`.
+
+## Review 2026-11-05 (reviewer, linux-gfx942, sync delta eb4d017..ea1185e)
+
+Scope: second merge of the sync round moat-sync-60ffe9e -- ea1185e, parents
+eb4d017 + 14d4783 (upstream master), one conflict in CMakeLists.txt.
+
+Merge fidelity: `diff <(git diff 60ffe9e eb4d017) <(git diff 14d4783 ea1185e)`
+differs only in (a) the port's fixed `RPU_CXX_STANDARD "17"` cache default and
+its `CXX_STANDARD 17 -> ${RPU_CXX_STANDARD}` substitutions, all now carried by
+upstream #792 itself (`git grep CXX_STANDARD 14d4783` shows every target using
+`${RPU_CXX_STANDARD}`), (b) the SoftBoundsRPUDeviceMetaParameter ctor fix,
+which upstream 14d4783 now carries (rpu_linearstep_device.h:72), and (c)
+HIP_TARGET_PROPERTIES moved below the dependency includes next to upstream's
+relocated CUDA_TARGET_PROPERTIES. Nothing of the HIP port dropped; cuda_to_hip.h,
+dependencies_hip.cmake, rpu_cub.h, cuda_util.h, pwu_kernel_parameter_base.h,
+rpu_base_tiles_cuda.cpp, simulator/CMakeLists.txt and docs are identical deltas.
+Upstream's side kept: empty-default RPU_CXX_STANDARD + ATen.h detection,
+CUDA_STANDARD in CUDA_TARGET_PROPERTIES, RPU_CUDA_ARCHITECTURES "75;80;89;120".
+WIN32 block: upstream re-added `/O2` under WIN32; the port's existing split
+(standard under WIN32, `/O2` under MSVC) is unchanged from eb4d017.
+
+CUDA path: in `git diff 14d4783 ea1185e -- CMakeLists.txt` every CUDA-side line
+is upstream's own, wrapped unchanged in the `else()` of `if(USE_HIP)`; the only
+CUDA-visible port edits are the pre-existing MSVC split and
+`USE_CUDA AND CUDAToolkit_VERSION_MAJOR LESS 11`, both already in eb4d017.
+Not compiled with nvcc here (no CUDA toolkit); the round still owes the CUDA
+compile at ea1185e before it goes to a person.
+
+Absorbed upstream device code (60ffe9e..14d4783, src/rpucuda/cuda): new
+setDeviceParameterFrom overrides (host-side assign/assignTranspose), chopper
+pointer rebinding after load, three self-move fixes (`std::move(other.x)`),
+plus copyright-line churn. No new kernels, launches, warp intrinsics, lane
+masks, literal 32s, or cub/curand/cublas calls -- no fault-class exposure.
+
+Detection under HIP: HIP_TARGET_PROPERTIES sets only CXX_STANDARD; CMake
+applies it to LANGUAGE HIP sources (no HIP_STANDARD needed). Confirmed: with
+torch 2.12 the configure prints `Using C++17 (required by .../ATen/ATen.h)` and
+all 75 compile lines carry `-std=gnu++17` (bit_line_maker.cu included);
+the porter showed `-std=gnu++20` with torch 2.16. Both branches of the
+detection work on the HIP path.
+
+Reviewer GPU run (Python >= 3.12 on Linux, the gap the porter left): MI300X
+(gfx942, wave64), HIP_VISIBLE_DEVICES=2. Job-private venv
+(`/usr/bin/python3.12 -m venv --without-pip`, packages installed with the job
+venv's `pip --python`), Python 3.12.3, TheRock nightly pair from
+https://rocm.nightlies.amd.com/v2/gfx94X-dcgpu/: torch
+2.12.0a0+rocm7.13.0a20260325 with rocm[libraries,devel]==7.13.0a20260325
+(HIP 7.13), numpy 1.26.4, pybind11 3.1.0, cmake 4.4.4, OpenBLAS 0.3.26 (apt).
+Gotcha: unset PYTHONPATH when pip-installing into such a venv if the job
+exports one -- pip saw typing_extensions in the 3.11 PYTHONPATH dir as
+"already satisfied" and the suites failed at import.
+```
+R=$VENV312/lib/python3.12/site-packages/_rocm_sdk_devel
+cmake -S . -B build_hip312 -GNinja -DUSE_HIP=ON -DUSE_CUDA=OFF \
+  -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++ \
+  -DROCM_PATH=$R -DCMAKE_PREFIX_PATH="$TORCH_CMAKE;$PYBIND11_CMAKE;$R" \
+  -DPython3_EXECUTABLE=$VENV312/bin/python -DPython_EXECUTABLE=$VENV312/bin/python \
+  -DRPU_BLAS=OpenBLAS -DBUILD_TEST=OFF -DRPU_USE_TORCH_BUFFERS=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build_hip312 -j56      # 78/78; 29 gfx942 code objects in rpu_base
+cp build_hip312/src/aihwkit/simulator/rpu_base.cpython-312-x86_64-linux-gnu.so src/aihwkit/simulator/
+ulimit -c 0; PYTHONPATH=src python -m pytest -q -p no:cacheprovider -n 8 <suites>
+```
+- test_specific_tiles + test_simulator_tiles + test_bindings_tiles: **577 passed, 60 skipped**
+- test_torch_tiles + test_inference_tiles: **406 passed, 55 skipped, 0 failed**
+- test_layers_linear + test_layers_convolution: **566 passed, 216 skipped**
+- test_analog_ctx: **179 passed, 29 skipped, 127 subtests passed**
+Counts match the porter's gfx90a/Python 3.11 run at ea1185e exactly. This is a
+reviewer's evidence run, not the linux-gfx942 platform record; the validator
+can reuse the recipe. jargon.py --port: clean. Fork tree: only untracked
+build_hip312/.
+
+Findings: none blocking. Open items carried from the porter's entry, not
+review defects: CUDA nvcc compile at ea1185e; `upstream.py --drift --apply`
+for the fork's master mirror before `--fix-review`.
+
+Verdict: review-passed.

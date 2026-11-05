@@ -7,21 +7,18 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T01:19:43Z",
-  "updated_at": "2026-11-04T23:44:14Z",
+  "updated_at": "2026-11-05T00:25:37Z",
   "head_sha": "ea1185efa2caa08024bc12c4da242e14becb9f3c",
   "depends_on": [],
   "pr_url": "https://github.com/IBM/aihwkit/pull/770",
   "pr_number": 770,
   "pr_opened_at": "2026-06-08T22:00:49Z",
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-04T23:44:14Z"
-  },
+  "porting": null,
   "waivers": {},
   "pr_state": "closed",
   "license_spdx": "MIT",
   "upstream_repo_id": 296369718,
-  "stage": "reviewing",
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -156,7 +153,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-04T23:44:14Z",
+      "updated_at": "2026-11-05T00:25:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -191,8 +188,8 @@
     "upstream_sha": "60ffe9e45b0861bdee8daaf7323d2895d81c9bf9"
   },
   "porting_released": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-04T23:29:42Z",
-    "at": "2026-11-04T23:39:56Z"
+    "arch": "linux-gfx942",
+    "since": "2026-11-04T23:44:14Z",
+    "at": "2026-11-05T00:25:37Z"
   }
 }
