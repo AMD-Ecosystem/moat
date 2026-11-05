@@ -2893,3 +2893,51 @@ Not rerun. The 2026-11-05 CUDA compile check already covers this head_sha (fde33
 
 ### Result
 linux-gfx90a: `revalidate` -> `completed` at `fde33e5`.
+## Validation 2026-11-05 (linux-gfx1100, revalidate): PASS -> completed (head fde33e5)
+
+Trigger: head `b9c257a` (this arch's `failed_sha`, upstream double `hipFree` aborting the dense-stereo pipeline) -> `fde33e5` (ElasGPU frees `d_valids` once, no duplicate frees). Full rebuild and run, no carry-forward. Host: Radeon Pro W7800 (gfx1100, wave32), `HIP_VISIBLE_DEVICES=1`, every GPU run under `ulimit -c 0`. Ubuntu 24.04, TheRock pip SDK (`_rocm_sdk_devel`, ROCm 7.16.26385, amdclang 24.0.0git), CMake 3.31.6, g++ 13, apt PCL 1.14 / Boost 1.83 / glog / protobuf / octomap. Fork cloned fresh into `projects/plvs/src`, HEAD `fde33e5` == `origin/moat-port`.
+
+### Build (everything from source in this job dir; nothing copied from earlier jobs except the two datasets)
+- OpenCV-with-HIP: `AMD-Ecosystem/opencv@50f05b1` + `opencv_contrib@041d552`, the 2026-11-04 gfx1100 cmake line (`-DWITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=<sdk>/bin/amdclang++ -DCMAKE_PREFIX_PATH=<sdk> -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_GTK=ON -DBUILD_LIST=core,imgproc,imgcodecs,highgui,videoio,video,features2d,flann,calib3d,ximgproc,cudev,cudaarithm,cudawarping,cudaimgproc,cudastereo,cudafilters,cudafeatures2d,cudabgsegm`), 650/650, installed to scratch; the usual install-tree shim (lines 107-143 of `OpenCVConfig.cmake`, the `find_host_package(CUDA ...)` / `find_cuda_helper_libs` block, removed).
+- Pangolin `fe57db532` + `Thirdparty/pangolin.patch`, then DBoW2, g2o, volumetric_mapping, open_chisel, chisel_server, voxblox, voxblox_server, libsgm, line_descriptor, libelas-gpu with `-DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 -DOpenCV_DIR=<ocv> -DUSE_HIP=ON -DOPENCV_VERSION=4 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_HIP_ARCHITECTURES=gfx1100`; plvs with `cmake -S . -B build-hip -DWITH_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DWITH_LIBSGM=ON -DWITH_LIBELAS=ON -DWITH_G2O_NEW=OFF -DWITH_FASTFUSION=OFF -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 -DOPENCV_VERSION=4 -DOpenCV_DIR=<ocv> -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 && cmake --build build-hip -j 32` (the porter's `build_all.sh`, paths changed only). All RC=0; configure prints `building with libelas HIP`. `lib/libplvs.so`: `.hip_fatbin`, 8 `ElasGPU` dynamic symbols, links `libamdhip64.so.7` and the scratch HIP OpenCV.
+- libelas-gpu standalone for the ELAS comparison, from `git archive fde33e5 Thirdparty/libelas-gpu` outside the fork: `cmake -S $L -B $L/build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release && cmake --build $L/build -j 16`, 14/14, `--offload-arch=gfx1100` 6x and `-march=native` 8x in build.ninja (the default, as in the recorded tables).
+
+### ELAS GPU-vs-CPU (`elas_cmp.cpp`, extracted verbatim from this file), against the standalone `-march=native` library
+`amdclang++ -x hip --offload-arch=gfx1100 -std=c++17 -O2 -DUSE_HIP -I$L/CPU -I$L/GPU elas_cmp.cpp -x none $L/lib/liblibelas_gpu.a -pthread -o elas_cmp`; `./elas_cmp $L/input <mode>`, RC=0 in all four modes.
+- Mode 2 (plvs + subsampling): GPU reruns bit-exact 7/7; cones and aloe identical to the CPU (max 0, vmis 0, `invalid_cpu` cones 26728); raindeer 0.50 / vmis 4, urban1 0.44 / 2, urban2 0.66 / 0, urban3 1.23 (1 px > 1) / 0, urban4 0.68 / 0. Line for line the recorded gfx1100 / gfx90a / gfx942 table.
+- Mode 0: mean |d| 0.016-0.025, >1px 0-7, vmis 1-25; max |d| cones R 24.80, aloe L 4.35 / R 9.19, raindeer R 67.0, urban2 R 14.86, urban3 R 3.67. Mode 1: mean 0.016-0.025, >1px 0-5, vmis 1-25. Mode 3: integer steps (max 2-67), mean 5.1e-5 to 1.9e-4, >1px 1-13. Reruns not bit-exact in modes 0/1/3 (the upstream findMatch duplicate writes and in-place adaptiveMean halo reads), all inside the recorded ranges.
+- Leak and sticky-error check (porter's `elas_leak.cpp`, same library): aloe and cones, 20 calls each after warm-up: **0.00 MB lost, 0/21 calls with a pending error** (b9c257a: 80 MB / 26 MB, 21/21 `hipErrorInvalidValue`).
+
+### Mono TUM RGB-D freiburg1_xyz (stock `mono_tum`, `TUM1.yaml`, viewer on under Xvfb)
+`xvfb-run -a -s '-screen 0 1280x1024x24' Examples/Monocular/mono_tum ORBvoc.txt Examples/Monocular/TUM1.yaml rgbd_dataset_freiburg1_xyz` (`ORBvoc.txt` checked byte-identical to the fork's `Vocabulary/ORBvoc.txt.tar.gz`).
+- Run 1: 798 images, initial map 428 points, 53 KFs, median tracking 9.2 ms, clean shutdown, RC=0. Sim3 ATE of KeyFrameTrajectory vs groundtruth (`agent_space/plvs/ate_tum.py`, Umeyama with scale): **0.0104 m**.
+- Run 2, `AMD_LOG_LEVEL=3`: RC=0, 315-point map, 52 KFs, ATE **0.0099 m**; `tileCalcKeypoints_kernel`, `calcOrb_kernel`, `IC_Angle_kernel`, `addBorder_kernel` x6384 each (798 frames x 8 levels).
+
+### TUM-VI room1 stereo with libelas (`TUM-VI_pcm.yaml` = tracked `Examples/Stereo/TUM-VI.yaml` with only `PointCloudMapping.on: 1`), 16 sequential runs + 1 traced
+`agent_space/plvs/runs_stereo.sh` (the porter's script, paths changed only), `LD_PRELOAD` backtrace handler:
+```
+xvfb-run -a -s '-screen 0 1280x1024x24' Examples/Stereo/stereo_tum_vi ORBvoc.txt TUM-VI_pcm.yaml \
+  dataset-room1_512_16/mav0/cam0/data dataset-room1_512_16/mav0/cam1/data \
+  Examples/Stereo/TUM_TimeStamps/dataset-room1_512.txt room1_runN
+```
+
+| outcome | runs (of 17) | which |
+|---|---|---|
+| clean: 2821/2821 frames, RC=0 | 14 | 2-4, 6-15, 17 |
+| `-217` / `invalid argument` abort | **0** | -- |
+| SEGV addr 0x1378, `KeyFrame::GetCameraCenter <- MapLine::UpdateNormalAndDepth <- LocalMapping::ProcessNewKeyFrame` (upstream, `plvs-upstream-stereo-mapping-crashes`) | 1 | 5 (after 413 libelas calls) |
+| SEGV at a heap address, `PointCloudMapOctreePointCloud<pcl::PointSurfelSegment>::UpdateMapNoSegm()+0x388 <- PointCloudMapping::UpdateMap <- Run` (upstream, same deferred item) | 2 | 1 (after 96 calls), 16 (after 257) |
+| any other crash | 0 | -- |
+
+- Clean runs: 411-473 libelas calls each, one map of 104-123 KFs, ATE RMSE vs mocap0 (rigid, camera-to-IMU offset not compensated, as before) **0.0766-0.0791 m** (porter at fde33e5 0.0746-0.0780, b9c257a 0.0764-0.0776).
+- Run 17 with `AMD_LOG_LEVEL=3`: clean, ATE 0.0785 m, 428 `stereo processing (libelas)` calls, **`libelas::findMatch_GPU` x856 and `libelas::adaptiveMeanGPU8` x428** (2 + 1 per call), ORB `IC_Angle_kernel` x45136, and **0 `hipErrorInvalidValue` returns** in the whole trace (b9c257a: 1465 in 367 calls). ELAS runs on the GPU inside plvs and no stale free remains.
+- The octree crash is 2/17 here against 1/16 for the porter; both are in CPU-only PointCloudMapping code with no device call in the stack, and the CPU-ELAS controls are too few to separate it statistically. It stays with the deferred item, not a gate.
+
+### Gates
+- `python3 utils/jargon.py --port plvs` -> `jargon: clean` (after `git fetch origin master:master`).
+- ROCm build documentation: `config.sh` HIP/ROCm section and `new_features.md` present and unchanged; no build change in this delta.
+- CUDA no-regression gate: already recorded at this head_sha (2026-11-05 CUDA compile check on the mi355 host, PASS); not repeated.
+- Integrity: `git -C projects/plvs/src status --porcelain` empty (Pangolin and build trees are ignored); HEAD `fde33e5` == `origin/moat-port`. No core files written.
+
+### Result
+linux-gfx1100: `revalidate` -> `completed` at `fde33e5`. The b9c257a failure (`-217` abort from the double `hipFree`) does not recur in 17 runs.
