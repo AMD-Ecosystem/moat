@@ -262,3 +262,6 @@ CUPY_INSTALL_USE_HIP=1 python -m pytest tests/install_tests -q     # exercises c
 6. **Coordination with ROCm/cupy's owners.** The port is staged on AMD's own CuPy staging fork, next to that team's Linux HIP work (recent upstream HIP PRs come from gpinkert). Who tells them before an upstream PR opens, and does it go upstream from ROCm/cupy under their flow or ours?
 7. **Linux baseline cost.** The regression comparison needs a baseline build and test run on each Linux gate host, which doubles the Linux test time. Accept, or limit the Linux baseline to W1-W3?
 8. **Packaging is not in this plan.** A Windows `cupy-rocm` wheel, conda package, or CI job is not planned; the deliverable is a source build. Confirm that is the intended scope. Separately, once this validates, gpu4pyscf's windows waiver and a `depends_on: cupy` edge on gpu4pyscf are for jeff to revisit; that record is not edited here.
+
+## Rulings (jeff, 2026-11-05)
+1. ROCm discovery on Windows: do NOT honour `HIP_PATH`; AMD's Windows HIP SDK is not supported (it has only caused trouble). Search `ROCM_HOME`, then `hipconfig --rocmpath` (TheRock). Docs say TheRock is the supported Windows ROCm and that HIP SDK installs are not.
