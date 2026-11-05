@@ -240,3 +240,6 @@ Keep the exact 32-lane warp emulation on 64-lane CDNA wavefronts; refusing warp 
 
 ## Ruling 2026-11-04 (jeff): gfx1250 tensor-core MMA
 Implement the KernelContext MMA API on gfx1250 WMMA now (replacing the refusal) and validate it on the fleet's gfx1250 host (alias mi450, one shared GPU: keep the validation job short and run only when the GPU is idle).
+
+## Ruling 2026-11-04 (jeff): SDPA stays on Composable Kernel
+Keep cuDNN SDPA on the CK FMHA ck-hip module (MIOpen attention lacks FP16 on gfx950 and ignores the causal mask). Register a deferral to re-evaluate hipDNN for SDPA once it is released and its attention covers gfx950, RDNA and Windows.
