@@ -425,3 +425,7 @@
 {"kind":"session","ts":"2026-10-31T09:09:55Z","epoch":1793437795.860804140,"event":"end","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-10-31T19:52:20Z","epoch":1793476340.577416335,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-10-31T19:55:32Z","epoch":1793476532.840560528,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-05T05:02:39Z","phase":"compile","seconds":271.651,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261104-204852-lichtfeld-studio/moat/agent_space/lfs/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261104-204852-lichtfeld-studio/build-hip lichtfeld_tests"}
+{"kind":"phase","ts":"2026-11-05T05:09:46Z","phase":"compile","seconds":197.103,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261104-204852-lichtfeld-studio/moat/agent_space/lfs/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261104-204852-lichtfeld-studio/build-hip lichtfeld_tests"}
+{"kind":"phase","ts":"2026-11-05T05:18:25Z","phase":"compile","seconds":243.577,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261104-204852-lichtfeld-studio/moat/agent_space/lfs/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261104-204852-lichtfeld-studio/build-hip"}
+{"kind":"phase","ts":"2026-11-05T05:24:28Z","phase":"compile","seconds":352.460,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261104-204852-lichtfeld-studio/moat/agent_space/lfs/lfs_compute_build.sh"}
