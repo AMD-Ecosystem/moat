@@ -2154,3 +2154,7 @@ Identical counts to linux-gfx90a and linux-gfx1100 at this head. The solver and 
 `python3 utils/jargon.py --port symforce`: clean (via a temporary junction of `src` to the clone plus local `main`/`moat-fix-465` branch refs, junction removed). ROCm build is documented in `symforce/caspar/README.md` "AMD GPUs (ROCm/HIP)". Clone `git status --porcelain`: empty.
 
 VALIDATION PASSED on gfx1151 (Radeon 8060S) at e7e0b00c.
+
+## Upstream PR body revised (2026-11-05)
+
+jeff approved and ran `agent_space/symforce-465-edit.sh`: the body of https://github.com/symforce-org/symforce/pull/465 is now the "Upstream PR body revision" draft above, with the Validation sentence filled in (MI250X and W7800 on Linux; the four Caspar GPU tests also on Radeon 8060S on Windows). Title unchanged. The fix round moat-fix-465 merged into moat-port at e7e0b00c and the approved reply was posted 2026-11-05T06:12Z.
