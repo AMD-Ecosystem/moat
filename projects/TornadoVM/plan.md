@@ -237,3 +237,6 @@ h. Virtual devices: port them if cheap; otherwise record why not in notes.md.
 
 ## Ruling 2026-11-04 (jeff): 32-lane warps on wave64 (supersedes plan item R1)
 Keep the exact 32-lane warp emulation on 64-lane CDNA wavefronts; refusing warp operations would make every warp-based program fail on Instinct GPUs. Document the limitation in the HIP backend docs: the two 32-lane halves of a wave64 do not make independent forward progress, so a kernel where one half spin-waits on a value written by the other half can hang where it would not on NVIDIA. Where that pattern can be detected, fail with a clear error instead of hanging.
+
+## Ruling 2026-11-04 (jeff): gfx1250 tensor-core MMA
+Implement the KernelContext MMA API on gfx1250 WMMA now (replacing the refusal) and validate it on the fleet's gfx1250 host (alias mi450, one shared GPU: keep the validation job short and run only when the GPU is idle).
