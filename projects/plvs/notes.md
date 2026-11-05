@@ -3233,3 +3233,14 @@ Both are on every sensor path, not only fisheye, and neither is a demonstrated W
 
 ### Not done here
 - No GPU run (not needed for review). The CUDA no-regression compile at 970cb1f (mi355/nvcc) is still owed before this goes to jeff, as the porter noted.
+
+### Addendum to Review 2026-11-05 (after pulling 2dbecf5f / fc5c4f2c)
+- Issue A is already filed as luigifreda/plvs#58, so finding 1's "update upstream Issue A" means a follow-up on #58 (or a new issue) for the line arrays once the fix exists. Posting it is jeff's decision. The ORB-SLAM3 issue (UZ-SLAMLab/ORB_SLAM3#1014) is unaffected, because the line arrays are plvs-only. The ASan table above also verifies, on Linux, the sentence that was dropped from #58 ("on Linux the same reads are out of bounds but usually do not fault"): ASan flags all bug-1 sites at fde33e5 in a run that exits 0.
+- jeff's 2026-11-05 "now" ruling on `plvs-upstream-stereo-mapping-crashes` (octree use-after-free in `UpdateMapNoSegm` as its own commit) lands in the same porter round as findings 1 and 2. This review does not cover it.
+- Draft follow-up comment for #58, for jeff to approve or drop (not posted):
+
+====
+My agent came up with this analysis, but I've read and approved it.
+
+> The same pattern affects the fisheye line depth arrays. `Frame::ComputeStereoFishEyeLineMatches` allocates `mvDepthLineStart` and `mvDepthLineEnd` with `NlinesLeft` entries (src/Frame.cc, next to `mvuRightLineStart/End`, which already get `Nlines`), but `Tracking::NeedNewKeyFrame` and `Tracking::CreateNewKeyFrame` loop over all `Nlines`. With AddressSanitizer on Linux, TUM-VI room1 stereo reports heap-buffer-overflow reads at src/Tracking.cc:4018 and :4316, just past an `NlinesLeft`-float buffer. If a value past the end is positive, CreateNewKeyFrame also unprojects a right-image line with `UnprojectStereoLine`, which reads `mvKeyLinesUn[i]` out of bounds as well. Sizing both vectors to `Nlines` with -1 (and allocating them even when `NlinesLeft == 0`) fixes it the same way.
+====
