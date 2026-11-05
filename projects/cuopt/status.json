@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "cuopt",
+  "upstream_url": "https://github.com/NVIDIA/cuopt",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-05T23:12:40Z",
+  "updated_at": "2026-11-05T23:12:40Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
