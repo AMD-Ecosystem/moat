@@ -2848,3 +2848,48 @@ Fact-checks run:
 Side observations, not findings against this delta:
 - The upstream `CPU/image.h` `loadPGM` (unchanged by the port) reads header fields with `getline`, one per line, and segfaults on the bundled `input/*.pgm`, whose header is one line (`P5 1282 1110 255`). That is why the harness here has its own reader; `main_gpu`/`main_cpu` built from the tree would crash the same way.
 - For the PR-prep squash: the fde33e5 body says the 12 clean TUM-VI runs had "371-470 libelas calls each", while the 2026-11-05 port round above says 413-470. Use the figure the run logs support when rewriting the message.
+
+## Validation 2026-11-05 (linux-gfx90a, revalidate): PASS -> completed (head fde33e5)
+
+Trigger: head `b9c257a` (this arch's `validated_sha`) -> `fde33e5` (ElasGPU: free `d_valids`, drop the duplicate `d_u_vals`/`d_v_vals` frees). The change is device-memory management in the HIP build, so this was a full rebuild and run with no carry-forward. Host: MI250X GCD (gfx90a, wave64), `HIP_VISIBLE_DEVICES=3`, every GPU run under `ulimit -c 0`. Ubuntu 24.04, TheRock pip SDK (`_rocm_sdk_devel`, amdclang++ 24.0.0git), no `/opt/rocm`, cmake 3.31.6, g++ 13.3, PCL 1.14.0, Boost 1.83 from apt. Fork cloned fresh into `projects/plvs/src`; HEAD `fde33e5` == `origin/moat-port`.
+
+### Build (all in this job directory)
+- OpenCV-with-HIP: I copied the gfx90a install from the 2026-11-04 linux-gfx90a validation (`opencv@50f05b1` + `opencv_contrib@041d552`, `-DWITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a`, with the `OpenCVConfig.cmake` CUDA-block shim already applied). The command is in that section; it was not rebuilt.
+- Documented route (`agent_space/plvs/build_all.sh`): I edited `config.sh` (`USE_HIP=1`, `USE_LOCAL_OPENCV=0`, `export OpenCV_DIR=<ocv-install>/lib/cmake/opencv4`). Then I built Pangolin `fe57db532` + `pangolin.patch` (into the gitignored `Thirdparty/Pangolin`), DBoW2, g2o, `install_local_g2o_new.sh`, volumetric_mapping, open_chisel, chisel_server, voxblox, voxblox_server, libelas-gpu, libsgm and line_descriptor in `build_thirdparty.sh` order. The options were `-DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 -DOpenCV_DIR=... -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DUSE_HIP=ON -DOPENCV_VERSION=4`. fastfusion was skipped (upstream g++ 13 `<deque>` error, as before), and so were rerun and evo. Next came plvs with the same options plus `-DWITH_FASTFUSION=OFF -DWITH_G2O_NEW=ON` (`make -j 64`), then `./build_plvs.sh "-DCMAKE_HIP_ARCHITECTURES=gfx90a -DWITH_FASTFUSION=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5"` over that tree, then `./gen_bin_vocabulary.sh`. The whole script returned RC=0. Configure printed `USE_HIP: ON`, `building with libelas HIP` and `building with stereo libsgm GPU`. `libplvs.so` has `.hip_fatbin` and 8 `ElasGPU` dynamic symbols, and `liblibelas_gpu.a` contains `elas_gpu.cu.o`. Afterwards `config.sh` was reverted with `git checkout`.
+
+### Test 1: TUM-VI room1 stereo, libelas dense, 21 runs
+`Examples/Stereo/stereo_tum_vi` with `Examples/Stereo/TUM-VI.yaml`, changed only to `PointCloudMapping.on: 1` (the ELAS consumer) and `Viewer.on: 0`. Data: `dataset-room1_512_16`. Each run went under `xvfb-run` with an `LD_PRELOAD` SIGSEGV/SIGABRT `backtrace_symbols_fd` handler (`agent_space/plvs/segv.c`, `run_stereo.sh`). I ran 20 runs, 4 at a time on the one GCD (`seq 1 20 | xargs -P 4`), plus one `AMD_LOG_LEVEL=3` run.
+
+| | runs | clean (2821/2821 frames, EXIT=0) | `-217` / `invalid argument` aborts | registered upstream crash (`plvs-upstream-stereo-mapping-crashes`) |
+|---|---|---|---|---|
+| batch | 20 | 18 | **0** | 2 (runs 4, 9) |
+| traced | 1 | 0 | **0** | 1 |
+| total | 21 | 18 | **0** | 3 |
+
+- **`-217` aborts: 0 of 21.** No log contains `Gpu API`, `hipError`, `terminate called` or `cv::Exception`.
+- All 3 crashes are upstream crash (1) of the deferred item: SEGV `addr=0x1378`, `pthread_mutex_lock <- KeyFrame::GetCameraCenter <- MapLine::UpdateNormalAndDepth <- LocalMapping::ProcessNewKeyFrame`. Rate 3/21, against 4/15 on this arch at b9c257a and 3/16 on gfx1100 at fde33e5. The octree `UpdateMapNoSegm` crash (2) did not occur. These crashes do not fail the port.
+- In the clean runs, `stereo processing (libelas)` ran 396-475 times per run. ATE RMSE of `f_room1` against mocap0 (Sim3, 2773 matched poses, `agent_space/plvs/ate_ns.py`, which is the earlier `ate.py` with ns timestamps scaled) is **0.0716-0.0727 m** over the 18 runs. That is the same band as this arch at b9c257a (HIP 0.0716-0.0727) and the CPU-only build (0.0711-0.0720). The ~7 cm floor is the uncompensated body-to-camera lever arm.
+- Traced run: `libelas::findMatch_GPU` x510 and `libelas::adaptiveMeanGPU8` x255 over 256 libelas calls before the MapLine crash. So ELAS runs on the device inside plvs. **All 10146 `hipFree` calls returned `hipSuccess`.** At b9c257a on gfx1100, the second frees returned `hipErrorInvalidValue` 1465 times in 367 calls.
+
+### Test 2: mono TUM RGB-D freiburg1_xyz (the recorded validation)
+`xvfb-run -a -s "-screen 0 1280x1024x24" Examples/Monocular/mono_tum Vocabulary/ORBvoc.txt Examples/Monocular/TUM1.yaml <data>/rgbd_dataset_freiburg1_xyz`, run while the stereo batch was going.
+- Run 1: 798 images, initial map 312 points, 50 KFs, EXIT=0, ATE **0.0101 m** (Sim3, `ate.py`) over 0.695 m.
+- Run 2 with `AMD_LOG_LEVEL=3`: EXIT=0, 300 points, 49 KFs, ATE 0.0108 m. `PLVS2::cuda::{tileCalcKeypoints_kernel, calcOrb_kernel, IC_Angle_kernel, addBorder_kernel}` each ran **6384 times** (798 frames x 8 levels).
+- At b9c257a this arch had 0.0089 / 0.0092 m on an idle GPU; this time the GPU was shared with four stereo runs (median tracking time 30-45 ms against 16.7 ms).
+
+### Test 3: ELAS GPU-vs-CPU, built the same way as the records
+I exported libelas-gpu with `git archive` at fde33e5 and at b9c257a and built it standalone with the porter's command. It defaults to `-march=native` for the CPU reference, 8 occurrences in `build.ninja`: `cmake -S $L -B $L/build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release && cmake --build $L/build -j 32`, RC=0 at both shas. The harness `elas_cmp.cpp` is byte-identical to the source in the 2026-11-04 fix-round section (diffed). Build: `amdclang++ -x hip --offload-arch=gfx90a -std=c++17 -O2 -DUSE_HIP -I$L/CPU -I$L/GPU elas_cmp.cpp -x none $L/lib/liblibelas_gpu.a -pthread`; run: `./elas_cmp $L/input <mode>`. Every mode returned RC=0 at both shas.
+- Mode 2 (plvs + subsampling): matches the recorded table exactly. GPU reruns are bit-exact on all 7 pairs. cones and aloe are identical to the CPU (max 0, vmis 0, cones `invalid_cpu` 26728). raindeer 0.50 / vmis 4, urban1 0.44 / 2, urban2 0.66 / 0, urban3 1.23 (1 px > 1) / 0, urban4 0.68 / 0. The fde33e5 output is **line-for-line identical to b9c257a** apart from the timing fields.
+- Mode 0: max |d| 0.57-24.80 (cones R 24.80), mean |d| 0.0043-0.0076, >1px 0-7, vmis 1-25. Mode 1: mean 0.0043-0.0070, >1px 0-5, max 0.55-4.35. Mode 3: integer steps, max 2-25, mean 5e-5 to 1.6e-4, >1px 1-12. All are inside the recorded ranges. Reruns are not bit-exact in modes 0/1/3, which is the upstream design noted before.
+- Leak and pending-error check (`agent_space/plvs/elas_leak.cpp`, 21 `ElasGPU::process` calls on one pair, `hipMemGetInfo` + `hipGetLastError` after each, plvs settings): b9c257a loses 80.00 MB (aloe) / 26.00 MB (cones) over 20 calls with a pending error after 21/21 calls. fde33e5 loses 0 / 0 with 0/21 pending errors. This matches the gfx1100 and gfx942 figures, now on gfx90a.
+
+### CUDA no-regression gate
+Not rerun. The 2026-11-05 CUDA compile check already covers this head_sha (fde33e5, nvcc 12.8, PASS).
+
+### Gates (validator step 4)
+- `python3 utils/jargon.py --port plvs` -> `jargon: clean`.
+- Documentation: I followed the ROCm build documented in `config.sh` / `build_plvs.sh` again (above). Nothing in the docs changed since bab4052.
+- Integrity: `git -C projects/plvs/src status --porcelain` is empty after reverting `config.sh` (Pangolin is gitignored); HEAD `fde33e5` == `origin/moat-port`.
+
+### Result
+linux-gfx90a: `revalidate` -> `completed` at `fde33e5`.
