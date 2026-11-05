@@ -921,3 +921,31 @@ CUDA no-regression gate: not run here (no CUDA toolkit on this host); already re
 Pre-completion checks: `python3 utils/jargon.py --port CudaSift` clean (after `git fetch origin moat-fix-97:moat-fix-97` and `AdaLovelace:AdaLovelace` in the clone so the range resolves); README documents the ROCm build (`### Build for AMD GPUs (ROCm/HIP)`); `git status --porcelain` in src: only `?? build-hip/`.
 
 State: linux-gfx1100 `revalidate` -> `completed` at 5135acc.
+
+## Validation 2026-11-05 (linux-gfx90a) at 5135acc -- fix round 97
+
+GPU: AMD Instinct MI250X / MI250, gfx90a (wave64), `HIP_VISIBLE_DEVICES=1` pinned by the dispatcher (one visible device, tests use devNum=0), all GPU runs under `ulimit -c 0`. ROCm 7.16 wheel SDK at `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`, OpenCV 4.6.0. Fresh fork clone, detached at 5135accf998c349dcfb05556769c9e416b39af3b (= `origin/moat-fix-97`); nothing pushed. Full run, no carry-forward (the delta changes the compiled host code of `ExtractSift`).
+
+Build (fresh `build-hip/`):
+    ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+    utils/timeit.sh CudaSift compile -- cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DCMAKE_BUILD_TYPE=Release
+    utils/timeit.sh CudaSift compile -- cmake --build projects/CudaSift/src/build-hip -j32
+Configure exit 0, build exit 0, 21/21 steps, 154 warnings, 0 errors, 0 `-Wliteral-conversion` (this platform at db7c163: 158; the 4 removed are the `cudaSiftH.cu:114`/`:125` float-to-int ones the fix targets, matching the reviewer's and the gfx1100 counts). `llvm-objdump --offloading` on the three test binaries: only `hip-amdgcn-amd-amdhsa--gfx90a`.
+
+Tests, each `utils/timeit.sh CudaSift test -- bash -c 'cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/<bin>'`:
+
+| test            | exit | result            | key numbers |
+|-----------------|------|-------------------|-------------|
+| test_extract    | 0    | 11 passed, 0 fail | basic 1910; thresh 7079/1910/542/6; initBlur 0/0.5/1/1.6 -> 3600/2806/1910/1262; octaves 1740/1876/1910/1919; reproducibility 1910/1910; scaleUp 3104 |
+| test_match      | 0    | 11 passed, 0 fail | self-match 1899/1910 >0.95; cross 1910 vs 2084, 1910 valid / 1909 good; RANSAC 849 / 826 refined; match 0.55 ms |
+| test_homography | 0    | 8 passed, 0 fail  | translation h[2]=30.1344 h[5]=20.2745, 1646 matches; rotation 1196; scale 944; stereo L1452/R2082, 752 RANSAC / 674 inliers |
+
+PASS: 30/30, all exit 0, no HIP fault or `safeCall` abort.
+
+Against this platform's record at db7c163 (10/11/8 = 29): the only count change is test_extract +1, the new `TestInitialBlur`; its counts 3600/2806/1910/1262 are identical to the reviewer's gfx90a sanity run, the porter's gfx1100 run and the gfx1100 validation at 5135acc (and pass the strict decrease that failed as 3600/3600/1910/1910 without the fix). Every initBlur=1.0 keypoint count is identical to db7c163 on this platform (1910; 7079/1910/542/6; 1740/1876/1910/1919; 3104; 1910 vs 2084; stereo 1452/2082), and self-match 1899/1910 is identical too, as expected since `fmax(1.0, 0.001f)` and the old int `max(1, 0)` both give 1. RANSAC-dependent numbers are within the run-to-run noise already recorded (849/826 vs 852/828; translation 1646 vs 1645, h within 0.001 px; rotation 1196 vs 1195; scale 944 vs 945; stereo 752 vs 752).
+
+CUDA no-regression gate: not run here (no CUDA toolkit used on this host); already recorded at 5135acc in `## CUDA compile check (nvcc 12.8) at 5135acc`.
+
+Pre-completion checks: `python3 utils/jargon.py --port CudaSift` clean (with local `moat-fix-97` and `AdaLovelace` branches fetched in the clone); README documents the ROCm build (`### Build for AMD GPUs (ROCm/HIP)` at line 174, `USE_HIP` row); `git status --porcelain` in src: only `?? build-hip/`.
+
+State: linux-gfx90a `revalidate` -> `completed` at 5135acc via `python3 utils/moatlib.py set-state CudaSift linux-gfx90a completed --agent validator`.
