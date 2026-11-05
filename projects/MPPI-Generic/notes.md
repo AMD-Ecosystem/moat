@@ -1279,3 +1279,51 @@ Already recorded at 70d2b68 ("CUDA compile check (nvcc 12.8) at 70d2b68": PASS).
 - Integrity: `git -C src status --porcelain` shows only `?? build-hip/`; cnpy clean at 91c53bc.
 
 State: completed at 70d2b68 on linux-gfx1100.
+
+## Validation 2026-11-05 (linux-gfx90a revalidate at 70d2b68, full GPU) -- completed
+
+Platform: gfx90a (MI250X, wave64), `HIP_VISIBLE_DEVICES=0` as pinned, `ulimit -c 0`. TheRock pip ROCm in the image venv (`R=$(rocm-sdk path --root)`, AMD clang 24), cmake 3.31, Ninja. Fork sha 70d2b686a037a6643d2636d8f8375919fb0325f6 (= origin/moat-port tip). Delta from this platform's validated_sha 11b61ab: bee3eb6 + 70d2b68 (host min/max -> fminf/fmaxf/fmin/fmax, plus the new RacerSuspensionTest.FractionalThrottleBrake). This is a real host-code change, so this was a full run with no carry-forward.
+
+### Setup / build
+```
+git clone https://github.com/AMD-Ecosystem/MPPI-Generic src
+git -C src checkout 70d2b686a037a6643d2636d8f8375919fb0325f6
+git -C src submodule update --init --recursive      # cnpy 91c53bc, rc=0
+git -C src branch --track main origin/main          # for jargon.py
+cmake -S src -B src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DROCM_PATH=$R \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+utils/timeit.sh MPPI-Generic compile -- cmake --build src/build-hip -j $MAX_JOBS
+```
+157/157 targets, exit 0, 0 errors.
+
+### Targeted GPU tests
+- `tests/dynamics/racer_suspension_model_test`: 4 pass (Template, BindStream, OmegaJacobian, FractionalThrottleBrake), 1 skipped (CPUvsGPU, upstream GTEST_SKIP). The new test passes on gfx90a.
+- `tests/mppi_core/normexp_kernel_tests` 10/10, `tests/feedback_controllers/ddp_tests` 10/10 PASS.
+
+### Full ctest
+```
+utils/timeit.sh MPPI-Generic test -- ctest --test-dir src/build-hip -j1 --timeout 120   # 216 s
+```
+431/463 pass, 32 fail, 8 not run (the same 5 Disabled + 3 Skipped as at 11b61ab).
+- 29 failures are the deterministic set recorded at 11b61ab on this arch, by name (known to fail on this platform, excluded from the verdict): 8 ARStandardCost.* (5 SEGFAULT + 3 Failed), ARRobustCostTest.getCostmapCostSpeed{Map,NoMap}Test, ARNeuralNetDynamics.computeGradTest, 6 npz loaders, DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, RacerDubins.ComputeStateTrajectoryFiniteTest, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, cuFFT.checkErrorCode, 6 GaussianTests.Check*, Integration.RK4.
+- 2 are the known intermittent pool: CompareLikelihoodRatioCostsCPUvsGPU for Gaussian<1,7> and NLN<3,3>. VecAddVecMultScalar passed in this run. `ctest -R 'CompareLikelihoodRatioCostsCPUvsGPU|VecAddVecMultScalar' -j1` 3x: 2/0/3 of 14 fail, inside the 0-4 range recorded at bee3eb6/70d2b68.
+- 1 is new to this arch's record: RMPPITest.RobustMPPILargeVarianceRobustCost, `rmppi_test.cu:822` "Tube failure!!" at t=5.64 s (the robust controller's trajectory left the tube). This is a stochastic test, unrelated to the delta:
+  - The controller RNG seed defaults to `std::chrono::system_clock::now()` (`include/mppi/controllers/controller.cuh:60`), so every run samples different noise.
+  - The rmppi_test object depends on none of the 7 changed files (`ninja -t deps`; the only objects that do are racer_suspension_model_test, autorally_standard_cost_test and autorally_robust_cost_test). `git diff 11b61ab 70d2b68 -- tests/controllers include/mppi/controllers include/mppi/core` is empty.
+  - I built `tests/controllers/rmppi_test` at 11b61ab in a scratch worktree with the same recipe, unbundled `.hip_fatbin` from both binaries (`clang-offload-bundler --unbundle --targets=hipv4-amdgcn-amd-amdhsa--gfx90a`) and compared `llvm-objdump -d` with addresses stripped. The device ISA is identical (17210 lines each). The only difference in the code objects is the path-derived `__hip_cuid_*` symbol, because the two trees live in different directories. `utils/codeobj_diff.py` could not run here: it hardcodes `/opt/rocm/llvm/bin/llvm-nm`, and there is no `/opt/rocm` on this TheRock pip host.
+  - Rerun rate at 70d2b68: run directly, `rmppi_test --gtest_filter=RMPPITest.RobustMPPILargeVarianceRobustCost` passed 10/10; `ctest -R RMPPITest` failed 2 of 15 runs (RobustCost case each time). At 11b61ab, `ctest -R RMPPITest` failed 0 of 15. With the same device code and a time-based seed, that is sampling noise. It is an intermittent case, not a regression.
+
+Comparison with this platform's 11b61ab record (431/462, 31 fail = 30 deterministic-or-known + 1 intermittent VecAddVecMultScalar): +1 test and +1 pass, both the added FractionalThrottleBrake. The deterministic failures are the same by name, and so is the not-run set. The intermittent cases that failed differ (2 CompareLikelihoodRatio + 1 RMPPI here; VecAddVecMultScalar there). The porter's gfx90a count at 70d2b68 (431/463, 32 fail = 29 + 3 pool) and the gfx1100 validator's count at 70d2b68 (433/463, 30 fail = 29 + 1 pool) match this run apart from which intermittent cases happened to fail. Every difference is either the added test or an intermittent case whose compiled code the delta does not touch.
+
+GPU verdict: PASS on gfx90a wave64.
+
+### CUDA gate
+Already recorded at 70d2b68 ("CUDA compile check (nvcc 12.8) at 70d2b68": PASS). Not re-run.
+
+### Finish checks
+- Jargon: `python3 utils/jargon.py --port MPPI-Generic` -> clean.
+- Documentation: README "Building MPPI-Generic for AMD GPUs (ROCm)" (README.md:64) present next to the CUDA build.
+- Integrity: `git -C src status --porcelain` shows only `?? build-hip/` (I deleted the `robust_rc_large_*.npy` outputs from the direct rmppi_test runs). cnpy is clean at 91c53bc. The scratch 11b61ab worktree has been removed.
+
+State: completed at 70d2b68 on linux-gfx90a.

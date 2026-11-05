@@ -89,3 +89,7 @@
 {"kind":"phase","ts":"2026-11-05T06:18:47Z","phase":"compile","seconds":40.938,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/rx7900-20261104-221452-v-mppi-generic/moat/projects/MPPI-Generic/src/build-hip -j 32"}
 {"kind":"phase","ts":"2026-11-05T06:21:43Z","phase":"test","seconds":158.374,"exit":8,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/rx7900-20261104-221452-v-mppi-generic/moat/projects/MPPI-Generic/src/build-hip -j1 --timeout 600"}
 {"kind":"session","ts":"2026-11-05T06:22:43Z","epoch":1793859763.980044164,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-05T06:24:41Z","epoch":1793859881.050182782,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-05T06:26:23Z","phase":"compile","seconds":52.058,"exit":0,"cmd":"cmake --build projects/MPPI-Generic/src/build-hip -j 64"}
+{"kind":"phase","ts":"2026-11-05T06:30:14Z","phase":"test","seconds":215.586,"exit":8,"cmd":"ctest --test-dir projects/MPPI-Generic/src/build-hip -j1 --timeout 120"}
+{"kind":"session","ts":"2026-11-05T06:39:45Z","epoch":1793860785.451103466,"event":"end","platform":"linux-gfx90a"}
