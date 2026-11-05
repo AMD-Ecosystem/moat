@@ -787,3 +787,75 @@ CUDACXX=/usr/local/cuda-12.8/bin/nvcc VERBOSE=1 bash scripts/build.sh Release
 - `matching.cu` MatchSiftPoints2 now uses signed `min(int,int)` where upstream mixed int and unsigned; `MatchSiftData` returns early when either point count is 0, so `numPts-1 >= 0` and both forms pick the same index.
 
 Result: no CUDA regression at db7c163. Platform states unchanged.
+
+## Fix round moat-fix-97 (2026-11-05, linux-gfx1100) -- HIP host min/max truncation in ExtractSift
+
+Request: jeff's sweep for HIP host `min`/`max` truncation (`~/claude-shared/plans/moat-hip-host-minmax-truncation-sweep.md`) hit `cudaSiftH.cu:114` and `:125`, `LowPass(lowImg, img, max(initBlur, 0.001f))` in the public `ExtractSift` (double, float). ROCm's `__clang_hip_math.h` defines host `min`/`max` only for `(int, int)` unless `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__` is set (unset here), so both arguments became int. CUDA's host `max(double, float)` is `fmax`. The previous round (db7c163) had merged, so `fix-branch` re-used the name `moat-fix-97`, cut from the published tip db7c163.
+
+Change: fork commit 5135acc on `moat-fix-97` (base/published db7c163), `[ROCm] Use fmax for the initial blur clamp in ExtractSift`: both call sites `max(` -> `fmax(` (no `#ifdef`, plain C++; `fmax(double, float)` resolves through the standard promoting overload to `fmax(double, double)`, the same as CUDA's `max(double, float)` body), plus `TestInitialBlur` in `tests/test_extract.cpp` (feature count must strictly decrease over initBlur 0, 0.5, 1, 1.6). Device code and `(int, int)` calls untouched. Pushed `moat-fix-97` only; `moat-port` still db7c163. `python3 utils/jargon.py --port CudaSift` clean; message `prose.py`/`jargon.py` clean; title 58 chars. `advance-head CudaSift 5135acc...`. nvcc compile not run (no CUDA on this host); the dispatcher runs it on the mi355 host.
+
+Environment: gfx1100 (Radeon Pro W7800, wave32), `HIP_VISIBLE_DEVICES=0` pinned by the dispatcher, ROCm 7.16 wheel SDK (`/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`), OpenCV 4.6.0, all GPU runs under `ulimit -c 0`. Build exactly as the 2026-11-04 gfx1100 entry (plus `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` for the sweep).
+
+### Re-sweep of the whole project (host-only, poisoned min/max)
+
+Every TU in `build-hip/compile_commands.json` recompiled with its real flags plus `--cuda-host-only -fsyntax-only -include poison.h` (`template<class A,class B> void min(A,B)=delete;` and the same for `max`), three times: as built, with `-DMANAGEDMEM`, and with `-DCUDART_VERSION=12000` (the guards that are off in this build). Only hits anywhere: `cudaSiftH.cu:114:26` and `:125:28`. After the fix: 0 hits in `cudaSiftH.cu`. Judged harmless / not applicable:
+- `-DMANAGEDMEM` fails with "no member named 'h_data' in 'SiftData'" in several files and `threads` undeclared at `cudaSiftH.cu:359`: that build option is already broken upstream, unrelated, and its regions contain no min/max (grep).
+- `-DCUDART_VERSION=12000` only switches device shuffle intrinsics in `cudautils.h` (static-assert on 32-bit masks is device-side, unrelated).
+- `geomFuncs.cpp` compiles with the host C++ compiler, never sees the HIP header, and has no min/max.
+- `match.cu` is not built by CMake; it has no min/max calls. `#if 0` regions in `cudaSiftH.cu`, `matching.cu`, `match.cu`: no min/max (grep over all sources, disabled regions included).
+- All other textual `min(`/`max(` hits are in `__global__`/`__device__` code in `cudaSiftD.cu` and `matching.cu` (device overloads cover float there), plus `std::min` in tests.
+
+Baseline build also showed the defect as 4 clang warnings: `cudaSiftH.cu:114:40` / `:125:42` "implicit conversion from 'float' to 'int' changes value from 0.001 to 0 [-Wliteral-conversion]" (each twice). Fresh full build after the fix: 154 warnings, the 158 baseline minus exactly those 4.
+
+### Run-time evidence (probe driver, outside the fork)
+
+`agent_space/probe/blur_probe.cpp` links `build-hip/libcudasift_lib.a`; for scaleUp 0/1 and initBlur 1.0/1.6/0.5 it extracts img1 and img2, counts NaN in position/scale/orientation/descriptor, runs `MatchSiftData` and `FindHomography(..., 10000, 0.00f, 0.80f, 5.0)`. Run from src/ (needs `data/`).
+
+| scaleUp | initBlur | before db7c163 kpts1/kpts2, RANSAC | after 5135acc kpts1/kpts2, RANSAC |
+|---|---|---|---|
+| 0 | 1.0 | 1910/2084, 847 | 1910/2084, 851 |
+| 0 | 1.6 | 1910/2084, 852 (same as 1.0) | 1262/1390, 631 |
+| 0 | 0.5 | 3600/3938, 1165 (no blur) | 2806/3042, 1073 |
+| 1 | 1.0 | 3104/3438, 1159 | 3104/3438, 1159 |
+| 1 | 1.6 | 3104/3438, 1158 (same as 1.0) | 2332/2536, 977 |
+| 1 | 0.5 | 4102/4514, 1354 (no blur) | 3805/4174, 1317 |
+
+NaN count 0 in every row, before and after. The predicted NaN for initBlur < 1 does not show in this build because CMake adds `-ffast-math`: `LowPass(scale=0)` computes `ivar2 = 1/(2*0*0)` and, compiled with `-O3 -ffast-math`, the kernel comes out `0 0 0 0 1 0 0 0 0` (identity, i.e. no blur); compiled with plain `-O3` it is all `-nan` (checked with a standalone copy of the kernel loop, `agent_space/probe/kern.cpp`). So in this build the effect of initBlur < 1 is an unblurred image (3600 vs 2806 keypoints at 0.5); a consumer building without fast-math would get NaN keypoints. RANSAC counts at 1.0 vary run to run (847 vs 851), as in earlier records.
+
+### Tests at 5135acc
+
+Without the fix (test source at 5135acc, `cudaSiftH.cu` temporarily restored to db7c163, then put back): `test_extract` exit 1, 10 passed / 1 failed; TestInitialBlur saw 3600, 3600, 1910, 1910.
+
+With the fix, each `utils/timeit.sh CudaSift test -- bash -c 'cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/<bin>'`:
+
+| test | exit | result | key numbers |
+|---|---|---|---|
+| test_extract | 0 | 11 passed, 0 fail | basic 1910; thresh 7077/1910/542/6; initBlur 0/0.5/1/1.6 -> 3600/2806/1910/1262; octaves 1740/1876/1910/1919; scaleUp 3104 |
+| test_match | 0 | 11 passed, 0 fail | self-match 1901/1910 >0.95; 1910 valid / 1909 good; RANSAC 850 / 827 refined |
+| test_homography | 0 | 8 passed, 0 fail | translation h[2]=30.1473 h[5]=20.2825, 1643 matches; rotation 1196; scale 944; stereo 752 RANSAC / 682 inliers |
+
+Against the gfx1100 validation at db7c163 (10/11/8): the only count change is test_extract +1, the new test. Every initBlur=1.0 keypoint count is identical (1910; 7077/1910/542/6; 1740/1876/1910/1919; 3104; stereo 1452/2082), as expected since `fmax(1.0, 0.001f)` and int `max(1, 0)` both give 1. RANSAC-dependent numbers are within the run-to-run noise seen before (850/827 vs 851/828; stereo 752 vs 753; inliers 682 vs 675; translation h within 0.02 px).
+
+Fault-class entry: already written for LEAP on `port/LEAP` (`references/fault-classes.md`); not duplicated here.
+
+State: linux-gfx1100 porting -> ported (stage). All platforms owe revalidation at 5135acc. Reviewer next.
+
+### Proposed fix review PR body (for jeff)
+
+Title: `[ROCm] Use fmax for the initial blur clamp in ExtractSift`
+
+```
+A sweep of ROCm ports for HIP host min/max truncation found two call sites here: `ExtractSift` in `cudaSiftH.cu` (lines 114 and 125) clamps the initial blur with `max(initBlur, 0.001f)` in host code. HIP defines host `max` only for `(int, int)` (ROCm's `__clang_hip_math.h`, unless `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__` is set), so under ROCm both values were converted to int; CUDA's host `max(double, float)` is `fmax`. Nothing upstream asked for this; it is our defect in the PR.
+
+Effect on gfx1100 at db7c163: initBlur 1.6 gave exactly the 1.0 result (1910 keypoints on img1), and any initBlur below 1 became 0, an unblurred image with this project's -ffast-math build (0.5 gave 3600 keypoints instead of 2806) and an all-NaN low-pass kernel without fast-math. Every existing test passes 1.0, so none caught it.
+
+Change: one commit, 5135acc, `max(` -> `fmax(` at both call sites (what CUDA resolves to; no #ifdef, CUDA unchanged) and a new `TestInitialBlur` in `tests/test_extract.cpp` that requires strictly fewer features as initBlur goes 0, 0.5, 1, 1.6. A host-only recompile of every file with min/max poisoned, including the MANAGEDMEM and CUDART_VERSION branches, found no other host call site.
+
+Tested on gfx1100 (ROCm 7.16): without the fix the new test fails (3600, 3600, 1910, 1910); with it test_extract 11/11 (3600, 2806, 1910, 1262), test_match 11/11, test_homography 8/8, and every initBlur 1.0 keypoint count is unchanged.
+
+gfx90a, gfx1100 and the Windows GPUs are re-tested at 5135acc, and the CUDA build is compile-checked with nvcc, before this merges.
+
+## Upstream reply
+
+I've pushed a follow-up commit that fixes a bug this PR introduced in the ROCm build: `ExtractSift` clamped `initBlur` with a host `max` that HIP only defines for integers, so any non-integer initial blur was truncated (1.6 ran as 1, and values below 1 as 0). It now calls `fmax`, which is what the CUDA build already used, and `test_extract` has a new check that fails without it.
+```
