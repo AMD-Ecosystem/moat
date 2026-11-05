@@ -224,3 +224,5 @@
 {"kind":"phase","ts":"2026-11-05T05:52:15Z","phase":"compile","seconds":21.603,"exit":0,"cmd":"bash -c cd projects/TIGRE/src && /var/lib/jenkins/fleet/jobs/mi200-20261104-214101-v-tigre/venv/bin/python setup.py build_ext --inplace -j 16"}
 {"kind":"phase","ts":"2026-11-05T05:53:59Z","phase":"test","seconds":94.775,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi200-20261104-214101-v-tigre/moat/agent_space/run_head.sh /var/lib/jenkins/fleet/jobs/mi200-20261104-214101-v-tigre/moat/projects/TIGRE/src /var/lib/jenkins/fleet/jobs/mi200-20261104-214101-v-tigre/moat/agent_space/scripts"}
 {"kind":"session","ts":"2026-11-05T05:54:56Z","epoch":1793858096.803779499,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-05T06:33:33Z","phase":"compile","seconds":72.045,"exit":0,"cmd":"bash agent_space/tigre_build_win1151_f77.sh"}
+{"kind":"phase","ts":"2026-11-05T06:37:18Z","phase":"test","seconds":189.995,"exit":0,"cmd":"bash agent_space/tigre_run_f77.sh"}

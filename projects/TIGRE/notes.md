@@ -1659,3 +1659,32 @@ cd projects/TIGRE/src/Python && PYTHONPATH=$PWD MPLBACKEND=Agg $FLEET_VENV/bin/p
 - Integrity: `git -C projects/TIGRE/src status --porcelain` shows untracked build output only.
 - CUDA compile gate: already satisfied at f779703 (see "CUDA compile check (nvcc 12.8) at f779703"); not re-run.
 - For the fix review PR body retest line: linux-gfx90a (MI250X) at f779703: 8/8 build, 70 + 4 passed, all projection/reconstruction/adjointness/repeat checks equal b61ff14.
+
+## Validation 2026-11-05 (windows-gfx1151, validator, moat-fix-747 @ f779703 -> completed)
+
+jeff asked for this run. GPU: AMD Radeon 8060S / gfx1151 (RDNA3.5 APU), TheRock ROCm 7.14.0a20260519, Windows 11, MSVC 14.44. Fresh clone `agent_space/tigre-win2` detached at f779703298570f752da7c3994db3fc9903b9bf1c (`origin/moat-fix-747`), `git status --porcelain`: untracked build output only. All runs once, serially, `ulimit -c 0`, volumes as in the b61ff14 record. Nothing pushed to the fork.
+
+### Build
+Same recipe as the b61ff14 entry (Python 3.12 venv `agent_space/tigre_venv`, setuptools<72, serial build, `BUILD_WITH_HIP=1 HIP_ARCH=gfx1151 HIPCC=<rocm>/lib/llvm/bin/clang++.exe`, `rocm_stage_runtime` next to the `.pyd`s):
+```
+utils/timeit.sh TIGRE compile -- bash agent_space/tigre_build_win1151_f77.sh   # python setup.py build_ext --inplace in tigre-win2
+```
+rc 0, 0 `error:` lines, 8/8 `.pyd`, 72 s.
+
+### Tests
+```
+utils/timeit.sh TIGRE test -- bash agent_space/tigre_run_f77.sh   # 190 s
+```
+(pytest per file from `tigre-win2/Python` with `PYTHONPATH` set and `MPLBACKEND=Agg`, then `gates.py`, `tigre_parallel.py`, `solvers.py` from the host-local `agent_space/tigre-scripts/`.)
+- Upstream pytest, 7 files: compute_cor 6, demo_angles 1, denoise_2d_guard 3, filtering_workers 37, gpuids_default 5, krylov_restart_and_norms 9, krylov_smoke 9 -> **70 passed** (previous record b61ff14: 70). New `test_interpolated_voxel_size.py`: **4 passed** (10.4 s). Total 74, 0 failed. Matches gfx90a and gfx1100 at this head (74/74).
+- `gates.py`: Siddon 26.647/113.343, interp vs Siddon 0.0190, FDK 0.1481, OS-SART-20 0.1200, adjointness 1.527e-05 / 4.255e-04, PASS. `tigre_parallel.py`: axis 0.0087, offset 0.0087, FBP 0.1538, missed rays finite, PASS. `solvers.py`: all nine finite, PASS.
+- **Every gate number equals this platform's b61ff14 record to the printed digit.** Expected: those gates use dVoxel 1 or theta = psi = 0, where `fmaxf` and the truncating `max` agree. The only difference is the new test file (+4), which is the fix's own test.
+
+### Exclusions
+- `repeat_par.py` / `repeat_par_interp.py` (20 repeated projector calls per case, 16 cases per pass; parallel Siddon about 8 s per call on this APU): not run. They are repeat loops, which jeff barred on this host after the gfx1151 lockup earlier today, and they test the multi-GPU/race fix of an earlier head, which this delta does not touch. The b61ff14 record (0/20 differ in 16 cases) stands for them.
+- The before/after of the new test on b61ff14 (2 failed) was not re-run here; it is recorded on gfx90a and gfx1100.
+
+### Other gates
+CUDA compile gate: satisfied at f779703 (nvcc 12.8 entry above); not run on this Windows host. Docs unchanged by the delta (`Frontispiece/python_installation.md` keeps its AMD GPU section). `jargon.py --port TIGRE`: clean.
+
+Outcome: windows-gfx1151 -> completed at f779703298570f752da7c3994db3fc9903b9bf1c.
