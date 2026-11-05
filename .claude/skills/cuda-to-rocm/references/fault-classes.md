@@ -180,7 +180,14 @@ scope still works. ROCm's is genuinely asynchronous, so the freed and reused buf
 after the copy is enqueued. The corruption appears only in bytes the kernel does not
 overwrite, and the failing set varies run to run. This is a use-after-free that is latent UB
 on CUDA, not an allocator defect -- confirm by keeping the source alive and watching the
-failures vanish. (CV-CUDA: InterpolationVarShapeWrap.)
+failures vanish. (CV-CUDA: InterpolationVarShapeWrap.) Whether it bites depends on the
+runtime version and copy size, so a clean run is not evidence of safety: on HIP 7.16 (gfx942)
+a pageable H2D `hipMemcpyAsync` of at most 64 KiB is staged at call time and returns while
+the stream is still busy, and a larger one blocks until the stream drains, so neither reads
+the source after return there. Fix by the API contract (sync the stream, or a synchronous
+copy, before the buffer dies) instead of waiting for a reproduction; to probe a runtime,
+queue a long `clock64()` spin kernel, issue the copy, overwrite the source at once, then
+sync and compare. (GPUMD: `main_replica` Ewald `find_k_and_G`.)
 
 **A functor returning a reference to a by-value or forwarded parameter** binds to a
 temporary that expires at the return. nvcc and CUB happen to keep the value live in

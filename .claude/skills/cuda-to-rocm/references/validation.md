@@ -194,13 +194,19 @@ port. Compare the assertion count against the CUDA build's, or filter the failin
 section out and watch whether the total moves. A deferral that makes a test case
 abort quietly defers the rest of the file with it. (marian-dev)
 
-## "Fixed seed" builds that rely on C `rand()` are not reproducible under ROCm
+## "Fixed seed" builds that rely on C `rand()` are not reproducible on some ROCm builds
 
 Projects often get reproducible runs in a debug build by simply not calling `srand()`
-and seeding device RNGs from `rand()`. Under ROCm the runtime breaks that: when code
-objects load, comgr's embedded LLVM (`sys::fs::createUniquePath` ->
-`sys::Process::GetRandomNumber`) calls `srand()` with its own seed and then `rand()`
-(38 times for GPUMD, HIP 7.16) before the application's first call. Two runs of the
+and seeding device RNGs from `rand()`. Some ROCm builds break that. On the first kernel
+launch the HIP runtime compiles its internal copy kernels through comgr, and each comgr
+action makes a temp directory via LLVM `sys::fs::createUniquePath` ->
+`sys::Process::GetRandomNumber`, which calls `srand(<random seed>)` and then `rand()`
+(38 times on HIP 7.16) whenever LLVM was built without `arc4random` (glibc < 2.36 at
+LLVM build time, as in TheRock's manylinux SDK). It is not the application's code
+objects loading: `rand()` after `hipMalloc` is still the default stream. Check a host
+with `nm -D --undefined-only libLLVM*.so* libamd_comgr.so* | grep -w -e srand -e
+arc4random`; Ubuntu 24.04's distro comgr imports `arc4random` and is unaffected. Any
+`srand()` the program made before its first launch is overridden too. Two runs of the
 same input then draw different random streams, and a self-comparison suite (same
 binary as baseline and candidate) fails exactly the stochastic cases. To classify,
 rerun them with an `LD_PRELOAD` shim whose `srand()` is a no-op: if they pass, it is
