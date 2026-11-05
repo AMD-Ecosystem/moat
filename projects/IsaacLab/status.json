@@ -2,16 +2,57 @@
   "schema_version": 3,
   "name": "IsaacLab",
   "upstream_url": "https://github.com/isaac-sim/IsaacLab",
-  "fork_url": null,
+  "fork_url": "https://github.com/AMD-Ecosystem/IsaacLab",
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "screened",
   "adopted_at": "2026-11-05T22:48:53Z",
-  "updated_at": "2026-11-05T22:48:54Z",
+  "updated_at": "2026-11-05T23:18:52Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-05T23:15:13Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "BSD-3-Clause AND Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "BSD-3-Clause AND Apache-2.0",
+      "evidence": "https://github.com/isaac-sim/IsaacLab/blob/main/LICENSE",
+      "at": "2026-11-05T23:13:48Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none for Isaac Lab; AMD-Ecosystem/IsaacLab fork exists (empty, taken over); deps have AMD forks: AMD-Ecosystem/warp 1.13 (pin 1.17), AMD-Ecosystem/newton rocm-enablement, AMD-Ecosystem/mujoco_warp 3.8.1 (pin ~3.15)",
+    "viable": true,
+    "summary": "NVIDIA robot-learning framework, pure Python (no .cu); Kit-less Newton path is the target: install on ROCm via AMD Warp/Newton/MuJoCo-Warp forks (which trail Isaac Lab's pins), fix CUDA-only assumptions, run the 35 kitless test files, upstream a docs/packaging change; Kit/Isaac Sim path out of scope",
+    "at": "2026-11-05T23:15:11Z"
+  }
 }
