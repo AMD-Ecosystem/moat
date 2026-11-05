@@ -7,12 +7,12 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-05T19:04:17Z",
+  "updated_at": "2026-11-05T22:15:47Z",
   "head_sha": "af27a9f4b69e3f80eb5012ede0fa80294c6addd2",
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "license_spdx": "Apache-2.0 OR MIT OR GPL-2.0-only WITH Classpath-exception-2.0",
+  "license_spdx": "Apache-2.0",
   "intake": {
     "verdict": "decline",
     "reason": "already-supported",
@@ -109,5 +109,13 @@
     "by": "jeffdaily",
     "at": "2026-11-04T19:11:23Z",
     "reason": "Upstream PRs target develop; jeff 2026-11-04: mirror upstream develop onto the fork (pushed at f8e3ac907) and cut moat-port from it"
-  }
+  },
+  "license_spdx_history": [
+    {
+      "from": "Apache-2.0 OR MIT OR GPL-2.0-only WITH Classpath-exception-2.0",
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/beehive-lab/TornadoVM/blob/master/LICENSE_APACHE2",
+      "at": "2026-11-05T22:15:47Z"
+    }
+  ]
 }
