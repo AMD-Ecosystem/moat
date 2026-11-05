@@ -404,6 +404,6 @@ brucefan1983/GPUMD master ddc6e2d2 (2026-11-03) still has the bug at `src/force/
 - Upstream removed `tests/` (882583a7, 2026-09-20, "move regression tests"). Its harness is now `tests_regression/` (`run_regression.py` + `manifest.json`, baseline vs candidate). The `tests/run_tests.sh` stanza and `tests/gpumd/ilp_nep_cutoff/` cannot go upstream as written. The case would have to be re-expressed for `tests_regression/` or left out of the follow-up.
 - The same poison probe on upstream master (147 files) finds the same single hit. Separately, `utilities/nep_model_file.cu` (new upstream) fails the HIP host compile: `nep_utilities.cuh: unknown type name '__forceinline__'`, so the probe could not see into that file. That is an upstream HIP build regression for the next sync round, not part of this delta.
 
-CUDA compile with real nvcc is still owed before this goes to jeff (no nvcc on this host).
+CUDA compile: covered by the concurrent "CUDA compile check (nvcc 12.8) at 15124b5" entry above (mi355 host, rc 0, no new warning).
 
 Verdict: review-passed at 15124b53.
