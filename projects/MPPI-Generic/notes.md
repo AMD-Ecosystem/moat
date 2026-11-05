@@ -1328,7 +1328,7 @@ Already recorded at 70d2b68 ("CUDA compile check (nvcc 12.8) at 70d2b68": PASS).
 
 State: completed at 70d2b68 on linux-gfx90a.
 
-## Validation 2026-11-05 (windows-gfx1151 at 70d2b68, laptop safety procedure) -- in progress
+## Validation 2026-11-05 (windows-gfx1151 at 70d2b68, laptop safety procedure) -- completed
 
 Platform: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32), Windows 11, TheRock ROCm 7.14 pip SDK (`D:/Develop/TheRock/.venv`, AMD clang 23). Fork sha 70d2b686a037 (= origin/moat-port tip), cnpy 91c53bc. Per the 2026-10-29 incident (bugcheck 0x119 at ARRobustCostTest.getCostmapCostSpeedMapTest; any GPU page fault can crash this laptop), the run is chunked, one GPU process at a time, with a per-line fsync log at `agent_space/mppi-val/chunks.log`.
 
@@ -1340,3 +1340,35 @@ Excluded from the run (ctest `-E`), none of them run on this laptop:
 - Host-only Linux known failures are NOT excluded (they fail cleanly without the GPU): 6 npz loaders, RacerDubins.ComputeStateTrajectoryFiniteTest, 6 GaussianTests.Check*, Integration.RK4.
 - Not excluded but built from textured headers (no texture object is created at run time by their test sources): ddp_tests, vanilla_mppi_test, rollout_kernel_tests, racer_dubins/linear/sampling tests.
 - Disabled upstream (not run on any platform): 5 DISABLED_, 3 GTEST_SKIP.
+
+### Build (incremental, existing build-hip tree configured for gfx1151)
+```
+cmake -S src -B src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_HIP_COMPILER=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release     # configured earlier at 11b61ab
+git -C src checkout 70d2b686a037 && git -C src submodule update --init --recursive   # cnpy 91c53bc
+source agent_space/win_rocm_env.sh; unset CC CXX; utils/timeit.sh MPPI-Generic compile -- cmake --build <abs>/src/build-hip -j12   # 17 s, 7 steps (the delta's 3 TUs + links), 0 errors
+```
+Whole tree is 155 targets and built at 11b61ab; the CMake-side `WINDOWS_EXPORT_ALL_SYMBOLS` cnpy export (the one thing the Windows record had to confirm) links and runs: cnpy.dll is produced and the npz-loading tests pass. 16 physical cores, `-j12`.
+
+Environment issue found: configure's `find_package(PythonInterp)` picked a Python without numpy, so `generateTestNetwork.py` failed at configure time and `build-hip/neuralNet*.npz` was never generated (FNNHelperTest.LoadModelTest/LoadModelNPZTest and ARNeuralNetDynamics.LoadModelTest failed with "Could not load neural net model"). Generated them with `agent_space/torch312_venv/Scripts/python.exe scripts/autorally/test/generateTestNetwork.py -o build-hip` and re-ran the four affected chunks. `generateTestMaps.py` was not run (feeds only the excluded texture tests). Not a port defect.
+
+### Chunked run
+`agent_space/mppi-val/run_chunks.py`: 27 chunks, each `ctest --test-dir build-hip -j1 --timeout 90 -R '^(<suites>)[./]' -E '<exclusion regex>'` (one exe's suites at a time), `ulimit -c 0`, every output line fsynced to `agent_space/mppi-val/chunks.log`, stop on any fault text. Whole run ~8 min. No GPU fault, hang, or crash anywhere; the laptop did not bugcheck. Final chunk: `racer_suspension_model_test.exe --gtest_filter='-*CPUvsGPU'` direct: 4/4 pass (Template, BindStream, OmegaJacobian, FractionalThrottleBrake).
+
+### Result
+533 tests registered; 45 excluded (26 ARStandardCost, 7 ARRobustCostTest, 2 QuadrotorMapCost, 5 RacerSuspensionTest [4 run separately at the end], ARNeuralNetDynamics.computeGradTest, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, cuFFT.checkErrorCode, Dynamics.stepGPU, DubinsDynamics.TestUpdateStateGPU). Of the 488 run in chunks (after the npz re-run): 462 pass, 20 fail, 5 DISABLED_ not run, 1 GTEST_SKIP; plus 4/4 RacerSuspension = 466 pass.
+
+20 failures, all clean (no fault), by cause:
+- Match Linux's recorded failures at 70d2b68 by name (13): GaussianTests.Check* x6, Integration.RK4, RacerDubins.ComputeStateTrajectoryFiniteTest, and 4 SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU (the known intermittent FP-tolerance pool, 0-4 failing per run on Linux).
+- Windows-only, recorded the same way on windows-gfx1101 on 2026-06-05 (6): BasePlantTest.run* x5 (wall-clock bounds, e.g. optimization duration 29.9 ms vs allowed 16.7-24.7 ms, and 8 iterations vs 10 expected; Windows scheduling), WeightedReductionKernel.strideControlWeightReduction (Windows 1 MB default stack vs the test's multi-MB local arrays).
+- New on Windows (1): ControllerKernelChoiceTest/15.MoreEvaluationsDoNotAdjustChoice, RobustMPPIController, DoubleIntegrator. The test picks a rollout kernel from measured wall-clock times and asserts the choice stays put; at 20 iterations "split 60.36 ms vs single 58.91 ms" flipped it. Timing noise on a shared APU, no GPU error; the other 15 variants pass.
+- Intermittent (1, also seen on gfx90a): RMPPITest.RobustMPPILargeVarianceRobustCost failed once (2.2 s), passed on a direct rerun (15.9 s). Time-seeded stochastic test whose compiled code the delta does not touch.
+
+Differences from Linux: (a) 6 npz loaders that fail on Linux pass here (a working numpy path); (b) the Windows-only timing/stack failures above; (c) the registered-test total (533 vs Linux 463 run + 8 not run = 471) differs by a constant 62, identical to the 11b61ab comparison on this host (532 vs 470), so it is how the toolchains name/expand typed tests under ctest, not new tests; the unexplained part is not investigated further. The new test, RacerSuspensionTest.FractionalThrottleBrake, passes.
+
+Not validated on this platform, by design of the safety procedure: the excluded texture map-cost tests and the 5 GPU-failing known tests (all fail cleanly on Linux, deferred feature).
+
+CUDA gate: already recorded at 70d2b68, not re-run (no toolkit here). Finish checks: `python utils/jargon.py --port MPPI-Generic` clean; README has "Building MPPI-Generic for AMD GPUs (ROCm)"; `git -C src status --porcelain` has no modified tracked files (only untracked build output and logs); cnpy clean at 91c53bc.
+
+GPU verdict: PASS on windows-gfx1151 for everything that ran. State: completed at 70d2b68.
