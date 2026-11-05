@@ -51,3 +51,14 @@ Shared-code note for the planner: items 1-5 and 9 touch `install/cupy_builder` a
 ## Ruling 2026-11-04 (jeff): PR base and mirror
 The PR base is upstream cupy/cupy `main`. ROCm/cupy had no `main` (its default `master` stopped at 2026-01-31 when the fork became staging-only), so a `main` branch mirroring upstream was pushed to ROCm/cupy at 6efc0a4. ROCm/cupy's `master` and its default branch are left as they are (not ours to reconfigure). `fork_default_branch` stays `main`. moat-port was cut from upstream main at 18b54de.
 - Gates (jeff 2026-11-04): all three gates stay required (wave64, wave32, windows). The Windows work touches code the Linux HIP build shares, so the Linux validations are the regression check for CuPy's existing Linux ROCm build.
+
+## Planner 2026-11-04 (windows-gfx1151)
+
+plan.md and surface.json written against upstream main 6efc0a4 (moat-port 18b54de is 4 commits behind; none touch planned files). Laptop probes against TheRock 7.14.0a20260612 (`rocm-sdk path --root`), no CuPy build:
+- hiprtc DLL is `hiprtc0714.dll` (`hiprtc{MAJOR:02d}{MINOR:02d}.dll`); no roctracer/roctx/rccl libs or headers on Windows; all other import libs present.
+- cl.exe cannot host-compile `hiprand/hiprand_kernel.h` (C2676/C3861/C2146); clang-cl can. clang-cl ignores setuptools' `/GL`, so only `compiler.cc` needs swapping.
+- `hipcc -c` defaults to the static CRT (`RuntimeLibrary=MT_StaticRelease`); `-fms-runtime-lib=dll` gives `MD_DynamicRelease`.
+- hipcc on Windows silently targets gfx906 without `--offload-arch`; `--offload-arch=native` fails here; `HCC_AMDGPU_TARGET` is honoured.
+- HIP stubs resolved via `ctypes.CDLL(__file__)` need explicit export on Windows (plan risk 1).
+- `hipconfig --rocmpath` prints the devel root; `which hipcc` finds the venv shim, so the Linux root heuristic is wrong on Windows.
+Eight open questions for jeff are in plan.md.

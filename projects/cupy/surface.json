@@ -1,0 +1,258 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "6efc0a448869",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "cupy\\_core\\include\\cupy\\atomics.cuh",
+      "cupy\\_core\\include\\cupy\\bfloat16.cuh",
+      "cupy\\_core\\include\\cupy\\carray.cuh",
+      "cupy\\_core\\include\\cupy\\complex.cuh",
+      "cupy\\_core\\include\\cupy\\complex\\arithmetic.h",
+      "cupy\\_core\\include\\cupy\\complex\\catrig.h",
+      "cupy\\_core\\include\\cupy\\complex\\catrigf.h",
+      "cupy\\_core\\include\\cupy\\complex\\ccosh.h",
+      "cupy\\_core\\include\\cupy\\complex\\ccoshf.h",
+      "cupy\\_core\\include\\cupy\\complex\\cexp.h",
+      "cupy\\_core\\include\\cupy\\complex\\cexpf.h",
+      "cupy\\_core\\include\\cupy\\complex\\clog.h",
+      "cupy\\_core\\include\\cupy\\complex\\clogf.h",
+      "cupy\\_core\\include\\cupy\\complex\\complex.h",
+      "cupy\\_core\\include\\cupy\\complex\\complex_inl.h",
+      "cupy\\_core\\include\\cupy\\complex\\cpow.h",
+      "cupy\\_core\\include\\cupy\\complex\\cproj.h",
+      "cupy\\_core\\include\\cupy\\complex\\csinh.h",
+      "cupy\\_core\\include\\cupy\\complex\\csinhf.h",
+      "cupy\\_core\\include\\cupy\\complex\\csqrt.h",
+      "cupy\\_core\\include\\cupy\\complex\\csqrtf.h",
+      "cupy\\_core\\include\\cupy\\complex\\ctanh.h",
+      "cupy\\_core\\include\\cupy\\complex\\ctanhf.h",
+      "cupy\\_core\\include\\cupy\\complex\\math_private.h",
+      "cupy\\_core\\include\\cupy\\float16.cuh",
+      "cupy\\_core\\include\\cupy\\hip_workaround.cuh",
+      "cupy\\_core\\include\\cupy\\structview.cuh",
+      "cupy\\_core\\include\\cupy\\type_dispatcher.cuh",
+      "cupy\\_core\\include\\cupy\\unstructured_void.cuh",
+      "cupy\\cuda\\cupy_cub.cu",
+      "cupy\\cuda\\cupy_cub.h",
+      "cupy\\cuda\\cupy_cufft.h",
+      "cupy\\cuda\\cupy_cufftXt.cu",
+      "cupy\\cuda\\cupy_cufftXt.h",
+      "cupy\\cuda\\cupy_thrust.cu",
+      "cupy\\random\\cupy_distributions.cu",
+      "cupy\\random\\cupy_distributions.cuh",
+      "cupy_backends\\cuda\\cupy_cublas.h",
+      "cupy_backends\\cuda\\cupy_cusolver.h",
+      "cupy_backends\\cuda\\cupy_cusparse.h",
+      "cupy_backends\\cuda\\cupy_nccl.h",
+      "cupy_backends\\cupy_cusparselt.h",
+      "cupy_backends\\cupy_lapack.h",
+      "cupy_backends\\cupy_nccl.h",
+      "cupy_backends\\cupy_rand.h",
+      "cupy_backends\\hip\\cupy_cusparselt.h",
+      "cupy_backends\\hip\\cupy_hip.h",
+      "cupy_backends\\hip\\cupy_hip_common.h",
+      "cupy_backends\\hip\\cupy_hipblas.h",
+      "cupy_backends\\hip\\cupy_hiprand.h",
+      "cupy_backends\\hip\\cupy_hipsparse.h",
+      "cupy_backends\\hip\\cupy_rocsolver.h",
+      "cupyx\\scipy\\ndimage\\cuda\\pba_kernels_2d.h",
+      "cupyx\\scipy\\ndimage\\cuda\\pba_kernels_3d.h",
+      "examples\\gemm\\sgemm.cu"
+    ],
+    "markers": {
+      "device_code": 578,
+      "kernel": 20,
+      "launch": 2,
+      "warp_intrinsic": 8,
+      "driver_api": 13,
+      "texture": 1
+    },
+    "libraries": {
+      "cusparse": 1583,
+      "cusolver": 619,
+      "nccl": 115,
+      "curand": 81,
+      "thrust": 191,
+      "cub": 3,
+      "cufft": 109,
+      "cublas": 489
+    }
+  },
+  "components": [
+    {
+      "id": "build:win32-rocm-root",
+      "kind": "build",
+      "where": "install/cupy_builder/install_build.py get_rocm_path"
+    },
+    {
+      "id": "build:win32-hip-host-compiler-clang-cl",
+      "kind": "build",
+      "where": "install/cupy_builder/{install_build,cupy_setup_build,_command}.py"
+    },
+    {
+      "id": "build:win32-hip-cxx17",
+      "kind": "build",
+      "where": "install/cupy_builder/install_build.py get_compiler_setting"
+    },
+    {
+      "id": "build:win32-hip-device-compiler-hipcc",
+      "kind": "build",
+      "where": "install/cupy_builder/_compiler.py DeviceCompilerWin32"
+    },
+    {
+      "id": "build:win32-hip-library-set",
+      "kind": "build",
+      "where": "install/cupy_builder/_features.py HIP_cuda_nvtx_cusolver"
+    },
+    {
+      "id": "extension:cuda (HIP_cuda_nvtx_cusolver: runtime, driver, cublas, curand, cusparse, nvrtc, cufft, cusolver, nvtx, _core/*)",
+      "kind": "python_extension",
+      "where": "install/cupy_builder/_features.py"
+    },
+    {
+      "id": "extension:cub (cupy/cuda/cupy_cub.cu)",
+      "kind": "python_extension",
+      "where": "install/cupy_builder/_features.py HIP_cub"
+    },
+    {
+      "id": "extension:thrust (cupy/cuda/cupy_thrust.cu)",
+      "kind": "python_extension",
+      "where": "install/cupy_builder/_features.py HIP_thrust"
+    },
+    {
+      "id": "extension:random (cupy/random/cupy_distributions.cu)",
+      "kind": "python_extension",
+      "where": "install/cupy_builder/_features.py HIP_random"
+    },
+    {
+      "id": "extension:dlpack",
+      "kind": "python_extension",
+      "where": "install/cupy_builder/_features.py COMMON_dlpack"
+    },
+    {
+      "id": "extension:nccl (RCCL, optional)",
+      "kind": "python_extension",
+      "where": "install/cupy_builder/_features.py HIP_nccl"
+    },
+    {
+      "id": "runtime:roctx-noop",
+      "kind": "runtime",
+      "where": "cupy_backends/hip/cupy_roctx.h"
+    },
+    {
+      "id": "runtime:roctracer-profiler-noop",
+      "kind": "runtime",
+      "where": "cupy_backends/hip/cupy_profiler.h"
+    },
+    {
+      "id": "runtime:softlink-self-exports (driver cu*, cudaRuntimeGetVersion, cusparse generic stubs)",
+      "kind": "runtime",
+      "where": "cupy_backends/hip/cupy_hip*.h, cupy_hipsparse.h"
+    },
+    {
+      "id": "runtime:hiprtc-dll-name",
+      "kind": "runtime",
+      "where": "cupy_backends/cuda/libs/_cnvrtc.pxi"
+    },
+    {
+      "id": "runtime:hipcc-include-dirs-probe",
+      "kind": "runtime",
+      "where": "cupy/_environment.py _get_hipcc_include_dirs"
+    },
+    {
+      "id": "runtime:runtime-hipcc-path-and-arch (CUB block reduction, hipcc backend)",
+      "kind": "runtime",
+      "where": "cupy/cuda/compiler.py, cupy/_core/_cub_reduction.pyx"
+    },
+    {
+      "id": "runtime:win32-rocm-root",
+      "kind": "runtime",
+      "where": "cupy/_environment.py _get_rocm_path"
+    },
+    {
+      "id": "runtime:win32-dll-directory",
+      "kind": "runtime",
+      "where": "cupy/_environment.py, cupy/__init__.py"
+    },
+    {
+      "id": "docs:install-rocm-windows",
+      "kind": "docs",
+      "where": "docs/source/install.rst"
+    },
+    {
+      "id": "test:cupy_tests/cuda_tests",
+      "kind": "test",
+      "where": "tests/cupy_tests/cuda_tests"
+    },
+    {
+      "id": "test:cupy_tests/cuda_tests/test_texture.py",
+      "kind": "test",
+      "where": "tests/cupy_tests/cuda_tests/test_texture.py"
+    },
+    {
+      "id": "test:cupy_tests/core_tests",
+      "kind": "test",
+      "where": "tests/cupy_tests/core_tests"
+    },
+    {
+      "id": "test:cupy_tests/array-library suites (creation..functional, test_*.py)",
+      "kind": "test",
+      "where": "tests/cupy_tests"
+    },
+    {
+      "id": "test:cupyx_tests/{linalg,jit}_tests + test_*.py",
+      "kind": "test",
+      "where": "tests/cupyx_tests"
+    },
+    {
+      "id": "test:cupyx_tests/scipy_tests/{linalg,sparse,special}_tests",
+      "kind": "test",
+      "where": "tests/cupyx_tests/scipy_tests"
+    },
+    {
+      "id": "test:cupyx_tests/scipy_tests (remaining: ndimage, signal, interpolate, ...)",
+      "kind": "test",
+      "where": "tests/cupyx_tests/scipy_tests"
+    },
+    {
+      "id": "test:cupyx_tests/signal_tests",
+      "kind": "test",
+      "where": "tests/cupyx_tests/signal_tests"
+    },
+    {
+      "id": "test:cupyx_tests/distributed_tests",
+      "kind": "test",
+      "where": "tests/cupyx_tests/distributed_tests"
+    },
+    {
+      "id": "test:example_tests",
+      "kind": "test",
+      "where": "tests/example_tests"
+    },
+    {
+      "id": "test:install_tests + import_tests (non-GPU)",
+      "kind": "test",
+      "where": "tests/install_tests, tests/import_tests"
+    },
+    {
+      "id": "example:examples/",
+      "kind": "example",
+      "where": "examples/"
+    },
+    {
+      "id": "validation:cuda-linux-nvcc-no-regression",
+      "kind": "validation",
+      "where": "mi355 nvcc build"
+    },
+    {
+      "id": "validation:cuda-windows-no-regression",
+      "kind": "validation",
+      "where": "no MOAT host can build it (plan Q4)"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "removed_from_floor": [],
+  "planner_note": "setuptools+Cython build: scan_components finds no components, so every entry is planner-added. The CUDA census is upstream's existing Linux HIP surface; this Windows delta adds no device code. Nothing is scoped out yet: rccl/roctracer/roctx absence on Windows is handled by no-op/optional paths and texture, deferred-suite and CUDA-Windows coverage are open questions for jeff (plan.md Q3, Q4)."
+}

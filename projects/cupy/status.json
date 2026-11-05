@@ -6,15 +6,12 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
-  "stage": "planning",
+  "stage": "planned",
   "adopted_at": "2026-11-04T22:34:29Z",
-  "updated_at": "2026-11-05T07:05:30Z",
+  "updated_at": "2026-11-05T07:26:46Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-05T07:05:30Z"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx1100": {
@@ -47,7 +44,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-05T07:05:30Z",
+      "updated_at": "2026-11-05T07:26:46Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -79,5 +76,10 @@
     "viable": true,
     "summary": "CuPy (MIT) Windows ROCm build only: Linux HIP is upstream; Windows device compiler raises for HIP, needs hipcc/clang-cl path, hiprtc DLL name, no roctracer/rccl, DLL dirs; unblocks gpu4pyscf windows",
     "at": "2026-11-04T22:41:45Z"
+  },
+  "porting_released": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-05T07:05:30Z",
+    "at": "2026-11-05T07:26:46Z"
   }
 }
