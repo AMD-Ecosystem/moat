@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
   "adopted_at": "2026-06-04T01:07:42Z",
-  "updated_at": "2026-11-05T07:26:49Z",
+  "updated_at": "2026-11-05T07:33:27Z",
   "head_sha": "f779703298570f752da7c3994db3fc9903b9bf1c",
   "depends_on": [],
   "pr_url": "https://github.com/CERN/TIGRE/pull/747",
@@ -164,13 +164,8 @@
       "last_agent": "validator"
     }
   },
-  "published_sha": "b61ff14c87689beb1b08e2bcd8223c29ce85a83d",
-  "fix": {
-    "branch": "moat-fix-747",
-    "base_sha": "b61ff14c87689beb1b08e2bcd8223c29ce85a83d",
-    "review_pr": "https://github.com/AMD-Ecosystem/TIGRE/pull/2",
-    "opened_at": "2026-11-05T05:02:37Z"
-  },
+  "published_sha": "f779703298570f752da7c3994db3fc9903b9bf1c",
+  "fix": null,
   "porting_released": {
     "arch": "linux-gfx90a",
     "since": "2026-11-05T05:26:24Z",
@@ -178,10 +173,10 @@
   },
   "pr_approval": {
     "approved_by": "jeffdaily",
-    "at": "2026-11-04T23:09:24Z",
-    "head_sha": "b61ff14c87689beb1b08e2bcd8223c29ce85a83d",
-    "content_sha256": "7fdcb56a3ec50c58a011afc0619d67046182ed5848ba9fbdf4aead8eee68cac9",
-    "review_pr": "https://github.com/AMD-Ecosystem/TIGRE/pull/1"
+    "at": "2026-11-05T07:31:22Z",
+    "head_sha": "f779703298570f752da7c3994db3fc9903b9bf1c",
+    "content_sha256": "19f537f43e5238f4046c15e632960158278c274c4c58c96d03dabaa6ad911d65",
+    "review_pr": "https://github.com/AMD-Ecosystem/TIGRE/pull/2"
   },
-  "fix_merged_at": "2026-11-04T23:20:07Z"
+  "fix_merged_at": "2026-11-05T07:33:27Z"
 }
