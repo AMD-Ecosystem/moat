@@ -2468,3 +2468,7 @@ buf/tex ratios, both rounds: project 3.02-3.31, backproject 1.81-2.49 (modular S
 
 ### Not done
 - Squash message not edited; the replacement sentence above is for jeff. No fork push, no GitHub writes, no platform state change.
+
+## PR-prep squash (2026-11-05)
+
+jeff approved and ran `agent_space/leap-squash-push.sh`: `moat-port` 63d2724 (10 commits on 0c8846f) -> 00fae7e (2 commits, identical tree 0b39c07). Commit 1 `[ROCm] Port LEAP to HIP, reading through textures or linear memory` (the checked message plus the host min/max bullet, with both texture-vs-buffer "bit-identical" claims corrected per "gfx90a texture vs buffer at 63d2724": 50 of 56 outputs bit-identical, six within 6.7e-6 relative); commit 2 `Fix off-by-one bounds checks in bilateral_filter.cu` (unchanged checked text). `squash-carry-forward` carried linux-gfx942, linux-gfx90a, linux-gfx1100 and windows-gfx1151; windows-gfx1201/gfx1101 (offline hosts) stay at c77df45. Messages in `agent_space/leap-squash-msg{1,2}.txt` (local).
