@@ -717,3 +717,38 @@ python3 tests_regression/run_regression.py --repo-root "$PWD" --suite full --bas
 gpumd, nep, gpumd_replica and tb build. The NEP-spin tests pass 110 of 114, including the FP64 reference checks; in two full runs of the regression suite, 250 and 248 of the 256 cases pass, and the relations pass 25 of 25 and 21 of 21 (4 skipped because a member case failed). The remaining failures are of two kinds. Cases that depend on the default `rand()` stream (the four `test_corrector_preserves_force_modifiers` cases, `replicate_velocity_unseeded`, `graphene_hac`, `graphene_nemd_shc`, `graphene_hnemd_shc`, `silicon_liquid_transport`) differ between runs on some ROCm builds, because the runtime reseeds the C library's `rand()` when it prepares its internal kernels on the first launch; they pass when that reseed is suppressed. The others are float-atomic summation noise at or just above absolute bounds that the regression README asks to be checked by self-comparison on the target GPU: `qnep_pppm_future_bec` (BEC up to 1.2e-5 against 1e-5, thermo 1.0e-7 to 1.1e-7 against 1e-7, or one unit in the last printed digit of a value printed to six decimals) fails in most runs, and `pppm_round_5_7` (1.03e-7 against 1e-7) and `observer_average_then_observe_control` (one value differing in the last bit) fail occasionally.
 
 (Before presenting: update the counts after every gate's revalidation at the PR head, add the mi355 nvcc result for 51018103, and apply jeff's ruling on the two rand() deferrals.)
+
+## CUDA compile check (nvcc 12.8) at 51018103
+
+Helper run on the mi355 fleet host (CUDA 12.8 toolkit, V12.8.93; no NVIDIA GPU), compile only, requested by jeff. Fresh clone of the fork's `moat-port` at **51018103** vs `git worktree add ../up c3d5d8ac` (upstream master). CUDA-visible delta: 070d3f53 (`gpu_macro.cuh` include in `utilities/nep_utilities.cuh`; `gpuLaneMask()` at 12 call sites -- 4 in `force/nep_spin/nep_spin.cu`, 6 in `force/nep_spin/nep_spin3_force.cuh`, 2 in `main_nep/nep_spin/nep_spin.cu`; explicit width `warp_size` on the two shuffles in `apply_ann_one_layer_warp`), the carried 15124b53 host line in `force/ilp_nep.cu`, and 51018103 (`CHECK(gpuStreamSynchronize(stream))` in `main_replica/force/ewald.cu` `Ewald::find_k_and_G`, host only). f3622149 is `tests_regression/` only.
+
+Recipe: upstream's unmodified `src/makefile` (default `all` = gpumd nep gpumd_replica tb; `nvcc -std=c++14 -O3 -arch=sm_60 -Xcompiler="<makefile WARN_FLAGS>" -I./`), both trees concurrently:
+
+    export PATH=/usr/local/cuda-12.8/bin:$PATH
+    utils/timeit.sh GPUMD compile -- make -C <clone>/src -j64 -O      # 51018103, 20.4 s
+    make -C <clone-up>/src -j64 -O                                    # c3d5d8ac
+
+| | 51018103 | c3d5d8ac |
+|---|---|---|
+| make rc | 0 | 0 |
+| nvcc invocations (compile / link) | 230 / 4 | 230 / 4 |
+| objects | 230 `.o` | same 230 |
+| executables | `gpumd` 24730448 B, `nep` 8004496 B, `tb` 1552152 B, `src/gpumd_replica` 3777440 B | same sizes |
+| nvcc errors | 0 | 0 |
+| nvcc warnings | 234, all `Support for offline compilation for architectures prior to '<compute/sm/lto>_75' will be removed` (one per invocation, `-arch=sm_60`) | identical 234 |
+| host compiler warnings (makefile's -Wall -Wextra set) | none | none |
+
+Whole logs, sorted and path-normalized: identical, so per-file diagnostics are identical, including `main_replica/force/ewald.cu` and the 070d3f53 files.
+
+Device code (sm_60, the makefile build). No `nvdisasm` in CUDA 12.8 here, so `cuobjdump -sass` fails; instead `cuobjdump -xelf all` / `-xptx all` on all 230 objects of each tree, then a SHA-1 of every `.text.*`, `.nv.constant*`, `.nv.shared*`, `.nv.global*`, `.nv.info*` section of each cubin (read with a small Python ELF parser) plus the full PTX, after normalizing nvcc's per-compile `_GLOBAL__N__<8hex>_` / `_INTERNAL_<8hex>_` tokens. **All 3953 records identical: 841 kernel `.text` sections (8984448 B) and 230 PTX files.** Caution for whoever repeats this: `objcopy -O binary --only-section=... /dev/stdout` on a cubin silently yields empty output (every hash was SHA-1 of nothing on a first attempt), so check the hashes are not `da39a3ee...`. Per changed TU: `force/nep_spin/nep_spin.o` 43 kernels / 118328 PTX lines, `main_nep/nep_spin/spin_evaluate.o` 31 / 90782, `main_nep/nep_spin/nep_spin.o` 2 / 783, `force/ilp_nep.o` 11 / 15765, `main_replica/force/ewald.o` 2 / 907, `utilities/nep_model_file.o` 0 / 30 -- all identical.
+
+What the comparison can see, by control (scratch copies of `main_nep/nep_spin/nep_spin.cu` compiled with the makefile flags, then deleted; the clone stays clean):
+- Mask changed to `gpuLaneMask(0x0000ffff)` on one shuffle: **sm_60 and sm_70 SASS `.text` unchanged** (pre-Volta SHFL ignores the member mask, and on sm_70 ptxas emitted the same code here), but the PTX differs (`mov.u32 %r37, -1` -> `65535`). So for masks the PTX is the evidence, and it is identical across the trees.
+- Width changed from `warp_size` to 16: `.text` hash of `apply_ann_one_layer_warp<199>` changes (d6247e05 -> 3f3100e2), so the section hashes do detect code changes.
+- Extra: the six changed TUs also compiled at `-arch=sm_70` in both trees: rc 0, only the deprecation notice, cubin sections and PTX identical.
+
+`gpuLaneMask()` on CUDA: `nvcc -E -Xcompiler -P` of `force/nep_spin/nep_spin.cu`, `main_nep/nep_spin/nep_spin.cu`, `main_nep/nep_spin/spin_evaluate.cu` (includes `nep_spin3_force.cuh`) and `utilities/nep_model_file.cu` in both trees: no `gpuLaneMask` token survives; the differences are `__shfl_*_sync(m, ...)` / `__syncwarp(m)` -> `(...((m)), ...)` with `m` = `0xffffffff`, `atom_mask`, `center_mask`, `active_mask` (the original masks), the two added `, warp_size` arguments, and re-wrapped lines. After stripping whitespace, the extra parentheses and `, warp_size`, the only remaining differences are 31 `fprintf(stderr, "Line: %d\n", N)` statements in `force/nep_spin/nep_spin.cu` with N shifted by +1 (CHECK macro `__LINE__`); the other three TUs are identical. `nep_model_file.cu` differs only by one blank line: `gpu_macro.cuh` is already included on CUDA before `nep_utilities.cuh`.
+
+Host code (`objdump -d`, addresses and the hash tokens normalized): only `force/ilp_nep.o` (`fmax`), `force/nep_spin/nep_spin.o` (`__LINE__` constants) and `main_replica/force/ewald.o` differ. `ewald.o` gains one undefined `cudaStreamSynchronize` reference (0 -> 1) and 96 B of `.text` (35951 -> 36047), i.e. the added sync is the only change there; its kernels are identical.
+
+Not covered: `main_nep/nep_spin/spin_specialized.cu` under `NEP_SPECIALIZED_RUNTIME_BUILD` (runtime-compiled by `nep_compile`); it uses the same `nep_spin3_force.cuh`, whose expansion is shown above. PASS: the CUDA path builds with nvcc 12.8 exactly as upstream c3d5d8ac does, with identical device code and PTX; the only CUDA behaviour change is the host-side stream sync in `Ewald::find_k_and_G`. No platform states changed.
