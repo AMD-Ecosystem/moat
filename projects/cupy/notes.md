@@ -47,3 +47,6 @@ Shared-code note for the planner: items 1-5 and 9 touch `install/cupy_builder` a
 - `fork_default_branch` is recorded as `main`, but ROCm/cupy has no `main` branch: its GitHub default is `master` (`6c4b343`). Upstream cupy/cupy's default is `main`. Whichever branch is the upstream mirror and PR base needs recording; this screen did not change it.
 - Gates: the project scope is Windows-only, but `config/arches.toml` requires `wave64`, `wave32` and `windows`. The build-script and `_environment.py` changes are shared with the Linux HIP build, so Linux revalidation is still real evidence against a regression. Whether the Linux gates are owed (or a waiver is suggested) is jeff's call.
 - Once cupy-rocm builds on Windows, gpu4pyscf's approved windows waiver and its `windows-gfx1101` block can be revisited, and a `depends_on: cupy` edge could be recorded on gpu4pyscf. That is gpu4pyscf's record and is not edited here.
+
+## Ruling 2026-11-04 (jeff): PR base and mirror
+The PR base is upstream cupy/cupy `main`. ROCm/cupy had no `main` (its default `master` stopped at 2026-01-31 when the fork became staging-only), so a `main` branch mirroring upstream was pushed to ROCm/cupy at 6efc0a4. ROCm/cupy's `master` and its default branch are left as they are (not ours to reconfigure). `fork_default_branch` stays `main`. moat-port was cut from upstream main at 18b54de.
