@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:03:06Z",
-  "updated_at": "2026-11-04T23:37:45Z",
+  "updated_at": "2026-11-05T07:52:40Z",
   "head_sha": "ccc2950facafa108eecea14e49cdb87b3b97d459",
   "depends_on": [],
   "waivers": {},
@@ -25,7 +25,7 @@
       "at": "2026-10-29T18:07:11Z"
     }
   },
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx942": {
       "blocked": false,
@@ -111,7 +111,7 @@
       "failed_sha": "689b8856ccd436ee36021dc416807a212e7955f8",
       "started_at": "2026-11-04T09:03:29Z",
       "completed_at": "2026-11-04T10:56:52Z",
-      "updated_at": "2026-11-04T23:37:45Z",
+      "updated_at": "2026-11-05T07:52:40Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -173,5 +173,9 @@
     "arch": "linux-gfx942",
     "since": "2026-11-04T09:30:49Z",
     "at": "2026-11-04T09:58:42Z"
+  },
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-05T07:52:40Z"
   }
 }
