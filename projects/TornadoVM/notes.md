@@ -305,3 +305,27 @@ Scope: the fix-round-2 delta `git diff 57c769f25..2a7075bde` (one commit, 9 file
 - Byte-identity: `git diff origin/develop...2a7075bde` over `tornado-drivers/{cuda,opencl,metal,opencl-jni}`, `tornado-native-libs/{cudf-jni,cudnn-jni,cutlass-jni}` and `CudaDialect.java`/`OpenClDialect.java`/`MetalDialect.java` is empty. The delta touches only tornado-nccl, its tests and three docs. `TornadoVMOpenCLNotSupported` already exists on develop.
 - gfx942 runs at `2a7075bde` (HIP_VISIBLE_DEVICES=3, `-Dtornado.enabled.backends=hip`): TestNcclMultiProcess 4 pass + 1 unsupported (one GPU), the same with a working OpenCL platform. TestNccl 30 run, 0 failed, 10 unsupported.
 - Commit `2a7075bde`: `[ROCm]` title of 56 characters, ASCII, AI disclosure, fenced Test Plan, no Co-Authored-By. `utils/jargon.py --commits 57c769f25..2a7075bde` and `--diff origin/develop...2a7075bde` are clean. No non-ASCII in the added lines. `git status --porcelain` shows no modified tracked files.
+
+## Fix round 3 (2026-11-05, linux-gfx942, MI300X): review 3 must-fix 1, child backend order
+
+Porter at `2a7075bde` -> `08cb3c5aa` on `moat-port`, one new commit ("[ROCm] Find the NCCL test's backend by type in the child process", 64 chars), no force-push. Only `TestNcclMultiProcess.java` changes. Host: ROCm 10.1 TheRock wheels, OpenJDK 21.0.12, HIP_VISIBLE_DEVICES=3, `ulimit -c 0`, `TORNADO_CK_GPU_TARGETS=gfx942`, private Maven repo.
+
+Change: the parent passes the backend type name (`HIP`/`CUDA`) instead of the index `1`; `RankWithIdWithoutDevice` calls the no-arg `create()` first, then walks `getNumBackends()` and takes the first index whose `getBackendType(i)` matches, skipping a backend whose start throws (OpenCL with no platform). Javadoc updated. No priority options are added to the child.
+
+Evidence (`make jdk21 BACKEND=opencl,hip` BUILD SUCCESS at the new tree; `tornado-test --jvm=<opts> -V ...nccl.TestNcclMultiProcess`; "OpenCL on" = the review-3 symlink recipe with `ROCR_VISIBLE_DEVICES=3 HIP_VISIBLE_DEVICES=0`):
+
+| OpenCL platform | `--jvm` | result |
+|---|---|---|
+| none | `-Dtornado.enabled.backends=hip` | 4 pass + 1 unsupported (testTwoProcesses, one GPU) |
+| none | `-Dtornado.enabled.backends=hip -Dtornado.hip.priority=20` | 4 + 1 |
+| working | (default options) | 5 unsupported: OpenCL is the parent's default device, so `ncclMustBeAvailable` skips (as designed) |
+| working | `-Dtornado.hip.priority=20` | 4 + 1 |
+| working | `-Dtornado.enabled.backends=hip` | 4 + 1 |
+| working | `-Dtornado.enabled.backends=hip -Dtornado.hip.priority=20` | 4 + 1 |
+| none | `-Dtornado.hip.priority=20` | 5 failed in `TornadoTestBase` ("No OpenCL platforms found"): the harness-wide behaviour review 3 noted, not this test |
+
+Before: the review-3 job's `2a7075bde` dist, OpenCL on, `-Dtornado.hip.priority=20` -> 1 failed (`testUniqueIdWithoutDeviceStartsNoBackend`, child "Unable to load NCCL"), as the reviewer reported.
+
+CUDA: `make jdk21 BACKEND=cuda` at `08cb3c5aa` in a separate worktree, nvcc 12.8.93 (`/usr/local/cuda/bin/nvcc`, CUTLASS sm_80): BUILD SUCCESS. `git diff origin/develop...08cb3c5aa` over `tornado-drivers/{cuda,opencl,metal,cuda-jni,opencl-jni}`, `tornado-native-libs/{cudf-jni,cudnn-jni,cutlass-jni}` and the Cuda/OpenCl/Metal dialects is empty. `utils/jargon.py --commits 2a7075bde..HEAD` and `--diff origin/develop...HEAD` clean; `utils/prose.py` clean on the body; ASCII; AI disclosure; fenced Test Plan; no Co-Authored-By.
+
+Process note: the first local commit (`04e44ff54`, never pushed) claimed all three Test Plan runs pass without an OpenCL platform; the last does not (harness row above), so it was recommitted with a corrected body before the push.

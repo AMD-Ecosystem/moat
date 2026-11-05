@@ -32,3 +32,5 @@
 {"kind":"phase","ts":"2026-11-05T02:25:57Z","phase":"test","seconds":15.192,"exit":0,"cmd":"tornado-test --jvm=-Dtornado.enabled.backends=hip -V uk.ac.manchester.tornado.unittests.nccl.TestNccl"}
 {"kind":"phase","ts":"2026-11-05T02:28:35Z","phase":"compile","seconds":34.021,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300-20261104-181105-tvm-review3/moat/agent_space/cuda jdk21 BACKEND=cuda"}
 {"kind":"session","ts":"2026-11-05T02:29:36Z","epoch":1793845776.191362411,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-05T02:36:49Z","phase":"compile","seconds":0.008,"exit":2,"cmd":"make jdk21 BACKEND=opencl,hip"}
+{"kind":"phase","ts":"2026-11-05T02:38:50Z","phase":"compile","seconds":108.635,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=opencl,hip"}
