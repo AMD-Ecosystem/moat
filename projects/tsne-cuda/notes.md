@@ -520,3 +520,27 @@ With it the reproduction prints 1.0000 for both axes. Re-enabling the reduction 
 ====
 
 Open for jeff: approve, edit or drop each draft before anything is posted upstream. Filing is a GitHub-visible write that this job did not make.
+
+## Review 2026-11-05 (reviewer, linux-gfx1201) -> review-passed
+
+Reviewed the fix delta `4fedca7..33f708d` (`edff77b`, `33f708d`) with the pr-review skill, fact-checked inline. No findings.
+
+- `edff77b` (`src/include/test/test_reduce.h`): all six `cpu_result` vectors are `double`; the mean and alpha comparisons (`cpu_result[i]/((float) N)`, `cpu_result[i]*alpha`) promote to double, so the reference is a double throughout. Tolerance unchanged at `1e-4`; the GPU path (`ReduceAlpha`, one `cublasSgemv` against a ones vector) is untouched.
+- `33f708d` (INSTALL.md, HIP Linux section): every claim checked on this host. The gfx1201 FAISS `01a09e8` install has `NEEDED libomp.so` with RUNPATH only `$SDK/lib`; `libomp.so` is in `$SDK/lib/llvm/lib` (`$SDK/llvm` -> `lib/llvm`, matching the `/opt/rocm/llvm/...` spelling the section already uses). With the documented GCC C/CXX build, `libtsnecuda.so` needs `libgomp.so.1` and its RUNPATH has no llvm dir. `import tsnecuda` succeeds; `tsnecuda.test()` raises `OSError: libomp.so: cannot open shared object file: No such file or directory` (so "using" is the right word); with `$SDK/llvm/lib` appended to `LD_LIBRARY_PATH`, rc 0, total_time 2.92 s.
+- Commit hygiene: titles 56 and 61 chars, `[ROCm]`, prose attribution only, no trailer, ASCII; `utils/jargon.py --port tsne-cuda` clean. Fork clone tree clean.
+
+GPU evidence (Radeon gfx1201, `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, TheRock pip SDK, gfx1201 FAISS `01a09e8` install copied from the gfx1201 fix job). Fresh clone at `33f708d`, `-G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_HIP_COMPILER=$SDK/llvm/bin/clang++ -DCMAKE_PREFIX_PATH="$SDK;$FAISS_PREFIX" -DBUILD_TESTS=ON`, system GCC 13.3 for C/CXX, rc 0. `LD_LIBRARY_PATH=$FAISS_PREFIX/lib`; `time()` pinned with an `LD_PRELOAD` shim returning `$SEED`.
+
+- `./build/tsnecuda_test`, seeds 1..300 pinned: 0 failed; 30 unpinned runs: 0 failed.
+- Shim control, a copy of the tree (outside the fork clone) with the `4fedca7` `test_reduce.h`: seed 216 passes, seed 217 fails `Reductions.ReduceSum_Row_512x512` twice out of two runs, so the pinning works.
+- Error injection, a copy of the tree (outside the fork clone) with the `33f708d` test and an `INJECT` env switch in `ReduceAlpha` (`src/util/reduce_utils.cu`), seeds 5 and 217:
+
+| injected GPU error | result |
+|---|---|
+| none | 8/8 pass |
+| one term dropped (`N-1` / `M-1` in the gemv) | 8/8 fail |
+| every output scaled by `1+2e-6` | `ReduceSum_Col`, `ReduceSum_Row` fail (6 pass: mean/alpha outputs are about 0.1 in magnitude) |
+| one output element `+2e-4` | 8/8 fail |
+| one output element `+5e-5` | 8/8 pass (under the unchanged 1e-4 tolerance, as expected) |
+
+So the tests still catch a real reduction error at the 1e-4 level; the change only removed the reference's own float drift. Still owed by the validators: the repeated `tsnecuda_test` runs on wave64 hardware, whose hipBLAS gemv may accumulate differently.
