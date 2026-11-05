@@ -4494,6 +4494,16 @@ def _gate_blockers(name, obj):
     if not lic_ok:
         blocking.append(("license", lic_why))
 
+    # Surface accounting: work recorded as owed (in scope, not yet done) blocks the
+    # PR until it is covered or a person rules it out of scope.
+    try:
+        sys.path.insert(0, str(REPO_ROOT / "utils"))
+        import surface as _surface
+        for cid, why in _surface.owed(name).items():
+            blocking.append(("surface-owed", f"{cid} is still owed: {(why or '')[:120]}"))
+    except Exception as e:  # never let the accounting helper hide the real gates
+        blocking.append(("surface-owed", f"could not read owed surface items: {e}"))
+
     # Integrity gate: the validated content must be COMMITTED. A fork with
     # uncommitted tracked source/build edits means a validation built against local
     # edits that are NOT in the branch -- the upstream PR would be unbuildable (the
