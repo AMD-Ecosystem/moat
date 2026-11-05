@@ -2118,3 +2118,39 @@ Sizes 1000, 1024, 1500, 2049, 5000, 65537, 1000003; inputs for the padding lane 
 Compared with this platform's earlier record (completed at 1a9e9770: runtime build plus the SumStore harness), this run covers more: the upstream Caspar GPU tests, codegen tests, full ctest and the README example. No regression.
 
 VALIDATION PASSED on linux-gfx1100 (Radeon Pro W7800) at e7e0b00c.
+
+## Validation windows-gfx1151 2026-11-04 (fix round moat-fix-465, tip e7e0b00c)
+
+Validator, jeff's request, light run. GPU: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32), `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, one GPU process at a time, each test run exactly once. Source: fork clone `agent_space/symforce-win`, detached at `e7e0b00c5e343e57724226aca38b92438868cc6b` (== head_sha), clean tree. Previous validated_sha 1a9e9770 (runtime build plus a SumStore harness only); this run covers the new upstream Caspar GPU tests.
+
+### Build
+
+Standalone CMake project (`agent_space/sf-caspar-tests/CMakeLists.txt`) mirroring the Caspar block of `test/CMakeLists.txt` verbatim (HIP branch: `caspar_test_runtime` from shared_indices/sort_indices/solver_tools, the four `caspar_*_cuda_test.cc` plus their checked-in generated data), to avoid building symengine/LCM on Windows. Catch2 3.13.0 via FetchContent, Eigen from vcpkg. GNU-driver route (clang/clang++ for C, CXX and HIP; CMake 3.31.0 cannot ABI-probe HIP with clang-cl), `ROCM_ROOT = D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel` (clang 23.0.0):
+```
+cmake -S agent_space/sf-caspar-tests -B agent_space/sf-caspar-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=$R/lib/llvm/bin/clang.exe -DCMAKE_CXX_COMPILER=$R/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++.exe -DCMAKE_PREFIX_PATH="$R/lib/cmake;D:/Develop/vcpkg/installed/x64-windows" -DCMAKE_HIP_ARCHITECTURES=gfx1151
+cmake --build agent_space/sf-caspar-build --parallel 8
+```
+Configure 16 s, build 50 s (199 steps), rc=0; only the pre-existing `-Wunused-value` warnings on ignored `hipError_t` returns. `amdhip64_7.dll`, `amd_comgr*.dll`, `rocm_kpack.dll` copied next to the exes (System32 amdhip64 wins over PATH).
+
+### Tests (each once, normal size)
+
+| test | result | time |
+|---|---|---|
+| caspar_backend_coverage_cuda_test | 302/302 assertions, 1 case | 0.9 s |
+| caspar_padding_lane_cuda_test | 6/6, 1 case | 0.8 s |
+| caspar_solver_cuda_test | 24/24, 5 cases | 0.8 s |
+| caspar_tridiagonal_cuda_test | 140/140, 2 cases | 2.6 s |
+
+Identical counts to linux-gfx90a and linux-gfx1100 at this head. The solver and padding-lane tests execute the SumStore path the maintainer asked about.
+
+### Skipped, and why
+
+- The 200-repeat SumStore race harness and the Linux 5x repeat runs: skipped on purpose; this laptop locked up running that harness earlier today. Linux gfx90a and gfx1100 cover it (200 runs per size, 0 failures).
+- Full ctest (symforce core, codegen and python tests, docs, rustfmt): not built on this host. Only the GPU Caspar targets were built; the non-GPU tests do not depend on the delta and the Linux validators record 209/212 with 3 environmental failures. The README HIP example (needs symengine python build) was not run here; Linux validators ran it.
+- CUDA no-regression gate: no toolkit here; already recorded at this head by the porter (nvcc 12.8).
+
+### Gates
+
+`python3 utils/jargon.py --port symforce`: clean (via a temporary junction of `src` to the clone plus local `main`/`moat-fix-465` branch refs, junction removed). ROCm build is documented in `symforce/caspar/README.md` "AMD GPUs (ROCm/HIP)". Clone `git status --porcelain`: empty.
+
+VALIDATION PASSED on gfx1151 (Radeon 8060S) at e7e0b00c.
