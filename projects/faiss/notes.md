@@ -1549,3 +1549,105 @@ instructions (already reviewed; unchanged this round).
 `wave32`) already satisfying their gates at this same head_sha, all three required gates
 remain satisfied at head. This is additive real-GPU evidence for `wave32` on a second,
 independent gfx1100 host.
+
+## Porter round 2026-11-05 (linux-gfx1201) -- ROCm 10.1 build fix + install header -> ported
+
+Answers deferral `faiss-rocm10-fp16-include-and-install-header` (registered in
+`projects/tsne-cuda/deferred.json` on `port/tsne-cuda`; jeff ruled `now` 2026-11-04). Two new
+commits on `moat-port` on top of `01a09e8` (no amend, no force-push); head `708a879bc`.
+
+### 1. `7bd3b4806` [ROCm] Keep HIP fp16/bf16 includes in Float16.cuh through hipify
+
+Reproduced at `01a09e8` with TheRock pip SDK 10.1.0 (gfx1201): 157 GPU TUs fail with
+`unknown type name 'half2'`, `__float22half2_rn` / `__hip_bfloat16` undeclared, all via
+`faiss/gpu/utils/Float16.cuh`.
+
+**The deferral's diagnosis was half wrong.** It said newer `hip_runtime.h` stopped pulling the
+fp16/bf16 headers in. Checked: a HIP TU that includes only `hip/hip_runtime.h` and uses `half2`,
+`__float22half2_rn`, `__hip_bfloat16` fails identically (4 errors) on BOTH 7.14.0a20260612 and
+10.1.0 -- neither provides them. The real change is **hipify-perl**: 10.1's drops an `#include`
+it has already emitted earlier in the same file, ignoring preprocessor branches. Float16.cuh had
+`#if !defined(USE_AMD_ROCM)` cuda_bf16.h/cuda_fp16.h `#else` hip/hip_bf16.h/hip/hip_fp16.h;
+hipify translates the first branch to the hip headers and then deletes the identical lines in
+the `#else`, so the ROCm-compiled branch is empty. 7.14's hipify-perl keeps both copies (verified
+on the pristine 01a09e8 file), which is why every earlier validation built.
+
+Fix: put the `#if defined(USE_AMD_ROCM)` HIP branch first. 10.1 hipify keeps it and dedups the
+translated CUDA branch (which ROCm never compiles); 7.14 keeps both. CUDA sees the same headers.
+Only Float16.cuh in the hipified tree has a dropped `#else` include (checked every file the
+configure modified). Installed headers now carry an empty `#else`; a consumer that includes
+FAISS's `.cuh` internals must already define `USE_AMD_ROCM` (DeviceDefs.cuh `#error`s on
+`CUDA_VERSION < 8000` without it), so this costs no consumer anything.
+
+### 2. `708a879bc` [ROCm] Install InvertedListScannerStats.h with the public headers
+
+Not ROCm-specific: upstream fixed it in `ab632382d` (#5268, 2026-06-03), after this branch's base
+`0c72755ec`. Same one-line `FAISS_HEADERS` change, carried as a `[ROCm]` commit because
+`audit-commits` requires the prefix and this branch's install is what ROCm consumers (tsne-cuda)
+link. Merging upstream main into the branch before the PR would make it vanish from the diff.
+
+### Build + test (AMD Radeon AI PRO R9700, gfx1201 RDNA4 wave32, HIP_VISIBLE_DEVICES=1, ulimit -c 0)
+
+gflags is not on this host; built v2.2.2 from source into the job dir
+(`cmake -DBUILD_SHARED_LIBS=ON -DCMAKE_INSTALL_PREFIX=<job>/deps/gflags`), added to
+`CMAKE_PREFIX_PATH`. Configure (restore pristine first -- hipify is not idempotent):
+```
+git checkout -- faiss/ c_api/; find faiss/gpu c_api/gpu -name '*.hip' -delete
+rm -rf faiss/gpu-backup faiss/gpu-tmp c_api/gpu-backup c_api/gpu-tmp
+export ROCM_PATH=$SDK PATH=$SDK/bin:$SDK/libexec/hipify:$PATH
+cmake -S . -B build -G Ninja \
+  -DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_ROCM=ON -DFAISS_ENABLE_CUVS=OFF \
+  -DFAISS_ENABLE_PYTHON=OFF -DFAISS_ENABLE_C_API=ON -DFAISS_ENABLE_EXTRAS=OFF \
+  -DBUILD_TESTING=ON -DBUILD_SHARED_LIBS=ON \
+  -DFAISS_OPT_LEVEL=generic -DFAISS_ENABLE_MKL=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1201 \
+  -DCMAKE_C_COMPILER=$CC -DCMAKE_CXX_COMPILER=$CXX -DCMAKE_HIP_COMPILER=$SDK/lib/llvm/bin/clang++ \
+  "-DCMAKE_PREFIX_PATH=$SDK;<gflags prefix>" \
+  -DBLAS_LIBRARIES=$SDK/lib/host-math/lib/librocm-openblas.so \
+  -DLAPACK_LIBRARIES=$SDK/lib/host-math/lib/librocm-openblas.so -DCMAKE_INSTALL_PREFIX=<prefix>
+ninja -C build -j24
+OPENBLAS_NUM_THREADS=1 ctest --test-dir build -j1 -R "TestGpu|TestCodePacking" --output-on-failure
+build/faiss/gpu/test/TestGpuIcmEncoder
+ctest --test-dir build -j8 -E "TestGpu|TestCodePacking"
+cmake --install build
+```
+No `-DCMAKE_HIP_FLAGS=-include ...` workaround and no hand-copied header.
+
+| SDK | CC/CXX | build | GPU ctest | IcmEncoder | other ctest |
+|---|---|---|---|---|---|
+| 10.1.0 (image `/opt/python-3.11-venv`, `rocm-sdk path --root`) | `$SDK/bin/amdclang{,++}` | 446/446, 0 errors | 108/108 (425 s) | 7/7 | 266/266 (3 self-skipped SIMD) |
+| 7.14.0a20260612 (job `$FLEET_VENV`, `rocm.nightlies.amd.com/v2/gfx120X-all`) | `$SDK/llvm/bin/clang{,++}` (7.14's `bin/amdclang++` execs a missing `amdllvm`) | 0 errors | 108/108 (422 s) | 7/7 | 266/266 (same 3) |
+
+- Both at head `708a879bc`. 10.1 was also run at the pre-final local commit (same code, older
+  comment wording): 108/108, 7/7, 266/266.
+- `llvm-objdump --offloading libfaiss.so`: gfx1201 code objects only (168 on 7.14).
+- 7.14 runtime: its libs carry no RUNPATH to the SDK, so the post-build gtest discovery step
+  fails with `libamdhip64.so.7: cannot open` until
+  `LD_LIBRARY_PATH=$SDK/lib:$SDK/lib/llvm/lib:$SDK/lib/host-math/lib`; ldd confirmed every HIP
+  lib then resolved from 7.14, none from 10.1. Environmental only.
+- Install (10.1): `include/faiss/impl/InvertedListScannerStats.h` present. Consumer check: a HIP
+  TU (`hipcc -DUSE_AMD_ROCM --offload-arch=gfx1201`) including the installed
+  `faiss/gpu/GpuIndexFlat.h`, `StandardGpuResources.h`, `utils/Float16.cuh` and
+  `impl/AuxIndexStructures.h`, linking `libfaiss`: GpuIndexFlatL2 over 1000x16 random rows finds
+  row 42 at distance 0, and a device `float4ToHalf4` round-trip of (1.5, -2, 0.25, 3) is exact; rc 0.
+  Runtime needs `LD_LIBRARY_PATH=$SDK/llvm/lib:$SDK/lib/host-math/lib` for libomp/openblas
+  (same as tsne-cuda notes record).
+- `jargon.py --port faiss` clean, `audit-commits` OK, `audit-clean` OK, tree restored (0 modified).
+- INSTALL.md: no change needed (build procedure unchanged).
+
+### Owed / not done here
+
+- **CUDA compile on mi355** (Float16.cuh is shared code; the CUDA branch's headers are unchanged,
+  only the branch order moved). Not run here: no nvcc on this host.
+- Every platform reads `revalidate` at `708a879bc`. Prior evidence was all ROCm 7.x; this
+  round's gfx1201 numbers above are porter evidence, not a validator record.
+- The deferral item's status (`port/tsne-cuda`, `projects/tsne-cuda/deferred.json`) is left `open`
+  for the tsne-cuda round to mark `done` once FAISS revalidates; that branch is mid-review and
+  this job did not write to it. tsne-cuda's notes' two FAISS workarounds become unnecessary at
+  `708a879bc`.
+- Host tooling: the image's Python 3.11 argparse rejects `check.py`'s `nargs="*"` + `choices`
+  with an empty list (`invalid choice: []`), so the MOAT pre-push hook fails on every push under
+  3.11; pushed with a job-local Python 3.12 venv (jsonschema, pyflakes) first on PATH. Also
+  `port/faiss` had to merge `origin/main` before its pre-push `states` gate passed (Velvet's
+  approved wave64 waiver needs main's `waivable` list); one conflict in
+  `strategy-a-cmake.md`, both sides kept.
