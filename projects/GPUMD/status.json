@@ -7,13 +7,12 @@
   "priority": 5.508,
   "ext_type": "make",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-11-05T05:50:22Z",
+  "updated_at": "2026-11-05T05:52:18Z",
   "head_sha": "15124b533b659e338e43ffb7878b847d7d1ce09d",
   "pr_url": "https://github.com/brucefan1983/GPUMD/pull/1538",
   "pr_number": 1538,
   "pr_opened_at": "2026-06-05T19:24:45Z",
   "pr_merged_at": "2026-06-05T19:24:45Z",
-  "porting": null,
   "waivers": {},
   "pr_state": "merged",
   "license_clearance": {
@@ -26,35 +25,6 @@
   "upstream_repo_id": 97248567,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "6231243f",
-      "started_at": "2026-05-30T06:58:13Z",
-      "completed_at": "2026-06-03T22:51:48Z",
-      "updated_at": "2026-11-05T05:19:48Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "porter",
-      "carry_forward": {
-        "to": "6231243f",
-        "method": "source-class",
-        "detail": "makefile.hip drops explicit -std=c++17; hipcc defaults to C++17 (verified: rocPRIM compiles at default, errors at c++14), effective standard unchanged; build-flag only, no source change",
-        "at": "2026-06-03T22:51:48Z"
-      }
-    },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
@@ -100,6 +70,35 @@
         "last_session_at": null
       },
       "last_agent": "validator"
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6231243f",
+      "started_at": "2026-05-30T06:58:13Z",
+      "completed_at": "2026-06-03T22:51:48Z",
+      "updated_at": "2026-11-05T05:19:48Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter",
+      "carry_forward": {
+        "to": "6231243f",
+        "method": "source-class",
+        "detail": "makefile.hip drops explicit -std=c++17; hipcc defaults to C++17 (verified: rocPRIM compiles at default, errors at c++14), effective standard unchanged; build-flag only, no source change",
+        "at": "2026-06-03T22:51:48Z"
+      }
     },
     "windows-gfx1201": {
       "state": "completed",
@@ -156,11 +155,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
+      "validated_sha": "15124b533b659e338e43ffb7878b847d7d1ce09d",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-11-05T05:29:58Z",
+      "completed_at": "2026-11-05T05:52:18Z",
+      "updated_at": "2026-11-05T05:52:18Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -174,7 +173,8 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer"
+      "last_agent": "validator",
+      "state": "completed"
     }
   },
   "published_sha": "6231243fdaabe33217b44dce15aa75c138a3468b",

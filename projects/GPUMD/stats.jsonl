@@ -16,3 +16,8 @@
 {"kind":"phase","ts":"2026-11-05T05:48:02Z","phase":"compile","seconds":33.134,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/rx7900-20261104-214240-v-gpumd/moat/agent_space/GPUMD/src -f makefile.hip HIP_ARCH=gfx1100 -j8"}
 {"kind":"phase","ts":"2026-11-05T05:48:41Z","phase":"test","seconds":12.103,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-214240-v-gpumd/moat/agent_space/run_suite.sh /var/lib/jenkins/fleet/jobs/rx7900-20261104-214240-v-gpumd/moat/agent_space/GPUMD /var/lib/jenkins/fleet/jobs/rx7900-20261104-214240-v-gpumd/moat/agent_space/run-head ilp_nep_cutoff carbon graphene_dos graphene_kappa_emd"}
 {"kind":"session","ts":"2026-11-05T05:50:28Z","epoch":1793857828.092740222,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-05T05:49:36Z","epoch":1793857776.227777659,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-05T05:50:19Z","phase":"compile","seconds":9.639,"exit":0,"cmd":"make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx942 -j56"}
+{"kind":"phase","ts":"2026-11-05T05:50:39Z","phase":"test","seconds":0.064,"exit":0,"cmd":"bash -c for c in graphene_dos graphene_kappa_emd carbon ilp_nep_cutoff graphene_kappa_nemd graphene_kappa_hnemd silicon_dispersion; do cd gpumd/$c; s=$(date +%s); if [ $c = ilp_nep_cutoff ]; then ../../../src/gpumd > stdout.log 2> stderr.log; else ../../../src/gpumd > stdout.log 2> stderr.log; fi; echo \"$c rc=$? stderr_bytes=$(stat -c %s stderr.log) secs=$(( $(date +%s)-s ))\"; cd ../..; done"}
+{"kind":"phase","ts":"2026-11-05T05:51:04Z","phase":"test","seconds":11.051,"exit":0,"cmd":"/tmp/gpumd-val-942/run_suite.sh"}
+{"kind":"session","ts":"2026-11-05T05:52:18Z","epoch":1793857938.459022988,"event":"end","platform":"linux-gfx942"}

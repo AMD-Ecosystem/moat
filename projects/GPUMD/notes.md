@@ -455,3 +455,31 @@ Differences from the earlier record, explained: (1) the earlier gfx1100 T std (1
 - CUDA compile: already recorded at 15124b5 (nvcc 12.8, mi355 host), not repeated.
 
 Result: PASS, 4/4 cases (new `ilp_nep_cutoff` fails at the parent and passes at the head; 3 recorded workloads pass at both). linux-gfx1100 revalidate -> completed at 15124b53.
+## Validation 2026-11-05 (linux-gfx942, validator) -- 15124b53, PASSED
+
+Host: MI300X (gfx942, CDNA3, wave64), HIP 7.16.26385 / AMD clang 24.0.0git, HIP_VISIBLE_DEVICES=0 (dispatcher-pinned), `ulimit -c 0`. Fresh clone of AMD-Ecosystem/GPUMD, detached at 15124b533b659e338e43ffb7878b847d7d1ce09d. linux-gfx942 has no earlier validation record for this project (first validation on this platform), so the comparison is against the porter's gfx90a counts at this head, the reviewer's gfx942 run at this head, and the other platforms' records.
+
+Build:
+
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx942 -j56
+
+rc 0, 0 errors, 102 warnings (94 `-Wunused-value` on ignored hipError_t returns, 8 `-Winconsistent-missing-override`; the pre-existing benign classes). `gpumd` 12873992 B, `nep` 1185744 B.
+
+Tests: scratch copy `/tmp/gpumd-val-942/{src,tests}` (binaries copied, `potentials` symlinked) so the fork tree stays clean. Every case under `tests/run_tests.sh` that runs `gpumd`, run as `../../../src/gpumd > stdout.log 2> stderr.log` in each case dir, wrapped `utils/timeit.sh GPUMD test -- /tmp/gpumd-val-942/run_suite.sh`. The two pytest stanzas (carbon_average, carbon_observe) were not run here and were not in the porter's or reviewer's suite either.
+
+| case | rc | stderr | result |
+|---|---|---|---|
+| carbon (NEP4 NVE 100 steps) | 0 | empty | Etot drift (max-min)/\|mean\| 1.36e-6, std/\|mean\| 3.64e-7, T mean 300.54 K, PE vs CUDA ref at step 10 3.34e-5, neighbor.out identical to ref |
+| graphene_dos (Tersoff + hipFFT DOS) | 0 | empty | NPT T (rows >= 10) 299.89 +- 1.98 K (CUDA ref 300.32 +- 1.86); MVAC t0 1,1,1; dos.out 200x4 finite, min 3.14e-2; DOS vs CUDA ref, normalized by global max: max diff 8.32e-2, RMSE 1.25e-2 |
+| graphene_kappa_emd | 0 | empty | T mean 297.20 K, hac.out 50x11 finite |
+| ilp_nep_cutoff (new) | 1 | empty | last stdout line `ERROR: Please make sure cutoff of ILP is larger than it of NEP.`, identical to error1.out (the harness diff passes) |
+| ilp_nep_cutoff control, ILP rcut 4.3 | 0 | empty | runs (not in the harness; re-run of the porter/reviewer control) |
+| graphene_kappa_nemd (additive) | 0 | empty | compute.out max rel diff vs ref 1.86e-2, shc.out 1499x3 finite |
+| graphene_kappa_hnemd (additive) | 0 | empty | kappa.out and shc.out finite; 10-step kappa is noise-dominated (sign differs from ref, expected for a 10-row chaotic estimate) |
+| silicon_dispersion (additive, no MD) | 0 | empty | omega2.out max rel diff vs ref 2.94e-11 |
+
+No NaN in any thermo.out. Raw `diff -q` against the CUDA reference files differs for every MD output, as on every platform (chaotic MD, atomicAdd cell binning; see Determinism above). Only ilp_nep_cutoff and the deterministic outputs can match exactly, and they do.
+
+Comparison: the carbon, graphene_dos and graphene_kappa_emd numbers fall in the same band as the porter's gfx90a run at 15124b53 (1.20e-6 / 7.38e-2 DOS / 297.01 K) and the gfx1100 record (DOS 6.35e-2 / 1.25e-2). None of the three constructs ILP_NEP, so the fix cannot change them. The one difference the fix explains is ilp_nep_cutoff: ILP rcut 4.1 under a 4.2 NEP cutoff is now rejected, matching CUDA, as in the reviewer's gfx942 run at this head. PASS: 3/3 recorded workloads plus the new test, 3 additive cases clean.
+
+Pre-completion checks: `git -C projects/GPUMD/src status --porcelain` shows no tracked modifications; `utils/jargon.py --port GPUMD` clean; the ROCm build is documented in `doc/installation.rst` (98c8bb47), and this delta changes no build step. CUDA gate: already recorded at this head ("CUDA compile check (nvcc 12.8) at 15124b5", mi355), so not re-run.
