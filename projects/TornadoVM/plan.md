@@ -234,3 +234,6 @@ f. No upstream issue first; the PR is the proposal.
 g. Done 2026-11-04: upstream `develop` (f8e3ac907) pushed to the fork as `develop`; `fork_default_branch` set to `develop` (`set-base-branch`). Cut `moat-port` from the fork's `develop`. `license_spdx` still reads the old OR expression; moatlib has no setter for it, so it needs a records fix (Apache-2.0 since #1266) before PR prep.
 h. Virtual devices: port them if cheap; otherwise record why not in notes.md.
 
+
+## Ruling 2026-11-04 (jeff): 32-lane warps on wave64 (supersedes plan item R1)
+Keep the exact 32-lane warp emulation on 64-lane CDNA wavefronts; refusing warp operations would make every warp-based program fail on Instinct GPUs. Document the limitation in the HIP backend docs: the two 32-lane halves of a wave64 do not make independent forward progress, so a kernel where one half spin-waits on a value written by the other half can hang where it would not on NVIDIA. Where that pattern can be detected, fail with a clear error instead of hanging.
