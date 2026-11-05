@@ -1327,3 +1327,16 @@ Already recorded at 70d2b68 ("CUDA compile check (nvcc 12.8) at 70d2b68": PASS).
 - Integrity: `git -C src status --porcelain` shows only `?? build-hip/` (I deleted the `robust_rc_large_*.npy` outputs from the direct rmppi_test runs). cnpy is clean at 91c53bc. The scratch 11b61ab worktree has been removed.
 
 State: completed at 70d2b68 on linux-gfx90a.
+
+## Validation 2026-11-05 (windows-gfx1151 at 70d2b68, laptop safety procedure) -- in progress
+
+Platform: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32), Windows 11, TheRock ROCm 7.14 pip SDK (`D:/Develop/TheRock/.venv`, AMD clang 23). Fork sha 70d2b686a037 (= origin/moat-port tip), cnpy 91c53bc. Per the 2026-10-29 incident (bugcheck 0x119 at ARRobustCostTest.getCostmapCostSpeedMapTest; any GPU page fault can crash this laptop), the run is chunked, one GPU process at a time, with a per-line fsync log at `agent_space/mppi-val/chunks.log`.
+
+### Exclusion list (written before running anything)
+Excluded from the run (ctest `-E`), none of them run on this laptop:
+- All texture-backed map-cost tests, the deferred feature: `ARStandardCost.*` (26), `ARRobustCostTest.*` (7, includes getCostmapCostSpeedMapTest / NoMapTest / computeCostTest), `QuadrotorMapCost.*` (2). The three `texture_helper` test TUs are already CMake-excluded on HIP.
+- Linux gfx90a/gfx1100 deterministic failures at 70d2b68 that exercise the GPU (a clean failure on Linux is not a guarantee of one here): `ARNeuralNetDynamics.computeGradTest`, `WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic` (ARStandardCost based, and a 2.4 MB stack-array SEH overflow on Windows), `cuFFT.checkErrorCode` (hipFFT dereferences a garbage plan handle), `Dynamics.stepGPU`, `DubinsDynamics.TestUpdateStateGPU`.
+- `RacerSuspensionTest.*` (the fixture builds a TextureHelper) is excluded from the main run. Its 4 non-skipped tests create no texture object and call no GPUSetup (the TextureHelper constructor only resizes host vectors; the only GPU calls are stream create/destroy); the one that touches textures on the GPU, CPUvsGPU, is an upstream GTEST_SKIP. They are run last, as a separate final chunk, because FractionalThrottleBrake is this delta's new test.
+- Host-only Linux known failures are NOT excluded (they fail cleanly without the GPU): 6 npz loaders, RacerDubins.ComputeStateTrajectoryFiniteTest, 6 GaussianTests.Check*, Integration.RK4.
+- Not excluded but built from textured headers (no texture object is created at run time by their test sources): ddp_tests, vanilla_mppi_test, rollout_kernel_tests, racer_dubins/linear/sampling tests.
+- Disabled upstream (not run on any platform): 5 DISABLED_, 3 GTEST_SKIP.
