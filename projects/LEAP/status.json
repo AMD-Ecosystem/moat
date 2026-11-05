@@ -7,13 +7,37 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-05T00:51:08Z",
+  "updated_at": "2026-11-05T00:52:57Z",
   "head_sha": "63d272405259bc861da536e53962c5c79b1c5702",
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 644559794,
   "stage": "review-passed",
   "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "63d272405259bc861da536e53962c5c79b1c5702",
+      "failed_sha": null,
+      "started_at": "2026-11-04T17:10:14Z",
+      "completed_at": "2026-11-05T00:51:08Z",
+      "updated_at": "2026-11-05T00:51:08Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
+    },
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
@@ -37,6 +61,28 @@
       },
       "state": "completed",
       "last_agent": "validator"
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c77df45b3fcd9d659b3a9f77cc2fdfef673a19e0",
+      "started_at": null,
+      "completed_at": "2026-06-16T09:52:08Z",
+      "updated_at": "2026-08-20T00:08:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     },
     "linux-gfx1100": {
       "state": "completed",
@@ -90,59 +136,14 @@
         "at": "2026-06-16T06:33:12Z"
       }
     },
-    "windows-gfx1101": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "c77df45b3fcd9d659b3a9f77cc2fdfef673a19e0",
-      "started_at": null,
-      "completed_at": "2026-06-16T09:52:08Z",
-      "updated_at": "2026-08-20T00:08:22Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
     "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "d2112b63f025446cd519453423679c5cd8740bf5",
-      "started_at": "2026-06-02T08:08:39Z",
-      "completed_at": "2026-11-04T20:33:05Z",
-      "updated_at": "2026-11-05T00:34:09Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
-    },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
       "validated_sha": "63d272405259bc861da536e53962c5c79b1c5702",
-      "failed_sha": null,
-      "started_at": "2026-11-04T17:10:14Z",
-      "completed_at": "2026-11-05T00:51:08Z",
-      "updated_at": "2026-11-05T00:51:08Z",
+      "started_at": "2026-06-02T08:08:39Z",
+      "completed_at": "2026-11-05T00:52:57Z",
+      "updated_at": "2026-11-05T00:52:57Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -156,8 +157,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "state": "completed"
+      "last_agent": "validator"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/1",
@@ -165,6 +165,5 @@
     "arch": "linux-gfx90a",
     "since": "2026-11-05T00:24:22Z",
     "at": "2026-11-05T00:34:09Z"
-  },
-  "porting": null
+  }
 }

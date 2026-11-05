@@ -2145,11 +2145,60 @@ PriorBilateralFilter(2.5, 0.5)     5187/5187 changed                0/5187
 BilateralFilter(2.5, 0.5, 2.0)     5187/5187 changed                0/5187
 ```
 (columns: voxels changed vs input, max|gpu-ref|.) At 63d2724, BilateralFilter(2.5, 0.5) changes the volume and agrees with the model to within 2.7e-06.
+## Validation 2026-11-05 (validator, linux-gfx90a, revalidate, moat-port @ 63d2724)
+
+Result: completed at 63d272405259bc861da536e53962c5c79b1c5702. jeff asked for this run. On gfx90a (texture path) gpu_vs_cpu_validate is 12/12 with modular SF `fbp_interior=0.9995 adjoint=3.37e-03`, leak 0 bytes, and BilateralFilter / PriorBilateralFilter complete with no fault. Against 5f6816f and d2112b6, 34/36 dump arrays and 18/20 point arrays are bit-identical; the four that differ are exactly the defect paths 63d2724 fixes (`modular_SF_back`, `modular_SF_fbp`, `bilateral_out`, `priorbilateral_out`), as the gfx1100 porter found. 5f6816f vs d2112b6 is still 36/36 and 20/20 bit-identical. CUDA CMake build at 63d2724: rc=0, warnings equal to upstream 0c8846f.
+
+Host: AMD Instinct MI250X GCD (gfx90a), HIP_VISIBLE_DEVICES=0 (pinned by the dispatcher), torch 2.16.0a0+git6c3af02, HIP 7.16.26385, numpy 1.26.4, /opt/python-3.11-venv. All GPU runs under `ulimit -c 0`. Fresh fork clone at `projects/LEAP/src` checked out at 63d2724 (= origin/moat-port tip); builds from `git archive` copies of 63d2724, d2112b6 and 5f6816f in agent_space/cmp. Scripts `dump_outputs.py`, `compare_outputs.py`, `dump_point.py`, `leak_check.py` extracted unchanged from this file; `bilat_frac.py` is new (below).
+
+### Builds (all rc=0, `all archs for visible cards are included for compilation (gfx90a)`, 20 `--offload-arch=gfx90a` lines each)
+```
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=32 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/63d2724 && python setup_AMD.py build_ext --inplace"   # 19.2 s
+(cd agent_space/cmp/<d2112b6|5f6816f> && env -u PYTORCH_ROCM_ARCH MAX_JOBS=32 python setup_AMD.py build_ext --inplace)
+```
+The 12 `-Wliteral-conversion` lines in the d2112b6 build log (six bilateral_filter.hip sites) are 0 at 63d2724.
+
+### Tests (one wrapped run, `utils/timeit.sh LEAP test`, 305.8 s for everything below)
+```
+python dump_outputs.py <build>/src out_<b>_r<n>.npz 256    # interleaved: 5f6816f r1, 63d2724 r1, 5f6816f r2, 63d2724 r2, then d2112b6
+python compare_outputs.py out_5f6816f_r1.npz out_63d2724_r1.npz   # 34/36; same for r2 and for d2112b6 vs 63d2724
+python compare_outputs.py out_5f6816f_r1.npz out_5f6816f_r2.npz   # ALL BIT-IDENTICAL; same for 63d2724 r1 vs r2 and 5f6816f vs d2112b6
+python dump_point.py <build>/src pt_<b>.npz                # 5f6816f, d2112b6, 63d2724
+python compare_outputs.py pt_<old>.npz pt_63d2724.npz      # 18/20 vs either; pt_5f6816f vs pt_d2112b6 ALL BIT-IDENTICAL (20)
+(cd agent_space/cmp/63d2724 && AMD_LOG_LEVEL=3 python unitTests/gpu_vs_cpu_validate.py)   # rc=0, 12/12 PASS, OVERALL: PASS
+python leak_check.py <build>/src                           # 5f6816f and 63d2724: delta 0 bytes over 200 iterations (sum(g)=377330)
+python bilat_frac.py <build>/src                           # d2112b6, 63d2724
+```
+- Differing arrays (63d2724 vs 5f6816f, same vs d2112b6): `modular_SF_back` 12209399/17432576 (max abs 1.4e+03, rel 3.4), `modular_SF_fbp` 12209400/17432576 (rel 4.0); `bilateral_out` and `priorbilateral_out` 2179072/2179072 (max abs 5.2e-02, rel 0.14). Everything else bit-identical, run-to-run identical.
+- gpu_vs_cpu_validate at 63d2724: parallel VD/SF adjoint 2.54e-05/1.64e-05; fan 2.44e-04/1.85e-04; coneparallel 1.24e-03/5.07e-05; cone-flat 1.42e-04/1.46e-04 (fbp 0.9998); cone-curved 8.54e-05/1.30e-04; modular VD fbp 0.9998, adjoint 3.39e-03; **modular SF fbp_interior 0.9995 (err 0.000), adjoint 3.37e-03**; every other fbp_interior 1.0000. The 11 non-modular-SF lines equal this platform's d2112b6 record; the modular SF line equals the gfx90a reviewer's 63d2724 run. 60 `hsa_amd_pointer_info() failed` log lines (pre-existing; 61 at d2112b6), 0 `Error: GPU` lines in any log.
+- dump_point filter cases: `bilateral ok {'out': (2179072, 0)}` and `priorbilateral ok {'out': (2179072, 0)}` in all three builds; no fault, no non-finite value. Its `BilateralFilter(f, 3.0, 0.1)` now changes the volume (it was the identity at 5f6816f/d2112b6, intensity 0.1 truncating to 0). `upsample` fails in the script (ctypes dtype) and `dictionary` memory-faults in the OMP kernel (`hipSetDevice Error: an illegal memory access`) in all three builds; pre-existing, not counted. The ok/FAILED lines are identical across builds.
+- Fractional FWHMs (`bilat_frac.py`, 13x21x19 volume uniform in [0,4), GPU vs a float64 NumPy model of `bilateralFilterKernel` with the untruncated parameters):
+  - 63d2724: BilateralFilter(2.5, 0.5) changes 5187/5187 voxels, max|gpu-ref| 2.73e-06; (2.0, 0.5) 5187, 1.98e-06; (2.5, 5.0) 5187, 3.55e-06; (2.0, 5.0) 5187, 2.49e-06. (2.5, x) differs from (2.0, x) in 5187 voxels for both x. Scaled (2.5, 0.5, 2.0) and PriorBilateral(2.5, 0.5) change 5187. All finite.
+  - d2112b6 control: (2.5, 0.5) and (2.0, 0.5) change 0 voxels (max|gpu-ref| 1.35e-01 / 1.13e-01); (2.5, 5.0) equals (2.0, 5.0) in every voxel (max|gpu-ref| 2.31e-01 vs 2.49e-06 for the integer case); scaled and prior variants change 0.
+
+Timings, median of 5, 256 cols x 266 rows x 360 views, device-resident tensors, ms, project / backproject. 63d2724/5f6816f ratios are 0.96-1.04 except modular_SF backproject, 272.0 / 275.4 vs 373.1 / 373.6 (0.73 / 0.74), because that geometry now takes the cone kernel instead of the parallel one (gfx1100 porter saw 0.688). Matches this platform's d2112b6 table within ~1%:
+```
+geometry_model   5f6816f r1       63d2724 r1       5f6816f r2       63d2724 r2       d2112b6
+parallel_VD      166.7 /  71.2    166.6 /  71.3    166.7 /  71.2    166.8 /  71.2    167.1 /  71.4
+parallel_SF      166.8 /  71.4    167.6 /  71.4    166.8 /  71.4    166.7 /  71.5    167.2 /  71.4
+fan_VD           157.9 /  70.0    158.2 /  70.0    158.3 /  70.0    158.0 /  70.4    157.5 /  70.1
+fan_SF           158.3 / 136.9    158.1 / 137.1    158.0 / 134.4    157.7 / 137.0    158.1 / 137.0
+coneparallel_VD  331.0 /  73.9    331.1 /  73.8    331.3 /  75.2    331.5 /  74.2    331.2 /  73.9
+coneparallel_SF  331.0 / 139.9    331.2 / 139.4    334.3 / 139.8    331.9 / 144.2    331.2 / 139.1
+cone-flat_VD     297.5 /  72.2    297.7 /  72.2    298.6 /  72.2    298.2 /  72.7    297.7 /  72.1
+cone-flat_SF     297.6 / 397.1    297.8 / 396.3    297.7 / 397.4    297.8 / 397.5    297.8 / 397.1
+cone-curved_VD   325.6 /  73.4    325.7 /  73.3    329.1 /  76.5    329.2 /  73.4    325.7 /  73.3
+cone-curved_SF   325.7 / 249.4    325.6 / 249.1    325.6 / 259.3    326.2 / 250.2    325.8 / 248.9
+modular_VD       302.0 /  71.8    302.2 /  71.7    302.4 /  71.9    302.7 /  72.2    302.3 /  71.7
+modular_SF       302.0 / 373.1    302.3 / 272.0    302.3 / 373.6    309.2 / 275.4    302.8 / 374.7
+```
+Comparison: the gfx1100 porter's 63d2724 results (12/12, modular SF 0.9995 / 3.37e-03, the same four differing arrays, fractional FWHMs now change all voxels) and the gfx90a reviewer's (12/12, 5187/5187) are reproduced. This platform's d2112b6 record (12/12, 0 bytes, 5f6816f-identical) holds at 63d2724 for every path the fix does not touch.
 
 bilat_frac.py:
 ```python
 """usage: bilat_frac.py <leap src dir>: BilateralFilter with fractional FWHMs vs a float64 NumPy model of bilateralFilterKernel."""
 import sys, math, numpy as np
+import sys, numpy as np
 sys.path.insert(0, sys.argv[1])
 from leapctype import tomographicModels
 lc = tomographicModels(); lc.set_gpu(0)
@@ -2205,3 +2254,45 @@ Not run on this host: it has no CUDA toolkit (`/opt/conda/envs/cuda-12.8` and co
 - No fork push, no gh write.
 
 validated_sha: 63d272405259bc861da536e53962c5c79b1c5702
+
+def model(f, sF, iF):
+    f = f.astype(np.float64)
+    c = 2.0 * np.sqrt(2.0 * np.log(2.0))
+    sd = (sF / c) ** 2; si = (iF / c) ** 2
+    w = max(1, int(np.ceil(np.sqrt(2.0 * np.log(10.0) * sd))))
+    out = np.empty_like(f); N = f.shape
+    for i in range(N[0]):
+        for j in range(N[1]):
+            for k in range(N[2]):
+                b = f[max(0, i-w):i+w+1, max(0, j-w):j+w+1, max(0, k-w):k+w+1]
+                di, dj, dk = np.meshgrid(np.arange(max(0, i-w), min(N[0], i+w+1)) - i, np.arange(max(0, j-w), min(N[1], j+w+1)) - j,
+                                         np.arange(max(0, k-w), min(N[2], k+w+1)) - k, indexing="ij")
+                wt = np.exp(-((di*di + dj*dj + dk*dk) * 0.5 / sd + (f[i, j, k] - b) ** 2 * 0.5 / si))
+                out[i, j, k] = (wt * b).sum() / wt.sum()
+    return out
+
+outs = {}
+for sF, iF in [(2.5, 0.5), (2.0, 0.5), (2.5, 5.0), (2.0, 5.0)]:
+    g = f0.copy(); lc.BilateralFilter(g, sF, iF); outs[(sF, iF)] = g
+    print("Bilateral(%.1f, %.1f): changed %d/%d  max|gpu-ref| %.3e" % (sF, iF, np.count_nonzero(g != f0), f0.size, np.abs(g - model(f0, sF, iF)).max()), flush=True)
+print("(2.5,0.5) vs (2.0,0.5) differ in %d voxels; (2.5,5.0) vs (2.0,5.0) differ in %d" % (
+    np.count_nonzero(outs[(2.5, 0.5)] != outs[(2.0, 0.5)]), np.count_nonzero(outs[(2.5, 5.0)] != outs[(2.0, 5.0)])))
+g = f0.copy(); lc.BilateralFilter(g, 2.5, 0.5, 2.0); print("scaled Bilateral(2.5, 0.5, 2.0): changed %d" % np.count_nonzero(g != f0))
+g = f0.copy(); lc.PriorBilateralFilter(g, 2.5, 0.5, f0.copy()); print("PriorBilateral(2.5, 0.5): changed %d" % np.count_nonzero(g != f0))
+print("finite:", all(np.isfinite(v).all() for v in outs.values()))
+```
+
+### CUDA gate at 63d2724 (CMake, nvcc 12.8)
+nvcc `release 12.8, V12.8.93` (conda layout at /tmp/cuda-12.8 on this host), host GNU 13.3.0, CMake 3.31.6. FindCUDA cannot find the headers in the conda layout (`Could NOT find CUDA (missing: CUDA_INCLUDE_DIRS)`, also with `-DCUDA_INCLUDE_DIRS`), so `agent_space/cudatk` is a symlink tree (`bin`, `nvvm` -> /tmp/cuda-12.8/..., `include`, `lib64` -> /tmp/cuda-12.8/targets/x86_64-linux/...). Trees from `git archive` of 63d2724 and upstream 0c8846f.
+```
+CM="-DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release -DCUDA_TOOLKIT_ROOT_DIR=$PWD/agent_space/cudatk"
+CUDACXX=/tmp/cuda-12.8/bin/nvcc bash utils/timeit.sh LEAP cuda-compile -- bash -c "cmake -S agent_space/cu/63d2724 -B agent_space/cu/63d2724/build $CM && cmake --build agent_space/cu/63d2724/build -j 32"   # rc=0, 43.5 s, Built target leapct
+CUDACXX=/tmp/cuda-12.8/bin/nvcc bash -c "cmake -S agent_space/cu/0c8846f -B agent_space/cu/0c8846f/build $CM && cmake --build agent_space/cu/0c8846f/build -j 32"                                # rc=0
+/tmp/cuda-12.8/bin/cuobjdump --list-elf agent_space/cu/<t>/build/lib/libleapct.so
+```
+Both: 20 CUDA objects, 21 CXX objects, 20 ELFs each for sm_50/60/70/80/90/100/120 (`CUDA_ARCHITECTURES all-major` overrides the pin, as before). 190 `warning` lines each; grouped by file and message with line numbers masked they are the same set with the same counts as recorded at d2112b6 (#550-D, #177-D, -Wconversion-null, cudaMemcpyToArray, fread). The one textual difference is how the 20 sm_75 notices interleave in the parallel log. No new warning; the three fixed .cu files build clean. No CUDA runtime behaviour is claimed (no NVIDIA GPU). This completes the CMake build the reviewer's per-file nvcc check left open.
+
+### Completion checks
+- `python3 utils/jargon.py --port LEAP`: clean.
+- Documentation: the delta d2112b6..63d2724 is source and test only; the build documentation is unchanged from the d2112b6 record.
+- `git -C projects/LEAP/src status --porcelain`: empty.
