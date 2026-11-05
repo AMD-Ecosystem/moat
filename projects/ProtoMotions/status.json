@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "ProtoMotions",
+  "upstream_url": "https://github.com/NVlabs/ProtoMotions",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-05T23:39:26Z",
+  "updated_at": "2026-11-05T23:39:28Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
