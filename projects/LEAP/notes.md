@@ -1910,3 +1910,51 @@ print([bool(np.isfinite(a).all() and (a != f).any()) for a in (g, h, s)])
 
 This prints `[True, True, True]` on an AMD Instinct MI250X, where the three outputs are bit-identical before and after the change. On an AMD Radeon 8060S, BilateralFilter and PriorBilateralFilter on a 133 x 128 x 128 volume fault before the change and complete after it.
 ~~~~
+
+## Port 2026-11-05 (porter, linux-gfx1100, host min/max truncation fix, moat-port d2112b6 -> f83ae1a)
+
+jeff asked for a fix for the "Port defect found" entry above (HIP host `min`/`max` exist only for `(int, int)`). Commit f83ae1ae7069d7c27db0076f5186d39b00ddac61 "[ROCm] Define the floating-point host min/max overloads for HIP", one commit on top of d2112b6. It changes `setup_AMD.py`: the HIP (`'nvcc'`) compile flags in the `if rocm:` branch gain `-D__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__=1`. It also changes `unitTests/gpu_vs_cpu_validate.py`, where modular SF loses its exemption (see below). No `.cu`/`.cpp`/`.h` source changes. The CUDA branch of setup_AMD.py is untouched. `jargon.py --port LEAP`: clean. `prose.py` on the body: clean. Pushed `d2112b6..f83ae1a moat-port`; `advance-head LEAP f83ae1a`; stage `ported`.
+
+Host: AMD Radeon PRO W7800 (gfx1100), HIP_VISIBLE_DEVICES=2 (pinned by the dispatcher), torch 2.16.0a0+git6c3af02, ROCm SDK clang 24 (`_rocm_sdk_devel` in /opt/python-3.11-venv), numpy 1.26.4. All GPU runs under `ulimit -c 0`. Builds: `git archive d2112b6` in agent_space/cmp/base, and the same plus the new setup_AMD.py and test in agent_space/cmp/fix (both files `cmp`-identical to f83ae1a). The fork clone is clean.
+```
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=10 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/<base|fix> && python setup_AMD.py build_ext --inplace"   # both rc=0, 20 hipcc, gfx1100
+```
+
+### Finding every call site (host-only pass)
+`-Wfloat-conversion` over the hipified sources cannot tell host from device calls, because device bodies are parsed in the host pass too. The precise method: in the real hipcc command (from build.log) add `--cuda-host-only -fsyntax-only -D__HIP_NO_HOST_MIN_MAX_IN_GLOBAL_NAMESPACE__ -include poison.h`. `poison.h` redefines ROCm's default host pair `min/max(const int, const int)` with `__attribute__((diagnose_if(true, "HOSTMINMAX", "warning")))`, so each host call that lands on it is reported with its location. `poison_ext.h` defines the set `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__=1` gives (int, unsigned, long, unsigned long, long long, unsigned long long, float, double, float/double, double/float), each reporting its own signature. A first attempt with `deprecated` missed the two ramp_filter.cu sites (cause not traced), so diagnose_if is the tool. The scripts are in agent_space/cmp/scan (local only; the method is in the skill entry).
+- 77 host min/max calls across the 20 .hip files, 0 errors with either header (so no ambiguity under the extended set).
+- 17 change overload under the extended set, which is the defect: `bilateral_filter.cu` 246-247, 343-344, 455-456 (outer `max` -> (double,double), inner `min` -> (double,float)); `projectors_Joseph.cu:2349` (double,double), `:2350` (float,float) twice; `ramp_filter.cu:843, 934` (double,double).
+- The other 60 stay on (int,int) with integer arguments (oversampling, slice ranges, window radii, `max(1024, getSPcores())`, block sizes, chunk sizes), the same overload CUDA picks.
+- Device code: the define only adds host-only inline functions. The 20 gfx1100 code objects, unbundled from each object's `.hip_fatbin`, have byte-identical `.text`, `.rodata`, `.data` and `.bss`, the same `llvm-objdump -d` output and the same sorted symbol table. Only the `__hip_cuid_<hash>` name differs, because the CUID hashes the compile flags. That name change accounts for the remaining code-object bytes and the symbol order.
+- Build warnings: the only difference between the two build logs is that the six `-Wliteral-conversion` warnings at bilateral_filter.hip 247/248/344/345/456/457 ("changes value from 0.25 to 0", "1.0E-8 to 0") disappear. The defect was visible in every build log.
+- Not affected: the `.cpp` files (g++), and every device min/max.
+
+### Results, d2112b6 vs f83ae1a (same host, same session)
+```
+bash utils/timeit.sh LEAP test -- bash -c "cd agent_space/cmp/<b> && python unitTests/gpu_vs_cpu_validate.py"
+python agent_space/scripts/minmax_check.py agent_space/cmp/<b>/src runs/mm_<b>.npz
+python agent_space/scripts/modsf.py agent_space/cmp/<b>
+python agent_space/scripts/lowpass.py agent_space/cmp/<b>/src
+python dump_point.py agent_space/cmp/<b>/src runs/pt_<b>.npz ; python dump_outputs.py agent_space/cmp/<b>/src runs/out_<b>.npz 256
+python compare_outputs.py runs/pt_base.npz runs/pt_fix.npz ; python compare_outputs.py runs/out_base.npz runs/out_fix.npz
+```
+- gpu_vs_cpu_validate.py at d2112b6 (old test): 12/12 PASS, with the 12 lines equal to this platform's earlier record. The old test run on the fix build gives the same 12 lines, byte for byte, including **modular VD adjoint 3.39e-03 before and after**. The fix cannot move it. Modular VD backprojection goes to `backproject_VD` (`projectors.cpp:170`), not `backproject_Joseph_modular`, which serves the modular geometry with the SF projector. The 3.39e-03 stays unexplained. It is within ADJ_TOL and is not this defect.
+- New test at f83ae1a: 12/12 PASS. Modular SF: `fbp_interior=0.9995 (err 0.000) adjoint=3.37e-03`. The other 11 lines are unchanged. The new test run against the d2112b6 build FAILS modular SF (`fbp_interior=0.2251 (err 0.775) adjoint=3.40e+00`), so it now catches this defect.
+- Joseph modular backprojection (`modsf.py`, validator geometry, tilt 1 / tilt 0): modular SF FBP interior was 0.2251 / 0.2251 and is now 0.9995 / 1.0000. Its adjoint error was 3.40 / 7.73 and is now 3.39e-03 / 2.30e-03. Modular VD is identical in both builds (0.9998 / 1.0000, 3.40e-03 / 2.58e-03). Cause: `alpha` truncated to 0 makes `maxDivergence` 0, so `isParallel` was taken for cone data. **The test docstring's "modular-beam SF is non-adjoint by design" and "modular SF FBP is a pre-existing upstream limitation" (and the same claims in the port and review PR bodies above) were this port defect, not upstream behavior.** f83ae1a removes the test's modular-SF exemption and the two docstring claims. In dump_outputs, modular SF FBP vs modular VD FBP moves from rel 0.83 to 7.0e-03.
+- Bilateral (`minmax_check.py`, 13x21x19 volume in [0,4), compared against a float64 NumPy model of `bilateralFilterKernel` with the untruncated parameters):
+  - d2112b6: (2.5, 0.5) and (2.0, 0.5) change 0/5187 voxels (the identity; max|gpu-ref| 1.43e-01 / 1.17e-01). (2.5, 5.0) equals (2.0, 5.0) in all voxels (max|gpu-ref| 2.40e-01). The scaled (2.0) and prior variants at (2.5, 0.5) change 0 voxels. Integer FWHMs (2.0, 5.0) and (2.0, 1.0) already matched the model (2.7e-06, 2.3e-06).
+  - f83ae1a: every case changes 5187/5187 voxels and matches the model to max|gpu-ref| <= 3.9e-06. (2.5, x) now differs from (2.0, x) in all 5187 voxels. The scaled and prior variants change all voxels.
+- FBPlowpass (`lowpass.py`, filterProjections GPU vs filterProjections_cpu, 128 cols): with FBPlowpass 3.0 the relative difference was 0.998 (parallel and cone) at d2112b6 and is 6.8e-07 at f83ae1a. Without FBPlowpass it is 2.2e-07 in both builds.
+- dump_point.py: rc=0 in both, and the ok/FAILED lines are identical. As before, `upsample` fails in the script and `dictionary` reports its asynchronous illegal access (1 line in each build). compare_outputs: 18/20 arrays bit-identical. The two that differ are `bilateral_out` and `priorbilateral_out` (2179072/2179072 voxels, max abs 5.2e-02). Its `BilateralFilter(f, 3.0, 0.1)` was the identity at d2112b6, so dump_point's bilateral comparisons in every earlier record compared unfiltered copies, as the squash-message check found.
+- dump_outputs.py (36 arrays): 34 bit-identical. The two that differ are `modular_SF_back` (12209399/17432576, rel 3.4) and `modular_SF_fbp`, both from the backprojector above. Times new/old: 1.005-1.028 project and 1.007-1.019 backproject on every geometry (device code is identical, and the fix ran second; earlier records show the same drift through a session). The one exception is modular_SF backproject at 0.688, because it now runs the cone kernel instead of the parallel one.
+
+Every output difference is one of the three defect paths. Nothing else moved.
+
+### Skill lesson
+Added to `cuda-to-rocm` `references/fault-classes.md` (Floating point) and the SKILL.md index: symptom, the diagnose_if detection pass, and the fix with its device-code check.
+
+### Not done / for jeff
+- CUDA compile (nvcc) at f83ae1a: not run here (no nvcc on this host, and as a fleet worker I cannot dispatch). The change is in setup_AMD.py's `if rocm:` branch plus a Python test, so the CUDA build inputs are unchanged. Your standing rule still asks for an nvcc compile before you see the round: one mi355 run of `python setup_AMD.py build_ext --inplace` (CUDA) at f83ae1a.
+- Every platform now reads `revalidate` at f83ae1a, and the stage is `ported`, so a review comes next.
+- The drafted squash messages and the review PR body above say modular SF FBP non-convergence and non-adjointness are upstream behavior. That is wrong, and they need the correction before any PR prep. Whether f83ae1a stays a third commit or is folded into commit 1 at the squash is your call.
+- The Windows build uses the same setup_AMD.py flags, and `-D...=1` is plain, so I expect no Windows difference. The Windows validator will confirm.
