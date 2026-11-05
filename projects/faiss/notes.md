@@ -1702,3 +1702,63 @@ A HIP TU that includes either one without `-DUSE_AMD_ROCM` compiles against a 7.
 `01a09e824` a 10.1 build failed outright, and 7.x output is unchanged by the commit. The consumer
 requirement is now written in "## Install as a dependency". tsne-cuda includes only
 `GpuIndexFlat.h` / `StandardGpuResources.h` / `GpuCloner.h`, which need no define.
+
+## CUDA compile check 2026-11-05 (708a879bc)
+
+Real-nvcc no-regression check owed by the 2026-11-05 porter and reviewer rounds. Compile only,
+no GPU run, no role taken, no state changed. Host: mi355 fleet host, nvcc 12.8.93
+(`/usr/local/cuda-12.8/bin`), GCC 13.3.0, CMake 3.31.6, Ninja.
+
+- Port: `AMD-Ecosystem/faiss` `moat-port` at `708a879bc`.
+- Control: `0c72755ec`, the merge base of `moat-port` with the fork's `main` mirror. The mirror
+  tip (`b5ca016`) has moved past the base with unrelated upstream commits; the base isolates
+  exactly the 5 port commits (`git diff --stat 0c72755ec 708a879bc`: 6 files, +33/-14).
+- Deps: gflags v2.2.2 built from source into the job dir (`-DBUILD_SHARED_LIBS=ON`). BLAS/LAPACK:
+  the system `libopenblas.so` was found by CMake, so no BLAS build was needed. googletest comes
+  from the tree's FetchContent.
+
+Configure + build (same for both shas, same build directory path so outputs are comparable):
+```
+export PATH=/usr/local/cuda-12.8/bin:$PATH CUDACXX=/usr/local/cuda-12.8/bin/nvcc
+cmake -S . -B build -G Ninja \
+  -DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_CUVS=OFF -DFAISS_ENABLE_PYTHON=OFF \
+  -DFAISS_ENABLE_C_API=ON -DFAISS_ENABLE_EXTRAS=OFF -DBUILD_TESTING=ON \
+  -DBUILD_SHARED_LIBS=ON -DFAISS_OPT_LEVEL=generic -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
+  -DCUDAToolkit_ROOT=/usr/local/cuda-12.8 \
+  -DCMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE=PRE_TEST \
+  -DCMAKE_PREFIX_PATH=<job>/work/deps/gflags
+ninja -C build -j64 -k 0
+ctest --test-dir build -N; ctest --test-dir build -N -R "TestGpu|TestCodePacking"
+cuobjdump --list-elf build/faiss/libfaiss.so; cuobjdump -ptx build/faiss/libfaiss.so
+```
+(`PRE_TEST` discovery keeps the post-build step from launching the gtest binaries; `ctest -N`
+then only runs `--gtest_list_tests`, which touches no GPU.)
+
+| sha | ninja | CUDA TUs | sm_80 ELFs in libfaiss | ctest -N total | GPU tests | errors | warnings |
+|---|---|---|---|---|---|---|---|
+| control `0c72755ec` | 446/446, rc 0, 68 s | 184 | 182 | 374 | 108 | 0 | 1 (`tmpnam` in CPU `test_mmap.cpp`) |
+| port `708a879bc` | 446/446, rc 0, 65 s | 184 | 182 | 374 | 108 | 0 | same 1 |
+
+All 11 GPU test binaries (TestCodePacking, TestGpuDistance, TestGpuIcmEncoder,
+TestGpuIndexBinaryFlat, TestGpuIndexFlat, TestGpuIndexIVFFlat, TestGpuIndexIVFPQ,
+TestGpuIndexIVFScalarQuantizer, TestGpuMemoryException, TestGpuResidualQuantizer,
+TestGpuSelect), `faiss_test` and `libfaiss_c.so` link in both. Counts match the ROCm builds
+(108 GPU + 266 other).
+
+Device code equivalence (Float16.cuh is included by nearly every GPU TU):
+- Built control, dumped `cuobjdump -ptx libfaiss.so`, checked the source out at `708a879bc` and
+  rebuilt in place (177 CUDA objects recompiled), dumped again. 3,417,747 lines each, 752
+  `.entry` kernels. The raw diff is 11,520 lines, all of them nvcc's per-compile internal-linkage
+  hashes (`_INTERNAL_<8hex>_`, `_cu_<8hex>_<n>`, `__N__<8hex>_`); after normalizing those three
+  patterns with sed the PTX is **identical**.
+- Object sha256 comparison is not usable: every `.cu.o` differs in both directions because of the
+  same random module IDs. Host-only objects that differ are just the two changed test sources
+  (`TestCodePacking.cpp`, `TestUtils.cpp`).
+- SASS was not compared: this CUDA 12.8 install has no `nvdisasm` (`cuobjdump -sass` fails).
+  Identical PTX through the same `ptxas` is the comparison used.
+
+Verdict: no CUDA regression at `708a879bc`. The CUDA build is clean, and the 7bd3b4806
+Float16.cuh branch reorder produces the same sm_80 device code as the control. This closes the
+"CUDA compile on mi355" item owed by the 2026-11-05 porter round. Build trees, the fork clone and
+the gflags prefix were deleted afterwards (the host root disk had 8 to 25 GB free during the run).
