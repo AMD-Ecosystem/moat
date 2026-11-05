@@ -2941,3 +2941,38 @@ xvfb-run -a -s '-screen 0 1280x1024x24' Examples/Stereo/stereo_tum_vi ORBvoc.txt
 
 ### Result
 linux-gfx1100: `revalidate` -> `completed` at `fde33e5`. The b9c257a failure (`-217` abort from the double `hipFree`) does not recur in 17 runs.
+
+## Validation 2026-11-04 (windows-gfx1151, revalidate): PASS -> completed (head fde33e5)
+
+Trigger: `failed_sha` bab4052 -> head fde33e5. Host: Radeon 8060S (gfx1151, wave32, 20 CUs), TheRock SDK 7.14.60850 (clang 23), CMake 3.31, vcpkg x64-windows (dynamic; PCL 1.15.1, Abseil DLL), LIB with MSVC 14.50 first. Recipe: the 2026-11-04 Windows port round above, unchanged. Fork checked out at fde33e5 (== origin/moat-port); tracked tree clean at completion (a throwaway edit to `Examples/Stereo/stereo_tum_vi.cc`, see below, was discarded). Every GPU process ran under `ulimit -c 0`, `OMP_NUM_THREADS=4`, one plvs process at a time. Scripts: `agent_space/plvs_win/` (gitignored): `vloop.sh`, `sloop.sh`/`sloop2.sh`, `sym.sh`.
+
+### Build at fde33e5
+- libelas-gpu rebuilt WITH the GPU code: `cmake -S Thirdparty/libelas-gpu -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_{C,CXX,HIP}_COMPILER=<sdk>/lib/llvm/bin/clang{,++,++}.exe -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DBUILD_WITH_MARCH_NATIVE=OFF ...` -> 14/14, 8 s (the `-regalloc=basic` workaround for `elas.cpp` holds). `libelas_gpu.lib` carries `elas_gpu.cu.obj` with `ElasGPU` symbols. Main tree reconfigured (`configure_main.sh -DWITH_FASTFUSION=OFF`, USE_HIP=ON) and relinked: `mono_tum` and `stereo_tum_vi` build RC=0. (The configure message prints "building with libelas CUDA" because the OpenCV wrapper presets `CUDA_FOUND`; the compile line has `-DUSE_HIP -DUSE_LIBELAS -DUSE_LIBSGM` and no `-DUSE_CUDA`.)
+
+### Test 1: mono TUM RGB-D freiburg1_xyz (798 frames, viewer on), 3 runs
+| run | exit | lost/reset | KFs | ATE RMSE (Sim3, `ate.py`) | median track |
+|---|---|---|---|---|---|
+| 1 | 0 | 0 | 51 | 1.00 cm (max 3.23) | 34.1 ms |
+| 2 | 0 | 0 | 53 | 0.95 cm (max 2.87) | 34.2 ms |
+| 3 | trajectory saved | 0 | 48 | 0.85 cm (max 2.14) | 34.5 ms |
+(Run 3's `rc=` line is missing only because a harness timeout killed the wrapper after the exe finished writing the trajectory.) Matches the porter's 0.95-1.00 cm.
+
+### Test 2: ELAS GPU-vs-CPU (`elas_cmp.cpp` verbatim from the 2026-11-04 fix-round section)
+libelas-gpu exported with `git archive fde33e5` and built standalone for gfx1151 (default `-march=native`, 8 occurrences, as in the recorded tables). Harness: `clang++ -x hip --offload-arch=gfx1151 -std=c++17 -O2 -DUSE_HIP -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -I$L/CPU -I$L/GPU elas_cmp.cpp -x none libelas_gpu.lib` (the `-D_DLL ... --dependent-lib` flags avoid a RuntimeLibrary MT/MD mismatch on Windows); run `elas_cmp.exe $L/input <mode>`; RC=0 in all four modes.
+- Mode 2: GPU reruns bit-exact 7/7; cones and aloe identical to CPU (max 0, vmis 0, cones `invalid_cpu` 26728); raindeer 0.50 / vmis 4, urban1 0.44 / 2, urban2 0.66 / 0, urban3 1.23 (1 px > 1) / 0, urban4 0.68 / 0. Line for line the gfx90a / gfx1100 / gfx942 table.
+- Mode 0: D1 mean |d| 0.014-0.020, >1px 0-1, vmis 1-9; D2 cones max 24.80. Mode 1 similar. Mode 3: integer steps, max 2-3 on the first pairs, mean ~5e-5, >1px 1-5. All inside the recorded ranges.
+- Leak and pending-error check (`elas_leak.cpp`, 21 `ElasGPU::process` calls with plvs settings, `hipMemGetInfo` + `hipGetLastError` after each): aloe 0.00 MB lost, cones 0.00 MB lost, **0/21 calls with a pending error** for both (b9c257a: 80 / 26 MB, 21/21 errors).
+
+### Test 3: TUM-VI room1 stereo (dataset-room1_512_16 downloaded, 1.7 GB), libelas on the GPU in plvs
+`stereo_tum_vi` with `Examples/Stereo/TUM-VI.yaml` plus `PointCloudMapping.on: 1`.
+- **`-217` / `invalid argument` / `hipError` / `terminate called` hits: 0 in all 10 logs.** An `AMD_LOG_LEVEL=3` run (cut by timeout at 20 libelas calls) shows `libelas::findMatch_GPU` x40, `adaptiveMeanGPU8` x20, ORB `IC_Angle` x10304, 3582 `hipFree` calls and 0 `hipErrorInvalidValue`. So ELAS runs on the device inside plvs and the double free no longer aborts.
+- The run does NOT finish the sequence on Windows: 5/5 PCM-on runs end in an access violation (rc 139) in a SLAM CPU thread after 30-131 libelas calls: `LocalMapping::CreateNewMapFeatures` (x2, symbolized with a `/DEBUG` relink and `llvm-symbolizer`), `LocalMapping::KeyFrameCulling`, `LoopClosing::DetectCommonRegionsFromBoW -> ORBmatcher::SearchByProjection`, and one unsymbolized. This is not libelas or the GPU: with `PointCloudMapping.on: 0` (no ELAS call) the HIP build dies the same way (`CreateNewMapFeatures`), with `Line.on: 0` too, and a CPU-only Windows build of the same source (`-DUSE_HIP=OFF -DWITH_LIBELAS=OFF -DWITH_LIBSGM=OFF`, `build-win-cpu`) dies 3/3 at the same point (about 870 log lines). Linux ran 17-21 stereo runs with 14-18 clean, so the Windows rate is far higher; the stacks are in CPU-only keyframe/map code (the same class as the registered `plvs-upstream-stereo-mapping-crashes`: Linux saw a `CreateNewMapFeatures` SEGV and a `SearchForTriangulation` rowRange exception). No line numbers were obtained (the build has no `-gcodeview`), so the Windows-specific trigger is not root-caused. Recorded as `plvs-windows-stereo-slam-crash`, not a port gate.
+- Windows-only build defect found: `Examples/Stereo/stereo_tum_vi.cc` includes `<unistd.h>` and calls `usleep`, so the target does not compile on Windows (`fatal error: 'unistd.h' file not found`). Minimal fix: `#include <thread>` and `std::this_thread::sleep_for(std::chrono::microseconds((long long)((T-ttrack)*1e6)))`. I used that as an uncommitted local edit to build the exe and discarded it. It affects only that example, not the library or the mono path.
+
+### Gates
+- CUDA compile gate: recorded at this head_sha on 2026-11-05 (PASS); not repeated here.
+- `python3 utils/jargon.py --port plvs` -> `jargon: clean`. ROCm build documentation unchanged since bab4052.
+- Integrity: `git -C projects/plvs/src status --porcelain` shows no modified tracked files; HEAD fde33e5.
+
+### Result
+windows-gfx1151: `port-ready`/`validation-failed` -> `completed` at fde33e5: GPU ORB (mono, 3/3 clean, 0 lost, ATE ~1 cm) and GPU ELAS (bit-exact reruns, CPU parity, no leak, no pending error, no -217 in plvs) validated on real gfx1151. The Windows stereo SLAM crash is pre-existing CPU-side and reproduces without any GPU code.

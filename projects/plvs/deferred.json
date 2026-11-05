@@ -86,6 +86,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-05T00:26:19Z",
       "decided": null
+    },
+    {
+      "id": "plvs-windows-stereo-slam-crash",
+      "kind": "other",
+      "component": null,
+      "summary": "On Windows (gfx1151, clang 23) the TUM-VI room1 stereo SLAM (stereo_tum_vi) crashes with an access violation in a CPU keyframe/map thread (LocalMapping::CreateNewMapFeatures, KeyFrameCulling, LoopClosing::DetectCommonRegionsFromBoW) within 30-131 keyframes, 5/5 runs with libelas and PointCloudMapping, and identically with PointCloudMapping off and in a CPU-only (USE_HIP=OFF, no libelas/libsgm) Windows build; Linux runs the same sequence 14-18 clean of 17-21. Not caused by the HIP port. Root cause not found (no line info). Also Examples/Stereo/stereo_tum_vi.cc includes <unistd.h>/usleep so the target does not build on Windows; fix: std::this_thread::sleep_for. Neither gates the port.",
+      "refs": [
+        "projects/plvs/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-05T03:42:59Z",
+      "decided": null
     }
   ]
 }
