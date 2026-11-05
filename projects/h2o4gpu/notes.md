@@ -169,3 +169,23 @@ Wheel bundles `_ch2o4gpu_gpu.so`, `lightgbm_gpu/lib/lib_lightgbm.so` (HIP), `lig
 ### Porter round close-out (2026-11-05, linux-gfx90a)
 - No fork change: `moat-port` stays at `ccde3a9`. jeff's 2026-11-04 rulings (plan.md) settle the two open questions above: xgboost_prev stays CPU-only under `USE_HIP`, and xgboost stays on `release_2.1.3-rocm`.
 - surface.json accounted for: 20 components covered with the commit and evidence from these notes; `vendored:nvidia-eula-helpers` (removed in 3c713ae, ruling 4), `interface:r` (no native code) and `platform:windows` (ruling 3 sequences it last; the windows gate is still owed) added to scoped_out beside the planner's six. `python3 utils/surface.py check h2o4gpu` clean with the stage at `ported`.
+
+## CUDA compile check 2026-11-05 (ccde3a9)
+
+CUDA no-regression compile check on linux-gfx950 (mi355 host), nvcc 12.8 (V12.8.93), gcc 13.3.0, cmake 3.31.6, SWIG 4.2.1, OpenBLAS 0.3.26. No role taken, no state changed, no GPU run.
+
+- Trees: fork `moat-port` at `ccde3a9` and the control upstream `97279de` (the fork's `master` is now at `97279de`). The CUDA submodule pointers are identical in both: `xgboost` `4235811`, `xgboost_prev` `0ad357a`, `LightGBM` `42043b9`, `tests/googletest` `2fe3bd9`; `.gitmodules` keeps their h2oai URLs. `LightGBM_rocm`/`xgboost_rocm` are only added, and the Makefile/config.mk route to them only under `USE_HIP=ON` (`LIGHTGBM_DIR`/`XGBOOST_DIR` default to `LightGBM`/`xgboost`). Only `tests/googletest` was initialized; the gbm submodules were not built.
+- One arch: `GPU_COMPUTE_VER` is a plain `SET` (not a cache var), so both trees got the same scratch-only sed: `60;61;70;75;80;90` -> `80`, and the Blackwell `;100;120` append dropped. Result `-gencode=arch=compute_80,code=sm_80;-gencode=arch=compute_80,code=compute_80`.
+- Commands (same for both, `t` = ctrl|port):
+  ```
+  export PATH=/usr/local/cuda-12.8/bin:$FLEET_VENV/bin:$PATH
+  cmake -S $t -B $t/build -DCMAKE_BUILD_TYPE=Release -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-12.8 -DPython_EXECUTABLE=$FLEET_VENV/bin/python -DSWIG_EXECUTABLE=$FLEET_VENV/bin/swig
+  cmake --build $t/build -j32 -- -k
+  ```
+- Result: both PASS. All targets build: `libcpuh2o4gpu.a`, `libgpuh2o4gpu.a`, `_ch2o4gpu_cpu.so`, `_ch2o4gpu_gpu.so` (NVML stub linked), `h2o4gpu_test` (gtest; arima test macros compile to `ASSERT_FLOAT_EQ`). Build time about 25 s each.
+- Errors: none from the port. Environment pitfall that hits both trees the same way: SWIG 4.5.1 (pip `swig` latest) fails `_ch2o4gpu_cpu` with `'PyString_Check' was not declared` / `'PyInt_Check'` (the `.i` files use Python 2 API that SWIG 4.3+ no longer shims). Use SWIG <= 4.2 (Ubuntu 24.04 apt `swig` is 4.2; pip `swig==4.2.1` into `$FLEET_VENV` works).
+- Warnings: the project compiles with `-w` (CXX and NVCC), so compiler warnings are suppressed in both. Normalized warning sets (13 unique lines each) are identical apart from a line shift: CMake `CMP0146` FindCUDA dev warning at CMakeLists.txt:106 -> :111 (the 5 added lines above it), CMake deprecations from `cmake_policy(CMP0078 OLD)` and googletest's `cmake_minimum_required`, and the CUDA 12.8 NVTX2 `#pragma message` deprecation from `nvToolsExt.h`. No new warnings.
+- The CUDA build sees no HIP pieces: no `hip_compat` in any include path or build file, and no reference to `LightGBM_rocm`/`xgboost_rocm` in the build tree.
+- Binary diff (`libgpuh2o4gpu.a`): objects `bwcheck.cu.o` and `p2pbwcheck.cu.o` are gone (3c713ae), and so are their symbols (`bwcheck`, `p2pbwcheck`, `output*Matrix`, `printResults*`, `checkP2Paccess`, `delay`, `sMemory*`). Otherwise the symbol sets are the same apart from anonymous-namespace hash renames and the kmeans|| lambda closure types (`kmeans_parallel` symbols: 54 vs 54). `kmeans_h2o4gpu.cu.o` sm_80 fatbin 2976360 -> 3219224 B (+8%), PTX 2979409 -> 3134411 B. The growth sits in the four CUB `DeviceReduce{,SingleTile}Kernel` instantiations over the counting lambda (about 1875 -> 3010 PTX lines each), and it is the minstd_rand `discard` modular arithmetic (`mul.lo ... 2147483647`) emitted twice as often. Cause: `device` is now a captured host loop index and no longer a device-side `cudaGetDevice` (ac069e2). It is the same value, because the loop has just done `cudaSetDevice(i)`, so behaviour is unchanged; the size change is nvcc's codegen. h2o4gpuglm.cu.o +64 B, projector_direct_dense.cu.o -32 B.
+- Not done: GPU test run (none on this host by instruction); gbm submodule builds (`make xgboost`/`lightgbm_gpu` CUDA recipes are untouched by the port, and the notes above record that the `xgboost/Makefile2` recipe is already stale upstream).
+- Build trees deleted after the check.
