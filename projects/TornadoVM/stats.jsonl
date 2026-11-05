@@ -34,3 +34,8 @@
 {"kind":"session","ts":"2026-11-05T02:29:36Z","epoch":1793845776.191362411,"event":"end","platform":"linux-gfx942"}
 {"kind":"phase","ts":"2026-11-05T02:36:49Z","phase":"compile","seconds":0.008,"exit":2,"cmd":"make jdk21 BACKEND=opencl,hip"}
 {"kind":"phase","ts":"2026-11-05T02:38:50Z","phase":"compile","seconds":108.635,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=opencl,hip"}
+{"kind":"session","ts":"2026-11-05T03:49:51Z","epoch":1793850591.570396005,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-05T03:54:16Z","phase":"test","seconds":8.278,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261104-193844-tvm-review4/run-before.sh"}
+{"kind":"phase","ts":"2026-11-05T03:55:47Z","phase":"compile","seconds":218.764,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261104-193844-tvm-review4/build.sh"}
+{"kind":"phase","ts":"2026-11-05T03:56:24Z","phase":"test","seconds":30.595,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261104-193844-tvm-review4/run-after.sh"}
+{"kind":"session","ts":"2026-11-05T03:56:41Z","epoch":1793851001.122378346,"event":"end","platform":"linux-gfx942"}

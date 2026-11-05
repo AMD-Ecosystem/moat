@@ -329,3 +329,28 @@ Before: the review-3 job's `2a7075bde` dist, OpenCL on, `-Dtornado.hip.priority=
 CUDA: `make jdk21 BACKEND=cuda` at `08cb3c5aa` in a separate worktree, nvcc 12.8.93 (`/usr/local/cuda/bin/nvcc`, CUTLASS sm_80): BUILD SUCCESS. `git diff origin/develop...08cb3c5aa` over `tornado-drivers/{cuda,opencl,metal,cuda-jni,opencl-jni}`, `tornado-native-libs/{cudf-jni,cudnn-jni,cutlass-jni}` and the Cuda/OpenCl/Metal dialects is empty. `utils/jargon.py --commits 2a7075bde..HEAD` and `--diff origin/develop...HEAD` clean; `utils/prose.py` clean on the body; ASCII; AI disclosure; fenced Test Plan; no Co-Authored-By.
 
 Process note: the first local commit (`04e44ff54`, never pushed) claimed all three Test Plan runs pass without an OpenCL platform; the last does not (harness row above), so it was recommitted with a corrected body before the push.
+
+## Review 2026-11-05 (linux-gfx942, MI300X, reviewer at `08cb3c5aa`)
+
+Scope: the fix-round-3 delta `git diff 2a7075bde..08cb3c5aa` (one commit, `TestNcclMultiProcess.java` only), checked against the code and reproduced on gfx942. The 32-lane warp emulation and the porter's open questions are with jeff and were not reviewed. Verdict: **clean, review-passed**. No findings.
+
+### Verified closed (evidence for this review)
+
+- Review-3 must-fix 1: the child now takes the backend type name and `backendOfType` walks `getNumBackends()`, matching `getBackendType(i)`. `Backends.get(i)` creates lazily and caches a failed start, so a dead OpenCL slot throws once, is skipped, and the order no longer matters. The lookup runs after `NcclUniqueId.create()`, so it does not weaken the "create starts no backend" check. Unused `TornadoExecutionPlan` import removed; the new imports are all used.
+- Builds in this job's directory (ROCm 10.1 TheRock wheels, OpenJDK 21.0.12, `HIP_VISIBLE_DEVICES=3`, `ulimit -c 0`, `TORNADO_CK_GPU_TARGETS=gfx942`, private Maven repo): `make jdk21 BACKEND=opencl,hip` BUILD SUCCESS at `2a7075bde` and at `08cb3c5aa` (fresh clone of `AMD-Ecosystem/TornadoVM`, `origin/moat-port` = `08cb3c5aa`).
+- `tornado-test --jvm=<opts> -V uk.ac.manchester.tornado.unittests.nccl.TestNcclMultiProcess` ("OpenCL on" = the review-3 symlink recipe, `ROCR_VISIBLE_DEVICES=3 HIP_VISIBLE_DEVICES=0`):
+
+| tree | OpenCL | `--jvm` | result |
+|---|---|---|---|
+| `2a7075bde` | on | `-Dtornado.hip.priority=20` | 1 failed (`testUniqueIdWithoutDeviceStartsNoBackend`, child "Unable to load NCCL"), 3 pass, 1 unsupported |
+| `2a7075bde` | none | `-Dtornado.enabled.backends=hip -Dtornado.hip.priority=20` | 1 failed (same test, child "No OpenCL platforms found": HIP is backend 0, the rank ran on dead backend 1) |
+| `08cb3c5aa` | on | `-Dtornado.hip.priority=20` | 4 pass + 1 unsupported (testTwoProcesses, one GPU) |
+| `08cb3c5aa` | on | (default) | 5 unsupported (OpenCL is the parent's default device; as designed) |
+| `08cb3c5aa` | on | `-Dtornado.enabled.backends=hip` | 4 + 1 |
+| `08cb3c5aa` | on | `-Dtornado.enabled.backends=hip -Dtornado.hip.priority=20` | 4 + 1 |
+| `08cb3c5aa` | none | `-Dtornado.enabled.backends=hip` | 4 + 1 |
+| `08cb3c5aa` | none | `-Dtornado.enabled.backends=hip -Dtornado.hip.priority=20` | 4 + 1 |
+
+  The second row is a no-OpenCL failure mode of the old test that review 3 did not list; the fix covers it too.
+- Byte-identity: `git diff origin/develop...08cb3c5aa` over `tornado-drivers/{cuda,ptx,opencl,spirv,metal}`, `tornado-native-libs/{cudf-jni,cudnn-jni,cutlass-jni}` and `tc-codegen` `CudaDialect.java`/`OpenClDialect.java`/`MetalDialect.java` is empty. The delta is one Java test file compiled the same way for every backend; the porter's real-nvcc `make jdk21 BACKEND=cuda` at `08cb3c5aa` is recorded in fix round 3 and was not repeated here.
+- Commit `08cb3c5aa`: `[ROCm]` title of 64 characters, ASCII, AI disclosure, fenced Test Plan, no Co-Authored-By. `utils/jargon.py --commits 2a7075bde..08cb3c5aa` and `--diff origin/develop...08cb3c5aa` clean. Fork tree has no modified tracked files.
