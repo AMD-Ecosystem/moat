@@ -1049,3 +1049,70 @@ ctest --test-dir src/build-hip -j1 --timeout 600   # 159 s
 - Process slip: the first `jargon.py --port` call errored ("cannot resolve main..moat-port", no local `main` in the fresh clone) and the push in the same command line went ahead. Created a local tracking `main` and re-ran: `jargon: clean`, so the pushed branch is clean.
 - CUDA compile not run here (no nvcc on this host); the change is plain fminf/fmaxf/fmin/fmax in existing CUDA C++, owed on the nvcc host.
 - Lesson for the fault-class entry on port/LEAP (not edited here; the entry is not on this branch): a host-only probe over `compile_commands.json` misses headers whose only including TUs are excluded from the HIP build; probe those excluded TUs with the same flags too.
+
+## CUDA compile check (nvcc 12.8) at bee3eb6
+
+Compile-only CUDA gate for bee3eb6 (`[ROCm] Call fminf/fmaxf in host code instead of unqualified min/max`), compared against its parent 11b61ab. Host: no NVIDIA GPU, nvcc 12.8.93 (`/usr/local/cuda-12.8`), gcc 13.3.0, CMake 3.31.6, Ninja, Eigen 3.4.0 from `/usr/include/eigen3`. Fresh recursive clone of fork `moat-port` (bee3eb6), parent via `git worktree add --detach ../parent HEAD~1`; cnpy submodule 91c53bc at both.
+
+**Result: build PASS at both, but bee3eb6 regresses the CUDA device path of `RacerSuspension::computeStateDeriv`. Needs a porter fix before this head goes further.**
+
+### Build (same recipe as the V100 gate, arch list fixed because there is no GPU to autodetect)
+yaml-cpp is not installed here and building it from source was refused by this session's permission policy. The project only calls `find_package(yaml-cpp REQUIRED)` when tests/examples are on; no target links it and no source includes it (`grep -rn yaml` over CMake files and sources: only CMakeLists.txt:210-212). So a stub package file was used, containing only `set(yaml-cpp_FOUND TRUE)`. This changes nothing that is compiled.
+```
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON \
+  -DMPPI_CUDA_ARCH_LIST="70;80" -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
+  -Dyaml-cpp_DIR=<stub dir> -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+utils/timeit.sh MPPI-Generic cuda-compile -- cmake --build build -j 16 -- -k 0 -v
+```
+| | bee3eb6 (head) | 11b61ab (parent) |
+|---|---|---|
+| configure rc | 0 ("CUDA Architecture(s): 70;80") | 0 |
+| build rc | 0, 181/181 steps, 176 s | 0, 181/181 steps, 176 s |
+| nvcc TUs | 58 | 58 |
+| targets (test/example executables + .so) | 61 | 61, identical list |
+| nvcc errors | 0 | 0 |
+| diagnostics in build log | 58x `nvcc warning : Support for offline compilation for architectures prior to sm_75 ...` (one per TU, from sm_70) | identical |
+
+The real build passes `-w` in `CMAKE_CUDA_FLAGS` (upstream CMakeLists), so the build log cannot show per-file warnings. To compare them, every TU that depends on a changed file (`ninja -t deps`: 8 test TUs, no library or example TU) was recompiled from `compile_commands.json` with `-w` removed and `-Xcompiler=-Wall,-Wuninitialized -Wno-deprecated-gpu-targets` added, at both shas:
+
+| TU | warnings head | parent | rc |
+|---|---|---|---|
+| autorally_robust_cost_test.cu | 19 | 19 | 0/0 |
+| autorally_standard_cost_test.cu | 12 | 12 | 0/0 |
+| bicycle_slip_parametric_model_test.cu | 36 | 36 | 0/0 |
+| racer_dubins_elevation_lstm_steering_model_test.cu | 38 | 38 | 0/0 |
+| racer_dubins_elevation_lstm_uncertainty_model_test.cu | 29 | 29 | 0/0 |
+| racer_dubins_elevation_model_test.cu | 17 | 17 | 0/0 |
+| racer_dubins_elevation_suspension_test.cu | 38 | 38 | 0/0 |
+| racer_suspension_model_test.cu | **17** | **9** | 0/0 |
+
+The only new warnings, all from racer_suspension.cu lines 110 and 111, once per arch pass (sm_70, sm_80):
+```
+racer_suspension.cu(110): warning #20014-D: calling a __host__ function from a __host__ __device__ function is not allowed
+racer_suspension.cu(110): warning #20011-D: calling a __host__ function("... ::std::fmax<double, float> (T1, T2)") from a __host__ __device__ function("RacerSuspension::computeStateDeriv") is not allowed
+(same for line 111)
+```
+Explanation: lines 110-111 are `float throttle = fmax(0.0, control[...]);` / `float brake = fmax(0.0, -control[...]);` inside the `__device__ __host__` Eigen overload of `computeStateDeriv`, which the `__device__` float* overload (racer_suspension.cu:308-323) calls. With `(double, float)` arguments, CUDA has no `__host__ __device__` `fmax` overload, so overload resolution picks libstdc++'s host-only promoting template `std::fmax<double, float>`. Before the change, `max(0.0, float)` resolved to CUDA's `__host__ __device__ max(double, float)`. The host table in the 2026-11-05 porter entry above says "CUDA host overload fmax" for this site, which is true on the host pass only; the function is also compiled for the device.
+
+This is not only a warning. PTX of the `runGPUDynamics<RacerSuspension, 10, 2, 8, 1>` kernel instantiated in racer_suspension_model_test.cu (same compile command, `-ptx -arch=sm_80`):
+
+| | kernel PTX lines | ld.global | max.f32 | max.f64 |
+|---|---|---|---|---|
+| parent 11b61ab | 4439 | 96 | 15 | 4 |
+| head bee3eb6 | **856** | **25** | 5 | 0 |
+| head + candidate fix | 4429 | 96 | 19 | 0 |
+
+nvcc treats the host call in device code as undefined and drops most of the device dynamics body. Nothing in CI caught it: the build uses `-w`, and the only GPU test for this model (`RacerSuspensionTest.CPUvsGPU`) is `GTEST_SKIP`ped upstream; the GPU kernel tests for it are commented out. Any CUDA user of `RacerSuspension` on the GPU would get wrong state derivatives.
+
+Candidate fix (verified in a scratch copy only; fork not edited, nothing pushed):
+```
+-  float throttle = fmax(0.0, control[C_INDEX(THROTTLE_BRAKE)]);
+-  float brake = fmax(0.0, -control[C_INDEX(THROTTLE_BRAKE)]);
++  float throttle = fmaxf(0.0f, control[C_INDEX(THROTTLE_BRAKE)]);
++  float brake = fmaxf(0.0f, -control[C_INDEX(THROTTLE_BRAKE)]);
+```
+`fmaxf` is `__host__ __device__` on CUDA and HIP, and the result is identical (max of 0 and a float, stored as float). With it: rc 0, zero #20011/#20014 warnings, zero warnings in racer_suspension.cu, and the kernel PTX is back to parent size (table above). The HIP behaviour of the fix was not checked here (no HIP run on this host); the porter should rerun racer_suspension_model_test on HIP, including `FractionalThrottleBrake`.
+
+Other changed sites are fine on CUDA: bicycle_slip_parametric.cu and racer_dubins_elevation.cu use float `fminf`/`fmaxf` (no new warning in any of their 5 test TUs), racer_suspension.cu:195 uses `fmaxf(fminf(..))`, and the test-file `fmax(fmin(double, float), float)` sites are in host-only reference helpers (no new warning in either autorally test TU).
+
+Platform states were not changed by this check.
