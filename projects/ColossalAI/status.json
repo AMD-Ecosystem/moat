@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "ColossalAI",
+  "upstream_url": "https://github.com/hpcaitech/ColossalAI",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-05T22:44:55Z",
+  "updated_at": "2026-11-05T22:44:58Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
