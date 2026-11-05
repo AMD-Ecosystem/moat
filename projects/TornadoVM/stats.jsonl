@@ -47,3 +47,5 @@
 {"kind":"phase","ts":"2026-11-05T07:42:34Z","phase":"cuda-compile","seconds":17.969,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-225531-tvm-rulings/moat/agent_space/wt-cuda jdk21 BACKEND=cuda"}
 {"kind":"phase","ts":"2026-11-05T07:48:08Z","phase":"test","seconds":456.955,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi355-20261104-225531-tvm-rulings/moat/projects/TornadoVM/src && tornado-test --verbose --quickPass"}
 {"kind":"phase","ts":"2026-11-05T07:50:30Z","phase":"test","seconds":10.329,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-225531-tvm-rulings/moat/projects/TornadoVM/src test-nogpu JDK=jdk21"}
+{"kind":"session","ts":"2026-11-05T07:56:21Z","epoch":1793865381.892164062,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-05T08:07:22Z","epoch":1793866042.852199055,"event":"end","platform":"linux-gfx942"}
