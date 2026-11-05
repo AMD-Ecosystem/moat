@@ -611,3 +611,38 @@ Runtime: `LD_LIBRARY_PATH=$FAISS_PREFIX/lib:$SDK/llvm/lib` (the INSTALL.md libom
 
 - `utils/jargon.py --port tsne-cuda`: clean. Documentation: INSTALL.md "Building for AMD GPUs (ROCm)" carries the Linux recipe and the new libomp sentence.
 - CUDA gate: already passed at `33f708d` (CUDA compile check 2026-11-04, mi355 host, nvcc 12.8, rc 0); not repeated.
+
+## Validation 2026-11-04 (validator, windows-gfx1151) -> completed at 33f708d
+
+Head `33f708d`, fresh clone of `AMD-Ecosystem/tsne-cuda`, clean tree. AMD Radeon 8060S (gfx1151, wave32 APU), Windows 11, `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, TheRock pip SDK ROCm 7.14 (clang 23.0.0), MSVC 14.44 / Windows SDK 10.0.22621 for the CRT headers. FAISS: the `708a879bc` windows-gfx1151 install from the faiss validation (agent_space `faiss_install`, DLLs staged from `faiss_stage`).
+
+Build, INSTALL.md Windows recipe (GNU-driver `clang`/`clang++` for C, CXX, HIP; Ninja), plus the FAISS-recipe SDK hints `-DCMAKE_HIP_COMPILER_ROCM_ROOT` and `--rocm-device-lib-path`, `-DBUILD_TESTS=ON`; configure + `cmake --build build -j6`: 31/31 steps, 0 FAILED, `libtsnecuda.dll` and `tsnecuda_test.exe` produced (HIP-language executable link of `tsnecuda_test.exe` works with the plain CMake rule, no link wrapper needed). Warnings are `-Wdeprecated-declarations` for `getenv` (CRT) only in sampled output.
+```
+R=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DBUILD_TESTS=ON \
+ -DCMAKE_C_COMPILER=$R/lib/llvm/bin/clang.exe -DCMAKE_CXX_COMPILER=$R/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++.exe \
+ -DCMAKE_HIP_COMPILER_ROCM_ROOT=$R -DCMAKE_HIP_FLAGS=--rocm-device-lib-path=$R/lib/llvm/amdgcn/bitcode \
+ -DCMAKE_PREFIX_PATH="$R;$R/lib/host-math;<_rocm_sdk_libraries_gfx1151>;<faiss install>"
+cmake --build build -j6
+```
+Runtime: faiss.dll plus the ROCm DLLs (amdhip64_7, amd_comgr, hiprtc, hipblas, rocblas, libhipblaslt, rocsolver, rocm-openblas, rocm_kpack, hipfft, rocfft, hipsparse, rocsparse, rocrand, hiprand) copied next to `tsnecuda_test.exe` and next to `libtsnecuda.dll` in `build/python/tsnecuda` (no exit 127 once staged); `ROCBLAS_TENSILE_LIBPATH` set to the SDK `rocblas/library`. Python 3.12.10 venv, numpy 2.5.4, scikit-learn 1.9.1, pytest 9.2.0; `PYTHONPATH` unset.
+
+- `ctest`: 1/1 passed (0.40 s).
+- `tsnecuda_test.exe` 10 consecutive runs 1 s apart: 10/10 rc 0 (and a verbose run: `PASSED 8 tests`).
+- `tsnecuda.test()` from `build/python`: rc 0, total_time 9.42 s.
+- `python -m pytest -v build/python/tsnecuda/test` with `TSNECUDA_TEST_BLOBS_N=20000` (the plan's gfx1151 sizing): 7 passed in 61.21 s.
+- Metric harness (test_tsne.py helpers, `python -I`, blobs at 20000 not 50000 on this APU):
+
+| metric | measured | threshold |
+|---|---|---|
+| digits trustworthiness | 0.99207 | >= 0.97 |
+| digits 5-fold 10-NN accuracy | 0.97053 | >= 0.95 |
+| scikit-learn TSNE trustworthiness (reference) | 0.99333 | ours >= ref - 0.02 |
+| digits, `TSNE_SYNC_KERNELS=1` | trust 0.99227, kNN 0.96386 | 0.97 / 0.95 |
+| digits, launch overrides (FFT 64, ATTR/REP/INTEG 256) | trust 0.99195, kNN 0.96163 | 0.97 / 0.95 |
+| blobs 20000, k=32 ARI | 1.0 (2.75 s) | >= 0.95 |
+| blobs 10000, k=1024 (CPU FAISS) ARI | 1.0 (38.1 s) | >= 0.9 |
+
+clang-cl note (reviewer's request for `ab87296`): an all-clang-cl configuration cannot be built here. Mixed clang++/clang-cl is refused by CMake 3.31 (`Windows-Clang.cmake`: mixed frontend variants not supported), and with clang-cl for C, CXX and HIP the HIP compiler test fails in `Windows-MSVC.cmake:69` ("MSVC compiler version not detected properly") before any source compiles. So the `if(NOT MSVC)` guard is not reachable on Windows with HIP; it stays correct for the GNU-driver path (MSVC false, the googletest C++ objects built with the GNU flags, as observed). This is a CMake/toolchain limitation, not a port defect; the documented recipe (GNU-driver clang) is what passes.
+
+`utils/jargon.py --port tsne-cuda`: clean. INSTALL.md documents the Windows HIP recipe. CUDA gate: recorded at `33f708d` (mi355, nvcc 12.8), not repeated. Fork clone has 0 modified tracked files.
