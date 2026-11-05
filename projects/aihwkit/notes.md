@@ -1226,3 +1226,71 @@ dirs, deleted afterwards along with the clone and the venv's torch).
 
 Verdict: CUDA gate PASS (compile and link) at ea1185e. This closes the "CUDA
 nvcc compile at ea1185e" open item from the porter and reviewer entries.
+## Revalidation 2026-11-05 (validator, linux-gfx90a, sync tip ea1185e)
+
+State: revalidate (validated_sha eb4d017 -> head ea1185e, sync round
+moat-sync-60ffe9e, second merge absorbing upstream 14d4783). GPU: AMD Instinct
+MI250X / MI250 (gfx90a:sramecc+:xnack-, wave64), HIP_VISIBLE_DEVICES=2. Fork
+cloned fresh, detached at ea1185efa2caa08024bc12c4da242e14becb9f3c.
+
+Primary run, Python 3.12 (upstream's new floor). Job-private venv
+(`/usr/bin/python3.12 -m venv --without-pip`, packages installed with the job
+venv's `pip --python`, PYTHONPATH unset). The TheRock `v2/gfx90a` nightly index
+carries rocm-sdk wheels but no torch; the matched pair comes from
+https://rocm.nightlies.amd.com/v2-staging/gfx90a/: torch
+2.13.0a0+rocm7.14.0a20260612, torchvision 0.28.0a0+rocm7.14.0a20260612,
+rocm[libraries,devel]==7.14.0a20260612 (HIP 7.14.60850). Python 3.12.3,
+numpy 2.5.4, pybind11 3.1.0, cmake 4.4.4, OpenBLAS 0.3.26 (apt). Test deps
+from PyPI: scipy scikit-learn tqdm protobuf requests pytest pytest-xdist
+parameterized ninja.
+```
+$FLEET_VENV/bin/pip --python $V/bin/python install --index-url https://rocm.nightlies.amd.com/v2-staging/gfx90a/ \
+  --extra-index-url https://pypi.org/simple "torch==2.13.0a0+rocm7.14.0a20260612" \
+  "torchvision==0.28.0a0+rocm7.14.0a20260612" "rocm[libraries,devel]==7.14.0a20260612"
+R=$V/lib/python3.12/site-packages/_rocm_sdk_devel
+cmake -S . -B build_hip312 -GNinja -DUSE_HIP=ON -DUSE_CUDA=OFF \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++ \
+  -DROCM_PATH=$R -DCMAKE_PREFIX_PATH="$TORCH_CMAKE;$PYBIND11_CMAKE;$R" \
+  -DPython3_EXECUTABLE=$V/bin/python -DPython_EXECUTABLE=$V/bin/python \
+  -DRPU_BLAS=OpenBLAS -DBUILD_TEST=OFF -DRPU_USE_TORCH_BUFFERS=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build_hip312 -j64      # 78/78, rc=0, 0 errors
+cp build_hip312/src/aihwkit/simulator/rpu_base.cpython-312-x86_64-linux-gnu.so src/aihwkit/simulator/
+ulimit -c 0; PYTHONPATH=src python -m pytest -q -p no:cacheprovider -n 8 <suites>
+```
+Configure printed `Using C++17 (required by .../ATen/ATen.h)` (torch 2.13).
+rpu_base carries 43 `amdgcn-amd-amdhsa--gfx90a` code-object markers;
+`rpu_base.cuda.is_compiled()` -> True.
+- test_specific_tiles + test_simulator_tiles + test_bindings_tiles: **577 passed, 60 skipped, 0 failed**
+- test_torch_tiles + test_inference_tiles: **406 passed, 55 skipped, 0 failed**
+- test_layers_linear + test_layers_convolution: **566 passed, 216 skipped, 0 failed**
+- test_analog_ctx: **179 passed, 29 skipped, 127 subtests passed**
+Skips checked (`-rs`): the non-Cuda parametrizations of Cuda-only tests
+("CUDA tile needed", "not compiled with CUDA support" on use_cuda=False
+classes) and feature skips; none caused by the HIP build.
+
+Second run, torch >= 2.14 path (the one that exposed the input-range-grad
+drift): the host's /opt/python-3.11-venv (read-only use), Python 3.11.17,
+torch 2.16.0a0+git6c3af02, HIP 7.16.26385, its pip rocm-sdk-devel; same cmake
+line into build_hip311 (configure: `Using C++20`), 78/78 rc=0.
+- 577/60, 406/55/0, 566/216, 179/29 -- identical counts, 0 failed.
+
+TorchInferenceTest_TorchInferenceCuda::test_input_range_grad: PASSED on both
+stacks (`pytest -v tests/test_torch_tiles.py -k test_input_range_grad` -> 4
+passed each, including the IRDropTCuda variant). With 14d4783's #827 merged it
+passes on torch 2.16 as well as torch 2.13, consistent with the porter's
+finding that the deferral aihwkit-input-range-grad-drift was the torch >= 2.14
+clamp-gradient change (deferral left unruled; a person rules it).
+
+Counts match the porter's gfx90a/py3.11 run and the reviewer's gfx942/py3.12
+run at ea1185e exactly.
+
+CUDA gate: not run here -- no CUDA toolkit on this host (no conda, no
+/usr/local/cuda). `cuda-not-validated: no toolkit on this host`; the round
+still owes the nvcc compile at ea1185e before it goes to a person.
+
+Jargon: `python3 utils/jargon.py --port aihwkit` -> clean (needed local
+`master` and `moat-sync-60ffe9e` branches in the fresh clone; fork master now
+mirrors 14d4783). Fork tree: tracked files unmodified (only untracked
+build_hip311/, build_hip312/).
+
+Verdict: PASS at ea1185e. Transitioning linux-gfx90a to completed.
