@@ -153,6 +153,23 @@ slots. (dietgpu)
 faults. Kernels reading index +/-1 or +/-width at edges (stencils, neighbour gathers) must
 clamp. (colmap ComputeDOG.)
 
+**A latent OOB that stopped reproducing is still there, and index math on `size_t` operands
+overshoots UPWARD, not past-the-end.** Two traps, usually together. First, whether a wild
+read faults depends on what the driver happens to have mapped, so the same kernel can abort
+on one tree and complete on the next with no relevant change; absence of a fault is not
+evidence the bug is gone, and "it no longer crashes" must never close an OOB finding.
+Instrument instead: a `printf` in the trailing threads of the last block, printing the
+decoded indices and the sizes they are checked against, decides it in one run. Second, when
+padded threads decode an index through arithmetic whose operands are `size_t` -- closed-form
+inverses of triangular pair indices are the classic shape -- the intended "negative"
+excursion is computed in UNSIGNED 64-bit and wraps to nearly 2^64 instead. The out-of-range
+indices are then astronomical rather than slightly too large, and a `sqrt` of the wrapped
+value returns a real number where a signed evaluation would have produced a NaN, so the
+symptom does not look like the sign error it is. (gRASPA `TotalVDWRealCoulomb`: the trailing
+thread decoded `AtomA 2147484974` and `AtomB 2305843010287440402` against a size of 1327 --
+an 18-exabyte offset from a `size_t*` base -- and the fix was moving the bounds test that
+already existed above the two loads it followed.)
+
 **Rule-of-five on resource handles.** CUDA tolerates a default-constructed or
 double-destroyed texture/stream/event handle; AMD faults. Give RAII wrappers explicit
 default init (`handle = 0`), move-only semantics, and a guarded destructor. (colmap
@@ -543,18 +560,22 @@ the CUDA build too and are not HIP-specific hacks. (Velvet)
 
 ## Types, dispatch and platform limits
 
-**`clock64()` is a 20-bit wrapping counter on RDNA3, so a cycle-bounded spin or delay
-ends early.** HIP's `clock64()` is `__builtin_readcyclecounter()`. On gfx11 that lowers to
-`s_getreg_b32 hwreg(HW_REG_SHADER_CYCLES, 0, 20)`, while gfx90a emits a 64-bit
-`s_memtime`. A `while (clock64() - start < cycles)` loop with `cycles` above 2^20 can exit at
-the counter's first wrap, after anywhere from 0 to about a million cycles instead of the
-intended tens of milliseconds. Nothing fails at the loop itself. What breaks is whatever the
-delay was holding open: a test that gates a producer stream to prove a consumer waits for it
-passes or fails by luck, and a device-side timeout fires immediately. Time such loops with
-`wall_clock64()`, a 64-bit constant-rate counter on every AMD GPU, and convert the duration
-with `hipDeviceGetAttribute(..., hipDeviceAttributeWallClockRate, dev)` (kHz). Treat any
-`clock64()`/`clock()` difference compared against more than 2^20 as this bug.
-(LichtFeld-Studio: tensor hardening `GateStream` delay kernel.)
+**`clock64()` is a 20-bit wrapping counter on RDNA3, so a cycle-bounded spin, delay or
+timeout misbehaves.** HIP's `clock64()` is `__builtin_readcyclecounter()`. On gfx11 (RDNA3/3.5)
+that lowers to `s_getreg_b32 hwreg(HW_REG_SHADER_CYCLES, 0, 20)`, which wraps about every
+million cycles, while gfx9 emits a 64-bit `s_memtime`. Depending on how the comparison is
+written, a `while (clock64() - start < cycles)` loop with `cycles` above 2^20 either exits at
+the counter's first wrap (after anywhere from 0 to about a million cycles) or never
+terminates, and which happens is intermittent because it depends on where the counter stood
+at `start`. Nothing fails at the loop itself. What breaks is whatever the delay was holding
+open: a test that gates a producer stream to prove a consumer waits for it passes or fails by
+luck, a device-side timeout fires immediately, or the kernel hangs. Elapsed-time measurements
+are silently wrong the same way. Time such loops with `wall_clock64()`, a 64-bit
+constant-rate counter on every AMD GPU, and convert the duration with
+`hipDeviceGetAttribute(..., hipDeviceAttributeWallClockRate, dev)` (kHz). Grep a port for
+`clock64` and `clock()` in device code and treat any difference compared against more than
+2^20 as this bug. (LichtFeld-Studio: tensor hardening `GateStream` delay kernel; FLAMEGPU2,
+found in a test probe.)
 
 **Library swaps.** cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE ->
 hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Mostly 1:1; watch handle types
