@@ -106,3 +106,6 @@
 {"kind":"phase","ts":"2026-11-05T05:50:35Z","phase":"test","seconds":0.711,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match"}
 {"kind":"phase","ts":"2026-11-05T05:50:36Z","phase":"test","seconds":0.608,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography"}
 {"kind":"session","ts":"2026-11-05T05:51:10Z","epoch":1793857870.878244865,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-05T06:39:55Z","phase":"compile","seconds":10.100,"exit":0,"cmd":"bash agent_space/cs_build_f77.sh"}
+{"kind":"phase","ts":"2026-11-05T06:40:25Z","phase":"test","seconds":8.378,"exit":0,"cmd":"bash agent_space/cs_run_f77.sh"}
+{"kind":"phase","ts":"2026-11-05T06:41:07Z","phase":"test","seconds":5.127,"exit":0,"cmd":"bash agent_space/cs_run_match.sh"}

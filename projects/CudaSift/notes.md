@@ -949,3 +949,29 @@ CUDA no-regression gate: not run here (no CUDA toolkit used on this host); alrea
 Pre-completion checks: `python3 utils/jargon.py --port CudaSift` clean (with local `moat-fix-97` and `AdaLovelace` branches fetched in the clone); README documents the ROCm build (`### Build for AMD GPUs (ROCm/HIP)` at line 174, `USE_HIP` row); `git status --porcelain` in src: only `?? build-hip/`.
 
 State: linux-gfx90a `revalidate` -> `completed` at 5135acc via `python3 utils/moatlib.py set-state CudaSift linux-gfx90a completed --agent validator`.
+
+## Validation 2026-11-05 (windows-gfx1151) at 5135acc -- fix round 97
+
+jeff asked for this run. GPU: AMD Radeon 8060S (gfx1151, CC 11.5, 20 CUs), `HIP_VISIBLE_DEVICES=0`, TheRock ROCm 7.14, OpenCV 4.9.0 (`agent_space/opencv_install`, no videoio, so demo_video is not built). Fresh clone `agent_space/cs-win2` detached at 5135accf998c349dcfb05556769c9e416b39af3b (= `origin/moat-fix-97`), fresh `build-hip/`; `git status --porcelain`: untracked `build-hip/` only. Each test run once, serially, `ulimit -c 0`. Nothing pushed.
+
+Build (recipe of the 2026-10-16 / 2026-11-04 entries, fresh configure):
+    utils/timeit.sh CudaSift compile -- bash agent_space/cs_build_f77.sh
+      # cmake -S . -B build-hip -GNinja -DUSE_HIP=ON -DCMAKE_CXX_COMPILER=<rocm>/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=<same> -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=<rocm> -DOpenCV_DIR=<opencv>/lib -DCMAKE_BUILD_TYPE=Release
+      # cmake --build build-hip -j16 --target cudasift_lib cudasift test_extract test_match test_homography
+Exit 0, 13/13 steps, 0 errors, 0 `-Wliteral-conversion` (the Linux validators report the same removal of the `cudaSiftH.cu:114`/`:125` float-to-int warnings). Runtime DLLs (amdhip64_7, amd_comgr, hiprtc, rocm_kpack, OpenCV) staged next to the binaries. Tests: `utils/timeit.sh CudaSift test -- bash agent_space/cs_run_f77.sh` (cwd `src/` for data/; 8 s for the three).
+
+| test            | exit | result             | key numbers |
+|-----------------|------|--------------------|-------------|
+| test_extract    | 0    | 11 passed, 0 fail  | basic 1910; thresh 7077/1910/542/6; initBlur 0/0.5/1/1.6 -> 3600/2806/1910/1262; octaves 1740/1876/1910/1919; reproducibility 1910/1910; scaleUp 3104 |
+| test_match      | 1    | 10 passed, 1 fail  | self-match 1902/1910 >0.95; cross 1910 valid / 1909 good; RANSAC 851 / 828 refined; the one failure is `Matching completes in < 2 ms (optimal)`: avg 2.33 ms |
+| test_homography | 0    | 8 passed, 0 fail  | translation h[2]=30.1345 h[5]=20.2746; stereo L1452/R2082, 752 RANSAC |
+
+Result: 29/30 on the first run; all functional checks pass. Against this platform's record at db7c163 (10/11/8 = 29): test_extract +1 (the new `TestInitialBlur`, counts 3600/2806/1910/1262 identical to gfx90a and gfx1100 at 5135acc), every other keypoint count identical to db7c163 (1910; 7077/1910/542/6; 1740/1876/1910/1919; 3104; 1910 vs 2084; stereo 1452/2082), RANSAC numbers within recorded run-to-run noise (851/828 vs 852/828; translation h within 0.001 px; stereo 752).
+
+The one failure is a performance threshold, not a correctness check, and it is host load rather than the fix: `MatchSiftData` and its kernels are untouched by the delta (it changes only the `ExtractSift` initial-blur clamp), and the db7c163 record on this platform had avg matching 1.48 ms against the same 2 ms limit. A second run of test_match at 5135acc gave 2.05 ms (same single failure, RANSAC 848/825), and the **db7c163 binary built earlier (control, same host, same minute) gave 2.09 ms and the same single failure**. Another session's GPU process (a stereo-matching executable, 3 GB resident) was running on the shared APU throughout. So the timing difference is explained without the fix. Not repeated further (third run barred).
+
+CUDA gate: already recorded at 5135acc (`## CUDA compile check (nvcc 12.8) at 5135acc`); no toolkit on this host. `python utils/jargon.py --port CudaSift`: clean. README documents the ROCm build (`### Build for AMD GPUs (ROCm/HIP)`).
+
+Exclusions: none (no benchmark or demos run).
+
+State: windows-gfx1151 `revalidate` -> `completed` at 5135acc.
