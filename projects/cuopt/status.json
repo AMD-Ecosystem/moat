@@ -8,10 +8,30 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-05T23:12:40Z",
-  "updated_at": "2026-11-05T23:12:40Z",
+  "updated_at": "2026-11-05T23:54:08Z",
   "head_sha": null,
-  "depends_on": [],
+  "depends_on": [
+    "raft",
+    "rmm"
+  ],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVIDIA/cuopt/blob/1af75d9e60a6137813f40a175157fe683f06ea1b/LICENSE",
+      "at": "2026-11-05T23:51:20Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "other",
+    "duplicate_effort": "none found (amd/AMD-AGI orgs unsearchable, SAML); RAFT/RMM ports exist as ROCm-DS hipRaft/hipMM at RAPIDS 25.10 baseline",
+    "viable": null,
+    "summary": "NVIDIA cuOpt GPU LP/MILP/routing solver (6.4 MB .cu, Apache-2.0, clean): dependency-blocked on cuDSS (no ROCm equivalent, barrier solver) and on hipRaft/hipMM lagging RAFT 25.10 vs required 26.12; ROCm-DS territory, revisit at a 26.x baseline",
+    "at": "2026-11-05T23:54:08Z"
+  }
 }
