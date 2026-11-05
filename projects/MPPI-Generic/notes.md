@@ -1236,3 +1236,46 @@ Same compile command for racer_suspension_model_test.cu with the `--generate-cod
 The 70d2b68 kernel body is byte-identical to 11b61ab's (`diff` of the extracted entry: 0 lines). The whole PTX files differ only in the per-TU hash of one `_INTERNAL_..._piecewise_construct` symbol name, because the test file itself changed (added FractionalThrottleBrake). So the CUDA device path of `RacerSuspension::computeStateDeriv` is back to upstream's: `fmax(0.0, static_cast<double>(float))` compiles to the same code as CUDA's `max(double, float)`.
 
 No fork source edited (`git status --porcelain --untracked-files=no` empty in all three trees), nothing pushed. Platform states were not changed by this check.
+
+## Validation 2026-11-05 (linux-gfx1100 revalidate at 70d2b68, full GPU) -- completed
+
+Platform: RX 7900 (gfx1100, RDNA3, wave32), `HIP_VISIBLE_DEVICES=2` as pinned, `ulimit -c 0`. TheRock pip ROCm in the image venv (`R=$(rocm-sdk path --root)`, AMD clang 24). Fork sha 70d2b686a037 (= origin/moat-port tip). Delta from this platform's validated_sha 11b61ab: bee3eb6 + 70d2b68 (host min/max -> fminf/fmaxf/fmin/fmax, plus the new RacerSuspensionTest.FractionalThrottleBrake). Real host-code change, so full run, no carry-forward.
+
+### Setup / build
+```
+git clone https://github.com/AMD-Ecosystem/MPPI-Generic src
+git -C src checkout 70d2b686a037a6643d2636d8f8375919fb0325f6
+git -C src submodule update --init --recursive      # cnpy 91c53bc, rc=0
+git -C src branch --track main origin/main          # for jargon.py
+cmake -S src -B src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DROCM_PATH=$R \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+utils/timeit.sh MPPI-Generic compile -- cmake --build src/build-hip -j $MAX_JOBS
+```
+157/157 targets, exit 0, 0 errors.
+
+### Targeted GPU tests
+- `tests/dynamics/racer_suspension_model_test`: 4 pass (Template, BindStream, OmegaJacobian, FractionalThrottleBrake), 1 skipped (CPUvsGPU, upstream GTEST_SKIP). The new test passes on gfx1100.
+- `tests/mppi_core/normexp_kernel_tests` 10/10, `tests/feedback_controllers/ddp_tests` 10/10 PASS.
+
+### Full ctest
+```
+utils/timeit.sh MPPI-Generic test -- ctest --test-dir src/build-hip -j1 --timeout 600   # 158 s
+```
+433/463 pass, 30 fail, 8 not run (the same 5 Disabled + 3 Skipped as at 11b61ab).
+- 29 failures are the deterministic set recorded at 11b61ab, by name (known to fail on this platform, excluded from the verdict): 8 ARStandardCost.* (5 SEGFAULT + 3 Failed, deferred texture class), ARRobustCostTest.getCostmapCostSpeedMapTest / NoMapTest, ARNeuralNetDynamics.computeGradTest, 6 npz loaders (FNNHelperTest.LoadModelNPZTestNested, LSTMHelperTest.LoadModelPath{,Init}Test / LoadModelNPZTest, LSTMLSTMHelperTest.LoadModelPathTest{,LongBuffer}), DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, RacerDubins.ComputeStateTrajectoryFiniteTest, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, cuFFT.checkErrorCode, 6 GaussianTests.Check*, Integration.RK4.
+- The 30th is the known intermittent pool: SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU<Gaussian<1,7>>. VecAddVecMultScalar passed in this run. `ctest -R 'CompareLikelihoodRatioCostsCPUvsGPU|VecAddVecMultScalar' -j1` 3x: 1/0/3 of 14 fail, inside the 0-4 range recorded at bee3eb6 and 70d2b68 by the porter. `ninja -t deps`: racer_suspension.cu is a dependency of one object only (racer_suspension_model_test), so no intermittent-pool TU is touched by the delta.
+
+Comparison with this platform's 11b61ab record (432/462, 30 fail = 29 deterministic + 1 intermittent): +1 test, +1 pass, the added FractionalThrottleBrake. Same deterministic failures by name and same not-run set. The porter's gfx1100 count at bee3eb6 (429/463, 32 fail) and the gfx90a count at 70d2b68 (431/463, 32 fail) differ only in how many intermittent-pool cases failed (3 vs 1 here). No other difference, so the fix explains every change.
+
+GPU verdict: PASS on gfx1100 wave32.
+
+### CUDA gate
+Already recorded at 70d2b68 ("CUDA compile check (nvcc 12.8) at 70d2b68": PASS). Not re-run.
+
+### Finish checks
+- Jargon: `python3 utils/jargon.py --port MPPI-Generic` -> clean.
+- Documentation: README "Building MPPI-Generic for AMD GPUs (ROCm)" present next to the CUDA build.
+- Integrity: `git -C src status --porcelain` shows only `?? build-hip/`; cnpy clean at 91c53bc.
+
+State: completed at 70d2b68 on linux-gfx1100.

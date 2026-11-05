@@ -85,3 +85,7 @@
 {"kind":"phase","ts":"2026-11-05T06:08:37Z","phase":"cuda-compile","seconds":154.288,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi355-20261104-220317-nv2-mppi-generic/moat/agent_space/base/build -j 40 -- -k 0 -v"}
 {"kind":"phase","ts":"2026-11-05T06:08:39Z","phase":"cuda-compile","seconds":155.808,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi355-20261104-220317-nv2-mppi-generic/moat/agent_space/head/build -j 40 -- -k 0 -v"}
 {"kind":"phase","ts":"2026-11-05T06:08:39Z","phase":"cuda-compile","seconds":155.934,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi355-20261104-220317-nv2-mppi-generic/moat/agent_space/bee/build -j 40 -- -k 0 -v"}
+{"kind":"session","ts":"2026-11-05T06:17:47Z","epoch":1793859467.428041317,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-05T06:18:47Z","phase":"compile","seconds":40.938,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/rx7900-20261104-221452-v-mppi-generic/moat/projects/MPPI-Generic/src/build-hip -j 32"}
+{"kind":"phase","ts":"2026-11-05T06:21:43Z","phase":"test","seconds":158.374,"exit":8,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/rx7900-20261104-221452-v-mppi-generic/moat/projects/MPPI-Generic/src/build-hip -j1 --timeout 600"}
+{"kind":"session","ts":"2026-11-05T06:22:43Z","epoch":1793859763.980044164,"event":"end","platform":"linux-gfx1100"}
