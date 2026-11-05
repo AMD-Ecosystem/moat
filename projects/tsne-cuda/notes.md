@@ -647,3 +647,4 @@ clang-cl note (reviewer's request for `ab87296`): an all-clang-cl configuration 
 
 `utils/jargon.py --port tsne-cuda`: clean. INSTALL.md documents the Windows HIP recipe. CUDA gate: recorded at `33f708d` (mi355, nvcc 12.8), not repeated. Fork clone has 0 modified tracked files.
 - 2026-11-05: jeff filed the KNN -1 issue as https://github.com/CannyLab/tsne-cuda/issues/143.
+- 2026-11-05: jeff filed the ReduceMean issue as https://github.com/CannyLab/tsne-cuda/issues/144.
