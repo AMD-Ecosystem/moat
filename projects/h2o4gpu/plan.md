@@ -171,3 +171,4 @@ Platform order: Linux wave64 and wave32 first; Windows only per open question 3.
 
 ## Ruling 2026-11-04 (jeff)
 - xgboost_prev under USE_HIP: keep it, built CPU-only, so models saved by older releases still load in the ROCm wheel as they do in the CUDA wheel.
+- xgboost: stay on AMD-Ecosystem/xgboost release_2.1.3-rocm (closest to h2oai's 2.1.4, same generation as the CUDA wheel) with its one rocThrust compat patch; do not move to release/3.2.0.
