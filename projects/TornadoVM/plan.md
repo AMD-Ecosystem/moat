@@ -246,3 +246,6 @@ Keep cuDNN SDPA on the CK FMHA ck-hip module (MIOpen attention lacks FP16 on gfx
 
 ## Ruling 2026-11-04 (jeff): CK pin
 Keep the pinned CK development commit (CK release tags lack the gfx11 FMHA kernels). Document the reason next to the pin in the ck-hip CMake and in the README. Deferral tornadovm-ck-release-tag tracks moving to the first CK release tag that has them.
+
+## Ruling 2026-11-04 (jeff): ck-hip on Windows
+Try building ck-hip on Windows with Ninja (clang-cl, TheRock), limited to the gfx1151 target, and validate SDPA and GEMM on the laptop. If CK on Windows proves too cumbersome, stop and report; it then becomes a documented Windows gap. cuDF stays unsupported on Windows because hipDF ships no Windows build (jeff considers that a hipDF feature gap).
