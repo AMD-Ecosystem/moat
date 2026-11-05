@@ -24,3 +24,11 @@
 {"kind":"phase","ts":"2026-11-05T00:56:03Z","phase":"compile","seconds":457.127,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=opencl,hip"}
 {"kind":"phase","ts":"2026-11-05T00:56:32Z","phase":"test","seconds":6.476,"exit":0,"cmd":"bash -c cd projects/TornadoVM/src && source setvars.sh >/dev/null && tornado-test --jvm=\"-Dtornado.enabled.backends=hip\" -V uk.ac.manchester.tornado.unittests.nccl.TestNcclMultiProcess 2>&1"}
 {"kind":"session","ts":"2026-11-05T01:22:32Z","epoch":1793841752.319419968,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-05T02:17:02Z","epoch":1793845022.022639044,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-05T02:18:47Z","phase":"compile","seconds":0.008,"exit":2,"cmd":"make jdk21 BACKEND=opencl,hip"}
+{"kind":"phase","ts":"2026-11-05T02:21:42Z","phase":"compile","seconds":166.491,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300-20261104-181105-tvm-review3/moat/projects/TornadoVM/src jdk21 BACKEND=opencl,hip"}
+{"kind":"phase","ts":"2026-11-05T02:24:34Z","phase":"compile","seconds":165.809,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300-20261104-181105-tvm-review3/moat/agent_space/before jdk21 BACKEND=opencl,hip"}
+{"kind":"phase","ts":"2026-11-05T02:25:41Z","phase":"test","seconds":6.718,"exit":0,"cmd":"tornado-test --jvm=-Dtornado.enabled.backends=hip -V uk.ac.manchester.tornado.unittests.nccl.TestNcclMultiProcess"}
+{"kind":"phase","ts":"2026-11-05T02:25:57Z","phase":"test","seconds":15.192,"exit":0,"cmd":"tornado-test --jvm=-Dtornado.enabled.backends=hip -V uk.ac.manchester.tornado.unittests.nccl.TestNccl"}
+{"kind":"phase","ts":"2026-11-05T02:28:35Z","phase":"compile","seconds":34.021,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300-20261104-181105-tvm-review3/moat/agent_space/cuda jdk21 BACKEND=cuda"}
+{"kind":"session","ts":"2026-11-05T02:29:36Z","epoch":1793845776.191362411,"event":"end","platform":"linux-gfx942"}
