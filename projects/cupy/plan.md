@@ -270,3 +270,4 @@ CUPY_INSTALL_USE_HIP=1 python -m pytest tests/install_tests -q     # exercises c
 4. CUDA Windows no-regression (jeff): compile CuPy's CUDA Windows path on the windows-gfx1151 laptop (no GPU needed). A no-admin CUDA 12.8 toolkit is at C:\Users\jdaily\cuda-win\cuda128 (CUDA_PATH=.../Library; import libs in Library/lib, not lib/x64), with MSVC 14.44 from the x64 Native Tools prompt. Build upstream 18b54de and moat-port both; the port must build exactly as upstream does on CUDA Windows.
 5. Docs (jeff): the Windows ROCm install subsection goes in the same PR.
 6. Coordination (jeff): no pre-coordination; the PR goes upstream through the normal MOAT flow (ROCm/cupy:moat-port -> cupy/cupy:main). jeff notifies the ROCm/cupy owners himself when the PR is submitted.
+7. Linux baseline (jeff): full upstream 18b54de baseline build and test run on both Linux gate hosts; failures are classified against it.
