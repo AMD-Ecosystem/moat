@@ -6507,3 +6507,33 @@ No nvcc on this host. The change is plain CUDA C++ (`fminf`/`fmaxf` exist on hos
 `python3 utils/jargon.py --port LichtFeld-Studio`: clean. `moatlib.py audit-commits`: OK. `utils/prose.py` on the commit body: clean; ASCII only. `git -C projects/LichtFeld-Studio/src status --porcelain`: no tracked modifications. Pushed 204cdab0..fc2cfd9d to `moat-port` (pre-push hook passed). `advance-head LichtFeld-Studio fc2cfd9d`; `classify 204cdab0 fc2cfd9d` = `mixed` (HipToolchain.cmake comment-only, Cameras.cuh and the test code), so linux-gfx90a and linux-gfx1100 read `revalidate`. Stage -> `ported` for a reviewer.
 
 Record keeping: `moatlib.py worktree` refused because merging origin/main into port/LichtFeld-Studio conflicted in `.claude/skills/cuda-to-rocm/references/fault-classes.md` (the clock64 entry, written independently on both sides by this project and FLAMEGPU2); merged by hand into one entry crediting both (moat 5852587e) and pushed.
+
+## CUDA compile check (nvcc 12.8) at fc2cfd9d
+
+No pipeline role; fleet mi355 host, no NVIDIA GPU, 2026-11-05, requested by jeff. Head fc2cfd9d (`moat-port`) against its parent 204cdab0. Platform states unchanged.
+
+### Scope and why not a full build
+The full CMake build (recipe in "CUDA compile check 2026-10-31") needs a fresh vcpkg clone and bootstrap plus the LibTorch 2.9.0+cu128 download; neither is on this host, and the sandbox refused fetching and running them. So, as allowed for this check, every TU the change reaches was compiled by hand with the project's real CUDA flags (top-level `CMAKE_CUDA_FLAGS` `--extended-lambda --expt-relaxed-constexpr`, Release `-O3 -use_fast_math`, `RELEASE_BUILD`, glm's `GLM_FORCE_DEPTH_ZERO_TO_ONE`, CUDA/C++ standard 20, sm_86 as upstream forces without nvidia-smi). Differences from the CMake build: system glm 0.9.9.8 and gtest 1.14 instead of vcpkg's, hand-written include paths. nvcc V12.8.93 (`/usr/local/cuda-12.8`), host compiler g++-14.
+TUs: every `.cu` that includes `Cameras.cuh` (`grep -rl Cameras.cuh`): `tests/gut_camera_model_cuda.cu`, `src/preprocessing/lens_views.cu`, `src/training/kernels/depth_loss.cu`, gsplat `ProjectionUT3DGSFused.cu`, `RasterizeToPixelsFromWorld3DGSFwd.cu`, `RasterizeToPixelsFromWorld3DGSBwd.cu`; plus the changed host test `tests/test_undistort.cpp` (g++-14). `Common.h` and `FromWorldRay.cuh` mention Cameras.cuh only in comments or are reached through the TUs above; `tests/test_gsplat_rasterizer.cpp` does not include it. The third changed file, `cmake/HipToolchain.cmake`, is read only with `USE_HIP`.
+
+### Commands (trees: `src` = fresh blobless clone of `moat-port` at fc2cfd9d, `parent` = `git worktree add ../parent fc2cfd9d~1`)
+```
+cd <tree>
+/usr/local/cuda-12.8/bin/nvcc -ccbin g++-14 -std=c++20 -O3 -use_fast_math --extended-lambda --expt-relaxed-constexpr \
+  -gencode arch=compute_86,code=sm_86 -DRELEASE_BUILD -DNDEBUG -DGLM_FORCE_DEPTH_ZERO_TO_ONE \
+  -Isrc/preprocessing/include -Xcudafe --display_error_number \
+  -I. -Isrc -Isrc/training -Isrc/core/include -Isrc/training/include -Itests -c <tu> -o <out>/<tu>.o
+g++-14 -std=c++23 -O2 -Wall -Wextra -DRELEASE_BUILD -DNDEBUG -DGLM_FORCE_DEPTH_ZERO_TO_ONE -DTEST_DATA_DIR='"tests/data"' \
+  -DPROJECT_ROOT_PATH='"."' -I. -Isrc -Isrc/core/include -Isrc/training/include -Isrc/io/include -Isrc/training -Itests \
+  -I/usr/local/cuda-12.8/include -c tests/test_undistort.cpp
+```
+
+### Results
+- nvcc, real flags: all 6 TUs rc 0 at both commits, **0 warnings and 0 errors at either** (stderr empty for all 12 compiles). No #20011/#20013/#20014/#20015.
+- Negative control (same nvcc flags, a scratch `.cu` with a `__host__ __device__` constructor calling a plain host function, a constexpr host function and `std::max`): without `--expt-relaxed-constexpr` it prints #20011, #20013 and #20015; with the flag only #20011. So the harness shows these diagnostics when they occur, and the project flag suppresses the constexpr ones by design.
+- Hence also compiled `gut_camera_model_cuda.cu` and `lens_views.cu` **without** `--expt-relaxed-constexpr` at both commits: both rc 1 at both commits (upstream depends on the flag; e.g. 79 errors in lens_views.cu from `std::array::operator[]` in `__device__` functions), and the per-message multiset of warnings and errors (file + message, line numbers stripped) is **identical** between head and parent (53 #20013 each TU). The old unqualified float `min`/`max` resolved to CUDA's own host-and-device overloads and produced no diagnostic; the new `fminf`/`fmaxf` produce none either. The #20013 lines naming `max`/`min` in the fisheye constructors and `compute_opencv_fisheye_max_angle` are untouched `std::max`/`std::min` calls present at both commits.
+- Device code: cubins extracted with `cuobjdump -xelf all` (nvdisasm is absent, so no SASS listing), every executable section hashed with anonymous-namespace hashes normalized: **all 160 kernels byte-identical** between head and parent (Bwd 92, Fwd 40, lens_views 13, depth_loss 10, gut_camera_model_cuda 4, ProjectionUT3DGSFused 1). The change is host-side only in its CUDA effect, as expected (device float min/max are fminf/fmaxf).
+- `tests/test_undistort.cpp` (g++-14, `-Wall -Wextra`, stricter than the project): rc 0 at both commits, the same 6 warnings at both (5 `-Wrange-loop-construct`, 1 `-Wdangling-else`, all on lines the commit does not touch). No new warning.
+- Not covered: link, the rest of the 1,460-edge graph, vcpkg feature selection. Those are unaffected by a header-and-test-only delta and were checked in full at 001fc728 ("CUDA compile check 2026-10-31").
+
+Verdict: the CUDA path is unbroken at fc2cfd9d; no new nvcc error or warning in any changed or affected file. Scripts and logs in the job space `lfs/` (`scripts/nvcc1.sh`, `scripts/run.sh`, `scripts/cubin_text.py`, `out/`), not committed.
