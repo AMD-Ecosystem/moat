@@ -6,12 +6,53 @@
   "fork_default_branch": "develop",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-05T22:50:00Z",
-  "updated_at": "2026-11-05T22:50:01Z",
+  "updated_at": "2026-11-05T23:07:42Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-05T23:07:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "AGPL-3.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "AGPL-3.0",
+      "evidence": "https://github.com/cdcseacave/openMVS/blob/develop/LICENSE",
+      "at": "2026-11-05T23:04:50Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none",
+    "viable": true,
+    "summary": "AGPL-3.0 (tier 3) multi-view stereo; optional CMake CUDA path (3 MVS kernels ~105 KB + driver-API memory layer, no NVRTC) with CPU-vs-GPU MVS tests; no AMD effort exists, maintainer says GPU is NVIDIA-only; COLMAP sibling",
+    "at": "2026-11-05T23:07:40Z"
+  }
 }
