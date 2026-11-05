@@ -8,3 +8,6 @@
 {"kind":"phase","ts":"2026-11-05T05:18:30Z","phase":"test","seconds":15.701,"exit":0,"cmd":"bash /tmp/gpumdrun/run3.sh"}
 {"kind":"phase","ts":"2026-11-05T05:25:43Z","phase":"compile","seconds":0.004,"exit":2,"cmd":"make -j32"}
 {"kind":"phase","ts":"2026-11-05T05:26:01Z","phase":"compile","seconds":6.307,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-212333-nv-gpumd/moat/agent_space/gpumd/src -j32"}
+{"kind":"session","ts":"2026-11-05T05:25:39Z","epoch":1793856339.420418670,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-05T05:28:00Z","phase":"compile","seconds":10.253,"exit":0,"cmd":"make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx942 -j56 gpumd"}
+{"kind":"session","ts":"2026-11-05T05:29:58Z","epoch":1793856598.802046635,"event":"end","platform":"linux-gfx942"}

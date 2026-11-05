@@ -381,3 +381,29 @@ Recipe: upstream's documented CUDA build, unmodified `src/makefile` (`nvcc -std=
 | other warnings | none | none |
 
 Changed TU alone, serial (`cd src && nvcc -std=c++14 -O3 -arch=sm_60 -I./ -c force/ilp_nep.cu`): rc 0 at both, only the sm_60 deprecation warning. Extra host-warning pass `-Wno-deprecated-gpu-targets -Xcompiler -Wall,-Wextra` on `force/ilp_nep.cu`: 113 lines of output at both commits, identical modulo line numbers (pre-existing `-Wcomment` at ilp_nep.cu:1551, `-Wunused-parameter` in potential.cuh etc.); nothing on line 221. No new warning anywhere. PASS: the CUDA path compiles unchanged with nvcc 12.8. No platform states changed.
+## Review 2026-11-05 (linux-gfx942, reviewer) -- delta 6231243f..15124b53, PASSED
+
+Scope: `git diff 6231243f..15124b53` on `moat-port` (fresh clone of AMD-Ecosystem/GPUMD). One source line (`src/force/ilp_nep.cu:221`) plus the new `tests/gpumd/ilp_nep_cutoff/` case and its `tests/run_tests.sh` stanza. No findings.
+
+### Checked
+- Overload equivalence: `max_nep_rc` is `double` (`ilp_nep.cuh:212`), `rc_radial` is `float` (`ilp_nep.cuh:132`). CUDA's host `max(double, float)` is `fmax(a, double(b))`; the fix is `fmax(max_nep_rc, double(parambs[i].rc_radial))`, the same call. `fmax(double,double)` resolves to libm on the host under both compilers, so NaN behaviour is the same (the non-NaN operand is returned).
+- Scope: the line is in the `ILP_NEP` constructor (host only). No device code changed. The `(int,int)` calls at 229-230 are unchanged.
+- Host-only poison probe, re-run independently (hipcc 7.16.26385, `-x hip --cuda-host-only -fsyntax-only -O3 --offload-arch=gfx942 -DUSE_HIP -I./ -include poison.h`, every `.cu` file in the `makefile.hip` gpumd + nep source lists, 125 files):
+  - 15124b53 default: 0 hits, 0 other errors. Same with `-DUSE_FIXED_NEIGHBOR -DUSE_NEPCG -DDEBUG -DUSE_FIXED_SCALER -DCG_RDF -DSTRONG_DEBUG -DOUTPUT_NEIGHBOR_FOR_TRAIN -DFINE_TUNE_DESCRIPTOR -DZHEYONG -DUSE_KEPLER`, and with `-DUSE_GRAPHENE_TB`: 0 hits.
+  - 6231243f (control): exactly one hit, `force/ilp_nep.cu:221:18: call to deleted function 'max'`.
+  - The `#if` guard inventory over those directories matches the porter's coverage. Files carrying `USE_PLUMED/TENSORFLOW/NNAP/NETCDF` contain no unqualified `min(`/`max(`.
+- Run-time before/after on gfx942 (MI300X, HIP_VISIBLE_DEVICES=0, ulimit -c 0). Both heads were built with `make -f makefile.hip HIP_ARCH=gfx942 -j56 gpumd` (rc 0):
+  - 6231243f: `ilp_nep_cutoff` exit 0, `diff -q error.out error1.out` -> differ (the run completed with the bad cutoff).
+  - 15124b53: exit 1, `ERROR: Please make sure cutoff of ILP is larger than it of NEP.`, diff identical. Empty stderr.
+  - Control with ILP rcut 4.3: exit 0, empty stderr.
+  - After the harness's own `rm -f error.out neighbor.out`, `git status --porcelain` is clean.
+- Commit message: title is 65 chars, `[ROCm]`, and accurate. The body states the defect, cause and fix correctly, includes "Authored with Claude.", and has a fenced Test Plan. No trailer, ASCII only. `utils/jargon.py --port GPUMD` clean (after `git fetch origin master:master` in the clone), `utils/prose.py` clean. `audit-commits` flags only the pre-existing 6231243f (already upstream).
+
+### Upstream check (follow-up candidate)
+brucefan1983/GPUMD master ddc6e2d2 (2026-11-03) still has the bug at `src/force/ilp_nep.cu:216` (the porter's entry says 221; that is the fork line). The source hunk of 15124b53 applies cleanly to master (`git apply --check --include='src/*'`). Two facts for whoever prepares the follow-up (neither blocks this review):
+- Upstream removed `tests/` (882583a7, 2026-09-20, "move regression tests"). Its harness is now `tests_regression/` (`run_regression.py` + `manifest.json`, baseline vs candidate). The `tests/run_tests.sh` stanza and `tests/gpumd/ilp_nep_cutoff/` cannot go upstream as written. The case would have to be re-expressed for `tests_regression/` or left out of the follow-up.
+- The same poison probe on upstream master (147 files) finds the same single hit. Separately, `utilities/nep_model_file.cu` (new upstream) fails the HIP host compile: `nep_utilities.cuh: unknown type name '__forceinline__'`, so the probe could not see into that file. That is an upstream HIP build regression for the next sync round, not part of this delta.
+
+CUDA compile with real nvcc is still owed before this goes to jeff (no nvcc on this host).
+
+Verdict: review-passed at 15124b53.

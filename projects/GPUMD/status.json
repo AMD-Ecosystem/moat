@@ -7,16 +7,13 @@
   "priority": 5.508,
   "ext_type": "make",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-11-05T05:25:39Z",
+  "updated_at": "2026-11-05T05:29:58Z",
   "head_sha": "15124b533b659e338e43ffb7878b847d7d1ce09d",
   "pr_url": "https://github.com/brucefan1983/GPUMD/pull/1538",
   "pr_number": 1538,
   "pr_opened_at": "2026-06-05T19:24:45Z",
   "pr_merged_at": "2026-06-05T19:24:45Z",
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-05T05:25:39Z"
-  },
+  "porting": null,
   "waivers": {},
   "pr_state": "merged",
   "license_clearance": {
@@ -27,7 +24,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 97248567,
-  "stage": "reviewing",
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -169,7 +166,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-05T05:25:39Z",
+      "updated_at": "2026-11-05T05:29:58Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -188,8 +185,8 @@
   },
   "published_sha": "6231243fdaabe33217b44dce15aa75c138a3468b",
   "porting_released": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-05T05:06:24Z",
-    "at": "2026-11-05T05:19:48Z"
+    "arch": "linux-gfx942",
+    "since": "2026-11-05T05:25:39Z",
+    "at": "2026-11-05T05:29:58Z"
   }
 }
