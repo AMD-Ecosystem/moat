@@ -3165,3 +3165,4 @@ The delta `fde33e5..970cb1f` touches no CUDA source and no build file: `git diff
 - A g++ `-fsyntax-only -DUSE_CUDA` compile of the three changed host TUs was tried. With opencv_contrib 4.13.0 module headers, the bundled include dirs and a configured bundled g2o (for `config.h`), it got as far as `include/Map.h:47: pangolin/pangolin.h: No such file`, and stopped there; PCL would be needed next. The changed lines are outside `USE_CUDA`, so the CPU and HIP builds compile the same code: the Windows HIP build did at 970cb1f, and the Linux revalidations will compile it with g++.
 
 - Ruling 2026-11-05 (jeff): keep 970cb1f (MapLine right-camera observation counted once) on moat-port; it is one of the three Windows stereo crash causes.
+- 2026-11-05: jeff filed the MapLine issue as https://github.com/luigifreda/plvs/issues/57 (condensed draft).
