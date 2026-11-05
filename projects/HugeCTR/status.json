@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-05T23:20:48Z",
-  "updated_at": "2026-11-05T23:20:49Z",
+  "updated_at": "2026-11-05T23:56:03Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVIDIA-Merlin/HugeCTR/blob/main/LICENSE",
+      "at": "2026-11-05T23:55:56Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "No HugeCTR port; workload covered on AMD by TorchRec + FBGEMM_GPU on ROCm (ROCm/FBGEMM, rocm/primus:v26.1 docker, AMD-AGI/DLRMBenchmark DLRMv2 on MI300X)",
+    "viable": null,
+    "summary": "NVIDIA GPU recsys framework (2.5 MB CUDA, Apache-2.0 clean) in de facto maintenance mode; AMD users already served by TorchRec+FBGEMM on ROCm, so decline",
+    "at": "2026-11-05T23:56:02Z"
+  }
 }
