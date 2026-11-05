@@ -541,7 +541,7 @@ Porter at `5da5fbbf9` -> `af27a9f4b` on `moat-port` (one new commit, no amend or
 
 Evidence (Temurin 21.0.12, ROCm 10.1 TheRock wheels, job-local Maven repository, `ulimit -c 0`):
 - `./mvnw -Pjdk21 -pl tornado-compiler/tc-runtime -am test -DskipTests=false -Dtest=TcCompilerTest -Dsurefire.failIfNoSpecifiedTests=false`: 29/29, BUILD SUCCESS.
-- `make test-nogpu JDK=jdk21`: BUILD SUCCESS; ir 13 (in the 17-test tornado/ir reactor totals), frontend 12, codegen LitTest 60, HipMmaRoutingTest 1, TcCompilerTest 29, all pass, 0 failures.
+- `make test-nogpu JDK=jdk21`: BUILD SUCCESS; lit tests ir 13, lower 7, opt 16, tornado 5, frontend 12, codegen 60, HipMmaRoutingTest 1, TcCompilerTest 29, all pass, 0 failures.
 - No GPU run: a doc paragraph and a test-source comment; no generated code changes.
 - `git diff origin/develop...af27a9f4b` over `tornado-drivers/{cuda,ptx,opencl,spirv,metal,cuda-jni,opencl-jni}`, `tornado-native-libs/{cudf-jni,cudnn-jni,cutlass-jni}` is empty, and no Cuda/OpenCL/Metal dialect file is in the diff.
 - `utils/jargon.py -C projects/TornadoVM/src --commits origin/develop..HEAD` and `--diff origin/develop...HEAD` clean; `utils/prose.py` clean on the body; title 67 chars, ASCII, AI disclosure, fenced Test Plan, no Co-Authored-By. Fork tree has no modified tracked files.
