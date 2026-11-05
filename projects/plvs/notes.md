@@ -2783,3 +2783,48 @@ With this change, 0 of 140 runs crashed in `UpdateNormalAndDepth` (108 plain, 32
 
 Possible extra hardening, not needed for this crash: in `EraseObservation`, also set the line bad when `mObservations` becomes empty, and assign `mpRefKF` from `begin()` only when the map is not empty.
 ====
+
+## CUDA compile check 2026-11-05 (fde33e5)
+
+CUDA no-regression compile check on the mi355 fleet host, no role taken and no state changed. Toolkit: `/usr/local/cuda-12.8/bin/nvcc` 12.8.93, host g++ 13. No GPU work. Port = `moat-port` `fde33e5`; control = fork `master` `2ecb8b1`, which equals upstream `luigifreda/plvs` HEAD (`git ls-remote` checked). Both were built as git worktrees in the job directory, and every build tree was deleted afterwards.
+
+**Result: PASS. Everything builds with RC=0 at both shas, device SASS is identical at both shas, and there are no new errors. There is one new compiler warning, `"CudaSafeCall" redefined`, in libsgm (details below). It does not change behaviour.**
+
+### What was built and why it is the minimal target set
+- The full plvs CUDA link needs OpenCV built with the CUDA contrib modules (`cudafilters`, `cudafeatures2d`, `cudawarping`, `cudastereo`; the host code under `USE_CUDA` in `ORBextractor`, `Tracking` and `StereoDisparity` calls them), plus PCL and the rest of the SLAM stack. This host has no PCL, its root filesystem had 6-9 GB free and is shared with other jobs, and apt would write to `/`. So the check built the CUDA targets directly, and verified the host `USE_CUDA` code by preprocessor equivalence.
+- OpenCV 4.13.0 (the version in upstream `install_local_opencv.sh`), CPU-only, minimal build, used only for its headers (`opencv2/core/cuda/*` is installed without CUDA): `cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=17 -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_PYTHON=OFF -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_IPP=OFF -DWITH_ITT=OFF -DBUILD_LIST=core,imgproc,features2d,flann,calib3d -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF`.
+- ORB/FAST kernels (`src/cuda/{Allocator_gpu,Cuda,Fast_gpu,Orb_gpu}.cu`), with the top-level `CMakeLists.txt` `WITH_CUDA` flags. Each file at each sha:
+  ```
+  nvcc -ccbin /usr/bin/g++ -std=c++17 -use_fast_math -Xcompiler -fPIC -O3 \
+    -gencode arch=compute_80,code=sm_80 -gencode arch=compute_90,code=sm_90 \
+    -DUSE_CUDA -Iinclude -I<ocv>/include/opencv4 -c src/cuda/<f>.cu
+  ```
+- libelas-gpu and libsgm, through their own CMake (the `build_thirdparty.sh` path), at each sha:
+  ```
+  cmake -S Thirdparty/<lib> -B <b> -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 \
+    -DOpenCV_DIR=<ocv>/lib/cmake/opencv4 -DOPENCV_VERSION=4 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+    -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-12.8 -DCUDA_ARCH_BIN=8.0 && make -C <b> -j32
+  ```
+  libelas-gpu configures `USE_CUDA true`, with `-DUSE_CUDA` in the CXX flags and `-gencode arch=compute_80,code=sm_80`. libsgm takes its auto-detected list, sm_53 to sm_86, at both shas.
+
+### Results
+| target | base 2ecb8b1 | port fde33e5 | device SASS base vs port | host code base vs port |
+|---|---|---|---|---|
+| `Allocator_gpu.cu`, `Cuda.cu` | RC=0, 0 warnings | RC=0, 0 warnings | identical | identical to a line-shift control |
+| `Fast_gpu.cu`, `Orb_gpu.cu` | RC=0, 0 warnings | RC=0, 0 warnings | identical | identical to a line-shift control |
+| libelas-gpu (5 targets) | RC=0, 44 warning lines | RC=0, 32 | `elas_gpu.cu` identical | only the intended `cudaFree(d_valids)` change; all 9 C++ objects identical |
+| libsgm (`libsgm.a`) | RC=0, 20 warning lines | RC=0, 69 | all 10 `.cu` identical | `__LINE__` immediates only (see below) |
+
+- With OpenCV 4.13 headers, `Orb_gpu.cu` and `Fast_gpu.cu` now compile at **both** shas. The earlier gates saw `textureReference` and `reduce<32>` errors (2026-08-14 and before); those came from the system OpenCV 4.6 headers with CUDA 12.8, not from the port, and they do not occur with the upstream-documented OpenCV.
+- How "identical" was measured: `cuobjdump -xelf all`, then `nvdisasm` (13.1, from the triton wheel; the 12.8 toolkit here has no nvdisasm), with addresses and the per-TU anonymous-namespace hashes masked (`_GLOBAL__N__<hash>`, `_INTERNAL_<hash>`, `_cu_<hash>_<n>`, which nvcc derives from the source text). Host code was compared with `objdump -d --no-show-raw-insn` under the same masking.
+- ORB/FAST host code: the port adds one `#include "cuda_to_hip.h"` line, which shifts `__LINE__` in `checkCudaErrors`. A control made from the base sources with a blank line at the same position (and 4 blank lines in `Fast.hpp`/`Orb.hpp`) gives host disassembly identical to the port for all 4 files. The `<< <` to `<<<` edits are token-neutral.
+- libsgm host code: `median_filter` and `check_consistency` differ only in the `__LINE__` argument to `cuda_safe_call` (+62 lines and +1 line, from the HIP-only intrinsic block and the include). All other libsgm objects are identical.
+- libelas-gpu host: the `elas_gpu.cu.o` diff is exactly the `fde33e5` change (the two `cudaFree(d_u_vals)`/`cudaFree(d_v_vals)` calls become one `cudaFree(d_valids)`), plus branch-offset shifts. The 12 removed warning lines are the `-Wnarrowing` / `#2361-D` `int32_t`-to-`float` narrowing warnings in `elas.cpp:902` and `elas_gpu.cu:394`, which the port's casts fix. `elas.cpp.o` is still byte-identical in code.
+- Host `USE_CUDA` code in plvs: `unifdef -k -t -DUSE_CUDA -UUSE_HIP -U__HIP_PLATFORM_AMD__ -U_WIN32 -UWIN32 -U_MSC_VER -U_WIN64 -U__MINGW32__` on base and port, blank lines ignored. `ORBextractor.{h,cc}`, `Frame.cc`, `Tracking.{h,cc}` and `StereoDisparity.{h,cc}` come out **identical**. The `USE_CUDA` blocks of `PointCloudKeyFrame.{h,cc}` are unchanged; that file's other diffs (the `(int32_t)step[0]` cast and the `extern template` move) are outside `USE_CUDA` and shared with the CPU build. The remaining 30-odd modified host files differ only in non-CUDA shared code (WIN32, PCL-version, include and Stopwatch changes), which the CPU-only builds already compile.
+
+### New warning (CUDA path, libsgm), not an error
+`Thirdparty/libsgm/src/internal.h:32: warning: "CudaSafeCall" redefined`, 49 lines: 16 each from `check_consistency.cu`, `cuda_utils.cu` and `median_filter.cu` (repeated across the nvcc compilation passes), plus 1 from `stereo_sgm.cpp`. The cause: the port's `src/cuda_to_hip.h` defines a printf fallback `CudaSafeCall` in its non-HIP branch (`:65-72`, behind `#ifndef CudaSafeCall`), and `internal.h` now includes that shim (`:26`) before its own unconditional `#define CudaSafeCall ... cuda_safe_call(...)` (`:32`). Behaviour is unchanged. The later definition wins, and every `CudaSafeCall`/`CudaKernelCheck` use (in `check_consistency.cu`, `median_filter.cu` and `stereo_sgm.cpp`) comes after `internal.h`, so the throwing `cuda_safe_call` still runs, as the identical SASS and `__LINE__`-only host diffs confirm. The HIP branch of the shim (`:52-59`) has the same structure, so a HIP build should hit the same redefinition. No file uses the fallback, so the porter can drop both `CudaSafeCall` blocks from the shim to remove the warning. No fork change was made in this check.
+
+### Not checked here
+- The full plvs CUDA library and executables (they need OpenCV with the CUDA contrib modules, plus PCL). The host `USE_CUDA` code was checked by preprocessor equivalence, not by compiling it with g++.
+- The system OpenCV 4.6 was not re-run; earlier gates recorded identical pre-existing errors at both shas with it.
