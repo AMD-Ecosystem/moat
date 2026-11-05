@@ -378,8 +378,7 @@ ternaries to match the host forms exactly. (CV-CUDA: OpMorphology CLOSE on RGBAf
 
 **Host `min`/`max` on floating-point values truncate to int under hipcc.** CUDA declares
 host `min`/`max` for int, unsigned, long, long long, float and double. HIP's
-`__clang_hip_math.h` declares only `min`/`max(int, int)` on the host unless
-`__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__` is nonzero (it defaults to 0). So host code in a
+`__clang_hip_math.h` declares only `min`/`max(int, int)` on the host. So host code in a
 `.cu` file such as `max(0.25, min(100.0, fwhm))` or `max(atan(a), atan(b))` compiles
 cleanly, converts both arguments to int and returns an int. Device code is unaffected,
 because the device overloads cover float and double. Expect parameters silently rounded
@@ -389,16 +388,24 @@ to 0"), and only when a literal is involved. Detection: add
 `-D__HIP_NO_HOST_MIN_MAX_IN_GLOBAL_NAMESPACE__ -include poison.h` to the real hipcc
 command with `--cuda-host-only -fsyntax-only`. `poison.h` redefines the default pair with
 `__attribute__((diagnose_if(true, "HOSTMINMAX", "warning")))`, so every host call that
-lands on `(int, int)` is reported with its location. Write the extended set the same way to
-see which of them change overload. Use `diagnose_if`, not `deprecated`: a `deprecated`
-version missed LEAP's two `ramp_filter.cu` sites (cause not traced). Fix: add
-`-D__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__=1` to the HIP compile flags. This gives CUDA's host
-set minus the mixed signed/unsigned integer overloads (`__HIP_DEFINE_MIXED_HOST_MIN_MAX__`
-adds those). Check that the extended set compiles without ambiguity, and diff the device
-code objects (`.text`/`.rodata` of the unbundled `.hip_fatbin`). The `__hip_cuid_*` symbol
-names change with the flags. (LEAP: bilateral FWHMs truncated, intensity FWHM < 1 gave the
-identity; the modular-beam Joseph backprojector chose its parallel kernel for cone data,
-failing adjointness and FBP; the FBPlowpass window zeroed all but DC.)
+lands on `(int, int)` is reported with its location. Define CUDA's full overload set the
+same way, each overload naming its own signature, to see which calls really take floating
+point. Use `diagnose_if`, not `deprecated`: a `deprecated` version missed LEAP's two
+`ramp_filter.cu` sites (cause not traced). Fix: change the call sites to what CUDA's
+overload calls. `crt/math_functions.hpp` implements `min`/`max(double, double)` and the
+mixed float/double forms with `fmin`/`fmax`, and `(float, float)` with `fminf`/`fmaxf`.
+Cast a float argument to double where CUDA took a mixed overload, e.g.
+`fmax(0.25, fmin(100.0, double(fwhm)))`. That keeps CUDA's results, NaN handling included,
+on every ROCm and on CUDA, without an `#ifdef`. Leave int calls alone. Do NOT rely on
+`-D__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__=1`. That macro adds the floating-point host
+overloads only from ROCm 7.2.0 (LLVM 0248d277ca), defaults to 0, and does not exist in
+7.1.x and earlier, where the define silently does nothing and the truncation stays. Rerun
+the detection pass with no define: no host call may still land on `(int, int)` with
+non-int arguments. Then confirm that the device code objects did not change (`.text`/`.rodata`
+of the unbundled `.hip_fatbin`; the `__hip_cuid_*` names change with path and flags).
+(LEAP: bilateral FWHMs truncated, intensity FWHM < 1 gave the identity; the modular-beam
+Joseph backprojector chose its parallel kernel for cone data, failing adjointness and FBP;
+the FBPlowpass window zeroed all but DC.)
 
 ## Headers, includes and build
 
