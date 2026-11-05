@@ -108,7 +108,8 @@ Scan this list against what you are doing. If any line could apply, open
 - CUPTI has no ROCm analogue; ck_tile fmha ships headers but no instance library (generate the instances; MIOpen's MHA has no FP16 path).
 - CUTLASS-style GEMMs map to CK device ops (XDL on CDNA, WMMA on RDNA, DL for RDNA FP32 with padded copies).
 - cuDF/cuVS/RMM: hipDF, hipVS, hipMM ship as C++ wheels on AMD's package index, with a few API gaps.
-- hipSPARSE breaks HIP graph capture where cuSPARSE does not (destroy syncs, default-algorithm analysis, size-0 buffers).
+- hipSPARSE breaks HIP graph capture where cuSPARSE does not (destroying a CSR SpMat syncs, default-algorithm analysis, size-0 buffers).
+- Pick a library's NVIDIA or AMD build per device, never by starting every backend; a HIP port that keeps the soname (hipVS, hipDF) allows one per process.
 - NVML -> AMD SMI, keyed by PCI address, not device index.
 - `char` vs `signed char` vector base types differ between HIP and CUDA.
 - AMD compute-capability values COLLIDE with NVIDIA arch numbers, so CC-keyed dispatch picks the wrong path.

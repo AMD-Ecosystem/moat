@@ -449,9 +449,11 @@ a small store kernel. CK's `ck/config.h` is generated: `configure_file` its `con
 
 **RAPIDS libraries: hipDF, hipVS and hipMM as C++ wheels.** AMD's package index
 (`https://pypi.amd.com/rocm-7.2.3/simple`) carries `amd-libhipdf` (libcudf headers, libcudf,
-hipcomp, CMake packages), `amd-libhipmm` (librmm + rapids_logger), `amd-libhipvs` (libcuvs,
-libcuvs_c) and `amd-libraft`, laid out like the RAPIDS wheels; `amd-libhipdf` declares no
-dependencies, so add `amd-libhipmm` yourself. hipDF keeps cuDF's API and ships CUDA-named
+hipcomp, CMake packages), `amd-libhipmm` (librmm; it requires `amd-rocmds-logger`, which
+holds rapids_logger), `amd-libhipvs` (libcuvs, libcuvs_c) and `amd-libraft`, laid out like the
+RAPIDS wheels; `amd-libhipdf` and `amd-libhipvs` declare no dependencies, so add
+`amd-libhipmm` yourself (pip then brings `amd-rocmds-logger`; unpacking wheels by hand, take
+all three). hipDF keeps cuDF's API and ships CUDA-named
 compat headers (`cudf/cuda_runtime.h`), so a cuDF client compiles with ROCm clang, C++20 and
 `find_package(cudf)` (CMake >= 3.30.4; put each wheel's `lib64/cmake` on the prefix path, and
 the wheels before ROCm's, whose hipccl lacks `CCCL::CCCL`). Differences from current RAPIDS:
@@ -463,9 +465,21 @@ all-neighbors graph into device outputs only, and needs `libomp.so` from ROCm's
 `lib/llvm/lib`. The libraries link `libamdhip64.so.7` and resolved against a ROCm 10.1 SDK.
 (TornadoVM)
 
+**Choosing the NVIDIA or AMD build of a library at run time.** A runtime with both a CUDA and a
+HIP backend must pick per device, from the device's own backend, and never by enumerating or
+starting every installed backend: creating a backend that cannot start (HIP on an NVIDIA host)
+throws, and a static initializer that does so breaks the library on the device that works. Where
+the two builds have different sonames (NCCL `libnccl.so.2` and RCCL `librccl.so.1`), bind both,
+each loaded on first use. Where the HIP port keeps the soname (hipVS `libcuvs_c.so`, hipDF
+`libcudf.so`), a process can hold only one, so detect which loaded: a `dlsym` through the
+library's handle also searches its dependencies, so finding `hipGetDevice` marks the HIP build.
+Then serve only devices of that backend. (TornadoVM)
+
 **Library calls inside HIP graph capture.** hipSPARSE's generic API breaks capture in three
-ways cuSPARSE does not: `hipsparseDestroySpMat`/`DnVec` call `hipDeviceSynchronize`
-(invalidating the capture), the default CSR SpMV algorithm analyses on first use
+ways cuSPARSE does not: destroying a CSR `SpMat` descriptor (`hipsparseDestroySpMat`) calls
+`hipDeviceSynchronize`, which invalidates the capture (`hipStreamEndCapture` returns 901, in
+every capture mode; destroying a `DnVec` does not, ROCm 10.1 on gfx950), the default CSR SpMV
+algorithm analyses on first use
 (`HIPSPARSE_STATUS_INTERNAL_ERROR` while capturing), and a non-null external buffer whose
 queried size is 0 returns `INVALID_VALUE` once descriptors are reused. Create descriptors
 before capture and cache them per operand set, use `HIPSPARSE_SPMV_CSR_ALG2`, and pass a null

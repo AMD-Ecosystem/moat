@@ -10,3 +10,7 @@
 {"kind":"phase","ts":"2026-11-04T22:21:00Z","phase":"test","seconds":461.243,"exit":0,"cmd":"timeout 7200 tornado-test --verbose --quickPass"}
 {"kind":"session","ts":"2026-11-04T22:38:31Z","epoch":1793831911.121652151,"event":"start","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-04T22:57:55Z","epoch":1793833075.173968772,"event":"end","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-04T23:03:20Z","phase":"compile","seconds":0.003,"exit":2,"cmd":"make jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-04T23:06:56Z","phase":"compile","seconds":186.334,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-150016-tvm-fix1/moat/projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-04T23:43:06Z","phase":"compile","seconds":189.859,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-150016-tvm-fix1/moat/projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-05T00:04:12Z","phase":"test","seconds":10.098,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-150016-tvm-fix1/moat/projects/TornadoVM/src test-nogpu JDK=jdk21"}
