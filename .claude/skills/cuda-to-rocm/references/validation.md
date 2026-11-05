@@ -111,6 +111,35 @@ their size from the same PE header. A `/STACK` change that "did not help" is wor
 checking with `llvm-readobj --file-headers <exe> | grep StackReserve` -- the flag may
 never have reached the linker.
 
+## Windows: a CPU crash that Linux never shows is often a heap over-read
+
+**An access violation that hits only the Windows build, in CPU code the port did not
+touch, and moves between functions from run to run, is worth reading as an
+out-of-bounds read before suspecting threads or the toolchain.** glibc's heap is one
+contiguous mapping, so a read a few KB past the end of a vector usually returns
+garbage and goes unnoticed; the Windows heap commits pages on demand, so the same read
+can land on an unmapped page. plvs (TUM-VI stereo, fisheye cameras) crashed 13 of 13
+Windows runs in `LocalMapping::CreateNewMapFeatures`, `KeyFrameCulling` and
+`LoopClosing` while Linux finished most runs; the cause was `mvuRight`/`mvDepth` sized
+to the left-image keypoint count but indexed over both images (code inherited from
+ORB-SLAM3, so any ORB-SLAM3 derivative has it). Fixing the allocation made the runs clean.
+
+Getting file:line costs one rebuild and no admin rights:
+- Build a CPU-only tree with `-DCMAKE_CXX_FLAGS="... -g -gcodeview"` and
+  `-DCMAKE_EXE_LINKER_FLAGS="-Xlinker /DEBUG"` (the GNU-driver clang++ emits CodeView);
+  `/DEBUG` alone, as in the section above, gives function names but no lines or locals.
+- `cdb.exe` without installing anything: download the WinDbg `.msixbundle` (the URL is
+  in `https://windbg.download.prss.microsoft.com/dbazure/prod/1-0-0/windbg.appinstaller`),
+  `unzip` the `windbg_win-x64.msix` out of it, and `unzip` that; `amd64/cdb.exe` runs
+  from the extracted tree.
+- Run `cdb -g -G -y <pdb dir> -c "sxd av; sxe -c2 \".lines -e; .ecxr; r; kn 40; dv /t /v; q\" av; g" <exe> <args>`
+  (`MSYS2_ARG_CONV_EXCL="*"` under Git Bash). `sxd av` skips first-chance faults the
+  program handles; the second-chance command prints the stack with source lines and
+  the faulting registers, which show the index and the base pointer of the bad read.
+- If several build trees write their executables into the same source-tree directory
+  (plvs does), copy each exe and its PDB under a distinct name before building the next
+  tree, or a run silently uses the other build.
+
 ## Windows: TheRock clang 23 can hang in x86 register allocation
 
 A host C++ TU that compiles in about a second at `-O1` but never finishes at `-O2`/`-O3`
