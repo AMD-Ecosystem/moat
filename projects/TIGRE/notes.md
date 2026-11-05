@@ -1544,3 +1544,30 @@ I added a follow-up commit that fixes the interpolated forward projector on AMD 
 ## Notes for the approver
 The upstream reply above is the only part posted on CERN/TIGRE#747.
 ```
+
+## CUDA compile check (nvcc 12.8) at f779703
+
+Compile-only helper run (fleet job on a Linux host with the CUDA 12.8 toolkit and no NVIDIA GPU), requested by jeff. No platform state changed. Answers "The CUDA compile check is owed at f779703 on the mi355 host" in the maxdistanceCuboid fix round above. Result: **the CUDA build passes at f779703: rc 0, 8/8 extensions, 629 ptxas entry functions, nvcc and host warnings identical per file to its parent b61ff14. No new warning.**
+
+Toolchain (same as the b61ff14 check): nvcc `release 12.8, V12.8.93`, gcc 13.3.0, Python 3.11.17, numpy 1.26.4, Cython 3.3.1 (pip-installed into the job venv), setuptools 79.0.1. 17 `-gencode` pairs per `.cu`.
+
+Commands (fresh clone of AMD-Ecosystem/TIGRE `moat-fix-747`; `head` detached at f779703298570f752da7c3994db3fc9903b9bf1c, `parent` a local clone of it detached at b61ff14c87689beb1b08e2bcd8223c29ce85a83d; both built at the same time, not wrapped in `timeit.sh`):
+```
+export CUDA_HOME=/usr/local/cuda-12.8 PATH=/usr/local/cuda-12.8/bin:$PATH
+cd parent && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16 > ../parent.log 2>&1   # rc=0
+cd head   && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16 > ../head.log 2>&1     # rc=0
+```
+
+| tree | rc | extensions built | nvcc compiles | `-std` on nvcc lines | ptxas entry functions | nvcc `error` |
+|---|---|---|---|---|---|---|
+| parent b61ff14 | 0 | 8/8 | 20 (13 unique `.cu`) | 20x `-std=c++11` | 629 | 0 |
+| head f779703 | 0 | 8/8 | 20 (13 unique `.cu`) | 20x `-std=c++11` | 629 | 0 |
+
+- Extensions in both: `_Atb _AwminTV _Ax _RandomNumberGenerator _gpuUtils _minPICCS _minTV _tv_proximal`.
+- nvcc warnings per file, identical counts in both trees: `#177-D` Siddon_projection_parallel.cu 17, ray_interpolated_projection_parallel.cu 17, voxel_backprojection_parallel.cu 102 (6 variables x 17); `#550-D` gpuUtils.cu 272. **ray_interpolated_projection.cu (the changed file) has no nvcc warning in either tree.** No `c++14` anywhere in either log. The only `error` strings are the `-Werror=format-security` flag and a NumPy deprecation text.
+- Host g++ warnings identical in both: GpuIds.cpp `malloc` return ignored (7), TIGRE_common.cpp zero-length printf format (7), `_randomNumberGenerator.cpp` unused `__pyx_v_imgsize` (2).
+- After sorting and removing the copy/create lines and parallel-build interleaving and ptxas timing lines, the two logs are the same.
+- Changed TU, `build/.../Common/CUDA/ray_interpolated_projection.o`: the `.nv_fatbin` section, all 17 extracted cubins (`cuobjdump -xelf all`) and the PTX (`cuobjdump -ptx`) have identical md5 in both trees, so device code is unchanged. Host `maxdistanceCuboid(Geometry, unsigned)`: at b61ff14 it makes 4 calls to the static `max(float,float)` (`_ZL3maxff`, CUDA `crt/math_functions.hpp:1105`, whose body is `return fmaxf(a, b);`); at f779703 it makes 4 direct `fmaxf` calls (`objdump -dr` relocations); the other calls (`std::abs`/`cos`/`sin`/`sqrt`, float overloads) are the same in both. So on CUDA the change only removes one wrapper call: same function, same results.
+- The other changed file, `Python/tests/test_interpolated_voxel_size.py`, is not compiled; no GPU here to run it.
+
+The CUDA compile gate is satisfied at f779703. No CUDA runtime behaviour is claimed (no NVIDIA GPU). For the fix review PR body: "nvcc 12.8: all 8 extensions build, with the same nvcc warnings as b61ff14; device code of the changed file is byte-identical."
