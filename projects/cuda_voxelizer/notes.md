@@ -586,3 +586,19 @@ Identical to the gfx90a 3625a1e validation (Release 8/1, -O0 4/0): the HIP code 
 
 - `_DEBUG` -O0 build at 64 (binvox): surface `Processed 5110 triangles`, `Tested 117367 voxels`, `Marked 45229 voxels`. Solid prints 0, which is upstream behaviour. Device-memory table in both.
 - Upstream CI smoke `./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu` (README build, layout copied to a scratch dir): exit 0, `## CPU VOXELISATION`, forced-CPU message, writes `bunny.OBJ_64.vox`.
+
+## CUDA compile check 2026-11-05 (5a9b7cf)
+
+No-regression compile of `moat-port` at `5a9b7cf` against upstream (`f9fc9a9`, the fork's `main`, equal to `Forceflow/cuda_voxelizer` `main`), linux-gfx950 host, no NVIDIA GPU, no GPU work. No role taken, no state changed. nvcc 12.8.93 (`/usr/local/cuda-12.8/bin`), GCC 13.3.0, CMake 3.31.6, Ninja. Trimesh2 `2022.03.04` (`0b3d9e2`) built from source in the job directory (`make -C trimesh2/libsrc -j64`, exit 0, `lib.Linux64/libtrimesh.a`). Each tree in its own detached worktree, `USE_HIP` at its default OFF:
+
+```
+export PATH=/usr/local/cuda-12.8/bin:$PATH
+cmake -GNinja -DCMAKE_CUDA_ARCHITECTURES=80 -DTrimesh2_INCLUDE_DIR=<tm2>/include -DTrimesh2_LINK_DIR=<tm2>/lib.Linux64 -S <tree> -B <build>
+cmake --build <build> --parallel 64
+```
+
+- Both configure (`The CUDA compiler identification is NVIDIA 12.8.93 with host compiler GNU 13.3.0`, `Found CUDAToolkit ... 12.8.93`), build and link (`[8/8]` link of `cuda_voxelizer`), exit 0. Warnings at `5a9b7cf` are upstream's only: `-Wwrite-strings` `main.cpp:28`, `-Wformat` `%llu` at `main.cpp:67`, `util_cuda.cpp:34`, `util_io.cpp:21`.
+- `src/main.cpp` is compiled by the host compiler with `-I<tm2>/include -isystem <cuda>/include -fopenmp`. The two `main.cpp.o` differ in one instruction plus `.rodata`. To separate `main.cpp` from the helper headers, the TU was recompiled at one fixed path with the same flags, swapping only `main.cpp` and keeping first upstream's `src/` headers, then the port's. With either header set, the upstream and `5a9b7cf` `main.cpp` objects differ in exactly one byte: the `__LINE__` argument passed to `check()` right after `call cudaMallocManaged` (`mov $0xd6,%ecx` -> `mov $0xdc,%ecx`, 214 -> 220, the `checkCudaErrors(cudaMallocManaged(...))` line moved by the six-line `#if defined(__HIP_PLATFORM_AMD__)` block). `.rodata` and every other instruction are identical. So on CUDA the voxel table is upstream's `cudaMallocManaged` allocation, with no `cudaMemset`, no `cudaMalloc`/`cudaMemcpy`/`cudaFree` (the `main.cpp.o` undefined symbols list `cudaMallocManaged` and none of those). The rest of the full-build `main.cpp.o` difference comes from the replaced BSD-3 `helper_cuda.h`/`helper_string.h` (string tables) and the build path in `__FILE__`, not from `main.cpp`.
+- The `.cu` objects and the GPU path were not compared or run here (no NVIDIA GPU). Last NVIDIA run is the V100 run at 3625a1e above. For the CUDA build the only change since then is that `main.cpp` reverts to upstream's managed table, now shown above to be code-identical.
+
+Builds, worktrees, the fork clone and Trimesh2 were deleted from the job directory afterwards.
