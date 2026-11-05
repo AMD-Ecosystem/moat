@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "ComfyUI-3D-Pack",
+  "upstream_url": "https://github.com/MrForExample/ComfyUI-3D-Pack",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "torch-ext",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-05T22:50:46Z",
+  "updated_at": "2026-11-05T22:50:47Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
