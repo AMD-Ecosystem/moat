@@ -129,3 +129,167 @@ No GPU run possible. The single-arch gencode is a choice for the comparison only
 - Non-GPU: `tests/install_tests tests/import_tests` with `CUPY_INSTALL_USE_HIP=1`: 31 passed, 1 skipped.
 - Stage (ii) is therefore incomplete: rest of W1, all of W2 and W3 are owed by the windows-gfx1151 validator (after the Linux gates, Ruling 3). The test script `agent_space/cupy_test.sh` (laptop) wraps the run.
 - Three ROCm defects registered as deferred rocm-bug-report on this project: `hiprtc-win-absolute-program-name`, `hipcc-exe-unquoted-forwarded-args` (both worked around in the port), `hiprtc-win-msvc-stl-complex-signbit` (not worked around).
+
+## Porter round 2026-11-05b (windows-gfx1151): hiprtc + MSVC STL workaround (deferral hiprtc-win-msvc-stl-complex-signbit, ruled `now` by jeff, bounded)
+
+Result: **worked.** Two new commits on the fork clone, on top of f4f78903, **committed locally and NOT pushed** (see "Lock" below):
+
+| # | sha | title |
+|---|---|---|
+| 13 | 4ccded519 | [ROCm] Declare the as_mdspan friend of CArray as __device__ (`cupy/_core/include/cupy/carray.cuh`, one line) |
+| 14 | 694db667f | [ROCm] Supply MSVC STL device helpers for hiprtc on Windows (`cupy/_core/include/cupy/hip_workaround.cuh`, +94 lines guarded by `__HIPCC_RTC__ && _MSC_VER`) |
+
+What was found, in order (each layer only visible once the previous one was fixed):
+1. `MSVC complex:575: call to 'signbit' is ambiguous`: `_Ctraits<long double>::_Signbit` calls `std::signbit(long double)`; hiprtc_runtime.h declares only `signbit(float)` and `signbit(double)` (lines 1083/1084). Fix: `static __device__ bool signbit(long double)` forwarding to `__signbit(double)`, plus `namespace std { using ::signbit; }` (the earlier using-declaration in std does not see a later overload). Must precede the first `<complex>` include; `hip_workaround.cuh` is in `cupy_header_list`, which `compile_with_cache` prepends to every CuPy-generated kernel, before the user preamble (`#include <cupy/xsf/...>`). hiprtc on Windows defines `_WIN32`, `_MSC_VER`, `__HIPCC_RTC__`, `__HIP_DEVICE_COMPILE__` (probed); `__CUDACC__` is not defined.
+2. `xsf/cupy.h: 'shape_' is a private member of 'CArray<...>'` (21 of 31 GUFuncLike tests). NOT Windows-specific: the friend declaration in carray.cuh lacks `__device__` while `xsf::as_mdspan` is `__device__`; the ROCm 7.14 clang (23) no longer matches them. A minimal standalone repro fails the same with offline `clang++ -x hip --cuda-device-only` for BOTH `--target=x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`, and with `-fno-ms-compatibility -fno-delayed-template-parsing`; adding `__device__` to the friend fixes it. CUDA: nvcc 12.8 `-c` compiles both forms; NVRTC 12.8 compiling the real cupy headers + an `xsf::as_mdspan` kernel FAILS without the change ("A function without execution space annotations ... host functions are not allowed in JIT mode", unless `-default-device`) and PASSES with it. So this is shared code, deliberately unconditional (correct on CUDA, Linux HIP, Windows HIP). It deviates from "Windows-HIP-only" in jeff's brief; it is a separate commit so it can be dropped or sent separately. The Linux validators should check GUFuncLike on Linux ROCm 7.14 (prediction: it fails there without this commit).
+3. `ld.lld: error: undefined hidden symbol: _Exp` (voigt_profile): MSVC's complex exp/cosh/sinh call the UCRT helpers `_Exp`, `_Cosh`, `_Sinh`, `_FExp`, `_FCosh`, `_FSinh` (ymath.h), host-only. A plain `extern "C" __device__ short _Exp(...)` definition is refused: `__host__ __device__ function '_Exp' cannot overload __device__ function '_Exp'` (clang's `cuda_wrappers/complex` wraps the STL in `force_cuda_host_device`). Working form: `__device__ __attribute__((weak)) short __cupy_msvc_Exp(double*, double, short) __asm__("_Exp")` plus its definition; same for the other five. Semantics follow the UCRT (microsoft/STL `stl/src/xexp.cpp`, `xcosh.cpp`, `xsinh.cpp`, read for behaviour, not copied): `_Exp` = y*e^x*2^eoff with a power-of-two split for |x|>700 (two-step ln2 reduction with fma), returns 0/1/-1 (zero/inf/finite); `_Cosh`/`_Sinh` = y*cosh/sinh with the exp path for |x|>=22 and the UCRT's NaN/inf/zero cases; the float forms go through double. `weak` so a second definition (e.g. a future multi-program link) cannot collide. Long double helpers (`_LExp`, `_LCosh`, `_LSinh`, `_LDtest`) are not needed by anything instantiated and are not provided.
+- Not workable: filtering include dirs (TheRock ships no libc++; xsf `config.h` includes `<complex>`, `<cmath>`, ... whenever `__CUDACC__` is undefined); an MSVC STL macro to avoid `_Ctraits` (none exists). `<cmath>` alone compiles under hiprtc with the MSVC dirs (probed: signbit/exp/cosh on double).
+- Scope limit: user `RawKernel`/`RawModule` code is not prefixed with `cupy_header_list` and still hits the bug if it includes `<complex>`; including `<cupy/hip_workaround.cuh>` first is the user-side workaround.
+
+Accuracy probe (`C:/Users/jdaily/cupy-work/msvc_complex_probe.py`, RawModule including hip_workaround.cuh then `<complex>`): std::exp/cosh/sinh of complex<double> and complex<float>, 4008 inputs (re in [-30,30] and [-750,750], im in [-10,10], plus edge values; float re clipped to +-100). 0 mismatches vs NumPy (rtol 1e-13 double, 2e-6 float) over all outputs whose reference is finite and normal (11717 double, 6722 float). Subnormal outputs differ by double rounding (double) or flush to 0 (float; f32 subnormals are flushed on the device here). Where NumPy overflows in an intermediate (cosh/sinh of 710.27-4.72j and 710.5+0.5j) the device result is finite and correct (~1.6e308), which is the point of the helpers.
+
+Tests at the local tip 694db667f (`agent_space/cupy_test.sh`: CUPY_TEST_GPU_LIMIT=1, CUPY_GPU_MEMORY_LIMIT=25%, ulimit -c 0, `-m "not slow and not multi_gpu"`, one pytest process at a time, test_texture.py ignored, no texture tests run):
+- `core_tests/test_elementwise.py -k TestElementwiseGUFuncLike`: **31 passed** (was 23 failed / 8 passed at f4f78903; with only the signbit shim: 21 failed / 10 passed).
+- cupyx.scipy.special smoke, one file at a time: voigt_profile 1/1 passed, wright_bessel 1/1, ellipk 5/5, spfun_stats 2 passed 1 skipped, dawsn 1 passed 1 failed, sici 2 passed 2 failed, erfi 1 passed 1 failed, lambertw 0/1, digamma 1 passed 6 failed, wofz 0/1. Baseline without the change: every xsf kernel fails at signbit (spfun_stats re-run at baseline: 2 failed, both `signbit is ambiguous`).
+- All 12 remaining failures are one error, `no matching function for call to '<fn>'` with `thrust::complex<T>` arguments against `cxx::complex<T>` (= `std::complex<T>`) candidates: xsf `config.h` maps `cxx::complex` to `thrust::complex` only `#if defined(__CUDACC__)`, and no HIP compile defines `__CUDACC__`, so complex-typed xsf functions cannot take CuPy's complex arrays under HIP on ANY OS. Not Windows-specific and not in this delta; expected to reproduce on the Linux gates (to be confirmed by the linux-gfx1100 baseline, Ruling 7). The real-valued digamma tests fail for the same reason (the ufunc's complex loop is compiled with the rest).
+- Changing the header invalidates the kernel cache: the first run of each file recompiles (ellipk took ~3 min).
+
+### Lock: commits not pushed (needs a person)
+
+`set-state cupy windows-gfx1151 porting` refused: `illegal transition ported -> porting` (the stage table only allows `ported -> reviewing`). The fork-write lock is free (`port-lock cupy`: no lock held), but there is no porter entry from `ported`, and `port-lock --take` is documented as a person's decision, so the porter did not push moat-port, did not advance head and did not change state. To land it: a person takes the lock (`python3 utils/moatlib.py port-lock cupy --take windows-gfx1151`) or otherwise rules how a porter adds commits at `ported`; then fast-forward push moat-port f4f78903 -> 694db667f, `advance-head`, release. The two commits live only in the laptop clone `D:/Develop/moat/agent_space/wt-cupy/projects/cupy/src` (branch moat-port, 2 ahead of origin/moat-port). jargon.py: no hits in the two new commits (its existing hits are in upstream history). The CUDA Windows build comparison (Ruling 4) was not rerun: carray.cuh is a run-time header, not compiled at build time, and hip_workaround.cuh is HIP-only; NVRTC evidence above.
+
+### ROCm bug report drafts (not filed)
+
+Reproducer files on the laptop: `D:/Develop/moat/agent_space/cupy-rocm-bugs/` (hiprtc_repro.cpp, repro_signbit.cu, repro_exp.cu, repro_cmath.cu, k.cu, shim.h, hipcc_quote.py, q.cu, `dir with space/hdr.h`). All three confirmed on this laptop 2026-11-05 with TheRock ROCm 7.14.0a20260612 (pip `rocm[libraries,devel]`, gfx1151), HIP 7.14.60850-1b2a555677, AMD clang 23.0.0git (llvm-project 52226beb248f), comgr daab70a62bfc, MSVC 14.44.35207, Windows SDK 10.0.22621, Windows 11.
+
+The host program shared by drafts 1 and 2 (`hiprtc_repro.cpp`), built with `clang-cl /EHsc /MD /std:c++17 -D__HIP_PLATFORM_AMD__ -I<rocm>\include hiprtc_repro.cpp hiprtc.lib`:
+
+```cpp
+// hiprtc_repro <source.cu> <program name> [hiprtc options...]
+#include <hip/hiprtc.h>
+#include <cstdio>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+int main(int argc, char** argv) {
+  std::ifstream f(argv[1]);
+  std::stringstream ss;
+  ss << f.rdbuf();
+  std::string src = ss.str();
+  hiprtcProgram prog;
+  hiprtcCreateProgram(&prog, src.c_str(), argv[2], 0, nullptr, nullptr);
+  std::vector<const char*> opts(argv + 3, argv + argc);
+  hiprtcResult rc = hiprtcCompileProgram(prog, (int)opts.size(), opts.data());
+  size_t n = 0;
+  hiprtcGetProgramLogSize(prog, &n);
+  std::string log(n, '\0');
+  hiprtcGetProgramLog(prog, &log[0]);
+  std::printf("hiprtcCompileProgram: %s\n%s\n", hiprtcGetErrorString(rc), log.c_str());
+  return rc != HIPRTC_SUCCESS;
+}
+```
+
+#### Draft 1: hiprtc on Windows cannot compile `<complex>` from the MSVC STL
+
+Title: [hiprtc][Windows] `#include <complex>` fails: `call to 'signbit' is ambiguous` (MSVC STL), then `undefined hidden symbol: _Exp`
+
+On Windows, hiprtc compiles device code against whatever C++ standard library the include path provides, and ROCm ships no libc++ headers there, so a kernel that includes `<complex>` is compiled against the MSVC STL (the include dirs `hipcc -x hip -E -v NUL` reports: clang `cuda_wrappers`, the clang resource dir, MSVC `include`, the Windows SDK `ucrt`, ...). That fails in two ways. Libraries that compile C++ kernels at run time (CuPy, through SciPy's xsf special-function headers and its mdspan-based kernels) hit this on every kernel that includes a standard header.
+
+Kernel `repro_signbit.cu`:
+
+```cpp
+#include <complex>
+extern "C" __global__ void k(double* a) { a[0] = std::abs(std::complex<double>(a[0], a[1])); }
+```
+
+Run with the MSVC include dirs as `-I` options (here the 12 unique dirs from `hipcc -x hip -E -v NUL`): `hiprtc_repro.exe repro_signbit.cu repro_signbit.cu --offload-arch=gfx1151 -I<dir1> ... -I<dir12>`
+
+```
+hiprtcCompileProgram: HIPRTC_ERROR_COMPILATION
+In file included from ...\comgr-XXXX\input\repro_signbit.cu:1:
+In file included from ...\_rocm_sdk_devel\lib\llvm\lib\clang\23\include\cuda_wrappers\complex:82:
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\complex:575:16: error: call to 'signbit' is ambiguous
+  575 |         return (::std:: signbit)(_Left);
+...\comgr-XXXX\include\hiprtc_runtime.h:1083:75: note: candidate function
+ 1083 | static __attribute__((device)) inline __attribute__((always_inline)) bool signbit(float __x) { return ::__signbitf(__x); }
+...\comgr-XXXX\include\hiprtc_runtime.h:1084:75: note: candidate function
+ 1084 | static __attribute__((device)) inline __attribute__((always_inline)) bool signbit(double __x) { return ::__signbit(__x); }
+1 error generated when compiling for gfx1151.
+```
+
+The call is `_Ctraits<long double>::_Signbit`, i.e. `std::signbit(long double)`; hiprtc_runtime.h declares only the float and double overloads, so the long double argument is ambiguous. With that worked around (a `signbit(long double)` overload declared before `<complex>`, `shim.h`, passed as `-include shim.h`), the next failure is at link, from `repro_exp.cu`:
+
+```cpp
+#include <complex>
+extern "C" __global__ void k(double* a) { auto z = std::exp(std::complex<double>(a[0], a[1])); a[0] = z.real(); a[1] = z.imag(); }
+```
+
+```
+hiprtcCompileProgram: HIPRTC_ERROR_COMPILATION
+ld.lld: error: undefined hidden symbol: _Exp
+>>> referenced by ...\comgr-1844-1-15d9fb\input\repro_exp.o:(k)
+```
+
+MSVC's `std::exp`, `cosh` and `sinh` for `complex<float>` and `complex<double>` call the UCRT helpers `_Exp`, `_Cosh`, `_Sinh`, `_FExp`, `_FCosh`, `_FSinh` (declared in `ymath.h`), which have no device definition. `<cmath>` alone compiles (`repro_cmath.cu`: `std::signbit`, `std::exp`, `std::cosh` on double).
+
+Expected: `<complex>` compiles and links for the device under hiprtc on Windows, as it does on Linux with libstdc++.
+
+What a fix could look like: (a) in hiprtc_runtime.h (and the HIP clang wrapper headers, if offline compilation is affected the same way), when targeting the MSVC environment, add `signbit(long double)` and device definitions of the six UCRT helpers (`y * exp(x) * 2^eoff`, `y * cosh(x)`, `y * sinh(x)` with the UCRT's overflow avoidance and special-value handling), the way the clang CUDA/HIP wrapper headers already supply device versions of other C runtime functions; or (b) ship libc++ headers with ROCm on Windows and have hiprtc use them for device code. A user-side workaround that works today: a header included before `<complex>`, guarded by `__HIPCC_RTC__ && _MSC_VER`, providing the overload and the six helpers as `__device__ __attribute__((weak))` functions bound to the C names with `__asm__("_Exp")` etc. (a plain `extern "C" __device__ _Exp` definition is rejected, because `cuda_wrappers/complex` forces the STL declarations to `__host__ __device__`).
+
+#### Draft 2: hiprtc on Windows fails with an empty log when the program name is an absolute path
+
+Title: [hiprtc][Windows] `hiprtcCompileProgram` returns HIPRTC_ERROR_COMPILATION with an empty log when the program name is an absolute path
+
+`hiprtcCreateProgram`'s `name` argument names the program (it is used in diagnostics). On Windows, an absolute path there makes the compile fail with no log; the same source compiles with a relative name. CuPy and similar libraries pass the full path of a cache file as the name.
+
+Kernel `k.cu`:
+
+```cpp
+extern "C" __global__ void k(float* a) { a[threadIdx.x] += 1.0f; }
+```
+
+```
+> hiprtc_repro.exe k.cu C:\Users\me\k.cu --offload-arch=gfx1151
+hiprtcCompileProgram: HIPRTC_ERROR_COMPILATION
+
+> hiprtc_repro.exe k.cu k.cu --offload-arch=gfx1151
+hiprtcCompileProgram: HIPRTC_SUCCESS
+```
+
+`C:/Users/me/k.cu` fails the same way; `sub\k.cu` and `sub/k.cu` succeed. Same result with `AMD_COMGR_USE_VFS=0`. With `AMD_COMGR_EMIT_VERBOSE_LOGS=1 AMD_COMGR_REDIRECT_LOGS=stderr` the only signal is `AMD_COMGR_ACTION_COMPILE_SOURCE_TO_RELOCATABLE ... ReturnStatus: AMD_COMGR_STATUS_ERROR`, with no diagnostic. A successful compile reports its source as `...\comgr-XXXX\input\k.cu`, so the likely cause is joining comgr's temporary input directory with an absolute Windows name (a drive letter inside a path), which is harmless on Linux (`/tmp/x/input//home/...`) and invalid on Windows.
+
+Expected: any name compiles, or at least an error says the name is invalid. A fix: use only the file name component (or a sanitized name) for the temporary file and keep the full name for diagnostics.
+
+#### Draft 3: hipcc.exe does not quote the arguments it forwards to clang
+
+Title: [hipcc][Windows] `hipcc.exe` splits forwarded arguments that contain spaces or quotes
+
+`hipcc.exe` rebuilds the clang command line as one string without quoting the arguments it forwards, so an argument that contains a space or a double quote is split when clang parses its command line. A define such as `-DEXTERN_C=extern "C"` and an include directory under `C:\Program Files (x86)\...` (where the MSVC and Windows SDK headers live) both break.
+
+`hipcc_quote.py` passes the same argument vector (a list, so each element is one argv entry) to `hipcc.exe` and to `clang++.exe`:
+
+```python
+args = ['-x', 'hip', '--offload-arch=gfx1151', '-c', 'q.cu', '-o', 'q.o',
+        '-DEXTERN_C=extern "C"', '-I' + os.path.join(here, 'dir with space')]
+```
+
+with `q.cu` (and `dir with space/hdr.h` defining `HDR_OK`):
+
+```cpp
+#include <hip/hip_runtime.h>
+#include "hdr.h"
+EXTERN_C __global__ void k(float* a) { a[threadIdx.x] += HDR_OK; }
+```
+
+```
+hipcc.exe rc 1
+clang: error: no such file or directory: 'C'
+clang: error: no such file or directory: 'with'
+clang: error: no such file or directory: 'space'
+failed to execute:""...\lib\llvm\bin\clang.exe"   --offload-arch=gfx1151 -O3  -x hip -c "q.cu" -o "q.o" -DEXTERN_C=extern "C" -IC:\Users\me\rtcbug\dir with space"
+
+lib\llvm\bin\clang++.exe rc 0
+```
+
+Expected: hipcc forwards each argument unchanged, as clang++.exe receives it. A fix: quote each forwarded argument for the Windows command line (surround with `"` and escape embedded `"` and trailing backslashes per the CommandLineToArgvW rules), or start clang with an argument vector instead of a joined string.
