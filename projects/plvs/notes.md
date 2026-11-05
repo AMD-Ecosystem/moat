@@ -3246,3 +3246,5 @@ My agent came up with this analysis, but I've read and approved it.
 ====
 
 - Ruling 2026-11-05 (jeff): fix the line depth arrays (Frame.cc:3037-3038 mvDepthLineStart/End sized to left lines, read over all lines at Tracking.cc:4018/:4314) on moat-port as a separate commit, and add it to luigifreda/plvs#58 as a follow-up comment.
+
+- Ruling 2026-11-05 (jeff): also fix on moat-port, as separate commits, the two upstream undefined-behaviour reads review 4 found: MapLine.cc:688 (3-entry line-scale array indexed with the point pyramid level count, 8) and OptimizableTypes.cpp:214 (auto projectJac binds an Eigen expression over a temporary; also ORB-SLAM3 OptimizableTypes.cpp:150). File upstream issues for both (plvs) and the Eigen one (ORB-SLAM3), drafts for jeff first.
