@@ -983,3 +983,69 @@ Not run at both: 9 Disabled (incl. ColoredNoise.check* and MATH_UTILS.Matrix3fMu
 The port's 18 failures are all in the base's 19, with the same names: BicycleSlipParametricTest.{Template, ComputeDynamics, ComputeDynamicsWithNormals, TestModelGPU, TestModelGPUNormals, TestModelGPUNormalsReverse, TestStepGPUvsCPU}, DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, RacerDubinsElevationTest.{TestStep, TestStepGPUvsCPU, TestStepReverse, TestStepGPUvsCPUReverse}, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU (Gaussian<1,7> and ColoredNoise<3,3>), Integration.RK4, ActivationFunctionTest.SigmoidGPU. The base's extra failure is RMPPITest.RobustMPPILargeVarianceRobustCost (one run each, so not classified further). These are upstream's own CUDA failures on this toolchain/GPU (several match the names that fail on AMD too: DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, CompareLikelihoodRatioCostsCPUvsGPU), so they are not port regressions. The texture-backed tests deferred on HIP (ARStandardCost.*, texture helpers) pass on CUDA at the port, so the `if(USE_HIP)` exclusions do not touch the CUDA build.
 
 Result: CUDA gate **PASS** at 11b61ab (no port-only build error, no port-only test failure).
+
+## 2026-11-05: host min/max truncation fix (porter, bee3eb6)
+
+Requested by jeff after the cross-project host min/max sweep. Platform linux-gfx1100 (RX 7900 / gfx1100, wave32), TheRock pip ROCm in the image venv (`R=$(rocm-sdk path --root)`, AMD clang 24), `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__` unset, so ROCm's host `min`/`max` exist only for `(int, int)` and the defect reproduces. `pr-state` = none, so `moat-port` was pushed directly (pre-push hook installed by `protect-fork`, push accepted). Fork commit bee3eb6 on top of 11b61ab: `[ROCm] Call fminf/fmaxf in host code instead of unqualified min/max`.
+
+### Re-check of the whole project
+- Probe: every HIP TU in `compile_commands.json` of the real build (50 TUs, flags as built: `-DUSE_HIP -DCMAKE_USE_CUDA_BARRIERS*`, forced `cuda_to_hip.h`), re-run with `--cuda-host-only -fsyntax-only -include probe.h` where probe.h is `template<class A,class B> void min(A,B)=delete; template<class A,class B> void max(A,B)=delete;`. Script: run each compile command with `-o`/`-c` removed plus those flags.
+- The five dynamics tests excluded from the HIP build (`racer_dubins_elevation{,_suspension,_lstm_steering,_lstm_uncertainty}_model_test.cu`, `bicycle_slip_parametric_model_test.cu`) were probed separately with the same flags, because their headers are compiled by no HIP TU. That is how the bicycle-slip and elevation sites showed up; the in-build probe alone cannot see them.
+- Text grep for unqualified `min(`/`max(` over every tracked `.cu/.cuh/.h/.hpp/.cpp` outside submodules covers code behind any `#if`.
+
+Fixed (host code, CUDA resolves to the float/double overloads):
+| site | args | CUDA host overload | now |
+|---|---|---|---|
+| racer_suspension.cu:110,111 (`__host__ __device__` computeStateDeriv) | `(double, float)` | fmax | `fmax` |
+| racer_suspension.cu:195 | `(float, float)` x2 | fmaxf/fminf | `fmaxf(fminf(..))` |
+| bicycle_slip_parametric.cu:160,163 (host updateState) | float | fmaxf/fminf | same |
+| racer_dubins_elevation.cu:49,55 (host computeParametricAccelDeriv), 307 (host computeGrad) | float | fmaxf/fminf | same |
+| tests autorally_standard_cost_test.cu:836,837 / autorally_robust_cost_test.cu:164,165 | float | fminf/fmaxf | same |
+| tests autorally_standard_cost_test.cu:842,843 / autorally_robust_cost_test.cu:171,172 | inner `(double, float)`, outer `(double, float)` | fmin/fmax | `fmax(fmin(..))` |
+| tests racer_dubins_elevation_model_test.cu:1139 (not in the sweep; test excluded on HIP) | float | fminf | `fminf` |
+
+Judged harmless, left alone:
+- tube_mppi_controller.cu:20,21,41,42,192,193 and robust_mppi_controller.cu:319,320,328,329,337,338: `max(2 or 1, dim3.z/.y)`, i.e. `(int, unsigned int)`. CUDA picks `max(int, unsigned)` (unsigned compare), HIP converts the unsigned to int. The results differ only for a block dimension >= 2^31, which no launch can have.
+- Device code (`__global__`/`__device__`): mppi_common.cu:924-1009, rmppi_kernels.cu:79,193,311, gaussian.cu:33-40, piecewise_linear_noise.cuh:50, smooth-MPPI.cu:49, tests/include/kernel_tests/core/rmppi_kernel_test.cu:112, and the device updateState in bicycle_slip_parametric.cu:222,227. Device overloads are complete on ROCm.
+- `(int, int)`: risk_utils.cu:39,40 and math_utils_test.cu:1035-1060.
+- After the fix the probe reports only the 12 controller `(int, unsigned)` sites; the excluded dynamics tests show no min/max errors (their remaining host errors are the known deferred `typename` / `case this->CONST` ones).
+- Side check: host `abs(float)` in a .hip file resolves to the float overload (1.5 for -1.5f), so the `abs(...)` calls next to these sites are fine.
+
+### Before/after at run time (host calls)
+RacerSuspension::computeStateDeriv, P_I_Z=0.2, V_I_X=1, QW=1, d(V_I_X)/dt:
+| throttle_brake | before | after |
+|---|---|---|
+| 0.00 | -0.199032 | -0.200000 |
+| 0.25 | -0.199032 | 0.550000 |
+| 0.50 | -0.199032 | 1.300000 |
+| 0.75 | -0.199032 | 2.050000 |
+| 1.00 | 2.797512 | 2.800000 |
+| -0.50 | -0.199032 | -5.200000 |
+| -1.00 | -10.197650 | -10.200000 |
+(The 0.0008-0.003 shift at 0/±1 is the integer tire-force clamp on line 195.)
+
+RacerDubinsElevation::computeParametricAccelDeriv, d(VEL_X)/dt: vx=0.1 u=0.5: 4.0 -> 5.011; vx=0.1 u=0.9: 4.0 -> 5.5; vx=1.0 u=0.5: 1.0 -> 1.5; vx=1.0 u=0.9: 2.0 -> 2.54 (clamp_ax and low-speed throttle no longer truncated).
+BicycleSlipParametric::updateState, STEER_ANGLE=0.3, BRAKE_STATE=0.4, zero derivative: steer 0.0 -> 0.3, brake -2147483648 -> 0.4.
+Test reference `calculateStandardCostmapValue` for the four getTrackCostTest states: 15.000000 -> 14.999166, 15.416666 -> 15.432528, 5.933333 -> 5.432528, 6.033333 -> 5.532528 (states 2 and 3 were off by 0.5 against a 0.1 tolerance). ARStandardCost.getTrackCostTest itself still SEGFAULTs on HIP (deferred texture class), so this is shown by a direct call of the helper body only. `calculateRobustCostmapValue` has no caller; fixed for consistency.
+
+### Regression test
+New `RacerSuspensionTest.FractionalThrottleBrake` (host computeStateDeriv: half throttle = midpoint of none and full; half brake strictly between none and full). Built against the old racer_suspension.cu: FAILED (`accel(0.5)` -0.199032 vs expected 1.299240; `accel(-0.5)` == `accel(0.0)`). With the fix: OK. racer_suspension_model_test: 4 pass, 1 skipped (CPUvsGPU, upstream GTEST_SKIP).
+
+### Build and full ctest
+```
+R=$(rocm-sdk path --root)
+cmake -S src -B src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DROCM_PATH=$R \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build src/build-hip -j 10          # 157/157, 0 errors
+ctest --test-dir src/build-hip -j1 --timeout 600   # 159 s
+```
+429/463 pass, 32 fail, 8 not run (same 5 Disabled + 3 Skipped as at 11b61ab). 463 = 462 + the new test.
+- The 29 deterministic failures recorded at 11b61ab recur by name (8 ARStandardCost, 2 ARRobustCostTest.getCostmapCost*, ARNeuralNetDynamics.computeGradTest, 6 npz loaders, DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, RacerDubins.ComputeStateTrajectoryFiniteTest, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, cuFFT.checkErrorCode, 6 GaussianTests.Check*, Integration.RK4).
+- The other 3 are the known intermittent pool: CudaFloatStructsTests/*.VecAddVecMultScalar and CompareLikelihoodRatioCostsCPUvsGPU for ColoredNoise<3,3> and NLN<3,3>. `ctest -R 'CompareLikelihoodRatioCostsCPUvsGPU|VecAddVecMultScalar'` 5x each: pre-fix build 0/0/1/2/3 failures, fixed build 1/2/2/3/3. Neither TU depends on a changed file (`ninja -t deps`: the only HIP object that includes a changed library file is racer_suspension_model_test.cu.o).
+- So the only change in the GPU suite is the added passing test. The ARRobustCostTest/ARStandardCost failures are texture-backed GPU paths, not the corrected reference helpers.
+
+### Other
+- Process slip: the first `jargon.py --port` call errored ("cannot resolve main..moat-port", no local `main` in the fresh clone) and the push in the same command line went ahead. Created a local tracking `main` and re-ran: `jargon: clean`, so the pushed branch is clean.
+- CUDA compile not run here (no nvcc on this host); the change is plain fminf/fmaxf/fmin/fmax in existing CUDA C++, owed on the nvcc host.
+- Lesson for the fault-class entry on port/LEAP (not edited here; the entry is not on this branch): a host-only probe over `compile_commands.json` misses headers whose only including TUs are excluded from the HIP build; probe those excluded TUs with the same flags too.
