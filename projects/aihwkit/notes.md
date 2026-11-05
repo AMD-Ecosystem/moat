@@ -1364,3 +1364,21 @@ Jargon: `python3 utils/jargon.py --port aihwkit` -> clean (local `master`,
 tracked files unmodified (only untracked build_hip311/, build_hip312/).
 
 Verdict: PASS at ea1185e. Transitioning linux-gfx1100 to completed.
+
+## Revalidation 2026-11-04 (validator, windows-gfx1151, sync tip ea1185e)
+
+State: revalidate (validated_sha eb4d017 -> head ea1185e, sync round moat-sync-60ffe9e, second merge absorbing upstream 14d4783). GPU: AMD Radeon 8060S (gfx1151, wave32, APU), HIP_VISIBLE_DEVICES=0, ROCBLAS_USE_HIPBLASLT=0. Toolchain unchanged from the eb4d017 Windows run: TheRock ROCm 7.14.0a20260519, torch 2.12.0+rocm7.14.0a20260519, Python 3.12.10, pybind11 3.1.0, cmake 4.4.4 (the venv cmake; the system cmake 3.31 fails the clang-cl ABI probe), all-clang-cl. Fork src checkout detached at ea1185efa2caa08024bc12c4da242e14becb9f3c; no push to the fork.
+
+Build: the eb4d017 recipe with ONE change, `-DRPU_CXX_STANDARD=20` dropped so upstream #792's torch-based standard detection is exercised. Configure printed `Using C++17 (required by .../torch/include/ATen/ATen.h)`; build proceeded with -DCMAKE_HIP_STANDARD=20 as before. 78/78 compile; the rpu_base link failed with the known unresolved `__kmpc_*` (and c10_hip/torch_hip) until the same build.ninja edit as at eb4d017 was applied (c10_hip.lib torch_hip.lib libomp140.lib, /WHOLEARCHIVE:RPU_GPU.lib, full stubgen path), then linked. No DLL staging was needed this time (import succeeded: cuda.is_compiled() True).
+
+Tests (`ulimit -c 0; PYTHONPATH=src python -m pytest -q -p no:cacheprovider -rs <file(s)>`, one group at a time):
+- test_specific_tiles: 45 passed, 3 skipped
+- test_simulator_tiles + test_bindings_tiles: 532 passed, 57 skipped, 0 failed (with specific: 577 passed / 60 skipped, identical to gfx90a and gfx1100)
+- test_torch_tiles + test_inference_tiles: 406 passed, 55 skipped, 0 failed
+- TorchInferenceCuda::test_input_range_grad (-k, also in the above): 4 passed
+- test_layers_linear + test_layers_convolution: 566 passed, 216 skipped, 0 failed
+- test_analog_ctx: 179 passed, 29 skipped, 127 subtests passed
+
+Counts match the Linux gfx90a and gfx1100 runs at ea1185e exactly. CUDA gate: recorded PASS at ea1185e on a Linux host (CUDA compile check 2026-11-04); not repeated. Jargon: `python3 utils/jargon.py --port aihwkit` clean. Docs: README "Running on AMD GPUs" present. Fork tree: tracked files unmodified (untracked build_hip/, build_hip2/ only).
+
+Verdict: PASS at ea1185e. Transitioning windows-gfx1151 to completed.
