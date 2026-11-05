@@ -271,3 +271,4 @@ CUPY_INSTALL_USE_HIP=1 python -m pytest tests/install_tests -q     # exercises c
 5. Docs (jeff): the Windows ROCm install subsection goes in the same PR.
 6. Coordination (jeff): no pre-coordination; the PR goes upstream through the normal MOAT flow (ROCm/cupy:moat-port -> cupy/cupy:main). jeff notifies the ROCm/cupy owners himself when the PR is submitted.
 7. Linux baseline (jeff): full upstream 18b54de baseline build and test run on both Linux gate hosts; failures are classified against it.
+8. Scope (jeff): source build only; no Windows wheel, conda package or CI job; packaging is left to the maintainers.
