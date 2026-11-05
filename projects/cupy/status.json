@@ -6,12 +6,15 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
-  "stage": "screened",
+  "stage": "planning",
   "adopted_at": "2026-11-04T22:34:29Z",
-  "updated_at": "2026-11-04T22:41:45Z",
+  "updated_at": "2026-11-05T07:05:30Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-05T07:05:30Z"
+  },
   "waivers": {},
   "platforms": {
     "linux-gfx1100": {
@@ -36,6 +39,29 @@
         "last_session_at": null
       },
       "last_agent": "intake"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-05T07:05:30Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "planner"
     }
   },
   "fork_url_ruling": {
