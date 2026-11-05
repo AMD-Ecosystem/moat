@@ -483,3 +483,33 @@ No NaN in any thermo.out. Raw `diff -q` against the CUDA reference files differs
 Comparison: the carbon, graphene_dos and graphene_kappa_emd numbers fall in the same band as the porter's gfx90a run at 15124b53 (1.20e-6 / 7.38e-2 DOS / 297.01 K) and the gfx1100 record (DOS 6.35e-2 / 1.25e-2). None of the three constructs ILP_NEP, so the fix cannot change them. The one difference the fix explains is ilp_nep_cutoff: ILP rcut 4.1 under a 4.2 NEP cutoff is now rejected, matching CUDA, as in the reviewer's gfx942 run at this head. PASS: 3/3 recorded workloads plus the new test, 3 additive cases clean.
 
 Pre-completion checks: `git -C projects/GPUMD/src status --porcelain` shows no tracked modifications; `utils/jargon.py --port GPUMD` clean; the ROCm build is documented in `doc/installation.rst` (98c8bb47), and this delta changes no build step. CUDA gate: already recorded at this head ("CUDA compile check (nvcc 12.8) at 15124b5", mi355), so not re-run.
+
+## Validation 2026-11-05 (windows-gfx1151, validator) -- 15124b53, PASSED
+
+jeff asked for this run. GPU: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32), `HIP_VISIBLE_DEVICES=0`, TheRock ROCm 7.14.0a20260519, Windows 11. Fresh depth-1 clone of AMD-Ecosystem/GPUMD `moat-port` in `agent_space/gpumd-win2`, HEAD 15124b533b659e338e43ffb7878b847d7d1ce09d (matches `git ls-remote`); `git status --porcelain`: clean (objects and binary are ignored). Nothing pushed. Each case run once, serially, `ulimit -c 0`.
+
+### Build
+    utils/timeit.sh GPUMD compile -- bash agent_space/gp_build_f77.sh
+      # cd src; mingw32-make -f makefile.hip gpumd HIP_ARCH=gfx1151 LDFLAGS="-L<rocm>/lib" CC="<rocm>/bin/hipcc.exe" CFLAGS="-O3 --offload-arch=gfx1151 -DUSE_HIP -std=c++17" -j8
+rc 0, `gpumd` 13.1 MB, 0 errors. Environment notes (no source or makefile change): (1) `CC=<rocm>/bin/hipcc.exe` must be given by full path, because `mingw32-make` does not find `hipcc` through the MSYS PATH. (2) The 2026-05-30 recipe built with the default language mode; with this SDK's rocPRIM, `force/neighbor.cu`, `force/potential.cu` and `force/nep_multigpu.cu` (the thrust users) fail with `rocPRIM requires at least C++17` because the Windows clang driver defaults lower, so those three were built with `-std=c++17` and the other objects with the default (the build was run as one -j16 pass that failed on those three, then re-run with `CFLAGS` carrying `-std=c++17`; make rebuilt only the failed objects). The Linux makefile comment says C++17 is the hipcc default there; an explicit `-std=c++17` in the Windows recipe is the fix and the makefile is unchanged. (3) At -j16 two hipcc launches failed with "failed to execute" (process-launch failure, not a compile error) and succeeded at -j8.
+
+### Tests (real gfx1151)
+Scratch tree `agent_space/gp_run/{src/gpumd.exe, potentials (needed files only), tests/gpumd/<case>}` with the ROCm runtime DLLs staged next to the exe and the SDK `bin` on PATH (first launch without the SDK bin on PATH exited 127: `hipfft.dll` not found; environment, fixed by PATH). Run as `../../../src/gpumd.exe > stdout.txt 2> stderr.txt` via `utils/timeit.sh GPUMD test -- bash agent_space/gp_run_suite.sh` (18 s for the four cases, 11 s of that GPU).
+
+| case | rc | stderr | result |
+|---|---|---|---|
+| ilp_nep_cutoff (new) | 1 | empty | last stdout line `ERROR: Please make sure cutoff of ILP is larger than it of NEP.`; identical to `error1.out` once the CR is stripped (the checkout has CRLF `error1.out` and the bash harness `diff -q` is byte-wise, so `run_tests.sh` as written differs on this Windows checkout; `run_tests.bat` has no entry for this case) |
+| ilp_nep_cutoff control, ILP rcut 4.3 | 0 | empty | runs to completion |
+| carbon (NEP4 NVE 100 steps) | 0 | empty | thermo 10x18 finite; Etot drift (max-min)/\|mean\| 1.00e-6, std/\|mean\| 3.1e-7, T mean 300.37 K; PE at step 10 vs CUDA ref 4.7e-5 relative |
+| graphene_dos (Tersoff, hipFFT DOS) | 0 | empty | dos.out 200x4 finite, mvac t0 1,1,1, NPT T rows >= 10 300.11 +- 2.24 K |
+| graphene_kappa_emd | 0 | empty | hac.out 50x11 finite, NPT T rows >= 10 299.76 +- 2.09 K |
+
+No NaN in any output. Against the previous record on this platform (6231243f..65b4ded, 2026-05-30: carbon ~9e-7 energy conservation, dos 200x4 and hac 50x11 finite, exit 0): the same three workloads pass with the same shapes and the same energy-conservation level (1.0e-6). The only new behaviour is `ilp_nep_cutoff`, which is the fix (ILP rcut 4.1 under a 4.2 NEP cutoff is rejected as on CUDA; it ran to completion at the parent on gfx90a and gfx1100). The parent binary was not rebuilt here, so the "fails before" half was not re-shown on this platform; it is recorded by the gfx90a, gfx1100 and gfx942 entries above. Counts: 4/4 cases plus the control, versus 3/3 previously.
+
+### Exclusions
+Not run (beyond what the earlier Windows record covered, kept out to limit load on the APU): graphene_kappa_nemd, graphene_kappa_hnemd, silicon_dispersion, the other tests/gpumd cases, the two pytest stanzas, and the `nep` executable. No case recorded as faulting or large-memory on this host was run.
+
+### Gates
+`jargon.py -` on the commit message and added lines of 15124b5: clean (the port-range scan needs a full-history clone; the Linux validators ran `--port GPUMD` clean at this head). Docs: `doc/installation.rst` ROCm section unchanged by the delta. CUDA gate: recorded at this head ("CUDA compile check (nvcc 12.8) at 15124b5"); not run on this host.
+
+State: windows-gfx1151 `revalidate` -> `completed` at 15124b53.
