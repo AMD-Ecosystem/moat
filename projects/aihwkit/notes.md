@@ -1382,3 +1382,5 @@ Tests (`ulimit -c 0; PYTHONPATH=src python -m pytest -q -p no:cacheprovider -rs 
 Counts match the Linux gfx90a and gfx1100 runs at ea1185e exactly. CUDA gate: recorded PASS at ea1185e on a Linux host (CUDA compile check 2026-11-04); not repeated. Jargon: `python3 utils/jargon.py --port aihwkit` clean. Docs: README "Running on AMD GPUs" present. Fork tree: tracked files unmodified (untracked build_hip/, build_hip2/ only).
 
 Verdict: PASS at ea1185e. Transitioning windows-gfx1151 to completed.
+
+- 2026-11-05 (jeff): deferral aihwkit-input-range-grad-drift closed as fixed upstream by #827. Correction to its summary: the failure was not ROCm toolchain drift; torch 2.14 zeroes the clamp gradient at the boundary, which broke upstream's Python code on any backend. Reverting only dba3bc3 reproduces it; with it, test_input_range_grad passes on gfx90a, gfx1100 and gfx1151 at ea1185e.

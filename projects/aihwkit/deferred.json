@@ -9,10 +9,15 @@
       "refs": [
         "projects/aihwkit/notes.md sync round 2026-09-08"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "done",
+      "upstream_issue": "https://github.com/IBM/aihwkit/pull/827",
       "created_at": "2026-09-08T22:10:33Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-05T07:43:51Z",
+        "note": "Not ROCm drift: torch 2.14 changed the clamp gradient at the bound; fixed upstream by IBM/aihwkit#827 (dba3bc3), merged in the sync round at ea1185e; passes on gfx90a, gfx1100, gfx1151"
+      }
     }
   ]
 }
