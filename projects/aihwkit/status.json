@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T01:19:43Z",
-  "updated_at": "2026-11-05T02:58:01Z",
+  "updated_at": "2026-11-05T04:38:36Z",
   "head_sha": "ea1185efa2caa08024bc12c4da242e14becb9f3c",
   "depends_on": [],
   "pr_url": "https://github.com/IBM/aihwkit/pull/770",
@@ -182,7 +182,7 @@
   "fix": {
     "branch": "moat-sync-60ffe9e",
     "base_sha": "70577b578b7faa661611e905c0b9ec1a1d85bf33",
-    "review_pr": null,
+    "review_pr": "https://github.com/AMD-Ecosystem/aihwkit/pull/1",
     "opened_at": "2026-09-08T21:54:24Z",
     "kind": "sync",
     "upstream_sha": "60ffe9e45b0861bdee8daaf7323d2895d81c9bf9"
