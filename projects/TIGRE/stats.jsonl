@@ -202,3 +202,6 @@
 {"kind":"phase","ts":"2026-11-05T05:06:44Z","phase":"compile","seconds":21.533,"exit":0,"cmd":"bash -c cd projects/TIGRE/src && /var/lib/jenkins/fleet/jobs/mi200-20261104-204943-tigre/venv/bin/python setup.py build_ext --inplace -j 16"}
 {"kind":"phase","ts":"2026-11-05T05:10:20Z","phase":"compile","seconds":17.195,"exit":0,"cmd":"bash -c cd projects/TIGRE/src && /var/lib/jenkins/fleet/jobs/mi200-20261104-204943-tigre/venv/bin/python setup.py build_ext --inplace -j 16"}
 {"kind":"phase","ts":"2026-11-05T05:13:46Z","phase":"test","seconds":93.987,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi200-20261104-204943-tigre/moat/agent_space/wt-TIGRE/agent_space/run_head.sh /var/lib/jenkins/fleet/jobs/mi200-20261104-204943-tigre/moat/agent_space/wt-TIGRE/projects/TIGRE/src /var/lib/jenkins/fleet/jobs/mi200-20261104-204943-tigre/moat/agent_space/wt-TIGRE/agent_space/scripts"}
+{"kind":"session","ts":"2026-11-05T05:26:24Z","epoch":1793856384.706885973,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-05T05:30:15Z","phase":"compile","seconds":0.024,"exit":2,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261104-212302-rev-tigre/venv/bin/python setup.py build_ext --inplace -j 16"}
+{"kind":"session","ts":"2026-11-05T05:33:23Z","epoch":1793856803.795847225,"event":"end","platform":"linux-gfx90a"}
