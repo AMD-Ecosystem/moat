@@ -7,7 +7,7 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-11-05T05:46:31Z",
+  "updated_at": "2026-11-05T05:56:04Z",
   "head_sha": "fc2cfd9ddb07a62b93210c3f2ee87e51d00cdb2b",
   "depends_on": [],
   "waivers": {
@@ -27,7 +27,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 672651553,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -36,7 +36,7 @@
       "validated_sha": "204cdab0fa1066cb706e332c371ae9a0f846eff7",
       "started_at": "2026-05-31T01:11:33Z",
       "completed_at": "2026-10-31T09:09:55Z",
-      "updated_at": "2026-10-31T19:46:36Z",
+      "updated_at": "2026-11-05T05:56:04Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -50,7 +50,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "reviewer",
       "failed_sha": "b0a50fa0c0a7178267854a284ff0ec0258ed8fe5",
       "carry_forward": {
         "from": "001fc7285ed1d76cd73651ec5b71a13de19a96d4",
@@ -168,7 +168,10 @@
     "since": "2026-11-05T04:53:56Z",
     "at": "2026-11-05T05:46:31Z"
   },
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-05T05:56:04Z"
+  },
   "on_hold": true,
   "on_hold_reason": "moat-port is reference-only; upstream asked for focused PRs against dev (issue 3968), worked outside this pipeline"
 }
