@@ -1294,3 +1294,73 @@ mirrors 14d4783). Fork tree: tracked files unmodified (only untracked
 build_hip311/, build_hip312/).
 
 Verdict: PASS at ea1185e. Transitioning linux-gfx90a to completed.
+
+## Revalidation 2026-11-05 (validator, linux-gfx1100, sync tip ea1185e)
+
+State: revalidate (validated_sha eb4d017 -> head ea1185e, sync round
+moat-sync-60ffe9e, second merge absorbing upstream 14d4783). GPU: AMD Radeon
+Pro W7800 48GB (gfx1100, wave32 native), HIP_VISIBLE_DEVICES=0. Fork cloned
+fresh, detached at ea1185efa2caa08024bc12c4da242e14becb9f3c. Full run, no
+carry-forward attempt (the delta absorbs upstream device code).
+
+Primary run, Python 3.12 (upstream's new floor), the gfx90a ea1185e recipe
+with the gfx110X index. Job-private venv (`/usr/bin/python3.12 -m venv
+--without-pip`, packages installed with the job venv's `pip --python`,
+PYTHONPATH unset). The `v2/gfx110X-all` index stops at torch 2.12 / ROCm 7.13;
+the newer matched pair is on v2-staging: torch 2.13.0a0+rocm7.14.0a20260612,
+torchvision 0.28.0a0+rocm7.14.0a20260612,
+rocm[libraries,devel]==7.14.0a20260612 (HIP 7.14.60850). Python 3.12.3, numpy
+2.5.4, pybind11 and cmake from PyPI, OpenBLAS from apt libopenblas-dev.
+```
+$FLEET_VENV/bin/pip --python $V/bin/python install --index-url https://rocm.nightlies.amd.com/v2-staging/gfx110X-all/ \
+  --extra-index-url https://pypi.org/simple "torch==2.13.0a0+rocm7.14.0a20260612" \
+  "torchvision==0.28.0a0+rocm7.14.0a20260612" "rocm[libraries,devel]==7.14.0a20260612"
+$FLEET_VENV/bin/pip --python $V/bin/python install pybind11 cmake numpy scipy scikit-learn tqdm \
+  protobuf requests pytest pytest-xdist parameterized ninja
+R=$V/lib/python3.12/site-packages/_rocm_sdk_devel
+cmake -S . -B build_hip312 -GNinja -DUSE_HIP=ON -DUSE_CUDA=OFF \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++ \
+  -DROCM_PATH=$R -DCMAKE_PREFIX_PATH="$TORCH_CMAKE;$PYBIND11_CMAKE;$R" \
+  -DPython3_EXECUTABLE=$V/bin/python -DPython_EXECUTABLE=$V/bin/python \
+  -DRPU_BLAS=OpenBLAS -DBUILD_TEST=OFF -DRPU_USE_TORCH_BUFFERS=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build_hip312 -j16      # 78/78, rc=0, 0 errors
+cp build_hip312/src/aihwkit/simulator/rpu_base.cpython-312-x86_64-linux-gnu.so src/aihwkit/simulator/
+ulimit -c 0; PYTHONPATH=src python -m pytest -q -p no:cacheprovider -n 8 <suites>
+```
+Configure printed `Using C++17 (required by .../ATen/ATen.h)` (torch 2.13).
+rpu_base carries `amdgcn-amd-amdhsa--gfx1100` code objects;
+`rpu_base.cuda.is_compiled()` -> True.
+- test_specific_tiles + test_simulator_tiles + test_bindings_tiles: **577 passed, 60 skipped, 0 failed**
+- test_torch_tiles + test_inference_tiles: **406 passed, 55 skipped, 0 failed**
+- test_layers_linear + test_layers_convolution: **566 passed, 216 skipped, 0 failed**
+- test_analog_ctx: **179 passed, 29 skipped, 127 subtests passed**
+Skips (`-rs` over the first two groups, 115 total): CUDA tile needed 36,
+test_weight_programming_optimization 28, torch-tile modifier noise 25, No
+forward 8, Not an AnalogTile 6, CUDA chopper buffers 3, not compiled with CUDA
+support 2 (use_cuda=False classes), device lifetime/diffusion 4, Inp res < 0 2,
+tuneUpdate CUDA-only 1. None caused by the HIP build.
+
+Second run, torch >= 2.14 path: the host's /opt/python-3.11-venv (read-only
+use), Python 3.11.17, torch 2.16.0a0+git6c3af02, HIP 7.16.26385, its pip
+rocm-sdk-devel; same cmake line into build_hip311 without the pybind11 path
+(configure: `Using C++20`), 78/78 rc=0.
+- 577/60, 406/55/0, 566/216, 179/29 -- identical counts, 0 failed.
+
+TorchInferenceTest_TorchInferenceCuda::test_input_range_grad: PASSED on both
+stacks (`pytest -v tests/test_torch_tiles.py -k test_input_range_grad` -> 4
+passed each, IRDropTCuda included). At eb4d017 on this host and the torch 2.16
+stack it failed (x=-0.0005 vs y=-0.0187); with 14d4783's #827 merged it
+passes, matching the gfx90a finding. Deferral aihwkit-input-range-grad-drift
+left unruled; a person rules it.
+
+Counts match the porter's gfx90a/py3.11, the reviewer's gfx942/py3.12 and the
+gfx90a validator's py3.12 + py3.11 runs at ea1185e exactly.
+
+CUDA gate: already recorded PASS at ea1185e (CUDA compile check 2026-11-04);
+not repeated.
+
+Jargon: `python3 utils/jargon.py --port aihwkit` -> clean (local `master`,
+`moat-sync-60ffe9e`, `moat-port` refs fetched in the fresh clone). Fork tree:
+tracked files unmodified (only untracked build_hip311/, build_hip312/).
+
+Verdict: PASS at ea1185e. Transitioning linux-gfx1100 to completed.
