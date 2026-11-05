@@ -218,3 +218,42 @@ A HIP port of h2o4gpu's GPU solvers via `hip_compat/` CUDA-named headers and a `
 - `tests/python/open_data/gbm`: 16 pass / 4 fail / 17 skip (same as gfx90a; the 4 are `lgb.cv(early_stopping_rounds=)`, removed in LightGBM 4.0). `tests/python/open_data/system`: 2/2.
 - h2o GBM patches on the GPU (`agent_space/gbm/gbm_check.py`, under rocprofv3): xgboost cut points for feature 0 are the between-bin midpoints `[0.5, 1.5, ..., 8.5]` on both cpu and cuda. `get_feature_interactions` returns a DataFrame; `pred_contribs` sums to the margin; sklearn `pred_leaf`/`pred_contribs` work; `DAI_XGBOOST_AVOID_LOGGER=1` prints `[XGBoost]` lines. LightGBM `device_type='cuda'` vs cpu: 100000x20, 50 rounds, max pred diff 7.9e-7. Trace: 24306 LightGBM:: and 370 xgboost kernels. The LightGBM C++ MOJO accessors (`GetTrees`, Tree split getters) compile, but nothing in-tree exercises them.
 - roctx (ruling 5): `USENVTX=1` + `-DUSE_NVTX` build links `libroctx64.so.4`; the default build does not. ElasticNetH2O fit under `rocprofv3 --marker-trace`: 1115 marker records = 1115 `START:` lines, corr 0.99999.
+
+## Porter fix round 2026-11-05 (linux-gfx90a, MI250X/MI250, ROCm 10.1 pip SDK) -- answers Review 2026-11-05
+
+Fork `moat-port` `ccde3a9` -> `f2ecfb0` (3 new commits, no amend, no force-push). No review PR is recorded, so there are no threads to answer.
+
+### Finding 1 -> `4e5e4331` "Package the previous XGBoost library without its wheel step" (no `[ROCm]`; jeff's ruling: shared packaging fix for both the CUDA and ROCm wheels, split-out-able)
+- Reproduced at ccde3a9: `make -C src xgboost_prev USE_HIP=ON` builds `xgboost_prev/lib/libxgboost.so` (79 MB) then `Makefile2:47: libxgboostp3` fails, `packaging.version.InvalidVersion: Invalid version: '1.4.0-SNAPSHOT'` (venv setuptools 79.0.1).
+- Fix (Makefile only): the `xgboost_prev` recipe passes `-o libxgboostp3` to the submodule's `make -f Makefile2`, so the wheel step is skipped and the target succeeds for every `XGBOOST_TARGET` (libxgboost / libxgboost2 / libxgboost-cpu all end in p3); `install_xgboost_prev` now does `mkdir -p xgboost_prev/python-package/xgboost/lib && cp xgboost_prev/lib/libxgboost.so` there instead of pip-installing the missing wheel. `src/interface_py/Makefile` symlinks that package dir as `xgboost_prev`, and `setup.py get_packages` walks every subdir, so `xgboost_prev/lib/libxgboost.so` ships in the h2o4gpu wheel. The old wheel install had only put the same .py files plus `lib/libxgboost.so` there.
+- Split-out check: `git cherry-pick 4e5e4331` onto `origin/master` (97279de) applies cleanly (Makefile 6+/3-).
+- `f2ecfb0c` adds `make xgboost_prev install_xgboost_prev USE_HIP=ON` to DEVEL.md's ROCm command block (the prose already named the target).
+- Proof from the installed f2ecfb0 wheel, LD_LIBRARY_PATH unset (`agent_space/oracle/xgbprev.py`): `xgboost_prev 1.4.0-SNAPSHOT`, lib `site-packages/xgboost_prev/lib/libxgboost.so`; binary:logistic hist 5000x10, 30 rounds, train acc 0.9876; save/reload `.model` and `.json` max pred diff 0; `gpu_hist` raises (CPU build, as ruled).
+
+### Finding 2 -> `074608c0` "[ROCm] Give the GPU Python module a runpath to the ROCm libraries"
+- Reproduced at ccde3a9: `_ch2o4gpu_gpu.so` RUNPATH `[/usr/lib/gcc/x86_64-linux-gnu/13]` only, while `h2o4gpu_test` (an executable clang links) has `.../_rocm_sdk_devel/lib`. Cause: the ROCm lib dir is a HIP-compiler implicit link dir, so CMake drops it from the runpath of HIP-linked targets; clang adds it for executables only, and clang's `-fopenmp` link was what had added it for the module.
+- Fix: `SET_TARGET_PROPERTIES(${SWIG_MODULE_ch2o4gpu_gpu_REAL_NAME} PROPERTIES BUILD_RPATH $<TARGET_FILE_DIR:hip::amdhip64> INSTALL_RPATH ...)` in the USE_HIP branch. OpenMP fix kept: NEEDED has libgomp.so.1 and no libomp/libomptarget. After: RUNPATH `[<venv>/_rocm_sdk_devel/lib:/usr/lib/gcc/x86_64-linux-gnu/13]` (the CMAKE_PREFIX_PATH spelling of the SDK root); `strip --strip-unneeded` in `make cpp` keeps it.
+- The new commit body states the loader requirement correctly; e7727e7's body is not amended (rule: new commits only). Its "loader configuration that a ROCm install provides" sentence stays in history, superseded by 074608c0. The skill lesson in `references/fault-classes.md` is rewritten: a separate paragraph on HIP-linked shared libraries getting no ROCm RUNPATH, without the unverified ld.so.conf claim. SKILL.md index gets one line.
+
+### Verification at f2ecfb0 (this host, gfx90a, HIP_VISIBLE_DEVICES=0, `ulimit -c 0`, LD_LIBRARY_PATH unset for every run)
+```
+R=$($FLEET_VENV/bin/python -m rocm_sdk path --root); export PATH=$FLEET_VENV/bin:$R/bin:$PATH CMAKE_PREFIX_PATH=$R OMP_NUM_THREADS=$MAX_JOBS CMAKE_BUILD_PARALLEL_LEVEL=$MAX_JOBS
+cmake -S src -B src/build-hip -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$FLEET_VENV/bin/python && cmake --build src/build-hip -j$MAX_JOBS
+make cpp USE_HIP=ON PYTHON=$FLEET_VENV/bin/python
+make lightgbm_gpu install_lightgbm_gpu lightgbm_cpu install_lightgbm_cpu USE_HIP=ON PYTHON=...
+make xgboost install_xgboost USE_HIP=ON PYTHON=...
+make xgboost_prev install_xgboost_prev USE_HIP=ON PYTHON=...
+make apply-sklearn PYTHON=... && make py USE_HIP=ON PYTHON=...
+$FLEET_VENV/bin/python -m pip install --no-deps --force-reinstall src/interface_py/dist/h2o4gpu-0.6.0+local.f2ecfb0c.dirty-cp311-cp311-linux_x86_64.whl
+```
+(`.dirty` = the h2o patches the ROCm make targets apply inside LightGBM_rocm/xgboost_rocm; reverted with `git -C <sub> checkout -- .` afterwards. Tracked fork tree clean with `--ignore-submodules=untracked`.)
+- Fresh configure + build: `h2o4gpu_test` 24/24, 3 consecutive runs.
+- Wheel contents: `h2o4gpu/libs/_ch2o4gpu_gpu.so`, `lightgbm_gpu/lib/lib_lightgbm.so`, `lightgbm_cpu/lib/lib_lightgbm.so`, `xgboost/lib/libxgboost.so`, **`xgboost_prev/lib/libxgboost.so`** (new).
+- Oracle (`agent_space/oracle/oracle.py`, rewritten on this host; exits nonzero if `GPUlib.get()` is None or no GPU): `LD_LIBRARY_PATH = None`, `device_count(-1)` (1, 1). KMeansH2O v_measure 1.000000, center dist 1.6e-5 (f32) / 4.3e-14 (f64); TSVD cusolver sv rel err 1.4e-7 / 5.0e-16, power (tol 1e-5) 4.9e-5 / 3.1e-5; PCA ev 2.2e-7 / 2.2e-15; ElasticNetH2O r2 0.999956 / 0.999920 (sklearn ridge 0.999997 / 0.999993). ALL PASS. (A first draft compared TSVD power at 1e-10 in f64 and failed at 2.7e-5. That is the power method's own tol=1e-5 convergence, not precision; cusolver gives 4e-16.)
+- GPU proof: the same oracle under `rocprofv3 --kernel-trace --output-format csv`, LD_LIBRARY_PATH unset: 42818 dispatches on one GPU agent, incl. kmeans:: 108, cml:: 6050, h2o4gpu:: 262, rocBLAS 15994, rocSOLVER 636, rocPRIM 12556.
+- `pytest tests/python/open_data/system tests/python/open_data/gbm`: 18 pass / 4 fail / 17 skip, the same as the previous round (4 = `lgb.cv(early_stopping_rounds=)`, removed in LightGBM 4.0; skips = unsynced data / "Huge memory footprint"). xgboost gpu_hist and the GPU pickled-model predict tests pass without LD_LIBRARY_PATH.
+- Environment: fresh job venv needed `cython==3.0.11 threadpoolctl psutil tabulate future joblib pytest-timeout meson-python ninja feather-format "pyarrow<15"` (pip, into `$FLEET_VENV` only); apt swig 4.2.0 already present.
+- Not run here: the CUDA compile check at f2ecfb0 (runs separately on mi355).
+
+### Finding 3 (records)
+- `surface.json` `platform:windows` stays under `scoped_out` as a placeholder. Its reason now opens with "PLACEHOLDER, NOT A SCOPE CUT" and says Windows is still owed under ruling 3, the windows gate is required and unwaived, and the entry moves when the tooling gains an owed state (that change is being handled separately). `surface.py check h2o4gpu`: clean.

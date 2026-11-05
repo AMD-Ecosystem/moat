@@ -420,10 +420,21 @@ target add their `INTERFACE_INCLUDE_DIRECTORIES` instead of linking the targets.
 LINKED by clang, so an `-fopenmp` link flag there adds `libomp.so` + `libomptarget.so`
 next to libgomp -- two OpenMP runtimes in one process. Link `OpenMP::OpenMP_CXX` (libgomp)
 and drop `-fopenmp` from the HIP-linked target's link flags; compile the HIP TUs without
-OpenMP (their pragmas run serially) unless the whole build uses clang. Side effect to
-expect: clang's `-fopenmp` link had also injected RUNPATHs to the ROCm lib dirs, so after
-the fix a pip-installed ROCm SDK needs `LD_LIBRARY_PATH` (a `/opt/rocm` install registers
-its lib dir with ld.so.conf). Check with `readelf -d <lib> | grep NEEDED`. (h2o4gpu)
+OpenMP (their pragmas run serially) unless the whole build uses clang. Check with
+`readelf -d <lib> | grep NEEDED`. (h2o4gpu)
+
+**A HIP-linked shared library gets no RUNPATH to the ROCm lib dir.** The ROCm lib dir is
+one of the HIP compiler's implicit link directories, so CMake leaves it out of the build
+RUNPATH; clang adds it for executables (`h2o4gpu_test` had it) but not for a `SHARED` or
+`MODULE` target. Anything else that happened to inject it (h2o4gpu's was clang's
+`-fopenmp` link) hides the gap until it is removed. Then, with the pip/TheRock SDK and no
+`LD_LIBRARY_PATH`, the module fails to load -- and a Python loader that swallows the
+`ImportError` (h2o4gpu's `GPUlib.get()`) silently runs every solver on the CPU while the
+tests pass. Set it explicitly on the target:
+`BUILD_RPATH $<TARGET_FILE_DIR:hip::amdhip64>` (and `INSTALL_RPATH`), then check
+`readelf -d <lib> | grep RUNPATH` and run the GPU path with `LD_LIBRARY_PATH` unset.
+Whether a `/opt/rocm` package registers its lib dir with ld.so.conf was not verified; do
+not rely on it. (h2o4gpu)
 
 ## Types, dispatch and platform limits
 

@@ -104,6 +104,7 @@ Scan this list against what you are doing. If any line could apply, open
 - A `-include`d compat header creates no dependency edge: wipe objects after editing it or you validate stale code.
 - Never define `CUDART_VERSION` in a compat header: hip* library headers read it as "NVIDIA backend". rocThrust's `thrust/system/cuda/error.h` is CUDA-only; never reopen `namespace thrust::hip`.
 - `hip::hipcub`/`roc::rocthrust` targets leak `--offload-arch` into g++ sources of a mixed target; a HIP-linked target given `-fopenmp` loads clang's libomp next to g++'s libgomp.
+- A HIP-linked shared library or Python module gets no RUNPATH to the ROCm lib dir (an implicit link dir); set `BUILD_RPATH` from `hip::amdhip64` or it fails to load without `LD_LIBRARY_PATH`.
 
 **Types, dispatch and platform limits**
 - Never name the pointee struct of an opaque handle (`CUstream_st`); use `std::remove_pointer_t<cudaStream_t>`.

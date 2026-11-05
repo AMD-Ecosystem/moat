@@ -401,7 +401,7 @@
     },
     {
       "id": "platform:windows",
-      "reason": "Not a cut: jeff's ruling 3 sequences Windows last, after wave64 and wave32 pass at the same head, and the windows-gfx1151 host decides whether it lands as one final commit or is reported as too cumbersome. This Linux porter round cannot build or validate it; the windows gate stays owed until then."
+      "reason": "PLACEHOLDER, NOT A SCOPE CUT: Windows is still owed under jeff's ruling 3 (attempt last, after wave64 and wave32 pass at the same head; land it as one final commit or report that it is too cumbersome). It is filed under scoped_out only because surface.py has no 'in scope, not yet done' state at ported; a tooling change for an owed state is being handled separately, and this entry moves there when it lands. The windows gate is required and unwaived."
     }
   ],
   "removed_from_floor": [
