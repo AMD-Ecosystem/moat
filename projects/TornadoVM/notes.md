@@ -446,3 +446,48 @@ Scope: the rulings-round delta `git diff 08cb3c5aa..3c00e2062` (4 commits: TC-E4
 - CK pin claim: `git ls-remote --tags` shows `rocm-7.2.4` as the newest release tag. At that tag `example/ck_tile/01_fmha/codegen/ops/fmha_fwd.py` has gfx9, gfx950 and gfx12 factories and no gfx11 (the only "gfx11" is a TODO comment). The pinned commit's codegen has gfx11. Deferrals `tornadovm-ck-release-tag` and `tornadovm-sdpa-hipdnn` are registered.
 - GPU run on gfx942: `tornado-test --jvm="-Dtornado.enabled.backends=hip" -V ...kernelcontext.api.TestUnsupportedKernelContextOps`: 9 run, 0 failed, 3 unsupported (the OpenCL-only cases). `testLocalFlagWaitAcrossWarps` passes through the TC-E4019 refusal.
 - Commits: `[ROCm]` titles of 46-61 characters, ASCII, AI disclosure, fenced Test Plan, no Co-Authored-By. `utils/jargon.py -C projects/TornadoVM/src --commits 08cb3c5aa..HEAD` and `--diff origin/develop...HEAD` are clean. The fork tree has no modified tracked files.
+
+## Fix round 4 (2026-11-05, linux-gfx950, MI355X): review 5 must-fix 1, TC-E4019 over-rejection
+
+Porter at `3c00e2062` -> `f05b0dd01` on `moat-port` (one new commit, no amend or force-push). Host: ROCm 10.1 TheRock wheels (`ROCM_PATH` = the wheel's `_rocm_sdk_devel`), Temurin 21.0.12, HIP_VISIBLE_DEVICES=0, `ulimit -c 0`, Maven repository local to the job (`-Dmaven.repo.local`).
+
+### What changed (`Legality.localWait` / `sameWavefrontWait`)
+
+The loop shape is unchanged (no header argument, no write/barrier/call, exits decided by a local read), and now one read instruction has to decide every exit. The kernel is rejected only when all of the following hold:
+
+1. Writes to the array outside the loop that cannot end the wait are ignored: a constant that, read back, keeps every exit in the loop (evaluated through the exit conditions), and a compare-and-swap with expected == new (reviewer fix a, second half). A `Call` taking the array means accept.
+2. A write that can end the wait and runs before the loop means accept, because the loop may exit on its first test. "Before" means that some block dominating the header (the header included) lies on every path from the write to the kernel's end, so the writing threads and the waiting threads meet there before the wait. That covers the waiting thread's own earlier write (the write's block dominates the header), a write followed by a barrier, and a write followed by a plain reconvergence point (reviewer fix a, first half, generalised).
+3. The remaining writes happen after the wait starts. For each `localIdx` x in [0, maxWorkGroupSize), the conditions are evaluated thread by thread (an integer evaluator over const/convert/binary/icmp/select of `thread_id.local` dim 0; anything else counts as unknown, so both branches stay possible). From that, compute which threads may write, which may enter the loop, and which certainly enter it (no path to a return that avoids the header). Reject only if every possible writer is in one 64-thread wavefront B, a thread w in B certainly enters, and w is present in every work-group size n where some thread can enter the loop: while n holds no writer, the first possible waiter must be a certain one (it waits forever on any GPU); once n holds the first writer, w < n (reviewer fix b, made stricter: all writers in the waiter's wavefront, not just some writer).
+4. A kernel with any intrinsic for dimension 1 or 2 (`localIdy`, `globalIdz`, group ids...) is never rejected: writers in other rows can be in other wavefronts. See the decision for jeff below.
+
+Diagnostic text: "this loop waits for a local-memory value that only threads of the waiting thread's 64-lane wavefront write; the wavefront runs its two 32-lane warps in lockstep, so the wait can hang before the write runs". Docs: the last paragraph of "Warps on 64-lane AMD wavefronts (HIP backend)" in `docs/source/programming.rst` now says what is rejected, what is accepted, and which accepted waits can still hang.
+
+### Tests
+
+- `tornado-compiler/tc-frontend/src/test/kernels/.../LocalWaitKernels.java` (new): `sameWavefront` (writer 0, waiters >= 32) and `sameSecondWavefront` (writer 64, waiters > 64) must be rejected. `writtenBeforeBarrier`, `ownWrite`, `writtenBeforeWaiting` (write, then the threads meet again with no barrier, then wait), `otherWavefront` (writer 64, waiters 0-63), `writersInTwoWavefronts` (writers 0 and 64, waiters 1-63) and `twoDimensional` must compile. The first three plus `otherWavefront` are the review's three cases.
+- `TcCompilerTest#legalityRefusesLocalWaitsOnWave64Hip` compiles each of them for gfx950 and also gains an IR case (a non-releasing store next to the writer is still rejected). The existing IR cases are unchanged and still pass. 29/29.
+- Mutation check: disabling each of (runs-before, ends-wait, writers-in-one-wavefront, other-dimension) in turn makes exactly one assertion of that test fail.
+- `TestUnsupportedKernelContextOps#testLocalFlagWaitsThatComplete` (new, every backend): runs set-before-barrier (local 64), own flag (128), set-before-wait (64), across wavefronts (128) and set in two wavefronts (128) on the device and checks `out[i] == i % local`.
+
+### Evidence on gfx950 at `f05b0dd01`
+
+- `./mvnw -Pjdk21 -pl tornado-compiler/tc-runtime -am test -DskipTests=false -Dtest=TcCompilerTest -Dsurefire.failIfNoSpecifiedTests=false`: 29/29.
+- `make test-nogpu JDK=jdk21`: BUILD SUCCESS, including codegen LitTest 60/60, HipMmaRoutingTest 1/1, TcCompilerTest 29/29.
+- `TORNADO_CK_SOURCE_DIR=/tmp make jdk21 BACKEND=hip` EXIT 0. `tornado-test --verbose ...kernelcontext.api.TestUnsupportedKernelContextOps`: 7 pass, 3 unsupported (OpenCL-only), 0 fail. `testLocalFlagWaitAcrossWarps` still gets TC-E4019, and `testLocalFlagWaitsThatComplete` passes, so all five accepted kernels complete with correct output.
+- Plain HIP (`agent_space/spin/second.hip`, 128-thread block, writer 64, waiters 65-127): killed by `timeout 20` with the writer branch first in source, completes with the spin branch first. Same behaviour as the round-1 halves reproduction, so the second-wavefront rejection is a real hazard.
+- `tc emit --all` with the `3c00e2062` TC jars vs the new ones, over `tornado-unittests` and `tornado-examples` classes: byte-identical for cuda, cuda `--cc 70`, cuda `--cc 90`, opencl and metal (diagnostics and exit status included), and for hip on examples. On hip/unittests the old TC refused 6 kernels (`localFlagWaitKernel` and the five new valid ones), and the new TC refuses only `localFlagWaitKernel`. Every other difference is the emitted code of the five newly accepted kernels.
+- CUDA: `make jdk21 BACKEND=cuda` in a worktree at `f05b0dd01` with real nvcc 12.8 (`/usr/local/cuda/bin/nvcc`, CUTLASS shim sm_80): BUILD SUCCESS. `git diff origin/develop...f05b0dd01` over `tornado-drivers/{cuda,ptx,opencl,spirv,metal,cuda-jni,opencl-jni}`, `tornado-native-libs/{cudf-jni,cudnn-jni,cutlass-jni}` and the Cuda/OpenCl/Metal dialects is empty.
+- `utils/jargon.py -C projects/TornadoVM/src --commits 3c00e2062..HEAD` and `--diff origin/develop...HEAD` clean; `utils/prose.py` clean on the body; title 65 chars, ASCII, AI disclosure, fenced Test Plan, no Co-Authored-By.
+
+### For jeff: how far the proof goes, and what is left
+
+The proof is feasible for one-dimensional kernels, so the provable case is rejected. Two things a compile-time check cannot see remain, because TC compiles a kernel without its launch shape:
+
+- **Rejections that may still be wrong, both from the launch shape:**
+  - (i) A kernel that uses only dimension 0 but is launched with a 2D/3D work-group. The other rows are copies that share the local flag, so a writer in another row (possibly in a wavefront with no waiters) can release the first row's waiters. Example: rows of 56 threads, writer `localIdx == 40`, waiters `localIdx < 8`. Kernels that themselves use a second or third dimension are already accepted for this reason.
+  - (ii) A work-group too small for any thread to reach the wait (for example `localFlagWaitKernel` launched with 32 threads) completes trivially but is still rejected.
+
+  Both need a launch whose shape makes the wait dead or redundant. Closing them requires the work-group shape at compile time, which means a change to the shared `TcHook.compile` path and the compile cache key. I did not do that.
+- **Waits accepted that can still hang on wave64 (documented in programming.rst):** writers chosen by data or by values the evaluator does not follow; waits whose exits depend on more than one read; any kernel using a second or third dimension; a releasing write whose value is not a constant, when it runs before the wait. The remaining hang risk is that such a kernel hangs at run time instead of getting TC-E4019. This is the "accept when it cannot be proven" side of the ruling.
+
+Question for jeff: are (i) and (ii) acceptable as documented edge cases? The alternative is to stop rejecting 1D-only kernels too, which would leave `testLocalFlagWaitAcrossWarps` and the same-wavefront pattern to hang on gfx950/gfx942. Rejection (i) is the only case of a sensible launch being refused. The commit title says "certain to hang", which is slightly strong: the hazard depends on the order the compiler gives the branches (the plain HIP reproductions hang with one order and complete with the other). The body states the proven condition precisely.

@@ -49,3 +49,14 @@
 {"kind":"phase","ts":"2026-11-05T07:50:30Z","phase":"test","seconds":10.329,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261104-225531-tvm-rulings/moat/projects/TornadoVM/src test-nogpu JDK=jdk21"}
 {"kind":"session","ts":"2026-11-05T07:56:21Z","epoch":1793865381.892164062,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-05T08:07:22Z","epoch":1793866042.852199055,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-05T08:12:38Z","epoch":1793866358.371417505,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-05T08:24:56Z","phase":"compile","seconds":0.004,"exit":2,"cmd":"make jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-05T08:25:15Z","phase":"compile","seconds":12.087,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261105-001013-tvm-fix-detect/moat/projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-05T08:25:23Z","phase":"test","seconds":2.279,"exit":0,"cmd":"tornado-test --verbose uk.ac.manchester.tornado.unittests.kernelcontext.api.TestUnsupportedKernelContextOps"}
+{"kind":"phase","ts":"2026-11-05T08:26:23Z","phase":"compile","seconds":12.122,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261105-001013-tvm-fix-detect/moat/projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-05T08:28:42Z","phase":"test","seconds":1.440,"exit":0,"cmd":"tornado-test --verbose uk.ac.manchester.tornado.unittests.kernelcontext.api.TestUnsupportedKernelContextOps"}
+{"kind":"phase","ts":"2026-11-05T08:28:51Z","phase":"test","seconds":9.371,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261105-001013-tvm-fix-detect/moat/projects/TornadoVM/src test-nogpu JDK=jdk21"}
+{"kind":"phase","ts":"2026-11-05T08:30:38Z","phase":"compile","seconds":12.122,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261105-001013-tvm-fix-detect/moat/projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-05T08:30:39Z","phase":"test","seconds":1.301,"exit":0,"cmd":"tornado-test --verbose uk.ac.manchester.tornado.unittests.kernelcontext.api.TestUnsupportedKernelContextOps"}
+{"kind":"phase","ts":"2026-11-05T08:33:05Z","phase":"compile","seconds":23.308,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261105-001013-tvm-fix-detect/moat/agent_space/wt-cuda jdk21 BACKEND=cuda"}
+{"kind":"session","ts":"2026-11-05T08:34:05Z","epoch":1793867645.905485492,"event":"end","platform":"linux-gfx950"}
