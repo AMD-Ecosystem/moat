@@ -407,3 +407,51 @@ brucefan1983/GPUMD master ddc6e2d2 (2026-11-03) still has the bug at `src/force/
 CUDA compile: covered by the concurrent "CUDA compile check (nvcc 12.8) at 15124b5" entry above (mi355 host, rc 0, no new warning).
 
 Verdict: review-passed at 15124b53.
+
+## Validation 2026-11-05 (linux-gfx1100, validator) -- revalidate at 15124b53, PASS
+
+Host: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), pinned HIP_VISIBLE_DEVICES=3 by the dispatcher, all GPU runs under `ulimit -c 0`. Toolchain: TheRock pip SDK, HIP 7.16.26385, AMD clang 24.0.0git (the earlier gfx1100 record used ROCm 7.2.1). Fresh clone of AMD-Ecosystem/GPUMD, detached at 15124b533b659e338e43ffb7878b847d7d1ce09d (`moat-port` tip, on `origin/moat-port`); parent 6231243f as a `git worktree` for the before control. No fork edit, no push.
+
+### Build
+    utils/timeit.sh GPUMD compile -- make -C <clone>/src -f makefile.hip HIP_ARCH=gfx1100 -j8    # head: gpumd + nep
+    make -C <parent-worktree>/src -f makefile.hip HIP_ARCH=gfx1100 -j8 gpumd                     # parent 6231243f
+
+Both rc 0, 0 errors. Head: 102 warnings, all pre-existing classes (94 `-Wunused-value` nodiscard hipError_t, 8 `-Winconsistent-missing-override`). `gpumd` 12968224 B, `nep` 1129168 B; every embedded code object is `amdgcn-amd-amdhsa--gfx1100` (87 bundles, none other).
+
+### Tests (real gfx1100)
+Each case copied from the tree into a scratch `tests/gpumd/<case>` with `potentials` and `src/gpumd` symlinked so the cases' relative paths resolve, run as `../../../src/gpumd > stdout.txt 2> stderr.txt` (script `agent_space/run_suite.sh`), wrapped `utils/timeit.sh GPUMD test -- ...`. Cases are the ones recorded above plus the new one: `ilp_nep_cutoff carbon graphene_dos graphene_kappa_emd`.
+
+New test `ilp_nep_cutoff` (ILP rcut 4.1 vs NEP 4.2), harness check `tail -n 1 stdout > error.out; diff -q error.out error1.out`:
+
+| binary | rc | last line | diff vs error1.out |
+|---|---|---|---|
+| 15124b53 (head) | 1 | `ERROR: Please make sure cutoff of ILP is larger than it of NEP.` | identical |
+| 6231243f (parent) | 0 | run completed (1 step) | differ |
+| 15124b53, C.ilp rcut edited to 4.3 (control) | 0 | run completed | -- |
+
+So the truncation bug reproduces on gfx1100 at the parent and the fix restores the CUDA behaviour; empty stderr in all three.
+
+Recorded workloads, head vs parent (same host, same day) vs this platform's 2026-05-30 record. All 8 runs exit 0, empty stderr, no NaN in any output.
+
+| metric | head 15124b53 | parent 6231243f | gfx1100 record 2026-05-30 |
+|---|---|---|---|
+| carbon NVE drift (max-min)/\|mean Etot\| | 6.45e-7 | 1.06e-6 | 9.76e-7 |
+| carbon std/\|mean\| | 1.67e-7 | 3.46e-7 | 3.45e-7 |
+| carbon T mean | 300.44 K | 300.30 K | 300.35 K |
+| carbon PE / KE vs CUDA ref (step 10) | 1.33e-6 / 8.1e-5 | 9.81e-6 / 6.4e-4 | 9.77e-6 / 6.18e-4 |
+| graphene_dos dos.out 200x4 finite, min | yes, 2.87e-2 | yes, 2.93e-2 | yes, 3.17e-2 |
+| graphene_dos DOS vs dos1.out (max-normalized) max diff / RMSE | 3.67e-2 / 9.33e-3 | 6.02e-2 / 9.22e-3 | 6.35e-2 / 1.25e-2 |
+| graphene_dos MVAC t=0 x,y,z | 1,1,1 | 1,1,1 | 1,1,1 |
+| graphene_dos NPT T, rows 10-99 mean / std | 299.71 / 2.09 K | 299.63 / 2.03 K | 299.55 / 1.91 K |
+| graphene_kappa_emd NPT T, rows 10-99 mean / std | 300.06 / 1.83 K | 299.84 / 2.07 K | 299.36 / 2.31 K |
+| graphene_kappa_emd hac.out | 50x11 finite, t 0.1-9.9 ps | same | same |
+
+Differences from the earlier record, explained: (1) the earlier gfx1100 T std (1.91/2.31 K) excludes the initial 0->300 K Berendsen ramp; over all 100 rows the std is about 13.5 K for head, parent and the CUDA reference alike (ref rows 10-99: 300.32 / 1.86 K), so the table compares rows 10-99. This is a metric definition, not a behaviour change. (2) The remaining scatter (carbon drift, PE vs ref, DOS diff) moves in both directions between head and parent on the same host and day and stays in the chaotic-MD band root-caused above to atomicAdd cell binning; none of these three workloads constructs `ILP_NEP`, the only code the fix touches, so no change is expected and none beyond that noise is seen. (3) Toolchain changed from ROCm 7.2.1 to HIP 7.16 since the earlier record; parent and head on the new toolchain agree.
+
+### Gates
+- `python3 utils/jargon.py --port GPUMD` (clone symlinked at projects/GPUMD/src for the scan, then removed): clean.
+- `python3 utils/moatlib.py audit-clean GPUMD`: OK; `git status --porcelain` in the clone shows no modified tracked file.
+- Docs: `doc/installation.rst` "Building for AMD GPUs (ROCm/HIP)" still present; the delta changes no build step.
+- CUDA compile: already recorded at 15124b5 (nvcc 12.8, mi355 host), not repeated.
+
+Result: PASS, 4/4 cases (new `ilp_nep_cutoff` fails at the parent and passes at the head; 3 recorded workloads pass at both). linux-gfx1100 revalidate -> completed at 15124b53.

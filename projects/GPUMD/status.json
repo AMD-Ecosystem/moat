@@ -7,7 +7,7 @@
   "priority": 5.508,
   "ext_type": "make",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-11-05T05:29:58Z",
+  "updated_at": "2026-11-05T05:50:22Z",
   "head_sha": "15124b533b659e338e43ffb7878b847d7d1ce09d",
   "pr_url": "https://github.com/brucefan1983/GPUMD/pull/1538",
   "pr_number": 1538,
@@ -59,10 +59,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "6231243f",
+      "validated_sha": "15124b533b659e338e43ffb7878b847d7d1ce09d",
       "started_at": null,
-      "completed_at": "2026-06-03T22:51:48Z",
-      "updated_at": "2026-06-03T22:51:48Z",
+      "completed_at": "2026-11-05T05:50:22Z",
+      "updated_at": "2026-11-05T05:50:22Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -76,13 +76,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "6231243f",
-        "method": "source-class",
-        "detail": "makefile.hip drops explicit -std=c++17; hipcc defaults to C++17 (verified: rocPRIM compiles at default, errors at c++14), effective standard unchanged; build-flag only, no source change",
-        "at": "2026-06-03T22:51:48Z"
-      }
+      "last_agent": "validator"
     },
     "windows-gfx1101": {
       "state": "completed",
