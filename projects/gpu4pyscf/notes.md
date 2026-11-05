@@ -3777,3 +3777,6 @@ lib +3: test_hip_einsum_complex_large, test_hip_einsum_complex_split, test_hip_s
 - `python3 utils/jargon.py --port gpu4pyscf`: clean (after creating local `master` and `moat-port` branches in the clone; a detached checkout makes it fail to resolve the range).
 - Documentation: the README ROCm block built as written (only `-j` changed).
 - Fork `git status --porcelain`: empty (md tests' `from_h5.xyz` in the clone root removed).
+
+## Optional dependency: cupy (Windows only), ruling 2026-11-04 (jeff)
+gpu4pyscf's Windows support needs CuPy-ROCm on Windows, which is being ported as MOAT project `cupy` (port on ROCm/cupy moat-port, PR to cupy/cupy). It is NOT a hard `depends_on`: the approved windows waiver stands and the Linux PR proceeds on its own. Deferral `gpu4pyscf-windows-after-cupy` tracks validating and offering Windows support once the CuPy Windows port lands.
