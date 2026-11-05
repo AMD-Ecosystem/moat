@@ -8,10 +8,27 @@
   "ext_type": "torch-ext",
   "stage": "unclaimed",
   "adopted_at": "2026-11-05T22:50:46Z",
-  "updated_at": "2026-11-05T22:50:47Z",
+  "updated_at": "2026-11-05T23:12:32Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/MrForExample/ComfyUI-3D-Pack/blob/main/LICENSE",
+      "at": "2026-11-05T23:12:30Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "license-blocked",
+    "duplicate_effort": "none",
+    "viable": false,
+    "summary": "ComfyUI node aggregator (3.9k stars, MIT top level) with no CUDA of its own: its .cu files are vendored NVIDIA-proprietary (EG3D bias_act), Tencent-licensed or generated slangtorch code, 47 files carry NVIDIA proprietary licence text, and its main GPU deps are licence-blocked (nvdiffrast, Inria diff-gaussian-rasterization) or already supported (spconv, torch-scatter, nerfacc).",
+    "at": "2026-11-05T23:12:32Z"
+  }
 }
