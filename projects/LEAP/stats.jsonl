@@ -184,3 +184,4 @@
 {"kind":"phase","ts":"2026-11-05T00:40:18Z","phase":"test","seconds":5.084,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261104-163645-v-leap3/moat/agent_space/cmp/63d2724 && python unitTests/gpu_vs_cpu_validate.py"}
 {"kind":"phase","ts":"2026-11-05T00:40:23Z","phase":"test","seconds":5.036,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261104-163645-v-leap3/moat/agent_space/cmp/d2112b6 && python unitTests/gpu_vs_cpu_validate.py"}
 {"kind":"session","ts":"2026-11-05T01:02:27Z","epoch":1793840547.936722211,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-05T05:13:52Z","phase":"cuda-compile","seconds":15.248,"exit":0,"cmd":"bash -c cd agent_space/nvcc && cmake -S port -B port/build -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release && cmake --build port/build -j 42"}

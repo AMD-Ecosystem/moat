@@ -2395,3 +2395,23 @@ run.py frac63.py <src>   # BilateralFilter / PriorBilateralFilter on a 13x21x19 
 - Not repeated here: leak_check, CUDA gate (no toolkit on this host; Windows skips by procedure), jargon scan (no fork clone under projects/; Linux validators recorded it clean at this head), the Linux-only scripts minmax_check/modsf/lowpass. No fork push, no gh write.
 
 validated_sha: 63d272405259bc861da536e53962c5c79b1c5702
+
+## CUDA compile check (nvcc 12.8) at 63d2724
+
+Compile-only helper run (fleet job on a Linux host with the CUDA 12.8 toolkit and no NVIDIA GPU), requested by jeff. No platform state changed. Result: **the upstream CMake CUDA build passes at 63d2724 (rc=0, `Built target leapct`), with no nvcc error and warnings identical per file to upstream main 0c8846f and to d2112b6.** The delta d2112b6..63d2724 is f83ae1a (define `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__`) and 63d2724 (remove that define; host `min`/`max` with floating-point arguments become `fmin`/`fmax` in `src/bilateral_filter.cu` and `src/ramp_filter.cu`, `fmax` and `fmaxf` in `src/projectors_Joseph.cu`), plus `unitTests/gpu_vs_cpu_validate.py`; net source diff is those three `.cu` files only.
+
+Toolchain: nvcc `release 12.8, V12.8.93` at /usr/local/cuda-12.8, host GNU 13.3.0, CMake 3.31.6. Fresh clones under agent_space/nvcc: `port` = AMD-Ecosystem/LEAP `moat-port` checked out at 63d272405259bc861da536e53962c5c79b1c5702, `d211` = the same clone at d2112b63f025446cd519453423679c5cd8740bf5 (rebuilt for a direct log diff), `base` = LLNL/LEAP main at 0c8846f42b2e59340d5559fc1271d590a292f9a0.
+```
+CUDACXX=/usr/local/cuda-12.8/bin/nvcc bash -c "cmake -S base -B base/build -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release && cmake --build base/build -j 42"   # rc=0
+CUDACXX=/usr/local/cuda-12.8/bin/nvcc bash -c "cmake -S d211 -B d211/build -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release && cmake --build d211/build -j 42"   # rc=0
+CUDACXX=/usr/local/cuda-12.8/bin/nvcc bash utils/timeit.sh LEAP cuda-compile -- bash -c "cd agent_space/nvcc && cmake -S port -B port/build -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release && cmake --build port/build -j 42"   # rc=0, 15.2 s
+cuobjdump --list-elf <tree>/build/lib/libleapct.so
+```
+
+| tree | rc | CUDA objects | CXX objects | ELF per arch (sm_50/60/70/80/90/100/120) | `error:` lines | raw `warning` lines |
+|---|---|---|---|---|---|---|
+| base 0c8846f | 0 | 20 | 21 | 20 each | 0 | 190 |
+| d2112b6 | 0 | 20 | 21 | 20 each | 0 | 190 |
+| port 63d2724 | 0 | 20 | 21 | 20 each | 0 | 190 |
+
+Warnings grouped by file and message (path and message, diagnostic number normalised) are the same set with the same counts in all three trees, and match the d2112b6 record: nvcc `#550-D` (`cudaStatus` in analytic_ray_tracing_gpu.cu 7, cuda_utils.cu 21, ramp_filter.cu 14; `result` in ramp_filter.cu 35), `#177-D` in scatter_models.cu 7; host `-Wconversion-null` on `cudaTextureObject_t` from NULL in 15 files (bilateral_filter.cu 5, projectors_Joseph.cu 2, ramp_filter.cu 2); `cudaMemcpyToArray` deprecated in cuda_utils.cu 1; `fread` unused result in file_io.cpp 14; 20 nvcc "offline compilation for architectures prior to sm_75" notices; one CMake dev warning at `src/CMakeLists.txt:14`. The only textual difference is one of the sm_75 notices interleaved with another in the d2112b6 log (parallel build output), the same artifact the d2112b6 record saw in its base log. Warning lines naming the three changed files: 58 at d2112b6, 58 at 63d2724. **No new warning in bilateral_filter.cu, projectors_Joseph.cu or ramp_filter.cu**, so there is nothing to explain. On the types: `fmax(double, double)`/`fmin(double, double)` take the explicit `double(...)` casts with no narrowing; in projectors_Joseph.cu `furthestFromCenter()`, `z_0()` and `z_samples()` return `float` (`src/parameters.h:202,209,269`) and C++ `fabs(float)` is `float`, so `fmaxf` gets float arguments only and its float result widens into `double rFOV`, with no conversion that `-Wall` would flag. As at d2112b6, `CUDA_ARCHITECTURES all-major` in `src/CMakeLists.txt` overrides the `-D` pin. No CUDA runtime behaviour is claimed (no NVIDIA GPU).
