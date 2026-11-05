@@ -167,6 +167,13 @@ different AMD target, change ONLY `-DCMAKE_HIP_ARCHITECTURES` (e.g. gfx1100). NO
 vendor the select SOURCE rather than linking libfaiss; for those, the reference is
 faiss/gpu/utils/{Select,WarpShuffles,PtxUtils,DeviceDefs}.* on the moat-port branch.
 
+A ROCm consumer that includes installed FAISS `.cuh` internals must compile with
+`-DUSE_AMD_ROCM`: FAISS sets it with directory-scoped `add_definitions` (CMakeLists.txt:83),
+so the exported `faiss` target does not carry it. Built with ROCm 10.1+ hipify, the installed
+`gpu/utils/Float16.cuh` (and `ConversionOperators.cuh`, which includes it) has the fp16/bf16
+headers only in its `USE_AMD_ROCM` branch. The public index headers (`GpuIndexFlat.h`,
+`StandardGpuResources.h`, `GpuCloner.h`) need no define.
+
 ## Out of scope (by design, not regressions)
 - cuVS/CAGRA: FAISS_ENABLE_CUVS=ON pulls NVIDIA cuVS/raft (CUDA-only), mutually exclusive with
   ROCm. TestGpuIndexCagra / TestGpuIndexBinaryCagra / TestGpuFilterConvert are CUVS-gated and
@@ -1651,3 +1658,47 @@ No `-DCMAKE_HIP_FLAGS=-include ...` workaround and no hand-copied header.
   `port/faiss` had to merge `origin/main` before its pre-push `states` gate passed (Velvet's
   approved wave64 waiver needs main's `waivable` list); one conflict in
   `strategy-a-cmake.md`, both sides kept.
+
+## Review 2026-11-05 (reviewer, linux-gfx1201) -> review-passed
+
+Scope: `01a09e824..708a879bc` (7bd3b4806 Float16.cuh branch order, 708a879bc install header).
+Fork not modified. Verdict: no code defects; one record correction made here (below).
+
+Fact-checks run on this host (hipify-perl copies from TheRock SDKs 7.14.0, 10.1.0, 10.2.0, 10.3.0):
+- hipify explanation confirmed. 10.1's hipify-perl adds a whole-file pass ("Deduplicate generated
+  hip, roc, and miopen headers") that keeps only the first `#include` of any path starting with
+  `hip`, `roc` or `miopen`, blind to `#if` branches; 7.14's has no such pass. On Float16.cuh at
+  `01a09e824`, 10.1/10.2/10.3 leave the `#else` (ROCm) branch empty; 7.14 keeps both. At
+  `708a879bc`, 10.1/10.2/10.3 keep the hip headers in the `#if defined(USE_AMD_ROCM)` branch and
+  empty the CUDA branch; 7.14 keeps both.
+- `hip_runtime.h` alone does not declare `half2` / `__float22half2_rn` / `__hip_bfloat16` on 10.1
+  (4 errors), as the commit body says.
+- No other converted file lost an include. Ran `faiss/gpu/hipify.sh` on `git archive` copies of
+  `01a09e824` and `708a879bc` with 7.14 and with 10.1 and compared per-file `#include` multisets
+  over `faiss/gpu` and `c_api/gpu` (74 `.hip` each). Besides Float16.cuh's fp16/bf16, the only
+  losses are duplicate `hip/hip_runtime.h` lines in 10 `utils/` headers, and each of those keeps
+  one unconditional (outside any `#if`) copy. No `rocprim/` or `hipcub/` include is lost.
+  10.1 vs 10.3 output: identical include sets in every file.
+- CUDA path unchanged. No nvcc here, so preprocessed Float16.cuh with clang++ (TheRock 10.1 LLVM)
+  `-x cuda --cuda-path=<CUDA 12.9.86 headers from the nvidia-cuda-{runtime,nvcc,cccl,curand,cublas}-cu12 wheels> -nocudalib -E -P`,
+  host pass and device passes `sm_70`, `sm_80`: `01a09e824` and `708a879bc` output is
+  byte-identical once the `__FILE__` checkout prefix is normalized; `-H` shows `cuda_bf16.h` and
+  `cuda_fp16.h` still included. This is clang CUDA, not nvcc: the real-nvcc compile on mi355 is
+  still owed before the port goes to jeff (porter recorded the same).
+- 708a879bc is the same line at the same position as upstream `ab632382d` (#5268, in upstream
+  main); `git merge-tree HEAD upstream/main` is clean. Upstream main still has the old
+  Float16.cuh branch order.
+- `jargon.py --port faiss` clean, `audit-commits` OK, `audit-clean` OK, `prose.py` clean on both
+  bodies; titles 64/65 chars; no trailer.
+
+Record correction (made in this review, no fork change needed): the porter round says installed
+headers with an empty `#else` cost no consumer anything because "DeviceDefs.cuh `#error`s on
+`CUDA_VERSION < 8000` without" `USE_AMD_ROCM`. That holds for headers that reach DeviceDefs.cuh
+(e.g. WarpShuffles.cuh), but not for Float16.cuh or ConversionOperators.cuh, which are both in
+the installed GPU headers (faiss/gpu/CMakeLists.txt:134,141) and do not include DeviceDefs.cuh.
+A HIP TU that includes either one without `-DUSE_AMD_ROCM` compiles against a 7.14-hipified tree
+(both branches carry the hip headers) but fails with `unknown type name 'half2'` against a
+10.1-hipified tree at `708a879bc`. This is not a regression from any working state: at
+`01a09e824` a 10.1 build failed outright, and 7.x output is unchanged by the commit. The consumer
+requirement is now written in "## Install as a dependency". tsne-cuda includes only
+`GpuIndexFlat.h` / `StandardGpuResources.h` / `GpuCloner.h`, which need no define.

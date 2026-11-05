@@ -122,3 +122,5 @@
 {"kind":"phase","ts":"2026-11-05T00:21:25Z","phase":"compile","seconds":32.146,"exit":0,"cmd":"bash agent_space/cfg.sh /opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel build-r10 /var/lib/jenkins/fleet/jobs/gfx1201-20261104-154818-faiss-fix-rocm10/inst-r10 /opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/host-math/lib/librocm-openblas.so"}
 {"kind":"phase","ts":"2026-11-05T00:22:28Z","phase":"compile","seconds":62.835,"exit":0,"cmd":"ninja -C /var/lib/jenkins/fleet/jobs/gfx1201-20261104-154818-faiss-fix-rocm10/moat/projects/faiss/src/build-r10 -j 24"}
 {"kind":"phase","ts":"2026-11-05T00:29:40Z","phase":"test","seconds":425.411,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/gfx1201-20261104-154818-faiss-fix-rocm10/moat/projects/faiss/src/build-r10 -j1 -R TestGpu|TestCodePacking --output-on-failure"}
+{"kind":"session","ts":"2026-11-05T00:36:08Z","epoch":1793838968.037521394,"event":"start","platform":"linux-gfx1201"}
+{"kind":"session","ts":"2026-11-05T00:42:47Z","epoch":1793839367.536787505,"event":"end","platform":"linux-gfx1201"}

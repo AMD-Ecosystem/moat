@@ -7,13 +7,13 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-05-31T16:36:35Z",
-  "updated_at": "2026-11-05T00:36:08Z",
+  "updated_at": "2026-11-05T00:42:36Z",
   "head_sha": "708a879bc438e4683689839daedcadd76496e9ca",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 81227005,
-  "stage": "reviewing",
+  "stage": "review-passed",
   "platforms": {
     "windows-gfx1101": {
       "state": "completed",
@@ -136,7 +136,7 @@
       "failed_sha": null,
       "started_at": "2026-11-04T23:52:12Z",
       "completed_at": null,
-      "updated_at": "2026-11-05T00:36:08Z",
+      "updated_at": "2026-11-05T00:42:36Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -155,12 +155,9 @@
   },
   "porting_released": {
     "arch": "linux-gfx1201",
-    "since": "2026-11-04T23:52:12Z",
-    "at": "2026-11-05T00:31:55Z"
+    "since": "2026-11-05T00:36:08Z",
+    "at": "2026-11-05T00:42:36Z"
   },
   "review_pr": "https://github.com/AMD-Ecosystem/faiss/pull/1",
-  "porting": {
-    "arch": "linux-gfx1201",
-    "since": "2026-11-05T00:36:08Z"
-  }
+  "porting": null
 }
