@@ -1587,3 +1587,40 @@ Correct these before the fork review PR is opened (wording in the draft above, n
 2. `## Upstream reply`: "for voxel sizes that are not whole numbers ... rounded the voxel size to an integer, so part or all of the object was skipped" overstates it. Sizes below 1 were not skipped (dVoxel 0.8 passed before the fix), and only sizes above 1 lost data. Suggested: "I added a follow-up commit that fixes the interpolated forward projector on AMD GPUs when theta or psi is nonzero and the voxel size is not a whole number: a host max() call cut the voxel size to an integer, so for sizes above 1 part or all of the object was skipped. It also adds a small test that checks the interpolated projector against Siddon for that case."
 
 Still owed before jeff sees the round: the nvcc compile check at f779703 (mi355 host) and revalidation at f779703 on every gate.
+
+## Validation 2026-11-05 (linux-gfx1100, validator, moat-fix-747 @ f779703 -> completed)
+
+jeff asked for this run. GPU: AMD Radeon Pro W7800 48GB / gfx1100, TheRock ROCm SDK 10.1 (`rocm-sdk path --root`), HIP_VISIBLE_DEVICES=0 (dispatcher pin), every GPU run under `ulimit -c 0`. Job venv: python 3.11.17, numpy 1.26.4, scipy 1.10.1, Cython 3.3.1 (`pip install numpy==1.26.4 scipy==1.10.1 Cython matplotlib h5py tqdm pytest`). Fresh fork clone, detached at f779703298570f752da7c3994db3fc9903b9bf1c (`origin/moat-fix-747` tip). Full GPU run with no carry-forward: the delta changes host code of `_Ax`, so it is not binary-equivalent.
+
+### Build
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH BUILD_WITH_HIP=1 HIP_ARCH=gfx1100 ROCM_PATH=$(rocm-sdk path --root)
+utils/timeit.sh TIGRE compile -- bash -c "cd projects/TIGRE/src && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16"
+```
+rc 0, 0 `error:` lines, 20 hipcc compiles at `-std=c++14`, 8/8 `.so`, `llvm-objdump --offloading` shows gfx1100 in each. Self-test: hardware trilinear supported.
+
+### Upstream pytest plus the new test
+`PYTHONPATH=<src>/Python MPLBACKEND=Agg $FLEET_VENV/bin/python -m pytest -q -p no:cacheprovider --rootdir=<src>/Python <src>/Python/tests/<file>.py`, each wrapped in `utils/timeit.sh TIGRE test`: test_compute_cor 6, test_demo_angles 1, test_denoise_2d_guard 3, test_filtering_workers 37, test_gpuids_default 5, test_krylov_restart_and_norms 9, test_krylov_smoke 9, test_interpolated_voxel_size 4 -> **74 passed, 0 failed**. Earlier record on this platform (b61ff14): 70/70 on the 7 upstream files, unchanged; the 4 are the new file. Matches the porter's and reviewer's 74 on gfx90a.
+
+### The fix on this card
+Built b61ff14c87689beb1b08e2bcd8223c29ce85a83d the same way in a scratch clone (`agent_space/base`, rc 0, 8/8 `.so`) and ran the f779703 test file against it (`PYTHONPATH=agent_space/base/Python ... pytest <src>/Python/tests/test_interpolated_voxel_size.py`): **2 failed** (`[1.5-cone]`, `[1.5-parallel]`, "interpolated vs Siddon relative error 1.000"), 2 passed (0.8 cases). At f779703: 4 passed. Same pattern as the porter's and reviewer's gfx90a runs. `.hip_fatbin` of `_Ax` at b61ff14 vs f779703: byte-identical (`llvm-objcopy --dump-section`, `cmp`), so only host code changed.
+
+### GPU gates
+Scripts copied unchanged from this host's b61ff14 validator job (`gates.py`, `miss.py`, `solvers.py`, `repeat_par.py`, `repeat_par_interp.py`, `tigre_parallel.py`) into host-local `agent_space/scripts/`, run as `PYTHONPATH=<src>/Python MPLBACKEND=Agg $FLEET_VENV/bin/python <script>` under `utils/timeit.sh TIGRE test`.
+- `gates.py`: cone Siddon mean/max 27.457 / 111.229, interp vs Siddon 0.003997, FDK 0.27626, OS-SART-20 0.19358, adjointness 1.234e-05 / 6.267e-05; parallel axis interp vs Siddon 0.004019 / adj 3.227e-05, offset 0.004087 / 5.504e-05, Euler 0.005590, FBP 0.10503, SIRT-20 0.19545. All finite.
+- `miss.py`: Siddon zero frac 0.8614 / max 27.096, interpolated 0.8547 / 26.423, finite, no hang.
+- `solvers.py`: sart 0.0406, ossart 0.2972, sirt 0.4828, cgls 0.1916, fista 0.2855, asd_pocs 0.0469, awasd_pocs 0.0387, os_asd_pocs 0.3091, ossart_tv 0.3153. All finite.
+- Repeats, 3 passes (`for pass in 1 2 3; do for g in parallel cone; do python repeat_par.py $g Siddon; python repeat_par_interp.py $g; done; python tigre_parallel.py; done`): parallel/cone x Siddon/interpolated x phantom/random -> **0/20 differ in all 24 cases** (480 repeats bitwise identical).
+- `tigre_parallel.py`, 3 runs, identical each time: axis 0.0043 (adj Siddon 1.758e-05, interp 3.014e-06), offset 0.0041 (5.277e-05, 9.165e-07), Euler 0.0056 (3.115e-05, 4.910e-06), FBP 0.0833, SIRT-20 0.1952, missed rays finite, zero 0.860 / 0.853. RESULT PASS.
+
+**Every gate number equals this platform's b61ff14 record to the printed digit** (missed-rays wall time 0.02-0.03 s aside). The only difference from the earlier record is the new test file, and its before/after result is the fix itself. Expected: the gates use dVoxel 1 or theta = psi = 0, where `fmaxf` and the truncating `max` agree.
+
+### CUDA no-regression gate
+Already recorded at f779703 ("CUDA compile check (nvcc 12.8) at f779703" above: rc 0, 8/8). Not re-run.
+
+### Completion checks
+- `python3 utils/jargon.py --port TIGRE`: clean (local `master`, `moat-port`, `moat-fix-747` refs created from origin in the fork clone).
+- Docs: `Frontispiece/python_installation.md` keeps the "AMD GPU (ROCm/HIP)" section; the delta needs no doc change.
+- `git -C projects/TIGRE/src status --porcelain`: no modified tracked files, only untracked build output.
+
+Outcome: linux-gfx1100 -> **completed** at f779703. This satisfies the wave32 gate at this head. For the fix review PR retest line: gfx1100 (W7800) 8/8 build, 70 + 4 pass, all gates match b61ff14 exactly.
