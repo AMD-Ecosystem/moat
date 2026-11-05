@@ -18,3 +18,9 @@
 {"kind":"phase","ts":"2026-11-05T00:12:42Z","phase":"compile","seconds":0.005,"exit":2,"cmd":"make jdk21 BACKEND=opencl,hip"}
 {"kind":"phase","ts":"2026-11-05T00:17:45Z","phase":"compile","seconds":277.121,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261104-160741-tvm-review2/moat/projects/TornadoVM/src && make jdk21 BACKEND=opencl,hip"}
 {"kind":"session","ts":"2026-11-05T00:25:32Z","epoch":1793838332.628501707,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-05T00:35:48Z","epoch":1793838948.705336033,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-05T00:38:42Z","phase":"compile","seconds":0.003,"exit":2,"cmd":"make jdk21 BACKEND=opencl,hip"}
+{"kind":"phase","ts":"2026-11-05T00:45:48Z","phase":"compile","seconds":409.287,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=opencl,hip"}
+{"kind":"phase","ts":"2026-11-05T00:56:03Z","phase":"compile","seconds":457.127,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=opencl,hip"}
+{"kind":"phase","ts":"2026-11-05T00:56:32Z","phase":"test","seconds":6.476,"exit":0,"cmd":"bash -c cd projects/TornadoVM/src && source setvars.sh >/dev/null && tornado-test --jvm=\"-Dtornado.enabled.backends=hip\" -V uk.ac.manchester.tornado.unittests.nccl.TestNcclMultiProcess 2>&1"}
+{"kind":"session","ts":"2026-11-05T01:22:32Z","epoch":1793841752.319419968,"event":"end","platform":"linux-gfx942"}
