@@ -7,7 +7,7 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-05T06:23:36Z",
+  "updated_at": "2026-11-05T07:11:41Z",
   "head_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38",
   "waivers": {},
   "license_spdx": "MIT",
@@ -165,5 +165,17 @@
     "arch": "linux-gfx90a",
     "since": "2026-11-05T00:24:22Z",
     "at": "2026-11-05T00:34:09Z"
-  }
+  },
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-05T07:03:16Z",
+    "head_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38",
+    "content_sha256": "d110ac37043c2793744914fcc0604628b8a26dc3720f4e8db42733d25f57c648",
+    "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/1"
+  },
+  "pr_url": "https://github.com/llnl/LEAP/pull/216",
+  "pr_number": 216,
+  "pr_opened_at": "2026-11-05T07:11:41Z",
+  "pr_state": "open",
+  "published_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38"
 }
