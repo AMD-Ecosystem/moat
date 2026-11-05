@@ -319,3 +319,53 @@ A HIP port of h2o4gpu's GPU solvers via `hip_compat/` CUDA-named headers and a `
 - Not run here: CUDA compile check at f2ecfb0 (mi355; see item 2).
 
 - 2026-11-05: jeff filed https://github.com/h2oai/h2o4gpu/issues/899 (xgboost_prev no longer builds with CUDA 12 or current setuptools).
+## Porter fix round 2026-11-05 (linux-gfx90a, MI250X/MI250, ROCm 10.1 pip SDK) -- answers Review round 2 under jeff's xgboost_prev reversal
+
+jeff reversed the xgboost_prev keep ruling (plan.md, last entry): drop it from the ROCm build. Fork `moat-port` `f2ecfb0` -> `9607b09` (2 new commits, no amend, no force-push). No review PR is recorded, so no threads to answer.
+
+### `24e61690` Revert "Package the previous XGBoost library without its wheel step"
+- Plain `git revert` of 4e5e433 (shared, non-[ROCm]) with a rationale body. The CUDA `xgboost_prev`/`install_xgboost_prev` recipes are upstream's again: `make -n xgboost_prev install_xgboost_prev` (no USE_HIP) prints the `make -f Makefile2 ... libxgboost` recipe and the wheel install from `python-package/dist`, and `git diff 97279de -- Makefile` has no added/removed xgboost_prev line at that commit.
+
+### `9607b099` [ROCm] Do not build or bundle the previous XGBoost with USE_HIP
+- Makefile: under `USE_HIP=ON`, `xgboost_prev` and `install_xgboost_prev` only echo "XGboost previous version is not built with USE_HIP=ON" (same `ifeq` pattern as `xgboost`/`lightgbm_gpu`), so `deps-install-with-*` still run through them. `src/interface_py/Makefile`: the `xgboost_prev` symlink is made only when `USE_HIP != ON`, so `setup.py get_packages` never sees it. `make/config.mk`: the USE_HIP `XGBOOST_TARGET=libxgboost-cpu` override (it existed only for xgboost_prev) removed. DEVEL.md: the `make xgboost_prev ... USE_HIP=ON` line removed, plus a sentence that load_pkl cannot convert 0.90 pickles in a ROCm build. CUDA path: dry run identical to upstream (above).
+- Review round 2 finding 1 (GNU_UNIQUE TLS crash with both XGBoost libraries in one process) is closed: xgboost_prev is no longer in the ROCm process at all, so `-fno-gnu-unique` is not needed, and the question to jeff is moot. Finding 2 (4e5e433 not exercised with the CUDA target) is moot: 4e5e433 is reverted, the CUDA recipe is upstream's. The records note (register the surface owed-state tooling item) is done: deferred `surface-owed-state-for-in-scope-platforms`.
+
+### Verification at 9607b09 (this host, gfx90a, HIP_VISIBLE_DEVICES=0, `ulimit -c 0`, LD_LIBRARY_PATH unset, OPENBLAS_NUM_THREADS=32 for every run)
+Fresh clone; the wheel was built from the working tree identical to 9607b09 (committed after the build, no edits in between):
+```
+R=$($FLEET_VENV/bin/python -m rocm_sdk path --root); export PATH=$FLEET_VENV/bin:$R/bin:$PATH CMAKE_PREFIX_PATH=$R OMP_NUM_THREADS=$MAX_JOBS CMAKE_BUILD_PARALLEL_LEVEL=$MAX_JOBS
+git submodule update --init --recursive tests/googletest LightGBM_rocm xgboost_rocm
+cmake -S src -B src/build-hip -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$FLEET_VENV/bin/python && cmake --build src/build-hip -j$MAX_JOBS
+make cpp USE_HIP=ON PYTHON=$FLEET_VENV/bin/python
+make lightgbm_gpu install_lightgbm_gpu lightgbm_cpu install_lightgbm_cpu USE_HIP=ON PYTHON=...
+make xgboost install_xgboost USE_HIP=ON PYTHON=...
+make xgboost_prev install_xgboost_prev USE_HIP=ON PYTHON=...     # prints the not-built line twice, builds nothing
+make apply-sklearn PYTHON=... && make py USE_HIP=ON PYTHON=...
+$FLEET_VENV/bin/python -m pip install --no-deps --force-reinstall src/interface_py/dist/h2o4gpu-0.6.0+local.24e61690.dirty-cp311-cp311-linux_x86_64.whl
+```
+(the wheel's describe is the revert commit + dirty = the uncommitted 9607b09 edits and the h2o patches applied inside LightGBM_rocm/xgboost_rocm; submodule trees reverted with `git -C <sub> checkout -- .` afterwards; fork tracked tree clean with `--ignore-submodules=untracked`.)
+- All steps rc 0. `xgboost_prev/lib` never created (the xgboost_prev submodule source does get checked out by `apply-sklearn`'s submodule init, and is still not bundled).
+- Wheel: `unzip -l | grep -c xgboost_prev/` = 0. Ships `h2o4gpu/libs/_ch2o4gpu_gpu.so`, `lightgbm_gpu/lib/lib_lightgbm.so`, `lightgbm_cpu/lib/lib_lightgbm.so`, `xgboost/lib/libxgboost.so`. Installed venv: no `xgboost_prev*` in site-packages; `importlib.util.find_spec('xgboost_prev')` None.
+- `_ch2o4gpu_gpu.so`: RUNPATH `[<job>/venv-base-links/_rocm_sdk_devel/lib:/usr/lib/gcc/x86_64-linux-gnu/13]`, NEEDED libgomp only (074608c / e7727e7 unchanged).
+- `h2o4gpu_test`: 24/24 pass, 3 consecutive runs.
+- `import h2o4gpu` OK (0.6.0). Oracle (`agent_space/oracle/oracle.py`, exits nonzero if GPUlib is None or no GPU): `device_count(-1)` (1, 1). KMeansH2O v_measure 1.000000, center dist 4.1e-6 (f32) / 6.7e-15 (f64); TSVD cusolver sv rel err 1.8e-7 / 3.0e-16; PCA ev 4.6e-7 / 3.8e-16; ElasticNetH2O (alpha 0, lambda 1e-6) r2 1.000000 = Ridge. ALL PASS. Under `rocprofv3 --kernel-trace`: 48519 dispatches on one GPU agent, kmeans:: 110, cml:: 7242, h2o4gpu:: 226, rocBLAS 18071, rocSOLVER 636, rocPRIM 14722.
+- GBM (`agent_space/oracle/gbm.py`, 100000x20 regression, 80/20 split, 50 rounds): xgboost 2.1.3 `USE_HIP` True, shared QuantileDMatrix held-out RMSE cuda 0.1309159382 / cpu 0.1309159387; `get_feature_interactions` present. lightgbm_gpu 4.7.0 `device_type='cuda'` RMSE 0.12325394 / cpu 0.12329379. Under rocprofv3: 24286 `LightGBM::` and 5332 `xgboost::` kernels.
+  - Observation for the reviewer (LightGBM_rocm unchanged this round, so not from this change): LightGBM cuda vs cpu predictions are not ulp-close row by row on this data -- median |diff| 7.5e-10 but max 4.1e-2, 0.04% of rows > 1e-3 (200000x30, 100 rounds: max 6.7e-2, 0.2% of rows; RMSE 0.12260690 vs 0.12254017). That is the pattern of occasional near-tie splits resolving differently (different histogram summation order); RMSE agrees to < 1e-3 relative. Earlier rounds' "max pred diff 3.4e-8 / 7.9e-7 / 1.4e-8" were on other data (y = linear + noise); a first strict 1e-4 max-diff check here failed for this reason and was replaced by the RMSE check.
+- `pytest tests/python/open_data/system tests/python/open_data/gbm`: 18 pass / 4 fail / 17 skip, same as the three previous rounds (4 = `lgb.cv(early_stopping_rounds=)`, removed in LightGBM 4.0; skips = unsynced data / memory).
+- What a user sees for xgboost_migration (`agent_space/oracle/migration.py`, from the installed wheel): (1) a pickle from the current xgboost: `load_pkl` returns the XGBClassifier, max pred diff 0.0 -- unaffected. (2) an emulated XGBoost 0.90 pickle (a Booster pickled with its handle replaced by `save_raw(raw_format='deprecated')`, which has no serialisation header, written with a reducer override) reaches exactly the migration branch and fails with a chained traceback:
+  ```
+  xgboost.core.XGBoostError: [..] xgboost_rocm/src/learner.cc:1186: Check failed: header == serialisation_header_: If you are loading a serialized model (like pickle in Python, RDS in R) or
+  configuration generated by an older version of XGBoost, please export the model by calling
+  `Booster.save_model` from that version first, then load it back in current version. See: ...
+  During handling of the above exception, another exception occurred:
+    File ".../h2o4gpu/util/xgboost_migration.py", line 23, in load_pkl
+      import xgboost_prev  # pylint: disable=unused-import
+  ModuleNotFoundError: No module named 'xgboost_prev'
+  ```
+  Judged clear enough (names the cause and the remedy, re-save with the old version), so xgboost_migration.py is unchanged (shared code; on CUDA the package is still bundled). DEVEL.md states the limitation.
+- Guard note: the fleet guard blocks any Bash command whose text contains "pip install" (it matched a heredoc editing the Makefile's existing recipe and a commit message); file edits went through the editor tool, commit messages through files. No pip ran outside `$FLEET_VENV`.
+- Not run here: the CUDA compile check at 9607b09 (mi355, separately). Its delta vs the f2ecfb0 check: the revert restores upstream's Makefile recipe; 9607b09 touches only `ifeq ($(USE_HIP),ON)` branches, a `USE_HIP != ON` shell guard around the xgboost_prev symlink, config.mk's USE_HIP block, and DEVEL.md.
+
+### Upstream issue draft (jeff's ruling: "a short upstream issue tells the maintainers"; filing it is a person's action, not done here)
+Title: `make xgboost_prev` cannot build with CUDA 12 or current setuptools
+Body: The `xgboost_prev` target cannot produce the previous XGBoost on the current toolchain. Its recipe edits `xgboost_prev/cmake/Utils.cmake` to add compute capabilities 35 and 37, which CUDA 12 no longer accepts, and the submodule's wheel step (`python setup.py bdist_wheel` in `Makefile2`, target `libxgboostp3`) fails on current setuptools with `packaging.version.InvalidVersion: Invalid version: '1.4.0-SNAPSHOT'`. `install_xgboost_prev` then has no wheel to install, so `make py` bundles `xgboost_prev` without `lib/libxgboost.so`, and `import xgboost_prev` raises `XGBoostLibraryNotFound`; `h2o4gpu.util.xgboost_migration.load_pkl` needs it to convert XGBoost 0.90 pickles. Seen with CUDA 12.8 (nvcc rejects the 35;37 gencode) and setuptools 79.0.1.

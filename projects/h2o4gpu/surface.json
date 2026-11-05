@@ -237,9 +237,16 @@
     {
       "id": "submodule:xgboost-lightgbm-gpu",
       "kind": "submodule",
-      "where": "xgboost, xgboost_prev, LightGBM (+ Makefile xgboost/lightgbm_gpu targets)",
+      "where": "xgboost, LightGBM (+ Makefile xgboost/lightgbm_gpu targets)",
       "added_by": "planner",
       "note": "jeff 2026-11-04: in scope. LightGBM: use upstream USE_ROCM support. xgboost: under USE_HIP only, build from AMD-Ecosystem/xgboost ROCm branch; CUDA build keeps the h2oai submodules untouched."
+    },
+    {
+      "id": "submodule:xgboost_prev",
+      "kind": "submodule",
+      "where": "xgboost_prev (+ Makefile xgboost_prev/install_xgboost_prev targets, src/interface_py/Makefile bundling)",
+      "added_by": "porter",
+      "note": "Split out of submodule:xgboost-lightgbm-gpu after jeff's 2026-11-05 ruling dropped xgboost_prev from the ROCm build."
     },
     {
       "id": "interface:r",
@@ -359,11 +366,11 @@
     },
     {
       "id": "submodule:xgboost-lightgbm-gpu",
-      "evidence": "Per ruling 1: LightGBM_rocm submodule at upstream v4.7.0 with the h2o C++ patch (39984a9), cuda vs cpu RMSE 0.10112081684 / 0.10112081687; xgboost_rocm from AMD-Ecosystem/xgboost release_2.1.3-rocm with the rocThrust namespace patch and the h2o patches (ccde3a9), shared-QuantileDMatrix RMSE 0.1041118556 (cuda) vs 0.1041118550 (cpu), XGBFI/pred_leaf/pred_contribs on a cuda model. xgboost_prev stays CPU-only under USE_HIP (config.mk XGBOOST_TARGET=libxgboost-cpu), as jeff ruled 2026-11-04; release_2.1.3-rocm kept per the same ruling. CUDA submodules untouched."
+      "evidence": "Per ruling 1: LightGBM_rocm submodule at upstream v4.7.0 with the h2o C++ patch (39984a9), cuda vs cpu RMSE 0.10112081684 / 0.10112081687; xgboost_rocm from AMD-Ecosystem/xgboost release_2.1.3-rocm with the rocThrust namespace patch and the h2o patches (ccde3a9), shared-QuantileDMatrix RMSE 0.1041118556 (cuda) vs 0.1041118550 (cpu), XGBFI/pred_leaf/pred_contribs on a cuda model. release_2.1.3-rocm kept per jeff's 2026-11-04 ruling. xgboost_prev is scoped out under ROCm (submodule:xgboost_prev). CUDA submodules untouched. Re-verified at 9607b09: xgboost cuda/cpu RMSE 0.1309159382/0.1309159387, LightGBM cuda/cpu RMSE 0.12325394/0.12329379, 24286 LightGBM:: and 5332 xgboost:: GPU kernels."
     },
     {
       "id": "doc:readme-build",
-      "evidence": "README.md requirements line points AMD users at DEVEL.md#use_hip-amd-gpus (ac069e2); DEVEL.md USE_HIP section extended with roctx, LightGBM and xgboost build steps (2012add, 39984a9, ccde3a9)."
+      "evidence": "README.md requirements line points AMD users at DEVEL.md#use_hip-amd-gpus (ac069e2); DEVEL.md USE_HIP section extended with roctx, LightGBM and xgboost build steps (2012add, 39984a9, ccde3a9); 9607b09 removes the xgboost_prev step from the USE_HIP section and states that load_pkl cannot convert XGBoost 0.90 pickles in a ROCm build."
     }
   ],
   "scoped_out": [
@@ -402,6 +409,10 @@
     {
       "id": "platform:windows",
       "reason": "PLACEHOLDER, NOT A SCOPE CUT: Windows is still owed under jeff's ruling 3 (attempt last, after wave64 and wave32 pass at the same head; land it as one final commit or report that it is too cumbersome). It is filed under scoped_out only because surface.py has no 'in scope, not yet done' state at ported; a tooling change for an owed state is being handled separately, and this entry moves there when it lands. The windows gate is required and unwaived."
+    },
+    {
+      "id": "submodule:xgboost_prev",
+      "reason": "Ruled by jeff 2026-11-05 (reverses the 2026-11-04 keep ruling): not built or bundled under USE_HIP. Upstream's own CUDA 12.8 build cannot produce it either (its recipe adds CUDA archs 35;37, and its wheel step fails on current setuptools with InvalidVersion '1.4.0-SNAPSHOT'). The shared packaging commit 4e5e433 is reverted, so the CUDA recipe is upstream's. Effect under ROCm: h2o4gpu.util.xgboost_migration.load_pkl cannot convert XGBoost 0.90 pickles; current pickles load unchanged. A short upstream issue is to tell the maintainers (a person files it)."
     }
   ],
   "removed_from_floor": [
