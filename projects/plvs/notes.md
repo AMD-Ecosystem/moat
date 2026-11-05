@@ -3141,3 +3141,25 @@ Keep one keyframe per feature, parallel to each feature vector:
 
 With this fix plus fixes for the fisheye depth arrays and the MapLine observation count, 10 of 10 consecutive Windows runs finished the sequence.
 ====
+
+## CUDA compile check 2026-11-05 (970cb1f)
+
+CUDA no-regression compile check on the mi355 fleet host. No role was taken, no state changed, no GPU work. Toolkit: `/usr/local/cuda-12.8/bin/nvcc` 12.8.93 (V12.8.93), host g++ 13.3. Port = `moat-port` `970cb1f`; control = fork `master` `2ecb8b1`, still equal to upstream `luigifreda/plvs` HEAD (`git ls-remote` checked). Both were git worktrees in the job directory. Recipe and minimal target set are the same as in "CUDA compile check 2026-11-05 (fde33e5)" above: OpenCV 4.13.0 built from source CPU-only, used for headers (`BUILD_LIST=core,imgproc,features2d,flann,calib3d,highgui,imgcodecs,videoio`); the four `src/cuda/*.cu` files compiled with nvcc for sm_80+sm_90 with `-DUSE_CUDA`; libelas-gpu (`CUDA_ARCH_BIN=8.0`) and libsgm (auto-detected sm_53..sm_86) through their own CMake. All build trees were deleted afterwards.
+
+**Result: PASS. Every target builds with RC=0 at both shas. Device SASS is identical, there are no errors, and there are no new warnings beyond the libsgm `"CudaSafeCall" redefined` warning recorded at fde33e5.**
+
+The delta `fde33e5..970cb1f` touches no CUDA source and no build file: `git diff --stat fde33e5 970cb1f -- Thirdparty src/cuda include/cuda CMakeLists.txt cmake` is empty. It changes only `src/Frame.cc`, `src/LoopClosing.cc`, `src/MapLine.cc` and the two TUM-VI examples.
+
+| target | base 2ecb8b1 | port 970cb1f | device SASS base vs port |
+|---|---|---|---|
+| `Allocator_gpu.cu`, `Cuda.cu`, `Fast_gpu.cu`, `Orb_gpu.cu` | RC=0, 0 warnings | RC=0, 0 warnings | identical (all 4) |
+| libelas-gpu (5 targets) | RC=0, 44 warning lines | RC=0, 32 | `elas_gpu.cu.o` identical |
+| libsgm (`libsgm.a`) | RC=0, 20 warning lines | RC=0, 69 | all 10 `.cu.o` identical; 70 cubins compared, sm_75/80/86 disassembled (nvdisasm 13.1 refuses sm_53..sm_70 as deprecated, same message on both sides) |
+
+- The warning counts are the same as at fde33e5. Normalized warning diff (paths and line numbers masked): libelas-gpu port has only fewer warnings (the `-Wnarrowing` / `#2361-D` lines the port's casts remove, plus line-shifted `#177-D` unused-variable lines). libsgm port adds only the 49 `Thirdparty/libsgm/src/internal.h:32: warning: "CudaSafeCall" redefined` lines. That warning is not a regression of this round; its cause and the suggested fix are in the fde33e5 section.
+- SASS was compared with `cuobjdump -sass` (or `cuobjdump -xelf all` + nvdisasm for libsgm), with `NVDISASM_PATH` pointing at nvdisasm 13.1 from the triton wheel (the 12.8 toolkit here has none). Anonymous-namespace hashes and address comments were masked.
+- Host `USE_CUDA` code: `unifdef -k -t -DUSE_CUDA -UUSE_HIP -U__HIP_PLATFORM_AMD__ -U_WIN32 -UWIN32 -U_MSC_VER -U_WIN64 -U__MINGW32__`, blank lines ignored, base vs port. `ORBextractor.{h,cc}`, `Tracking.{h,cc}` and `StereoDisparity.{h,cc}` are identical. In `Frame.cc` the only difference is the a93e73d change in `ComputeStereoFishEyeMatches` (allocate `mvDepth`/`mvuRight` with `N` entries before the early return), which is shared host code outside any `USE_CUDA` block. `LoopClosing.cc`, `MapLine.cc` and the two TUM-VI examples contain no `USE_CUDA` reference.
+
+### Not checked here
+- The full plvs CUDA library and executables. They need OpenCV with the CUDA contrib modules, Pangolin and PCL; none is on this host, and apt would modify the shared image.
+- A g++ `-fsyntax-only -DUSE_CUDA` compile of the three changed host TUs was tried. With opencv_contrib 4.13.0 module headers, the bundled include dirs and a configured bundled g2o (for `config.h`), it got as far as `include/Map.h:47: pangolin/pangolin.h: No such file`, and stopped there; PCL would be needed next. The changed lines are outside `USE_CUDA`, so the CPU and HIP builds compile the same code: the Windows HIP build did at 970cb1f, and the Linux revalidations will compile it with g++.
