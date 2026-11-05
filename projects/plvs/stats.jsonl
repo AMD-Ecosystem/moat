@@ -326,3 +326,5 @@
 {"kind":"phase","ts":"2026-11-05T05:26:37Z","phase":"compile","seconds":36.681,"exit":0,"cmd":"cmake --build projects/plvs/src/build-win-gfx1151 --target stereo_tum_vi mono_tum -j 16"}
 {"kind":"phase","ts":"2026-11-05T05:53:12Z","phase":"compile","seconds":12.139,"exit":0,"cmd":"cmake --build projects/plvs/src/build-win-gfx1151 --target stereo_tum_vi -j 8"}
 {"kind":"phase","ts":"2026-11-05T06:00:49Z","phase":"compile","seconds":45.180,"exit":0,"cmd":"cmake --build projects/plvs/src/build-win-gfx1151 --target stereo_tum_vi mono_tum -j 8"}
+{"kind":"session","ts":"2026-11-05T07:09:25Z","epoch":1793862565.988798708,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-05T07:50:18Z","epoch":1793865018.304682729,"event":"end","platform":"linux-gfx942"}

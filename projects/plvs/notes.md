@@ -3169,3 +3169,67 @@ The delta `fde33e5..970cb1f` touches no CUDA source and no build file: `git diff
 - 2026-11-05: jeff filed issue A (fisheye mvuRight/mvDepth over-read) as https://github.com/luigifreda/plvs/issues/58, without the unverified Linux ASan sentence.
 - 2026-11-05: jeff filed issue B (LoopClosing keyframe vector) as https://github.com/luigifreda/plvs/issues/59, as drafted.
 - 2026-11-05: jeff filed the same fisheye over-read on ORB-SLAM3 as https://github.com/UZ-SLAMLab/ORB_SLAM3/issues/1014 (linking #58).
+## Review 2026-11-05 (reviewer, linux-gfx942): changes-requested (delta fde33e5..970cb1f, head 970cb1f)
+
+Requested by jeff: review the windows-gfx1151 round's four commits, fact-check each root cause against the code (bug 1 also against ORB-SLAM3 4452a3c), check that each fix is minimal and leaves non-fisheye and mono paths alone, and reproduce bug 1 on Linux with AddressSanitizer before and after. Reviewed `git diff fde33e5...970cb1f` on `moat-port` with the pr-review skill. The fork was not modified. CPU only: no GPU was used, and one plvs process ran at a time under `ulimit -c 0` with `OMP_NUM_THREADS=4`.
+
+### Port Review: plvs (moat-port vs fde33e5)
+
+#### Summary
+The delta fixes three upstream CPU over-reads/miscounts on the fisheye stereo path and makes the two TUM-VI examples build on Windows. All three root causes are confirmed in the code, and ASan confirms on Linux that bugs 1 and 2 are present at fde33e5 and gone at 970cb1f. Each fix is minimal and changes nothing on the pinhole-stereo, RGB-D or mono paths. Verdict: Request Changes, for two items: a93e73d fixes the fisheye point depth arrays but not the line depth arrays next to them, which have the same defect and still overrun at head under ASan on the same sequence; and the promoted lesson misstates the evidence.
+
+#### Port Correctness
+1. **Fisheye line depth arrays are still short (the line analogue of bug 1).** `Frame::ComputeStereoFishEyeLineMatches` allocates `mvDepthLineStart` and `mvDepthLineEnd` with `NlinesLeft` entries (`src/Frame.cc:3037-3038` at 970cb1f), while `mvuRightLineStart`/`End` beside them get `Nlines = NlinesLeft + NlinesRight` (`:3043-3044`). Fisheye line indices span both images, so the unguarded `for(i<Nlines)` readers overrun: `Tracking::NeedNewKeyFrame` (`src/Tracking.cc:4018-4019`) and `Tracking::CreateNewKeyFrame` (`:4314-4315`). (LocalMapping already bounds-checks the size at `src/LocalMapping.cc:1995-1996` and `:1102`/`:1107`, so upstream knew the array was short.) At 970cb1f, ASan reports them on TUM-VI room1: `Tracking.cc:4018` "0 bytes after 280-byte region" and `Tracking.cc:4316` "0 bytes after 308-byte region" (each region is `NlinesLeft` floats, allocated at `Frame::operator=`, `include/Frame.h:82`). The read is not only a fault risk on the Windows heap: if a past-the-end value is positive, `CreateNewKeyFrame` creates a MapLine for a right-image line through `Frame::UnprojectStereoLine(i)` (`src/Frame.cc:2716-2735`), which applies the left pinhole intrinsics and reads `mvKeyLinesUn[i]` (left lines only, `:1565`) out of bounds again. That corrupts the map on Linux too. Also, if `NlinesLeft == 0` and `NlinesRight > 0`, the whole `if(NlinesLeft>0)` block (`:3035`) is skipped, so all four arrays stay empty while `Nlines > 0`, and the same loops index an empty vector. Fix: as a new commit, allocate `mvDepthLineStart`/`mvDepthLineEnd` with `Nlines` entries of -1, like `mvuRightLineStart`/`End`, and move the four `Nlines`-sized allocations out of `if(NlinesLeft>0)` so they always exist when `Nlines > 0`. Right-line entries then read as "no depth", which every reader already handles (as in a93e73d). Only the fisheye constructor calls this function, so pinhole, RGB-D and mono are unaffected. Then update upstream Issue A, or add a sibling issue: the draft currently says the fisheye depth arrays are fixed. jeff's rule for bug 3 was to carry an upstream fix only when it is a Windows root cause, and this one has not been seen to crash on Windows (10/10 clean at 970cb1f). If jeff rules it out of this round, it moves to the `plvs-upstream-stereo-mapping-crashes` deferral and this item is closed. Requested here because it is the incomplete half of bug 1's fix, not a new bug: the same allocation pattern on the same fisheye frame path, still overrunning on the validated sequence.
+
+#### Commit Hygiene / records
+2. **The promoted lesson overstates the evidence** (`.claude/skills/cuda-to-rocm/references/validation.md:114-125` on `port/plvs`, commit 9f0f2a9c). It attributes the `LoopClosing` crashes to the `mvuRight`/`mvDepth` sizing and says "Fixing the allocation made the runs clean". By this round's own table, the LoopClosing crash is bug 2 (a plvs-only keyframe vector, not inherited from ORB-SLAM3), and the allocation fix alone left 3 of 10 HIP runs crashing (bugs 2 and 3). Reword: name the three causes and say that the allocation fix removed the every-run crash, and that two rarer over-read/miscount bugs remained. "glibc's heap is one contiguous mapping" is also too strong (glibc uses per-thread arenas, and allocations above the mmap threshold get their own mapping). "Usually lands in already-mapped heap memory" is enough for the argument.
+
+### Fact-check of the porter's root causes (all confirmed)
+- **Bug 1 (a93e73d).** At fde33e5, `src/Frame.cc:2992-2993` sized `mvDepth`/`mvuRight` to `Nleft`, and `N = Nleft + Nright` (`:2911`). The early return at `:2981` (no descriptors) left them empty with `N > 0`. ORB-SLAM3 4452a3c `src/Frame.cc:1136-1137` has the same `Nleft` allocation (fetched and read). ORB-SLAM3 has no early return, so the empty-vector case is plvs-only, and `LocalMapping.cc:491` and `:961` there are the same reads. `mvuRight[leftIdx]` is never written on the fisheye path (only `mvDepth[leftIdx]` is, `:3020` at fde33e5), so `mvuRight` is all -1 before and after the fix. Every reader of a right index (`LocalMapping.cc:709`, `:718`, `:1923`; `ORBmatcher.cc:1368` in `Fuse`, where `idx` indexes the right keypoints when `bRight`) now reads -1 instead of whatever followed the buffer. `ComputeStereoFishEyeMatches` is called only from the fisheye stereo constructor (`Frame.cc:2919`). Pinhole stereo (`:1795`), RGB-D (`:2276`) and mono (`:643`) allocate their own `N`-sized arrays and are untouched. The behaviour change on the fisheye path is that a right-image observation now never counts toward `KeyFrameCulling` redundancy (`mvDepth[i] < 0 -> continue`) and never takes the stereo branch in `Fuse`. Before, both depended on garbage. The matched left observation of the same point still counts.
+- **Bug 2 (61e9640).** `ORBmatcher::SearchByProjection` (Sim3 overload) reads `vpPointsKFs[iMP]` in step with `vpPoints` (`src/ORBmatcher.cc:640`), and `LineMatcher::SearchByProjection` reads `vpLinesKFs[iMP]` (`src/LineMatcher.cc:1947`). At fde33e5, `LoopClosing::DetectCommonRegionsFromBoW` passed the deduplicated keyframe set instead (`src/LoopClosing.cc:847`, `:899`). ORB-SLAM3 4452a3c `src/LoopClosing.cc:727-755` pushes one keyframe per point, so this bug is plvs-only. `KeyFramePtr` is a raw pointer in this build (`DECLARE_POINTERS`, `include/Pointers.h:68-69`), so the over-read copies a garbage pointer and never dereferences it. Its only use is `vpMatchedKF[bestIdx] = pKFi` (`ORBmatcher.cc:723`, `LineMatcher.cc:2042`), and `vpMatchedKF`/`vpMatchedLinesKF` are not read after the calls (`LoopClosing.cc:905-918`). The fix changes only the over-read. The removed object branch only ever fed the removed set. The new vectors are parallel by construction (each `push_back` is paired with the feature's `push_back`).
+- **Bug 3 (970cb1f).** `MapLine::AddObservation` added 2 for any index whose `mvuRightLineStart/End` marker is set (`src/MapLine.cc:255` at fde33e5), and `ComputeStereoFishEyeLineMatches` sets the marker on both the left and right index of a stereo line match (`src/Frame.cc:3166-3169`). `EraseObservation` subtracts 1 for the right index (`MapLine.cc:296-307`). The fix gates on `NlinesLeft != -1 && idx >= NlinesLeft`, the same test `AddObservation` already uses to choose the tuple slot (`:243`). It is a no-op whenever `NlinesLeft == -1` (pinhole stereo, RGB-D, mono) and for fisheye left observations. The null/garbage `mpRefKF` dereference is at `MapLine.cc:661` (`pRefKF->GetCameraCenter()`), as cited.
+- **441cb76.** Only these two examples included `<unistd.h>` (grep of `Examples/`), and `include/PosixCompat.h` includes `<unistd.h>` on non-Windows, so the POSIX build is unchanged.
+- Commit gate: all four titles are `[ROCm]`, 43-65 characters, with fenced Test Plans and no trailer. `moatlib.commit_message_problems` flags only the five older commits that jeff's 2026-11-04 ruling sends to the PR-prep squash. `jargon.py --port plvs`: clean.
+
+### ASan reproduction (Linux, CPU-only, TUM-VI room1 stereo)
+Setup, all inside this job's directory (`w/`, container-local): OpenCV 4.13.0+contrib CPU install and `dataset-room1_512_16` copied from the 2026-11-04 MapLine RCA scratch tree on this host. Third-party libs rebuilt at fde33e5 with that RCA's `build_tp.sh` options (Pangolin fe57db532 + patch, DBoW2, g2o, volumetric_mapping, open_chisel, chisel_server, voxblox, voxblox_server, line_descriptor, fastfusion with `-include deque`). Then plvs and `stereo_tum_vi` were built with:
+
+```
+cmake .. -DCMAKE_BUILD_TYPE=Release -DWITH_CUDA=OFF -DUSE_HIP=OFF -DWITH_LIBELAS=OFF -DWITH_LIBSGM=OFF \
+  -DWITH_FASTFUSION=OFF -DWITH_G2O_NEW=OFF -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 \
+  -DOPENCV_VERSION=4 -DOpenCV_DIR=<ocv>/lib/cmake/opencv4 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  "-DCMAKE_CXX_FLAGS=-fsanitize=address -fsanitize-recover=address -fno-omit-frame-pointer -g -DEIGEN_MALLOC_ALREADY_ALIGNED=1" \
+  "-DCMAKE_C_FLAGS=<same>" -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address -DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address
+make -j 56 plvs stereo_tum_vi
+ASAN_OPTIONS=halt_on_error=0:detect_leaks=0:alloc_dealloc_mismatch=0 OMP_NUM_THREADS=4 \
+  ./Examples/Stereo/stereo_tum_vi Vocabulary/ORBvoc.txt TUM-VI-noviewer.yaml \
+  dataset-room1_512_16/mav0/cam0/data dataset-room1_512_16/mav0/cam1/data \
+  Examples/Stereo/TUM_TimeStamps/dataset-room1_512.txt room1
+```
+
+(`TUM-VI-noviewer.yaml` = tracked `Examples/Stereo/TUM-VI.yaml` + `Viewer.on: 0`.) Without `-DEIGEN_MALLOC_ALREADY_ALIGNED=1`, Eigen switches to its handmade aligned malloc under `__SANITIZE_ADDRESS__` while the uninstrumented g2o frees with plain `free`, and the log fills with thousands of false "attempting free on address which was not malloc()-ed" reports. The remaining g2o `malloc`/`operator delete` mismatch is the same boundary effect and was suppressed with `alloc_dealloc_mismatch=0`.
+
+Unique error sites (ASan reports each PC once):
+
+| site | fde33e5 (rc 0, 610 s, 102 KFs) | 970cb1f (rc 0, 621 s) | cause |
+|---|---|---|---|
+| `LocalMapping.cc:709` CreateNewMapFeatures | heap-buffer-overflow, 68 B after a 4016-B region (1004 floats = `Nleft`, `KeyFrame.cc:128`) | gone | bug 1 |
+| `LocalMapping.cc:718` | 8 B after 4028-B region | gone | bug 1 |
+| `LocalMapping.cc:1923` KeyFrameCulling | 0 B after 4016-B region | gone | bug 1 |
+| `ORBmatcher.cc:1368`, `:1376` Fuse | 8 B after 4012-B region | gone | bug 1 |
+| `ORBmatcher.cc:640` SearchByProjection | 0 B after 80-B `KeyFrame*` vector (10 KFs) | gone | bug 2 |
+| `LineMatcher.cc:1947` SearchByProjection | same 80-B vector | gone | bug 2 |
+| `Tracking.cc:4018/4019` NeedNewKeyFrame | 0 B after 280-B region | **still present** | finding 1 |
+| `Tracking.cc:4316` CreateNewKeyFrame | 0 B after 308-B region | **still present** | finding 1 |
+| `MapLine.cc:687` (688 at 970cb1f) UpdateNormalAndDepth | 4 B before a 12-B region | still present | pre-existing, see below |
+| `OptimizableTypes.cpp:220`, `:233` EdgeSE3ProjectXYZ::linearizeOplus | stack-use-after-scope | still present | pre-existing, see below |
+
+Bug 3 is a count drift, not an invalid access, so ASan cannot see it. The 2026-11-04 Linux RCA already measured it (0/140 vs 11/220 crashes). Both runs were single runs: ASan deduplicates by PC, and the bug-1 sites are reached on nearly every keyframe, so one run per build covers them.
+
+### Pre-existing upstream over-reads outside this delta (recorded, not required here)
+Both are on every sensor path, not only fisheye, and neither is a demonstrated Windows root cause. Whether they go into the upstream issue drafts or a deferral is jeff's call.
+- `MapLine::UpdateNormalAndDepth` (`src/MapLine.cc:688` at 970cb1f) reads `pRefKF->mvLineScaleFactors[nLevels-1]` with `nLevels = pRefKF->mnScaleLevels`, the point pyramid depth (8 in TUM-VI.yaml), against the line pyramid vector of `mnLineScaleLevels` entries (3 floats, the 12-B region). This is plvs-only code.
+- `EdgeSE3ProjectXYZ::linearizeOplus` (`src/OptimizableTypes.cpp:214`): `auto projectJac = -pCamera->projectJac(xyz_trans);` binds an Eigen expression to a temporary `Matrix<double,2,3>` that dies at the end of the statement, so lines 220 and 233 read a dead stack slot. This is inherited verbatim from ORB-SLAM3 4452a3c `src/OptimizableTypes.cpp:150`. Fix: `const Eigen::Matrix<double,2,3> projectJac = -pCamera->projectJac(xyz_trans);`.
+
+### Not done here
+- No GPU run (not needed for review). The CUDA no-regression compile at 970cb1f (mi355/nvcc) is still owed before this goes to jeff, as the porter noted.
