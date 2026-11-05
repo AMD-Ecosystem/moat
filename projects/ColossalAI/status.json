@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-05T22:44:55Z",
-  "updated_at": "2026-11-05T22:44:58Z",
+  "updated_at": "2026-11-05T23:05:04Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-05T23:05:03Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/hpcaitech/ColossalAI/blob/main/LICENSE",
+      "at": "2026-11-05T23:03:24Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none found (2024 issue #5669 comment says AMD collaboration underway; nothing public followed)",
+    "viable": true,
+    "summary": "ColossalAI (Apache-2.0, active, 41k stars): 18 CUDA extension kernels with inline PTX and warp-32 reductions, loader rejects ROCm torch; no AMD path upstream",
+    "at": "2026-11-05T23:05:01Z"
+  }
 }
