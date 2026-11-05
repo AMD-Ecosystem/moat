@@ -360,3 +360,24 @@ All 3 exit 0, empty stderr, no NaN, both binaries. Before and after sit in the s
 Commit 15124b53 `[ROCm] Fix NEP cutoff truncated to int in the ILP_NEP constructor`; `utils/jargon.py --port GPUMD` clean, `utils/prose.py` clean. Pre-existing: `audit-commits` flags 6231243f (already merged upstream) for no Test Plan; not touched.
 
 CUDA compile check not run here (no nvcc on this host); the change is plain `fmax`/`double()` and the test files are data, so it should compile unchanged with nvcc -- the dispatcher's mi355 nvcc check is still owed before presenting. All platforms now read revalidate at 15124b53 (validated_sha 6231243f).
+
+## CUDA compile check (nvcc 12.8) at 15124b5
+
+Helper run on the mi355 fleet host (CUDA 12.8 toolkit, V12.8.93; no NVIDIA GPU), compile only, requested by jeff. Head 15124b53 vs parent 6231243f, fresh clone of the fork plus `git worktree add ../gpumd-parent 6231243f`. Note: the head commit changes one line in `src/force/ilp_nep.cu` (`max(max_nep_rc, parambs[i].rc_radial)` -> `fmax(max_nep_rc, double(parambs[i].rc_radial))`); there is no `fmin`/`fminf`/`fmaxf` change despite the dispatch wording. The other changed files are test data and `tests/run_tests.sh`, not compiled.
+
+Recipe: upstream's documented CUDA build, unmodified `src/makefile` (`nvcc -std=c++14 -O3 -arch=sm_60 -I./`, links `-lcublas -lcusolver -lcufft`):
+
+    export PATH=/usr/local/cuda-12.8/bin:$PATH
+    utils/timeit.sh GPUMD compile -- make -C <clone>/src -j32       # head 15124b53
+    make -C <clone-parent>/src -j32                                  # parent 6231243f
+
+| | head 15124b53 | parent 6231243f |
+|---|---|---|
+| make rc | 0 | 0 |
+| TUs compiled / links | 125 / 2 | 125 / 2 |
+| targets | `gpumd` (21431848 B), `nep` (3600104 B) | same sizes |
+| nvcc errors | 0 | 0 |
+| nvcc warnings | 127, all `Support for offline compilation for architectures prior to ..._75 will be removed` (one per nvcc invocation, from the makefile's default `-arch=sm_60`) | identical 127 |
+| other warnings | none | none |
+
+Changed TU alone, serial (`cd src && nvcc -std=c++14 -O3 -arch=sm_60 -I./ -c force/ilp_nep.cu`): rc 0 at both, only the sm_60 deprecation warning. Extra host-warning pass `-Wno-deprecated-gpu-targets -Xcompiler -Wall,-Wextra` on `force/ilp_nep.cu`: 113 lines of output at both commits, identical modulo line numbers (pre-existing `-Wcomment` at ilp_nep.cu:1551, `-Wunused-parameter` in potential.cuh etc.); nothing on line 221. No new warning anywhere. PASS: the CUDA path compiles unchanged with nvcc 12.8. No platform states changed.
