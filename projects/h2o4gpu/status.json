@@ -7,13 +7,10 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:05:27Z",
-  "updated_at": "2026-11-04T21:13:13Z",
+  "updated_at": "2026-11-05T05:07:08Z",
   "head_sha": "ccde3a900feee38d459cd91f0d9889bb34379158",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-04T19:37:52Z"
-  },
+  "porting": null,
   "waivers": {},
   "license_spdx": "Apache-2.0",
   "intake": {
@@ -29,7 +26,7 @@
       "at": "2026-08-07T15:27:16Z"
     }
   },
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
@@ -61,7 +58,7 @@
       "failed_sha": null,
       "started_at": "2026-11-04T19:37:52Z",
       "completed_at": null,
-      "updated_at": "2026-11-04T19:37:52Z",
+      "updated_at": "2026-11-05T05:07:08Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -78,9 +75,9 @@
     }
   },
   "porting_released": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-04T07:19:52Z",
-    "at": "2026-11-04T07:30:15Z"
+    "arch": "linux-gfx90a",
+    "since": "2026-11-04T19:37:52Z",
+    "at": "2026-11-05T05:07:08Z"
   },
   "base_branch_ruling": {
     "branch": "master",

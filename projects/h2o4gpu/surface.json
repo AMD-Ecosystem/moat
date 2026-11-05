@@ -284,7 +284,88 @@
       "note": "add a ROCm build subsection"
     }
   ],
-  "covered": [],
+  "covered": [
+    {
+      "id": "library:ch2o4gpu_cpu",
+      "evidence": "Unchanged CPU SWIG module, built outside both GPU branches; ac069e2 adds only a USE_CUDA/USE_HIP mutual-exclusion check after it. Built by `make cpp USE_HIP=ON` and packaged in the ROCm wheel at ccde3a9 on linux-gfx90a; tests/python/open_data/system (non-GPU) ran from that wheel (11 pass / 5 fail on missing datasets, see notes)."
+    },
+    {
+      "id": "library:ch2o4gpu_gpu",
+      "evidence": "HIP SWIG module from the USE_HIP branch (ac069e2; -fopenmp link removed for the HIP module in e7727e7). Imported from the ROCm wheel on linux-gfx90a: get_gpu_info_c reports 1 / 4 GPUs under HIP_VISIBLE_DEVICES=0 / 0,1,2,3; verify_gpu_lib.sh PASS (gfx90a code object after strip)."
+    },
+    {
+      "id": "library:commonh2o4gpu",
+      "evidence": "Compiled into gpuh2o4gpu on the HIP branch with -DCUDA_MAJOR=${hip_VERSION_MAJOR} -DHAVECUDA and linked to hip::host (ac069e2); builds cleanly at ccde3a9 on linux-gfx90a."
+    },
+    {
+      "id": "library:cpuh2o4gpu",
+      "evidence": "Unchanged CPU solver library; on USENVTX builds it also links roctx64 because it compiles glm.h with USE_NVTX (2012add). Builds in the USE_HIP configuration at ccde3a9 on linux-gfx90a."
+    },
+    {
+      "id": "library:gpuh2o4gpu",
+      "evidence": "All src/*.cu minus factorization compiled LANGUAGE HIP against hipBLAS/hipSPARSE/hipSOLVER/hipRAND/rocThrust/hipCUB via hip_compat/ shims (ac069e2). Exercised by h2o4gpu_test 24/24 and the Python oracle on linux-gfx90a."
+    },
+    {
+      "id": "test:h2o4gpu_test",
+      "evidence": "googletest suite built on the HIP branch (ac069e2): 24/24 pass on linux-gfx90a, 3 consecutive runs at ac069e2, again at 2012add and on a fresh configure+build of ccde3a9. ARIMA d0p2q2 / d1p1q1 use a ROCm-only ASSERT_NEAR(2e-5*|expected|) justified by a float64 triangulation (notes)."
+    },
+    {
+      "id": "build:cmake-use-hip",
+      "evidence": "OPTION(USE_HIP) branch beside USE_CUDA: enable_language(HIP), hip_compat include on HIP sources only, hipBLAS/hipSPARSE/hipSOLVER/hipRAND targets, hipCUB/rocThrust include dirs only, no pinned arch (ac069e2, e7727e7, 2012add). Exact configure/build commands in notes."
+    },
+    {
+      "id": "build:make-cpp-testunit",
+      "evidence": "Makefile forwards USE_HIP to cmake in cpp/testunit (ac069e2); scripts/verify_gpu_lib.sh gains a .hip_fatbin branch (ac069e2). `make cpp USE_HIP=ON` -> verify_gpu_lib.sh PASS on linux-gfx90a."
+    },
+    {
+      "id": "build:python-wheel",
+      "evidence": "setup.py packages _ch2o4gpu_gpu when hipcc is on PATH as well as nvcc (ac069e2); GBM wheel targets dispatch to ROCm builds under USE_HIP (39984a9, ccde3a9). Full ROCm wheel built with `make py USE_HIP=ON` at ccde3a9 and installed into the fleet venv; device_count(-1) -> (1, 1)."
+    },
+    {
+      "id": "runtime:gpu-info-nvml",
+      "evidence": "get_gpu_info_c implemented with the HIP runtime under __HIP_PLATFORM_AMD__ (hipGetDeviceCount, hipGetDeviceProperties, hipSetDevice+hipMemGetInfo, current device restored); utilization/per-pid 0 with a warning; NVML path unchanged (ac069e2). n_gpus 1 / 4 under HIP_VISIBLE_DEVICES=0 / 0,1,2,3, 63.98 GiB each, cc (9,0) on linux-gfx90a."
+    },
+    {
+      "id": "source:cudacc-gates",
+      "evidence": "All 7 __CUDACC__ gates in prox_lib.h, util.h and solver/glm.h widened to __CUDACC__ || __HIPCC__ (ac069e2); POGS functors compile as device code and the GLM fit runs on GPU (cml::* kernels in the rocprofv3 trace)."
+    },
+    {
+      "id": "solver:kmeans",
+      "evidence": "Ported in ac069e2 (device-side cudaGetDevice in two kmeans|| lambdas replaced by the captured host loop index). KMeans googletests pass; oracle vs sklearn: v_measure 1.000000, max center dist 6e-6 (f32) / 1e-14 (f64); rocprofv3 shows kmeans::detail::* kernels on the GPU agent (linux-gfx90a)."
+    },
+    {
+      "id": "solver:tsvd-pca",
+      "evidence": "Ported in ac069e2 through the hipSOLVER/hipBLAS shims. Oracle vs sklearn on linux-gfx90a: TSVD sv rel err 1.4e-6 / comp 7.4e-4 (f32), 9e-15 / 1.3e-8 (f64); PCA ev 4.9e-7 / comp 2.8e-5 (f32), 3e-15 / 1.5e-8 (f64)."
+    },
+    {
+      "id": "solver:glm-pogs",
+      "evidence": "Ported in ac069e2 (ProxEvalF ctor gains __host__). ElasticNetH2O ridge r2 0.999972 (f32) / 0.999971 (f64) vs sklearn 0.999975; recovered GLM tests 49 pass, the 14 fails are sklearn/pandas API drift and missing datasets (notes); cml::*/h2o4gpu::* kernels in the rocprofv3 trace (linux-gfx90a)."
+    },
+    {
+      "id": "solver:arima",
+      "evidence": "Ported in ac069e2; 13 ARIMA googletests pass on linux-gfx90a, two with the ROCm-only tolerance from test:h2o4gpu_test (ROCm closer to float64 than the cuSOLVER golden values)."
+    },
+    {
+      "id": "test:python-pytest",
+      "evidence": "Shipped suite run from the ROCm wheel on linux-gfx90a at ccde3a9: open_data/gbm 16 pass / 4 fail / 17 skip (fails are the LightGBM >= 4.0 cv() early_stopping_rounds API, same on CUDA 4.6; skips are data); open_data/system + small 11 pass / 5 fail (missing datasets not in the public S3 bucket). Adapted LightGBM/xgboost tests 7 pass under rocprofv3 with LightGBM::* and xgboost kernels dispatched."
+    },
+    {
+      "id": "validation:historic-python-solver-tests",
+      "evidence": "Recovered from a22da27^ out of tree (not shipped) and run on linux-gfx90a at ac069e2 / e7727e7: kmeans+svd 21 pass / 48 fail / 1 skip, glm 49 pass / 14 fail / 13 skip; every failure classified as sklearn/pandas API drift, the svd_flip sign convention, or missing data, none a port defect (notes)."
+    },
+    {
+      "id": "optional:nvtx",
+      "evidence": "Mapped to roctx per jeff's ruling 5 (2012add): hip_compat/nvToolsExt.h -> roctxRangePushA/roctxRangePop, roctx64 linked under USENVTX. GLM fit under rocprofv3 --marker-trace: 1087 MARKER_CORE_RANGE_API records, equal to the 1087 PUSH_RANGE START lines; default build has no roctx NEEDED."
+    },
+    {
+      "id": "submodule:xgboost-lightgbm-gpu",
+      "evidence": "Per ruling 1: LightGBM_rocm submodule at upstream v4.7.0 with the h2o C++ patch (39984a9), cuda vs cpu RMSE 0.10112081684 / 0.10112081687; xgboost_rocm from AMD-Ecosystem/xgboost release_2.1.3-rocm with the rocThrust namespace patch and the h2o patches (ccde3a9), shared-QuantileDMatrix RMSE 0.1041118556 (cuda) vs 0.1041118550 (cpu), XGBFI/pred_leaf/pred_contribs on a cuda model. xgboost_prev stays CPU-only under USE_HIP (config.mk XGBOOST_TARGET=libxgboost-cpu), as jeff ruled 2026-11-04; release_2.1.3-rocm kept per the same ruling. CUDA submodules untouched."
+    },
+    {
+      "id": "doc:readme-build",
+      "evidence": "README.md requirements line points AMD users at DEVEL.md#use_hip-amd-gpus (ac069e2); DEVEL.md USE_HIP section extended with roctx, LightGBM and xgboost build steps (2012add, 39984a9, ccde3a9)."
+    }
+  ],
   "scoped_out": [
     {
       "id": "solver:factorization-als",
@@ -309,6 +390,18 @@
     {
       "id": "ci:jenkins-actions",
       "reason": "MOAT adds no fork CI (CPU-only CI cannot observe GPU correctness) and leaves upstream CI untouched."
+    },
+    {
+      "id": "vendored:nvidia-eula-helpers",
+      "reason": "Removed per jeff's ruling 4 / counsel ruling (deferred h2o4gpu-nvidia-proprietary-rescan, done): the 12 EULA-notice files plus p2pbwcheck.cu are deleted in 3c713ae, the first moat-port commit; nothing called bwcheck()/p2pbwcheck(). Nothing left to port."
+    },
+    {
+      "id": "interface:r",
+      "reason": "No native or CUDA code: a reticulate wrapper over the Python package, so it inherits the port with nothing to change. Not separately exercised (no R toolchain in the validation set)."
+    },
+    {
+      "id": "platform:windows",
+      "reason": "Not a cut: jeff's ruling 3 sequences Windows last, after wave64 and wave32 pass at the same head, and the windows-gfx1151 host decides whether it lands as one final commit or is reported as too cumbersome. This Linux porter round cannot build or validate it; the windows gate stays owed until then."
     }
   ],
   "removed_from_floor": [
