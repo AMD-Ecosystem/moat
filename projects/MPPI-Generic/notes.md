@@ -1181,3 +1181,58 @@ Second review of the host min/max round: bee3eb6 and 70d2b68 together against 11
 - Commits: bee3eb6 title 67 chars and 70d2b68 title 66 chars, both `[ROCm]`, ASCII, Test Plan in a fenced block, AI disclosure in prose, no trailer. `python3 utils/jargon.py --port MPPI-Generic`: clean. `utils/prose.py` on both bodies: clean.
 - Commit text, for any PR-prep squash (not blocking; no amend allowed): taken alone, bee3eb6's "The CUDA results are unchanged ... Device code ... untouched" was false for the CUDA device path of computeStateDeriv; 70d2b68 corrects it and describes why. A squashed message should keep 70d2b68's facts, i.e. say the host-and-device lines use `fmax(0.0, static_cast<double>(...))`.
 - CUDA: the nvcc check of 70d2b68 is still owed on the nvcc host (the first reviewer compiled the static_cast form clean on nvcc 12.8 in a 7-line reproducer only).
+## CUDA compile check (nvcc 12.8) at 70d2b68
+
+Compile-only CUDA gate for 70d2b68 (`[ROCm] Cast the throttle command to double in RacerSuspension fmax`), the porter fix for the bee3eb6 finding. Compared against its parent bee3eb6 and against 11b61ab (the parent of the whole min/max change). Host: no NVIDIA GPU, nvcc 12.8.93 (`/usr/local/cuda-12.8`), gcc 13.3.0, CMake 3.31.6, Ninja, Eigen 3.4.0 from `/usr/include/eigen3`. Fresh recursive clone of fork `moat-port` (70d2b68); bee3eb6 and 11b61ab via `git worktree add --detach ../bee HEAD~1` / `../base HEAD~2` plus `git submodule update --init --recursive`; cnpy 91c53bc at all three.
+
+**Result: PASS. 70d2b68 removes the bee3eb6 regression: every changed-file TU has exactly the warnings of 11b61ab, no warning from racer_suspension.cu, and the `runGPUDynamics<RacerSuspension>` kernel PTX is identical to 11b61ab's. No new warning at the head.**
+
+### Build (recipe of the bee3eb6 entry: yaml-cpp stub `set(yaml-cpp_FOUND TRUE)`, nothing compiled links or includes yaml-cpp)
+```
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON \
+  -DMPPI_CUDA_ARCH_LIST="70;80" -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
+  -Dyaml-cpp_DIR=<stub dir> -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+utils/timeit.sh MPPI-Generic cuda-compile -- cmake --build <abs>/build -j 40 -- -k 0 -v
+```
+| | 70d2b68 (head) | bee3eb6 (parent) | 11b61ab |
+|---|---|---|---|
+| configure rc | 0 ("CUDA Architecture(s): 70;80") | 0 | 0 |
+| build rc | 0, 181/181, 156 s | 0, 181/181, 156 s | 0, 181/181, 154 s |
+| nvcc TUs | 58 | 58 | 58 |
+| built files (executables + .so/.a under build/, depth 3) | 65 | 65, identical list | 65, identical list |
+| nvcc errors | 0 | 0 | 0 |
+| diagnostics in build log | 58x `Support for offline compilation for architectures prior to sm_75` (sm_70), nothing else | identical | identical |
+
+(The bee3eb6 entry's "61 targets" counted executables + .so only; this count includes the gtest/gmock `.a` files.)
+
+### Per-TU warnings without `-w`
+Upstream's `CMAKE_CUDA_FLAGS` has `-w`, so each TU depending on a changed file was recompiled from `compile_commands.json` with `-w` removed and `-Xcompiler=-Wall,-Wuninitialized -Wno-deprecated-gpu-targets` added. `ninja -t deps` over the 7 changed files gives the same 8 test TUs as at bee3eb6 (no library or example TU). Count = lines matching `warning[ :#]` (case-sensitive, so it skips the capitalised `Warning #20015-D` Eigen lines below; the bee3eb6 entry used a slightly different count, its numbers are each 2 higher, the deltas match).
+
+| TU | head | bee3eb6 | 11b61ab | rc |
+|---|---|---|---|---|
+| autorally_robust_cost_test.cu | 16 | 16 | 16 | 0/0/0 |
+| autorally_standard_cost_test.cu | 10 | 10 | 10 | 0/0/0 |
+| bicycle_slip_parametric_model_test.cu | 34 | 34 | 34 | 0/0/0 |
+| racer_dubins_elevation_lstm_steering_model_test.cu | 36 | 36 | 36 | 0/0/0 |
+| racer_dubins_elevation_lstm_uncertainty_model_test.cu | 27 | 27 | 27 | 0/0/0 |
+| racer_dubins_elevation_model_test.cu | 15 | 15 | 15 | 0/0/0 |
+| racer_dubins_elevation_suspension_test.cu | 36 | 36 | 36 | 0/0/0 |
+| racer_suspension_model_test.cu | **7** | **15** | **7** | 0/0/0 |
+
+- Head vs 11b61ab: the sorted warning texts (paths stripped, line numbers normalised) are identical for all 8 TUs.
+- bee3eb6's extra 8 are again `racer_suspension.cu(110)`/`(111)`: `#20011-D` (`calling a __host__ function("__gnu_cxx::__promote_2<...>` i.e. `std::fmax<double, float>`) and `#20014-D`, once per arch pass. Zero lines mentioning `racer_suspension.cu(` at the head. (The reviewer's standalone repro reported this as #20013/#20015; inside the project TU nvcc numbers it #20011/#20014. Same diagnostic, both gone at 70d2b68.)
+- 56 `Warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function` lines in racer_suspension_model_test.cu at all three shas come from Eigen's `complex_multiply`/`complex_divide` in `/usr/include/eigen3`, not from project code; unchanged.
+- Remaining head warnings in racer_suspension_model_test.cu are pre-existing upstream host diagnostics (`#pragma unroll` ignored in math_utils.h/matrix_mult_utils.cuh, signed/unsigned compares in texture_helper.cu), same as 11b61ab.
+
+### Device code (PTX)
+Same compile command for racer_suspension_model_test.cu with the `--generate-code` flags dropped, `-c` -> `-ptx`, `-arch=sm_80`; measured the `.entry _Z14runGPUDynamicsI15RacerSuspensionLi10ELi2ELi8ELi1EEvPT_if` body:
+
+| | body lines | ld.global | max.f32 | max.f64 |
+|---|---|---|---|---|
+| 11b61ab | 3956 | 88 | 15 | 4 |
+| bee3eb6 | 374 | 17 | 5 | 0 |
+| 70d2b68 | 3956 | 88 | 15 | 4 |
+
+The 70d2b68 kernel body is byte-identical to 11b61ab's (`diff` of the extracted entry: 0 lines). The whole PTX files differ only in the per-TU hash of one `_INTERNAL_..._piecewise_construct` symbol name, because the test file itself changed (added FractionalThrottleBrake). So the CUDA device path of `RacerSuspension::computeStateDeriv` is back to upstream's: `fmax(0.0, static_cast<double>(float))` compiles to the same code as CUDA's `max(double, float)`.
+
+No fork source edited (`git status --porcelain --untracked-files=no` empty in all three trees), nothing pushed. Platform states were not changed by this check.
