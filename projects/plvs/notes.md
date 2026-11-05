@@ -2980,3 +2980,164 @@ windows-gfx1151: `port-ready`/`validation-failed` -> `completed` at fde33e5: GPU
 ## Validation 2026-11-04 (windows-gfx1151): validation-failed at fde33e5 (ruling by jeff)
 
 jeff overturned the `completed` recorded above: stereo_tum_vi example does not build on Windows; TUM-VI stereo crashes 5/5 (deferral plvs-windows-stereo-slam-crash). Both are to be fixed and the crash root-caused before windows-gfx1151 completes. A porter round on windows-gfx1151 follows.
+
+## Port round 2026-11-05 (windows-gfx1151, porter): Windows stereo crash root-caused (three upstream CPU bugs, two of them heap over-reads), TUM-VI examples build. Head 970cb1f
+
+Requested by jeff after overturning the windows-gfx1151 `completed` at fde33e5 (recorded `validation-failed` at fde33e5 first, then took the lock). Host: Radeon 8060S (gfx1151), TheRock SDK 7.14.60850 (clang 23), the 2026-11-04 Windows recipe unchanged. Every SLAM process ran under `ulimit -c 0`, `OMP_NUM_THREADS=4`, one at a time. Scripts in `agent_space/plvs_win/` of the wt-plvs worktree: `dloop.sh` (run loop), `cdbrun.sh` (run under cdb), `ate_tumvi.py` (Sim3 ATE vs `mocap0/data.csv`).
+
+### Commits (on top of fde33e5, pushed as a fast-forward, fde33e5..970cb1f)
+- 441cb76 `[ROCm] Build the TUM-VI examples on Windows`: `Examples/Stereo/stereo_tum_vi.cc` and `Examples/Monocular/mono_tum_vi.cc` (the only two examples that include `<unistd.h>` directly) include the existing `include/PosixCompat.h` (from 3b5d2e5) instead. Both targets build on Windows. Not HIP-specific; separable.
+- a93e73d `[ROCm] Size fisheye stereo depth arrays to all keypoints`: `src/Frame.cc` +4/-2, the main Windows crash (bug 1 below).
+- 61e9640 `[ROCm] Pass per-point keyframes to loop-closure projection search`: `src/LoopClosing.cc` +7/-12 (bug 2).
+- 970cb1f `[ROCm] Count a right-camera line observation once`: `src/MapLine.cc` +2/-1, the Linux-root-caused MapLine fix (bug 3). jeff's instruction was to carry it only if it is also a Windows root cause. It is: once bugs 1 and 2 were fixed, it caused a Windows crash (h5 below) with exactly the Linux path-B signature, so it is carried as its own commit. If jeff disagrees, a new commit reverts it cleanly.
+- None of the four is HIP-specific, and each is a separate commit so it can be split out. The `[ROCm]` prefix is what the commit gate requires (`moatlib.commit_message_problems`: every title must start with `[ROCm]`). All four pass that gate and `jargon.py --port plvs`. The gate still flags 5 older commits (a75da87, 7719623, 1654d89, 3b5d2e5, 3cbfef4: "Test Plan has no fenced command block"); jeff's 2026-11-04 ruling sends those to the PR-prep squash.
+- Fork clone note: `agent_space/wt-plvs/projects/plvs/src` was on a detached HEAD at fde33e5 (the validator's checkout) with local `moat-port` at e0dcda3. The first push therefore failed as non-fast-forward. Local `moat-port` was fast-forwarded to the new commits and then pushed. No history was rewritten.
+
+### Root cause: three upstream CPU bugs; the first one alone crashes every Windows run
+Diagnosis setup: CPU-only Windows build with `-g -gcodeview` + `-Xlinker /DEBUG` (`build-win-cpudbg`: `USE_HIP=OFF WITH_LIBELAS=OFF WITH_LIBSGM=OFF WITH_FASTFUSION=OFF`), run under `cdb` (extracted from the WinDbg msixbundle into `agent_space/tools/windbg`, no install; `cdbrun.sh`). For HIP Release traces, the code at the crash offset was compared statically (`cdb -z <exe>`, `u <addr>`) between the HIP exe and the debug CPU exe. Both use the same optimization flags and the bytes were identical, so the debug PDB gives the line. WER LocalDumps is configured on this host but wrote no dump for these processes.
+
+**Bug 1 (every run): fisheye `mvuRight`/`mvDepth` too short.** `Frame::ComputeStereoFishEyeMatches` (`src/Frame.cc:2992-2993` on upstream master 2ecb8b1) allocates `mvuRight` and `mvDepth` with `Nleft` entries. A fisheye stereo frame indexes keypoints over both images, `N = Nleft + Nright` (`src/Frame.cc:2911`), and the early return for a frame without descriptors leaves both vectors empty. Every per-keypoint read with a right-image index therefore overruns: `LocalMapping::CreateNewMapFeatures` `mvuRight[idx1]`/`[idx2]` (`src/LocalMapping.cc:709`, `:718`), `KeyFrameCulling` `mvDepth[i]` (`:1923`), and others. This is verbatim ORB-SLAM3 (UZ-SLAMLab/ORB_SLAM3 4452a3c `Frame.cc:1136-1137`, `LocalMapping.cc:491`, `:961`; fetched and checked). Symbolized fault (unfixed debug CPU build under cdb):
+
+```
+stereo_tum_vi!PLVS2::LocalMapping::CreateNewMapFeatures+0x1787  [src\LocalMapping.cc @ 709]
+stereo_tum_vi!PLVS2::LocalMapping::Run+0x198                    [src\LocalMapping.cc @ 141]
+movss xmm0,dword ptr [r8+rsi*4]   r8=0000027a`862adec0 (mvuRight data) rsi=0x46e (idx1=1134)  -> 0000027a`862af078 = ????????
+```
+
+The read lands 4.5 KB past the start of the buffer, in an unmapped page. The validator's HIP Release traces at `CreateNewMapFeatures+0x1787` (4 of its 7) are the same instruction. Its `KeyFrameCulling+0x347` trace fits `mvDepth[i]` at `:1923`, though it was not separately symbolized. Fix (a93e73d): allocate both vectors with `N` entries of -1, before the early return. Right-image entries then read as "no depth", which every reader already handles.
+
+**Bug 2 (2 of 10 runs once bug 1 was fixed): loop-closure keyframe vector not parallel to the points.** `LoopClosing::DetectCommonRegionsFromBoW` (`src/LoopClosing.cc:846-899`, marked "Luigi's change", from upstream 340374e) replaced the per-point `vpKeyFrames.push_back(pCovKFi)` with a deduplicated set of keyframes. `ORBmatcher::SearchByProjection` (Sim3 overload) still reads `vpPointsKFs[iMP]` in parallel with `vpPoints` (`src/ORBmatcher.cc:640`), and `LineMatcher::SearchByProjection` does the same with `vpLinesKFs[iMP]` (`src/LineMatcher.cc:1947`). Every feature past the number of keyframes therefore reads beyond the vector. The crash at `ORBmatcher::SearchByProjection+0x3D1` is the load `mov r12,[rcx+rax*8]` of `vpPointsKFs[iMP]` (`rcx` = `vpPointsKFs.data()`); the validator's s_run2 trace has the same offset. The bug is plvs-only: ORB-SLAM3 pushes one keyframe per point. The matched-keyframe outputs (`vpMatchedKF`, `vpMatchedLinesKF`) are never read afterwards. So the fix (61e9640: per-feature keyframe vectors parallel to `vpMapPoints`/`vpMapLines`, with the now-unused set removed) changes only the overread.
+
+**Bug 3 (1 of 10 runs once bug 1 was fixed): the MapLine `nObs` drift from the Linux investigation.** h5 crashed in `LocalMapping::SearchInNeighbors -> MapLine::UpdateNormalAndDepth -> KeyFrame::GetCameraCenter` (mutex lock on a bad pointer). That is path B of "MapLine null KeyFrame root cause 2026-11-04". On MSVC the zombie's `mpRefKF` is garbage, not null: `_Tree_val::_Buyheadnode` (MSVC 14.44 `<xtree>:343-352`) constructs only the head node's links, colour and `_Isnil`, so `mObservations.begin()->first` on an empty map reads uninitialized heap. Fix (970cb1f) = the Linux-verified 2-line change.
+
+Why only Windows: on Linux, bugs 1 and 2 usually read other mapped glibc heap memory and return garbage silently. For bug 1 that garbage feeds tests that `mpCamera2` already makes irrelevant at `:709`, but at `:1923` it decides whether a right-image observation counts toward keyframe culling. The Windows heap commits pages on demand, so the same reads reach unmapped pages. The symbolized faults ruled out the Windows-specific causes considered: thread stack size (the e0dcda3 8 MB `/STACK` covers `std::thread` workers, and these faults are access violations, not `0xC00000FD`), LLP64, `RAND_MAX`, and struct packing. The crash also happened with `Line.on: 0` (validator nl_run1), which fits bug 1 being in point code.
+
+### Regression check
+One plvs process at a time, `OMP_NUM_THREADS=4`, `ulimit -c 0`. The GPU runs use the HIP build (USE_HIP, gfx1151) with the validator's failing config `TUM-VI_pcm.yaml` (the tracked `Examples/Stereo/TUM-VI.yaml` plus `PointCloudMapping.on: 1`, libelas on the GPU). ATE is the Sim3-aligned position RMSE against `mocap0/data.csv` (`ate_tumvi.py`), with 2773 of 2821 poses matched.
+
+| build | runs | clean | crashes (signature) |
+|---|---|---|---|
+| fde33e5 unfixed (validator: 5 PCM-on, 1 PCM-off, 1 lines-off HIP, 3 CPU-only; this round: 2 debug CPU, 1 under cdb) | 13 | 0 | 13 (bug 1 at `:709` in every symbolized case; the validator also saw `KeyFrameCulling` and `SearchByProjection`) |
+| + bug 1 fix only, HIP (h1-h10) | 10 | 7 | h5 bug 3; h7 and h10 bug 2 (`SearchByProjection+0x3D1`) |
+| + bug 1 fix only, debug CPU under cdb (f1, f3; I cut f2 short and discarded it) | 2 | 2 | 0 |
+| + all three fixes = committed 970cb1f, HIP (a1-a10, consecutive) | 10 | **10** | **0** |
+
+- All-fixes runs: every run finished all 2821 frames with rc 0 and one map of 68-98 KFs. ATE 0.0725-0.0818 m (a1 0.0729, a2 0.0725, a3 0.0748, a4 0.0725, a5 0.0738, a6 0.0818, a7 0.0750, a8 0.0726, a9 0.0767, a10 0.0731). No `hipError`, `-217` or `terminate` lines. The clean bug-1-only runs gave 0.0721-0.0813 m; Linux records 0.070-0.073 m (PCM off).
+- Mono TUM RGB-D fr1_xyz with the all-fixes build (`mono_tum_hipall.exe` = 970cb1f content, viewer on): rc 0, 0 lost/reset, 44 KFs, ATE 0.85 cm (max 1.87), median track 46 ms. The recorded range is 0.85-1.00 cm.
+- The tested tree is the committed one: `git diff | md5sum` of the working tree at build time was `31b748b0...`, the same hash as just before the three commits.
+- Process slip, recorded for honesty: I killed `cdb.exe` to stop the debugger loop. That ended iteration f2, but the loop then started f3, a debug-CPU run (clean, 112 KFs) that overlapped HIP runs h1-h8, so two plvs processes ran at once for about 30 minutes. The host was unaffected. The rest of the round, including all a-runs, ran strictly one process at a time (the chain waited on `tasklist`).
+
+### Not done here
+- CUDA no-regression compile at 970cb1f (mi355 / nvcc). It is required before this goes to jeff. The delta is host C++ only (`Frame.cc`, `LoopClosing.cc`, `MapLine.cc`, two examples), with no `.cu` file and no build change.
+- Linux revalidation. The head moved, so linux-gfx90a and linux-gfx1100 now read `revalidate`. I expect the Linux TUM-VI MapLine crash rate (about 3 percent) to go to 0, as it did in the Linux fixed-build runs (0/140), and bugs 1 and 2 to stop reading garbage. AddressSanitizer on the unfixed Linux tree should show bugs 1 and 2; not tried.
+- Lesson promoted to `.claude/skills/cuda-to-rocm/references/validation.md` ("Windows: a CPU crash that Linux never shows is often a heap over-read", with the no-install cdb recipe).
+- The `plvs-upstream-stereo-mapping-crashes` deferral (undecided) lists the MapLine crash as its item (1); 970cb1f now fixes that item on `moat-port`. Item (2), the PointCloudMapping octree use-after-free, was not seen in these runs and is not addressed. Its status is left to jeff.
+
+### Upstream issue drafts (for jeff to file; not filed)
+Two new issues: A (bug 1) and B (bug 2). Bug 3 already has its draft in "MapLine null KeyFrame root cause 2026-11-04" above, and it now also has the Windows evidence (h5) and the MSVC garbage-pointer note. Target for A and B: https://github.com/luigifreda/plvs/issues. ORB-SLAM3 has the same bug; whether to also tell UZ-SLAMLab is jeff's call. Checked with `utils/jargon.py` and `utils/prose.py`.
+
+====
+Issue A
+
+**Title:** Out-of-bounds read of mvuRight/mvDepth with stereo fisheye cameras (crashes on Windows)
+
+### Symptom
+
+With a stereo fisheye rig (`Examples/Stereo/stereo_tum_vi` with `Examples/Stereo/TUM-VI.yaml`, TUM-VI `dataset-room1_512_16`), the Windows build crashes with an access violation on the LocalMapping thread in every run, usually within the first 30 to 130 keyframes. The same happens in a CPU-only build. On Linux the same reads are out of bounds but usually do not fault.
+
+```
+PLVS2::LocalMapping::CreateNewMapFeatures   src/LocalMapping.cc:709
+PLVS2::LocalMapping::Run                    src/LocalMapping.cc:141
+movss xmm0,dword ptr [r8+rsi*4]   (r8 = mvuRight.data(), rsi = idx1 = 1134; the address is unmapped)
+```
+
+### Root cause
+
+For a fisheye stereo frame, keypoints of both images share one index space, `N = Nleft + Nright` (src/Frame.cc:2911). `Frame::ComputeStereoFishEyeMatches` allocates `mvDepth` and `mvuRight` with only `Nleft` entries (src/Frame.cc:2992-2993), and leaves them empty when it returns early for a frame without descriptors. Code that walks all keypoint indices then reads past the end whenever an index belongs to the right image, for example `mvuRight[idx1]` and `mvuRight[idx2]` in `LocalMapping::CreateNewMapFeatures` (src/LocalMapping.cc:709 and :718) and `mvDepth[i]` in `LocalMapping::KeyFrameCulling` (src/LocalMapping.cc:1923). On Linux the read usually lands in other heap memory and returns garbage; on Windows it reaches an unmapped page. The same allocation is in ORB-SLAM3 (src/Frame.cc:1136-1137 at 4452a3c).
+
+### Reproduction
+
+1. Build master on Windows (CPU-only is enough: `-DWITH_CUDA=OFF -DWITH_LIBELAS=OFF -DWITH_LIBSGM=OFF`).
+2. Download https://cdn3.vision.in.tum.de/tumvi/exported/euroc/512_16/dataset-room1_512_16.tar and extract it.
+3. Run:
+
+```
+stereo_tum_vi Vocabulary/ORBvoc.txt Examples/Stereo/TUM-VI.yaml dataset-room1_512_16/mav0/cam0/data dataset-room1_512_16/mav0/cam1/data Examples/Stereo/TUM_TimeStamps/dataset-room1_512.txt room1
+```
+
+### Proposed fix
+
+```diff
+--- a/src/Frame.cc
++++ b/src/Frame.cc
+@@ void Frame::ComputeStereoFishEyeMatches()
++    mvDepth = vector<float>(N,-1.0f);
++    mvuRight = vector<float>(N,-1);
++
+     if(mDescriptors.rows == 0 || mDescriptorsRight.rows == 0)
+     {
+@@
+     mvRightToLeftMatch = vector<int>(Nright,-1);
+-    mvDepth = vector<float>(Nleft,-1.0f);
+-    mvuRight = vector<float>(Nleft,-1);
+```
+
+Right-image entries stay -1, which every reader already treats as "no stereo depth". Before this change, 13 of 13 Windows runs crashed. With it, no run faulted at these reads. With it plus fixes for two other, rarer crashes in the same runs (a keyframe vector in LoopClosing::DetectCommonRegionsFromBoW and the MapLine observation count, reported separately), 10 of 10 consecutive runs finished the sequence, with a Sim3 ATE against the mocap ground truth of 0.073-0.082 m.
+====
+
+Issue B
+
+====
+**Title:** LoopClosing passes a per-keyframe vector where SearchByProjection expects one keyframe per point
+
+### Symptom
+
+During loop detection with the TUM-VI stereo example, the LoopClosing thread intermittently crashes with an access violation on Windows (2 of 10 runs, once an unrelated fisheye depth-array overrun is fixed):
+
+```
+PLVS2::ORBmatcher::SearchByProjection(KeyFrame*&, Sim3&, const vector<MapPoint*>&, const vector<KeyFrame*>&, ...)   src/ORBmatcher.cc:640
+PLVS2::LoopClosing::DetectCommonRegionsFromBoW
+PLVS2::LoopClosing::NewDetectCommonRegions
+PLVS2::LoopClosing::Run
+```
+
+The faulting instruction is the load of `vpPointsKFs[iMP]`.
+
+### Root cause
+
+`LoopClosing::DetectCommonRegionsFromBoW` collects `vpMapPoints` and `vpMapLines` from the covisible keyframes. It now builds `vpKeyFrames` from a set of the distinct keyframes (src/LoopClosing.cc:847-899, the commented-out `vpKeyFrames.push_back(pCovKFi)` lines). Both `ORBmatcher::SearchByProjection` and `LineMatcher::SearchByProjection` still index that vector in parallel with the feature vector, `vpPointsKFs[iMP]` (src/ORBmatcher.cc:640) and `vpLinesKFs[iMP]` (src/LineMatcher.cc:1947). As a result, every feature past the number of keyframes reads beyond the end of `vpKeyFrames`. On Linux this usually returns garbage that only ends up in `vpMatchedKF` / `vpMatchedLinesKF`, which are not read afterwards. On Windows the read can reach an unmapped page.
+
+### Reproduction
+
+Run `Examples/Stereo/stereo_tum_vi` with `Examples/Stereo/TUM-VI.yaml` on TUM-VI `dataset-room1_512_16` several times on Windows. The crash needs loop detection to reach the Sim3 projection step, so it does not happen in every run.
+
+### Proposed fix
+
+Keep one keyframe per feature, parallel to each feature vector:
+
+```diff
+-                vector<KeyFramePtr> vpKeyFrames;
+-                unordered_set<KeyFramePtr> spKeyFrames;
++                vector<KeyFramePtr> vpMapPointKFs; // parallel to vpMapPoints
++                vector<KeyFramePtr> vpMapLineKFs;  // parallel to vpMapLines
+ ...
+                             vpMapPoints.push_back(pCovMPij);
+-                            spKeyFrames.insert(pCovKFi);
++                            vpMapPointKFs.push_back(pCovKFi);
+ ...
+                                 vpMapLines.push_back(pCovMLij);
+-                                spKeyFrames.insert(pCovKFi);
++                                vpMapLineKFs.push_back(pCovKFi);
+ ...
+-                                spKeyFrames.insert(pCovKFi);
+ ...
+-                vpKeyFrames = vector<KeyFramePtr>(spKeyFrames.begin(),spKeyFrames.end());
+ ...
+-matcher.SearchByProjection(mpCurrentKF, mScw, vpMapPoints, vpKeyFrames, vpMatchedMP, vpMatchedKF, 8, 1.5);
++matcher.SearchByProjection(mpCurrentKF, mScw, vpMapPoints, vpMapPointKFs, vpMatchedMP, vpMatchedKF, 8, 1.5);
+-pLineMatcher->SearchByProjection(mpCurrentKF, mScw, vpMapLines, vpKeyFrames, vpMatchedML, vpMatchedLinesKF, 8, 1.5);
++pLineMatcher->SearchByProjection(mpCurrentKF, mScw, vpMapLines, vpMapLineKFs, vpMatchedML, vpMatchedLinesKF, 8, 1.5);
+```
+
+With this fix plus fixes for the fisheye depth arrays and the MapLine observation count, 10 of 10 consecutive Windows runs finished the sequence.
+====
