@@ -39,7 +39,7 @@
       "refs": [
         "projects/cuda_voxelizer/notes.md Review 2026-11-04 (third review)"
       ],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-11-04T09:58:35Z",
       "decided": {
@@ -75,10 +75,15 @@
       "refs": [
         "projects/cuda_voxelizer/notes.md Review 2026-11-05 (fourth review)"
       ],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-11-05T08:34:55Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-05T19:25:12Z",
+        "note": "V100 run at 5a9b7cf done (notes 'NVIDIA run 2026-11-05'): 64/256 exact, 512 small residual on CUDA too; PR body states the residual is cross-vendor"
+      }
     }
   ]
 }
