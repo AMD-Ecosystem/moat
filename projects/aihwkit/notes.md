@@ -1177,3 +1177,52 @@ review defects: CUDA nvcc compile at ea1185e; `upstream.py --drift --apply`
 for the fork's master mirror before `--fix-review`.
 
 Verdict: review-passed.
+
+## CUDA compile check 2026-11-04 (sync tip ea1185e)
+
+Scope: compile and link only, Linux host without an NVIDIA GPU; nothing runs.
+No role taken, no state changed. Repeats the 2026-11-04 eb4d017 gate (same
+recipe, same toolchain) at the sync round tip ea1185e (moat-sync-60ffe9e),
+with upstream 14d4783 (the commit ea1185e merges) built the same way as a
+control. Fork cloned fresh; ea1185e checked out detached, 14d4783 in a
+detached worktree (upstream IBM/aihwkit fetched as a second remote). Nothing
+pushed.
+
+Toolchain: nvcc V12.8.93 (/usr/local/cuda-12.8, CUB 2.7.0), GCC 13.3.0,
+cmake 3.31.6, Ninja, Python 3.11.17 in a job-private venv with
+`torch==2.11.0+cu128`, pybind11 3.0.1, numpy 1.26.4; apt `libopenblas-dev`
+0.3.26. Command: the cmake configure + `cmake --build -j64` block of the
+eb4d017 gate, unchanged (incl. `-DPython_EXECUTABLE`; "Found Torch:" points at
+the venv's CUDA wheel in both builds).
+
+| | ea1185e (port) | 14d4783 (upstream control) |
+|---|---|---|
+| configure | clean | one CMake warning: `USE_HIP` unused (expected, upstream has no such option) |
+| build | 79/79, exit 0, 429 s | 79/79, exit 0, 422 s |
+| compiler warnings / errors | 0 / 0 | 0 / 0 |
+| CUDA objects (.cu.o) | 37 | 37 |
+| RPU_CUDA_ARCHITECTURES | 75;80;89;120 | 75;80;89;120 |
+| bit_line_maker.cu.o ELF | sm_75 sm_80 sm_89 sm_120 | same |
+| rpu_base .so | 267217912 bytes | 267217912 bytes |
+| exported dynamic symbols | 15483 | 15483 |
+
+The two .so files differ byte-wise only where expected: the exported symbol
+lists differ solely in nvcc's per-path anonymous-namespace and fatbin/link
+hashes (`_GLOBAL__N__<hash>_..._cu_<hash>`, `__fatbinwrap_*`,
+`__cudaRegisterLinkedBinary_*`); after normalizing those hashes the two
+symbol lists are identical (diff empty). The .so grew from 198 MB at eb4d017
+to 267 MB at both commits because upstream's RPU_CUDA_ARCHITECTURES gained
+sm_120, not because of the port.
+
+Difference between port and control: none on the CUDA path beyond the
+expected unused-`USE_HIP` configure warning on the control. The port's
+CUDA-path-visible edits at ea1185e (CMakeLists.txt, cuda_util.h,
+pwu_kernel_parameter_base.h, rpu_cub.h `#if defined(USE_HIP)` nesting,
+rpu_base_tiles_cuda.cpp) compile warning-free with nvcc and produce the same
+exported interface as upstream.
+
+Fork tree: tracked files unmodified at both commits (only untracked build
+dirs, deleted afterwards along with the clone and the venv's torch).
+
+Verdict: CUDA gate PASS (compile and link) at ea1185e. This closes the "CUDA
+nvcc compile at ea1185e" open item from the porter and reviewer entries.
