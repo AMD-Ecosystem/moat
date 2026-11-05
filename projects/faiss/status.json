@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-05-31T16:36:35Z",
-  "updated_at": "2026-11-05T01:14:23Z",
+  "updated_at": "2026-11-05T01:26:20Z",
   "head_sha": "708a879bc438e4683689839daedcadd76496e9ca",
   "depends_on": [],
   "waivers": {},
@@ -60,6 +60,29 @@
       },
       "last_agent": "validator"
     },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "708a879bc438e4683689839daedcadd76496e9ca",
+      "started_at": "2026-05-31T23:40:43Z",
+      "completed_at": "2026-11-05T01:14:23Z",
+      "updated_at": "2026-11-05T01:14:23Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
@@ -106,37 +129,14 @@
       },
       "last_agent": "validator"
     },
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "708a879bc438e4683689839daedcadd76496e9ca",
-      "started_at": "2026-05-31T23:40:43Z",
-      "completed_at": "2026-11-05T01:14:23Z",
-      "updated_at": "2026-11-05T01:14:23Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
-    },
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
+      "validated_sha": "708a879bc438e4683689839daedcadd76496e9ca",
       "failed_sha": null,
       "started_at": "2026-11-04T23:52:12Z",
-      "completed_at": null,
-      "updated_at": "2026-11-05T00:42:36Z",
+      "completed_at": "2026-11-05T01:26:20Z",
+      "updated_at": "2026-11-05T01:26:20Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -150,7 +150,8 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer"
+      "last_agent": "reviewer",
+      "state": "completed"
     }
   },
   "porting_released": {
@@ -158,6 +159,5 @@
     "since": "2026-11-05T00:36:08Z",
     "at": "2026-11-05T00:42:36Z"
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/faiss/pull/1",
-  "porting": null
+  "review_pr": "https://github.com/AMD-Ecosystem/faiss/pull/1"
 }

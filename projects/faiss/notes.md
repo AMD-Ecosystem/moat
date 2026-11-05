@@ -1788,3 +1788,77 @@ Install-and-consume: installed tree has `include/faiss/impl/InvertedListScannerS
 CUDA gate: cuda-not-validated on this host. No nvcc here and no conda; the `nvidia-cuda-nvcc-cu12==12.8.*` pip wheel ships `ptxas` and headers but no `nvcc` binary, so that route does not work. The real-nvcc compile on the mi355 host is still owed before the port goes to jeff (porter and reviewer record the same).
 
 Pre-completion checks: `jargon.py --port faiss` clean (needed a local `main` branch in the fresh clone first: `git -C projects/faiss/src branch main origin/main`), `audit-commits` OK, `audit-clean` OK. Hipify artifacts restored with `git checkout -- faiss/ c_api/`; 0 modified tracked files. INSTALL.md already documents `-DFAISS_ENABLE_ROCM=ON` next to the CUDA build; the round changed no build procedure.
+## Validation 2026-11-05 (validator, linux-gfx1201) -> completed
+
+Device: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32), HIP_VISIBLE_DEVICES=1, all GPU runs
+under `ulimit -c 0`. SDK: TheRock pip ROCm 10.1.0 (`/opt/python-3.11-venv`, `SDK=$(rocm-sdk path
+--root)`). Platform was `port-ready` at `head_sha=708a879bc438e4683689839daedcadd76496e9ca`
+(first validator record for linux-gfx1201). Full run, no carry-forward.
+
+Fresh clone of `AMD-Ecosystem/faiss` `moat-port`, `HEAD == 708a879bc`, tree clean;
+`pr-state faiss` -> `none`; `protect-fork` installed. gflags v2.2.2 built from source into the
+job dir (`cmake -G Ninja -DBUILD_SHARED_LIBS=ON -DCMAKE_INSTALL_PREFIX=<job>/deps/gflags`);
+note its install also registers the build in the user package registry
+(`~/.cmake/packages/gflags/`), removed afterwards so other jobs do not pick it up.
+
+Build (porter round recipe above, 10.1 row):
+```
+export ROCM_PATH=$SDK PATH=$SDK/bin:$SDK/libexec/hipify:$PATH
+cmake -S projects/faiss/src -B projects/faiss/src/build -G Ninja \
+  -DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_ROCM=ON -DFAISS_ENABLE_CUVS=OFF \
+  -DFAISS_ENABLE_PYTHON=OFF -DFAISS_ENABLE_C_API=ON -DFAISS_ENABLE_EXTRAS=OFF \
+  -DBUILD_TESTING=ON -DBUILD_SHARED_LIBS=ON \
+  -DFAISS_OPT_LEVEL=generic -DFAISS_ENABLE_MKL=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1201 \
+  -DCMAKE_C_COMPILER=$SDK/bin/amdclang -DCMAKE_CXX_COMPILER=$SDK/bin/amdclang++ \
+  -DCMAKE_HIP_COMPILER=$SDK/lib/llvm/bin/clang++ \
+  "-DCMAKE_PREFIX_PATH=$SDK;<job>/deps/gflags" \
+  -DBLAS_LIBRARIES=$SDK/lib/host-math/lib/librocm-openblas.so \
+  -DLAPACK_LIBRARIES=$SDK/lib/host-math/lib/librocm-openblas.so \
+  -DCMAKE_INSTALL_PREFIX=<job>/deps/faiss-install
+ninja -C projects/faiss/src/build -j24
+```
+- Configure 0 errors (hipify.sh ran; hipified Float16.cuh keeps `hip/hip_bf16.h` + `hip/hip_fp16.h`
+  in the `#if defined(USE_AMD_ROCM)` branch, CUDA `#else` empty -- the intended 10.1 output).
+- Build 446/446, 0 errors. Warnings only pre-existing classes: 572 `-Wignored-pragmas`
+  (float_control, per TU), 56 `-Wunused-value`, 38 `-Wpass-failed`, 4 deprecated, 2 misc.
+- `llvm-objdump --offloading build/faiss/libfaiss.so`: 168 `amdgcn-amd-amdhsa--gfx1201` code
+  objects, no other arch. No `-DCMAKE_HIP_FLAGS=-include` workaround, no hand-copied header.
+
+Tests:
+```
+OPENBLAS_NUM_THREADS=1 ctest --test-dir projects/faiss/src/build -j1 -R "TestGpu|TestCodePacking" --output-on-failure
+  -> 100% tests passed, 0 tests failed out of 108 (427.87 s)
+projects/faiss/src/build/faiss/gpu/test/TestGpuIcmEncoder
+  -> [  PASSED  ] 7 tests (7533 ms)
+ctest --test-dir projects/faiss/src/build -j8 -E "TestGpu|TestCodePacking"
+  -> 100% tests passed, 0 tests failed out of 266 (208.31 s); 3 self-skipped:
+     ScalarQuantizer.TQMSESimdDispatchSelection, ScalarQuantizer.TQMSESimdDistancePathParity,
+     SIMDConfig.modern_hardware_has_simd_support (FAISS_OPT_LEVEL=generic; same 3 as porter round)
+```
+115/115 GPU tests + 266/266 non-GPU, identical to the porter's 10.1 and 7.14 runs at this head.
+
+Install-and-consume: `cmake --install build` -> `include/faiss/impl/InvertedListScannerStats.h`
+present; package config at `share/faiss/faiss-config.cmake`. Consumer is a separate CMake project
+(`project(... LANGUAGES CXX HIP)`, `find_package(faiss REQUIRED)`,
+`target_compile_definitions(consumer PRIVATE USE_AMD_ROCM)`, `target_link_libraries(consumer
+PRIVATE faiss)`, `CMAKE_PREFIX_PATH=<install>;$SDK`, `CMAKE_HIP_ARCHITECTURES=gfx1201`) with one
+`.hip` TU including installed `GpuIndexFlat.h`, `StandardGpuResources.h`, `utils/Float16.cuh`,
+`impl/AuxIndexStructures.h`, `impl/InvertedListScannerStats.h`. Built 0 errors; run with
+`LD_LIBRARY_PATH=$SDK/lib/llvm/lib:$SDK/lib/host-math/lib`: GpuIndexFlatL2 over 1000x16 random
+rows finds row 42 at distance 0 (ntotal=1000), device `float4ToHalf4`/`half4ToFloat4` round-trip
+of (1.5, -2, 0.25, 3) exact; rc 0.
+
+**CUDA no-regression gate: not run here, still owed at `708a879bc`.** This host has no CUDA
+toolkit (no `/opt/conda`, no nvcc). Installing NVIDIA's `nvidia-cuda-nvcc-cu12` wheels into a
+job-local venv was refused by the fleet guard (pip blocked for headless jobs), and was not
+worked around. The reviewer's clang `-x cuda` preprocess comparison (byte-identical
+Float16.cuh output, cuda_fp16.h/cuda_bf16.h still included) stands as partial evidence; the
+real-nvcc compile on the mi355 host is still required before the port goes to jeff.
+`cuda-not-validated: no CUDA toolkit on linux-gfx1201 host`.
+
+Gates: tree restored (`git checkout -- faiss/ c_api/`, 78 hipify-modified tracked files -> 0);
+`audit-clean faiss` OK; `jargon.py --port faiss` clean (needed a local `main` branch in the
+fresh clone: `git branch main origin/main`, otherwise it reports "cannot resolve main..moat-port");
+`audit-commits faiss` OK. Documentation: INSTALL.md documents `-DFAISS_ENABLE_ROCM=ON` /
+`-DCMAKE_HIP_ARCHITECTURES` next to the CUDA GPU build; unchanged this round and still accurate.
