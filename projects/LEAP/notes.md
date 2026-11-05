@@ -2296,3 +2296,74 @@ Both: 20 CUDA objects, 21 CXX objects, 20 ELFs each for sm_50/60/70/80/90/100/12
 - `python3 utils/jargon.py --port LEAP`: clean.
 - Documentation: the delta d2112b6..63d2724 is source and test only; the build documentation is unchanged from the d2112b6 record.
 - `git -C projects/LEAP/src status --porcelain`: empty.
+## Validation 2026-11-05 (validator, linux-gfx1100, revalidate, moat-port @ 63d2724)
+
+Verdict: completed at 63d272405259bc861da536e53962c5c79b1c5702 (confirmed equal to the fork's `moat-port`). jeff asked for this run. On gfx1100 (image support, texture path live), the only outputs that differ from this platform's previous validated head d2112b6 are the four arrays the 63d2724 port entry predicts: `modular_SF_back`/`modular_SF_fbp` in dump_outputs and `bilateral_out`/`priorbilateral_out` in dump_point. The counts and magnitudes match the porter's. Every other array is bit-identical. gpu_vs_cpu_validate is 12/12, and its 12 lines equal the porter's at this head. 0 bytes leaked. BilateralFilter and PriorBilateralFilter complete with no fault. No `Error: GPU` line.
+
+Host: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), HIP_VISIBLE_DEVICES=0 (pinned by the dispatcher; torch sees 1 device; `amd-smi process` showed no other process on any GPU at start), torch 2.16.0a0+git6c3af02, HIP 7.16.26385, /opt/python-3.11-venv. All GPU runs under `ulimit -c 0`. Builds are `git archive` copies of d2112b6 and 63d2724 in agent_space/cmp. The fork clone at projects/LEAP/src is checked out at 63d2724, was never built, and is clean. Scripts: `dump_outputs.py`, `compare_outputs.py`, `dump_point.py` and `leak_check.py`, extracted unchanged from this file.
+
+### Builds (both rc=0)
+```
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=16 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/63d2724 && python setup_AMD.py build_ext --inplace > build.log 2>&1"
+(cd agent_space/cmp/d2112b6 && env -u PYTORCH_ROCM_ARCH MAX_JOBS=16 python setup_AMD.py build_ext --inplace)
+# both: 20 hipcc invocations, all --offload-arch=gfx1100
+```
+
+### Tests
+```
+AMD_LOG_LEVEL=3 bash utils/timeit.sh LEAP test -- bash -c "cd agent_space/cmp/<b> && python unitTests/gpu_vs_cpu_validate.py"   # both rc=0, 12/12, OVERALL: PASS, 0 'Error: GPU'
+cp 63d2724/unitTests/gpu_vs_cpu_validate.py d2112b6/unitTests/head_validate.py; python unitTests/head_validate.py   # in the d2112b6 tree: rc=1, modular SF FAIL (negative control)
+python dump_outputs.py agent_space/cmp/<b>/src runs/<x>.npz 256   # order: d2112b6 r1, 63d2724 r1, d2112b6 r2, 63d2724 r2, 63d2724 r3, d2112b6 r3; each ~47 s wall
+python compare_outputs.py old_rN.npz new_rN.npz                   # N=1..3: 34/36 bit-identical every round
+python compare_outputs.py old_r1.npz old_r2.npz ; python compare_outputs.py new_r1.npz new_r3.npz   # ALL BIT-IDENTICAL (run-to-run determinism)
+python pt_nodict.py agent_space/cmp/<b>/src runs/pt_<b>.npz       # dump_point.py minus its last 2 lines (dictionary); rc=0, 4.7 s each
+python compare_outputs.py runs/pt_d2112b6.npz runs/pt_63d2724.npz # 17/19 bit-identical
+python leak_check.py agent_space/cmp/<b>/src                      # both: sum(g)=377330, delta 0 bytes over 200 iterations
+python bilat_frac.py agent_space/cmp/<b>/src                      # fractional-FWHM check, below
+```
+- gpu_vs_cpu_validate at 63d2724: parallel adjoint 2.54e-05/1.64e-05 (VD/SF); fan 2.44e-04/1.85e-04; coneparallel 1.24e-03/5.07e-05; cone-flat 1.42e-04/1.46e-04, fbp 0.9998; cone-curved 8.54e-05/1.30e-04; modular VD fbp 0.9998, adjoint 3.39e-03; **modular SF `fbp_interior=0.9995 (err 0.000) adjoint=3.37e-03`**. These match the porter (gfx1100) and the reviewer (gfx90a) at this head. The d2112b6 build with its own test gives the same 11 lines plus `modular SF fwd-vs-VD (err 0.000) adjoint=n/a`, as this platform recorded at d2112b6. Head's test run in the d2112b6 tree fails modular SF with `fbp_interior=0.2251 (err 0.775) adjoint=3.40e+00`, the porter's figure.
+- dump_outputs: the two differing arrays are `modular_SF_back` (12209399/17432576, max abs 1.415e+03, rel 3.40) and `modular_SF_fbp` (12209400/17432576, rel 4.04), in all three rounds. These are the porter's counts. The 34 others are bit-identical in all rounds.
+- dump_point: the ok/FAILED lines are identical between the builds. `bilateral` and `priorbilateral` are `ok` in both builds, with no HIP error line. The two differing arrays are `bilateral_out` and `priorbilateral_out` (2179072/2179072, max abs 5.213e-02, rel 0.142). The porter recorded max abs 5.2e-02. The other 17 arrays are bit-identical. `upsample` fails in the script (ctypes dtype), as on every platform.
+- `dictionary` (pre-existing, not ported, not in the gate): in the unmodified dump_point.py on the d2112b6 build it did not return. After 10 min the main thread was spinning on the CPU at 100% with the GPU idle, and I killed it. That is why the dictionary-free copy was used, since the npz is only written at the end. Run alone (`pt_dictionary.py`: DictionaryDenoising, then a MedianFilter), it times out at 120 s (`timeout` rc=124) in **both** builds. This platform's d2112b6 record saw an asynchronous illegal access here instead. It is the same pre-existing fault, seen as a hang on this card, and it is identical across builds.
+- **BilateralFilter, fractional FWHMs** (`bilat_frac.py`, 13x21x19 volume in [0,4), compared against a float64 NumPy model of `bilateralFilterKernel` with the untruncated parameters):
+
+| call | d2112b6 changed / max\|gpu-ref\| | 63d2724 changed / max\|gpu-ref\| |
+|---|---|---|
+| BilateralFilter(2.5, 0.5) | 0/5187 / 1.30e-01 | 5187/5187 / 3.55e-06 |
+| BilateralFilter(2.0, 0.5) | 0/5187 / 1.18e-01 | 5187/5187 / 2.14e-06 |
+| BilateralFilter(2.5, 5.0) | 5187/5187 / 2.39e-01 | 5187/5187 / 3.62e-06 |
+| BilateralFilter(2.0, 5.0) | 5187/5187 / 2.29e-06 | 5187/5187 / 2.29e-06 |
+| BilateralFilter(2.0, 1.0) | 5187/5187 / 2.13e-06 | 5187/5187 / 2.13e-06 |
+| (2.5,0.5) vs (2.0,0.5) voxels differing | 0 | 5187 |
+| (2.5,5.0) vs (2.0,5.0) voxels differing | 0 | 5187 |
+| scaled BilateralFilter(2.5, 0.5, 2.0) changed | 0 | 5187 |
+| PriorBilateralFilter(2.5, 0.5) changed | 0 | 5187 |
+
+  So BilateralFilter(2.5, 0.5) now changes the volume, and it matches the model. The integer-FWHM cases are unchanged between builds, as expected.
+
+gfx1100 times (dump_outputs.py, median of 5, 256 cols x 266 rows x 360 views, device-resident tensors, ms, project / backproject; old = d2112b6, new = 63d2724):
+```
+geometry_model     old_r1           new_r1           old_r2           new_r2           new_r3           old_r3
+parallel_VD      117.6 /  60.2   124.1 /  61.9   126.6 /  62.1   127.5 /  62.4   128.2 /  62.4   128.6 /  62.6
+parallel_SF      118.3 /  61.0   123.9 /  62.2   126.5 /  62.5   127.5 /  62.8   128.0 /  62.5   128.5 /  63.1
+fan_VD           120.2 /  55.5   124.6 /  57.2   126.4 /  57.6   127.1 /  57.6   128.2 /  57.2   128.5 /  57.5
+fan_SF           120.8 / 106.6   124.3 / 109.3   125.7 / 110.1   126.8 / 110.0   127.9 / 110.6   127.7 / 110.3
+coneparallel_VD  261.8 /  64.2   268.2 /  66.5   269.2 /  66.7   270.5 /  67.1   272.2 /  67.2   272.2 /  67.2
+coneparallel_SF  262.7 / 115.4   268.5 / 119.0   269.7 / 119.3   270.6 / 119.5   272.7 / 120.2   272.4 / 120.2
+cone-flat_VD     244.5 /  61.3   252.1 /  63.2   253.5 /  63.1   252.8 /  63.4   252.9 /  63.5   254.0 /  63.5
+cone-flat_SF     245.6 / 326.7   251.6 / 334.1   253.2 / 333.5   254.3 / 335.9   254.1 / 337.0   254.2 / 336.4
+cone-curved_VD   269.3 /  63.7   275.1 /  65.0   274.9 /  64.9   276.8 /  65.6   275.8 /  66.0   276.7 /  66.1
+cone-curved_SF   269.1 / 203.0   274.4 / 205.5   275.7 / 206.6   276.4 / 206.9   276.8 / 207.3   276.9 / 207.5
+modular_VD       247.3 /  62.4   251.3 /  63.2   251.4 /  63.2   253.2 /  63.6   253.0 /  63.6   254.1 /  63.6
+modular_SF       247.0 / 320.4   251.3 / 222.0   253.3 / 325.4   253.5 / 223.6   252.6 / 223.5   253.6 / 326.9
+```
+new/old ratios: r1 1.016-1.055 / 1.012-1.036; r2 0.997-1.009 / 0.999-1.010; r3 (new first) 0.995-1.001 / 0.991-1.003. The exception is modular_SF backproject at 0.693 / 0.687 / 0.684. That path now runs the cone kernel instead of the parallel one (the porter recorded 0.688). Times rise through the session (old r2/r1 is 1.013-1.077), so the r1 excess is drift, not the change: r3, with new run first, is within 1%. The figures are 1-4% above this platform's d2112b6 table (e.g. parallel_VD 116.1-121.6 / 59.3-61.2 there), and the order is consistent with drift plus a different card in the same family.
+
+### Other gates
+- Jargon: `python3 utils/jargon.py --port LEAP` -> `jargon: clean` (after creating local `main`/`moat-port` branches in the fresh clone).
+- Documentation: the delta d2112b6..63d2724 is three `.cu` files and the test. The ROCm build documentation is unchanged and was already accepted.
+- CUDA gate: no nvcc on this host. Not repeated here. At this head the reviewer's entry records a direct nvcc 12.8 `-arch=sm_80` compile of all 20 `src/*.cu`, rc=0, with warnings identical to d2112b6. The CMake `all-major` build (jeff's mi355 nvcc rule) has still not been run at 63d2724, as the reviewer noted.
+- Integrity: `git -C projects/LEAP/src status --porcelain` is empty, and HEAD is 63d272405259bc861da536e53962c5c79b1c5702 = origin/moat-port.
+- No fork push, no `gh` write.
+
+validated_sha: 63d272405259bc861da536e53962c5c79b1c5702
