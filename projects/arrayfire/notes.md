@@ -3168,3 +3168,32 @@ Comparison: matches the porter's gfx1100 result at this head (131/132, `reduce` 
 - `jargon.py --port arrayfire`: the 3 standing hits only (published `6800d5586` 'MOAT', and upstream's own `head_sha` x2 in `.github/scripts`). Porter and reviewer accepted these this round.
 - Documentation: this round does not change the ROCm build docs, which were accepted in earlier rounds.
 - `git -C projects/arrayfire/src status --porcelain`: empty (the build dir is gitignored), HEAD 83f66a507.
+
+## Validation 2026-11-04 (validator, windows-gfx1151, sync round head 83f66a507) -- RESULT: COMPLETED (128/130 run, 1 intermittent hang)
+
+Asked for by jeff. Head `83f66a50732a47f4b6d654ef031f71ae208bfbc7` (`moat-sync-64c88d9`, upstream 64c88d932 merged plus the reduce-by-key key-initialization / kWarpSize fix). Previous record for this platform: 129/131 at 950dcdd02 (2026-08-20). GPU: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32), Windows 11, TheRock SDK 7.14.0a (`_rocm_sdk_devel`), `ulimit -c 0`, nothing pushed to the fork. The head was checked out as a detached `git worktree` of the existing fork clone (`git worktree add --detach agent_space/af-src-83f66 83f66a507`); tracked tree clean throughout.
+
+### Build (fresh dir, same recipe as the 2026-08-20 entry)
+Configure line identical to the 2026-08-20 entry (clang/clang++ GNU driver, Ninja, Release, `AF_BUILD_HIP=ON`, CPU/OpenCL/CUDA/oneAPI/Forge/examples/cuDNN/ImageIO OFF, `-DBoost_INCLUDE_DIR=D:/Develop/TheRock/build/third-party/boost/source -DBoost_NO_SYSTEM_PATHS=ON`, `ROCM_PATH`/`HIP_PATH` unset).
+```
+utils/timeit.sh arrayfire compile -- cmake -S <wt> -B <wt>/build-gfx1151 -G Ninja ...      # 128 s, exit 0
+utils/timeit.sh arrayfire compile -- cmake --build <wt>/build-gfx1151 -j 16               # 460 s, 1082/1082, exit 0
+```
+`-j 16` = physical core count. Runtime DLLs and the `hipblaslt/` and `rocblas/` dirs copied into `build-gfx1151/bin` from the earlier build's bin (same SDK), as in the 2026-08-20 entry.
+
+### Tests (serial, one GPU process at a time)
+```
+ROCM_PATH/HIP_PATH=<_rocm_sdk_devel>, ROCBLAS_TENSILE_LIBPATH=<libs_gfx1151>/bin/rocblas/library, ROCBLAS_USE_HIPBLASLT=0, HIP_VISIBLE_DEVICES=0
+utils/timeit.sh arrayfire test -- ctest --test-dir <wt>/build-gfx1151 -R '_cuda$' -E sparse_arith -j1 --output-on-failure --timeout 900
+```
+Exclusion: `test_sparse_arith_cuda` only, because it SEGFAULTed on this host at 950dcdd02 (the documented Windows rocsparse csrgeam2 crash, sparse+sparse path); excluded to avoid repeating a known fault, not run at this head. No test was excluded as a large-memory or stress test; none of the suite is on that list.
+
+**ctest: 128/130 binaries PASS in 3040 s.** Two did not pass:
+1. `test_confidence_connected_cuda` Failed -- "Image IO Not Configured" (`AF_WITH_IMAGEIO=OFF`), the standing disposition on every platform, same as 950dcdd02.
+2. `test_threading_cuda` Timeout at 900 s. Not seen at 950dcdd02 on this host (14 s) but the same timeout was recorded on windows-gfx1101/gfx1201 at earlier heads. Diagnosis: ctest rerun (second run, hung >13 min with 7 s CPU, killed by hand; the `--timeout 300` did not fire) and `threading_cuda --gtest_filter=Threading.*` stopped in `Threading.FFT_ALL` (60 s limit) after `FFT_R2C` 4.8 s and `FFT_C2C` 0.6 s passed. Then `--gtest_filter=Threading.FFT_ALL:Threading.BLAS:Threading.Sparse` run twice alone: both times all three PASS (FFT_ALL 6.1 s and 6.4 s, BLAS 0.23 s, Sparse 0.55 s). So it is an intermittent multi-threaded hipFFT deadlock (hang with idle CPU), not a deterministic failure and not in code this round touched (the round changes reduce-by-key and merges upstream). Left as a recorded residual; no deeper root-causing.
+
+Direct runs: `reduce_cuda` 1062/1062 PASS (5.0 s); in ctest `test_reduce_cuda` 46 s, `test_ireduce_cuda`, `test_scan_cuda`, `test_blas_cuda`, `test_sparse_cuda`, `test_topk_cuda`, `test_nearest_neighbour_cuda` all Passed. The reduce-by-key suites that failed on ROCm 7.16 at 5d09b5c0f pass here at the fixed head. No NaN or HIP fault; no 719.
+
+Comparison: 950dcdd02 here was 129/131 (confidence_connected + sparse_arith segfault; threading passed). Now 128/130 run: same confidence_connected residual, sparse_arith excluded rather than run, threading hung intermittently. Linux at this head: 131/132 on gfx90a, gfx1100, gfx942 (only confidence_connected, no ImageIO). No new deterministic failure.
+
+CUDA no-regression gate: already recorded at 83f66a507 (nvcc 12.8), not repeated (no toolkit here). `python3 utils/jargon.py --port arrayfire` (after fetching local `master` and `moat-sync-64c88d9` refs): only the standing `6800d5586` 'MOAT' hit. Documentation: unchanged by this round, intact.
