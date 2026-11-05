@@ -6624,3 +6624,39 @@ Already recorded at fc2cfd9d ("CUDA compile check (nvcc 12.8) at fc2cfd9d", mi35
 
 ### Verdict: COMPLETED (linux-gfx90a) at fc2cfd9d
 Every difference from the 001fc728 record on this platform is the new fisheye test passing or a recorded intermittent (LpipsTest, UndoHistoryTest) not firing, except one WindowInputDispatchTest crash from a one-off SDL video init failure under Xvfb that passed 3 of 3 reruns.
+
+## Revalidation 2026-11-05 (validator, windows-gfx1151, Radeon 8060S APU, wave32) -- fc2cfd9d, COMPLETED
+
+Requested by jeff. Last validated here: 81b7fa24. Fork clone `projects/LichtFeld-Studio/src` fast-forwarded 2ac6bc3d -> fc2cfd9ddb07a62b93210c3f2ee87e51d00cdb2b (`git merge --ff-only`), no modified tracked files before or after. Windows recipe unchanged (TheRock ROCm SDK in venv-gsplat, CMake 4.3.2, clang-cl C/C++, clang++ HIP, MSVC BuildTools, Ninja `-j 8`; cap 8 of 32 logical CPUs). `ulimit -c 0`, one GPU process at a time, no loops.
+
+### Build
+The old `agent_space/lfs_sync.bat` now stops at configure: since the application CMake (Vulkan, volk, VMA, SDL3 via vcpkg) is the default HIP path, `find_package(Vulkan REQUIRED)` fails ("Could NOT find Vulkan"). The compute-only path is now opt-in, as docs/building_and_distribution.md says: add `-DLFS_HIP_COMPUTE_ONLY=ON` (`agent_space/lfs_val11.bat` = lfs_sync.bat plus that flag). The full application (lichtfeld_tests, LichtFeld-Studio.exe) was not built on Windows: there is no Vulkan SDK or vcpkg tree on this host and the Windows viewer is paused by jeff, so this platform's record stays compute-tests-only, as at 81b7fa24.
+```
+MSYS2_ARG_CONV_EXCL="*" utils/timeit.sh LichtFeld-Studio compile -- cmd.exe /c 'agent_space\lfs_val11.bat'
+```
+Existing build tree `agent_space/lfs-sync` reused (Release, gfx1151): 325 steps, rc 0, zero errors, about 13 min, linked `lfs_compute_tests.exe`.
+
+### Test
+```
+ulimit -c 0; LFS_CWD='D:\Develop\moat\projects\LichtFeld-Studio\src' LFS_EXCLUDE='TensorReserveInplaceCat.AllocationFailurePreservesInstalledStorage' \
+  utils/timeit.sh LichtFeld-Studio test -- python agent_space/lfs_suite_runner_v2.py 'D:\Develop\moat\agent_space\lfs-sync-runs\v11'
+```
+One suite per process; GsplatRasterizerTest hit the recorded SEH, was watchdog-killed and rerun per test (the known `hip-windows-vmm-va-not-reused` isolation). 2224 tests / 171 suites, 336 s: **2187 passed, 11 failed, 25 skipped, 0 incomplete**. Excluded test: TensorReserveInplaceCat.AllocationFailurePreservesInstalledStorage (recorded as faulting on this host since 2026-10-21).
+
+Versus 81b7fa24 (2198 run: 2162 / 10 / 25): +26 tests (the suites added since: stream pool, TensorMultiStream, pinned, hip_heap_reuse), +25 passed, +1 failed.
+- Same ten-failure core, minus one: 4 DepthAnchor* (codec stub on Windows), CudaErrorDiagnostics x2, CudaTest.D1_BinaryInPlaceWaitsForGatedProducer (upstream `lfs-upstream-binary-inplace-no-stream-join`), TensorD4FromBlobHomeStreamTest x2: all present as recorded. AllocCounterTest.PoolCacheHitDoesNotIncrement now passes (stream-ordered pool, same as Linux at this head).
+- New, 2 in TensorMultiStreamTest (now reachable: BucketCrossStreamReuseIsOrdered no longer hangs with the pool):
+  - TrainerViewerHandshakeYieldsConsistentSnapshots: the recorded test-protocol race, failing on both Linux archs at this head too.
+  - ExplicitD2HTransferGuardsDroppedPinnedDestination (and ExplicitH2DTransferGuardsDroppedPinnedSource when run alone or in a group): `reused_after_completion.data_ptr() == destination_ptr` fails (got 0x...E00000, expected 0x...C00000, adjacent 1 MiB pinned-cache blocks). Linux gfx1100 and gfx90a pass both. Windows-only and nondeterministic: D2H alone failed twice and passed once; the pair failed in 3 of 3 group runs; in the full sweep only D2H failed. Nothing is corrupted: the assertions that a block still in flight is not handed out (`replacement != source/destination`) hold, the data checks in the same tests pass, and the sibling ExplicitH2DViewCopy / ExplicitD2HViewCopy tests pass. The failing assertion is which of two ready same-size cached blocks the allocator returns after the stream completes, so the likely cause is event-query timing on the Windows runtime making a seeded cache block look busy at the first allocation (not proven; not root-caused, no instrumented build). Left for a person or a Windows porter round; it is also the allocator area the 2026-10-30c porter asked this platform to watch.
+- Not failing here but failing on Linux: AllocatorHygiene.FailedSlabReclaimRestoresOwnershipAndAccounting (Linux order dependence), DiscoverySweep x2 (Linux integer modulo); they pass on Windows as at 81b7fa24.
+- Linux compute counts at this head: gfx1100 2212/7/10, gfx90a 2213/6/10, of 2229 tests. Windows runs 2224 (5 fewer) because the runner excludes the one test above and the Windows build omits tests gated on the Linux-only video/rocDecode path (`LFS_HAVE_ROCDECODE`); skips differ (25 vs 10) because the data-dependent cases skip without the bicycle/garden links on this host, as at 81b7fa24.
+
+### New test at this head
+GutThinPrismFisheye.ProjectsAndInvertsPastOneRadian lives in test_undistort.cpp (`lichtfeld_tests`, not built on Windows). To exercise the fix on this GPU the exact test source (the COLMAP reference function and `expect_thin_prism_projects_like_colmap_and_inverts`, copied by line range from tests/test_undistort.cpp) was compiled with the production `tests/gut_camera_model_cuda.cu` (includes `Cameras.cuh`) as a standalone gtest executable (`agent_space/lfs_val11_fisheye/b.bat`, clang++ -x hip, gfx1151, `-D__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__=1` as the build uses): GutThinPrismFisheye.ProjectsLikeColmapAndInvertsItself OK, **ProjectsAndInvertsPastOneRadian OK**, GutOpenCvFisheye.InvertsTheWholeCalibratedRim OK (3/3). Also in the compute run: GsplatRasterizerTest.GutFromWorldThinPrismGradParity OK.
+
+### Other gates
+- CUDA gate: not run (no CUDA toolkit on this host); recorded at fc2cfd9d by the fleet compile check.
+- `python3 utils/jargon.py --port LichtFeld-Studio`: clean. Docs: the delta changes no build step; the ROCm section already names `-DLFS_HIP_COMPUTE_ONLY=ON`. `git -C projects/LichtFeld-Studio/src status --porcelain`: empty.
+
+### Verdict: COMPLETED (windows-gfx1151) at fc2cfd9d
+Real gfx1151 GPU pass: 2187 of 2224 run, every failure a recorded test except the two Windows-only pinned-cache identity assertions above, flagged for follow-up.
