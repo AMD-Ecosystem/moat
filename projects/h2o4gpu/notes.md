@@ -257,3 +257,25 @@ $FLEET_VENV/bin/python -m pip install --no-deps --force-reinstall src/interface_
 
 ### Finding 3 (records)
 - `surface.json` `platform:windows` stays under `scoped_out` as a placeholder. Its reason now opens with "PLACEHOLDER, NOT A SCOPE CUT" and says Windows is still owed under ruling 3, the windows gate is required and unwaived, and the entry moves when the tooling gains an owed state (that change is being handled separately). `surface.py check h2o4gpu`: clean.
+
+## CUDA compile check 2026-11-05 (f2ecfb0)
+
+CUDA no-regression compile check on linux-gfx950 (mi355 host), nvcc 12.8 (V12.8.93), gcc 13.3.0, cmake 3.31.6, SWIG 4.2.1 (pip, into the job venv), apt OpenBLAS 0.3.26. No role taken, no state changed, no GPU run. Nothing needed building from source.
+
+- Trees: fork `moat-port` at `f2ecfb0` and control upstream `97279de` (fork `master`), as two worktrees of one clone under the job directory. CUDA submodules unchanged in both: `xgboost` `4235811`, `xgboost_prev` `0ad357a`, `LightGBM` `42043b9`, `tests/googletest` `2fe3bd9`, all still on their h2oai/google URLs in `.gitmodules`; the port only adds `LightGBM_rocm` (`8f7036f`) and `xgboost_rocm` (`ee5234f`). Only `tests/googletest` was initialized.
+- Delta since the ccde3a9 check: `4e5e4331` (Makefile `xgboost_prev`/`install_xgboost_prev`, shared by both paths), `074608c0` (CMake RUNPATH, inside `if(USE_HIP)` only), `f2ecfb0c` (DEVEL.md).
+- One arch, same scratch-only sed in both trees: `SET(GPU_COMPUTE_VER 60;61;70;75;80;90)` -> `80`, the `;100;120` append commented out. Result `-gencode=arch=compute_80,code=sm_80;-gencode=arch=compute_80,code=compute_80`.
+- Commands (`t` = ctrl|port):
+  ```
+  export PATH=/usr/local/cuda-12.8/bin:$FLEET_VENV/bin:$PATH
+  git -C $t submodule update --init tests/googletest
+  cmake -S $t -B $t/build -DCMAKE_BUILD_TYPE=Release -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-12.8 -DPython_EXECUTABLE=$FLEET_VENV/bin/python -DSWIG_EXECUTABLE=$FLEET_VENV/bin/swig
+  cmake --build $t/build -j32 -- -k
+  ```
+- Result: both PASS (configure rc 0, build rc 0, 0 lines matching `error`). Both build `libcpuh2o4gpu.a`, `libgpuh2o4gpu.a`, `_ch2o4gpu_cpu.so`, `_ch2o4gpu_gpu.so`, `h2o4gpu_test` (24 tests listed by `--gtest_list_tests`; not run).
+- Errors: none.
+- Warnings: no new warnings. The project builds with `-w`; the normalized warning/deprecation sets (14 unique lines each, paths and line numbers stripped) are identical. The only shift is the CMake `CMP0146` FindCUDA dev warning at CMakeLists.txt:106 -> :111.
+- No HIP pieces in the CUDA build: no `hip_compat`, `amdhip`, `LightGBM_rocm` or `xgboost_rocm` in any CMake-generated file. `_ch2o4gpu_gpu.so` NEEDED and RUNPATH (`/usr/local/cuda-12.8/lib64:/usr/local/cuda-12.8/lib64/stubs`) are identical in both trees, so 074608c0 does not touch the CUDA module.
+- Binary diff (`libgpuh2o4gpu.a`, 19266318 -> 19399008 B): `bwcheck.cu.o` and `p2pbwcheck.cu.o` gone with their symbols (3c713ae); every other object is byte-size identical except `kmeans_h2o4gpu.cu.o` 4027424 -> 4270608 B (the captured-device CUB instantiations recorded at ccde3a9; `kmeans_parallel` symbols 54 vs 54) and `h2o4gpuglm.cu.o` +64 B. Symbol differences after hash normalization are only those two groups. Same picture as the ccde3a9 check.
+- Makefile CUDA path (4e5e4331), dry run only (`make -n xgboost_prev install_xgboost_prev`, default `USE_HIP` off): the recipe now runs `make -f Makefile2 ... -o libxgboostp3 libxgboost` on `xgboost_prev`, and the install step does `mkdir -p xgboost_prev/python-package/xgboost/lib && cp xgboost_prev/lib/libxgboost.so ...` instead of the pip wheel install. Cosmetic: the two new `#` lines are tab-indented inside the recipe, so make echoes them as shell comments when the target runs. `xgboost_prev` itself was not CUDA-built here: its `Utils.cmake` sed adds `35;37`, which nvcc 12.8 does not accept, the same in both trees.
+- Build trees, worktrees and clone deleted after the check.
