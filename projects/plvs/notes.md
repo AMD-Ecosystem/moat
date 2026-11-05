@@ -3167,3 +3167,4 @@ The delta `fde33e5..970cb1f` touches no CUDA source and no build file: `git diff
 - Ruling 2026-11-05 (jeff): keep 970cb1f (MapLine right-camera observation counted once) on moat-port; it is one of the three Windows stereo crash causes.
 - 2026-11-05: jeff filed the MapLine issue as https://github.com/luigifreda/plvs/issues/57 (condensed draft).
 - 2026-11-05: jeff filed issue A (fisheye mvuRight/mvDepth over-read) as https://github.com/luigifreda/plvs/issues/58, without the unverified Linux ASan sentence.
+- 2026-11-05: jeff filed issue B (LoopClosing keyframe vector) as https://github.com/luigifreda/plvs/issues/59, as drafted.
