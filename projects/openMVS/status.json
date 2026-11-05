@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "openMVS",
+  "upstream_url": "https://github.com/cdcseacave/openMVS",
+  "fork_url": null,
+  "fork_default_branch": "develop",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-05T22:50:00Z",
+  "updated_at": "2026-11-05T22:50:01Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}

@@ -1,0 +1,1 @@
+# openMVS notes
