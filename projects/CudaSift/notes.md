@@ -859,3 +859,20 @@ gfx90a, gfx1100 and the Windows GPUs are re-tested at 5135acc, and the CUDA buil
 
 I've pushed a follow-up commit that fixes a bug this PR introduced in the ROCm build: `ExtractSift` clamped `initBlur` with a host `max` that HIP only defines for integers, so any non-integer initial blur was truncated (1.6 ran as 1, and values below 1 as 0). It now calls `fmax`, which is what the CUDA build already used, and `test_extract` has a new check that fails without it.
 ```
+
+## CUDA compile check (nvcc 12.8) at 5135acc
+
+Compile-only check on a Linux host with NVIDIA CUDA 12.8.93 (`/usr/local/cuda-12.8`) and no NVIDIA GPU; GCC 13.3.0, CMake 3.31.6, OpenCV 4.6.0. Head: fork `moat-fix-97` at 5135accf998c349dcfb05556769c9e416b39af3b. Parent: db7c163aa8f48c939ef5e03afaf1a7823173eb3f (the published tip, itself CUDA-checked above). Fresh clones under `/tmp/cs-nv/{head,parent}`, nothing modified. The commit changes only `max(` -> `fmax(` at `cudaSiftH.cu:114` and `:125` (no `fmin`/`fminf`/`fmaxf` anywhere in it) and adds `TestInitialBlur` to `tests/test_extract.cpp`.
+
+Upstream's documented build script, same recipe as the db7c163 check, run in each clone:
+```bash
+CUDACXX=/usr/local/cuda-12.8/bin/nvcc VERBOSE=1 bash scripts/build.sh Release
+```
+(Not wrapped in `utils/timeit.sh`; no telemetry recorded for this check.)
+- rc=0 on both. Same 12 compile lines on both: nvcc for `cudaImage.cu`, `cudaSiftH.cu`, `matching.cu`, `mainSift.cpp`, `examples/demo_{extract,match,video}.cpp`, `tests/{benchmark,test_extract,test_match,test_homography}.cpp`; `/usr/bin/c++` for `geomFuncs.cpp`. cudaSiftH.cu flags: `--use_fast_math -O3 -lineinfo -DNDEBUG -std=c++17 --generate-code=arch=compute_89,code=[compute_89,sm_89] -Xcompiler=-fPIC`.
+- Targets built, identical: cudasift_lib, cudasift, demo_extract, demo_match, demo_video, benchmark, test_extract, test_match, test_homography. `cuobjdump --list-elf build/libcudasift_lib.a`: `sm_89.cubin` for cudaImage, cudaSiftH, matching on both.
+- Warnings/errors: zero and zero on both (`grep -ci warning` = 0 in each full verbose log). No new warning in `cudaSiftH.cu` or `tests/test_extract.cpp`.
+- Generated code for the changed file is unchanged. CUDA 12.8's `crt/math_functions.hpp:1120` defines host `max(const double a, const float b)` as `return fmax(a, static_cast<double>(b));`, so the edit only names the function CUDA already called. Evidence on `cudaSiftH.cu.o`: host `objdump -dr` with symbolic labels stripped is identical (5214 lines; the raw diff was two `.LCn` label names, shifted because `.rodata.str1.1` embeds the clone path `/tmp/cs-nv/parent` vs `/tmp/cs-nv/head`); both objects reference `U fmax`; embedded PTX identical after dropping `.file`/`.b8` debug lines and normalising the path-derived `_INTERNAL_<hash>_` prefix. The sm_89 cubins are the same size (602592 bytes) and differ only in the path string and that hash. SASS not compared (no `nvdisasm` in this toolkit install).
+- No test binary run (no NVIDIA driver; the db7c163 check showed the expected "driver version is insufficient" stop).
+
+Result: no CUDA regression at 5135acc. Platform states unchanged.
