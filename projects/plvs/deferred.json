@@ -85,7 +85,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-05T00:26:19Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-05T07:41:56Z",
+        "note": "MapLine half done in 970cb1f + luigifreda/plvs#57; fix the octree use-after-free in UpdateMapNoSegm as its own commit and draft an upstream issue"
+      }
     },
     {
       "id": "plvs-windows-stereo-slam-crash",
