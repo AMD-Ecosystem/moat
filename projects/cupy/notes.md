@@ -50,3 +50,4 @@ Shared-code note for the planner: items 1-5 and 9 touch `install/cupy_builder` a
 
 ## Ruling 2026-11-04 (jeff): PR base and mirror
 The PR base is upstream cupy/cupy `main`. ROCm/cupy had no `main` (its default `master` stopped at 2026-01-31 when the fork became staging-only), so a `main` branch mirroring upstream was pushed to ROCm/cupy at 6efc0a4. ROCm/cupy's `master` and its default branch are left as they are (not ours to reconfigure). `fork_default_branch` stays `main`. moat-port was cut from upstream main at 18b54de.
+- Gates (jeff 2026-11-04): all three gates stay required (wave64, wave32, windows). The Windows work touches code the Linux HIP build shares, so the Linux validations are the regression check for CuPy's existing Linux ROCm build.
