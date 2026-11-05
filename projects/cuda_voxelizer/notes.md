@@ -654,3 +654,5 @@ Primary session, Tesla V100-SXM2-32GB via Slurm, CUDA 12.9, sm_70, Trimesh2 2022
 | obj_points (surface, solid) | identical | identical | differs (text file: one moved voxel shifts every later line, so the byte count is not a voxel count) |
 
 So the managed table works on NVIDIA (64 and 256 exact), and the small 512 boundary residual also appears on CUDA, the same order as on AMD (4-9 surface voxels, 0-1 solid). The 5a9b7cf commit message's "only observed on AMD" is therefore wrong in the other direction; the PR body should say the 512 residual appears on both vendors (fp contraction / rsqrtf at voxel boundaries). This closes the gap in deferral cuda-voxelizer-5a9b7cf-nvidia-managed-run pending jeff's ruling.
+
+- Ruling 2026-11-05 (jeff): CUDA's src/main.cpp stays byte-identical to upstream; no cudaMemset clear on CUDA (upstream never had it; the V100 run at 5a9b7cf matches the CPU at 64 and 256).
