@@ -1762,3 +1762,29 @@ Verdict: no CUDA regression at `708a879bc`. The CUDA build is clean, and the 7bd
 Float16.cuh branch reorder produces the same sm_80 device code as the control. This closes the
 "CUDA compile on mi355" item owed by the 2026-11-05 porter round. Build trees, the fork clone and
 the gflags prefix were deleted afterwards (the host root disk had 8 to 25 GB free during the run).
+## Validation 2026-11-05 (revalidate, linux-gfx90a) -> completed
+
+Device: AMD Instinct MI250X (gfx90a, CDNA2 wave64), `HIP_VISIBLE_DEVICES=3`, `ulimit -c 0`. SDK: TheRock pip ROCm 10.1.0 (image `/opt/python-3.11-venv`, `SDK=$(rocm-sdk path --root)`). Platform was `revalidate`: `validated_sha=01a09e824`, `head_sha=708a879bc`. Fresh clone of `moat-port`, `git rev-parse HEAD` = `708a879bc438e4683689839daedcadd76496e9ca`. No carry-forward: `classify 01a09e824 708a879bc` -> `mixed` (Float16.cuh, faiss/CMakeLists.txt), and 01a09e824 does not build on 10.1 at all, so a full run.
+
+gflags: system `libgflags-dev` is on this host, nothing built from source. Configure is the 2026-11-05 porter recipe with `-DCMAKE_HIP_ARCHITECTURES=gfx90a`, `CC/CXX=$SDK/bin/amdclang{,++}`, `CMAKE_HIP_COMPILER=$SDK/lib/llvm/bin/clang++`, `-DCMAKE_PREFIX_PATH=$SDK`, `BLAS/LAPACK=$SDK/lib/host-math/lib/librocm-openblas.so`, C API ON, tests ON, `PATH=$SDK/bin:$SDK/libexec/hipify:$PATH`. After configure, the hipified `faiss/gpu/utils/Float16.cuh` keeps `hip/hip_bf16.h` + `hip/hip_fp16.h` in the `USE_AMD_ROCM` branch with an empty `#else`, as the review describes.
+
+```
+ninja -C build -j32                                   # 446/446, 0 errors
+llvm-objdump --offloading build/faiss/libfaiss.so      # 168 code objects, all gfx90a
+OPENBLAS_NUM_THREADS=1 ctest --test-dir build -j1 -R "TestGpu|TestCodePacking" --output-on-failure
+  # 100% tests passed, 0 failed out of 108 (647 s)
+build/faiss/gpu/test/TestGpuIcmEncoder                 # [ PASSED ] 7 tests (11.1 s)
+OPENBLAS_NUM_THREADS=1 ctest --test-dir build -j8 -E "TestGpu|TestCodePacking"
+  # 100% tests passed, 0 failed out of 266 (56 s); 3 self-skipped:
+  # ScalarQuantizer.TQMSESimdDispatchSelection, ScalarQuantizer.TQMSESimdDistancePathParity,
+  # SIMDConfig.modern_hardware_has_simd_support (same 3 as the gfx1201 porter run)
+cmake --install build                                  # rc 0
+```
+
+Counts match the gfx1201 porter round (108/108, 7/7, 266/266) and every earlier gfx90a run.
+
+Install-and-consume: installed tree has `include/faiss/impl/InvertedListScannerStats.h`. A separate CMake project (`find_package(faiss)` + `find_package(hip)`, `LANGUAGES CXX HIP`, `target_compile_definitions(... USE_AMD_ROCM)`, linking the exported `faiss` target, gfx90a) with one `.hip` TU including the installed `gpu/GpuIndexFlat.h`, `gpu/StandardGpuResources.h`, `gpu/utils/Float16.cuh`, `impl/AuxIndexStructures.h`, `impl/InvertedListScannerStats.h` configured and built clean. Run: GpuIndexFlatL2 over 1000x16 random rows finds row 42 at distance 0; a device `float4ToHalf4`/`half4ToFloat4` round trip of (1.5, -2, 0.25, 3) is exact; a default `InvertedListScannerStats` has `scan_cnt == 0`; rc 0. Needs `LD_LIBRARY_PATH=$SDK/lib/llvm/lib:$SDK/lib/host-math/lib` (rc 127 on `librocm-openblas.so.0` without it), the environmental item already recorded.
+
+CUDA gate: cuda-not-validated on this host. No nvcc here and no conda; the `nvidia-cuda-nvcc-cu12==12.8.*` pip wheel ships `ptxas` and headers but no `nvcc` binary, so that route does not work. The real-nvcc compile on the mi355 host is still owed before the port goes to jeff (porter and reviewer record the same).
+
+Pre-completion checks: `jargon.py --port faiss` clean (needed a local `main` branch in the fresh clone first: `git -C projects/faiss/src branch main origin/main`), `audit-commits` OK, `audit-clean` OK. Hipify artifacts restored with `git checkout -- faiss/ c_api/`; 0 modified tracked files. INSTALL.md already documents `-DFAISS_ENABLE_ROCM=ON` next to the CUDA build; the round changed no build procedure.
