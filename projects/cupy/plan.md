@@ -266,3 +266,4 @@ CUPY_INSTALL_USE_HIP=1 python -m pytest tests/install_tests -q     # exercises c
 ## Rulings (jeff, 2026-11-05)
 1. ROCm discovery on Windows: do NOT honour `HIP_PATH`; AMD's Windows HIP SDK is not supported (it has only caused trouble). Search `ROCM_HOME`, then `hipconfig --rocmpath` (TheRock). Docs say TheRock is the supported Windows ROCm and that HIP SDK installs are not.
 2. cudaProfilerStart/Stop on Windows HIP: no-op returning success (as a CUDA user sees with no profiler attached); cupy.cuda.profile() keeps working.
+3. Windows test order (jeff): texture tests are deferred, not excluded. Order on windows-gfx1151: (i) Linux gates first; (ii) all non-texture Windows suites (the plan's W1-W3 subset); (iii) then the deferred cupyx suites; (iv) the texture tests (test_texture.py and texture-backed cupyx.ndimage tests) at the very end, one test file at a time under ulimit -c 0. The windows gate needs all four stages.
