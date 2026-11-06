@@ -72,3 +72,5 @@
 {"kind":"phase","ts":"2026-11-05T19:03:27Z","phase":"test","seconds":4.248,"exit":0,"cmd":"bash -c cd projects/TornadoVM/src && ./mvnw -Pjdk21 -pl tornado-compiler/tc-runtime -am test -DskipTests=false -Dtest=TcCompilerTest -Dsurefire.failIfNoSpecifiedTests=false"}
 {"kind":"phase","ts":"2026-11-05T19:03:47Z","phase":"test","seconds":8.738,"exit":0,"cmd":"bash -c cd projects/TornadoVM/src && make test-nogpu JDK=jdk21"}
 {"kind":"session","ts":"2026-11-05T19:04:17Z","epoch":1793905457.491044761,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-06T02:53:46Z","epoch":1793933626.406718727,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-06T02:55:31Z","epoch":1793933731.839675732,"event":"end","platform":"linux-gfx942"}
