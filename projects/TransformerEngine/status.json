@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T11:27:57Z",
-  "updated_at": "2026-11-06T11:27:58Z",
+  "updated_at": "2026-11-06T11:33:12Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVIDIA/TransformerEngine/blob/main/LICENSE",
+      "at": "2026-11-06T11:32:52Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "ported-elsewhere",
+    "duplicate_effort": "ROCm/TransformerEngine (AMD-maintained, dev branch, active 2026-11-05)",
+    "viable": false,
+    "summary": "NVIDIA FP8 transformer library; AMD's ROCm/TransformerEngine is a mature, daily-maintained port (hipBLASLt, CK/AITER, AOTriton); partial items are on its roadmap",
+    "at": "2026-11-06T11:33:12Z"
+  }
 }
