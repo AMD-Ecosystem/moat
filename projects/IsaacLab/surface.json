@@ -1,0 +1,285 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "eed2d2889a5b",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [],
+    "markers": {},
+    "libraries": {},
+    "python_surface_added_by_planner": {
+      "note": "No native CUDA; the census is empty by construction. The GPU surface is Python on Warp JIT kernels; see plan.md 'CUDA surface inventory'.",
+      "warp_graph_capture_production_sites": [
+        "source/isaaclab_newton/isaaclab_newton/physics/newton_backend.py",
+        "source/isaaclab_newton/isaaclab_newton/sensors/ray_caster/newton_raycast_sensor.py",
+        "source/isaaclab_newton/isaaclab_newton/sensors/frame_transformer/frame_transformer.py",
+        "source/isaaclab_newton/isaaclab_newton/renderers/newton_warp_renderer.py",
+        "source/isaaclab_newton/isaaclab_newton/physics/mpm_solver.py",
+        "source/isaaclab/isaaclab/actuators/newton/physx_runtime.py",
+        "source/isaaclab/isaaclab/utils/device.py",
+        "source/isaaclab_visualizers/isaaclab_visualizers/newton/particle_surface.py",
+        "source/isaaclab_experimental/isaaclab_experimental/utils/warp_graph_cache.py"
+      ],
+      "nvidia_tooling_sites": [
+        "source/isaaclab/isaaclab/benchmark/recorders/record_gpu_info.py",
+        "source/isaaclab/isaaclab/cli/multigpu.py",
+        "scripts/reinforcement_learning/ray/util.py",
+        "scripts/reinforcement_learning/ray/wrap_resources.py",
+        "scripts/reinforcement_learning/ray/task_runner.py"
+      ],
+      "packaging": [
+        "pyproject.toml ([tool.uv.sources] torch/torchvision -> pytorch-cu130; warp-lang==1.17.0 CUDA wheel)"
+      ]
+    }
+  },
+  "components": [
+    {
+      "id": "install:rocm-kitless-recipe",
+      "kind": "build_path",
+      "where": "pyproject.toml, docs/source/isaaclab/installation.rst"
+    },
+    {
+      "id": "package:isaaclab",
+      "kind": "library",
+      "where": "source/isaaclab"
+    },
+    {
+      "id": "package:isaaclab_newton",
+      "kind": "library",
+      "where": "source/isaaclab_newton"
+    },
+    {
+      "id": "package:isaaclab_tasks",
+      "kind": "library",
+      "where": "source/isaaclab_tasks"
+    },
+    {
+      "id": "package:isaaclab_rl",
+      "kind": "library",
+      "where": "source/isaaclab_rl"
+    },
+    {
+      "id": "package:isaaclab_assets",
+      "kind": "library",
+      "where": "source/isaaclab_assets"
+    },
+    {
+      "id": "package:isaaclab_contrib",
+      "kind": "library",
+      "where": "source/isaaclab_contrib"
+    },
+    {
+      "id": "package:isaaclab_experimental",
+      "kind": "library",
+      "where": "source/isaaclab_experimental"
+    },
+    {
+      "id": "package:isaaclab_tasks_experimental",
+      "kind": "library",
+      "where": "source/isaaclab_tasks_experimental"
+    },
+    {
+      "id": "package:isaaclab_visualizers",
+      "kind": "library",
+      "where": "source/isaaclab_visualizers"
+    },
+    {
+      "id": "package:isaaclab_ppisp",
+      "kind": "library",
+      "where": "source/isaaclab_ppisp"
+    },
+    {
+      "id": "package:isaaclab_physx",
+      "kind": "library",
+      "where": "source/isaaclab_physx"
+    },
+    {
+      "id": "package:isaaclab_ov",
+      "kind": "library",
+      "where": "source/isaaclab_ov"
+    },
+    {
+      "id": "package:isaaclab_mimic",
+      "kind": "library",
+      "where": "source/isaaclab_mimic"
+    },
+    {
+      "id": "package:isaaclab_teleop",
+      "kind": "library",
+      "where": "source/isaaclab_teleop"
+    },
+    {
+      "id": "package:_isaaclab_testing",
+      "kind": "library",
+      "where": "source/_isaaclab_testing"
+    },
+    {
+      "id": "test:kitless-marker-set",
+      "kind": "test",
+      "where": "CI_MARKER=kitless via tools/conftest.py (12 files at eed2d288)"
+    },
+    {
+      "id": "test:multi-gpu-training-smoke",
+      "kind": "test",
+      "where": "source/isaaclab/test/multi_gpu/test_multi_gpu_training_smoke.py"
+    },
+    {
+      "id": "test:warp-kernel-unit-tests-kitless-unmarked",
+      "kind": "test",
+      "where": "Warp-kernel unit tests that need neither Kit nor OV (plan.md Test plan)"
+    },
+    {
+      "id": "test:tools-tests",
+      "kind": "test",
+      "where": "uv run isaaclab --test (non-GPU regression)"
+    },
+    {
+      "id": "example:rsl-rl-train-newton-smoke",
+      "kind": "example",
+      "where": "uv run isaaclab train ... presets=newton_mjwarp"
+    },
+    {
+      "id": "benchmark:runtime-newton",
+      "kind": "benchmark",
+      "where": "uv run isaaclab benchmark runtime ... presets=newton_mjwarp"
+    },
+    {
+      "id": "benchmark:gpu-info-recorder",
+      "kind": "benchmark",
+      "where": "source/isaaclab/isaaclab/benchmark/recorders/record_gpu_info.py"
+    },
+    {
+      "id": "scripts:ray-multi-gpu",
+      "kind": "example",
+      "where": "scripts/reinforcement_learning/ray"
+    },
+    {
+      "id": "docs:rocm-install-section",
+      "kind": "docs",
+      "where": "docs/source/isaaclab/installation.rst"
+    },
+    {
+      "id": "platform:wave32",
+      "kind": "platform",
+      "where": "AMD Warp tile width hardcoded 64 on HIP (dependency)"
+    },
+    {
+      "id": "platform:windows",
+      "kind": "platform",
+      "where": "AMD Warp has no Windows HIP build (dependency)"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "package:isaaclab_physx",
+      "reason": "PhysX backend runs only under Isaac Sim Kit or the ovphysx wheel; requires NVIDIA proprietary binaries with no AMD build (Kit-less Newton is the AMD target per jeff 2026-11-05)"
+    },
+    {
+      "id": "package:isaaclab_ov",
+      "reason": "ovphysx/ovrtx/ovstage wheels; requires NVIDIA proprietary binaries with no AMD build"
+    },
+    {
+      "id": "package:isaaclab_mimic",
+      "reason": "needs Isaac Sim Kit (teleop/XR) and the cuRobo motion planner path; requires NVIDIA proprietary binaries with no AMD build"
+    },
+    {
+      "id": "package:isaaclab_teleop",
+      "reason": "needs the Kit XR runtime / CloudXR (isaaccapture); requires NVIDIA proprietary binaries with no AMD build"
+    },
+    {
+      "id": "package:_isaaclab_testing",
+      "reason": "its only kitless-marked file, test_visualizers_rtx.py, needs RTX/OVRTX; requires NVIDIA proprietary binaries with no AMD build"
+    }
+  ],
+  "owed": [
+    {
+      "id": "install:rocm-kitless-recipe",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "package:isaaclab",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "package:isaaclab_newton",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "package:isaaclab_tasks",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "package:isaaclab_rl",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "package:isaaclab_assets",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "package:isaaclab_contrib",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "package:isaaclab_experimental",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "package:isaaclab_tasks_experimental",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "package:isaaclab_visualizers",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "package:isaaclab_ppisp",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "test:kitless-marker-set",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "test:multi-gpu-training-smoke",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "test:warp-kernel-unit-tests-kitless-unmarked",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "test:tools-tests",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "example:rsl-rl-train-newton-smoke",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "benchmark:runtime-newton",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "benchmark:gpu-info-recorder",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "scripts:ray-multi-gpu",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "docs:rocm-install-section",
+      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+    },
+    {
+      "id": "platform:wave32",
+      "reason": "depends on AMD Warp: its dev branch hardcodes WP_TILE_WARP_SIZE 64 for all HIP targets; the halo branch has the fix at 1.17.0.dev4 (notes.md question 1b)"
+    },
+    {
+      "id": "platform:windows",
+      "reason": "AMD Warp's HIP build is Linux-only; windows gate is a waiver candidate for jeff (notes.md question 3); validated last if a build appears"
+    }
+  ],
+  "removed_from_floor": []
+}

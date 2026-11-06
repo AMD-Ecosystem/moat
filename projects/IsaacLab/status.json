@@ -5,16 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/IsaacLab",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "python-warp",
+  "stage": "planned",
   "adopted_at": "2026-11-05T22:48:53Z",
-  "updated_at": "2026-11-05T23:51:38Z",
+  "updated_at": "2026-11-06T00:53:00Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-05T23:51:37Z"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -24,7 +21,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-05T23:51:37Z",
+      "updated_at": "2026-11-06T00:52:59Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -57,5 +54,10 @@
     "viable": true,
     "summary": "NVIDIA robot-learning framework, pure Python (no .cu); Kit-less Newton path is the target: install on ROCm via AMD Warp/Newton/MuJoCo-Warp forks (which trail Isaac Lab's pins), fix CUDA-only assumptions, run the 35 kitless test files, upstream a docs/packaging change; Kit/Isaac Sim path out of scope",
     "at": "2026-11-05T23:15:11Z"
+  },
+  "porting_released": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-05T23:51:37Z",
+    "at": "2026-11-06T00:52:59Z"
   }
 }
