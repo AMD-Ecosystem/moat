@@ -424,3 +424,43 @@ Benign, not a port defect. Reproduced and explained here (`agent_space/oracle/lg
 
 ## Ruling 2026-11-05 (jeff): PR-prep squash authorized
 At PR prep, once every gate is satisfied at the validated head, squash moat-port into compliant commit(s) whose tree is identical to the validated head (fixing the commit-gate failures and the overstated messages recorded in notes), record it with `moatlib.py squash-carry-forward h2o4gpu <new_sha>`, and replace moat-port with the squash. That one force-push of h2o4gpu moat-port is authorized by this ruling (no upstream PR is open). Same terms as plvs.
+
+## Validation 2026-11-06 (linux-gfx1100, Radeon Pro W7800 48GB, wave32, ROCm 10.1 pip SDK)
+
+Validator at `9607b099` (moat-port tip = head_sha). Fresh clone of the fork, `git submodule update --init --recursive tests/googletest LightGBM_rocm xgboost_rocm`. HIP_VISIBLE_DEVICES=3 (dispatcher pin), `ulimit -c 0`, LD_LIBRARY_PATH unset and OPENBLAS_NUM_THREADS=32 for every build and run. Extra pip into the job venv: `swig==4.2.1 cython==3.0.11 threadpoolctl psutil tabulate future joblib pytest-timeout meson-python ninja feather-format "pyarrow<15" build wheel` (scikit-learn 1.9.1, numpy 1.26.4, setuptools 79.0.1 already present). apt `libopenblas-dev` already present.
+
+### Build (rc 0 for every step, 605 s wall at MAX_JOBS=32)
+```
+R=$($FLEET_VENV/bin/python -m rocm_sdk path --root); P=$FLEET_VENV/bin/python
+export PATH=$FLEET_VENV/bin:$R/bin:$PATH CMAKE_PREFIX_PATH=$R OMP_NUM_THREADS=$MAX_JOBS CMAKE_BUILD_PARALLEL_LEVEL=$MAX_JOBS
+cmake -S . -B build-hip -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$P
+cmake --build build-hip -j$MAX_JOBS
+make cpp USE_HIP=ON PYTHON=$P
+make lightgbm_gpu install_lightgbm_gpu lightgbm_cpu install_lightgbm_cpu USE_HIP=ON PYTHON=$P
+make xgboost install_xgboost USE_HIP=ON PYTHON=$P
+make xgboost_prev install_xgboost_prev USE_HIP=ON PYTHON=$P
+make apply-sklearn PYTHON=$P
+make py USE_HIP=ON PYTHON=$P
+$P -m pip install --no-deps --force-reinstall src/interface_py/dist/h2o4gpu-0.6.0+local.9607b099.dirty-cp311-cp311-linux_x86_64.whl
+```
+- `verify_gpu_lib.sh`: "AMD GPU code objects intact after strip: amdgcn-amd-amdhsa--gfx1100". xgboost_prev targets print "XGboost previous version is not built with USE_HIP=ON" twice and build nothing.
+- Wheel ships `h2o4gpu/libs/_ch2o4gpu_gpu.so`, `lightgbm_gpu/lib/lib_lightgbm.so`, `lightgbm_cpu/lib/lib_lightgbm.so`, `xgboost/lib/libxgboost.so`; `unzip -l | grep -c xgboost_prev/` = 0, and no `xgboost_prev*` in site-packages after install. ("dirty" = the h2o patches the Makefile applies inside LightGBM_rocm/xgboost_rocm; reverted with `git -C <sub> checkout -- .` afterwards.)
+- Installed `_ch2o4gpu_gpu.so`: RUNPATH `[<job>/venv-base-links/_rocm_sdk_devel/lib:/usr/lib/gcc/x86_64-linux-gnu/13]`, NEEDED libgomp and no libomp/libomptarget. It loads with LD_LIBRARY_PATH unset.
+
+### Results
+- `build-hip/h2o4gpu_test`: 24/24 PASS on 3 consecutive runs (rc 0 each).
+- Python GPU path vs scikit-learn 1.9.1 (`agent_space/oracle.py`, recreated on this host; exits nonzero if GPUlib is None, no GPU, or any check fails): `device_count(-1)` (1, 1). ALL PASS:
+  - KMeansH2O (20000x10, 5 blobs): v_measure 1.000000 both; max center dist to sklearn 3.8e-6 (f32) / 8.2e-15 (f64).
+  - TruncatedSVDH2O cusolver (5000x50, 5 comps): sv rel err vs numpy SVD 4.4e-7 / 1.8e-15; components vs sklearn arpack (sign-aligned) 8.8e-6 / 2.5e-8.
+  - PCAH2O: explained_variance rel err 5.0e-7 / 3.0e-15; components 3.5e-6 / 3.0e-8.
+  - ElasticNetH2O (alpha 0, lambda 1e-6, 20000x20): r2 0.999994 / 0.999996, gap to sklearn Ridge 1.9e-8 / 1.2e-13.
+  - Under `rocprofv3 --kernel-trace --output-format csv`: 104164 dispatches, all on one GPU agent, including kmeans:: 110 (all_dots, calculate_centroids, make_new_labels, ... float and double), h2o4gpu:: 226, cml:: 15482 (mostly rocPRIM kernels over cml functors), rocBLAS 39677, rocSOLVER 552, other rocPRIM/rocThrust 15482.
+- GBM GPU vs CPU (`agent_space/gbm.py`, 100000x20, integer f0, 80/20 split, 50 rounds), under rocprofv3: 66184 dispatches on the GPU agent, `LightGBM::` 49792, `xgboost::` 5618. ALL PASS:
+  - xgboost 2.1.3, `build_info()['USE_HIP']` True. Shared QuantileDMatrix held-out RMSE cpu 0.6310918444 / cuda 0.6310918563, max pred diff 1.9e-6. h2o between-bin cuts on f0 `0.5 ... 8.5` (cuda model). `get_feature_interactions` DataFrame (311, 8). `pred_contribs` (5, 21) sums to the margin. `pred_leaf` (5, 50).
+  - lightgbm_gpu 4.7.0 `device_type='cuda'` vs cpu (deterministic): held-out RMSE 0.60913774 / 0.60917006; training-row max pred diff 9.9e-8 (the reviewer's round-3 guidance: compare RMSE or training rows, not held-out rows).
+- `pytest -p no:cacheprovider tests/python/open_data/system tests/python/open_data/gbm -rfs -q`: 18 passed / 4 failed / 17 skipped, the same as every earlier round. The 4 failures are all `TypeError: cv() got an unexpected keyword argument 'early_stopping_rounds'` (test_lightgbm gpu/cpu x dart/gbdt; removed in LightGBM 4.0). Skips: data dir not synced (15), huge memory footprint (2).
+- roctx (ruling 5): `USENVTX=1 cmake -S . -B build-nvtx ... -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_CXX_FLAGS=-DUSE_NVTX -DCMAKE_HIP_FLAGS=-DUSE_NVTX` prints "Building with NVTX support on (roctx)" and `_ch2o4gpu_gpu.so` NEEDs `libroctx64.so.4` (default build: no roctx). A copy of the installed package with that module (`agent_space/glm_nvtx.py`, ElasticNetH2O f64 fit, corr 0.9999213) under `rocprofv3 --marker-trace --kernel-trace`: 2580 `MARKER_CORE_RANGE_API` records = 2580 `START:` lines printed by PUSH_RANGE (Evaluate_fg, gapoptvaltol, orelax, P1alloc, ... 179 each), 10178 kernels.
+- CUDA compile gate: not rerun; `## CUDA compile check 2026-11-05` above already covers `9607b09` (nvcc 12.8, all targets PASS).
+- `python3 utils/jargon.py --port h2o4gpu`: clean. ROCm build documented in DEVEL.md beside the CUDA build.
+- Integrity: `git status --porcelain --ignore-submodules=untracked` at `9607b099` shows only untracked build output (build-hip/, build-nvtx/, sklearn_download.lock, src/interface_py/lightgbm_{cpu,gpu}).
+- Verdict: linux-gfx1100 (wave32) completed at `9607b099`.
