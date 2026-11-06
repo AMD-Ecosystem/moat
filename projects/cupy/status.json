@@ -6,15 +6,12 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
-  "stage": "porting",
+  "stage": "ported",
   "adopted_at": "2026-11-04T22:34:29Z",
-  "updated_at": "2026-11-06T05:31:42Z",
-  "head_sha": "694db667ffdcfb3c8ceaa4fdaff20ef0695ae3b6",
+  "updated_at": "2026-11-06T05:43:36Z",
+  "head_sha": "24a62ef95b47e50fc1722077435d90b3c6a0b7c0",
   "depends_on": [],
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-06T05:31:42Z"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx1100": {
@@ -47,7 +44,7 @@
       "failed_sha": null,
       "started_at": "2026-11-05T17:27:29Z",
       "completed_at": null,
-      "updated_at": "2026-11-06T05:31:42Z",
+      "updated_at": "2026-11-06T05:43:35Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,8 +78,8 @@
     "at": "2026-11-04T22:41:45Z"
   },
   "porting_released": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-06T04:16:31Z",
-    "at": "2026-11-06T04:27:59Z"
+    "arch": "windows-gfx1151",
+    "since": "2026-11-06T05:31:42Z",
+    "at": "2026-11-06T05:43:35Z"
   }
 }
