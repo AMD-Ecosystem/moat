@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T03:47:33Z",
-  "updated_at": "2026-11-06T03:47:34Z",
+  "updated_at": "2026-11-06T03:53:32Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVIDIA/Model-Optimizer/blob/main/LICENSE",
+      "at": "2026-11-06T03:53:30Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "ported-elsewhere",
+    "duplicate_effort": "amd/Quark (AMD-owned, active); NVIDIA/Model-Optimizer#1990 by zhihuidu-amd (open, stale-labelled, no HIP build of the .cu kernels)",
+    "viable": true,
+    "summary": "NVIDIA ModelOpt quantization library (Python, 10 optional JIT .cu kernels); AMD covers it with AMD Quark and an AMD engineer's open upstream ROCm PR #1990",
+    "at": "2026-11-06T03:53:31Z"
+  }
 }
