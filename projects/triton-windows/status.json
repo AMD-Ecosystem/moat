@@ -8,10 +8,18 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T02:40:46Z",
-  "updated_at": "2026-11-06T02:40:47Z",
+  "updated_at": "2026-11-06T02:42:48Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "this repo already supports AMD on Windows (RDNA2-4 incl. gfx1151, TheRock ROCm); community-maintained by woct0rdho in the triton-lang org",
+    "viable": true,
+    "summary": "triton-windows: Windows fork of Triton that already ships AMD support (RDNA2-RDNA4, Strix Halo) with TheRock ROCm in monthly releases; nothing to port",
+    "at": "2026-11-06T02:42:48Z"
+  }
 }
