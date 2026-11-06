@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-06T01:31:43Z",
-  "updated_at": "2026-11-06T01:31:44Z",
+  "updated_at": "2026-11-06T02:01:30Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-06T02:01:29Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/apache/tvm/blob/main/LICENSE",
+      "at": "2026-11-06T01:59:55Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "upstream native ROCm backend; open #20545 (third party) for Windows ROCm; no AMD fork",
+    "viable": true,
+    "summary": "Apache TVM compiler: native maintained ROCm backend (AMDGPU codegen, hipBLAS, rocThrust, RCCL) but zero AMD GPU tests in CI; validate-and-fix on wave64/wave32, no port; else decline already-supported",
+    "at": "2026-11-06T02:01:26Z"
+  }
 }
