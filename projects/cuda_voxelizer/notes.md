@@ -656,3 +656,42 @@ Primary session, Tesla V100-SXM2-32GB via Slurm, CUDA 12.9, sm_70, Trimesh2 2022
 So the managed table works on NVIDIA (64 and 256 exact), and the small 512 boundary residual also appears on CUDA, the same order as on AMD (4-9 surface voxels, 0-1 solid). The 5a9b7cf commit message's "only observed on AMD" is therefore wrong in the other direction; the PR body should say the 512 residual appears on both vendors (fp contraction / rsqrtf at voxel boundaries). This closes the gap in deferral cuda-voxelizer-5a9b7cf-nvidia-managed-run pending jeff's ruling.
 
 - Ruling 2026-11-05 (jeff): CUDA's src/main.cpp stays byte-identical to upstream; no cudaMemset clear on CUDA (upstream never had it; the V100 run at 5a9b7cf matches the CPU at 64 and 256).
+
+## Validation 2026-11-06 (linux-gfx1201, validator, moat-port 5a9b7cf)
+
+Verdict: completed. Satisfies the wave32 gate at head 5a9b7cf. `classify ccc2950 5a9b7cf` = `mixed` (`src/main.cpp`), so full real-GPU revalidation, no carry-forward.
+
+Host: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32, discrete PCIe), one GPU pinned with `HIP_VISIBLE_DEVICES`. TheRock ROCm 10.1.0 pip SDK (`rocm-sdk path --root`, no `/opt/rocm`), HIP 7.16.26385, CMake 3.31.6, Ninja, g++ 13.3.0. All GPU runs under `ulimit -c 0`. Trimesh2 2022.03.04 (`0b3d9e2`) built from source in the job directory: `make -C trimesh2/libsrc -j12`, exit 0, `lib.Linux64/libtrimesh.a`. Fresh fork clone at `5a9b7cf`.
+
+### Builds (all exit 0; upstream warnings only: `main.cpp:28` -Wwrite-strings, `%llu` -Wformat, `nodiscard` hipError_t in the `.cu` files, Trimesh2 `mathutil.h` -Wimplicit-const-int-float-conversion)
+
+```
+# README Linux recipe, verbatim apart from the ROCm prefix and target (build dir <src>/build, default Makefiles generator)
+cmake -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DTrimesh2_INCLUDE_DIR:PATH=<tm2>/include -DTrimesh2_LINK_DIR:PATH=<tm2>/lib.Linux64 -S <src> -B <src>/build
+cmake --build <src>/build --parallel 12
+# device -O0 and -O0 + _DEBUG, out of tree
+common="-G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) <Trimesh2 flags>"
+cmake -S <src> -B b-o0    $common -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0"
+cmake -S <src> -B b-o0dbg $common -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0 -D_DEBUG" -DCMAKE_CXX_FLAGS=-D_DEBUG
+```
+
+`CMAKE_BUILD_TYPE:STRING=Release` in the README build's cache. Emitted atomics (`llvm-objdump --offloading` then `llvm-objdump -d` on the gfx1201 code objects): Release `global_atomic_or_b32` / `global_atomic_xor_b32`; -O0 `flat_atomic_or_b32` / `flat_atomic_xor_b32`. Both are the native bitwise atomics into the HIP `cudaMalloc` voxel table (every GPU log shows `Allocating ... of CUDA device memory for Voxel Grid`).
+
+### GPU-vs-CPU differential, `test_models/bunny.OBJ`
+
+Harness `work/scripts/cvdiff.py <exe> <model> <work> <tag> --repeat 3` (job directory): each run in its own directory with a copy of the model; GPU run then `-cpu` on the same binary; the GPU log must show `## GPU VOXELISATION`, `Voxelization GPU time` and `CUDA device memory for Voxel Grid` with no CPU section or fallback; binvox RLE and the morton `.bin` bitset decoded to numpy bool arrays, obj_points compared as sets of `v` lines; each 512 case re-run 3 more times on the GPU and sha256-compared with the first. 36 cases (2 builds x 2 modes x 3 sizes x 3 formats). Counts identical across binvox / morton / obj_points in every row. **36 of 36 512 repeats byte-identical.**
+
+| mode | size | filled CPU | Release diff (GPU-only/CPU-only) | -O0 diff (GPU-only/CPU-only) | GPU ms binvox Release / -O0 |
+|---|---|---|---|---|---|
+| surface | 64 | 13,802 | 0 | 0 | 0.3 / 15.9 |
+| surface | 256 | 221,760 | 0 | 0 | 3.9 / 257 |
+| surface | 512 | 887,315 | 9 (3/6) | 4 (2/2) | 25.3 / 1,618 |
+| solid | 64 | 52,258 | 0 | 0 | 0.4 / 13.5 |
+| solid | 256 | 3,345,384 | 0 | 0 | 5.7 / 297 |
+| solid | 512 | 26,763,628 | 1 (1/0) | 0 | 38.8 / 2,226 |
+
+- Equal row for row to this arch's 3625a1e validation and the 5a9b7cf review run (Release 9 / 1, -O0 4 / 0): the HIP path is unchanged by `5a9b7cf`. The 512 residual is the accepted boundary FP class (contraction plus `rsqrtf`), which the 2026-11-05 V100 run shows on CUDA too.
+- `_DEBUG` -O0 build at 64 (binvox): surface `Processed 5110 triangles`, `Tested 117367 voxels`, `Marked 45229 voxels` via `cudaMemcpyFromSymbol`; solid prints 0 (upstream's solid kernel never counts). Differential at 64, all three formats, surface and solid: 0.
+- Writers at 64 (Release): `-o obj` GPU and CPU byte-identical (4,479,991 bytes); `-o vox` identical except 2 bytes in the last 4, which also differ between two `-cpu` runs (upstream `VoxWriter.cpp` uninitialized palette entry, as recorded before).
+- Upstream CI smoke `./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu` with the README build (layout copied to a scratch dir): exit 0, `## CPU VOXELISATION`, forced-CPU message, writes `bunny.OBJ_64.vox`. CPU filled counts equal every earlier arch.
+- CUDA gate not rerun: recorded at 5a9b7cf ("CUDA compile check 2026-11-05 (5a9b7cf)" and "NVIDIA run 2026-11-05" above). `utils/jargon.py --port cuda_voxelizer` clean. README documents the Linux and Windows ROCm builds. Fork tree clean at 5a9b7cf (`git status --porcelain` empty; `build/` is ignored).
