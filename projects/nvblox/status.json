@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "nvblox",
+  "upstream_url": "https://github.com/nvidia-isaac/nvblox",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T03:50:52Z",
+  "updated_at": "2026-11-06T03:50:53Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
