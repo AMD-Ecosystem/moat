@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T03:40:13Z",
-  "updated_at": "2026-11-06T03:40:14Z",
+  "updated_at": "2026-11-06T03:44:56Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "intake": {
+    "verdict": "decline",
+    "reason": "ported-elsewhere",
+    "duplicate_effort": "ROCm/rocAL (AMD-owned separate library, active; not DALI-API-compatible)",
+    "viable": null,
+    "summary": "NVIDIA DALI data-loading/augmentation library (nvJPEG/NVDEC/NPP-bound); AMD covers its role with its own maintained ROCm/rocAL (PyTorch/TF/JAX plugins)",
+    "at": "2026-11-06T03:44:53Z"
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVIDIA/DALI/blob/main/LICENSE",
+      "at": "2026-11-06T03:44:56Z"
+    }
+  ]
 }
