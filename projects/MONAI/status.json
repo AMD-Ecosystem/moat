@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T03:59:55Z",
-  "updated_at": "2026-11-06T03:59:56Z",
+  "updated_at": "2026-11-06T04:11:51Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/Project-MONAI/MONAI/blob/dev/LICENSE",
+      "at": "2026-11-06T04:10:21Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "ported-elsewhere",
+    "duplicate_effort": "AMD-Ecosystem/MONAI amd-develop; amd-monai (ROCm-LS); upstream #9153 merged, #9161 open",
+    "viable": true,
+    "summary": "MONAI (Apache-2.0, medical imaging on PyTorch): AMD already maintains the ROCm port (AMD-Ecosystem/MONAI amd-develop, amd-monai in ROCm-LS for MI300X/MI325X/MI355X) and upstreamed core ROCm support (#9153); only Radeon/Windows coverage is missing, which is the ROCm-LS team's call",
+    "at": "2026-11-06T04:11:51Z"
+  }
 }
