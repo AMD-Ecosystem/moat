@@ -593,3 +593,57 @@ Julia/Mandelbrot vs the OpenCL backend on the same GPU (review 1's request). Ope
 `tornado-test -V uk.ac.manchester.tornado.unittests.compute.ComputeTests`: default options, both backends fail the same two tests (OpenCL Julia `expected 3.8022814 but was 1.4224751`, HIP `expected -1000.0 but was 1.5197568`, both Mandelbrot `expected 8.0 but was 9.0`); with `--jvm=-Dtornado.enable.fma=false` both pass 19/19. So the failures are FMA contraction in a chaotic iteration (the hue is `1000/k`, so a changed escape step changes it a lot), shared by the vendor's OpenCL compiler on the same device, not a HIP backend fault. The HIP and OpenCL compilers contract different expressions (72844 Julia pixels differ between them), which is why the first failing pixel differs. Mandelbrot's mismatch is not the "+-1 greylevel" its test comment expects (max 218), on both backends.
 
 Port checks: `utils/jargon.py -C projects/TornadoVM/src --commits origin/develop..af27a9f4b` and `--diff origin/develop...af27a9f4b` clean (`--port TornadoVM` still cannot resolve `develop..moat-port` in this clone layout). The ROCm build is documented next to the CUDA one (`README.md`, `INSTALL_FROM_SOURCE.md`, `docs/source/developer-guidelines.rst`, native-libs README). Fork tree has no modified tracked files.
+## Validation 2026-11-06 (linux-gfx1201, Radeon AI PRO R9700, wave32, validator at `af27a9f4b`)
+
+Verdict: **pass**, linux-gfx1201 completed at `af27a9f4b`. This is the first run on real hardware for the RDNA4 paths that earlier rounds only compile-checked: gfx12 WMMA MMA, the CK FMHA gfx12 instances (TestCuDnn SDPA), and the CK WMMA (F16/BF16) and DL (F32) GEMMs (TestCutlass).
+
+Host and toolchain: ROCm 10.1 TheRock wheels (`ROCM_PATH` = the wheel's `_rocm_sdk_devel`, HIP runtime 7.16.26385), Temurin 21.0.13+9 unpacked in the job directory, job-local Maven repository (`MAVEN_OPTS=-Dmaven.repo.local=...`), `MAX_JOBS=24` (24 physical cores), `HIP_VISIBLE_DEVICES=0` (pinned by the dispatcher; the host has four R9700s), `ulimit -c 0` for every GPU run. No hipDF/hipVS wheels: those builds target gfx90a/gfx942/gfx950 only, so `HIPDF_HOME` was unset and the cuDF/cuVS tasks report unsupported, as the notes predict for RDNA.
+
+Build (fresh clone of `AMD-Ecosystem/TornadoVM`, detached at `af27a9f4b`; `timeit.sh` runs from the MOAT root, so pass `make -C <fork>`):
+
+```bash
+make -C projects/TornadoVM/src jdk21 BACKEND=hip      # BUILD SUCCESS, 10:13 min, ck-hip for all nine default targets
+source projects/TornadoVM/src/setvars.sh
+tornado --devices                                     # 0:0 HIP AMD Radeon AI PRO R9700
+```
+
+Results (HIP SDK above):
+
+| Run | Result |
+|---|---|
+| `bash projects/TornadoVM/probe/mma/run.sh` | `== PASS (gfx1201)`. Code object has `v_wmma_f32_16x16x16_f16` x5, `_bf16` x1, `v_wmma_i32_16x16x16_iu8` x2; harness 53/53 (f16, bf16, s8, e4m3, e5m2, every FP8 byte, 1-5 k-steps, 1-4 warps, idle warps); `--mutate` 53/53 detected |
+| `tornado-selftest` | 20 pass, 1 skip (device-side launch). TC target "HIP gfx1201, warp 32, tensor cores F16+FP8"; `device/warp-sum` and both tensor-core checks pass |
+| MMA classes | TestMatrixMultiplicationMMA 18/18, MMABF16 7/7, MMAInt8 12/12, MMAFP8 8/8, MMACpAsync 8/8, MMAGlobalFragmentLoad 6/6, MMAInt8FragmentElementRead 4/4, MMAFragmentHelper 2/2 (65/65) |
+| `tornado-test --verbose --quickPass` | 2187 ran: 1437 pass, 748 unsupported, 2 failed (testMandelbrot, testJuliaSets, whitelisted). 54 of the unsupported are TestCudf 24, TestCudfColumns 23 and TestCuVS 7 (no hipDF/hipVS on RDNA), which accounts for the gap from gfx950's 1488 / 696 |
+| Library classes (`tornado-test -V <class>`) | TestCuBlas 27/27, TestCuBlasLt 10/10 (FP8 included), TestCuFft 9/9, TestCuRand 7/7, TestCusparse 17/17, TestNccl 30 run / 10 unsupported (two GPUs), TestNcclMultiProcess 5 run / 2 unsupported (one GPU; no OpenCL module in a HIP-only SDK), TestCuDnn 20/20 (SDPA on CK gfx12), TestCutlass 26/26 (CK WMMA / DL on RDNA4), TestCudf 24 unsupported, TestCudfColumns 23 unsupported, TestCuVS 7 unsupported, TestProfiler 9/9, TestProfilerTransferBytes 2/2, TestFP8 13/13 |
+| KernelContext | TestUnsupportedKernelContextOps 10 run / 3 unsupported (OpenCL-only), 0 failed. On wave32 TC-E4019 does not apply, so `testLocalFlagWaitAcrossWarps` runs the kernel and it completes. TestDynamicParallelism 2 pass / 13 unsupported |
+| `HeapFail#test03` (`-J"-Dtornado.device.memory=1MB"`) | pass |
+| `make test-nogpu JDK=jdk21` (with `tornado-compiler/utils/hiprtccheck/hiprtccheck` built first: `gcc -O2 -D__HIP_PLATFORM_AMD__ -I$ROCM_PATH/include -o hiprtccheck hiprtccheck.c -L$ROCM_PATH/lib -lhiprtc -Wl,-rpath,$ROCM_PATH/lib`) | BUILD SUCCESS. Lit: ir 13, lower 7, opt 16, tornado 5, frontend 12, codegen 60 (HIP lit compiled by hipRTC); HipMmaRoutingTest 1/1, TcCompilerTest 29/29 |
+| amd-smi power | profiler `POWER_USAGE_mW` 2000 for MatrixMultiplication2D. `amd-smi metric -g 0 --power` reads SOCKET_POWER 2-6 W over the same run, so the handler agrees with amd-smi. The card draws little power for this short workload |
+
+### Mandelbrot / Julia against the OpenCL backend (review 1's request)
+
+A second SDK, `make jdk21 BACKEND=opencl,hip` (worktree at `af27a9f4b`, `TORNADO_CK_GPU_TARGETS=gfx1201`). The AMD OpenCL platform comes up with review 3's symlink recipe, plus the ROCm core libraries that `libamdocl64` needs (`libhsa-runtime64.so.1` and `libamd_comgr.so.3` from `_rocm_sdk_core/lib`, so `LD_LIBRARY_PATH=<symlink dir>:$ROCM_CORE/lib:$ROCM_PATH/lib`), and `ROCR_VISIBLE_DEVICES=0 HIP_VISIBLE_DEVICES=0`. `tornado --devices` then lists `0:0` OpenCL gfx1201 and `1:0` HIP.
+
+| `--jvm` | testJuliaSets | testMandelbrot |
+|---|---|---|
+| `-Dtornado.enabled.backends=opencl` (default `-cl-mad-enable -cl-fast-relaxed-math`) | fail: expected 3.8022814, got 1.4224751 | fail: expected 8.0, got 9.0 |
+| `-Dtornado.enabled.backends=opencl -Dtornado.opencl.compiler.flags=-w` | fail: expected -1000.0, got 1.5197569 | not run |
+| `-Dtornado.enabled.backends=hip` (default) | fail: expected -1000.0, got 1.5197568 | fail: expected 8.0, got 9.0 |
+| `-Dtornado.enabled.backends=hip -Dtornado.enable.fma=false` (adds `-ffp-contract=off`) | **pass** | **pass** |
+
+Both whitelisted failures come from FMA contraction in a chaotic float iteration that the test compares against the sequential Java result (Java does not fuse). The OpenCL backend on the same GPU fails both tests too, and with the fast-math flags removed it gives HIP's value to the last digit. With contraction off, HIP matches Java exactly. Neither failure is a defect of the port.
+
+### Mixed SDK and CUDA gate
+
+- No CUDA toolkit on this host. The CUDA 12.8 redist tarballs (`cuda_nvcc` 12.8.93, `cuda_cudart`, `cuda_cccl`, `cuda_nvrtc` from `developer.download.nvidia.com/compute/cuda/redist`, manifest `redistrib_12.8.1.json`) were unpacked into the job directory with `lib64 -> lib`. The PyPI `nvidia-cuda-nvcc-cu12` 12.8.93 wheel holds only `ptxas`, not `nvcc`. Without nvcc, any build that includes the CUDA backend fails in upstream's unchanged `cutlass-jni` ("Failed to find nvcc"), on develop as well.
+- `make jdk21 BACKEND=cuda,hip` (worktree, `TORNADO_CK_GPU_TARGETS=gfx1201`, `CUDACXX`/`CUDAToolkit_ROOT` = that toolkit): BUILD SUCCESS, CUTLASS shim `arch=80-real;80-virtual`; the cuDNN and cuDF shims skip for missing NVIDIA libraries. HIP runs from this SDK with `-Dtornado.enabled.backends=hip`: TestNccl 30 run / 10 unsupported, TestNcclMultiProcess 5 / 2 unsupported, TestCudf 24 unsupported, TestCuVS 7 unsupported, TestCuBlas 27/27, TestCutlass 26/26. Nothing throws from the vendor choice (review 1 item 4). Plain `tornado --devices` in this SDK throws `CUDA driver library (libcuda) not found`, because the CUDA backend comes first and fails to start. This is the harness-wide behaviour review 3 recorded for an OpenCL backend with no platform, and it is not specific to this port.
+- **CUDA gate at `af27a9f4b`: pass.** `make jdk21 BACKEND=cuda` in the same worktree with real nvcc 12.8.93, CUTLASS shim sm_80: BUILD SUCCESS, with no HIP or CK modules in the reactor. `git diff origin/develop...af27a9f4b` over `tornado-drivers/{cuda,ptx,opencl,metal}` and `tornado-native-libs/{cudf-jni,cudnn-jni,cutlass-jni}` is empty.
+
+### Completion checks
+
+- `python3 utils/jargon.py --port TornadoVM` still cannot resolve `develop..moat-port` in a single-branch clone (known). The explicit ranges `-C projects/TornadoVM/src --commits origin/develop..af27a9f4b` and `--diff origin/develop...af27a9f4b` are clean.
+- Documentation: the ROCm build appears in `INSTALL_FROM_SOURCE.md`, `README.md` and `docs/source/developer-guidelines.rst` (`make BACKEND=hip` with `ROCM_PATH`/`HIP_PATH`).
+- Integrity: `git -C projects/TornadoVM/src status --porcelain` shows only the untracked `tornado-compiler/utils/hiprtccheck/hiprtccheck` binary; no tracked file is modified.
+- Not covered here: multi-GPU NCCL/RCCL (the dispatcher pins one GPU), and cuDF/cuVS on RDNA (no hipDF/hipVS build exists for it).
+- Skill: `references/no-hip-equivalent.md` now records the gfx12 WMMA operand/result layout as confirmed on gfx1201 (it said "not measured").

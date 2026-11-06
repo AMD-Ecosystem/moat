@@ -83,3 +83,31 @@
 {"kind":"phase","ts":"2026-11-06T04:33:16Z","phase":"cuda-compile","seconds":17.365,"exit":0,"cmd":"make -C agent_space/src3 jdk21 BACKEND=cuda"}
 {"kind":"phase","ts":"2026-11-06T04:33:27Z","phase":"test","seconds":82.400,"exit":0,"cmd":"bash agent_space/libtests.sh"}
 {"kind":"session","ts":"2026-11-06T04:36:18Z","epoch":1793939778.403691696,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-06T04:14:43Z","epoch":1793938483.032590918,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-06T04:15:15Z","phase":"compile","seconds":0.003,"exit":2,"cmd":"make jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-06T04:26:11Z","phase":"compile","seconds":626.745,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/gfx1201-20261105-201017-tvm-val/moat/projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-06T04:27:13Z","phase":"test","seconds":33.036,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/gfx1201-20261105-201017-tvm-val/moat/projects/TornadoVM/probe/mma/run.sh"}
+{"kind":"phase","ts":"2026-11-06T04:29:05Z","phase":"compile","seconds":82.835,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/gfx1201-20261105-201017-tvm-val/wt-ocl jdk21 BACKEND=opencl,hip"}
+{"kind":"phase","ts":"2026-11-06T04:40:38Z","phase":"test","seconds":792.281,"exit":0,"cmd":"tornado-test --verbose --quickPass"}
+{"kind":"phase","ts":"2026-11-06T04:40:56Z","phase":"test","seconds":3.982,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cublas.TestCuBlas"}
+{"kind":"phase","ts":"2026-11-06T04:40:59Z","phase":"test","seconds":3.024,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cublas.TestCuBlasLt"}
+{"kind":"phase","ts":"2026-11-06T04:41:02Z","phase":"test","seconds":2.332,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cufft.TestCuFft"}
+{"kind":"phase","ts":"2026-11-06T04:41:03Z","phase":"test","seconds":1.285,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.curand.TestCuRand"}
+{"kind":"phase","ts":"2026-11-06T04:41:05Z","phase":"test","seconds":1.950,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cusparse.TestCusparse"}
+{"kind":"phase","ts":"2026-11-06T04:41:17Z","phase":"test","seconds":12.417,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.nccl.TestNccl"}
+{"kind":"phase","ts":"2026-11-06T04:41:19Z","phase":"test","seconds":1.659,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.nccl.TestNcclMultiProcess"}
+{"kind":"phase","ts":"2026-11-06T04:41:42Z","phase":"test","seconds":22.839,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cudnn.TestCuDnn"}
+{"kind":"phase","ts":"2026-11-06T04:41:44Z","phase":"test","seconds":1.932,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cutlass.TestCutlass"}
+{"kind":"phase","ts":"2026-11-06T04:41:45Z","phase":"test","seconds":0.691,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cudf.TestCudf"}
+{"kind":"phase","ts":"2026-11-06T04:41:45Z","phase":"test","seconds":0.680,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cudf.TestCudfColumns"}
+{"kind":"phase","ts":"2026-11-06T04:41:46Z","phase":"test","seconds":0.632,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cuvs.TestCuVS"}
+{"kind":"phase","ts":"2026-11-06T04:41:48Z","phase":"test","seconds":1.700,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.profiler.TestProfiler"}
+{"kind":"phase","ts":"2026-11-06T04:41:49Z","phase":"test","seconds":0.980,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.profiler.TestProfilerTransferBytes"}
+{"kind":"phase","ts":"2026-11-06T04:41:50Z","phase":"test","seconds":1.177,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.arrays.TestFP8"}
+{"kind":"phase","ts":"2026-11-06T04:41:51Z","phase":"test","seconds":1.251,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.api.TestUnsupportedKernelContextOps"}
+{"kind":"phase","ts":"2026-11-06T04:41:52Z","phase":"test","seconds":1.275,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.api.TestDynamicParallelism"}
+{"kind":"phase","ts":"2026-11-06T04:42:38Z","phase":"test","seconds":15.032,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/gfx1201-20261105-201017-tvm-val/moat/projects/TornadoVM/src test-nogpu JDK=jdk21"}
+{"kind":"phase","ts":"2026-11-06T04:50:16Z","phase":"compile","seconds":431.035,"exit":2,"cmd":"make -C /var/lib/jenkins/fleet/jobs/gfx1201-20261105-201017-tvm-val/wt-cuda jdk21 BACKEND=cuda,hip"}
+{"kind":"phase","ts":"2026-11-06T04:54:51Z","phase":"cuda-compile","seconds":160.159,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/gfx1201-20261105-201017-tvm-val/wt-cuda jdk21 BACKEND=cuda,hip"}
+{"kind":"phase","ts":"2026-11-06T04:55:52Z","phase":"cuda-compile","seconds":21.258,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/gfx1201-20261105-201017-tvm-val/wt-cuda jdk21 BACKEND=cuda"}
+{"kind":"session","ts":"2026-11-06T05:02:54Z","epoch":1793941374.087970843,"event":"end","platform":"linux-gfx1201"}

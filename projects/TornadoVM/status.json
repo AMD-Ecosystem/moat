@@ -7,10 +7,9 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-06T04:36:12Z",
+  "updated_at": "2026-11-06T05:02:48Z",
   "head_sha": "af27a9f4b69e3f80eb5012ede0fa80294c6addd2",
   "depends_on": [],
-  "porting": null,
   "waivers": {},
   "license_spdx": "Apache-2.0",
   "intake": {
@@ -97,6 +96,30 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "af27a9f4b69e3f80eb5012ede0fa80294c6addd2",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-06T05:02:48Z",
+      "updated_at": "2026-11-06T05:02:48Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
     }
   },
   "porting_released": {
