@@ -434,11 +434,23 @@ Validator at `9607b099` (moat-port tip = head_sha). Fresh clone of the fork, `gi
 R=$($FLEET_VENV/bin/python -m rocm_sdk path --root); P=$FLEET_VENV/bin/python
 export PATH=$FLEET_VENV/bin:$R/bin:$PATH CMAKE_PREFIX_PATH=$R OMP_NUM_THREADS=$MAX_JOBS CMAKE_BUILD_PARALLEL_LEVEL=$MAX_JOBS
 cmake -S . -B build-hip -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$P
+## Validation 2026-11-06 (linux-gfx90a, AMD Instinct MI250X / MI250, ROCm 10.1 pip SDK) -- moat-port 9607b09
+
+Validator role, fresh clone of `AMD-Ecosystem/h2o4gpu` checked out at `9607b099f3e0128c99eb8964c32462892b086967` (= `origin/moat-port`). `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, `LD_LIBRARY_PATH` unset and `OPENBLAS_NUM_THREADS=32` for every build and run. Submodule pins: `LightGBM_rocm` 8f7036f, `xgboost_rocm` ee5234f, `tests/googletest` 2fe3bd9. Extra venv packages (into `$FLEET_VENV` only): `cython==3.0.11 meson-python feather-format "pyarrow<15" pytest-timeout`; apt `swig` 4.2.0 and `libopenblas-dev` 0.3.26 already present. No dependency had to be built from source beyond the in-tree submodules.
+
+### Build (all rc 0; wheel `h2o4gpu-0.6.0+local.9607b099.dirty`, "dirty" = the h2o patches applied inside the two ROCm submodules during the build)
+```
+R=$($FLEET_VENV/bin/python -m rocm_sdk path --root); P=$FLEET_VENV/bin/python
+export PATH=$FLEET_VENV/bin:$R/bin:$PATH CMAKE_PREFIX_PATH=$R OMP_NUM_THREADS=$MAX_JOBS CMAKE_BUILD_PARALLEL_LEVEL=$MAX_JOBS
+cd projects/h2o4gpu/src
+git submodule update --init --recursive tests/googletest LightGBM_rocm xgboost_rocm
+cmake -S . -B build-hip -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$P
 cmake --build build-hip -j$MAX_JOBS
 make cpp USE_HIP=ON PYTHON=$P
 make lightgbm_gpu install_lightgbm_gpu lightgbm_cpu install_lightgbm_cpu USE_HIP=ON PYTHON=$P
 make xgboost install_xgboost USE_HIP=ON PYTHON=$P
 make xgboost_prev install_xgboost_prev USE_HIP=ON PYTHON=$P
+make xgboost_prev install_xgboost_prev USE_HIP=ON PYTHON=$P    # prints "XGboost previous version is not built with USE_HIP=ON" twice
 make apply-sklearn PYTHON=$P
 make py USE_HIP=ON PYTHON=$P
 $P -m pip install --no-deps --force-reinstall src/interface_py/dist/h2o4gpu-0.6.0+local.9607b099.dirty-cp311-cp311-linux_x86_64.whl
@@ -464,3 +476,19 @@ $P -m pip install --no-deps --force-reinstall src/interface_py/dist/h2o4gpu-0.6.
 - `python3 utils/jargon.py --port h2o4gpu`: clean. ROCm build documented in DEVEL.md beside the CUDA build.
 - Integrity: `git status --porcelain --ignore-submodules=untracked` at `9607b099` shows only untracked build output (build-hip/, build-nvtx/, sklearn_download.lock, src/interface_py/lightgbm_{cpu,gpu}).
 - Verdict: linux-gfx1100 (wave32) completed at `9607b099`.
+- Wall clock about 15 min (most of it the recursive submodule clone). `verify_gpu_lib.sh`: "PASS: _ch2o4gpu_gpu.so survived strip". Both patch sets applied (only git's trailing-whitespace warnings, LightGBM 0001:47, xgboost 0002:384,738).
+- Wheel ships `h2o4gpu/libs/_ch2o4gpu_gpu.so`, `lightgbm_gpu/lib/lib_lightgbm.so`, `lightgbm_cpu/lib/lib_lightgbm.so`, `xgboost/lib/libxgboost.so`; `xgboost_prev/` entries 0. Installed `_ch2o4gpu_gpu.so`: RUNPATH `[<job>/venv-base-links/_rocm_sdk_devel/lib:/usr/lib/gcc/x86_64-linux-gnu/13]`, NEEDED hipblas/hipsparse/hipsolver/hiprand/rocrand/amdhip64/openblas/libgomp (no libomp, no libomptarget, no roctx).
+
+### Tests (exact results)
+- C++ googletest `build-hip/h2o4gpu_test`: **24/24 pass, 3 consecutive runs** (rc 0 each).
+- Python GPU path vs scikit-learn 1.9.1 (`agent_space/oracle/oracle.py` from the previous gfx90a rounds, unchanged; exits nonzero if `GPUlib.get()` is None or no GPU): `device_count(-1)` (1, 1). KMeansH2O v_measure 1.000000, center dist 3.7e-6 (f32) / 9.2e-15 (f64); TSVD (cusolver) sv rel err 1.8e-7 / 3.0e-16; PCA ev rel err 4.6e-7 / 3.8e-16; ElasticNetH2O (alpha 0, lambda 1e-6) r2 1.000000 = sklearn Ridge in both dtypes. **ALL PASS**.
+- Same oracle under `rocprofv3 --kernel-trace --output-format csv`: ALL PASS again; 48519 dispatches, all on one GPU agent: `kmeans::` 110, `cml::` 7242, `h2o4gpu::` 226, rocBLAS 18071, rocSOLVER 636, rocPRIM 14722.
+- xgboost and LightGBM, GPU vs CPU (`agent_space/oracle/gbm.py`, 100000x20, 80/20 split, 50 rounds): xgboost 2.1.3 (`USE_HIP` True), shared QuantileDMatrix held-out RMSE cuda 0.1309159382 / cpu 0.1309159387, `get_feature_interactions` present. lightgbm_gpu 4.7.0 `device_type='cuda'` RMSE 0.12325394 / cpu 0.12329379 (per-row max 4.05e-2, median 7.3e-10, 0.04% of rows > 1e-3: the near-tie threshold placement judged benign in Review round 3). ALL PASS. Under rocprofv3: 36807 dispatches on the GPU agent, `LightGBM::` 24286, `xgboost::` 5332.
+- Shipped `pytest -q -p no:cacheprovider tests/python/open_data/system tests/python/open_data/gbm`: **18 passed / 4 failed / 17 skipped** in 26 s. The 4 failures are the known `test_lightgbm.py::test_lightgbm_{gpu,cpu}[{dart,gbdt}]`, all `TypeError: cv() got an unexpected keyword argument 'early_stopping_rounds'` (removed in LightGBM 4.0; upstream test drift, same as every earlier round). Skips = data not synced / memory.
+- roctx with the NVTX switch on: `USENVTX=1 cmake -S . -B build-nvtx -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$P -DCMAKE_CXX_FLAGS=-DUSE_NVTX -DCMAKE_HIP_FLAGS=-DUSE_NVTX && cmake --build build-nvtx -j64` prints "Building with NVTX support on (roctx)"; its `_ch2o4gpu_gpu.so` NEEDs `libroctx64.so.4` (the default build: none). A copy of the installed package with that module, ElasticNetH2O fit (`agent_space/glm_solve.py`) under `rocprofv3 --marker-trace --kernel-trace`: **1087 marker records = 1087 `START:` lines** (Evaluate_fg, gapoptvaltol, orelax, P1alloc, ... 72 each), 3848 kernels, fit corr 0.99999.
+
+### Gates for completion
+- CUDA no-regression: already recorded at this head (`## CUDA compile check 2026-11-05 (ccde3a9)`, second entry, which also built 9607b09 with nvcc 12.8: PASS, no new warnings). Not re-run.
+- `python3 utils/jargon.py --port h2o4gpu`: clean. Documentation: DEVEL.md `##### USE_HIP (AMD GPUs)` documents the ROCm build next to the CUDA one, including the LightGBM/xgboost ROCm submodules and the xgboost_prev limitation.
+- Integrity: submodule trees reset (`git -C LightGBM_rocm checkout -- .`, same for `xgboost_rocm`); `git status --porcelain --ignore-submodules=untracked` shows only untracked build output (`build-hip/`, `build-nvtx/`, `sklearn_download.lock`, `src/interface_py/lightgbm_{cpu,gpu}`). `moatlib.py audit-clean h2o4gpu`: OK.
+- Verdict: linux-gfx90a **completed** at 9607b09.
