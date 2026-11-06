@@ -115,14 +115,19 @@ never have reached the linker.
 
 **An access violation that hits only the Windows build, in CPU code the port did not
 touch, and moves between functions from run to run, is worth reading as an
-out-of-bounds read before suspecting threads or the toolchain.** glibc's heap is one
-contiguous mapping, so a read a few KB past the end of a vector usually returns
+out-of-bounds read before suspecting threads or the toolchain.** On Linux a read a few
+KB past the end of a vector usually lands in already-mapped heap memory, returns
 garbage and goes unnoticed; the Windows heap commits pages on demand, so the same read
 can land on an unmapped page. plvs (TUM-VI stereo, fisheye cameras) crashed 13 of 13
-Windows runs in `LocalMapping::CreateNewMapFeatures`, `KeyFrameCulling` and
-`LoopClosing` while Linux finished most runs; the cause was `mvuRight`/`mvDepth` sized
-to the left-image keypoint count but indexed over both images (code inherited from
-ORB-SLAM3, so any ORB-SLAM3 derivative has it). Fixing the allocation made the runs clean.
+Windows runs while Linux finished most runs, and three upstream CPU bugs were behind
+it. The every-run crash (`LocalMapping::CreateNewMapFeatures`, `KeyFrameCulling`) was
+`mvuRight`/`mvDepth` sized to the left-image keypoint count but indexed over both
+images (code inherited from ORB-SLAM3, so any ORB-SLAM3 derivative has it). Fixing that
+allocation still left 3 of 10 runs crashing: a loop-closure keyframe vector shorter
+than the point vector it is indexed with (the `LoopClosing` crash, plvs-only) and a
+line observation counted twice. Only with all three fixed were 10 of 10 runs clean, so
+keep running the sequence after the first fix. AddressSanitizer on a Linux CPU-only
+build shows the over-reads in a run that exits 0, which makes it the cheaper search.
 
 Getting file:line costs one rebuild and no admin rights:
 - Build a CPU-only tree with `-DCMAKE_CXX_FLAGS="... -g -gcodeview"` and
