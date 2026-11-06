@@ -411,3 +411,55 @@ cd <wt> && python -m pip wheel -v --no-build-isolation --no-deps -w <job>/cudach
 - Same warning lines (255 each, identical after path normalisation).
 - Wheels: identical file list (65 `.so`). `nm -D --defined-only` of every `.so` identical (2247 lines), and the `NEEDED` entries are identical. The only files that differ are the expected run-time sources: `cupy/__init__.py`, `cupy/_environment.py`, `cupy/cuda/compiler.py`, `carray.cuh`, `hip_workaround.cuh` (plus `RECORD`).
 - Verdict: **no CUDA Linux build regression at 24a62ef95.** Build trees, wheels and worktrees under the job directory were deleted afterwards.
+## Validation 2026-11-06 (linux-gfx90a, validator): full upstream baseline per Ruling 7
+
+Port: ROCm/cupy `moat-port` at **24a62ef95**. Baseline: upstream **18b54de** (merge base). Host: MI210-class gfx90a (`gfx90a:sramecc+:xnack-`, wave64), TheRock pip ROCm (rocm-sdk 10.1.0, HIP runtime 71626385, hipconfig 7.16.26385), Python 3.11.17, Cython 3.2.9, numpy 2.4.6, scipy 1.17.1, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout, hypothesis 6.54.6, optuna (all in the job venv).
+
+### Build (same toolchain and flags for both trees)
+
+```bash
+export ROCM_HOME=<venv>/../_rocm_sdk_devel     # rocm-sdk devel root of the venv
+export PATH="$VENV/bin:$ROCM_HOME/bin:$PATH" LD_LIBRARY_PATH="$ROCM_HOME/lib"
+export CUPY_INSTALL_USE_HIP=1 HCC_AMDGPU_TARGET=gfx90a CUPY_NUM_BUILD_JOBS=32
+utils/timeit.sh cupy compile -- bash -c "cd projects/cupy/src && python setup.py build_ext --inplace -v"   # port
+(cd agent_space/wt-base && python setup.py build_ext --inplace -v)                                          # baseline worktree at 18b54de
+```
+
+Both EXIT 0, identical configure summary (cuda Yes 71626385, cub Yes 400700, nccl Yes 23007, random Yes, thrust Yes, dlpack Yes), 472 warnings each, the same 64 `.so` files. Plan smoke (elementwise, reduction, RawKernel, CUB, hipRAND, rocSOLVER, hipFFT, hipBLAS, hipSPARSE, rocThrust, nvtx, profiler) passes on both. `tests/install_tests tests/import_tests` (CUPY_INSTALL_USE_HIP=1): 31 passed, 1 skipped on both.
+
+### Full test suite
+
+Every subdirectory of `tests/cupy_tests` and `tests/cupyx_tests` (and of `cupyx_tests/scipy_tests`), plus each top-level `test_*.py`, as its own pytest process, one process at a time, alternating port and baseline per target. No marker filter (slow tests included; multi_gpu tests skip under the GPU limit). The GPU (64 GB) peaked near 8 GB with 16 workers, so `-n 16` was used (`-n auto` would have meant 128 contexts on one GPU). Environment as upstream's ROCm CI (`.pfnci/linux/tests/rocm-7-14.sh`):
+
+```bash
+ulimit -c 0
+export CUPY_TEST_GPU_LIMIT=1 CUPY_TEST_FULL_COMBINATION=0 CUPY_CACHE_DIR=<per-tree dir>
+utils/timeit.sh cupy test -- bash -c 'cd "$1" && shift && exec "$@"' _ <tree> \
+  timeout --signal INT --kill-after 60 14400 python -m pytest -n 16 -rfEX --timeout 600 -p no:cacheprovider -q --junitxml=<out>.xml <target>
+```
+
+Totals over the junit records (one record per test id, worst outcome kept):
+
+| tree | passed | failed | error | skipped | xfail |
+|---|---|---|---|---|---|
+| port 24a62ef95 | 98727 | 385 | 1 | 7768 | 4726 |
+| base 18b54de | 98705 | 407 | 1 | 7768 | 4726 |
+
+Same test-id set on both trees. Per-directory counts were identical on both trees except core_tests (port 130 failed / base 151), special_tests (13 / 15) and ndimage_tests (1 / 0). Skip counts in sparse_tests (port 2 fewer) and ndimage_tests (port 2 more) differ in opposite directions and cancel in the totals.
+
+### Classification
+
+- **Identical failures (upstream's): 385** (384 failures + the 1 collection error `statistics_tests/test_histogram.py::TestCubHistogram`, which xdist reports as 16 errors). By class: test_bfloat16 127; interpolate TestInterp1D 105, TestNdBSpline 21, TestCubicSpline 14, TestRegularGridInterpolator 1; sparse TestSpsolveTriangular 24, sparray/int64-index/LOBPCG 17; signal TestChirp 8; cupy fft 6 and cupyx.scipy fft 6; TestCumsum 6, TestCumprod 6, TestBatchScanSizeOverInt32Max 4; TestSVD 4; test_cusparse TestCheckAvailabilityVersionSkew 4; test_init 4; test_optimize 3; TestPolyval 2; TestUfuncSlow 2; TestArrayElementwiseOp 2; one each in binary TestElementwise (`std::is_signed` not found under hiprtc), dlpack, cuda_tests test_runtime, random TestRandomState, testing TestPackageRequirements; and the 13 complex xsf calls below.
+- **New on the port: none.** One test failed on the port run only: `cupyx_tests/scipy_tests/ndimage_tests/test_interpolation.py::TestZoom::test_zoom_float[_param_19_{cval=1.0, mode='nearest', order=0, output=None, prefilter=True, zoom=10}]` (48 of 1e6 elements wrong, e.g. 1.49e-10 instead of 6.66). It did not reproduce: `-k "TestZoom and test_zoom_float"` serially, twice on each tree, 54 passed every time; the whole `test_interpolation.py` with `-n 16` on the port: 5203 passed. On Linux the port changes only the `__device__` friend in `carray.cuh` (no code generated) and an MSVC-only block in `hip_workaround.cuh`, and the build is identical to the baseline, so this is an intermittent on this host, not a port regression.
+- **Fixed by the port: 23**, all from 4ccded519 (`__device__` on the `as_mdspan` friend of CArray):
+  - `core_tests/test_elementwise.py::TestElementwiseGUFuncLike`: **21 fail on the baseline, pass on the port** (all 31 tests of the class pass on the port). Baseline error: 111 x `'data_'/'shape_'/'strides_' is a private member of 'CArray<...>'`; 0 in the port log. This confirms the gfx1100 reviewer's finding on gfx90a.
+  - `special_tests/test_spfun_stats.py::TestPoissonBinomCDF::test_values` and `::test_scalar_k`: fail on the baseline with the same CArray private-member error, pass on the port. These are new here: no earlier record lists them.
+- **The 12 complex xsf calls** (the Windows porter's 12 remaining special failures) fail identically on Linux, on both trees: TestErfi::test_complex, TestDawsn::test_complex, TestLambertW::test_values, TestDigamma x6 (test_complex, test_scalar, test_arange, test_linspace_positive, test_linspace_negative, test_inf_and_nan), TestSici::test_complex, TestShichi::test_complex, TestWofz::test_complex. A 13th test with the same cause, `test_ufunc_dispatch.py::TestUfunc::test_dispatch[wofz]`, also fails on both trees. Every error is `no matching function for call to '<dawsn|digamma|erfi|lambertw|sici|shichi|wofz>'`, with candidates `cxx::complex<T>` (= `std::complex<T>`) and arguments `thrust::complex<T>`: xsf maps `cxx::complex` to `thrust::complex` only when `__CUDACC__` is defined, and no HIP compile defines it. This is upstream's, not in this delta, and the same on every OS.
+
+### Other gates
+
+- CUDA compile gate: not run on this host (no CUDA toolkit here). No commit since the Ruling 4 nvcc comparison changes a build-time CUDA path (reviews 2026-11-06 and 2026-11-06b).
+- Jargon: `python3 utils/jargon.py --port cupy` reports clean (local `main` at 18b54de). Docs: `docs/source/install.rst` has the Windows ROCm section; the Linux ROCm build docs are upstream's.
+- Integrity: `git -C projects/cupy/src status --porcelain` shows no modified tracked files (only in-place build output).
+
+**Verdict: linux-gfx90a completed at 24a62ef95.** The port behaves as upstream on Linux, apart from the 23 tests that 4ccded519 fixes.
