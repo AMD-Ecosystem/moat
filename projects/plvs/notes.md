@@ -3522,3 +3522,24 @@ The 970cb1f column matches the porter's table report for report. The full run do
 
 ### Not done here
 - No mono or RGB-D ASan run: no TUM RGB-D sequence is on this host and the disk has under 2 GB free. Unaffected-mode behaviour rests on the code reading above and the porter's gfx1100 mono run. No GPU run (not needed for review). The CUDA no-regression compile at b4be814 is still owed (mi355).
+
+## CUDA compile check 2026-11-05 (b4be814)
+
+CUDA no-regression compile check on the mi355 fleet host. No role was taken, no state changed, no GPU work. Toolkit: `/usr/local/cuda-12.8/bin/nvcc` 12.8.93 (V12.8.93), host g++ 13. Port = `moat-port` `b4be814`; control = fork `master` `2ecb8b1`, still equal to upstream `luigifreda/plvs` HEAD (`git ls-remote` checked). Both were git worktrees in the job directory. Recipe and minimal target set are the same as in "CUDA compile check 2026-11-05 (fde33e5)": OpenCV 4.13.0 built from source CPU-only and used only for its headers (`BUILD_LIST=core,imgproc,features2d,flann,calib3d,highgui,imgcodecs,videoio`, Ninja, `WITH_CUDA=OFF`); the four `src/cuda/*.cu` files compiled with nvcc for sm_80+sm_90 with `-DUSE_CUDA`; libelas-gpu (`CUDA_ARCH_BIN=8.0`, configure reports `USE_CUDA true`, `-DUSE_CUDA` in the CXX flags) and libsgm (auto-detected sm_53..sm_86) built through their own CMake. All build trees and the OpenCV build were deleted afterwards.
+
+**Result: PASS. Every target builds with RC=0 at both shas, all device code is byte-identical, there are no errors, and there are no new warnings. The libsgm `"CudaSafeCall" redefined` warning recorded at fde33e5 is still there.**
+
+The delta `970cb1f..b4be814` (46a26f4, 2522f1e, 59eb0da, b4be814) touches only `src/Frame.cc`, `src/MapLine.cc`, `src/OptimizableTypes.cpp` and `src/PointCloudMapOctreePointCloud.cc`. `git diff --stat 970cb1f b4be814 -- Thirdparty src/cuda include CMakeLists.txt cmake '*.sh' '*.cmake' '*.txt'` is empty.
+
+| target | base 2ecb8b1 | port b4be814 | device code base vs port |
+|---|---|---|---|
+| `Allocator_gpu.cu`, `Cuda.cu`, `Fast_gpu.cu`, `Orb_gpu.cu` | RC=0, 0 warnings | RC=0, 0 warnings | identical (8 cubins) |
+| libelas-gpu (5 targets) | RC=0, 44 warning lines | RC=0, 32 | `elas_gpu.cu.o` identical |
+| libsgm (`libsgm.a`) | RC=0, 20 warning lines | RC=0, 69 | all 10 `.cu.o` identical (70 cubins, sm_53..sm_86) |
+
+- Device code: for all 79 cubins (`cuobjdump -xelf all`), the multiset of MD5s of the `.text.*` kernel sections is identical, base vs port (18 cubins contain no kernels). Section names are not compared because they carry the per-TU hash that nvcc derives from the source text. This byte comparison also covers libsgm sm_53..sm_70, which nvdisasm 13.1 refuses. As a cross-check, the masked `nvdisasm` listings (13.1 from the triton wheel; the 12.8 toolkit has none) are identical for every object as well.
+- Warnings, with paths and line numbers masked, base vs port: the libelas-gpu port has only fewer warnings (the 6 `#2361-D` and 6 `-Wnarrowing` `int32_t`-to-`float` lines the port's casts remove). libsgm port adds only the 49 `Thirdparty/libsgm/src/internal.h:32: warning: "CudaSafeCall" redefined` lines. The counts are the same as at fde33e5 and 970cb1f, so this round adds nothing. The warning's cause and its suggested fix (drop the unused `CudaSafeCall` fallbacks from `src/cuda_to_hip.h`) are in the fde33e5 section; the fork still carries it.
+- Host `USE_CUDA` code: `unifdef -k -t -DUSE_CUDA -UUSE_HIP -U__HIP_PLATFORM_AMD__ -U_WIN32 -UWIN32 -U_MSC_VER -U_WIN64 -U__MINGW32__`, blank lines ignored, 970cb1f vs b4be814. `ORBextractor.{h,cc}`, `Tracking.{h,cc}` and `StereoDisparity.{h,cc}` are identical. `Frame.cc` differs only in the single 46a26f4 hunk in `ComputeStereoFishEyeLineMatches` (line 3032), which comes after the file's last `USE_CUDA` block (line 2866). It is shared host code, the same in the CPU and HIP builds. `MapLine.cc`, `OptimizableTypes.cpp` and `PointCloudMapOctreePointCloud.cc` contain no `USE_CUDA`, `USE_HIP` or `__CUDACC__` reference.
+
+### Not checked here
+- The full plvs CUDA library and executables. They need OpenCV with the CUDA contrib modules, Pangolin and PCL, and the host has 132 GB free on a 97%-full shared root. The changed lines are host C++ outside `USE_CUDA`, which the Linux and Windows HIP builds compile unchanged.
