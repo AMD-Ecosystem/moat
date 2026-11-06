@@ -8,7 +8,7 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T03:04:35Z",
-  "updated_at": "2026-11-06T03:06:54Z",
+  "updated_at": "2026-11-06T11:40:14Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -21,5 +21,14 @@
     "viable": true,
     "summary": "bitsandbytes: upstream already builds for ROCm and marks LLM.int8, 4-bit QLoRA and 8-bit optimizers supported on CDNA and RDNA, Linux and Windows; leftover fixes already have open PRs",
     "at": "2026-11-06T03:06:54Z"
-  }
+  },
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/bitsandbytes-foundation/bitsandbytes/blob/main/LICENSE",
+      "at": "2026-11-06T11:40:13Z"
+    }
+  ]
 }
