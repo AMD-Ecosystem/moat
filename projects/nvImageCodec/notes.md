@@ -1,0 +1,1 @@
+# nvImageCodec notes
