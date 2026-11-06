@@ -190,6 +190,7 @@ def generate(name, src=None):
         "components": comps,
         "covered": [],
         "scoped_out": [],
+        "owed": [],
         "removed_from_floor": [],
     }
 
@@ -233,10 +234,15 @@ def check(name):
             scoped[s] = None
         else:
             scoped[s.get("id")] = s.get("reason")
+    owed = _id_reasons(d.get("owed", []))
     problems = []
     for c in d.get("components", []):
         cid = c["id"]
         if cid in covered:
+            continue
+        if cid in owed:
+            if not owed[cid]:
+                problems.append(f"{name}: {cid} owed with no reason")
             continue
         if cid in scoped:
             if not scoped[cid]:
@@ -248,6 +254,30 @@ def check(name):
         if isinstance(r, dict) and not r.get("reason"):
             problems.append(f"{name}: {r.get('id')} removed from the floor with no reason")
     return problems
+
+
+def _id_reasons(entries):
+    out = {}
+    for e in entries:
+        if isinstance(e, str):
+            out[e] = None
+        else:
+            out[e.get("id")] = e.get("reason")
+    return out
+
+
+def owed(name, root=None):
+    """Components still in scope but not yet done (`owed`), as {id: reason}.
+
+    `owed` exists because the only other way to account for in-scope, unfinished
+    work was `scoped_out`, which reads as a cut nobody made (h2o4gpu's Windows
+    platform, kept last by a ruling). The surface gate accepts an owed item with a
+    reason, so a port can claim success on the platforms it has done, and pr_ready
+    refuses while any remain, so owed work cannot reach an upstream PR unnoticed."""
+    p = (root or REPO) / "projects" / name / "surface.json"
+    if not p.is_file():
+        return {}
+    return _id_reasons(json.loads(p.read_text()).get("owed", []))
 
 
 def main():
