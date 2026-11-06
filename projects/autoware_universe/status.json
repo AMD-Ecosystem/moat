@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-05T23:13:25Z",
-  "updated_at": "2026-11-05T23:13:26Z",
+  "updated_at": "2026-11-06T00:04:10Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-06T00:04:09Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/autowarefoundation/autoware_universe/blob/main/LICENSE",
+      "at": "2026-11-06T00:01:39Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none in universe; AMD Silo AI x Autoware Foundation collaboration (2025-12, AutoDrive e2e model) touches no universe CUDA publicly",
+    "viable": true,
+    "summary": "Autoware ROS 2 monorepo, 797 KB CUDA; 69% is pre/post kernels around TensorRT (needs a MIGraphX backend, defer); fork for the pure-CUDA unit (pointcloud preprocessor, CUDA ground seg, occupancy grid, ~250 KB) plus companion repos autoware_cuda and cuda_blackboard; scope cut and Silo AI coordination need jeff",
+    "at": "2026-11-06T00:02:59Z"
+  }
 }
