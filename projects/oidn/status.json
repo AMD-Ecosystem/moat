@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T02:27:16Z",
-  "updated_at": "2026-11-06T02:27:17Z",
+  "updated_at": "2026-11-06T03:00:32Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/RenderKit/oidn/blob/master/LICENSE.txt",
+      "at": "2026-11-06T03:00:19Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream devices/hip (Intel-maintained, AMD contributes, PR #267)",
+    "viable": false,
+    "summary": "Intel Open Image Denoise: upstream-maintained HIP backend covers all RDNA2/3/3.5/4 with prebuilt Linux+Windows binaries; only CDNA missing, which is wave64+MFMA feature work, not a port",
+    "at": "2026-11-06T03:00:31Z"
+  }
 }
