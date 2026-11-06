@@ -695,3 +695,42 @@ Harness `work/scripts/cvdiff.py <exe> <model> <work> <tag> --repeat 3` (job dire
 - Writers at 64 (Release): `-o obj` GPU and CPU byte-identical (4,479,991 bytes); `-o vox` identical except 2 bytes in the last 4, which also differ between two `-cpu` runs (upstream `VoxWriter.cpp` uninitialized palette entry, as recorded before).
 - Upstream CI smoke `./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu` with the README build (layout copied to a scratch dir): exit 0, `## CPU VOXELISATION`, forced-CPU message, writes `bunny.OBJ_64.vox`. CPU filled counts equal every earlier arch.
 - CUDA gate not rerun: recorded at 5a9b7cf ("CUDA compile check 2026-11-05 (5a9b7cf)" and "NVIDIA run 2026-11-05" above). `utils/jargon.py --port cuda_voxelizer` clean. README documents the Linux and Windows ROCm builds. Fork tree clean at 5a9b7cf (`git status --porcelain` empty; `build/` is ignored).
+## Validation 2026-11-06 (linux-gfx90a, validator, moat-port 5a9b7cf)
+
+Verdict: completed. Satisfies the wave64 gate at head 5a9b7cf. Full real-GPU revalidation (no carry-forward: `classify ccc2950 5a9b7cf` is `mixed`). The HIP path is unchanged by 5a9b7cf: every count equals the gfx90a 3625a1e validation and the porter's 5a9b7cf round exactly.
+
+Host: AMD Instinct MI250X/MI250 (gfx90a:sramecc+:xnack-), one GCD (`HIP_VISIBLE_DEVICES=1`), Linux. TheRock ROCm 10.1.0 pip SDK (`rocm-sdk path --root`), HIP 7.16.26385, AMD clang 24.0.0git (d6f6cb6), CMake 3.31.6, g++ 13.3.0. Trimesh2 2022.03.04 (`0b3d9e2`) built from source in the job directory (`make -C trimesh2/libsrc -j64`, exit 0, `lib.Linux64/libtrimesh.a`). Fresh fork clone at `5a9b7cf` (`origin/moat-port`); build dirs outside the clone; `git status --porcelain` empty at the end. All GPU runs under `ulimit -c 0`.
+
+### Builds (all exit 0, upstream warnings only: -Wwrite-strings, -Wformat `%llu`, `nodiscard` hipError_t, -Wimplicit-const-int-float-conversion)
+
+```
+common="-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DTrimesh2_INCLUDE_DIR:PATH=<tm2>/include -DTrimesh2_LINK_DIR:PATH=<tm2>/lib.Linux64"
+mkdir b-readme && cd b-readme && cmake -DCMAKE_BUILD_TYPE=Release $common <src>    # README Linux recipe (Unix Makefiles), prefix swapped for the pip SDK
+cmake -S <src> -B b-o0    -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0" $common
+cmake -S <src> -B b-o0dbg -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0 -D_DEBUG" -DCMAKE_CXX_FLAGS=-D_DEBUG $common
+cmake --build <dir> --parallel 64
+```
+
+Emitted atomics (`llvm-objcopy --dump-section=.hip_fatbin` of each `voxelize*.cu.o`, `clang-offload-bundler --unbundle` to the gfx90a code object, `llvm-objdump -d`): README Release `global_atomic_cmpswap` in both kernels; device -O0 `flat_atomic_or` (voxelize.cu) and `flat_atomic_xor` (voxelize_solid.cu), the native instructions that set no bits on a managed table at 689b885.
+
+### GPU-vs-CPU differential, `test_models/bunny.OBJ`
+
+Harness `agent_space/cvdiff.py <exe> <model> <work> <tag> --repeat 3` (rewritten; agent_space does not survive containers): each run in its own directory with a copy of the model; GPU run then `-cpu` on the same binary; the GPU log must show `## GPU VOXELISATION`, `Voxelization GPU time` and `CUDA device memory for Voxel Grid` with no fallback, the `-cpu` log `## CPU VOXELISATION` and no GPU section; binvox RLE and the morton `.bin` decoded to bitsets, obj_points compared as vertex-line sets; then 3 more GPU runs sha256-compared with the first. Every GPU log shows `Best device: AMD Instinct MI250X / MI250`.
+
+36 cases (2 builds x surface/solid x 64/256/512 x binvox/morton/obj_points). Differing counts are identical across the three formats in every case. **108 of 108 repeats byte-identical** to the first GPU run.
+
+| mode | size | filled CPU | Release (README) diff, GPU-only/CPU-only | Release GPU ms (binvox) | device -O0 diff | -O0 GPU ms |
+|---|---|---|---|---|---|---|
+| surface | 64 | 13,802 | 0 | 0.4 | 0 | 25.0 |
+| surface | 256 | 221,760 | 0 | 9.9 | 0 | 597 |
+| surface | 512 | 887,315 | 8 (3/5) | 62.2 | 4 (2/2) | 3,820 |
+| solid | 64 | 52,258 | 0 | 0.9 | 0 | 19.2 |
+| solid | 256 | 3,345,384 | 0 | 49.4 | 0 | 691 |
+| solid | 512 | 26,763,628 | 1 (1/0) | 388 | 0 | 5,444 |
+
+- 512 residual is the accepted boundary FP class (also seen on the V100 at 5a9b7cf): Release 8 / 1, -O0 4 / 0, as at 3625a1e on this card.
+- `_DEBUG` -O0 build at 64, surface and solid, binvox and morton: 0 diff, repeat identical; `cudaMemcpyFromSymbol` reads the counters (surface `Processed 5110 triangles`, `Tested 117367 voxels`, `Marked 45229 voxels`; solid 0, upstream's solid kernel never increments them).
+- `-o obj` at 64 (Release): 2 GPU + 2 CPU files byte-identical. `-o vox` at 64: all four files (56,473 bytes) identical except the last 4 bytes, the known upstream uninitialized `colors[255]` palette entry in `VoxWriter.cpp` (two `-cpu` runs also differ there). Not a port issue.
+- Upstream CI smoke `./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu` (README build, upstream layout in a scratch dir): exit 0, `## CPU VOXELISATION`, writes `test_models/bunny.OBJ_64.vox`. CPU counts match every other arch.
+- CUDA gate not rerun: already recorded at 5a9b7cf (nvcc 12.8 compile check on the gfx950 host, V100 run above).
+- `utils/jargon.py --port cuda_voxelizer`: clean. ROCm build documented in the README next to the CUDA build. Fork tree clean at 5a9b7cf.
