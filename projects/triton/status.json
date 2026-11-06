@@ -8,10 +8,18 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T02:30:16Z",
-  "updated_at": "2026-11-06T02:30:18Z",
+  "updated_at": "2026-11-06T02:33:11Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream third_party/amd backend, AMD-owned (CODEOWNERS), CI on gfx90a/gfx942/gfx950",
+    "viable": true,
+    "summary": "Triton: compiler with an in-tree, AMD-maintained AMD backend (CDNA+RDNA) gated by upstream CI on MI200/MI300/MI355 runners; nothing to port",
+    "at": "2026-11-06T02:33:10Z"
+  }
 }
