@@ -3661,3 +3661,37 @@ Not rerun. The CUDA compile check at b4be814 passed (nvcc 12.8.93, mi355 host, 2
 
 ### Result
 linux-gfx1100: `revalidate` -> `completed` at `5a0a83c`.
+
+## Validation 2026-11-05 (windows-gfx1151, revalidate): PASS -> completed (head 5a0a83c)
+
+Trigger: `failed_sha` fde33e5 -> head 5a0a83c. Host: Radeon 8060S (gfx1151, wave32, 20 CUs), TheRock SDK 7.14.60850 (clang 23), CMake 3.31, vcpkg x64-windows (dynamic), LIB with MSVC 14.50 first. Recipe: the 2026-11-04 Windows port round, unchanged. Fork clone HEAD 5a0a83c == origin/moat-port; `git status --porcelain` shows no modified tracked files. Every process ran under `ulimit -c 0`, `OMP_NUM_THREADS=4`, strictly one plvs process at a time (sequential loops, no debugger). Scripts and logs: `agent_space/plvs_win/` (`v5loop.sh`, `v5/`, `dloop.sh`, `runs/w_run*.log`, `elas_t5/`).
+
+### Build at 5a0a83c
+- libelas-gpu rebuilt with `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151`; `libelas_gpu.lib` carries 24 `ElasGPU` symbols. `mono_tum` and `stereo_tum_vi` rebuilt under `timeit.sh plvs compile`, RC=0 (compile line `-DUSE_HIP`, no `USE_CUDA`).
+
+### Mono TUM RGB-D freiburg1_xyz, 3 runs (`TUM1.yaml`, viewer on)
+| run | exit | lost/reset | ATE RMSE (Sim3, `ate.py`) | median track |
+|---|---|---|---|---|
+| 1 | 0 | 0 | 0.91 cm (max 2.27) | 30.2 ms |
+| 2 | 0 | 0 | 1.11 cm (max 3.48) | 39.1 ms |
+| 3 | 0 | 0 | 0.88 cm (max 2.15) | 38.9 ms |
+
+### TUM-VI room1 stereo, libelas on the GPU, PointCloudMapping on, 10 consecutive runs
+`EXE=stereo_tum_vi.exe YAML=TUM-VI_pcm.yaml PFX=w bash dloop.sh 1..10` (`TUM-VI_pcm.yaml` = tracked `Examples/Stereo/TUM-VI.yaml` plus `PointCloudMapping.on: 1`).
+- **10/10 clean: rc 0, 2821/2821 poses, single map.** `-217` / `invalid argument` / `hipError` / `Gpu API` / `terminate called` / exception lines: **0** in all 10 logs. Crashes: **0** (the 970cb1f round was also 10/10; fde33e5 was 0/5).
+- Per run: 316-367 `stereo processing (libelas)` calls, 72-92 keyframes in the saved trajectory. Sim3 ATE vs `mocap0` (`ate_tumvi.py`, 2773/2821 matched): 0.0713, 0.0727, 0.0719, 0.0728, 0.0717, 0.0724, 0.0718, 0.0722, 0.0722, 0.0721 m (Linux 0.077-0.078 rigid, Windows 970cb1f 0.0725-0.0818).
+- No separate `AMD_LOG_LEVEL` traced run this round; GPU ELAS execution inside plvs was traced at fde33e5 on this host (findMatch_GPU x40, 0 `hipErrorInvalidValue`) and the libelas path is unchanged.
+
+### ELAS GPU-vs-CPU and leak check
+libelas-gpu `git archive 5a0a83c`, built standalone for gfx1151 (default `-march=native`, 8 occurrences), harness build and run exactly as in the 2026-11-04 Windows validation (`elas_cmp.cpp` byte-identical, `elas_leak.cpp` copied). Needs ROCm bin dirs on PATH, else exit 127 (environment). RC=0 in all four modes.
+- Mode 2: GPU reruns bit-exact 7/7; cones and aloe identical to CPU (max 0, vmis 0, cones `invalid_cpu` 26728); raindeer 0.50 / vmis 4, urban1 0.44 / 2, urban2 0.66 / 0, urban3 1.23 (1 px > 1) / 0, urban4 0.68 / 0. Line for line the recorded table.
+- Mode 0: D1 mean |d| 0.014-0.025, >1px 0-1, vmis 1-16; D2 max cones 24.80, raindeer 67.0, urban2 14.75, urban3 3.67. Mode 1 similar. Mode 3: integer steps (max 2-4 on D1, 25/67/15 on the same D2 outliers), mean 3.5e-5 to 1.9e-4, >1px 1-13. All inside the recorded gfx90a/gfx1100/gfx1151 ranges.
+- Leak and pending-error check (`elas_leak.exe <input dir>`, 21 `ElasGPU::process` calls): aloe 0.00 MB lost, cones 0.00 MB lost, 0/21 calls with a pending error for both.
+
+### Gates
+- CUDA compile gate: recorded at b4be814 (PASS); 5a0a83c is comment-only on top; not repeated (no CUDA toolkit on this host).
+- `python3 utils/jargon.py --port plvs` -> `jargon: clean`. ROCm build documentation unchanged and present (see the Linux validations of this head).
+- Integrity: no modified tracked files; HEAD 5a0a83c.
+
+### Result
+windows-gfx1151: `validation-failed` -> `completed` at 5a0a83c. GPU ORB (mono 3/3, 0 lost, ATE ~1 cm) and GPU ELAS (bit-exact reruns, CPU parity, no leak, no pending error, 10/10 stereo runs with 0 crashes and 0 -217) validated on real gfx1151.
