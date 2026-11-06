@@ -293,3 +293,34 @@ lib\llvm\bin\clang++.exe rc 0
 ```
 
 Expected: hipcc forwards each argument unchanged, as clang++.exe receives it. A fix: quote each forwarded argument for the Windows command line (surround with `"` and escape embedded `"` and trailing backslashes per the CommandLineToArgvW rules), or start clang with an argument vector instead of a joined string.
+
+## Review 2026-11-06 (linux-gfx1100, reviewer)
+
+Scope: `git diff 18b54de...694db667f` on ROCm/cupy `moat-port` (14 commits), pr-review skill, with each finding re-checked against the code. Verdict: **changes requested** (1 finding).
+
+### Port Correctness
+
+1. **The Windows ROCm root is found only when `hipconfig` is on `PATH`.** See `cupy/_environment.py:240` and `install/cupy_builder/install_build.py:71`: both call `shutil.which('hipconfig')`. TheRock installs `hipconfig.exe` as a console script in the venv's `Scripts` directory (plan, feasibility probe), and that directory is on `PATH` only when the venv is activated. Suppose a user runs `C:\venv\Scripts\python.exe -c "import cupy"` without activating (an IDE, a scheduled task, a service) and has not set `ROCM_HOME`, which install.rst calls optional. Then `get_rocm_path()` returns None and `_setup_win32_hip_dll_directory` (`cupy/_environment.py:614-616`) returns silently without adding `<root>/bin`. The first extension import then fails with a bare `DLL load failed`, and nothing names ROCm or `ROCM_HOME`. hiprtc and runtime hipcc are left without a root as well. The same happens at build time with `--no-build-isolation` from an unactivated venv: it fails with `clang-cl could not be found: lib\llvm\bin\clang-cl.exe`. Fix, within Ruling 1 (still `ROCM_HOME`, then `hipconfig --rocmpath`): when `which` finds nothing on `PATH`, also look for `hipconfig` in `sysconfig.get_path('scripts')` of the running interpreter, in both helpers. Optionally, also make the HIP branch of the Windows DLL-load diagnostic (`_diagnose_win32_dll_load`) name `ROCM_HOME`. This was found by reading the code; it was not reproduced here, because this host has no Windows. The windows-gfx1151 porter should reproduce it with an unactivated venv before and after the fix.
+
+### Checked, with no finding (evidence for the next stage)
+
+- Every builder and runtime change is gated on win32, `_WIN32`, `ctx.use_hip` together with win32, or `__HIPCC_RTC__ && _MSC_VER`, or is identical on Linux: `os.devnull`; `CUPY_HIP_EXPORT` is empty off Windows; `rocblas_stride` is `int64_t`, which is `long` on LP64, and `cupy_lapack.h:136` sits inside the HIP-only branch; `<string>` was already pulled in transitively; adding the `cupy_hip_common.h` include to `cupy_hipsparse.h` leaves the build identical (below). The `_command.py` `_depends.json` copy sits inside `if sys.platform == 'win32'`. Every caller of `get_rocm_path` is HIP-gated, so the CUDA Windows build never runs `hipconfig`. The CUDA Windows branches (the nvcc `DeviceCompilerWin32.compile` path, the `/std:c++17` and NVTX logic) are byte-identical; the porter's laptop comparison at f4f78903 (134 identical command lines) covers every build-time change, and 4ccded519 and 694db667f touch only run-time headers (`carray.cuh` is read by NVRTC and hiprtc only; it is never compiled at build time).
+- Export set compared against the lookups: every `.get()` name in `_driver_extern.pxi` and `_runtime_softlink.pxi`, and every name in `cusparse.pyx` that has a HIP stub, carries `CUPY_HIP_EXPORT`. The `cusparseSpGEAM*` names have no HIP stub on any OS, so behaviour is unchanged. The cuSOLVER and cuFFT SoftLinks do not resolve against `__file__` on HIP.
+- The MSVC STL helpers in `hip_workaround.cuh` were compared with the UCRT behaviour (microsoft/STL `xexp.cpp`, `xcosh.cpp`, `xsinh.cpp`). The return codes are 0/1/-1 for zero, infinity and finite (as `_Dscale`). The ln2 hi/lo split constants are the fdlibm values. The NaN, infinity and zero cases of `_Cosh` and `_Sinh` match, and the switch to the exp path at |x| >= 22 adds error below double epsilon (e^-44). The block is inert on Linux and for CUDA (`__HIPCC_RTC__ && _MSC_VER`).
+- Commit hygiene: all 14 titles start with `[ROCm]` and are at most 72 characters; no Co-Authored-By trailer; every body has an AI disclosure and a Test Plan; ASCII only; `python3 utils/jargon.py --port cupy` reports clean (it needs a local `main` ref in the clone: `git -C projects/cupy/src branch main origin/main`).
+
+### Linux HIP no-change check (this host: TheRock pip ROCm, HIP 7.16.26385, AMD clang 24.0.0git, gfx1100 W7800, Python 3.11, Cython 3.2.9, numpy 2.4.6)
+
+The commands below build the port and the baseline in-place, in two worktrees under `agent_space/` (`wt-port` at 694db667f and `wt-base` at 18b54de). The same command was run in each tree, with the job venv and `CUPY_NUM_BUILD_JOBS=16`:
+
+```bash
+export ROCM_HOME=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+export PATH="$ROCM_HOME/bin:$PATH" LD_LIBRARY_PATH="$ROCM_HOME/lib" CUPY_INSTALL_USE_HIP=1 HCC_AMDGPU_TARGET=gfx1100
+utils/timeit.sh cupy compile -- bash -c "cd <wt> && python setup.py build_ext --inplace -v"
+```
+
+- Both trees build (EXIT 0) with the same configure summary: cuda Yes 71626385, cub Yes 400700, nccl Yes 23007, random Yes, thrust Yes, dlpack Yes. Both produce the same set of 128 `.so` files and the same warning count (472).
+- All 132 compile and link command lines are identical, once the tree path and `CUPY_CACHE_KEY` (a source hash) are normalised. The dynamic symbol tables of all `.so` files are identical apart from the three path-derived `__hip_cuid_*` symbols.
+- Smoke, run with `PYTHONPATH=<wt>` and `ulimit -c 0` on the pinned GPU: plan smoke (elementwise, reduction, RawKernel, CUB via runtime hipcc, hipRAND, rocSOLVER, hipFFT, hipBLAS, hipSPARSE, rocThrust, nvtx, profiler), plus complex exp at 700.5+0.5j against NumPy. **Pass on both.**
+- `tests/install_tests tests/import_tests` with `CUPY_INSTALL_USE_HIP=1`: 31 passed, 1 skipped, on both.
+- Shared commit 4ccded519, `python -m pytest tests/cupy_tests/core_tests/test_elementwise.py -k TestElementwiseGUFuncLike`: base **21 failed, 10 passed** (111 x `'data_'/'shape_' is a private member of 'CArray<...>'`), port **31 passed**. The porter's prediction is confirmed: the bug is not specific to Windows, and Linux ROCm needs the fix too. The full Linux baseline (Ruling 7) remains the validators' work.
