@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-06T02:24:49Z",
-  "updated_at": "2026-11-06T02:24:53Z",
+  "updated_at": "2026-11-06T02:45:52Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-06T02:45:51Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/pytorch/rl/blob/main/LICENSE",
+      "at": "2026-11-06T02:45:42Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none",
+    "viable": true,
+    "summary": "TorchRL (PyTorch org, MIT): pure-Python RL lib with one optional 9 KB .cu (GPU segment tree for prioritized replay); setup.py only builds it when torch.version.cuda+nvcc, so ROCm torch gets CPU fallback -- enable ROCm build, run GPU tests, upstream setup.py/docs + ROCm wheel lane",
+    "at": "2026-11-06T02:45:47Z"
+  }
 }
