@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T11:00:55Z",
-  "updated_at": "2026-11-06T11:00:55Z",
+  "updated_at": "2026-11-06T11:09:56Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVIDIAGameWorks/kaolin/blob/master/LICENSE",
+      "at": "2026-11-06T11:09:36Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "ported-elsewhere",
+    "duplicate_effort": "AMD-Ecosystem/kaolin (AMD engineers, 2026-09-17, Instinct-only, not offered upstream)",
+    "viable": true,
+    "summary": "NVIDIA 3D DL PyTorch library; AMD-owned AMD-Ecosystem/kaolin already ports the full CUDA extension, validated MI300X/MI355X; gaps are wave32/Windows and warp-based physics",
+    "at": "2026-11-06T11:09:55Z"
+  }
 }
