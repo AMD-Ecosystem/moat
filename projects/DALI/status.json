@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "DALI",
+  "upstream_url": "https://github.com/NVIDIA/DALI",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T03:40:13Z",
+  "updated_at": "2026-11-06T03:40:14Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
