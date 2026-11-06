@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "tiny-cuda-nn",
+  "upstream_url": "https://github.com/NVlabs/tiny-cuda-nn",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T03:35:57Z",
+  "updated_at": "2026-11-06T03:35:57Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
