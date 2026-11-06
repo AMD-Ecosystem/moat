@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-06T00:10:24Z",
-  "updated_at": "2026-11-06T00:10:26Z",
+  "updated_at": "2026-11-06T00:42:06Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-06T00:41:04Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "huggingface/candle#3801 (xmiksay, open, conflicting) building on #3424; amd/AMD-AGI orgs unchecked (SSO)",
+    "viable": true,
+    "summary": "Rust ML framework; open sound community ROCm backend PR huggingface/candle#3801 (RDNA/Linux only, no maintainer review): validate+improve it on wave64/Windows, no competing PR",
+    "at": "2026-11-06T00:41:00Z"
+  },
+  "license_spdx": "MIT OR Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT OR Apache-2.0",
+      "evidence": "https://github.com/huggingface/candle/blob/cfcbd7186d13271843ce7eb41d25659bd0835850/LICENSE-APACHE",
+      "at": "2026-11-06T00:42:06Z"
+    }
+  ]
 }
