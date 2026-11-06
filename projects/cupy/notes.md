@@ -389,3 +389,25 @@ Confirmed by reading the code. `prepare_wheel_libs` (`install/cupy_builder/cupy_
 - This is upstream behaviour, and it already affects CUDA Windows the same way: with no `_depends.json`, the import diagnostic is silently dropped.
 - A guard would need a HIP marker that survives the `rmtree`. Either another file outside `.data`, or importing a compiled module to ask `is_hip` before the DLL directory exists, which is the very load this function enables. That adds upstream-visible surface to fix a transient developer-tree state that upstream's own build creates.
 - It is enough to keep this in notes as a gotcha for anyone validating on Windows: after a failed build, rebuild before testing, or CuPy binds the driver's System32 `amdhip64_7.dll`.
+
+## CUDA compile check (Linux) at 24a62ef95
+
+2026-11-06, linux-gfx950 fleet host, no role taken and no state changed (Ruling 4 no-regression evidence for the Linux CUDA path). CUDA 12.8 (`nvcc` V12.8.93, `/usr/local/cuda-12.8`), g++ 13.3.0, Python 3.11.17, Cython 3.2.9, numpy 2.4.6, setuptools 79.0.1 in the job venv. No NVIDIA driver or GPU on the host; nothing was run on a GPU.
+
+Two worktrees of one ROCm/cupy clone, `wt-base` at upstream 18b54de and `wt-port` at moat-port 24a62ef95 (submodules cccl 4ee3a7b, dlpack cd0d5e4, jitify 1a0ca0e, xsf 2e1e697 in both), built in parallel with the same script:
+
+```bash
+export TMPDIR=<job>/cudachk/tmp-<wt>
+export CUDA_PATH=/usr/local/cuda-12.8 PATH=$FLEET_VENV/bin:/usr/local/cuda-12.8/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda-12.8/lib64 LIBRARY_PATH=/usr/local/cuda-12.8/lib64/stubs
+export CUPY_NVCC_GENERATE_CODE=arch=compute_80,code=sm_80 CUPY_NUM_BUILD_JOBS=48
+unset CUPY_INSTALL_USE_HIP ROCM_HOME
+cd <wt> && python -m pip wheel -v --no-build-isolation --no-deps -w <job>/cudachk/whl-<wt> .
+```
+
+- `LIBRARY_PATH=.../lib64/stubs` is needed on a host without the NVIDIA driver: without `libcuda.so` the jitify configure probe fails to link and the build aborts with `Your CUDA environment is invalid` (seen identically in both trees on the first attempt).
+- Both build (EXIT 0, about 135 s each). Identical configure summary: cuda Yes (12080), cusolver Yes, nvtx Yes, cub Yes (300102), jitify Yes (1a0ca0e), random Yes, thrust Yes (300102), dlpack Yes; nccl, cutensor, cusparselt No (headers not in this toolkit).
+- All 133 compile and link command lines are identical after normalising the tree path, the temp dir and `CUPY_CACHE_KEY` (sorted, byte-compared): 65 g++ compiles, 65 g++ links, 3 nvcc compiles (`cupy_cub.cu`, `cupy_thrust.cu`, `cupy_distributions.cu`). `CUPY_CACHE_KEY` differs as expected (c5550207 vs bad50f9b), since the port changes `carray.cuh` and `hip_workaround.cuh`.
+- Same warning lines (255 each, identical after path normalisation).
+- Wheels: identical file list (65 `.so`). `nm -D --defined-only` of every `.so` identical (2247 lines), and the `NEEDED` entries are identical. The only files that differ are the expected run-time sources: `cupy/__init__.py`, `cupy/_environment.py`, `cupy/cuda/compiler.py`, `carray.cuh`, `hip_workaround.cuh` (plus `RECORD`).
+- Verdict: **no CUDA Linux build regression at 24a62ef95.** Build trees, wheels and worktrees under the job directory were deleted afterwards.
