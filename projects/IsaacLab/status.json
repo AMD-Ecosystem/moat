@@ -6,12 +6,15 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "python-warp",
-  "stage": "planned",
+  "stage": "porting",
   "adopted_at": "2026-11-05T22:48:53Z",
-  "updated_at": "2026-11-06T00:53:00Z",
+  "updated_at": "2026-11-06T01:12:51Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-06T01:12:51Z"
+  },
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -36,6 +39,28 @@
         "last_session_at": null
       },
       "last_agent": "planner"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-06T01:12:51Z",
+      "completed_at": null,
+      "updated_at": "2026-11-06T01:12:51Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   },
   "license_spdx": "BSD-3-Clause AND Apache-2.0",
