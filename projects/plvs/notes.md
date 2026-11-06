@@ -3457,3 +3457,68 @@ Proposed fix:
 
 With both changes the same ASan run reports nothing, and the sequence still finishes with the same trajectory accuracy.
 ====
+
+## Review 2026-11-06 (reviewer, linux-gfx942): changes-requested (delta 970cb1f..b4be814, head b4be814)
+
+Requested by jeff: review the four commits on 970cb1f (46a26f4, 2522f1e, 59eb0da, b4be814) and the corrected lesson with the pr-review skill, fact-check each root cause and fix, check that each fix is minimal and separable and that nothing changes on unaffected camera modes, run ASan on Linux TUM-VI room1 stereo before and after, and check the upstream drafts. Reviewed `git diff 970cb1f...b4be814` on `moat-port` (fresh clone of AMD-Ecosystem/plvs). The fork was not modified. CPU only, no GPU used; one plvs process at a time under `ulimit -c 0`, `OMP_NUM_THREADS=4`.
+
+### Port Review: plvs (moat-port vs 970cb1f)
+
+#### Summary
+The delta fixes four upstream CPU defects (fisheye line depth arrays short, octree use-after-free, MapLine line-scale index, dangling Eigen expression). All four root causes are confirmed, every fix is minimal and its own commit, and ASan on Linux goes from 17 reports at 970cb1f to 0 at b4be814 on the full sequence with dense mapping on. Verdict: Request Changes, for one item: the new code comment in 2522f1e states the mechanism that the round's own corrected analysis (and the reproducer below) disproves.
+
+#### Port Correctness
+1. **2522f1e's code comment gives the wrong cause** (`src/PointCloudMapOctreePointCloud.cc:958` and `:1042`): "Deleting a voxel frees its leaf, which the iterator still references; delete after the loop." The iterator does not reference the leaf it is on: `OctreeDepthFirstIterator::operator++` pops it and, at max depth, never calls `getNodeType()` on it (`pcl/octree/impl/octree_iterator.hpp:122-128`, PCL 1.14). Deleting the current leaf in the loop is harmless (control run below: 0 ASan reports). The fault needs a centroid that keys into another voxel, so `deleteVoxelAtPoint` frees a sibling leaf or branch that is still on the iterator's stack. This comment ships upstream and would send the maintainer to the wrong mechanism. Fix, as a new commit touching only the two comments, e.g. `// deleteVoxelAtPoint() can free a leaf or branch the iterator has not visited yet (a centroid can lie in a neighbouring voxel); delete after the loop.`
+
+#### Commit Hygiene (for the PR-prep squash; no amend)
+2. 2522f1e's body says "Every leaf is still visited once and the same voxels are removed, so the map content is unchanged". That holds only when every centroid stays in its own voxel, which is the case where the change does nothing. In the drift case the old loop freed a not-yet-visited neighbour: that leaf was never visited, never pushed to `pPointCloud_` that pass, and never queued for its own removal, or the next `++it` crashed. Now it is visited, output if stable, and queued if unstable. When rewriting the message at the squash, say that the same voxels are removed except where a drifted centroid's neighbour had not been visited yet, which the old loop skipped or crashed on.
+3. b4be814's Test Plan says "the parent of this commit reports 12 stack-use-after-scope reads". The porter already noted that run was at 2522f1e content. This run measured all 12 at 970cb1f (table below), which 59eb0da cannot change. Correct the wording at the squash.
+
+### Upstream drafts (notes.md, 2026-11-06 round): corrections before jeff files them
+- **MapLine draft and combined draft, item 1:** the line numbers are fork numbers. 970cb1f added a line at `MapLine.cc:255`, so on upstream master (fork `master` 2ecb8b1, still equal to upstream) `nLevels` is at `src/MapLine.cc:680` and the read at `:687`. Write "src/MapLine.cc:680-687" and "at src/MapLine.cc:687" (master `:113` for the constructor is correct). All other cited lines check out against master: `OptimizableTypes.cpp:214/220/233`, `Tracking.cc:4018/4019/4314/4316`, `LocalMapping.cc:709/718/1923`, `ORBmatcher.cc:1368/1376`, `PointCloudMapOctreePointCloud.cc:935/1006` (the two function heads), ORB-SLAM3 `OptimizableTypes.cpp:150` with two later uses, and `pcl/octree/octree_iterator.h:733`.
+- **Combined draft:** "Both runs exit 0": one run reports both reads, so write "The run exits 0". The closing sentence "With both changes the same ASan run reports nothing" is not true of upstream master. The zero-report run was at b4be814 content, which also has a93e73d, 61e9640, 970cb1f, 46a26f4 and 2522f1e. On master with only these two changes, the #58/#59 and line-array reports would remain. Write "With both changes these reports are gone, and the sequence still finishes with the same trajectory accuracy."
+- The octree draft, the #58 follow-up, the separate projectJac draft and the ORB-SLAM3 draft are accurate as written. Each claim was checked against master, PCL 1.14 and this run.
+
+### Fact-check of the porter's root causes and fixes (all confirmed)
+- **46a26f4.** `ComputeStereoFishEyeLineMatches` (only caller: the fisheye constructor, `src/Frame.cc:2949`, and only when `Nlines > 0`) now allocates `mvDepthLineStart/End` and `mvuRightLineStart/End` with `Nlines` entries before the `NlinesLeft>0` guard. Every reader of a right-image index either bounds-checks against `size()` or tests `> 0`/`>= 0`. The bounds-checked readers are `LocalMapping.cc:1102/1107/1172` (where `idx1L`/`idx2L` are always left indices, `:1017-1047`) and `:1994-1998`, so their behaviour is unchanged. The `> 0`/`>= 0` readers are `Tracking.cc:2843`, `:3524`, `:4018`, `:4314`, `Frame::UnprojectStereoLine` `:2719` and `LocalMapping.cc:1011/1034`, and they now read -1 instead of past-the-end memory. The one write at `LocalMapping.cc:1161` is under `!mpCamera2`, so it is not on this path. Pinhole stereo (`:2033`), RGB-D (`:2461`) and mono (`:704`) allocate their own `Nlines`-sized arrays and are untouched.
+- **2522f1e.** I wrote an independent reproducer (`w/octree/t.cc`, container-local): the real `OctreePointCloudCentroid<pcl::PointXYZRGBA>` from `src/OctreePointCloudCentroid.cc` with PCL 1.14 and resolution 0.03. It has 7960 voxel pairs (even key k-1 and its +x sibling k), with three equal points at the last float below the face in voxel k-1 and one point in k. Measured: 2480 of the 7960 three-point centroids key into voxel k (`(2c + p) * float(1/3)` rounds up across the face; over 20000 faces with the last float below each face, 6167 cross). In-loop deletion (upstream): **heap-use-after-free READ of size 8 in `OctreeLeafNodeDepthFirstIterator::operator++`, freed by `deleteVoxelAtPoint` -> `deleteLeafRecursive` -> `~OctreeLeafNode`**. Deferred deletion (the fix): clean, 15920 leaves visited. Control with the points at the voxel centres (no drift), in-loop deletion: clean, which is the evidence for finding 1. `deleteLeafRecursive` (`octree_base.hpp:393-438`) ignores a missing child, so a deferred delete of an already-removed voxel is safe. Same side effect as the porter recorded: after the fix, a drifted centroid deletes the neighbour (7960 leaves left, all the three-point voxels). `UpdateMapSegm` has the identical loop, and fixing both is the right scope. The loop's only other uses of the leaf are reads and push_backs, so collecting is safe. Memory per pass is small (about 16M removals over 174 non-zero passes in this run).
+- **59eb0da.** `KeyFrame::mvLineScaleFactors` is copied from the line extractor (`Frame.cc:250/435/2823`) and has `mnLineScaleLevels` entries. In all 210 tracked settings files with `ORBextractor.nLevels` (8), `Line.nLevels` is 3, 1 or the default 2 (`LineExtractor::kNumOctavesForBdDefault`), so the old index 7 was always past the end. The change affects every sensor mode that creates lines, by design (jeff's ruling). It replaces a garbage divisor with the intended one.
+- **b4be814.** `GeometricCamera::projectJac` returns `Eigen::Matrix<double,2,3>` by value (`include/CameraModels/GeometricCamera.h:107`), and the unary-minus expression nests it by reference, so `auto` dangled. The other `projectJac` uses in the file (`:96`, `:158`, `:293`, `:310`) are single full expressions, and `G2oTypes.cc:417` stores a matrix. A grep of `src/` and `include/` for `auto x = <Eigen expression>` found only expressions over named lvalues or concrete results (`toRotationMatrix()`, Sophus products, `transform * point`).
+- Commits: four `[ROCm]` titles of 57-66 chars, fenced Test Plans, AI disclosure, no trailer. `check.py commits` flags only the five older commits from jeff's 2026-11-04 squash ruling. `jargon.py --port plvs`: clean. Each commit touches one file (46a26f4 `Frame.cc`, 2522f1e the octree file, 59eb0da `MapLine.cc`, b4be814 `OptimizableTypes.cpp`) and is separable. No CUDA, HIP or build file is touched, so there is no fault-class surface in this delta.
+- Lesson (`references/validation.md:114-130` on `port/plvs`): now matches the 2026-11-05 table (13/13, the bug-1 fix leaving 3 of 10, 10/10 with all three) and drops the glibc overstatement. No problems.
+
+### ASan, Linux CPU-only, TUM-VI room1 stereo, full sequence, dense mapping on
+Built in this job (`w/`, container-local). Review 4's third-party builds were copied from the review4 job on this host (Pangolin fe57db532 + patch, DBoW2, g2o, volumetric_mapping, open_chisel, chisel_server, voxblox, voxblox_server, line_descriptor; source tree byte-checked against 970cb1f), and its OpenCV 4.13.0+contrib CPU install and `dataset-room1_512_16` were used read-only. CPU libelas was rebuilt here (`-DUSE_HIP=OFF -DCMAKE_DISABLE_FIND_PACKAGE_CUDA=ON`: this host has a CUDA 12.8 toolkit, which the libelas CMake otherwise picks up). plvs:
+
+```
+cmake .. -DCMAKE_BUILD_TYPE=Release -DWITH_CUDA=OFF -DUSE_HIP=OFF -DWITH_LIBELAS=ON -DWITH_LIBSGM=OFF \
+  -DWITH_FASTFUSION=OFF -DWITH_G2O_NEW=OFF -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 \
+  -DOPENCV_VERSION=4 -DOpenCV_DIR=<ocv>/lib/cmake/opencv4 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_DISABLE_FIND_PACKAGE_CUDA=ON \
+  "-DCMAKE_CXX_FLAGS=-fsanitize=address -fsanitize-recover=address -fno-omit-frame-pointer -g -DEIGEN_MALLOC_ALREADY_ALIGNED=1" \
+  "-DCMAKE_C_FLAGS=<same>" -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address -DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address
+make -j 56 plvs stereo_tum_vi
+ASAN_OPTIONS=halt_on_error=0:detect_leaks=0:alloc_dealloc_mismatch=0 OMP_NUM_THREADS=4 \
+  ./Examples/Stereo/stereo_tum_vi Vocabulary/ORBvoc.txt TUM-VI-pcm-noviewer.yaml \
+  dataset-room1_512_16/mav0/cam0/data dataset-room1_512_16/mav0/cam1/data \
+  Examples/Stereo/TUM_TimeStamps/dataset-room1_512.txt room1
+```
+
+`TUM-VI-pcm-noviewer.yaml` = tracked `Examples/Stereo/TUM-VI.yaml` with `PointCloudMapping.on: 1` and `Viewer.on: 0` appended. The b4be814 build came first. The "before" build swapped in the four 970cb1f files (tree checked equal to 970cb1f) and rebuilt incrementally (4 objects).
+
+| site | 970cb1f (rc 0, 608 s, 2821 frames, 91 KFs) | b4be814 (rc 0, 624 s, 2821 frames, 90 KFs) |
+|---|---|---|
+| `Tracking.cc:4018`, `:4019` NeedNewKeyFrame, heap-buffer-overflow 0 B / 48 B after 280-B region | present | gone |
+| `Tracking.cc:4316` CreateNewKeyFrame, 0 B / 20 B after 308-B region (2 reports) | present | gone |
+| `MapLine.cc:688` UpdateNormalAndDepth, 12-B (3-float) region | present | gone |
+| stack-use-after-scope in Eigen loads from `OptimizableTypes.cpp:220` (9) / `:233` (3) | 12 | gone |
+| heap-use-after-free anywhere | 0 | 0 |
+| total ASan reports | **17** | **0** |
+| non-zero unstable-voxel removal passes / voxels removed | 177 / 16.98 M | 174 / 16.00 M |
+
+The 970cb1f column matches the porter's table report for report. The full run does not hit the octree use-after-free in either build (it needs the drift and stack-position coincidence). The reproducer above is the evidence for 2522f1e.
+
+### Pre-existing upstream, outside this delta (recorded, not required)
+- `MapLine::MapLine(..., Frame*, idxF)` (`src/MapLine.cc:102-104`) reads `pFrame->mvKeyLinesRightUn[idxF]` for a right-image index without subtracting `NlinesLeft`, unlike the KeyFrame path at `:672`. Its only caller (`Tracking.cc:3572`, localization-mode visual odometry lines) passes indices with positive depth, which after 46a26f4 are left lines only, so it is unreachable on every path I traced. Not a Windows or ASan finding.
+
+### Not done here
+- No mono or RGB-D ASan run: no TUM RGB-D sequence is on this host and the disk has under 2 GB free. Unaffected-mode behaviour rests on the code reading above and the porter's gfx1100 mono run. No GPU run (not needed for review). The CUDA no-regression compile at b4be814 is still owed (mi355).
