@@ -647,3 +647,27 @@ Both whitelisted failures come from FMA contraction in a chaotic float iteration
 - Integrity: `git -C projects/TornadoVM/src status --porcelain` shows only the untracked `tornado-compiler/utils/hiprtccheck/hiprtccheck` binary; no tracked file is modified.
 - Not covered here: multi-GPU NCCL/RCCL (the dispatcher pins one GPU), and cuDF/cuVS on RDNA (no hipDF/hipVS build exists for it).
 - Skill: `references/no-hip-equivalent.md` now records the gfx12 WMMA operand/result layout as confirmed on gfx1201 (it said "not measured").
+
+## gfx1250 MMA validation 2026-11-05 (af27a9f4b)
+
+Scope: the gfx1250 MMA check only (no role, no state change). Host: one MI450 (`amd-smi static`: TARGET_GRAPHICS_VERSION gfx1250, wavefront 32), `HIP_VISIBLE_DEVICES=0`, `amd-smi process` showed no other process before the build, before the run and after it. ROCm 10.1 TheRock wheels (`ROCM_PATH=HIP_PATH=` the wheel's `_rocm_sdk_devel`), Temurin 21.0.13+9 unpacked in the job directory, job-local Maven repository, `ulimit -c 0` for the GPU run. `HIPBLASLT_TENSILE_LIBPATH` was not needed (no hipBLASLt test in this scope).
+
+```bash
+git clone --filter=blob:none https://github.com/AMD-Ecosystem/TornadoVM projects/TornadoVM/src
+git -C projects/TornadoVM/src checkout --detach af27a9f4b
+TORNADO_CK_SOURCE_DIR=/tmp make -C projects/TornadoVM/src jdk21 BACKEND=hip   # BUILD SUCCESS, 19.9 s; ck-hip skipped ("TORNADO_CK_SOURCE_DIR=/tmp is not a Composable Kernel")
+source projects/TornadoVM/src/setvars.sh; ulimit -c 0
+bash projects/TornadoVM/probe/mma/run.sh   # rc 1: "== FAIL (gfx1250): harness"
+```
+
+Results:
+
+- Code object: exactly one each of `v_wmma_f32_16x16x32_f16`, `v_wmma_f32_16x16x32_bf16`, `v_wmma_f32_16x16x64_fp8_fp8`, `v_wmma_f32_16x16x64_bf8_bf8`, `v_wmma_i32_16x16x64_iu8`, as predicted.
+- Harness: f16 10/10 ok (ints exact, random worst rel 1.9e-07), bf16 10/10 ok (worst rel 4.4e-08), s8 11/11 ok (exact, wraparound included), e4m3 "every byte" ok and e5m2 "every byte" ok (exact, NaN/inf included). **20 of 53 failed: all 10 random/ints cases of e4m3 and all 10 of e5m2**, every one with a small error: e4m3 worst rel 1.1e-05 to 3.8e-05 (1 to 1877 wrong elements per case), e5m2 worst rel 3.9e-05 to 6.6e-05 (176 to 3600 wrong). The harness bound for non-exact kinds is rel > 1e-5, with rel = |got - ref| / sum|a*b| over the products. `--mutate`: 53/53 detected.
+- `tornado-selftest`: 20 pass, 1 skip (device-launch). TC target "HIP gfx1250, warp 32, local memory 320 KB, tensor cores F16+FP8"; `device/warp-sum`, `tensor-cores/mma-f16` (32x32x64) and `tensor-cores/mma-fp8` (16x16x64) pass.
+- MMA classes: TestMatrixMultiplicationMMA 18/18, MMABF16 7/7, MMAInt8 12/12, MMAFP8 8/8, MMACpAsync 8/8, MMAGlobalFragmentLoad 6/6, MMAInt8FragmentElementRead 4/4, MMAFragmentHelper 2/2 (65/65).
+- Fork tree: `git status --porcelain` shows no modified tracked files.
+
+Reading (no further GPU runs, to keep the job short): the lane layout is confirmed for all five forms. f16, bf16 and s8 are exact or at fp32 rounding, and a layout fault gives O(1) errors, not 1e-5. The OCP FP8 encoding is confirmed by the exact every-byte cases (one product per output). The FP8 failures are accumulation precision. The helper passes C = 0 to the WMMA and adds `c` afterwards in fp32, so the error comes from summing the 32 products inside one `v_wmma_f32_16x16x64_{fp8_fp8,bf8_bf8}`. A worst relative error of 2^-16 to 2^-14 against sum|a*b| means the hardware keeps about 14 to 16 bits in its FP8 dot-product accumulation, not full fp32. gfx950 MFMA and gfx1201 WMMA met 1e-5 on the same cases. This is the same class as the reduced-precision FP8 accumulation of NVIDIA Hopper tensor cores, and TornadoVM's own FP8 tests (MMAFP8 8/8, selftest mma-fp8) pass at their tolerances.
+
+Question for jeff (no change made): accept this as gfx1250 hardware behaviour and give the harness a per-arch FP8 bound (for example rel 1e-4 on gfx1250, keeping exact checks for every-byte), or have the gfx1250 FP8 path split the k32 sum into smaller WMMA pieces or accumulate in fp32 in another way, at a cost in throughput? With a looser FP8 bound, everything else in this run passes on gfx1250.

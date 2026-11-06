@@ -111,3 +111,5 @@
 {"kind":"phase","ts":"2026-11-06T04:54:51Z","phase":"cuda-compile","seconds":160.159,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/gfx1201-20261105-201017-tvm-val/wt-cuda jdk21 BACKEND=cuda,hip"}
 {"kind":"phase","ts":"2026-11-06T04:55:52Z","phase":"cuda-compile","seconds":21.258,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/gfx1201-20261105-201017-tvm-val/wt-cuda jdk21 BACKEND=cuda"}
 {"kind":"session","ts":"2026-11-06T05:02:54Z","epoch":1793941374.087970843,"event":"end","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-06T05:16:45Z","phase":"build","seconds":25.074,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-06T05:17:22Z","phase":"test","seconds":24.371,"exit":1,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
