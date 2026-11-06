@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T11:13:50Z",
-  "updated_at": "2026-11-06T11:13:51Z",
+  "updated_at": "2026-11-06T11:23:58Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "BSD-3-Clause",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "BSD-3-Clause",
+      "evidence": "https://github.com/NVIDIA-Omniverse/PhysX/blob/main/LICENSE.md",
+      "at": "2026-11-06T11:23:35Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "ported-elsewhere",
+    "duplicate_effort": "AMD-Ecosystem/PhysX rocm-enablement (AMD engineers, 2026-09-16, Instinct/Linux-only, not offered upstream)",
+    "viable": true,
+    "summary": "NVIDIA PhysX 5 physics SDK; AMD-owned AMD-Ecosystem/PhysX rocm-enablement ports the GPU simulation, validated MI300X/MI355X Linux; gaps are wave32 and Windows",
+    "at": "2026-11-06T11:23:58Z"
+  }
 }
