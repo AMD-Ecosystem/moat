@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "cudnn-frontend",
+  "upstream_url": "https://github.com/NVIDIA/cudnn-frontend",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T03:33:33Z",
+  "updated_at": "2026-11-06T03:33:34Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
