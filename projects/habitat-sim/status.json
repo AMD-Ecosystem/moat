@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-06T01:53:13Z",
-  "updated_at": "2026-11-06T01:53:16Z",
+  "updated_at": "2026-11-06T02:15:43Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-06T02:15:43Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/facebookresearch/habitat-sim/blob/main/LICENSE",
+      "at": "2026-11-06T02:15:35Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none (amd/AMD-AGI orgs unchecked: SAML)",
+    "viable": true,
+    "summary": "Archived/sunset embodied-AI simulator (MIT); real AMD gap is EGL device selection via NVIDIA-only EGL_NV_device_cuda (issue #2402), plus one hipRAND noise kernel and optional HIP-GL interop; fork-only deliverable, no upstream PR possible",
+    "at": "2026-11-06T02:15:39Z"
+  }
 }
