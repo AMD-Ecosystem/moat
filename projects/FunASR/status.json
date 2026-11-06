@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-06T02:15:09Z",
-  "updated_at": "2026-11-06T02:15:11Z",
+  "updated_at": "2026-11-06T02:40:31Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-06T02:40:30Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/modelscope/FunASR/blob/main/LICENSE",
+      "at": "2026-11-06T02:40:17Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none (upstream AMD work is Vulkan/llama.cpp only; Hygon DCU issue #2972 closed unvalidated)",
+    "viable": true,
+    "summary": "PyTorch speech toolkit; plain-torch main path plus one optional JIT RWKV WKV kernel whose nvcc-only flags break hipcc; validate on ROCm torch, fix loader, docs PR",
+    "at": "2026-11-06T02:40:23Z"
+  }
 }
