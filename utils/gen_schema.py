@@ -260,6 +260,21 @@ def build():
                     "note": {"type": "string"},
                 },
             },
+            # Corrections to license_spdx after intake: what it was, what it became,
+            # and the licence file that shows it.
+            "license_spdx_history": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["to", "evidence", "at"],
+                    "properties": {
+                        "from": {"type": ["string", "null"]},
+                        "to": {"type": "string", "minLength": 1},
+                        "evidence": {"type": "string", "minLength": 1},
+                        "at": {"type": "string"},
+                    },
+                },
+            },
             # A person's ruling that the port lives in an existing repository
             # instead of the organization fork intake assumes (ROCm/cupy is AMD's
             # staging fork for upstream CuPy). fork_url carries the value.
