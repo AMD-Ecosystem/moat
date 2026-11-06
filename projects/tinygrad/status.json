@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T01:14:11Z",
-  "updated_at": "2026-11-06T01:14:12Z",
+  "updated_at": "2026-11-06T01:29:05Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/tinygrad/tinygrad/blob/master/LICENSE",
+      "at": "2026-11-06T01:29:00Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream ops_amd.py/ops_hip.py (first-party, CI on 7900xtx/9060xt, MI350X MLPerf); ROCm/tinygrad stale fork 2024-05",
+    "viable": false,
+    "summary": "Runtime-codegen DL framework; first-party AMD backends (KFD/AM/USB, CDNA3/4 + RDNA3/4) with AMD hardware CI; all .cu is vendored ThunderKittens in extra/, which already has an AMD twin",
+    "at": "2026-11-06T01:29:04Z"
+  }
 }
