@@ -3248,3 +3248,116 @@ My agent came up with this analysis, but I've read and approved it.
 - Ruling 2026-11-05 (jeff): fix the line depth arrays (Frame.cc:3037-3038 mvDepthLineStart/End sized to left lines, read over all lines at Tracking.cc:4018/:4314) on moat-port as a separate commit, and add it to luigifreda/plvs#58 as a follow-up comment.
 
 - Ruling 2026-11-05 (jeff): also fix on moat-port, as separate commits, the two upstream undefined-behaviour reads review 4 found: MapLine.cc:688 (3-entry line-scale array indexed with the point pyramid level count, 8) and OptimizableTypes.cpp:214 (auto projectJac binds an Eigen expression over a temporary; also ORB-SLAM3 OptimizableTypes.cpp:150). File upstream issues for both (plvs) and the Eigen one (ORB-SLAM3), drafts for jeff first.
+
+## Port round 2026-11-06 (linux-gfx1100, porter): review 4 findings and jeff's rulings addressed. Head 2522f1e
+
+Requested by jeff: address Review 2026-11-05 (changes-requested at 970cb1f) and his rulings on the line depth arrays (now) and `plvs-upstream-stereo-mapping-crashes` (now: the octree half). Host: Radeon Pro W7800 (gfx1100, wave32), `HIP_VISIBLE_DEVICES=1`, TheRock pip SDK (ROCm 7.16, amdclang 24), Ubuntu 24.04, g++ 13, apt PCL 1.14. Every plvs process ran under `ulimit -c 0` with `OMP_NUM_THREADS=4`, one at a time. Everything was built in this job's directory: OpenCV-with-HIP `AMD-Ecosystem/opencv@50f05b1` + `opencv_contrib@041d552` (the 2026-11-05 gfx1100 cmake line and install-tree shim, unchanged), Pangolin fe57db532 + patch, all third-party libs and plvs with the 2026-11-05 `build_all.sh` options. The two datasets were copied from the 2026-11-05 gfx1100 validation job on this host. For the CPU-only ASan build only, that job's OpenCV install (same commits, same cmake line) was copied in, to start the ASan build while the HIP OpenCV compiled.
+
+### Commits (on top of 970cb1f, fast-forward push 970cb1f..2522f1e)
+- 46a26f4 `[ROCm] Size fisheye stereo line depth arrays to all lines` (`src/Frame.cc` +9/-7): `ComputeStereoFishEyeLineMatches` allocates `mvDepthLineStart`/`End` with `Nlines` entries of -1 instead of `NlinesLeft`, and allocates them and `mvuRightLineStart`/`End` outside `if(NlinesLeft>0)`, so they exist whenever `Nlines > 0` (same pattern as a93e73d). `mvLeftToRightLinesMatch` stays inside the guard. Only the fisheye stereo constructor calls the function.
+- 2522f1e `[ROCm] Delete unstable octree voxels after the leaf iteration` (`src/PointCloudMapOctreePointCloud.cc` +16/-2): `UpdateMapNoSegm` and its twin `UpdateMapSegm` (same loop, same bug, 80 lines below) collect the centroids into an `AlignedPointTVector` and call `deleteVoxelAtPoint` after the loop. jeff's ruling names `UpdateMapNoSegm`; `UpdateMapSegm` is fixed in the same commit because it is the identical pattern and leaving it would be the same half-fix review 4 flagged for the line arrays. If jeff wants only `UpdateMapNoSegm`, a new commit reverts the second hunk pair.
+- Both commits pass `jargon.py --port plvs` (clean) and `commit_message_problems` (only the five older commits jeff's 2026-11-04 ruling sends to the PR-prep squash). The tested tree is the committed one: `git diff 970cb1f HEAD | md5sum` = `25084423...`, the hash of the working-tree diff the HIP build was built from.
+
+### Octree root cause, corrected
+The deferral's wording ("`mapPoint` a reference into the leaf being deleted") is not the mechanism. In PCL 1.14 the depth-first iterator never touches the leaf it just visited: `OctreeDepthFirstIterator::operator++` pops it and short-circuits `getNodeType()` because its depth exceeds `max_octree_depth_`, and `deleteVoxelAtPoint` copies the point into a key before freeing anything. The use-after-free needs `deleteVoxelAtPoint(centroid)` to free a node that is still on the iterator's stack, which happens when the centroid's key is not the leaf's own key. The container's moving average makes that possible: `fc = float(1/3) = 0.33333334`, and for three equal inputs `(2c + p) * fc` rounds above `p` (630 of 1999 values just below a 0.03 m face, numpy float32 check). The centroid then lies in the +x neighbour voxel, and if that leaf (or a branch emptied by removing it) has not been visited yet, the next `++it` calls `getNodeType()` through a freed vtable.
+- Binary evidence: the recorded crashes (`UpdateMapNoSegm()+0x388`, gfx1100 validation 2026-11-05 runs 1 and 16) are the return address of `mov (%rbx),%rdi; mov (%rdi),%rax; call *0x10(%rax)` in that job's `libplvs.so` (objdump), the virtual `getNodeType()` in `OctreeLeafNodeDepthFirstIterator::operator++` (`pcl/octree/octree_iterator.h:733`).
+- Reproducer (`deps/octree_uaf/t.cc` in this job, container-local): the real `OctreePointCloudCentroid<pcl::PointXYZRGBA>` (compiled from `src/OctreePointCloudCentroid.cc`), 4000 voxels each with three equal points just below the upper x face plus one point in the +x neighbour, and the `UpdateMapNoSegm` loop body. `g++ -std=c++17 -fsanitize=address -g -O1 -DEIGEN_MALLOC_ALREADY_ALIGNED=1 <plvs includes> t.cc src/OctreePointCloudCentroid.cc -lpcl_common -lpcl_octree`. `./t inloop` (upstream pattern): **heap-use-after-free READ of size 8 in `OctreeLeafNodeDepthFirstIterator::operator++` (octree_iterator.h:733), freed by `deleteVoxelAtPoint` -> `removeLeaf` -> `deleteLeafRecursive` -> `~OctreeLeafNode`**. `./t after` (the fix): clean, 6808 leaves, 1110 centroids outside their own voxel.
+- Side effect, unchanged by the fix and not addressed: a drifted centroid makes `deleteVoxelAtPoint` remove the neighbour voxel instead of the unstable one. Deleting by the leaf's own key (`it.getCurrentOctreeKey()` + `removeLeaf`) would remove the right voxel, but `removeLeaf` is protected in `OctreeBase`, and that is a behaviour change, so it is only mentioned in the upstream draft.
+
+### ASan, Linux CPU-only, TUM-VI room1 stereo, full sequence, one run per build
+Reviewer's recipe (`-fsanitize=address -fsanitize-recover=address -fno-omit-frame-pointer -g -DEIGEN_MALLOC_ALREADY_ALIGNED=1`, `ASAN_OPTIONS=halt_on_error=0:detect_leaks=0:alloc_dealloc_mismatch=0`), but with `-DWITH_LIBELAS=ON` (CPU libelas, `USE_HIP=OFF`) and `TUM-VI_pcm_noviewer.yaml` (tracked `Examples/Stereo/TUM-VI.yaml` + `PointCloudMapping.on: 1` + `Viewer.on: 0`) so the dense mapping and the octree run. Two git worktrees of the fork: `asan` at 970cb1f, `asan-fix` at 970cb1f + the two patches (= 2522f1e content).
+
+| site | 970cb1f (rc 0, 2821 frames, 97 KFs, 172 non-zero removal passes) | 2522f1e content (rc 0, 2821 frames, 98 KFs, 169 passes) |
+|---|---|---|
+| `Tracking.cc:4018` NeedNewKeyFrame | heap-buffer-overflow, 0 B after 280-B region | **gone** |
+| `Tracking.cc:4019` | 48 B after 280-B region | **gone** |
+| `Tracking.cc:4316` CreateNewKeyFrame (2 reports) | 0 B and 20 B after 308-B region | **gone** |
+| `MapLine.cc:688` UpdateNormalAndDepth | 4 B before 12-B region | present (pre-existing, review 4) |
+| Eigen `PacketMath.h:716/746` stack-use-after-scope (12 reports) | present | present (`OptimizableTypes.cpp` `projectJac` temporary, review 4) |
+| heap-use-after-free anywhere | 0 | 0 |
+| total ASan reports | 17 | 13 |
+
+The full-sequence ASan run did not hit the octree use-after-free at 970cb1f either: it needs a drifted centroid whose neighbour leaf is still ahead of the iterator, a few times per hundred runs going by the GPU crash rate. The proof for item 2 is the reproducer plus the matching crash instruction, not this table.
+
+### GPU runs (HIP build at 2522f1e content, libelas on the GPU, `TUM-VI_pcm.yaml`, viewer on under Xvfb)
+`runs_stereo.sh` (2026-11-05 script, paths changed, `OMP_NUM_THREADS=4` added), one process at a time.
+
+| outcome | runs |
+|---|---|
+| clean, 2821/2821 frames, rc 0, one map | **16 of 16** |
+| SEGV in `UpdateMapNoSegm` / MapLine / anything | 0 |
+| `-217`, `invalid argument`, `terminate`, `hipError` lines | 0 |
+
+- KFs 80-101, 274-323 libelas calls per run, rigid ATE vs `mocap0` **0.0769-0.0784 m** (fde33e5 on this host: 0.0766-0.0791 m). About 18-21 million unstable voxels removed per run (sum of `UpdateMap() - removed N`, runs 1, 8, 16), so the fixed path is exercised heavily.
+- KFs are lower than at fde33e5 (104-123, 411-473 libelas calls). Expected: before a93e73d and 46a26f4, `NeedNewKeyFrame` counted past-the-end garbage as tracked close points and lines, and `KeyFrameCulling` read garbage depth for right-image observations. Accuracy is unchanged.
+- Baseline for the octree crash, same sequence and config, gfx1100: 1/16 (porter, fde33e5) and 2/17 (validator, fde33e5), 3/33 together. 0/16 here is consistent with the fix but not statistically decisive on its own (P(0 of 16 | 3/33) is about 0.2); the reproducer is the proof.
+- A 17th run with `AMD_LOG_LEVEL=3` processed all 2821 frames with `libelas::findMatch_GPU` x570, `adaptiveMeanGPU8` x285 (285 libelas calls), `IC_Angle_kernel` x45136, 0 `hipErrorInvalidValue`, no SEGV; my harness's 10-minute background limit killed it during shutdown, before it wrote the trajectory, so it is not counted.
+- Host note: runs 1-3 took 860-1110 s instead of 163 s. Another job was saturating the host (load 50+ on 64 threads, single-thread copy bandwidth measured at 0.01-0.1 GB/s for long stretches); the fde33e5 `mono_tum` from the previous job on the same data was equally slow then (median tracking 0.86 s), so it was the host, not the build. Runs 4-16 ran at the normal 163 s. All 16 are counted; the slow ones finished clean.
+- Mono TUM RGB-D fr1_xyz (`mono_tum`, `TUM1.yaml`, viewer on): run on the idle host rc 0, 798 frames, 55 KFs, median tracking 9.2 ms, Sim3 ATE **0.0096 m** (records 0.0099-0.0104 m). A first run under the overload: rc 0, 26 KFs, ATE 0.0093 m, median 0.39 s.
+
+### Lesson correction (item 3)
+`.claude/skills/cuda-to-rocm/references/validation.md`, "Windows: a CPU crash that Linux never shows is often a heap over-read": now names the three causes, says the allocation fix removed the every-run crash but left 3 of 10 runs crashing (the plvs-only `LoopClosing` keyframe vector, bug 2, and the MapLine double count, bug 3), that only all three gave 10/10, and replaces "glibc's heap is one contiguous mapping" with "usually lands in already-mapped heap memory". It adds that ASan on a Linux CPU build shows such over-reads in a run that exits 0.
+
+### Records
+- `plvs-upstream-stereo-mapping-crashes` -> done (MapLine half 970cb1f, octree half 2522f1e). The upstream issue for the octree half is drafted below, not filed.
+- CUDA no-regression compile at 2522f1e is owed (mi355, dispatched separately). The delta is host C++ outside any `USE_CUDA` block, no `.cu` file and no build change: `git diff --stat 970cb1f 2522f1e` touches only `src/Frame.cc` and `src/PointCloudMapOctreePointCloud.cc`.
+- Not done: Windows and the other Linux arches now read `revalidate` at 2522f1e.
+
+### Draft: upstream issue for luigifreda/plvs (for jeff to file; not filed)
+Checked with `utils/jargon.py` wording rules and `utils/prose.py`.
+
+====
+**Title:** Use-after-free in PointCloudMapOctreePointCloud::UpdateMapNoSegm when removing unstable voxels
+
+My agent came up with this analysis, but I've read and approved it.
+
+### Symptom
+
+With dense mapping on (`Examples/Stereo/TUM-VI.yaml` with `PointCloudMapping.on: 1`, `PointCloudMapping.type: "octree_point"`), long runs of `stereo_tum_vi` on TUM-VI `dataset-room1_512_16` occasionally crash with SIGSEGV in the point-cloud mapping thread (3 of 33 runs on Linux):
+
+```
+PLVS2::PointCloudMapOctreePointCloud<pcl::PointSurfelSegment>::UpdateMapNoSegm()
+PLVS2::PointCloudMapping::UpdateMap()
+PLVS2::PointCloudMapping::Run()
+```
+
+The faulting instruction is the virtual `getNodeType()` call in `OctreeLeafNodeDepthFirstIterator::operator++` (pcl/octree/octree_iterator.h:733 in PCL 1.14).
+
+### Root cause
+
+`UpdateMapNoSegm` and `UpdateMapSegm` (src/PointCloudMapOctreePointCloud.cc:935 and :1006) call `octree_.deleteVoxelAtPoint(mapPoint)` inside the leaf iterator loop, with `mapPoint` the leaf's centroid. `deleteVoxelAtPoint` frees the leaf whose voxel contains that point, plus any branch it leaves empty. The centroid is a moving average (`OctreePointCloudVoxelCentroidContainerMV::addPoint`) and can land just across a voxel face: for three equal inputs, `(2c + p) * float(1/3)` rounds above `p`. The call then frees a neighbouring leaf, or a branch above it, that the depth-first iterator still holds on its stack, and the next `++it` reads freed memory. A small AddressSanitizer test with `OctreePointCloudCentroid<pcl::PointXYZRGBA>` (points just below voxel faces, plus the same loop) reports heap-use-after-free in `OctreeLeafNodeDepthFirstIterator::operator++`, on a node freed by `deleteVoxelAtPoint`.
+
+### Proposed fix
+
+Delete after the loop:
+
+```diff
++    typename OctreeType::AlignedPointTVector pointsToDelete;
+     typename OctreeType::LeafNodeIterator it, itEnd;
+     for (it = octree_.leaf_depth_begin(), itEnd = octree_.leaf_depth_end(); it != itEnd; ++it)
+     {
+ ...
+                     num_removed_unstable_points++;
+-                    octree_.deleteVoxelAtPoint(mapPoint);
++                    pointsToDelete.push_back(mapPoint);
+ ...
+     }
++    for (const PointT& point : pointsToDelete)
++    {
++        octree_.deleteVoxelAtPoint(point);
++    }
+```
+
+The same change applies to `UpdateMapSegm`. With it the test runs clean, and 16 of 16 runs of the sequence finished. A drifted centroid still removes the neighbouring voxel rather than the unstable one; deleting by the leaf's own key would avoid that, if you prefer.
+====
+
+### Draft: follow-up comment for luigifreda/plvs#58 (for jeff to approve or drop; not posted)
+Review 4's draft, with the measured ASan evidence for both halves.
+
+====
+My agent came up with this analysis, but I've read and approved it.
+
+> Linux evidence for the over-read above, and a twin in the line arrays. With AddressSanitizer on a Linux CPU-only build, TUM-VI room1 stereo exits 0 but reports heap-buffer-overflow reads at src/LocalMapping.cc:709, :718 and :1923 and src/ORBmatcher.cc:1368 and :1376, each just past an `Nleft`-float buffer; with `mvDepth`/`mvuRight` sized to `N` they are gone. So the reads are out of bounds on Linux too; they just do not usually fault there.
+>
+> The fisheye line depth arrays have the same problem. `Frame::ComputeStereoFishEyeLineMatches` allocates `mvDepthLineStart` and `mvDepthLineEnd` with `NlinesLeft` entries (next to `mvuRightLineStart/End`, which already get `Nlines`), and allocates none of them when the left image has no lines, but `Tracking::NeedNewKeyFrame` and `Tracking::CreateNewKeyFrame` loop over all `Nlines`. ASan reports heap-buffer-overflow at src/Tracking.cc:4018, :4019 and :4316, just past an `NlinesLeft`-float buffer. If a value read past the end is positive, CreateNewKeyFrame also unprojects a right-image line with `UnprojectStereoLine`, which reads `mvKeyLinesUn[i]` out of bounds as well. Sizing both vectors to `Nlines` with -1, and allocating all four even when `NlinesLeft == 0`, removes the three reports.
+====
