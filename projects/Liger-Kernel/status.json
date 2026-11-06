@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "Liger-Kernel",
+  "upstream_url": "https://github.com/linkedin/Liger-Kernel",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T01:35:22Z",
+  "updated_at": "2026-11-06T01:35:23Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
