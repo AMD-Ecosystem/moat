@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T02:14:18Z",
-  "updated_at": "2026-11-06T02:14:19Z",
+  "updated_at": "2026-11-06T02:42:53Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "BSD-3-Clause",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "BSD-3-Clause",
+      "evidence": "https://github.com/meta-pytorch/torchcodec/blob/main/LICENSE",
+      "at": "2026-11-06T02:42:47Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "duplicate",
+    "duplicate_effort": "rocJPEG in-tree by maintainer+AMD (#1554, #1642, CI job); rocDecode out-of-tree plugin started by ROCm-org member (Cemberk/torchcodec-rocm, #1247), idle since 2026-03",
+    "viable": true,
+    "summary": "PyTorch media decode (NVDEC/nvJPEG, one .cu): rocJPEG already landing upstream with AMD; maintainer wants video as an out-of-tree plugin an AMD dev already started -- coordinate, don't fork",
+    "at": "2026-11-06T02:42:52Z"
+  }
 }
