@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T03:06:09Z",
-  "updated_at": "2026-11-06T03:06:14Z",
+  "updated_at": "2026-11-06T03:13:38Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/THUDM/slime/blob/main/LICENSE",
+      "at": "2026-11-06T03:13:35Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream ROCm support maintained by AMD engineers (yushengsu-thu, jun-amd, gramesh-amd); open PRs THUDM/slime#2369, #2506",
+    "viable": true,
+    "summary": "slime (THUDM RL post-training on Megatron+SGLang, Apache-2.0): ROCm already upstream (AMD tutorial, gfx942/gfx950 Dockerfiles, INT4 QAT .cu ROCm-enabled #2274) and AMD engineers have live ROCm PRs open (#2369, #2506); only an optional GLM-5 DeepGEMM-alignment router kernel lacks a path",
+    "at": "2026-11-06T03:13:38Z"
+  }
 }
