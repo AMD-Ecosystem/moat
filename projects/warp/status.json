@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T03:30:24Z",
-  "updated_at": "2026-11-06T03:30:24Z",
+  "updated_at": "2026-11-06T03:36:58Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVIDIA/warp/blob/main/LICENSE.md",
+      "at": "2026-11-06T03:36:56Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "ported-elsewhere",
+    "duplicate_effort": "AMD-Ecosystem/warp (AMD-owned, active; textures gap tracked in its #20, nextafterf gap untracked)",
+    "viable": true,
+    "summary": "NVIDIA Warp simulation framework; AMD team maintains the HIP port AMD-Ecosystem/warp (ex ROCm/warp, active); remaining gaps (textures, nextafterf) belong to that fork",
+    "at": "2026-11-06T03:36:58Z"
+  }
 }
