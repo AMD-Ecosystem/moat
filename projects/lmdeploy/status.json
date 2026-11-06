@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-06T00:20:34Z",
-  "updated_at": "2026-11-06T00:20:35Z",
+  "updated_at": "2026-11-06T00:49:47Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-06T00:46:08Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "upstream PR #3925 (AMD contributor, docs + Triton FA tiling, 2025-09); no ROCm/AMD-Ecosystem fork; amd/AMD-AGI orgs unchecked (SSO)",
+    "viable": true,
+    "summary": "LLM serving toolkit; upstream documents ROCm for its Triton PyTorch engine but has no AMD CI and an open bf16-misdetection bug (#4022); scope = validate PyTorch engine wave64+wave32, fix bf16/packaging, update docs. TurboMind (hand-written SM70-90 PTX/CuTe/wgmma GEMMs) out of scope.",
+    "at": "2026-11-06T00:46:03Z"
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/InternLM/lmdeploy/blob/bc2c8da35a4e70133f4b55acba04e2da69e5cedc/LICENSE",
+      "at": "2026-11-06T00:49:46Z"
+    }
+  ]
 }
