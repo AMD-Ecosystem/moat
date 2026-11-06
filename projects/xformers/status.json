@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "xformers",
+  "upstream_url": "https://github.com/facebookresearch/xformers",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T11:26:43Z",
+  "updated_at": "2026-11-06T11:26:44Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
