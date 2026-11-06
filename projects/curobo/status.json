@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-05T23:22:07Z",
-  "updated_at": "2026-11-05T23:22:09Z",
+  "updated_at": "2026-11-06T00:06:32Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-06T00:06:31Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVlabs/curobo/blob/main/LICENSE",
+      "at": "2026-11-06T00:05:39Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none authoritative; community ZiguanWang/curobo_rocm_wrapper (v0.8.0 patches, gfx1201 only, non-authoritative)",
+    "viable": true,
+    "summary": "GPU motion planning/IK/collision for robot arms (52 .cu, ~650 KB); Apache-2.0 since v0.8.0 and clean file by file; no AMD path; needs a HIP runtime-compile backend (main now NVRTC-only via cuda.core) plus pervasive wave32 fixes; depends on AMD-Ecosystem/warp",
+    "at": "2026-11-06T00:06:28Z"
+  }
 }
