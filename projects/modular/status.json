@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T02:48:48Z",
-  "updated_at": "2026-11-06T02:48:52Z",
+  "updated_at": "2026-11-06T02:59:24Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0-WITH-LLVM-exception AND LicenseRef-MAX-License",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0-WITH-LLVM-exception AND LicenseRef-MAX-License",
+      "evidence": "https://github.com/modular/modular/blob/main/LICENSE",
+      "at": "2026-11-06T02:59:06Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream native AMD backend (MLRT HIP driver, max/kernels amd/, MI355X CI per system-requirements)",
+    "viable": false,
+    "summary": "MAX/Mojo AI stack; native AMD GPU support (in-tree HIP driver, AMD Mojo kernels, MI355X verified), no CUDA source to port; MAX parts under source-available MAX License",
+    "at": "2026-11-06T02:59:22Z"
+  }
 }
