@@ -8,10 +8,18 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T02:12:02Z",
-  "updated_at": "2026-11-06T02:12:04Z",
+  "updated_at": "2026-11-06T02:20:19Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "none needed: pure PyTorch, runs on ROCm via torch; AMD ROCm docs ship PEFT/LoRA guides",
+    "viable": true,
+    "summary": "PEFT: pure-PyTorch adapter library; only CUDA is a 3 KB optional BOFT JIT kernel with a torch fallback, and AMD's ROCm docs already cover PEFT/LoRA on Instinct",
+    "at": "2026-11-06T02:20:18Z"
+  }
 }
