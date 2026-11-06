@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T03:35:57Z",
-  "updated_at": "2026-11-06T03:35:57Z",
+  "updated_at": "2026-11-06T03:47:49Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "BSD-3-Clause",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "BSD-3-Clause",
+      "evidence": "https://github.com/NVlabs/tiny-cuda-nn/blob/master/LICENSE.txt",
+      "at": "2026-11-06T03:47:47Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "license-blocked",
+    "duplicate_effort": "community only: amdadvtech/tiny-hip-nn (gfx90a, stale 2023), ZJLi2013/tiny-rocm-nn (MI300X, 2026-04), Painter3000/tiny-rdna4-nn (gfx1201, 2026-08); none authoritative",
+    "viable": true,
+    "summary": "NVlabs neural-graphics MLP/hash-grid library, high value; BSD-3 top level but the PyTorch loader modules.py (which the port must edit), __init__.py and the stbi sample wrapper carry NVIDIA's proprietary header (added 2022, after the BSD release) -- fails the file-by-file bar; question for jeff in notes",
+    "at": "2026-11-06T03:47:49Z"
+  }
 }
