@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "Megatron-LM",
+  "upstream_url": "https://github.com/NVIDIA/Megatron-LM",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T03:20:47Z",
+  "updated_at": "2026-11-06T03:20:48Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
