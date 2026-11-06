@@ -3570,3 +3570,49 @@ Requested by jeff: review the comment-only commit 5a0a83c on b4be814 with the pr
 - Optional wording for jeff when filing the combined draft (not a blocker): its title says "Two out-of-bounds reads", but item 2 is a stack-use-after-scope (a dangling temporary), not out of bounds. "Two invalid memory reads" would be exact.
 
 Verdict: review-passed. Every arch reads `revalidate` at 5a0a83c. The CUDA compile at 5a0a83c is unchanged from b4be814 (comment-only, outside `USE_CUDA`); whether to re-run it is jeff's call under the standing rule.
+
+## Validation 2026-11-06 (linux-gfx90a, revalidate): PASS -> completed (head 5a0a83c)
+
+Trigger: head `fde33e5` (this arch's `validated_sha`) -> `5a0a83c`. The delta is 441cb76 (TUM-VI examples include `PosixCompat.h`), a93e73d (fisheye `mvuRight`/`mvDepth` sized to N), 61e9640 (per-point loop-closure keyframes), 970cb1f (MapLine right-camera obs counted once), 46a26f4 (fisheye line depth arrays), 2522f1e + 5a0a83c (octree deferred deletion), 59eb0da/b4be814 (MapLine pyramid index, Eigen Jacobian lifetime). It is shared host C++ that changes SLAM behaviour, so this was a full rebuild and run with no carry-forward. Host: MI250X GCD (gfx90a, wave64), `HIP_VISIBLE_DEVICES=0`, every GPU run under `ulimit -c 0` with `OMP_NUM_THREADS=4`. Ubuntu 24.04, TheRock pip SDK (`amdclang++` from `/opt/python-3.11-venv/bin`, no `/opt/rocm`), cmake 3.31.6, g++ 13.3, apt PCL 1.14.0 / Boost 1.83. The fork was cloned fresh into `projects/plvs/src`; HEAD `5a0a83c` == `origin/moat-port`.
+
+### Build (in this job directory)
+- OpenCV-with-HIP: I copied the gfx90a install (`opencv@50f05b1` + `opencv_contrib@041d552`, `-DWITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a`, with the `OpenCVConfig.cmake` CUDA-block shim) from the 2026-11-05 gfx90a validation job on this host. The command is in the 2026-11-04 gfx90a section. The two datasets (TUM-VI `dataset-room1_512_16`, TUM `rgbd_dataset_freiburg1_xyz`) were copied from the same job.
+- Everything else was built from scratch with the 2026-11-05 `build_all.sh`, paths changed only: `config.sh` edited the documented way (`USE_HIP=1`, `USE_LOCAL_OPENCV=0`, `OpenCV_DIR`); Pangolin `fe57db532` + patch; DBoW2, g2o, `install_local_g2o_new.sh`, volumetric_mapping, open_chisel, chisel_server, voxblox, voxblox_server, libelas-gpu, libsgm and line_descriptor in `build_thirdparty.sh` order, with `-DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DUSE_HIP=ON -DOPENCV_VERSION=4`. fastfusion, rerun and evo were skipped, as before. Then came plvs with `-DWITH_FASTFUSION=OFF -DWITH_G2O_NEW=ON` (`make -j 64`), then `./build_plvs.sh "-DCMAKE_HIP_ARCHITECTURES=gfx90a -DWITH_FASTFUSION=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5"`, then `./gen_bin_vocabulary.sh`. RC=0. Configure printed `USE_HIP: ON`, `building with libelas HIP` and `building with stereo libsgm GPU`. `libplvs.so` has `.hip_fatbin` and 8 `ElasGPU` dynamic symbols, and `liblibelas_gpu.a` contains `elas_gpu.cu.o`. `config.sh` was reverted with `git checkout` afterwards.
+
+### Test 1: TUM-VI room1 stereo, libelas dense, 21 runs
+`Examples/Stereo/stereo_tum_vi` with `Examples/Stereo/TUM-VI.yaml` at 5a0a83c, changed only to `PointCloudMapping.on: 1` and `Viewer.on: 0`, under `xvfb-run` with the `LD_PRELOAD` SIGSEGV/SIGABRT backtrace handler (`segv.c`, `run_stereo.sh` from the 2026-11-05 job). I ran 20 runs, 4 at a time on the one GCD (`seq 1 20 | xargs -P 4`), then one `AMD_LOG_LEVEL=3` run alone.
+
+| | runs | clean (2821/2821 frames, EXIT=0) | `-217` / `invalid argument` aborts | registered upstream crash (`plvs-upstream-stereo-mapping-crashes`) |
+|---|---|---|---|---|
+| batch | 20 | 20 | **0** | 0 |
+| traced | 1 | 1 | **0** | 0 |
+| total | 21 | 21 | **0** | **0** |
+
+- **`-217` aborts: 0 of 21.** No log contains `Gpu API`, `hipError`, `terminate called`, `cv::Exception` or `invalid argument`, and no SIGNAL line appears in any run.
+- **Upstream crashes: 0 of 21.** Neither the MapLine null-KeyFrame SEGV nor the octree `UpdateMapNoSegm` SEGV occurred. The same configuration on this arch gave 3/21 at fde33e5 and 4/15 at b9c257a. P(0 of 21 | 3/21) is about 0.04, consistent with 970cb1f, 2522f1e and the other fixes.
+- Every run wrote all 2821 poses to `f_room1.txt`, with 84-102 KFs and 269-303 `stereo processing (libelas)` calls per run. ATE RMSE of `f_room1` against mocap0 (Sim3, 2773 matched poses, `ate_ns.py`) is **0.0714-0.0726 m** over the 21 runs, the same band as fde33e5 (0.0716-0.0727) and the CPU-only build (0.0711-0.0720). The ~7 cm floor is the uncompensated lever arm. KFs and libelas calls are lower than at fde33e5 (396-475 calls), the same drop the gfx1100 porter saw after a93e73d/46a26f4 removed the past-the-end reads in `NeedNewKeyFrame`.
+- Traced run: `libelas::findMatch_GPU` x606, `libelas::adaptiveMeanGPU8` x303 over 303 libelas calls, and `IC_Angle_kernel` x45136. **All 13218 `hipFree` calls returned `hipSuccess`**, and no `hipError` string appears in the 507 MB trace. ATE 0.0719 m.
+
+### Test 2: mono TUM RGB-D freiburg1_xyz
+`xvfb-run -a -s "-screen 0 1280x1024x24" Examples/Monocular/mono_tum Vocabulary/ORBvoc.txt Examples/Monocular/TUM1.yaml <data>/rgbd_dataset_freiburg1_xyz`, run on an otherwise idle GCD.
+- Run 1: 798 images, initial map 209 points, 51 KFs, median tracking 21 ms, EXIT=0, Sim3 ATE **0.0091 m** (`ate.py`) over 0.69 m.
+- Run 2 with `AMD_LOG_LEVEL=3`: EXIT=0, 398 points, 44 KFs, ATE 0.0082 m. `PLVS2::cuda::{tileCalcKeypoints_kernel, calcOrb_kernel, IC_Angle_kernel, addBorder_kernel}` each ran **6384 times** (798 frames x 8 levels).
+- Records on this arch: 0.0089 / 0.0092 m (b9c257a), 0.0101 / 0.0108 m (fde33e5, shared GPU).
+- Harness note: my first attempt at run 1 exited 127 before the binary started, because a `${i/2/...}` expansion handed `env` the word `1` as a command. It is not counted.
+
+### Test 3: ELAS GPU-vs-CPU, built the same way as the records
+I exported libelas-gpu with `git archive 5a0a83c Thirdparty/libelas-gpu` and built it standalone: `cmake -S $L -B $L/build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release && cmake --build $L/build -j 32`, RC=0. The CPU reference has `-march=native` (CMAKE_CXX_FLAGS `-O3 -pthread -ftree-vectorize -funroll-loops -fPIC -march=native`, 8 occurrences in `build.ninja`). `elas_cmp.cpp` is byte-identical to the 2026-11-05 job's copy, which was diffed against the source in the 2026-11-04 fix-round section. Harness build: `amdclang++ -x hip --offload-arch=gfx90a -std=c++17 -O2 -DUSE_HIP -I$L/CPU -I$L/GPU elas_cmp.cpp -x none $L/lib/liblibelas_gpu.a -pthread`; run: `./elas_cmp $L/input <mode>`. RC=0 in all 4 modes. libelas-gpu has not changed since fde33e5 (`git diff --stat fde33e5 5a0a83c -- Thirdparty/libelas-gpu` is empty).
+- Mode 2 (plvs + subsampling): **identical line for line to the fde33e5 record on this arch, apart from the timing fields**. GPU reruns are bit-exact on all 7 pairs. cones and aloe match the CPU exactly (max 0, vmis 0). raindeer 0.50 / vmis 4, urban1 0.44 / 2, urban2 0.66 / 0, urban3 1.23 (1 px > 1) / 0, urban4 0.68 / 0.
+- Mode 0: max |d| 0.53-24.80 (cones R 24.80), mean 0.0043-0.0076, >1px 0-7, vmis 1-25. Mode 1: mean 0.0044-0.0069, >1px 0-5, max 0.53-4.35. Mode 3: integer steps, max 2-25, mean 5e-5 to 1.7e-4, >1px 1-12. All are inside the recorded ranges. Reruns in modes 0/1/3 are not bit-exact, the upstream design noted before.
+- Leak and pending-error check (`elas_leak.cpp`, 21 `ElasGPU::process` calls, `./elas_leak <input>/<pair> 21`): aloe and cones each lost **0.00 MB** after the first call, with **0/22** pending errors (fde33e5: 0 / 0, 0/21).
+
+### CUDA no-regression gate
+Not rerun. The CUDA compile check of 2026-11-05 covers b4be814 (nvcc 12.8, PASS, device code identical to upstream). `moatlib.py classify plvs b4be814 5a0a83c` -> `class=comment-only arch_independent=True inert=True`: two comment lines in `src/PointCloudMapOctreePointCloud.cc`, a file with no `USE_CUDA` reference. Whether to re-run it at 5a0a83c anyway stays jeff's call, as the review said.
+
+### Gates (validator step 4)
+- `python3 utils/jargon.py --port plvs` -> `jargon: clean` (after creating the local `master` branch from `origin/master` in the fresh clone, which jargon needs to resolve the range).
+- Documentation: I followed the ROCm build documented in `config.sh` / `build_plvs.sh` again. No docs or build scripts changed in `fde33e5..5a0a83c`.
+- Integrity: `git -C projects/plvs/src status --porcelain` is empty after reverting `config.sh` (Pangolin is gitignored); HEAD `5a0a83c` == `origin/moat-port` (re-fetched).
+
+### Result
+linux-gfx90a: `revalidate` -> `completed` at `5a0a83c`.

@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-11-06T05:39:00Z",
+  "updated_at": "2026-11-06T06:31:30Z",
   "head_sha": "5a0a83c67f16f34e0e6155271c431d890a049cce",
   "depends_on": [
     "opencv_contrib"
@@ -141,10 +141,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "fde33e54bc3f672463d306b756d975ac5cc71d1d",
+      "validated_sha": "5a0a83c67f16f34e0e6155271c431d890a049cce",
       "started_at": "2026-06-05T00:11:54Z",
-      "completed_at": "2026-11-05T02:28:15Z",
-      "updated_at": "2026-11-05T02:28:15Z",
+      "completed_at": "2026-11-06T06:31:30Z",
+      "updated_at": "2026-11-06T06:31:30Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
