@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:03:06Z",
-  "updated_at": "2026-11-06T04:37:16Z",
+  "updated_at": "2026-11-06T07:08:08Z",
   "head_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2",
   "depends_on": [],
   "waivers": {},
@@ -30,11 +30,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "ccc2950facafa108eecea14e49cdb87b3b97d459",
+      "validated_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2",
       "failed_sha": null,
       "started_at": "2026-11-04T07:12:52Z",
-      "completed_at": "2026-11-04T11:12:51Z",
-      "updated_at": "2026-11-04T23:37:45Z",
+      "completed_at": "2026-11-06T07:08:07Z",
+      "updated_at": "2026-11-06T07:08:07Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -49,15 +49,7 @@
         "last_session_at": null
       },
       "last_agent": "validator",
-      "state": "completed",
-      "carry_forward": {
-        "from": "3625a1e825b9ade31a09d64dfd52f4420186665d",
-        "to": "ccc2950facafa108eecea14e49cdb87b3b97d459",
-        "method": "source-class",
-        "class": "doc-only",
-        "detail": "no changes",
-        "at": "2026-11-04T23:37:45Z"
-      }
+      "state": "completed"
     },
     "linux-gfx942": {
       "blocked": false,

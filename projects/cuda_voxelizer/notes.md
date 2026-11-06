@@ -734,3 +734,24 @@ Harness `agent_space/cvdiff.py <exe> <model> <work> <tag> --repeat 3` (rewritten
 - Upstream CI smoke `./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu` (README build, upstream layout in a scratch dir): exit 0, `## CPU VOXELISATION`, writes `test_models/bunny.OBJ_64.vox`. CPU counts match every other arch.
 - CUDA gate not rerun: already recorded at 5a9b7cf (nvcc 12.8 compile check on the gfx950 host, V100 run above).
 - `utils/jargon.py --port cuda_voxelizer`: clean. ROCm build documented in the README next to the CUDA build. Fork tree clean at 5a9b7cf.
+
+## Validation 2026-11-06 (windows-gfx1151, validator, moat-port 5a9b7cf)
+
+Verdict: completed. Satisfies the windows gate at head 5a9b7cf. `classify ccc2950 5a9b7cf` = `mixed`, so a full real-GPU revalidation (no carry-forward). The HIP path is unchanged by 5a9b7cf: every count equals the 3625a1e Windows validation exactly.
+
+Host: AMD Radeon 8060S (gfx1151, RDNA3.5, wave32, APU), Windows 11, TheRock HIP 7.14 pip SDK, clang-cl for C, CXX and HIP, CMake 4.3.2, Ninja, Trimesh2 2022.03.04 `trimesh.lib` (as in the porter section). Fork clone checked out at 5a9b7cf; no modified tracked files. TheRock amdhip64_7.dll / amd_comgr / hiprtc DLLs and libomp140 staged next to the exe. All GPU runs under `ulimit -c 0`, one at a time.
+
+Build (clean dir, Release, exit 0, upstream warnings only): `utils/timeit.sh cuda_voxelizer compile -- bash agent_space/cuvox_build.sh <dir> Release` (README Windows recipe: `-G Ninja -DUSE_HIP=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_HIP_ARCHITECTURES=gfx1151`, all-clang-cl, Trimesh2 include/link dirs).
+
+Differential: `utils/timeit.sh cuda_voxelizer test -- python3 agent_space/cuvox_compare.py <exe> bunny.OBJ <work> --repeat 3` (GPU vs `-cpu`, binvox / morton / obj_points decoded to voxel sets, 3 more GPU runs compared). 18 cases, 54 GPU runs, 18 of 18 repeats identical. Counts identical across the three formats. GPU log: `Best device: AMD Radeon(TM) 8060S Graphics`, `Allocating ... of CUDA device memory for Voxel Grid`, `## GPU VOXELISATION`.
+
+| mode | size | filled CPU | diff (GPU-only/CPU-only) |
+|---|---|---|---|
+| surface | 64 | 13,802 | 0 |
+| surface | 256 | 221,760 | 0 |
+| surface | 512 | 887,315 | 9 (3/6) |
+| solid | 64 | 52,258 | 0 |
+| solid | 256 | 3,345,384 | 0 |
+| solid | 512 | 26,763,628 | 1 (1/0) |
+
+512 rows are the accepted boundary FP class (same 9 / 1 as 3625a1e here and on gfx1201; also seen on CUDA); harness TOTAL_FAILS=6 is exactly those six rows. Smoke `cuda_voxelizer.exe -f bunny.OBJ -s 64 -cpu`: exit 0, writes `bunny.OBJ_64.vox`. Not rerun: `_DEBUG` device-counter build and `-o vox/obj` writers (covered on this host at 689b885 and on other arches at 5a9b7cf). CUDA gate not rerun (host has no nvcc; recorded at 5a9b7cf). `utils/jargon.py --port cuda_voxelizer` clean; README documents the Windows and Linux ROCm builds.

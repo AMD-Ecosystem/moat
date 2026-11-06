@@ -122,3 +122,7 @@
 {"kind":"phase","ts":"2026-11-06T04:36:17Z","phase":"test","seconds":0.003,"exit":127,"cmd":"./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu"}
 {"kind":"phase","ts":"2026-11-06T04:36:32Z","phase":"test","seconds":0.094,"exit":0,"cmd":"env -C /var/lib/jenkins/fleet/jobs/mi200-20261105-201117-cuvox-val3/moat/agent_space/smoke ./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu"}
 {"kind":"session","ts":"2026-11-06T04:37:16Z","epoch":1793939836.774981502,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-06T06:55:43Z","epoch":1793948144.115654600,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-06T06:56:12Z","phase":"compile","seconds":16.118,"exit":0,"cmd":"bash agent_space/cuvox_build.sh D:/Develop/moat/agent_space/cuvox_val5 Release"}
+{"kind":"phase","ts":"2026-11-06T07:07:09Z","phase":"test","seconds":635.524,"exit":1,"cmd":"python3 agent_space/cuvox_compare.py D:/Develop/moat/agent_space/cuvox_val5/cuda_voxelizer.exe D:/Develop/moat/projects/cuda_voxelizer/src/test_models/bunny.OBJ D:/Develop/moat/agent_space/cuvox_val5_work --repeat 3"}
+{"kind":"session","ts":"2026-11-06T07:08:11Z","epoch":1793948892.079563600,"event":"end","platform":"windows-gfx1151"}
