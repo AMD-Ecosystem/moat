@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T00:18:51Z",
-  "updated_at": "2026-11-06T00:18:52Z",
+  "updated_at": "2026-11-06T00:50:11Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/kvcache-ai/Mooncake/blob/main/LICENSE-APACHE",
+      "at": "2026-11-06T00:47:59Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream USE_HIP (TE+Store, MI350X CI, ROCm wheels, AMD codeowners); PG-on-HIP RFC #5202 by AMD with MI355X prototype; EmbeddedLLM fork has no delta",
+    "viable": false,
+    "summary": "KV-cache transfer engine/store: upstream already ships ROCm/HIP (MI350X CI, wheels); PG gap owned by AMD RFC #5202, EP is AMD-native work",
+    "at": "2026-11-06T00:50:09Z"
+  }
 }
