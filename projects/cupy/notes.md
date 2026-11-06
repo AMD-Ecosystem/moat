@@ -343,3 +343,49 @@ Tests at 24a62ef95 (laptop, ulimit -c 0, one pytest process, no texture tests):
 - `tests/install_tests tests/import_tests`: 31 passed, 1 skipped.
 - flake8 on the two files: only pre-existing F824 in install_build.py.
 - jargon.py --port cupy: clean, after pointing the clone's local `main` at the upstream base 18b54de. ROCm/cupy's own `main` is NOT an upstream mirror (32k commits off), so `git branch main origin/main`, as the review note suggests, gives 20 false hits from upstream history.
+
+## Review 2026-11-06b (linux-gfx1201, reviewer)
+
+Scope: `git diff 694db667f...24a62ef95` on ROCm/cupy `moat-port` (one commit, `[ROCm] Find hipconfig without an activated environment on Windows`), pr-review skill, each point re-checked against the code. Verdict: **review passed**, no findings. The commit resolves finding 1 of the 2026-11-06 review within Ruling 1: the lookup order is still ROCM_HOME, then `hipconfig --rocmpath`, and HIP_PATH is not read anywhere.
+
+### Checked, with no finding
+
+- Every behavioural change is Windows- or HIP-only:
+  - `cupy/_environment.py`: `_get_win32_rocm_path` is called only under `_PLATFORM_WIN32` (`_get_rocm_path`, line 221). `_setup_win32_hip_dll_directory` returns early off win32, and the new warning sits after the `_is_win32_hip_build` check, so a CUDA Windows import is unchanged. `_diagnose_win32_dll_load` is reached only from `_diagnose_import_error` under `sys.platform == 'win32'`. For a CUDA build it emits the same lines as before (`''`, `''`, `CUDA Path: ...`, `DLL dependencies:`).
+  - `install/cupy_builder/install_build.py`: `_get_win32_rocm_path` is reached only under `PLATFORM_WIN32` (line 63). `configure_msvc_for_hip` has two callers, `_command.py:221` (win32 MSVC and `ctx.use_hip`) and `cupy_setup_build.py:540` (`ctx.use_hip and PLATFORM_WIN32`). On every OS, the only new effect is `import sysconfig` (stdlib).
+- `if not rocm_path` in `configure_msvc_for_hip` covers both the `''` the build helper returns and an empty ROCM_HOME. The runtime `get_rocm_path` caches None correctly: its sentinel is `''`.
+- I exercised the logic on Linux with `sysconfig.get_path('scripts')` mocked to a directory holding a fake `hipconfig`, `PATH=/nonexistent` and ROCM_HOME unset (`agent_space/probe_lookup.py`):
+  - Both helpers return the fake root.
+  - With no scripts directory, the runtime helper returns None and the build helper returns `''`.
+  - `configure_msvc_for_hip` raises the ROCM_HOME message.
+  - `_setup_win32_hip_dll_directory`, forced to win32 with an `amdhip64_7.dll` depends list, emits the ROCM_HOME warning.
+- `shutil.which(..., path=...)` applies PATHEXT on Windows. A venv's `sysconfig.get_path('scripts')` is `<venv>\Scripts`. Searching the current directory first is unchanged from the existing on-PATH lookup.
+- Commit hygiene: the title is 65 characters with `[ROCm]`. There is no Co-Authored-By or noreply trailer. The body has an AI disclosure and a Test Plan with fenced commands. The body and the diff are ASCII. `python3 utils/jargon.py --port cupy` reports clean, with the clone's local `main` at 18b54de. That follows the porter's correction: ROCm/cupy's `main` is not an upstream mirror, so `branch main origin/main` is wrong.
+- install.rst: the added sentence describes the lookup as the code implements it.
+
+### Linux HIP no-change check (this host: gfx1201, TheRock pip ROCm, HIP 71626385, Python 3.11.17, Cython 3.2.9, numpy 2.4.6 in the job venv)
+
+The same command was run in two worktrees, `agent_space/wt-base` (694db667f) and `agent_space/wt-port` (24a62ef95):
+
+```bash
+export ROCM_HOME=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+export PATH="$FLEET_VENV/bin:$ROCM_HOME/bin:$PATH" LD_LIBRARY_PATH="$ROCM_HOME/lib" CUPY_INSTALL_USE_HIP=1 HCC_AMDGPU_TARGET=gfx1201 CUPY_NUM_BUILD_JOBS=12
+utils/timeit.sh cupy compile -- bash -c "cd <wt> && python setup.py build_ext --inplace -v"
+```
+
+- Both trees build (EXIT 0) with the same configure summary: cuda Yes 71626385, cub Yes 400700, nccl Yes 23007, random, thrust and dlpack Yes. Both have 455 warnings and 64 `.so` files.
+- All 516 compile and link command lines are identical after normalising the tree path and `CUPY_CACHE_KEY`. The `nm -D --defined-only` output for every `.so` is identical (6930 lines), with `__hip_cuid_*` excluded.
+- Smoke on the port tree, under `ulimit -c 0` with `HIP_VISIBLE_DEVICES=0`, importing cupy with warnings set to errors: **pass**. It covered elementwise, reduction, RawKernel, CUB, random, eigvalsh/solve, FFT, sparse matmul, sort, nvtx, profiler, and complex exp at 700.5+0.5j against NumPy.
+- `tests/install_tests tests/import_tests`: 31 passed, 1 skipped.
+- Host noise, unrelated to the port: when cupyx.scipy.sparse imports SciPy, the image's shared scipy 1.10 (built for numpy 1.x) prints `_ARRAY_API not found`. cupyx catches the error and carries on.
+- No CUDA compile was run. The commit changes no compiled source and no CUDA build path, and the build helper's new branch is HIP-only, so the nvcc comparison of Ruling 4 still applies.
+
+### Porter note: a failed setup.py run removes `cupy/.data/_depends.json`
+
+Confirmed by reading the code. `prepare_wheel_libs` (`install/cupy_builder/cupy_setup_build.py:481-490`) runs from `setup.py:53` on every invocation, before any build, and runs `rmtree` on `cupy/.data`. The Windows-only copy in `_command.py:257-271` restores `_depends.json` only after a successful `build_ext`.
+
+**The port should not guard against it** (no finding):
+- It affects only a source tree used in place (editable or `--inplace` builds) after a failed run. Wheels and regular installs carry their own `cupy/.data` in site-packages, and the next successful build restores the file.
+- This is upstream behaviour, and it already affects CUDA Windows the same way: with no `_depends.json`, the import diagnostic is silently dropped.
+- A guard would need a HIP marker that survives the `rmtree`. Either another file outside `.data`, or importing a compiled module to ask `is_hip` before the DLL directory exists, which is the very load this function enables. That adds upstream-visible surface to fix a transient developer-tree state that upstream's own build creates.
+- It is enough to keep this in notes as a gotcha for anyone validating on Windows: after a failed build, rebuild before testing, or CuPy binds the driver's System32 `amdhip64_7.dll`.
