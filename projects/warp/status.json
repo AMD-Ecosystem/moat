@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "warp",
+  "upstream_url": "https://github.com/NVIDIA/warp",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T03:30:24Z",
+  "updated_at": "2026-11-06T03:30:24Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
