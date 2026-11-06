@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "RTXNTC",
+  "upstream_url": "https://github.com/NVIDIA-RTX/RTXNTC",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T04:17:36Z",
+  "updated_at": "2026-11-06T04:17:37Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
