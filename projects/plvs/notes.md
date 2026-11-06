@@ -3384,7 +3384,7 @@ Upstream issue drafts for these two (luigifreda/plvs x2, UZ-SLAMLab/ORB_SLAM3 x1
 
 My agent came up with this analysis, but I've read and approved it.
 
-`MapLine::UpdateNormalAndDepth` (src/MapLine.cc:681-688) sets `const int nLevels = pRefKF->mnScaleLevels;` and then divides by `pRefKF->mvLineScaleFactors[nLevels-1]`. `mnScaleLevels` is the keypoint pyramid depth (`ORBextractor.nLevels`, 8 in the example settings), but `mvLineScaleFactors` has `mnLineScaleLevels` entries (`Line.nLevels`, 3 in the example settings), so the read is past the end of the vector and `mfMinDistance` of every map line updated here is scaled by whatever follows it in memory. With AddressSanitizer on Linux, `stereo_tum_vi` with `Examples/Stereo/TUM-VI.yaml` on TUM-VI `dataset-room1_512_16` reports a heap-buffer-overflow at src/MapLine.cc:688. The `MapLine` constructor from a `Frame` (src/MapLine.cc:113) already uses `mnLineScaleLevels` for the same computation, so the fix is one line:
+`MapLine::UpdateNormalAndDepth` (src/MapLine.cc:680-687) sets `const int nLevels = pRefKF->mnScaleLevels;` and then divides by `pRefKF->mvLineScaleFactors[nLevels-1]`. `mnScaleLevels` is the keypoint pyramid depth (`ORBextractor.nLevels`, 8 in the example settings), but `mvLineScaleFactors` has `mnLineScaleLevels` entries (`Line.nLevels`, 3 in the example settings), so the read is past the end of the vector and `mfMinDistance` of every map line updated here is scaled by whatever follows it in memory. With AddressSanitizer on Linux, `stereo_tum_vi` with `Examples/Stereo/TUM-VI.yaml` on TUM-VI `dataset-room1_512_16` reports a heap-buffer-overflow at src/MapLine.cc:687. The `MapLine` constructor from a `Frame` (src/MapLine.cc:113) already uses `mnLineScaleLevels` for the same computation, so the fix is one line:
 
 ```diff
 -    const int nLevels = pRefKF->mnScaleLevels;
@@ -3436,9 +3436,9 @@ Requested shape: one plvs issue for both reads. It replaces the two separate plv
 
 My agent came up with this analysis, but I've read and approved it.
 
-AddressSanitizer on a Linux CPU-only build reports two reads of invalid memory when `stereo_tum_vi` runs `Examples/Stereo/TUM-VI.yaml` on TUM-VI `dataset-room1_512_16`. Both runs exit 0, so the reads usually go unnoticed.
+AddressSanitizer on a Linux CPU-only build reports two reads of invalid memory when `stereo_tum_vi` runs `Examples/Stereo/TUM-VI.yaml` on TUM-VI `dataset-room1_512_16`. The run exits 0, so the reads usually go unnoticed.
 
-1. `MapLine::UpdateNormalAndDepth` (src/MapLine.cc:681-688) sets `const int nLevels = pRefKF->mnScaleLevels;` and divides by `pRefKF->mvLineScaleFactors[nLevels-1]`. `mnScaleLevels` is the keypoint pyramid depth (`ORBextractor.nLevels: 8`), but `mvLineScaleFactors` has one entry per line pyramid level (`Line.nLevels: 3`), so the index is past the end and `mfMinDistance` is scaled by whatever follows the vector. ASan reports a heap-buffer-overflow at src/MapLine.cc:688. The `MapLine` constructor from a `Frame` (src/MapLine.cc:113) already uses `mnLineScaleLevels`.
+1. `MapLine::UpdateNormalAndDepth` (src/MapLine.cc:680-687) sets `const int nLevels = pRefKF->mnScaleLevels;` and divides by `pRefKF->mvLineScaleFactors[nLevels-1]`. `mnScaleLevels` is the keypoint pyramid depth (`ORBextractor.nLevels: 8`), but `mvLineScaleFactors` has one entry per line pyramid level (`Line.nLevels: 3`), so the index is past the end and `mfMinDistance` is scaled by whatever follows the vector. ASan reports a heap-buffer-overflow at src/MapLine.cc:687. The `MapLine` constructor from a `Frame` (src/MapLine.cc:113) already uses `mnLineScaleLevels`.
 
 2. `EdgeSE3ProjectXYZ::linearizeOplus` (src/OptimizableTypes.cpp:214) declares `auto projectJac = -pCamera->projectJac(xyz_trans);`. `projectJac` returns an `Eigen::Matrix<double,2,3>` by value, so `auto` becomes an Eigen expression that refers to a temporary destroyed at the end of the statement, and the products at lines 220 and 233 read a dead stack slot. ASan reports stack-use-after-scope at both lines. The same line is in ORB-SLAM3 (src/OptimizableTypes.cpp:150).
 
@@ -3455,7 +3455,7 @@ Proposed fix:
 +        const Eigen::Matrix<double,2,3> projectJac = -pCamera->projectJac(xyz_trans);
 ```
 
-With both changes the same ASan run reports nothing, and the sequence still finishes with the same trajectory accuracy.
+With both changes these reports are gone, and the sequence still finishes with the same trajectory accuracy.
 ====
 
 ## Review 2026-11-06 (reviewer, linux-gfx942): changes-requested (delta 970cb1f..b4be814, head b4be814)
@@ -3543,3 +3543,18 @@ The delta `970cb1f..b4be814` (46a26f4, 2522f1e, 59eb0da, b4be814) touches only `
 
 ### Not checked here
 - The full plvs CUDA library and executables. They need OpenCV with the CUDA contrib modules, Pangolin and PCL, and the host has 132 GB free on a 97%-full shared root. The changed lines are host C++ outside `USE_CUDA`, which the Linux and Windows HIP builds compile unchanged.
+
+## Port round 2026-11-06 (porter, linux-gfx1100): review 5 of b4be814 addressed (head 5a0a83c)
+
+- **Finding 1 (comment mechanism):** new commit `5a0a83c` "[ROCm] Correct the octree deferred-deletion comments" on top of b4be814 (no amend, no force-push). It touches only the two comment lines at `src/PointCloudMapOctreePointCloud.cc:958` and `:1042`, which now read `// deleteVoxelAtPoint() can free a leaf or branch the iterator has not visited yet (a centroid can lie in a neighbouring voxel); delete after the loop.` (the reviewer's wording). `git diff b4be814 5a0a83c --stat`: 1 file, 2 insertions, 2 deletions.
+- Compile: the one changed translation unit, compiled with its exact flags from the gfx1100 HIP build's `compile_commands.json` (fix5 job, b4be814 content) pointed at this clone's source, output to `/dev/null`: rc 0. Its only diagnostics are the existing `-Wsign-compare` warnings at `:1057` (upstream code, unchanged). No rebuild or run: comment-only, as the request allowed.
+- `jargon.py --port plvs`: clean. `check.py commits`: only the five older commits from jeff's 2026-11-04 squash ruling.
+- **Upstream drafts corrected** (2026-11-06 round, above): the MapLine draft and combined draft item 1 now cite upstream master `src/MapLine.cc:680-687` and the read at `:687` (constructor `:113` unchanged). The combined draft says "The run exits 0", and its closing sentence is now "With both changes these reports are gone, and the sequence still finishes with the same trajectory accuracy." That avoids claiming a zero-report run on master: the zero-report run was at b4be814 content, which also carries a93e73d, 61e9640, 970cb1f, 46a26f4 and 2522f1e.
+
+### Commit-message corrections owed at the PR-prep squash (jeff's 2026-11-04 ruling)
+Collected so the squash can be written from one list:
+1. **2522f1e body:** drop "Every leaf is still visited once and the same voxels are removed, so the map content is unchanged." Say instead that the same voxels are removed, except where a drifted centroid's neighbour had not yet been visited: the old loop skipped that leaf (or crashed on the next `++it`), and now it is visited, output if stable and queued for removal if unstable. Fold 5a0a83c into this commit, and state the mechanism the same way the corrected comments do.
+2. **b4be814 Test Plan:** "the parent of this commit reports 12 stack-use-after-scope reads" is wrong. Write that all 12 were measured at 970cb1f, the base of this series (review 5 table). 59eb0da cannot change them.
+3. Carried from earlier: the five commits without a fenced Test Plan (a75da87, 7719623, 1654d89, 3b5d2e5, 3cbfef4), and the fde33e5 libelas call count (413-470, not 371-470).
+
+Records: `advance-head plvs 5a0a83c`. Every arch reads `revalidate`. Next stage is review of `b4be814..5a0a83c`. The CUDA no-regression compile at 5a0a83c is trivially unchanged from b4be814 (comment only, outside `USE_CUDA`), but it is still owed under the standing rule if jeff wants it re-run.

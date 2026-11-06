@@ -374,3 +374,5 @@
 {"kind":"phase","ts":"2026-11-06T04:32:56Z","phase":"compile","seconds":72.967,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261105-200724-plvs-review5/w/scripts/build_asan.sh 970"}
 {"kind":"phase","ts":"2026-11-06T04:43:10Z","phase":"test","seconds":608.306,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261105-200724-plvs-review5/w/scripts/run_asan.sh /var/lib/jenkins/fleet/jobs/mi300-20261105-200724-plvs-review5/w/runs/970"}
 {"kind":"session","ts":"2026-11-06T04:44:44Z","epoch":1793940284.574291386,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-06T05:31:11Z","phase":"compile","seconds":0.004,"exit":127,"cmd":"bash agent_space/cc.sh"}
+{"kind":"phase","ts":"2026-11-06T05:31:32Z","phase":"compile","seconds":14.509,"exit":0,"cmd":"bash agent_space/cc.sh"}
