@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-11-06T06:31:30Z",
+  "updated_at": "2026-11-06T06:51:19Z",
   "head_sha": "5a0a83c67f16f34e0e6155271c431d890a049cce",
   "depends_on": [
     "opencv_contrib"
@@ -23,13 +23,14 @@
   "upstream_repo_id": 693793222,
   "stage": "review-passed",
   "platforms": {
-    "windows-gfx1101": {
-      "blocked": true,
-      "blocked_reason": "Hardware offline (the Windows gfx1101/gfx1201 host was retired 2026-10-28); Windows coverage comes from windows-gfx1151. Correction, 2026-11-04: the earlier diagnosis here (clang-cl boost.serialization miscompilation, recursion in oserializer<KeyFrame>::save_object_data) was wrong. Frames were misattributed in a binary without a PDB; the real crash was __chkstk stack exhaustion in Tracking::MonocularInitialization (~427 KB of Frame grid arrays vs the 1 MB Windows default stack), fixed at e0dcda3 with WIN32 /STACK:8MB and run on windows-gfx1151. See notes.md.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-11-04T22:42:53Z",
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "5a0a83c67f16f34e0e6155271c431d890a049cce",
+      "started_at": "2026-06-05T00:11:54Z",
+      "completed_at": "2026-11-06T06:31:30Z",
+      "updated_at": "2026-11-06T06:31:30Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -42,7 +43,9 @@
         "session_count": 0,
         "first_session_at": null,
         "last_session_at": null
-      }
+      },
+      "last_agent": "validator",
+      "failed_sha": "22ea83454241447b418832da2ee2c1a3b25a08a8"
     },
     "linux-gfx942": {
       "blocked": false,
@@ -66,30 +69,6 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
-    },
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "fde33e54bc3f672463d306b756d975ac5cc71d1d",
-      "failed_sha": "fde33e54bc3f672463d306b756d975ac5cc71d1d",
-      "started_at": "2026-11-04T08:04:09Z",
-      "completed_at": "2026-11-05T03:42:59Z",
-      "updated_at": "2026-11-05T07:02:41Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "validation-failed",
-      "last_agent": "porter"
     },
     "windows-gfx1201": {
       "blocked": true,
@@ -117,10 +96,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "fde33e54bc3f672463d306b756d975ac5cc71d1d",
+      "validated_sha": "5a0a83c67f16f34e0e6155271c431d890a049cce",
       "started_at": "2026-08-13T21:21:31Z",
-      "completed_at": "2026-11-05T02:45:12Z",
-      "updated_at": "2026-11-06T05:32:33Z",
+      "completed_at": "2026-11-06T06:51:19Z",
+      "updated_at": "2026-11-06T06:51:19Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -137,14 +116,14 @@
       "last_agent": "validator",
       "failed_sha": "b9c257afb6e25fb68c49737f00f675dfd265a10f"
     },
-    "linux-gfx90a": {
-      "state": "completed",
+    "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "5a0a83c67f16f34e0e6155271c431d890a049cce",
-      "started_at": "2026-06-05T00:11:54Z",
-      "completed_at": "2026-11-06T06:31:30Z",
-      "updated_at": "2026-11-06T06:31:30Z",
+      "validated_sha": "fde33e54bc3f672463d306b756d975ac5cc71d1d",
+      "failed_sha": "fde33e54bc3f672463d306b756d975ac5cc71d1d",
+      "started_at": "2026-11-04T08:04:09Z",
+      "completed_at": "2026-11-05T03:42:59Z",
+      "updated_at": "2026-11-05T07:02:41Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -158,14 +137,34 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "failed_sha": "22ea83454241447b418832da2ee2c1a3b25a08a8"
+      "state": "validation-failed",
+      "last_agent": "porter"
+    },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "Hardware offline (the Windows gfx1101/gfx1201 host was retired 2026-10-28); Windows coverage comes from windows-gfx1151. Correction, 2026-11-04: the earlier diagnosis here (clang-cl boost.serialization miscompilation, recursion in oserializer<KeyFrame>::save_object_data) was wrong. Frames were misattributed in a binary without a PDB; the real crash was __chkstk stack exhaustion in Tracking::MonocularInitialization (~427 KB of Frame grid arrays vs the 1 MB Windows default stack), fixed at e0dcda3 with WIN32 /STACK:8MB and run on windows-gfx1151. See notes.md.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-04T22:42:53Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   },
   "porting_released": {
     "arch": "linux-gfx942",
     "since": "2026-11-06T05:36:25Z",
     "at": "2026-11-06T05:39:00Z"
-  },
-  "porting": null
+  }
 }

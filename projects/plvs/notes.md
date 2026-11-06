@@ -3616,3 +3616,48 @@ Not rerun. The CUDA compile check of 2026-11-05 covers b4be814 (nvcc 12.8, PASS,
 
 ### Result
 linux-gfx90a: `revalidate` -> `completed` at `5a0a83c`.
+## Validation 2026-11-06 (linux-gfx1100, revalidate): PASS -> completed (head 5a0a83c)
+
+Trigger: this arch's `validated_sha` fde33e5 -> head 5a0a83c (441cb76, a93e73d, 61e9640, 970cb1f, 46a26f4, 2522f1e, 59eb0da, b4be814, 5a0a83c: TUM-VI examples, fisheye point and line depth arrays, loop-closure keyframes, MapLine obs count and pyramid index, octree deferred deletion, `projectJac` lifetime). Host C++ that runs in the stereo pipeline, so this was a full rebuild and run, with no carry-forward. Host: Radeon Pro W7800 (gfx1100, wave32), `HIP_VISIBLE_DEVICES=1`, Ubuntu 24.04, TheRock pip SDK (`_rocm_sdk_devel`, amdclang 24), CMake 3.31.6, g++ 13, apt PCL 1.14 / Boost 1.83. Every GPU process ran under `ulimit -c 0` with `OMP_NUM_THREADS=4`, one at a time. The fork was cloned fresh into `projects/plvs/src`; HEAD `5a0a83c` == `origin/moat-port`. The two datasets, `ORBvoc.txt` and `TUM-VI_pcm.yaml` (tracked `Examples/Stereo/TUM-VI.yaml` with only `PointCloudMapping.on: 1`, diffed) were copied from the 2026-11-06 fix5 job on this host. Everything else was built in this job's directory.
+
+### Build
+- OpenCV-with-HIP from source: `AMD-Ecosystem/opencv@50f05b1` + `opencv_contrib@041d552`, the 2026-11-05 gfx1100 cmake line unchanged (`build_ocv.sh`), RC=0, 650/650. Install-tree shim: lines 107-143 of `OpenCVConfig.cmake` (the `find_host_package(CUDA ...)` / `find_cuda_helper_libs` block) were replaced by one comment. The generated file was byte-identical to the fix5 job's unshimmed `.orig` before the replacement.
+- Then Pangolin fe57db532 + `pangolin.patch`, DBoW2, g2o, volumetric_mapping, open_chisel, chisel_server, voxblox, voxblox_server, libsgm, line_descriptor and libelas-gpu, then plvs `build-hip` (`-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DWITH_LIBSGM=ON -DWITH_LIBELAS=ON -DWITH_G2O_NEW=OFF -DWITH_FASTFUSION=OFF -DBUILD_WITH_MARCH_NATIVE=OFF ...`). This was the 2026-11-05 `build_all.sh` with only the paths changed, run under `timeit.sh plvs compile`, RC=0. Configure prints `building with libelas HIP`. `lib/libplvs.so` has one `.hip_fatbin` and 8 `ElasGPU` dynamic symbols, and it links `libamdhip64.so.7` and the job's HIP `libopencv_cudastereo.so.414`.
+
+### ELAS GPU-vs-CPU, standalone libelas-gpu with the `-march=native` CPU reference
+`git archive 5a0a83c Thirdparty/libelas-gpu` outside the fork; `cmake -S $L -B $L/build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release && cmake --build $L/build -j 16`, 14/14, `-march=native` 8x and `--offload-arch=gfx1100` 6x in build.ninja. `elas_cmp.cpp` and `elas_leak.cpp` are byte-identical to the 2026-11-05 gfx1100 validation copies (cmp). Build: `amdclang++ -x hip --offload-arch=gfx1100 -std=c++17 -O2 -DUSE_HIP -I$L/CPU -I$L/GPU <src> -x none $L/lib/liblibelas_gpu.a -pthread`. Run: `./elas_cmp $L/input <mode>`, RC=0 in modes 0-3. libelas-gpu has not changed since fde33e5 (`git diff --stat fde33e5 5a0a83c` touches no `Thirdparty` file).
+- Mode 2 (plvs settings + subsampling): GPU reruns are bit-exact 7/7. cones and aloe are identical to the CPU (max 0, vmis 0, cones `invalid_cpu` 26728). raindeer 0.50 / vmis 4, urban1 0.44 / 2, urban2 0.66 / 0, urban3 1.23 (1 px > 1) / 0, urban4 0.68 / 0. This is line for line the recorded table.
+- Mode 0: mean |d| 0.016-0.026, vmis 1-25, >1px 0-8. Max |d|: cones R 24.80, aloe L 4.35 / R 9.19, raindeer R 67.0, urban2 R 14.86, urban3 R 3.67. Mode 1: mean 0.016-0.025, >1px 0-5, vmis 1-25. Mode 3: integer steps (max 2-67), mean 5.2e-5 to 1.9e-4, >1px 1-13. Reruns are not bit-exact in modes 0/1/3 (the known upstream nondeterminism). Every figure is inside the recorded ranges except aloe R mode 0 >1px = 8, one pixel above the recorded 0-7. That mode is nondeterministic run to run, and mode 3 records 8 for the same image.
+- Leak and pending-error check (`./elas_leak $L/input/<img> 20`): aloe and cones **0.00 MB lost, 0/21 calls with a pending error**.
+
+### Mono TUM RGB-D freiburg1_xyz (stock `mono_tum`, `TUM1.yaml`, viewer on under Xvfb)
+`run_mono.sh` (`xvfb-run -a -s '-screen 0 1280x1024x24' Examples/Monocular/mono_tum ORBvoc.txt Examples/Monocular/TUM1.yaml rgbd_dataset_freiburg1_xyz`, `LD_PRELOAD` backtrace handler).
+- Run 1: 798 frames, initial map 341 points, 52 KFs, median tracking 9.3 ms, clean shutdown, RC=0. Sim3 ATE of the KeyFrameTrajectory (`ate_tum.py`): **0.0090 m**.
+- Run 2, `AMD_LOG_LEVEL=3`: RC=0, 51 KFs, ATE **0.0095 m**. `tileCalcKeypoints_kernel`, `calcOrb_kernel`, `IC_Angle_kernel` and `addBorder_kernel` each ran 6384 times (798 frames x 8 levels), with 0 `hipErrorInvalidValue`.
+- Records: 0.0096-0.0104 m.
+
+### TUM-VI room1 stereo with libelas on the GPU, 16 sequential runs + 1 traced
+`runs_stereo.sh` (2026-11-05 script, paths changed only): `xvfb-run -a -s '-screen 0 1280x1024x24' Examples/Stereo/stereo_tum_vi ORBvoc.txt TUM-VI_pcm.yaml dataset-room1_512_16/mav0/cam0/data dataset-room1_512_16/mav0/cam1/data Examples/Stereo/TUM_TimeStamps/dataset-room1_512.txt room1_runN`, with the `LD_PRELOAD` SIGSEGV/SIGABRT backtrace handler and a 1800 s timeout. Run 17 used `AMD_LOG_LEVEL=3`.
+
+| outcome | runs (of 17) |
+|---|---|
+| clean: 2821/2821 frames, RC=0, one map | **17** |
+| `-217` / `invalid argument` abort | **0** |
+| registered upstream crash (`plvs-upstream-stereo-mapping-crashes`: MapLine `GetCameraCenter` SEGV or octree `UpdateMapNoSegm` SEGV) | **0** |
+| any other crash, or any `Gpu API` / `hipError` / `terminate called` / `cv::Exception` line | 0 |
+
+- Per run: 266-305 `stereo processing (libelas)` calls and 84-101 KFs in map 0. Rigid ATE of `f_room1` vs `mocap0` (`ate.py`, 2762/2821 matched; the camera-to-IMU lever arm is not compensated, as before) is **0.0771-0.0784 m**. The b4be814-content round on this host had 274-323 calls, 80-101 KFs and 0.0769-0.0784 m. At fde33e5 this arch had 411-473 calls, 104-123 KFs and 0.0766-0.0791 m: the lower KF count is the expected effect of a93e73d/46a26f4, which is recorded in the 2026-11-06 port round.
+- Traced run 17: clean, ATE 0.0776 m, 298 libelas calls, **`libelas::findMatch_GPU` x596 and `libelas::adaptiveMeanGPU8` x298** (2 + 1 per call), `IC_Angle_kernel` x45136, **0 `hipErrorInvalidValue`** among 26186 `hipFree` log lines. ELAS runs on the device inside plvs.
+- The upstream crash rate for this sequence on this arch at fde33e5 was 3/33 (1 MapLine, 2 octree). At the fixed content it is now 0/16 (port round) + 0/17 (here) = 0/33.
+
+### CUDA no-regression gate
+Not rerun. The CUDA compile check at b4be814 passed (nvcc 12.8.93, mi355 host, 2026-11-05 section), and 5a0a83c only changes comments on top of it (`classify plvs b4be814 5a0a83c` -> `comment-only`, outside any `USE_CUDA` block).
+
+### Gates (validator step 4)
+- `python3 utils/jargon.py --port plvs` -> `jargon: clean` (after `git fetch origin master:master`).
+- `check.py commits`: only the five older commits from jeff's 2026-11-04 squash ruling (a75da87, 7719623, 1654d89, 3b5d2e5, 3cbfef4), as before.
+- ROCm build documentation: the `config.sh` HIP/ROCm section and `new_features.md` are present, and this delta changes no build file.
+- Integrity: `git -C projects/plvs/src status --porcelain` is empty (Pangolin and the build trees are ignored), HEAD `5a0a83c` == `origin/moat-port`, and no core files were written.
+
+### Result
+linux-gfx1100: `revalidate` -> `completed` at `5a0a83c`.
