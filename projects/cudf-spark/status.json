@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "cudf-spark",
+  "upstream_url": "https://github.com/NVIDIA/cudf-spark",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T04:23:49Z",
+  "updated_at": "2026-11-06T04:23:50Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
