@@ -1,0 +1,846 @@
+From ee1f2cd0cb2e4f762b7a79a0baed1511a1fbf364 Mon Sep 17 00:00:00 2001
+From: Jeff Daily <jeff.daily@amd.com>
+Date: Fri, 6 Nov 2026 02:47:13 +0000
+Subject: [PATCH 1/2] [ROCm] Skip Warp graph capture on devices that cannot
+ capture
+
+Warp built for ROCm reports HIP devices as CUDA devices (`Device.is_cuda` is True) but cannot capture graphs on them: `Device.supports_graph_capture` is False, `wp.ScopedCapture` runs its body eagerly and leaves `capture.graph` as None, and `wp.capture_launch(None)` raises. Isaac Lab gates every capture on `is_cuda`, so on AMD GPUs the Newton backend ran each physics step twice (once eagerly, once inside the capture that produced no graph) and recaptured on every step, and the BVH refit, ray caster, frame transformer, Warp renderer, Newton actuator runtime, particle surface, IK and `WarpGraphCache` paths raised on replay. On an MI300X, 50 `sim.step()` calls ran the physics step 100 times before this change and 50 times after it.
+
+Add `isaaclab.utils.warp.utils.supports_graph_capture(device)`, which is `device.is_cuda` and the device's `supports_graph_capture` attribute, defaulting to True for Warp builds without it, and use it at each capture site so those paths run eagerly instead. The CUDA behavior is unchanged: NVIDIA Warp either lacks the attribute or reports True.
+
+Tests that capture now call the new `isaaclab.test.utils.skip_without_graph_capture(device)` immediately before capturing, so their eager checks still run and only the capture part is skipped. A test that mocks capture patches the check instead, and the MuJoCo Warp reset test falls back to its eager reset.
+
+Also record the HIP version in the GPU info benchmark recorder when PyTorch is a ROCm build, and document a ROCm install for the Newton workflows in the installation guide.
+
+This change was prepared with the help of an AI coding agent.
+
+Test Plan:
+
+On an AMD Instinct MI300X (gfx942) with PyTorch 2.11.0+rocm7.13.0 and Warp 1.18.0.dev2 built for HIP, installed as in the new installation section with the `test` and `importers` extras:
+
+```bash
+for f in source/isaaclab/test/sim/test_mjcf_converter.py source/isaaclab/test/sim/test_urdf_converter.py source/isaaclab/test/sim/test_schemas_deprecation.py source/isaaclab_newton/test/assets/test_articulation.py source/isaaclab_newton/test/assets/test_rigid_object.py source/isaaclab_newton/test/assets/test_bam_actuator_mjwarp.py source/isaaclab_newton/test/assets/test_newton_actuators_newton.py source/isaaclab_tasks/test/test_microduck_velocity.py; do python -m pytest -m kitless "$f"; done
+for f in source/isaaclab/test/utils/test_warp_math.py source/isaaclab/test/utils/test_warp_memory.py source/isaaclab/test/utils/test_wrench_composer.py source/isaaclab/test/sensors/test_shared_sensor_kernels.py source/isaaclab_newton/test/physics/test_newton_manager.py source/isaaclab_newton/test/physics/test_newton_solvers.py source/isaaclab_experimental/test/envs/mdp/test_*_warp_parity.py; do python -m pytest "$f"; done
+isaaclab train --rl_library rsl_rl --task Isaac-Cartpole-Direct --num_envs 4096 --max_iterations 100 physics=newton_mjwarp
+python tools/changelog/cli.py check upstream/main
+```
+
+All pass except two VBD cases in `test_rigid_object.py`, which fail to link a Newton VBD kernel that calls `nextafterf` on HIP. Cartpole training reaches a mean reward of 4.94 with the 300-step episode length cap.
+---
+ docs/source/isaaclab/installation.rst         | 61 +++++++++++++++++++
+ .../changelog.d/rocm-graph-capture.added.rst  |  4 ++
+ .../changelog.d/rocm-graph-capture.fixed.rst  |  2 +
+ .../changelog.d/rocm-graph-capture.minor      |  0
+ .../actuators/newton/physx_runtime.py         |  4 +-
+ .../benchmark/recorders/record_gpu_info.py    |  5 ++
+ .../isaaclab/isaaclab/test/utils/__init__.py  | 13 +++-
+ .../isaaclab/isaaclab/test/utils/devices.py   | 16 +++++
+ source/isaaclab/isaaclab/utils/device.py      |  4 +-
+ source/isaaclab/isaaclab/utils/warp/utils.py  | 17 ++++++
+ .../sensors/test_shared_sensor_kernels.py     |  4 +-
+ source/isaaclab/test/utils/test_warp_math.py  |  3 +-
+ .../isaaclab/test/utils/test_warp_memory.py   |  4 +-
+ .../test/utils/test_wrench_composer.py        |  3 +-
+ .../changelog.d/rocm-graph-capture.fixed.rst  |  2 +
+ .../utils/warp_graph_cache.py                 |  5 ++
+ .../test/envs/mdp/parity_helpers.py           |  2 +
+ .../test/envs/mdp/test_events_warp_parity.py  |  6 ++
+ .../envs/mdp/test_terminations_warp_parity.py |  2 +
+ .../changelog.d/rocm-graph-capture.fixed.rst  |  3 +
+ .../isaaclab_newton/physics/newton_backend.py |  5 +-
+ .../renderers/newton_warp_renderer.py         |  3 +-
+ .../frame_transformer/frame_transformer.py    |  3 +-
+ .../ray_caster/newton_raycast_sensor.py       |  3 +-
+ .../test/assets/test_articulation.py          |  4 +-
+ .../test/physics/test_newton_manager.py       |  7 ++-
+ .../test/physics/test_newton_solvers.py       |  3 +-
+ .../changelog.d/rocm-graph-capture.fixed.rst  |  2 +
+ .../contrib/gb300_sharpa_insertion/ik.py      |  3 +-
+ .../changelog.d/rocm-graph-capture.fixed.rst  |  2 +
+ .../newton/particle_surface.py                |  4 +-
+ 31 files changed, 180 insertions(+), 19 deletions(-)
+ create mode 100644 source/isaaclab/changelog.d/rocm-graph-capture.added.rst
+ create mode 100644 source/isaaclab/changelog.d/rocm-graph-capture.fixed.rst
+ create mode 100644 source/isaaclab/changelog.d/rocm-graph-capture.minor
+ create mode 100644 source/isaaclab_experimental/changelog.d/rocm-graph-capture.fixed.rst
+ create mode 100644 source/isaaclab_newton/changelog.d/rocm-graph-capture.fixed.rst
+ create mode 100644 source/isaaclab_tasks/changelog.d/rocm-graph-capture.fixed.rst
+ create mode 100644 source/isaaclab_visualizers/changelog.d/rocm-graph-capture.fixed.rst
+
+diff --git a/docs/source/isaaclab/installation.rst b/docs/source/isaaclab/installation.rst
+index fa1e432ef..d8197bcf6 100644
+--- a/docs/source/isaaclab/installation.rst
++++ b/docs/source/isaaclab/installation.rst
+@@ -87,6 +87,7 @@ cover the default Newton and PyTorch training environment; Isaac Sim is an optio
+    * - GPU training
+      - A CUDA-capable NVIDIA GPU supported by the selected Newton solver and PyTorch.
+        The default CUDA 13 stack requires Turing or newer (compute capability 7.5+).
++       Newton workflows can also run on AMD Instinct GPUs; see :ref:`installation-method-rocm`.
+    * - NVIDIA driver
+      - ``595.58.03`` on Linux x86_64; ``580.159`` on Linux aarch64; ``595.97`` on Windows x86_64.
+        Use a current production driver for your GPU.
+@@ -568,6 +569,66 @@ Generate VS Code or Cursor settings for the current workspace with:
+    The Pyright configuration inherits an existing ``[tool.pyright]`` table and adds paths discovered
+    from the active Python environment.
+ 
++.. _installation-method-rocm:
++
++AMD GPUs with ROCm
++------------------
++
++The Newton workflows run on AMD Instinct GPUs with PyTorch and Warp built for ROCm. This setup has been tested on
++AMD Instinct MI300X (``gfx942``) on Linux x86_64. Isaac Sim, the OV backends, and the Isaac RTX and OVRTX renderers
++need NVIDIA GPUs and are not available on this path.
++
++Warp runs graph-capturing code eagerly on HIP devices, so ``use_cuda_graph`` settings have no effect there. Warp
++textures are not supported on HIP devices, so the Newton Warp renderer cannot load textured meshes.
++
++Create a Python 3.12 environment in the Isaac Lab checkout and install PyTorch together with the matching ROCm SDK
++from AMD's package index. The index path selects the GPU family, here ``gfx94X-dcgpu`` for MI300:
++
++.. code-block:: bash
++
++   uv venv --python 3.12 .venv
++   source .venv/bin/activate
++   uv pip install --index-url https://pypi.org/simple \
++      --extra-index-url https://repo.amd.com/rocm/whl/gfx94X-dcgpu/ \
++      torch==2.11.0+rocm7.13.0 torchvision==0.26.0+rocm7.13.0 "rocm[libraries,devel]==7.13.0"
++   export ROCM_PATH=$(rocm-sdk path --root)
++   export LD_LIBRARY_PATH=$ROCM_PATH/lib
++
++Keep ``ROCM_PATH`` and ``LD_LIBRARY_PATH`` set whenever you run Isaac Lab: Warp compiles kernels at runtime and
++looks up the ROCm headers and libraries through them.
++
++Build Warp with the HIP backend from AMD's Warp repository for your GPU architecture. Build on a host without a CUDA
++Toolkit, which the Warp build would select instead of ROCm:
++
++.. code-block:: bash
++
++   git clone https://github.com/AMD-Ecosystem/warp.git ../warp-rocm
++   git -C ../warp-rocm checkout ac540f595ff5763a374c113d77e4111a1d4791bd
++   (cd ../warp-rocm && python build_lib.py --rocm-path "$ROCM_PATH" --hip-arch=gfx942 --no-use-libmathdx)
++
++Install Isaac Lab with overrides that keep the ROCm builds of PyTorch and Warp. ``--no-sources`` drops the CUDA
++PyTorch index that the project selects for PyTorch, so the workspace packages are listed explicitly:
++
++.. code-block:: bash
++
++   cat > rocm-overrides.txt <<EOF
++   torch==2.11.0+rocm7.13.0
++   torchvision==0.26.0+rocm7.13.0
++   warp-lang @ file://$(realpath ../warp-rocm)
++   EOF
++   uv pip install --no-sources --override rocm-overrides.txt \
++      --index https://repo.amd.com/rocm/whl/gfx94X-dcgpu/ \
++      -e . -e source/isaaclab -e source/isaaclab_assets -e source/isaaclab_contrib \
++      -e source/isaaclab_experimental -e source/isaaclab_newton -e source/isaaclab_ov \
++      -e source/isaaclab_physx -e source/isaaclab_ppisp -e source/isaaclab_rl -e source/isaaclab_tasks \
++      -e source/isaaclab_tasks_experimental -e source/isaaclab_visualizers
++
++Then run a Newton workflow from the activated environment:
++
++.. code-block:: bash
++
++   isaaclab train --rl_library rsl_rl --task Isaac-Cartpole-Direct physics=newton_mjwarp
++
+ .. _installation-method-source:
+ .. _isaaclab-source-installation:
+ 
+diff --git a/source/isaaclab/changelog.d/rocm-graph-capture.added.rst b/source/isaaclab/changelog.d/rocm-graph-capture.added.rst
+new file mode 100644
+index 000000000..b2d3e8e73
+--- /dev/null
++++ b/source/isaaclab/changelog.d/rocm-graph-capture.added.rst
+@@ -0,0 +1,4 @@
++* Added :func:`~isaaclab.utils.warp.utils.supports_graph_capture` to check whether Warp can capture CUDA graphs on a
++  device, and :func:`~isaaclab.test.utils.skip_without_graph_capture` to skip the capture part of a test on devices
++  that cannot.
++* Added the HIP version to the GPU info benchmark recorder on ROCm builds of PyTorch.
+diff --git a/source/isaaclab/changelog.d/rocm-graph-capture.fixed.rst b/source/isaaclab/changelog.d/rocm-graph-capture.fixed.rst
+new file mode 100644
+index 000000000..a02a01e37
+--- /dev/null
++++ b/source/isaaclab/changelog.d/rocm-graph-capture.fixed.rst
+@@ -0,0 +1,2 @@
++* Fixed CUDA graph capture of Newton actuators and graph memory reservation on GPU devices whose Warp build cannot
++  capture graphs, such as HIP devices on ROCm, by running them eagerly.
+diff --git a/source/isaaclab/changelog.d/rocm-graph-capture.minor b/source/isaaclab/changelog.d/rocm-graph-capture.minor
+new file mode 100644
+index 000000000..e69de29bb
+diff --git a/source/isaaclab/isaaclab/actuators/newton/physx_runtime.py b/source/isaaclab/isaaclab/actuators/newton/physx_runtime.py
+index 81383c2cf..fd2e2e352 100644
+--- a/source/isaaclab/isaaclab/actuators/newton/physx_runtime.py
++++ b/source/isaaclab/isaaclab/actuators/newton/physx_runtime.py
+@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any
+ 
+ import warp as wp
+ 
++from isaaclab.utils.warp.utils import supports_graph_capture
++
+ from .adapter import NewtonActuatorAdapter, build_implicit_dof_mask
+ from .physx_wrapper import PhysxActuatorWrapper
+ 
+@@ -115,7 +117,7 @@ class PhysxActuatorRuntime:
+                     "stateful Newton actuators cannot run inside an outer CUDA graph capture; "
+                     "let the host actuator runtime manage their alternating graphs"
+                 )
+-            if self.adapter.is_all_graphable and device.is_cuda and not device.is_capturing:
++            if self.adapter.is_all_graphable and supports_graph_capture(device) and not device.is_capturing:
+                 if self.native_actuator_graphs is None:
+                     self._capture_native_actuator_graphs(collection, dt)
+                 if self.native_actuator_graphs:
+diff --git a/source/isaaclab/isaaclab/benchmark/recorders/record_gpu_info.py b/source/isaaclab/isaaclab/benchmark/recorders/record_gpu_info.py
+index 841c23d6c..5c8c0bc2f 100644
+--- a/source/isaaclab/isaaclab/benchmark/recorders/record_gpu_info.py
++++ b/source/isaaclab/isaaclab/benchmark/recorders/record_gpu_info.py
+@@ -85,6 +85,9 @@ class GPUInfoRecorder(MeasurementDataRecorder):
+ 
+             cuda_version = getattr(torch_version, "cuda", None)
+             self._gpu_hardware_info["cuda_version"] = cuda_version if cuda_version else "Unknown"
++            hip_version = getattr(torch_version, "hip", None)
++            if hip_version:
++                self._gpu_hardware_info["hip_version"] = hip_version
+ 
+         with contextlib.suppress(Exception):
+             import pynvml
+@@ -227,6 +230,8 @@ class GPUInfoRecorder(MeasurementDataRecorder):
+         metadata.append(
+             StringMetadata(name="cuda_version", data=self._gpu_hardware_info.get("cuda_version", "Unknown"))
+         )
++        if "hip_version" in self._gpu_hardware_info:
++            metadata.append(StringMetadata(name="hip_version", data=self._gpu_hardware_info["hip_version"]))
+ 
+         # Per-device hardware info as a dict
+         devices_data = {}
+diff --git a/source/isaaclab/isaaclab/test/utils/__init__.py b/source/isaaclab/isaaclab/test/utils/__init__.py
+index fc05bb719..1315180b5 100644
+--- a/source/isaaclab/isaaclab/test/utils/__init__.py
++++ b/source/isaaclab/isaaclab/test/utils/__init__.py
+@@ -7,14 +7,21 @@
+ 
+ Exposes :class:`DeviceScope` and :func:`test_devices` for selecting the device
+ list to parametrize tests over, plus :func:`resolve_test_sim_device` for deriving
+-a Kit-backed test's device from the same runtime mask, and :func:`launch_test_simulation`
++a Kit-backed test's device from the same runtime mask, :func:`skip_without_graph_capture`
++for tests that capture CUDA graphs, and :func:`launch_test_simulation`
+ to start the simulation runtime for a test module. The selected
+ set is ``scope ∩ runtime``: ``scope`` is the call-site argument (the devices the
+ test is valid on), the runtime is the ``ISAACLAB_TEST_DEVICES`` env var (the
+ devices the run may use).
+ """
+ 
+-from .devices import DeviceScope, resolve_test_sim_device, test_devices
++from .devices import DeviceScope, resolve_test_sim_device, skip_without_graph_capture, test_devices
+ from .simulation import launch_test_simulation
+ 
+-__all__ = ["DeviceScope", "launch_test_simulation", "resolve_test_sim_device", "test_devices"]
++__all__ = [
++    "DeviceScope",
++    "launch_test_simulation",
++    "resolve_test_sim_device",
++    "skip_without_graph_capture",
++    "test_devices",
++]
+diff --git a/source/isaaclab/isaaclab/test/utils/devices.py b/source/isaaclab/isaaclab/test/utils/devices.py
+index 64fb1d3f3..64d5c7a46 100644
+--- a/source/isaaclab/isaaclab/test/utils/devices.py
++++ b/source/isaaclab/isaaclab/test/utils/devices.py
+@@ -218,6 +218,22 @@ def test_devices(scope: str | DeviceScope = DeviceScope.ALL, *, skip: dict[str,
+ test_devices.__test__ = False
+ 
+ 
++def skip_without_graph_capture(device: str) -> None:
++    """Skip the rest of the current test when Warp cannot capture CUDA graphs on ``device``.
++
++    Call it immediately before a capture, so the eager checks earlier in the test still run on such devices.
++
++    Args:
++        device: Warp device the test captures on.
++    """
++    import pytest
++
++    from isaaclab.utils.warp.utils import supports_graph_capture
++
++    if not supports_graph_capture(device):
++        pytest.skip(f"Warp cannot capture CUDA graphs on {device}.")
++
++
+ def _expand(mask: str, count: int) -> list[bool]:
+     """Expand a mask to ``count`` include-flags; a trailing ``X`` fills the rest with ``True``.
+ 
+diff --git a/source/isaaclab/isaaclab/utils/device.py b/source/isaaclab/isaaclab/utils/device.py
+index 30c649554..851b4a37e 100644
+--- a/source/isaaclab/isaaclab/utils/device.py
++++ b/source/isaaclab/isaaclab/utils/device.py
+@@ -50,9 +50,11 @@ def reserve_cuda_graph_memory(device: str) -> None:
+     """
+     import warp as wp
+ 
++    from isaaclab.utils.warp.utils import supports_graph_capture
++
+     warp_device = wp.get_device(device)
+     if (
+-        not warp_device.is_cuda
++        not supports_graph_capture(warp_device)
+         or not warp_device.is_mempool_enabled
+         or warp_device.is_capturing
+         or warp_device.alias in _GRAPH_MEMORY_RESERVED_DEVICES
+diff --git a/source/isaaclab/isaaclab/utils/warp/utils.py b/source/isaaclab/isaaclab/utils/warp/utils.py
+index 003dc5d04..770434cc9 100644
+--- a/source/isaaclab/isaaclab/utils/warp/utils.py
++++ b/source/isaaclab/isaaclab/utils/warp/utils.py
+@@ -43,3 +43,20 @@ def capture_unsafe(reason: str | None = None):
+         return wrapper
+ 
+     return decorator
++
++
++def supports_graph_capture(device: wp.DeviceLike = None) -> bool:
++    """Whether Warp can capture and replay CUDA graphs on a GPU device.
++
++    Warp builds for ROCm report HIP devices as CUDA devices but run :class:`warp.ScopedCapture` eagerly without
++    producing a graph, which they report through ``Device.supports_graph_capture``. Warp builds without that attribute
++    capture on every CUDA device.
++
++    Args:
++        device: Warp device. Defaults to the current device.
++
++    Returns:
++        True if ``device`` is a CUDA device that supports graph capture.
++    """
++    device = wp.get_device(device)
++    return device.is_cuda and getattr(device, "supports_graph_capture", True)
+diff --git a/source/isaaclab/test/sensors/test_shared_sensor_kernels.py b/source/isaaclab/test/sensors/test_shared_sensor_kernels.py
+index 26a361c0e..5e8befe73 100644
+--- a/source/isaaclab/test/sensors/test_shared_sensor_kernels.py
++++ b/source/isaaclab/test/sensors/test_shared_sensor_kernels.py
+@@ -17,7 +17,7 @@ from isaaclab_newton.sensors.pva.pva_data import PvaData as NewtonPvaData
+ from isaaclab.sensors.frame_transformer.kernels import frame_transformer_update_kernel
+ from isaaclab.sensors.imu.kernels import imu_update_kernel
+ from isaaclab.sensors.pva.kernels import make_pva_update, pva_reset_kernel
+-from isaaclab.test.utils import DeviceScope, test_devices
++from isaaclab.test.utils import DeviceScope, skip_without_graph_capture, test_devices
+ 
+ pytestmark = pytest.mark.unit
+ 
+@@ -155,6 +155,7 @@ def test_pva_partial_outputs_replay_and_reset_aliases(device):
+     ]
+     kernel = make_pva_update(data.data_types)
+     wp.launch(kernel, 2, args, device=device)
++    skip_without_graph_capture(device)
+     with wp.ScopedCapture(device=device) as capture:
+         wp.launch(kernel, 2, args, device=device)
+     pose.fill_(wp.transformf(wp.vec3f(0), wp.quatf(0, 0, 0, 1)))
+@@ -268,6 +269,7 @@ def test_packed_sensor_readers_follow_buffers_through_capture_and_recreation(bac
+         np.testing.assert_array_equal(
+             held.warp.numpy(), np.broadcast_to([2, 2, 2, 0, 0, 0, 1], held.warp.numpy().shape)
+         )
++        skip_without_graph_capture(device)
+         with wp.ScopedCapture(device=device) as capture:
+             assert getattr(data, field) is held
+         pos.fill_(wp.vec3f(3.0))
+diff --git a/source/isaaclab/test/utils/test_warp_math.py b/source/isaaclab/test/utils/test_warp_math.py
+index 2ada56905..662acb520 100644
+--- a/source/isaaclab/test/utils/test_warp_math.py
++++ b/source/isaaclab/test/utils/test_warp_math.py
+@@ -11,7 +11,7 @@ import numpy as np
+ import pytest
+ import warp as wp
+ 
+-from isaaclab.test.utils import test_devices
++from isaaclab.test.utils import skip_without_graph_capture, test_devices
+ from isaaclab.utils.warp import math as warp_math
+ from isaaclab.utils.warp.math import (
+     acceleration_at_offset,
+@@ -110,6 +110,7 @@ def test_heading_and_inverse_rotation_preserve_strides_and_replay(device):
+                 heading.numpy().reshape(4), [math.pi / 2, 0, -math.pi / 2, -math.pi / 2], atol=1e-6
+             )
+             if wp.get_device(device).is_cuda:
++                skip_without_graph_capture(device)
+                 with wp.ScopedCapture(device=device) as capture:
+                     wp.launch(inverse, shape, [quat, vector, rotated])
+                     wp.launch(yaw, shape, [forward, quat, heading])
+diff --git a/source/isaaclab/test/utils/test_warp_memory.py b/source/isaaclab/test/utils/test_warp_memory.py
+index 5a8fb2050..5f91c7207 100644
+--- a/source/isaaclab/test/utils/test_warp_memory.py
++++ b/source/isaaclab/test/utils/test_warp_memory.py
+@@ -9,7 +9,7 @@ import numpy as np
+ import pytest
+ import warp as wp
+ 
+-from isaaclab.test.utils import DeviceScope, test_devices
++from isaaclab.test.utils import DeviceScope, skip_without_graph_capture, test_devices
+ from isaaclab.utils.warp import memory
+ from isaaclab.utils.warp.launch_cache import _WarpLaunchCache
+ 
+@@ -141,6 +141,7 @@ def test_generated_operations_replay_changed_strided_inputs_and_selectors(device
+ 
+         selected_copy()
+         wp.launch(memory.make_masked_fill(wp.float32, 2), (2, 3), [8.0, row_mask, column_mask, target])
++        skip_without_graph_capture(device)
+         with wp.ScopedCapture(device=device) as capture:
+             cache.launch("concat", memory.concat, pos, quat, output)
+             selected_copy()
+@@ -212,6 +213,7 @@ def test_mask_resolution_replays_device_indices_and_rejects_capture_uploads(devi
+     memory.resolve_1d_mask(ids=ids, **kwargs)
+     host_ids = torch.tensor([1], dtype=torch.int32)
+     # The target's capture state matters even if another device is the Python default.
++    skip_without_graph_capture(device)
+     with wp.ScopedDevice("cpu"), wp.ScopedCapture(device=device) as capture:
+         with pytest.raises(RuntimeError, match="upload host selectors"):
+             memory.resolve_1d_mask(ids=[1], **kwargs)
+diff --git a/source/isaaclab/test/utils/test_wrench_composer.py b/source/isaaclab/test/utils/test_wrench_composer.py
+index 7ca8d22f8..0383871b4 100644
+--- a/source/isaaclab/test/utils/test_wrench_composer.py
++++ b/source/isaaclab/test/utils/test_wrench_composer.py
+@@ -19,7 +19,7 @@ import pytest
+ import torch
+ import warp as wp
+ 
+-from isaaclab.test.utils import DeviceScope, test_devices
++from isaaclab.test.utils import DeviceScope, skip_without_graph_capture, test_devices
+ from isaaclab.utils.warp import ProxyArray
+ from isaaclab.utils.wrench_composer import WrenchComposer
+ 
+@@ -516,6 +516,7 @@ def test_generated_writers_replay_changed_inputs_under_cuda_capture(device):
+             return composer.out_force_b, composer.out_torque_b
+ 
+         write_and_compose()  # Warm up the specializations used by this execution path.
++        skip_without_graph_capture(device)
+         with wp.ScopedCapture(device=device) as capture:
+             force, torque = write_and_compose()
+         global_force.fill_(wp.vec3f(0, 3, 0))
+diff --git a/source/isaaclab_experimental/changelog.d/rocm-graph-capture.fixed.rst b/source/isaaclab_experimental/changelog.d/rocm-graph-capture.fixed.rst
+new file mode 100644
+index 000000000..bf13b42ac
+--- /dev/null
++++ b/source/isaaclab_experimental/changelog.d/rocm-graph-capture.fixed.rst
+@@ -0,0 +1,2 @@
++* Fixed :class:`~isaaclab_experimental.utils.warp_graph_cache.WarpGraphCache` on GPU devices whose Warp build cannot
++  capture CUDA graphs, such as HIP devices on ROCm, by running each stage eagerly.
+diff --git a/source/isaaclab_experimental/isaaclab_experimental/utils/warp_graph_cache.py b/source/isaaclab_experimental/isaaclab_experimental/utils/warp_graph_cache.py
+index d446be28d..e71bc437b 100644
+--- a/source/isaaclab_experimental/isaaclab_experimental/utils/warp_graph_cache.py
++++ b/source/isaaclab_experimental/isaaclab_experimental/utils/warp_graph_cache.py
+@@ -10,6 +10,8 @@ from typing import Any
+ 
+ import warp as wp
+ 
++from isaaclab.utils.warp.utils import supports_graph_capture
++
+ 
+ class WarpGraphCache:
+     """Caches Warp CUDA graphs by stage name: captures on first call, replays after.
+@@ -62,6 +64,9 @@ class WarpGraphCache:
+         if graph is not None:
+             wp.capture_launch(graph)
+             return self._results[stage]
++        device = wp.get_device()
++        if device.is_cuda and not supports_graph_capture(device):
++            return fn(*args, **kwargs)
+         # Warm-up: run eagerly to flush first-call allocations / hasattr guards.
+         fn(*args, **kwargs)
+         # Capture: allocations already done, only wp.launch calls are recorded.
+diff --git a/source/isaaclab_experimental/test/envs/mdp/parity_helpers.py b/source/isaaclab_experimental/test/envs/mdp/parity_helpers.py
+index 758b2f9ec..c8e2ee20b 100644
+--- a/source/isaaclab_experimental/test/envs/mdp/parity_helpers.py
++++ b/source/isaaclab_experimental/test/envs/mdp/parity_helpers.py
+@@ -21,6 +21,7 @@ import warp as wp
+ 
+ from isaaclab.envs.mdp.commands.commands_cfg import UniformPoseCommandCfg
+ from isaaclab.envs.mdp.commands.pose_command import UniformPoseCommand
++from isaaclab.test.utils import skip_without_graph_capture
+ from isaaclab.utils.warp import ProxyArray
+ 
+ # ---------------------------------------------------------------------------
+@@ -122,6 +123,7 @@ def run_warp_captured_mutated(func, env, mutate, shape=(NUM_ENVS,), dtype=wp.flo
+     """
+     out = wp.zeros(shape, dtype=dtype, device=device)
+     func(env, out, **kwargs)  # warm-up outside the capture
++    skip_without_graph_capture(device)
+     with wp.ScopedCapture() as capture:
+         func(env, out, **kwargs)
+     mutate()
+diff --git a/source/isaaclab_experimental/test/envs/mdp/test_events_warp_parity.py b/source/isaaclab_experimental/test/envs/mdp/test_events_warp_parity.py
+index e93e73267..c740c96a8 100644
+--- a/source/isaaclab_experimental/test/envs/mdp/test_events_warp_parity.py
++++ b/source/isaaclab_experimental/test/envs/mdp/test_events_warp_parity.py
+@@ -31,6 +31,8 @@ from parity_helpers import (
+     copy_np_to_wp,
+ )
+ 
++from isaaclab.test.utils import skip_without_graph_capture
++
+ # ============================================================================
+ # Fixtures
+ # ============================================================================
+@@ -144,6 +146,7 @@ class TestEventCapturedDataMutation:
+         )
+ 
+         # Capture
++        skip_without_graph_capture(DEVICE)
+         with wp.ScopedCapture() as cap:
+             warp_evt.reset_joints_by_offset(
+                 warp_env, mask, position_range=(0.0, 0.0), velocity_range=(0.0, 0.0), asset_cfg=cfg
+@@ -172,6 +175,7 @@ class TestEventCapturedDataMutation:
+         warp_evt.reset_joints_by_scale(
+             warp_env, mask, position_range=(1.0, 1.0), velocity_range=(1.0, 1.0), asset_cfg=cfg
+         )
++        skip_without_graph_capture(DEVICE)
+         with wp.ScopedCapture() as cap:
+             warp_evt.reset_joints_by_scale(
+                 warp_env, mask, position_range=(1.0, 1.0), velocity_range=(1.0, 1.0), asset_cfg=cfg
+@@ -203,6 +207,7 @@ class TestEventCapturedDataMutation:
+         }
+ 
+         warp_evt.push_by_setting_velocity(warp_env, mask, velocity_range=zero_range)
++        skip_without_graph_capture(DEVICE)
+         with wp.ScopedCapture() as cap:
+             warp_evt.push_by_setting_velocity(warp_env, mask, velocity_range=zero_range)
+ 
+@@ -224,6 +229,7 @@ class TestEventCapturedDataMutation:
+         mask = wp.array([i < NUM_ENVS // 2 for i in range(NUM_ENVS)], dtype=wp.bool, device=DEVICE)
+ 
+         warp_evt.apply_external_force_torque(warp_env, mask, force_range=(2.0, 2.0), torque_range=(3.0, 3.0))
++        skip_without_graph_capture(DEVICE)
+         with wp.ScopedCapture() as cap:
+             warp_evt.apply_external_force_torque(warp_env, mask, force_range=(2.0, 2.0), torque_range=(3.0, 3.0))
+         composer = warp_env.scene["robot"].permanent_wrench_composer
+diff --git a/source/isaaclab_experimental/test/envs/mdp/test_terminations_warp_parity.py b/source/isaaclab_experimental/test/envs/mdp/test_terminations_warp_parity.py
+index 9676f2b06..4ae97b5eb 100644
+--- a/source/isaaclab_experimental/test/envs/mdp/test_terminations_warp_parity.py
++++ b/source/isaaclab_experimental/test/envs/mdp/test_terminations_warp_parity.py
+@@ -50,6 +50,7 @@ from parity_helpers import (
+ 
+ import isaaclab.envs.mdp.terminations as stable_term
+ from isaaclab.managers.manager_term_cfg import TerminationTermCfg
++from isaaclab.test.utils import skip_without_graph_capture
+ 
+ # ============================================================================
+ # Fixtures
+@@ -263,6 +264,7 @@ class TestTerminationParity:
+         out.zero_()
+         warp_term.joint_pos_out_of_manual_limit(warp_env, out, bounds=bounds, asset_cfg=cfg)
+         # capture (including the zero)
++        skip_without_graph_capture(DEVICE)
+         with wp.ScopedCapture() as cap:
+             out.zero_()
+             warp_term.joint_pos_out_of_manual_limit(warp_env, out, bounds=bounds, asset_cfg=cfg)
+diff --git a/source/isaaclab_newton/changelog.d/rocm-graph-capture.fixed.rst b/source/isaaclab_newton/changelog.d/rocm-graph-capture.fixed.rst
+new file mode 100644
+index 000000000..1359284af
+--- /dev/null
++++ b/source/isaaclab_newton/changelog.d/rocm-graph-capture.fixed.rst
+@@ -0,0 +1,3 @@
++* Fixed physics steps, BVH refits, ray casts, frame transforms and Warp rendering on GPU devices whose Warp build cannot
++  capture CUDA graphs, such as HIP devices on ROCm. They ran eagerly inside a capture that produced no graph, which
++  stepped physics twice per step and failed on replay; they now run eagerly without capturing.
+diff --git a/source/isaaclab_newton/isaaclab_newton/physics/newton_backend.py b/source/isaaclab_newton/isaaclab_newton/physics/newton_backend.py
+index 920f682da..4f02f5de2 100644
+--- a/source/isaaclab_newton/isaaclab_newton/physics/newton_backend.py
++++ b/source/isaaclab_newton/isaaclab_newton/physics/newton_backend.py
+@@ -26,6 +26,7 @@ from isaaclab.sim import SimulationContext
+ from isaaclab.utils.buffers import TimestampedBuffer
+ from isaaclab.utils.timer import Timer
+ from isaaclab.utils.version import has_kit
++from isaaclab.utils.warp.utils import supports_graph_capture
+ 
+ from isaaclab_newton.renderers.visual_material import VisualMaterialWriter
+ 
+@@ -257,7 +258,7 @@ class NewtonBackend:
+             callback()
+         solver_cls.eval_fk(solver_cfg, solver, state_0, None, None)
+         self.capture = None
+-        if self.cfg.use_cuda_graph and self.device.is_cuda:
++        if self.cfg.use_cuda_graph and supports_graph_capture(self.device):
+             if solver_cls.supports_capture(solver_cfg, solver):
+                 self.capture = lambda fn: capture_graph(
+                     self.device, fn, relaxed=relaxed_capture is not None and relaxed_capture()
+@@ -480,7 +481,7 @@ class NewtonBackend:
+         if cache.timestamp == timestamp:
+             return
+         cache.timestamp = timestamp
+-        if not (use_cuda_graph and self.device.is_cuda):
++        if not (use_cuda_graph and supports_graph_capture(self.device)):
+             self._refit_bvh()
+             return
+         pointers = self.state_pointers()
+diff --git a/source/isaaclab_newton/isaaclab_newton/renderers/newton_warp_renderer.py b/source/isaaclab_newton/isaaclab_newton/renderers/newton_warp_renderer.py
+index 2a0f89809..2130e7079 100644
+--- a/source/isaaclab_newton/isaaclab_newton/renderers/newton_warp_renderer.py
++++ b/source/isaaclab_newton/isaaclab_newton/renderers/newton_warp_renderer.py
+@@ -21,6 +21,7 @@ from isaaclab.renderers.camera_render_spec import CameraRenderSpec
+ from isaaclab.scene_data import REQUIRES_STAGE_AND_MODEL, SceneDataFormat
+ from isaaclab.sim import SimulationContext
+ from isaaclab.utils.version import has_kit
++from isaaclab.utils.warp.utils import supports_graph_capture
+ from isaaclab.utils.warp.warp_math import replace_background_depth_wp
+ 
+ from ..physics import NewtonBackendCfg, newton_backend
+@@ -591,7 +592,7 @@ class NewtonWarpRenderer(BaseRenderer):
+         if backend.geometry_offsets:
+             provider.get_geometry_points(output=backend.state_0.particle_q, offsets=backend.geometry_offsets)
+         # Native triangle-mesh updates read back indices and may allocate after pointer swaps.
+-        use_graph = self.cfg.use_cuda_graph and backend.device.is_cuda and backend.model.tri_count == 0
++        use_graph = self.cfg.use_cuda_graph and supports_graph_capture(backend.device) and backend.model.tri_count == 0
+         timestamp = provider.backend.transforms_timestamp + provider.backend.geometry_timestamp
+         backend.refit_bvh(timestamp, use_cuda_graph=use_graph)
+         if not use_graph:
+diff --git a/source/isaaclab_newton/isaaclab_newton/sensors/frame_transformer/frame_transformer.py b/source/isaaclab_newton/isaaclab_newton/sensors/frame_transformer/frame_transformer.py
+index 6c0b247b0..a5514ca62 100644
+--- a/source/isaaclab_newton/isaaclab_newton/sensors/frame_transformer/frame_transformer.py
++++ b/source/isaaclab_newton/isaaclab_newton/sensors/frame_transformer/frame_transformer.py
+@@ -14,6 +14,7 @@ from newton.sensors import SensorFrameTransform
+ from isaaclab.sensors.frame_transformer.base_frame_transformer import BaseFrameTransformer
+ from isaaclab.sim.utils.queries import split_path_expr
+ from isaaclab.utils.version import has_kit
++from isaaclab.utils.warp.utils import supports_graph_capture
+ 
+ from isaaclab_newton.physics import newton_backend
+ 
+@@ -305,7 +306,7 @@ class FrameTransformer(BaseFrameTransformer):
+             raise RuntimeError(f"FrameTransformer '{self.cfg.prim_path}': sensor is not initialized")
+         state = self._backend_manager.get_scene_data_backend().state
+         device = state.body_q.device
+-        if device.is_cuda and not device.is_capturing:
++        if supports_graph_capture(device) and not device.is_capturing:
+             pointers = state.body_q.ptr, env_mask.ptr
+             if self._update_graph is None or self._update_graph[0] != pointers:
+                 graph = newton_backend.capture_graph(
+diff --git a/source/isaaclab_newton/isaaclab_newton/sensors/ray_caster/newton_raycast_sensor.py b/source/isaaclab_newton/isaaclab_newton/sensors/ray_caster/newton_raycast_sensor.py
+index f774c51d4..553feb9e8 100644
+--- a/source/isaaclab_newton/isaaclab_newton/sensors/ray_caster/newton_raycast_sensor.py
++++ b/source/isaaclab_newton/isaaclab_newton/sensors/ray_caster/newton_raycast_sensor.py
+@@ -20,6 +20,7 @@ from isaaclab.sensors.ray_caster.base_ray_caster import BaseRayCaster
+ from isaaclab.sensors.ray_caster.kernels import ALIGNMENT_BASE, update_ray_caster_kernel
+ from isaaclab.utils.version import has_kit
+ from isaaclab.utils.warp import ProxyArray
++from isaaclab.utils.warp.utils import supports_graph_capture
+ 
+ from isaaclab_newton.physics import NewtonBackendCfg, NewtonBuilderCfg, newton_backend
+ 
+@@ -344,7 +345,7 @@ class NewtonRaycastSensor(_NewtonRayCasterPoseMixin, BaseRayCaster):
+             backend.state_0.body_q = poses.transforms
+         if backend.geometry_offsets:
+             provider.get_geometry_points(output=backend.state_0.particle_q, offsets=backend.geometry_offsets)
+-        use_graph = self.cfg.use_cuda_graph and backend.device.is_cuda
++        use_graph = self.cfg.use_cuda_graph and supports_graph_capture(backend.device)
+         timestamp = provider.backend.transforms_timestamp + provider.backend.geometry_timestamp
+         backend.refit_bvh(timestamp, use_cuda_graph=use_graph)
+         if not use_graph:
+diff --git a/source/isaaclab_newton/test/assets/test_articulation.py b/source/isaaclab_newton/test/assets/test_articulation.py
+index 60d9b78cd..beec42a07 100644
+--- a/source/isaaclab_newton/test/assets/test_articulation.py
++++ b/source/isaaclab_newton/test/assets/test_articulation.py
+@@ -27,7 +27,7 @@ from isaaclab_newton.physics import NewtonCfg, NewtonManager
+ from isaaclab_newton.test.fixtures.mock_newton import backend_stub
+ 
+ from isaaclab.sim import FrameView, SimulationCfg
+-from isaaclab.test.utils import DeviceScope, launch_test_simulation, test_devices
++from isaaclab.test.utils import DeviceScope, launch_test_simulation, skip_without_graph_capture, test_devices
+ 
+ launch_test_simulation(SimulationCfg(physics=NewtonCfg()))
+ 
+@@ -446,6 +446,7 @@ def test_task_space_allocation_and_capture(device, first_property):
+     properties = ("body_com_jacobian_w", "body_link_jacobian_w", "mass_matrix", "gravity_compensation_forces")
+     assert all(getattr(data, f"_{name}_ta") is None for name in properties)
+     assert data._jacobian_buf_flat is data._mass_matrix_full_buf is data._gravity_force_full_buf is None
++    skip_without_graph_capture(device)
+     with wp.ScopedCapture(device=device) as capture:
+         output = getattr(data, first_property)
+     required = {first_property}
+@@ -788,6 +789,7 @@ def test_newton_ordered_state_publishes_inside_captured_cuda_graph(device: str)
+         joint_ordering=_LEG_PUBLIC_JOINT_NAMES,
+         body_ordering=_LEG_PUBLIC_BODY_NAMES,
+     )
++    skip_without_graph_capture(device)
+     sim_cfg = newton_sim_cfg(device, use_newton_actuators=False, use_cuda_graph=True)
+     with build_simulation_context(sim_cfg=sim_cfg) as sim:
+         articulation = spawn_assets({"robot": articulation_cfg})["robot"]
+diff --git a/source/isaaclab_newton/test/physics/test_newton_manager.py b/source/isaaclab_newton/test/physics/test_newton_manager.py
+index a81bc1178..edefbde8c 100644
+--- a/source/isaaclab_newton/test/physics/test_newton_manager.py
++++ b/source/isaaclab_newton/test/physics/test_newton_manager.py
+@@ -47,7 +47,7 @@ from newton.solvers import SolverImplicitMPM, SolverKamino, SolverMuJoCo, Solver
+ from isaaclab.physics import PhysicsEvent
+ from isaaclab.scene_data import SceneDataFormat, SceneDataProvider
+ from isaaclab.sim import SimulationCfg, SimulationContext, build_simulation_context
+-from isaaclab.test.utils import DeviceScope, test_devices
++from isaaclab.test.utils import DeviceScope, skip_without_graph_capture, test_devices
+ 
+ # ----- Configuration and lifecycle -------------------------------------------------------
+ 
+@@ -479,6 +479,7 @@ def test_model_changes_notify_the_solver_once_per_step_and_warn_once_when_ignore
+ def test_step_runs_eagerly_once_then_replays_a_graph_only_when_the_solver_supports_capture(monkeypatch, supported):
+     events, replays = [], []
+     monkeypatch.setattr(newton_backend, "capture_graph", lambda device, segment, relaxed=False: segment)
++    monkeypatch.setattr(newton_backend, "supports_graph_capture", lambda device: True)
+     monkeypatch.setattr(wp, "capture_launch", lambda segment: (replays.append(segment), segment()))
+     backend = _recording_backend(events, device="cuda:0", captures=supported)
+ 
+@@ -607,6 +608,8 @@ def _two_solver_configs() -> list[tuple[NewtonCfg, int]]:
+ @pytest.mark.parametrize("device", test_devices(DeviceScope.CUDA))
+ def test_backends_with_different_solvers_step_side_by_side(device, captured):
+     """Each backend advances only its own model and matches a backend stepped alone."""
++    if captured:
++        skip_without_graph_capture(device)
+     pair = [_pendulums(cfg, decimation, device, captured=captured) for cfg, decimation in _two_solver_configs()]
+     alone = [_pendulums(cfg, decimation, device) for cfg, decimation in _two_solver_configs()]
+     start = [backend.state_0.joint_q.numpy().copy() for backend in pair]
+@@ -711,6 +714,7 @@ def test_queries_share_one_bvh_refit_per_publication(monkeypatch, cloth, device)
+ @pytest.mark.parametrize("device", test_devices(DeviceScope.CUDA))
+ def test_bvh_refit_captures_a_model_without_rigid_bodies(device):
+     """A particle-only model has no ``body_q``; its refit is still captured and replayed once per publication."""
++    skip_without_graph_capture(device)
+     builder = newton.ModelBuilder()
+     for position in ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)):
+         builder.add_particle(pos=wp.vec3(position), vel=wp.vec3(), mass=1.0)
+@@ -742,6 +746,7 @@ def test_captured_step_holds_staged_forces_and_recaptures_after_decimation_chang
+     monkeypatch, solver_cfg, relaxed_capture, num_substeps, decimation
+ ):
+     """The first step runs eagerly, later steps replay; staged forces hold for every substep and callbacks run once."""
++    skip_without_graph_capture("cuda:0")
+     sim_cfg = SimulationCfg(
+         dt=0.005,
+         device="cuda:0",
+diff --git a/source/isaaclab_newton/test/physics/test_newton_solvers.py b/source/isaaclab_newton/test/physics/test_newton_solvers.py
+index cf139f39f..aa5a06199 100644
+--- a/source/isaaclab_newton/test/physics/test_newton_solvers.py
++++ b/source/isaaclab_newton/test/physics/test_newton_solvers.py
+@@ -42,6 +42,7 @@ from newton.solvers import SolverImplicitMPM, SolverMuJoCo, SolverXPBD
+ 
+ from isaaclab.sim import SimulationContext
+ from isaaclab.test.utils import test_devices
++from isaaclab.utils.warp.utils import supports_graph_capture
+ 
+ 
+ def _model_stub(state_attributes=()) -> SimpleNamespace:
+@@ -166,7 +167,7 @@ def test_mjwarp_authored_reset_imports_only_selected_worlds(device):
+     qvel.fill_(-0.75)
+     reset = functools.partial(MJWarpSolver.reset, cfg, solver, state, world_mask)
+     reset()  # Warm the reset kernels with an empty mask before capture.
+-    if not cfg.use_mujoco_cpu:
++    if not cfg.use_mujoco_cpu and supports_graph_capture(device):
+         with wp.ScopedCapture(device=device) as capture:
+             reset()
+         reset = functools.partial(wp.capture_launch, capture.graph)
+diff --git a/source/isaaclab_tasks/changelog.d/rocm-graph-capture.fixed.rst b/source/isaaclab_tasks/changelog.d/rocm-graph-capture.fixed.rst
+new file mode 100644
+index 000000000..6c8bbd9ba
+--- /dev/null
++++ b/source/isaaclab_tasks/changelog.d/rocm-graph-capture.fixed.rst
+@@ -0,0 +1,2 @@
++* Fixed the captured Newton IK solver of the GB300 Sharpa insertion task on GPU devices whose Warp build cannot capture
++  CUDA graphs, such as HIP devices on ROCm, by solving eagerly.
+diff --git a/source/isaaclab_tasks/isaaclab_tasks/contrib/gb300_sharpa_insertion/ik.py b/source/isaaclab_tasks/isaaclab_tasks/contrib/gb300_sharpa_insertion/ik.py
+index 67c0ee891..f921e4f27 100644
+--- a/source/isaaclab_tasks/isaaclab_tasks/contrib/gb300_sharpa_insertion/ik.py
++++ b/source/isaaclab_tasks/isaaclab_tasks/contrib/gb300_sharpa_insertion/ik.py
+@@ -13,6 +13,7 @@ from isaaclab_newton.controllers.ik.newton_ik_solver_cfg import NewtonIKSolverCf
+ from isaaclab_newton.physics import newton_backend
+ 
+ from isaaclab.utils.version import has_kit
++from isaaclab.utils.warp.utils import supports_graph_capture
+ 
+ 
+ class CapturedNewtonIKSolver(NewtonIKSolver):
+@@ -29,7 +30,7 @@ class CapturedNewtonIKSolver(NewtonIKSolver):
+ 
+     def solve(self, joint_pos: wp.array) -> wp.array:
+         """Solve from current joint positions [m or rad], using the native output buffer."""
+-        if not joint_pos.device.is_cuda or joint_pos.device.is_capturing:
++        if not supports_graph_capture(joint_pos.device) or joint_pos.device.is_capturing:
+             return super().solve(joint_pos)
+         if joint_pos.shape != self.joint_q_out.shape:
+             raise ValueError(f"Expected IK seed shape {self.joint_q_out.shape}, got {joint_pos.shape}.")
+diff --git a/source/isaaclab_visualizers/changelog.d/rocm-graph-capture.fixed.rst b/source/isaaclab_visualizers/changelog.d/rocm-graph-capture.fixed.rst
+new file mode 100644
+index 000000000..eb4c4715e
+--- /dev/null
++++ b/source/isaaclab_visualizers/changelog.d/rocm-graph-capture.fixed.rst
+@@ -0,0 +1,2 @@
++* Fixed particle surface extraction on GPU devices whose Warp build cannot capture CUDA graphs, such as HIP devices
++  on ROCm, by running it eagerly.
+diff --git a/source/isaaclab_visualizers/isaaclab_visualizers/newton/particle_surface.py b/source/isaaclab_visualizers/isaaclab_visualizers/newton/particle_surface.py
+index c8e578a50..1aa968ef8 100644
+--- a/source/isaaclab_visualizers/isaaclab_visualizers/newton/particle_surface.py
++++ b/source/isaaclab_visualizers/isaaclab_visualizers/newton/particle_surface.py
+@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
+ 
+ import warp as wp
+ 
++from isaaclab.utils.warp.utils import supports_graph_capture
++
+ from .newton_visualizer import NewtonGLVisualizer, NewtonRTXVisualizer
+ 
+ if TYPE_CHECKING:
+@@ -100,7 +102,7 @@ class ParticleSurfaceRenderer:
+         self._empty_normals = wp.empty(0, dtype=wp.vec3, device=self._model.device)
+         self._surface_mesh = None
+         self._surface_graph = None
+-        if use_cuda_graph and self._model.device.is_cuda:
++        if use_cuda_graph and supports_graph_capture(self._model.device):
+             self._surface_mesh = self._extract_surface()
+             with wp.ScopedCapture(device=self._model.device) as capture:
+                 self._surface_mesh = self._extract_surface()
+-- 
+2.55.0
+
+
+From 03bb17b08290babb82d18bb3e2adb25ff1a5194c Mon Sep 17 00:00:00 2001
+From: Jeff Daily <jeff.daily@amd.com>
+Date: Fri, 6 Nov 2026 03:01:17 +0000
+Subject: [PATCH 2/2] [ROCm] Keep the GPU info recorder metadata unchanged
+
+The previous commit added a `hip_version` metadata entry to the GPU info benchmark recorder on ROCm builds of PyTorch. `TestGPUInfoRecorder::test_get_data_returns_measurement_data` expects exactly four metadata entries, and the recorder already falls back to `torch.cuda.memory_allocated` and an `Unknown` CUDA version without NVML or `nvidia-smi`, so drop the extra entry and its changelog bullet.
+
+This change was prepared with the help of an AI coding agent.
+
+Test Plan:
+
+On an AMD Instinct MI300X (gfx942) with PyTorch 2.11.0+rocm7.13.0:
+
+```bash
+python -m pytest source/isaaclab/test/benchmark/test_recorders.py
+python tools/changelog/cli.py check upstream/main
+```
+---
+ source/isaaclab/changelog.d/rocm-graph-capture.added.rst     | 1 -
+ .../isaaclab/isaaclab/benchmark/recorders/record_gpu_info.py | 5 -----
+ 2 files changed, 6 deletions(-)
+
+diff --git a/source/isaaclab/changelog.d/rocm-graph-capture.added.rst b/source/isaaclab/changelog.d/rocm-graph-capture.added.rst
+index b2d3e8e73..b1c73c9e1 100644
+--- a/source/isaaclab/changelog.d/rocm-graph-capture.added.rst
++++ b/source/isaaclab/changelog.d/rocm-graph-capture.added.rst
+@@ -1,4 +1,3 @@
+ * Added :func:`~isaaclab.utils.warp.utils.supports_graph_capture` to check whether Warp can capture CUDA graphs on a
+   device, and :func:`~isaaclab.test.utils.skip_without_graph_capture` to skip the capture part of a test on devices
+   that cannot.
+-* Added the HIP version to the GPU info benchmark recorder on ROCm builds of PyTorch.
+diff --git a/source/isaaclab/isaaclab/benchmark/recorders/record_gpu_info.py b/source/isaaclab/isaaclab/benchmark/recorders/record_gpu_info.py
+index 5c8c0bc2f..841c23d6c 100644
+--- a/source/isaaclab/isaaclab/benchmark/recorders/record_gpu_info.py
++++ b/source/isaaclab/isaaclab/benchmark/recorders/record_gpu_info.py
+@@ -85,9 +85,6 @@ class GPUInfoRecorder(MeasurementDataRecorder):
+ 
+             cuda_version = getattr(torch_version, "cuda", None)
+             self._gpu_hardware_info["cuda_version"] = cuda_version if cuda_version else "Unknown"
+-            hip_version = getattr(torch_version, "hip", None)
+-            if hip_version:
+-                self._gpu_hardware_info["hip_version"] = hip_version
+ 
+         with contextlib.suppress(Exception):
+             import pynvml
+@@ -230,8 +227,6 @@ class GPUInfoRecorder(MeasurementDataRecorder):
+         metadata.append(
+             StringMetadata(name="cuda_version", data=self._gpu_hardware_info.get("cuda_version", "Unknown"))
+         )
+-        if "hip_version" in self._gpu_hardware_info:
+-            metadata.append(StringMetadata(name="hip_version", data=self._gpu_hardware_info["hip_version"]))
+ 
+         # Per-device hardware info as a dict
+         devices_data = {}
+-- 
+2.55.0
+
