@@ -3427,3 +3427,33 @@ src/OptimizableTypes.cpp:150 declares `auto projectJac = -pCamera->projectJac(xy
 ====
 
 Records at b4be814: CUDA no-regression compile owed at b4be814 (mi355, dispatched separately); `git diff --stat 970cb1f b4be814` touches only `src/Frame.cc`, `src/PointCloudMapOctreePointCloud.cc`, `src/MapLine.cc` and `src/OptimizableTypes.cpp`, all host C++ outside `USE_CUDA`, no `.cu` and no build file. Every arch reads `revalidate` at b4be814; the next stage is review of `970cb1f..b4be814`.
+
+### Draft: combined upstream issue for luigifreda/plvs covering items 5 and 6 (for jeff to file; not filed)
+Requested shape: one plvs issue for both reads. It replaces the two separate plvs drafts above (use one or the other, not both). The octree use-after-free keeps its own draft ("Draft: upstream issue for luigifreda/plvs" in the 2026-11-06 round). The ORB-SLAM3 draft above already covers only the projectJac read. All three checked with `utils/prose.py`.
+
+====
+**Title:** Two out-of-bounds reads: MapLine::UpdateNormalAndDepth line-scale index and a dead temporary in EdgeSE3ProjectXYZ::linearizeOplus
+
+My agent came up with this analysis, but I've read and approved it.
+
+AddressSanitizer on a Linux CPU-only build reports two reads of invalid memory when `stereo_tum_vi` runs `Examples/Stereo/TUM-VI.yaml` on TUM-VI `dataset-room1_512_16`. Both runs exit 0, so the reads usually go unnoticed.
+
+1. `MapLine::UpdateNormalAndDepth` (src/MapLine.cc:681-688) sets `const int nLevels = pRefKF->mnScaleLevels;` and divides by `pRefKF->mvLineScaleFactors[nLevels-1]`. `mnScaleLevels` is the keypoint pyramid depth (`ORBextractor.nLevels: 8`), but `mvLineScaleFactors` has one entry per line pyramid level (`Line.nLevels: 3`), so the index is past the end and `mfMinDistance` is scaled by whatever follows the vector. ASan reports a heap-buffer-overflow at src/MapLine.cc:688. The `MapLine` constructor from a `Frame` (src/MapLine.cc:113) already uses `mnLineScaleLevels`.
+
+2. `EdgeSE3ProjectXYZ::linearizeOplus` (src/OptimizableTypes.cpp:214) declares `auto projectJac = -pCamera->projectJac(xyz_trans);`. `projectJac` returns an `Eigen::Matrix<double,2,3>` by value, so `auto` becomes an Eigen expression that refers to a temporary destroyed at the end of the statement, and the products at lines 220 and 233 read a dead stack slot. ASan reports stack-use-after-scope at both lines. The same line is in ORB-SLAM3 (src/OptimizableTypes.cpp:150).
+
+Proposed fix:
+
+```diff
+--- a/src/MapLine.cc
++++ b/src/MapLine.cc
+-    const int nLevels = pRefKF->mnScaleLevels;
++    const int nLevels = pRefKF->mnLineScaleLevels;
+--- a/src/OptimizableTypes.cpp
++++ b/src/OptimizableTypes.cpp
+-        auto projectJac = -pCamera->projectJac(xyz_trans);
++        const Eigen::Matrix<double,2,3> projectJac = -pCamera->projectJac(xyz_trans);
+```
+
+With both changes the same ASan run reports nothing, and the sequence still finishes with the same trajectory accuracy.
+====
