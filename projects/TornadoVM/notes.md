@@ -562,3 +562,34 @@ Fact-check, sentence by sentence, against `Legality.localWait`/`sameWavefrontWai
 - Commit: title 67 chars, `[ROCm]`, ASCII, AI disclosure, fenced Test Plan, no Co-Authored-By. `utils/jargon.py -C <fork> --commits 5da5fbbf9..af27a9f4b` and `--diff 5da5fbbf9..af27a9f4b` clean; `utils/prose.py` clean on the body. Fresh clone at `af27a9f4b` has no modified tracked files.
 
 Non-blocking (only if a later round touches the file anyway; a PR-prep squash must keep the tree, so it cannot carry this): the javadoc of `TestUnsupportedKernelContextOps#testLocalFlagWaitsThatComplete` (`tornado-unittests/.../kernelcontext/api/TestUnsupportedKernelContextOps.java:412-414`) still describes its cases as "Waits that complete on every GPU ... or by a thread in another 64-thread wavefront (also when a thread of the waiters' own wavefront sets it too)". It is accurate for the five kernels the test runs (all completed on gfx942), but read as a general rule it is the phrasing round 6 removed elsewhere.
+
+## Validation 2026-11-06 (linux-gfx950, MI355X, validator at `af27a9f4b`)
+
+Fresh clone of `AMD-Ecosystem/TornadoVM`, detached at `af27a9f4b` (= `origin/moat-port`). Host: ROCm 10.1 TheRock wheels (`ROCM_PATH` = the wheel's `_rocm_sdk_devel`), Temurin 21.0.12, job-local Maven repository, `HIP_VISIBLE_DEVICES=3` (one MI355X, gfx950:sramecc+:xnack-, wave64), `ulimit -c 0`, hipDF/hipVS wheel libraries copied from the rulings-round job (`HIPDF_HOME` and the wheel `lib64` dirs plus `$ROCM_PATH/lib/llvm/lib` on `LD_LIBRARY_PATH`). Verdict: **completed**.
+
+Builds:
+- `make jdk21 BACKEND=hip` (CK fetched, 9 targets, `CMAKE_BUILD_PARALLEL_LEVEL=42`): EXIT 0 in 4m09s; `libtornado-ck.so` and `libtornado-hipdf.so` in the SDK. `git status --porcelain` clean afterwards.
+- Separate clones at `af27a9f4b` (`TORNADO_CK_SOURCE_DIR=/tmp`): `make jdk21 BACKEND=opencl,hip` EXIT 0; `make jdk21 BACKEND=cuda,hip` EXIT 0 and `make jdk21 BACKEND=cuda` EXIT 0, both with real nvcc 12.8.93 (`/usr/local/cuda/bin/nvcc`, CUTLASS shim `arch=80-real;80-virtual`; cuDNN and cuDF shims skip for missing NVIDIA libraries, as at every earlier round). This is the CUDA no-regression gate at `af27a9f4b`: pass.
+
+GPU tests (HIP SDK):
+- `tornado-selftest`: 20 pass, 1 skip (device-side launch).
+- `tornado-test --verbose --quickPass`: 2187 ran, 1489 pass, 696 unsupported, 2 failed (`ComputeTests#testMandelbrot`, `#testJuliaSets`, both whitelisted). One more pass than at `3c00e2062` (the new `testLocalFlagWaitsThatComplete`). 13m12s.
+- Library and feature classes (`tornado-test -V <class>`; ran / failed / unsupported): TestCuBlas 27/0/0, TestCuBlasLt 10/0/0, TestCuFft 9/0/0, TestCuRand 7/0/0, TestCusparse 17/0/0, TestNccl 30/0/10 (one GPU), TestNcclMultiProcess 5/0/2 (one GPU, HIP-only SDK), TestCuDnn 20/0/0, TestCutlass 26/0/0, TestCudf 24/0/0, TestCudfColumns 23/0/3 (ZSTD writes), TestCuVS 7/0/0, TestProfiler 9/0/0, TestProfilerTransferBytes 2/0/0, TestFP8 13/0/0, TestFP8ElementwiseCopy 1/0/0, TestUnsupportedKernelContextOps 10/0/3 (OpenCL-only cases; `testLocalFlagWaitAcrossWarps` gets TC-E4019, `testLocalFlagWaitsThatComplete` passes), TestDynamicParallelism 15/0/13, TestDynamicParallelismPipelines 4/0/4, `HeapFail#test03` with `-Dtornado.device.memory=1MB` pass.
+- MMA classes: TestMMAFragmentHelper 2/0/0, TestMMAGlobalFragmentLoad 6/0/0, TestMMAInt8FragmentElementRead 4/0/0, TestMatrixMultiplicationKernelContext 3/0/0, TestMatrixMultiplicationMMA 18/0/0, ...MMABF16 7/0/0, ...MMACpAsync 8/0/0, ...MMAFP8 8/0/0, ...MMAInt8 12/0/0. `bash ../probe/mma/run.sh`: harness 0 of 53 failed, mutated reference 53 of 53 failed, `== PASS (gfx950)`.
+
+Non-GPU tests:
+- `make test-nogpu JDK=jdk21`: BUILD SUCCESS, 0 failures; includes TcCompilerTest 29/29, HipMmaRoutingTest 1/1 and the ir 13 / lower 7 / opt 16 / tornado 5 / frontend 12 / codegen 60 lit tests.
+- Codegen lit with the external checkers present: built `tornado-compiler/utils/hiprtccheck` (`gcc -O2 -D__HIP_PLATFORM_AMD__ -I$ROCM_PATH/include -o hiprtccheck hiprtccheck.c -L$ROCM_PATH/lib -lhiprtc`) and put nvcc on PATH, then `./mvnw -o -Pjdk21 -pl tornado-compiler/tc-codegen -am test -DskipTests=false -Dtest=LitTest -Dsurefire.failIfNoSpecifiedTests=false`: 60/60. A logging wrapper confirmed hipRTC really ran: 15 invocations, one of them `mma.tcir` for gfx908 gfx942 gfx950 gfx1100 gfx1201 gfx1250. (The binary is untracked build output.)
+
+Julia/Mandelbrot vs the OpenCL backend on the same GPU (review 1's request). OpenCL from the review-3 recipe (`libOpenCL.so.1 -> $ROCM_PATH/lib/opencl/libamdocl64.so.2` on `LD_LIBRARY_PATH`, `ROCR_VISIBLE_DEVICES=3 HIP_VISIBLE_DEVICES=0`) in the `opencl,hip` SDK: device 0:0 OpenCL gfx950, 1:0 HIP MI355X. A scratch harness (`agent_space/julia/`, the two test kernels verbatim, each run on both devices and compared with the Java result at the test's tolerance):
+
+| backend | `tornado.enable.fma` | Julia hue mismatches (of 1048576) | Julia brightness | Mandelbrot mismatches (of 262144), max diff |
+|---|---|---|---|---|
+| OpenCL | true (default) | 73390 (7.0%) | 7400 | 764, 218 greylevels |
+| HIP | true (default) | 72032 (6.9%) | 7424 | 764, 218 greylevels |
+| OpenCL | false | 0 | 0 | 0 |
+| HIP | false | 0 | 0 | 0 |
+
+`tornado-test -V uk.ac.manchester.tornado.unittests.compute.ComputeTests`: default options, both backends fail the same two tests (OpenCL Julia `expected 3.8022814 but was 1.4224751`, HIP `expected -1000.0 but was 1.5197568`, both Mandelbrot `expected 8.0 but was 9.0`); with `--jvm=-Dtornado.enable.fma=false` both pass 19/19. So the failures are FMA contraction in a chaotic iteration (the hue is `1000/k`, so a changed escape step changes it a lot), shared by the vendor's OpenCL compiler on the same device, not a HIP backend fault. The HIP and OpenCL compilers contract different expressions (72844 Julia pixels differ between them), which is why the first failing pixel differs. Mandelbrot's mismatch is not the "+-1 greylevel" its test comment expects (max 218), on both backends.
+
+Port checks: `utils/jargon.py -C projects/TornadoVM/src --commits origin/develop..af27a9f4b` and `--diff origin/develop...af27a9f4b` clean (`--port TornadoVM` still cannot resolve `develop..moat-port` in this clone layout). The ROCm build is documented next to the CUDA one (`README.md`, `INSTALL_FROM_SOURCE.md`, `docs/source/developer-guidelines.rst`, native-libs README). Fork tree has no modified tracked files.

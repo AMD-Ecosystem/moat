@@ -74,3 +74,12 @@
 {"kind":"session","ts":"2026-11-05T19:04:17Z","epoch":1793905457.491044761,"event":"end","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-06T02:53:46Z","epoch":1793933626.406718727,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-06T02:55:31Z","epoch":1793933731.839675732,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-06T04:12:49Z","epoch":1793938369.733292700,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-06T04:13:27Z","phase":"compile","seconds":0.004,"exit":2,"cmd":"make jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-06T04:17:46Z","phase":"compile","seconds":248.766,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261105-200926-tvm-val/moat/projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-06T04:29:26Z","phase":"cuda-compile","seconds":17.746,"exit":0,"cmd":"make -C agent_space/src3 jdk21 BACKEND=cuda,hip"}
+{"kind":"phase","ts":"2026-11-06T04:29:52Z","phase":"test","seconds":9.319,"exit":0,"cmd":"make -C agent_space/src3 test-nogpu JDK=jdk21"}
+{"kind":"phase","ts":"2026-11-06T04:31:27Z","phase":"test","seconds":791.739,"exit":0,"cmd":"tornado-test --verbose --quickPass"}
+{"kind":"phase","ts":"2026-11-06T04:33:16Z","phase":"cuda-compile","seconds":17.365,"exit":0,"cmd":"make -C agent_space/src3 jdk21 BACKEND=cuda"}
+{"kind":"phase","ts":"2026-11-06T04:33:27Z","phase":"test","seconds":82.400,"exit":0,"cmd":"bash agent_space/libtests.sh"}
+{"kind":"session","ts":"2026-11-06T04:36:18Z","epoch":1793939778.403691696,"event":"end","platform":"linux-gfx950"}
