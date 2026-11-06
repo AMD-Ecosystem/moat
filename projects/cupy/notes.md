@@ -463,3 +463,144 @@ Same test-id set on both trees. Per-directory counts were identical on both tree
 - Integrity: `git -C projects/cupy/src status --porcelain` shows no modified tracked files (only in-place build output).
 
 **Verdict: linux-gfx90a completed at 24a62ef95.** The port behaves as upstream on Linux, apart from the 23 tests that 4ccded519 fixes.
+## Validation 2026-11-06 (linux-gfx1201, validator): full upstream baseline (Ruling 7)
+
+Verdict: **pass, no port regression on Linux.** Port: ROCm/cupy `moat-port` 24a62ef95. Baseline: upstream 18b54de. Host: gfx1201 (Radeon, 32 GiB VRAM, one GPU visible, `HIP_VISIBLE_DEVICES=0`), TheRock pip ROCm `_rocm_sdk_devel` (HIP 7.16.26385, runtime 71626385), Python 3.11.17, job venv with Cython 3.2.9, numpy 2.4.6, scipy 1.17.1, pytest 7.3.2, hypothesis 6.54.6, pytest-xdist 3.3.1, pytest-timeout. Same submodule pins in both trees.
+
+### Build (both trees, same command, in-place, worktrees `agent_space/wt-port` and `agent_space/wt-base`)
+
+```bash
+export ROCM_HOME=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+export PATH="$FLEET_VENV/bin:$ROCM_HOME/bin:$PATH" LD_LIBRARY_PATH="$ROCM_HOME/lib"
+export CUPY_INSTALL_USE_HIP=1 HCC_AMDGPU_TARGET=gfx1201 CUPY_NUM_BUILD_JOBS=12
+utils/timeit.sh cupy compile -- bash -c "cd <wt> && python setup.py build_ext --inplace -v"
+```
+
+- Both EXIT 0. Same configure summary (cuda Yes 71626385, cub Yes 400700, nccl Yes 23007, random Yes, thrust Yes, dlpack Yes), same 640 compile/link lines after normalising the tree path and `CUPY_CACHE_KEY`, 474 warnings each. `nm -D --defined-only` symbol names identical for every `.so` (`__hip_cuid_*` excluded); only `cupy_backends/cuda/libs/nvrtc.so` differs, in the addresses of seven `std::vector` weak symbols, from the win32-gated program-name branch in `_cnvrtc.pxi`.
+- Smoke (`agent_space/smoke.py`: elementwise + reduction, RawKernel, CUB, random, eigvalsh/solve, FFT, sparse matmul, sort, complex exp 700.5+0.5j vs NumPy): pass on both.
+
+### Test command (one pytest process at a time; port then base, each suite)
+
+```bash
+ulimit -c 0; export CUPY_CACHE_DIR=agent_space/kcache-<t> PYTHONPATH=agent_space/wt-<t>; cd agent_space/wt-<t>
+utils/timeit.sh cupy test -- python -m pytest tests/cupy_tests  -p no:cacheprovider -n 8 --dist loadfile --timeout 1800 -rfE -q --junitxml=...
+utils/timeit.sh cupy test -- python -m pytest tests/cupyx_tests -p no:cacheprovider -n 8 --dist loadfile --timeout 1800 --timeout-method=thread -rfE -q --junitxml=...
+```
+
+`-n 8`, not `-n auto`: auto is 48 workers on this host, under 0.7 GiB of VRAM each, and several tests allocate 2-8 GiB. Even at 8 workers a few large-memory tests OOM or self-skip under contention (listed below; all pass when run alone). No marker filter: slow tests included; multi-GPU tests run and fail with `hipErrorInvalidDevice` on both trees because only one GPU is visible.
+
+### Raw results
+
+| run | passed | failed | errors | skipped | xfailed | xpassed | wall |
+|---|---|---|---|---|---|---|---|
+| port cupy_tests | 26586 | 216 | 8 | 2113 | 105 | 0 | 43 min |
+| base cupy_tests | 23137 | 3626 | 9 | 2113 | 105 | 0 | 96 min (interrupted, below) |
+| port cupyx_tests | 71594 | 576 | 456 | 5146 | 4622 | 192 | 24 min |
+| base cupyx_tests | 71914 | 256 | 456 | 5146 | 4622 | 192 | 24 min |
+
+Two runs were polluted by the same harness fault, one on each tree, so the affected files were rerun on that tree (the rerun result supersedes):
+- **base cupy_tests**: about 3390 tests failed with `hipErrorNoBinaryForGpu` / `hipErrorInvalidSource: device kernel image is invalid` (precompiled CUB/Thrust kernels and cached kernels), in random, arithmetic, statistics, sorting and testing_tests files. Afterwards every worker sat at 0% CPU with the controller waiting, and an nccl `TestCommSplit::test_4_processes_2_subcomm` spawn child spun for 77 min where `--timeout 1800` (signal method) could not fire. I killed the spinning child, then sent SIGINT to the controller, which wrote the junit XML (1 h 36 min). Rerun of the 15 affected files on base: 12694 passed, 42 failed, 8 errors, no `NoBinaryForGpu`.
+- **port cupyx_tests**: 323 tests in `ndimage_tests/test_filters.py` and `test_interpolation.py` failed with the same `hipErrorNoBinaryForGpu`. Rerun of those two files on port: 13183 passed, 0 failed. The base run had one such failure (`test_morphology` tophat); rerun of `test_morphology.py` on base: 5466 passed.
+- So a worker sometimes loses its kernel images after a long xdist run on this host, on either tree; the symptom is `hipErrorNoBinaryForGpu` on every later kernel in that worker. It is not tied to the port. cupyx runs used `--timeout-method=thread` so a hang inside a HIP call kills the worker instead of wedging the run.
+
+### Classification (per test id, after the reruns)
+
+| suite | pass both | fail both | port fixes (fail base, pass port) | port-only fail | skip both | xfail both |
+|---|---|---|---|---|---|---|
+| cupy_tests | 26565 | 215 | 21 | 0 (2 contention, below) | 2108 | 105 |
+| cupyx_tests | 72110 | 706 | 2 | 0 | 5146 | 4622 |
+
+- **Port-only after reruns, contention, not regressions**: `cupy_tests/cuda_tests/test_memory.py::TestMemInfo::test_mem_info` (asserts free memory > 0 while the other workers had the GPU full) and `math_tests/test_sumprod.py::TestCumprod::test_cumprod_huge_array` (OOM allocating 4 GiB). Rerun alone on port: 2 passed. Likewise 5 `TestReductionSizeOverInt32Max` tests self-skipped on port ("out of memory in test") and passed in the base rerun, and the 3 `TestSplineFilter1dLargeArray` tests OOM'd in both full runs; rerun alone on base: 3 passed.
+- **No new failure on the port.** Every failure on the port also fails on the baseline at 18b54de, with the same error.
+
+### 4ccded519 effect (`__device__` on the CArray friend declaration)
+
+- `pytest tests/cupy_tests/core_tests/test_elementwise.py -k TestElementwiseGUFuncLike`, alone: base **21 failed, 10 passed** (111 x `'data_'/'shape_'/'strides_' is a private member of 'CArray<...>'`), port **31 passed**. Matches the gfx1100 review.
+- The full run found two more tests with the same cause: `cupyx_tests/scipy_tests/special_tests/test_spfun_stats.py::TestPoissonBinomCDF::test_values` and `::test_scalar_k`. Base: 2 failed (`HIPRTC_ERROR_COMPILATION`, `'data_'/'shape_'/'strides_' is a private member of 'CArray<float, 1, true, true>'`); port: 2 passed, 1 skipped.
+- So 4ccded519 fixes 23 tests on Linux ROCm. It is the only Linux behaviour change in the port.
+
+### The complex xsf calls (identical on both trees, upstream's)
+
+The 12 xsf failures the Windows porter recorded fail the same way on Linux, at port and at baseline, plus a 13th test with the same error: `test_dawsn::TestDawsn::test_complex`, `test_digamma::TestDigamma::{test_arange,test_complex,test_inf_and_nan,test_linspace_negative,test_linspace_positive,test_scalar}`, `test_erfi::TestErfi::test_complex`, `test_lambertw::TestLambertW::test_values`, `test_sici::TestSici::test_complex`, `test_sici::TestShichi::test_complex`, `test_wofz::TestWofz::test_complex`, and on Linux also `test_ufunc_dispatch::TestUfunc::test_dispatch[wofz]`. Each is `error: no matching function for call to '<fn>'`, the candidate note being `no known conversion from 'const thrust::complex<float>' to 'cxx::complex<float>' (aka 'std::complex<float>')`: xsf `config.h` maps `cxx::complex` to `thrust::complex` only under `__CUDACC__`, which no HIP compile defines. The error sets match test by test between port and base. This is not Windows-specific and is not in the port's scope.
+
+### Failures common to both trees (upstream's at 18b54de on this host)
+
+cupy_tests, 215 ids (222 junit entries; the 8 `TestCubHistogram` setup errors share one id):
+- 1 x `binary_tests.test_elementwise.TestElementwise`: `AssertionError: Only cupy raises error`
+- 1 x `core_tests.fusion_tests.test_misc.TestFusionMultiDevice`: `AssertionError: Both cupy and numpy raise exceptions`
+- 127 x `core_tests.test_bfloat16`: `AssertionError: Only cupy raises error` (113); `NVRTCError: HIPRTC_ERROR_COMPILATION (6)` (14)
+- 1 x `core_tests.test_dlpack.TestNewDLPackConversion`: `NVRTCError: HIPRTC_ERROR_COMPILATION (6)`
+- 2 x `core_tests.test_elementwise.TestElementwise`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 2 x `core_tests.test_ndarray.TestNdarrayCopy`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 5 x `core_tests.test_ndarray.TestNdarrayDeepCopy`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 2 x `core_tests.test_ndarray_elementwise_op.TestArrayElementwiseOp`: `AssertionError:`
+- 1 x `core_tests.test_ndarray_get.TestArrayGet`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 1 x `core_tests.test_ndarray_get.TestArrayGetWithOut`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 19 x `core_tests.test_raw.TestRaw`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 1 x `core_tests.test_scan.TestScan`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 3 x `creation_tests.test_from_data.TestFromData`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 4 x `cuda_tests.test_device.TestDeviceSwitch`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal` (3); `Failed: Timeout (>N.0s) from pytest-timeout.` (1)
+- 2 x `cuda_tests.test_memory.TestUnownedMemory`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 1 x `cuda_tests.test_nccl.TestCommSplit`: `Failed: Timeout (>N.0s) from pytest-timeout.`
+- 1 x `cuda_tests.test_nccl.TestNCCL`: `NcclError: NCCL_ERROR_INVALID_ARGUMENT: invalid argument (run with NCCL_DEBUG=WAR`
+- 1 x `cuda_tests.test_runtime`: `assertion`
+- 3 x `cuda_tests.test_stream.TestStream`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 2 x `fft_tests.test_cache.TestPlanCache`: `Failed: Timeout (>N.0s) from pytest-timeout.` (1); `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal` (1)
+- 6 x `fft_tests.test_fft`: `AssertionError:`
+- 4 x `linalg_tests.test_decomposition.TestSVD`: `AssertionError:`
+- 5 x `manipulation_tests.test_basic.TestBasic`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal` (4); `AssertionError: Both cupy and numpy raise exceptions` (1)
+- 1 x `manipulation_tests.test_join.TestJoin`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 4 x `math_tests.test_sumprod.TestBatchScanSizeOverInt32Max`: `CUDADriverError: hipErrorInvalidValue: invalid argument`
+- 6 x `math_tests.test_sumprod.TestCumprod`: `AssertionError: Only cupy raises error`
+- 6 x `math_tests.test_sumprod.TestCumsum`: `AssertionError: Only cupy raises error`
+- 1 x `random_tests.test_generator.TestRandomState`: `Failed: DID NOT RAISE <class 'KeyError'>`
+- 8 x `statistics_tests.test_histogram`: `assertion`
+- 1 x `testing_tests.test_helper.TestPackageRequirements`: `AssertionError: assert False`
+
+cupyx_tests, 706 ids:
+- 114 x `distributed_tests.test_array_nccl.TestDistributedArray2Devices`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 114 x `distributed_tests.test_array_nccl.TestDistributedArray4Devices`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 114 x `distributed_tests.test_array_no_nccl.TestDistributedArray2Devices`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 114 x `distributed_tests.test_array_no_nccl.TestDistributedArray4Devices`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 16 x `distributed_tests.test_linalg.TestDistributedMatMul`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 3 x `jit_tests.test_cub.TestCubWarpReduce`: `AssertionError:`
+- 1 x `jit_tests.test_raw.TestRaw`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 1 x `profiler_tests.test_benchmark.TestBenchmark`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+- 6 x `scipy_tests.fft_tests.test_fft`: `AssertionError:`
+- 21 x `scipy_tests.interpolate_tests.test_ndbspline.TestNdBSpline`: `AssertionError: Only cupy raises error`
+- 14 x `scipy_tests.interpolate_tests.test_polyint.TestCubicSpline`: `AssertionError: Only cupy raises error`
+- 105 x `scipy_tests.interpolate_tests.test_polyint.TestInterp1D`: `AssertionError: Only cupy raises error` (97); `assertion` (8)
+- 1 x `scipy_tests.interpolate_tests.test_rgi.TestRegularGridInterpolator`: `assertion`
+- 8 x `scipy_tests.signal_tests.test_waveforms.TestChirp`: `AssertionError: Only cupy raises error` (6); `NVRTCError: HIPRTC_ERROR_COMPILATION (6)` (2)
+- 13 x `scipy_tests.sparse_tests.test_csr.TestCsrMatrixScipyComparison`: `AssertionError:` (8); `AssertionError: Only cupy raises error` (4)
+- 1 x `scipy_tests.sparse_tests.test_linalg.TestLOBPCG`: `XPASS(strict)`
+- 24 x `scipy_tests.sparse_tests.test_linalg.TestSpsolveTriangular`: `AssertionError: Only cupy raises error`
+- 3 x `scipy_tests.sparse_tests.test_sparray.TestBoolSum`: `assertion` (1); `AssertionError:` (1)
+- 1 x `scipy_tests.sparse_tests.test_sparray.TestMeanEmpty`: `AssertionError: Different types of errors occurred`
+- 1 x `scipy_tests.sparse_tests.test_sparray.TestSetdiag2DRejected`: `ValueError: hipSPARSE currently cannot handle sparse matrices with null ptrs`
+- 1 x `scipy_tests.sparse_tests.test_sparray.TestSparseArray1D`: `AssertionError:`
+- 3 x `scipy_tests.sparse_tests.test_sparray.TestSparseArrayTypeIdentity`: `ValueError: hipSPARSE currently cannot handle sparse matrices with null ptrs`
+- 2 x `scipy_tests.sparse_tests.test_sparray.TestSpsolveArray`: `assertion`
+- 1 x `scipy_tests.sparse_tests.test_sparse_int64_indices.TestInt64Helpers`: `assertion`
+- 1 x `scipy_tests.sparse_tests.test_sparse_int64_indices.TestInt64LinalgGuards`: `assertion`
+- 3 x `scipy_tests.sparse_tests.test_sparse_int64_indices.TestInt64SumAxis`: `assertion`
+- 1 x `scipy_tests.special_tests.test_dawsn.TestDawsn`: `AssertionError: Only cupy raises error`
+- 6 x `scipy_tests.special_tests.test_digamma.TestDigamma`: `AssertionError: Only cupy raises error`
+- 1 x `scipy_tests.special_tests.test_erfi.TestErfi`: `AssertionError: Only cupy raises error`
+- 1 x `scipy_tests.special_tests.test_lambertw.TestLambertW`: `AssertionError: Only cupy raises error`
+- 1 x `scipy_tests.special_tests.test_sici.TestShichi`: `AssertionError: Only cupy raises error`
+- 1 x `scipy_tests.special_tests.test_sici.TestSici`: `AssertionError: Only cupy raises error`
+- 1 x `scipy_tests.special_tests.test_ufunc_dispatch.TestUfunc`: `AssertionError: Only cupy raises error`
+- 1 x `scipy_tests.special_tests.test_wofz.TestWofz`: `AssertionError: Only cupy raises error`
+- 4 x `test_cusparse.TestCheckAvailabilityVersionSkew`: `ValueError: No available version information specified for __test_version_skew__`
+- 2 x `test_cusparse.TestSpmmLargeColumns`: `RuntimeError: parallel_for failed: hipErrorInvalidConfiguration: invalid configurati`
+- 1 x `test_time.TestRepeat`: `CUDARuntimeError: hipErrorInvalidDevice: invalid device ordinal`
+
+Plus, on the base full run only, 3 `TestSplineFilter1dLargeArray` OOMs (pass alone, above). The multi-GPU `hipErrorInvalidDevice` rows come from one visible GPU. bfloat16 is `no viable overloaded '/='` (and `+=`, `*=`) in hiprtc. The timeouts are `TestDeviceSwitch::test_thread_safe`, `TestCommSplit::test_4_processes_2_subcomm` and `TestPlanCache::test_LRU_cache5`. Per-test outcomes: `agent_space/res-{port,base}-{cupy,cupyx}_tests.xml` and `*_rerun.xml` on this host (scratch, not durable); classification scripts `agent_space/parse.py`, `cmp.py`.
+
+### Other gates
+
+- Jargon: `python3 utils/jargon.py --port cupy` clean (local `main` at 18b54de, per the porter's note).
+- Docs: install.rst documents the Windows ROCm build next to the CUDA build (checked by both reviews); the Linux HIP docs are unchanged.
+- Integrity: `git -C agent_space/wt-port status --porcelain --untracked-files=no` and the same for `projects/cupy/src` are empty; HEAD 24a62ef95.
+- **CUDA gate: not run on this host (no CUDA toolkit, no conda).** cuda-not-validated here. The port changes no Linux CUDA compile command (reviews 2026-11-06 and 2026-11-06b). An nvcc 12.8 compile at 24a62ef95 is still owed on a host with the toolkit (mi355), per the standing rule to compile the CUDA path before presenting.
