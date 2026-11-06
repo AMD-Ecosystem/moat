@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T01:57:04Z",
-  "updated_at": "2026-11-06T01:57:05Z",
+  "updated_at": "2026-11-06T02:11:36Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/ggml-org/llama.cpp/blob/master/LICENSE",
+      "at": "2026-11-06T02:11:27Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream GGML_HIP backend (docs/build.md#hip), rocm release artifacts every build, hip-quality-check CI",
+    "viable": true,
+    "summary": "LLM inference engine; upstream GGML_HIP backend with ROCm release binaries (Linux+Windows, ROCm 10.0) and AMD CI; nothing left to port",
+    "at": "2026-11-06T02:11:35Z"
+  }
 }
