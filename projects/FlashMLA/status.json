@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T11:18:35Z",
-  "updated_at": "2026-11-06T11:18:36Z",
+  "updated_at": "2026-11-06T11:22:54Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/deepseek-ai/FlashMLA/blob/main/LICENSE",
+      "at": "2026-11-06T11:22:52Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "ported-elsewhere",
+    "duplicate_effort": "https://github.com/ROCm/aiter (AMD-owned; aiter/mla.py)",
+    "viable": false,
+    "summary": "DeepSeek MLA/sparse-attention kernels (SM90/SM100 CuTe); AMD-owned ROCm/aiter carries MLA + sparse MLA (gfx942/950/1250) and upstream README links it as the AMD version",
+    "at": "2026-11-06T11:22:54Z"
+  }
 }
