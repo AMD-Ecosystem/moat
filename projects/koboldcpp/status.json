@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T01:28:57Z",
-  "updated_at": "2026-11-06T01:28:58Z",
+  "updated_at": "2026-11-06T01:45:17Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "AGPL-3.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "AGPL-3.0",
+      "evidence": "https://github.com/LostRuins/koboldcpp/blob/concedo/LICENSE.md",
+      "at": "2026-11-06T01:44:07Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream LLAMA_HIPBLAS build + rocm-rolling release; community YellowRoseCx/koboldcpp-rocm (stale, v1.104 vs v1.124)",
+    "viable": true,
+    "summary": "KoboldCpp LLM runner; upstream already builds its whole CUDA surface (vendored ggml + legacy v2/v3 .cu) with HIP via LLAMA_HIPBLAS and ships a CI-built Linux ROCm binary; only gap is no Windows ROCm binary (packaging)",
+    "at": "2026-11-06T01:45:16Z"
+  }
 }
