@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "whisper.cpp",
+  "upstream_url": "https://github.com/ggml-org/whisper.cpp",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T02:20:01Z",
+  "updated_at": "2026-11-06T02:20:04Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
