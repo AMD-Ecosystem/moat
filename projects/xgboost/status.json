@@ -8,10 +8,19 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T03:09:57Z",
-  "updated_at": "2026-11-06T03:09:59Z",
+  "updated_at": "2026-11-06T10:57:06Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/dmlc/xgboost/blob/master/LICENSE",
+      "at": "2026-11-06T10:57:06Z"
+    }
+  ]
 }
