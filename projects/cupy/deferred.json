@@ -44,6 +44,19 @@
         "at": "2026-11-05T20:31:53Z",
         "note": "bounded workaround attempt in the port (~2h); ROCm bug report either way"
       }
+    },
+    {
+      "id": "clang-hip-math-win-nan-double-shift",
+      "kind": "rocm-bug-report",
+      "component": "clang_hip_math",
+      "summary": "On Windows __clang_hip_math.h nan(const char*) computes (uint64_t)mantissa | (0xFFF << 51) with an int-typed 0xFFF, so the shift is undefined/zero and double nan(\"\") returns 0.0 instead of NaN (nanf works). Fix: 0xFFFULL << 51 in the !_WIN32 else branch. Hits CuPy jit nan, special zeta/zetac, signal sawtooth/square on Windows ROCm.",
+      "refs": [
+        "projects/cupy/notes.md#validation-2026-11-06-windows-gfx1151-validator"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-06T19:24:38Z",
+      "decided": null
     }
   ]
 }

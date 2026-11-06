@@ -604,3 +604,67 @@ Plus, on the base full run only, 3 `TestSplineFilter1dLargeArray` OOMs (pass alo
 - Docs: install.rst documents the Windows ROCm build next to the CUDA build (checked by both reviews); the Linux HIP docs are unchanged.
 - Integrity: `git -C agent_space/wt-port status --porcelain --untracked-files=no` and the same for `projects/cupy/src` are empty; HEAD 24a62ef95.
 - **CUDA gate: not run on this host (no CUDA toolkit, no conda).** cuda-not-validated here. The port changes no Linux CUDA compile command (reviews 2026-11-06 and 2026-11-06b). An nvcc 12.8 compile at 24a62ef95 is still owed on a host with the toolkit (mi355), per the standing rule to compile the CUDA path before presenting.
+
+## Validation 2026-11-06 (windows-gfx1151, validator): Ruling 3 stages (ii), (iii), (iv) at 24a62ef95
+
+Port: ROCm/cupy `moat-port` at **24a62ef95** (fast-forward; `git status --porcelain` empty at the end). Host: Windows 11, Radeon 8060S (gfx1151, wave32 APU), TheRock ROCm 7.14.0a20260612 (hipconfig 7.14.60850), Python 3.13 venv `C:/Users/jdaily/cupy-work/venv`, MSVC 14.44 (x64 Native Tools), Cython 3.2.9, numpy 2.5.4, scipy 1.18.1, pytest 9.2.0, pytest-timeout (installed for this run), hypothesis 6.54.6. No xdist: one pytest process at a time.
+
+### Build
+
+```bash
+source agent_space/cupy_rocm_env.sh      # venv Scripts + MSVC bin on PATH, HCC_AMDGPU_TARGET=gfx1151, CUPY_INSTALL_USE_HIP=1
+utils/timeit.sh cupy compile -- python -m pip install -v --no-build-isolation -e projects/cupy/src      # EXIT 0
+```
+
+- Gotcha confirmed: a `python setup.py build_ext --inplace -v` run (EXIT 0) cleared `cupy/.data` and did not put `_depends.json` back in the source tree, so the next import bound System32's amdhip64 and failed with `CuPy failed to load hiprtc0712.dll`. The editable `pip install -e` run restores it, and `install.rst` documents `pip install`. Porter note for commit 6fd6150: its source-tree copy of `_depends.json` is not reached by a plain `setup.py build_ext --inplace` here. Not a gate.
+- Smoke (`cupy-work/smoke.py`: elementwise, reduction, RawKernel, CUB, hipRAND, rocSOLVER, hipFFT, hipBLAS, hipSPARSE, rocThrust, nvtx, profiler): OK.
+
+### Test command (per file, one pytest process at a time; driver `agent_space/cupy_val.sh` on the laptop)
+
+```bash
+ulimit -c 0
+export CUPY_TEST_GPU_LIMIT=1 CUPY_GPU_MEMORY_LIMIT=25% CUPY_TEST_FULL_COMBINATION=0 PYTHONUTF8=1
+utils/timeit.sh cupy test -- timeout --signal INT --kill-after 60 7200 python -m pytest -p no:cacheprovider -q -rfEX --timeout 1200 -m "not slow and not multi_gpu" --junitxml=<file>.xml <test file>
+```
+
+`CUPY_TEST_FULL_COMBINATION=0` matches upstream's ROCm CI and the Linux validators. No file approached the 2 h cap (longest: `ndimage_tests/test_filters.py` 55 min, `test_interpolation.py` 55 min, `test_arithmetic.py` 25 min, `test_ndarray_elementwise_op.py` 24 min). The machine stayed responsive: no TDR, no GPU hang, no bugcheck. Counts are junit records (skipped includes xfail as junit reports it).
+
+### Counts per stage
+
+| Stage | Scope | Files | passed | failed | error | skipped |
+|---|---|---|---|---|---|---|
+| (ii) W1-W3 | cuda_tests (texture ignored), all core_tests incl. fusion_tests and test_cub_reduction, every cupy_tests dir of W2 plus testing_tests and the top-level test_*.py, cupyx linalg_tests, jit_tests, scipy linalg/sparse/special, cupyx test_*.py | 229 | 50521 | 96 | 0 | 7990 |
+| (iii) deferred cupyx | distributed, profiler, signal, tools, scipy fft/fftpack/interpolate/ndimage (minus test_interpolation.py)/signal/spatial/stats, get_array_module, example_tests | 71 | 42346 | 158 | 0 | 3070 |
+| (iv) texture, last, one file each | `cuda_tests/test_texture.py` (module-level `pytest.skip('HIP texture support is not yet ready')`, 1 skipped); `ndimage_tests/test_interpolation.py` (its texture-backed class is `skipif is_hip`) | 2 | 5200 | 0 | 0 | 461 |
+| total | | 302 | 98067 | 254 | 0 | 11521 |
+
+Per-test lists: `C:/Users/jdaily/cupy-work/val-stage-ii.txt`, `val-stage-iii.txt`, junit under `cupy-work/val/` (laptop scratch).
+
+### Classification of the 254 failures against the Linux baselines (gfx90a and gfx1201 above)
+
+Identical failures on upstream's Linux base (not ours): **243**
+- stage ii (88): binary TestElementwise 1; TestArrayElementwiseOp pow fastpath 2; cupy fft test_rfft_input_alignment 6; TestSVD 4; TestCumsum 6 and TestCumprod 6; TestRandomState 1; jit TestCubWarpReduce 3; sparse TestSpsolveTriangular 24, LOBPCG 1, sparray 11, int64-index 5; the 13 complex xsf calls (dawsn, digamma x6, erfi, lambertw, sici, shichi, wofz, ufunc_dispatch[wofz]); test_cusparse VersionSkew 4; `cuda_tests/test_runtime::test_pointer_get_memory_type` 1 (also fails on Linux).
+- stage iii (155): scipy fft test_rfft_input_alignment 6, interpolate TestNdBSpline 21 + test_polyint 119 (TestInterp1D 105, TestCubicSpline 14) + test_rgi 1, waveforms TestChirp 8 (6 + 2 hiprtc compile).
+
+Windows/APU runtime behaviour or harness (not the port): 4
+- `cuda_tests/test_memory.py::TestSingleDeviceMemoryPool::test_get_limit`: artefact of `CUPY_GPU_MEMORY_LIMIT=25%` (the test expects 0). Passes with the cap unset (re-verified).
+- `cuda_tests/test_memory.py::test_managed_memory_madvise_basic`: `hipErrorInvalidValue` from the managed-memory advise call on this Windows APU runtime (passes on both Linux hosts).
+- `statistics_tests/test_histogram.py::TestCubHistogram::test_bincount_gh7698`: asserts `cub.device_histogram` is called, but `cupy/_statistics/histogram.py` skips CUB under `runtime.is_hip`. Linux reports the class as a setup/collection error.
+- `signal_tests/test_signaltools.py::TestHilbert2::test_quadrant_values[shape3]`: 1 of 25 elements, 5.5e-16 vs -6.7e-16 against `atol=1e-15` (FFT round-off around exact zero); reproduced in isolation; scipy 1.18.1 here vs 1.17.1 on Linux.
+
+Toolchain defect, not the port: **7 tests** (all double `nan("")`): `jit_tests/test_raw::TestRaw::test_nan`, `special_tests/test_zeta` (test_arange, test_inf_and_nan, test_linspace), `test_zetac::test_inf_and_nan`, `signal_tests/test_waveforms.py::TestSawtooth::test_sawtooth[3.0]` and `TestSquare::test_square[3.0]`. They pass on both Linux hosts. Cause, read in the SDK header `lib/llvm/lib/clang/23/include/__clang_hip_math.h`: `double nan(const char*)` has an `#else` branch for `_WIN32` that does `__val |= 0xFFF << 51;` with an int-typed `0xFFF`, so the shift is undefined and double `nan("")` returns 0.0. A hiprtc probe (`cupy-work/nan_probe.py`) gives `nanf("")` = nan, `__builtin_nan("")` = nan, `nan("")` = 0.0. The fix is `0xFFFULL << 51`. Registered as `rocm-bug-report clang-hip-math-win-nan-double-shift` on this project. CuPy emits `nan("")` in `cupyx/jit/_cuda_types.py:340` and `cupyx/scipy/special/_zeta.py`. A port-side workaround was not made (validation does not modify the fork); because the header declares `nan` itself it would have to be a macro in the `__HIPCC_RTC__ && _MSC_VER` block of `hip_workaround.cuh`, which is the porter's call.
+
+New on the port: none. The two Linux-proven fixes work on Windows hiprtc: `core_tests/test_elementwise.py` 45 passed (TestElementwiseGUFuncLike, commit 4ccded519 plus the MSVC signbit helpers in 694db667f) and the xsf TestPoissonBinomCDF tests pass.
+
+Notable passes (the porter's earlier stops): all of `core_tests` (fusion_tests included; `test_cub_reduction.py` 25 passed), `math_tests/test_arithmetic.py` 8783, `ndimage_tests/test_filters.py` 7980, `test_interpolation.py` 5200 (the Linux intermittent TestZoom case did not appear).
+
+### Windows runtime observation
+
+`core_tests/test_ndarray_copy_and_view.py` printed its summary (54 passed, 7 skipped) and then did not exit for 23 min (process-teardown hang on this APU); the driver's watcher killed it (rc=137), results intact. One occurrence in 302 files. hiprtc costs about 1 s per kernel on a cold cache; the whole run took about 11 h wall including a restart that moved fusion_tests to the end of stage (ii) (its first `test_array.py` attempt was discarded and rerun).
+
+### Other gates
+
+- CUDA compile gate: not run on this host; the Linux nvcc comparison at 24a62ef95 passed and Ruling 4's Windows CUDA comparison stands (f4f78903; later deltas change no CUDA branch).
+- Jargon: `python3 utils/jargon.py --port cupy` clean. Docs: `docs/source/install.rst` has "Building CuPy for ROCm on Windows". Integrity: fork tree clean.
+
+**Verdict: windows-gfx1151 completed at 24a62ef95**, with the one toolchain defect above registered.
