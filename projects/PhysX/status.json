@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "PhysX",
+  "upstream_url": "https://github.com/NVIDIA-Omniverse/PhysX",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T11:13:50Z",
+  "updated_at": "2026-11-06T11:13:51Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
