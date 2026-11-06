@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T03:56:56Z",
-  "updated_at": "2026-11-06T03:56:56Z",
+  "updated_at": "2026-11-06T04:02:16Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "BSD-2-Clause",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "BSD-2-Clause",
+      "evidence": "https://github.com/NVIDIA/numba-cuda/blob/main/LICENSE",
+      "at": "2026-11-06T04:02:14Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "ported-elsewhere",
+    "duplicate_effort": "Numba HIP (numba.hip), ROCm/hip-python packages/numba-hip (moved from archived ROCm/numba-hip)",
+    "viable": false,
+    "summary": "Numba's CUDA JIT target (Python->NVVM/PTX compiler), not a kernel port; AMD's numba.hip in ROCm/hip-python is the ROCm target",
+    "at": "2026-11-06T04:02:16Z"
+  }
 }
