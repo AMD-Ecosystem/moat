@@ -6,12 +6,55 @@
   "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-06T00:55:00Z",
-  "updated_at": "2026-11-06T00:55:01Z",
+  "updated_at": "2026-11-06T01:21:28Z",
   "head_sha": null,
-  "depends_on": [],
+  "depends_on": [
+    "candle"
+  ],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-06T01:21:28Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/EricLBuehler/mistral.rs/blob/52b3c49b2021e77bbd80bcbbbcfae534a89decd0/LICENSE",
+      "at": "2026-11-06T01:21:16Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none upstream; non-authoritative pstreet/mistral.rs+pstreet/candle gfx1151 deployment fork (cudarc-hip); amd/AMD-AGI unchecked (SSO)",
+    "viable": true,
+    "summary": "Rust LLM engine on candle with ~3.5MB own CUDA (quant, paged-attn, cuBLASLt, NCCL); hard dep on a candle ROCm backend; owner says ROCm is on the radar, no upstream PR",
+    "at": "2026-11-06T01:21:23Z"
+  }
 }
