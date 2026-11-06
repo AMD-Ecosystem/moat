@@ -8,7 +8,7 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T03:09:57Z",
-  "updated_at": "2026-11-06T10:57:06Z",
+  "updated_at": "2026-11-06T11:08:53Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -22,5 +22,13 @@
       "evidence": "https://github.com/dmlc/xgboost/blob/master/LICENSE",
       "at": "2026-11-06T10:57:06Z"
     }
-  ]
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "ported-elsewhere",
+    "duplicate_effort": "https://github.com/ROCm/xgboost (AMD-owned, maintained)",
+    "viable": true,
+    "summary": "XGBoost GPU boosting; AMD-owned ROCm/xgboost carries USE_HIP and is released with ROCm 7 (release/3.2.0, 2026-07); upstream has no HIP",
+    "at": "2026-11-06T11:08:53Z"
+  }
 }
