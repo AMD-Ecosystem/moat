@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "candle",
+  "upstream_url": "https://github.com/huggingface/candle",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T00:10:24Z",
+  "updated_at": "2026-11-06T00:10:26Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
