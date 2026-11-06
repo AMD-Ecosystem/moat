@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T00:11:44Z",
-  "updated_at": "2026-11-06T00:11:45Z",
+  "updated_at": "2026-11-06T00:31:13Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/ApolloAuto/apollo/blob/master/LICENSE",
+      "at": "2026-11-06T00:31:10Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream ApolloAuto/apollo#14681 from amd/apollo (merged 2023-01-19)",
+    "viable": true,
+    "summary": "Baidu Apollo AV stack: AMD upstreamed ROCm/HIP + MIGraphX support (PR #14681, 2023; Bazel --config=amd, AMD Docker images); only revalidation of newer modules remains",
+    "at": "2026-11-06T00:31:13Z"
+  }
 }
