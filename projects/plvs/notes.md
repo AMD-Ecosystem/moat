@@ -3249,7 +3249,7 @@ My agent came up with this analysis, but I've read and approved it.
 
 - Ruling 2026-11-05 (jeff): also fix on moat-port, as separate commits, the two upstream undefined-behaviour reads review 4 found: MapLine.cc:688 (3-entry line-scale array indexed with the point pyramid level count, 8) and OptimizableTypes.cpp:214 (auto projectJac binds an Eigen expression over a temporary; also ORB-SLAM3 OptimizableTypes.cpp:150). File upstream issues for both (plvs) and the Eigen one (ORB-SLAM3), drafts for jeff first.
 
-## Port round 2026-11-06 (linux-gfx1100, porter): review 4 findings and jeff's rulings addressed. Head 2522f1e
+## Port round 2026-11-06 (linux-gfx1100, porter): review 4 findings and jeff's rulings addressed. Head b4be814
 
 Requested by jeff: address Review 2026-11-05 (changes-requested at 970cb1f) and his rulings on the line depth arrays (now) and `plvs-upstream-stereo-mapping-crashes` (now: the octree half). Host: Radeon Pro W7800 (gfx1100, wave32), `HIP_VISIBLE_DEVICES=1`, TheRock pip SDK (ROCm 7.16, amdclang 24), Ubuntu 24.04, g++ 13, apt PCL 1.14. Every plvs process ran under `ulimit -c 0` with `OMP_NUM_THREADS=4`, one at a time. Everything was built in this job's directory: OpenCV-with-HIP `AMD-Ecosystem/opencv@50f05b1` + `opencv_contrib@041d552` (the 2026-11-05 gfx1100 cmake line and install-tree shim, unchanged), Pangolin fe57db532 + patch, all third-party libs and plvs with the 2026-11-05 `build_all.sh` options. The two datasets were copied from the 2026-11-05 gfx1100 validation job on this host. For the CPU-only ASan build only, that job's OpenCV install (same commits, same cmake line) was copied in, to start the ASan build while the HIP OpenCV compiled.
 
@@ -3361,3 +3361,69 @@ My agent came up with this analysis, but I've read and approved it.
 >
 > The fisheye line depth arrays have the same problem. `Frame::ComputeStereoFishEyeLineMatches` allocates `mvDepthLineStart` and `mvDepthLineEnd` with `NlinesLeft` entries (next to `mvuRightLineStart/End`, which already get `Nlines`), and allocates none of them when the left image has no lines, but `Tracking::NeedNewKeyFrame` and `Tracking::CreateNewKeyFrame` loop over all `Nlines`. ASan reports heap-buffer-overflow at src/Tracking.cc:4018, :4019 and :4316, just past an `NlinesLeft`-float buffer. If a value read past the end is positive, CreateNewKeyFrame also unprojects a right-image line with `UnprojectStereoLine`, which reads `mvKeyLinesUn[i]` out of bounds as well. Sizing both vectors to `Nlines` with -1, and allocating all four even when `NlinesLeft == 0`, removes the three reports.
 ====
+
+### Same round, continued: jeff's 2026-11-05 ruling on the two UB reads. Head b4be814
+The ruling "also fix on moat-port, as separate commits, the two upstream undefined-behaviour reads review 4 found" (8e7152b9) reached this branch through a sync after I had read notes.md, and I saw it only when recording `ported`. That `ported` was written to the local status.json only (never committed or pushed; origin still showed `porting` with this host's lock), so I discarded the local change with `git checkout projects/plvs/status.json` and continued under the same lock. Commits on top of 2522f1e (fast-forward push 2522f1e..b4be814):
+- 59eb0da `[ROCm] Use the line pyramid depth in MapLine::UpdateNormalAndDepth` (`src/MapLine.cc` +1/-1): `nLevels = pRefKF->mnLineScaleLevels` instead of `mnScaleLevels` (8 point levels vs 3 line levels in TUM-VI.yaml), matching the Frame-based constructor at `:113`. Behaviour change: `mfMinDistance` of lines updated here is now the intended value instead of being divided by heap garbage.
+- b4be814 `[ROCm] Keep the projection Jacobian alive in EdgeSE3ProjectXYZ` (`src/OptimizableTypes.cpp` +1/-1): `const Eigen::Matrix<double,2,3> projectJac = ...` instead of `auto`. Same values when the dead slot was not reused; no other `auto x = -expr` in `src/`/`include/`. ORB-SLAM3 master `src/OptimizableTypes.cpp:150` has the same line (fetched read-only).
+- Both pass `jargon.py --port plvs` and the commit gate (same five old commits only). Tested tree = committed tree: `git diff 2522f1e` before committing had md5 `d1fffe42...`, identical to the two patches applied to the ASan worktree; the HIP build was rebuilt incrementally from that tree (`MapLine.cc.o`, `OptimizableTypes.cpp.o`, relink).
+- One wording imprecision, left as is because the rules forbid amending: b4be814's Test Plan says "the parent of this commit reports 12 stack-use-after-scope reads"; that ASan run was at 2522f1e content, one commit earlier. 59eb0da only touches `MapLine.cc` and cannot change those reads.
+
+ASan at b4be814 content (`asan-fix` worktree + the two patches, same recipe, full sequence): **rc 0, 2821 frames, 98 KFs, 0 ASan reports** (970cb1f: 17, 2522f1e content: 13).
+
+GPU reruns at b4be814 content, same scripts and config, one process at a time, host idle (163 s per run):
+- Stereo TUM-VI room1, libelas on the GPU, dense mapping on: **16 of 16 clean** (2821/2821 frames, rc 0, one map, no SEGV, `-217`, `invalid argument`, `terminate` or `hipError` lines). 83-96 KFs, 261-309 libelas calls, rigid ATE vs `mocap0` **0.0769-0.0781 m**; about 21 million unstable voxels removed per run (runs 1 and 16).
+- Mono fr1_xyz: rc 0, 53 KFs, median tracking 9.4 ms, Sim3 ATE **0.0101 m**.
+- Across the round, 32 consecutive TUM-VI runs on this host with the octree fix (16 at 2522f1e content, 16 at b4be814) and no crash of any kind; at fde33e5 the same config crashed 3 of 33 times in the octree loop and 1 of 33 in MapLine.
+
+Upstream issue drafts for these two (luigifreda/plvs x2, UZ-SLAMLab/ORB_SLAM3 x1), for jeff to file; not filed. No existing issue on either (`gh search issues`, read-only).
+### Draft: upstream issue for luigifreda/plvs, MapLine line-scale read (for jeff to file; not filed)
+
+====
+**Title:** MapLine::UpdateNormalAndDepth reads mvLineScaleFactors with the keypoint pyramid level count
+
+My agent came up with this analysis, but I've read and approved it.
+
+`MapLine::UpdateNormalAndDepth` (src/MapLine.cc:681-688) sets `const int nLevels = pRefKF->mnScaleLevels;` and then divides by `pRefKF->mvLineScaleFactors[nLevels-1]`. `mnScaleLevels` is the keypoint pyramid depth (`ORBextractor.nLevels`, 8 in the example settings), but `mvLineScaleFactors` has `mnLineScaleLevels` entries (`Line.nLevels`, 3 in the example settings), so the read is past the end of the vector and `mfMinDistance` of every map line updated here is scaled by whatever follows it in memory. With AddressSanitizer on Linux, `stereo_tum_vi` with `Examples/Stereo/TUM-VI.yaml` on TUM-VI `dataset-room1_512_16` reports a heap-buffer-overflow at src/MapLine.cc:688. The `MapLine` constructor from a `Frame` (src/MapLine.cc:113) already uses `mnLineScaleLevels` for the same computation, so the fix is one line:
+
+```diff
+-    const int nLevels = pRefKF->mnScaleLevels;
++    const int nLevels = pRefKF->mnLineScaleLevels;
+```
+
+With it the report is gone.
+====
+
+### Draft: upstream issue for luigifreda/plvs, projectJac temporary (for jeff to file; not filed)
+
+====
+**Title:** EdgeSE3ProjectXYZ::linearizeOplus uses a destroyed temporary through `auto`
+
+My agent came up with this analysis, but I've read and approved it.
+
+src/OptimizableTypes.cpp:214 declares `auto projectJac = -pCamera->projectJac(xyz_trans);`. `GeometricCamera::projectJac` returns an `Eigen::Matrix<double,2,3>` by value, and the unary minus makes `auto` deduce an Eigen expression that refers to that temporary, which is destroyed at the end of the statement. The products on the next lines that use `projectJac` then read a dead stack slot. It usually gives the right numbers only because nothing has reused the slot yet. AddressSanitizer reports it as stack-use-after-scope (Linux, `stereo_tum_vi` on TUM-VI room1, every run). The fix is to store a matrix:
+
+```diff
+-        auto projectJac = -pCamera->projectJac(xyz_trans);
++        const Eigen::Matrix<double,2,3> projectJac = -pCamera->projectJac(xyz_trans);
+```
+
+With it the reports are gone. The same line is in ORB-SLAM3 (src/OptimizableTypes.cpp:150), so I am reporting it there as well.
+====
+
+### Draft: upstream issue for UZ-SLAMLab/ORB_SLAM3, projectJac temporary (for jeff to file; not filed)
+
+====
+**Title:** EdgeSE3ProjectXYZ::linearizeOplus uses a destroyed temporary through `auto`
+
+My agent came up with this analysis, but I've read and approved it.
+
+src/OptimizableTypes.cpp:150 declares `auto projectJac = -pCamera->projectJac(xyz_trans);`. `GeometricCamera::projectJac` returns an `Eigen::Matrix<double,2,3>` by value, and the unary minus makes `auto` deduce an Eigen expression that refers to that temporary, which is destroyed at the end of the statement. The two products that use `projectJac` afterwards read a dead stack slot; it usually gives the right numbers only because nothing has reused the slot yet. AddressSanitizer reports it as stack-use-after-scope. The same code in plvs, a derivative of ORB-SLAM3, shows it with `stereo_tum_vi` on TUM-VI room1. The fix is to store a matrix:
+
+```diff
+-        auto projectJac = -pCamera->projectJac(xyz_trans);
++        const Eigen::Matrix<double,2,3> projectJac = -pCamera->projectJac(xyz_trans);
+```
+====
+
+Records at b4be814: CUDA no-regression compile owed at b4be814 (mi355, dispatched separately); `git diff --stat 970cb1f b4be814` touches only `src/Frame.cc`, `src/PointCloudMapOctreePointCloud.cc`, `src/MapLine.cc` and `src/OptimizableTypes.cpp`, all host C++ outside `USE_CUDA`, no `.cu` and no build file. Every arch reads `revalidate` at b4be814; the next stage is review of `970cb1f..b4be814`.
