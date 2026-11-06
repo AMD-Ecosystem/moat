@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "ktransformers",
+  "upstream_url": "https://github.com/kvcache-ai/ktransformers",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T00:15:35Z",
+  "updated_at": "2026-11-06T00:15:38Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
