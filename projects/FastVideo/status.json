@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T01:01:59Z",
-  "updated_at": "2026-11-06T01:02:02Z",
+  "updated_at": "2026-11-06T01:46:33Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/hao-ai-lab/FastVideo/blob/main/LICENSE",
+      "at": "2026-11-06T01:42:14Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream ROCm platform (AMD PR #669) + Triton VSA on ROCm (#1851, #1860 open); stale fork amd-wangfan/FastVideo",
+    "viable": false,
+    "summary": "Video-diffusion framework; upstream already has a ROCm platform (SDPA/FA) and Triton VSA routes, with active MI355X tuning (open PR #1860). Its CUDA kernels are optional Hopper TK/Blackwell/FP4/NCCL fast paths with ROCm fallbacks, and STA was removed upstream (#1124)",
+    "at": "2026-11-06T01:46:33Z"
+  }
 }
