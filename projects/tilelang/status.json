@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "tilelang",
+  "upstream_url": "https://github.com/tile-ai/tilelang",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T01:39:12Z",
+  "updated_at": "2026-11-06T01:39:13Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
