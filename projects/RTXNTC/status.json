@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T04:17:36Z",
-  "updated_at": "2026-11-06T04:17:37Z",
+  "updated_at": "2026-11-06T04:25:17Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "LicenseRef-NvidiaProprietary",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "LicenseRef-NvidiaProprietary",
+      "evidence": "https://github.com/NVIDIA-RTX/RTXNTC/blob/main/LICENSE.txt",
+      "at": "2026-11-06T04:25:15Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "license-blocked",
+    "duplicate_effort": "none",
+    "viable": false,
+    "summary": "NVIDIA neural texture compression SDK; every source file, including the 8 .cu in the RTXNTC-Library submodule, is under the proprietary NVIDIA RTX SDKs LICENSE (derivative works of sample code only, no distribution of modified SDK source); decompression already runs on AMD via DX12/Vulkan",
+    "at": "2026-11-06T04:25:16Z"
+  }
 }
