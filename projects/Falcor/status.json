@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T04:04:19Z",
-  "updated_at": "2026-11-06T04:04:20Z",
+  "updated_at": "2026-11-06T04:15:01Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "BSD-3-Clause",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "BSD-3-Clause",
+      "evidence": "https://github.com/NVIDIAGameWorks/Falcor/blob/master/LICENSE.md",
+      "at": "2026-11-06T04:14:57Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "not-a-target",
+    "duplicate_effort": "none",
+    "viable": false,
+    "summary": "NVIDIA DX12/Vulkan Slang research renderer; CUDA is only an optional interop sample (one 2.8 KB .cu), CudaUtils and an OptiX denoiser pass -- no meaningful HIP port; in-tree licence clean (BSD-3), DLSS/RTXDI/NRD linked under NVIDIA licences",
+    "at": "2026-11-06T04:15:01Z"
+  }
 }
