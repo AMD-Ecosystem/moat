@@ -1538,6 +1538,30 @@ def pending_waivers():
     return sorted(out)
 
 
+def set_license_spdx(name, spdx, evidence):
+    """Record or correct the project's licence as a fact read from the repository.
+
+    Reading a licence is a fact any agent may establish (see license_gate); until now
+    the only way to change it after intake was a hand edit, which AGENTS.md forbids.
+    TornadoVM was recorded with a stale identifier. A change of tier can loosen the
+    licence gate, so the record keeps the previous value and the evidence URL, and a
+    tier 3/4 result still needs a person's clearance exactly as before."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if not evidence or not evidence.startswith("https://"):
+        raise ValueError(f"{name}: --evidence must be a URL to the licence file")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    old = obj.get("license_spdx")
+    obj["license_spdx"] = spdx
+    obj.setdefault("license_spdx_history", []).append(
+        {"from": old, "to": spdx, "evidence": evidence, "at": now_iso()})
+    save_record(name, obj, f"{name}: licence {old} -> {spdx} ({evidence})")
+    return old
+
+
 def record_license_clearance(name, approved_by, note=None):
     """Record a person's decision to allow a tier 3/4 project upstream."""
     obj = load_status(name)
@@ -4494,6 +4518,16 @@ def _gate_blockers(name, obj):
     if not lic_ok:
         blocking.append(("license", lic_why))
 
+    # Surface accounting: work recorded as owed (in scope, not yet done) blocks the
+    # PR until it is covered or a person rules it out of scope.
+    try:
+        sys.path.insert(0, str(REPO_ROOT / "utils"))
+        import surface as _surface
+        for cid, why in _surface.owed(name).items():
+            blocking.append(("surface-owed", f"{cid} is still owed: {(why or '')[:120]}"))
+    except Exception as e:  # never let the accounting helper hide the real gates
+        blocking.append(("surface-owed", f"could not read owed surface items: {e}"))
+
     # Integrity gate: the validated content must be COMMITTED. A fork with
     # uncommitted tracked source/build edits means a validation built against local
     # edits that are NOT in the branch -- the upstream PR would be unbuildable (the
@@ -4730,6 +4764,13 @@ def main(argv=None):
     s.add_argument("name")
     s.add_argument("--by", required=True, help="who approved it (never an agent)")
     s.add_argument("--note", help="scope or conditions of the approval")
+
+    s = sub.add_parser("set-license-spdx",
+                       help="record or correct the project's licence (SPDX id) as read "
+                            "from the repository, with the licence file as evidence")
+    s.add_argument("name")
+    s.add_argument("spdx")
+    s.add_argument("--evidence", required=True, help="URL of the licence file")
 
     s = sub.add_parser("license-gate", help="may this port be offered upstream on licence grounds?")
     s.add_argument("name")
@@ -5070,6 +5111,10 @@ def main(argv=None):
     elif args.cmd == "record-license-clearance":
         c = record_license_clearance(args.name, args.by, args.note)
         print(f"{args.name}: tier {c['tier']} cleared upstream by {c['approved_by']}")
+    elif args.cmd == "set-license-spdx":
+        old = set_license_spdx(args.name, args.spdx, args.evidence)
+        ok, why = license_gate(args.name)
+        print(f"{args.name}: licence {old} -> {args.spdx}; license-ok={ok} ({why})")
     elif args.cmd == "license-gate":
         ok, why = license_gate(args.name)
         print(f"{args.name}: license-ok={ok} ({why})")
