@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-06T01:39:12Z",
-  "updated_at": "2026-11-06T01:39:13Z",
+  "updated_at": "2026-11-06T01:54:28Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/tile-ai/tilelang/blob/main/LICENSE",
+      "at": "2026-11-06T01:53:29Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream native HIP backend; EmbeddedLLM/tilelang is 0 ahead/643 behind (stale mirror); open upstream PR #3425 adds Windows ROCm",
+    "viable": false,
+    "summary": "TileLang tile DSL/compiler: upstream already ships a first-class HIP backend (MFMA/WMMA, gfx942/gfx950/gfx11/gfx12, MI300X CI, Linux wheels); Windows ROCm is in open upstream PR #3425",
+    "at": "2026-11-06T01:54:28Z"
+  }
 }
