@@ -1384,3 +1384,16 @@ Counts match the Linux gfx90a and gfx1100 runs at ea1185e exactly. CUDA gate: re
 Verdict: PASS at ea1185e. Transitioning windows-gfx1151 to completed.
 
 - 2026-11-05 (jeff): deferral aihwkit-input-range-grad-drift closed as fixed upstream by #827. Correction to its summary: the failure was not ROCm toolchain drift; torch 2.14 zeroes the clamp gradient at the boundary, which broke upstream's Python code on any backend. Reverting only dba3bc3 reproduces it; with it, test_input_range_grad passes on gfx90a, gfx1100 and gfx1151 at ea1185e.
+
+## Sync round, third merge 2026-11-09 (porter, linux-gfx90a, moat-sync-60ffe9e -> f708ce6)
+
+Why: jeff approved review PR AMD-Ecosystem/aihwkit#1 at ea1185e, but `upstream.py --merge-fix` held it because upstream master advanced past 14d4783 by one commit, 350ff34 "docs(developer_install): align setup guide with current build system (#836)" (docs/source/advanced_install.rst + developer_install.rst only).
+
+Merge (no rebase, no force): `git merge --no-ff upstream/master` on moat-sync-60ffe9e at ea1185e. advanced_install.rst merged clean (the port never touched it). One conflict in developer_install.rst, two hunks:
+- GPU arch paragraph: took upstream's new "and then pass -DRPU_CUDA_ARCHITECTURES=$CUDA_ARCH ... CUDA 13 / Blackwell" text, then kept the port's AMD gfx-target paragraph (rocminfo one-liner) after it.
+- Compilation flags table: took upstream's wider table (USE_CUDA default `$USE_CUDA env (OFF if unset)`, new options, corrected defaults) and added a `USE_HIP` row in the same form, because CMakeLists.txt line 12 reads `option(USE_HIP ... $ENV{USE_HIP})`. Added the matching `USE_HIP` row to upstream's new "Environment variables" table.
+The port's "GPU with MKL (AMD, ROCm/HIP)" build line and the "For AMD GPUs, build with ROCm/HIP support instead" block auto-merged and are unchanged. `git diff upstream/master -- docs/` shows only the port's ROCm/HIP text.
+
+Checks: plain docutils parse of developer_install.rst -> no table/structure errors (only Sphinx `:ref:` roles unknown to bare docutils). `python3 utils/jargon.py --port aihwkit` -> clean. `audit-commits aihwkit` flags only upstream's own 350ff34 (no [ROCm] prefix, 75-char title, no disclosure; it is upstream's commit and arrives by merge) and the already-published 70577b5 (no Test Plan); nothing on f708ce6.
+
+Pushed f708ce6 (fast-forward ea1185e..f708ce6). `python3 utils/moatlib.py classify aihwkit ea1185e f708ce6` -> `class=doc-only arch_independent=True inert=True`. `advance-head aihwkit f708ce6` carried linux-gfx90a, linux-gfx1100 and windows-gfx1151 forward by source-class (doc-only) with no GPU rerun; no rebuild done because no source or build file changed. windows-gfx1201/gfx1101 stay at 70577b5 as before this round. jeff needs to re-approve the round on #1 at f708ce6; his ea1185e approval does not cover the new commit.
