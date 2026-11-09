@@ -700,7 +700,7 @@ ILP_NEP: under HIP, the host call `max(max_nep_rc, parambs[i].rc_radial)` (doubl
 
 HIP build: `utilities/nep_model_file.cu` reached `nep_utilities.cuh` without a runtime header (nvcc pre-includes one, hipcc does not), so the header now includes `gpu_macro.cuh`. The NEP-spin kernels pass 32-bit masks to `__syncwarp` and `__shfl_*_sync`; HIP requires 64-bit masks, and on a 64-lane wavefront the second 32-lane tile sits in lanes 32-63. A `gpuLaneMask()` macro in `gpu_macro.cuh`, the identity on CUDA, moves the mask to the right lanes, and one warp kernel now passes its 32-lane width to its shuffles explicitly. `makefile.hip` also builds `gpumd_replica` like the default makefile.
 
-The CUDA build sees only the extra include, the identity macro, an explicit width equal to the default, and a comment in `main_replica/force/ewald.cu` explaining why its uploads from local host vectors need no stream synchronization.
+Besides the `fmax` line, the CUDA build sees only the extra include, the identity macro, an explicit width equal to the default, and a comment in `main_replica/force/ewald.cu` explaining why its uploads from local host vectors need no stream synchronization.
 
 Testing on an AMD Instinct MI300X (gfx942), from the repository root:
 
@@ -714,7 +714,7 @@ python3 tests_regression/run_regression.py --repo-root "$PWD" --suite full --bas
 
 gpumd, nep, gpumd_replica and tb build. The NEP-spin tests pass 110 of 114, including the FP64 reference checks; in two full runs of the regression suite, 250 and 248 of the 256 cases pass, and the relations pass 25 of 25 and 21 of 21 (4 skipped because a member case failed). The remaining failures are of two kinds. Cases that depend on the default `rand()` stream (the four `test_corrector_preserves_force_modifiers` cases, `replicate_velocity_unseeded`, `graphene_hac`, `graphene_nemd_shc`, `graphene_hnemd_shc`, `silicon_liquid_transport`) differ between runs on some ROCm builds, because the runtime reseeds the C library's `rand()` when it prepares its internal kernels on the first launch; they pass when that reseed is suppressed. The others are float-atomic summation noise at or just above absolute bounds that the regression README asks to be checked by self-comparison on the target GPU: `qnep_pppm_future_bec` (BEC up to 1.2e-5 against 1e-5, thermo 1.0e-7 to 1.1e-7 against 1e-7, or one unit in the last printed digit of a value printed to six decimals) fails in most runs, and `pppm_round_5_7` (1.03e-7 against 1e-7) and `observer_average_then_observe_control` (one value differing in the last bit) fail occasionally.
 
-(Before presenting: update the counts after every gate's revalidation at the PR head, add the mi355 nvcc result for 51018103, and apply jeff's ruling on the two rand() deferrals.)
+(Before presenting: update the counts after every gate's revalidation at the PR head, redo the mi355 nvcc compile if the head moves past 374da0df (PASS there, recorded), and apply jeff's ruling on the two rand() deferrals.)
 
 ## CUDA compile check (nvcc 12.8) at 51018103
 
@@ -915,3 +915,34 @@ Every command in the draft body was run from the repository root, with gfx1100 a
 
 ### Recommendation
 **Request Changes, skill only (item 1).** The fork at 374da0df needs no change: the tree differs from f3622149 by the comment alone, the comment is accurate for the 1D uploads it describes, and the PR body is accurate and passes both gates. Item 1 is a follow-up commit on `port/GPUMD` correcting `references/fault-classes.md` and `SKILL.md:83` for the measured `hipMemcpy2DAsync` behaviour. No fork commit means no new nvcc or validation round. The next review only needs to check the skill delta.
+
+## Skill fix 2026-11-09 (linux-gfx942, porter) -- review item 1 (pageable 2D/3D async copies), head unchanged at 374da0df
+
+jeff asked for this skill-only run. Host: MI300X (gfx942), HIP 7.16.26385 (`hipRuntimeGetVersion` 71626385), AMD clang 24.0.0git (TheRock pip SDK), `HIP_VISIBLE_DEVICES=0` (dispatcher-pinned), probe under `ulimit -c 0`. `orient.sh` completed normally and named porter; `set-state GPUMD linux-gfx942 porting --agent porter` took the lock. No fork change: `moat-port` stays at 374da0df.
+
+### Probe (gfx942)
+The reviewer's probe above, extended: mode 2 issues `hipMemcpy3DAsync` (srcPtr `make_hipPitchedPtr(src,w,w,h/2)`, dstPtr pitch `dpitch`, extent `(w, h/2, 2)`); `ovw` 0 = untouched, 1 = `memset(src,0xEE)` then `delete` right after the call, 2 = `memset` only (no free, to separate "read late" from heap reuse); every case at padded (`dpitch` rounded to 256) and tight (`dpitch == w`) pitch; the histogram is reduced to counts of 0x5a, 0xEE and other. `hipcc --offload-arch=gfx942 -O2 q.hip -o q`, run twice: byte counts identical between runs, timings within 0.1 ms (the first call of a run pays about 16-24 ms of init).
+
+| copy | bytes | spin | call | sync | device sees (ovw=2 / ovw=1) |
+|---|---|---|---|---|---|
+| 1D `hipMemcpyAsync` | 234, 65536 | no / yes | <= 0.02 ms | 0.0 / 501 ms | 0x5a, all bytes (staged) |
+| 1D `hipMemcpyAsync` | 524288 | no | 0.03-0.05 ms | 0.0 ms | 0x5a, all bytes |
+| 1D `hipMemcpyAsync` | 524288 | yes | 501.2 ms (blocked) | 0.0 ms | 0x5a, all bytes |
+| `hipMemcpy2DAsync` | 234 | no / yes | <= 0.02 ms | 0.1 / 501 ms | 0xEE x234 / 0xEE x218 + 16 heap bytes |
+| `hipMemcpy2DAsync` | 65536 | no / yes | <= 0.03 ms | 0.0 / 501 ms | 0xEE x65536 / 0xEE x65504 + 32 heap bytes |
+| `hipMemcpy2DAsync` | 524288 | no / yes | <= 0.02 ms | 0.0 / 501 ms | 0xEE, all bytes (both) |
+| `hipMemcpy3DAsync` | 234, 65536, 524288 | no / yes | <= 0.02 ms | as 2D | same as 2D at each size |
+
+Padded and tight pitch give the same result. Without the overwrite (ovw=0) every case copies 0x5a correctly. So on gfx942, as the reviewer found on gfx1100: 1D is staged up to 64 KiB and blocks above it (on an idle stream a large 1D copy just completes inside the call); 2D and 3D return at once at every size, idle stream included, and read the pageable source later. 3D on gfx1100 is not measured.
+
+### Skill (commit 38081568 on `port/GPUMD`)
+- `references/fault-classes.md`: heading now "a pageable 1D source is safe, a pageable 2D or 3D source is not on HIP"; the safe rule is limited to 1D `hipMemcpyAsync`; the header note is quoted with "only the 1D half holds"; the measurements (both arches, HIP 7.16.26385, sizes, pitches, spin) are listed; a pageable 2D/3D source must stay alive and unchanged until the stream (or an event after the copy) is synchronized, while CUDA documents staging; CV-CUDA is now the explained example; D2H, symbol and array copies are named unmeasured; the GPUMD cost paragraph, the pinned-source and cross-stream hazards and the `wall_clock64()` recipe (now "for 2D or 3D, `hipMemcpy2DAsync` or `hipMemcpy3DAsync` the same way", "staged, blocked or deferred") are kept. The entry cites no TIGRE case, so there was none to keep.
+- `SKILL.md:83`: CUDA documents staging every H2D variant; HIP stages only 1D; a pageable 2D/3D source must stay alive and unchanged until the stream is synchronized; pinned-source and cross-stream hazards on both platforms.
+- `grep -rn -i 'pageable' .claude/skills/cuda-to-rocm`: hits only in the two rewritten passages; no other statement in the skill claims 2D/3D staging (`grep -rn 'Memcpy2D\|Memcpy3D\|before return'` likewise).
+
+### Draft follow-up PR body nits
+- "The CUDA build sees only ..." is now "Besides the `fmax` line, the CUDA build sees only ...".
+- The internal reminder now says to redo the mi355 nvcc compile if the head moves past 374da0df (PASS there, recorded), instead of "add the mi355 nvcc result for 51018103".
+- `prose.py` on the body: clean; `jargon.py -`: clean.
+
+Stage `ported` with head unchanged at 374da0df; the next review only needs the skill delta (38081568) and the two body edits.
