@@ -3039,3 +3039,66 @@ cd <tree>/unitTests && MPLBACKEND=Agg PYTHONPATH=../src $FLEET_VENV/bin/python {
 - Documentation: the ROCm build is in README "Editable installs" / "Building wheels" (`-Ccmake.define.LEAP_GPU=AMD`), upstream's own text.
 - Integrity: `git -C projects/LEAP/src status --porcelain` empty.
 - Telemetry: two `test` records with exit 2 at 21:02:40Z are my first invocation (`timeit.sh` changes to the repository root, so the relative script path was not found), not test failures.
+## Validation 2026-11-09 (validator, linux-gfx1100, revalidate, moat-fix-216 @ b8595bb)
+
+Verdict: **completed** at b8595bb15253f44ebfd6c9cf549259137ec59ced (`git fetch origin moat-fix-216` gives that sha = `head_sha`). jeff asked for this run. On gfx1100 (image support, texture path live by default), b8595bb passes `gpu_vs_cpu_validate.py` 14/14 in the default and `LEAP_USE_NOTEX=ON` builds, and its 12 projector lines equal the gfx90a review at b8595bb line for line. The new loadTexture checks fail at 8c76c08 only in the NOTEX build, as on gfx90a. Upstream's `unit_tests.py` and `memory_leak_tests.py` give rc=0 on both builds. 0 bytes leaked. Every difference from the porter's or reviewer's numbers is explained below; none is a port defect.
+
+Host: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32). HIP_VISIBLE_DEVICES=0 (pinned by the dispatcher; torch sees 1 device; `amd-smi process` showed no process on any GPU at start). torch 2.16.0a0+git6c3af02 (HIP 7.16.26385), TheRock SDK 10.1.0 (`_rocm_sdk_devel`, clang) in /opt/python-3.11-venv, CMake 3.31.6, numpy 1.26.4. Every GPU run was under `ulimit -c 0`. `orient.sh` finished in seconds with no hang. Fresh fork clone at projects/LEAP/src, detached at b8595bb, never built, `protect-fork LEAP`; local branches `main`, `moat-fix-216` created from origin for jargon. Scripts `dump_outputs.py`, `compare_outputs.py`, `dump_point.py`, `leak_check.py`, `leak_check2.py`, `bilat_frac.py`, `cc_probe.py` and `att_probe.py` were extracted unchanged from this file. `pt_nodict.py` is `dump_point.py` without its two `dictionary` lines.
+
+### Builds (all rc=0, 0 `error:` lines, offload-arch gfx1100 only)
+```
+# agent_space/bld.sh <sha> <name> [args] = git archive of the fork clone, then
+#   cmake -S . -B build -G Ninja -DLEAP_GPU=AMD -DCMAKE_HIP_COMPILER=<sdk>/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=<sdk> -DCMAKE_BUILD_TYPE=Release [args]; cmake --build build -j 16
+bash utils/timeit.sh LEAP compile -- agent_space/bld.sh b8595bb new                          # warning lines 1534, ~27 s
+bash utils/timeit.sh LEAP compile -- agent_space/bld.sh b8595bb newnotex -DLEAP_USE_NOTEX=ON # 1502
+agent_space/bld.sh 8c76c08 tip ; agent_space/bld.sh 8c76c08 tipnotex -DLEAP_USE_NOTEX=ON     # 1532 / 1500
+(cd <git archive of 00fae7e> && env -u PYTORCH_ROCM_ARCH MAX_JOBS=16 python setup_AMD.py build_ext --inplace)   # old; 20 hipcc, all gfx1100
+# documented route, job venv only (no torch there; LEAP does not need it):
+CMAKE_BUILD_PARALLEL_LEVEL=16 $FLEET_VENV/bin/python -m pip install -e . -Ccmake.define.LEAP_GPU=AMD -Ccmake.define.CMAKE_HIP_COMPILER=<sdk>/llvm/bin/clang++ -Ccmake.define.CMAKE_PREFIX_PATH=<sdk> -Cbuild-dir=build/{wheel_tag}   # rc=0, 17 s
+```
+The warning counts equal the gfx942 and gfx90a records. The documented pip route works here: `Successfully installed leapct-2.0+untagged`, CMake detected `CMAKE_HIP_ARCHITECTURES=gfx1100;gfx1100;gfx1100;gfx1100`, and `import leapctype` from an unrelated directory without PYTHONPATH loads `<venv>/site-packages/leapctype/libleapct.so`. A parallel-beam projection then gives sum(g)=377330, the CMake build's value. ISA: of the 21 gfx1100 code objects in `libleapct.so`, the default build has 6223 `image_*` instructions (gfx90a: 6225, different target) and NOTEX has 0.
+
+### Tests
+```
+AMD_LOG_LEVEL=3 bash utils/timeit.sh LEAP test -- bash -c "cd agent_space/cmp/<b> && python unitTests/gpu_vs_cpu_validate.py"   # new, newnotex
+cp new/unitTests/gpu_vs_cpu_validate.py <tip|tipnotex>/unitTests/head_validate.py      # 8c76c08 trees run the b8595bb test (negative control) and their own
+python cc_probe.py <b>/src ; python att_probe.py <b>/src mapfwd,mapback,cylback,cylfwd   # old, new, newnotex, tipnotex
+python dump_outputs.py <b>/src /dev/shm/leapval/<run>.npz 256 ; python compare_outputs.py A.npz B.npz
+python pt_nodict.py <b>/src runs/pt_<b>.npz ; timeout 180 python dump_point.py <b>/src runs/ptfull_<b>.npz
+python bilat_frac.py <b>/src ; python leak_check.py <b>/src ; python leak_check2.py <b>/src
+bash utils/timeit.sh LEAP test -- bash -c "cd <b>/unitTests && MPLBACKEND=Agg PYTHONPATH=../src $FLEET_VENV/bin/python unit_tests.py"          # matplotlib 3.11.2 pip-installed into the job venv, numpy pinned 1.26.4
+bash utils/timeit.sh LEAP test -- bash -c "cd <b>/unitTests && MPLBACKEND=Agg PYTHONPATH=../src $FLEET_VENV/bin/python memory_leak_tests.py"
+```
+- **gpu_vs_cpu_validate**, b8595bb default and NOTEX: rc=0, **14/14, OVERALL: PASS**, 0 `Error: GPU`. Default: fbp_interior 0.9993-1.0000; adjoint parallel 8.28e-07/7.65e-07, fan 3.82e-07/4.45e-07, coneparallel 1.24e-03/1.23e-06, cone-flat 2.84e-06/1.52e-04, cone-curved 1.79e-03/5.16e-07, modular 2.87e-03/2.86e-03. Consistency cost(-3, 0, 3)=3.115, 0.06119, 3.004 PASS; attenuated adjoint 3.41e-05 PASS. NOTEX: the same lines except fan VD 5.09e-07 and coneparallel SF 1.29e-06. Both builds equal the gfx90a b8595bb review. `hsa_amd_pointer_info() failed` lines: 68 default, 0 NOTEX. 8c76c08 with its own (12-case) test gives 60, so the two new checks add 8; the 8c76c08 record has 60.
+- Negative control, 8c76c08: own test 12/12 PASS in both builds, lines identical to b8595bb. With the b8595bb test: default PASS (texture path always copied); NOTEX rc=1, consistency 0, 0, 0 FAIL, attenuated 4.97e+07 FAIL, 21 memory-fault/illegal-address lines. This is the gfx90a table exactly. 00fae7e with its own test: 12/12 PASS (modular SF 0.9995/3.37e-03, as recorded).
+- **cc_probe** (shifts 0, 1, 3, -3): b8595bb default 703.3714, 675.9775, 660.8594, 862.7307; NOTEX 703.3714, 675.9774, 660.8594, 862.7307; 00fae7e 703.3714, 675.9775, 660.8596, 862.7307 (rel 2e-07 at shift 3); 8c76c08 NOTEX 0, 0, 0, 0. **att_probe**: b8595bb both builds and 00fae7e give 1926872 / 6.222942e+06, 1556944 / 1.447452e+09, 1293072 / 5.394915e+08, 1906833 / 2.497943e+06 (= gfx90a/gfx942). 8c76c08 NOTEX gives `hipErrorIllegalAddress`, then cylfwd 0 nonzero (dead context). 00fae7e prints a pre-existing `Unknown device type` debug line (its cuda_utils.cu:594).
+- **dump_outputs** (256 cols; runs in order old_r1, new_r1, newnotex_r1, tip_r1, tipnotex_r1, new_r2, then old_r2, new_r3; ~40-46 s each):
+  - 8c76c08 vs b8595bb: 36/36 bit-identical default, 36/36 NOTEX. new_r1 vs new_r2: ALL BIT-IDENTICAL.
+  - b8595bb texture vs NOTEX: 0/36, every array rel <= 4.2e-07 (gfx90a: max 5.5e-06 modular_VD_fbp, the rest <= 2.8e-06).
+  - **00fae7e vs b8595bb default: 28/36** (both rounds). Six of the eight differing arrays match the gfx90a list and magnitudes: cone-flat VD_fwd 2.95e-02, cone-curved VD_fwd 2.33e-01, cone-flat SF_back/fbp 1.58e-03/1.50e-02, cone-flat VD_back/fbp 6.2e-07/4.0e-05. **The other two differ by arch:** here modular VD_back/fbp are bit-identical, and fan VD_fwd/SF_fwd differ at rounding level (rel 2.6e-07, 486k of 24.5M elements). Explanation: this is the gfx90a porter's mechanism, the run-time `tex.filter` branch in `leap_hip_tex3D` changing floating-point contraction. Here it lands in a different kernel. Test: an agent_space copy of b8595bb with that branch removed from `leap_hip_tex3D` (always the linear blend) gives fan VD/SF_fwd bit-identical to 00fae7e. It contains upstream's `floor`->`floorf`, `fabs`->`fabsf` and `g_rowStride` edits to `fanBeamProjectorKernel_SF`, so those change nothing. In that copy the rounding-level difference moves to cone-flat SF_fwd instead (rel 3.1e-07): codegen-level and target-specific, not a defect.
+  - 00fae7e vs b8595bb NOTEX: 0/36. The same 6 upstream-change arrays, and rel <= 4.2e-07 elsewhere.
+  - Peak dump footprint: six npz (17.1 GB) were briefly in /dev/shm together, over the 10 GB cap jeff set, for about 3 minutes before comparison and deletion. After that, never more than 3 (8.6 GB). All npz files are deleted; /dev/shm/leapval is removed.
+- **Timings** (median of 5, ms project / backproject, device-resident; back-to-back old_r2 -> new_r3): parallel VD 125.9/62.5 -> 131.4/66.1, parallel SF 126.4/63.1 -> 131.7/67.2, fan VD 127.2/57.8 -> 130.9/60.9, fan SF 127.8/110.6 -> 129.4/117.6, coneparallel VD 273.2/67.9 -> 293.4/70.5, coneparallel SF 274.0/121.1 -> 292.8/122.8, cone-flat VD 256.6/64.1 -> 201.8/65.1, cone-flat SF 257.6/340.9 -> 332.3/213.1, cone-curved VD 278.9/66.5 -> 202.5/68.6, cone-curved SF 278.9/209.2 -> 294.6/215.0, modular VD 255.2/63.9 -> 273.1/65.7, modular SF 255.3/224.2 -> 272.5/223.7.
+  - Upstream kernel changes: Joseph cone VD forward 0.73-0.79x, tilted cone-flat SF 1.29x project / 0.63x back; gfx90a saw the same directions.
+  - Elsewhere b8595bb/00fae7e is 1.01-1.07x project and 1.00-1.06x back. That is up to ~3 points above gfx90a's 1-4% (VD back +3-6% there). The r1 pair showed 1.06-1.11x, but 00fae7e itself rose 6% between r1 and r2 (session drift), so only the back-to-back figures count. tip vs new is 0.98-1.00, and run-to-run 1.00-1.02. Performance observation only, not a gate.
+  - NOTEX/texture on this card: project 1.43-1.52x (Joseph cone VD 0.80x), back 0.85-1.22x (gfx90a: 1.71-2.83x / 0.75-1.16x).
+- **dump_point** (pt_nodict, 4-5 s each): ok/FAILED pattern identical in every build (14 ok; `upsample` fails in the script, ctypes dtype, pre-existing).
+  - 8c76c08 vs b8595bb default: 19/19 bit-identical.
+  - 00fae7e vs b8595bb default: 16/19. downsample/downsample3 differ at 3.3e-07/4.2e-07 (clang-compiled resample_cpu.cpp, as recorded), eSF_cone back at 3.0e-03 (upstream rewrite). On the texture path the att arrays are bit-identical to 00fae7e.
+  - 00fae7e vs b8595bb NOTEX: 11/19. att_map fwd/back and att_cyl back differ at 2.3e-07 to 2.5e-07, plus downsample/downsample3 and eSF back (parallel/fan 2.8e-07, cone 3.0e-03): the gfx90a list.
+  - 8c76c08 NOTEX vs b8595bb NOTEX: 9/19. 8c76c08 NOTEX gets `hipErrorIllegalAddress` in att_map back, and the later filters (bilateral, priorbilateral, median, median5, lowsignal, median2d, lowsignal2d) return their input (rel 0.14-0.85), confirming the porter's correction on this card.
+  - Full `dump_point.py` with `dictionary`, timeout 180: rc=0 in about 15 s for 00fae7e, b8595bb and b8595bb NOTEX. `dictionary ok {'out': (1, 0)}` is followed by an asynchronous `hipSetDevice Error: an illegal memory access`, and dictionary_out is bit-identical across builds. This is the pre-existing dictionary fault (gfx90a/gfx942: memory fault in the OMP kernel). The 63d2724 record on this platform saw a hang instead; today, at the same code (00fae7e), it faults rather than hangs. It is identical across builds and not in the gate.
+- **bilat_frac**, 00fae7e, b8595bb and b8595bb NOTEX identical: 5187/5187 changed in every case. max|gpu-ref| (2.5, 0.5) 2.604e-06, (2.0, 0.5) 1.981e-06, (2.5, 5.0) 3.548e-06, (2.0, 5.0) 2.251e-06.
+  - The gfx942/gfx90a figures 2.727e-06 / 2.489e-06 for (2.5, 0.5) / (2.0, 5.0) are a target-level float difference: 00fae7e gives the same values as b8595bb on each card.
+  - The 63d2724 gfx1100 table (3.55e-06 ...) cannot be compared. It has rows the recorded script never prints ((2.0, 1.0), and (2.5,0.5) vs (2.0,0.5)), so that run used a modified copy; the script recorded here is unchanged since 2026-11-05.
+- **leak_check**: delta 0 bytes over 200 iterations, sum(g)=377330 (00fae7e, b8595bb, b8595bb NOTEX). **leak_check2**: 0 bytes on every loop for all three builds; results 377330 / 1.46752e+07 / 0.0297462 (NOTEX 0.0297461), = gfx90a.
+- **unit_tests.py**: rc=0 in 21 s / 24 s; projector error 0.000972% / 0.0137%, FBP error 0.915% / 1.027%. NOTEX differs only in the 8th digit of the projector errors. **memory_leak_tests.py**: rc=0 in 451 s (default) / 491 s (NOTEX), with no error, fault or traceback line.
+
+### Other gates
+- Jargon: `python3 utils/jargon.py --port LEAP` -> `jargon: clean`.
+- Documentation: README "Editable installs" documents `python -m pip install -e . -Ccmake.define.LEAP_GPU=AMD` and `docs/hipify-strategy.md`, and that route builds and runs here (above). b8595bb changes no build file or doc.
+- CUDA gate: not repeated, since there is no nvcc here. The "CUDA compile check (nvcc 12.8) at b8595bb" entry records rc=0 by both documented routes.
+- Integrity: `git -C projects/LEAP/src status --porcelain` is empty, and HEAD is b8595bb15253f44ebfd6c9cf549259137ec59ced = origin/moat-fix-216. The always-linear experiment was an agent_space copy and never touched the clone.
+- No fork push, no `gh` write, nothing installed into the shared Python (matplotlib and the editable leapct went into the job venv).
+
+validated_sha: b8595bb15253f44ebfd6c9cf549259137ec59ced
