@@ -1397,3 +1397,13 @@ The port's "GPU with MKL (AMD, ROCm/HIP)" build line and the "For AMD GPUs, buil
 Checks: plain docutils parse of developer_install.rst -> no table/structure errors (only Sphinx `:ref:` roles unknown to bare docutils). `python3 utils/jargon.py --port aihwkit` -> clean. `audit-commits aihwkit` flags only upstream's own 350ff34 (no [ROCm] prefix, 75-char title, no disclosure; it is upstream's commit and arrives by merge) and the already-published 70577b5 (no Test Plan); nothing on f708ce6.
 
 Pushed f708ce6 (fast-forward ea1185e..f708ce6). `python3 utils/moatlib.py classify aihwkit ea1185e f708ce6` -> `class=doc-only arch_independent=True inert=True`. `advance-head aihwkit f708ce6` carried linux-gfx90a, linux-gfx1100 and windows-gfx1151 forward by source-class (doc-only) with no GPU rerun; no rebuild done because no source or build file changed. windows-gfx1201/gfx1101 stay at 70577b5 as before this round. jeff needs to re-approve the round on #1 at f708ce6; his ea1185e approval does not cover the new commit.
+
+## Review 2026-11-09 (reviewer, linux-gfx942, sync round moat-sync-60ffe9e, ea1185e..f708ce6)
+
+Scope: `git diff ea1185e f708ce6` (merge of upstream 350ff34, #836). Fresh fork clone; branch moat-sync-60ffe9e at f708ce6, parents ea1185e + 350ff34. `--stat`: docs/source/advanced_install.rst and docs/source/developer_install.rst only; no source, build or test file changed. `moatlib.py classify aihwkit ea1185e f708ce6` -> doc-only, arch_independent, inert.
+
+Resolution check: `git diff upstream/master f708ce6 -- docs` (upstream/master = 350ff34) shows only the port's text: the AMD MKL build line, the gfx-target/rocminfo paragraph (now after upstream's new CUDA 13 / Blackwell note), the "For AMD GPUs, build with ROCm/HIP support instead" block, and the new USE_HIP rows in the flags and environment-variable tables. Compared against `git diff 350ff34^ ea1185e -- docs`, every port hunk survives word for word; advanced_install.rst is identical to upstream. The new rows are correct: CMakeLists.txt:11-12 reads both USE_CUDA and USE_HIP defaults from `$ENV{...}` (OFF when unset). docutils 0.x parse of both files (`publish_doctree`, report_level 2): no table or structure errors, only the Sphinx `:ref:` roles that bare docutils does not know. No non-ASCII added.
+
+Commit f708ce6: `[ROCm]` title (57 chars), rationale, AI disclosure, fenced Test Plan, no Co-Authored-By trailer. `python3 utils/jargon.py --port aihwkit` -> clean. Fork tree unmodified.
+
+No findings. Verdict: review-passed. The doc-only carry-forward of the gfx90a/gfx1100/gfx1151 validations stands.
