@@ -802,3 +802,58 @@ I compared outcomes per test id against the 24a62ef95 junit XMLs, filtered to th
 - Docs: unchanged since 24a62ef95 (install.rst, checked by the reviews).
 - Integrity: `git -C projects/cupy/src status --porcelain --untracked-files=no` is empty, and HEAD is 225236c47.
 - CUDA gate: not run (no CUDA toolkit on this host). The delta has no compile or link path, so the nvcc 12.8 compile check at 24a62ef95 (linux-gfx950, above) still applies, as both reviews of this delta concluded.
+## Validation 2026-11-09 (linux-gfx90a, validator): revalidate at 225236c47 against 24a62ef95
+
+Port: ROCm/cupy `moat-port` at **225236c47**, compared with this platform's 24a62ef95 record (Validation 2026-11-06 above). The delta 24a62ef95..225236c47 is `install/cupy_builder/_command.py` only (`classify`: mixed), and it adds work only under win32 with HIP. Host: gfx90a (MI210-class, wave64), TheRock pip ROCm (rocm-sdk 10.1.0, HIP 71626385, hipconfig 7.16.26385), Python 3.11.17, setuptools 79.0.1, Cython 3.2.9, numpy 2.4.6, scipy 1.17.1, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout 2.4.0, hypothesis 6.56.4 (6.54.6 at 24a62ef95), optuna 5.0.0, all in the job venv. One GPU (`HIP_VISIBLE_DEVICES` pinned by the dispatcher).
+
+### Build (both shas, same script, in parallel; 24a62ef95 in worktree `agent_space/wt-24a62ef95`, same submodules cccl 4ee3a7b, dlpack cd0d5e4, jitify 1a0ca0e, xsf 2e1e697)
+
+```bash
+export ROCM_HOME=$JOB/venv-base-links/_rocm_sdk_devel
+export PATH="$FLEET_VENV/bin:$ROCM_HOME/bin:$PATH" LD_LIBRARY_PATH="$ROCM_HOME/lib"
+export CUPY_INSTALL_USE_HIP=1 HCC_AMDGPU_TARGET=gfx90a CUPY_NUM_BUILD_JOBS=32
+utils/timeit.sh cupy compile -- bash -c "cd projects/cupy/src && python setup.py build_ext --inplace -v"
+(cd agent_space/wt-24a62ef95 && python setup.py build_ext --inplace -v)
+```
+
+- Both EXIT 0, with the same configure summary (cuda 71626385, cub 400700, nccl 23007, random, thrust and dlpack Yes).
+- All 131 command lines are **byte-identical** after the tree path is normalised: 64 g++ compiles, 64 links and 3 hipcc device compiles (`Command: [...hipcc...]` lines). `CUPY_CACHE_KEY` is bad50f9b in both builds.
+- Both builds have 472 warning lines, identical after normalisation, and the same 64 `.so` files. The `nm -D --defined-only` output of every `.so` is identical (6930 lines, `__hip_cuid_*` excluded). No `cupy/.data` is written on Linux.
+- `utils/codeobj_diff.py` cannot run on this TheRock SDK: it hard-codes `/opt/rocm`, and the SDK ships no `roc-obj-ls`. The GPU runs below were done in its place, as the task asked.
+- Smoke on 225236c47 passes: elementwise and reduction 90.0, RawKernel 45.0, `special.erf`, `ndimage.zoom`, FFT and SVD.
+
+### Tests (225236c47 tree, the same pytest recipe as 24a62ef95)
+
+```bash
+ulimit -c 0
+export CUPY_TEST_GPU_LIMIT=1 CUPY_TEST_FULL_COMBINATION=0 CUPY_CACHE_DIR=/dev/shm/<dir>/cache TMPDIR=/dev/shm/<dir>/tmp
+utils/timeit.sh cupy test -- bash -c 'cd "$1" && shift && exec "$@"' _ projects/cupy/src \
+  timeout --signal INT --kill-after 60 14400 python -m pytest -n 16 -rfEX --timeout 600 -p no:cacheprovider -q --junitxml=<out>.xml <target>
+```
+
+| target | 225236c47 | 24a62ef95 (this platform) |
+|---|---|---|
+| install_tests + import_tests | 31 passed, 1 skipped | 31 passed, 1 skipped |
+| cupy_tests/core_tests | 130 failed, 2861 passed, 528 skipped, 14 xfailed | 130 failed |
+| scipy_tests/special_tests | 13 failed, 479 passed, 46 skipped | 13 failed |
+| scipy_tests/ndimage_tests | 1 failed (intermittent), 24128 passed, 1786 skipped, 114 xfailed | 1 failed (intermittent) |
+
+- core_tests: 127 test_bfloat16, 1 test_dlpack TestNewDLPackConversion and 2 TestArrayElementwiseOp. These are the upstream failures classified at 24a62ef95. All 31 TestElementwiseGUFuncLike tests pass, so the 4ccded519 fix still holds.
+- special_tests: the same 13 complex xsf calls as at 24a62ef95 (the TestDigamma x6, TestErfi, TestDawsn, TestLambertW, TestSici, TestShichi and TestWofz complex cases, plus `test_ufunc_dispatch[wofz]`).
+- ndimage_tests: `test_interpolation.py::TestZoom::test_zoom_int[_param_7_{cval=1.0, mode='constant', order=0, output='empty', prefilter=True, zoom=10}]` failed with 107 of 1e6 elements wrong (max abs diff 9). This is the same intermittent as at 24a62ef95 (`TestZoom::test_zoom_float`, zoom=10, 48 of 1e6), on a different param. It did not reproduce:
+  - `-k TestZoom -n 16`, 3 times on each tree: 352 passed, 4 skipped every time.
+  - The whole `test_interpolation.py` under `-n 16`, once on each tree: 5203 passed on both.
+  - The build is identical, so this is a host intermittent, not a port regression.
+- **Host disk-full incident.** The host's root filesystem (shared by every job) reached 0 bytes free during the first run. That run produced:
+  - core_tests: 1598 failed, 40 errors, from `OSError: [Errno 28] No space left on device: '/tmp/tmp...'`.
+  - ndimage: a `TestMapCoordinates::test_map_coordinates_int[_param_187_...]` failure, raised as `HIPRTC_ERROR_COMPILATION (6)` with an empty log. hiprtc writes temp files, so an empty-log compile failure is the ENOSPC fingerprint here.
+  - The counted run above was repeated with `TMPDIR` and `CUPY_CACHE_DIR` on `/dev/shm`, and `PYTHONDONTWRITEBYTECODE=1` for the side runs. It had no ENOSPC. `test_map_coordinates_int` passes in the full `test_interpolation.py` rerun. The first run's special_tests (13 failed) matches the rerun exactly.
+- Verdict: **same outcomes as 24a62ef95** on every requested suite, so the full suite was not re-run.
+
+### Other gates
+
+- CUDA compile gate: not run here (no CUDA toolkit). The delta changes no compile or link code. Ruling 4's nvcc comparison at 24a62ef95 stands (reviews 2026-11-09 and 2026-11-09b).
+- Jargon: `python3 utils/jargon.py --port cupy` reports clean (local `main` at 18b54de). Docs are unchanged since 24a62ef95.
+- Integrity: `git -C projects/cupy/src status --porcelain` shows no modified tracked files (only in-place build output).
+
+**Verdict: linux-gfx90a completed at 225236c47.**

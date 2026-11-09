@@ -8,42 +8,19 @@
   "ext_type": "setuptools-cuda",
   "stage": "review-passed",
   "adopted_at": "2026-11-04T22:34:29Z",
-  "updated_at": "2026-11-09T21:15:29Z",
+  "updated_at": "2026-11-09T21:34:07Z",
   "head_sha": "225236c47072362bfd596d8f2d1c7b13f8d86784",
   "depends_on": [],
   "waivers": {},
   "platforms": {
-    "linux-gfx1100": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-11-09T18:52:23Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
-    },
     "linux-gfx90a": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "24a62ef95b47e50fc1722077435d90b3c6a0b7c0",
+      "validated_sha": "225236c47072362bfd596d8f2d1c7b13f8d86784",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-11-06T09:38:54Z",
-      "updated_at": "2026-11-06T09:38:54Z",
+      "completed_at": "2026-11-09T21:34:07Z",
+      "updated_at": "2026-11-09T21:34:07Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -83,6 +60,29 @@
       },
       "last_agent": "validator",
       "state": "completed"
+    },
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-09T18:52:23Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
     },
     "windows-gfx1151": {
       "blocked": false,
@@ -129,6 +129,5 @@
     "arch": "linux-gfx1201",
     "since": "2026-11-09T19:25:11Z",
     "at": "2026-11-09T19:49:20Z"
-  },
-  "porting": null
+  }
 }
