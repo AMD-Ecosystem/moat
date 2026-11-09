@@ -175,24 +175,34 @@ The reliance is a latent upstream bug, not a ROCm defect: zero explicitly
 smaller than its output allocation. (opencv_contrib: cudastereo census_transform border.)
 
 **`cudaMemcpy*Async` lifetime and ordering: a pageable 1D source is safe, a pageable 2D or
-3D source is not on HIP.** CUDA documents that every H2D async copy from PAGEABLE host
-memory is staged before the call returns. HIP does so only for 1D `hipMemcpyAsync`:
-`hip_runtime_api.h` says "If host or dst are not pinned, the memory copy will be performed
-synchronously" for it and for `hipMemcpy2DAsync`, but only the 1D half holds. Measured with
-a pageable `std::vector` source overwritten (and freed) right after the call, with and
-without a 0.5 s `wall_clock64()` spin kernel ahead of the copy on the stream, at 234 B, 64
-KiB and 512 KiB, tight and padded device pitch (HIP 7.16.26385, gfx942 and gfx1100):
+3D source is not on HIP.** Neither platform documents that a pageable H2D async copy reads its
+source before the call returns. NVIDIA's "API synchronization behavior" page
+(https://docs.nvidia.com/cuda/cuda-runtime-api/api-sync-behavior.html, Memcpy, Asynchronous)
+says only that a transfer with pageable host memory "might be synchronous with respect to
+host" and that the driver "may" synchronize with the stream and stage the copy into pinned
+memory; the "returns once the pageable buffer has been copied to the staging memory"
+guarantee is in the Synchronous section, for `cudaMemcpy`. That CUDA stages pageable H2D
+copies, 2D included, before return is observed (CV-CUDA, below), not documented, and has
+not been probed here. HIP's `hip_runtime_api.h` says "If host or dst are not pinned, the
+memory copy will be performed synchronously" for `hipMemcpyAsync` and `hipMemcpy2DAsync`;
+neither copy is synchronous, but for 1D the source can be reused or freed right after the
+call, and for 2D it cannot. Measured with a pageable `std::vector` source overwritten (and
+freed) right after the call, with and without a 0.5 s `wall_clock64()` spin kernel ahead of
+the copy on the stream, at 234 B, 64 KiB and 512 KiB, tight and padded device pitch (HIP
+7.16.26385, gfx942 and gfx1100):
 - 1D `hipMemcpyAsync` H2D of at most 64 KiB is staged at call time and returns while the
   stream is still busy; a larger one blocks until the stream drains. The device always sees
   the original bytes, so a 1D source may be freed or reused at once.
-- `hipMemcpy2DAsync` (both arches) and `hipMemcpy3DAsync` (gfx942; gfx1100 not measured) H2D
-  return in under 0.1 ms at every size, even on an idle stream, and read the source later:
-  the device sees the overwrite, or freed-heap bytes when the buffer was deleted.
+- `hipMemcpy2DAsync` and `hipMemcpy3DAsync` H2D (both arches) return in under 0.1 ms at
+  every size, even on an idle stream, and read the source later: the device sees the
+  overwrite, or freed-heap bytes when the buffer was deleted.
 
-So on HIP a pageable 2D or 3D source must stay alive and unchanged until the stream (or an
-event recorded after the copy) is synchronized; CUDA code that frees a local `std::vector`
-after `cudaMemcpy2DAsync` is correct on CUDA and copies garbage on ROCm. CV-CUDA is this
-case: `TestInterpolationVarShapeWrap.cpp` frees a per-iteration pageable `dstVec` after
+So a pageable 2D or 3D source must stay alive and unchanged until the stream (or an event
+recorded after the copy) is synchronized. On HIP that is measured; on CUDA reading the
+source before return is not guaranteed either, so do not rely on it there unless NVIDIA
+documents it. CUDA code that frees a local `std::vector` after `cudaMemcpy2DAsync` works on
+CUDA in practice and copies garbage on ROCm. CV-CUDA is this case:
+`TestInterpolationVarShapeWrap.cpp` frees a per-iteration pageable `dstVec` after
 `cudaMemcpy2DAsync`, and on ROCm 7.2.1 garbage appeared in the row padding the kernel never
 writes; keeping `dstVec` alive until the stream sync fixed it with no sync change. Other
 copy variants (D2H, `hipMemcpyToSymbolAsync`, arrays) are unmeasured; probe before relying

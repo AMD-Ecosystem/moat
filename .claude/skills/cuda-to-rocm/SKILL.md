@@ -80,7 +80,7 @@ Scan this list against what you are doing. If any line could apply, open
 **Memory and lifetime**
 - Out-of-bounds reads: CUDA often tolerates one element past an allocation; AMD faults.
 - Fresh device allocations are NOT zeroed on ROCm, where CUDA's allocator often hands back zeroed pages.
-- `cudaMemcpy*Async` from a pageable host buffer: CUDA documents staging every H2D variant before return; HIP stages only 1D `hipMemcpyAsync`. A pageable `hipMemcpy2DAsync`/`hipMemcpy3DAsync` source is read after the call returns and must stay alive and unchanged until the stream is synchronized. On both platforms, a pinned source reused before the stream finishes and another stream reading the destination early are hazards.
+- `cudaMemcpy*Async` from a pageable host buffer: CUDA documents only that such a copy "might be synchronous" and that the driver "may" stage it (staging before return is observed, not guaranteed); HIP, measured, stages only 1D `hipMemcpyAsync`, so a 1D source can be reused right after the call. A pageable `hipMemcpy2DAsync`/`hipMemcpy3DAsync` source is read after the call returns and must stay alive and unchanged until the stream is synchronized; on CUDA do not rely on a pageable 2D/3D source being read before return either. On both platforms, a pinned source reused before the stream finishes and another stream reading the destination early are hazards.
 - Rule-of-five on resource handles: CUDA tolerates double-destroy of a texture/stream/event; AMD does not.
 - A functor returning a reference to a by-value parameter (lifetime UB) is tolerated by nvcc, not by clang/HIP.
 - `hipLaunchHostFunc` callback threads must not call ANY runtime API.
