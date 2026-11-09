@@ -3142,3 +3142,23 @@ The DLL carries 21 x `hipv4-amdgcn-amd-amdhsa--gfx1151` (gfx1151 only). No DLL s
 This laptop is the only Windows host, and Windows is a required gate. Linux gfx942 and gfx1100 at b8595bb are unaffected.
 
 Integrity: no tracked-file change committed; the scratch edits live only in `agent_space/leap-b85`. No fork push, no `gh` write, nothing installed into the shared Python.
+
+## Porter 2026-11-09 (windows-gfx1151, fix round moat-fix-216: Windows CMake build, b8595bb -> 53037f0)
+
+Fixed items 2-4 of the windows-gfx1151 validation failure at b8595bb as three new commits on `moat-fix-216` (no amend, no rebase; `moat-port` untouched at 00fae7e):
+- `3060a7c` Run the hipify scripts through the Python interpreter -- `third_party/hipify_torch/cmake/Hipify.cmake`: `find_package(Python3 REQUIRED COMPONENTS Interpreter)` and `${Python3_EXECUTABLE}` before `hipify_cli.py` (both forms) and `replace_cuda_with_hip_files.py`. The file is only included for `LEAP_GPU=AMD`, so CUDA/CPU builds never see it; on Linux the scripts run as before, through the found interpreter instead of the shebang's (scikit-build-core passes its own interpreter as the hint).
+- `ab4ada9` Use CMake paths for the hipified source lists -- `src/CMakeLists.txt`, inside `if(LEAP_HIP)` after `get_hipified_list`: per-element `file(TO_CMAKE_PATH)` over SRC_CPP/HEADER/SRC_CU. Identity on forward-slash paths (Linux).
+- `53037f0` [ROCm] Export the C interface from the Windows HIP build -- `if (WIN32 AND LEAP_HIP) target_compile_definitions(leapct PRIVATE WIN32 PROJECTOR_EXPORTS)`. Scoped to the HIP build rather than all of WIN32: an MSVC-compiled (CUDA or CPU-only) Windows build already exports through MSVC's C4273 inconsistent-linkage behaviour, so it is left byte-for-byte unchanged.
+Item 1 (CMake's HIP language on Windows getting MSVC-style flags) is NOT committed and the README is unchanged for it; jeff is deciding. This build used the validator's workaround: `agent_space/leap_b85_venv`'s cmake (its patched `Platform/Windows-MSVC.cmake`), `CMAKE_CXX_COMPILER=clang++.exe`, `CMAKE_VS_PLATFORM_TOOLSET=v143_clang_` (reported unused by CMake here; harmless).
+
+Build (fresh clone at `projects/LEAP/src`, torch312_venv env, TheRock 7.13, CMake 4.4.4, Ninja):
+```
+bash utils/timeit.sh LEAP compile -- bash agent_space/leap_fix216_cfg.sh    # rc=0, configure 9.3 s (validator saw ~100 s, hipify dominated; Found Python3 = torch312_venv python 3.12.10)
+bash utils/timeit.sh LEAP compile -- bash agent_space/leap_fix216_build.sh  # cmake --build -j 8, rc=0, 58/58, 0 errors
+dumpbin /exports build_cm/bin/libleapct.dll                                 # 338 functions, 338 names (validator: 338)
+cp build_cm/bin/libleapct.dll src/leapctype/
+```
+Tests (one GPU process at a time, `ulimit -c 0`, `dictionary` excluded):
+- `bash agent_space/leap_fix216_gvc.sh` (unitTests/gpu_vs_cpu_validate.py): rc=0, **14/14 OVERALL: PASS**; figures identical to the validator's throwaway build (adjoint cone-flat SF 1.52e-04, cone-curved VD 1.79e-03, modular 2.87e-03/2.86e-03, consistency 3.067/0.04434/2.988, attenuated 3.43e-05).
+- `bash agent_space/leap_fix216_pt.sh` (dump_point without dictionary): rc=0, 14 ok, `upsample` FAILED (ctypes dtype, same on every platform); all 19 arrays bit-identical to the validator's `pt_b85.npz`.
+`python utils/jargon.py --port LEAP`: clean (needed a local `main` tracking origin/main in the fresh clone). Pushed `moat-fix-216` b8595bb..53037f0; `advance-head` -> 53037f0. Not checked here: nvcc and Linux builds (the dispatcher reruns them). Lesson promoted to `cuda-to-rocm/references/fault-classes.md` (Headers, includes and build: all-clang Windows HIP build faults).
