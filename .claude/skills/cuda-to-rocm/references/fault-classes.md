@@ -175,8 +175,9 @@ The reliance is a latent upstream bug, not a ROCm defect: zero explicitly
 smaller than its output allocation. (opencv_contrib: cudastereo census_transform border.)
 
 **`cudaMemcpy*Async` lifetime and ordering: a pageable 1D source is safe, a pageable 2D or
-3D source is not on HIP.** Neither platform documents that a pageable H2D async copy reads its
-source before the call returns. NVIDIA's "API synchronization behavior" page
+3D source is not on HIP.** CUDA does not document that a pageable H2D async copy reads its
+source before the call returns; HIP's header claims it for 1D and 2D, and the measurements
+below show the claim holds only for 1D. NVIDIA's "API synchronization behavior" page
 (https://docs.nvidia.com/cuda/cuda-runtime-api/api-sync-behavior.html, Memcpy, Asynchronous)
 says only that a transfer with pageable host memory "might be synchronous with respect to
 host" and that the driver "may" synchronize with the stream and stage the copy into pinned
@@ -185,7 +186,8 @@ guarantee is in the Synchronous section, for `cudaMemcpy`. That CUDA stages page
 copies, 2D included, before return is observed (CV-CUDA, below), not documented, and has
 not been probed here. HIP's `hip_runtime_api.h` says "If host or dst are not pinned, the
 memory copy will be performed synchronously" for `hipMemcpyAsync` and `hipMemcpy2DAsync`;
-neither copy is synchronous, but for 1D the source can be reused or freed right after the
+a 1D copy of at most 64 KiB is staged rather than synchronous, a larger 1D copy blocks in
+the call, and a 2D copy is neither; for 1D the source can be reused or freed right after the
 call, and for 2D it cannot. Measured with a pageable `std::vector` source overwritten (and
 freed) right after the call, with and without a 0.5 s `wall_clock64()` spin kernel ahead of
 the copy on the stream, at 234 B, 64 KiB and 512 KiB, tight and padded device pitch (HIP
