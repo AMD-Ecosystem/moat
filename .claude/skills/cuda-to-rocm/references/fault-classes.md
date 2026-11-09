@@ -464,12 +464,15 @@ compile_commands.json` and `ldd` on the library. (LEAP version two.)
 
 **An all-clang Windows HIP build hides three CMake/export faults that MSVC builds never
 hit.** (1) `WIN32`-guarded export macros (`#ifdef WIN32` + `#ifdef PROJECTOR_EXPORTS` ->
-`__declspec(dllexport)`) export NOTHING: clang predefines `_WIN32`, not `WIN32` (CMake's
-`/DWIN32` comes from MSVC-style flags the HIP language does not get), and where a header does
-pick `dllimport`, clang drops it on the definition instead of exporting as MSVC does. The DLL
-links fine and `ctypes` fails at the first symbol; check `dumpbin /exports` (and a ~1 KB
-import lib). Fix: `if (WIN32 AND <hip build>) target_compile_definitions(t PRIVATE WIN32
-<X>_EXPORTS)`. (2) The vendored `hipify_torch` `cmake/Hipify.cmake` runs `hipify_cli.py` and
+`__declspec(dllexport)`) export NOTHING: clang predefines `_WIN32`, not `WIN32` (`WIN32` is
+CMake's `/DWIN32` in `Platform/Windows-MSVC.cmake` `CMAKE_<LANG>_FLAGS_INIT`, the MSVC-syntax
+flag `clang++ -x hip` rejects, so a build that works around that gap loses it), and where a
+header does pick `dllimport`, clang drops it on the definition instead of exporting as MSVC
+does. The DLL links fine and `ctypes` fails at the first symbol; check `dumpbin /exports` (and
+a ~1 KB import lib). Fix: `if (WIN32 AND <hip build>) target_compile_definitions(t PRIVATE
+WIN32 <X>_EXPORTS)`; defining `WIN32` also switches every other `#ifdef WIN32` path in the
+sources, so run the tests on that build. (2) The vendored `hipify_torch` `cmake/Hipify.cmake`
+(still so upstream in ROCm/hipify_torch at 1ea3231) runs `hipify_cli.py` and
 `replace_cuda_with_hip_files.py` as the `execute_process` program, relying on the shebang:
 on Windows that fails ("Failed to hipify files!"); prefix `${Python3_EXECUTABLE}` from
 `find_package(Python3 COMPONENTS Interpreter)`. (3) `get_hipified_list` returns native
