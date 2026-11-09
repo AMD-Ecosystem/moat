@@ -983,3 +983,21 @@ jeff asked for this skill-only run. Host: RX 7900 XTX (gfx1100). `orient.sh` com
 - `grep -rn -i 'pageable\|Memcpy2D\|Memcpy3D' .claude/skills/cuda-to-rocm`: hits only `SKILL.md:83`, `fault-classes.md:177-222` and the unrelated layered-texture line (`fault-classes.md:347`); all consistent. New lines are ASCII; `utils/check.py` ok.
 
 Stage `ported`; the next review only needs skill commit cde62cba.
+
+## Review 2026-11-09 (linux-gfx1100, reviewer) -- skill cde62cba, head unchanged at 374da0df, CHANGES REQUESTED (skill only)
+
+Scope: skill commit cde62cba (`SKILL.md:83`, `references/fault-classes.md:177-222`) and the porter's "Skill fix 2026-11-09 (linux-gfx1100)" entry. Fork `moat-port` = 374da0df (`git ls-remote`), equal to `head_sha`, so no code review. No probe rerun (the gfx942 and gfx1100 tables above are the evidence). `orient.sh` completed and named reviewer; `set-state GPUMD linux-gfx1100 reviewing --agent reviewer` took the lock. `HIP_VISIBLE_DEVICES=1` (dispatcher-pinned), `ulimit -c 0`.
+
+### Must fix
+
+1. **`fault-classes.md:178-179` "Neither platform documents that a pageable H2D async copy reads its source before the call returns" contradicts `fault-classes.md:186-188`.** The quoted HIP header note ("If host or dst are not pinned, the memory copy will be performed synchronously", `hip_runtime_api.h` 5432 and 5924 in the TheRock 7.16 SDK, rechecked) does document exactly that for `hipMemcpyAsync` and `hipMemcpy2DAsync`; it is the documentation that is wrong for 2D. Action: limit the sentence to CUDA, e.g. "CUDA does not document that ...; HIP's header claims it for 1D and 2D, and the measurements below show it holds (as source safety) only for 1D."
+2. **`fault-classes.md:188` "neither copy is synchronous" overstates the probes for 1D above 64 KiB.** Both tables show a 512 KiB 1D copy blocking in the call until the stream drains (501 ms call, 0.0 ms sync; idle stream: completes inside the call), and the bullet at `fault-classes.md:194` says so. Only the 1D copy of at most 64 KiB and the 2D copy are shown not to be synchronous. Action: scope it, e.g. "a 1D copy of at most 64 KiB is staged rather than synchronous and a 2D copy is neither, but for 1D the source can be reused ...". (The previous review's nit was scoped to 64 KiB or less; the generalisation is new.)
+
+### Checked, no change needed
+- NVIDIA "API synchronization behavior" page refetched: Memcpy, Asynchronous says "might be synchronous with respect to host" and the driver "may synchronize with the stream and stage the copy into pinned memory"; "The function will return once the pageable buffer has been copied to the staging memory" is in the Synchronous section. The skill quotes and places both correctly, and `SKILL.md:83` matches.
+- CUDA staging of 2D before return is labelled observed (CV-CUDA), not documented and not probed; "works on CUDA in practice" (`fault-classes.md:203-204`) is accurate.
+- `hipMemcpy3DAsync` "(both arches)" (`fault-classes.md:196`) matches the gfx942 and gfx1100 probes; the measurement parameters (HIP 7.16.26385, 234 B / 64 KiB / 512 KiB, tight and padded pitch, 0.5 s `wall_clock64()` spin, freed-heap bytes on delete) match both tables. D2H, symbol and array copies stay named unmeasured.
+- `grep -rn -i 'pageable\|Memcpy2D\|Memcpy3D' .claude/skills/cuda-to-rocm`: hits only `SKILL.md:83`, `fault-classes.md:177-222` and the unrelated layered-texture line 347. `SKILL.md:83` contains neither problem above and agrees with the reference; no other passage contradicts it.
+
+### Recommendation
+**Request Changes, skill only (items 1-2).** Two sentence edits in `fault-classes.md` in one follow-up skill commit on `port/GPUMD`; `SKILL.md`, the fork, the PR body, the nvcc record and validation are unaffected. The next review only needs that commit.
