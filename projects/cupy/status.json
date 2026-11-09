@@ -8,7 +8,7 @@
   "ext_type": "setuptools-cuda",
   "stage": "review-passed",
   "adopted_at": "2026-11-04T22:34:29Z",
-  "updated_at": "2026-11-09T19:49:20Z",
+  "updated_at": "2026-11-09T21:15:29Z",
   "head_sha": "225236c47072362bfd596d8f2d1c7b13f8d86784",
   "depends_on": [],
   "waivers": {},
@@ -63,11 +63,11 @@
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "24a62ef95b47e50fc1722077435d90b3c6a0b7c0",
+      "validated_sha": "225236c47072362bfd596d8f2d1c7b13f8d86784",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-11-06T09:54:58Z",
-      "updated_at": "2026-11-09T19:49:20Z",
+      "completed_at": "2026-11-09T21:15:29Z",
+      "updated_at": "2026-11-09T21:15:29Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,7 +81,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
+      "last_agent": "validator",
       "state": "completed"
     },
     "windows-gfx1151": {

@@ -755,3 +755,50 @@ utils/timeit.sh cupy compile -- bash -c "cd agent_space/wt-<sha> && python setup
 - `python -m pytest tests/install_tests tests/import_tests`, run from the worktree: 30 passed, 2 skipped. The skips are `test_build.py:138` ("For ROCm/HIP environment") and `test_features.py:23` ("For CUDA environment", because `CUPY_INSTALL_USE_HIP` was not exported at test time). The stats.jsonl `test` row with exit 4 is a wrong-cwd invocation through timeit.sh (no tests collected), not a failure.
 
 - 2026-11-09: jeff filed the three Windows bug reports on ROCm/TheRock: #9845 (hiprtc + MSVC <complex>), #9848 (hiprtc absolute program name), #9849 (hipcc.exe argument quoting). The nan() fix goes to llvm/llvm-project as a PR (prepared and tested on mi355).
+## Validation 2026-11-09 (linux-gfx1201, validator): revalidate at 225236c47 against this platform's 24a62ef95 results
+
+Verdict: **pass, same outcomes as 24a62ef95.** The delta 24a62ef95..225236c47 is `install/cupy_builder/_command.py` only (Windows HIP builds). Host: gfx1201 (32 GiB, `HIP_VISIBLE_DEVICES=0`), TheRock pip ROCm `_rocm_sdk_devel` (runtime 71626385), Python 3.11.17. Fresh job venv with Cython 3.2.9, numpy 2.4.6, scipy 1.17.1, hypothesis 6.54.6, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout and fastrlock installed, matching the 24a62ef95 run. Submodules: cccl 4ee3a7b, dlpack cd0d5e4, jitify 1a0ca0e, xsf 2e1e697. The 24a62ef95 references are the build log and junit XMLs from that validation, which are still on this host under the earlier job's `agent_space`. No 24a62ef95 rebuild was needed.
+
+### Build
+
+```bash
+export ROCM_HOME=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+export PATH="$FLEET_VENV/bin:$ROCM_HOME/bin:$PATH" LD_LIBRARY_PATH="$ROCM_HOME/lib"
+export CUPY_INSTALL_USE_HIP=1 HCC_AMDGPU_TARGET=gfx1201 CUPY_NUM_BUILD_JOBS=12
+utils/timeit.sh cupy compile -- bash -c "cd projects/cupy/src && python setup.py build_ext --inplace -v"
+```
+
+- EXIT 0 in 264 s. The configure summary is the same as at 24a62ef95 (cuda 71626385, cub 400700, nccl 23007, random, thrust and dlpack Yes), with 472 warning lines in both logs.
+- I extracted the command lines with `grep -oE "(g\+\+ |Command: \['/[^ ]*/bin/hipcc).*"` and normalised the tree path, the job venv path and `CUPY_CACHE_KEY`. All **131 compile/link command lines are byte-identical** to the 24a62ef95 validation build log: 64 g++ compiles, 64 links and 3 hipcc device compiles. `CUPY_CACHE_KEY` is bad50f9b in both.
+- `nm -D --defined-only` of all 64 `.so` (excluding `__hip_cuid_*`) gives 6930 lines, the same set as the 24a62ef95 build from review 2026-11-09b. `cupy/.data` is empty because nothing is written on Linux.
+
+### Tests (`ulimit -c 0`, one pytest process at a time, `CUPY_CACHE_DIR=agent_space/kcache`, `PYTHONPATH` = the source tree, run from the tree)
+
+```bash
+python -m pytest tests/install_tests tests/import_tests -p no:cacheprovider -rfE -q
+python -m pytest <suite> -p no:cacheprovider -rfE -q -n 8 --dist loadfile --timeout 1800 --timeout-method=thread --junitxml=...
+```
+
+I compared outcomes per test id against the 24a62ef95 junit XMLs, filtered to the same suite prefix, with the 24a62ef95 `cupyx` rerun superseding as in that classification. For each failing id I also compared the first message line, after masking numbers and `/tmp/...` paths.
+
+| suite | 225236c47 | 24a62ef95 | outcome changes | failing ids with a different message |
+|---|---|---|---|---|
+| install_tests + import_tests | 31 passed, 1 skipped | 31 passed, 1 skipped (reviews) | -- | -- |
+| cupy_tests/core_tests | 2861 passed, 162 failed, 495 skipped, 15 xfailed (13 min 38 s) | 2861 / 162 / 495 / 15 | 0 | 0 |
+| cupyx_tests/scipy_tests/ndimage_tests | 24126 passed, 1789 skipped, 114 xfailed, 0 failed | 24126 / 1789 / 114 / 0 (after the `hipErrorNoBinaryForGpu` rerun) | 0 | -- |
+| cupyx_tests/scipy_tests/special_tests | 479 passed, 13 failed, 46 skipped | 479 / 13 / 46 | 0 | 0 |
+
+- The 162 core_tests failures are the upstream-common set classified at 24a62ef95: bfloat16 hiprtc, `hipErrorInvalidDevice` with one GPU visible, and the rest. The 13 special failures are the xsf `cxx::complex`/`thrust::complex` calls recorded there. `TestElementwiseGUFuncLike` and `TestPoissonBinomCDF` (the 4ccded519 fixes) still pass.
+- No `hipErrorNoBinaryForGpu` this time; ndimage needed no rerun.
+- Harness notes, not results:
+  - The first ndimage invocation used the wrong path, `tests/cupyx_tests/ndimage_tests`: pytest exit 5, no tests, which is the stats.jsonl row with exit 5.
+  - A second, cold-kernel-cache invocation was killed by the agent harness's background time limit at about 95% with no failures shown. That run has no stats row; its log is `agent_space/res-ndimage-killed.log`.
+  - The third run, with a warm cache, is the result above (117 s).
+- Since nothing differed from 24a62ef95, the full-suite run and the upstream re-classification were not needed.
+
+### Other gates
+
+- Jargon: `python3 utils/jargon.py --port cupy` reports clean, with the clone's local `main` at upstream 18b54de and `moat-port` at origin/moat-port.
+- Docs: unchanged since 24a62ef95 (install.rst, checked by the reviews).
+- Integrity: `git -C projects/cupy/src status --porcelain --untracked-files=no` is empty, and HEAD is 225236c47.
+- CUDA gate: not run (no CUDA toolkit on this host). The delta has no compile or link path, so the nvcc 12.8 compile check at 24a62ef95 (linux-gfx950, above) still applies, as both reviews of this delta concluded.
