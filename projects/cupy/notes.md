@@ -668,3 +668,21 @@ Notable passes (the porter's earlier stops): all of `core_tests` (fusion_tests i
 - Jargon: `python3 utils/jargon.py --port cupy` clean. Docs: `docs/source/install.rst` has "Building CuPy for ROCm on Windows". Integrity: fork tree clean.
 
 **Verdict: windows-gfx1151 completed at 24a62ef95**, with the one toolchain defect above registered.
+
+## Porter round 2026-11-09 (windows-gfx1151): `_depends.json` missing after `setup.py build_ext --inplace`
+
+jeff ruled `now` on the Windows validator's observation (2026-11-06) and authorized a lock takeover from the validated stage (`port-lock cupy --take windows-gfx1151`). moat-port 24a62ef95 -> **161d6e87e** `[ROCm] Restore the DLL dependency list for in-place builds on Windows` (one new commit, plain fast-forward push, no amend). File: `install/cupy_builder/_command.py` (+22/-9).
+
+Cause: setuptools' `build_ext.run` (`setuptools/command/build_ext.py:105-111`) saves `inplace`, sets it to False, builds into `build_lib`, then calls `copy_extensions_to_source()` if it was set. So `self.inplace` is always False inside `build_extensions`, and 6fd6150's source-tree copy ran only for `editable_mode`. With `prepare_wheel_libs` clearing `cupy/.data` on every setup.py run, `build_ext --inplace` always left the source tree without `_depends.json`.
+
+**Note for the PR-prep squash:** 6fd6150's message says "In-place and editable installs ... `build_ext` also copies it there in those modes"; at 6fd6150 that was true only for editable installs. With 161d6e87e it holds for both; a squashed message can keep the sentence.
+
+Change: the editable copy stays at the end of `build_extensions` (now `getattr(self, 'editable_mode', False)` only); a `copy_extensions_to_source` override (called by setuptools only for `--inplace`) does the same copy when `sys.platform == 'win32'` and `ctx.use_hip`. Shared helper `_copy_depends_json_to_source`. Linux and CUDA builds unchanged: the override calls `super()` and adds nothing off Windows-HIP; no compile command changes, so Ruling 4's CUDA comparison is unaffected.
+
+Evidence (laptop, `source agent_space/cupy_rocm_env.sh`, x64 Native Tools env, `ulimit -c 0`; probe `C:/Users/jdaily/cupy-work/probe_inplace.py`, GetModuleFileNameW):
+- Before, at 24a62ef95: `utils/timeit.sh cupy compile -- bash -c "cd projects/cupy/src && python setup.py build_ext --inplace"` EXIT 0, source `cupy/.data` empty; import -> `dirs []`, `amdhip64_7` = `C:\WINDOWS\SYSTEM32\amdhip64_7.dll`, runtime 71260602, first kernel `RuntimeError: CuPy failed to load hiprtc0712.dll`. Reproduced exactly as the validator described (log `cupy-work/build-inplace-before.log`).
+- After, same command: EXIT 0, `cupy/.data/_depends.json` present; `amdhip64_7` and `hiprtc0714.dll` both from `<venv>\Lib\site-packages\_rocm_sdk_devel\bin`, runtime 71460850, kernel ok (log `build-inplace-after.log`).
+- `smoke.py` after the in-place build (`CUPY_GPU_MEMORY_LIMIT=25%`): OK (elementwise+reduction, RawKernel, CUB, random, solvers, FFT, matmul, sparse, sort, nvtx, profiler).
+- Editable route still works: removed the source `_depends.json`, `python -m pip install -v --no-build-isolation --no-deps -e projects/cupy/src` EXIT 0, file restored, same DLL bindings, kernel ok (log `build-editable-after.log`).
+- `tests/install_tests tests/import_tests`: 31 passed, 1 skipped. flake8 on `_command.py`: clean. `jargon.py --port cupy`: clean.
+- Not run: the full suite (the change touches only build-time file placement; the three validated platforms derive `revalidate` at the new head), Linux/CUDA builds (no change reachable there).

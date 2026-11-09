@@ -182,3 +182,8 @@
 {"kind":"phase","ts":"2026-11-06T09:59:51Z","phase":"compile","seconds":25.002,"exit":0,"cmd":"bash -c cd projects/cupy/src && python setup.py build_ext --inplace -v"}
 {"kind":"phase","ts":"2026-11-06T10:04:56Z","phase":"compile","seconds":43.604,"exit":0,"cmd":"python -m pip install -v --no-build-isolation -e projects/cupy/src"}
 {"kind":"session","ts":"2026-11-06T20:25:00Z","epoch":1793996700.706320800,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-09T17:43:28Z","phase":"compile","seconds":596.029,"exit":0,"cmd":"bash -c cd projects/cupy/src && python setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-09T17:47:52Z","phase":"compile","seconds":158.891,"exit":0,"cmd":"bash -c cd projects/cupy/src && python setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-09T17:49:58Z","phase":"test","seconds":7.170,"exit":2,"cmd":"python smoke.py"}
+{"kind":"phase","ts":"2026-11-09T17:51:23Z","phase":"test","seconds":46.801,"exit":0,"cmd":"python C:/Users/<user>/cupy-work/smoke.py"}
+{"kind":"phase","ts":"2026-11-09T17:54:04Z","phase":"compile","seconds":114.884,"exit":0,"cmd":"python -m pip install -v --no-build-isolation --no-deps -e projects/cupy/src"}
