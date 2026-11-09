@@ -260,3 +260,4 @@
 {"kind":"phase","ts":"2026-11-09T22:46:20Z","phase":"compile","seconds":13.681,"exit":0,"cmd":"agent_space/bld.sh b8595bb base"}
 {"kind":"phase","ts":"2026-11-09T22:46:20Z","phase":"compile","seconds":13.878,"exit":0,"cmd":"agent_space/bld.sh 53037f0 head"}
 {"kind":"phase","ts":"2026-11-09T22:48:17Z","phase":"test","seconds":6.467,"exit":0,"cmd":"bash -c cd agent_space/cmp/head && python unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"session","ts":"2026-11-09T22:51:36Z","epoch":1794264696.292585285,"event":"end","platform":"linux-gfx1100"}
