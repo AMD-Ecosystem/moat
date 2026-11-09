@@ -80,7 +80,7 @@ Scan this list against what you are doing. If any line could apply, open
 **Memory and lifetime**
 - Out-of-bounds reads: CUDA often tolerates one element past an allocation; AMD faults.
 - Fresh device allocations are NOT zeroed on ROCm, where CUDA's allocator often hands back zeroed pages.
-- `cudaMemcpy*Async` from a soon-freed pageable host buffer: CUDA stages synchronously, HIP does not.
+- `cudaMemcpy*Async` from a pageable host buffer reads it before returning on CUDA and HIP, so freeing it after the call is safe; the hazards are a pinned source reused before the stream finishes, and another stream reading the destination early.
 - Rule-of-five on resource handles: CUDA tolerates double-destroy of a texture/stream/event; AMD does not.
 - A functor returning a reference to a by-value parameter (lifetime UB) is tolerated by nvcc, not by clang/HIP.
 - `hipLaunchHostFunc` callback threads must not call ANY runtime API.

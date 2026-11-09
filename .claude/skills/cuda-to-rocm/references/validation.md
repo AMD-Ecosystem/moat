@@ -205,7 +205,9 @@ action makes a temp directory via LLVM `sys::fs::createUniquePath` ->
 LLVM build time, as in TheRock's manylinux SDK). It is not the application's code
 objects loading: `rand()` after `hipMalloc` is still the default stream. Check a host
 with `nm -D --undefined-only libLLVM*.so* libamd_comgr.so* | grep -w -e srand -e
-arc4random`; Ubuntu 24.04's distro comgr imports `arc4random` and is unaffected. Any
+arc4random`: `arc4random` present is what decides, since a libLLVM can import both
+(Ubuntu's `libLLVM.so.20.1` does). Ubuntu 24.04's distro comgr is unaffected: it imports
+only `rand` itself, and the `libLLVM-17.so.1` it loads imports `arc4random`. Any
 `srand()` the program made before its first launch is overridden too. Two runs of the
 same input then draw different random streams, and a self-comparison suite (same
 binary as baseline and candidate) fails exactly the stochastic cases. To classify,
