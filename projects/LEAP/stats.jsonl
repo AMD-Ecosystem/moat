@@ -211,3 +211,4 @@
 {"kind":"phase","ts":"2026-11-09T20:14:16Z","phase":"test","seconds":42.221,"exit":0,"cmd":"/opt/python-3.11-venv/bin/python agent_space/scripts/dump_outputs.py agent_space/cmp/new/src /dev/shm/leap216/out_new.npz 256"}
 {"kind":"phase","ts":"2026-11-09T20:15:57Z","phase":"test","seconds":70.380,"exit":0,"cmd":"/opt/python-3.11-venv/bin/python agent_space/scripts/dump_outputs.py agent_space/cmp/newnotex/src /dev/shm/leap216/out_newnotex.npz 256"}
 {"kind":"phase","ts":"2026-11-09T20:17:08Z","phase":"test","seconds":70.376,"exit":0,"cmd":"/opt/python-3.11-venv/bin/python agent_space/scripts/dump_outputs.py agent_space/cmp/tipnotex/src /dev/shm/leap216/out_tipnotex.npz 256"}
+{"kind":"session","ts":"2026-11-09T20:53:36Z","epoch":1794257616.991742031,"event":"end","platform":"linux-gfx90a"}
