@@ -573,3 +573,11 @@
 {"kind":"phase","ts":"2026-11-09T17:53:10Z","phase":"test","seconds":9.927,"exit":0,"cmd":"agent_space/of_new.sh python -m pytest -q -p no:cacheprovider /var/lib/jenkins/fleet/jobs/mi300-20261109-081837-oneflow-fix25/moat/projects/oneflow/src/python/oneflow/test/graph/test_graph_fused_mlp_cuda_graph.py"}
 {"kind":"session","ts":"2026-11-09T18:03:41Z","epoch":1794247421.137982415,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-09T18:31:22Z","epoch":1794249082.842166476,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-09T19:04:55Z","epoch":1794251095.637330134,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-09T19:05:00Z","phase":"compile","seconds":2.535,"exit":1,"cmd":"bash projects/oneflow/src/build_rocm.sh all"}
+{"kind":"phase","ts":"2026-11-09T19:07:26Z","phase":"compile","seconds":90.941,"exit":1,"cmd":"bash projects/oneflow/src/build_rocm.sh all"}
+{"kind":"phase","ts":"2026-11-09T19:26:46Z","phase":"compile","seconds":1132.538,"exit":0,"cmd":"bash projects/oneflow/src/build_rocm.sh all"}
+{"kind":"phase","ts":"2026-11-09T19:32:46Z","phase":"test","seconds":315.823,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261109-105952-oneflow-val2/moat/agent_space/reg/run.sh"}
+{"kind":"phase","ts":"2026-11-09T19:35:55Z","phase":"test","seconds":133.190,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261109-105952-oneflow-val2/moat/agent_space/suite/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261109-105952-oneflow-val2/moat/agent_space/suite/graph_cg /var/lib/jenkins/fleet/jobs/rx7900-20261109-105952-oneflow-val2/moat/agent_space/suite/graph_list.txt 4 ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1"}
+{"kind":"phase","ts":"2026-11-09T19:41:52Z","phase":"test","seconds":341.635,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261109-105952-oneflow-val2/moat/agent_space/suite/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261109-105952-oneflow-val2/moat/agent_space/suite/full /var/lib/jenkins/fleet/jobs/rx7900-20261109-105952-oneflow-val2/moat/agent_space/suite/list.txt 3"}
+{"kind":"session","ts":"2026-11-09T19:42:46Z","epoch":1794253366.201715779,"event":"end","platform":"linux-gfx1100"}

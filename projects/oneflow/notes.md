@@ -4690,3 +4690,45 @@ No-regression compile of the CUDA path on the mi355 host (no role, no state chan
 - The delta since the last CUDA check (021f4ad34..8d470dcc14) matches the dispatch's claim. The `cmake/cuda.cmake` lines are inside `if(BUILD_CUDA AND USE_HIP)`. `cuda_stream.cpp` wraps `cublasCreate` and `cusolverDnCreate` in brace scopes whose guard is under `#if defined(USE_HIP)`. `cuda_to_hip.h` and `hip_compat/{cublasLt,cufftXt}.h` are HIP-only. The other two files are Python tests. `cuda_stream.cpp` and everything that includes it built cleanly with nvcc/g++ in the port build.
 - Not covered: running anything on an NVIDIA GPU, including the device-generic regression tests (the open item about cuFFT plan creation under capture on CUDA still stands).
 - Build trees, the dependency extracts and the source clone were deleted after the run. Logs and the comparison inputs stay in the job's `cw/logs/` (container-local).
+
+## Validation 2026-11-09 (validator, linux-gfx1100, W7800; head 8d470dcc1 `[ROCm] Correct the libunwind comment about glog's fallback`: COMPLETED)
+
+Host: Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), `HIP_VISIBLE_DEVICES=1` pinned by the dispatcher (one GPU in this job), Threadripper PRO 5975WX, ROCm 10.1.0 SDK wheels, Python 3.11.17, numpy 1.26.4, protobuf 3.20.3, opencv-python-headless 4.10.0.84, torch 2.16.0a0+git6c3af02 symlinked read-only from `/opt/python-3.11-venv` into `$FLEET_VENV-base-links`, `ulimit -c 0` on every run, `OMP_NUM_THREADS=4`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, no JIT extension builds. Fresh fork clone at `origin/moat-port` = 8d470dcc14be72b8f96434ccc62cd57129aabc56, `protect-fork` run. `$FLEET_VENV/bin/python -m pip install -r dev-requirements.txt fsspec pytest-timeout pytest-repeat opencv-python-headless==4.10.0.84`.
+
+### Verdict: **completed**. Every check of the dispatch passes; the per-id outcomes match the recorded runs.
+
+### Build, with a findable libunwind
+- This host has no system libunwind-dev (only the runtime `libunwind8` 1.6.2 and `libunwind-18`), and `apt-get install` needs root, which the job does not have. So GNU libunwind 1.6.2 was built from its release tarball (sha256 4a6aec66...4976) into `<job>/deps/unwind` (`./configure --prefix=... --disable-tests --disable-documentation CC=gcc`) and put on `CMAKE_PREFIX_PATH`. Control: a 4-line CMake project calling `find_package(Unwind)` with oneflow's `cmake/third_party/FindUnwind.cmake` and the same environment prints `Found Unwind: <job>/deps/unwind/include (found version "1.6.2")`. So a build without de15305bb would have found and linked it.
+- No `ccache` on this host, while `build_rocm.sh` sets it as the compiler launcher, so a pass-through `ccache` script (`exec "$@"`) went first on `PATH`. Also the `pywrap/python3` that drops pip's `--user`.
+- `export CMAKE_PREFIX_PATH=$R:<job>/deps/unwind ROCM_CLANG=$R/lib/llvm/bin/clang++ ROCM_CLANG_C=$R/lib/llvm/bin/clang CMAKE_HIP_ARCHITECTURES=gfx1100 JOBS=32`, then `utils/timeit.sh oneflow compile -- bash projects/oneflow/src/build_rocm.sh all` on a clean tree: **rc 0, 1133 s**, `OF_GPU_WARP_SIZE: 32`.
+- libunwind is not used: configure prints no `Found Unwind` (only `Looking for _Unwind_Backtrace - found`). `CMakeCache.txt` has no `Unwind_*` entry, only glog's `WITH_UNWIND:BOOL=ON`. glog `config.h` defines `HAVE_EXECINFO_H` and leaves `HAVE_LIB_UNWIND` and `HAVE_UNWIND_H` undefined. `build.ninja` has no `BACKWARD_HAS_LIBUNWIND`. `nm -D liboneflow.so` has no `unw_*`/`_U*` imports, only `_Unwind_Backtrace@GCC_3.3`, `_Unwind_GetIPInfo`, `_Unwind_Resume`. `ldd` lists no libunwind.
+- `import oneflow` works (`1.0.0+cu00.git.8d470dcc1`). Smoke check: a 64 x 1000 softmax sums to 64.0, and a 64 x 64 fp32 mm differs from numpy by 7.6e-6.
+
+### Capture regression tests (`agent_space/reg/run.sh`, one pytest per run, sequential on the idle GPU, `utils/timeit.sh oneflow test`)
+| test | `ROCBLAS_USE_HIPBLASLT` unset | `=1` |
+|---|---|---|
+| test_graph_fused_mlp_cuda_graph | 5 of 5 pass (5.0-5.2 s) | 5 of 5 pass |
+| test_graph_cuda_graph_stream_creation | 5 of 5 pass (4.5-4.6 s) | 5 of 5 pass |
+| test_graph_cuda_graph_fft_plan | 5 of 5 pass (14.6-15.7 s) | 5 of 5 pass (14.3-14.9 s) |
+No log of the 30 runs has a `(906)`, `(901)` or `PARSE_ERROR` line.
+
+### Fused-MLP cold-capture repro
+`agent_space/t/cg_grad.py <k>` (the reconstruction gfx90a described: a two-layer `fused_mlp` in float16 with float32 master weights, SGD lr 1, weights reset to their initial values before each step, the graph called first; 4 steps x 4 parameters, graph update compared with eager `before - grad`), `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1 ONEFLOW_ONE_EMBEDDING_FUSED_MLP_ASYNC_GRAD=1`: **k = 64, 1024 and 2^20: rc 0, 16 of 16 bitwise equal, 0 mismatches, no 906**, with `ROCBLAS_USE_HIPBLASLT` unset and with `=1`.
+
+### Graph suite with CUDA graphs on
+All 92 files of `python/oneflow/test/graph/`: one pytest per file, `--timeout=600` and `timeout 600`, 4 at a time, `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1` (`agent_space/suite/run.sh`, `utils/timeit.sh oneflow test`, 133 s). **259 ids: 152 pass, 102 skip, 5 fail. That is the gfx942 porter's count at 8d470dcc1 exactly, and the same 10 nonzero files**: test_alexnet_graph, test_graph_ofrecord_reader and test_run_global_graph_by_vm abort on `/dataset/imagenette/ofrecord/part-00000` (missing). test_alexnet_auto_parallel, test_fx_fuse and test_fx_replace_ops fail at collection (flowvision / `oneflow.fx`). test_fx_symbolic_trace_module and test_run_graph_by_vm each have 1 failure. test_graph_session_env_destruct1 and test_util collect no tests. The slowest file took 23 s: **no timeout, no hang**.
+
+### 133-file suite
+The 131-file list of the earlier gfx1100 rounds, rebuilt from its description here because that host's `agent_space` is gone: fix22's files (test_rand, randn, randint, randn_like, randint_like, rrelu, randperm, gumbel_softmax, global_rand/randn/randint, the 14 pooling files, grouped_matmul_bias, optim_lbfgs/sgd/adam, matmul_long_k, matmul, bmm, misc/test_import_without_imp), fix23's eight additions (conv1d, conv2d, conv_bias_grad, conv_float64, deconv2d, cublas_fused_mlp, fused_matmul_bias, fused_matmul_bias_add_relu_dropout), and all of `test/graph/`, which now has 92 files including the stream-creation and FFT-plan tests. One pytest per file, `timeout 900`, 3 at a time, no CUDA-graph variable, `utils/timeit.sh oneflow test`, 342 s.
+- **115 files pass, 18 fail; 442 ids: 301 pass, 118 skip, 23 fail.** The recorded run at 7bc268503 ("Porter round 2026-11-04 (linux-gfx1100 ...)") had 441 ids (300 / 118 / 23) and the same 18 failing files. The difference is the one new id, the FFT-plan test, which passes.
+- The 23 failing ids are the known classes, with the recorded counts per file: the random-data conv/deconv autotests (test_conv1d 2, test_conv2d 4, test_deconv2d 3), test_avgpool 4 and test_global_avgpool 1 (torch 2.16 endless-loop and half-data autotests), test_matmul 2 (the numpy `__bool__` autotest proxy, fp16 and int), the float32 tolerance pair test_cublas_fused_mlp / test_fused_matmul_bias_add_relu_dropout, and the 5 graph ids above.
+- A per-id diff against the earlier junit was not possible, because those files were on the other host. The comparison is by totals, failing files and failing ids.
+
+### CUDA gate
+Already recorded at this head: "CUDA compile check at 8d470dcc14" (mi355, nvcc 12.8.93, PASS). Not repeated.
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow` (after `git branch -f master origin/master` in the clone): only the three known hits in 68718f038's message, which jeff's no-rewrite ruling leaves for the PR-prep squash. Added lines are clean.
+- Documentation: README.md's ROCm block and `build_rocm.sh` are unchanged by 021f4ad34..8d470dcc1. The libunwind change needs no documentation: the build now works with or without libunwind.
+- `git -C projects/oneflow/src status --porcelain --untracked-files=no`: empty.
+- Not run: two-GPU one_embedding/P2P tests (one GPU pinned). The delta since d9e41753e touches no embedding, shuffle or collective kernel.
