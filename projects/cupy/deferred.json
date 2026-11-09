@@ -62,6 +62,22 @@
         "at": "2026-11-09T17:04:37Z",
         "note": "report to ROCm only; no workaround in the port; list the 7 failures as a known ROCm issue in the PR"
       }
+    },
+    {
+      "id": "cupy-hipcc-to-amdclang",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Migrate CuPy's HIP build-time and runtime compiles from hipcc to amdclang++ (and ROCm discovery from hipconfig to rocm-sdk path --root), per TheRock's hipcc deprecation (docs/development/hipcc_migration.md; TheRock#9849). jeff 2026-11-09: a separate task from the Windows port.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-09T23:36:10Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-09T23:37:00Z",
+        "note": "separate task from the Windows port"
+      }
     }
   ]
 }
