@@ -857,3 +857,5 @@ utils/timeit.sh cupy test -- bash -c 'cd "$1" && shift && exec "$@"' _ projects/
 - Integrity: `git -C projects/cupy/src status --porcelain` shows no modified tracked files (only in-place build output).
 
 **Verdict: linux-gfx90a completed at 225236c47.**
+
+- 2026-11-09: the Windows nan() bug is upstream clang's (__clang_hip_math.h _WIN32 branch); jeff opened llvm/llvm-project#240615 with the one-token fix and a test. TheRock #9849 reply (ScottTodd): hipcc is deprecated in TheRock; projects should call amdclang++ directly (docs/development/hipcc_migration.md). jeff: migrating CuPy from hipcc to amdclang++ is its own task, separate from the Windows port.
