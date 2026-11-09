@@ -462,6 +462,20 @@ __kmpc_fork_call`: clang emits libomp calls, the link brought libgomp).
 clang links its own libomp and adds a runpath to it. Check with `grep -c fopenmp
 compile_commands.json` and `ldd` on the library. (LEAP version two.)
 
+**An all-clang Windows HIP build hides three CMake/export faults that MSVC builds never
+hit.** (1) `WIN32`-guarded export macros (`#ifdef WIN32` + `#ifdef PROJECTOR_EXPORTS` ->
+`__declspec(dllexport)`) export NOTHING: clang predefines `_WIN32`, not `WIN32` (CMake's
+`/DWIN32` comes from MSVC-style flags the HIP language does not get), and where a header does
+pick `dllimport`, clang drops it on the definition instead of exporting as MSVC does. The DLL
+links fine and `ctypes` fails at the first symbol; check `dumpbin /exports` (and a ~1 KB
+import lib). Fix: `if (WIN32 AND <hip build>) target_compile_definitions(t PRIVATE WIN32
+<X>_EXPORTS)`. (2) The vendored `hipify_torch` `cmake/Hipify.cmake` runs `hipify_cli.py` and
+`replace_cuda_with_hip_files.py` as the `execute_process` program, relying on the shebang:
+on Windows that fails ("Failed to hipify files!"); prefix `${Python3_EXECUTABLE}` from
+`find_package(Python3 COMPONENTS Interpreter)`. (3) `get_hipified_list` returns native
+backslash paths; fed to `file(GLOB_RECURSE)` they glob from the drive root and configure
+runs for many minutes -- normalise each element with `file(TO_CMAKE_PATH)`. (LEAP, windows)
+
 ## Types, dispatch and platform limits
 
 **`clock64()` is a 20-bit counter on gfx11.** On RDNA3/3.5 it compiles to
