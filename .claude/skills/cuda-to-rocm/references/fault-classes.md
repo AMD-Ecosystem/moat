@@ -405,7 +405,17 @@ non-int arguments. Then confirm that the device code objects did not change (`.t
 of the unbundled `.hip_fatbin`; the `__hip_cuid_*` names change with path and flags).
 (LEAP: bilateral FWHMs truncated, intensity FWHM < 1 gave the identity; the modular-beam
 Joseph backprojector chose its parallel kernel for cone data, failing adjointness and FBP;
-the FBPlowpass window zeroed all but DC.)
+the FBPlowpass window zeroed all but DC.) `std::min`/`std::max` are NOT safe either once a
+hipify pass has run: hipify_torch (and torch's hipify, same table) rewrites them to
+`::min`/`::max`, which land on the same `(int, int)` host pair, so a correct
+`std::min(float, float)` in CUDA source truncates in the hipified copy. Run the detection
+on the hipified sources, not the originals. When a build compiles host `.cpp` files as
+HIP too, those files are in scope, but unqualified calls there usually bind to `std::min`
+through `using namespace std` (a template exact match beats the int pair); to tell a real
+truncation from that, report only calls that land on `(int, int)` with ROCm's default
+pair AND on a non-int overload with CUDA's full set. (LEAP version two: 27 sites, 10 of
+them new, including `1.0 / max(fabs(v_min), fabs(v_max))` dividing by zero in the cone
+geometry setup.)
 
 ## Headers, includes and build
 
@@ -435,6 +445,20 @@ a member template whose parameter pack shadowed the class pack -- accepted by MS
 by Clang and GCC. Expect missing `typename`/`template` disambiguators, two-phase lookup
 failures and narrowing conversions. Fixes are additive and arch-independent, so they help
 the CUDA build too and are not HIP-specific hacks. (Velvet)
+
+**CMake `LANGUAGE HIP` on host `.cpp` files drops OpenMP.** `OpenMP::OpenMP_CXX` adds
+`-fopenmp` through `$<$<COMPILE_LANGUAGE:CXX>:...>` and links the host compiler's runtime
+(libgomp for g++). A build that sets every source to `LANGUAGE HIP` therefore compiles its
+CPU code without OpenMP: `#pragma omp` loops run serially with no warning, and code that
+mixes OpenMP runtime calls with the pragmas can misbehave (LEAP's `downSample_cpu` aborted
+with `free(): invalid pointer`; the same code built by g++ ran). Passing `-fopenmp` for HIP
+alone while still linking `OpenMP::OpenMP_CXX` fails at load time (`undefined symbol:
+__kmpc_fork_call`: clang emits libomp calls, the link brought libgomp).
+`find_package(OpenMP COMPONENTS HIP)` failed to find flags with the TheRock SDK and CMake
+3.31. What worked: `target_compile_options(t PRIVATE $<$<COMPILE_LANGUAGE:HIP>:-fopenmp>)`,
+`target_link_options(t PRIVATE -fopenmp)`, and no `OpenMP::OpenMP_CXX` on the HIP target;
+clang links its own libomp and adds a runpath to it. Check with `grep -c fopenmp
+compile_commands.json` and `ldd` on the library. (LEAP version two.)
 
 ## Types, dispatch and platform limits
 
