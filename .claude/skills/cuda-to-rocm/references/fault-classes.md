@@ -338,6 +338,19 @@ MLP backward run right after an nn.Graph training step under `ONEFLOW_KERNEL_ENA
 and, with `ROCBLAS_USE_HIPBLASLT=1`, the first eager device-to-host copy after one, which
 constructs a stream with its rocBLAS and hipSOLVER handles.)
 
+**hipFFT plan creation fails the same way, but quietly.** `hipfftMakePlan*` /
+`hipfftXtMakePlanMany` (not `hipfftCreate`) runs null-stream work too. Under another thread's
+capture it does not exit: it returns `HIPFFT_PARSE_ERROR` (12), which reads like bad arguments,
+and the capturing thread's `hipStreamEndCapture` then fails with 901 (or its next library call
+fails). It does this with auto-allocation off and when an identical plan already exists. Put plan
+creation under the same exclusive lock as handle creation, which matters most where the framework
+makes a new plan on every FFT call. To reproduce a race like this in a test, issue the eager ops
+continuously from a second Python thread while the main thread runs several NEW graphs (each
+captures again on its first step). A loop of eager ops placed after the graph call mostly runs
+after the capture ends on an idle machine, and passes on the unfixed build. (oneflow: 8 graphs
+with an FFT thread failed 6 of 6 runs on gfx942 before the fix, and 200 FFTs after each graph call
+passed 2 of 2.)
+
 ## Textures
 
 **gfx94x+ (CDNA3 and newer: MI300-class) disables the HIP image/texture object API at COMPILE
