@@ -2930,3 +2930,70 @@ nvcc -E -x cu -arch=sm_80 -std=c++17 -D__INCLUDE_CUFFT -D__USE_GPU [-D__USE_NOTE
 - Device code: `cuobjdump -ptx` (PTX embedded for sm_120 only) gives 4199 `tex.` / 3474 `ld.global` / 153325 lines in both default builds; the only differences are the 8 hunks (32 lines) in `bilateralFilterKernel`, `bilateralFilterKernel_txty`, `scaledBilateralFilterKernel`, `scaledBilateralFilterKernel_txtyy` (`setp.gt` -> `setp.ge`, cda2608), exactly as at 8c76c08. `LEAP_USE_NOTEX=ON`: 0 `tex.`, 14797 `ld.global` (= 8c76c08).
 - b8595bb host code: `cuda_utils.cu` at b8595bb and at 8c76c08, preprocessed with the build's defines, is identical in the default CUDA build (0 differing lines of 43017), and differs only under `-D__USE_NOTEX` (20 lines: the `cudaMalloc` + `cudaMemcpyDeviceToDevice` into an owned buffer, `owns = 1`, return `dev_buf`). So the copy compiles under nvcc in upstream's CUDA software-sampler configuration, which is also the configuration it fixes there: upstream 63c9544's `#ifdef __USE_NOTEX` branch aliases the caller's buffer the same way. The texture-object path is unchanged.
 - Not run: no CUDA runtime behaviour is claimed (no NVIDIA GPU here; the V100 comparison is a separate job).
+## Review 2026-11-09 (reviewer, linux-gfx90a, moat-fix-216 @ b8595bb, delta 8c76c08..b8595bb)
+
+jeff asked for this run. Verdict: **review-passed**. No code findings in b8595bb. There are two corrections to the PR text drafts (below). They are notes-only, but whoever writes the fork review PR body for `upstream.py --fix-review` must apply them. `orient.sh` finished in about 2 minutes (no hang workaround needed). `set-state LEAP linux-gfx90a reviewing` took the lock. Fresh fork clone at `projects/LEAP/src` with `protect-fork LEAP`; working tree clean.
+
+Host: AMD Instinct MI250X GCD (gfx90a, image support), HIP_VISIBLE_DEVICES=1 (pinned by the dispatcher), torch 2.16.0a0+git6c3af02, numpy 1.26.4, TheRock SDK 10.1.0 clang in /opt/python-3.11-venv, CMake 3.31.6. Every GPU run was under `ulimit -c 0`. The job venv has no torch, so scripts ran with the shared interpreter, read-only. matplotlib 3.11.2 and its missing pure deps went into a local `--target` dir on PYTHONPATH (`--no-deps`, so numpy stays 1.26.4); nothing was installed into the shared Python.
+
+### Code (b8595bb `src/cuda_utils.cu`)
+- The new linear branch is correct. It allocates `N.x*N.y*N.z` floats, copies device to device, and sets `n0=N.z, n1=N.y, n2=N.x`. That covers the same elements in the same order as the hardware branch: `cudaMalloc3DArray(make_cudaExtent(N.z, N.y, N.x))`, copy pitch `N.z*4`. The swap and int4 overloads only permute x/z or drop `.w` before forwarding. On a failed copy the buffer is freed and nullptr is returned. `freeTexture` frees it on HIP (`tex == 0 && owns`) and on `__USE_NOTEX` (`owns`), then resets the handle, so a second `freeTexture` is a no-op. No caller `cudaFree`s a returned TEX_ARRAY or frees a handle twice without the reset. No caller uses TEX_ARRAY as a data pointer or expects the texture to see later writes to its source.
+- No loader still aliases. `.data =` is assigned only in the four loaders: `loadTexture_from_cpu`, device `loadTexture`, `loadTexture1D` and `loadTexture2D`. All of them now copy into an owned buffer.
+- Handle-leak audit over all 51 call sites outside `cuda_utils.cu`: every load is freed on every normal path, and per-chunk reload loops (`ramp_filter.cu:2503-2520`, `:2862-2878`) free each iteration. The only leaks are pre-existing and identical on the texture path:
+  - `noise_filters.cu:1166-1169` and `:1566-1569`: `return false` after a failed `cudaMalloc`, before `freeTexture`.
+  - `projectors_SF.cu:3422` and `backprojectors_VD.cu:1664`: an unreachable `else return false`.
+  On the linear path these now leak an owned buffer, the same as the texture path leaks its cudaArray; OOM paths only.
+- CUDA neutrality: on the default CUDA build the whole changed block sits under `#if defined(__USE_NOTEX) || defined(__HIP_PLATFORM_AMD__)` and the `freeTexture` hunk is a comment inside `#elif defined(__USE_NOTEX)`, so nothing changes. Upstream's CUDA NOTEX build (`src/CMakeLists.txt:249-250` defines `__USE_NOTEX` for `LEAP_CUDA` too) compiles the new branch: TEX_ARRAY is `float*` there, and the inner `cudaStatus` is scoped to the `if` block, so it does not clash with the later declaration. The HIP build compiles both blocks in one TU and is warning-neutral (1534 vs 1532 warning lines, the same +2 as on gfx942). nvcc is still owed (the dispatcher's mi355 step).
+- Nit, not blocking: the upstream comments at `src/texture_compat.h:73` and `:78` still describe an `owns == 0` / NULL aliasing state that no loader produces any more.
+
+### Regression check on gfx90a
+Builds (`agent_space/bld.sh <sha> <name> [-DLEAP_USE_NOTEX=ON]` = git archive + `cmake -G Ninja -DLEAP_GPU=AMD -DCMAKE_HIP_COMPILER=<sdk>/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=<sdk> -DCMAKE_BUILD_TYPE=Release`; `cmake --build -j 24/32`):
+- `tip`/`tipnotex` = 8c76c08 and `new`/`newnotex` = b8595bb. All rc=0 with 0 errors; warning lines 1532 / 1500 / 1534 / 1502; offload-arch gfx90a only.
+- `old` = 00fae7e, built with `PYTORCH_ROCM_ARCH=gfx90a python setup_AMD.py build_ext --inplace`, rc=0.
+
+ISA of `libleapct.so` (21 code objects): the default build has 6225 `image_*` instructions, the NOTEX build 0, so the texture path is live by default here.
+
+`gpu_vs_cpu_validate.py` from b8595bb (the 8c76c08 trees ran a copy of it):
+
+| build | consistency cost(-3, 0, 3) | attenuated adjoint | OVERALL |
+|---|---|---|---|
+| 8c76c08 default (texture) | 3.115, 0.06119, 3.004 PASS | 3.41e-05 PASS | PASS |
+| 8c76c08 NOTEX | 0, 0, 0 FAIL | 4.97e+07 FAIL (HSA_STATUS_ERROR_MEMORY_FAULT in `attenuatedBackprojectorKernel_SF`) | FAIL |
+| b8595bb default (texture) | 3.115, 0.06119, 3.004 PASS | 3.41e-05 PASS | PASS 14/14 |
+| b8595bb NOTEX | 3.115, 0.06119, 3.004 PASS | 3.41e-05 PASS | PASS 14/14 |
+
+On gfx90a's default build the check passes at 8c76c08 as well, and that is correct. The aliasing branch only runs on the global-memory path, and the texture branch always copied into a cudaArray. So on this GPU only the NOTEX build demonstrates the regression. The 12 projector lines of b8595bb match the gfx90a 8c76c08 record line for line: default fan VD 3.82e-07 and coneparallel SF 1.23e-06; NOTEX 5.09e-07 and 1.29e-06.
+
+### Reruns (b8595bb, default and NOTEX)
+- `cc_probe.py`, cost at shifts 0, 1, 3, -3:
+  - 00fae7e: 703.3714, 675.9775, 660.8594, 862.7307.
+  - b8595bb default and NOTEX: the same to 7 digits (703.3713/703.3714, 675.9775, 660.8594, 862.7307).
+  - 8c76c08 NOTEX: 0, 0, 0, 0.
+- `att_probe.py mapfwd,mapback,cylback,cylfwd`:
+  - b8595bb, both builds, and 00fae7e: 1926872 / 6.222942e+06, 1556944 / 1.447452e+09, 1293072 / 5.394915e+08, 1906833 / 2.497943e+06.
+  - 8c76c08 NOTEX: `mapback` memory fault with 0 nonzero, then `cylfwd` 0 nonzero (dead context).
+- `dump_outputs.py` at 256 cols, five 2.85 GB npz written to /dev/shm (never more than 3 at once) and deleted:
+  - 8c76c08 vs b8595bb default: 36/36 bit-identical, times 0.988-1.005.
+  - 8c76c08 NOTEX vs b8595bb NOTEX: 36/36 bit-identical.
+  - b8595bb texture vs NOTEX: 0/36, max rel 5.5e-06 (modular_VD_fbp), the rest <= 2.8e-06. Time NOTEX/texture: project 1.71-2.83x, back 0.75-1.16x, the same as the 8c76c08 record.
+  - 00fae7e vs b8595bb default: **28/36** bit-identical. The 8 that differ are cone-flat VD_fwd 2.95e-02, cone-curved VD_fwd 2.33e-01, cone-flat SF_back/fbp 1.58e-03/1.50e-02, cone-flat VD_back/fbp 5.8e-07/4.0e-05, and modular VD_back/fbp 4.1e-07/5.1e-06. These are the same 8 arrays the gfx90a 8c76c08 entry lists under "The 9 that differ": that entry miscounted, and 27/9 should read 28/8.
+- `dump_point.py` (16 cases):
+  - 8c76c08 vs b8595bb default: 20/20 bit-identical.
+  - b8595bb NOTEX vs 00fae7e: every array bit-identical except att_map fwd/back and att_cyl back (rel 2.3e-07 to 2.5e-07, sampler), downsample/downsample3 (3.3e-07/4.2e-07), and eSF back (parallel/fan 2.8e-07; cone 3.0e-03, upstream rewrite).
+  - 8c76c08 NOTEX vs b8595bb NOTEX: 9/20. The bilateral, median, lowsignal and dictionary outputs all differ (rel 0.14 to 0.85) because the `att_map back` fault killed the context.
+  - **The porter's correction to the previous review's dump_point attribution holds on gfx90a too.** Pre-existing on gfx90a in every build, 00fae7e included: the last case, `dictionary`, raises a memory fault in the `OMP` kernel, and `upsample` fails in the script (ctypes dtype).
+- `bilat_frac.py`, both builds: 5187/5187 changed. max|gpu-ref| 3.548e-06 and 2.489e-06 on the cases the script prints.
+- `leak_check.py`: delta 0 bytes over 200 iterations, sum(g)=377330 (00fae7e, b8595bb, b8595bb NOTEX).
+- `leak_check2.py`: 0 bytes on every loop for all three builds. Results 377330 / 1.46752e+07 / 0.0297462; NOTEX gives 0.0297461.
+- `unit_tests.py` rc=0 on both builds: projector error 0.000972% / 0.0137%, FBP error 0.915% / 1.027%.
+- `memory_leak_tests.py`: rc=0 on both builds (about 9 and 12 minutes, no error lines; the power-iteration lambdas agree to 6 digits). Command: `cd <tree>/unitTests && MPLBACKEND=Agg PYTHONPATH=<pylib>:../src python memory_leak_tests.py`.
+- `jargon.py --port LEAP` is clean. The b8595bb message passes `jargon.py -`; its title is 57 characters with no Co-Authored-By. The unprefixed title fits a vendor-neutral change that also fixes the CUDA NOTEX build.
+
+### PR text: required corrections before the fork review PR (notes-only)
+The three drafts in the porter's entry (fork review PR body, `## Upstream reply`, upstream #216 body) pass `jargon.py -` and `prose.py`. I checked their claims against the code and the runs above. The reply is accurate. Fix these:
+1. **27/9 is wrong; it is 28/8.**
+   - Fork review PR body, gfx90a line: "27 of 36 forward/back/FBP outputs bit-identical to 00fae7e, the other 9 explained by ..." should read "28 of 36 ..., the other 8 explained by ...". Then replace `<PENDING: gfx90a at b8595bb>` with: "b8595bb, default (texture objects) and LEAP_USE_NOTEX=ON builds: gpu_vs_cpu_validate 14/14; outputs bit-identical to 8c76c08 on both builds; the new checks fail at 8c76c08 only in the LEAP_USE_NOTEX=ON build (the texture path always copied)".
+   - Upstream #216 body, Validation paragraph: "On the MI250X, with texture objects, 27 of 36 were bit-identical at the previous commit" should read "On the MI250X, with texture objects, 28 of 36 are bit-identical to the earlier version of this PR; the other 8 follow the same upstream kernel changes, plus rounding-level differences in modular-beam voxel-driven backprojection". Move the MI250X out of `<PENDING>` into the 14/14 list: "AMD Instinct MI250X (gfx90a), Linux, texture objects, default and `LEAP_USE_NOTEX=ON` builds".
+2. **"fail at 8c76c08" needs a qualifier.** Fork review PR body, b8595bb bullet: "(fail at 8c76c08, pass at b8595bb)" should read "(fail at 8c76c08 on the global-memory path: gfx942, or any LEAP_USE_NOTEX=ON build; pass at b8595bb)". The upstream body already scopes it to the MI300X and is accurate.
+
+Owed, not part of this verdict: gfx90a validator record at b8595bb, gfx1100, Windows gfx1151, nvcc on mi355 and the V100 comparison.

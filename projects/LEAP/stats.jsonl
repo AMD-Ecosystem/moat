@@ -201,3 +201,13 @@
 {"kind":"phase","ts":"2026-11-09T19:32:16Z","phase":"test","seconds":35.539,"exit":0,"cmd":"python /var/lib/jenkins/fleet/jobs/mi300-20261109-111505-fix2-leap-216/moat/agent_space/scripts/dump_outputs.py /var/lib/jenkins/fleet/jobs/mi300-20261109-111505-fix2-leap-216/moat/agent_space/cmp/newnotex/src /var/lib/jenkins/fleet/jobs/mi300-20261109-111505-fix2-leap-216/moat/agent_space/dumps/out_newnotex.npz 256"}
 {"kind":"session","ts":"2026-11-09T19:56:24Z","epoch":1794254184.868720544,"event":"end","platform":"linux-gfx942"}
 {"kind":"phase","ts":"2026-11-09T20:04:06Z","phase":"cuda-compile","seconds":18.684,"exit":0,"cmd":"bash agent_space/nvcc/build.sh agent_space/nvcc/port build"}
+{"kind":"session","ts":"2026-11-09T20:05:50Z","epoch":1794254750.338311200,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-09T20:08:10Z","phase":"compile","seconds":25.306,"exit":0,"cmd":"agent_space/bld.sh b8595bb newnotex -DLEAP_USE_NOTEX=ON"}
+{"kind":"phase","ts":"2026-11-09T20:08:10Z","phase":"compile","seconds":25.456,"exit":0,"cmd":"agent_space/bld.sh b8595bb new"}
+{"kind":"phase","ts":"2026-11-09T20:09:19Z","phase":"compile","seconds":27.686,"exit":0,"cmd":"agent_space/bld.sh 8c76c08 tipnotex -DLEAP_USE_NOTEX=ON"}
+{"kind":"phase","ts":"2026-11-09T20:09:20Z","phase":"compile","seconds":28.642,"exit":0,"cmd":"agent_space/bld.sh 8c76c08 tip"}
+{"kind":"phase","ts":"2026-11-09T20:12:51Z","phase":"test","seconds":45.553,"exit":0,"cmd":"/opt/python-3.11-venv/bin/python agent_space/scripts/dump_outputs.py agent_space/cmp/old/src /dev/shm/leap216/out_old.npz 256"}
+{"kind":"phase","ts":"2026-11-09T20:13:34Z","phase":"test","seconds":42.691,"exit":0,"cmd":"/opt/python-3.11-venv/bin/python agent_space/scripts/dump_outputs.py agent_space/cmp/tip/src /dev/shm/leap216/out_tip.npz 256"}
+{"kind":"phase","ts":"2026-11-09T20:14:16Z","phase":"test","seconds":42.221,"exit":0,"cmd":"/opt/python-3.11-venv/bin/python agent_space/scripts/dump_outputs.py agent_space/cmp/new/src /dev/shm/leap216/out_new.npz 256"}
+{"kind":"phase","ts":"2026-11-09T20:15:57Z","phase":"test","seconds":70.380,"exit":0,"cmd":"/opt/python-3.11-venv/bin/python agent_space/scripts/dump_outputs.py agent_space/cmp/newnotex/src /dev/shm/leap216/out_newnotex.npz 256"}
+{"kind":"phase","ts":"2026-11-09T20:17:08Z","phase":"test","seconds":70.376,"exit":0,"cmd":"/opt/python-3.11-venv/bin/python agent_space/scripts/dump_outputs.py agent_space/cmp/tipnotex/src /dev/shm/leap216/out_tipnotex.npz 256"}
