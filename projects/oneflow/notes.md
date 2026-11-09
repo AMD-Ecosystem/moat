@@ -4657,3 +4657,36 @@ Host: MI300X (gfx942, wave64), `HIP_VISIBLE_DEVICES=1` pinned by the dispatcher,
 ### Still owed before upstream (not blockers here)
 - CUDA nvcc compile at 8d470dcc1 (mi355 host), as the porter recorded. The C++ change is HIP-only by include path.
 - The new test is device-generic and runs on CUDA too. Whether cuFFT plan creation under another thread's capture fails on NVIDIA was never checked. As with the other device-generic tests, it needs one NVIDIA run before upstream submission.
+
+## CUDA compile check at 8d470dcc14
+
+No-regression compile of the CUDA path on the mi355 host (no role, no state change, no GPU work). Full CUDA builds of `moat-port` 8d470dcc14 and of the fork's `master` 25c8978c1 (the merge base), both with the same options, then a comparison of diagnostics and compile commands. **Result: PASS. Both builds link (rc 0). No errors on either. Every warning on master appears on the port at the same file, line and column. The one difference is a master warning the port removes. The compile flags of every shared TU are identical except for the long-standing LLVM define.** This settles the "CUDA nvcc compile at 8d470dcc1" item above.
+
+### Toolchain and procedure
+- nvcc 12.8.93 from `/usr/local/cuda-12.8` (cuBLAS, cuRAND, cuFFT, cuSOLVER, cuSPARSE, NVTX headers present), host gcc/g++ 13.3.0, cmake 3.31.6. cuDNN 8.9.7.29 and NCCL 2.32.3 from their cu12 wheels (`pip download --no-deps`; sha256 adf4f59e...7b02 and bb94b234...a21c), extracted under the job directory with unversioned `.so` symlinks.
+- Upstream's documented configure plus the options this host needs: `cmake <src> -C cmake/caches/international/cuda.cmake -DCMAKE_CUDA_ARCHITECTURES=80 -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-12.8 -DCUDNN_ROOT_DIR=<job>/deps/cudnn -DCMAKE_BUILD_TYPE=Release -DTREAT_WARNINGS_AS_ERRORS=OFF -DCMAKE_C_COMPILER=gcc-13 -DCMAKE_CXX_COMPILER=g++-13 -DCMAKE_CUDA_COMPILER=nvcc -DCMAKE_CUDA_HOST_COMPILER=g++-13 -DUSE_SYSTEM_NCCL=ON -DNCCL_ROOT_DIR=<job>/deps/nccl -DPython3_EXECUTABLE=<wrapper>`, then `make -k -j128` (Unix Makefiles, as the README says). WITH_CUTLASS takes upstream's default (ON under gcc), so the CUTLASS and flash-attention paths and the `WITH_CUTLASS` part of `fused_attention_kernels.cu` are compiled.
+- Changes from the README, each the same in both builds:
+  - Release instead of the cache's RelWithDebInfo, to save disk. Debug info does not change diagnostics.
+  - `TREAT_WARNINGS_AS_ERRORS=OFF`: with upstream's default ON, gcc 13.3 stops at `oneflow/core/auto_parallel/sbp_graph.cpp:696` (`-Werror=maybe-uninitialized`). That file is identical on master, so the failure is upstream rot. With OFF every TU compiles and links, and the same warning shows up in both builds below.
+  - A Python wrapper that drops `--user`: `cmake/python.cmake` installs `dev-requirements.txt` with `--user`, which pip refuses inside a venv. The requirements were installed into the job venv beforehand.
+  - Scratch-only, never committed: `cmake/third_party/flash_attention.cmake` points at a local zip of flash-attention-v2 eed2e82 with its `csrc/cutlass` submodule (bbe579a9) and `#include <cstdio>`/`<cstdlib>` added to `csrc/flash_attn/src/cuda_utils.cu`. The pinned aliyuncs mirror URL returns HTTP 403, as recorded in earlier rounds.
+  - Master only, scratch-only: the port's two gcc-13 third-party fixes, copied verbatim, i.e. the flatbuffers `-Werror` strip (`cmake/third_party/flatbuffers.cmake`) and the kineto `-include cstdint` block (`external/kineto/CMakeLists.txt`). Without them master stops at configure-time third-party builds (`stl_algobase.h ... -Werror=stringop-overflow=` in flatbuffers `reflection.cpp`, and `SampleListener.h:90: 'uint64_t' was not declared` in kineto) and never reaches oneflow's own TUs (`build rc=2`, 2m47s).
+
+### Results
+| | port 8d470dcc14 | master 25c8978c1 (+ two third-party fixes) |
+|---|---|---|
+| configure / build rc | 0 / 0 | 0 / 0 |
+| build wall (`make -k -j128`) | 9m08s | 9m18s |
+| liboneflow.so | 911,735,768 B, 222 sm_80 ELF | 911,717,984 B, 220 sm_80 ELF |
+| `_oneflow_internal` | linked | linked |
+| `.cu.o` / oneflow target objects | 321 / 1586 | 319 / 1583 |
+| compile_commands entries | 1822 | 1819 |
+| error diagnostics | 0 | 0 |
+| warning diagnostic lines | 1364 | 1365 |
+
+- Diagnostics: ANSI-stripped `warning:`/`error:` lines with job paths normalized, compared exactly and with line numbers dropped. The only difference is one master warning that is gone on the port: `oneflow/extension/stack/python/custom_eval_frame.c:47:53: passing argument 2 of 'EnableCustomEvalFrame' from incompatible pointer type [-Wincompatible-pointer-types]` (the port's CPython eval-frame signature fix). No new warning in any TU. Both builds show the two `sbp_graph.cpp:696` `-Wmaybe-uninitialized` warnings that the default `-Werror` would have turned into errors.
+- TUs: the port adds three, `hip_long_k_gemm.cu`, `image_resize_rpp.cpp` and `conv_hip_double_kernels.cu`. Each is wrapped in `#if defined(WITH_CUDA) && defined(USE_HIP)` and compiles to an empty object on CUDA. That accounts for the 3 extra entries, the 2 extra `.cu.o` and the 2 extra sm_80 ELF entries.
+- Compile commands, keyed by (file, object) and compared as argument sets: of the 1819 shared TUs, 147 are identical. The other 1672 differ only by `-DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1` (the `LLVMSupportWithHeader` interface definition in `cmake/oneflow.cmake:346`). That edit dates from 68718f038 and is already in the reviewed list of unguarded edits (item "B." of the earlier review). Nothing in 021f4ad34..8d470dcc14 changes CUDA compile flags.
+- The delta since the last CUDA check (021f4ad34..8d470dcc14) matches the dispatch's claim. The `cmake/cuda.cmake` lines are inside `if(BUILD_CUDA AND USE_HIP)`. `cuda_stream.cpp` wraps `cublasCreate` and `cusolverDnCreate` in brace scopes whose guard is under `#if defined(USE_HIP)`. `cuda_to_hip.h` and `hip_compat/{cublasLt,cufftXt}.h` are HIP-only. The other two files are Python tests. `cuda_stream.cpp` and everything that includes it built cleanly with nvcc/g++ in the port build.
+- Not covered: running anything on an NVIDIA GPU, including the device-generic regression tests (the open item about cuFFT plan creation under capture on CUDA still stands).
+- Build trees, the dependency extracts and the source clone were deleted after the run. Logs and the comparison inputs stay in the job's `cw/logs/` (container-local).
