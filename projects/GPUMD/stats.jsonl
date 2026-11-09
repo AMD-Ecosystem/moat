@@ -53,3 +53,7 @@
 {"kind":"session","ts":"2026-11-05T22:55:07Z","epoch":1793919307.463040614,"event":"end","platform":"linux-gfx1100"}
 {"kind":"phase","ts":"2026-11-09T17:11:44Z","phase":"compile","seconds":36.262,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300-20261109-090333-fix3-gpumd/moat/projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx942 -j40"}
 {"kind":"phase","ts":"2026-11-09T17:42:14Z","phase":"compile","seconds":19.066,"exit":0,"cmd":"make -C agent_space/cc/port/src -j64 -O"}
+{"kind":"session","ts":"2026-11-09T17:45:19Z","epoch":1794246319.863526273,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-09T17:52:14Z","phase":"compile","seconds":0.004,"exit":2,"cmd":"make -C src -f makefile.hip HIP_ARCH=gfx1100 -j16"}
+{"kind":"phase","ts":"2026-11-09T17:54:00Z","phase":"compile","seconds":71.075,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261109-093623-rev3-sync-gpumd/moat/projects/GPUMD/src && make -C src -f makefile.hip HIP_ARCH=gfx1100 -j16"}
+{"kind":"session","ts":"2026-11-09T18:21:34Z","epoch":1794248494.198620246,"event":"end","platform":"linux-gfx1100"}

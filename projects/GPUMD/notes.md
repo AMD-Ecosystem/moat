@@ -840,3 +840,78 @@ Host code (`objdump -dr`). Only symbol/branch addresses and the hash tokens are 
 - `main_replica/force/ewald.o`: **not byte-identical to upstream, but differs only by two `__LINE__` constants**, `0x117`/`0x114` and `0x12f`/`0x12c` (279/276 and 303/300). These are the two `GPU_CHECK_KERNEL` sites after `find_k_and_G`, shifted +3 by the new comment. `cudaStreamSynchronize` is undefined in neither object (the 51018103 reference is gone), the `.text` sizes match (10148 B each), and the two kernels are identical. So no executable code changed; only the line number that `CHECK` would print on an error moved.
 
 Not covered (as before): `main_nep/nep_spin/spin_specialized.cu` under `NEP_SPECIALIZED_RUNTIME_BUILD`. PASS: at 374da0df the CUDA path builds with nvcc 12.8 exactly as upstream c3d5d8ac does, with identical device code and PTX. Host code differs only by the `fmax` codegen in `ilp_nep.o` and by `__LINE__` constants in `nep_spin.o` and `ewald.o`; there is no CUDA behaviour change against upstream. No platform states changed.
+
+## Review 2026-11-09 (linux-gfx1100, reviewer) -- fix round 51018103 -> 374da0df and skill 38ce17bd, CHANGES REQUESTED (skill only)
+
+Scope: `git diff 51018103 374da0df`, `git diff f3622149 374da0df`, the 374da0df message, skill commit 38ce17bd, the porter's 2026-11-09 entry, and the draft follow-up PR body (title and body under "Draft follow-up PR for jeff ... supersedes the earlier draft"). Fresh fork clone, `moat-port` = 374da0df = `origin/moat-port`. Host: RX 7900 XTX (gfx1100, wave32), HIP 7.16.26385 / AMD clang 24.0.0git (TheRock pip SDK), `HIP_VISIBLE_DEVICES=0` (dispatcher-pinned), `ulimit -c 0`. `orient.sh` completed normally and named reviewer; `set-state GPUMD linux-gfx1100 reviewing --agent reviewer` took the lock. The nvcc 12.8 record at 374da0df is PASS (ewald.o differs from upstream only by two `__LINE__` constants).
+
+### Must fix
+
+1. **Skill: the new rule "an async copy from a pageable source reads it before returning on CUDA and HIP" is false for `hipMemcpy2DAsync` on HIP 7.16, and the CV-CUDA case it calls unexplained is exactly that.** `references/fault-classes.md:177-203` (heading "the hazard is a pinned source or another stream, not a pageable source", the opening rule, "is safe on both platforms", and the "Unexplained by this rule: CV-CUDA" sentence) and `SKILL.md:83` ("`cudaMemcpy*Async` from a pageable host buffer reads it before returning on CUDA and HIP, so freeing it after the call is safe") state the rule for every async copy, but both probes (gfx942, gfx1100) measured only 1D `hipMemcpyAsync`; the 2D claim rests on the header note alone. Probe here (source below: pageable `std::vector` source filled 0x5a, optional 0.5 s `wall_clock64()` spin on the stream, the copy, then `memset(src,0xEE)` and `delete` at once, sync, D2H, byte histogram of the copied region; twice, plus a run with `dpitch == width`):
+
+| copy | bytes | spin | call | sync | device sees |
+|---|---|---|---|---|---|
+| `hipMemcpy2DAsync` H2D, dpitch 256 | 234 (13x18) | no / yes | 0.04 / 0.02 ms | 0.1 / 500 ms | 0xEE x218 plus freed-heap bytes |
+| same | 65536 (4096x16) | no / yes | 0.03 / 0.01 ms | 0.0 / 500 ms | 0xEE, all bytes |
+| same | 524288 (8192x64) | no / yes | 0.05 / 0.01 ms | 0.1 / 500 ms | 0xEE, all bytes |
+| same, dpitch = width | all three sizes | both | <= 0.07 ms | | 0xEE (and heap garbage at 234 B) |
+| `hipMemcpyAsync` H2D | 234, 65536 | both | <= 0.02 ms | | 0x5a, correct |
+| `hipMemcpyAsync` H2D | 524288 | yes | 500 ms (blocked) | 0.0 ms | 0x5a, correct |
+
+Without the overwrite every case copies 0x5a correctly, so the 2D path itself works; it reads the pageable source after the call returns, even on an idle stream and at any size, contrary to the `hip_runtime_api.h` note. The 1D rows reproduce the 64 KiB staged / larger-blocks result. This is the CV-CUDA mechanism (`TestInterpolationVarShapeWrap.cpp`, per-iteration `dstVec` freed after `cudaMemcpy2DAsync`, garbage only in padding the kernel never writes, fixed by keeping `dstVec` alive with no sync change), now reproduced on a current runtime rather than "not re-verified". It also corrects my previous review, which took the header note as covering 2D. Action: scope the safe rule to 1D `hipMemcpyAsync` H2D (documented and measured on gfx942 and gfx1100, HIP 7.16); add that pageable `hipMemcpy2DAsync` on HIP 7.16 (measured gfx1100; gfx942 not measured) reads the source after return, so a pageable 2D source must stay alive and unmodified until the stream is synchronized, and that 3D and other copy variants are unmeasured, so probe before relying on them; rewrite the CV-CUDA sentence as the explained example; fix the heading and `SKILL.md:83` to match. Keep the GPUMD cost paragraph, the pinned-source and cross-stream hazards, and the `wall_clock64()` recipe (add "for 2D, issue `hipMemcpy2DAsync` the same way"). 38ce17bd's message states the same over-broad rule; a follow-up skill commit on `port/GPUMD` is enough (no rewrite).
+
+Probe source (`hipcc --offload-arch=gfx1100 -O2 q.hip -o q`; for the `dpitch == width` run, replace the `dpitch` initialiser with `w`):
+
+    #include <hip/hip_runtime.h>
+    #include <chrono>
+    #include <cstdio>
+    #include <cstring>
+    #include <map>
+    #include <vector>
+    #define C(x) do{hipError_t e=(x);if(e){printf("err %s line %d\n",hipGetErrorString(e),__LINE__);return 1;}}while(0)
+    __global__ void spin(unsigned long long t){unsigned long long s=wall_clock64();while(wall_clock64()-s<t);}
+    using clk=std::chrono::steady_clock;
+    static double ms(clk::time_point a){return std::chrono::duration<double,std::milli>(clk::now()-a).count();}
+    // mode: 0 = 2D, 1 = 1D ; ovw: overwrite+free source after call
+    int run(hipStream_t st,int rate,int mode,int ovw,size_t w,size_t h,bool dospin){
+      size_t dpitch=(w+255)/256*256; unsigned char* d; C(hipMalloc(&d,dpitch*h));
+      C(hipMemset(d,0,dpitch*h)); C(hipDeviceSynchronize());
+      auto* src=new std::vector<unsigned char>(w*h,0x5a);
+      if(dospin) spin<<<1,1,0,st>>>((unsigned long long)rate*1000ull/2);
+      auto t0=clk::now();
+      if(mode==0) C(hipMemcpy2DAsync(d,dpitch,src->data(),w,w,h,hipMemcpyHostToDevice,st));
+      else C(hipMemcpyAsync(d,src->data(),w*h,hipMemcpyHostToDevice,st));
+      double tc=ms(t0);
+      if(ovw){memset(src->data(),0xEE,src->size()); delete src;}
+      auto t1=clk::now(); C(hipStreamSynchronize(st)); double ts=ms(t1);
+      std::vector<unsigned char> out(dpitch*h); C(hipMemcpy(out.data(),d,out.size(),hipMemcpyDeviceToHost));
+      std::map<int,long> hist; size_t rowlen=(mode==0)?w:w*h; size_t rows=(mode==0)?h:1; size_t pitch=(mode==0)?dpitch:w*h;
+      for(size_t r=0;r<rows;r++)for(size_t c=0;c<rowlen;c++)hist[out[r*pitch+c]]++;
+      printf("%s ovw=%d spin=%d bytes=%zu call=%.2fms sync=%.1fms vals:",mode?"1D":"2D",ovw,dospin,w*h,tc,ts);
+      for(auto&p:hist)printf(" %02x:%ld",p.first,p.second); printf("\n");
+      if(!ovw) delete src; C(hipFree(d)); return 0;
+    }
+    int main(){int rate; C(hipDeviceGetAttribute(&rate,hipDeviceAttributeWallClockRate,0)); printf("wallrate %d kHz\n",rate);
+      hipStream_t st; C(hipStreamCreate(&st));
+      size_t W[]={13,4096,8192},H[]={18,16,64};
+      for(int k=0;k<3;k++) for(int mode=0;mode<2;mode++) for(int ovw=0;ovw<2;ovw++) for(int sp=0;sp<2;sp++) if(run(st,rate,mode,ovw,W[k],H[k],sp)) return 1;
+      return 0;}
+
+### Checked, no change needed
+- **Tree:** `git diff f3622149 374da0df` is the three comment lines in `src/main_replica/force/ewald.cu:142-144` only; `git diff 51018103 374da0df` removes `CHECK(gpuStreamSynchronize(stream));` and adds them. Code equals upstream's.
+- **Comment accuracy:** the four uploads are `GPU_Vector::copy_from_host_async` -> 1D `gpuMemcpyAsync` H2D (`src/main_replica/utilities/gpu_vector.cuh:138-141`), which CUDA documents as staging pageable sources before return and HIP documents and behaves as synchronous/staged (table above). `src/` has no `Memcpy2D`/`Memcpy3D` call, so the 2D finding does not touch GPUMD. "Would serialize the replica streams that this thread interleaves" matches `Replica_Runtime::advance_device` and the measured cost. Length (3 lines) and style (`//` full sentences, inside the 100-column `.clang-format` limit, lines 86-92 chars) fit the file; upstream comments here are sparse, and three lines for a non-obvious "why no sync" is proportionate.
+- **374da0df message:** accurate (its claims are about `hipMemcpyAsync`); `[ROCm]` title 64 chars; "Authored with Claude."; no trailer; Test Plan literal.
+- **Draft PR body:** accurate for the final tree; `prose.py`: clean; `jargon.py -` (body only): clean. Nit, optional: "The CUDA build sees only the extra include, ..." omits the `fmax` line, which CUDA also compiles (the ILP_NEP paragraph already says CUDA resolves the old call to `fmax`, so it is not misleading); "Besides that line, the CUDA build sees only ..." would be exact. The internal reminder under the body still says "add the mi355 nvcc result for 51018103"; it is 374da0df now (PASS, recorded).
+
+### Tests on gfx1100, PR body commands from the repository root
+Every command in the draft body was run from the repository root, with gfx1100 and `-j$MAX_JOBS` (16) substituted. The release build and pytest ran in the fork clone. `make clean`, the DEBUG build and the regression run ran in a detached worktree at 374da0df (`agent_space/dbg`), so the release binaries pytest was using stayed in place. pytest and the DEBUG build overlapped on the same host.
+- `make -C src -f makefile.hip HIP_ARCH=gfx1100 -j16` (through `timeit.sh`): rc 0, 71 s, no errors (only upstream's `nodiscard` warnings). Sizes: gpumd 15128448 B, nep 3870840 B, tb 309904 B, gpumd_replica 2298824 B.
+- `python3 -m pytest tests_pytest/test_spin_*.py` (job venv: calorine 4.1, ase 3.29.0, pytest 7.3.2): **110 passed, 4 failed** in 1053 s. The 4 failures are the four `test_corrector_preserves_force_modifiers` `rand()` cases, matching the body's "110 of 114".
+- `make -C src -f makefile.hip clean`: rc 0. `make -C src -f makefile.hip HIP_ARCH=gfx1100 -j16 gpumd nep CFLAGS="-O3 --offload-arch=gfx1100 -DUSE_HIP -DDEBUG"`: rc 0, 920 s.
+- `python3 tests_regression/run_regression.py --repo-root "$PWD" --suite full --baseline "$PWD/src/gpumd" --candidate "$PWD/src/gpumd" --baseline-nep "$PWD/src/nep" --candidate-nep "$PWD/src/nep"`, run as written plus `--timeout-scale 2` and a representative subset in place of the full suite: `--case 'ilp_*' 'qnep_*' 'kspace_*' ewald_no_force nve 'nvt_*' 'parser_*' 'observer_*' pppm_round_5_7`. Result: **29 passed, 0 failed**; relations 4 passed, 21 skipped (members not selected); rc 0, 336 s. The subset includes `ilp_nep_cutoff_below_nep`, all four qNEP Ewald/PPPM cases, `observer_average_then_observe_control` and `pppm_round_5_7`.
+- Not in the body, but relevant because `ewald.cu` is in `gpumd_replica`: `python3 tests_regression/replica/test_replica.py` on the release binary gave 6/12. The 6 failures are the known `format_version 1` model-header failures (upstream dd7d0ba8, recorded in the sync round). In the scratch worktree with `examples/nep_train/nep.txt` from cd7f757d and `examples/qnep_train/nep.txt` from eda8e04b (`GPUMD_REPLICA` set to the release binary; the edit was reverted afterwards): **12/12 OK**, including the qNEP REMD/PRD Ewald and PPPM restart tests.
+- 374da0df's Test Plan, run as written from the fork clone root on the release build: rc 0, `kspace ewald` in `remd_restart.meta`.
+- `git status --porcelain` in the fork clone: clean; HEAD = `origin/moat-port` = 374da0df.
+
+### Recommendation
+**Request Changes, skill only (item 1).** The fork at 374da0df needs no change: the tree differs from f3622149 by the comment alone, the comment is accurate for the 1D uploads it describes, and the PR body is accurate and passes both gates. Item 1 is a follow-up commit on `port/GPUMD` correcting `references/fault-classes.md` and `SKILL.md:83` for the measured `hipMemcpy2DAsync` behaviour. No fork commit means no new nvcc or validation round. The next review only needs to check the skill delta.
