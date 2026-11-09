@@ -3219,3 +3219,67 @@ Host: Radeon Pro W7800 (gfx1100), HIP_VISIBLE_DEVICES=0 (pinned), TheRock SDK cl
 Items (2) and (3) are accurate. In (1), "CMake's `/DWIN32` comes from MSVC-style flags the HIP language does not get" was wrong. Stock CMake's `Platform/Windows-MSVC.cmake` (3.31 lines 473/479) appends `${_PLATFORM_DEFINES}` (`/DWIN32`) to every language's `FLAGS_INIT`, HIP included. That MSVC-syntax flag is the one `clang++ -x hip` rejects (item 1 of the windows-gfx1151 validation). WIN32 goes missing because a build working around that gap loses the flag. I corrected the clause in place. I also added that defining `WIN32` switches the sources' other `#ifdef WIN32` paths (so test that build), and that upstream hipify_torch still has the shebang call. The edit is on `port/LEAP` with this entry.
 
 Not run: the Windows build (no Windows host here; the windows-gfx1151 validator revalidates 53037f0) and nvcc (the mi355 host). `utils/check.py` fails only on `commits` (the fork clone's `main` mirror is 24 upstream commits behind; not this delta) and a vacuous `surface`. Integrity: `git -C projects/LEAP/src status --porcelain` empty. No fork push, no `gh` write, nothing installed into the shared Python (the editable install went into the job venv).
+
+## Validation 2026-11-09 (validator, linux-gfx1100, revalidate, moat-fix-216 @ 53037f0)
+
+jeff asked for this run. Verdict: **completed** at 53037f009f4b1047db1aed46b47675cb3b477e64 (`git fetch origin moat-fix-216` gives that sha = `head_sha`). On Linux, 53037f0 is the same program as b8595bb on this card. Every `dump_outputs` and `dump_point` array is bit-identical between the two shas, in the default build and in `LEAP_USE_NOTEX=ON`. `gpu_vs_cpu_validate.py` gives 14/14 on both builds, line for line equal to the gfx1100 b8595bb record. Upstream's `unit_tests.py` and `memory_leak_tests.py` give rc=0 on both builds with the recorded figures. Every 00fae7e comparison reproduces the b8595bb record exactly. Two differences from earlier records came up (leak-check page noise and an editable-install shadowing mistake of mine, both under Tests); neither is a port defect.
+
+Host: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32). HIP_VISIBLE_DEVICES=1 (pinned by the dispatcher; the b8595bb record used card 0 of the same four-W7800 host, so the hardware is identical). torch 2.16.0a0+git6c3af02, TheRock SDK clang (`_rocm_sdk_devel`) in /opt/python-3.11-venv, CMake 3.31.6, numpy 1.26.4. Every GPU run was under `ulimit -c 0`. At start, `amd-smi process` showed no process on card 1. Another fleet job (a GPUMD pytest) was running on another card. `orient.sh` finished normally with no hang. Fresh fork clone at projects/LEAP/src, detached at 53037f0, `protect-fork LEAP`, local `main`/`moat-fix-216` created from origin for jargon. The scripts (`dump_outputs`, `compare_outputs`, `dump_point`, `pt_nodict`, `bilat_frac`, `cc_probe`, `att_probe`, `leak_check`, `leak_check2`) and the b8595bb/00fae7e records (`pt_*.npz`, `ptfull_*.npz`, `cmp_*.txt`, logs) were copied unchanged from the b8595bb validation's job directory on this host. That run deleted its full-size dump npz files, so b8595bb was rebuilt here and dumped fresh.
+
+### Builds (all rc=0, 0 `error:` lines)
+```
+# agent_space/bld.sh <sha> <name> [args] = git archive of the fork clone, then
+#   cmake -S . -B build -G Ninja -DLEAP_GPU=AMD -DCMAKE_HIP_COMPILER=<sdk>/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=<sdk> -DCMAKE_BUILD_TYPE=Release [args]; cmake --build build -j 16
+bash utils/timeit.sh LEAP compile -- agent_space/bld.sh 53037f0 head                          # 1534 warning lines, 13.7 s
+bash utils/timeit.sh LEAP compile -- agent_space/bld.sh 53037f0 headnotex -DLEAP_USE_NOTEX=ON # 1502, 14.0 s
+agent_space/bld.sh b8595bb b85 ; agent_space/bld.sh b8595bb b85notex -DLEAP_USE_NOTEX=ON      # 1534 / 1502
+(cd <git archive of 00fae7e> && env -u PYTORCH_ROCM_ARCH MAX_JOBS=16 python setup_AMD.py build_ext --inplace)  # old; 20 hipcc, all --offload-arch=gfx1100
+# documented route, job venv (no torch there; LEAP does not need it):
+CMAKE_BUILD_PARALLEL_LEVEL=8 $FLEET_VENV/bin/python -m pip install -e . -Ccmake.define.LEAP_GPU=AMD -Ccmake.define.CMAKE_HIP_COMPILER=<sdk>/llvm/bin/clang++ -Ccmake.define.CMAKE_PREFIX_PATH=<sdk> -Cbuild-dir=build/{wheel_tag}   # rc=0, 24 s
+```
+The warning counts equal the b8595bb record. Pip route: `Successfully installed leapct-2.0+untagged`. CMakeCache has `CMAKE_HIP_ARCHITECTURES=gfx1100;gfx1100;gfx1100;gfx1100` and `Python3_EXECUTABLE=<job venv>/bin/python`, which is 3060a7c's `find_package(Python3)` picking the build interpreter, as the reviewer saw. Smoke test of the installed package: `python -I` from /tmp, `leapctype` loads from the editable tree. A 180x64x128 parallel-beam projection of a ones volume gives sum(g)=1.45664e+08. The package was uninstalled afterwards; the reason is under Tests.
+
+### Tests
+```
+AMD_LOG_LEVEL=3 bash utils/timeit.sh LEAP test -- bash -c "cd agent_space/cmp/<b> && python unitTests/gpu_vs_cpu_validate.py"     # head, headnotex: 7.1 s / 6.4 s
+bash utils/timeit.sh LEAP test -- agent_space/dumps.sh    # 387 s: python dump_outputs.py <b>/src /dev/shm/leapval216/<run>.npz 256 ; python compare_outputs.py A.npz B.npz
+python pt_nodict.py <b>/src runs/pt_<b>.npz ; timeout 180 python dump_point.py <b>/src runs/ptfull_<b>.npz ; python compare_outputs.py <record>.npz <new>.npz
+python cc_probe.py <b>/src ; python att_probe.py <b>/src mapfwd,mapback,cylback,cylfwd ; python bilat_frac.py <b>/src ; python leak_check.py <b>/src ; python leak_check2.py <b>/src   # head, headnotex, old
+bash utils/timeit.sh LEAP test -- bash -c "cd agent_space/cmp/<b>/unitTests && MPLBACKEND=Agg PYTHONPATH=../src $FLEET_VENV/bin/python unit_tests.py"          # matplotlib 3.11.2 into the job venv, numpy pinned 1.26.4
+bash utils/timeit.sh LEAP test -- bash -c "cd agent_space/cmp/<b>/unitTests && MPLBACKEND=Agg PYTHONPATH=../src $FLEET_VENV/bin/python memory_leak_tests.py"
+```
+- **gpu_vs_cpu_validate**, 53037f0 default and NOTEX: rc=0, **14/14, OVERALL: PASS** (the 12 projector cases plus the two loadTexture regression checks, consistency and attenuated), 0 `Error: GPU`. Default: adjoint parallel 8.28e-07/7.65e-07, fan 3.82e-07/4.45e-07, coneparallel 1.24e-03/1.23e-06, cone-flat 2.84e-06/1.52e-04, cone-curved 1.79e-03/5.16e-07, modular 2.87e-03/2.86e-03; fbp_interior 0.9993-1.0000; consistency cost(-3, 0, 3)=3.115, 0.06119, 3.004 PASS; attenuated 3.41e-05 PASS. NOTEX: the same lines except fan VD 5.09e-07 and coneparallel SF 1.29e-06. Both builds equal the b8595bb record (and the reviewer's 53037f0 default run). `hsa_amd_pointer_info() failed` lines: 68 default, 0 NOTEX, as recorded.
+- **dump_outputs** (256 cols; runs in order b85_r1, head_r1, headnotex_r1, b85notex_r1, old_r1, head_r2, old_r2, head_r3; 38-47 s each):
+  - **b8595bb vs 53037f0: ALL BIT-IDENTICAL, 36/36 default and 36/36 NOTEX.** head_r1 vs head_r2 vs head_r3: bit-identical.
+  - 53037f0 texture vs NOTEX: 0/36, every array rel <= 4.2e-07 (= record).
+  - 00fae7e vs 53037f0 default: 28/36 in both rounds. The `cmp_*` bit_identical/max_abs/rel/differing lines are textually identical to the b8595bb record's `cmp_old_r1_new_r1.txt` and `cmp_old_r2_new_r3.txt`. The 8 differing arrays are cone-flat VD_fwd 2.95e-02, cone-curved VD_fwd 2.33e-01, cone-flat SF_back/fbp 1.58e-03/1.50e-02, cone-flat VD_back/fbp 6.2e-07/4.0e-05 (upstream kernel changes), and fan VD/SF_fwd at 2.6e-07 (the `tex.filter` contraction difference, explained in the b8595bb record). 00fae7e vs 53037f0 NOTEX: 0/36, the same differing pattern as recorded.
+  - Peak dump footprint was 3 npz (8.0 GB) in /dev/shm, under the 10 GB cap. /dev/shm/leapval216 is removed.
+- **Timings** (median of 5, ms project/backproject; back-to-back old_r2 -> head_r3): parallel VD 125.9/60.9 -> 132.4/64.7, fan SF 125.9/108.5 -> 132.2/116.3, coneparallel VD 265.9/64.9 -> 290.5/69.6, cone-flat VD 249.0/61.9 -> 206.6/62.9, cone-flat SF 248.6/329.7 -> 331.7/212.6, cone-curved VD 273.6/64.3 -> 207.0/67.0, modular SF 253.3/219.3 -> 273.4/222.5.
+  - Upstream kernel changes give the same directions as recorded: Joseph cone VD forward 0.76-0.83x, tilted cone-flat SF 1.33x project / 0.65x back.
+  - Elsewhere head/old is 1.05-1.10x project and 1.01-1.08x back. The b8595bb record had 1.01-1.07x / 1.00-1.06x. The extra 1-4 points are session noise, not code. The device code is bit-identical in output to b8595bb, and the only delta is CMake. b85_r1 -> head_r1, the same program, already shows 1.01-1.06x, and head_r2 -> head_r3 shows 1.01-1.05x. Performance observation only, not a gate.
+  - NOTEX/texture: project 1.44-1.52x (Joseph cone VD 0.76x), back 0.85-1.25x (= record).
+- **dump_point** (pt_nodict, 4-5 s each): 14 ok and `upsample` FAILED (ctypes dtype, pre-existing) in both builds, the same ok/FAILED pattern as the record.
+  - **53037f0 vs b8595bb record: 19/19 bit-identical default, 19/19 NOTEX.**
+  - 00fae7e record vs 53037f0: 16/19 default and 11/19 NOTEX. The compare lines are textually identical to the record's `cmpt_old_new.txt` / `cmpt_old_newnotex.txt`: downsample/downsample3 at 3.3e-07/4.2e-07, eSF_cone back at 3.0e-03, and on NOTEX also att_map fwd/back and att_cyl back at 2.3e-07 to 2.5e-07 and eSF parallel/fan back at 2.8e-07.
+  - Full `dump_point.py` (with `dictionary`), timeout 180: rc=0 in 14 s on both builds, bit-identical to the b8595bb `ptfull_*` records. `dictionary ok {'out': (1, 0)}` is followed by the pre-existing asynchronous `hipSetDevice Error: an illegal memory access`, as recorded. dictionary_out is bit-identical to 00fae7e.
+- **cc_probe**: head 703.3714, 675.9775, 660.8594, 862.7307; NOTEX 703.3714, 675.9774, 660.8594, 862.7307; 00fae7e 703.3714, 675.9775, 660.8596, 862.7307 (= record). **att_probe**: all three builds give 1926872 / 6.222942e+06, 1556944 / 1.447452e+09, 1293072 / 5.394915e+08, 1906833 / 2.497943e+06 (= record).
+- **bilat_frac**, head, NOTEX and 00fae7e identical: 5187/5187 changed. max|gpu-ref| (2.5, 0.5) 2.604e-06, (2.0, 0.5) 1.981e-06, (2.5, 5.0) 3.548e-06, (2.0, 5.0) 2.251e-06 (= record).
+- **leak_check**: sum(g)=377330 on all three builds. **leak_check2**: results 377330 / 1.46752e+07 / 0.0297462 (NOTEX 0.0297461), = record.
+  - **Difference from the record:** the first pass showed nonzero free-memory deltas of +/-2097152 bytes. head: device loop -2 MiB, attenuated +2 MiB. NOTEX leak_check -2 MiB. 00fae7e: +2 MiB then -2 MiB. The record had 0 on every loop.
+  - Explanation: the device's free-memory reading (`torch.cuda.mem_get_info`) moves in 2 MiB pages, with no leak behind it. The signs alternate, each pair nets to zero, nothing grows with the 200 iterations, and 00fae7e shows the same. Two reruns per build gave 0/0/0 on head both times. NOTEX gave +4/-2/+2 MiB, then 0/0/0. 00fae7e gave 0/0/0, then 0/-2/0 MiB. The record's 0 is the common case. These are leak checks; a real leak would be monotonic and scale with iterations.
+- **unit_tests.py**: rc=0, 23 s / 24 s. Default: projector error 0.0009719871054704919% / 0.013741582580709275%, FBP error 0.9148% / 1.0271%. NOTEX: projector 0.0009719870411063502% / 0.013741581550883007%, same FBP. Both equal the b8595bb record's digits.
+- **memory_leak_tests.py**: rc=0 in 456 s (default) / 491 s (NOTEX) (record: 451 / 491), with no error, fault or traceback line.
+- **A mistake of mine, caught and redone:**
+  - The first NOTEX `unit_tests.py` printed the *default* build's projector errors and had no "falling back to .../build/lib/libleapct.so" warning. The editable `leapct` I had just installed into the job venv had loaded instead. scikit-build-core's editable install registers a meta-path finder, and that finder wins over `PYTHONPATH=../src`.
+  - I killed the NOTEX `memory_leak_tests.py` that was running on that install, by PID (its stats.jsonl row has exit 143). Then `pip uninstall leapct` from the job venv, and both NOTEX tests were rerun. They carry the fallback warning that proves the NOTEX library loaded, and they give the figures above.
+  - The default `unit_tests.py`/`memory_leak_tests.py` runs started before the install finished, and both carry the fallback warning, so they are valid. Every other script runs the shared torch Python with `sys.path.insert(0, <b>/src)`, where no leapct is installed, so none was affected.
+  - The pitfall is general for anyone who validates with both a direct CMake tree and an editable install in one venv: check which library loaded.
+
+### Other gates
+- Jargon: `python3 utils/jargon.py --port LEAP` -> `jargon: clean`.
+- Documentation: README documents `python -m pip install -e . -Ccmake.define.LEAP_GPU=AMD` (line 58) and the wheel route (line 77). The editable route builds and runs here (above). 53037f0 changes no doc.
+- CUDA gate: not run here (no nvcc on this host). "CUDA compile check (nvcc 12.8) at 53037f0" records rc=0 by both documented routes.
+- Integrity: `git -C projects/LEAP/src status --porcelain` is empty, and HEAD is 53037f009f4b1047db1aed46b47675cb3b477e64 = origin/moat-fix-216.
+- No fork push, no `gh` write, nothing into the shared Python. matplotlib went into the job venv; the editable leapct went into the job venv and was uninstalled. All dump npz files are deleted.
+
+validated_sha: 53037f009f4b1047db1aed46b47675cb3b477e64
