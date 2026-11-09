@@ -2591,3 +2591,140 @@ cuobjdump --list-elf / -ptx <so> ; readelf -d <so> ; nm -D <so> | grep GOMP_
 - Device code: `cuobjdump -ptx` (all-major embeds PTX for sm_120 only) gives 4199 `tex.` and 3474 `ld.global` instructions in both default builds, 153325 lines each; the only differences are 8 hunks in `bilateralFilterKernel`, `bilateralFilterKernel_txty`, `scaledBilateralFilterKernel`, `scaledBilateralFilterKernel_txtyy` (`setp.gt` -> `setp.ge`, cda2608's `i >= N.x`). So 4937bda leaves the CUDA texture path untouched, as claimed. `LEAP_USE_NOTEX=ON`, newly a CMake option, now compiles upstream's software sampler on CUDA (0 `tex.`, 14797 `ld.global`; before it the variable did nothing for CUDA).
 - Host code, preprocessed with nvcc -E (`-arch=sm_80`, the build's defines and include paths) for the touched files: cuda_utils.cu differs only in `std::min`/`min` -> `fminf` on float GPU-memory values (`getAvailableGPUmemory` returns float, `max_gpu_memory` and `freeGB` are float), `max` -> `fmax` on `(double, double)`, and `&(tex_object)` / `(tex_object)` parentheses from the `LEAP_TEX_HANDLE` macro; ramp_filter.cu `fmax(0.0, double(cos(omega)))` (CUDA's host `max(double, float)` already promoted to double), `fmin` on `(double, double)` and `fminf(0.5f, float)`; projectors_Joseph.cu `fmax` on two doubles and `fmaxf` on floats (as at 63d2724); total_variation, backprojectors_VD, projectors_SF, projectors_extendedSF one `min`/`max` line each. Same argument types as before, no narrowing; only NaN handling would differ (fmin/fmax drop a NaN operand). file_io.cpp differs only by the added `#include <cstdint>`; the Windows guard in it and in leap_defines.h is inactive on Linux.
 - Not run: no CUDA runtime behaviour is claimed. Importing either wheel (63c9544 or 8c76c08) on this host and calling `project` segfaults the same way (no NVIDIA driver; with `set_gpu(-1)` it prints `cudaMalloc(projections) failed!`), so it says nothing about the port.
+
+## Review 2026-11-09 (reviewer, linux-gfx942, moat-fix-216 @ 8c76c08 vs fix.base 00fae7e)
+
+jeff asked for this run. Verdict: **changes-requested** (2 findings). Scope: the merge f7a71e7 (`git show --cc`, plus `git diff 63c9544 f7a71e7` and every non-texture hunk of 0c8846f..00fae7e checked against the tip) and the six follow-up commits. Host: AMD Instinct MI300X (gfx942, no image support), HIP_VISIBLE_DEVICES=2 (pinned by the dispatcher), torch 2.16.0a0+git6c3af02, TheRock SDK clang 24 in /opt/python-3.11-venv, CMake 3.31.6; every GPU run under `ulimit -c 0`. `orient.sh` finished in about 2 minutes (no hang workaround needed).
+
+### Port Correctness
+1. **The linear-memory path aliases the caller's device buffer, and three callers free or overwrite it while the texture is live (gfx942/gfx950 regression against the published 00fae7e).** `loadTexture(TEX_DATA&, float* dev_data, ...)` in its `if (linearTexture)` branch (`src/cuda_utils.cu:1484-1499`, upstream's NOTEX body moved there by 4937bda) stores `dev_data` with `owns = 0`; the hardware branch copies into a cudaArray, and 00fae7e's buffer path copied too. Callers written for snapshot semantics break:
+   - `src/geometry/geometric_calibration.cu:393-397` (`consistencyCost`): `loadTexture(d_data_txt, dev_g_subset, ...)`, then `float* dev_cost = dev_g_subset; setToConstant(dev_g_subset, 0.0, ...)`, and `consistencyCostKernel` writes `cost[ind]` into the buffer it samples. **Measured on gfx942**: `consistency_cost` (cone, 180 x 133 x 128, Delta_centerCol 0, 1, 3, -3) returns `0.0` for every shift at 8c76c08 (texture build and LEAP_USE_NOTEX=ON build alike) and at upstream 63c9544; 00fae7e returns 703.37, 675.98, 660.86, 862.73.
+   - `src/projectors/projectors_attenuated.cu:1058-1063` (`backproject_attenuated`, `data_on_cpu`): `cudaFree(dev_g)` immediately after `loadTexture(d_data_txt, dev_g, ...)`, before the backprojector kernels read it, and `cudaMalloc(dev_f)` follows. **Measured on gfx942**: attenuated backprojection of numpy data (voxel mu map and cylindrical model) faults with `HSA_STATUS_ERROR_MEMORY_FAULT` / `hipErrorIllegalAddress` at 8c76c08 and at 63c9544, and the dead context makes every later call in the process return zeros (in `dump_point.py`, `att_map back` and the following `att_cyl fwd` are all zero); 00fae7e completes (back nonzero 1556944, sum 1.447452e+09). Forward attenuated projection is unaffected.
+   - `src/projectors/projectors_Siddon.cu:1589-1594` (`backproject_Siddon`, `data_on_cpu`): the same free-before-launch pattern; no caller in `src/` today, so latent.
+   An audit of every other device-pointer `loadTexture` call (about 30 live sites: VD, SF, eSF, Joseph, symmetric, attenuated forward, scatter, billiards, matching pursuit, noise filters, resample, ramp filter) found the buffer outlives the reading kernels and no kernel writes what it samples; extents and strides of the two branches agree at every site. The same defect exists in upstream's own AMD build (every GPU) and in any `LEAP_USE_NOTEX=ON` build, CUDA included, but this round is what routes gfx942/gfx950 into it by default, and the PR currently in front of the maintainer does not have it. Fix: in the linear branch of the device-pointer `loadTexture`, `cudaMalloc` an owned buffer and `cudaMemcpy(..., cudaMemcpyDeviceToDevice)` (`owns = 1`), like `loadTexture_from_cpu`/`loadTexture1D` already do, so both branches give every caller a snapshot; it is vendor-neutral and also fixes the CUDA NOTEX build. (The copy is one device-to-device pass over the input; 00fae7e paid it and was still slower than the tip only because of the sampler.) Patching the three callers instead leaves the next upstream caller exposed. Add a regression check that runs on the linear path: `consistency_cost` nonzero and equal across texture and NOTEX builds, and attenuated backprojection of numpy data (for example in `gpu_vs_cpu_validate.py`).
+
+### Commit Hygiene / PR text
+2. **The proposed fork review PR body and its `## Upstream reply` need revision.** (a) `jargon.py -` flags `Revalidation` in its `## Validation` line. (b) The `## Upstream reply` lists the min/max, OpenMP and bilateral fixes but not 4937bda, the one design decision the maintainer has to accept: the PR now adds texture objects for image-capable AMD GPUs on top of upstream's global-memory sampler (keeping the sampler for gfx942/gfx950); say so, and add the finding-1 fix. (c) `## Validation` should carry gfx942 (below) next to gfx90a; note that on gfx942 none of the 36 dump arrays is bit-identical to 00fae7e (the linear path changed from the old `leapTexel` blend to upstream's `fmaf` sampler), so the "27 of 36" figure is gfx90a-only. The upstream PR #216 body also still describes `setup_AMD.py`; a draft revision is below (two `<PENDING ...>` markers to settle once finding 1 is fixed and the CUDA/other-GPU runs are in).
+
+### Checks with no finding (evidence for the next round)
+- Merge: only `src/leap_defines.h` has a combined diff (the Windows uint8/uint16 guard plus upstream's additions; correct). Every non-texture hunk of 0c8846f..00fae7e is present at the tip or explained: bilateral `i >= N.x` (cda2608, all 4 kernels), all host min/max sites (35f83ef; the Joseph modular half-angle, ramp-filter low-pass, bilateral widths among them), the `linearInterp` kernel parameter (replaced by `tex.filter`, set by every loader from `useLinearInterpolation`, so no point-vs-linear mismatch is possible), the `analytic_ray_tracing_gpu.cu` include order (new file builds), Windows guard (kept), setup_AMD.py-only pieces (removed in f8465b0). The old port's non-finite-coordinate handling survives on the texture path (`leap_hip_tex3D`); upstream's sampler returns 0 for NaN.
+- Fetch sites: no `tex1D/2D/3D` call outside `src/texture_compat.h` (three commented `tex2D` in matching_pursuit.cu); every kernel, upstream's new ones (rotated-detector SF/VD backprojectors, billiards) included, fetches through `TEX3D`/`TEX1D`, hence `leap_tex3D`/`leap_tex1D` on gfx942. No `cudaCreateTextureObject`/array call outside `src/cuda_utils.cu`, and all four loaders call `LEAP_LINEAR_TEXTURE` before creating anything; 0 `Error: GPU` lines in any run.
+- Host min/max: every replacement matches CUDA's overload for its argument types (`v_min`/`v_max`, `z_0()`, `z_samples()`, `furthestFromCenter()` are float, so `fmaxf` = CUDA's `max(float,float)`; mixed float/double sites use `fmin`/`fmax` on doubles, = CUDA's mixed overloads). Hipify claim confirmed: `third_party/hipify_torch/hipify_torch/cuda_to_hip_mappings.py:65-66`, and the upstream build's `build/hipified_src/hip_utils.hip:724` reads `::min(retVal, getAvailableGPUmemory(...))`.
+- OpenMP: no `.cu` file has an OpenMP pragma; the CUDA build compiles the `.cpp` files as CXX with `OpenMP::OpenMP_CXX`, so only the AMD build (every TU HIP) lacked `-fopenmp`, and the fix sits in the `LEAP_HIP` branch. The crash it removes is real, not masked: `src/resample_cpu.cpp` fills `source_2Ds[omp_get_thread_num()]` in a `num_threads` loop, so without OpenMP only slot 0 is set and the later frees hit garbage. Upstream 63c9544 on gfx942: `dump_point.py` aborts in `downsample` with `double free or corruption (out)`; the tip completes. Installed library: `NEEDED libomp.so`, RUNPATH to the SDK's `lib/llvm/lib` survives the pip install (it comes from the clang driver).
+- Cone VD test change (b747883) is justified, not a port defect: `projectors.cpp:82-83` sends cone non-SF forward projection to `project_Joseph_cone` in host code with no vendor condition; `coneBeamProjectorKernel_Joseph` (`projectors_Joseph.cu:2516`) takes `rFOVsq` and never uses it, while every voxel-driven backprojector skips `x*x + y*y > rFOVsq` (e.g. `backprojectors_VD.cu:1169`). Reproduced on gfx942 with the old full-volume test (f8465b0's file): cone-flat VD 2.21e-01, cone-curved VD 2.18e-01 FAIL at 8c76c08 and at upstream 63c9544 (which additionally fails modular SF 0.2251 / 3.40e+00); 00fae7e passes all 12 (cone-flat VD 1.42e-04). The arithmetic is vendor-neutral and the sampler cannot create a 0.22 gap, so CUDA should print the same with the old test (the V100 run can confirm). Upstream may want to know the Joseph cone kernel ignores its `rFOVsq`; that is a person's call.
+
+### Tests run (gfx942)
+```
+agent_space/bld.sh <sha> <name> [-DLEAP_USE_NOTEX=ON]   # git archive + cmake -G Ninja -DLEAP_GPU=AMD -DCMAKE_HIP_COMPILER=<sdk>/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=<sdk> -DCMAKE_BUILD_TYPE=Release; cmake --build -j 37
+#   tip (8c76c08), tipnotex (8c76c08, LEAP_USE_NOTEX=ON), up (63c9544); all rc=0, offload-arch=gfx942 only; warning lines 1592 / 1560 / 1576
+cd old && python setup_AMD.py build_ext --inplace     # 00fae7e baseline, rc=0
+# documented build, into the job venv (the shared Python is off limits):
+$FLEET_VENV/bin/python -m pip install -e . -Ccmake.define.LEAP_GPU=AMD -Ccmake.define.CMAKE_HIP_COMPILER=<sdk>/llvm/bin/clang++ -Ccmake.define.CMAKE_PREFIX_PATH=<sdk> -Cbuild-dir=build_pip   # rc=0, 38 s; the bare command finds the compiler but needs CMAKE_PREFIX_PATH for hipfft on this TheRock layout (environment, same for upstream)
+```
+- `gpu_vs_cpu_validate.py`: tip and tipnotex **12/12 PASS**, identical lines (both take the linear path here): fbp_interior 0.9993-1.0000; adjoint parallel 8.28e-07/7.65e-07, fan 3.82e-07/4.45e-07, coneparallel 1.24e-03/1.29e-06, cone-flat 2.84e-06/1.52e-04, cone-curved 1.79e-03/5.81e-07, modular 2.87e-03/2.86e-03. 0 `hsa_amd_pointer_info` lines, 0 `Error: GPU`. 00fae7e with its own test: 12/12, the recorded gfx942 lines.
+- `dump_outputs.py` (256 cols): tip vs tipnotex **ALL BIT-IDENTICAL (36/36)**, times 0.99-1.01 (the per-device selection gives the same code path). 00fae7e vs tip: 0/36 bit-identical; 28 arrays at the ULP level (rel <= 1.02e-06, most ~3e-07) from the sampler change; the rest are upstream kernel changes as on gfx90a (cone-flat/curved VD_fwd 2.95e-02/2.33e-01, cone-flat SF_back/fbp 1.58e-03/1.50e-02, cone-flat VD_back/fbp 1.3e-06/1.0e-04, cone-flat SF_fwd 2.4e-06, parallel_VD_fbp 3.8e-06). Time tip/00fae7e (project/back): parallel 0.94/0.45, fan 0.92-0.93/0.43-0.46, coneparallel 1.03/0.41-0.70, cone-flat VD 0.40/0.61, cone-flat SF 0.76/0.28, cone-curved VD 0.37/0.71, cone-curved SF 1.03/0.41, modular 1.02/0.45-0.61. The three 2.85 GB npz files were deleted after comparison.
+- `dump_point.py`: ok/FAILED lines differ from 00fae7e only by finding 1 (`att_map back` 0 nonzero, then `att_cyl fwd` 0 nonzero after the fault) and `dictionary` (00fae7e 1 nonzero, tip 0; that case memory-faulted on gfx90a before, not investigated). Against upstream 63c9544 (downsample/upsample/dictionary skipped because 63c9544 aborts there): every array bit-identical except `att_cyl_fwd` (63c9544 ran it before its own fault), so the median/low-signal/bilateral-(3.0, 0.1) differences from 00fae7e (rel 1.4e-01 to 2.5) come from version two's rewritten filters, not the port. `upsample` fails in the script (ctypes dtype), as before.
+- `bilat_frac.py`: tip and tipnotex 5187/5187 changed, max|gpu-ref| 2.727e-06 / 1.981e-06 / 3.548e-06 / 2.489e-06 (= 00fae7e); 63c9544 0/5187 for FWHM 0.5 (the truncation).
+- `leak_check.py`: 0 bytes over 200 iterations, sum(g)=377330 (tip and 00fae7e).
+- `unit_tests.py` rc=0 (projector error 0.000972% / 0.0137%, FBP error 0.915% / 1.027%); `memory_leak_tests.py` rc=0 (`MPLBACKEND=Agg PYTHONPATH=../src $FLEET_VENV/bin/python`).
+- `jargon.py --port LEAP`: clean. Our commits: `[ROCm]` titles <= 72 characters except cda2608, whose vendor-neutral title matches the original bounds-fix commit; no `Co-Authored-By` in any of our commits (the 15 such trailers in the range are upstream's own commits).
+- Probes (local, below): `att_probe.py <src> cylfwd|cylback|mapfwd|mapback|mapback_gpu`, `cc_probe.py <src>`.
+
+att_probe.py:
+```python
+"""usage: att_probe.py <src> [order]: attenuated parallel projector cases in isolation; prints nonzero counts and sums."""
+import sys, numpy as np
+sys.path.insert(0, sys.argv[1])
+from leapctype import tomographicModels
+import warnings; warnings.simplefilter("ignore")
+nC = 128; nR = 133; nA = 180
+pix = 1.03 * 2.0 * 250.0 / 512 * (512.0 / nC); sdd = 765.0; sod = 0.5 * sdd
+def mk():
+    lc = tomographicModels(); ang = lc.setAngleArray(nA, 360.0)
+    lc.set_parallelbeam(nA, nR, nC, sod/sdd*pix, sod/sdd*pix, 0.5*(nR-1)+0.3, 0.5*(nC-1)+0.27, ang)
+    lc.set_default_volume(); lc.set_gpu(0)
+    f = lc.allocate_volume(); lc.set_FORBILD(f, False)
+    g = lc.allocate_projections(); lc.set_FORBILD(None, False); lc.rayTrace(g)
+    return lc, f, g
+def rep(tag, a): print(f"{tag:28s} nonzero {np.count_nonzero(a):9d} sum {float(a.sum(dtype=np.float64)):.6e}", flush=True)
+for case in sys.argv[2].split(","):
+    lc, f, g = mk()
+    if case.startswith("map"): lc.set_attenuationMap(0.02 * f.copy())
+    else: lc.set_cylindircalAttenuationMap(0.01, 0.45 * nC * sod / sdd * pix)
+    if case.endswith("fwd"):
+        gp = lc.allocate_projections(); lc.project(gp, f.copy()); rep(case + " (numpy)", gp)
+    else:
+        b = lc.allocate_volume(); lc.backproject(g.copy(), b); rep(case + " (numpy)", b)
+    if case.endswith("gpu"):
+        import torch
+        fd = torch.from_numpy(f).cuda(); gd = torch.from_numpy(g).cuda()
+        bd = torch.zeros_like(fd); lc.backproject(gd, bd); rep(case + " (device)", bd.cpu().numpy())
+```
+
+cc_probe.py:
+```python
+"""usage: cc_probe.py <src>: consistency_cost on a flat-panel cone-beam sinogram for a few detector shifts."""
+import sys, numpy as np
+sys.path.insert(0, sys.argv[1])
+import warnings; warnings.simplefilter("ignore")
+from leapctype import tomographicModels
+lc = tomographicModels(); nA, nR, nC = 180, 133, 128
+lc.set_conebeam(nA, nR, nC, 1.0, 1.0, 0.5*(nR-1), 0.5*(nC-1), lc.setAngleArray(nA, 360.0), 500.0, 1000.0)
+lc.set_default_volume(); lc.set_gpu(0)
+g = lc.allocate_projections(); lc.set_FORBILD(None, False); lc.rayTrace(g)
+for d in [0.0, 1.0, 3.0, -3.0]:
+    print(f"Delta_centerCol {d:5.1f}: cost {lc.consistency_cost(g.copy(), 0.0, d, 0.0, 0.0)!r}", flush=True)
+```
+
+### Draft revision of the upstream PR #216 body (for jeff; `prose.py` and `jargon.py` clean; not posted)
+````
+## Summary
+
+This PR adds AMD GPU support to LEAP on top of the version two CMake build. Upstream's AMD backend (`LEAP_GPU=AMD`, hipify into the build directory, `texture_compat.h`) already compiled; this PR makes it produce correct results and use texture hardware where the GPU has it.
+
+To build on ROCm, from the repository root:
+
+```
+python -m pip install -e . -Ccmake.define.LEAP_GPU=AMD
+```
+
+CMake compiles for the GPUs visible at build time unless `CMAKE_HIP_ARCHITECTURES` is set (for example `-Ccmake.define.CMAKE_HIP_ARCHITECTURES="gfx90a;gfx942;gfx1100"`).
+
+## What is implemented
+
+Textures. The AMD build defined `__USE_NOTEX` for every GPU, so every fetch went through the global-memory sampler. On HIP, `TEX_DATA` now carries either a texture object or the global-memory handle, chosen per device at run time:
+- GPUs with image support get a point-filtered texture object, and `TEX3D`/`TEX1D` blend the corner texels in software (HIP cannot filter float element-read textures linearly), with CUDA's convention for unnormalized coordinates. On an MI250X this made projection 1.7-2.8x faster than the global-memory sampler.
+- gfx942 and gfx950 have no image support and use the global-memory sampler. <PENDING FIX: the device-pointer `loadTexture` now copies the caller's buffer, as the texture path does; three callers (`consistencyCost`, `backproject_attenuated`, `backproject_Siddon`) free or overwrite that buffer while the texture is live.>
+- The loaders check the device's `hipDeviceAttributeImageSupport` against a flag compiled into that device's code and create no texture if they disagree, so a multi-architecture build works on every GPU. `LEAP_USE_NOTEX` is now a CMake option (default OFF) that forces the global-memory sampler on any backend.
+
+Host `min`/`max` on floating-point values. HIP declares host `min`/`max` only for `int` unless `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__` is defined, and the vendored hipify rewrites `std::min`/`std::max` to `::min`/`::max`. 27 host calls in the `.cu` files truncated their arguments to `int`; among the effects, modular-beam cone data took the parallel-beam backprojector (modular SF FBP recovered 0.2251 instead of 1.0) and an intensity FWHM below 1 made the bilateral filters return their input. These calls now use `fmin`/`fmax`/`fminf`/`fmaxf`, the functions CUDA's host overloads call, so CUDA results are unchanged.
+
+OpenMP in the AMD build. Every source is compiled as HIP, but `OpenMP::OpenMP_CXX` only adds `-fopenmp` to CXX sources, so the CPU code was built without OpenMP: its loops ran serially and `down_sample` on host data aborted with `free(): invalid pointer` (per-thread buffers indexed by `omp_get_thread_num()`). The AMD build now compiles and links with the HIP compiler's `-fopenmp`.
+
+Bilateral filter bounds. The four kernels in `src/denoise/bilateral_filter.cu` tested `i > N.x` and so read and wrote one slice past the volume; the check is now `i >= N.x`. This is vendor-neutral.
+
+Cleanup: `src/fbp/ramp_filter_hip.cuh` and `src/projectors/projectors_Joseph_cpu_hip.h` are removed. They are stale hipify outputs, and while they exist hipify keeps them instead of translating the current headers (the configure log prints `[skipped, already hipified]`).
+
+A new test, `unitTests/gpu_vs_cpu_validate.py`, runs 6 geometries (parallel, fan, cone-parallel, cone-flat, cone-curved, modular) with the VD and SF projectors and checks that outputs are finite, that FBP of a uniform cylinder recovers 1.0 inside it, and that `<Af,g> == <f,A^T g>` for a random `f` inside the field of view. (Cone-beam VD pairs the Joseph forward projector, which does not apply the field-of-view cut, with the voxel-driven backprojector, which does; with `f` filling the whole grid that pair differs by 0.22 on any GPU.)
+
+## Effect on the CUDA/NVIDIA path
+
+With the default `LEAP_USE_NOTEX=OFF`, the CUDA build keeps `TEX_DATA = cudaTextureObject_t` and the hardware `tex3D`/`tex1D` calls; the texture changes, OpenMP flags and HIP defines are guarded to the AMD backend. The CUDA-visible source changes are the `fmin`/`fmax` call sites (same results as CUDA's overloads) and the bilateral bounds check, which leaves every in-range output unchanged. <PENDING: nvcc compile and V100 comparison against upstream at the final commit.>
+
+## Validation
+
+`unitTests/gpu_vs_cpu_validate.py` passes 12/12 on:
+- AMD Instinct MI250X (gfx90a), Linux, texture objects
+- AMD Instinct MI300X (gfx942), Linux, global-memory sampler
+- <PENDING: Radeon PRO W7800 (gfx1100) Linux, Radeon 8060S (gfx1151) Windows>
+
+FBP recovers 0.9993 to 1.0000 inside the cylinder and the adjoint relative error is between 3.8e-07 and 2.9e-03. Upstream's `unit_tests.py` and `memory_leak_tests.py` run to completion, and repeated project/backproject calls leak no device memory. Fractional bilateral widths (2.5, 0.5) now change the volume and match a float64 NumPy model of the kernel to within 2.7e-06.
+
+This work was authored with the assistance of Claude, an AI assistant.
+
+---
+
+This pull request was prepared with the help of an AI assistant acting as a coding agent and was read and approved by a person before it was opened. It comes from an ongoing effort to add AMD GPU support to widely used CUDA projects, one repository at a time: https://github.com/AMD-Ecosystem/moat -- that repository describes how the work is done and what a person checks before anything is submitted.
+
+If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
+````
