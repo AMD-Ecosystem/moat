@@ -2997,3 +2997,45 @@ The three drafts in the porter's entry (fork review PR body, `## Upstream reply`
 2. **"fail at 8c76c08" needs a qualifier.** Fork review PR body, b8595bb bullet: "(fail at 8c76c08, pass at b8595bb)" should read "(fail at 8c76c08 on the global-memory path: gfx942, or any LEAP_USE_NOTEX=ON build; pass at b8595bb)". The upstream body already scopes it to the MI300X and is accurate.
 
 Owed, not part of this verdict: gfx90a validator record at b8595bb, gfx1100, Windows gfx1151, nvcc on mi355 and the V100 comparison.
+
+## Validation 2026-11-09 (validator, linux-gfx942, revalidate, moat-fix-216 @ b8595bb)
+
+jeff asked for this run. Verdict: **completed** at b8595bb15253f44ebfd6c9cf549259137ec59ced. Every number below equals the porter's gfx942 b8595bb record or the reviewer's gfx942 00fae7e record; the only differences are run-to-run timing noise (within 1.5%, one backprojection 3.7%) and the free GPU memory upstream's `unit_tests.py` prints (other jobs share the card). `orient.sh` finished in about 2 minutes (no hang workaround needed). Fresh fork clone at `projects/LEAP/src` (`protect-fork LEAP`), detached at b8595bb = `origin/moat-fix-216`; working tree clean (`git status --porcelain` empty). No lock taken, nothing pushed to the fork.
+
+Host: AMD Instinct MI300X HF (gfx942, no image support), HIP_VISIBLE_DEVICES=2 (pinned by the dispatcher), torch 2.16.0a0+git6c3af02, numpy 1.26.4, TheRock SDK clang in /opt/python-3.11-venv, CMake 3.31.6. Every GPU run under `ulimit -c 0`. Scripts are the ones recorded in this file (dump_outputs, compare_outputs, dump_point, bilat_frac, leak_check, leak_check2, cc_probe, att_probe), copied with the porter's b8595bb records (`pt_new.npz`, `pt_newnotex.npz`, dump logs) and the reviewer's 00fae7e records (`pt_old.npz`, `cmp_old_tip.txt`, `dump_old.log`) and 00fae7e `setup_AMD.py` build (gfx942) from the two earlier job directories on this host. matplotlib 3.11.2 went into the job venv (numpy pinned at 1.26.4); nothing into the shared Python.
+
+### Builds
+```
+# agent_space/bld.sh <sha> <name> [args] = git archive <sha> | tar -x; cmake -S . -B build -G Ninja -DLEAP_GPU=AMD -DCMAKE_HIP_COMPILER=<sdk>/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=<sdk> -DCMAKE_BUILD_TYPE=Release [args]; cmake --build build -j $MAX_JOBS
+bash utils/timeit.sh LEAP compile -- agent_space/bld.sh b8595bb15253f44ebfd6c9cf549259137ec59ced new                     # rc=0, 15.8 s
+bash utils/timeit.sh LEAP compile -- agent_space/bld.sh b8595bb15253f44ebfd6c9cf549259137ec59ced newnotex -DLEAP_USE_NOTEX=ON   # rc=0, 16.2 s
+# documented route, into the job venv:
+$FLEET_VENV/bin/python -m pip install -e . -Ccmake.define.LEAP_GPU=AMD -Ccmake.define.CMAKE_HIP_COMPILER=<sdk>/llvm/bin/clang++ -Ccmake.define.CMAKE_PREFIX_PATH=<sdk> -Cbuild-dir=build_pip   # rc=0, 17.4 s, leapct-2.0+untagged
+```
+0 `error:` lines; `warning:` lines 1534 (default) / 1502 (NOTEX), = the porter's b8595bb counts; offload-arch gfx942 only (464 compile lines each).
+
+### Tests (default `new` and `LEAP_USE_NOTEX=ON` `newnotex`, both at b8595bb)
+```
+cd <tree>/unitTests && AMD_LOG_LEVEL=3 python gpu_vs_cpu_validate.py
+python agent_space/scripts/dump_outputs.py <tree>/src /dev/shm/leapv216/out_<name>.npz 256 ; python agent_space/scripts/compare_outputs.py A.npz B.npz
+python agent_space/scripts/dump_point.py <tree>/src runs/pt_<name>.npz ; python agent_space/scripts/cmp_pt.py A.npz B.npz
+python agent_space/scripts/{bilat_frac,leak_check,leak_check2}.py <tree>/src
+python agent_space/scripts/cc_probe.py <tree>/src ; python agent_space/scripts/att_probe.py <tree>/src mapfwd,mapback,cylback,cylfwd
+cd <tree>/unitTests && MPLBACKEND=Agg PYTHONPATH=../src $FLEET_VENV/bin/python {unit_tests,memory_leak_tests}.py
+```
+(each wrapped in `utils/timeit.sh LEAP test --`)
+
+- `gpu_vs_cpu_validate.py`: **14/14 PASS, OVERALL: PASS on both builds** (7.5 s / 7.3 s), lines byte-identical to the porter's b8595bb logs: fbp_interior 0.9993-1.0000; adjoint parallel 8.28e-07/7.65e-07, fan 3.82e-07/4.45e-07, coneparallel 1.24e-03/1.29e-06, cone-flat 2.84e-06/1.52e-04, cone-curved 1.79e-03/5.81e-07, modular 2.87e-03/2.86e-03; loadTexture regression checks: consistency cost(-3, 0, 3) = 3.115, 0.06119, 3.004 PASS, attenuated adjoint 3.41e-05 PASS. 0 `hsa_amd_pointer_info`, 0 `Error: GPU`. The pip-installed tree (job venv python, library found as package data, no fallback warning) prints the same 14 lines.
+- `dump_outputs.py` (256 cols; npz on /dev/shm, at most three 2.85 GB files at once, all deleted): default vs NOTEX **36/36 bit-identical**; default run 1 vs run 2 **36/36 bit-identical**; 00fae7e vs b8595bb **0/36 bit-identical, and all 36 rows (max_abs, rel, differing counts) are identical to the reviewer's 00fae7e-vs-8c76c08 table** (28 at rounding level, rel <= 1.02e-06, from the sampler change; cone-flat/curved VD_fwd 2.95e-02/2.33e-01, cone-flat SF_back/fbp 1.58e-03/1.50e-02, cone-flat VD_back/fbp 1.3e-06/1.0e-04, cone-flat SF_fwd 2.4e-06, parallel_VD_fbp 3.8e-06 from upstream's kernel changes). The b8595bb npz records were deleted by the porter; against the porter's b8595bb dump logs: nonzero counts 12/12 equal for default, NOTEX and run 2; project time mine/record 0.991-1.014, backproject 0.963-1.015 (noise). 00fae7e times vs the reviewer's log: 1.000-1.004 / 0.996-1.010. Time b8595bb/00fae7e: project 0.37-1.03, back 0.29-0.72 (= the reviewer's ratios to 0.01).
+- `dump_point.py`: rc=0 both; ok/FAILED lines identical to the porter's b8595bb log and to the reviewer's 00fae7e log (`upsample` FAILED in the script, ctypes dtype, pre-existing; `dictionary` ok with 1 nonzero). Arrays: vs porter's `pt_new.npz` 20/20 bit-identical, vs `pt_newnotex.npz` 20/20, default vs NOTEX 20/20; vs 00fae7e `pt_old.npz` 12/20, the 8 that differ are exactly the porter's list: att_map fwd/back, att_cyl back (rel 2.3e-07 to 2.5e-07, sampler), downsample/downsample3 (3.3e-07/4.2e-07, clang-compiled resample_cpu.cpp), eSF back parallel/fan 2.9e-07 / 2.8e-07, cone 3.0e-03 (upstream's rewrite).
+- `bilat_frac.py`, both: 5187/5187 changed for every case, max|gpu-ref| 2.727e-06 / 1.981e-06 / 3.548e-06 / 2.489e-06 (= record).
+- `leak_check.py`, both: delta 0 bytes, sum(g)=377330. `leak_check2.py`, both: 0 bytes on every loop; results 377330 / 1.46752e+07 / 0.029746 (= record).
+- Probes: `cc_probe.py` both builds 703.3712, 675.9773, 660.8590, 862.7300; 00fae7e 703.3712, 675.9775, 660.8591, 862.7300 (= porter). `att_probe.py`: map fwd 1926872 / 6.222942e+06, map back 1556944 / 1.447452e+09, cyl back 1293072 / 5.394915e+08, cyl fwd 1906833 / 2.497943e+06 for both builds and 00fae7e (= porter).
+- Upstream `unit_tests.py`: rc=0 both builds (32.8 s / 32.4 s), projector error 0.000972% / 0.0137%, FBP error 0.915% / 1.027%; output identical to the porter's b8595bb logs except the free GPU memory line (191.04 vs 190.11 GB; other jobs on the card). `memory_leak_tests.py`: rc=0 both builds (495.6 s / 486.3 s), 0 error/fault/Traceback lines, output (100 RWLS iterations, power-iteration lambdas 1.5593449276298152, 3.838254020666161, ...) identical to the porter's b8595bb logs except the library build timestamp.
+
+### Gates
+- CUDA compile: not rerun; recorded above at b8595bb ("CUDA compile check (nvcc 12.8) at b8595bb", rc=0).
+- `jargon.py --port LEAP`: clean (needed local `main` and `moat-fix-216` branches in the clone: `git branch main origin/main`, `git branch moat-fix-216 origin/moat-fix-216`).
+- Documentation: the ROCm build is in README "Editable installs" / "Building wheels" (`-Ccmake.define.LEAP_GPU=AMD`), upstream's own text.
+- Integrity: `git -C projects/LEAP/src status --porcelain` empty.
+- Telemetry: two `test` records with exit 2 at 21:02:40Z are my first invocation (`timeit.sh` changes to the repository root, so the relative script path was not found), not test failures.
