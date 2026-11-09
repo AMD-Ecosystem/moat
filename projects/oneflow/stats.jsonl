@@ -571,3 +571,5 @@
 {"kind":"phase","ts":"2026-11-09T17:52:50Z","phase":"test","seconds":11.163,"exit":0,"cmd":"agent_space/of_new.sh python -m pytest -q -p no:cacheprovider /var/lib/jenkins/fleet/jobs/mi300-20261109-081837-oneflow-fix25/moat/projects/oneflow/src/python/oneflow/test/graph/test_graph_fused_mlp_cuda_graph.py"}
 {"kind":"phase","ts":"2026-11-09T17:53:00Z","phase":"test","seconds":9.705,"exit":0,"cmd":"agent_space/of_new.sh python -m pytest -q -p no:cacheprovider /var/lib/jenkins/fleet/jobs/mi300-20261109-081837-oneflow-fix25/moat/projects/oneflow/src/python/oneflow/test/graph/test_graph_fused_mlp_cuda_graph.py"}
 {"kind":"phase","ts":"2026-11-09T17:53:10Z","phase":"test","seconds":9.927,"exit":0,"cmd":"agent_space/of_new.sh python -m pytest -q -p no:cacheprovider /var/lib/jenkins/fleet/jobs/mi300-20261109-081837-oneflow-fix25/moat/projects/oneflow/src/python/oneflow/test/graph/test_graph_fused_mlp_cuda_graph.py"}
+{"kind":"session","ts":"2026-11-09T18:03:41Z","epoch":1794247421.137982415,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-09T18:31:22Z","epoch":1794249082.842166476,"event":"end","platform":"linux-gfx942"}
