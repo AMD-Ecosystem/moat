@@ -972,3 +972,14 @@ The porter's extended probe (modes 1D/2D/3D; `ovw` 0 untouched, 1 `memset(0xEE)`
 
 ### Recommendation
 **Request Changes, skill only (items 1-2).** This is one follow-up skill commit on `port/GPUMD`. The fork, the PR body, the nvcc record and the validation picture are unaffected. The next review only needs that commit.
+
+## Skill fix 2026-11-09 (linux-gfx1100, porter) -- review items 1-2 and nit, skill commit cde62cba, head unchanged at 374da0df
+
+jeff asked for this skill-only run. Host: RX 7900 XTX (gfx1100). `orient.sh` completed and named porter; `set-state GPUMD linux-gfx1100 porting` took the lock. No fork change and no GPU work: `moat-port` stays at 374da0df.
+
+- Item 1 (`fault-classes.md:177-206`, `SKILL.md:83`): the claim that CUDA documents staging every pageable H2D async copy before return is gone. The entry now quotes NVIDIA's API synchronization page (Memcpy, Asynchronous: "might be synchronous with respect to host"; the driver "may" stage into pinned memory), notes the "returns once ... copied to the staging memory" guarantee is in the Synchronous section, and says CUDA staging of pageable 2D copies before return is observed (CV-CUDA), not documented, and not probed by MOAT. HIP behaviour is labelled measured. Conclusion on both platforms: keep a pageable 2D/3D source alive until the stream (or an event after the copy) is synchronized; on CUDA do not rely on it being read before return unless documented. CV-CUDA's freed `dstVec` "works on CUDA in practice". The 1D advice (no extra sync for HIP) is unchanged.
+- Item 2 (`fault-classes.md:196`): `hipMemcpy3DAsync` now "(both arches)", folded into the 2D bullet, per the reviewer's gfx1100 probe.
+- Nit (`fault-classes.md:187-189`): the header note is no longer "only the 1D half holds"; it now says neither copy is synchronous, but for 1D the source can be reused or freed right after the call (staged up to 64 KiB, blocking above it, per the bullet), and for 2D it cannot.
+- `grep -rn -i 'pageable\|Memcpy2D\|Memcpy3D' .claude/skills/cuda-to-rocm`: hits only `SKILL.md:83`, `fault-classes.md:177-222` and the unrelated layered-texture line (`fault-classes.md:347`); all consistent. New lines are ASCII; `utils/check.py` ok.
+
+Stage `ported`; the next review only needs skill commit cde62cba.
