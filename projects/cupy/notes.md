@@ -724,3 +724,32 @@ Evidence (laptop, `source agent_space/cupy_rocm_env.sh`, x64 Native Tools env, `
 - Editable: `rm -f ...; python -m pip install -v --no-build-isolation --no-deps -e projects/cupy/src` EXIT 0, `_depends.json` restored; import from the source tree (cwd `C:/Users/jdaily`, no sys.path edit) binds the same two DLLs from `<root>\bin`, kernel sum 90.0 (log `build-editable-r2.log`).
 - `tests/install_tests tests/import_tests`: 31 passed, 1 skipped. `smoke.py` (`CUPY_GPU_MEMORY_LIMIT=25%`): OK. flake8 7.5.0 on `_command.py`: clean. `jargon.py --port cupy`: clean. `prose.py` on the commit message: clean.
 - Not run: Linux/CUDA builds (the delta only removes a win32+HIP branch; no compile command changes), full suite (validated platforms derive `revalidate` at the new head).
+
+## Review 2026-11-09b (linux-gfx1201, reviewer): delta 161d6e87e..225236c47, and 24a62ef95..225236c47 as a whole
+
+Scope: `install/cupy_builder/_command.py`, one new commit `[ROCm] Copy the DLL dependency list once for editable builds on Windows` (+3/-6), read with the surrounding unchanged `custom_build_ext` code, using the pr-review skill with an inline fact-check. Verdict: **review passed**, no findings. Finding 1 of the 2026-11-09 review is resolved: the `editable_mode` copy at the end of `build_extensions` is gone, and `_depends.json` is copied to the source tree only in the `copy_extensions_to_source` override. Its comment now says "`--inplace` and editable builds".
+
+`moatlib.py classify cupy 24a62ef95 225236c47`: **class=mixed** (arch_independent=False, inert=False; `_command.py`: token count differs). `161d6e87e..225236c47` classifies the same way. This is expected for a build-script edit, and the validated platforms derive `revalidate`.
+
+### Checked, with no finding
+
+- Mechanism, re-read in the job venv's setuptools 79.0.1. `build_ext.finalize_options` sets `inplace = True` when `editable_mode` is set (`setuptools/command/build_ext.py:223-224`). `run()` clears `inplace` around `_build_ext.run` and then calls `copy_extensions_to_source()` when it was set (lines 97-102). `editable_wheel._set_editable_mode` sets `editable_mode` on the build sub-commands (`editable_wheel.py:230-239`). So the override is the single copy point for `pip install -e`, `build_ext --inplace` and `setup.py develop`, and a plain wheel or install (inplace False) never writes into the source tree. The new comment and commit message describe this correctly.
+- `_copy_depends_json_to_source` reads `self.build_lib`, which `run()` leaves unchanged, so it reads the same path `build_extensions` wrote. The override runs only after a successful `_build_ext.run`, and only under `sys.platform == 'win32' and use_hip`, which is the same `win32` block that writes the file. The file therefore always exists when the override copies it. `os`, `shutil` and `json` are still used. No orphaned code is left: the old `self.inplace` test, which was always False there, is gone at 225236c47.
+- CUDA and Linux paths: the override calls `super()` first and adds work only on win32 with HIP. The delta has no compile or link code, so the nvcc comparison of Ruling 4 (CUDA compile check at 24a62ef95) still holds.
+- Commit hygiene: the title has the `[ROCm]` prefix and is 71 characters. No Co-Authored-By or noreply trailer. The body discloses AI assistance and has a Test Plan with fenced commands. The messages and diff for 24a62ef95..225236c47 are ASCII. `utils/prose.py` on the 225236c47 message: clean. `python3 utils/jargon.py --port cupy`: clean, with the clone's local `main` set to upstream base 18b54de, as in the 2026-11-06b review. flake8 7.x on `_command.py`: clean. The porter's PR-prep squash note (do not repeat 161d6e87e's "only for `--inplace`" claim) still applies.
+
+### Linux HIP no-change check (gfx1201, TheRock pip ROCm, HIP 71626385, Python 3.11, setuptools 79.0.1, Cython 3.2.9, numpy 2.4.6 in the job venv)
+
+The same script was run in two worktrees, `agent_space/wt-24a62ef95` and `agent_space/wt-225236c47` (submodules cccl 4ee3a7b, dlpack cd0d5e4, jitify 1a0ca0e, xsf 2e1e697), built in parallel:
+
+```bash
+export ROCM_HOME=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+export PATH="$FLEET_VENV/bin:$ROCM_HOME/bin:$PATH" LD_LIBRARY_PATH="$ROCM_HOME/lib" CUPY_INSTALL_USE_HIP=1 HCC_AMDGPU_TARGET=gfx1201 CUPY_NUM_BUILD_JOBS=12
+utils/timeit.sh cupy compile -- bash -c "cd agent_space/wt-<sha> && python setup.py build_ext --inplace -v"
+```
+
+- Both builds: EXIT 0 (about 273 s each). The configure summary is the same (cuda 71626385, cub 400700, nccl 23007, random, thrust and dlpack Yes). Each has 472 warning lines, identical after path normalisation, and the same 64-entry `.so` list.
+- All 131 command lines are **identical** once the tree path is normalised: 64 g++ compiles, 64 links and 3 hipcc device compiles. `CUPY_CACHE_KEY` is the same in both trees (bad50f9b), as expected because the delta touches no header. Extraction note: one link line in the base log was interleaved behind a diagnostic gutter (`      | INFO:root:...`), so match with `grep -o`, not an anchored `^` grep.
+- The `nm -D --defined-only` output of every `.so` is identical (6930 lines), with `__hip_cuid_*` excluded. No `_depends.json` is written on Linux (`cupy/.data` is empty).
+- Smoke on the 225236c47 tree, under `ulimit -c 0` with `HIP_VISIBLE_DEVICES=1` (gfx1201): pass. It covered an elementwise op and reduction (90.0), a RawKernel (100.0), random plus sort, and FFT against NumPy. The `_ARRAY_API not found` line is the known shared scipy 1.10 noise.
+- `python -m pytest tests/install_tests tests/import_tests`, run from the worktree: 30 passed, 2 skipped. The skips are `test_build.py:138` ("For ROCm/HIP environment") and `test_features.py:23` ("For CUDA environment", because `CUPY_INSTALL_USE_HIP` was not exported at test time). The stats.jsonl `test` row with exit 4 is a wrong-cwd invocation through timeit.sh (no tests collected), not a failure.

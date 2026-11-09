@@ -194,3 +194,8 @@
 {"kind":"phase","ts":"2026-11-09T19:06:29Z","phase":"compile","seconds":98.774,"exit":0,"cmd":"bash -c cd projects/cupy/src && python setup.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-09T19:08:50Z","phase":"compile","seconds":71.699,"exit":0,"cmd":"python -m pip install -v --no-build-isolation --no-deps -e projects/cupy/src"}
 {"kind":"phase","ts":"2026-11-09T19:10:26Z","phase":"test","seconds":43.446,"exit":0,"cmd":"bash -c cd projects/cupy/src && python -m pytest -q tests/install_tests tests/import_tests"}
+{"kind":"session","ts":"2026-11-09T19:25:11Z","epoch":1794252311.777475438,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-09T19:47:40Z","phase":"compile","seconds":272.730,"exit":0,"cmd":"agent_space/build.sh /var/lib/jenkins/fleet/jobs/gfx1201-20261109-112137-cupy-review4/moat/agent_space/wt-24a62ef95"}
+{"kind":"phase","ts":"2026-11-09T19:47:41Z","phase":"compile","seconds":273.766,"exit":0,"cmd":"agent_space/build.sh /var/lib/jenkins/fleet/jobs/gfx1201-20261109-112137-cupy-review4/moat/agent_space/wt-225236c47"}
+{"kind":"phase","ts":"2026-11-09T19:48:42Z","phase":"test","seconds":0.178,"exit":4,"cmd":"python -m pytest -q -p no:cacheprovider tests/install_tests tests/import_tests"}
+{"kind":"session","ts":"2026-11-09T19:49:20Z","epoch":1794253760.609446130,"event":"end","platform":"linux-gfx1201"}
