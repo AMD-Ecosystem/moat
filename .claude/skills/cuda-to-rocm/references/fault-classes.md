@@ -174,33 +174,44 @@ The reliance is a latent upstream bug, not a ROCm defect: zero explicitly
 (`hipMemsetAsync`) before the partial-write kernel, and audit any kernel whose write set is
 smaller than its output allocation. (opencv_contrib: cudastereo census_transform border.)
 
-**`cudaMemcpy*Async` lifetime and ordering: the hazard is a pinned source or another stream,
-not a pageable source.** An async copy from PAGEABLE host memory reads its source before the
-call returns, on CUDA and on HIP alike: `hip_runtime_api.h` documents for `hipMemcpyAsync`
-and `hipMemcpy2DAsync` "If host or dst are not pinned, the memory copy will be performed
-synchronously". Measured on HIP 7.16 (gfx942 and gfx1100): a pageable H2D copy of at most 64
-KiB is staged at call time and returns while the stream is still busy, and a larger one
-blocks until the stream drains; in neither case is the source read after return. So copying
-from a local `std::vector` and letting it go out of scope, or reusing it at once, is safe on
-both platforms, and a stream sync added "for HIP" is a cost with no benefit: in GPUMD's
-`gpumd_replica`, where one thread interleaves the streams of all replicas on a GPU, a
-per-call sync after the Ewald k-vector uploads made an 8-replica run about 21% slower on
-gfx1100 (four runs each) and 2.5x slower on gfx942 (one run each), and was removed. The real
-hazards are: (1) a PINNED or registered source (`hipHostMalloc`, `hipHostRegister`, a
-pinned-vector class) freed or overwritten before the stream reaches the copy, because that
-copy really is asynchronous; and (2) cross-stream ordering, where a kernel on another stream
-(or the legacy null stream against a non-blocking stream, below) reads the destination
-before the copy lands. Fix those with a stream or event sync before the buffer is reused, or
-an event wait on the consuming stream. To probe a runtime, queue a long spin kernel on the
-stream that waits on `wall_clock64()` (constant rate; `clock64()` wraps at 20 bits on gfx11,
-see below, and a 2e8-tick `clock64()` spin hung for over 4.5 minutes on gfx1100), issue the
-copy, overwrite the source at once, then sync and compare; time the call to see whether it
-staged or blocked. Unexplained by this rule: CV-CUDA's `TestInterpolationVarShapeWrap.cpp`
-frees a per-iteration pageable `dstVec` after `cudaMemcpy2DAsync`, and on ROCm 7.2.1 garbage
-appeared in the row padding that vanished when `dstVec` was kept alive. That contradicts the
-documented behaviour and was not re-verified on a current runtime; a different cause (an
-older runtime path, or another buffer) is possible. (GPUMD: `main_replica` Ewald
-`find_k_and_G`; CV-CUDA.)
+**`cudaMemcpy*Async` lifetime and ordering: a pageable 1D source is safe, a pageable 2D or
+3D source is not on HIP.** CUDA documents that every H2D async copy from PAGEABLE host
+memory is staged before the call returns. HIP does so only for 1D `hipMemcpyAsync`:
+`hip_runtime_api.h` says "If host or dst are not pinned, the memory copy will be performed
+synchronously" for it and for `hipMemcpy2DAsync`, but only the 1D half holds. Measured with
+a pageable `std::vector` source overwritten (and freed) right after the call, with and
+without a 0.5 s `wall_clock64()` spin kernel ahead of the copy on the stream, at 234 B, 64
+KiB and 512 KiB, tight and padded device pitch (HIP 7.16.26385, gfx942 and gfx1100):
+- 1D `hipMemcpyAsync` H2D of at most 64 KiB is staged at call time and returns while the
+  stream is still busy; a larger one blocks until the stream drains. The device always sees
+  the original bytes, so a 1D source may be freed or reused at once.
+- `hipMemcpy2DAsync` (both arches) and `hipMemcpy3DAsync` (gfx942; gfx1100 not measured) H2D
+  return in under 0.1 ms at every size, even on an idle stream, and read the source later:
+  the device sees the overwrite, or freed-heap bytes when the buffer was deleted.
+
+So on HIP a pageable 2D or 3D source must stay alive and unchanged until the stream (or an
+event recorded after the copy) is synchronized; CUDA code that frees a local `std::vector`
+after `cudaMemcpy2DAsync` is correct on CUDA and copies garbage on ROCm. CV-CUDA is this
+case: `TestInterpolationVarShapeWrap.cpp` frees a per-iteration pageable `dstVec` after
+`cudaMemcpy2DAsync`, and on ROCm 7.2.1 garbage appeared in the row padding the kernel never
+writes; keeping `dstVec` alive until the stream sync fixed it with no sync change. Other
+copy variants (D2H, `hipMemcpyToSymbolAsync`, arrays) are unmeasured; probe before relying
+on them. Do not add a sync after a 1D pageable upload "for HIP": it is a cost with no
+benefit. In GPUMD's `gpumd_replica`, where one thread interleaves the streams of all
+replicas on a GPU, a per-call sync after the 1D Ewald k-vector uploads made an 8-replica run
+about 21% slower on gfx1100 (four runs each) and 2.5x slower on gfx942 (one run each), and
+was removed. The other hazards, on both platforms: (1) a PINNED or registered source
+(`hipHostMalloc`, `hipHostRegister`, a pinned-vector class) freed or overwritten before the
+stream reaches the copy, because that copy really is asynchronous; and (2) cross-stream
+ordering, where a kernel on another stream (or the legacy null stream against a non-blocking
+stream, below) reads the destination before the copy lands. Fix those with a stream or event
+sync before the buffer is reused, or an event wait on the consuming stream. To probe a
+runtime, queue a long spin kernel on the stream that waits on `wall_clock64()` (constant
+rate; `clock64()` wraps at 20 bits on gfx11, see below, and a 2e8-tick `clock64()` spin hung
+for over 4.5 minutes on gfx1100), issue the copy (for 2D or 3D, `hipMemcpy2DAsync` or
+`hipMemcpy3DAsync` the same way), overwrite the source at once, then sync and compare; time
+the call to see whether it staged, blocked or deferred. (GPUMD: `main_replica` Ewald
+`find_k_and_G`, and the probe in its notes; CV-CUDA.)
 
 **A functor returning a reference to a by-value or forwarded parameter** binds to a
 temporary that expires at the return. nvcc and CUB happen to keep the value live in
