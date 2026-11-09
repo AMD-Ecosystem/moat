@@ -7,7 +7,7 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-09T17:37:07Z",
+  "updated_at": "2026-11-09T17:37:15Z",
   "head_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38",
   "waivers": {},
   "license_spdx": "MIT",
@@ -181,5 +181,11 @@
   "porting": {
     "arch": "linux-gfx90a",
     "since": "2026-11-09T17:37:07Z"
+  },
+  "fix": {
+    "branch": "moat-fix-216",
+    "base_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38",
+    "review_pr": null,
+    "opened_at": "2026-11-09T17:37:15Z"
   }
 }
