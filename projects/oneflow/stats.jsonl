@@ -581,3 +581,14 @@
 {"kind":"phase","ts":"2026-11-09T19:35:55Z","phase":"test","seconds":133.190,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261109-105952-oneflow-val2/moat/agent_space/suite/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261109-105952-oneflow-val2/moat/agent_space/suite/graph_cg /var/lib/jenkins/fleet/jobs/rx7900-20261109-105952-oneflow-val2/moat/agent_space/suite/graph_list.txt 4 ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1"}
 {"kind":"phase","ts":"2026-11-09T19:41:52Z","phase":"test","seconds":341.635,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261109-105952-oneflow-val2/moat/agent_space/suite/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261109-105952-oneflow-val2/moat/agent_space/suite/full /var/lib/jenkins/fleet/jobs/rx7900-20261109-105952-oneflow-val2/moat/agent_space/suite/list.txt 3"}
 {"kind":"session","ts":"2026-11-09T19:42:46Z","epoch":1794253366.201715779,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-09T19:07:02Z","epoch":1794251222.809049406,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-09T19:07:57Z","phase":"compile","seconds":6.410,"exit":1,"cmd":"bash agent_space/build.sh all"}
+{"kind":"phase","ts":"2026-11-09T19:20:26Z","phase":"compile","seconds":727.175,"exit":0,"cmd":"bash agent_space/build.sh all"}
+{"kind":"phase","ts":"2026-11-09T19:33:49Z","phase":"test","seconds":256.749,"exit":0,"cmd":"bash agent_space/cap.sh new 5"}
+{"kind":"phase","ts":"2026-11-09T19:37:52Z","phase":"test","seconds":242.843,"exit":0,"cmd":"bash agent_space/cap.sh new 5 lt"}
+{"kind":"phase","ts":"2026-11-09T19:50:43Z","phase":"test","seconds":118.271,"exit":0,"cmd":"bash agent_space/suite.sh graph 0 4"}
+{"kind":"phase","ts":"2026-11-09T19:52:41Z","phase":"test","seconds":117.967,"exit":0,"cmd":"bash agent_space/suite.sh graph 0 4"}
+{"kind":"phase","ts":"2026-11-09T19:54:17Z","phase":"test","seconds":96.537,"exit":0,"cmd":"bash agent_space/suite.sh tensor 0 4"}
+{"kind":"phase","ts":"2026-11-09T20:14:21Z","phase":"test","seconds":1203.488,"exit":0,"cmd":"bash agent_space/suite.sh modules 0 8"}
+{"kind":"phase","ts":"2026-11-09T20:21:02Z","phase":"test","seconds":401.379,"exit":0,"cmd":"bash agent_space/reg.sh 0 r1"}
+{"kind":"session","ts":"2026-11-09T20:22:09Z","epoch":1794255729.381687437,"event":"end","platform":"linux-gfx90a"}

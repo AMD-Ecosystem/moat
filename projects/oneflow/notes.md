@@ -4732,3 +4732,48 @@ Already recorded at this head: "CUDA compile check at 8d470dcc14" (mi355, nvcc 1
 - Documentation: README.md's ROCm block and `build_rocm.sh` are unchanged by 021f4ad34..8d470dcc1. The libunwind change needs no documentation: the build now works with or without libunwind.
 - `git -C projects/oneflow/src status --porcelain --untracked-files=no`: empty.
 - Not run: two-GPU one_embedding/P2P tests (one GPU pinned). The delta since d9e41753e touches no embedding, shuffle or collective kernel.
+## Validation 2026-11-09 (validator, linux-gfx90a, MI250X; head 8d470dcc1 `[ROCm] Correct the libunwind comment about glog's fallback`: **completed**)
+
+Host: MI250X GCD (gfx90a:sramecc+:xnack-, wave64), `HIP_VISIBLE_DEVICES=0` pinned by the dispatcher (one GPU), AMD EPYC 7702, ROCm 10.1.0 SDK wheels, **libunwind-dev 1.6.2 installed**, Python 3.11.17, numpy 1.26.4, protobuf 3.20.3 (`$FLEET_VENV/bin/python -m pip install -r dev-requirements.txt fsspec pytest-timeout pytest-repeat opencv-python-headless==4.10.0.84`), torch 2.16.0a0+git6c3af02 symlinked read-only into `$FLEET_VENV-base-links`, `ulimit -c 0` on every run, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, `PYTHONDONTWRITEBYTECODE=1`, no JIT extension builds. Fresh fork clone (`--reference` the 021f4ad34 gfx90a job's clone, `--dissociate`) at `moat-port` = 8d470dcc14be72b8f96434ccc62cd57129aabc56. Scripts are the 021f4ad34 gfx90a round's (`agent_space/suite.sh`, `rt.sh`, `py1.sh`, `reg.sh`, `t/cg_grad.py`, `longk.py`, `cg_ws1.py`), retargeted to this job; new: `build.sh`, `one.sh new|old <test>` (runs a test file from this tree against this build or the 021f4ad34 build, read-only), `cap.sh`, `ctl.sh`, `cg.sh`, `cmp.py` (per-id outcome comparison of two junit dirs).
+
+### Verdict: **completed** at 8d470dcc1. The libunwind blocker of the 021f4ad34 round is gone on a host with libunwind-dev, every capture regression test passes 5 of 5 with and without `ROCBLAS_USE_HIPBLASLT=1`, the two new tests fail on the 021f4ad34 build, and every suite matches the 021f4ad34 gfx90a junit id for id.
+
+### Build (documented procedure, clean, libunwind-dev installed)
+`utils/timeit.sh oneflow compile -- bash agent_space/build.sh all`, which is `bash build_rocm.sh all` with `ROCM_CLANG`/`ROCM_CLANG_C` from the SDK wheel, `CMAKE_HIP_ARCHITECTURES=gfx90a`, `JOBS=$MAX_JOBS` (128), `CCACHE_DISABLE=1` (root disk had 16 GB free), and `CMAKE_PREFIX_PATH=$R`: **rc 0, 727 s**, `OF_GPU_WARP_SIZE: 64`. (A first attempt without `CMAKE_PREFIX_PATH` stopped at `find_package(hip)`: the SDK wheel is not at `/opt/rocm`, the README's path. That is the host, not the port.) No `Found Unwind`, `CMakeCache.txt` has 0 `Unwind_` entries, glog `config.h`: `HAVE_EXECINFO_H` defined, `HAVE_LIB_UNWIND` and `HAVE_UNWIND_H` undefined. `nm -D liboneflow.so | grep -c ' U unw_'` = **0**, `ldd`: no libunwind. `import oneflow` works: `flow.cuda.is_available()` True, a 64 x 1000 softmax sums to 64.0, a 64 x 64 fp32 mm differs from numpy by 9.5e-6.
+
+### Capture regression tests (`agent_space/cap.sh new 5 [lt]`, one pytest process per run, `utils/timeit.sh oneflow test`)
+| test | `ROCBLAS_USE_HIPBLASLT` unset | `=1` |
+|---|---|---|
+| graph/test_graph_fused_mlp_cuda_graph.py | **5 of 5 pass** (7.1-7.6 s) | **5 of 5 pass** (7.2 s) |
+| graph/test_graph_cuda_graph_stream_creation.py | **5 of 5 pass** (6.7-7.0 s) | **5 of 5 pass** (6.6-6.9 s) |
+| graph/test_graph_cuda_graph_fft_plan.py | **5 of 5 pass** (24.5-25.1 s) | **5 of 5 pass** (22.0-22.6 s) |
+No log has a `(906)` or `PARSE_ERROR` line.
+
+Positive control on this arch (`agent_space/ctl.sh`; the same test files from this tree, run against the 021f4ad34 gfx90a build of the previous job, read-only): test_graph_cuda_graph_stream_creation (`=1`, as the test sets) **fails 3 of 3**, each with the 906. test_graph_cuda_graph_fft_plan **fails 2 of 3** (190 s and 97 s to exit), each with `CUFFT_PARSE_ERROR` and the capturing thread's 901; the third run passed in 22 s, the timing-dependent miss the review recorded on gfx942 (5 of 7 there). The FFT test never failed on the 8d470dcc1 build (10 of 10).
+
+### Fused-MLP cold-capture repro (`agent_space/cg.sh`: `t/cg_grad.py`, `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1 ONEFLOW_ONE_EMBEDDING_FUSED_MLP_ASYNC_GRAD=1`, graph called first, 4 steps x 4 parameters)
+k = 64, 1024 and 2^20, with `ROCBLAS_USE_HIPBLASLT` unset and `=1`: **rc 0, 0 mismatches, 16 of 16 bitwise equal** in all 6, no 906 line. Also `longk.py` (k = 2^20 fp16/bf16 against torch): RESULT PASS, the same numbers as at 021f4ad34 (fp16 2.0e-4 to 4.1e-4, bf16 1.5e-3 to 2.5e-3). `cg_ws1.py` (`ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`): 27 graphs captured, 0 bad, RESULT PASS.
+
+### Suites (`agent_space/suite.sh`: one pytest per file, `--timeout=900` plus `timeout -k 30 1800` per file, junit per file, GPU 0), per test id (`cmp.py`) against the 021f4ad34 gfx90a junit recorded on this host
+| suite | wall | passed | failed | errors | skipped | aborted files | vs 021f4ad34 gfx90a |
+|---|---|---|---|---|---|---|---|
+| graph (92 files, 4 at a time) | 118 s | 152 | 2 | 3 | 102 | 3 (test_alexnet_graph, test_graph_ofrecord_reader, test_run_global_graph_by_vm: `/dataset` missing) | **257 of 257 shared ids same outcome**; the 2 new ids (fft_plan, stream_creation) pass |
+| graph, `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1` | 118 s | 152 | 2 | 3 | 102 | the same 3 | **257 of 257 same**, the 2 new ids pass; no timeout, no hang |
+| tensor (22 files, 4 at a time) | 97 s | 366 | 3 | 0 | 22 | 0 | **391 of 391 same** |
+| modules (548 files, 8 at a time) | 1203 s | 1613 | 54 | 5 | 316 | 2 (test_dataset, test_loss, as before) | **1988 of 1988 same** |
+- The gfx1100 "131-file list" (fix22's 122 files plus 9) lives on that host, so it was not rerun as such; the full graph, tensor and modules suites above are a superset of it. Its modules part, reconstructed from the fix22/fix23 descriptions (the 14 pooling files, rand/randn/randint/_like, rrelu, randperm, gumbel_softmax, global_rand*, grouped_matmul_bias, optim_lbfgs/sgd/adam, matmul_long_k, matmul, bmm, conv1d/2d, conv_bias_grad, conv_float64, deconv2d, cublas_fused_mlp, fused_matmul_bias, fused_matmul_bias_add_relu_dropout; 40 files, `agent_space/list131_modules.txt`): 182 of 182 ids same outcome (148 pass, 16 skip, 18 fail), plus the graph directory above.
+- graph failures, with and without CUDA graphs: 3 collection errors, `oneflow.fx.symbolic_trace` missing, and the `broadcast_sub` graph-repr assertion, as at 021f4ad34. Modules failures are the known classes recorded at 021f4ad34 (14 endless loop, 5 collection errors, `ONEFLOW_CI`, char/int8, higher-derivative oracles, numpy `__bool__`, `/dataset`, the float32 tolerance pair, the digamma CPU float16 draws).
+
+### Regression tests of the recent rounds (`agent_space/reg.sh 0 r1`)
+test_matmul_long_k 4 p; test_conv_float64 6; test_grouped_matmul_bias 2; test_cross_entropy_float16 3; test_check_numerics_float16 2; test_pool2d_channels_last 1; test_pooling_channels_last 2; test_batchnorm 6 + 1 skip; test_conv_bias_grad 2; test_reduce_sum_like 2; test_fused_matmul_bias 1; test_bmm 2; test_rand 4 + 1 skip; test_randint 6 + 1 skip; test_optim_lbfgs 1; misc/test_import_without_imp 1; graph/test_graph_repeated_small_run 2; graph/test_graph_fused_mlp_cuda_graph 1; graph/test_graph_image_gpu_decoder 1 + 1 skip. test_cublas_fused_mlp fails 1 of 1, the known float32 tolerance item (same as 021f4ad34).
+
+### Not run: the two-GPU one_embedding / P2P / fused-harness tests
+One GPU pinned. The delta 021f4ad34..8d470dcc1 touches no embedding, shuffle or collective kernel (`cmake/cuda.cmake`, `cuda_to_hip.h`, `hip_compat/cublasLt.h`, `hip_compat/cufftXt.h`, `cuda_stream.cpp`, two Python tests).
+
+### CUDA gate
+Not rerun: "CUDA compile check at 8d470dcc14" above already records the nvcc 12.8 (sm_80) build of this head as PASS.
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038's message (left for the PR-prep squash).
+- Documentation: README.md's ROCm block and `build_rocm.sh` are unchanged by the delta and reproduced this build (with `CMAKE_PREFIX_PATH` for a non-`/opt/rocm` install).
+- `git -C projects/oneflow/src status --porcelain`: empty.
