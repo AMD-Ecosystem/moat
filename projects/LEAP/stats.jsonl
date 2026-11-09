@@ -1,0 +1,22 @@
+{"kind":"session","ts":"2026-11-05T04:52:28Z","epoch":1793854349.394325400,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-05T04:52:58Z","phase":"compile","seconds":23.309,"exit":0,"cmd":"bash agent_space/leap_win_build_63d.sh"}
+{"kind":"phase","ts":"2026-11-05T04:53:10Z","phase":"test","seconds":0.599,"exit":2,"cmd":"D:/Develop/moat/agent_space/torch312_venv/Scripts/python.exe ../leap-scripts/run.py unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-05T04:53:22Z","phase":"test","seconds":2.016,"exit":1,"cmd":"D:/Develop/moat/agent_space/torch312_venv/Scripts/python.exe D:/Develop/moat/agent_space/leap-scripts/run.py unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-05T04:53:40Z","phase":"test","seconds":7.618,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch312_venv/Scripts/python.exe D:/Develop/moat/agent_space/leap-scripts/run.py D:/Develop/moat/agent_space/leap-63d/unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-05T04:53:56Z","phase":"test","seconds":6.334,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch312_venv/Scripts/python.exe D:/Develop/moat/agent_space/leap-scripts/run.py D:/Develop/moat/agent_space/leap-scripts/dump_point.py D:/Develop/moat/agent_space/leap-63d/src D:/Develop/moat/agent_space/leap-scripts/pt_63d.npz"}
+{"kind":"phase","ts":"2026-11-05T04:55:20Z","phase":"test","seconds":69.729,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch312_venv/Scripts/python.exe D:/Develop/moat/agent_space/leap-scripts/run.py D:/Develop/moat/agent_space/leap-scripts/dump_outputs.py D:/Develop/moat/agent_space/leap-63d/src D:/Develop/moat/agent_space/leap-scripts/out_63d.npz 256"}
+{"kind":"session","ts":"2026-11-05T04:58:03Z","epoch":1793854683.472007300,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-09T21:52:41Z","phase":"compile","seconds":9.860,"exit":1,"cmd":"bash agent_space/leap_b85_cfg.sh"}
+{"kind":"phase","ts":"2026-11-09T21:53:43Z","phase":"compile","seconds":8.619,"exit":1,"cmd":"bash agent_space/leap_b85_cfg.sh"}
+{"kind":"phase","ts":"2026-11-09T21:54:13Z","phase":"compile","seconds":8.568,"exit":1,"cmd":"bash agent_space/leap_b85_cfg.sh"}
+{"kind":"phase","ts":"2026-11-09T21:54:46Z","phase":"compile","seconds":8.893,"exit":1,"cmd":"bash agent_space/leap_b85_cfg.sh"}
+{"kind":"phase","ts":"2026-11-09T21:56:01Z","phase":"compile","seconds":13.824,"exit":1,"cmd":"bash agent_space/leap_b85_cfg.sh"}
+{"kind":"phase","ts":"2026-11-09T21:56:47Z","phase":"compile","seconds":9.351,"exit":1,"cmd":"bash agent_space/leap_b85_cfg.sh"}
+{"kind":"phase","ts":"2026-11-09T21:57:32Z","phase":"compile","seconds":8.287,"exit":1,"cmd":"bash agent_space/leap_b85_cfg.sh"}
+{"kind":"phase","ts":"2026-11-09T21:58:57Z","phase":"compile","seconds":13.088,"exit":1,"cmd":"bash agent_space/leap_b85_cfg.sh"}
+{"kind":"phase","ts":"2026-11-09T22:13:59Z","phase":"compile","seconds":25.334,"exit":0,"cmd":"bash agent_space/leap_b85_build.sh"}
+{"kind":"phase","ts":"2026-11-09T22:15:21Z","phase":"compile","seconds":26.458,"exit":0,"cmd":"bash agent_space/leap_b85_build.sh"}
+{"kind":"phase","ts":"2026-11-09T22:17:13Z","phase":"compile","seconds":26.778,"exit":0,"cmd":"bash agent_space/leap_b85_build.sh"}
+{"kind":"phase","ts":"2026-11-09T22:18:58Z","phase":"test","seconds":24.958,"exit":0,"cmd":"bash agent_space/leap_b85_gvc.sh"}
+{"kind":"phase","ts":"2026-11-09T22:19:44Z","phase":"test","seconds":9.037,"exit":0,"cmd":"bash agent_space/leap_b85_pt.sh"}
+{"kind":"phase","ts":"2026-11-09T22:20:07Z","phase":"test","seconds":4.984,"exit":0,"cmd":"bash agent_space/leap_b85_frac.sh"}
