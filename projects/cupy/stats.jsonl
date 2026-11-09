@@ -187,3 +187,7 @@
 {"kind":"phase","ts":"2026-11-09T17:49:58Z","phase":"test","seconds":7.170,"exit":2,"cmd":"python smoke.py"}
 {"kind":"phase","ts":"2026-11-09T17:51:23Z","phase":"test","seconds":46.801,"exit":0,"cmd":"python C:/Users/<user>/cupy-work/smoke.py"}
 {"kind":"phase","ts":"2026-11-09T17:54:04Z","phase":"compile","seconds":114.884,"exit":0,"cmd":"python -m pip install -v --no-build-isolation --no-deps -e projects/cupy/src"}
+{"kind":"session","ts":"2026-11-09T18:22:11Z","epoch":1794248531.952940657,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-09T18:50:41Z","phase":"compile","seconds":1157.145,"exit":0,"cmd":"bash -c cd agent_space/wt-161d6e87e && python setup.py build_ext --inplace -v"}
+{"kind":"phase","ts":"2026-11-09T18:51:07Z","phase":"compile","seconds":1183.679,"exit":0,"cmd":"bash -c cd agent_space/wt-24a62ef95 && python setup.py build_ext --inplace -v"}
+{"kind":"session","ts":"2026-11-09T18:52:23Z","epoch":1794250343.711730131,"event":"end","platform":"linux-gfx1100"}

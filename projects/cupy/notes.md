@@ -686,3 +686,29 @@ Evidence (laptop, `source agent_space/cupy_rocm_env.sh`, x64 Native Tools env, `
 - Editable route still works: removed the source `_depends.json`, `python -m pip install -v --no-build-isolation --no-deps -e projects/cupy/src` EXIT 0, file restored, same DLL bindings, kernel ok (log `build-editable-after.log`).
 - `tests/install_tests tests/import_tests`: 31 passed, 1 skipped. flake8 on `_command.py`: clean. `jargon.py --port cupy`: clean.
 - Not run: the full suite (the change touches only build-time file placement; the three validated platforms derive `revalidate` at the new head), Linux/CUDA builds (no change reachable there).
+
+## Review 2026-11-09 (linux-gfx1100, reviewer): delta 24a62ef95..161d6e87e
+
+Scope: `install/cupy_builder/_command.py` (+22/-9), one commit `[ROCm] Restore the DLL dependency list for in-place builds on Windows`. `moatlib.py classify cupy 24a62ef95 161d6e87e`: **class=mixed** (arch_independent=False, inert=False; `_command.py`: token count differs).
+
+### Port Correctness
+
+1. **Editable installs reach `copy_extensions_to_source` too, so the `editable_mode` branch at `install/cupy_builder/_command.py:264-265` is a second copy of the same file, and the stated mechanics are wrong.** setuptools' `build_ext.finalize_options` ends with `if self.editable_mode: self.inplace = True` (`setuptools/command/build_ext.py:223-224` in both 77.0.3, the `pyproject.toml` minimum, and 79.0.1), and `editable_wheel._set_editable_mode` sets `editable_mode` before the command is finalized. `run()` therefore calls `copy_extensions_to_source()` for `pip install -e` as well as for `--inplace` and legacy `setup.py develop`. A toy package whose `build_ext` subclass prints from both hooks shows: `build_ext` -> build_extensions only; `build_ext --inplace` -> both; `setup.py develop` -> both; an editable pip install with `--no-build-isolation` -> `build_extensions inplace=False editable=True`, then `copy_extensions_to_source` (same on 77.0.3 and 79.0.1). `custom_build_ext` overrides neither `finalize_options` nor `run`, so this applies to CuPy. On Windows HIP an editable install now copies `_depends.json` twice. That does no harm, but the code says it needs two hooks when it needs one. Fix: drop the `editable_mode` copy from `build_extensions` (lines 264-265) and keep only the `copy_extensions_to_source` override. Correct its comment (lines 268-270): setuptools calls it after the build for `--inplace` and editable builds, and `inplace` is cleared during the build. Correct the next commit body the same way. The current body says the hook is called "only for `--inplace`" and that "editable installs keep the copy at the end of `build_extensions`". For the PR-prep squash, the porter's note at the 2026-11-09 round still applies; the squashed sentence should not repeat the "only for `--inplace`" claim. Re-run the laptop evidence for both routes after the change (in-place: file restored and DLLs bound from `_rocm_sdk_devel\bin`; editable: the same).
+
+### Verified, no finding (scope of the request)
+
+- `build_ext.run` sets `inplace` to False around `_build_ext.run` and calls `copy_extensions_to_source()` only when it was set (`setuptools/command/build_ext.py:96-102`, 79.0.1). Confirmed. The only addition is finding 1 (editable implies `inplace`).
+- The new copy runs only on Windows with `ctx.use_hip`: the override checks `sys.platform == 'win32' and get_context().use_hip`, and `build_lib/cupy/.data/_depends.json` is written only inside `build_extensions`' `if sys.platform == 'win32'` block, so the file the override copies always exists when it runs.
+- Linux HIP build from both shas on this host (TheRock pip ROCm, HIP 7.16.26385, gfx1100, Python 3.11, setuptools 79.0.1, Cython 3.2.9, numpy 2.4.6, job venv; worktrees `agent_space/wt-<sha>`):
+  ```bash
+  export ROCM_HOME=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+  export PATH="$VENV/bin:$ROCM_HOME/bin:$PATH" LD_LIBRARY_PATH="$ROCM_HOME/lib" CUPY_INSTALL_USE_HIP=1 HCC_AMDGPU_TARGET=gfx1100 CUPY_NUM_BUILD_JOBS=5
+  utils/timeit.sh cupy compile -- bash -c "cd agent_space/wt-<sha> && python setup.py build_ext --inplace -v"
+  ```
+  Both EXIT 0, same configure summary (cuda 71626385, cub 400700, nccl 23007, random, thrust, dlpack all Yes), 472 warnings each, and the same `.so` file list. All 131 command lines are **identical** once the tree path and `CUPY_CACHE_KEY` are normalised: 64 g++ compiles, 64 links, 3 hipcc device compiles. No `cupy/.data` is created on Linux.
+- CUDA builds: the delta changes no compile or link code path. The override adds work only under win32 plus HIP, so the CUDA command lines cannot change and the nvcc comparison of Ruling 4 stands.
+- Commit hygiene: the title has the `[ROCm]` prefix and is 69 characters. No Co-Authored-By trailer. The body discloses AI assistance and carries a Test Plan. ASCII only. `jargon.py --port cupy` is clean.
+
+### Recommendation
+
+**Request Changes** (finding 1).
