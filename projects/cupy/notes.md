@@ -712,3 +712,15 @@ Scope: `install/cupy_builder/_command.py` (+22/-9), one commit `[ROCm] Restore t
 ### Recommendation
 
 **Request Changes** (finding 1).
+
+## Porter round 2026-11-09b (windows-gfx1151): review finding 1 (editable builds reach `copy_extensions_to_source`)
+
+moat-port 161d6e87e -> **225236c47** `[ROCm] Copy the DLL dependency list once for editable builds on Windows` (one new commit, plain fast-forward push, no amend). File: `install/cupy_builder/_command.py` (+3/-6): dropped the `editable_mode` copy at the end of `build_extensions` (old lines 264-265) and corrected the `copy_extensions_to_source` comment ("Called after the build for `--inplace` and editable builds"). Mechanism (reviewer's finding, accepted): `build_ext.finalize_options` sets `inplace = True` when `editable_mode` is set (setuptools 77.0.3 and 79.0.1), so `run()` calls `copy_extensions_to_source()` for `pip install -e`, `build_ext --inplace` and `setup.py develop`; the override is the single copy point.
+
+**Note for the PR-prep squash:** 161d6e87e's message says `copy_extensions_to_source` is called "only for `--inplace`" and that editable installs keep the copy in `build_extensions`; both are wrong (see above). 225236c47's message states the mechanism correctly. A squashed message must not repeat the "only for `--inplace`" claim; 6fd6150's sentence ("In-place and editable installs ... `build_ext` also copies it there in those modes") holds at 225236c47.
+
+Evidence (laptop, `source agent_space/cupy_rocm_env.sh`, x64 Native Tools env, `ulimit -c 0`, TheRock ROCm 7.14.0a20260612, Python 3.13, setuptools in venv):
+- In-place: `rm -f cupy/.data/_depends.json; utils/timeit.sh cupy compile -- bash -c "cd projects/cupy/src && python setup.py build_ext --inplace"` EXIT 0, `_depends.json` (447 B) restored. `probe_inplace.py`: DLL dir `<venv>\Lib\site-packages\_rocm_sdk_devel\bin`; `amdhip64_7.dll` and `hiprtc0714.dll` both from that `bin`; runtime/driver 71460850; kernel sum 90.0 (log `cupy-work/build-inplace-r2.log`).
+- Editable: `rm -f ...; python -m pip install -v --no-build-isolation --no-deps -e projects/cupy/src` EXIT 0, `_depends.json` restored; import from the source tree (cwd `C:/Users/jdaily`, no sys.path edit) binds the same two DLLs from `<root>\bin`, kernel sum 90.0 (log `build-editable-r2.log`).
+- `tests/install_tests tests/import_tests`: 31 passed, 1 skipped. `smoke.py` (`CUPY_GPU_MEMORY_LIMIT=25%`): OK. flake8 7.5.0 on `_command.py`: clean. `jargon.py --port cupy`: clean. `prose.py` on the commit message: clean.
+- Not run: Linux/CUDA builds (the delta only removes a win32+HIP branch; no compile command changes), full suite (validated platforms derive `revalidate` at the new head).
