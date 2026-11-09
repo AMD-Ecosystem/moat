@@ -809,3 +809,34 @@ In the "Draft follow-up PR" above: the `gpumd_replica:` paragraph is removed, an
 
 ### Gates
 `python3 utils/jargon.py --port GPUMD`: the 2 known hits in upstream's 725fe762 only. `prose.py` and `jargon.py -` on 374da0df's message: clean; title 64 chars. `git status --porcelain` in the fork clone: clean. Pushed 51018103..374da0df (fast-forward), `advance-head` to 374da0df, stage `ported`. nvcc on mi355 is owed for 374da0df (the dispatcher runs it); the expected CUDA delta against c3d5d8ac is now 070d3f53, the 15124b53 `fmax` line and a comment, with `ewald.o` back to upstream's code. A re-review is next.
+
+## CUDA compile check (nvcc 12.8) at 374da0df
+
+Helper run on the mi355 fleet host (CUDA 12.8 toolkit, V12.8.93; no NVIDIA GPU), compile only, requested by jeff. Fresh clone of the fork's `moat-port` at **374da0df** vs `git worktree add ../up c3d5d8ac` (upstream master). CUDA-visible delta: 070d3f53 (`gpu_macro.cuh` include in `utilities/nep_utilities.cuh`, `gpuLaneMask()` masks, explicit `warp_size` widths), the carried 15124b53 `fmax` line in `force/ilp_nep.cu`, and in `main_replica/force/ewald.cu` `Ewald::find_k_and_G` only a three-line comment (374da0df removes the 51018103 `CHECK(gpuStreamSynchronize(stream))` and adds the comment in its place). The other `src/` change, `makefile.hip`, is not read by the CUDA build.
+
+Recipe: same as the f3622149 and 51018103 entries (upstream's unmodified `src/makefile`, default `all`, `nvcc -std=c++14 -O3 -arch=sm_60 -Xcompiler="<makefile WARN_FLAGS>" -I./`), both trees at the same time:
+
+    export PATH=/usr/local/cuda-12.8/bin:$PATH
+    utils/timeit.sh GPUMD compile -- make -C <clone>/src -j64 -O      # 374da0df, 19.1 s
+    make -C <clone-up>/src -j64 -O                                    # c3d5d8ac
+
+| | 374da0df | c3d5d8ac |
+|---|---|---|
+| make rc | 0 | 0 |
+| nvcc invocations (compile / link) | 230 / 4 | 230 / 4 |
+| objects | 230 `.o` | same 230 |
+| executables | `gpumd` 24730448 B, `nep` 8004496 B, `tb` 1552152 B, `src/gpumd_replica` 3777440 B | same sizes |
+| nvcc errors | 0 | 0 |
+| nvcc warnings | 234, all `Support for offline compilation for architectures prior to '<compute/sm/lto>_75' will be removed` (one per invocation) | identical 234 |
+| host compiler warnings (makefile's -Wall -Wextra set) | none | none |
+
+Whole logs, sorted and path-normalized: identical, so the nvcc diagnostics are identical for every file.
+
+Device code: the same section-hash method (`cuobjdump -xelf all` / `-xptx all` on all 230 objects; SHA-1 of every `.text.*`, `.nv.constant*`, `.nv.shared*`, `.nv.global*`, `.nv.info*` cubin section, read by a Python ELF parser, plus the full PTX, with the `_GLOBAL__N__<8hex>_` / `_INTERNAL_<8hex>_` tokens normalized). **All 3953 records identical: 841 kernel `.text` sections (8984448 B) and 230 PTX files**, the same totals as the earlier entries. The SHA-1 of empty input appears only on the 144 NOBITS sections (123 `.nv.shared*`, 21 `.nv.global`), whose file body is empty by definition; no PROGBITS section hashed empty. Per changed TU: `force/nep_spin/nep_spin.o` 43 kernels / 118328 PTX lines, `force/ilp_nep.o` 11 / 15765, `main_nep/nep_spin/nep_spin.o` 2 / 783, `main_replica/force/ewald.o` 2 / 907; all identical.
+
+Host code (`objdump -dr`). Only symbol/branch addresses and the hash tokens are normalized; immediates are kept. A first pass that also masked every hex immediate hid the `__LINE__` constants and showed only `ilp_nep.o`, so a repeat of this check should keep immediates. Three objects differ; the other 227 are identical:
+- `force/ilp_nep.o`: 8 lines, a reordered load and a swapped xmm0/xmm1 pair around `cvtss2sd`, from the `fmax(max_nep_rc, double(...rc_radial))` line.
+- `force/nep_spin/nep_spin.o`: 47 `mov $imm,%ecx` constants (upstream 1261..2196), each +1 (the `CHECK` macro's `__LINE__` after the added include line). Undefined symbols are identical.
+- `main_replica/force/ewald.o`: **not byte-identical to upstream, but differs only by two `__LINE__` constants**, `0x117`/`0x114` and `0x12f`/`0x12c` (279/276 and 303/300). These are the two `GPU_CHECK_KERNEL` sites after `find_k_and_G`, shifted +3 by the new comment. `cudaStreamSynchronize` is undefined in neither object (the 51018103 reference is gone), the `.text` sizes match (10148 B each), and the two kernels are identical. So no executable code changed; only the line number that `CHECK` would print on an error moved.
+
+Not covered (as before): `main_nep/nep_spin/spin_specialized.cu` under `NEP_SPECIALIZED_RUNTIME_BUILD`. PASS: at 374da0df the CUDA path builds with nvcc 12.8 exactly as upstream c3d5d8ac does, with identical device code and PTX. Host code differs only by the `fmax` codegen in `ilp_nep.o` and by `__LINE__` constants in `nep_spin.o` and `ewald.o`; there is no CUDA behaviour change against upstream. No platform states changed.
