@@ -1021,3 +1021,41 @@ Scope: skill commit c611a120 (`references/fault-classes.md:177-191`) and the "Sk
 
 ### Recommendation
 **Review passed.** The fork at 374da0df was passed on code by the previous review; the skill text is now accurate, internally consistent and names what was not measured.
+
+## Validation 2026-11-09 (linux-gfx1100, validator) -- revalidate at 374da0df, PASS
+
+jeff asked for this run. Host: AMD Radeon RX 7900 XTX (gfx1100, RDNA3, wave32), `HIP_VISIBLE_DEVICES=0` (dispatcher-pinned), all GPU runs under `ulimit -c 0`. Toolchain: TheRock pip SDK, HIP 7.16.26385, AMD clang 24.0.0git. `orient.sh` completed normally and named validator (`revalidate`). Fresh clone of AMD-Ecosystem/GPUMD, detached at **374da0df0d0011867be8a709c3e912d54cdc4eb0** (= `origin/moat-port`); a detached worktree of the same commit for the DEBUG build, and a second one for the replica legacy-model run. No fork edit, no push. Job venv: calorine 4.1, ase 3.29.0, pytest 7.3.2, hypothesis.
+
+### Builds (PR-body commands, gfx1100)
+    utils/timeit.sh GPUMD compile -- make -C <clone>/src -f makefile.hip HIP_ARCH=gfx1100 -j16
+    utils/timeit.sh GPUMD compile -- make -C <dbg-worktree>/src -f makefile.hip HIP_ARCH=gfx1100 -j24 gpumd nep CFLAGS="-O3 --offload-arch=gfx1100 -DUSE_HIP -DDEBUG"
+
+Both rc 0, 0 errors (warnings: only upstream's `nodiscard hipError_t` and `-Winconsistent-missing-override` classes). Release, 47 s: gpumd 15128448 B, nep 3870840 B, tb 309904 B, gpumd_replica 2298824 B (byte sizes identical to the 2026-11-09 gfx1100 review's build of the same commit). DEBUG, 41 s: gpumd 15128312 B, nep 3870784 B. (A first launch of the two builds was stopped by me before finishing, because I had set a too-short background timeout; both trees were `make clean`ed and rebuilt from scratch. The DEBUG half of the second launch died at once with exit 127 because its subshell missed the `cd` to the MOAT root that `timeit.sh` needs (so it wrote no telemetry entry); not a build failure.)
+
+### Tests (real gfx1100)
+- **NEP-spin pytest** (release): `python -m pytest tests_pytest/test_spin_{fire,force_modifiers,model_format,restart,sib,tspin,validation}.py` -> **110 passed, 4 failed**, 55 s. The 4 are the known `test_corrector_preserves_force_modifiers` cases (sib/glsd x small/large box, `add_random_force` `rand()` stream). Rerun with an `LD_PRELOAD` shim that turns `srand` into a no-op: **4 passed**. So 114/114 when that reseed is suppressed, and the `gpuLaneMask` kernels pass with HIP's mask checks live (no `NDEBUG`) on wave32.
+- **Full `tests_regression`** (DEBUG, self-comparison, PR-body command plus `--timeout-scale 3`):
+  `python3 tests_regression/run_regression.py --repo-root $D --suite full --baseline $D/src/gpumd --candidate $D/src/gpumd --baseline-nep $D/src/nep --candidate-nep $D/src/nep --timeout-scale 3`
+  -> **completed: 249/256 cases, relations 25/25**, 442 s (the whole suite finished on this host, including the FP64 graphene/silicon transport cases; it overlapped the not-slow pytest on the same GPU for its full length). `ilp_nep_cutoff_below_nep` PASS. The 7 failures, classified by reruns with `--case`:
+
+| case | first run | rerun plain | rerun with srand shim | class |
+|---|---|---|---|---|
+| replicate_velocity_unseeded (final.xyz) | FAIL | FAIL | PASS | rand() reseed (known) |
+| graphene_hac (hac.out) | FAIL | FAIL | PASS | rand() reseed (known) |
+| graphene_nemd_shc (compute.out) | FAIL | FAIL | PASS | rand() reseed (known) |
+| graphene_hnemd_shc (kappa.out) | FAIL | FAIL | PASS | rand() reseed (known) |
+| silicon_liquid_transport (adf.out) | FAIL | FAIL | PASS | rand() reseed (known) |
+| qnep_pppm_future_bec | bec 1.44e-5 vs atol 1e-5 | bec 1.54e-5 | FAIL, thermo field 9 1.04e-7 vs atol 1e-7 | float-atomic noise (known; different field per run, fails with the shim too) |
+| qnep_actions_before_potential | dpdt.out 1.0e-6 vs atol 2e-7 | PASS | -- | float-atomic noise (known; same magnitude as the 2026-11-05 gfx1100 review) |
+
+  No new failure class. Shim run of the 5 rand() cases: `Summary: 5 passed, 0 failed`.
+- **`tests_pytest -m "not slow"`** (release, whole directory): **801 passed, 4 failed, 480 skipped, 10 deselected**, 1010 s. The 4 failures are the same four `test_corrector_preserves_force_modifiers` rand() cases (they are inside this selection); no other failure. Skips are the fixture/netCDF skips recorded on gfx942 (480, same count).
+- **Replica** (`GPUMD_REPLICA=<clone>/src/gpumd_replica python3 tests_regression/replica/test_replica.py`, release): as-is **6/12**, the 6 failures all `REMD/PRD explicit streams support energy NEP4/NEP5 and qNEP4 models` (the known upstream dd7d0ba8 `format_version 1` model-header class). In the scratch worktree with `examples/nep_train/nep.txt` from cd7f757d and `examples/qnep_train/nep.txt` from eda8e04b: **12/12 OK** (18.8 s), including the qNEP REMD/PRD Ewald and PPPM restart tests, which run the `ewald.cu` path 374da0df comments.
+
+### Gates
+- CUDA compile gate: already recorded PASS at 374da0df (mi355, nvcc 12.8, entry above); not repeated.
+- `python3 utils/jargon.py --port GPUMD` (local `master` from the fork's `origin/master`): the 2 known hits in upstream's own 725fe762 merge only. `jargon.py -C projects/GPUMD/src --commits c3d5d8ac..374da0df --diff c3d5d8ac...374da0df`: clean.
+- Documentation: `doc/installation.rst` "Building for AMD GPUs (ROCm/HIP)" documents `make -f makefile.hip` and `HIP_ARCH`; README points to it.
+- Integrity: `git status --porcelain` clean in the clone and the DEBUG worktree (only ignored build output and reports); HEAD 374da0df.
+
+Result: **completed** at 374da0df on linux-gfx1100. Every failure is in a known class (rand() reseed by the runtime's comgr on the first launch; float-atomic qNEP/PPPM noise at absolute bounds; replica model headers upstream).
