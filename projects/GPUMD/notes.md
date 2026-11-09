@@ -1005,3 +1005,19 @@ Scope: skill commit cde62cba (`SKILL.md:83`, `references/fault-classes.md:177-22
 ## Skill fix 3 (2026-11-09, primary session, windows-gfx1151)
 
 Applied the fifth review's two sentence edits to `references/fault-classes.md` (CUDA-only "does not document" sentence; 1D <= 64 KiB staged, larger 1D blocks, 2D neither). Fork unchanged at 374da0df.
+
+## Review 2026-11-09 (linux-gfx1100, reviewer) -- skill c611a120, head unchanged at 374da0df, REVIEW PASSED
+
+Scope: skill commit c611a120 (`references/fault-classes.md:177-191`) and the "Skill fix 3" entry. Fork `moat-port` = 374da0df (`git ls-remote`), equal to `head_sha`, so no code review and no probe rerun (the gfx942 and gfx1100 tables above are the evidence). `orient.sh` completed and named reviewer; `set-state GPUMD linux-gfx1100 reviewing --agent reviewer` took the lock. `HIP_VISIBLE_DEVICES=1` (dispatcher-pinned), `ulimit -c 0`.
+
+### Checked, no change needed
+- Item 1 of the fifth review: `fault-classes.md:178-180` now limits "does not document" to CUDA and says HIP's header claims source-read-before-return for 1D and 2D, holding only for 1D. Matches the header (note present on `hipMemcpyAsync` and `hipMemcpy2DAsync`, absent on `hipMemcpy3DAsync`; rechecked in a local `hip_runtime_api.h`) and both arches' probes. No longer contradicts lines 187-191.
+- Item 2: `fault-classes.md:189-191` now says a 1D copy of at most 64 KiB is staged, a larger 1D copy blocks in the call, and a 2D copy is neither. Matches both tables (512 KiB 1D: 501 ms call with spin, completes in the call when idle; 2D/3D: under 0.1 ms call at every size) and the bullet at lines 193-195. The 64 KiB threshold is bracketed by the measured 64 KiB and 512 KiB points, as the bullet already stated.
+- Internal consistency: heading, opening sentences, bullets, the "must stay alive until synchronized" conclusion, the CV-CUDA example, the unmeasured list (D2H, symbol, arrays), the GPUMD cost paragraph and the probe recipe agree. `SKILL.md:83` is unchanged and agrees.
+- `grep -rn -i 'pageable\|Memcpy2D\|Memcpy3D' .claude/skills/cuda-to-rocm`: hits only `SKILL.md:83`, `fault-classes.md:177-224` and the unrelated layered-texture line 349; no contradiction. No non-ASCII in `fault-classes.md`; `utils/check.py` ok.
+
+### Nit (optional, no action needed)
+- The c611a120 message says HIP's header claims the copies "are synchronous (the claim only holds for 1D)"; per the skill text, the safety consequence holds for 1D, while a 1D copy of at most 64 KiB is staged rather than synchronous. Control-plane commit only; the skill text is exact.
+
+### Recommendation
+**Review passed.** The fork at 374da0df was passed on code by the previous review; the skill text is now accurate, internally consistent and names what was not measured.
