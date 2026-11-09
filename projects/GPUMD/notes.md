@@ -1001,3 +1001,7 @@ Scope: skill commit cde62cba (`SKILL.md:83`, `references/fault-classes.md:177-22
 
 ### Recommendation
 **Request Changes, skill only (items 1-2).** Two sentence edits in `fault-classes.md` in one follow-up skill commit on `port/GPUMD`; `SKILL.md`, the fork, the PR body, the nvcc record and validation are unaffected. The next review only needs that commit.
+
+## Skill fix 3 (2026-11-09, primary session, windows-gfx1151)
+
+Applied the fifth review's two sentence edits to `references/fault-classes.md` (CUDA-only "does not document" sentence; 1D <= 64 KiB staged, larger 1D blocks, 2D neither). Fork unchanged at 374da0df.
