@@ -698,7 +698,7 @@ This follow-up to #1538 fixes a HIP-only bug in the ILP_NEP setup and brings the
 
 ILP_NEP: under HIP, the host call `max(max_nep_rc, parambs[i].rc_radial)` (double, float) resolved to the only host overload, `max(int, int)`, so a 4.2 A NEP radial cutoff became 4 and an ILP cutoff of 4.1 was accepted instead of rejected as on CUDA. It now calls `fmax`, which is what CUDA resolves the call to. A new `tests_regression` case, `ilp_nep_cutoff_below_nep`, checks the rejection; it fails with the old line and passes with the fix.
 
-HIP build: `utilities/nep_model_file.cu` reached `nep_utilities.cuh` without a runtime header (nvcc pre-includes one, hipcc does not), so the header now includes `gpu_macro.cuh`. The NEP-spin kernels pass 32-bit masks to `__syncwarp` and `__shfl_*_sync`; HIP requires 64-bit masks, and on a 64-lane wavefront the second 32-lane tile sits in lanes 32-63. A `gpuLaneMask()` macro in `gpu_macro.cuh`, the identity on CUDA, moves the mask to the right lanes, and one warp kernel now passes its 32-lane width to its shuffles explicitly. `makefile.hip` also builds `gpumd_replica` like the default makefile.
+HIP build: `utilities/nep_model_file.cu` reached `nep_utilities.cuh` without a runtime header (nvcc pre-includes one, hipcc does not), so the header now includes `gpu_macro.cuh`. The NEP-spin kernels pass 32-bit masks to `__syncwarp` and `__shfl_*_sync`; HIP requires 64-bit masks, and on a 64-lane wavefront the second 32-lane tile sits in lanes 32-63. A `gpuLaneMask()` macro in `gpu_macro.cuh`, the identity on CUDA, moves the mask to the right lanes, and one warp kernel now passes its 32-lane width to its shuffles explicitly. `makefile.hip` also builds `gpumd_replica` like the default makefile, and compiles with `-ffp-contract=on`: hipcc's default (`fast`) also fuses multiply-adds across statements, which on an MI250X (gfx90a) rounds the per-slot and batched instantiations of the replica NEP kernels differently and fails the bitwise batched-versus-per-slot replica tests; `on` fuses only within an expression, as nvcc does by default.
 
 Besides the `fmax` line, the CUDA build sees only the extra include, the identity macro, an explicit width equal to the default, and a comment in `main_replica/force/ewald.cu` explaining why its uploads from local host vectors need no stream synchronization.
 
@@ -706,15 +706,16 @@ Testing on an AMD Instinct MI300X (gfx942), from the repository root:
 
 ```
 make -C src -f makefile.hip HIP_ARCH=gfx942 -j16
+GPUMD_REPLICA="$PWD/src/gpumd_replica" python3 tests_regression/replica/test_replica.py
 python3 -m pytest tests_pytest/test_spin_*.py
 make -C src -f makefile.hip clean
-make -C src -f makefile.hip HIP_ARCH=gfx942 -j16 gpumd nep CFLAGS="-O3 --offload-arch=gfx942 -DUSE_HIP -DDEBUG"
+make -C src -f makefile.hip HIP_ARCH=gfx942 -j16 gpumd nep CFLAGS="-O3 --offload-arch=gfx942 -DUSE_HIP -ffp-contract=on -DDEBUG"
 python3 tests_regression/run_regression.py --repo-root "$PWD" --suite full --baseline "$PWD/src/gpumd" --candidate "$PWD/src/gpumd" --baseline-nep "$PWD/src/nep" --candidate-nep "$PWD/src/nep"
 ```
 
-gpumd, nep, gpumd_replica and tb build. The pytest runs used calorine from its master branch, because calorine 4.1 cannot read the `format_version 1` model files now in `tests_pytest/fixtures`. The NEP-spin tests pass 110 of 114, including the FP64 reference checks, and `python3 -m pytest tests_pytest -m "not slow"` passes 866 with the same 4 failures. In the full regression suite, 247 of the 256 cases pass, including `ilp_nep_cutoff_below_nep`, and the relations pass 25 of 25. The remaining failures are of two kinds. Cases that depend on the default `rand()` stream (the four `test_corrector_preserves_force_modifiers` cases, `replicate_velocity_unseeded`, `graphene_hac`, `graphene_nemd_shc`, `graphene_hnemd_shc`, `silicon_liquid_transport`) differ between runs on some ROCm builds, because the runtime reseeds the C library's `rand()` when it prepares its internal kernels on the first launch; they pass when that reseed is suppressed. The others are float-atomic summation noise at or just above absolute bounds that the regression README asks to be checked by self-comparison on the target GPU: `qnep_pppm_future_bec` (BEC 1.17e-5 against 1e-5, or one unit in the last printed digit of a thermo value printed to six decimals), `pppm_round_exact` and `pppm_round_5_7` (thermo 1.1e-7 to 1.6e-7 against 1e-7) and `train_nep_pbte_ediff` (one unit in the last printed digit of a test force); they vary between runs, and `qnep_pppm_future_bec`, `train_nep_pbte_ediff` and `pppm_round_5_7` passed on a rerun.
+gpumd, nep, gpumd_replica and tb build. The replica tests pass 16 of 16 on the MI300X and on an MI250X (gfx90a) when run with the NEP4 and qNEP4 example models from cd7f757d and eda8e04b, because gpumd_replica rejects the current example models. The pytest runs used calorine from its master branch, because calorine 4.1 cannot read the `format_version 1` model files now in `tests_pytest/fixtures`. The NEP-spin tests pass 110 of 114, including the FP64 reference checks, and `python3 -m pytest tests_pytest -m "not slow"` passes 866 with the same 4 failures. In the full regression suite, 247 of the 256 cases pass, including `ilp_nep_cutoff_below_nep`, and the relations pass 25 of 25. The remaining failures are of two kinds. Cases that depend on the default `rand()` stream (the four `test_corrector_preserves_force_modifiers` cases, `replicate_velocity_unseeded`, `graphene_hac`, `graphene_nemd_shc`, `graphene_hnemd_shc`, `silicon_liquid_transport`) differ between runs on some ROCm builds, because the runtime reseeds the C library's `rand()` when it prepares its internal kernels on the first launch; they pass when that reseed is suppressed. The others are float-atomic summation noise at or just above absolute bounds that the regression README asks to be checked by self-comparison on the target GPU: `qnep_pppm_future_bec` (BEC 1.17e-5 against 1e-5, or one unit in the last printed digit of a thermo value printed to six decimals), `pppm_round_exact` and `pppm_round_5_7` (thermo 1.1e-7 to 1.6e-7 against 1e-7) and `train_nep_pbte_ediff` (one unit in the last printed digit of a test force); they vary between runs, and `qnep_pppm_future_bec`, `train_nep_pbte_ediff` and `pppm_round_5_7` passed on a rerun.
 
-(Before presenting: the head is now 3b0f1908, so every gate needs revalidation there and the mi355 nvcc compile must be redone at 3b0f1908 (the last PASS is at 374da0df); update the counts from those runs. jeff's 2026-11-09 rulings on the rand() deferrals are applied: no GPUMD change, the body explains the 9 failures.)
+(Before presenting: the head is now 458683da (3b0f1908 plus `-ffp-contract=on` in `makefile.hip`), so every gate needs revalidation there; refresh the MI300X counts from the gfx942 run at 458683da (the quoted ones are from 3b0f1908, without the flag) and confirm the replica 16/16 there (the MI250X 16/16 is the porter's gfx90a run at 458683da). The mi355 nvcc PASS at 3b0f1908 stands: 458683da changes only `makefile.hip`, which the CUDA build never reads. jeff's 2026-11-09 rulings on the rand() deferrals are applied: no GPUMD change, the body explains the 9 failures.)
 
 ## CUDA compile check (nvcc 12.8) at 51018103
 
@@ -1409,3 +1410,45 @@ Compared with the 374da0df gfx942 validation (251/256, 25/25; spin 110/114; `-m 
 - Telemetry: one `-m "not slow"` attempt was stopped at ~4% (harness foreground timeout) and relaunched detached; it left no stats entry.
 
 PASS at 3b0f1908 on linux-gfx942.
+
+## Porter 2026-11-10 (linux-gfx90a) -- `-ffp-contract=on` in makefile.hip, 3b0f1908 -> 458683da
+
+jeff asked for this run, answering the linux-gfx90a validation failure at 3b0f1908 (batched replica not bit-identical to per-slot). Host: AMD Instinct MI250X/MI250 (gfx90a), `HIP_VISIBLE_DEVICES=2` (dispatcher-pinned), `ulimit -c 0`, TheRock pip SDK (HIP 7.16.26385). `orient.sh` completed normally and named porter; `set-state GPUMD linux-gfx90a porting` took the lock. Fresh fork clone at `projects/GPUMD/src`, `moat-port` = 3b0f1908, `protect-fork` installed, local `master` from `origin/master`. Job venv: ase 3.29.0, calorine from source at 1c94125 (reports 4.1), pytest 7.3.2.
+
+### Change (458683da, one new commit on 3b0f1908)
+`src/makefile.hip`: `CFLAGS = -O3 --offload-arch=$(HIP_ARCH) -DUSE_HIP -ffp-contract=on`, with a three-line comment in the style of the existing `-std` comment above it. `gpumd_replica` receives `CFLAGS` through `$(MAKE) -C main_replica ... CFLAGS="$(CFLAGS)"`, and `main_replica/makefile` has no HIP flags of its own (its CFLAGS are nvcc-only), so all four targets get the flag: the build log shows it on all 230 compiles, `force/nep.cu` and `replica_batch.cu` included. CUDA: `makefile.hip` is read only by the HIP build; `src/makefile`, CMake and every source file are unchanged, so the nvcc build is byte-for-byte the 3b0f1908 one (mi355 nvcc PASS at 3b0f1908 stands). Docs: `doc/installation.rst` shows only `make -f makefile.hip` and `HIP_ARCH=...`, never CFLAGS, so a reader following it keeps the flag; no doc change. The one place a user overrides CFLAGS is the draft PR body's DEBUG command, now updated to include `-ffp-contract=on`.
+
+### Builds (gfx90a, concurrently)
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx90a -j48
+    utils/timeit.sh GPUMD compile -- make -C agent_space/dbg/src -f makefile.hip HIP_ARCH=gfx90a -j48 gpumd nep CFLAGS="-O3 --offload-arch=gfx90a -DUSE_HIP -ffp-contract=on -DDEBUG"
+
+(`agent_space/dbg`: detached worktree at 3b0f1908 with the same diff applied.) Both rc 0, 63 s, 0 errors, warnings the known 88 `-Wunused-value` + 12 `-Winconsistent-missing-override`. Release: gpumd 15637464 B, nep 3926888 B, tb 320472 B, gpumd_replica 2645824 B. DEBUG: gpumd 15637304 B, nep 3926832 B.
+
+### Tests (real gfx90a)
+| command | 458683da | 3b0f1908 on gfx90a (validator) |
+|---|---|---|
+| `GPUMD_REPLICA=<clone>/src/gpumd_replica python3 agent_space/rep/tests_regression/replica/test_replica.py` (worktree with `examples/nep_train/nep.txt` from cd7f757d and `examples/qnep_train/nep.txt` from eda8e04b, as the validator did) | **16/16 OK** (49 s) | 13/16 (the 3 batched tests) |
+| same, `-k test_batched_matches_per_slot -k test_split_resume_is_exact`, 3 runs | **3/3 OK each run** (15 s each) | failed 4 of 4 runs |
+| `python3 -m pytest tests_pytest/test_spin_*.py` (release) | **110 passed, 4 failed** (66 s): the 4 `test_corrector_preserves_force_modifiers`; **4 passed** under the `srand` no-op `LD_PRELOAD` shim | 110/4, 4/4 |
+| full `tests_regression` (DEBUG, self-comparison, PR-body command from the worktree root) | **248/256, relations 21 passed + 4 skipped** (807 s; the 4 skipped are the `observer_*` relations, skipped because member `observer_average_then_observe_control` failed) | 250/256, 25/25 |
+
+The 8 regression failures: the 5 rand() cases (`replicate_velocity_unseeded`, `graphene_hac`, `graphene_nemd_shc`, `graphene_hnemd_shc`, `silicon_liquid_transport`: fail again plain, pass under the shim), plus `observer_average_then_observe_control` (second.xyz text), `predict_nep_pbte_batch` (force_train field 32186, -0.0105681 vs -0.0105679, abs 2.0e-7 vs atol 2e-7) and `train_charge_vdw_mixed` (loss.out `rmse_force_train` 0.62040 vs 0.62041). Rerun of the 8 plus `observer_average_two_runs`, plain: 3 passed, 6 failed (the 5 rand() + `observer_average_two_runs`); under the shim: 8 passed, 1 failed (`train_charge_vdw_mixed`). Every failure is a self-comparison of one binary against itself, so it is run-to-run nondeterminism, not a deterministic difference.
+
+A/B to see whether the flag makes the noise more frequent: a second DEBUG build of 3b0f1908 without the flag (`agent_space/dbgdef`), then 10 alternating runs of `--case observer_average_two_runs --case observer_average_then_observe_control --case train_charge_vdw_mixed --case predict_nep_pbte_batch` on each build:
+
+| case (fails out of 10) | with `-ffp-contract=on` | default (`fast`) |
+|---|---|---|
+| `observer_average_two_runs` / `_then_observe_control` (either) | 4 | 0 |
+| `train_charge_vdw_mixed` | 4 | 2 |
+| `predict_nep_pbte_batch` | 0 | 0 |
+
+The observer diff (kept with `--keep-all`) is one field of one atom in second.xyz, 2.6824736640780875 vs 2.6824736640780866 (8.9e-16, a few ulp), from two runs of the same binary; the gfx942 porter recorded the same case failing by 1.1e-16 with the default flags at 51018103 (round of 2026-11-05), so the nondeterminism exists without the flag, and on gfx90a the flag only changes how often it reaches the 17th printed digit. `train_charge_vdw_mixed` already failed intermittently in the validator's `-ffp-contract=on` experiment and fails 2/10 here without the flag. None is a deterministic regression. For the reviewer and validators: these two cases are the ones to watch at 458683da; if a person wants the observer case quieter, that is upstream test tolerance (exact-text compare of double-precision output under float atomics), not something the flag should be bent around.
+
+### Gates
+- Commit 458683da `[ROCm] Contract FMAs within expressions only in makefile.hip` (61 chars), body: why, "Authored with Claude.", Test Plan with literal commands; ASCII, no Co-Authored-By. `prose.py` on the message: clean.
+- `python3 utils/jargon.py --port GPUMD`: only the 2 known hits in upstream's own 725fe762. `jargon.py -C projects/GPUMD/src --commits 3b0f1908..moat-port --diff 3b0f1908...moat-port`: clean.
+- Integrity: `git status --porcelain` in the clone shows no modified tracked file (build output only).
+- Pushed 3b0f1908..458683da to `moat-port` (fast-forward, pre-push hook passed; `ls-remote` = 458683da). `advance-head GPUMD 458683da...`.
+- Draft follow-up PR body (the one superseding the earlier draft) updated: the HIP-build paragraph names the flag and why; the DEBUG command carries `-ffp-contract=on`; the replica test command and its 16/16 (MI300X at 3b0f1908, MI250X at 458683da) are added; the reminder says every gate is owed at 458683da and the MI300X counts must be refreshed there. `prose.py` and `jargon.py -` on the body: clean.
+
+Next: review of 458683da (one build-file line), then revalidation of every gate at 458683da, including the replica batch tests on gfx942/gfx1100/Windows with the flag.
