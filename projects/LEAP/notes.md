@@ -3979,3 +3979,4 @@ If you would rather not receive pull requests from this effort, say so here or o
 
 ## CMake issue 2026-11-10
 jeff approved the "CMake issue draft (for jeff)" text as written and put it in a secret gist for pasting into gitlab.kitware.com: https://gist.github.com/jeffdaily/ff3541824c49e532981854332fae5f47 (issue URL to record once filed). The #25325 comment was not used; the issue body covers it.
+- Filed by jeff: https://gitlab.kitware.com/cmake/cmake/-/work_items/28264
