@@ -3876,7 +3876,7 @@ Title: `Merge LLNL/LEAP version two and the Windows build into the HIP port (#21
 llnl/LEAP#216 became conflicting when upstream merged version two (#217, #218): the sources moved into subdirectories, setup*.py were replaced by scikit-build-core and CMake with a LEAP_GPU=AMD backend (vendored hipify_torch), and every texture fetch now goes through TEX_DATA/TEX3D in texture_compat.h with a global-memory sampler (__USE_NOTEX) that the AMD build forced on. Upstream's AMD build also did not configure on Windows.
 
 ## What changed
-- f7a71e7 merges upstream main 63c954454415f4e4d5f0a7b2fb8c63700c52f842. All 13 conflicting .cu files take the upstream version; setup_AMD.py goes; the stale ramp_filter_hip.cuh and projectors_Joseph_cpu_hip.h stay deleted (with them present, hipify keeps them instead of translating the current headers).
+- f7a71e7 merges upstream main 63c954454415f4e4d5f0a7b2fb8c63700c52f842. All 14 .cu files with content conflicts take the upstream version (the port's edits to them come back in the commits below); setup_AMD.py goes; the stale ramp_filter_hip.cuh and projectors_Joseph_cpu_hip.h stay deleted (with them present, hipify keeps them instead of translating the current headers).
 - 4937bda (design decision): upstream's global-memory sampler stays and is what gfx942/gfx950 (no image support) use; on top of it, texture objects come back for AMD GPUs with image support (software blend of point fetches), chosen per device at run time. LEAP_USE_NOTEX becomes a CMake option that forces the sampler on any backend. gfx90a: projection 1.7-2.8x faster than the sampler, backprojection 0.75-1.16x.
 - 35f83ef: 27 host min/max calls on floating-point values truncated to int under HIP (10 new in version two, some via hipify's std::min -> ::min); now fmin/fmax.
 - cda2608: bilateral kernels test `i >= N.x` instead of `i > N.x`. Defensive only: upstream 9de0c92 already returns when `i > sliceEnd` (sliceEnd clamped to N.x - 1), so no thread reaches the old off-by-one; compute-sanitizer memcheck is clean on the V100 in base and port, and outputs are unchanged.
@@ -3976,3 +3976,6 @@ This pull request was prepared with the help of an AI assistant acting as a codi
 
 If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
 ````
+
+## CMake issue 2026-11-10
+jeff approved the "CMake issue draft (for jeff)" text as written and put it in a secret gist for pasting into gitlab.kitware.com: https://gist.github.com/jeffdaily/ff3541824c49e532981854332fae5f47 (issue URL to record once filed). The #25325 comment was not used; the issue body covers it.
