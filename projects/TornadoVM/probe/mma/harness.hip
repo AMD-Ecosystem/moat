@@ -242,9 +242,9 @@ static Case random_case(int kind, int steps, int wpb, int active, bool ints, boo
     return c;
 }
 
-// Every FP8 byte value v, in tile v: A row r, k = (v % 32) holds v in tile v / 32's row (v / 32) % 16; B column
-// n = v % 8 holds 1.0 at that k. The result is v's value (NaN and infinities included) at (r, n), and
-// v * 0 elsewhere in the row.
+// Every FP8 byte value v, in tile v: A row v % 16 holds v at k = (v * 7) % 32; B column v % 8 holds 1.0 at
+// that k. The result is v's value (NaN and infinities included) at (v % 16, v % 8), and v * 0 elsewhere in
+// the row.
 static Case fp8_bytes(int kind) {
     Case c;
     c.kind = kind, c.steps = 1, c.warpsPerBlock = 4, c.activeWarps = 4, c.ntiles = 256, c.exact = true;
@@ -289,10 +289,10 @@ static void launch(const Case &c, std::vector<int> &D) {
 // Returns the number of mismatching elements; tiles of inactive warps must be left untouched.
 static double gExactBound = 0.0, gFp8Bound = 1e-5, gE5m2SubnormalBound = 0.0;
 
-// The bound for one element: every-byte tile v holds byte v in row v % 16.
-static double bound_of(const Case &c, int tile, int r) {
+// The bound for one element: every-byte tile v holds byte v's own result at (v % 16, v % 8).
+static double bound_of(const Case &c, int tile, int r, int n) {
     if (c.everyByte) {
-        bool sub = c.kind == E5M2 && r == tile % 16 && tile >= 0x81 && tile <= 0x83;
+        bool sub = c.kind == E5M2 && r == tile % 16 && n == tile % 8 && tile >= 0x81 && tile <= 0x83;
         return sub ? gE5m2SubnormalBound : 0.0;
     }
     return c.exact ? gExactBound : (c.kind == E4M3 || c.kind == E5M2) ? gFp8Bound : 1e-5;
@@ -334,7 +334,7 @@ static long check(const Case &c, const std::vector<int> &D, bool mutate, double 
                         mag += std::fabs(p);
                     }
                 }
-                double g = as_float(got), bound = bound_of(c, tile, r);
+                double g = as_float(got), bound = bound_of(c, tile, r, n);
                 if (c.everyByte && !mutate && !(std::isnan(ref) && std::isnan(g)) && g != ref) {
                     printf("      byte 0x%02x (row %d col %d): got %.9g, want %.9g, rel %.2g, bound %g\n", tile, r, n, g, ref,
                            mag > 0 ? std::fabs(g - ref) / mag : std::fabs(g - ref), bound);

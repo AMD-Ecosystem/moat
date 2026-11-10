@@ -837,3 +837,23 @@ Evidence on gfx1100:
 2. **The `fp8_bytes` comment contradicts the code that `bound_of` relies on** (`harness.hip:245-247`). It reads "in tile v: A row r, k = (v % 32) holds v in tile v / 32's row (v / 32) % 16"; the code (`:257`) puts byte v in tile v, row v % 16, k = (v * 7) % 32, B column v % 8. The tile / row / k part has been stale since `7b631d4f`; round 8 edited this line and prepended "in tile v", so the sentence now gives two different tiles. A reader checking the exception's scope against this comment gets the wrong element. Fix: describe the actual placement, e.g. "Every FP8 byte value v, in tile v: A row v % 16 holds v at k = (v * 7) % 32; B column v % 8 holds 1.0 at that k. The result is v's value (NaN and infinities included) at (v % 16, v % 8), and v * 0 elsewhere in the row."
 
 No fork change is needed for either item; the next round is MOAT-only, followed by a rerun of `run.sh` (with `--mutate`) on a gfx11 host.
+
+## Porter round 9 (2026-11-10, linux-gfx1100, Radeon Pro W7800): review 9 must-fixes
+
+MOAT-only round under jeff's request: both items are in `probe/mma/harness.hip`; the fork is not touched and the head stays `ee94c5c7f`. Next review scope: the `probe/mma/harness.hip` diff of this round.
+
+Host setup (this job's directory only): porter round 8's recipe. Ubuntu 24.04 `openjdk-21-jdk-headless`/`-jre-headless` 21.0.13.0.3 fetched with `apt-get download` (private `Dir::State::Lists`/`Dir::Cache`, `Debug::NoLocking=1`), unpacked with `dpkg-deb -x`, `/etc` symlinks repointed into the unpacked tree, `lib/security/cacerts` pointed at a PKCS12 truststore built with keytool from `/etc/ssl/certs/ca-certificates.crt` (121 certs), `MAVEN_OPTS=-Djavax.net.ssl.trustStore=... -Dmaven.repo.local=<job>/m2`. ROCm 10.1 TheRock wheels (`ROCM_PATH=<image venv>/site-packages/_rocm_sdk_devel`), `HIP_VISIBLE_DEVICES=0` (dispatcher pin), `ulimit -c 0` for every GPU run. Fresh clone of `AMD-Ecosystem/TornadoVM` detached at `ee94c5c7f` (= remote `moat-port`); `TORNADO_CK_GPU_TARGETS=gfx1100 TORNADO_CK_SOURCE_DIR=/tmp make jdk21 BACKEND=hip`: BUILD SUCCESS. Note: `utils/timeit.sh` runs from the MOAT root, so pass `make -C <clone>`.
+
+| Must-fix | Change |
+|---|---|
+| 1 exception scope | `bound_of(case, tile, r, n)` now also requires `n == tile % 8`, so `gE5m2SubnormalBound` (1e-6 on gfx11) applies only to the three results jeff ruled on, D(v % 16, v % 8) for E5M2 bytes 0x81-0x83. The other 21 elements of those rows (v * 0, reference -0) are bit-exact again. The bounds line already described the narrower rule and is unchanged. |
+| 2 `fp8_bytes` comment | Now describes the code's placement: byte v in tile v, A row v % 16 holds v at k = (v * 7) % 32, B column v % 8 holds 1.0 at that k, result at (v % 16, v % 8), v * 0 elsewhere in the row. |
+
+Evidence on gfx1100 (`bash projects/TornadoVM/probe/mma/run.sh`, SDK at `ee94c5c7f`): `== PASS (gfx1100)`.
+- Code object `v_wmma_f32_16x16x16_f16` x5, `_bf16` x1, `v_wmma_i32_16x16x16_iu8` x2. Bounds lines `f16/bf16 exact cases 1e-06, random fp8 1e-05, other random 1e-05` and `every byte e4m3 0, e5m2 0 except bytes 0x81-0x83 1e-06`.
+- 0 of 53 cases failed; e4m3 every byte worst rel 0; e5m2 every byte worst rel 2.4e-7. The only non-bit-exact every-byte results are e5m2 0x81 (row 1 col 1, rel 2.4e-7), 0x82 (row 2 col 2, 1.2e-7), 0x83 (row 3 col 3, 7.9e-8), each printed with `bound 1e-06`.
+- `--mutate`: 53 of 53 cases failed.
+- `tornado-selftest` 20 pass / 1 skip (device-launch; `tensor-cores/mma-f16` and `mma-fp8` PASS). TestMatrixMultiplicationMMA 18/18, MMABF16 7/7, MMAInt8 12/12, MMAFP8 8/8, MMACpAsync 8/8, TestMMAGlobalFragmentLoad 6/6, TestMMAInt8FragmentElementRead 4/4, TestMMAFragmentHelper 2/2, 0 failed.
+- Reviewer's injection (scratch copies outside the repo, `+5e-7f` added to the e5m2 every-byte result at byte 0x81 row 1 col 0, reference 0): the round 8 harness prints `bound 1e-06` for that element and passes (`e5m2 every byte ok (0 wrong, worst rel 5e-07)`, `0 of 53 cases failed`); this round's harness prints `bound 0` and fails (`e5m2 every byte FAIL (1 wrong, worst rel 5e-07)`, `1 of 53 cases failed`), while col 1 of the same row keeps `bound 1e-06`.
+
+Fork clone has no modified tracked files after the runs; no fork commit, so no jargon/prose check was needed for upstream text. Not run: other platforms (nothing they validate changed; the harness rule is gfx11-only) and the CUDA build (no fork change).

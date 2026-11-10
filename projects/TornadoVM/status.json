@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-10T08:01:05Z",
+  "updated_at": "2026-11-10T08:01:32Z",
   "head_sha": "ee94c5c7ff92483e95a6467bc65e298f3564ab01",
   "depends_on": [],
   "waivers": {},
@@ -25,7 +25,7 @@
       "at": "2026-08-07T15:41:21Z"
     }
   },
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
@@ -129,7 +129,7 @@
       "failed_sha": null,
       "started_at": "2026-11-10T07:17:47Z",
       "completed_at": null,
-      "updated_at": "2026-11-10T08:01:05Z",
+      "updated_at": "2026-11-10T08:01:32Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -148,8 +148,8 @@
   },
   "porting_released": {
     "arch": "linux-gfx1100",
-    "since": "2026-11-10T07:28:34Z",
-    "at": "2026-11-10T07:46:50Z"
+    "since": "2026-11-10T08:01:05Z",
+    "at": "2026-11-10T08:01:32Z"
   },
   "base_branch_ruling": {
     "branch": "develop",
@@ -166,8 +166,5 @@
       "at": "2026-11-05T22:15:47Z"
     }
   ],
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-10T08:01:05Z"
-  }
+  "porting": null
 }
