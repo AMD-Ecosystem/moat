@@ -210,3 +210,8 @@
 {"kind":"phase","ts":"2026-11-10T20:45:41Z","phase":"test","seconds":6.934,"exit":0,"cmd":"tornado-selftest"}
 {"kind":"phase","ts":"2026-11-10T20:45:51Z","phase":"test","seconds":1.390,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.pointers.TestCopyDevicePointers"}
 {"kind":"session","ts":"2026-11-10T20:46:19Z","epoch":1794343579.079742184,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-10T22:42:07Z","epoch":1794350527.926558500,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-10T22:46:17Z","phase":"compile","seconds":247.968,"exit":0,"cmd":"cmd //c C:\\Users/<user>\\tvm-work\\build.bat"}
+{"kind":"phase","ts":"2026-11-10T22:48:02Z","phase":"test","seconds":14.805,"exit":0,"cmd":"env MSYS2_ARG_CONV_EXCL=* cmd /c D:\\Develop\\moat\\agent_space\\tvm-val\\tests.bat"}
+{"kind":"phase","ts":"2026-11-10T22:48:21Z","phase":"test","seconds":5.086,"exit":0,"cmd":"env MSYS2_ARG_CONV_EXCL=* cmd /c D:\\Develop\\moat\\agent_space\\tvm-val\\t2.bat"}
+{"kind":"session","ts":"2026-11-10T22:48:55Z","epoch":1794350935.904812700,"event":"end","platform":"windows-gfx1151"}

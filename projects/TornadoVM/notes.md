@@ -1091,3 +1091,26 @@ Build: fresh clone of `AMD-Ecosystem/TornadoVM` detached at `d90e1d189` (= `orig
 Nothing differed, so no quickPass or library suites (per review 12). No CUDA compile owed (no CUDA or native source changed since the `ee94c5c7f` gate).
 
 Completion checks: `python3 utils/jargon.py --port TornadoVM` clean (after `git branch -f develop origin/develop` and `moat-port origin/moat-port` in the clone); docs unchanged in substance (`BACKEND=hip` still documented next to the CUDA build); `git -C projects/TornadoVM/src status --porcelain` empty.
+## Validation 2026-11-10 (windows-gfx1151, Radeon 8060S, wave32, validator at `d90e1d189`)
+
+Verdict: **completed** at `d90e1d189`. Scope per review 12's advice (the delta from the validated `ee94c5c7f` tree is two launcher scripts and two docs files): rebuild at the new head, exercise the changed launcher code in three env cases, plus devices, selftest, `TestCopyDevicePointers` and one short `tornado-test` class. No full-suite rerun. One GPU process at a time, `ulimit -c 0`.
+
+Host and toolchain as the 2026-11-06 and 2026-11-10 Windows entries: VS 2022 BuildTools (VsDevCmd x64), TheRock venv ROCm 10.1 (`D:\Develop\TheRock\.venv\Lib\site-packages\_rocm_sdk_devel`, hiprtc0714), Temurin 21.0.13+9, pyinstaller venv. Fork clone `C:\Users\jdaily\tvm-work\TornadoVM` at `d90e1d189` (`git status` shows only untracked hiprtccheck binaries; `projects/TornadoVM/src` HEAD `d90e1d189`, no modified tracked files). `jargon.py --port TornadoVM` clean.
+
+Build: `utils/timeit.sh TornadoVM compile -- cmd /c C:\Users\jdaily\tvm-work\build.bat` (VsDevCmd; `nmake /f Makefile.mak jdk21 BACKEND=hip`, `TORNADO_CK_REQUIRED=1`, `TORNADO_CK_GPU_TARGETS=gfx1151`, `HIP_DEVICE_LIB_PATH=%ROCM_PATH%\lib\llvm\amdgcn\bitcode`, WINDOWS-ROOT trust store). BUILD SUCCESS, 3:30 min (Maven), `tornado.exe`/`tornado-test.exe` repackaged, `setvars.cmd` written.
+
+Launcher cases (scripts in `agent_space/tvm-val/case{A,B,C}.bat`; PATH reduced to JDK, pyinstaller venv with python, the SDK bin, System32). Each run through three entry points: packaged `tornado.exe`, `python bin\tornado.py` (the packaged copy), and the source `tornado.bat` placed next to that `tornado.py` (the bat is not packaged in this SDK, which ships `tornado.exe`):
+- (a) ROCM_PATH and HIP_PATH unset, `--devices`: all three exit 1 with no crash. `tornado.exe` and `tornado.py`: `[ERROR] Cannot find the HIP runtime (amdhip64_*.dll) and hipRTC (hiprtc*.dll) the HIP backend needs`, `[CAUSE] Neither ROCM_PATH nor HIP_PATH names a ROCm installation with a bin directory.`, `[FIX] Install ROCm 10.1 or newer from TheRock's Python packages and set ROCM_PATH` / `to its root, which 'rocm-sdk path --root' prints. See: https://github.com/ROCm/TheRock`, `[NOTE] HIP backend is AMD-specific`. `tornado.bat` first prints `[WARNING] HIP backend is configured but neither ROCM_PATH nor HIP_PATH is set` plus the two TheRock lines, then the same error block.
+- (b) ROCM_PATH = the TheRock 10.1 venv root only: all three exit 0, no bat warning; `HIPDriver 0:0 AMD HIP -- AMD Radeon(TM) 8060S Graphics`, global memory 89.5 GB, local 64.0 KB.
+- (c) same ROCM_PATH, HIP_PATH = `agent_space\tvm-val\fakehip` (exists, `bin` empty, so no amdhip64/hiprtc there): all three exit 0 with the same device listing. `get_hip_bin_dirs()` = `[ROCM_PATH\bin, fakehip\bin]` and the PATH head after `add_hip_sdk_to_path()` is the same two in that order, so ROCM_PATH wins.
+
+| Run | Result | Previous (`ee94c5c7f`) |
+|---|---|---|
+| `tornado.exe --devices` | HIPDriver 0:0 AMD Radeon(TM) 8060S Graphics, 89.5 GB | same |
+| `tornado-selftest` (`-m tornado.tc.selftest/...SelfTest`) | 20 pass, 1 skip (device-launch), rc 0; mma-f16 and mma-fp8 PASS | same |
+| `TestCopyDevicePointers` | 3/3 (testCopyDevicePointersLargeRegion, ...Matrix, testCopyDevicePointers), 0 failed | 3/3 |
+| `TestMatrixMultiplicationMMAInt8` (`tornado-test.exe -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMAInt8`) | 12/12 | 12/12 |
+
+My first MMA attempt used the wrong class name (`...matrices.MMAInt8`, ClassNotFoundException); corrected, not a project issue.
+
+CUDA no-regression gate: not run here (no CUDA toolkit on this host); the delta is `tornado.bat`, `tornado.py` and docs only, no CUDA or native source. Documentation of the ROCm build: updated by this delta (`INSTALL_FROM_SOURCE.md`, `developer-guidelines.rst`), clean.
