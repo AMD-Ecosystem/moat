@@ -980,3 +980,17 @@ utils/timeit.sh cupy compile -- bash -c "cd projects/cupy/src && python setup.py
 - Integrity: `git -C projects/cupy/src status --porcelain` shows no modified tracked files (only in-place build output).
 
 **Verdict: linux-gfx90a completed at a6e01258f.**
+
+## Validation 2026-11-10 (windows-gfx1151, validator): revalidate at a6e01258f against 225236c47
+
+Port: ROCm/cupy `moat-port` at **a6e01258f** (the mypy annotation commit), fork tree `git status --porcelain` shows no modified tracked files. Host: Radeon 8060S gfx1151, TheRock ROCm 7.14.0a20260612, Python 3.13 venv, MSVC 14.44 x64 (`source agent_space/cupy_rocm_env.sh`). Full procedure of the 225236c47 run, not the reviewer's lighter option.
+
+Build: `git -C projects/cupy/src clean -fdxq` first (the first install skipped every extension as up-to-date, so it was discarded), then `utils/timeit.sh cupy compile -- python -m pip install -v --no-build-isolation -e projects/cupy/src` EXIT 0 in about 9 min (log `C:/Users/jdaily/cupy-work/build-a6e.log`); `cupy/.data/_depends.json` present; `smoke.py` OK. This exercised the edited `configure_msvc_for_hip` and the Windows HIP feature dict.
+
+Tests: `agent_space/cupy_val_all.sh` -> `cupy_val.sh` (302 files, stages ii, iii, iv, texture last, one pytest process at a time, `ulimit -c 0`, `CUPY_TEST_GPU_LIMIT=1 CUPY_GPU_MEMORY_LIMIT=25% CUPY_TEST_FULL_COMBINATION=0`, `-m "not slow and not multi_gpu" --timeout 1200`), teardown watcher `agent_space/cupy_teardown_watch.sh` alongside. test_ndarray_copy_and_view.py printed its summary (54 passed, 7 skipped) and hung in teardown as known; the watcher's kill reached the child but not the venv launcher parent, which I killed by hand (taskkill), so that file records rc=1 and all junit results are intact.
+
+Counts: **98067 passed, 254 failed, 0 error, 11521 skipped** (109842 junit records), equal to 225236c47. `agent_space/cupy_sum_a6e.py` per-test comparison against the 225236c47 junit set: 0 new failures, 0 old failures now passing, 0 missing, 0 extra test ids. Per-file rc identical (9 files rc=5 nothing collected, 31 rc=1 from test failures plus the teardown-killed file as before). The 254 failures are the list already classified (243 identical on the Linux upstream base, 4 Windows/APU runtime or harness, 7 double `nan("")` toolchain defect). No TDR, bugcheck or instability.
+
+Other gates: CUDA compile gate not run on this host (the delta is Python annotations only). `jargon.py --port cupy` clean. Docs unchanged.
+
+**Verdict: windows-gfx1151 completed at a6e01258f.** No new port defects.
