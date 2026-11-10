@@ -3983,3 +3983,9 @@ jeff approved the "CMake issue draft (for jeff)" text as written and put it in a
 
 ## Fix round 216 merged 2026-11-10
 `upstream.py --merge-fix --apply` (run by jeff after his `/moat approve` on AMD-Ecosystem/LEAP#2) fast-forwarded `moat-port` to 70ab397 and posted the approved reply on llnl/LEAP#216; the approved revised PR body was then applied. #216: OPEN, MERGEABLE, CLEAN, head 70ab397.
+
+### CMake #28264 follow-up 2026-11-10
+
+- Brad King (10:45 -05:00) suggested CMake >= 4.1 with policy CMP0197 (`cmake_minimum_required(VERSION 3.29...4.1)`) for the 3.31.0 `/machine:x64` link failure.
+- Tested on windows-gfx1151 with pip CMake 4.4.4, reproducer `agent_space/cmkhip/src4` (`project(x CXX)` + `enable_language(HIP)`, CXX clang-cl, HIP clang++): with CMP0197 NEW the HIP compiler check still fails at compile on `/DWIN32 /D_WINDOWS /Ob0 /Od /RTC1`. With `CMAKE_HIP_FLAGS`/`CMAKE_HIP_FLAGS_<CONFIG>` overridden, CMP0197 NEW configures (OLD fails the test link on `/machine:x64`), but the real compile rule is still MSVC-style (`/nologo`, `-imsvc`, `-MDd`, `-RTC1`, `-Zi`, `-clang:-MD`, `/Fo`) and clang++ rejects it. So CMP0197 fixes only the link symptom.
+- jeff's reply with those results posted 2026-11-10 21:20Z (note 1906770); its formatting was fixed in the Markdown editor and checked through GraphQL (`https://gitlab.kitware.com/api/graphql` reads notes without a login; the REST notes API returns 401).
