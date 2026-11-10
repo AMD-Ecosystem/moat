@@ -479,6 +479,30 @@ on Windows that fails ("Failed to hipify files!"); prefix `${Python3_EXECUTABLE}
 backslash paths; fed to `file(GLOB_RECURSE)` they glob from the drive root and configure
 runs for many minutes -- normalise each element with `file(TO_CMAKE_PATH)`. (LEAP, windows)
 
+**CMake's HIP language on Windows only works when every C/C++ compiler is ROCm's GNU-style
+`clang++`; make the project choose it, do not document a workaround.** `Platform/Windows-Clang.cmake`
+is include-guarded and picks MSVC-style or GNU-style rules for ALL languages from whichever
+language includes it first (MSVC-style if any language's frontend variant is MSVC). So with
+cl.exe as CXX, `enable_language(HIP)`/`check_language(HIP)` dies with "mixes Clang and MSVC"
+(a project that probes with `check_language` then reports "no HIP compiler"); with clang-cl in
+`project(... CXX HIP)` it dies with "mixed frontend variants"; and with clang-cl in
+`project(... CXX)` followed by a later `enable_language(HIP)` the check is skipped and HIP gets
+`/DWIN32 /D_WINDOWS /Ob0 /Od /RTC1` and `/machine:x64`, which `clang++` rejects in
+CMakeTestHIPCompiler. Fix inside the project, before `project()`, guarded by
+`CMAKE_HOST_WIN32` and the HIP option: find the HIP `clang++` (`HIPCXX`, else `hipconfig
+--hipclangpath` with `HIP_PATH`/`ROCM_PATH`/the Python interpreter's directory as hints -- a
+pip-installed ROCm SDK puts `hipconfig.exe` in the venv `Scripts`) and set `CMAKE_CXX_COMPILER`
+to it unless the user gave one. Three more Windows gaps travel with it: CMake picks the
+default `CMAKE_HIP_ARCHITECTURES` with `rocm_agent_enumerator`, which ROCm does not ship on
+Windows, and silently falls back to gfx906 (run `amdgpu-arch` from the clang directory
+instead); `find_package(hip)` needs `CMAKE_HIP_COMPILER_ROCM_ROOT` on `CMAKE_PREFIX_PATH`
+(there is no `/opt/rocm/bin` on PATH to derive it from); and CMake before 3.29 links a Windows
+HIP DLL without `-shared` (`lld-link: error: subsystem must be defined`; 3.28.4 fails, 3.29.2
+works). scikit-build-core picks a Visual Studio generator on Windows, which has no HIP
+support; a `[[tool.scikit-build.overrides]]` with `if.platform-system = "^win32"`,
+`if.failed = true` and `cmake.define.CMAKE_GENERATOR = "Ninja"` retries only the failing
+build, so a Windows CUDA build keeps its generator. (LEAP, windows-gfx1151)
+
 ## Types, dispatch and platform limits
 
 **`clock64()` is a 20-bit counter on gfx11.** On RDNA3/3.5 it compiles to
