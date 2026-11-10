@@ -2,18 +2,45 @@
   "schema_version": 3,
   "name": "MONAI",
   "upstream_url": "https://github.com/Project-MONAI/MONAI",
-  "fork_url": null,
-  "fork_default_branch": "main",
+  "fork_url": "https://github.com/AMD-Ecosystem/MONAI",
+  "fork_default_branch": "dev",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "planning",
   "adopted_at": "2026-11-06T03:59:55Z",
-  "updated_at": "2026-11-06T04:11:51Z",
+  "updated_at": "2026-11-10T07:15:56Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-10T07:15:56Z"
+  },
   "waivers": {},
-  "platforms": {},
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-10T07:15:56Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "planner"
+    }
+  },
   "license_spdx": "Apache-2.0",
   "license_spdx_history": [
     {
@@ -24,11 +51,18 @@
     }
   ],
   "intake": {
-    "verdict": "decline",
-    "reason": "ported-elsewhere",
+    "verdict": "fork",
+    "reason": null,
     "duplicate_effort": "AMD-Ecosystem/MONAI amd-develop; amd-monai (ROCm-LS); upstream #9153 merged, #9161 open",
     "viable": true,
-    "summary": "MONAI (Apache-2.0, medical imaging on PyTorch): AMD already maintains the ROCm port (AMD-Ecosystem/MONAI amd-develop, amd-monai in ROCm-LS for MI300X/MI325X/MI355X) and upstreamed core ROCm support (#9153); only Radeon/Windows coverage is missing, which is the ROCm-LS team's call",
-    "at": "2026-11-06T04:11:51Z"
+    "summary": "Validation take-up of AMD-Ecosystem/MONAI amd-develop (AMD team's existing ROCm port), ruled by Jeff Daily 2026-11-09",
+    "at": "2026-11-10T07:15:29Z"
+  },
+  "base_branch_ruling": {
+    "branch": "dev",
+    "previous": "main",
+    "by": "Jeff Daily",
+    "at": "2026-11-10T07:15:56Z",
+    "reason": "the fork's upstream mirror is dev (tracks Project-MONAI dev, upstream's default); main was a scaffold default and does not exist on the fork"
   }
 }
