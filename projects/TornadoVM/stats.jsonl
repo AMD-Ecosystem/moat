@@ -125,3 +125,8 @@
 {"kind":"phase","ts":"2026-11-10T07:20:48Z","phase":"compile","seconds":2.951,"exit":2,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
 {"kind":"phase","ts":"2026-11-10T07:21:37Z","phase":"compile","seconds":29.808,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
 {"kind":"phase","ts":"2026-11-10T07:22:28Z","phase":"test","seconds":41.747,"exit":0,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
+{"kind":"session","ts":"2026-11-10T07:28:34Z","epoch":1794295714.917042397,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-10T07:43:42Z","phase":"build","seconds":0.006,"exit":2,"cmd":"make jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-10T07:44:30Z","phase":"build","seconds":29.022,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-10T07:45:06Z","phase":"test","seconds":18.343,"exit":0,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
+{"kind":"session","ts":"2026-11-10T07:46:50Z","epoch":1794296810.063510410,"event":"end","platform":"linux-gfx1100"}
