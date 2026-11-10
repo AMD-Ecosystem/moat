@@ -11,10 +11,12 @@
 // Usage: harness [--mutate]. --mutate checks every result against the next column's reference; every
 // case must then fail, which shows the comparison can see a wrong result. Exit status 0 means every case passed (or, with --mutate, failed).
 //
-// Tolerances, relative to the sum of the products' magnitudes: s8 is always exact. The exact float cases (small
-// integers, and one FP8 product per output) are bit-exact except on gfx11, whose WMMA is one or two float ulps
-// off even then (1e-6). The random float cases allow 1e-5, and 1e-4 for FP8 on gfx1250, whose FP8 WMMA keeps
-// about 14 to 16 bits while summing. A wrong layout or FP8 decoding is off by far more than any of these.
+// Tolerances, relative to the sum of the products' magnitudes: s8 is always exact. The exact f16/bf16 cases
+// (small integers) are bit-exact except on gfx11, whose WMMA is one or two float ulps off even then (1e-6). The
+// FP8 every-byte cases are bit-exact on every arch, except the e5m2 negative subnormals 0x81-0x83 on gfx11
+// (1e-6, measured one or two float ulps off). The random float cases allow 1e-5, and 1e-4 for FP8 on gfx1250,
+// whose FP8 WMMA keeps about 14 to 16 bits while summing. A wrong layout or FP8 decoding is off by far more
+// than any of these. The every-byte cases also list each byte whose result is not bit-exact.
 
 #include <hip/hip_runtime.h>
 
@@ -148,7 +150,7 @@ static double element(int kind, const int *words, int k) {
 struct Case {
     std::string name;
     int kind, steps, warpsPerBlock, activeWarps, ntiles;
-    bool exact;
+    bool exact, everyByte = false;
     std::vector<int> A, B, C;
 };
 
@@ -240,13 +242,13 @@ static Case random_case(int kind, int steps, int wpb, int active, bool ints, boo
     return c;
 }
 
-// Every FP8 byte value v: A row r, k = (v % 32) holds v in tile v / 32's row (v / 32) % 16; B column
+// Every FP8 byte value v, in tile v: A row r, k = (v % 32) holds v in tile v / 32's row (v / 32) % 16; B column
 // n = v % 8 holds 1.0 at that k. The result is v's value (NaN and infinities included) at (r, n), and
 // v * 0 elsewhere in the row.
 static Case fp8_bytes(int kind) {
     Case c;
     c.kind = kind, c.steps = 1, c.warpsPerBlock = 4, c.activeWarps = 4, c.ntiles = 256, c.exact = true;
-    c.name = "every byte";
+    c.name = "every byte", c.everyByte = true;
     c.A.assign((size_t) c.ntiles * 128, 0);
     c.B.assign((size_t) c.ntiles * 64, 0);
     c.C.assign((size_t) c.ntiles * 128, 0);
@@ -285,11 +287,19 @@ static void launch(const Case &c, std::vector<int> &D) {
 }
 
 // Returns the number of mismatching elements; tiles of inactive warps must be left untouched.
-static double gExactBound = 0.0, gFp8Bound = 1e-5;
+static double gExactBound = 0.0, gFp8Bound = 1e-5, gE5m2SubnormalBound = 0.0;
+
+// The bound for one element: every-byte tile v holds byte v in row v % 16.
+static double bound_of(const Case &c, int tile, int r) {
+    if (c.everyByte) {
+        bool sub = c.kind == E5M2 && r == tile % 16 && tile >= 0x81 && tile <= 0x83;
+        return sub ? gE5m2SubnormalBound : 0.0;
+    }
+    return c.exact ? gExactBound : (c.kind == E4M3 || c.kind == E5M2) ? gFp8Bound : 1e-5;
+}
 
 static long check(const Case &c, const std::vector<int> &D, bool mutate, double &worst) {
     long bad = 0;
-    double bound = c.exact ? gExactBound : (c.kind == E4M3 || c.kind == E5M2) ? gFp8Bound : 1e-5;
     int K = 8 * perWord(c.kind);
     for (int tile = 0; tile < c.ntiles; tile++) {
         bool active = tile % c.warpsPerBlock < c.activeWarps;
@@ -324,7 +334,11 @@ static long check(const Case &c, const std::vector<int> &D, bool mutate, double 
                         mag += std::fabs(p);
                     }
                 }
-                double g = as_float(got);
+                double g = as_float(got), bound = bound_of(c, tile, r);
+                if (c.everyByte && !mutate && !(std::isnan(ref) && std::isnan(g)) && g != ref) {
+                    printf("      byte 0x%02x (row %d col %d): got %.9g, want %.9g, rel %.2g, bound %g\n", tile, r, n, g, ref,
+                           mag > 0 ? std::fabs(g - ref) / mag : std::fabs(g - ref), bound);
+                }
                 if (std::isnan(ref) || std::isnan(g)) {
                     bad += std::isnan(ref) != std::isnan(g);
                 } else if (std::isinf(ref) || std::isinf(g)) {
@@ -372,10 +386,12 @@ int main(int argc, char **argv) {
     printf("device: %s (%s), wavefront %d\n", prop.name, prop.gcnArchName, prop.warpSize);
     if (strncmp(prop.gcnArchName, "gfx11", 5) == 0) {
         gExactBound = 1e-6;
+        gE5m2SubnormalBound = 1e-6;
     } else if (strncmp(prop.gcnArchName, "gfx1250", 7) == 0) {
         gFp8Bound = 1e-4;
     }
-    printf("bounds: exact cases %g, random fp8 %g, other random 1e-05\n", gExactBound, gFp8Bound);
+    printf("bounds: f16/bf16 exact cases %g, random fp8 %g, other random 1e-05\n", gExactBound, gFp8Bound);
+    printf("bounds: every byte e4m3 0, e5m2 0 except bytes 0x81-0x83 %g\n", gE5m2SubnormalBound);
     struct Config {
         int steps, wpb, active;
     } configs[] = {{1, 1, 1}, {3, 2, 2}, {2, 4, 4}, {1, 2, 1}, {5, 4, 3}};

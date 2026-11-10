@@ -121,3 +121,7 @@
 {"kind":"phase","ts":"2026-11-10T02:59:12Z","phase":"test","seconds":1105.695,"exit":0,"cmd":"tornado-test --verbose --quickPass"}
 {"kind":"session","ts":"2026-11-10T03:14:50Z","epoch":1794280490.597934333,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-10T03:30:56Z","epoch":1794281456.670904087,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-10T07:20:31Z","phase":"compile","seconds":0.003,"exit":2,"cmd":"make jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-10T07:20:48Z","phase":"compile","seconds":2.951,"exit":2,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-10T07:21:37Z","phase":"compile","seconds":29.808,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-10T07:22:28Z","phase":"test","seconds":41.747,"exit":0,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
