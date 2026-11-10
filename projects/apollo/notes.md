@@ -37,3 +37,8 @@ The AMD path landed for 8.0 and has seen little care since: `rocm_configure.bzl`
 Decline, `SKIP_REASON` `already-supported`: AMD itself upstreamed a ROCm/HIP + MIGraphX path (Bazel `--config=amd`, ROCm toolchain, AMD Docker images) that is merged and documented. MOAT would duplicate AMD's own work. If someone wants the gap closed, the value would be revalidating `--config=amd` on current `master` with current ROCm and porting the newer CUDA-only modules. That is a heavy Bazel/Docker job and a coordination question for whoever owns `amd/apollo`, not a fresh port.
 
 No question for jeff.
+
+## Ruling: validation project (Jeff Daily, 2026-11-10)
+
+Jeff Daily overrode the intake decline: apollo becomes a validation project. Check that the ROCm support merged upstream in 2023 (ApolloAuto/apollo#14681) still builds and works. Validate on every required gate (wave64, wave32, Windows) and fix what breaks; the fixes go on `moat-port` of a new AMD-Ecosystem fork. A person creates that fork, never an agent; the project waits in `awaiting-fork` until it exists, then `release-forks` moves it to `screened` for the planner.
+

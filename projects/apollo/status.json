@@ -6,14 +6,37 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-06T00:11:44Z",
-  "updated_at": "2026-11-06T00:31:13Z",
+  "updated_at": "2026-11-10T18:15:42Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {},
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-10T18:15:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
   "license_spdx": "Apache-2.0",
   "license_spdx_history": [
     {
@@ -24,11 +47,11 @@
     }
   ],
   "intake": {
-    "verdict": "decline",
-    "reason": "already-supported",
+    "verdict": "fork",
+    "reason": null,
     "duplicate_effort": "upstream ApolloAuto/apollo#14681 from amd/apollo (merged 2023-01-19)",
     "viable": true,
-    "summary": "Baidu Apollo AV stack: AMD upstreamed ROCm/HIP + MIGraphX support (PR #14681, 2023; Bazel --config=amd, AMD Docker images); only revalidation of newer modules remains",
-    "at": "2026-11-06T00:31:13Z"
+    "summary": "Validation take-up ruled by Jeff Daily 2026-11-10: Check that the ROCm support merged upstream in 2023 (ApolloAuto/apollo#14681) still builds and works on all required gates (wave64, wave32, Windows); fixes go to a new AMD-Ecosystem fork (requested, created by a person)",
+    "at": "2026-11-10T18:15:42Z"
   }
 }
