@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-10T19:49:11Z",
+  "updated_at": "2026-11-10T20:12:47Z",
   "head_sha": "78d852c66132326e4c78f376549ec8f7a7a72aba",
   "depends_on": [],
   "waivers": {},
@@ -25,7 +25,7 @@
       "at": "2026-08-07T15:41:21Z"
     }
   },
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx1100": {
       "blocked": false,
@@ -144,7 +144,7 @@
       "failed_sha": "af27a9f4b69e3f80eb5012ede0fa80294c6addd2",
       "started_at": "2026-11-10T01:43:44Z",
       "completed_at": "2026-11-10T10:30:04Z",
-      "updated_at": "2026-11-10T19:49:11Z",
+      "updated_at": "2026-11-10T20:12:47Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -158,7 +158,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "reviewer",
       "state": "completed",
       "carry_forward": {
         "from": "620445bf1f6d0eb6eac0585d5708c998a3ab438f",
@@ -190,5 +190,8 @@
       "at": "2026-11-05T22:15:47Z"
     }
   ],
-  "porting": null
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-10T20:12:47Z"
+  }
 }
