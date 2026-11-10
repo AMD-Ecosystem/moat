@@ -1540,3 +1540,20 @@ Replica, from a detached worktree of 5f6596ec with `examples/nep_train/nep.txt` 
 - Pushed 458683da..5f6596ec to `moat-port` (fast-forward, pre-push hook passed; `ls-remote` = 5f6596ec). `advance-head GPUMD 5f6596ec...`.
 
 Next: review of 5f6596ec (comments only) and skill 3aff0376, then revalidation of every gate at 5f6596ec. CUDA: `makefile.hip` is not read by nvcc, so the nvcc PASS at 3b0f1908 stands.
+
+## Review 2026-11-10 (linux-gfx1100, reviewer) -- delta 458683da..5f6596ec (comments only) and skill 3aff0376, REVIEW PASSED
+
+jeff asked for this run. Host: RX 7900 XTX (gfx1100), `HIP_VISIBLE_DEVICES=0` (dispatcher-pinned), `ulimit -c 0`. `orient.sh` completed normally and named reviewer; `set-state GPUMD linux-gfx1100 reviewing --agent reviewer` took the lock. Fresh fork clone, `moat-port` = 5f6596ec. No test run (comments-only round).
+
+Items from the previous review:
+1. nvcc claim: gone from `src/makefile.hip:22-25`; the comment now gives the instantiation reason (fuses only within one source expression, so every instantiation forms the same FMAs). 5f6596ec's message states the correction to 458683da. The draft PR body says the same and the reminder asks the squash message to carry it. Skill 3aff0376 (`references/fault-classes.md`, `-ffp-contract` entry) matches the porter's nvcc 12.8 PTX/SASS table: `--fmad=true` gives `fma.rn.f32`/FFMA for the two-statement form, so `on` is stricter than nvcc; `on` is justified by same-FMAs-across-instantiations, with GPUMD cited.
+2. Note 2 at `src/makefile.hip:6-8` now reads "Do not remove -DUSE_HIP or -ffp-contract=on" and explains that a CFLAGS override replaces the line and reaches gpumd_replica. Done.
+3. Draft PR body: the float-atomic class now names `observer_average_two_runs`/`observer_average_then_observe_control` (with the skipped `observer_*` relations) and `train_charge_vdw_mixed`, with the small-box double-`atomicAdd` per-atom virial cause. `jargon.py -` and `utils/prose.py` on the body (lines up to the internal reminder): clean. The reminder paragraph itself contains "revalidation"; it is not upstream text and must stay out of the posted body.
+
+Build identity: `git diff 458683da 5f6596ec` changes only `#` lines in `src/makefile.hip` (no non-comment +/- line), and `make -n -f makefile.hip HIP_ARCH=gfx1100 all` in 5f6596ec and a 458683da worktree gives the same 248 command lines (`cmp` identical), so the build is the 458683da build.
+
+Gates: `jargon.py -C projects/GPUMD/src --commits 458683da..5f6596ec --diff 458683da...5f6596ec` clean; `jargon.py -` on the 5f6596ec message clean; title 59 chars, `[ROCm]`, "Authored with Claude.", no Co-Authored-By. Integrity: clone `status --porcelain` empty.
+
+Nit (no action needed before squash): 5f6596ec's Test Plan runs `cuobjdump -sass`, which needs an `nvdisasm` that CUDA 12.8 on the mi355 host lacks (the porter used `NVDISASM_PATH`); the PR-prep squash message replaces this anyway.
+
+Verdict: review passed. Next: revalidation of every gate at 5f6596ec (gfx950 replica suite more than once, per the porter's hang note).

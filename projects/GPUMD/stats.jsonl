@@ -154,3 +154,5 @@
 {"kind":"phase","ts":"2026-11-10T10:39:43Z","phase":"compile","seconds":63.205,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/rx7900-20261110-023436-rev8-sync-gpumd/moat/agent_space/dbgon/src -f makefile.hip HIP_ARCH=gfx1100 -j10 gpumd nep CFLAGS=-O3 --offload-arch=gfx1100 -DUSE_HIP -ffp-contract=on -DDEBUG"}
 {"kind":"session","ts":"2026-11-10T10:51:22Z","epoch":1794307882.256164678,"event":"end","platform":"linux-gfx1100"}
 {"kind":"phase","ts":"2026-11-10T10:56:45Z","phase":"compile","seconds":18.959,"exit":0,"cmd":"make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx950 -j128"}
+{"kind":"session","ts":"2026-11-10T11:41:13Z","epoch":1794310873.830434725,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-10T11:42:49Z","epoch":1794310969.945503729,"event":"end","platform":"linux-gfx1100"}
