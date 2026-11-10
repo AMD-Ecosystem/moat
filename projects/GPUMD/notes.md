@@ -1249,3 +1249,36 @@ Host code (`objdump -dr --no-show-raw-insn`; only instruction addresses, branch/
 No other host differences: `main_nep/nep_spin/nep_spin.o` and every includer of `nep_utilities.cuh`/`gpu_macro.cuh` are identical (the edits there do not change any line count that `__LINE__` reaches, and `gpuLaneMask(m)` is `(m)` on CUDA).
 
 Not covered (as before): `main_nep/nep_spin/spin_specialized.cu` under `NEP_SPECIALIZED_RUNTIME_BUILD`. PASS: at 3b0f1908 the CUDA path builds with nvcc 12.8 exactly as upstream d6cd2e36 does, with identical device code and PTX. Host code differs only by the `fmax` codegen in `ilp_nep.o` and by `__LINE__` constants in `nep_spin.o` and `ewald.o`; there is no CUDA behaviour change against upstream. No platform states changed.
+## Review 2026-11-10 (linux-gfx1100, reviewer) -- sync round 2, merge 374da0df -> 3b0f1908, REVIEW PASSED
+
+jeff asked for this run. Host: RX 7900 XTX (gfx1100, wave32), HIP 7.16.26385 / AMD clang 24.0.0git (TheRock pip SDK), `HIP_VISIBLE_DEVICES=0` (dispatcher-pinned), `ulimit -c 0`. `orient.sh` completed normally and named reviewer; `set-state GPUMD linux-gfx1100 reviewing --agent reviewer` took the lock. Fresh fork clone, `moat-port` = 3b0f1908 (parents 374da0df, d6cd2e36); upstream d6cd2e36 fetched by URL (no remote added).
+
+No findings.
+
+What was checked:
+- **Conflict resolution** (`src/force/ilp/ilp_nep.cu:203`): `git diff d6cd2e36 3b0f1908 -- src/force/ilp/ilp_nep.cu` is the single line `max(max_nep_rc, parambs[i].rc_radial)` -> `fmax(max_nep_rc, double(parambs[i].rc_radial))`; the surrounding upstream code (`model.rc_radial[0]`, `model.rc_angular[0]`, `model.max_radial`) is verbatim. `max_nep_rc` is still `double` (`ilp_nep.cuh`, `double max_nep_rc;`), `ILP_NEP` `rc_radial` still `float` (`ilp_nep.cuh:139`), `NEP_Model_File::rc_radial` is `std::vector<float>` (`utilities/nep_io/nep_model_file.cuh:54`), so the fix is still needed.
+- **Delta identity**: `git diff c3d5d8ac 374da0df` and `git diff d6cd2e36 3b0f1908`, with `index` lines and hunk headers stripped and `src/force/ilp_nep.cu` mapped to its new path, have identical `+`/`-` lines (15 files, +103/-21 both); only three context lines in `ilp_nep.cu` differ, which are upstream's rewrite. Nothing of upstream's is reverted: the merge's diff against d6cd2e36 contains nothing but the reviewed delta. The auto-merged `makefile.hip` carries upstream's new `*/*.cu`/`*/*.cuh` wildcards and our `gpumd_replica`/`clean_replica` targets; `main_replica/makefile` gained only `replica_batch.cu` upstream and still links `-lcufft` only (our `LIBS="-lhipfft"` override still covers it).
+- **Upstream range spot-check** (`git diff -M c3d5d8ac d6cd2e36 -- src`, 42 commits, 35 non-merge): no added `__shfl*`, `__ballot`, `__activemask`, `__any`/`__all`, `__syncwarp`, `warpSize`, 32-bit lane masks, `& 31`/`% 32`/`>> 5` lane math, `__ldg`, inline asm, textures, or new CUDA libraries. The new replica-batch reductions (`main_replica/replica_batch.cu`) are `__syncthreads`-based tree reductions over `blockDim.x`. The new `gpuMemcpy2DAsync` (`main_replica/utilities/gpu_macro.cuh:31`, used at `replica_batch.cu:389`) is device-to-device only, so the pageable-2D-source hazard does not apply; the new `gpuMemcpyAsync` D2H copies in `main_replica/force/nep.cu` are followed by `gpuStreamSynchronize`. Host min/max in new code is `std::max`. The only `_WIN32` additions are in `utilities/nep_io/compact_nep.cu` (`<process.h>`/`_getpid` vs `<unistd.h>`/`getpid`), correctly guarded. The porter's full host min/max probe was not redone.
+- **Merge commit message**: `jargon.py -`: clean; `prose.py`: clean. `jargon.py -C projects/GPUMD/src --commits d6cd2e36..moat-port --diff d6cd2e36...moat-port`: clean.
+- **Draft follow-up PR** (title and body under "Draft follow-up PR for jeff ... supersedes the earlier draft", internal reminder excluded): `jargon.py -`: clean; `prose.py`: clean. Every count matches the porter's sync round 2 table: spin 110/114; `-m "not slow"` 866 passed with the same 4 failures; regression 247/256 and relations 25/25; 9 failures = 5 rand() cases + `qnep_pppm_future_bec`, `pppm_round_exact`, `pppm_round_5_7`, `train_nep_pbte_ediff`; magnitudes (BEC 1.17e-5, pppm 1.16e-7 to 1.63e-7 quoted as 1.1e-7 to 1.6e-7, force 2.0e-7) and "passed on a rerun" for the three named cases (two on the plain rerun, `qnep_pppm_future_bec` on the shim rerun). The calorine sentence matches the environment note (calorine 4.1 fails on `format_version 1`; master 1c94125 reads it). The reminder correctly says every gate and the mi355 nvcc compile are owed at 3b0f1908.
+
+### Build and tests on gfx1100 at 3b0f1908
+Release in the fork clone, DEBUG in a detached worktree at 3b0f1908 (`agent_space/dbg`), from the MOAT root:
+
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx1100 -j10
+    utils/timeit.sh GPUMD compile -- make -C agent_space/dbg/src -f makefile.hip HIP_ARCH=gfx1100 -j10 gpumd nep CFLAGS="-O3 --offload-arch=gfx1100 -DUSE_HIP -DDEBUG"
+
+Both rc 0, 0 errors; warnings only the known classes (88 `-Wunused-value`, 12 `-Winconsistent-missing-override`). Release: gpumd 15510928 B, nep 3848608 B, tb 309904 B, gpumd_replica 2494264 B.
+
+calorine from source at the porter's commit (gitlab materials-modeling/calorine 1c94125), cloned into `agent_space/` and installed into this job's venv only.
+
+| command | result | porter gfx942 |
+|---|---|---|
+| `python -m pytest tests_pytest/test_spin_*.py` (release) | **110 passed, 4 failed** (54 s) | 110/4 |
+| the 4 `test_corrector_preserves_force_modifiers` cases under an `LD_PRELOAD` srand no-op shim | 4/4 passed | 4/4 |
+| `run_regression.py --suite full` (DEBUG, self-comparison) with `--case` for `ilp_nep_cutoff_below_nep ilp_nep_compute ilp_tersoff_compute ilp_tmd_sw_compute qnep_ewald_future_bec qnep_pppm_future_bec qnep_force_accessors qnep_actions_before_potential kspace_single_late multi_nep_observer nep89_two_runs temperature_nep_two_run_ramp predict_nep_pbte_batch train_nep_pbte_batch train_nep_pbte_ediff train_qnep1_pbte_batch train_qnep2_water_fff` | **16 passed, 1 failed** (relations skipped as a subset); `ilp_nep_cutoff_below_nep` PASS | all 17 pass in the full run except `qnep_pppm_future_bec` and `train_nep_pbte_ediff` (float noise) |
+| `qnep_ewald_future_bec` rerun 3x | PASS, FAIL, PASS | -- |
+
+The one failure, `qnep_ewald_future_bec` (`dpdt.out` field 16, 0.161695 vs 0.161696, 1.0e-6 vs atol 2e-7: one unit in the sixth printed decimal), is the known float-atomic class: the same field and magnitude as on gfx1100 in the 2026-11-05 run and on gfx90a at 374da0df. It flips between runs and is not in the merge's code. `qnep_pppm_future_bec` and `train_nep_pbte_ediff`, which failed on gfx942, passed here.
+
+The mi355 nvcc compile at 3b0f1908 is still owed before presenting (porter's note). State: `review-passed`.
