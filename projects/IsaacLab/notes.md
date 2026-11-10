@@ -349,3 +349,81 @@ All 51 skips (5 kitless + 46 unmarked) carry the single message `Warp cannot cap
 - Jargon: `python3 utils/jargon.py --port IsaacLab` = clean (local `main` ref at `eed2d288`, since the fork has no `main`).
 - Documentation: the ROCm build is documented in `installation.rst` "AMD GPUs with ROCm", next to the other install methods. The install command reproduces as described above.
 - Integrity: fork tree at `d4aac6cc` has no modified tracked files and no untracked files after the LFS restore.
+## Validation 2026-11-10 (linux-gfx1100, validator role)
+
+Validated `moat-port` @ `d4aac6ccf4d717de7e0566d63f5df20d9f10ec02` on an AMD Radeon Pro W7800 48GB (`gfx1100`, wave32, RDNA3), `HIP_VISIBLE_DEVICES=1` (pinned by the dispatcher), `ulimit -c 0`. Fresh clone of the fork into `projects/IsaacLab/src`. Verdict: **completed**. Every failure is a known AMD Warp gap (drafts D, E) or a container environment gap; no Isaac Lab failure. This run found one new AMD Warp defect, Draft F below. It is wave32-only and none of the tested Isaac Lab paths reach it.
+
+### Environment (the documented recipe, with the gfx110X index and the job directory)
+
+The installation.rst "AMD GPUs with ROCm" commands, run as written except for three changes. The index path is `gfx110X-all` instead of `gfx94X-dcgpu`. `--hip-arch=gfx1100`. The venv and Warp clone live in the job directory instead of `.venv` and `../warp-rocm`.
+- `uv venv -p python3.12 $FLEET_VENV/py312`. Then `uv pip install --index-url https://pypi.org/simple --extra-index-url https://repo.amd.com/rocm/whl/gfx110X-all/ torch==2.11.0+rocm7.13.0 torchvision==0.26.0+rocm7.13.0 "rocm[libraries,devel]==7.13.0"`. This installed `rocm-sdk-libraries-gfx110x-all==7.13.0` and `triton==3.6.0+rocm7.13.0`. `ROCM_PATH=$(rocm-sdk path --root)` and `LD_LIBRARY_PATH` were prepended as the docs say. `WARP_CACHE_PATH` pointed into the job directory.
+- AMD Warp `amd-integeration-dev` @ `ac540f595ff5763a374c113d77e4111a1d4791bd` was built with `python build_lib.py --rocm-path "$ROCM_PATH" --hip-arch=gfx1100 --no-use-libmathdx -j 16`: "Warp build succeeded". This host has no CUDA Toolkit, so Draft A's wrapper was not needed. The Warp tree is unmodified.
+- Isaac Lab: the documented `uv pip install --no-sources --override rocm-overrides.txt --index https://repo.amd.com/rocm/whl/gfx110X-all/ -e '.[test,importers]' -e source/<12 members>` (`[test,importers]` added for pytest and the converter tests). Resolved: torch 2.11.0+rocm7.13.0, warp-lang 1.18.0.dev2 (file), newton 1.8.0.dev0 (git `42f7def1`), mujoco-warp 3.15.0, mujoco 3.15.0. Warp reports `"cuda:0" : "AMD Radeon Pro W7800 48GB" (45 GiB, gfx1100, mempool enabled)`, `supports_graph_capture=False`, `is_hip=True`. A one-kernel smoke returned the right values.
+- LFS: no git-lfs on the host. The 202 LFS files under `source/` were fetched from `media.githubusercontent.com/media/isaac-sim/IsaacLab/eed2d288.../<path>`, and each was sha256-checked against its pointer oid (202/202 matched). The pointers were restored with `git checkout -- source` after the run. The fork tree is clean (`git status --porcelain` empty).
+
+Every test command: one pytest process per file, `python -m pytest -p no:cacheprovider [-m kitless] -rfEs -q <file>`, run from the clone root under `utils/timeit.sh IsaacLab test`.
+
+### Kitless marker set (12 files; 10 run with `-m kitless`)
+
+| file | result |
+|---|---|
+| isaaclab/test/sim/test_mjcf_converter.py | 11 passed |
+| isaaclab/test/sim/test_schemas_deprecation.py | 96 passed |
+| isaaclab/test/sim/test_urdf_converter.py | 18 passed |
+| isaaclab_newton/test/assets/test_articulation.py | 37 passed, 5 skipped (capture guard) |
+| isaaclab_newton/test/assets/test_bam_actuator_mjwarp.py | 11 passed |
+| isaaclab_newton/test/assets/test_newton_actuators_newton.py | 37 passed |
+| isaaclab_newton/test/assets/test_rigid_object.py | 20 passed, 2 failed |
+| isaaclab_tasks/test/test_microduck_velocity.py | 3 passed (1 deselected) |
+| isaaclab_visualizers/test/test_newton_adapter.py | 1 failed |
+| isaaclab_visualizers/test/test_newton_gl_dynamic_mesh.py | 1 failed |
+
+Total: 233 passed, 5 skipped, 4 failed. Not run: `multi_gpu/test_multi_gpu_training_smoke.py` (needs 2+ GPUs; this job is pinned to one) and `_isaaclab_testing/test/rendering/test_visualizers_rtx.py` (RTX/OVRTX, scoped out).
+
+The 4 failures, sorted:
+- Known AMD Warp gap, Draft D (2): `test_rigid_object.py::test_vbd_root_state_tracks_integrated_body[vbd-cuda:0]` and `[body-only-cuda:0]`, `ld.lld: error: undefined hidden symbol: nextafterf`. Same as on gfx942; the docs already name it.
+- Known AMD Warp gap, Draft E (1): `test_newton_adapter.py::test_newton_scene_camera_controls_apply_uniformly_to_active_copies[cuda:0]`. On gfx1100 the failure point differs from gfx942. `wp.Texture2D` creation gets past `wp_texture_create_device` (gfx942 raised error 801 there), then `copy_from` fails: `RuntimeError: Failed to copy to texture: Invalid destination memory type 3` (`warp/_src/texture.py:660`, called from Newton `warp_raytrace/render_context.py:522`). This is still the HIP device texture gap, but jeff may want to add the RDNA symptom to Draft E.
+- Environment (1): `test_newton_gl_dynamic_mesh.py::test_dynamic_mesh_moves_after_growth_between_viewers[cuda:0]`, `ImportError: Library "EGL" not found`, which leads to `OpenGLRenderer requires pyglet`. The container has no libEGL, so this says nothing about the port. gfx1100 has a graphics pipeline, so the test could run on a host with Mesa EGL installed. I did not install system packages into the shared image.
+
+Real failures: 0.
+
+### Unmarked Warp-kernel tests (17 files, no marker)
+
+test_warp_index_kernel 8 passed; test_warp_math 6 passed, 1 skipped; test_warp_memory 11 passed, 2 skipped; test_wrench_composer 37 passed, 1 skipped; test_ray_caster_kernels 16 passed; test_shared_sensor_kernels 6 passed, 5 skipped; test_update_ray_caster_kernel 11 passed; test_newton_manager 43 passed, 4 skipped; test_newton_solvers 36 passed; test_ppisp 14 passed; test_ppisp_kernels 7 passed; test_recorders 18 passed; actions parity 4 passed; events parity 1 passed, 4 skipped; observations parity 9 skipped; rewards parity 4 passed, 16 skipped; terminations parity 6 passed, 4 skipped.
+
+Total: 228 passed, 46 skipped, 0 failed. All 46 skips are `Warp cannot capture CUDA graphs on cuda:0.` (`skip_without_graph_capture`, the port's intended guard). These counts are identical, file by file, to the gfx942 porter run.
+
+### End-to-end
+
+- Training: `isaaclab train --rl_library rsl_rl --task Isaac-Cartpole-Direct --num_envs 4096 --max_iterations 100 physics=newton_mjwarp` rc=0, training time 78.61 s, no traceback. Mean reward at iterations 0/1/10/25/50/75/99 = 0.13 / -0.15 / -2.76 / 2.81 / 4.91 / 4.93 / 4.94. Mean episode length reaches 300 (the cap) by iteration 50. About 0.34 s per iteration, collection 0.20 s. The first iteration took 34.8 s of kernel JIT with a cold cache. The reward curve tracks the gfx942 run (0.13 / -2.49 / 2.59 / 4.68 / 4.93 / 4.94).
+- Runtime benchmark: `isaaclab benchmark runtime --task Isaac-Cartpole-Direct --num_envs 4096 --num_steps 1000 --warmup_steps 50 presets=newton_mjwarp` rc=0, 361,119 steps/s (std 25,813, peak 424,894), total wall 11.34 s, startup 0.18 / 4.61 / 8.36 s.
+
+### Wave32 tile width (planner risk 1b): exercised, new AMD Warp defect (Draft F)
+
+AMD Warp `ac540f59` `warp/native/tile_reduce.h:14-18` defines `WP_TILE_WARP_SIZE 64` for every `__HIP_PLATFORM_AMD__` target. I probed it on gfx1100 with job-dir scripts `work/probe/tile_wave32.py` and `tile_wave32_b.py`, comparing against numpy:
+- `tile_load` of 256 floats followed by `tile_sum`, 1024 tiles: max error 7.6e-06 at block_dim 32, but 42.1 / 36.2 / 35.9 at block_dim 64 / 128 / 256. `tile_max` is correct only at block_dim 32.
+- The MuJoCo Warp pattern, per-thread `wp.tile(x, preserve_type=True)` followed by `tile_reduce(wp.add, ...)`, and `tile_load` of block_dim floats with `tile_reduce`: error 9.5e-07 at block_dim 32, but 15.1 / 27.2 / 30.8 at 64 / 128 / 256.
+- `tile_matmul` 32x32: error 2.9e-06 at block_dim 32 / 64 / 128 (correct).
+
+Isaac Lab's tested paths do not show the defect. Isaac Lab's own source has no tile reductions. Cartpole (nv=2) and microduck run MuJoCo Warp at block_dim 32, the one correct size. MuJoCo Warp sets solver block_dim to round_up_32(nv), so I compared `mjw.forward` qacc against MuJoCo C (`work/probe/mjw_nv.py`) for free boxes resting in contact with the floor, nv = 24 / 30 / 36 / 48 / 96 (block 32 / 32 / 64 / 64 / 96). Newton solver max |qacc diff| = 1.0e-4 / 1.4e-4 / 4.6e-5 / 7.9e-5 / 6.8e-5. CG solver = 2.8e-2 / 1.6e-2 / 4.2e-3 / 3.9e-2 / 3.9e-2. Neither solver steps up at the 32-to-64 boundary, against max |qacc| about 96. So this run shows no wrong numbers in MuJoCo Warp, but I did not trace why its reductions escape the defect. Newton's IK optimizers, implicit MPM, Kamino, VBD and geometry/SDF kernels also call tile reductions. None of them is on the tested path, and on wave32 they would get wrong sums silently whenever block_dim > 32. The docs claim only MI300X testing, which stays accurate. If the porter later lists RDNA in the docs, they should name this limit. Registered as `deferred.py` `rocm-bug-report` `amd-warp-wave32-tile-reduce` on this project.
+
+#### Draft F: tile reductions wrong on wave32 (RDNA) because WP_TILE_WARP_SIZE is 64 for every HIP target
+
+Repository: `AMD-Ecosystem/warp`, branch `amd-integeration-dev` @ `ac540f595ff5763a374c113d77e4111a1d4791bd`. Not filed; for jeff.
+
+====
+Title: tile_sum / tile_reduce return wrong results on wave32 GPUs (gfx1100) for block_dim > 32
+
+On an RDNA3 GPU (Radeon Pro W7800, gfx1100, wave32), ROCm 7.13, tile reductions launched with `wp.launch_tiled(..., block_dim=64)` or larger return wrong values. Reducing 64 to 256 standard-normal floats per tile gives a max absolute error of 15 to 42 against numpy. That holds for `wp.tile_sum`, `wp.tile_max`, and `wp.tile_reduce(wp.add, ...)` alike, and for tiles built either with `wp.tile_load` or with per-thread `wp.tile(x)`. At `block_dim=32` the results are correct (error about 1e-6), and `wp.tile_matmul` is correct at every block size. `warp/native/tile_reduce.h:14-18` defines `WP_TILE_WARP_SIZE 64` for every `__HIP_PLATFORM_AMD__` target, so on wave32 hardware the warp-level shuffle reduction assumes 64 lanes where the hardware has 32. The `amd-integration-halo` branch already selects the width with `__GFX9__`.
+
+Expected: `WP_TILE_WARP_SIZE` follows the target's wavefront size (64 under `__GFX9__`, 32 otherwise, or derived from `__AMDGCN_WAVEFRONT_SIZE` / `warpSize`), and the tile tests run on a wave32 device in CI.
+====
+
+### Gates
+
+- CUDA no-regression: not applicable as an nvcc compile, because the port has no compiled CUDA code (it is Python only; `pyproject.toml` and `uv.lock` are byte-identical to upstream). The NVIDIA run showing that capture still engages is still owed, as both reviews recorded.
+- Jargon: `python3 utils/jargon.py --port IsaacLab` returned clean (with a local `main` ref at eed2d288, as the reviewer used).
+- Documentation: the ROCm install section exists in `installation.rst` where the CUDA install is documented, and it reproduced on gfx1100 with only the index path and `--hip-arch` changed. Both are values a reader picks for their own GPU, and the section says the index path selects the GPU family.
+- Integrity: the fork tree is clean at `d4aac6cc`.
+
+Known AMD Warp gaps on this platform: Draft D 2 tests, Draft E 1 test. Drafts A, B and C are install-time and needed no test. A did not apply (no CUDA Toolkit on the host). The documented recipe already handles B and C, so they caused no failures. Environment: 1 test (no EGL). Real failures: 0.

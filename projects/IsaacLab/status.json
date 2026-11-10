@@ -8,10 +8,9 @@
   "ext_type": "python-warp",
   "stage": "review-passed",
   "adopted_at": "2026-11-05T22:48:53Z",
-  "updated_at": "2026-11-10T08:35:33Z",
+  "updated_at": "2026-11-10T08:42:20Z",
   "head_sha": "d4aac6ccf4d717de7e0566d63f5df20d9f10ec02",
   "depends_on": [],
-  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -36,6 +35,30 @@
         "last_session_at": null
       },
       "last_agent": "planner"
+    },
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d4aac6ccf4d717de7e0566d63f5df20d9f10ec02",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-10T08:42:20Z",
+      "updated_at": "2026-11-10T08:42:20Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
     },
     "linux-gfx942": {
       "blocked": false,

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "amd-warp-wave32-tile-reduce",
+      "kind": "rocm-bug-report",
+      "component": "AMD-Ecosystem/warp",
+      "summary": "AMD Warp amd-integeration-dev ac540f59 hardcodes WP_TILE_WARP_SIZE 64 for every HIP target (warp/native/tile_reduce.h:14-18). On wave32 RDNA (gfx1100, W7800) tile_sum/tile_max/tile_reduce return wrong results for any block_dim > 32 (sum error 15-42 on sums of 64-256 unit normals); block_dim 32 and tile_matmul are correct. Isaac Lab's tested kitless paths are unaffected (no failing test; MuJoCo Warp qacc matches MuJoCo C across nv=24..96), but Newton IK, implicit MPM, Kamino, VBD and geometry kernels use tile reductions. Fix exists on amd-integration-halo (selects by __GFX9__). Draft F in projects/IsaacLab/notes.md.",
+      "refs": [
+        "projects/IsaacLab/notes.md#validation-2026-11-10-linux-gfx1100"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-10T08:41:17Z",
+      "decided": null
+    }
+  ]
+}
