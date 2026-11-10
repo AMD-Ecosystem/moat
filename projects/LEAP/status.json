@@ -7,12 +7,12 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-10T07:50:33Z",
+  "updated_at": "2026-11-10T08:19:17Z",
   "head_sha": "f538223d604d2e9c96ad90a13e108e16612f43f1",
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 644559794,
-  "stage": "reviewing",
+  "stage": "review-passed",
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
@@ -120,7 +120,7 @@
       "validated_sha": "53037f009f4b1047db1aed46b47675cb3b477e64",
       "started_at": "2026-06-02T08:08:39Z",
       "completed_at": "2026-11-09T23:58:59Z",
-      "updated_at": "2026-11-10T07:50:33Z",
+      "updated_at": "2026-11-10T08:19:17Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -162,9 +162,9 @@
   },
   "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/1",
   "porting_released": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-10T04:31:14Z",
-    "at": "2026-11-10T07:34:53Z"
+    "arch": "linux-gfx90a",
+    "since": "2026-11-10T07:50:33Z",
+    "at": "2026-11-10T08:19:17Z"
   },
   "pr_approval": {
     "approved_by": "jeffdaily",
@@ -184,8 +184,5 @@
     "review_pr": null,
     "opened_at": "2026-11-09T17:37:15Z"
   },
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-10T07:50:33Z"
-  }
+  "porting": null
 }
