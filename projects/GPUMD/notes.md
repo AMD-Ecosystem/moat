@@ -1134,3 +1134,37 @@ Both rc 0, 0 errors, 63 s each. Release: gpumd 15753424 B, nep 4268272 B, tb 322
 - Integrity: `git status --porcelain` empty in the clone and both worktrees; HEAD 374da0df.
 
 Result: **completed** at 374da0df on linux-gfx90a. Every failure is in a known class (rand() reseed at the first launch; float-atomic noise at absolute bounds; replica model headers upstream).
+
+## Validation 2026-11-09 (windows-gfx1151, validator) -- sync round 374da0df, PASSED
+
+jeff asked for this run. GPU: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32), `HIP_VISIBLE_DEVICES=0`, TheRock ROCm SDK (same as the 2026-11-05 Windows record), Windows 11. Fresh clone of AMD-Ecosystem/GPUMD (`agent_space/gpumd-win3`) at **374da0df0d0011867be8a709c3e912d54cdc4eb0** (= `moat-port`, matches `git ls-remote`); `git status --porcelain` clean. Nothing pushed. Serial, one GPU process at a time, `ulimit -c 0`, each case run once.
+
+### Build
+    utils/timeit.sh GPUMD compile -- bash agent_space/gp3_build.sh
+      # cd src; mingw32-make -f makefile.hip gpumd nep gpumd_replica HIP_ARCH=gfx1151 LDFLAGS="-L<rocm>/lib" CC="<rocm>/bin/hipcc.exe" CFLAGS="-O3 --offload-arch=gfx1151 -DUSE_HIP -std=c++17" -j8 -k
+rc 0, 0 errors, one pass (about 9 min). gpumd 15434752 B, nep 4276224 B, gpumd_replica.exe 2537984 B: all three targets build, including the new nep_model_file.cu (`gpu_macro.cuh` include) and the NEP-spin TUs (`gpuLaneMask`, wave32 shift 0). The linker wrote `gpumd` and `nep` without `.exe` (hipcc `-o gpumd` on this SDK); copied to `gpumd.exe`/`nep.exe` for running. Same environment notes as 2026-11-05 (full-path hipcc.exe, `-std=c++17`, -j8, runtime DLLs next to the exe, SDK bin on PATH).
+
+### Tests (real gfx1151)
+tests/gpumd no longer exists upstream, so the four earlier cases ran from the scratch tree `agent_space/gp_run3` (copied from the previous record's `gp_run`) with the new binary: `utils/timeit.sh GPUMD test -- bash agent_space/gp3_run_suite.sh`.
+
+| case | rc | stderr | result |
+|---|---|---|---|
+| ilp_nep_cutoff | 1 | empty | last stdout line `ERROR: Please make sure cutoff of ILP is larger than it of NEP.`, identical to error1.out modulo the CRLF of the Windows checkout (as before) |
+| ilp_ctl (control, ILP rcut 4.3) | 0 | empty | completes |
+| carbon (NEP4 NVE) | 0 | empty | thermo finite, Etot drift (max-min)/\|mean\| 1.6e-6, std 4.3e-7, T mean 300.40 K |
+| graphene_dos | 1 first, 0 after edit | see below | after removing the stale line: dos.out 400x4 and mvac.out 400x4 finite, mvac t0 1,1,1, thermo finite |
+| graphene_kappa_emd | 0 | empty | hac.out 100x11 finite, T mean 298.4 +- 10.0 K |
+
+graphene_dos first exit 1: `Input Error: measure/measure.cu:120 dump_velocity has been removed. Use dump_xyz <interval> <filename> velocity instead.` The old test input predates upstream's removal of `dump_velocity`; not a port fault. The line was deleted from the scratch `run.in` and the case rerun once (rc 0, empty stderr).
+
+Regression harness, serial, release binary as baseline and candidate, 8 short light cases, `--program gpumd --timeout-scale 3`:
+`python3 tests_regression/run_regression.py --repo-root agent_space/gpumd-win3 --suite full --program gpumd --case <c>... --baseline gpumd.exe --candidate gpumd.exe`
+cases: ilp_nep_cutoff_below_nep (new), neighbor_alias_aliased, neighbor_alias_control, nve, nvt_ber, nvt_nhc, npt_ber_iso, nvt_mttk -> **8 passed, 0 failed**; relation neighbor_alias_translation_invariance PASS (the other 24 skipped as their cases were not selected). The new case behaves as on gfx90a/gfx942/gfx1100.
+
+### Not run
+The full 256-case suite, the pytest suites, replica tests, `nep` training and the rand()-reseed, float-atomic and replica model-header cases (all known classes on Linux at this head, none run here), to keep load off the APU. No GPU fault, hang or 719 occurred. gpumd_replica was built but not run.
+
+### Gates
+`jargon.py -C <clone> --commits c3d5d8ac..374da0df --diff c3d5d8ac...374da0df`: clean (the `--port` scan needs the projects/GPUMD/src clone absent on this host; Linux validators ran it, 2 known hits in upstream's own 725fe762). Docs: `doc/installation.rst` ROCm section documents `makefile.hip`; no build-step change this round. CUDA gate recorded at this head (mi355, PASS). Integrity: clone `git status --porcelain` clean.
+
+State: windows-gfx1151 -> `completed` at 374da0df.
