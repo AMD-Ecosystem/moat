@@ -22,7 +22,7 @@
       "refs": [
         "projects/cupy/notes.md#porter-round-2026-11-05"
       ],
-      "status": "filed",
+      "status": "done",
       "upstream_issue": "https://github.com/ROCm/TheRock/issues/9849",
       "created_at": "2026-11-05T19:08:39Z",
       "decided": null
