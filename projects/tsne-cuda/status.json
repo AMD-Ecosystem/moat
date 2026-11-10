@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T06:47:29Z",
-  "updated_at": "2026-11-10T05:15:38Z",
+  "updated_at": "2026-11-10T05:16:42Z",
   "head_sha": "33f708d1ac8c4fae8cc7c8d31a5ca58238dfdf5b",
   "depends_on": [
     "faiss"
@@ -130,11 +130,9 @@
     "at": "2026-11-05T00:16:03Z"
   },
   "review_pr": "https://github.com/AMD-Ecosystem/tsne-cuda/pull/1",
-  "pr_approval": {
-    "approved_by": "jeffdaily",
-    "at": "2026-11-10T04:42:14Z",
-    "head_sha": "33f708d1ac8c4fae8cc7c8d31a5ca58238dfdf5b",
-    "content_sha256": "b629cf83bde028afe21a71ca8b99c6a0df7c356cc9a0af7f68096b6323fc1983",
-    "review_pr": "https://github.com/AMD-Ecosystem/tsne-cuda/pull/1"
-  }
+  "pr_url": "https://github.com/CannyLab/tsne-cuda/pull/145",
+  "pr_number": 145,
+  "pr_opened_at": "2026-11-10T05:16:42Z",
+  "pr_state": "open",
+  "published_sha": "33f708d1ac8c4fae8cc7c8d31a5ca58238dfdf5b"
 }
