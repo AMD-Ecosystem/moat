@@ -1662,3 +1662,40 @@ Compared with the 374da0df gfx942 record (251/256, 25/25; spin 110/114; 801/4 of
 - Telemetry: two `test` entries with nonzero exit and under 0.5 s are my own command mistakes (a relative path under `timeit.sh`, and a pytest on a nonexistent `test_spin_basic.py`), not test results.
 
 Result: **completed** at 5f6596ec on linux-gfx942. Every failure is in a known class: rand() reseed, float-atomic noise (qNEP PPPM BEC, small-box virial, trainer loss), and the replica `format_version 1` model headers. The flag question above goes to jeff.
+## Validation 2026-11-10 (linux-gfx90a, validator) -- revalidate at 5f6596ec, PASS
+
+jeff asked for this run. Host: AMD Instinct MI250X/MI250 (gfx90a, CDNA2, wave64), `HIP_VISIBLE_DEVICES=2` (dispatcher-pinned), every GPU run under `ulimit -c 0`. Toolchain: TheRock pip SDK, HIP 7.16.26385, AMD clang 24.0.0git. `orient.sh` on `port/GPUMD` completed normally (no hang) and named validator (`port-ready`, returning from the 3b0f1908 failure, so a full run with no carry-forward). Fresh clone of AMD-Ecosystem/GPUMD at `projects/GPUMD/src`, detached at **5f6596ec7b656eac5f0c96df882f8bdda36565df** (= `origin/moat-port`); detached worktrees of the same commit for the DEBUG build (`agent_space/dbg`) and the legacy-model replica run (`agent_space/rep`; model edits reverted, both worktrees removed after). No fork edit, no push. Job venv only: calorine built from a source clone of gitlab materials-modeling/calorine at **1c94125** (the porter's commit; reports 4.1), ase 3.29.0, pytest 7.3.2. `amd-smi process` showed no other process on any GPU when the replica runs started; no hang or crash occurred.
+
+### Builds (PR-body commands, gfx90a)
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx90a -j48
+    utils/timeit.sh GPUMD compile -- make -C agent_space/dbg/src -f makefile.hip HIP_ARCH=gfx90a -j64 gpumd nep CFLAGS="-O3 --offload-arch=gfx90a -DUSE_HIP -ffp-contract=on -DDEBUG"
+
+Both rc 0, 0 errors (60 s / 58 s); `-ffp-contract=on` on all 230 release compile lines; warnings only the known 88 `-Wunused-value` + 12 `-Winconsistent-missing-override`. Release: gpumd 15637464 B, nep 3926888 B, tb 320472 B, gpumd_replica 2645824 B; DEBUG gpumd 15637304 B, nep 3926832 B. Every size equals the porter's gfx90a build at 458683da, as expected for a comments-only delta. (A first DEBUG attempt exited 2 in 0 s because it started before its worktree existed; my shell error, not a build failure.)
+
+### Tests (real gfx90a)
+| command | 5f6596ec | 3b0f1908 on gfx90a | 374da0df on gfx90a |
+|---|---|---|---|
+| `GPUMD_REPLICA=<clone>/src/gpumd_replica python3 tests_regression/replica/test_replica.py` (release, as-is, from the clone root) | **4/16** (11.7 s); all 12 failures stop at `REMD/PRD explicit streams support energy NEP4/NEP5 and qNEP4 models` (8 REMD, 4 PRD) | 4/16 | 6/12 |
+| same from `agent_space/rep` with `examples/nep_train/nep.txt` from cd7f757d and `examples/qnep_train/nep.txt` from eda8e04b, GPU idle | **16/16 OK** (49.0 s) | 13/16 (the 3 batched tests) | 12/12 |
+| same, `-k test_batched_matches_per_slot -k test_split_resume_is_exact`, 3 runs | **3/3 OK each run** (15.1 s each) | failed 4 of 4 | -- |
+| `python3 -m pytest tests_pytest/test_spin_*.py` (release) | **110 passed, 4 failed** (68 s); the 4 `test_corrector_preserves_force_modifiers` (sib/glsd x small/large box) | 110/4 | 110/4 |
+| those 4 under an `LD_PRELOAD` shim of `void srand(unsigned){}` | **4 passed** | 4/4 | 4/4 |
+| full `tests_regression` (DEBUG, self-comparison, from the worktree root): `python3 tests_regression/run_regression.py --repo-root $D --suite full --baseline $D/src/gpumd --candidate $D/src/gpumd --baseline-nep $D/src/nep --candidate-nep $D/src/nep` | **completed, 250/256 cases; relations 21 passed, 0 failed, 4 skipped** (801 s, whole suite incl. FP64 transport cases, no `--timeout-scale`; overlapped the not-slow pytest). `ilp_nep_cutoff_below_nep` PASS. The 4 skipped relations are the `observer_*` ones, skipped because `observer_average_then_observe_control` failed | 250/256, 25/25 | 249/256, 25/25 |
+| rerun plain: `--case` for the 6 failures plus `observer_average_two_runs` | 1 passed, 6 failed (186 s): the 5 rand() cases and `observer_average_two_runs` (second.xyz); `observer_average_then_observe_control` passed | -- | -- |
+| same 7 under the srand shim | **7 passed, 0 failed**; the 4 `observer_*` relations now run: 4 passed (155 s) | -- | -- |
+| `python3 -m pytest tests_pytest -m "not slow"` (release, whole directory) | **866 passed, 4 failed, 638 skipped, 10 deselected** (2183 s, overlapped the regression run); the 4 are the same rand() cases, nothing else | 866/4/638/10 | 801/4/480 (smaller pre-merge suite) |
+
+Failure classification, none new:
+- **rand() reseed** (deferral `gpumd-hip-runtime-reseeds-rand`, ruled defer): the 4 spin pytest cases (both pytest runs) and `replicate_velocity_unseeded` (final.xyz), `graphene_hac` (hac.out), `graphene_nemd_shc` (compute.out), `graphene_hnemd_shc` (kappa.out), `silicon_liquid_transport` (adf.out); all fail again plain and pass under the shim. Same set as at 3b0f1908 and 374da0df on this host.
+- **float-atomic noise** (the upstream double-`atomicAdd` per-atom virial race in the small-box NEP path that the reviewer traced, made more frequent by `-ffp-contract=on`): `observer_average_then_observe_control` in the full run, second.xyz atom line 137 (diff hunk `@@ -134,7`), field 11 (virial xx), **2.6824736640780866 vs 2.6824736640780875**, the exact two values the gfx90a porter and gfx1100 reviewer recorded; `observer_average_two_runs` (second.xyz text) on the plain rerun, where `_then_observe_control` passed instead; both pass under the shim rerun (the shim does not touch atomics, so that is just the intermittency). `train_charge_vdw_mixed` and `qnep_pppm_future_bec` passed this time.
+- **replica model header** (upstream `format_version 1`, platform-independent): the 12 as-is replica failures; 16/16 with the legacy models.
+
+Compared with 3b0f1908 on this host: the blocker that failed it (batched-vs-per-slot replica not bit-identical) is fixed by 458683da's flag: 16/16 and the three batched tests 3 of 3 runs, against 4 of 4 failing before. Regression count unchanged at 250/256; the float-noise case moved from `qnep_pppm_future_bec` to the `observer_*` pair, as the porter's and reviewer's A/B predicted. Pytest counts identical.
+
+### Gates
+- CUDA compile gate: the mi355 nvcc 12.8 PASS at 3b0f1908 stands (458683da and 5f6596ec change only `src/makefile.hip`, which the CUDA build does not read: `git diff 3b0f1908 5f6596ec --stat` = `src/makefile.hip | 10 ++++++++--`); not repeated.
+- `python3 utils/jargon.py --port GPUMD` (local `master` created from the fork's `origin/master`): only the 2 known hits in upstream's own 725fe762 merge. `jargon.py -C projects/GPUMD/src --commits 3b0f1908..5f6596ec --diff 3b0f1908...5f6596ec`: clean.
+- Documentation: `doc/installation.rst:74,78` documents `make -f makefile.hip` and `HIP_ARCH=...`; no CFLAGS override is documented, so the flag is kept.
+- Integrity: no modified tracked file in the clone or either worktree (HEAD 5f6596ec in each) before the worktrees were removed.
+
+Result: **completed** at 5f6596ec on linux-gfx90a. Every failure is in a known class (rand() reseed, float-atomic noise in the observer virial, replica `format_version 1` model headers upstream).
