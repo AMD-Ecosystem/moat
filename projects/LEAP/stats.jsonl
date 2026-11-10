@@ -462,3 +462,14 @@
 {"kind":"phase","ts":"2026-11-10T09:07:01Z","phase":"compile","seconds":17.149,"exit":0,"cmd":"bash agent_space/pip_e.sh"}
 {"kind":"phase","ts":"2026-11-10T09:07:18Z","phase":"test","seconds":0.005,"exit":2,"cmd":"bash agent_space/pipe70/unitTests/../../../agent_space/pipe70/unitTests/gpu_vs_cpu_validate.py"}
 {"kind":"session","ts":"2026-11-10T09:08:35Z","epoch":1794301715.378071319,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-10T08:41:43Z","epoch":1794300103.397942860,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-10T08:42:26Z","phase":"compile","seconds":21.358,"exit":0,"cmd":"bash agent_space/bld.sh 70ab397485760680867b95a405c33908a8aac3e7 head"}
+{"kind":"phase","ts":"2026-11-10T08:42:48Z","phase":"compile","seconds":21.498,"exit":0,"cmd":"bash agent_space/bld.sh 70ab397485760680867b95a405c33908a8aac3e7 headnotex -DLEAP_USE_NOTEX=ON"}
+{"kind":"phase","ts":"2026-11-10T08:44:49Z","phase":"test","seconds":9.157,"exit":0,"cmd":"bash -c cd agent_space/cmp/head/unitTests && python gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-10T08:44:58Z","phase":"test","seconds":9.589,"exit":0,"cmd":"bash -c cd agent_space/cmp/headnotex/unitTests && python gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-10T08:46:04Z","phase":"compile","seconds":28.894,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261110-003346-v3-leap-216/venv/bin/python -m pip install -v -e /var/lib/jenkins/fleet/jobs/mi200-20261110-003346-v3-leap-216/moat/agent_space/pipsrc -Ccmake.define.LEAP_GPU=AMD -Ccmake.define.CMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/llvm/bin/clang++ -Ccmake.define.CMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -Cbuild-dir=/var/lib/jenkins/fleet/jobs/mi200-20261110-003346-v3-leap-216/moat/agent_space/pipsrc/build_pip"}
+{"kind":"phase","ts":"2026-11-10T08:53:25Z","phase":"test","seconds":481.305,"exit":0,"cmd":"bash agent_space/dumps.sh"}
+{"kind":"phase","ts":"2026-11-10T08:56:36Z","phase":"test","seconds":183.631,"exit":0,"cmd":"bash agent_space/tests2.sh"}
+{"kind":"phase","ts":"2026-11-10T08:56:51Z","phase":"test","seconds":6.263,"exit":0,"cmd":"bash -c cd agent_space/pipsrc/unitTests && /var/lib/jenkins/fleet/jobs/mi200-20261110-003346-v3-leap-216/venv/bin/python gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-10T09:17:43Z","phase":"test","seconds":1247.005,"exit":0,"cmd":"bash agent_space/tests3.sh"}
+{"kind":"session","ts":"2026-11-10T09:18:54Z","epoch":1794302334.295791596,"event":"end","platform":"linux-gfx90a"}
