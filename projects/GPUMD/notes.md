@@ -1452,3 +1452,50 @@ The observer diff (kept with `--keep-all`) is one field of one atom in second.xy
 - Draft follow-up PR body (the one superseding the earlier draft) updated: the HIP-build paragraph names the flag and why; the DEBUG command carries `-ffp-contract=on`; the replica test command and its 16/16 (MI300X at 3b0f1908, MI250X at 458683da) are added; the reminder says every gate is owed at 458683da and the MI300X counts must be refreshed there. `prose.py` and `jargon.py -` on the body: clean.
 
 Next: review of 458683da (one build-file line), then revalidation of every gate at 458683da, including the replica batch tests on gfx942/gfx1100/Windows with the flag.
+
+## Review 2026-11-10 (linux-gfx1100, reviewer) -- delta 3b0f1908..458683da (`-ffp-contract=on` in makefile.hip), CHANGES REQUESTED (wording only; keep the flag)
+
+jeff asked for this run. Host: RX 7900 XTX (gfx1100, wave32), TheRock pip SDK (HIP 7.16.26385, AMD clang 24.0.0git), `HIP_VISIBLE_DEVICES=0` (dispatcher-pinned), all GPU work under `ulimit -c 0`. `orient.sh` completed normally (no hang) and named reviewer; `set-state GPUMD linux-gfx1100 reviewing --agent reviewer` took the lock. Fresh fork clone, `moat-port` = 458683da. Detached scratch worktrees of 458683da: `agent_space/rep` (legacy-model replica run), `agent_space/dbgon` (DEBUG, with the flag), `agent_space/dbgdef` (DEBUG, flag removed via a CFLAGS override; gpumd/nep sizes 15510800/3844456 B, identical to the 3b0f1908 DEBUG build on this host, so it is the 3b0f1908 build), `agent_space/bis` (per-TU bisection). No fork edit, no push. calorine was not needed (no pytest run this review).
+
+Scope: `git diff 3b0f1908 458683da` (only `src/makefile.hip`, +4/-1), the 458683da message, the porter's entry above and the draft follow-up PR body. CUDA: `src/makefile`, `main_replica/makefile` and all sources untouched; the mi355 nvcc PASS at 3b0f1908 stands.
+
+### Builds
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx1100 -j12
+    utils/timeit.sh GPUMD compile -- make -C agent_space/dbgon/src -f makefile.hip HIP_ARCH=gfx1100 -j10 gpumd nep CFLAGS="-O3 --offload-arch=gfx1100 -DUSE_HIP -ffp-contract=on -DDEBUG"
+    utils/timeit.sh GPUMD compile -- make -C agent_space/dbgdef/src -f makefile.hip HIP_ARCH=gfx1100 -j10 gpumd nep CFLAGS="-O3 --offload-arch=gfx1100 -DUSE_HIP -DDEBUG"
+
+All rc 0, 0 errors. The release log has `-ffp-contract=on` on all 230 compile lines (gpumd, nep, tb, and the `main_replica` objects via `CFLAGS="$(CFLAGS)"`); only the 4 link lines lack it. Release sizes: gpumd 15467192, nep 3836632, tb 309896, gpumd_replica 2473688 B.
+
+### Replica (release, legacy models from cd7f757d / eda8e04b in `agent_space/rep`, reverted after)
+- `GPUMD_REPLICA=<clone>/src/gpumd_replica python3 tests_regression/replica/test_replica.py`: **16/16 OK** (28.6 s).
+- `-k test_batched_matches_per_slot -k test_split_resume_is_exact`, 3 runs: **3/3 OK each** (8.2-8.4 s).
+
+### A/B (DEBUG, self-comparison, alternating dbgon/dbgdef)
+`python3 $D/tests_regression/run_regression.py --repo-root $D --suite full --baseline $D/src/gpumd --candidate $D/src/gpumd --baseline-nep $D/src/nep --candidate-nep $D/src/nep --case observer_average_two_runs --case observer_average_then_observe_control --case train_charge_vdw_mixed --case predict_nep_pbte_batch` (`agent_space/scripts/ab.sh`), 10 rounds, then the two observer cases alone for 20 more rounds (`scripts/obs.sh`):
+
+| case (runs failing) | `-ffp-contract=on` | default (`fast`) |
+|---|---|---|
+| observer_* (either case), 10 rounds | 7/10 | 0/10 |
+| observer_* (either case), 20 more rounds | 14/20 | 0/20 |
+| train_charge_vdw_mixed | 4/10 | 0/10 |
+| predict_nep_pbte_batch | 0/10 | 0/10 |
+
+So on gfx1100 too the flag makes these self-comparisons fail far more often (gfx90a porter: 4/10 vs 0/10 and 4/10 vs 2/10).
+
+### Where the observer nondeterminism comes from (an upstream race the flag exposes, not a regression)
+- The diff is always the same single number: second.xyz, atom line 136, field 11 = per-atom virial xx, 2.6824736640780875 vs 2.6824736640780866 (2 double ulp). Positions, velocities, forces, energies and every other file are identical. These are the exact two values the gfx90a porter recorded, so it is a two-way ordering choice, not codegen noise.
+- The case's box is 10 A with NEP radial cutoff 4.2, so `get_expanded_box` (`src/force/nep/nep.cu:1049`, thickness <= 2.5*(rc+1)) takes the small-box path. There `find_force_radial_small_box` and `find_force_angular_small_box` scatter per-atom virial into neighbor `n2` with double `atomicAdd` from many threads (`src/force/nep/nep_small_box.cuh:435-443`, `555-563`; forces likewise at `425-430`). The summation order of those double atomics is unordered on any GPU, CUDA included.
+- Why it is only sometimes visible: the addends are floats converted to double. A double sum of floats is exact (order-independent) unless the addends' exponents span too widely. The flag changes the float addends' low bits (different FMA formation), which for this atom makes the double sum inexact, so the order shows in the 17th digit. With default flags on gfx942 the same case already failed this way (`observer_average_then_observe_control`, one ulp, porter runs at 51018103 on 2026-11-05, entries above), so the race exists without the flag.
+- Per-TU bisection (`agent_space/scripts/tu.sh`: objects of the default build, one TU recompiled, gpumd relinked): `force/nep/nep.cu` alone with `-ffp-contract=on`: observer fails **7/10**; the same relink with `nep.cu` recompiled without the flag: **0/10**. That is the TU that includes `nep_small_box.cuh`, which matches the race above.
+- `train_charge_vdw_mixed` is the same class: the `nep` trainer accumulates with float/double atomics (`main_nep/nep_charge_vdw/nep_charge_vdw.cu` has 48 `atomicAdd`), and it already failed 2/10 without the flag on gfx90a.
+
+### Recommendation: keep `-ffp-contract=on` in `makefile.hip`'s global CFLAGS
+A narrower alternative (the flag only for `main_replica`, leaving gpumd/nep on `fast`) would make the observer case pass on gfx1100/gfx90a by luck of rounding while the upstream race stays, and gfx942 shows it fails without the flag anyway. Global `on` gives every target the same contraction rule, makes upstream's bitwise replica tests pass on gfx90a/gfx942/gfx1100, and causes no deterministic regression. The extra observer/training failures should be documented as run-to-run noise from upstream's atomics; making them quiet is an upstream test or kernel question (ordered virial accumulation or a tolerance on second.xyz), not something to bend the flag around.
+
+### Problems (must fix)
+1. **The claim that `-ffp-contract=on` is what nvcc does is unverified and probably wrong.** It appears in `src/makefile.hip:20-21` ("as nvcc does by default"), the 458683da message ("which is what nvcc does by default (--fmad=true)") and the draft PR body ("`on` fuses only within an expression, as nvcc does by default"); it comes from `.claude/skills/cuda-to-rocm/references/fault-classes.md:399-403`. Clang's own CUDA default is cross-statement contraction (set to match nvcc): `clang -x cuda --cuda-device-only -nocudainc -nocudalib --cuda-gpu-arch=sm_80 -O0 -S -emit-llvm` on `float d = a[1]*a[2]; a[0] = d + a[3];` gives `fmul contract` and `fadd contract` (two statements), the same as `-x hip`. nvcc's `--fmad=true` emits unrounded PTX `mul.f32`/`add.f32`, which ptxas may fuse with no statement scope. Either verify on the mi355 host (`nvcc -arch=sm_90 -cubin` that two-statement kernel, `cuobjdump -sass`: an FFMA means nvcc contracts across statements) or, simpler, justify `on` by what it does: it contracts only within one expression, so the per-slot and batched instantiations form the same FMAs. Fix the makefile comment and the PR body now; 458683da's message cannot be amended (no force-push), so the new commit's message states the corrected reason and the PR-prep squash message carries it. If the nvcc check confirms cross-statement FFMA, correct the fault-classes lesson on this branch too.
+2. **A CFLAGS override silently drops the flag.** `src/makefile.hip` note 2 says "Do not remove -DUSE_HIP"; make it "Do not remove -DUSE_HIP or -ffp-contract=on". Anyone building with `CFLAGS=...` on the command line (the way `tests_regression/README.md:89` and `developer/spin_validation.md:71` ask for `-DDEBUG`) replaces the whole line, and `gpumd_replica` receives that CFLAGS, so a DEBUG replica build loses the flag and the batched tests fail again on gfx90a. Editing the line in place (the header's own `-DUSE_PLUMED` instruction, `doc/installation.rst`) keeps it.
+3. **Draft PR body: the failure list must cover the noise the flag makes frequent.** Validators at 458683da will see `observer_average_two_runs`/`observer_average_then_observe_control` (and the 4 `observer_*` relations they skip) and `train_charge_vdw_mixed` fail often. Name them in the float-atomic class with the cause in one sentence: per-atom virial in the small-box NEP path is accumulated with double `atomicAdd`, so the last digit of one atom's virial in second.xyz varies between runs; the training loss likewise. Keep the reminder to refresh counts from the gfx942 run at 458683da.
+
+### Checks that passed
+`python3 utils/jargon.py -` on the 458683da message and on the draft body: clean; `utils/prose.py` on both: clean; `jargon.py -C projects/GPUMD/src --commits 3b0f1908..458683da --diff 3b0f1908...458683da`: clean. Title `[ROCm] Contract FMAs within expressions only in makefile.hip` (61 chars), "Authored with Claude.", Test Plan with fenced commands, no Co-Authored-By, ASCII. Integrity: `git -C projects/GPUMD/src status --porcelain` shows no modified tracked file.
