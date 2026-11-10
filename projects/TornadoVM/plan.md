@@ -255,3 +255,6 @@ Keep the current check (rejects only provable same-wavefront waits in 1D kernels
 
 ## Ruling 2026-11-09 (jeff): MMA tolerances where the hardware does not accumulate bit-exactly
 Use relative tolerances in the selftest MMA checks (Checks.mmaF16, Checks.mmaFp8) and the probe/mma harness where the hardware's internal accumulation is not exact: about 1e-6 for f16/bf16 on gfx11 (RDNA3/3.5 WMMA, 1-ulp differences measured on gfx1151) and 1e-4 for FP8 on gfx1250 (errors up to 6.6e-5 measured). Keep the exact encoding (every-byte) and layout (--mutate) checks. Document the accumulation precision in the HIP backend docs. Do not split the accumulation.
+
+## Ruling 2026-11-10 (jeff): gfx11 every-byte FP8 bound and the CUDA copy race
+Review 8 must-fix 2, option (a): in the probe/mma harness every-byte check, E4M3 stays bit-exact on every arch; E5M2 stays bit-exact everywhere except on gfx11, where only the three negative subnormal bytes 0x81, 0x82 and 0x83 get the 1e-6 relative bound (measured 1-2 fp32 ulps on gfx1151). Every other E5M2 byte stays bit-exact on gfx11 too. Must-fix 1 (the regression test comment overclaims) is fixed as the review describes. The upstream PR body mentions that the CUDA backend has the same unsynchronized device-to-device copy shape; the port does not change the CUDA backend.
