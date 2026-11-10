@@ -403,3 +403,6 @@
 {"kind":"phase","ts":"2026-11-10T08:16:52Z","phase":"compile","seconds":14.638,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi200-20261109-233620-rev5-leap-216/moat/agent_space/piprun.sh old None 100 wheel"}
 {"kind":"phase","ts":"2026-11-10T08:17:07Z","phase":"compile","seconds":14.672,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi200-20261109-233620-rev5-leap-216/moat/agent_space/piprun.sh old None 100 edit"}
 {"kind":"session","ts":"2026-11-10T08:19:17Z","epoch":1794298757.978592916,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-10T08:22:49Z","phase":"compile","seconds":30.654,"exit":0,"cmd":"bash -c cd ../leapw2/clean && bash ../plainrun.sh /d/Develop/moat/agent_space/leapw2/venv/Scripts/python.exe -m pip install -v -e . -Ccmake.define.LEAP_GPU=AMD"}
+{"kind":"phase","ts":"2026-11-10T08:23:04Z","phase":"test","seconds":9.452,"exit":0,"cmd":"bash -c cd ../leapw2/clean && bash ../plainrun.sh /d/Develop/moat/agent_space/leapw2/venv/Scripts/python.exe ../run.py unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-10T08:24:21Z","phase":"compile","seconds":28.072,"exit":0,"cmd":"bash -c cd ../leapw2/clean && bash ../plainrun.sh /d/Develop/moat/agent_space/leapw2/venv/Scripts/python.exe -m pip install -v -e . -Ccmake.define.LEAP_GPU=None -Cbuild-dir=build_cpu"}

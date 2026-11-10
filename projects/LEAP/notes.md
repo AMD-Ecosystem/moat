@@ -3654,3 +3654,21 @@ PYTHONPATH=agent_space/skbc/u<ver> $FLEET_VENV/bin/python agent_space/probe/prob
 
 ### Not covered here
 No Windows run (Linux host). The win32 detection was exercised by faking `sys.platform` inside the backend only, so scikit-build-core's Windows-only `ninja()` early return was checked by reading the source (both versions), not executed. The porter's plain-shell Windows logs are the runtime evidence for it. The CUDA path at f538223 is covered by the nvcc 12.8 check above.
+
+## Porter 2026-11-10 (windows-gfx1151, fix round moat-fix-216: backend fallback, f538223 -> 70ab397)
+
+jeff asked for this run: implement only the first "Residual notes for jeff" item of the linux-gfx90a review at f538223. One new commit on `moat-fix-216` (no amend/rebase/force; `moat-port` untouched at 00fae7e, verified with `git ls-remote`):
+- `70ab397` [ROCm] Fall back to stock scikit-build-core if its internals move -- in `scripts/leap_build_backend.py`, after the `sys.platform != "win32"` return, the imports of `parse_generator`/`SettingsReader`, the settings read, the LEAP_GPU scan and the generator check are in `try: ... except Exception: return`; the final `-GNinja` append stays outside. On any failure CMAKE_ARGS is untouched (stock behaviour).
+
+Verification (this laptop; `ulimit -c 0`, HIP_VISIBLE_DEVICES=0, one GPU process). `agent_space/leapw2/clean` fast-forwarded to 70ab397, same venv (`rocm[libraries,devel]==7.14.0a20260519`), plain shell `agent_space/leapw2/plainrun.sh` (`env -i`).
+```
+bash utils/timeit.sh LEAP compile -- bash -c 'cd ../leapw2/clean && bash ../plainrun.sh <venv>/Scripts/python.exe -m pip install -v -e . -Ccmake.define.LEAP_GPU=AMD'      # pip-amd9.log
+bash utils/timeit.sh LEAP test -- bash -c 'cd ../leapw2/clean && bash ../plainrun.sh <venv>/Scripts/python.exe ../run.py unitTests/gpu_vs_cpu_validate.py'              # gvc2.log
+bash utils/timeit.sh LEAP compile -- bash -c 'cd ../leapw2/clean && bash ../plainrun.sh <venv>/Scripts/python.exe -m pip install -v -e . -Ccmake.define.LEAP_GPU=None -Cbuild-dir=build_cpu'  # pip-cpu2.log
+cd ../leapw2/clean && env -i SystemRoot=... PATH=/c/WINDOWS/system32:/c/WINDOWS <skbc/venv112>/Scripts/python.exe <scratch>/fb/probe.py   # scikit-build-core 1.1.2, scratch copy of the backend
+```
+- (1) AMD pip: rc=0; `Collecting ninja>=1.5` -> ninja-1.13.2, `*** Building project with Ninja`, `[58/58] Linking HIP shared library bin\libleapct.dll`, `leapct-1.27.dev43+g70ab39748`, 0 `error:`, no traceback. gpu_vs_cpu_validate (run.py harness, preloads the venv's amdhip64_7.dll/hipfft.dll): rc=0, **14/14 OVERALL: PASS**, adjoint figures equal the f538223 record (coneparallel 1.24e-03/2.59e-07, cone-flat 2.97e-06/1.52e-04, cone-curved 1.79e-03/2.58e-07, modular 2.87e-03/2.86e-03, consistency 3.115/0.06119/3.004, attenuated 3.43e-05).
+- (2) Fallback probe (real win32, `LEAP_GPU=AMD` in config_settings, cwd = clean tree): baseline -> `CMAKE_ARGS='-GNinja'`, requires `['cmake>=3.23', 'ninja>=1.5', 'setuptools-scm']`. With `SettingsReader.from_file` raising, `parse_generator` raising, `SettingsReader` deleted from its module, or `scikit_build_core.builder.generator` unimportable (`sys.modules[...] = None`): `_use_ninja` returns without exception, `CMAKE_ARGS` unset, requires = stock `['cmake>=3.23', 'setuptools-scm']`. Note for whoever repeats this: the stock `get_requires_for_build_wheel` itself uses `SettingsReader` and `parse_generator`, so patching them and then calling the wrapped hook raises from the STOCK part; the probe patches only around `_use_ninja` and restores before calling the stock hook. The commit's Test Plan one-liner (`m.SettingsReader = None`) prints `None` (checked).
+- (3) CPU-only pip: rc=0, no ninja requirement, CXX MSVC 19.44.35223.0, `*** Building project with Visual Studio 17 2022`.
+- `python3 utils/jargon.py --port LEAP`: clean; message ASCII; title 65 chars; `git diff --check` clean. Pushed `moat-fix-216` f538223..70ab397. Fork clone `git status --porcelain` empty.
+- Not covered: Linux/nvcc (the change is after the `sys.platform` return; dispatcher reruns them), Windows CUDA (no NVIDIA), scikit-build-core 1.0.0 on Windows for this commit (1.1.2 only).
