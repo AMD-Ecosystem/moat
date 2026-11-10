@@ -1769,3 +1769,23 @@ rc 0, full build and link of gpumd 27322192, nep 8705816, tb 1613592, gpumd_repl
 - Pushed 5f6596ec..26547d27 to `moat-port` (fast-forward, pre-push hook passed; `ls-remote` = 26547d27). `advance-head GPUMD 26547d27...`.
 
 Next: review of 26547d27, then revalidation of every gate at 26547d27 (windows-gfx1151 must rerun `test_batched_matches_per_slot_prd`).
+
+## Review 2026-11-10 (linux-gfx1100, reviewer) -- delta 5f6596ec..26547d27 (PRD slot-allocation sync), REVIEW PASSED
+
+jeff asked for this run. Scope: fork 26547d27 (`src/main_replica/replica_prd.cu`, +2 lines), its message, the diagnosis and porter entries above, and the one new paragraph in the draft follow-up PR body. Fresh fork clone, `moat-port` = 26547d27. Host: RX 7900 XTX (gfx1100, wave32), TheRock pip SDK, `HIP_VISIBLE_DEVICES=0` (dispatcher-pinned), `ulimit -c 0`. `orient.sh` completed and named reviewer; `set-state GPUMD linux-gfx1100 reviewing --agent reviewer` took the lock.
+
+No problems found.
+- Race: confirmed. `allocate_memory_gpu` (`model/read_xyz.cu:554`) does `force_per_atom.resize(N * 3, 0)`, whose `fill` launches `gpu_fill<<<>>>` with no stream (`utilities/gpu_vector.cuh:240`); `GPU_CHECK_KERNEL` syncs only in DEBUG builds. The fill is the last default-stream op in `allocate_memory_gpu` (the later `virial`/`potential`/`thermo` resizes are plain `gpuMalloc`). `Replica_Runtime::initialize` (`replica_common.cu:521-523`) then runs `compute_force` on the non-blocking slot stream with nothing ordering it after the fill; the PRD velocity upload is `copy_from_host_async` on the slot stream. The added `CHECK(gpuDeviceSynchronize())` at `replica_prd.cu:658` follows the only fill and all blocking copies in `initialize_slot` and precedes all slot-stream work. `allocate_memory_gpu` and `initialize_slot` have no other callers.
+- Other drivers: REMD (`replica_remd.cu:471-480`) uses blocking `copy_from_host` in both branches (resume directly; fresh via `Velocity::initialize`, `velocity.cu:307`), which is ordered after the null-stream fill. `replica_batch.cu:443-458` and `replica_common.cu:239-241` resize without a fill. The only other default-stream fills in `src/main_replica/` are `Minimizer_FIRE::compute`'s `velocity_.fill(0.0)`, taken only when `stream == nullptr` (otherwise `fill_async` on the stream); `GPU_Pinned_Vector(size, value)` fills host memory. No other allocate-with-fill before slot-stream work.
+- Message: no `[ROCm]` (vendor-neutral, correct), title 53 chars, "Authored with Claude.", fenced Test Plan, no Co-Authored-By, ASCII. `prose.py`: clean. `jargon.py --port GPUMD`: only the 2 known hits in upstream's 725fe762.
+- Draft PR body paragraph ("Replica PRD: ..."): accurate; `prose.py` and `jargon.py -` on the body: clean. Its gfx1151 sentence rests on the diagnosis scratch build until the windows-gfx1151 revalidation at 26547d27 lands (the reminder already says every gate is owed).
+
+Build and test (gfx1100):
+
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx1100 -j32
+
+rc 0; gpumd_replica 2473784 B. Detached worktree at 26547d27 with `examples/nep_train/nep.txt` from cd7f757d and `examples/qnep_train/nep.txt` from eda8e04b (removed after):
+
+    GPUMD_REPLICA=$PWD/projects/GPUMD/src/src/gpumd_replica python3 <worktree>/tests_regression/replica/test_replica.py -v -k test_batched_matches_per_slot_prd
+
+**1/1 OK** (4.9 s). This host never showed the race, so this is a no-regression check, not evidence of the fix. Clone `status --porcelain`: clean.

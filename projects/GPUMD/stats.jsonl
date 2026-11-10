@@ -206,3 +206,7 @@
 {"kind":"phase","ts":"2026-11-10T15:18:24Z","phase":"test","seconds":57.806,"exit":0,"cmd":"python3 /var/lib/jenkins/fleet/jobs/mi355-20261110-071233-fix3-prd-gpumd/moat/agent_space/rep/tests_regression/replica/test_replica.py -v"}
 {"kind":"phase","ts":"2026-11-10T15:19:08Z","phase":"compile","seconds":18.142,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261110-071233-fix3-prd-gpumd/moat/agent_space/cu/src -j128 CUDA_ARCH=-arch=sm_90 all"}
 {"kind":"session","ts":"2026-11-10T15:20:26Z","epoch":1794324026.114369747,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-10T15:27:15Z","epoch":1794324435.276133494,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-10T15:28:36Z","phase":"compile","seconds":35.260,"exit":0,"cmd":"make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx1100 -j32"}
+{"kind":"phase","ts":"2026-11-10T15:29:05Z","phase":"test","seconds":4.912,"exit":0,"cmd":"python3 agent_space/gp_rep/tests_regression/replica/test_replica.py -v -k test_batched_matches_per_slot_prd"}
+{"kind":"session","ts":"2026-11-10T15:30:02Z","epoch":1794324602.042521440,"event":"end","platform":"linux-gfx1100"}
