@@ -35,3 +35,9 @@ Only packaging: upstream ships no Windows ROCm binary (Windows AMD users are poi
 ### Recommendation
 
 Decline, `SKIP_REASON` `already-supported`: upstream koboldcpp builds its whole CUDA surface (vendored ggml plus its own legacy v2/v3 `.cu` files) with HIP via `LLAMA_HIPBLAS`, and publishes a CI-built Linux ROCm binary at each release. The residual Windows-binary/docs gap is packaging, not porting, and on a tier-3 (AGPL-3.0) project.
+
+## Ruling: validation project (Jeff Daily, 2026-11-10)
+
+Jeff Daily overrode the intake decline: koboldcpp becomes a validation project. The port is not stale upstream, but the only ROCm fork is a stale community one (YellowRoseCx/koboldcpp-rocm) and AMD has no fork. Validate upstream's own HIP build (LLAMA_HIPBLAS) on every required gate (wave64, wave32, Windows) and fix what breaks. The fixes go on `moat-port` of an AMD-Ecosystem fork. A person creates that fork, never an agent; the project waits in `awaiting-fork` until it exists, then `release-forks` moves it to `screened` for the planner.
+
+Licence: AGPL-3.0 is tier 3. Validation and fork-side fixes need no clearance. Anything offered upstream needs a licence clearance recorded by a person (`record-license-clearance`) first.

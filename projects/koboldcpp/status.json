@@ -6,14 +6,37 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-06T01:28:57Z",
-  "updated_at": "2026-11-06T01:45:17Z",
+  "updated_at": "2026-11-10T18:08:41Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {},
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-10T18:08:41Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
   "license_spdx": "AGPL-3.0",
   "license_spdx_history": [
     {
@@ -24,11 +47,11 @@
     }
   ],
   "intake": {
-    "verdict": "decline",
-    "reason": "already-supported",
-    "duplicate_effort": "upstream LLAMA_HIPBLAS build + rocm-rolling release; community YellowRoseCx/koboldcpp-rocm (stale, v1.104 vs v1.124)",
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "upstream LLAMA_HIPBLAS build + ROCm binary; stale community YellowRoseCx/koboldcpp-rocm",
     "viable": true,
-    "summary": "KoboldCpp LLM runner; upstream already builds its whole CUDA surface (vendored ggml + legacy v2/v3 .cu) with HIP via LLAMA_HIPBLAS and ships a CI-built Linux ROCm binary; only gap is no Windows ROCm binary (packaging)",
-    "at": "2026-11-06T01:45:16Z"
+    "summary": "Validation take-up ruled by Jeff Daily 2026-11-10: validate upstream's HIP build on all platforms (wave64, wave32, Windows); fixes go to a requested AMD-Ecosystem fork. AGPL-3.0 (tier 3): any upstream contribution needs a recorded licence clearance",
+    "at": "2026-11-10T18:08:41Z"
   }
 }
