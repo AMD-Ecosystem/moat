@@ -1699,3 +1699,36 @@ Compared with 3b0f1908 on this host: the blocker that failed it (batched-vs-per-
 - Integrity: no modified tracked file in the clone or either worktree (HEAD 5f6596ec in each) before the worktrees were removed.
 
 Result: **completed** at 5f6596ec on linux-gfx90a. Every failure is in a known class (rand() reseed, float-atomic noise in the observer virial, replica `format_version 1` model headers upstream).
+
+## Diagnosis 2026-11-10 (windows-gfx1151) -- batched PRD replica
+
+jeff asked for a bounded diagnosis of the `test_batched_matches_per_slot_prd` failure recorded at 5f6596ec on windows-gfx1151. No platform state changed, no fork edit or push. Binary: the validator's `agent_space/gpumd-win4/src/gpumd_replica.exe` (5f6596ec, `-ffp-contract=on`). Inputs: the test class itself, imported from `agent_space/gp4_rep/tests_regression/replica` (legacy models from cd7f757d / eda8e04b swapped in), PRD options `replicas 3 event 5 dephase 10 correlate 5 distance 0.15 quench 0.01 3000`, 2000-atom PbTe supercell. Scratch scripts in `agent_space/gp5diag/`. Serial, `ulimit -c 0`, 9 GPU runs total, no fault or hang. Runtime PATH needs the SDK `bin` in MSYS form (`export PATH="$(cygpath -u "$ROCM_ROOT")/bin:$PATH"`); with the `D:/...` form the exe exits 0xC0000135 (hipfft.dll not found).
+
+### Determinism probe (one 20-step batch=0 start, then four 40-step resumes from copies of it)
+    python agent_space/gp5diag/batch_det.py agent_space/gp4_rep/tests_regression/replica <win path>/gpumd-win4/src/gpumd_replica.exe agent_space/gp5diag/run1
+- b0a vs b0b (both `GPUMD_REPLICA_BATCH=0`): all files identical.
+- b1a vs b1b (both `=1`): all files identical.
+- b0 vs b1 (each pairing): only `prd_replica_2_restart.xyz` differs (plus the extra batched line in `neighbor.out`). Replicas 0 and 1, basin, events and meta are bit-identical. Replica 2: all 18000 position/velocity values differ, max position diff 2.3e-3 A.
+So neither path is nondeterministic. The difference is systematic and confined to the last replica.
+
+### Earliest divergence (1-step resume, `agent_space/gp5diag/short.py ... 1`)
+After one step replica 2 already differs (position 7.0e-5 A max, velocity up to 7e-4 in natural units, per-atom velocity ratio 0.963..1.028, so not a thermostat factor). Not ulp-level and not chaos amplification. Back-solving the first velocity-Verlet drift, x1 - x0 - v0*dt = 0.5*F0/m*dt^2, from the restart and the 1-step output gives the force each run started with:
+- replica 0 and 1, both paths: implied F0 = 0 (residual 3e-15).
+- replica 2, batch 1: implied F0 = 0.
+- replica 2, batch 0: implied acceleration rms 2.8e-5 A/fs^2, a real force.
+The resumed run starts from zero forces except for per-slot replica 2.
+
+### Cause: unordered zero fill of `force_per_atom` on the legacy default stream (upstream race, PRD only)
+- `Replica_Runtime::initialize` (`main_replica/replica_common.cu:520-523`) runs `initialize_slot(*slot)` and then `compute_force(device, *slot)` on `slot.stream`, which is created `gpuStreamNonBlocking` (`main_replica/utilities/gpu_stream.cuh:154,183`).
+- `PRD_Driver::initialize_slot` (`main_replica/replica_prd.cu:656`) calls `allocate_memory_gpu`, whose `atom.force_per_atom.resize(N * 3, 0)` (`main_replica/model/read_xyz.cu:554`) zero-fills through `GPU_Vector::fill`, a `gpu_fill<<<>>>` launch on the legacy default stream (`main_replica/utilities/gpu_vector.cuh:240`). PRD then uploads velocities with `copy_from_host_async` on the slot stream and syncs only that stream (`replica_prd.cu:664-668`). Nothing orders the default-stream fill before `compute_force` on the non-blocking slot stream.
+- On gfx1151/Windows the fill lands after the NEP force is computed and wipes it. The next blocking `hipMemcpy` flushes it: the next slot's `allocate_memory_gpu` copies for replicas 0 and 1, and the `Replica_Batch` constructor's `copy_from_host` (`main_replica/replica_batch.cu:444-446`) for replica 2 when batching is on. With batching off nothing flushes replica 2's fill before the first step, so replica 2 keeps its real force. That is the batch0/batch1 difference.
+- REMD does not race: `REMD_Driver::initialize_slot` (`replica_remd.cu:471-473`) uploads velocities with the blocking `copy_from_host`, which orders after the fill. That is why REMD batched and split-resume pass here.
+- On Linux (gfx1100/gfx942/gfx90a) the fill completes before `compute_force` in practice, so all replicas keep their forces and both paths agree. CUDA has the same unordered-stream pattern; it is an upstream bug that this platform's timing exposes.
+- Not caused by atomics, a wave-size assumption or FP contraction (both paths are bitwise repeatable, the error is a whole force field and not ulps). The `-ffp-contract=off` build was not tried; it is irrelevant to this cause.
+
+### Confirmation (scratch build, not a fork edit)
+Copied `gpumd-win4/src/main_replica` to `agent_space/gp5diag/fix/main_replica`, added `CHECK(gpuDeviceSynchronize());` right after `allocate_memory_gpu(...)` in `PRD_Driver::initialize_slot`, and rebuilt (`mingw32-make CC=<rocm>/bin/hipcc.exe CFLAGS="-O3 --offload-arch=gfx1151 -DUSE_HIP -ffp-contract=on -std=c++17" LIBS=-lhipfft LDFLAGS=-L<rocm>/lib`, only replica_prd.obj recompiled). From the same 20-step start, 40-step resumes at batch 0 and batch 1: **all PRD outputs identical** (three replica restarts, basin, events, meta). The fixed run's replica 2 equals the original per-slot replica 2 bit for bit; replicas 0 and 1 now differ from the original runs (both paths), confirming that the original runs resumed those replicas from a zero force.
+The two different magnitudes in the validator's runs (4e-4, 1e-3) came from two different fresh start runs; start-run repeatability was not checked.
+
+### Recommendation
+A one-line ordering fix: `CHECK(gpuDeviceSynchronize());` (or `gpuStreamSynchronize(0)`) after `allocate_memory_gpu` in `PRD_Driver::initialize_slot`, or once in `Replica_Runtime::initialize` before `compute_force` to cover both drivers. It is correct on CUDA too. The race is upstream's code, so per the scope rule it belongs in an upstream issue/PR (GPUMD is active); carrying it on moat-port as a separate commit is the alternative if the windows gate should pass before upstream takes it. jeff's call. Not a known-nondeterminism note: the per-slot result is the physically correct one and the batched (and replica 0/1) results are wrong on this platform.
