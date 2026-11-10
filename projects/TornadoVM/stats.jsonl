@@ -197,3 +197,5 @@
 {"kind":"phase","ts":"2026-11-10T20:24:52Z","phase":"test","seconds":10.079,"exit":0,"cmd":"cmd.exe /c C:\\Users/<user>\\AppData\\Local\\Temp\\claude\\8e8b101471bc8a7c\\920c642b-cd0e-4647-a64c-a7e466513d51\\scratchpad\\launch_new.cmd"}
 {"kind":"phase","ts":"2026-11-10T20:30:09Z","phase":"compile","seconds":194.145,"exit":0,"cmd":"cmd.exe /c C:\\Users/<user>\\AppData\\Local\\Temp\\claude\\8e8b101471bc8a7c\\920c642b-cd0e-4647-a64c-a7e466513d51\\scratchpad\\build.cmd"}
 {"kind":"phase","ts":"2026-11-10T20:30:45Z","phase":"test","seconds":11.918,"exit":0,"cmd":"cmd.exe /c C:\\Users/<user>\\AppData\\Local\\Temp\\claude\\8e8b101471bc8a7c\\920c642b-cd0e-4647-a64c-a7e466513d51\\scratchpad\\launch_pkg.cmd"}
+{"kind":"session","ts":"2026-11-10T20:35:37Z","epoch":1794342937.575846200,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-10T20:38:35Z","epoch":1794343115.444939800,"event":"end","platform":"windows-gfx1151"}
