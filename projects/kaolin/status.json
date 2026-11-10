@@ -2,13 +2,13 @@
   "schema_version": 3,
   "name": "kaolin",
   "upstream_url": "https://github.com/NVIDIAGameWorks/kaolin",
-  "fork_url": null,
-  "fork_default_branch": "main",
+  "fork_url": "https://github.com/AMD-Ecosystem/kaolin",
+  "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "awaiting-fork",
+  "stage": "screened",
   "adopted_at": "2026-11-06T11:00:55Z",
-  "updated_at": "2026-11-10T21:15:34Z",
+  "updated_at": "2026-11-10T21:16:58Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -53,5 +53,11 @@
     "viable": null,
     "summary": "take-up of AMD-Ecosystem/kaolin building on the AMD team's rocm-enablement work (74a1b181, merged to fork master fcc9bfcd), ruled by Jeff Daily",
     "at": "2026-11-10T21:15:34Z"
+  },
+  "base_branch_ruling": {
+    "branch": "master",
+    "previous": "main",
+    "by": "Jeff Daily",
+    "at": "2026-11-10T21:16:57Z"
   }
 }

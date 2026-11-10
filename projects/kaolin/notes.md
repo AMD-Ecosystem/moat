@@ -22,3 +22,15 @@ Decline, reason `ported-elsewhere`: an AMD-owned fork (AMD-Ecosystem/kaolin) alr
 
 ### Question for jeff
 AMD-Ecosystem/kaolin is in our own org but is not a MOAT project. Should MOAT adopt it as an existing fork (validate wave32/Windows and review the added `*_gpu.cu` copies) in coordination with its authors, or leave it to them?
+
+## Take-up ruling (2026-11-10)
+
+Jeff Daily ruled on 2026-11-10 that MOAT takes kaolin up, building on the AMD team's existing ROCm work (same approach as PhysX), overriding intake's decline (ported-elsewhere) recommendation:
+
+- Fork: https://github.com/AMD-Ecosystem/kaolin. `rocm-enablement` is 74a1b18187 (one commit "[ROCm] AMD Instinct (ROCm) enablement for kaolin", 2026-09-17, 35 files). The fork's `master` is fcc9bfcd, a merge of that commit onto upstream d52da9f8 with no further content, so `master` is the AMD team's delivery branch and not a pure upstream mirror (2 ahead / 2 behind NVIDIAGameWorks/kaolin `master` at the time of the ruling). Recorded `fork_default_branch` = `master` (`set-base-branch kaolin master --by "Jeff Daily"`), as with MONAI's `amd-develop`. Neither fork branch is to be modified.
+- Port base: the porter creates `moat-port` from the fork `master` tip (carrying 74a1b181 and its authorship), then merges upstream `master`. Our work goes on top as separate commits.
+- Minimal viable diff: clean up whitespace-only changes and every other change the port does not need, in commits on top. The ruling keeps only: the `amd-kaolin` distribution rename in setup.py, the `PYTORCH_ROCM_ARCH` default of gfx942;gfx950 when unset (whether to extend it to the wave32 targets is a question for Jeff, not a porter decision), and the ROCm port changes themselves. Known noise to examine first: the 26 added `kaolin/csrc/**/*_gpu.cu` files (~10K lines) that sit beside the existing `*_cuda.cu` files; the one pair compared (metrics/sided_distance) is byte-identical apart from an added AMD copyright line. If they are duplicates, remove them so the port edits the original files in place. Also review the added "Modifications Copyright" lines against the default-no-new-copyright rule, and the README/installation.rst rewrites, for necessity.
+- Also in scope: Radeon (wave32, gfx1100/gfx1201) and Windows gfx1151, with every gate validated (Linux wave64 and wave32 first, Windows last). The AMD README reports MI300X 15213 pass / 88 fail ("all non-port") / 1444 skip, and wave64 fixes in sg_inner_product, packed_simple_sum and deftet; re-check those 88 failures against upstream on NVIDIA rather than accepting the label.
+- Delivery vehicle is Jeff's call later.
+
+Recorded: `set-intake kaolin fork`, `set-state kaolin linux-gfx942 awaiting-fork`, `release-forks` (stage `screened`, `fork_url` set). Re-run `set-fork-url kaolin https://github.com/AMD-Ecosystem/kaolin --by "Jeff Daily"` once the porter has pushed `moat-port`.
