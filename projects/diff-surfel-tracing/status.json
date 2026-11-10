@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-11-04T23:08:22Z",
+  "updated_at": "2026-11-10T05:10:47Z",
   "head_sha": "e24c44cba2463988f011d582a7d2998f936bd371",
   "depends_on": [],
   "waivers": {},
@@ -125,5 +125,12 @@
     "since": "2026-11-04T10:03:18Z",
     "at": "2026-11-04T10:07:50Z"
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/diff-surfel-tracing/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/diff-surfel-tracing/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-10T01:19:03Z",
+    "head_sha": "e24c44cba2463988f011d582a7d2998f936bd371",
+    "content_sha256": "f47cfff9e72b1995744b95544db882da23b3110d4cd4ebba038feb4176a8c9b1",
+    "review_pr": "https://github.com/AMD-Ecosystem/diff-surfel-tracing/pull/1"
+  }
 }
