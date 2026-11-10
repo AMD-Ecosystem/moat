@@ -427,3 +427,136 @@ Expected: `WP_TILE_WARP_SIZE` follows the target's wavefront size (64 under `__G
 - Integrity: the fork tree is clean at `d4aac6cc`.
 
 Known AMD Warp gaps on this platform: Draft D 2 tests, Draft E 1 test. Drafts A, B and C are install-time and needed no test. A did not apply (no CUDA Toolkit on the host). The documented recipe already handles B and C, so they caused no failures. Environment: 1 test (no EGL). Real failures: 0.
+
+## NVIDIA no-regression run (2026-11-10, V100)
+
+
+Date: 2026-11-10. Requested by jeff (Jeff Daily).
+
+## Verdict
+
+PASS. No regression on NVIDIA. On a Tesla V100-SXM2-32GB (sm_70) with NVIDIA warp-lang 1.17.0 from PyPI, `supports_graph_capture()` returns True, CUDA graph capture engages, and all 27 test files pass on both refs: moat-port d4aac6cc gets 516 passed, 0 skipped, 0 failed, and upstream eed2d288 gets 516 passed, 0 skipped, 0 failed. The 516 test node ids are identical on the two refs. No test skips with the graph-capture reason on moat-port: the junit XML has zero `<skipped>` elements, and no log contains "cannot capture". All 51 tests that skip on AMD (5 kitless in test_articulation plus 46 unmarked) run and pass here. The Cartpole Newton training smoke on moat-port finishes with rc=0, and the mean reward goes from 0.13 to 4.94 with episode length at the 300 cap. That curve matches the AMD runs.
+
+## Environment
+
+- Host: a V100 node (Slurm partition defq), one GPU per srun (`--gres=gpu:TeslaV100-SXM2-32GB:1`), Ubuntu 24, NVIDIA driver 575.57.08 (CUDA 12.9). Every run used `ulimit -c 0`.
+- The work tree was on a shared home that the login node and the compute nodes both see. The venvs, the uv cache, the managed Python and the Warp kernel caches were in node-local /tmp, so all sruns were pinned to the same node. Everything was deleted at the end.
+- Sources: `git clone https://github.com/AMD-Ecosystem/IsaacLab.git` and checkout of d4aac6ccf4d717de7e0566d63f5df20d9f10ec02 (`merge-base --is-ancestor eed2d288 HEAD` OK; 31 files, +191/-26 vs base). Upstream eed2d2889a5b963fee8c3594d29fe6d91ec67046 was fetched from isaac-sim/IsaacLab into a `git worktree`. git-lfs was available: the port checkout smudged all LFS files (0 pointers left), and `git lfs checkout` in the base worktree materialized 203/203 LFS files from the same local LFS store.
+- Installer: uv 0.13.7, managed CPython 3.12.
+- Install, per ref, from the checkout root (so uv reads `[tool.uv.pip]` index-strategy unsafe-best-match and the root pins):
+
+```
+uv venv -p 3.12 $L/venv-<ref>
+# cu126-overrides.txt:
+#   torch==2.11.0+cu126
+#   torchvision==0.26.0+cu126
+uv pip install --python $L/venv-<ref>/bin/python --no-sources \
+  --override cu126-overrides.txt \
+  --index https://download.pytorch.org/whl/cu126 \
+  -e ".[test,importers]" -e source/isaaclab -e source/isaaclab_assets -e source/isaaclab_contrib \
+  -e source/isaaclab_experimental -e source/isaaclab_newton -e source/isaaclab_ov -e source/isaaclab_physx \
+  -e source/isaaclab_ppisp -e source/isaaclab_rl -e source/isaaclab_tasks \
+  -e source/isaaclab_tasks_experimental -e source/isaaclab_visualizers
+```
+
+- Deviation from the documented `uv sync` / `uv run`: one change only. `[tool.uv.sources]` pins torch to the `pytorch-cu130` index, but CUDA 13 dropped sm_70, and driver 575 supports only CUDA 12.9. So `--no-sources` plus an override selects the same torch/torchvision versions (2.11.0 / 0.26.0) from the cu126 index, whose arch list includes sm_70. The rest resolved exactly as pinned, including warp-lang 1.17.0 from PyPI.
+- Resolved versions (identical on both refs): torch 2.11.0+cu126 (CUDA 12.6; arch list sm_50..sm_90 including sm_70), torchvision 0.26.0+cu126, warp-lang 1.17.0 (PyPI; "CUDA Toolkit 12.9, Driver 12.9"), newton 1.8.0.dev0 (git 42f7def1), mujoco-warp 3.15.0, mujoco 3.15.0, rsl-rl-lib 5.5.1, usd-exchange 3.0.1, pytest 9.2.0, isaaclab 44.0.0. nvidia-*-cu12 runtime wheels came with torch.
+- sm_70 support: no package refused sm_70. Warp, Newton, MuJoCo Warp and torch all compiled and ran kernels on the V100.
+
+## Device check (moat-port venv, on the GPU)
+
+```
+torch 2.11.0+cu126 cuda 12.6 avail True
+torch device Tesla V100-SXM2-32GB cap (7, 0)
+Warp 1.17.0 initialized:
+   CUDA Toolkit 12.9, Driver 12.9
+     "cuda:0"   : "Tesla V100-SXM2-32GB" (32 GiB, sm_70, mempool enabled)
+device: cuda:0 name: Tesla V100-SXM2-32GB arch: 70
+is_cuda: True
+hasattr supports_graph_capture: False
+is_hip: <no attr>
+isaaclab supports_graph_capture(cuda:0): True
+isaaclab supports_graph_capture(cpu): False
+capture graph is None: False
+after 3 graph launches (capture itself does not execute): [3. 3. 3. 3.]
+```
+
+Every expected value matches: `is_cuda` True, no `supports_graph_capture` attribute on NVIDIA Warp, and the helper returns True. A real `wp.ScopedCapture` produced a non-None graph, and replaying it with `wp.capture_launch` 3 times gave the right result.
+
+## Tests
+
+Each file ran in its own pytest process from the checkout root: `python -m pytest -p no:cacheprovider -rfEs -q [-m kitless] --junitxml=<f>.xml <file>`. `WARP_CACHE_PATH` was set per ref. The kitless set is the 12 files that carry the literal `pytest.mark.kitless` marker, minus 2 that were not run: `multi_gpu/test_multi_gpu_training_smoke.py` needs 2+ GPUs, and `_isaaclab_testing/test/rendering/test_visualizers_rtx.py` needs RTX/OVRTX. These are the same exclusions as the AMD runs. The unmarked set is the 17 Warp-kernel files the AMD validators ran, test_recorders included.
+
+Counts are passed / skipped / failed. "AMD skips" is the number of graph-capture skips each file has on AMD (from the MOAT notes).
+
+### Kitless set (`-m kitless`)
+
+| file | moat-port d4aac6cc | upstream eed2d288 | AMD skips |
+|---|---|---|---|
+| isaaclab/test/sim/test_mjcf_converter.py | 11/0/0 | 11/0/0 | 0 |
+| isaaclab/test/sim/test_schemas_deprecation.py | 96/0/0 | 96/0/0 | 0 |
+| isaaclab/test/sim/test_urdf_converter.py | 18/0/0 | 18/0/0 | 0 |
+| isaaclab_newton/test/assets/test_articulation.py | 42/0/0 | 42/0/0 | 5 |
+| isaaclab_newton/test/assets/test_bam_actuator_mjwarp.py | 11/0/0 | 11/0/0 | 0 |
+| isaaclab_newton/test/assets/test_newton_actuators_newton.py | 37/0/0 | 37/0/0 | 0 |
+| isaaclab_newton/test/assets/test_rigid_object.py | 22/0/0 | 22/0/0 | 0 |
+| isaaclab_tasks/test/test_microduck_velocity.py | 3/0/0 (1 deselected) | 3/0/0 (1 deselected) | 0 |
+| isaaclab_visualizers/test/test_newton_adapter.py | 1/0/0 (47 deselected) | 1/0/0 (47 deselected) | 0 |
+| isaaclab_visualizers/test/test_newton_gl_dynamic_mesh.py | 1/0/0 | 1/0/0 | 0 |
+| subtotal | 242/0/0 | 242/0/0 | 5 |
+
+### Unmarked Warp-kernel files
+
+| file | moat-port d4aac6cc | upstream eed2d288 | AMD skips |
+|---|---|---|---|
+| isaaclab/test/utils/test_warp_index_kernel.py | 8/0/0 | 8/0/0 | 0 |
+| isaaclab/test/utils/test_warp_math.py | 7/0/0 | 7/0/0 | 1 |
+| isaaclab/test/utils/test_warp_memory.py | 13/0/0 | 13/0/0 | 2 |
+| isaaclab/test/utils/test_wrench_composer.py | 38/0/0 | 38/0/0 | 1 |
+| isaaclab/test/sensors/test_ray_caster_kernels.py | 16/0/0 | 16/0/0 | 0 |
+| isaaclab/test/sensors/test_shared_sensor_kernels.py | 11/0/0 | 11/0/0 | 5 |
+| isaaclab/test/sensors/test_update_ray_caster_kernel.py | 11/0/0 | 11/0/0 | 0 |
+| isaaclab_newton/test/physics/test_newton_manager.py | 47/0/0 | 47/0/0 | 4 |
+| isaaclab_newton/test/physics/test_newton_solvers.py | 36/0/0 | 36/0/0 | 0 |
+| isaaclab_ppisp/test/test_ppisp.py | 14/0/0 | 14/0/0 | 0 |
+| isaaclab_ppisp/test/test_ppisp_kernels.py | 7/0/0 | 7/0/0 | 0 |
+| isaaclab/test/benchmark/test_recorders.py | 18/0/0 | 18/0/0 | 0 |
+| isaaclab_experimental/test/envs/mdp/test_actions_warp_parity.py | 4/0/0 | 4/0/0 | 0 |
+| isaaclab_experimental/test/envs/mdp/test_events_warp_parity.py | 5/0/0 | 5/0/0 | 4 |
+| isaaclab_experimental/test/envs/mdp/test_observations_warp_parity.py | 9/0/0 | 9/0/0 | 9 |
+| isaaclab_experimental/test/envs/mdp/test_rewards_warp_parity.py | 20/0/0 | 20/0/0 | 16 |
+| isaaclab_experimental/test/envs/mdp/test_terminations_warp_parity.py | 10/0/0 | 10/0/0 | 4 |
+| subtotal | 274/0/0 | 274/0/0 | 46 |
+
+### Totals
+
+- moat-port d4aac6cc: 516 passed, 0 skipped, 0 failed (27 files, every pytest rc=0).
+- upstream eed2d288: 516 passed, 0 skipped, 0 failed (27 files, every pytest rc=0).
+- Collected test node ids (classname::name from junit) are identical on both refs: 516 vs 516, `diff` empty. No test is added, removed or newly gated.
+- Graph-capture skips on moat-port: 0. None of the 54 junit files contains a `<skipped>`, `<failure>` or `<error>` element. The 51 tests that skip on AMD all run and pass here. Examples include `test_step_runs_eagerly_once_then_replays_a_graph_only_when_the_solver_supports_capture[True/False]`, `test_captured_step_holds_staged_forces_and_recaptures_after_decimation_changes[...]`, `test_packed_sensor_readers_follow_buffers_through_capture_and_recreation[cuda:0-...]`, `test_generated_writers_replay_changed_inputs_under_cuda_capture[cuda:0]`, `test_newton_ordered_state_publishes_inside_captured_cuda_graph[cuda:0]` and `test_task_space_allocation_and_capture[...-cuda:0]`. 32 test names that contain "capture" or "graph" passed.
+- Failure tracebacks: none on either ref. Three tests that fail on AMD for HIP or environment reasons pass on NVIDIA on both refs: the two VBD cases in test_rigid_object (`nextafterf` link error on HIP), test_newton_adapter (HIP texture error 801), and test_newton_gl_dynamic_mesh (no GL config on the AMD host). They are not port issues.
+- Wall time per file was similar on both refs (for example test_newton_manager 289 s port vs 244 s base, test_articulation 185 s vs 159 s). The two runs were concurrent on separate GPUs of the same node, with cold Warp kernel caches. This is not a performance comparison.
+
+## Cartpole Newton training smoke (moat-port)
+
+```
+cd <port checkout>
+isaaclab train --rl_library rsl_rl --task Isaac-Cartpole-Direct --num_envs 4096 --max_iterations 100 physics=newton_mjwarp
+```
+
+The command exited with rc=0 after 144 s of wall time, with training time 78.82 s. Steady state was about 0.37 s per iteration, with 0.14 s of collection. The log has no Traceback or error lines. Its only warnings are the 3 rsl_rl `obs_groups` deprecation warnings that the AMD runs also show.
+
+| iteration | mean reward | mean episode length |
+|---|---|---|
+| 0 | 0.13 | 12.78 |
+| 9 | -2.87 | 100.64 |
+| 24 | 2.35 | 153.48 |
+| 49 | 4.68 | 286.21 |
+| 74 | 4.93 | 300.00 |
+| 99 | 4.94 | 300.00 |
+
+Start 0.13, end 4.94, episode length at the 300 cap. Earlier runs at iterations 0/9/24/49/74/99: gfx942 0.13 / -2.49 / 2.59 / 4.68 / 4.93 / 4.94; gfx1100 0.13 / ... / 4.91 / 4.93 / 4.94.
+
+## Cleanup
+
+The work tree, both venvs, the uv cache, the managed Python, the Warp kernel caches and the probe files were deleted from the shared home and from node-local /tmp. Nothing was written to GitHub.
