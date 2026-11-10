@@ -8,10 +8,13 @@
   "ext_type": "python-warp",
   "stage": "porting",
   "adopted_at": "2026-11-05T22:48:53Z",
-  "updated_at": "2026-11-06T03:03:41Z",
+  "updated_at": "2026-11-10T01:34:40Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-10T01:34:40Z"
+  },
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -38,13 +41,13 @@
       "last_agent": "planner"
     },
     "linux-gfx942": {
-      "blocked": true,
-      "blocked_reason": "porting done locally (moat-port 03bb17b08, saved as projects/IsaacLab/moat-port-03bb17b0.patch) but the push to AMD-Ecosystem/IsaacLab was refused: jeffdaily has pull-only access (HTTP 403). A person must grant write access to the fork, then clear this block and push; see notes.md Porter 2026-11-06.",
+      "blocked": false,
+      "blocked_reason": null,
       "validated_sha": null,
       "failed_sha": null,
       "started_at": "2026-11-06T01:12:51Z",
       "completed_at": null,
-      "updated_at": "2026-11-06T03:03:41Z",
+      "updated_at": "2026-11-10T01:34:40Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
