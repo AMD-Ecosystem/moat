@@ -7,7 +7,7 @@
   "priority": 4.22,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-10T05:13:18Z",
+  "updated_at": "2026-11-10T05:14:26Z",
   "head_sha": "cf0acba47dd137bbb7663d2f51fc3e955ebeb724",
   "waivers": {},
   "license_clearance": {
@@ -177,11 +177,9 @@
     "since": "2026-11-02T21:43:34Z",
     "at": "2026-11-02T21:44:58Z"
   },
-  "pr_approval": {
-    "approved_by": "jeffdaily",
-    "at": "2026-11-10T01:19:56Z",
-    "head_sha": "cf0acba47dd137bbb7663d2f51fc3e955ebeb724",
-    "content_sha256": "c295073aa66b2efc77e40f80e2f3f7f51eeb29882346da0e6028f7db45679723",
-    "review_pr": "https://github.com/AMD-Ecosystem/gpuRIR/pull/1"
-  }
+  "pr_url": "https://github.com/DavidDiazGuerra/gpuRIR/pull/88",
+  "pr_number": 88,
+  "pr_opened_at": "2026-11-10T05:14:26Z",
+  "pr_state": "open",
+  "published_sha": "cf0acba47dd137bbb7663d2f51fc3e955ebeb724"
 }
