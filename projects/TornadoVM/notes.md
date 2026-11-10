@@ -944,3 +944,23 @@ Completion checks:
 ## gfx1250 MMA validation 2026-11-10 (linux-gfx1250, MI450, `ee94c5c7f`): not run, GPU busy
 
 Requested by jeff: the same scope as the 2026-11-05 (`af27a9f4b`) gfx1250 MMA check, no role and no state change. Not run. The MI450 is shared with other teams and the job rule is to stop if anything else is on the GPU. `amd-smi process` at job start showed one foreign process on GPU 0: PID 62477, 890.0 MB VRAM, GFX usage 0 ns, not visible to `ps` inside this container (another container on the host). No build, no GPU command, nothing left behind. The check at `ee94c5c7f` (`make jdk21 BACKEND=hip`, `probe/mma/run.sh` with `--mutate`, `tornado-selftest`, the eight MMA classes) is still owed; rerun it when `amd-smi process` shows the GPU idle.
+
+## Validation 2026-11-10 (windows-gfx1151, Radeon 8060S, wave32, validator at `ee94c5c7f`)
+
+Verdict: **completed** at `ee94c5c7f`. Same host, clone (`C:\Users\jdaily\tvm-work\TornadoVM`, fast-forwarded to `ee94c5c7f`) and recipe as the 2026-11-06 Windows validation and porter round 7. One GPU process at a time, `ulimit -c 0`.
+
+Build: `nmake /f Makefile.mak jdk21 BACKEND=hip` from VsDevCmd (script `build.bat`: JAVA_HOME = the Temurin 21.0.13+9 subdirectory `jdk\jdk-21.0.13+9`, TORNADO_CK_REQUIRED=1, TORNADO_CK_GPU_TARGETS=gfx1151, HIP_DEVICE_LIB_PATH=%ROCM_PATH%\lib\llvm\amdgcn\bitcode, pyinstaller venv first on PATH, trust store WINDOWS-ROOT). BUILD SUCCESS, 2:34 min, `tornado.exe`/`tornado-test.exe` packaged, `tornado-ck.dll` in the SDK lib. Two false starts were my own wrapper (JAVA_HOME pointed one directory too high), not the project.
+
+| Run | Result |
+|---|---|
+| `tornado --devices` | HIPDriver 0:0 AMD Radeon(TM) 8060S Graphics, 89.5 GB |
+| `tornado-selftest` | 20 pass, 1 skip (device-launch); mma-f16 and mma-fp8 PASS |
+| MMA classes (`tornado-test -V ...kernelcontext.matrices.<class>`) | MMA 18/18, MMABF16 7/7, MMAInt8 12/12, MMAFP8 8/8, MMACpAsync 8/8, TestMMAGlobalFragmentLoad 6/6, MMAInt8FragmentElementRead 4/4, MMAFragmentHelper 2/2 |
+| `TestCopyDevicePointers` (class) | 3/3, 0 failed (the D2D race fix holds); also passes inside the full run |
+| `tornado-test --verbose --quickPass` | 2188 ran: 1414 pass, 772 unsupported, 2 failed (ComputeTests testMandelbrot, testJuliaSets: the known FMA-contraction pair, whitelisted), rc 0, 943 s. TestWarmUp and TestProfiler passed this time |
+| ck-hip (`TestCuDnn`, `TestCutlass`) | 20/20 and 26/26 (CK built on Windows with Ninja, per the recorded ruling) |
+| `ARCH=gfx1151 probe/mma/run.sh` (from a VsDevCmd shell; hipcc needs HIP_DEVICE_LIB_PATH) | `== PASS (gfx1151)`: bounds "f16/bf16 exact cases 1e-06, random fp8 1e-05; every byte e4m3 0, e5m2 0 except bytes 0x81-0x83 1e-06"; 0 of 53 failed; `--mutate` 53 of 53 failed. Code object: `v_wmma_f32_16x16x16_f16` x5, `_bf16` x1, `v_wmma_i32_16x16x16_iu8` x2 |
+
+MMA bit-exactness: e4m3 every byte worst rel 0 (bit-exact); e5m2 every byte worst rel 2.4e-07, which under the harness bounds (0 for every byte but 0x81-0x83) can only come from 0x81-0x83; every other byte is bit-exact. The harness reports a worst value per case, not a per-byte list, so the three bytes are inferred from the bound, matching the porter round 7 listing. f16/bf16 `ints` cases worst rel 5.6e-08, inside 1e-6. Nothing widened.
+
+Completion checks: `jargon.py -C <clone> --commits origin/develop..HEAD` and `--diff origin/develop...HEAD` clean; documentation of the ROCm build recorded earlier and unchanged; the clone has no modified tracked files (only the untracked hiprtccheck binaries). CUDA no-regression gate: not run here (no toolkit on this host); recorded at `ee94c5c7f` by linux-gfx950 and linux-gfx1201.

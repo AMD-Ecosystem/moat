@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-10T08:40:40Z",
+  "updated_at": "2026-11-10T10:30:04Z",
   "head_sha": "ee94c5c7ff92483e95a6467bc65e298f3564ab01",
   "depends_on": [],
   "waivers": {},
@@ -124,11 +124,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
+      "validated_sha": "ee94c5c7ff92483e95a6467bc65e298f3564ab01",
       "failed_sha": "af27a9f4b69e3f80eb5012ede0fa80294c6addd2",
       "started_at": "2026-11-10T01:43:44Z",
-      "completed_at": null,
-      "updated_at": "2026-11-10T03:00:08Z",
+      "completed_at": "2026-11-10T10:30:04Z",
+      "updated_at": "2026-11-10T10:30:04Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -143,7 +143,7 @@
         "last_session_at": null
       },
       "last_agent": "validator",
-      "state": "validation-failed"
+      "state": "completed"
     }
   },
   "porting_released": {

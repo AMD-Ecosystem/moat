@@ -169,3 +169,26 @@
 {"kind":"phase","ts":"2026-11-10T08:38:47Z","phase":"test","seconds":8.471,"exit":0,"cmd":"make -C projects/TornadoVM/src test-nogpu JDK=jdk21"}
 {"kind":"phase","ts":"2026-11-10T08:39:54Z","phase":"cuda-compile","seconds":21.016,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/gfx1201-20261110-001550-tornadovm-val-gfx1201/work/cudawt jdk21 BACKEND=cuda"}
 {"kind":"session","ts":"2026-11-10T08:40:40Z","epoch":1794300040.393188462,"event":"end","platform":"linux-gfx1201"}
+{"kind":"session","ts":"2026-11-10T10:05:27Z","epoch":1794305127.366745500,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-10T10:05:56Z","phase":"compile","seconds":3.374,"exit":2,"cmd":"cmd //c C:\\Users/<user>\\tvm-work\\build.bat"}
+{"kind":"phase","ts":"2026-11-10T10:06:20Z","phase":"compile","seconds":3.052,"exit":2,"cmd":"cmd //c C:\\Users/<user>\\tvm-work\\build.bat"}
+{"kind":"phase","ts":"2026-11-10T10:06:32Z","phase":"compile","seconds":3.515,"exit":2,"cmd":"cmd //c C:\\Users/<user>\\tvm-work\\build.bat"}
+{"kind":"phase","ts":"2026-11-10T10:09:43Z","phase":"compile","seconds":182.929,"exit":0,"cmd":"cmd //c C:\\Users/<user>\\tvm-work\\build.bat"}
+{"kind":"phase","ts":"2026-11-10T10:09:59Z","phase":"test","seconds":0.283,"exit":127,"cmd":"bash -c tornado --devices | head -8; tornado-selftest"}
+{"kind":"phase","ts":"2026-11-10T10:10:16Z","phase":"test","seconds":6.391,"exit":0,"cmd":"bash -c tornado --devices | head -8; tornado-selftest"}
+{"kind":"phase","ts":"2026-11-10T10:10:33Z","phase":"test","seconds":4.315,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMA"}
+{"kind":"phase","ts":"2026-11-10T10:10:37Z","phase":"test","seconds":3.116,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMABF16"}
+{"kind":"phase","ts":"2026-11-10T10:10:42Z","phase":"test","seconds":3.443,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMAInt8"}
+{"kind":"phase","ts":"2026-11-10T10:10:47Z","phase":"test","seconds":3.583,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMAFP8"}
+{"kind":"phase","ts":"2026-11-10T10:10:51Z","phase":"test","seconds":3.208,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMACpAsync"}
+{"kind":"phase","ts":"2026-11-10T10:10:55Z","phase":"test","seconds":3.094,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMMAGlobalFragmentLoad"}
+{"kind":"phase","ts":"2026-11-10T10:11:00Z","phase":"test","seconds":3.285,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMMAInt8FragmentElementRead"}
+{"kind":"phase","ts":"2026-11-10T10:11:04Z","phase":"test","seconds":2.967,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMMAFragmentHelper"}
+{"kind":"phase","ts":"2026-11-10T10:11:09Z","phase":"test","seconds":3.489,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.pointers.TestCopyDevicePointers"}
+{"kind":"phase","ts":"2026-11-10T10:11:23Z","phase":"test","seconds":1.961,"exit":1,"cmd":"env ARCH=gfx1151 OUT=D:/Develop/moat/agent_space/tvmval/mma bash /d/Develop/moat/agent_space/wt-tornadovm/projects/TornadoVM/probe/mma/run.sh"}
+{"kind":"phase","ts":"2026-11-10T10:11:37Z","phase":"test","seconds":1.955,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/wt-tornadovm/projects/TornadoVM/probe/mma/run.sh"}
+{"kind":"phase","ts":"2026-11-10T10:12:32Z","phase":"test","seconds":34.538,"exit":0,"cmd":"env ARCH=gfx1151 OUT=D:/Develop/moat/agent_space/tvmval/mma bash /d/Develop/moat/agent_space/wt-tornadovm/projects/TornadoVM/probe/mma/run.sh"}
+{"kind":"phase","ts":"2026-11-10T10:28:35Z","phase":"test","seconds":943.172,"exit":0,"cmd":"tornado-test --verbose --quickPass"}
+{"kind":"phase","ts":"2026-11-10T10:29:30Z","phase":"test","seconds":26.193,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cudnn.TestCuDnn"}
+{"kind":"phase","ts":"2026-11-10T10:29:35Z","phase":"test","seconds":4.321,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cutlass.TestCutlass"}
+{"kind":"session","ts":"2026-11-10T10:29:36Z","epoch":1794306576.669247600,"event":"end","platform":"windows-gfx1151"}
