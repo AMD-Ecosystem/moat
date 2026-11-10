@@ -119,3 +119,5 @@
 {"kind":"phase","ts":"2026-11-10T02:37:47Z","phase":"compile","seconds":217.712,"exit":0,"cmd":"cmd //c C:\\Users/<user>\\AppData\\Local\\Temp\\claude\\8e8b101471bc8a7c\\920c642b-cd0e-4647-a64c-a7e466513d51\\scratchpad\\build.cmd"}
 {"kind":"phase","ts":"2026-11-10T02:40:25Z","phase":"test","seconds":102.709,"exit":0,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
 {"kind":"phase","ts":"2026-11-10T02:59:12Z","phase":"test","seconds":1105.695,"exit":0,"cmd":"tornado-test --verbose --quickPass"}
+{"kind":"session","ts":"2026-11-10T03:14:50Z","epoch":1794280490.597934333,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-10T03:30:56Z","epoch":1794281456.670904087,"event":"end","platform":"linux-gfx942"}

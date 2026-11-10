@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-10T03:14:50Z",
+  "updated_at": "2026-11-10T03:30:56Z",
   "head_sha": "95a21e6ee39553c5accbaaf6b7017dbf938958bb",
   "depends_on": [],
   "waivers": {},
@@ -25,7 +25,7 @@
       "at": "2026-08-07T15:41:21Z"
     }
   },
-  "stage": "reviewing",
+  "stage": "changes-requested",
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
@@ -82,7 +82,7 @@
       "failed_sha": null,
       "started_at": "2026-11-05T00:35:44Z",
       "completed_at": null,
-      "updated_at": "2026-11-10T03:14:50Z",
+      "updated_at": "2026-11-10T03:30:56Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -124,9 +124,9 @@
     }
   },
   "porting_released": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-10T01:43:44Z",
-    "at": "2026-11-10T03:00:08Z"
+    "arch": "linux-gfx942",
+    "since": "2026-11-10T03:14:50Z",
+    "at": "2026-11-10T03:30:56Z"
   },
   "base_branch_ruling": {
     "branch": "develop",
@@ -143,8 +143,5 @@
       "at": "2026-11-05T22:15:47Z"
     }
   ],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-10T03:14:50Z"
-  }
+  "porting": null
 }
