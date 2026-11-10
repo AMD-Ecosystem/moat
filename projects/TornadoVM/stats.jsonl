@@ -133,3 +133,7 @@
 {"kind":"phase","ts":"2026-11-10T07:59:19Z","phase":"build","seconds":0.006,"exit":2,"cmd":"make jdk21 BACKEND=hip"}
 {"kind":"phase","ts":"2026-11-10T08:00:04Z","phase":"build","seconds":28.906,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/rx7900-20261109-235413-tornadovm-porter9/tvm jdk21 BACKEND=hip"}
 {"kind":"phase","ts":"2026-11-10T08:00:28Z","phase":"test","seconds":18.294,"exit":0,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
+{"kind":"session","ts":"2026-11-10T08:08:11Z","epoch":1794298091.392703584,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-10T08:11:44Z","phase":"compile","seconds":33.746,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/rx7900-20261110-000259-tornadovm-review10/build/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-10T08:12:09Z","phase":"test","seconds":18.099,"exit":0,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
+{"kind":"session","ts":"2026-11-10T08:13:13Z","epoch":1794298393.524176497,"event":"end","platform":"linux-gfx1100"}
