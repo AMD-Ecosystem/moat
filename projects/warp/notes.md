@@ -21,3 +21,23 @@ Both gaps are fixes to the AMD fork, not a reason for a parallel MOAT port: cont
 
 ### Recommendation
 Decline, SKIP_REASON `ported-elsewhere`: AMD's own Warp port (AMD-Ecosystem/warp, formerly ROCm/warp) covers it and is actively maintained. The two gaps IsaacLab found belong to that fork: textures are already tracked there (#20); `nextafterf` is not, and is worth reporting to that team.
+
+## Take-up rulings (2026-11-10, Jeff Daily)
+
+Intake recommended decline (ported-elsewhere: AMD-Ecosystem/warp). Jeff Daily ruled on 2026-11-10 that MOAT takes warp up. State is deliberately not yet changed: the release-line tooling below must exist first.
+
+Delivery: no upstream PR. NVIDIA will not accept AMD support, and upstream release branches take no patches. The deliverables are branches in AMD-Ecosystem/warp that MOAT creates and owns.
+
+Structure, one MOAT project per line (each with its own status, lock, gates and validation evidence):
+- `warp-1.14`, `warp-1.15`, ... `warp-1.19` (and each later release): the fork carries `release-1.N`, a pristine copy of upstream's branch (same SHAs, recorded `fork_default_branch`), and `release/1.N.0.amd0`, which starts as an exact copy of it and receives the AMD support on top (the line's `fork_branch`). Version `1.N.0+rocm.0`. Later upstream patch tags (`v1.N.1`) arrive as sync rounds.
+- `warp` (development line): `amd-integration` against a pristine `main` mirror, kept current with upstream `main` by merges, never rebases.
+- Order: walk forward, `warp-1.15` depends on `warp-1.14`, and so on; each release builds on the previous release's port plus the upstream delta. Not port-the-tip-then-backport.
+- `release/1.13.0.amd0` (AMD's shipped 1.13, ROCm 26.10) is left alone. MOAT's porting starts at 1.14. The AMD 1.13 delta is reviewed first only to decide whether it is a good starting point for `warp-1.14` (review in progress; result goes in this file).
+- Sign-off: a review PR from `release/1.N.0.amd0` into the pristine `release-1.N`, never merged; `/moat approve` there; approval leads to tagging `v1.N.0+rocm.0` and freezing the branch, not to an upstream publish.
+
+Scope for every line: the unreported gaps Isaac Lab found (Warp's runtime compiler does not define `__CUDA_ARCH__`, breaking Newton's `nextafterf` and `texture.h:817`; `WP_TILE_WARP_SIZE` 64 for every target breaks wave32 tile reductions), wave32 Radeon and Windows gfx1151, all gates validated. Textures (hipArray, AMD-Ecosystem/warp#20) are in scope as a separate effort. Packaging is source/Docker build today (no pip package exists); publishing a wheel and its name is for the release owners.
+
+Tooling needed before scaffolding (control-plane work, Jeff merges):
+- `scaffold` option creating `warp-1.N` against NVIDIA/warp (project name differs from repo name);
+- `set-fork-branch` setter (moatlib already reads `fork_branch` at utils/moatlib.py:121, :1837, :2542; nothing writes it);
+- a delivery mode, e.g. `set-delivery <name> fork-release --by <who>`: `pr_ready` gates the in-fork review PR against the mirror; approval triggers tag + freeze instead of `upstream.py --publish`. `set-no-upstream` does not fit (it refuses a review PR and finishes without approval).
