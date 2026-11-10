@@ -342,3 +342,8 @@
 {"kind":"phase","ts":"2026-11-10T00:08:26Z","phase":"test","seconds":9.804,"exit":0,"cmd":"bash ../leapw/pt.sh"}
 {"kind":"phase","ts":"2026-11-10T01:58:56Z","phase":"cuda-compile","seconds":0.002,"exit":127,"cmd":"bash ../scripts/build.sh port build"}
 {"kind":"phase","ts":"2026-11-10T02:00:55Z","phase":"cuda-compile","seconds":18.271,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi355-20261109-175637-nv4-leap-216/moat/agent_space/scripts/build.sh /var/lib/jenkins/fleet/jobs/mi355-20261109-175637-nv4-leap-216/moat/agent_space/nvcc/port build"}
+{"kind":"session","ts":"2026-11-10T01:56:18Z","epoch":1794275778.524761259,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-10T02:00:02Z","phase":"compile","seconds":16.956,"exit":0,"cmd":"bash agent_space/bld.sh 53037f0 old"}
+{"kind":"phase","ts":"2026-11-10T02:00:20Z","phase":"compile","seconds":17.957,"exit":0,"cmd":"bash agent_space/bld.sh 95e6339 new"}
+{"kind":"phase","ts":"2026-11-10T02:00:59Z","phase":"test","seconds":5.626,"exit":0,"cmd":"bash -c cd agent_space/cmp/new/unitTests && PYTHONPATH=../src /opt/python-3.11-venv/bin/python gpu_vs_cpu_validate.py"}
+{"kind":"session","ts":"2026-11-10T02:09:48Z","epoch":1794276588.717557883,"event":"end","platform":"linux-gfx942"}
