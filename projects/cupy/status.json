@@ -6,9 +6,9 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
-  "stage": "review-passed",
+  "stage": "porting",
   "adopted_at": "2026-11-04T22:34:29Z",
-  "updated_at": "2026-11-10T19:30:26Z",
+  "updated_at": "2026-11-10T19:50:37Z",
   "head_sha": "225236c47072362bfd596d8f2d1c7b13f8d86784",
   "depends_on": [],
   "waivers": {},
@@ -91,7 +91,7 @@
       "failed_sha": null,
       "started_at": "2026-11-05T17:27:29Z",
       "completed_at": "2026-11-10T10:03:34Z",
-      "updated_at": "2026-11-10T10:03:34Z",
+      "updated_at": "2026-11-10T19:50:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -130,5 +130,9 @@
     "since": "2026-11-09T19:25:11Z",
     "at": "2026-11-09T19:49:20Z"
   },
-  "review_pr": "https://github.com/ROCm/cupy/pull/76"
+  "review_pr": "https://github.com/ROCm/cupy/pull/76",
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-10T19:50:37Z"
+  }
 }
