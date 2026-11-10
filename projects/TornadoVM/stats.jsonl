@@ -115,3 +115,7 @@
 {"kind":"phase","ts":"2026-11-06T05:17:22Z","phase":"test","seconds":24.371,"exit":1,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
 {"kind":"session","ts":"2026-11-06T20:29:36Z","epoch":1793996977.348295400,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-06T21:47:23Z","epoch":1794001644.511216300,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-10T02:32:28Z","phase":"test","seconds":97.002,"exit":0,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
+{"kind":"phase","ts":"2026-11-10T02:37:47Z","phase":"compile","seconds":217.712,"exit":0,"cmd":"cmd //c C:\\Users/<user>\\AppData\\Local\\Temp\\claude\\8e8b101471bc8a7c\\920c642b-cd0e-4647-a64c-a7e466513d51\\scratchpad\\build.cmd"}
+{"kind":"phase","ts":"2026-11-10T02:40:25Z","phase":"test","seconds":102.709,"exit":0,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
+{"kind":"phase","ts":"2026-11-10T02:59:12Z","phase":"test","seconds":1105.695,"exit":0,"cmd":"tornado-test --verbose --quickPass"}

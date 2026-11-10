@@ -726,3 +726,45 @@ Maven BUILD SUCCESS in 3:46 min including the CK fetch and the nested Ninja buil
 - Documentation: the ROCm build is documented (see the linux-gfx1201 entry). The Windows recipe above (trust store, pyinstaller, bash-only scripts) is not in the docs; INSTALL_FROM_SOURCE.md could mention pyinstaller for the Windows launchers.
 - Integrity: the clone shows only untracked files (the hiprtccheck binaries and DLLs); no tracked file modified. The CUDA gate was not run here (no toolkit on this host); it is recorded at this head by the Linux validators.
 - Skill: `references/no-hip-equivalent.md` gained the gfx1151 WMMA exactness note.
+
+## Porter round 7 (2026-11-09, windows-gfx1151, Radeon 8060S): CopyDevicePointers root cause, MMA tolerances
+
+Two new commits on `moat-port` at `af27a9f4b`, pushed as a fast-forward: `c3ece4b69` ([ROCm] Order the device-region mapping copy against HIP streams) and `95a21e6ee` ([ROCm] Allow for inexact WMMA accumulation in the selftest MMA checks). Head advanced to `95a21e6ee`. Same host setup, clone (`C:\Users\jdaily\tvm-work\TornadoVM`) and SDK recipe as the 2026-11-06 Windows validation (VS 2022 BuildTools, TheRock ROCm 10.1, Temurin 21.0.13+9, `nmake /f Makefile.mak jdk21 BACKEND=hip` with `TORNADO_CK_GPU_TARGETS=gfx1151 TORNADO_CK_REQUIRED=1`, Maven with `-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT`, pyinstaller venv first on PATH). Rebuild at `95a21e6ee`: BUILD SUCCESS, 2:56 min, launchers packaged. CUDA, OpenCL, Metal and PTX driver trees are unchanged against `origin/develop` (`git diff --stat origin/develop..95a21e6ee -- tornado-drivers/{cuda,opencl,metal,ptx}` empty); the new code is Java in the HIP driver, tc-selftest, a unit test and docs, so there is no new nvcc surface, but the CUDA no-regression build still has to be rerun at the new head on the mi355 host.
+
+### Root cause: TestCopyDevicePointers#testCopyDevicePointersMatrix
+
+Ordering, not arithmetic or type widths. Instrumented `NativeCommandQueue.mapOnDeviceMemoryNDRegion` and `HIPMemorySegmentWrapper` (log file, not stderr: the test runner swallows stderr) on the failing run:
+
+```
+alloc FloatArray base=0x800006000 id=0x800006010 size=4112      (matrix, graph 0)
+alloc FloatArray base=0x800009000 id=0x800009010 size=144       (row, allocated by the mapping step)
+DtoD dest=0x800009010 src=0x800006010 offset=480 sizeT=4 header=16 sizeSrc=4112 sizeDest=144 payload=128 result=0
+read id=0x800009010 size=144
+```
+
+Every pointer, offset (15 rows x 32 floats + 16-byte header), payload (128 B) and the return code are right, and graph 1's kernel and read-back use the mapped buffer. `hipMemcpyDtoD` is asynchronous with respect to the host for device-to-device copies and runs on the legacy default stream; the backend's streams are `hipStreamNonBlocking`, so graph 1's `computeRow` kernel can run before the copy lands and reads the row as it was (0, or 7 left by the preceding test). Bisection with a system property: `hipStreamSynchronize(0)` AFTER the copy alone -> pass; `hipCtxSynchronize()` BEFORE the copy alone -> still `0.1`. Linux wins the race; Windows loses it every time (same shape as lc0's null-stream upload race). Not a runtime bug, so no reproducer or bug report: the C `hipMemcpyDtoD` probe passed because it read back with a synchronising D2H.
+
+Fix (`c3ece4b69`, HIP only): device synchronise before the copy (the producer has finished) and after it (the next kernel sees the data), with the reason in the method comment; `memSetZero` already does the same for `hipMemsetD8`. Regression test `TestCopyDevicePointers#testCopyDevicePointersLargeRegion` maps 512 rows of a 1024 x 4096 matrix (8 MB); HIP only (`assertNotBackend` OPENCL/METAL/CUDA, since the CUDA mapping has the same unsynchronised shape and is not ours to change). Before the fix on this laptop: `element 0 ==> expected: <256.1> but was: <0.1>` and the matrix test `expected: <15.1> but was: <7.1>`; after: class 3/3 twice, matrix test alone 1/1.
+
+Not changed (pre-existing, mirrored from the CUDA backend): on a copy failure `mapOnDeviceMemoryNDRegion` returns the `hipError_t` and the wrapper stores it as the buffer pointer.
+
+Gotcha for anyone patching an installed SDK by hand: the generated `tornado-argfile` puts `.` first on `--module-path`, so a backup copy of a TornadoVM jar left in the current directory silently shadows the SDK's jar (cost one round of "my logging does not print").
+
+### MMA tolerances (jeff's 2026-11-09 ruling)
+
+- `Checks.mmaF16` / `Checks.mmaFp8` (`95a21e6ee`): new `mmaTolerance(caps, fp8)` keyed on `TargetCaps.matrixCores()`: `WMMA_GFX11` 1e-6 (f16 and FP8, which gfx11 widens to f16), `WMMA_GFX1250` 1e-4 for FP8 only, 0 (bit equality, the old `same`) for everything else, CUDA included. The bound is relative to sum|a*b| over the products, as in the harness. `docs/source/programming.rst` gains "MMA accumulation precision (HIP backend)".
+- `probe/mma/harness.hip` (this repo): s8 stays exact everywhere; the exact float cases (f16/bf16 small integers and the FP8 "every byte" cases) stay bit-exact except on gfx11 (1e-6); random cases keep 1e-5, FP8 random 1e-4 on gfx1250. The harness prints the bounds it applies. For jeff: on gfx1151 the e5m2 "every byte" case needs the gfx11 bound too. Exactly three bytes fail bit-exactness, the negative e5m2 subnormals 0x81, 0x82, 0x83 (-2^-16, -2^-15, -3*2^-16) multiplied by 1.0: got `0xb7800002`, `0xb8000001`, `0xb8400001` for references `0xb7800000`, `0xb8000000`, `0xb8400000` (1-2 fp32 ulps, 2.4e-7 relative). The positive subnormals and every e4m3 byte are exact. A wrong decoding would be off by at least one e5m2 step (12.5% or more), so the 1e-6 bound still pins each byte to its value; on every other arch the every-byte check stays bit-exact. If you want every-byte strictly bit-exact on gfx11 too, that needs a different lowering, which the ruling ("do not split the accumulation") excludes.
+- `probe/mma/run.sh` now runs on Windows from Git bash with `ARCH` set: Windows classpath (`cygpath -m`, `;`) and the SDK's `amdhip64_7.dll`/`amd_comgr*.dll`/`rocm_kpack.dll` copied next to the harness.
+
+### Results at `95a21e6ee` (rebuilt SDK, this laptop, one GPU process at a time, `ulimit -c 0`)
+
+| Run | Result |
+|---|---|
+| `ARCH=gfx1151 bash projects/TornadoVM/probe/mma/run.sh` | `== PASS (gfx1151)`. Harness `bounds: exact cases 1e-06, random fp8 1e-05`: 0 of 53 failed; `--mutate`: 53 of 53 failed. Code object `v_wmma_f32_16x16x16_f16` x5, `_bf16` x1, `v_wmma_i32_16x16x16_iu8` x2 |
+| `tornado-selftest` | 20 pass, 1 skip (device-launch); `tensor-cores/mma-f16` 32x32x64 and `mma-fp8` 16x16x64 PASS |
+| MMA classes | TestMatrixMultiplicationMMA 18/18, MMABF16 7/7, MMAInt8 12/12, MMAFP8 8/8, MMACpAsync 8/8, TestMMAGlobalFragmentLoad 6/6, MMAInt8FragmentElementRead 4/4, MMAFragmentHelper 2/2 |
+| `tornado-test -V ...pointers.TestCopyDevicePointers` | 3/3 (testCopyDevicePointers, testCopyDevicePointersMatrix, testCopyDevicePointersLargeRegion) |
+| `tornado-test -V ...TestCopyDevicePointers#testCopyDevicePointersMatrix` | 1/1 |
+| `tornado-test --verbose --quickPass` | 2188 ran (one more than at `af27a9f4b`: the new large-region test): 1414 pass, 772 unsupported, 2 failed, ComputeTests testJuliaSets (`expected -1000.0 but was 1.5197568`) and testMandelbrot (`expected 8.0 but was 9.0`), the known FMA-contraction pair, whitelisted; rc 0, 18:23 min. testCopyDevicePointersMatrix now passes inside the full run, and TestWarmUp#test01 passed this time |
+
+Fork tree after the runs: no modified tracked files (only the untracked hiprtccheck binaries). `utils/jargon.py -C <clone> --commits origin/develop..HEAD` and `--diff origin/develop...HEAD`: clean. Skill: `references/fault-classes.md` gains the async device-to-device copy variant of the null-stream race; `references/no-hip-equivalent.md` gains the gfx11 negative-e5m2-subnormal and gfx1250 FP8 bounds. windows-gfx1151 still needs its own validation at `95a21e6ee` (this was a porter round), and linux-gfx950/gfx1201 now owe revalidation, plus the CUDA no-regression build on the mi355 host.
