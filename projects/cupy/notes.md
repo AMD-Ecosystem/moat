@@ -877,3 +877,17 @@ Other gates: CUDA compile gate not run on this host (Linux validators carry it; 
 ## Review PR 2026-11-10
 
 Review PR opened by jeff's approval of the exact title and body: https://github.com/ROCm/cupy/pull/76 (`moat-port` -> `main`, 17 commits, 20 files, head `225236c47`, mergeable). Title: `[ROCm] Support building and running CuPy for ROCm on Windows`. Before approving, jeff asked about three points, answered in the session: the Windows SDK is TheRock 7.14.0a20260612 (the laptop pin, not a chosen trade-off; the Linux hosts run rocm-sdk 10.1.0, which reports HIP 7.16); device code uses hipcc to mirror upstream's Linux HIP build (deferral `cupy-hipcc-to-amdclang` still awaits a ruling); and b2cb1b3 goes upstream only through this PR. Not run: a Windows validation on a 10.x SDK. After the PR publishes, jeff notifies the ROCm/cupy owners (Ruling 6).
+
+## Fix round 2026-11-10 (porter, windows-gfx1151): mypy annotations
+
+Trigger: review PR https://github.com/ROCm/cupy/pull/76 CI job static-checks failed in the pre-commit `mypy` hook: `cupy/_environment.py:601: error: Need type annotation for "_win32_dll_directories"  [var-annotated]`. Upstream runs the same pre-commit, so it would fail there too.
+
+Running the hooks locally on Windows (`pre-commit run mypy --all-files`, mypy 2.3.0 as pinned in `.pre-commit-config.yaml`, PRE_COMMIT_HOME under agent_space) also showed the `mypy (install)` hook failing, which Linux CI does not see because mypy skips `sys.platform == 'win32'` branches on Linux: `_features.py:202-204` (`"object" has no attribute "remove"` on the HIP feature dict, from 186c05c7a) and `_command.py:221` (`Call to untyped function "configure_msvc_for_hip"`, from 2d2388d10). Both are our code, so they are fixed in the same commit.
+
+Commit **a6e01258f** `[ROCm] Annotate the Windows ROCm helpers for mypy` (on top of 225236c47, fast-forward push to `moat-port`; no upstream PR exists): `_win32_dll_directories: list[Any]` (typeshed defines `os.add_dll_directory` only for win32, so `Any`), `HIP_cuda_nvtx_cusolver: dict[str, Any]` (matches `_from_dict`), `configure_msvc_for_hip(compiler: Any) -> None` plus `from typing import Any` in install_build.py. No behavior change.
+
+Checks: `pre-commit run mypy --all-files` both hooks Passed; pre-commit env mypy `--platform linux --ignore-missing-imports cupy cupyx cupy_backends .github .pfnci` Success (350 files); `--config-file install/mypy.ini install` Success on `--platform linux` and `--platform win32`; `pre-commit run --files` on the three files all Passed (autopep8, ruff). Note: a plain venv mypy with `packaging` installed reports `cupy/testing/_helper.py:44 [arg-type]` (upstream code); the pre-commit env lacks packaging, so CI does not. flake8 F824 hits in install_build.py are upstream code (the repo lints with ruff).
+
+Sanity on windows-gfx1151 (`source agent_space/cupy_rocm_env.sh`, editable install, `ulimit -c 0`): `cupy.arange(10, float32)*2 .sum()` = 90.0; `pytest tests/install_tests tests/import_tests`: 31 passed, 1 skipped. `jargon.py --port cupy` clean, `prose.py` clean.
+
+State: review-passed -> porting -> ported; `advance-head` a6e01258f. `classify 225236c47 a6e01258f`: mixed (not arch-independent), so linux-gfx90a, linux-gfx1201 and windows-gfx1151 (validated at 225236c47) owe revalidation after review. CUDA nvcc gate: the delta is Python type annotations only.
