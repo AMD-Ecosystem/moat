@@ -2050,3 +2050,44 @@ With the flag scoped to `gpumd_replica`, the seed test and the observer self-com
 - Telemetry: one `test` entry (0.24 s, exit 1, `python3 -m pytest -q tests_pytest/`) is a shell mistake of mine, not a test result.
 
 Result: **completed** at d3658389 on linux-gfx90a.
+## Validation 2026-11-10 (linux-gfx1100, validator) -- revalidate at d3658389, PASS
+
+jeff asked for this run. Host: AMD Radeon RX 7900 XTX (gfx1100, RDNA3, wave32), `HIP_VISIBLE_DEVICES=1` (dispatcher-pinned; `amd-smi process` showed no process on any GPU at start), all GPU runs under `ulimit -c 0`. Toolchain: TheRock pip SDK, HIP 7.16.26385, AMD clang 24.0.0git. `orient.sh` on `port/GPUMD` completed normally (no hang) and named validator (`revalidate`). Fresh clone of AMD-Ecosystem/GPUMD detached at **d3658389dafad6735c8fa83aac86693ad49a0ed0** (= `origin/moat-port`); detached worktrees of the same commit for the DEBUG build (`agent_space/dbg`) and the legacy-model replica run (`agent_space/rep`; model files reverted, both worktrees removed after). No fork edit, no push. Job venv only: calorine built from a source clone of gitlab materials-modeling/calorine at **1c94125** (the porter's commit; reports 4.1), ase 3.29.0, pytest 7.3.2, hypothesis 6.56.4, numpy 1.26.4. Carry-forward not applicable (`classify 26547d27 d3658389` = mixed; the delta changes compile flags of gpumd/nep/tb), so a full run.
+
+Host load: another job's pytorch build kept the host at load average about 35-37 (of 64 threads) during the pytest runs, so the pytest wall times below are inflated (the not-slow suite took 3302 s against 1021-1023 s in the earlier gfx1100 records; the GPU was mostly idle, the time went to the many short gpumd/nep launches). The NEP-spin pytest also overlapped the not-slow run on the same GPU.
+
+### Builds (PR-body commands, gfx1100, concurrently, from the MOAT root)
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx1100 -j16
+    utils/timeit.sh GPUMD compile -- make -C agent_space/dbg/src -f makefile.hip HIP_ARCH=gfx1100 -j16 gpumd nep CFLAGS="-O3 --offload-arch=gfx1100 -DUSE_HIP -DDEBUG"
+
+Both rc 0, 0 errors, 48 s each; warnings only the known classes (88/84 `-Wunused-value` nodiscard `hipError_t`, 12 `-Winconsistent-missing-override`). Release log: 229 compiles, `-ffp-contract=on` on exactly the 25 `main_replica` ones (sub-make line `CFLAGS="-O3 --offload-arch=gfx1100 -DUSE_HIP -ffp-contract=on"`); DEBUG: 198 compiles, none flagged. Release: gpumd 15510928 B, nep 3848608 B, tb 309904 B (= the no-flag 3b0f1908 gfx1100 builds), gpumd_replica 2473784 B (= the flagged 26547d27 build). DEBUG: gpumd 15510800 B, nep 3844456 B (= 3b0f1908 DEBUG). Matches the reviewer's d3658389 release sizes.
+
+### Tests (real gfx1100)
+| command | d3658389 | 26547d27 on gfx1100 | 3b0f1908 on gfx1100 |
+|---|---|---|---|
+| full `tests_regression` (DEBUG, self-comparison): `python3 $D/tests_regression/run_regression.py --repo-root $D --suite full --baseline $D/src/gpumd --candidate $D/src/gpumd --baseline-nep $D/src/nep --candidate-nep $D/src/nep --timeout-scale 3` | **completed, all 256 cases: 248 passed, 8 failed; relations 25/25**, 423 s including the FP64 graphene/silicon transport cases (ran alone for its first minute, then overlapped the not-slow pytest). `ilp_nep_cutoff_below_nep` PASS; `observer_average_*` and `train_charge_vdw_mixed` passed | 249/256, 21 passed + 4 skipped | 248/256, 25/25 (the same 8 cases) |
+| the 8 rerun with `--case` x8, plain / under the srand shim | 0/8 / **6/8** (shim failures: `qnep_pppm_future_bec` bec 1.03e-5, `qnep_actions_before_potential` dpdt field 15 1.0e-6) | 0/7 / 7/7 | 2/8 / 7/8 |
+| `GPUMD_REPLICA=<clone>/src/gpumd_replica python3 tests_regression/replica/test_replica.py -v` in `agent_space/rep` with `examples/nep_train/nep.txt` from cd7f757d and `examples/qnep_train/nep.txt` from eda8e04b | **16/16 OK**, 35.0 s | 16/16 | 16/16 |
+| same, `-k test_batched_matches_per_slot -k test_split_resume_is_exact` (prd, remd, split-resume), 3 runs | **3/3 OK each run** (9.1, 9.7, 9.4 s); no hang, no crash | 3/3 x3 | -- |
+| replica as-is (current example models, from the clone) | 4/16; the 12 failures all stop at `REMD explicit streams support energy NEP4/NEP5 and qNEP4 models` (8) / `PRD explicit streams ...` (4) | 4/16 | 4/16 |
+| `python -m pytest tests_pytest/test_spin_*.py` (release) | **110 passed, 4 failed** (737 s, slowed by the overlap and host load); the 4 `test_corrector_preserves_force_modifiers` (sib/glsd x small/large box) | 110/4 | 110/4 |
+| the 4 under an `LD_PRELOAD` srand no-op shim (`void srand(unsigned){}`) | **4 passed** | 4/4 | 4/4 |
+| `python -m pytest tests_pytest -m "not slow"` (release, whole directory, from the clone) | **866 passed, 4 failed, 638 skipped, 10 deselected**, 3302 s (host load, see above); the 4 are the rand() spin cases; `test_nep_seed.py` passed | 865/5/638/10 | 866/4/638/10 |
+| `python -m pytest tests_pytest/test_nep_seed.py::test_same_seed_gives_the_same_model`, 10 runs | **0/10 failed** (10/10 passed) | 5/10 failed | -- |
+
+Observer/trainer repeat (DEBUG, 10 rounds of `run_regression.py ... --case observer_average_two_runs --case observer_average_then_observe_control --case train_charge_vdw_mixed`): observer pair **0/10** (relations 4/4 in every round, so `observer_reset_second_run_equality` 0/10 too); `train_charge_vdw_mixed` **6/10**. A `--keep-all` repeat (failed on the 3rd try) shows the recorded signature: loss.out `rmse_force_train` `0.62040` vs `0.62041`. So on gfx1100 the observer pair and the seed test are back to their no-flag behaviour (26547d27 here: observer either 6/10, relation 2/10, seed 5/10), as the ruling intended; the observer sentence does not need to go back into the PR body. `train_charge_vdw_mixed` stays noisy without the flag, as on gfx90a (2/5 at d3658389, 2/10 default at 458683da); it is already in the body's float-atomic list. Its rate here (6/10) is higher than at 26547d27 on this host (5/10) and at 5f6596ec (5/10), within the spread of 10-run samples.
+
+Every failure classified, none new:
+- **rand() reseed** (deferral `gpumd-hip-runtime-reseeds-rand`, ruled defer; TheRock#9865): the 4 spin pytest cases (both pytest runs), `replicate_velocity_unseeded`, `graphene_hac`, `graphene_nemd_shc`, `graphene_hnemd_shc`, `silicon_liquid_transport`; fail again plain, pass under the shim.
+- **float-atomic noise at absolute bounds** (qNEP, as at 3b0f1908 on this host): `qnep_ewald_future_bec` (dpdt.out field 16, 0.161695 vs 0.161696, 1.0e-6 vs atol 2e-7; failed in the full run and the plain rerun, passed under the shim), `qnep_pppm_future_bec` (bec.xyz 1.67e-5, 1.17e-5, 1.03e-5 vs atol 1e-5 in three runs, fields 22735/22731), `qnep_actions_before_potential` (dpdt.out field 23 then field 15, 1.0e-6 vs 2e-7). The same three cases, fields and magnitudes as the 3b0f1908 gfx1100 record, which also ran gpumd without the flag. Trainer: `train_charge_vdw_mixed` in the repeat runs.
+- **replica model header** (upstream `format_version 1`, platform-independent): the 12 as-is replica failures; 16/16 with the legacy models.
+
+For the draft PR body (porter, not a validator edit): on gfx1100 the qNEP float-noise set is `qnep_ewald_future_bec`, `qnep_pppm_future_bec`, `qnep_actions_before_potential` (BEC up to 1.7e-5 against 1e-5), already noted at 3b0f1908; the body's class wording covers them, and its quoted counts are the MI300X run's.
+
+### Gates
+- CUDA compile: the mi355 nvcc 12.8 full build at 26547d27 passed; d3658389 changes only `src/makefile.hip`, which the CUDA build does not read. Not repeated.
+- `python3 utils/jargon.py --port GPUMD` (local `master` from the fork's `origin/master` c5597219): only the 2 known hits in upstream's own 725fe762. `jargon.py -C projects/GPUMD/src --commits 26547d27..d3658389 --diff 26547d27...d3658389`: clean.
+- Documentation: `doc/installation.rst:74-78` documents `make -f makefile.hip` and `HIP_ARCH=gfx1100`; unchanged by this delta.
+- Integrity: `git status --porcelain --untracked-files=no` empty in the clone and both worktrees, HEAD d3658389 in each.
+
+Result: **completed** at d3658389 on linux-gfx1100.
