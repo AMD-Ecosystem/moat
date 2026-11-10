@@ -1282,3 +1282,46 @@ calorine from source at the porter's commit (gitlab materials-modeling/calorine 
 The one failure, `qnep_ewald_future_bec` (`dpdt.out` field 16, 0.161695 vs 0.161696, 1.0e-6 vs atol 2e-7: one unit in the sixth printed decimal), is the known float-atomic class: the same field and magnitude as on gfx1100 in the 2026-11-05 run and on gfx90a at 374da0df. It flips between runs and is not in the merge's code. `qnep_pppm_future_bec` and `train_nep_pbte_ediff`, which failed on gfx942, passed here.
 
 The mi355 nvcc compile at 3b0f1908 is still owed before presenting (porter's note). State: `review-passed`.
+## Validation 2026-11-10 (linux-gfx1100, validator) -- revalidate at 3b0f1908, PASS
+
+jeff asked for this run. Host: AMD Radeon RX 7900 XTX (gfx1100, RDNA3, wave32), `HIP_VISIBLE_DEVICES=0` (dispatcher-pinned), all GPU runs under `ulimit -c 0`. Toolchain: TheRock pip SDK, HIP 7.16.26385, AMD clang 24.0.0git. `orient.sh` (on `port/GPUMD`) completed normally and named validator (`revalidate`). Fresh clone of AMD-Ecosystem/GPUMD detached at **3b0f1908a32b260e2446201833d4cc19dce6321e** (= `origin/moat-port`; parents 374da0df, d6cd2e36); detached worktrees of the same commit for the DEBUG build (`agent_space/dbg`) and the replica legacy-model run (`agent_space/rep`). No fork edit, no push. Job venv: calorine built from source at gitlab materials-modeling/calorine **1c9412504bf1** (the porter's commit; still reports version 4.1), from a clone in `agent_space/`, into this job's venv only; ase 3.29.0, pytest 7.3.2, hypothesis 6.56.4.
+
+### Builds (PR-body commands, gfx1100, from the MOAT root)
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx1100 -j16
+    utils/timeit.sh GPUMD compile -- make -C agent_space/dbg/src -f makefile.hip HIP_ARCH=gfx1100 -j16 gpumd nep CFLAGS="-O3 --offload-arch=gfx1100 -DUSE_HIP -DDEBUG"
+
+Both rc 0, 0 errors; warnings only the known classes (88 `-Wunused-value` nodiscard `hipError_t`, 12 `-Winconsistent-missing-override`). Release 46 s: gpumd 15510928 B, nep 3848608 B, tb 309904 B, gpumd_replica 2494264 B (identical sizes to the 2026-11-10 gfx1100 review build of this commit). DEBUG 45 s: gpumd 15510800 B, nep 3844456 B.
+
+### Tests (real gfx1100)
+| command | result | 374da0df on gfx1100 (2026-11-09) |
+|---|---|---|
+| `python -m pytest tests_pytest/test_spin_*.py` (release) | **110 passed, 4 failed**, 54 s; the 4 are `test_corrector_preserves_force_modifiers` (sib/glsd x small/large box) | 110/4 |
+| the 4 under an `LD_PRELOAD` srand no-op shim (`void srand(unsigned){}`) | **4 passed** | 4/4 |
+| full `tests_regression` (DEBUG, self-comparison, PR-body command plus `--timeout-scale 3`): `python3 tests_regression/run_regression.py --repo-root $D --suite full --baseline $D/src/gpumd --candidate $D/src/gpumd --baseline-nep $D/src/nep --candidate-nep $D/src/nep --timeout-scale 3` | **completed: 248 passed, 8 failed of 256; relations 25/25**, 429 s (whole suite including the FP64 graphene/silicon transport cases; overlapped the not-slow pytest on the same GPU). `ilp_nep_cutoff_below_nep` PASS | 249/256, 25/25, 442 s |
+| the 8 rerun plain (`--case` x8) | 2 passed, 6 failed (5 rand() cases + `qnep_ewald_future_bec`) | -- |
+| the 8 rerun under the srand shim | 7 passed, 1 failed (`qnep_actions_before_potential`, a different field) | -- |
+| `python -m pytest tests_pytest -m "not slow"` (release, whole directory) | **866 passed, 4 failed, 638 skipped, 10 deselected**, 1021 s; the 4 are the same rand() cases, no other failure | 801/4/480 (suite grew upstream; 866/4/638 matches the porter's gfx942 count at 3b0f1908) |
+| `GPUMD_REPLICA=<clone>/src/gpumd_replica python3 tests_regression/replica/test_replica.py` (release) | **4/16**; all 12 failures stop at `REMD/PRD explicit streams support energy NEP4/NEP5 and qNEP4 models` (8 REMD, 4 PRD) | 6/12 (fewer tests then) |
+| same in `agent_space/rep` with `examples/nep_train/nep.txt` from cd7f757d and `examples/qnep_train/nep.txt` from eda8e04b (reverted after) | **16/16 OK**, 28.9 s (includes upstream's new batch-choice/batched tests and the qNEP REMD/PRD Ewald and PPPM restart tests) | 12/12 |
+
+Regression failures, classified:
+| case | full run | plain rerun | shim rerun | class |
+|---|---|---|---|---|
+| replicate_velocity_unseeded (final.xyz) | FAIL | FAIL | PASS | rand() reseed (known) |
+| graphene_hac (hac.out) | FAIL | FAIL | PASS | rand() reseed (known) |
+| graphene_nemd_shc (compute.out) | FAIL | FAIL | PASS | rand() reseed (known) |
+| graphene_hnemd_shc (kappa.out) | FAIL | FAIL | PASS | rand() reseed (known) |
+| silicon_liquid_transport (adf.out) | FAIL | FAIL | PASS | rand() reseed (known) |
+| qnep_ewald_future_bec | dpdt.out field 16, 1.0e-6 vs atol 2e-7 | same field, 1.0e-6 | PASS | float-atomic noise (known; same field and magnitude as the 2026-11-10 review) |
+| qnep_pppm_future_bec | bec 1.80e-5 vs atol 1e-5; thermo field 7, 1.0e-6 vs 1e-7 | PASS | PASS | float-atomic noise (known) |
+| qnep_actions_before_potential | dpdt.out field 23, 1.0e-6 vs atol 2e-7 | PASS | dpdt.out field 15, 1.0e-6 | float-atomic noise (known; same signature as 374da0df on gfx1100) |
+
+No new failure class. Note for the draft PR body: on gfx1100 the float-noise set is `qnep_ewald_future_bec`, `qnep_pppm_future_bec` and `qnep_actions_before_potential` (dpdt one unit in the sixth printed decimal; BEC up to 1.8e-5 against 1e-5), not gfx942's `pppm_round_*`/`train_nep_pbte_ediff`; the body's class wording covers both, but its quoted BEC magnitude (1.17e-5) is gfx942's, and the body describes an MI300X run only.
+
+### Gates
+- CUDA compile gate: already recorded PASS at 3b0f1908 (mi355, nvcc 12.8, entry above); not repeated.
+- `python3 utils/jargon.py --port GPUMD` (local `master` created from the fork's `origin/master` c5597219): the 2 known hits in upstream's own 725fe762 merge only. `jargon.py -C projects/GPUMD/src --commits d6cd2e36..3b0f1908 --diff d6cd2e36...3b0f1908`: clean.
+- Documentation: `doc/installation.rst` documents `make -f makefile.hip` and `HIP_ARCH=gfx1100`; README points to the installation guide for ROCm/HIP.
+- Integrity: `git status --porcelain` empty in the clone and both worktrees; HEAD 3b0f1908.
+
+Result: **completed** at 3b0f1908 on linux-gfx1100. Every failure is in a known class (rand() reseed, float-atomic qNEP noise at absolute bounds, replica `format_version 1` model headers upstream).
