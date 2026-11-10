@@ -1908,3 +1908,6 @@ Compared with 5f6596ec on this host: identical pytest counts and failure set; re
 - Integrity: `git status --porcelain --untracked-files=no` empty in the clone and both worktrees (HEAD 26547d27 in each) before the worktrees were removed.
 
 Result: **completed** at 26547d27 on linux-gfx942.
+
+## TheRock issue filed 2026-11-10
+The `comgr-llvm-srand-perturbs-host-rand` deferral (jeff ruled "now") is filed by jeff as https://github.com/ROCm/TheRock/issues/9865 (first HIP kernel launch reseeds rand(); libLLVM built without arc4random).
