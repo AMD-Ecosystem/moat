@@ -7,7 +7,7 @@
   "priority": 5.508,
   "ext_type": "make",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-11-10T21:04:40Z",
+  "updated_at": "2026-11-10T21:31:17Z",
   "head_sha": "d3658389dafad6735c8fa83aac86693ad49a0ed0",
   "waivers": {},
   "license_clearance": {
@@ -202,5 +202,17 @@
     }
   ],
   "pr_round": 2,
-  "review_pr": "https://github.com/AMD-Ecosystem/GPUMD/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/GPUMD/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-10T21:22:46Z",
+    "head_sha": "d3658389dafad6735c8fa83aac86693ad49a0ed0",
+    "content_sha256": "f2bc0222525492c8c24c80c4ae1f014170856acbe8b2c4dc279128f864564eb6",
+    "review_pr": "https://github.com/AMD-Ecosystem/GPUMD/pull/1"
+  },
+  "pr_url": "https://github.com/brucefan1983/GPUMD/pull/1888",
+  "pr_number": 1888,
+  "pr_opened_at": "2026-11-10T21:31:17Z",
+  "pr_state": "open",
+  "published_sha": "d3658389dafad6735c8fa83aac86693ad49a0ed0"
 }
