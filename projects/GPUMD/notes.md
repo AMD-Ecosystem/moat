@@ -2118,3 +2118,36 @@ State: windows-gfx1151 -> `completed` at d3658389.
 - The first attempt stopped at the vocabulary gate: the follow-up delta 6231243f..moat-port is 1291 commits over the API. Fixed with a local fork clone plus moat main 2489715d (scan only `merge-base --independent` upstream parents: 332 -> 1, about an hour -> 7 s; old and new scans both found no hits).
 - Next: jeff's `/moat approve` on fork PR #1, then `upstream.py --publish --apply`.
 - 2026-11-10 21:31Z: jeff's `/moat approve` on fork PR #1 (21:22Z); `upstream.py --publish --apply` opened https://github.com/brucefan1983/GPUMD/pull/1888 (AMD-Ecosystem:moat-port d3658389 -> master), now `pr_state` open, `published_sha` d3658389; `moat-port` is frozen. Upstream CI (`build` x2) pending at open.
+
+#### Final body of brucefan1983/GPUMD#1888 as opened (supersedes the drafts above; the tool appended the disclosure footer)
+
+Title: `[ROCm] Restore the HIP build and fix a host max() truncation in ILP_NEP`
+
+````markdown
+This follow-up to #1538 fixes a HIP-only bug in the ILP_NEP setup and brings the HIP build back in line with current master.
+
+ILP_NEP: under HIP, the host call `max(max_nep_rc, parambs[i].rc_radial)` (double, float) resolved to the only host overload, `max(int, int)`, so a 4.2 A NEP radial cutoff became 4 and an ILP cutoff of 4.1 was accepted instead of rejected as on CUDA. It now calls `fmax`, which is what CUDA resolves the call to. A new `tests_regression` case, `ilp_nep_cutoff_below_nep`, checks the rejection; it fails with the old line and passes with the fix.
+
+HIP build: `utilities/nep_model_file.cu` reached `nep_utilities.cuh` without a runtime header (nvcc pre-includes one, hipcc does not), so the header now includes `gpu_macro.cuh`. The NEP-spin kernels pass 32-bit masks to `__syncwarp` and `__shfl_*_sync`; HIP requires 64-bit masks, and on a 64-lane wavefront the second 32-lane tile sits in lanes 32-63. A `gpuLaneMask()` macro in `gpu_macro.cuh`, the identity on CUDA, moves the mask to the right lanes, and one warp kernel now passes its 32-lane width to its shuffles explicitly. `makefile.hip` also builds `gpumd_replica` like the default makefile, and compiles that target with `-ffp-contract=on`: hipcc's default (`fast`) also fuses multiply-adds across statements, which on an MI250X (gfx90a) rounds the per-slot and batched instantiations of the replica NEP kernels differently and fails the bitwise batched-versus-per-slot replica tests; `on` fuses only within one source expression, so both instantiations form the same multiply-adds. The other targets keep hipcc's default, because with `on` the float atomics in `nep` training made two runs with the same seed differ more often (`test_nep_seed.py::test_same_seed_gives_the_same_model` failed in 6 of 10 runs on the MI300X and 3 of 10 on the MI250X, against 0 of 10 with the default).
+
+Replica PRD: `PRD_Driver::initialize_slot` zero-filled the per-atom forces with a kernel on the default stream, unordered with the force computed on the slot's non-blocking stream, so some replicas could resume from a zero force; it now synchronizes the device after the allocation, which made batched and per-slot PRD runs identical on a Radeon 8060S (gfx1151, Windows), where they differed, and the race is timing-dependent on any GPU, CUDA included.
+
+Besides the `fmax` line and that synchronization, the CUDA build sees only the extra include, the identity macro, an explicit width equal to the default, and a comment in `main_replica/force/ewald.cu` explaining why its uploads from local host vectors need no stream synchronization.
+
+Testing on an AMD Instinct MI300X (gfx942), from the repository root:
+
+```
+make -C src -f makefile.hip HIP_ARCH=gfx942 -j16
+GPUMD_REPLICA="$PWD/src/gpumd_replica" python3 tests_regression/replica/test_replica.py
+python3 -m pytest tests_pytest/test_spin_*.py
+make -C src -f makefile.hip clean
+make -C src -f makefile.hip HIP_ARCH=gfx942 -j16 gpumd nep CFLAGS="-O3 --offload-arch=gfx942 -DUSE_HIP -DDEBUG"
+python3 tests_regression/run_regression.py --repo-root "$PWD" --suite full --baseline "$PWD/src/gpumd" --candidate "$PWD/src/gpumd" --baseline-nep "$PWD/src/nep" --candidate-nep "$PWD/src/nep"
+```
+
+gpumd, nep, gpumd_replica and tb build. The replica tests pass 16 of 16 on the MI300X and on an MI250X (gfx90a) when run with the NEP4 and qNEP4 example models from cd7f757d and eda8e04b, because gpumd_replica rejects the current example models. The pytest runs used calorine from its master branch, because calorine 4.1 cannot read the `format_version 1` model files now in `tests_pytest/fixtures`. The NEP-spin tests pass 110 of 114, including the FP64 reference checks, and `python3 -m pytest tests_pytest -m "not slow"` passes 866 with the same 4 failures. In the full regression suite, 250 of the 256 cases pass, including `ilp_nep_cutoff_below_nep`, and the relations pass 25 of 25. The remaining failures are of two kinds. Cases that depend on the default `rand()` stream (the four `test_corrector_preserves_force_modifiers` cases, `replicate_velocity_unseeded`, `graphene_hac`, `graphene_nemd_shc`, `graphene_hnemd_shc`, `silicon_liquid_transport`) differ between runs on some ROCm builds, because the runtime reseeds the C library's `rand()` when it prepares its internal kernels on the first launch (reported as ROCm/TheRock#9865); they pass when that reseed is suppressed. The other, `qnep_pppm_future_bec` (BEC 1.4e-5 against 1e-5, or one unit in the last printed digit of a thermo value printed to six decimals), is float-atomic summation noise at an absolute bound that the regression README asks to be checked by self-comparison on the target GPU. On other runs and GPUs the same noise occasionally moves `pppm_round_exact`, `pppm_round_5_7` and `pppm_round_above` (thermo 1.1e-7 to 1.6e-7 against 1e-7), the last printed digit of a test force in `train_nep_pbte_ediff`, or the last printed digit of a training loss in `train_charge_vdw_mixed`; these pass on a rerun.
+
+On an NVIDIA Tesla V100 (CUDA 12.9), the full regression suite with upstream master as baseline and this branch as candidate passes 256 of 256 cases and 25 of 25 relations, the NEP-spin and `-m "not slow"` pytest results are the same for both trees, and `gpumd_replica` from both trees compiles with identical warnings and passes the replica tests 16 of 16 with the older example models, including the batched-versus-per-slot tests on each of three repeats.
+````
+
+Upstream CI at open (CUDA CI, CUDA CI on Windows): success. Waiting on maintainer review.
