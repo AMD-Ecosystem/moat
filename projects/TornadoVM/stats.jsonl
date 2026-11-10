@@ -192,3 +192,5 @@
 {"kind":"phase","ts":"2026-11-10T10:29:30Z","phase":"test","seconds":26.193,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cudnn.TestCuDnn"}
 {"kind":"phase","ts":"2026-11-10T10:29:35Z","phase":"test","seconds":4.321,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cutlass.TestCutlass"}
 {"kind":"session","ts":"2026-11-10T10:29:36Z","epoch":1794306576.669247600,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-10T20:12:46Z","epoch":1794341567.117002100,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-10T20:15:28Z","epoch":1794341728.669116400,"event":"end","platform":"windows-gfx1151"}
