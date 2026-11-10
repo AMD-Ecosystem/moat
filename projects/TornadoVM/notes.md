@@ -1050,3 +1050,27 @@ Revalidation advice (moatlib classed `78d852c66..d90e1d189` `mixed`, so linux-gf
 - windows-gfx1151 (the only host where the changed code runs): build the SDK at `d90e1d189` and run the packaged launcher in three cases: no ROCM_PATH or HIP_PATH (new CAUSE/FIX text, exit 1, and the `tornado.bat` warning); ROCM_PATH only; ROCM_PATH = TheRock with HIP_PATH pointing elsewhere (PATH head is `%ROCM_PATH%\bin`). In each launching case run `tornado --devices` and the tc selftest (20 pass, 1 skip), plus one short `tornado-test` HIP class so the launcher's test path runs too. The porter round already did most of this at `d90e1d189` on this laptop. The validator should repeat it under its own role and record it.
 - linux-gfx950 (wave64) and linux-gfx1201 (wave32): `tornado.py` is the Linux launcher too, but the changed functions are unreachable there. A build at `d90e1d189`, `tornado --devices`, the tc selftest and one short `tornado-test` HIP class per host prove the launcher at the new head. No full unit-test or library suite.
 - No CUDA nvcc recompile is owed for this delta (no CUDA/native source changed). The gfx1250 MMA check stays owed as before.
+
+## Validation 2026-11-10 (linux-gfx1201, Radeon AI PRO R9700, wave32, validator at `d90e1d189`)
+
+Verdict: **pass**, linux-gfx1201 completed at `d90e1d189`. Proportionate revalidation per review 12's advice, requested by jeff. `git diff --stat 620445bf1 d90e1d189` (620445bf1 is tree-identical to this platform's full validation at `ee94c5c7f`, which is no longer reachable on the fork after the squash) touches only `INSTALL_FROM_SOURCE.md`, `docs/source/developer-guidelines.rst`, `tornado-assembly/src/bin/tornado.bat` and `tornado-assembly/src/bin/tornado.py`; the Java, native, CMake and test trees are unchanged. On Linux the changed `tornado.py` functions return early (`os.name != 'nt'`), so the launcher run below is what this platform can observe.
+
+Host and toolchain (job directory only): ROCm 10.1 TheRock wheels (`ROCM_PATH=HIP_PATH=<image venv>/site-packages/_rocm_sdk_devel`), Temurin 21.0.13+9 from the Adoptium API unpacked in the job directory, `MAVEN_OPTS=-Dmaven.repo.local=<job>/m2`, dispatcher pin `HIP_VISIBLE_DEVICES=1`, `ulimit -c 0` for every GPU run. Fresh clone of `AMD-Ecosystem/TornadoVM` detached at `d90e1d189` (= remote `moat-port`).
+
+```bash
+TORNADO_CK_SOURCE_DIR=/tmp make -C projects/TornadoVM/src jdk21 BACKEND=hip   # BUILD SUCCESS, 19.0 s; ck-hip skipped ("TORNADO_CK_SOURCE_DIR=/tmp is not a Composable Kernel"), hipDF skipped (no HIPDF_HOME); in-build tc lit/unit tests pass
+source projects/TornadoVM/src/setvars.sh
+tornado --devices
+tornado-selftest
+tornado-test -V uk.ac.manchester.tornado.unittests.pointers.TestCopyDevicePointers
+```
+
+| Run | `d90e1d189` | `ee94c5c7f` (earlier today) |
+|---|---|---|
+| `tornado --devices` | 1 driver, HIPDriver `0:0` AMD Radeon AI PRO R9700, 31.9 GB | `0:0` HIP AMD Radeon AI PRO R9700 |
+| `tornado-selftest` | 20 pass, 1 skip (device-launch); TC target "HIP gfx1201, warp 32, tensor cores F16+FP8"; `device/warp-sum`, `mma-f16` 32x32x64, `mma-fp8` 16x16x64 PASS; rc 0 | 20 pass, 1 skip |
+| `tornado-test -V ...pointers.TestCopyDevicePointers` | 3/3 (testCopyDevicePointers, testCopyDevicePointersMatrix, testCopyDevicePointersLargeRegion), 0 unsupported, rc 0 | 3/3 |
+
+Nothing differed, so no quickPass or library suites were run. Not rerun here (unchanged trees): the ck-hip classes (TestCuDnn/TestCutlass, ck-hip skipped by this recipe), the MMA probe, quickPass and library classes recorded at `ee94c5c7f`.
+
+Completion checks: `python3 utils/jargon.py --port TornadoVM` (after `git branch -f develop origin/develop` and `moat-port origin/moat-port` in the clone): clean. Documentation: the ROCm build stays documented in `INSTALL_FROM_SOURCE.md` and `docs/source/developer-guidelines.rst` (this delta updates their ROCm 10.1 / TheRock text). Integrity: `git -C projects/TornadoVM/src status --porcelain` is empty. CUDA no-regression gate: not owed for this delta (no CUDA or native source changed); last recorded pass at `ee94c5c7f`.

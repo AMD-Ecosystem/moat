@@ -199,3 +199,9 @@
 {"kind":"phase","ts":"2026-11-10T20:30:45Z","phase":"test","seconds":11.918,"exit":0,"cmd":"cmd.exe /c C:\\Users/<user>\\AppData\\Local\\Temp\\claude\\8e8b101471bc8a7c\\920c642b-cd0e-4647-a64c-a7e466513d51\\scratchpad\\launch_pkg.cmd"}
 {"kind":"session","ts":"2026-11-10T20:35:37Z","epoch":1794342937.575846200,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-10T20:38:35Z","epoch":1794343115.444939800,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-10T20:42:49Z","epoch":1794343369.812969949,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-10T20:44:25Z","phase":"compile","seconds":0.003,"exit":2,"cmd":"make jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-10T20:45:01Z","phase":"compile","seconds":23.036,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-10T20:45:38Z","phase":"test","seconds":2.083,"exit":0,"cmd":"bash -c ulimit -c 0; tornado-selftest"}
+{"kind":"phase","ts":"2026-11-10T20:45:46Z","phase":"test","seconds":1.325,"exit":0,"cmd":"bash -c ulimit -c 0; tornado-test -V uk.ac.manchester.tornado.unittests.pointers.TestCopyDevicePointers"}
+{"kind":"session","ts":"2026-11-10T20:46:20Z","epoch":1794343580.273334614,"event":"end","platform":"linux-gfx1201"}
