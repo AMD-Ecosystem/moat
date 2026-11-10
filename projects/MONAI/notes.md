@@ -47,3 +47,15 @@ The plan (plan.md) is written for the whole project as amd-develop ships it. The
 2. **hipCIM on Windows.** `amd-hipcim` (the cuCIM replacement in the `cucim`/`all` extras) is Linux-only, and setup.cfg already gates it with `platform_system=="Linux"`. No ROCm GPU image-I/O option exists on Windows, so whole-slide-image reading on Windows falls back to the CPU readers (openslide/tifffile), named as such. Does that stand as the Windows scope, or should the Windows gate wait on a hipCIM Windows build?
 3. **CuPy-backed transform paths.** MONAI uses CuPy in about 11 modules alongside cucim, as an optional import. CuPy has ROCm wheels on Linux. The plan has the validator install them on Linux, so these paths run instead of skip. Windows has no CuPy ROCm wheel, so those paths skip there. Confirm that this is acceptable and not a cut.
 4. **Delivery vehicle.** Recorded as Jeff's call later (a PR into `amd-develop` from `moat-port`, or a handoff to the AMD team). Nothing in the pipeline depends on it before validation.
+
+## Ruling: independent port on upstream dev (Jeff Daily, 2026-11-10)
+
+This supersedes the 2026-11-09 validation take-up against `amd-develop`. Jeff Daily ruled that MOAT ports MONAI as a normal port of upstream Project-MONAI/MONAI `dev`, as if AMD-Ecosystem/MONAI `amd-develop` did not exist. The purpose is an independent port that jeff will compare against amd-develop with the AMD team afterwards, so the port must not be derived from theirs.
+
+For the planner (resume: the stage is `planning`, linux-gfx942 holds the lock) and every later role:
+- Do not read amd-develop, its commits or its diff. Rewrite plan.md for the upstream `dev` tip (record the sha). Treat the amd-develop-specific parts of the earlier plan and notes as superseded: the f9f65c94 base, FORCE_CUDA on amd-develop, the MIOpen fresh-process rerun.
+- Upstream `dev` already contains the merged upstream ROCm build support (#9153); that is upstream code and in scope as such.
+- `moat-port` is cut from the upstream `dev` tip and pushed to AMD-Ecosystem/MONAI as a new branch. The fork's GitHub default branch stays `amd-develop`, because the AMD team owns that fork: the one exception to the moat-port-default rule. `fork_default_branch` stays `dev`.
+- Scope is the whole project: monai._C, the runtime-built GMM extension, optional GPU dependencies with their ROCm equivalents where they exist (cuCIM -> hipCIM, CuPy ROCm wheels on Linux), and the GPU, unit and integration suites.
+- The three scope questions above (TensorRT/MIGraphX, hipCIM on Windows, CuPy on Windows) still await jeff; carry them forward, revised for the new base if their facts change, and do not mark the project planned until he answers.
+- Validation order as usual: Linux wave64 and wave32 first, Windows gfx1151 last.
