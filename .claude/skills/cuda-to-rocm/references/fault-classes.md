@@ -483,12 +483,13 @@ runs for many minutes -- normalise each element with `file(TO_CMAKE_PATH)`. (LEA
 `clang++`; make the project choose it, do not document a workaround.** `Platform/Windows-Clang.cmake`
 is include-guarded and picks MSVC-style or GNU-style rules for ALL languages from whichever
 language includes it first (MSVC-style if any language's frontend variant is MSVC). So with
-cl.exe as CXX, `enable_language(HIP)`/`check_language(HIP)` dies with "mixes Clang and MSVC"
-(a project that probes with `check_language` then reports "no HIP compiler"); with clang-cl in
-`project(... CXX HIP)` it dies with "mixed frontend variants"; and with clang-cl in
-`project(... CXX)` followed by a later `enable_language(HIP)` the check is skipped and HIP gets
-`/DWIN32 /D_WINDOWS /Ob0 /Od /RTC1` and `/machine:x64`, which `clang++` rejects in
-CMakeTestHIPCompiler. Fix inside the project, before `project()`, guarded by
+cl.exe as CXX, `enable_language(HIP)` dies with "mixes Clang and MSVC" (`check_language(HIP)`
+cannot report this: it probes in a separate HIP-only project, so a "no HIP compiler" message
+after it means the probe found no `clang++`); with clang-cl in `project(... CXX HIP)` it dies
+with "mixed frontend variants"; and with clang-cl in `project(... CXX)` followed by a later
+`enable_language(HIP)` the check is skipped and HIP gets cl-style flags that `clang++` rejects
+in CMakeTestHIPCompiler (4.4.4: `/DWIN32 /D_WINDOWS /Ob0 /Od /RTC1` on the compile; 3.31.0:
+`/machine:x64` on the link). Fix inside the project, before `project()`, guarded by
 `CMAKE_HOST_WIN32` and the HIP option: find the HIP `clang++` (`HIPCXX`, else `hipconfig
 --hipclangpath` with `HIP_PATH`/`ROCM_PATH`/the Python interpreter's directory as hints -- a
 pip-installed ROCm SDK puts `hipconfig.exe` in the venv `Scripts`) and set `CMAKE_CXX_COMPILER`
@@ -498,10 +499,25 @@ Windows, and silently falls back to gfx906 (run `amdgpu-arch` from the clang dir
 instead); `find_package(hip)` needs `CMAKE_HIP_COMPILER_ROCM_ROOT` on `CMAKE_PREFIX_PATH`
 (there is no `/opt/rocm/bin` on PATH to derive it from); and CMake before 3.29 links a Windows
 HIP DLL without `-shared` (`lld-link: error: subsystem must be defined`; 3.28.4 fails, 3.29.2
-works). scikit-build-core picks a Visual Studio generator on Windows, which has no HIP
-support; a `[[tool.scikit-build.overrides]]` with `if.platform-system = "^win32"`,
-`if.failed = true` and `cmake.define.CMAKE_GENERATOR = "Ninja"` retries only the failing
-build, so a Windows CUDA build keeps its generator. (LEAP, windows-gfx1151)
+works). Outside a Visual Studio developer prompt three more fail, and the documented command
+should still work there: CMake enables RC for Windows `clang++` and finds `rc.exe` only on
+PATH (take the newest from the Windows SDK, `KitsRoot10` in the registry, `bin/10.*/x64`);
+FindOpenMP finds `libomp.lib` for Windows `clang++` only through the prompt's `LIB` (preset
+`OpenMP_CXX_FLAGS=-fopenmp`, `OpenMP_CXX_LIB_NAMES=""` when every source is HIP and linked with
+`-fopenmp`, which adds libomp itself); and pip's isolated build sets `PYTHONPATH` to a
+sitecustomize that hides the environment's own site-packages, so a pip-installed ROCm SDK's
+`hipconfig.exe` in that same environment prints nothing (`unset(ENV{PYTHONPATH})` in the
+Windows HIP configure; CMake and hipify call hipconfig too, and hipify then misreads the ROCm
+version). scikit-build-core picks a Visual Studio generator on Windows, which has no HIP
+support. Do not use a `[[tool.scikit-build.overrides]]` with `if.failed = true` to retry with
+Ninja: any `if.failed` override makes scikit-build-core withdraw its
+`prepare_metadata_for_build_*` hooks on every platform (pip then compiles during "Preparing
+metadata" and metadata-only queries build the library), and a failing Windows CUDA or CPU build
+is retried with Ninja. Instead use a small in-tree PEP 517 backend (`build-backend` +
+`backend-path`) that re-exports `scikit_build_core.build` and, only on Windows with the HIP
+option set and no generator chosen, appends `-GNinja` to `CMAKE_ARGS` in the `get_requires_*`
+and `build_*` hooks; scikit-build-core (1.0 through 1.1.2) then also lists `ninja` as a build
+requirement when Ninja is missing, and every other build is untouched. (LEAP, windows-gfx1151)
 
 ## Types, dispatch and platform limits
 
