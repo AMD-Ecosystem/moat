@@ -7,7 +7,7 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-10T15:27:48Z",
+  "updated_at": "2026-11-10T15:42:57Z",
   "head_sha": "70ab397485760680867b95a405c33908a8aac3e7",
   "waivers": {},
   "license_spdx": "MIT",
@@ -168,20 +168,16 @@
   },
   "pr_approval": {
     "approved_by": "jeffdaily",
-    "at": "2026-11-05T07:03:16Z",
-    "head_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38",
-    "content_sha256": "d110ac37043c2793744914fcc0604628b8a26dc3720f4e8db42733d25f57c648",
-    "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/1"
+    "at": "2026-11-10T15:31:32Z",
+    "head_sha": "70ab397485760680867b95a405c33908a8aac3e7",
+    "content_sha256": "f9af345159f1accff0d78825d576ec7051b07d16727566973d8b60c4f893b31a",
+    "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/2"
   },
   "pr_url": "https://github.com/llnl/LEAP/pull/216",
   "pr_number": 216,
   "pr_opened_at": "2026-11-05T07:11:41Z",
   "pr_state": "open",
-  "published_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38",
-  "fix": {
-    "branch": "moat-fix-216",
-    "base_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38",
-    "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/2",
-    "opened_at": "2026-11-09T17:37:15Z"
-  }
+  "published_sha": "70ab397485760680867b95a405c33908a8aac3e7",
+  "fix": null,
+  "fix_merged_at": "2026-11-10T15:42:57Z"
 }
