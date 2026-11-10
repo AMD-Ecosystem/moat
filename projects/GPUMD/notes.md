@@ -1557,3 +1557,25 @@ Gates: `jargon.py -C projects/GPUMD/src --commits 458683da..5f6596ec --diff 4586
 Nit (no action needed before squash): 5f6596ec's Test Plan runs `cuobjdump -sass`, which needs an `nvdisasm` that CUDA 12.8 on the mi355 host lacks (the porter used `NVDISASM_PATH`); the PR-prep squash message replaces this anyway.
 
 Verdict: review passed. Next: revalidation of every gate at 5f6596ec (gfx950 replica suite more than once, per the porter's hang note).
+
+## Validation 2026-11-10 (windows-gfx1151, validator) -- revalidate at 5f6596ec, VALIDATION FAILED (batched PRD not bit-identical to per-slot on gfx1151)
+
+jeff asked for this run. GPU: AMD Radeon 8060S (gfx1151, wave32 APU), `HIP_VISIBLE_DEVICES=0`, TheRock ROCm SDK, Windows 11. Fresh clone `agent_space/gpumd-win4` at **5f6596ec7b656eac5f0c96df882f8bdda36565df** (= `ls-remote moat-port`), clean tracked tree (only staged runtime DLLs untracked). Nothing pushed. Serial, one GPU process at a time, `ulimit -c 0`.
+
+### Build
+    utils/timeit.sh GPUMD compile -- bash agent_space/gp4_build.sh
+      # cd src; mingw32-make -f makefile.hip gpumd nep gpumd_replica HIP_ARCH=gfx1151 LDFLAGS="-L<rocm>/lib" CC="<rocm>/bin/hipcc.exe" CFLAGS="-O3 --offload-arch=gfx1151 -DUSE_HIP -ffp-contract=on -std=c++17" -j8 -k
+rc 0, 0 errors, `-ffp-contract=on` on all 224 compile lines. gpumd 15762432 B, nep 4227584 B, gpumd_replica.exe 2703360 B. Linker again wrote gpumd/nep without .exe (copied). Runtime DLLs (amd_comgr, amdhip64_7, hiprtc*) copied next to the exe; the first harness run without them exited 0xC0000005 (environment, fixed by staging).
+
+### Tests (real gfx1151)
+Regression harness, serial, self-comparison, `--timeout-scale 3`, cases ilp_nep_cutoff_below_nep neighbor_alias_aliased neighbor_alias_control nve nvt_ber nvt_nhc npt_ber_iso nvt_mttk: **8 passed, 0 failed**, relation neighbor_alias_translation_invariance PASS (24 skipped, not selected).
+
+Replica, scratch worktree `agent_space/gp4_rep` at 5f6596ec with `examples/nep_train/nep.txt` from cd7f757d and `examples/qnep_train/nep.txt` from eda8e04b, `GPUMD_REPLICA=<clone>/src/gpumd_replica.exe`, `-k test_batched_matches_per_slot -k test_split_resume_is_exact` (4x2000 atoms PbTe, 40 steps, about 11 s):
+- test_batched_matches_per_slot_remd ok; test_split_resume_is_exact ok (both batch=0 and 1)
+- **test_batched_matches_per_slot_prd FAIL**, twice (run twice, stopped): `prd_replica_2_restart.xyz differs between prd_batch0 and prd_batch1`. The differing values are not ulp-level and differ between the two runs: first run replica 2 coordinate 3.2690353 (batch 0) vs 3.2686072 (batch 1), diff ~4e-4; second run 3.2068339 vs 3.2058530, diff ~1e-3. The first file the test compares to differ is the replica_2 restart; the others were not inspected (assert stops at the first).
+Read: this is the same class as the linux-gfx90a failure at 3b0f1908 (batched replica not bit-identical to per-slot), which `-ffp-contract=on` cured there (3/3 OK at 458683da on MI250X, 16/16). On gfx1151 the flag is present and REMD plus split-resume pass, but PRD (3000 K quench, event 5, dephase 10) diverges, with differences that grow to 1e-3 which suggests an amplified near-ulp nondeterminism after a PRD event rather than a gross fault. No GPU fault, hang or 719. Not root-caused (known hard class: one arch wrong numbers while others pass; stopped per discipline). Pass counts at this arch: 2 of 3 requested replica tests.
+
+### Gates
+`jargon.py -C gpumd-win4 --commits 3b0f1908..5f6596ec --diff 3b0f1908...5f6596ec`: clean. Docs: installation.rst ROCm section unchanged and still accurate. CUDA gate recorded at 3b0f1908; the delta touches only makefile.hip. Integrity: clone has no modified tracked file.
+
+State: windows-gfx1151 -> `validation-failed` at 5f6596ec. For the porter: decide whether PRD batched bit-identity is expected on wave32 APUs (other gates are satisfied by Linux archs at this head or pending; this record is extra evidence on the windows gate only), or whether a gfx1151 determinism difference in the batched PRD path (replica_batch.cu) needs a look.
