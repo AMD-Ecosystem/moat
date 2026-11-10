@@ -7,83 +7,13 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-10T09:06:15Z",
+  "updated_at": "2026-11-10T09:07:49Z",
   "head_sha": "70ab397485760680867b95a405c33908a8aac3e7",
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 644559794,
   "stage": "review-passed",
   "platforms": {
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38",
-      "failed_sha": "b8595bb15253f44ebfd6c9cf549259137ec59ced",
-      "started_at": "2026-11-09T22:28:09Z",
-      "completed_at": "2026-11-05T04:56:46Z",
-      "updated_at": "2026-11-10T08:25:01Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "validation-failed",
-      "last_agent": "validator"
-    },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "70ab397485760680867b95a405c33908a8aac3e7",
-      "failed_sha": null,
-      "started_at": "2026-11-04T17:10:14Z",
-      "completed_at": "2026-11-10T09:06:15Z",
-      "updated_at": "2026-11-10T09:06:15Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "state": "completed"
-    },
-    "windows-gfx1101": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "c77df45b3fcd9d659b3a9f77cc2fdfef673a19e0",
-      "started_at": null,
-      "completed_at": "2026-06-16T09:52:08Z",
-      "updated_at": "2026-08-20T00:08:22Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
     "windows-gfx1201": {
       "state": "completed",
       "blocked": false,
@@ -136,14 +66,62 @@
       },
       "last_agent": "reviewer"
     },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "70ab397485760680867b95a405c33908a8aac3e7",
+      "failed_sha": null,
+      "started_at": "2026-11-04T17:10:14Z",
+      "completed_at": "2026-11-10T09:06:15Z",
+      "updated_at": "2026-11-10T09:06:15Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38",
+      "failed_sha": "b8595bb15253f44ebfd6c9cf549259137ec59ced",
+      "started_at": "2026-11-09T22:28:09Z",
+      "completed_at": "2026-11-05T04:56:46Z",
+      "updated_at": "2026-11-10T08:25:01Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "validation-failed",
+      "last_agent": "validator"
+    },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "53037f009f4b1047db1aed46b47675cb3b477e64",
+      "validated_sha": "70ab397485760680867b95a405c33908a8aac3e7",
       "started_at": "2026-06-02T13:30:00Z",
-      "completed_at": "2026-11-09T23:40:10Z",
-      "updated_at": "2026-11-10T08:32:42Z",
+      "completed_at": "2026-11-10T09:07:49Z",
+      "updated_at": "2026-11-10T09:07:49Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -157,7 +135,29 @@
         "first_session_at": "2026-06-02T13:30:00Z",
         "last_session_at": "2026-06-02T14:00:00Z"
       },
-      "last_agent": "reviewer"
+      "last_agent": "validator"
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c77df45b3fcd9d659b3a9f77cc2fdfef673a19e0",
+      "started_at": null,
+      "completed_at": "2026-06-16T09:52:08Z",
+      "updated_at": "2026-08-20T00:08:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/1",
@@ -183,6 +183,5 @@
     "base_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38",
     "review_pr": null,
     "opened_at": "2026-11-09T17:37:15Z"
-  },
-  "porting": null
+  }
 }

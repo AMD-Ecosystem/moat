@@ -448,3 +448,17 @@
 {"kind":"phase","ts":"2026-11-10T08:57:14Z","phase":"test","seconds":32.413,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261110-003340-v3-leap-216/moat/agent_space/cmp/newnotex/unitTests && MPLBACKEND=Agg PYTHONPATH=../src /var/lib/jenkins/fleet/jobs/mi300-20261110-003340-v3-leap-216/venv/bin/python unit_tests.py"}
 {"kind":"phase","ts":"2026-11-10T09:05:13Z","phase":"test","seconds":478.267,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261110-003340-v3-leap-216/moat/agent_space/cmp/newnotex/unitTests && MPLBACKEND=Agg PYTHONPATH=../src /var/lib/jenkins/fleet/jobs/mi300-20261110-003340-v3-leap-216/venv/bin/python memory_leak_tests.py"}
 {"kind":"session","ts":"2026-11-10T09:06:20Z","epoch":1794301580.836367993,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-10T08:37:10Z","epoch":1794299830.474753213,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-10T08:37:41Z","phase":"compile","seconds":13.664,"exit":0,"cmd":"agent_space/bld.sh 70ab397485760680867b95a405c33908a8aac3e7 h70"}
+{"kind":"phase","ts":"2026-11-10T08:37:55Z","phase":"compile","seconds":13.892,"exit":0,"cmd":"agent_space/bld.sh 70ab397485760680867b95a405c33908a8aac3e7 h70notex -DLEAP_USE_NOTEX=ON"}
+{"kind":"phase","ts":"2026-11-10T08:38:41Z","phase":"test","seconds":6.569,"exit":0,"cmd":"bash -c cd agent_space/cmp/h70 && python unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-10T08:38:47Z","phase":"test","seconds":6.270,"exit":0,"cmd":"bash -c cd agent_space/cmp/h70notex && python unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-10T08:46:49Z","phase":"test","seconds":470.238,"exit":0,"cmd":"agent_space/dumps.sh"}
+{"kind":"phase","ts":"2026-11-10T08:49:04Z","phase":"test","seconds":96.709,"exit":0,"cmd":"agent_space/points.sh"}
+{"kind":"phase","ts":"2026-11-10T08:49:59Z","phase":"test","seconds":21.756,"exit":0,"cmd":"bash -c cd agent_space/cmp/h70/unitTests && MPLBACKEND=Agg PYTHONPATH=../src /var/lib/jenkins/fleet/jobs/rx7900-20261110-003405-v3-leap-216/venv/bin/python unit_tests.py"}
+{"kind":"phase","ts":"2026-11-10T08:57:22Z","phase":"test","seconds":442.751,"exit":0,"cmd":"bash -c cd agent_space/cmp/h70/unitTests && MPLBACKEND=Agg PYTHONPATH=../src /var/lib/jenkins/fleet/jobs/rx7900-20261110-003405-v3-leap-216/venv/bin/python memory_leak_tests.py"}
+{"kind":"phase","ts":"2026-11-10T08:57:46Z","phase":"test","seconds":24.083,"exit":0,"cmd":"bash -c cd agent_space/cmp/h70notex/unitTests && MPLBACKEND=Agg PYTHONPATH=../src /var/lib/jenkins/fleet/jobs/rx7900-20261110-003405-v3-leap-216/venv/bin/python unit_tests.py"}
+{"kind":"phase","ts":"2026-11-10T09:06:00Z","phase":"test","seconds":493.829,"exit":0,"cmd":"bash -c cd agent_space/cmp/h70notex/unitTests && MPLBACKEND=Agg PYTHONPATH=../src /var/lib/jenkins/fleet/jobs/rx7900-20261110-003405-v3-leap-216/venv/bin/python memory_leak_tests.py"}
+{"kind":"phase","ts":"2026-11-10T09:07:01Z","phase":"compile","seconds":17.149,"exit":0,"cmd":"bash agent_space/pip_e.sh"}
+{"kind":"phase","ts":"2026-11-10T09:07:18Z","phase":"test","seconds":0.005,"exit":2,"cmd":"bash agent_space/pipe70/unitTests/../../../agent_space/pipe70/unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"session","ts":"2026-11-10T09:08:35Z","epoch":1794301715.378071319,"event":"end","platform":"linux-gfx1100"}
