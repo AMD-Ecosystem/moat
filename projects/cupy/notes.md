@@ -908,3 +908,41 @@ Revalidation advice (moatlib: `mixed`). The delta changes no executed code, so a
 - linux-gfx90a, linux-gfx1201: rebuild/reinstall at a6e01258f with the recorded Linux procedure (this runs install/cupy_builder, including the edited `_features.py`), then `pytest tests/install_tests tests/import_tests` plus one short core GPU file (for example `tests/cupy_tests/core_tests/test_ndarray_elementwise_op.py`), and record completed at a6e01258f. No baseline re-run (Ruling 7 is already met at 18b54de).
 - windows-gfx1151: a clean rebuild with the documented Windows command, because that is what exercises `configure_msvc_for_hip` and the win32 branch of the HIP feature dict. Then `import cupy` in a fresh process (this runs the `_win32_dll_directories` code), `pytest tests/install_tests tests/import_tests` (the porter's editable-install sanity has already passed: 31 passed, 1 skipped), and one short non-texture GPU file. The Ruling 3 four-stage order, texture stage included, was satisfied at 225236c47 and nothing on those paths changed, so I see no case for repeating it. Whether this light evidence is enough for the windows gate at the new head is jeff's call; moatlib has no carry-forward for a content change, so a validator still has to record completed at a6e01258f.
 - CUDA nvcc no-regression: no new compile needed for annotation-only Python.
+
+## Validation 2026-11-10 (linux-gfx1201, validator): revalidate at a6e01258f against this platform's 225236c47 results
+
+Verdict: **pass, same outcomes as 225236c47.** The delta 225236c47..a6e01258f is the mypy annotation commit (cupy/_environment.py, install/cupy_builder/_features.py, install/cupy_builder/install_build.py, all under `from __future__ import annotations`); this follows the reviewer's revalidation advice above, with the full core_tests instead of one file. Host: gfx1201 (`HIP_VISIBLE_DEVICES=1`, dispatcher pin), TheRock pip ROCm `_rocm_sdk_devel` (runtime 71626385), Python 3.11.17. Job venv brought to the 225236c47 run's versions: Cython 3.2.9, numpy 2.4.6, scipy 1.17.1, hypothesis 6.54.6, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout 2.4.0, fastrlock 0.8.4. Fork clone at a6e01258f (origin/moat-port), submodules cccl 4ee3a7b, dlpack cd0d5e4, jitify 1a0ca0e, xsf 2e1e697. References: the 225236c47 build log and junit XMLs, still on this host in the previous job's `agent_space`.
+
+### Build
+
+Same command as the 225236c47 validation (env.sh: `ROCM_HOME=.../_rocm_sdk_devel`, `CUPY_INSTALL_USE_HIP=1 HCC_AMDGPU_TARGET=gfx1201 CUPY_NUM_BUILD_JOBS=12`):
+
+```bash
+utils/timeit.sh cupy compile -- bash -c "cd projects/cupy/src && python setup.py build_ext --inplace -v"
+```
+
+- EXIT 0. Configure summary unchanged (cuda 71626385, cub 400700, nccl 23007, random, thrust, dlpack Yes); 474 warning lines in both logs; `CUPY_CACHE_KEY` bad50f9b in both.
+- Command lines extracted with `grep -oE "(g\+\+ |Command: \['/[^ ]*/bin/hipcc).*"`, tree path, venv path and cache key normalised: **131 lines (64 g++ compiles, 64 links, 3 hipcc device compiles), identical as a sorted set** to the 225236c47 build; only the emission order differs, from the parallel build.
+- `nm -D --defined-only` names of all 64 `.so` (excluding `__hip_cuid_*`): byte-identical to the 225236c47 build tree.
+
+### Tests (`ulimit -c 0`, one pytest process at a time, run from the tree with `PYTHONPATH` = the tree)
+
+```bash
+python -m pytest tests/install_tests tests/import_tests -p no:cacheprovider -rfE -q
+python -m pytest tests/cupy_tests/core_tests -p no:cacheprovider -rfE -q -n 8 --dist loadfile --timeout 1800 --timeout-method=thread --junitxml=...
+```
+
+| suite | a6e01258f | 225236c47 | outcome changes | failing ids with a different message |
+|---|---|---|---|---|
+| install_tests + import_tests | 31 passed, 1 skipped | 31 passed, 1 skipped | 0 | -- |
+| cupy_tests/core_tests | 2861 passed, 162 failed, 495 skipped, 15 xfailed (13 min 16 s) | 2861 / 162 / 495 / 15 | 0 | 0 |
+
+- Per test id comparison of the junit XMLs; for each failing id the first message line compared after masking numbers and `/tmp` paths. The 162 failures are the upstream-common set classified at 24a62ef95 (bfloat16 hiprtc, `hipErrorInvalidDevice` with one GPU visible, ...). `TestElementwiseGUFuncLike` (the 4ccded519 fix) still passes.
+- Nothing differed, so no full-suite run or upstream re-classification was needed.
+
+### Other gates
+
+- Jargon: `python3 utils/jargon.py --port cupy` clean (local `main` at upstream 18b54de).
+- Docs: unchanged by the delta.
+- Integrity: `git -C projects/cupy/src status --porcelain --untracked-files=no` empty, HEAD a6e01258f.
+- CUDA gate: not run (no CUDA toolkit on this host); the delta is Python annotations only, never evaluated at runtime, per the review above.
