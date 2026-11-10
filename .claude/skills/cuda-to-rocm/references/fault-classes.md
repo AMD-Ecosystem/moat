@@ -233,6 +233,17 @@ fp16 upload is `FCLayer<half>::LoadWeights` instead, which still corrupted the m
 head while the value/policy gate passed 34/34. Upstream's own fix, lc0 #2454, is the
 reference shape: one `cudaDeviceSynchronize()` after the `tensor_mem_` malloc/memset loop.)
 
+A plain `hipMemcpyDtoD`/`cuMemcpyDtoD` (or `hipMemcpy` with `hipMemcpyDeviceToDevice`) is
+the same race in a less suspicious costume: a device-to-device copy is asynchronous with
+respect to the host and runs on the legacy stream, so the "synchronous-looking" call returns
+before the copy lands and the next kernel on a non-blocking stream can read the destination
+first. Fingerprint: the destination reads exactly as it was before the copy (zeros, or the
+previous test's values), the copy's own arguments and return code are right, and a
+standalone C probe of the same copy passes because it reads back with a synchronizing D2H.
+Bisect with a sync on each side: only the one AFTER the copy fixes it. (TornadoVM:
+`NativeCommandQueue.mapOnDeviceMemoryNDRegion`, deterministic on Windows gfx1151, passing
+on Linux gfx950/gfx1201.)
+
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 

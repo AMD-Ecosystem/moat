@@ -10,6 +10,11 @@
 //
 // Usage: harness [--mutate]. --mutate checks every result against the next column's reference; every
 // case must then fail, which shows the comparison can see a wrong result. Exit status 0 means every case passed (or, with --mutate, failed).
+//
+// Tolerances, relative to the sum of the products' magnitudes: s8 is always exact. The exact float cases (small
+// integers, and one FP8 product per output) are bit-exact except on gfx11, whose WMMA is one or two float ulps
+// off even then (1e-6). The random float cases allow 1e-5, and 1e-4 for FP8 on gfx1250, whose FP8 WMMA keeps
+// about 14 to 16 bits while summing. A wrong layout or FP8 decoding is off by far more than any of these.
 
 #include <hip/hip_runtime.h>
 
@@ -280,8 +285,11 @@ static void launch(const Case &c, std::vector<int> &D) {
 }
 
 // Returns the number of mismatching elements; tiles of inactive warps must be left untouched.
+static double gExactBound = 0.0, gFp8Bound = 1e-5;
+
 static long check(const Case &c, const std::vector<int> &D, bool mutate, double &worst) {
     long bad = 0;
+    double bound = c.exact ? gExactBound : (c.kind == E4M3 || c.kind == E5M2) ? gFp8Bound : 1e-5;
     int K = 8 * perWord(c.kind);
     for (int tile = 0; tile < c.ntiles; tile++) {
         bool active = tile % c.warpsPerBlock < c.activeWarps;
@@ -324,7 +332,7 @@ static long check(const Case &c, const std::vector<int> &D, bool mutate, double 
                 } else {
                     double err = std::fabs(g - ref), rel = mag > 0 ? err / mag : err;
                     worst = std::max(worst, rel);
-                    bad += c.exact ? err != 0.0 : rel > 1e-5;
+                    bad += bound == 0.0 ? err != 0.0 : rel > bound;
                 }
             }
         }
@@ -362,6 +370,12 @@ int main(int argc, char **argv) {
     hipDeviceProp_t prop;
     CHECK_HIP(hipGetDeviceProperties(&prop, 0));
     printf("device: %s (%s), wavefront %d\n", prop.name, prop.gcnArchName, prop.warpSize);
+    if (strncmp(prop.gcnArchName, "gfx11", 5) == 0) {
+        gExactBound = 1e-6;
+    } else if (strncmp(prop.gcnArchName, "gfx1250", 7) == 0) {
+        gFp8Bound = 1e-4;
+    }
+    printf("bounds: exact cases %g, random fp8 %g, other random 1e-05\n", gExactBound, gFp8Bound);
     struct Config {
         int steps, wpb, active;
     } configs[] = {{1, 1, 1}, {3, 2, 2}, {2, 4, 4}, {1, 2, 1}, {5, 4, 3}};

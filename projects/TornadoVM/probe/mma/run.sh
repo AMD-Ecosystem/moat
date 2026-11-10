@@ -9,7 +9,8 @@
 #    lists the matrix instructions in its code object, and runs it (then with --mutate, which must fail).
 # 2. Runs tornado-selftest and every KernelContext MMA unit-test class.
 # Needs TORNADOVM_HOME (setvars.sh) and ROCM_PATH. ARCH overrides the GPU architecture, OUT the
-# scratch directory. Exit status 0 only if every step passed.
+# scratch directory. Exit status 0 only if every step passed. On Windows run it from Git bash with
+# ARCH set (amdgpu-arch finds no device there); the harness gets the SDK's HIP runtime DLLs next to it.
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 : "${TORNADOVM_HOME:?source setvars.sh of a HIP SDK first}"
@@ -21,7 +22,12 @@ mkdir -p "$out"
 failed=()
 
 echo "== harness ($arch, scratch $out)"
-cp="$(ls "$TORNADOVM_HOME"/share/java/tornado/tc-*.jar | tr '\n' ':')"
+windows=; case "$(uname -s)" in MINGW* | MSYS* | CYGWIN*) windows=1 ;; esac
+if [ -n "$windows" ]; then
+    cp="$(for j in "$TORNADOVM_HOME"/share/java/tornado/tc-*.jar; do cygpath -m "$j"; done | tr '\n' ';')"
+else
+    cp="$(ls "$TORNADOVM_HOME"/share/java/tornado/tc-*.jar | tr '\n' ':')"
+fi
 preview=$(grep -q 'tornado.jdk.preview=true' "$TORNADOVM_HOME/etc/tornado.jdk" 2>/dev/null && echo --enable-preview || true)
 if ! "${JAVA_HOME:+$JAVA_HOME/bin/}java" $preview -cp "$cp" uk.ac.manchester.tornado.tc.codegen.tools.EmitTool --target=hip "$here/helpers.tcir" \
         < /dev/null > "$out/tc_helpers.hip"; then
@@ -30,6 +36,8 @@ fi
 if ! "$ROCM_PATH/bin/hipcc" --offload-arch="$arch" -O2 -std=c++17 -I"$out" "$here/harness.hip" -o "$out/harness"; then
     echo "run.sh: harness.hip does not compile for $arch"; exit 1
 fi
+# The System32 amdhip64 of a Windows display driver can be older than the SDK; load the SDK's.
+[ -n "$windows" ] && cp "$ROCM_PATH"/bin/amdhip64_*.dll "$ROCM_PATH"/bin/amd_comgr*.dll "$ROCM_PATH"/bin/rocm_kpack.dll "$out"/ 2>/dev/null
 "$ROCM_PATH/bin/hipcc" --offload-arch="$arch" --cuda-device-only -S -O2 -std=c++17 -I"$out" "$here/harness.hip" -o "$out/harness-$arch.s"
 echo "matrix instructions in the code object:"
 grep -oE 'v_(mfma|wmma)[a-z0-9_]*' "$out/harness-$arch.s" | sort | uniq -c
