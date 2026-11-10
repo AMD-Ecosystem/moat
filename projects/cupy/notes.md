@@ -946,3 +946,37 @@ python -m pytest tests/cupy_tests/core_tests -p no:cacheprovider -rfE -q -n 8 --
 - Docs: unchanged by the delta.
 - Integrity: `git -C projects/cupy/src status --porcelain --untracked-files=no` empty, HEAD a6e01258f.
 - CUDA gate: not run (no CUDA toolkit on this host); the delta is Python annotations only, never evaluated at runtime, per the review above.
+## Validation 2026-11-10 (linux-gfx90a, validator): revalidate at a6e01258f against 225236c47
+
+Port: ROCm/cupy `moat-port` at **a6e01258f**, compared with this platform's 225236c47 record (Validation 2026-11-09 above). The delta is a6e01258f only (mypy annotations in `cupy/_environment.py`, `install/cupy_builder/_features.py`, `install/cupy_builder/install_build.py`, all under `from __future__ import annotations`). Fresh fork clone, same submodules (cccl 4ee3a7b, dlpack cd0d5e4, jitify 1a0ca0e, xsf 2e1e697). Same host and toolchain: gfx90a (MI210-class, wave64), TheRock pip ROCm (rocm-sdk 10.1.0, HIP 71626385, hipconfig 7.16.26385), Python 3.11.17, setuptools 79.0.1, Cython 3.2.9, numpy 2.4.6, scipy 1.17.1, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout 2.4.0, hypothesis 6.56.4, optuna 5.0.0, fastrlock 0.8.4 in the job venv. One GPU (`HIP_VISIBLE_DEVICES` pinned by the dispatcher).
+
+### Build (the recorded procedure)
+
+```bash
+export ROCM_HOME=$JOB/venv-base-links/_rocm_sdk_devel
+export PATH="$FLEET_VENV/bin:$ROCM_HOME/bin:$PATH" LD_LIBRARY_PATH="$ROCM_HOME/lib"
+export CUPY_INSTALL_USE_HIP=1 HCC_AMDGPU_TARGET=gfx90a CUPY_NUM_BUILD_JOBS=32
+utils/timeit.sh cupy compile -- bash -c "cd projects/cupy/src && python setup.py build_ext --inplace -v"
+```
+
+- EXIT 0, same configure summary (cuda 71626385, cub 400700, nccl 23007, random, thrust and dlpack Yes).
+- Compared with the 225236c47 build log of this platform (tree and job paths normalised): the 128 g++ compile and link lines and the 3 hipcc `Command: [...]` lines are **byte-identical**. `CUPY_CACHE_KEY` is bad50f9b in both. The warning lines are identical (474 lines matching `warning`). The same 64 `.so` files. `nm -D --defined-only` of every `.so` is identical (6930 lines, `__hip_cuid_*` excluded).
+
+### Tests (same pytest recipe as 225236c47; `ulimit -c 0`, `CUPY_TEST_GPU_LIMIT=1 CUPY_TEST_FULL_COMBINATION=0`, `CUPY_CACHE_DIR` and `TMPDIR` on `/dev/shm`, `-n 16 -rfEX --timeout 600 -p no:cacheprovider`)
+
+| target | a6e01258f | 225236c47 (this platform) |
+|---|---|---|
+| install_tests + import_tests | 31 passed, 1 skipped | 31 passed, 1 skipped |
+| cupy_tests/core_tests | 130 failed, 2861 passed, 528 skipped, 14 xfailed (524 s) | 130 failed, 2861 passed, 528 skipped, 14 xfailed |
+
+- core_tests failures: 127 test_bfloat16, 1 test_dlpack TestNewDLPackConversion, 2 TestArrayElementwiseOp (`test_pow_python_scalar_fastpath[3]`, `[3.0]`). The same classes and counts as 225236c47, all classified as upstream's at 24a62ef95. All 31 TestElementwiseGUFuncLike tests pass (the 4ccded519 fix holds).
+- The 225236c47 counted rerun kept no junit file, so this comparison is by class and count from that record, not per test id. Every one of the 130 failing ids is also a failure in the surviving junit file of that job's first (disk-full) run.
+- Same outcomes, so the full suite was not re-run.
+
+### Other gates
+
+- CUDA compile gate: not run here (no CUDA toolkit); the delta is Python type annotations only, and no compile or link line changed.
+- Jargon: `python3 utils/jargon.py --port cupy` clean (fork `main` 6efc0a448 fetched locally). Docs unchanged by the delta.
+- Integrity: `git -C projects/cupy/src status --porcelain` shows no modified tracked files (only in-place build output).
+
+**Verdict: linux-gfx90a completed at a6e01258f.**

@@ -8,7 +8,7 @@
   "ext_type": "setuptools-cuda",
   "stage": "review-passed",
   "adopted_at": "2026-11-04T22:34:29Z",
-  "updated_at": "2026-11-10T20:25:13Z",
+  "updated_at": "2026-11-10T20:28:37Z",
   "head_sha": "a6e01258f5bd5a90b1e1804f36dc1d22d73aa57f",
   "depends_on": [],
   "waivers": {},
@@ -16,11 +16,11 @@
     "linux-gfx90a": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "225236c47072362bfd596d8f2d1c7b13f8d86784",
+      "validated_sha": "a6e01258f5bd5a90b1e1804f36dc1d22d73aa57f",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-11-09T21:34:07Z",
-      "updated_at": "2026-11-09T21:34:07Z",
+      "completed_at": "2026-11-10T20:28:37Z",
+      "updated_at": "2026-11-10T20:28:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -36,6 +36,30 @@
       },
       "state": "completed",
       "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "225236c47072362bfd596d8f2d1c7b13f8d86784",
+      "failed_sha": null,
+      "started_at": "2026-11-05T17:27:29Z",
+      "completed_at": "2026-11-10T10:03:34Z",
+      "updated_at": "2026-11-10T20:00:36Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "state": "completed"
     },
     "linux-gfx1201": {
       "blocked": false,
@@ -83,30 +107,6 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
-    },
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "225236c47072362bfd596d8f2d1c7b13f8d86784",
-      "failed_sha": null,
-      "started_at": "2026-11-05T17:27:29Z",
-      "completed_at": "2026-11-10T10:03:34Z",
-      "updated_at": "2026-11-10T20:00:36Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer",
-      "state": "completed"
     }
   },
   "fork_url_ruling": {
@@ -130,6 +130,5 @@
     "since": "2026-11-10T19:56:02Z",
     "at": "2026-11-10T20:00:36Z"
   },
-  "review_pr": "https://github.com/ROCm/cupy/pull/76",
-  "porting": null
+  "review_pr": "https://github.com/ROCm/cupy/pull/76"
 }
