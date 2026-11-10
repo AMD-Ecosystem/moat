@@ -2110,3 +2110,10 @@ Replica, scratch worktree `agent_space/gp5_rep` at d3658389 with `examples/nep_t
 `jargon.py -C gpumd-win5 --commits 5f6596ec..d3658389 --diff 5f6596ec...d3658389`: clean. CUDA gate: not run on this host (no toolkit use here; recorded by Linux validators). Docs unchanged. Integrity: no modified tracked file in the clone.
 
 State: windows-gfx1151 -> `completed` at d3658389.
+
+## Follow-up review PR opened 2026-11-10
+
+- Fork `master` fast-forwarded to upstream master 92c2d5ce (`gh repo sync`); upstream's 3 commits past d6cd2e36 are dftd3-only and touch no ported file.
+- Fork review PR https://github.com/AMD-Ecosystem/GPUMD/pull/1 (`moat-port` d3658389 -> `master`, 11 commits, CLEAN), title `[ROCm] Restore the HIP build and fix a host max() truncation in ILP_NEP`, body as jeff approved (agent_space draft, matches the notes draft plus the refreshed counts, TheRock#9865 and V100 paragraph) with the standard disclosure footer.
+- The first attempt stopped at the vocabulary gate: the follow-up delta 6231243f..moat-port is 1291 commits over the API. Fixed with a local fork clone plus moat main 2489715d (scan only `merge-base --independent` upstream parents: 332 -> 1, about an hour -> 7 s; old and new scans both found no hits).
+- Next: jeff's `/moat approve` on fork PR #1, then `upstream.py --publish --apply`.

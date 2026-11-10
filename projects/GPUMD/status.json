@@ -7,14 +7,9 @@
   "priority": 5.508,
   "ext_type": "make",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-11-10T18:12:33Z",
+  "updated_at": "2026-11-10T21:04:40Z",
   "head_sha": "d3658389dafad6735c8fa83aac86693ad49a0ed0",
-  "pr_url": "https://github.com/brucefan1983/GPUMD/pull/1538",
-  "pr_number": 1538,
-  "pr_opened_at": "2026-06-05T19:24:45Z",
-  "pr_merged_at": "2026-06-05T19:24:45Z",
   "waivers": {},
-  "pr_state": "merged",
   "license_clearance": {
     "approved_by": "jeffdaily",
     "at": "2026-08-06T02:33:28Z",
@@ -190,10 +185,22 @@
       "failed_sha": "5f6596ec7b656eac5f0c96df882f8bdda36565df"
     }
   },
-  "published_sha": "6231243fdaabe33217b44dce15aa75c138a3468b",
   "porting_released": {
     "arch": "linux-gfx1100",
     "since": "2026-11-10T16:56:29Z",
     "at": "2026-11-10T17:01:06Z"
-  }
+  },
+  "pr_history": [
+    {
+      "pr_url": "https://github.com/brucefan1983/GPUMD/pull/1538",
+      "pr_number": 1538,
+      "pr_state": "merged",
+      "pr_opened_at": "2026-06-05T19:24:45Z",
+      "pr_merged_at": "2026-06-05T19:24:45Z",
+      "published_sha": "6231243fdaabe33217b44dce15aa75c138a3468b",
+      "archived_at": "2026-11-10T21:04:35Z"
+    }
+  ],
+  "pr_round": 2,
+  "review_pr": "https://github.com/AMD-Ecosystem/GPUMD/pull/1"
 }
