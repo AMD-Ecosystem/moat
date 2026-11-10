@@ -360,3 +360,6 @@
 {"kind":"phase","ts":"2026-11-10T07:28:45Z","phase":"compile","seconds":27.964,"exit":0,"cmd":"bash -c cd ../leapw2/clean && bash ../plainrun.sh /d/Develop/moat/agent_space/leapw2/venv/Scripts/python.exe -m pip install -v -e . -Ccmake.define.LEAP_GPU=None -Cbuild-dir=build_cpu"}
 {"kind":"phase","ts":"2026-11-10T07:29:24Z","phase":"compile","seconds":27.776,"exit":0,"cmd":"bash -c cd ../leapw2/stock && bash ../plainrun.sh /d/Develop/moat/agent_space/leapw2/venv/Scripts/python.exe -m pip install -v -e . -Ccmake.define.LEAP_GPU=None -Cbuild-dir=build_cpu"}
 {"kind":"phase","ts":"2026-11-10T07:30:16Z","phase":"compile","seconds":33.674,"exit":0,"cmd":"bash ../leapw2/plainrun.sh /usr/bin/bash ../leapw2/plaincmake.sh"}
+{"kind":"phase","ts":"2026-11-10T07:38:23Z","phase":"cuda-compile","seconds":21.712,"exit":0,"cmd":"bash agent_space/scripts/build.sh agent_space/nvcc/w95 build"}
+{"kind":"phase","ts":"2026-11-10T07:38:24Z","phase":"cuda-compile","seconds":22.225,"exit":0,"cmd":"bash agent_space/scripts/build.sh agent_space/nvcc/base build"}
+{"kind":"phase","ts":"2026-11-10T07:38:24Z","phase":"cuda-compile","seconds":22.403,"exit":0,"cmd":"bash agent_space/scripts/build.sh agent_space/nvcc/port build"}
