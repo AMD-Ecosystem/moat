@@ -396,13 +396,20 @@ gfx90a. Route the f32 device sqrt through the correctly-rounded f64 `__dsqrt_rn`
 back; CDNA has fast f64 sqrt so the cost is negligible. (CV-CUDA: OpNormalize, L2
 PairwiseMatcher.)
 
-**clang for HIP defaults to `-ffp-contract=fast`** and forms FMAs ACROSS statements, where
-nvcc with `--fmad=true` contracts only within one expression. The extra contraction drifts
-results ~1 ULP from the CUDA build and CPU gold. MATCH UPSTREAM's setting rather than
-pinning one unconditionally: CV-CUDA needed `-ffp-contract=on` to match nvcc, while
-LC-framework's nvcc recipe uses `-fmad=false -mno-fma -ffp-contract=off`, so pinning `on`
-there would diverge. Integer-only components are unaffected. (CV-CUDA OpWarpPerspective;
-LC-framework.)
+**clang for HIP defaults to `-ffp-contract=fast`** and forms FMAs ACROSS statements -- and
+so does nvcc: with its default `--fmad=true`, `float d = a*b; r = d + c;` compiles to one
+`fma.rn.f32` in PTX and one FFMA in SASS (nvcc 12.8, sm_90; GPUMD), the same as the
+one-expression form. `-ffp-contract=on` is therefore STRICTER than nvcc, not a match for
+it: it fuses only within one source expression (clang emits `llvm.fmuladd` in the front
+end), while `fast` lets the backend fuse whatever survives inlining. FMA formation still
+differs between the compilers, so results can drift ~1 ULP from the CUDA build and CPU
+gold under either setting. MATCH UPSTREAM's setting rather than pinning one
+unconditionally: CV-CUDA's tests passed with `-ffp-contract=on`, while LC-framework's nvcc
+recipe uses `-fmad=false -mno-fma -ffp-contract=off`, so pinning `on` there would diverge.
+Choose `on` for what it guarantees: two template instantiations or call sites built from
+the same source expressions form the same FMAs. GPUMD's batched-vs-per-slot replica tests
+compare such instantiations bitwise and failed on gfx90a under `fast`. Integer-only
+components are unaffected. (CV-CUDA OpWarpPerspective; LC-framework; GPUMD.)
 
 **An exact float-equality branch fed by approximate division can HANG, not just drift.**
 HIP's `__fdividef` differs ~1 ULP from CUDA, so a downstream exact-equality test on the
