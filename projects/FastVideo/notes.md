@@ -38,3 +38,8 @@ Every compiled kernel is an NVIDIA-architecture-specific acceleration, and each 
 Decline, `already-supported`. Upstream maintains a ROCm platform with SDPA/FlashAttention backends and Triton routes for its video sparse attention, and an external contributor is actively landing AMD work, including MI355X tuning in open PR #1860. The CUDA-only kernels are Hopper TK, Blackwell PTX/FP4 and NCCL-device accelerations, and each has a working fallback on ROCm. The matrix's "sliding-tile attention" lead is moot: STA has been removed from the pipeline (#1124).
 
 Question for jeff (only if a different call is wanted): should MOAT offer a ROCm validation walkthrough for consumer RDNA (wave32) and Windows, plus routing for the SLA/BSA Triton backends on ROCm, as a docs/packaging contribution coordinated with the active contributor? The screen recommends not to, by default.
+
+## Ruling: validation project (Jeff Daily, 2026-11-10)
+
+Jeff Daily overrode the intake decline: FastVideo becomes a validation project. Validate upstream's ROCm platform support (#669) and the Triton video sparse attention path (#1851). Validate on every required gate (wave64, wave32, Windows) and fix what breaks; the fixes go on `moat-port` of a new AMD-Ecosystem fork. A person creates that fork, never an agent; the project waits in `awaiting-fork` until it exists, then `release-forks` moves it to `screened` for the planner.
+Jeff asked whether to transfer amd-wangfan/FastVideo instead. It holds one commit ("add vsa triton opt on gfx942", 2026-02-27) plus upstream merges, is 495 commits behind, and no upstream PR came from it; #1851 likely supersedes the commit. A new fork from current upstream is preferred; the commit can be compared against #1851 during validation.

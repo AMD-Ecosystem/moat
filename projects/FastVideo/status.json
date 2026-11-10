@@ -6,14 +6,37 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-06T01:01:59Z",
-  "updated_at": "2026-11-06T01:46:33Z",
+  "updated_at": "2026-11-10T18:16:04Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {},
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-10T18:16:04Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
   "license_spdx": "Apache-2.0",
   "license_spdx_history": [
     {
@@ -24,11 +47,11 @@
     }
   ],
   "intake": {
-    "verdict": "decline",
-    "reason": "already-supported",
-    "duplicate_effort": "upstream ROCm platform (AMD PR #669) + Triton VSA on ROCm (#1851, #1860 open); stale fork amd-wangfan/FastVideo",
-    "viable": false,
-    "summary": "Video-diffusion framework; upstream already has a ROCm platform (SDPA/FA) and Triton VSA routes, with active MI355X tuning (open PR #1860). Its CUDA kernels are optional Hopper TK/Blackwell/FP4/NCCL fast paths with ROCm fallbacks, and STA was removed upstream (#1124)",
-    "at": "2026-11-06T01:46:33Z"
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "upstream ROCm platform (#669, silogen) + Triton VSA on ROCm (#1851 merged, #1860 open); stale fork amd-wangfan/FastVideo",
+    "viable": true,
+    "summary": "Validation take-up ruled by Jeff Daily 2026-11-10: Validate upstream's ROCm platform support (#669) and the Triton video sparse attention path (#1851) on all required gates (wave64, wave32, Windows); fixes go to a new AMD-Ecosystem fork (requested, created by a person)",
+    "at": "2026-11-10T18:16:04Z"
   }
 }
