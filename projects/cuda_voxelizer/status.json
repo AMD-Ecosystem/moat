@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:03:06Z",
-  "updated_at": "2026-11-06T07:08:08Z",
+  "updated_at": "2026-11-10T00:35:16Z",
   "head_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2",
   "depends_on": [],
   "waivers": {},
@@ -149,5 +149,6 @@
     "arch": "linux-gfx1201",
     "since": "2026-11-05T08:19:36Z",
     "at": "2026-11-05T08:35:01Z"
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/cuda_voxelizer/pull/1"
 }
