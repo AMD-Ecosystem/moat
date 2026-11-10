@@ -700,7 +700,9 @@ ILP_NEP: under HIP, the host call `max(max_nep_rc, parambs[i].rc_radial)` (doubl
 
 HIP build: `utilities/nep_model_file.cu` reached `nep_utilities.cuh` without a runtime header (nvcc pre-includes one, hipcc does not), so the header now includes `gpu_macro.cuh`. The NEP-spin kernels pass 32-bit masks to `__syncwarp` and `__shfl_*_sync`; HIP requires 64-bit masks, and on a 64-lane wavefront the second 32-lane tile sits in lanes 32-63. A `gpuLaneMask()` macro in `gpu_macro.cuh`, the identity on CUDA, moves the mask to the right lanes, and one warp kernel now passes its 32-lane width to its shuffles explicitly. `makefile.hip` also builds `gpumd_replica` like the default makefile, and compiles with `-ffp-contract=on`: hipcc's default (`fast`) also fuses multiply-adds across statements, which on an MI250X (gfx90a) rounds the per-slot and batched instantiations of the replica NEP kernels differently and fails the bitwise batched-versus-per-slot replica tests; `on` fuses only within one source expression, so both instantiations form the same multiply-adds.
 
-Besides the `fmax` line, the CUDA build sees only the extra include, the identity macro, an explicit width equal to the default, and a comment in `main_replica/force/ewald.cu` explaining why its uploads from local host vectors need no stream synchronization.
+Replica PRD: `PRD_Driver::initialize_slot` zero-filled the per-atom forces with a kernel on the default stream, unordered with the force computed on the slot's non-blocking stream, so some replicas could resume from a zero force; it now synchronizes the device after the allocation, which made batched and per-slot PRD runs identical on a Radeon 8060S (gfx1151, Windows), where they differed, and the race is timing-dependent on any GPU, CUDA included.
+
+Besides the `fmax` line and that synchronization, the CUDA build sees only the extra include, the identity macro, an explicit width equal to the default, and a comment in `main_replica/force/ewald.cu` explaining why its uploads from local host vectors need no stream synchronization.
 
 Testing on an AMD Instinct MI300X (gfx942), from the repository root:
 
@@ -715,7 +717,7 @@ python3 tests_regression/run_regression.py --repo-root "$PWD" --suite full --bas
 
 gpumd, nep, gpumd_replica and tb build. The replica tests pass 16 of 16 on the MI300X and on an MI250X (gfx90a) when run with the NEP4 and qNEP4 example models from cd7f757d and eda8e04b, because gpumd_replica rejects the current example models. The pytest runs used calorine from its master branch, because calorine 4.1 cannot read the `format_version 1` model files now in `tests_pytest/fixtures`. The NEP-spin tests pass 110 of 114, including the FP64 reference checks, and `python3 -m pytest tests_pytest -m "not slow"` passes 866 with the same 4 failures. In the full regression suite, 247 of the 256 cases pass, including `ilp_nep_cutoff_below_nep`, and the relations pass 25 of 25. The remaining failures are of two kinds. Cases that depend on the default `rand()` stream (the four `test_corrector_preserves_force_modifiers` cases, `replicate_velocity_unseeded`, `graphene_hac`, `graphene_nemd_shc`, `graphene_hnemd_shc`, `silicon_liquid_transport`) differ between runs on some ROCm builds, because the runtime reseeds the C library's `rand()` when it prepares its internal kernels on the first launch; they pass when that reseed is suppressed. The others are float-atomic summation noise at or just above absolute bounds that the regression README asks to be checked by self-comparison on the target GPU: `qnep_pppm_future_bec` (BEC 1.17e-5 against 1e-5, or one unit in the last printed digit of a thermo value printed to six decimals), `pppm_round_exact` and `pppm_round_5_7` (thermo 1.1e-7 to 1.6e-7 against 1e-7) and `train_nep_pbte_ediff` (one unit in the last printed digit of a test force); they vary between runs, and `qnep_pppm_future_bec`, `train_nep_pbte_ediff` and `pppm_round_5_7` passed on a rerun. The same class covers `observer_average_two_runs` and `observer_average_then_observe_control` (when either fails, the four `observer_*` relations are skipped) and `train_charge_vdw_mixed`: the small-box NEP path accumulates per-atom virial with double `atomicAdd`, so the last digit of one atom's virial in second.xyz varies between runs, and the trainer's atomic accumulation likewise moves the last printed digit of a training loss.
 
-(Before presenting: the head is now 5f6596ec (3b0f1908 plus `-ffp-contract=on` in `makefile.hip` at 458683da, plus comment-only corrections at 5f6596ec), so every gate needs revalidation there; refresh the MI300X counts from the gfx942 run at 5f6596ec (the quoted ones are from 3b0f1908, without the flag) and confirm the replica 16/16 there (the MI250X 16/16 is the porter's gfx90a run at 458683da, same binaries as 5f6596ec). The mi355 nvcc PASS at 3b0f1908 stands: 458683da and 5f6596ec change only `makefile.hip`, which the CUDA build never reads. The PR-prep squash message must state the corrected reason for the flag (fuses only within one source expression, so both instantiations form the same multiply-adds), not 458683da's "as nvcc does by default". jeff's 2026-11-09 rulings on the rand() deferrals are applied: no GPUMD change, the body explains the 9 failures.)
+(Before presenting: the head is now 26547d27 (3b0f1908 plus `-ffp-contract=on` in `makefile.hip` at 458683da, comment-only corrections at 5f6596ec, and the PRD slot-allocation sync at 26547d27, a separate vendor-neutral commit per jeff's 2026-11-10 ruling), so every gate needs revalidation there; refresh the MI300X counts from the gfx942 run at 5f6596ec (the quoted ones are from 3b0f1908, without the flag) and confirm the replica 16/16 there (the MI250X 16/16 is the porter's gfx90a run at 458683da, same binaries as 5f6596ec). The mi355 nvcc 12.8 full build at 26547d27 passes (porter 2026-11-10 entry). The PR-prep squash message must state the corrected reason for the flag (fuses only within one source expression, so both instantiations form the same multiply-adds), not 458683da's "as nvcc does by default". jeff's 2026-11-09 rulings on the rand() deferrals are applied: no GPUMD change, the body explains the 9 failures.)
 
 ## CUDA compile check (nvcc 12.8) at 51018103
 
@@ -1732,3 +1734,38 @@ The two different magnitudes in the validator's runs (4e-4, 1e-3) came from two 
 
 ### Recommendation
 A one-line ordering fix: `CHECK(gpuDeviceSynchronize());` (or `gpuStreamSynchronize(0)`) after `allocate_memory_gpu` in `PRD_Driver::initialize_slot`, or once in `Replica_Runtime::initialize` before `compute_force` to cover both drivers. It is correct on CUDA too. The race is upstream's code, so per the scope rule it belongs in an upstream issue/PR (GPUMD is active); carrying it on moat-port as a separate commit is the alternative if the windows gate should pass before upstream takes it. jeff's call. Not a known-nondeterminism note: the per-slot result is the physically correct one and the batched (and replica 0/1) results are wrong on this platform.
+
+Ruling (jeff, 2026-11-10): carry the PRD slot-allocation ordering fix on `moat-port` as its own vendor-neutral commit; no separate upstream PR.
+
+## Porter 2026-11-10 (linux-gfx950, mi355) -- PRD slot-allocation race (windows-gfx1151 validation-failed), 5f6596ec -> 26547d27
+
+jeff asked for this run. Host: MI355 (gfx950), CUDA 12.8 (V12.8.93) at `/usr/local/cuda-12.8`, TheRock pip SDK, `HIP_VISIBLE_DEVICES=1` (dispatcher-pinned), `ulimit -c 0`. `orient.sh` (on `port/GPUMD`) completed normally; `set-state GPUMD linux-gfx950 porting --agent porter` took the lock. Fresh fork clone, `moat-port` = 5f6596ec, `protect-fork` installed, local `master` from `origin/master`, `pr-state` merged.
+
+### Change
+Fork 26547d27 `Order replica slot allocation before slot-stream work` (53 chars, no `[ROCm]`: shared code, not ROCm-specific): `CHECK(gpuDeviceSynchronize());` after `allocate_memory_gpu(...)` in `PRD_Driver::initialize_slot` (`src/main_replica/replica_prd.cu:656-658`) with a one-line comment that the force zero fill runs on the default stream. No `USE_HIP` guard. `gpuDeviceSynchronize` wrapped in `CHECK` is the idiom `main_replica/main.cu:151,181` and `GPU_CHECK_KERNEL` use; the project has no default-stream-only sync idiom. Body: problem, cause, fix, "Authored with Claude.", Test Plan with fenced commands; `prose.py` and `jargon.py -` clean.
+
+Other drivers checked: `replica_remd.cu:471-473` (`REMD_Driver::initialize_slot`) follows the allocation with the blocking `copy_from_host`, which is ordered after the default-stream fill (a pageable host-to-device copy syncs the stream before it starts), so REMD does not have the race; unchanged. `replica_batch.cu:443-458` resizes without a fill value (no kernel) and then uses blocking `copy_from_host`; `replica_common.cu:239-241` likewise resizes without a fill. Only PRD has the pattern.
+
+### Build and tests (gfx950)
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx950 -j128
+
+rc 0, 0 errors. gpumd 14715984, nep 3251088, tb 314616, gpumd_replica 2494368 B (+96 B over 5f6596ec).
+
+Replica, from a detached worktree with `examples/nep_train/nep.txt` from cd7f757d and `examples/qnep_train/nep.txt` from eda8e04b (worktree removed after), `GPUMD_REPLICA=<clone>/src/gpumd_replica`:
+- `python3 tests_regression/replica/test_replica.py -v`: **16/16 OK** (57.8 s), `test_batched_matches_per_slot_prd` ok.
+- `-k test_batched_matches_per_slot -k test_split_resume_is_exact` (remd, prd, split-resume), 3 runs in a row: **3/3 OK each** (14.4, 15.4, 14.6 s). No hang this time (cf. the earlier gfx950 hang note).
+This host never showed the race; the gfx1151 validator's rerun is the evidence that it is fixed there.
+
+### CUDA compile (nvcc 12.8, compile only, no NVIDIA GPU)
+    export PATH=/usr/local/cuda-12.8/bin:$PATH
+    utils/timeit.sh GPUMD compile -- make -C <worktree of 26547d27>/src -j128 CUDA_ARCH=-arch=sm_90 all
+
+rc 0, full build and link of gpumd 27322192, nep 8705816, tb 1613592, gpumd_replica 4750176 B; `replica_prd.o` compiled; no compile errors or host warnings; the 4 link lines print only the `prior to sm_75` deprecation notice (upstream's link lines carry no arch). PASS.
+
+### Gates
+- Draft follow-up PR body: one paragraph for 26547d27 (the race, the gfx1151 observation, timing-dependent on any GPU) and the CUDA-visible sentence now names the synchronization; the reminder names head 26547d27 and the nvcc pass here. `prose.py` and `jargon.py -` on the body: clean.
+- `python3 utils/jargon.py --port GPUMD`: only the 2 known hits in upstream's 725fe762. `jargon.py -C projects/GPUMD/src --commits 5f6596ec..moat-port --diff 5f6596ec...moat-port`: clean.
+- Integrity: `git -C projects/GPUMD/src status --porcelain` shows no modified tracked file.
+- Pushed 5f6596ec..26547d27 to `moat-port` (fast-forward, pre-push hook passed; `ls-remote` = 26547d27). `advance-head GPUMD 26547d27...`.
+
+Next: review of 26547d27, then revalidation of every gate at 26547d27 (windows-gfx1151 must rerun `test_batched_matches_per_slot_prd`).
