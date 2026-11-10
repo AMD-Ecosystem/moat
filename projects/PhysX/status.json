@@ -6,14 +6,37 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-06T11:13:50Z",
-  "updated_at": "2026-11-06T11:23:58Z",
+  "updated_at": "2026-11-10T19:58:53Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {},
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-10T19:58:53Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
   "license_spdx": "BSD-3-Clause",
   "license_spdx_history": [
     {
@@ -24,11 +47,11 @@
     }
   ],
   "intake": {
-    "verdict": "decline",
-    "reason": "ported-elsewhere",
-    "duplicate_effort": "AMD-Ecosystem/PhysX rocm-enablement (AMD engineers, 2026-09-16, Instinct/Linux-only, not offered upstream)",
-    "viable": true,
-    "summary": "NVIDIA PhysX 5 physics SDK; AMD-owned AMD-Ecosystem/PhysX rocm-enablement ports the GPU simulation, validated MI300X/MI355X Linux; gaps are wave32 and Windows",
-    "at": "2026-11-06T11:23:58Z"
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": null,
+    "viable": null,
+    "summary": "take-up of AMD-Ecosystem/PhysX building on the AMD team's rocm-enablement branch (d09e2532), ruled by Jeff Daily",
+    "at": "2026-11-10T19:58:41Z"
   }
 }
