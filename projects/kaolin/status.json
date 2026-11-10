@@ -6,14 +6,37 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-06T11:00:55Z",
-  "updated_at": "2026-11-06T11:09:56Z",
+  "updated_at": "2026-11-10T21:15:34Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {},
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-10T21:15:34Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
   "license_spdx": "Apache-2.0",
   "license_spdx_history": [
     {
@@ -24,11 +47,11 @@
     }
   ],
   "intake": {
-    "verdict": "decline",
-    "reason": "ported-elsewhere",
-    "duplicate_effort": "AMD-Ecosystem/kaolin (AMD engineers, 2026-09-17, Instinct-only, not offered upstream)",
-    "viable": true,
-    "summary": "NVIDIA 3D DL PyTorch library; AMD-owned AMD-Ecosystem/kaolin already ports the full CUDA extension, validated MI300X/MI355X; gaps are wave32/Windows and warp-based physics",
-    "at": "2026-11-06T11:09:55Z"
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": null,
+    "viable": null,
+    "summary": "take-up of AMD-Ecosystem/kaolin building on the AMD team's rocm-enablement work (74a1b181, merged to fork master fcc9bfcd), ruled by Jeff Daily",
+    "at": "2026-11-10T21:15:34Z"
   }
 }
