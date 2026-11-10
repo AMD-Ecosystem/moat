@@ -1217,3 +1217,35 @@ Environment notes:
 `python3 utils/jargon.py --port GPUMD`: the 2 known hits in upstream's own 725fe762 (the fork's `master` mirror is still c5597219; the dispatcher owns it). `jargon.py -C projects/GPUMD/src --commits d6cd2e36..moat-port --diff d6cd2e36...moat-port`: clean. `prose.py` on the merge message and the updated draft PR body, and `jargon.py -` on the body: clean. `git status --porcelain` in the clone: clean. Pushed 374da0df..3b0f1908 (fast-forward), `advance-head` to 3b0f1908, stage `ported`.
 
 CUDA-visible changes this round: none beyond upstream's own and the previously reviewed delta (`git diff d6cd2e36 3b0f1908` is the 374da0df delta against c3d5d8ac, with `ilp_nep.cu` at its new path). The mi355 nvcc compile is owed at 3b0f1908 (expected: device code identical to d6cd2e36, host differences only the `fmax` codegen and `__LINE__` constants). Next: review of the merge, then revalidation of every gate at 3b0f1908. The draft follow-up PR body above (the one superseding the earlier draft) now carries this run's counts and the calorine note.
+
+## CUDA compile check (nvcc 12.8) at 3b0f1908
+
+Helper run on the mi355 fleet host (CUDA 12.8 toolkit, V12.8.93; no NVIDIA GPU), compile only, requested by jeff. Fresh clone of the fork's `moat-port` at **3b0f1908** (merge of upstream d6cd2e36 into 374da0df) vs `git worktree add ../up d6cd2e36` (upstream master, fetched by URL, no remote added). `git diff d6cd2e36 3b0f1908 -- src/` touches 8 files: the 070d3f53 delta (`gpuLaneMask` in `gpu_macro.cuh`, masks and explicit `warp_size` in `force/nep_spin/nep_spin.cu`, `nep_spin3_force.cuh`, `main_nep/nep_spin/nep_spin.cu`, the `gpu_macro.cuh` include in `utilities/nep_utilities.cuh`), the `fmax` line in `force/ilp/ilp_nep.cu` (new path), the three-line comment in `main_replica/force/ewald.cu`, and `makefile.hip`, which the CUDA build does not read.
+
+Recipe: same as the 374da0df entry (upstream's unmodified `src/makefile`, default `all`, `nvcc -std=c++14 -O3 -arch=sm_60 -Xcompiler="<makefile WARN_FLAGS>" -I./`), both trees built at the same time:
+
+    export PATH=/usr/local/cuda-12.8/bin:$PATH
+    utils/timeit.sh GPUMD compile -- make -C <clone>/src -j64 -O      # 3b0f1908, 19.6 s
+    make -C <clone-up>/src -j64 -O                                    # d6cd2e36
+
+| | 3b0f1908 | d6cd2e36 |
+|---|---|---|
+| make rc | 0 | 0 |
+| nvcc invocations (compile / link) | 229 / 4 | 229 / 4 |
+| objects | 229 `.o` | same 229 paths |
+| executables (in `src/`) | `gpumd` 24758096 B, `nep` 7972632 B, `tb` 1552152 B, `gpumd_replica` 4225736 B | same sizes |
+| nvcc errors | 0 | 0 |
+| nvcc warnings | 233, all `Support for offline compilation for architectures prior to '<compute/sm/lto>_75' will be removed` (one per invocation) | identical 233 |
+| host compiler warnings (makefile's -Wall -Wextra set) | none | none |
+
+The object count is down by one from the 374da0df entry (230) and the sizes changed because upstream reorganized `src/` in this range; both trees agree. Whole logs, sorted, with only the absolute tree prefix normalized: identical, so the nvcc diagnostics are identical for every file.
+
+Device code: the same section-hash method (`cuobjdump -xelf all` / `-xptx all` on all 229 objects; SHA-1 of every `.text.*`, `.nv.constant*`, `.nv.shared*`, `.nv.global*`, `.nv.info*` cubin section, read by a Python ELF parser, plus the full PTX, with the `_GLOBAL__N__<8hex>_` / `_INTERNAL_<8hex>_` tokens normalized). **All 4019 records identical: 855 kernel `.text` sections (9214400 B) and 229 PTX files.** The SHA-1 of empty input appears only on NOBITS sections (483 `.nv.shared*`, 359 of them size 0; 21 `.nv.global`), whose file body is empty by definition; no PROGBITS section hashed empty. (The 374da0df entry's NOBITS breakdown was 123 `.nv.shared*`; it probably counted only the non-empty ones, 124 here, but I have no script from that run to confirm. The comparison itself does not depend on that count.) Per changed TU: `force/nep_spin/nep_spin.o` 43 kernels / 118328 PTX lines, `force/ilp/ilp_nep.o` 11 / 17403, `main_nep/nep_spin/nep_spin.o` 2 / 783, `main_replica/force/ewald.o` 2 / 907; all identical.
+
+Host code (`objdump -dr --no-show-raw-insn`; only instruction addresses, branch/symbol offsets and the hash tokens are normalized, immediates kept). Three objects differ; the other 226 are identical:
+- `force/ilp/ilp_nep.o` (the `fmax` line): 151 hunks, 354 lines, more than the 8 lines at 374da0df because upstream rewrote the constructor around the line (`NEP_Model_File` parsing), so the changed codegen now cascades through register allocation. Every differing line is in `ILP_NEP::ILP_NEP` (`C1` and its `.cold` part); the substance is the same xmm0/xmm1 swap around `cvtss2sd 0x14(%rax,%r14,1)` (`double(parambs[i].rc_radial)`), and the rest are %rcx/%rdi renamings, spill-slot moves and alignment padding. Relocations (as a multiset) and the `call` sequence are identical, and every section has the same size (`.text` 42495 B, object total 1008512 B in both).
+- `force/nep_spin/nep_spin.o`: 47 `mov $imm,%ecx` constants (upstream 1261..2178), each +1. These are the `CHECK` macro's `__LINE__` after the line-wrapped `__shfl_down_sync` at line 834 (+5/-4 in that file). Undefined symbols are identical; `.text` 94875 B in both.
+- `main_replica/force/ewald.o`: two `__LINE__` constants, `0x117`/`0x114` and `0x12f`/`0x12c` (279/276, 303/300), the `GPU_CHECK_KERNEL` sites after `find_k_and_G` shifted +3 by the comment. Undefined symbols are identical; `.text` 10148 B in both.
+No other host differences: `main_nep/nep_spin/nep_spin.o` and every includer of `nep_utilities.cuh`/`gpu_macro.cuh` are identical (the edits there do not change any line count that `__LINE__` reaches, and `gpuLaneMask(m)` is `(m)` on CUDA).
+
+Not covered (as before): `main_nep/nep_spin/spin_specialized.cu` under `NEP_SPECIALIZED_RUNTIME_BUILD`. PASS: at 3b0f1908 the CUDA path builds with nvcc 12.8 exactly as upstream d6cd2e36 does, with identical device code and PTX. Host code differs only by the `fmax` codegen in `ilp_nep.o` and by `__LINE__` constants in `nep_spin.o` and `ewald.o`; there is no CUDA behaviour change against upstream. No platform states changed.
