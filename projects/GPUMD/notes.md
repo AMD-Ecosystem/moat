@@ -2091,3 +2091,22 @@ For the draft PR body (porter, not a validator edit): on gfx1100 the qNEP float-
 - Integrity: `git status --porcelain --untracked-files=no` empty in the clone and both worktrees, HEAD d3658389 in each.
 
 Result: **completed** at d3658389 on linux-gfx1100.
+
+## Validation 2026-11-10 (windows-gfx1151, validator) -- revalidate at d3658389, PASS
+
+jeff asked for this run. GPU: AMD Radeon 8060S (gfx1151, wave32 APU), `HIP_VISIBLE_DEVICES=0`, TheRock ROCm SDK, Windows 11. Fresh clone `agent_space/gpumd-win5` at **d3658389dafad6735c8fa83aac86693ad49a0ed0** (= `ls-remote moat-port`). Nothing pushed. Serial, one GPU process at a time, `ulimit -c 0`.
+
+### Build
+    utils/timeit.sh GPUMD compile -- bash agent_space/gp5_build.sh
+      # cd src; mingw32-make -f makefile.hip gpumd nep gpumd_replica HIP_ARCH=gfx1151 LDFLAGS="-L<rocm>/lib" CC="<rocm>/bin/hipcc.exe" CFLAGS="-O3 --offload-arch=gfx1151 -DUSE_HIP -std=c++17" -j8 -k
+rc 0, 0 errors. CFLAGS override carries no `-ffp-contract=on`. Compile lines (` -c `): 223 total; `-ffp-contract=on` on 25, all in the `main_replica` sub-make (the 25 `-o` targets are replica*.obj plus the replica copies of shared sources); the other 198 (gpumd and nep) carry none. gpumd 15802880 B, nep 4247552 B, gpumd_replica.exe 2703872 B. gpumd/nep copied to .exe, runtime DLLs staged next to them as before.
+
+### Tests (real gfx1151)
+Regression harness, serial, self-comparison, `--timeout-scale 3`, `--program gpumd`, cases ilp_nep_cutoff_below_nep neighbor_alias_aliased neighbor_alias_control nve nvt_ber nvt_nhc npt_ber_iso nvt_mttk: **8 passed, 0 failed**, relation neighbor_alias_translation_invariance PASS (9 s).
+
+Replica, scratch worktree `agent_space/gp5_rep` at d3658389 with `examples/nep_train/nep.txt` from cd7f757d and `examples/qnep_train/nep.txt` from eda8e04b (removed after), `GPUMD_REPLICA=<clone>/src/gpumd_replica.exe`, `python3 tests_regression/replica/test_replica.py -v -k test_batched_matches_per_slot -k test_split_resume_is_exact`, 3 runs: **3/3 OK each run** (11.0 s, 11.3 s, 11.2 s); `test_batched_matches_per_slot_prd` ok all three times (it failed 2 of 2 at 5f6596ec), remd and split_resume ok. This confirms 26547d27 (device sync in `PRD_Driver::initialize_slot`) fixes the race on the arch where it showed. No fault, hang or 719.
+
+### Gates
+`jargon.py -C gpumd-win5 --commits 5f6596ec..d3658389 --diff 5f6596ec...d3658389`: clean. CUDA gate: not run on this host (no toolkit use here; recorded by Linux validators). Docs unchanged. Integrity: no modified tracked file in the clone.
+
+State: windows-gfx1151 -> `completed` at d3658389.

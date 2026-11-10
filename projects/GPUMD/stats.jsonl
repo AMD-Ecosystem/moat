@@ -316,3 +316,4 @@
 {"kind":"phase","ts":"2026-11-10T17:33:21Z","phase":"test","seconds":765.521,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261110-090302-v5-flag-gpumd/moat/projects/GPUMD/src && python3 -m pytest tests_pytest/test_spin_*.py -p no:cacheprovider -q"}
 {"kind":"phase","ts":"2026-11-10T18:04:40Z","phase":"test","seconds":3302.849,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261110-090302-v5-flag-gpumd/moat/projects/GPUMD/src && python3 -m pytest tests_pytest -m 'not slow' -p no:cacheprovider -q"}
 {"kind":"session","ts":"2026-11-10T18:05:35Z","epoch":1794333935.088466109,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-10T18:12:34Z","epoch":1794334354.215046100,"event":"end","platform":"windows-gfx1151"}
