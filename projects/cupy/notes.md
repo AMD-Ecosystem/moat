@@ -873,3 +873,7 @@ Counts: **98067 passed, 254 failed, 0 error, 11521 skipped** (109842 junit recor
 Other gates: CUDA compile gate not run on this host (Linux validators carry it; the delta changes no CUDA branch). `jargon.py --port cupy` clean. Docs: install.rst Windows ROCm section unchanged and present.
 
 **Verdict: windows-gfx1151 completed at 225236c47.** No new port defects.
+
+## Review PR 2026-11-10
+
+Review PR opened by jeff's approval of the exact title and body: https://github.com/ROCm/cupy/pull/76 (`moat-port` -> `main`, 17 commits, 20 files, head `225236c47`, mergeable). Title: `[ROCm] Support building and running CuPy for ROCm on Windows`. Before approving, jeff asked about three points, answered in the session: the Windows SDK is TheRock 7.14.0a20260612 (the laptop pin, not a chosen trade-off; the Linux hosts run rocm-sdk 10.1.0, which reports HIP 7.16); device code uses hipcc to mirror upstream's Linux HIP build (deferral `cupy-hipcc-to-amdclang` still awaits a ruling); and b2cb1b3 goes upstream only through this PR. Not run: a Windows validation on a 10.x SDK. After the PR publishes, jeff notifies the ROCm/cupy owners (Ruling 6).
