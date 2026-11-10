@@ -940,3 +940,7 @@ Completion checks:
 - Documentation: `BACKEND=hip` build in `INSTALL_FROM_SOURCE.md`, `README.md`, `docs/source/developer-guidelines.rst`.
 - Integrity: `git -C projects/TornadoVM/src status --porcelain` shows only the untracked `tornado-compiler/utils/hiprtccheck/hiprtccheck`; no tracked file modified.
 - Not covered here (as at `af27a9f4b`): multi-GPU NCCL/RCCL (one pinned GPU), cuDF/cuVS on RDNA, the OpenCL-backend Mandelbrot/Julia comparison (unchanged code; done at `af27a9f4b`), amd-smi power (unchanged code; TestProfiler 9/9).
+
+## gfx1250 MMA validation 2026-11-10 (linux-gfx1250, MI450, `ee94c5c7f`): not run, GPU busy
+
+Requested by jeff: the same scope as the 2026-11-05 (`af27a9f4b`) gfx1250 MMA check, no role and no state change. Not run. The MI450 is shared with other teams and the job rule is to stop if anything else is on the GPU. `amd-smi process` at job start showed one foreign process on GPU 0: PID 62477, 890.0 MB VRAM, GFX usage 0 ns, not visible to `ps` inside this container (another container on the host). No build, no GPU command, nothing left behind. The check at `ee94c5c7f` (`make jdk21 BACKEND=hip`, `probe/mma/run.sh` with `--mutate`, `tornado-selftest`, the eight MMA classes) is still owed; rerun it when `amd-smi process` shows the GPU idle.
