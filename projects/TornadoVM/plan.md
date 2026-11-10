@@ -252,3 +252,6 @@ Try building ck-hip on Windows with Ninja (clang-cl, TheRock), limited to the gf
 
 ## Ruling 2026-11-05 (jeff): spin-wait detection edge cases
 Keep the current check (rejects only provable same-wavefront waits in 1D kernels). Do not pass the work-group shape into TcHook.compile. Document the two known false positives next to the check and in the programming.rst paragraph: a localIdx-only kernel launched with a 2D/3D work-group where a writer in another row releases the waiters, and a work-group too small for any thread to reach the wait. Add the 56-thread-row example as a test that documents the false positive.
+
+## Ruling 2026-11-09 (jeff): MMA tolerances where the hardware does not accumulate bit-exactly
+Use relative tolerances in the selftest MMA checks (Checks.mmaF16, Checks.mmaFp8) and the probe/mma harness where the hardware's internal accumulation is not exact: about 1e-6 for f16/bf16 on gfx11 (RDNA3/3.5 WMMA, 1-ulp differences measured on gfx1151) and 1e-4 for FP8 on gfx1250 (errors up to 6.6e-5 measured). Keep the exact encoding (every-byte) and layout (--mutate) checks. Document the accumulation precision in the HIP backend docs. Do not split the accumulation.
