@@ -8,8 +8,8 @@
   "ext_type": "python-warp",
   "stage": "porting",
   "adopted_at": "2026-11-05T22:48:53Z",
-  "updated_at": "2026-11-10T07:44:05Z",
-  "head_sha": "03bb17b08290babb82d18bb3e2adb25ff1a5194c",
+  "updated_at": "2026-11-10T07:54:09Z",
+  "head_sha": "d4aac6ccf4d717de7e0566d63f5df20d9f10ec02",
   "depends_on": [],
   "porting": {
     "arch": "linux-gfx942",

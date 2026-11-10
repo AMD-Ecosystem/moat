@@ -185,3 +185,85 @@ On NVIDIA Warp, `supports_graph_capture(device)` evaluates to exactly `device.is
 ### Corrections to the porter's dependency analysis
 
 - Gap 3 (Kamino) is wrong as written. The only production caller of `rcm_batch.create_rcm_batch_launch`, `llt_blocked_rcm_solver.py:516`, passes `use_cuda_graph=False`, so Kamino never reaches `create_cuda_graph_callback` (`rcm_batch.py:710-711`). Only the Kamino examples capture. There is a different possible Kamino defect on HIP, which I have not run: `_sync_threads` (`rcm_batch.py:62-68`) is `__syncthreads()` only under `#if defined(__CUDA_ARCH__)`, which HIPRTC does not define (no definition in AMD Warp `ac540f59`). The `complete_cuda` persistent kernel (`:321-407`, launched when `max_bfs_iters is None` and `device.is_cuda`) would then run with no block barriers on HIP. Record it as a Newton dependency candidate; it needs a run with Kamino before anyone draft-files it.
+
+## Porter round 2 (2026-11-10, linux-gfx942, porter role, answers "Review 2026-11-10")
+
+Fresh clone of `AMD-Ecosystem/IsaacLab` `moat-port` @ `03bb17b08` into this job's `projects/IsaacLab/src`; two commits added on top (no amend, no force push): `36a81e333` "[ROCm] Note the VBD solver gap and keep LD_LIBRARY_PATH in ROCm docs" and `d4aac6ccf` "[ROCm] List GPUs through PyTorch when nvidia-smi is missing in Ray". Pushed `moat-port` `03bb17b08..d4aac6ccf`; `git ls-remote` confirms `d4aac6ccf4d717de7e0566d63f5df20d9f10ec02`. The planner questions for jeff above are untouched and still open. Nothing was posted anywhere and nothing was pushed to a dependency repository.
+
+Test environment: the 2026-11-06 porter's Python 3.12 venv (torch 2.11.0+rocm7.13.0, AMD Warp ac540f59 built for gfx942) read in place, with `PYTHONPATH` set to this clone's `source/*` so every `isaaclab*` import resolved to this clone (checked via `__file__`), `HIP_VISIBLE_DEVICES=2`, `ulimit -c 0`, and the documented `ROCM_PATH` / prepended `LD_LIBRARY_PATH`. A separate venv (`$FLEET_VENV/py312`, ray 2.60.0 plus that venv's site-packages through a `.pth`) ran the Ray probe.
+
+### Finding by finding
+
+1. Docs (`36a81e333`): one sentence after the texture sentence says Newton's VBD solver does not run on HIP devices because its kernels fail to link (`nextafterf` undefined) and names MuJoCo Warp, XPBD and Featherstone as the working solvers; `export LD_LIBRARY_PATH=$ROCM_PATH/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}`. Re-run: `pytest -m kitless source/isaaclab_newton/test/assets/test_rigid_object.py -k vbd` = 2 failed (the two vbd cases, `ld.lld: error: undefined hidden symbol: nextafterf`), 1 passed, as the docs now say. With `LD_LIBRARY_PATH=/opt/nonexistent` before the documented prepend, Warp initialises (`ROCm 7.13, HIP driver 7.13`) and runs a kernel on MI300X. codespell clean; Sphinx build still not run (docs extra not installed).
+2. Ray (`d4aac6ccf`): `scripts/reinforcement_learning/ray/util.py` test mode uses `nvidia-smi` when `shutil.which` finds it, else lists the GPUs visible to PyTorch (`get_device_name`, `mem_get_info` free MB, serial `N/A`). Probe (job dir `work/probe/ray_test_mode.py`, local `ray.init`, `execute_job(..., test_mode=True)`): upstream raises `FileNotFoundError: [Errno 2] No such file or directory: 'nvidia-smi'`; patched logs `Name: AMD Instinct MI300X HF|Memory Available: 196140 MB|Serial Number N/A` and `Detected GPUs from PyTorch: 1`. On ROCm the fallback sees only visible GPUs, so the "isolation" comparison in that function never fires there; with `nvidia-smi` present nothing changes. `wrap_resources.py:100` and `task_runner.py` only pass the string `"nvidia-smi"` as the job label to that test mode, so they need no change. ruff 0.14.10 check/format clean; `tools/changelog/cli.py check eed2d288...` rc=0 (scripts are not a changelog package).
+3. `surface.json`: 17 components moved to `covered`, each with its evidence; `owed` now holds only real work: `test:multi-gpu-training-smoke` (needs 2+ GPUs, every run was pinned to one), `test:tools-tests` (`isaaclab --test` never ran to completion), `benchmark:gpu-info-recorder` (below), `platform:wave32`, `platform:windows`. `benchmark:runtime-newton` now ran: `isaaclab benchmark runtime --task Isaac-Cartpole-Direct --num_envs 4096 --num_steps 1000 --warmup_steps 50 presets=newton_mjwarp` rc=0, 331,846 steps/s (std 34,091), 1000 iterations, 12.34 s wall, startup 0.46/9.66/11.10 s. `scripts:ray-multi-gpu` is covered by finding 2. `surface.py check IsaacLab` = fully accounted for.
+4. Bug drafts: below, "Drafts for jeff". Two of the five root causes differ from what the earlier notes said; see the correction.
+5. Lesson: `.claude/skills/cuda-to-rocm/references/validation.md`, new section "A source-built HIP library and a PyTorch wheel must load the same ROCm runtime" (on this branch).
+
+### benchmark:gpu-info-recorder: not final, design question for jeff
+
+`test_recorders.py` 18 passed at `d4aac6ccf`. But on ROCm the recorder has neither pynvml nor `nvidia-smi`: `cuda_version` reads `Unknown`, utilization is never recorded, and memory falls back to `torch.cuda.memory_allocated`, which misses Warp's allocations. The runtime benchmark above therefore prints `gpu_util 0.0 %` and `gpu_mem 0.00 GB`. `torch.cuda.utilization` / `device_memory_used` would work on ROCm through the `amdsmi` Python package, which the documented TheRock install does not ship (`ModuleNotFoundError: amdsmi`); a device-wide `torch.cuda.mem_get_info` fallback works today (measured: free drops by 1 GiB after a 1 GiB allocation) but changes upstream's last-resort semantics and its `test_mem_peak_tracks_running_max`, which drives `memory_allocated` directly. Question for jeff: (a) leave it owed and document that GPU telemetry is unavailable on ROCm, (b) add an `amdsmi` path and put `amdsmi` in the ROCm install docs, or (c) change the fallback to `mem_get_info` and adjust the upstream test. Left `owed`, not decided by an agent.
+
+### Correction to "AMD Warp and dependency gaps" 1 and 2 (measured this round)
+
+Probe (job dir `work/probe/nextafter_probe.py`, one `wp.func_native` snippet per run on MI300X with AMD Warp ac540f59): `#if defined(__CUDA_ARCH__)` is FALSE in AMD Warp's HIPRTC kernel compile, `#if defined(__HIP_DEVICE_COMPILE__)` is TRUE; `return nextafterf(value, INFINITY);` compiles and returns `1.0000001` (Warp's `cuda_crt.h` mapping works); `__ocml_nextafter_f32` also works; `return __builtin_nextafterf(value, INFINITY);` fails `ld.lld: error: undefined hidden symbol: nextafterf`. Newton's `newton/_src/solvers/vbd/interval_arithmetic.py:37-60` writes `#if defined(__CUDA_ARCH__) nextafterf(...) #else __builtin_nextafterf(...) #endif`, so on HIP it takes the CPU branch. Gap 1 is therefore not `cuda_crt.h:1096`; it is a device-code guard that only knows CUDA. AMD Warp's own headers already guard with `!defined(__CUDA_ARCH__) && !defined(__HIP_DEVICE_COMPILE__)` (`warp/native/crt.h:19,30`, `tile_fft.h:316`). Gap 2's compile half is the same class inside AMD Warp: `warp/native/texture.h:817` `sample_2d` uses `#if defined(__CUDA_ARCH__)` alone, so the HIP device compile takes the CPU branch and calls the host function `cpu_sample_2d_channel_at_level`. The reviewer's Kamino `_sync_threads` candidate (`rcm_batch.py:62-68`) is the same pattern and is consistent with this measurement; it has still not been run.
+
+Skill candidate for the reviewer to judge (not promoted this round): in Warp-based projects, `wp.func_native` snippets and Warp headers that pick device code with `__CUDA_ARCH__` alone take the host branch under AMD Warp's HIPRTC; grep for `__CUDA_ARCH__` in native snippets and add `|| defined(__HIP_DEVICE_COMPILE__)`.
+
+### Drafts for jeff (not filed; MOAT posts nothing to these repositories)
+
+Each draft is for jeff to file or forward to the AMD Warp owners (or the AMD Newton fork owners for D) if he chooses. Repository: `AMD-Ecosystem/warp` unless stated, branch `amd-integeration-dev` @ `ac540f595ff5763a374c113d77e4111a1d4791bd`.
+
+#### Draft A: build_lib.py ignores --rocm-path when a CUDA Toolkit is installed
+
+====
+Title: build_lib.py builds CUDA instead of HIP when a CUDA Toolkit is present, even with --rocm-path
+
+On a Linux host that has both ROCm and a CUDA Toolkit (here `/usr/local/cuda`), `python build_lib.py --rocm-path "$ROCM_PATH" --hip-arch=gfx942` does not build the HIP backend. `build_lib.py:490-491` calls `find_cuda_sdk()` whenever `--cuda-path` is not given, and `find_cuda_sdk()` returns the first of `WARP_CUDA_PATH`/`CUDA_HOME`/`CUDA_PATH`, `which nvcc`, or `/usr/local/cuda`. Then `build_lib.py:507` sets `enable_hip = bool(rocm_path) and cuda_path is None`, so an explicit `--rocm-path` loses to an auto-detected toolkit. `--no-cuda` cannot be used to opt out because it also clears `rocm_path` (`build_lib.py:487`).
+
+Expected: an explicit `--rocm-path` (or `--hip-arch`) selects the HIP backend and skips CUDA Toolkit detection, or a flag such as `--no-cuda-toolkit` exists that keeps ROCm enabled.
+
+Workaround used: run the build through a wrapper that replaces `build_lib.find_cuda_sdk` with `lambda: None`, or build on a host with no CUDA Toolkit.
+====
+
+#### Draft B: HIPRTC kernel builds need ROCM_PATH under the TheRock Python wheel layout
+
+====
+Title: HIPRTC kernel compiles fail with 'float.h' file not found unless ROCM_PATH is set (TheRock wheels)
+
+With ROCm installed from TheRock's Python packages (`rocm[libraries,devel]==7.13.0` from repo.amd.com, no `/opt/rocm`), every Warp kernel launch on a HIP device fails at JIT time with `fatal error: 'float.h' file not found`. `warp/_src/build.py:_hip_extra_include_dirs` looks for the clang resource directory and the HIP headers only under `ROCM_PATH`, `ROCM_HOME`, `HIP_PATH` and `/opt/rocm`. Setting `ROCM_PATH=$(rocm-sdk path --root)` fixes it.
+
+Expected: Warp finds the ROCm root it was loaded against without an environment variable, for example from the directory of the loaded `libhiprtc`/`libamdhip64` or from `rocm_sdk` when it is importable, and names the missing root in the error when it cannot.
+====
+
+#### Draft C: warp.so needs libhiprtc-builtins.so.7 on LD_LIBRARY_PATH
+
+====
+Title: warp.so fails to load next to a TheRock PyTorch unless LD_LIBRARY_PATH includes the ROCm lib directory
+
+A HIP build of Warp links `warp.so` with `-lamdhip64 -lhiprtc -lhiprtc-builtins` (`warp/_src/build_dll.py:988-998`), and the result has `RUNPATH [$ORIGIN]` only. In a TheRock venv, `import torch` preloads `libamdhip64` and `libhiprtc` from the `_rocm_sdk_*` packages but not `libhiprtc-builtins.so.7`, so `import warp; wp.init()` fails with `Failed to load the shared library warp.so` unless `LD_LIBRARY_PATH` contains `$(rocm-sdk path --root)/lib`.
+
+Expected: `warp.so` loads without `LD_LIBRARY_PATH`, for example by resolving the ROCm libraries the same way the runtime locates the ROCm root (Draft B), by recording the build's ROCm lib directory in the RUNPATH, or by dropping the direct `libhiprtc-builtins` link if HIPRTC loads it itself.
+====
+
+#### Draft D: device code guarded by __CUDA_ARCH__ alone takes the host branch under HIPRTC (Newton VBD)
+
+Target: jeff's choice between `AMD-Ecosystem/warp` (make the convention explicit) and the AMD Newton fork `AMD-Ecosystem/newton` (fix the snippet); the defect lives in Newton's code but only shows on AMD Warp.
+
+====
+Title: Newton VBD fails to link on HIP: native snippet picks __builtin_nextafterf because __CUDA_ARCH__ is undefined under HIPRTC
+
+On AMD Warp (HIP backend, MI300X, ROCm 7.13), any Newton model that uses the VBD solver fails to build its kernels with `ld.lld: error: undefined hidden symbol: nextafterf`. `newton/_src/solvers/vbd/interval_arithmetic.py:37-60` (`next_float_up`/`next_float_down`) uses a `wp.func_native` snippet that calls `nextafterf` under `#if defined(__CUDA_ARCH__)` and `__builtin_nextafterf` otherwise. Warp's HIPRTC compile does not define `__CUDA_ARCH__` (it defines `__HIP_DEVICE_COMPILE__`), so the device build takes the CPU branch, and `__builtin_nextafterf` lowers to a call to `nextafterf` that has no device definition. Measured with one-line snippets: `nextafterf(1.0f, INFINITY)` returns `1.0000001` on HIP, `__builtin_nextafterf` fails to link.
+
+Fix: guard device code with `#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)`, as Warp's own headers do (`warp/native/crt.h:19`). The same pattern appears in `newton/_src/solvers/kamino/_src/linalg/factorize/rcm_batch.py:62-68` (`_sync_threads` emits `__syncthreads()` only under `__CUDA_ARCH__`), which would leave the persistent `complete_cuda` kernel without block barriers on HIP; not yet run.
+====
+
+#### Draft E: Warp textures on HIP: device creation unsupported and sampling kernels fail to compile
+
+====
+Title: Texture2D on HIP: wp_texture_create_device returns 801 and texture sampling kernels fail to compile
+
+On AMD Warp (HIP backend, MI300X, ROCm 7.13), `wp.Texture2D(..., device="cuda:0")` fails with `Warp CUDA error 801: operation not supported (in function wp_texture_create_device)`, and any kernel that samples a texture fails to compile with `warp/native/texture.h:827: error: reference to __host__ function 'cpu_sample_2d_channel_at_level' in __host__ __device__ function`. The compile failure comes from `texture.h:817`, where `sample_2d` selects the device path with `#if defined(__CUDA_ARCH__)` alone; HIPRTC does not define it, so the HIP device compile takes the CPU path. The suite already skips HIP for device textures (`warp/tests/cuda/test_texture.py:2885`). Downstream, Newton's Warp renderer cannot render textured meshes on AMD GPUs (Isaac Lab `test_newton_adapter.py`, `test_camera_output_contract.py::test_newton_hdr_background_preserves_unlit_geometry`).
+
+Expected: the texture headers guard device code with `__CUDA_ARCH__ || __HIP_DEVICE_COMPILE__`, and HIP device textures are implemented with HIP texture objects, or `Texture2D` on a HIP device raises a clear "not supported on HIP" error at creation and kernels that sample textures still compile.
+====

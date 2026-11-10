@@ -23,3 +23,6 @@
 {"kind":"session","ts":"2026-11-06T03:04:03Z","epoch":1793934243.917402213,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-10T07:14:46Z","epoch":1794294886.705620066,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-10T07:20:30Z","epoch":1794295230.436562531,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-10T07:44:10Z","epoch":1794296650.211924842,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-10T07:50:34Z","phase":"test","seconds":40.005,"exit":0,"cmd":"isaaclab benchmark runtime --task Isaac-Cartpole-Direct --num_envs 4096 --num_steps 1000 --warmup_steps 50 --output_path /var/lib/jenkins/fleet/jobs/mi300-20261109-234036-isaaclab-porter-r2b/work/bench presets=newton_mjwarp"}
+{"kind":"session","ts":"2026-11-10T07:54:09Z","epoch":1794297249.379254203,"event":"end","platform":"linux-gfx942"}

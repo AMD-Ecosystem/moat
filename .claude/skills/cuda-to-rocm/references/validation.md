@@ -341,6 +341,31 @@ instead of erroring -- so an unfetched `main` produces a false "clean", not a cr
 it first (`git fetch --depth 50 origin main:main`) and confirm the range resolves to a
 nonzero commit count before trusting a "clean" result. (mahout)
 
+## A source-built HIP library and a PyTorch wheel must load the same ROCm runtime
+
+**A process gets one `libamdhip64.so.7`. When a port builds a HIP library from source
+(Warp, a native extension, a JIT runtime) and the project also imports PyTorch, build the
+library against the ROCm that the PyTorch wheel brings, not against whatever ROCm the host
+happens to have.** IsaacLab on MI300X: AMD Warp built against the image's TheRock HIP 7.16
+plus `torch==2.11.0+rocm7.2` from download.pytorch.org fails in an order-dependent way --
+torch imported first and Warp prints `CUDA Toolkit 71626.38, Driver 70226.1 (insufficient
+CUDA driver version!)` and exposes no GPU; Warp imported first and torch raises
+`RuntimeError: No CUDA GPUs are available`. Neither message names the runtime clash, and
+both look like a broken port or a driver problem. Building Warp against apt ROCm 7.2
+instead, to match the wheel, stalled (hipCUB `DeviceReduce` compiling for over 25 minutes).
+
+What worked: TheRock's Python packages carry the SDK and a matching PyTorch together. Install
+`torch==X+rocmV`, `torchvision==Y+rocmV` and `"rocm[libraries,devel]==V"` from
+`https://repo.amd.com/rocm/whl/<gfx-family>/` (with uv, give that index as
+`--extra-index-url` next to PyPI as `--index-url`; uv favours the extra index, and the
+reverse resolves PyPI's CUDA torch). Then build the library with
+`ROCM_PATH=$(rocm-sdk path --root)`, and keep `ROCM_PATH` and `LD_LIBRARY_PATH=$ROCM_PATH/lib`
+(prepended) set at run time: a runtime compiler (HIPRTC) finds its headers through
+`ROCM_PATH`, and torch preloads `libamdhip64`/`libhiprtc` but not every library a
+separately built `.so` links (`libhiprtc-builtins.so.7` for Warp). Triage first: print
+which `libamdhip64` each import resolved (`/proc/<pid>/maps`, or the version each library
+reports) before rebuilding anything. (IsaacLab)
+
 ## A cached build-script decision from a wrong env var survives fixing the env var
 
 If a `build.rs` reads an env var (e.g. `ROCM_PATH`) to emit `cargo:rustc-link-search`, but

@@ -168,7 +168,76 @@
       "where": "AMD Warp has no Windows HIP build (dependency)"
     }
   ],
-  "covered": [],
+  "covered": [
+    {
+      "id": "install:rocm-kitless-recipe",
+      "evidence": "TheRock torch 2.11.0+rocm7.13.0 + rocm[libraries,devel]==7.13.0 + AMD Warp ac540f59 built for gfx942 + uv --no-sources --override install, documented in installation.rst (AMD GPUs with ROCm); used for every linux-gfx942 run (notes.md Environment recipe)"
+    },
+    {
+      "id": "package:isaaclab",
+      "evidence": "capture gates moved to supports_graph_capture; kitless sim tests, Warp-kernel unit tests and test_recorders (18 passed at d4aac6ccf) pass on linux-gfx942"
+    },
+    {
+      "id": "package:isaaclab_newton",
+      "evidence": "newton_backend / ray caster / frame transformer / renderer gates; test_articulation 37 passed, test_rigid_object 20 passed + 2 VBD failures (Newton native snippet, notes.md draft D), test_newton_manager 43 passed, test_newton_solvers 36 passed on linux-gfx942"
+    },
+    {
+      "id": "package:isaaclab_tasks",
+      "evidence": "test_microduck_velocity 3 passed; Isaac-Cartpole-Direct rsl_rl training and runtime benchmark run on linux-gfx942"
+    },
+    {
+      "id": "package:isaaclab_rl",
+      "evidence": "rsl_rl wrapper exercised by the Isaac-Cartpole-Direct training run (100 iterations, reward to episode cap) on linux-gfx942"
+    },
+    {
+      "id": "package:isaaclab_assets",
+      "evidence": "asset configs loaded by the microduck and cartpole environments and the Newton asset tests on linux-gfx942"
+    },
+    {
+      "id": "package:isaaclab_contrib",
+      "evidence": "one gate change (gb300_sharpa_insertion/ik.py); package installs and imports on linux-gfx942; no contrib test is Kit-less"
+    },
+    {
+      "id": "package:isaaclab_experimental",
+      "evidence": "warp_graph_cache eager on HIP; Warp parity tests (actions, events, observations, rewards, terminations) pass eager halves, capture halves skip on HIP, on linux-gfx942"
+    },
+    {
+      "id": "package:isaaclab_tasks_experimental",
+      "evidence": "no CUDA-specific code; installs and imports on linux-gfx942 (no change needed)"
+    },
+    {
+      "id": "package:isaaclab_visualizers",
+      "evidence": "particle_surface gate; test_newton_adapter fails on AMD Warp HIP textures (notes.md draft E) and test_newton_gl_dynamic_mesh needs a GL context absent on compute-only CDNA; both documented, neither is Isaac Lab code"
+    },
+    {
+      "id": "package:isaaclab_ppisp",
+      "evidence": "test_ppisp 14 passed, test_ppisp_kernels 7 passed on linux-gfx942"
+    },
+    {
+      "id": "test:kitless-marker-set",
+      "evidence": "10 of 12 files run on linux-gfx942 (notes.md GPU results); failures are the VBD and texture dependency defects and the missing GL context; the other two are multi-GPU (owed) and RTX (scoped out with _isaaclab_testing)"
+    },
+    {
+      "id": "test:warp-kernel-unit-tests-kitless-unmarked",
+      "evidence": "16 unmarked Warp-kernel files run on linux-gfx942, all pass or skip only the capture half (notes.md GPU results)"
+    },
+    {
+      "id": "example:rsl-rl-train-newton-smoke",
+      "evidence": "isaaclab train --rl_library rsl_rl --task Isaac-Cartpole-Direct --num_envs 4096 --max_iterations 100 physics=newton_mjwarp rc=0, reward 0.13 -> 4.94, episode length at cap (linux-gfx942)"
+    },
+    {
+      "id": "benchmark:runtime-newton",
+      "evidence": "isaaclab benchmark runtime --task Isaac-Cartpole-Direct --num_envs 4096 --num_steps 1000 --warmup_steps 50 presets=newton_mjwarp rc=0 at d4aac6ccf: 331,846 steps/s, 12.34 s wall (linux-gfx942); GPU util/mem fields read 0 on ROCm, see benchmark:gpu-info-recorder"
+    },
+    {
+      "id": "scripts:ray-multi-gpu",
+      "evidence": "util.execute_job test mode lists GPUs through PyTorch when nvidia-smi is absent (commit d4aac6ccf); verified with a local Ray instance on MI300X; upstream raised FileNotFoundError. wrap_resources/task_runner only pass the label 'nvidia-smi' to that test mode"
+    },
+    {
+      "id": "docs:rocm-install-section",
+      "evidence": "installation.rst 'AMD GPUs with ROCm' with VBD and texture limits and LD_LIBRARY_PATH prepend (36a81e333); codespell clean; Sphinx build not run (docs extra not installed)"
+    }
+  ],
   "scoped_out": [
     {
       "id": "package:isaaclab_physx",
@@ -193,84 +262,16 @@
   ],
   "owed": [
     {
-      "id": "install:rocm-kitless-recipe",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "package:isaaclab",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "package:isaaclab_newton",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "package:isaaclab_tasks",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "package:isaaclab_rl",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "package:isaaclab_assets",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "package:isaaclab_contrib",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "package:isaaclab_experimental",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "package:isaaclab_tasks_experimental",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "package:isaaclab_visualizers",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "package:isaaclab_ppisp",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "test:kitless-marker-set",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
       "id": "test:multi-gpu-training-smoke",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "test:warp-kernel-unit-tests-kitless-unmarked",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+      "reason": "needs two or more GPUs in one process; every linux-gfx942 run so far was pinned to one GPU by the fleet dispatcher. Owed to a validator run with 2+ GPUs visible"
     },
     {
       "id": "test:tools-tests",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "example:rsl-rl-train-newton-smoke",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "benchmark:runtime-newton",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+      "reason": "uv run isaaclab --test walks most of the repository and was stopped at the 20-minute background limit on 2026-11-06; the failures seen were missing optional modules (rl_games, skrl, sb3, teleop, mimic, ov*, cv2, rerun), the two dependency defects, and the recorder test since fixed. A full run to completion is owed"
     },
     {
       "id": "benchmark:gpu-info-recorder",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "scripts:ray-multi-gpu",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
-    },
-    {
-      "id": "docs:rocm-install-section",
-      "reason": "in scope per plan.md, not yet ported (planned 2026-11-05)"
+      "reason": "recorder runs on ROCm (test_recorders 18 passed) but reports cuda_version Unknown, no GPU utilization and memory from torch.cuda.memory_allocated only (Warp allocations invisible: the runtime benchmark shows gpu_util 0.0 %, gpu_mem 0.00 GB). Not final: a real fix needs either the amdsmi Python package (torch.cuda.utilization / device_memory_used use it on ROCm; the documented TheRock install does not ship it) or a device-wide torch.cuda.mem_get_info fallback, which changes upstream's last-resort semantics and its test_mem_peak_tracks_running_max contract. Design call for jeff (notes.md Porter round 2)"
     },
     {
       "id": "platform:wave32",
