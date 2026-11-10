@@ -298,3 +298,54 @@ The candidate is sound and applies beyond Warp. HIP device compiles (HIPRTC meas
 
 - NVIDIA no-regression run showing capture still engages (no compiled CUDA code, so no nvcc compile applies).
 - PR-prep squash notes from the first review still apply. Squash `36a81e333` and `d4aac6ccf` messages as written; they have no stale sentences.
+
+## Validation 2026-11-10 (linux-gfx942, validator role)
+
+Validated `moat-port` @ `d4aac6ccf4d717de7e0566d63f5df20d9f10ec02` on AMD Instinct MI300X HF (`gfx942:sramecc+:xnack-`), one GPU pinned by the dispatcher (`HIP_VISIBLE_DEVICES=2`), `ulimit -c 0`. Everything was built fresh in this job's own directory; nothing from earlier jobs was reused. Verdict: **pass**. 0 real failures. The only failures are the known AMD Warp gaps (Drafts D and E) and one display-stack environment failure.
+
+### Environment (built from scratch, job directory only)
+
+- Python 3.12 venv at `$FLEET_VENV/py312` (uv 0.12.23). `uv pip install --index-url https://pypi.org/simple --extra-index-url https://repo.amd.com/rocm/whl/gfx94X-dcgpu/ torch==2.11.0+rocm7.13.0 torchvision==0.26.0+rocm7.13.0 "rocm[libraries,devel]==7.13.0"`.
+- `ROCM_PATH=$(rocm-sdk path --root)`, `LD_LIBRARY_PATH=$ROCM_PATH/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}` (as documented).
+- AMD Warp `amd-integeration-dev` @ `ac540f595ff5763a374c113d77e4111a1d4791bd`, cloned into the job dir: `python build_lib.py --rocm-path $ROCM_PATH --hip-arch=gfx942 --no-use-libmathdx -j 48`, rc=0 in about 63 s. The host has `/usr/local/cuda`, so the build ran through a wrapper that sets `build_lib.find_cuda_sdk = lambda: None` (Draft A workaround; Warp tree unmodified). Warp reports `1.18.0.dev2`, `cuda:0 = AMD Instinct MI300X HF (192 GiB, gfx942:sramecc+:xnack-)`, `supports_graph_capture=False`; a doubling kernel returns `[2. 4.]`.
+- Isaac Lab: `uv pip install --no-sources --override rocm-overrides.txt -e ".[test,importers]" -e source/<each of the 12 workspace members>` with the documented overrides (torch, torchvision, `warp-lang @ file://<warp-rocm>`). Result: torch 2.11.0+rocm7.13.0, warp-lang 1.18.0.dev2, newton 1.8.0.dev0 (git `42f7def1`), mujoco-warp 3.15.0, mujoco 3.15.0, pillow 13.0.0, usd-exchange 3.0.1; 0 `nvidia-*` wheels.
+- Documented install command checked separately in a throwaway venv with an empty uv cache (`--dry-run`, verbatim from `installation.rst:616-626`, run from the checkout root): resolves 185 packages (newton at the pinned git sha, pillow 13.0.0, transformers 5.10.4, torch 2.11.0+rocm7.13.0). The command depends on being run from the checkout root, because uv then reads the checkout's `[tool.uv]` `index-strategy = "unsafe-best-match"` and `override-dependencies`. Run from another directory, it fails: the AMD index returns HTTP 403 for packages it does not host (`build`, `transformers`), and uv stops on a 403; it also offers only `pillow<=12.2.0`. The docs already say to work in the checkout, so this is not a docs defect. I hit it only because `utils/timeit.sh` changes directory.
+- Git LFS: no `git-lfs` on the host. The 202 LFS files under `source/*/test/` were fetched from `media.githubusercontent.com/media/isaac-sim/IsaacLab/d4aac6cc.../<path>`, each sha256-checked against its pointer (202/202 matched), and restored to pointers afterwards (`git checkout -- source`).
+
+### Kitless marker set (12 files at d4aac6cc; one pytest process per file, `-m kitless`)
+
+| file | passed | skipped | failed |
+|---|---|---|---|
+| isaaclab/test/sim/test_mjcf_converter.py | 11 | 0 | 0 |
+| isaaclab/test/sim/test_schemas_deprecation.py | 96 | 0 | 0 |
+| isaaclab/test/sim/test_urdf_converter.py | 18 | 0 | 0 |
+| isaaclab_newton/test/assets/test_articulation.py | 37 | 5 | 0 |
+| isaaclab_newton/test/assets/test_bam_actuator_mjwarp.py | 11 | 0 | 0 |
+| isaaclab_newton/test/assets/test_newton_actuators_newton.py | 37 | 0 | 0 |
+| isaaclab_newton/test/assets/test_rigid_object.py | 20 | 0 | 2 (Draft D) |
+| isaaclab_tasks/test/test_microduck_velocity.py | 3 | 0 | 0 |
+| isaaclab_visualizers/test/test_newton_adapter.py | 0 | 0 | 1 (Draft E) |
+| isaaclab_visualizers/test/test_newton_gl_dynamic_mesh.py | 0 | 0 | 1 (environment) |
+| **total (10 files run)** | **233** | **5** | **4** |
+
+- Draft D (2): `test_vbd_root_state_tracks_integrated_body[vbd-cuda:0]` and `[body-only-cuda:0]`: `ld.lld: error: undefined hidden symbol: nextafterf`, `CUDA kernel build failed with error code 6`.
+- Draft E (1): `test_newton_scene_camera_controls_apply_uniformly_to_active_copies[cuda:0]`: `Warp CUDA error 801: operation not supported (in function wp_texture_create_device, .../texture.cpp:205)`.
+- Environment (1): `test_dynamic_mesh_moves_after_growth_between_viewers[cuda:0]`: `pyglet.window.NoSuchConfigException: No standard config is available` (no GL context on this headless compute host; same as the porter's run).
+- Real failures: 0. Not run: `multi_gpu/test_multi_gpu_training_smoke.py` (one GPU pinned) and `_isaaclab_testing/test/rendering/test_visualizers_rtx.py` (RTX/OVRTX, out of scope).
+
+### Unmarked Warp-kernel suites (one process per file, no marker)
+
+test_warp_index_kernel 8 passed; test_warp_math 6 passed / 1 skipped; test_warp_memory 11 / 2; test_wrench_composer 37 / 1; test_ray_caster_kernels 16; test_shared_sensor_kernels 6 / 5; test_update_ray_caster_kernel 11; test_newton_manager 43 / 4; test_newton_solvers 36; test_ppisp 14; test_ppisp_kernels 7; benchmark/test_recorders 18; experimental mdp parity: actions 4, events 1 / 4, observations 0 / 9, rewards 4 / 16, terminations 6 / 4. Total **228 passed, 46 skipped, 0 failed**.
+
+All 51 skips (5 kitless + 46 unmarked) carry the single message `Warp cannot capture CUDA graphs on cuda:0.` (the port's `skip_without_graph_capture` guard; read from the junit XML). There are no other skip reasons.
+
+### Cartpole Newton training smoke
+
+`isaaclab train --rl_library rsl_rl --task Isaac-Cartpole-Direct --num_envs 4096 --max_iterations 100 physics=newton_mjwarp` rc=0, training time 76.56 s (the first iteration includes about 34 s of kernel JIT; about 0.2 s collection per iteration after that). Mean reward / episode length at iterations 0, 9, 24, 49, 74, 99: 0.13/12.8, -2.49/96.4, 2.59/171.0, 4.68/287.0, 4.93/300.0, 4.94/300.0. The policy reaches the 300-step episode cap, which matches the porter's run. No errors or tracebacks in the log; only `HIPRTC does not support precompiled headers` warnings (44) and rsl_rl `obs_groups` deprecation warnings.
+
+### Gates
+
+- CUDA compile gate: not applicable. The repository has no `.cu`/`.cuh`/`.hip` files (`git ls-files` count 0), and the port changes only Python, docs and changelog fragments (31 files, +191/-26 vs `eed2d288`). The NVIDIA runtime run showing that capture still engages is still owed, as earlier notes say.
+- Jargon: `python3 utils/jargon.py --port IsaacLab` = clean (local `main` ref at `eed2d288`, since the fork has no `main`).
+- Documentation: the ROCm build is documented in `installation.rst` "AMD GPUs with ROCm", next to the other install methods. The install command reproduces as described above.
+- Integrity: fork tree at `d4aac6cc` has no modified tracked files and no untracked files after the LFS restore.

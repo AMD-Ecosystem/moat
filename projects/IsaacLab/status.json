@@ -8,7 +8,7 @@
   "ext_type": "python-warp",
   "stage": "review-passed",
   "adopted_at": "2026-11-05T22:48:53Z",
-  "updated_at": "2026-11-10T08:03:50Z",
+  "updated_at": "2026-11-10T08:35:33Z",
   "head_sha": "d4aac6ccf4d717de7e0566d63f5df20d9f10ec02",
   "depends_on": [],
   "porting": null,
@@ -40,11 +40,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
+      "validated_sha": "d4aac6ccf4d717de7e0566d63f5df20d9f10ec02",
       "failed_sha": null,
       "started_at": "2026-11-06T01:12:51Z",
-      "completed_at": null,
-      "updated_at": "2026-11-10T08:03:50Z",
+      "completed_at": "2026-11-10T08:35:33Z",
+      "updated_at": "2026-11-10T08:35:33Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -58,7 +58,8 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer"
+      "last_agent": "validator",
+      "state": "completed"
     }
   },
   "license_spdx": "BSD-3-Clause AND Apache-2.0",
