@@ -335,3 +335,8 @@
 {"kind":"phase","ts":"2026-11-09T23:56:21Z","phase":"test","seconds":761.550,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261109-152623-v2-leap-216/moat/agent_space/cmp/head/unitTests && MPLBACKEND=Agg PYTHONPATH=/var/lib/jenkins/fleet/jobs/mi200-20261109-152623-v2-leap-216/moat/agent_space/pylib:../src python memory_leak_tests.py"}
 {"kind":"phase","ts":"2026-11-09T23:58:34Z","phase":"test","seconds":894.237,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261109-152623-v2-leap-216/moat/agent_space/cmp/headnotex/unitTests && MPLBACKEND=Agg PYTHONPATH=/var/lib/jenkins/fleet/jobs/mi200-20261109-152623-v2-leap-216/moat/agent_space/pylib:../src python memory_leak_tests.py"}
 {"kind":"session","ts":"2026-11-09T23:58:59Z","epoch":1794268739.990414873,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-09T23:48:09Z","phase":"compile","seconds":40.389,"exit":0,"cmd":"bash ../leapw/build.sh ../leapw/t1/b"}
+{"kind":"phase","ts":"2026-11-10T00:01:29Z","phase":"compile","seconds":38.895,"exit":0,"cmd":"bash -c source ../leapw/envb.sh; cd ../leapw/clean && python -m pip install -v -e . -Ccmake.define.LEAP_GPU=AMD"}
+{"kind":"phase","ts":"2026-11-10T00:03:19Z","phase":"compile","seconds":44.718,"exit":0,"cmd":"bash ../leapw/plain.sh"}
+{"kind":"phase","ts":"2026-11-10T00:07:34Z","phase":"test","seconds":12.220,"exit":0,"cmd":"bash ../leapw/gvc.sh"}
+{"kind":"phase","ts":"2026-11-10T00:08:26Z","phase":"test","seconds":9.804,"exit":0,"cmd":"bash ../leapw/pt.sh"}

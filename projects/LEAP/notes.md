@@ -3375,3 +3375,97 @@ bash utils/timeit.sh LEAP test -- bash -c "cd agent_space/cmp/<b>/unitTests && M
 - No fork push, no `gh` write, nothing in the shared Python. The editable leapct and matplotlib went into the job venv; numpy stays 1.26.4 there. Dump files are deleted and `/dev/shm/leapv2` is removed.
 
 validated_sha: 53037f009f4b1047db1aed46b47675cb3b477e64
+## Porter 2026-11-09 (windows-gfx1151, fix round moat-fix-216: Windows HIP configure with stock CMake, 53037f0 -> 95e6339)
+
+jeff's ruling: the Windows ROCm build must work with the documented command and no manual workaround. This round fixes item 1 of the windows-gfx1151 validation at b8595bb inside LEAP's build, so neither the venv patch of `Platform/Windows-MSVC.cmake` nor `CMAKE_VS_PLATFORM_TOOLSET` nor a user-chosen CXX compiler is needed. Two new commits on `moat-fix-216` (no amend/rebase; `moat-port` untouched at 00fae7e):
+- `be0ad2c` [ROCm] Configure the Windows HIP build with ROCm's clang++ -- new `cmake/LeapWindowsHip.cmake`, included from the top-level `CMakeLists.txt` BEFORE `project()` under `CMAKE_HOST_WIN32 AND LEAP_GPU matches AMD` (case-insensitive). It: stops with a message under CMake < 3.29 or a Visual Studio generator; finds the HIP clang++ (`CMAKE_HIP_COMPILER`, else `HIPCXX`, else `hipconfig --hipclangpath` with hints `HIP_PATH`, `ROCM_PATH`, and the directory of `Python_EXECUTABLE`/`Python3_EXECUTABLE` -- scikit-build-core passes the interpreter, and a pip-installed ROCm SDK puts `hipconfig.exe` beside it in `Scripts`; then `clang++` under that dir or `HIP_PATH`/`ROCM_PATH` `bin`/`lib/llvm/bin`); sets `CMAKE_CXX_COMPILER` to it unless `CMAKE_CXX_COMPILER` is defined (an env `CXX` is overridden); and, when neither `CMAKE_HIP_ARCHITECTURES` nor `HIPARCHS` is set, sets `CMAKE_HIP_ARCHITECTURES` from `amdgpu-arch` next to clang++. Top-level AMD branch: `if(WIN32) list(APPEND CMAKE_PREFIX_PATH "${CMAKE_HIP_COMPILER_ROCM_ROOT}")` after `enable_language(HIP)` (find_package(hip/hipfft) otherwise fail: there is no `<rocm>/bin` on PATH to derive the prefix from). `pyproject.toml`: `[[tool.scikit-build.overrides]] if.platform-system = "^win32"`, `if.failed = true`, `cmake.define.CMAKE_GENERATOR = "Ninja"` -- scikit-build-core picks the Visual Studio generator on Windows (CMake: "HIP language not currently supported by Visual Studio generator"), so the AMD build fails fast at the guard and is retried with Ninja; a Windows CUDA/CPU build succeeds on the first try and keeps its VS generator (upstream's `etc/win_build*.bat` use VS generators).
+- `95e6339` [ROCm] Document the Windows AMD GPU build -- README, under the editable-install AMD command: ROCm SDK (pip `rocm[devel]` in the same environment, or the HIP SDK which sets `HIP_PATH`), VS C++ build tools, CMake 3.29+, same command, native GPU default and `CMAKE_HIP_ARCHITECTURES` to override. The README hard-wraps at ~92 columns there; matched.
+Linux/macOS/CUDA/CPU configures do not reach any of it (all guarded by `CMAKE_HOST_WIN32`+AMD, `WIN32` inside the AMD branch, or a failed-Windows-build override). Not re-verified here: Linux AMD and nvcc (the dispatcher reruns them).
+
+Root cause (CMake 3.31.0 and 4.4.4, `Modules/Platform/Windows-Clang.cmake`; 4.4.4 line numbers): the file is include-guarded (lines 6-9), and the language that includes it first decides for all: lines 225-230 select `include(Platform/Windows-MSVC)` and an MSVC-style `__windows_compiler_clang_base` if ANY of C/CXX/CUDA/HIP has frontend variant MSVC; the consistency checks (`__verify_same_language_values`, lines 191-201: COMPILER_ID over C;CXX;HIP, FRONTEND_VARIANT over C;CXX;CUDA;HIP) also run only on that first include. LEAP does `project(leapct LANGUAGES CXX)` then `check_language(HIP)`/`enable_language(HIP)`: with cl.exe as CXX the HIP probe fails "mixes Clang and MSVC" (LEAP then says "LEAP_GPU=AMD requires a HIP compiler"); with clang-cl the checks are skipped and HIP inherits `__windows_compiler_msvc` -> `Windows-MSVC.cmake` line 538 FLAGS_INIT `/DWIN32 /D_WINDOWS`, debug `/Ob0 /Od /RTC1`, link `/machine:x64`. With ROCm clang++ as CXX too, every rule is GNU-style and stock CMake works. Further Windows gaps found: no `rocm_agent_enumerator` on Windows -> default arch silently gfx906 (open CMake issue #25325 covers the fallback in general); CMake < 3.29 links the HIP DLL without `-shared` (`Windows-Clang.cmake` gained `CMAKE_SHARED_LIBRARY_CREATE_${lang}_FLAGS "-shared"` in 3.29.0): 3.28.4 fails `lld-link: error: subsystem must be defined`, 3.25.2 the same, 3.23.3 (upstream's minimum) stops at the new version message; Windows HIP platform files first exist in 3.25. Standalone reproducers: `agent_space/cmkhip/src` (HIP only, works), `src2` (`project(x CXX HIP)`, cl and clang-cl), `src3` (`project(x CXX)` + `enable_language(HIP)`, clang-cl: the /DWIN32 failure); logs beside them.
+
+Verification (this laptop, clean clone of 95e6339 at `agent_space/leapw/clean`, fresh venv `agent_space/leap_w32b_venv` (numpy scipy imageio matplotlib only), env `agent_space/leapw/envb.sh` = VS 2022 x64 tools + the ROCm-SDK venv's `Scripts` on PATH, no CC/CXX/HIP_PATH/ROCM_PATH/HIPCXX/PYTORCH_ROCM_ARCH; `ulimit -c 0`, HIP_VISIBLE_DEVICES=0, one GPU process at a time):
+```
+bash utils/timeit.sh LEAP compile -- bash -c 'source ../leapw/envb.sh; cd ../leapw/clean && python -m pip install -v -e . -Ccmake.define.LEAP_GPU=AMD'
+#   rc=0, 49 s: VS 18 2026 generator -> "configure with -G Ninja" -> "retrying due to override" -> Ninja, CXX+HIP "Clang 23.0.0 with GNU-like command-line", 58/58, CMake 3.31.0 (system, chosen by scikit-build-core)
+bash utils/timeit.sh LEAP compile -- bash ../leapw/plain.sh    # cmake -S . -B build -G Ninja -DLEAP_GPU=AMD -DCMAKE_BUILD_TYPE=Release && cmake --build build -j 8, unpatched pip CMake 4.4.4; rc=0, 56 s, 58/58, 0 errors
+dumpbin /exports <site-packages>/leapctype/libleapct.dll and build/bin/libleapct.dll   # 338 functions / 338 names each (set_model present); 21 x hipv4-amdgcn-amd-amdhsa--gfx1151 (auto-detected)
+bash utils/timeit.sh LEAP test -- bash ../leapw/gvc.sh         # python ../run.py unitTests/gpu_vs_cpu_validate.py (editable install; loads site-packages/leapctype/libleapct.dll)
+bash utils/timeit.sh LEAP test -- bash ../leapw/pt.sh          # leap-scripts/pt_nodict.py (dump_point without dictionary)
+```
+`agent_space/leapw/run.py` is a test harness only: it preloads `amdhip64_7.dll` (`_rocm_sdk_core/bin`) and `hipfft.dll` (`_rocm_sdk_libraries/bin`) before running the script, because this host's System32 carries an older amdhip64_7.dll (the venv has no torch to preload it, unlike the earlier runs).
+- gpu_vs_cpu_validate: rc=0, **14/14 OVERALL: PASS**, 0 `Error: GPU`. adjoint parallel 7.01e-07/2.55e-07, fan 2.54e-07/3.81e-07, coneparallel 1.24e-03/2.59e-07, cone-flat 2.97e-06/1.52e-04, cone-curved 1.79e-03/2.58e-07, modular 2.87e-03/2.86e-03 (all = the b8595bb/53037f0 gfx1151 records); attenuated 3.43e-05; consistency 3.115/0.06119/3.004 (earlier gfx1151 runs gave 3.067/0.04434/2.988 in the torch312 env, which lacks scipy -- see next item).
+- dump_point without dictionary: rc=0, 14 ok, `upsample` FAILED (ctypes dtype, same everywhere). In the fresh venv all 19 arrays differ from `pt_b85.npz` because the fresh venv HAS scipy and torch312_venv does not ("scipy package cannot be found, so not included rotated objects"), so the FORBILD phantom gains its rotated objects. Control: the same installed DLL copied into a src copy and run the old way (torch312 python, `leap-scripts/run.py`) gives **19/19 arrays bit-identical to `pt_b85.npz`**.
+- Also: plain configure with CMake 3.29.2 + build rc=0 (58/58); CMake 3.28.4 configure OK, link fails as above (hence the 3.29 floor); 3.23.3 stops at the message. Compiler discovery also checked with the SDK venv's `Scripts` removed from PATH: via `-DPython_EXECUTABLE=<sdk venv python>` (finds `Scripts/hipconfig.exe`) and via `HIP_PATH=<_rocm_sdk_devel>` (finds `bin/hipconfig.exe`); both configure with gfx1151.
+- Not covered: the HIP SDK installer layout (no HIP SDK here; the clang++ fallback hints `HIP_PATH/bin` for it), the pip SDK installed in the SAME venv as the build (the job venv took the SDK from PATH; the Python_EXECUTABLE check covers the lookup), Windows CUDA (no NVIDIA here; untouched on first-try success by construction).
+- Runtime note (not a build issue, not changed): loading libleapct.dll needs the ROCm runtime DLLs findable (amdhip64_7.dll, hipfft.dll); upstream's loader falls back to `CDLL(winmode=0)`, so PATH works, and importing torch first works as before.
+`python utils/jargon.py --port LEAP`: clean. Pushed `moat-fix-216` 53037f0..95e6339. Integrity: fork clone `git status --porcelain` shows only untracked `build_cm/`.
+Skill lesson promoted to `cuda-to-rocm/references/fault-classes.md` (after the all-clang Windows HIP entry): the first-language-wins Windows-Clang rule, the in-project fix, the arch/prefix/3.29 gaps, and the scikit-build-core `if.failed` generator retry.
+
+## CMake issue draft (for jeff)
+
+Searched the Kitware tracker first (public API, read-only; searches "HIP Windows", "HIP Windows MSVC", "HIP clang-cl", "mixes Clang and MSVC", "HIP Visual Studio generator", "amdgpu-arch", and every HIP-titled issue). No existing issue covers this. Related: #24245 (open, HIP for the Visual Studio generators), #25325 (open, default `CMAKE_HIP_ARCHITECTURES` when `rocm_agent_enumerator` fails), #27826 (closed, `-fuse-ld=lld-link` and HIP `-fgpu-rdc` on Windows). Nothing posted; jeff files it.
+
+Title: `Windows-Clang: HIP with clang++ gets MSVC-style flags when CXX is clang-cl and enable_language(HIP) comes later`
+
+Body:
+
+````markdown
+On Windows, the HIP language works only when every enabled C/C++ compiler is the GNU-style `clang++`. With an MSVC-style C++ compiler the result depends on the order in which languages are enabled, and one order silently produces a HIP compiler that cannot compile anything.
+
+Environment: Windows 11, ROCm 7.13 SDK (TheRock Python wheels; `clang++.exe` and `clang-cl.exe` are Clang 23 from the same LLVM), Visual Studio 2022 build tools, Ninja. Reproduced with CMake 3.31.0 and 4.4.4.
+
+`x.hip`:
+
+```cpp
+#include <hip/hip_runtime.h>
+__global__ void k(float* p) { p[threadIdx.x] = 1.0f; }
+extern "C" __declspec(dllexport) int launch(float* p) { k<<<1, 32>>>(p); return hipDeviceSynchronize(); }
+```
+
+`CMakeLists.txt`:
+
+```cmake
+cmake_minimum_required(VERSION 3.29)
+project(x LANGUAGES CXX)
+enable_language(HIP)
+add_library(x SHARED x.hip)
+```
+
+```
+cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=<rocm>/lib/llvm/bin/clang-cl.exe -DCMAKE_HIP_COMPILER=<rocm>/lib/llvm/bin/clang++.exe -DCMAKE_HIP_ARCHITECTURES=gfx1151
+```
+
+Result with 4.4.4:
+
+```
+-- The CXX compiler identification is Clang 23.0.0 with MSVC-like command-line
+-- The HIP compiler identification is Clang 23.0.0 with GNU-like command-line
+CMake Error at .../Modules/CMakeTestHIPCompiler.cmake:71 (message):
+  The HIP compiler ... is not able to compile a simple test program.
+    clang++.exe -D_MBCS -D__HIP_ROCclr__=1 -isystem <rocm>/include /DWIN32 /D_WINDOWS --cuda-host-only /Ob0 /Od /RTC1 --offload-arch=gfx1151 ...
+    clang++: error: no such file or directory: '/DWIN32'
+    clang++: error: no such file or directory: '/D_WINDOWS'
+    clang++: error: no such file or directory: '/Ob0'
+    clang++: error: no such file or directory: '/Od'
+    clang++: error: no such file or directory: '/RTC1'
+```
+
+With 3.31.0 the compile step passes and the test link fails on `/machine:x64` instead (`clang++: error: no such file or directory: '/machine:x64'`).
+
+The same compilers in `project(x LANGUAGES CXX HIP)` fail cleanly with "The current configuration uses the Clang compiler tool with mixed frontend variants". With `cl.exe` as the C++ compiler, either order fails with "The current configuration mixes Clang and MSVC or some other CL compatible compiler tool". With `clang++.exe` as both compilers, the project configures and builds.
+
+Cause: `Modules/Platform/Windows-Clang.cmake` is include-guarded (`__WINDOWS_CLANG`), and the first language that includes it decides for all later ones. It selects `include(Platform/Windows-MSVC)` and an MSVC-style `__windows_compiler_clang_base` if any of C, CXX, CUDA or HIP has `COMPILER_FRONTEND_VARIANT` MSVC, and the `__verify_same_language_values` checks for mixed compiler IDs and frontend variants run only during that first include. When CXX (clang-cl) is enabled alone, the checks see no HIP compiler and pass; a later `enable_language(HIP)` reuses the MSVC-style macro, so `__windows_compiler_msvc(HIP)` gives the GNU-style `clang++` the cl-style `CMAKE_HIP_FLAGS_INIT` (`/DWIN32 /D_WINDOWS`), configuration flags and linker flags.
+
+Expected: the rules for a language should follow that language's own frontend variant, so HIP compiled by `clang++` gets the GNU-style rules (`__windows_compiler_clang_gnu`) whatever the C/C++ compiler is; clang-cl and cl.exe objects link with `clang++ -x hip` objects (they share the MSVC ABI), much as CUDA works next to cl.exe. Failing that, the mixed-frontend check should run whenever a language is enabled, so this order gets the same clear error as `project(x LANGUAGES CXX HIP)` rather than an unusable HIP compiler.
+
+This matters in practice because many projects enable HIP after `project()` (for example after `check_language(HIP)` to select a GPU backend), and on Windows the default C++ compiler is cl.exe, so a HIP build either reports that no HIP compiler exists or fails the compiler test. Projects currently have to set `CMAKE_CXX_COMPILER` to ROCm's `clang++` before `project()`.
+
+Two related Windows gaps, in case they belong elsewhere: the default `CMAKE_HIP_ARCHITECTURES` comes from `rocm_agent_enumerator`, which ROCm does not ship on Windows, so CMake falls back to the compiler's default (gfx906) instead of the GPU in the machine, while `amdgpu-arch.exe` next to `clang++.exe` reports it (see #25325); and before CMake 3.29 a Windows HIP shared library links without `-shared` (`lld-link: error: subsystem must be defined`; 3.28.4 fails, 3.29.2 works).
+````
+
+Optional short comment for #25325 (default arch), if jeff prefers to keep that part out of the new issue:
+
+```markdown
+On Windows this fallback is the normal path: ROCm does not ship `rocm_agent_enumerator` there, so a HIP project configured without `CMAKE_HIP_ARCHITECTURES` gets the compiler's default (gfx906 with ROCm 7.13's Clang 23) rather than the GPU in the machine, and the build then fails at run time. `amdgpu-arch.exe` (and `offload-arch.exe`) ships next to `clang++.exe` in the same ROCm install and prints the installed GPUs (`gfx1151` on a Radeon 8060S), so it could serve as the enumerator on Windows.
+```

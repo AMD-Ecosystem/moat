@@ -7,21 +7,21 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-09T23:58:59Z",
-  "head_sha": "53037f009f4b1047db1aed46b47675cb3b477e64",
+  "updated_at": "2026-11-10T00:25:05Z",
+  "head_sha": "95e633993fa36b3ab4547f091df2eb3ea08faa19",
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 644559794,
-  "stage": "review-passed",
+  "stage": "ported",
   "platforms": {
-    "linux-gfx90a": {
-      "state": "completed",
+    "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "53037f009f4b1047db1aed46b47675cb3b477e64",
-      "started_at": "2026-06-02T08:08:39Z",
-      "completed_at": "2026-11-09T23:58:59Z",
-      "updated_at": "2026-11-09T23:58:59Z",
+      "validated_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38",
+      "failed_sha": "b8595bb15253f44ebfd6c9cf549259137ec59ced",
+      "started_at": "2026-11-09T22:28:09Z",
+      "completed_at": "2026-11-05T04:56:46Z",
+      "updated_at": "2026-11-10T00:25:04Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -35,7 +35,32 @@
         "first_session_at": null,
         "last_session_at": null
       },
+      "state": "validation-failed",
       "last_agent": "validator"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "53037f009f4b1047db1aed46b47675cb3b477e64",
+      "failed_sha": null,
+      "started_at": "2026-11-04T17:10:14Z",
+      "completed_at": "2026-11-09T23:44:15Z",
+      "updated_at": "2026-11-09T23:44:15Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
     },
     "windows-gfx1101": {
       "state": "completed",
@@ -88,38 +113,14 @@
         "at": "2026-06-16T06:33:12Z"
       }
     },
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38",
-      "failed_sha": "b8595bb15253f44ebfd6c9cf549259137ec59ced",
-      "started_at": "2026-11-09T22:28:09Z",
-      "completed_at": "2026-11-05T04:56:46Z",
-      "updated_at": "2026-11-09T23:30:39Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "validation-failed",
-      "last_agent": "validator"
-    },
-    "linux-gfx942": {
+    "linux-gfx90a": {
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "53037f009f4b1047db1aed46b47675cb3b477e64",
-      "failed_sha": null,
-      "started_at": "2026-11-04T17:10:14Z",
-      "completed_at": "2026-11-09T23:44:15Z",
-      "updated_at": "2026-11-09T23:44:15Z",
+      "started_at": "2026-06-02T08:08:39Z",
+      "completed_at": "2026-11-09T23:58:59Z",
+      "updated_at": "2026-11-09T23:58:59Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -133,8 +134,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "state": "completed"
+      "last_agent": "validator"
     },
     "linux-gfx1100": {
       "state": "completed",
@@ -162,9 +162,9 @@
   },
   "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/1",
   "porting_released": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-09T22:44:48Z",
-    "at": "2026-11-09T22:51:26Z"
+    "arch": "windows-gfx1151",
+    "since": "2026-11-09T23:30:39Z",
+    "at": "2026-11-10T00:25:04Z"
   },
   "pr_approval": {
     "approved_by": "jeffdaily",
@@ -183,9 +183,5 @@
     "base_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38",
     "review_pr": null,
     "opened_at": "2026-11-09T17:37:15Z"
-  },
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-09T23:30:39Z"
   }
 }
