@@ -859,3 +859,17 @@ utils/timeit.sh cupy test -- bash -c 'cd "$1" && shift && exec "$@"' _ projects/
 **Verdict: linux-gfx90a completed at 225236c47.**
 
 - 2026-11-09: the Windows nan() bug is upstream clang's (__clang_hip_math.h _WIN32 branch); jeff opened llvm/llvm-project#240615 with the one-token fix and a test. TheRock #9849 reply (ScottTodd): hipcc is deprecated in TheRock; projects should call amdclang++ directly (docs/development/hipcc_migration.md). jeff: migrating CuPy from hipcc to amdclang++ is its own task, separate from the Windows port.
+
+## Validation 2026-11-10 (windows-gfx1151, validator): revalidate at 225236c47 against 24a62ef95
+
+Port: ROCm/cupy `moat-port` at **225236c47**, fork tree `git status --porcelain` empty. Same host and toolchain as the 24a62ef95 run (Radeon 8060S gfx1151, TheRock ROCm 7.14.0a20260612, Python 3.13 venv, MSVC 14.44).
+
+Build (the path the delta touched, editable install): `source agent_space/cupy_rocm_env.sh; utils/timeit.sh cupy compile -- python -m pip install -v --no-build-isolation -e projects/cupy/src` EXIT 0, `cupy/.data/_depends.json` present afterwards, `smoke.py` OK.
+
+Tests: same procedure as the 24a62ef95 section (driver `agent_space/cupy_val_all.sh` -> `cupy_val.sh`, per file, one pytest process at a time, `ulimit -c 0`, `CUPY_TEST_GPU_LIMIT=1 CUPY_GPU_MEMORY_LIMIT=25% CUPY_TEST_FULL_COMBINATION=0`, `-m "not slow and not multi_gpu" --timeout 1200`, stages ii, iii, iv in the same file order, texture last). 302 files.
+
+Counts: **98067 passed, 254 failed, 0 error, 11521 skipped** (109842 junit records). These equal the 24a62ef95 totals. Per-test comparison of the junit records (`agent_space/cupy_sum.py`): 0 new failures, 0 tests that failed before and now do not, same set of 109842 test ids. The 254 failures are therefore the same list classified at 24a62ef95 (243 identical on the Linux upstream base, 4 Windows/APU runtime or harness, 7 double `nan("")` toolchain defect). Nine files return pytest rc=5 (nothing collected), as before. No hang, TDR or bugcheck; the machine stayed responsive. The warm hiprtc cache made the run much shorter than the 11 h of the first run.
+
+Other gates: CUDA compile gate not run on this host (Linux validators carry it; the delta changes no CUDA branch). `jargon.py --port cupy` clean. Docs: install.rst Windows ROCm section unchanged and present.
+
+**Verdict: windows-gfx1151 completed at 225236c47.** No new port defects.
