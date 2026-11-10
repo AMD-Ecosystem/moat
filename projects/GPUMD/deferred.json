@@ -12,7 +12,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-05T16:55:02Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-10T04:34:23Z",
+        "note": "2026-11-09: no GPUMD code change; the PR body explains the 9 self-comparison failures; root cause goes to the comgr/TheRock report"
+      }
     },
     {
       "id": "comgr-llvm-srand-perturbs-host-rand",
@@ -25,7 +30,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-05T16:55:03Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-10T04:34:49Z",
+        "note": "2026-11-09: draft a ROCm/TheRock issue for jeff to file (build LLVM with arc4random/getrandom; a library should not reseed the process rand())"
+      }
     }
   ]
 }
