@@ -137,3 +137,11 @@
 {"kind":"phase","ts":"2026-11-10T08:11:44Z","phase":"compile","seconds":33.746,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/rx7900-20261110-000259-tornadovm-review10/build/src jdk21 BACKEND=hip"}
 {"kind":"phase","ts":"2026-11-10T08:12:09Z","phase":"test","seconds":18.099,"exit":0,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
 {"kind":"session","ts":"2026-11-10T08:13:13Z","epoch":1794298393.524176497,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-10T08:18:47Z","epoch":1794298727.344818527,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-10T08:22:20Z","phase":"compile","seconds":185.206,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-10T08:23:00Z","phase":"test","seconds":23.006,"exit":0,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
+{"kind":"phase","ts":"2026-11-10T08:24:06Z","phase":"cuda-compile","seconds":18.062,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261110-001505-tornadovm-val-gfx950/w/cuda-src jdk21 BACKEND=cuda,hip"}
+{"kind":"phase","ts":"2026-11-10T08:24:43Z","phase":"cuda-compile","seconds":17.591,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi355-20261110-001505-tornadovm-val-gfx950/w/cuda-src jdk21 BACKEND=cuda"}
+{"kind":"phase","ts":"2026-11-10T08:26:00Z","phase":"test","seconds":11.173,"exit":0,"cmd":"make -C projects/TornadoVM/src test-nogpu JDK=jdk21"}
+{"kind":"phase","ts":"2026-11-10T08:33:07Z","phase":"test","seconds":454.632,"exit":0,"cmd":"tornado-test --verbose --quickPass"}
+{"kind":"session","ts":"2026-11-10T08:34:13Z","epoch":1794299653.109328532,"event":"end","platform":"linux-gfx950"}

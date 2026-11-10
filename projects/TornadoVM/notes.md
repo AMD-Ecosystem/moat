@@ -875,3 +875,37 @@ Evidence on gfx1100 (job directory only; porter round 8's JDK recipe: Ubuntu 24.
   - +1 fp32 ulp at the ruled e5m2 element byte 0x81 row 1 col 1: ok (rel 1.2e-7 within 1e-6), as the ruling allows.
   - Exception forced to 0: `e5m2 every byte FAIL (3 wrong)`, the three ruled results only.
 - Hygiene: diff ASCII; no fork commit this round, so no jargon/prose check applies; fork clone has no modified tracked files after the runs.
+
+## Validation 2026-11-10 (linux-gfx950, MI355X, validator at `ee94c5c7f`)
+
+Revalidation after porter rounds 7-9 (`af27a9f4b..ee94c5c7f`: HIP `NativeCommandQueue` device-region copy sync, selftest MMA tolerances, `testCopyDevicePointersLargeRegion` and its javadoc) and the MOAT harness change of rounds 8-9. `classify af27a9f4b ee94c5c7f` = `mixed` (a HIP driver change), so a full run, not a carry-forward. Verdict: **completed**; every result matches or extends the `af27a9f4b` run on this host.
+
+Host and toolchain (job directory only): ROCm 10.1 TheRock wheels (`ROCM_PATH` = the image venv's `_rocm_sdk_devel`), Temurin 21.0.13+9 from the Adoptium API (download worked, so the apt-get recipe was not needed), job-local Maven repository, hipDF/hipVS from the AMD PyPI index `https://pypi.amd.com/rocm-7.2.3/packages/<pkg>/<wheel>` (`amd-libhipdf` 3.0.0, `amd-libhipmm` 4.0.0, `amd-rocmds-logger` 1.0.0, `amd-libhipvs` 1.0.0, `amd-libraft` 1.0.0; the simple index's hrefs are relative, `../../packages/...`), unpacked with `python3 -I -m zipfile -e`. `HIP_VISIBLE_DEVICES=3` (dispatcher pin, one MI355X gfx950:sramecc+:xnack-, wave64), `ulimit -c 0` for every GPU run. Run-time `LD_LIBRARY_PATH` = the five wheel `lib64` dirs, `$ROCM_PATH/lib/llvm/lib` and `$ROCM_PATH/lib`. Gotcha: without `$ROCM_PATH/lib` on it, `libcuvs_c.so` cannot resolve hipBLAS/hipSOLVER/RCCL/amdhip64 and TestCuVS reports 7 unsupported instead of failing; with it, 7/7. (libtornado-hipdf carries an rpath, so cuDF is unaffected.)
+
+Build: fresh clone of `AMD-Ecosystem/TornadoVM` detached at `ee94c5c7f` (= remote `moat-port`), `TORNADO_CK_REQUIRED=1 HIPDF_HOME=<wheels>/libcudf CMAKE_BUILD_PARALLEL_LEVEL=64 make -C projects/TornadoVM/src jdk21 BACKEND=hip`: BUILD SUCCESS, Maven 3:01 min (CK fetched, nine default targets); `libtornado-ck.so` and `libtornado-hipdf.so` in the SDK.
+
+| Run | `ee94c5c7f` | `af27a9f4b` (2026-11-06) |
+|---|---|---|
+| `bash projects/TornadoVM/probe/mma/run.sh` | `== PASS (gfx950)`. Code object `v_mfma_f32_4x4x4_16b_f16` x20, `_bf16` x4, `v_mfma_i32_4x4x4_16b_i8` x8. Bounds `f16/bf16 exact cases 0, random fp8 1e-05, other random 1e-05` and `every byte e4m3 0, e5m2 0 except bytes 0x81-0x83 0` (the gfx11 exception is 0 here). 0 of 53 failed; every-byte e4m3 and e5m2 worst rel 0. `--mutate`: 53 of 53 failed | PASS, 0 / 53, mutate 53 / 53 |
+| `tornado-selftest` | 20 pass, 1 skip (device launch); `tensor-cores/mma-f16` 32x32x64 and `mma-fp8` 16x16x64 PASS (bit-exact path, tolerance 0 on gfx950) | 20 / 1 |
+| MMA classes | TestMatrixMultiplicationMMA 18/0/0, MMABF16 7/0/0, MMAInt8 12/0/0, MMAFP8 8/0/0, MMACpAsync 8/0/0, TestMMAGlobalFragmentLoad 6/0/0, TestMMAInt8FragmentElementRead 4/0/0, TestMMAFragmentHelper 2/0/0 | same |
+| `tornado-test -V ...pointers.TestCopyDevicePointers` (twice) | 3/3 both times (testCopyDevicePointers, ...Matrix, ...LargeRegion); `#testCopyDevicePointersMatrix` alone 1/1 | 2/2 (LargeRegion did not exist) |
+| `tornado-test --verbose --quickPass` | 2188 ran: 1490 pass, 696 unsupported, 2 failed (ComputeTests testMandelbrot, testJuliaSets, whitelisted, the known FMA-contraction pair); rc 0, 454 s | 2187: 1489 / 696 / 2. The one extra pass is the new LargeRegion test |
+| Library and feature classes (ran / failed / unsupported) | TestCuBlas 27/0/0, TestCuBlasLt 10/0/0, TestCuFft 9/0/0, TestCuRand 7/0/0, TestCusparse 17/0/0, TestNccl 30/0/10 (one GPU), TestNcclMultiProcess 5/0/2, TestCuDnn 20/0/0, TestCutlass 26/0/0, TestCudf 24/0/0, TestCudfColumns 23/0/3 (ZSTD writes), TestCuVS 7/0/0, TestProfiler 9/0/0, TestProfilerTransferBytes 2/0/0, TestFP8 13/0/0, TestFP8ElementwiseCopy 1/0/0, TestUnsupportedKernelContextOps 10/0/3, TestDynamicParallelism 15/0/13, TestDynamicParallelismPipelines 4/0/4, `HeapFail#test03` (`-J"-Dtornado.device.memory=1MB"`) pass | identical |
+| `make test-nogpu JDK=jdk21` (with `tornado-compiler/utils/hiprtccheck/hiprtccheck` built first and nvcc on PATH) | BUILD SUCCESS, 0 failures; codegen LitTest 60/60, HipMmaRoutingTest 1/1, TcCompilerTest 29/29, frontend lit 12 | same |
+
+Not rerun: the Julia/Mandelbrot comparison against the OpenCL backend (review 1's request, answered at `af27a9f4b` on this host and on gfx1201); no code generation changed since, and the two failures are the same whitelisted pair.
+
+### CUDA no-regression gate at `ee94c5c7f`: pass
+
+Separate clone of the fork at `ee94c5c7f` in the job directory, real nvcc 12.8.93 (`/usr/local/cuda/bin/nvcc`, `CUDACXX` set), same JDK and Maven repository:
+- `TORNADO_CK_SOURCE_DIR=/tmp make jdk21 BACKEND=cuda,hip`: BUILD SUCCESS. `tornado-cutlass.cu` compiled by nvcc with `--generate-code=arch=compute_80,code=[sm_80]` and `[compute_80]` (`TornadoVM CUTLASS: arch=80-real;80-virtual`); the cuDNN and cuDF shims skip for missing NVIDIA libraries, as at every earlier round; CK skipped (that `/tmp` is not a CK checkout) to keep the check short.
+- `make jdk21 BACKEND=cuda` with `ROCM_PATH`, `HIP_PATH` and `HIPDF_HOME` unset: BUILD SUCCESS, no HIP or CK module in the reactor, `libtornado-cutlass.so` in the SDK.
+- `git diff --stat origin/develop...ee94c5c7f -- tornado-drivers/{cuda,ptx,opencl,metal} tornado-native-libs/{cudf-jni,cudnn-jni,cutlass-jni}` is empty; `af27a9f4b..ee94c5c7f` touches only `docs/source/programming.rst`, tc-selftest `Checks.java`, the HIP `NativeCommandQueue.java` and `TestCopyDevicePointers.java`. The clone was deleted afterwards.
+
+### Completion checks
+
+- `python3 utils/jargon.py --port TornadoVM`: clean (after `git branch -f develop origin/develop` and `moat-port origin/moat-port` in the clone, so the range resolves); `-C projects/TornadoVM/src --commits origin/develop..ee94c5c7f` and `--diff origin/develop...ee94c5c7f`: clean.
+- Documentation: `BACKEND=hip` is documented in `README.md`, `INSTALL_FROM_SOURCE.md` and `docs/source/developer-guidelines.rst`, next to the CUDA build.
+- Integrity: `git -C projects/TornadoVM/src status --porcelain` shows only the untracked `hiprtccheck` binary; no tracked file modified.
+- Not covered here: multi-GPU NCCL/RCCL (one pinned GPU).
