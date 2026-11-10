@@ -7,7 +7,7 @@
   "priority": 5.508,
   "ext_type": "make",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-11-10T17:01:06Z",
+  "updated_at": "2026-11-10T17:40:07Z",
   "head_sha": "d3658389dafad6735c8fa83aac86693ad49a0ed0",
   "pr_url": "https://github.com/brucefan1983/GPUMD/pull/1538",
   "pr_number": 1538,
@@ -52,11 +52,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "26547d27313b6d21051795a8614f5ed6c7e4dd89",
+      "validated_sha": "d3658389dafad6735c8fa83aac86693ad49a0ed0",
       "failed_sha": null,
       "started_at": "2026-11-05T16:10:30Z",
-      "completed_at": "2026-11-10T16:21:09Z",
-      "updated_at": "2026-11-10T16:21:09Z",
+      "completed_at": "2026-11-10T17:40:07Z",
+      "updated_at": "2026-11-10T17:40:07Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

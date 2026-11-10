@@ -1969,3 +1969,44 @@ Tests (real gfx1100, job venv: calorine from source at 1c94125 (reports 4.1), as
 - `python -m pytest tests_pytest/test_nep_seed.py::test_same_seed_gives_the_same_model` (clone root, release nep), 5 runs: **5/5 passed** (26547d27 on this host: 5/10 failed).
 
 Integrity: `git -C projects/GPUMD/src status --porcelain --untracked-files=no` empty, HEAD d3658389. Next: revalidation of every gate at d3658389.
+
+## Validation 2026-11-10 (linux-gfx942, validator) -- revalidate at d3658389, PASSED
+
+jeff asked for this run. Host: MI300X (gfx942, CDNA3, wave64), HIP 7.16.26385 / AMD clang 24.0.0git (TheRock pip SDK), `HIP_VISIBLE_DEVICES=2` (dispatcher-pinned), all GPU work under `ulimit -c 0`. `amd-smi process -g 2` showed no other process on the GPU at the start and at the end; no replica run hung or crashed. `orient.sh` (on `port/GPUMD`) completed normally (no hang) and named validator (`state=revalidate`). Fresh clone of AMD-Ecosystem/GPUMD detached at **d3658389dafad6735c8fa83aac86693ad49a0ed0** (= `origin/moat-port`); detached worktrees of the same commit for the DEBUG build (`agent_space/dbg`) and the legacy-model replica run (`agent_space/rep`; models reverted, both removed after). No fork edit, no push. Job venv only: calorine built from a source clone of gitlab materials-modeling/calorine at **1c94125** (the porter's commit; reports 4.1), ase 3.29.0, pytest 7.3.2, hypothesis 6.56.4. Full run: `classify GPUMD 26547d27 d3658389` = `unknown` (build-file change, compile flags differ), no carry-forward.
+
+### Builds (PR-body commands, gfx942, concurrently)
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx942 -j28
+    utils/timeit.sh GPUMD compile -- make -C agent_space/dbg/src -f makefile.hip HIP_ARCH=gfx942 -j28 gpumd nep CFLAGS="-O3 --offload-arch=gfx942 -DUSE_HIP -DDEBUG"
+
+Both rc 0 (40 s / 39 s), 0 errors; warnings only the known classes (100/96 lines: `-Wunused-value` nodiscard, `-Winconsistent-missing-override`). Release log: 229 compiles, `-ffp-contract=on` on exactly 25 (the `main_replica` sub-make); DEBUG log: no flag anywhere. Release: gpumd 15099704 B, nep 3447344 B, tb 315128 B (= the no-flag 3b0f1908 gfx942 sizes), gpumd_replica 2502560 B (= the flagged 26547d27 gfx942 size). DEBUG: gpumd 15099560 B, nep 3447296 B (= 3b0f1908 DEBUG).
+
+### Tests (real gfx942)
+| command | d3658389 | time | 26547d27 on gfx942 | 3b0f1908 on gfx942 |
+|---|---|---|---|---|
+| `GPUMD_REPLICA=<clone>/src/gpumd_replica python3 <clone>/tests_regression/replica/test_replica.py` (as-is) | **4/16**; all 12 failures stop at `REMD/PRD explicit streams support energy NEP4/NEP5 and qNEP4 models` | 19 s | 4/16 | 4/16 |
+| same, `agent_space/rep/tests_regression/replica/test_replica.py -v` with `examples/nep_train/nep.txt` from cd7f757d and `examples/qnep_train/nep.txt` from eda8e04b | **16/16 OK** (`test_batched_matches_per_slot_prd` ok) | 50 s | 16/16 | 16/16 |
+| same, `-k test_batched_matches_per_slot -k test_split_resume_is_exact`, 3 runs | **3/3 OK each run** (prd, remd, split-resume) | 14, 14, 20 s | 3/3 x3 | -- |
+| `python3 -m pytest tests_pytest/test_nep_seed.py::test_same_seed_gives_the_same_model` (clone root, release nep, GPU idle), 10 runs | **10/10 passed** (0/10 failed) | ~1.8 s each | 4/5 failed (5f6596ec: 6/10) | passed in the suite |
+| `python3 $D/tests_regression/run_regression.py --repo-root $D --suite full --baseline $D/src/gpumd --candidate $D/src/gpumd --baseline-nep $D/src/nep --candidate-nep $D/src/nep` (DEBUG, self-comparison, whole suite incl. FP64 transport cases; overlapped the spin and not-slow pytest) | **completed, 250/256 cases; relations 25/25** (none skipped; the `observer_*` relations ran and passed); `ilp_nep_cutoff_below_nep` PASS | 765 s | 247/256, 21+4 skipped | 250/256, 25/25 |
+| the 6 failures rerun (`--case` x6), plain | 0/6 | 63 s | 3/9 | 0/6 |
+| the 6 under the `LD_PRELOAD` srand no-op shim (`void srand(unsigned){}`) | 5/6 (only `qnep_pppm_future_bec`) | 67 s | 6/9 | 5/6 |
+| DEBUG `--case observer_average_two_runs --case observer_average_then_observe_control --case train_charge_vdw_mixed`, 10 rounds | **0/10 rounds with any failure**; relations 4/4 every round | 78 s total | observer pair failed in the full run | -- |
+| `python3 -m pytest tests_pytest/test_spin_*.py` (release, clone root) | **110 passed, 4 failed** (the 4 `test_corrector_preserves_force_modifiers`) | 139 s | 110/4 | 110/4 |
+| those 4 under the srand shim | **4 passed** | 7 s | 4/4 | 4/4 |
+| `python3 -m pytest tests_pytest -m "not slow" -p no:cacheprovider` (release, clone root) | **866 passed, 4 failed, 638 skipped, 10 deselected**: the 4 rand() spin cases only; the seed test passed | 1563 s | 865/5 (seed test) | 866/4/638/10 |
+
+Every failure classified, none new:
+- **rand() reseed** (deferral `gpumd-hip-runtime-reseeds-rand`, ruled defer; TheRock issue 9865): the 4 spin pytest cases (both pytest runs) and `replicate_velocity_unseeded` (final.xyz), `graphene_hac` (hac.out), `graphene_nemd_shc` (compute.out), `graphene_hnemd_shc` (kappa.out), `silicon_liquid_transport` (adf.out); the 5 fail again plain and all 9 pass under the shim.
+- **float-atomic noise at absolute bounds**: `qnep_pppm_future_bec` only, failing in all three runs, as at 3b0f1908 on this host: full run thermo.out field 47, 1.0e-6 vs atol 1e-7 (-16011.045805); plain rerun bec.xyz field 13, 1.38e-5 vs atol 1e-5; shim rerun bec.xyz field 13, 1.57e-5. Same fields and magnitudes as the 374da0df/3b0f1908/5f6596ec/26547d27 records.
+- **replica model header** (upstream `format_version 1`, platform-independent): the 12 as-is replica failures; 16/16 with the legacy models.
+
+Effect of the ruling (flag scoped to `gpumd_replica`): the cases the global flag made frequent are back to their 3b0f1908 behaviour on this host. Seed test 0/10 failed (5f6596ec 6/10, 26547d27 4/5); observer pair and `observer_*` relations 0/10 rounds plus the full run, so no observer failure to record; `train_charge_vdw_mixed` 0/10 plus the full run (on gfx90a it still fails without the flag, 2/5 in the porter's d3658389 run, so it stays in the PR body's float-atomic list). The batched replica tests keep passing with the flag on `gpumd_replica`. Regression and pytest counts equal the 3b0f1908 gfx942 validation exactly (250/256 + 25/25, 0/6 plain, 5/6 shim; 866/4/638/10; spin 110/114).
+
+### Gates
+- CUDA compile gate: the porter's mi355 nvcc 12.8 full build at 26547d27 is PASS; d3658389 changes only `src/makefile.hip` (`git diff --stat 26547d27 d3658389` = `src/makefile.hip | 21 ++++++++++++---------`), which the CUDA build does not read. Not repeated.
+- `python3 utils/jargon.py --port GPUMD` (local `master`/`moat-port` from origin): only the 2 known hits in upstream's own 725fe762. `jargon.py -C projects/GPUMD/src --commits 26547d27..d3658389 --diff 26547d27...d3658389` and `--commits d6cd2e36..d3658389 --diff d6cd2e36...d3658389`: clean.
+- Documentation: `doc/installation.rst:74,78` documents `make -f makefile.hip [HIP_ARCH=...]`, which builds all four targets with the makefile's own flags; unchanged.
+- Integrity: `git status --porcelain --untracked-files=no` empty in the clone and both worktrees (HEAD d3658389 in each) before the worktrees were removed.
+- Telemetry: the as-is replica entry exits 1 (the 12 known header failures), and the regression/pytest entries exit 1 for the classified failures above.
+
+Result: **completed** at d3658389 on linux-gfx942.
