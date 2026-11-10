@@ -7,7 +7,7 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-10T09:18:54Z",
+  "updated_at": "2026-11-10T09:27:09Z",
   "head_sha": "70ab397485760680867b95a405c33908a8aac3e7",
   "waivers": {},
   "license_spdx": "MIT",
@@ -91,11 +91,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "00fae7e90bb3da7873f63686e23eef111bfa5f38",
+      "validated_sha": "70ab397485760680867b95a405c33908a8aac3e7",
       "failed_sha": "b8595bb15253f44ebfd6c9cf549259137ec59ced",
       "started_at": "2026-11-09T22:28:09Z",
-      "completed_at": "2026-11-05T04:56:46Z",
-      "updated_at": "2026-11-10T08:25:01Z",
+      "completed_at": "2026-11-10T09:27:09Z",
+      "updated_at": "2026-11-10T09:27:09Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -109,7 +109,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "state": "validation-failed",
+      "state": "completed",
       "last_agent": "validator"
     },
     "linux-gfx90a": {

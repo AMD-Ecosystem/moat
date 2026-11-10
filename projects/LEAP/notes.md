@@ -3832,3 +3832,33 @@ bash utils/timeit.sh LEAP test -- bash agent_space/tests3.sh   # cd cmp/<b>/unit
 - No fork push, no `gh` write, nothing in the shared Python. The editable leapct went into the job venv and has been uninstalled. Dump files are deleted.
 
 validated_sha: 70ab397485760680867b95a405c33908a8aac3e7
+
+## Validation 2026-11-10 (validator, windows-gfx1151, revalidate, moat-fix-216 @ 70ab397)
+
+jeff asked for this run. Verdict: **completed** at 70ab397485760680867b95a405c33908a8aac3e7. The documented `python -m pip install -e . -Ccmake.define.LEAP_GPU=AMD` builds from a plain shell on the laptop (no Visual Studio variables, no Ninja/cl/rc on PATH), `gpu_vs_cpu_validate` is 14/14 PASS, `dump_point` is bit-identical to the b8595bb gfx1151 record in the old environment, leak delta 0 bytes. Nothing pushed, no `gh` write.
+
+Host: Windows 11, Radeon 8060S (gfx1151, wave32 APU), `ulimit -c 0`, HIP_VISIBLE_DEVICES=0, one GPU process at a time, each test run once. Fresh clone `agent_space/leapv/src` of the fork clone checked out at 70ab397 (`git status --porcelain` empty); fresh venv `agent_space/leapv/venv` (Python 3.12.10, numpy 2.5.4, scipy 1.18.1, imageio, matplotlib, `rocm[libraries,devel]==7.14.0a20260519` from https://rocm.nightlies.amd.com/v2/gfx1151/, so the SDK is in the same venv). Plain shell = `agent_space/leapv/plainrun.sh` (the porter's `env -i` runner with the venv path), CMake 3.31.0 from `C:\Program Files\CMake\bin`.
+
+### Commands
+```
+bash utils/timeit.sh LEAP compile -- bash -c 'cd ../leapv/src && bash ../plainrun.sh <venv>/Scripts/python.exe -m pip install -v -e . -Ccmake.define.LEAP_GPU=AMD'
+bash utils/timeit.sh LEAP test -- bash -c 'cd ../leapv/src && bash ../plainrun.sh <venv>/Scripts/python.exe ../run.py unitTests/gpu_vs_cpu_validate.py'
+... run.py leap-scripts/dump_point.py <src> pt_70a.npz           # venv python (scipy present)
+... torch312 python, leap-scripts/run.py dump_point.py <ctl> pt_70a_ctl.npz   # control, see below
+... run.py leak_check_ctypes.py <src>                            # leak_check.py with hipMemGetInfo via ctypes (venv has no torch)
+python3 utils/jargon.py --port LEAP                              # clean
+```
+`run.py` (copy of the porter's) preloads `amdhip64_7.dll` and `hipfft.dll` from the venv's `_rocm_sdk_core` / `_rocm_sdk_libraries_gfx1151` before importing the test script: this host's System32 runtime is older. Environment, not a port issue.
+
+### Results
+- Build: rc=0, `leapct-1.27.dev43+g70ab39748`, "Building project with Ninja" (ninja pulled into the build env by the backend), `[58/58] Linking HIP shared library bin\libleapct.dll`, 0 `error:` lines, `--offload-arch=gfx1151` auto-detected.
+- gpu_vs_cpu_validate: rc=0, 14/14, `OVERALL: PASS`, 0 `Error: GPU`. Adjoint figures equal the porter's f538223/70ab397 record: coneparallel 2.59e-07, cone-flat 1.52e-04, cone-curved 2.58e-07, modular VD 2.87e-03 (fbp_interior 0.9998), modular SF 2.86e-03 (0.9995), consistency cost 3.115 / 0.06119 / 3.004, attenuated 3.43e-05.
+- dump_point: rc=0, 14 ok, `upsample` FAILED (ctypes dtype, as on every platform), `dictionary` ran ok (1 element). Against `pt_b85.npz` (b8595bb) in the venv with scipy 1.18.1, every array differs (e.g. att_map_back rel 6.9e-02, eSF back rel 7.6e-02): the venv has scipy and the torch312 venv does not, so the FORBILD phantom gains its rotated objects (the porter's finding at 95e6339). Control, same as the porter's: the installed `libleapct.dll` plus the package's Python files copied to `agent_space/leapv/ctl` and run with torch312 python (no scipy) and the old `leap-scripts/run.py`: **ALL BIT-IDENTICAL against `pt_b85.npz`** (all arrays). Against `pt_63d.npz` (older source, 63d2724) 3 arrays differ at ULP level (downsample, downsample3 rel ~4e-07; eSF_cone_0.5_back rel 3.0e-03, 12034901/17432576 values), which `pt_b85` already contained as part of the b8595bb-era changes.
+- leak_check (200 project+backproject iterations, 64x64x90 parallel SF): free device memory 95740502016 before and after, delta 0 bytes; sum(g)=377330 (374102 in the earlier no-scipy record: same scipy phantom effect).
+
+### Not run
+- `unitTests/unit_tests.py`: skipped as large-memory for this APU (720 angles x 576 x 512 cone-beam, several full-size projection and volume copies, a CPU filter pass, and `plt.show()` blocking); `gpu_vs_cpu_validate` covers the same geometries at small size. `memory_leak_tests.py`, `verificationTests.py`, `dump_outputs.py` not run (dump_outputs not requested; Linux validators carried it at this head).
+- CUDA gate: no CUDA toolkit use here by procedure; the delta from the validated Linux heads is Windows-only build files.
+- Jargon scan clean; README documents the AMD build (`-Ccmake.define.LEAP_GPU=AMD`, Windows ROCm SDK note).
+
+validated_sha: 70ab397485760680867b95a405c33908a8aac3e7
