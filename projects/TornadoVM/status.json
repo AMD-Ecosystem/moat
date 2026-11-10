@@ -27,6 +27,30 @@
   },
   "stage": "review-passed",
   "platforms": {
+    "linux-gfx950": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d90e1d189db4362ec0f6c682865f8c8f4572a17d",
+      "failed_sha": null,
+      "started_at": "2026-11-04T19:14:44Z",
+      "completed_at": "2026-11-10T20:46:19Z",
+      "updated_at": "2026-11-10T20:46:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
+    },
     "linux-gfx1100": {
       "blocked": false,
       "blocked_reason": null,
@@ -72,38 +96,6 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
-    },
-    "linux-gfx950": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "78d852c66132326e4c78f376549ec8f7a7a72aba",
-      "failed_sha": null,
-      "started_at": "2026-11-04T19:14:44Z",
-      "completed_at": "2026-11-10T08:34:13Z",
-      "updated_at": "2026-11-10T19:49:10Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "state": "completed",
-      "carry_forward": {
-        "from": "620445bf1f6d0eb6eac0585d5708c998a3ab438f",
-        "to": "78d852c66132326e4c78f376549ec8f7a7a72aba",
-        "method": "source-class",
-        "class": "doc-only",
-        "detail": "no changes",
-        "at": "2026-11-10T19:49:10Z"
-      }
     },
     "linux-gfx1201": {
       "blocked": false,
@@ -181,6 +173,5 @@
       "evidence": "https://github.com/beehive-lab/TornadoVM/blob/master/LICENSE_APACHE2",
       "at": "2026-11-05T22:15:47Z"
     }
-  ],
-  "porting": null
+  ]
 }

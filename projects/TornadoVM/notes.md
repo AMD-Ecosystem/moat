@@ -1074,3 +1074,20 @@ tornado-test -V uk.ac.manchester.tornado.unittests.pointers.TestCopyDevicePointe
 Nothing differed, so no quickPass or library suites were run. Not rerun here (unchanged trees): the ck-hip classes (TestCuDnn/TestCutlass, ck-hip skipped by this recipe), the MMA probe, quickPass and library classes recorded at `ee94c5c7f`.
 
 Completion checks: `python3 utils/jargon.py --port TornadoVM` (after `git branch -f develop origin/develop` and `moat-port origin/moat-port` in the clone): clean. Documentation: the ROCm build stays documented in `INSTALL_FROM_SOURCE.md` and `docs/source/developer-guidelines.rst` (this delta updates their ROCm 10.1 / TheRock text). Integrity: `git -C projects/TornadoVM/src status --porcelain` is empty. CUDA no-regression gate: not owed for this delta (no CUDA or native source changed); last recorded pass at `ee94c5c7f`.
+## Validation 2026-11-10 (linux-gfx950, MI355X, validator at `d90e1d189`)
+
+Proportionate revalidation per review 12's advice. `classify` calls `78d852c66..d90e1d189` `mixed`, but `git diff --stat 620445bf1 d90e1d189` (620445bf1 is tree-identical to this host's last full run at `ee94c5c7f`, which the squash removed from the remote) touches only `INSTALL_FROM_SOURCE.md`, `docs/source/developer-guidelines.rst`, `tornado-assembly/src/bin/tornado.bat` and `tornado.py` (Windows-only paths in the launcher). Verdict: **completed**; every result matches the `ee94c5c7f` record.
+
+Host and toolchain (job directory only): ROCm 10.1 TheRock wheels (`ROCM_PATH` = `HIP_PATH` = the image venv's `_rocm_sdk_devel`), Temurin 21.0.13+9 from the Adoptium API, job-local Maven repository (`MAVEN_OPTS=-Dmaven.repo.local=<job>/m2`), `HIP_VISIBLE_DEVICES=1` (dispatcher pin, one MI355X gfx950, wave64), `ulimit -c 0` for every GPU run. No hipDF/hipVS wheels (not needed for these checks).
+
+Build: fresh clone of `AMD-Ecosystem/TornadoVM` detached at `d90e1d189` (= `origin/moat-port`), `CMAKE_BUILD_PARALLEL_LEVEL=64 TORNADO_CK_SOURCE_DIR=/tmp make -C projects/TornadoVM/src jdk21 BACKEND=hip`: BUILD SUCCESS, 20.9 s wall (CK skipped by the `/tmp` source dir). Maven prints 542 `Failed to build parent project for ...tornado-drivers-ck-hip` warnings; the module still reports SUCCESS and they do not affect the SDK.
+
+| Run | `d90e1d189` | `ee94c5c7f` (2026-11-10) |
+|---|---|---|
+| `tornado --devices` | 1 HIPDriver device: AMD Instinct MI355X, 288 GB global, 160 KB local, block threads 1024 | same device |
+| `tornado-selftest` | 20 pass, 1 skip (device/device-launch); `mma-f16` 32x32x64 and `mma-fp8` 16x16x64 PASS; TC target HIP gfx950, warp 64, tensor cores F16+FP8 | 20 / 1 |
+| `tornado-test -V uk.ac.manchester.tornado.unittests.pointers.TestCopyDevicePointers` | 3/3 (testCopyDevicePointers, ...Matrix, ...LargeRegion), 1.34 s | 3/3 |
+
+Nothing differed, so no quickPass or library suites (per review 12). No CUDA compile owed (no CUDA or native source changed since the `ee94c5c7f` gate).
+
+Completion checks: `python3 utils/jargon.py --port TornadoVM` clean (after `git branch -f develop origin/develop` and `moat-port origin/moat-port` in the clone); docs unchanged in substance (`BACKEND=hip` still documented next to the CUDA build); `git -C projects/TornadoVM/src status --porcelain` empty.
