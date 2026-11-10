@@ -1325,3 +1325,49 @@ No new failure class. Note for the draft PR body: on gfx1100 the float-noise set
 - Integrity: `git status --porcelain` empty in the clone and both worktrees; HEAD 3b0f1908.
 
 Result: **completed** at 3b0f1908 on linux-gfx1100. Every failure is in a known class (rand() reseed, float-atomic qNEP noise at absolute bounds, replica `format_version 1` model headers upstream).
+
+## Validation 2026-11-10 (linux-gfx90a, validator) -- sync round 2 at 3b0f1908, VALIDATION FAILED (new class: batched replica not bit-identical on gfx90a)
+
+jeff asked for this run. Host: AMD Instinct MI250X/MI250 (gfx90a, CDNA2, wave64), `HIP_VISIBLE_DEVICES=2` (dispatcher-pinned), all GPU runs under `ulimit -c 0`. Toolchain: TheRock pip SDK, HIP 7.16.26385, AMD clang 24.0.0git. `orient.sh` on `port/GPUMD` completed normally (no hang) and named validator (`revalidate`). Fresh clone of AMD-Ecosystem/GPUMD at `projects/GPUMD/src`, detached at **3b0f1908a32b260e2446201833d4cc19dce6321e** (= `origin/moat-port`; parents 374da0df, d6cd2e36). Detached worktrees of the same commit: `agent_space/dbg` (DEBUG build), `agent_space/rep` (replica legacy-model runs and flag experiments; model edits reverted), `agent_space/dbgon` (flag experiment). No fork edit, no push. Job venv only: ase 3.29.0, pytest 7.3.2, hypothesis 6.56.4, and calorine built from a source clone of gitlab materials-modeling/calorine at **1c94125** (the porter's commit; reports version 4.1), which parses the `format_version 1` fixtures.
+
+### Builds (PR-body commands, gfx90a, concurrently)
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx90a -j32
+    utils/timeit.sh GPUMD compile -- make -C agent_space/dbg/src -f makefile.hip HIP_ARCH=gfx90a -j32 gpumd nep CFLAGS="-O3 --offload-arch=gfx90a -DUSE_HIP -DDEBUG"
+
+Both rc 0, 0 errors, 63 s / 64 s. Warnings only the known classes (88 `-Wunused-value`, 12 `-Winconsistent-missing-override`). Release: gpumd 16139976 B, nep 4241928 B, tb 322264 B, gpumd_replica 2756488 B. DEBUG: gpumd 16139832 B, nep 4241872 B.
+
+### Tests (real gfx90a)
+| command | result | 374da0df on gfx90a |
+|---|---|---|
+| `python3 -m pytest tests_pytest/test_spin_*.py` (release, clone root) | **110 passed, 4 failed** (68 s); the 4 `test_corrector_preserves_force_modifiers` (sib/glsd x small/large box) | 110/4 |
+| the 4, `LD_PRELOAD` srand no-op shim (`void srand(unsigned){}`) | **4 passed** (3.5 s) | 4/4 |
+| `python3 -m pytest tests_pytest -m "not slow"` (release) | **866 passed, 4 failed, 638 skipped, 10 deselected** (2603 s, overlapped the regression run and the flag experiments on the same GPU); the 4 failures are the same rand() cases | 801/4/480 (suite grew upstream); identical to the porter's gfx942 count at 3b0f1908 |
+| full `tests_regression` (DEBUG, self-comparison, PR-body command: `python3 $D/tests_regression/run_regression.py --repo-root $D --suite full --baseline $D/src/gpumd --candidate $D/src/gpumd --baseline-nep $D/src/nep --candidate-nep $D/src/nep`) | **250/256 cases, relations 25/25** (881 s, whole suite incl. FP64 transport cases, no `--timeout-scale`); `ilp_nep_cutoff_below_nep` PASS | 249/256, 25/25 |
+| the 6 failures rerun with `--case` plain | 1 passed, 5 failed (147 s) | -- |
+| the 6 rerun with the srand shim | **6 passed** (204 s) | -- |
+| `GPUMD_REPLICA=<clone>/src/gpumd_replica python3 tests_regression/replica/test_replica.py` (release, as-is) | **4/16** (12.6 s); the 12 failures all stop at `REMD/PRD explicit streams support energy NEP4/NEP5 and qNEP4 models` | 6/12 (suite grew upstream) |
+| same in `agent_space/rep` with `examples/nep_train/nep.txt` from cd7f757d and `examples/qnep_train/nep.txt` from eda8e04b | **13/16** (60.7 s): FAIL `test_batched_matches_per_slot_remd`, `test_batched_matches_per_slot_prd`, `test_split_resume_is_exact (batch=1)` | 12/12 (these tests are new); porter gfx942 16/16 |
+
+Regression failure classification (known):
+- rand() reseed (deferral `gpumd-hip-runtime-reseeds-rand`, ruled defer): `replicate_velocity_unseeded`, `graphene_hac`, `graphene_nemd_shc`, `graphene_hnemd_shc`, `silicon_liquid_transport` (text diffs); fail again plain, pass under the shim. Same 5 as at 374da0df.
+- float-atomic noise at absolute bounds: `qnep_pppm_future_bec` (bec.xyz field 22735, 1.07e-5 vs atol 1e-5, rel 6.5e-7); passed on the plain rerun.
+
+### New failure: batched replica integration is not bit-identical to per-slot on gfx90a
+The three failing replica tests are upstream's new ones (af8b0971, replica batching). They assert that `GPUMD_REPLICA_BATCH=1` reproduces the per-slot path bit for bit. On gfx90a they fail in 4 of 4 runs (the full suite plus 3 reruns of the three tests). Diagnosis (scratch probe `agent_space/scripts/batch_det.py`, which reuses the test class: one 20-step start, then four 40-step resumes b0a/b0b at batch 0 and b1a/b1b at batch 1):
+- batch 0 vs batch 0: identical; batch 1 vs batch 1: identical; batch 0 vs batch 1: differ (remd and prd). So each path is deterministic and this is not atomic-order noise. It is a systematic difference between the paths.
+- Magnitude: the first differing `remd_thermo.out` row has potential energy -7463.528158664703 vs -7463.528137683868 (2.8e-9 relative); the temperature columns are identical.
+- Whole `gpumd_replica` rebuilt with `-ffp-contract=off`: batch 0 == batch 1 for remd and prd. Bisected by recompiling one TU at a time with `-ffp-contract=off` and the rest default: `replica_batch.cu` alone: still differs; `integrate/ensemble_bdp.cu` alone: still differs; **`force/nep.cu` alone: identical**. `force/nep.cu` with **`-ffp-contract=on`** alone (the nvcc `--fmad=true` equivalent): identical.
+- Cause: the NEP kernels in `main_replica/force/nep.cu` (`find_neighbor_list_large_box`, `find_descriptor`, `find_force_radial`, `find_partial_force_angular`, `find_force_ZBL`) are templates on `Box_View`, instantiated for `Box` (per-slot) and `Batch_Box` (batched; `model/batch_box.cuh`). hipcc's default `-ffp-contract=fast` contracts across statements, and on gfx90a the two instantiations get different FMA formation, so the forces differ in the last bits and the trajectories diverge. nvcc contracts within an expression only. This is the recorded fault class in `cuda-to-rocm` references/fault-classes.md ("clang for HIP defaults to `-ffp-contract=fast`"; CV-CUDA needed `-ffp-contract=on`). The porter's gfx942 run passed 16/16 with the default flags, so the codegen difference is arch-dependent. The upstream code is not wrong. Its bitwise test only holds when both instantiations contract the same way.
+- Whole `gpumd_replica` built with `-ffp-contract=on` (`make -f makefile.hip HIP_ARCH=gfx90a -j32 gpumd_replica CFLAGS="-O3 --offload-arch=gfx90a -DUSE_HIP -ffp-contract=on"`), legacy models: **16/16 OK** (55.9 s).
+- Side observation: the `-ffp-contract=off` replica build makes the four `test_qnep_comments_and_restart_solver_validation` subtests stop at `multi_replica encountered a non-finite thermodynamic value` / `FIRE minimization encountered a non-finite value` (12/16). The default and `on` builds pass them. Not pursued; it argues against `off`.
+- Main-suite effect of `on` (DEBUG gpumd/nep built with `-ffp-contract=on` in `agent_space/dbgon`, same regression command): **250/256, relations 25/25**. The failures are the same 5 rand() cases plus `train_charge_vdw_mixed` (loss.out text diff), which passed 2 of 2 reruns (intermittent training noise). `qnep_pppm_future_bec` passed. No deterministic regression from the flag.
+
+Recommendation for the porter: add `-ffp-contract=on` to `makefile.hip`'s `CFLAGS`, matching nvcc's default `--fmad=true` contraction, as the skill's fault class advises ("match upstream's setting"). The `gpumd_replica` target inherits `CFLAGS`. The CUDA build does not read `makefile.hip`. This is a build-file change, so every gate revalidates. Also run the replica batch tests on gfx942/gfx1100 with the flag. Whether to take the fix or record the bitwise tests as a known gfx90a exception is jeff's call if the porter disagrees. This run counts them as a port failure because a documented, cheap build-file fix exists and makes upstream's test pass on this arch.
+
+### Gates
+- CUDA compile gate: recorded PASS at 3b0f1908 (mi355, nvcc 12.8); not repeated.
+- `python3 utils/jargon.py --port GPUMD` (local `master` created from the fork's `origin/master`): only the 2 known hits in upstream's own 725fe762 merge. `jargon.py -C projects/GPUMD/src --commits d6cd2e36..3b0f1908 --diff d6cd2e36...3b0f1908`: clean.
+- Documentation: `doc/installation.rst` "Building for AMD GPUs (ROCm/HIP)" documents `make -f makefile.hip` and `HIP_ARCH`; README links the installation guide.
+- Integrity: tracked files unmodified in the clone and all three worktrees; HEAD 3b0f1908 in each.
+
+Result: **validation-failed** at 3b0f1908 on linux-gfx90a. Everything else matches the 374da0df record and the porter's gfx942 counts at this head: spin 110/114 (114 with the shim), `-m "not slow"` 866 passed with the 4 rand() cases, regression 250/256 + 25/25 with the 6 failures in known classes. The only blocker is the new batched-replica bit-identity failure above.
