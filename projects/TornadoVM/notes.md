@@ -909,3 +909,34 @@ Separate clone of the fork at `ee94c5c7f` in the job directory, real nvcc 12.8.9
 - Documentation: `BACKEND=hip` is documented in `README.md`, `INSTALL_FROM_SOURCE.md` and `docs/source/developer-guidelines.rst`, next to the CUDA build.
 - Integrity: `git -C projects/TornadoVM/src status --porcelain` shows only the untracked `hiprtccheck` binary; no tracked file modified.
 - Not covered here: multi-GPU NCCL/RCCL (one pinned GPU).
+## Validation 2026-11-10 (linux-gfx1201, Radeon AI PRO R9700, wave32, validator at `ee94c5c7f`)
+
+Verdict: **pass**, linux-gfx1201 completed at `ee94c5c7f`. Full revalidation, no carry-forward: the delta from `af27a9f4b` (`c3ece4b69`, `95a21e6ee`, `ee94c5c7f`) changes Java in the HIP driver (`NativeCommandQueue.java`) and tc-selftest (`Checks.java`), which no code-object diff covers. Every count matches the `af27a9f4b` run on this host, plus the new `testCopyDevicePointersLargeRegion`.
+
+Host and toolchain (job directory only): ROCm 10.1 TheRock wheels (`ROCM_PATH=<image venv>/site-packages/_rocm_sdk_devel`), Temurin 21.0.13+9 downloaded from the Adoptium API and unpacked in the job directory (the apt-get recipe was not needed), `MAVEN_OPTS=-Dmaven.repo.local=<job>/m2`, `MAX_JOBS=24`, `HIP_VISIBLE_DEVICES=0` (dispatcher pin), `ulimit -c 0` for every GPU run. No hipDF/hipVS (RDNA), so `HIPDF_HOME` unset. Fresh clone of `AMD-Ecosystem/TornadoVM` detached at `ee94c5c7f` (= remote `moat-port`).
+
+```bash
+make -C projects/TornadoVM/src jdk21 BACKEND=hip      # BUILD SUCCESS, 8:17 min, ck-hip for all nine default targets
+source projects/TornadoVM/src/setvars.sh
+tornado --devices                                     # 0:0 HIP AMD Radeon AI PRO R9700
+```
+
+| Run | `ee94c5c7f` | `af27a9f4b` (2026-11-06) |
+|---|---|---|
+| `bash projects/TornadoVM/probe/mma/run.sh` | `== PASS (gfx1201)`. Code object `v_wmma_f32_16x16x16_f16` x5, `_bf16` x1, `v_wmma_i32_16x16x16_iu8` x2. Bounds `f16/bf16 exact cases 0, random fp8 1e-05, other random 1e-05` and `every byte e4m3 0, e5m2 0 except bytes 0x81-0x83 0`: gfx12 takes none of the gfx11 exceptions, and every exact and every-byte case is bit-exact (e4m3 and e5m2 every byte worst rel 0, including 0x81-0x83). 0 of 53 failed; `--mutate` 53 of 53 failed | same instructions, 53/53, `--mutate` 53/53 detected |
+| `tornado-selftest` | 20 pass, 1 skip (device-launch); TC target "HIP gfx1201, warp 32, tensor cores F16+FP8"; `mma-f16` 32x32x64 and `mma-fp8` 16x16x64 PASS (bit-equality path, `mmaTolerance` 0 off gfx11) | 20 pass, 1 skip |
+| MMA classes | TestMatrixMultiplicationMMA 18/18, MMABF16 7/7, MMAInt8 12/12, MMAFP8 8/8, MMACpAsync 8/8, TestMMAGlobalFragmentLoad 6/6, TestMMAInt8FragmentElementRead 4/4, TestMMAFragmentHelper 2/2 | 65/65, same split |
+| `tornado-test -V ...pointers.TestCopyDevicePointers` (twice) | 3/3 both times (testCopyDevicePointers, testCopyDevicePointersMatrix, testCopyDevicePointersLargeRegion); `#testCopyDevicePointersMatrix` alone 1/1 | 2 tests, both pass inside the full run |
+| `tornado-test --verbose --quickPass` | 2188 ran: 1438 pass, 748 unsupported, 2 failed, ComputeTests testMandelbrot (`expected 8.0 but was 9.0`) and testJuliaSets (`expected -1000.0 but was 1.5197568`), whitelisted (the FMA-contraction pair); rc 0, 8:10 min | 2187 ran: 1437 / 748 / 2 (same pair) |
+| Library classes (`tornado-test -V <class>`) | TestCuBlas 27/27, TestCuBlasLt 10/10, TestCuFft 9/9, TestCuRand 7/7, TestCusparse 17/17, TestNccl 30 run / 10 unsupported, TestNcclMultiProcess 5 / 2 unsupported, TestCuDnn 20/20, TestCutlass 26/26, TestCudf 24 unsupported, TestCudfColumns 23 unsupported, TestCuVS 7 unsupported, TestProfiler 9/9, TestProfilerTransferBytes 2/2, TestFP8 13/13; 0 failed | identical |
+| KernelContext | TestUnsupportedKernelContextOps 10 run / 3 unsupported, TestDynamicParallelism 15 run / 13 unsupported, 0 failed | identical |
+| `HeapFail#test03` (`-J"-Dtornado.device.memory=1MB"`) | pass | pass |
+| `make test-nogpu JDK=jdk21` (hiprtccheck built first, recipe in the 2026-11-06 entry) | BUILD SUCCESS. Lit opt 16, tornado 5, frontend 12, codegen 60; HipMmaRoutingTest 1/1, TcCompilerTest 29/29 | BUILD SUCCESS, same counts |
+
+**CUDA gate at `ee94c5c7f`: pass** (owed since porter round 7; rounds 8 and 9 did not run it). CUDA 12.8 redist tarballs (`cuda_nvcc` 12.8.93, `cuda_cudart` 12.8.90, `cuda_cccl` 12.8.90, `cuda_nvrtc` 12.8.93, manifest `redistrib_12.8.1.json`) unpacked into the job directory with `lib64 -> lib`; a separate local clone at `ee94c5c7f`; `CUDACXX`/`CUDAToolkit_ROOT`/`CUDA_PATH` = that toolkit; `make jdk21 BACKEND=cuda`: BUILD SUCCESS (19 s Maven wall clock), CUTLASS shim `arch=80-real;80-virtual` compiled by nvcc 12.8.93, no HIP or CK modules in the reactor. `git diff origin/develop ee94c5c7f -- tornado-drivers/{cuda,ptx,opencl,metal} tornado-native-libs/{cudf-jni,cudnn-jni,cutlass-jni}` is empty.
+
+Completion checks:
+- `python3 utils/jargon.py --port TornadoVM` (after `git branch -f develop origin/develop` and `moat-port origin/moat-port` in the clone): clean; `--commits origin/develop..ee94c5c7f` and `--diff origin/develop...ee94c5c7f`: clean.
+- Documentation: `BACKEND=hip` build in `INSTALL_FROM_SOURCE.md`, `README.md`, `docs/source/developer-guidelines.rst`.
+- Integrity: `git -C projects/TornadoVM/src status --porcelain` shows only the untracked `tornado-compiler/utils/hiprtccheck/hiprtccheck`; no tracked file modified.
+- Not covered here (as at `af27a9f4b`): multi-GPU NCCL/RCCL (one pinned GPU), cuDF/cuVS on RDNA, the OpenCL-backend Mandelbrot/Julia comparison (unchanged code; done at `af27a9f4b`), amd-smi power (unchanged code; TestProfiler 9/9).

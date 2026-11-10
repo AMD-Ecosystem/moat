@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-10T08:34:13Z",
+  "updated_at": "2026-11-10T08:40:40Z",
   "head_sha": "ee94c5c7ff92483e95a6467bc65e298f3564ab01",
   "depends_on": [],
   "waivers": {},
@@ -27,14 +27,14 @@
   },
   "stage": "review-passed",
   "platforms": {
-    "windows-gfx1151": {
+    "linux-gfx1100": {
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": null,
-      "failed_sha": "af27a9f4b69e3f80eb5012ede0fa80294c6addd2",
-      "started_at": "2026-11-10T01:43:44Z",
+      "failed_sha": null,
+      "started_at": "2026-11-10T07:17:47Z",
       "completed_at": null,
-      "updated_at": "2026-11-10T03:00:08Z",
+      "updated_at": "2026-11-10T08:13:08Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -48,8 +48,30 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "state": "validation-failed"
+      "last_agent": "reviewer"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-05T00:35:44Z",
+      "completed_at": null,
+      "updated_at": "2026-11-10T03:30:56Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
     },
     "linux-gfx950": {
       "blocked": false,
@@ -75,37 +97,14 @@
       "last_agent": "validator",
       "state": "completed"
     },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": "2026-11-05T00:35:44Z",
-      "completed_at": null,
-      "updated_at": "2026-11-10T03:30:56Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
-    },
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "af27a9f4b69e3f80eb5012ede0fa80294c6addd2",
+      "validated_sha": "ee94c5c7ff92483e95a6467bc65e298f3564ab01",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-11-06T05:02:48Z",
-      "updated_at": "2026-11-06T05:02:48Z",
+      "completed_at": "2026-11-10T08:40:40Z",
+      "updated_at": "2026-11-10T08:40:40Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -122,14 +121,14 @@
       "state": "completed",
       "last_agent": "validator"
     },
-    "linux-gfx1100": {
+    "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": null,
-      "failed_sha": null,
-      "started_at": "2026-11-10T07:17:47Z",
+      "failed_sha": "af27a9f4b69e3f80eb5012ede0fa80294c6addd2",
+      "started_at": "2026-11-10T01:43:44Z",
       "completed_at": null,
-      "updated_at": "2026-11-10T08:13:08Z",
+      "updated_at": "2026-11-10T03:00:08Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -143,7 +142,8 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer"
+      "last_agent": "validator",
+      "state": "validation-failed"
     }
   },
   "porting_released": {
@@ -165,6 +165,5 @@
       "evidence": "https://github.com/beehive-lab/TornadoVM/blob/master/LICENSE_APACHE2",
       "at": "2026-11-05T22:15:47Z"
     }
-  ],
-  "porting": null
+  ]
 }

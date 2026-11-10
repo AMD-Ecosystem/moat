@@ -145,3 +145,27 @@
 {"kind":"phase","ts":"2026-11-10T08:26:00Z","phase":"test","seconds":11.173,"exit":0,"cmd":"make -C projects/TornadoVM/src test-nogpu JDK=jdk21"}
 {"kind":"phase","ts":"2026-11-10T08:33:07Z","phase":"test","seconds":454.632,"exit":0,"cmd":"tornado-test --verbose --quickPass"}
 {"kind":"session","ts":"2026-11-10T08:34:13Z","epoch":1794299653.109328532,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-10T08:19:43Z","epoch":1794298783.856862596,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-10T08:28:01Z","phase":"compile","seconds":497.161,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-10T08:28:36Z","phase":"test","seconds":16.747,"exit":0,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
+{"kind":"phase","ts":"2026-11-10T08:37:11Z","phase":"test","seconds":489.684,"exit":0,"cmd":"tornado-test --verbose --quickPass"}
+{"kind":"phase","ts":"2026-11-10T08:37:32Z","phase":"test","seconds":3.935,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cublas.TestCuBlas"}
+{"kind":"phase","ts":"2026-11-10T08:37:55Z","phase":"test","seconds":22.679,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cudnn.TestCuDnn"}
+{"kind":"phase","ts":"2026-11-10T08:37:56Z","phase":"test","seconds":1.324,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.api.TestDynamicParallelism"}
+{"kind":"phase","ts":"2026-11-10T08:37:57Z","phase":"test","seconds":1.293,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.api.TestUnsupportedKernelContextOps"}
+{"kind":"phase","ts":"2026-11-10T08:37:59Z","phase":"test","seconds":1.201,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.arrays.TestFP8"}
+{"kind":"phase","ts":"2026-11-10T08:38:00Z","phase":"test","seconds":1.362,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.profiler.TestProfiler"}
+{"kind":"phase","ts":"2026-11-10T08:38:02Z","phase":"test","seconds":2.091,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cutlass.TestCutlass"}
+{"kind":"phase","ts":"2026-11-10T08:38:15Z","phase":"test","seconds":12.468,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.nccl.TestNccl"}
+{"kind":"phase","ts":"2026-11-10T08:38:16Z","phase":"test","seconds":1.309,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.curand.TestCuRand"}
+{"kind":"phase","ts":"2026-11-10T08:38:19Z","phase":"test","seconds":3.084,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cublas.TestCuBlasLt"}
+{"kind":"phase","ts":"2026-11-10T08:38:21Z","phase":"test","seconds":2.038,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cusparse.TestCusparse"}
+{"kind":"phase","ts":"2026-11-10T08:38:22Z","phase":"test","seconds":0.645,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cuvs.TestCuVS"}
+{"kind":"phase","ts":"2026-11-10T08:38:22Z","phase":"test","seconds":0.682,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cudf.TestCudf"}
+{"kind":"phase","ts":"2026-11-10T08:38:23Z","phase":"test","seconds":0.694,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cudf.TestCudfColumns"}
+{"kind":"phase","ts":"2026-11-10T08:38:26Z","phase":"test","seconds":2.356,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cufft.TestCuFft"}
+{"kind":"phase","ts":"2026-11-10T08:38:27Z","phase":"test","seconds":1.666,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.nccl.TestNcclMultiProcess"}
+{"kind":"phase","ts":"2026-11-10T08:38:28Z","phase":"test","seconds":0.988,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.profiler.TestProfilerTransferBytes"}
+{"kind":"phase","ts":"2026-11-10T08:38:47Z","phase":"test","seconds":8.471,"exit":0,"cmd":"make -C projects/TornadoVM/src test-nogpu JDK=jdk21"}
+{"kind":"phase","ts":"2026-11-10T08:39:54Z","phase":"cuda-compile","seconds":21.016,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/gfx1201-20261110-001550-tornadovm-val-gfx1201/work/cudawt jdk21 BACKEND=cuda"}
+{"kind":"session","ts":"2026-11-10T08:40:40Z","epoch":1794300040.393188462,"event":"end","platform":"linux-gfx1201"}
