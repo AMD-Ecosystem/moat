@@ -1371,3 +1371,41 @@ Recommendation for the porter: add `-ffp-contract=on` to `makefile.hip`'s `CFLAG
 - Integrity: tracked files unmodified in the clone and all three worktrees; HEAD 3b0f1908 in each.
 
 Result: **validation-failed** at 3b0f1908 on linux-gfx90a. Everything else matches the 374da0df record and the porter's gfx942 counts at this head: spin 110/114 (114 with the shim), `-m "not slow"` 866 passed with the 4 rand() cases, regression 250/256 + 25/25 with the 6 failures in known classes. The only blocker is the new batched-replica bit-identity failure above.
+
+## Validation 2026-11-10 (linux-gfx942, validator) -- revalidate at 3b0f1908, PASSED
+
+jeff asked for this run. Host: MI300X (gfx942, CDNA3, wave64), HIP 7.16.26385 / AMD clang 24.0.0git (TheRock pip SDK), `HIP_VISIBLE_DEVICES=0` (dispatcher-pinned), all GPU work under `ulimit -c 0`. `orient.sh` completed normally and named validator (`state=revalidate`). Fresh clone of AMD-Ecosystem/GPUMD detached at **3b0f1908a32b260e2446201833d4cc19dce6321e** (= `origin/moat-port`); DEBUG build in a detached `git worktree` at the same sha (`agent_space/dbg`), as in the 374da0df validation. No fork edit, no push. Test environment: job venv with calorine built from source at gitlab materials-modeling/calorine **1c9412504bf1** (the porter's commit; reports version 4.1; needed for the `format_version 1` fixtures), ase 3.29.0, pytest 7.3.2, hypothesis 6.56.4. The carry-forward shortcut does not apply (an upstream merge changes code everywhere), so this was a full run.
+
+### Builds (PR body commands, gfx942, -j56)
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx942 -j56
+    utils/timeit.sh GPUMD compile -- make -C agent_space/dbg/src -f makefile.hip HIP_ARCH=gfx942 -j56 gpumd nep CFLAGS="-O3 --offload-arch=gfx942 -DUSE_HIP -DDEBUG"
+
+Both rc 0 (36 s / 34 s, run concurrently), 0 errors; warnings only the known classes (88/84 `-Wunused-value` nodiscard hipError_t, 12 `-Winconsistent-missing-override`). Release: gpumd 15099704 B, nep 3447344 B, tb 315128 B, gpumd_replica 2604936 B; DEBUG gpumd 15099560 B, nep 3447296 B. Every size equals the porter's 3b0f1908 build.
+
+### Tests (real gfx942, from the repository root, GPU otherwise idle unless noted)
+| command | result | time |
+|---|---|---|
+| `python3 tests_regression/run_regression.py --repo-root "$PWD" --suite full --baseline "$PWD/src/gpumd" --candidate "$PWD/src/gpumd" --baseline-nep "$PWD/src/nep" --candidate-nep "$PWD/src/nep"` (DEBUG, self-comparison) | **250/256 cases, relations 25/25** (0 skipped); `ilp_nep_cutoff_below_nep` PASS | 599 s |
+| the 6 failing cases (`--case` x6), plain | 0/6 (same 6 fail) | 44 s |
+| same, `LD_PRELOAD` srand no-op shim (`void srand(unsigned){}`), twice | 5/6, 5/6 (only `qnep_pppm_future_bec` fails) | 42 s, 43 s |
+| `python3 -m pytest tests_pytest/test_spin_*.py` (release) | **110 passed, 4 failed** | 79 s |
+| the 4 failures (`-k test_corrector_preserves_force_modifiers`) under the srand shim | 4 passed | 5 s |
+| `python3 -m pytest tests_pytest -m "not slow"` (release; the replica runs below overlapped its first minutes) | **866 passed, 4 failed, 638 skipped, 10 deselected** | 1478 s |
+| `GPUMD_REPLICA=$PWD/src/gpumd_replica python3 tests_regression/replica/test_replica.py` (as-is) | **4/16** (12 failures) | 23 s |
+| same, DEBUG worktree with `examples/nep_train/nep.txt` from cd7f757d and `examples/qnep_train/nep.txt` from eda8e04b, release replica binary (reverted afterwards, worktree clean) | **16/16 OK** | 56 s |
+
+Every failure classified, none new:
+- **rand() reseed** (deferral `gpumd-hip-runtime-reseeds-rand`, ruled defer): the 4 `test_corrector_preserves_force_modifiers` cases (sib/glsd x small/large box; the same 4 in both pytest runs, the only failures in `-m "not slow"`), and in `tests_regression` `replicate_velocity_unseeded`, `graphene_hac`, `graphene_nemd_shc`, `graphene_hnemd_shc`, `silicon_liquid_transport` (text diffs). All 9 pass under the srand shim (the regression 5 twice) and the regression 5 fail again plain.
+- **float-atomic noise at absolute bounds**: `qnep_pppm_future_bec` only, which failed in all 4 runs above (full, plain rerun, both shim reruns), each time on different fields just past the bound: bec.xyz 1.15e-5 to 1.17e-5 against atol 1e-5 (fields 21, 22727), thermo.out 1.0e-7 to 1.6e-7 against atol 1e-7 (fields 9, 30). Because it passed in the 374da0df validation on this host, I ran an A/B to check whether the merge changed it: DEBUG 374da0df built in a second worktree with the same command, then the case alone (`--case qnep_pppm_future_bec`), alternating 3b0f1908/374da0df, 6 rounds. **3b0f1908: 0/6 passed; 374da0df: 2/6 passed.** The failing fields (bec 13/22727/22735, thermo 8/9/30/48) and magnitudes (bec 1.1e-5 to 1.8e-5, thermo 1.0e-7 to 2.0e-7) are the same in both builds, so this is the known class and predates the merge: 374da0df shows the same noise on the same fields. 3b0f1908 failed more often (10 of 10 runs vs 4 of 6), which is not enough to call a regression with the same signature. The port's delta does not touch PPPM or qNEP; upstream's range does change code around them. `train_nep_pbte_ediff`, `pppm_round_exact` and `pppm_round_5_7`, which hit their bounds in the porter's run, passed here.
+- **replica model header** (upstream `format_version 1`, platform-independent): the 12 replica failures (8 `REMD explicit streams support energy NEP4/NEP5 and qNEP4 models.`, 4 `PRD ...`); 16/16 with the legacy-header models, including upstream's new batch-choice and batched-vs-per-slot tests and the qNEP ewald/pppm restart paths.
+
+Compared with the 374da0df gfx942 validation (251/256, 25/25; spin 110/114; `-m "not slow"` 801 passed / 4 failed of the smaller pre-merge suite; replica 6/12 as-is, 12/12 legacy) and the porter's 3b0f1908 gfx942 run (247/256, 25/25; spin 110/114; 866/4/638/10; replica 4/16, 16/16): same rand() set, same replica class, pytest counts identical to the porter's, and the regression failure set a subset of the porter's.
+
+### Pre-completion checks
+- `git -C projects/GPUMD/src status --porcelain`: no modified tracked files (both worktrees removed after the run).
+- `python3 utils/jargon.py --port GPUMD` (after creating local `master`/`moat-port` refs from origin in the detached clone): only the 2 known hits in upstream's own 725fe762 ("Merge pull request #1538 from jeffdaily/moat-port"). `jargon.py -C projects/GPUMD/src --commits d6cd2e36..3b0f1908 --diff d6cd2e36...3b0f1908`: clean.
+- Docs: `doc/installation.rst` documents `make -f makefile.hip [HIP_ARCH=...]`; this round changes no build step.
+- CUDA gate: already recorded at this head ("CUDA compile check (nvcc 12.8) at 3b0f1908", mi355, PASS), not re-run.
+- Telemetry: one `-m "not slow"` attempt was stopped at ~4% (harness foreground timeout) and relaunched detached; it left no stats entry.
+
+PASS at 3b0f1908 on linux-gfx942.
