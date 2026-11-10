@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "monai-tensorrt-to-migraphx",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "MONAI's TensorRT export/compile path (monai/networks/trt_compiler.py, convert_to_trt/trt_compile in monai/networks/utils.py) is NVIDIA-only and inert on ROCm (tests skip). A ROCm equivalent would be a new MIGraphX/torch_migraphx backend that neither upstream nor AMD-Ecosystem/MONAI amd-develop has. Planner recommends defer; Jeff rules defer vs now before MONAI is marked planned.",
+      "refs": [
+        "projects/MONAI/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-10T07:19:15Z",
+      "decided": null
+    }
+  ]
+}

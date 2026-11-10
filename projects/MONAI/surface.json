@@ -1,0 +1,75 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "f9f65c9437e1",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "monai/_extensions/gmm/gmm_cuda.cu",
+      "monai/_extensions/gmm/gmm_cuda_linalg.cuh",
+      "monai/csrc/filtering/bilateral/bilateralfilter_cuda.cu",
+      "monai/csrc/filtering/bilateral/bilateralfilter_cuda_phl.cu",
+      "monai/csrc/filtering/permutohedral/hash_table.cuh",
+      "monai/csrc/filtering/permutohedral/permutohedral_cuda.cu",
+      "monai/csrc/filtering/trainable_bilateral/bf_layer_gpu_backward.cu",
+      "monai/csrc/filtering/trainable_bilateral/bf_layer_gpu_forward.cu",
+      "monai/csrc/filtering/trainable_joint_bilateral/jbf_layer_gpu_backward.cu",
+      "monai/csrc/filtering/trainable_joint_bilateral/jbf_layer_gpu_forward.cu",
+      "monai/csrc/lltm/lltm_cuda.cu",
+      "monai/csrc/resample/pushpull_cuda.cu",
+      "monai/csrc/utils/resample_utils.h"
+    ],
+    "markers": {
+      "kernel": 24,
+      "device_code": 131,
+      "launch": 30,
+      "warp_intrinsic": 4
+    },
+    "libraries": {}
+  },
+  "components": [
+    {
+      "id": "extension:monai._C",
+      "kind": "python_extension",
+      "where": "setup.py (get_extensions, BUILD_MONAI=1 FORCE_CUDA=1; monai/csrc/**)"
+    },
+    {
+      "id": "jit_extension:gmm",
+      "kind": "python_extension",
+      "where": "monai/_extensions/loader.py + monai/_extensions/gmm (torch.utils.cpp_extension.load at runtime)"
+    },
+    {
+      "id": "tests:csrc-gpu",
+      "kind": "tests",
+      "where": "tests/networks/layers/filtering/*, tests/networks/layers/test_grid_pull.py, test_lltm.py, test_gmm.py, tests/utils/test_enum_bound_interp.py, tests/transforms/test_spatial_gpu_support.py"
+    },
+    {
+      "id": "tests:unittests",
+      "kind": "tests",
+      "where": "runtests.sh --unittests / tests/runner.py (796 test_*.py; GPU cases gated by skip_if_no_cuda)"
+    },
+    {
+      "id": "tests:integration",
+      "kind": "tests",
+      "where": "runtests.sh --net (tests/integration/*)"
+    },
+    {
+      "id": "optional:hipcim",
+      "kind": "option",
+      "where": "setup.cfg extras cucim -> amd-hipcim (monai/data/wsi_reader.py, monai/transforms/*, monai/metrics/utils.py)"
+    },
+    {
+      "id": "examples:amd",
+      "kind": "examples",
+      "where": "examples/simple_monai_example.py, examples/monai_with_hipcim.py"
+    },
+    {
+      "id": "platform:windows",
+      "kind": "platform",
+      "where": "setup.py omp_flags/_rocm_install_requires on win32; extension + JIT build under ROCm Windows torch"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}

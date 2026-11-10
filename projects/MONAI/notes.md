@@ -21,3 +21,29 @@ Source: third-party "AMD AI Software Gap Matrix" seed (verdict: partial, AMD for
 
 ### Recommendation
 Decline, SKIP_REASON `ported-elsewhere`: AMD's own team maintains the ROCm port (AMD-Ecosystem/MONAI `amd-develop`, `amd-monai` in ROCm-LS) and is upstreaming it. Note the Radeon/Windows coverage gap for the ROCm-LS team rather than as MOAT work.
+
+## Take-up ruling (2026-11-09)
+
+Jeff Daily ruled on 2026-11-09 that MOAT takes MONAI up as a validation project against the AMD team's existing fork, overriding intake's decline (ported-elsewhere) recommendation:
+
+- The fork is https://github.com/AMD-Ecosystem/MONAI, which the AMD team maintains; its GitHub default branch `amd-develop` is what ships as `amd-monai` in ROCm-LS (Instinct/Linux only).
+- Validate it like any port: Linux wave64 and wave32 hosts first, then Windows gfx1151.
+- Any fixes Radeon/Windows need go on our `moat-port` branch of that fork, for coordination with the AMD team. The port base is the tip of `amd-develop`, not upstream `dev`: the AMD team's ROCm work lives there and we build on it rather than redo it.
+- Delivery is to the AMD team's fork (`amd-develop`), not a new upstream PR to Project-MONAI; the delivery vehicle is Jeff's call later.
+
+How the ruling was recorded (2026-11-10, planner job on linux-gfx942):
+
+- `set-intake MONAI fork` (summary: validation take-up of AMD-Ecosystem/MONAI amd-develop, ruled by Jeff Daily).
+- `set-fork-url MONAI https://github.com/AMD-Ecosystem/MONAI --by "Jeff Daily" ...` REFUSED: `no branch 'moat-port' on https://github.com/AMD-Ecosystem/MONAI`. It checks that the port branch already exists on the fork, and this job was not allowed to push anything to the fork, so the branch could not be created.
+- The fork URL is the default organization fork (`AMD-Ecosystem/<name>`), so the state machine's existing-fork path records the same fact: `set-state MONAI linux-gfx942 awaiting-fork`, then `release-forks`, which saw that the fork exists and moved the project to `screened` with `fork_url = https://github.com/AMD-Ecosystem/MONAI`. That path does not write a `fork_url_ruling` block. Once `moat-port` exists on the fork, `set-fork-url` can be re-run with the same arguments to attach Jeff's ruling to status.json.
+- `fork_default_branch` was the scaffold default `main`, which does not exist on the fork. The fork's upstream mirror is `dev` (fork `dev` 6e358ab is an ancestor of Project-MONAI `dev` c5bddb2; it is stale, 2026-11-10). Recorded with `set-base-branch MONAI dev --by "Jeff Daily"`.
+- `moat-port` does not exist on the fork yet. The porter creates it from the `amd-develop` tip (f9f65c9437e131565f75d7a11266540ba51293fe) and not from `dev`. Pushing `moat-port` to the fork is a normal porter action.
+
+## Planner (2026-11-10, linux-gfx942): questions for Jeff before `planned`
+
+The plan (plan.md) is written for the whole project as amd-develop ships it. The stage is still `planning`, with the lock held by linux-gfx942. It was deliberately not moved to `planned`, because the items below touch scope, and under the scope-cut rule only Jeff may decide them. Once they are answered, a planner on linux-gfx942 (the lock holder) records the answers in plan.md and runs `set-state MONAI linux-gfx942 planned`. A planner on a different arch would need `port-lock --take`, which is a person's decision.
+
+1. **TensorRT path (`monai/networks/trt_compiler.py`, `monai/networks/utils.py` `convert_to_trt`/`trt_compile`).** This is NVIDIA-only (tensorrt, torch_tensorrt, polygraphy, cuda-python). amd-develop ships it untouched and it is inert on ROCm, where its tests skip on the missing module. The ROCm equivalent would be MIGraphX (torch_migraphx). By the NVIDIA-library rule, an NVIDIA-only GPU library gets its ROCm equivalent, but here that would be a new backend that neither upstream nor amd-develop has. That is a feature port, not a HIP port. Recommendation: defer it, and leave the path inert and skipped, as amd-develop ships it. Registered as `monai-tensorrt-to-migraphx` (`utils/deferred.py`, feature-port) for Jeff's defer/now ruling.
+2. **hipCIM on Windows.** `amd-hipcim` (the cuCIM replacement in the `cucim`/`all` extras) is Linux-only, and setup.cfg already gates it with `platform_system=="Linux"`. No ROCm GPU image-I/O option exists on Windows, so whole-slide-image reading on Windows falls back to the CPU readers (openslide/tifffile), named as such. Does that stand as the Windows scope, or should the Windows gate wait on a hipCIM Windows build?
+3. **CuPy-backed transform paths.** MONAI uses CuPy in about 11 modules alongside cucim, as an optional import. CuPy has ROCm wheels on Linux. The plan has the validator install them on Linux, so these paths run instead of skip. Windows has no CuPy ROCm wheel, so those paths skip there. Confirm that this is acceptable and not a cut.
+4. **Delivery vehicle.** Recorded as Jeff's call later (a PR into `amd-develop` from `moat-port`, or a handoff to the AMD team). Nothing in the pipeline depends on it before validation.
