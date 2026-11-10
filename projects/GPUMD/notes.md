@@ -1096,3 +1096,41 @@ The new case `ilp_nep_cutoff_below_nep` passed. Compared with the porter's gfx94
 - CUDA gate: already recorded at this head ("CUDA compile check (nvcc 12.8) at 374da0df", mi355, PASS), not re-run.
 
 PASS at 374da0df on linux-gfx942.
+
+## Validation 2026-11-09 (linux-gfx90a, validator) -- revalidate at 374da0df, PASS
+
+jeff asked for this run. Host: AMD Instinct MI250X/MI250 (gfx90a, CDNA2, wave64), `HIP_VISIBLE_DEVICES=2` (dispatcher-pinned), all GPU runs under `ulimit -c 0`. Toolchain: TheRock pip SDK, HIP 7.16.26385, AMD clang 24.0.0git. `orient.sh` (on `port/GPUMD`) completed normally and named validator (`revalidate`). Fresh clone of AMD-Ecosystem/GPUMD at `projects/GPUMD/src`, detached at **374da0df0d0011867be8a709c3e912d54cdc4eb0**; a detached worktree of the same commit (`agent_space/dbg`) for the DEBUG build, and a second (`agent_space/rep`) for the replica legacy-model run (edit reverted afterwards). No fork edit, no push. Job venv: calorine 4.1, ase 3.29.0, pytest 7.3.2, hypothesis.
+
+### Builds (PR-body commands, gfx90a, concurrently)
+    utils/timeit.sh GPUMD compile -- make -C <clone>/src -f makefile.hip HIP_ARCH=gfx90a -j32
+    utils/timeit.sh GPUMD compile -- make -C <dbg-worktree>/src -f makefile.hip HIP_ARCH=gfx90a -j32 gpumd nep CFLAGS="-O3 --offload-arch=gfx90a -DUSE_HIP -DDEBUG"
+
+Both rc 0, 0 errors, 63 s each. Release: gpumd 15753424 B, nep 4268272 B, tb 322264 B, gpumd_replica 2532296 B. DEBUG: gpumd 15753272 B, nep 4268208 B.
+
+### Tests (real gfx90a)
+- **NEP-spin pytest** (release, from the clone root): `python -m pytest tests_pytest/test_spin_*.py` -> **110 passed, 4 failed**, 69 s. The 4 are the known `test_corrector_preserves_force_modifiers` cases (sib/glsd x small/large box). Rerun with `LD_PRELOAD` of a shim making `srand` a no-op: **4 passed** (114/114 with the reseed suppressed). The `gpuLaneMask` kernels pass on wave64 with HIP's mask checks live.
+- **Full `tests_regression`** (DEBUG, self-comparison, PR-body command; overlapped the spin pytest and then the not-slow pytest on the same GPU for its whole length):
+  `python3 tests_regression/run_regression.py --repo-root $D --suite full --baseline $D/src/gpumd --candidate $D/src/gpumd --baseline-nep $D/src/nep --candidate-nep $D/src/nep`
+  -> **249/256 cases, relations 25/25**, 882 s, whole suite completed (FP64 transport cases included; no `--timeout-scale` needed). `ilp_nep_cutoff_below_nep` PASS. The 7 failures, all 7 rerun with `--case` plain (75 s) and with the srand shim (75 s):
+
+| case | first run | rerun plain | rerun with srand shim | class |
+|---|---|---|---|---|
+| replicate_velocity_unseeded (final.xyz) | FAIL | FAIL | PASS | rand() reseed (known) |
+| graphene_hac (hac.out) | FAIL | FAIL | PASS | rand() reseed (known) |
+| graphene_nemd_shc (compute.out) | FAIL | FAIL | PASS | rand() reseed (known) |
+| graphene_hnemd_shc (kappa.out) | FAIL | FAIL | PASS | rand() reseed (known) |
+| silicon_liquid_transport (adf.out) | FAIL | FAIL | PASS | rand() reseed (known) |
+| qnep_ewald_future_bec | dpdt.out field 16, 1.0e-6 vs atol 2e-7 (last printed digit) | PASS | PASS | float-atomic noise (known class; same dpdt.out magnitude as qnep_actions_before_potential on gfx1100) |
+| train_nep_pbte_ediff | force_test.out, 2.0e-7 vs atol 2e-7 / rtol 1e-5 (last printed digit) | PASS | PASS | float-atomic noise (known class; same as predict_nep_pbte_batch on gfx942) |
+
+  Plain rerun `Summary: 2 passed, 5 failed`; shim rerun `Summary: 7 passed, 0 failed`. No new failure class; the two numeric case names are new to the list but the signature (one unit in the last printed digit, intermittent, passes on rerun) is the recorded float-atomic class.
+- **`tests_pytest -m "not slow"`** (release, whole directory): **801 passed, 4 failed, 480 skipped, 10 deselected**, 2273 s (overlapped the regression run for its first 12 min). The 4 failures are the same four `test_corrector_preserves_force_modifiers` rand() cases; nothing else. Counts identical to the gfx1100 run at this head.
+- **Replica** (`GPUMD_REPLICA=<clone>/src/gpumd_replica python3 tests_regression/replica/test_replica.py`, release): as-is **6/12** (15.9 s); the 6 failures are all `Input Error: REMD/PRD explicit streams support energy NEP4/NEP5 and qNEP4 models` (replica_remd.cu:373 / replica_prd.cu:537), the known upstream dd7d0ba8 `format_version 1` model-header class. In the scratch worktree with `examples/nep_train/nep.txt` from cd7f757d and `examples/qnep_train/nep.txt` from eda8e04b: **12/12 OK** (61.7 s), including the qNEP REMD/PRD Ewald and PPPM restart tests that run the commented `ewald.cu` path.
+
+### Gates
+- CUDA compile gate: already recorded PASS at 374da0df (mi355, nvcc 12.8); not repeated.
+- `python3 utils/jargon.py --port GPUMD` (local `master` from the fork's `origin/master`): only the 2 known hits in upstream's own 725fe762 merge. `jargon.py -C projects/GPUMD/src --commits c3d5d8ac..374da0df --diff c3d5d8ac...374da0df`: clean.
+- Documentation: `doc/installation.rst` "Building for AMD GPUs (ROCm/HIP)" documents `make -f makefile.hip` and `HIP_ARCH`; README links it.
+- Integrity: `git status --porcelain` empty in the clone and both worktrees; HEAD 374da0df.
+
+Result: **completed** at 374da0df on linux-gfx90a. Every failure is in a known class (rand() reseed at the first launch; float-atomic noise at absolute bounds; replica model headers upstream).
