@@ -6,14 +6,37 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-06T02:27:16Z",
-  "updated_at": "2026-11-06T03:00:32Z",
+  "updated_at": "2026-11-10T18:16:24Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {},
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-10T18:16:24Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
   "license_spdx": "Apache-2.0",
   "license_spdx_history": [
     {
@@ -24,11 +47,11 @@
     }
   ],
   "intake": {
-    "verdict": "decline",
-    "reason": "already-supported",
+    "verdict": "fork",
+    "reason": null,
     "duplicate_effort": "upstream devices/hip (Intel-maintained, AMD contributes, PR #267)",
-    "viable": false,
-    "summary": "Intel Open Image Denoise: upstream-maintained HIP backend covers all RDNA2/3/3.5/4 with prebuilt Linux+Windows binaries; only CDNA missing, which is wave64+MFMA feature work, not a port",
-    "at": "2026-11-06T03:00:31Z"
+    "viable": true,
+    "summary": "Validation take-up ruled by Jeff Daily 2026-11-10: Validate upstream's HIP device (devices/hip) on all required gates (wave64, wave32, Windows); fixes go to a new AMD-Ecosystem fork (requested, created by a person)",
+    "at": "2026-11-10T18:16:24Z"
   }
 }
