@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-10T22:57:50Z",
+  "updated_at": "2026-11-11T15:29:09Z",
   "head_sha": "d90e1d189db4362ec0f6c682865f8c8f4572a17d",
   "depends_on": [],
   "waivers": {},
@@ -25,7 +25,7 @@
       "at": "2026-08-07T15:41:21Z"
     }
   },
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx950": {
       "blocked": false,
@@ -34,7 +34,7 @@
       "failed_sha": null,
       "started_at": "2026-11-04T19:14:44Z",
       "completed_at": "2026-11-10T20:46:19Z",
-      "updated_at": "2026-11-10T20:46:19Z",
+      "updated_at": "2026-11-11T15:29:09Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -165,5 +165,9 @@
       "evidence": "https://github.com/beehive-lab/TornadoVM/blob/master/LICENSE_APACHE2",
       "at": "2026-11-05T22:15:47Z"
     }
-  ]
+  ],
+  "porting": {
+    "arch": "linux-gfx950",
+    "since": "2026-11-11T15:29:09Z"
+  }
 }
