@@ -1073,6 +1073,16 @@ def _delta_hits_local(clone, base, head, terms, allow):
     if merges.returncode:
         return None
     theirs = sorted({p for l in merges.stdout.splitlines() for p in l.split()[2:]})
+    if len(theirs) > 1:
+        # Upstream's own merges come along too (GPUMD: 332 parents, one diff of
+        # millions of lines each). A parent reachable from another one adds
+        # nothing but time: subtracting fewer upstream lines can only keep more
+        # lines in the scan, never fewer.
+        independent = _run(["git", "-C", str(clone), "merge-base", "--independent",
+                            *theirs], capture_output=True, text=True)
+        if independent.returncode:
+            return None
+        theirs = sorted(independent.stdout.split())
     if theirs:
         msgs = _run(["git", "-C", str(clone), "log", "--format=%B",
                      f"{base}..{head}", "--not", *theirs],
