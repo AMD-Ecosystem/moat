@@ -1,35 +1,33 @@
 ## Validation policy
 
 - A port is validated only when the project's real test suite builds and passes on a real AMD GPU for the target arch, with no regression in non-GPU tests.
-- Coverage is expressed as GATES -- wave64, wave32, windows -- and a gate is satisfied by ANY arch carrying that attribute. No arch leads: whichever host picks the project up ports it, and the rest validate the same branch independently and in parallel.
-- A validation should not introduce a NEW fork commit for anything non-essential; if your arch needs no code change, leave the branch untouched. When a fix IS genuinely necessary (e.g. configurable arch), put it in a NEW commit on top -- NEVER amend a commit any arch has validated: amending orphans its `validated_sha`, the regression guard can no longer classify the delta, and every passed arch is forced back to a full revalidation. A new commit is cheap by comparison: `advance_head` carries validation forward automatically for documentation-only, comment/format-only and CI-config deltas, and a `codeobj_diff` binary-equivalence check can carry forward the rest.
-- A CPU-only docker build (image `rocm/dev-ubuntu-24.04:7.2.4-complete`) proves the code compiles and links under ROCm. It cannot observe any Fault-class bug above, since no GPU runs, so it is never a validation gate. Do NOT wire it into the fork's GitHub Actions: a workflow that proves nothing and emails failure noise at whoever watches the fork is pure cost. (Not because of revalidation churn -- the regression guard deliberately classifies CI-config deltas as inert, so a yml commit moves the fork HEAD without forcing revalidation. The rule stands because the workflows gate nothing.) Disable Actions on the fork instead; run a CPU-only docker build locally if you want a manual compile check.
+- Cover both wavefront widths and each OS the project supports: at least one wave64 (CDNA) GPU, one wave32 (RDNA) GPU, and Windows when the project builds there. Any GPU of the right family covers its width; each validates the same branch independently.
+- Validating on another architecture should not introduce a NEW commit for anything non-essential; if that arch needs no code change, leave the branch untouched. When a fix IS genuinely necessary (e.g. configurable arch), put it in a NEW commit on top -- NEVER amend a commit another arch has already validated: the amended commit is no longer the one that was tested, so every passed arch has to test again. A new commit is cheap by comparison, and one that changes only documentation, comments or formatting, or leaves the HIP code objects byte-identical, needs no new GPU run.
+- A CPU-only docker build (image `rocm/dev-ubuntu-24.04:7.2.4-complete`) proves the code compiles and links under ROCm. It cannot observe any fault-class bug, since no GPU runs, so it is never a validation gate. Do NOT wire it into CI that appears to gate the port: a workflow that proves nothing and emails failure noise at whoever watches the repository is pure cost. Run a CPU-only docker build locally if you want a manual compile check.
 - gfx90a and gfx942 are CDNA (wave64); the gfx11xx/gfx12xx parts are RDNA (wave32). A change that passes on one width can still fail on the other via the warp-size class, which is why each arch validates on its own hardware rather than inheriting a result.
-- PR-prep gate -- nvcc CUDA-build check: before opening any PR whose claim is "the CUDA/NVIDIA build is unchanged", compile the CUDA path (`USE_HIP=OFF`) with nvcc on this GPU-less host (nvcc from the dedicated conda env `/opt/conda/envs/cuda-12.8/bin/nvcc`, created if missing with `conda create -y -n cuda-12.8 -c nvidia cuda-toolkit=12.8` -- the full `cuda-toolkit`, not compiler-only `cuda-nvcc`, because the check must LINK; host gcc 13 works. ALWAYS pin the arch, e.g. `-DCMAKE_CUDA_ARCHITECTURES=80`: `native` autodetection on a host with no NVIDIA GPU silently degrades to an ancient arch, and `atomicAdd(double*)` "no instance of overloaded function" is that fingerprint, not a real failure). nvcc compiles without an NVIDIA GPU, so this is available on a ROCm-only host, and GPU validation on AMD cannot see a broken CUDA path -- "notes.md says the CUDA path is preserved" is NOT the same as having compiled it. State it honestly in the PR ("compile-checked with nvcc, not run"). REQUIRED when the port adds a CUDA/HIP-split backend (e.g. `Foo_cuda.cpp` vs `Foo_hip.cpp`): that CUDA file is never compiled during HIP-only porting and can be badly broken. The check must reach the LINK stage (build one real target/demo, not compile-only of a single TU) -- the undefined-reference class (e.g. explicit instantiations that do not match real call-site signatures) only surfaces at link. If the fix is HIP-binary-equivalent (codeobj_diff identical), it carries forward with no GPU re-validation.
+- PR-prep gate -- nvcc CUDA-build check: before opening any PR whose claim is "the CUDA/NVIDIA build is unchanged", compile the CUDA path (`USE_HIP=OFF`) with nvcc. No NVIDIA GPU is needed: a dedicated conda env works on a ROCm-only machine (`conda create -y -n cuda-12.8 -c nvidia cuda-toolkit=12.8` -- the full `cuda-toolkit`, not compiler-only `cuda-nvcc`, because the check must LINK; host gcc 13 works. ALWAYS pin the arch, e.g. `-DCMAKE_CUDA_ARCHITECTURES=80`: `native` autodetection on a host with no NVIDIA GPU silently degrades to an ancient arch, and `atomicAdd(double*)` "no instance of overloaded function" is that fingerprint, not a real failure). GPU validation on AMD cannot see a broken CUDA path -- writing "the CUDA path is preserved" in your notes is NOT the same as having compiled it. State it honestly in the PR ("compile-checked with nvcc, not run"). REQUIRED when the port adds a CUDA/HIP-split backend (e.g. `Foo_cuda.cpp` vs `Foo_hip.cpp`): that CUDA file is never compiled during HIP-only porting and can be badly broken. The check must reach the LINK stage (build one real target/demo, not compile-only of a single TU) -- the undefined-reference class (e.g. explicit instantiations that do not match real call-site signatures) only surfaces at link. If a fix leaves the HIP code objects byte-identical, it needs no new GPU run.
   - Setup: point `-I` at the project's deps (vcpkg include dir, plus any CUDA-Samples headers it uses -- `helper_cuda.h`, `helper_math.h`, `helper_string.h`) and select the project's non-MATLAB/Python build macro. For a Thrust/CUB project also install `cuda-cccl`: on CUDA 13.x they ship there under `include/cccl/{thrust,cub}` (nvcc finds them automatically, but a host-compiler OpenMP-backend check needs that path on `-I` explicitly, and stdgpu's CMake wants `THRUST_INCLUDE_DIR` pointed at it).
   - For a header-only or template library the changed headers only compile when instantiated: CMake-configure the CUDA backend to generate its config headers, then `nvcc -c` a small TU that `template class`-instantiates the affected containers, rather than compiling headers alone.
   - The newest toolkit is not the whole check: a host TU that touches `__half` can be ill-formed on every CUDA release the project supports and fine on the one installed here, because 12.2 exposed `__half`'s integer converts to host compilers (11.0 through 12.1 hide them, and a 12.2-or-newer build hides them again if it defines `__CUDA_FP16_DISABLE_IMPLICIT_INTEGER_CONVERTS_FOR_HOST_COMPILERS__`). When the port touches half-typed host code, also compile that translation unit (or a repro of its template shape) against an older toolkit's headers -- `conda create -n cuda-12.1-hdr -c nvidia cuda-cudart-dev=12.1 cuda-cccl=12.1` is enough for a `g++ -std=c++17 -I<env>/include` check, no nvcc needed. See "A ROCm-only branch inside a shared template still COMPILES on the CUDA path" in fault-classes.md for what it catches. (marian-dev)
   - The class this catches that a HIP-only build cannot: an unconditional device-header include reaching host translation units. Used on 8 projects in one six-week window; it caught a template-shadow regression in Velvet and an stdgpu regression of exactly that include class. (stdgpu, SCAMP, cuSZ, mahout, lc0, cuPDLPx, TIGRE, Velvet)
-  - A torch `CUDAExtension` cannot get this gate the same way: `torch/extension.h` pulls in the fleet's ONLY installed PyTorch, a ROCm dev build with no CUDA-flavored counterpart on hand, so the check dies in the ambient install's headers before it can judge the port. See "CUDA gate for torch-extension ports" below for the fingerprints, the diagnosis, and the `cuda-not-validated` recording convention. (FaithC, accelerated-scan)
-  - A CUDA-path configure failure at `find_package(CUDA <ver> REQUIRED)` ("did not find CUDAConfig.cmake / cuda-config.cmake") on a project whose `cmake_minimum_required` floor is >= 3.27 is a CMake/toolchain incompatibility, not a port regression, if the project still calls the legacy `FindCUDA` module (as opposed to pure `enable_language(CUDA)` + `FindCUDAToolkit`, which is unaffected). CMake 3.27 added policy CMP0146 ("the FindCUDA module is removed"); once the project's minimum-required version reaches or exceeds a policy's introduction version, that policy defaults to NEW and the module self-disables (its file is found on disk but returns immediately) -- confirm with `--debug-find-pkg=CUDA`, which shows "The file was found at .../FindCUDA.cmake" right above the "did not find" error. `-DCMAKE_POLICY_DEFAULT_CMP0146=OLD` does NOT recover it once minimum-required is at/above the policy version (verified with a two-line reproducer CMakeLists.txt); only an in-project `cmake_policy(SET CMP0146 OLD)` before the `find_package(CUDA...)` call works, which would be an edit to code the port does not own. Confirm pre-existing by building the identical upstream base sha with the identical cmake/nvcc/gcc versions: if it fails identically, record `cuda-not-validated` with the CMP0146 explanation, not a gate. (arbor)
+  - A torch `CUDAExtension` cannot get this gate the same way: `torch/extension.h` pulls in the host's installed PyTorch, and on a machine whose only torch is a ROCm build with no CUDA-flavored counterpart, the check dies in the ambient install's headers before it can judge the port. See "CUDA gate for torch-extension ports" below for the fingerprints, the diagnosis, and how to record it. (FaithC, accelerated-scan)
+  - A CUDA-path configure failure at `find_package(CUDA <ver> REQUIRED)` ("did not find CUDAConfig.cmake / cuda-config.cmake") on a project whose `cmake_minimum_required` floor is >= 3.27 is a CMake/toolchain incompatibility, not a port regression, if the project still calls the legacy `FindCUDA` module (as opposed to pure `enable_language(CUDA)` + `FindCUDAToolkit`, which is unaffected). CMake 3.27 added policy CMP0146 ("the FindCUDA module is removed"); once the project's minimum-required version reaches or exceeds a policy's introduction version, that policy defaults to NEW and the module self-disables (its file is found on disk but returns immediately) -- confirm with `--debug-find-pkg=CUDA`, which shows "The file was found at .../FindCUDA.cmake" right above the "did not find" error. `-DCMAKE_POLICY_DEFAULT_CMP0146=OLD` does NOT recover it once minimum-required is at/above the policy version (verified with a two-line reproducer CMakeLists.txt); only an in-project `cmake_policy(SET CMP0146 OLD)` before the `find_package(CUDA...)` call works, which would be an edit to code the port does not own. Confirm pre-existing by building the identical upstream base sha with the identical cmake/nvcc/gcc versions: if it fails identically, record the CUDA check as not validated, with the CMP0146 explanation, rather than as a port regression. (arbor)
 - Cross-OS HIP host-pass check from Windows: a Windows host can syntax-check the Linux HIP host pass of a `.cu` without a Linux box. No root is needed: in WSL, `apt-get download libstdc++-14-dev libgcc-14-dev libc6-dev linux-libc-dev libc6 libcrypt-dev` then `dpkg-deb -x` each into a directory and copy `usr/include` and `usr/lib/gcc` out (`tar -ch` to resolve symlinks). Then run the HIP clang with the TU's own `-D/-I/-include` flags plus `--target=x86_64-unknown-linux-gnu --sysroot=<dir> --gcc-install-dir=<dir>/usr/lib/gcc/x86_64-linux-gnu/14 -nogpulib -x hip --cuda-host-only -fsyntax-only`; `-E -dM` should show `__linux__`, `__GLIBCXX__` and no `_MSC_VER`. Use the same ROCm toolchain as the Linux validators, both the clang major and the HIP headers: in the LichtFeld-Studio `std::pow(__half, __half)` case, clang 23 with the ROCm 7.14 headers accepted the call that clang 24 with the 10.x headers (the Linux build's toolchain) rejected as ambiguous. `__half`'s conversion operators live in ROCm's `amd_hip_fp16.h`, and that run did not separate the compiler from the headers, so a check on an older toolchain proves nothing. Reproduce the Linux error first (negative control) before trusting a clean result. It is syntax evidence only; the Linux validator's real build stays the gate. (LichtFeld-Studio)
 
 ## Platforms
 
-A platform is `<os>-<gfx>`, and the set is open: whatever GPU your host reports is a
-platform, and the gates it satisfies follow from its name -- the wavefront width from the
-architecture family, `windows` from the OS. Nothing needs adding anywhere first. The only
-thing that must be known in advance is the wavefront width of a family, because guessing
-it wrong mis-sizes shared memory silently; an unrecognised family is refused with the
-one-line fix (`[wave]` in `config/arches.toml`).
+A platform is an OS plus a GPU architecture. What matters for coverage follows from the
+architecture family -- its wavefront width -- and from the OS. Know a family's wavefront
+width before trusting a result on it, because guessing it wrong mis-sizes shared memory
+silently.
 
 Ones seen so far, for orientation rather than as a roster:
 
-- gfx90a: MI200-class CDNA2, wavefront 64. Satisfies wave64.
-- gfx942: MI300-class CDNA3, wavefront 64. Additive evidence alongside gfx90a; exercises fp8 paths gfx90a cannot.
+- gfx90a: MI200-class CDNA2, wavefront 64.
+- gfx942: MI300-class CDNA3, wavefront 64. Exercises fp8 paths gfx90a cannot.
 - gfx1100: RDNA3 (Radeon), wavefront 32. Watch warp-size assumptions and RDNA occupancy.
-- gfx1201: RDNA4 (RX 9070 XT), wavefront 32. On Windows it satisfies wave32 and windows together; the same GPU on Linux satisfies wave32 alone.
-- gfx1101, gfx1151: wavefront 32. Records already made against them still satisfy gates -- a validation does not stop being true because a machine changed.
+- gfx1201: RDNA4 (RX 9070 XT), wavefront 32. On Windows one machine covers wave32 and Windows together.
+- gfx1101, gfx1151: RDNA3 / RDNA3.5, wavefront 32.
 
 ## Windows: use TheRock ROCm, not the Windows HIP SDK
 
@@ -121,8 +119,8 @@ The tell is the split: Python `import torch` reports devices correctly, because 
 the package loads every DLL, while the standalone C++ executable says there is no GPU, and
 kernel tests that do not call `is_available()` first pass on the same run.
 
-Do not read it as "the project does not work on Windows" -- that mistake cost
-LichtFeld-Studio a wrongly-suggested gate waiver. An earlier version of this entry blamed
+Do not read it as "the project does not work on Windows" -- that mistake nearly dropped
+Windows support for LichtFeld-Studio. An earlier version of this entry blamed
 `lld-link` omitting `.CRT$XCU` from `torch_hip.dll`; that was wrong, and checking the
 executable's import table first would have found the real cause.
 
@@ -150,8 +148,7 @@ four (gfx1151; the same project's concurrency tests failed identically on gfx110
 gfx1201). `GPU_MAX_HW_QUEUES` does not change it. Results stay correct; only the overlap
 is lost. If a failing test's assertion is a timing ratio between a serial and a
 concurrent run, and every functional test passes, this is the cause and the port is not
-at fault. A 20-line repro and the bug report (`hip-win-stream-serialization`) are on
-FLAMEGPU2.
+at fault. (FLAMEGPU2, where a 20-line repro was written.)
 
 ## Using a stream after `hipDeviceReset` corrupts the heap (Windows shows it)
 
@@ -199,10 +196,10 @@ validating it is unlike validating a kernel: collectives are a multi-GPU feature
 the test process must hold two or more same-architecture GPUs SIMULTANEOUSLY. Two
 consequences for scheduling on a multi-GPU host:
 
-- Parallelising ports across a host's GPUs -- one build or validation pinned per
+- Parallelising work across a host's GPUs -- one build or test run pinned per
   device with `HIP_VISIBLE_DEVICES` -- is suspended for the duration of a
-  collectives run. The run owns every device it uses; another port's job landing on
-  a sibling GPU mid-run contends with it, and both results are suspect.
+  collectives run. The run owns every device it uses; another job landing on a
+  sibling GPU mid-run contends with it, and both results are suspect.
 - The one-device-per-process pin the mixed-arch section above prescribes must be
   LIFTED for the collectives process: give it exactly the same-architecture devices
   it should use (read the device list at run time, never a remembered index), and
@@ -270,18 +267,6 @@ When the gate cannot see the path, find a second observable rather than reportin
 The decisive form of this evidence is a BASE CONTROL: rebuild the pre-fix source and show the gate passing while the second observable is wrong. On lc0 the pre-fix build passed 34/34 on a moves-left net and simultaneously reported moves left 72 against the CPU reference's 82 in fp16. That single pair is what turns a reviewer's argued finding into a measured one, and it costs one file's recompile when the fix is one file.
 
 Watch the precision variant too: a gate pinned to the fp32 backend can miss a defect that only exists in the fp16 one, and fp16 is often what the auto-selecting backend actually gives users. lc0 registers `hip` as fp32 and `hip-fp16` as half, and `hip-auto` picks half on every gfx11 part, so the recorded fp32 gate command was not testing the configuration users run. Expect an fp16-vs-CPU comparison to fail tight tolerances on ordinary rounding (policy relative 3.4e-02 here) and read the error MAGNITUDE rather than the pass/fail bit: rounding sits orders of magnitude below a corrupted-constant signature.
-
-## `classify` needs the fork already cloned at `projects/<name>/src`
-
-`moatlib.py classify <name> <old_sha> <new_sha>` diffs the fork's git history, so it
-reads `projects/<name>/src` as a checkout, not a description. In a fresh worktree
-(the common case: a validator dispatched to revalidate rarely has yesterday's build
-directory lying around) that path does not exist yet, and the tool fails closed --
-`class=unknown arch_independent=False (classification failed -> revalidate)` -- which
-is indistinguishable from a genuine indeterminate verdict. Clone the fork's port
-branch into `projects/<name>/src` FIRST (or point it at an existing checkout), then
-classify; do not read an `unknown` verdict as evidence the delta is functional before
-checking whether the clone was even there. (SCAMP)
 
 ## Diagnosing a suspected AMD fault before escalating
 
@@ -353,12 +338,12 @@ versioned file instead (`hiprtc0*.dll` -- the `0` excludes
 
 ## CUDA gate for torch-extension ports: the host's installed PyTorch itself can be the wall
 
-On a host whose only installed PyTorch is a ROCm dev build (e.g. built from `/var/lib/jenkins/pytorch` with `USE_ROCM=1`), nvcc-compiling a torch C++/CUDA extension fails for reasons that have nothing to do with the port. No full `CUDAExtension` link is reachable without downloading a genuine CUDA-flavored torch wheel, so the closest available check is a raw `nvcc -c` of the `.cu` against `torch.utils.cpp_extension.include_paths()` -- and that dies in the ambient install's headers. Two fingerprints of the same root cause:
+On a host whose only installed PyTorch is a ROCm dev build (built from source with `USE_ROCM=1`), nvcc-compiling a torch C++/CUDA extension fails for reasons that have nothing to do with the port. No full `CUDAExtension` link is reachable without downloading a genuine CUDA-flavored torch wheel, so the closest available check is a raw `nvcc -c` of the `.cu` against `torch.utils.cpp_extension.include_paths()` -- and that dies in the ambient install's headers. Two fingerprints of the same root cause:
 
 - The shipped `torch/include` tree was generated for the ROCm build and is missing CUDA-only generated headers, e.g. `#include <c10/cuda/impl/cuda_cmake_macros.h>: No such file or directory` (that file is emitted by cmake only when `USE_CUDA=1`).
 - `torch/headeronly/util/complex.h` guards `#include <thrust/complex.h>` with `#if defined(__HIPCC__) || defined(__HIPCC__)` -- a duplicated-token typo, evidently meant `__CUDACC__ || __HIPCC__` -- so under nvcc the include is skipped while `c10/util/complex.h`/`complex_math.h` still reference `thrust::complex` unconditionally under `__CUDACC__`, cascading into ~100 "identifier thrust is undefined" errors on ANY project that includes `torch/extension.h`, regardless of that project's own code (observed on dev build `2.14.0a0+gitb6b444c`).
 
-Neither is a defect in the port: they are defects in the ambient PyTorch install, present identically whether you build the pristine upstream or the ROCm branch. Diagnose it as environmental by checking that the errors bottom out in `torch/headeronly`/`c10` (not the port's own files) and that `grep -n '__builtin_trap\|__trap\|__HIP\|hip[A-Z]\|amdgcn\|USE_ROCM'` over the port's own changed sources is empty. Do not chase this by patching the installed torch headers (that is fixing the environment, not the port). Record `cuda-not-validated: <the missing-header or duplicated-guard error>` and, if there is time budget left, substitute a source-level check: diff the port's CUDA-facing code (e.g. the non-ROCm branch of a dual-path file) against upstream and confirm it is byte-for-byte the same logic, only guarded differently -- that is as much passthrough evidence as a real nvcc pass would give without one. (FaithC, accelerated-scan)
+Neither is a defect in the port: they are defects in the ambient PyTorch install, present identically whether you build the pristine upstream or the ROCm branch. Diagnose it as environmental by checking that the errors bottom out in `torch/headeronly`/`c10` (not the port's own files) and that `grep -n '__builtin_trap\|__trap\|__HIP\|hip[A-Z]\|amdgcn\|USE_ROCM'` over the port's own changed sources is empty. Do not chase this by patching the installed torch headers (that is fixing the environment, not the port). Record the CUDA check as not validated, quoting the missing-header or duplicated-guard error, and, if there is time budget left, substitute a source-level check: diff the port's CUDA-facing code (e.g. the non-ROCm branch of a dual-path file) against upstream and confirm it is byte-for-byte the same logic, only guarded differently -- that is as much passthrough evidence as a real nvcc pass would give without one. (FaithC, accelerated-scan)
 
 Before settling for the diff-only fallback, check whether the project has a SECOND build path that reaches the CUDA-facing device code without going through `torch.utils.cpp_extension`/`CUDAExtension` at all -- a `CUDA_PTX_COMPILATION` target invoked from its own `CMakeLists.txt`, an `enable_language(CUDA)` project that only needs `find_package(CUDAToolkit)` for the device kernels themselves. That path only needs `find_package(Torch)` for include directories (no ROCm/CUDA mismatch, no linking), so it configures and builds against the ambient ROCm torch without incident, and it gives a REAL pinned-arch nvcc compile of the port's touched CUDA headers -- strictly better evidence than a diff, and worth the extra ten minutes of reading the project's CMake before writing off the gate as environmental. Confirm first that the headers the port touches are actually `#include`d by whatever `.cu` files that path compiles, or the pass proves nothing about the port's own edits. (diff-surfel-tracing)
 
@@ -366,7 +351,7 @@ Before settling for the diff-only fallback, check whether the project has a SECO
 
 Some projects have no tests at all -- no `tests/`, no CI, no assertions -- so the GPU gate has to be authored. Where the script lives is not bookkeeping, because the commit-message Test Plans name it: a Test Plan is a promise that a reader with the hardware can re-run the command, and a fenced `python3 validate_foo.py` that resolves to nothing in a clone of the fork reads as "there is a validation script you have not found" rather than "this lives elsewhere". Every fenced command in every commit body must be runnable from a clone of the fork.
 
-Default to shipping the harness in the port when it is ONE standalone file importing only the standard library, the framework the project already depends on, and the project itself. That is a script, not an imposed test framework, so "we cannot invent a test framework for someone else's repository" is not a reason to keep it out; and it is the direct answer to "how do I know this works on my machine" for a PR that asks a maintainer to take a whole new back end on trust. Put it beside whatever standalone script the project already ships (its `example/` or `demo/` directory), name it for what it actually checks (a script that asserts `torch.version.hip` is the ROCm check, not a general test), and point at it from the same doc section that documents the ROCm build. Keep ONE copy -- move it, do not copy it, because two copies drift and the drifting one is the one the gate runs. Keep it in MOAT only when it genuinely cannot ship: it needs fixtures, data, or a framework the project does not have. Never leave it in `agent_space/`, which is gitignored: harnesses written there are lost to every other host. (diff-surfel-tracing, EnvGS)
+Default to shipping the harness in the port when it is ONE standalone file importing only the standard library, the framework the project already depends on, and the project itself. That is a script, not an imposed test framework, so "we cannot invent a test framework for someone else's repository" is not a reason to keep it out; and it is the direct answer to "how do I know this works on my machine" for a PR that asks a maintainer to take a whole new back end on trust. Put it beside whatever standalone script the project already ships (its `example/` or `demo/` directory), name it for what it actually checks (a script that asserts `torch.version.hip` is the ROCm check, not a general test), and point at it from the same doc section that documents the ROCm build. Keep ONE copy -- move it, do not copy it, because two copies drift and the drifting one is the one the gate runs. Keep it in your own porting records only when it genuinely cannot ship: it needs fixtures, data, or a framework the project does not have. Never leave it in an untracked scratch directory: a harness written there is lost to every other machine. (diff-surfel-tracing, EnvGS)
 
 ## A patch you carry against a pinned dependency: check "unfixed upstream" per entry
 
@@ -525,7 +510,7 @@ generated from the installed header at configure time and never checked in; retu
 a plain probe already compiles; returns empty if the installed header is already in the fixed
 order; and re-probes WITH the shim, discarding it and warning if it did not actually help.
 
-Verified in four directions on this host: ROCm 7.14 at C++23 -> shim generated and a real HIP
+Verified in four directions on a gfx1151 Windows machine: ROCm 7.14 at C++23 -> shim generated and a real HIP
 target builds; a simulated ROCm 10.1 toolchain (real 10.1 header via `-resource-dir`) ->
 "no shim needed", nothing generated; a C++20 project -> "no shim needed"; and a negative
 control with the shim disabled -> the same target fails on the same header, proving the pass
@@ -534,49 +519,6 @@ was not vacuous.
 Nothing here is guarded on Windows. MSVC's STL is merely the first to implement P0533R9;
 ROCm/llvm-project#285 notes that libstdc++ doing so will break Linux identically. A
 `WIN32`-only guard, or a ROCm version check, would miss that. Probe for the capability.
-
-## A rate-limited host can still get a usable fork clone: filter the blobs, sparse the tree
-
-Some hosts have GitHub blob traffic throttled hard enough that a full clone of a large repo is not survivable inside a stop-discipline budget (measured at roughly 1-3 MB/min for a ~110 MB repo, so more than half an hour before anything is readable). A lazy promisor checkout of the whole tree is no better -- it re-fetches per file and stalls part way through. But history and trees are cheap: a blob-filtered clone with the working tree narrowed to the files you actually need is seconds, not minutes.
-
-```
-git clone --filter=blob:none --no-checkout --branch <port-branch> <fork> <dest>
-git -C <dest> sparse-checkout init --no-cone
-git -C <dest> sparse-checkout set '/docs/*.md' '/*.md'    # the paths this round edits
-git -C <dest> checkout <port-branch>
-git -C <dest> branch master origin/master                 # or the fork's default branch
-```
-
-Why each line matters:
-
-- `--filter=blob:none` fetches every commit and tree but no file contents, so the diff, log, and `git ls-tree` all work immediately. `git show <ref>:<path>` then pulls single blobs on demand -- enough to read a handful of build files without ever checking them out.
-- Files outside the sparse set carry `skip-worktree`, so `git status --porcelain` stays clean and the integrity gate reads correctly rather than reporting the rest of the tree as deleted.
-- The last line is not optional for MOAT tooling: `jargon.py --port` resolves `<default>..<port-branch>` and fails with "cannot resolve" on a clone that has only the remote-tracking ref.
-
-This is a docs, diff, and review checkout, not a build checkout -- a compile needs the whole tree and there is no way around paying for it. Use it for a documentation-only porter round, a reviewer reading a delta, or a validator verifying that a delta is confined to another platform's guards. (LichtFeld-Studio)
-
-## `jargon.py --port` alone misses an in-flight fix round
-
-`utils/jargon.py --port <name>` resolves its range from `obj.get("fork_branch") or
-PORT_BRANCH`, and nothing in `moatlib.py` ever writes `fork_branch` -- so it always
-defaults to `moat-port`. Once a fix round is staged on `moat-fix-<pr#>` (the published
-`moat-port` is frozen while a PR is open), `--port` silently scans the FROZEN branch and
-never sees the round's new commits; it can report "clean" while genuinely-added jargon
-sits unscanned on the staging branch. Scan the real range explicitly instead: `python3
-utils/jargon.py -C projects/<name>/src --commits <base>..<fix-branch> --diff
-<base>..<fix-branch>`. Two things make this fail open rather than loud: a shallow single-branch
-clone of the fork usually has no local `main`, and `scan_commits`/`scan_diff` (unlike
-`port_range`'s explicit range-count check) report zero hits on an unresolvable git range
-instead of erroring -- so an unfetched `main` produces a false "clean", not a crash. Fetch
-it first (`git fetch --depth 50 origin main:main`) and confirm the range resolves to a
-nonzero commit count before trusting a "clean" result. (mahout)
-
-The opposite false alarm happens after an upstream sync: the scan's base is the clone's
-local default branch, and if that branch still points at the old mirror tip, every
-upstream commit the merge brought in is scanned as if it were the port's, and upstream's
-own wording ("Strategy B", "revalidate", "COLMAP model") is reported. Fast-forward the local
-default branch to the fetched upstream (`git branch -f master origin/master`) before
-scanning. (LichtFeld-Studio)
 
 ## A cached build-script decision from a wrong env var survives fixing the env var
 
@@ -592,9 +534,9 @@ lib -- fails with `unable to find library -l<name>`, which looks like a missing 
 library rather than a stale cache. Fix: `cargo clean -p <crate>` (not just re-running with
 the right env) before rebuilding. Generalizes beyond ROCm: always check `env | grep -i
 <toolkit>_path` against what the build script actually expects before trusting old notes
-from a different host generation -- ROCm/CUDA install layouts (`/opt/rocm` vs a
-TheRock/pip `_rocm_sdk_devel` tree vs a conda env) are not portable between hosts even
-within the same fleet. (mahout)
+from a different machine -- ROCm/CUDA install layouts (`/opt/rocm` vs a TheRock/pip
+`_rocm_sdk_devel` tree vs a conda env) are not portable between hosts, even ones set up by
+the same team. (mahout)
 
 ## Headless Vulkan on a Linux GPU host: Xvfb plus Mesa's software WSI
 

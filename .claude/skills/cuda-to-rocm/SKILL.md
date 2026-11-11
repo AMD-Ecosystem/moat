@@ -5,7 +5,7 @@ description: Port a CUDA project to ROCm/HIP for AMD GPUs. Strategy selection, t
 
 # CUDA to ROCm/HIP
 
-Accumulated across every port MOAT has done. This file is the index and the decision-critical parts;
+Accumulated across many real ports. This file is the index and the decision-critical parts;
 everything else is in `references/`, loaded only when you need it.
 
 **Most porting bugs are not in symbol names.** Hipify handles the renaming. The bugs are
@@ -60,7 +60,7 @@ to inherit. Cheapest high-signal check first: grep the upstream's own docs for
 `amd|rocm|hip|gfx[0-9]`, because reference repos routinely link platform forks.
 `references/assess-existing-support.md`.
 
-Some CUDA has no HIP analogue to translate INTO, so hipify succeeds at doing nothing and the port looks small. CUTLASS reimplements against Composable Kernel; CuTe has a real structural correspondence in AMD's FlyDSL, whose layout algebra is modelled on it. That is a reimplementation with a defined target, not the same verdict as "no target exists" -- and both get written `cant-port` unless you say which. `references/no-hip-equivalent.md`.
+Some CUDA has no HIP analogue to translate INTO, so hipify succeeds at doing nothing and the port looks small. CUTLASS reimplements against Composable Kernel; CuTe has a real structural correspondence in AMD's FlyDSL, whose layout algebra is modelled on it. That is a reimplementation with a defined target, not the same verdict as "no target exists" -- and both get written off as "not portable" unless you say which. `references/no-hip-equivalent.md`.
 
 ## Fault classes -- the index
 
@@ -141,14 +141,15 @@ from a genuine wavefront bug. Both were learned the expensive way.
 
 Any fix to code that is not arch-guarded must be correct on **both** wavefront sizes. A
 per-arch hack that fixes wave32 and regresses wave64 makes the archs ping-pong, and each
-"fix" then costs a full revalidation everywhere. Prefer a runtime `warpSize` query on the
+"fix" then costs a full re-test on every architecture. Prefer a runtime `warpSize` query on the
 host and a compile-time constant in device code.
 
 ## Validation bar
 
 A real-GPU test run is the only evidence that counts. Lint is not validation, and a
-CPU-only build proves compilation and nothing else. Coverage is expressed as gates --
-wave64, wave32, windows -- satisfied by any arch carrying that attribute. Also compile the
+CPU-only build proves compilation and nothing else. Cover both wavefront widths and each
+OS the project supports: at least one wave64 (CDNA) GPU, one wave32 (RDNA) GPU, and Windows
+when the project builds there. Also compile the
 CUDA path with nvcc as a no-regression gate: an additive ROCm port must leave the CUDA
 build a pure passthrough. `references/validation.md`.
 
@@ -162,13 +163,15 @@ predicates), so it lands the NVIDIA half only. `references/upstream-sync.md`.
 ## Writing it up
 
 Commit messages, PR bodies and code comments go to upstream maintainers who do not know
-our vocabulary. Check with `python3 utils/jargon.py --port <name>` before pushing -- the whole branch,
-not the commit you just wrote; terms and their replacements are in `config/jargon.toml`.
+your team's vocabulary. Before pushing, check the whole branch -- not just the commit you
+wrote last -- for in-house terms: internal stage or state names, tool names, and this
+skill's own labels such as "Strategy A" or "fault class". A term list with a replacement
+for each is worth keeping and running mechanically.
 
-The checker matches a fixed term list, so it does not catch a comment that explains a
-hazard by naming ANOTHER ported project as shorthand for it. arrayfire carried eleven such
-comments; the six saying "fault class" were flagged and five saying "the amgcl void*-aliasing
-fix" or "the gsplat target-attribute rule" were not. To an upstream reader both are dangling
+A term list does not catch a comment that explains a hazard by naming ANOTHER ported
+project as shorthand for it. arrayfire carried eleven such comments; the six saying "fault
+class" were caught by a term check and five saying "the amgcl void*-aliasing fix" or "the
+gsplat target-attribute rule" were not. To an upstream reader both are dangling
 references to a codebase they have never seen. State the hazard itself -- "hipSPARSE typedefs
 several descriptor types to the same void*, so a wrapper keyed on the handle type cannot
 separate them" -- and before pushing, grep new comments for the names of other projects you

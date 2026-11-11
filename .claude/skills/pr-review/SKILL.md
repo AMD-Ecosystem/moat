@@ -72,7 +72,7 @@ parallelism is only how a top-level session affords them.
 ## Review Workflow
 
 ### Step 1: Understand context
-Read `projects/<name>/plan.md` (the intended strategy and risks), `notes.md`, and invoke the `cuda-to-rocm` skill. Group the diff by type (compat header, CMake, kernel fixes, tests, CI). Note scope.
+Read `projects/<name>/plan.md` (the intended strategy and risks), `notes.md`, and invoke the `cuda-to-rocm` and `moat-porting` skills. Group the diff by type (compat header, CMake, kernel fixes, tests, CI). Note scope.
 
 ### Step 2: Deep review
 Go through every changed line against [review-checklist.md](review-checklist.md). For any
@@ -134,5 +134,6 @@ Only when the user requests a "detailed" review. File-specific feedback with lin
 Read these for context rather than relying on memory:
 - `AGENTS.md` -- standing rules, autonomy boundary, coding style
 - the `cuda-to-rocm` skill -- porting strategies and fault classes the port must follow
+- the `moat-porting` skill -- how MOAT records, gates, and carries the port forward
 - `projects/<name>/plan.md` -- the intended strategy, risks, and test plan for this project
 - `projects/<name>/notes.md` -- project-specific gotchas and prior review/validation records

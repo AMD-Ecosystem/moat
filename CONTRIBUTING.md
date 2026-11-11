@@ -275,7 +275,11 @@ the checker missed, add it in the same change.
 
 Capture per-project findings in `projects/<name>/notes.md`. If a lesson would help someone
 porting a **different** project, promote it into the `cuda-to-rocm` skill's `references/`
-at the moment you learn it, naming the source project. A later sweep is what failed before:
+at the moment you learn it, naming the source project. That skill is published outside MOAT
+as an AMD skill, so write the lesson for a reader who has never seen this repository: no
+`moatlib`, `notes.md`, gates, roles, states, or fleet hosts. A lesson about MOAT's own
+pipeline, records, tools, or hosts goes to the `moat-porting` skill, and
+`utils/check.py skills` fails when MOAT vocabulary lands in `cuda-to-rocm`. A later sweep is what failed before:
 an append-only file nobody was told to open went unused from the day it was created.
 
 File it by who needs it, not by where you found it. The activity that surfaces a lesson is

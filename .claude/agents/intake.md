@@ -73,7 +73,8 @@ Two checks that are per-file, not top-level:
   to compete with it.
 - For the finer judgement -- is an existing port authoritative, and does that make the
   work "validate and improve" rather than "port from scratch" -- read the
-  `cuda-to-rocm` skill's `references/assess-existing-support.md`.
+  `cuda-to-rocm` skill's `references/assess-existing-support.md`, plus the `moat-porting` skill's
+  dispositions section.
 
 If a mature AMD port exists, recommend a decline with reason `already-supported`
 (`set-intake --reason`, see Outcomes) -- the skip itself is a person's, recorded through
