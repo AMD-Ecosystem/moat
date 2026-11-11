@@ -1226,6 +1226,13 @@ Non-blocking:
 Requested by jeff: repeat the `d90e1d189` gfx1250 MMA check at the sync head, because merge `42c254d3a` changed shared TC compiler code (AbiLowering, ValueSpecialisation, TcArguments). Validator role at fork `moat-port` `8b9994f6a54dec9ca4de062eb8491a1dcea083ad` (detached checkout; `ls-remote` showed `moat-port` at it when cloned). Verdict: **pass**, every check, every number inside the same range as the `d90e1d189` run.
 
 Host and toolchain (job directory only): one MI450 gfx1250, `HIP_VISIBLE_DEVICES=0` (dispatcher pin). Same stack as the `d90e1d189` entry: ROCm 10.1.0 TheRock wheels (`ROCM_PATH=HIP_PATH=` the image venv's `_rocm_sdk_devel`), `hipconfig --version` 7.16.26385-0000000, AMD clang 24.0.0git (ROCm/llvm-project d6f6cb691863), amd-smi 27.1.0, amdgpu 7.1.0.31300009, Temurin 21.0.13+9 (Adoptium API), job-local Maven repository, `CMAKE_BUILD_PARALLEL_LEVEL=32`, `ulimit -c 0`. Before each GPU step and after the last, `amd-smi process` printed "No running processes detected" and `/sys/class/kfd/kfd/proc/` was empty.
+## Validation 2026-11-11 (linux-gfx950) at 8b9994f6a
+
+Requested by jeff after his "sync first" ruling: full revalidation of `moat-port` at `8b9994f6a54dec9ca4de062eb8491a1dcea083ad` (upstream develop `986fbadfc` merged at `42c254d3a`, plus the HIPCodeCache `getTornadoHome()` fix), review 13 passed. Verdict: **completed**. Every count matches the porter's gfx950 full-build equivalent at the same head, and every difference from this platform's `ee94c5c7f` run comes from upstream's three new test classes.
+
+Host and toolchain (job directory only): one MI355X (gfx950, wave64, 288 GB), `HIP_VISIBLE_DEVICES=0` (dispatcher pin, kept). Another job's process held 26-66 GB of VRAM on the same GPU during the run, and nothing failed. ROCm 10.1 TheRock wheels (`ROCM_PATH` = `HIP_PATH` = the image venv's `_rocm_sdk_devel`), Temurin 21.0.13+9 (Adoptium API), CMake 3.31.6, job-local Maven repository (`MAVEN_OPTS=-Dmaven.repo.local=<job>/m2`), `CMAKE_BUILD_PARALLEL_LEVEL=64`. hipDF/hipVS: the five wheels from `https://pypi.amd.com/rocm-7.2.3/packages/...` (`amd-libhipdf` 3.0.0, `amd-libhipmm` 4.0.0, `amd-rocmds-logger` 1.0.0, `amd-libhipvs` 1.0.0, `amd-libraft` 1.0.0), unpacked with `python3 -I -m zipfile -e`. Run-time `LD_LIBRARY_PATH` = the five wheel `lib64` dirs, `$ROCM_PATH/lib/llvm/lib` and `$ROCM_PATH/lib`. `ulimit -c 0` for every GPU run.
+
+Head and tree: fresh clone of `AMD-Ecosystem/TornadoVM`. `ls-remote` showed `moat-port` at `8b9994f6a` and `develop` at `f8e3ac907`. Detached checkout of `8b9994f6a`, and `git status --porcelain` was empty before the build. After all runs the only entry is the untracked `tornado-compiler/utils/hiprtccheck/hiprtccheck` binary, which I built for the lit tests.
 
 ```bash
 git clone --filter=blob:none https://github.com/AMD-Ecosystem/TornadoVM projects/TornadoVM/src
@@ -1258,3 +1265,37 @@ Harness bounds as printed: `f16/bf16 exact cases 0, random fp8 0.0001, other ran
 Not run (scope per jeff): quickPass, library suites, ck-hip classes, stress loops. No CUDA compile owed here (the porter ran the CUDA gate at `8b9994f6a`).
 
 Completion checks: `git -C projects/TornadoVM/src status --porcelain` empty, HEAD `8b9994f6a`. `python3 utils/jargon.py --port TornadoVM` with local `develop` at the fork mirror `f8e3ac907` reports the one upstream hit review 13 recorded (`docs/CONSUME-FROM-UNIFIED-MEMORY.md:59`, present at upstream `986fbadfc`); with local `develop` set to upstream `986fbadfc` (fetched into the clone only) it is clean. Validation only: nothing pushed to the fork.
+TORNADO_CK_REQUIRED=1 HIPDF_HOME=<wheels>/x/libcudf utils/timeit.sh TornadoVM compile -- make -C projects/TornadoVM/src jdk21 BACKEND=hip
+# BUILD SUCCESS, 3:00 min Maven wall (ck-hip 2:47, CK fetched, nine default targets); libtornado-ck.so and libtornado-hipdf.so in the SDK
+source projects/TornadoVM/src/setvars.sh; ulimit -c 0; export LD_LIBRARY_PATH=<wheel lib64s>:$ROCM_PATH/lib/llvm/lib:$ROCM_PATH/lib:$LD_LIBRARY_PATH
+tornado --devices
+tornado-selftest
+tornado-test --verbose --quickPass
+tornado-test -V <class>        # each class below
+gcc -O2 -D__HIP_PLATFORM_AMD__ -I$ROCM_PATH/include -o hiprtccheck hiprtccheck.c -L$ROCM_PATH/lib -lhiprtc -Wl,-rpath,$ROCM_PATH/lib   # in tornado-compiler/utils/hiprtccheck
+PATH=$PATH:/usr/local/cuda/bin make -C projects/TornadoVM/src test-nogpu JDK=jdk21
+```
+
+| Run (`8b9994f6a`, CK + hipDF/hipVS SDK) | Result | gfx950 porter run at `8b9994f6a` | This platform at `ee94c5c7f` |
+|---|---|---|---|
+| `tornado --devices` | 1 HIPDriver device 0:0 AMD Instinct MI355X, 288.0 GB global, 160.0 KB local, 1024 block threads | same | same |
+| `tornado-selftest` | 20 pass, 1 skip (device/device-launch). TC target "HIP gfx950, warp 64, tensor cores F16+FP8". `mma-f16` 32x32x64 and `mma-fp8` 16x16x64 PASS | 20 / 1 | 20 / 1 |
+| `tornado-test --verbose --quickPass` | 2230 ran: 1509 pass, 719 unsupported, 2 failed (`ComputeTests#testMandelbrot`, `#testJuliaSets`, both whitelisted). rc 0, 462 s | full-build equivalent 2230 / 1509 / 719 / 2 | 2188 / 1490 / 696 / 2 |
+| `TestCopyDevicePointers` | 3/0/0 | 3/3 | 3/3 |
+| MMA classes (ran/failed/unsupported) | TestMatrixMultiplicationMMA 18/0/0, MMABF16 7/0/0, MMAInt8 12/0/0, MMAFP8 8/0/0, MMACpAsync 8/0/0, TestMMAGlobalFragmentLoad 6/0/0, TestMMAInt8FragmentElementRead 4/0/0, TestMMAFragmentHelper 2/0/0 (65/65). TestMatrixMultiplicationKernelContext 3/0/0 | same | same |
+| Library classes | TestCuBlas 27/0/0, TestCuBlasLt 10/0/0, TestCuDnn 20/0/0, TestCutlass 26/0/0, TestCudf 24/0/0, TestCudfColumns 23/0/3 (the three Parquet writes that need ZSTD: `testWriteParquetColumnsRoundTrip`, `...DecimalAndFloat`, `...WithStringsGathered`), TestCuVS 7/0/0, TestCuFft 9/0/0, TestCuRand 7/0/0, TestCusparse 17/0/0, TestNccl 30/0/10 (two GPUs needed), TestNcclMultiProcess 5/0/2, TestProfiler 9/0/0 | same for the five it ran | identical |
+| New upstream classes | TestArrayInit 11/0/0. TestConsumeFromUnifiedMemory 18/0/10 (HIP reports no unified memory, and the 8 that pass check the rejection paths). TestDeviceView 13/0/13 (CUDA only) | same | -- |
+| `make test-nogpu JDK=jdk21` | BUILD SUCCESS, 15 s. Surefire: 246 tests in 34 classes over 10 modules, 0 failures, 0 errors. Codegen LitTest 60/60 (with hiprtccheck), TcCompilerTest 29/29, HipMmaRoutingTest 1/1, HeaderlessRepresentationTest 3/3, frontend LitTest 12/12 | "409 tests, 0 failures" | pass |
+
+Differences explained:
+- quickPass against this platform's `ee94c5c7f` run: +42 ran, +19 pass, +23 unsupported. These are exactly upstream's three new classes: TestArrayInit 11 pass, TestConsumeFromUnifiedMemory 8 pass + 10 unsupported, TestDeviceView 13 unsupported. 1490 + 19 = 1509 and 696 + 23 = 719. No test that passed at `ee94c5c7f` failed or turned unsupported. The two failures are the same whitelisted FMA-contraction pair as at every earlier round.
+- quickPass against the porter's run at the same head: their quickPass used an SDK without CK or hipDF (1428 / 800 / 2). This run used the full SDK and matches their full-build equivalent exactly.
+- `test-nogpu` count: 246 is the sum of the ten module-level Surefire summaries (14+20+26+8+17+20+14+69+55+3), and the per-class lines add up to the same number. The porter's 409 was counted some other way and is not reproducible from Surefire's own totals. It is not a failure difference: both runs have 0 failures and the same named classes and counts.
+
+CUDA no-regression gate: not rerun. The porter recorded it at `8b9994f6a` (`make jdk21 BACKEND=cuda` and `BACKEND=cuda,hip` with nvcc 12.8.93), so it is already done for this head.
+
+Completion checks:
+- `python3 utils/jargon.py --port TornadoVM`, with the clone's `develop` = fork `develop` (`f8e3ac907`): one hit, "Revalidate this when changing JDKs" at `docs/CONSUME-FROM-UNIFIED-MEMORY.md:59`. That line is upstream's text (`git grep` finds it at `986fbadfc`). With `develop` set to upstream `986fbadfc`, the scan is clean. This matches review 13's non-blocking item: fast-forward the fork's `develop` mirror before the review PR opens.
+- Documentation: `BACKEND=hip` is documented in `README.md`, `INSTALL_FROM_SOURCE.md` and `docs/source/developer-guidelines.rst`.
+- Integrity: HEAD `8b9994f6a`, no tracked file modified. Validation only, so nothing was pushed to the fork.
+- Not covered: multi-GPU NCCL/RCCL (one pinned GPU).

@@ -226,3 +226,35 @@
 {"kind":"phase","ts":"2026-11-11T16:10:08Z","phase":"compile","seconds":21.301,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
 {"kind":"phase","ts":"2026-11-11T16:10:41Z","phase":"test","seconds":12.081,"exit":0,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
 {"kind":"session","ts":"2026-11-11T16:11:21Z","epoch":1794413481.985975618,"event":"end","platform":"linux-gfx1250"}
+{"kind":"session","ts":"2026-11-11T16:10:10Z","epoch":1794413410.263704580,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-11T16:13:16Z","phase":"compile","seconds":186.332,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-11T16:13:27Z","phase":"test","seconds":1.760,"exit":0,"cmd":"tornado-selftest"}
+{"kind":"phase","ts":"2026-11-11T16:21:28Z","phase":"test","seconds":461.760,"exit":0,"cmd":"tornado-test --verbose --quickPass"}
+{"kind":"phase","ts":"2026-11-11T16:21:43Z","phase":"test","seconds":1.167,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.pointers.TestCopyDevicePointers"}
+{"kind":"phase","ts":"2026-11-11T16:21:44Z","phase":"test","seconds":1.022,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMMAFragmentHelper"}
+{"kind":"phase","ts":"2026-11-11T16:21:45Z","phase":"test","seconds":1.137,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMMAGlobalFragmentLoad"}
+{"kind":"phase","ts":"2026-11-11T16:21:46Z","phase":"test","seconds":1.045,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMMAInt8FragmentElementRead"}
+{"kind":"phase","ts":"2026-11-11T16:21:47Z","phase":"test","seconds":0.995,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationKernelContext"}
+{"kind":"phase","ts":"2026-11-11T16:21:49Z","phase":"test","seconds":1.386,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMA"}
+{"kind":"phase","ts":"2026-11-11T16:21:50Z","phase":"test","seconds":1.197,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMABF16"}
+{"kind":"phase","ts":"2026-11-11T16:21:51Z","phase":"test","seconds":1.168,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMACpAsync"}
+{"kind":"phase","ts":"2026-11-11T16:21:52Z","phase":"test","seconds":1.187,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMAFP8"}
+{"kind":"phase","ts":"2026-11-11T16:21:54Z","phase":"test","seconds":1.274,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMAInt8"}
+{"kind":"phase","ts":"2026-11-11T16:21:59Z","phase":"test","seconds":4.938,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cublas.TestCuBlas"}
+{"kind":"phase","ts":"2026-11-11T16:22:02Z","phase":"test","seconds":3.224,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cublas.TestCuBlasLt"}
+{"kind":"phase","ts":"2026-11-11T16:22:20Z","phase":"test","seconds":18.384,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cudnn.TestCuDnn"}
+{"kind":"phase","ts":"2026-11-11T16:22:22Z","phase":"test","seconds":1.744,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cutlass.TestCutlass"}
+{"kind":"phase","ts":"2026-11-11T16:22:35Z","phase":"test","seconds":13.053,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cudf.TestCudf"}
+{"kind":"phase","ts":"2026-11-11T16:22:42Z","phase":"test","seconds":6.818,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cudf.TestCudfColumns"}
+{"kind":"phase","ts":"2026-11-11T16:22:48Z","phase":"test","seconds":5.825,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cuvs.TestCuVS"}
+{"kind":"phase","ts":"2026-11-11T16:22:50Z","phase":"test","seconds":2.161,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cufft.TestCuFft"}
+{"kind":"phase","ts":"2026-11-11T16:22:51Z","phase":"test","seconds":1.200,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.curand.TestCuRand"}
+{"kind":"phase","ts":"2026-11-11T16:22:53Z","phase":"test","seconds":1.708,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cusparse.TestCusparse"}
+{"kind":"phase","ts":"2026-11-11T16:23:05Z","phase":"test","seconds":11.860,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.nccl.TestNccl"}
+{"kind":"phase","ts":"2026-11-11T16:23:07Z","phase":"test","seconds":1.833,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.nccl.TestNcclMultiProcess"}
+{"kind":"phase","ts":"2026-11-11T16:23:08Z","phase":"test","seconds":1.519,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.profiler.TestProfiler"}
+{"kind":"phase","ts":"2026-11-11T16:23:09Z","phase":"test","seconds":0.747,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.arrays.TestArrayInit"}
+{"kind":"phase","ts":"2026-11-11T16:23:10Z","phase":"test","seconds":0.958,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.memory.TestConsumeFromUnifiedMemory"}
+{"kind":"phase","ts":"2026-11-11T16:23:11Z","phase":"test","seconds":0.635,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.deviceview.TestDeviceView"}
+{"kind":"phase","ts":"2026-11-11T16:23:53Z","phase":"test","seconds":15.001,"exit":0,"cmd":"make -C projects/TornadoVM/src test-nogpu JDK=jdk21"}
+{"kind":"session","ts":"2026-11-11T16:25:16Z","epoch":1794414316.468671268,"event":"end","platform":"linux-gfx950"}
