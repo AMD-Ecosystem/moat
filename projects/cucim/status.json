@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "cucim",
+  "upstream_url": "https://github.com/rapidsai/cucim",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-11T20:55:23Z",
+  "updated_at": "2026-11-11T20:55:24Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
