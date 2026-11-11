@@ -56,3 +56,7 @@ Build is heavy (LLVM + large C++ tree; full builds go to a fleet host, not this 
 ### Question for jeff
 
 Is a validation-only round (run TVM's GPU tests on wave64 + wave32 on current ROCm, fix what fails, no source port) on a mature upstream ROCm backend worth fleet time, or should this be declined as `already-supported`? The screen leans fork because upstream has zero AMD GPU test coverage, but there is no concrete known breakage at current main.
+
+## Declined (recorded 2026-11-11)
+
+Jeff Daily declined tvm on 2026-11-10 ("decline TVM"); the disposition is in data/dispositions.json (skip, already-supported: native upstream ROCm backend). This record had been left at intake `fork` / `awaiting-fork` because `triage.py skip` writes the disposition without touching a scaffolded project. Intake is re-recorded as decline and the project is held (`set-hold tvm on`), since the state machine has no `awaiting-fork -> unclaimed` edge. Do not request a fork.
