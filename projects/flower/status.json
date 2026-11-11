@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "flower",
+  "upstream_url": "https://github.com/flwrlabs/flower",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-11T20:55:05Z",
+  "updated_at": "2026-11-11T20:55:06Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
