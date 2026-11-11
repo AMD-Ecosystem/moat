@@ -119,6 +119,14 @@ def gate_readme():
     branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
     if branch.startswith("port/"):
         return []
+    # The checkout's branch is the wrong question for a push: recording a fact writes a
+    # commit straight to `port/<name>` from whatever is checked out (the publisher's
+    # approval snapshot does), and judging the trunk's table there refused the push
+    # because some other project's state had moved. The pre-push hook passes the refs
+    # being updated; unless one of them is the trunk, the table is not in play.
+    pushed = os.environ.get("MOAT_PUSH_REFS")
+    if pushed is not None and "refs/heads/main" not in pushed.split():
+        return []
     if not _run(["git", "for-each-ref", "--format=%(refname)",
                  "refs/remotes/origin/port/"]).stdout.strip():
         print("readme: skipped -- no port branches in this checkout, so the table "

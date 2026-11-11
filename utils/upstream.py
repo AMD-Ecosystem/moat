@@ -765,6 +765,9 @@ def open_review_pr(row, title, body, apply=False):
         return ("error", (r.stderr or r.stdout).strip())
     url = r.stdout.strip().splitlines()[-1]
     moatlib.set_review_pr(row["name"], url)
+    unlanded = _land_local_record(row["name"], f"{row['name']}: review PR opened -- {url}")
+    if unlanded:
+        print(f"  WARNING {row['name']}: {unlanded}", file=sys.stderr)
     # How to approve goes in a COMMENT, never in the body: the body is republished
     # verbatim as the upstream pull request, and an external maintainer has no use for
     # our approval command.
@@ -793,6 +796,39 @@ def open_review_pr(row, title, body, apply=False):
             if row.get("followup") else "")],
         capture_output=True, text=True, timeout=90)
     return ("opened", url)
+
+
+def _land_local_record(name, message):
+    """Commit and push a record a moatlib setter wrote into this working tree.
+
+    `save_record` writes a fact to the project's branch when the record lives on one,
+    but when it resolves to this checkout (a trunk-resident project, or standing on
+    `port/<name>`) it only rewrites the local status.json and leaves the commit to the
+    caller. Every caller here records something GitHub already shows -- a review PR, an
+    upstream PR, an approval, a merged round -- so leaving it uncommitted means every
+    other checkout keeps the stale state: cuda_voxelizer's upstream PR went unrecorded
+    for a day and TornadoVM's review PR was invisible to the next publish run. Returns
+    None when nothing was left behind, else what went wrong."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    r = _run(["git", "status", "--porcelain", "--", f"projects/{name}/status.json"],
+             cwd=str(REPO), capture_output=True, text=True)
+    if not r.stdout.strip():
+        return None
+    # On the trunk the push is judged on the README table too, and the record just
+    # written changes it; regenerate it into the same commit rather than fail the push.
+    extra = []
+    if moatlib.current_branch() == "main":
+        _run([sys.executable, "utils/gen_readme.py"], cwd=str(REPO),
+             capture_output=True, text=True)
+        extra = ["README.md"]
+    try:
+        if moatlib.commit_project(name, message, extra_paths=extra):
+            return None
+    except Exception as e:                      # noqa: BLE001 - reported, not raised
+        return f"recorded in this checkout but could not commit it: {e}"
+    return ("recorded in this checkout but the commit did not push; run "
+            f"`python3 utils/moatlib.py commit-project {name} \"{message}\"`")
 
 
 def publish_blockers(name, row):
@@ -923,6 +959,9 @@ def open_upstream(name, row):
         moatlib.set_pr_open(name, url, num)
     except Exception as e:                      # noqa: BLE001 - reported, not raised
         return (url, f"opened {url} but could NOT record it: {e}")
+    unlanded = _land_local_record(name, f"{name}: upstream PR opened -- {url}")
+    if unlanded:
+        return (url, f"opened {url}; {unlanded}")
 
     # The review PR has done its job -- the change it was reviewing is now in front of
     # the maintainers. Close it pointing at where the conversation continues, rather
@@ -1002,7 +1041,11 @@ def report_publish(apply, only=None):
 def moatlib_record(name):
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
-    return moatlib.record_pr_approval(name)
+    a = moatlib.record_pr_approval(name)
+    unlanded = _land_local_record(name, f"{name}: approval recorded")
+    if unlanded:
+        raise RuntimeError(unlanded)
+    return a
 
 
 # ---- fix rounds: review and merge ------------------------------------------
@@ -1285,6 +1328,10 @@ def open_fix_review_pr(row, title, body, apply=False):
     url = r.stdout.strip().splitlines()[-1]
     try:
         moatlib.set_fix_review_pr(row["name"], url)
+        unlanded = _land_local_record(row["name"],
+                                      f"{row['name']}: fix review PR opened -- {url}")
+        if unlanded:
+            raise RuntimeError(unlanded)
     except Exception as e:                      # noqa: BLE001 - reported, not raised
         # The PR exists on GitHub now. Raising here would lose the URL and leave the
         # round still reading as "needs a review PR", which opens a second one.
@@ -1562,6 +1609,9 @@ def do_merge_fix(name, d, fix, pr):
 
     try:
         moatlib.set_fix_merged(name, tip)
+        unlanded = _land_local_record(name, f"{name}: fix round merged at {tip[:12]}")
+        if unlanded:
+            raise RuntimeError(unlanded)
     except Exception as e:                      # noqa: BLE001 - reported, not raised
         notes.append(f"could NOT record it: {e}; the staging branch is kept so the "
                      f"round can be recorded by hand "
