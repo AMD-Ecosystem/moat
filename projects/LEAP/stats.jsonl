@@ -503,3 +503,7 @@
 {"kind":"phase","ts":"2026-11-09T22:18:58Z","phase":"test","seconds":24.958,"exit":0,"cmd":"bash agent_space/leap_b85_gvc.sh"}
 {"kind":"phase","ts":"2026-11-09T22:19:44Z","phase":"test","seconds":9.037,"exit":0,"cmd":"bash agent_space/leap_b85_pt.sh"}
 {"kind":"phase","ts":"2026-11-09T22:20:07Z","phase":"test","seconds":4.984,"exit":0,"cmd":"bash agent_space/leap_b85_frac.sh"}
+{"kind":"phase","ts":"2026-11-09T22:32:54Z","phase":"compile","seconds":14.370,"exit":0,"cmd":"bash agent_space/leap_fix216_cfg.sh"}
+{"kind":"phase","ts":"2026-11-09T22:33:43Z","phase":"compile","seconds":23.007,"exit":0,"cmd":"bash agent_space/leap_fix216_build.sh"}
+{"kind":"phase","ts":"2026-11-09T22:34:37Z","phase":"test","seconds":15.054,"exit":0,"cmd":"bash agent_space/leap_fix216_gvc.sh"}
+{"kind":"phase","ts":"2026-11-09T22:35:04Z","phase":"test","seconds":9.679,"exit":0,"cmd":"bash agent_space/leap_fix216_pt.sh"}

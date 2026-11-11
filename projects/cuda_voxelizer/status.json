@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:03:06Z",
-  "updated_at": "2026-11-10T00:35:16Z",
+  "updated_at": "2026-11-10T05:10:39Z",
   "head_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2",
   "depends_on": [],
   "waivers": {},
@@ -150,5 +150,17 @@
     "since": "2026-11-05T08:19:36Z",
     "at": "2026-11-05T08:35:01Z"
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/cuda_voxelizer/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/cuda_voxelizer/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-10T01:03:43Z",
+    "head_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2",
+    "content_sha256": "94fd072b48759d5e44fe679773d635aae3ea0c428b4dc02e3d0f2a99743d9d36",
+    "review_pr": "https://github.com/AMD-Ecosystem/cuda_voxelizer/pull/1"
+  },
+  "pr_url": "https://github.com/Forceflow/cuda_voxelizer/pull/84",
+  "pr_number": 84,
+  "pr_opened_at": "2026-11-10T05:10:39Z",
+  "pr_state": "open",
+  "published_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2"
 }
