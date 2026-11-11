@@ -6,14 +6,39 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-05T23:20:48Z",
-  "updated_at": "2026-11-05T23:56:03Z",
+  "updated_at": "2026-11-11T15:45:50Z",
   "head_sha": null,
-  "depends_on": [],
+  "depends_on": [
+    "HierarchicalKV"
+  ],
   "porting": null,
   "waivers": {},
-  "platforms": {},
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-11T15:45:49Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
   "license_spdx": "Apache-2.0",
   "license_spdx_history": [
     {
@@ -24,11 +49,11 @@
     }
   ],
   "intake": {
-    "verdict": "decline",
-    "reason": "already-supported",
-    "duplicate_effort": "No HugeCTR port; workload covered on AMD by TorchRec + FBGEMM_GPU on ROCm (ROCm/FBGEMM, rocm/primus:v26.1 docker, AMD-AGI/DLRMBenchmark DLRMv2 on MI300X)",
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": null,
     "viable": null,
-    "summary": "NVIDIA GPU recsys framework (2.5 MB CUDA, Apache-2.0 clean) in de facto maintenance mode; AMD users already served by TorchRec+FBGEMM on ROCm, so decline",
-    "at": "2026-11-05T23:56:02Z"
+    "summary": "take-up ruled by Jeff Daily: HugeCTR needs a canonical AMD-Ecosystem home despite TorchRec+FBGEMM coverage; hard dependency HierarchicalKV is being screened as its own MOAT project",
+    "at": "2026-11-11T15:45:47Z"
   }
 }
