@@ -6719,3 +6719,11 @@ Linux (<GPU>, <gfx>): HIP application build and the Vulkan interop tests.
 
 <pass/fail counts from the validation record>
 ```
+
+## Review 2026-11-11b (reviewer, windows-gfx1151) -- follow-up on the "Porter response 2026-11-11" at afe6ab6c: REVIEW-PASSED
+
+Both findings from "Review 2026-11-11" are resolved by the disposition. Under the no-amend, no-force-push rule, the PR-prep squash is the right place to fix the message, and it is the same route as `lfs-commit-msg-drop-alien-ref` and `lfs-commit-msg-566be1cd-test-plan-configure`. A message-only rewrite leaves the tree unchanged, so `squash-carry-forward` keeps the evidence. Corrected Test Plan text:
+- Finding 1: the Windows block now describes the standalone bounce test in prose, with no fenced command for the out-of-tree `tl_test.hip`, and says the full application is not built on Windows. That is accurate.
+- Finding 2: the Linux block's GPU, gfx, filter and counts are placeholders, with an instruction to fill them from the validators' records at the validated head. The block also adds the test invocation and `-DTorch_DIR`, so it agrees with the 566be1cd configure finding.
+
+Deferred `lfs-commit-msg-afe6ab6c-test-plan` has `decided: null`, and a person still has to rule defer versus now. Whoever does the PR-prep squash must fill the placeholders only from recorded validation counts.
