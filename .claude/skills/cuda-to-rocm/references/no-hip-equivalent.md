@@ -55,3 +55,56 @@ The warp-level `mma.sync` m16n8kK family (with `ldmatrix`/`movmatrix` feeding it
 - Do not test a WMMA/MFMA port for bit-exact fp32 results on integer-valued data, even where every product and partial sum is exactly representable. gfx1151 (RDNA3.5 WMMA, f16 and bf16 inputs) returned 1-ulp-off results (3e-8 to 9e-8 relative to sum|a*b|) for such inputs while lane layout was right (random data within fp32 rounding); gfx950 MFMA and gfx1201 WMMA were exact. Gate exactness per arch, and use a relative bound on gfx11. A single product is not safe either: three negative e5m2 subnormals (bytes 0x81-0x83) widened exactly to f16 and multiplied by 1.0 came back 1-2 fp32 ulps off on gfx1151, so a one-product-per-output "every byte" encoding check needs the gfx11 bound (1e-6 still pins the byte to its value) for exactly those three bytes; every e4m3 byte and every other e5m2 byte was bit-exact on gfx1151 and gfx1100 (TornadoVM probe), so keep the rest of the check exact rather than loosening the whole kind. gfx1250 FP8 WMMA (`v_wmma_f32_16x16x64_fp8_fp8`) sums with about 14-16 bits: random FP8 data reached 6.6e-5 relative, so bound FP8 there at about 1e-4.
 - FP8 (E4M3 and E5M2, OCP) widens exactly to half, so one half-precision path serves every target, including gfx942 whose native FP8 is FNUZ.
 - Select the path at compile time with the architecture macros (`__gfx942__`, `__GFX11__`; `__GFX12__` also covers gfx1250).
+## Runtime-compiled kernels inherit nothing from the host build
+
+Projects that compile device code at runtime -- an OptiX PTX pipeline ported to
+HIP RT/hiprtc, or any hiprtc/comgr JIT -- have two compilers, and only one of
+them is configured by the build system. Every macro the host build supplies
+(`USE_ROCM`, `__HIP_PLATFORM_AMD__`, anything from `extra_compile_args`) is
+absent from the runtime compile unless it is passed explicitly in the option
+list handed to the JIT.
+
+This bites the moment a header is shared between the ahead-of-time and runtime
+paths. Collapsing a duplicated `params.h` back into the CUDA path's copy behind
+`#ifdef USE_ROCM` is the right call for maintainability, and it will then take
+the CUDA branch under the JIT and fail on `#include <optix.h>` (or on any other
+CUDA-only include) with an error that looks nothing like a missing define. Pass
+`-DUSE_ROCM=1` alongside the include paths in the JIT option vector.
+
+Two related traps in the same place:
+
+- **Guarding by compiler identity is not enough.** `__HIPCC_RTC__` and
+  `__HIP_DEVICE_COMPILE__` are defined by the runtime compiler, but a shared
+  header also gets included by the *host* translation unit, where neither is
+  set. Guard on the platform macro, and set that macro in both compiles.
+- **Scalar typedefs collide.** A CUDA header that writes its own
+  `typedef unsigned long int uint64_t;` clashes under hiprtc with HIP's
+  `using uint64_t = __hip_internal::uint64_t` (`unsigned long long`), because
+  the HIP device headers are already in scope. Guard the typedefs out on the
+  ROCm side rather than trying to match the type.
+
+Diagnosing this is easy once you know to look: the runtime compiler's log is
+usually printed to stderr and then swallowed, and the visible symptom is a
+launch failure (`hipErrorInvalidHandle`) or an outright hang from launching a
+module that was never built. Read the whole stderr, not the exception.
+
+**The staged copy, not your working tree, is what runs.** A project that
+compiles at runtime has to put the kernel sources somewhere the installed
+package can find them, so its installer copies them next to `__init__.py` and
+the JIT reads *that* copy. Edit a shared header, run the tests, watch them
+pass, and you have tested the copy from the last install. This is not
+hypothetical: a whole round of evidence for `diff-surfel-tracing` -- "the
+forward works" -- was produced by a header the same commit deleted, and the
+port turned out not to compile from its own sources at all. Two habits close
+it: reinstall (not just rebuild) after touching anything the installer stages,
+and, when a result surprises you, diff the package copy against the source
+before believing either. Clearing the JIT cache does not help, because the
+cache key hashes the staged source it just read.
+
+Related: the JIT's on-disk cache may not be where you set it. HIP RT's
+`hiprtSetCacheDirPath` is applied to a compiler that has already latched its
+default, so the binaries land in a `cache/` directory relative to the process
+working directory. Before concluding that a cache-clearing test cleared
+anything, find the `.bin` files.
+
+Source: `diff-surfel-tracing` (OptiX to HIP RT), gfx942.

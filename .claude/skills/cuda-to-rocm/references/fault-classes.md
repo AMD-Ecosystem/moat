@@ -46,6 +46,73 @@ every wave32 device.)
 **Lane masks must be 64-bit where the API takes one** -- `__shfl*`, `__ballot`,
 `__activemask`. A `uint32` mask is wrong on a 64-wide wavefront.
 
+**And the mask VALUE must be built in 64 bits, which the destination type does not do for
+you.** In `const uint64_t mask = ((1 << K) - 1) << (K * subgroup);` the shift result type is
+the promoted LEFT operand, i.e. `int`, so the whole expression is evaluated in 32 bits and
+the widening to `uint64_t` happens afterwards, too late. Shifting an `int` by 32 or more is
+undefined, and AMD does not trap or saturate: the 32-bit shift instruction uses only the low
+5 bits of the count, so the count wraps and lanes 32..63 silently get the mask belonging to
+lanes 0..31. Any mask literal that can be shifted past bit 31 needs `1ull`. The class is
+nasty because it compiles clean, is invisible on wave32 (a 32-lane wavefront never reaches a
+shift of 32, which is why upstream RDNA testing does not catch it), and yields a wrong-lane
+collective rather than a fault. Grep every `1 <<` and `1u <<` whose shift count is derived
+from a lane index. HIP RT 3.1.0.cb09c56 has exactly this in three places
+(`hiprt/impl/BvhBuilderKernels.h`, `subwarpMask`): the upper half of the wavefront selects
+its widest child from the wrong subgroup, one subtree gets opened twice, the collapse
+therefore emits more leaf references than there are primitives, and the persistent builder
+kernel -- whose only exit is `emittedCount == primitiveCount` -- steps over its own exit
+value and spins forever, hanging the GPU inside a BVH build over a few dozen triangles.
+(diff-surfel-tracing, in its HIP RT dependency.)
+
+**A 32-bit literal COMBINED with a 64-bit mask is the same class in a second shape, and it
+does not need a shift count over 31 to be wrong.** `mask &= ~( 1u << lane )` computes the
+complement in 32 bits, so the operand zero-extends and the AND clears bits 32..63 of the
+mask for EVERY lane, not just lanes over 31. `mask ^= 1 << lane` is worse at exactly one
+lane: `1 << 31` is `INT_MIN`, which sign-extends to `0xffffffff80000000` and SETS bits
+32..63 that a `while ( mask )` loop can then never clear. The first shape ends a
+lane-at-a-time loop halfway through, so the upper half of every wavefront is skipped and
+whatever it was supposed to produce is silently absent; the second hangs. Both are the same
+grep as above -- every `1 <<`, `1u <<` and `~( 1u << ... )` in an expression whose other
+operand is a 64-bit mask -- and the grep must be run over the whole dependency, not stopped
+at the first site that explains the symptom in front of you. In HIP RT 3.1.0.cb09c56 the
+three `subwarpMask` sites are joined by `PairTriangles` (`activeMask &= ~( 1u << ... )`,
+which drops the triangles of lanes 32..63 from the BVH: the build succeeds, the image looks
+plausible, and half the geometry is simply not there -- 31 of 64 primitives traced, versus
+62 of 64 once fixed) and `PackLeavesWarp` (`packetMask ^= 1 << broadcastLane`, on the
+RTIP 3.1 leaf path, so RDNA4 rather than CDNA). A validation harness that only checks
+finiteness, determinism and plausible ranges passes the first one; check that the geometry
+you handed the accelerator is the geometry that gets traced. (diff-surfel-tracing.)
+
+**Sweep for THREE patterns, not one, and sweep the vendored subtrees the port ships.** A
+`1 <<` grep finds the shapes above and misses the one that faults. The full sweep is: (a)
+every `1 <<`, `1u <<`, `~( 1u << ... )` whose other operand is a 64-bit mask; (b) every
+32-bit DESTINATION that receives a wave-wide collective -- `u32 x = __ballot( ... )`, a
+`uint32_t` struct field, an explicit `(uint32_t)` cast -- since `__ballot` returns all 64
+lanes and the narrowing keeps lanes 0..31 whether or not a literal is involved anywhere;
+(c) the IDIOM that makes (b) wrong rather than merely truncated: code that carves a block
+into fixed 32-lane logical warps (`warp = threadIdx.x / 32`, `lane = threadIdx.x % 32`,
+often a `constexpr WARP_SIZE = 32`) and then calls a wave-wide collective, so on wave64 the
+second logical warp in each wavefront silently reads the FIRST one's answer -- its own bits
+are sitting in the half that was discarded. Run all three over every subtree the port
+compiles, including a dependency's vendored `contrib/` copies of other projects: they are
+staged and runtime-compiled exactly like its own headers, and a defect there is reported to
+a different repository than the one you are patching.
+
+Orochi's radix sort (`ParallelPrimitives/RadixSortKernels.h`, `OnesweepReorder`, vendored
+byte-identically into HIP RT 3.1.0.cb09c56) is (b)+(c): a 256-thread block as eight 32-lane
+logical warps, `u32 broThreads = __ballot( itemIndex < numberOfInputs )`, so every odd
+logical warp ranks its keys against the even warp's attendee set and the corrupted prefix
+sums index a GLOBAL write. Measured on gfx90a it is a hard `Memory access fault ... kernel:
+OnesweepReorderKeyPair64`, not a wrong answer. Fix it with the same arch-unified shift as
+the cuSZ entry below, `(u32)( __ballot( PRED ) >> ( ( threadIdx.x % warpSize ) / 32 * 32 ) )`,
+which is a no-op on wave32 and on the CUDA `__ballot_sync` path. Note the reachability
+trap: the sort dispatches a single-pass kernel below 3072 elements and only reaches this one
+above it, so a small harness scene never executes the defect -- two review rounds passed
+44/44 over a back end that could not build an acceleration structure for any real scene. If
+a dependency picks kernels by problem size, one test case has to be big enough to cross
+every such threshold. (diff-surfel-tracing, in the Orochi copy vendored by its HIP RT
+dependency.)
+
 **Do not hardcode wave64 GEOMETRY either** -- the inverse failure. Packing two logical
 32-thread rows into one wavefront (`wflane = threadIdx.x + ((threadIdx.y&1)<<5)`, a
 `1ull<<wflane` prefix mask, `__shfl(...,0,64)`, `__popcll` over a 64-bit ballot, a

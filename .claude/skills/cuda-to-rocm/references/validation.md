@@ -291,6 +291,66 @@ Two patterns that each cost a deep investigation before the real cause was found
 - **Triangulate single- against double-precision before blaming the wavefront.** When a warp-collective rewrite shows SP divergence, run a second GPU variant and compare both to the DP oracle. If both GPU variants diverge from DP identically at the same positions, and the DP path is bit-identical to the CPU oracle, it is floating-point reassociation at a comparison boundary -- not a wave-size fault. SCAMP used this to clear a ~0.5 divergence at 10/8093 positions as a threshold-boundary artifact. (SCAMP)
 - **A kernel that hangs only in a Debug build: rebuild Debug at `-O2` before blaming an assert or the port.** A Debug HIP build turns two things on at once, `-O0` device codegen and every `assert` (including HIP's own `__hip_check_mask` in the `*_sync` intrinsics). Configure a second Debug tree with `-DCMAKE_HIP_FLAGS_DEBUG="-O2 -g0"` (NDEBUG still unset). If the test passes there, the asserts are not what fires and the hang is `-O0` codegen; find the kernel with `AMD_SERIALIZE_KERNEL=3 AMD_LOG_LEVEL=3` (last launch that never completes) and the PC with the SDK's `rocgdb` after a SIGINT. Run a Debug suite one test per process with a timeout so one hang does not hide the rest. The asserts-on `-O2` tree is also the better Debug evidence for mask and wave64 checks. (LichtFeld-Studio)
 
+## A fault inside a vendored JIT entry point: rebuild-with-a-forced-throw beats a debugger
+
+When a crash's stack bottoms out inside a vendored dependency's own runtime-JIT
+call (e.g. `hiprtBuildTraceKernels`, which drives HIP RT's own `hipRTC`/`comgr`
+compile of its BVH-builder and trace kernels) rather than in the port's own
+device code, do not reach for a debugger or a minidump first -- that is
+porter/investigation scope, not a validator's, and it is slow. A cheaper test
+that still yields real evidence: read the JIT call's own error-handling source
+for a place where a compile failure could be silently swallowed (a `result !=
+SUCCESS` check that only acts when an accompanying log string is non-empty is
+the classic shape -- an empty log on a genuine failure is common on Windows,
+where comgr can fail silently for reasons that have nothing to do with the
+actual compile), patch that ONE spot locally to unconditionally `throw` with
+the raw result code, rebuild just that translated unit (seconds, not the whole
+dependency), and rerun. Two outcomes, both informative and neither requiring a
+debugger:
+
+- Your forced exception fires with a real code and message -- you have found
+  the actual failure, cheaply.
+- The crash is byte-for-byte identical (same fault address relative to the
+  containing function, e.g. `hiprtBuildTraceKernels() + 0x894` unchanged
+  across rebuilds even though ASLR moves the DLL's base) and your `throw`
+  never fires -- you have FALSIFIED that code path as the cause, which is
+  just as real a finding: the crash is earlier, or in a different function
+  entirely, and no further time should go into that call.
+
+Revert the diagnostic edit before finishing (it is a throwaway, never
+committed) and record the falsification, not just "still crashes" -- a bare
+re-run tells the next person nothing they did not already know; a rebuild
+that proves a specific mechanism is NOT the cause narrows the search space
+for whoever picks it up next. Two independent hypotheses can be dispatched
+this way inside a single 30-minute retry budget: an environment-variable
+hypothesis (does the crash change when a plausible cause is toggled?) and a
+source-level hypothesis (does the crash change when the suspected swallowed
+error is forced to surface?) are both answerable without a debugger, and a
+"both falsified, same relative offset both times" result is a complete,
+honest retry outcome -- it is not a reason to escalate to a debugger inside
+the validator role. Also check host-global scratch (e.g. a prior session's
+`upstream-issues` drafts) for an existing diagnosis of the same dependency's
+JIT/loader class before re-deriving one from scratch -- but verify it against
+the CURRENT patched source rather than assuming it still applies: a
+previously-reported defect in the same call chain may already be fixed in the
+project's own vendored-dependency patch, which rules it out rather than
+explaining the new crash. (diff-surfel-tracing)
+
+**Read the top frame before forming any hypothesis.** Python's `-X faulthandler`
+prints the faulting frame first; `0x0000000000000000 <unknown module>` above a
+vendored DLL means a call through a NULL function pointer, which in an
+Orochi/hipew-style loader means the library that pointer comes from was never
+loaded. That was the whole diff-surfel-tracing crash, after two retries chased
+the JIT: TheRock names the runtime compiler `hiprtc07013.dll` (HIP 7.13 -- major
+in two digits, minor in three), while HIP RT, Orochi and the port all searched a
+fixed list of four-digit names (`hiprtc0714.dll` ... `hiprtc0503.dll`), so hiprtc
+silently stayed unloaded and the first `orortcCreateProgram` jumped to address 0.
+Any project that `LoadLibrary`s hiprtc (or amdhip64, amd_comgr) by a hard-coded
+versioned name has this fault on TheRock: list `${ROCM_PATH}/bin` for the
+versioned file instead (`hiprtc0*.dll` -- the `0` excludes
+`hiprtc-builtins*.dll`), and compare the names the loader tries against
+`ls $ROCM_PATH/bin` before anything else. (diff-surfel-tracing)
+
 ## CUDA gate for torch-extension ports: the host's installed PyTorch itself can be the wall
 
 On a host whose only installed PyTorch is a ROCm dev build (e.g. built from `/var/lib/jenkins/pytorch` with `USE_ROCM=1`), nvcc-compiling a torch C++/CUDA extension fails for reasons that have nothing to do with the port. No full `CUDAExtension` link is reachable without downloading a genuine CUDA-flavored torch wheel, so the closest available check is a raw `nvcc -c` of the `.cu` against `torch.utils.cpp_extension.include_paths()` -- and that dies in the ambient install's headers. Two fingerprints of the same root cause:
@@ -299,6 +359,21 @@ On a host whose only installed PyTorch is a ROCm dev build (e.g. built from `/va
 - `torch/headeronly/util/complex.h` guards `#include <thrust/complex.h>` with `#if defined(__HIPCC__) || defined(__HIPCC__)` -- a duplicated-token typo, evidently meant `__CUDACC__ || __HIPCC__` -- so under nvcc the include is skipped while `c10/util/complex.h`/`complex_math.h` still reference `thrust::complex` unconditionally under `__CUDACC__`, cascading into ~100 "identifier thrust is undefined" errors on ANY project that includes `torch/extension.h`, regardless of that project's own code (observed on dev build `2.14.0a0+gitb6b444c`).
 
 Neither is a defect in the port: they are defects in the ambient PyTorch install, present identically whether you build the pristine upstream or the ROCm branch. Diagnose it as environmental by checking that the errors bottom out in `torch/headeronly`/`c10` (not the port's own files) and that `grep -n '__builtin_trap\|__trap\|__HIP\|hip[A-Z]\|amdgcn\|USE_ROCM'` over the port's own changed sources is empty. Do not chase this by patching the installed torch headers (that is fixing the environment, not the port). Record `cuda-not-validated: <the missing-header or duplicated-guard error>` and, if there is time budget left, substitute a source-level check: diff the port's CUDA-facing code (e.g. the non-ROCm branch of a dual-path file) against upstream and confirm it is byte-for-byte the same logic, only guarded differently -- that is as much passthrough evidence as a real nvcc pass would give without one. (FaithC, accelerated-scan)
+
+Before settling for the diff-only fallback, check whether the project has a SECOND build path that reaches the CUDA-facing device code without going through `torch.utils.cpp_extension`/`CUDAExtension` at all -- a `CUDA_PTX_COMPILATION` target invoked from its own `CMakeLists.txt`, an `enable_language(CUDA)` project that only needs `find_package(CUDAToolkit)` for the device kernels themselves. That path only needs `find_package(Torch)` for include directories (no ROCm/CUDA mismatch, no linking), so it configures and builds against the ambient ROCm torch without incident, and it gives a REAL pinned-arch nvcc compile of the port's touched CUDA headers -- strictly better evidence than a diff, and worth the extra ten minutes of reading the project's CMake before writing off the gate as environmental. Confirm first that the headers the port touches are actually `#include`d by whatever `.cu` files that path compiles, or the pass proves nothing about the port's own edits. (diff-surfel-tracing)
+
+## A project with no test suite: author the harness, then ship it WITH the port
+
+Some projects have no tests at all -- no `tests/`, no CI, no assertions -- so the GPU gate has to be authored. Where the script lives is not bookkeeping, because the commit-message Test Plans name it: a Test Plan is a promise that a reader with the hardware can re-run the command, and a fenced `python3 validate_foo.py` that resolves to nothing in a clone of the fork reads as "there is a validation script you have not found" rather than "this lives elsewhere". Every fenced command in every commit body must be runnable from a clone of the fork.
+
+Default to shipping the harness in the port when it is ONE standalone file importing only the standard library, the framework the project already depends on, and the project itself. That is a script, not an imposed test framework, so "we cannot invent a test framework for someone else's repository" is not a reason to keep it out; and it is the direct answer to "how do I know this works on my machine" for a PR that asks a maintainer to take a whole new back end on trust. Put it beside whatever standalone script the project already ships (its `example/` or `demo/` directory), name it for what it actually checks (a script that asserts `torch.version.hip` is the ROCm check, not a general test), and point at it from the same doc section that documents the ROCm build. Keep ONE copy -- move it, do not copy it, because two copies drift and the drifting one is the one the gate runs. Keep it in MOAT only when it genuinely cannot ship: it needs fixtures, data, or a framework the project does not have. Never leave it in `agent_space/`, which is gitignored: harnesses written there are lost to every other host. (diff-surfel-tracing, EnvGS)
+
+## A patch you carry against a pinned dependency: check "unfixed upstream" per entry
+
+A port that pins a third-party dependency and carries fixes against it will want to say so in the README and the patch header, and the natural sentence -- "these are bugs in <dep> and none of them is fixed upstream" -- is a claim about a moving target that nobody re-checks after the first round. Some of the entries may be fixes the dependency has ALREADY made, on commits later than the tag you pinned; you backported them, which is why they are in your patch, and calling them unfixed upstream is wrong in a way a maintainer can disprove in one click. Two other counts drift the same way: how many entries the patch has (count `^--- a/` and the header table, they can disagree) and which project each entry belongs to (a dependency's vendored `contrib/` copy of a third project is that project's bug, not the dependency's).
+
+Check each entry against the dependency's default branch, not the patch as a whole, and record the commit you checked against with the date. Read-only GitHub API fetches of the patched paths plus a grep for the fixed expression is a few minutes for a dozen files, and it partitions the patch into backports (keep the hunk, it is needed at the pinned tag, but say why it is there) and genuine defects (keep the hunk AND report it). Then scope every upstream-visible sentence to the partition it is true of, and prefer sending the reader to the patch header over restating part of it in a README, so there is one place to keep correct. `diff-surfel-tracing` shipped "none of them is fixed at HEAD" over eleven entries; three of them were already on HIP RT's main branch, and it took three review rounds to stop restating the count wrongly. (diff-surfel-tracing)
+
 - **A cascading wall of SegFault/OOM/"no kernel image available" partway through a long serial suite can be one poisoned physical card, not a port defect -- check `rocm-smi --showpids` against `--showmeminfo vram` before concluding anything.** arrayfire on an 8x MI300X host: a full `ctest` run started clean, crashed (SegFault) on an early binary, and every binary after it degraded -- more SegFaults, a "no kernel image is available for execution on the device" (hipErrorNoBinaryForGpu) on a JIT op, then explicit "Device out of memory". `rocm-smi --showmeminfo vram` showed that GPU pinned near its full capacity; `rocm-smi --showpids` showed *no process attached to it at all*, including after `kill -9` of every test binary -- the VRAM was orphaned at the KFD/driver level, not held by a live allocator, and a process crash should not leak GPU memory past its own exit. Re-running the identical suite (fresh JIT disk cache) on a different, verified-idle card on the same host, same build, same commit, came back 131/132 clean with no crash, no OOM, and no "no kernel image" anywhere. The disagreement between the two `rocm-smi` views is the tell: if `--showmeminfo` says a card is nearly full but `--showpids` shows nothing on it, that card's state cannot be trusted for this session -- switch cards to disambiguate before spending time on the port. (arrayfire)
 
 ## A torch build used only as a test oracle can break a build two different ways as it drifts
