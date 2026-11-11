@@ -1299,3 +1299,43 @@ Completion checks:
 - Documentation: `BACKEND=hip` is documented in `README.md`, `INSTALL_FROM_SOURCE.md` and `docs/source/developer-guidelines.rst`.
 - Integrity: HEAD `8b9994f6a`, no tracked file modified. Validation only, so nothing was pushed to the fork.
 - Not covered: multi-GPU NCCL/RCCL (one pinned GPU).
+## Validation 2026-11-11 (linux-gfx1201) at 8b9994f6a
+
+Verdict: **pass**, linux-gfx1201 completed at `8b9994f6a` (Radeon AI PRO R9700, wave32). Full revalidation, no carry-forward: the sync delta `d90e1d189..8b9994f6a` brings upstream Java runtime/API source (classify = mixed). jeff's request after the "sync first" ruling; review 13 passed. Every count matches this platform's last full run (`ee94c5c7f`) plus exactly the 42 tests of upstream's three new classes.
+
+Host and toolchain (job directory only): ROCm 10.1 TheRock wheels (`ROCM_PATH` = `HIP_PATH` = the image venv's `_rocm_sdk_devel`), Temurin 21.0.13+9 from the Adoptium API unpacked in the job directory, `MAVEN_OPTS=-Dmaven.repo.local=<job>/m2`, `CMAKE_BUILD_PARALLEL_LEVEL=24`, dispatcher pin `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0` for every GPU run. Fresh clone of `AMD-Ecosystem/TornadoVM`; `origin/moat-port` = `8b9994f6a54dec9ca4de062eb8491a1dcea083ad`, detached there, `git status --porcelain` clean before the build. No hipDF/hipVS for RDNA (the AMD PyPI wheels target gfx90a/gfx942/gfx950 only), so `HIPDF_HOME` unset and the cuDF/cuVS classes report unsupported, as at every earlier gfx1201 run.
+
+```bash
+TORNADO_CK_REQUIRED=1 make -C projects/TornadoVM/src jdk21 BACKEND=hip   # BUILD SUCCESS, 10:08 min; ck-hip 139 attention sources for the nine default targets incl. gfx1201, libtornado-ck.so in the SDK; hipDF skipped (no HIPDF_HOME)
+source projects/TornadoVM/src/setvars.sh
+tornado --devices                 # 1 driver, HIPDriver 0:0 AMD Radeon AI PRO R9700, 31.9 GB, 64 KB local
+tornado-selftest                  # rc 0
+tornado-test --verbose --quickPass
+tornado-test -V uk.ac.manchester.tornado.unittests.<class>   # each class below
+tornado-test -V -J"-Dtornado.device.memory=1MB" uk.ac.manchester.tornado.unittests.fails.HeapFail#test03
+make -C projects/TornadoVM/src test-nogpu JDK=jdk21   # hiprtccheck built first (recipe in the 2026-11-06 entry)
+```
+
+| Run | `8b9994f6a` | `ee94c5c7f` (this platform, 2026-11-10) |
+|---|---|---|
+| `tornado-selftest` | 20 pass, 1 skip (device-launch); TC target "HIP gfx1201, warp 32, tensor cores F16+FP8"; `device/warp-sum`, `mma-f16` 32x32x64, `mma-fp8` 16x16x64 PASS | 20 / 1 |
+| `tornado-test --verbose --quickPass` (CK SDK) | 2230 ran: 1457 pass, 771 unsupported, 2 failed (ComputeTests testMandelbrot, testJuliaSets, whitelisted FMA-contraction pair); rc 0, 464 s | 2188: 1438 / 748 / 2 |
+| `TestCopyDevicePointers` | 3/0/0 | 3/3 |
+| MMA classes (ran/failed/unsupported) | TestMatrixMultiplicationMMA 18/0/0, MMABF16 7/0/0, MMAInt8 12/0/0, MMAFP8 8/0/0, MMACpAsync 8/0/0, TestMMAGlobalFragmentLoad 6/0/0, TestMMAInt8FragmentElementRead 4/0/0, TestMMAFragmentHelper 2/0/0 (65/65) | 65/65 |
+| Library classes | TestCuBlas 27/0/0, TestCuBlasLt 10/0/0, TestCuDnn 20/0/0 (SDPA on CK gfx12), TestCutlass 26/0/0 (CK WMMA/DL), TestCuFft 9/0/0, TestCuRand 7/0/0, TestCusparse 17/0/0, TestNccl 30/0/10 (one GPU), TestNcclMultiProcess 5/0/2, TestCudf 24/0/24, TestCudfColumns 23/0/23, TestCuVS 7/0/7 (no hipDF/hipVS on RDNA), TestFP8 13/0/0, TestProfiler 9/0/0, TestProfilerTransferBytes 2/0/0 | identical |
+| New upstream classes | TestArrayInit 11/0/0; TestConsumeFromUnifiedMemory 18/0/10 (HIP has no unified memory: `TornadoVMHIPNotSupported`; the 8 that run check rejection paths and API validation); TestDeviceView 13/0/13 (CUDA only) | -- |
+| KernelContext | TestUnsupportedKernelContextOps 10/0/3, TestDynamicParallelism 15/0/13 | identical |
+| `HeapFail#test03` (1MB heap) | pass | pass |
+| `make test-nogpu JDK=jdk21` | BUILD SUCCESS, 13 modules, 34 test classes / 246 tests, 0 failures, 0 errors; lit ir 13, lower 7, opt 16, tornado 5, frontend 12, codegen 60 (hipRTC); HeaderlessRepresentationTest 3/3 (new upstream), HipMmaRoutingTest 1/1, TcCompilerTest 29/29 | BUILD SUCCESS, same lit/unit counts |
+
+Accounting of every difference:
+- Against this platform at `ee94c5c7f`: +42 ran, +19 pass, +23 unsupported. These are exactly upstream's three new classes: TestArrayInit 11 pass, TestConsumeFromUnifiedMemory 8 pass + 10 unsupported, TestDeviceView 13 unsupported. No test that passed before fails or turns unsupported. (The `d90e1d189` run on this platform was a launcher spot check with no quickPass; `620445bf1..d90e1d189` changed no Java.)
+- Against the gfx950 porter run at `8b9994f6a` (full-build equivalent 2230 ran / 1509 pass / 719 unsupported / 2 failed): same total and same whitelisted pair; 52 fewer passes and 52 more unsupported here. 51 are cuDF/cuVS, which have no RDNA build: TestCudf 24, TestCudfColumns 20 (gfx950 also reports its 3 ZSTD cases unsupported), TestCuVS 7. The 52nd is not from this round: the same 52-pass gap stood at `ee94c5c7f` (gfx950 1490 vs gfx1201 1438), while at `af27a9f4b` it was 51 (1488 vs 1437); gfx950 gained one pass in between that this platform did not. This platform's quickPass unsupported list holds no HIP-arch-dependent entry other than the cuDF/cuVS classes (the rest are backend-tagged OpenCL/CUDA/Metal, MULTI-DEVICE with one pinned GPU, dynamic parallelism, and upstream's default-4GB-heap skip of `TestLongIndexArrays#testFloatArrayBeyondIntRange`), so it is a test that runs only on gfx950's side and is unchanged by the sync. The exact test needs gfx950's per-test log to name.
+- `make test-nogpu`: the gfx950 entry's "409 tests" counts differently from the per-class sum here (246 test cases in 34 classes); every lit and unit class gfx950 names matches (codegen lit 60/60, HeaderlessRepresentationTest 3/3, TcCompilerTest 29/29, HipMmaRoutingTest 1/1) and nothing fails.
+
+Completion checks:
+- `python3 utils/jargon.py --port TornadoVM` (clone's local `moat-port` = `origin/moat-port`): with local `develop` at the fork's mirror `f8e3ac907` it reports the one upstream line review 13 recorded (`docs/CONSUME-FROM-UNIFIED-MEMORY.md`, "Revalidate this when changing JDKs", present in upstream `986fbadfc`); with local `develop` at upstream `986fbadfc` it is clean. The fork's `develop` mirror still needs the fast-forward review 13 asked for before the review PR.
+- Documentation: `BACKEND=hip` build in `INSTALL_FROM_SOURCE.md`, `README.md`, `docs/source/developer-guidelines.rst`.
+- Integrity: `git -C projects/TornadoVM/src status --porcelain` shows only the untracked `tornado-compiler/utils/hiprtccheck/hiprtccheck`; HEAD `8b9994f6a`; no tracked file modified.
+- CUDA no-regression gate: already recorded at `8b9994f6a` by the porter (real nvcc 12.8.93, `BACKEND=cuda` and `cuda,hip`); not rerun.
+- Not covered here: multi-GPU NCCL/RCCL (one pinned GPU), cuDF/cuVS on RDNA (no hipDF/hipVS build), the OpenCL-backend Mandelbrot/Julia comparison and the MMA probe harness (both unchanged code since `af27a9f4b`/`ee94c5c7f`; selftest and the 65 MMA tests cover the path).

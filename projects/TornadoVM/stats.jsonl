@@ -258,3 +258,37 @@
 {"kind":"phase","ts":"2026-11-11T16:23:11Z","phase":"test","seconds":0.635,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.deviceview.TestDeviceView"}
 {"kind":"phase","ts":"2026-11-11T16:23:53Z","phase":"test","seconds":15.001,"exit":0,"cmd":"make -C projects/TornadoVM/src test-nogpu JDK=jdk21"}
 {"kind":"session","ts":"2026-11-11T16:25:16Z","epoch":1794414316.468671268,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-11T16:10:42Z","epoch":1794413442.439415745,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-11T16:20:56Z","phase":"compile","seconds":613.593,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-11T16:29:05Z","phase":"test","seconds":464.059,"exit":0,"cmd":"tornado-test --verbose --quickPass"}
+{"kind":"phase","ts":"2026-11-11T16:33:01Z","phase":"test","seconds":1.193,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.pointers.TestCopyDevicePointers"}
+{"kind":"phase","ts":"2026-11-11T16:33:02Z","phase":"test","seconds":1.676,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMA"}
+{"kind":"phase","ts":"2026-11-11T16:33:04Z","phase":"test","seconds":1.296,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMABF16"}
+{"kind":"phase","ts":"2026-11-11T16:33:05Z","phase":"test","seconds":1.430,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMAInt8"}
+{"kind":"phase","ts":"2026-11-11T16:33:07Z","phase":"test","seconds":1.303,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMAFP8"}
+{"kind":"phase","ts":"2026-11-11T16:33:08Z","phase":"test","seconds":1.294,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMatrixMultiplicationMMACpAsync"}
+{"kind":"phase","ts":"2026-11-11T16:33:09Z","phase":"test","seconds":1.210,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMMAGlobalFragmentLoad"}
+{"kind":"phase","ts":"2026-11-11T16:33:10Z","phase":"test","seconds":1.093,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMMAInt8FragmentElementRead"}
+{"kind":"phase","ts":"2026-11-11T16:33:11Z","phase":"test","seconds":1.016,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.matrices.TestMMAFragmentHelper"}
+{"kind":"phase","ts":"2026-11-11T16:33:15Z","phase":"test","seconds":3.846,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cublas.TestCuBlas"}
+{"kind":"phase","ts":"2026-11-11T16:33:18Z","phase":"test","seconds":3.002,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cublas.TestCuBlasLt"}
+{"kind":"phase","ts":"2026-11-11T16:33:41Z","phase":"test","seconds":22.553,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cudnn.TestCuDnn"}
+{"kind":"phase","ts":"2026-11-11T16:33:43Z","phase":"test","seconds":1.922,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cutlass.TestCutlass"}
+{"kind":"phase","ts":"2026-11-11T16:33:43Z","phase":"test","seconds":0.680,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cudf.TestCudf"}
+{"kind":"phase","ts":"2026-11-11T16:33:44Z","phase":"test","seconds":0.684,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cudf.TestCudfColumns"}
+{"kind":"phase","ts":"2026-11-11T16:33:45Z","phase":"test","seconds":0.628,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cuvs.TestCuVS"}
+{"kind":"phase","ts":"2026-11-11T16:33:47Z","phase":"test","seconds":2.336,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cufft.TestCuFft"}
+{"kind":"phase","ts":"2026-11-11T16:33:48Z","phase":"test","seconds":1.266,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.curand.TestCuRand"}
+{"kind":"phase","ts":"2026-11-11T16:33:50Z","phase":"test","seconds":1.921,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.cusparse.TestCusparse"}
+{"kind":"phase","ts":"2026-11-11T16:34:03Z","phase":"test","seconds":12.423,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.nccl.TestNccl"}
+{"kind":"phase","ts":"2026-11-11T16:34:04Z","phase":"test","seconds":1.684,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.nccl.TestNcclMultiProcess"}
+{"kind":"phase","ts":"2026-11-11T16:34:06Z","phase":"test","seconds":1.171,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.arrays.TestFP8"}
+{"kind":"phase","ts":"2026-11-11T16:34:07Z","phase":"test","seconds":1.309,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.profiler.TestProfiler"}
+{"kind":"phase","ts":"2026-11-11T16:34:08Z","phase":"test","seconds":0.972,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.profiler.TestProfilerTransferBytes"}
+{"kind":"phase","ts":"2026-11-11T16:34:09Z","phase":"test","seconds":0.749,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.arrays.TestArrayInit"}
+{"kind":"phase","ts":"2026-11-11T16:34:10Z","phase":"test","seconds":0.960,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.memory.TestConsumeFromUnifiedMemory"}
+{"kind":"phase","ts":"2026-11-11T16:34:10Z","phase":"test","seconds":0.665,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.deviceview.TestDeviceView"}
+{"kind":"phase","ts":"2026-11-11T16:34:12Z","phase":"test","seconds":1.274,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.api.TestUnsupportedKernelContextOps"}
+{"kind":"phase","ts":"2026-11-11T16:34:13Z","phase":"test","seconds":1.261,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.api.TestDynamicParallelism"}
+{"kind":"phase","ts":"2026-11-11T16:34:33Z","phase":"test","seconds":8.500,"exit":0,"cmd":"make -C projects/TornadoVM/src test-nogpu JDK=jdk21"}
+{"kind":"session","ts":"2026-11-11T16:35:44Z","epoch":1794414944.813543105,"event":"end","platform":"linux-gfx1201"}
