@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "autoware_cuda",
+  "upstream_url": "https://github.com/autowarefoundation/autoware_cuda",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-11T18:07:23Z",
+  "updated_at": "2026-11-11T18:07:25Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
