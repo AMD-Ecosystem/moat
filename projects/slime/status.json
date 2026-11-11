@@ -6,14 +6,37 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-06T03:06:09Z",
-  "updated_at": "2026-11-06T03:13:38Z",
+  "updated_at": "2026-11-11T15:48:10Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {},
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-11T15:48:09Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
   "license_spdx": "Apache-2.0",
   "license_spdx_history": [
     {
@@ -24,11 +47,11 @@
     }
   ],
   "intake": {
-    "verdict": "decline",
-    "reason": "already-supported",
-    "duplicate_effort": "upstream ROCm support maintained by AMD engineers (yushengsu-thu, jun-amd, gramesh-amd); open PRs THUDM/slime#2369, #2506",
-    "viable": true,
-    "summary": "slime (THUDM RL post-training on Megatron+SGLang, Apache-2.0): ROCm already upstream (AMD tutorial, gfx942/gfx950 Dockerfiles, INT4 QAT .cu ROCm-enabled #2274) and AMD engineers have live ROCm PRs open (#2369, #2506); only an optional GLM-5 DeepGEMM-alignment router kernel lacks a path",
-    "at": "2026-11-06T03:13:38Z"
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": null,
+    "viable": null,
+    "summary": "take-up ruled by Jeff Daily: request a new AMD-Ecosystem/slime fork rather than transferring jun-amd/slime",
+    "at": "2026-11-11T15:48:07Z"
   }
 }

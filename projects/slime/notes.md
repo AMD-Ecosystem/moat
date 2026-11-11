@@ -23,3 +23,7 @@ Source: third-party "AMD AI Software Gap Matrix" seed (verdict: partial / AMD pa
 
 ### Recommendation: decline, SKIP_REASON `already-supported`
 Mature upstream ROCm support (docs, Dockerfiles for gfx942/gfx950, ROCm-enabled QAT kernel) maintained by AMD engineers with live ROCm PRs open; MOAT would duplicate AMD's own work.
+
+## Take-up ruling (2026-11-09, recorded 2026-11-11)
+
+Jeff Daily ruled that slime gets an AMD-Ecosystem home: a new fork created by a person, not a transfer of jun-amd/slime. Intake had recommended decline (already-supported: ROCm support upstream, AMD engineers' PRs THUDM/slime#2369 and #2506 open). Recorded `set-intake slime fork` and `awaiting-fork`; scope (validation of the upstream ROCm path on all gates, plus the GLM-5 DeepGEMM-alignment router kernel that lacks a path) is for the planner, with any cut put to Jeff.
