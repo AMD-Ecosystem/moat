@@ -222,3 +222,7 @@
 {"kind":"phase","ts":"2026-11-11T15:50:36Z","phase":"compile","seconds":172.058,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
 {"kind":"session","ts":"2026-11-11T15:58:15Z","epoch":1794412695.653147600,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-11T16:04:33Z","epoch":1794413073.421231400,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-11T16:09:47Z","epoch":1794413387.213201921,"event":"start","platform":"linux-gfx1250"}
+{"kind":"phase","ts":"2026-11-11T16:10:08Z","phase":"compile","seconds":21.301,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-11T16:10:41Z","phase":"test","seconds":12.081,"exit":0,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}
+{"kind":"session","ts":"2026-11-11T16:11:21Z","epoch":1794413481.985975618,"event":"end","platform":"linux-gfx1250"}

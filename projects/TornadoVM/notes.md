@@ -1220,3 +1220,41 @@ Commits: titles 57 and 68 chars with `[ROCm]`; rationale, prose AI disclosure ("
 Non-blocking:
 - `python utils/jargon.py --port TornadoVM` reports one hit, "Revalidate this when changing JDKs" at `docs/CONSUME-FROM-UNIFIED-MEMORY.md:59`. It is upstream text (`git grep` finds it at `986fbadfc`, not at `f8e3ac907`); the scan counts it because the clone's `develop` (and the fork's `develop` mirror) is still `f8e3ac907`. Before the review PR opens, fast-forward the fork's `develop` mirror to upstream so the PR diff shows only the port delta and the scan is clean.
 - Future work, not this round: APUs (gfx1151, MI300A) share memory with the host, so HIP could implement `consumeFromUnifiedMemory` the way Metal does. CUDA leaves it unimplemented too.
+
+## Validation 2026-11-11 (linux-gfx1250) at 8b9994f6a
+
+Requested by jeff: repeat the `d90e1d189` gfx1250 MMA check at the sync head, because merge `42c254d3a` changed shared TC compiler code (AbiLowering, ValueSpecialisation, TcArguments). Validator role at fork `moat-port` `8b9994f6a54dec9ca4de062eb8491a1dcea083ad` (detached checkout; `ls-remote` showed `moat-port` at it when cloned). Verdict: **pass**, every check, every number inside the same range as the `d90e1d189` run.
+
+Host and toolchain (job directory only): one MI450 gfx1250, `HIP_VISIBLE_DEVICES=0` (dispatcher pin). Same stack as the `d90e1d189` entry: ROCm 10.1.0 TheRock wheels (`ROCM_PATH=HIP_PATH=` the image venv's `_rocm_sdk_devel`), `hipconfig --version` 7.16.26385-0000000, AMD clang 24.0.0git (ROCm/llvm-project d6f6cb691863), amd-smi 27.1.0, amdgpu 7.1.0.31300009, Temurin 21.0.13+9 (Adoptium API), job-local Maven repository, `CMAKE_BUILD_PARALLEL_LEVEL=32`, `ulimit -c 0`. Before each GPU step and after the last, `amd-smi process` printed "No running processes detected" and `/sys/class/kfd/kfd/proc/` was empty.
+
+```bash
+git clone --filter=blob:none https://github.com/AMD-Ecosystem/TornadoVM projects/TornadoVM/src
+git -C projects/TornadoVM/src checkout --detach 8b9994f6a
+TORNADO_CK_SOURCE_DIR=/tmp utils/timeit.sh TornadoVM compile -- make -C projects/TornadoVM/src jdk21 BACKEND=hip   # BUILD SUCCESS, 17.1 s Maven wall; CK skipped ("TORNADO_CK_SOURCE_DIR=/tmp is not a Composable Kernel"), hipDF skipped (no HIPDF_HOME); SDK tornadovm-8.1.1-jdk21-dev-hip
+source projects/TornadoVM/src/setvars.sh; ulimit -c 0
+tornado --devices
+tornado-test -V uk.ac.manchester.tornado.unittests.pointers.TestCopyDevicePointers
+OUT=<job>/probe utils/timeit.sh TornadoVM test -- bash projects/TornadoVM/probe/mma/run.sh   # rc 0, "== PASS (gfx1250)"; harness, --mutate, tornado-selftest, eight MMA classes
+```
+
+| Run | `8b9994f6a` | `d90e1d189` (2026-11-11) |
+|---|---|---|
+| `tornado --devices` | 1 HIPDriver device `0:0` AMD Radeon Graphics, 432.0 GB global, 320.0 KB local, 1024 block threads | same |
+| `TestCopyDevicePointers` | 3/3, 0 unsupported | 3/3 |
+| `tornado-selftest` | 20 pass, 1 skip (device/device-launch); TC target "HIP gfx1250, fp64 yes, fp16 yes, warp 32, local memory 320 KB, work-group 1024, tensor cores F16+FP8"; `device/warp-sum`, `tensor-cores/mma-f16` 32x32x64, `tensor-cores/mma-fp8` 16x16x64 PASS | same |
+| Code object matrix instructions | exactly one each of `v_wmma_f32_16x16x32_{f16,bf16}`, `v_wmma_f32_16x16x64_{fp8_fp8,bf8_bf8}`, `v_wmma_i32_16x16x64_iu8` | same |
+| Harness | 0 of 53 failed | 0 of 53 |
+| Harness `--mutate` | 53 of 53 failed (all detected) | 53 of 53 |
+| MMA classes | MMA 18/18, MMABF16 7/7, MMAInt8 12/12, MMAFP8 8/8, MMACpAsync 8/8, MMAGlobalFragmentLoad 6/6, MMAInt8FragmentElementRead 4/4, MMAFragmentHelper 2/2 (65/65, 0 unsupported) | 65/65 |
+
+Harness bounds as printed: `f16/bf16 exact cases 0, random fp8 0.0001, other random 1e-05`; `every byte e4m3 0, e5m2 0 except bytes 0x81-0x83 0`. Per kind (worst relative error against sum|a*b|, 0 wrong elements everywhere), identical ranges to `d90e1d189`:
+- f16: ints exact (5/5), random 1.3e-07 to 1.9e-07 (5/5).
+- bf16: ints exact (5/5), random 2.6e-08 to 4.4e-08 (5/5).
+- s8: 11/11 exact, wraparound included.
+- e4m3: random 2.9e-05 to 3.8e-05, ints 1.1e-05 to 1.7e-05 (10/10 within 1e-4); every byte exact.
+- e5m2: random 5.0e-05 to 6.6e-05, ints 3.9e-05 to 4.6e-05 (10/10 within 1e-4); every byte exact.
+- Worst FP8 case 6.6e-05 = 0.66 of the 1e-4 gfx1250 bound, as before; everything else bit-exact or within 1e-5.
+
+Not run (scope per jeff): quickPass, library suites, ck-hip classes, stress loops. No CUDA compile owed here (the porter ran the CUDA gate at `8b9994f6a`).
+
+Completion checks: `git -C projects/TornadoVM/src status --porcelain` empty, HEAD `8b9994f6a`. `python3 utils/jargon.py --port TornadoVM` with local `develop` at the fork mirror `f8e3ac907` reports the one upstream hit review 13 recorded (`docs/CONSUME-FROM-UNIFIED-MEMORY.md:59`, present at upstream `986fbadfc`); with local `develop` set to upstream `986fbadfc` (fetched into the clone only) it is clean. Validation only: nothing pushed to the fork.
