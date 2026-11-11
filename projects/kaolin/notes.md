@@ -34,3 +34,18 @@ Jeff Daily ruled on 2026-11-10 that MOAT takes kaolin up, building on the AMD te
 - Delivery vehicle is Jeff's call later.
 
 Recorded: `set-intake kaolin fork`, `set-state kaolin linux-gfx942 awaiting-fork`, `release-forks` (stage `screened`, `fork_url` set). Re-run `set-fork-url kaolin https://github.com/AMD-Ecosystem/kaolin --by "Jeff Daily"` once the porter has pushed `moat-port`.
+
+## Licence ruling (2026-11-11, Jeff Daily)
+
+A rescan with the fixed `licenses.py scan-nvidia` (pure Python; the grep-based scan falsely reported this tree clean on the Windows host) found NVIDIA-restricted files in upstream kaolin, unchanged in AMD's `master`/`rocm-enablement` (AMD's delta does not touch them; its `unbatched_mcube_gpu.cu` includes two of them unchanged):
+- `kaolin/csrc/ops/spc/point_utils.h`: NVIDIA "proprietary rights ... strictly prohibited" header; declarations only, included by `kaolin/csrc/bindings.cpp`.
+- `kaolin/csrc/ops/conversions/unbatched_mcube/defines.h`, `helper_math.h`, `tables.h`: CUDA-samples EULA headers.
+- `kaolin/non_commercial/flexicubes/` (`flexicubes.py`, `tables.py`): NVIDIA Source Code License, non-commercial (`LICENSE.NSCL`, `COPYRIGHT`).
+
+Jeff Daily ruled, on `moat-port`, as separate commits:
+1. Delete the four headers and replace each: fresh declarations for `point_utils.h`; rewritten `defines.h` and vector-math `helper_math.h` (drop-in for both CUDA and HIP; HIP's built-in vector operators do not exist on CUDA); `tables.h` generated programmatically from the marching-cubes case rules (Lorensen and Cline, 1987), not copied from the NVIDIA-headered file.
+2. Delete `kaolin/non_commercial/` (Python, unused by the GPU build) and anything that imports only it.
+3. Build and run the CUDA path with real nvcc (mi355 host) as well as the ROCm path, since the replacements change the CUDA build too.
+4. Before any delivery, the replacements and `point_utils.h`'s stale proprietary header go to AMD's legal contact (Jeff raises it).
+
+Context: upstream is an NVIDIA-org repo with infrequent releases (latest v0.18.0, 2025-08-08); upstreaming ROCm support is unlikely, so the deliverable is this fork. AMD's fork has produced no release (no tags; `amd-kaolin` is not on public PyPI).
