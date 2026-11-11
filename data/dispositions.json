@@ -1123,6 +1123,15 @@
     "reason": "not-a-target",
     "repo_id": 835036273
   },
+  "lh3/minimap2": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-11T23:55:05Z",
+    "disposition": "skip",
+    "full_name": "lh3/minimap2",
+    "note": "2026-11-11: not a CUDA-to-ROCm port. Upstream is CPU-only and refuses GPU code (#1258); AMD-Ecosystem/minimap2 is an AMD product build (ROCm/HIP GPU chaining + alignment, limited early access) that MOAT should not touch.",
+    "reason": "declined",
+    "repo_id": 97612481
+  },
   "librapid/librapid": {
     "decided": "2026-06-05T04:44:26Z",
     "disposition": "skip",
