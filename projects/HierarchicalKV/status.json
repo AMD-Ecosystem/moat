@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-11T15:46:07Z",
-  "updated_at": "2026-11-11T15:46:07Z",
+  "updated_at": "2026-11-11T15:57:04Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-11T15:57:03Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVIDIA-Merlin/HierarchicalKV/blob/master/LICENSE",
+      "at": "2026-11-11T15:57:02Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none (Hygon DCU downstream HYGON-AI/HierarchicalKV-das exists, ruled out as base; Ascend NPU ports)",
+    "viable": true,
+    "summary": "Header-only GPU KV hash table (Apache-2.0), hard dep of HugeCTR take-up; no AMD port; risks: 32-bit warp masks/32-lane probing on wave64, __pipeline_memcpy_async + __vcmpeq4 shims, libhipcxx atomics",
+    "at": "2026-11-11T15:57:03Z"
+  }
 }
