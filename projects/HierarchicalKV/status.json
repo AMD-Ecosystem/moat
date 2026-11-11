@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "HierarchicalKV",
+  "upstream_url": "https://github.com/NVIDIA-Merlin/HierarchicalKV",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-11T15:46:07Z",
+  "updated_at": "2026-11-11T15:46:07Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
