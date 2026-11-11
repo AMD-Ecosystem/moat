@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "MONAILabel",
+  "upstream_url": "https://github.com/Project-MONAI/MONAILabel",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-11T20:56:43Z",
+  "updated_at": "2026-11-11T20:56:44Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
