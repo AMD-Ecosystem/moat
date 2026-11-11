@@ -39,6 +39,8 @@ def tier_of(spdx, cfg=None):
     if not spdx or spdx in ("NOASSERTION", "NONE", "null"):
         return 4
     spdx = spdx.strip()
+    while spdx.startswith("(") and spdx.endswith(")") and _balanced(spdx[1:-1]):
+        spdx = spdx[1:-1].strip()
     for n in (1, 2, 3):
         if spdx in cfg[f"tier{n}"]["spdx"]:
             return n
@@ -48,13 +50,47 @@ def tier_of(spdx, cfg=None):
     #   OR   -- the recipient chooses, so the best (lowest) tier applies
     #   AND  -- all of them bind, so the worst applies
     #   WITH -- an exception grants extra permission on a base licence; tier the base
-    if " WITH " in spdx:
-        return tier_of(spdx.split(" WITH ", 1)[0], cfg)
+    # Split in SPDX precedence order, loosest first (OR, then AND, then WITH), and only
+    # at the top level of parentheses. Splitting on WITH first returned tier 1 for
+    # "Apache-2.0 WITH LLVM-exception AND LicenseRef-MAX-License" and silently dropped
+    # the AND part, which is the part that binds.
     for sep, pick in ((" OR ", min), (" AND ", max)):
-        if sep in spdx:
-            parts = [p.strip(" ()") for p in spdx.split(sep)]
+        parts = _split_top(spdx, sep)
+        if len(parts) > 1:
             return pick(tier_of(p, cfg) for p in parts)
+    parts = _split_top(spdx, " WITH ")
+    if len(parts) > 1:
+        return tier_of(parts[0], cfg)
     return 4
+
+
+def _balanced(expr):
+    depth = 0
+    for ch in expr:
+        depth += {"(": 1, ")": -1}.get(ch, 0)
+        if depth < 0:
+            return False
+    return depth == 0
+
+
+def _split_top(expr, sep):
+    """Split on `sep` where it is not inside parentheses (case-insensitive, as SPDX
+    operators are)."""
+    parts, depth, start, i, up = [], 0, 0, 0, expr.upper()
+    while i < len(expr):
+        ch = expr[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif depth == 0 and up.startswith(sep, i):
+            parts.append(expr[start:i].strip())
+            i += len(sep)
+            start = i
+            continue
+        i += 1
+    parts.append(expr[start:].strip())
+    return parts
 
 
 def route(tier):
