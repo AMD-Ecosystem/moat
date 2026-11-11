@@ -151,16 +151,24 @@ The project name links upstream.
 | [alien](https://github.com/chrxh/alien) ([fork](https://github.com/AMD-Ecosystem/alien/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#710](https://github.com/chrxh/alien/pull/710) |
 | [amgcl](https://github.com/ddemidov/amgcl) ([fork](https://github.com/AMD-Ecosystem/amgcl/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#315](https://github.com/ddemidov/amgcl/pull/315) |
 | [anari-visionaray](https://github.com/szellmann/anari-visionaray) ([fork](https://github.com/AMD-Ecosystem/anari-visionaray/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#10](https://github.com/szellmann/anari-visionaray/pull/10) |
+| [apollo](https://github.com/ApolloAuto/apollo) | ⬜ | ⬜ | ⬜ | — |
 | [arbor](https://github.com/arbor-sim/arbor) ([fork](https://github.com/AMD-Ecosystem/arbor/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#2512](https://github.com/arbor-sim/arbor/pull/2512) |
-| [arrayfire](https://github.com/arrayfire/arrayfire) ([fork](https://github.com/AMD-Ecosystem/arrayfire/tree/moat-port)) | ✅ | ✅ | 🔄 | 🔵 [#3708](https://github.com/arrayfire/arrayfire/pull/3708) fork is upstream's AMD path |
+| [arrayfire](https://github.com/arrayfire/arrayfire) ([fork](https://github.com/AMD-Ecosystem/arrayfire/tree/moat-port)) | ✅ | ✅ | ✅ | 🔵 [#3708](https://github.com/arrayfire/arrayfire/pull/3708) fork is upstream's AMD path |
 | [AutoDock-GPU](https://github.com/ccsb-scripps/AutoDock-GPU) ([fork](https://github.com/AMD-Ecosystem/AutoDock-GPU/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#320](https://github.com/ccsb-scripps/AutoDock-GPU/pull/320) |
+| [autoware_cuda](https://github.com/autowarefoundation/autoware_cuda) | ⬜ | ⬜ | 🎫 | — |
+| [autoware_universe](https://github.com/autowarefoundation/autoware_universe) | ⬜ | ⬜ | 🎫 | — |
+| [axolotl](https://github.com/axolotl-ai-cloud/axolotl) | ⬜ | ⬜ | ⬜ | — |
 | [bam](https://github.com/ZaidQureshi/bam) ([fork](https://github.com/AMD-Ecosystem/bam/tree/moat-port)) | 🚫 | 🚫 | 🚫 | ⏸ on hold |
 | [barney](https://github.com/NVIDIA/barney) ([fork](https://github.com/AMD-Ecosystem/barney/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#46](https://github.com/NVIDIA/barney/pull/46) |
 | [baspacho](https://github.com/facebookresearch/baspacho) ([fork](https://github.com/AMD-Ecosystem/baspacho/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#10](https://github.com/facebookresearch/baspacho/pull/10) |
 | [bellhopcuda](https://github.com/A-New-BellHope/bellhopcuda) ([fork](https://github.com/AMD-Ecosystem/bellhopcuda/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#65](https://github.com/A-New-BellHope/bellhopcuda/pull/65) |
+| [bitsandbytes](https://github.com/bitsandbytes-foundation/bitsandbytes) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
 | [brian2cuda](https://github.com/brian-team/brian2cuda) ([fork](https://github.com/AMD-Ecosystem/brian2cuda/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#327](https://github.com/brian-team/brian2cuda/pull/327) |
+| [candle](https://github.com/huggingface/candle) | ⬜ | ⬜ | ⬜ | — |
 | [catboost](https://github.com/catboost/catboost) ([fork](https://github.com/AMD-Ecosystem/catboost-moat/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#3111](https://github.com/catboost/catboost/pull/3111) |
 | [colmap](https://github.com/colmap/colmap) ([fork](https://github.com/AMD-Ecosystem/colmap/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟣 [#4635](https://github.com/colmap/colmap/pull/4635) |
+| [ColossalAI](https://github.com/hpcaitech/ColossalAI) | ⬜ | ⬜ | ⬜ | — |
+| [ComfyUI-3D-Pack](https://github.com/MrForExample/ComfyUI-3D-Pack) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- gap-matrix intake 2026-11-10: licence issues in bundled components |
 | [CPM.cu](https://github.com/OpenBMB/CPM.cu) | 🚫 | — | — | ⚪ not-portable |
 | [CubbyFlow](https://github.com/utilForever/CubbyFlow) ([fork](https://github.com/AMD-Ecosystem/CubbyFlow/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#145](https://github.com/utilForever/CubbyFlow/pull/145) |
 | [cuBQL](https://github.com/NVIDIA/cuBQL) ([fork](https://github.com/AMD-Ecosystem/cuBQL/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#35](https://github.com/NVIDIA/cuBQL/pull/35) |
@@ -168,41 +176,58 @@ The project name links upstream.
 | [cuda-efficient-features](https://github.com/fixstars/cuda-efficient-features) ([fork](https://github.com/AMD-Ecosystem/cuda-efficient-features/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#3](https://github.com/fixstars/cuda-efficient-features/pull/3) |
 | [CUDA-L2](https://github.com/deepreinforce-ai/CUDA-L2) | 🚫 | — | — | ⚪ not-portable |
 | [CUDA-ScanMatcher-ICP](https://github.com/botforge/CUDA-ScanMatcher-ICP) ([fork](https://github.com/AMD-Ecosystem/CUDA-ScanMatcher-ICP/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#10](https://github.com/botforge/CUDA-ScanMatcher-ICP/pull/10) |
+| [cuda_blackboard](https://github.com/autowarefoundation/cuda_blackboard) | ⬜ | ⬜ | 🎫 | — |
 | [cuda_voxelizer](https://github.com/Forceflow/cuda_voxelizer) ([fork](https://github.com/AMD-Ecosystem/cuda_voxelizer/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [cudaKDTree](https://github.com/ingowald/cudaKDTree) ([fork](https://github.com/AMD-Ecosystem/cudaKDTree/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#40](https://github.com/ingowald/cudaKDTree/pull/40) |
 | [CudaSift](https://github.com/Celebrandil/CudaSift) ([fork](https://github.com/AMD-Ecosystem/CudaSift/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#97](https://github.com/Celebrandil/CudaSift/pull/97) |
+| [cudf-spark](https://github.com/NVIDIA/cudf-spark) | ⬜ | ⬜ | ⬜ | ⚪ ported-elsewhere |
+| [cudnn-frontend](https://github.com/NVIDIA/cudnn-frontend) | ⬜ | ⬜ | ⬜ | ⚪ ported-elsewhere |
 | [CuMesh](https://github.com/JeffreyXiang/CuMesh) ([fork](https://github.com/AMD-Ecosystem/CuMesh/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#36](https://github.com/JeffreyXiang/CuMesh/pull/36) |
+| [cuopt](https://github.com/NVIDIA/cuopt) | ⬜ | ⬜ | ⬜ | ⚪ other |
 | [cuPDLP-C](https://github.com/COPT-Public/cuPDLP-C) ([fork](https://github.com/AMD-Ecosystem/cuPDLP-C/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#41](https://github.com/COPT-Public/cuPDLP-C/pull/41) |
 | [cuPDLPx](https://github.com/MIT-Lu-Lab/cuPDLPx) ([fork](https://github.com/AMD-Ecosystem/cuPDLPx/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#94](https://github.com/MIT-Lu-Lab/cuPDLPx/pull/94) |
 | [cupoch](https://github.com/neka-nat/cupoch) ([fork](https://github.com/AMD-Ecosystem/cupoch/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#143](https://github.com/neka-nat/cupoch/pull/143) |
+| [cupy](https://github.com/cupy/cupy) ([fork](https://github.com/ROCm/cupy/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [CuRast](https://github.com/m-schuetz/CuRast) ([fork](https://github.com/AMD-Ecosystem/CuRast/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#2](https://github.com/m-schuetz/CuRast/pull/2) |
+| [curobo](https://github.com/NVlabs/curobo) | ⬜ | ⬜ | ⬜ | — |
 | [cuSZ](https://github.com/szcompressor/cuSZ) ([fork](https://github.com/AMD-Ecosystem/cuSZ/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#91](https://github.com/szcompressor/cuSZ/pull/91) |
 | [CV-CUDA](https://github.com/CVCUDA/CV-CUDA) ([fork](https://github.com/AMD-Ecosystem/CV-CUDA/tree/moat-port)) | ✅ | ✅ | 🔧 | 🟢 [#293](https://github.com/CVCUDA/CV-CUDA/pull/293) |
+| [DALI](https://github.com/NVIDIA/DALI) | ⬜ | ⬜ | ⬜ | ⚪ ported-elsewhere |
+| [DCGM](https://github.com/NVIDIA/DCGM) | ⬜ | ⬜ | ⬜ | ⚪ ported-elsewhere |
 | [DEM-Engine](https://github.com/projectchrono/DEM-Engine) ([fork](https://github.com/AMD-Ecosystem/DEM-Engine/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#69](https://github.com/projectchrono/DEM-Engine/pull/69) |
 | [dgSPARSE-Lib](https://github.com/dgSPARSE/dgSPARSE-Lib) ([fork](https://github.com/AMD-Ecosystem/dgSPARSE-Lib/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#39](https://github.com/dgSPARSE/dgSPARSE-Lib/pull/39) |
 | [dietgpu](https://github.com/facebookresearch/dietgpu) ([fork](https://github.com/AMD-Ecosystem/dietgpu/tree/moat-port)) | ✅ | ✅ | ✅ | 🔵 fork is the AMD path; upstream takes no pull requests |
 | [diff-surfel-rasterizations](https://github.com/xbillowy/diff-surfel-rasterizations) ([fork](https://github.com/AMD-Ecosystem/diff-surfel-rasterizations/tree/moat-port)) | ✅ | ✅ | ✅ | — |
-| [diff-surfel-tracing](https://github.com/xbillowy/diff-surfel-tracing) ([fork](https://github.com/AMD-Ecosystem/diff-surfel-tracing/tree/moat-port)) | ✅ | ✅ | ✅ | — |
+| [diff-surfel-tracing](https://github.com/xbillowy/diff-surfel-tracing) ([fork](https://github.com/AMD-Ecosystem/diff-surfel-tracing/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#7](https://github.com/xbillowy/diff-surfel-tracing/pull/7) |
 | [DiffPhysDrone](https://github.com/HenryHuYu/DiffPhysDrone) ([fork](https://github.com/AMD-Ecosystem/DiffPhysDrone/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#45](https://github.com/HenryHuYu/DiffPhysDrone/pull/45) |
 | [DynOSAM](https://github.com/ACFR-RPG/DynOSAM) ([fork](https://github.com/AMD-Ecosystem/DynOSAM/tree/moat-port)) | ⬜ | 🔧 | ⬜ | — |
 | [egg.c](https://github.com/d0rc/egg.c) ([fork](https://github.com/AMD-Ecosystem/egg.c/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#8](https://github.com/d0rc/egg.c/pull/8) |
 | [ElasticFusion](https://github.com/mp3guy/ElasticFusion) ([fork](https://github.com/AMD-Ecosystem/ElasticFusion/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#251](https://github.com/mp3guy/ElasticFusion/pull/251) |
 | [EnvGS](https://github.com/zju3dv/EnvGS) ([fork](https://github.com/AMD-Ecosystem/EnvGS/tree/moat-port)) | ✅ | ✅ | ✅ | — |
+| [espnet](https://github.com/espnet/espnet) | ⬜ | ⬜ | ⬜ | — |
 | [espresso](https://github.com/espressomd/espresso) ([fork](https://github.com/AMD-Ecosystem/espresso/tree/moat-port)) | ✅ | ✅ | 🚫 | — |
 | [evogp](https://github.com/EMI-Group/evogp) ([fork](https://github.com/AMD-Ecosystem/evogp/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#12](https://github.com/EMI-Group/evogp/pull/12) |
+| [exllamav2](https://github.com/turboderp-org/exllamav2) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
+| [exllamav3](https://github.com/turboderp-org/exllamav3) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
 | [faiss](https://github.com/facebookresearch/faiss) ([fork](https://github.com/AMD-Ecosystem/faiss/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [FaithC](https://github.com/Luo-Yihao/FaithC) ([fork](https://github.com/AMD-Ecosystem/FaithC/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#12](https://github.com/Luo-Yihao/FaithC/pull/12) |
+| [Falcor](https://github.com/NVIDIAGameWorks/Falcor) | ⬜ | ⬜ | ⬜ | ⚪ not-a-target |
 | [Fast-Poisson-Image-Editing](https://github.com/Trinkle23897/Fast-Poisson-Image-Editing) ([fork](https://github.com/AMD-Ecosystem/Fast-Poisson-Image-Editing/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#25](https://github.com/Trinkle23897/Fast-Poisson-Image-Editing/pull/25) |
 | [faster-gaussian-splatting](https://github.com/nerficg-project/faster-gaussian-splatting) ([fork](https://github.com/AMD-Ecosystem/faster-gaussian-splatting/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [FastGeodis](https://github.com/masadcv/FastGeodis) ([fork](https://github.com/AMD-Ecosystem/FastGeodis/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#68](https://github.com/masadcv/FastGeodis/pull/68) |
+| [FastVideo](https://github.com/hao-ai-lab/FastVideo) | ⬜ | ⬜ | ⬜ | — |
+| [FBGEMM](https://github.com/pytorch/FBGEMM) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
 | [fdtd3d](https://github.com/zer011b/fdtd3d) ([fork](https://github.com/AMD-Ecosystem/fdtd3d/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#205](https://github.com/zer011b/fdtd3d/pull/205) |
 | [ffpa-attn](https://github.com/xlite-dev/ffpa-attn) ([fork](https://github.com/AMD-Ecosystem/ffpa-attn/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#268](https://github.com/xlite-dev/ffpa-attn/pull/268) |
 | [FLAMEGPU2](https://github.com/FLAMEGPU/FLAMEGPU2) ([fork](https://github.com/AMD-Ecosystem/FLAMEGPU2/tree/moat-port)) | ✅ | ✅ | ✅ | ⏸ on hold |
+| [flash-attention](https://github.com/Dao-AILab/flash-attention) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
+| [FlashMLA](https://github.com/deepseek-ai/FlashMLA) | ⬜ | ⬜ | ⬜ | ⚪ ported-elsewhere |
 | [FlashMoE](https://github.com/osayamenja/FlashMoE) | 🚫 | — | — | ⚪ not-portable |
 | [FlashRT](https://github.com/flashrt-project/FlashRT) | 🚫 | — | — | ⚪ not-portable |
-| [FlexGEMM](https://github.com/JeffreyXiang/FlexGEMM) | ⬜ | ⬜ | ⬜ | — |
+| [FlexGEMM](https://github.com/JeffreyXiang/FlexGEMM) ([fork](https://github.com/AMD-Ecosystem/FlexGEMM/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [foldmason](https://github.com/steineggerlab/foldmason) ([fork](https://github.com/AMD-Ecosystem/foldmason/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [foldseek](https://github.com/steineggerlab/foldseek) ([fork](https://github.com/AMD-Ecosystem/foldseek/tree/moat-port)) | ✅ | ✅ | ✅ | — |
+| [FunASR](https://github.com/modelscope/FunASR) | ⬜ | ⬜ | ⬜ | — |
 | [gaussian_splatting](https://github.com/joeyan/gaussian_splatting) ([fork](https://github.com/AMD-Ecosystem/gaussian_splatting/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#37](https://github.com/joeyan/gaussian_splatting/pull/37) |
 | [gdtk](https://github.com/gdtk-uq/gdtk) ([fork](https://github.com/AMD-Ecosystem/gdtk/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [GOMC](https://github.com/GOMC-WSU/GOMC) ([fork](https://github.com/AMD-Ecosystem/GOMC/tree/moat-port)) | ✅ | ✅ | ✅ | — |
@@ -210,75 +235,119 @@ The project name links upstream.
 | [gpu4pyscf](https://github.com/pyscf/gpu4pyscf) ([fork](https://github.com/AMD-Ecosystem/gpu4pyscf/tree/moat-port)) | ✅ | ✅ | 🎫 | — |
 | [GPU_IPC](https://github.com/KemengHuang/GPU_IPC) ([fork](https://github.com/AMD-Ecosystem/GPU_IPC/tree/moat-port)) | ✅ | ✅ | 🚫 | — |
 | [Gpufit](https://github.com/gpufit/Gpufit) ([fork](https://github.com/AMD-Ecosystem/Gpufit/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#149](https://github.com/gpufit/Gpufit/pull/149) |
-| [GPUMD](https://github.com/brucefan1983/GPUMD) ([fork](https://github.com/AMD-Ecosystem/GPUMD/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#1538](https://github.com/brucefan1983/GPUMD/pull/1538) |
-| [gpuRIR](https://github.com/DavidDiazGuerra/gpuRIR) ([fork](https://github.com/AMD-Ecosystem/gpuRIR/tree/moat-port)) | ✅ | ✅ | ✅ | — |
+| [GPUMD](https://github.com/brucefan1983/GPUMD) ([fork](https://github.com/AMD-Ecosystem/GPUMD/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#1888](https://github.com/brucefan1983/GPUMD/pull/1888) |
+| [gpuRIR](https://github.com/DavidDiazGuerra/gpuRIR) ([fork](https://github.com/AMD-Ecosystem/gpuRIR/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#88](https://github.com/DavidDiazGuerra/gpuRIR/pull/88) |
 | [gRASPA](https://github.com/snurr-group/gRASPA) ([fork](https://github.com/AMD-Ecosystem/gRASPA/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#96](https://github.com/snurr-group/gRASPA/pull/96) |
 | [gtsam_points](https://github.com/koide3/gtsam_points) ([fork](https://github.com/AMD-Ecosystem/gtsam_points/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#99](https://github.com/koide3/gtsam_points/pull/99) |
-| [h2o4gpu](https://github.com/h2oai/h2o4gpu) ([fork](https://github.com/AMD-Ecosystem/h2o4gpu/tree/moat-port)) | 🔧 | 🔧 | 🔧 | — |
+| [h2o4gpu](https://github.com/h2oai/h2o4gpu) ([fork](https://github.com/AMD-Ecosystem/h2o4gpu/tree/moat-port)) | ✅ | ✅ | ⬜ | — |
+| [habitat-sim](https://github.com/facebookresearch/habitat-sim) | ⬜ | ⬜ | ⬜ | — |
 | [HEonGPU](https://github.com/Alisah-Ozcan/HEonGPU) ([fork](https://github.com/AMD-Ecosystem/HEonGPU/tree/moat-port)) | ✅ | ✅ | 🔧 | — |
+| [HierarchicalKV](https://github.com/NVIDIA-Merlin/HierarchicalKV) | ⬜ | ⬜ | ⬜ | — |
+| [HugeCTR](https://github.com/NVIDIA-Merlin/HugeCTR) | ⬜ | ⬜ | ⬜ | — |
 | [icicle](https://github.com/ingonyama-zk/icicle) ([fork](https://github.com/AMD-Ecosystem/icicle/tree/moat-port)) | ✅ | ✅ | 🎫 | — |
+| [IsaacLab](https://github.com/isaac-sim/IsaacLab) ([fork](https://github.com/AMD-Ecosystem/IsaacLab/tree/moat-port)) | ✅ | ✅ | ⬜ | — |
 | [k2](https://github.com/k2-fsa/k2) ([fork](https://github.com/AMD-Ecosystem/k2/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#1353](https://github.com/k2-fsa/k2/pull/1353) |
 | [kaldi](https://github.com/kaldi-asr/kaldi) ([fork](https://github.com/AMD-Ecosystem/kaldi/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟢 [#4986](https://github.com/kaldi-asr/kaldi/pull/4986) |
 | [kaldifeat](https://github.com/csukuangfj/kaldifeat) ([fork](https://github.com/AMD-Ecosystem/kaldifeat/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#124](https://github.com/csukuangfj/kaldifeat/pull/124) |
+| [kaolin](https://github.com/NVIDIAGameWorks/kaolin) ([fork](https://github.com/AMD-Ecosystem/kaolin/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
 | [KittenGpuLBVH](https://github.com/jerry060599/KittenGpuLBVH) ([fork](https://github.com/AMD-Ecosystem/KittenGpuLBVH/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#5](https://github.com/jerry060599/KittenGpuLBVH/pull/5) |
+| [koboldcpp](https://github.com/LostRuins/koboldcpp) | ⬜ | ⬜ | ⬜ | — |
+| [ktransformers](https://github.com/kvcache-ai/ktransformers) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
 | [LC-framework](https://github.com/burtscher/LC-framework) ([fork](https://github.com/AMD-Ecosystem/LC-framework/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [lc0](https://github.com/LeelaChessZero/lc0) ([fork](https://github.com/AMD-Ecosystem/lc0/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#2420](https://github.com/LeelaChessZero/lc0/pull/2420) |
-| [LEAP](https://github.com/llnl/LEAP) ([fork](https://github.com/AMD-Ecosystem/LEAP/tree/moat-port)) | ✅ | ✅ | ✅ | — |
+| [LEAP](https://github.com/llnl/LEAP) ([fork](https://github.com/AMD-Ecosystem/LEAP/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#216](https://github.com/llnl/LEAP/pull/216) |
 | [libSGM](https://github.com/fixstars/libSGM) ([fork](https://github.com/AMD-Ecosystem/libSGM/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#89](https://github.com/fixstars/libSGM/pull/89) |
-| [LichtFeld-Studio](https://github.com/MrNeRF/LichtFeld-Studio) ([fork](https://github.com/AMD-Ecosystem/LichtFeld-Studio/tree/moat-port)) | ✅ | ✅ | 🔄 | ⏸ on hold |
+| [LichtFeld-Studio](https://github.com/MrNeRF/LichtFeld-Studio) ([fork](https://github.com/AMD-Ecosystem/LichtFeld-Studio/tree/moat-port)) | 🔄 | 🔄 | 🔄 | ⏸ on hold |
+| [Liger-Kernel](https://github.com/linkedin/Liger-Kernel) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
 | [LiteGS](https://github.com/MooreThreads/LiteGS) ([fork](https://github.com/AMD-Ecosystem/LiteGS/tree/moat-port)) | ✅ | ✅ | ✅ | — |
+| [LivePortrait](https://github.com/KlingAIResearch/LivePortrait) | ⬜ | ⬜ | ⬜ | — |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
 | [llm-awq](https://github.com/mit-han-lab/llm-awq) ([fork](https://github.com/AMD-Ecosystem/llm-awq/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#354](https://github.com/mit-han-lab/llm-awq/pull/354) |
 | [llm.c](https://github.com/karpathy/llm.c) ([fork](https://github.com/AMD-Ecosystem/llm.c/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#854](https://github.com/karpathy/llm.c/pull/854) |
 | [llmq](https://github.com/IST-DASLab/llmq) | 🚫 | — | — | ⚪ not-portable |
+| [lmdeploy](https://github.com/InternLM/lmdeploy) | ⬜ | ⬜ | ⬜ | — |
 | [mahout](https://github.com/apache/mahout) ([fork](https://github.com/AMD-Ecosystem/mahout/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#1399](https://github.com/apache/mahout/pull/1399) |
 | [marian-dev](https://github.com/marian-nmt/marian-dev) ([fork](https://github.com/AMD-Ecosystem/marian-dev/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#1043](https://github.com/marian-nmt/marian-dev/pull/1043) |
 | [MASt3R-SLAM](https://github.com/rmurai0610/MASt3R-SLAM) ([fork](https://github.com/AMD-Ecosystem/MASt3R-SLAM/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [mcx](https://github.com/fangq/mcx) ([fork](https://github.com/AMD-Ecosystem/mcx/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#264](https://github.com/fangq/mcx/pull/264) |
+| [Megatron-LM](https://github.com/NVIDIA/Megatron-LM) | ⬜ | ⬜ | ⬜ | ⚪ ported-elsewhere |
 | [metaeuk](https://github.com/soedinglab/metaeuk) ([fork](https://github.com/AMD-Ecosystem/metaeuk/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [mHC.cu](https://github.com/AndreSlavescu/mHC.cu) ([fork](https://github.com/AMD-Ecosystem/mHC.cu/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#10](https://github.com/AndreSlavescu/mHC.cu/pull/10) |
+| [mistral.rs](https://github.com/EricLBuehler/mistral.rs) | ⬜ | ⬜ | ⬜ | — |
 | [MMseqs2](https://github.com/soedinglab/MMseqs2) ([fork](https://github.com/AMD-Ecosystem/MMseqs2/tree/moat-port)) | ✅ | ✅ | ✅ | — |
-| [MPPI-Generic](https://github.com/ACDSLab/MPPI-Generic) ([fork](https://github.com/AMD-Ecosystem/MPPI-Generic/tree/moat-port)) | ✅ | ✅ | 🔄 | — |
+| [Model-Optimizer](https://github.com/NVIDIA/Model-Optimizer) | ⬜ | ⬜ | ⬜ | ⚪ ported-elsewhere |
+| [modular](https://github.com/modular/modular) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
+| [MONAI](https://github.com/Project-MONAI/MONAI) ([fork](https://github.com/AMD-Ecosystem/MONAI/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
+| [Mooncake](https://github.com/kvcache-ai/Mooncake) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
+| [MPPI-Generic](https://github.com/ACDSLab/MPPI-Generic) ([fork](https://github.com/AMD-Ecosystem/MPPI-Generic/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [mumax3](https://github.com/mumax/3) ([fork](https://github.com/AMD-Ecosystem/mumax3/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#400](https://github.com/mumax/3/pull/400) |
+| [nccl](https://github.com/NVIDIA/nccl) | ⬜ | ⬜ | ⬜ | ⚪ ported-elsewhere |
 | [ntransformer](https://github.com/xaskasdf/ntransformer) ([fork](https://github.com/AMD-Ecosystem/ntransformer/tree/moat-port)) | ✅ | ✅ | ✅ | — |
+| [numba-cuda](https://github.com/NVIDIA/numba-cuda) | ⬜ | ⬜ | ⬜ | ⚪ ported-elsewhere |
+| [nunchaku](https://github.com/nunchux-ai/nunchaku) | ⬜ | ⬜ | ⬜ | — |
+| [nvblox](https://github.com/nvidia-isaac/nvblox) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- gap-matrix intake 2026-11-10: proprietary files |
 | [nvdiffrec](https://github.com/NVlabs/nvdiffrec) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- Jeff Daily decided 2026-11-04: decline, license-blocked |
+| [nvImageCodec](https://github.com/NVIDIA/nvImageCodec) | ⬜ | ⬜ | ⬜ | ⚪ not-a-target |
 | [OCTproZ](https://github.com/spectralcode/OCTproZ) ([fork](https://github.com/AMD-Ecosystem/OCTproZ/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [ohm](https://github.com/csiro-robotics/ohm) ([fork](https://github.com/AMD-Ecosystem/ohm/tree/moat-port)) | ✅ | ✅ | ✅ | — |
-| [oneflow](https://github.com/Oneflow-Inc/oneflow) ([fork](https://github.com/AMD-Ecosystem/oneflow/tree/moat-port)) | 🔄 | 🔧 | 🎫 | — |
+| [oidn](https://github.com/RenderKit/oidn) | ⬜ | ⬜ | ⬜ | — |
+| [oneflow](https://github.com/Oneflow-Inc/oneflow) ([fork](https://github.com/AMD-Ecosystem/oneflow/tree/moat-port)) | ✅ | ✅ | 🎫 | — |
 | [op43dgs](https://github.com/LetianHuang/op43dgs) ([fork](https://github.com/AMD-Ecosystem/op43dgs/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#15](https://github.com/LetianHuang/op43dgs/pull/15) |
 | [Open3D](https://github.com/isl-org/Open3D) ([fork](https://github.com/AMD-Ecosystem/Open3D/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#7509](https://github.com/isl-org/Open3D/pull/7509) |
 | [opencv](https://github.com/opencv/opencv) ([fork](https://github.com/AMD-Ecosystem/opencv/tree/moat-port)) | 🚫 | 🚫 | 🚫 | 🟢 [#29285](https://github.com/opencv/opencv/pull/29285) |
 | [opencv_contrib](https://github.com/opencv/opencv_contrib) ([fork](https://github.com/AMD-Ecosystem/opencv_contrib/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#4147](https://github.com/opencv/opencv_contrib/pull/4147) |
+| [openMVS](https://github.com/cdcseacave/openMVS) | ⬜ | ⬜ | ⬜ | — |
+| [peft](https://github.com/huggingface/peft) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
 | [PhoenixOS](https://github.com/SJTU-IPADS/PhoenixOS) | 🚫 | ⬜ | ⬜ | ⏸ on hold |
+| [PhysX](https://github.com/NVIDIA-Omniverse/PhysX) ([fork](https://github.com/AMD-Ecosystem/PhysX/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
 | [plumed2](https://github.com/plumed/plumed2) ([fork](https://github.com/AMD-Ecosystem/plumed2/tree/moat-port)) | ✅ | ✅ | 🎫 | — |
-| [plvs](https://github.com/luigifreda/plvs) ([fork](https://github.com/AMD-Ecosystem/plvs/tree/moat-port)) | ✅ | 🔧 | ⬜ | — |
+| [plvs](https://github.com/luigifreda/plvs) ([fork](https://github.com/AMD-Ecosystem/plvs/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [Pointcept](https://github.com/Pointcept/Pointcept) ([fork](https://github.com/AMD-Ecosystem/Pointcept/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#604](https://github.com/Pointcept/Pointcept/pull/604) |
 | [popsift](https://github.com/alicevision/popsift) ([fork](https://github.com/AMD-Ecosystem/popsift/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#186](https://github.com/alicevision/popsift/pull/186) |
 | [prismatic](https://github.com/prism-em/prismatic) ([fork](https://github.com/AMD-Ecosystem/prismatic/tree/moat-port)) | ✅ | ✅ | ✅ | 🔴 [#122](https://github.com/prism-em/prismatic/pull/122) |
+| [ProtoMotions](https://github.com/NVlabs/ProtoMotions) | ⬜ | ⬜ | ⬜ | — |
 | [pytorch3d](https://github.com/facebookresearch/pytorch3d) | ✅ | ✅ | ✅ | 🟣 [#2039](https://github.com/facebookresearch/pytorch3d/pull/2039) |
 | [qrack](https://github.com/unitaryfoundation/qrack) ([fork](https://github.com/AMD-Ecosystem/qrack/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [Quest](https://github.com/mit-han-lab/Quest) ([fork](https://github.com/AMD-Ecosystem/Quest/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [QUICK](https://github.com/merzlab/QUICK) ([fork](https://github.com/AMD-Ecosystem/QUICK/tree/moat-port)) | ✅ | ✅ | 🚫 | — |
+| [rl](https://github.com/pytorch/rl) | ⬜ | ⬜ | ⬜ | — |
 | [rmagine](https://github.com/uos/rmagine) ([fork](https://github.com/AMD-Ecosystem/rmagine/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#25](https://github.com/uos/rmagine/pull/25) |
 | [rmcl](https://github.com/uos/rmcl) ([fork](https://github.com/AMD-Ecosystem/rmcl/tree/moat-port)) | ✅ | ✅ | 🚫 | — |
+| [RTXNTC](https://github.com/NVIDIA-RTX/RTXNTC) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- gap-matrix intake 2026-11-10: NVIDIA proprietary licence |
 | [RWKV-CUDA](https://github.com/BlinkDL/RWKV-CUDA) ([fork](https://github.com/AMD-Ecosystem/RWKV-CUDA/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [RXMesh](https://github.com/owensgroup/RXMesh) ([fork](https://github.com/AMD-Ecosystem/RXMesh/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#73](https://github.com/owensgroup/RXMesh/pull/73) |
 | [SCAMP](https://github.com/zpzim/SCAMP) ([fork](https://github.com/AMD-Ecosystem/SCAMP/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#145](https://github.com/zpzim/SCAMP/pull/145) |
+| [slime](https://github.com/THUDM/slime) | ⬜ | ⬜ | ⬜ | — |
 | [SpargeAttn](https://github.com/thu-ml/SpargeAttn) | 🚫 | — | — | ⚪ not-portable |
 | [splatad](https://github.com/carlinds/splatad) ([fork](https://github.com/AMD-Ecosystem/splatad/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#24](https://github.com/carlinds/splatad/pull/24) |
 | [sppark](https://github.com/supranational/sppark) ([fork](https://github.com/AMD-Ecosystem/sppark/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#82](https://github.com/supranational/sppark/pull/82) |
+| [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
 | [stdgpu](https://github.com/stotko/stdgpu) ([fork](https://github.com/AMD-Ecosystem/stdgpu/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#484](https://github.com/stotko/stdgpu/pull/484) |
-| [symforce](https://github.com/symforce-org/symforce) ([fork](https://github.com/AMD-Ecosystem/symforce/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#465](https://github.com/symforce-org/symforce/pull/465) |
+| [symforce](https://github.com/symforce-org/symforce) ([fork](https://github.com/AMD-Ecosystem/symforce/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#465](https://github.com/symforce-org/symforce/pull/465) |
 | [TIGRE](https://github.com/CERN/TIGRE) ([fork](https://github.com/AMD-Ecosystem/TIGRE/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#747](https://github.com/CERN/TIGRE/pull/747) |
+| [tilelang](https://github.com/tile-ai/tilelang) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
+| [tiny-cuda-nn](https://github.com/NVlabs/tiny-cuda-nn) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- gap-matrix intake 2026-11-10: for now: NVIDIA source licence restrictions |
 | [tiny-vllm](https://github.com/jmaczan/tiny-vllm) ([fork](https://github.com/AMD-Ecosystem/tiny-vllm/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#2](https://github.com/jmaczan/tiny-vllm/pull/2) |
+| [tinygrad](https://github.com/tinygrad/tinygrad) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
 | [torch-linear-assignment](https://github.com/ivan-chai/torch-linear-assignment) ([fork](https://github.com/AMD-Ecosystem/torch-linear-assignment/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#31](https://github.com/ivan-chai/torch-linear-assignment/pull/31) |
-| [TornadoVM](https://github.com/beehive-lab/TornadoVM) ([fork](https://github.com/AMD-Ecosystem/TornadoVM/tree/moat-port)) | 🔧 | 🔧 | 🔧 | — |
-| [TRELLIS.2](https://github.com/microsoft/TRELLIS.2) | ⬜ | ⬜ | ⬜ | — |
-| [tsne-cuda](https://github.com/CannyLab/tsne-cuda) ([fork](https://github.com/AMD-Ecosystem/tsne-cuda/tree/moat-port)) | ✅ | 🔧 | ⬜ | — |
+| [torchcodec](https://github.com/meta-pytorch/torchcodec) | ⬜ | ⬜ | ⬜ | ⚪ duplicate |
+| [TornadoVM](https://github.com/beehive-lab/TornadoVM) ([fork](https://github.com/AMD-Ecosystem/TornadoVM/tree/moat-port)) | ✅ | ✅ | ✅ | — |
+| [TransformerEngine](https://github.com/NVIDIA/TransformerEngine) | ⬜ | ⬜ | ⬜ | ⚪ ported-elsewhere |
+| [TRELLIS.2](https://github.com/microsoft/TRELLIS.2) ([fork](https://github.com/AMD-Ecosystem/TRELLIS.2/tree/moat-port)) | ⬜ | 🔧 | ⬜ | — |
+| [triton](https://github.com/triton-lang/triton) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
+| [triton-windows](https://github.com/triton-lang/triton-windows) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
+| [tsne-cuda](https://github.com/CannyLab/tsne-cuda) ([fork](https://github.com/AMD-Ecosystem/tsne-cuda/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#145](https://github.com/CannyLab/tsne-cuda/pull/145) |
 | [TTT3R](https://github.com/Inception3D/TTT3R) ([fork](https://github.com/AMD-Ecosystem/TTT3R/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#31](https://github.com/Inception3D/TTT3R/pull/31) |
 | [TurboFNO](https://github.com/shixun404/TurboFNO) ([fork](https://github.com/AMD-Ecosystem/TurboFNO/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟣 [#4](https://github.com/shixun404/TurboFNO/pull/4) |
+| [tvm](https://github.com/apache/tvm) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
 | [unified-cache-management](https://github.com/ModelEngine-Group/unified-cache-management) ([fork](https://github.com/AMD-Ecosystem/unified-cache-management/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#1021](https://github.com/ModelEngine-Group/unified-cache-management/pull/1021) |
 | [Velvet](https://github.com/vitalight/Velvet) ([fork](https://github.com/AMD-Ecosystem/Velvet/tree/moat-port)) | 🎫 | ✅ | ✅ | 🟢 [#9](https://github.com/vitalight/Velvet/pull/9) |
 | [visionaray](https://github.com/szellmann/visionaray) ([fork](https://github.com/AMD-Ecosystem/visionaray/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#51](https://github.com/szellmann/visionaray/pull/51) |
+| [warp](https://github.com/NVIDIA/warp) | ⬜ | ⬜ | ⬜ | — |
+| [wenet](https://github.com/wenet-e2e/wenet) | ⬜ | ⬜ | ⬜ | — |
+| [whisper.cpp](https://github.com/ggml-org/whisper.cpp) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
+| [xformers](https://github.com/facebookresearch/xformers) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
+| [xgboost](https://github.com/dmlc/xgboost) | ⬜ | ⬜ | ⬜ | ⚪ ported-elsewhere |
 | [yalm](https://github.com/andrewkchan/yalm) ([fork](https://github.com/AMD-Ecosystem/yalm/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#12](https://github.com/andrewkchan/yalm/pull/12) |
 | [YarnBall](https://github.com/jerry060599/YarnBall) ([fork](https://github.com/AMD-Ecosystem/YarnBall/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#5](https://github.com/jerry060599/YarnBall/pull/5) |
 | [ZhiLight](https://github.com/zhihu/ZhiLight) ([fork](https://github.com/AMD-Ecosystem/ZhiLight/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟢 [#81](https://github.com/zhihu/ZhiLight/pull/81) |
