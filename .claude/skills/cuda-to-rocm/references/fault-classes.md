@@ -233,6 +233,17 @@ fp16 upload is `FCLayer<half>::LoadWeights` instead, which still corrupted the m
 head while the value/policy gate passed 34/34. Upstream's own fix, lc0 #2454, is the
 reference shape: one `cudaDeviceSynchronize()` after the `tensor_mem_` malloc/memset loop.)
 
+A plain `hipMemcpyDtoD`/`cuMemcpyDtoD` (or `hipMemcpy` with `hipMemcpyDeviceToDevice`) is
+the same race in a less suspicious costume: a device-to-device copy is asynchronous with
+respect to the host and runs on the legacy stream, so the "synchronous-looking" call returns
+before the copy lands and the next kernel on a non-blocking stream can read the destination
+first. Fingerprint: the destination reads exactly as it was before the copy (zeros, or the
+previous test's values), the copy's own arguments and return code are right, and a
+standalone C probe of the same copy passes because it reads back with a synchronizing D2H.
+Bisect with a sync on each side: only the one AFTER the copy fixes it. (TornadoVM:
+`NativeCommandQueue.mapOnDeviceMemoryNDRegion`, deterministic on Windows gfx1151, passing
+on Linux gfx950/gfx1201.)
+
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
@@ -538,7 +549,80 @@ and a few signature differences such as the hipBLAS v2 enums.
 per-kernel profiling path inert and let the timer fall back to `hipEvent` wall-clock rather
 than substituting something. ck_tile's fused MHA ships headers but no prebuilt instance
 library in `/opt/rocm/lib`, so `fmha_fwd` is declared-only and using it means vendoring CK's
-codegen. (cuSZ, lc0)
+codegen (how, below). (cuSZ, lc0)
+
+**Fused FP16 attention (cuDNN SDPA, flash attention): MIOpen has no path, CK's FMHA does.**
+MIOpen's find-2.0 MHA problem (`miopenCreateMhaProblem`, ROCm 10.1 SDK) offers only the
+`MhaForward` solver on gfx950: FP32, packed BHSD only (no strided tensors), and the causal
+mask (`miopenTensorMhaMask`) is not applied -- the output equals the unmasked attention. For
+FP16 generate ck_tile FMHA instances: fetch CK's `include` and `example/ck_tile/01_fmha`
+(sparse checkout of a pinned commit), run `generate.py --api fwd --optdim 32,64,128,256
+--filter <fnmatch>` and compile the instances with the FMHA example's flags; call
+`fmha_fwd(traits, args, stream_config{stream})` from a small C ABI. Gotchas: the filter
+matches the kernel name WITHOUT the `_gfx950` suffix (end the pattern at `_nsink`, or it
+matches nothing); release tag rocm-7.2.4 generates no gfx11 forward kernels (develop does);
+cuDNN's `set_causal_mask` is CK `mask_top_left` (window left -1, right 0); keep
+`-fgpu-flush-denormals-to-zero` on the FMHA sources only; for one build spanning gfx9 and gfx11
+define `USE_NEW_UNIFIED_FRAMEWORK=0` (CK develop's unified framework needs a single host-side
+target, and `CK_CMAKE_GPU_TARGET_IDS` takes the first for every pass, failing the gfx11
+device pass). 139 FP16 inference instances for
+nine architectures build in about 2.5 minutes at 128 jobs. (TornadoVM)
+
+**Generic GEMM on CK device operations.** For CUTLASS-style row-major GEMMs with fused
+epilogues: `DeviceGemmMultipleD_Xdl_CShuffle` on CDNA (FP16/BF16/FP32),
+`DeviceGemmMultipleD_Wmma_CShuffleV3` on RDNA3/4 (FP16/BF16; its `MakeArgumentPointer` takes
+an extra split-K argument), `DeviceGemmMultipleD_Dl` for FP32 on RDNA. Try each and run the
+first whose `IsSupportedArgument` passes on the current device. Epilogues are elementwise
+functors `op(e, c, d...)`; a bias is a D operand with row stride 0. Operand vectors must
+respect the real pointer alignment (8 bytes for data after a 24-byte header: 4-element FP16
+vectors). The DL operation has no K padding (needs M, N, K tile multiples) and its D-operand
+epilogue gave wrong results on gfx950: run it on zero-padded copies and combine `beta * C` in
+a small store kernel. CK's `ck/config.h` is generated: `configure_file` its `config.h.in` with
+`CK_ENABLE_FP16/BF16/FP32`, `CK_ENABLE_DL_KERNELS`, `CK_USE_XDL`, `CK_USE_WMMA`. (TornadoVM)
+
+**RAPIDS libraries: hipDF, hipVS and hipMM as C++ wheels.** AMD's package index
+(`https://pypi.amd.com/rocm-7.2.3/simple`) carries `amd-libhipdf` (libcudf headers, libcudf,
+hipcomp, CMake packages), `amd-libhipmm` (librmm; it requires `amd-rocmds-logger`, which
+holds rapids_logger), `amd-libhipvs` (libcuvs, libcuvs_c) and `amd-libraft`, laid out like the
+RAPIDS wheels; `amd-libhipdf` and `amd-libhipvs` declare no dependencies, so add
+`amd-libhipmm` yourself (pip then brings `amd-rocmds-logger`; unpacking wheels by hand, take
+all three). hipDF keeps cuDF's API and ships CUDA-named
+compat headers (`cudf/cuda_runtime.h`), so a cuDF client compiles with ROCm clang, C++20 and
+`find_package(cudf)` (CMake >= 3.30.4; put each wheel's `lib64/cmake` on the prefix path, and
+the wheels before ROCm's, whose hipccl lacks `CCCL::CCCL`). Differences from current RAPIDS:
+hipMM 4.0 keeps memory resources under `rmm/mr/device/` and `set_current_device_resource`
+takes a pointer; hipDF 3.0's Parquet writer has no Zstandard compressor ("nvCOMP 2.4 or
+newer is required") and `LIBCUDF_HOST_COMPRESSION` does not route around it; hipVS takes
+DLPack device tensors as `kDLCUDA` and refuses `kDLROCM`, builds a host dataset's
+all-neighbors graph into device outputs only, and needs `libomp.so` from ROCm's
+`lib/llvm/lib`. The libraries link `libamdhip64.so.7` and resolved against a ROCm 10.1 SDK.
+(TornadoVM)
+
+**Choosing the NVIDIA or AMD build of a library at run time.** A runtime with both a CUDA and a
+HIP backend must pick per device, from the device's own backend, and never by enumerating or
+starting every installed backend: creating a backend that cannot start (HIP on an NVIDIA host)
+throws, and a static initializer that does so breaks the library on the device that works. Where
+the two builds have different sonames (NCCL `libnccl.so.2` and RCCL `librccl.so.1`), bind both,
+each loaded on first use. Where the HIP port keeps the soname (hipVS `libcuvs_c.so`, hipDF
+`libcudf.so`), a process can hold only one, so detect which loaded: a `dlsym` through the
+library's handle also searches its dependencies, so finding `hipGetDevice` marks the HIP build.
+Then serve only devices of that backend. (TornadoVM)
+
+**Library calls inside HIP graph capture.** hipSPARSE's generic API breaks capture in three
+ways cuSPARSE does not: destroying a CSR `SpMat` descriptor (`hipsparseDestroySpMat`) calls
+`hipDeviceSynchronize`, which invalidates the capture (`hipStreamEndCapture` returns 901, in
+every capture mode; destroying a `DnVec` does not, ROCm 10.1 on gfx950), the default CSR SpMV
+algorithm analyses on first use
+(`HIPSPARSE_STATUS_INTERNAL_ERROR` while capturing), and a non-null external buffer whose
+queried size is 0 returns `INVALID_VALUE` once descriptors are reused. Create descriptors
+before capture and cache them per operand set, use `HIPSPARSE_SPMV_CSR_ALG2`, and pass a null
+buffer when the size is 0. `AMD_LOG_LEVEL=3` shows the call that broke the capture. (TornadoVM)
+
+**GPU power (the NVML replacement) is AMD SMI.** `amdsmi_init(AMDSMI_INIT_AMD_GPUS)`, find
+the GPU by PCI address (`hipDeviceAttributePciDomainId`/`PciBusId`/`PciDeviceId` into the
+64-bit `amdsmi_bdf_t`; a HIP device index counts only the `HIP_VISIBLE_DEVICES` GPUs), then
+`amdsmi_get_power_info`: watts, `current_socket_power` on MI300 and later, unsupported
+fields read `UINT32_MAX`. (TornadoVM)
 
 **A ROCm-only branch inside a shared template still COMPILES on the CUDA path.** Gating the
 divergence on a `static constexpr bool` predicate that is false on NVIDIA (`if(needsCast())`)
@@ -637,6 +721,19 @@ and launch via `hipModuleLaunchKernel`. Two cgo-specific traps: `hiprand.h` does
 `typedef _Float16 __half;` in the cgo preamble (it must sit in the comment block touching
 `import "C"`); and `hipCtxSynchronize`/`hipCtxGetApiVersion` return `hipErrorNotSupported` on ROCm 7.2.1, so
 synchronize via `hipStreamSynchronize`. (mumax3: Go + cgo + runtime code-object loading.)
+
+The same class with NVRTC instead of embedded PTX (CUDA C++ generated at run time) ports to hipRTC.
+Bind it by absolute path under `ROCM_PATH`/`HIP_PATH` before any bare name (on Windows the hipRTC DLL
+carries the version, `hiprtc0702.dll`, so scan `bin`). hipRTC declares `half`, `__hip_bfloat16` and
+the fp16/bf16 intrinsics itself, but `#include <hip/hip_fp16.h>` fails without `-I<rocm>/include`:
+guard any include with `__has_include`. Spellings that differ or are missing in hipRTC:
+`__float2bfloat16` (no `_rn`), no `__double2half`, `__dp4a` or `llmin`/`llmax`. Pass
+`--offload-arch=<gcnArchName>` explicitly (read `gcnArchName` from `hipDeviceProp_t` through the
+versioned `hipGetDevicePropertiesR0600`, whose layout that version fixes), and read device attributes
+by their HIP enum values, which differ from CUDA's. HIP's context API is deprecated: a backend built
+around primary contexts can stand the device in for the context and make it current with
+`hipSetDevice`. clang contracts `a * b + c` by default as NVRTC does; `-ffp-contract=off` is the
+`--fmad=false` equivalent. (TornadoVM: Java FFM bindings, TC-generated HIP C++.)
 
 **Compute-only CDNA has no graphics pipeline**, so OpenGL/Vulkan-interop apps build but
 cannot run on gfx90a. Datacenter parts have no display engine: radeonsi refuses a GL context
