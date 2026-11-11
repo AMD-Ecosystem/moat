@@ -45,6 +45,20 @@ every wave32 device.)
 **Lane masks must be 64-bit where the API takes one** -- `__shfl*`, `__ballot`,
 `__activemask`. A `uint32` mask is wrong on a 64-wide wavefront.
 
+The `*_sync` warp functions go further and refuse it at compile time. HIP's
+`__shfl*_sync`, `__ballot_sync`, `__any_sync`, `__all_sync`, `__match_*_sync` and
+`__reduce_*_sync` `static_assert` that the mask type is 64 bits wide, so the CUDA idiom
+`__shfl_down_sync(0xffffffff, v, o)` -- an `unsigned int` literal -- fails on every AMD
+target, wave32 included, with "The mask must be a 64-bit integer. Implicitly promoting a
+smaller integer is almost always an error." hipify leaves the literal alone, so a
+"hipify ran clean" tree still does not build. CUDA's mask parameter is 32-bit, so one
+literal cannot serve both: define the full mask once in the compat header
+(`0xffffffffffffffffull` under `__HIP_PLATFORM_AMD__`, `0xffffffffu` otherwise) and use
+that name at every call site. On wave32 HIP ignores the upper half. Defining
+`HIP_DISABLE_WARP_SYNC_BUILTINS` also silences the error, but it removes the `*_sync`
+builtins (and on some ROCm versions `__syncwarp` with them), so it is not a fix. (Verified
+with HIP 7.13 for gfx90a and gfx1151: the `unsigned` mask fails, the 64-bit one compiles.)
+
 **And the mask VALUE must be built in 64 bits, which the destination type does not do for
 you.** In `const uint64_t mask = ((1 << K) - 1) << (K * subgroup);` the shift result type is
 the promoted LEFT operand, i.e. `int`, so the whole expression is evaluated in 32 bits and
