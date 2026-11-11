@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-11T20:57:44Z",
-  "updated_at": "2026-11-11T20:57:45Z",
+  "updated_at": "2026-11-11T21:21:59Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVIDIA/NVFlare/blob/main/LICENSE",
+      "at": "2026-11-11T21:21:57Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "AMD-Ecosystem/NVFlare main/rocm-enablement (1 commit, gfx942/gfx950, not offered upstream)",
+    "viable": true,
+    "summary": "NVIDIA FLARE (pure-Python FL; only CUDA is optional CGBN paillier plugin for secure XGBoost); AMD fork is one rocm-smi commit, Instinct-only, 183 behind and now conflicting; Linux/macOS only upstream, Windows waiver candidate",
+    "at": "2026-11-11T21:21:58Z"
+  }
 }
