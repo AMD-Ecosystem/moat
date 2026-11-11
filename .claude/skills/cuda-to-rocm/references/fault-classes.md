@@ -274,6 +274,12 @@ nothing. A project that genuinely needs
 hardware linear filtering has no CDNA3 hardware path at all and needs the software-lerp
 fallback below unconditionally on gfx94x+. (arrayfire: `fast.cu`/`orb.cu`/`regions.cu` FAST/
 ORB/connected-components kernels, all plain LUT point-lookups with no filtering, on MI300X.)
+A port that already point-samples and lerps in software for that fallback is one step from
+the buffer form: the texture then supplies only two point fetches and the border address
+mode, so allocate the table with one trailing zero element standing in for the border texel
+and index it directly; the arithmetic, and so every result, is unchanged on every arch.
+Check the index range first -- here the caller's window bound kept the low index >= 0, so
+only the high side could touch the border. (gpuRIR `image_sample_lut`, gfx942.)
 
 A project that reads EVERYTHING through texture objects, with address modes, needs more than a pointer swap, but the emulation is still exact when no binding relies on hardware filtering (LEAP: its HIP port already created every texture point-mode and blended corners in software, so every fetch was a point fetch). Keep the handle type and every kernel signature: on an image-less GPU have the texture loader cudaMalloc one buffer holding a small header (extents, address mode) followed by the dense data, and return that buffer as the `hipTextureObject_t` (and as the `hipArray*` the call sites free). The device accessor applies the address mode in float before converting to an index (clamp: `fminf/fmaxf` to `[0, n-1]`; border: any axis outside `[0, n)` returns 0), reads `floor(c)` for a point fetch, and maps a non-finite coordinate to a finite one. Casting the header and data pointers to `__attribute__((address_space(4)))` (read-only constant) lets the compiler hoist the header into one `s_load_dwordx4` per kernel instead of reloading it around stores.
 
@@ -451,6 +457,16 @@ Fix additively -- it helps the CUDA build too. (LC-framework)
 **A force-included compat header creates no build dependency edge.** After editing a header
 injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
 stale code and get a silent false pass. (lc0)
+
+**`#if __CUDA_ARCH__ >= NNN` and `#if CUDART_VERSION < NNNN` silently pick the wrong branch on
+HIP**, because neither macro is defined there (it reads as 0). An arch-gated kernel body
+compiles to an empty stub or its `#else` printf with no error, so a feature can look "built"
+yet never run; grep for both macros before calling a port complete. Widen the arch guard with
+`|| defined(__HIP_DEVICE_COMPILE__)` (never define `__CUDA_ARCH__` in a shim; HIP headers and
+libraries test it), and prefix version guards with `!defined(USE_HIP) &&` so HIP takes the
+modern CUDA spelling -- the legacy branch may name intrinsics HIP lacks (`h2div` vs
+`__h2div`). Confirm with the disassembly: the kernel should contain real instructions
+(`v_pk_*_f16` for half2 code). (gpuRIR)
 
 **MSVC-only upstreams accept code that clang and gcc reject**, so the HIP build (and the
 CUDA build under nvcc) is a stricter compiler than the project has ever seen. Velvet carried
