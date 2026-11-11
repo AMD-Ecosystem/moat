@@ -196,6 +196,20 @@ upstream PR. The finished PR moves into the record's history (`pr_history`) rath
 blocking the route, and every gate binds at the new head exactly as it did for the first
 PR. The `moat-checkup` skill walks the preconditions.
 
+## Release lines: when upstream will never take the port
+
+Some upstreams will not accept AMD support at all (NVIDIA's Warp and cuCIM), so the deliverable is a set of branches MOAT owns in the fork, one MOAT project per upstream release. `warp-1.14` and `warp-1.15` are projects against `NVIDIA/warp` beside the development line `warp`; each line depends on the one before it (`--deps warp-1.14`), so they are ported in order, each starting from the previous line's port plus upstream's delta.
+
+    python3 utils/moatlib.py scaffold NVIDIA/warp --name warp-1.14 --branch release-1.14 --deps ...
+    python3 utils/moatlib.py set-fork-branch warp-1.14 release/1.14.0.amd0 --by <who>
+    python3 utils/moatlib.py set-delivery warp-1.14 fork-release --by <who> [--tag-format ...]
+    python3 utils/moatlib.py set-fork-url warp-1.14 https://github.com/AMD-Ecosystem/warp --by <who>
+    python3 utils/moatlib.py mirror-branch warp-1.14
+
+The three rulings are a person's. `fork_default_branch` (here `release-1.14`) is a pristine copy of upstream's release branch under upstream's own name and SHAs: it is the review base, and the only thing that writes it is `mirror-branch`, which fast-forwards it to upstream and refuses anything else (a fork clone's pre-push hook refuses direct pushes to it too). `mirror-branch` also creates the port branch as an exact copy of the mirror when the fork lacks one; it copies upstream's commits only, so an agent may run it. The porter commits on top of `fork_branch`, versions the build `1.14.0+rocm.0`, and makes the project's release wheel buildable on every supported platform; the validator installs and tests the built wheel. Hosting the wheels (a GitHub release) is a separate GitHub-visible act that needs a person's approval of its exact content.
+
+Sign-off is the ordinary review PR, opened by `upstream.py --review` from the port branch into the pristine branch, with the same gates and the same `/moat approve` reading and staleness rules. It is never merged, and no submission note is appended because nothing is republished. Approval authorizes `upstream.py --finish-release --apply`, on the `--publish` contract: it re-reads the approval and every gate live, checks the review PR still runs port branch into base at the recorded head and that the base is still upstream's own history, then tags the approved commit (`v{version}+rocm.{rev}` from a branch ending in `<version>.amd<rev>`, unless the line's `--tag-format` says otherwise), records the delivery, closes the review PR unmerged, and refreshes the clone's pre-push hook. A delivered line is frozen exactly like a maintained fork: `pr-state` answers `delivered`, the hook refuses pushes to the branch, and later upstream patch releases (`v1.14.1`) arrive through `sync-branch` rounds with their own review PR and approval, merged by `--merge-fix`. `upstream.py --drift` watches delivered lines for upstream's advance. `pr-candidates` lists ready lines as `RELEASE-READY`, never as upstream PR candidates.
+
 ## Who opens the upstream pull request
 
 An attended session on the maintainer's own machine, running one command -- the

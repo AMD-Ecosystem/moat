@@ -79,11 +79,16 @@ _PR_RANKABLE = set(PR_STATES) == {"open"} | _TERMINAL_PR
 # `base_branch_ruling` is STICKY and, where it stands, decides fork_default_branch:
 # a host whose copy predates the ruling would otherwise restore the old PR base
 # just by writing something newer.
+# `delivery` and `release` are STICKY: erasing the first would re-arm the upstream
+# publish path against a person's ruling, and erasing the second would unfreeze a
+# tagged release branch. `fork_branch_ruling` decides fork_branch exactly as
+# base_branch_ruling decides fork_default_branch.
 STICKY = ("upstream_repo_id", "fork_url", "review_pr", "pr_approval",
           "license_clearance", "license_spdx", "pr_number", "pr_url",
           "pr_opened_at", "pr_merged_at", "pr_closed_at", "pr_closed_note",
           "adopted_at", "maintained", "no_upstream", "fix_abandoned",
-          "base_branch_ruling", "fork_url_ruling")
+          "base_branch_ruling", "fork_url_ruling", "fork_branch_ruling",
+          "delivery", "release")
 UNION = ("platforms", "waivers")
 RESET = ("on_hold", "on_hold_reason")
 # Every field that describes the CURRENT upstream-PR round. When the two sides
@@ -216,6 +221,8 @@ def merge(a, b):
             del out[k]
     if out.get("base_branch_ruling"):
         out["fork_default_branch"] = out["base_branch_ruling"]["branch"]
+    if out.get("fork_branch_ruling"):
+        out["fork_branch"] = out["fork_branch_ruling"]["branch"]
 
     for k in RESET:
         out.pop(k, None)

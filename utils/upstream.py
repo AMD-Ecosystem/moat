@@ -35,6 +35,8 @@ branch and opens a PR, and a human decides -- the same path everything else take
     python3 utils/upstream.py --merge-fix --apply # fast-forward the open PR to the approved tip
     python3 utils/upstream.py --drift            # maintained forks vs upstream's advance
     python3 utils/upstream.py --drift --apply    # also fast-forward a behind fork mirror
+    python3 utils/upstream.py --finish-release   # approved release lines ready to tag
+    python3 utils/upstream.py --finish-release --apply # tag, close the review PR, freeze
 
 Record maintenance and one publishing step. None of it does any porting -- that needs a
 GPU host and a session. These keep the record true, tell someone, and send an approved
@@ -403,8 +405,8 @@ def fork_poll(apply=False, stale_weeks=3):
     for name, d, _where in all_records():
         if name in got or moatlib.project_stage(d) != "awaiting-fork":
             continue
-        slug = (d.get("fork_url") or f"https://github.com/AMD-Ecosystem/{name}") \
-            .replace("https://github.com/", "")
+        slug = (d.get("fork_url") or "").replace("https://github.com/", "") \
+            or moatlib.default_fork_slug(d)
         waiting.append({"name": name, "slug": slug, "since": d.get("updated_at") or ""})
 
     print(f"fork-poll: {len(released)} released, {len(waiting)} still waiting\n")
@@ -453,8 +455,8 @@ def approval_drift():
 
     rows = []
     for name, d, _where in all_records():
-        if d.get("pr_state"):
-            continue          # already published
+        if d.get("pr_state") or moatlib.release_delivered(d):
+            continue          # already published, or a release already tagged
         url = (d.get("pr_approval") or {}).get("review_pr") or d.get("review_pr")
         if not url:
             continue          # no review PR for an approval to drift from
@@ -566,6 +568,8 @@ def publishable(only=None):
         url = (d.get("pr_approval") or {}).get("review_pr") or d.get("review_pr")
         if not url or d.get("pr_state"):
             continue                      # no review PR, or already submitted
+        if moatlib.release_line(d):
+            continue                      # never published; --finish-release
         pr = moatlib.fetch_review_pr(url)
         if pr is None:
             unreachable.append({"name": name, "url": url})
@@ -638,7 +642,7 @@ def review_candidates():
         if not fork:
             continue
         row = {"name": name, "fork": fork, "branch": branch, "base": base,
-               "problem": None}
+               "problem": None, "release": moatlib.release_line(d)}
         if followup:
             row["followup"] = d.get("pr_number")
             row["prior_url"] = d.get("pr_url")
@@ -702,7 +706,10 @@ def open_review_pr(row, title, body, apply=False):
 
     # Attached before the checks below, not after, so the note is scanned like the
     # rest of the body and shown in the --review preview exactly as it will publish.
-    body = with_submission_note(body)
+    # Not on a release line: its review PR is the sign-off itself and nothing is
+    # republished to an upstream maintainer, who is who the note addresses.
+    if not row.get("release"):
+        body = with_submission_note(body)
 
     terms, allow = jargon.load()
     hits = (jargon.scan_text(title, "title", terms, allow)
@@ -745,6 +752,8 @@ def open_review_pr(row, title, body, apply=False):
                 f"({row['commits']} commits, {row['files']} files"
                 + (f"; follow-up to PR #{row['followup']}, delta past "
                    f"{row['base_sha'][:12]}" if row.get("followup") else "")
+                + ("; release line: approval tags and freezes, never merges"
+                   if row.get("release") else "")
                 + f")\n\n{title}\n\n{body}")
     if row.get("followup"):
         # The finished PR becomes history BEFORE anything external happens: if
@@ -787,9 +796,16 @@ def open_review_pr(row, title, body, apply=False):
          f"commit you were looking at, which is what proves the approval covers this "
          f"code and not an earlier push; a conversation comment counts too, judged by "
          f"its time against the branch tip.\n\n"
-         f"The title and body above are what gets opened upstream, verbatim, so approving "
-         f"here approves all three: the code, the title and the body. Anything pushed "
-         f"afterwards, or any edit to the title or body, voids it and needs a fresh one."
+         + (f"This is a release sign-off. Approving tags the approved commit, "
+            f"closes this pull request WITHOUT merging it and freezes "
+            f"`{row['branch']}`; never merge it, because `{row['base']}` must stay "
+            f"an exact copy of upstream's branch. Anything pushed afterwards, or any "
+            f"edit to the title or body, voids the approval and needs a fresh one."
+            if row.get("release") else
+            "The title and body above are what gets opened upstream, verbatim, so "
+            "approving here approves all three: the code, the title and the body. "
+            "Anything pushed afterwards, or any edit to the title or body, voids it "
+            "and needs a fresh one.")
          + (f"\n\nThis is a follow-up to {row.get('prior_url') or 'the previous pull request'}, "
             f"which is finished: only the delta since it is under review here, and "
             f"publishing opens a new upstream pull request carrying it."
@@ -1225,7 +1241,9 @@ def _round_live(d, fix):
     needs its upstream PR open; a sync round needs the maintained ruling standing.
     A round whose backing vanished is not silently a different kind of round."""
     if fix.get("kind") == "sync":
-        return bool(d.get("maintained"))
+        sys.path.insert(0, str(REPO / "utils"))
+        import moatlib
+        return bool(d.get("maintained") or moatlib.release_delivered(d))
     return d.get("pr_state") == "open"
 
 
@@ -1762,6 +1780,159 @@ def report_merge_fix(apply, only=None):
     return ret
 
 
+# ---- release lines: finishing an approved release ----------------------------
+#
+# A release line (moatlib.set_delivery fork-release) is never published upstream.
+# Its review PR runs from the port branch into the fork's pristine copy of
+# upstream's release branch, and a person's `/moat approve` there is the sign-off.
+# --finish-release is the trusted step that follows, on the --publish contract:
+# the live approval, every gate and the fork's own state are re-checked right
+# before acting, and it is a dry run unless --apply. It tags the approved commit,
+# records the delivery (which freezes the branch: the fork pre-push hook and
+# pr-state read it), and closes the review PR unmerged. Merging that PR would
+# write the pristine mirror, so nothing here ever merges it.
+
+def finish_release_rows(only=None):
+    """Release lines with a review PR recorded and no release yet."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    for name, d, _where in all_records(only):
+        if moatlib.release_line(d) and d.get("review_pr") \
+                and not d.get("release") and not d.get("fix"):
+            yield name, d
+
+
+def finish_release_blockers(name, d, pr):
+    """(blockers, tag): everything that must hold before the release is tagged,
+    re-checked live."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+
+    bad = []
+    # Covers a closed or MERGED review PR too: approval_currency refuses on any
+    # state but OPEN, and a merged one means the mirror was written.
+    code, why = moatlib.approval_currency(pr)
+    if code != "ok":
+        bad.append(f"approval {code}: {why}")
+    blockers, _notes = moatlib.moat_command_audit(pr)
+    bad += blockers
+    ready, blocking, _ = moatlib.pr_ready(name)
+    if not ready:
+        bad.append("not release-ready: "
+                   + ", ".join(f"{p}={s}" for p, s in blocking))
+    writable, why = moatlib.record_writable_here(name)
+    if not writable:
+        bad.append(why)
+    fork = (d.get("fork_url") or "").replace("https://github.com/", "")
+    base = d.get("fork_default_branch") or "main"
+    branch = d.get("fork_branch") or moatlib.PORT_BRANCH
+    if (pr.get("slug") or "").lower() != fork.lower():
+        bad.append(f"the review PR is on {pr.get('slug')}, not the fork {fork}")
+    if pr.get("headRefName") != branch or pr.get("baseRefName") != base:
+        bad.append(f"the review PR runs {pr.get('headRefName')} -> "
+                   f"{pr.get('baseRefName')}, not {branch} -> {base}")
+    tip = pr.get("headRefOid")
+    if not tip or not moatlib.same_commit(tip, d.get("head_sha")):
+        bad.append(f"the review PR's head {(tip or '?')[:12]} is not the recorded "
+                   f"head_sha {(d.get('head_sha') or '?')[:12]}")
+    tag = None
+    try:
+        tag = moatlib.release_tag(d)
+    except ValueError as e:
+        bad.append(str(e))
+    if tip and d.get("fork_url"):
+        bad += moatlib.release_fork_problems(name, d, tip, tag)
+    return bad, tag
+
+
+def do_finish_release(name, d, pr, tag):
+    """The pre-authorized write: tag, record, close. Ordered so a failure leaves
+    the least to undo -- the tag first (idempotent, so a retry passes it), then
+    the record (which is what freezes the branch), and the review PR is closed
+    only once the delivery is recorded, so an open PR always means "not yet
+    finished" and a rerun completes the job."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+
+    tip = pr["headRefOid"]
+    url = pr.get("url") or d.get("review_pr")
+    try:
+        notes = [moatlib.push_fork_tag(name, tip, tag)]
+    except Exception as e:                      # noqa: BLE001 - reported, not raised
+        return (False, f"could not tag: {e}")
+    try:
+        moatlib.set_release_delivered(name, tag, tip, url)
+        unlanded = _land_local_record(name, f"{name}: release {tag} delivered at "
+                                            f"{tip[:12]}")
+        if unlanded:
+            raise RuntimeError(unlanded)
+    except Exception as e:                      # noqa: BLE001 - reported, not raised
+        return (True, f"tagged {tag} at {tip[:12]} but could NOT record the "
+                      f"delivery: {e}; the review PR is left open and a rerun of "
+                      f"--finish-release --apply completes it")
+    c = _run(["gh", "pr", "close", url, "--comment",
+              f"Approved and released as `{tag}` at {tip}. `{d.get('fork_branch')}` "
+              f"is now frozen; later upstream patch releases arrive as separate "
+              f"sync rounds, each with its own review. Closing without merging: "
+              f"`{d.get('fork_default_branch')}` stays an exact copy of upstream's "
+              f"branch."],
+             capture_output=True, text=True, timeout=90)
+    notes.append("closed the review PR unmerged" if c.returncode == 0 else
+                 f"could NOT close the review PR ({(c.stderr or c.stdout).strip()[:80]}); "
+                 f"close it by hand without merging")
+    level, msg = moatlib.protect_fork(name)
+    if level != "skip":
+        notes.append(msg)
+    return (True, "; ".join(notes))
+
+
+def report_finish_release(apply, only=None):
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    rows = list(finish_release_rows(only))
+    print(f"upstream: {len(rows)} release line(s) with a review PR recorded\n")
+    ret = 0
+    for name, d in rows:
+        pr = moatlib.fetch_review_pr(d["review_pr"])
+        if pr is None:
+            print(f"  UNREACHABLE {name:25} could not read {d['review_pr']} -- "
+                  f"an outage is not a withdrawn approval")
+            ret = 1
+            continue
+        if moatlib._approving_review(pr) is None and pr.get("state") == "OPEN":
+            blockers, _notes = moatlib.moat_command_audit(pr)
+            print(f"  {'OBJECTED' if blockers else 'WAITING':10} {name:26} "
+                  + (blockers[0][:78] if blockers else
+                     f"no {moatlib.APPROVE_COMMAND!r} on {d['review_pr']} yet"))
+            continue
+        bad, tag = finish_release_blockers(name, d, pr)
+        if bad:
+            print(f"  HELD       {name:26} {bad[0][:78]}")
+            for b in bad[1:]:
+                print(f"             {'':26} {b[:78]}")
+            continue
+        print(f"  READY      {name:26} tag {tag} at "
+              f"{(pr.get('headRefOid') or '?')[:12]} and freeze "
+              f"{d.get('fork_branch') or moatlib.PORT_BRANCH}")
+        if not apply:
+            continue
+        try:
+            moatlib_record(name)     # who authorised this, before anything moves
+        except Exception as e:                  # noqa: BLE001 - reported, not raised
+            print(f"  FAILED to record the approval for {name}: {e}")
+            ret = 1
+            continue
+        ok, detail = do_finish_release(name, d, pr, tag)
+        print(f"  {'RELEASED' if ok else 'FAILED':10} {name:26} {detail}")
+        if not ok:
+            ret = 1
+    if rows and not apply:
+        print("\n  --finish-release --apply tags each READY line's approved commit, "
+              "records the delivery (freezing the branch) and closes the review PR "
+              "unmerged.")
+    return ret
+
+
 # ---- maintained forks: the drift sweep --------------------------------------
 #
 # A maintained fork (moatlib.set_maintained) is a port branch upstream points its
@@ -1876,8 +2047,12 @@ def drift_status(name, d):
 
 def report_drift(apply=False):
     sys.path.insert(0, str(REPO / "utils"))
-    rows = [(n, d) for n, d, _w in all_records() if d.get("maintained")]
-    print(f"upstream: {len(rows)} maintained fork(s)\n")
+    import moatlib
+    # A delivered release line is watched the same way: upstream's release branch
+    # gaining a patch release is exactly the drift its sync rounds absorb.
+    rows = [(n, d) for n, d, _w in all_records()
+            if d.get("maintained") or moatlib.release_delivered(d)]
+    print(f"upstream: {len(rows)} maintained fork(s) and delivered release line(s)\n")
     ret = 0
     for name, d in sorted(rows):
         state, info = drift_status(name, d)
@@ -1988,6 +2163,10 @@ def main():
                     help="maintained forks: how far upstream has moved and whether "
                          "the port branch still merges (--apply also fast-forwards "
                          "a behind mirror)")
+    ap.add_argument("--finish-release", action="store_true",
+                    help="release lines approved on their in-fork review PR: tag "
+                         "the approved commit, freeze the branch and close the "
+                         "review PR unmerged (--apply to write; --name for one)")
     ap.add_argument("--resolve-threads", action="store_true",
                     help="with --name: resolve fork review PR threads whose last "
                          "word is ours (--apply to write)")
@@ -2061,6 +2240,8 @@ def main():
         return 0 if action in ("opened", "would-open") else 1
     if a.merge_fix:
         return report_merge_fix(apply=a.apply, only=a.name)
+    if a.finish_release:
+        return report_finish_release(apply=a.apply, only=a.name)
     if a.resolve_threads:
         if not a.name:
             print("resolve-threads: pass --name <project>")
