@@ -81,7 +81,7 @@ Scan this list against what you are doing. If any line could apply, open
 **Memory and lifetime**
 - Out-of-bounds reads: CUDA often tolerates one element past an allocation; AMD faults.
 - Fresh device allocations are NOT zeroed on ROCm, where CUDA's allocator often hands back zeroed pages.
-- `cudaMemcpy*Async` from a soon-freed pageable host buffer: CUDA stages synchronously, HIP does not.
+- `cudaMemcpy*Async` from a soon-freed pageable host buffer: CUDA stages synchronously, HIP does not. The same hides an unsynchronized upload on one stream feeding a kernel on another.
 - Rule-of-five on resource handles: CUDA tolerates double-destroy of a texture/stream/event; AMD does not.
 - `hipEventQuery`/`hipEventSynchronize` dereference the event's recording stream: querying an event after that stream is destroyed (legal on CUDA) hangs or crashes intermittently. Keep destroyed streams alive: route stream create/destroy through a sync-park-reuse pool in the compat header, not per-holder sweeps.
 - A functor returning a reference to a by-value parameter (lifetime UB) is tolerated by nvcc, not by clang/HIP.
