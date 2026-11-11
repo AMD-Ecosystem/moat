@@ -8,11 +8,17 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-11T20:58:46Z",
-  "updated_at": "2026-11-11T21:24:06Z",
+  "updated_at": "2026-11-11T23:09:17Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "Windows is not a Clair3 platform at all (Linux-only toolchain and pipeline); not a ROCm gap. Approved 2026-11-11.",
+      "approved_by": "Jeff Daily",
+      "at": "2026-11-11T23:09:16Z"
+    }
+  },
   "platforms": {},
   "license_spdx": "BSD-3-Clause",
   "license_spdx_history": [

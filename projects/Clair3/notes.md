@@ -51,3 +51,10 @@ Compared `AMD-Ecosystem/Clair3@main` (e297294, 2026-09-17) with `HKU-BAL/Clair3@
 ### Recommendation
 
 `fork` (record via `set-intake`), validate-lane and small: ROCm is already upstream and AMD's own, so the only work is a Radeon (wave32) end-to-end validation, the device-index check, and a docs/Dockerfile line naming Radeon targets, sent upstream the way #480 was. If Jeff judges upstream's Instinct support sufficient, the alternative is a decline with reason `already-supported`. Windows should be a waiver.
+
+## Rulings (2026-11-11, Jeff Daily)
+
+- Validation project, not a port: AMD's ROCm support is upstream (HKU-BAL/Clair3#480, shipped in v2.0.5 with a ROCm image; #486 merged). Build upstream's ROCm path and run its tests on Radeon (wave32) Linux as well as Instinct; fix what breaks, including GPU device ordering on hosts with an integrated GPU plus a Radeon card (rocm-smi-based selection) and a Radeon-capable Docker target.
+- Delivery: upstream PRs to HKU-BAL/Clair3 (it has accepted AMD's ROCm work twice); every upstream text needs Jeff's approval of the exact draft.
+- Base: AMD-Ecosystem/Clair3 `main` is a single stale commit that reverts newer upstream work and is AMD's branch, so it is not touched and not used. Once write access arrives, create a pristine copy of upstream `main` in the fork with the release-line tooling's fast-forward-only mirror command and record it as `fork_default_branch`; `moat-port` branches from it.
+- Windows: waiver approved by Jeff Daily (not a Clair3 platform).
