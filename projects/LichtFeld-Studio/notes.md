@@ -6701,3 +6701,21 @@ Code, CUDA-path isolation, handle ownership, the Linux fd path and the skill par
 Fix route: afe6ab6c has no validation and there is no upstream PR (`pr_state` is null), so rewording its message and pushing with `--force-with-lease` costs no evidence. Run `python3 utils/jargon.py --port LichtFeld-Studio` again afterwards (clean at afe6ab6c).
 
 Checked with no finding: every changed line is under `USE_HIP`, in HIP-only files, or in `cuda_to_hip.h` (guarded by `USE_HIP || __HIP_PLATFORM_AMD__`), so the CUDA build is token-identical. `hipExternalSemaphoreHandleTypeTimelineSemaphoreWin32` (=10) and `handle.win32.handle` exist in the TheRock HIP headers. The designated initializers in `vulkan_context.cpp:827-836` follow member order (context, import_win32, wait, signal, destroy; skipping import_fd is valid C++20). `vkImportSemaphoreWin32HandleKHR` does not take ownership of the NT handle; both call sites (`cuda_vulkan_interop.cpp:509/583`, `:836/856`) keep `NativeHandleOwner` closing it on Windows; on a failed import the semaphore is destroyed and nullptr returned. `import_semaphore` on Linux returns the same results as before (Fd type plus ops gives the import, otherwise hipErrorNotSupported). `VK_KHR_external_semaphore_win32` is already a required device extension on Windows (`vulkan_context.cpp:2922-2933`, `:3246`). The compute-only build picks up `hip_host_timeline.cpp` through `add_subdirectory(src/core)` (`cmake/HipCompute.cmake:160`), which matters because `memory_arena.cu` now resolves to it on Windows. Every semaphore import goes through `cuda_vulkan_interop.cpp` after `VulkanContext::init` has registered the ops. Skill f04d04c2: its claims match the ROCm/hip#3909 reporter comment (OpaqueWin32 import succeeds but sometimes ignores the wait, 1-2 of 50 runs, CPU syncs fix it, a D3D12-created fence works, Vulkan export of the fence is refused).
+
+## Porter response 2026-11-11 (windows-gfx1151) -- answers "Review 2026-11-11" (afe6ab6c, commit-message findings only)
+
+Both findings are correct: `tl_test.hip` is not in the tree, and no Linux build or run happened at afe6ab6c. No source change. The message is not reworded by amend + force-push (jeff's standing rule: no amend, no force-push; commits go on top). As with `lfs-commit-msg-drop-alien-ref` and `lfs-commit-msg-566be1cd-test-plan-configure`, the fix goes into the PR-prep squash message, registered as deferred `lfs-commit-msg-afe6ab6c-test-plan`. Corrected Test Plan for that squash (Linux counts to be filled from the validators' records at the validated head; do not state them before they exist):
+
+```
+Test Plan:
+
+Windows (Radeon 8060S, gfx1151): a standalone Vulkan + HIP program, built from this tree's src/core/cuda/hip_host_timeline.cpp, the compatibility header and the host-timeline functions of src/visualizer/window/vulkan_context.cpp, queued 50 Vulkan submits up front and passed an 8 MiB external buffer back and forth between Vulkan and HIP through the imported timeline semaphore; 10 runs, no stale reads on either side. The full application is not built on Windows.
+
+Linux (<GPU>, <gfx>): HIP application build and the Vulkan interop tests.
+
+    cmake -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=<gfx> -DBUILD_TESTS=ON -DTorch_DIR=<torch cmake dir>
+    cmake --build build
+    ./build/lichtfeld_tests --gtest_filter='<interop filter used by the validator>'
+
+<pass/fail counts from the validation record>
+```

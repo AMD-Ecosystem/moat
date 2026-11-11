@@ -7,7 +7,7 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-11-11T19:30:14Z",
+  "updated_at": "2026-11-11T19:30:52Z",
   "head_sha": "afe6ab6ceb4184013cd90bc24e5f202bc2f4c6dd",
   "depends_on": [],
   "waivers": {
@@ -27,7 +27,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 672651553,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -129,7 +129,7 @@
       "failed_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
       "started_at": "2026-10-20T00:45:37Z",
       "completed_at": "2026-11-05T07:58:46Z",
-      "updated_at": "2026-11-11T19:30:13Z",
+      "updated_at": "2026-11-11T19:30:51Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -149,13 +149,10 @@
   },
   "porting_released": {
     "arch": "windows-gfx1151",
-    "since": "2026-11-11T19:17:17Z",
-    "at": "2026-11-11T19:25:17Z"
+    "since": "2026-11-11T19:30:13Z",
+    "at": "2026-11-11T19:30:51Z"
   },
   "on_hold": true,
   "on_hold_reason": "moat-port is reference-only; upstream asked for focused PRs against dev (issue 3968), worked outside this pipeline",
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-11T19:30:13Z"
-  }
+  "porting": null
 }

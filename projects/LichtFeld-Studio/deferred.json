@@ -459,6 +459,19 @@
         "at": "2026-10-31T20:16:02Z",
         "note": "2026-10-31: do in the PR-prep squash (squash-carry-forward)"
       }
+    },
+    {
+      "id": "lfs-commit-msg-afe6ab6c-test-plan",
+      "kind": "other",
+      "component": null,
+      "summary": "Before the upstream PR, reword afe6ab6c ('[ROCm] Order Vulkan timeline semaphores on the host on Windows too') in the PR-prep squash, not by amending: (1) the Windows block must not give a fenced command for tl_test.hip, which is not in the tree; describe the standalone Vulkan+HIP bounce test in prose (50 queued submits, 8 MiB external buffer, 10 runs, no stale reads, Radeon 8060S gfx1151) and fence only in-tree commands; (2) the Linux block must state only observed results: replace it with the lichtfeld_tests interop filter and pass counts from the gfx1100/gfx90a revalidation at the validated head. Corrected text is in notes.md 'Porter response 2026-11-11'.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#review-2026-11-11"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-11T19:30:12Z",
+      "decided": null
     }
   ]
 }
