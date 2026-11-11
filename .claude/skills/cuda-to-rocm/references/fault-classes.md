@@ -73,6 +73,25 @@ lossy or statistical pipeline the wrong collective still round-trips, so it surf
 quality-metric shift (compression ratio, PSNR) rather than a crash -- the cross-arch gate
 has to compare the METRIC, not just that the output decodes. (cuSZ)
 
+**A full 64-bit `*_sync` mask in 32-lane group code traps in a HIP debug build on wave64.**
+HIP's `__shfl*_sync` / `__ballot_sync` run `__hip_check_mask`, which asserts that the mask
+equals the lanes that reached the call (`__ballot(true)`), and `__hip_assert` is a
+`__builtin_trap()` unless `NDEBUG` is defined. Code written for 32-lane CUDA warps and kept
+correct on wave64 by group-local folds (offsets below 32, width-32 shuffles, the
+`>> (__lane_id() & 32)` ballot) is still wrong to pass `0xffff...ffffull` wherever the two
+halves of a wavefront can reach the intrinsic separately: a per-group `continue`, a
+per-group trip count, or a cross-warp step that runs only `threadIdx.x < 32` (or
+`warp_id == 0` with `warp_id = threadIdx.x / 32`). Release builds are correct and wave32
+cannot see it, because a group is the whole wave, so only a wave64 debug run traps. Pass the
+caller's group mask, `0xffffffffull << (__lane_id() & 32u)`: it is the whole wave on wave32
+and one half on wave64. The check runs a waterfall over distinct mask values, so each half
+is validated against itself, whether the halves arrive together or apart. HIP evaluates the
+shuffle in the caller's context, so the mask changes only that check and the ballot's
+`& mask`, never the data movement. Mask-free `__shfl(v, s, 32)` / `__ballot` also work but
+drop the check entirely. Folds over the native wavefront (`warp_id = threadIdx.x /
+warpSize`) keep the full mask. (LichtFeld-Studio: fastgs/gsplat 32-lane tile macros, nn
+softmax/norm block reductions, `block_reduce_min4`.)
+
 **Intra-wave barrier divergence.** A per-row early `return` before `__syncthreads()` is
 benign on CUDA when a row is a whole 32-lane warp -- the warp exits and leaves the barrier
 wait set. On wave64 two rows share a wavefront, so one row returning is a half-wave
@@ -155,6 +174,36 @@ already existed above the two loads it followed.)
 double-destroyed texture/stream/event handle; AMD faults. Give RAII wrappers explicit
 default init (`handle = 0`), move-only semantics, and a guarded destructor. (colmap
 CuTexObj.)
+
+**Querying an event after its recording stream was destroyed is a use-after-free on HIP.**
+CUDA keeps an event valid after `cudaStreamDestroy` of the stream it was recorded on, and
+caches built on that (pinned host allocators that keep per-block "last use" events, event
+pools) query those events much later. HIP's `hipEventRecord` stores the stream in the event,
+and `hipEventQuery`/`hipEventSynchronize` read that stream's capture state -- and, if the
+freed memory happens to say "capturing", lock its mutex and hash into its event set --
+without checking the stream still exists (`checkEventCaptureRestrictions`, clr
+`hip_event.cpp`; `hipEventRecord`, `hipEventDestroy` and `hipStreamWaitEvent` do check).
+The query returns the right answer until the heap reuses the freed `hip::Stream`, then it
+hangs in `pthread_mutex_lock`, segfaults, or raises SIGFPE (a zero bucket count), so it
+looks like a flaky test that fails after tens to hundreds of repeats. Fingerprint: a gdb
+stack of `pthread_mutex_lock` <- two unexported libamdhip64 frames <- `hipEventQuery`, no
+other thread inside HIP. Prove it with an `LD_PRELOAD` shim over
+`hipEventRecord`/`hipStreamDestroy`/`hipEventQuery` that flags queries on events whose last
+recording stream is dead; a plain create/record/destroy/query loop will NOT reproduce it,
+because the next `hipStreamCreate` takes the chunk back with a clean status; fill freshly
+`malloc`'d 16 B-64 KiB chunks with 32-bit 1s after the destroy and the query hangs every time.
+Do not fix it holder by holder: the holders are not only caches but events in transit outside
+the holder's lock (blocks an `empty_cache` took and waits on after unlocking) and app-owned
+rings and frame fences no allocator hook sees, and a per-site sweep misses some. Fix the class
+where the compatibility header already maps the stream calls: route `cudaStreamCreate*` and
+`cudaStreamDestroy` to a small pool whose destroy synchronizes and parks the stream (real
+destroy only if it is capturing or fails to sync) and whose create reuses a parked stream with
+the same device, flags and default priority. No stream an event ever saw is freed, and the
+pool is bounded by the peak number of live streams. Do not park without reuse: an idle used
+stream holds about 8 MiB of host memory on TheRock 10.1. (LichtFeld-Studio:
+`core/cuda/hip_stream_reuse`, which replaced a `PinnedMemoryAllocator::release_stream` sweep;
+project save hung or crashed on gfx1100, and the review found three more holders; deferral
+`hip-event-query-destroyed-stream-uaf`.)
 
 **Fresh device allocations are NOT zero on ROCm**, where CUDA's allocator often hands back
 zeroed pages. A kernel writing only a sub-region and implicitly relying on a zero start
@@ -436,6 +485,25 @@ pair AND on a non-int overload with CUDA's full set. (LEAP version two: 27 sites
 them new, including `1.0 / max(fabs(v_min), fabs(v_max))` dividing by zero in the cone
 geometry setup.)
 
+**A HIP workaround in shared host code must not change CUDA's numbers.** HIP declares the
+scalar math builtins (`rsqrtf`, `min`/`max`) for the device only, and HIP's `__half`
+converts to every floating type through a template, so a port that rewrites a host call for
+HIP (`rsqrtf(x)` to `1.0f / std::sqrt(x)`, `std::pow(a, b)` to a cast through `double`,
+`__half` to an integer through `float`) silently changes the CUDA build too: `1.0f / sqrtf`
+rounds twice and moved 9 of 51 coefficients by 1 ULP, `pow` through double differed in the
+last bit, and the float route made NaN/Inf half-to-int undefined where CUDA's
+`__half2int_rz` saturates. Gate the rewrite on `__HIPCC__` and keep upstream's
+expression in the `#else`. Do not narrow the gate to the toolchain where the error first
+showed: `std::pow(__half, __half)` was ambiguous in the HIP host pass on Linux too (glibc
+`double` vs libstdc++ `float`) once a `__half` kernel instantiated it. A `_MSC_VER` gate
+was chosen because an older Linux build had compiled upstream's call, but that build had no
+gate and predated the kernels that instantiate it, and the first Linux build with the gate
+failed; key the gate to the cause (HIP's `__half`), not to the first OS that
+failed; where HIP needs a substitute, write the formula CUDA's host math
+uses (`(float)(1.0 / sqrt((double)x))` for host `rsqrtf`), and give conversions CUDA's
+saturation and NaN rules. A compile-only CUDA build with a per-TU preprocessed diff against
+upstream is what found these; HIP runs cannot. (LichtFeld-Studio)
+
 ## Headers, includes and build
 
 **A shared compat header must be host-includable.** Host `.cpp` TUs reach the shim through
@@ -454,6 +522,53 @@ without hipify. Verify include order rather than trusting the prepend. (LC-frame
 CUDA's headers supplied them transitively and the narrower HIP include graph unmasks them.
 Fix additively -- it helps the CUDA build too. (LC-framework)
 
+**`CUDART_VERSION` is undefined under HIP, so every `#if CUDART_VERSION >= N` guard silently
+takes its fallback.** Audit them: some fallbacks change behaviour, not just speed. A
+`cudaMallocAsync` path that falls back to `cudaMalloc` makes the allocation uncapturable, and
+`hipMalloc` inside a graph capture fails with `hipErrorStreamCaptureUnsupported`; when the
+caller then bails out without ending the capture, every later allocation in the process
+fails the same way and a whole test binary goes red behind one root cause. Extend the guard
+(`|| defined(USE_HIP)`) where the HIP API exists, rather than defining `CUDART_VERSION`
+globally, which flips untested pool paths at once. A pool whose fallback frees with
+`hipFree` also synchronizes the device on every free, so a free while another stream waits on
+a host callback blocks forever (a gated-producer test deadlocks; the async free returns at
+once). To prove the CUDA view unchanged, note that `unifdef -UUSE_HIP` leaves
+`#if X || defined(USE_HIP)` as written (it does not reduce `X || 0`); compare with
+`-UUSE_HIP -DCUDART_VERSION=<N>` on both the upstream and the port file, for an N on each
+side of every guard. Once the HIP default pool is in use, do not count on
+`hipMemPoolAttrReleaseThreshold`. On ROCm 10.1 (Linux) it reaches the pool's VM heap only if
+it is set after the pool's first allocation; set before it (as most code does, in setup), it
+is lost and freed blocks are unmapped at the next synchronize whatever its value. Even when
+set late it keeps memory only in 128 MiB chunks, so a threshold below one chunk (such as
+64 MiB) keeps nothing, and a free can trim below the threshold. Correctness is unaffected;
+measure before working around it (deferral `hip-vmheap-unmap-threshold-lost-or-overtrimmed`,
+formerly `hip-mempool-release-threshold-ignored`). (LichtFeld-Studio)
+
+**The vcpkg toolchain already overrides `add_library`/`add_executable`.** A second
+top-scope override (the MPPI retag trick) makes `_add_library` point at vcpkg's override,
+which recurses. In a vcpkg project retag `.cu` sources with a pass over all targets after
+the subdirectories are added: walk `BUILDSYSTEM_TARGETS` and `SUBDIRECTORIES`, and use
+`set_source_files_properties(... TARGET_DIRECTORY <tgt> PROPERTIES LANGUAGE HIP)` with paths
+made absolute against the target's `SOURCE_DIR`. (LichtFeld-Studio)
+
+**LibTorch's CMake package adds `-D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1`
+to every target that links it** (`torch_hip` INTERFACE_COMPILE_OPTIONS). Project `.cu` test
+files that use `__half` arithmetic then fail with "invalid operands ... '__half'". If no HIP TU
+includes LibTorch, `#undef` both in the force-included compat header under `__HIP__`.
+(LichtFeld-Studio)
+
+**For plain C++ TUs the HIP headers `#define __noinline__ __attribute__((noinline))`**
+(nvcc defines it only when compiling CUDA). glib's `__has_attribute(__noinline__)` then fails
+("too few arguments provided to function-like macro"), so any TU that includes GTK after the
+HIP runtime breaks. `#undef __noinline__` in the compat header when `!defined(__HIP__)`.
+(LichtFeld-Studio)
+
+**Use the CUDA build's host compiler for host C++ in a large app.** HIP needs clang only for
+the HIP language; `CMAKE_C/CXX_COMPILER` can stay gcc. Upstream code tested only with gcc can
+trip clang-only C++ rejections unrelated to HIP (`__attribute__((visibility)) [[nodiscard]]`
+ordering; `std::expected<std::any, E>` constraint recursion with libstdc++ 14).
+(LichtFeld-Studio)
+
 **A force-included compat header creates no build dependency edge.** After editing a header
 injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
 stale code and get a silent false pass. (lc0)
@@ -467,6 +582,52 @@ libraries test it), and prefix version guards with `!defined(USE_HIP) &&` so HIP
 modern CUDA spelling -- the legacy branch may name intrinsics HIP lacks (`h2div` vs
 `__h2div`). Confirm with the disassembly: the kernel should contain real instructions
 (`v_pk_*_f16` for half2 code). (gpuRIR)
+
+**Project code that splits on `__CUDACC__` means "compiled by the device compiler", and HIP
+does not define it.** Upstreams increasingly hide host-only C++23 (`std::expected` error
+types, `std::source_location` capture) from nvcc with `#if !defined(__CUDACC__)` and show
+device helpers only under `#if defined(__CUDACC__)`. A HIP source defines `__HIPCC__`
+instead, so it parses the host-only branch (a C++23 `#error` or missing `std::expected`
+under the HIP C++20 standard) and silently skips device fast paths. Treat `__CUDACC__` in
+project code as `defined(__CUDACC__) || defined(__HIPCC__)`; `__HIPCC__` is set only for
+HIP sources, so plain C++ TUs keep the host branch. Do not define `__CUDACC__` globally
+instead: rocThrust takes its CUDA-system path under it. Re-grep after every upstream sync,
+since new splits arrive with new code. (LichtFeld-Studio)
+
+**Extend a CUDA guard for HIP; never re-key it.** Upstream's `#ifndef __CUDACC__` around
+host fallbacks for `fminf`/`min`/`max`/`rsqrtf` (CUDA-Samples `helper_math.h` and its
+copies) also admits the HIP device pass, because HIP never defines `__CUDACC__`. Re-keying
+it to `!defined(__CUDA_ARCH__)` exposes the fallbacks to nvcc's HOST pass, where `int
+max(int, int)` redefines CUDA's and every TU including the header fails -- invisible on
+ROCm. Add the HIP macro to the original test instead (`!defined(__CUDACC__) &&
+!defined(__HIP__)`), which leaves the CUDA and plain C++ expansions identical. HIP's host
+pass does not need the fallbacks when no host-emitted code calls them; compile the host
+objects without them to check. (LichtFeld-Studio)
+
+**clang checks kernel bodies in the HIP host pass; nvcc does not.** A macro that splits
+device and host forms on `#if defined(__CUDA_ARCH__)` takes the host form when clang
+compiles the host side of a HIP TU, and clang still type-checks the instantiated
+`__global__` bodies there. A host-only call in that branch (a string formatter, a throw)
+inside a kernel is then `call to __host__ function from __global__ function ... when
+compiling for host`, while nvcc builds the same code. It shows only where the macro is live,
+typically a debug assert that is `((void)0)` under NDEBUG, so Release passes and the first
+Debug build fails. Build Debug once after every upstream sync, and give HIP sources the
+kernel-safe form in both passes (`defined(__CUDA_ARCH__) || defined(__HIPCC__)`) or make
+the callee `__host__ __device__`. Only calls that go through overload resolution (templates,
+overload sets) fail at once; a call to a single non-template `__host__` function in a kernel
+is a deferred diagnostic that never fires, because the host pass does not emit kernel bodies.
+That gives a narrower fix that keeps the host form for host code in HIP TUs: under
+`#elif defined(__HIPCC__)` evaluate the message argument in `[&]() { return (message); }()`.
+clang makes an unattributed lambda `__host__ __device__`, so the template call inside it is
+legal in a kernel's host-pass body, while host functions still get the formatted message.
+(LichtFeld-Studio)
+
+**CUDA error codes HIP lacks still appear in switch labels.** Error classifiers name codes
+such as `cudaErrorMisalignedAddress`, `cudaErrorInvalidPc` or `cudaErrorSystemNotReady`
+that have no `hipError_t`. Aliasing them to the nearest HIP code duplicates a case label
+when that code is also listed. Define each as `static_cast<hipError_t>(<CUDA value>)` after
+checking no `hipError_t` enumerator uses the value: the labels stay distinct, and since HIP
+never returns them they are unreachable. (LichtFeld-Studio)
 
 **MSVC-only upstreams accept code that clang and gcc reject**, so the HIP build (and the
 CUDA build under nvcc) is a stricter compiler than the project has ever seen. Velvet carried
@@ -548,14 +709,22 @@ requirement when Ninja is missing, and every other build is untouched. (LEAP, wi
 
 ## Types, dispatch and platform limits
 
-**`clock64()` is a 20-bit counter on gfx11.** On RDNA3/3.5 it compiles to
-`s_getreg_b32 hwreg(HW_REG_SHADER_CYCLES, 0, 20)`, which wraps about every million cycles;
-gfx9 uses the 64-bit `s_memtime`. A spin-wait or timeout written `while (clock64() - start
-< n)` never terminates when the counter wraps first, so the kernel hangs -- intermittently,
-because it depends on where the counter stood at `start`. Elapsed-time measurements are
-silently wrong the same way. Use `wall_clock64()` (a 64-bit constant-rate counter on both,
-rate from `hipDeviceAttributeWallClockRate` in kHz) for any interval. Grep a port for
-`clock64` and `clock()` in device code. (FLAMEGPU2, found in a test probe)
+**`clock64()` is a 20-bit wrapping counter on RDNA3, so a cycle-bounded spin, delay or
+timeout misbehaves.** HIP's `clock64()` is `__builtin_readcyclecounter()`. On gfx11 (RDNA3/3.5)
+that lowers to `s_getreg_b32 hwreg(HW_REG_SHADER_CYCLES, 0, 20)`, which wraps about every
+million cycles, while gfx9 emits a 64-bit `s_memtime`. Depending on how the comparison is
+written, a `while (clock64() - start < cycles)` loop with `cycles` above 2^20 either exits at
+the counter's first wrap (after anywhere from 0 to about a million cycles) or never
+terminates, and which happens is intermittent because it depends on where the counter stood
+at `start`. Nothing fails at the loop itself. What breaks is whatever the delay was holding
+open: a test that gates a producer stream to prove a consumer waits for it passes or fails by
+luck, a device-side timeout fires immediately, or the kernel hangs. Elapsed-time measurements
+are silently wrong the same way. Time such loops with `wall_clock64()`, a 64-bit
+constant-rate counter on every AMD GPU, and convert the duration with
+`hipDeviceGetAttribute(..., hipDeviceAttributeWallClockRate, dev)` (kHz). Grep a port for
+`clock64` and `clock()` in device code and treat any difference compared against more than
+2^20 as this bug. (LichtFeld-Studio: tensor hardening `GateStream` delay kernel; FLAMEGPU2,
+found in a test probe.)
 
 **Library swaps.** cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE ->
 hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Mostly 1:1; watch handle types
@@ -795,3 +964,148 @@ When such a delta flips a passed arch to revalidate, REBUILD it rather than carr
 on "it is Windows-gated" reasoning. A binary-equivalence carry-forward inherently builds,
 which is how both regressions above were caught; a reasoning-only skip would have shipped a
 broken build. (aihwkit, MMseqs2)
+
+## Vulkan interop and image codecs
+
+**External memory ports 1:1; external semaphores do not.** `hipImportExternalMemory` with
+OPAQUE_FD/OPAQUE_WIN32, `hipExternalMemoryGetMappedMipmappedArray` + surface objects, and
+mapped buffers round-trip Vulkan data bit-exactly (RDNA3 Linux and Windows). Semaphores:
+`hipImportExternalSemaphore` rejects the timeline handle types (`TimelineSemaphoreFd`,
+`TimelineSemaphoreWin32`) in a front-end range check on both OSes, and on Linux nothing
+imports at all (binary OPAQUE_FD returns not-supported down to the KFD). On Windows, do not
+import a timeline VkSemaphore as `hipExternalSemaphoreHandleTypeOpaqueWin32`: the import
+succeeds and a single wait/signal honors values, but with several values in flight it has
+been reported to let HIP read a buffer before Vulkan finished writing it (gfx1102, about 1
+run in 25, stale data and no error; ROCm/hip#3909). 500 queued bounces on gfx1151 did not
+reproduce it, so a short passing test proves nothing. Order on the host on both OSes: import
+the exported handle into a second timeline VkSemaphore on the app's device
+(`vkImportSemaphoreFdKHR`, or `vkImportSemaphoreWin32HandleKHR` with OPAQUE_WIN32, which
+leaves the NT handle with the caller), wait = `vkWaitSemaphores` before enqueueing HIP work,
+signal = `hipStreamSynchronize` then `vkSignalSemaphore`. Routing the four
+`cuda*ExternalSemaphore*` calls to such an implementation from the compat header leaves every
+call site untouched. A blocking host wait deadlocks if the Vulkan submit that signals the
+value comes later on the same thread, so check submission order at each wait and put a
+timeout on the host wait. If host ordering costs too much on Windows, a GPU-ordered route
+has been reported stable but is untested here: create the fence in D3D12 (`CreateFence` +
+`CreateSharedHandle`; Vulkan cannot export one) and import it into HIP as
+`hipExternalSemaphoreHandleTypeD3D12Fence` and into Vulkan with `D3D12_FENCE_BIT`. HIP has no
+`cudaDevAttrTimelineSemaphoreInteropSupported`. (LichtFeld-Studio, from the interop spikes
+and the ROCm/hip#3909 report)
+
+**HIP VMM memory exported to Vulkan works on Linux.** `hipMemCreate` with
+`hipMemHandleTypePosixFileDescriptor` + `hipMemExportToShareableHandle` gives an fd that RADV
+imports as OPAQUE_FD (and DMA_BUF), correct in both directions. Differences from CUDA: HIP
+has no handle-type-supported attribute, `hipMemAllocationProp` spells the field
+`requestedHandleType` (singular), `hipDeviceptr_t` is `void*` (CUDA's `CUdeviceptr` is an
+integer, so VA arithmetic needs adapters), and AMD's minimum granularity is 4 KiB, not 2 MiB.
+(LichtFeld-Studio)
+
+**Match HIP and Vulkan devices by PCI location (Linux) or LUID (Windows), never by UUID.**
+HIP's UUID is the board serial, RADV's encodes the PCI address, so a CUDA-style
+`deviceUUID` comparison never matches and a multi-GPU host picks the wrong Vulkan device.
+(LichtFeld-Studio)
+
+**rocJPEG writes past the row pitch.** Its output conversion writes each row out to a
+multiple of 8 pixels regardless of `RocJpegImage::pitch`, so with a tight pitch the first
+pixels of every following row are overwritten -- nondeterministically, up to full-scale
+errors. Decode into staging with rows padded to 16 pixels and copy the visible region out
+(`hipMemcpy2DAsync`), which also orders rocJPEG's own stream before the caller's.
+(LichtFeld-Studio)
+
+**Fall back to the CPU only for JPEGs rocJPEG cannot decode, and say so.** rocJPEG 1.10 on
+VCN decodes only 8-bit baseline (SOF0) JPEG, 1 or 3 components, 4:4:4/4:4:0/4:2:2/4:2:0,
+at least 64x64. Extended sequential (SOF1, which nvJPEG decodes), progressive,
+arithmetic-coded, CMYK and 4:1:1 streams fail `rocJpegStreamParse` with `BAD_JPEG` -- the
+same status a corrupt file gets -- and small images fail `rocJpegDecode` with
+`JPEG_NOT_SUPPORTED`. So classify from the JPEG frame header
+(SOFn marker, precision, component count, sampling factors) yourself, decode only those cases
+on the CPU with a warning naming the reason, and let every other failure (OOM, decoder
+creation, corrupt data) surface as an error. A catch-all fallback hides real failures behind
+a silently slower path. (LichtFeld-Studio review)
+
+**A JPEG that ends before its scan hangs the VCN JPEG engine.** rocJPEG 1.10 parses such a
+stream as SUCCESS (dimensions and all) and submits it; the engine hangs until the driver
+resets the `jpeg_dec` ring, and the process's GPU context is lost ("context is guilty of a
+hard recovery", then abort). One corrupt file in a dataset kills the app, where nvJPEG
+returns an error. Only the missing scan was measured to hang: a JPEG cut inside its scan
+(no end-of-image marker) decodes, with no reset, and one with no scan hangs. A scan header
+with no data was only parse-checked (SUCCESS). Walk the markers on the host before calling
+rocJPEG and require at least a scan with data; the port also requires a frame header,
+defined quantization tables, a well-formed scan header and an end-of-image marker, as a
+precaution against corrupt streams, and treats any failure as a decode error. Such a
+stream may appear only in a test of that host-side check, which is then the one barrier
+in front of the hardware: a regression in the check costs a ring reset, so run that test
+on a GPU no other job is using. (LichtFeld-Studio; deferral `rocjpeg-no-scan-jpeg-hangs-vcn`)
+
+**NVDEC through FFmpeg becomes FFmpeg demux plus rocDecode.** FFmpeg has no rocDecode
+hwaccel, and the CUDA device context behind `*_cuvid` fails on AMD, so the code silently
+falls back to software decode. TheRock's SDK ships rocDecode's library, headers and CMake
+package but not the samples' `VideoDemuxer`/`RocVideoDecoder` helpers, so keep FFmpeg for
+demux and drive `rocDecCreateVideoParser`/`rocDecParseVideoData` yourself behind an
+`avcodec_send_packet`/`receive_frame`/`flush_buffers`-shaped class: H.264/HEVC packets
+through `h264_mp4toannexb`/`hevc_mp4toannexb`, the AV1 `av1C` config OBUs (extradata after
+4 bytes) prepended to the first packet after open or flush, a flush that destroys and
+recreates the parser (keep the decoder when the next sequence header matches), and frames
+of `AV_PKT_FLAG_DISCARD` packets (outside an MP4 edit list) dropped by pts as libavcodec
+does, or the frame count is one higher than the software decoder's. Copy each displayed
+picture (`rocDecGetVideoFrame`, offset by the display area) into an `AVBufferPool` of
+`hipMalloc`'d NV12/P010 buffers so frames stay on the GPU. Measured on gfx1100 against
+libavcodec/libdav1d: H.264 High, HEVC Main/Main 10, VP9 profiles 0/2 and AV1 8/10-bit
+bit-exact, timestamps preserved. (LichtFeld-Studio)
+
+**rocDecode's capability query is not a support check by itself.** `rocDecGetDecoderCaps`
+takes codec, chroma format and bit depth but no profile, and rocDecode 1.10 decodes an
+H.264 High 4:4:4 Predictive stream with 4:2:0 chroma (x264 lossless) with
+`rocDecodeStatus_Success` and wrong pixels (its AVC picture parameters have no field for
+the SPS lossless flag `qpprime_y_zero_transform_bypass_flag`, so the engine is never told).
+Gate the hardware path on the stream's profile too (H.264 Baseline/Main/High; HEVC Main/Main
+10/Main Still) and on the caps size limits, and decode the rest on the CPU with a logged
+reason. The caps limits are coded sizes: before the minimum check, round the display size
+up to the codec's block size (16 for H.264, 8, the smallest coding block, for HEVC; VP9 and
+AV1 code the frame size itself). Comparing the display size refuses valid streams: a 60x60
+H.264 or HEVC stream is coded 64x64, inside VCN 4's 64x64 minimum, and decodes bit-exact.
+The maxima (4096, 8192, 4352) are multiples of 16, so the display size gives the same answer
+there. Also do not trust the parser's `video_signal_description` for VP9 and AV1:
+it reports limited range and matrix 0 for full-range streams; take those from FFmpeg's
+stream parameters (H.264/HEVC VUI values are right). Validate a port's decode against the
+software decoder frame by frame, not by eye. (LichtFeld-Studio; deferrals
+`rocdecode-h264-high444-420-silent-miscode`, `rocdecode-vp9-av1-signal-description-missing`)
+
+**A rocDecode success status does not mean right pixels: check a reference clip once per
+process before trusting a codec.** On gfx90a (MI250X, amdgpu-dkms 6.16.6), rocDecode 1.10
+from TheRock SDK 10.1 loads the SDK's bundled Mesa VA-API driver
+(`rocm_sysdeps/lib/radeonsi_drv_video.so`), and through it every H.264, HEVC and VP9 frame,
+8- and 10-bit, is wrong in nearly every byte while `rocDecGetDecodeStatus` says success;
+Ubuntu's Mesa driver on the same card (`LIBVA_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/dri`)
+and the bundled driver on gfx1100 are bit-exact. Caps, profile and size gates cannot see
+this, so the port decodes an embedded two-frame 64x64 clip per codec and bit depth the first
+time a process asks about it, through the same demux, bitstream filter and copy code as real
+files, and compares each frame's MD5 with the digest of FFmpeg's software decode
+(`ffmpeg -i clip -pix_fmt nv12|p010le -f framemd5 -`, which hashes the frame packed with no
+row padding, the layout `av_image_copy_to_buffer(..., 1)` gives a host copy). A mismatch
+refuses that codec for the process with a named CPU reason. Key the result by device,
+codec and bit depth under a mutex, run it inside the capability query (lazily, not at
+start-up), and do not cache a decode error (that is an error, not a verdict). Cost on
+MI250X: 40-46 ms for the first codec (includes loading the VA driver), 7-18 ms per further
+codec. Even the intra frame was wrong, and 10-bit failed with 8-bit, but check each codec
+and depth: one codec's result is not evidence for another. Test it without a broken driver
+by injecting a wrong digest, and add a test that the verdict agrees with a full decode of
+the fixtures, so the same suite proves the check on a good driver and a bad one. Do not
+switch the VA driver from inside the application. (LichtFeld-Studio; deferral
+`rocdecode-sdk-va-driver-gfx90a-wrong-frames`)
+
+**The software fallback for AV1 needs libdav1d.** FFmpeg's built-in `av1` decoder only
+drives hardware accelerators (without one it fails with "Get current frame error"), and
+vcpkg's `ffmpeg` port builds no software AV1 decoder unless the `dav1d` feature is on. A
+CUDA project that relies on NVDEC for AV1 often never enables it, so a ROCm port's CPU
+path has nothing to decode AV1 with on GPUs without AV1 decode hardware (gfx90a), or on a
+build without rocDecode. Add `dav1d` for the ROCm build only, as a manifest feature (a
+`rocm` entry under `features` in `vcpkg.json` that lists `ffmpeg` with `dav1d`) appended
+to `VCPKG_MANIFEST_FEATURES` under `if(USE_HIP)` before `project()`, the way projects
+already select a `tests` feature; a CUDA configure never selects it, so its dependency set
+is unchanged. Do not generate a modified copy of the manifest in the build tree instead: it
+is a script rewriting a dependency choice (overlay paths, registries, user overrides and
+pkg-config caches all need handling) where the manifest has a declarative mechanism. The
+vcpkg toolchain caches `VCPKG_MANIFEST_DIR` with FORCE, so a build tree that ever pointed it
+elsewhere keeps doing so until reconfigured with `-UVCPKG_MANIFEST_DIR`. (LichtFeld-Studio)
+

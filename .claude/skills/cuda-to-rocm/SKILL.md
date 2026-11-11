@@ -72,6 +72,7 @@ Scan this list against what you are doing. If any line could apply, open
 - Warp-derived array sizing: quantities scaling WITH `warpSize` need the 64 upper bound, quantities scaling as `blockDim/warpSize` need the 32 LOWER bound. Getting it backwards writes out of bounds.
 - A compat `__ballot_sync` that casts `__ballot()` to `uint32_t` returns the wrong 32 lanes on wave64.
 - An over-wide `__shfl*` width silently clamps to the physical wavefront instead of erroring; the symptom is a metric shift, not a crash.
+- A full 64-bit `*_sync` mask in 32-lane group code traps in a HIP debug build on wave64 when the halves diverge; pass the group mask.
 - Intra-wave barrier divergence: a per-row early return before `__syncthreads()` is benign on CUDA, faults on wave64.
 - `cub`/`hipCUB` block-collective `TempStorage` reuse races on a 64-thread block without an explicit `__syncthreads`.
 - `__smid()` can EXCEED `multiProcessorCount` on AMD, unlike NVIDIA.
@@ -82,8 +83,12 @@ Scan this list against what you are doing. If any line could apply, open
 - Fresh device allocations are NOT zeroed on ROCm, where CUDA's allocator often hands back zeroed pages.
 - `cudaMemcpy*Async` from a soon-freed pageable host buffer: CUDA stages synchronously, HIP does not.
 - Rule-of-five on resource handles: CUDA tolerates double-destroy of a texture/stream/event; AMD does not.
+- `hipEventQuery`/`hipEventSynchronize` dereference the event's recording stream: querying an event after that stream is destroyed (legal on CUDA) hangs or crashes intermittently. Keep destroyed streams alive: route stream create/destroy through a sync-park-reuse pool in the compat header, not per-holder sweeps.
 - A functor returning a reference to a by-value parameter (lifetime UB) is tolerated by nvcc, not by clang/HIP.
 - `hipLaunchHostFunc` callback threads must not call ANY runtime API.
+- A `hipLaunchHostFunc` callback must not block either: ROCr runs it on the async-events thread, so a callback waiting on a host gate stalls every later event on the device (a multi-stream test hung on gfx1100).
+- HIP after `fork()` crashes in the child (segfault in hipEventQuery); a test that forks and then touches the GPU fails on ROCm.
+- A query HIP reports as unsupported (`cudaLimitPrintfFifoSize` -> hipErrorUnsupportedLimit) leaves a sticky last error that the NEXT launch check reports; clear it under the HIP branch.
 
 **Textures**
 - Texture pitch alignment: AMD requires 256-byte row pitch for pitched 2D binds (32 on NVIDIA).
@@ -92,7 +97,8 @@ Scan this list against what you are doing. If any line could apply, open
 - Gate hardware-vs-software texture paths on a VERIFIED runtime self-test, never on creation success or `_WIN32`.
 
 **Floating point**
-- `__fsqrt_rn` is not always correctly rounded on gfx90a (1 ULP high); CUDA's is IEEE-correct.
+- `__fsqrt_rn` is not always correctly rounded on gfx90a or gfx1100 (1 ULP high); CUDA's is IEEE-correct. Map it to `sqrtf` when a test compares against host sqrt.
+- Without `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__` HIP's HOST `min`/`max` take int, so `min(float, float)` in `__host__ __device__` code silently truncates on the host (whole-pixel camera errors); define it for the HIP build.
 - clang(HIP) defaults to `-ffp-contract=fast` and forms FMAs ACROSS expressions; nvcc contracts expression-only.
 - Exact float-equality branches fed by `__fdividef` produce out-of-range indices.
 - HIP device `cuda::min`/`max` NaN-selection can differ from host `std::min`/`max`.
@@ -103,6 +109,7 @@ Scan this list against what you are doing. If any line could apply, open
 - `__HIP_PLATFORM_AMD__` is undefined until `hip_runtime.h` is included; a gate placed before it silently picks the CUDA branch.
 - Missing includes in a HIP port are usually pre-existing upstream omissions unmasked by the narrower include graph.
 - A `-include`d compat header creates no dependency edge: wipe objects after editing it or you validate stale code.
+- clang type-checks kernel bodies in the HIP host pass, where `__CUDA_ARCH__` is unset: a `__CUDA_ARCH__`-split debug macro calling host code fails only in Debug.
 
 **Types, dispatch and platform limits**
 - Never name the pointee struct of an opaque handle (`CUstream_st`); use `std::remove_pointer_t<cudaStream_t>`.
@@ -112,12 +119,15 @@ Scan this list against what you are doing. If any line could apply, open
 - hipSPARSE breaks HIP graph capture where cuSPARSE does not (destroying a CSR SpMat syncs, default-algorithm analysis, size-0 buffers).
 - Pick a library's NVIDIA or AMD build per device, never by starting every backend; a HIP port that keeps the soname (hipVS, hipDF) allows one per process.
 - NVML -> AMD SMI, keyed by PCI address, not device index.
+- `clock64()` is a 20-bit wrapping counter on RDNA3; cycle-bounded spins and delays end early. Use `wall_clock64()`.
 - `char` vs `signed char` vector base types differ between HIP and CUDA.
 - AMD compute-capability values COLLIDE with NVIDIA arch numbers, so CC-keyed dispatch picks the wrong path.
 - Library swaps: cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE -> hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Handle types and v2-enum signatures differ.
+- nvJPEG/nvImageCodec -> rocJPEG for JPEG decode only (VCN; baseline SOF0 only: no SOF1 or progressive, nothing under 64x64, no encoder, no JPEG 2000); the rest needs a named CPU path, chosen from the frame header, not a catch-all. A JPEG with no scan hangs the VCN engine: validate markers on the host first. NVDEC -> FFmpeg demux + rocDecode's parser and decoder (no FFmpeg hwaccel); gate on profile as well as `rocDecGetDecoderCaps`, which has no profile and lets unsupported H.264 profiles decode wrong, and whose size limits are coded sizes (round the display size up to the block size); a success status can still carry wrong pixels on some GPU and VA driver pairs, so decode a reference clip per codec once per process before trusting it; the CPU path needs libdav1d for AV1. NVENC has no ROCm equivalent: name the software encoder path. See fault-classes "Vulkan interop and image codecs".
 - Runtime PTX + CUDA Driver API is a third build class beyond A and B.
 - MSVC-only upstreams accept code gcc/clang reject; the HIP build is a stricter compiler.
 - No graphics pipeline on compute-only CDNA: OpenGL/Vulkan-interop apps build but cannot run on gfx90a.
+- Vulkan timeline semaphores do not import into HIP on either OS, and the Windows OpaqueWin32 import can silently miss a wait: order on the host.
 - An arch-specific fix keyed on OS or ROCm version can BREAK an already-validated arch.
 
 Two diagnostic methods in `references/validation.md` are worth knowing before you escalate a

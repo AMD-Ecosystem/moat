@@ -12,6 +12,8 @@
   - The class this catches that a HIP-only build cannot: an unconditional device-header include reaching host translation units. Used on 8 projects in one six-week window; it caught a template-shadow regression in Velvet and an stdgpu regression of exactly that include class. (stdgpu, SCAMP, cuSZ, mahout, lc0, cuPDLPx, TIGRE, Velvet)
   - A torch `CUDAExtension` cannot get this gate the same way: `torch/extension.h` pulls in the fleet's ONLY installed PyTorch, a ROCm dev build with no CUDA-flavored counterpart on hand, so the check dies in the ambient install's headers before it can judge the port. See "CUDA gate for torch-extension ports" below for the fingerprints, the diagnosis, and the `cuda-not-validated` recording convention. (FaithC, accelerated-scan)
   - A CUDA-path configure failure at `find_package(CUDA <ver> REQUIRED)` ("did not find CUDAConfig.cmake / cuda-config.cmake") on a project whose `cmake_minimum_required` floor is >= 3.27 is a CMake/toolchain incompatibility, not a port regression, if the project still calls the legacy `FindCUDA` module (as opposed to pure `enable_language(CUDA)` + `FindCUDAToolkit`, which is unaffected). CMake 3.27 added policy CMP0146 ("the FindCUDA module is removed"); once the project's minimum-required version reaches or exceeds a policy's introduction version, that policy defaults to NEW and the module self-disables (its file is found on disk but returns immediately) -- confirm with `--debug-find-pkg=CUDA`, which shows "The file was found at .../FindCUDA.cmake" right above the "did not find" error. `-DCMAKE_POLICY_DEFAULT_CMP0146=OLD` does NOT recover it once minimum-required is at/above the policy version (verified with a two-line reproducer CMakeLists.txt); only an in-project `cmake_policy(SET CMP0146 OLD)` before the `find_package(CUDA...)` call works, which would be an edit to code the port does not own. Confirm pre-existing by building the identical upstream base sha with the identical cmake/nvcc/gcc versions: if it fails identically, record `cuda-not-validated` with the CMP0146 explanation, not a gate. (arbor)
+- Cross-OS HIP host-pass check from Windows: a Windows host can syntax-check the Linux HIP host pass of a `.cu` without a Linux box. No root is needed: in WSL, `apt-get download libstdc++-14-dev libgcc-14-dev libc6-dev linux-libc-dev libc6 libcrypt-dev` then `dpkg-deb -x` each into a directory and copy `usr/include` and `usr/lib/gcc` out (`tar -ch` to resolve symlinks). Then run the HIP clang with the TU's own `-D/-I/-include` flags plus `--target=x86_64-unknown-linux-gnu --sysroot=<dir> --gcc-install-dir=<dir>/usr/lib/gcc/x86_64-linux-gnu/14 -nogpulib -x hip --cuda-host-only -fsyntax-only`; `-E -dM` should show `__linux__`, `__GLIBCXX__` and no `_MSC_VER`. Use the same ROCm toolchain as the Linux validators, both the clang major and the HIP headers: in the LichtFeld-Studio `std::pow(__half, __half)` case, clang 23 with the ROCm 7.14 headers accepted the call that clang 24 with the 10.x headers (the Linux build's toolchain) rejected as ambiguous. `__half`'s conversion operators live in ROCm's `amd_hip_fp16.h`, and that run did not separate the compiler from the headers, so a check on an older toolchain proves nothing. Reproduce the Linux error first (negative control) before trusting a clean result. It is syntax evidence only; the Linux validator's real build stays the gate. (LichtFeld-Studio)
+
 ## Platforms
 
 A platform is `<os>-<gfx>`, and the set is open: whatever GPU your host reports is a
@@ -68,6 +70,17 @@ Read that failure as "this CMake is too old", not "clang-cl cannot host HIP". A 
 CMake is one `pip install cmake` away and TheRock's own venv already carries 4.3.2, so
 reach for it before restructuring a build around the older constraint.
 
+The one working mixed setup is LibTorch's own: `clang-cl` for C and C++, `clang++` for HIP,
+with HIP enabled AFTER C and C++ (`project(... LANGUAGES CXX C)` then
+`set(CMAKE_HIP_COMPILER_FORCED TRUE)` + `enable_language(HIP)`) and the HIP rules
+overridden to GNU style: compile object, depfile, `-isystem`, the MSVC runtime-library
+options, and C++ link rules for non-RDC targets. On CMake 4.3+ also strip the MSVC-style
+defaults (`/DWIN32 /O2 ...`) from `CMAKE_HIP_FLAGS` and its per-config variants and map the
+MSVC debug-information options to nothing, or clang++ rejects `/DWIN32` and `-Zi`. A
+project whose tests link ROCm LibTorch inherits this setup, because `find_package(Torch)`
+applies the same rules. See LichtFeld-Studio `cmake/HipCompute.cmake` and pytorch
+`cmake/public/LoadHIP.cmake`. (LichtFeld-Studio)
+
 Note the split with PyTorch extension ports, where `clang-cl` IS the required host
 compiler (see strategy-b-torch.md): torch drives the compile itself and never goes
 through CMake's `HIP` language.
@@ -85,31 +98,48 @@ import, not of a bad port.
 seconds; run it on the DLLs too, not just the .exe, since the missing module is usually
 one level down.
 
-## Windows: static initializers in TheRock's DLLs may never run
+## Windows: a C++ LibTorch consumer must force the torch_hip.dll import
 
 **A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a
-port that works perfectly.** TheRock's PyTorch Windows build links `torch_hip.dll` with
-`lld-link`, which emits no `.CRT$XCU` section; `_DllMainCRTStartup`'s CRT init pointer is
-NULL, `_initterm` never runs, and so `REGISTER_CUDA_HOOKS`'s static initializers never
-execute. `CUDAHooksRegistry` in `torch_cpu.dll` stays empty, `getCUDAHooks()` returns a
-no-op stub, and `is_available()` answers false on a machine whose GPU is fine.
+port that works perfectly**, because the executable never loads `torch_hip.dll` at all.
+The GPU hooks register from static initializers in that DLL, and the MSVC-ABI linker keeps
+a DLL import only when something references one of its symbols. A test that calls only
+`torch::` and `at::` APIs living in `torch_cpu.dll` references none, so the import is
+dropped, the registry stays empty and `is_available()` answers false on a machine whose
+GPU is fine. Check with `dumpbin /dependents <exe>` (prefix `MSYS2_ARG_CONV_EXCL="*"` from
+Git Bash): `torch_hip.dll` is missing from the list.
 
-The tell is the split: Python `import torch` reports devices correctly
-(`torch._C._cuda_getDeviceCount() > 0`), because the ctypes path does not go through the
-registry, while the standalone C++ executable says there is no GPU. Kernel tests that do
-not call `is_available()` first pass on the same run. If those three things are true
-together, this is the cause and the port is not at fault.
+PyTorch handles this for CUDA: `caffe2/CMakeLists.txt` puts
+`-INCLUDE:?warp_size@cuda@at@@YAHXZ` on `torch_cuda`'s interface link options for MSVC, so
+every consumer keeps the DLL. ROCm LibTorch has no such option on `torch_hip`, so a ROCm
+consumer has to add it to its own test target:
+`target_link_options(<tgt> PRIVATE "/INCLUDE:?warp_size@cuda@at@@YAHXZ")` under `WIN32`.
+With it, every torch-gated LichtFeld-Studio test that had failed now runs: 2044/2048 pass on gfx1151 and 2042/2048 on gfx1200.
+The missing interface option is tracked as `pytorch-windows-torch-hip-include-symbol`.
+
+The tell is the split: Python `import torch` reports devices correctly, because importing
+the package loads every DLL, while the standalone C++ executable says there is no GPU, and
+kernel tests that do not call `is_available()` first pass on the same run.
 
 Do not read it as "the project does not work on Windows" -- that mistake cost
-LichtFeld-Studio a wrongly-suggested gate waiver, on a port where 320 of 914 tests were
-passing on real gfx1101 hardware. It is a defect in a third-party build, so it is a
-deferred bug report (`therock-windows-lld-link-crt-xcu`, registered against
-LichtFeld-Studio -- `deferred.py list` finds it across refs) plus a workaround, not a
-property of the platform. Worth trying, none of them yet tested: `/WHOLEARCHIVE` or
-a forced reference into the hooks translation unit so the linker cannot drop it; calling
-`_initterm` on the DLL's CRT section directly; spawning a thread after load, since the
-TLS callbacks that do exist fire on `DLL_THREAD_ATTACH` and `DLL_PROCESS_ATTACH` calls
-`DisableThreadLibraryCalls`.
+LichtFeld-Studio a wrongly-suggested gate waiver. An earlier version of this entry blamed
+`lld-link` omitting `.CRT$XCU` from `torch_hip.dll`; that was wrong, and checking the
+executable's import table first would have found the real cause.
+
+## Windows: VMM address ranges that were mapped are never reused
+
+On TheRock ROCm 7.14 for Windows (amdhip64_7.dll, gfx1151), `hipMemAddressFree` on a range
+that once had a chunk mapped (`hipMemCreate`, `hipMemMap`, `hipMemSetAccess`, then
+`hipMemUnmap`, `hipMemRelease`) returns `hipSuccess`, but the range is never handed out again:
+each later `hipMemAddressReserve` lands higher. After about 240 GiB of cumulative
+reservations, reserve logs `failed to create a va range mem object` and then faults with
+0xC0000005 inside amdhip64 instead of returning an error; gtest reports an SEH exception and
+the process often hangs. A reserve/free loop with no map step reuses one address, so a
+short reproducer that skips the map will not show it. Code that sizes VA reservations
+generously (tens of GiB per cache) and recreates them dies after a few cycles: the test
+passes alone and fails on its Nth repeat or deep into a suite. `AMD_LOG_LEVEL=3` shows the
+climbing bases. Run such suites one gtest suite per process, with a per-test fallback, and
+treat it as a runtime defect, not a port bug. (LichtFeld-Studio)
 
 ## Windows: kernels on different streams run one after another
 
@@ -154,6 +184,14 @@ installed in that machine, so a pinned `HIP_VISIBLE_DEVICES=1` copied from older
 notes silently selects a different card, or none. Read the device list at the time
 you use it (`rocminfo`, `hipInfo`).
 
+`amd-smi` numbers GPUs in its own order, which need not be HIP's. On a four-W7800 host
+`HIP_VISIBLE_DEVICES=2` was amd-smi's GPU 0, the card another job was using, while amd-smi
+GPU 2 was HIP device 0. To pick an idle card, match by PCI address: print
+`hipDeviceGetPCIBusId` for each `HIP_VISIBLE_DEVICES=<i>`, compare with `amd-smi list`
+(BDF) and `amd-smi process`, and read that card's `/sys/class/drm/card*/device/`
+`gpu_busy_percent` / `mem_info_vram_used` (the sysfs card number is a third ordering).
+(LichtFeld-Studio)
+
 ## RCCL collectives need the whole multi-GPU host at once
 
 NCCL->RCCL is a mechanical swap (RCCL is API-compatible and ships in ROCm), but
@@ -193,6 +231,22 @@ went untested, and "the failures are isolated to X" describes what ran, not the
 port. Compare the assertion count against the CUDA build's, or filter the failing
 section out and watch whether the total moves. A deferral that makes a test case
 abort quietly defers the rest of the file with it. (marian-dev)
+
+## Failures that appear only when the whole suite runs in one process
+
+Two kinds show up on Linux and not on a host that runs one suite per process (as the
+Windows runners do), and neither is a port defect:
+
+- gtest death tests (`EXPECT_EXIT`, `EXPECT_DEATH`) under the default `fast` style
+  `fork()` without exec. Once an earlier test has initialized the HIP runtime, the child
+  can die with SIGSEGV before running the test body, even when the code under test is
+  CPU-only; gtest's "Death tests use fork() ... detected N threads" warning is the
+  sign. Rerun the test with `--gtest_death_test_style=threadsafe` (re-exec). If it
+  passes, the failure was the harness.
+- Tests that assume the state of a process-global allocator or cache: they pass alone
+  and fail after some unrelated earlier test. Run the test alone, then bisect the
+  suites that precede it with `--gtest_filter` to find the one that leaves the state
+  behind, and check that the port does not touch either file before you record it.
 
 ## One architecture gets wrong numbers while the others pass
 
@@ -235,6 +289,7 @@ Two patterns that each cost a deep investigation before the real cause was found
 
 - **A "data-dependent, later-data-corrupts-earlier, per-tile" corruption signature is the fingerprint of a REPRODUCER bug, not a codegen fault.** cuSZ chased a suspected miscompile to a BLOCKED state and an IR bisect; the actual cause was the test input -- `np.arange(..., dtype=float32) * (python float)` promotes to float64, so `.tofile()` wrote 8 bytes per element and the tool read the stream as f32. Validate the byte width and dtype of any binary test input before escalating to an ISA bisect or a ROCm bug report. (cuSZ)
 - **Triangulate single- against double-precision before blaming the wavefront.** When a warp-collective rewrite shows SP divergence, run a second GPU variant and compare both to the DP oracle. If both GPU variants diverge from DP identically at the same positions, and the DP path is bit-identical to the CPU oracle, it is floating-point reassociation at a comparison boundary -- not a wave-size fault. SCAMP used this to clear a ~0.5 divergence at 10/8093 positions as a threshold-boundary artifact. (SCAMP)
+- **A kernel that hangs only in a Debug build: rebuild Debug at `-O2` before blaming an assert or the port.** A Debug HIP build turns two things on at once, `-O0` device codegen and every `assert` (including HIP's own `__hip_check_mask` in the `*_sync` intrinsics). Configure a second Debug tree with `-DCMAKE_HIP_FLAGS_DEBUG="-O2 -g0"` (NDEBUG still unset). If the test passes there, the asserts are not what fires and the hang is `-O0` codegen; find the kernel with `AMD_SERIALIZE_KERNEL=3 AMD_LOG_LEVEL=3` (last launch that never completes) and the PC with the SDK's `rocgdb` after a SIGINT. Run a Debug suite one test per process with a timeout so one hang does not hide the rest. The asserts-on `-O2` tree is also the better Debug evidence for mask and wave64 checks. (LichtFeld-Studio)
 
 ## CUDA gate for torch-extension ports: the host's installed PyTorch itself can be the wall
 
@@ -245,6 +300,86 @@ On a host whose only installed PyTorch is a ROCm dev build (e.g. built from `/va
 
 Neither is a defect in the port: they are defects in the ambient PyTorch install, present identically whether you build the pristine upstream or the ROCm branch. Diagnose it as environmental by checking that the errors bottom out in `torch/headeronly`/`c10` (not the port's own files) and that `grep -n '__builtin_trap\|__trap\|__HIP\|hip[A-Z]\|amdgcn\|USE_ROCM'` over the port's own changed sources is empty. Do not chase this by patching the installed torch headers (that is fixing the environment, not the port). Record `cuda-not-validated: <the missing-header or duplicated-guard error>` and, if there is time budget left, substitute a source-level check: diff the port's CUDA-facing code (e.g. the non-ROCm branch of a dual-path file) against upstream and confirm it is byte-for-byte the same logic, only guarded differently -- that is as much passthrough evidence as a real nvcc pass would give without one. (FaithC, accelerated-scan)
 - **A cascading wall of SegFault/OOM/"no kernel image available" partway through a long serial suite can be one poisoned physical card, not a port defect -- check `rocm-smi --showpids` against `--showmeminfo vram` before concluding anything.** arrayfire on an 8x MI300X host: a full `ctest` run started clean, crashed (SegFault) on an early binary, and every binary after it degraded -- more SegFaults, a "no kernel image is available for execution on the device" (hipErrorNoBinaryForGpu) on a JIT op, then explicit "Device out of memory". `rocm-smi --showmeminfo vram` showed that GPU pinned near its full capacity; `rocm-smi --showpids` showed *no process attached to it at all*, including after `kill -9` of every test binary -- the VRAM was orphaned at the KFD/driver level, not held by a live allocator, and a process crash should not leak GPU memory past its own exit. Re-running the identical suite (fresh JIT disk cache) on a different, verified-idle card on the same host, same build, same commit, came back 131/132 clean with no crash, no OOM, and no "no kernel image" anywhere. The disagreement between the two `rocm-smi` views is the tell: if `--showmeminfo` says a card is nearly full but `--showpids` shows nothing on it, that card's state cannot be trusted for this session -- switch cards to disambiguate before spending time on the port. (arrayfire)
+
+## A torch build used only as a test oracle can break a build two different ways as it drifts
+
+When a project's own tensor/rasterizer/etc. library is libtorch-free and pulls in a ROCm
+PyTorch build purely as a parity-test oracle (`find_package(Torch)` in the test target
+only), that torch dependency is a moving target across sessions/hosts even though the
+port's own source did not change. Two independent fault shapes turned up on the same host,
+in the same build, from the same torch version bump (LichtFeld-Studio, torch `2.14.0a0`):
+
+- **Torch's vendored `fmt` shadows the system `fmt` any spdlog build expects.** Recent
+  PyTorch ships its own copy of `fmt` under `torch/include/fmt/` for its "stable ABI"
+  surface. `torch/include/fmt/core.h` is a small stub that, unless a project explicitly
+  opts in, includes only a reduced `base.h` -- but `torch/include/fmt/format.h` is the
+  REAL, full, current fmt (e.g. 12.x). Once `-isystem .../torch/include` is on a
+  translation unit's search path (added for the parity-oracle link), every `#include
+  <fmt/...>` in that TU -- including a completely unrelated `spdlog` header -- resolves to
+  torch's copy first, because a compiler's own implicit system directories (where the
+  distro's compatible `fmt`/`spdlog` actually live) are always searched last, after every
+  explicit `-I`/`-isystem`. If the distro's `libspdlog` was built against an older fmt API
+  (e.g. `fmt::basic_format_string`, renamed to `fmt::fstring` in fmt 12), the mismatch
+  surfaces as a template-not-found error inside `spdlog/common.h`, nothing about ROCm/HIP
+  at all. Confirm by swapping compilers (a different, unrelated compiler hitting the exact
+  same error rules out a compiler-version quirk) and by checking whether `torch/include/
+  fmt/format.h` exists and reports a newer `FMT_VERSION` than the system's `fmt/core.h`.
+  Fix without touching the fork: build `spdlog` from source with `-DSPDLOG_FMT_EXTERNAL=OFF`
+  (bundles spdlog's own matched fmt copy) and point `spdlog_DIR` at that install -- the same
+  "vendor a known-good copy locally" pattern already used for pinned `glm`/header-only deps.
+  Pick the spdlog version by the fmt it bundles, not by whatever is newest in the distro:
+  bundled fmt 10.x and older hit `call to consteval function 'fmt::basic_format_string<...>'
+  is not a constant expression` from `FMT_STRING` under a recent Clang (seen with a ROCm SDK
+  carrying an LLVM 23 dev snapshot), which is a second, unrelated failure that looks like the
+  first one and reproduces with no torch include at all. spdlog 1.14.1 bundles fmt 10.2.1 and
+  fails; spdlog 1.15.3 bundles fmt 11.x and is clean. Triage both symptoms in a second with
+  `clang++ -std=c++20 -fsyntax-only -I<spdlog>/include` on a two-line TU calling
+  `spdlog::info("{:.6e}", f)`, instead of rebuilding the project to find out.
+- **A libtorch `c10/cuda/*.h` header a project's compat layer already aliases for can grow
+  new symbols the alias list has not caught up to.** A CUDA-graph-capture/user-object-retain
+  helper added to `c10/cuda/CUDAGraphsC10Utils.h` in a newer torch build referenced
+  `cudaGraph_t`/`cudaHostFn_t`/`cudaUserObject_t`/`cudaUserObjectNoDestructorSync`/
+  `cudaGraphUserObjectMove`/`cudaUserObjectRelease`/`cudaStreamGetCaptureInfo_v2` literally
+  (this header is never hipified for a plain CMake consumer -- torch only hipifies at
+  `CUDAExtension` build time), while the project's own compat header already aliased
+  *other* symbols from the very same file (`cudaStreamCaptureMode`, `cudaStreamBeginCapture`,
+  ...) -- proof the aliasing strategy is right and the coverage merely fell behind a torch
+  version bump. This is a real, small, escalatable gap (confirm every missing symbol has a
+  `hip*` equivalent in the installed HIP runtime headers before reporting it, so the fix is
+  known to be "add N aliases", not an open-ended investigation), and it is not something to
+  route around with an older pinned torch -- an older torch only hides the gap for one host's
+  one session; the same coverage will fall behind again on the next torch refresh. Send it
+  back to the porter with the exact symbol list and confirmed HIP counterparts.
+  **Treat the compiler's error list as a lower bound and alias the whole helper, not just the
+  names it printed.** Two independent mechanisms hide a missing alias, and only one of them is
+  the familiar template one. (a) Clang drops the undeclared-callee diagnostic when one of the
+  call's arguments is an *error-typed expression*. A variable declared with a missing type name
+  is error-typed only when clang cannot recover its declaration, i.e. when that type name has no
+  typo-correction candidate; most missing `cuda*` type names DO have one and clang then reports
+  the callee normally -- so **a type name clang does not correct** (here `cudaGraph_t`, printed
+  with no "did you mean") **masks every missing function alias in each call passing a value of
+  that type**, and those function names appear only in a second wave, after the type aliases are
+  added. What pins that to correctability rather than to the argument being a type: `#undef`-ing
+  a type whose name typo-corrects leaves the callee reported, redefining that same type to an
+  uncorrectable spelling suppresses both callees, and redefining `cudaGraph_t` to a correctable
+  spelling brings its callee back -- flip only the correctability and the suppression flips with
+  it, in both directions. In that header the unaliased `cudaGraph_t` hid
+  both `cudaGraphRetainUserObject(graph, ...)` -- whose arguments are all non-dependent, so
+  ordinary lookup would have rejected it at template-definition time -- and
+  `cudaStreamGetCaptureInfo_v2(..., &graph, ...)`, whose argument list contains no undeclared
+  name at all. An argument that is merely an undeclared *identifier* does not suppress the
+  callee when clang can typo-correct it (`cudaGraphUserObjectMove` -> "did you mean
+  'hipGraphUserObjectMove'?", and the call around it is still reported), so do not reason about
+  this from a synthetic reproducer whose undeclared name has no correction candidate; measure
+  on the real header with the probe below. (b) A call whose arguments *are* dependent is
+  looked up only at instantiation, so inside a template nobody instantiates it produces no
+  error at all while the helper is merely parsed (`cudaUserObjectCreate(&obj, data.get(), ...)`
+  on a `std::unique_ptr<T>`). Either way, covering the parameter types alone leaves the body
+  half translated. Check rather than reason about it: syntax-only compile the real torch header
+  behind the compat header, `#undef`-ing one alias at a time. Removal that still gives rc 0
+  means that name is diagnosed only at instantiation; removal that errors means it is required
+  at parse time, and if it was still absent from the original error list, something else in the
+  same call masked it. (LichtFeld-Studio)
 
 ## HIP + C++23 on an older toolchain: `isfinite cannot overload` (and how to stay forward-compatible)
 
@@ -325,6 +460,26 @@ Nothing here is guarded on Windows. MSVC's STL is merely the first to implement 
 ROCm/llvm-project#285 notes that libstdc++ doing so will break Linux identically. A
 `WIN32`-only guard, or a ROCm version check, would miss that. Probe for the capability.
 
+## A rate-limited host can still get a usable fork clone: filter the blobs, sparse the tree
+
+Some hosts have GitHub blob traffic throttled hard enough that a full clone of a large repo is not survivable inside a stop-discipline budget (measured at roughly 1-3 MB/min for a ~110 MB repo, so more than half an hour before anything is readable). A lazy promisor checkout of the whole tree is no better -- it re-fetches per file and stalls part way through. But history and trees are cheap: a blob-filtered clone with the working tree narrowed to the files you actually need is seconds, not minutes.
+
+```
+git clone --filter=blob:none --no-checkout --branch <port-branch> <fork> <dest>
+git -C <dest> sparse-checkout init --no-cone
+git -C <dest> sparse-checkout set '/docs/*.md' '/*.md'    # the paths this round edits
+git -C <dest> checkout <port-branch>
+git -C <dest> branch master origin/master                 # or the fork's default branch
+```
+
+Why each line matters:
+
+- `--filter=blob:none` fetches every commit and tree but no file contents, so the diff, log, and `git ls-tree` all work immediately. `git show <ref>:<path>` then pulls single blobs on demand -- enough to read a handful of build files without ever checking them out.
+- Files outside the sparse set carry `skip-worktree`, so `git status --porcelain` stays clean and the integrity gate reads correctly rather than reporting the rest of the tree as deleted.
+- The last line is not optional for MOAT tooling: `jargon.py --port` resolves `<default>..<port-branch>` and fails with "cannot resolve" on a clone that has only the remote-tracking ref.
+
+This is a docs, diff, and review checkout, not a build checkout -- a compile needs the whole tree and there is no way around paying for it. Use it for a documentation-only porter round, a reviewer reading a delta, or a validator verifying that a delta is confined to another platform's guards. (LichtFeld-Studio)
+
 ## `jargon.py --port` alone misses an in-flight fix round
 
 `utils/jargon.py --port <name>` resolves its range from `obj.get("fork_branch") or
@@ -340,6 +495,13 @@ clone of the fork usually has no local `main`, and `scan_commits`/`scan_diff` (u
 instead of erroring -- so an unfetched `main` produces a false "clean", not a crash. Fetch
 it first (`git fetch --depth 50 origin main:main`) and confirm the range resolves to a
 nonzero commit count before trusting a "clean" result. (mahout)
+
+The opposite false alarm happens after an upstream sync: the scan's base is the clone's
+local default branch, and if that branch still points at the old mirror tip, every
+upstream commit the merge brought in is scanned as if it were the port's, and upstream's
+own wording ("Strategy B", "revalidate", "COLMAP model") is reported. Fast-forward the local
+default branch to the fetched upstream (`git branch -f master origin/master`) before
+scanning. (LichtFeld-Studio)
 
 ## A cached build-script decision from a wrong env var survives fixing the env var
 
@@ -358,3 +520,56 @@ the right env) before rebuilding. Generalizes beyond ROCm: always check `env | g
 from a different host generation -- ROCm/CUDA install layouts (`/opt/rocm` vs a
 TheRock/pip `_rocm_sdk_devel` tree vs a conda env) are not portable between hosts even
 within the same fleet. (mahout)
+
+## Headless Vulkan on a Linux GPU host: Xvfb plus Mesa's software WSI
+
+A Vulkan app or test that needs a window can run on a headless RDNA host under `xvfb-run`,
+but Xvfb has no DRI3, so RADV reports no presentation support and the app silently picks
+llvmpipe (which lacks external memory/semaphore interop and skips the interop tests).
+`export MESA_VK_WSI_DEBUG=sw VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json` lets
+RADV present through Mesa's software path and hides llvmpipe; the GPU still does all the
+rendering and interop. Screenshots come from `xwd -root -display :N`. (LichtFeld-Studio)
+
+
+## HIP and Vulkan in one process can oops the kernel on an old amdgpu-dkms
+
+A process that runs both HIP and RADV shares one amdgpu VM (libdrm hands both the same device
+file), and once KFD owns that VM it is a compute VM. amdgpu-dkms 6.16.13 dereferences a NULL
+`bo_va` in `amdgpu_gem_va_ioctl` when the Vulkan driver sends `AMDGPU_VA_OP_CLEAR` in a compute
+VM: `BUG: kernel NULL pointer dereference, address: 0000000000000038`, `RIP:
+amdgpu_gem_va_ioctl+0x731`. From user space it looks like a GPU hang: an iteration counter
+stops, the process sits in D state on kill, and every later `open("/dev/kfd")` on every GPU in
+the host blocks in `kfd_create_process -> __flush_workqueue`. `amd-smi reset` does not clear
+it; only a reboot does. amdgpu-dkms 6.19.14 has the guard (`if (bo_va &&
+bo_va->last_pt_update)`). A HIP-only or Vulkan-only process never reaches it, so a headless
+run passing proves nothing about the interop path. Check `cat /sys/module/amdgpu/version`
+before running any HIP+Vulkan interop app, and do not debug the port for this symptom on an
+older driver. (LichtFeld-Studio: GUI training crashed twice at 6.16.13; on 6.19.14 the same
+binary trained 5000 iterations cleanly.)
+
+## rocDecode frames wrong on one architecture: swap the VA driver before blaming the port
+
+rocDecode decodes through VA-API, and a TheRock SDK loads its own bundled Mesa VA driver
+(`<SDK>/lib/rocm_sysdeps/lib/radeonsi_drv_video.so`), not the distribution's. On gfx90a
+with SDK 10.1.0 (bundled "Mesa Gallium 26.3.0-devel", amdgpu-dkms 6.16.6) every H.264,
+HEVC and VP9 frame came back wrong in nearly every byte while `rocDecGetDecodeStatus`
+said success; gfx1100 with the same SDK was bit-exact. Three checks split it, each on
+valid streams only: `strace -f -e trace=openat` shows which render node and which
+`*_drv_video.so` the process opens (a wrong card is the other suspect); rerun the same
+test binary with `LIBVA_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/dri` (the distribution's
+Mesa; the bundled libva loads it), which was bit-exact; and decode the clip with the
+system `ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD<n>
+-hwaccel_output_format vaapi -vf hwdownload,format=nv12` against a software decode,
+which proves the video engine itself. When comparing against software decode, compare
+luma only or keep the source's pixel format: `-pix_fmt nv12` on a full-range stream
+rescales the range and makes a correct decode look wrong. (LichtFeld-Studio)
+
+## A free-memory-delta test can fail once per process on gfx90a
+
+HIP keeps device memory from some first uses for the life of the process. On gfx90a a
+plain program's first pageable 100 MiB `hipMemcpy` round trip took 150 MiB of
+`hipMemGetInfo` free memory for good, and later round trips took none. A test that reads
+free memory before an allocation and asserts it comes back afterwards can then fail by a
+fixed amount on its first run in a process and pass on repeats. Check with
+`--gtest_repeat=3` in one process before calling it a leak: a leak grows each
+repetition, a first-use cost appears once. (LichtFeld-Studio)
