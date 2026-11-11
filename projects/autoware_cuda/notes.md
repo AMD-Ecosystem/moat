@@ -65,3 +65,7 @@ Linux-only ROS 2 packages; the `windows` gate cannot reasonably be satisfied, an
 ### Recommendation
 
 Fork. Apache-2.0, no duplicate effort, and the shared base every GPU package in the full-scope autoware_universe ruling needs. `autoware_cuda_utils` is a small mechanical HIP port (first unit, unblocks the pure-CUDA autoware_universe packages); `autoware_tensorrt_common` needs a MIGraphX engine layer whose API must be designed jointly with the autoware_universe consumers (second unit).
+
+## Windows waiver (2026-11-11)
+
+Jeff Daily approved the suggested `windows` waiver (Linux-only ROS 2 package), with the same ruling as autoware_universe.

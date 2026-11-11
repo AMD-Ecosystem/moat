@@ -8,14 +8,16 @@
   "ext_type": "unknown",
   "stage": "awaiting-fork",
   "adopted_at": "2026-11-11T18:07:23Z",
-  "updated_at": "2026-11-11T18:21:33Z",
+  "updated_at": "2026-11-11T18:55:46Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {
     "windows": {
       "reason": "Linux-only ROS 2 packages (ament/colcon, rclcpp, autoware_cmake, Ubuntu-targeted Autoware stack); no ROS 2 Autoware toolchain on Windows. Same ground as the windows waiver Jeff Daily approved for autoware_universe, whose hard dependency this is.",
-      "suggested_at": "2026-11-11T18:21:26Z"
+      "suggested_at": "2026-11-11T18:21:26Z",
+      "approved_by": "Jeff Daily",
+      "at": "2026-11-11T18:55:46Z"
     }
   },
   "platforms": {
