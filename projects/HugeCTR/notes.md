@@ -56,3 +56,7 @@ Question for jeff: Does an AMD-supported alternative stack for the same workload
 ## Take-up ruling (2026-11-11)
 
 Jeff Daily ruled that HugeCTR needs a canonical home in AMD-Ecosystem, overriding intake's decline (already-supported: TorchRec + FBGEMM_GPU on ROCm cover the workload). The project is recorded as a take-up (`set-intake HugeCTR fork`) with `depends_on: HierarchicalKV`, its hard build dependency, which has no AMD port and is screened as its own MOAT project (claimed and in intake 2026-11-11; the Hygon DCU port is not to be used as a base). State `awaiting-fork`: a person creates AMD-Ecosystem/HugeCTR; the selector will not start it before HierarchicalKV is done.
+
+## Licence rescan (2026-11-11)
+
+Fixed `licenses.py scan-nvidia` (pure Python; the earlier grep scan on the Windows host could report false cleans) on a shallow clone with submodules: the `third_party/cuml` submodule (pinned cuML 4323a5d) carries 4 files marked "CONFIDENTIAL to NVIDIA ... under the terms of a form of NVIDIA software license agreement": `cpp/src/knn/knn_classify_mg.cu`, `knn_opg_common.cu`, `knn_opg_common.cuh`, `knn_regress_mg.cu`, compiled by cuML's own CMake (multi-GPU KNN). For the planner: establish whether HugeCTR's build uses that submodule (and those targets) at all; the port must not modify, hipify or derive from those files, and should exclude them from any ROCm build. HugeCTR's own tree scanned clean.
