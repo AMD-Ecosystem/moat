@@ -6,12 +6,58 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-11T18:07:23Z",
-  "updated_at": "2026-11-11T18:07:25Z",
+  "updated_at": "2026-11-11T18:21:33Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
-  "waivers": {},
-  "platforms": {}
+  "waivers": {
+    "windows": {
+      "reason": "Linux-only ROS 2 packages (ament/colcon, rclcpp, autoware_cmake, Ubuntu-targeted Autoware stack); no ROS 2 Autoware toolchain on Windows. Same ground as the windows waiver Jeff Daily approved for autoware_universe, whose hard dependency this is.",
+      "suggested_at": "2026-11-11T18:21:26Z"
+    }
+  },
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-11T18:21:33Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/autowarefoundation/autoware_cuda/blob/main/LICENSE",
+      "at": "2026-11-11T18:21:14Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none",
+    "viable": true,
+    "summary": "Autoware shared CUDA/TensorRT base: cuda_utils is a small mechanical HIP+rocThrust port; tensorrt_common needs a new MIGraphX engine layer (ONNX/cache/fp16/int8/dyn shapes) whose API must match autoware_universe consumers",
+    "at": "2026-11-11T18:21:19Z"
+  }
 }
