@@ -96,6 +96,7 @@ Scan this list against what you are doing. If any line could apply, open
 - clang(HIP) defaults to `-ffp-contract=fast` and forms FMAs ACROSS expressions; nvcc contracts expression-only.
 - Exact float-equality branches fed by `__fdividef` produce out-of-range indices.
 - HIP device `cuda::min`/`max` NaN-selection can differ from host `std::min`/`max`.
+- HIP host `min`/`max` in `.cu` files exist only for `(int, int)`: float arguments silently truncate. Fix the call sites with `fmin`/`fmax`; the macro is ROCm >= 7.2 only and defaults off.
 
 **Headers, includes and build**
 - A shared compat header must be host-includable: gate device-only includes behind `__CUDACC__`/`__HIPCC__`, or CUB leaks into host TUs. Hit independently by two projects.

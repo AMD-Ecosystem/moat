@@ -264,6 +264,16 @@ hardware linear filtering has no CDNA3 hardware path at all and needs the softwa
 fallback below unconditionally on gfx94x+. (arrayfire: `fast.cu`/`orb.cu`/`regions.cu` FAST/
 ORB/connected-components kernels, all plain LUT point-lookups with no filtering, on MI300X.)
 
+A project that reads EVERYTHING through texture objects, with address modes, needs more than a pointer swap, but the emulation is still exact when no binding relies on hardware filtering (LEAP: its HIP port already created every texture point-mode and blended corners in software, so every fetch was a point fetch). Keep the handle type and every kernel signature: on an image-less GPU have the texture loader cudaMalloc one buffer holding a small header (extents, address mode) followed by the dense data, and return that buffer as the `hipTextureObject_t` (and as the `hipArray*` the call sites free). The device accessor applies the address mode in float before converting to an index (clamp: `fminf/fmaxf` to `[0, n-1]`; border: any axis outside `[0, n)` returns 0), reads `floor(c)` for a point fetch, and maps a non-finite coordinate to a finite one. Casting the header and data pointers to `__attribute__((address_space(4)))` (read-only constant) lets the compiler hoist the header into one `s_load_dwordx4` per kernel instead of reloading it around stores.
+
+Measured on gfx90a (MI250X) against the point-mode texture build, LEAP: the emulation is exact (every forward, back and FBP output and every point-sampled kernel bit-identical, including point fetches at fractional coordinates, so the AMD sampler does not quantize where `floor` does not; the only differences were FMA-contraction ULPs, rel ~1e-7, from inlining different code), but 2-3x SLOWER where it feeds software trilinear blends (projection 3.0-3.3x, backprojection 1.8-2.5x): eight bounds-checked row-major loads replace eight `image_sample`s against a tiled image. A lone point read costs about what a hardware point fetch does. So unlike the LUT case above, do not apply it unconditionally. Use a dual path:
+- Device: select the buffer accessor under `#if __HIP_NO_IMAGE_SUPPORT`, which ROCm's `amd_device_functions.h` defines per target in the device pass (gfx942/gfx950, via `__gfx94plus_clr__`); every other target keeps the texture helpers byte-for-byte. A fat binary then carries the right code for each arch.
+- Host: the loader picks the allocation at run time from `hipDeviceAttributeImageSupport` of the current device. Make a mismatch impossible, not just unlikely: define a `__device__ int` in the loader's translation unit whose initializer is chosen by the same `#if`, read it with `hipMemcpyFromSymbol` (that returns the value from the code object loaded for THIS device), and refuse to create a handle if it disagrees with the attribute. Cache the answer per device.
+- Free/destroy: keep the call sites by redirecting `cudaFreeArray` and `cudaDestroyTextureObject` (CUDA spelling, so hipify renames them too) as FUNCTION-LIKE macros, so the helper can still call the runtime function as `(cudaFreeArray)(a)`. Dispatch on a host registry of live buffers, and free a buffer only when both halves of its free/destroy pair have been released: call sites typically free the array before destroying the handle, and freeing at the first call would let a new texture object reuse the address before the second.
+To test the image-less path on a texture-capable GPU, build a throwaway copy with `__HIP_NO_IMAGE_SUPPORT` forced to 1 and the attribute forced to 0; forcing only the device side must hit the refusal. (LEAP.)
+
+**A global-memory texture replacement must COPY the source, never alias it.** Creating a texture from a device buffer copies it into a `cudaArray`, so callers treat the texture as a snapshot: they free the source right after the load, or reuse it as the output of the kernel that samples the texture. A fallback that stores the caller's pointer to save the copy turns those callers into use-after-free (a memory fault, and a dead context that zeroes every later call in the process) or into a kernel reading its own output (a silent wrong answer). Copy device-to-device into a buffer the handle owns and free it with the handle; the copy cost 0-2.5% of a projection or backprojection on an MI300X. Audit for it by grepping each loader call for a `cudaFree`/`setToConstant`/output alias of the source before the matching free. Because a fault kills the context, a test script that runs many cases can attribute the zeros or unchanged outputs of LATER cases to the wrong cause; check the first failing case. (LEAP: upstream's `__USE_NOTEX` sampler aliased in the device-pointer `loadTexture`; `consistency_cost` returned 0 and attenuated backprojection faulted on gfx942.)
+
 Two things make that replacement cheap to get right. A pre-existing non-texture path for a
 type textures cannot carry (CUDA has no `double` texture, so such kernels usually already
 have a `double` specialization reading the pointer directly) is proof the algorithm is
@@ -368,6 +378,47 @@ Host `std::min(a,b)` is `b<a?b:a` and `std::max(a,b)` is `a<b?b:a`; a device ver
 bytes and comparing host gold against device output differ bit-for-bit. Spell the device
 ternaries to match the host forms exactly. (CV-CUDA: OpMorphology CLOSE on RGBAf32.)
 
+**Host `min`/`max` on floating-point values truncate to int under hipcc.** CUDA declares
+host `min`/`max` for int, unsigned, long, long long, float and double. HIP's
+`__clang_hip_math.h` declares only `min`/`max(int, int)` on the host. So host code in a
+`.cu` file such as `max(0.25, min(100.0, fwhm))` or `max(atan(a), atan(b))` compiles
+cleanly, converts both arguments to int and returns an int. Device code is unaffected,
+because the device overloads cover float and double. Expect parameters silently rounded
+down, a value below 1 clamped to 0, and geometry decisions taken on a zero angle. The only
+build symptom is `-Wliteral-conversion` on fractional literals ("changes value from 0.25
+to 0"), and only when a literal is involved. Detection: add
+`-D__HIP_NO_HOST_MIN_MAX_IN_GLOBAL_NAMESPACE__ -include poison.h` to the real hipcc
+command with `--cuda-host-only -fsyntax-only`. `poison.h` redefines the default pair with
+`__attribute__((diagnose_if(true, "HOSTMINMAX", "warning")))`, so every host call that
+lands on `(int, int)` is reported with its location. Define CUDA's full overload set the
+same way, each overload naming its own signature, to see which calls really take floating
+point. Use `diagnose_if`, not `deprecated`: a `deprecated` version missed LEAP's two
+`ramp_filter.cu` sites (cause not traced). Fix: change the call sites to what CUDA's
+overload calls. `crt/math_functions.hpp` implements `min`/`max(double, double)` and the
+mixed float/double forms with `fmin`/`fmax`, and `(float, float)` with `fminf`/`fmaxf`.
+Cast a float argument to double where CUDA took a mixed overload, e.g.
+`fmax(0.25, fmin(100.0, double(fwhm)))`. That keeps CUDA's results, NaN handling included,
+on every ROCm and on CUDA, without an `#ifdef`. Leave int calls alone. Do NOT rely on
+`-D__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__=1`. That macro adds the floating-point host
+overloads only from ROCm 7.2.0 (LLVM 0248d277ca), defaults to 0, and does not exist in
+7.1.x and earlier, where the define silently does nothing and the truncation stays. Rerun
+the detection pass with no define: no host call may still land on `(int, int)` with
+non-int arguments. Then confirm that the device code objects did not change (`.text`/`.rodata`
+of the unbundled `.hip_fatbin`; the `__hip_cuid_*` names change with path and flags).
+(LEAP: bilateral FWHMs truncated, intensity FWHM < 1 gave the identity; the modular-beam
+Joseph backprojector chose its parallel kernel for cone data, failing adjointness and FBP;
+the FBPlowpass window zeroed all but DC.) `std::min`/`std::max` are NOT safe either once a
+hipify pass has run: hipify_torch (and torch's hipify, same table) rewrites them to
+`::min`/`::max`, which land on the same `(int, int)` host pair, so a correct
+`std::min(float, float)` in CUDA source truncates in the hipified copy. Run the detection
+on the hipified sources, not the originals. When a build compiles host `.cpp` files as
+HIP too, those files are in scope, but unqualified calls there usually bind to `std::min`
+through `using namespace std` (a template exact match beats the int pair); to tell a real
+truncation from that, report only calls that land on `(int, int)` with ROCm's default
+pair AND on a non-int overload with CUDA's full set. (LEAP version two: 27 sites, 10 of
+them new, including `1.0 / max(fabs(v_min), fabs(v_max))` dividing by zero in the cone
+geometry setup.)
+
 ## Headers, includes and build
 
 **A shared compat header must be host-includable.** Host `.cpp` TUs reach the shim through
@@ -396,6 +447,77 @@ a member template whose parameter pack shadowed the class pack -- accepted by MS
 by Clang and GCC. Expect missing `typename`/`template` disambiguators, two-phase lookup
 failures and narrowing conversions. Fixes are additive and arch-independent, so they help
 the CUDA build too and are not HIP-specific hacks. (Velvet)
+
+**CMake `LANGUAGE HIP` on host `.cpp` files drops OpenMP.** `OpenMP::OpenMP_CXX` adds
+`-fopenmp` through `$<$<COMPILE_LANGUAGE:CXX>:...>` and links the host compiler's runtime
+(libgomp for g++). A build that sets every source to `LANGUAGE HIP` therefore compiles its
+CPU code without OpenMP: `#pragma omp` loops run serially with no warning, and code that
+mixes OpenMP runtime calls with the pragmas can misbehave (LEAP's `downSample_cpu` aborted
+with `free(): invalid pointer`; the same code built by g++ ran). Passing `-fopenmp` for HIP
+alone while still linking `OpenMP::OpenMP_CXX` fails at load time (`undefined symbol:
+__kmpc_fork_call`: clang emits libomp calls, the link brought libgomp).
+`find_package(OpenMP COMPONENTS HIP)` failed to find flags with the TheRock SDK and CMake
+3.31. What worked: `target_compile_options(t PRIVATE $<$<COMPILE_LANGUAGE:HIP>:-fopenmp>)`,
+`target_link_options(t PRIVATE -fopenmp)`, and no `OpenMP::OpenMP_CXX` on the HIP target;
+clang links its own libomp and adds a runpath to it. Check with `grep -c fopenmp
+compile_commands.json` and `ldd` on the library. (LEAP version two.)
+
+**An all-clang Windows HIP build hides three CMake/export faults that MSVC builds never
+hit.** (1) `WIN32`-guarded export macros (`#ifdef WIN32` + `#ifdef PROJECTOR_EXPORTS` ->
+`__declspec(dllexport)`) export NOTHING: clang predefines `_WIN32`, not `WIN32` (`WIN32` is
+CMake's `/DWIN32` in `Platform/Windows-MSVC.cmake` `CMAKE_<LANG>_FLAGS_INIT`, the MSVC-syntax
+flag `clang++ -x hip` rejects, so a build that works around that gap loses it), and where a
+header does pick `dllimport`, clang drops it on the definition instead of exporting as MSVC
+does. The DLL links fine and `ctypes` fails at the first symbol; check `dumpbin /exports` (and
+a ~1 KB import lib). Fix: `if (WIN32 AND <hip build>) target_compile_definitions(t PRIVATE
+WIN32 <X>_EXPORTS)`; defining `WIN32` also switches every other `#ifdef WIN32` path in the
+sources, so run the tests on that build. (2) The vendored `hipify_torch` `cmake/Hipify.cmake`
+(still so upstream in ROCm/hipify_torch at 1ea3231) runs `hipify_cli.py` and
+`replace_cuda_with_hip_files.py` as the `execute_process` program, relying on the shebang:
+on Windows that fails ("Failed to hipify files!"); prefix `${Python3_EXECUTABLE}` from
+`find_package(Python3 COMPONENTS Interpreter)`. (3) `get_hipified_list` returns native
+backslash paths; fed to `file(GLOB_RECURSE)` they glob from the drive root and configure
+runs for many minutes -- normalise each element with `file(TO_CMAKE_PATH)`. (LEAP, windows)
+
+**CMake's HIP language on Windows only works when every C/C++ compiler is ROCm's GNU-style
+`clang++`; make the project choose it, do not document a workaround.** `Platform/Windows-Clang.cmake`
+is include-guarded and picks MSVC-style or GNU-style rules for ALL languages from whichever
+language includes it first (MSVC-style if any language's frontend variant is MSVC). So with
+cl.exe as CXX, `enable_language(HIP)` dies with "mixes Clang and MSVC" (`check_language(HIP)`
+cannot report this: it probes in a separate HIP-only project, so a "no HIP compiler" message
+after it means the probe found no `clang++`); with clang-cl in `project(... CXX HIP)` it dies
+with "mixed frontend variants"; and with clang-cl in `project(... CXX)` followed by a later
+`enable_language(HIP)` the check is skipped and HIP gets cl-style flags that `clang++` rejects
+in CMakeTestHIPCompiler (4.4.4: `/DWIN32 /D_WINDOWS /Ob0 /Od /RTC1` on the compile; 3.31.0:
+`/machine:x64` on the link). Fix inside the project, before `project()`, guarded by
+`CMAKE_HOST_WIN32` and the HIP option: find the HIP `clang++` (`HIPCXX`, else `hipconfig
+--hipclangpath` with `HIP_PATH`/`ROCM_PATH`/the Python interpreter's directory as hints -- a
+pip-installed ROCm SDK puts `hipconfig.exe` in the venv `Scripts`) and set `CMAKE_CXX_COMPILER`
+to it unless the user gave one. Three more Windows gaps travel with it: CMake picks the
+default `CMAKE_HIP_ARCHITECTURES` with `rocm_agent_enumerator`, which ROCm does not ship on
+Windows, and silently falls back to gfx906 (run `amdgpu-arch` from the clang directory
+instead); `find_package(hip)` needs `CMAKE_HIP_COMPILER_ROCM_ROOT` on `CMAKE_PREFIX_PATH`
+(there is no `/opt/rocm/bin` on PATH to derive it from); and CMake before 3.29 links a Windows
+HIP DLL without `-shared` (`lld-link: error: subsystem must be defined`; 3.28.4 fails, 3.29.2
+works). Outside a Visual Studio developer prompt three more fail, and the documented command
+should still work there: CMake enables RC for Windows `clang++` and finds `rc.exe` only on
+PATH (take the newest from the Windows SDK, `KitsRoot10` in the registry, `bin/10.*/x64`);
+FindOpenMP finds `libomp.lib` for Windows `clang++` only through the prompt's `LIB` (preset
+`OpenMP_CXX_FLAGS=-fopenmp`, `OpenMP_CXX_LIB_NAMES=""` when every source is HIP and linked with
+`-fopenmp`, which adds libomp itself); and pip's isolated build sets `PYTHONPATH` to a
+sitecustomize that hides the environment's own site-packages, so a pip-installed ROCm SDK's
+`hipconfig.exe` in that same environment prints nothing (`unset(ENV{PYTHONPATH})` in the
+Windows HIP configure; CMake and hipify call hipconfig too, and hipify then misreads the ROCm
+version). scikit-build-core picks a Visual Studio generator on Windows, which has no HIP
+support. Do not use a `[[tool.scikit-build.overrides]]` with `if.failed = true` to retry with
+Ninja: any `if.failed` override makes scikit-build-core withdraw its
+`prepare_metadata_for_build_*` hooks on every platform (pip then compiles during "Preparing
+metadata" and metadata-only queries build the library), and a failing Windows CUDA or CPU build
+is retried with Ninja. Instead use a small in-tree PEP 517 backend (`build-backend` +
+`backend-path`) that re-exports `scikit_build_core.build` and, only on Windows with the HIP
+option set and no generator chosen, appends `-GNinja` to `CMAKE_ARGS` in the `get_requires_*`
+and `build_*` hooks; scikit-build-core (1.0 through 1.1.2) then also lists `ninja` as a build
+requirement when Ninja is missing, and every other build is untouched. (LEAP, windows-gfx1151)
 
 ## Types, dispatch and platform limits
 
