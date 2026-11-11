@@ -735,17 +735,27 @@ broken build. (aihwkit, MMseqs2)
 **External memory ports 1:1; external semaphores do not.** `hipImportExternalMemory` with
 OPAQUE_FD/OPAQUE_WIN32, `hipExternalMemoryGetMappedMipmappedArray` + surface objects, and
 mapped buffers round-trip Vulkan data bit-exactly (RDNA3 Linux and Windows). Semaphores:
-`hipImportExternalSemaphore` rejects the timeline handle types in a front-end range check on
-both OSes; on Windows a timeline VkSemaphore exported OPAQUE_WIN32 imports as
-`hipExternalSemaphoreHandleTypeOpaqueWin32` and keeps timeline semantics; on Linux nothing
-imports (binary OPAQUE_FD returns not-supported down to the KFD). Order on the host there:
-import the fd into a second VkSemaphore on the app's device, wait = `vkWaitSemaphores`
-before enqueueing HIP work, signal = `hipStreamSynchronize` then `vkSignalSemaphore`. Routing
-the four `cuda*ExternalSemaphore*` calls to such an implementation from the compat header
-leaves every call site untouched. A blocking host wait deadlocks if the Vulkan submit that
-signals the value comes later on the same thread, so check submission order at each wait
-and put a timeout on the host wait. HIP has no `cudaDevAttrTimelineSemaphoreInteropSupported`.
-(LichtFeld-Studio, from the interop spikes)
+`hipImportExternalSemaphore` rejects the timeline handle types (`TimelineSemaphoreFd`,
+`TimelineSemaphoreWin32`) in a front-end range check on both OSes, and on Linux nothing
+imports at all (binary OPAQUE_FD returns not-supported down to the KFD). On Windows, do not
+import a timeline VkSemaphore as `hipExternalSemaphoreHandleTypeOpaqueWin32`: the import
+succeeds and a single wait/signal honors values, but with several values in flight it has
+been reported to let HIP read a buffer before Vulkan finished writing it (gfx1102, about 1
+run in 25, stale data and no error; ROCm/hip#3909). 500 queued bounces on gfx1151 did not
+reproduce it, so a short passing test proves nothing. Order on the host on both OSes: import
+the exported handle into a second timeline VkSemaphore on the app's device
+(`vkImportSemaphoreFdKHR`, or `vkImportSemaphoreWin32HandleKHR` with OPAQUE_WIN32, which
+leaves the NT handle with the caller), wait = `vkWaitSemaphores` before enqueueing HIP work,
+signal = `hipStreamSynchronize` then `vkSignalSemaphore`. Routing the four
+`cuda*ExternalSemaphore*` calls to such an implementation from the compat header leaves every
+call site untouched. A blocking host wait deadlocks if the Vulkan submit that signals the
+value comes later on the same thread, so check submission order at each wait and put a
+timeout on the host wait. If host ordering costs too much on Windows, a GPU-ordered route
+has been reported stable but is untested here: create the fence in D3D12 (`CreateFence` +
+`CreateSharedHandle`; Vulkan cannot export one) and import it into HIP as
+`hipExternalSemaphoreHandleTypeD3D12Fence` and into Vulkan with `D3D12_FENCE_BIT`. HIP has no
+`cudaDevAttrTimelineSemaphoreInteropSupported`. (LichtFeld-Studio, from the interop spikes
+and the ROCm/hip#3909 report)
 
 **HIP VMM memory exported to Vulkan works on Linux.** `hipMemCreate` with
 `hipMemHandleTypePosixFileDescriptor` + `hipMemExportToShareableHandle` gives an fd that RADV

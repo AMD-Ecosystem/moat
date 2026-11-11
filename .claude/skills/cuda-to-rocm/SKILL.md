@@ -121,6 +121,7 @@ Scan this list against what you are doing. If any line could apply, open
 - Runtime PTX + CUDA Driver API is a third build class beyond A and B.
 - MSVC-only upstreams accept code gcc/clang reject; the HIP build is a stricter compiler.
 - No graphics pipeline on compute-only CDNA: OpenGL/Vulkan-interop apps build but cannot run on gfx90a.
+- Vulkan timeline semaphores do not import into HIP on either OS, and the Windows OpaqueWin32 import can silently miss a wait: order on the host.
 - An arch-specific fix keyed on OS or ROCm version can BREAK an already-validated arch.
 
 Two diagnostic methods in `references/validation.md` are worth knowing before you escalate a
