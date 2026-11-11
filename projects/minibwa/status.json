@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-11T20:57:48Z",
-  "updated_at": "2026-11-11T20:57:49Z",
+  "updated_at": "2026-11-11T21:12:56Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/lh3/minibwa/blob/master/LICENSE.txt",
+      "at": "2026-11-11T21:12:55Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "AMD-Ecosystem/minibwa master (AMD Instinct HIP overlay, 2026-09-15, never offered upstream)",
+    "viable": true,
+    "summary": "CPU short-read aligner, no CUDA upstream; AMD fork adds an Instinct-only HIP ksw2 backend that hard-codes wave64 and reverts some upstream files; upstream is POSIX-only and lh3 keeps GPU code out of tree, so the fork is the deliverable",
+    "at": "2026-11-11T21:12:56Z"
+  }
 }
