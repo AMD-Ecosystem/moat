@@ -220,3 +220,5 @@
 {"kind":"phase","ts":"2026-11-11T15:31:32Z","phase":"compile","seconds":25.616,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
 {"kind":"phase","ts":"2026-11-11T15:46:51Z","phase":"compile","seconds":171.777,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
 {"kind":"phase","ts":"2026-11-11T15:50:36Z","phase":"compile","seconds":172.058,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"session","ts":"2026-11-11T15:58:15Z","epoch":1794412695.653147600,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-11T16:04:33Z","epoch":1794413073.421231400,"event":"end","platform":"windows-gfx1151"}

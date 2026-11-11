@@ -1200,3 +1200,23 @@ For jeff (an observation, not a blocker; nothing changed): upstream's Maven Cent
 Fleet guard note: the guard resolves a push remote against the session's working directory (the moat clone), so a `cd <src> && ...` push to `origin` is refused. The `git -C <src>` form the guard's message names worked (`d90e1d189..8b9994f6a` on `moat-port`).
 
 Completion checks: `python3 utils/jargon.py --port TornadoVM` clean. For the scan, local `develop` was set to upstream `986fbadfc` so it covers only the port's commits; the fork's `develop` mirror is still `f8e3ac907` and was not touched. `git -C projects/TornadoVM/src status --porcelain` empty. `classify d90e1d189 8b9994f6a` = mixed, so every platform owes a full revalidation and the reviewer covers `d90e1d189..8b9994f6a`.
+
+## Review 2026-11-11 (reviewer, windows-gfx1151 host, sync delta `d90e1d189..8b9994f6a`, review 13)
+
+Verdict: **review-passed**. No must-fix findings. Scope: merge `42c254d3a` (upstream develop `986fbadfc` into the port) and `8b9994f6a` (HIPCodeCache uses `Tornado.getTornadoHome()`), reviewed with the pr-review skill; every point below was re-checked against the cited code.
+
+Merge faithfulness: `git diff f8e3ac907 d90e1d189` and `git diff 986fbadfc 42c254d3a` are both 254 files, +26228/-350, 29935 lines. With `index` lines and hunk offsets stripped, the only difference is one context line in `tornado-unittests/.../tools/TornadoHelper.java` (`UNSUPPORTED_EXCEPTIONS` now also lists upstream's `TornadoDeviceViewNotSupported`). The port delta survived the merge unchanged.
+
+Upstream changes audited against the HIP path, nothing missing:
+- Code caches: OCL/CUDA/Metal `resolveDirectory` switched to `Tornado.getTornadoHome()`; `HIPCodeCache.java:97` now matches. No other `TORNADOVM_HOME`/`getenv` lookup in `tornado-drivers/hip` or the HIP/MIOpen/CK library providers; `libtornado-hipdf.so` loads through upstream's `FFMSupport.loadBundledLibrary` like the CUDA shims.
+- Unified memory: `TornadoDevice.isUnifiedMemorySupported()` defaults false and `TornadoXPUDevice.checkOnUnifiedMemory` throws; the interpreter calls it before allocation, so HIP behaves like OpenCL. `TestConsumeFromUnifiedMemory.requireUnifiedMemory` routes HIP to `TornadoVMHIPNotSupported` via `assertNotBackend`; `docs/CONSUME-FROM-UNIFIED-MEMORY.md` covers HIP under "OpenCL and others | false".
+- `XPUBuffer.getAllocatedSize()` is a default returning `size()`; HIP buffers own all their storage, so no override is needed.
+- Device views: `bindCUDADeviceBuffer` refuses non-CUDA plan devices (`TornadoExecutionPlan.java:329`); an unbound view reaching a non-CUDA driver fails in `getSegment()` with `checkNotCUDADeviceView`, the same for OpenCL/Metal/HIP. The TC headerless ABI (`AbiLowering`/`ValueSpecialisation`/`TcArguments`) adds no dialect branch the HIP `cudaLike` checks would need to mirror.
+- Versions: HIP poms use `${revision}`; no port-added `8.0.x` string remains. `tornado-test` gains upstream's three classes and `--enable-native-access=tornado.unittests`; the port does not touch it.
+- Release/Maven Central/SDKMAN workflow and README/installation.rst lists name only published artifacts (opencl/metal/cuda). HIP is not published, so leaving it out is accurate; adding it is a scope decision for jeff (porter's observation stands).
+
+Commits: titles 57 and 68 chars with `[ROCm]`; rationale, prose AI disclosure ("Authored with Claude."), fenced Test Plan; no Co-Authored-By/noreply; ASCII; one line per paragraph.
+
+Non-blocking:
+- `python utils/jargon.py --port TornadoVM` reports one hit, "Revalidate this when changing JDKs" at `docs/CONSUME-FROM-UNIFIED-MEMORY.md:59`. It is upstream text (`git grep` finds it at `986fbadfc`, not at `f8e3ac907`); the scan counts it because the clone's `develop` (and the fork's `develop` mirror) is still `f8e3ac907`. Before the review PR opens, fast-forward the fork's `develop` mirror to upstream so the PR diff shows only the port delta and the scan is clean.
+- Future work, not this round: APUs (gfx1151, MI300A) share memory with the host, so HIP could implement `consumeFromUnifiedMemory` the way Metal does. CUDA leaves it unimplemented too.
