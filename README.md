@@ -166,7 +166,7 @@ The project name links upstream.
 | [brian2cuda](https://github.com/brian-team/brian2cuda) ([fork](https://github.com/AMD-Ecosystem/brian2cuda/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#327](https://github.com/brian-team/brian2cuda/pull/327) |
 | [candle](https://github.com/huggingface/candle) ([fork](https://github.com/AMD-Ecosystem/candle/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [catboost](https://github.com/catboost/catboost) ([fork](https://github.com/AMD-Ecosystem/catboost-moat/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#3111](https://github.com/catboost/catboost/pull/3111) |
-| [Clair3](https://github.com/HKU-BAL/Clair3) | ⬜ | ⬜ | ⬜ | — |
+| [Clair3](https://github.com/HKU-BAL/Clair3) | ⬜ | ⬜ | 🎫 | — |
 | [colmap](https://github.com/colmap/colmap) ([fork](https://github.com/AMD-Ecosystem/colmap/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟣 [#4635](https://github.com/colmap/colmap/pull/4635) |
 | [ColossalAI](https://github.com/hpcaitech/ColossalAI) ([fork](https://github.com/AMD-Ecosystem/ColossalAI/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [ComfyUI-3D-Pack](https://github.com/MrForExample/ComfyUI-3D-Pack) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- gap-matrix intake 2026-11-10: licence issues in bundled components |
@@ -174,7 +174,7 @@ The project name links upstream.
 | [CubbyFlow](https://github.com/utilForever/CubbyFlow) ([fork](https://github.com/AMD-Ecosystem/CubbyFlow/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#145](https://github.com/utilForever/CubbyFlow/pull/145) |
 | [cuBQL](https://github.com/NVIDIA/cuBQL) ([fork](https://github.com/AMD-Ecosystem/cuBQL/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#35](https://github.com/NVIDIA/cuBQL/pull/35) |
 | [cubvh](https://github.com/ashawkey/cubvh) ([fork](https://github.com/AMD-Ecosystem/cubvh/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#34](https://github.com/ashawkey/cubvh/pull/34) |
-| [cucim](https://github.com/rapidsai/cucim) | ⬜ | ⬜ | ⬜ | ⚪ ported-elsewhere |
+| [cucim](https://github.com/rapidsai/cucim) | ⬜ | ⬜ | 🎫 | ⚪ ported-elsewhere |
 | [cuda-efficient-features](https://github.com/fixstars/cuda-efficient-features) ([fork](https://github.com/AMD-Ecosystem/cuda-efficient-features/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#3](https://github.com/fixstars/cuda-efficient-features/pull/3) |
 | [CUDA-L2](https://github.com/deepreinforce-ai/CUDA-L2) | 🚫 | — | — | ⚪ not-portable |
 | [CUDA-ScanMatcher-ICP](https://github.com/botforge/CUDA-ScanMatcher-ICP) ([fork](https://github.com/AMD-Ecosystem/CUDA-ScanMatcher-ICP/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#10](https://github.com/botforge/CUDA-ScanMatcher-ICP/pull/10) |
@@ -242,7 +242,7 @@ The project name links upstream.
 | [gpuRIR](https://github.com/DavidDiazGuerra/gpuRIR) ([fork](https://github.com/AMD-Ecosystem/gpuRIR/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#88](https://github.com/DavidDiazGuerra/gpuRIR/pull/88) |
 | [gRASPA](https://github.com/snurr-group/gRASPA) ([fork](https://github.com/AMD-Ecosystem/gRASPA/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#96](https://github.com/snurr-group/gRASPA/pull/96) |
 | [gtsam_points](https://github.com/koide3/gtsam_points) ([fork](https://github.com/AMD-Ecosystem/gtsam_points/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#99](https://github.com/koide3/gtsam_points/pull/99) |
-| [h2o4gpu](https://github.com/h2oai/h2o4gpu) ([fork](https://github.com/AMD-Ecosystem/h2o4gpu/tree/moat-port)) | ✅ | ✅ | ⬜ | — |
+| [h2o4gpu](https://github.com/h2oai/h2o4gpu) ([fork](https://github.com/AMD-Ecosystem/h2o4gpu/tree/moat-port)) | ✅ | ✅ | 🔧 | — |
 | [habitat-sim](https://github.com/facebookresearch/habitat-sim) ([fork](https://github.com/AMD-Ecosystem/habitat-sim/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [HEonGPU](https://github.com/Alisah-Ozcan/HEonGPU) ([fork](https://github.com/AMD-Ecosystem/HEonGPU/tree/moat-port)) | ✅ | ✅ | 🔧 | — |
 | [HierarchicalKV](https://github.com/NVIDIA-Merlin/HierarchicalKV) | ⬜ | ⬜ | ⬜ | — |
@@ -277,7 +277,7 @@ The project name links upstream.
 | [metaeuk](https://github.com/soedinglab/metaeuk) ([fork](https://github.com/AMD-Ecosystem/metaeuk/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [mHC.cu](https://github.com/AndreSlavescu/mHC.cu) ([fork](https://github.com/AMD-Ecosystem/mHC.cu/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#10](https://github.com/AndreSlavescu/mHC.cu/pull/10) |
 | [minibwa](https://github.com/lh3/minibwa) | ⬜ | ⬜ | ⬜ | — |
-| [minimap2](https://github.com/lh3/minimap2) | ⬜ | ⬜ | ⬜ | — |
+| [minimap2](https://github.com/lh3/minimap2) | ⬜ | ⬜ | ⬜ | ⚪ declined |
 | [mistral.rs](https://github.com/EricLBuehler/mistral.rs) ([fork](https://github.com/AMD-Ecosystem/mistral.rs/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [MMseqs2](https://github.com/soedinglab/MMseqs2) ([fork](https://github.com/AMD-Ecosystem/MMseqs2/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [Model-Optimizer](https://github.com/NVIDIA/Model-Optimizer) | ⬜ | ⬜ | ⬜ | ⚪ ported-elsewhere |
@@ -293,7 +293,7 @@ The project name links upstream.
 | [nunchaku](https://github.com/nunchux-ai/nunchaku) ([fork](https://github.com/AMD-Ecosystem/nunchaku/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [nvblox](https://github.com/nvidia-isaac/nvblox) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- gap-matrix intake 2026-11-10: proprietary files |
 | [nvdiffrec](https://github.com/NVlabs/nvdiffrec) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- Jeff Daily decided 2026-11-04: decline, license-blocked |
-| [NVFlare](https://github.com/NVIDIA/NVFlare) | ⬜ | ⬜ | ⬜ | — |
+| [NVFlare](https://github.com/NVIDIA/NVFlare) | ⬜ | ⬜ | 🎫 | — |
 | [nvImageCodec](https://github.com/NVIDIA/nvImageCodec) | ⬜ | ⬜ | ⬜ | ⚪ not-a-target |
 | [OCTproZ](https://github.com/spectralcode/OCTproZ) ([fork](https://github.com/AMD-Ecosystem/OCTproZ/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [ohm](https://github.com/csiro-robotics/ohm) ([fork](https://github.com/AMD-Ecosystem/ohm/tree/moat-port)) | ✅ | ✅ | ✅ | — |
