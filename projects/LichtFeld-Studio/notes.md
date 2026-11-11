@@ -6686,3 +6686,5 @@ Evidence (this host, Radeon 8060S gfx1151, HIP runtime 71460850, AMD Vulkan 26.1
 - `python3 utils/jargon.py --port LichtFeld-Studio`: clean.
 
 Open: the cuda-to-rocm `fault-classes.md` "External memory ports 1:1; external semaphores do not" paragraph on this branch still recommends the OpaqueWin32 import on Windows; it needs correcting (pending jeff's decision) before this branch's skill edit merges.
+
+Skill follow-up 2026-11-11: the cuda-to-rocm `fault-classes.md` semaphore paragraph now teaches host ordering on both OSes (OpaqueWin32 race report, D3D12-fence alternative) and SKILL.md indexes the trap, commit f04d04c2. The "Open" item above is closed.
