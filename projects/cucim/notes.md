@@ -59,3 +59,10 @@ Compared `AMD-Ecosystem/hipCIM@amd-develop` (f650f03, 2026-10-15) with `rapidsai
 ### Recommendation
 
 `fork` (record via `set-intake`). Worth taking up for wave32 on top of the authoritative AMD port; Windows is plausible for `cucim.skimage` via MOAT's cupy and hard for the C++ slide reader, so the Windows scope needs Jeff's ruling. No upstream PR has been offered by AMD, so any upstream destination is Jeff's call too.
+
+## Rulings (2026-11-11, Jeff Daily)
+
+- Base: independent port from the tip of upstream rapidsai/cucim `main` (record the exact commit when porting starts). AMD-Ecosystem/hipCIM `amd-develop` (114 ahead / 84 behind, based on v26.06.00) is reference material only. The fork is AMD-Ecosystem/hipCIM (named differently from the project, so `release-forks` will not find it by name; record it with `set-fork-url cucim https://github.com/AMD-Ecosystem/hipCIM --by "Jeff Daily"` once write access exists and `moat-port` is pushed). Its `main` is the upstream mirror; AMD's branches are left alone.
+- Release lines: cuCIM follows the RAPIDS two-month cadence with `release/YY.MM` branches. MOAT ports and maintains release lines from 26.08 onward (26.08, 26.10, 26.12 and each later release), the releases the AMD team has not done (their hipCIM shipped against 26.06). Same model as Warp: pristine copy of upstream's release branch plus a MOAT-owned AMD branch on top, buildable wheels, sign-off by in-fork review PR then tag and freeze; one MOAT project per line (`cucim-26.08`, ...), each depending on the previous. Requires the release-line tooling (being built now).
+- Windows: waiver approved by Jeff Daily (rocJPEG and hipFile do not exist on Windows; POSIX-heavy C++; upstream never supported Windows).
+- `cpp/include/cucim/dynlib/helper.h` (Apache-2.0 SPDX plus a stale NVIDIA "proprietary rights" paragraph): do not touch or use it; delete it on `moat-port` and replace what `cpp/src/core/cucim_plugin.h` needs from it with a fresh implementation, in its own commit, CUDA path verified with nvcc.

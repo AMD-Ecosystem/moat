@@ -8,13 +8,19 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-11T20:55:23Z",
-  "updated_at": "2026-11-11T21:16:31Z",
+  "updated_at": "2026-11-11T22:41:54Z",
   "head_sha": null,
   "depends_on": [
     "cupy"
   ],
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "No Windows path for the GPU I/O stack: rocJPEG and hipFile (the nvJPEG/GDS replacements) do not exist on Windows, the C++ core is POSIX-heavy, and upstream cuCIM has never supported Windows. Approved 2026-11-11.",
+      "approved_by": "Jeff Daily",
+      "at": "2026-11-11T22:41:54Z"
+    }
+  },
   "platforms": {},
   "license_spdx": "Apache-2.0",
   "license_spdx_history": [
