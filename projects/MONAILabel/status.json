@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-11T20:56:43Z",
-  "updated_at": "2026-11-11T20:56:44Z",
+  "updated_at": "2026-11-11T21:19:38Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/Project-MONAI/MONAILabel/blob/main/LICENSE",
+      "at": "2026-11-11T21:19:36Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "AMD-Ecosystem/MONAILabel amd-develop (gfx942/gfx950); upstream PR #1925 open (AMD rocm-smi fix, changes requested)",
+    "viable": true,
+    "summary": "MONAI Label server (pure Python on torch+MONAI, no kernels); AMD fork is Instinct/Linux-only, its GPU-detect fix is upstream PR #1925; value is Radeon+Windows validation (upstream already supports Windows)",
+    "at": "2026-11-11T21:19:38Z"
+  }
 }
