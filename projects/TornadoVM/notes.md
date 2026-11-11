@@ -1154,3 +1154,49 @@ Harness per kind (worst relative error against sum|a*b|, 0 wrong elements in eve
 Not run (scope per jeff): quickPass, library suites, ck-hip classes (CK skipped by the recipe), stress loops. No CUDA compile owed (no CUDA or native change since the `ee94c5c7f` gate).
 
 Completion checks: `git -C projects/TornadoVM/src status --porcelain` empty, HEAD `d90e1d189`; `python3 utils/jargon.py --port TornadoVM` clean (after `git branch -f develop origin/develop` and `moat-port origin/moat-port` in the clone). Validation only: nothing pushed to the fork.
+## Porter round 2026-11-11: sync with upstream develop (`d90e1d189` -> `8b9994f6a`, linux-gfx950, MI355X)
+
+jeff's 2026-11-11 ruling: "sync first". Bring `moat-port` up to upstream develop before the review PR opens. No upstream PR or review PR existed, so `moat-port` was not frozen and took a plain (non-force) update.
+
+Upstream merged: beehive-lab/TornadoVM develop at `986fbadfc9fc9ae6c0ea6a8422a3b8d04f9dddc3` ("Bump version to 8.1.1-dev"; still the tip when fetched at 15:29Z). The port base was `f8e3ac907`. 29 upstream commits, 66 files: the 8.1.0 release, `TaskGraph.consumeFromUnifiedMemory` (#1315), CUDA device views (#1319), bulk `init()` of native arrays (#1323), OpenCL/Metal on Maven Central and `Tornado.getTornadoHome()` (#1320, #1322).
+
+Commits on `moat-port`:
+- `42c254d3a` `[ROCm] Merge upstream develop into the HIP backend branch` (merge, parents `d90e1d189` and `986fbadfc`; textually clean, no conflicts).
+- `8b9994f6a` `[ROCm] Resolve the HIP code cache root with Tornado.getTornadoHome()`. `HIPCodeCache.resolveDirectory` used `System.getenv("TORNADOVM_HOME")`; the OpenCL, CUDA and Metal code caches now call `Tornado.getTornadoHome()` (`-Dtornado.home`, then `TORNADOVM_HOME`, then `<user.home>/.tornadovm`). The HIP code cache is on by default (`tornado.hip.codecache.enable=True`), so without an SDK every HIP compile wrote `./null/var/hip-codecache/...`. The change is one line plus an import (`git diff d90e1d189 8b9994f6a -- tornado-drivers/hip` is that file only).
+
+Audit of upstream's other shared-pattern changes against the HIP driver. Nothing else was needed:
+- `TornadoDevice.isUnifiedMemorySupported()` / `isOnUnifiedMemory()` and `TornadoXPUDevice.checkOnUnifiedMemory()` are default methods (false / throw `TornadoUnifiedMemoryNotSupported`). Only Metal overrides them. CUDA overrides to return false, and OpenCL inherits. HIP inherits like OpenCL, so a `consumeFromUnifiedMemory` graph is rejected when the plan compiles, before `allocate` ever sees a unified-memory state.
+- CUDA and Metal `allocate()` now return `getAllocatedSize()` instead of `size()`. It differs from `size()` only for their new external/unified buffers. OpenCL kept `size()`; HIP has no such buffers, so it is unchanged too.
+- Device views: `TornadoExecutionPlan` throws `TornadoDeviceViewNotSupported` for any plan device that is not CUDA, and `TestDeviceView` throws `TornadoVMCUDANotSupported` unless the default device is CUDA. `TcArguments` (drivers-common, which HIP also uses) handles a device-view argument, but no HIP plan can bind one.
+- `TestConsumeFromUnifiedMemory` excludes devices without unified memory via `assertNotBackend(device.getTornadoVMBackend(), ...)`, which already maps HIP to `TornadoVMHIPNotSupported`. After the merge, `TornadoHelper.UNSUPPORTED_EXCEPTIONS` keeps both the port's `TornadoVMHIPNotSupported` and upstream's new `TornadoDeviceViewNotSupported`. No new exclusion was added.
+- No other `TORNADOVM_HOME` lookups exist in `tornado-drivers/hip`, the ck-hip/cudf-hip native modules or the HIP launcher paths. The remaining `System.getenv("TORNADOVM_HOME")` calls (Tc.java, examples, fuzz, prebuilt/virtual unit tests) are upstream code that upstream left as is. No port-added `8.0.1` version string remains.
+
+Host and toolchain (job directory only): ROCm 10.1 TheRock wheels (`ROCM_PATH` = `HIP_PATH` = the image venv's `_rocm_sdk_devel`), Temurin 21.0.13+9 (Adoptium API), job-local Maven repository, `HIP_VISIBLE_DEVICES=0` (dispatcher pin, one MI355X gfx950, wave64), `ulimit -c 0` for every GPU run, nvcc 12.8.93 (`/usr/local/cuda/bin`). hipDF/hipVS came from the AMD PyPI index (`https://pypi.amd.com/rocm-7.2.3/packages/...`, the same five wheels as the 2026-11-10 entry), unpacked with `python3 -I -m zipfile -e`.
+
+Builds (all BUILD SUCCESS, `git status --porcelain` clean after each):
+- `TORNADO_CK_SOURCE_DIR=/tmp make jdk21 BACKEND=hip` (no CK). The quickPass below used this SDK.
+- `TORNADO_CK_REQUIRED=1 HIPDF_HOME=<wheels>/x/libcudf make jdk21 BACKEND=hip` (CK fetched, `CMAKE_BUILD_PARALLEL_LEVEL=64`): `libtornado-ck.so` and `libtornado-hipdf.so` in the SDK.
+- CUDA no-regression gate, in a separate worktree at `8b9994f6a` with `TORNADO_CK_SOURCE_DIR=/tmp`: `make jdk21 BACKEND=cuda`, then `make jdk21 BACKEND=cuda,hip`, both with real nvcc ("The CUDA compiler identification is NVIDIA 12.8.93"). The CUTLASS shim built (`libtornado-cutlass.so`); the cuDNN and cuDF shims skip for missing NVIDIA libraries, as before. Pass.
+
+| Run (`8b9994f6a`) | Result | Previous on gfx950 |
+|---|---|---|
+| `tornado --devices` | HIPDriver 0:0 AMD Instinct MI355X, 288 GB, 160 KB local, 1024 block threads | same |
+| `tornado-selftest` | 20 pass, 1 skip (device-launch); mma-f16 32x32x64, mma-fp8 16x16x64 PASS | 20 / 1 |
+| `TestCopyDevicePointers` | 3/3 | 3/3 |
+| `TestConsumeFromUnifiedMemory` (new) | 18 ran, 0 failed, 10 unsupported (HIP has no unified memory; the 8 that pass check the rejection paths and API validation) | -- |
+| `TestArrayInit` (new) | 11/0/0 | -- |
+| `TestDeviceView` (new) | 13 ran, 0 failed, 13 unsupported (CUDA only) | -- |
+| `tornado-test --verbose --quickPass` (SDK without CK or hipDF) | 2230 ran: 1428 pass, 800 unsupported, 2 failed (`ComputeTests#testMandelbrot`, `#testJuliaSets`, whitelisted; FMA contraction, as documented). 10m52s | 2188 / 1490 / 696 / 2 (CK + hipDF SDK) |
+| TestCutlass / TestCuDnn / TestCudf / TestCudfColumns / TestCuVS (CK + hipDF SDK; wheel `lib64`s, `$ROCM_PATH/lib/llvm/lib` and `$ROCM_PATH/lib` on `LD_LIBRARY_PATH`) | 26/0/0, 20/0/0, 24/0/0, 23/0/3, 7/0/0 | same |
+| MMA classes (all in `kernelcontext.matrices`): TestMMAFragmentHelper, TestMMAGlobalFragmentLoad, TestMMAInt8FragmentElementRead, TestMatrixMultiplicationKernelContext, ...MMA, ...MMABF16, ...MMACpAsync, ...MMAFP8, ...MMAInt8 | 2/0/0, 6/0/0, 4/0/0, 3/0/0, 18/0/0, 7/0/0, 8/0/0, 8/0/0, 12/0/0 | same |
+| `make test-nogpu JDK=jdk21` | BUILD SUCCESS, 409 tests, 0 failures (includes upstream's new HeaderlessRepresentationTest 3/3, TcCompilerTest 29/29, HipMmaRoutingTest 1/1, codegen lit 60/60) | pass |
+
+QuickPass accounting: the three new classes add 42 tests (19 pass, 23 unsupported). The other 81 missing passes are the library suites that need CK or hipDF/hipVS, which the quickPass SDK did not have: TestCutlass 26, TestCuDnn 4 (SDPA on CK), TestCudf 24, TestCudfColumns 20 (23 minus the 3 ZSTD cases that are always unsupported), TestCuVS 7. Rerun on the CK + hipDF SDK, all five match their previous counts (row above). The full-SDK equivalent total is therefore 2230 ran / 1509 pass / 719 unsupported / 2 failed. No test that passed at `d90e1d189` fails or turns unsupported for a code reason.
+
+TORNADOVM_HOME unset, the way upstream's no-SDK path runs (plain classpath, the flags from upstream's README): `env -u TORNADOVM_HOME java --enable-preview --enable-native-access=ALL-UNNAMED -Dtornado.enabled.backends=hip -cp "$SDK/share/java/tornado/*" uk.ac.manchester.tornado.examples.VectorAddInt 1024`, run from an empty working directory. It runs on the MI355X (`-Dtornado.threadInfo=True` shows Backend HIP), the result is correct, rc 0. Code cache location: with `-Duser.home=<scratch>/home` it is `<scratch>/home/.tornadovm/var/hip-codecache/device-0-0/VectorAddInt_vectorAdd-<hash>.hsaco`; with `-Dtornado.home=<scratch>/th` it is `<scratch>/th/var/hip-codecache/...`. No `null/` directory appears in the working directory. Gotcha: Java's `user.home` comes from the passwd entry, not `$HOME`, so `HOME=... java` does not redirect `~/.tornadovm`. My first attempt therefore wrote to the real home's `.tornadovm`; I removed it afterwards.
+
+For jeff (an observation, not a blocker; nothing changed): upstream's Maven Central workflow now publishes the OpenCL and Metal drivers next to CUDA. The HIP driver binds amdhip64/hipRTC through FFM the same way and runs from the plain classpath, as shown above, so it could join that list (`hip-backend` profile, `tornado-drivers/hip` in `-pl`) in a later round or in the upstream PR discussion. It is out of scope for this sync.
+
+Fleet guard note: the guard resolves a push remote against the session's working directory (the moat clone), so a `cd <src> && ...` push to `origin` is refused. The `git -C <src>` form the guard's message names worked (`d90e1d189..8b9994f6a` on `moat-port`).
+
+Completion checks: `python3 utils/jargon.py --port TornadoVM` clean. For the scan, local `develop` was set to upstream `986fbadfc` so it covers only the port's commits; the fork's `develop` mirror is still `f8e3ac907` and was not touched. `git -C projects/TornadoVM/src status --porcelain` empty. `classify d90e1d189 8b9994f6a` = mixed, so every platform owes a full revalidation and the reviewer covers `d90e1d189..8b9994f6a`.
