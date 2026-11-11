@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-11T20:55:05Z",
-  "updated_at": "2026-11-11T20:55:06Z",
+  "updated_at": "2026-11-11T21:17:01Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/flwrlabs/flower/blob/main/LICENSE",
+      "at": "2026-11-11T21:16:58Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "flwrlabs/flower#8383 (open, AMD, head AMD-Ecosystem/flower:smahto/flower_amd)",
+    "viable": true,
+    "summary": "Pure-Python FL framework, no CUDA (validate lane: Ray GPU discovery + ROCm torch); AMD PR #8383 adds Instinct/Linux-only Ray discovery diagnostics and docs, awaiting maintainers; MOAT value is Radeon/Windows evidence contributed to that PR, Windows Ray GPU discovery likely absent",
+    "at": "2026-11-11T21:17:01Z"
+  }
 }
