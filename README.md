@@ -155,7 +155,7 @@ The project name links upstream.
 | [arbor](https://github.com/arbor-sim/arbor) ([fork](https://github.com/AMD-Ecosystem/arbor/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#2512](https://github.com/arbor-sim/arbor/pull/2512) |
 | [arrayfire](https://github.com/arrayfire/arrayfire) ([fork](https://github.com/AMD-Ecosystem/arrayfire/tree/moat-port)) | ✅ | ✅ | ✅ | 🔵 [#3708](https://github.com/arrayfire/arrayfire/pull/3708) fork is upstream's AMD path |
 | [AutoDock-GPU](https://github.com/ccsb-scripps/AutoDock-GPU) ([fork](https://github.com/AMD-Ecosystem/AutoDock-GPU/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#320](https://github.com/ccsb-scripps/AutoDock-GPU/pull/320) |
-| [autoware_cuda](https://github.com/autowarefoundation/autoware_cuda) | ⬜ | ⬜ | ⬜ | — |
+| [autoware_cuda](https://github.com/autowarefoundation/autoware_cuda) | ⬜ | ⬜ | 🎫 | — |
 | [autoware_universe](https://github.com/autowarefoundation/autoware_universe) | ⬜ | ⬜ | 🎫 | — |
 | [axolotl](https://github.com/axolotl-ai-cloud/axolotl) | ⬜ | ⬜ | ⬜ | — |
 | [bam](https://github.com/ZaidQureshi/bam) ([fork](https://github.com/AMD-Ecosystem/bam/tree/moat-port)) | 🚫 | 🚫 | 🚫 | ⏸ on hold |
@@ -176,7 +176,7 @@ The project name links upstream.
 | [cuda-efficient-features](https://github.com/fixstars/cuda-efficient-features) ([fork](https://github.com/AMD-Ecosystem/cuda-efficient-features/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#3](https://github.com/fixstars/cuda-efficient-features/pull/3) |
 | [CUDA-L2](https://github.com/deepreinforce-ai/CUDA-L2) | 🚫 | — | — | ⚪ not-portable |
 | [CUDA-ScanMatcher-ICP](https://github.com/botforge/CUDA-ScanMatcher-ICP) ([fork](https://github.com/AMD-Ecosystem/CUDA-ScanMatcher-ICP/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#10](https://github.com/botforge/CUDA-ScanMatcher-ICP/pull/10) |
-| [cuda_blackboard](https://github.com/autowarefoundation/cuda_blackboard) | ⬜ | ⬜ | ⬜ | — |
+| [cuda_blackboard](https://github.com/autowarefoundation/cuda_blackboard) | ⬜ | ⬜ | 🎫 | — |
 | [cuda_voxelizer](https://github.com/Forceflow/cuda_voxelizer) ([fork](https://github.com/AMD-Ecosystem/cuda_voxelizer/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [cudaKDTree](https://github.com/ingowald/cudaKDTree) ([fork](https://github.com/AMD-Ecosystem/cudaKDTree/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#40](https://github.com/ingowald/cudaKDTree/pull/40) |
 | [CudaSift](https://github.com/Celebrandil/CudaSift) ([fork](https://github.com/AMD-Ecosystem/CudaSift/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#97](https://github.com/Celebrandil/CudaSift/pull/97) |
@@ -257,7 +257,7 @@ The project name links upstream.
 | [lc0](https://github.com/LeelaChessZero/lc0) ([fork](https://github.com/AMD-Ecosystem/lc0/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#2420](https://github.com/LeelaChessZero/lc0/pull/2420) |
 | [LEAP](https://github.com/llnl/LEAP) ([fork](https://github.com/AMD-Ecosystem/LEAP/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#216](https://github.com/llnl/LEAP/pull/216) |
 | [libSGM](https://github.com/fixstars/libSGM) ([fork](https://github.com/AMD-Ecosystem/libSGM/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#89](https://github.com/fixstars/libSGM/pull/89) |
-| [LichtFeld-Studio](https://github.com/MrNeRF/LichtFeld-Studio) ([fork](https://github.com/AMD-Ecosystem/LichtFeld-Studio/tree/moat-port)) | ✅ | ✅ | ✅ | ⏸ on hold |
+| [LichtFeld-Studio](https://github.com/MrNeRF/LichtFeld-Studio) ([fork](https://github.com/AMD-Ecosystem/LichtFeld-Studio/tree/moat-port)) | 🔄 | 🔄 | 🔄 | ⏸ on hold |
 | [Liger-Kernel](https://github.com/linkedin/Liger-Kernel) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
 | [LiteGS](https://github.com/MooreThreads/LiteGS) ([fork](https://github.com/AMD-Ecosystem/LiteGS/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [LivePortrait](https://github.com/KlingAIResearch/LivePortrait) | ⬜ | ⬜ | ⬜ | — |
