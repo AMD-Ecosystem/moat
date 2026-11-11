@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-11T16:35:44Z",
+  "updated_at": "2026-11-11T17:13:19Z",
   "head_sha": "8b9994f6a54dec9ca4de062eb8491a1dcea083ad",
   "depends_on": [],
   "waivers": {},
@@ -124,11 +124,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "d90e1d189db4362ec0f6c682865f8c8f4572a17d",
+      "validated_sha": "8b9994f6a54dec9ca4de062eb8491a1dcea083ad",
       "failed_sha": "af27a9f4b69e3f80eb5012ede0fa80294c6addd2",
       "started_at": "2026-11-10T01:43:44Z",
-      "completed_at": "2026-11-10T22:57:50Z",
-      "updated_at": "2026-11-11T16:04:21Z",
+      "completed_at": "2026-11-11T17:13:19Z",
+      "updated_at": "2026-11-11T17:13:19Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -142,7 +142,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
+      "last_agent": "validator",
       "state": "completed"
     },
     "linux-gfx950": {

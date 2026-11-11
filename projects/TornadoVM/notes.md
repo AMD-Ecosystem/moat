@@ -1339,3 +1339,28 @@ Completion checks:
 - Integrity: `git -C projects/TornadoVM/src status --porcelain` shows only the untracked `tornado-compiler/utils/hiprtccheck/hiprtccheck`; HEAD `8b9994f6a`; no tracked file modified.
 - CUDA no-regression gate: already recorded at `8b9994f6a` by the porter (real nvcc 12.8.93, `BACKEND=cuda` and `cuda,hip`); not rerun.
 - Not covered here: multi-GPU NCCL/RCCL (one pinned GPU), cuDF/cuVS on RDNA (no hipDF/hipVS build), the OpenCL-backend Mandelbrot/Julia comparison and the MMA probe harness (both unchanged code since `af27a9f4b`/`ee94c5c7f`; selftest and the 65 MMA tests cover the path).
+
+## Validation 2026-11-11 (windows-gfx1151) at 8b9994f6a
+
+Requested by jeff after his "sync first" ruling: full revalidation of `moat-port` at `8b9994f6a54dec9ca4de062eb8491a1dcea083ad` (upstream develop `986fbadfc` merged at `42c254d3a`, plus the HIPCodeCache `getTornadoHome()` fix), review 13 passed. Verdict: **completed**. Radeon 8060S (gfx1151, wave32). One GPU process at a time.
+
+Head and tree: `projects/TornadoVM/src` and the build clone `C:\Users\jdaily\tvm-work\TornadoVM` both at `8b9994f6a` (fetch + detached checkout, no edits); no modified tracked files in either (clone has only the untracked hiprtccheck binaries). Toolchain as the 2026-11-10 Windows entries (VS 2022 BuildTools, TheRock venv ROCm 10.1, Temurin 21.0.13+9).
+
+Build: `utils/timeit.sh TornadoVM compile -- cmd /c C:\Users\jdaily\tvm-work\build.bat` (with `MSYS2_ARG_CONV_EXCL="*"` from Git Bash; `//c` just opens an interactive cmd). BUILD SUCCESS, 2:55 min, SDK `tornadovm-8.1.1-jdk21-dev-hip-windows-amd64`.
+
+| Run | Result |
+|---|---|
+| `tornado.exe --devices` | HIPDriver 0:0 AMD Radeon(TM) 8060S Graphics, 89.5 GB |
+| `tornado-selftest` | 20 pass, 1 skip (device-launch), rc 0; mma-f16 and mma-fp8 PASS |
+| launcher (`python bin\tornado.py --devices`, ROCM_PATH set) | rc 0, same device |
+| `TestCopyDevicePointers` | 3/3 (also 3/3 inside the full run) |
+| `tornado-test --verbose --quickPass` | 2230 ran: 1433 pass, 795 unsupported, 2 failed (ComputeTests testMandelbrot, testJuliaSets: the known FMA-contraction pair, whitelisted), rc 0, 1240 s |
+| MMA classes (from the full run; `TestMMAFragmentHelper` rerun alone) | MMA 18/18, MMABF16 7/7, MMAInt8 12/12, MMAFP8 8/8, MMACpAsync 8/8, GlobalFragmentLoad 6/6, Int8FragmentElementRead 4/4, FragmentHelper 2/2 (65/65) |
+| Library classes (ran/failed/unsupported) | TestCuBlas 27/0/0, TestCuBlasLt 10/0/1 (`testLtMatmulFP8`, FP8 unsupported on the device; same as the 2026-11-06 Windows run), TestCuFft 9/0/0, TestCuRand 7/0/0, TestCusparse 17/0/0, TestCuDnn 20/0/0, TestCutlass 26/0/0 (CK), TestNccl 30/0/30, TestNcclMultiProcess 5/0/5, TestCudf 24/0/24, TestCudfColumns 23/0/23, TestCuVS 7/0/7 (no NCCL/hipDF/hipVS on Windows) |
+| New upstream classes | TestArrayInit 11/0/0, TestConsumeFromUnifiedMemory 18/0/10 (HIP has no unified memory), TestDeviceView 13/0/13 (CUDA only) |
+
+Difference from this platform's `ee94c5c7f` run (2188 ran / 1414 pass / 772 unsupported / 2 failed): +42 ran = 11 + 18 + 13 (the three new classes); +19 pass = 11 (TestArrayInit) + 8 (the TestConsumeFromUnifiedMemory rejection and validation paths); +23 unsupported = 10 + 13; failed unchanged (the same two whitelisted tests). Versus gfx950 and gfx1201 at this head: the same 2230 ran. No other difference.
+
+No-SDK run (TORNADOVM_HOME unset, ROCM_PATH set, plain classpath `share\java\tornado\*`, `--enable-preview --enable-native-access=ALL-UNNAMED -Dtornado.enabled.backends=hip`, from an empty working directory): `VectorAddInt 1024` ran on the 8060S, "Result is correct", rc 0, and the code cache landed under `%USERPROFILE%\.tornadovm\var\hip-codecache\device-0-0\*.hsaco`, confirming the `getTornadoHome()` fix on Windows.
+
+Completion checks: `jargon.py --port TornadoVM` reports one hit, "Revalidate this when changing JDKs" at `docs/CONSUME-FROM-UNIFIED-MEMORY.md:59`: upstream text present at `986fbadfc` (the clone's `develop` is still the fork mirror `f8e3ac907`). With the range pinned to upstream (`--commits 986fbadfc..8b9994f6a` and `--diff 986fbadfc...8b9994f6a`) both are clean, as the other arches recorded. ROCm build documentation recorded earlier and unchanged. CUDA no-regression gate not run here (no toolkit on this host; recorded by gfx950/gfx1201).

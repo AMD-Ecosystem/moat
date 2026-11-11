@@ -292,3 +292,7 @@
 {"kind":"phase","ts":"2026-11-11T16:34:13Z","phase":"test","seconds":1.261,"exit":0,"cmd":"tornado-test -V uk.ac.manchester.tornado.unittests.kernelcontext.api.TestDynamicParallelism"}
 {"kind":"phase","ts":"2026-11-11T16:34:33Z","phase":"test","seconds":8.500,"exit":0,"cmd":"make -C projects/TornadoVM/src test-nogpu JDK=jdk21"}
 {"kind":"session","ts":"2026-11-11T16:35:44Z","epoch":1794414944.813543105,"event":"end","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-11T16:44:55Z","phase":"compile","seconds":0.410,"exit":1,"cmd":"cmd /c C:Usersjdailytvm-workbuild.bat"}
+{"kind":"phase","ts":"2026-11-11T16:45:05Z","phase":"compile","seconds":0.427,"exit":0,"cmd":"cmd //c C:\\Users/<user>\\tvm-work\\build.bat"}
+{"kind":"phase","ts":"2026-11-11T16:48:46Z","phase":"compile","seconds":211.653,"exit":0,"cmd":"cmd /c C:\\Users/<user>\\tvm-work\\build.bat"}
+{"kind":"phase","ts":"2026-11-11T17:10:11Z","phase":"test","seconds":1241.162,"exit":0,"cmd":"cmd /c D:\\Develop\\moat\\agent_space\\tvm-val\\full.bat"}
