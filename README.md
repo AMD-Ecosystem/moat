@@ -331,7 +331,7 @@ The project name links upstream.
 | [tinygrad](https://github.com/tinygrad/tinygrad) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
 | [torch-linear-assignment](https://github.com/ivan-chai/torch-linear-assignment) ([fork](https://github.com/AMD-Ecosystem/torch-linear-assignment/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#31](https://github.com/ivan-chai/torch-linear-assignment/pull/31) |
 | [torchcodec](https://github.com/meta-pytorch/torchcodec) | ⬜ | ⬜ | ⬜ | ⚪ duplicate |
-| [TornadoVM](https://github.com/beehive-lab/TornadoVM) ([fork](https://github.com/AMD-Ecosystem/TornadoVM/tree/moat-port)) | ✅ | ✅ | ✅ | — |
+| [TornadoVM](https://github.com/beehive-lab/TornadoVM) ([fork](https://github.com/AMD-Ecosystem/TornadoVM/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#1327](https://github.com/beehive-lab/TornadoVM/pull/1327) |
 | [TransformerEngine](https://github.com/NVIDIA/TransformerEngine) | ⬜ | ⬜ | ⬜ | ⚪ ported-elsewhere |
 | [TRELLIS.2](https://github.com/microsoft/TRELLIS.2) ([fork](https://github.com/AMD-Ecosystem/TRELLIS.2/tree/moat-port)) | ⬜ | 🔧 | ⬜ | — |
 | [triton](https://github.com/triton-lang/triton) | ⬜ | ⬜ | ⬜ | ⚪ already-supported |
