@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-11T20:58:46Z",
-  "updated_at": "2026-11-11T20:58:46Z",
+  "updated_at": "2026-11-11T21:24:06Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "BSD-3-Clause",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "BSD-3-Clause",
+      "evidence": "https://github.com/HKU-BAL/Clair3/blob/main/LICENSE.md",
+      "at": "2026-11-11T21:24:04Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "upstream PR #480 merged (AMD-Ecosystem amd-develop, Instinct gfx942/gfx950); fork main is a stale superseded commit",
+    "viable": true,
+    "summary": "Clair3 variant caller (torch only, no CUDA source); AMD ROCm support already merged upstream (#480, v2.0.5) for Instinct Linux; residual is Radeon validation + docs; Windows not an upstream platform (waiver)",
+    "at": "2026-11-11T21:24:06Z"
+  }
 }
