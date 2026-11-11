@@ -35,3 +35,7 @@ TurboMind: not recommended. It is a CUDA-native inference engine whose hot path 
 
 ### Dependencies
 No MOAT hard dependencies. Optional GPU dependencies of the PyTorch engine, relevant on ROCm: triton (ROCm build from the torch wheel), flash-linear-attention (pure Triton), tilelang (EmbeddedLLM/tilelang AMD fork exists), flash_attn (ROCm/flash-attention exists). deep_gemm, flash_mla, deep_ep, flashinfer are CUDA-only and are optional; the ROCm path should keep them off.
+
+## Scope ruling (2026-11-11, Jeff Daily)
+
+Jeff Daily ruled TurboMind in scope now, not deferred: "I don't see why not to port TurboMind now. Sure it's a huge effort, but we've got the time and the agents and the tokens." The port covers the whole project: the PyTorch engine on ROCm (validation on all gates, the HIP `is_bf16_supported` fix behind #4022, `runtime_rocm.txt` parity) AND a HIP port of TurboMind (`src/turbomind/`, built for `LMDEPLOY_TARGET_DEVICE=rocm` alongside the CUDA build, CUDA path preserved). The planner should stage it (build system and non-GEMM kernels first, then attention, then the hand-written SM70/80/90 GEMM paths with their inline asm / mma.sync / ldmatrix / cp.async / CuTe / wgmma, mapped to MFMA on wave64 and WMMA on wave32, or to hipBLASLt / Composable Kernel where a library covers the shape), and record per-stage evidence. Any further cut inside TurboMind is again Jeff's decision.
