@@ -1,0 +1,154 @@
+{
+  "schema_version": 3,
+  "name": "cuda_voxelizer",
+  "upstream_url": "https://github.com/Forceflow/cuda_voxelizer",
+  "fork_url": "https://github.com/AMD-Ecosystem/cuda_voxelizer",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-08-07T07:03:06Z",
+  "updated_at": "2026-11-10T00:35:16Z",
+  "head_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2",
+  "depends_on": [],
+  "waivers": {},
+  "license_spdx": "MIT",
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none",
+    "viable": true,
+    "summary": "Small, actively-maintained MIT CUDA mesh voxelizer with a real GPU kernel path and no existing AMD/ROCm port; two vendored NVIDIA CUDA-Samples helper headers (helper_cuda.h, helper_string.h) carry old restrictive EULA-style text and should be reviewed/replaced during the port even though the project's own code is clean MIT.",
+    "at": "2026-08-07T07:08:00Z",
+    "decided": {
+      "choice": "fork",
+      "by": "jeffdaily",
+      "at": "2026-10-29T18:07:11Z"
+    }
+  },
+  "stage": "review-passed",
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2",
+      "failed_sha": null,
+      "started_at": "2026-11-04T07:12:52Z",
+      "completed_at": "2026-11-06T07:08:07Z",
+      "updated_at": "2026-11-06T07:08:07Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-04T09:58:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2",
+      "failed_sha": "689b8856ccd436ee36021dc416807a212e7955f8",
+      "started_at": "2026-11-04T09:03:29Z",
+      "completed_at": "2026-11-06T04:37:16Z",
+      "updated_at": "2026-11-06T04:37:16Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-06T04:31:05Z",
+      "updated_at": "2026-11-06T04:31:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
+    "linux-gfx950": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-04T08:25:02Z",
+      "completed_at": null,
+      "updated_at": "2026-11-04T08:28:07Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting_released": {
+    "arch": "linux-gfx1201",
+    "since": "2026-11-05T08:19:36Z",
+    "at": "2026-11-05T08:35:01Z"
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/cuda_voxelizer/pull/1"
+}

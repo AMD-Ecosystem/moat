@@ -213,6 +213,28 @@ The reliance is a latent upstream bug, not a ROCm defect: zero explicitly
 (`hipMemsetAsync`) before the partial-write kernel, and audit any kernel whose write set is
 smaller than its output allocation. (opencv_contrib: cudastereo census_transform border.)
 
+**Bitwise and min/max atomics on `hipMallocManaged` memory are silently dropped on a
+discrete xnack- card.** There, managed memory is host-resident fine-grained memory, and
+the device reaches it over PCIe, whose AtomicOps cover only add, swap and CAS. A native
+`global_atomic_or`/`xor`/`smin`/`umax` into it completes with no error and changes nothing;
+`atomicAdd`, `atomicCAS`, plain stores and `hipMalloc` memory are all fine. Whether the
+port is hit depends on CODEGEN, not on the source: HIP's `atomicOr` marks the operation
+`!amdgpu.no.fine.grained.memory`, which permits the native instruction, but the inliner can
+drop that metadata when the atomic sits in a helper inlined into the kernel, and without it
+the backend emits a CAS retry loop that works. So one program can pass at `-O3` and come out
+entirely empty at device `-O0`, and a standalone probe can contradict the application.
+Device `-O0` is not exotic: a CMake HIP build configured with no `CMAKE_BUILD_TYPE` (what
+many READMEs give) has empty `CMAKE_HIP_FLAGS` and compiles device code at `-O0`, so
+validate the README recipe as written, not with `-DCMAKE_BUILD_TYPE=Release` added.
+Disassemble the APPLICATION's code object (`llvm-objdump --offloading <exe>`, then
+`llvm-objdump -d` on the gfx bundle): a native `global_atomic_or` or `flat_atomic_or` means
+it fails; only `global_atomic_cmpswap` means it is passing by accident. A passing
+CPU-vs-GPU differential does not clear this risk. Fix it in the source, never by optimization
+level: put the atomically written buffer in `hipMalloc` memory and copy it back, or use the
+`_system` atomic variants. (cuda_voxelizer on gfx90a/MI250X: `atomicOr`/`atomicXor` voxel
+table, exact at default `-O3` and Debug, 0 of 13,802 / 52,258 voxels at device `-O0`;
+gfx942 and the gfx1151 APU do not drop them. cudaKDTree: int `atomicMin`/`atomicMax`.)
+
 **`cudaMemcpy*Async` from a soon-freed pageable host buffer.** CUDA stages pageable async
 copies synchronously, so a test that copies from a local `std::vector` and lets it go out of
 scope still works. ROCm's is genuinely asynchronous, so the freed and reused buffer is read
@@ -723,6 +745,24 @@ requirement when Ninja is missing, and every other build is untouched. (LEAP, wi
 `no template named 'enable_if_t' in namespace 'std'`. ROCm 7.2 still accepted C++11, so a
 port validated there breaks only on a newer SDK. Look for a build script that pins
 `-std=c++11` for nvcc and reuses it for hipcc; raise it on the HIP path only. (TIGRE)
+
+**nvcc accepts a spaced-out launch, `kernel << <grid, block >> > (...)`; clang does not.**
+Visual Studio's auto-formatter produces it, and clang reports only "expected expression" at
+the launch line. Rewrite it as `kernel<<<grid, block>>>(...)`, valid for both. (cuda_voxelizer)
+
+**The CUDA Samples `helper_math.h` makes vector arithmetic ambiguous under HIP.** HIP's
+`float3`/`int3`/... are `HIP_vector_type`, which already defines element-wise operators: the
+vector-vector compound assignments as non-template MEMBERS and vector-vector `*`, `/` as
+non-template FRIENDS, the rest as templates. helper_math's free non-template
+`operator+=(float3&, float3)`, `operator*(float3, float3)`, ... tie with those, so every such
+expression fails as ambiguous, on host and device, including inside helper_math itself
+(`smoothstep`). Do not guard the colliding functions one by one (about 40 of them): wrap the
+whole negate/add/subtract/multiply/divide block in `#if !defined(__HIP_PLATFORM_AMD__)` and
+let HIP's operators, which compute the same per-component results, take every case. Its
+host `min`/`max`/`fminf`/`fmaxf`/`rsqrtf` block is guarded on `#ifndef __CUDACC__`; extend it
+to `&& !defined(__HIPCC__)`, since clang's HIP math header defines host+device `min`/`max`
+and the copies become redefinitions in `.hip`/`LANGUAGE HIP` TUs. Host `.cpp` files still need
+the block. (cuda_voxelizer)
 
 ## Types, dispatch and platform limits
 
