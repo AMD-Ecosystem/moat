@@ -845,14 +845,11 @@ def publish_blockers(name, row):
                    "gate that passed")
     else:
         bhits = jargon.scan_text(msgs.stdout, "branch commits", terms, allow)
-        diff = _run(["gh", "pr", "diff", row["url"]],
-                              capture_output=True, text=True, timeout=180)
-        if diff.returncode:
+        added, why = _pr_added_lines(pr["slug"], pr["number"], row["url"])
+        if added is None:
             bad.append("cannot re-check the branch's added lines for in-house "
-                       "vocabulary (gh pr diff failed)")
+                       f"vocabulary ({why})")
         else:
-            added = "\n".join(l[1:] for l in diff.stdout.splitlines()
-                              if l.startswith("+") and not l.startswith("+++"))
             bhits += jargon.scan_text(added, "branch added lines", terms, allow)
         if bhits:
             bad.append("in-house vocabulary on the branch: "
@@ -1144,6 +1141,37 @@ def _fix_delta_hits(fork, base, head, clone=None):
                       if l.startswith("+") and not l.startswith("+++"))
     hits += jargon.scan_text(added, "delta added lines", terms, allow)
     return hits
+
+
+def _pr_added_lines(slug, number, url):
+    """The added lines of a PR's diff, or (None, reason) when they cannot all be read.
+
+    `gh pr diff` is refused for a diff over 20000 lines (HTTP 406), which a large port
+    exceeds (TornadoVM's HIP backend is about 30000). The per-file listing has no such
+    cap, so it is the fallback; it lists at most 3000 files and omits `patch` on a file
+    too large to render, and either means a partial answer, which is refused rather
+    than scanned -- a partial answer that reads like a clean one is worse than none."""
+    diff = _run(["gh", "pr", "diff", url], capture_output=True, text=True, timeout=180)
+    if not diff.returncode:
+        lines = diff.stdout.splitlines()
+    else:
+        files = _run(["gh", "api", "--paginate", f"repos/{slug}/pulls/{number}/files",
+                      "--jq", ".[] | {f: .filename, p: .patch, a: .additions}"],
+                     capture_output=True, text=True, timeout=300)
+        if files.returncode:
+            return None, "gh pr diff and the PR file listing both failed"
+        rows = [json.loads(l) for l in files.stdout.splitlines() if l.strip()]
+        if len(rows) >= 3000:
+            return None, f"the PR file listing stops at {len(rows)} files"
+        # A binary file has no patch and no added lines; a text file too large to
+        # render has added lines but no patch.
+        nopatch = [r["f"] for r in rows if r.get("p") is None and r.get("a")]
+        if nopatch:
+            return None, (f"{len(nopatch)} file(s) listed without a patch, e.g. "
+                          f"{nopatch[0]}")
+        lines = [l for r in rows for l in (r.get("p") or "").splitlines()]
+    return "\n".join(l[1:] for l in lines
+                     if l.startswith("+") and not l.startswith("+++")), None
 
 
 def _round_live(d, fix):
