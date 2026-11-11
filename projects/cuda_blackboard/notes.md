@@ -52,3 +52,7 @@ Linux-only ROS 2 package; ROS 2 Autoware targets Ubuntu. The `windows` gate cann
 ### Recommendation
 
 Fork. Small (about 25 source and header files, runtime API only, no kernels), Apache-2.0, no duplicate effort, and a hard dependency of the full-scope autoware_universe ruling. Expected port: compat header plus a HIP branch in CMakeLists.txt; the work is mostly in standing up ROS 2 on the validation hosts.
+
+## Windows waiver (2026-11-11)
+
+Jeff Daily approved the suggested `windows` waiver (Linux-only ROS 2 package), with the same ruling as autoware_universe.
