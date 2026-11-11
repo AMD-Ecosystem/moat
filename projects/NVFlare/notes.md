@@ -56,3 +56,11 @@ Compared `AMD-Ecosystem/NVFlare@main` (45fdf3ce, 2026-09-22) with `NVIDIA/NVFlar
 ### Recommendation
 
 `fork` (record via `set-intake`). The Python GPU-discovery port is small and the AMD fork's commit is a usable hint but needs re-doing on current upstream; Radeon validation of the PyTorch path is cheap. The optional CGBN/paillier plugin is the only real kernel port and needs a scope ruling. Windows is a waiver candidate.
+
+## Rulings (2026-11-11, Jeff Daily)
+
+- Base: independent port from the tip of upstream NVIDIA/NVFlare `main`. AMD-Ecosystem/NVFlare's two commits (a `rocm-smi` fallback in `nvflare/fuel/utils/gpu_utils.py`, a unit test with captured MI300X `rocm-smi` CSV, and ROCM.md) are reference only; they no longer apply after upstream rewrote `gpu_utils.py` twice and added an NVIDIA-only GPU probe.
+- Scope: full, including the CGBN/Paillier plugin (the only CUDA in the repo; warp-synchronous, ~400 shuffles, 32-bit ballot masks, inline PTX), so secure XGBoost runs on AMD, wave64 and wave32.
+- GPU discovery: AMD GPUs must be discovered and their memory reported, including on Radeon. Method under discussion with Jeff (see below); torch is NOT a core NVFlare dependency (only the optional `app_opt` extra), and upstream's design shells out to `nvidia-smi` without creating a GPU context, so the natural mirror is `amd-smi` (rocm-smi is deprecated), with visible-device filtering that honours HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES alongside CUDA_VISIBLE_DEVICES.
+- Windows: waiver approved by Jeff Daily (upstream supports Linux and macOS only).
+- Release lines: NVIDIA-owned repo with maintained release branches (2.6 to 2.9); deliverable is the fork. Release lines from 2.9 onward (start once 2.9.1 is final), same model as Warp and cuCIM, plus the development line on `main`.

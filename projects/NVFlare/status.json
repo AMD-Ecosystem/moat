@@ -8,11 +8,17 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-11T20:57:44Z",
-  "updated_at": "2026-11-11T21:21:59Z",
+  "updated_at": "2026-11-11T22:59:15Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "Upstream NVFlare supports only Linux and macOS; Windows has never been a supported platform, so it is not a ROCm gap. Approved 2026-11-11.",
+      "approved_by": "Jeff Daily",
+      "at": "2026-11-11T22:59:15Z"
+    }
+  },
   "platforms": {},
   "license_spdx": "Apache-2.0",
   "license_spdx_history": [
