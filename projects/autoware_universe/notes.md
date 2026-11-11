@@ -47,3 +47,12 @@ Fork (take up), scoped to the pure-CUDA unit: autoware_cuda_utils + cuda_blackbo
 1. Scope cut: the only realistic first unit is the non-TensorRT CUDA (pointcloud preprocessor, CUDA ground segmentation, occupancy grid map, about 31% of the CUDA) plus the two companion repos autowarefoundation/autoware_cuda and autowarefoundation/cuda_blackboard. The TensorRT perception nodes the matrix names would need a MIGraphX backend and MIGraphX custom ops for the spconv and deformable-attention plugins. Do you approve starting with the non-TensorRT unit and deferring the TensorRT/MIGraphX work, and should autoware_cuda and cuda_blackboard be screened as their own MOAT projects (dependencies) or carried inside this one?
 2. Coordination: AMD Silo AI announced a collaboration with the Autoware Foundation (2025-12-16, AutoDrive end-to-end model on Instinct/Radeon Pro). Nothing public touches autoware_universe's CUDA, but should someone check with that team before we fork, so we are not racing an unpublished internal port?
 3. Windows: Autoware is Linux-only ROS 2. If adopted, should the planner request a `windows` gate waiver up front?
+
+## Scope ruling (2026-11-11, Jeff Daily)
+
+Jeff Daily approved the full scope, staged:
+1. The two companion repos as their own MOAT projects, recorded as hard dependencies (`set-deps autoware_universe autoware_cuda cuda_blackboard`): https://github.com/autowarefoundation/autoware_cuda and https://github.com/autowarefoundation/cuda_blackboard (both Apache-2.0; claimed and in intake 2026-11-11).
+2. The pure-CUDA packages: cuda_pointcloud_preprocessor, ground_segmentation_cuda, probabilistic_occupancy_grid_map, with their gtests as the GPU gate.
+3. A MIGraphX backend for the TensorRT perception nodes: an engine layer equivalent to `autoware_tensorrt_common` (ONNX in, compiled program out), plugin-free models first (yolox, classifier, centerpoint, transfusion), then the custom TensorRT plugins (autoware_tensorrt_plugins: spconv implicit GEMM, multi-scale deformable attention, segment_csr, unique, argsort, rotate, quick_cumsum; autoware_tensorrt_bevformer) re-implemented as MIGraphX custom ops, then bevfusion, ptv3, bevformer and VAD. The CUDA/TensorRT path is preserved.
+
+Windows gate: waiver approved by Jeff Daily (Linux-only ROS 2 stack). Coordination with AMD Silo AI (Autoware Foundation collaboration, 2025-12-16) is Jeff's call and was not made a precondition.

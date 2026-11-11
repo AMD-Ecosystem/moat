@@ -8,11 +8,20 @@
   "ext_type": "unknown",
   "stage": "awaiting-fork",
   "adopted_at": "2026-11-05T23:13:25Z",
-  "updated_at": "2026-11-06T00:04:10Z",
+  "updated_at": "2026-11-11T18:06:32Z",
   "head_sha": null,
-  "depends_on": [],
+  "depends_on": [
+    "autoware_cuda",
+    "cuda_blackboard"
+  ],
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "Autoware is a Linux-only ROS 2 (Humble/Jazzy) stack; no Windows build exists upstream. Approved 2026-11-11 with the full-scope ruling.",
+      "approved_by": "Jeff Daily",
+      "at": "2026-11-11T18:06:31Z"
+    }
+  },
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
