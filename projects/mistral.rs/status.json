@@ -2,13 +2,13 @@
   "schema_version": 3,
   "name": "mistral.rs",
   "upstream_url": "https://github.com/EricLBuehler/mistral.rs",
-  "fork_url": null,
+  "fork_url": "https://github.com/AMD-Ecosystem/mistral.rs",
   "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "awaiting-fork",
+  "stage": "screened",
   "adopted_at": "2026-11-06T00:55:00Z",
-  "updated_at": "2026-11-06T01:21:28Z",
+  "updated_at": "2026-11-11T19:52:35Z",
   "head_sha": null,
   "depends_on": [
     "candle"
