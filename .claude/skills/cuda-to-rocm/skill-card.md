@@ -6,7 +6,7 @@ Ports CUDA projects to ROCm/HIP for AMD GPUs: picks the build strategy, catches 
 
 ## Owner
 
-MOAT maintainers (AMD)
+Jeff Daily (AMD)
 
 ## License
 

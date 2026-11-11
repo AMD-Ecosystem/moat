@@ -70,6 +70,7 @@ Scan this list against what you are doing. If any line could apply, open
 **Wavefront and warp semantics**
 - Warp size: NVIDIA is always 32; AMD is 64 on CDNA (gfx9xx) and 32 on RDNA. Never hardcode.
 - Warp-derived array sizing: quantities scaling WITH `warpSize` need the 64 upper bound, quantities scaling as `blockDim/warpSize` need the 32 LOWER bound. Getting it backwards writes out of bounds.
+- HIP's `*_sync` warp functions reject a 32-bit mask at compile time; CUDA's `0xffffffff` needs a 64-bit spelling on HIP.
 - A compat `__ballot_sync` that casts `__ballot()` to `uint32_t` returns the wrong 32 lanes on wave64.
 - An over-wide `__shfl*` width silently clamps to the physical wavefront instead of erroring; the symptom is a metric shift, not a crash.
 - A full 64-bit `*_sync` mask in 32-lane group code traps in a HIP debug build on wave64 when the halves diverge; pass the group mask.
