@@ -6660,3 +6660,29 @@ GutThinPrismFisheye.ProjectsAndInvertsPastOneRadian lives in test_undistort.cpp 
 
 ### Verdict: COMPLETED (windows-gfx1151) at fc2cfd9d
 Real gfx1151 GPU pass: 2187 of 2224 run, every failure a recorded test except the two Windows-only pinned-cache identity assertions above, flagged for follow-up.
+
+## Porter round 2026-11-11 (windows-gfx1151) -- afe6ab6c: Windows timeline semaphores ordered on the host
+
+Why: the reporter of ROCm/hip#3909 replied (https://github.com/ROCm/hip/issues/3909#issuecomment-6802006159) that importing a Vulkan timeline semaphore as `hipExternalSemaphoreHandleTypeOpaqueWin32` returns success but, on gfx1102 with many values queued in one submit, lets HIP read a buffer before Vulkan finished writing it in about 1-2 of 50 runs (stale data, no error); only CPU syncs made it stable. The port's Windows branch used exactly that alias (`cuda_to_hip.h`). jeff ruled 2026-11-11: route Windows through the host-ordered path Linux already uses.
+
+Change (fork `afe6ab6ce`, on fc2cfd9d, 5 files +65/-35, all under `USE_HIP`):
+- `cuda_to_hip.h`: the `_WIN32` branch is gone; both OSes route the four `cuda*ExternalSemaphore*` calls to `lfs::core::hip_host_timeline`. `cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32` now maps to `hipExternalSemaphoreHandleTypeTimelineSemaphoreWin32` (the descriptor never reaches HIP).
+- `hip_host_timeline.{hpp,cpp}`: `VulkanOps::import_win32` (NT handle, caller keeps it, matching Vulkan's non-owning NT-handle import and the call sites' `NativeHandleOwner`); `import_semaphore` dispatches on Fd/Win32 type.
+- `vulkan_context.cpp`: `hipHostTimelineImportWin32` (`vkImportSemaphoreWin32HandleKHR`, OPAQUE_WIN32, into a second timeline VkSemaphore on the app device); shared `createHipHostTimelineSemaphore` helper; ops registered/unregistered on Windows too.
+- `src/core/CMakeLists.txt`: `hip_host_timeline.cpp` built for every `USE_HIP` build.
+
+Evidence (this host, Radeon 8060S gfx1151, HIP runtime 71460850, AMD Vulkan 26.10.1):
+- The full Windows app still cannot be built here (no Vulkan SDK/vcpkg app deps), and `D:/Develop/moat-old` (the old SDK venv, torch and C++ deps used by `agent_space/lfs_val11.bat`) no longer exists, so the compute build was not rerun. The compute tranche does not include the changed viewer files except `cuda_to_hip.h`, whose change is the semaphore block only.
+- `agent_space/lfs_wintl/tl_test.hip`: standalone Vulkan + HIP program compiled from the fork's own `hip_host_timeline.cpp`, `cuda_to_hip.h` (the real macros) and the host-timeline block extracted verbatim from `vulkan_context.cpp` (`vk_ops.inc`, `#if defined(USE_HIP)` .. matching `#endif`). It queues 50 Vulkan submits up front (wait 2i, snapshot 1 MiB tail of an 8 MiB external buffer, fill with V(i), signal 2i+1); HIP step i waits 2i+1, counts words != V(i), writes V(i)+7, signals 2i+2. The semaphore handle is closed right after import.
+  ```
+  source agent_space/win_rocm_env.sh
+  hipcc -x hip --offload-arch=gfx1151 -O1 -std=c++20 -Wno-unused-value -DLFS_STATIC_BUILD -I . -I <fork>/src/core/include -I D:/Develop/vcpkg/installed/x64-windows/include tl_test.hip <fork>/src/core/cuda/hip_host_timeline.cpp -o tl_test.exe
+  rocm_stage_runtime .; ulimit -c 0
+  tl_test.exe host 10   # fork path
+  tl_test.exe gpu 10    # old OpaqueWin32 alias, async HIP waits/signals
+  ```
+  host: 0 of 10 runs stale (500 bounces, 0 stale words either side). gpu (old alias): also 0 of 10 runs stale on this gfx1151; the reported race is not reproduced here at this size, which neither confirms nor refutes the gfx1102 report.
+- Linux fd branch (`hipHostTimelineImport`, now using the helper): compiled syntax-only (clang-cl `/Zs`, vcpkg Vulkan headers) with the `_WIN32` branch switched off; no Linux sysroot on this host. Linux runtime and the CUDA nvcc gate are for the Linux validators / fleet compile check at afe6ab6c.
+- `python3 utils/jargon.py --port LichtFeld-Studio`: clean.
+
+Open: the cuda-to-rocm `fault-classes.md` "External memory ports 1:1; external semaphores do not" paragraph on this branch still recommends the OpaqueWin32 import on Windows; it needs correcting (pending jeff's decision) before this branch's skill edit merges.
