@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-11T15:55:45Z",
+  "updated_at": "2026-11-11T15:58:18Z",
   "head_sha": "8b9994f6a54dec9ca4de062eb8491a1dcea083ad",
   "depends_on": [],
   "waivers": {},
@@ -25,7 +25,7 @@
       "at": "2026-08-07T15:41:21Z"
     }
   },
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx1100": {
       "blocked": false,
@@ -128,7 +128,7 @@
       "failed_sha": "af27a9f4b69e3f80eb5012ede0fa80294c6addd2",
       "started_at": "2026-11-10T01:43:44Z",
       "completed_at": "2026-11-10T22:57:50Z",
-      "updated_at": "2026-11-10T22:57:50Z",
+      "updated_at": "2026-11-11T15:58:16Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -142,7 +142,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "reviewer",
       "state": "completed"
     },
     "linux-gfx1201": {
@@ -189,5 +189,9 @@
       "evidence": "https://github.com/beehive-lab/TornadoVM/blob/master/LICENSE_APACHE2",
       "at": "2026-11-05T22:15:47Z"
     }
-  ]
+  ],
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-11T15:58:16Z"
+  }
 }
