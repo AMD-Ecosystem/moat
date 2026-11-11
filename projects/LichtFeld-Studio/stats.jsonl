@@ -448,3 +448,5 @@
 {"kind":"phase","ts":"2026-11-05T07:24:09Z","phase":"test","seconds":59.871,"exit":1,"cmd":"agent_space/in_src.sh timeout -k 30 1800 /var/lib/jenkins/fleet/jobs/mi200-20261104-223510-v-lichtfeld-studio/build-compute/cmake/hip_tests/lfs_compute_tests"}
 {"kind":"phase","ts":"2026-11-05T07:26:20Z","phase":"test","seconds":107.542,"exit":0,"cmd":"bash agent_space/smoke.sh r1 /sys/bus/pci/devices/0000:32:00.0"}
 {"kind":"session","ts":"2026-11-05T07:27:07Z","epoch":1793863627.554285100,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-11T19:17:15Z","epoch":1794424635.968358800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-11T19:25:19Z","epoch":1794425119.475130800,"event":"end","platform":"windows-gfx1151"}
