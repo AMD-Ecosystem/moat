@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-11T15:29:09Z",
+  "updated_at": "2026-11-11T15:37:33Z",
   "head_sha": "d90e1d189db4362ec0f6c682865f8c8f4572a17d",
   "depends_on": [],
   "waivers": {},
@@ -144,6 +144,30 @@
       },
       "last_agent": "validator",
       "state": "completed"
+    },
+    "linux-gfx1250": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d90e1d189db4362ec0f6c682865f8c8f4572a17d",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-11T15:37:33Z",
+      "updated_at": "2026-11-11T15:37:33Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
     }
   },
   "porting_released": {

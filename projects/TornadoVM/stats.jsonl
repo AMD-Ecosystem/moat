@@ -215,3 +215,5 @@
 {"kind":"phase","ts":"2026-11-10T22:48:02Z","phase":"test","seconds":14.805,"exit":0,"cmd":"env MSYS2_ARG_CONV_EXCL=* cmd /c D:\\Develop\\moat\\agent_space\\tvm-val\\tests.bat"}
 {"kind":"phase","ts":"2026-11-10T22:48:21Z","phase":"test","seconds":5.086,"exit":0,"cmd":"env MSYS2_ARG_CONV_EXCL=* cmd /c D:\\Develop\\moat\\agent_space\\tvm-val\\t2.bat"}
 {"kind":"session","ts":"2026-11-10T22:48:55Z","epoch":1794350935.904812700,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-11T15:35:44Z","phase":"compile","seconds":18.042,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-11T15:36:25Z","phase":"test","seconds":12.153,"exit":0,"cmd":"bash projects/TornadoVM/probe/mma/run.sh"}

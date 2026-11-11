@@ -1114,3 +1114,43 @@ Launcher cases (scripts in `agent_space/tvm-val/case{A,B,C}.bat`; PATH reduced t
 My first MMA attempt used the wrong class name (`...matrices.MMAInt8`, ClassNotFoundException); corrected, not a project issue.
 
 CUDA no-regression gate: not run here (no CUDA toolkit on this host); the delta is `tornado.bat`, `tornado.py` and docs only, no CUDA or native source. Documentation of the ROCm build: updated by this delta (`INSTALL_FROM_SOURCE.md`, `developer-guidelines.rst`), clean.
+
+## Validation 2026-11-11 (linux-gfx1250)
+
+Requested by jeff: the gfx1250 MMA check owed since 2026-11-10 (two attempts blocked by a foreign GPU process), validator role at fork `moat-port` `d90e1d189db4362ec0f6c682865f8c8f4572a17d` (detached checkout of exactly that sha; `ls-remote` showed `moat-port` still at it when cloned). Verdict: **pass**, every check below, all within the documented gfx1250 bounds.
+
+Host and toolchain (job directory only): one MI450 (`amd-smi static`: TARGET_GRAPHICS_VERSION gfx1250), `HIP_VISIBLE_DEVICES=0` (dispatcher pin). ROCm 10.1.0 TheRock wheels (`rocm-sdk-core`/`-devel`/`-device-gfx1250` 10.1.0; `ROCM_PATH=HIP_PATH=` the image venv's `_rocm_sdk_devel`), `hipconfig --version` 7.16.26385-0000000, AMD clang 24.0.0git (ROCm/llvm-project d6f6cb691863), amd-smi 27.1.0, amdgpu driver 7.1.0.31300009. Temurin 21.0.13+9 from the Adoptium API, job-local Maven repository (`MAVEN_OPTS=-Dmaven.repo.local=<job>/m2`), `CMAKE_BUILD_PARALLEL_LEVEL=32`. `ulimit -c 0` for every GPU run. Before the first GPU command, between runs and after the last, `amd-smi process` printed "No running processes detected" and `/sys/class/kfd/kfd/proc/` was empty.
+
+```bash
+git clone --filter=blob:none https://github.com/AMD-Ecosystem/TornadoVM projects/TornadoVM/src
+git -C projects/TornadoVM/src checkout --detach d90e1d189
+TORNADO_CK_SOURCE_DIR=/tmp utils/timeit.sh TornadoVM compile -- make -C projects/TornadoVM/src jdk21 BACKEND=hip   # BUILD SUCCESS, 14.1 s Maven wall; ck-hip skipped ("TORNADO_CK_SOURCE_DIR=/tmp is not a Composable Kernel"), hipDF skipped (no HIPDF_HOME)
+source projects/TornadoVM/src/setvars.sh; ulimit -c 0
+tornado --devices
+tornado-test -V uk.ac.manchester.tornado.unittests.pointers.TestCopyDevicePointers
+OUT=<job>/probe utils/timeit.sh TornadoVM test -- bash projects/TornadoVM/probe/mma/run.sh   # rc 0, "== PASS (gfx1250)"; runs tornado-selftest and the eight MMA classes
+```
+
+| Run | `d90e1d189` | `af27a9f4b` (2026-11-05) |
+|---|---|---|
+| `tornado --devices` | 1 HIPDriver device `0:0` AMD Radeon Graphics, 432.0 GB global, 320.0 KB local, 1024 block threads | same device |
+| `TestCopyDevicePointers` | 3/3 (testCopyDevicePointers, ...Matrix, ...LargeRegion), 0 unsupported | not run |
+| `tornado-selftest` | 20 pass, 1 skip (device/device-launch); TC target "HIP gfx1250, fp64 yes, fp16 yes, warp 32, local memory 320 KB, work-group 1024, tensor cores F16+FP8"; `device/warp-sum`, `tensor-cores/mma-f16` 32x32x64 and `tensor-cores/mma-fp8` 16x16x64 PASS | 20 / 1 |
+| Code object matrix instructions | exactly one each of `v_wmma_f32_16x16x32_{f16,bf16}`, `v_wmma_f32_16x16x64_{fp8_fp8,bf8_bf8}`, `v_wmma_i32_16x16x64_iu8` | same |
+| Harness | 0 of 53 failed | 20 of 53 failed (FP8 random/ints at the old 1e-5 bound) |
+| Harness `--mutate` | 53 of 53 failed (all detected) | 53 / 53 |
+| MMA classes | MMA 18/18, MMABF16 7/7, MMAInt8 12/12, MMAFP8 8/8, MMACpAsync 8/8, MMAGlobalFragmentLoad 6/6, MMAInt8FragmentElementRead 4/4, MMAFragmentHelper 2/2 (65/65) | 65/65 |
+
+Bounds: the selftest prints no bound; the one it applies comes from `Checks.mmaTolerance` (`tc-selftest/.../Checks.java:131-133`): `WMMA_GFX1250` -> 1e-4 relative for FP8, 0 (bit equality) for f16, so mma-f16 passed bit-exact and mma-fp8 within 1e-4. The harness printed `bounds: f16/bf16 exact cases 0, random fp8 0.0001, other random 1e-05` and `bounds: every byte e4m3 0, e5m2 0 except bytes 0x81-0x83 0` (the 0x81-0x83 bound is non-zero only on gfx11).
+
+Harness per kind (worst relative error against sum|a*b|, 0 wrong elements in every case):
+- f16: ints exact (5/5), random 1.3e-07 to 1.9e-07 (5/5).
+- bf16: ints exact (5/5), random 2.6e-08 to 4.4e-08 (5/5).
+- s8: 11/11 exact, int32 wraparound included.
+- e4m3: random 2.9e-05 to 3.8e-05, ints 1.1e-05 to 1.7e-05 (10/10 within 1e-4); every byte exact.
+- e5m2: random 5.0e-05 to 6.6e-05, ints 3.9e-05 to 4.6e-05 (10/10 within 1e-4); every byte exact.
+- No byte is off bit-exact in either E4M3 or E5M2 "every byte" (NaN/inf included). The FP8 magnitudes match the 2026-11-05 run (worst e4m3 3.8e-05, e5m2 6.6e-05), the hardware accumulation precision behind the 1e-4 gfx1250 bound; the worst case is 0.66 of the bound.
+
+Not run (scope per jeff): quickPass, library suites, ck-hip classes (CK skipped by the recipe), stress loops. No CUDA compile owed (no CUDA or native change since the `ee94c5c7f` gate).
+
+Completion checks: `git -C projects/TornadoVM/src status --porcelain` empty, HEAD `d90e1d189`; `python3 utils/jargon.py --port TornadoVM` clean (after `git branch -f develop origin/develop` and `moat-port origin/moat-port` in the clone). Validation only: nothing pushed to the fork.
