@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-11T20:56:43Z",
-  "updated_at": "2026-11-11T20:56:45Z",
+  "updated_at": "2026-11-11T21:15:06Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/lh3/minimap2/blob/master/LICENSE.txt",
+      "at": "2026-11-11T21:15:05Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "AMD-Ecosystem/minimap2 master (AMD Instinct HIP backend, 2026-09-15, never offered upstream); mm2-gb research fork",
+    "viable": true,
+    "summary": "Long-read aligner, no CUDA upstream and lh3 refuses GPU code (#1258); AMD fork is the HIP port (mm2-gb chaining + ksw2 kernels, GPU gtests) but Instinct-only, wave64-hard-coded and a heavy restructure; Radeon/Windows work would land on the fork",
+    "at": "2026-11-11T21:15:06Z"
+  }
 }
