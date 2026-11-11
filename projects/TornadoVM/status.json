@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-11T17:13:19Z",
+  "updated_at": "2026-11-11T18:32:54Z",
   "head_sha": "8b9994f6a54dec9ca4de062eb8491a1dcea083ad",
   "depends_on": [],
   "waivers": {},
@@ -189,5 +189,6 @@
       "evidence": "https://github.com/beehive-lab/TornadoVM/blob/master/LICENSE_APACHE2",
       "at": "2026-11-05T22:15:47Z"
     }
-  ]
+  ],
+  "review_pr": "https://github.com/AMD-Ecosystem/TornadoVM/pull/1"
 }
