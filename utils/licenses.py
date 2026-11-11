@@ -16,6 +16,7 @@ early still costs nothing and means the answer is known before the work is done.
 """
 
 import argparse
+import os
 import pathlib
 import re
 import subprocess
@@ -108,15 +109,31 @@ def route(tier):
 def scan_nvidia(repo_dir, cfg=None):
     """Files carrying an NVIDIA proprietary licence, which force tier 3 regardless
     of the top-level licence. Matches licence TEXT: grepping for "NVIDIA" alone
-    flags every CUDA project, and an NVIDIA copyright under Apache-2.0 is clean."""
+    flags every CUDA project, and an NVIDIA copyright under Apache-2.0 is clean.
+
+    Pure Python on purpose. This used `grep -rliF` and read only its stdout; Git
+    Bash's grep 3.0 aborts (rc 134) on some trees, which printed nothing and so
+    reported a proprietary-licensed tree (nvdiffrast) as clean. A file that cannot
+    be read raises instead of being skipped: a scan that silently misses files is
+    the same false clean."""
     cfg = cfg or load()
-    markers = cfg["tier3"]["nvidia_proprietary"]["text_markers"]
+    markers = [m.lower().encode() for m in cfg["tier3"]["nvidia_proprietary"]["text_markers"]]
+    root = os.fspath(repo_dir)
+    if not os.path.isdir(root):
+        raise FileNotFoundError(f"scan-nvidia: no directory {root}")
     hits = []
-    for m in markers:
-        r = subprocess.run(["grep", "-rliF", "--", m, str(repo_dir)],
-                           capture_output=True, text=True)
-        hits.extend(line for line in r.stdout.splitlines() if line)
-    return sorted(set(hits))
+    for dirpath, dirnames, filenames in os.walk(root):
+        if ".git" in dirnames:
+            dirnames.remove(".git")
+        for name in filenames:
+            path = os.path.join(dirpath, name)
+            if os.path.islink(path):
+                continue
+            with open(path, "rb") as f:
+                text = f.read().lower()
+            if any(m in text for m in markers):
+                hits.append(path)
+    return sorted(hits)
 
 
 def check_config(cfg=None):
