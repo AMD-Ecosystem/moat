@@ -8,9 +8,11 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-11T20:56:43Z",
-  "updated_at": "2026-11-11T21:19:38Z",
+  "updated_at": "2026-11-11T22:48:08Z",
   "head_sha": null,
-  "depends_on": [],
+  "depends_on": [
+    "MONAI"
+  ],
   "porting": null,
   "waivers": {},
   "platforms": {},

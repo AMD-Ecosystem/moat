@@ -56,3 +56,11 @@ Compared `AMD-Ecosystem/MONAILabel@amd-develop` (0370aa6, 2026-09-30) with `Proj
 ### Recommendation
 
 `fork` (record via `set-intake`). Low-risk validate-lane port: no kernels, upstream already supports Windows, and an AMD PR (#1925) is already in front of the maintainers. MOAT's value is wave32 and Windows validation plus the ROCm gaps the AMD fork left (Windows GPU detection, scribbles `CUDA_HOME`).
+
+## Rulings (2026-11-11, Jeff Daily)
+
+- Base: independent port from the tip of upstream Project-MONAI/MONAILabel `main` (record the exact commit when porting starts). AMD-Ecosystem/MONAILabel `amd-develop` and upstream PR #1925 are reference material only. Keep the port minimal: GPU discovery through torch instead of depending on `rocm-smi`; make the scribbles GMM path work when `CUDA_HOME` is unset on ROCm torch; correct device ordering on hosts with an integrated GPU plus a Radeon card. Leave out AMD's `amd-monailabel` rename, the `image_path` -> `img_path` key rename, `amd-monai` requirements and product docs.
+- Windows: in scope (upstream already supports Windows); no waiver.
+- Dependency: `depends_on: MONAI` (the GMM extension comes from MONAI; MOAT's independent MONAI port goes first).
+- Delivery: Jeff's call later. AMD's #1925 is open upstream for the same code; nothing is posted upstream or to the AMD team until Jeff decides.
+- The fork is AMD-Ecosystem/MONAILabel; `moat-port` cannot be pushed until Jeff's write access arrives (requested 2026-11-11).
