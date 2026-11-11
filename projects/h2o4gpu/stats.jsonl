@@ -119,3 +119,19 @@
 {"kind":"phase","ts":"2026-11-06T03:32:06Z","phase":"test","seconds":82.205,"exit":1,"cmd":"bash agent_space/test.sh"}
 {"kind":"phase","ts":"2026-11-06T03:32:42Z","phase":"test","seconds":5.983,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261105-185209-h2o-val/venv-base-links/_rocm_sdk_devel/bin/rocprofv3 --marker-trace --kernel-trace --output-format csv -d /var/lib/jenkins/fleet/jobs/mi200-20261105-185209-h2o-val/moat/agent_space/nvtxprof -o glm -- env PYTHONPATH=/var/lib/jenkins/fleet/jobs/mi200-20261105-185209-h2o-val/moat/agent_space/nvtxpkg /var/lib/jenkins/fleet/jobs/mi200-20261105-185209-h2o-val/venv/bin/python /var/lib/jenkins/fleet/jobs/mi200-20261105-185209-h2o-val/moat/agent_space/glm_solve.py"}
 {"kind":"session","ts":"2026-11-06T03:33:46Z","epoch":1793936026.686107462,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-11T22:52:28Z","epoch":1794437548.962387600,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-11T22:56:02Z","phase":"compile","seconds":1.019,"exit":1,"cmd":"cmake --build /d/Develop/moat/agent_space/wt-h2o4gpu/projects/h2o4gpu/src/build-win -j 12 -k 0"}
+{"kind":"phase","ts":"2026-11-11T22:56:33Z","phase":"compile","seconds":10.746,"exit":1,"cmd":"cmake --build /d/Develop/moat/agent_space/wt-h2o4gpu/projects/h2o4gpu/src/build-win -j 12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-11T22:58:42Z","phase":"compile","seconds":29.475,"exit":1,"cmd":"cmake --build /d/Develop/moat/agent_space/wt-h2o4gpu/projects/h2o4gpu/src/build-win -j 12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-11T23:04:39Z","phase":"test","seconds":1.307,"exit":127,"cmd":"./h2o4gpu_test.exe"}
+{"kind":"phase","ts":"2026-11-11T23:05:08Z","phase":"test","seconds":0.962,"exit":127,"cmd":"D:/Develop/moat/agent_space/wt-h2o4gpu/projects/h2o4gpu/src/build-win/h2o4gpu_test.exe"}
+{"kind":"phase","ts":"2026-11-11T23:05:24Z","phase":"test","seconds":2.692,"exit":0,"cmd":"D:/Develop/moat/agent_space/wt-h2o4gpu/projects/h2o4gpu/src/build-win/h2o4gpu_test.exe"}
+{"kind":"phase","ts":"2026-11-11T23:07:18Z","phase":"test","seconds":3.120,"exit":1,"cmd":"D:/Develop/moat/agent_space/h2o_venv/Scripts/python.exe /d/Develop/moat/agent_space/h2o_win/oracle.py"}
+{"kind":"phase","ts":"2026-11-11T23:07:51Z","phase":"test","seconds":3.626,"exit":1,"cmd":"D:/Develop/moat/agent_space/h2o_venv/Scripts/python.exe /d/Develop/moat/agent_space/h2o_win/oracle.py"}
+{"kind":"phase","ts":"2026-11-11T23:08:06Z","phase":"test","seconds":2.170,"exit":1,"cmd":"D:/Develop/moat/agent_space/h2o_venv/Scripts/python.exe /d/Develop/moat/agent_space/h2o_win/oracle.py"}
+{"kind":"phase","ts":"2026-11-11T23:10:34Z","phase":"compile","seconds":84.967,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/build.sh"}
+{"kind":"phase","ts":"2026-11-11T23:11:08Z","phase":"test","seconds":5.106,"exit":127,"cmd":"D:/Develop/moat/agent_space/h2o_venv/Scripts/python.exe /d/Develop/moat/agent_space/h2o_win/oracle.py"}
+{"kind":"phase","ts":"2026-11-11T23:12:29Z","phase":"test","seconds":3.713,"exit":127,"cmd":"D:/Develop/moat/agent_space/h2o_venv/Scripts/python.exe /d/Develop/moat/agent_space/h2o_win/oracle.py"}
+{"kind":"phase","ts":"2026-11-11T23:12:57Z","phase":"test","seconds":3.935,"exit":127,"cmd":"D:/Develop/moat/agent_space/h2o_venv/Scripts/python.exe /d/Develop/moat/agent_space/h2o_win/oracle.py"}
+{"kind":"phase","ts":"2026-11-11T23:39:58Z","phase":"compile","seconds":76.248,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/build.sh"}
+{"kind":"session","ts":"2026-11-11T23:44:06Z","epoch":1794440647.491451700,"event":"end","platform":"windows-gfx1151"}
