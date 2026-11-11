@@ -13,7 +13,7 @@ If another arch holds the lock, `set-state ... porting` refuses and names the ho
 
 ## Inputs
 - projects/<name>/plan.md (for a platform with its own handling, its `## Delta plan: <platform>` section)
-- projects/<name>/status.json, notes.md, the `cuda-to-rocm` skill
+- projects/<name>/status.json, notes.md, the `cuda-to-rocm` and `moat-porting` skills
 - reviewer/validator findings in notes.md (when state is changes-requested / validation-failed)
 - when `status.json` records a review PR (`review_pr`, or `fix.review_pr` in a fix
   round) and the round answers a `/moat changes-requested`: the ENTIRE review PR --

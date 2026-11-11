@@ -4,8 +4,7 @@ The real semantic differences. Most porting bugs are here, not in symbol names, 
 surface at runtime on a build that compiled cleanly.
 
 Sections match the index in SKILL.md, so a line that looked relevant there leads straight
-to its entry here. Each entry names the project it was learned on; the full incident lives
-in that project's `notes.md`.
+to its entry here. Each entry names the project it was learned on.
 
 ## Wavefront and warp semantics
 
@@ -302,8 +301,8 @@ W x H*L, also works). Map each `surf2DLayeredwrite(v,s,x,y,layer)` to
 CUDA keeps the real layered array byte-for-byte. AMD's candidate fix
 (ROCm/rocm-systems#6683) corrects only the `surf2DLayered` builtins -- `tex2DLayered` uses a
 different builtin and may collapse independently, so re-verify per ROCm version and keep
-the workaround until proven fixed on your stack. NOT confirmed on RDNA; a wave32 porter
-should re-run the repro to establish arch scope. (popsift: the Gaussian pyramid and DoG were
+the workaround until proven fixed on your stack. NOT confirmed on RDNA; re-run the repro on a
+wave32 part to establish arch scope. (popsift: the Gaussian pyramid and DoG were
 layered arrays, and without this the DoG was all-zero.)
 
 **A hardware linear-filter texture over an element-read float array is ARCH-SPECIFIC, not a
@@ -528,17 +527,16 @@ a larger port, rarely worth it for an interactive renderer. (Velvet: XPBD cloth 
 writing particle positions into GL VBOs.)
 
 **An arch-specific fix keyed on the OS or the ROCm version can BREAK an already-validated
-arch**, because in this fleet those are PROXIES for the real dependency. Windows hosts run
-TheRock nightly wheels -- a newer ROCm but sometimes an OLDER torch -- while Linux runs an
-older ROCm with a newer torch, so OS, ROCm version and torch hipify generation are tangled
-and can ANTI-correlate. A guard written `#ifdef _WIN32` when the true dependency is the
+arch**, because those are only PROXIES for the real dependency. A Windows setup on TheRock
+nightly wheels can pair a newer ROCm with an OLDER torch while a Linux setup pairs an older
+ROCm with a newer torch, so OS, ROCm version and torch hipify generation are tangled and can
+ANTI-correlate. A guard written `#ifdef _WIN32` when the true dependency is the
 hipify generation works only by that accidental correlation. Guard on the real axis, and
 there are three:
 
 - **OS and toolchain** -> `_WIN32`: MSVC-vs-MinGW linkage, DLL import libs, path
   separators. (The `/ALTERNATENAME` workaround for missing inherited-constructor exports
-  belongs here; the reproducer is in the local `findings/` area, and the project's own
-  `deferred.json` records whether it was filed.)
+  belongs here.)
 - **HIP runtime version** -> `HIP_VERSION_MAJOR`/`MINOR`: header behaviour, added or
   removed symbols. (MMseqs2: a Windows commit defined `HIP_DISABLE_WARP_SYNC_BUILTINS`
   unconditionally because `<amd_hip_bf16.h>` defines `__shfl_*_sync` on ROCm 7.14+, but on
@@ -549,14 +547,14 @@ there are three:
   symbols become `USE_ROCM`-only, where v1 renamed the other way. In a torch CUDAExtension
   the TU IS hipified, so just write the CUDA spelling. In a NON-hipified TU -- a
   CMake/`USE_HIP` port, or a host `.cpp` routed around hipify -- detect the version at build
-  time, pass a NEUTRAL define (`-DTORCH_HIPIFY_V2`, never a moat-named one), and branch:
+  time, pass a NEUTRAL define (`-DTORCH_HIPIFY_V2`, never one named after your team or tooling), and branch:
   v2 -> `c10::cuda::getCurrentCUDAStream`, v1 -> `c10::hip::getCurrentHIPStream`. (aihwkit: a Windows commit hard-coded
   `c10::hip::getCurrentHIPStream`, needed on TheRock's older torch but absent on Linux's
   newer one, breaking that build.)
 
-Validator corollary: a Windows-LABELED delta is NOT automatically inert elsewhere -- it can
-touch a shared header that compiles differently against another platform's ROCm or torch.
-When such a delta flips a passed arch to revalidate, REBUILD it rather than carrying forward
-on "it is Windows-gated" reasoning. A binary-equivalence carry-forward inherently builds,
-which is how both regressions above were caught; a reasoning-only skip would have shipped a
-broken build. (aihwkit, MMseqs2)
+Corollary for validation: a Windows-LABELED change is NOT automatically inert elsewhere --
+it can touch a shared header that compiles differently against another platform's ROCm or
+torch. When one lands after other platforms have passed, REBUILD on those platforms rather
+than skipping them on "it is Windows-gated" reasoning. Rebuilding is how both regressions
+above were caught; a reasoning-only skip would have shipped a broken build. (aihwkit,
+MMseqs2)

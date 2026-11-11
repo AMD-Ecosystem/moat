@@ -1,9 +1,9 @@
 # When hipify has nothing to translate
 
-Some CUDA code has no HIP analogue to translate INTO. The build succeeds at finding nothing to do, which reads like a small port and is the opposite. This is the most common reason a project ends up dispositioned `cant-port`, and it is worth separating two very different verdicts that get written the same way:
+Some CUDA code has no HIP analogue to translate INTO. The build succeeds at finding nothing to do, which reads like a small port and is the opposite. This is the most common reason a project gets declared not portable, and it is worth separating two very different verdicts that get written the same way:
 
 - **No AMD-native target exists.** Genuinely not portable. NVIDIA-proprietary runtimes (TensorRT, OptiX), closed binary kernels shipped as wheels, or a codegen backend emitting PTX with no AMDGPU counterpart.
-- **A port would be a REIMPLEMENTATION against an AMD-native target.** Tractable, sometimes valuable, but not a translation -- it needs its own scope, its own estimate, and a person's decision. Recording it as `cant-port` throws away the fact that a target exists.
+- **A port would be a REIMPLEMENTATION against an AMD-native target.** Tractable, sometimes valuable, but not a translation -- it needs its own scope, its own estimate, and a person's decision. Recording it as not portable throws away the fact that a target exists.
 
 ## CUTLASS -> Composable Kernel
 
@@ -36,12 +36,10 @@ There is a third option worth checking before either: if the project already goe
 - Documentation: https://rocm.docs.amd.com/projects/AMDMIGraphX/en/latest/
 - ONNX Runtime provider: https://onnxruntime.ai/docs/execution-providers/MIGraphX-ExecutionProvider.html
 
-Related, and easy to miss for the same reason: `cv::cuda::*` is not a dead end either. MOAT ported OpenCV's CUDA modules -- cudaarithm, cudawarping, cudaimgproc, cudaoptflow, cudafilters, cudafeatures2d, cudaobjdetect, cudastereo, cudabgsegm, cudacodec -- validated on four architectures, upstream at opencv/opencv_contrib#4147. A project blocked on "OpenCV CUDA has no ROCm build" should record `depends_on: [opencv_contrib]` rather than a decline.
+Related, and easy to miss for the same reason: `cv::cuda::*` is not a dead end either. OpenCV's CUDA modules -- cudaarithm, cudawarping, cudaimgproc, cudaoptflow, cudafilters, cudafeatures2d, cudaobjdetect, cudastereo, cudabgsegm, cudacodec -- have a HIP port validated on four architectures, upstream at opencv/opencv_contrib#4147. A project blocked on "OpenCV CUDA has no ROCm build" should depend on that port rather than be declined.
 
-## What this means at intake
+## What this means when deciding whether to port
 
-`cant-port` should mean "no AMD-native target exists", not "hipify will not do it". When the blocker is CUTLASS or CuTe, say which target a reimplementation would aim at and roughly what it would cost, and let a person decide whether that is work worth taking on. A decline that does not name the alternative is hiding a decision rather than making one.
-
-Existing dispositions that rest on this and predate FlyDSL being available: FlashKDA, NATTEN, mirage and spconv are all recorded `cant-port` on CUTLASS/CuTe grounds. They may deserve revisiting on that basis -- which is a person's call, not an agent's.
+"Not portable" should mean "no AMD-native target exists", not "hipify will not do it". When the blocker is CUTLASS or CuTe, say which target a reimplementation would aim at and roughly what it would cost, and let a person decide whether that is work worth taking on. A decline that does not name the alternative is hiding a decision rather than making one. Declines on CUTLASS/CuTe grounds made before FlyDSL was available may deserve revisiting.
 
 Raw PTX tensor-core intrinsics are a separate case and stay blocked: `mma.sync`, `ldmatrix.sync`, Hopper `wgmma`/TMA and `tcgen05` have no HIP-level equivalent, and the AMD analogue is MFMA/WMMA reached through rocWMMA, CK or FlyDSL rather than a direct instruction swap.
