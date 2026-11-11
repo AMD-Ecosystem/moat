@@ -150,8 +150,11 @@ UNTRUSTED = {
 }
 
 
-def all_records():
+def all_records(only=None):
     """(name, record, where) for every project across refs, not just this checkout.
+
+    With `only`, just that project: reading every record across refs is most of the
+    cost of a sweep, and a run aimed at one project should not pay it.
 
     Everything below used to glob the local tree. That was equivalent while every
     project's folder sat on the trunk, and stops being so the moment one moves to its
@@ -159,7 +162,7 @@ def all_records():
     skipped project is indistinguishable from one with nothing to report."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
-    for name in sorted(moatlib.all_projects()):
+    for name in [only] if only else sorted(moatlib.all_projects()):
         obj, where = moatlib.project_record(name)
         if obj is not None:
             yield name, obj, where
@@ -532,7 +535,7 @@ def report_approvals(apply):
     return 0
 
 
-def publishable():
+def publishable(only=None):
     """Ports whose review PR carries a standing approval and are ready to submit.
 
     Returns (ready, unreachable). This is what makes clicking Approve mean something.
@@ -559,7 +562,7 @@ def publishable():
     import moatlib
 
     out, unreachable, objected = [], [], []
-    for name, d, _where in all_records():
+    for name, d, _where in all_records(only):
         url = (d.get("pr_approval") or {}).get("review_pr") or d.get("review_pr")
         if not url or d.get("pr_state"):
             continue                      # no review PR, or already submitted
@@ -935,8 +938,8 @@ def open_upstream(name, row):
     return (url, None)
 
 
-def report_publish(apply):
-    rows, unreachable, objected = publishable()
+def report_publish(apply, only=None):
+    rows, unreachable, objected = publishable(only)
     print(f"upstream: {len(rows)} approved port(s) awaiting submission"
           + (f", {len(objected)} with a standing objection" if objected else "")
           + (f", {len(unreachable)} review PR(s) UNREACHABLE" if unreachable else "")
@@ -1915,7 +1918,8 @@ def main():
     g.add_argument("--apply", action="store_true")
     ap.add_argument("--review", action="store_true",
                     help="ports whose gates are met with no review PR open yet")
-    ap.add_argument("--name", help="with --review --apply: which project to open")
+    ap.add_argument("--name", help="with --review --apply: which project to open; "
+                    "with --publish: check and submit only this project")
     ap.add_argument("--title", help="with --review --apply: the upstream PR title")
     ap.add_argument("--body-file", help="with --review --apply: file holding the body")
     ap.add_argument("--forks", action="store_true",
@@ -1974,7 +1978,7 @@ def main():
         print(f"review-pr: {action} -- {detail}")
         return 0 if action in ("opened", "would-open") else 1
     if a.publish:
-        return report_publish(apply=a.apply)
+        return report_publish(apply=a.apply, only=a.name)
     if a.fix_review:
         rows = fix_review_rows()
         if not a.apply and not a.name:
