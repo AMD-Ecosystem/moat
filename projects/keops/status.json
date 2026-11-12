@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-12T18:32:39Z",
-  "updated_at": "2026-11-12T18:32:39Z",
+  "updated_at": "2026-11-12T19:01:20Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-12T19:01:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/getkeops/keops/blob/main/licence.txt",
+      "at": "2026-11-12T19:01:00Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none",
+    "viable": true,
+    "summary": "KeOps: runtime NVRTC kernel generator (GPyTorch/GeomLoss backend); port = additive hiprtc binder, no warp intrinsics, Linux-only upstream",
+    "at": "2026-11-12T19:01:10Z"
+  }
 }
