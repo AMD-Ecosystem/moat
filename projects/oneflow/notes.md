@@ -5043,7 +5043,7 @@ test_matmul_long_k 4 p; test_conv_float64 6; test_grouped_matmul_bias 2; test_cr
 
 ### Not run
 - Two-GPU one_embedding / P2P / fused-harness tests: one GPU pinned. The delta 8d470dcc1..c741328b7 touches no kernel (two CMake comments, one test keyword, the LLVM sub-build's link flag).
-- CUDA compile gate: no nvcc on this host (`/opt/conda/envs/cuda-12.8` absent). Still owed at c741328b7 on the mi355 host, as the porter and reviewer recorded.
+- CUDA compile gate: no nvcc on this host (`/opt/conda/envs/cuda-12.8` absent). Recorded by another host concurrently with this round: "CUDA compile check at c741328b7" (nvcc 12.8, PASS).
 
 ### Other checks
 - `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038's message (for the PR-prep squash); nothing new.
