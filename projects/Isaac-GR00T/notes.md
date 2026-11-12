@@ -29,3 +29,8 @@ Validation project (lane `validate`, seed `amd-gap-matrix`, NVIDIA-owned upstrea
 - **CUDA-only dependencies:** TensorRT (deployment engine, `test_build_tensorrt_engine.py`, `test_trt_pipeline.py`): gap, no ROCm substitute in tree; MIGraphX would be new work; exclude. flash-attn 2.8.3 cu12 wheel: substitute upstream flash-attn ROCm (CK/Triton) build or SDPA fallback. DeepSpeed 0.17.6: ROCm builds exist. Jetson / Spark / Thor scripts: NVIDIA hardware only, out of scope.
 - **Windows:** no upstream Windows story (`required-environments` is Linux only; deepspeed, flash-attn and torchcodec markers are Linux-only). Inference through SDPA might work on Windows ROCm torch, but fine-tuning (16 GB+ inference, 40 GB+ fine-tune) and the sim stacks do not. Suggest a `windows` gate waiver; only jeff approves it.
 - **Risks:** packaging (TensorRT hard dep on x86_64 even for training users); Qwen3-VL in bf16 under SDPA vs flash-attn numerics against the checkpoint-based test tolerances; torchcodec/FFmpeg on ROCm images; 16 GB+ inference fits Radeon 24 GB parts, fine-tune wants Instinct.
+
+## Ruling (2026-11-12, Jeff Daily)
+
+- The one `scan-nvidia` hit, `ATTRIBUTIONS.md` (the reproduced NVIDIA TensorRT Software License Agreement for the TensorRT pip dependency), is classed benign: it licenses a dependency, not a file in this repo, the same class as the dependency licence docs in PhysX, warp and IsaacLab. No licence clearance is involved.
+- Kept as a fork-only validation project (NVIDIA owns upstream; no upstream PR). The work is packaging (flash-attn cu12 wheel pins, `tensorrt-cu12` on every x86_64 install, cu128 torch index) plus validation; TensorRT deployment (`scripts/deployment`) stays out of scope.
