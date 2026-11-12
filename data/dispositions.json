@@ -1123,6 +1123,15 @@
     "reason": "not-a-target",
     "repo_id": 835036273
   },
+  "lh3/minibwa": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:07:44Z",
+    "disposition": "skip",
+    "full_name": "lh3/minibwa",
+    "note": "2026-11-11: not a CUDA-to-ROCm port. Upstream is CPU-only (same maintainer as minimap2, which refuses GPU code); AMD-Ecosystem/minibwa is part of AMD's life-science GPU product line built on the minimap2 fork's kernels, which MOAT should not touch.",
+    "reason": "declined",
+    "repo_id": 1075662152
+  },
   "lh3/minimap2": {
     "by": "Jeff Daily",
     "decided": "2026-11-11T23:55:05Z",
