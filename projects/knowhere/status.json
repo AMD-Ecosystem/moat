@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-12T18:29:57Z",
-  "updated_at": "2026-11-12T18:30:00Z",
+  "updated_at": "2026-11-12T18:45:20Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-12T18:45:20Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/zilliztech/knowhere/blob/main/LICENSE",
+      "at": "2026-11-12T18:45:18Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "community konkolchin/knowhere-hip (knowhere 2.5 on hipVS 25.10, gfx1100 IVF only); no ROCm-DS knowhere/Milvus work found",
+    "viable": true,
+    "summary": "Milvus vector-search engine; GPU path is cuVS only (4 .cu, no kernels, vendored Faiss GPU unbuilt); hipVS covers all 4 indexes but tracks cuVS 25.10 vs knowhere's 26.02 (ACE missing)",
+    "at": "2026-11-12T18:45:19Z"
+  }
 }
