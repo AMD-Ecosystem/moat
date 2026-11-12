@@ -6,12 +6,55 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-12T16:29:57Z",
-  "updated_at": "2026-11-12T16:29:59Z",
+  "updated_at": "2026-11-12T16:53:39Z",
   "head_sha": null,
-  "depends_on": [],
+  "depends_on": [
+    "warp"
+  ],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-12T16:53:39Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVIDIA/physicsnemo/blob/main/LICENSE.txt",
+      "at": "2026-11-12T16:53:24Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none",
+    "viable": true,
+    "summary": "NVIDIA PhysicsNeMo (Apache-2.0, no .cu): validation project, PyTorch plus Warp; blocked on MOAT warp ROCm build, gate is upstream pytest test/",
+    "at": "2026-11-12T16:53:34Z"
+  }
 }
