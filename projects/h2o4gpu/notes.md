@@ -1154,3 +1154,7 @@ Validator role, jeff's request: first Windows validation, toward the review PR. 
 - `python3 utils/jargon.py --port h2o4gpu`: clean. Documentation: DEVEL.md has the Windows paragraph under `##### USE_HIP (AMD GPUs)`.
 - Integrity: no modified tracked files in the clone; `moatlib.py audit-clean h2o4gpu`: OK. No fork edits or pushes.
 - Verdict: windows-gfx1151 (wave32) **completed** at `0e70429b`.
+
+## Ruling 2026-11-12: -finline-hint-functions on every arch
+
+jeff ruled to keep `-finline-hint-functions` on src/gpu/h2o4gpuglm.cu for every Linux HIP architecture rather than gating it on gfx11/gfx12. Measured cost on gfx9: the GLM file's kernels are 20-55% slower on gfx942 (1-5% of total kernel time, no wall-time change) and repeated fits 2-5% slower on gfx90a (total GPU time +1.2%). No code change; 0e70429b stands.
