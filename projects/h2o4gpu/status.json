@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:05:27Z",
-  "updated_at": "2026-11-12T20:13:35Z",
+  "updated_at": "2026-11-12T20:19:00Z",
   "head_sha": "0e70429b85679b1dd028b4c26f95c3131ffaa6e9",
   "depends_on": [],
   "waivers": {},
@@ -27,14 +27,14 @@
   },
   "stage": "review-passed",
   "platforms": {
-    "windows-gfx1151": {
+    "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": null,
       "failed_sha": null,
-      "started_at": "2026-11-11T22:51:44Z",
+      "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-12T00:49:53Z",
+      "updated_at": "2026-11-12T19:42:34Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -49,54 +49,6 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
-    },
-    "linux-gfx1100": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "9607b099f3e0128c99eb8964c32462892b086967",
-      "failed_sha": null,
-      "started_at": "2026-11-12T19:33:59Z",
-      "completed_at": "2026-11-06T03:22:11Z",
-      "updated_at": "2026-11-12T19:36:35Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "last_agent": "validator"
-    },
-    "linux-gfx90a": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "9607b099f3e0128c99eb8964c32462892b086967",
-      "failed_sha": null,
-      "started_at": "2026-11-04T19:37:52Z",
-      "completed_at": "2026-11-06T03:33:37Z",
-      "updated_at": "2026-11-06T03:33:37Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "last_agent": "validator"
     },
     "linux-gfx942": {
       "blocked": false,
@@ -122,14 +74,38 @@
       "last_agent": "validator",
       "state": "completed"
     },
-    "linux-gfx1201": {
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "0e70429b85679b1dd028b4c26f95c3131ffaa6e9",
+      "failed_sha": null,
+      "started_at": "2026-11-12T19:33:59Z",
+      "completed_at": "2026-11-12T20:19:00Z",
+      "updated_at": "2026-11-12T20:19:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": null,
       "failed_sha": null,
-      "started_at": null,
+      "started_at": "2026-11-11T22:51:44Z",
       "completed_at": null,
-      "updated_at": "2026-11-12T19:42:34Z",
+      "updated_at": "2026-11-12T00:49:53Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -144,6 +120,30 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
+    },
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "9607b099f3e0128c99eb8964c32462892b086967",
+      "failed_sha": null,
+      "started_at": "2026-11-04T19:37:52Z",
+      "completed_at": "2026-11-06T03:33:37Z",
+      "updated_at": "2026-11-06T03:33:37Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
     }
   },
   "porting_released": {
@@ -157,6 +157,5 @@
     "by": "jeffdaily",
     "at": "2026-11-04T19:32:26Z",
     "reason": "Upstream h2oai/h2o4gpu's branch is master; there is no main (jeff 2026-11-04)"
-  },
-  "porting": null
+  }
 }
