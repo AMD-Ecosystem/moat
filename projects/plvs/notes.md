@@ -3897,3 +3897,57 @@ Not rerun: the 2026-11-12 CUDA compile check covers eb1b369 (nvcc 12.8, PASS, de
 
 ### Result
 linux-gfx90a: `revalidate` -> `completed` at `eb1b369`.
+## Validation 2026-11-12 (linux-gfx1100) at eb1b369: PASS -> completed
+
+Requested by jeff (2026-11-11, work the backlog toward the PR-prep squash). Trigger: `revalidate`, `validated_sha` 5a0a83c -> head eb1b369 (the upstream 632c55b merge; `classify plvs 5a0a83c eb1b369` -> `mixed`, so a full rebuild and run, no carry-forward). Host: Radeon Pro W7800 (gfx1100, wave32), `HIP_VISIBLE_DEVICES=0` (dispatcher pin, kept), Ubuntu 24.04, TheRock pip SDK (`_rocm_sdk_devel`, amdclang 24, `rocm-sdk version` 10.1.0), CMake 3.31.6, g++ 13, apt PCL 1.14 / Boost 1.83 (already installed). **Host load: idle at start** (load 0.31 on 64 threads, `amd-smi process` empty on all four GPUs); during the runs the load was 10-16, which is the plvs process itself (~820% CPU) plus Xvfb, one GPU process at a time. Every GPU process ran under `ulimit -c 0` with `OMP_NUM_THREADS=4`; no core file was written. Fork cloned fresh into `projects/plvs/src`; HEAD eb1b369 == `origin/moat-port`, `git status --porcelain` empty before and after. Everything was built in this job's directory. The datasets (`dataset-room1_512_16`, `rgbd_dataset_freiburg1_xyz`), `elas_cmp.cpp` / `elas_leak.cpp` (cmp-identical to the 2026-11-11 port-round copies), `TUM-VI_pcm.yaml` (diffed: tracked `Examples/Stereo/TUM-VI.yaml` with only `PointCloudMapping.on: 1`) and the driver scripts (paths changed only) were copied from the 2026-11-11 port-round job on this host; `ORBvoc.txt` was unpacked from the tracked `Vocabulary/ORBvoc.txt.tar.gz`.
+
+### Build
+- OpenCV-with-HIP from source: `AMD-Ecosystem/opencv@50f05b1` + `opencv_contrib@041d552` (clean trees), the 2026-11-11 `build_ocv.sh` cmake line unchanged, `-j 32` (`MAX_JOBS`), RC=0, 759/759, about 4 min on the idle host. Install-tree shim: lines 107-143 of `OpenCVConfig.cmake` (the `find_host_package(CUDA ...)` / `find_cuda_helper_libs` block) replaced by one comment; the generated file was cmp-identical to the port round's unshimmed `.orig` before that.
+- Pangolin fe57db532 (fresh `--recursive` clone, `git apply ../pangolin.patch`), then the 2026-11-11 `build_all.sh` unchanged (DBoW2, g2o, volumetric_mapping, open_chisel, chisel_server, voxblox, voxblox_server, libelas-gpu, libsgm, line_descriptor, then plvs `build-hip` with `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DWITH_LIBSGM=ON -DWITH_LIBELAS=ON -DWITH_G2O_NEW=OFF -DWITH_FASTFUSION=OFF -DBUILD_WITH_MARCH_NATIVE=OFF -DPLVS_BUILD_TESTS=ON ...`), under `timeit.sh plvs compile`, RC=0 (209 s). Configure prints `USE_HIP: ON`, `building with libelas HIP`, `building with stereo libsgm GPU`. `lib/libplvs.so`: one `.hip_fatbin`, 8 `ElasGPU` dynamic symbols, links `libamdhip64.so.7` and this job's HIP `libopencv_cudastereo.so.414`.
+
+### Upstream's new tests (632c55b), HIP build
+- `ctest --test-dir projects/plvs/src/build-hip --output-on-failure -R '^line_'`: **6/6 passed** (observations, one_sided, replacement, distance, fusion, triangulation). (A first invocation with a relative `--test-dir` exited 1 because `timeit.sh` runs from the MOAT root: no test ran; my path error.)
+- `python3 tests/test_evaluation_alignment.py`: **3/3 OK**.
+
+### Mono TUM RGB-D freiburg1_xyz (stock `mono_tum`, `TUM1.yaml`, viewer on under Xvfb), 3 runs
+`run_mono.sh 1 3` (`xvfb-run -a -s '-screen 0 1280x1024x24' Examples/Monocular/mono_tum ORBvoc.txt Examples/Monocular/TUM1.yaml rgbd_dataset_freiburg1_xyz`, `LD_PRELOAD` SIGSEGV/SIGABRT backtrace handler), Sim3 ATE of `KeyFrameTrajectory.txt` vs `groundtruth.txt` (`ate.py`).
+
+| run | rc | KFs | median tracking | Sim3 ATE |
+|---|---|---|---|---|
+| 1 | 0 | 51 | 9.3 ms | 0.0088 m |
+| 2 | 0 | 52 | 9.1 ms | 0.0106 m |
+| 3 | 0 | 56 | 9.2 ms | 0.0104 m |
+
+No signal, no `hipError` / `Gpu API` / `terminate called` / `cv::Exception` line. Records on this arch 0.0087-0.0104 m; run 2 is 0.2 mm above that, inside the cross-arch spread (gfx1151 0.0088-0.0111 m at 5a0a83c). Monocular ORB-SLAM is run-to-run nondeterministic and the GPU ORB path is unchanged by the merge (no `src/cuda`, `.cu` or `Thirdparty` change, `git diff --stat 5a0a83c eb1b369 -- Thirdparty` empty).
+
+### TUM-VI room1 stereo, libelas on the GPU, dense mapping on: 12 runs + 1 traced
+`runs_stereo.sh 1 12` then `runs_stereo.sh 13 13 trace` (`xvfb-run ... Examples/Stereo/stereo_tum_vi ORBvoc.txt TUM-VI_pcm.yaml dataset-room1_512_16/mav0/cam0/data .../cam1/data Examples/Stereo/TUM_TimeStamps/dataset-room1_512.txt room1_runN`, viewer on, `LD_PRELOAD` backtrace handler, 1800 s timeout; run 13 with `AMD_LOG_LEVEL=3`). ATE of `f_room1_runN.txt` vs `mocap0/data.csv` (`ate.py`), 2773/2821 matched. About 163 s per run.
+
+| outcome | runs (of 13) |
+|---|---|
+| clean: rc 0, 2821/2821 poses, one map (no `Map 1`) | **13** |
+| `-217` / `invalid argument` abort | **0** |
+| registered upstream crash (`plvs-upstream-stereo-mapping-crashes`) | **0** |
+| any other signal, or any `Gpu API` / `hipError` / `terminate called` / `cv::Exception` line | **0** |
+
+- Rigid ATE **0.0765-0.0789 m**, Sim3 **0.0716-0.0724 m** (5a0a83c on this arch: rigid 0.0771-0.0784; port round at eb1b369: rigid 0.0771-0.0779, Sim3 0.0723-0.0724; gfx90a Sim3 0.0714-0.0726). Map 0 has 82-88 KFs. `stereo processing (libelas)` calls: 199-231.
+- Traced run 13: clean, rigid 0.0773 / Sim3 0.0721 m, 199 libelas calls -> **`libelas::findMatch_GPU` x398 and `libelas::adaptiveMeanGPU8` x199** (2 + 1 per call), `IC_Angle_kernel` x45136, **0 `hipErrorInvalidValue`** (no `hipError*` string at all) among 21236 `hipFree` log lines. ELAS runs on the device inside plvs.
+- **libelas call count below the 5a0a83c band (266-305), explained as upstream behaviour, not the port.** In every run the call count equals the last keyframe id + 1 (`lastKeyframeIndex`), i.e. it counts keyframes created, culled ones included, and is a SLAM-behaviour figure. A/B control on this host, same session, same OpenCV and third-party builds: `git archive 5a0a83c` built with the identical plvs cmake line (`Thirdparty` symlinked to the eb1b369 clone's built tree; `git diff 5a0a83c eb1b369 -- Thirdparty` is empty), `stereo_tum_vi` target, 4 runs with the same script: **271-284 libelas calls, 88-97 KFs, rigid 0.0772-0.0786 / Sim3 0.0717-0.0721 m, 0 crashes, 0 error lines**. So the drop to 199-231 calls and 82-88 KFs comes with the merge content, at unchanged ATE. The merge changes no HIP, `.cu` or `Thirdparty` file, and the review established that eb1b369 = upstream 632c55b plus the identical port delta (Review 2026-11-12); the difference is upstream's b5684e1/632c55b host C++ (stereo line association, triangulation rejection, `MapLine::UpdateNormalAndDepth`), which creates fewer keyframes on this sequence. The port round's starved-host runs (264/266) were timing-perturbed; its one normal-speed run had 215, consistent with this set.
+- Upstream crash rate on this arch: 0/13 here, 0/3 in the port round at eb1b369.
+
+### ELAS GPU-vs-CPU, standalone libelas-gpu with the `-march=native` CPU reference
+`git archive HEAD Thirdparty/libelas-gpu` outside the fork; `cmake -S $L -B $L/build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release && cmake --build $L/build -j 8`, 14/14, `-march=native` 8x and `--offload-arch=gfx1100` 6x in `build.ninja`. Harness build: `amdclang++ -x hip --offload-arch=gfx1100 -std=c++17 -O2 -DUSE_HIP -I$L/CPU -I$L/GPU <src> -x none $L/lib/liblibelas_gpu.a -pthread`. Run: `./elas_cmp $L/input <mode>`, RC=0 in modes 0-3.
+- Mode 2 (plvs settings + subsampling): GPU reruns bit-exact 7/7; cones and aloe identical to the CPU (max 0, vmis 0, cones `invalid_cpu` 26728); raindeer 0.50 / vmis 4, urban1 0.44 / 2, urban2 0.66 / 0, urban3 1.23 (1 px > 1) / 0, urban4 0.68 / 0. Line for line the recorded table.
+- Mode 0: D1 max 0.78-4.35, mean 0.016-0.025, >1px 0-5, vmis 1-25; D2 max cones 24.80, aloe 9.19, raindeer 22.73, urban2 14.75, urban3 3.67, >1px 0-8. Mode 1: max 0.73-4.35, mean 0.016-0.025, >1px 0-5, vmis 1-25. Mode 3: integer steps (max 2-25), mean 5.1e-5 to 1.7e-4, >1px 1-12, vmis 1-25. All inside the recorded gfx1100 ranges; reruns not bit-exact in modes 0/1/3 (the known upstream nondeterminism).
+- Leak and pending-error check, run with nothing else on the GPU (`amd-smi process` empty on every GPU immediately before; no plvs run active): `./elas_leak $L/input/<img> 20` -> **aloe 0.00 MB, cones 0.00 MB lost after the first call, 0/21 calls with a pending error** for both.
+
+### CUDA no-regression gate
+Not rerun: the CUDA compile check at eb1b369 passed (mi355 host, nvcc 12.8.93, "CUDA compile check 2026-11-12 (eb1b369)" above).
+
+### Gates (validator step 4)
+- `python3 utils/jargon.py --port plvs` -> `jargon: clean`, with the clone's local `master` set to `upstream/master` 632c55b (local ref only, not pushed).
+- ROCm build documentation: the `config.sh` HIP/ROCm section and `new_features.md` are present; the merge changed no HIP build file.
+- Integrity: `git -C projects/plvs/src status --porcelain` empty (Pangolin and build trees are ignored); HEAD eb1b369 == `origin/moat-port`; no fork edit, no push, no core file.
+
+### Result
+linux-gfx1100: `revalidate` -> `completed` at eb1b369. The owed 10-run TUM-VI set is done (13/13 clean, 0 `-217`, 0 registered upstream crashes, ATE in band), with the traced in-SLAM kernel run; mono 3/3; upstream tests 6/6 + 3/3; ELAS CPU parity and 0 MB leak. The only out-of-band figures (libelas calls / KF count lower; mono run 2 0.2 mm above this arch's band) are explained above as upstream SLAM behaviour and run-to-run spread, not the port.
