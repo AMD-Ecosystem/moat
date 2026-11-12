@@ -550,3 +550,27 @@ Tools (no admin): WinDbg was already installed per-user (`%LOCALAPPDATA%\Microso
 - Heap stress in one process: `seq.py km32,ts32,pca32,en32,en64,km64,ts64,pca64,en32,en64,km32` exits 0 (no corruption, EN f64 twice). `kmpt.py`: KMeans predict == nearest-centroid argmin 1.0 and == labels_ 1.0; transform (20000,5) argmin agreement 1.0, f32 and f64.
 - CPU KMeans back end (`_ch2o4gpu_cpu`): compiles and loads. Not exercised, because upstream marks it "not working".
 - Separate pre-existing upstream bug, not fixed (platform-independent): when `lambdas` is passed as a list, `elastic_net_ptr.cpp` copies `lambdas[1..]` but never `lambdas[0]`, so the first lambda stays 0 (the verbose log shows "lambda = 0").
+
+## CUDA compile check at 2c22a86 (2026-11-12)
+
+CUDA no-regression compile check on linux-gfx950 (mi355 host), nvcc 12.8 (V12.8.93), gcc 13.3.0, cmake 3.31.6, SWIG 4.2.1 (pip, into the job venv), numpy 1.26.4, apt OpenBLAS 0.3.26. No role taken, no state changed. No NVIDIA GPU on this host, so nothing was run on a GPU: this is compile and link evidence only.
+
+- Trees: one clone of `AMD-Ecosystem/h2o4gpu` (fetched explicitly; `moat-port` tip is `2c22a862`), worktrees at `9607b099f` (base, the last checked head) and `2c22a86` (head), under the job directory. Only `tests/googletest` initialized. Same scratch-only sed in both, as in the earlier checks: `SET(GPU_COMPUTE_VER 60;61;70;75;80;90)` -> `80`, the `;100;120` append commented out (sm_80 + compute_80; 40 nvcc invocations, all with that pair).
+- Commands (`t` = base|head):
+  ```
+  export PATH=/usr/local/cuda-12.8/bin:$FLEET_VENV/bin:$PATH
+  git -C $t submodule update --init tests/googletest
+  cmake -S $t -B $t/build -DCMAKE_BUILD_TYPE=Release -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-12.8 -DPython_EXECUTABLE=$FLEET_VENV/bin/python -DSWIG_EXECUTABLE=$FLEET_VENV/bin/swig
+  cmake --build $t/build -j32 -- -k VERBOSE=1
+  ```
+- Result: both PASS (configure rc 0, build rc 0, no compiler or linker errors). Both build and link `libcpuh2o4gpu.a`, `libgpuh2o4gpu.a`, `_ch2o4gpu_cpu.so`, `_ch2o4gpu_gpu.so`, `h2o4gpu_test` (24 tests listed by `--gtest_list_tests`; not run).
+- Configure summary: identical except the CMake `CMP0146` FindCUDA dev warning at CMakeLists.txt:111 -> :134 (the 23-line `if(WIN32)` block above it).
+- Command lines: all 333 compile/link/archive/SWIG commands from the verbose log, sorted with the tree path normalized, are identical, including the nvcc line for `src/gpu/kmeans/kmeans_h2o4gpu.cu` and the host `c++` line for `src/cpu/h2o4gpukmeans.cpp`. The FindCUDA-generated `cuda_compile` scripts (which hold the nvcc flags) are identical too. So the `if(WIN32)` block and the MSVC-frontend `/FI` and `/Ob1` branch do not reach the Linux CUDA build; no `hip_compat`, `amdhip`, `/FI`, `Ob1`, `LightGBM_rocm` or `xgboost_rocm` appears in any generated build file.
+- Warnings: the project builds with `-w`. Normalized warning sets from configure+build are identical (14 unique lines: CMP0146, `cmake_policy(CMP0078 OLD)` and googletest `cmake_minimum_required` deprecations, CUDA 12.8 NVTX2 `#pragma message`). Because `-w` hides compiler warnings, the two changed KMeans sources were also recompiled in both trees with their exact build commands, `-w` removed and `-Wall -Wextra` added (nvcc via `-Xcompiler`): 110 warning lines in each tree, the same 32 unique after line-number normalization, all pre-existing (unused parameters, sign-compare, `random_shuffle` deprecation). No new warning from `alloc_result`, the `thrust::copy`/`std::copy` calls, or `<numeric>`.
+- Objects (`ar x` of both static libs, sizes and `nm` after hash normalization): only three objects differ.
+  - `kmeans_h2o4gpu.cu.o` 4270672 -> 4256792 B. Device code unchanged: `.nv_fatbin` 3219224 B in both, and the PTX (`cuobjdump -ptx`) is identical once the per-compile `_<hash>_17_kmeans_h2o4gpu_cu_<hash>` names are normalized. Host `.text` 15361 -> 15297 B. Host symbols: gone are the `thrust::vector_base<{int,float,double}>::copy_insert`/`allocate_and_copy` instantiations, the `thrust::copy` into a `host_vector<int>` iterator and two `sequential::trivial_copy_n` clones (the old `host_vector::insert` path); new import `calloc`. 14 `kmeans_fit` symbols in both.
+  - `h2o4gpukmeans.cpp.o` (CPU back end, host gcc) 86808 -> 85608 B; only symbol change is the new `malloc` import.
+  - `projector_direct_dense.cu.o` -32 B (`.nv_fatbin` -8 B): it includes `timer.h`, whose content changed (`_WIN32` branch), so the per-compile internal-linkage hash changed; PTX identical after hash normalization. No code change.
+- Modules: `_ch2o4gpu_gpu.so` (11 NEEDED), `_ch2o4gpu_cpu.so` (6) and `h2o4gpu_test` (10) have the same NEEDED and RUNPATH (`/usr/local/cuda-12.8/lib64:/usr/local/cuda-12.8/lib64/stubs`) in both trees. The only change in undefined dynamic symbols is `PyLong_AsLongLong` added to both SWIG modules (the `elastic_net.i` typemap change; `PyLong_AsLongLong` is in every Python 3 C API).
+- Not done: any NVIDIA GPU run (no NVIDIA GPU on this host), the Makefile gbm recipes (untouched by 2c22a86).
+- Build trees and the clone stay in the job directory (scratch); nothing was pushed.
