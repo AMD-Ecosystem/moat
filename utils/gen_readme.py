@@ -195,6 +195,14 @@ def outcome_cell(p):
     # recorded" is the opposite of a port whose fork is the place to get it.
     if p.get("no_upstream"):
         return "🔵 fork is the AMD path; upstream takes no pull requests"
+    # A release line ships as a tagged branch on the fork, never as an upstream
+    # pull request: the tag once it is signed off, and the plan until then.
+    if moatlib.release_line(p):
+        rel = p.get("release")
+        if rel:
+            return (f"\U0001f535 released on the fork as `{rel.get('tag')}` "
+                    f"([branch]({p.get('fork_url')}/tree/{p.get('fork_branch')}))")
+        return "\u2014 fork release line; no upstream pull request"
     return "—"
 
 
@@ -229,7 +237,7 @@ def render_table(projects):
         "| ✅ | proven on the current code | | 🟣 | contribution merged upstream |",
         "| 🔄 | proven earlier; the code has moved since | | 🟢 | pull request open |",
         "| 🔧 | in progress | | 🔴 | pull request closed |",
-        "| ⬜ | not started | | 🔵 | the fork is where AMD support lives: upstream points users at it instead of merging, or is archived and takes no pull requests |",
+        "| ⬜ | not started | | 🔵 | the fork is where AMD support lives: upstream points users at it instead of merging, is archived and takes no pull requests, or will never take the port and the fork ships tagged releases |",
         "| 🚫 | blocked, with a reason recorded | | ⚖️ | licence bars contributing the port |",
         "| 🎫 | waived for this project, with maintainer approval | | ⚪ | set aside, with the reason recorded |",
         "| — | nothing recorded | | ⏸ | on hold, deliberately not being worked |",
