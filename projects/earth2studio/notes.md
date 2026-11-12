@@ -36,3 +36,7 @@ Validation project (lane `validate`, seed `amd-gap-matrix`, NVIDIA-owned upstrea
 - **CUDA-only dependencies:** NATTEN (gap, declined in MOAT as can't-port); torch-harmonics CUDA extension (follow-on port, or its fallback); earth2grid CUDA extension (follow-on port); `jax[cuda13]` (ROCm JAX); `onnxruntime-gpu` (ORT ROCm / MIGraphX EP); `cupy-cuda13x` (CuPy ROCm); `cucim-cu13` (MOAT `cucim`); `cudf-cu13` (gap); `nvtx`, `pynvml` (make optional).
 - **Windows:** classifiers say "OS Independent", but the model stack (PhysicsNeMo, JAX, cuDF, NATTEN, Redis serve) is Linux-first and CI is Linux containers. The core API plus a few pure-PyTorch models (FCN, DLWP, AFNO) may run on Windows ROCm torch; a Windows run is possible evidence but not a natural gate. Suggest a `windows` waiver, or keep the gate scoped to the core + pure-PyTorch subset; jeff decides.
 - **Risks:** breadth (dozens of model extras, each with its own dependency stack); large checkpoint downloads for `package` tests; NATTEN-dependent DiT models are the headline CorrDiff/StormCast variants the gap list mentions, so the visible result will be partial.
+
+## Declined (2026-11-12)
+
+Jeff Daily ruled earth2studio out of scope for MOAT on 2026-11-12: too much work for a validation project (two LicenseRef-NvidiaProprietary files, NATTEN DiT and cuDF data-assimilation model gaps, per-model validation). Intake is re-recorded as decline and the project is held. Do not request a fork. torch-harmonics and earth2grid stay unclaimed.
