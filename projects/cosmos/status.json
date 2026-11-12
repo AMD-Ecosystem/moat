@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-12T16:31:20Z",
-  "updated_at": "2026-11-12T16:31:21Z",
+  "updated_at": "2026-11-12T16:58:55Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-12T16:58:54Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "OpenMDW-1.1",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "OpenMDW-1.1",
+      "evidence": "https://github.com/NVIDIA/cosmos/blob/main/LICENSE",
+      "at": "2026-11-12T16:58:43Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none",
+    "viable": true,
+    "summary": "NVIDIA Cosmos 3 landing repo (OpenMDW-1.1 = tier 4, needs licence clearance; docs only, code in NVIDIA/cosmos-framework): validate diffusers/vLLM quickstart on ROCm; Jeff to pick fork target",
+    "at": "2026-11-12T16:58:50Z"
+  }
 }
