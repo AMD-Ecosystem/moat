@@ -1167,6 +1167,24 @@
     "reason": "already-supported",
     "repo_id": 64991887
   },
+  "lightricks/ltx-2": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T21:38:03Z",
+    "disposition": "skip",
+    "full_name": "Lightricks/LTX-2",
+    "note": "gap-matrix intake follow-up 2026-11-12: maintainer ruled ROCm not planned (LTX-2 #141); default path is pure PyTorch needing only packaging, no test suite; a fork would only hold the opt-in ltx-kernels perf package; LTX-Video is superseded by LTX-2",
+    "reason": "not-a-target",
+    "repo_id": 1127234517
+  },
+  "lightricks/ltx-video": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T21:38:04Z",
+    "disposition": "skip",
+    "full_name": "Lightricks/LTX-Video",
+    "note": "gap-matrix intake follow-up 2026-11-12: maintainer ruled ROCm not planned (LTX-2 #141); default path is pure PyTorch needing only packaging, no test suite; a fork would only hold the opt-in ltx-kernels perf package; LTX-Video is superseded by LTX-2",
+    "reason": "not-a-target",
+    "repo_id": 891705470
+  },
   "linkedin/liger-kernel": {
     "by": "Jeff Daily",
     "decided": "2026-11-10T18:02:42Z",
