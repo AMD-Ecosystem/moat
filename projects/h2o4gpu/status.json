@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:05:27Z",
-  "updated_at": "2026-11-12T19:26:23Z",
+  "updated_at": "2026-11-12T19:33:41Z",
   "head_sha": "1e22b819bd1d84e7d801099148fef4c24d20b430",
   "depends_on": [],
   "waivers": {},
@@ -157,5 +157,8 @@
     "at": "2026-11-04T19:32:26Z",
     "reason": "Upstream h2oai/h2o4gpu's branch is master; there is no main (jeff 2026-11-04)"
   },
-  "porting": null
+  "porting": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-12T19:33:41Z"
+  }
 }
