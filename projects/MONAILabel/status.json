@@ -2,13 +2,13 @@
   "schema_version": 3,
   "name": "MONAILabel",
   "upstream_url": "https://github.com/Project-MONAI/MONAILabel",
-  "fork_url": null,
+  "fork_url": "https://github.com/AMD-Ecosystem/MONAILabel",
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "awaiting-fork",
+  "stage": "screened",
   "adopted_at": "2026-11-11T20:56:43Z",
-  "updated_at": "2026-11-12T22:24:46Z",
+  "updated_at": "2026-11-12T22:33:26Z",
   "head_sha": null,
   "depends_on": [
     "MONAI"
