@@ -8,11 +8,17 @@
   "ext_type": "unknown",
   "stage": "awaiting-fork",
   "adopted_at": "2026-11-12T18:29:57Z",
-  "updated_at": "2026-11-12T18:45:20Z",
+  "updated_at": "2026-11-12T21:50:56Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "knowhere and Milvus are Linux-only, and hipVS is Linux-only. Approved 2026-11-12 with the gap-matrix intake follow-ups.",
+      "approved_by": "Jeff Daily",
+      "at": "2026-11-12T21:50:56Z"
+    }
+  },
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
