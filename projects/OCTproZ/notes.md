@@ -300,3 +300,26 @@ gfx1201 Windows validation. Results match gfx1201 exactly: 32768/32768 non-zero
 pipeline output (mean=0.5933) and 65278/65536 surf3Dwrite voxels -- confirming
 identical correctness on RDNA3 wave32 (27 CUs, 25.5 GB). GPU pinned with
 HIP_VISIBLE_DEVICES=1.
+
+## CUDA compile check (nvcc 12.8) at af845bad
+
+CUDA no-regression compile of the fork at head_sha af845bad4edc1f6e23e7bdd8a0d61d24544bfeed (qmake, default non-`USE_HIP` path, so `pri/cuda.pri`), on a ROCm fleet host that carries a CUDA toolkit (no NVIDIA GPU; compile and link only). Toolkit: `Cuda compilation tools, release 12.8, V12.8.93`, host compiler gcc 13.3.0. The image has no Qt development files, so these Ubuntu noble packages, matching the installed 5.15.13 runtime, were fetched with `apt-get download` and extracted with `dpkg -x` into the job directory: qtbase5-dev, qtbase5-dev-tools, qt5-qmake, qt5-qmake-bin, libqt5opengl5-dev, qtchooser, libqt5printsupport5t64. A `qt.conf` next to qmake redirects the prefix there. `cuda.pri` was left as committed (its "CUDA 13.0" arch list is sm_75 through sm_120, all accepted by 12.8).
+
+```
+export PATH=<job>/deps/qt/usr/lib/qt5/bin:/usr/local/cuda/bin:$PATH
+mkdir oct-build && cd oct-build
+qmake ../OCTproZ/octproz_project/octproz_project.pro && make -k -j32
+```
+
+Result: FAIL with the documented flags, inherited from upstream and not introduced by the port. nvcc stops on `cuda_code.cu` (`Makefile:722: cuda_code_cuda.o`) with six static assertions in the Qt headers, the first being:
+
+```
+qt5/QtCore/qnamespace.h:272:16: error: static assertion failed: (std::is_same<decltype(std::declval<TextElideMode>() | std::declval<TextFlag>()), int>::value)
+  272 |     Q_DECLARE_MIXED_ENUM_OPERATORS_SYMMETRIC(int, TextElideMode, TextFlag)
+```
+
+(The other five are the `&` and `^` operators and the reversed operand order.) Upstream's tip, spectralcode/OCTproZ 3984974f089a73233e7d10338aa92c8e1acb96de, built the same way fails identically with the same six errors on its own `cuda_code.cu`. The trigger is `NVCC_OPTIONS = --use_fast_math -std=c++11` in `cuda.pri` combined with Qt 5.15.13's headers under nvcc 12.8. Re-running that exact nvcc command with only `-std=c++11` changed: `-std=c++14` gives the same six errors, while `-std=c++17` compiles `cuda_code.cu` cleanly (exit 0, no errors) for all ten gencode targets, on both the fork and upstream.
+
+With the c++17 object in place, the rest of the CUDA target was finished in the same build tree: `make -j32` in `oct-build/octproz` with `LIBRARY_PATH=/usr/local/cuda/lib64/stubs`, because this host has no NVIDIA driver and therefore no `libcuda.so` for `-lcuda`. Every host C++ file of the octproz target compiled, including `glwindow2d.h`/`kernels.h` with the port's new `cuda_to_hip.h` include and `USE_HIP` guards on the CUDA path. `OCTproZ` linked (4.27 MB, identical in size to upstream's), and `cuobjdump` shows SASS for sm_75, 80, 86, 87, 89, 90, 100 and 120. The devkit and 8 of the 10 plugins built. Two plugins could not be configured because the image lacks those Qt modules: `octproz-camera-extension` ("Unknown module(s) in QT: multimedia multimediawidgets") and `octproz-socket-stream-extension` ("Unknown module(s) in QT: websockets"). Neither contains CUDA code, and the port does not touch them.
+
+Verdict: the port introduces no CUDA compile regression. The `-std=c++11` failure is upstream's own issue with current Qt 5.15 and nvcc 12.8. The `cuda-compile` telemetry lines for this check record exit 0 because the wrapper script echoed the make status instead of returning it; the real outcome is the one described above.
