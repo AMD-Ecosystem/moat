@@ -17,3 +17,7 @@ Origin: Jeff Daily's 2026-11-12 ruling on a third-party "AMD AI software gap" li
 - CUDA-only dependencies: FlashInfer NVFP4 (`nvfp4` quant, Blackwell only -- gap, document as unsupported on AMD); `fp8w8a8` uses `torch._scaled_mm` e4m3 (works on gfx942/gfx950 with fnuz/ocp fp8 selection; check, the README lists only NVIDIA); `intw8a8` via gemlite Triton kernels (gemlite's AMD support is partial -- main risk). The `torch==2.11.0` and `triton==3.6.0` exact pins resolve to CUDA wheels on PyPI; a ROCm install needs the ROCm torch index and its bundled triton.
 - Windows: upstream has a Windows story (`triton-windows` pin), so Windows is in scope -- no waiver; triton-windows is CUDA-only, so on ROCm Windows the Triton path depends on TheRock's Windows Triton (risk).
 - Existing AMD work to back: none.
+
+## Declined (2026-11-12)
+
+Jeff Daily declined world_engine as license-blocked on 2026-11-12: GPL-3.0 (tier 3) needs a licence clearance that is not his to give, the README's AMD claim has no ROCm code behind it, and the GPU stack leans on NVIDIA-specific pieces (gemlite low-bit Triton GEMMs, NVFP4 via FlashInfer). Intake is re-recorded as decline and the project is held. Do not request a fork.
