@@ -3695,3 +3695,93 @@ libelas-gpu `git archive 5a0a83c`, built standalone for gfx1151 (default `-march
 
 ### Result
 windows-gfx1151: `validation-failed` -> `completed` at 5a0a83c. GPU ORB (mono 3/3, 0 lost, ATE ~1 cm) and GPU ELAS (bit-exact reruns, CPU parity, no leak, no pending error, 10/10 stereo runs with 0 crashes and 0 -217) validated on real gfx1151.
+
+## Port round 2026-11-11 (porter, linux-gfx1100): upstream master 632c55b merged into `moat-port`. Head eb1b369
+
+Requested by jeff (2026-11-11, work the backlog): plvs needs an upstream merge before its PR-prep squash, because the maintainer fixed and closed #57, #58 and #59 on 2026-11-07. Host: Radeon Pro W7800 (gfx1100, wave32), `HIP_VISIBLE_DEVICES=0` (dispatcher pin, kept), Ubuntu 24.04, TheRock pip SDK (`_rocm_sdk_devel`, amdclang 24), CMake 3.31.6, g++ 13, apt PCL 1.14 / Boost 1.83. Every GPU process ran under `ulimit -c 0` with `OMP_NUM_THREADS=4`, one at a time. Everything was built in this job's directory; nothing survived from earlier plvs jobs on this host, so the apt dependencies, OpenCV-with-HIP, the datasets and the ELAS harnesses were all redone (below).
+
+### Merge
+- Upstream: `luigifreda/plvs` `master` = **632c55b1c61ddd2d624e26e12db34e632dba4a55** (2026-11-08, "Fix stereo line association and reject triangulations that do not overlap"), whose parent is b5684e157797ba43f1c04717d6178cdb1f9c09d6 ("Fix stereo fisheye crashes in loop closing and local mapping (#57, #58, #59)"). Merge base with `moat-port` = 2ecb8b1 (the old upstream tip and current fork `master`).
+- `git merge --no-ff upstream/master` on `moat-port` 5a0a83c -> merge commit **eb1b369** `[ROCm] Merge upstream master into the ROCm port` (parents 5a0a83c, 632c55b). No rebase, no amend; plain push.
+- Conflicts: `src/Frame.cc` (2 hunks), `src/LoopClosing.cc` (2), `src/MapLine.cc` (2). Everything else auto-merged (upstream also changed `.gitignore`, `CMakeLists.txt`, `config.sh`, `src/LineMatcher.cc`, `src/ORBmatcher.cc`, `src/Tracking.cc`, `src/LocalMapping.cc`; added `bash_utils.sh` env helpers, `include/GeometricTools.h` code, `tests/`). The upstream delta adds no `USE_CUDA` code path and no `.cu` change, so nothing new needed HIP treatment.
+
+| file | hunk | taken | why |
+|---|---|---|---|
+| `src/Frame.cc` | `ComputeStereoFishEyeMatches` `mvDepth`/`mvuRight` sized N before the early return (ours a93e73d) | upstream | Same code; upstream's comment. |
+| `src/Frame.cc` | `ComputeStereoFishEyeLineMatches` line depth arrays sized `Nlines` (ours 46a26f4) | upstream | Upstream sizes `mvDepthLineStart/End` to `Nlines` outside the guard, as ours did. Ours also moved `mvuRightLineStart/End` out of `if(NlinesLeft>0)`; upstream keeps them inside. Not needed: with `NlinesLeft == 0` the vectors stay empty, and every reader either checks `.empty()` first (`LineMatcher.cc:666/705/1022/1403/2227/2482`, `LocalMapping.cc:1021/1044`, `MapLine.cc:240`, `Optimizer.cc:886/1940/2689/3801/6221`) or indexes only a left index, which cannot exist then (`MapLine.cc:272/292`, `LocalMapping.cc:1247` behind `!bRight1`). The auto-merged removal of the two lines from inside the guard was reverted too, so the function is byte-identical to upstream. |
+| `src/LoopClosing.cc` | per-feature keyframe vectors (ours 61e9640) | upstream (whole file) | Identical code, upstream's comment; ours also kept a stale commented-out `vpKeyFrames` debug line that upstream deleted. No HIP change in this file. |
+| `src/MapLine.cc` | `AddObservation` right-camera index counted once (ours 970cb1f) | upstream (whole file) | Identical condition (`bRightObservation`), upstream's comment. |
+| `src/MapLine.cc` | `UpdateNormalAndDepth` line pyramid (ours 59eb0da) | upstream | Upstream rewrote the function: midpoint distance, bounds check on `level`, `mfMinDistance = mfMaxDistance / mvLineScaleFactors.back()` (`src/MapLine.cc:789-800`), so the `nLevels` index is gone. No HIP change in this file. |
+
+Resulting tree vs upstream master: `src/Frame.cc` differs only by the 7 `USE_HIP` guard lines, `src/LoopClosing.cc` and `src/MapLine.cc` are identical. Non-HIP differences still on the branch: `src/PointCloudMapOctreePointCloud.cc` (2522f1e + 5a0a83c), `src/OptimizableTypes.cpp` (b4be814), the two TUM-VI examples (`PosixCompat.h`, 441cb76, Windows build), plus the earlier Windows/clang compile fixes (`LineMatcher.cc` iterator init, `ORBmatcher.cc` `<cstdint>`) that predate this series.
+- Not changed: upstream's new `config.sh` writes `USE_CUDA`/`CUDA_VERSION` to a `.env` file through `write_env_var`; nothing in the tree reads `.env` yet (`read_env_var` has no caller), so no `USE_HIP` line was added.
+
+### Which of our non-HIP fixes upstream now covers (for jeff's filing decision)
+Citations are `luigifreda/plvs` at 632c55b.
+
+| our commit | defect | covered by upstream? | upstream evidence | draft in notes.md |
+|---|---|---|---|---|
+| a93e73d | fisheye `mvDepth`/`mvuRight` sized `Nleft` (#58) | **yes** (b5684e1) | `src/Frame.cc:2981-2985` | "Issue A" (2026-11-05 round): moot, #58 was filed and is closed |
+| 46a26f4 | fisheye line depth arrays sized `NlinesLeft` | **yes** (b5684e1) | `src/Frame.cc:3037-3040` (`mvuRightLineStart/End` stay inside `if(NlinesLeft>0)` at `:3048-3049`, safe, see the table above) | the #58 follow-up comment: **moot**. Its line-array half is fixed and its Linux ASan half only adds evidence to a closed, fixed issue |
+| 61e9640 | loop-closure keyframe vector shorter than the features (#59) | **yes** (b5684e1) | `src/LoopClosing.cc:846-849`, `:861`, `:876`, `:907`, `:918` | "Issue B": moot (#59 closed) |
+| 970cb1f | right-camera line observation counted twice (#57) | **yes** (b5684e1, kept in 632c55b) | `src/MapLine.cc:241-248` | MapLine null-KeyFrame draft: moot (#57 closed) |
+| 59eb0da | `MapLine::UpdateNormalAndDepth` indexes `mvLineScaleFactors` with the keypoint level count | **yes** (632c55b) | `src/MapLine.cc:789-800` uses `mvLineScaleFactors.back()`; no `mnScaleLevels` left in the file | separate MapLine line-scale draft: **moot**; combined draft item 1: **moot** |
+| b4be814 | `auto projectJac = -pCamera->projectJac(...)` dangling Eigen expression | **no** | `src/OptimizableTypes.cpp:214` unchanged | separate projectJac draft: **still valid** (or the combined draft reduced to item 2). ORB-SLAM3 draft: unaffected, still valid |
+| 2522f1e + 5a0a83c | octree `deleteVoxelAtPoint` inside the leaf iterator (use-after-free) | **no** | `src/PointCloudMapOctreePointCloud.cc:990` (`UpdateMapNoSegm`) and `:1071` (`UpdateMapSegm`) still delete inside the loop | octree draft: **still valid**; its cited `:935`/`:1006` function heads are unchanged at 632c55b |
+
+So of the drafts, two plvs issues remain worth filing (octree use-after-free; projectJac, either the separate draft or the combined draft cut to item 2), plus the ORB-SLAM3 projectJac draft. The #58 comment and the Issue A/B, MapLine null-KeyFrame and line-scale drafts are superseded. Nothing was filed or posted.
+
+The squash list ("Commit-message corrections owed at the PR-prep squash") changes with this: a93e73d, 61e9640, 970cb1f, 46a26f4 and 59eb0da now contribute nothing to the diff against upstream, so they drop out of the squashed result. Item 2 (b4be814 Test Plan wording) and item 1 (2522f1e body, fold 5a0a83c) still apply.
+
+### Build at eb1b369 (everything in this job directory)
+- apt (fresh container): `libpcl-dev libboost-all-dev libglew-dev libglfw3-dev libsuitesparse-dev libgoogle-glog-dev libprotobuf-dev protobuf-compiler liboctomap-dev libssl-dev libgtk-3-dev libepoxy-dev libavcodec-dev libavformat-dev libswscale-dev libjpeg-dev libpng-dev libtiff-dev libeigen3-dev`.
+- OpenCV-with-HIP from source: `AMD-Ecosystem/opencv@50f05b1` + `opencv_contrib@041d552`, the recorded gfx1100 cmake line (`-DWITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=<sdk>/bin/amdclang++ -DCMAKE_PREFIX_PATH=<sdk> -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_PYTHON=OFF -DWITH_GTK=ON -DBUILD_LIST=core,imgproc,imgcodecs,highgui,videoio,video,features2d,flann,calib3d,ximgproc,cudev,cudaarithm,cudawarping,cudaimgproc,cudastereo,cudafilters,cudafeatures2d,cudabgsegm -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF`), `cmake --build -j 8` (`MAX_JOBS`), RC=0, 759/759 (ninja's count this time; the records say 650), 3427 s on a loaded host. Install-tree shim: lines 107-143 of `OpenCVConfig.cmake` (the `find_host_package(CUDA ...)` / `find_cuda_helper_libs` block) replaced by one comment.
+- Pangolin fe57db532 + `Thirdparty/pangolin.patch` (gitignored `Thirdparty/Pangolin`), then DBoW2, g2o, volumetric_mapping, open_chisel, chisel_server, voxblox, voxblox_server, libelas-gpu, libsgm, line_descriptor with `-DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 -DOpenCV_DIR=<ocv> -DUSE_HIP=ON -DOPENCV_VERSION=4 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_HIP_ARCHITECTURES=gfx1100`. Then plvs: `cmake -S . -B build-hip -DWITH_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DWITH_LIBSGM=ON -DWITH_LIBELAS=ON -DWITH_G2O_NEW=OFF -DWITH_FASTFUSION=OFF -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 -DOPENCV_VERSION=4 -DOpenCV_DIR=<ocv> -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DPLVS_BUILD_TESTS=ON && cmake --build build-hip -j 8`, all under `timeit.sh plvs compile`, RC=0 (1131 s). Configure prints `USE_HIP: ON`, `building with libelas HIP`, `building with stereo libsgm GPU`. `lib/libplvs.so`: one `.hip_fatbin`, 8 `ElasGPU` dynamic symbols, links `libamdhip64.so.7` and the job's HIP `libopencv_cudastereo.so.414`.
+- Integrity: `git -C projects/plvs/src status --porcelain` shows only untracked build output (build dirs, Pangolin); no modified tracked file. `config.sh` was not edited or sourced (the third-party driver passes the options directly), so no `.env` was written.
+
+### Upstream's new tests (added by 632c55b), HIP build
+- `ctest --test-dir build-hip --output-on-failure -R '^line_'`: **6/6 passed** (observations, one_sided, replacement, distance, fusion, triangulation).
+- `python3 tests/test_evaluation_alignment.py`: 3/3 OK.
+
+### Mono TUM RGB-D freiburg1_xyz (stock `mono_tum`, `TUM1.yaml`, viewer on under Xvfb), 3 runs
+`xvfb-run -a -s '-screen 0 1280x1024x24' Examples/Monocular/mono_tum ORBvoc.txt Examples/Monocular/TUM1.yaml rgbd_dataset_freiburg1_xyz`, `LD_PRELOAD` SIGSEGV/SIGABRT backtrace handler, Sim3 ATE of `KeyFrameTrajectory.txt` vs `groundtruth.txt`.
+
+| run | rc | KFs | median tracking | Sim3 ATE |
+|---|---|---|---|---|
+| 1 | 0 | 45 | 13.2 ms | 0.0094 m |
+| 2 | 0 | 50 | 12.8 ms | 0.0088 m |
+| 3 | 0 | 48 | 11.8 ms | 0.0087 m |
+
+Records on this arch: 0.0090-0.0104 m. No signal, no `hipError` line.
+
+### TUM-VI room1 stereo, libelas on the GPU, dense mapping on: 3 completed runs, short of the 10 requested
+`stereo_tum_vi ORBvoc.txt <yaml> dataset-room1_512_16/mav0/cam0/data .../cam1/data Examples/Stereo/TUM_TimeStamps/dataset-room1_512.txt room1_runN` under `xvfb-run`, `LD_PRELOAD` backtrace handler. Run 1 used `TUM-VI_pcm.yaml` (tracked `Examples/Stereo/TUM-VI.yaml` with only `PointCloudMapping.on: 1`, viewer on, the records' gfx1100 config); runs 3 and 4 used the same file plus `Viewer.on: 0` (the config of the gfx90a records), to take Mesa llvmpipe's software rendering off a starved host. ATE vs `mocap0/data.csv`, 2773/2821 poses matched.
+
+| run | viewer | rc | KFs (one map) | libelas calls | unstable voxels removed (passes) | rigid ATE | Sim3 ATE | wall |
+|---|---|---|---|---|---|---|---|---|
+| 1 | on | 0 | 84 | 215 | 13.2 M (140) | 0.0779 m | 0.0724 m | 13 min |
+| 3 | off | 0 | 92 | 264 | 14.2 M (136) | 0.0773 m | 0.0723 m | 54 min |
+| 4 | off | 0 | 83 | 266 | 14.9 M (143) | 0.0771 m | 0.0723 m | 45 min |
+
+- **Crashes: 0 of 3.** No SIGNAL line, no `-217`, `invalid argument`, `Gpu API`, `hipError`, `terminate called` or `cv::Exception` line in any log. The 5a0a83c round on this arch: 0/17, rigid ATE 0.0771-0.0784 m, 84-101 KFs, 266-305 libelas calls; gfx90a Sim3 0.0714-0.0726 m. All three runs fall in those bands (run 1's 215 libelas calls are below the band with KFs inside it).
+- Not counted: run 2 (viewer on) was still mapping at 31 min when I killed its driver loop to change the plan, and the harness tore down its process group, so it ended without a trajectory. That was my action, not a crash. Run 5 was killed during startup when I stopped the batch.
+- Why only 3: the host was starved by other jobs the whole session. Single-thread `numpy` copy bandwidth measured 0.026, 0.050 and 0.037 GB/s at three points, load 35-70 on 64 threads, and the median tracking time was 0.79-0.97 s in runs 3/4 against 9 ms on an idle host. A run took 45-54 min instead of the recorded 163 s, so 10 runs would have needed about 8 hours. The OpenCV build alone took 57 min at `MAX_JOBS=8`. I stopped at 3 under the stop discipline. The traced `AMD_LOG_LEVEL=3` run was not done either; libelas-gpu is unchanged since 5a0a83c (`git diff --stat 5a0a83c eb1b369 -- Thirdparty/libelas-gpu` is empty), and its in-SLAM kernel trace is recorded at 5a0a83c on this arch.
+- **Owed:** the 10-run TUM-VI set at eb1b369 (with the traced run) on a non-starved host. linux-gfx1100 now reads `revalidate`, so the next validator here should run it.
+
+### ELAS GPU-vs-CPU and leak check (standalone libelas-gpu with the `-march=native` CPU reference)
+`git archive HEAD Thirdparty/libelas-gpu` outside the fork; `cmake -S $L -B $L/build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release && cmake --build $L/build -j 4`, 14/14, `-march=native` 8x and `--offload-arch=gfx1100` 6x in `build.ninja`. `elas_cmp.cpp` was extracted verbatim from the 2026-11-04 fix-round section of this file. Build: `amdclang++ -x hip --offload-arch=gfx1100 -std=c++17 -O2 -DUSE_HIP -I$L/CPU -I$L/GPU <src> -x none $L/lib/liblibelas_gpu.a -pthread`. Run: `./elas_cmp $L/input <mode>`, RC=0 in modes 0-3.
+- Mode 2 (plvs settings + subsampling): GPU reruns bit-exact 7/7; cones and aloe identical to the CPU (max 0, vmis 0, cones `invalid_cpu` 26728); raindeer 0.50 / vmis 4, urban1 0.44 / 2, urban2 0.66 / 0, urban3 1.23 (1 px > 1) / 0, urban4 0.68 / 0. Line for line the recorded table.
+- Mode 0: max |d| 0.68-67.0 (aloe L 4.35 / R 9.19, raindeer R 67.0), mean 0.017-0.027, >1px 0-8, vmis 1-25. Mode 1: max 0.79-4.35, mean 0.017-0.026, >1px 0-5, vmis 1-25. Mode 3: integer steps (max 2-67), mean 5.1e-5 to 1.9e-4, >1px 1-13, vmis 1-25. All inside the recorded gfx1100 ranges; reruns not bit-exact in modes 0/1/3 (known upstream nondeterminism).
+- Leak and pending-error check: `elas_leak.cpp` had to be rewritten, because its source was never recorded and the earlier jobs are gone. The rewrite does 21 `ElasGPU::process` calls with `postprocess_only_left`, `hipDeviceSynchronize` + `hipGetLastError` + `hipMemGetInfo` after each, and reports the free-memory drop after the first call; `./elas_leak $L/input/<img> 20`. Alone on the GPU: **aloe 0.00 MB (twice), cones 0.00 MB, 0/21 calls with a pending error** for both. A first aloe run that overlapped stereo run 3 on the same GPU reported 8.00 MB: `hipMemGetInfo` is device-wide. Lesson added to `cuda-to-rocm/references/validation.md` ("A free-memory leak check measures the whole GPU, not your process").
+
+### CUDA compile check: owed at eb1b369
+Not run. This host has no nvcc; it needs the mi355 host. Unlike the comment-only 5a0a83c, the merge brings in upstream's host C++ (`src/LocalMapping.cc`, `src/MapLine.cc`, `src/Tracking.cc`, `include/GeometricTools.h`, a new `test_line_mapping` target), none of it in `.cu` files or behind `USE_CUDA`, and touches no `.cu` file. The last CUDA check passed at b4be814 (nvcc 12.8). It must be rerun at eb1b369 before this goes to jeff.
+
+### Gates
+- `python3 utils/jargon.py --port plvs` -> `jargon: clean`, with the local `master` set to `upstream/master` (632c55b) so the range is `632c55b..moat-port`, ours only (26 commits). The fork's own `master` mirror on GitHub is still 2ecb8b1; I did not push to it.
+- `check.py commits` (which uses `origin/master`, the stale mirror) also lists upstream's b5684e1 and 632c55b (no `[ROCm]`, no Test Plan). They are upstream's commits and appear only because the fork mirror is behind upstream. Fast-forwarding the mirror (`upstream.py --drift --apply`) is left to whoever runs the checkup. Of our commits it lists only the five older ones from jeff's 2026-11-04 squash ruling.
+- Merge commit eb1b369: title 47 chars, rationale, "Authored with Claude.", fenced Test Plan, no trailer.
+
+### Records
+- `set-state plvs linux-gfx1100 porting` (took the lock), push `5a0a83c..eb1b369`, `advance-head plvs eb1b369`, then `ported`. The next reviewer covers `5a0a83c..eb1b369` (the merge; `git diff 5a0a83c eb1b369` is upstream's two commits plus the conflict resolutions above). `classify plvs 5a0a83c eb1b369` -> `class=mixed arch_independent=False`, so every platform reads `revalidate`.
+- Questions for jeff: none about the merge itself; every conflict was the same fix on both sides. Open items: the 10-run TUM-VI set and the CUDA compile at eb1b369 (above), and which of the remaining drafts to file (the coverage table).

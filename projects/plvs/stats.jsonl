@@ -420,3 +420,5 @@
 {"kind":"phase","ts":"2026-11-06T06:50:07Z","phase":"test","seconds":2840.934,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261105-214215-plvs-val-5a0/deps/chain.sh"}
 {"kind":"session","ts":"2026-11-06T06:51:19Z","epoch":1793947879.542508560,"event":"end","platform":"linux-gfx1100"}
 {"kind":"phase","ts":"2026-11-06T07:13:22Z","phase":"compile","seconds":41.082,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/wt-plvs/projects/plvs/src && source /d/Develop/moat/agent_space/wt-plvs/agent_space/plvs_win/env.sh >/dev/null 2>&1; cmake --build build-win-gfx1151 --target mono_tum stereo_tum_vi 2>&1 | tail -15"}
+{"kind":"phase","ts":"2026-11-12T00:45:56Z","phase":"compile","seconds":3427.484,"exit":0,"cmd":"bash ../w/build_ocv.sh"}
+{"kind":"phase","ts":"2026-11-12T01:05:10Z","phase":"compile","seconds":1130.788,"exit":0,"cmd":"bash ../w/build_all.sh"}
