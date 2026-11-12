@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "makefile",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-08-19T23:37:42Z",
-  "head_sha": "8aadf2185510930b523c786e21fde116c22b2809",
+  "updated_at": "2026-11-12T23:16:30Z",
+  "head_sha": "b999234d59c8932d1808883ef96ac59ec08fd3c5",
   "depends_on": [],
   "porting": null,
   "waivers": {},
@@ -26,10 +26,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "8aadf2185510930b523c786e21fde116c22b2809",
+      "validated_sha": "b999234d59c8932d1808883ef96ac59ec08fd3c5",
       "started_at": "2026-06-05T08:59:35Z",
-      "completed_at": "2026-06-08T19:03:35Z",
-      "updated_at": "2026-06-08T19:03:35Z",
+      "completed_at": "2026-11-12T23:16:22Z",
+      "updated_at": "2026-11-12T23:16:22Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -45,20 +45,20 @@
       },
       "last_agent": "reviewer",
       "carry_forward": {
-        "to": "8aadf218",
+        "to": "b999234d59c8932d1808883ef96ac59ec08fd3c5",
         "method": "binary-equiv",
-        "detail": "readGrid ios::binary POSIX no-op: device ISA identical (24 exports), host-only behavior change",
-        "at": "2026-06-08T19:03:35Z"
+        "detail": "b999234 only deletes the unreferenced 'all' rule from src/chicken/makefile; the validated 'make HIP=1 install' and 'make HIP=1 test' targets keep identical prerequisites and recipes, so the built bina",
+        "at": "2026-11-12T23:16:22Z"
       }
     },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "8aadf2185510930b523c786e21fde116c22b2809",
+      "validated_sha": "b999234d59c8932d1808883ef96ac59ec08fd3c5",
       "started_at": "2026-06-05T15:32:44Z",
-      "completed_at": "2026-06-08T19:40:40Z",
-      "updated_at": "2026-06-08T19:40:40Z",
+      "completed_at": "2026-11-12T23:16:25Z",
+      "updated_at": "2026-11-12T23:16:25Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -74,20 +74,20 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "8aadf2185510930b523c786e21fde116c22b2809",
+        "to": "b999234d59c8932d1808883ef96ac59ec08fd3c5",
         "method": "binary-equiv",
-        "detail": "readGrid ios::binary POSIX no-op: device ISA identical (24 exports), host-only behavior change",
-        "at": "2026-06-08T19:40:40Z"
+        "detail": "b999234 only deletes the unreferenced 'all' rule from src/chicken/makefile; the validated 'make HIP=1 install' and 'make HIP=1 test' targets keep identical prerequisites and recipes, so the built bina",
+        "at": "2026-11-12T23:16:25Z"
       }
     },
     "windows-gfx1101": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "8aadf2185510930b523c786e21fde116c22b2809",
+      "validated_sha": "b999234d59c8932d1808883ef96ac59ec08fd3c5",
       "started_at": "2026-06-20T01:53:04Z",
-      "completed_at": "2026-06-20T01:53:04Z",
-      "updated_at": "2026-06-20T01:53:04Z",
+      "completed_at": "2026-11-12T23:16:28Z",
+      "updated_at": "2026-11-12T23:16:28Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -101,16 +101,22 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator"
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "b999234d59c8932d1808883ef96ac59ec08fd3c5",
+        "method": "binary-equiv",
+        "detail": "b999234 only deletes the unreferenced 'all' rule from src/chicken/makefile; the validated 'make HIP=1 install' and 'make HIP=1 test' targets keep identical prerequisites and recipes, so the built bina",
+        "at": "2026-11-12T23:16:28Z"
+      }
     },
     "windows-gfx1201": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "8aadf2185510930b523c786e21fde116c22b2809",
+      "validated_sha": "b999234d59c8932d1808883ef96ac59ec08fd3c5",
       "started_at": "2026-06-08T18:00:29Z",
-      "completed_at": "2026-06-08T18:00:29Z",
-      "updated_at": "2026-06-08T18:00:29Z",
+      "completed_at": "2026-11-12T23:16:30Z",
+      "updated_at": "2026-11-12T23:16:30Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -123,6 +129,12 @@
         "session_count": 0,
         "first_session_at": null,
         "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "b999234d59c8932d1808883ef96ac59ec08fd3c5",
+        "method": "binary-equiv",
+        "detail": "b999234 only deletes the unreferenced 'all' rule from src/chicken/makefile; the validated 'make HIP=1 install' and 'make HIP=1 test' targets keep identical prerequisites and recipes, so the built bina",
+        "at": "2026-11-12T23:16:30Z"
       }
     }
   },
