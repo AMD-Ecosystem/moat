@@ -1842,6 +1842,15 @@
     "reason": "not-a-target",
     "repo_id": 285634219
   },
+  "overworldai/world_engine": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T19:46:18Z",
+    "disposition": "skip",
+    "full_name": "Overworldai/world_engine",
+    "note": "gap-matrix intake follow-up 2026-11-12: GPL-3.0 (tier 3) needs licence clearance; README AMD claim has no ROCm code; NVIDIA-specific stack (gemlite, NVFP4/FlashInfer)",
+    "reason": "license-blocked",
+    "repo_id": 1100875802
+  },
   "packtpublishing/gpu-programming-with-cpp-and-cuda": {
     "decided": "2026-06-05T01:25:52Z",
     "disposition": "skip",
