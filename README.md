@@ -262,7 +262,7 @@ The project name links upstream.
 | [llm.c](https://github.com/karpathy/llm.c) ([fork](https://github.com/AMD-Ecosystem/llm.c/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#854](https://github.com/karpathy/llm.c/pull/854) |
 | [llmq](https://github.com/IST-DASLab/llmq) | 🚫 | — | — | ⚪ not-portable |
 | [lmdeploy](https://github.com/InternLM/lmdeploy) ([fork](https://github.com/AMD-Ecosystem/lmdeploy/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
-| [LTX-2](https://github.com/Lightricks/LTX-2) | ⬜ | ⬜ | ⬜ | — |
+| [LTX-2](https://github.com/Lightricks/LTX-2) | ⬜ | ⬜ | ⬜ | ⚪ not-a-target |
 | [mahout](https://github.com/apache/mahout) ([fork](https://github.com/AMD-Ecosystem/mahout/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#1399](https://github.com/apache/mahout/pull/1399) |
 | [marian-dev](https://github.com/marian-nmt/marian-dev) ([fork](https://github.com/AMD-Ecosystem/marian-dev/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#1043](https://github.com/marian-nmt/marian-dev/pull/1043) |
 | [MASt3R-SLAM](https://github.com/rmurai0610/MASt3R-SLAM) ([fork](https://github.com/AMD-Ecosystem/MASt3R-SLAM/tree/moat-port)) | ✅ | ✅ | ✅ | — |
