@@ -4936,3 +4936,27 @@ Neither the fork's README ROCm block nor any other tracked file has an `LD_PRELO
 - CUDA compile check of c741328b7 on the mi355 host (nvcc).
 - wave32 revalidation (gfx1100) at c741328b7; wave64 (gfx90a, gfx942) revalidation as the selector derives; the windows waiver stands.
 - Review of 8d470dcc14..c741328b7 (three commits: 19444bcdf, 3007f7951, c741328b7).
+
+## Review 2026-11-11 (reviewer, windows-gfx1151 console host, no GPU work; lock taken as linux-gfx942; /pr-review local-branch moat-port 8d470dcc14..c741328b7: 19444bcdf, 3007f7951, c741328b7)
+
+Read-only review of the fork objects in `agent_space/oneflow-prep` (fetched, `origin/moat-port` = c741328b7; read through `git show`/`git diff`, its working tree untouched). No build or GPU run on this host; the porter's build, readelf, reproducer and suite evidence ("Porter round 2026-11-12") is what the review checked the code against.
+
+### Verdict: **review-passed**, no blocker
+
+### Checked, no finding
+- **Version script is HIP-only.** `oneflow/ir/install-llvm.cmake:10-23`: `LLVM_HIP_ARGS` is set only under `if(BUILD_CUDA AND USE_HIP)`; elsewhere it is an empty unquoted list that drops out of the `execute_process` argv at `:49`, so CUDA and CPU-only configures pass exactly the old arguments. The CPU-only and CUDA paths never write the map file.
+- **Linker flags preserved.** The sub-configure already received `-DCMAKE_SHARED_LINKER_FLAGS_INIT` (`:32`), and an explicit `CMAKE_SHARED_LINKER_FLAGS` would shadow it, so prefixing `${CMAKE_SHARED_LINKER_FLAGS_INIT}` keeps what the caches set (`-fuse-ld=lld` in `cmake/caches/ci/gh-hosted/cpu-clang.cmake:5` and siblings) and `$LDFLAGS` (CMake folds it into the `_INIT` variable in the parent scope). EXE/MODULE flags untouched; `CMAKE_SHARED_LINKER_FLAGS` applies only to the shared libraries the version node is meant for.
+- **Complete.** `ONEFLOW_LLVM { global: *; };` has no `local:`, so it hides nothing that was exported before (hidden-visibility symbols stay hidden; a version script does not widen visibility) and tags every exported symbol. Each library's references to its own symbols and libLLVMTableGen/oneflow-tblgen's references to libLLVMSupport bind to `@ONEFLOW_LLVM`, as liboneflow.so's do (porter's readelf counts). With `LLVM_BUILD_TOOLS=OFF` and only `install-oneflow-tblgen install-mlir-headers` built (`:59-66`, `WITH_MLIR=OFF` in every HIP build), no target in the sub-build carries its own LLVM export-list version script that a second `--version-script` would collide with; the clean builds at c741328b7 confirm it.
+- **Torch-first order.** A versioned `@ONEFLOW_LLVM` reference cannot bind to an `LLVM_24.0` definition, and LLVM 17's internal references are versioned too, so loading libLLVM.so.24 first is also safe; the porter ran `import torch; import oneflow`.
+- **No relink on reconfigure.** The execute_process runs on every oneflow configure (`FetchContent_GetProperties` population is not cached), so the map file must not be rewritten: `file(CONFIGURE)` writes only on change and needs CMake 3.18, the project minimum (`CMakeLists.txt:3`). The porter measured 0 relinks on two reruns.
+- **Scope.** The in-tree LLVM provider (`oneflow/ir/llvm-in-tree.cmake`) is not covered, but it is only reached with `WITH_MLIR=ON`, which the HIP build does not support (plan.md:45, README ROCm block, build_rocm.sh:32).
+- **Comments match the code.** `cmake/cuda.cmake:4-7`: the force-include is `cmake/util.cmake:242-255` (`-include .../cuda_to_hip.h` for CXX under `USE_HIP`). `cmake/third_party.cmake:132-136`: MIOpen is `find_package(miopen REQUIRED)` and in `VENDOR_CUDA_LIBRARIES` (`cmake/cuda.cmake:26,43`), the shim is `oneflow/core/device/hip_compat/cudnn.h`, and cutlass/trt_flash_attention/flash_attention are included only in the `elseif(BUILD_CUDA)` branch (`:153-156`). The new `install-llvm.cmake` comment agrees with the porter's readelf/gdb evidence.
+- **Timeout.** `test_graph_fused_mlp_cuda_graph.py:108` `timeout=600`, the same keyword and value as test_graph_cuda_graph_fft_plan.py:91, test_graph_cuda_graph_stream_creation.py:77 and test_graph_image_gpu_decoder.py:197.
+- **Commit hygiene.** Titles 56, 53, 61 characters, `[ROCm]` prefix; rationale, fenced Test Plan, "Authored with Claude." in prose, no Co-Authored-By or noreply anywhere. Diff and messages ASCII-only. `python3 utils/jargon.py -C agent_space/oneflow-prep --commits origin/master..c741328b7`: only the three known hits in 68718f038; `--diff origin/master...c741328b7`: clean.
+
+### Lesson recommendation (not edited)
+Add the porter's proposed lesson to `cuda-to-rocm`; it applies to any project that ships its own shared LLVM (or any unversioned copy of a library ROCm ships versioned) and its wording is MOAT-free. Suggested place: `references/fault-classes.md`, "Headers, includes and build". Suggested additions so a reader with the symptom finds it: the symptom (`realloc(): invalid pointer` abort in libLLVM's static initializers at import/load), that it shows with ROCm installed from Python wheels where comgr links a shared libLLVM, and that `-Bsymbolic` on the bundled copy does not help (it stops the bundled LLVM from being interposed, not from interposing). The branch now merges cleanly with main, so the skill-file conflict that held it back is gone.
+
+### Still owed (not blockers here)
+- CUDA nvcc compile at c741328b7 (mi355 host), as the porter recorded.
+- wave32 and wave64 revalidation at c741328b7.

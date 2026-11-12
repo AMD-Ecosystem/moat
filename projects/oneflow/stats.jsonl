@@ -601,3 +601,5 @@
 {"kind":"phase","ts":"2026-11-12T00:26:28Z","phase":"compile","seconds":19.935,"exit":0,"cmd":"bash agent_space/build.sh all"}
 {"kind":"phase","ts":"2026-11-12T00:36:01Z","phase":"test","seconds":352.842,"exit":0,"cmd":"bash agent_space/phase1.sh"}
 {"kind":"phase","ts":"2026-11-12T01:06:20Z","phase":"test","seconds":1788.843,"exit":0,"cmd":"bash agent_space/phase2.sh"}
+{"kind":"session","ts":"2026-11-12T01:17:37Z","epoch":1794446258.814696100,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-12T01:23:15Z","epoch":1794446595.836999800,"event":"end","platform":"linux-gfx942"}
