@@ -601,3 +601,38 @@ The 2026-06-05 gfx90a and 2026-06-08 gfx1100 validations recorded "GPU functiona
 ### Verdict
 
 Upstream's HIP build of metaeuk is correct where the GPU is reachable: GPU predictions are identical to the CPU ungapped path on all 6 regression cases. The real gap is metaeuk-specific and platform-neutral: `--gpu 1` does nothing in its workflows (gap 1).
+
+## Refresh onto upstream tip attempted on linux-gfx90a (2026-11-12): stopped, needs jeff
+
+jeff's request: merge upstream's tip into `moat-port` so the review PR (AMD-Ecosystem/metaeuk#1) can be approved. Stopped before any write: no push, no fork default-branch fast-forward, no `advance-head`, no state change, no lock taken. The conflicts are not upstream drift around our port. Upstream replaced the code our port touches with its own HIP port, so every resolution is a choice between two HIP implementations. That choice belongs to jeff and applies equally to MMseqs2 and foldseek.
+
+### Facts checked
+
+- `python3 utils/moatlib.py pr-state metaeuk`: `none`. `moat-port` is not frozen.
+- Fork: `moat-port` = `e6070cc` (one commit on `ccf0362`); fork `master` = `ccf0362`. Upstream `master` = `2b5193a8` (2026-09-22), 8 commits ahead; fork `master` is an ancestor, so the mirror fast-forward is clean. It was not done, because it is only useful together with the refresh.
+- Upstream's 8 commits: the `lib/mmseqs` subtree update `ef21cbf`/`eadaf81` (597 files, carrying MMseqs2's own ROCm/HIP support: `ENABLE_HIP`, `cuda_hip_compatibility.cuh`, `cuda_hip_rename.h`, AMD kernel-config tables, HIP-gated CMake, ROCm Dockerfiles and `test-gpu-rocm.yml`), plus Dockerfile/azure Rust changes, `cmake_minimum_required` 3.5, a tests submodule bump and the GFF CDS phase fix.
+- Sibling forks have not moved: AMD-Ecosystem/MMseqs2 `moat-port` = `75a9b029`, AMD-Ecosystem/foldseek `moat-port` = `74bd2d82`.
+
+### Trial merge (local only, aborted)
+
+```
+git -C projects/metaeuk/src checkout -b trial origin/moat-port
+git -C projects/metaeuk/src merge --no-commit --no-ff upstream/master
+```
+
+9 files conflict, 22 hunks: libmarv `CMakeLists.txt` (3), `gapless_kernel_config.cuh` (1), `hpc_helpers/cuda_helpers.cuh` (2), `hpc_helpers/cuda_raiiwrappers.cuh` (1), `hpc_helpers/peer_access.cuh` (1), `mathops.cuh` (6), `pssmkernels_smithwaterman.cuh` (5), `smithwaterman_kernel_config.cuh` (1), and `lib/mmseqs/src/CMakeLists.txt` (2). Every hunk is our `USE_HIP` code against upstream's `ENABLE_HIP` code for the same lines. Example, `mathops.cuh` `reduce_max`: ours is `#if defined(USE_HIP) marv_tile_reduce(...)`, upstream's is `compatibility::group_reduce_max(group, val)` for both vendors. Keeping both gives two parallel HIP build options and two compat layers in one library. An upstream maintainer would not take that, and it is no "re-apply on top".
+
+Taking upstream's side of every conflict (`git checkout --theirs` on the 9 files) leaves this over upstream (`git diff --cached --stat upstream/master`: 15 files, +555/-13):
+- Dead after the merge, because upstream's libmarv CMake no longer reads `USE_HIP`: `cuda_to_hip.h` (226), `marv_simd_amd.cuh` (204), `hip_compat/` (3 headers), the `USE_HIP` option and `ENABLE_CUDA OR USE_HIP` gate in `lib/mmseqs/CMakeLists.txt`, and the small guard edits in `blosum.cu`, `kernelhelpers.cuh`, `custom_thrust_allocators.cuh`, `utility_kernels.cuh`.
+- Still useful over upstream: the Windows libmarv pieces (`mapped_file.hpp` Win32 path, `MARV_API` exports in `marv.h`/`marv.cu`, the tinyexpr `-fPIC` guard), which upstream lacks, and the `ClampToInvalid` `__HIP_DEVICE_COMPILE__` guard in `convert.cuh` (the latent divergence noted in the MMseqs2 2026-10-29 section). The Windows libmarv CMake fixes lived in the libmarv `CMakeLists.txt` that upstream rewrote, so they would have to be redone on upstream's `ENABLE_HIP` CMake.
+
+### Why this is jeff's call
+
+1. Retire, or cut scope to Windows: with upstream's libmarv the Linux port contributes nothing. What is left is a Windows libmarv delivery plus a one-line `ClampToInvalid` fix. That is a different, partial port (`feedback_scope_cut_needs_jeff`), and the MMseqs2 notes already judge it "low value unless jeff wants a Windows libmarv deliverable". The alternative is to retire the metaeuk port in favour of upstream's HIP support.
+2. Keep our libmarv: resolving toward ours throws away upstream's new behaviour: the AMD-tuned tables, the int8 Blackwell path wiring and its CMake restructure. It would also carry known defects. On gfx1100 our port is 15.6x slower than upstream's HIP path (scalar `__hmax2`, MMseqs2 notes 2026-10-30), and its `__syncwarp`/`HIP_DISABLE_WARP_SYNC_BUILTINS` keying breaks on ROCm 7.16 (MMseqs2 notes 2026-10-29). The task's own rule ("keep upstream's new behaviour") rules this out.
+3. The same decision covers MMseqs2 and foldseek, whose refreshes run in parallel. It should be made once for all three.
+4. Related, from the 2026-10-29 sections above: metaeuk's `predictexons`/`easy-predict` `--gpu 1` never reaches the GPU (forced `--prefilter-mode 0`), so the Linux "GPU 6/6" validations of this port did not exercise libmarv. This is a metaeuk workflow defect in both upstream and our port. A Windows-only or retired port does not touch it either way.
+
+### Question for jeff
+
+For metaeuk (and MMseqs2/foldseek): (a) retire the port in favour of upstream's HIP support (close review PR #1; optionally offer upstream the `ClampToInvalid` guard and the `--gpu 1` workflow issue drafted above), or (b) re-scope it to a Windows libmarv delivery rebuilt on upstream's `ENABLE_HIP` CMake (merge upstream taking its libmarv, drop the dead `USE_HIP` layer, re-port the Windows pieces, revalidate wave64/wave32/windows)? Under (b) the merge resolution is: `--theirs` on all 9 conflicted files, then delete `cuda_to_hip.h`, `marv_simd_amd.cuh`, `hip_compat/` and the `USE_HIP` CMake edits, keep `convert.cuh`'s guard, then redo the Windows CMake fixes against upstream's libmarv `CMakeLists.txt`.
