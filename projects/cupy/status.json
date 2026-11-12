@@ -8,7 +8,7 @@
   "ext_type": "setuptools-cuda",
   "stage": "review-passed",
   "adopted_at": "2026-11-04T22:34:29Z",
-  "updated_at": "2026-11-10T22:40:37Z",
+  "updated_at": "2026-11-10T23:05:43Z",
   "head_sha": "a6e01258f5bd5a90b1e1804f36dc1d22d73aa57f",
   "depends_on": [],
   "waivers": {},
@@ -130,5 +130,17 @@
     "since": "2026-11-10T19:56:02Z",
     "at": "2026-11-10T20:00:36Z"
   },
-  "review_pr": "https://github.com/ROCm/cupy/pull/76"
+  "review_pr": "https://github.com/ROCm/cupy/pull/76",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-10T22:56:22Z",
+    "head_sha": "a6e01258f5bd5a90b1e1804f36dc1d22d73aa57f",
+    "content_sha256": "c09c84c96e6d9e8fc8a2d579b41272b555a76179cbe0c29149f44ade1f057202",
+    "review_pr": "https://github.com/ROCm/cupy/pull/76"
+  },
+  "pr_url": "https://github.com/cupy/cupy/pull/10467",
+  "pr_number": 10467,
+  "pr_opened_at": "2026-11-10T23:05:43Z",
+  "pr_state": "open",
+  "published_sha": "a6e01258f5bd5a90b1e1804f36dc1d22d73aa57f"
 }
