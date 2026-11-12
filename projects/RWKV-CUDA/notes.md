@@ -613,3 +613,24 @@ done
 ```
 
 Result: PASS for the kernels. All six compiles exited 0 with no warnings. The changes that were not compiled are inert on CUDA by construction. The three `.cpp` wrappers gain only an `#elif defined(USE_ROCM) || defined(__HIP_PLATFORM_AMD__)` branch ahead of the unchanged `cuda_bf16.h` branch. In the scripts, `hip_aware_cuda_cflags()` returns its argument unchanged when `torch.version.hip is None`, and `host_cflags()` only drops the MSVC `/wd` flags off Windows (on Linux those flags would otherwise go to g++). A full `load()` build still needs a host with CUDA PyTorch: a job dispatched with its own venv (`--build`), or a guard that allows a job-local venv.
+
+### Full extension build with CUDA PyTorch (2026-11-12)
+
+Completes the check above. Fork at head_sha 3efd11d28f61ac354469fa33d948098f9f390689 (upstream tip compared: BlinkDL/RWKV-CUDA `main` 9b17d5d). Same ROCm fleet host, no NVIDIA GPU; job-local venv (Python 3.11) with `torch 2.11.0+cu128` (`torch.version.cuda` 12.8) from `https://download.pytorch.org/whl/cu128`, nvcc `release 12.8, V12.8.93`, gcc 13.3.0, ninja 1.13.0.
+
+Method: each harness script was run unmodified through a small driver that wraps `torch.utils.cpp_extension.load`, so every `load()` the script reaches runs for real (nvcc, g++ for the `.cpp` binding, link, and dlopen of the `.so`); the script then stops at its first CUDA tensor with "Found no NVIDIA driver", which does not count against the build. Environment: `CUDA_HOME=/usr/local/cuda TORCH_CUDA_ARCH_LIST="8.0;9.0"`, a fresh `TORCH_EXTENSIONS_DIR` per run. The nvcc command lines carried `-gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_90,code=sm_90` plus the scripts' own flags unchanged (`-res-usage --use_fast_math -O3 -Xptxas -O3 --extra-device-vectorization`), which confirms `hip_aware_cuda_cflags()` is the identity on CUDA.
+
+```
+python drive_load.py rwkv7_fast_fused/rwkv7_cuda_benchmark.py {bf16,fp32} 0
+python drive_load.py rwkv7_fast_fused/rwkv7_cuda_benchmark_state.py {bf16,fp32} 0
+python drive_load.py rwkv7_fast_fused/rwkv7_cuda_benchmark_state_passing.py {bf16,fp32} 0
+python drive_load.py wkv/run.py
+python drive_load.py depthwise_conv1d/run.py
+python drive_load.py wkv5/run.py benchmark
+python drive_load.py wkv5_bf16/run.py
+python drive_load.py wkv5a/run.py --job 1 --algo 2
+python drive_load.py wkv6/run.py
+python drive_load.py wkv6_state/run.py
+```
+
+Result: PASS, no regression. Built, linked and loaded with zero compiler warnings: rwkv7_clampw, rwkv7_state_clampw and rwkv7_statepassing_clampw in both bf16 and `_FP32_` modes (the only port-changed `.cu`/`.cpp` sources), wkv, timex (depthwise_conv1d), wkv5_ref, wkv5 (wkv5_bf16), wkv5a, wkv5 and wkv6 (wkv6), wkv6state. The one failure is inherited: `wkv5/run.py` with its default `CUDA_KERNEL_VERSION='1d'` compiles and links but the import fails with `wkv5.so: undefined symbol: _Z13cuda_backwardiiiiPfS_S_S_S_S_S_S_S_S_S_S_` (the `wkv5_op.cpp` declaration has the extra `ww` argument that `wkv5_cuda_v1d.cu` lacks, as recorded under Gotchas). Upstream 9b17d5d built the same way fails identically, and neither file is touched by the port. A direct `load()` of `wkv5_op.cpp` + `wkv5_cuda_v1.cu` with the script's flags (`-DN=64 -DCC=4096`), the kernel version the ROCm validation used, builds clean.
