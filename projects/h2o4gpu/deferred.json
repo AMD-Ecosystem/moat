@@ -30,6 +30,33 @@
       "upstream_issue": null,
       "created_at": "2026-11-05T18:12:49Z",
       "decided": null
+    },
+    {
+      "id": "h2o4gpu-ob2-gfx1151-windows-device-miscompile",
+      "kind": "rocm-bug-report",
+      "component": "llvm-amdgpu",
+      "summary": "/Ob2 device miscompile suspected on gfx1151 Windows (TheRock ROCm, clang-cl): the double-precision FuncEval reduction kernel (rocPRIM reduce over zip_function<FuncEvalF<double>>) in src/gpu/h2o4gpuglm.cu never completes with /O2 /Ob2 and completes with /Ob1. Reproducer being extracted: reduce the kernel to a standalone .hip, diff /Ob1 vs /Ob2 ISA, draft the compiler issue for jeff. Until then the port carries /Ob1 on h2o4gpuglm.cu (CMakeLists.txt, clang-cl HIP front end only); drop that property once the compiler fix lands.",
+      "refs": [
+        "projects/h2o4gpu/notes.md: Porter 2026-11-11 round 2, Defect 2",
+        "projects/h2o4gpu/notes.md: Review 2026-11-11, item 3"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-12T00:59:38Z",
+      "decided": null
+    },
+    {
+      "id": "h2o4gpu-kmeans-multi-gpu-transform-and-remainder",
+      "kind": "other",
+      "component": null,
+      "summary": "Inherited upstream multi-GPU KMeans bugs (CUDA and HIP alike, present before the port): (1) kmeans_transform with n_gpus>1 returns wrong distances for every row: each GPU's chunk-by-k distance block is column-major and the blocks are concatenated, but KMeansH2O.transform reshapes the whole buffer as one column-major (rows, k) matrix (gfx942, n_gpus=2: argmin agreement 0.26-0.34 vs NumPy; each block alone matches to 3.8e-16). (2) With rows % n_gpus != 0, fit, predict and transform never process the last rows % n_gpus rows (rows/n_gpu per GPU; 'TODO: that may ignore up to n_gpu - 1 rows'): their labels are 0 and their distances 0. Single-GPU is correct. Needs a person's ruling: fix in the port (strided host copy for (1); remainder rows for (2)) or report upstream only.",
+      "refs": [
+        "projects/h2o4gpu/notes.md: Porter fix round 2026-11-12 (linux-gfx942)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-12T01:08:55Z",
+      "decided": null
     }
   ]
 }

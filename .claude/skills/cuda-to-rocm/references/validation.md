@@ -123,6 +123,10 @@ concurrent run, and every functional test passes, this is the cause and the port
 at fault. A 20-line repro and the bug report (`hip-win-stream-serialization`) are on
 FLAMEGPU2.
 
+## Windows: a hang can be one kernel that never finishes
+
+**A Windows "hang" that keeps the host blocked in `hipMemcpy` can be one kernel that never finishes.** Confirm it before you hunt a host-side loop: `AMD_LOG_LEVEL=3` shows the last `hipLaunchKernel` followed only by repeated `PAL fence isn't ready! result:3`. A symbol-carrying build that keeps Release codegen locates the call site (clang-cl: `-O2 -Ob2 -DNDEBUG -Z7` plus `-DEBUG` at link). If the hang depends on inlining (`/Ob2` hangs, `/Ob1` passes), compare the kernel's ISA from `--cuda-device-only -S`. Scope the `/Ob1` workaround to the one translation unit, through `COMPILE_OPTIONS` on that source under the MSVC HIP front end, and record that a compiler reproducer is still owed. (h2o4gpu: the double `FuncEvalF` reduction in `h2o4gpuglm.cu` on gfx1151, TheRock 7.14.)
+
 ## Using a stream after `hipDeviceReset` corrupts the heap (Windows shows it)
 
 **A process that finishes its work and then dies at exit with `0xC0000374` (heap

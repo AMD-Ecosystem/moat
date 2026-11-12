@@ -597,3 +597,34 @@ One `[ROCm]` commit adds the Windows CMake/clang-cl HIP build, moves the KMeans 
 - The commit Test Plan gives the C++ run as literal commands but describes the Python oracle only in prose.
 
 Checked with no finding: the free paths (only Python owns the KMeans buffers: `kmeans.i` -> NumPy `free()`; R goes through the Python package, `interface_c` and the gtests do not call the kmeans API, and `examples/cpp/kmeans_driver.cpp` frees nothing); no thrust/std objects leak out of the API any more; `kmeans_fit` sizes labels to `rows` with uniform `rows / n_gpu` chunks; CPU back end `alloc_result(std::vector)` uses `malloc` + `std::copy` with `<cstdlib>`/`<algorithm>` included. `elastic_net.i` `PyLong_AsLongLong`: identical on LP64 and fixes Win64's 32-bit `long`. `timer.h`, the `__has_include` roctx fallback, `windows.h` under `_WIN32` and `NOMINMAX`: the Linux and CUDA preprocessing is unchanged. Commit title is 58 chars, AI disclosure is in prose, no Co-Authored-By. `jargon.py --port h2o4gpu`: clean.
+
+## Porter fix round 2026-11-12 (linux-gfx942, MI300X, ROCm 10.1 pip SDK) -- answers Review 2026-11-11
+
+jeff's request: the three must-fix items of Review 2026-11-11. `moat-port` 2c22a86 -> `d0b78f3d` (two new commits on top, plain push to AMD-Ecosystem/h2o4gpu; nothing amended or force-pushed). Review covers `2c22a86..d0b78f3d`. HIP_VISIBLE_DEVICES=2,3 (dispatcher pin, 2 MI300X), `ulimit -c 0`, LD_LIBRARY_PATH unset, OPENBLAS_NUM_THREADS=32 for every run.
+
+### Item 1 -> `24cd051e` "[ROCm] Allocate the KMeans transform result for every input row"
+- `kmeans_transform`: `alloc_result<T>(chunk_distances * n_gpu)` -> `alloc_result<T>(rows * k)`. Other result allocations checked: `kmeans_fit` centroids (`d_centroids[0]->size()` = `k*cols`, matches `kmeans.py`) and labels (`rows`), `kmeans_predict` labels (`rows`) were already right. CPU back end (`src/cpu/h2o4gpukmeans.cpp`) fixes `n_cpu = 1`, so its `n / n_cpu` sizes equal `rows`: no change.
+- Allocation evidence (valgrind/ASan not used: the NumPy reader is uninstrumented, so ASan cannot see its read; a `calloc` interposer `agent_space/km/libcalloc_log.so` via `LD_PRELOAD` logs requested sizes instead). `n_gpus=2`, 20001 rows, k=5: NumPy `np.zeros` requests 400020 B (f32) / 800040 B (f64); the library then requested `calloc(100000, 4)` / `calloc(100000, 8)` at 2c22a86 (20 B / 40 B short of the view NumPy reads) and `calloc(100005, 4)` / `calloc(100005, 8)` at d0b78f3d.
+- Python API (`agent_space/km/km_multi.py <n_gpus> <rows> <dtype>`, in-tree package: `make apply-sklearn`, `build-hip/_ch2o4gpu_*pu.so` + `ch2o4gpu_*pu.py` copied into `src/interface_py/h2o4gpu/libs/`, `PYTHONPATH=src/interface_py`; checks fit labels, predict and transform against NumPy nearest-centroid and squared distance):
+  - `n_gpus=1`, 20001 and 20000 rows, f32 and f64: ALL PASS (labels/predict agreement 1.0; transform max rel err 1.5e-7 f32 / 3.8e-16 f64).
+  - `n_gpus=2`: shapes correct and no out-of-bounds read, but values FAIL, from two inherited upstream bugs that the review item does not cover (same code at 9607b099 and on CUDA; behaviour identical at 2c22a86 and d0b78f3d):
+    - transform: every row wrong for n_gpus>1, even with 20000 rows (argmin agreement 0.337; 0.262 at 20001). Each GPU's `chunk x k` block is column-major and the blocks are concatenated, while `kmeans.py:420` reshapes the whole buffer as one column-major `(rows, k)`. `agent_space/km/layout.py`: each block read as its own `(chunk, k)` F-order matrix matches NumPy to 3.8e-16.
+    - remainder rows: with 20001 rows the last row is never processed by fit, predict or transform (`rows / n_gpu` per GPU; the code's own "TODO: that may ignore up to n_gpu - 1 rows"): label 0 (ref 4), distances 0 (calloc zero-fill, now inside the allocation).
+    - Registered for a person's ruling (fix in the port vs upstream report only): `deferred.py` id `h2o4gpu-kmeans-multi-gpu-transform-and-remainder`. Not fixed here: outside the review item and upstream behaviour on CUDA too.
+  - `n_gpus=3` not tested: the dispatcher pin exposes two GPUs and `device_count` caps the request at 2.
+- C++ `build-hip/h2o4gpu_test`: 24/24 PASS, three runs.
+
+### Item 2 -> `d0b78f3d` "[ROCm] Qualify the comment on the Windows /Ob1 GLM workaround"
+Comment only: observed on one GPU (gfx1151) with one toolchain (TheRock ROCm on Windows, clang-cl); suspected device code generation issue, not yet reduced to a reproducer; `/Ob1` avoids it. Guard unchanged. Built in the same Linux tree as item 1 (the build used the working tree that became both commits).
+
+### Item 3 (records)
+- `deferred.py add rocm-bug-report --id h2o4gpu-ob2-gfx1151-windows-device-miscompile --project h2o4gpu --component llvm-amdgpu` (reproducer extraction, ISA diff, compiler issue draft for jeff, then drop `/Ob1`).
+- `cuda-to-rocm` skill: the Windows hang lesson moved from `references/fault-classes.md` (## Memory and lifetime) to `references/validation.md` as `## Windows: a hang can be one kernel that never finishes`, after the other `## Windows:` sections; "is often" -> "can be". This branch's `utils/check.py` has no `skills` gate; `check.py jargon`: ok.
+
+### Commit-message corrections owed at the PR-prep squash
+- `2c22a86` ("[ROCm] Build the GPU library and Python modules on Windows"): the sentence "`h2o4gpuglm.cu` is compiled with `/Ob1`: with `/Ob2` the double-precision `FuncEval` reduction kernel never completes on Windows (gfx1151, ROCm 7.14), so the double-precision ElasticNet fit hung." overstates the evidence. Reword as: with `/Ob2` the kernel was observed never to complete on one GPU (gfx1151) with one toolchain (TheRock ROCm on Windows, clang-cl); the suspected cause is a device code generation issue not yet reduced to a reproducer; `/Ob1` avoids it.
+- `2c22a86` Test Plan describes the Python oracle only in prose (Review 2026-11-11, not blocking): give literal commands at the squash.
+
+### Gates and what is owed at d0b78f3d
+- `python3 utils/jargon.py --port h2o4gpu`: clean (after fetching the fork's `master` into the clone). `utils/prose.py` on both messages: clean. Fork clone status: only untracked `build-hip/`.
+- Owed: CUDA nvcc compile check on the mi355 host at `d0b78f3d` (the kmeans change is in the shared CUDA source); revalidation on linux-gfx90a, linux-gfx1100 and windows-gfx1151 (and the first linux-gfx942 validation).
