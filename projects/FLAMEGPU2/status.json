@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-08-20T05:37:54Z",
-  "head_sha": "a290861",
+  "updated_at": "2026-10-21T22:05:39Z",
+  "head_sha": "7977ab2b6ad33015333424c5ea0f656241736ca5",
   "depends_on": [],
   "porting": null,
   "waivers": {},
@@ -20,16 +20,16 @@
   },
   "license_spdx": "AGPL-3.0",
   "upstream_repo_id": 34064755,
-  "stage": "porting",
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "a290861",
+      "validated_sha": "7977ab2b6ad33015333424c5ea0f656241736ca5",
       "started_at": "2026-06-05T05:06:43Z",
-      "completed_at": "2026-06-08T00:38:47Z",
-      "updated_at": "2026-08-20T00:11:42Z",
+      "completed_at": "2026-10-21T22:03:53Z",
+      "updated_at": "2026-10-21T22:03:53Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -43,13 +43,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "a290861",
-        "method": "binary-equiv",
-        "detail": "#include <windows.h> inside #ifdef _MSC_VER; linux clang does not define _MSC_VER, no compiled diff",
-        "at": "2026-06-08T00:38:47Z"
-      }
+      "last_agent": "validator"
     },
     "linux-gfx1100": {
       "state": "completed",
@@ -125,13 +119,37 @@
         "last_session_at": null
       },
       "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "7977ab2b6ad33015333424c5ea0f656241736ca5",
+      "failed_sha": null,
+      "started_at": "2026-10-21T06:36:04Z",
+      "completed_at": "2026-10-21T06:50:47Z",
+      "updated_at": "2026-10-21T06:50:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "state": "completed"
     }
   },
   "porting_released": {
-    "arch": "linux-gfx90a",
-    "since": "2026-08-20T00:11:42Z",
-    "at": "2026-08-20T00:26:32Z"
+    "arch": "windows-gfx1151",
+    "since": "2026-10-21T06:47:49Z",
+    "at": "2026-10-21T06:49:50Z"
   },
   "on_hold": true,
-  "on_hold_reason": "Parked by Jeff Daily until ptheywood replies on upstream draft PR #1379 (amdgpu branch): waiting to learn whether he wants a PR against amdgpu or a cherry-pick of amdgpu-fixes @ 2ecf5a01. Port itself is complete on all four platforms at a290861."
+  "on_hold_reason": "jeffdaily 2026-10-20: upstream owns the HIP PR (FLAMEGPU/FLAMEGPU2#1379, branch amdgpu). moat-port is kept as a validated build of his bfda5dec plus three fixes, synced once at 7977ab2b; do not follow his rebases and do not open an upstream PR. Fixes reach upstream as a described reply he commits himself (CLA needs employer sign-off). Retire when #1379 merges."
 }

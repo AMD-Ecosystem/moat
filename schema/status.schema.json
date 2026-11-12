@@ -17,7 +17,8 @@
     "schema_version": {
       "enum": [
         2,
-        3
+        3,
+        4
       ]
     },
     "name": {
@@ -453,6 +454,215 @@
         },
         "note": {
           "type": "string"
+        }
+      }
+    },
+    "license_spdx_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "to",
+          "evidence",
+          "at"
+        ],
+        "properties": {
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1
+          },
+          "at": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "fork_url_ruling": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "url",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "previous": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "base_branch_ruling": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "branch",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "previous": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "fork_branch_ruling": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "branch",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "previous": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "delivery": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "mode",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "fork-release"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "tag_format": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "release": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "tag",
+        "sha",
+        "at"
+      ],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha": {
+          "type": "string",
+          "minLength": 1
+        },
+        "review_pr": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "approved_by": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "rev": {
+          "type": "integer"
+        },
+        "review_closed_at": {
+          "type": "string"
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
         }
       }
     },

@@ -89,6 +89,15 @@ if [ -n "${UNREACHABLE// /}" ]; then
   echo "unknown  : ${UNREACHABLE}-- review PR(s) unreadable, approval state UNKNOWN (not 'nothing to submit')"
 fi
 
+# A release line approved on its in-fork review PR is finished work waiting on one
+# command, exactly like an approved port, so it is surfaced the same way.
+FINISH=$(python3 utils/upstream.py --finish-release 2>/dev/null)
+RELEASE=$(printf '%s\n' "$FINISH" | sed -n 's/^  \(READY\|RESUME\) *\([^ ]*\).*/\2/p' | tr '\n' ' ')
+if [ -n "${RELEASE// /}" ]; then
+  echo "approved : ${RELEASE}-- finish the release: python3 utils/upstream.py --finish-release --apply"
+  echo "           (tags the approved commit, freezes the branch, closes the review PR unmerged)"
+fi
+
 # A suggested waiver blocks its project's PR and only a person can clear it, so it has
 # to be visible from a session that is not the one that suggested it. The porter that
 # found the obstacle may have run unattended hours ago; without this the case sits in
