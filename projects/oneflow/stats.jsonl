@@ -596,3 +596,8 @@
 {"kind":"phase","ts":"2026-11-11T23:55:41Z","phase":"compile","seconds":657.717,"exit":0,"cmd":"bash agent_space/build.sh all"}
 {"kind":"phase","ts":"2026-11-11T23:59:50Z","phase":"test","seconds":207.973,"exit":0,"cmd":"bash agent_space/cap.sh"}
 {"kind":"phase","ts":"2026-11-12T00:03:40Z","phase":"test","seconds":222.004,"exit":0,"cmd":"bash agent_space/cap2.sh"}
+{"kind":"phase","ts":"2026-11-12T00:12:09Z","phase":"compile","seconds":20.370,"exit":0,"cmd":"bash agent_space/build.sh all"}
+{"kind":"phase","ts":"2026-11-12T00:26:06Z","phase":"compile","seconds":720.483,"exit":0,"cmd":"bash agent_space/build_both.sh"}
+{"kind":"phase","ts":"2026-11-12T00:26:28Z","phase":"compile","seconds":19.935,"exit":0,"cmd":"bash agent_space/build.sh all"}
+{"kind":"phase","ts":"2026-11-12T00:36:01Z","phase":"test","seconds":352.842,"exit":0,"cmd":"bash agent_space/phase1.sh"}
+{"kind":"phase","ts":"2026-11-12T01:06:20Z","phase":"test","seconds":1788.843,"exit":0,"cmd":"bash agent_space/phase2.sh"}

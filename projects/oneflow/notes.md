@@ -4825,3 +4825,114 @@ The test passes `timeout=600`, a child that outlives it is killed and the test e
 
 ### For the reviewer and validators
 Review 8d470dcc14..3007f7951 (two commits, 7 insertions, 3 deletions). Every gate reads revalidate at 3007f7951; the windows waiver stands.
+
+## Porter round 2026-11-12 (linux-gfx90a, MI250X GCD, `HIP_VISIBLE_DEVICES=0` pinned by the dispatcher; jeff's 2026-11-11 ruling "option 1": fix `therock-libllvm-symbol-interposition` in the port's build files)
+
+Lock: `ported -> porting` is refused by moatlib, so the stage went `ported -> reviewing -> changes-requested -> porting` as in the earlier jeff-directed rounds (the "changes requested" is jeff's directive, not a reviewer verdict), then `ported`. `pr-state oneflow`: none, so the commit went on `moat-port` directly.
+
+### Commit on `moat-port` (3007f7951..c741328b7, fast-forward, pushed; no force, pre-push hook ran)
+c741328b7 `[ROCm] Version bundled LLVM symbols apart from ROCm's libLLVM`, one file, `oneflow/ir/install-llvm.cmake` (+16 -2). In HIP builds only (`if(BUILD_CUDA AND USE_HIP)`), the configure of the bundled LLVM (the `LLVM_PROVIDER=install` path that every HIP build takes, because build_rocm.sh sets `WITH_MLIR=OFF`) gets `-DCMAKE_SHARED_LINKER_FLAGS=<CMAKE_SHARED_LINKER_FLAGS_INIT> -Wl,--version-script=<build>/oneflow/ir/llvm_monorepo-build/oneflow_llvm.map`, a one-line script `ONEFLOW_LLVM { global: *; };` written with `file(CONFIGURE)`. Every symbol that libLLVMSupport.so.17git / libLLVMDemangle.so.17git / libLLVMTableGen.so.17git export is then `@@ONEFLOW_LLVM`, and liboneflow.so's references are `@ONEFLOW_LLVM`. The message ends "Authored with Claude.", has a fenced Test Plan, and no Co-Authored-By; `utils/prose.py`: clean. The commit was rewritten twice locally before the push (title 74 chars; mechanism wording; `file(WRITE)` -> `file(CONFIGURE)`); only the final c741328b7 was ever pushed.
+
+### The mechanism, corrected (the deferral's summary had it slightly wrong)
+- Only `libamd_comgr.so.3` in the SDK has `libLLVM.so.24.0git` as a NEEDED entry (every `$R/lib/*.so.[0-9]` checked); the HIP runtime reaches libLLVM through comgr. The deferral lists libamdhip64, hipblas, rocblas, rccl as linking it directly; that is not what `readelf -d` shows.
+- libLLVM.so.24 IS effectively linked with `-Bsymbolic-functions`: of its 352 `R_X86_64_JUMP_SLOT` relocations none is against an `llvm::` function, so its own function calls bind locally. What it lacks is full `-Bsymbolic`: `readelf -d` has no `SYMBOLIC` / `FLAGS SYMBOLIC` entry (only `FLAGS_1 NODELETE`), and 2005 `R_X86_64_GLOB_DAT` / `R_X86_64_64` relocations reference its own `_ZTVN4llvm*` vtables, e.g. `R_X86_64_GLOB_DAT _ZTVN4llvm19raw_svector_ostreamE@@LLVM_24.0`. Those stay preemptible.
+- libLLVM.so.24 versions its symbols (`VERDEF`: base `libLLVM.so.24.0git`, then `LLVM_24.0`), and all 1153 llvm:: references of libamd_comgr are `@LLVM_24.0`. oneflow's libLLVMSupport.so.17git had no VERDEF, and glibc lets an unversioned definition satisfy a versioned reference. So libLLVM.so.24's vtable references bind to LLVM 17's vtables. gdb (reproducer below): `raw_ostream::write` (libLLVM.so.24) -> `raw_svector_ostream::write_impl` (LLVM 17, reached through the vtable) -> `SmallVectorBase<unsigned long>::grow_pod` (LLVM 17) -> `realloc(): invalid pointer`, inside `Twine::printOneChild` of a libLLVM.so.24 static initializer.
+- A version node on the LLVM 17 side makes the glibc match fail both ways: a `@LLVM_24.0` reference no longer matches an `ONEFLOW_LLVM` definition, and an `@ONEFLOW_LLVM` reference cannot match a `LLVM_24.0` definition (so importing torch first, which loads libLLVM.so.24 earlier, also stays correct).
+
+### Why versioning and not static + hidden
+Linking LLVMSupport statically into liboneflow.so would also need `-Wl,--exclude-libs` (a static copy is exported from liboneflow.so by default and would interpose the same way), a different `find_library` for the archive, explicit LLVMDemangle and zstd link dependencies, and a decision about of_op_schema / of_functional / the Python module each embedding a copy. -Bsymbolic on libLLVMSupport.so.17 alone does not help: it stops LLVM 17 from being interposed, not LLVM 17 from interposing. The version script changes one link flag of the LLVM sub-build and nothing about what is built, installed or linked.
+
+### CUDA build unchanged
+`LLVM_HIP_ARGS` is empty unless `BUILD_CUDA AND USE_HIP`, and an empty unquoted list drops out of `execute_process(COMMAND ...)`. Shown with `agent_space/cudaargs.cmake` (the same if/set and an `echo_append` of the neighbouring arguments): `cmake -DUSE_HIP=OFF -P` prints `[-DLLVM_EXTERNAL_ONEFLOWTABLEGEN_SOURCE_DIR=t] [-G] [Ninja]`, `-DUSE_HIP=ON` prints the same with `-DCMAKE_SHARED_LINKER_FLAGS=... -Wl,--version-script=...` in between. The CUDA configure argv is therefore identical. classify, as expected for a code change:
+```
+$ python3 utils/moatlib.py classify oneflow 3007f7951 c741328b7
+class=mixed arch_independent=False inert=False
+oneflow/ir/install-llvm.cmake: mixed (token count differs)
+$ python3 utils/moatlib.py classify oneflow 8d470dcc14 c741328b7
+class=mixed arch_independent=False inert=False
+cmake/cuda.cmake: comment-only ...; cmake/third_party.cmake: comment-only ...; oneflow/ir/install-llvm.cmake: mixed (token count differs); python/oneflow/test/graph/test_graph_fused_mlp_cuda_graph.py: mixed (token count differs)
+```
+The CUDA compile check on the mi355 host is still owed for c741328b7 (not runnable here).
+
+### Builds (job directory only)
+- Incremental on the 3007f7951 tree: rc 0; the LLVM sub-build reconfigured, relinked its shared libs with the script, liboneflow.so relinked.
+- Clean `rm -rf build && bash build_rocm.sh all` (`agent_space/build.sh`; `CMAKE_PREFIX_PATH=$R`, `ROCM_CLANG(_C)` from the SDK wheel, `CMAKE_HIP_ARCHITECTURES=gfx90a`, job ccache, pywrap python3): rc 0, at the intermediate commit and again at c741328b7 itself (`OF_GPU_WARP_SIZE: 64`, part of `phase1.sh`, 353 s with warm ccache).
+- Regression found and fixed before the push: with `file(WRITE)`, every configure relinked 9 LLVM shared libs, liboneflow.so and the Python module, because the LLVM sub-build's link depfile (`-Xlinker --dependency-file=.../link.d`) lists the version script as a link input and `file(WRITE)` touches it. `file(CONFIGURE)` (CMake 3.18, the project minimum) writes only on change: two further `build_rocm.sh all` reruns relinked nothing, the same as the baseline tree (0 and 0). One intermediate rerun relinked liboneflow.so through `of_git_version/version.cpp` after the commit changed the git state; that is existing behaviour.
+- `readelf --dyn-syms`: libLLVMSupport.so.17git 3002 `@@ONEFLOW_LLVM` symbols, libLLVMDemangle.so.17git 455, liboneflow.so 4 `@ONEFLOW_LLVM` references; the baseline build's libLLVMSupport has 0.
+- `/opt/rocm` does not exist on this host, so the /opt/rocm-style install check was skipped.
+
+### import without any preload
+`LD_PRELOAD` unset (asserted in the script), `ulimit -c 0`: `1.0.0+cu00.git.c741328b7`, `flow.cuda.is_available()` True, a 64 x 1000 softmax sums to 64.0, a 64 x 64 fp32 mm differs from numpy by 7.6e-6. `import torch; import oneflow` in that order also works (torch 2.16.0a0+git6c3af02, symlinked read-only into `$FLEET_VENV-base-links`).
+
+### Suites without the preload (`agent_space/suite.sh`: one pytest per file, `--timeout=900` plus `timeout -k 30 1800`, junit per file, GPU 0, `ONEFLOW_TEST_DEVICE_NUM=1`; `utils/timeit.sh oneflow test`)
+The 8d470dcc1 gfx90a junit lived in a job directory that no longer exists, so the baseline is a second clone at 3007f7951 (differs from 8d470dcc1 by two comments and one test timeout) built the same way in `agent_space/base` and run WITH the preload, as every earlier round ran. Its totals reproduce the 8d470dcc1 gfx90a record: graph 152 / 2 / 3 / 102 with and without CUDA graphs, tensor 366 / 3 / 0 / 22. Per test id (`agent_space/cmp.py`), c741328b7 without preload vs 3007f7951 with:
+| suite | c741328b7, no preload (pass/fail/error/skip) | per id vs baseline | per-file rc |
+|---|---|---|---|
+| graph (92 files, 4 at a time, 112 s) | 152 / 2 / 3 / 102 | **259 of 259 same** | identical |
+| graph, `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1` | 152 / 2 / 3 / 102 | **259 of 259 same** | identical |
+| tensor (22 files, 4 at a time, 93 s) | 366 / 3 / 0 / 22 | **391 of 391 same** | identical |
+| modules (548 files, 8 at a time, 738 s) | 1612 / 51 / 5 / 315 | **1982 of 1983 shared same**; 5 ids only in the baseline | 1 file differs |
+Modules differences, both known random cases, checked with 3 reruns of each file on each build (`agent_space/rr.sh`):
+- `test_special_ops::test_flow_psi_with_random_data` pass -> fail: fails on both builds (c741328b7 3 of 3, 3007f7951 2 of 3); the random-draw digamma/psi item recorded at 021f4ad34.
+- `test_higher_derivative_loss` aborted (rc 134) in the suite run, so its 5 ids are missing: torch's own `binary_cross_entropy_out_cuda` (the oracle) raised the HSA exception on targets outside [0,1], the random abort recorded since the 197416f07 rounds. Reruns: c741328b7 run 1 died on the same HSA exception, this time with a SIGSEGV (rc 139) in oneflow's `SymbolUtil<LocalTensorMeta>` hash map on the main thread while the process was going down; runs 2 and 3 completed with **5 of 5 ids the same as the baseline suite run**. 3007f7951 run 1 aborted the same way (rc 134), runs 2 and 3 completed (run 2 flipped smooth_l1 grad_grad to pass). No log anywhere has `realloc(): invalid pointer`.
+- Aborted files otherwise the same on both builds: test_dataset (`/dataset` missing), test_loss (the BCE oracle); graph: test_alexnet_graph, test_graph_ofrecord_reader, test_run_global_graph_by_vm (`/dataset`).
+
+### Standalone reproducer for the ROCm bug report (not filed)
+`agent_space/repro/` (copy kept only here, so the full source is below). The LLVM 17 shared libs are the ones the bundled LLVM built before this change (`BUILD_SHARED_LIBS=ON`, no version script), copied to `repro/llvm17/`; any LLVM shared component library built without symbol versioning will do.
+```c
+/* tiny.c: a shared library with its own shared LLVM (libLLVMSupport from LLVM 17). */
+void *LLVMSearchForAddressOfSymbol(const char *name); /* llvm-c/Support.h */
+int tiny(void) { return LLVMSearchForAddressOfSymbol("tiny") != 0; }
+```
+```c
+/* main.c: loads libtiny.so (and with it LLVM 17), then the HIP runtime from the ROCm SDK wheels. */
+#include <stdio.h>
+int tiny(void);
+int hipGetDeviceCount(int *count); /* hip/hip_runtime_api.h */
+int main(void) {
+  int n = -1;
+  int rc = hipGetDeviceCount(&n);
+  printf("tiny=%d hipGetDeviceCount rc=%d count=%d\n", tiny(), rc, n);
+  return rc;
+}
+```
+```
+R=$(python -m rocm_sdk path --root)        # ROCm 10.1.0 rocm-sdk-devel wheel
+L=<dir with libLLVMSupport.so.17git, libLLVMDemangle.so.17git>
+gcc -shared -fPIC -o libtiny.so tiny.c -Wl,--no-as-needed -L$L -lLLVMSupport
+gcc -o repro main.c -Wl,--no-as-needed -L. -ltiny -L$R/lib -lamdhip64 -Wl,-rpath,'$ORIGIN'
+ulimit -c 0
+LD_LIBRARY_PATH=$L:$R/lib ./repro
+  realloc(): invalid pointer
+  Aborted                                               (rc 134)
+LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git LD_LIBRARY_PATH=$L:$R/lib ./repro
+  tiny=0 hipGetDeviceCount rc=0 count=1                 (rc 0)
+LD_LIBRARY_PATH=<the same LLVM 17 libs linked with the ONEFLOW_LLVM version script>:$R/lib ./repro
+  tiny=0 hipGetDeviceCount rc=0 count=1                 (rc 0)
+```
+gdb (`gdb -batch -ex run -ex 'bt 12' -ex kill`): frames #7-#11 `__libc_realloc` <- `llvm::SmallVectorBase<unsigned long>::grow_pod` (llvm17/libLLVMSupport.so.17git) <- `llvm::raw_svector_ostream::write_impl` (llvm17) <- `llvm::raw_ostream::write` (libLLVM.so.24.0git) <- `llvm::Twine::printOneChild` (libLLVM.so.24.0git). readelf evidence for the report:
+```
+$ readelf -d $R/lib/llvm/lib/libLLVM.so.24.0git | grep -E 'SONAME|FLAGS|SYMBOLIC'
+ 0x000000000000000e (SONAME)             Library soname: [libLLVM.so.24.0git]
+ 0x000000006ffffffb (FLAGS_1)            Flags: NODELETE
+$ readelf -d $R/lib/llvm/lib/libLLVM.so.24.0git | grep -c SYMBOLIC
+0
+$ readelf -r -W $R/lib/llvm/lib/libLLVM.so.24.0git | grep raw_svector_ostream
+... R_X86_64_GLOB_DAT 0000000006c8cc98 _ZTVN4llvm19raw_svector_ostreamE@@LLVM_24.0 + 0
+```
+Suggested ask for the report: link libLLVM.so with `-Bsymbolic` (not only `-Bsymbolic-functions`), or link LLVM statically into comgr as the /opt/rocm packages do, so a process that also loads an unversioned LLVM cannot redirect libLLVM's vtables.
+
+Core dumps: this host's `kernel.core_pattern` pipes to `systemd-coredump`, and a pipe handler receives the dump regardless of `ulimit -c 0` (bash printed "core dumped" and no file appeared in the job directory). The deliberate aborts here (one reproducer run; gdb kills its run before a dump) and the suites' known aborting files therefore went to the host's coredump handler, not this disk.
+
+### Docs
+Neither the fork's README ROCm block nor any other tracked file has an `LD_PRELOAD` or libLLVM instruction (`git grep -i 'LD_PRELOAD\|libLLVM\|TheRock'`: only an unrelated ci/test/excludelist comment and the new cmake comment), so nothing was removed. The `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` in the run recipes of this file is no longer needed from c741328b7 on. No MOAT skill mentions it either. Proposed `cuda-to-rocm` lesson, held back because the skill files conflict with origin/main on this branch (jeff is handling that): "A project that bundles its own shared LLVM (libLLVMSupport etc.) aborts at load against ROCm packages whose comgr links a shared, versioned libLLVM without -Bsymbolic; give the bundled LLVM's shared libraries a version script of their own, or link them statically with --exclude-libs."
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038's message.
+- `git -C projects/oneflow/src status --porcelain`: no modified tracked file.
+- Deferral `therock-libllvm-symbol-interposition`: stays `open` (the ROCm bug report is not filed; jeff files it); `--ref` to this section added. Its summary's "built without -Bsymbolic-functions" and its list of libraries linking libLLVM are corrected above; deferred.py has no edit command for the summary.
+
+### Owed
+- CUDA compile check of c741328b7 on the mi355 host (nvcc).
+- wave32 revalidation (gfx1100) at c741328b7; wave64 (gfx90a, gfx942) revalidation as the selector derives; the windows waiver stands.
+- Review of 8d470dcc14..c741328b7 (three commits: 19444bcdf, 3007f7951, c741328b7).
