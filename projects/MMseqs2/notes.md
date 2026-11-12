@@ -955,3 +955,33 @@ Promoted to the `cuda-to-rocm` skill (`SKILL.md` "Performance -- correct is not 
 ### Upstream follow-up candidate (not drafted for posting, needs jeff)
 
 Replacing `compatibility::hmax2`/`hmin2`'s `asm volatile` in `lib/libmarv/src/cuda_hip_compatibility.cuh` with `__builtin_elementwise_max`/`min` on a `_Float16` 2-vector would make upstream's HIP gapless prefilter about 2x faster on gfx1100 (21.0 -> 10.45 s, identical output). Not measured on gfx90a/gfx942, where upstream's tables were tuned. Upstream-visible, so it is jeff's call whether to raise it.
+
+## Refresh onto upstream tip: stopped, needs jeff's decision (2026-11-12, linux-gfx942)
+
+jeff asked for a porter run that merges upstream's tip into `moat-port` (head 75a9b029, review PR AMD-Ecosystem/MMseqs2#1) so the upstream PR can merge. No fork branch, mirror or MOAT state was changed. The trial merge was aborted and nothing was pushed. `pr-state MMseqs2` = none, so `moat-port` is not frozen.
+
+### What the trial merge showed
+
+```
+git clone https://github.com/AMD-Ecosystem/MMseqs2 projects/MMseqs2/src
+git -C projects/MMseqs2/src remote add upstream https://github.com/soedinglab/MMseqs2 && git fetch upstream master
+git checkout -b trial-merge origin/moat-port && git merge --no-commit upstream/master   # then git merge --abort
+```
+
+- upstream/master d0185a2d (2026-11-11); fork `master` 17b688d2 fast-forwards to it (checked, not pushed). Merge base 11933403; port 5 commits, upstream 150 commits.
+- 17 conflicts: 12 content (CMakeLists.txt, cmake/MMseqsResourceCompiler.cmake, lib/libmarv/src/CMakeLists.txt, pssmkernels_smithwaterman.cuh, mathops.cuh, util.cuh, six hpc_helpers headers) and 5 modify/delete (blosum.cu, blosum.hpp, gapless_kernel_config.cuh, smithwaterman_kernel_config.cuh, kernelhelpers.cuh, all deleted upstream).
+- The cause is not ordinary drift. Upstream now has its own HIP backend: c7eee558 "ROCm/HIP GPU support" (top-level `ENABLE_HIP`), fe334a31 "Add HIP CI" and 63831a18 "Add ROCm to readme". Since the 2026-10-29 validations above it has also rewritten libmarv: `cuda_hip_compatibility.cuh`, `cuda_hip_rename.h`, `cmake/MarvGpuArch.cmake`, and per-arch AMD aligner instantiations (`aligners/make_aligner_amd_{gfx900,gfx942,gfx1100,gfx1150}.cu`, `*_default_amd.cu`). The port's config-ladder files are deleted upstream.
+- Upstream tip has no Windows support in libmarv or `GpuUtil.cpp` (no `_WIN32` guards). Windows is the one thing the port covers that upstream does not.
+
+### Why this was not resolved mechanically
+
+The requested rule ("keep upstream's new behaviour, re-apply the HIP port on top") cannot be applied as written. Upstream's new behaviour IS a HIP port. Re-applying ours would add a second, parallel HIP backend (`USE_HIP`, `cuda_to_hip.h`, `marv_simd_amd.cuh`, `hip_compat/`) next to upstream's `ENABLE_HIP`. No maintainer would take that, and the 2026-10-30 section measured ours 15.6x slower on gfx1100. Keeping upstream on every conflict would leave a tree that does not hang together: the port's non-conflicting files (cuda_to_hip.h, marv_simd_amd.cuh, the hip_compat headers, the USE_HIP blocks in src/CMakeLists.txt) would still be there, and none of them could build against the restructured libmarv. Either way, what remains of the port is a different scope, and that is a person's call (scope-cut rule, and any "already supported upstream" disposition).
+
+### Options for jeff
+
+1. Retire the port as superseded upstream: record an already-supported/ported-elsewhere disposition, close review PR #1 unmerged, and do not open an upstream PR. The earlier evidence (2026-10-29 gfx90a and gfx1100 sections) is that upstream's HIP path passes 43/43 regression, including SEARCH_GPU and SEARCH_GPU_SERVER, with GPU-vs-CPU-ungapped results byte-identical. The follow-up candidates already recorded still stand as separate upstream items: README RDNA/from-source note, the CUDA `_SW_default` -> gfx942 table regression, `hmax2` `asm volatile` -> builtin (2x), and the `ClampToInvalid` `__CUDA_ARCH__` latent issue. Some may have changed at d0185a2d.
+2. Re-scope to Windows only: merge upstream, resolve every libmarv/CMake conflict to upstream, delete the port's own HIP backend, then port only the Windows enablement (mapped_file Win32, MARV_API exports, MSVC-ABI CMake, MMseqsResourceCompiler/tinyexpr WIN32, GpuUtil `_WIN32` stubs) onto upstream's `ENABLE_HIP`. That is new porting work against a restructured library, not a refresh. Every platform's evidence would be voided, and the deliverable would be a library-only Windows path (the `mmseqs` binary itself is POSIX-only).
+
+Not done because the refresh stopped: the fork `master` fast-forward (step 2), the HIP build and GPU tests, the CUDA compile check, jargon, push, `advance-head`.
+
+foldseek (and so the parallel foldseek refresh) is likely in the same situation. steineggerlab/foldseek tip 39b02b9 (2026-11-11) has pulled `lib/mmseqs` forward with a subtree squash (5b3bc29), so its vendored libmarv probably carries upstream's HIP backend. This was not checked further. `steineggerlab/metaeuk` returned "repository not found" at that URL; its upstream location was not looked up.
