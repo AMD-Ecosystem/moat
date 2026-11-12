@@ -7,7 +7,7 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-11-12T01:23:02Z",
+  "updated_at": "2026-11-12T02:20:11Z",
   "head_sha": "c741328b7b5e70f1b7dbb946d269f1605bf8c0ee",
   "waivers": {
     "windows": {
@@ -159,10 +159,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": "ported + GPU-validated. liboneflow.so (1.3GB) and the _oneflow_internal pybind module LINK; the ep/cuda/primitive slice GPU-validates vs PyTorch-ROCm (device='cuda' == HIP backend, fwd+bwd): test_add/cast/where/masked_fill/broadcast_ops/transpose/softmax/layer_norm = 64 passed, matmul core = 9 passed. Monolith built with the ROCm clang; hip::host+roc::rccl linked (not hip::device); 17 .cu deferred (cuDNN/cuBLASLt/cuSOLVER/CUTLASS+wmma/libcu++/P2P) with their host registrations guarded or stubbed (NewLruCache, GridSampleKernelUtil<kCUDA> -> CPU-only). GPU faults fixed: hipblasSetMathMode no-op on CDNA, __launch_bounds__(1024) on the norm block kernels, CUDNN_BN_MIN_EPSILON=0.0, and the wave64 LayerNormParamGrad reduction (tile/launch/shared/width all 32, width-confined shfl). Fork 68718f0.",
-      "validated_sha": "8d470dcc14be72b8f96434ccc62cd57129aabc56",
+      "validated_sha": "c741328b7b5e70f1b7dbb946d269f1605bf8c0ee",
       "started_at": "2026-05-31T01:37:32Z",
-      "completed_at": "2026-11-09T20:21:59Z",
-      "updated_at": "2026-11-12T01:09:58Z",
+      "completed_at": "2026-11-12T02:20:11Z",
+      "updated_at": "2026-11-12T02:20:11Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -176,7 +176,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter",
+      "last_agent": "validator",
       "failed_sha": "021f4ad34eba3d1e7c411ff7415380697aa9ad83"
     }
   },

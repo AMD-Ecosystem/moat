@@ -605,3 +605,10 @@
 {"kind":"session","ts":"2026-11-12T01:23:15Z","epoch":1794446595.836999800,"event":"end","platform":"linux-gfx942"}
 {"kind":"phase","ts":"2026-11-12T01:30:32Z","phase":"compile","seconds":687.975,"exit":0,"cmd":"bash ../cw/build.sh 8d47"}
 {"kind":"phase","ts":"2026-11-12T01:42:01Z","phase":"compile","seconds":678.136,"exit":0,"cmd":"bash ../cw/build.sh c741"}
+{"kind":"session","ts":"2026-11-12T01:29:35Z","epoch":1794446975.227187447,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-12T01:40:49Z","phase":"compile","seconds":673.956,"exit":0,"cmd":"bash agent_space/build.sh all"}
+{"kind":"phase","ts":"2026-11-12T01:58:00Z","phase":"test","seconds":964.129,"exit":0,"cmd":"bash agent_space/suites.sh"}
+{"kind":"phase","ts":"2026-11-12T02:15:21Z","phase":"test","seconds":824.095,"exit":0,"cmd":"bash agent_space/rest2.sh"}
+{"kind":"phase","ts":"2026-11-12T02:16:33Z","phase":"test","seconds":56.734,"exit":0,"cmd":"bash agent_space/cg.sh"}
+{"kind":"phase","ts":"2026-11-12T02:17:46Z","phase":"test","seconds":48.728,"exit":0,"cmd":"bash agent_space/ctl.sh"}
+{"kind":"session","ts":"2026-11-12T02:20:11Z","epoch":1794450011.936395631,"event":"end","platform":"linux-gfx90a"}

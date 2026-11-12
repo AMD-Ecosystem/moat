@@ -4992,3 +4992,61 @@ All comparisons normalize the job's `src-<tag>` and `build-<tag>` paths.
 - Build trees, source clones and dependency extracts deleted after the run (host disk at 97%). Logs, the traces and the extracted argv/cache files stay in the job's `cw/logs/` (container-local); the comparison script is `cw/tools/compare.py`.
 
 This settles the "CUDA compile check of c741328b7 on the mi355 host (nvcc)" item under "Porter round 2026-11-12 ... Owed".
+
+## Validation 2026-11-11 (linux-gfx90a) at c741328b7 (validator, MI250X GCD, `HIP_VISIBLE_DEVICES=0` pinned by the dispatcher; jeff's request: revalidate at the new head after the 2026-11-11 PR-prep rounds, with NO LD_PRELOAD of libLLVM)
+
+Host: AMD Instinct MI250X / MI250 (`gfx90a:sramecc+:xnack-`, wave64), one GPU visible, ROCm 10.1.0 SDK wheels (`$FLEET_VENV-base-links/_rocm_sdk_devel`), Python 3.11, numpy 1.26.4, protobuf 3.20.3 (`"$FLEET_VENV"/bin/python -m pip install -r dev-requirements.txt fsspec pytest-timeout pytest-repeat opencv-python-headless==4.10.0.84`; the fleet guard only accepts pip when the literal `$FLEET_VENV` appears in the command), torch 2.16.0a0+git6c3af02 symlinked read-only into `$FLEET_VENV-base-links`, `ulimit -c 0` on every run, **`LD_PRELOAD` unset on every run** (`env -u LD_PRELOAD` in each script), `PYTHONDONTWRITEBYTECODE=1`, no JIT extension builds. Fresh fork clone (`--reference` the prep-fixes job's clone, `--dissociate`), `protect-fork` installed. **Head confirmed: `moat-port` = `git ls-remote` = c741328b7b5e70f1b7dbb946d269f1605bf8c0ee; `git status --porcelain` empty before and after.** Scripts in `agent_space/` (gitignored): `env.sh`, `build.sh`, `suite.sh`, `suites.sh`, `one.sh`, `py1.sh`, `cap.sh`, `reg.sh`, `rr.sh`, `cg.sh`, `ctl.sh`, `cmp.py`, `t/{imp,cg_grad,longk,bce_probe,torch_bce,torch_bce_tgt}.py`.
+
+### Verdict: **completed**. Without any preload, `import oneflow` works in both import orders; graph (with and without CUDA graphs) and tensor suites match the baseline id for id; modules differ by one id and one aborted file, both explained below as test-oracle randomness that the base build shows too; every capture, regression, long-k and cold-capture check passes.
+
+### Build (documented procedure, clean, this job's directory)
+`utils/timeit.sh oneflow compile -- bash agent_space/build.sh all` = `bash build_rocm.sh all` with `CMAKE_PREFIX_PATH=$R`, `ROCM_CLANG(_C)` from the SDK wheel, `CMAKE_HIP_ARCHITECTURES=gfx90a`, `JOBS=$MAX_JOBS` (128), job-local ccache (cold), `pywrap/python3` first on PATH (the cmake/python.cmake `pip install --user` venv quirk): **rc 0, 674 s**, `OF_GPU_WARP_SIZE: 64`. `readelf --dyn-syms`: libLLVMSupport.so.17git **3002** `@@ONEFLOW_LLVM`, libLLVMDemangle.so.17git **455**, liboneflow.so **4** `@ONEFLOW_LLVM` references (the porter's counts).
+
+### import without preload (`agent_space/t/imp.py`, asserts `LD_PRELOAD` is absent)
+| order | result |
+|---|---|
+| `import oneflow; import torch` | rc 0, `1.0.0+cu00.git.c741328b7`, `flow.cuda.is_available()` True, 64 x 1000 softmax sums to 64.0, 64 x 64 fp32 mm vs numpy 7.6e-6, torch mm 7.6e-6, torch -> oneflow round trip bitwise |
+| `import torch; import oneflow` | rc 0, the same (softmax sum 63.999996) |
+No `realloc(): invalid pointer` anywhere in this round's logs. The `Runtime version 71626.38 of CUDA Runtime incompatible with compiletime version 11.8` warning at import is pre-existing (in the 3007f7951 baseline logs as well).
+
+### Suites (`agent_space/suite.sh`: one pytest per file, `--timeout=900` plus `timeout -k 30 1800`, junit per file, `ONEFLOW_TEST_DEVICE_NUM=1`, no preload; `utils/timeit.sh oneflow test`, 964 s total)
+Baseline: no 8d470dcc1 gfx90a junit survives on this host, so the closest recorded baseline is the prep-fixes job's 3007f7951 build run WITH the preload (`mi200-20261111-153809-oneflow-prep-fixes/moat/agent_space/j/base_*`, read-only; its totals reproduce the 8d470dcc1 gfx90a record, and 3007f7951 differs from 8d470dcc1 by two comments and a test timeout). Also compared with the porter's c741328b7 no-preload run (`j/new_*`).
+| suite | wall | pass / fail / error / skip | per id vs 3007f7951 baseline | per-file rc vs baseline |
+|---|---|---|---|---|
+| graph (92 files, 4 at a time) | 112 s | 152 / 2 / 3 / 102 | **259 of 259 same** | identical |
+| graph, `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1` | 112 s | 152 / 2 / 3 / 102 | **259 of 259 same** | identical; no timeout, no hang |
+| tensor (22 files, 4 at a time) | 91 s | 366 / 3 / 0 / 22 | **391 of 391 same** | identical |
+| modules (548 files, 8 at a time) | 649 s | 1614 / 49 / 5 / 315 | **1982 of 1983 shared same**; 5 ids only in the baseline | 1 file differs (test_higher_derivative_loss: 1 -> 139) |
+Against the porter's c741328b7 run: graph 259/259, graph+CG 259/259, tensor 391/391 same; modules 1981 of 1983 (the two random ids below).
+
+Every modules difference, explained:
+- `test_global_higher_derivative_loss::test_smooth_l1_loss_grad_grad` fail -> pass. Random draws: in 3 reruns on this build it failed 2 times and passed once (run 2); the porter saw the same flip on 3007f7951 (its rerun 2). Not port-related.
+- `test_special_ops::test_flow_psi_with_random_data` (porter's diff only): pass here, and 3 of 3 pass in reruns; `test_flow_digamma_with_random_data` failed once in 3 reruns. The random-draw digamma/psi item recorded since 021f4ad34.
+- `test_higher_derivative_loss` aborted (rc 139), so its 5 ids are missing. **Root cause, found this round:** `generate_necessity_for_bce_loss` draws the BCE target from `[0, num_classes)` = [0, 2) on whichever device `random_device()` picks, and torch (the oracle) rejects targets above 1. On CPU it raises `RuntimeError: all elements of target should be between 0 and 1` (the test fails, `PyTorchDoesNotSupportError`); on the GPU the same check is `CUDA_KERNEL_ASSERT(target_val >= zero && target_val <= one)` (`aten/src/ATen/native/cuda/Loss.cu:90`), a device trap: `HSA_STATUS_ERROR_EXCEPTION ... code: 0x1016` in `binary_cross_entropy_out_cuda`, then a 719 at the next HIP call and SIGSEGV/SIGABRT while the process goes down. Evidence: `t/bce_probe.py` wraps torch's `F.binary_cross_entropy` and logs what it receives; the faulting call had input [0.0706, 0.9685] (valid) and **target [0.4187, 1.348]**. Torch alone, no oneflow imported (`t/torch_bce_tgt.py`, input 0.5): target 0.9 and 1.0 no fault, **target 1.348 -> the same HSA exception**. So abort vs fail depends only on which device the first out-of-range draw lands on. Counts: this build aborted 4 of 4 (suite plus 3 reruns of `rr.sh`); the 3007f7951 build (read-only, with preload, `ctl.sh`) aborted 1 of 3 here, and in the porter's round each build aborted 1 of 3. On every non-aborting run on either build the test reports `test_bce_loss_grad_grad` failed with the torch target error, so the file never passes on either build. Not port-related; an upstream test defect (target should be drawn in [0, 1] for BCELoss).
+- Aborted files otherwise the same on both builds: test_dataset (`/dataset` missing), test_loss (the same BCE oracle); graph: test_alexnet_graph, test_graph_ofrecord_reader, test_run_global_graph_by_vm (`/dataset`).
+
+### Capture regression tests (`agent_space/cap.sh`, one pytest process per run, no preload)
+| test | `ROCBLAS_USE_HIPBLASLT` unset | `=1` |
+|---|---|---|
+| graph/test_graph_fused_mlp_cuda_graph.py | **5 of 5 pass** (7.3-7.4 s) | **5 of 5 pass** (7.4 s) |
+| graph/test_graph_cuda_graph_stream_creation.py | **5 of 5 pass** (6.6-6.9 s) | **5 of 5 pass** (6.6-6.8 s) |
+| graph/test_graph_cuda_graph_fft_plan.py | **5 of 5 pass** (23.8-24.8 s) | **5 of 5 pass** (21.5-22.6 s) |
+Plus test_graph_fused_mlp_cuda_graph with outer `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`: 3 of 3 pass. No log has a `(906)`, `(901)` or `PARSE_ERROR` line. (A first `cap.sh` attempt clobbered its loop variable inside `run()` and ran nothing after the first test, rc 4 "file not found"; fixed with `local`, all rerun.)
+
+### Regression tests of the recent rounds (`agent_space/reg.sh`, no preload)
+test_matmul_long_k 4 p; test_conv_float64 6; test_grouped_matmul_bias 2; test_cross_entropy_float16 3; test_check_numerics_float16 2; test_pool2d_channels_last 1; test_pooling_channels_last 2; test_batchnorm 6 + 1 skip; test_conv_bias_grad 2; test_reduce_sum_like 2; test_fused_matmul_bias 1; test_bmm 2; test_rand 4 + 1 skip; test_randint 6 + 1 skip; test_optim_lbfgs 1; misc/test_import_without_imp 1; graph/test_graph_repeated_small_run 2; graph/test_graph_fused_mlp_cuda_graph 1; graph/test_graph_image_gpu_decoder 1 + 1 skip. **Identical to the 8d470dcc1 record.** test_cublas_fused_mlp fails 1 of 1 (`test_fused_matmul_op`, float32 elementwise 1e-4), the known tolerance item, the same as at 8d470dcc1.
+
+### Long-k and cold-capture checks (no preload)
+- `t/longk.py` (reconstructed; the earlier script did not survive): k = 2^20 fp16/bf16 eager, uniform(-1, 1), error = max abs / max |float64 ref|, oneflow vs torch on the same rounded inputs: **RESULT PASS, oneflow equals torch in all 12 cases**. fp16: mm 1/2/16 x 2^20 x 64 2.78e-4 / 2.79e-4 / 4.11e-4, transpose_b 2.01e-4, bmm 4 x (1 x 2^18 x 64) 2.54e-4, 1 x 2^16 x 64 2.61e-4 (the same numbers as the 2026-11-01 table); bf16 1.81e-3 to 2.79e-3 (different draws from the old table, same level).
+- `t/cg_grad.py <k>` with `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1 ONEFLOW_ONE_EMBEDDING_FUSED_MLP_ASYNC_GRAD=1` (two-layer fused_mlp fp16, fp32 master weights, SGD lr 1, weights reset before each step, graph called first; 4 steps x 4 parameters, graph update vs eager `before - grad`, bitwise): **k = 64, 1024 and 2^20, `ROCBLAS_USE_HIPBLASLT` unset and `=1`: rc 0, 16 of 16 bitwise equal, 0 mismatches, no 906, in all 6**.
+  - A first reconstruction reset the graph's parameters with `param.data = new_tensor`; that swaps in a tensor the compiled graph never sees, so the graph kept training its own buffers while `before` read the reset values: step 0 was bitwise equal, steps 1-3 differed by up to 390. Positive check that this is the script and not c741328b7: the same v1 script on the 3007f7951 build (read-only, with preload) gives **the identical 4 of 16 / 12 mismatches**. Resetting in place (`param.copy_(...)` under `no_grad`) gives 16 of 16 on this build. Kept as `t/cg_grad_v1_dataassign.py`.
+
+### Not run
+- Two-GPU one_embedding / P2P / fused-harness tests: one GPU pinned. The delta 8d470dcc1..c741328b7 touches no kernel (two CMake comments, one test keyword, the LLVM sub-build's link flag).
+- CUDA compile gate: no nvcc on this host (`/opt/conda/envs/cuda-12.8` absent). Still owed at c741328b7 on the mi355 host, as the porter and reviewer recorded.
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038's message (for the PR-prep squash); nothing new.
+- Documentation: no tracked file carries an LD_PRELOAD/libLLVM instruction; README's ROCm block and `build_rocm.sh` reproduced this build. From c741328b7 on, the `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` in this file's earlier run recipes is not needed on this platform: this whole round ran without it.
+- `git -C projects/oneflow/src status --porcelain`: empty (no modified tracked file).
+- Core dumps: `ulimit -c 0` on every run; this host's `kernel.core_pattern` pipes to systemd-coredump, which receives dumps regardless (bash printed "dumped core" for the test_higher_derivative_loss aborts and the deliberate torch-only BCE trap; no core file landed in the job directory).
