@@ -2592,6 +2592,15 @@
     "reason": "not-a-target",
     "repo_id": 365500737
   },
+  "xbillowy/diff-surfel-rasterizations": {
+    "by": "jeffdaily",
+    "decided": "2026-11-12T16:21:11Z",
+    "disposition": "skip",
+    "full_name": "xbillowy/diff-surfel-rasterizations",
+    "note": "Non-commercial licence; contributing needs written permission from the Inria/MPII GRAPHDECO copyright holders. The ported fork is the deliverable.",
+    "reason": "license-blocked",
+    "repo_id": 826182513
+  },
   "xgbj/sparse-mask-attention": {
     "decided": "2026-06-05T01:25:52Z",
     "disposition": "skip",
