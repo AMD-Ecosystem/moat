@@ -592,3 +592,7 @@
 {"kind":"phase","ts":"2026-11-09T20:14:21Z","phase":"test","seconds":1203.488,"exit":0,"cmd":"bash agent_space/suite.sh modules 0 8"}
 {"kind":"phase","ts":"2026-11-09T20:21:02Z","phase":"test","seconds":401.379,"exit":0,"cmd":"bash agent_space/reg.sh 0 r1"}
 {"kind":"session","ts":"2026-11-09T20:22:09Z","epoch":1794255729.381687437,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-11T23:44:19Z","phase":"compile","seconds":28.441,"exit":1,"cmd":"bash agent_space/build.sh all"}
+{"kind":"phase","ts":"2026-11-11T23:55:41Z","phase":"compile","seconds":657.717,"exit":0,"cmd":"bash agent_space/build.sh all"}
+{"kind":"phase","ts":"2026-11-11T23:59:50Z","phase":"test","seconds":207.973,"exit":0,"cmd":"bash agent_space/cap.sh"}
+{"kind":"phase","ts":"2026-11-12T00:03:40Z","phase":"test","seconds":222.004,"exit":0,"cmd":"bash agent_space/cap2.sh"}

@@ -4777,3 +4777,51 @@ Not rerun: "CUDA compile check at 8d470dcc14" above already records the nvcc 12.
 - `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038's message (left for the PR-prep squash).
 - Documentation: README.md's ROCm block and `build_rocm.sh` are unchanged by the delta and reproduced this build (with `CMAKE_PREFIX_PATH` for a non-`/opt/rocm` install).
 - `git -C projects/oneflow/src status --porcelain`: empty.
+
+## Porter round 2026-11-11 (linux-gfx90a, MI250X GCD, `HIP_VISIBLE_DEVICES=0` pinned by the dispatcher; jeff's 2026-11-11 ruling "Fix all three now", before the PR-prep squash)
+
+Scope was exactly three edits on top of the review-passed head 8d470dcc14: two stale comments and the missing `timeout=` recorded under "Review" at fix23 ("The new test's `subprocess.run` has no `timeout=`"). `pr-state oneflow`: none, so the round went on `moat-port` directly. Lock: `set-state oneflow linux-gfx90a porting` (review-passed -> porting), released by `ported`.
+
+### Commits on `moat-port` (8d470dcc1..3007f7951, fast-forward, pushed; no force, pre-push hook ran)
+- 19444bcdf `[ROCm] Correct two stale comments in the HIP CMake setup`: `cmake/third_party.cmake` no longer says MIOpen is "not ported yet" (MIOpen is found in cmake/cuda.cmake and linked through `VENDOR_CUDA_LIBRARIES`, cuDNN mapped onto it by the `cudnn.h` shim); it now says MIOpen replaces cuDNN through the shim and that CUTLASS and flash-attention are not built (they are only included in the `elseif(BUILD_CUDA)` branch). `cmake/cuda.cmake` no longer says "host C++ is untouched": host .cpp files get `cuda_to_hip.h` force-included per target by `set_compile_options_to_oneflow_target`, and 19 host .cpp files differ from master.
+- 3007f7951 `[ROCm] Add a timeout to the fused MLP CUDA graph test`: `timeout=600` on the `subprocess.run` in `python/oneflow/test/graph/test_graph_fused_mlp_cuda_graph.py`, the same keyword and value as test_graph_cuda_graph_fft_plan, test_graph_cuda_graph_stream_creation and test_graph_image_gpu_decoder.
+- Both messages end with "Authored with Claude." (jeff's wording for this round) and carry a fenced Test Plan; no Co-Authored-By.
+
+### Classify
+```
+$ python3 utils/moatlib.py classify oneflow 8d470dcc14 19444bcdf
+class=comment-only arch_independent=True inert=True
+cmake/cuda.cmake: comment-only (comments/format only); cmake/third_party.cmake: comment-only (comments/format only)
+$ python3 utils/moatlib.py classify oneflow 8d470dcc14 3007f7951
+class=mixed arch_independent=False inert=False
+cmake/cuda.cmake: comment-only ...; cmake/third_party.cmake: comment-only ...; python/oneflow/test/graph/test_graph_fused_mlp_cuda_graph.py: mixed (token count differs)
+```
+The cmake commit is comment-only; the whole delta is `mixed` only because of the test keyword, so every gate reads revalidate at 3007f7951.
+
+### Build (documented procedure, clean tree, this job's directory)
+Fresh fork clone in `projects/oneflow/src`, `protect-fork`, local `master` from `origin/master`. `$FLEET_VENV/bin/python -m pip install -r dev-requirements.txt fsspec pytest-timeout pytest-repeat opencv-python-headless==4.10.0.84` (brings protobuf 6.33.5 down to 3.20.3). `agent_space/env.sh`: `R=$FLEET_VENV-base-links/_rocm_sdk_devel` (ROCm 10.1.0 SDK wheels), `CMAKE_PREFIX_PATH=$R ROCM_CLANG=$R/lib/llvm/bin/clang++ ROCM_CLANG_C=$R/lib/llvm/bin/clang CMAKE_HIP_ARCHITECTURES=gfx90a JOBS=$MAX_JOBS` (128), job-local ccache, `pywrap/python3` first on PATH. The first configure stopped at cmake/python.cmake's `pip install --user` ("Can not perform a '--user' install" in a venv), the known host quirk; with the pywrap, `utils/timeit.sh oneflow compile -- bash agent_space/build.sh all` (= `bash build_rocm.sh all`): **rc 0, 658 s**, `OF_GPU_WARP_SIZE: 64`. libunwind-dev 1.6.2 is installed on this host. Smoke (`LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, `ulimit -c 0`): `1.0.0+cu00.git.3007f7951`, `flow.cuda.is_available()` True, a 64 x 1000 softmax sums to 64.0, a 64 x 64 fp32 mm differs from numpy by 7.6e-6.
+
+### Tests at 3007f7951 (`agent_space/one.sh`: one pytest process per run, `--timeout=900`, `timeout -k 30 1800`, `ulimit -c 0`, LD_PRELOAD libLLVM, PYTHONPATH = this tree's `python/`, GPU 0; `utils/timeit.sh oneflow test`)
+| test | outer env unset | `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1` | `ROCBLAS_USE_HIPBLASLT=1` |
+|---|---|---|---|
+| graph/test_graph_fused_mlp_cuda_graph.py | **5 of 5 pass** (7.2-7.4 s) | **5 of 5 pass** | **3 of 3 pass** |
+| graph/test_graph_cuda_graph_stream_creation.py | **5 of 5 pass** (6.6-7.0 s) | -- | **3 of 3 pass** |
+| graph/test_graph_cuda_graph_fft_plan.py | **5 of 5 pass** (24.6-25.1 s) | -- | **3 of 3 pass** (22.1-22.7 s) |
+The fused-MLP test sets `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1` in its subprocess itself, so the outer variable only changes the parent. No log has a `(906)`, `(901)` or `PARSE_ERROR` line. Hang probe with `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`, one run each: test_graph_linear 4 p, test_graph_linear_train 2 p, test_graph_optim_sgd 2 p, test_graph_relu 1 p, test_graph_lr_scheduler 19 p, test_graph_activation_checkpoint 1 p, test_graph_repeated_small_run 2 p, test_graph_image_gpu_decoder 1 p + 1 skip. Same counts as the 8d470dcc1 rounds; no timeout, no hang.
+
+### The timeout is honored
+`agent_space/timeout_probe.py` loads the test module, wraps `subprocess.run` to record the `timeout` the test passes and then shrinks it to 1 s, and calls the test method:
+```
+TimeoutExpired after 1.1 s (timeout=1)
+timeout kwarg passed by the test: [600]
+```
+The test passes `timeout=600`, a child that outlives it is killed and the test errors with `subprocess.TimeoutExpired` instead of hanging, and no child process was left behind (`pgrep` empty afterwards).
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038's message (for the PR-prep squash); nothing new.
+- `git -C projects/oneflow/src status --porcelain`: no modified tracked file (only untracked build output).
+- Not run: the full graph/tensor/modules suites and the CUDA compile gate. The delta is two CMake comments and one test keyword argument; the cmake change classifies comment-only, so neither the HIP nor the CUDA build can change from it.
+- Orient on this host could not merge `origin/main` into `port/oneflow`: conflicts in `.claude/skills/cuda-to-rocm/{SKILL.md,references/fault-classes.md,references/no-hip-equivalent.md,references/validation.md}`. Outside this round's scope and left for a person or the next round; the project records are unaffected.
+
+### For the reviewer and validators
+Review 8d470dcc14..3007f7951 (two commits, 7 insertions, 3 deletions). Every gate reads revalidate at 3007f7951; the windows waiver stands.
