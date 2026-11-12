@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-08-20T00:30:14Z",
+  "updated_at": "2026-11-12T22:58:56Z",
   "head_sha": "97fc79a1322d157e99e83fc5f2790f04d4dea39a",
   "depends_on": [],
   "porting": null,
@@ -139,5 +139,7 @@
       }
     }
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/foldmason/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/foldmason/pull/1",
+  "on_hold": true,
+  "on_hold_reason": "jeff 2026-11-12: upstream MMseqs2 shipped its own HIP libmarv (c7eee558, ENABLE_HIP); our USE_HIP libmarv port is superseded. Wait for the MMseqs2 rescope (arch fallback/tuning, Windows, ClampToInvalid), then rescope this port to what remains on top of ENABLE_HIP."
 }
