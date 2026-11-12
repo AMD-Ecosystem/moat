@@ -6,12 +6,55 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-12T16:27:02Z",
-  "updated_at": "2026-11-12T16:27:02Z",
+  "updated_at": "2026-11-12T16:50:53Z",
   "head_sha": null,
-  "depends_on": [],
+  "depends_on": [
+    "flash-attention"
+  ],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-12T16:50:53Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/SkyworkAI/Matrix-Game/blob/main/LICENSE",
+      "at": "2026-11-12T16:50:11Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "upstream PR #67 (AITER CK flash-attn backend for MG-3, open since 2026-03); no ROCm/AMD-Ecosystem fork",
+    "viable": true,
+    "summary": "Skywork interactive world model (PyTorch+flash-attn+Triton, no own CUDA); validate MG-4/MG-3 inference on ROCm, back AMD's open upstream PR #67 (AITER CK attention)",
+    "at": "2026-11-12T16:50:38Z"
+  }
 }
