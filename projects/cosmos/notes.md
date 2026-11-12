@@ -17,3 +17,7 @@ Origin: Jeff Daily's 2026-11-12 ruling on a third-party "AMD AI software gap" li
 - CUDA-only dependencies: TensorRT-LLM and NIM (no ROCm path -- out of scope); FP8 checkpoints (`*-fp8-*` benchmarks) need fp8 GEMM support on the target arch; FlashAttention 4 in cosmos-framework (SM100/SM120 only; ROCm substitute is CK/aiter flash-attn or SDPA). vLLM ROCm and diffusers on ROCm torch are the substitutes for the serving stack.
 - Windows: no upstream Windows story (Linux, NGC containers, H100/GB300 recipes). Suggest a windows waiver; only Jeff approves one.
 - Existing AMD work to back: none in Cosmos repos; vLLM and diffusers ROCm support upstream is what this validation leans on.
+
+## Declined (2026-11-12)
+
+Jeff Daily declined Cosmos on 2026-11-12: NVIDIA/Cosmos holds no code, its runtimes (diffusers, vLLM) already support ROCm, and NVIDIA/cosmos-framework is not taken up, to keep MOAT in scope. OpenMDW-1.1 is not added to the licence table (licence decisions are not his to make). Intake is re-recorded as decline and the project is held (`set-hold cosmos on`), since awaiting-fork has no edge back to unclaimed. Do not request a fork.
