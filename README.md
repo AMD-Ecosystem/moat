@@ -170,7 +170,7 @@ The project name links upstream.
 | [colmap](https://github.com/colmap/colmap) ([fork](https://github.com/AMD-Ecosystem/colmap/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟣 [#4635](https://github.com/colmap/colmap/pull/4635) |
 | [ColossalAI](https://github.com/hpcaitech/ColossalAI) ([fork](https://github.com/AMD-Ecosystem/ColossalAI/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [ComfyUI-3D-Pack](https://github.com/MrForExample/ComfyUI-3D-Pack) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- gap-matrix intake 2026-11-10: licence issues in bundled components |
-| [cosmos](https://github.com/NVIDIA/cosmos) | ⬜ | ⬜ | ⬜ | — |
+| [cosmos](https://github.com/NVIDIA/cosmos) | ⬜ | ⬜ | ⬜ | ⚪ not-a-target |
 | [CosyVoice](https://github.com/QwenAudio/CosyVoice) | ⬜ | ⬜ | ⬜ | — |
 | [CPM.cu](https://github.com/OpenBMB/CPM.cu) | 🚫 | — | — | ⚪ not-portable |
 | [CubbyFlow](https://github.com/utilForever/CubbyFlow) ([fork](https://github.com/AMD-Ecosystem/CubbyFlow/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#145](https://github.com/utilForever/CubbyFlow/pull/145) |
