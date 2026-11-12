@@ -1362,11 +1362,12 @@
     "repo_id": 797553215
   },
   "mitsuba-renderer/drjit-core": {
-    "decided": "2026-06-05T01:19:01Z",
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T16:41:44Z",
     "disposition": "skip",
     "full_name": "mitsuba-renderer/drjit-core",
-    "note": "Dr.Jit JIT compiler has HIP/LLVM backend (see ext/drjit-core)",
-    "reason": "already-supported",
+    "note": "corrected 2026-11-12 (was already-supported, 'has HIP backend', which is wrong): Dr.Jit has CUDA (PTX) and LLVM (CPU) backends only, no HIP/AMD GPU backend; AMD's attempts drjit-core#203 and drjit#520 were closed upstream. A HIP backend is a new JIT backend, beyond a port; see deferred item mitsuba3-drjit-amd-backend",
+    "reason": "cant-port",
     "repo_id": 245897378
   },
   "mni-ml/framework": {
