@@ -2,13 +2,13 @@
   "schema_version": 3,
   "name": "cucim",
   "upstream_url": "https://github.com/rapidsai/cucim",
-  "fork_url": null,
+  "fork_url": "https://github.com/AMD-Ecosystem/cucim",
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "awaiting-fork",
+  "stage": "screened",
   "adopted_at": "2026-11-11T20:55:23Z",
-  "updated_at": "2026-11-12T22:23:42Z",
+  "updated_at": "2026-11-12T22:36:26Z",
   "head_sha": null,
   "depends_on": [
     "cupy"
