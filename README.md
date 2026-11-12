@@ -221,8 +221,8 @@ The project name links upstream.
 | [FlashRT](https://github.com/flashrt-project/FlashRT) | 🚫 | — | — | ⚪ not-portable |
 | [FlexGEMM](https://github.com/JeffreyXiang/FlexGEMM) ([fork](https://github.com/AMD-Ecosystem/FlexGEMM/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [flower](https://github.com/flwrlabs/flower) ([fork](https://github.com/AMD-Ecosystem/flower/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
-| [foldmason](https://github.com/steineggerlab/foldmason) ([fork](https://github.com/AMD-Ecosystem/foldmason/tree/moat-port)) | ✅ | ✅ | ✅ | — |
-| [foldseek](https://github.com/steineggerlab/foldseek) ([fork](https://github.com/AMD-Ecosystem/foldseek/tree/moat-port)) | ✅ | ✅ | ✅ | — |
+| [foldmason](https://github.com/steineggerlab/foldmason) ([fork](https://github.com/AMD-Ecosystem/foldmason/tree/moat-port)) | ✅ | ✅ | ✅ | ⏸ on hold |
+| [foldseek](https://github.com/steineggerlab/foldseek) ([fork](https://github.com/AMD-Ecosystem/foldseek/tree/moat-port)) | ✅ | ✅ | ✅ | ⏸ on hold |
 | [FunASR](https://github.com/modelscope/FunASR) ([fork](https://github.com/AMD-Ecosystem/FunASR/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [gaussian_splatting](https://github.com/joeyan/gaussian_splatting) ([fork](https://github.com/AMD-Ecosystem/gaussian_splatting/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#37](https://github.com/joeyan/gaussian_splatting/pull/37) |
 | [gdtk](https://github.com/gdtk-uq/gdtk) ([fork](https://github.com/AMD-Ecosystem/gdtk/tree/moat-port)) | ✅ | ✅ | ✅ | — |
@@ -268,7 +268,7 @@ The project name links upstream.
 | [MASt3R-SLAM](https://github.com/rmurai0610/MASt3R-SLAM) ([fork](https://github.com/AMD-Ecosystem/MASt3R-SLAM/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [Matrix-Game](https://github.com/SkyworkAI/Matrix-Game) | ⬜ | ⬜ | 🎫 | — |
 | [mcx](https://github.com/fangq/mcx) ([fork](https://github.com/AMD-Ecosystem/mcx/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#264](https://github.com/fangq/mcx/pull/264) |
-| [metaeuk](https://github.com/soedinglab/metaeuk) ([fork](https://github.com/AMD-Ecosystem/metaeuk/tree/moat-port)) | ✅ | ✅ | ✅ | — |
+| [metaeuk](https://github.com/soedinglab/metaeuk) ([fork](https://github.com/AMD-Ecosystem/metaeuk/tree/moat-port)) | ✅ | ✅ | ✅ | ⏸ on hold |
 | [mHC.cu](https://github.com/AndreSlavescu/mHC.cu) ([fork](https://github.com/AMD-Ecosystem/mHC.cu/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#10](https://github.com/AndreSlavescu/mHC.cu/pull/10) |
 | [minibwa](https://github.com/lh3/minibwa) | ⬜ | ⬜ | ⬜ | ⚪ declined |
 | [minimap2](https://github.com/lh3/minimap2) | ⬜ | ⬜ | ⬜ | ⚪ declined |
@@ -287,7 +287,7 @@ The project name links upstream.
 | [OCTproZ](https://github.com/spectralcode/OCTproZ) ([fork](https://github.com/AMD-Ecosystem/OCTproZ/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [ohm](https://github.com/csiro-robotics/ohm) ([fork](https://github.com/AMD-Ecosystem/ohm/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [oidn](https://github.com/RenderKit/oidn) ([fork](https://github.com/AMD-Ecosystem/oidn/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
-| [oneflow](https://github.com/Oneflow-Inc/oneflow) ([fork](https://github.com/AMD-Ecosystem/oneflow/tree/moat-port)) | ✅ | ✅ | 🎫 | — |
+| [oneflow](https://github.com/Oneflow-Inc/oneflow) ([fork](https://github.com/AMD-Ecosystem/oneflow/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟢 [#10697](https://github.com/Oneflow-Inc/oneflow/pull/10697) |
 | [op43dgs](https://github.com/LetianHuang/op43dgs) ([fork](https://github.com/AMD-Ecosystem/op43dgs/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#15](https://github.com/LetianHuang/op43dgs/pull/15) |
 | [Open3D](https://github.com/isl-org/Open3D) ([fork](https://github.com/AMD-Ecosystem/Open3D/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#7509](https://github.com/isl-org/Open3D/pull/7509) |
 | [opencv](https://github.com/opencv/opencv) ([fork](https://github.com/AMD-Ecosystem/opencv/tree/moat-port)) | 🚫 | 🚫 | 🚫 | 🟢 [#29285](https://github.com/opencv/opencv/pull/29285) |
