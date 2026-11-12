@@ -5050,3 +5050,61 @@ test_matmul_long_k 4 p; test_conv_float64 6; test_grouped_matmul_bias 2; test_cr
 - Documentation: no tracked file carries an LD_PRELOAD/libLLVM instruction; README's ROCm block and `build_rocm.sh` reproduced this build. From c741328b7 on, the `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` in this file's earlier run recipes is not needed on this platform: this whole round ran without it.
 - `git -C projects/oneflow/src status --porcelain`: empty (no modified tracked file).
 - Core dumps: `ulimit -c 0` on every run; this host's `kernel.core_pattern` pipes to systemd-coredump, which receives dumps regardless (bash printed "dumped core" for the test_higher_derivative_loss aborts and the deliberate torch-only BCE trap; no core file landed in the job directory).
+
+## Validation 2026-11-11 (linux-gfx1100) at c741328b7 (validator, Radeon Pro W7800 48GB, `HIP_VISIBLE_DEVICES=0` pinned by the dispatcher; jeff's request: revalidate at the new head after the 2026-11-11 PR-prep rounds, with NO LD_PRELOAD of libLLVM)
+
+Host: Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), one GPU visible, ROCm 10.1.0 SDK wheels (`$FLEET_VENV-base-links/_rocm_sdk_devel`), Python 3.11.17, numpy 1.26.4, protobuf 3.20.3 (`"$FLEET_VENV"/bin/python -m pip install -r dev-requirements.txt fsspec pytest-timeout pytest-repeat opencv-python-headless==4.10.0.84`), torch 2.16.0a0+git6c3af02 symlinked read-only into `$FLEET_VENV-base-links` (torch, its dist-info, torchgen, functorch), `ulimit -c 0` and **`LD_PRELOAD` unset on every head run** (`unset LD_PRELOAD` in `agent_space/env.sh`, and `t/imp.py` prints it: `None`), `OMP_NUM_THREADS=4`, `ONEFLOW_TEST_DEVICE_NUM=1`, `PYTHONDONTWRITEBYTECODE=1`, no JIT extension builds. Fresh fork clone into `projects/oneflow/src`, `protect-fork` installed. **Head confirmed: `moat-port` = `git ls-remote origin moat-port` = c741328b7b5e70f1b7dbb946d269f1605bf8c0ee; `git status --porcelain` empty before the build and after every run.** Scripts in `agent_space/` (gitignored): `env.sh`, `build.sh`, `run1.sh`, `suite.sh`, `cap.sh`, `reg.sh`, `cmp.py`, `t/{imp,cg_grad,longk}.py`.
+
+### Verdict: **completed**. Without any preload, `import oneflow` works in both import orders. The graph suite (with and without CUDA graphs) and the tensor suite match a same-host 8d470dcc1 baseline id for id. Modules differs from that baseline in one id, the known random CPU float16 digamma draw. Every capture, regression, long-k and cold-capture check passes.
+
+### Host load (recorded as asked)
+While this job built, another job's pytorch build ran about 60 gcc processes on the same 64-thread host. Load average reached **156** at 04:02 and stayed above 80 until about 04:20. Heavy oneDNN TUs (`cpu_rnn_list.cpp`, `cpu_reorder_regular_f32_f32.cpp`, `ref_rnn.cpp`) each spent more than 25 minutes in cc1plus at about 60 % of a core. After 04:25 load fell to 15-28. Test timings were only mildly affected: graph 140 s here vs 133 s at 8d470dcc1. modules took 1377 s at 4 files at a time, vs 841 s for the same runner at fd94e199a; the same-host baseline below took 1307 s under the same conditions, so this is the host and the test count, not the head.
+
+### Build (documented procedure, clean, this job's directory)
+`utils/timeit.sh oneflow compile -- bash agent_space/build.sh <src>` = `bash build_rocm.sh all` with `CMAKE_PREFIX_PATH=$R`, `ROCM_CLANG(_C)` from the SDK wheel, `CMAKE_HIP_ARCHITECTURES=gfx1100`, `JOBS=$MAX_JOBS` (10, the dispatcher's cap; earlier rounds used 32), job-local ccache (cold, `CCACHE_BASEDIR` set), `pywrap/python3` first on PATH (drops cmake/python.cmake's `pip install --user`): **rc 0, 3587 s** (1133 s at JOBS=32 at 8d470dcc1), `CMAKE_HIP_ARCHITECTURES: gfx1100`, `OF_GPU_WARP_SIZE: 32`. `readelf --dyn-syms`: libLLVMSupport.so.17git **3002** `@@ONEFLOW_LLVM`, libLLVMDemangle.so.17git **455**, liboneflow.so **4** `@ONEFLOW_LLVM` references. These are the gfx90a porter's and validator's counts.
+
+Baseline: a second clone at 8d470dcc14 (`agent_space/base/src`) built the same way after the head build (ccache warm, 44 % hits; rc 0, about 29 min). Its libLLVMSupport.so.17git and liboneflow.so have **0** `ONEFLOW_LLVM` symbols and no version node. Control: **without** the preload, `import oneflow` on that baseline aborts with `realloc(): invalid pointer`, rc 134. All baseline suite runs below used `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, as every round up to 8d470dcc1 ran. The baseline was needed because the 8d470dcc1 gfx1100 junit lived in a job directory that no longer exists, and that round ran only the graph suite and the 133-file list, not tensor or modules.
+
+### import without preload (`agent_space/t/imp.py`)
+| order | result |
+|---|---|
+| `import oneflow; import torch` | rc 0, `1.0.0+cu00.git.c741328b7`, `flow.cuda.is_available()` True, 64 x 1000 softmax sums to 64.0, 64 x 64 fp32 mm vs float64 numpy 9.8e-6 (torch 9.8e-6), torch -> oneflow GPU round trip bitwise |
+| `import torch; import oneflow` | rc 0, the same (mm 7.4e-6 on that draw) |
+No `realloc(): invalid pointer` in any head log of this round (`grep -r` over `agent_space/j`). The `Runtime version 71626.38 ... incompatible with compiletime version 11.8` and `capability 110 is not compatible` warnings at import are pre-existing.
+
+### Suites (`agent_space/suite.sh`: one pytest per file, `--timeout=900` plus `timeout -k 30 1800`, junit per file, 4 files at a time; `utils/timeit.sh oneflow test`; per-id comparison `agent_space/cmp.py`)
+| suite | c741328b7, no preload: wall, pass / fail / error / skip (ids) | 8d470dcc1 + preload, same host | per id | per-file rc |
+|---|---|---|---|---|
+| graph (92 files) | 140 s, 152 / 2 / 3 / 102 (259) | 130 s, 152 / 2 / 3 / 102 | **259 of 259 same** | identical |
+| graph, `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1` | 136 s, 152 / 2 / 3 / 102 (259) | 131 s, the same | **259 of 259 same** | identical; slowest file 25 s, no timeout, no hang |
+| tensor (22 files) | 73 s, 368 / 1 / 0 / 22 (391) | 68 s, the same | **391 of 391 same** | identical |
+| modules (548 files) | 1377 s, 1614 / 53 / 5 / 316 (1988) | 1307 s, 1615 / 52 / 5 / 316 (1988) | **1987 of 1988 same** | 1 file differs (test_special_ops 0 -> 1) |
+- Graph: the same totals and the same 10 nonzero files as "Validation 2026-11-09 (validator, linux-gfx1100 ...)" at 8d470dcc1. test_alexnet_graph, test_graph_ofrecord_reader and test_run_global_graph_by_vm abort on `/dataset/imagenette/ofrecord/part-00000` (missing). test_alexnet_auto_parallel, test_fx_fuse and test_fx_replace_ops error at collection. test_fx_symbolic_trace_module and test_run_graph_by_vm have 1 failure each. test_graph_session_env_destruct1 and test_util collect nothing.
+- Tensor: only test_safetensors (`ModuleNotFoundError: safetensors`, not installed), as in every earlier gfx1100 round. The 8d470dcc1-era tensor total of 368 / 1 / 0 / 22 is reproduced exactly.
+- Modules, the one difference: `test_special_ops::test_flow_psi_with_random_data` passed on the baseline and failed on the head. The failure is `op_kernel_not_found_error` for `digamma` with `DeviceType_Name: kCPU`, `kFloat16`: the autotest drew CPU float16, and no build has a CPU float16 digamma kernel (the class recorded since the f52f1b78e rounds). Three reruns of the file on the head build: run 1 failed the same way (CPU float16 again), runs 2 and 3 passed 16 of 16. Not port-related.
+- Modules failures otherwise have the same ids on both builds, in the classes already explained in this file: the autotest "endless loop" files (avgpool 4, global_avgpool 1, conv1d 2, conv2d 4, deconv2d 3), the numpy `__bool__` autotest proxy (concat, copy 2, div, logical_and, matmul 2, replication_pad, slice 2, tensordot), `KeyError: 'ONEFLOW_CI'` (test_fft 5), `oneflow.char != int8` (tensor_ops 4, type_tensor 2), the higher-derivative torch oracles (bce target outside [0, 1], kl_div, smooth_l1, and the ZeroTensor abs grad_grad pair), the image ops on `/dataset`, 5 collection errors, functional docstr, codegeex, and the float32 tolerance pair test_cublas_fused_mlp / test_fused_matmul_bias_add_relu_dropout. Aborts on both builds: test_dataset (`/dataset`) and test_loss (the BCE oracle device trap), rc 134. test_higher_derivative_loss completed on both builds this time.
+
+### Capture tests (`agent_space/cap.sh`, one pytest process per run, sequential, no preload)
+| test | `ROCBLAS_USE_HIPBLASLT` unset | `=1` |
+|---|---|---|
+| graph/test_graph_fused_mlp_cuda_graph.py | **5 of 5 pass** (7-8 s) | **5 of 5 pass** (7-8 s) |
+| graph/test_graph_cuda_graph_stream_creation.py | **5 of 5 pass** (6-7 s) | **5 of 5 pass** (6-7 s) |
+| graph/test_graph_cuda_graph_fft_plan.py | **5 of 5 pass** (17 s) | **5 of 5 pass** (16-17 s) |
+No log has a `(906)`, `(901)` or `PARSE_ERROR` line.
+
+### Regression tests of the recent rounds (`agent_space/reg.sh`, no preload)
+test_matmul_long_k 4 p; test_conv_float64 6; test_grouped_matmul_bias 2; test_cross_entropy_float16 3; test_check_numerics_float16 2; test_pool2d_channels_last 1; test_pooling_channels_last 2; test_batchnorm 6 + 1 skip; test_conv_bias_grad 2; test_reduce_sum_like 2; test_fused_matmul_bias 1; test_bmm 2; test_rand 4 + 1 skip; test_randint 6 + 1 skip; test_optim_lbfgs 1; misc/test_import_without_imp 1; graph/test_graph_repeated_small_run 2; graph/test_graph_fused_mlp_cuda_graph 1; graph/test_graph_image_gpu_decoder 1 + 1 skip. All pass. test_cublas_fused_mlp fails 1 of 1 (`test_fused_matmul_op`, the known float32 tolerance item), as at 8d470dcc1 and on gfx90a at c741328b7.
+
+### Long-k and cold-capture checks (no preload)
+- `t/longk.py` (written for this round; the earlier script did not survive): fp16 and bf16, uniform(-1, 1), error = max abs / max |float64 ref|, oneflow and torch on the same rounded inputs: **RESULT PASS**. oneflow fp16: mm 1/2/16 x 2^20 x 64 3.75e-4 / 3.15e-4 / 3.41e-4, transpose_b 3.75e-4, bmm 4 x (1 x 2^18 x 64) 3.37e-4, 1 x 2^16 x 64 2.88e-4. On the same inputs torch's fp16 results are 3.9e-3 / 1.1e-3 / 8.7e-4 / 3.3e-3 for the four 2^20 cases: torch on this ROCm still shows the long-k fp16 accuracy loss on gfx1100, and oneflow's long-k path does not. bf16: oneflow 2.5e-3 to 4.0e-3, torch 2.0e-3 to 5.0e-3.
+- `t/cg_grad.py <k>` (rebuilt from the gfx90a description: two-layer fused_mlp fp16, fp32 master weights, SGD lr 1, weights reset in place before each step, graph called first; 4 steps x 4 parameters, graph update vs eager `before - grad`, bitwise) with `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1 ONEFLOW_ONE_EMBEDDING_FUSED_MLP_ASYNC_GRAD=1`: **k = 64, 1024 and 2^20, `ROCBLAS_USE_HIPBLASLT` unset and `=1`: rc 0, 16 of 16 bitwise equal, 0 mismatches, no 906, in all 6**.
+
+### Not run
+- Two-GPU one_embedding / P2P tests: one GPU pinned. The delta 8d470dcc1..c741328b7 touches no kernel (two CMake comments, one test timeout, the bundled LLVM sub-build's link flag).
+- CUDA compile gate: already recorded at this head ("CUDA compile check at c741328b7", mi355, nvcc 12.8.93, PASS). Not repeated.
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow` (after `git branch -f master origin/master` in the clone): only the three known hits in 68718f038's message, left for the PR-prep squash; added lines are clean.
+- Documentation: no tracked file carries an LD_PRELOAD or libLLVM instruction. The README ROCm block and `build_rocm.sh` reproduced this build unchanged. From c741328b7 on, the `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` in the earlier gfx1100 recipes of this file is not needed on this platform either.
+- `git -C projects/oneflow/src status --porcelain`: empty.
+- Core dumps: `ulimit -c 0` on every run. This host's `kernel.core_pattern` pipes to apport (`|/usr/share/apport/apport ...`), and a pipe handler receives the dump whatever the ulimit says. bash printed "core dumped" for the deliberate no-preload baseline import and for the known aborting files (test_dataset, test_loss, the three `/dataset` graph files). No core file landed in the job directory.
