@@ -2345,6 +2345,15 @@
     "reason": "not-a-target",
     "repo_id": 956357429
   },
+  "tencent-hunyuan/hy-worldplay": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T16:18:21Z",
+    "disposition": "skip",
+    "full_name": "Tencent-Hunyuan/HY-WorldPlay",
+    "note": "gap-matrix missed-project triage 2026-11-12: Tencent Hunyuan community licence (tier 4) excludes EU/UK/South Korea, caps use at 1M MAU, contributions only by private email; PyTorch with an inherited FastVideo ROCm shim",
+    "reason": "license-blocked",
+    "repo_id": 1113569067
+  },
   "tensorflow/recommenders-addons": {
     "decided": "2026-05-30T03:40:13Z",
     "disposition": "skip",
