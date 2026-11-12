@@ -5108,3 +5108,7 @@ test_matmul_long_k 4 p; test_conv_float64 6; test_grouped_matmul_bias 2; test_cr
 - Documentation: no tracked file carries an LD_PRELOAD or libLLVM instruction. The README ROCm block and `build_rocm.sh` reproduced this build unchanged. From c741328b7 on, the `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` in the earlier gfx1100 recipes of this file is not needed on this platform either.
 - `git -C projects/oneflow/src status --porcelain`: empty.
 - Core dumps: `ulimit -c 0` on every run. This host's `kernel.core_pattern` pipes to apport (`|/usr/share/apport/apport ...`), and a pipe handler receives the dump whatever the ulimit says. bash printed "core dumped" for the deliberate no-preload baseline import and for the known aborting files (test_dataset, test_loss, the three `/dataset` graph files). No core file landed in the job directory.
+
+## PR-prep squash 2026-11-12
+
+jeff approved the squash shape (gcc-13 commit, RMSNorm fix with its test, one HIP backend commit) and authorized the force-push. moat-port was force-pushed c741328b7 -> 14801d8a83043e852b72a3671bc88e5896aec904 with `--force-with-lease=moat-port:c741328b7...`; both trees are 0dac92194ed9bfc8acd94ba591866f8c9644ac82. `squash-carry-forward` carried linux-gfx90a and linux-gfx1100. linux-gfx942 stays validated at d9e41753e (jeff ruled not to revalidate it before the squash); wave64 is satisfied by gfx90a. The stale fork branch `moat-port-squash` (be1ef73f1) was deleted with jeff's authorization.

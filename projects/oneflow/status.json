@@ -7,8 +7,8 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-11-12T05:57:49Z",
-  "head_sha": "c741328b7b5e70f1b7dbb946d269f1605bf8c0ee",
+  "updated_at": "2026-11-12T22:29:17Z",
+  "head_sha": "14801d8a83043e852b72a3671bc88e5896aec904",
   "waivers": {
     "windows": {
       "reason": "Upstream oneflow has never supported Windows, and the obstacle is the operating system rather than the GPU. cmake/oneflow.cmake:54 contains a literal error('Expanding macro in WIN32 is not supported yet') and there is no upstream Windows CI. Four further independent blockers, each sufficient on its own: RCCL is hard-required via find_package(rccl REQUIRED) and is Linux-only, with <nccl.h> pulled in by cuda_util.h -- the main GPU utility header included nearly everywhere -- plus four other core files; POSIX platform code sits outside any platform-excluded subdir (ibv_wrapper.cpp dlopening libibverbs.so, pthread_fork.cpp using pthread_atfork, unistd.h in several core files); cmake/platform.cmake is MSVC-only (/MP /bigobj /EHsc /GF /FC) and therefore mutually exclusive with the all-clang toolchain HIP requires on Windows; and 32 third-party libraries build from source through ExternalProject_Add with Linux-centric recipes. Making RCCL optional alone is a multi-file refactor across the GPU utility header, well beyond this port's minimal footprint. The determination was reached by build analysis on windows-gfx1101/gfx1201 on 2026-06-05, is architectural rather than per-GPU, and was carried to windows-gfx1151 on 2026-08-20 without re-deriving it. The HIP port itself is complete and validated at head 2729bee5 on linux-gfx90a (wave64) and linux-gfx1100 (wave32); windows is the only gate open. This is the strongest waiver case in the current set: unlike espresso or rmcl, no amount of host provisioning would help, because upstream's own build system refuses WIN32.",
@@ -135,10 +135,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": "GPU-validated on gfx1100 (RDNA3, wave32, ROCm 7.2.1). Fresh build from fork HEAD 68718f03: 190 gfx1100 code objects, OF_GPU_WARP_SIZE=32. Test slice: 73 passed / 2 failed (same pre-existing artifacts as gfx90a -- numpy __bool__ dtype-interop, not GPU faults). Wave32 warp reductions: softmax/layer_norm/rms_norm all produce correct results (softmax max_abs_diff=1.49e-08, layer_norm bwd gamma/beta no NaN, rms_norm bwd weight no NaN). LayerNormParamGrad wave64 fix is correct on wave32 (tile=32, block_dim_x=32, width=32 matches native wavefront). No fork changes needed. Fork 68718f0.",
-      "validated_sha": "c741328b7b5e70f1b7dbb946d269f1605bf8c0ee",
+      "validated_sha": "14801d8a83043e852b72a3671bc88e5896aec904",
       "started_at": "2026-05-31T10:07:00Z",
       "completed_at": "2026-11-12T05:57:49Z",
-      "updated_at": "2026-11-12T05:57:49Z",
+      "updated_at": "2026-11-12T22:29:17Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -159,10 +159,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": "ported + GPU-validated. liboneflow.so (1.3GB) and the _oneflow_internal pybind module LINK; the ep/cuda/primitive slice GPU-validates vs PyTorch-ROCm (device='cuda' == HIP backend, fwd+bwd): test_add/cast/where/masked_fill/broadcast_ops/transpose/softmax/layer_norm = 64 passed, matmul core = 9 passed. Monolith built with the ROCm clang; hip::host+roc::rccl linked (not hip::device); 17 .cu deferred (cuDNN/cuBLASLt/cuSOLVER/CUTLASS+wmma/libcu++/P2P) with their host registrations guarded or stubbed (NewLruCache, GridSampleKernelUtil<kCUDA> -> CPU-only). GPU faults fixed: hipblasSetMathMode no-op on CDNA, __launch_bounds__(1024) on the norm block kernels, CUDNN_BN_MIN_EPSILON=0.0, and the wave64 LayerNormParamGrad reduction (tile/launch/shared/width all 32, width-confined shfl). Fork 68718f0.",
-      "validated_sha": "c741328b7b5e70f1b7dbb946d269f1605bf8c0ee",
+      "validated_sha": "14801d8a83043e852b72a3671bc88e5896aec904",
       "started_at": "2026-05-31T01:37:32Z",
       "completed_at": "2026-11-12T02:20:11Z",
-      "updated_at": "2026-11-12T02:20:11Z",
+      "updated_at": "2026-11-12T22:29:17Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
