@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-11-12T03:37:49Z",
+  "updated_at": "2026-11-12T03:44:08Z",
   "head_sha": "eb1b3696041b6fc0b32ab1c79c19e6e7b82839b3",
   "depends_on": [
     "opencv_contrib"
@@ -21,7 +21,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 693793222,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -160,6 +160,29 @@
         "first_session_at": null,
         "last_session_at": null
       }
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-12T03:44:08Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
     }
   },
   "porting_released": {
@@ -167,5 +190,8 @@
     "since": "2026-11-11T23:52:18Z",
     "at": "2026-11-12T03:37:49Z"
   },
-  "porting": null
+  "porting": {
+    "arch": "linux-gfx1201",
+    "since": "2026-11-12T03:44:08Z"
+  }
 }
