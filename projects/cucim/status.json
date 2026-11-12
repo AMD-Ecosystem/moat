@@ -1,0 +1,36 @@
+{
+  "schema_version": 3,
+  "name": "cucim",
+  "upstream_url": "https://github.com/rapidsai/cucim",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-11T20:55:23Z",
+  "updated_at": "2026-11-11T21:16:31Z",
+  "head_sha": null,
+  "depends_on": [
+    "cupy"
+  ],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/rapidsai/cucim/blob/main/LICENSE",
+      "at": "2026-11-11T21:15:33Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "AMD-Ecosystem/hipCIM amd-develop (AMD product, gfx942/gfx950 Linux only, never offered upstream); ROCm-LS/hipCIM archived",
+    "viable": true,
+    "summary": "cuCIM (biomedical image I/O + CuPy skimage); AMD port AMD-Ecosystem/hipCIM is Instinct/Linux-only, 84 behind upstream; value is Radeon wave32; Windows via MOAT cupy for skimage, C++ reader hard",
+    "at": "2026-11-11T21:16:31Z"
+  }
+}

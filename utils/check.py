@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Every gate MOAT enforces, in one place.
 
 CI and the pre-push hook both call this, so they cannot drift. Adding a gate here
@@ -17,6 +19,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tomllib
@@ -115,6 +118,14 @@ def gate_readme():
     # unrelated projects each fail on a table none of them touched.
     branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
     if branch.startswith("port/"):
+        return []
+    # The checkout's branch is the wrong question for a push: recording a fact writes a
+    # commit straight to `port/<name>` from whatever is checked out (the publisher's
+    # approval snapshot does), and judging the trunk's table there refused the push
+    # because some other project's state had moved. The pre-push hook passes the refs
+    # being updated; unless one of them is the trunk, the table is not in play.
+    pushed = os.environ.get("MOAT_PUSH_REFS")
+    if pushed is not None and "refs/heads/main" not in pushed.split():
         return []
     if not _run(["git", "for-each-ref", "--format=%(refname)",
                  "refs/remotes/origin/port/"]).stdout.strip():
@@ -273,6 +284,24 @@ def gate_forks():
     """No fork carries uncommitted source edits. A validation built against local
     changes that are not in the branch produces an unbuildable PR."""
     r = _run([sys.executable, "utils/moatlib.py", "audit-clean"])
+    if r.returncode == 0:
+        return []
+    return [l for l in r.stdout.splitlines() if l.strip()][:10]
+
+
+def gate_commits():
+    """Fork commits obey the message rules AGENTS.md states.
+
+    Those rules were written down and never executed. jargon.py walks the same range but
+    only for in-house vocabulary; pr_intent.py checks the PULL REQUEST title, which is a
+    different string. So a body missing its Test Plan could reach a maintainer unremarked,
+    and publication sends the branch as it stands -- `upstream.py --publish` opens the pull
+    request with `--head <fork>:<branch>` and squashing first is supported but not
+    enforced.
+
+    Slow for the same reason as the fork gate: it shells out per clone.
+    """
+    r = _run([sys.executable, "utils/moatlib.py", "audit-commits"])
     if r.returncode == 0:
         return []
     return [l for l in r.stdout.splitlines() if l.strip()][:10]
@@ -522,29 +551,114 @@ def gate_harness_adapters():
     return problems
 
 
+# Spelled by construction so this file cannot trip its own gate.
+CONFLICT_START = "<" * 7 + " "
+CONFLICT_MID = "=" * 7
+CONFLICT_END = ">" * 7 + " "
+
+
+def gate_conflict_markers():
+    """No tracked file still carries an unresolved merge conflict.
+
+    `git add` on a conflicted file marks it RESOLVED, so committing the markers
+    themselves needs no force and produces no warning. A trunk-merge sweep across the
+    port branches does that resolution in bulk, which is where one slip becomes many
+    bad branches. Caught exactly that way on 2026-08-19: a resolution reached
+    port/colmap with the markers still in a skill reference, and every other gate
+    reported ok.
+
+    A conflict is the full start/middle/end triple in order, so a markdown setext
+    underline or a row of equals signs on its own is not one. An unterminated start is
+    reported too: prose about conflicts does not begin a line with the marker.
+    """
+    problems = []
+    r = _run(["git", "ls-files", "-z"])
+    for path in r.stdout.split(chr(0)):
+        if not path:
+            continue
+        p = REPO / path
+        if not p.is_file():
+            continue
+        try:
+            lines = p.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue                     # binary or unreadable: not this gate's business
+        start = mid = None
+        for n, line in enumerate(lines, 1):
+            if line.startswith(CONFLICT_START):
+                start, mid = n, None
+            elif start and mid is None and line.rstrip() == CONFLICT_MID:
+                mid = n
+            elif start and mid and line.startswith(CONFLICT_END):
+                problems.append(f"{path}:{start}: unresolved merge conflict committed "
+                                f"(`git add` alone only marks it resolved)")
+                start = mid = None
+        if start:
+            problems.append(f"{path}:{start}: merge conflict marker with no end marker")
+    return problems
+
+
+# cuda-to-rocm is published outside MOAT as an AMD skill, so the files an agent loads
+# from it must stand alone. MOAT-only practice lives in the moat-porting skill. The
+# skill card and evals are catalog metadata, not guidance, and are not scanned.
+STANDALONE_SKILL = REPO / ".claude" / "skills" / "cuda-to-rocm"
+MOAT_VOCABULARY = re.compile(
+    r"\bMOAT\b|moatlib|(?<![\w/.])utils/|\bnotes\.md\b|\bplan\.md\b|\bstatus\.json\b"
+    r"|\bsurface\.json\b|\bdeferred\.(?:py|json)\b|projects/<|\bfleet\b"
+    r"|\b(?:head|validated|published)_sha\b|\brevalidat|cuda-not-validated|codeobj_diff"
+    r"|advance[_-]head|config/(?:arches|jargon)\.toml|\bcant-port\b|\bdepends_on\b"
+    r"|(?<![\w/])_deps/|(?<![\w/])findings/|/var/lib/jenkins",
+    re.IGNORECASE)
+
+
+def gate_skills():
+    """The cuda-to-rocm skill names no MOAT tool, record, or state."""
+    problems = []
+    paths = [STANDALONE_SKILL / "SKILL.md"]
+    for sub in ("references", "assets"):
+        paths += sorted(p for p in (STANDALONE_SKILL / sub).rglob("*") if p.is_file())
+    for path in paths:
+        rel = path.relative_to(REPO).as_posix()
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            m = MOAT_VOCABULARY.search(line)
+            if m:
+                problems.append(f"{rel}:{n}: MOAT vocabulary {m.group(0)!r}; move it to "
+                                f".claude/skills/moat-porting/ or say it generically")
+    return problems
+
+
 GATES = {
     "gh-guard": (gate_gh_guard, False),
+    "skills": (gate_skills, False),
     "harness-adapters": (gate_harness_adapters, False),
     "code": (gate_code, False),
     "schema": (gate_schema, False),
     "readme": (gate_readme, False),
     "licenses": (gate_licenses, False),
     "blobs": (gate_blobs, False),
+    "conflicts": (gate_conflict_markers, False),
     "states": (gate_states, False),
     "jargon": (gate_jargon, False),
     "optout": (gate_optout, False),
     "surface": (gate_surface, False),
     "published": (gate_published, False),
-    "forks": (gate_forks, True),      # slow: shells out per fork clone
+    "forks": (gate_forks, True),
+    "commits": (gate_commits, True),   # slow: shells out per fork clone      # slow: shells out per fork clone
 }
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("gates", nargs="*", choices=list(GATES) + [], default=None)
+    # No `choices` here: Python 3.11 argparse checks the empty default of a
+    # nargs="*" positional against them and rejects a bare `check.py --fast`.
+    ap.add_argument("gates", nargs="*", metavar="gate",
+                    help="gates to run (default: all): " + ", ".join(GATES))
     ap.add_argument("--fast", action="store_true", help="skip slow gates")
     a = ap.parse_args()
+    unknown = [g for g in a.gates if g not in GATES]
+    if unknown:
+        ap.error(f"unknown gate: {', '.join(unknown)} (choose from {', '.join(GATES)})")
 
     selected = a.gates or [g for g, (_, slow) in GATES.items() if not (a.fast and slow)]
     failed = 0

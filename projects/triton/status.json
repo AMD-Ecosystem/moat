@@ -1,0 +1,34 @@
+{
+  "schema_version": 3,
+  "name": "triton",
+  "upstream_url": "https://github.com/triton-lang/triton",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T02:30:16Z",
+  "updated_at": "2026-11-06T11:46:13Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream third_party/amd backend, AMD-owned (CODEOWNERS), CI on gfx90a/gfx942/gfx950",
+    "viable": true,
+    "summary": "Triton: compiler with an in-tree, AMD-maintained AMD backend (CDNA+RDNA) gated by upstream CI on MI200/MI300/MI355 runners; nothing to port",
+    "at": "2026-11-06T02:33:10Z"
+  },
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/triton-lang/triton/blob/main/LICENSE",
+      "at": "2026-11-06T11:46:12Z"
+    }
+  ]
+}
