@@ -507,3 +507,21 @@ VALIDATED on real GPU (AMD Radeon PRO V710, gfx1101). Both binary-grid GPU examp
 correct numerics matching the Linux reference. The readGrid ios::binary fix is a POSIX no-op on
 Linux (so no revalidation needed there) and works correctly on this Windows gfx1101 host.
 windows-gfx1101 -> completed at 8aadf218.
+
+## CUDA compile check (nvcc 12.8) at 8aadf218
+
+CUDA no-regression compile of `src/chicken` in the fork at head_sha 8aadf2185510930b523c786e21fde116c22b2809, on a ROCm fleet host that carries a CUDA toolkit (no NVIDIA GPU; compile and link only). Toolkit: `Cuda compilation tools, release 12.8, V12.8.93`, host compiler gcc 13.3.0. The makefile passes no `-arch`, so sm_80 and sm_90 were added through nvcc's `NVCC_APPEND_FLAGS` without editing the makefile. Each variant ran in its own copy of the tree:
+
+```
+export NVCC_APPEND_FLAGS="-gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_90,code=sm_90"
+cd src/chicken
+make GPU=1 INSTALL_DIR=<job>/inst-gpu install            # chicken_for_cuda (FP64, ideal air)
+make GPU=1 FP32=1 INSTALL_DIR=<job>/inst-fp32 install    # + chicken_for_cuda_fp32
+make GPU=1 AB_GAS=1 INSTALL_DIR=<job>/inst-ab install    # reacting gas model
+make INSTALL_DIR=<job>/inst-cpu install                  # chicken_for_cpu (also nvcc)
+make -C test gas_test rsla_test vector3_test spline_test # CUDA branch of test/makefile
+```
+
+Result: PASS. All five variants exited 0 with no warnings. `cuobjdump --list-elf` shows sm_80 and sm_90 SASS in `chkn-run` (GPU, and GPU with AB_GAS) and in `chkn-run-fp32`. The CUDA branch of `test/makefile` (the `else` of the new `ifeq ($(HIP),1)`) builds all four test programs. Upstream's tip was not built because nothing failed.
+
+One behaviour change on the CUDA side, not a compile regression: the port added `all: $(SELECTED_TARGETS)` as the first rule. A bare `make` with no target used to build `chicken_for_cuda`, upstream's first rule. It now builds the selected flavour (`chicken_for_cpu` plus chkn-prep and chkn-post unless `GPU=1`). The documented `make install` and `make GPU=1 ... install` are unaffected.
