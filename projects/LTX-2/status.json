@@ -8,7 +8,7 @@
   "ext_type": "unknown",
   "stage": "awaiting-fork",
   "adopted_at": "2026-11-12T16:34:49Z",
-  "updated_at": "2026-11-12T17:06:10Z",
+  "updated_at": "2026-11-12T21:36:57Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -48,11 +48,13 @@
     }
   ],
   "intake": {
-    "verdict": "fork",
-    "reason": null,
-    "duplicate_effort": "none official; maintainer closed #141 'AMD/ROCm is not planned'",
-    "viable": true,
-    "summary": "LTX-2 (current LTX repo, supersedes LTX-Video; Apache-2.0): validate pure-PyTorch pipelines, ltx-kernels .cu out of scope; maintainer said ROCm not planned, so fork-only",
-    "at": "2026-11-12T17:06:04Z"
-  }
+    "verdict": "decline",
+    "reason": "not-a-target",
+    "duplicate_effort": null,
+    "viable": null,
+    "summary": "declined by Jeff Daily 2026-11-12: maintainer ruled ROCm not planned (#141), no test suite, default path needs only packaging; a fork would only hold the opt-in ltx-kernels (comms kernels plus CuTe DeepGEMM rewrite)",
+    "at": "2026-11-12T21:36:56Z"
+  },
+  "on_hold": true,
+  "on_hold_reason": "declined by Jeff Daily 2026-11-12 (data/dispositions.json skip, not-a-target); awaiting-fork has no edge back to unclaimed, so held"
 }

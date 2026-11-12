@@ -16,3 +16,7 @@ Origin: Jeff Daily's 2026-11-12 ruling on a third-party "AMD AI software gap" li
 - CUDA-only dependencies: `natten` extra (Linux+CUDA only; README says it falls back to Triton or eager automatically -- Triton on ROCm is the path to check), FlashAttention 3/4 (Hopper/Blackwell; SDPA used otherwise, which is the AMD path), `nvidia-cudnn-cu13` override (Linux, CUDA), `ltx-kernels` (out of scope, see above). FP8/int8 checkpoint variants need checking per arch.
 - Windows: upstream has a Windows story (README: natten skipped on Windows/macOS, Triton or eager fallback, "the same command works everywhere"), so Windows is in scope -- no waiver. Note #325's gfx1102 freeze on a 16 GB card with the 22B model: memory-heavy runs on the gfx1151 laptop need care (light runs only).
 - Existing AMD work to back: none official; community generator repo only.
+
+## Declined (2026-11-12)
+
+Jeff Daily declined LTX-2 (and the superseded Lightricks/LTX-Video) as not-a-target on 2026-11-12. The maintainer ruled ROCm "not planned" (#141), there is no test suite, and the default inference path needs only packaging changes; an AMD-Ecosystem fork would only be justified by porting the opt-in `ltx-kernels` package (multi-GPU comms kernels, and a CuTe DeepGEMM FP8 GEMM that would need replacing with an AMD kernel), which is a performance-only porting project outside MOAT's current scope. Intake is re-recorded as decline and the project is held. Do not request a fork.
