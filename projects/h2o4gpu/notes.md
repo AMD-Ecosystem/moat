@@ -624,7 +624,9 @@ Comment only: observed on one GPU (gfx1151) with one toolchain (TheRock ROCm on 
 ### Commit-message corrections owed at the PR-prep squash
 - `2c22a86` ("[ROCm] Build the GPU library and Python modules on Windows"): the sentence "`h2o4gpuglm.cu` is compiled with `/Ob1`: with `/Ob2` the double-precision `FuncEval` reduction kernel never completes on Windows (gfx1151, ROCm 7.14), so the double-precision ElasticNet fit hung." overstates the evidence. Reword as: with `/Ob2` the kernel was observed never to complete on one GPU (gfx1151) with one toolchain (TheRock ROCm on Windows, clang-cl); the suspected cause is a device code generation issue not yet reduced to a reproducer; `/Ob1` avoids it.
 - `2c22a86` Test Plan describes the Python oracle only in prose (Review 2026-11-11, not blocking): give literal commands at the squash.
-- (added 2026-11-12, linux-gfx1100 porter) `2c22a86`: the `/Ob1` sentence (either wording above) misstates the cause now that it is known. At the squash say: with `/Ob2` the double-precision GLM fit hangs on RDNA GPUs because of LLVM AMDGPU bug llvm/llvm-project#224205 (long-branch relaxation uses s[30:31], the return address, as scratch in a large inlined non-kernel device function that never saves it); `/Ob1` keeps that function small enough to avoid it. Same text as the `6c756448` message.
+- (added 2026-11-12, linux-gfx1100 porter; corrected 2026-11-12 per Review 2026-11-12 item 1) `2c22a86`: the `/Ob1` sentence (either wording above) misstates the cause now that it is known, and must not say the fit "hangs on RDNA GPUs". At the squash say: at the default inlining level the GLM reduction (float and double) compiles into a large device function whose long branches clobber the return address (LLVM AMDGPU bug llvm/llvm-project#224205); the double-precision fit was observed to hang on gfx1151 (Windows); the same code pattern is present in Linux RDNA builds, although no hang was seen there; limiting inlining (`/Ob1` for clang-cl, `-finline-hint-functions` otherwise) removes those long branches. Same wording as the `CMakeLists.txt` comment at `0e70429b`.
+- (added 2026-11-12, Review 2026-11-12 item 3) `24cd051e` Test Plan runs `PYTHONPATH=src/interface_py python km_multi.py 2 20001 float32`, but `km_multi.py` is not in the tree (it was a porter scratch script). At the squash give literal in-tree commands or an inline `python -c`/heredoc script that builds the data, fits `h2o4gpu.KMeans(n_gpus=2)`, and checks `transform()` has shape `(rows, k)`; the single-GPU sizes can use the reproducers from h2oai/h2o4gpu#900 and #901.
+- (added 2026-11-12, Review 2026-11-12 item 3) `1e22b819` Test Plan gives the asm long-branch count and the ElasticNet/sklearn check only in prose. At the squash give the literal commands: the device-only asm compile (the real `h2o4gpuglm.cu` compile line from `compile_commands.json` plus `--cuda-device-only -S --offload-arch=<gfx>`) with an inline count of `s_getpc_b64 s[30:31]`/`s_setpc_b64 s[30:31]` long branches per non-kernel function, and an inline script that fits ElasticNet (float64, 2000x20 and 20000x20) and compares with sklearn.
 - (added 2026-11-12) `d0b78f3d` ("[ROCm] Qualify the comment on the Windows /Ob1 GLM workaround"): its body says the cause is a suspected device code generation issue not yet reduced to a reproducer, observed on one GPU and one toolchain. Superseded by `6c756448`; at the squash the two collapse into the single llvm/llvm-project#224205 explanation above.
 
 ### Gates and what is owed at d0b78f3d
@@ -869,3 +871,36 @@ CUDA no-regression compile check on linux-gfx950 (mi355 host), nvcc 12.8 (V12.8.
 - Modules: `_ch2o4gpu_gpu.so`, `_ch2o4gpu_cpu.so` and `h2o4gpu_test` have identical NEEDED and RUNPATH in both trees; `_ch2o4gpu_gpu.so` undefined dynamic symbols identical.
 - Not done: any NVIDIA GPU run (no NVIDIA GPU on this host); the Makefile gbm recipes (untouched by this delta).
 - Build trees and the clone stay in the job directory (scratch); nothing was pushed to the fork.
+
+## Porter fix round 2026-11-12 (linux-gfx1100, Radeon RX 7900 host, ROCm SDK pip, job venv) -- answers Review 2026-11-12
+
+jeff's request: address the three must-fix items of Review 2026-11-12 (scope `2c22a86..1e22b819`). No upstream or review PR exists, so `moat-port` is not frozen; plain push on top.
+
+### State handling
+Stage was `changes-requested` (not `ported` as in the earlier rounds), so the legal path applied: `port-lock h2o4gpu --take linux-gfx1100` (lock free, no holder displaced), `set-state h2o4gpu linux-gfx1100 porting`, fork commit and plain push, `advance-head`, `set-state ... ported` (releases the lock). The next review covers `1e22b819..0e70429b` plus this round's answers to the review's findings.
+
+### Item 1: commit `0e70429b` "[ROCm] State only the observed GLM hang in the inlining comment"
+Comment only, `CMakeLists.txt` above the `CMAKE_HIP_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"` block: at the default level the GLM reduction (float and double) compiles into a large device function whose long branches clobber the return address (llvm/llvm-project#224205); the double-precision fit was observed to hang on gfx1151 (Windows); the same code pattern is present in Linux RDNA builds, although no hang was seen there; limiting inlining removes those long branches. `/Ob1` and `-finline-hint-functions` lines and guards unchanged. Fresh clone from `https://github.com/AMD-Ecosystem/h2o4gpu.git`, `moatlib.py protect-fork h2o4gpu` before the push; plain push `1e22b819..0e70429b` to `moat-port`. The 2c22a86 entry of "Commit-message corrections owed at the PR-prep squash" now carries the same wording.
+
+Verification:
+- `python3 utils/moatlib.py classify h2o4gpu 1e22b819 0e70429b`: `class=comment-only arch_independent=True inert=True` (`CMakeLists.txt: comment-only`).
+- Configure once in each tree (new head in `projects/h2o4gpu/src`, `1e22b819` in a detached worktree in the job directory), no build:
+  ```
+  R=$($FLEET_VENV/bin/python -m rocm_sdk path --root); export PATH=$FLEET_VENV/bin:$R/bin:$PATH CMAKE_PREFIX_PATH=$R
+  git submodule update --init tests/googletest
+  cmake -S . -B build-hip -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$FLEET_VENV/bin/python -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+  ```
+  Both rc 0 (pip `swig==4.2.1` into the job venv; no OpenBLAS needed for configure). `compile_commands.json`, tree path normalized: 37 entries each, same file set, 0 differing entries; the `src/gpu/h2o4gpuglm.cu` line still ends `-fPIC -finline-hint-functions ... -x hip -c`.
+- No GPU run: a comment-only change produces an identical build, so it needs none.
+- `utils/prose.py` on the message: clean. `python3 utils/jargon.py --port h2o4gpu`: clean. Fork clone status after commit: only untracked `build-hip/`.
+
+### Item 2: skill lesson
+`.claude/skills/cuda-to-rocm/references/validation.md`: the Windows hang-diagnosis section keeps `AMD_LOG_LEVEL=3` / `PAL fence isn't ready!` and the symbol-build advice, then points to a new section "A hang that depends on inlining: long branches clobber the return address": names llvm/llvm-project#224205, the asm signature (in a non-kernel function, `s_getpc_b64 s[30:31]` ... `s_setpc_b64 s[30:31]` long branches with no save/restore of s30/s31, counted per function in `--cuda-device-only -S` output), present in Linux RDNA builds too and not always hanging, and both per-file spellings (`/Ob1` for clang-cl, `-finline-hint-functions` for clang/hipcc on Linux) through `COMPILE_OPTIONS` on the one source. The "reproducer still owed" sentence is gone. `utils/check.py` on this branch has no `skills` gate; `python3 utils/check.py jargon`: ok; `jargon.py -` on the added lines: clean.
+
+### Item 3
+"Commit-message corrections owed at the PR-prep squash" gains the `24cd051e` entry (`km_multi.py` not in the tree; give literal in-tree commands or an inline script) and the `1e22b819` entry (asm count and sklearn check only in prose; give literal commands).
+
+### Owed at 0e70429b
+- Review of `1e22b819..0e70429b` plus this round's answers.
+- CUDA: the nvcc compile check at `1e22b819` passed ("CUDA compile check at 1e22b819"); `0e70429b` is comment-only inside `if(USE_HIP)`, so no new CUDA check is needed.
+- Revalidation on linux-gfx90a, linux-gfx1100 and windows-gfx1151, plus the first linux-gfx942 validation, at the new head.
