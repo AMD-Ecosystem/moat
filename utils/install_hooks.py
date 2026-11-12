@@ -49,6 +49,14 @@ PRE_PUSH = f"""#!/usr/bin/env bash
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 0
 
+# The refs this push updates, for gates that judge only some destinations (the README
+# table is a trunk artifact). git hands them to pre-push on stdin, one per line.
+MOAT_PUSH_REFS=""
+while read -r _lref _lsha rref _rsha; do
+  MOAT_PUSH_REFS="$MOAT_PUSH_REFS $rref"
+done
+export MOAT_PUSH_REFS
+
 # --fast skips the fork-cleanliness gate: it walks every fork clone and would add
 # tens of seconds to every push. pr_ready enforces it where it matters.
 if ! python3 utils/check.py --fast; then
