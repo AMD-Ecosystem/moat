@@ -31,3 +31,4 @@
 {"kind": "tokens", "ts": "2026-06-16T06:35:36Z", "tokens": 30347, "source": "porter"}
 {"kind": "tokens", "ts": "2026-06-16T09:59:39Z", "tokens": 53580, "source": "validator"}
 {"kind": "tokens", "ts": "2026-06-23T22:49:51Z", "tokens": 14826, "source": "gfx90a in-pipeline cleanup (batch 4 subagent, shared)"}
+{"kind":"phase","ts":"2026-11-12T22:39:01Z","phase":"cuda-compile","seconds":6.715,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi355-20261112-143556-cuda-compile-6/scripts/nt.sh /var/lib/jenkins/fleet/jobs/mi355-20261112-143556-cuda-compile-6/cc/ntransformer /var/lib/jenkins/fleet/jobs/mi355-20261112-143556-cuda-compile-6/cc/nt-build"}

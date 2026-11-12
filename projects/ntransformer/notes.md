@@ -393,3 +393,15 @@ Removed docs/research/ (5 files: R1_delta_streaming, R2_sparse_ffn, R3_predictiv
 
 ## Restore docs/research (2026-11-12)
 jeff spotted during review-PR approval that 917c247 (the 2026-06-16 PR-prep cleanup) deleted upstream's own `docs/research/` notes (upstream commits e23e5dd/1fa1484, 2026-02-22). Those files belong to the project; an AMD-support PR must not delete them. Reverted as 320fa0b `[ROCm] Restore the docs/research notes` on top (no amend); `git diff --stat origin/main -- docs/` is empty, `jargon.py --port ntransformer` clean. `classify` = doc-only, inert; `advance-head` carried validation forward. Lesson: never delete upstream-authored files as "out of scope"; out of scope means leave them untouched.
+
+## CUDA compile check (nvcc 12.8) at 320fa0ba
+
+CUDA no-regression compile of the fork at head_sha 320fa0bab4d3e109bde5caebef6bdafb0c1ce21d (default `USE_HIP=OFF`), on a ROCm fleet host that carries a CUDA toolkit (no NVIDIA GPU; compile and link only). Toolkit: `Cuda compilation tools, release 12.8, V12.8.93`. CMake 3.31.6. The CUDA host compiler is gcc-14, which the CMakeLists picks up itself (`find_program(GCC14 gcc-14)`). The README's command is used except for the nvcc path (the README names CUDA 13.1). `CMAKE_CUDA_ARCHITECTURES` is set unconditionally to `80;86;89;90` in CMakeLists.txt, so that list overrides the `-D` given here.
+
+```
+cmake -S ntransformer -B nt-build -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES="80;90"
+cmake --build nt-build -j 32
+```
+
+Result: PASS. These targets built: `ntransformer_lib`, `test_tensor`, `test_gemm`, `ntransformer`. The device link step and the final link completed with no warnings. `cuobjdump --list-elf ntransformer` shows SASS for sm_80, sm_86, sm_89 and sm_90. Not covered: the `USE_GPUNVME=ON` path, which needs the external gpu-nvme-direct library (the port left that path untouched; see plan.md item 3). Upstream's tip was not built because nothing failed.
