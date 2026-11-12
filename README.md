@@ -235,7 +235,7 @@ The project name links upstream.
 | [gpuRIR](https://github.com/DavidDiazGuerra/gpuRIR) ([fork](https://github.com/AMD-Ecosystem/gpuRIR/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#88](https://github.com/DavidDiazGuerra/gpuRIR/pull/88) |
 | [gRASPA](https://github.com/snurr-group/gRASPA) ([fork](https://github.com/AMD-Ecosystem/gRASPA/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#96](https://github.com/snurr-group/gRASPA/pull/96) |
 | [gtsam_points](https://github.com/koide3/gtsam_points) ([fork](https://github.com/AMD-Ecosystem/gtsam_points/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#99](https://github.com/koide3/gtsam_points/pull/99) |
-| [h2o4gpu](https://github.com/h2oai/h2o4gpu) ([fork](https://github.com/AMD-Ecosystem/h2o4gpu/tree/moat-port)) | 🔄 | 🔄 | 🔧 | — |
+| [h2o4gpu](https://github.com/h2oai/h2o4gpu) ([fork](https://github.com/AMD-Ecosystem/h2o4gpu/tree/moat-port)) | 🔄 | 🔄 | ⬜ | — |
 | [habitat-sim](https://github.com/facebookresearch/habitat-sim) ([fork](https://github.com/AMD-Ecosystem/habitat-sim/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [HEonGPU](https://github.com/Alisah-Ozcan/HEonGPU) ([fork](https://github.com/AMD-Ecosystem/HEonGPU/tree/moat-port)) | ✅ | ✅ | 🔧 | — |
 | [HierarchicalKV](https://github.com/NVIDIA-Merlin/HierarchicalKV) | ⬜ | ⬜ | ⬜ | — |
@@ -336,7 +336,7 @@ The project name links upstream.
 | [Wan2.2](https://github.com/Wan-Video/Wan2.2) | ⬜ | ⬜ | ⬜ | — |
 | [warp](https://github.com/NVIDIA/warp) | ⬜ | ⬜ | ⬜ | — |
 | [wenet](https://github.com/wenet-e2e/wenet) ([fork](https://github.com/AMD-Ecosystem/wenet/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
-| [world_engine](https://github.com/Overworldai/world_engine) | ⬜ | ⬜ | ⬜ | — |
+| [world_engine](https://github.com/Overworldai/world_engine) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- gap-matrix intake follow-up 2026-11-12: GPL-3 |
 | [yalm](https://github.com/andrewkchan/yalm) ([fork](https://github.com/AMD-Ecosystem/yalm/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#12](https://github.com/andrewkchan/yalm/pull/12) |
 | [YarnBall](https://github.com/jerry060599/YarnBall) ([fork](https://github.com/AMD-Ecosystem/YarnBall/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#5](https://github.com/jerry060599/YarnBall/pull/5) |
 | [ZhiLight](https://github.com/zhihu/ZhiLight) ([fork](https://github.com/AMD-Ecosystem/ZhiLight/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟢 [#81](https://github.com/zhihu/ZhiLight/pull/81) |
