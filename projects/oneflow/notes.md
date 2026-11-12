@@ -5112,3 +5112,8 @@ test_matmul_long_k 4 p; test_conv_float64 6; test_grouped_matmul_bias 2; test_cr
 ## PR-prep squash 2026-11-12
 
 jeff approved the squash shape (gcc-13 commit, RMSNorm fix with its test, one HIP backend commit) and authorized the force-push. moat-port was force-pushed c741328b7 -> 14801d8a83043e852b72a3671bc88e5896aec904 with `--force-with-lease=moat-port:c741328b7...`; both trees are 0dac92194ed9bfc8acd94ba591866f8c9644ac82. `squash-carry-forward` carried linux-gfx90a and linux-gfx1100. linux-gfx942 stays validated at d9e41753e (jeff ruled not to revalidate it before the squash); wave64 is satisfied by gfx90a. The stale fork branch `moat-port-squash` (be1ef73f1) was deleted with jeff's authorization.
+
+## Upstream 2026-11-12
+
+- jeff approved the fork review PR (https://github.com/AMD-Ecosystem/oneflow/pull/1, `/moat approve`); `upstream.py --publish --apply --name oneflow` opened https://github.com/Oneflow-Inc/oneflow/pull/10697 at 14801d8a8. moat-port is now frozen.
+- jeff filed the libLLVM interposition report as https://github.com/ROCm/TheRock/issues/9939 (deferral `therock-libllvm-symbol-interposition`; its stored summary is out of date, see "Porter round 2026-11-12" for the corrected mechanism).
