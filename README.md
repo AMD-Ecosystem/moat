@@ -248,6 +248,7 @@ The project name links upstream.
 | [kaldifeat](https://github.com/csukuangfj/kaldifeat) ([fork](https://github.com/AMD-Ecosystem/kaldifeat/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#124](https://github.com/csukuangfj/kaldifeat/pull/124) |
 | [kaolin](https://github.com/NVIDIAGameWorks/kaolin) ([fork](https://github.com/AMD-Ecosystem/kaolin/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
 | [KittenGpuLBVH](https://github.com/jerry060599/KittenGpuLBVH) ([fork](https://github.com/AMD-Ecosystem/KittenGpuLBVH/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#5](https://github.com/jerry060599/KittenGpuLBVH/pull/5) |
+| [knowhere](https://github.com/zilliztech/knowhere) | ⬜ | ⬜ | ⬜ | — |
 | [koboldcpp](https://github.com/LostRuins/koboldcpp) ([fork](https://github.com/AMD-Ecosystem/koboldcpp/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
 | [LC-framework](https://github.com/burtscher/LC-framework) ([fork](https://github.com/AMD-Ecosystem/LC-framework/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [lc0](https://github.com/LeelaChessZero/lc0) ([fork](https://github.com/AMD-Ecosystem/lc0/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#2420](https://github.com/LeelaChessZero/lc0/pull/2420) |
