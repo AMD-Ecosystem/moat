@@ -767,3 +767,55 @@ Reading the output:
 Source check (read-only), upstream h2oai/h2o4gpu master `97279defc47329147fd20d62381608c20cd3efd7`, `src/gpu/kmeans/kmeans_h2o4gpu.cu`:
 - Confirmed. `kmeans_transform` (line 893) gathers the per-GPU blocks with `#pragma omp parallel for` at line 945 and `h_pairwise_distances->insert(h_pairwise_distances->end(), d_pairwise_distances[q]->begin(), d_pairwise_distances[q]->end())` at lines 947-949, into one `thrust::host_vector<T>` created at line 944. Concurrent `insert(end(), ...)` on one vector is a data race (reallocation and size update unsynchronised), and the order of the blocks depends on thread scheduling. The pragma is live on CUDA: `CMAKE_CXX_FLAGS` gets `${OpenMP_CXX_FLAGS}` (lines 37-39) and the GPU library is built with FindCUDA's `CUDA_ADD_LIBRARY` (line 208), whose host-flag propagation (`CUDA_PROPAGATE_HOST_FLAGS`, default ON) passes it to the host compiler (inferred from CMake defaults, not observed with an nvcc build here).
 - The port no longer has that loop: `2c22a862` replaced it. `moat-port` `d0b78f3d` `src/gpu/kmeans/kmeans_h2o4gpu.cu` lines 947-955: `alloc_result<T>(rows * k)` then, under the same `#pragma omp parallel for` (line 949), `thrust::copy(..., h_pairwise_distances + q * chunk_distances)` into disjoint offsets: no race, fixed block order. (HIP TUs are compiled without OpenMP anyway, so the loop is serial on ROCm.) The column-major block layout bug (`kmeans.py:420` reshape) and the remainder bug remain, as the output shows.
+
+## Porter 2026-11-12 round 2 (linux-gfx1100, Radeon PRO W7800, wave32, ROCm 10.1 pip SDK, clang 24.0.0git d6f6cb69) -- jeff's ruling: Linux gets -finline-hint-functions
+
+### Ruling
+jeff 2026-11-12: Linux gets -finline-hint-functions. Option (b) of the question in "Porter 2026-11-12": Linux HIP builds get the guarded `-finline-hint-functions` workaround for llvm/llvm-project#224205 on `src/gpu/h2o4gpuglm.cu`, matching the Windows clang-cl `/Ob1`.
+
+### Commit `1e22b819` "[ROCm] Limit inlining in the GLM file on Linux HIP builds too"
+`CMakeLists.txt`, HIP branch only (the CUDA path is untouched): the non-MSVC `else()` gains `SET_SOURCE_FILES_PROPERTIES(src/gpu/h2o4gpuglm.cu PROPERTIES COMPILE_OPTIONS "-finline-hint-functions")`, the same mechanism as the Windows `/Ob1` line. No other `COMPILE_OPTIONS` is set on that file (its only other property is `LANGUAGE HIP`, from the `GPU_CU_SOURCES` line), so nothing is clobbered. The comment moved above the `if()` and covers both branches: the LLVM AMDGPU bug, why limiting inlining avoids it, `/Ob1` is the clang-cl spelling. Plain push `6c756448..1e22b819` to AMD-Ecosystem/h2o4gpu `moat-port` (fresh clone from `https://github.com/AMD-Ecosystem/h2o4gpu.git`, `moatlib.py protect-fork` installed before the push). `utils/prose.py` on the message: clean. `jargon.py --port h2o4gpu`: clean. Fork clone status: only untracked `build-hip/`.
+
+### Build (rc 0, both trees)
+New head in `projects/h2o4gpu/src`, baseline `6c756448` in a detached worktree beside it. Same recipe as "Porter 2026-11-12" (OpenBLAS v0.3.26 built from source into this job's directory, same make line; pip `swig==4.2.1 cython==3.0.11 threadpoolctl psutil tabulate future joblib pytest-timeout`). HIP_VISIBLE_DEVICES=0 (dispatcher pin), `ulimit -c 0`, LD_LIBRARY_PATH unset, OPENBLAS_NUM_THREADS=32.
+```
+cmake -S . -B build-hip -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH="$R;$OB" -DBLA_VENDOR=OpenBLAS -DCBLAS_INCLUDE_DIR=$OB/include -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$P -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build build-hip -j$MAX_JOBS
+```
+
+### Compile commands, 1e22b819 vs 6c756448
+`compile_commands.json` of both trees, source path normalized: 37 entries each, same file set; exactly one entry differs, `src/gpu/h2o4gpuglm.cu`, and only by the added token `-finline-hint-functions`.
+
+### Asm (device-only asm from each tree's real compile line, `--offload-arch` swapped; same `mkasm.sh`/`lb.py` method as "Porter 2026-11-12")
+
+| target | 6c756448: non-kernel funcs / their long branches / through s[30:31] (unsaved) / kernel long branches | 1e22b819: same columns |
+|---|---|---|
+| gfx1100 | 2 / 478 / 478 (478; double 237, float 241) / 0 | 44 / 0 / 0 / 0 |
+| gfx1201 | 2 / 669 / 669 (669; double 235, float 434) / 13 | 44 / 0 / 0 / 0 |
+| gfx90a | 1 / 116 / 0 / 220 (0 through s[30:31]) | 44 / 0 / 0 / 0 |
+
+Baseline numbers reproduce the previous section exactly. Deviation from the expected "gfx90a unchanged in branch count": the flag applies to the file for every offload arch, so gfx90a also goes from 336 long branches (116 in its one non-kernel function, 220 in kernels, none through s[30:31]) to 0. The s[30:31] count on gfx90a is 0 before and after; the gfx90a runtime effect (if any) belongs to its revalidation. gfx942 asm was not generated.
+
+### Runtime on gfx1100, 1e22b819 vs 6c756448
+- `build-hip/h2o4gpu_test`, 3 runs each: 24/24 PASS every run; 0.37-0.39 s new, 0.37-0.38 s base.
+- GLM reproducers (`en.py`, `logit.py` from "Porter 2026-11-12", in-tree package per build, each run `timeout 300`), 3 runs each per build, 42 runs, all rc 0, results identical between builds. Times (new / base, seconds, three runs):
+
+| case | result | new | base |
+|---|---|---|---|
+| en f64 2000x20 (Windows reproducer) | r2 0.999995 = Ridge, gap 3.8e-13 | 0.75 0.80 0.83 | 0.83 0.81 0.75 |
+| en f64 20000x20 | gap 1.8e-13 | 1.79 1.81 1.78 | 1.79 1.58 1.79 |
+| en f32 20000x20 | gap 0 | 1.56 1.53 1.52 | 1.51 1.56 1.53 |
+| en f64 100000x50 | gap 1.9e-13 | 4.27 4.31 4.33 | 4.29 4.50 4.32 |
+| logistic f64 2000 | acc 0.8775 = sklearn | 0.67 0.69 0.70 | 0.68 0.69 0.69 |
+| logistic f64 20000 | acc 0.8907 vs 0.8908 | 1.11 1.10 1.20 | 1.21 1.20 1.21 |
+| logistic f32 20000 | acc 0.8907 vs 0.8908 | 0.97 0.91 0.99 | 0.98 0.97 0.98 |
+
+No measurable cost. As before, the baseline does not hang on this GPU either, so this shows no regression, not a hang avoided.
+
+### State handling
+Same as the previous round: lock taken with `moatlib.py port-lock h2o4gpu --take linux-gfx1100` (free; jeff's dispatch authorized it), fork pushed, `advance-head h2o4gpu 1e22b819bd1d84e7d801099148fef4c24d20b430`, lock released. Stage stays `ported`, so the next review covers `2c22a86..1e22b819`.
+
+### Owed at 1e22b819
+- Review of `2c22a86..1e22b819`.
+- CUDA nvcc compile check on the mi355 host at `1e22b819` (last at 2c22a86; the CMake change is inside the HIP branch, but 24cd051e changed shared KMeans source).
+- Revalidation on linux-gfx90a, linux-gfx1100 and windows-gfx1151, plus the first linux-gfx942 validation.

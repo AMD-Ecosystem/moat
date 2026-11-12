@@ -150,3 +150,6 @@
 {"kind":"phase","ts":"2026-11-12T16:39:34Z","phase":"compile","seconds":31.147,"exit":2,"cmd":"bash agent_space/build_h2o.sh"}
 {"kind":"phase","ts":"2026-11-12T16:41:56Z","phase":"compile","seconds":31.175,"exit":0,"cmd":"bash agent_space/build_h2o.sh"}
 {"kind":"phase","ts":"2026-11-12T16:48:08Z","phase":"compile","seconds":2.496,"exit":0,"cmd":"bash agent_space/build_h2o.sh"}
+{"kind":"session","ts":"2026-11-12T19:00:30Z","epoch":1794510030.967198742,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-12T19:14:56Z","phase":"build","seconds":49.978,"exit":0,"cmd":"bash agent_space/build_h2o.sh /var/lib/jenkins/fleet/jobs/rx7900-20261112-102327-h2o4gpu-linux-inline-hint/moat/projects/h2o4gpu/src"}
+{"kind":"session","ts":"2026-11-12T19:19:22Z","epoch":1794511162.061641225,"event":"end","platform":"linux-gfx1100"}
