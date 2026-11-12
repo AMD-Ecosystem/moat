@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "CosyVoice",
+  "upstream_url": "https://github.com/QwenAudio/CosyVoice",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-12T16:28:41Z",
+  "updated_at": "2026-11-12T16:28:43Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
