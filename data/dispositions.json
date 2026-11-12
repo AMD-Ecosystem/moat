@@ -2346,6 +2346,24 @@
     "reason": "not-a-target",
     "repo_id": 956357429
   },
+  "tencent-hunyuan/hunyuanvideo": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T18:33:34Z",
+    "disposition": "skip",
+    "full_name": "Tencent-Hunyuan/HunyuanVideo",
+    "note": "gap-matrix intake follow-up 2026-11-12: Tencent Hunyuan Community Licence (tier 4, same family as HY-WorldPlay) excludes the EU, UK and South Korea and requires a separate Tencent licence above 100M MAU; Wan2.2 and LTX-2 (Apache-2.0) cover the same ground",
+    "reason": "license-blocked",
+    "repo_id": 895453957
+  },
+  "tencent-hunyuan/hunyuanvideo-1.5": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T18:33:43Z",
+    "disposition": "skip",
+    "full_name": "Tencent-Hunyuan/HunyuanVideo-1.5",
+    "note": "gap-matrix intake follow-up 2026-11-12: Tencent Hunyuan Community Licence (tier 4, same family as HY-WorldPlay) excludes the EU, UK and South Korea and requires a separate Tencent licence above 100M MAU; Wan2.2 and LTX-2 (Apache-2.0) cover the same ground",
+    "reason": "license-blocked",
+    "repo_id": 1100328089
+  },
   "tencent-hunyuan/hy-worldplay": {
     "by": "Jeff Daily",
     "decided": "2026-11-12T16:18:21Z",
