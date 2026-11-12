@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-12T16:28:41Z",
-  "updated_at": "2026-11-12T16:28:43Z",
+  "updated_at": "2026-11-12T16:59:14Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-12T16:59:13Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/QwenAudio/CosyVoice/blob/main/LICENSE",
+      "at": "2026-11-12T16:58:29Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "upstream PR #1754 by alexhegit (AMD), open but conflicting since 2025-12; no ROCm/AMD-Ecosystem fork",
+    "viable": true,
+    "summary": "Alibaba TTS (PyTorch, optional TensorRT/ORT-GPU/vLLM, no own CUDA); validate example.py inference on ROCm incl. Windows, back AMD community PR #1754 (ROCm requirements + README)",
+    "at": "2026-11-12T16:58:54Z"
+  }
 }
