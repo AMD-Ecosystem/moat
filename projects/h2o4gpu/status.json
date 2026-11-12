@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:05:27Z",
-  "updated_at": "2026-11-11T23:42:48Z",
+  "updated_at": "2026-11-12T00:36:01Z",
   "head_sha": "9607b099f3e0128c99eb8964c32462892b086967",
   "depends_on": [],
   "waivers": {},
@@ -34,7 +34,7 @@
       "failed_sha": null,
       "started_at": "2026-11-11T22:51:44Z",
       "completed_at": null,
-      "updated_at": "2026-11-11T22:51:44Z",
+      "updated_at": "2026-11-12T00:36:00Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -134,5 +134,8 @@
     "at": "2026-11-04T19:32:26Z",
     "reason": "Upstream h2oai/h2o4gpu's branch is master; there is no main (jeff 2026-11-04)"
   },
-  "porting": null
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-12T00:36:00Z"
+  }
 }
