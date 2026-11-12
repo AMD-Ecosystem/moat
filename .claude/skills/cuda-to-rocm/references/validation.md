@@ -113,7 +113,7 @@ TLS callbacks that do exist fire on `DLL_THREAD_ATTACH` and `DLL_PROCESS_ATTACH`
 
 ## Windows: `hipcc.exe` and hiprtc traps for setuptools/Python builds
 
-Found porting CuPy's Windows build (cupy notes.md). Each one looks like a broken port and is not:
+Found porting CuPy's Windows build. Each one looks like a broken port and is not:
 
 - **`hipcc.exe -c` links the static CRT by default.** The object carries `RuntimeLibrary=MT_StaticRelease`, so linking it with setuptools' `/MD` objects is LNK2038. Pass `-fms-runtime-lib=dll`.
 - **No target means gfx906, silently.** Without `--offload-arch` or `HCC_AMDGPU_TARGET`, hipcc on Windows builds for gfx906, and `--offload-arch=native` fails. The symptom is "invalid device function" at launch. Require an explicit target at build time; at run time pass `--offload-arch=<gcnArchName>` of the current device.
