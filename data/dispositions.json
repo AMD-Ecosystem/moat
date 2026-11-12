@@ -1577,6 +1577,15 @@
     "reason": "license-blocked",
     "repo_id": 920294381
   },
+  "nvidia/cosmos": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T18:55:42Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/Cosmos",
+    "note": "gap-matrix intake follow-up 2026-11-12: docs-only landing repo (no code); Cosmos 3 runs through diffusers and vLLM, which already support ROCm; cosmos-framework not taken up (MOAT scope); OpenMDW-1.1 stays tier 4",
+    "reason": "not-a-target",
+    "repo_id": 910176789
+  },
   "nvidia/cucollections": {
     "decided": "2026-08-06T04:28:48Z",
     "disposition": "skip",
