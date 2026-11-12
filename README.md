@@ -220,7 +220,7 @@ The project name links upstream.
 | [FlashMoE](https://github.com/osayamenja/FlashMoE) | 🚫 | — | — | ⚪ not-portable |
 | [FlashRT](https://github.com/flashrt-project/FlashRT) | 🚫 | — | — | ⚪ not-portable |
 | [FlexGEMM](https://github.com/JeffreyXiang/FlexGEMM) ([fork](https://github.com/AMD-Ecosystem/FlexGEMM/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
-| [flower](https://github.com/flwrlabs/flower) | ⬜ | ⬜ | ⬜ | — |
+| [flower](https://github.com/flwrlabs/flower) ([fork](https://github.com/AMD-Ecosystem/flower/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
 | [foldmason](https://github.com/steineggerlab/foldmason) ([fork](https://github.com/AMD-Ecosystem/foldmason/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [foldseek](https://github.com/steineggerlab/foldseek) ([fork](https://github.com/AMD-Ecosystem/foldseek/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [FunASR](https://github.com/modelscope/FunASR) ([fork](https://github.com/AMD-Ecosystem/FunASR/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
@@ -241,15 +241,15 @@ The project name links upstream.
 | [HierarchicalKV](https://github.com/NVIDIA-Merlin/HierarchicalKV) | ⬜ | ⬜ | ⬜ | — |
 | [HugeCTR](https://github.com/NVIDIA-Merlin/HugeCTR) | ⬜ | ⬜ | ⬜ | — |
 | [icicle](https://github.com/ingonyama-zk/icicle) ([fork](https://github.com/AMD-Ecosystem/icicle/tree/moat-port)) | ✅ | ✅ | 🎫 | — |
-| [Isaac-GR00T](https://github.com/NVIDIA/Isaac-GR00T) | ⬜ | ⬜ | ⬜ | — |
+| [Isaac-GR00T](https://github.com/NVIDIA/Isaac-GR00T) | ⬜ | ⬜ | 🎫 | — |
 | [IsaacLab](https://github.com/isaac-sim/IsaacLab) ([fork](https://github.com/AMD-Ecosystem/IsaacLab/tree/moat-port)) | ✅ | ✅ | ⬜ | — |
 | [k2](https://github.com/k2-fsa/k2) ([fork](https://github.com/AMD-Ecosystem/k2/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#1353](https://github.com/k2-fsa/k2/pull/1353) |
 | [kaldi](https://github.com/kaldi-asr/kaldi) ([fork](https://github.com/AMD-Ecosystem/kaldi/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟢 [#4986](https://github.com/kaldi-asr/kaldi/pull/4986) |
 | [kaldifeat](https://github.com/csukuangfj/kaldifeat) ([fork](https://github.com/AMD-Ecosystem/kaldifeat/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#124](https://github.com/csukuangfj/kaldifeat/pull/124) |
 | [kaolin](https://github.com/NVIDIAGameWorks/kaolin) ([fork](https://github.com/AMD-Ecosystem/kaolin/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
-| [keops](https://github.com/getkeops/keops) | ⬜ | ⬜ | ⬜ | — |
+| [keops](https://github.com/getkeops/keops) | ⬜ | ⬜ | 🎫 | — |
 | [KittenGpuLBVH](https://github.com/jerry060599/KittenGpuLBVH) ([fork](https://github.com/AMD-Ecosystem/KittenGpuLBVH/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#5](https://github.com/jerry060599/KittenGpuLBVH/pull/5) |
-| [knowhere](https://github.com/zilliztech/knowhere) | ⬜ | ⬜ | ⬜ | — |
+| [knowhere](https://github.com/zilliztech/knowhere) | ⬜ | ⬜ | 🎫 | — |
 | [koboldcpp](https://github.com/LostRuins/koboldcpp) ([fork](https://github.com/AMD-Ecosystem/koboldcpp/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
 | [LC-framework](https://github.com/burtscher/LC-framework) ([fork](https://github.com/AMD-Ecosystem/LC-framework/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [lc0](https://github.com/LeelaChessZero/lc0) ([fork](https://github.com/AMD-Ecosystem/lc0/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#2420](https://github.com/LeelaChessZero/lc0/pull/2420) |
@@ -266,7 +266,7 @@ The project name links upstream.
 | [mahout](https://github.com/apache/mahout) ([fork](https://github.com/AMD-Ecosystem/mahout/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#1399](https://github.com/apache/mahout/pull/1399) |
 | [marian-dev](https://github.com/marian-nmt/marian-dev) ([fork](https://github.com/AMD-Ecosystem/marian-dev/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#1043](https://github.com/marian-nmt/marian-dev/pull/1043) |
 | [MASt3R-SLAM](https://github.com/rmurai0610/MASt3R-SLAM) ([fork](https://github.com/AMD-Ecosystem/MASt3R-SLAM/tree/moat-port)) | ✅ | ✅ | ✅ | — |
-| [Matrix-Game](https://github.com/SkyworkAI/Matrix-Game) | ⬜ | ⬜ | ⬜ | — |
+| [Matrix-Game](https://github.com/SkyworkAI/Matrix-Game) | ⬜ | ⬜ | 🎫 | — |
 | [mcx](https://github.com/fangq/mcx) ([fork](https://github.com/AMD-Ecosystem/mcx/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#264](https://github.com/fangq/mcx/pull/264) |
 | [metaeuk](https://github.com/soedinglab/metaeuk) ([fork](https://github.com/AMD-Ecosystem/metaeuk/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [mHC.cu](https://github.com/AndreSlavescu/mHC.cu) ([fork](https://github.com/AMD-Ecosystem/mHC.cu/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#10](https://github.com/AndreSlavescu/mHC.cu/pull/10) |
@@ -275,7 +275,7 @@ The project name links upstream.
 | [mistral.rs](https://github.com/EricLBuehler/mistral.rs) ([fork](https://github.com/AMD-Ecosystem/mistral.rs/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [MMseqs2](https://github.com/soedinglab/MMseqs2) ([fork](https://github.com/AMD-Ecosystem/MMseqs2/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [MONAI](https://github.com/Project-MONAI/MONAI) ([fork](https://github.com/AMD-Ecosystem/MONAI/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
-| [MONAILabel](https://github.com/Project-MONAI/MONAILabel) | ⬜ | ⬜ | ⬜ | — |
+| [MONAILabel](https://github.com/Project-MONAI/MONAILabel) ([fork](https://github.com/AMD-Ecosystem/MONAILabel/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
 | [MPPI-Generic](https://github.com/ACDSLab/MPPI-Generic) ([fork](https://github.com/AMD-Ecosystem/MPPI-Generic/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [mumax3](https://github.com/mumax/3) ([fork](https://github.com/AMD-Ecosystem/mumax3/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#400](https://github.com/mumax/3/pull/400) |
 | [ntransformer](https://github.com/xaskasdf/ntransformer) ([fork](https://github.com/AMD-Ecosystem/ntransformer/tree/moat-port)) | ✅ | ✅ | ✅ | — |
@@ -293,9 +293,9 @@ The project name links upstream.
 | [opencv](https://github.com/opencv/opencv) ([fork](https://github.com/AMD-Ecosystem/opencv/tree/moat-port)) | 🚫 | 🚫 | 🚫 | 🟢 [#29285](https://github.com/opencv/opencv/pull/29285) |
 | [opencv_contrib](https://github.com/opencv/opencv_contrib) ([fork](https://github.com/AMD-Ecosystem/opencv_contrib/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#4147](https://github.com/opencv/opencv_contrib/pull/4147) |
 | [openMVS](https://github.com/cdcseacave/openMVS) ([fork](https://github.com/AMD-Ecosystem/openMVS/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
-| [openpi](https://github.com/Physical-Intelligence/openpi) | ⬜ | ⬜ | ⬜ | — |
+| [openpi](https://github.com/Physical-Intelligence/openpi) | ⬜ | ⬜ | 🎫 | — |
 | [PhoenixOS](https://github.com/SJTU-IPADS/PhoenixOS) | 🚫 | ⬜ | ⬜ | ⏸ on hold |
-| [physicsnemo](https://github.com/NVIDIA/physicsnemo) | ⬜ | ⬜ | ⬜ | — |
+| [physicsnemo](https://github.com/NVIDIA/physicsnemo) | ⬜ | ⬜ | 🎫 | — |
 | [PhysX](https://github.com/NVIDIA-Omniverse/PhysX) ([fork](https://github.com/AMD-Ecosystem/PhysX/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
 | [plumed2](https://github.com/plumed/plumed2) ([fork](https://github.com/AMD-Ecosystem/plumed2/tree/moat-port)) | ✅ | ✅ | 🎫 | — |
 | [plvs](https://github.com/luigifreda/plvs) ([fork](https://github.com/AMD-Ecosystem/plvs/tree/moat-port)) | ✅ | ✅ | ✅ | — |
@@ -333,7 +333,7 @@ The project name links upstream.
 | [unified-cache-management](https://github.com/ModelEngine-Group/unified-cache-management) ([fork](https://github.com/AMD-Ecosystem/unified-cache-management/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#1021](https://github.com/ModelEngine-Group/unified-cache-management/pull/1021) |
 | [Velvet](https://github.com/vitalight/Velvet) ([fork](https://github.com/AMD-Ecosystem/Velvet/tree/moat-port)) | 🎫 | ✅ | ✅ | 🟢 [#9](https://github.com/vitalight/Velvet/pull/9) |
 | [visionaray](https://github.com/szellmann/visionaray) ([fork](https://github.com/AMD-Ecosystem/visionaray/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#51](https://github.com/szellmann/visionaray/pull/51) |
-| [Wan2.2](https://github.com/Wan-Video/Wan2.2) | ⬜ | ⬜ | ⬜ | — |
+| [Wan2.2](https://github.com/Wan-Video/Wan2.2) | ⬜ | ⬜ | 🎫 | — |
 | [warp](https://github.com/NVIDIA/warp) | ⬜ | ⬜ | ⬜ | — |
 | [wenet](https://github.com/wenet-e2e/wenet) ([fork](https://github.com/AMD-Ecosystem/wenet/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [world_engine](https://github.com/Overworldai/world_engine) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- gap-matrix intake follow-up 2026-11-12: GPL-3 |
