@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-12T16:34:49Z",
-  "updated_at": "2026-11-12T16:34:51Z",
+  "updated_at": "2026-11-12T17:06:10Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-12T17:06:10Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/Lightricks/LTX-2/blob/main/LICENSE",
+      "at": "2026-11-12T17:05:59Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none official; maintainer closed #141 'AMD/ROCm is not planned'",
+    "viable": true,
+    "summary": "LTX-2 (current LTX repo, supersedes LTX-Video; Apache-2.0): validate pure-PyTorch pipelines, ltx-kernels .cu out of scope; maintainer said ROCm not planned, so fork-only",
+    "at": "2026-11-12T17:06:04Z"
+  }
 }
