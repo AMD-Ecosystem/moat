@@ -392,10 +392,21 @@ the recorded `head_sha`, that the base is still upstream's own history (a merged
 PR fails this), and that the tag is free; then it tags the approved commit, records
 `release`, closes the review PR unmerged and refreshes the clone's hook. If the record
 write fails after the tag, the review PR stays open and a rerun finishes the job (the
-tag push is idempotent at the same commit). A delivered line is frozen like a
-maintained fork (`pr-state` says `delivered`), `misplaced` treats it as finished, and
-`--drift` watches upstream's release branch for patch releases, which arrive as
-`sync-branch` rounds through `--fix-review` and `--merge-fix` like any sync. Publishing
+tag push is idempotent at the same commit); if only the close failed, the line is
+listed as `RESUME` and a rerun does just the closing steps. Tags are annotated with
+the approver and the review PR. A delivered line is frozen like a maintained fork
+(`pr-state` says `delivered`; the hook also refuses moving or deleting a tag),
+`misplaced` treats it as finished, and `--drift` watches upstream's release branch for
+patch releases, which arrive as `sync-branch` rounds through `--fix-review` and
+`--merge-fix` like any sync. The merge tags the new tip as a release (`v1.14.1+rocm.0`
+from upstream's newest absorbed version tag, or the next `+rocm.<rev>` when there is
+none) and records it; a sync review PR may not carry `## Upstream reply`, since there
+is no upstream PR to post it on.
+
+Rollout: release-line records are `schema_version` 4, which tooling from before this
+feature refuses to load. A host must `branch-sync` and re-run `orient.sh` (which
+re-runs `protect-fork`, replacing v3 fork hooks that would let a push to a delivered
+branch through) before it touches a release line. Publishing
 the line's wheels as a GitHub release is a separate act that needs the person's
 approval of the exact content.
 

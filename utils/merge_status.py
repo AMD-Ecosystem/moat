@@ -223,6 +223,12 @@ def merge(a, b):
         out["fork_default_branch"] = out["base_branch_ruling"]["branch"]
     if out.get("fork_branch_ruling"):
         out["fork_branch"] = out["fork_branch_ruling"]["branch"]
+    # A sticky delivery ruling keeps the release-line schema version with it, or a
+    # newer write from a host whose copy predates the ruling would hand the record
+    # back to tooling that would publish it (moatlib.RELEASE_SCHEMA_VERSION).
+    if out.get("delivery"):
+        out["schema_version"] = max(a.get("schema_version") or 0,
+                                    b.get("schema_version") or 0)
 
     for k in RESET:
         out.pop(k, None)

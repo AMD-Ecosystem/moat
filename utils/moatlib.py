@@ -31,7 +31,16 @@ SCHEMA_VERSION = 3
 # 3 is a real break rather than an addition: `revalidate` became a `completed` block
 # whose validated_sha is not the head, so a version-2 reader would see that block and
 # conclude the arch is up to date on code it has never run.
-READABLE_SCHEMA_VERSIONS = (2, 3)
+#
+# 4 marks a RELEASE LINE record (set_delivery writes it, and only there): such a
+# project must never be offered upstream, and tooling from before release lines
+# ignores the `delivery` field it does not know -- its --publish would open a real
+# upstream PR on the line's approval. Its load_status rejects version 4, and every
+# publish route snapshots the approval through load_status before it opens
+# anything, so old tooling fails closed on these records instead. Ordinary records
+# stay at SCHEMA_VERSION; nothing migrates them.
+RELEASE_SCHEMA_VERSION = 4
+READABLE_SCHEMA_VERSIONS = (2, 3, 4)
 
 def _load_arches():
     """config/arches.toml is the single source of truth for gates.
@@ -152,28 +161,57 @@ def release_delivered(obj):
     return bool(release_line(obj) and (obj or {}).get("release"))
 
 
-def release_tag(obj, tag_format=None):
+def tag_format_fields(fmt):
+    """The fields a tag format names, or ValueError. Parsed with the same
+    machinery str.format uses, so what passes here cannot raise there: only bare
+    fields from _TAG_FIELDS, no conversion, format spec, attribute or index, and
+    no stray brace."""
+    import string
+    used = set()
+    try:
+        parsed = list(string.Formatter().parse(fmt))
+    except ValueError as e:
+        raise ValueError(f"tag format {fmt!r} does not parse: {e}")
+    for _lit, field, spec, conv in parsed:
+        if field is None:
+            continue
+        if field not in _TAG_FIELDS or spec or conv:
+            raise ValueError(f"tag format {fmt!r}: {{{field}"
+                             + (f"!{conv}" if conv else "")
+                             + (f":{spec}" if spec else "")
+                             + f"}} is not one of the plain fields "
+                               f"{', '.join('{' + f + '}' for f in _TAG_FIELDS)}")
+        used.add(field)
+    return used
+
+
+def branch_release_version(obj):
+    """(version, rev) from a fork_branch ending in <version>.amd<rev>, or None."""
+    m = _RELEASE_BRANCH_RE.search(obj.get("fork_branch") or "")
+    return (m.group(1), int(m.group(2))) if m else None
+
+
+def release_tag(obj, tag_format=None, version=None, rev=None):
     """The tag a release line's approved commit gets. Raises ValueError when the
     format names a field the record cannot supply, so a bad format is refused when
-    a person records it rather than when the approved release is being finished."""
+    a person records it rather than when the approved release is being finished.
+    `version`/`rev` override what the port branch name says: a patch sync names
+    the upstream version it absorbed (release_sync_tag)."""
     fmt = tag_format or (obj.get("delivery") or {}).get("tag_format") \
         or DEFAULT_RELEASE_TAG_FORMAT
-    used = set(re.findall(r"{(\w*)}", fmt))
-    unknown = used - set(_TAG_FIELDS)
-    if unknown:
-        raise ValueError(f"tag format {fmt!r} names unknown field(s) "
-                         f"{sorted(unknown)}; known: {', '.join(_TAG_FIELDS)}")
+    used = tag_format_fields(fmt)
     branch = obj.get("fork_branch") or ""
     fields = {"name": obj.get("name") or "", "branch": branch}
     if used & {"version", "rev"}:
-        m = _RELEASE_BRANCH_RE.search(branch)
-        if not m:
+        derived = branch_release_version(obj)
+        if not derived and (version is None or rev is None):
             raise ValueError(
                 f"tag format {fmt!r} derives {{version}}/{{rev}} from fork_branch, "
                 f"and {branch or '(unset)'!r} does not end in <version>.amd<rev> "
                 f"(e.g. release/1.14.0.amd0) -- record the port branch first "
                 f"(set-fork-branch), or give a format without those fields")
-        fields.update(version=m.group(1), rev=m.group(2))
+        fields.update(version=version if version is not None else derived[0],
+                      rev=str(rev if rev is not None else derived[1]))
     tag = fmt.format(**fields)
     if not valid_ref_name(f"refs/tags/{tag}"):
         raise ValueError(f"tag {tag!r} (from {fmt!r}) is not a valid git tag name")
@@ -692,6 +730,14 @@ def validate_status(obj):
             raise ValueError(f"status.json missing required key: {k}")
     if obj["schema_version"] not in READABLE_SCHEMA_VERSIONS:
         raise ValueError(f"unsupported schema_version: {obj['schema_version']}")
+    # The pairing is the point of version 4 (see RELEASE_SCHEMA_VERSION): a
+    # release-line record readable by tooling that would publish it is the hazard.
+    if obj.get("delivery") and obj["schema_version"] != RELEASE_SCHEMA_VERSION:
+        raise ValueError(f"a record with a delivery ruling must be schema_version "
+                         f"{RELEASE_SCHEMA_VERSION}, not {obj['schema_version']}")
+    if obj["schema_version"] == RELEASE_SCHEMA_VERSION and not obj.get("delivery"):
+        raise ValueError(f"schema_version {RELEASE_SCHEMA_VERSION} is only for "
+                         f"release-line records (a delivery ruling)")
     if "stage" in obj and obj["stage"] not in STAGE_STATES:
         raise ValueError(f"invalid stage: {obj['stage']!r}")
     # A verdict nobody signed satisfies nothing, so the stage cannot stand without one.
@@ -2052,6 +2098,7 @@ def set_fork_branch(name, branch, by, reason=None):
         obj["fork_branch_ruling"]["reason"] = reason
     save_record(name, obj, f"{name}: port branch {old or PORT_BRANCH} -> {branch}, "
                            f"ruled by {by}")
+    _reprotect(name)
     return obj
 
 
@@ -2095,6 +2142,7 @@ def set_delivery(name, mode, by, tag_format=None, reason=None, clear=False):
         if not ok:
             raise ValueError(why)
         obj.pop("delivery", None)
+        obj["schema_version"] = SCHEMA_VERSION
         save_record(name, obj, f"{name}: delivery ruling cleared by {by}")
         return obj
     if mode not in DELIVERY_MODES:
@@ -2119,19 +2167,27 @@ def set_delivery(name, mode, by, tag_format=None, reason=None, clear=False):
     if obj.get("fork_branch"):
         release_tag({**obj, "delivery": rec})          # raises with the reason
     else:
-        unknown = set(re.findall(r"{(\w*)}", fmt)) - set(_TAG_FIELDS)
-        if unknown:
-            raise ValueError(f"tag format {fmt!r} names unknown field(s) "
-                             f"{sorted(unknown)}; known: {', '.join(_TAG_FIELDS)}")
+        tag_format_fields(fmt)                         # raises with the reason
     if reason:
         rec["reason"] = reason
     ok, why = record_writable_here(name)
     if not ok:
         raise ValueError(why)
     obj["delivery"] = rec
+    obj["schema_version"] = RELEASE_SCHEMA_VERSION
     save_record(name, obj, f"{name}: delivery ruled {mode} by {by} (tag format "
                            f"{fmt})")
+    _reprotect(name)
     return obj
+
+
+def _reprotect(name):
+    """Re-render a local fork clone's pre-push hook after a ruling changes what it
+    guards (the port branch's name, or a release line's mirror and tags). A clone
+    elsewhere picks the change up the next time orient runs protect-fork."""
+    level, msg = protect_fork(name)
+    if level == "warn":
+        print(msg, file=sys.stderr)
 
 
 def set_release_delivered(name, tag, sha, review_pr):
@@ -2169,12 +2225,109 @@ def set_release_delivered(name, tag, sha, review_pr):
     ok, why = record_writable_here(name)
     if not ok:
         raise ValueError(why)
+    ver = branch_release_version(obj)
     obj["release"] = {"tag": tag, "sha": sha, "review_pr": review_pr,
                       "approved_by": a["approved_by"], "at": now_iso()}
+    if ver:
+        obj["release"].update(version=ver[0], rev=ver[1])
     obj["published_sha"] = sha
     save_record(name, obj, f"{name}: release {tag} delivered at {sha[:12]} "
                            f"(approved by {a['approved_by']} on {review_pr}); "
                            f"{obj.get('fork_branch') or PORT_BRANCH} is now frozen")
+    return obj
+
+
+def set_release_review_closed(name):
+    """Record that the delivered release's review PR was closed unmerged, the last
+    step of --finish-release. Until this is recorded, the finishing sweep keeps the
+    line in view so an interrupted run is completed rather than forgotten."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    rel = obj.get("release") or {}
+    if not rel or rel.get("review_closed_at"):
+        return obj
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    obj["release"] = {**rel, "review_closed_at": now_iso()}
+    save_record(name, obj, f"{name}: review PR for {rel.get('tag')} closed unmerged")
+    return obj
+
+
+def release_sync_tag(name, obj, upstream_sha):
+    """(tag, version, rev) for an approved sync round on a delivered release line.
+
+    The version is upstream's newest version tag (`v1.14.1`, `1.14.1`) whose commit
+    the round absorbed, so a patch release becomes `v1.14.1+rocm.0` under the
+    default format; a sync that brings no new upstream version bumps the revision
+    instead (`v1.14.0+rocm.1`). Read from upstream's tags in the scratch repo, so it
+    holds on any host; falls back to the line's current version when upstream tags
+    nothing in reach."""
+    rel = obj.get("release") or {}
+    cur = branch_release_version(obj)
+    prev_version = rel.get("version") or (cur[0] if cur else None)
+    prev_rev = rel.get("rev") if rel.get("rev") is not None else (cur[1] if cur else 0)
+    repo = _mirror_repo(name, obj)
+
+    def git(*a, timeout=3600):
+        return subprocess.run(["git", "-C", str(repo), *a], capture_output=True,
+                              text=True, timeout=timeout)
+
+    base = obj.get("fork_default_branch") or "main"
+    git("fetch", "-q", "upstream", f"+refs/heads/{base}:refs/mirror/upstream",
+        "+refs/tags/*:refs/uptags/*")
+    best = None
+    rows = git("for-each-ref", "refs/uptags",
+               "--format=%(refname:strip=2) %(objectname) %(*objectname)").stdout
+    for line in rows.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        m = re.fullmatch(r"v?(\d+(?:\.\d+)*)", parts[0])
+        if not m:
+            continue
+        commit = parts[2] if len(parts) > 2 else parts[1]
+        if git("merge-base", "--is-ancestor", commit, upstream_sha).returncode:
+            continue
+        key = tuple(int(x) for x in m.group(1).split("."))
+        if best is None or key > best[0]:
+            best = (key, m.group(1))
+    version = best[1] if best else prev_version
+    rev = (int(prev_rev) + 1) if version == prev_version else 0
+    return (release_tag(obj, version=version, rev=rev), version, rev)
+
+
+def set_release_tagged(name, tag, sha, review_pr, approved_by, version=None,
+                       rev=None):
+    """Record a release tag pushed for an approved sync round on a delivered line.
+    The previous release moves into `release.history`; the new one is what the
+    next patch release is numbered from. Called by `upstream.py --merge-fix` after
+    the fast-forward and the tag push; it authorises nothing."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    rel = obj.get("release")
+    if not release_delivered(obj):
+        raise ValueError(f"{name}: not a delivered release line")
+    if rel.get("tag") == tag and same_commit(rel.get("sha"), sha):
+        return obj
+    if not same_commit(obj.get("published_sha"), sha):
+        raise ValueError(f"{name}: {sha[:12]} is not the published tip "
+                         f"{(obj.get('published_sha') or '?')[:12]}")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    prior = {k: v for k, v in rel.items() if k != "history"}
+    new = {"tag": tag, "sha": sha, "review_pr": review_pr,
+           "approved_by": approved_by, "at": now_iso(),
+           "review_closed_at": now_iso(),
+           "history": (rel.get("history") or []) + [prior]}
+    if version is not None:
+        new.update(version=version, rev=rev)
+    obj["release"] = new
+    save_record(name, obj, f"{name}: release {tag} tagged at {sha[:12]} "
+                           f"(sync round approved by {approved_by})")
     return obj
 
 
@@ -2345,11 +2498,12 @@ def release_fork_problems(name, obj, tip, tag=None):
     return bad
 
 
-def push_fork_tag(name, sha, tag):
-    """Push lightweight tag `tag` at `sha` to the fork. Idempotent when the tag
-    already names `sha`; refused when it names anything else, because a release
-    tag that moved is worse than one that failed. Only the trusted finishing path
-    (`upstream.py --finish-release --apply`) calls this, after its checks."""
+def push_fork_tag(name, sha, tag, message):
+    """Push ANNOTATED tag `tag` at `sha` to the fork, carrying `message` (who
+    approved, and where). Idempotent when the tag already names `sha`; refused
+    when it names anything else, because a release tag that moved is worse than
+    one that failed. Only the trusted paths (`upstream.py --finish-release` and
+    `--merge-fix` on a delivered line) call this, after their checks."""
     obj, _where = project_record(name)
     if obj is None:
         raise FileNotFoundError(str(status_path(name)))
@@ -2373,7 +2527,11 @@ def push_fork_tag(name, sha, tag):
             timeout=3600)
     if git("cat-file", "-e", f"{sha}^{{commit}}").returncode:
         raise ValueError(f"{name}: {sha[:12]} is not on the fork's port branch")
-    p = git("push", "-q", "fork", f"{sha}:refs/tags/{tag}", timeout=600)
+    t = git("tag", "-f", "-a", "-m", message, tag, sha)
+    if t.returncode:
+        raise ValueError(f"{name}: could not create the annotated tag {tag}: "
+                         f"{(t.stderr or t.stdout).strip()[:160]}")
+    p = git("push", "-q", "fork", f"refs/tags/{tag}:refs/tags/{tag}", timeout=600)
     if p.returncode:
         raise ValueError(f"{name}: could not push {tag}: "
                          f"{(p.stderr or p.stdout).strip()[:160]}")
@@ -2965,7 +3123,10 @@ _FORK_HOOK = """#!/usr/bin/env bash
 # Refuses pushes to the port branch while it is upstream-visible or frozen: the
 # head of an open upstream PR, a maintained branch upstream points its users at,
 # or a delivered (tagged) release line. Only states known to leave the branch
-# private let a push through, so a state this hook predates refuses too.
+# private let a push through, so a state added after this version refuses too
+# (an older hook, v3 and before, does not -- re-run protect-fork to replace it).
+# On a release line it also refuses pushes to the pristine mirror and any push
+# that moves or deletes an existing tag: release tags are fixed points.
 # Installed by `moatlib.py protect-fork {name}`; see AGENTS.md on fix rounds.
 set -u
 [ "${{MOAT_PUBLISH:-}}" = "1" ] && exit 0
@@ -2975,7 +3136,7 @@ set -u
 # below is paid for only on the one push that could reach a maintainer.
 targets=0
 mirror=0
-while read -r _local _lsha remote _rsha; do
+while read -r _local _lsha remote rsha; do
   [ "$remote" = "refs/heads/{branch}" ] && targets=1
   {mirror_test}
 done
@@ -3048,7 +3209,13 @@ def protect_fork(name):
     # mirror unguarded: people fast-forward those from a clone, and nothing
     # reviews a diff against them.
     mirror = (obj.get("fork_default_branch") or "main") if release_line(obj) else ""
-    test = (f'[ "$remote" = "refs/heads/{mirror}" ] && mirror=1' if mirror else ":")
+    # A remote sha that is not all zeros means the tag already exists there, so
+    # the push would move or delete it.
+    test = (f'[ "$remote" = "refs/heads/{mirror}" ] && mirror=1\n'
+            f'  case "$remote" in refs/tags/*) case "$rsha" in *[!0]*) '
+            f'echo >&2 "moat: $remote already exists on the fork; release tags are '
+            f'never moved or deleted"; exit 1 ;; esac ;; esac'
+            if mirror else ":")
     text = _FORK_HOOK.format(marker=FORK_HOOK_MARKER, name=name,
                              moatlib=str(REPO_ROOT / "utils" / "moatlib.py"),
                              branch=obj.get("fork_branch") or PORT_BRANCH,

@@ -346,6 +346,13 @@ def build():
                     "review_pr": {"type": ["string", "null"]},
                     "approved_by": {"type": "string"},
                     "at": {"type": "string"},
+                    # The upstream version and revision the tag names, so the
+                    # next patch sync is numbered from them.
+                    "version": {"type": "string"},
+                    "rev": {"type": "integer"},
+                    "review_closed_at": {"type": "string"},
+                    # Earlier releases of this line, oldest first.
+                    "history": {"type": "array", "items": {"type": "object"}},
                 },
             },
             # The review PR on our own fork: where a maintainer sees the code, title

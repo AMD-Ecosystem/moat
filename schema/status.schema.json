@@ -17,7 +17,8 @@
     "schema_version": {
       "enum": [
         2,
-        3
+        3,
+        4
       ]
     },
     "name": {
@@ -647,6 +648,21 @@
         },
         "at": {
           "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "rev": {
+          "type": "integer"
+        },
+        "review_closed_at": {
+          "type": "string"
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
         }
       }
     },

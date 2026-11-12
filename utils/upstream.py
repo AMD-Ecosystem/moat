@@ -1292,7 +1292,7 @@ def fix_review_rows():
             continue
         out.append({"name": name, "fork": fork, "fix": fix, "base": base,
                     "tip": tip["sha"], "problem": None,
-                    "branch": fix["branch"],
+                    "branch": fix["branch"], "pr_url": d.get("pr_url"),
                     "target": d.get("fork_branch") or moatlib.PORT_BRANCH})
     return out
 
@@ -1322,6 +1322,11 @@ def open_fix_review_pr(row, title, body, apply=False):
     if REPLY_HEADING in (body or "") and not reply:
         return ("reply", f"the body carries {REPLY_HEADING!r} with nothing under "
                          f"it -- drop the heading or write the reply")
+    if reply and not row.get("pr_url"):
+        # A release line's sync round has no upstream PR to reply on; refusing
+        # here beats discovering it after the merge push already moved the branch.
+        return ("reply", f"the body carries {REPLY_HEADING!r} but there is no "
+                         f"upstream PR to post it on -- drop the section")
     if reply:
         terms, allow = jargon.load()
         rhits = jargon.scan_text(reply, "upstream reply", terms, allow)
@@ -1395,19 +1400,28 @@ def base_conflict(name, d, tip):
     review-PR gate skips (the documented only-where-a-clone-lives backstop
     pattern), the merge gate refuses, because the one place that must never
     guess is the one about to move the open PR."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
     clone = REPO / "projects" / name / "src"
     if not (clone / ".git").exists():
         return ("unknown", "no fork clone here to test-merge with")
-    m = re.search(r"github\.com/([^/]+/[^/]+)/pull/(\d+)", d.get("pr_url") or "")
-    if not m:
-        return ("unknown", "no upstream PR recorded")
-    up, num = m.group(1), m.group(2)
-    pr = gh_json(["pr", "view", num, "--repo", up, "--json", "baseRefName"])
-    base_ref = (pr or {}).get("baseRefName")
-    if not base_ref:
-        return ("unknown", f"cannot read the base branch of {up}#{num}")
-    f = _run(["git", "-C", str(clone), "fetch",
-                        f"https://github.com/{up}",
+    if moatlib.release_line(d):
+        # A release line has no upstream PR by construction. What its rounds
+        # must keep merging with is upstream's release branch -- the branch the
+        # pristine mirror copies, under the same name.
+        base_ref = d.get("fork_default_branch") or "main"
+        source, up = d.get("upstream_url") or "", d.get("upstream_url") or "?"
+    else:
+        m = re.search(r"github\.com/([^/]+/[^/]+)/pull/(\d+)", d.get("pr_url") or "")
+        if not m:
+            return ("unknown", "no upstream PR recorded")
+        up, num = m.group(1), m.group(2)
+        pr = gh_json(["pr", "view", num, "--repo", up, "--json", "baseRefName"])
+        base_ref = (pr or {}).get("baseRefName")
+        if not base_ref:
+            return ("unknown", f"cannot read the base branch of {up}#{num}")
+        source = f"https://github.com/{up}"
+    f = _run(["git", "-C", str(clone), "fetch", source,
                         f"+refs/heads/{base_ref}:refs/moat/base"],
                        capture_output=True, text=True, timeout=120)
     if f.returncode:
@@ -1485,6 +1499,10 @@ def merge_fix_blockers(name, d, fix, pr):
     reply = fix_reply_of(pr.get("body"))
     if REPLY_HEADING in (pr.get("body") or "") and not reply:
         bad.append(f"the body carries {REPLY_HEADING!r} with nothing under it")
+    if reply and not d.get("pr_url"):
+        bad.append(f"the body carries {REPLY_HEADING!r} but there is no upstream "
+                   f"PR to post it on (a release line) -- drop the section and "
+                   f"get a fresh approval")
     if reply:
         terms, allow = jargon.load()
         rhits = jargon.scan_text(reply, "upstream reply", terms, allow)
@@ -1639,7 +1657,12 @@ def do_merge_fix(name, d, fix, pr):
     stale = _sync_local_port_branch(clone, branch, tip)
     if stale:
         notes.append(stale)
-    if fix.get("kind") == "sync":
+    if fix.get("kind") == "sync" and moatlib.release_delivered(d):
+        # A delivered release line names each approved patch sync as a release
+        # (v1.14.1+rocm.0 for upstream's v1.14.1), annotated with who approved it
+        # and where, and records it so the next one is numbered from it.
+        notes.append(_tag_release_sync(name, d, fix, pr, tip))
+    elif fix.get("kind") == "sync":
         # A maintained branch has followers who clone it by name and get whatever
         # the tip is that day. Tagging each approved sync gives them a fixed
         # point to pin -- and gives us the exact tip any report is about. The
@@ -1668,6 +1691,40 @@ def do_merge_fix(name, d, fix, pr):
                      f"and can be deleted by hand")
     return (True, f"fast-forwarded {branch} to {tip[:12]}"
                   + ("; " + "; ".join(notes) if notes else ""))
+
+
+def _release_message(name, tag, pr, url):
+    review = None
+    try:
+        sys.path.insert(0, str(REPO / "utils"))
+        import moatlib
+        review = moatlib._approving_review(pr)
+    except Exception:                           # noqa: BLE001 - message only
+        pass
+    who = (review or {}).get("login") or "?"
+    return who, f"{name} {tag}\n\nApproved by {who} on {url}\n"
+
+
+def _tag_release_sync(name, d, fix, pr, tip):
+    """Tag and record an approved sync round's tip on a delivered release line.
+    Best effort like the rest of the post-push steps: the branch already moved, so
+    a failure is reported with the command that finishes it by hand."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    url = pr.get("url") or fix.get("review_pr")
+    try:
+        tag, version, rev = moatlib.release_sync_tag(name, d, fix.get("upstream_sha")
+                                                     or tip)
+        who, msg = _release_message(name, tag, pr, url)
+        moatlib.push_fork_tag(name, tip, tag, msg)
+        moatlib.set_release_tagged(name, tag, tip, url, who, version, rev)
+        unlanded = _land_local_record(name, f"{name}: release {tag} tagged")
+        if unlanded:
+            return f"tagged {tag}; {unlanded}"
+        return f"tagged {tag} (annotated)"
+    except Exception as e:                      # noqa: BLE001 - reported, not raised
+        return (f"could NOT tag or record the release at {tip[:12]}: {e}; push an "
+                f"annotated release tag there by hand and record it")
 
 
 def resolve_threads(name, apply):
@@ -1793,12 +1850,18 @@ def report_merge_fix(apply, only=None):
 # write the pristine mirror, so nothing here ever merges it.
 
 def finish_release_rows(only=None):
-    """Release lines with a review PR recorded and no release yet."""
+    """Release lines with a review PR recorded and no release yet, plus delivered
+    ones whose finishing run stopped before the review PR's closure was recorded
+    (those only need the remaining steps)."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
     for name, d, _where in all_records(only):
-        if moatlib.release_line(d) and d.get("review_pr") \
-                and not d.get("release") and not d.get("fix"):
+        if not moatlib.release_line(d) or not d.get("review_pr"):
+            continue
+        rel = d.get("release")
+        if rel and not rel.get("review_closed_at"):
+            yield name, d
+        elif not rel and not d.get("fix"):
             yield name, d
 
 
@@ -1856,8 +1919,9 @@ def do_finish_release(name, d, pr, tag):
 
     tip = pr["headRefOid"]
     url = pr.get("url") or d.get("review_pr")
+    _who, msg = _release_message(name, tag, pr, url)
     try:
-        notes = [moatlib.push_fork_tag(name, tip, tag)]
+        notes = [moatlib.push_fork_tag(name, tip, tag, msg)]
     except Exception as e:                      # noqa: BLE001 - reported, not raised
         return (False, f"could not tag: {e}")
     try:
@@ -1870,6 +1934,15 @@ def do_finish_release(name, d, pr, tag):
         return (True, f"tagged {tag} at {tip[:12]} but could NOT record the "
                       f"delivery: {e}; the review PR is left open and a rerun of "
                       f"--finish-release --apply completes it")
+    return (True, "; ".join(notes + [_close_release_review(name, d, url, tag, tip)]))
+
+
+def _close_release_review(name, d, url, tag, tip):
+    """The last step: close the review PR unmerged, record that, refresh the hook.
+    Also the whole of a resumed run, so an interrupted finish converges."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    notes = []
     c = _run(["gh", "pr", "close", url, "--comment",
               f"Approved and released as `{tag}` at {tip}. `{d.get('fork_branch')}` "
               f"is now frozen; later upstream patch releases arrive as separate "
@@ -1877,13 +1950,24 @@ def do_finish_release(name, d, pr, tag):
               f"`{d.get('fork_default_branch')}` stays an exact copy of upstream's "
               f"branch."],
              capture_output=True, text=True, timeout=90)
-    notes.append("closed the review PR unmerged" if c.returncode == 0 else
-                 f"could NOT close the review PR ({(c.stderr or c.stdout).strip()[:80]}); "
-                 f"close it by hand without merging")
+    if c.returncode == 0:
+        notes.append("closed the review PR unmerged")
+        try:
+            moatlib.set_release_review_closed(name)
+            unlanded = _land_local_record(name, f"{name}: review PR for {tag} closed")
+            if unlanded:
+                notes.append(unlanded)
+        except Exception as e:                  # noqa: BLE001 - reported, not raised
+            notes.append(f"could NOT record the closure ({e}); a rerun records it")
+    else:
+        notes.append(f"could NOT close the review PR "
+                     f"({(c.stderr or c.stdout).strip()[:80]}); a rerun of "
+                     f"--finish-release --apply retries it (close it by hand "
+                     f"without merging if that keeps failing)")
     level, msg = moatlib.protect_fork(name)
     if level != "skip":
         notes.append(msg)
-    return (True, "; ".join(notes))
+    return "; ".join(notes)
 
 
 def report_finish_release(apply, only=None):
@@ -1893,44 +1977,73 @@ def report_finish_release(apply, only=None):
     print(f"upstream: {len(rows)} release line(s) with a review PR recorded\n")
     ret = 0
     for name, d in rows:
-        pr = moatlib.fetch_review_pr(d["review_pr"])
-        if pr is None:
-            print(f"  UNREACHABLE {name:25} could not read {d['review_pr']} -- "
-                  f"an outage is not a withdrawn approval")
-            ret = 1
-            continue
-        if moatlib._approving_review(pr) is None and pr.get("state") == "OPEN":
-            blockers, _notes = moatlib.moat_command_audit(pr)
-            print(f"  {'OBJECTED' if blockers else 'WAITING':10} {name:26} "
-                  + (blockers[0][:78] if blockers else
-                     f"no {moatlib.APPROVE_COMMAND!r} on {d['review_pr']} yet"))
-            continue
-        bad, tag = finish_release_blockers(name, d, pr)
-        if bad:
-            print(f"  HELD       {name:26} {bad[0][:78]}")
-            for b in bad[1:]:
-                print(f"             {'':26} {b[:78]}")
-            continue
-        print(f"  READY      {name:26} tag {tag} at "
-              f"{(pr.get('headRefOid') or '?')[:12]} and freeze "
-              f"{d.get('fork_branch') or moatlib.PORT_BRANCH}")
-        if not apply:
-            continue
         try:
-            moatlib_record(name)     # who authorised this, before anything moves
-        except Exception as e:                  # noqa: BLE001 - reported, not raised
-            print(f"  FAILED to record the approval for {name}: {e}")
-            ret = 1
-            continue
-        ok, detail = do_finish_release(name, d, pr, tag)
-        print(f"  {'RELEASED' if ok else 'FAILED':10} {name:26} {detail}")
-        if not ok:
+            ret |= _finish_one(name, d, apply)
+        except Exception as e:                  # noqa: BLE001 - one line, not the sweep
+            print(f"  ERROR      {name:26} {type(e).__name__}: {e}"[:120])
             ret = 1
     if rows and not apply:
         print("\n  --finish-release --apply tags each READY line's approved commit, "
               "records the delivery (freezing the branch) and closes the review PR "
               "unmerged.")
     return ret
+
+
+def _finish_one(name, d, apply):
+    """One line's report (and, with apply, its finishing). Returns 0 or 1."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    rel = d.get("release")
+    if rel:
+        # Delivered, but the run stopped before the review PR's closure was
+        # recorded. Only the closing steps remain; the approval was consumed
+        # by the tag, so it is not re-judged.
+        pr = moatlib.fetch_review_pr(rel.get("review_pr") or d["review_pr"])
+        state = (pr or {}).get("state")
+        print(f"  RESUME     {name:26} {rel.get('tag')} is tagged and recorded; "
+              f"review PR {str(state or 'UNREACHABLE').lower()}")
+        if apply and pr is not None:
+            url = pr.get("url") or d["review_pr"]
+            if state == "OPEN":
+                detail = _close_release_review(name, d, url, rel.get("tag"),
+                                               rel.get("sha") or "")
+            else:
+                moatlib.set_release_review_closed(name)
+                detail = (_land_local_record(name, f"{name}: review PR for "
+                                                   f"{rel.get('tag')} closed")
+                          or "recorded the closure")
+            print(f"  {'RELEASED':10} {name:26} {detail}")
+        return 1 if pr is None else 0
+    pr = moatlib.fetch_review_pr(d["review_pr"])
+    if pr is None:
+        print(f"  UNREACHABLE {name:25} could not read {d['review_pr']} -- "
+              f"an outage is not a withdrawn approval")
+        return 1
+    if moatlib._approving_review(pr) is None and pr.get("state") == "OPEN":
+        blockers, _notes = moatlib.moat_command_audit(pr)
+        print(f"  {'OBJECTED' if blockers else 'WAITING':10} {name:26} "
+              + (blockers[0][:78] if blockers else
+                 f"no {moatlib.APPROVE_COMMAND!r} on {d['review_pr']} yet"))
+        return 0
+    bad, tag = finish_release_blockers(name, d, pr)
+    if bad:
+        print(f"  HELD       {name:26} {bad[0][:78]}")
+        for b in bad[1:]:
+            print(f"             {'':26} {b[:78]}")
+        return 0
+    print(f"  READY      {name:26} tag {tag} at "
+          f"{(pr.get('headRefOid') or '?')[:12]} and freeze "
+          f"{d.get('fork_branch') or moatlib.PORT_BRANCH}")
+    if not apply:
+        return 0
+    try:
+        moatlib_record(name)     # who authorised this, before anything moves
+    except Exception as e:                  # noqa: BLE001 - reported, not raised
+        print(f"  FAILED to record the approval for {name}: {e}")
+        return 1
+    ok, detail = do_finish_release(name, d, pr, tag)
+    print(f"  {'RELEASED' if ok else 'FAILED':10} {name:26} {detail}")
+    return 0 if ok else 1
 
 
 # ---- maintained forks: the drift sweep --------------------------------------
