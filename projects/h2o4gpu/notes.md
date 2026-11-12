@@ -684,3 +684,86 @@ Package: a copy of `src/interface_py/h2o4gpu` in `agent_space/pkg` with `build-h
 - CUDA nvcc compile check on the mi355 host at `6c756448` (last checked at 2c22a86; 24cd051e changed shared KMeans source).
 - Revalidation on linux-gfx90a, linux-gfx1100 and windows-gfx1151 (and the first linux-gfx942 validation).
 - Review of `2c22a86..6c756448`.
+
+## KMeans multi-GPU reproducers 2026-11-12 (linux-gfx942, 2x MI300X, ROCm 10.1 pip SDK)
+
+jeff's request: verified output of two reproducers for the upstream h2oai/h2o4gpu issues he will file on deferral `h2o4gpu-kmeans-multi-gpu-transform-and-remainder`. No role, no state change, no fork change.
+
+- Build: fresh clone of `https://github.com/AMD-Ecosystem/h2o4gpu.git` `moat-port` at `d0b78f3d7749c7bf36f9eeda6d138acb3f6d2673` in the job directory. `HIP_VISIBLE_DEVICES=6,7` (dispatcher pin), `ulimit -c 0`, `LD_LIBRARY_PATH` unset, `OPENBLAS_NUM_THREADS=32`.
+  ```
+  P=$FLEET_VENV/bin/python; R=$($P -m rocm_sdk path --root); export PATH=$FLEET_VENV/bin:$R/bin:$PATH
+  $P -m pip install swig==4.2.1 cython==3.0.11 meson-python ninja threadpoolctl joblib
+  git submodule update --init tests/googletest
+  cmake -S . -B build-hip -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$P
+  cmake --build build-hip -j$MAX_JOBS
+  make apply-sklearn PYTHON=$P
+  cp build-hip/_ch2o4gpu_*pu.so build-hip/ch2o4gpu_*pu.py src/interface_py/h2o4gpu/libs/
+  PYTHONPATH=<clone>/src/interface_py $P repro_transform.py
+  ```
+  Recipe note: SWIG from pip defaults to 4.5.1, whose generated wrapper fails to compile against the project's `numpy.i` (`PyString_Check`/`PyInt_Check` not declared); 4.2.1 builds (apt's 4.2.0 did in earlier rounds). `device_count(-1)` = (2, 2).
+- Scripts run exactly as jeff wrote them; `KMeansH2O.__init__` already takes `n_clusters, n_gpus, random_state, max_iter`, so no change.
+
+repro_transform.py:
+```python
+# KMeans.transform with n_gpus=2 vs NumPy distances to the fitted centers.
+import numpy as np
+from h2o4gpu.solvers.kmeans import KMeansH2O
+
+rng = np.random.RandomState(0)
+X = rng.rand(1000, 4)  # 1000 rows, divisible by 2
+for n_gpus in (1, 2):
+    km = KMeansH2O(n_clusters=3, n_gpus=n_gpus, random_state=0, max_iter=50).fit(X)
+    C = km.cluster_centers_
+    got = km.transform(X)
+    want = np.sqrt(((X[:, None, :] - C[None, :, :]) ** 2).sum(-1))
+    print("n_gpus=%d max|got-want|=%.3g argmin agreement=%.3f"
+          % (n_gpus, np.abs(got - want).max(),
+             (got.argmin(1) == want.argmin(1)).mean()))
+```
+
+repro_remainder.py:
+```python
+# With rows % n_gpus != 0, fit and predict never process the last rows.
+import numpy as np
+from h2o4gpu.solvers.kmeans import KMeansH2O
+
+rng = np.random.RandomState(0)
+X = rng.rand(1001, 4)  # 1001 rows, n_gpus=2 -> 1 row left over
+for n_gpus in (1, 2):
+    km = KMeansH2O(n_clusters=3, n_gpus=n_gpus, random_state=0, max_iter=50).fit(X)
+    C = km.cluster_centers_
+    # Last row placed exactly on center 1 and center 2: predict must return 1 and 2.
+    X1 = X.copy(); X1[-1] = C[1]
+    X2 = X.copy(); X2[-1] = C[2]
+    nearest = np.sqrt(((X[:, None, :] - C[None, :, :]) ** 2).sum(-1)).argmin(1)
+    print("n_gpus=%d fit labels_[-1]=%d (nearest center %d)  predict last row on C[1]: %d, on C[2]: %d"
+          % (n_gpus, km.labels_[-1], nearest[-1], km.predict(X1)[-1], km.predict(X2)[-1]))
+```
+
+Raw output (each script twice; identical both times):
+```
+=== repro_transform.py run 1 (HIP_VISIBLE_DEVICES=6,7) ===
+n_gpus=1 max|got-want|=0.25 argmin agreement=1.000
+n_gpus=2 max|got-want|=1.06 argmin agreement=0.423
+rc=0
+=== repro_transform.py run 2 (HIP_VISIBLE_DEVICES=6,7) ===
+n_gpus=1 max|got-want|=0.25 argmin agreement=1.000
+n_gpus=2 max|got-want|=1.06 argmin agreement=0.423
+rc=0
+=== repro_remainder.py run 1 (HIP_VISIBLE_DEVICES=6,7) ===
+n_gpus=1 fit labels_[-1]=0 (nearest center 0)  predict last row on C[1]: 1, on C[2]: 2
+n_gpus=2 fit labels_[-1]=0 (nearest center 0)  predict last row on C[1]: 0, on C[2]: 0
+rc=0
+=== repro_remainder.py run 2 (HIP_VISIBLE_DEVICES=6,7) ===
+n_gpus=1 fit labels_[-1]=0 (nearest center 0)  predict last row on C[1]: 1, on C[2]: 2
+n_gpus=2 fit labels_[-1]=0 (nearest center 0)  predict last row on C[1]: 0, on C[2]: 0
+rc=0
+```
+
+Reading the output:
+- Transform: the 2-GPU bug shows (argmin agreement 0.423 vs 1.000). But the 1-GPU line is not exact either: `max|got-want|=0.25` because `transform` returns **squared** Euclidean distances and the script compares with `np.sqrt(...)`. A separate diagnostic (`diag.py`, scripts untouched) on the same data: n_gpus=1 `max|got - squared|` = 8.88e-16; n_gpus=2 `max|got - squared|` = 1.22, argmin 0.423, and re-reading the flat buffer as two per-GPU `(500, 3)` column-major blocks (GPU 0 then GPU 1) matches squared distances to 1.22e-15. For the issue, compare with squared distances (drop the `np.sqrt`), or the 1-GPU line looks wrong too.
+- Remainder: predict shows the bug (2-GPU last row returns 0 for both C[1] and C[2]; 1-GPU returns 1 and 2). The fit half does not show it with this seed: the last row's nearest center happens to be 0, the same as the never-written zero-filled label. The diagnostic's second 1001-row draw (the RNG state after the 1000-row draw) has nearest center 1: n_gpus=1 `labels_[-1]=1`, n_gpus=2 `labels_[-1]=0`.
+
+Source check (read-only), upstream h2oai/h2o4gpu master `97279defc47329147fd20d62381608c20cd3efd7`, `src/gpu/kmeans/kmeans_h2o4gpu.cu`:
+- Confirmed. `kmeans_transform` (line 893) gathers the per-GPU blocks with `#pragma omp parallel for` at line 945 and `h_pairwise_distances->insert(h_pairwise_distances->end(), d_pairwise_distances[q]->begin(), d_pairwise_distances[q]->end())` at lines 947-949, into one `thrust::host_vector<T>` created at line 944. Concurrent `insert(end(), ...)` on one vector is a data race (reallocation and size update unsynchronised), and the order of the blocks depends on thread scheduling. The pragma is live on CUDA: `CMAKE_CXX_FLAGS` gets `${OpenMP_CXX_FLAGS}` (lines 37-39) and the GPU library is built with FindCUDA's `CUDA_ADD_LIBRARY` (line 208), whose host-flag propagation (`CUDA_PROPAGATE_HOST_FLAGS`, default ON) passes it to the host compiler (inferred from CMake defaults, not observed with an nvcc build here).
+- The port no longer has that loop: `2c22a862` replaced it. `moat-port` `d0b78f3d` `src/gpu/kmeans/kmeans_h2o4gpu.cu` lines 947-955: `alloc_result<T>(rows * k)` then, under the same `#pragma omp parallel for` (line 949), `thrust::copy(..., h_pairwise_distances + q * chunk_distances)` into disjoint offsets: no race, fixed block order. (HIP TUs are compiled without OpenMP anyway, so the loop is serial on ROCm.) The column-major block layout bug (`kmeans.py:420` reshape) and the remainder bug remain, as the output shows.
