@@ -8,7 +8,7 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-11T20:56:43Z",
-  "updated_at": "2026-11-11T21:15:06Z",
+  "updated_at": "2026-11-11T23:59:58Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -24,11 +24,11 @@
     }
   ],
   "intake": {
-    "verdict": "fork",
-    "reason": null,
-    "duplicate_effort": "AMD-Ecosystem/minimap2 master (AMD Instinct HIP backend, 2026-09-15, never offered upstream); mm2-gb research fork",
-    "viable": true,
-    "summary": "Long-read aligner, no CUDA upstream and lh3 refuses GPU code (#1258); AMD fork is the HIP port (mm2-gb chaining + ksw2 kernels, GPU gtests) but Instinct-only, wave64-hard-coded and a heavy restructure; Radeon/Windows work would land on the fork",
-    "at": "2026-11-11T21:15:06Z"
+    "verdict": "decline",
+    "reason": "declined",
+    "duplicate_effort": null,
+    "viable": null,
+    "summary": "declined by Jeff Daily 2026-11-11: not a CUDA-to-ROCm port; upstream refuses GPU code and the AMD fork is an AMD product build MOAT should not touch",
+    "at": "2026-11-11T23:59:58Z"
   }
 }
