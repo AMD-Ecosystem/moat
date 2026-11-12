@@ -8,13 +8,19 @@
   "ext_type": "unknown",
   "stage": "awaiting-fork",
   "adopted_at": "2026-11-12T16:27:02Z",
-  "updated_at": "2026-11-12T16:50:53Z",
+  "updated_at": "2026-11-12T21:50:09Z",
   "head_sha": null,
   "depends_on": [
     "flash-attention"
   ],
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "upstream inference is Linux-only and its Windows entry is unvalidated; the 80 GB-class realtime preset exceeds what the only Windows host (gfx1151 laptop) can safely run. Approved 2026-11-12 with the gap-matrix intake follow-ups.",
+      "approved_by": "Jeff Daily",
+      "at": "2026-11-12T21:50:09Z"
+    }
+  },
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
