@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-12T16:36:20Z",
-  "updated_at": "2026-11-12T16:36:21Z",
+  "updated_at": "2026-11-12T17:08:15Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-12T17:08:14Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "GPL-3.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "GPL-3.0",
+      "evidence": "https://github.com/Overworldai/world_engine/blob/main/LICENSE",
+      "at": "2026-11-12T17:08:11Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none",
+    "viable": true,
+    "summary": "Overworld world_engine (GPL-3.0 = tier 3, needs licence clearance): PyTorch+Triton+gemlite, README claims AMD but no ROCm code; gate examples/benchmark.py",
+    "at": "2026-11-12T17:08:13Z"
+  }
 }
