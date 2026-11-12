@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "bionemo-recipes",
+  "upstream_url": "https://github.com/NVIDIA-BioNeMo/bionemo-recipes",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-12T16:31:41Z",
+  "updated_at": "2026-11-12T16:31:43Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
