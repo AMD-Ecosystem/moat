@@ -1058,3 +1058,54 @@ Each: `utils/timeit.sh qrack test -- $S/_build/unittest --proc-<p> --layer-<l> -
 - Integrity: `git -C projects/qrack/src status --porcelain` empty (untracked _build/ only).
 
 Result: linux-gfx90a revalidate -> completed at b06652a8 (only failures are the two recorded known upstream failure sets).
+
+## Merge spot check with upstream adaebf3d on linux-gfx942 (2026-11-12)
+Requested by jeff before the upstream PR opens. Sanity build and test of the approved port merged with upstream's current tip. This is a local merge only: nothing was pushed and no MOAT state, fork branch or review PR changed. Upstream `main` moved 16 commits past the port's merge base 98b47407, to adaebf3d. Those commits bring QBridge (5ed0e731, db84c820, 2fda2a7c; src/qbridge.cpp, include/qbridge.hpp, PInvoke entry points, 6 new test cases), #1044 SetAmplitudePage (2d43b858), and iOS/Debian/CI build fixes. They also change src/qpager.cpp, src/qengine/state.cpp, src/qengine/arithmetic.cpp, parallel_for and the version (10.14.4).
+Platform: MI300X gfx942 (wave64), every run printed "CUDA device #0: AMD Instinct MI300X HF", HIP_VISIBLE_DEVICES=4 (dispatcher pin, idle by amd-smi). TheRock ROCm SDK 10.1.0 pip wheels (AMD clang 24.0.0git), CMake 3.31.6, Ninja.
+
+### Merge
+```
+git clone https://github.com/AMD-Ecosystem/qrack.git qrack-merge && cd qrack-merge
+git remote add upstream https://github.com/unitaryfoundation/qrack.git && git fetch upstream
+git checkout b06652a8fdc198ce80147efa4b05b0777b874144
+git merge --no-edit adaebf3d152443817690a2300e80f660fb9007b0   # local merge commit 7ef7cbaf, not pushed
+```
+Conflict-free: 17 files, +2409/-73 against b06652a8. Upstream touched two port-modified files, with no overlap. In CMakeLists.txt it added src/qbridge.cpp to the qrack sources, installs qbridge.hpp, and changed the version. In src/qengine/cuda.cu the only change is #1044, so the merged tree now carries the SetAmplitudePage fix.
+
+### Build
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+S=<job>/qrack-merge
+cmake -S $S -B $S/_build -G Ninja -DENABLE_CUDA=ON -DENABLE_OPENCL=OFF -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$R -DENABLE_TESTS=ON
+utils/timeit.sh qrack build -- cmake --build $S/_build -j56 --target unittest
+```
+Configure: OpenCL OFF / CUDA ON / HIP ON. Build exit 0, 40/40 (39 before; +qbridge.cpp), 0 warnings, every HIP compile carries a single --offload-arch=gfx942.
+
+### Tests (`ulimit -c 0`, `LD_LIBRARY_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_core/lib`)
+Each: `utils/timeit.sh qrack test -- $S/_build/unittest --proc-<p> --layer-<l> -d yes`. The "shared" column reruns the GPU layers with the filter `'~[qbridge]'`, which leaves the 213 test cases that existed at b06652a8.
+
+| proc/layer | merged 7ef7cbaf (full) | shared tests only | b06652a8 on gfx942 (2026-11-01) | wall |
+|---|---|---|---|---|
+| cuda/qengine | All passed, 9978 / 219 | 9612 / 213 | 9612 / 213 | 46s |
+| cuda/qpager | All passed, 9975 / 219 | 9609 / 213 | 212 passed, 1 failed (test_cswap, known) | 47s |
+| cuda/qunit | All passed, 9979 / 219 | 9613 / 213 | 9613 / 213 | 2s |
+| cuda/qunit-qpager | All passed, 9979 / 219 | 9613 / 213 | 9613 / 213 | 2s |
+| cuda/qunit-multi | All passed, 9976 / 219 | 9610 / 213 | 9610 / 213 | 1s |
+| cuda/qunit-multi-qpager | exit 0, 0 test cases (not wired) | -- | 0 | 1s |
+| cuda/qtensornetwork | 215 passed, 4 failed (known ModNOut set) | -- | 209 / 4 | 1s |
+| hybrid/qunit | All passed, 9979 / 219 | -- | 9613 / 213 | 1s |
+| hybrid/qengine | exit 0, 0 test cases (not wired) | -- | 0 | 1s |
+| cpu/qengine | All passed, 9978 / 219 | -- | 9612 / 213 | 147s |
+| cpu/qpager | All passed, 9975 / 219 | -- | 9609 / 213 | 280s |
+| cpu/qtensornetwork | 215 passed, 4 failed (same 4) | -- | 209 / 4 | 2s |
+
+- Shared tests: assertion counts match b06652a8 exactly on every GPU layer. The only change is that **cuda/qpager test_cswap now passes**, because #1044 is in upstream. Repeats (no -d): `--proc-cuda --layer-qpager test_cswap` 10/10, `--layer-qengine test_cswap` 10/10, `--layer-qengine test_ucmtrx` 10/10. Once this merge lands in `moat-port`, the test_cswap entry under "Known upstream failures" is obsolete and should be removed.
+- qtensornetwork (cuda and cpu): test_mulmodnout, test_imulmodnout, test_cmulmodnout, test_cimulmodnout, "QInterface::{MUL,IMUL,CMUL}ModNOut not implemented!". These are the same 4 known cases; the line numbers moved +1 to tests.cpp:4629/4650/4748/4775 because of the new include. No new failure on any layer.
+- New QBridge tests (test_qbridge_exact, _truncation, _deferred, _measure, _pauli_expectation, _engine_width): all 6 pass on every wired layer, 366 assertions (`'[qbridge]'` alone: 366 / 6). They hard-code `QBridge({ QINTERFACE_CPU }, ...)` and a QINTERFACE_CPU reference, so they never reach the HIP engines whatever `--proc` says.
+- To put QBridge on the GPU anyway, a local harness (not committed) ran upstream's test_qbridge_exact body (same random circuit, fidelity > 0.999 against a CPU reference, plus GetFidelityEstimate > 0.999). It used patch engine stacks {CUDA}, {QPAGER, CUDA} and {QUNIT, CUDA}, n = 8 and 10, mb = 8, P = 1..4, open and ring, linked against the merged libqrack.a. Result: **48/48 passed**, fidelity 0.999999 to 1.000001. A first attempt with mb = n = 14 was stopped after 10 minutes because the patch registers grow to about 28 qubits. That stop is about size; it is not a failure.
+- Upstream-only and b06652a8-only reruns were not needed: there is no new failure to attribute.
+- Test runs drop `lossy_test.svtq` into the current directory; it was deleted from the MOAT checkout.
+
+Verdict: CLEAN. The merged tree builds and passes on gfx942 with only the recorded known failures, and one fewer than at b06652a8 (qpager test_cswap is fixed by #1044). The CUDA path was not recompiled for this spot check.
