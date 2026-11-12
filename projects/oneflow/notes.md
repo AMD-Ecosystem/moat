@@ -4960,3 +4960,35 @@ Add the porter's proposed lesson to `cuda-to-rocm`; it applies to any project th
 ### Still owed (not blockers here)
 - CUDA nvcc compile at c741328b7 (mi355 host), as the porter recorded.
 - wave32 and wave64 revalidation at c741328b7.
+## CUDA compile check at c741328b7 (2026-11-12, mi355 host, nvcc 12.8.93)
+
+No-regression compile of the CUDA path for the round 8d470dcc14..c741328b7 (19444bcdf, 3007f7951, c741328b7); no role, no state change, no GPU work. Full CUDA builds of `moat-port` 8d470dcc14 and c741328b7 with the recipe of "CUDA compile check at 8d470dcc14", then a comparison of configure arguments, the bundled-LLVM configure argv and link lines, compile and link commands, and diagnostics. **Result: PASS. Both configure and build with rc 0 and link liboneflow.so and `_oneflow_internal`. The bundled LLVM's configure argv is token-for-token identical (no `--version-script`, no `CMAKE_SHARED_LINKER_FLAGS` argument without USE_HIP), its CMakeCache and all 448 of its link lines are identical, all 1822 compile commands are identical, and the warning set is identical line for line. Nothing was run on an NVIDIA GPU; this host has none.**
+
+### Toolchain and procedure (same as at 8d470dcc14)
+- nvcc 12.8.93 (`/usr/local/cuda-12.8`), gcc/g++ 13.3.0, cmake 3.31.6. cuDNN 8.9.7.29 and NCCL 2.32.3 from their cu12 wheels, the same sha256 as at 8d470dcc14 (adf4f59e...7b02, bb94b234...a21c), extracted under the job directory with unversioned `.so` symlinks. `dev-requirements.txt` installed into the job venv; a python3 wrapper dropping `--user`.
+- `cmake <src> -C cmake/caches/international/cuda.cmake -DCMAKE_CUDA_ARCHITECTURES=80 -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-12.8 -DCUDNN_ROOT_DIR=<job>/deps/cudnn -DCMAKE_BUILD_TYPE=Release -DTREAT_WARNINGS_AS_ERRORS=OFF -DCMAKE_C_COMPILER=gcc-13 -DCMAKE_CXX_COMPILER=g++-13 -DCMAKE_CUDA_COMPILER=nvcc -DCMAKE_CUDA_HOST_COMPILER=g++-13 -DUSE_SYSTEM_NCCL=ON -DNCCL_ROOT_DIR=<job>/deps/nccl -DPython3_EXECUTABLE=<wrapper> -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, then `make -k -j64` (the dispatcher's `MAX_JOBS`; the earlier check used -j128), each wrapped in `utils/timeit.sh oneflow compile`. Release and `TREAT_WARNINGS_AS_ERRORS=OFF` for the reasons recorded at 8d470dcc14 (the gcc 13.3 `-Werror=maybe-uninitialized` at `oneflow/core/auto_parallel/sbp_graph.cpp:696` is upstream rot; both builds show its two warnings). WITH_CUTLASS at upstream's default (ON), so CUTLASS and flash-attention are compiled.
+- Scratch-only, in both trees, never committed: `cmake/third_party/flash_attention.cmake` pointed at a local zip of oneflow-inc/flash-attention-v2 eed2e82 with its `csrc/cutlass` submodule (bbe579a9, v3.4.1) and `#include <cstdio>`/`<cstdlib>` added to `csrc/flash_attn/src/cuda_utils.cu`; the pinned aliyuncs mirror URL still returns HTTP 403.
+- The CUDA build takes `LLVM_PROVIDER=install` (WITH_MLIR is OFF by default, CMakeLists.txt:50), so `oneflow/ir/install-llvm.cmake` runs in it; the bundled LLVM configure is an `execute_process` that logs nothing, so its expanded argv was captured afterwards with a traced reconfigure of each tree: `cmake --trace-expand --trace-source=<src>/oneflow/ir/install-llvm.cmake .` (rc 0 on both).
+
+### Results
+| | 8d470dcc14 | c741328b7 |
+|---|---|---|
+| configure / build rc | 0 / 0 | 0 / 0 |
+| configure / total wall | 108 s / 688 s | 114 s / 678 s |
+| liboneflow.so | 911,801,520 B, 222 sm_80 ELF | 911,801,520 B, 222 sm_80 ELF |
+| `_oneflow_internal` | 14,099,776 B | 14,099,776 B |
+| oneflow `.cu.o` (excluding CUTLASS, flash-attention) | 222 | 222 |
+| compile_commands entries | 1822 | 1822 |
+| error / warning diagnostic lines | 0 / 1352 | 0 / 1352 |
+
+All comparisons normalize the job's `src-<tag>` and `build-<tag>` paths.
+- Bundled LLVM configure argv (`install-llvm.cmake` `execute_process`, from the trace): identical token for token. The only textual difference is an extra space before `-G` where `${LLVM_HIP_ARGS}` expands to an empty list, which adds no argument. No `--version-script` and no `-DCMAKE_SHARED_LINKER_FLAGS=` in the c741328b7 argv; the trace shows `set(LLVM_HIP_ARGS )` and `if(BUILD_CUDA AND USE_HIP )` skipped. The rest of the file's trace (the `cmake --build . -j256 --target install-oneflow-tblgen install-mlir-headers` step, LLVM_INCLUDE_DIRS) is the same.
+- Bundled LLVM: `llvm_monorepo-build/CMakeCache.txt` identical (`CMAKE_SHARED_LINKER_FLAGS:STRING=` empty in both); all 448 `link.txt` identical (the 3 that carry a `--version-script` are LLVM's own export maps and are present in both); no `oneflow_llvm.map` written; libLLVMSupport.so.17git has no VERDEF and no `ONEFLOW_LLVM` node, and liboneflow.so has no `ONEFLOW_LLVM` reference, in either build.
+- Top-level: `CMakeCache.txt` identical. Configure output differs only in line numbers shifted by 19444bcdf's comment edits (`cmake/cuda.cmake:102` -> `:104` in one CMake warning, `cmake/third_party.cmake:152` -> `:153` in four include backtraces).
+- Compile commands: 1822 of 1822 identical as argument sets, no TU added or removed. Main-build link lines: 531 of 533 identical; the other two (`cutlass_lib`, `cutlass_library_static`) differ only in CUTLASS's unity-batch object names, which are a SHA256 of the batch's absolute source paths (cutlass `CUDA.cmake:262`); with paths and those hashes normalized they are byte-identical (40 objects each).
+- Diagnostics: ANSI-stripped `warning:`/`error:` lines compared as multisets with line numbers kept: identical, nothing only in either build. (The count differs from the 1364 recorded at 8d470dcc14 because this run's filter is different; the comparison here is between two runs of the same filter.)
+- liboneflow.so: NEEDED entries identical; the dynamic symbol tables differ only in 4 nvcc anonymous-namespace names whose hash depends on the source path (`_GLOBAL__N__5276d210_19_random_generator_cu...` vs `..._58b7062f_...`, same symbols).
+- Not covered: running anything on an NVIDIA GPU.
+- Build trees, source clones and dependency extracts deleted after the run (host disk at 97%). Logs, the traces and the extracted argv/cache files stay in the job's `cw/logs/` (container-local); the comparison script is `cw/tools/compare.py`.
+
+This settles the "CUDA compile check of c741328b7 on the mi355 host (nvcc)" item under "Porter round 2026-11-12 ... Owed".
