@@ -200,7 +200,7 @@ The project name links upstream.
 | [diff-surfel-tracing](https://github.com/xbillowy/diff-surfel-tracing) ([fork](https://github.com/AMD-Ecosystem/diff-surfel-tracing/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#7](https://github.com/xbillowy/diff-surfel-tracing/pull/7) |
 | [DiffPhysDrone](https://github.com/HenryHuYu/DiffPhysDrone) ([fork](https://github.com/AMD-Ecosystem/DiffPhysDrone/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#45](https://github.com/HenryHuYu/DiffPhysDrone/pull/45) |
 | [DynOSAM](https://github.com/ACFR-RPG/DynOSAM) ([fork](https://github.com/AMD-Ecosystem/DynOSAM/tree/moat-port)) | ⬜ | 🔧 | ⬜ | — |
-| [earth2studio](https://github.com/NVIDIA/earth2studio) | ⬜ | ⬜ | ⬜ | — |
+| [earth2studio](https://github.com/NVIDIA/earth2studio) | ⬜ | ⬜ | ⬜ | ⚪ not-a-target |
 | [egg.c](https://github.com/d0rc/egg.c) ([fork](https://github.com/AMD-Ecosystem/egg.c/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#8](https://github.com/d0rc/egg.c/pull/8) |
 | [ElasticFusion](https://github.com/mp3guy/ElasticFusion) ([fork](https://github.com/AMD-Ecosystem/ElasticFusion/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#251](https://github.com/mp3guy/ElasticFusion/pull/251) |
 | [EnvGS](https://github.com/zju3dv/EnvGS) ([fork](https://github.com/AMD-Ecosystem/EnvGS/tree/moat-port)) | ✅ | ✅ | ✅ | — |
@@ -235,7 +235,7 @@ The project name links upstream.
 | [gpuRIR](https://github.com/DavidDiazGuerra/gpuRIR) ([fork](https://github.com/AMD-Ecosystem/gpuRIR/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#88](https://github.com/DavidDiazGuerra/gpuRIR/pull/88) |
 | [gRASPA](https://github.com/snurr-group/gRASPA) ([fork](https://github.com/AMD-Ecosystem/gRASPA/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#96](https://github.com/snurr-group/gRASPA/pull/96) |
 | [gtsam_points](https://github.com/koide3/gtsam_points) ([fork](https://github.com/AMD-Ecosystem/gtsam_points/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#99](https://github.com/koide3/gtsam_points/pull/99) |
-| [h2o4gpu](https://github.com/h2oai/h2o4gpu) ([fork](https://github.com/AMD-Ecosystem/h2o4gpu/tree/moat-port)) | 🔄 | 🔄 | ⬜ | — |
+| [h2o4gpu](https://github.com/h2oai/h2o4gpu) ([fork](https://github.com/AMD-Ecosystem/h2o4gpu/tree/moat-port)) | ✅ | ✅ | ⬜ | — |
 | [habitat-sim](https://github.com/facebookresearch/habitat-sim) ([fork](https://github.com/AMD-Ecosystem/habitat-sim/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [HEonGPU](https://github.com/Alisah-Ozcan/HEonGPU) ([fork](https://github.com/AMD-Ecosystem/HEonGPU/tree/moat-port)) | ✅ | ✅ | 🔧 | — |
 | [HierarchicalKV](https://github.com/NVIDIA-Merlin/HierarchicalKV) | ⬜ | ⬜ | ⬜ | — |
