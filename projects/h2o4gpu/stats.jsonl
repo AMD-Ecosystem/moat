@@ -135,3 +135,9 @@
 {"kind":"phase","ts":"2026-11-11T23:12:57Z","phase":"test","seconds":3.935,"exit":127,"cmd":"D:/Develop/moat/agent_space/h2o_venv/Scripts/python.exe /d/Develop/moat/agent_space/h2o_win/oracle.py"}
 {"kind":"phase","ts":"2026-11-11T23:39:58Z","phase":"compile","seconds":76.248,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/build.sh"}
 {"kind":"session","ts":"2026-11-11T23:44:06Z","epoch":1794440647.491451700,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-12T00:04:56Z","phase":"compile","seconds":67.185,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/build_dbg.sh"}
+{"kind":"phase","ts":"2026-11-12T00:17:00Z","phase":"compile","seconds":34.392,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/build_rd.sh"}
+{"kind":"phase","ts":"2026-11-12T00:18:29Z","phase":"compile","seconds":62.268,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/build_rd.sh"}
+{"kind":"phase","ts":"2026-11-12T00:27:26Z","phase":"compile","seconds":61.845,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/build_rd2.sh"}
+{"kind":"phase","ts":"2026-11-12T00:33:01Z","phase":"compile","seconds":34.551,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/build.sh"}
+{"kind":"phase","ts":"2026-11-12T00:33:55Z","phase":"test","seconds":5.119,"exit":0,"cmd":"python /d/Develop/moat/agent_space/h2o_win/rc3.py D:\\Develop\\moat\\agent_space\\h2o_win\\pkg oracle.py f32,f64"}
