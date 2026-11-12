@@ -22,3 +22,4 @@
 {"kind":"phase","ts":"2026-06-20T05:38:26Z","phase":"compile","seconds":21.192,"exit":1,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe B:/develop/moat/agent_space/rwkv_run_gfx1101.py"}
 {"kind":"phase","ts":"2026-06-20T05:51:37Z","phase":"test","seconds":161.594,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe B:/develop/moat/agent_space/rwkv_run_gfx1101.py"}
 {"kind": "tokens", "ts": "2026-06-20T05:54:19Z", "tokens": 89975, "source": "validator (gfx1101)"}
+{"kind":"phase","ts":"2026-11-12T22:40:27Z","phase":"cuda-compile","seconds":4.628,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi355-20261112-143556-cuda-compile-6/scripts/rwkv.sh /var/lib/jenkins/fleet/jobs/mi355-20261112-143556-cuda-compile-6/cc/RWKV-CUDA /var/lib/jenkins/fleet/jobs/mi355-20261112-143556-cuda-compile-6/cc/rwkv-build"}

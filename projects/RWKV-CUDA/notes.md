@@ -595,3 +595,21 @@ synchronization via `__syncthreads()` -- wave-width agnostic.
 Err ratios match all prior platforms. No RWKV source change needed beyond 3efd11d.
 The 4 torch JIT bugs are Windows+HIP 2.9.x issues; monkey-patch applied at runtime.
 windows-gfx1101 -> completed @ 3efd11d.
+
+## CUDA compile check (nvcc 12.8) at 3efd11d2
+
+Partial CUDA no-regression check of the fork at head_sha 3efd11d28f61ac354469fa33d948098f9f390689, on a ROCm fleet host that carries a CUDA toolkit (no NVIDIA GPU). Toolkit: `Cuda compilation tools, release 12.8, V12.8.93`, host compiler gcc 13.3.0.
+
+The documented build is `torch.utils.cpp_extension.load()` from the run/benchmark scripts, and that needs a CUDA build of PyTorch. This host has only the image's ROCm PyTorch (`torch.version.cuda` is None). The fleet guard refused to create a job-local venv with a cu128 PyTorch wheel in it, classifying that as changing the Python environment that all jobs on this host share. So the full extension build (the `.cpp` bindings plus the link) was NOT checked.
+
+What was checked: every `.cu` file the port changed (the three `rwkv7_fast_fused/cuda/*.cu`; they include no torch headers) was compiled with nvcc using the benchmark scripts' own `extra_cuda_cflags`. Each was built in both the bf16 mode and the `_FP32_` mode:
+
+```
+cd rwkv7_fast_fused/cuda
+for k in rwkv7_clampw rwkv7_state_clampw rwkv7_statepassing_clampw; do
+  nvcc -c -arch=sm_80 -res-usage -D_N_=64 -D_CHUNK_LEN_=16 --use_fast_math -O3 -Xptxas -O3 --extra-device-vectorization -o $k.bf16.o $k.cu
+  nvcc -c -arch=sm_80 -res-usage -D_N_=64 -D_FP32_ -D_CHUNK_LEN_=16 --use_fast_math -O3 -Xptxas -O3 --extra-device-vectorization -o $k.fp32.o $k.cu
+done
+```
+
+Result: PASS for the kernels. All six compiles exited 0 with no warnings. The changes that were not compiled are inert on CUDA by construction. The three `.cpp` wrappers gain only an `#elif defined(USE_ROCM) || defined(__HIP_PLATFORM_AMD__)` branch ahead of the unchanged `cuda_bf16.h` branch. In the scripts, `hip_aware_cuda_cflags()` returns its argument unchanged when `torch.version.hip is None`, and `host_cflags()` only drops the MSVC `/wd` flags off Windows (on Linux those flags would otherwise go to g++). A full `load()` build still needs a host with CUDA PyTorch: a job dispatched with its own venv (`--build`), or a guard that allows a job-local venv.
