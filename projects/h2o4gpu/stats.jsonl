@@ -147,3 +147,6 @@
 {"kind":"phase","ts":"2026-11-12T00:58:42Z","phase":"compile","seconds":0.106,"exit":1,"cmd":"cmake --build build-hip -j64"}
 {"kind":"phase","ts":"2026-11-12T00:59:21Z","phase":"compile","seconds":27.930,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261111-165348-h2o4gpu-fix-review/moat/projects/h2o4gpu/src/build-hip -j64"}
 {"kind":"session","ts":"2026-11-12T01:09:29Z","epoch":1794445769.574859621,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-12T16:39:34Z","phase":"compile","seconds":31.147,"exit":2,"cmd":"bash agent_space/build_h2o.sh"}
+{"kind":"phase","ts":"2026-11-12T16:41:56Z","phase":"compile","seconds":31.175,"exit":0,"cmd":"bash agent_space/build_h2o.sh"}
+{"kind":"phase","ts":"2026-11-12T16:48:08Z","phase":"compile","seconds":2.496,"exit":0,"cmd":"bash agent_space/build_h2o.sh"}

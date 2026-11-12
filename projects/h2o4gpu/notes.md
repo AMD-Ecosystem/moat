@@ -624,7 +624,63 @@ Comment only: observed on one GPU (gfx1151) with one toolchain (TheRock ROCm on 
 ### Commit-message corrections owed at the PR-prep squash
 - `2c22a86` ("[ROCm] Build the GPU library and Python modules on Windows"): the sentence "`h2o4gpuglm.cu` is compiled with `/Ob1`: with `/Ob2` the double-precision `FuncEval` reduction kernel never completes on Windows (gfx1151, ROCm 7.14), so the double-precision ElasticNet fit hung." overstates the evidence. Reword as: with `/Ob2` the kernel was observed never to complete on one GPU (gfx1151) with one toolchain (TheRock ROCm on Windows, clang-cl); the suspected cause is a device code generation issue not yet reduced to a reproducer; `/Ob1` avoids it.
 - `2c22a86` Test Plan describes the Python oracle only in prose (Review 2026-11-11, not blocking): give literal commands at the squash.
+- (added 2026-11-12, linux-gfx1100 porter) `2c22a86`: the `/Ob1` sentence (either wording above) misstates the cause now that it is known. At the squash say: with `/Ob2` the double-precision GLM fit hangs on RDNA GPUs because of LLVM AMDGPU bug llvm/llvm-project#224205 (long-branch relaxation uses s[30:31], the return address, as scratch in a large inlined non-kernel device function that never saves it); `/Ob1` keeps that function small enough to avoid it. Same text as the `6c756448` message.
+- (added 2026-11-12) `d0b78f3d` ("[ROCm] Qualify the comment on the Windows /Ob1 GLM workaround"): its body says the cause is a suspected device code generation issue not yet reduced to a reproducer, observed on one GPU and one toolchain. Superseded by `6c756448`; at the squash the two collapse into the single llvm/llvm-project#224205 explanation above.
 
 ### Gates and what is owed at d0b78f3d
 - `python3 utils/jargon.py --port h2o4gpu`: clean (after fetching the fork's `master` into the clone). `utils/prose.py` on both messages: clean. Fork clone status: only untracked `build-hip/`.
 - Owed: CUDA nvcc compile check on the mi355 host at `d0b78f3d` (the kmeans change is in the shared CUDA source); revalidation on linux-gfx90a, linux-gfx1100 and windows-gfx1151 (and the first linux-gfx942 validation).
+
+## Porter 2026-11-12 (linux-gfx1100, Radeon PRO W7800, wave32, ROCm SDK clang 24.0.0git d6f6cb69) -- jeff's ruling on the Windows /Ob1 workaround: keep it, cite llvm/llvm-project#224205, check Linux RDNA
+
+### Question for jeff (Linux RDNA shows the #224205 pattern in the asm, but nothing hangs)
+The exact Linux compile line of `src/gpu/h2o4gpuglm.cu` (hipcc-style clang++ `-O3`, no `/Ob` equivalent) produces the bug pattern for gfx1100 and gfx1201: the rocPRIM single-block reduce body over `FuncEvalF<double>` is one large non-kernel function, called with `s_swappc_b64 s[30:31]`, that long-branches through `s_getpc_b64 s[30:31]` ... `s_setpc_b64 s[30:31]` 237 times (gfx1100) / 235 times (gfx1201) with no save or restore of s30/s31 anywhere in the function, and returns through `s_setpc_b64 s[30:31]`. Those are the same counts as the Windows cross-compile. The `FuncEvalF<float>` instance has it too (241 / 434). gfx90a: none through s[30:31]. Yet the float64 GLM never hung on this GPU: 3/3 Windows-reproducer runs and 24 more runs over sizes, both families and both dtypes, all matching sklearn, and the kernel trace shows the affected kernel running and finishing. Per the ruling I added no Linux workaround. Proposed guarded change if you want Linux covered (both verified on this host in asm and at runtime, see below): in the HIP branch's non-MSVC `else()`, `SET_SOURCE_FILES_PROPERTIES(src/gpu/h2o4gpuglm.cu PROPERTIES COMPILE_OPTIONS "SHELL:-mllvm -amdgpu-long-branch-factor=0")` (the long branches stay but use a reserved SGPR pair, so no s[30:31] long branch is left in any non-kernel function), or `-finline-hint-functions` (clang's `/Ob1`: the callee stays out of line and no long branch is left at all). I lean to `-finline-hint-functions`, because it matches the Windows workaround and removes the long branches instead of moving them; the cost is one more device call per reduce, with no measurable change here. Options: (a) leave Linux alone (latent: the pattern exists, but nothing observed it hang); (b) add one of the two guarded options for non-Windows HIP builds and have the next validator round confirm it on gfx1100/gfx90a. State left at `ported` either way.
+
+### State handling
+`set-state h2o4gpu linux-gfx1100 porting` refused: `illegal transition ported -> porting` (STAGE_TRANSITIONS has only `ported -> reviewing`). The lock was free, so the round took it with `moatlib.py port-lock h2o4gpu --take linux-gfx1100` (jeff's request authorized this porter round; no holder was displaced), committed and pushed the fork, ran `advance-head`, and released the lock at the end. The stage stayed `ported` the whole time, so the next review covers `2c22a86..6c756448` (the review at 2c22a86 requested changes; 24cd051e, d0b78f3d and 6c756448 have not been reviewed).
+
+### Commit `6c756448` "[ROCm] Cite the LLVM bug behind the Windows /Ob1 GLM workaround"
+Comment only, `CMakeLists.txt` in the `CMAKE_HIP_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"` branch: at the default inlining level the double-precision GLM kernel hangs on RDNA GPUs because of llvm/llvm-project#224205 (long-branch relaxation clobbers the return address in a large inlined device function); `/Ob1` keeps that function small enough to avoid it. Guard and `/Ob1` unchanged. Plain push `d0b78f3d..6c756448` to AMD-Ecosystem/h2o4gpu `moat-port`. `utils/prose.py` on the message: clean. `jargon.py --port h2o4gpu`: clean (after `git fetch origin master:master` in the clone). Fork clone status: only untracked `build-hip/`.
+
+### Build on this host (rc 0)
+This container has no `libopenblas-dev`; FindBLAS picked ATLAS, whose `/usr/include/x86_64-linux-gnu/cblas.h` has no `extern "C"`, so `h2o4gpu_test` failed to link (`undefined symbol: cblas_dgemm(CBLAS_ORDER, ...)`, "did you mean: extern "C" cblas_dgemm"). An environment gap, not a port defect (earlier validators had apt OpenBLAS). OpenBLAS v0.3.26 built from source into the job directory (`make -j32 USE_OPENMP=1 NO_FORTRAN=1 TARGET=HASWELL NUM_THREADS=64 && make PREFIX=<job>/deps/openblas install`). Extra pip into the job venv: `swig==4.2.1 cython==3.0.11 threadpoolctl psutil tabulate future joblib pytest pytest-timeout`. HIP_VISIBLE_DEVICES=0 (dispatcher pin), `ulimit -c 0`, LD_LIBRARY_PATH unset, OPENBLAS_NUM_THREADS=32.
+```
+R=$($FLEET_VENV/bin/python -m rocm_sdk path --root); P=$FLEET_VENV/bin/python; OB=<job>/deps/openblas
+export PATH=$FLEET_VENV/bin:$R/bin:$PATH CMAKE_PREFIX_PATH=$R OMP_NUM_THREADS=$MAX_JOBS CMAKE_BUILD_PARALLEL_LEVEL=$MAX_JOBS
+git submodule update --init tests/googletest
+cmake -S . -B build-hip -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH="$R;$OB" -DBLA_VENDOR=OpenBLAS -DCBLAS_INCLUDE_DIR=$OB/include -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$P -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build build-hip -j$MAX_JOBS
+```
+`build-hip/h2o4gpu_test`: 24/24 PASS, 3 runs (at d0b78f3d's code; 6c756448 only changes a comment in a branch Linux never reaches, rebuilt rc 0).
+
+### Asm check
+Device asm from the real compile line (`compile_commands.json` entry for `src/gpu/h2o4gpuglm.cu`), with `-o ...o` replaced by `--cuda-device-only -S -o <file>.s` and `--offload-arch` swapped per target (script `agent_space/asm/mkasm.sh <gfx> <out.s> [extra flags]`). Counter `agent_space/asm/lb.py`: splits the file into functions (`.type ...,@function` .. `.Lfunc_end`), marks kernels from `.amdhsa_kernel`, counts a long branch as `s_getpc_b64 s[a:b]` followed by `s_add_u32`/`s_addc_u32` (gfx12: `s_add_co_u32`/`s_add_co_ci_u32`) on a label difference and `s_setpc_b64 s[a:b]`, and looks for any save of s30/s31 (`v_writelane_b32 vN, s30|s31`, `s_mov_b32 sN, s30|s31`, `s_mov_b64 s[..], s[30:31]`) and restore.
+
+| target / flags | non-kernel functions | long branches in them | through s[30:31] | saved s30/s31 | kernel long branches (s[30:31]) |
+|---|---|---|---|---|---|
+| gfx1100 default | 2 (reduce body, `FuncEvalF<double>` and `<float>`) | 478 | 478 (double 237, float 241) | no (0 saves, 0 restores) | 0 |
+| gfx1201 default | 2 (same) | 669 | 669 (double 235, float 434) | no | 13 (0) |
+| gfx90a default (control) | 1 | 116 | 0 | n/a | 220 (0) |
+| gfx1100 `-mllvm -amdgpu-long-branch-factor=0` | 2 | 478 | 0 | n/a | 0 |
+| gfx1201 `-mllvm -amdgpu-long-branch-factor=0` | 2 | 669 | 0 | n/a | 13 (5; kernels have no return address) |
+| gfx1100 `-finline-hint-functions` | 44 | 0 | 0 | n/a | 0 |
+| gfx1201 `-finline-hint-functions` | 44 | 0 | 0 | n/a | 0 |
+
+The double function on gfx1100: 53185 asm lines, NumVgprs 248 (Windows `/Ob2` reported a 248-VGPR body too), one real return `s_setpc_b64 s[30:31]`, called from its kernel by `s_swappc_b64 s[30:31], s[0:1]`. The Linux layout therefore matches Windows; the difference is not in inlining.
+
+### Runtime (this GPU, in-tree package)
+Package: a copy of `src/interface_py/h2o4gpu` in `agent_space/pkg` with `build-hip/_ch2o4gpu_*pu.so` and `ch2o4gpu_*pu.py` in `libs/` and a stub `__init__.py` that aliases `h2o4gpu.{linear_model,cluster,decomposition,utils,metrics}` to sklearn 1.9.1, then appends `__init__.base.py` (the Windows approach; the `make apply-sklearn` overlay builds h2o's scikit-learn fork, which this check does not need). Reproducer `agent_space/en.py <dtype> <rows> [cols]`: `ElasticNetH2O(n_gpus=1, alphas=[0.0], lambdas=[1e-6], n_folds=1, max_iter=5000, tol=1e-6, double_precision=1)` fit + predict vs sklearn `Ridge(alpha=1e-6)` r2 (the Windows `en64` call and the Linux oracle's GLM check); `agent_space/logit.py`: `family="logistic"`, alphas [0.5], lambdas [1e-4] vs `LogisticRegression` accuracy. Every run is `timeout 300 $FLEET_VENV/bin/python agent_space/<script> ...`.
+- Windows reproducer f64 2000x20: 3/3 rc 0, 0.8 s each, r2 0.999995 = Ridge (gap 3.8e-13).
+- f64 20000x20 (the Linux validation's GLM check) 3/3, gap 1.8e-13; f32 20000x20 3/3, gap 0; f64 200x20 3/3; f64 20001x7 3/3; f64 100000x50 3/3 (4.5 s); logistic f64 2000 3/3 (acc 0.8775 = sklearn), logistic f64 20000 3/3 (0.8907 vs 0.8908), logistic f32 20000 3/3. 27 runs, all rc 0, none near the watchdog.
+- `rocprofv3 --kernel-trace` on the f64 2000x20 run: 17605 dispatches; the `reduce_impl<true, ... zip_function<FuncEvalF<double>> ...>` kernel (grid 256, block 256: one block), whose callee is the function with the 237 unsaved branches, ran twice and finished.
+- No GLM pytest ran: `tests/python/open_data` has only `system/` and `gbm/` (no GLM), and `tests/python/{small,big}/test_glm_*.py` need the Kaggle datasets (not synced). The earlier Linux validations covered GLM only through the oracle's ElasticNetH2O f32/f64 20000x20, repeated above.
+- Why no hang on Linux (hypothesis, not verified): the bug fires only when a long branch is actually taken before the return, and which blocks run depends on the data path (the `FuncEval` switch on the function type, tail handling of the reduce). These inputs apparently never take one of the 237 branches on gfx1100, while the Windows gfx1151 run took one. Not tested: instrumenting which long-branch blocks execute.
+- Variants (both built by recompiling only `h2o4gpuglm.cu.o` with the extra flag and relinking `_ch2o4gpu_gpu.so` from `link.txt`, `agent_space/variant.sh <tag> <flags>`): `-mllvm -amdgpu-long-branch-factor=0` and `-finline-hint-functions` each pass en f64 2000 3/3, en f64 20000 3/3, logistic f64 20000 3/3, en f32 20000 3/3, with the same r2/accuracy and timings within 0.2 s of the default build. They cannot show a hang being avoided here, because the default build does not hang on this GPU.
+
+### Records
+- The deferral `h2o4gpu-ob2-gfx1151-windows-device-miscompile` (reproducer, ISA diff, compiler issue draft, then drop `/Ob1`) now has its compiler issue: llvm/llvm-project#224205 (related LLVM PR #229427). Not edited here (it is a person's ruling); dropping `/Ob1` waits for a TheRock/ROCm compiler with the fix.
+
+### Owed at 6c756448
+- CUDA nvcc compile check on the mi355 host at `6c756448` (last checked at 2c22a86; 24cd051e changed shared KMeans source).
+- Revalidation on linux-gfx90a, linux-gfx1100 and windows-gfx1151 (and the first linux-gfx942 validation).
+- Review of `2c22a86..6c756448`.
