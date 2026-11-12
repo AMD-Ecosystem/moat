@@ -7,8 +7,8 @@
   "priority": 4.348,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:34Z",
-  "updated_at": "2026-08-20T04:13:18Z",
-  "head_sha": "917c2477d9aae682bff81fcbab9b623c3122c01f",
+  "updated_at": "2026-11-12T22:18:38Z",
+  "head_sha": "320fa0bab4d3e109bde5caebef6bdafb0c1ce21d",
   "porting": null,
   "waivers": {},
   "license_clearance": {
@@ -25,10 +25,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "917c2477d9aae682bff81fcbab9b623c3122c01f",
+      "validated_sha": "320fa0bab4d3e109bde5caebef6bdafb0c1ce21d",
       "started_at": "2026-06-02T05:53:09Z",
       "completed_at": "2026-06-23T22:48:52Z",
-      "updated_at": "2026-08-20T04:12:59Z",
+      "updated_at": "2026-11-12T22:18:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -44,20 +44,22 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "1b74f283755d01ef25350d6ce7a646eb04b333e4",
+        "from": "917c2477d9aae682bff81fcbab9b623c3122c01f",
+        "to": "320fa0bab4d3e109bde5caebef6bdafb0c1ce21d",
         "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:48:52Z"
+        "class": "doc-only",
+        "detail": "docs/research/R1_delta_streaming.md: A doc-only; docs/research/R2_sparse_ffn.md: A doc-only; docs/research/R3_predictive_skip.md: A doc-only; docs/research/README.md: A doc-only; docs/research/literat",
+        "at": "2026-11-12T22:18:37Z"
       }
     },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "917c2477d9aae682bff81fcbab9b623c3122c01f",
+      "validated_sha": "320fa0bab4d3e109bde5caebef6bdafb0c1ce21d",
       "started_at": "2026-06-02T07:00:00Z",
       "completed_at": "2026-06-23T22:48:53Z",
-      "updated_at": "2026-08-20T04:12:59Z",
+      "updated_at": "2026-11-12T22:18:38Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -73,20 +75,22 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "1b74f283755d01ef25350d6ce7a646eb04b333e4",
+        "from": "917c2477d9aae682bff81fcbab9b623c3122c01f",
+        "to": "320fa0bab4d3e109bde5caebef6bdafb0c1ce21d",
         "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:48:53Z"
+        "class": "doc-only",
+        "detail": "docs/research/R1_delta_streaming.md: A doc-only; docs/research/R2_sparse_ffn.md: A doc-only; docs/research/R3_predictive_skip.md: A doc-only; docs/research/README.md: A doc-only; docs/research/literat",
+        "at": "2026-11-12T22:18:38Z"
       }
     },
     "windows-gfx1101": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "917c2477d9aae682bff81fcbab9b623c3122c01f",
+      "validated_sha": "320fa0bab4d3e109bde5caebef6bdafb0c1ce21d",
       "started_at": null,
       "completed_at": "2026-06-23T22:48:53Z",
-      "updated_at": "2026-08-20T04:12:59Z",
+      "updated_at": "2026-11-12T22:18:38Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -102,20 +106,22 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "1b74f283755d01ef25350d6ce7a646eb04b333e4",
+        "from": "917c2477d9aae682bff81fcbab9b623c3122c01f",
+        "to": "320fa0bab4d3e109bde5caebef6bdafb0c1ce21d",
         "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:48:53Z"
+        "class": "doc-only",
+        "detail": "docs/research/R1_delta_streaming.md: A doc-only; docs/research/R2_sparse_ffn.md: A doc-only; docs/research/R3_predictive_skip.md: A doc-only; docs/research/README.md: A doc-only; docs/research/literat",
+        "at": "2026-11-12T22:18:38Z"
       }
     },
     "windows-gfx1201": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "917c2477d9aae682bff81fcbab9b623c3122c01f",
+      "validated_sha": "320fa0bab4d3e109bde5caebef6bdafb0c1ce21d",
       "started_at": null,
       "completed_at": "2026-06-23T22:48:53Z",
-      "updated_at": "2026-08-20T04:12:59Z",
+      "updated_at": "2026-11-12T22:18:38Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -131,20 +137,22 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "1b74f283755d01ef25350d6ce7a646eb04b333e4",
+        "from": "917c2477d9aae682bff81fcbab9b623c3122c01f",
+        "to": "320fa0bab4d3e109bde5caebef6bdafb0c1ce21d",
         "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:48:53Z"
+        "class": "doc-only",
+        "detail": "docs/research/R1_delta_streaming.md: A doc-only; docs/research/R2_sparse_ffn.md: A doc-only; docs/research/R3_predictive_skip.md: A doc-only; docs/research/README.md: A doc-only; docs/research/literat",
+        "at": "2026-11-12T22:18:38Z"
       }
     },
     "windows-gfx1151": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "917c2477d9aae682bff81fcbab9b623c3122c01f",
+      "validated_sha": "320fa0bab4d3e109bde5caebef6bdafb0c1ce21d",
       "started_at": null,
       "completed_at": "2026-06-23T22:48:53Z",
-      "updated_at": "2026-08-20T04:12:59Z",
+      "updated_at": "2026-11-12T22:18:38Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -160,10 +168,12 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "1b74f283755d01ef25350d6ce7a646eb04b333e4",
+        "from": "917c2477d9aae682bff81fcbab9b623c3122c01f",
+        "to": "320fa0bab4d3e109bde5caebef6bdafb0c1ce21d",
         "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:48:53Z"
+        "class": "doc-only",
+        "detail": "docs/research/R1_delta_streaming.md: A doc-only; docs/research/R2_sparse_ffn.md: A doc-only; docs/research/R3_predictive_skip.md: A doc-only; docs/research/README.md: A doc-only; docs/research/literat",
+        "at": "2026-11-12T22:18:38Z"
       }
     }
   },
