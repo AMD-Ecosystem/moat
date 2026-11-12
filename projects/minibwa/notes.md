@@ -43,3 +43,7 @@ Compared `AMD-Ecosystem/minibwa` `master` (ae3f0f5) with `lh3/minibwa` `master` 
 - Linux-only pieces: Makefile hipcc path (`ROCM_PATH` from `hipconfig`, `--gcc-install-dir` for the manylinux gcc-toolset, `-no-pie`, `-lamdhip64`), `gpu/build_selftest.sh`; plus the POSIX-only upstream CPU code above.
 - Offered upstream: no (no PR in lh3/minibwa), and the maintainer's stated policy for minimap2 says it would not be accepted.
 - Judgement: AMD-official but a single-drop, Instinct-only overlay that regresses upstream code. Reusable as a reference for the kernel and the C seam; a MOAT port would re-apply the seam on current upstream, make the kernels wavefront-size-generic, and add Radeon evidence. Whether to build on it or start from the minimap2 kernels is jeff's ruling.
+
+## Declined (2026-11-11, Jeff Daily)
+
+Jeff Daily declined minibwa with the same reasoning as minimap2: upstream lh3/minibwa is CPU-only, and AMD-Ecosystem/minibwa is part of AMD's life-science GPU product line (kernels transplanted from the AMD minimap2 fork), not a CUDA-to-ROCm port. Recorded in data/dispositions.json (skip, declined) on main eb8bcb57. Nothing is to be pushed to AMD-Ecosystem/minibwa and no write access is needed for it.
