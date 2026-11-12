@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "earth2studio",
+  "upstream_url": "https://github.com/NVIDIA/earth2studio",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-12T16:32:52Z",
+  "updated_at": "2026-11-12T16:32:56Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
