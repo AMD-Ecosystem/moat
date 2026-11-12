@@ -291,6 +291,7 @@ The project name links upstream.
 | [opencv](https://github.com/opencv/opencv) ([fork](https://github.com/AMD-Ecosystem/opencv/tree/moat-port)) | 🚫 | 🚫 | 🚫 | 🟢 [#29285](https://github.com/opencv/opencv/pull/29285) |
 | [opencv_contrib](https://github.com/opencv/opencv_contrib) ([fork](https://github.com/AMD-Ecosystem/opencv_contrib/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#4147](https://github.com/opencv/opencv_contrib/pull/4147) |
 | [openMVS](https://github.com/cdcseacave/openMVS) ([fork](https://github.com/AMD-Ecosystem/openMVS/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
+| [openpi](https://github.com/Physical-Intelligence/openpi) | ⬜ | ⬜ | ⬜ | — |
 | [PhoenixOS](https://github.com/SJTU-IPADS/PhoenixOS) | 🚫 | ⬜ | ⬜ | ⏸ on hold |
 | [physicsnemo](https://github.com/NVIDIA/physicsnemo) | ⬜ | ⬜ | ⬜ | — |
 | [PhysX](https://github.com/NVIDIA-Omniverse/PhysX) ([fork](https://github.com/AMD-Ecosystem/PhysX/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
