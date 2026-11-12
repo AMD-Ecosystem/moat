@@ -3804,3 +3804,39 @@ No findings. What was checked:
 - **Gates.** `python3 utils/jargon.py --port plvs` with local `master` at 632c55b -> `jargon: clean` (26 commits, `632c55b..eb1b369`). Merge commit eb1b369: `[ROCm]` title, 47 chars, rationale, "Authored with Claude.", fenced Test Plan, no trailer; its claim that the three conflicted files differ from upstream only by the `src/Frame.cc` HIP guards is true.
 
 Still owed before this goes to jeff (not review findings): TUM-VI stereo 10-run set with the traced run at eb1b369 (gfx1100) and the CUDA compile at eb1b369 (mi355). The PR-prep squash list shrinks as the porter says: a93e73d, 61e9640, 970cb1f, 46a26f4 and 59eb0da contribute nothing to the diff against 632c55b.
+
+## CUDA compile check 2026-11-12 (eb1b369)
+
+CUDA no-regression compile check on the mi355 fleet host. No role was taken, no state changed. Toolkit: `/usr/local/cuda-12.8/bin/nvcc` 12.8.93 (V12.8.93), host g++ 13.3.0, CMake 3.31.6. Port = `moat-port` **eb1b369** (merge of upstream 632c55b into 5a0a83c; `origin/moat-port` checked). Control = upstream `luigifreda/plvs` `master` **632c55b** (fetched from https://github.com/luigifreda/plvs.git, `git ls-remote` checked; the fork's `master` mirror is still the stale 2ecb8b1 and was not used). Both were git worktrees in the job directory. No NVIDIA GPU is on this host, so nothing was run: this is compile evidence only.
+
+Recipe and minimal target set are the b4be814 ones: OpenCV 4.13.0 built from source CPU-only and used for its headers (`-GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=17 -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_PYTHON=OFF -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_IPP=OFF -DWITH_ITT=OFF -DBUILD_LIST=core,imgproc,features2d,flann,calib3d,highgui,imgcodecs,videoio -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF`, 380/380). The four ORB/FAST kernels, each at each sha:
+```
+nvcc -ccbin /usr/bin/g++ -std=c++17 -use_fast_math -Xcompiler -fPIC -O3 \
+  -gencode arch=compute_80,code=sm_80 -gencode arch=compute_90,code=sm_90 \
+  -DUSE_CUDA -Iinclude -I<ocv>/include/opencv4 -c src/cuda/<f>.cu
+```
+libelas-gpu and libsgm through their own CMake:
+```
+cmake -S Thirdparty/<lib> -B <b> -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_MARCH_NATIVE=OFF -DCPP_STANDARD_VERSION=17 \
+  -DOpenCV_DIR=<ocv>/lib/cmake/opencv4 -DOPENCV_VERSION=4 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-12.8 -DCUDA_ARCH_BIN=8.0 && make -C <b> -j32 VERBOSE=1
+```
+libelas-gpu configures `USE_CUDA true` with `-DUSE_CUDA` in `CMAKE_CXX_FLAGS` at both shas. All build trees, the clones and the OpenCV build (5.2 GB) were deleted afterwards.
+
+**Result: PASS. Every target builds with RC=0 at both shas. There are no errors and no warnings new relative to the control. All device code is byte-identical, and the CMake-generated compile command lines are identical. The libsgm `"CudaSafeCall" redefined` warning recorded since fde33e5 is still there; it is a port-side difference, not new in this round.**
+
+| target | control 632c55b | port eb1b369 | device code control vs port |
+|---|---|---|---|
+| `Allocator_gpu.cu`, `Cuda.cu`, `Fast_gpu.cu`, `Orb_gpu.cu` | RC=0, 0 warnings | RC=0, 0 warnings | identical (8 cubins, 8 kernel sections) |
+| libelas-gpu (configure + build) | RC=0, 44 warning lines | RC=0, 32 | `elas_gpu.cu.o` identical (1 cubin sm_80, 2 kernel sections) |
+| libsgm (`libsgm.a`) | RC=0, 20 warning lines | RC=0, 69 | all 10 `.cu.o` identical (70 cubins sm_53..sm_86, 210 kernel sections) |
+
+- Device code: for each of the 15 CUDA objects, `cuobjdump -xelf all`, then the MD5 of every `.text.*` section of every cubin, read with a small Python ELF64 section-header reader (`objcopy` does not handle cubins and silently returned nothing; a first pass that used it compared only cubin counts and was discarded). The sorted hash lists are identical, control vs port, for all 79 cubins / 220 kernel sections.
+- Warnings, paths and line numbers masked, control vs port: libelas-gpu port has only fewer (the 6 `#2361-D` and 6 `-Wnarrowing` `int32_t`-to-`float` lines in `elas_gpu.cu`/`elas.cpp` that the port's casts remove). libsgm port adds only the 49 `Thirdparty/libsgm/src/internal.h:32: warning: "CudaSafeCall" redefined` lines. Counts are the same as at fde33e5, 970cb1f and b4be814, where the control was 2ecb8b1, so the upstream merge changed nothing on the CUDA path. The warning's cause and fix (drop the unused `CudaSafeCall` fallbacks from `src/cuda_to_hip.h`) are in the fde33e5 section; the fork still carries it.
+- Compile command lines: every `nvcc` and `c++` invocation from the `VERBOSE=1` logs, tree path masked and sorted: libelas-gpu 16 and libsgm 21 at each sha, **identical**. The ORB/FAST lines are the fixed recipe above. The merge touched no CUDA build input: `git diff --stat 5a0a83c eb1b369 -- Thirdparty src/cuda include/cuda cmake '*.cu' '*.cuh'` is empty, and upstream's only `CMakeLists.txt` change is the `PLVS_BUILD_TESTS` block (`test_line_mapping`), outside the `WITH_CUDA` sections. `install_local_opencv.sh` keeps `OPENCV_VERSION=4.13.0` (upstream changed only the cuDNN apt logic); `config.sh` adds `write_env_var USE_CUDA/CUDA_VERSION`, which no build reads.
+- Host `USE_CUDA` code (the merge's real change is host C++): `unifdef -k -t -DUSE_CUDA -UUSE_HIP -U__HIP_PLATFORM_AMD__ -U_WIN32 -UWIN32 -U_MSC_VER -U_WIN64 -U__MINGW32__`, blank lines ignored, control 632c55b vs port eb1b369. `ORBextractor.{h,cc}`, `Tracking.{h,cc}`, `Frame.cc`, `include/cuda/{Fast,Orb}.hpp` come out **identical**, so upstream's new `Tracking.cc`/`Frame.cc` code is compiled the same way in both. `PointCloudKeyFrame.{h,cc}` differs only in the port's existing shared-code changes (cast, `extern template` move), as recorded at fde33e5. `LocalMapping.cc`, `MapLine.cc`, `LoopClosing.cc`, `include/GeometricTools.h`, `include/MapLine.h` and `tests/test_line_mapping.cc` contain no `USE_CUDA`/`__CUDACC__` reference.
+- Port delta, before vs after the merge: `git diff 2ecb8b1 5a0a83c` vs `git diff 632c55b eb1b369`, per file, changed lines compared. 114 of 117 files carry the identical port delta. The 3 that changed only got smaller: `src/LoopClosing.cc` and `src/MapLine.cc` now equal upstream, and `src/Frame.cc` is down to the 7 `#ifndef USE_CUDA` -> `#if !defined(USE_CUDA) && !defined(USE_HIP)` (and `#ifdef USE_CUDA` -> `|| defined(USE_HIP)`) guard lines, which are no-ops when `USE_CUDA` is defined.
+
+### Not checked here
+- No NVIDIA GPU run: this host has none.
+- The full plvs CUDA library and executables, the same limit as earlier checks: they need OpenCV built with the CUDA contrib modules, Pangolin and PCL. The host `USE_CUDA` code was checked by preprocessor equivalence against the control, not compiled with g++ under `-DUSE_CUDA`. The upstream host C++ the merge brings in is the same text on both sides, and the HIP and CPU builds at eb1b369 compiled it (porter section above).
