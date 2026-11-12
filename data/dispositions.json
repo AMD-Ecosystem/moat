@@ -1534,6 +1534,15 @@
     "reason": "not-a-target",
     "repo_id": 876545970
   },
+  "nvidia-bionemo/bionemo-recipes": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T21:23:00Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA-BioNeMo/bionemo-recipes",
+    "note": "gap-matrix intake follow-up 2026-11-12: out of scope for MOAT; recipe outcomes decided by ROCm TransformerEngine parity, Megatron/Evo2 recipes need binary-only/FA4-cu13 kernels; belongs with the ROCm TE team",
+    "reason": "not-a-target",
+    "repo_id": 705428944
+  },
   "nvidia-bionemo/nvmolkit": {
     "decided": "2026-05-29T23:57:04Z",
     "disposition": "skip",
