@@ -1630,3 +1630,23 @@ than a cleanup.
 
 Ruled `hold` by Jeff Daily 2026-08-19: do not rewrite history for this; record it where
 whoever preps the pull request will see it.
+
+## CUDA compile check (nvcc 12.8) at d7d98677
+
+CUDA no-regression compile of the fork at head_sha d7d98677060e36cfa329db4229c8b3d14cf53b32, on a ROCm fleet host that carries a CUDA toolkit (no NVIDIA GPU; compile and link only). Toolkit: `Cuda compilation tools, release 12.8, V12.8.93`, host compiler gcc 13.3.0. Each flavour ran in its own copy of the tree because the generators write into the source directory. The commands are the README's and the generators' printed nvcc lines, with `-arch=sm_70` replaced by `-arch=sm_80`:
+
+```
+F='-O3 -march=native -fopenmp -mno-fma -ffp-contract=off'
+# framework, GPU
+./generate_Device_LC-Framework.py
+nvcc -O3 -arch=sm_80 -fmad=false -DUSE_GPU -Xcompiler "$F" -I. -std=c++17 -o lc lc.cu
+# framework, hybrid CPU+GPU
+./generate_Hybrid_LC-Framework.py
+nvcc -O3 -arch=sm_80 -fmad=false -DUSE_CPU -DUSE_GPU -Xcompiler "$F" -I. -std=c++17 -o lc lc.cu
+# standalone GPU compressor/decompressor
+./generate_standalone_GPU_compressor_decompressor.py "" "TUPL4_1 RRE_1 CLOG_1"
+nvcc -O3 -arch=sm_80 -fmad=false -Xcompiler "$F" -I. -std=c++17 -o compress compressor-standalone.cu
+nvcc -O3 -arch=sm_80 -fmad=false -Xcompiler "$F" -I. -std=c++17 -o decompress decompressor-standalone.cu
+```
+
+Result: PASS. All three flavours compiled and linked with exit 0 and no warnings. `cuobjdump --list-elf lc` shows sm_80 SASS. Upstream's tip was not built because nothing failed.
