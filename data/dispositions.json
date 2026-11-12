@@ -1655,6 +1655,15 @@
     "reason": "ported-elsewhere",
     "repo_id": 321811880
   },
+  "nvidia/earth2studio": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T20:36:29Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/earth2studio",
+    "note": "gap-matrix intake follow-up 2026-11-12: out of scope for MOAT; two LicenseRef-NvidiaProprietary files, NATTEN DiT and cuDF model gaps, per-model validation",
+    "reason": "not-a-target",
+    "repo_id": 782634112
+  },
   "nvidia/megatron-lm": {
     "by": "Jeff Daily",
     "decided": "2026-11-10T18:02:43Z",
