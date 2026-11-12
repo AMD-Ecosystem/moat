@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:05:27Z",
-  "updated_at": "2026-11-12T00:38:17Z",
+  "updated_at": "2026-11-12T00:41:49Z",
   "head_sha": "2c22a86288c6981659b870307f44a1feea2871ab",
   "depends_on": [],
   "waivers": {},
@@ -25,7 +25,7 @@
       "at": "2026-08-07T15:27:16Z"
     }
   },
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
@@ -34,7 +34,7 @@
       "failed_sha": null,
       "started_at": "2026-11-11T22:51:44Z",
       "completed_at": null,
-      "updated_at": "2026-11-12T00:38:16Z",
+      "updated_at": "2026-11-12T00:41:48Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -48,7 +48,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "planner"
+      "last_agent": "reviewer"
     },
     "linux-gfx1100": {
       "blocked": false,
@@ -134,5 +134,8 @@
     "at": "2026-11-04T19:32:26Z",
     "reason": "Upstream h2oai/h2o4gpu's branch is master; there is no main (jeff 2026-11-04)"
   },
-  "porting": null
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-12T00:41:48Z"
+  }
 }
