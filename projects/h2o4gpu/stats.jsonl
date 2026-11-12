@@ -195,3 +195,14 @@
 {"kind":"phase","ts":"2026-11-12T20:09:45Z","phase":"test","seconds":76.235,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261112-114429-h2o4gpu-val-0e70/moat/projects/h2o4gpu/src && ulimit -c 0 && unset LD_LIBRARY_PATH && OPENBLAS_NUM_THREADS=32 timeout 1800 /var/lib/jenkins/fleet/jobs/mi200-20261112-114429-h2o4gpu-val-0e70/venv/bin/python -m pytest -q -p no:cacheprovider tests/python/open_data/system tests/python/open_data/gbm -rfs 2>&1"}
 {"kind":"phase","ts":"2026-11-12T20:20:52Z","phase":"test","seconds":611.983,"exit":0,"cmd":"bash agent_space/sweep.sh"}
 {"kind":"session","ts":"2026-11-12T20:27:51Z","epoch":1794515271.216196975,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-12T20:35:33Z","epoch":1794515733.739802700,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-12T20:37:18Z","phase":"compile","seconds":98.296,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/build_val.sh"}
+{"kind":"phase","ts":"2026-11-12T20:38:15Z","phase":"test","seconds":5.287,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/val/run.sh ../oracle.py f32,f64"}
+{"kind":"phase","ts":"2026-11-12T20:38:22Z","phase":"test","seconds":3.279,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/val/run.sh km2.py"}
+{"kind":"phase","ts":"2026-11-12T20:38:37Z","phase":"test","seconds":3.697,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/val/run.sh km2.py"}
+{"kind":"phase","ts":"2026-11-12T20:38:44Z","phase":"test","seconds":3.408,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/val/run.sh km2.py"}
+{"kind":"phase","ts":"2026-11-12T20:38:51Z","phase":"test","seconds":3.318,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/val/run.sh km2.py"}
+{"kind":"phase","ts":"2026-11-12T20:39:12Z","phase":"test","seconds":5.983,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/val/run.sh ../oracle.py f32,f64"}
+{"kind":"phase","ts":"2026-11-12T20:39:26Z","phase":"test","seconds":7.415,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/val/run.sh ../oracle.py f32,f64"}
+{"kind":"phase","ts":"2026-11-12T20:45:08Z","phase":"test","seconds":330.341,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/val/sweep.sh"}
+{"kind":"session","ts":"2026-11-12T20:45:59Z","epoch":1794516359.792005800,"event":"end","platform":"windows-gfx1151"}

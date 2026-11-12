@@ -1116,3 +1116,41 @@ In-tree packages: copies of the installed `h2o4gpu` package with `libs/_ch2o4gpu
 - `python3 utils/jargon.py --port h2o4gpu`: clean (fork `master` fetched into the clone). Documentation: DEVEL.md `##### USE_HIP (AMD GPUs)` documents the ROCm build next to the CUDA build.
 - Integrity: submodule patch sets reverted (`git -C LightGBM_rocm checkout -- .`, same for `xgboost_rocm`: 0 tracked modifications, heads 8f7036f / ee5234f), baseline worktree removed and pruned. `git status --porcelain --ignore-submodules=untracked` at `0e70429b`: only untracked `build-hip/`, `build-nvtx/`, `sklearn_download.lock`, `src/interface_py/lightgbm_{cpu,gpu}`. `moatlib.py audit-clean h2o4gpu`: OK.
 - Verdict: linux-gfx90a (wave64) **completed** at `0e70429b`. Every difference from the 2026-11-06 record is explained: kmeans dispatch count (+8, added oracle calls), LightGBM per-row spread (near-tie thresholds, unchanged library), and the 2-5% warm GLM cost of `-finline-hint-functions`. n_gpus=2 not run (one GPU pinned).
+
+## Validation 2026-11-12 (windows-gfx1151) at 0e70429b
+
+Validator role, jeff's request: first Windows validation, toward the review PR. Radeon 8060S (gfx1151, wave32, APU, one GPU), TheRock ROCm 7.14.0a20260612 pip SDK, clang-cl (clang 23) for C, C++ and HIP, OpenBLAS from vcpkg, Python 3.12.10 venv (numpy 1.26.4, scikit-learn 1.9.1, swig 4.2.1). Source clone `projects/h2o4gpu/src` detached at `0e70429b85679b1dd028b4c26f95c3131ffaa6e9` = `fork/moat-port` = head_sha; no modified tracked files (only untracked build-* dirs). Strictly one process at a time, `ulimit -c 0`, every Python run under `timeout 300`; no large memory probes.
+
+### Build (rc 0, fresh tree `build-val`)
+`agent_space/h2o_win/build_val.sh` (the recorded recipe in "Porter 2026-11-11 round 2": `cmake -G Ninja -S . -B build-val -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_{C,CXX,HIP}_COMPILER=<TheRock clang-cl> -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DCMAKE_TOOLCHAIN_FILE=<vcpkg> -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=<venv>`; `cmake --build build-val -j 12`), 54/54 targets. `ninja -t commands` for `h2o4gpuglm.cu` carries `/O2 /Ob2 /Ob1` (the per-file `/Ob1` from the MSVC-frontend branch is last and wins). Runtime staged with `rocm_stage_runtime`; the Python run loads the SDK's `amdhip64_7.dll` (checked via GetModuleFileNameW), not System32's.
+
+### Results
+- `build-val/h2o4gpu_test.exe`: **24/24 PASS, 3 consecutive runs** (rc 0, 0.44-0.54 s).
+- Python oracle (`agent_space/h2o_win/oracle.py f32,f64`, f32 and f64 in one process, vs scikit-learn 1.9.1): **ALL PASS, 3 runs**. `device_count(-1)` (1, 1). f32: KMeans v_measure 1.0, center dist 3.7e-6; TSVD cusolver sv 2.7e-7, comp 2.5e-6; PCA ev 5.8e-7, comp 1.2e-5; ElasticNet r2 0.999989 vs Ridge 1.000000. f64: KMeans center dist 9.4e-15; TSVD sv 5.0e-16, comp 2.9e-8; PCA ev 4.7e-15, comp 3.0e-8; ElasticNet r2 0.999980 vs Ridge. Same as the 2c22a86 Windows record and as the Linux oracle magnitudes.
+- KMeans at odd row counts (`agent_space/h2o_win/val/km2.py`; 6 random features, k=5, n_gpus=1; 20001 and 1001 rows, f32 and f64; transform compared with NumPy SQUARED distances): **PASS, 3 runs, 12 cases**. fit `labels_` and `predict` agree with the NumPy nearest center on 1.0 of rows (including the last), transform shape `(rows, 5)`, argmin agreement 1.0, max abs err / max dist2 about 3e-7 (f32) / 6e-16 (f64). The first attempt of my script used a per-element relative error with a 1e-3 floor and flagged f32 at 1.07e-3: harness metric (cancellation in the `|x|^2 - 2xc + |c|^2` form on near-zero distances, as the gfx942 record explains), not a port fault; the metric was then changed to error over the largest distance.
+- GLM sweep (`agent_space/h2o_win/val/glm.py`, `sweep.sh`, log `val/sweep.log`): ElasticNetH2O(n_gpus=1, alphas [0], lambdas [1e-6], n_folds 1, max_iter 5000, tol 1e-6) vs sklearn Ridge r2, and family logistic (alphas [0.5], lambdas [1e-4]) vs LogisticRegression accuracy; each case 3 runs, sequential, `timeout 300`: **36/36 rc 0, all PASS, identical results across runs, none near the watchdog.** The f64 fit that hung at /Ob2 now completes at every size:
+
+| case | result (3 runs identical) | seconds |
+|---|---|---|
+| en f32 2000x20 / 20000x20 / 20001x7 / 100000x50 | gap 0 in all | 1.0 / 2.1-2.5 / 2.2-2.7 / 5.7-6.0 |
+| en f64 2000x20 | gap 1.7e-12 | 1.0-1.1 |
+| en f64 20000x20 | gap 1.9e-13 | 2.3-2.6 |
+| en f64 20001x7 | gap 5.8e-14 | 2.8-3.0 |
+| en f64 100000x50 | gap 3.3e-13 | 10.5-10.8 |
+| logistic f32 2000x20 / 20000x20 | acc 0.7715 / 0.7171 = sklearn | 0.9 / 1.7-1.8 |
+| logistic f64 2000x20 / 20000x20 | acc 0.7715 / 0.7171 = sklearn | 1.0-1.1 / 2.0-2.6 |
+
+- 100000x50 is the largest size (40 MB f64); nothing larger was tried on this APU.
+
+### Not run on Windows, and why
+- Multi-GPU KMeans (n_gpus=2, h2oai/h2o4gpu#900/#901): one GPU, `device_count(-1)` (1, 1); the inherited behaviour is on record from gfx942.
+- xgboost/LightGBM GPU builds, the Makefile targets, `make py`/wheel, the sklearn overlay, shipped `pytest tests/python/open_data`: not ported to Windows (Linux/bash only, "Scope limits" in Porter 2026-11-11).
+- `_ch2o4gpu_cpu` (CPU KMeans back end) loads but is not exercised (upstream marks it not working).
+- rocprofv3 kernel-trace and roctx marker checks: TheRock Windows ships no rocprofv3/roctracer; the no-op roctx fallback in `hip_compat/nvToolsExt.h` is what this build uses.
+- The `/Ob1` workaround stays in force on Windows; this run builds the shipped head, so nothing about its necessity was re-tested here (see the deferred reproducer record).
+
+### Gates
+- CUDA no-regression: not run on this host (no CUDA toolkit used here); covered at 1e22b819 and 0e70429b is comment-only (classify: comment-only).
+- `python3 utils/jargon.py --port h2o4gpu`: clean. Documentation: DEVEL.md has the Windows paragraph under `##### USE_HIP (AMD GPUs)`.
+- Integrity: no modified tracked files in the clone; `moatlib.py audit-clean h2o4gpu`: OK. No fork edits or pushes.
+- Verdict: windows-gfx1151 (wave32) **completed** at `0e70429b`.
