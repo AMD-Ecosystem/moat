@@ -3951,3 +3951,39 @@ Not rerun: the CUDA compile check at eb1b369 passed (mi355 host, nvcc 12.8.93, "
 
 ### Result
 linux-gfx1100: `revalidate` -> `completed` at eb1b369. The owed 10-run TUM-VI set is done (13/13 clean, 0 `-217`, 0 registered upstream crashes, ATE in band), with the traced in-SLAM kernel run; mono 3/3; upstream tests 6/6 + 3/3; ELAS CPU parity and 0 MB leak. The only out-of-band figures (libelas calls / KF count lower; mono run 2 0.2 mm above this arch's band) are explained above as upstream SLAM behaviour and run-to-run spread, not the port.
+
+## Validation 2026-11-12 (windows-gfx1151) at eb1b369: PASS -> completed
+
+Requested by jeff (2026-11-11, work the backlog toward the PR-prep squash). Trigger: `validated_sha` 5a0a83c -> head eb1b369 (upstream 632c55b merge, `classify` = `mixed`), full rebuild and run. Host: Radeon 8060S (gfx1151, wave32, 20 CUs), TheRock SDK 7.14.60850, CMake 3.31, vcpkg x64-windows, LIB with MSVC 14.50 first; recipe = the 2026-11-04 Windows port round and 2026-11-05 validation, unchanged (`agent_space/plvs_win/`: `env.sh`, `configure_main.sh`, `v6loop.sh` (copy of `v5loop.sh`), `dloop6.sh` (`dloop.sh` writing to `runs6/`), `v6/`, `runs6/`). Fork clone fetched explicitly from https://github.com/AMD-Ecosystem/plvs.git moat-port, fast-forwarded 5a0a83c -> eb1b369; HEAD == origin/moat-port, `git status --porcelain` shows no modified tracked files (only untracked build output). Every process ran under `ulimit -c 0`, `OMP_NUM_THREADS=4`, one plvs process at a time, sequential loops.
+
+### Build
+Incremental `cmake --build build-win-gfx1151 --target mono_tum stereo_tum_vi` under `timeit.sh plvs compile`, RC=0 (96 s, 45 steps; only Optimizer.cc-style warnings, no errors). libelas-gpu not rebuilt: `git diff --stat 5a0a83c eb1b369 -- Thirdparty` is empty (no HIP, .cu or Thirdparty change).
+
+### Mono TUM RGB-D freiburg1_xyz, 3 runs (`TUM1.yaml`, viewer on)
+| run | rc | lost/reset | Sim3 ATE (`ate.py`) |
+|---|---|---|---|
+| 1 | 0 | 0 | 0.93 cm (max 2.50) |
+| 2 | 0 | 0 | 0.98 cm (max 3.10) |
+| 3 | 0 | 0 | 0.87 cm (max 2.16) |
+Median tracking time (run 1) 31 ms; 0 `hipError` / `Gpu API` / `terminate called` lines. Recorded band at 5a0a83c on this host 0.88-1.11 cm.
+
+### TUM-VI room1 stereo, libelas on the GPU, PointCloudMapping on (`TUM-VI_pcm.yaml`), 10 consecutive runs
+`EXE=stereo_tum_vi.exe YAML=TUM-VI_pcm.yaml PFX=e bash dloop6.sh 1..10`.
+- **10/10 clean: rc 0, 2821/2821 poses, single map (no `Map 1`).** `-217` / `invalid argument` / `hipError` / `Gpu API` / `terminate called` / exception lines: **0** in all 10 logs. Crashes: **0**.
+- Sim3 ATE vs `mocap0` (`ate_tumvi.py`, 2773/2821 matched): 0.0720, 0.0723, 0.0717, 0.0721, 0.0721, 0.0730, 0.0728, 0.0720, 0.0720, 0.0722 m (this host at 5a0a83c: 0.0713-0.0728; Linux eb1b369: gfx90a 0.0717-0.0728, gfx1100 0.0716-0.0724).
+- `stereo processing (libelas)` calls per run: 241, 242, 243, 241, 255, 248, 253, 257, 226, 245 (226-257); keyframes in `kf_*` 70-89. Below the 5a0a83c band on this host (316-367), consistent with the Linux eb1b369 records (gfx90a 192-231, gfx1100 199-231; gfx1100's A/B control with a 5a0a83c build showed the drop comes with upstream's tracking changes at unchanged ATE). Slightly higher than the Linux counts, within the host-to-host timing spread; ATE unchanged, so not a port effect.
+- No separate `AMD_LOG_LEVEL` traced run on Windows this round; the libelas device path is unchanged (traced at fde33e5 here, and at eb1b369 on gfx90a and gfx1100: findMatch_GPU x2 per call, 0 `hipErrorInvalidValue`).
+
+### Upstream's new tests (632c55b)
+`-DPLVS_BUILD_TESTS=ON` reconfigured in the existing build dir, `cmake --build . --target test_line_mapping` RC=0 (clang, deprecation warnings only), `tests/test_line_mapping.exe`: **6/6 PASS** (observations, one_sided, replacement, distance, fusion, triangulation), each run directly (ctest not invoked) with the Stereo example dir and ROCm bin dirs on PATH; a first attempt exited 127 `libprotobuf.dll` not found, an environment PATH issue (DLLs live next to the examples). `python tests/test_evaluation_alignment.py`: **3/3 OK**.
+
+### ELAS GPU-vs-CPU and leak check
+Not rerun: libelas-gpu is unchanged since 5a0a83c (and since fde33e5 in code); see the 2026-11-05 (windows-gfx1151) section (bit-exact GPU reruns, CPU parity, 0.00 MB leak, 0/21 pending errors), and the Linux eb1b369 records of the same checks.
+
+### Gates
+- CUDA compile gate: recorded at eb1b369 (2026-11-12, PASS); no CUDA toolkit used here.
+- `python3 utils/jargon.py --port plvs` -> `jargon: clean`. ROCm build documentation unchanged by the merge (see Linux validations).
+- Integrity: no modified tracked files; HEAD eb1b369.
+
+### Result
+windows-gfx1151: `revalidate` -> `completed` at eb1b369.
