@@ -133,7 +133,7 @@ widths are proven separately rather than assumed to follow from each other.
 | ✅ | proven on the current code | | 🟣 | contribution merged upstream |
 | 🔄 | proven earlier; the code has moved since | | 🟢 | pull request open |
 | 🔧 | in progress | | 🔴 | pull request closed |
-| ⬜ | not started | | 🔵 | the fork is where AMD support lives: upstream points users at it instead of merging, or is archived and takes no pull requests |
+| ⬜ | not started | | 🔵 | the fork is where AMD support lives: upstream points users at it instead of merging, is archived and takes no pull requests, or will never take the port and the fork ships tagged releases |
 | 🚫 | blocked, with a reason recorded | | ⚖️ | licence bars contributing the port |
 | 🎫 | waived for this project, with maintainer approval | | ⚪ | set aside, with the reason recorded |
 | — | nothing recorded | | ⏸ | on hold, deliberately not being worked |
@@ -231,7 +231,7 @@ The project name links upstream.
 | [gpuRIR](https://github.com/DavidDiazGuerra/gpuRIR) ([fork](https://github.com/AMD-Ecosystem/gpuRIR/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#88](https://github.com/DavidDiazGuerra/gpuRIR/pull/88) |
 | [gRASPA](https://github.com/snurr-group/gRASPA) ([fork](https://github.com/AMD-Ecosystem/gRASPA/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#96](https://github.com/snurr-group/gRASPA/pull/96) |
 | [gtsam_points](https://github.com/koide3/gtsam_points) ([fork](https://github.com/AMD-Ecosystem/gtsam_points/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#99](https://github.com/koide3/gtsam_points/pull/99) |
-| [h2o4gpu](https://github.com/h2oai/h2o4gpu) ([fork](https://github.com/AMD-Ecosystem/h2o4gpu/tree/moat-port)) | ✅ | ✅ | 🔧 | — |
+| [h2o4gpu](https://github.com/h2oai/h2o4gpu) ([fork](https://github.com/AMD-Ecosystem/h2o4gpu/tree/moat-port)) | 🔄 | 🔄 | 🔧 | — |
 | [habitat-sim](https://github.com/facebookresearch/habitat-sim) ([fork](https://github.com/AMD-Ecosystem/habitat-sim/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [HEonGPU](https://github.com/Alisah-Ozcan/HEonGPU) ([fork](https://github.com/AMD-Ecosystem/HEonGPU/tree/moat-port)) | ✅ | ✅ | 🔧 | — |
 | [HierarchicalKV](https://github.com/NVIDIA-Merlin/HierarchicalKV) | ⬜ | ⬜ | ⬜ | — |
