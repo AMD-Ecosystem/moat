@@ -632,3 +632,44 @@ Upstream's HIP support is complete and correct for foldseek's `--gpu` structure 
 - gfx90a gap 3 ("RDNA/wave32 runtime unvalidated, expect 834/872/0 diff"): validated on gfx1100 with exactly 834/872/0, plus the SCOP 284-domain run, byte-identical to CPU ungapped.
 - The gfx90a draft PR "Build ProstT5 with the HIP backend when ENABLE_HIP is set" is not sufficient as written. Setting `GGML_HIP=ON` (blocker a) runs into the other three blockers found on gfx1100: `GGML_STATIC` vs ggml-hip's static guard (b), the vendored ggml's removed `hipblasDatatype_t` (c), and `structcreatedb.cpp:556` dropping devices not named "CUDA" while ggml-hip names them "ROCm" (d). The PR needs a ggml update (or a shared ggml-hip) plus the device-name fix, and must be validated with the weights on a host that can download them.
 - The gfx90a caveat that `-DENABLE_HIP=1 -DENABLE_CUDA=1` together would turn on `GGML_CUDA` stands. It is another reason to key ggml's backend on `ENABLE_HIP` explicitly.
+
+## Refresh onto upstream tip, linux-gfx942 porter (2026-11-12): STOPPED, needs jeff's ruling
+
+jeff's request: merge upstream's current tip into `moat-port` (merge commit, no rebase) so the review PR (AMD-Ecosystem/foldseek#1) is mergeable again, resolving conflicts "keeping upstream's new behavior and re-applying the HIP port on top" and resolving libmarv "the same way the existing port did". Those two instructions now point in opposite directions, so no merge was committed or pushed. State unchanged (`review-passed`, head 74bd2d82).
+
+### Done
+- `pr-state foldseek`: none (no upstream PR, `moat-port` not frozen). `protect-fork foldseek` installed the hook.
+- Fork mirror fast-forwarded (push of `upstream/master` to the fork's `master`): 7f4b9464 -> 39b02b9f (upstream tip, 2026-11-11, 135 commits past the port's base 718d4217). Fast-forward only.
+
+### Why it stopped
+upstream's 135 commits bring in the MMseqs2 subtree update that carries upstream's own complete HIP port of libmarv (`ENABLE_HIP` in `lib/mmseqs`, `cuda_hip_rename.h` + `cuda_hip_compatibility.cuh`, DPX TUs left out of the HIP build, AMD kernel-config tables, `ptx_wrappers.cuh`, a new int8 gapless path that is CUDA-only). Our port is a second, independent HIP port of the same files (`USE_HIP`, force-included `cuda_to_hip.h`, `hip_compat/`, DPX emulated and kept, SHARED libmarv with `-fgpu-rdc --hip-link`). `git merge --no-commit upstream/master` on 74bd2d82 conflicts in 11 files:
+
+- `CMakeLists.txt`, `lib/mmseqs/CMakeLists.txt`: our `USE_HIP` option vs upstream's new options (`ENABLE_STRUCTTY`, `AVX512_DISPATCH`); trivial on its own.
+- `lib/mmseqs/src/CMakeLists.txt`: our `if (USE_HIP) ... hip::host` block vs upstream's `ENABLE_HIP` handling.
+- `lib/mmseqs/lib/libmarv/src/CMakeLists.txt`: whole-file rewrite on both sides (ours: SHARED + device link + Windows linker fix; upstream: `MARV_GPU_LANGUAGE`, `HIP_SEPARABLE_COMPILATION`, DPX sources excluded on HIP, CUDA 13.2 int8 object library).
+- `gapless_kernel_config.cuh`, `smithwaterman_kernel_config.cuh`: our `__HIPCC__` force-to-sm89-default vs upstream's `#if defined(__CUDACC__)` AMD config tables.
+- `kernelhelpers.cuh`: our `WarpMaskT` widening vs upstream compiling the 16-bit path out under `__HIPCC__`.
+- `hpc_helpers/cuda_helpers.cuh`, `cuda_raiiwrappers.cuh`, `peer_access.cuh`: both sides widened the same guards differently; upstream adds a HIP `CUERR` and includes `cuda_hip_rename.h`.
+
+Resolving libmarv "the way the existing port did" means discarding upstream's HIP mechanism in favour of ours (regressing upstream behaviour and diverging from the MMseqs2 subtree, which the next subtree update would overwrite anyway). Keeping upstream's behaviour means taking upstream's libmarv HIP port wholesale and dropping most of ours. Layering both is not viable (two macro rename layers over the same cudaXxx names, two CMake options, DPX TUs both excluded and emulated). Either way the content of the review PR changes in kind, and MMseqs2 and metaeuk (same libmarv, refreshed in parallel) must make the same choice, so this is jeff's call.
+
+### Evidence for the decision (upstream tip alone, linux-gfx942)
+Host: MI300X (gfx942), HIP_VISIBLE_DEVICES=0, TheRock ROCm SDK at `$(hipconfig --rocmpath)`, cmake 3.31.6, `ulimit -c 0`.
+```
+R=$(hipconfig --rocmpath); export ROCM_PATH=$R HIP_PATH=$R
+cmake -S fs-up -B fs-up/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 \
+  -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=$R
+utils/timeit.sh foldseek compile -- cmake --build fs-up/build -j32 --target foldseek
+foldseek createdb example/ exDB; foldseek makepaddedseqdb exDB exDB_pad
+foldseek search exDB exDB     aln_cpu tmp_cpu --gpu 0 -e 10
+foldseek search exDB exDB_pad aln_gpu tmp_gpu --gpu 1 -e 10
+foldseek convertalis exDB exDB aln_cpu cpu.m8; foldseek convertalis exDB exDB_pad aln_gpu gpu.m8
+```
+Build PASS (binary carries `amdgcn-amd-amdhsa--gfx942`). Log shows `ungappedprefilter ... --gpu 1`. CPU 834 hits, GPU 872, common 834, 0 CPU-only, 38 GPU-only, 0 common rows differ in any column: identical to every validation of our port (gfx90a, gfx1100) and to upstream's earlier runs (gfx90a, gfx1100, 2026-10-29). Not checked: CUDA path (no nvcc on this host), Windows.
+
+### What our port would still add on top of upstream (if jeff picks "adopt upstream's libmarv HIP")
+From `git diff 718d4217 74bd2d82`, the pieces upstream lacks: a Windows build of libmarv (`mapped_file.hpp` Win32 mapping, `marv.h` `MARV_API` dllexport, `strtok_s` in `marv.cu`, `CMAKE_HIP_USING_LINKER_DEFAULT` on WIN32, tinyexpr `-fPIC` guard, NOMINMAX and warp-sync handling for ROCm 7.14+), and ROCm build docs (foldseek's README is still NVIDIA-only and never mentions `ENABLE_HIP`). These would have to be re-expressed on upstream's `ENABLE_HIP`/`cuda_hip_rename.h` mechanism and revalidated on Windows; the Windows libmarv pieces arguably belong in MMseqs2/libmarv upstream rather than in foldseek's vendored copy.
+
+### Questions for jeff
+1. Take upstream's libmarv HIP port wholesale in the merge (drop `USE_HIP`, `cuda_to_hip.h`, `hip_compat/`), keeping only the Windows and docs deltas re-applied on upstream's mechanism? Or keep our libmarv implementation over upstream's? Or close the foldseek port as already supported upstream (HIP `--gpu` search verified on gfx90a, gfx1100, gfx942)?
+2. Whichever is chosen, should MMseqs2 and metaeuk follow the same ruling (their refresh workers face the identical libmarv conflict)?
