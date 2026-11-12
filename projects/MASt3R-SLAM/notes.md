@@ -439,3 +439,9 @@ python3 utils/codeobj_diff.py agent_space/MASt3R-SLAM-gfx1100-gpu1/old-build age
   mast3r_slam_backends.cpython-312-x86_64-linux-gnu.so: identical (exported symbols + device ISA identical (200 exports))
 
 No GPU re-run required. Carried forward to completed at 07385a22.
+
+## CUDA compile check (nvcc 12.8) at 07385a22
+
+NOT CHECKED. Attempted on a ROCm fleet host that carries a CUDA toolkit (`Cuda compilation tools, release 12.8, V12.8.93`) for head_sha 07385a228e2ff7701ffd8f136d257051fa6c0fda. The build is a torch CUDAExtension (an editable install via `setup.py`, plus `thirdparty/mast3r/dust3r/croco/models/curope/setup.py`). Every `.cu` file includes `<torch/extension.h>`, so nothing can be compiled without a CUDA build of PyTorch. This host has only the image's ROCm PyTorch (`torch.version.cuda` is None). The fleet guard refused to create a job-local venv with a cu128 PyTorch wheel in it, classifying that as changing the Python environment that all jobs on this host share. No other route was tried.
+
+This matters more here than for a flags-only port because the port changed kernel source on the CUDA path unconditionally: `long` -> `int64_t` in `gn_kernels.cu` accessors, `torch::linalg::linalg_norm` -> `torch::linalg_norm`, `Tensor::type()` -> `scalar_type()`, and the `cuda/std/limits` include (see the review notes above). A static read of the `setup.py` diff confirms that the CUDA branch keeps the original `-O3` plus `-gencode` sm_60 through sm_86 list unchanged under `torch.version.hip is None`, and that `extra_link_args` is empty off Windows. Still needed: a host with CUDA PyTorch (a job dispatched with its own venv via `--build`, or a guard that allows a job-local venv). On it, do editable installs with `--no-build-isolation` of `thirdparty/mast3r/dust3r/croco/models/curope` and then `.`, with `TORCH_CUDA_ARCH_LIST="8.0;9.0"`.
