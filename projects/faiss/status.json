@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-05-31T16:36:35Z",
-  "updated_at": "2026-11-05T02:47:36Z",
+  "updated_at": "2026-11-10T19:44:34Z",
   "head_sha": "708a879bc438e4683689839daedcadd76496e9ca",
   "depends_on": [],
   "waivers": {},
@@ -159,5 +159,17 @@
     "since": "2026-11-05T00:36:08Z",
     "at": "2026-11-05T00:42:36Z"
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/faiss/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/faiss/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-10T19:36:09Z",
+    "head_sha": "708a879bc438e4683689839daedcadd76496e9ca",
+    "content_sha256": "059a23c735b5a940c2574a966e2e5ecbb23ee40d7546a5797ef5438e6b684e34",
+    "review_pr": "https://github.com/AMD-Ecosystem/faiss/pull/1"
+  },
+  "pr_url": "https://github.com/facebookresearch/faiss/pull/5881",
+  "pr_number": 5881,
+  "pr_opened_at": "2026-11-10T19:44:34Z",
+  "pr_state": "open",
+  "published_sha": "708a879bc438e4683689839daedcadd76496e9ca"
 }
