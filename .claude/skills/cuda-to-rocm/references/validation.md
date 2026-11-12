@@ -228,6 +228,16 @@ stack per crash kind). Without core dumps (`ulimit -c 0`), and when gdb slows th
 much to finish, a 15-line `LD_PRELOAD` handler that calls `backtrace_symbols_fd` on
 SIGSEGV/SIGABRT still gives the stack. (plvs)
 
+## A free-memory leak check measures the whole GPU, not your process
+
+`hipMemGetInfo` (like `cudaMemGetInfo`) reports free memory for the device, so a leak
+harness that compares free memory across repeated calls also counts every other process
+allocating on that GPU. plvs: a 21-call libelas leak check reported 8.00 MB lost on one
+image while a SLAM run shared the card, and 0.00 MB once it ran alone, which is the
+recorded figure. Run memory-delta checks with nothing else on the device (check
+`rocm-smi --showpids`), and repeat any non-zero result alone before calling it a leak.
+(plvs)
+
 ## Two GPUs visible to one process can crash the runtime
 
 On ROCm 7.14 a process that could see a mixed RDNA3 + RDNA4 pair crashed in the HIP
