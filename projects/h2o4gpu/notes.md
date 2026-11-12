@@ -920,3 +920,83 @@ One comment-only fork commit (0e70429b) restates the GLM inlining comment to the
 
 ### Not blocking (record only)
 - Owed, known: revalidation on linux-gfx90a, linux-gfx1100, windows-gfx1151 and the first linux-gfx942 validation at `0e70429b`. The CUDA compile check at `1e22b819` passed and covers this comment-only delta inside `if(USE_HIP)`.
+
+## Validation 2026-11-12 (linux-gfx942) at 0e70429b
+
+Validator role, jeff's request (2026-11-12): revalidate toward the review PR. This is the first linux-gfx942 validation. It ran on AMD Instinct MI300X (gfx942) with the ROCm 10.1 pip SDK (job venv), under `HIP_VISIBLE_DEVICES=6,7` (the dispatcher pin; single-GPU runs narrowed it to `6`). Every build and run used `ulimit -c 0`, LD_LIBRARY_PATH unset and `OPENBLAS_NUM_THREADS=32`, and every GLM run had `timeout 300`. Fresh clone of `https://github.com/AMD-Ecosystem/h2o4gpu.git` checked out at `0e70429b85679b1dd028b4c26f95c3131ffaa6e9`, equal to `origin/moat-port`. Tracked tree clean before and after. Submodule pins: `LightGBM_rocm` 8f7036f, `xgboost_rocm` ee5234f, `tests/googletest` 2fe3bd9. apt `libopenblas-dev` 0.3.26 was present, so no OpenBLAS source build was needed. Extra pip into the job venv: `swig==4.2.1 cython==3.0.11 meson-python feather-format "pyarrow<15" pytest-timeout` (scikit-learn 1.9.1, numpy 1.26.4, setuptools 79.0.1 already present). Closest recorded baselines: gfx942 Review round 3 (9607b09), the gfx90a/gfx1100 validations at 9607b09, and the gfx942 KMeans reproducers at d0b78f3d. Beside the head, the last validated head `9607b099f` was built as an A/B baseline (`cmake` library build only, gfx942).
+
+### Build (all rc 0; wheel `h2o4gpu-0.6.0+local.0e70429b.dirty`, "dirty" = the h2o patches applied inside the two ROCm submodules)
+```
+R=$($FLEET_VENV/bin/python -m rocm_sdk path --root); P=$FLEET_VENV/bin/python
+export PATH=$FLEET_VENV/bin:$R/bin:$PATH CMAKE_PREFIX_PATH=$R OMP_NUM_THREADS=$MAX_JOBS CMAKE_BUILD_PARALLEL_LEVEL=$MAX_JOBS
+git submodule update --init --recursive tests/googletest LightGBM_rocm xgboost_rocm
+cmake -S . -B build-hip -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$P -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build build-hip -j$MAX_JOBS
+make cpp USE_HIP=ON PYTHON=$P
+make lightgbm_gpu install_lightgbm_gpu lightgbm_cpu install_lightgbm_cpu USE_HIP=ON PYTHON=$P
+make xgboost install_xgboost USE_HIP=ON PYTHON=$P
+make xgboost_prev install_xgboost_prev USE_HIP=ON PYTHON=$P
+make apply-sklearn PYTHON=$P
+make py USE_HIP=ON PYTHON=$P
+$P -m pip install --no-deps --force-reinstall src/interface_py/dist/h2o4gpu-0.6.0+local.0e70429b.dirty-cp311-cp311-linux_x86_64.whl
+```
+- `verify_gpu_lib.sh`: "AMD GPU code objects intact after strip: amdgcn-amd-amdhsa--gfx942", PASS. The xgboost_prev targets print "XGboost previous version is not built with USE_HIP=ON" twice and build nothing. Both patch sets apply cleanly; the only warnings are git's trailing-whitespace ones.
+- `compile_commands.json`: the `src/gpu/h2o4gpuglm.cu` entry carries `-finline-hint-functions` and `--offload-arch=gfx942` (1e22b819 is active).
+- The wheel ships `h2o4gpu/libs/_ch2o4gpu_gpu.so`, `lightgbm_gpu/lib/lib_lightgbm.so`, `lightgbm_cpu/lib/lib_lightgbm.so` and `xgboost/lib/libxgboost.so`, with 0 `xgboost_prev/` entries. The installed `_ch2o4gpu_gpu.so` has RUNPATH `[<job>/venv-base-links/_rocm_sdk_devel/lib:/usr/lib/gcc/x86_64-linux-gnu/13]` and NEEDs hipblas/hipsparse/hipsolver/hiprand/rocrand/amdhip64/openblas/libgomp, with no libomp, no libomptarget and no roctx. It loads with LD_LIBRARY_PATH unset.
+
+### Results (each compared with the closest record)
+- C++ googletest `build-hip/h2o4gpu_test`: **24/24 PASS on 3 consecutive runs**, plus 3 more timed runs at 0.48-0.78 s. Baseline 9607b099f: 24/24 on 3 runs, 0.60-0.74 s. Same as every earlier record.
+- Python GPU oracle from the installed wheel (`agent_space/t/oracle.py`, recreated here, same checks as the earlier oracles; exits nonzero if `GPUlib.get()` is None, there is no GPU, or any check fails): `device_count(-1)` (1, 1). **ALL PASS**:
+  - KMeansH2O (20000x10, 5 blobs): v_measure 1.000000, max center distance to sklearn 4.5e-6 (f32) / 7.7e-15 (f64). Earlier records: 2.8e-6 to 6.8e-6 / 6.7e-15 to 1.0e-14.
+  - TSVD cusolver (5000x50, 5 comps): singular value rel err 5.3e-7 / 1.4e-15. Earlier records: 1.3e-7 to 8.2e-7 / 3e-16 to 1.8e-15.
+  - PCAH2O: ev rel err 5.1e-7 / 1.3e-15, components 6.1e-6 / 2.7e-8 (gfx90a: 5.0e-7 / 3.0e-15, 3.5e-6 / 3.0e-8).
+  - ElasticNetH2O (alpha 0, lambda 1e-6, 20000x20): r2 0.999994 in both dtypes, gap to sklearn Ridge 1e-12 / 3e-13 (earlier records: 1.9e-8 / 1.2e-13 and 2.8e-8 / 2.5e-13).
+  - The small run-to-run differences in these magnitudes come from different random data (each host recreated the oracle with its own generator) and from float32 rounding. All are far inside the tolerances.
+  - Under `rocprofv3 --kernel-trace`: ALL PASS again. 105793 dispatches, all on one GPU agent: `kmeans::` 96, `cml::` 15722, `h2o4gpu::` 226, rocBLAS 40281, rocSOLVER 552, rocPRIM 15708.
+- GBM GPU vs CPU (`agent_space/t/gbm.py`; 100000x20, integer f0, 80/20 split, 50 rounds): **ALL PASS**.
+  - xgboost 2.1.3, `USE_HIP` True. Shared-QuantileDMatrix held-out RMSE: cpu 0.2721543336, cuda 0.2721543351, max pred diff 2.9e-6. f0 thresholds are the between-bin midpoints `0.5 ... 8.5`. `get_feature_interactions` returns a (741, 8) DataFrame, `pred_contribs` (5, 21) sums to the margin, and `pred_leaf` is (5, 50).
+  - lightgbm_gpu 4.7.0, `device_type='cuda'` vs cpu (deterministic): held-out RMSE 0.59240759 / 0.59250727; training-row max pred diff 3.4e-8.
+- Shipped `pytest -p no:cacheprovider tests/python/open_data/system tests/python/open_data/gbm -rf -q`: **18 passed / 4 failed / 17 skipped**, identical to every earlier round. The 4 failures are all `TypeError: cv() got an unexpected keyword argument 'early_stopping_rounds'` (`test_lightgbm_{gpu,cpu}[{dart,gbdt}]`, removed in LightGBM 4.0; upstream test drift).
+- roctx: `USENVTX=1 cmake -S . -B build-nvtx ... -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_CXX_FLAGS=-DUSE_NVTX -DCMAKE_HIP_FLAGS=-DUSE_NVTX` prints "Building with NVTX support on (roctx)". Its `_ch2o4gpu_gpu.so` NEEDs `libroctx64.so.4`; the default build has no roctx. An ElasticNetH2O f64 2000x20 fit using that module, under `rocprofv3 --marker-trace --kernel-trace`, gives **5184 marker records = 5184 `START:` lines** and PASS (r2 gap 3.8e-13). The `__has_include` fallback added in 2c22a86 still selects the real roctx on Linux.
+
+### GLM sweep, head 0e70429b vs baseline 9607b099f (the delta changes GLM device code through 1e22b819 `-finline-hint-functions`)
+`agent_space/t/glm_sweep.sh`: `en.py` is ElasticNetH2O(n_gpus=1, alphas [0], lambdas [1e-6], n_folds 1, max_iter 5000, tol 1e-6) vs sklearn Ridge r2; `logit.py` is family logistic, alphas [0.5], lambdas [1e-4] vs sklearn LogisticRegression accuracy. Head ran from the installed wheel; baseline from a copy of the same Python package with the 9607b099f `build-hip/_ch2o4gpu_gpu.so` (its SWIG `.py` is byte-identical). Each case ran 3 times per build under `timeout 300`: **72 runs, all rc 0, all PASS, with identical results between builds.** None came near the watchdog; the slowest run took 2.3 s.
+
+| case | result (head = base) | head s | base s |
+|---|---|---|---|
+| en f32 2000x20 | gap 6.4e-12 | 1.19 1.15 0.84 | 0.82 1.02 1.05 |
+| en f32 20000x20 | gap 2.1e-12 | 1.46 1.48 1.52 | 1.25 1.23 1.23 |
+| en f32 20001x7 | gap 6.3e-12 | 1.74 1.47 1.73 | 1.63 1.60 1.69 |
+| en f32 100000x50 | gap 1.1e-12 | 1.84 1.71 1.80 | 1.84 1.78 1.86 |
+| logit f32 2000x20 | acc 0.9300 = sklearn | 0.74 0.97 0.73 | 0.97 0.78 0.92 |
+| logit f32 20000x20 | acc 0.9335 = sklearn | 1.16 1.12 1.17 | 0.94 1.03 1.17 |
+| en f64 2000x20 (Windows reproducer size) | gap 3.8e-13 | 1.13 1.05 1.20 | 1.32 0.86 1.08 |
+| en f64 20000x20 | gap 1.8e-13 | 1.49 1.66 1.68 | 1.54 1.70 1.43 |
+| en f64 20001x7 | gap 5.9e-13 | 1.78 1.97 2.02 | 2.02 2.18 2.06 |
+| en f64 100000x50 | gap 8e-14 | 2.33 2.22 2.23 | 2.20 2.33 2.07 |
+| logit f64 2000x20 | acc 0.9300 = sklearn | 0.97 0.76 0.92 | 1.00 1.28 0.94 |
+| logit f64 20000x20 | acc 0.9335 = sklearn | 1.26 1.28 1.10 | 1.06 1.20 1.27 |
+
+- Wall time is unchanged within noise. The one block that looked different, en f32 20000x20 (head about 0.25 s slower in 3/3 runs), went away when the builds were interleaved over 5 rounds: head 1.33-1.53 s vs base 1.25-1.51 s (f64: 1.44-1.89 vs 1.48-1.73). The first sweep ran all head cases before all base cases, so the gap was run-order noise.
+- **Kernel time does change: a measured, explained cost of the ruled workaround, not a correctness difference.** Kernel traces (`rocprofv3 --kernel-trace`, one run per case) show identical dispatch counts in both builds (20000x20: 48502 f32 / 51315 f64; 100000x50: 90982 / 94915). Summed time of the kernels from the GLM file (`cml::`, `h2o4gpu::`, `FuncEval` reductions), head vs base: 20000x20 28.3 vs 23.7 ms (f32) and 56.0 vs 44.9 ms (f64); 100000x50 52.3 vs 41.1 ms (f32) and 79.3 vs 51.0 ms (f64). Total kernel time across all libraries rises only 1-5% (f64 100000x50: 872 vs 834 ms), and fit wall time is dominated by host work and rocBLAS. Almost all of the growth is one kernel: the rocPRIM reduce over `transform_iterator<cml::Square<double>, permutation_iterator<..strided_range..>>` (a squared-norm reduction, 10117 dispatches in f64 100000x50) went from 37.6 to 65.3 ms (3.7 -> 6.5 us per dispatch). The `FuncEvalF` reduce kernels (2 dispatches) went from 23 to 65 us. Cause: with `-finline-hint-functions` the thrust/rocPRIM functors and iterator dereferences stay out-of-line device calls.
+- gfx942 device asm of `h2o4gpuglm.cu` (the real compile line from `compile_commands.json` plus `--cuda-device-only -S`; `agent_space/asm/lb2.py` counts `s_getpc_b64` + `(.LBBx-.Lpost_getpcN)` long branches per function): default (flag dropped): 1 non-kernel function with 151 long branches, 124 kernels with 220, **none through s[30:31]**. With the flag: 44 non-kernel functions, 0 long branches anywhere. So gfx942, like gfx90a, never had the llvm/llvm-project#224205 pattern; on this arch the flag only removes harmless long branches and pays for the extra calls.
+- **Question for jeff (not blocking; the change is functionally correct here, and wall time is unchanged):** on gfx942 the `-finline-hint-functions` workaround costs about 20-55% of GLM-file kernel time (1-5% of total kernel time, invisible in fit wall time) and protects against nothing, because the #224205 s[30:31] pattern does not occur on gfx9. Keep it file-wide for every arch, as ruled? Or limit it to the RDNA targets where the pattern exists (no per-arch `COMPILE_OPTIONS` exists for one source in a multi-arch build, so that would mean, for example, applying it only when `CMAKE_HIP_ARCHITECTURES` contains a gfx11/gfx12 target)? No change made; recorded for the ruling.
+
+### KMeans, n_gpus=1 and n_gpus=2 (HIP_VISIBLE_DEVICES=6,7, `device_count(-1)` (2, 2))
+- `agent_space/t/km.py <n_gpus> <rows> <dtype>` (rand 6 features, k=5; fit labels and predict vs NumPy nearest-centroid; transform vs NumPy squared distances):
+  - **n_gpus=1, 20000 and 20001 rows, f32 and f64: all PASS.** Fit and predict agreement 1.0; transform shape `(rows, 5)`, max rel err 1.7e-5 / 1.8e-5 (f32, from the cancellation in the `|x|^2 - 2xc + |c|^2` form on near-zero distances) and 4e-14 / 3e-14 (f64); argmin agreement 1.0.
+  - n_gpus=2: fit and predict agree 1.0 on the first rows, and transform has the correct shape `(rows, 5)` (24cd051e). But the transform values are wrong: argmin agreement 0.262 (20000 rows) / 0.242 (20001 rows), max rel err 45-59. This is h2oai/h2o4gpu#900 (per-GPU column-major blocks concatenated, reshaped as one `(rows, k)` F-order matrix). Expected and inherited, not a port failure.
+- jeff's recorded reproducers (verbatim from "KMeans multi-GPU reproducers 2026-11-12", 2 runs each, identical output, and identical to the d0b78f3d record):
+  ```
+  repro_transform:  n_gpus=1 max|got-want|=0.25 argmin agreement=1.000   (0.25 = sqrt vs squared, as recorded)
+                    n_gpus=2 max|got-want|=1.06 argmin agreement=0.423
+  repro_remainder:  n_gpus=1 fit labels_[-1]=0 (nearest center 0)  predict last row on C[1]: 1, on C[2]: 2
+                    n_gpus=2 fit labels_[-1]=0 (nearest center 0)  predict last row on C[1]: 0, on C[2]: 0
+  ```
+  `agent_space/t/layout.py` on the same data: n_gpus=2 `max|got - squared|` = 1.22, while rereading the flat buffer as two per-GPU `(500, 3)` F-order blocks gives 1.22e-15. **#900 (transform layout) and #901 (remainder row never processed: predict returns 0 for a last row placed on C[1] or C[2]) both still reproduce; single-GPU results are correct.** jeff ruled these upstream-only.
+
+### Gates
+- CUDA no-regression: "CUDA compile check at 1e22b819 (2026-11-12)" passed (nvcc 12.8); 0e70429b is comment-only inside `if(USE_HIP)` (`classify`: comment-only). Not re-run.
+- `python3 utils/jargon.py --port h2o4gpu`: clean (after `git fetch origin master:master` and a local `moat-port` ref in the clone). Documentation: DEVEL.md `##### USE_HIP (AMD GPUs)` documents the ROCm build beside the CUDA one.
+- Integrity: submodule trees reset (`git -C LightGBM_rocm checkout -- .`, the same for `xgboost_rocm`). `git status --porcelain --ignore-submodules=untracked` at 0e70429b shows only untracked build output (`build-hip/`, `build-nvtx/`, `sklearn_download.lock`, `src/interface_py/lightgbm_{cpu,gpu}`). `moatlib.py audit-clean h2o4gpu`: OK.
+- Verdict: linux-gfx942 (wave64) **completed** at 0e70429b. Every test passes or matches its earlier record. Every difference is explained: run-order timing noise; the kernel-time cost of the ruled inlining workaround (question above); and the inherited multi-GPU KMeans bugs #900/#901, ruled upstream-only.
