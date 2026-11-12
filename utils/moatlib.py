@@ -2164,10 +2164,20 @@ def set_delivery(name, mode, by, tag_format=None, reason=None, clear=False):
     if tag_format:
         rec["tag_format"] = tag_format
     fmt = tag_format or DEFAULT_RELEASE_TAG_FORMAT
+    missing = {"version", "rev"} - tag_format_fields(fmt)   # raises on a bad format
+    if missing:
+        # Patch syncs are numbered by release_sync_tag: a new upstream version
+        # resets the revision to 0, and a sync without one bumps the revision.
+        # Each field alone repeats a tag (no {rev}: two syncs of one version;
+        # no {version}: rev 0 of every version), and a repeated tag is refused
+        # at push time, leaving that sync untagged.
+        raise ValueError(f"tag format {fmt!r} lacks {', '.join('{' + f + '}' for f in sorted(missing))}: "
+                         f"release tags must name both the upstream version and "
+                         f"the revision, because patch syncs reset the revision "
+                         f"on a new upstream version and bump it otherwise, so "
+                         f"either field alone repeats an earlier tag")
     if obj.get("fork_branch"):
         release_tag({**obj, "delivery": rec})          # raises with the reason
-    else:
-        tag_format_fields(fmt)                         # raises with the reason
     if reason:
         rec["reason"] = reason
     ok, why = record_writable_here(name)
@@ -2358,13 +2368,21 @@ def _mirror_repo(name, obj):
 
 
 def _remote_ref(repo, remote, ref):
-    """(readable, sha) of `ref` on `remote`; a peeled tag answers with its commit."""
-    r = subprocess.run(["git", "-C", str(repo), "ls-remote", remote, ref],
+    """(readable, sha) of `ref` on `remote`; a tag answers with its COMMIT.
+
+    The peeled `<ref>^{}` pattern is asked for explicitly: ls-remote given only
+    the ref name returns an annotated tag's own object id, which never equals
+    the commit it tags -- and every release tag is annotated, so the idempotence
+    checks in push_fork_tag and release_fork_problems would call a tag that is
+    exactly where it should be "already exists elsewhere"."""
+    r = subprocess.run(["git", "-C", str(repo), "ls-remote", remote, ref,
+                        f"{ref}^{{}}"],
                        capture_output=True, text=True, timeout=120)
     if r.returncode:
         return (False, "")
-    rows = {ref: sha for sha, ref in (line.split("\t", 1)
-                                      for line in r.stdout.splitlines() if "\t" in line)}
+    rows = {name: sha for sha, name in (line.split("\t", 1)
+                                        for line in r.stdout.splitlines()
+                                        if "\t" in line)}
     return (True, rows.get(f"{ref}^{{}}") or rows.get(ref) or "")
 
 
