@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:23:31Z",
-  "updated_at": "2026-08-09T00:27:13Z",
+  "updated_at": "2026-10-09T15:40:56Z",
   "head_sha": "d38c7aaa2f8d",
   "depends_on": [],
   "pr_url": "https://github.com/fangq/mcx/pull/264",
@@ -119,5 +119,6 @@
       },
       "last_agent": "validator"
     }
-  }
+  },
+  "published_sha": "d38c7aaa2f8de184ad276e34d9cc5a13371642dc"
 }

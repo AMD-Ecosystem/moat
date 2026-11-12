@@ -13,10 +13,10 @@ There is no lead platform. Plan the port itself; any arch may execute it, and ea
 
 ## Inputs
 - projects/<name>/status.json (upstream URL, default branch, ext_type if known; state is `screened`, or `planning` when resuming a run another host dropped)
-- the `cuda-to-rocm` skill (invoke it; load references/ as needed)
+- the `cuda-to-rocm` skill (invoke it; load references/ as needed) and the `moat-porting` skill
 
 ## Steps
-1. Invoke the `cuda-to-rocm` skill and read status.json.
+1. Invoke the `cuda-to-rocm` and `moat-porting` skills and read status.json.
 2. Clone the upstream read-only into projects/<name>/src/: `gh repo clone <full_name> projects/<name>/src -- --depth=1`. Do not branch or commit.
 3. Classify the build (the skill's build classification): pure CMake -> Strategy A; pytorch extension -> Strategy B. Record the exact files/lines that decide it. Set ext_type in status.json.
 4. Inventory the CUDA surface: kernels, `__global__`/`__device__`, warp intrinsics (`__shfl*`, `__ballot`, `warpSize`, any hardcoded 32), textures/surfaces, cuBLAS/cuFFT/cuRAND/cuSPARSE/Thrust/CUB usage, pinned/managed memory, streams/events. Map each to its ROCm/HIP equivalent or flag it as a risk.
@@ -50,7 +50,10 @@ didn't go far enough".
 reviewer. The machine-checked form is what gives it teeth: `python3 utils/surface.py
 generate <name>` writes `projects/<name>/surface.json`, and check.py's `surface` gate then
 refuses to let that project claim success with a component neither `covered` nor
-`scoped_out` with a reason. **Generate one as a standard step of every new plan** -- it is
+`scoped_out` with a reason. Work that stays in scope but is not done yet (a platform a
+ruling keeps for last) goes under `owed` with a reason: the gate accepts it, and `pr_ready`
+refuses while any owed item remains, so never record unfinished in-scope work as
+`scoped_out`. **Generate one as a standard step of every new plan** -- it is
 what turns "the plan says so" into something that fails a push. The gate judges only
 projects that carry the file (colmap was the first; most pre-existing ports have none), so
 do not describe the accounting as enforced unless the file exists. If a surface.json is
