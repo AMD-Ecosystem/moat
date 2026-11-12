@@ -904,3 +904,19 @@ Verification:
 - Review of `1e22b819..0e70429b` plus this round's answers.
 - CUDA: the nvcc compile check at `1e22b819` passed ("CUDA compile check at 1e22b819"); `0e70429b` is comment-only inside `if(USE_HIP)`, so no new CUDA check is needed.
 - Revalidation on linux-gfx90a, linux-gfx1100 and windows-gfx1151, plus the first linux-gfx942 validation, at the new head.
+
+## Review 2026-11-12 round 2 (linux-gfx1201) -- moat-port 0e70429b (delta 1e22b819..0e70429b) plus records be4c652b and skill df72c7a5
+
+### Port Review: h2o4gpu (moat-port `0e70429b` vs `1e22b819`)
+
+#### Summary
+One comment-only fork commit (0e70429b) restates the GLM inlining comment to the observed evidence, and the MOAT records and cuda-to-rocm lesson answer Review 2026-11-12 items 2 and 3. Verdict: **Approve** (no findings).
+
+### Checked with no finding
+- Item 1: `CMakeLists.txt:343-351` at `0e70429b` says the GLM reduction (float and double) compiles into a large device function whose long branches clobber the return address, cites llvm/llvm-project#224205 (verified open, title "[AMDGPU] Long-branch reserved SGPR pair is the return address s[30:31] in a callable function ...", read-only `gh issue view`), the double-precision fit was observed to hang on gfx1151 (Windows), the pattern is present in Linux RDNA builds without an observed hang, and limiting inlining removes the long branches. Matches the asm records ("Porter 2026-11-12" and round 2: `FuncEvalF<double>` 237/235 and `<float>` 241/434 s[30:31] long branches on gfx1100/gfx1201, 0 after limiting inlining; gfx90a none through s[30:31], so "Linux RDNA" is the right scope). `/Ob1` and `-finline-hint-functions` lines and guards unchanged. `python3 utils/moatlib.py classify h2o4gpu 1e22b819 0e70429b`: `class=comment-only arch_independent=True inert=True`. Commit title 63 chars with `[ROCm]`, AI disclosure in prose, no Co-Authored-By, fenced Test Plan.
+- Item 2: `.claude/skills/cuda-to-rocm/references/validation.md:126-132`: the Windows hang-diagnosis section keeps `AMD_LOG_LEVEL=3` / `PAL fence isn't ready!` and now forwards to a new, OS-neutral section "A hang that depends on inlining: long branches clobber the return address" that names #224205, gives the asm signature (non-kernel callee of `s_swappc_b64 s[30:31]`, `s_getpc_b64 s[30:31]` ... `s_setpc_b64 s[30:31]` with no save/restore of s30/s31, from `--cuda-device-only -S`), says it appears in Linux RDNA builds and does not always hang, and gives both per-file spellings (`/Ob1` clang-cl, `-finline-hint-functions` clang/hipcc) via `COMPILE_OPTIONS`. The stale "reproducer still owed" sentence is gone. `python3 utils/check.py jargon`: ok; `jargon.py -` on lines 126-132: clean. No MOAT tool, record or state named.
+- Item 3: "Commit-message corrections owed at the PR-prep squash" (notes.md:624) has entries for `2c22a86` (wording identical to the 0e70429b comment), `d0b78f3d` (superseded, collapses into the #224205 explanation), `24cd051e` (`km_multi.py` not in tree; literal in-tree or inline script) and `1e22b819` (asm count and sklearn check owed as literal commands).
+- `python3 utils/jargon.py --port h2o4gpu`: clean (fresh clone of `https://github.com/AMD-Ecosystem/h2o4gpu.git` at `0e70429b`, fork `master` fetched). Clone status clean. `utils/check.py commits` flags only `24e6169`/`4e5e433` (pre-existing, covered by the 2026-11-05 squash ruling).
+
+### Not blocking (record only)
+- Owed, known: revalidation on linux-gfx90a, linux-gfx1100, windows-gfx1151 and the first linux-gfx942 validation at `0e70429b`. The CUDA compile check at `1e22b819` passed and covers this comment-only delta inside `if(USE_HIP)`.
