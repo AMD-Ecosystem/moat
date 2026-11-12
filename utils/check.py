@@ -19,6 +19,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tomllib
@@ -117,6 +118,14 @@ def gate_readme():
     # unrelated projects each fail on a table none of them touched.
     branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
     if branch.startswith("port/"):
+        return []
+    # The checkout's branch is the wrong question for a push: recording a fact writes a
+    # commit straight to `port/<name>` from whatever is checked out (the publisher's
+    # approval snapshot does), and judging the trunk's table there refused the push
+    # because some other project's state had moved. The pre-push hook passes the refs
+    # being updated; unless one of them is the trunk, the table is not in play.
+    pushed = os.environ.get("MOAT_PUSH_REFS")
+    if pushed is not None and "refs/heads/main" not in pushed.split():
         return []
     if not _run(["git", "for-each-ref", "--format=%(refname)",
                  "refs/remotes/origin/port/"]).stdout.strip():
@@ -589,8 +598,38 @@ def gate_conflict_markers():
     return problems
 
 
+# cuda-to-rocm is published outside MOAT as an AMD skill, so the files an agent loads
+# from it must stand alone. MOAT-only practice lives in the moat-porting skill. The
+# skill card and evals are catalog metadata, not guidance, and are not scanned.
+STANDALONE_SKILL = REPO / ".claude" / "skills" / "cuda-to-rocm"
+MOAT_VOCABULARY = re.compile(
+    r"\bMOAT\b|moatlib|(?<![\w/.])utils/|\bnotes\.md\b|\bplan\.md\b|\bstatus\.json\b"
+    r"|\bsurface\.json\b|\bdeferred\.(?:py|json)\b|projects/<|\bfleet\b"
+    r"|\b(?:head|validated|published)_sha\b|\brevalidat|cuda-not-validated|codeobj_diff"
+    r"|advance[_-]head|config/(?:arches|jargon)\.toml|\bcant-port\b|\bdepends_on\b"
+    r"|(?<![\w/])_deps/|(?<![\w/])findings/|/var/lib/jenkins",
+    re.IGNORECASE)
+
+
+def gate_skills():
+    """The cuda-to-rocm skill names no MOAT tool, record, or state."""
+    problems = []
+    paths = [STANDALONE_SKILL / "SKILL.md"]
+    for sub in ("references", "assets"):
+        paths += sorted(p for p in (STANDALONE_SKILL / sub).rglob("*") if p.is_file())
+    for path in paths:
+        rel = path.relative_to(REPO).as_posix()
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            m = MOAT_VOCABULARY.search(line)
+            if m:
+                problems.append(f"{rel}:{n}: MOAT vocabulary {m.group(0)!r}; move it to "
+                                f".claude/skills/moat-porting/ or say it generically")
+    return problems
+
+
 GATES = {
     "gh-guard": (gate_gh_guard, False),
+    "skills": (gate_skills, False),
     "harness-adapters": (gate_harness_adapters, False),
     "code": (gate_code, False),
     "schema": (gate_schema, False),

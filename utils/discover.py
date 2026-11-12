@@ -20,6 +20,17 @@ it preserves those code:-sourced records on its next run instead of
 overwriting them (historically it truncated the file and silently erased
 every code-search find -- the actual cause of the blind spot).
 
+A third pass takes a curated list instead of a search: `--seed <file>` merges
+the repos named in a seed file (data/seeds/*.json) into candidates.json. A
+seed is someone else's judgement of where AMD support is missing, so it skips
+the search-quality filters (stars, recency, forks, owner org) and keeps only
+the checks that bind a person's decision: opt-outs, skip dispositions and
+adoption, by repo id as well as name. It also keeps repos with no CUDA source,
+tagged `lane: validate` -- a pure-PyTorch project still needs someone to build
+it on ROCm, fix its setup.py, run its tests and say so in its docs. Repos with
+CUDA source are tagged `lane: port`. `--seed-gap-matrix <url|html>` converts
+the published AMD AI Software Gap Matrix into a seed file.
+
 Output: data/candidates.json (ranked, filtered) and data/candidates.raw.jsonl
 (every unique hit before filtering, for audit). Adopt rows with
 `python3 utils/moatlib.py scaffold <owner/repo>`."""
@@ -28,10 +39,12 @@ import argparse
 import datetime as _dt
 import json
 import math
+import re
 import subprocess
 import sys
 import time
 import tomllib
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -47,6 +60,18 @@ FIELDS = ("fullName,url,defaultBranch,stargazersCount,forksCount,pushedAt,"
           "isFork,isArchived,isDisabled,language,description,license")
 
 
+def _run(*args, **kwargs):
+    """subprocess.run, decoding text output as UTF-8 rather than the locale's code page.
+
+    gh emits UTF-8. On Windows the default decoder is cp1252, which raises on bytes it
+    has no mapping for (one repo description is enough), and the reader thread dies
+    leaving stdout None. Same wrapper as utils/upstream.py."""
+    if kwargs.get("text"):
+        kwargs.setdefault("encoding", "utf-8")
+        kwargs.setdefault("errors", "replace")
+    return subprocess.run(*args, **kwargs)
+
+
 def load_cfg():
     return tomllib.loads(CONFIG.read_text())
 
@@ -57,7 +82,7 @@ def run_query(query, limit):
     cmd = ["gh", "search", "repos", *query.split(),
            "--sort", "stars", "--order", "desc",
            "--limit", str(limit), "--json", FIELDS]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = _run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         sys.stderr.write(f"discover: query failed: {query}\n{r.stderr.strip()}\n")
         if "rate limit" in r.stderr.lower() or "API rate" in r.stderr:
@@ -173,7 +198,7 @@ def cuda_bytes(full_name, cache):
     kernels, versus merely mentioning CUDA in its README."""
     if full_name in cache:
         return cache[full_name]
-    r = subprocess.run(["gh", "api", f"repos/{full_name}/languages"],
+    r = _run(["gh", "api", f"repos/{full_name}/languages"],
                        capture_output=True, text=True)
     cb = 0
     if r.returncode == 0:
@@ -194,7 +219,7 @@ def code_search(query, page, per_page=100):
     truncate the query (which is what loses high-signal mid-page repos)."""
     backoffs = [30, 60, 120, 240, 300, 300]
     for attempt in range(len(backoffs) + 1):
-        r = subprocess.run(
+        r = _run(
             ["gh", "api", "-X", "GET", "search/code",
              "-f", f"q={query}", "-f", f"per_page={per_page}", "-f", f"page={page}"],
             capture_output=True, text=True)
@@ -269,7 +294,7 @@ def code_search_repos(cfg, disk=None, save=None):
 def fetch_repo_meta(full_name):
     """Repo metadata via the REST API, mapped to the same shape gh search repos
     returns (so passes()/to_record() reuse works unchanged). None on error."""
-    r = subprocess.run(["gh", "api", f"repos/{full_name}"],
+    r = _run(["gh", "api", f"repos/{full_name}"],
                        capture_output=True, text=True)
     if r.returncode != 0:
         return None
@@ -472,6 +497,147 @@ def run_code_search_pass(cfg, out_path):
     return new_recs, stats
 
 
+SEEDS = DATA / "seeds"
+GAP_MATRIX_URL = "https://amd-gap-matrix.vercel.app/"
+
+
+def seed_from_gap_matrix(src):
+    """A seed from the AMD AI Software Gap Matrix page (a URL or a saved copy).
+
+    The page embeds its whole dataset as JSON in <script id="gap-data">. Only what
+    intake needs is kept: the GitHub repo, the matrix's own name for the entry, and
+    its verdict, which is a lead for intake rather than a finding. Entries with no
+    GitHub repo (closed products, OS features) are listed so the count reconciles."""
+    if re.match(r"https?://", src):
+        with urllib.request.urlopen(src, timeout=60) as r:
+            html = r.read().decode("utf-8")
+    else:
+        html = Path(src).read_text(encoding="utf-8")
+    m = re.search(r'<script[^>]*id="gap-data"[^>]*>(.*?)</script>', html, re.S)
+    if not m:
+        raise ValueError("no gap-data script in the page; the layout changed")
+    data = json.loads(m.group(1))
+    meta = data["meta"]
+    repos, no_repo = [], []
+    for lib in data["libraries"]:
+        gm = re.search(r"github\.com/([^/\s]+/[^/\s#?]+)", lib.get("repo") or "")
+        if not gm:
+            no_repo.append(lib["name"])
+            continue
+        repos.append({
+            "full_name": gm.group(1).removesuffix(".git"),
+            "label": lib["name"],
+            "readiness": lib.get("readiness"),
+            "path": lib.get("path"),
+            "owner_type": lib.get("owner_type"),
+        })
+    return {
+        "source": "amd-gap-matrix",
+        "url": meta.get("site_url") or GAP_MATRIX_URL,
+        "version": meta.get("version"),
+        "reviewed": meta.get("last_reviewed"),
+        "repos": repos,
+        "no_repo": no_repo,
+    }
+
+
+def adopted_index():
+    """(full names, repo ids) of every adopted project, wherever its record lives."""
+    sys.path.insert(0, str(Path(__file__).parent))
+    import moatlib
+    names = set()
+    for n in moatlib.all_projects():
+        full = moatlib.upstream_full_name(n)
+        if full:
+            names.add(full.lower())
+    return names, set(moatlib.adopted_repo_ids())
+
+
+def run_seed_pass(cfg, seed_path, out_path):
+    """Merge a seed file's repos into candidates.json. See the module docstring for
+    which filters a seed skips and why."""
+    seed = json.loads(Path(seed_path).read_text(encoding="utf-8"))
+    source = seed["source"]
+    tag = f"seed:{source}"
+    s = cfg["search"]
+    excl_orgs = {o.lower() for o in s.get("exclude_orgs", [])}
+    excl_substr = [x.lower() for x in s.get("exclude_org_substrings", [])]
+    # The named exclusions are decisions, not search filters, so a seed honors them.
+    excluded = {e.lower() for e in s["exclude"]}
+
+    existing = json.loads(Path(out_path).read_text()) if Path(out_path).exists() else []
+    known = {r["full_name"].lower(): r for r in existing}
+    adopted_names, adopted_ids = adopted_index()
+    today = _dt.date.today().isoformat()
+
+    new_recs, decided, adopted, retagged, meta_err = [], [], [], [], []
+    for entry in seed["repos"]:
+        if entry["full_name"].lower() in excluded:
+            decided.append(entry["full_name"])
+            continue
+        meta = fetch_repo_meta(entry["full_name"])
+        time.sleep(1.0)  # secondary rate limit; see run_code_search_pass
+        if meta is None:
+            meta_err.append(entry["full_name"])
+            continue
+        fn, rid = meta["fullName"], meta.get("id")
+        if already_decided(fn, rid):
+            decided.append(fn)
+            continue
+        if fn.lower() in adopted_names or rid in adopted_ids:
+            adopted.append(fn)
+            continue
+        info = {"source": source, "label": entry.get("label"),
+                "readiness": entry.get("readiness"), "path": entry.get("path")}
+        was = known.get(fn.lower())
+        if was is not None:
+            was["matched_queries"] = sorted(set(was.get("matched_queries", [])) | {tag})
+            was.setdefault("seed", info)
+            retagged.append(fn)
+            continue
+        cb = cuda_bytes(fn, {})
+        meta["_cuda_bytes"] = cb
+        meta["matched_queries"] = [tag]
+        rec = to_record(meta, cfg)
+        owner = fn.split("/")[0].lower()
+        rec.update({
+            "repo_id": rid,
+            "is_archived": meta.get("isArchived"),
+            "lane": "port" if cb > 0 else "validate",
+            # Discovery would have dropped this owner (NVIDIA's orgs): an upstream PR
+            # is unlikely, and a port of it needs a clean per-file licence scan.
+            "excluded_owner": owner in excl_orgs or any(x in owner for x in excl_substr),
+            "seed": info,
+            "first_seen": today,
+            "last_seen": today,
+        })
+        known[fn.lower()] = rec
+        new_recs.append(rec)
+
+    merged = existing + new_recs
+    # .get: a hand-added record (lssfau/walberla) carries no priority.
+    merged.sort(key=lambda r: (-(r.get("priority") or 0), r["full_name"].lower()))
+    # indent=1 matches what triage.py writes back, so a seed diff shows only new rows.
+    with open(out_path, "w") as f:
+        json.dump(merged, f, indent=1)
+        f.write("\n")
+    stats = {
+        "seed": source,
+        "repos": len(seed["repos"]),
+        "no_github_repo": len(seed.get("no_repo", [])),
+        "already_decided": len(decided),
+        "already_adopted": len(adopted),
+        "already_candidates": len(retagged),
+        "meta_errors": meta_err,
+        "kept_new": len(new_recs),
+        "lane_port": sum(1 for r in new_recs if r["lane"] == "port"),
+        "lane_validate": sum(1 for r in new_recs if r["lane"] == "validate"),
+        "total_candidates": len(merged),
+    }
+    sys.stderr.write("discover: seed summary " + json.dumps(stats) + "\n")
+    return new_recs, stats
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="discover")
     ap.add_argument("--limit", type=int, help="per-query result cap (<=1000)")
@@ -484,8 +650,25 @@ def main(argv=None):
                     help="run the CUDA-source code-search pass and merge new repos "
                          "into --out (the metadata-search blind-spot closer); "
                          "does not re-run the metadata pass")
+    ap.add_argument("--seed", metavar="FILE",
+                    help="merge the repos in a seed file (data/seeds/*.json) into --out")
+    ap.add_argument("--seed-gap-matrix", metavar="URL_OR_HTML", nargs="?",
+                    const=GAP_MATRIX_URL,
+                    help="write data/seeds/amd-gap-matrix.json from the gap matrix page "
+                         "(default: the live site), then stop")
     args = ap.parse_args(argv)
     cfg = load_cfg()
+    if args.seed_gap_matrix:
+        seed = seed_from_gap_matrix(args.seed_gap_matrix)
+        SEEDS.mkdir(parents=True, exist_ok=True)
+        path = SEEDS / "amd-gap-matrix.json"
+        path.write_text(json.dumps(seed, indent=1) + "\n", encoding="utf-8")
+        sys.stderr.write(f"discover: {len(seed['repos'])} repos, {len(seed['no_repo'])} "
+                         f"without a GitHub repo (version {seed['version']}) -> {path}\n")
+        return 0
+    if args.seed:
+        run_seed_pass(cfg, args.seed, args.out)
+        return 0
     if args.code_search:
         run_code_search_pass(cfg, args.out)
         return 0

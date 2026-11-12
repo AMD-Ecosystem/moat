@@ -258,6 +258,51 @@
         "at": "2026-08-25T18:06:14Z"
       },
       "project": null
+    },
+    {
+      "id": "mitsuba3-drjit-amd-backend",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): mitsuba-renderer/mitsuba3 GPU variants need a Dr.Jit AMD GPU backend, which does not exist (drjit-core has CUDA and LLVM backends only). Revisit when a Dr.Jit HIP backend lands upstream.",
+      "refs": [
+        "https://github.com/mitsuba-renderer/mitsuba3",
+        "https://github.com/mitsuba-renderer/drjit-core/pull/203",
+        "https://github.com/mitsuba-renderer/drjit/pull/520"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-12T16:46:37Z",
+      "decided": null,
+      "project": null
+    },
+    {
+      "id": "nemo-curator-rocm-ds",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): NVIDIA-NeMo/Curator needs a complete ROCm-DS stack, not just one RAPIDS library: GPU curation runs on cuDF, cuML, RAFT/cuVS and Dask-CUDA together (cuML is already declined for MOAT). Revisit when ROCm-DS covers that full set.",
+      "refs": [
+        "https://github.com/NVIDIA-NeMo/Curator"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-12T16:52:33Z",
+      "decided": null,
+      "project": null
+    },
+    {
+      "id": "maniskill-sapien-physx-warp",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): haosulab/ManiSkill GPU simulation needs SAPIEN's PhysX GPU backend and a vendored NVIDIA Warp. Revisit once the MOAT PhysX and Warp ports are delivered, starting with a screen of haosulab/SAPIEN.",
+      "refs": [
+        "https://github.com/haosulab/ManiSkill",
+        "https://github.com/haosulab/SAPIEN"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-12T16:59:21Z",
+      "decided": null,
+      "project": null
     }
   ]
 }
