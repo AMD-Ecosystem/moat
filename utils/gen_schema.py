@@ -260,6 +260,35 @@ def build():
                     "note": {"type": "string"},
                 },
             },
+            # Corrections to license_spdx after intake: what it was, what it became,
+            # and the licence file that shows it.
+            "license_spdx_history": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["to", "evidence", "at"],
+                    "properties": {
+                        "from": {"type": ["string", "null"]},
+                        "to": {"type": "string", "minLength": 1},
+                        "evidence": {"type": "string", "minLength": 1},
+                        "at": {"type": "string"},
+                    },
+                },
+            },
+            # A person's ruling that the port lives in an existing repository
+            # instead of the organization fork intake assumes (ROCm/cupy is AMD's
+            # staging fork for upstream CuPy). fork_url carries the value.
+            "fork_url_ruling": {
+                "type": ["object", "null"],
+                "required": ["url", "by", "at"],
+                "properties": {
+                    "url": {"type": "string", "minLength": 1},
+                    "previous": {"type": ["string", "null"]},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
             # A person's ruling that the upstream PR targets a branch other than
             # the default recorded at scaffold (upstream asks for PRs against
             # `development`, say). fork_default_branch carries the value; this
@@ -273,6 +302,57 @@ def build():
                     "by": {"type": "string", "minLength": 1},
                     "at": {"type": "string"},
                     "reason": {"type": "string"},
+                },
+            },
+            # A person's ruling that the port lives on a fork branch other than
+            # moat-port (a release line's release/<version>.amd<rev>). fork_branch
+            # carries the value; this records who changed it, from what, and why.
+            "fork_branch_ruling": {
+                "type": ["object", "null"],
+                "required": ["branch", "by", "at"],
+                "properties": {
+                    "branch": {"type": "string", "minLength": 1},
+                    "previous": {"type": ["string", "null"]},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
+            # A person's ruling on how the port is delivered when it is not an
+            # upstream PR. fork-release makes the project a release line: the
+            # review PR runs from fork_branch into the pristine mirror
+            # fork_default_branch, and approval tags and freezes the branch
+            # (`upstream.py --finish-release`) instead of publishing.
+            "delivery": {
+                "type": ["object", "null"],
+                "required": ["mode", "by", "at"],
+                "properties": {
+                    "mode": {"enum": list(m.DELIVERY_MODES)},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "tag_format": {"type": "string", "minLength": 1},
+                    "reason": {"type": "string"},
+                },
+            },
+            # A delivered release line: the tag pushed at the approved commit, and
+            # the sign-off it rests on. From here the port branch is frozen and
+            # later upstream patch releases arrive as sync rounds.
+            "release": {
+                "type": ["object", "null"],
+                "required": ["tag", "sha", "at"],
+                "properties": {
+                    "tag": {"type": "string", "minLength": 1},
+                    "sha": {"type": "string", "minLength": 1},
+                    "review_pr": {"type": ["string", "null"]},
+                    "approved_by": {"type": "string"},
+                    "at": {"type": "string"},
+                    # The upstream version and revision the tag names, so the
+                    # next patch sync is numbered from them.
+                    "version": {"type": "string"},
+                    "rev": {"type": "integer"},
+                    "review_closed_at": {"type": "string"},
+                    # Earlier releases of this line, oldest first.
+                    "history": {"type": "array", "items": {"type": "object"}},
                 },
             },
             # The review PR on our own fork: where a maintainer sees the code, title

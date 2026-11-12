@@ -58,11 +58,11 @@ Goal: only `.cu`/`.hip` translation units see the HIP toolchain; host C++ is unt
    `ROCR_VISIBLE_DEVICES` (and a `find_program` fallback to the absolute
    `/opt/rocm/bin/rocm_agent_enumerator` defeats hiding it from `PATH`). Then re-read the
    README block you wrote about the flag: lc0 dropped its gfx90a fallback in a review round
-   and left the README claiming "defaulting to gfx90a" through two further porter rounds
-   until a validator's documentation check caught it. Any review round that changes what a
+   and left the README claiming "defaulting to gfx90a" through two further rounds until a
+   documentation check during validation caught it. Any review round that changes what a
    build option DOES carries a documentation edit with it.
 
-   **Document a clean-environment-safe build: pass `-DCMAKE_PREFIX_PATH=/opt/rocm`.** When the project's CMake calls `find_package(hip)` / `find_package(hipcub)` / `find_package(rocThrust)` (most Strategy A ports do, to link `hip::device`/`hip::host`), CMake locates ROCm's config packages by deriving the `/opt/rocm` prefix from `/opt/rocm/bin` being on `PATH`. Our dev hosts and the gfx90a container have ROCm on `PATH`, so the build "just works" for us; a clean ROCm container (e.g. `rocm/dev-ubuntu`) does not, and the exact documented command fails with `hip_DIR-NOTFOUND` (or hipcub/rocThrust NOTFOUND). Setting `-DCMAKE_HIP_COMPILER` by absolute path is NOT enough (it points the HIP language at the compiler but does not seed the package search), and `ROCM_PATH=/opt/rocm` alone is NOT enough either (both proven experimentally). Always pass `-DCMAKE_PREFIX_PATH=/opt/rocm` (append `;/opt/rocm` when the command already sets a prefix for another dependency, e.g. a vendored gtsam/pangolin install) in BOTH the recipe you run and every documented build block (README, install guide, notes.md), plus a one-line "or put `/opt/rocm/bin` on `PATH`" note. Watch the silent variant: `find_package(hip QUIET)` does not error on a clean container, it disables the GPU path and builds a CPU-only library. Builds that use only `enable_language(HIP)` with no roc/hip `find_package` and no `hip::` link are not affected. (visionaray #53 surfaced this while standing up a clean-container CI job.)
+   **Document a clean-environment-safe build: pass `-DCMAKE_PREFIX_PATH=/opt/rocm`.** When the project's CMake calls `find_package(hip)` / `find_package(hipcub)` / `find_package(rocThrust)` (most Strategy A ports do, to link `hip::device`/`hip::host`), CMake locates ROCm's config packages by deriving the `/opt/rocm` prefix from `/opt/rocm/bin` being on `PATH`. A developer machine usually has ROCm on `PATH`, so the build "just works" there; a clean ROCm container (e.g. `rocm/dev-ubuntu`) does not, and the exact documented command fails with `hip_DIR-NOTFOUND` (or hipcub/rocThrust NOTFOUND). Setting `-DCMAKE_HIP_COMPILER` by absolute path is NOT enough (it points the HIP language at the compiler but does not seed the package search), and `ROCM_PATH=/opt/rocm` alone is NOT enough either (both proven experimentally). Always pass `-DCMAKE_PREFIX_PATH=/opt/rocm` (append `;/opt/rocm` when the command already sets a prefix for another dependency, e.g. a vendored gtsam/pangolin install) in BOTH the recipe you run and every documented build block (README, install guide, porting notes), plus a one-line "or put `/opt/rocm/bin` on `PATH`" note. Watch the silent variant: `find_package(hip QUIET)` does not error on a clean container, it disables the GPU path and builds a CPU-only library. Builds that use only `enable_language(HIP)` with no roc/hip `find_package` and no `hip::` link are not affected. (visionaray #53 surfaced this while standing up a clean-container CI job.)
 
 3. Guard genuinely divergent code with `#if defined(USE_HIP)`; keep such guards rare. Dispatch sites that accept either backend use `#if defined(USE_CUDA) || defined(USE_HIP)`.
 
@@ -132,10 +132,9 @@ copy is `assets/hip_link_win.py` in this skill. It strips `-fuse-ld=*`, converts
 pairs and bare MSVC `/flags` to `-Wl,` form, and rewrites `-lXXX.lib` to `-Xlinker XXX.lib`
 so lld-link resolves them via `LIB`. It is ~60 lines and carries no project-specific state.
 
-**Vendor a copy into the fork** (conventionally `cmake/hip_link_win.py`) rather than
-referencing this repository: the project's CMake calls it, and the work is meant to be
-upstreamed, so a pull request cannot depend on a file that only exists here. Fix bugs in the
-canonical copy first, then re-copy into the forks that carry it.
+**Vendor a copy into the project** (conventionally `cmake/hip_link_win.py`) rather than
+referencing this skill: the project's CMake calls it, and the work is meant to be
+upstreamed, so a pull request cannot depend on a file that only exists here.
 
 Guard the override to Windows. Related and separate: the clang-cl `/Fo` bundler bug, where the
 CMake HIP compile rule must emit `-o <OBJECT>` instead of `/Fo<OBJECT>` because the driver

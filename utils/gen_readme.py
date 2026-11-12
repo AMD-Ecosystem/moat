@@ -46,8 +46,16 @@ def load_projects():
         if disp and disp.get("disposition") == "skip":
             rec["disposition"] = disp.get("reason")
             rec["disposition_note"] = disp.get("note")
+        # A project whose AMD support already exists, upstream or in someone else's
+        # port, has no port of ours to show. Its disposition record keeps intake from
+        # repeating the work; a row would only pad the board. A PR of ours still shows.
+        if rec.get("disposition") in HIDDEN_DISPOSITIONS and not rec.get("pr_url"):
+            continue
         out.append(rec)
     return out
+
+
+HIDDEN_DISPOSITIONS = {"already-supported", "ported-elsewhere"}
 
 
 # A gate is proven, or it is not. Ranked best-first: a project with one architecture
@@ -138,15 +146,15 @@ def outcome_cell(p):
     """The Outcome column: what this project actually delivered. An upstream PR
     (any state) is shown by its glyph + number. Projects without a PR carry a recorded
     disposition in data/dispositions.json:
-      already-supported -- upstream already had a ROCm path, so there is no port to
-                    show. It is a screening result, not a row on a porting board:
-                    data/dispositions.json is its record and the table stays about
-                    ports. Falls through to ⚪ if such a project ever keeps a folder.
+      already-supported / ported-elsewhere -- AMD support exists without us, so
+                    there is no port to show. A screening result, not a row on a
+                    porting board: data/dispositions.json is its record, and
+                    load_projects drops the row unless we opened a PR.
       license-blocked -- the port may work, but the upstream license (non-commercial,
                     no-derivative, or otherwise incompatible) bars contributing it.
                     The platform cells stay truthful (the port was built/validated)
                     and the outcome carries ⚖️.
-      cant-port / not-a-target / duplicate / ported-elsewhere / declined -- set aside. ⚪
+      cant-port / not-a-target / duplicate / declined -- set aside. ⚪
       opted-out -- the maintainer asked not to receive our pull requests. Reads the
                     same ⚪, and deliberately so: whose decision it was belongs in the
                     record, not in a glyph on a board about ports.
@@ -187,6 +195,14 @@ def outcome_cell(p):
     # recorded" is the opposite of a port whose fork is the place to get it.
     if p.get("no_upstream"):
         return "🔵 fork is the AMD path; upstream takes no pull requests"
+    # A release line ships as a tagged branch on the fork, never as an upstream
+    # pull request: the tag once it is signed off, and the plan until then.
+    if moatlib.release_line(p):
+        rel = p.get("release")
+        if rel:
+            return (f"\U0001f535 released on the fork as `{rel.get('tag')}` "
+                    f"([branch]({p.get('fork_url')}/tree/{p.get('fork_branch')}))")
+        return "\u2014 fork release line; no upstream pull request"
     return "—"
 
 
@@ -221,7 +237,7 @@ def render_table(projects):
         "| ✅ | proven on the current code | | 🟣 | contribution merged upstream |",
         "| 🔄 | proven earlier; the code has moved since | | 🟢 | pull request open |",
         "| 🔧 | in progress | | 🔴 | pull request closed |",
-        "| ⬜ | not started | | 🔵 | the fork is where AMD support lives: upstream points users at it instead of merging, or is archived and takes no pull requests |",
+        "| ⬜ | not started | | 🔵 | the fork is where AMD support lives: upstream points users at it instead of merging, is archived and takes no pull requests, or will never take the port and the fork ships tagged releases |",
         "| 🚫 | blocked, with a reason recorded | | ⚖️ | licence bars contributing the port |",
         "| 🎫 | waived for this project, with maintainer approval | | ⚪ | set aside, with the reason recorded |",
         "| — | nothing recorded | | ⏸ | on hold, deliberately not being worked |",

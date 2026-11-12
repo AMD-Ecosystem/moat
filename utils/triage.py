@@ -121,6 +121,10 @@ def cmd_review(args):
     print(f"{'#':>3}  {'prio':>5}  {'stars':>7}  project -- description")
     for i, c in enumerate(shown, 1):
         tag = " [verify]" if c["full_name"].lower() in disp else ""
+        if c.get("lane"):
+            tag += f" [{c['lane']}]"
+        if c.get("excluded_owner"):
+            tag += " [nvidia-org]"
         desc = (c.get("description") or "")[:64]
         print(f"{i:>3}  {c['priority']:>5}  {c['stars']:>7}  {c['full_name']}{tag} -- {desc}")
     print(f"\nskip:   python3 utils/triage.py skip <owner/repo> --reason <{'|'.join(moatlib.SKIP_REASONS)}> --by <who> --note \"...\"")

@@ -1,0 +1,34 @@
+{
+  "schema_version": 3,
+  "name": "bitsandbytes",
+  "upstream_url": "https://github.com/bitsandbytes-foundation/bitsandbytes",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T03:04:35Z",
+  "updated_at": "2026-11-06T11:40:14Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream single-source HIP build (compat.cuh), README lists all features on CDNA+RDNA Linux/Windows, ROCm 6.4-10.0 release builds; residual ROCm fixes open as PRs by AMD/community (#2089, #2101, #2102)",
+    "viable": true,
+    "summary": "bitsandbytes: upstream already builds for ROCm and marks LLM.int8, 4-bit QLoRA and 8-bit optimizers supported on CDNA and RDNA, Linux and Windows; leftover fixes already have open PRs",
+    "at": "2026-11-06T03:06:54Z"
+  },
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/bitsandbytes-foundation/bitsandbytes/blob/main/LICENSE",
+      "at": "2026-11-06T11:40:13Z"
+    }
+  ]
+}
