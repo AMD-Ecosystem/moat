@@ -2,13 +2,13 @@
   "schema_version": 3,
   "name": "cucim",
   "upstream_url": "https://github.com/rapidsai/cucim",
-  "fork_url": "https://github.com/AMD-Ecosystem/cucim",
+  "fork_url": "https://github.com/AMD-Ecosystem/hipCIM",
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
   "stage": "screened",
   "adopted_at": "2026-11-11T20:55:23Z",
-  "updated_at": "2026-11-12T22:36:26Z",
+  "updated_at": "2026-11-12T22:42:38Z",
   "head_sha": null,
   "depends_on": [
     "cupy"
@@ -61,5 +61,12 @@
     "viable": true,
     "summary": "cuCIM (biomedical image I/O + CuPy skimage); AMD port AMD-Ecosystem/hipCIM is Instinct/Linux-only, 84 behind upstream; value is Radeon wave32; Windows via MOAT cupy for skimage, C++ reader hard",
     "at": "2026-11-11T21:16:31Z"
+  },
+  "fork_url_ruling": {
+    "url": "https://github.com/AMD-Ecosystem/hipCIM",
+    "previous": "https://github.com/AMD-Ecosystem/cucim",
+    "by": "Jeff Daily",
+    "at": "2026-11-12T22:42:37Z",
+    "reason": "the fork is AMD-Ecosystem/hipCIM (renamed from cucim; ruling 2026-11-11); its main is the upstream mirror"
   }
 }
