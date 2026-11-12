@@ -31,3 +31,7 @@ Validation project (lane `validate`, seed `amd-gap-matrix`, NVIDIA-owned upstrea
 - **CUDA-only dependencies:** Transformer Engine (substitute: ROCm/TransformerEngine; check THD/context-parallel and FP8 recipe coverage there), megatron-FSDP (pure Python, expected fine), subquadratic-ops-torch-cu13 (gap, binary-only), flash-attn-4 cu13 (gap; FA2 ROCm or TE attention as substitute requires recipe edits), NVFP4 (gap), `nvcr.io` base images (substitute `rocm/pytorch`).
 - **Windows:** no upstream Windows story (Docker/Linux, multi-GPU training); ROCm Transformer Engine has no Windows build. Suggest a `windows` gate waiver; only jeff approves it.
 - **Risks:** largest scope of the batch; TE-ROCm feature parity (THD packing, CP, MXFP8) decides most recipes; wave32 Radeon has limited TE support and small memory, so the wave32 gate may come down to single-GPU ESM2 / Llama3 tests.
+
+## Declined (2026-11-12)
+
+Jeff Daily declined bionemo-recipes as out of scope for MOAT on 2026-11-12: 25 recipe/model suites whose outcome is decided by ROCm TransformerEngine feature parity (THD, context parallel, MXFP8), with the Megatron/Evo2 recipes gapped from the start (binary-only subquadratic-ops, flash-attn-4 cu13, NVFP4). The validation belongs with the ROCm TransformerEngine team. Intake is re-recorded as decline and the project is held. Do not request a fork.
