@@ -1032,6 +1032,15 @@
     "reason": "not-a-target",
     "repo_id": 206801089
   },
+  "k2-fsa/sherpa-onnx": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:22:35Z",
+    "disposition": "skip",
+    "full_name": "k2-fsa/sherpa-onnx",
+    "note": "gap-matrix missed-project triage 2026-11-11: ONNX Runtime execution-provider plumbing only, no CUDA; AMD path is ORT's MIGraphX EP",
+    "reason": "not-a-target",
+    "repo_id": 531380835
+  },
   "kangruix/waveblender": {
     "decided": "2026-06-05T04:43:54Z",
     "disposition": "skip",
@@ -1515,6 +1524,15 @@
     "reason": "cant-port",
     "repo_id": 1035697953
   },
+  "nvidia-ai-blueprints/video-search-and-summarization": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:22:26Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA-AI-Blueprints/video-search-and-summarization",
+    "note": "gap-matrix missed-project triage 2026-11-11: orchestrates closed NVIDIA NIM/DeepStream containers, proprietary carve-outs, no portable CUDA",
+    "reason": "not-a-target",
+    "repo_id": 876545970
+  },
   "nvidia-bionemo/nvmolkit": {
     "decided": "2026-05-29T23:57:04Z",
     "disposition": "skip",
@@ -1539,6 +1557,15 @@
     "note": "gap-matrix intake 2026-11-10: proprietary files",
     "reason": "license-blocked",
     "repo_id": 468713635
+  },
+  "nvidia-rtx/rtxns": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:22:31Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA-RTX/RTXNS",
+    "note": "gap-matrix missed-project triage 2026-11-11: RTX SDK licence restricts use to NVIDIA GPUs; VK_NV_cooperative_vector, no CUDA",
+    "reason": "license-blocked",
+    "repo_id": 920294782
   },
   "nvidia-rtx/rtxntc": {
     "by": "Jeff Daily",
@@ -1681,6 +1708,15 @@
     "reason": "not-a-target",
     "repo_id": 98350667
   },
+  "nvidiagameworks/rtx-remix": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:22:28Z",
+    "disposition": "skip",
+    "full_name": "NVIDIAGameWorks/rtx-remix",
+    "note": "gap-matrix missed-project triage 2026-11-11: no CUDA; Vulkan runtime already runs on AMD; Toolkit needs Omniverse; dxvk-remix submodule has proprietary DLSS/NRC/NRD headers",
+    "reason": "not-a-target",
+    "repo_id": 615397988
+  },
   "nvlabs/nvdiffrast": {
     "decided": "2026-08-07T00:29:52Z",
     "disposition": "skip",
@@ -1762,6 +1798,15 @@
     "note": "Upstream ships a mature RDNA-only HIP backend; validated, no port needed. Analysis retained in history: `git show b40576d53399:projects/CTranslate2/plan.md` (notes.md, plan.md).",
     "reason": "already-supported",
     "repo_id": 210299376
+  },
+  "openrlhf/openrlhf": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:22:38Z",
+    "disposition": "skip",
+    "full_name": "OpenRLHF/OpenRLHF",
+    "note": "gap-matrix missed-project triage 2026-11-11: AMD upstream PR #1331 (MI300X support) open; dependencies (vLLM, DeepSpeed, Ray, flash-attn) are ROCm-capable",
+    "reason": "ported-elsewhere",
+    "repo_id": 672415139
   },
   "openucx/ucc": {
     "decided": "2026-06-05T01:18:36Z",
@@ -1858,6 +1903,15 @@
     "note": "C++ tasking library; has HIP backend (HPX/pika run on Frontier)",
     "reason": "already-supported",
     "repo_id": 448873865
+  },
+  "pola-rs/polars": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:22:40Z",
+    "disposition": "skip",
+    "full_name": "pola-rs/polars",
+    "note": "gap-matrix missed-project triage 2026-11-11: GPU engine is cudf-polars, carried by AMD's hipDF (ROCm-DS); nothing to port in polars",
+    "reason": "ported-elsewhere",
+    "repo_id": 263727855
   },
   "pranjalssh/fast.cu": {
     "decided": "2026-05-30T00:45:17Z",
@@ -2233,6 +2287,15 @@
     "note": "SPH-EXA C++20 hydro; DOE exascale code, has HIP (cmake/FindHIP.cmake)",
     "reason": "already-supported",
     "repo_id": 162446023
+  },
+  "stanfordvl/behavior-1k": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:22:33Z",
+    "disposition": "skip",
+    "full_name": "StanfordVL/BEHAVIOR-1K",
+    "note": "gap-matrix missed-project triage 2026-11-11: built on Isaac Sim/Omniverse; 3 files carry an NVIDIA proprietary header",
+    "reason": "not-a-target",
+    "repo_id": 439439857
   },
   "stereolabs/zed-sdk": {
     "decided": "2026-06-03T23:50:07Z",
