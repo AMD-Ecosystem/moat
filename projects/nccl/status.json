@@ -1,0 +1,34 @@
+{
+  "schema_version": 3,
+  "name": "nccl",
+  "upstream_url": "https://github.com/NVIDIA/nccl",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T03:22:41Z",
+  "updated_at": "2026-11-06T10:58:13Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "license_spdx": "Apache-2.0 AND BSD-3-Clause",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0 AND BSD-3-Clause",
+      "evidence": "https://github.com/NVIDIA/nccl/blob/master/LICENSE.txt",
+      "at": "2026-11-06T10:57:57Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "ported-elsewhere",
+    "duplicate_effort": "RCCL, AMD-maintained, ROCm/rocm-systems projects/rccl (ROCm/rccl retired)",
+    "viable": false,
+    "summary": "NVIDIA collectives library; AMD's RCCL (ROCm/rocm-systems projects/rccl) tracks NCCL 2.32 incl. symmetric memory; NVLS is NVSwitch hardware with no AMD equivalent",
+    "at": "2026-11-06T10:58:13Z"
+  }
+}

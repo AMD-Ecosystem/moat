@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Say what a pull request is FOR, from what it changes.
 
 Two kinds of change arrive here and they want different review. A PROJECT pull
@@ -48,7 +50,7 @@ PROJECT = re.compile(r"^projects/([^/]+)/(.*)$")
 AUTHORED = ("notes.md", "plan.md", "surface.json")
 # Files that follow from a project change and belong with it.
 RECORD = ("README.md", "data/dispositions.json", "data/deferred.json")
-KNOWLEDGE = ".claude/skills/cuda-to-rocm/"
+KNOWLEDGE = (".claude/skills/cuda-to-rocm/", ".claude/skills/moat-porting/")
 
 
 def changed(base):
@@ -197,7 +199,7 @@ def main():
                   f"{', '.join(stray[:6])}")
             print("  A reviewer reading this against one port will not look at those.")
         if knowledge:
-            print("  + a lesson promoted to the cuda-to-rocm skill, which belongs with "
+            print("  + a lesson promoted to the cuda-to-rocm or moat-porting skill, which belongs with "
                   "the port that taught it")
         if infra:
             print(f"  + {len(infra)} file(s) changing MOAT itself:")
