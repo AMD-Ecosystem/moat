@@ -1,0 +1,34 @@
+{
+  "schema_version": 3,
+  "name": "exllamav2",
+  "upstream_url": "https://github.com/turboderp-org/exllamav2",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T00:41:13Z",
+  "updated_at": "2026-11-06T01:00:48Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/turboderp-org/exllamav2/blob/master/LICENSE",
+      "at": "2026-11-06T00:59:18Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream HIP path since 2023 with ROCm wheels through rocm6.4/torch2.9; ROCm 7 warpSize build fix open as AMD PRs #807 and #815",
+    "viable": true,
+    "summary": "Quantized LLM inference ext; upstream ships HIP path and ROCm wheels (to 6.4); only gap (ROCm 7 build) already has 2 AMD PRs; V2 dev stopped for V3",
+    "at": "2026-11-06T01:00:47Z"
+  }
+}

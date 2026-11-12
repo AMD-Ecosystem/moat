@@ -1,0 +1,472 @@
+{"kind":"phase","ts":"2026-05-31T01:33:15Z","phase":"compile","seconds":0.586,"exit":1,"cmd":"bash agent_space/lfs_build.sh configure gfx90a"}
+{"kind":"phase","ts":"2026-05-31T01:33:46Z","phase":"compile","seconds":3.696,"exit":1,"cmd":"bash agent_space/lfs_build.sh configure gfx90a"}
+{"kind":"phase","ts":"2026-05-31T01:34:11Z","phase":"compile","seconds":3.382,"exit":1,"cmd":"bash agent_space/lfs_build.sh configure gfx90a"}
+{"kind":"phase","ts":"2026-05-31T01:34:32Z","phase":"compile","seconds":7.530,"exit":1,"cmd":"bash agent_space/lfs_build.sh configure gfx90a"}
+{"kind":"phase","ts":"2026-05-31T01:35:27Z","phase":"compile","seconds":7.818,"exit":1,"cmd":"bash agent_space/lfs_build.sh configure gfx90a"}
+{"kind":"phase","ts":"2026-05-31T01:36:00Z","phase":"compile","seconds":6.377,"exit":0,"cmd":"bash agent_space/lfs_build.sh configure gfx90a"}
+{"kind":"phase","ts":"2026-05-31T02:48:56Z","phase":"compile","seconds":10.003,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip --target lfs_compute_tests -j16"}
+{"kind":"phase","ts":"2026-05-31T02:49:07Z","phase":"test","seconds":0.143,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip -R lfs_compute_tests --output-on-failure --no-compress-output -j1"}
+{"kind":"phase","ts":"2026-05-31T02:49:26Z","phase":"test","seconds":0.003,"exit":127,"cmd":"./cmake/hip_tests/lfs_compute_tests --gtest_output=xml:/tmp/lfs_run1.xml"}
+{"kind":"phase","ts":"2026-05-31T02:49:46Z","phase":"test","seconds":15.700,"exit":1,"cmd":"/var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip/cmake/hip_tests/lfs_compute_tests --gtest_output=xml:/tmp/lfs_run1.xml"}
+{"kind":"phase","ts":"2026-05-31T03:06:03Z","phase":"compile","seconds":2.743,"exit":1,"cmd":"bash /var/lib/jenkins/moat/agent_space/lfs_build_gfx1100.sh"}
+{"kind":"phase","ts":"2026-05-31T03:09:41Z","phase":"compile","seconds":166.615,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/lfs_build_gfx1100.sh"}
+{"kind":"phase","ts":"2026-05-31T03:10:18Z","phase":"test","seconds":10.771,"exit":1,"cmd":"bash -c HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-06-05T08:19:22Z","phase":"compile","seconds":0.069,"exit":1,"cmd":"cmake --build B:/develop/moat/projects/LichtFeld-Studio/build-win-gfx1101 --target lfs_compute_tests -j64"}
+{"kind":"phase","ts":"2026-06-05T08:21:27Z","phase":"compile","seconds":86.139,"exit":1,"cmd":"cmake --build B:/develop/moat/projects/LichtFeld-Studio/build-win-gfx1101 --target lfs_compute_tests -j64"}
+{"kind":"phase","ts":"2026-06-05T09:02:39Z","phase":"test","seconds":5.091,"exit":0,"cmd":"python3 B:/develop/moat/agent_space/run_lfs_test_full.py"}
+{"kind":"phase","ts":"2026-06-05T09:14:25Z","phase":"compile","seconds":0.187,"exit":1,"cmd":"python3 agent_space/lfs_win_rebuild.py"}
+{"kind":"phase","ts":"2026-06-05T09:17:37Z","phase":"compile","seconds":0.906,"exit":1,"cmd":"python3 agent_space/lfs_win_rebuild.py"}
+{"kind":"phase","ts":"2026-06-05T09:17:53Z","phase":"compile","seconds":0.440,"exit":1,"cmd":"python3 agent_space/lfs_win_rebuild.py"}
+{"kind":"phase","ts":"2026-06-05T09:18:29Z","phase":"compile","seconds":1.175,"exit":1,"cmd":"python3 agent_space/lfs_win_rebuild.py"}
+{"kind":"phase","ts":"2026-06-05T09:27:07Z","phase":"test","seconds":5.123,"exit":0,"cmd":"python3 agent_space/run_lfs_test_full.py"}
+{"kind":"phase","ts":"2026-06-05T10:49:30Z","phase":"test","seconds":5.077,"exit":0,"cmd":"python B:/develop/moat/agent_space/run_lfs_test_full.py"}
+{"kind":"phase","ts":"2026-06-05T10:49:44Z","phase":"test","seconds":5.108,"exit":0,"cmd":"python B:/develop/moat/agent_space/run_lfs_test_full.py"}
+{"kind":"phase","ts":"2026-06-05T10:49:54Z","phase":"test","seconds":5.147,"exit":0,"cmd":"python B:/develop/moat/agent_space/run_lfs_test_full.py"}
+{"kind":"phase","ts":"2026-06-05T10:50:04Z","phase":"test","seconds":5.154,"exit":0,"cmd":"python B:/develop/moat/agent_space/run_lfs_test_full.py"}
+{"kind":"phase","ts":"2026-06-05T10:50:14Z","phase":"test","seconds":5.192,"exit":0,"cmd":"python B:/develop/moat/agent_space/run_lfs_test_full.py"}
+{"kind":"phase","ts":"2026-06-05T11:29:32Z","phase":"build-old","seconds":0.351,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/LichtFeld-Studio/src && git checkout e24593f4ea6b1aff0f45b1dd98cab2209b0fd17e"}
+{"kind":"phase","ts":"2026-06-05T11:30:38Z","phase":"build-old","seconds":0.942,"exit":1,"cmd":"cmake -S /var/lib/jenkins/moat/projects/LichtFeld-Studio/src -B /var/lib/jenkins/moat/projects/LichtFeld-Studio/build-old -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_C_COMPILER=/opt/rocm/llvm/bin/clang -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DTorch_DIR=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake/Torch -DLFS_GLM_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/glm-1.0.1 -DLFS_ARGS_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/lfs_args"}
+{"kind":"phase","ts":"2026-06-05T11:31:07Z","phase":"build-old","seconds":3.202,"exit":0,"cmd":"cmake -S /var/lib/jenkins/moat/projects/LichtFeld-Studio/src -B /var/lib/jenkins/moat/projects/LichtFeld-Studio/build-old -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_C_COMPILER=/opt/rocm/llvm/bin/clang -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DTorch_DIR=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake/Torch -DLFS_GLM_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/glm-1.0.1 -DLFS_ARGS_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/lfs_args"}
+{"kind":"phase","ts":"2026-06-05T11:33:00Z","phase":"build-old","seconds":110.421,"exit":1,"cmd":"cmake --build /var/lib/jenkins/moat/projects/LichtFeld-Studio/build-old --target lfs_compute_tests -j16"}
+{"kind":"phase","ts":"2026-06-05T11:36:34Z","phase":"build-new","seconds":8.192,"exit":0,"cmd":"cmake -S /var/lib/jenkins/moat/projects/LichtFeld-Studio/src -B /var/lib/jenkins/moat/projects/LichtFeld-Studio/build-new -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_C_COMPILER=/opt/rocm/llvm/bin/clang -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DTorch_DIR=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake/Torch -DLFS_GLM_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/glm-1.0.1 -DLFS_ARGS_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/lfs_args"}
+{"kind":"phase","ts":"2026-06-05T11:39:36Z","phase":"build-new","seconds":178.459,"exit":1,"cmd":"cmake --build /var/lib/jenkins/moat/projects/LichtFeld-Studio/build-new --target lfs_compute_tests -j16"}
+{"kind":"phase","ts":"2026-06-05T11:44:56Z","phase":"compile","seconds":188.781,"exit":0,"cmd":"bash -c cmake -S /var/lib/jenkins/moat/projects/LichtFeld-Studio/src -B /var/lib/jenkins/moat/projects/LichtFeld-Studio/build-new -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_C_COMPILER=/opt/rocm/llvm/bin/clang -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DTorch_DIR=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake/Torch -DLFS_GLM_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/glm-1.0.1 -DLFS_ARGS_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/lfs_args && cmake --build /var/lib/jenkins/moat/projects/LichtFeld-Studio/build-new --target lfs_compute_tests -j16"}
+{"kind":"phase","ts":"2026-06-05T11:45:18Z","phase":"test","seconds":16.185,"exit":1,"cmd":"/var/lib/jenkins/moat/projects/LichtFeld-Studio/build-new/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-06-05T13:24:47Z","phase":"compile-old","seconds":162.974,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/lfs-old-gfx1100 --target lfs_compute_tests -j16"}
+{"kind":"phase","ts":"2026-06-05T13:27:54Z","phase":"compile-new","seconds":162.558,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/lfs-new-gfx1100 --target lfs_compute_tests -j16"}
+{"kind":"phase","ts":"2026-06-05T13:28:46Z","phase":"test","seconds":11.124,"exit":1,"cmd":"/var/lib/jenkins/moat/lfs-new-gfx1100/cmake/hip_tests/lfs_compute_tests"}
+{"kind": "tokens", "ts": "2026-06-05T11:00:44Z", "tokens": 70279, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-05T13:30:56Z", "tokens": 68460, "source": "validator (gfx1100 revalidate)"}
+{"kind": "tokens", "ts": "2026-06-05T11:47:37Z", "tokens": 71931, "source": "validator"}
+{"kind":"phase","ts":"2026-06-07T19:28:27Z","phase":"compile","seconds":7.286,"exit":0,"cmd":"bash agent_space/lfs_build.sh configure gfx90a"}
+{"kind":"phase","ts":"2026-06-07T19:28:58Z","phase":"compile","seconds":22.694,"exit":1,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip --target lfs_compute_tests -j16"}
+{"kind":"phase","ts":"2026-06-07T19:30:40Z","phase":"compile","seconds":25.272,"exit":0,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip --target lfs_compute_tests -j16"}
+{"kind":"phase","ts":"2026-06-07T19:30:57Z","phase":"test","seconds":0.003,"exit":127,"cmd":"./cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-06-07T19:31:25Z","phase":"test","seconds":17.554,"exit":1,"cmd":"/var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-06-07T19:34:24Z","phase":"test","seconds":17.025,"exit":1,"cmd":"/var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-06-07T19:37:39Z","phase":"compile","seconds":146.318,"exit":0,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip --target lfs_compute_tests -j16"}
+{"kind":"phase","ts":"2026-06-07T19:38:09Z","phase":"test","seconds":17.201,"exit":1,"cmd":"/var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-06-07T19:54:00Z","phase":"compile","seconds":118.086,"exit":0,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip-gfx1100 --target lfs_compute_tests -j16"}
+{"kind":"phase","ts":"2026-06-07T19:54:24Z","phase":"test","seconds":13.440,"exit":0,"cmd":"bash -c HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests 2>&1 | tail -30"}
+{"kind": "tokens", "ts": "2026-06-15T12:15:40Z", "tokens": 51286, "source": "pr-prep"}
+{"kind":"session","ts":"2026-06-16T06:04:20Z","epoch":1781589860.596870507,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-06-16T06:06:10Z","epoch":1781589970.394455906,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-06-16T06:07:13Z", "tokens": 63947, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-16T06:35:35Z", "tokens": 31016, "source": "porter"}
+{"kind":"phase","ts":"2026-06-17T00:12:37Z","phase":"compile","seconds":0.120,"exit":1,"cmd":"cmake --build build-hip-gfx1100 --target lfs_compute_tests -j16"}
+{"kind":"phase","ts":"2026-06-17T00:16:59Z","phase":"compile","seconds":257.134,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip-gfx1100 --target lfs_compute_tests -j16"}
+{"kind": "tokens", "ts": "2026-06-17T00:20:58Z", "tokens": 49368, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-16T06:37:04Z", "tokens": 48627, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-23T22:54:15Z", "tokens": 22786, "source": "gfx90a in-pipeline cleanup (batch 1 subagent, shared)"}
+{"kind": "tokens", "ts": "2026-06-07T19:56:48Z", "tokens": 72412, "source": "validator"}
+{"kind":"session","ts":"2026-08-21T02:34:49Z","epoch":1787279689.545089000,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-21T03:01:51Z","epoch":1787281311.860068200,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-24T17:36:20Z","epoch":1787592980.498801300,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-24T18:01:55Z","epoch":1787594516.012103600,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-24T22:11:50Z","epoch":1787609510.449816306,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-24T22:11:59Z","phase":"misc","seconds":0.024,"exit":0,"cmd":"git --git-dir=/tmp/claude-1000/-var-lib-jenkins-moat/9560e441-1c09-4f38-a41d-049e22727436/scratchpad/lfs.git diff --stat 5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c 53c363f8dfa285bfd917570baa151c8cc47e5235"}
+{"kind":"session","ts":"2026-08-24T22:16:44Z","epoch":1787609804.778046449,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T22:20:20Z","epoch":1787610020.496092906,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T22:30:29Z","epoch":1787610629.343743389,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T22:33:38Z","epoch":1787610818.409058932,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T22:46:33Z","epoch":1787611593.329563786,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T22:47:42Z","epoch":1787611662.794707166,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T22:52:09Z","epoch":1787611929.034530851,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T22:53:35Z","epoch":1787612015.057037285,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T23:01:34Z","epoch":1787612494.512488368,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T23:02:46Z","epoch":1787612566.146419065,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T23:09:59Z","epoch":1787612999.646088379,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T23:11:05Z","epoch":1787613065.430025433,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T23:16:33Z","epoch":1787613393.457288703,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T23:20:47Z","epoch":1787613647.696597467,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T23:22:02Z","epoch":1787613722.684984987,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-27T03:25:26Z","epoch":1787801126.270248017,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-27T03:27:11Z","phase":"compile","seconds":6.247,"exit":0,"cmd":"cmake -S projects/LichtFeld-Studio/src -B projects/LichtFeld-Studio/src/build-hip-gfx1100 -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_CXX_COMPILER=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_C_COMPILER=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DTorch_DIR=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake/Torch -DGTest_DIR=/usr/lib/x86_64-linux-gnu/cmake/GTest -DLFS_GLM_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/glm-1.0.1 -DLFS_ARGS_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/lfs_args"}
+{"kind":"phase","ts":"2026-08-27T03:29:19Z","phase":"compile","seconds":122.147,"exit":1,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip-gfx1100 --target lfs_compute_tests -j64"}
+{"kind":"session","ts":"2026-08-27T03:43:41Z","epoch":1787802221.040944046,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-27T03:50:56Z","phase":"compile","seconds":120.467,"exit":1,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip-gfx1100 --target lfs_compute_tests -j64"}
+{"kind":"phase","ts":"2026-08-27T03:51:28Z","phase":"compile","seconds":24.255,"exit":1,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip-gfx1100 --target lfs_compute_tests -j64"}
+{"kind":"phase","ts":"2026-08-27T03:54:02Z","phase":"compile","seconds":76.296,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip-gfx1100 --target lfs_compute_tests -j64"}
+{"kind":"phase","ts":"2026-08-27T03:54:29Z","phase":"test","seconds":14.210,"exit":1,"cmd":"./projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-08-27T03:54:54Z","phase":"test","seconds":12.968,"exit":1,"cmd":"./projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"session","ts":"2026-08-27T04:02:44Z","epoch":1787803364.115527436,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-27T04:10:33Z","epoch":1787803833.823056869,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-27T04:20:34Z","epoch":1787804434.314235708,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-27T04:27:01Z","epoch":1787804821.148301068,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-27T04:27:05Z","epoch":1787804825.260756229,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-27T04:33:45Z","epoch":1787805225.203929703,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-27T04:40:21Z","epoch":1787805621.866790315,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-27T04:46:10Z","epoch":1787805970.598802808,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-27T04:49:58Z","epoch":1787806198.853866234,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-27T04:52:05Z","epoch":1787806325.325452322,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-27T04:52:09Z","phase":"compile","seconds":0.179,"exit":0,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip-gfx1100 --target lfs_compute_tests -j64"}
+{"kind":"phase","ts":"2026-08-27T04:52:35Z","phase":"test","seconds":13.100,"exit":1,"cmd":"env HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-08-27T04:53:05Z","phase":"test","seconds":12.970,"exit":1,"cmd":"env HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"session","ts":"2026-08-27T04:54:47Z","epoch":1787806487.888003871,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-20T01:05:11Z","epoch":1792458313.103121000,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-20T01:15:03Z","epoch":1792458904.037722900,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-20T01:34:34Z","epoch":1792460074.906445200,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-20T01:44:26Z","epoch":1792460666.899543200,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-20T01:46:29Z","epoch":1792460789.724675900,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-10-20T01:46:39Z","phase":"compile","seconds":5.171,"exit":0,"cmd":"cmd.exe /c D:\\Develop\\moat\\agent_space\\lfs_doccheck2.bat"}
+{"kind":"phase","ts":"2026-10-20T01:46:57Z","phase":"test","seconds":0.787,"exit":127,"cmd":"./lfs_compute_tests.exe"}
+{"kind":"phase","ts":"2026-10-20T01:47:02Z","phase":"test","seconds":0.569,"exit":127,"cmd":"./lfs_compute_tests.exe"}
+{"kind":"phase","ts":"2026-10-20T01:48:25Z","phase":"test","seconds":31.211,"exit":1,"cmd":"D:/Develop/moat/agent_space/lfs-doccheck2/cmake/hip_tests/lfs_compute_tests.exe"}
+{"kind":"phase","ts":"2026-10-20T01:48:59Z","phase":"test","seconds":28.820,"exit":1,"cmd":"D:/Develop/moat/agent_space/lfs-doccheck2/cmake/hip_tests/lfs_compute_tests.exe"}
+{"kind":"session","ts":"2026-10-20T01:50:02Z","epoch":1792461003.345367400,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-20T01:59:45Z","epoch":1792461585.777815680,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-20T02:01:35Z","phase":"compile","seconds":5.159,"exit":0,"cmd":"cmake -S projects/LichtFeld-Studio/src -B projects/LichtFeld-Studio/src/build-hip-gfx1100 -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_CXX_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_C_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DLFS_GLM_INCLUDE_DIR=/var/lib/jenkins/fleet/jobs/rx7900-20261019-185736-moat-lichtfeld-revalidate-session-prompt/moat/agent_space/_deps/glm-1.0.1 -DLFS_ARGS_INCLUDE_DIR=/var/lib/jenkins/fleet/jobs/rx7900-20261019-185736-moat-lichtfeld-revalidate-session-prompt/moat/agent_space/_deps/lfs_args -DGTest_DIR=/usr/lib/x86_64-linux-gnu/cmake/GTest -Dspdlog_DIR=/var/lib/jenkins/fleet/jobs/rx7900-20261019-185736-moat-lichtfeld-revalidate-session-prompt/moat/agent_space/_deps/spdlog-install/lib/cmake/spdlog -DTorch_DIR=/opt/python-3.11-venv/lib/python3.11/site-packages/torch/share/cmake/Torch"}
+{"kind":"phase","ts":"2026-10-20T02:02:29Z","phase":"compile","seconds":48.729,"exit":1,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip-gfx1100 --target lfs_compute_tests -j24"}
+{"kind":"phase","ts":"2026-10-20T02:05:06Z","phase":"compile","seconds":132.891,"exit":0,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip-gfx1100 --target lfs_compute_tests -j24"}
+{"kind":"phase","ts":"2026-10-20T02:05:13Z","phase":"test","seconds":0.004,"exit":127,"cmd":"projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-20T02:05:13Z","phase":"test","seconds":0.003,"exit":127,"cmd":"projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-20T02:05:38Z","phase":"test","seconds":13.749,"exit":1,"cmd":"projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-20T02:05:51Z","phase":"test","seconds":12.967,"exit":1,"cmd":"projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"session","ts":"2026-10-20T02:06:38Z","epoch":1792461998.879770227,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-20T01:59:04Z","epoch":1792461544.219146641,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-20T02:00:20Z","phase":"compile","seconds":3.070,"exit":1,"cmd":"bash agent_space/lfs_build.sh"}
+{"kind":"phase","ts":"2026-10-20T02:02:48Z","phase":"compile","seconds":136.294,"exit":0,"cmd":"bash agent_space/lfs_build.sh"}
+{"kind":"phase","ts":"2026-10-20T02:03:04Z","phase":"test","seconds":0.004,"exit":127,"cmd":"projects/LichtFeld-Studio/src/build-hip-gfx90a/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-20T02:03:04Z","phase":"test","seconds":0.004,"exit":127,"cmd":"projects/LichtFeld-Studio/src/build-hip-gfx90a/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-20T02:03:32Z","phase":"test","seconds":18.401,"exit":1,"cmd":"projects/LichtFeld-Studio/src/build-hip-gfx90a/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-20T02:03:49Z","phase":"test","seconds":17.173,"exit":1,"cmd":"projects/LichtFeld-Studio/src/build-hip-gfx90a/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"session","ts":"2026-10-20T02:04:36Z","epoch":1792461876.997656317,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-20T05:14:36Z","epoch":1792473277.068399100,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-10-20T06:20:34Z","phase":"compile","seconds":1.755,"exit":1,"cmd":"cmd.exe /c agent_spacelfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T06:23:24Z","phase":"compile","seconds":54.861,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T06:40:20Z","phase":"compile","seconds":362.172,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T07:13:23Z","phase":"compile","seconds":755.044,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T07:20:34Z","phase":"compile","seconds":20.489,"exit":127,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T07:28:05Z","phase":"compile","seconds":142.484,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T07:40:55Z","phase":"compile","seconds":723.208,"exit":127,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T07:42:00Z","phase":"compile","seconds":8.876,"exit":127,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T07:42:38Z","phase":"compile","seconds":12.512,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T07:43:41Z","phase":"test","seconds":2.938,"exit":0,"cmd":"bash agent_space/lfs_sync_run.sh --gtest_list_tests"}
+{"kind":"phase","ts":"2026-10-20T07:56:04Z","phase":"test","seconds":720.743,"exit":1,"cmd":"bash agent_space/lfs_sync_run.sh"}
+{"kind":"phase","ts":"2026-10-20T08:28:13Z","phase":"test","seconds":689.554,"exit":1,"cmd":"timeout 1800 bash agent_space/lfs_sync_run.sh --gtest_filter=-GsplatRasterizerTest.*"}
+{"kind":"phase","ts":"2026-10-20T08:53:34Z","phase":"test","seconds":1420.287,"exit":0,"cmd":"python agent_space/lfs_suite_runner.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\r1"}
+{"kind":"phase","ts":"2026-10-20T09:08:29Z","phase":"compile","seconds":761.437,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T09:24:17Z","phase":"compile","seconds":751.609,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T09:36:27Z","phase":"compile","seconds":691.226,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T09:50:19Z","phase":"compile","seconds":761.306,"exit":127,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T09:52:52Z","phase":"compile","seconds":9.491,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T10:43:37Z","phase":"test","seconds":3001.866,"exit":0,"cmd":"python agent_space/lfs_suite_runner.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\r2"}
+{"kind":"phase","ts":"2026-10-20T11:05:39Z","phase":"compile","seconds":16.374,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T11:36:17Z","phase":"test","seconds":1470.739,"exit":0,"cmd":"python agent_space/lfs_suite_runner.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\r3"}
+{"kind":"session","ts":"2026-10-20T11:53:25Z","epoch":1792497206.198064900,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-20T11:59:00Z","epoch":1792497541.416394800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-20T12:44:04Z","epoch":1792500244.641375600,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-10-20T13:16:10Z","phase":"compile","seconds":774.448,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T13:17:33Z","phase":"test","seconds":5.953,"exit":1,"cmd":"/d/Develop/moat/agent_space/lfs-sync/cmake/hip_tests/lfs_compute_tests.exe --gtest_filter=TensorD4FromBlobHomeStreamTest.*:CudaTest.D*"}
+{"kind":"phase","ts":"2026-10-20T13:27:13Z","phase":"compile","seconds":45.499,"exit":0,"cmd":"python /c/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/f21cdb92-9033-4994-a579-8091ec3a54e0/scratchpad/gfx90a_debug.py compile"}
+{"kind":"phase","ts":"2026-10-20T21:56:43Z","phase":"compile","seconds":111.472,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T22:22:15Z","phase":"test","seconds":1520.977,"exit":0,"cmd":"python agent_space/lfs_suite_runner.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\r5"}
+{"kind":"session","ts":"2026-10-20T22:40:45Z","epoch":1792536045.476376200,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-20T22:50:22Z","epoch":1792536623.037038000,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-21T06:17:32Z","epoch":1792563452.896334625,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-21T06:19:48Z","phase":"compile","seconds":61.042,"exit":1,"cmd":"bash agent_space/lfs_build.sh build-hip-gfx1100 Release"}
+{"kind":"phase","ts":"2026-10-21T06:20:03Z","phase":"compile","seconds":3.366,"exit":1,"cmd":"bash agent_space/lfs_build.sh build-hip-gfx1100 Release"}
+{"kind":"phase","ts":"2026-10-21T06:23:39Z","phase":"compile","seconds":205.555,"exit":0,"cmd":"bash agent_space/lfs_build.sh build-hip-gfx1100 Release"}
+{"kind":"phase","ts":"2026-10-21T06:31:15Z","phase":"test","seconds":34.829,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261020-231423-moat-lichtfeld-revalidate-ce822a31-sessi/moat/agent_space/run1.log"}
+{"kind":"phase","ts":"2026-10-21T06:32:39Z","phase":"test","seconds":32.426,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261020-231423-moat-lichtfeld-revalidate-ce822a31-sessi/moat/agent_space/run2.log"}
+{"kind":"session","ts":"2026-10-21T06:37:55Z","epoch":1792564675.918578888,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-21T06:17:39Z","epoch":1792563459.202928280,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T06:24:39Z","phase":"compile","seconds":350.155,"exit":1,"cmd":"agent_space/lfs_build.sh Release build-hip-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T06:31:41Z","phase":"compile","seconds":359.419,"exit":0,"cmd":"agent_space/lfs_build.sh Release build-hip-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T06:33:00Z","phase":"test","seconds":55.085,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T06:35:12Z","phase":"test","seconds":51.550,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T06:41:06Z","phase":"compile","seconds":346.802,"exit":1,"cmd":"agent_space/lfs_build.sh Debug build-hip-gfx90a-debug"}
+{"kind":"phase","ts":"2026-10-21T06:42:16Z","phase":"compile","seconds":14.243,"exit":1,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip-gfx90a-debug --target lfs_compute_tests -j 128 -- -k 0"}
+{"kind":"phase","ts":"2026-10-21T06:48:27Z","phase":"compile","seconds":336.364,"exit":0,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip-gfx90a-debug --target lfs_compute_tests -j 128"}
+{"kind":"phase","ts":"2026-10-21T06:59:39Z","phase":"test","seconds":648.184,"exit":143,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-debug --gtest_filter=WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.*"}
+{"kind":"phase","ts":"2026-10-21T07:15:18Z","phase":"test","seconds":443.645,"exit":0,"cmd":"agent_space/lfs_pertest.sh build-hip-gfx90a-debug WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.* agent_space/dbg_focus 150"}
+{"kind":"phase","ts":"2026-10-21T07:15:52Z","phase":"test","seconds":18.044,"exit":0,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-dbgO2 --gtest_filter=WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.*"}
+{"kind":"phase","ts":"2026-10-21T07:16:34Z","phase":"test","seconds":42.307,"exit":134,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-dbgO2"}
+{"kind":"phase","ts":"2026-10-21T07:17:49Z","phase":"test","seconds":37.582,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-dbgO2 --gtest_filter=-DepthAnchorSetupTest.DamagedDepthPropagatesDecodeError"}
+{"kind":"phase","ts":"2026-10-21T07:19:17Z","phase":"test","seconds":59.623,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-dbgO2 --gtest_filter=-DepthAnchorSetupTest.DamagedDepthPropagatesDecodeError:DeviceFaultTest.IndexSelectOobThrowsBoundsViolationWithFields"}
+{"kind":"session","ts":"2026-10-21T07:21:58Z","epoch":1792567318.998303188,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-21T06:15:06Z","epoch":1792563306.112778200,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-10-21T06:29:48Z","phase":"compile","seconds":881.279,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-21T06:54:21Z","phase":"test","seconds":1462.689,"exit":0,"cmd":"python agent_space/lfs_val_runner.py D:\\Develop\\moat\\agent_space\\lfs-val-runs\\v1"}
+{"kind":"phase","ts":"2026-10-21T07:23:36Z","phase":"test","seconds":1416.715,"exit":0,"cmd":"python agent_space/lfs_val_runner.py D:\\Develop\\moat\\agent_space\\lfs-val-runs\\v2"}
+{"kind":"phase","ts":"2026-10-21T07:39:49Z","phase":"compile","seconds":497.393,"exit":127,"cmd":"cmd.exe /c agent_space\\lfs_dbg_r6.bat"}
+{"kind":"phase","ts":"2026-10-21T07:56:50Z","phase":"compile","seconds":825.947,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-21T08:21:36Z","phase":"test","seconds":1454.075,"exit":0,"cmd":"python agent_space/lfs_suite_runner.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\r6"}
+{"kind":"session","ts":"2026-10-21T08:32:19Z","epoch":1792571539.732772300,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-21T08:35:52Z","epoch":1792571752.448956100,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-21T08:37:21Z","epoch":1792571841.823240300,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-10-21T08:37:30Z","phase":"compile","seconds":8.265,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-21T09:01:43Z","phase":"test","seconds":1447.238,"exit":0,"cmd":"python agent_space/lfs_suite_runner.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\v1"}
+{"kind":"session","ts":"2026-10-21T09:02:43Z","epoch":1792573363.208566400,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-21T08:40:15Z","epoch":1792572015.100052883,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-21T08:44:44Z","phase":"compile","seconds":234.277,"exit":0,"cmd":"bash agent_space/lfs_build.sh build-hip-gfx1100 Release"}
+{"kind":"phase","ts":"2026-10-21T08:45:26Z","phase":"test","seconds":32.697,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261021-013652-moat-lichtfeld-revalidate-61ea877f-sessi/moat/agent_space/run1.log"}
+{"kind":"phase","ts":"2026-10-21T08:45:58Z","phase":"test","seconds":32.689,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261021-013652-moat-lichtfeld-revalidate-61ea877f-sessi/moat/agent_space/run2.log"}
+{"kind":"phase","ts":"2026-10-21T08:49:23Z","phase":"test","seconds":32.350,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261021-013652-moat-lichtfeld-revalidate-61ea877f-sessi/moat/agent_space/run3.log"}
+{"kind":"session","ts":"2026-10-21T08:50:19Z","epoch":1792572619.362696949,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-21T08:42:12Z","epoch":1792572132.055457315,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T08:48:46Z","phase":"compile","seconds":358.673,"exit":0,"cmd":"bash agent_space/lfs_build.sh Release build-hip-gfx90a -DOpenEXR_DIR=/var/lib/jenkins/fleet/jobs/mi200-20261021-013647-moat-lichtfeld-revalidate-61ea877f-sessi/moat/agent_space/_deps/openexr-install/lib/cmake/OpenEXR"}
+{"kind":"phase","ts":"2026-10-21T08:50:26Z","phase":"test","seconds":51.287,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T08:51:19Z","phase":"test","seconds":52.268,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T08:57:20Z","phase":"compile","seconds":347.833,"exit":0,"cmd":"bash agent_space/lfs_build.sh Debug build-hip-gfx90a-debug -DOpenEXR_DIR=/var/lib/jenkins/fleet/jobs/mi200-20261021-013647-moat-lichtfeld-revalidate-61ea877f-sessi/moat/agent_space/_deps/openexr-install/lib/cmake/OpenEXR"}
+{"kind":"phase","ts":"2026-10-21T09:03:27Z","phase":"compile","seconds":367.272,"exit":0,"cmd":"bash agent_space/lfs_build.sh Debug build-hip-gfx90a-dbgO2 -DOpenEXR_DIR=/var/lib/jenkins/fleet/jobs/mi200-20261021-013647-moat-lichtfeld-revalidate-61ea877f-sessi/moat/agent_space/_deps/openexr-install/lib/cmake/OpenEXR -DCMAKE_HIP_FLAGS_DEBUG=-O2 -g0 -DCMAKE_CXX_FLAGS_DEBUG=-O2 -g0 -DCMAKE_C_FLAGS_DEBUG=-O2 -g0"}
+{"kind":"phase","ts":"2026-10-21T09:12:17Z","phase":"test","seconds":18.058,"exit":0,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-dbgO2 --gtest_filter=WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.*"}
+{"kind":"phase","ts":"2026-10-21T09:13:20Z","phase":"test","seconds":59.231,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-dbgO2 --gtest_filter=-DepthAnchorSetupTest.DamagedDepthPropagatesDecodeError:DeviceFaultTest.IndexSelectOobThrowsBoundsViolationWithFields"}
+{"kind":"phase","ts":"2026-10-21T09:13:52Z","phase":"test","seconds":25.160,"exit":0,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-debug --gtest_filter=WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.*-GsplatRasterizerTest.GutModeSteadyStateAllocs:GsplatRasterizerTest.GutFromWorldGradParity"}
+{"kind":"session","ts":"2026-10-21T09:14:33Z","epoch":1792574073.107850950,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T22:55:29Z","phase":"compile","seconds":605.757,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-21T22:56:28Z","phase":"compile","seconds":12.049,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-22T04:31:32Z","phase":"test","seconds":20095.071,"exit":0,"cmd":"python agent_space/lfs_suite_runner.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\r7"}
+{"kind":"session","ts":"2026-10-22T04:44:12Z","epoch":1792644252.909411000,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-22T04:58:51Z","epoch":1792645131.815133100,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-22T05:01:01Z","epoch":1792645261.737889000,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-10-22T05:01:10Z","phase":"compile","seconds":8.279,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-22T05:07:09Z","phase":"test","seconds":349.088,"exit":0,"cmd":"python agent_space/lfs_suite_runner_v2.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\v2"}
+{"kind":"session","ts":"2026-10-22T05:07:38Z","epoch":1792645658.702802800,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-22T05:03:46Z","epoch":1792645426.328091821,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-22T05:07:54Z","phase":"compile","seconds":236.233,"exit":1,"cmd":"bash agent_space/lfs_build.sh build-hip-gfx1100 Release"}
+{"kind":"session","ts":"2026-10-22T05:10:19Z","epoch":1792645819.135335353,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-22T05:22:41Z","phase":"compile","seconds":553.517,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-22T05:32:55Z","phase":"test","seconds":339.622,"exit":0,"cmd":"python agent_space/lfs_suite_runner_v2.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\p1022"}
+{"kind":"session","ts":"2026-10-22T05:42:06Z","epoch":1792647726.811558100,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-22T05:45:20Z","epoch":1792647920.996815900,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-22T05:47:52Z","epoch":1792648072.137310600,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-22T05:50:06Z","epoch":1792648207.008852600,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-22T05:51:56Z","epoch":1792648316.207704800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-10-22T06:00:54Z","phase":"compile","seconds":537.002,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-22T06:06:41Z","phase":"test","seconds":334.332,"exit":0,"cmd":"python agent_space/lfs_suite_runner_v2.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\v3"}
+{"kind":"session","ts":"2026-10-22T06:07:28Z","epoch":1792649248.287139400,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-22T05:54:43Z","epoch":1792648483.623931672,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-22T05:58:50Z","phase":"compile","seconds":235.978,"exit":0,"cmd":"bash agent_space/lfs_build.sh build-hip-gfx1100 Release"}
+{"kind":"phase","ts":"2026-10-22T05:59:31Z","phase":"test","seconds":32.571,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261021-225113-moat-lichtfeld-revalidate-81b7fa24-sessi/moat/agent_space/run1.log"}
+{"kind":"phase","ts":"2026-10-22T06:00:04Z","phase":"test","seconds":32.347,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261021-225113-moat-lichtfeld-revalidate-81b7fa24-sessi/moat/agent_space/run2.log"}
+{"kind":"phase","ts":"2026-10-22T06:00:36Z","phase":"test","seconds":32.517,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261021-225113-moat-lichtfeld-revalidate-81b7fa24-sessi/moat/agent_space/run3.log"}
+{"kind":"session","ts":"2026-10-22T06:01:30Z","epoch":1792648890.465153320,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-22T06:10:35Z","epoch":1792649435.905293128,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-22T06:16:48Z","phase":"compile","seconds":358.947,"exit":0,"cmd":"bash agent_space/lfs_build.sh Release build-hip-gfx90a -DOpenEXR_DIR=/var/lib/jenkins/fleet/jobs/mi200-20261021-225105-moat-lichtfeld-revalidate-81b7fa24-sessi/moat/agent_space/_deps/openexr-install/lib/cmake/OpenEXR"}
+{"kind":"phase","ts":"2026-10-22T06:17:58Z","phase":"test","seconds":51.478,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a"}
+{"kind":"phase","ts":"2026-10-22T06:18:50Z","phase":"test","seconds":51.557,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a"}
+{"kind":"phase","ts":"2026-10-22T06:24:53Z","phase":"compile","seconds":346.734,"exit":0,"cmd":"bash agent_space/lfs_build.sh Debug build-hip-gfx90a-debug -DOpenEXR_DIR=/var/lib/jenkins/fleet/jobs/mi200-20261021-225105-moat-lichtfeld-revalidate-81b7fa24-sessi/moat/agent_space/_deps/openexr-install/lib/cmake/OpenEXR"}
+{"kind":"phase","ts":"2026-10-22T06:30:58Z","phase":"compile","seconds":364.832,"exit":0,"cmd":"bash agent_space/lfs_build.sh Debug build-hip-gfx90a-dbgO2 -DOpenEXR_DIR=/var/lib/jenkins/fleet/jobs/mi200-20261021-225105-moat-lichtfeld-revalidate-81b7fa24-sessi/moat/agent_space/_deps/openexr-install/lib/cmake/OpenEXR -DCMAKE_HIP_FLAGS_DEBUG=-O2 -g0 -DCMAKE_CXX_FLAGS_DEBUG=-O2 -g0 -DCMAKE_C_FLAGS_DEBUG=-O2 -g0"}
+{"kind":"phase","ts":"2026-10-22T06:31:44Z","phase":"test","seconds":18.059,"exit":0,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-dbgO2 --gtest_filter=WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.*"}
+{"kind":"phase","ts":"2026-10-22T06:32:44Z","phase":"test","seconds":59.998,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-dbgO2 --gtest_filter=-DepthAnchorSetupTest.DamagedDepthPropagatesDecodeError:DeviceFaultTest.IndexSelectOobThrowsBoundsViolationWithFields"}
+{"kind":"phase","ts":"2026-10-22T06:33:27Z","phase":"test","seconds":25.142,"exit":0,"cmd":"timeout 300 agent_space/lfs_run.sh build-hip-gfx90a-debug --gtest_filter=WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.*-GsplatRasterizerTest.GutModeSteadyStateAllocs:GsplatRasterizerTest.GutFromWorldGradParity"}
+{"kind":"session","ts":"2026-10-22T06:34:38Z","epoch":1792650878.624466448,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-27T16:23:24Z","phase":"compile","seconds":584.761,"exit":0,"cmd":"bash agent_space/vcpkg_install.sh"}
+{"kind":"phase","ts":"2026-10-27T16:25:35Z","phase":"compile","seconds":10.842,"exit":1,"cmd":"bash agent_space/lfs_full_build.sh build-hip-full configure"}
+{"kind":"phase","ts":"2026-10-27T16:31:51Z","phase":"compile","seconds":337.394,"exit":1,"cmd":"bash agent_space/lfs_full_build.sh build-hip-full build"}
+{"kind":"phase","ts":"2026-10-27T16:55:03Z","phase":"compile","seconds":244.345,"exit":0,"cmd":"bash agent_space/lfs_compute_build.sh build-hip-compute"}
+{"kind":"phase","ts":"2026-10-27T17:37:05Z","phase":"test","seconds":8.135,"exit":0,"cmd":"bash agent_space/suite_runner.sh build-hip-gcc/tests/lichtfeld_tests /var/lib/jenkins/fleet/jobs/rx7900-20261027-090910-lfs-full-app-porter/moat/agent_space/full2"}
+{"kind":"phase","ts":"2026-10-27T18:32:00Z","phase":"test","seconds":3278.810,"exit":0,"cmd":"bash agent_space/suite_runner.sh build-hip-gcc/tests/lichtfeld_tests /var/lib/jenkins/fleet/jobs/rx7900-20261027-090910-lfs-full-app-porter/moat/agent_space/full2"}
+{"kind":"phase","ts":"2026-10-27T18:52:12Z","phase":"test","seconds":2.903,"exit":1,"cmd":"timeout 3000 bash agent_space/lfs_run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261027-090910-lfs-full-app-porter/moat/projects/LichtFeld-Studio/src/build-hip-gcc/LichtFeld-Studio --headless -d /var/lib/jenkins/fleet/jobs/rx7900-20261027-090910-lfs-full-app-porter/moat/projects/LichtFeld-Studio/src/data/bicycle --images images_4 -o /var/lib/jenkins/fleet/jobs/rx7900-20261027-090910-lfs-full-app-porter/moat/../deps/smoke_train --iter 3000 --export ply --no-depth-auto-generate --no-normal-auto-generate"}
+{"kind":"phase","ts":"2026-10-27T18:54:10Z","phase":"test","seconds":58.859,"exit":0,"cmd":"timeout 3000 bash agent_space/lfs_run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261027-090910-lfs-full-app-porter/moat/projects/LichtFeld-Studio/src/build-hip-gcc/LichtFeld-Studio --headless -d /var/lib/jenkins/fleet/jobs/rx7900-20261027-090910-lfs-full-app-porter/moat/projects/LichtFeld-Studio/src/data/bicycle --images images_4 -o /var/lib/jenkins/fleet/jobs/rx7900-20261027-090910-lfs-full-app-porter/moat/../deps/smoke_train --iter 3000 --export ply --no-depth-auto-generate --no-normal-auto-generate"}
+{"kind":"session","ts":"2026-10-28T18:24:35Z","epoch":1793211875.600293643,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-28T18:28:54Z","phase":"compile","seconds":259.121,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh build-hip-gcc all"}
+{"kind":"session","ts":"2026-10-28T18:54:59Z","epoch":1793213699.437324185,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-28T19:00:16Z","epoch":1793214016.320038523,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-28T19:11:17Z","epoch":1793214677.585877300,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-28T20:58:00Z","epoch":1793221080.514090262,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-28T21:05:24Z","phase":"compile","seconds":29.198,"exit":1,"cmd":"bash agent_space/lfs_full_build.sh build-hip-gcc"}
+{"kind":"phase","ts":"2026-10-28T21:05:37Z","phase":"compile","seconds":7.878,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh build-hip-gcc build"}
+{"kind":"phase","ts":"2026-10-28T21:09:44Z","phase":"compile","seconds":7.947,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh build-hip-gcc build"}
+{"kind":"session","ts":"2026-10-28T21:20:48Z","epoch":1793222448.693172787,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-28T21:33:41Z","epoch":1793223221.554240200,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-28T21:34:55Z","epoch":1793223295.974654500,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-28T23:06:54Z","epoch":1793228814.065717935,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-28T23:32:21Z","epoch":1793230341.963864059,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-29T17:38:50Z","phase":"compile","seconds":18.683,"exit":1,"cmd":"bash agent_space/lfs_full_build.sh build-hip-gcc build"}
+{"kind":"phase","ts":"2026-10-29T23:03:38Z","phase":"compile","seconds":196.735,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh build-hip-gcc build"}
+{"kind":"phase","ts":"2026-10-29T23:06:28Z","phase":"test","seconds":50.904,"exit":0,"cmd":"bash agent_space/run_suites.sh"}
+{"kind":"phase","ts":"2026-10-29T23:07:42Z","phase":"test","seconds":68.454,"exit":0,"cmd":"timeout -k 30 900 bash agent_space/lfs_run.sh ./LichtFeld-Studio --headless -d /var/lib/jenkins/fleet/jobs/rx7900-20261029-090528-lfs-sof1-fix/moat/projects/LichtFeld-Studio/src/data/bicycle --images images_4 -o /var/lib/jenkins/fleet/jobs/rx7900-20261029-090528-lfs-sof1-fix/moat/agent_space/runs/headless3000 --iter 3000 --eval --no-depth-auto-generate --no-normal-auto-generate"}
+{"kind":"session","ts":"2026-10-30T16:33:08Z","epoch":1793377988.218202459,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T16:35:57Z","epoch":1793378157.601184788,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T16:50:41Z","epoch":1793379041.181712338,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-30T17:10:37Z","phase":"compile","seconds":261.146,"exit":0,"cmd":"agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T17:20:07Z","phase":"compile","seconds":8.428,"exit":0,"cmd":"agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T17:32:20Z","phase":"compile","seconds":55.027,"exit":1,"cmd":"agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T17:34:03Z","phase":"compile","seconds":61.402,"exit":0,"cmd":"agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T17:35:34Z","phase":"compile","seconds":10.460,"exit":0,"cmd":"agent_space/lfs_full_build.sh"}
+{"kind":"session","ts":"2026-10-30T17:37:40Z","epoch":1793381860.153857917,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T17:41:32Z","epoch":1793382092.350775801,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T17:52:29Z","epoch":1793382749.423671513,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T17:56:25Z","epoch":1793382985.726656240,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-30T18:01:09Z","phase":"compile","seconds":258.965,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T18:01:48Z","phase":"compile","seconds":26.026,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T18:01:55Z","phase":"test","seconds":0.004,"exit":127,"cmd":"bash run_suites.sh RocDecodeVideo.*:Fixtures/RocDecodeMatchesSoftware.*"}
+{"kind":"phase","ts":"2026-10-30T18:02:02Z","phase":"test","seconds":1.664,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-105357-lfs-rocdecode-size-fix/moat/agent_space/run_suites.sh RocDecodeVideo.*:Fixtures/RocDecodeMatchesSoftware.*"}
+{"kind":"phase","ts":"2026-10-30T18:02:57Z","phase":"test","seconds":27.028,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-105357-lfs-rocdecode-size-fix/moat/agent_space/run_suites.sh VideoFrameExtractorOutcome* VideoFrameExtractorTrim* VideoFrameExtractorParams* *VideoFrameExtractorWriteTest* VideoFrameExtractorOutputNaming* *VideoColorRange* VideoDecoderFallback* VideoEncoder*"}
+{"kind":"phase","ts":"2026-10-30T18:03:25Z","phase":"test","seconds":20.472,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-105357-lfs-rocdecode-size-fix/moat/agent_space/run_suites.sh Video*"}
+{"kind":"phase","ts":"2026-10-30T18:04:48Z","phase":"test","seconds":66.706,"exit":0,"cmd":"timeout -k 30 900 bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-105357-lfs-rocdecode-size-fix/moat/agent_space/lfs_run.sh ./LichtFeld-Studio --headless -d /var/lib/jenkins/fleet/jobs/rx7900-20261030-105357-lfs-rocdecode-size-fix/moat/projects/LichtFeld-Studio/src/data/bicycle --images images_4 --iter 3000 --eval --no-depth-auto-generate --no-normal-auto-generate -o /var/lib/jenkins/fleet/jobs/rx7900-20261030-105357-lfs-rocdecode-size-fix/moat/agent_space/runs/headless/out"}
+{"kind":"session","ts":"2026-10-30T18:06:25Z","epoch":1793383585.275230527,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T19:03:21Z","epoch":1793387001.611409231,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T19:07:22Z","epoch":1793387242.593192014,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T19:11:50Z","epoch":1793387510.408506472,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-30T19:20:13Z","phase":"compile","seconds":257.678,"exit":1,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/moat/agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T19:22:22Z","phase":"test","seconds":0.061,"exit":0,"cmd":"bash agent_space/smoke.sh base1"}
+{"kind":"phase","ts":"2026-10-30T19:22:22Z","phase":"test","seconds":0.059,"exit":0,"cmd":"bash agent_space/smoke.sh base2"}
+{"kind":"phase","ts":"2026-10-30T19:23:41Z","phase":"test","seconds":67.462,"exit":0,"cmd":"bash agent_space/smoke.sh base1"}
+{"kind":"phase","ts":"2026-10-30T19:24:50Z","phase":"test","seconds":68.487,"exit":0,"cmd":"bash agent_space/smoke.sh base2"}
+{"kind":"phase","ts":"2026-10-30T19:26:37Z","phase":"test","seconds":68.897,"exit":0,"cmd":"bash agent_space/smoke.sh base1"}
+{"kind":"phase","ts":"2026-10-30T19:27:47Z","phase":"test","seconds":69.891,"exit":0,"cmd":"bash agent_space/smoke.sh base2"}
+{"kind":"phase","ts":"2026-10-30T19:35:37Z","phase":"compile","seconds":260.248,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T19:38:21Z","phase":"test","seconds":67.020,"exit":0,"cmd":"bash agent_space/smoke.sh pool1"}
+{"kind":"phase","ts":"2026-10-30T19:39:29Z","phase":"test","seconds":67.803,"exit":0,"cmd":"bash agent_space/smoke.sh pool2"}
+{"kind":"phase","ts":"2026-10-30T19:41:03Z","phase":"compile","seconds":0.054,"exit":1,"cmd":"cmake --build build-compute -j 24"}
+{"kind":"phase","ts":"2026-10-30T19:45:22Z","phase":"compile","seconds":239.955,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/build-compute -j 24"}
+{"kind":"phase","ts":"2026-10-30T19:46:21Z","phase":"test","seconds":40.577,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/moat/projects/LichtFeld-Studio/src && timeout -k 30 1800 /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/build-compute/cmake/hip_tests/lfs_compute_tests > /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/moat/agent_space/runs/compute/full.log 2>&1"}
+{"kind":"phase","ts":"2026-10-30T19:47:35Z","phase":"compile","seconds":48.230,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T19:53:32Z","phase":"compile","seconds":260.867,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/moat/agent_space/lfs_build_wintest.sh"}
+{"kind":"phase","ts":"2026-10-30T19:55:54Z","phase":"compile","seconds":18.198,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T20:23:02Z","phase":"test","seconds":1562.966,"exit":0,"cmd":"bash agent_space/suite_runner.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/moat/agent_space/runs/full"}
+{"kind":"phase","ts":"2026-10-30T20:25:41Z","phase":"test","seconds":67.335,"exit":0,"cmd":"bash agent_space/smoke.sh head"}
+{"kind":"session","ts":"2026-10-30T20:28:55Z","epoch":1793392135.016165224,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T20:33:29Z","epoch":1793392409.300476852,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T20:47:07Z","epoch":1793393227.719834819,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T20:50:19Z","epoch":1793393419.968708892,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T20:55:26Z","epoch":1793393726.117421551,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T20:59:46Z","epoch":1793393986.371002212,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T21:03:11Z","epoch":1793394191.199886518,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T21:07:11Z","epoch":1793394431.968356446,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-30T21:12:10Z","phase":"compile","seconds":257.745,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T21:16:30Z","phase":"compile","seconds":247.100,"exit":0,"cmd":"bash agent_space/lfs_compute_build.sh"}
+{"kind":"phase","ts":"2026-10-30T21:17:15Z","phase":"test","seconds":40.314,"exit":1,"cmd":"timeout -k 30 1200 /var/lib/jenkins/fleet/jobs/rx7900-20261030-140452-lfs-validate-gfx1100/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-30T21:59:04Z","phase":"test","seconds":2486.935,"exit":0,"cmd":"bash agent_space/suite_runner.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-140452-lfs-validate-gfx1100/moat/agent_space/suites-full"}
+{"kind":"phase","ts":"2026-10-30T22:13:43Z","phase":"compile","seconds":257.128,"exit":0,"cmd":"bash agent_space/lfs_base_build.sh lichtfeld_tests"}
+{"kind":"phase","ts":"2026-10-30T22:20:52Z","phase":"test","seconds":74.794,"exit":0,"cmd":"bash agent_space/smoke.sh head"}
+{"kind":"phase","ts":"2026-10-30T22:22:36Z","phase":"test","seconds":65.194,"exit":0,"cmd":"bash agent_space/smoke.sh head-hip0"}
+{"kind":"session","ts":"2026-10-30T22:24:17Z","epoch":1793399057.981423881,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T21:08:23Z","epoch":1793394503.081270452,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-30T21:27:51Z","phase":"compile","seconds":1076.009,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-140506-lfs-validate-gfx90a/build-hip-gfx90a"}
+{"kind":"phase","ts":"2026-10-30T21:34:21Z","phase":"compile","seconds":359.151,"exit":0,"cmd":"bash agent_space/lfs_compute_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-140506-lfs-validate-gfx90a/build-compute"}
+{"kind":"phase","ts":"2026-10-30T21:35:29Z","phase":"test","seconds":55.559,"exit":1,"cmd":"timeout -k 30 1800 /var/lib/jenkins/fleet/jobs/mi200-20261030-140506-lfs-validate-gfx90a/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-30T21:37:01Z","phase":"test","seconds":57.522,"exit":1,"cmd":"agent_space/in_src.sh timeout -k 30 1800 /var/lib/jenkins/fleet/jobs/mi200-20261030-140506-lfs-validate-gfx90a/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-30T22:24:01Z","phase":"test","seconds":2805.011,"exit":0,"cmd":"bash agent_space/run_suites.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-140506-lfs-validate-gfx90a/build-hip-gfx90a /var/lib/jenkins/fleet/jobs/mi200-20261030-140506-lfs-validate-gfx90a/moat/agent_space/runs/lft1"}
+{"kind":"phase","ts":"2026-10-30T22:35:10Z","phase":"test","seconds":106.658,"exit":0,"cmd":"bash agent_space/smoke.sh r1 /sys/bus/pci/devices/0000:32:00.0"}
+{"kind":"session","ts":"2026-10-30T22:37:40Z","epoch":1793399860.952164927,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-30T22:46:51Z","phase":"compile","seconds":268.224,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261030-152714-lfs-eventquery/repro/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T23:02:41Z","phase":"compile","seconds":249.626,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261030-152714-lfs-eventquery/repro/lfs_compute_build.sh"}
+{"kind":"session","ts":"2026-10-30T23:18:21Z","epoch":1793402301.348917833,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T23:31:53Z","epoch":1793403113.849557151,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T23:42:20Z","epoch":1793403740.278120938,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-30T23:46:57Z","phase":"compile","seconds":0.004,"exit":127,"cmd":"bash repro/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T23:52:53Z","phase":"compile","seconds":347.761,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-31T00:14:09Z","phase":"test","seconds":65.041,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/v/smoke.sh after"}
+{"kind":"phase","ts":"2026-10-31T00:21:24Z","phase":"compile","seconds":242.564,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/lfs_compute_build.sh"}
+{"kind":"phase","ts":"2026-10-31T00:46:07Z","phase":"test","seconds":1476.185,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/v/suite_runner.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/runs/sweep"}
+{"kind":"phase","ts":"2026-10-31T00:52:55Z","phase":"compile","seconds":26.452,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-31T00:53:01Z","phase":"compile","seconds":5.507,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/lfs_compute_build.sh"}
+{"kind":"phase","ts":"2026-10-31T00:53:07Z","phase":"test","seconds":0.101,"exit":127,"cmd":"timeout -k 30 1800 bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/build-compute"}
+{"kind":"phase","ts":"2026-10-31T00:53:54Z","phase":"test","seconds":40.442,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/moat/projects/LichtFeld-Studio/src && timeout -k 30 1800 xvfb-run -a /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"session","ts":"2026-10-31T00:56:57Z","epoch":1793408217.970392831,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-31T01:00:37Z","epoch":1793408437.938714627,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-31T01:22:46Z","epoch":1793409766.984703954,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-31T01:27:22Z","epoch":1793410042.863451491,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-31T01:37:56Z","phase":"compile","seconds":413.113,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/moat/projects/LichtFeld-Studio/src /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/build-hip"}
+{"kind":"phase","ts":"2026-10-31T01:38:51Z","phase":"compile","seconds":41.207,"exit":1,"cmd":"bash agent_space/lfs_full_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/moat/projects/LichtFeld-Studio/src /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/build-hip"}
+{"kind":"phase","ts":"2026-10-31T01:39:18Z","phase":"compile","seconds":14.939,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/moat/projects/LichtFeld-Studio/src /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/build-hip"}
+{"kind":"phase","ts":"2026-10-31T01:49:52Z","phase":"compile","seconds":123.730,"exit":1,"cmd":"bash agent_space/lfs_full_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/moat/projects/LichtFeld-Studio/src /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/build-hip"}
+{"kind":"phase","ts":"2026-10-31T01:50:46Z","phase":"compile","seconds":9.879,"exit":1,"cmd":"bash agent_space/lfs_full_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/moat/projects/LichtFeld-Studio/src /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/build-hip"}
+{"kind":"phase","ts":"2026-10-31T01:51:04Z","phase":"compile","seconds":10.583,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/moat/projects/LichtFeld-Studio/src /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/build-hip"}
+{"kind":"phase","ts":"2026-10-31T02:22:04Z","phase":"test","seconds":1794.994,"exit":0,"cmd":"bash agent_space/run_suites.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/build-hip /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/moat/agent_space/runs/full"}
+{"kind":"phase","ts":"2026-10-31T02:33:34Z","phase":"test","seconds":104.800,"exit":0,"cmd":"bash agent_space/smoke.sh r1 /sys/bus/pci/devices/0000:2f:00.0/drm/card3/device"}
+{"kind":"session","ts":"2026-10-31T02:38:32Z","epoch":1793414312.231375864,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-31T02:41:41Z","epoch":1793414501.550555777,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-31T02:43:13Z","phase":"compile","seconds":12.228,"exit":1,"cmd":"bash agent_space/cfg.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-194004-lfs-video-review/build-hip"}
+{"kind":"phase","ts":"2026-10-31T02:48:54Z","phase":"compile","seconds":309.045,"exit":1,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-194004-lfs-video-review/build-hip"}
+{"kind":"phase","ts":"2026-10-31T02:49:32Z","phase":"compile","seconds":0.320,"exit":1,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-194004-lfs-video-review/build-hip"}
+{"kind":"phase","ts":"2026-10-31T02:52:02Z","phase":"test","seconds":56.876,"exit":0,"cmd":"bash agent_space/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-194004-lfs-video-review/runs/video1.log 1800 Video*:*/Video*"}
+{"kind":"session","ts":"2026-10-31T02:54:17Z","epoch":1793415257.810407446,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-31T02:58:24Z","epoch":1793415504.463211737,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-31T02:59:22Z","phase":"compile","seconds":17.918,"exit":0,"cmd":"bash agent_space/cfg.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-195616-lfs-val-gfx1100/build-hip"}
+{"kind":"phase","ts":"2026-10-31T03:03:26Z","phase":"compile","seconds":238.601,"exit":0,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-195616-lfs-val-gfx1100/build-hip"}
+{"kind":"phase","ts":"2026-10-31T03:07:41Z","phase":"compile","seconds":247.312,"exit":0,"cmd":"bash agent_space/lfs_compute_build.sh"}
+{"kind":"phase","ts":"2026-10-31T03:08:10Z","phase":"test","seconds":0.094,"exit":127,"cmd":"timeout -k 30 1200 bash agent_space/lfs_run.sh ../build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-31T03:08:59Z","phase":"test","seconds":40.275,"exit":1,"cmd":"timeout -k 30 1200 bash agent_space/lfs_run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-195616-lfs-val-gfx1100/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-31T03:33:34Z","phase":"test","seconds":1457.123,"exit":0,"cmd":"bash agent_space/suite_runner.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-195616-lfs-val-gfx1100/suites-full"}
+{"kind":"phase","ts":"2026-10-31T04:40:30Z","phase":"test","seconds":3887.702,"exit":1,"cmd":"timeout -k 30 7000 bash agent_space/lfs_run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-195616-lfs-val-gfx1100/build-hip/tests/lichtfeld_tests --gtest_filter=ProjectDocumentTest.* --gtest_repeat=1000"}
+{"kind":"phase","ts":"2026-10-31T04:41:46Z","phase":"test","seconds":65.179,"exit":0,"cmd":"bash agent_space/smoke.sh head"}
+{"kind":"session","ts":"2026-10-31T04:43:41Z","epoch":1793421821.557418920,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-31T02:58:41Z","epoch":1793415521.306609640,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-31T03:05:26Z","phase":"compile","seconds":382.605,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-195627-lfs-val-gfx90a/moat/projects/LichtFeld-Studio/src /var/lib/jenkins/fleet/jobs/mi200-20261030-195627-lfs-val-gfx90a/build-hip"}
+{"kind":"phase","ts":"2026-10-31T03:16:19Z","phase":"compile","seconds":359.175,"exit":0,"cmd":"bash agent_space/lfs_compute_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-195627-lfs-val-gfx90a/build-compute"}
+{"kind":"phase","ts":"2026-10-31T03:17:29Z","phase":"test","seconds":59.720,"exit":1,"cmd":"agent_space/in_src.sh timeout -k 30 1800 /var/lib/jenkins/fleet/jobs/mi200-20261030-195627-lfs-val-gfx90a/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-31T03:48:22Z","phase":"test","seconds":1842.188,"exit":0,"cmd":"bash agent_space/run_suites.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-195627-lfs-val-gfx90a/build-hip /var/lib/jenkins/fleet/jobs/mi200-20261030-195627-lfs-val-gfx90a/moat/agent_space/runs/sweep"}
+{"kind":"phase","ts":"2026-10-31T04:00:09Z","phase":"test","seconds":104.888,"exit":0,"cmd":"bash agent_space/smoke.sh r1 /sys/bus/pci/devices/0000:32:00.0"}
+{"kind":"phase","ts":"2026-10-31T05:04:47Z","phase":"test","seconds":3817.269,"exit":0,"cmd":"agent_space/gt.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-195627-lfs-val-gfx90a/moat/agent_space/runs/projdoc_1000.log 9000 --gtest_filter=ProjectDocumentTest.*:-ProjectDocumentTest.AutosaveSigkillAtEveryBoundaryLeavesCompleteOldOrNewSidecar --gtest_repeat=1000 --gtest_brief=1"}
+{"kind":"session","ts":"2026-10-31T05:05:59Z","epoch":1793423159.950810157,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-31T06:11:10Z","phase":"compile","seconds":250.170,"exit":0,"cmd":"bash -c bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-230247-lfs-manifest-feature/moat/agent_space/cfg.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-230247-lfs-manifest-feature/build-existing && bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-230247-lfs-manifest-feature/moat/agent_space/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-230247-lfs-manifest-feature/build-existing"}
+{"kind":"phase","ts":"2026-10-31T06:12:16Z","phase":"compile","seconds":30.034,"exit":0,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-230247-lfs-manifest-feature/build-existing"}
+{"kind":"phase","ts":"2026-10-31T06:12:52Z","phase":"compile","seconds":6.322,"exit":0,"cmd":"bash -c bash agent_space/cfg.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-230247-lfs-manifest-feature/build-existing -UVCPKG_MANIFEST_DIR && bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-230247-lfs-manifest-feature/build-existing"}
+{"kind":"phase","ts":"2026-10-31T06:17:03Z","phase":"compile","seconds":242.536,"exit":0,"cmd":"bash -c bash agent_space/cfg.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-230247-lfs-manifest-feature/build-fresh && bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-230247-lfs-manifest-feature/build-fresh"}
+{"kind":"phase","ts":"2026-10-31T06:17:27Z","phase":"test","seconds":1.991,"exit":0,"cmd":"agent_space/run_filter.sh rocdecode RocDecodeSelfCheck.*:RocDecodeVideo.*:Fixtures/RocDecodeMatchesSoftware.*"}
+{"kind":"phase","ts":"2026-10-31T06:18:38Z","phase":"test","seconds":57.604,"exit":0,"cmd":"agent_space/run_filter.sh video Video*:*/Video*"}
+{"kind":"phase","ts":"2026-10-31T06:19:45Z","phase":"test","seconds":42.074,"exit":0,"cmd":"bash -c for s in NvCodecHipJpegTest NvCodecImageLoaderJpeg NvCodecImageLoaderJpeg2k8Bit Jpeg2kExplicitLayout NvCodecBatchDecodeTest PipelinedImageLoaderTest PipelinedLoaderLedger PipelinedImageLoaderSidecarJpeg2k Formats/PipelinedNormalDecode Formats/PipelinedDepthDecode AlphaAndSidecar/PipelinedMaskUndistortTest CompressedBlobTier SidecarResumeSampler CameraImageLoadTest EnvironmentImageLoadTest ImageIoTest ParallelPngWriter NvCodecImageLoaderJpeg2k16Bit NvCodecSentinelValidatorTest NvCodecAvailabilityTest; do agent_space/run_filter.sh codec-$(echo $s | tr / _) \"$s.*\"; done"}
+{"kind":"phase","ts":"2026-10-31T06:21:00Z","phase":"test","seconds":65.240,"exit":0,"cmd":"bash agent_space/smoke.sh fresh"}
+{"kind":"session","ts":"2026-10-31T06:28:16Z","epoch":1793428096.397243065,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-31T06:38:07Z","epoch":1793428687.047106891,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-31T06:42:18Z","epoch":1793428938.016486334,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-31T06:42:59Z","phase":"compile","seconds":18.237,"exit":0,"cmd":"bash agent_space/cfg.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-234012-lfs-val3-gfx1100/build-hip"}
+{"kind":"phase","ts":"2026-10-31T06:47:04Z","phase":"compile","seconds":237.949,"exit":0,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-234012-lfs-val3-gfx1100/build-hip"}
+{"kind":"phase","ts":"2026-10-31T06:51:22Z","phase":"compile","seconds":246.444,"exit":0,"cmd":"bash agent_space/lfs_compute_build.sh"}
+{"kind":"phase","ts":"2026-10-31T06:52:09Z","phase":"test","seconds":40.506,"exit":1,"cmd":"timeout -k 30 1200 bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-234012-lfs-val3-gfx1100/moat/agent_space/lfs_run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-234012-lfs-val3-gfx1100/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-31T07:17:11Z","phase":"test","seconds":1485.619,"exit":0,"cmd":"bash agent_space/suite_runner.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-234012-lfs-val3-gfx1100/suites-full"}
+{"kind":"phase","ts":"2026-10-31T07:17:41Z","phase":"test","seconds":1.943,"exit":0,"cmd":"timeout -k 30 900 bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-234012-lfs-val3-gfx1100/moat/agent_space/lfs_run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-234012-lfs-val3-gfx1100/build-hip/tests/lichtfeld_tests --gtest_filter=RocDecodeSelfCheck.*:RocDecodeVideo.*:Fixtures/RocDecodeMatchesSoftware.*"}
+{"kind":"phase","ts":"2026-10-31T07:18:38Z","phase":"test","seconds":56.933,"exit":1,"cmd":"timeout -k 30 1800 bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-234012-lfs-val3-gfx1100/moat/agent_space/lfs_run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-234012-lfs-val3-gfx1100/build-hip/tests/lichtfeld_tests --gtest_filter=Video*:*/Video*"}
+{"kind":"phase","ts":"2026-10-31T07:20:06Z","phase":"test","seconds":65.758,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-234012-lfs-val3-gfx1100/moat/agent_space/smoke.sh 001fc728"}
+{"kind":"phase","ts":"2026-10-31T08:25:21Z","phase":"test","seconds":3909.339,"exit":1,"cmd":"timeout -k 30 7000 bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-234012-lfs-val3-gfx1100/moat/agent_space/lfs_run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-234012-lfs-val3-gfx1100/build-hip/tests/lichtfeld_tests --gtest_filter=ProjectDocumentTest.* --gtest_repeat=1000"}
+{"kind":"session","ts":"2026-10-31T08:26:32Z","epoch":1793435192.004715922,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-31T06:43:42Z","epoch":1793429022.509834554,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-31T06:50:41Z","phase":"compile","seconds":419.282,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-234050-lfs-val3-gfx90a/moat/projects/LichtFeld-Studio/src /var/lib/jenkins/fleet/jobs/mi200-20261030-234050-lfs-val3-gfx90a/build-hip"}
+{"kind":"phase","ts":"2026-10-31T06:58:27Z","phase":"compile","seconds":456.441,"exit":0,"cmd":"bash agent_space/lfs_compute_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-234050-lfs-val3-gfx90a/build-compute"}
+{"kind":"phase","ts":"2026-10-31T06:59:40Z","phase":"test","seconds":60.056,"exit":1,"cmd":"agent_space/in_src.sh timeout -k 30 1800 /var/lib/jenkins/fleet/jobs/mi200-20261030-234050-lfs-val3-gfx90a/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-31T07:30:42Z","phase":"test","seconds":1850.356,"exit":0,"cmd":"bash agent_space/run_suites.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-234050-lfs-val3-gfx90a/build-hip /var/lib/jenkins/fleet/jobs/mi200-20261030-234050-lfs-val3-gfx90a/moat/agent_space/runs/sweep"}
+{"kind":"phase","ts":"2026-10-31T08:43:32Z","phase":"test","seconds":3993.535,"exit":0,"cmd":"bash agent_space/gt.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-234050-lfs-val3-gfx90a/moat/agent_space/runs/pdoc-repeat.log 7200 --gtest_filter=ProjectDocumentTest.*:-ProjectDocumentTest.AutosaveSigkillAtEveryBoundaryLeavesCompleteOldOrNewSidecar --gtest_repeat=1000 --gtest_brief=1"}
+{"kind":"phase","ts":"2026-10-31T08:45:33Z","phase":"test","seconds":105.388,"exit":0,"cmd":"bash agent_space/smoke.sh r1 /sys/bus/pci/devices/0000:2c:00.0"}
+{"kind":"session","ts":"2026-10-31T09:09:55Z","epoch":1793437795.860804140,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-31T19:52:20Z","epoch":1793476340.577416335,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-31T19:55:32Z","epoch":1793476532.840560528,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-05T05:02:39Z","phase":"compile","seconds":271.651,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261104-204852-lichtfeld-studio/moat/agent_space/lfs/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261104-204852-lichtfeld-studio/build-hip lichtfeld_tests"}
+{"kind":"phase","ts":"2026-11-05T05:09:46Z","phase":"compile","seconds":197.103,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261104-204852-lichtfeld-studio/moat/agent_space/lfs/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261104-204852-lichtfeld-studio/build-hip lichtfeld_tests"}
+{"kind":"phase","ts":"2026-11-05T05:18:25Z","phase":"compile","seconds":243.577,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261104-204852-lichtfeld-studio/moat/agent_space/lfs/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261104-204852-lichtfeld-studio/build-hip"}
+{"kind":"phase","ts":"2026-11-05T05:24:28Z","phase":"compile","seconds":352.460,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261104-204852-lichtfeld-studio/moat/agent_space/lfs/lfs_compute_build.sh"}
+{"kind":"session","ts":"2026-11-05T05:56:04Z","epoch":1793858164.357527405,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-05T06:04:10Z","phase":"compile","seconds":406.569,"exit":0,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/mi200-20261104-214952-rev-lichtfeld-studio/moat/projects/LichtFeld-Studio/src /var/lib/jenkins/fleet/jobs/mi200-20261104-214952-rev-lichtfeld-studio/build-hip"}
+{"kind":"phase","ts":"2026-11-05T06:24:58Z","phase":"compile","seconds":384.656,"exit":0,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/mi200-20261104-214952-rev-lichtfeld-studio/moat/projects/LichtFeld-Studio/src /var/lib/jenkins/fleet/jobs/mi200-20261104-214952-rev-lichtfeld-studio/build-hip"}
+{"kind":"phase","ts":"2026-11-05T06:31:11Z","phase":"compile","seconds":349.436,"exit":0,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/mi200-20261104-214952-rev-lichtfeld-studio/moat/projects/LichtFeld-Studio/src /var/lib/jenkins/fleet/jobs/mi200-20261104-214952-rev-lichtfeld-studio/build-hip"}
+{"kind":"session","ts":"2026-11-05T06:32:44Z","epoch":1793860364.170001659,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-05T06:39:04Z","epoch":1793860744.409650327,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-05T06:43:20Z","phase":"compile","seconds":256.466,"exit":0,"cmd":"bash -c bash /var/lib/jenkins/fleet/jobs/rx7900-20261104-223524-v-lichtfeld-studio/moat/agent_space/lfs/cfg.sh /var/lib/jenkins/fleet/jobs/rx7900-20261104-223524-v-lichtfeld-studio/build-hip && JOBS=32 bash /var/lib/jenkins/fleet/jobs/rx7900-20261104-223524-v-lichtfeld-studio/moat/agent_space/lfs/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261104-223524-v-lichtfeld-studio/build-hip"}
+{"kind":"phase","ts":"2026-11-05T06:47:41Z","phase":"compile","seconds":246.677,"exit":0,"cmd":"bash agent_space/lfs/lfs_compute_build.sh"}
+{"kind":"phase","ts":"2026-11-05T06:48:32Z","phase":"test","seconds":40.616,"exit":1,"cmd":"timeout -k 30 1200 bash agent_space/lfs/lfs_run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261104-223524-v-lichtfeld-studio/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-11-05T07:13:48Z","phase":"test","seconds":1491.097,"exit":0,"cmd":"bash agent_space/lfs/suite_runner.sh /var/lib/jenkins/fleet/jobs/rx7900-20261104-223524-v-lichtfeld-studio/moat/agent_space/lfs/runs/suites"}
+{"kind":"phase","ts":"2026-11-05T07:15:41Z","phase":"test","seconds":67.579,"exit":0,"cmd":"timeout -k 30 900 bash agent_space/lfs/lfs_run.sh ./LichtFeld-Studio --headless -d /var/lib/jenkins/fleet/jobs/rx7900-20261104-223524-v-lichtfeld-studio/moat/projects/LichtFeld-Studio/src/data/bicycle --images images_4 -o /var/lib/jenkins/fleet/jobs/rx7900-20261104-223524-v-lichtfeld-studio/moat/agent_space/lfs/runs/smoke/out --iter 3000 --eval --no-depth-auto-generate --no-normal-auto-generate"}
+{"kind":"session","ts":"2026-11-05T07:16:15Z","epoch":1793862975.157053296,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-05T06:38:53Z","epoch":1793860733.991885642,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-05T06:45:18Z","phase":"compile","seconds":384.117,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261104-223510-v-lichtfeld-studio/moat/projects/LichtFeld-Studio/src /var/lib/jenkins/fleet/jobs/mi200-20261104-223510-v-lichtfeld-studio/build-hip"}
+{"kind":"phase","ts":"2026-11-05T06:51:36Z","phase":"compile","seconds":356.707,"exit":0,"cmd":"bash agent_space/lfs_compute_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261104-223510-v-lichtfeld-studio/build-compute"}
+{"kind":"phase","ts":"2026-11-05T07:21:58Z","phase":"test","seconds":1816.342,"exit":0,"cmd":"bash agent_space/run_suites.sh /var/lib/jenkins/fleet/jobs/mi200-20261104-223510-v-lichtfeld-studio/build-hip /var/lib/jenkins/fleet/jobs/mi200-20261104-223510-v-lichtfeld-studio/moat/agent_space/runs/sweep"}
+{"kind":"phase","ts":"2026-11-05T07:24:09Z","phase":"test","seconds":59.871,"exit":1,"cmd":"agent_space/in_src.sh timeout -k 30 1800 /var/lib/jenkins/fleet/jobs/mi200-20261104-223510-v-lichtfeld-studio/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-11-05T07:26:20Z","phase":"test","seconds":107.542,"exit":0,"cmd":"bash agent_space/smoke.sh r1 /sys/bus/pci/devices/0000:32:00.0"}
+{"kind":"session","ts":"2026-11-05T07:27:07Z","epoch":1793863627.554285100,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-11T19:17:15Z","epoch":1794424635.968358800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-11T19:25:19Z","epoch":1794425119.475130800,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-11T19:32:27Z","epoch":1794425549.752053700,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-11T19:34:41Z","epoch":1794425682.256352600,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-05T07:31:54Z","phase":"compile","seconds":8.564,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-11-05T07:46:25Z","phase":"compile","seconds":832.393,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_val11.bat"}
+{"kind":"phase","ts":"2026-11-05T07:52:32Z","phase":"test","seconds":338.764,"exit":0,"cmd":"python agent_space/lfs_suite_runner_v2.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\v11"}
+{"kind":"phase","ts":"2026-11-11T18:13:17Z","phase":"compile","seconds":9.351,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_val11.bat"}
+{"kind":"session","ts":"2026-11-05T07:31:37Z","epoch":1793863898.830275100,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-05T07:58:55Z","epoch":1793865535.984799300,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-11T19:56:34Z","epoch":1794426994.213920937,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-11T20:23:11Z","phase":"compile","seconds":1539.580,"exit":0,"cmd":"bash -c agent_space/lfs/cfg.sh build-hip && agent_space/lfs/build.sh build-hip"}
+{"kind":"phase","ts":"2026-11-11T20:23:29Z","phase":"compile","seconds":2.471,"exit":1,"cmd":"bash agent_space/lfs/lfs_compute_build.sh build-compute"}
+{"kind":"phase","ts":"2026-11-11T20:28:16Z","phase":"compile","seconds":240.646,"exit":0,"cmd":"bash agent_space/lfs/lfs_compute_build.sh build-compute"}
+{"kind":"phase","ts":"2026-11-11T20:49:57Z","phase":"test","seconds":42.207,"exit":1,"cmd":"timeout -k 30 1200 agent_space/lfs/lfs_run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261111-115118-moat-lichtfeld-revalidate-afe6ab6c-gfx11/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-11-11T20:50:27Z","phase":"test","seconds":11.042,"exit":0,"cmd":"bash agent_space/lfs/suite_runner.sh /var/lib/jenkins/fleet/jobs/rx7900-20261111-115118-moat-lichtfeld-revalidate-afe6ab6c-gfx11/build-hip/tests/lichtfeld_tests /var/lib/jenkins/fleet/jobs/rx7900-20261111-115118-moat-lichtfeld-revalidate-afe6ab6c-gfx11/moat/agent_space/suites"}
+{"kind":"phase","ts":"2026-11-11T21:14:15Z","phase":"test","seconds":1400.231,"exit":0,"cmd":"bash agent_space/lfs/suite_runner.sh /var/lib/jenkins/fleet/jobs/rx7900-20261111-115118-moat-lichtfeld-revalidate-afe6ab6c-gfx11/build-hip/tests/lichtfeld_tests /var/lib/jenkins/fleet/jobs/rx7900-20261111-115118-moat-lichtfeld-revalidate-afe6ab6c-gfx11/moat/agent_space/suites"}
+{"kind":"phase","ts":"2026-11-11T21:15:51Z","phase":"test","seconds":67.701,"exit":0,"cmd":"timeout -k 30 900 agent_space/lfs/lfs_run.sh ./LichtFeld-Studio --headless -d /var/lib/jenkins/fleet/jobs/rx7900-20261111-115118-moat-lichtfeld-revalidate-afe6ab6c-gfx11/moat/projects/LichtFeld-Studio/src/data/bicycle --images images_4 -o /var/lib/jenkins/fleet/jobs/rx7900-20261111-115118-moat-lichtfeld-revalidate-afe6ab6c-gfx11/smoke-out --iter 3000 --eval --no-depth-auto-generate --no-normal-auto-generate"}
+{"kind":"phase","ts":"2026-11-11T21:50:31Z","phase":"test","seconds":63.443,"exit":0,"cmd":"timeout -k 30 900 agent_space/lfs/lfs_run.sh ./tests/lichtfeld_tests --gtest_filter=VideoExportUtilsTest.*:VisualizerImplResetTest.*:GTComparisonAsyncTest.*:HiGSExactDepth.*:ViewportInteropQueuedUpload.*:VulkanUiTextureSourceTest.*:Projection/VideoExportBandTest.*"}
+{"kind":"phase","ts":"2026-11-11T21:51:35Z","phase":"test","seconds":63.493,"exit":0,"cmd":"timeout -k 30 900 agent_space/lfs/lfs_run.sh ./tests/lichtfeld_tests --gtest_filter=VideoExportUtilsTest.*:VisualizerImplResetTest.*:GTComparisonAsyncTest.*:HiGSExactDepth.*:ViewportInteropQueuedUpload.*:VulkanUiTextureSourceTest.*:Projection/VideoExportBandTest.*"}
+{"kind":"phase","ts":"2026-11-11T21:52:39Z","phase":"test","seconds":63.766,"exit":0,"cmd":"timeout -k 30 900 agent_space/lfs/lfs_run.sh ./tests/lichtfeld_tests --gtest_filter=VideoExportUtilsTest.*:VisualizerImplResetTest.*:GTComparisonAsyncTest.*:HiGSExactDepth.*:ViewportInteropQueuedUpload.*:VulkanUiTextureSourceTest.*:Projection/VideoExportBandTest.*"}
+{"kind":"session","ts":"2026-11-11T21:54:35Z","epoch":1794434075.233474210,"event":"end","platform":"linux-gfx1100"}
