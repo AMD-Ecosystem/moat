@@ -8,11 +8,17 @@
   "ext_type": "unknown",
   "stage": "awaiting-fork",
   "adopted_at": "2026-11-12T18:32:39Z",
-  "updated_at": "2026-11-12T19:01:20Z",
+  "updated_at": "2026-11-12T21:52:26Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "upstream supports Linux and macOS only; POSIX .so build and 32-bit long indices on Windows; Windows PRs unmerged since 2020. Approved 2026-11-12 with the gap-matrix intake follow-ups.",
+      "approved_by": "Jeff Daily",
+      "at": "2026-11-12T21:52:26Z"
+    }
+  },
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
