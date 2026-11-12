@@ -1971,8 +1971,6 @@ def _close_release_review(name, d, url, tag, tip):
 
 
 def report_finish_release(apply, only=None):
-    sys.path.insert(0, str(REPO / "utils"))
-    import moatlib
     rows = list(finish_release_rows(only))
     print(f"upstream: {len(rows)} release line(s) with a review PR recorded\n")
     ret = 0
