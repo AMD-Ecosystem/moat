@@ -218,7 +218,7 @@ An attended session on the maintainer's own machine, running one command -- the
 person, or the agent working with them, since the content it publishes was already
 approved wholesale on the review PR and running it adds no new judgement:
 
-    python3 utils/upstream.py --publish --apply
+    python3 utils/upstream.py --publish --apply --name <project>
 
 It carries the approved title and body verbatim, re-checks the approval and every gate at
 that moment, opens the pull request, records it, and closes the review PR. `orient.sh`

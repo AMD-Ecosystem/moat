@@ -138,7 +138,11 @@ s_extrema.)
 
 Width-32 LOGICAL warp ops (`__shfl*(...,32)`, `cub::WarpReduce<,32>`,
 `cg::tiled_partition<32>`) are arch-agnostic and fine -- they work within a 32-lane
-subgroup whatever the physical width.
+subgroup whatever the physical width. That includes the tile's `ballot()`: HIP's
+`thread_block_tile<N>::ballot` returns `unsigned long long`, but compacts the tile's lanes
+to bits `0..N-1` (`internal::helper::adjust_mask`), so storing it in a 32-bit integer and
+indexing it with `__ffs`/`__popc`/`__fns` is correct on wave64. Only a RAW `__ballot`
+truncated to 32 bits (the next entry) is the fault. (faster-gaussian-splatting)
 
 **A compat `__ballot_sync` that casts `__ballot()` to `uint32_t` takes the LOW 32 lanes**,
 which are the wrong lanes for any logical warp not at the wavefront base -- with
@@ -360,6 +364,17 @@ isolation and FAILS in-suite, after earlier tests have dirtied and freed similar
 The reliance is a latent upstream bug, not a ROCm defect: zero explicitly
 (`hipMemsetAsync`) before the partial-write kernel, and audit any kernel whose write set is
 smaller than its output allocation. (opencv_contrib: cudastereo census_transform border.)
+
+The commonest instance is a counter or accumulator: `cudaMalloc(&count, sizeof(unsigned))`
+followed directly by a kernel that `atomicAdd`s into it. On CUDA the page is usually zero,
+so the count is right by luck; on ROCm it starts from whatever the last owner of that memory
+left, and the result is wrong by a varying offset that depends on what ran before -- easy
+to mistake for a race. Audit rule, for porting and for review alike: for each fresh
+allocation, find its first access. If that access is a read-modify-write (an atomic, `+=`,
+`|=`, a histogram bin increment) rather than a plain store, a `cudaMemset`/`hipMemsetAsync`
+or an initializing kernel must precede it on the same stream. This is easy to miss in a
+review that is focused on warp-size or mask bugs, because nothing about the kernel itself
+looks wrong.
 
 **Bitwise and min/max atomics on `hipMallocManaged` memory are silently dropped on a
 discrete xnack- card.** There, managed memory is host-resident fine-grained memory, and
@@ -884,7 +899,9 @@ macros that HIP leaves undefined (`CUBLAS_VERSION`, `CUBLAS_VER_*`, `NVJPEG_VER_
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which
 masks the bug -- so the gate is correct only by accident and breaks for anyone building
-without hipify. Verify include order rather than trusting the prepend. (LC-framework)
+without hipify. Verify include order rather than trusting the prepend, and prefer the
+compiler's own `__GFX8__`/`__GFX9__`/`__GFX11__`/`__GFX12__` device-pass predefines, which
+need no header at all and are never defined by nvcc or by a host compiler. (LC-framework)
 
 **With the ROCm clang as the host compiler, a found system libunwind links but does not load.**
 The ROCm clang searches the `include/` directory next to its LLVM install ahead of the system
