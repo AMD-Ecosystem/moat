@@ -57,6 +57,14 @@ Pinning a conservative NVIDIA tile table (T4/sm75) instead of an AMD-tuned one c
 RDNA3. With the slow scalar emulation the tuned table was 37% slower, because its larger
 per-thread tiles spill. Fix the instruction stream first, then tune tiles with the profiler.
 
+A project's own autotuner can still pick the wrong table. On an RDNA4 card (gfx1201) a full
+sweep of MMseqs2/libmarv's tuner, choosing the fastest config per tile size, gave a table
+that was 9% slower end to end than the untuned generic one, with identical results. The
+tuner ranked 512-thread blocks 10-40% above the generic 128-thread configs, but in the
+application the 128-thread kernels won. A different RDNA table did no better. Time the real
+workload against the existing configs before keeping a tuned table, and keep the raw tuner
+output so the comparison can be checked.
+
 ## What did not matter
 
 A SHARED library with `-fgpu-rdc` versus a static library with CMake's device link: same

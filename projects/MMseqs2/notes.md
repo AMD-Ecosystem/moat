@@ -1232,3 +1232,56 @@ jeff ruled that Windows support, for libmarv and for the `mmseqs` command-line t
 ## gfx950 tables kept (jeff, 2026-11-13)
 
 jeff ruled to keep the gfx950 tuned tables (0c897402) in the GPU-coverage PR as the last commit of the curated history. The PR body states the measured gain plainly (1.05x on q1k, 1.02x on the 8x database, identical output) and does not headline it as MI355 tuning; if the maintainer objects, drop the commit without argument. At curation, regenerate the raw tuner output behind the "4.6-9.3x slower" endpos figure or reword it to the ranges recorded here (reviewer caveat).
+## gfx1201 tuning porter round (2026-11-13, linux-gfx1201): tables NOT committed, finding for jeff
+
+jeff's request: the next 2026-11-12 rescope item, tuned libmarv aligner configs for gfx1201, done as the gfx950 round, with the rule that a negligible gain (about 1.02x or less) is recorded but not committed. Stage taken `review-passed -> porting` (lock linux-gfx1201); `pr-state` none. Host: AMD Radeon AI PRO R9700 (gfx1201, 64 CUs, wave32), `HIP_VISIBLE_DEVICES=0` (idle, self-pinned; the dispatcher set none), `CUDA_VISIBLE_DEVICES=0` for `--gpu`. TheRock `rocm-sdk-devel` (HIP 7.16.26385), gcc 13.3, CMake 3.31.6, Ninja, `MAX_JOBS` 24 (physical cores). All GPU runs under `ulimit -c 0`.
+
+**Result: the tuned tables are slower than the generic AMD configs on gfx1201, so nothing was committed and `moat-port` stays at 0c897402.** Every raw figure below is in `projects/MMseqs2/reference/gfx1201-tuning/` (committed with these notes): `raw/*.csv` (full tuner output of every sweep), `raw/sweeps.log` (commands, wall times), `raw/bench_q1k.log` / `raw/bench_t8.log` (every timing run with load, row count, md5), `kernel-stats/*.csv` (rocprofv3 kernel stats), `selection-report.txt` (every selected config with its GCUPS), `gen_tuned.py` (selection and file generator), the run scripts, and `gfx1201-tables-uncommitted.patch` (the complete fork change that was measured: the two aligner files, 7 dispatch blocks, 5 declarations, Readme line; `git apply` clean on 0c897402).
+
+### Structure check against upstream's wave32 tables
+
+Upstream's gfx1100 file differs from gfx90a/gfx950 in one way that matters: its 32-bit gapless and endpos lists mix `Datatype::Int` with `Datatype::Float`, so upstream tuned 32-bit with `--int32` beside `--float` (gfx1150 happens to keep only Float winners). This round therefore ran the 32-bit sweeps as `--float --int32`, and Int configs won some tiles. The other differences are cosmetic: gfx1100 keeps commented-out sub-512 multi-tile entries and copies its untuned endpos multi-tile list from the single-tile list; the gfx90a/gfx950 layout (no commented lines, measured endpos multi-tile list) was kept, since that layout is already on the branch and reviewed. SW lists: the same untuned AMD list as every AMD file.
+
+### Tuner and selection
+
+```
+R=$(hipconfig --rocmpath)
+cmake -S lib/libmarv/src -B build-tune -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DBUILD_TUNING=1 -DONLY_BUILD_TUNING=1 \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+cmake --build build-tune --target tuning_gapless -j24          # 5m37s
+build-tune/tuning_gapless <args> --printBestConfigs --sleep 10 > <name>.csv
+```
+Sweeps (full config space unless noted): `--half2 --tiles 1` 472 s, `--float --int32 --tiles 1` 374 s, `--float --int32 --endpos --tiles 1` 581 s, `--half2 --tiles 4` 3624 s, `--float --int32 --tiles 4` 3099 s (a first attempt was killed at 36 min by the 2 h background-job limit of this harness, together with the queued runs; the tuner prints only at exit, so nothing was lost but time). `--float --int32 --endpos --tiles 4` on the same narrowed scratch tuner copies as gfx90a/gfx950 (`configtuples.hpp`: blocksize 512 x groups 2-16 x numItems 4-48, 1398 s; blocksize 512 x group 32 x numItems 8-24, 204 s). No `--checkResults`.
+
+Selection rule unchanged (`gen_tuned.py`): per tile the max-GCUPS config over upstream's AMD spans; single tile drops t when a kept larger T has `g_T * t / T > g_t`; multi tile keeps tiles >= 256 within 10% of the best.
+
+Selected: half2 single 35 configs (16..1536, 2208-4395 GCUPS), half2 multi 12 (256..1536, 2918-3230), fp32/int32 single 34 (16..768, 2354-2873; 5 Int), fp32 multi 4 (320, 352, 576, 704; 2266-2503, the other tiles are 15-51% below the best), endpos single 34 (8..768, 832-2202; 7 Int), endpos multi 2 (Int 16x20 tile 320 1012, Int 32x20 tile 640 973; 16x16 and 32x16 reach 886, 12% below, so the 10% rule drops them where gfx90a/gfx950 kept four). The endpos multi-tile cliff above 20 items per thread reproduces: group 16 items 24-48 run 183-361 GCUPS against 1012 at 20 (2.8-5.5x), group 32 items 24 353 against 973 (2.8x) (`raw/endpos_t4_a.csv`, `raw/endpos_t4_b.csv`).
+
+### Timing: tuned vs generic (q1k benchmark of 2026-10-30)
+
+Generic = 0c897402 built for gfx1201 (configure prints `generic AMD aligner for gfx1201`); tuned = 0c897402 plus the patch above (no generic aligner configured; `llvm-nm` shows the `AMD_GFX1201_` objects). Both `cmake -S . -B <b> -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DHAVE_TESTS=1 -DCMAKE_HIP_ARCHITECTURES=gfx1201 ...`, 312/312, the same 76 warning lines (Rust `block_aligner_c`, tinyexpr), none in aligner files. `mmseqs ungappedprefilter q1k t p --gpu 1 --max-seqs 1000 -e 10000 --threads 8`, q1k = first 1000 queries of `util/regression/data/query.fasta` (388,288 residues), t = padded targetannotation; runs alternated, host load 1.3-4.0:
+
+| build | q1k wall s | 8x database (q200 vs t8) wall s |
+|---|---|---|
+| generic | 31.79, 31.86, 31.92 | 8.21, 8.25, 8.27 |
+| tuned gfx1201 | 35.06, 34.95 (0.91x) | 8.39, 8.39 (0.98x) |
+| upstream's gfx1100 tables, renamed to gfx1201 (scratch build only) | 35.50, 35.61 (0.90x) | 8.76, 8.79 (0.94x) |
+
+- Output identical in every run: q1k 1,000,000 rows, sorted createtsv md5 `6e2142dde4e89275a2c378e290a65088` (the same as the gfx90a and gfx950 rounds); 8x database 200,000 rows, md5 `461eebd479a2aeca4dfb3283d7e2e9b0`. t8 = targetannotation replicated 8 times with `_r<i>` header suffixes (288,208 sequences), q200 = first 200 queries of q1k.
+- Kernel trace (`rocprofv3 --kernel-trace --stats`, CUDA_VISIBLE_DEVICES unset): gapless kernel time 28.73 s generic vs 33.61 s tuned (all kernels 30.07 vs 34.24 s), so the loss is in the kernels. Generic runs six half2 single-tile configs at blocksize 128 (top: 128/4/32 7.89 s over 310 calls, 128/4/48 7.36 s over 221); tuned spreads over many blocksize-512 tiles (top: 512/4/44 2.14 s, 512/4/36 2.12 s).
+- Why the tuner disagrees: it ranks blocksize 512 above 128 for the very configs generic uses (tile 256 g4/n32: 128 -> 3709, 512 -> 4157 GCUPS; tile 384 g4/n48: 3176 vs 4349; tile 768 g8/n48: 3132 vs 4395; `raw/half2_t1.csv`), yet in the application the 128-thread kernels are faster on both database sizes. The tuner's synthetic database and launch pattern evidently do not represent mmseqs' per-batch launches on this 64-CU part; upstream's own wave32 table (gfx1100) loses the same way, so this is not a defect of this sweep. Not investigated further (stop discipline): finding the cause would mean changing the tuner or the selection rule, which is jeff's call.
+
+### Validation of the unchanged head 0c897402 on gfx1201 (porter evidence, not a validator record)
+
+- Regression (`util/regression/run_regression.sh <build-generic>/src/mmseqs <scratch>`, submodule 19b9867): 43/43 TEST SUCCESS, 0 failures; SEARCH_GPU 0.454819 = expected (18 s), SEARCH_GPU_SERVER 0.454819 = expected (19 s). The six `indexdb died` lines are INDEX_COMPATIBLE's deliberate incompatible-index cases (`--check-compatible 2`); that test passes.
+- Example GPU-vs-CPU (`easy-search examples/QUERY.fasta` against the padded DB with `--gpu 1`, against the unpadded DB with `--gpu 0`, as in earlier rounds): GPU 14482, CPU 12901, common 12438, all 12438 rows identical. (CPU against the padded DB gives 12901 rows that differ slightly from the unpadded ones and 12439 shared rows; upstream CPU behaviour, not looked into.)
+- Fork tree after the round: `git -C projects/MMseqs2/src status --porcelain` clean at 0c897402; nothing pushed, no `advance-head`, `utils/jargon.py` not needed (no new commit).
+
+### Decision for jeff
+
+1. Ruling asked: scope out `tuning:gfx1201` (surface.json keeps it owed, with the measurements, until you rule). Recommendation: scope it out; gfx1201 keeps the generic configs, which are faster here. The patch stays in `reference/gfx1201-tuning/` if a later tuner change makes a table worthwhile.
+2. The same evidence weakens the gfx950 table (1.02-1.05x, already your open decision from `## Review 2026-11-13 delta 2cda180e..0c897402`), and it suggests checking the gfx90a table's 1.23x against more than one database before the upstream PR.
+3. Possible upstream note (not drafted; your call): libmarv's tuner prefers configs that lose in mmseqs on gfx1201, and its gfx1100 table is slower than the generic configs on gfx1201. Measured on gfx1201 only; a gfx1100 host would show whether the gfx1100 table itself beats generic there.
+4. Stage: `porting` has no exit back to `review-passed`, and jeff's sequence ends at `delta-ported`, which is the only legal exit that releases the lock. Set `delta-ported` with `head_sha` unchanged at 0c897402: the reviewer's delta is empty, and its job this round is to check this no-commit finding against the reference files and return `review-passed`.
+
+Lesson promoted to the `cuda-to-rocm` skill (`references/performance.md`, "Tile tables are second order"): a project's own autotuner can pick a table that loses end to end, so time the real workload against the existing configs before keeping one.

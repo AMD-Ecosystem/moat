@@ -1145,7 +1145,7 @@
     },
     {
       "id": "tuning:gfx1201",
-      "reason": "rescope item 1: tuned configs need tuning_gapless runs on a gfx1201 host; until then gfx1201 uses the generic configs"
+      "reason": "rescope item 1: tuned on linux-gfx1201 2026-11-13 (notes.md `## gfx1201 tuning porter round`) and NOT committed: the tuner-selected tables are slower than the generic AMD configs on gfx1201 (q1k 0.91x, 8x database 0.98x, identical output), and so are upstream's gfx1100 tables run on gfx1201; gfx1201 keeps the generic configs. Awaiting jeff's ruling to scope this out (tables kept in reference/gfx1201-tuning/)"
     }
   ],
   "removed_from_floor": []

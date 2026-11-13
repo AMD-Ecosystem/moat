@@ -1,0 +1,25 @@
+gpuArch,alphabetSize,blocksize,tilesize,groupsize,numItems,mingcups,avggcups,maxgcups,datatype,approach,resultkind,numTiles
+1200,21,512,256,32,8,561.115,564.375,570.919,Int,unused,ScoreEndpos,4
+1200,21,512,256,32,8,532.549,534.511,537.092,Float,unused,ScoreEndpos,4
+1200,21,512,384,32,12,751.409,756.433,763.334,Int,unused,ScoreEndpos,4
+1200,21,512,384,32,12,681.563,684.525,687.383,Float,unused,ScoreEndpos,4
+1200,21,512,512,32,16,877.707,882.523,886.848,Int,unused,ScoreEndpos,4
+1200,21,512,512,32,16,814.228,815.737,818.51,Float,unused,ScoreEndpos,4
+1200,21,512,640,32,20,967.583,970.702,973.9,Int,unused,ScoreEndpos,4
+1200,21,512,640,32,20,872.988,874.574,876.32,Float,unused,ScoreEndpos,4
+1200,21,512,768,32,24,353.08,353.297,353.743,Int,unused,ScoreEndpos,4
+1200,21,512,768,32,24,329.56,329.976,330.41,Float,unused,ScoreEndpos,4
+gpuArch,alphabetSize,blocksize,tilesize,groupsize,numItems,mingcups,avggcups,maxgcups,datatype,approach,resultkind,numTiles
+1200,21,512,256,32,8,561.115,564.375,570.919,Int,unused,ScoreEndpos,4
+1200,21,512,384,32,12,751.409,756.433,763.334,Int,unused,ScoreEndpos,4
+1200,21,512,512,32,16,877.707,882.523,886.848,Int,unused,ScoreEndpos,4
+1200,21,512,640,32,20,967.583,970.702,973.9,Int,unused,ScoreEndpos,4
+1200,21,512,768,32,24,353.08,353.297,353.743,Int,unused,ScoreEndpos,4
+using type = std::tuple<
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 32, 8>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 32, 12>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 32, 16>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 32, 20>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 32, 24>,
+>;
+std::array<int, 5>{570,763,886,973,353,};

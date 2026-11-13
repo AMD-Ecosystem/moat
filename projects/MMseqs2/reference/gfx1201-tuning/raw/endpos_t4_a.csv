@@ -1,0 +1,161 @@
+gpuArch,alphabetSize,blocksize,tilesize,groupsize,numItems,mingcups,avggcups,maxgcups,datatype,approach,resultkind,numTiles
+1200,21,512,8,2,4,408.508,410.913,412.907,Int,unused,ScoreEndpos,4
+1200,21,512,8,2,4,389.057,389.783,390.419,Float,unused,ScoreEndpos,4
+1200,21,512,16,2,8,753.135,757.996,761.375,Int,unused,ScoreEndpos,4
+1200,21,512,16,2,8,679.812,683.97,687.803,Float,unused,ScoreEndpos,4
+1200,21,512,16,4,4,412.412,413.656,415.667,Int,unused,ScoreEndpos,4
+1200,21,512,16,4,4,400.227,401.863,404.531,Float,unused,ScoreEndpos,4
+1200,21,512,24,2,12,440.507,452.656,492.167,Int,unused,ScoreEndpos,4
+1200,21,512,24,2,12,423.158,425.364,432.707,Float,unused,ScoreEndpos,4
+1200,21,512,32,2,16,634.374,635.542,639.779,Int,unused,ScoreEndpos,4
+1200,21,512,32,2,16,588.586,589.967,593.17,Float,unused,ScoreEndpos,4
+1200,21,512,32,4,8,271.234,308.59,362.717,Float,unused,ScoreEndpos,4
+1200,21,512,32,4,8,302.371,326.625,359.738,Int,unused,ScoreEndpos,4
+1200,21,512,32,8,4,202.574,259.69,351.522,Int,unused,ScoreEndpos,4
+1200,21,512,32,8,4,76.3341,134.467,281.735,Float,unused,ScoreEndpos,4
+1200,21,512,40,2,20,992.635,1005.64,1012.16,Int,unused,ScoreEndpos,4
+1200,21,512,40,2,20,736.804,739.795,750.066,Float,unused,ScoreEndpos,4
+1200,21,512,48,4,12,514.933,535.106,565.112,Int,unused,ScoreEndpos,4
+1200,21,512,48,4,12,444.739,486.632,537.493,Float,unused,ScoreEndpos,4
+1200,21,512,48,2,24,348.046,348.739,349.212,Int,unused,ScoreEndpos,4
+1200,21,512,48,2,24,325.165,325.433,325.771,Float,unused,ScoreEndpos,4
+1200,21,512,56,2,28,353.715,357.309,359.174,Int,unused,ScoreEndpos,4
+1200,21,512,56,2,28,328.185,331.455,333.773,Float,unused,ScoreEndpos,4
+1200,21,512,64,4,16,680.432,706.433,735.191,Int,unused,ScoreEndpos,4
+1200,21,512,64,4,16,604.623,618.086,626.337,Float,unused,ScoreEndpos,4
+1200,21,512,64,2,32,361.005,361.955,362.547,Int,unused,ScoreEndpos,4
+1200,21,512,64,2,32,336.077,337.565,338.257,Float,unused,ScoreEndpos,4
+1200,21,512,64,8,8,256.49,260.839,285.092,Int,unused,ScoreEndpos,4
+1200,21,512,64,8,8,250.581,250.925,251.233,Float,unused,ScoreEndpos,4
+1200,21,512,64,16,4,138.356,138.583,138.956,Int,unused,ScoreEndpos,4
+1200,21,512,64,16,4,135.904,136.493,137.059,Float,unused,ScoreEndpos,4
+1200,21,512,72,2,36,356.028,356.581,357.027,Int,unused,ScoreEndpos,4
+1200,21,512,72,2,36,333.268,333.839,334.079,Float,unused,ScoreEndpos,4
+1200,21,512,80,4,20,820.29,828.694,854.449,Int,unused,ScoreEndpos,4
+1200,21,512,80,4,20,730.247,736.792,748.074,Float,unused,ScoreEndpos,4
+1200,21,512,80,2,40,279.839,279.973,280.129,Int,unused,ScoreEndpos,4
+1200,21,512,80,2,40,266.049,266.261,266.382,Float,unused,ScoreEndpos,4
+1200,21,512,88,2,44,216.355,216.644,216.848,Int,unused,ScoreEndpos,4
+1200,21,512,88,2,44,209.601,210.007,210.198,Float,unused,ScoreEndpos,4
+1200,21,512,96,8,12,464.935,467.034,470.06,Int,unused,ScoreEndpos,4
+1200,21,512,96,8,12,438.904,440.81,441.689,Float,unused,ScoreEndpos,4
+1200,21,512,96,4,24,346.465,350.28,351.81,Int,unused,ScoreEndpos,4
+1200,21,512,96,4,24,326.224,327.373,328.262,Float,unused,ScoreEndpos,4
+1200,21,512,96,2,48,183.444,183.652,183.806,Int,unused,ScoreEndpos,4
+1200,21,512,96,2,48,180.071,180.113,180.141,Float,unused,ScoreEndpos,4
+1200,21,512,112,4,28,355.309,355.585,355.815,Int,unused,ScoreEndpos,4
+1200,21,512,112,4,28,331.745,332.118,332.333,Float,unused,ScoreEndpos,4
+1200,21,512,128,8,16,659.708,661.632,663.537,Int,unused,ScoreEndpos,4
+1200,21,512,128,8,16,611.356,614.89,618.681,Float,unused,ScoreEndpos,4
+1200,21,512,128,16,8,410.711,414.915,418.933,Int,unused,ScoreEndpos,4
+1200,21,512,128,16,8,398.122,399.536,401.305,Float,unused,ScoreEndpos,4
+1200,21,512,128,4,32,357.686,357.892,357.984,Int,unused,ScoreEndpos,4
+1200,21,512,128,4,32,333.962,334.276,334.465,Float,unused,ScoreEndpos,4
+1200,21,512,144,4,36,357.53,357.635,357.797,Int,unused,ScoreEndpos,4
+1200,21,512,144,4,36,334.914,335.063,335.254,Float,unused,ScoreEndpos,4
+1200,21,512,160,8,20,826.677,829.648,832.19,Int,unused,ScoreEndpos,4
+1200,21,512,160,8,20,752.893,754.482,756.153,Float,unused,ScoreEndpos,4
+1200,21,512,160,4,40,279.616,279.782,280.003,Int,unused,ScoreEndpos,4
+1200,21,512,160,4,40,266.011,266.101,266.147,Float,unused,ScoreEndpos,4
+1200,21,512,176,4,44,216.76,216.863,217.077,Int,unused,ScoreEndpos,4
+1200,21,512,176,4,44,209.987,210.094,210.287,Float,unused,ScoreEndpos,4
+1200,21,512,192,16,12,667.427,668.733,671.459,Int,unused,ScoreEndpos,4
+1200,21,512,192,16,12,604.489,605.754,608.444,Float,unused,ScoreEndpos,4
+1200,21,512,192,8,24,355.05,355.318,355.45,Int,unused,ScoreEndpos,4
+1200,21,512,192,8,24,331.919,332.155,332.471,Float,unused,ScoreEndpos,4
+1200,21,512,192,4,48,182.802,182.935,183.054,Int,unused,ScoreEndpos,4
+1200,21,512,192,4,48,179.311,179.4,179.51,Float,unused,ScoreEndpos,4
+1200,21,512,224,8,28,357.891,358.05,358.291,Int,unused,ScoreEndpos,4
+1200,21,512,224,8,28,334.103,334.27,334.432,Float,unused,ScoreEndpos,4
+1200,21,512,256,16,16,873.951,879.63,886.628,Int,unused,ScoreEndpos,4
+1200,21,512,256,16,16,793.754,798.231,801.395,Float,unused,ScoreEndpos,4
+1200,21,512,256,8,32,357.754,358.078,358.547,Int,unused,ScoreEndpos,4
+1200,21,512,256,8,32,335.296,335.457,335.586,Float,unused,ScoreEndpos,4
+1200,21,512,288,8,36,356.176,356.417,356.639,Int,unused,ScoreEndpos,4
+1200,21,512,288,8,36,333.06,333.277,333.495,Float,unused,ScoreEndpos,4
+1200,21,512,320,16,20,1006.07,1008.32,1012.17,Int,unused,ScoreEndpos,4
+1200,21,512,320,16,20,859.296,863.348,866.896,Float,unused,ScoreEndpos,4
+1200,21,512,320,8,40,278.118,278.385,278.638,Int,unused,ScoreEndpos,4
+1200,21,512,320,8,40,264.364,264.612,264.752,Float,unused,ScoreEndpos,4
+1200,21,512,352,8,44,214.756,214.88,215.058,Int,unused,ScoreEndpos,4
+1200,21,512,352,8,44,208.172,208.405,208.583,Float,unused,ScoreEndpos,4
+1200,21,512,384,16,24,355.714,355.883,356.044,Int,unused,ScoreEndpos,4
+1200,21,512,384,16,24,331.891,332.12,332.339,Float,unused,ScoreEndpos,4
+1200,21,512,384,8,48,180.813,180.958,181.063,Int,unused,ScoreEndpos,4
+1200,21,512,384,8,48,177.791,177.916,178.046,Float,unused,ScoreEndpos,4
+1200,21,512,448,16,28,358.572,358.823,359.016,Int,unused,ScoreEndpos,4
+1200,21,512,448,16,28,334.036,334.338,334.596,Float,unused,ScoreEndpos,4
+1200,21,512,512,16,32,360.965,361.17,361.48,Int,unused,ScoreEndpos,4
+1200,21,512,512,16,32,336.56,336.637,336.716,Float,unused,ScoreEndpos,4
+1200,21,512,576,16,36,358.589,358.791,358.974,Int,unused,ScoreEndpos,4
+1200,21,512,576,16,36,335.91,336.067,336.33,Float,unused,ScoreEndpos,4
+1200,21,512,640,16,40,281.077,281.271,281.417,Int,unused,ScoreEndpos,4
+1200,21,512,640,16,40,266.871,266.962,267.096,Float,unused,ScoreEndpos,4
+1200,21,512,704,16,44,217.288,217.339,217.39,Int,unused,ScoreEndpos,4
+1200,21,512,704,16,44,210.65,210.704,210.753,Float,unused,ScoreEndpos,4
+1200,21,512,768,16,48,182.874,183.044,183.218,Int,unused,ScoreEndpos,4
+1200,21,512,768,16,48,179.459,179.566,179.678,Float,unused,ScoreEndpos,4
+gpuArch,alphabetSize,blocksize,tilesize,groupsize,numItems,mingcups,avggcups,maxgcups,datatype,approach,resultkind,numTiles
+1200,21,512,8,2,4,408.508,410.913,412.907,Int,unused,ScoreEndpos,4
+1200,21,512,16,2,8,753.135,757.996,761.375,Int,unused,ScoreEndpos,4
+1200,21,512,24,2,12,440.507,452.656,492.167,Int,unused,ScoreEndpos,4
+1200,21,512,32,2,16,634.374,635.542,639.779,Int,unused,ScoreEndpos,4
+1200,21,512,40,2,20,992.635,1005.64,1012.16,Int,unused,ScoreEndpos,4
+1200,21,512,48,4,12,514.933,535.106,565.112,Int,unused,ScoreEndpos,4
+1200,21,512,56,2,28,353.715,357.309,359.174,Int,unused,ScoreEndpos,4
+1200,21,512,64,4,16,680.432,706.433,735.191,Int,unused,ScoreEndpos,4
+1200,21,512,72,2,36,356.028,356.581,357.027,Int,unused,ScoreEndpos,4
+1200,21,512,80,4,20,820.29,828.694,854.449,Int,unused,ScoreEndpos,4
+1200,21,512,88,2,44,216.355,216.644,216.848,Int,unused,ScoreEndpos,4
+1200,21,512,96,8,12,464.935,467.034,470.06,Int,unused,ScoreEndpos,4
+1200,21,512,112,4,28,355.309,355.585,355.815,Int,unused,ScoreEndpos,4
+1200,21,512,128,8,16,659.708,661.632,663.537,Int,unused,ScoreEndpos,4
+1200,21,512,144,4,36,357.53,357.635,357.797,Int,unused,ScoreEndpos,4
+1200,21,512,160,8,20,826.677,829.648,832.19,Int,unused,ScoreEndpos,4
+1200,21,512,176,4,44,216.76,216.863,217.077,Int,unused,ScoreEndpos,4
+1200,21,512,192,16,12,667.427,668.733,671.459,Int,unused,ScoreEndpos,4
+1200,21,512,224,8,28,357.891,358.05,358.291,Int,unused,ScoreEndpos,4
+1200,21,512,256,16,16,873.951,879.63,886.628,Int,unused,ScoreEndpos,4
+1200,21,512,288,8,36,356.176,356.417,356.639,Int,unused,ScoreEndpos,4
+1200,21,512,320,16,20,1006.07,1008.32,1012.17,Int,unused,ScoreEndpos,4
+1200,21,512,352,8,44,214.756,214.88,215.058,Int,unused,ScoreEndpos,4
+1200,21,512,384,16,24,355.714,355.883,356.044,Int,unused,ScoreEndpos,4
+1200,21,512,448,16,28,358.572,358.823,359.016,Int,unused,ScoreEndpos,4
+1200,21,512,512,16,32,360.965,361.17,361.48,Int,unused,ScoreEndpos,4
+1200,21,512,576,16,36,358.589,358.791,358.974,Int,unused,ScoreEndpos,4
+1200,21,512,640,16,40,281.077,281.271,281.417,Int,unused,ScoreEndpos,4
+1200,21,512,704,16,44,217.288,217.339,217.39,Int,unused,ScoreEndpos,4
+1200,21,512,768,16,48,182.874,183.044,183.218,Int,unused,ScoreEndpos,4
+using type = std::tuple<
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 2, 4>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 2, 8>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 2, 12>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 2, 16>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 2, 20>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 4, 12>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 2, 28>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 4, 16>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 2, 36>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 4, 20>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 2, 44>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 8, 12>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 4, 28>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 8, 16>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 4, 36>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 8, 20>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 4, 44>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 16, 12>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 8, 28>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 16, 16>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 8, 36>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 16, 20>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 8, 44>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 16, 24>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 16, 28>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 16, 32>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 16, 36>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 16, 40>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 16, 44>,
+	GaplessConfig<21, Approach::unused, Datatype::Int, 512, 16, 48>,
+>;
+std::array<int, 30>{412,761,492,639,1012,565,359,735,357,854,216,470,355,663,357,832,217,671,358,886,356,1012,215,356,359,361,358,281,217,183,};

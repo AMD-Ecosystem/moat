@@ -7,13 +7,9 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:24:21Z",
-  "updated_at": "2026-11-13T05:51:21Z",
+  "updated_at": "2026-11-13T08:03:24Z",
   "head_sha": "0c8974021c3e1035640c6daf30e5ab88b6af7fbc",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx1201",
-    "since": "2026-11-13T04:20:12Z"
-  },
   "waivers": {
     "windows": {
       "reason": "Upstream MMseqs2 does not build on Windows: its database and file reading rely on Linux-only memory mapping (mmap) with no Windows path. jeff split Windows support (libmarv DLL 7c39308d, mmseqs CLI guards 54edbc78, plus a Windows file-I/O port) into a separate feature, deferral mmseqs2-windows-support, so the GPU-coverage PR tree carries no Windows commits and has nothing to build on Windows.",
@@ -24,94 +20,8 @@
   },
   "license_spdx": "MIT",
   "upstream_repo_id": 63755587,
-  "stage": "porting",
+  "stage": "delta-ported",
   "platforms": {
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "75a9b029",
-      "started_at": "2026-06-04T05:24:44Z",
-      "completed_at": "2026-06-23T22:43:20Z",
-      "updated_at": "2026-11-13T02:10:51Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer",
-      "carry_forward": {
-        "to": "75a9b029",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:43:20Z"
-      }
-    },
-    "linux-gfx1100": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "75a9b029",
-      "started_at": null,
-      "completed_at": "2026-06-23T22:43:21Z",
-      "updated_at": "2026-06-23T22:43:21Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "carry_forward": {
-        "to": "75a9b029",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:43:21Z"
-      }
-    },
-    "windows-gfx1101": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "75a9b029",
-      "started_at": null,
-      "completed_at": "2026-06-23T22:43:21Z",
-      "updated_at": "2026-06-23T22:43:21Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "75a9b029",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:43:21Z"
-      }
-    },
     "windows-gfx1201": {
       "state": "completed",
       "blocked": false,
@@ -163,6 +73,63 @@
       },
       "last_agent": "reviewer"
     },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "75a9b029",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:43:21Z",
+      "updated_at": "2026-06-23T22:43:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "75a9b029",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:43:21Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "75a9b029",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:43:21Z",
+      "updated_at": "2026-06-23T22:43:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "75a9b029",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:43:21Z"
+      }
+    },
     "linux-gfx950": {
       "blocked": false,
       "blocked_reason": null,
@@ -185,14 +152,14 @@
         "last_session_at": null
       }
     },
-    "linux-gfx1201": {
+    "linux-gfx90a": {
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": "2026-11-13T04:20:12Z",
-      "completed_at": null,
-      "updated_at": "2026-11-13T04:20:12Z",
+      "validated_sha": "75a9b029",
+      "started_at": "2026-06-04T05:24:44Z",
+      "completed_at": "2026-06-23T22:43:20Z",
+      "updated_at": "2026-11-13T02:10:51Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -205,13 +172,43 @@
         "session_count": 0,
         "first_session_at": null,
         "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "carry_forward": {
+        "to": "75a9b029",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:43:20Z"
       }
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-13T04:20:12Z",
+      "completed_at": null,
+      "updated_at": "2026-11-13T08:03:24Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/MMseqs2/pull/1",
   "porting_released": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-13T03:59:34Z",
-    "at": "2026-11-13T04:13:55Z"
+    "arch": "linux-gfx1201",
+    "since": "2026-11-13T04:20:12Z",
+    "at": "2026-11-13T08:03:24Z"
   }
 }

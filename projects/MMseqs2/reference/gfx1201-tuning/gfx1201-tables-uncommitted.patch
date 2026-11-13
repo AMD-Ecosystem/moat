@@ -1,0 +1,475 @@
+diff --git a/lib/libmarv/Readme.md b/lib/libmarv/Readme.md
+index 6d82099d..3e36afe2 100644
+--- a/lib/libmarv/Readme.md
++++ b/lib/libmarv/Readme.md
+@@ -17,7 +17,7 @@ GPU-accelerated protein database scan.
+ 
+ ## Hardware requirements
+ * (NVIDIA) A modern CUDA-capable GPU of Turing generation or newer. We provide tunings up to the Blackwell architecture. By PTX forward compatibility, libmarv should run on newer GPUs although performance will be less than expected without dedicated tuning.
+-* (AMD) A modern ROCm-capable GPU. We provide tunings for gfx900, gfx90a, gfx942, gfx950, gfx1100, and gfx1150. Other architectures listed in CMAKE_HIP_ARCHITECTURES use a generic, untuned kernel configuration.
++* (AMD) A modern ROCm-capable GPU. We provide tunings for gfx900, gfx90a, gfx942, gfx950, gfx1100, gfx1150, and gfx1201. Other architectures listed in CMAKE_HIP_ARCHITECTURES use a generic, untuned kernel configuration.
+ 
+ 
+ 
+diff --git a/lib/libmarv/src/aligners/make_aligner.cu b/lib/libmarv/src/aligners/make_aligner.cu
+index 03067f96..a40cc956 100644
+--- a/lib/libmarv/src/aligners/make_aligner.cu
++++ b/lib/libmarv/src/aligners/make_aligner.cu
+@@ -121,6 +121,11 @@ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_a
+         return make_multiconfig_gapless_aligner_amd_gfx1150_16bit();
+     }
+ #endif
++#ifdef MARV_HAVE_AMD_GFX1201
++    if(arch == "gfx1201"){
++        return make_multiconfig_gapless_aligner_amd_gfx1201_16bit();
++    }
++#endif
+ 
+ #ifdef MARV_HAVE_AMD_DEFAULT
+     return make_multiconfig_gapless_aligner_default_amd_16bit();
+@@ -235,6 +240,11 @@ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_a
+         return make_multiconfig_gapless_aligner_amd_gfx1150_16bit();
+     }
+ #endif
++#ifdef MARV_HAVE_AMD_GFX1201
++    if(arch == "gfx1201"){
++        return make_multiconfig_gapless_aligner_amd_gfx1201_16bit();
++    }
++#endif
+     
+ #ifdef MARV_HAVE_AMD_DEFAULT
+     return make_multiconfig_gapless_aligner_default_amd_16bit();
+@@ -349,6 +359,11 @@ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_a
+         return make_multiconfig_gapless_aligner_amd_gfx1150_32bit();
+     }
+ #endif
++#ifdef MARV_HAVE_AMD_GFX1201
++    if(arch == "gfx1201"){
++        return make_multiconfig_gapless_aligner_amd_gfx1201_32bit();
++    }
++#endif
+    
+ #ifdef MARV_HAVE_AMD_DEFAULT
+     return make_multiconfig_gapless_aligner_default_amd_32bit();
+@@ -410,6 +425,11 @@ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_sw_aligne
+         return make_multiconfig_sw_aligner_amd_gfx1150_32bit();
+     }
+ #endif
++#ifdef MARV_HAVE_AMD_GFX1201
++    if(arch == "gfx1201"){
++        return make_multiconfig_sw_aligner_amd_gfx1201_32bit();
++    }
++#endif
+ 
+ #ifdef MARV_HAVE_AMD_DEFAULT
+     return make_multiconfig_sw_aligner_default_amd_32bit();
+diff --git a/lib/libmarv/src/aligners/make_aligner_amd_gfx1201.cu b/lib/libmarv/src/aligners/make_aligner_amd_gfx1201.cu
+new file mode 100644
+index 00000000..71178a19
+--- /dev/null
++++ b/lib/libmarv/src/aligners/make_aligner_amd_gfx1201.cu
+@@ -0,0 +1,204 @@
++#include "score_only_alignment.cuh"
++#include "score_only_alignment_interfaces.cuh"
++
++
++#include <memory>
++
++#include "../namespace.hpp"
++LIBMARV_NAMESPACE_BEGIN
++
++
++    std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_aligner_amd_gfx1201_16bit(){
++        struct SingleTileConfigs{
++            using type = std::tuple<
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 2, 4>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 2, 8>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 2, 12>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 2, 16>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 2, 20>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 2, 24>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 2, 28>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 2, 32>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 256, 2, 36>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 2, 40>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 2, 44>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 2, 48>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 2, 52>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 256, 4, 28>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 2, 60>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 256, 4, 32>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 4, 36>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 4, 40>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 4, 44>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 4, 48>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 4, 52>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 4, 56>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 4, 60>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 4, 64>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 8, 36>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 8, 40>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 8, 44>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 8, 48>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 8, 52>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 8, 56>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 8, 60>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 8, 64>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 16, 36>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 16, 40>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 16, 48>
++            >;
++
++            static constexpr auto getPerformanceHints(){
++                constexpr auto result = std::array{2208,3183,3605,3808,3937,4097,4097,4145,4125,4202,
++                    4163,4220,4125,4122,4126,4191,4218,4295,4360,4348,
++                    4317,4278,4286,4302,4287,4323,4392,4395,4234,4333,
++                    4316,4380,3811,4068,4164};
++
++                static_assert(result.size() == std::tuple_size_v<type>);
++
++                return result;
++            };
++
++            static constexpr bool hasPerformanceHints(){
++                return false;
++            }
++        };
++
++        struct MultiTileConfigs{
++            using type = std::tuple<
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 2, 64>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 4, 48>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 4, 52>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 4, 56>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 4, 60>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 4, 64>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 8, 48>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 8, 52>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 8, 56>,
++                GaplessConfig<21, Approach::kernelparamzero, Datatype::Half2, 512, 8, 60>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 8, 64>,
++                GaplessConfig<21, Approach::hardcodedzero, Datatype::Half2, 512, 16, 48>
++            >;
++
++            static constexpr auto getPerformanceHints(){
++                constexpr auto result = std::array{3113,2948,3023,3024,2943,3166,2918,3070,3095,3075,
++                    3230,3026};
++
++                static_assert(result.size() == std::tuple_size_v<type>);
++
++                return result;
++            };
++
++            static constexpr bool hasPerformanceHints(){
++                return false;
++            }
++        };
++
++
++        return std::make_unique<MultiConfigScoreOnlyAligner<SingleTileConfigs, MultiTileConfigs>>(AlignmentAlgorithmE::Gapless);
++    }
++
++
++    std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_aligner_amd_gfx1201_32bit(){
++        struct SingleTileConfigs{
++            using type = std::tuple<
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 8>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 12>,
++                GaplessConfig<21, Approach::unused, Datatype::Int, 512, 2, 16>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 20>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 24>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 28>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 32>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 36>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 40>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 44>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 256, 2, 48>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 52>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 4, 28>,
++                GaplessConfig<21, Approach::unused, Datatype::Int, 512, 2, 60>,
++                GaplessConfig<21, Approach::unused, Datatype::Int, 512, 2, 64>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 256, 4, 36>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 4, 40>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 256, 4, 44>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 4, 48>,
++                GaplessConfig<21, Approach::unused, Datatype::Int, 512, 4, 52>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 4, 56>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 4, 60>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 256, 8, 32>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 256, 8, 36>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 8, 40>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 256, 8, 44>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 8, 48>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 256, 8, 52>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 8, 56>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 8, 60>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 16, 32>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 16, 36>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 16, 44>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 16, 48>
++            >;
++
++            static constexpr auto getPerformanceHints(){
++                constexpr auto result = std::array{2354,2581,2639,2667,2729,2765,2774,2794,2772,2804,
++                    2809,2695,2679,2631,2695,2703,2739,2780,2733,2667,
++                    2773,2797,2744,2780,2810,2810,2810,2821,2865,2873,
++                    2793,2805,2850,2740};
++
++                static_assert(result.size() == std::tuple_size_v<type>);
++
++                return result;
++            };
++
++            static constexpr bool hasPerformanceHints(){
++                return false;
++            }
++        };
++
++        struct MultiTileConfigs{
++            using type = std::tuple<
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 8, 40>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 8, 44>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 16, 36>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 16, 44>
++            >;
++
++            static constexpr auto getPerformanceHints(){
++                constexpr auto result = std::array{2266,2325,2351,2503};
++
++                static_assert(result.size() == std::tuple_size_v<type>);
++
++                return result;
++            };
++
++            static constexpr bool hasPerformanceHints(){
++                return false;
++            }
++        };
++
++
++        return std::make_unique<MultiConfigScoreOnlyAligner<SingleTileConfigs, MultiTileConfigs>>(AlignmentAlgorithmE::Gapless);
++    }
++
++    std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_sw_aligner_amd_gfx1201_32bit(){
++        //NOT TUNED
++        struct SingleTileConfigs{
++            using type = std::tuple<
++                SWConfig<21,Approach::unused, Datatype::Float,128,4,16>,
++                SWConfig<21,Approach::unused, Datatype::Float,128,4,32>,
++                SWConfig<21,Approach::unused, Datatype::Float,128,8,32>,
++                SWConfig<21,Approach::unused, Datatype::Float,128,16,32>
++            >;
++
++            static constexpr bool hasPerformanceHints(){
++                return false;
++            }
++        };
++
++        using MultiTileConfigs = SingleTileConfigs;
++
++
++        return std::make_unique<MultiConfigScoreOnlyAligner<SingleTileConfigs, MultiTileConfigs>>(AlignmentAlgorithmE::SW);
++    }
++
++
++LIBMARV_NAMESPACE_END
+diff --git a/lib/libmarv/src/aligners/make_aligner_endpos.cu b/lib/libmarv/src/aligners/make_aligner_endpos.cu
+index 5359bf57..72b714bd 100644
+--- a/lib/libmarv/src/aligners/make_aligner_endpos.cu
++++ b/lib/libmarv/src/aligners/make_aligner_endpos.cu
+@@ -111,6 +111,11 @@ std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_sw_
+         return make_multiconfig_sw_endpos_aligner_amd_gfx1150_32bit();
+     }
+ #endif
++#ifdef MARV_HAVE_AMD_GFX1201
++    if(arch == "gfx1201"){
++        return make_multiconfig_sw_endpos_aligner_amd_gfx1201_32bit();
++    }
++#endif
+ 
+ #ifdef MARV_HAVE_AMD_DEFAULT
+     return make_multiconfig_sw_endpos_aligner_default_amd_32bit();
+@@ -227,6 +232,11 @@ std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_gap
+         return make_multiconfig_gapless_endpos_aligner_amd_gfx1150_32bit();
+     }
+ #endif
++#ifdef MARV_HAVE_AMD_GFX1201
++    if(arch == "gfx1201"){
++        return make_multiconfig_gapless_endpos_aligner_amd_gfx1201_32bit();
++    }
++#endif
+ 
+ #ifdef MARV_HAVE_AMD_DEFAULT
+     return make_multiconfig_gapless_endpos_aligner_default_amd_32bit();
+@@ -339,6 +349,11 @@ std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_gap
+         return make_multiconfig_gapless_endpos_aligner_amd_gfx1150_32bit();
+     }
+ #endif
++#ifdef MARV_HAVE_AMD_GFX1201
++    if(arch == "gfx1201"){
++        return make_multiconfig_gapless_endpos_aligner_amd_gfx1201_32bit();
++    }
++#endif
+ 
+ #ifdef MARV_HAVE_AMD_DEFAULT
+     return make_multiconfig_gapless_endpos_aligner_default_amd_32bit();
+diff --git a/lib/libmarv/src/aligners/make_aligner_endpos_amd_gfx1201.cu b/lib/libmarv/src/aligners/make_aligner_endpos_amd_gfx1201.cu
+new file mode 100644
+index 00000000..5620206f
+--- /dev/null
++++ b/lib/libmarv/src/aligners/make_aligner_endpos_amd_gfx1201.cu
+@@ -0,0 +1,110 @@
++#include "score_with_endpos_alignment.cuh"
++#include "score_with_endpos_alignment_interfaces.cuh"
++
++
++#include <memory>
++
++#include "../namespace.hpp"
++LIBMARV_NAMESPACE_BEGIN
++
++
++    std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_gapless_endpos_aligner_amd_gfx1201_32bit(){
++        struct SingleTileConfigs{
++            using type = std::tuple<
++                GaplessConfig<21, Approach::unused, Datatype::Float, 256, 2, 4>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 8>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 12>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 16>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 20>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 24>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 28>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 32>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 36>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 40>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 2, 44>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 256, 4, 24>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 4, 28>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 4, 32>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 4, 36>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 4, 40>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 4, 44>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 4, 48>,
++                GaplessConfig<21, Approach::unused, Datatype::Int, 512, 4, 52>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 8, 28>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 4, 60>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 8, 32>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 8, 36>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 8, 40>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 8, 44>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 8, 48>,
++                GaplessConfig<21, Approach::unused, Datatype::Int, 512, 8, 52>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 8, 56>,
++                GaplessConfig<21, Approach::unused, Datatype::Float, 512, 8, 60>,
++                GaplessConfig<21, Approach::unused, Datatype::Int, 512, 8, 64>,
++                GaplessConfig<21, Approach::unused, Datatype::Int, 512, 16, 36>,
++                GaplessConfig<21, Approach::unused, Datatype::Int, 512, 32, 20>,
++                GaplessConfig<21, Approach::unused, Datatype::Int, 512, 16, 44>,
++                GaplessConfig<21, Approach::unused, Datatype::Int, 512, 16, 48>
++            >;
++
++            static constexpr auto getPerformanceHints(){
++                constexpr auto result = std::array{832,1592,1888,2057,1976,2043,2083,2087,2080,2126,
++                    2121,2084,2099,2111,2134,2143,2148,2131,1992,2111,
++                    2011,2123,2166,2157,2202,2171,2083,2083,2116,2089,
++                    1818,1765,1710,1855};
++
++                static_assert(result.size() == std::tuple_size_v<type>);
++
++                return result;
++            };
++
++            static constexpr bool hasPerformanceHints(){
++                return false;
++            }
++        };
++
++        struct MultiTileConfigs{
++            using type = std::tuple<
++                GaplessConfig<21, Approach::unused, Datatype::Int, 512, 16, 20>,
++                GaplessConfig<21, Approach::unused, Datatype::Int, 512, 32, 20>
++            >;
++
++            static constexpr auto getPerformanceHints(){
++                constexpr auto result = std::array{1012,973};
++
++                static_assert(result.size() == std::tuple_size_v<type>);
++
++                return result;
++            };
++
++            static constexpr bool hasPerformanceHints(){
++                return false;
++            }
++        };
++
++
++        return std::make_unique<MultiConfigScoreWithEndPosAligner<SingleTileConfigs, MultiTileConfigs>>(AlignmentAlgorithmE::Gapless);
++    }
++
++    std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_sw_endpos_aligner_amd_gfx1201_32bit(){
++        //NOT TUNED
++        struct SingleTileConfigs{
++            using type = std::tuple<
++                SWConfig<21,Approach::unused, Datatype::Float,128,4,16>,
++                SWConfig<21,Approach::unused, Datatype::Float,128,4,32>,
++                SWConfig<21,Approach::unused, Datatype::Float,128,8,32>,
++                SWConfig<21,Approach::unused, Datatype::Float,128,16,32>
++            >;
++
++            static constexpr bool hasPerformanceHints(){
++                return false;
++            }
++        };
++
++        using MultiTileConfigs = SingleTileConfigs;
++
++
++        return std::make_unique<MultiConfigScoreWithEndPosAligner<SingleTileConfigs, MultiTileConfigs>>(AlignmentAlgorithmE::SW);
++    }
++
++LIBMARV_NAMESPACE_END
+diff --git a/lib/libmarv/src/aligners/make_aligner_headers.cuh b/lib/libmarv/src/aligners/make_aligner_headers.cuh
+index 97cd70f7..dcc7b704 100644
+--- a/lib/libmarv/src/aligners/make_aligner_headers.cuh
++++ b/lib/libmarv/src/aligners/make_aligner_headers.cuh
+@@ -58,6 +58,7 @@ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_a
+ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_aligner_amd_gfx950_16bit();
+ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_aligner_amd_gfx1100_16bit();
+ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_aligner_amd_gfx1150_16bit();
++std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_aligner_amd_gfx1201_16bit();
+ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_aligner_default_amd_16bit();
+ 
+ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_aligner_amd_gfx900_32bit();
+@@ -66,6 +67,7 @@ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_a
+ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_aligner_amd_gfx950_32bit();
+ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_aligner_amd_gfx1100_32bit();
+ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_aligner_amd_gfx1150_32bit();
++std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_aligner_amd_gfx1201_32bit();
+ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_gapless_aligner_default_amd_32bit();
+ 
+ 
+@@ -109,6 +111,7 @@ std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_gap
+ std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_gapless_endpos_aligner_amd_gfx950_32bit();
+ std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_gapless_endpos_aligner_amd_gfx1100_32bit();
+ std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_gapless_endpos_aligner_amd_gfx1150_32bit();
++std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_gapless_endpos_aligner_amd_gfx1201_32bit();
+ std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_gapless_endpos_aligner_default_amd_32bit();
+ 
+ // std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_gapless_endpos_aligner_amd();
+@@ -130,6 +133,7 @@ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_sw_aligne
+ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_sw_aligner_amd_gfx950_32bit();
+ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_sw_aligner_amd_gfx1100_32bit();
+ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_sw_aligner_amd_gfx1150_32bit();
++std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_sw_aligner_amd_gfx1201_32bit();
+ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_sw_aligner_default_amd_32bit();
+ std::unique_ptr<MultiConfigScoreOnlyAlignerInterface> make_multiconfig_sw_aligner_32bit();
+ 
+@@ -157,6 +161,7 @@ std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_sw_
+ std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_sw_endpos_aligner_amd_gfx950_32bit();
+ std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_sw_endpos_aligner_amd_gfx1100_32bit();
+ std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_sw_endpos_aligner_amd_gfx1150_32bit();
++std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_sw_endpos_aligner_amd_gfx1201_32bit();
+ std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_sw_endpos_aligner_default_amd_32bit();
+ 
+ std::unique_ptr<MultiConfigScoreWithEndPosAlignerInterface> make_multiconfig_sw_endpos_aligner_32bit();
