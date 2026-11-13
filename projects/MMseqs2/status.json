@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:24:21Z",
-  "updated_at": "2026-11-13T17:15:45Z",
+  "updated_at": "2026-11-13T17:23:35Z",
   "head_sha": "af0688d88121a9f0dbcaef013149abd294533f29",
   "depends_on": [],
   "waivers": {
@@ -228,7 +228,6 @@
       "last_agent": "porter"
     }
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/MMseqs2/pull/1",
   "porting_released": {
     "arch": "linux-gfx90a",
     "since": "2026-11-13T16:47:58Z",
@@ -237,5 +236,12 @@
   "porting": {
     "arch": "linux-gfx942",
     "since": "2026-11-13T17:15:45Z"
+  },
+  "fork_branch": "moat-gpu-coverage",
+  "fork_branch_ruling": {
+    "branch": "moat-gpu-coverage",
+    "previous": null,
+    "by": "jeffdaily",
+    "at": "2026-11-13T17:23:35Z"
   }
 }
