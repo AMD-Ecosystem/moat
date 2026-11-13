@@ -1300,3 +1300,43 @@ n_gpus=1 matches the issue. n_gpus=2 is a clamped 1-GPU run, so it shows the cor
 - Commit A: runs and passes; its 2-GPU assertion is vacuous, its quoted magnitudes do not match its own script, its "previously 100000" refers to a commit outside the squash, and its recipe lacks the googletest submodule line. Replace the script with the corrected one above, quote 7e-7..1e-6 / 1.3e-15..1.7e-15 (or rerun on the final head and quote that), and run it once on a 2-GPU pin before approval.
 - Commit B: both scripts run and report what the message claims (478 / 669 without the flag, 0 with it; r2 gaps <= 1.6e-12). The counter is correct for gfx11 and gfx12 asm. Only the "336 vs 116" wording on gfx90a needs a clause.
 - #900 and #901: n_gpus=1 halves reproduce the issue text exactly; 2-GPU halves not reproducible on this 1-GPU pin.
+
+## KMeans 2-GPU Test Plan check 2026-11-12 (linux-gfx942, 2x MI300X, ROCm 10.1 pip SDK) -- moat-port 0e70429b
+
+jeff's request: the "Squash Test Plan check 2026-11-12" ran on one pinned GPU, so the corrected KMeans script's `n_gpus=2` case never ran on two. This check reruns it with two visible GPUs. No role, no state change, no fork change, nothing pushed. (Run in the early hours of 2026-11-13 UTC; dated with the job.)
+
+- Pin: dispatcher `HIP_VISIBLE_DEVICES=2,3`, kept; the script prints `visible GPUs 2`.
+- Tree: fresh clone of AMD-Ecosystem/h2o4gpu `moat-port` checked out at `0e70429b85679b1dd028b4c26f95c3131ffaa6e9` in the job directory; tracked tree clean afterwards (only untracked `build-hip/`). `ulimit -c 0`, LD_LIBRARY_PATH unset, OPENBLAS_NUM_THREADS=32. pip into the job venv: `swig==4.2.1 cython==3.0.11 meson-python ninja`; apt `libopenblas-dev` 0.3.26.
+- Build: the recipe from "Squash Test Plan check 2026-11-12" unchanged (submodule line, cmake configure, `cmake --build build-hip -j56`, `make apply-sklearn PYTHON=$P`, copy of `_ch2o4gpu_*pu.so` / `ch2o4gpu_*pu.py` into `src/interface_py/h2o4gpu/libs/`); every step rc 0. `h2o4gpu_test` not rerun (not asked).
+
+### Corrected KMeans script, 2 GPUs
+Run verbatim (the "Corrected script" block of the previous section with `EOF2` read as `EOF`, `python` = job venv), 3 runs, all rc 0, every assertion passed. Run 1:
+```
+visible GPUs 2
+float32 20000 n_gpus 1 transform buffer elements 100000 array elements 100000
+float32 20000 transform max err / max dist2 8.155188e-07
+float32 20001 n_gpus 1 transform buffer elements 100005 array elements 100005
+float32 20001 transform max err / max dist2 7.3372297e-07
+float32 20001 n_gpus 2 transform buffer elements 100005 array elements 100005
+float64 20000 n_gpus 1 transform buffer elements 100000 array elements 100000
+float64 20000 transform max err / max dist2 1.5989148033718466e-15
+float64 20001 n_gpus 1 transform buffer elements 100005 array elements 100005
+float64 20001 transform max err / max dist2 1.6820003389611122e-15
+float64 20001 n_gpus 2 transform buffer elements 100005 array elements 100005
+```
+The buffer lines and asserts were the same in runs 2 and 3. Error range over the 3 runs: float32 7.3e-7 to 8.8e-7, float64 1.30e-15 to 1.87e-15. Across these and the 6 one-GPU runs of the previous section: float32 7.2e-7 to 1.0e-6, float64 1.3e-15 to 1.9e-15. So the commit message should quote "7e-7..1e-6 / 1.3e-15..1.9e-15", widened from the previous section's 1.7e-15.
+- The `n_gpus=2` case really used both GPUs: `rocprofv3 --kernel-trace` of fit plus transform at 20001x10, float32, n_gpus=2 (`<job>/tp/km2.py`) shows kernels on two agents (932 / 823 dispatches), each with 41 `kmeans::detail::matmul<float>` distance dispatches of the same grid (51200), the last ones from transform. The #901 run below also shows the 2-way row split.
+
+### Issue #901 reproducer, 2 GPUs
+Body fetched with `gh issue view 901 --repo h2oai/h2o4gpu --json body` (read-only; issue OPEN, createdAt == updatedAt 2026-11-12T18:32:57Z), Python block run as posted, 2 runs, rc 0, same output both times:
+```
+n_gpus=1 predict last row on C[1]: 1, on C[2]: 2
+n_gpus=2 predict last row on C[1]: 0, on C[2]: 0
+```
+The n_gpus=2 line shows the bug (`0, 0`) exactly as the issue states.
+
+### What the check reports before the rows*k fix (24cd051), from the code
+At 24cd051's parent (`2c22a862`), `kmeans_transform` allocated `alloc_result<T>(chunk_distances * n_gpu)`, which is `calloc(chunk_distances * n_gpu, sizeof(T))`, with `chunk_distances = rows / n_gpu * k`. For 20001 rows, 5 clusters, 2 GPUs: `20001 / 2 = 10000` (integer division), giving `10000 * 5 * 2 = 100000` elements. That is `last_gpu_calloc = 400000` bytes for float32 and 800000 for float64, while `t.nbytes` is 400020 / 800040 (100005 elements). Both `n_gpus 2` asserts fail there (the buffer line would print `100000 array elements 100005`); `n_gpus=1` cases pass because `rows / 1 * k * 1 == rows * k`. At the squash base (`2c22a862^`, upstream) the result was `new thrust::host_vector<T>(0)` grown with `insert`, so no calloc came from `_ch2o4gpu_gpu` and `last_gpu_calloc` stays 0. Every case's assert fails there, `n_gpus=1` included. Not run (per the request); derived from `git show 2c22a862:src/gpu/kmeans/kmeans_h2o4gpu.cu` and its parent.
+
+### Result
+The owed 2-GPU run is done: the corrected script passes with 2 visible GPUs at 0e70429b, including `last_gpu_calloc == t.nbytes` for 20001 rows at n_gpus=2. Commit A's message can use the corrected script and recipe, quoting the magnitudes above.
