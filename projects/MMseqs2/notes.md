@@ -1125,3 +1125,28 @@ util/regression/run_regression.sh build/src/mmseqs scratch
 
 This work was authored with the assistance of Claude, an AI coding agent.
 ====
+
+## CUDA compile check (nvcc 13.5.37) at 2cda180e
+
+jeff's request (2026-11-13, linux-gfx950 fleet host): compile the CUDA path of `moat-port` 2cda180e with real nvcc as the no-regression check for the rescoped port. No MOAT state, fork branch or review PR was changed; the fork was not edited.
+
+Toolchain: libmarv's Readme asks for CUDA 13.2 or newer and the host has only nvcc 12.8, so the CUDA 13.5 wheels went into a job-local prefix with `pip install --target <job>/cuda13-wheels "nvidia-cuda-nvcc==13.5.*" "nvidia-cuda-runtime==13.5.*" nvidia-cuda-cccl "nvidia-nvvm==13.5.*" "nvidia-cuda-crt==13.5.*" "nvidia-nvtx==13.5.*"` (cccl resolved to 13.3.5.0.6), not into the shared image. `C=<job>/cuda13-wheels/nvidia/cu13`. The wheel ships only `libcudart.so.13`, so FindCUDAToolkit needs `ln -s libcudart.so.13 $C/lib/libcudart.so`. gcc 13.3, CMake 3.31.6, Ninja. CMake reports `CUDA compiler identification is NVIDIA 13.5.37`, `Found CUDAToolkit ... (found version "13.5.37")` and `marv: tuned kernels for 80;90; core architectures 80-real;90-real;90-virtual`.
+
+```
+cmake -S . -B build-cuda -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_CUDA=1 -DCMAKE_CUDA_ARCHITECTURES="80;90" \
+  -DCMAKE_CUDA_COMPILER=$C/bin/nvcc -DCUDAToolkit_ROOT=$C
+cmake --build build-cuda -j64 --target mmseqs
+cmake -S lib/libmarv/src -B build-marv -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=0 -DBUILD_TUNING=0 -DONLY_BUILD_TUNING=0 \
+  -DLIBRARY_ONLY=0 -DCMAKE_CUDA_ARCHITECTURES="80;90" -DCMAKE_CUDA_COMPILER=$C/bin/nvcc -DCUDAToolkit_ROOT=$C
+cmake --build build-marv -j64
+```
+
+Results:
+- Fork 2cda180e, top-level mmseqs with libmarv: PASS. All 317 steps complete and `src/mmseqs` links (2m54s at -j64); `mmseqs version` prints 2cda180e...
+- Fork 2cda180e, standalone libmarv (`LIBRARY_ONLY=0`): PASS. All 40 steps complete: `libmarv.a`, `align`, `makedb`, `test_gapless`, `test_cuda_multitile` and `test_db_copy` all link, with 0 warnings.
+- Upstream d0185a2d, top-level build with the same commands: PASS. Both trees give the same warnings (116 lines each, identical after path normalization): the Rust `block_aligner_c` ABI deprecations and four tinyexpr `-Warray-bounds`. None are in fork-changed files.
+- Device code is unchanged against upstream. `cuobjdump -sass` and `-ptx` (13.5 cuobjdump/nvdisasm wheels, same job-local install) of the fork and upstream `mmseqs` match line for line once the per-translation-unit `_INTERNAL_<hash>` / `_GLOBAL__N__<hash>` prefixes are normalized: 1043 SASS functions over sm_80 and sm_90, and 234 PTX entries. So the rescope changes no CUDA kernel. The CUDA-visible edits (dispatcher, `convert.cuh`, `marv.h`/`marv.cu`, `mapped_file.hpp`, GpuUtil) compile cleanly, and the HIP-only branches drop out.
+- The configure message `xxd or sed not found, compiling resources with CMake instead` means this host has no `xxd`. The non-WIN32 branch of `MMseqsResourceCompiler.cmake` is unchanged from upstream.
+- Not run: this host has no NVIDIA GPU, so there is no CUDA runtime test. This is a compile and link check only.
+
+This clears the rescope round's `cuda-not-validated: no nvcc on linux-gfx90a` item for 2cda180e.
