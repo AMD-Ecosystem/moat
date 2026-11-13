@@ -1041,6 +1041,16 @@ Gate arch-specific selection on `__HIP_PLATFORM_AMD__` and force the portable co
 trust CC major/minor for arch dispatch on AMD. Found independently by both libmarv ports.
 (MMseqs2, foldseek: the CUDASW++ short2-DPX Smith-Waterman selector.)
 
+The values also collide AMD with AMD, so per-arch tuning tables cannot be keyed on them either:
+gfx900, gfx906, gfx908 and gfx90a all report 9.0, gfx1100-gfx1102 report 11.0, and gfx1150/gfx1151
+11.5. A library that builds one tuned object per `--offload-arch` and picks the table by major/minor
+hands the gfx900 kernels to a gfx90a in a fat binary ("device kernel image is invalid"). Select by
+`hipDeviceProp_t::gcnArchName` with the feature suffix stripped (`gfx90a:sramecc+:xnack-` ->
+`gfx90a`), and give every requested target without its own table a generic build rather than a
+hard error. In CMake, `CMAKE_HIP_ARCHITECTURES` from native detection lists one entry per GPU
+(`gfx90a;gfx90a;gfx90a;gfx90a` on a four-GPU host): `list(REMOVE_DUPLICATES)` before creating
+per-arch targets. (MMseqs2: libmarv's per-arch AMD aligner tables.)
+
 **Runtime PTX plus the CUDA Driver API is a THIRD build class** beyond Strategy A and B.
 Some projects never compile `.cu` into the binary -- they emit PTX text, embed it, and load
 it at runtime via `cuModuleLoadData`/`cuLaunchKernel`, often through a hand-written FFI
