@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 # MOAT entrypoint. Pull the latest MOAT state, detect this host's AMD arch, pick
 # the single next project + stage for this platform, and print a dispatch
 # summary. Standing upkeep on the way writes and pushes: hook/merge-driver
@@ -76,7 +78,7 @@ python3 utils/upstream.py --forks --apply 2>/dev/null \
 PUBLISH=$(python3 utils/upstream.py --publish 2>/dev/null)
 READY=$(printf '%s\n' "$PUBLISH" | sed -n 's/^  READY *\([^ ]*\).*/\1/p' | tr '\n' ' ')
 if [ -n "${READY// /}" ]; then
-  echo "approved : ${READY}-- submit upstream: python3 utils/upstream.py --publish --apply"
+  echo "approved : ${READY}-- submit upstream: python3 utils/upstream.py --publish --apply --name <project>"
   echo "           (opens the PR with the approved title and body, then closes the review PR)"
 fi
 # A review PR that could not be READ is not a port with nothing to submit, and this
@@ -85,6 +87,15 @@ fi
 UNREACHABLE=$(printf '%s\n' "$PUBLISH" | sed -n 's/^  UNREACHABLE *\([^ ]*\).*/\1/p' | tr '\n' ' ')
 if [ -n "${UNREACHABLE// /}" ]; then
   echo "unknown  : ${UNREACHABLE}-- review PR(s) unreadable, approval state UNKNOWN (not 'nothing to submit')"
+fi
+
+# A release line approved on its in-fork review PR is finished work waiting on one
+# command, exactly like an approved port, so it is surfaced the same way.
+FINISH=$(python3 utils/upstream.py --finish-release 2>/dev/null)
+RELEASE=$(printf '%s\n' "$FINISH" | sed -n 's/^  \(READY\|RESUME\) *\([^ ]*\).*/\2/p' | tr '\n' ' ')
+if [ -n "${RELEASE// /}" ]; then
+  echo "approved : ${RELEASE}-- finish the release: python3 utils/upstream.py --finish-release --apply"
+  echo "           (tags the approved commit, freezes the branch, closes the review PR unmerged)"
 fi
 
 # A suggested waiver blocks its project's PR and only a person can clear it, so it has

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Aggregate projects/<name>/stats.jsonl into summary numbers. The stats are
 provenance of the MOAT endeavor: what the ports cost in compile/test wall,
 session wall, and tokens is a notable fact about the work, recorded so a person
