@@ -29,7 +29,7 @@ branch and opens a PR, and a human decides -- the same path everything else take
     python3 utils/upstream.py --approvals --apply # dismiss them and re-request review
     python3 utils/upstream.py --review           # report ports needing a review PR
     python3 utils/upstream.py --publish          # report approved ports ready to submit
-    python3 utils/upstream.py --publish --apply  # open the upstream PRs
+    python3 utils/upstream.py --publish --apply --name <p>  # open that one upstream PR
     python3 utils/upstream.py --fix-review       # staged fix rounds needing a review PR
     python3 utils/upstream.py --merge-fix        # approved fix rounds ready to merge
     python3 utils/upstream.py --merge-fix --apply # fast-forward the open PR to the approved tip
@@ -1035,8 +1035,8 @@ def report_publish(apply, only=None):
               f"when GitHub is reachable.")
     if not apply:
         if ready:
-            print(f"\n  --apply opens {len(ready)} upstream PR(s) with the approved "
-                  f"title and body.")
+            print(f"\n  --apply --name <project> opens that one upstream PR with "
+                  f"the approved title and body.")
         return 0
     for r in ready:
         # Snapshot the approval BEFORE publishing, so the record of who authorised
@@ -2255,7 +2255,8 @@ def main():
     ap.add_argument("--review", action="store_true",
                     help="ports whose gates are met with no review PR open yet")
     ap.add_argument("--name", help="with --review --apply: which project to open; "
-                    "with --publish: check and submit only this project")
+                    "with --publish: check and submit only this project "
+                    "(required with --publish --apply)")
     ap.add_argument("--title", help="with --review --apply: the upstream PR title")
     ap.add_argument("--body-file", help="with --review --apply: file holding the body")
     ap.add_argument("--forks", action="store_true",
@@ -2318,6 +2319,14 @@ def main():
         print(f"review-pr: {action} -- {detail}")
         return 0 if action in ("opened", "would-open") else 1
     if a.publish:
+        # Opening an upstream PR is one person's decision about one project, so the
+        # write names it. Without --name an --apply run once opened every approved
+        # port at the same time, including ones nobody meant to send that day.
+        if a.apply and not a.name:
+            print("--publish --apply needs --name <project>: it opens one upstream PR "
+                  "per run. Run --publish without --apply to list what is ready.",
+                  file=sys.stderr)
+            return 2
         return report_publish(apply=a.apply, only=a.name)
     if a.fix_review:
         rows = fix_review_rows()

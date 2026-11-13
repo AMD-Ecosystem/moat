@@ -78,7 +78,7 @@ python3 utils/upstream.py --forks --apply 2>/dev/null \
 PUBLISH=$(python3 utils/upstream.py --publish 2>/dev/null)
 READY=$(printf '%s\n' "$PUBLISH" | sed -n 's/^  READY *\([^ ]*\).*/\1/p' | tr '\n' ' ')
 if [ -n "${READY// /}" ]; then
-  echo "approved : ${READY}-- submit upstream: python3 utils/upstream.py --publish --apply"
+  echo "approved : ${READY}-- submit upstream: python3 utils/upstream.py --publish --apply --name <project>"
   echo "           (opens the PR with the approved title and body, then closes the review PR)"
 fi
 # A review PR that could not be READ is not a port with nothing to submit, and this
