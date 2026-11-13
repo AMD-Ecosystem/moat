@@ -759,6 +759,42 @@ when that code is also listed. Define each as `static_cast<hipError_t>(<CUDA val
 checking no `hipError_t` enumerator uses the value: the labels stay distinct, and since HIP
 never returns them they are unreachable. (LichtFeld-Studio)
 
+**nvcc's EDG front end accepts a split launch chevron; clang does not.** `kernel << <grid,
+block >> >(args)` -- spaces inside the triple angle brackets -- compiles under nvcc and is a
+hard parse error under hipcc/clang, which lexes `<<<` as a single token. It is common in
+Inria-derived 3DGS/2DGS rasterizers, where every launch site is written that way. Respace to
+`<<<grid, block >>>`; the CUDA path is unaffected because this is whitespace inside a token
+sequence nvcc already accepts. Expect one edit per launch site, not per file.
+(diff-surfel-rasterizations)
+
+**Three CUDA spellings that do not resolve under HIP, all cheap to guard.** They travel
+together in the same family of projects, so check for all three at once:
+`#include "device_launch_parameters.h"` (no such header; `threadIdx` and friends are
+intrinsic under hipcc), `#include <cooperative_groups/reduce.h>` (hipify's
+`CUDA_INCLUDE_MAP` maps only `cooperative_groups.h`, so this spelling is left verbatim and
+then does not resolve), and `__trap()` (not declared by HIP's device runtime;
+`#define __trap __builtin_trap` under `USE_ROCM`, which is what HIP's own `abort()` is).
+Guard each with `#if !defined(USE_ROCM)` / `#if defined(USE_ROCM)` so the CUDA path is
+untouched. (diff-surfel-rasterizations)
+
+The include is the only thing missing in the cooperative-groups case: `cg::reduce` itself
+exists on ROCm. ROCm 7.14 ships `<hip/cooperative_groups/hip_reduce.h>` (implemented in
+`hip/amd_detail/amd_hip_cooperative_groups_reduce.h`), and `hip_cooperative_groups.h` does
+NOT pull it in, so the `USE_ROCM` arm of the guard is an include of that header rather than
+a rewritten reduction. Dropping the include outright is right only when the code uses just
+`this_grid()`, `this_thread_block()` and `thread_rank()` -- grep for `cg::reduce`,
+`reduce_update_async` and `plus<>` first. (diff-surfel-rasterizations)
+
+**An uninitialised header-only submodule fails as a HIP error, not as a missing file.**
+When a project bundles GLM (or Eigen, or any header-only library) as a submodule and the
+clone did not recurse, the `-I` path still exists and is simply empty, so the compiler falls
+back to the system copy. A system GLM predating HIP support does not recognise `__HIP__` as
+a device compiler, so every `glm::dot`/`glm::length` call from device code is reported as
+"call to __host__ function from __device__ function" and `operator[]` becomes const -- dozens
+of errors that read like a broken port and are a missing checkout. Note the include paths in
+the diagnostic: if they point at `/usr/include`, run `git submodule update --init
+--recursive` before changing a single line of source. (diff-surfel-rasterizations)
+
 **MSVC-only upstreams accept code that clang and gcc reject**, so the HIP build (and the
 CUDA build under nvcc) is a stricter compiler than the project has ever seen. Velvet carried
 a member template whose parameter pack shadowed the class pack -- accepted by MSVC, rejected
