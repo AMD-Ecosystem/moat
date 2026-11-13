@@ -7,14 +7,21 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:24:21Z",
-  "updated_at": "2026-11-13T04:20:12Z",
+  "updated_at": "2026-11-13T05:51:21Z",
   "head_sha": "0c8974021c3e1035640c6daf30e5ab88b6af7fbc",
   "depends_on": [],
   "porting": {
     "arch": "linux-gfx1201",
     "since": "2026-11-13T04:20:12Z"
   },
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "Upstream MMseqs2 does not build on Windows: its database and file reading rely on Linux-only memory mapping (mmap) with no Windows path. jeff split Windows support (libmarv DLL 7c39308d, mmseqs CLI guards 54edbc78, plus a Windows file-I/O port) into a separate feature, deferral mmseqs2-windows-support, so the GPU-coverage PR tree carries no Windows commits and has nothing to build on Windows.",
+      "suggested_at": "2026-11-13T05:51:20Z",
+      "approved_by": "jeffdaily",
+      "at": "2026-11-13T05:51:21Z"
+    }
+  },
   "license_spdx": "MIT",
   "upstream_repo_id": 63755587,
   "stage": "porting",
