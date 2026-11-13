@@ -1,0 +1,194 @@
+{
+  "schema_version": 3,
+  "name": "GOMC",
+  "upstream_url": "https://github.com/GOMC-WSU/GOMC",
+  "fork_url": "https://github.com/AMD-Ecosystem/GOMC",
+  "fork_default_branch": "development",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-05T01:24:38Z",
+  "updated_at": "2026-11-13T22:08:48Z",
+  "head_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
+  "depends_on": [],
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 34094271,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
+      "started_at": null,
+      "completed_at": "2026-10-31T07:05:55Z",
+      "updated_at": "2026-10-31T07:05:55Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-10-31T06:56:38Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
+      "failed_sha": "4c06552c810100d289530e9475a07c81582e6581",
+      "started_at": "2026-10-31T06:38:30Z",
+      "completed_at": "2026-10-31T07:11:12Z",
+      "updated_at": "2026-10-31T07:11:12Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
+      "started_at": "2026-06-05T07:31:32Z",
+      "completed_at": "2026-10-31T07:04:48Z",
+      "updated_at": "2026-10-31T07:04:48Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "58d5496d3321d6776e8b78d8b94f4440ceec0f54",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:48:40Z",
+      "updated_at": "2026-08-20T00:07:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "2e3e59120593e88d48c74c3c7becc78c62381c05",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:48:40Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "58d5496d3321d6776e8b78d8b94f4440ceec0f54",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:48:40Z",
+      "updated_at": "2026-08-20T00:07:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "2e3e59120593e88d48c74c3c7becc78c62381c05",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:48:40Z"
+      }
+    }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/GOMC/pull/1",
+  "base_branch_ruling": {
+    "branch": "development",
+    "previous": "main",
+    "by": "jeff",
+    "at": "2026-10-30T18:22:33Z",
+    "reason": "upstream CONTRIBUTING.md asks for PRs against development"
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-10-31T06:49:47Z",
+    "at": "2026-10-31T06:56:38Z"
+  },
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-13T22:04:44Z",
+    "head_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
+    "content_sha256": "16833f3df26e58c9c5ba2b09683dddc7caa3a07bf51aec15fee253324e64f9c3",
+    "review_pr": "https://github.com/AMD-Ecosystem/GOMC/pull/1"
+  },
+  "pr_url": "https://github.com/GOMC-WSU/GOMC/pull/562",
+  "pr_number": 562,
+  "pr_opened_at": "2026-11-13T22:08:48Z",
+  "pr_state": "open",
+  "published_sha": "b8d1aa911eefe23946cdd1c06160172541028864"
+}
