@@ -1056,3 +1056,72 @@ CUDA_VISIBLE_DEVICES=0 util/regression/run_regression.sh build-tuned/src/mmseqs 
 - CUDA nvcc compile of 2cda180e on mi355.
 - Every platform record predates the rescope: after `advance-head` to 2cda180e, linux-gfx90a, linux-gfx1100, windows-gfx1101 and windows-gfx1201 are all behind head.
 - Review PR AMD-Ecosystem/MMseqs2#1 describes the old USE_HIP port, so its body is stale against the new scope (a reviewer/checkup matter, not touched here).
+
+## Review 2026-11-13 (reviewer, linux-gfx942: review-passed)
+
+Scope: the net diff of `moat-port` 2cda180e against upstream d0185a2d (17 files, +647/-84), judged as an upstream contribution to a project that already has a HIP backend. Method: `pr-review` skill, local-branch mode; every changed hunk read with its unchanged surroundings (dispatchers, `namespace.hpp` inline-namespace scheme, `MultiConfigScoreOnlyAligner` tile choosers, `MarvGpuArch.cmake`, `simd/MarvSimd.cmake`, `dbdata.cpp` MappedFile users); findings fact-checked inline against the code.
+
+### Port Review: MMseqs2 (moat-port vs d0185a2d)
+
+Summary: the branch adds a generic AMD aligner for untuned targets with gfx-name dispatch, tuned gfx90a gapless tables, the `ClampToInvalid` HIP device path and libmarv Windows enablement on top of upstream's `ENABLE_HIP`. No code defects found; approved for validation. The items below are PR-preparation work and cannot be done on `moat-port` without rewriting history, so they do not send the branch back.
+
+#### Commit Hygiene (fix at PR preparation)
+
+1. The upstream-visible history is not the contribution. `git log d0185a2d..moat-port` lists 11 commits: the five superseded USE_HIP commits (c755847a..75a9b029), the merge b29c9270 and the removal 440e1197, then the five scope commits. A maintainer would see a whole second HIP backend added and removed. Before the upstream PR, curate to the five scope commits (84a8fb2e, 3c588b6f, 7c39308d, 54edbc78, 2cda180e) on a tree identical to the validated head, through `squash-carry-forward`.
+2. 2cda180e's body says the fp32 endpos multi-tile configs above 20 items per thread "run 5-10x slower"; the porter measured 5.2x to 12.6x. Correct the figure in the curated commit.
+
+#### Decision for jeff (not a review failure)
+
+3. 54edbc78 (resource-compiler WIN32 path, tinyexpr `-fPIC`, `sys/mman.h` guards, GpuUtil server stubs) touches only the mmseqs tree, which cannot build on Windows (DBReader/FileUtil mmap untouched), so no Windows target exercises it. Unless the Windows round finds an mmseqs-tree target that needs it, drop it from the upstream PR; libmarv's Windows support (7c39308d) stands alone. The draft body below already leaves it out.
+
+#### Checks run (all passed; recorded so the next round does not repeat them)
+
+- CUDA path: all `make_aligner{,_endpos}.cu` edits sit in the `#else` (non-`__CUDACC__`) branches or under `#if !defined(__CUDACC__)`; `convert.cuh` CUDA branches unchanged textually; CMake changes are inside `if(ENABLE_HIP)` except the `WIN32 AND SHARED_LIBRARY` define, which is additive. A real nvcc compile is still owed (known open item).
+- Upstream's tuned arches: built `-DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx942` at 2cda180e on an MI300X (gfx942:sramecc+:xnack-), TheRock HIP 7.16.26385. `util/regression/run_regression.sh` (submodule 19b9867b): 43/43 GOOD, 0 BAD, SEARCH_GPU 0.454819 = expected, SEARCH_GPU_SERVER 0.454819 = expected. That build has no generic aligner (`MARV_HAVE_AMD_DEFAULT` undefined), so the passing GPU run shows the `arch == "gfx942"` table was selected. Review evidence only; the linux-gfx942 validator still records its own run.
+- SIMD backend (upstream #1168 includes `make_aligner_headers.cuh` from `simd/marv_simd_aligner.cpp`): `cmake -S lib/libmarv/src -DENABLE_SIMD=1` builds, ctest 2/2 passed.
+- gfx90a tables: `configsAreSortedByTileSize` static_asserts hold (they compile); `hasPerformanceHints()` false in every list as in upstream's tables, and the multi-tile chooser without hints picks by last-tile utilization, so the porter's 10%-of-best filter is the right lever. Evidence (upstream tuner per tile size, 1.23x end-to-end on the half2 path, regression and GPU-vs-CPU identity) is adequate for an upstream table.
+- `__vminu4` is absent from the ROCm headers (`grep -r __vminu4 $(hipconfig --rocmpath)/include`: no hits), so the per-byte loop is needed; the old HIP device fallback clamped via signed `char`, as the commit says.
+- `utils/jargon.py --port MMseqs2`: clean. Upstream PR search (gfx90a/fallback/Windows/ROCm/HIP): no competing PR; only soedinglab/MMseqs2#1167 (ours, out of scope here).
+
+### Review PR AMD-Ecosystem/MMseqs2#1 must be redrafted for jeff
+
+PR #1 (open, head `moat-port`, base `master`) still carries the superseded port's title "[ROCm] Add AMD GPU (HIP) support for GPU-accelerated search" and a body describing `USE_HIP`, `cuda_to_hip.h`, `marv_simd_amd.cuh`, `hip_compat/` and the old validation. None of that is on the branch now. Not edited (person's decision). Replacement draft below; `jargon.py -` and `prose.py` clean, title 61 characters. `upstream.py` appends the AI-assistance and opt-out note itself, so it is not in the draft. Before it goes to jeff: replace the Testing bullets with the validator records at the final head (gfx950/gfx1201 tuning rounds and the Windows round may change the scope), and re-run both checks.
+
+Title:
+
+====
+[ROCm] Run libmarv on untuned AMD GPUs and add gfx90a configs
+====
+
+Body:
+
+====
+libmarv's HIP backend builds and runs only on the four AMD targets with a tuned aligner file (gfx900, gfx942, gfx1100, gfx1150). Configuring for any other GPU, for example `-DCMAKE_HIP_ARCHITECTURES=gfx90a`, stops with `Cannot find source file: aligners/make_aligner_amd_gfx90a.cu`, and so does a default configure on a host with such a GPU, because CMake's native detection lists one entry per device. The runtime selection keys on compute capability, which does not identify an AMD ISA (gfx900, gfx906, gfx908 and gfx90a all report 9.0), so a binary built for gfx900 hands its kernels to a gfx90a and fails with `device kernel image is invalid`.
+
+This PR:
+
+- de-duplicates the HIP architecture list and builds the existing generic configs (`make_aligner_default_amd.cu`, `make_aligner_endpos_default_amd.cu`) once for every requested target without a tuned file, under their own inline namespace;
+- selects the AMD aligner by the device's gfx target name (`gcnArchName` without feature suffixes) and falls back to the generic configs, which the dispatchers already named in comments; without a generic build the error names the missing target;
+- adds tuned gapless configs for gfx90a (MI200), measured on an MI250X with libmarv's own `tuning_gapless` and laid out like the other AMD files; Smith-Waterman keeps the untuned AMD list, as on every AMD target;
+- makes `ClampToInvalid` take its per-byte device path under HIP as well (`__HIP_DEVICE_COMPILE__`), with an unsigned per-byte min since HIP has no `__vminu4`; the host fallback it used before clamps as signed `char`;
+- adds Windows support to libmarv for the ROCm clang toolchain: a Win32 `MappedFile`, `strtok_s`, and a `MARV_API` export macro that is active only for a shared build on Windows, so the default static build is unchanged.
+
+The tuned targets keep their own tables and the CUDA path is unchanged.
+
+On the first 1000 queries of the regression query set against the padded `targetannotation` database (`ungappedprefilter --gpu 1 --max-seqs 1000 -e 10000`), the gfx90a configs take 54.3 s against 67.3 s with the generic configs, with identical results.
+
+Testing:
+
+```
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx90a
+cmake --build build --target mmseqs
+util/regression/run_regression.sh build/src/mmseqs scratch
+```
+
+- AMD Instinct MI250X (gfx90a): regression 43/43 including SEARCH_GPU and SEARCH_GPU_SERVER, with the gfx90a configs and with the generic configs alone; on the bundled example every query/target pair shared by the GPU and CPU searches has an identical output row.
+- AMD Instinct MI300X (gfx942, tuned table): regression 43/43 including SEARCH_GPU and SEARCH_GPU_SERVER.
+- A build for gfx900, gfx90a, gfx942, gfx950, gfx1100, gfx1150, gfx1201 and gfx11-generic compiles and links, and on gfx90a selects the gfx90a table.
+- The SIMD backend (`-DENABLE_SIMD=1`) builds and its tests pass; a CPU-only build is unchanged.
+
+This work was authored with the assistance of Claude, an AI coding agent.
+====

@@ -77,3 +77,9 @@
 {"kind":"phase","ts":"2026-11-13T02:07:06Z","phase":"compile","seconds":106.228,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi200-20261112-133655-rescope-mmseqs2/moat/agent_space/build-marv -j64 --target align makedb test_gapless"}
 {"kind":"phase","ts":"2026-11-13T02:07:07Z","phase":"test","seconds":0.080,"exit":0,"cmd":"ctest --output-on-failure"}
 {"kind":"phase","ts":"2026-11-13T02:07:14Z","phase":"test","seconds":0.084,"exit":8,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi200-20261112-133655-rescope-mmseqs2/moat/agent_space/build-marv --output-on-failure"}
+{"kind":"session","ts":"2026-11-13T02:17:09Z","epoch":1794536229.068978343,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-13T02:20:47Z","phase":"compile","seconds":0.094,"exit":1,"cmd":"cmake --build build-gfx942 -j56 --target mmseqs"}
+{"kind":"phase","ts":"2026-11-13T02:22:18Z","phase":"compile","seconds":71.588,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261112-181558-mmseqs-review/moat/projects/MMseqs2/src/build-gfx942 -j56 --target mmseqs"}
+{"kind":"phase","ts":"2026-11-13T02:22:46Z","phase":"test","seconds":0.004,"exit":127,"cmd":"util/regression/run_regression.sh /var/lib/jenkins/fleet/jobs/mi300-20261112-181558-mmseqs-review/moat/projects/MMseqs2/src/build-gfx942/src/mmseqs /var/lib/jenkins/fleet/jobs/mi300-20261112-181558-mmseqs-review/moat/agent_space/reg"}
+{"kind":"phase","ts":"2026-11-13T02:28:38Z","phase":"test","seconds":334.975,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261112-181558-mmseqs-review/moat/projects/MMseqs2/src/util/regression/run_regression.sh /var/lib/jenkins/fleet/jobs/mi300-20261112-181558-mmseqs-review/moat/projects/MMseqs2/src/build-gfx942/src/mmseqs /var/lib/jenkins/fleet/jobs/mi300-20261112-181558-mmseqs-review/moat/agent_space/reg"}
+{"kind":"session","ts":"2026-11-13T02:30:27Z","epoch":1794537027.179797282,"event":"end","platform":"linux-gfx942"}
