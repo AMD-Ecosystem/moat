@@ -5374,3 +5374,7 @@ Both test files at the tip, run from blob-identical copies in `agent_space/t/new
 ### Records
 - `set-state --agent porter oneflow linux-gfx942 porting` (lock, 15c03b91), then `advance-head oneflow 50353bcb0c935d019f69e590fa7d59dc6907a509` and `set-state --agent porter oneflow linux-gfx942 ported` (stage `ported`, lock released), so a reviewer covers 14801d8a8..50353bcb0. The gfx942, gfx90a and gfx1100 records stay at `validated_sha` 14801d8a8 and read `revalidate` against the new head. Deferred `oneflow-50353bcb0-body-wording` registered (above). `moat-port` still at 14801d8a8; nothing else pushed to the fork. No gh writes.
 - Telemetry: compile 746 s recorded by timeit; the test loops were not wrapped in timeit.
+
+### Fix 10697: tip commit reworded (2026-11-13)
+
+jeff authorized amending the message of 50353bcb0 and force-pushing `moat-fix-10697`. The one wrong figure ("the op was within 0.009 ... the reference within 0.003", true only of the first 3 of 18 captured cases) now reads 0.016 and 0.009. The new tip e806d8cc8 has the same tree and parent (d1eec6e13) as 50353bcb0; it was built with `git commit-tree` and pushed with `--force-with-lease` on the old sha. `moat-port` is untouched at 14801d8a8. head_sha advanced to e806d8cc8; deferral `oneflow-50353bcb0-body-wording` done. No review or validation had run at 50353bcb0, so none is lost.
