@@ -106,11 +106,14 @@ fi
 python3 utils/moatlib.py waivers 2>/dev/null \
   | awk -F'\t' 'NF>1 {printf "waiver   :   AWAITING   %-26s %s -- %.70s\n", $1, $2, $4}' || true
 
-# A lesson on a live port branch is where it belongs -- the port's own review is what
-# publishes it -- so this reports only the case nothing will ever carry: a FINISHED
-# port whose branch still holds a global edit the trunk lacks. That branch is about to
-# be deleted. `lessons --pending` shows the rest, and they are not to be lifted.
-python3 utils/moatlib.py lessons 2>/dev/null \
+# Lessons are written in project notes (a port branch may not edit a skill) and promoted
+# to the skill on the trunk after the port's review. Only the count is shown here;
+# `lessons` lists them. ORPHANED is older: a skill edit made on a now-finished port
+# branch before branches were limited to their own folder.
+LESSONS=$(python3 utils/moatlib.py lessons 2>/dev/null)
+NL=$(printf '%s\n' "$LESSONS" | awk -F'\t' '$2=="CANDIDATE"' | grep -c . || true)
+[ "$NL" -gt 0 ] && echo "lesson   :   $NL in project notes await promotion: python3 utils/moatlib.py lessons"
+printf '%s\n' "$LESSONS" \
   | awk -F'\t' '$2=="ORPHANED" {printf "lesson   :   ORPHANED   %-24s %.60s\n", $1, $3}' || true
 
 # A folder in the wrong place is invisible until it bites, and it bites differently at

@@ -21,6 +21,14 @@ extends.
   port plan" or "your porting notes" instead of naming our files.
 - A lesson about MOAT's pipeline, records, tools or hosts: this skill.
 
+Both skills are trunk files, one organized copy each, and a port branch may not edit them
+(the pre-push `branch-scope` gate). Write the lesson in the project's `notes.md` under
+`## Lesson for cuda-to-rocm: <title>` or `## Lesson for moat-porting: <title>`, with the
+reference file it belongs in. The reviewer reads it with the port. After review, a trunk
+session promotes it: it puts the lesson where its reader would look, merges it with what
+is already there instead of appending, and adds `Promoted to <file> in <sha>.` under the
+heading. `python3 utils/moatlib.py lessons` lists lessons awaiting promotion.
+
 `python3 utils/check.py skills` enforces the boundary: it fails on MOAT vocabulary inside
 `.claude/skills/cuda-to-rocm/`.
 

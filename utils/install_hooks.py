@@ -112,6 +112,19 @@ def gh_launcher_path():
     return pathlib.Path.home() / ".local" / "bin" / name
 
 
+def gh_launchers():
+    """(path, text) for every launcher this host needs. Windows needs both: cmd and
+    PowerShell find `gh.cmd` through PATHEXT, but Git Bash does not use PATHEXT, so
+    with only `gh.cmd` installed `gh` in bash ran the real binary, unguarded."""
+    kinds = ["nt", "posix"] if os.name == "nt" else ["posix"]
+    out = []
+    for k in kinds:
+        name, body = GH_LAUNCHERS[k]
+        out.append((pathlib.Path.home() / ".local" / "bin" / name,
+                    body.format(marker=gh_guard.SHIM_MARKER, guard=str(guard_copy_path()))))
+    return out
+
+
 # The guard the launcher runs is a HOST copy of the trunk's gh_guard.py, not a file in
 # some checkout. The launcher is one per host while checkouts are many and come and go
 # (worktrees, fleet job clones). Pointing it into one of them meant every install from
@@ -125,11 +138,6 @@ def guard_copy_path():
 
 def guard_source_path():
     return guard_copy_path().with_suffix(".source")
-
-
-def gh_launcher_text():
-    _, body = GH_LAUNCHERS["nt" if os.name == "nt" else "posix"]
-    return body.format(marker=gh_guard.SHIM_MARKER, guard=str(guard_copy_path()))
 
 
 GUARD_IN_LAUNCHER = re.compile(r'"(.+?gh_guard\.py)"\s+--shim\s')
@@ -214,6 +222,9 @@ def gh_launcher_problem(shim=None):
                 f"of the host copy {guard_copy_path()} {hint}")
     if not guard.exists():
         return f"gh guard at {shim} runs {guard}, which does not exist {hint}"
+    for path, _ in gh_launchers():
+        if not path.exists() or gh_launcher_guard(path.read_text()) != guard_copy_path():
+            return f"gh launcher {path} is missing or does not run {guard_copy_path()} {hint}"
     if guard.read_text() == (TOOLS_ROOT / "utils" / "gh_guard.py").read_text():
         return None
     src = guard_source_path()
@@ -226,17 +237,20 @@ def gh_launcher_problem(shim=None):
 def install_gh_guard(check=False, uninstall=False):
     shim = gh_launcher_path()
     if uninstall:
-        if shim.exists() and gh_guard.SHIM_STAMP in shim.read_text():
-            shim.unlink()
-            print("install_hooks: gh guard removed")
-        else:
-            print("install_hooks: no moat gh guard to remove")
+        removed = False
+        for path, _ in gh_launchers():
+            if path.exists() and gh_guard.SHIM_STAMP in path.read_text(errors="ignore"):
+                path.unlink()
+                removed = True
+        print("install_hooks: gh guard removed" if removed
+              else "install_hooks: no moat gh guard to remove")
         return 0
 
-    if shim.exists() and gh_guard.SHIM_STAMP not in shim.read_text():
-        print(f"install_hooks: {shim} exists and is not ours -- refusing to overwrite",
-              file=sys.stderr)
-        return 1
+    for path, _ in gh_launchers():
+        if path.exists() and gh_guard.SHIM_STAMP not in path.read_text(errors="ignore"):
+            print(f"install_hooks: {path} exists and is not ours -- refusing to overwrite",
+                  file=sys.stderr)
+            return 1
 
     if gh_guard.real_gh() is None:
         # No gh at all is fine: a validation-only host never calls it. A launcher that
@@ -262,11 +276,13 @@ def install_gh_guard(check=False, uninstall=False):
     tmp.write_text((TOOLS_ROOT / "utils" / "gh_guard.py").read_text())
     os.replace(str(tmp), str(copy))
     guard_source_path().write_text(tools_commit() + "\n")
-    shim.parent.mkdir(parents=True, exist_ok=True)
-    shim.write_text(gh_launcher_text())
-    if os.name != "nt":
-        shim.chmod(shim.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    print(f"install_hooks: gh guard installed at {shim} (runs {copy})")
+    for path, text in gh_launchers():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # LF only: the sh launcher must not get CRLF line endings on Windows.
+        with open(path, "w", newline="\n") as f:
+            f.write(text)
+        path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        print(f"install_hooks: gh guard installed at {path} (runs {copy})")
 
     # A launcher PATH never reaches is worse than none, because it reads as installed.
     resolved = shutil.which("gh")

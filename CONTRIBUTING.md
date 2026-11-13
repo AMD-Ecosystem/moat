@@ -120,9 +120,10 @@ That part is reported and not enforced, because a fleet-wide sweep legitimately 
 every project at once and a gate that fires on ordinary work is one people learn to
 ignore.
 
-Promoting a lesson to the `cuda-to-rocm` skill inside a port is the one crossing that
-belongs, and is expected rather than tolerated: the lesson and the evidence for it
-should land together.
+A port branch does not edit the skills or the tooling: the pre-push `branch-scope`
+gate refuses a port-branch commit outside `projects/<name>/`. A lesson the port taught
+is written in its notes, reviewed with the port, and promoted to the skill on `main`
+(see Porting knowledge).
 
 ## Sending it upstream
 
@@ -290,8 +291,12 @@ the checker missed, add it in the same change.
 ## Porting knowledge
 
 Capture per-project findings in `projects/<name>/notes.md`. If a lesson would help someone
-porting a **different** project, promote it into the `cuda-to-rocm` skill's `references/`
-at the moment you learn it, naming the source project. That skill is published outside MOAT
+porting a **different** project, write it in that project's notes the moment you learn it,
+under `## Lesson for cuda-to-rocm: <title>`, naming the reference file it belongs in. The
+port's review reads it there; a trunk session then promotes it into the skill's
+`references/`, fitted into the existing text rather than appended, names the source
+project, and adds `Promoted to <file> in <sha>.` under the heading. `moatlib.py lessons`
+lists the ones waiting. That skill is published outside MOAT
 as an AMD skill, so write the lesson for a reader who has never seen this repository: no
 `moatlib`, `notes.md`, gates, roles, states, or fleet hosts. A lesson about MOAT's own
 pipeline, records, tools, or hosts goes to the `moat-porting` skill, and
