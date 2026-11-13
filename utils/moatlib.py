@@ -9,6 +9,7 @@ status.json is the source of truth. The three AMD targets share one fork branch,
 so any HEAD advance re-validates the platforms that already passed (see
 advance_head). State transitions are validated; illegal jumps raise."""
 
+import os
 import argparse
 import collections
 import hashlib
@@ -20,7 +21,10 @@ import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
 PROJECTS = REPO_ROOT / "projects"
 SCHEMA_VERSION = 3
 # Records are migrated in place, one ref at a time, so a checkout must not refuse the
@@ -47,7 +51,7 @@ def _load_arches():
 
     It defines RULES, not a roster: which gates are required, which may be waived,
     and how a wavefront width follows from an architecture family."""
-    with open(REPO_ROOT / "config" / "arches.toml", "rb") as f:
+    with open(TOOLS_ROOT / "config" / "arches.toml", "rb") as f:
         cfg = tomllib.load(f)
     waves = {fam: gate for gate, fams in cfg["wave"].items() for fam in fams}
     return (waves, cfg["gates"]["required"], set(cfg["gates"].get("waivable", [])),
@@ -1501,7 +1505,7 @@ def license_tier(name, obj=None):
     we know about X" question -- load_status prefers the working tree, which let a
     stale trunk-era copy shadow a licence recorded on the project's own branch.
     Pass `obj` when the caller already holds the record, so both judge the same one."""
-    sys.path.insert(0, str(REPO_ROOT / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import licenses
     if obj is None:
         obj, _where = project_record(name)
@@ -5249,7 +5253,7 @@ def _gate_blockers(name, obj):
     # Surface accounting: work recorded as owed (in scope, not yet done) blocks the
     # PR until it is covered or a person rules it out of scope.
     try:
-        sys.path.insert(0, str(REPO_ROOT / "utils"))
+        sys.path.insert(0, str(TOOLS_ROOT / "utils"))
         import surface as _surface
         for cid, why in _surface.owed(name).items():
             blocking.append(("surface-owed", f"{cid} is still owed: {(why or '')[:120]}"))
@@ -6278,4 +6282,6 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())
