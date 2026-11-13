@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-10-31T07:11:12Z",
+  "updated_at": "2026-11-13T22:07:10Z",
   "head_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
   "depends_on": [],
   "waivers": {},
@@ -178,5 +178,12 @@
     "arch": "linux-gfx942",
     "since": "2026-10-31T06:49:47Z",
     "at": "2026-10-31T06:56:38Z"
+  },
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-13T22:04:44Z",
+    "head_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
+    "content_sha256": "16833f3df26e58c9c5ba2b09683dddc7caa3a07bf51aec15fee253324e64f9c3",
+    "review_pr": "https://github.com/AMD-Ecosystem/GOMC/pull/1"
   }
 }
