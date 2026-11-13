@@ -46,8 +46,9 @@ You review the fork branch in the working tree -- `git diff`, `git log`, the fil
 themselves. You do not open a pull request anywhere, on the fork or upstream, and you
 do not run `upstream.py --review --apply`.
 
-There is exactly ONE PR on a fork, opened once, at the very end, when the port is
-finished and every required gate passes. It is where a person reviews the completed
+There is exactly ONE review PR on a fork per round, opened once, at the very end, when the
+round is finished and every required gate passes (a first port, and later each fix,
+sync or follow-up round). It is where a person reviews the completed
 work, and their approval on it is what opens the upstream PR. Opening one mid-review
 puts a page in front of that person that says the port is ready for their decision
 when it is not, and it is the wrong artifact for review feedback anyway: it is created

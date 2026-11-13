@@ -82,7 +82,7 @@ is nearly empty because it is Go + cgo + runtime PTX.
 - CUDA surface inventory
 - Risk list (warpSize 32-vs-64, rule-of-five on texture/resource handles, OOB neighbor reads, 256B texture pitch, library swaps, anything project-specific)
 - File-by-file change list
-- Build commands (configure + build for gfx90a)
+- Build commands (configure + build for the executing arch)
 - Test plan (real GPU tests; the non-GPU regression set)
 - Open questions
 
@@ -97,4 +97,4 @@ Write plan.md, then `python3 utils/moatlib.py set-state <name> <arch> planned --
 When a later platform needs its own handling (wave32 vs wave64, RDNA specifics, Windows), you are invoked for a short delta-plan appended as `## Delta plan: <platform>`. Do not re-plan from scratch. The project is past `screened` by then and `planning` is not a legal state there, so do NOT run `set-state ... planning`: the delta is written inside the porting round that needs it, serialised by the `porting` lock that round holds, and committed with that round's `commit-project`.
 
 ## Stop and ask
-If the build system is unrecognizable, dependencies are unobtainable, or the right strategy is genuinely unclear, set `blocked` with a concrete reason and ask rather than guessing. If deep analysis shows the port is not technically possible, write the case in notes.md and stop. The terminal verdict is `not-portable` in the project's own status.json -- deliberately NOT a disposition, because a dispositioned project is one that left the pipeline before anyone worked it -- and recording it is a person's decision: `moatlib.py set-not-portable <name> --reason ... --by <who>`. You write the case, never the verdict.
+If the build system is unrecognizable, dependencies are unobtainable, or the right strategy is genuinely unclear, record it with `python3 utils/moatlib.py set-blocked <name> <platform> '<concrete reason>'` and ask rather than guessing. If deep analysis shows the port is not technically possible, write the case in notes.md and stop. The terminal verdict is `not-portable` in the project's own status.json -- deliberately NOT a disposition, because a dispositioned project is one that left the pipeline before anyone worked it -- and recording it is a person's decision: `moatlib.py set-not-portable <name> --reason ... --by <who>`. You write the case, never the verdict.
