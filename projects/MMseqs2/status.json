@@ -7,14 +7,17 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:24:21Z",
-  "updated_at": "2026-11-13T02:30:27Z",
+  "updated_at": "2026-11-13T02:48:10Z",
   "head_sha": "2cda180ecefcff5988cdd50c7e0db6a91bc35783",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx950",
+    "since": "2026-11-13T02:48:10Z"
+  },
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 63755587,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -152,6 +155,28 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
+    },
+    "linux-gfx950": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-13T02:48:10Z",
+      "completed_at": null,
+      "updated_at": "2026-11-13T02:48:10Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/MMseqs2/pull/1",
