@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:19:27Z",
-  "updated_at": "2026-11-13T01:16:08Z",
+  "updated_at": "2026-11-13T01:17:25Z",
   "head_sha": "00e803dec721a28e4f9d6e060fd50dcdcf2925b9",
   "depends_on": [],
   "waivers": {},
@@ -162,11 +162,9 @@
     "since": "2026-11-01T06:15:50Z",
     "at": "2026-11-01T06:18:25Z"
   },
-  "pr_approval": {
-    "approved_by": "jeffdaily",
-    "at": "2026-11-12T21:44:34Z",
-    "head_sha": "00e803dec721a28e4f9d6e060fd50dcdcf2925b9",
-    "content_sha256": "081536b5083e75b80d4017781b4645ce31e6c62f5659f5aa46307009e0c92910",
-    "review_pr": "https://github.com/AMD-Ecosystem/faster-gaussian-splatting/pull/2"
-  }
+  "pr_url": "https://github.com/nerficg-project/faster-gaussian-splatting/pull/14",
+  "pr_number": 14,
+  "pr_opened_at": "2026-11-13T01:17:25Z",
+  "pr_state": "open",
+  "published_sha": "00e803dec721a28e4f9d6e060fd50dcdcf2925b9"
 }
