@@ -5258,3 +5258,7 @@ At the measured rates, about 2.3 faults were expected on 14801d8a8 and 5 on d9e4
 - No fork edit and no push: both trees clean (`--untracked-files=no`) at the end; nothing pushed anywhere except this notes commit on `port/oneflow`.
 - Telemetry: the three compile phases (835 s, 838 s, 210 s) are recorded. The test loops were not wrapped in timeit.
 - Host load: 1-min load average 10 to 110 during the rate run (other jobs on the host); both builds saw the same load because they ran at the same time.
+
+## Ruling 2026-11-13 (jeffdaily): linux-gfx942 completed at 14801d8a8
+
+jeffdaily ruled that the 2026-11-13 gfx942 validation at 14801d8a8 counts as completed. Its one failure, the `CudaGatherNd<int, int>` memory fault in `expensive/test_id_shuffle.py`, is a defect in upstream's test: `id_shuffle` writes only the first `num_unique` entries of `cur_rank_inverse_indices` and the test gathers through all 13312, so the unwritten tail occasionally holds stale out-of-range values in a fresh process (see "Investigation 2026-11-13 (linux-gfx942): test_id_shuffle GatherNd fault rate": 7/300 at 14801d8a8, 15/300 at d9e41753e, 0/200 with the gather limited to the written part). Everything else in that run passed or was explained. Whether and where to fix the test is a separate decision.
