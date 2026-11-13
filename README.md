@@ -22,7 +22,7 @@ before it is opened.** It says so in its own body, along with a link back here. 
 person who approves it is approving the diff, the title and the body together, on one
 page, before any of it is visible on your repository.
 
-**You get at most one pull request per project.** It is opened from a fork under the
+**You get at most one open pull request per project at a time.** It is opened from a fork under the
 [AMD-Ecosystem](https://github.com/AMD-Ecosystem) organisation against your default
 branch. There is no bot that follows up on a schedule -- every reply to you is a
 separate decision by a person, in a session they are sitting in front of.

@@ -30,6 +30,7 @@ would hand everything back anyway -- and the round trip costs more than doing it
     python3 utils/upstream.py --approvals        # approvals overtaken by a push or a body edit
     python3 utils/upstream.py --dry-run          # where our record disagrees with GitHub (incl. a moved PR head)
     python3 utils/moatlib.py waivers             # gate waivers waiting on a maintainer
+    python3 utils/moatlib.py stalled             # projects every architecture gave up on, before review
     python3 utils/deferred.py pending            # deferrals nobody has ruled on
     python3 utils/moatlib.py lessons             # reviewed lessons waiting to reach a skill (section 8)
 
@@ -344,6 +345,9 @@ There is rarely an `## Upstream reply` here: nobody asked for the round. The PR-
 states still bound the record: the project re-enters `porting` for the round and
 returns to `review-passed` after it, exactly as a fix round does.
 
+Upstream merging the port for real someday is the happy ending: a person records
+`set-pr-merged` and clears the ruling with `set-maintained <name> --clear --by <who>`.
+
 ### No upstream destination
 
 A port can finish with nowhere to send it: upstream archived the repository, so GitHub
@@ -363,9 +367,6 @@ deferral is ruled `now`, `misplaced` reports the branch as ready to merge to `ma
 A later fork commit recorded with `advance-head` re-homes the folder to `port/<name>`. Check for this before asking a person to approve a
 review PR: `gh api repos/<owner>/<repo> --jq .archived`. `--clear` withdraws the ruling
 if upstream is unarchived.
-
-Upstream merging the port for real someday is the happy ending: a person records
-`set-pr-merged` and clears the ruling with `set-maintained <name> --clear --by <who>`.
 
 ### Release lines
 
@@ -405,7 +406,7 @@ none) and records it; a sync review PR may not carry `## Upstream reply`, since 
 is no upstream PR to post it on.
 
 Rollout: release-line records are `schema_version` 4, which tooling from before this
-feature refuses to load. A host must `branch-sync` and re-run `orient.sh` (which
+feature refuses to load. A host must `branch-sync --apply` and re-run `orient.sh` (which
 re-runs `protect-fork`, replacing v3 fork hooks that would let a push to a delivered
 branch through) before it touches a release line. Publishing
 the line's wheels as a GitHub release is a separate act that needs the person's
@@ -453,8 +454,9 @@ older documents describe record nothing.
 
 A port whose obstacle is the PLATFORM rather than the GPU -- a host runtime written to
 POSIX, a Windows toolchain that will not load the runtime library -- can still go
-upstream, but only behind a waiver on the `windows` gate, the one gate
-`config/arches.toml` marks waivable. The validator that hit the obstacle records the case
+upstream, but only behind a waiver on a gate `config/arches.toml` marks waivable: `windows`, or `wave64` in
+the narrow case that file describes (GPU work that cannot be reached without a graphics
+context). The validator that hit the obstacle records the case
 (`moatlib.py suggest-waiver <name> windows --reason '<what stops it>'`); it satisfies
 nothing and BLOCKS `pr-ready` until a maintainer answers, so suggesting one can never
 let a port out early.
