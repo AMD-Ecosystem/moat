@@ -1035,7 +1035,7 @@ def report_publish(apply, only=None):
               f"when GitHub is reachable.")
     if not apply:
         if ready:
-            print(f"\n  --apply --name <project> opens that one upstream PR with "
+            print("\n  --apply --name <project> opens that one upstream PR with "
                   "the approved title and body.")
         return 0
     for r in ready:
