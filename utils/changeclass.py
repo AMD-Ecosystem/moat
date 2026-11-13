@@ -114,7 +114,11 @@ def _is_doc(path: str) -> bool:
     base = path.rsplit("/", 1)[-1]
     if low.endswith(DOC_SUFFIXES):
         return True
-    if path.startswith("docs/") or path.startswith("doc/") or "/docs/" in path:
+    # Only the repository's own top-level documentation tree. A nested `docs/` is
+    # just a directory name: `src/docs/render.cu` is source, and reading every
+    # path containing `/docs/` as documentation carried validations forward over
+    # code nobody rebuilt. Real documents below a nested one still match by suffix.
+    if path.startswith("docs/") or path.startswith("doc/"):
         return True
     if base in REPO_META_NAMES:
         return True
@@ -146,12 +150,30 @@ def _lang(path: str):
 def _tok_c(src: str):
     toks = []
     i, n = 0, len(src)
+    # A preprocessor directive ends at its line's end, so where that end falls is
+    # part of the program: `#define A` / `B` and `#define A B` hold the same
+    # tokens and mean different things. Each directive gets an end marker.
+    line_start, in_pp = True, False
     while i < n:
         ch = src[i]
-        if ch in " \t\r\n":
+        if ch == "\\" and src[i + 1:i + 2] == "\n" or src[i:i + 3] == "\\\r\n":
+            i += 2 if src[i + 1] == "\n" else 3     # a continued line is one line
+            continue
+        if ch == "\n":
+            if in_pp:
+                toks.append(("pp-end", ""))
+                in_pp = False
+            line_start = True
             i += 1
             continue
+        if ch in " \t\r":
+            i += 1
+            continue
+        if ch == "#" and line_start:
+            in_pp = True
         two = src[i:i + 2]
+        if two != "//" and two != "/*":
+            line_start = False
         if two == "//":
             j = src.find("\n", i)
             j = n if j < 0 else j
@@ -203,30 +225,55 @@ def _tok_c(src: str):
             continue
         toks.append(("punct", ch))
         i += 1
+    if in_pp:
+        toks.append(("pp-end", ""))
     return toks
 
 
-def _tok_line_hash(src: str, kws, multiline_str: bool = False):
+# Comments the build reads: Cython compiler directives and distutils build settings
+# are written as comments and change the generated extension.
+_DIRECTIVE_COMMENT = ("cython:", "distutils:")
+
+
+def _tok_line_hash(src: str, kws, multiline_str: bool = False, layout: bool = False):
     """Shared tokenizer for # line-comment languages (CMake, Python).
 
     Strings are treated atomically. multiline_str=True lets a double-quoted
     string span newlines (CMake quoted arguments do; Python single/double
     quotes do not -- only its triple-quotes, handled separately). Python
     triple-quotes and CMake bracket args/comments are not fully modeled; their
-    delimiters are handled, and anything ambiguous returns None (-> mixed)."""
+    delimiters are handled, and anything ambiguous returns None (-> mixed).
+
+    layout=True is for Python, where line breaks and indentation are syntax: the
+    first code token of each line is preceded by an ("indent", <leading
+    whitespace>) token, so moving a statement out of an `if` or joining two lines
+    changes the stream. Comment-only and blank lines add nothing."""
     toks = []
     i, n = 0, len(src)
+    line_at = 0             # index where the current line begins
+    fresh = True            # no code token emitted on this line yet
     while i < n:
         ch = src[i]
-        if ch in " \t\r\n":
+        if ch == "\n":
+            line_at, fresh = i + 1, True
+            i += 1
+            continue
+        if ch in " \t\r":
             i += 1
             continue
         if ch == "#":
             j = src.find("\n", i)
             j = n if j < 0 else j
-            toks.append(("comment", src[i:j]))
+            text = src[i:j]
+            if layout and text[1:].lstrip().startswith(_DIRECTIVE_COMMENT):
+                toks.append(("str", " ".join(text.split())))
+            else:
+                toks.append(("comment", text))
             i = j
             continue
+        if layout and fresh:
+            toks.append(("indent", src[line_at:i].expandtabs(8)))
+        fresh = False
         if ch in "\"'":
             triple = src[i:i + 3]
             if triple in ('"""', "'''"):
@@ -279,7 +326,7 @@ def _tokenize(lang: str, src: str):
         # CMake commands are not reserved; quoted "..." args may span newlines.
         return _tok_line_hash(src, frozenset(), multiline_str=True)
     if lang == "py":
-        return _tok_line_hash(src, PY_KEYWORDS)
+        return _tok_line_hash(src, PY_KEYWORDS, layout=True)
     return None
 
 
@@ -367,9 +414,14 @@ def classify(repo: str, old_sha: str, new_sha: str) -> Verdict:
                     fcls, ai, d = "mixed", False, "unknown file type"
                     details.append(f"{path}: {d}")
                 else:
-                    old_src = _blob(repo, old_sha, path) or ""
-                    new_src = _blob(repo, new_sha, path) or ""
-                    fcls, ai, d = _classify_file(lang, old_src, new_src)
+                    old_src = _blob(repo, old_sha, path)
+                    new_src = _blob(repo, new_sha, path)
+                    if old_src is None or new_src is None:
+                        # Two blobs that could not be read are not two empty
+                        # files that happen to match.
+                        fcls, ai, d = "mixed", False, "unreadable blob"
+                    else:
+                        fcls, ai, d = _classify_file(lang, old_src, new_src)
                     details.append(f"{path}: {fcls} ({d})")
                     if fcls in ("comment-only", "rename-only") and not ai:
                         arch_indep = False

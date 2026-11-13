@@ -4,15 +4,16 @@ Use with SKILL.md. Spawn sub-agents to verify items against the actual code. Rep
 
 ## 1. Port strategy
 - [ ] Strategy matches the build type (`cuda-to-rocm` build classification): pure CMake -> Strategy A (compat header + LANGUAGE HIP); pytorch extension -> Strategy B (torch hipify). A correct implementation of the wrong strategy is Request Changes.
-- [ ] Strategy A: a single cuda_to_hip.h compat header carries all aliases; it is a no-op on NVIDIA; there is no second HIP-aware header.
+- [ ] Strategy A: the aliases live in one place -- a single cuda_to_hip.h compat header, or the shadow-header directory when the port uses the shim-header method -- and are a no-op on NVIDIA; there is no ad-hoc HIP-aware header beside them.
 - [ ] Strategy A: .cu files are marked LANGUAGE HIP, not renamed to .hip (unless renaming is genuinely required).
 - [ ] Strategy B: no hand-renamed symbols and no compat header; only fixes hipify cannot do (e.g. warp size) are in source, guarded by USE_ROCM.
 
 ## 2. Fault classes (AMD strict where CUDA lenient)
-- [ ] No hardcoded warp/lane count of 32. Device code uses a per-arch constant (64 on __GFX9__, else 32); host code queries warpSize at runtime. Static shared-memory arrays use a compile-time upper bound or 64.
+- [ ] No hardcoded warp/lane count of 32. Device code uses a per-arch constant (64 on __GFX9__, else 32); host code queries warpSize at runtime. A static array sized WITH the wave width (per lane) uses the upper bound 64; one sized as blockDim/warpSize (per warp) uses the LOWER bound 32, or wave32 writes out of bounds.
 - [ ] Lane masks for __shfl*/__ballot/__activemask are 64-bit where the API takes a mask; no uint32 mask assumes wave32.
 - [ ] Texture/stream/event RAII wrappers have rule-of-five: default-init handle to 0, move-only, guarded destructor. No double-free of a default handle.
 - [ ] Kernels reading neighbor indices (+/-1, +/-width, stencils) clamp at edges; no read one-past-end relied upon.
+- [ ] No allocation is read before it is written: CUDA often hands back zeros where HIP does not, so every buffer the port touches is initialized explicitly (the uninitialized-allocation audit in `cuda-to-rocm`).
 - [ ] Pitched 2D texture binds respect 256-byte row pitch on AMD; point-sampled fetches prefer a linear bind to avoid pitch.
 - [ ] Library calls swapped correctly (cuBLAS->hipBLAS, cuFFT->hipFFT, cuRAND->hipRAND, cuSPARSE->hipSPARSE, cuDNN->MIOpen, Thrust/CUB->rocThrust/hipCUB); handle types and v2-enum signature differences handled.
 
@@ -28,13 +29,16 @@ Use with SKILL.md. Spawn sub-agents to verify items against the actual code. Rep
 
 ## 5. Build system
 - [ ] enable_language(HIP) used (Strategy A); HIP gated behind a USE_HIP option (default OFF).
-- [ ] HIP_ARCHITECTURES / arch flags set; the target builds for the intended gfx arch.
+- [ ] No gfx arch is pinned in the build files: targets read `${CMAKE_HIP_ARCHITECTURES}` (user override, else host auto-detect), and the auto-detect path was configured once with no `-DCMAKE_HIP_ARCHITECTURES`.
+- [ ] The HIP build really contains device code: the built library or executable carries a code object for the target arch (`llvm-objdump --offloading`), not only host objects that happen to link.
 - [ ] ROCm dependencies are gated behind the HIP build; no new hard dependency on the CUDA/CPU build.
 - [ ] CMake finds the HIP compiler (or documents CMAKE_HIP_COMPILER).
 
 ## 6. Testing
 - [ ] The plan's real GPU test suite is actually run on the target arch. A port without a real-GPU run is Request Changes.
 - [ ] Non-GPU tests are not regressed versus upstream.
+- [ ] The CUDA path was compiled and linked with real nvcc (not run) when the port claims the NVIDIA build is unchanged, and always when it adds a CUDA/HIP-split source file; "the CUDA path is preserved" in the notes is not a compile.
+- [ ] Both wavefront widths and Windows (when the project builds there) have a real-GPU run of the same branch, or the gap is stated.
 - [ ] Any CPU-only docker smoketest is treated as a compile-only tripwire, never the validation gate.
 
 ## 7. No in-house vocabulary in upstream-visible text
@@ -43,7 +47,7 @@ Use with SKILL.md. Spawn sub-agents to verify items against the actual code. Rep
 ## 8. Commit hygiene
 - [ ] Title prefixed [ROCm], <= 72 chars.
 - [ ] Body explains the change and discloses assistance from an AI coding agent; NO Co-Authored-By noreply trailer; has a Test Plan section.
-- [ ] History pushed with --force-with-lease; no bare --force; no ghstack. Multi-commit history on the port branch is fine -- the single-curated-commit rule was retired.
+- [ ] New commits go on top: a commit any platform has validated is never amended or force-pushed over (the amended commit is not the one that was tested). No ghstack. Multi-commit history on the port branch is fine -- the single-curated-commit rule was retired.
 - [ ] The fork the PR is opened from matches `status.json.fork_url`.
 - [ ] The port branch is not behind the fork's default branch. Read that branch from
       `status.json.fork_default_branch` rather than assuming `main`: 20 of the trunk's 50
@@ -60,11 +64,12 @@ Use with SKILL.md. Spawn sub-agents to verify items against the actual code. Rep
       It matters most in exactly the case where it is least visible: upstream changing a
       function the port also edits, a few lines away. On faster-gaussian-splatting the branch
       sat two commits behind for three reviews while upstream's tile-culling fix rewrote the
-      same function the port renamed a call in, ten lines above the port's own hunk. Rebasing
-      is nearly free before a validation or an approval lands on the head and expensive after:
-      it moves the head sha, so every arch revalidates and `approval_currency` refuses with
-      `stale-commits`. Ask for the rebase at review time, then have the validator run once on
-      the rebased sha.
+      same function the port renamed a call in, ten lines above the port's own hunk. Catching
+      up is nearly free before a validation or an approval lands on the head and expensive
+      after: it moves the head sha, so every arch revalidates and `approval_currency` refuses
+      with `stale-commits`. Ask for it at review time, as a MERGE of the default branch (never
+      a rebase, which rewrites commits that were already tested; see upstream-sync.md in
+      `cuda-to-rocm`), then have the validator run once on the merged sha.
 - [ ] A test added to an AMD-specific file exercises AMD-specific behaviour. A device-generic
       test parked in a HIP-only file never runs on the CUDA path, and a regression test for a
       wave64 fault that does not actually exercise wave64 proves nothing -- it just runs on an

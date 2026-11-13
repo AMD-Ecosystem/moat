@@ -56,6 +56,12 @@ jobs:
         # hosts where the clones actually exist.
         run: python3 utils/check.py --fast
 
+      - name: Unit tests
+        # The pure logic the gates and the publishing paths rest on: the status
+        # merge, the approval decisions, the guard's classifier. Standard library
+        # only, so there is nothing to install.
+        run: python3 -m unittest discover -s tests -t .
+
 # NOTE: there is deliberately no jargon job here. The no-in-house-vocabulary rule
 # applies to text that reaches an UPSTREAM project -- fork commit messages, PR
 # bodies, code comments -- not to this repo, whose own docs necessarily discuss

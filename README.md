@@ -22,7 +22,7 @@ before it is opened.** It says so in its own body, along with a link back here. 
 person who approves it is approving the diff, the title and the body together, on one
 page, before any of it is visible on your repository.
 
-**You get at most one pull request per project.** It is opened from a fork under the
+**You get at most one open pull request per project at a time.** It is opened from a fork under the
 [AMD-Ecosystem](https://github.com/AMD-Ecosystem) organisation against your default
 branch. There is no bot that follows up on a schedule -- every reply to you is a
 separate decision by a person, in a session they are sitting in front of.
@@ -226,7 +226,7 @@ The project name links upstream.
 | [FunASR](https://github.com/modelscope/FunASR) ([fork](https://github.com/AMD-Ecosystem/FunASR/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [gaussian_splatting](https://github.com/joeyan/gaussian_splatting) ([fork](https://github.com/AMD-Ecosystem/gaussian_splatting/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#37](https://github.com/joeyan/gaussian_splatting/pull/37) |
 | [gdtk](https://github.com/gdtk-uq/gdtk) ([fork](https://github.com/AMD-Ecosystem/gdtk/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#184](https://github.com/gdtk-uq/gdtk/pull/184) |
-| [GOMC](https://github.com/GOMC-WSU/GOMC) ([fork](https://github.com/AMD-Ecosystem/GOMC/tree/moat-port)) | ✅ | ✅ | ✅ | — |
+| [GOMC](https://github.com/GOMC-WSU/GOMC) ([fork](https://github.com/AMD-Ecosystem/GOMC/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#562](https://github.com/GOMC-WSU/GOMC/pull/562) |
 | [GooFit](https://github.com/GooFit/GooFit) ([fork](https://github.com/AMD-Ecosystem/GooFit/tree/moat-port)) | ✅ | ✅ | 🎫 | — |
 | [gpu4pyscf](https://github.com/pyscf/gpu4pyscf) ([fork](https://github.com/AMD-Ecosystem/gpu4pyscf/tree/moat-port)) | ✅ | ✅ | 🎫 | — |
 | [GPU_IPC](https://github.com/KemengHuang/GPU_IPC) ([fork](https://github.com/AMD-Ecosystem/GPU_IPC/tree/moat-port)) | ✅ | ✅ | 🚫 | — |
@@ -273,7 +273,7 @@ The project name links upstream.
 | [minibwa](https://github.com/lh3/minibwa) | ⬜ | ⬜ | ⬜ | ⚪ declined |
 | [minimap2](https://github.com/lh3/minimap2) | ⬜ | ⬜ | ⬜ | ⚪ declined |
 | [mistral.rs](https://github.com/EricLBuehler/mistral.rs) ([fork](https://github.com/AMD-Ecosystem/mistral.rs/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
-| [MMseqs2](https://github.com/soedinglab/MMseqs2) ([fork](https://github.com/AMD-Ecosystem/MMseqs2/tree/moat-gpu-coverage-v2)) | ✅ | ✅ | 🎫 | — |
+| [MMseqs2](https://github.com/soedinglab/MMseqs2) ([fork](https://github.com/AMD-Ecosystem/MMseqs2/tree/moat-gpu-coverage-v2)) | ✅ | ✅ | 🎫 | 🟢 [#1174](https://github.com/soedinglab/MMseqs2/pull/1174) |
 | [MONAI](https://github.com/Project-MONAI/MONAI) ([fork](https://github.com/AMD-Ecosystem/MONAI/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
 | [MONAILabel](https://github.com/Project-MONAI/MONAILabel) ([fork](https://github.com/AMD-Ecosystem/MONAILabel/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
 | [MPPI-Generic](https://github.com/ACDSLab/MPPI-Generic) ([fork](https://github.com/AMD-Ecosystem/MPPI-Generic/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#37](https://github.com/ACDSLab/MPPI-Generic/pull/37) |
@@ -287,7 +287,7 @@ The project name links upstream.
 | [OCTproZ](https://github.com/spectralcode/OCTproZ) ([fork](https://github.com/AMD-Ecosystem/OCTproZ/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#31](https://github.com/spectralcode/OCTproZ/pull/31) |
 | [ohm](https://github.com/csiro-robotics/ohm) ([fork](https://github.com/AMD-Ecosystem/ohm/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [oidn](https://github.com/RenderKit/oidn) ([fork](https://github.com/AMD-Ecosystem/oidn/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
-| [oneflow](https://github.com/Oneflow-Inc/oneflow) ([fork](https://github.com/AMD-Ecosystem/oneflow/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟢 [#10697](https://github.com/Oneflow-Inc/oneflow/pull/10697) |
+| [oneflow](https://github.com/Oneflow-Inc/oneflow) ([fork](https://github.com/AMD-Ecosystem/oneflow/tree/moat-port)) | 🔄 | 🔄 | 🎫 | 🟢 [#10697](https://github.com/Oneflow-Inc/oneflow/pull/10697) |
 | [op43dgs](https://github.com/LetianHuang/op43dgs) ([fork](https://github.com/AMD-Ecosystem/op43dgs/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#15](https://github.com/LetianHuang/op43dgs/pull/15) |
 | [Open3D](https://github.com/isl-org/Open3D) ([fork](https://github.com/AMD-Ecosystem/Open3D/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#7509](https://github.com/isl-org/Open3D/pull/7509) |
 | [opencv](https://github.com/opencv/opencv) ([fork](https://github.com/AMD-Ecosystem/opencv/tree/moat-port)) | 🚫 | 🚫 | 🚫 | 🟢 [#29285](https://github.com/opencv/opencv/pull/29285) |

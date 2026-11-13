@@ -8,7 +8,9 @@ git invokes: merge_status.py <ancestor O> <ours A> <theirs B> [path P]
 We write the merged result into the OURS file (A), which git uses as the merge
 result, and exit 0.
 
-The default is LATEST-WRITER-WINS per field, decided by the record's top-level
+A field only ONE side changed since the common ancestor is that side's (see
+merge()). For a field both sides changed, and whenever git supplies no ancestor,
+the default is LATEST-WRITER-WINS per field, decided by the record's top-level
 updated_at. That default matters more than any of the rules below: this driver
 used to start from `out = dict(a)` and then reconcile five named fields, so the
 other twenty-five silently took OURS. A concurrent merge could drop an approval
@@ -118,7 +120,7 @@ def _merge_history(a, b):
 
 
 def _load(p):
-    with open(p) as f:
+    with open(p, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -131,16 +133,52 @@ def _pr_rank(s):
     return 0 if not s or s == "none" else (2 if s in _TERMINAL_PR else 1)
 
 
-def _union(pa, pb):
-    """Per-key merge of two maps, latest writer winning within a key. Blocks carry
-    their own updated_at; anything without one resolves to B."""
+def _stamp(block):
+    """When a block was last written. Platform blocks carry updated_at; a waiver
+    carries only the times of its suggestion and of a person's ruling on it."""
+    return max((block.get(k) or "") for k in
+               ("updated_at", "at", "refused_at", "suggested_at"))
+
+
+def _same_sha(x, y):
+    return bool(x) and bool(y) and (x.startswith(y) or y.startswith(x))
+
+
+def _failure_at_same_commit(va, vb):
+    """The failing block when one side passed and the other failed THE SAME commit.
+
+    Two hosts of one platform can reach different verdicts on one sha -- a flaky
+    test, a host-specific fault. Recency would keep whichever wrote last, and a pass
+    that happened to be recorded after a failure would then satisfy a gate over
+    evidence that the commit does not pass there. The failure stands until someone
+    looks at it."""
+    for bad, good in ((va, vb), (vb, va)):
+        if (bad.get("state") == "validation-failed" and good.get("state") == "completed"
+                and _same_sha(bad.get("failed_sha"), good.get("validated_sha"))):
+            return bad
+    return None
+
+
+def _union(pa, pb, po=None):
+    """Per-key merge of two maps. With the ancestor `po`, a block only one side
+    changed is that side's; where both changed it (or there is no ancestor) the
+    later writer wins within the key, except that a failure and a pass recorded
+    against the same commit resolve to the failure."""
     out = {}
     for k in set(pa) | set(pb):
         va, vb = pa.get(k), pb.get(k)
+        vo = (po or {}).get(k)
         if va is None or vb is None:
             out[k] = vb if va is None else va
+        elif va == vb:
+            out[k] = vb
+        elif vo is not None and va == vo:
+            out[k] = vb
+        elif vo is not None and vb == vo:
+            out[k] = va
         elif isinstance(va, dict) and isinstance(vb, dict):
-            out[k] = vb if _b_is_later(va.get("updated_at"), vb.get("updated_at")) else va
+            out[k] = (_failure_at_same_commit(va, vb)
+                      or (vb if _b_is_later(_stamp(va), _stamp(vb)) else va))
         else:
             out[k] = vb
     return out
@@ -207,12 +245,53 @@ def _merge_intake(a, b, newer):
     return out
 
 
-def merge(a, b):
+_ABSENT = object()
+
+# Fields with a rule of their own further down; the ancestor pass leaves them alone.
+_RULED = ("updated_at", "porting", "porting_released", "intake", "pr_state",
+          "pr_history") + UNION
+
+
+def _one_sided(k, a, b, o):
+    """The side that alone changed field `k` since the ancestor, or None when
+    neither or both did (or there is no ancestor to tell)."""
+    if o is None:
+        return None
+    va, vb, vo = a.get(k, _ABSENT), b.get(k, _ABSENT), o.get(k, _ABSENT)
+    if va == vb:
+        return None
+    if va == vo:
+        return b
+    if vb == vo:
+        return a
+    return None
+
+
+def merge(a, b, o=None):
+    """Merge two records. `o` is their common ancestor when git supplied one.
+
+    Recency alone cannot tell a field a writer CHANGED from one it merely still
+    carried. A host that read the record, lost a race, and wrote later would win
+    every field on its stale copy: recording one platform's result put head_sha,
+    the stage and published_sha back to what they were before another host
+    advanced them, and a gate then read as satisfied at a commit the fork had left.
+    So a field only one side changed since the ancestor is that side's, whichever
+    record is newer; recency decides only what both sides changed."""
     a_top, b_top = a.get("updated_at") or "", b.get("updated_at") or ""
     newer, older = (b, a) if b_top > a_top else (a, b)
     out = dict(older)
     out.update(newer)                       # default: latest writer wins per field
     out["updated_at"] = max(a_top, b_top)
+    settled = set()
+    for k in (set(a) | set(b)) - set(_RULED):
+        side = _one_sided(k, a, b, o)
+        if side is None:
+            continue
+        settled.add(k)
+        if k in side:
+            out[k] = side[k]
+        else:
+            out.pop(k, None)
 
     for k in STICKY:
         if out.get(k) is None:
@@ -231,6 +310,8 @@ def merge(a, b):
                                     b.get("schema_version") or 0)
 
     for k in RESET:
+        if k in settled:
+            continue        # one side set or cleared it; the ancestor pass took that
         out.pop(k, None)
         if k in newer:
             out[k] = newer[k]
@@ -252,7 +333,7 @@ def merge(a, b):
 
     for k in UNION:
         if k in a or k in b:
-            out[k] = _union(a.get(k) or {}, b.get(k) or {})
+            out[k] = _union(a.get(k) or {}, b.get(k) or {}, (o or {}).get(k))
 
     if "intake" in a or "intake" in b:
         out["intake"] = _merge_intake(a, b, newer)
@@ -280,17 +361,23 @@ def merge(a, b):
 
 
 def main(argv):
-    # argv: O A B [P]; we only need ours (A) and theirs (B).
+    # argv: O A B [P]
     if len(argv) < 3:
         sys.stderr.write("merge_status: expected O A B [P]\n")
         return 2
-    a_path, b_path = argv[1], argv[2]
+    o_path, a_path, b_path = argv[0], argv[1], argv[2]
     try:
-        merged = merge(_load(a_path), _load(b_path))
+        ancestor = _load(o_path)
+        if not isinstance(ancestor, dict):
+            ancestor = None
+    except Exception:       # git hands over an empty file when both sides added it
+        ancestor = None
+    try:
+        merged = merge(_load(a_path), _load(b_path), ancestor)
     except Exception as e:  # fall back to a real conflict rather than guessing
         sys.stderr.write(f"merge_status: {e}; leaving conflict\n")
         return 1
-    with open(a_path, "w") as f:
+    with open(a_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(merged, f, indent=2)
         f.write("\n")
     return 0
