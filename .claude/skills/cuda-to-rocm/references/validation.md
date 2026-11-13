@@ -97,6 +97,75 @@ import, not of a bad port.
 seconds; run it on the DLLs too, not just the .exe, since the missing module is usually
 one level down.
 
+## Windows: a crash trace without a PDB names the wrong function
+
+**The function names in a Windows crash trace from a binary linked without `/DEBUG` are
+the nearest EXPORTED symbol, not the function that was running.** The tell is the
+offset: `save_object_data() + 0x214FE7 byte(s)` is two megabytes past that symbol, so it
+is not that function. plvs lost three porter sessions on two hosts to such a trace: a
+`0xC00000FD` stack overflow whose frames all read
+`boost::archive::...oserializer<...KeyFrame>::save_object_data` was diagnosed as
+"clang-cl miscompiles boost.serialization into infinite recursion", tried against
+static/dynamic boost and `-O0`, and recorded as a toolchain wall. Relinking with
+`-Xlinker /DEBUG` (a PDB, no recompile) and feeding the trace's image offsets
+(`0x140000000 + offset`) to `llvm-symbolizer --obj=<exe>` showed the truth in one run:
+seven frames, ending in `__chkstk` under `Tracking::MonocularInitialization`.
+
+Rerun the binary after relinking -- `/DEBUG` changes the `/OPT` defaults, so the old
+trace's offsets do not map onto the new image. A short trace that ends in `__chkstk`
+(`_alloca_probe`) is a big stack frame, not recursion: get the frame sizes from the
+`movl $imm, %eax` before each `__chkstk` call in `llvm-objdump -dr <file>.obj`. Windows
+gives an executable 1 MB of stack and Linux threads get 8 MB, so code that keeps large
+objects on the stack (plvs: three nested ~420 KB `Frame` locals) runs on Linux and
+overflows on Windows. The fix is a stack reserve on the Windows link
+(`add_link_options(LINKER:/STACK:8388608)` under `if(WIN32)`); `std::thread` workers take
+their size from the same PE header. A `/STACK` change that "did not help" is worth
+checking with `llvm-readobj --file-headers <exe> | grep StackReserve` -- the flag may
+never have reached the linker.
+
+## Windows: a CPU crash that Linux never shows is often a heap over-read
+
+**An access violation that hits only the Windows build, in CPU code the port did not
+touch, and moves between functions from run to run, is worth reading as an
+out-of-bounds read before suspecting threads or the toolchain.** On Linux a read a few
+KB past the end of a vector usually lands in already-mapped heap memory, returns
+garbage and goes unnoticed; the Windows heap commits pages on demand, so the same read
+can land on an unmapped page. plvs (TUM-VI stereo, fisheye cameras) crashed 13 of 13
+Windows runs while Linux finished most runs, and three upstream CPU bugs were behind
+it. The every-run crash (`LocalMapping::CreateNewMapFeatures`, `KeyFrameCulling`) was
+`mvuRight`/`mvDepth` sized to the left-image keypoint count but indexed over both
+images (code inherited from ORB-SLAM3, so any ORB-SLAM3 derivative has it). Fixing that
+allocation still left 3 of 10 runs crashing: a loop-closure keyframe vector shorter
+than the point vector it is indexed with (the `LoopClosing` crash, plvs-only) and a
+line observation counted twice. Only with all three fixed were 10 of 10 runs clean, so
+keep running the sequence after the first fix. AddressSanitizer on a Linux CPU-only
+build shows the over-reads in a run that exits 0, which makes it the cheaper search.
+
+Getting file:line costs one rebuild and no admin rights:
+- Build a CPU-only tree with `-DCMAKE_CXX_FLAGS="... -g -gcodeview"` and
+  `-DCMAKE_EXE_LINKER_FLAGS="-Xlinker /DEBUG"` (the GNU-driver clang++ emits CodeView);
+  `/DEBUG` alone, as in the section above, gives function names but no lines or locals.
+- `cdb.exe` without installing anything: download the WinDbg `.msixbundle` (the URL is
+  in `https://windbg.download.prss.microsoft.com/dbazure/prod/1-0-0/windbg.appinstaller`),
+  `unzip` the `windbg_win-x64.msix` out of it, and `unzip` that; `amd64/cdb.exe` runs
+  from the extracted tree.
+- Run `cdb -g -G -y <pdb dir> -c "sxd av; sxe -c2 \".lines -e; .ecxr; r; kn 40; dv /t /v; q\" av; g" <exe> <args>`
+  (`MSYS2_ARG_CONV_EXCL="*"` under Git Bash). `sxd av` skips first-chance faults the
+  program handles; the second-chance command prints the stack with source lines and
+  the faulting registers, which show the index and the base pointer of the bad read.
+- If several build trees write their executables into the same source-tree directory
+  (plvs does), copy each exe and its PDB under a distinct name before building the next
+  tree, or a run silently uses the other build.
+
+## Windows: TheRock clang 23 can hang in x86 register allocation
+
+A host C++ TU that compiles in about a second at `-O1` but never finishes at `-O2`/`-O3`
+is a compiler fault, not a slow build. Find the function with
+`-mllvm -debug-pass=Executions` under a `timeout`: the last lines name the pass and the
+function (plvs libelas: `Greedy Register Allocator` on `Elas::gapInterpolation`; at `-O1`
+with `-funroll-loops` the same pass crashes instead). `-mllvm -regalloc=basic` on that
+one source file keeps the optimization level and compiles it in a second.
+
 ## Windows: a C++ LibTorch consumer must force the torch_hip.dll import
 
 **A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a
@@ -179,10 +248,38 @@ reset and `hipStreamDestroy` then uses it again (valgrind: use-after-free on Lin
 where glibc aborts only some runs). The port-side fix is to destroy the owning object
 before the reset; whether to change the project is the upstream maintainer's call when
 a test exercises the order on purpose. Stale `hipFree` and `hipHostFree` fail cleanly
-with `hipErrorInvalidValue`; stale `hipEventDestroy` returns `hipSuccess` and was not
+with `hipErrorInvalidValue` in a single-threaded process (in a multithreaded one, see the
+next section); stale `hipEventDestroy` returns `hipSuccess` and was not
 checked under valgrind. Tell it apart from a missing DLL (which dies before `main`
 prints anything) by the work having completed first. A 12-line repro and a parity
 request to HIP are on FLAMEGPU2.
+
+## A duplicate `hipFree` in one thread can crash a different thread
+
+When a library frees the same device pointer twice and another thread allocates between
+the two frees, the second free can release that thread's buffer. The failure then shows
+up somewhere unrelated, and only in some runs: for example an OpenCV `cv::cuda` call
+aborting with `(-217) invalid argument` from `cudaGetLastError()`, or a jump to address 0.
+plvs hit this once its libelas GPU path was enabled. The upstream code freed two buffers
+twice, and on gfx1100 4-5 of 13 dense-stereo SLAM runs died that way, against 0 of 26
+runs of three controls (the double free removed, the CPU fallback, no GPU code). On
+gfx90a the same head never showed it, so a clean run on one architecture does not clear
+the code. Read the code for duplicate frees when a crash kind appears only where a newly
+enabled GPU path runs. Separate it from upstream races with the counting method under
+"Diagnosing a suspected AMD fault before escalating" (CPU-only control, many runs, one
+stack per crash kind). Without core dumps (`ulimit -c 0`), and when gdb slows the run too
+much to finish, a 15-line `LD_PRELOAD` handler that calls `backtrace_symbols_fd` on
+SIGSEGV/SIGABRT still gives the stack. (plvs)
+
+## A free-memory leak check measures the whole GPU, not your process
+
+`hipMemGetInfo` (like `cudaMemGetInfo`) reports free memory for the device, so a leak
+harness that compares free memory across repeated calls also counts every other process
+allocating on that GPU. plvs: a 21-call libelas leak check reported 8.00 MB lost on one
+image while a SLAM run shared the card, and 0.00 MB once it ran alone, which is the
+recorded figure. Run memory-delta checks with nothing else on the device (check
+`rocm-smi --showpids`), and repeat any non-zero result alone before calling it a leak.
+(plvs)
 
 ## Two GPUs visible to one process can crash the runtime
 
@@ -351,6 +448,7 @@ versioned name has this fault on TheRock: list `${ROCM_PATH}/bin` for the
 versioned file instead (`hiprtc0*.dll` -- the `0` excludes
 `hiprtc-builtins*.dll`), and compare the names the loader tries against
 `ls $ROCM_PATH/bin` before anything else. (diff-surfel-tracing)
+- **An intermittent crash seen only in the GPU build needs a CPU-only build control, run as often and under the same load.** A multi-threaded application (SLAM, pipelines with worker threads) can carry an upstream race that the GPU path only changes the timing of. plvs stereo segfaulted in 4 of 9 HIP runs and in 0 of 6 CPU-only runs, which looks like a port fault, but the crash was in CPU line-mapping code (a null `KeyFrame*` in `MapLine::UpdateNormalAndDepth`). Six more of each, run side by side, gave HIP 0/6 and CPU 1/6. Build the control from the same tree with the GPU option off, into a copy of the source tree when the project writes its outputs into the source tree, get a backtrace (`gdb -batch -ex run -ex bt`), and count runs before you decide. A handful of runs per side cannot tell a rate of 25% from a rate of 8%. (plvs)
 
 ## CUDA gate for torch-extension ports: the host's installed PyTorch itself can be the wall
 
