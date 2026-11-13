@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-11-13T01:20:49Z",
+  "updated_at": "2026-11-13T01:25:46Z",
   "head_sha": "2362bb2d7dbf33e74f830b971bc29c96dc9d5012",
   "depends_on": [
     "opencv_contrib"
@@ -23,6 +23,29 @@
   "upstream_repo_id": 693793222,
   "stage": "review-passed",
   "platforms": {
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-12T03:48:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
@@ -46,53 +69,6 @@
       },
       "state": "completed",
       "last_agent": "validator"
-    },
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "2362bb2d7dbf33e74f830b971bc29c96dc9d5012",
-      "started_at": "2026-06-05T00:11:54Z",
-      "completed_at": "2026-11-12T06:53:33Z",
-      "updated_at": "2026-11-13T00:26:10Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "failed_sha": "22ea83454241447b418832da2ee2c1a3b25a08a8"
-    },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-11-06T05:39:00Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
     },
     "linux-gfx1100": {
       "state": "completed",
@@ -118,6 +94,53 @@
       "last_agent": "validator",
       "failed_sha": "b9c257afb6e25fb68c49737f00f675dfd265a10f"
     },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-06T05:39:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "2362bb2d7dbf33e74f830b971bc29c96dc9d5012",
+      "started_at": "2026-06-05T00:11:54Z",
+      "completed_at": "2026-11-12T06:53:33Z",
+      "updated_at": "2026-11-13T00:26:10Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "failed_sha": "22ea83454241447b418832da2ee2c1a3b25a08a8"
+    },
     "windows-gfx1101": {
       "blocked": true,
       "blocked_reason": "Hardware offline (the Windows gfx1101/gfx1201 host was retired 2026-10-28); Windows coverage comes from windows-gfx1151. Correction, 2026-11-04: the earlier diagnosis here (clang-cl boost.serialization miscompilation, recursion in oserializer<KeyFrame>::save_object_data) was wrong. Frames were misattributed in a binary without a PDB; the real crash was __chkstk stack exhaustion in Tracking::MonocularInitialization (~427 KB of Frame grid arrays vs the 1 MB Windows default stack), fixed at e0dcda3 with WIN32 /STACK:8MB and run on windows-gfx1151. See notes.md.",
@@ -138,29 +161,6 @@
         "first_session_at": null,
         "last_session_at": null
       }
-    },
-    "linux-gfx1201": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-11-12T03:48:21Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
     },
     "windows-gfx1201": {
       "blocked": true,
@@ -197,5 +197,10 @@
     "head_sha": "2362bb2d7dbf33e74f830b971bc29c96dc9d5012",
     "content_sha256": "1a47bd8e10d724e862218dbeba6f8d3e3bffa7f9255804070745c78743e60685",
     "review_pr": "https://github.com/AMD-Ecosystem/plvs/pull/1"
-  }
+  },
+  "pr_url": "https://github.com/luigifreda/plvs/pull/60",
+  "pr_number": 60,
+  "pr_opened_at": "2026-11-13T01:25:46Z",
+  "pr_state": "open",
+  "published_sha": "2362bb2d7dbf33e74f830b971bc29c96dc9d5012"
 }
