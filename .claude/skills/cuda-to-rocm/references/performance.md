@@ -59,9 +59,10 @@ per-thread tiles spill. Fix the instruction stream first, then tune tiles with t
 
 A project's own autotuner can still pick the wrong table. On an RDNA4 card (gfx1201) a full
 sweep of MMseqs2/libmarv's tuner, choosing the fastest config per tile size, gave a table
-that was 9% slower end to end than the untuned generic one, with identical results. The
-tuner ranked 512-thread blocks 10-40% above the generic 128-thread configs, but in the
-application the 128-thread kernels won. A different RDNA table did no better. Time the real
+that was 2-9% slower end to end than the untuned generic one on two database sizes, with
+identical results. The tuner ranked 512-thread blocks 10-40% above the generic 128-thread
+configs, but in the application the generic table, built from 128-thread configs, was
+faster. A different RDNA table did no better. Time the real
 workload against the existing configs before keeping a tuned table, and keep the raw tuner
 output so the comparison can be checked.
 

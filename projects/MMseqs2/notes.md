@@ -1296,3 +1296,7 @@ Problems, both in `.claude/skills/cuda-to-rocm/references/performance.md` ("Tile
 2. "but in the application the 128-thread kernels won" claims the block size is the cause. The round compared whole tables only: generic runs six half2 single-tile configs, all blocksize 128; tuned runs 34, mostly 512 with different tile sizes and group/items splits (`kernel-stats/*.csv`). No run isolated block size, so a reader would take an unmeasured hardware claim from it. Reword to what was measured, e.g. "but the generic table, built from 128-thread configs, was faster in the application."
 
 Not a finding: whether `tuning:gfx1201` is scoped out is jeff's open ruling (Decision 1 of the porter round). Porter fix is the skill wording only; no fork commit, `head_sha` stays 0c897402, then back to `delta-ported`.
+
+## Lesson wording fix (2026-11-13, porter, windows-gfx1151)
+
+Addressed both findings of `## Review 2026-11-13 gfx1201 tuning round, empty fork delta` in `.claude/skills/cuda-to-rocm/references/performance.md`: the slowdown is now "2-9% slower ... on two database sizes" (0.91x q1k, 0.98x 8x database), and the cause is stated as the generic table (built from 128-thread configs) being faster, not block size alone. `python3 utils/check.py skills` passes. No fork change; head stays 0c897402.

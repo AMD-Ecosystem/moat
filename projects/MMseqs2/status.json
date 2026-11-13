@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:24:21Z",
-  "updated_at": "2026-11-13T08:18:11Z",
+  "updated_at": "2026-11-13T08:19:01Z",
   "head_sha": "0c8974021c3e1035640c6daf30e5ab88b6af7fbc",
   "depends_on": [],
   "waivers": {
@@ -20,7 +20,7 @@
   },
   "license_spdx": "MIT",
   "upstream_repo_id": 63755587,
-  "stage": "porting",
+  "stage": "delta-ported",
   "platforms": {
     "windows-gfx1201": {
       "state": "completed",
@@ -211,7 +211,7 @@
       "failed_sha": null,
       "started_at": "2026-11-13T08:18:11Z",
       "completed_at": null,
-      "updated_at": "2026-11-13T08:18:11Z",
+      "updated_at": "2026-11-13T08:19:01Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -230,12 +230,9 @@
   },
   "review_pr": "https://github.com/AMD-Ecosystem/MMseqs2/pull/1",
   "porting_released": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-13T08:11:33Z",
-    "at": "2026-11-13T08:14:44Z"
-  },
-  "porting": {
     "arch": "windows-gfx1151",
-    "since": "2026-11-13T08:18:11Z"
-  }
+    "since": "2026-11-13T08:18:11Z",
+    "at": "2026-11-13T08:19:01Z"
+  },
+  "porting": null
 }
