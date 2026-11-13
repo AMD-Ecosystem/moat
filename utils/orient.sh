@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 # MOAT entrypoint. Pull the latest MOAT state, detect this host's AMD arch, pick
 # the single next project + stage for this platform, and print a dispatch
 # summary. Standing upkeep on the way writes and pushes: hook/merge-driver
@@ -76,7 +78,7 @@ python3 utils/upstream.py --forks --apply 2>/dev/null \
 PUBLISH=$(python3 utils/upstream.py --publish 2>/dev/null)
 READY=$(printf '%s\n' "$PUBLISH" | sed -n 's/^  READY *\([^ ]*\).*/\1/p' | tr '\n' ' ')
 if [ -n "${READY// /}" ]; then
-  echo "approved : ${READY}-- submit upstream: python3 utils/upstream.py --publish --apply"
+  echo "approved : ${READY}-- submit upstream: python3 utils/upstream.py --publish --apply --name <project>"
   echo "           (opens the PR with the approved title and body, then closes the review PR)"
 fi
 # A review PR that could not be READ is not a port with nothing to submit, and this
@@ -87,6 +89,15 @@ if [ -n "${UNREACHABLE// /}" ]; then
   echo "unknown  : ${UNREACHABLE}-- review PR(s) unreadable, approval state UNKNOWN (not 'nothing to submit')"
 fi
 
+# A release line approved on its in-fork review PR is finished work waiting on one
+# command, exactly like an approved port, so it is surfaced the same way.
+FINISH=$(python3 utils/upstream.py --finish-release 2>/dev/null)
+RELEASE=$(printf '%s\n' "$FINISH" | sed -n 's/^  \(READY\|RESUME\) *\([^ ]*\).*/\2/p' | tr '\n' ' ')
+if [ -n "${RELEASE// /}" ]; then
+  echo "approved : ${RELEASE}-- finish the release: python3 utils/upstream.py --finish-release --apply"
+  echo "           (tags the approved commit, freezes the branch, closes the review PR unmerged)"
+fi
+
 # A suggested waiver blocks its project's PR and only a person can clear it, so it has
 # to be visible from a session that is not the one that suggested it. The porter that
 # found the obstacle may have run unattended hours ago; without this the case sits in
@@ -95,11 +106,14 @@ fi
 python3 utils/moatlib.py waivers 2>/dev/null \
   | awk -F'\t' 'NF>1 {printf "waiver   :   AWAITING   %-26s %s -- %.70s\n", $1, $2, $4}' || true
 
-# A lesson on a live port branch is where it belongs -- the port's own review is what
-# publishes it -- so this reports only the case nothing will ever carry: a FINISHED
-# port whose branch still holds a global edit the trunk lacks. That branch is about to
-# be deleted. `lessons --pending` shows the rest, and they are not to be lifted.
-python3 utils/moatlib.py lessons 2>/dev/null \
+# Lessons are written in project notes (a port branch may not edit a skill) and promoted
+# to the skill on the trunk after the port's review. Only the count is shown here;
+# `lessons` lists them. ORPHANED is older: a skill edit made on a now-finished port
+# branch before branches were limited to their own folder.
+LESSONS=$(python3 utils/moatlib.py lessons 2>/dev/null)
+NL=$(printf '%s\n' "$LESSONS" | awk -F'\t' '$2=="CANDIDATE"' | grep -c . || true)
+[ "$NL" -gt 0 ] && echo "lesson   :   $NL in project notes await promotion: python3 utils/moatlib.py lessons"
+printf '%s\n' "$LESSONS" \
   | awk -F'\t' '$2=="ORPHANED" {printf "lesson   :   ORPHANED   %-24s %.60s\n", $1, $3}' || true
 
 # A folder in the wrong place is invisible until it bites, and it bites differently at
