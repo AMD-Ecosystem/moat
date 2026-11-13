@@ -1340,3 +1340,12 @@ At 24cd051's parent (`2c22a862`), `kmeans_transform` allocated `alloc_result<T>(
 
 ### Result
 The owed 2-GPU run is done: the corrected script passes with 2 visible GPUs at 0e70429b, including `last_gpu_calloc == t.nbytes` for 20001 rows at n_gpus=2. Commit A's message can use the corrected script and recipe, quoting the magnitudes above.
+
+## Squash to 7 commits 2026-11-13 -- moat-port d743f11e (tree-identical to 0e70429b)
+
+jeff's request: publish the squash. `moat-port` on the fork went from 17 commits (tip `0e70429b85679b1dd028b4c26f95c3131ffaa6e9`) to 7 (tip `d743f11e296db53c67a2356a854bac0b314fef76`) by a `--force-with-lease` push pinned to the old tip, run by jeff. Both tips have tree `17c0d5c8d134`, so no content changed.
+
+- The two messages the "Squash Test Plan check 2026-11-12" faulted were corrected first: commit A (`709cbd21`, KMeans buffers) carries the corrected script with the `calloc` probe, the googletest submodule line and the recorded magnitudes (7e-7 to 1e-6 float32, 1.3e-15 to 1.9e-15 float64); commit B (`d743f11e`, GLM inlining) says "336 on gfx90a, 116 of them outside kernels". The other five commits are unchanged from the local `moat-port-prep` draft.
+- `python3 utils/jargon.py -C projects/h2o4gpu/src --commits 97279de..moat-port-squash --diff 97279de..moat-port-squash`: clean.
+- `python3 utils/moatlib.py squash-carry-forward h2o4gpu d743f11e296db53c67a2356a854bac0b314fef76`: carried linux-gfx90a, linux-gfx1100, linux-gfx942, windows-gfx1151. `pr-ready`: True.
+- Nothing was rebuilt or rerun for the squash; the evidence is the validations at `0e70429b` plus the tree identity.

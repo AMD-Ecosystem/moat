@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:05:27Z",
-  "updated_at": "2026-11-12T20:45:57Z",
-  "head_sha": "0e70429b85679b1dd028b4c26f95c3131ffaa6e9",
+  "updated_at": "2026-11-13T23:36:47Z",
+  "head_sha": "d743f11e296db53c67a2356a854bac0b314fef76",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "Apache-2.0",
@@ -30,11 +30,11 @@
     "linux-gfx90a": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "0e70429b85679b1dd028b4c26f95c3131ffaa6e9",
+      "validated_sha": "d743f11e296db53c67a2356a854bac0b314fef76",
       "failed_sha": null,
       "started_at": "2026-11-04T19:37:52Z",
       "completed_at": "2026-11-12T20:27:50Z",
-      "updated_at": "2026-11-12T20:27:50Z",
+      "updated_at": "2026-11-13T23:36:47Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -77,11 +77,11 @@
     "linux-gfx1100": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "0e70429b85679b1dd028b4c26f95c3131ffaa6e9",
+      "validated_sha": "d743f11e296db53c67a2356a854bac0b314fef76",
       "failed_sha": null,
       "started_at": "2026-11-12T19:33:59Z",
       "completed_at": "2026-11-12T20:19:00Z",
-      "updated_at": "2026-11-12T20:19:00Z",
+      "updated_at": "2026-11-13T23:36:47Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -101,11 +101,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "0e70429b85679b1dd028b4c26f95c3131ffaa6e9",
+      "validated_sha": "d743f11e296db53c67a2356a854bac0b314fef76",
       "failed_sha": null,
       "started_at": "2026-11-12T00:57:06Z",
       "completed_at": "2026-11-12T20:13:35Z",
-      "updated_at": "2026-11-12T20:13:35Z",
+      "updated_at": "2026-11-13T23:36:47Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -125,11 +125,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "0e70429b85679b1dd028b4c26f95c3131ffaa6e9",
+      "validated_sha": "d743f11e296db53c67a2356a854bac0b314fef76",
       "failed_sha": null,
       "started_at": "2026-11-11T22:51:44Z",
       "completed_at": "2026-11-12T20:45:56Z",
-      "updated_at": "2026-11-12T20:45:56Z",
+      "updated_at": "2026-11-13T23:36:47Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
