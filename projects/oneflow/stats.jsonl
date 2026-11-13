@@ -648,3 +648,4 @@
 {"kind":"phase","ts":"2026-11-13T17:01:26Z","phase":"compile","seconds":646.912,"exit":0,"cmd":"bash agent_space/build.sh all"}
 {"kind":"phase","ts":"2026-11-13T17:34:08Z","phase":"test","seconds":1465.087,"exit":0,"cmd":"bash -c bash agent_space/loopv.sh 0 1 150 /var/lib/jenkins/fleet/jobs/mi200-20261113-084659-oneflow-idshuffle-rate-90a/moat/agent_space/j/B/g0 & bash agent_space/loopv.sh 1 151 300 /var/lib/jenkins/fleet/jobs/mi200-20261113-084659-oneflow-idshuffle-rate-90a/moat/agent_space/j/B/g1 & wait"}
 {"kind":"phase","ts":"2026-11-13T19:20:29Z","phase":"test","seconds":2372.310,"exit":0,"cmd":"bash -c bash agent_space/gpu0.sh & bash agent_space/gpu1.sh & wait"}
+{"kind":"phase","ts":"2026-11-13T20:05:01Z","phase":"compile","seconds":746.300,"exit":0,"cmd":"bash agent_space/build.sh 56"}

@@ -218,6 +218,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-09T17:44:13Z",
       "decided": null
+    },
+    {
+      "id": "oneflow-50353bcb0-body-wording",
+      "kind": "other",
+      "component": null,
+      "summary": "Correct the 50353bcb0 ([ROCm] Bound the fp16 gradient shuffle check by the summation error) commit body before it reaches the open upstream PR, or accept it as is: it says that in every failing case captured on an MI300X the op was within 0.009 of the exact float64 sum and the reference within 0.003. Those are the first three of 18 captured cases; across all 18 the maxima are 0.0151 (op) and 0.0090 (reference), still far inside the per-element bound (0.09 to 0.22 in those cases). The fix round merges by fast-forward, so the body ships as written unless a person rules otherwise; the porter did not amend (no-amend rule). Wording only.",
+      "refs": [
+        "projects/oneflow/notes.md Porter round 2026-11-13 (fix 10697)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-13T21:06:19Z",
+      "decided": null
     }
   ]
 }
