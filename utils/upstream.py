@@ -872,6 +872,17 @@ def publish_blockers(name, row):
     # fails closed rather than publishing over an objection nobody re-read.
     blockers, _notes = moatlib.moat_command_audit(row["pr"])
     bad += blockers
+    # The approved page must be a review of THIS project's validated commit.
+    d, _where = moatlib.project_record(name)
+    if d is None:
+        bad.append(f"no record for {name} in this checkout or on the refs")
+    else:
+        bad += moatlib.review_pr_binding_problems(d, row["pr"])
+    # pr_ready below reads the opt-out and disposition registries from the trunk.
+    if not moatlib.refresh_trunk_data():
+        bad.append("could not fetch origin/main, so the opt-out and disposition "
+                   "records may be out of date -- a request to stop that cannot be "
+                   "read is not a request that was never made")
     # Gates, clean fork, no terminal outcome, no PR already open.
     ready, blocking, _ = moatlib.pr_ready(name)
     if not ready:
@@ -1482,6 +1493,15 @@ def merge_fix_blockers(name, d, fix, pr):
     ready, blocking, _ = moatlib.fix_ready(name)
     if not ready:
         bad.append("not fix-ready: " + ", ".join(f"{p}={s}" for p, s in blocking))
+    # A merge moves an open PR and may post a reply, so a request to stop binds it
+    # exactly as it binds opening one.
+    if not moatlib.refresh_trunk_data():
+        bad.append("could not fetch origin/main, so the opt-out record may be out "
+                   "of date")
+    opt = moatlib.optout_for(moatlib.upstream_full_name(name) or "")
+    if opt:
+        bad.append(f"opted-out: {opt['who']} asked not to receive pull requests "
+                   f"from this effort ({opt['source']})")
     # The merge ends in a record write. Discovering it cannot happen AFTER the open
     # PR has already moved leaves the worst state this flow can produce: the PR
     # advanced, published_sha naming the old tip, and the reconciler calling our own
