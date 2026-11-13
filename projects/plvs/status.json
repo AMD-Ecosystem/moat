@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-11-12T08:03:47Z",
-  "head_sha": "eb1b3696041b6fc0b32ab1c79c19e6e7b82839b3",
+  "updated_at": "2026-11-13T00:26:10Z",
+  "head_sha": "2362bb2d7dbf33e74f830b971bc29c96dc9d5012",
   "depends_on": [
     "opencv_contrib"
   ],
@@ -26,11 +26,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "eb1b3696041b6fc0b32ab1c79c19e6e7b82839b3",
+      "validated_sha": "2362bb2d7dbf33e74f830b971bc29c96dc9d5012",
       "failed_sha": "fde33e54bc3f672463d306b756d975ac5cc71d1d",
       "started_at": "2026-11-04T08:04:09Z",
       "completed_at": "2026-11-12T08:03:46Z",
-      "updated_at": "2026-11-12T08:03:46Z",
+      "updated_at": "2026-11-13T00:26:10Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -51,10 +51,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "eb1b3696041b6fc0b32ab1c79c19e6e7b82839b3",
+      "validated_sha": "2362bb2d7dbf33e74f830b971bc29c96dc9d5012",
       "started_at": "2026-06-05T00:11:54Z",
       "completed_at": "2026-11-12T06:53:33Z",
-      "updated_at": "2026-11-12T06:53:33Z",
+      "updated_at": "2026-11-13T00:26:10Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -98,10 +98,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "eb1b3696041b6fc0b32ab1c79c19e6e7b82839b3",
+      "validated_sha": "2362bb2d7dbf33e74f830b971bc29c96dc9d5012",
       "started_at": "2026-08-13T21:21:31Z",
       "completed_at": "2026-11-12T07:12:19Z",
-      "updated_at": "2026-11-12T07:12:19Z",
+      "updated_at": "2026-11-13T00:26:10Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
