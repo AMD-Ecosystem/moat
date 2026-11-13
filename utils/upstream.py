@@ -29,7 +29,7 @@ branch and opens a PR, and a human decides -- the same path everything else take
     python3 utils/upstream.py --approvals --apply # dismiss them and re-request review
     python3 utils/upstream.py --review           # report ports needing a review PR
     python3 utils/upstream.py --publish          # report approved ports ready to submit
-    python3 utils/upstream.py --publish --apply  # open the upstream PRs
+    python3 utils/upstream.py --publish --apply --name <p>  # open that one upstream PR
     python3 utils/upstream.py --fix-review       # staged fix rounds needing a review PR
     python3 utils/upstream.py --merge-fix        # approved fix rounds ready to merge
     python3 utils/upstream.py --merge-fix --apply # fast-forward the open PR to the approved tip
@@ -55,7 +55,10 @@ import re
 import subprocess
 import sys
 
-REPO = pathlib.Path(__file__).resolve().parents[1]
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = pathlib.Path(__file__).resolve().parents[1]
+REPO = pathlib.Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
 
 
 def _run(*args, **kwargs):
@@ -162,7 +165,7 @@ def all_records(only=None):
     project's folder sat on the trunk, and stops being so the moment one moves to its
     own branch: a sweep run from any single branch would silently skip the rest, and a
     skipped project is indistinguishable from one with nothing to report."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     for name in [only] if only else sorted(moatlib.all_projects()):
         obj, where = moatlib.project_record(name)
@@ -220,7 +223,7 @@ def poll(rows):
     without the stamp a follow-up cannot be judged (pr_ready refuses to guess the
     baseline). Stamped only when our record already agrees with GitHub about the
     state -- a drifting record gets corrected first, not annotated."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     drift, unreviewed, headdrift, backfill, errors = [], [], [], [], []
     for r in rows:
@@ -350,7 +353,7 @@ def apply_one(r):
     having just recorded several merges."""
     if r["real"] != "MERGED":
         return False
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     local = moatlib.status_path(r["name"]).exists()
     try:
@@ -366,7 +369,7 @@ def apply_backfill(r):
     merges are: poll() only routes a row here when the live PR head agrees with the
     record, and set_published_sha re-checks that agreement plus the record's own
     consistency before writing. Returns "local"/"branch" like apply_one, or False."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     local = moatlib.status_path(r["name"]).exists()
     try:
@@ -396,7 +399,7 @@ def fork_poll(apply=False, stale_weeks=3):
     a session. This only makes the project eligible and tells someone.
     """
     import datetime
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     released = [{"name": n, "slug": s}
                 for n, s in moatlib.release_awaiting_fork(dry_run=not apply)]
@@ -450,7 +453,7 @@ def approval_drift():
     (pr_approval_status); one without is judged from the PR alone
     (approval_currency), and a port still awaiting its first approval is not drift
     and is not reported."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     rows = []
@@ -491,7 +494,7 @@ def refresh_approval(r):
 
     This is our own fork, inside the autonomy boundary -- unlike anything upstream,
     which always needs its own explicit yes."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     pr = moatlib.fetch_review_pr(r["url"])
@@ -560,7 +563,7 @@ def publishable(only=None):
     unreachable remote is a warning and not a clean bill (existing_claim), and
     "nothing released" is not "nothing waiting" (release-forks). This was the one
     place still reading an outage as an answer."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     out, unreachable, objected = [], [], []
@@ -601,7 +604,7 @@ def review_candidates():
     contract. A follow-up held only by coverage gates is reported rather than
     silently skipped, because no other list names it; a finished PR with nothing
     new past it stays silent, which is most of the fleet."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     out = []
@@ -699,7 +702,7 @@ def open_review_pr(row, title, body, apply=False):
     """Open the review PR on our own fork. The title and body ARE the upstream PR's,
     so they are checked for in-house vocabulary before anyone sees them -- this is
     the last point where that is cheap to fix."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     import jargon
     import prose
@@ -825,7 +828,7 @@ def _land_local_record(name, message):
     other checkout keeps the stale state: cuda_voxelizer's upstream PR went unrecorded
     for a day and TornadoVM's review PR was invisible to the next publish run. Returns
     None when nothing was left behind, else what went wrong."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     r = _run(["git", "status", "--porcelain", "--", f"projects/{name}/status.json"],
              cwd=str(REPO), capture_output=True, text=True)
@@ -851,7 +854,7 @@ def publish_blockers(name, row):
     """Everything that must hold before a port is submitted upstream, as a list of
     reasons it must not be. Checked at publish time rather than trusted from earlier:
     a gate that passed when the reviewer looked is not evidence about now."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     import jargon
     import prose
@@ -932,7 +935,7 @@ def open_upstream(name, row):
     standing approval and no PR yet lives on its own `port/<name>` branch by
     construction, so reading the working tree found nothing unless the session
     happened to be standing on that branch."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     d, _where = moatlib.project_record(name)
@@ -1035,8 +1038,8 @@ def report_publish(apply, only=None):
               f"when GitHub is reachable.")
     if not apply:
         if ready:
-            print(f"\n  --apply opens {len(ready)} upstream PR(s) with the approved "
-                  f"title and body.")
+            print("\n  --apply --name <project> opens that one upstream PR with "
+                  "the approved title and body.")
         return 0
     for r in ready:
         # Snapshot the approval BEFORE publishing, so the record of who authorised
@@ -1055,7 +1058,7 @@ def report_publish(apply, only=None):
 
 
 def moatlib_record(name):
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     a = moatlib.record_pr_approval(name)
     unlanded = _land_local_record(name, f"{name}: approval recorded")
@@ -1108,7 +1111,7 @@ def _delta_hits_local(clone, base, head, terms, allow):
     Preferred over the API because it reads the WHOLE delta: `compare` caps its
     answer, and this scan is the last thing between in-house vocabulary and a
     stranger's repository."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import jargon
     if not (clone / ".git").exists():
         return None
@@ -1169,7 +1172,7 @@ def _fix_delta_hits(fork, base, head, clone=None):
     commits and 300 files and omits `patch` on large ones, and a partial answer that
     reads like a clean one is worse than no answer. A gate that cannot run is not a
     gate that passed."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import jargon
     terms, allow = jargon.load()
     if clone is not None:
@@ -1241,7 +1244,7 @@ def _round_live(d, fix):
     needs its upstream PR open; a sync round needs the maintained ruling standing.
     A round whose backing vanished is not silently a different kind of round."""
     if fix.get("kind") == "sync":
-        sys.path.insert(0, str(REPO / "utils"))
+        sys.path.insert(0, str(TOOLS_ROOT / "utils"))
         import moatlib
         return bool(d.get("maintained") or moatlib.release_delivered(d))
     return d.get("pr_state") == "open"
@@ -1249,7 +1252,7 @@ def _round_live(d, fix):
 
 def fix_review_rows():
     """Staged fix and sync rounds whose gates are met, with no review PR yet."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     out = []
     for name, d, _where in all_records():
@@ -1303,7 +1306,7 @@ def open_fix_review_pr(row, title, body, apply=False):
     Unlike open_review_pr, the title and body are NOT republished upstream -- the
     upstream-visible content is the delta's commits, scanned here, plus the
     optional reply section, scanned as the upstream prose it is about to become."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     import jargon
     import prose
@@ -1400,7 +1403,7 @@ def base_conflict(name, d, tip):
     review-PR gate skips (the documented only-where-a-clone-lives backstop
     pattern), the merge gate refuses, because the one place that must never
     guess is the one about to move the open PR."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     clone = REPO / "projects" / name / "src"
     if not (clone / ".git").exists():
@@ -1465,7 +1468,7 @@ def merge_fix_rows():
 
 def merge_fix_blockers(name, d, fix, pr):
     """Everything that must hold before the PR branch moves, re-checked live."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     import prose
     import jargon
@@ -1614,7 +1617,7 @@ def do_merge_fix(name, d, fix, pr):
     and failing to record leaves a moved PR, a published_sha naming the old tip, and
     a fix block pointing at a branch that no longer exists -- which the reconciler
     then reports as a maintainer push."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     clone = REPO / "projects" / name / "src"
@@ -1696,7 +1699,7 @@ def do_merge_fix(name, d, fix, pr):
 def _release_message(name, tag, pr, url):
     review = None
     try:
-        sys.path.insert(0, str(REPO / "utils"))
+        sys.path.insert(0, str(TOOLS_ROOT / "utils"))
         import moatlib
         review = moatlib._approving_review(pr)
     except Exception:                           # noqa: BLE001 - message only
@@ -1709,7 +1712,7 @@ def _tag_release_sync(name, d, fix, pr, tip):
     """Tag and record an approved sync round's tip on a delivered release line.
     Best effort like the rest of the post-push steps: the branch already moved, so
     a failure is reported with the command that finishes it by hand."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     url = pr.get("url") or fix.get("review_pr")
     try:
@@ -1740,7 +1743,7 @@ def resolve_threads(name, apply):
     Only threads whose LAST comment is the PR author's are touched: on a
     self-authored review PR the author's reply is the porter's answer, so a
     thread where the reviewer answered back stays open for a person."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import gh_guard
     obj, _where = next(((d, w) for n, d, w in all_records() if n == name), (None, None))
     if obj is None:
@@ -1800,7 +1803,7 @@ def report_merge_fix(apply, only=None):
     print(f"upstream: {len(rows)} fix round(s) with a review PR recorded\n")
     ret = 0
     for name, d, fix in rows:
-        sys.path.insert(0, str(REPO / "utils"))
+        sys.path.insert(0, str(TOOLS_ROOT / "utils"))
         import moatlib
         pr = moatlib.fetch_review_pr(fix["review_pr"])
         if pr is None:
@@ -1853,7 +1856,7 @@ def finish_release_rows(only=None):
     """Release lines with a review PR recorded and no release yet, plus delivered
     ones whose finishing run stopped before the review PR's closure was recorded
     (those only need the remaining steps)."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     for name, d, _where in all_records(only):
         if not moatlib.release_line(d) or not d.get("review_pr"):
@@ -1868,7 +1871,7 @@ def finish_release_rows(only=None):
 def finish_release_blockers(name, d, pr):
     """(blockers, tag): everything that must hold before the release is tagged,
     re-checked live."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     bad = []
@@ -1914,7 +1917,7 @@ def do_finish_release(name, d, pr, tag):
     the record (which is what freezes the branch), and the review PR is closed
     only once the delivery is recorded, so an open PR always means "not yet
     finished" and a rerun completes the job."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     tip = pr["headRefOid"]
@@ -1940,7 +1943,7 @@ def do_finish_release(name, d, pr, tag):
 def _close_release_review(name, d, url, tag, tip):
     """The last step: close the review PR unmerged, record that, refresh the hook.
     Also the whole of a resumed run, so an interrupted finish converges."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     notes = []
     c = _run(["gh", "pr", "close", url, "--comment",
@@ -1989,7 +1992,7 @@ def report_finish_release(apply, only=None):
 
 def _finish_one(name, d, apply):
     """One line's report (and, with apply, its finishing). Returns 0 or 1."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     rel = d.get("release")
     if rel:
@@ -2157,7 +2160,7 @@ def drift_status(name, d):
 
 
 def report_drift(apply=False):
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     # A delivered release line is watched the same way: upstream's release branch
     # gaining a patch release is exactly the drift its sync rounds absorb.
@@ -2255,7 +2258,8 @@ def main():
     ap.add_argument("--review", action="store_true",
                     help="ports whose gates are met with no review PR open yet")
     ap.add_argument("--name", help="with --review --apply: which project to open; "
-                    "with --publish: check and submit only this project")
+                    "with --publish: check and submit only this project "
+                    "(required with --publish --apply)")
     ap.add_argument("--title", help="with --review --apply: the upstream PR title")
     ap.add_argument("--body-file", help="with --review --apply: file holding the body")
     ap.add_argument("--forks", action="store_true",
@@ -2318,6 +2322,14 @@ def main():
         print(f"review-pr: {action} -- {detail}")
         return 0 if action in ("opened", "would-open") else 1
     if a.publish:
+        # Opening an upstream PR is one person's decision about one project, so the
+        # write names it. Without --name an --apply run once opened every approved
+        # port at the same time, including ones nobody meant to send that day.
+        if a.apply and not a.name:
+            print("--publish --apply needs --name <project>: it opens one upstream PR "
+                  "per run. Run --publish without --apply to list what is ready.",
+                  file=sys.stderr)
+            return 2
         return report_publish(apply=a.apply, only=a.name)
     if a.fix_review:
         rows = fix_review_rows()
@@ -2540,4 +2552,6 @@ def publish(applied):
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())

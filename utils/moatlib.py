@@ -9,6 +9,7 @@ status.json is the source of truth. The three AMD targets share one fork branch,
 so any HEAD advance re-validates the platforms that already passed (see
 advance_head). State transitions are validated; illegal jumps raise."""
 
+import os
 import argparse
 import collections
 import hashlib
@@ -20,7 +21,10 @@ import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
 PROJECTS = REPO_ROOT / "projects"
 SCHEMA_VERSION = 3
 # Records are migrated in place, one ref at a time, so a checkout must not refuse the
@@ -47,7 +51,7 @@ def _load_arches():
 
     It defines RULES, not a roster: which gates are required, which may be waived,
     and how a wavefront width follows from an architecture family."""
-    with open(REPO_ROOT / "config" / "arches.toml", "rb") as f:
+    with open(TOOLS_ROOT / "config" / "arches.toml", "rb") as f:
         cfg = tomllib.load(f)
     waves = {fam: gate for gate, fams in cfg["wave"].items() for fam in fams}
     return (waves, cfg["gates"]["required"], set(cfg["gates"].get("waivable", [])),
@@ -1501,7 +1505,7 @@ def license_tier(name, obj=None):
     we know about X" question -- load_status prefers the working tree, which let a
     stale trunk-era copy shadow a licence recorded on the project's own branch.
     Pass `obj` when the caller already holds the record, so both judge the same one."""
-    sys.path.insert(0, str(REPO_ROOT / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import licenses
     if obj is None:
         obj, _where = project_record(name)
@@ -4636,6 +4640,44 @@ def branch_lessons(base_ref="origin/main"):
     return sorted(out)
 
 
+LESSON_HEADING = re.compile(r"^## Lesson for (cuda-to-rocm|moat-porting): (.+?)\s*$", re.M)
+
+
+def lesson_candidates():
+    """Lessons recorded in project notes and not yet promoted: (name, skill, title).
+
+    The skills are trunk files with one organized copy, and a port branch may not edit
+    them (gate_branch_scope). A lesson learned on a port is written into that project's
+    notes.md under `## Lesson for cuda-to-rocm: <title>` (or `moat-porting`), so the
+    port's review reads it with the evidence beside it. A trunk session then promotes
+    it into the reference where its reader would look, rewritten to fit what is already
+    there, and records `Promoted to <file> in <sha>.` under the heading. That keeps the
+    review that caught wrong lessons before, without each branch carrying its own copy
+    of the skill."""
+    out = []
+    for name in sorted(all_projects()):
+        path = f"projects/{name}/notes.md"
+        raw = None
+        if current_branch() != f"port/{name}":
+            branch = port_branch_of(name)
+            if branch:
+                raw = _ref_read(f"origin/{branch}", path)
+        if raw is None:
+            p = PROJECTS / name / "notes.md"
+            if p.exists():
+                raw = p.read_text(encoding="utf-8", errors="replace")
+        if raw is None:
+            raw = _ref_read("origin/main", path)
+        if not raw:
+            continue
+        for m in LESSON_HEADING.finditer(raw):
+            end = raw.find("\n## ", m.end())
+            body = raw[m.end():end if end != -1 else len(raw)]
+            if "Promoted to " not in body:
+                out.append((name, m.group(1), m.group(2)))
+    return out
+
+
 def make_worktree(name, path=None, base_ref="origin/main"):
     """Create a worktree on `port/<name>` and bring it up to the trunk. Returns the path.
 
@@ -5249,7 +5291,7 @@ def _gate_blockers(name, obj):
     # Surface accounting: work recorded as owed (in scope, not yet done) blocks the
     # PR until it is covered or a person rules it out of scope.
     try:
-        sys.path.insert(0, str(REPO_ROOT / "utils"))
+        sys.path.insert(0, str(TOOLS_ROOT / "utils"))
         import surface as _surface
         for cid, why in _surface.owed(name).items():
             blocking.append(("surface-owed", f"{cid} is still owed: {(why or '')[:120]}"))
@@ -5408,9 +5450,10 @@ def main(argv=None):
     sub.add_parser("misplaced", help="projects whose folder is not where their state says")
 
     s = sub.add_parser("lessons",
-                       help="global edits on port branches; only the orphaned ones need acting on")
+                       help="lessons in project notes awaiting promotion to a skill, and "
+                            "old skill edits stranded on finished port branches")
     s.add_argument("--pending", action="store_true",
-                   help="also list the ones correctly awaiting their port's review")
+                   help="also list old skill/tooling edits on live port branches")
 
     sub.add_parser("waivers", help="gate waivers suggested but not yet approved")
 
@@ -5757,24 +5800,26 @@ def main(argv=None):
                   f"hardware, or `set-not-portable <name> --reason ... --by <who>`",
                   file=sys.stderr)
     elif args.cmd == "lessons":
+        cands = lesson_candidates()
+        for name, skill, title in cands:
+            print(f"{name}\tCANDIDATE\t{skill}: {title[:70]}")
         rows = branch_lessons()
         orphaned = [r for r in rows if r[2]]
-        pending = [r for r in rows if not r[2]]
         for name, paths, _o in orphaned:
             print(f"{name}\tORPHANED\t{','.join(paths[:4])}")
         if args.pending:
-            for name, paths, _o in pending:
-                print(f"{name}\tpending-review\t{','.join(paths[:4])}")
+            for name, paths, _o in (r for r in rows if not r[2]):
+                print(f"{name}\tlegacy-edit\t{','.join(paths[:4])}")
+        if cands:
+            print(f"-- {len(cands)} lesson(s) in project notes await promotion: once the "
+                  f"port's review has read them, put each in the skill on main where its "
+                  f"reader would look, then note `Promoted to <file> in <sha>.` under "
+                  f"its heading", file=sys.stderr)
         if orphaned:
-            print(f"-- {len(orphaned)} finished port(s) carry a global edit the trunk "
-                  f"does not have. Their branches are about to be deleted and nothing "
-                  f"will carry it: read each diff, then land it with the port",
-                  file=sys.stderr)
-        elif args.pending and pending:
-            print(f"-- {len(pending)} branch(es) carry a lesson awaiting their port's "
-                  f"review, which is where it belongs. Do NOT lift these to the trunk: "
-                  f"the review is what makes a lesson trustworthy",
-                  file=sys.stderr)
+            print(f"-- {len(orphaned)} finished port(s) carry a skill or tooling edit the "
+                  f"trunk does not have, from before port branches were limited to their "
+                  f"own folder. Read each diff and land what is still true when the "
+                  f"branch merges", file=sys.stderr)
     elif args.cmd == "misplaced":
         rows = misplaced_folders()
         for name, where, what, work in rows:
@@ -6278,4 +6323,6 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())
