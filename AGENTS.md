@@ -6,7 +6,7 @@ MOAT (Migration Orchestration via Automated Translation) is an AI-agent-driven e
 
 1. Work on `port/<name>` in this repository, never `main`. The branch holds `projects/<name>/` while work is in flight and its existence is the project claim. `MOAT_ALLOW_TRUNK=1` is only for control-plane work such as tooling or documentation.
 2. Run `bash utils/orient.sh` or invoke the `port-next` skill. It synchronizes state, performs standing upkeep (deliberately before platform detection, so a host with no working GPU still does it), detects the host platform, and prints the next project and role. If no project is local, `python3 utils/moatlib.py fleet <platform>` names actionable branches.
-3. Dispatch exactly the role reported by the selector: intake, planner, porter, reviewer, or validator. The role must read its canonical definition in `.claude/agents/<role>.md`, this file, the project records, and the `cuda-to-rocm` skill. State transitions gate every handoff; never skip one.
+3. Dispatch exactly the role reported by the selector: intake, planner, porter, reviewer, or validator. The role must read its canonical definition in `.claude/agents/<role>.md`, this file, the project records, and the `cuda-to-rocm` and `moat-porting` skills. State transitions gate every handoff; never skip one.
 4. Work autonomously inside the boundary below. Stop at a human decision or a genuine blocker.
 
 # Pipeline and durable state
@@ -37,6 +37,8 @@ A maintainer may decline the merge but adopt the fork by reference: close the PR
 
 A port may also have no upstream destination at all: the upstream repository is archived, so GitHub refuses any pull request. A person records that with `moatlib.py set-no-upstream <name> --evidence <URL> --by <who>`; `pr_ready` then refuses, the port leaves `pr-candidates`, and the fork's `moat-port` is the deliverable. Nothing freezes the branch and nothing watches upstream. The ruling stands in for the PR when deciding where the folder lives: with nothing outstanding the project is finished and its record merges to `main`, and a later `advance-head` re-homes it to `port/<name>`. Whether to also make `moat-port` the fork's GitHub default branch is that person's call; the recorded `fork_default_branch` stays the upstream mirror either way.
 
+A **release line** is for a project upstream will never take (NVIDIA-owned Warp, cuCIM): one MOAT project per upstream release (`scaffold --name warp-1.14 NVIDIA/warp --branch release-1.14`), each depending on the previous line, beside a development-line project. A person rules it with `set-delivery <name> fork-release --by <who>` and `set-fork-branch <name> release/1.14.0.amd0 --by <who>`. The fork's `fork_default_branch` is a pristine copy of upstream's release branch that only `moatlib.py mirror-branch` writes (fast-forward to upstream's SHAs, and it creates the port branch as an exact copy if absent; agents may run it). The porter works on `fork_branch` and the line ships buildable release wheels. Sign-off is an in-fork review PR into the pristine branch, never merged; `/moat approve` there authorizes `upstream.py --finish-release --apply`, which re-checks the approval and gates, tags the commit (`v1.14.0+rocm.0` by default), records the delivery, closes the review PR unmerged, and freezes the branch like a maintained one. Later upstream patch releases arrive as `sync-branch` rounds, and `--merge-fix` tags each as a release (`v1.14.1+rocm.0`); release tags are annotated with the approver and review PR. A release-line record is `schema_version` 4, which tooling from before release lines refuses to load (so it cannot publish one upstream): every host must `branch-sync` and re-run orient, whose `protect-fork` replaces older fork hooks, before touching a release line.
+
 Use `moatlib.project_record`, `all_projects`, or `fleet` from Python, or the CLI equivalents `show <name>`, `projects`, and `fleet <platform>`, when asking what MOAT knows; `pr-candidates` lists the ports whose upstream PR is ready to open, instead of scanning raw state. A project folder may live on another ref, so scanning the checked-out `projects/` directory alone can produce the opposite answer.
 
 # Human decisions and external writes
@@ -53,7 +55,7 @@ The following require a person's explicit decision:
 
 An upstream maintainer asking MOAT to stop is the one decision an agent may record directly with `utils/optout.py record`, because it is their decision and can only reduce work. Never argue or ask for a reason.
 
-Two upstream writes are pre-authorized, both on the same contract -- a person approved exactly this content on a fork review PR, and the tool rechecks the live approval and all gates before acting. `python3 utils/upstream.py --publish --apply` opens the upstream PR with the approved code, title, and body. `python3 utils/upstream.py --merge-fix --apply` fast-forwards an open PR's branch to an approved fix round's tip, and posts the approved reply when the fix review PR's body carries an `## Upstream reply` section. Do not reproduce either write with an ad-hoc `gh` command.
+Two upstream writes are pre-authorized, both on the same contract -- a person approved exactly this content on a fork review PR, and the tool rechecks the live approval and all gates before acting. `python3 utils/upstream.py --publish --apply --name <project>` opens that one project's upstream PR with the approved code, title, and body. `python3 utils/upstream.py --merge-fix --apply` fast-forwards an open PR's branch to an approved fix round's tip, and posts the approved reply when the fix review PR's body carries an `## Upstream reply` section. Do not reproduce either write with an ad-hoc `gh` command.
 
 `utils/gh_guard.py`, installed by `utils/install_hooks.py`, blocks obvious forbidden GitHub writes from either harness. It is defense in depth, not a substitute for scoped credentials. Do not bypass it, call the real `gh` binary, use `curl`, or otherwise route around a refusal. The trusted publisher resolves the real binary itself only after its approval checks pass.
 
@@ -62,13 +64,13 @@ For the full public-contribution and approval model, read `CONTRIBUTING.md` and 
 # Standing rules
 
 - Build the smallest complete port. Preserve upstream structure and the CUDA path; do not refactor unrelated code.
-- Use the `cuda-to-rocm` skill for strategy, fault classes, terminology, and validation methods. Promote a lesson there only when it helps a different project; project-specific facts stay in `notes.md`.
+- Use the `cuda-to-rocm` skill for strategy, fault classes, terminology, and validation methods, and the `moat-porting` skill for how MOAT records, gates, and carries that work forward. `cuda-to-rocm` is published outside MOAT, so it names no MOAT tool, record, or state; `utils/check.py skills` enforces that. Promote a lesson there only when it helps a different project; project-specific facts stay in `notes.md`.
 - Before touching code, read the project `status.json`, `plan.md`, and `notes.md`. Resume recorded work instead of rediscovering it.
 - Record exact commands, versions, pass/fail counts, and errors in `notes.md`. Do not record mutable fleet inventory.
 
 # MOAT repository synchronization
 
-This repository is shared by every host and harness. Pull before deciding and push each state transition promptly. `orient.sh` pulls the current project branch and merges relevant control-plane changes from the trunk. Route state and artifact writes through `moatlib`; prefer `python3 utils/moatlib.py commit-project <name> "<message>"`, which stages the project's status, plan, notes, surface, deferrals, and telemetry together and uses the synchronized commit/pull/push path. Do not implement a second synchronization path in a harness adapter.
+This repository is shared by every host and harness. Pull before deciding and push each state transition promptly. The tooling always runs from the trunk: every `utils/` entry point re-runs itself from an export of `origin/main` when the checkout's copy is not the trunk's (`utils/trunk.py`), and the pre-push hook runs the trunk's gates, so a port branch's own `utils/` never decides anything. A port branch changes only `projects/<name>/`; tooling, skills, agent definitions and shared data change on `main`, and the pre-push `branch-scope` gate refuses a port-branch commit outside the project folder. `orient.sh` pulls the current project branch and merges relevant control-plane changes from the trunk. Route state and artifact writes through `moatlib`; prefer `python3 utils/moatlib.py commit-project <name> "<message>"`, which stages the project's status, plan, notes, surface, deferrals, and telemetry together and uses the synchronized commit/pull/push path. Do not implement a second synchronization path in a harness adapter.
 
 `status.json` has the `moat-status` semantic merge driver; notes and telemetry use union merging, a git built-in wired in `.gitattributes`. Run `bash utils/setup_git.sh` in a fresh clone to register the driver; `orient.sh` does so on every run. If a push races, let `moatlib` retry its bounded synchronization. Do not resolve shared state by discarding another host's evidence.
 
@@ -78,7 +80,7 @@ Wrap build and test commands with `utils/timeit.sh <name> <phase> -- <command>` 
 
 # Where a lesson goes
 
-Capture project-specific evidence, recipes, and correspondence in `projects/<name>/notes.md`. Promote a lesson to the canonical `cuda-to-rocm` skill only when it would help someone porting a different project, and place it where a reader with that problem would look. Put the skill edit on the project branch that produced it so the same review judges the code and the lesson. Never lift an unreviewed lesson straight to `main`.
+Capture project-specific evidence, recipes, and correspondence in `projects/<name>/notes.md`. Promote a lesson to the canonical `cuda-to-rocm` skill only when it would help someone porting a different project, written for a reader who has never heard of MOAT, and place it where a reader with that problem would look. A lesson about MOAT's own pipeline, records, tools, or hosts goes to the `moat-porting` skill instead. Each skill is one organized reference on `main`. A port records a lesson in its `notes.md` under `## Lesson for cuda-to-rocm: <title>` (or `moat-porting`), where the port's review reads it with its evidence; after that review a trunk session promotes it into the right place in the skill, fitted to what is already there, and adds `Promoted to <file> in <sha>.` under the heading. `moatlib.py lessons` lists lessons awaiting promotion.
 
 # Scratch space
 
@@ -144,7 +146,8 @@ Deferred work belongs with the project that deferred it: use `utils/deferred.py 
 - `config/arches.toml`: required gates and wavefront-family mapping.
 - `schema/status.schema.json`: generated status schema.
 - `.claude/agents/`: canonical stage roles.
-- `.claude/skills/cuda-to-rocm/`: porting strategies, fault classes, and validation knowledge.
+- `.claude/skills/cuda-to-rocm/`: porting strategies, fault classes, and validation knowledge; MOAT-free, published as an AMD skill.
+- `.claude/skills/moat-porting/`: MOAT's recording, gating, and tool practice layered over `cuda-to-rocm`.
 - `.claude/skills/moat-checkup/`: approval, publication, maintainer rounds, and reconciliation.
 - `projects/<name>/`: status, plan, notes, surface accounting, deferrals, and telemetry.
 - `data/candidates.json`, `data/dispositions.json`, and `data/retired_stats.jsonl`: discovery decisions and retained telemetry.
