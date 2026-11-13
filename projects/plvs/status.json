@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-11-13T01:25:46Z",
+  "updated_at": "2026-11-13T01:40:34Z",
   "head_sha": "2362bb2d7dbf33e74f830b971bc29c96dc9d5012",
   "depends_on": [
     "opencv_contrib"
@@ -200,7 +200,7 @@
   },
   "pr_url": "https://github.com/luigifreda/plvs/pull/60",
   "pr_number": 60,
-  "pr_opened_at": "2026-11-13T01:25:46Z",
+  "pr_opened_at": "2026-11-13T01:40:33Z",
   "pr_state": "open",
   "published_sha": "2362bb2d7dbf33e74f830b971bc29c96dc9d5012"
 }
