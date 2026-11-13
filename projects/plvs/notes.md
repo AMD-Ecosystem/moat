@@ -3987,3 +3987,90 @@ Not rerun: libelas-gpu is unchanged since 5a0a83c (and since fde33e5 in code); s
 
 ### Result
 windows-gfx1151: `revalidate` -> `completed` at eb1b369.
+
+## Squash Test Plan check (elas_leak) 2026-11-12 (linux-gfx1100, no role, no state change)
+
+Requested by jeff: before the approved PR-prep squash is force-pushed, show that the `elas_leak.cpp` inlined in squashed commit 1's Test Plan compiles and runs. Host: Radeon Pro W7800 (gfx1100, wave32), `HIP_VISIBLE_DEVICES=1` (dispatcher pin, kept; the device was idle, 0.0 GB VRAM in use before the runs), TheRock pip SDK amdclang++ 24.0.0git (`d6f6cb69`), CMake from the job venv. Every GPU run used `ulimit -c 0` (core_pattern is apport, so the shell still prints "(core dumped)" on a segfault, but no core file was written).
+
+### Trees
+- fixed: fresh clone of AMD-Ecosystem/plvs at `eb1b369`.
+- before: `git worktree add --detach ../before eb1b369` followed by `git checkout fde33e5^ -- Thirdparty/libelas-gpu`. The only staged difference is `Thirdparty/libelas-gpu/GPU/elas_gpu.cu` (+2/-1), the fde33e5 change reversed. libelas-gpu is otherwise unchanged since then.
+
+### Test Plan run literally
+From each tree's root. The one difference: I set `CMAKE_BUILD_PARALLEL_LEVEL=8` in the environment of `cmake --build` (this is a shared host). Results:
+- `cmake -S ... -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release` and `cmake --build`: RC=0 on both trees, producing `Thirdparty/libelas-gpu/lib/liblibelas_gpu.a`. This standalone build defaults to `-march=native`, unlike the plvs build's `-DBUILD_WITH_MARCH_NATIVE=OFF`. That does not matter for this check.
+- The heredoc `elas_leak.cpp`, built with the plan's `amdclang++` line, **compiles**: RC=0 with 2 warnings, one each for the `[[nodiscard]]` result of `hipDeviceSynchronize` and `hipMemGetInfo` (`-Wunused-value`).
+- `./elas_leak Thirdparty/libelas-gpu/input/aloe 20` and `.../cones 20` **segfault (RC=139) on both trees before any GPU call**. gdb: `SIGSEGV in libelas::loadPGM(char const*) <- main`. Cause: the bundled PGMs put the whole header on one line (`P5 1282 1110 255\n`, checked with `od -c`). Upstream's `pnm_read` in `CPU/image.h` reads with `getline`, so the first read takes the entire header line, the `P5` check passes, and the next reads parse width and height out of pixel data. `main_gpu.cpp` and the other bundled mains call the same `loadPGM`. This is upstream code that the port does not touch. Earlier harnesses (porter, reviewer `plvs-r3`) used their own PGM readers, which is why they ran.
+
+So the Test Plan as written does not run. The library and measurement logic are fine; only the image loading is broken.
+
+### Corrected program (replaces the heredoc in commit 1's Test Plan)
+Only the loader changed: a local `readPGM` replaces `image.h`/`loadPGM`, std::vector replaces malloc, and `(void)` silences the two nodiscard warnings. The loop, parameters and measurement are unchanged.
+
+```
+cat > elas_leak.cpp <<'EOF2'
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <string>
+#include <vector>
+#include "elas_gpu.h"
+using namespace libelas;
+static std::vector<uint8_t> readPGM(const std::string& name, int32_t& w, int32_t& h) {
+  std::ifstream f(name, std::ios::binary);
+  std::string magic;
+  int maxval;
+  f >> magic >> w >> h >> maxval;
+  f.get();
+  std::vector<uint8_t> px(w * h);
+  f.read((char*)px.data(), px.size());
+  if (magic != "P5" || maxval > 255 || !f) { fprintf(stderr, "cannot read %s\n", name.c_str()); exit(1); }
+  return px;
+}
+int main(int argc, char** argv) {
+  std::string base = argv[1];
+  int calls = atoi(argv[2]) + 1;
+  int32_t w, h, w2, h2;
+  std::vector<uint8_t> I1 = readPGM(base + "_left.pgm", w, h);
+  std::vector<uint8_t> I2 = readPGM(base + "_right.pgm", w2, h2);
+  const int32_t dims[3] = {w, h, w};
+  std::vector<float> D1(w * h), D2(w * h);
+  Elas::Parameters param;
+  param.postprocess_only_left = true;
+  size_t free0 = 0, free1, total;
+  int pending = 0;
+  for (int i = 0; i < calls; i++) {
+    ElasGPU elas(param);
+    elas.process(I1.data(), I2.data(), D1.data(), D2.data(), dims);
+    (void)hipDeviceSynchronize();
+    if (hipGetLastError() != hipSuccess) pending++;
+    (void)hipMemGetInfo(&free1, &total);
+    if (i == 0) free0 = free1;
+  }
+  printf("lost %.2f MB after the first call, %d of %d calls left an error pending\n", (free0 - free1) / 1048576.0, pending, calls);
+  return 0;
+}
+EOF2
+```
+
+(In the commit message, the heredoc delimiter can go back to `EOF`. It is `EOF2` here only because this notes section was appended through an `EOF` heredoc.) The cmake, amdclang++ and run lines from the Test Plan stay exactly as they are:
+
+```
+cmake -S Thirdparty/libelas-gpu -B Thirdparty/libelas-gpu/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release
+cmake --build Thirdparty/libelas-gpu/build
+amdclang++ -x hip --offload-arch=gfx1100 -std=c++17 -O2 -DUSE_HIP -IThirdparty/libelas-gpu/CPU -IThirdparty/libelas-gpu/GPU elas_leak.cpp -x none Thirdparty/libelas-gpu/lib/liblibelas_gpu.a -pthread -o elas_leak
+./elas_leak Thirdparty/libelas-gpu/input/aloe 20
+./elas_leak Thirdparty/libelas-gpu/input/cones 20
+```
+
+### Results with the corrected program (compile RC=0, no warnings; every run RC=0)
+Exact output lines:
+- before (fde33e5^ libelas-gpu), aloe: `lost 80.00 MB after the first call, 21 of 21 calls left an error pending` (run twice, identical)
+- before, cones: `lost 26.00 MB after the first call, 21 of 21 calls left an error pending`
+- fixed (eb1b369), aloe: `lost 0.00 MB after the first call, 0 of 21 calls left an error pending` (run twice, identical)
+- fixed, cones: `lost 0.00 MB after the first call, 0 of 21 calls left an error pending`
+
+The program measures what the Test Plan prose claims. Free memory is sampled after call 1 and after call 21, so the loss covers 20 calls with warm-up excluded. The pending-error count is checked after every one of the 21 calls. The numbers match the plan's "Before: 80 MB ... (26 MB on cones), an error pending after every call. After: 0.00 MB lost and no pending error", and the 2026-11-05 gfx1100/gfx90a/gfx942 records. The prose can stay as is. One optional wording fix: "an error pending after every call" could read "an error pending after each of the 21 calls", to match the output.
+
+Artifacts (job dir, not committed): `elas/{fixed,before}`, `elas/elas_leak.cpp` (original), `elas/elas_leak2.cpp` (corrected), `elas/run-*.log`.
