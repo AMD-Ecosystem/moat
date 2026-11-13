@@ -1,0 +1,34 @@
+{
+  "schema_version": 3,
+  "name": "ktransformers",
+  "upstream_url": "https://github.com/kvcache-ai/ktransformers",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T00:15:35Z",
+  "updated_at": "2026-11-06T00:46:09Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/kvcache-ai/ktransformers/blob/main/LICENSE",
+      "at": "2026-11-06T00:46:05Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream maintainer-owned ROCm backend in kt-kernel; SGLang ROCm upstream",
+    "viable": true,
+    "summary": "CPU/GPU hybrid MoE inference; live kt-kernel path already has upstream ROCm (CPUINFER_USE_ROCM, HIP shim, ROCm.md) and GPU side is SGLang (already-supported); the .cu is archived/unused",
+    "at": "2026-11-06T00:46:08Z"
+  }
+}

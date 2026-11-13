@@ -304,6 +304,57 @@ def build():
                     "reason": {"type": "string"},
                 },
             },
+            # A person's ruling that the port lives on a fork branch other than
+            # moat-port (a release line's release/<version>.amd<rev>). fork_branch
+            # carries the value; this records who changed it, from what, and why.
+            "fork_branch_ruling": {
+                "type": ["object", "null"],
+                "required": ["branch", "by", "at"],
+                "properties": {
+                    "branch": {"type": "string", "minLength": 1},
+                    "previous": {"type": ["string", "null"]},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
+            # A person's ruling on how the port is delivered when it is not an
+            # upstream PR. fork-release makes the project a release line: the
+            # review PR runs from fork_branch into the pristine mirror
+            # fork_default_branch, and approval tags and freezes the branch
+            # (`upstream.py --finish-release`) instead of publishing.
+            "delivery": {
+                "type": ["object", "null"],
+                "required": ["mode", "by", "at"],
+                "properties": {
+                    "mode": {"enum": list(m.DELIVERY_MODES)},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "tag_format": {"type": "string", "minLength": 1},
+                    "reason": {"type": "string"},
+                },
+            },
+            # A delivered release line: the tag pushed at the approved commit, and
+            # the sign-off it rests on. From here the port branch is frozen and
+            # later upstream patch releases arrive as sync rounds.
+            "release": {
+                "type": ["object", "null"],
+                "required": ["tag", "sha", "at"],
+                "properties": {
+                    "tag": {"type": "string", "minLength": 1},
+                    "sha": {"type": "string", "minLength": 1},
+                    "review_pr": {"type": ["string", "null"]},
+                    "approved_by": {"type": "string"},
+                    "at": {"type": "string"},
+                    # The upstream version and revision the tag names, so the
+                    # next patch sync is numbered from them.
+                    "version": {"type": "string"},
+                    "rev": {"type": "integer"},
+                    "review_closed_at": {"type": "string"},
+                    # Earlier releases of this line, oldest first.
+                    "history": {"type": "array", "items": {"type": "object"}},
+                },
+            },
             # The review PR on our own fork: where a maintainer sees the code, title
             # and body together, and approves once.
             "review_pr": {"type": "string"},
@@ -419,4 +470,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())

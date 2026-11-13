@@ -73,7 +73,8 @@ Two checks that are per-file, not top-level:
   to compete with it.
 - For the finer judgement -- is an existing port authoritative, and does that make the
   work "validate and improve" rather than "port from scratch" -- read the
-  `cuda-to-rocm` skill's `references/assess-existing-support.md`.
+  `cuda-to-rocm` skill's `references/assess-existing-support.md`, plus the `moat-porting` skill's
+  dispositions section.
 
 If a mature AMD port exists, recommend a decline with reason `already-supported`
 (`set-intake --reason`, see Outcomes) -- the skip itself is a person's, recorded through
@@ -85,6 +86,14 @@ a coordination question, not a race.
 Cheap checks only. Deep analysis is the planner's job.
 
 - Does it genuinely use CUDA? (`.cu`/`.cuh`, CUDA libraries, a compiled extension)
+  A candidate tagged `lane: validate` (seeded, no CUDA source) is in scope anyway:
+  the work is to build it on ROCm, fix what packaging needs (setup.py, extras,
+  wheel pins), run its GPU tests, and send upstream a docs change stating ROCm
+  support. Record its GPU dependencies (flash-attn, onnxruntime-gpu, cuDF, ...)
+  with `set-deps`; that is usually what decides whether it works.
+- A candidate tagged `nvidia-org` has no upstream PR to offer, and may still be
+  ported, but only on a licence that is clean file by file: run
+  `utils/licenses.py scan-nvidia` on a clone and read every hit.
 - Does it depend on other MOAT projects? Record with `moatlib.py set-deps`.
 - Is upstream archived or abandoned? **Note it, do not block on it.** An archived
   upstream cannot accept a pull request, so the port has no upstream destination --
