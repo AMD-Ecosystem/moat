@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """MOAT control-plane library: schema, per-platform state machine, cross-platform
 gating + regression guard, validated status.json writes, and the single
 git-sync write path. Also a small CLI used by orient.sh and the agents.
@@ -7,6 +9,7 @@ status.json is the source of truth. The three AMD targets share one fork branch,
 so any HEAD advance re-validates the platforms that already passed (see
 advance_head). State transitions are validated; illegal jumps raise."""
 
+import os
 import argparse
 import collections
 import hashlib
@@ -18,7 +21,10 @@ import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
 PROJECTS = REPO_ROOT / "projects"
 SCHEMA_VERSION = 3
 # Records are migrated in place, one ref at a time, so a checkout must not refuse the
@@ -29,20 +35,30 @@ SCHEMA_VERSION = 3
 # 3 is a real break rather than an addition: `revalidate` became a `completed` block
 # whose validated_sha is not the head, so a version-2 reader would see that block and
 # conclude the arch is up to date on code it has never run.
-READABLE_SCHEMA_VERSIONS = (2, 3)
+#
+# 4 marks a RELEASE LINE record (set_delivery writes it, and only there): such a
+# project must never be offered upstream, and tooling from before release lines
+# ignores the `delivery` field it does not know -- its --publish would open a real
+# upstream PR on the line's approval. Its load_status rejects version 4, and every
+# publish route snapshots the approval through load_status before it opens
+# anything, so old tooling fails closed on these records instead. Ordinary records
+# stay at SCHEMA_VERSION; nothing migrates them.
+RELEASE_SCHEMA_VERSION = 4
+READABLE_SCHEMA_VERSIONS = (2, 3, 4)
 
 def _load_arches():
     """config/arches.toml is the single source of truth for gates.
 
     It defines RULES, not a roster: which gates are required, which may be waived,
     and how a wavefront width follows from an architecture family."""
-    with open(REPO_ROOT / "config" / "arches.toml", "rb") as f:
+    with open(TOOLS_ROOT / "config" / "arches.toml", "rb") as f:
         cfg = tomllib.load(f)
     waves = {fam: gate for gate, fams in cfg["wave"].items() for fam in fams}
-    return waves, cfg["gates"]["required"], set(cfg["gates"].get("waivable", []))
+    return (waves, cfg["gates"]["required"], set(cfg["gates"].get("waivable", [])),
+            set((cfg.get("offline") or {}).get("platforms", [])))
 
 
-WAVE_BY_FAMILY, REQUIRED_GATES, WAIVABLE_GATES = _load_arches()
+WAVE_BY_FAMILY, REQUIRED_GATES, WAIVABLE_GATES, OFFLINE_PLATFORMS = _load_arches()
 
 # A platform is an architecture on an operating system. Any host that reports a GPU
 # has one, so this validates the FORM rather than checking membership of a list --
@@ -99,6 +115,130 @@ def validations(obj):
 
 
 PORT_BRANCH = "moat-port"  # the topic branch that holds the port on each fork
+
+
+def upstream_visible_branch(obj):
+    """The fork branch whose commit messages the maintainer will actually read.
+
+    Normally `moat-port`. But while a fix round is staged, it is the round's staging
+    branch: `upstream.py --merge-fix` fast-forwards the open pull request's branch to
+    exactly that tip, so the round's commits become the published ones. Judging
+    `moat-port` during a round inspects only the tip that is already published and
+    silently passes the very commits the round is adding -- a gate that reports clean
+    while looking at the wrong branch is worse than no gate.
+
+    `fix` is cleared when a round merges (see set_fix_merged), so this falls back to
+    the port branch on its own once the round is over.
+    """
+    fix = obj.get("fix") or {}
+    return fix.get("branch") or obj.get("fork_branch") or PORT_BRANCH
+
+
+# How a finished port is delivered when it is not an upstream pull request. The one
+# mode so far is a RELEASE LINE: upstream will never take the port (NVIDIA-owned
+# projects such as Warp and cuCIM), so each upstream release gets its own MOAT
+# project whose deliverable is a branch MOAT owns in the fork. The fork carries a
+# pristine copy of upstream's release branch under upstream's name and SHAs (the
+# recorded fork_default_branch, which is also the review base), the port branch
+# (fork_branch, e.g. `release/1.14.0.amd0`) starts as an exact copy of it, and a
+# person's `/moat approve` on the in-fork review PR leads to a tag and a freeze
+# instead of an upstream publish (`upstream.py --finish-release`).
+DELIVERY_MODES = ("fork-release",)
+# `release/1.14.0.amd0` -> version 1.14.0, revision 0 -> tag v1.14.0+rocm.0. The
+# format is per project (set-delivery --tag-format) because naming is the release
+# owner's call; the default is the convention the first release lines were given.
+DEFAULT_RELEASE_TAG_FORMAT = "v{version}+rocm.{rev}"
+_RELEASE_BRANCH_RE = re.compile(r"(\d+(?:\.\d+)*)\.amd(\d+)$")
+_TAG_FIELDS = ("version", "rev", "name", "branch")
+
+
+def release_line(obj):
+    """Is this project a release line (delivered as a tagged fork branch, never an
+    upstream PR)?"""
+    return ((obj or {}).get("delivery") or {}).get("mode") == "fork-release"
+
+
+def release_delivered(obj):
+    """Has this release line been signed off, tagged and frozen? From then on its
+    port branch is a public fixed point exactly like a maintained branch: it moves
+    only through sync rounds (sync_branch) and the approved merge."""
+    return bool(release_line(obj) and (obj or {}).get("release"))
+
+
+def tag_format_fields(fmt):
+    """The fields a tag format names, or ValueError. Parsed with the same
+    machinery str.format uses, so what passes here cannot raise there: only bare
+    fields from _TAG_FIELDS, no conversion, format spec, attribute or index, and
+    no stray brace."""
+    import string
+    used = set()
+    try:
+        parsed = list(string.Formatter().parse(fmt))
+    except ValueError as e:
+        raise ValueError(f"tag format {fmt!r} does not parse: {e}")
+    for _lit, field, spec, conv in parsed:
+        if field is None:
+            continue
+        if field not in _TAG_FIELDS or spec or conv:
+            raise ValueError(f"tag format {fmt!r}: {{{field}"
+                             + (f"!{conv}" if conv else "")
+                             + (f":{spec}" if spec else "")
+                             + f"}} is not one of the plain fields "
+                               f"{', '.join('{' + f + '}' for f in _TAG_FIELDS)}")
+        used.add(field)
+    return used
+
+
+def branch_release_version(obj):
+    """(version, rev) from a fork_branch ending in <version>.amd<rev>, or None."""
+    m = _RELEASE_BRANCH_RE.search(obj.get("fork_branch") or "")
+    return (m.group(1), int(m.group(2))) if m else None
+
+
+def release_tag(obj, tag_format=None, version=None, rev=None):
+    """The tag a release line's approved commit gets. Raises ValueError when the
+    format names a field the record cannot supply, so a bad format is refused when
+    a person records it rather than when the approved release is being finished.
+    `version`/`rev` override what the port branch name says: a patch sync names
+    the upstream version it absorbed (release_sync_tag)."""
+    fmt = tag_format or (obj.get("delivery") or {}).get("tag_format") \
+        or DEFAULT_RELEASE_TAG_FORMAT
+    used = tag_format_fields(fmt)
+    branch = obj.get("fork_branch") or ""
+    fields = {"name": obj.get("name") or "", "branch": branch}
+    if used & {"version", "rev"}:
+        derived = branch_release_version(obj)
+        if not derived and (version is None or rev is None):
+            raise ValueError(
+                f"tag format {fmt!r} derives {{version}}/{{rev}} from fork_branch, "
+                f"and {branch or '(unset)'!r} does not end in <version>.amd<rev> "
+                f"(e.g. release/1.14.0.amd0) -- record the port branch first "
+                f"(set-fork-branch), or give a format without those fields")
+        fields.update(version=version if version is not None else derived[0],
+                      rev=str(rev if rev is not None else derived[1]))
+    tag = fmt.format(**fields)
+    if not valid_ref_name(f"refs/tags/{tag}"):
+        raise ValueError(f"tag {tag!r} (from {fmt!r}) is not a valid git tag name")
+    return tag
+
+
+def valid_ref_name(ref):
+    """git's own answer to whether `ref` is a legal ref name. Asked of git rather
+    than re-implemented, because the rules (no `..`, no `@{`, no trailing `.lock`,
+    ...) are git's and a home-grown subset is how a branch nobody can push gets
+    recorded."""
+    r = subprocess.run(["git", "check-ref-format", ref], capture_output=True)
+    return r.returncode == 0
+
+
+def default_fork_slug(obj, org="AMD-Ecosystem"):
+    """`owner/repo` of the fork when none is recorded: the organization's fork
+    carries the UPSTREAM repository's name, not the project's. They used to be
+    assumed equal, which a release line breaks by construction -- `warp-1.14` is a
+    project against NVIDIA/warp whose fork is AMD-Ecosystem/warp."""
+    url = (obj.get("upstream_url") or "").rstrip("/").removesuffix(".git")
+    repo = url.rsplit("/", 1)[-1] if "/" in url else ""
+    return f"{org}/{repo or obj.get('name')}"
 
 # Where the PORT is. One fork, one answer, so this is a property of the project and
 # never of an architecture -- there is no such thing as "screened on gfx90a".
@@ -357,24 +497,42 @@ def status_path(name):
 
 
 def load_status(name):
-    """A project's record. Reads the working tree first, then falls back to the refs.
+    """A project's record, resolved in project_record's order: the project's own
+    branch, then the working tree, then the trunk.
 
-    The fallback exists because 29 call sites take a project name and expect a
-    record, and after the migration an in-flight project's folder is on its own
-    branch rather than in this checkout. Making each caller resolve separately is how
-    a few of them silently answer "not adopted" instead."""
+    The fallback beyond the working tree exists because 29 call sites take a project
+    name and expect a record, and after the migration an in-flight project's folder
+    is on its own branch rather than in this checkout. Making each caller resolve
+    separately is how a few of them silently answer "not adopted" instead.
+
+    The branch wins over the working tree AND the trunk for project_record's colmap
+    reason: an in-flight project is worked on its branch, a re-home cannot delete the
+    copy the protected trunk still carries, and any checkout cut from the trunk
+    carries that stale copy as a perfectly ordinary local file. Reading local-or-
+    trunk first is how popsift's merge-fix saw a record with no fix round in it and
+    refused an approval that was standing -- the round listing (project_record) said
+    READY while this function said there was nothing to approve. Being ON the
+    project's branch is not a special case: the working tree IS the branch then, so
+    the local read is both correct and cheaper."""
     p = status_path(name)
+    if current_branch() != f"port/{name}":
+        branch = port_branch_of(name)
+        if branch:
+            raw = _ref_read(f"origin/{branch}", f"projects/{name}/status.json")
+            if raw:
+                obj = json.loads(raw)
+                validate_status(obj)
+                return obj
     if p.exists():
         with open(p) as f:
             obj = json.load(f)
         validate_status(obj)
         return obj
-    for ref in ("origin/main", f"origin/port/{name}"):
-        raw = _ref_read(ref, f"projects/{name}/status.json")
-        if raw:
-            obj = json.loads(raw)
-            validate_status(obj)
-            return obj
+    raw = _ref_read("origin/main", f"projects/{name}/status.json")
+    if raw:
+        obj = json.loads(raw)
+        validate_status(obj)
+        return obj
     raise FileNotFoundError(str(p))
 
 
@@ -410,12 +568,24 @@ def upstream_full_name(name):
 def save_status(name, obj):
     # Writing a project whose record lives on another branch would create a second
     # copy here and diverge from the one being worked. Say where it lives instead.
+    # The port-branch check does not care whether this checkout carries a local copy:
+    # a checkout cut from the trunk carries the pre-re-home file as an ordinary
+    # stale local, and writing it is how a work-lock commit for one project ends up
+    # stranded on another project's branch. port_branch_of also catches a branch
+    # whose spelling differs in case, which the literal used to miss.
+    if current_branch() != f"port/{name}":
+        branch = port_branch_of(name)
+        if branch and _ref_read(f"origin/{branch}", f"projects/{name}/status.json"):
+            raise RuntimeError(
+                f"{name}'s record is being worked on origin/{branch}"
+                + ("" if not status_path(name).exists() else
+                   f", and this checkout's projects/{name} is a stale pre-re-home copy")
+                + ". Check out that branch to write it.")
     if not status_path(name).exists():
-        for ref in ("origin/main", f"origin/port/{name}"):
-            if _ref_read(ref, f"projects/{name}/status.json"):
-                raise RuntimeError(
-                    f"{name} is not in this checkout -- its record is on {ref}. "
-                    f"Check out that branch to write it.")
+        if _ref_read("origin/main", f"projects/{name}/status.json"):
+            raise RuntimeError(
+                f"{name} is not in this checkout -- its record is on origin/main. "
+                f"Check out the trunk to write it.")
     validate_status(obj)
     stale = check_against_trunk(obj)
     if stale:
@@ -564,6 +734,14 @@ def validate_status(obj):
             raise ValueError(f"status.json missing required key: {k}")
     if obj["schema_version"] not in READABLE_SCHEMA_VERSIONS:
         raise ValueError(f"unsupported schema_version: {obj['schema_version']}")
+    # The pairing is the point of version 4 (see RELEASE_SCHEMA_VERSION): a
+    # release-line record readable by tooling that would publish it is the hazard.
+    if obj.get("delivery") and obj["schema_version"] != RELEASE_SCHEMA_VERSION:
+        raise ValueError(f"a record with a delivery ruling must be schema_version "
+                         f"{RELEASE_SCHEMA_VERSION}, not {obj['schema_version']}")
+    if obj["schema_version"] == RELEASE_SCHEMA_VERSION and not obj.get("delivery"):
+        raise ValueError(f"schema_version {RELEASE_SCHEMA_VERSION} is only for "
+                         f"release-line records (a delivery ruling)")
     if "stage" in obj and obj["stage"] not in STAGE_STATES:
         raise ValueError(f"invalid stage: {obj['stage']!r}")
     # A verdict nobody signed satisfies nothing, so the stage cannot stand without one.
@@ -696,6 +874,13 @@ def set_state(name, platform, new_state, agent=None, save=True):
                    and not same_commit(
                        (obj["platforms"].get(platform) or {}).get("validated_sha"),
                        obj.get("head_sha")))
+    # Its mirror: a `validation-failed` arch failing a NEWER head. failure_stands reads
+    # an old failed_sha as stale and derives `port-ready`, so short-circuiting here left
+    # the new failure unrecorded and sent the next validator to the same head again.
+    refailed = (not is_stage and new_state == cur == "validation-failed"
+                and not same_commit(
+                    (obj["platforms"].get(platform) or {}).get("failed_sha"),
+                    obj.get("head_sha")))
     # The other same-state call that is not a no-op: entering an exclusive stage the
     # project is ALREADY in while holding no lock. That is the ordinary case of picking
     # up work another host put down, and it is the half the exclusivity check above does
@@ -710,7 +895,7 @@ def set_state(name, platform, new_state, agent=None, save=True):
     acquires = (new_state in EXCLUSIVE_STAGES
                 and (obj.get("porting") or {}).get("arch") != platform)
     same = new_state == cur
-    if same and not (revalidated or acquires):
+    if same and not (revalidated or refailed or acquires):
         return obj
     table = STAGE_TRANSITIONS if is_stage else ARCH_TRANSITIONS
     # Reached only when the state really changes, or when one of the cases above
@@ -922,7 +1107,8 @@ def fetch_review_pr(url):
     neither is available from `gh pr view` alone -- see pr_approval_valid for why
     they, rather than anything we record ourselves, are what the gate rests on."""
     pr = _gh_json("pr", "view", url, "--json",
-                  "title,body,headRefOid,state,reviewDecision,url")
+                  "title,body,headRefOid,headRefName,baseRefName,state,"
+                  "reviewDecision,url")
     if pr is None:
         return None
     slug, num = _pr_ref(pr.get("url") or url)
@@ -1319,7 +1505,7 @@ def license_tier(name, obj=None):
     we know about X" question -- load_status prefers the working tree, which let a
     stale trunk-era copy shadow a licence recorded on the project's own branch.
     Pass `obj` when the caller already holds the record, so both judge the same one."""
-    sys.path.insert(0, str(REPO_ROOT / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import licenses
     if obj is None:
         obj, _where = project_record(name)
@@ -1481,6 +1667,30 @@ def pending_waivers():
     return sorted(out)
 
 
+def set_license_spdx(name, spdx, evidence):
+    """Record or correct the project's licence as a fact read from the repository.
+
+    Reading a licence is a fact any agent may establish (see license_gate); until now
+    the only way to change it after intake was a hand edit, which AGENTS.md forbids.
+    TornadoVM was recorded with a stale identifier. A change of tier can loosen the
+    licence gate, so the record keeps the previous value and the evidence URL, and a
+    tier 3/4 result still needs a person's clearance exactly as before."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if not evidence or not evidence.startswith("https://"):
+        raise ValueError(f"{name}: --evidence must be a URL to the licence file")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    old = obj.get("license_spdx")
+    obj["license_spdx"] = spdx
+    obj.setdefault("license_spdx_history", []).append(
+        {"from": old, "to": spdx, "evidence": evidence, "at": now_iso()})
+    save_record(name, obj, f"{name}: licence {old} -> {spdx} ({evidence})")
+    return old
+
+
 def record_license_clearance(name, approved_by, note=None):
     """Record a person's decision to allow a tier 3/4 project upstream."""
     obj = load_status(name)
@@ -1516,7 +1726,12 @@ def set_review_pr(name, url):
                 f"where a person approves the FINISHED port, and their approval on it "
                 f"opens the upstream PR. Finish the gates, then "
                 f"`upstream.py --review --apply --name {name}` opens and records it.")
-    obj["review_pr"] = url or None
+    if url:
+        obj["review_pr"] = url
+    else:
+        # Absent, not null: the schema types this field as a string and the
+        # status merge driver drops a null sticky field anyway.
+        obj.pop("review_pr", None)
     save_record(name, obj, f"{name}: review PR "
                            + (f"recorded -- {url}" if url else "cleared"))
     return obj
@@ -1528,8 +1743,21 @@ def set_review_pr(name, url):
 # standing anywhere else used to fail, which is how the documented submission command
 # could not submit.
 def set_pr_open(name, pr_url, pr_number):
-    """Record the upstream PR. Project-level: it changes nothing an arch validated."""
+    """Record the upstream PR. Project-level: it changes nothing an arch validated.
+
+    Refuses to overwrite a DIFFERENT PR already recorded: an open one is the
+    one-PR-at-a-time rule, and a finished one is history a follow-up archives
+    (archive_pr), never clobbers. Re-recording the same number is idempotent
+    recovery and allowed."""
     obj = load_status(name)
+    cur_state, cur_num = obj.get("pr_state"), obj.get("pr_number")
+    if cur_state and cur_num and int(pr_number) != int(cur_num):
+        raise ValueError(
+            f"{name}: PR #{cur_num} is already recorded as {cur_state} -- "
+            + ("one open PR at a time; an open PR changes through the fix flow"
+               if cur_state == "open" else
+               f"archive it first (`moatlib.py archive-pr {name}`) so the finished "
+               f"round becomes history instead of being overwritten"))
     obj["pr_url"] = _clean_pr_url(pr_url)
     obj["pr_number"] = int(pr_number)
     obj["pr_opened_at"] = now_iso()
@@ -1567,8 +1795,949 @@ def set_pr_closed(name, note=None):
     return obj
 
 
+def set_maintained(name, evidence, by, note=None, clear=False):
+    """Record a person's ruling that upstream adopted the fork BY REFERENCE: the
+    maintainer declined to merge the port but points their users at the fork's
+    port branch instead (aihwkit is the origin case -- IBM closed #770 and added
+    a README section naming the fork's branch as the way to run on AMD GPUs).
+    That makes the branch a public long-lived deliverable rather than a closed
+    PR's leftovers, and the ruling changes three behaviors at once: pr_ready
+    refuses, so no follow-up PR re-offers what a maintainer declined; the fork
+    pre-push hook keeps refusing direct pushes to the branch exactly as it does
+    under an open PR, because a branch people are told to clone is just as
+    upstream-visible; and the drift sweep (`upstream.py --drift`) starts watching
+    upstream for conflicts with the port. Later work lands through SYNC rounds
+    (sync_branch), which ride the fix-round machinery end to end.
+
+    A person's ruling, like a waiver or a clearance: `by` is required and never
+    defaulted, and `evidence` names where upstream says so (the README section,
+    the closing comment). If the record still calls the PR open, the live PR is
+    consulted rather than trusted: the maintainer who closed it and pointed at
+    the fork did both on GitHub, so their closure is recorded with the ruling --
+    one decision, one command -- instead of demanding a second write first.
+    --clear withdraws the ruling (upstream merged the port after all, or changed
+    their mind)."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if clear:
+        if not obj.get("maintained"):
+            raise ValueError(f"{name}: no maintained ruling recorded")
+        ok, why = record_writable_here(name)
+        if not ok:
+            raise ValueError(why)
+        obj.pop("maintained", None)
+        save_record(name, obj, f"{name}: maintained-fork ruling cleared by {by}")
+        return obj
+    if not evidence:
+        raise ValueError(f"{name}: evidence is required -- name where upstream "
+                         f"points at the fork (README section, closing comment)")
+    if obj.get("fix"):
+        raise ValueError(f"{name}: a round is still recorded on "
+                         f"{obj['fix'].get('branch')!r} -- a person sorts that "
+                         f"out before ruling the fork maintained")
+    # In flight again, indefinitely: the same re-home rule as fix_branch, for the
+    # same reason -- sync rounds write records, and a post-PR record is usually
+    # trunk-resident.
+    moved, why = ensure_port_branch(name)
+    if moved:
+        print(why, file=sys.stderr)
+        obj, _where = project_record(name)
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    st = obj.get("pr_state")
+    if st == "open":
+        # The ruling implies the PR ended; ask GitHub rather than a stale record.
+        repo, num = _pr_ref(obj.get("pr_url"))
+        if not repo:
+            raise ValueError(f"{name}: pr_state is open and there is no usable "
+                             f"pr_url to verify against")
+        live = _gh_json("pr", "view", num, "--repo", repo,
+                        "--json", "state,closedAt")
+        if not live or not live.get("state"):
+            raise ValueError(f"{name}: cannot read {repo}#{num} to confirm the "
+                             f"PR ended -- an outage is not a closure; retry "
+                             f"when GitHub is reachable")
+        if live["state"] == "MERGED":
+            raise ValueError(f"{name}: {repo}#{num} MERGED -- record that "
+                             f"(set-pr-merged) instead; maintained-by-reference "
+                             f"is for a port upstream declined to merge")
+        if live["state"] != "CLOSED":
+            raise ValueError(f"{name}: {repo}#{num} is still open on GitHub -- "
+                             f"a maintained ruling contradicts a live PR; the "
+                             f"normal PR flow covers it")
+        obj["pr_state"] = "closed"
+        obj["pr_closed_at"] = live.get("closedAt") or now_iso()
+        obj["pr_closed_note"] = (note or "upstream adopted the fork by "
+                                         f"reference: {evidence}")
+    elif st == "merged":
+        raise ValueError(f"{name}: the upstream PR merged -- the port lives "
+                         f"upstream and the fork is not the source of support")
+    elif st != "closed":
+        raise ValueError(f"{name}: no finished upstream PR recorded "
+                         f"(pr_state={st!r}) -- the ruling records how a PR "
+                         f"ended, and none did")
+    obj["maintained"] = {"evidence": evidence, "by": by, "at": now_iso()}
+    if note:
+        obj["maintained"]["note"] = note
+    save_record(name, obj,
+                f"{name}: fork ruled MAINTAINED by {by} -- upstream points at "
+                f"{obj.get('fork_branch') or PORT_BRANCH} ({evidence})")
+    return obj
+
+
+def set_no_upstream(name, evidence, by, note=None, clear=False):
+    """Record a person's ruling that this port has NO UPSTREAM DESTINATION: the
+    upstream repository is archived (read-only) or otherwise cannot take a pull
+    request, so the fork's port branch is the deliverable and stays one. dietgpu
+    is the origin case -- facebookresearch/dietgpu was archived after the port
+    was validated, and the port sat on the ready-to-open list for a PR GitHub
+    would refuse.
+
+    The ruling does one thing: pr_ready refuses, which takes the project off
+    every list that offers an upstream PR (pr-candidates, the review-PR sweep,
+    the publish step). It is not `set-maintained`: nobody upstream points users
+    at the fork, nothing freezes the port branch, and there is no drift to
+    watch on a repository that cannot move. It is not a disposition either: the
+    port is finished, validated work, not a candidate set aside.
+
+    A person's ruling, like a waiver: `by` is required and never defaulted, and
+    `evidence` names where it can be checked (the upstream repository URL
+    showing the archive banner). A PR that already exists is a contradiction a
+    person sorts out first -- an open one is live, and a finished one already
+    says how the round ended. --clear withdraws the ruling (upstream was
+    unarchived, or moved somewhere that takes pull requests)."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if clear:
+        if not obj.get("no_upstream"):
+            raise ValueError(f"{name}: no no-upstream ruling recorded")
+        ok, why = record_writable_here(name)
+        if not ok:
+            raise ValueError(why)
+        obj.pop("no_upstream", None)
+        save_record(name, obj, f"{name}: no-upstream ruling cleared by {by}")
+        return obj
+    if not evidence:
+        raise ValueError(f"{name}: evidence is required -- name where the missing "
+                         f"destination can be checked (the archived upstream's URL)")
+    if obj.get("pr_state") or obj.get("pr_url"):
+        raise ValueError(f"{name}: an upstream PR is recorded "
+                         f"(pr_state={obj.get('pr_state')!r}) -- that PR already "
+                         f"says where this port went; a no-upstream ruling is for "
+                         f"a port that never had anywhere to go")
+    if obj.get("maintained"):
+        raise ValueError(f"{name}: the fork is already ruled maintained, which "
+                         f"settles the PR question on its own")
+    if obj.get("review_pr"):
+        raise ValueError(f"{name}: a fork review PR is still recorded "
+                         f"({obj['review_pr']}) -- approving it would publish to a "
+                         f"repository that cannot take the PR; close it and "
+                         f"`set-review-pr {name} --clear` first")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    obj["no_upstream"] = {"evidence": evidence, "by": by, "at": now_iso()}
+    if note:
+        obj["no_upstream"]["note"] = note
+    save_record(name, obj,
+                f"{name}: ruled NO UPSTREAM DESTINATION by {by} ({evidence})")
+    return obj
+
+
+def set_fork_url(name, url, by, reason=None):
+    """Record a person's ruling that the port lives in a repository other than the
+    organization fork that intake assumes. cupy is the origin case: AMD already keeps
+    ROCm/cupy as the staging fork for upstream CuPy PRs, so a second fork would be
+    duplication. The port branch must already exist there (a read-only ls-remote
+    checks it), because that branch is what every later stage clones and pushes.
+    An open upstream PR already has its head repository, so that refuses."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if obj.get("pr_state") == "open":
+        raise ValueError(f"{name}: an upstream PR is open -- its head repository "
+                         f"is set on GitHub, not here")
+    url = url.rstrip("/").removesuffix(".git")
+    if not url.startswith("https://github.com/") or url.count("/") != 4:
+        raise ValueError(f"{name}: expected https://github.com/<owner>/<repo>, got {url!r}")
+    branch = obj.get("fork_branch") or PORT_BRANCH
+    if release_line(obj):
+        # A release line's two branches are copies of upstream's release branch,
+        # which `mirror-branch` creates once the fork is recorded -- so only the
+        # repository has to be reachable here, or the ruling could never be made.
+        r = subprocess.run(["git", "ls-remote", "--heads", url],
+                           capture_output=True, text=True, timeout=60)
+        if r.returncode:
+            raise ValueError(f"{name}: cannot reach {url} -- "
+                             f"{(r.stderr or r.stdout).strip()[:120]}")
+    else:
+        r = subprocess.run(["git", "ls-remote", url, f"refs/heads/{branch}"],
+                           capture_output=True, text=True, timeout=60)
+        if r.returncode or not r.stdout.strip():
+            raise ValueError(f"{name}: no branch {branch!r} on {url} -- create it "
+                             f"there from upstream's "
+                             f"{obj.get('fork_default_branch')} first")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    old = obj.get("fork_url")
+    obj["fork_url"] = url
+    obj["fork_url_ruling"] = {"url": url, "previous": old, "by": by, "at": now_iso()}
+    if reason:
+        obj["fork_url_ruling"]["reason"] = reason
+    save_record(name, obj, f"{name}: fork {old} -> {url}, ruled by {by}")
+    return obj
+
+
+def set_base_branch(name, branch, by, reason=None):
+    """Record a person's ruling that the upstream PR targets `branch` rather than
+    the default branch recorded at scaffold. GOMC is the origin case: upstream's
+    CONTRIBUTING.md asks for pull requests against `development`, not `main`.
+
+    `fork_default_branch` is both the PR base and the fork branch kept as a clean
+    mirror of upstream's, so the branch must already exist on the fork -- a
+    person mirrors it there first, and this checks with a read-only ls-remote.
+    An open upstream PR already has its base, and a recorded approval was given
+    on a diff against the old one, so both refuse."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if obj.get("pr_state") == "open":
+        raise ValueError(f"{name}: an upstream PR is open -- its base is set on "
+                         f"GitHub, not here")
+    if obj.get("pr_approval"):
+        raise ValueError(f"{name}: a PR approval is recorded against the diff from "
+                         f"{obj.get('fork_default_branch')!r}; a new base needs a "
+                         f"new approval -- clear it first")
+    fork = obj.get("fork_url")
+    if not fork:
+        raise ValueError(f"{name}: no fork recorded -- the base must exist on it")
+    r = subprocess.run(["git", "ls-remote", fork, f"refs/heads/{branch}"],
+                       capture_output=True, text=True, timeout=60)
+    if r.returncode or not r.stdout.strip():
+        raise ValueError(f"{name}: no branch {branch!r} on {fork} -- mirror "
+                         f"upstream's {branch} to the fork first")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    old = obj.get("fork_default_branch")
+    obj["fork_default_branch"] = branch
+    obj["base_branch_ruling"] = {"branch": branch, "previous": old,
+                                 "by": by, "at": now_iso()}
+    if reason:
+        obj["base_branch_ruling"]["reason"] = reason
+    save_record(name, obj, f"{name}: PR base {old} -> {branch}, ruled by {by}")
+    return obj
+
+
+def set_fork_branch(name, branch, by, reason=None):
+    """Record a person's ruling that the port lives on fork branch `branch` rather
+    than `moat-port`. A release line is the origin case: `warp-1.14`'s port is
+    `release/1.14.0.amd0`, named after the release it ships, beside the pristine
+    `release-1.14` that mirrors upstream. Everything downstream already reads
+    `fork_branch` (the hook, the review PR, the merge path); this is the one place
+    that writes it.
+
+    Refused while the current branch is upstream-visible or carries a decision:
+    an open PR has its head on GitHub, a maintained or delivered branch is what
+    people were told to clone, a staged round targets the current branch, and a
+    review PR or recorded approval was given on the old branch's diff. A recorded
+    head_sha is accepted only when the new branch's tip on the fork IS that
+    commit -- a rename that keeps the validated content -- because otherwise every
+    validation would silently describe a branch nobody ships."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if not by:
+        raise ValueError(f"{name}: --by is required -- this records a person's ruling")
+    if obj.get("pr_state") == "open":
+        raise ValueError(f"{name}: an upstream PR is open -- its head branch is set "
+                         f"on GitHub, not here")
+    if obj.get("maintained") or release_delivered(obj):
+        raise ValueError(f"{name}: {obj.get('fork_branch') or PORT_BRANCH} is a "
+                         f"public fixed point (maintained or a delivered release); "
+                         f"it is never renamed")
+    if obj.get("fix"):
+        raise ValueError(f"{name}: a round is staged against the current branch on "
+                         f"{obj['fix'].get('branch')!r} -- finish or abandon it first")
+    if obj.get("review_pr") or obj.get("pr_approval"):
+        raise ValueError(f"{name}: a review PR or approval is recorded against the "
+                         f"current branch's diff; close it and `set-review-pr {name} "
+                         f"--clear` first")
+    base = obj.get("fork_default_branch") or "main"
+    if not branch or branch.startswith("-") \
+            or not valid_ref_name(f"refs/heads/{branch}"):
+        raise ValueError(f"{name}: {branch!r} is not a valid branch name")
+    if branch == base:
+        raise ValueError(f"{name}: {branch!r} is the upstream mirror and review base "
+                         f"-- the port needs its own branch beside it")
+    if branch.startswith(("moat-fix-", "moat-sync-")):
+        raise ValueError(f"{name}: {branch!r} is in the staging-branch namespace "
+                         f"that fix and sync rounds own")
+    if release_line(obj):
+        release_tag({**obj, "fork_branch": branch})   # raises on an underivable tag
+    head = obj.get("head_sha")
+    if head:
+        tip = ""
+        if obj.get("fork_url"):
+            r = subprocess.run(["git", "ls-remote", obj["fork_url"],
+                                f"refs/heads/{branch}"],
+                               capture_output=True, text=True, timeout=60)
+            tip = (r.stdout.split() or [""])[0]
+        if not same_commit(tip, head):
+            raise ValueError(f"{name}: head_sha is {head[:12]} but {branch!r} on the "
+                             f"fork is at {tip[:12] or '(absent)'} -- the recorded "
+                             f"validations describe the old branch's content")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    old = obj.get("fork_branch")
+    obj["fork_branch"] = branch
+    obj["fork_branch_ruling"] = {"branch": branch, "previous": old,
+                                 "by": by, "at": now_iso()}
+    if reason:
+        obj["fork_branch_ruling"]["reason"] = reason
+    save_record(name, obj, f"{name}: port branch {old or PORT_BRANCH} -> {branch}, "
+                           f"ruled by {by}")
+    _reprotect(name)
+    return obj
+
+
+def set_delivery(name, mode, by, tag_format=None, reason=None, clear=False):
+    """Record a person's ruling on how this port is DELIVERED when it is not an
+    upstream pull request. `fork-release` makes the project a release line:
+    upstream will never take it (NVIDIA-owned Warp and cuCIM are the origin
+    cases), so the deliverable is the fork's port branch, signed off on an in-fork
+    review PR into the pristine release branch and then tagged and frozen.
+
+    It changes what a person's approval MEANS, which is why it is a ruling and
+    why a recorded review PR refuses: that PR was opened as an upstream
+    submission, and approving it under the new mode would tag a release instead.
+    pr_ready still gates the review PR exactly as before (every required gate,
+    licence, a clean fork); `upstream.py --publish` skips the line and
+    `upstream.py --finish-release` finishes it. Not `set-no-upstream`, which
+    refuses a review PR and finishes without anyone's approval.
+
+    `tag_format` names the tag (default DEFAULT_RELEASE_TAG_FORMAT) from the
+    fields in _TAG_FIELDS; it is validated here, against fork_branch when one is
+    recorded, so a format that cannot produce a tag is refused now and not at
+    finish time. --clear withdraws the ruling, but never after delivery: a pushed
+    tag is a fact, not a setting."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if not by:
+        raise ValueError(f"{name}: --by is required -- this records a person's ruling")
+    if clear:
+        if not obj.get("delivery"):
+            raise ValueError(f"{name}: no delivery ruling recorded")
+        if obj.get("release"):
+            raise ValueError(f"{name}: the line was delivered as "
+                             f"{obj['release'].get('tag')} -- that tag is public; "
+                             f"the ruling stays")
+        if obj.get("review_pr"):
+            raise ValueError(f"{name}: a review PR is recorded under the release "
+                             f"contract ({obj['review_pr']}); close it and "
+                             f"`set-review-pr {name} --clear` first")
+        ok, why = record_writable_here(name)
+        if not ok:
+            raise ValueError(why)
+        obj.pop("delivery", None)
+        obj["schema_version"] = SCHEMA_VERSION
+        save_record(name, obj, f"{name}: delivery ruling cleared by {by}")
+        return obj
+    if mode not in DELIVERY_MODES:
+        raise ValueError(f"{name}: unknown delivery mode {mode!r}; known: "
+                         f"{', '.join(DELIVERY_MODES)}")
+    if obj.get("pr_state") or obj.get("pr_url"):
+        raise ValueError(f"{name}: an upstream PR is recorded "
+                         f"(pr_state={obj.get('pr_state')!r}) -- that PR already says "
+                         f"where this port went")
+    if obj.get("maintained") or obj.get("no_upstream"):
+        raise ValueError(f"{name}: a maintained or no-upstream ruling already settles "
+                         f"how this port is delivered")
+    if obj.get("review_pr") and not release_line(obj):
+        raise ValueError(f"{name}: a review PR was opened as an upstream submission "
+                         f"({obj['review_pr']}); approving it under this ruling would "
+                         f"tag a release instead -- close it and `set-review-pr "
+                         f"{name} --clear` first")
+    rec = {"mode": mode, "by": by, "at": now_iso()}
+    if tag_format:
+        rec["tag_format"] = tag_format
+    fmt = tag_format or DEFAULT_RELEASE_TAG_FORMAT
+    missing = {"version", "rev"} - tag_format_fields(fmt)   # raises on a bad format
+    if missing:
+        # Patch syncs are numbered by release_sync_tag: a new upstream version
+        # resets the revision to 0, and a sync without one bumps the revision.
+        # Each field alone repeats a tag (no {rev}: two syncs of one version;
+        # no {version}: rev 0 of every version), and a repeated tag is refused
+        # at push time, leaving that sync untagged.
+        raise ValueError(f"tag format {fmt!r} lacks {', '.join('{' + f + '}' for f in sorted(missing))}: "
+                         f"release tags must name both the upstream version and "
+                         f"the revision, because patch syncs reset the revision "
+                         f"on a new upstream version and bump it otherwise, so "
+                         f"either field alone repeats an earlier tag")
+    if obj.get("fork_branch"):
+        release_tag({**obj, "delivery": rec})          # raises with the reason
+    if reason:
+        rec["reason"] = reason
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    obj["delivery"] = rec
+    obj["schema_version"] = RELEASE_SCHEMA_VERSION
+    save_record(name, obj, f"{name}: delivery ruled {mode} by {by} (tag format "
+                           f"{fmt})")
+    _reprotect(name)
+    return obj
+
+
+def _reprotect(name):
+    """Re-render a local fork clone's pre-push hook after a ruling changes what it
+    guards (the port branch's name, or a release line's mirror and tags). A clone
+    elsewhere picks the change up the next time orient runs protect-fork."""
+    level, msg = protect_fork(name)
+    if level == "warn":
+        print(msg, file=sys.stderr)
+
+
+def set_release_delivered(name, tag, sha, review_pr):
+    """Record that a release line was signed off and tagged. Called by
+    `upstream.py --finish-release --apply` AFTER the tag is on the fork, so the
+    record never claims a tag that does not exist; it authorises nothing and
+    re-checks that the approval snapshot covers exactly `sha`.
+
+    `published_sha` becomes the tagged commit: from here the port branch is a
+    public fixed point and later upstream patch releases arrive as sync rounds,
+    which stage from, and fast-forward away from, exactly this field. The review
+    PR and its approval stay recorded -- they are the sign-off -- and the
+    listings that look for unpublished review PRs skip a delivered line."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if not release_line(obj):
+        raise ValueError(f"{name}: not a release line (set-delivery fork-release)")
+    cur = obj.get("release")
+    if cur:
+        if cur.get("tag") == tag and same_commit(cur.get("sha"), sha):
+            return obj
+        raise ValueError(f"{name}: already delivered as {cur.get('tag')} at "
+                         f"{(cur.get('sha') or '?')[:12]}")
+    if obj.get("fix"):
+        raise ValueError(f"{name}: a round is staged on {obj['fix'].get('branch')!r} "
+                         f"-- a first release has none")
+    if not same_commit(obj.get("head_sha"), sha):
+        raise ValueError(f"{name}: {sha[:12]} is not head_sha "
+                         f"{(obj.get('head_sha') or '?')[:12]}")
+    a = obj.get("pr_approval") or {}
+    if not a.get("approved_by") or not same_commit(a.get("head_sha"), sha):
+        raise ValueError(f"{name}: no approval snapshot covers {sha[:12]} -- "
+                         f"`record-pr-approval {name}` first")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    ver = branch_release_version(obj)
+    obj["release"] = {"tag": tag, "sha": sha, "review_pr": review_pr,
+                      "approved_by": a["approved_by"], "at": now_iso()}
+    if ver:
+        obj["release"].update(version=ver[0], rev=ver[1])
+    obj["published_sha"] = sha
+    save_record(name, obj, f"{name}: release {tag} delivered at {sha[:12]} "
+                           f"(approved by {a['approved_by']} on {review_pr}); "
+                           f"{obj.get('fork_branch') or PORT_BRANCH} is now frozen")
+    return obj
+
+
+def set_release_review_closed(name):
+    """Record that the delivered release's review PR was closed unmerged, the last
+    step of --finish-release. Until this is recorded, the finishing sweep keeps the
+    line in view so an interrupted run is completed rather than forgotten."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    rel = obj.get("release") or {}
+    if not rel or rel.get("review_closed_at"):
+        return obj
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    obj["release"] = {**rel, "review_closed_at": now_iso()}
+    save_record(name, obj, f"{name}: review PR for {rel.get('tag')} closed unmerged")
+    return obj
+
+
+def release_sync_tag(name, obj, upstream_sha):
+    """(tag, version, rev) for an approved sync round on a delivered release line.
+
+    The version is upstream's newest version tag (`v1.14.1`, `1.14.1`) whose commit
+    the round absorbed, so a patch release becomes `v1.14.1+rocm.0` under the
+    default format; a sync that brings no new upstream version bumps the revision
+    instead (`v1.14.0+rocm.1`). Read from upstream's tags in the scratch repo, so it
+    holds on any host; falls back to the line's current version when upstream tags
+    nothing in reach."""
+    rel = obj.get("release") or {}
+    cur = branch_release_version(obj)
+    prev_version = rel.get("version") or (cur[0] if cur else None)
+    prev_rev = rel.get("rev") if rel.get("rev") is not None else (cur[1] if cur else 0)
+    repo = _mirror_repo(name, obj)
+
+    def git(*a, timeout=3600):
+        return subprocess.run(["git", "-C", str(repo), *a], capture_output=True,
+                              text=True, timeout=timeout)
+
+    base = obj.get("fork_default_branch") or "main"
+    git("fetch", "-q", "upstream", f"+refs/heads/{base}:refs/mirror/upstream",
+        "+refs/tags/*:refs/uptags/*")
+    best = None
+    rows = git("for-each-ref", "refs/uptags",
+               "--format=%(refname:strip=2) %(objectname) %(*objectname)").stdout
+    for line in rows.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        m = re.fullmatch(r"v?(\d+(?:\.\d+)*)", parts[0])
+        if not m:
+            continue
+        commit = parts[2] if len(parts) > 2 else parts[1]
+        if git("merge-base", "--is-ancestor", commit, upstream_sha).returncode:
+            continue
+        key = tuple(int(x) for x in m.group(1).split("."))
+        if best is None or key > best[0]:
+            best = (key, m.group(1))
+    version = best[1] if best else prev_version
+    rev = (int(prev_rev) + 1) if version == prev_version else 0
+    return (release_tag(obj, version=version, rev=rev), version, rev)
+
+
+def set_release_tagged(name, tag, sha, review_pr, approved_by, version=None,
+                       rev=None):
+    """Record a release tag pushed for an approved sync round on a delivered line.
+    The previous release moves into `release.history`; the new one is what the
+    next patch release is numbered from. Called by `upstream.py --merge-fix` after
+    the fast-forward and the tag push; it authorises nothing."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    rel = obj.get("release")
+    if not release_delivered(obj):
+        raise ValueError(f"{name}: not a delivered release line")
+    if rel.get("tag") == tag and same_commit(rel.get("sha"), sha):
+        return obj
+    if not same_commit(obj.get("published_sha"), sha):
+        raise ValueError(f"{name}: {sha[:12]} is not the published tip "
+                         f"{(obj.get('published_sha') or '?')[:12]}")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    prior = {k: v for k, v in rel.items() if k != "history"}
+    new = {"tag": tag, "sha": sha, "review_pr": review_pr,
+           "approved_by": approved_by, "at": now_iso(),
+           "review_closed_at": now_iso(),
+           "history": (rel.get("history") or []) + [prior]}
+    if version is not None:
+        new.update(version=version, rev=rev)
+    obj["release"] = new
+    save_record(name, obj, f"{name}: release {tag} tagged at {sha[:12]} "
+                           f"(sync round approved by {approved_by})")
+    return obj
+
+
+# Scratch clone for the fork writes a release line needs that copy existing commits
+# (the upstream mirror, the port branch's first tip, the release tag). Gitignored,
+# per project, reused across runs. A bare repo with no hooks: what it may push is
+# decided by the checks in mirror_branch and push_fork_tag, not by a hook.
+MIRROR_CACHE = REPO_ROOT / "agent_space" / "mirror-cache"
+
+
+def _mirror_repo(name, obj):
+    d = MIRROR_CACHE / name
+    if not (d / "HEAD").exists():
+        d.mkdir(parents=True, exist_ok=True)
+        r = subprocess.run(["git", "init", "-q", "--bare", str(d)],
+                           capture_output=True, text=True)
+        if r.returncode:
+            raise ValueError(f"{name}: cannot create {d}: {r.stderr.strip()}")
+    for remote, url in (("upstream", obj.get("upstream_url")),
+                        ("fork", obj.get("fork_url"))):
+        if not url:
+            continue
+        if subprocess.run(["git", "-C", str(d), "remote", "set-url", remote, url],
+                          capture_output=True).returncode:
+            subprocess.run(["git", "-C", str(d), "remote", "add", remote, url],
+                           capture_output=True)
+    return d
+
+
+def _remote_ref(repo, remote, ref):
+    """(readable, sha) of `ref` on `remote`; a tag answers with its COMMIT.
+
+    The peeled `<ref>^{}` pattern is asked for explicitly: ls-remote given only
+    the ref name returns an annotated tag's own object id, which never equals
+    the commit it tags -- and every release tag is annotated, so the idempotence
+    checks in push_fork_tag and release_fork_problems would call a tag that is
+    exactly where it should be "already exists elsewhere"."""
+    r = subprocess.run(["git", "-C", str(repo), "ls-remote", remote, ref,
+                        f"{ref}^{{}}"],
+                       capture_output=True, text=True, timeout=120)
+    if r.returncode:
+        return (False, "")
+    rows = {name: sha for sha, name in (line.split("\t", 1)
+                                        for line in r.stdout.splitlines()
+                                        if "\t" in line)}
+    return (True, rows.get(f"{ref}^{{}}") or rows.get(ref) or "")
+
+
+def mirror_branch(name, dry_run=False):
+    """Create or fast-forward the fork's pristine copy of upstream's branch, and
+    create the port branch from it if the fork lacks one. Returns a list of what
+    was (or, dry, would be) done.
+
+    `fork_default_branch` names both upstream's branch and the fork's mirror of
+    it, and the mirror carries upstream's own SHAs and nothing else -- for a
+    release line it is the review base, and anything else on it would show up in
+    nobody's diff. So the only write allowed is a fast-forward to a commit
+    upstream published: refused outright when the fork's branch is not an
+    ancestor of upstream's (a person sorts out how it diverged), and pushed
+    without force so git refuses a non-fast-forward too. The port branch is only
+    ever CREATED here, as an exact copy of the mirror tip; an existing one is
+    never moved. Neither write carries anything an agent authored, which is why
+    this needs no person: it copies upstream's commits to our own fork."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if not obj.get("fork_url"):
+        raise ValueError(f"{name}: no fork recorded (set-fork-url, or wait for "
+                         f"release-forks)")
+    base = obj.get("fork_default_branch") or "main"
+    port = obj.get("fork_branch") or PORT_BRANCH
+    if port == base:
+        raise ValueError(f"{name}: the port branch and the mirror are both "
+                         f"{base!r}")
+    repo = _mirror_repo(name, obj)
+
+    def git(*a, timeout=120):
+        return subprocess.run(["git", "-C", str(repo), *a], capture_output=True,
+                              text=True, timeout=timeout)
+
+    f = git("fetch", "-q", "upstream", f"+refs/heads/{base}:refs/mirror/upstream",
+            timeout=3600)
+    if f.returncode:
+        raise ValueError(f"{name}: cannot fetch {base} from {obj['upstream_url']}: "
+                         f"{(f.stderr or f.stdout).strip()[:160]}")
+    up_tip = git("rev-parse", "refs/mirror/upstream").stdout.strip()
+    ok, fork_tip = _remote_ref(repo, "fork", f"refs/heads/{base}")
+    if not ok:
+        raise ValueError(f"{name}: cannot read {obj['fork_url']} -- an unreadable "
+                         f"fork is not an empty one")
+    would = "would " if dry_run else ""
+    done = []
+    if fork_tip == up_tip:
+        done.append(f"{base}: in step with upstream at {up_tip[:12]}")
+    else:
+        if fork_tip:
+            if git("cat-file", "-e", f"{fork_tip}^{{commit}}").returncode:
+                git("fetch", "-q", "fork", f"+refs/heads/{base}:refs/mirror/fork",
+                    timeout=3600)
+            if git("merge-base", "--is-ancestor", fork_tip, up_tip).returncode:
+                raise ValueError(
+                    f"{name}: the fork's {base} ({fork_tip[:12]}) is not an "
+                    f"ancestor of upstream's ({up_tip[:12]}) -- it carries commits "
+                    f"upstream never published, or upstream rewrote the branch. "
+                    f"Refusing; a person sorts out the divergence")
+            what = f"fast-forward {fork_tip[:12]} -> {up_tip[:12]}"
+        else:
+            what = f"create at upstream's {up_tip[:12]}"
+        if not dry_run:
+            p = git("push", "-q", "fork", f"{up_tip}:refs/heads/{base}",
+                    timeout=3600)
+            if p.returncode:
+                raise ValueError(f"{name}: could not {what} on the fork: "
+                                 f"{(p.stderr or p.stdout).strip()[:160]}")
+        done.append(f"{base}: {would}{what}")
+    ok, port_tip = _remote_ref(repo, "fork", f"refs/heads/{port}")
+    if not ok:
+        raise ValueError(f"{name}: cannot read {obj['fork_url']}")
+    if port_tip:
+        done.append(f"{port}: exists at {port_tip[:12]}; left alone (only ever "
+                    f"created here)")
+    else:
+        if not dry_run:
+            p = git("push", "-q", "fork", f"{up_tip}:refs/heads/{port}",
+                    timeout=3600)
+            if p.returncode:
+                raise ValueError(f"{name}: could not create {port} on the fork: "
+                                 f"{(p.stderr or p.stdout).strip()[:160]}")
+        done.append(f"{port}: {would}create as an exact copy of {base} at "
+                    f"{up_tip[:12]}")
+    return done
+
+
+def release_fork_problems(name, obj, tip, tag=None):
+    """What the fork itself says against finishing a release at `tip`, read with
+    git so it holds on a host with no clone: the port branch must still be at the
+    approved commit, the review base must still be pristine (upstream's own
+    commits and nothing else, or the reviewed diff was against something upstream
+    never shipped), and the release tag must be free or already name `tip`."""
+    base = obj.get("fork_default_branch") or "main"
+    port = obj.get("fork_branch") or PORT_BRANCH
+    try:
+        repo = _mirror_repo(name, obj)
+    except ValueError as e:
+        return [str(e)]
+    bad = []
+    ok, port_tip = _remote_ref(repo, "fork", f"refs/heads/{port}")
+    if not ok:
+        return [f"cannot read {obj.get('fork_url')}"]
+    if not same_commit(port_tip, tip):
+        bad.append(f"the fork's {port} is at {port_tip[:12] or '(absent)'}, not the "
+                   f"approved {tip[:12]}")
+    ok, fork_base = _remote_ref(repo, "fork", f"refs/heads/{base}")
+
+    def git(*a, timeout=3600):
+        return subprocess.run(["git", "-C", str(repo), *a], capture_output=True,
+                              text=True, timeout=timeout)
+
+    if not fork_base:
+        bad.append(f"the fork has no {base} -- the review base is gone")
+    elif git("fetch", "-q", "upstream",
+             f"+refs/heads/{base}:refs/mirror/upstream").returncode:
+        bad.append(f"cannot fetch upstream's {base} to check the mirror is pristine")
+    else:
+        if git("cat-file", "-e", f"{fork_base}^{{commit}}").returncode:
+            git("fetch", "-q", "fork", f"+refs/heads/{base}:refs/mirror/fork")
+        if git("merge-base", "--is-ancestor", fork_base,
+               "refs/mirror/upstream").returncode:
+            bad.append(f"the fork's {base} ({fork_base[:12]}) is not upstream's own "
+                       f"history -- the review base carries commits upstream never "
+                       f"published (was the review PR merged?)")
+    if tag:
+        ok, cur = _remote_ref(repo, "fork", f"refs/tags/{tag}")
+        if cur and not same_commit(cur, tip):
+            bad.append(f"tag {tag} already exists at {cur[:12]}")
+    return bad
+
+
+def push_fork_tag(name, sha, tag, message):
+    """Push ANNOTATED tag `tag` at `sha` to the fork, carrying `message` (who
+    approved, and where). Idempotent when the tag already names `sha`; refused
+    when it names anything else, because a release tag that moved is worse than
+    one that failed. Only the trusted paths (`upstream.py --finish-release` and
+    `--merge-fix` on a delivered line) call this, after their checks."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    repo = _mirror_repo(name, obj)
+    ok, cur = _remote_ref(repo, "fork", f"refs/tags/{tag}")
+    if not ok:
+        raise ValueError(f"{name}: cannot read tags on {obj.get('fork_url')}")
+    if cur:
+        if same_commit(cur, sha):
+            return f"{tag} already at {sha[:12]}"
+        raise ValueError(f"{name}: tag {tag} already exists at {cur[:12]}, not "
+                         f"{sha[:12]}")
+
+    def git(*a, timeout=120):
+        return subprocess.run(["git", "-C", str(repo), *a], capture_output=True,
+                              text=True, timeout=timeout)
+
+    if git("cat-file", "-e", f"{sha}^{{commit}}").returncode:
+        port = obj.get("fork_branch") or PORT_BRANCH
+        git("fetch", "-q", "fork", f"+refs/heads/{port}:refs/mirror/port",
+            timeout=3600)
+    if git("cat-file", "-e", f"{sha}^{{commit}}").returncode:
+        raise ValueError(f"{name}: {sha[:12]} is not on the fork's port branch")
+    t = git("tag", "-f", "-a", "-m", message, tag, sha)
+    if t.returncode:
+        raise ValueError(f"{name}: could not create the annotated tag {tag}: "
+                         f"{(t.stderr or t.stdout).strip()[:160]}")
+    p = git("push", "-q", "fork", f"refs/tags/{tag}:refs/tags/{tag}", timeout=600)
+    if p.returncode:
+        raise ValueError(f"{name}: could not push {tag}: "
+                         f"{(p.stderr or p.stdout).strip()[:160]}")
+    return f"pushed {tag} at {sha[:12]}"
+
+
+def archive_pr(name):
+    """Move a finished (merged or closed) upstream PR into pr_history, freeing the
+    pr_* fields for a follow-up round.
+
+    A merged PR used to be a terminal state: pr_ready refused on it even when the
+    port branch carried new reviewed, revalidated commits (TurboFNO, 2026-08-24).
+    The follow-up flow treats it as history instead -- this is the transition, run
+    by `upstream.py --review --apply` when it opens a follow-up's review PR, and
+    exposed as `archive-pr` for recovery. It records facts and grants nothing: the
+    follow-up still faces every gate, the one-approval contract, and the same
+    pre-authorized publish as a first PR.
+
+    Refuses unless there is something to follow up with (head_sha past what the
+    finished PR shipped), and refuses to guess that baseline: published_sha must
+    be recorded first (the reconciler backfills it from the live PR). Bumping
+    pr_round is what tells the merge driver the whole PR block changed rounds --
+    see merge_status.py. Like fix_branch, a follow-up means the project is in
+    flight again, so a trunk-resident folder is re-homed onto port/<name>
+    first."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    st = obj.get("pr_state")
+    if st not in ("merged", "closed"):
+        raise ValueError(f"{name}: pr_state is {st!r} -- only a finished (merged or "
+                         f"closed) PR is archived; an open PR moves through the fix "
+                         f"flow, and no PR needs no archive")
+    if obj.get("maintained"):
+        raise ValueError(f"{name}: the fork is ruled maintained -- the finished PR "
+                         f"is the standing reference upstream points at, no "
+                         f"follow-up PR will be opened, and later work lands "
+                         f"through sync rounds; there is nothing to archive")
+    if obj.get("fix"):
+        raise ValueError(f"{name}: a fix round is still recorded on "
+                         f"{obj['fix'].get('branch')!r} -- a finished PR should "
+                         f"carry none; a person sorts that record out first")
+    if not obj.get("pr_url") or not obj.get("pr_number"):
+        raise ValueError(f"{name}: the finished PR has no pr_url/pr_number recorded")
+    shipped = obj.get("published_sha")
+    if not shipped:
+        raise ValueError(f"{name}: no published_sha records what the {st} PR "
+                         f"shipped -- `utils/upstream.py --apply` backfills it from "
+                         f"the live PR; the follow-up delta cannot be judged "
+                         f"without it")
+    if same_commit(obj.get("head_sha"), shipped):
+        raise ValueError(f"{name}: head_sha equals what the {st} PR shipped "
+                         f"({shipped[:12]}) -- there is nothing a follow-up would "
+                         f"carry, so the finished PR stays current")
+    if any(e.get("pr_number") == obj["pr_number"]
+           for e in obj.get("pr_history") or []):
+        raise ValueError(f"{name}: PR #{obj['pr_number']} is already in pr_history")
+    # In flight again: same re-home rule as fix_branch, for the same reason.
+    moved, why = ensure_port_branch(name)
+    if moved:
+        print(why, file=sys.stderr)
+        # Write on top of exactly what the new branch holds -- the trunk's copy --
+        # and re-run the guards on it: this checkout's copy may have been older.
+        obj, _where = project_record(name)
+        st, shipped = obj.get("pr_state"), obj.get("published_sha")
+        if st not in ("merged", "closed") or not shipped \
+                or same_commit(obj.get("head_sha"), shipped):
+            raise ValueError(f"{name}: the branch copy cut from the trunk does not "
+                             f"show an archivable finished PR (pr_state={st!r}) -- "
+                             f"resolve the record first")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    entry = {k: obj[k] for k in ("pr_url", "pr_number", "pr_state", "pr_opened_at",
+                                 "pr_merged_at", "pr_closed_at", "pr_closed_note",
+                                 "published_sha", "review_pr")
+             if obj.get(k) is not None}
+    if obj.get("fix_abandoned"):
+        entry["fix_abandoned"] = obj["fix_abandoned"]
+    entry["archived_at"] = now_iso()
+    for k in ("pr_url", "pr_number", "pr_state", "pr_opened_at", "pr_merged_at",
+              "pr_closed_at", "pr_closed_note", "published_sha", "review_pr",
+              "pr_approval", "fix", "fix_merged_at", "fix_abandoned"):
+        obj.pop(k, None)
+    obj["pr_history"] = (obj.get("pr_history") or []) + [entry]
+    obj["pr_round"] = (obj.get("pr_round") or 1) + 1
+    save_record(name, obj,
+                f"{name}: PR #{entry['pr_number']} ({entry['pr_state']}) archived "
+                f"-- round {obj['pr_round']} open for a follow-up past {shipped[:12]}")
+    return entry
+
+
 def _fork_repo(name):
     return PROJECTS / name / "src"
+
+
+# AGENTS.md states the commit-message rules; until this, nothing ran them. jargon.py
+# scans the same range but only for in-house vocabulary, and pr_intent.py checks the
+# PULL REQUEST title rather than the commit titles. So a body missing its disclosure or
+# its Test Plan reached upstream unremarked -- Quest c1d7fff did, through three porter
+# rounds, a full review and every gate.
+COMMIT_TITLE_MAX = 72
+# Disclosure wording is not standardised -- the fleet uses at least ten phrasings,
+# from "Assistance from an AI coding agent was used" to "Authored with the assistance
+# of Claude, an AI assistant by Anthropic". Match the naming rather than one sentence
+# shape, so the gate does not fail commits that comply in different words.
+_DISCLOSURE_TOKENS = ("ai coding agent", "ai agent", "ai assistant",
+                      "claude", "anthropic")
+_UNIT_SEP = chr(31)
+_REC_SEP = chr(30)
+
+
+def commit_message_problems(name, obj=None):
+    """What the fork branch's commits get wrong, one string per offence.
+
+    Judged over the WHOLE branch rather than the newest commit, because publication
+    sends the branch as it stands: `upstream.py --publish` opens the pull request with
+    `--head <fork>:<branch>`, and squashing first is supported but not enforced. Merges
+    are skipped, since a trunk merge carries upstream's message rather than ours.
+
+    Returns None when this host holds no clone of the fork -- the check did not run,
+    which is not the same as passing, the same distinction audit-clean draws.
+    """
+    obj = obj or load_status(name)
+    repo = _fork_repo(name)
+    if not repo.is_dir():
+        return None
+    base = obj.get("fork_default_branch") or "main"
+    branch = upstream_visible_branch(obj)
+    fmt = "%H" + _UNIT_SEP + "%s" + _UNIT_SEP + "%b" + _REC_SEP
+    out = None
+    for cand in (f"origin/{base}..{branch}", f"{base}..{branch}"):
+        r = subprocess.run(["git", "log", "--no-merges", "--format=" + fmt, cand],
+                           cwd=str(repo), capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        if r.returncode == 0:
+            out = r.stdout
+            break
+    if out is None:
+        return [f"{name}: cannot resolve {base}..{branch} in the local clone"]
+
+    records = [r for r in (x.strip(chr(10)) for x in out.split(_REC_SEP)) if r]
+    titles = [r.split(_UNIT_SEP)[1] for r in records if len(r.split(_UNIT_SEP)) > 1]
+    ours = [t for t in titles if t.startswith("[ROCm]")]
+    # The fork default is meant to be an unmodified upstream mirror. When it falls behind,
+    # base..moat-port stops describing our work and fills up with upstream's own commits,
+    # which of course do not follow our rules. Reporting each of those as an offence buries
+    # the real finding, which is that the mirror needs fast-forwarding before anyone reads
+    # a diff against it.
+    if titles and len(ours) * 2 < len(titles):
+        return [f"{name}: {len(titles) - len(ours)} of {len(titles)} commits in "
+                f"{base}..{branch} are not ours -- the fork default branch is behind "
+                f"upstream; fast-forward it before judging commit messages or diffs"]
+
+    problems = []
+    for rec in records:
+        rec = rec.strip("\n")
+        if not rec:
+            continue
+        parts = rec.split(_UNIT_SEP)
+        if len(parts) < 2:
+            continue
+        sha, title = parts[0][:7], parts[1]
+        body = parts[2] if len(parts) > 2 else ""
+        if not title.startswith("[ROCm]"):
+            problems.append(f"{name} {sha}: title does not start with [ROCm] -- {title[:50]}")
+        if len(title) > COMMIT_TITLE_MAX:
+            problems.append(f"{name} {sha}: title is {len(title)} chars, over {COMMIT_TITLE_MAX}")
+        low = body.lower()
+        if not any(t in low for t in _DISCLOSURE_TOKENS):
+            problems.append(f"{name} {sha}: body does not disclose AI-agent assistance")
+        if "test plan" not in low:
+            # A Test Plan is a claim about running something, so it is only meaningful
+            # where the commit could change what runs. Reuse the regression guard's own
+            # classifier rather than inventing a second idea of "does not affect the
+            # build": a delta it calls inert cannot alter any target's compiled output.
+            verdict = _classify_safe(repo, parts[0] + "~1", parts[0])
+            if verdict is None or not getattr(verdict, "inert", False):
+                problems.append(f"{name} {sha}: body has no Test Plan")
+        elif "```" not in body:
+            problems.append(f"{name} {sha}: Test Plan has no fenced command block")
+        if "co-authored-by" in low:
+            problems.append(f"{name} {sha}: carries a Co-Authored-By trailer")
+    return problems
 
 
 # ---- fix rounds on an open upstream PR -------------------------------------
@@ -1637,6 +2806,12 @@ def ensure_port_branch(name):
     # remote-tracking refs, and save_record is about to ask.
     _git("update-ref", f"refs/remotes/origin/port/{name}", main_ref, check=False)
     _PORT_BRANCH_MAP.clear()
+    # And drop what this process already read THROUGH the ref that did not exist:
+    # a cached miss for origin/port/<name> makes project_record fall back to the
+    # working-tree copy, and save_record then writes the fact to the wrong place --
+    # a checkout-local edit instead of the branch this just created.
+    for k in [k for k in _REF_CACHE if k[0] == f"origin/port/{name}"]:
+        del _REF_CACHE[k]
     return (True, f"{name}: re-homed onto port/{name} (cut from origin/main at "
                   f"{main_ref[:12]}) -- work in flight lives on its own branch")
 
@@ -1716,6 +2891,73 @@ def fix_branch(name):
     return obj["fix"]
 
 
+def sync_branch(name):
+    """Establish (or report) the staging branch for a SYNC round on a maintained
+    fork: absorbing upstream's advance into the long-lived port branch.
+
+    The counterpart of fix_branch, for a branch that outlived its PR. Upstream
+    adopted the fork by reference (set_maintained), so the port branch is public
+    API -- people clone it by name -- and it goes stale as upstream moves. A
+    sync round stages `git merge <upstream tip>` on `moat-sync-<sha7>`, cut from
+    the published tip; the porter resolves and builds there, head_sha follows
+    the staging tip (flipping validated platforms to revalidate, exactly as a
+    fix round does), the reviewer reviews the delta, and the trusted merge path
+    (`upstream.py --merge-fix --apply`) fast-forwards the port branch once a
+    person approves the round on a fork review PR -- which also tags the merged
+    tip so followers have a fixed point. MERGE upstream in, never rebase onto
+    it: a rebase rewrites the commits upstream's README tells people to clone.
+
+    Record-only, like fix_branch: it names the branch and pins the base and the
+    upstream tip being absorbed, so the round has one target that does not move
+    under it. Idempotent for the recorded branch; refuses a second round while
+    one is in flight."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if not (obj.get("maintained") or release_delivered(obj)):
+        raise ValueError(f"{name}: not a maintained fork or a delivered release "
+                         f"line -- sync rounds exist for a frozen public port "
+                         f"branch (set-maintained, or upstream.py "
+                         f"--finish-release); while an upstream PR is open, "
+                         f"changes stage through fix-branch")
+    base_branch = obj.get("fork_default_branch") or "main"
+    r = subprocess.run(["git", "ls-remote", obj["upstream_url"],
+                        f"refs/heads/{base_branch}"],
+                       capture_output=True, text=True, timeout=60)
+    tip = (r.stdout.split() or [""])[0]
+    if r.returncode or not tip:
+        raise ValueError(f"{name}: cannot read {base_branch} on "
+                         f"{obj['upstream_url']} -- the round absorbs a named "
+                         f"upstream tip, so it cannot start without one")
+    branch = f"moat-sync-{tip[:7]}"
+    fix = obj.get("fix")
+    if fix:
+        if fix.get("branch") != branch:
+            raise ValueError(f"{name}: a round is already in flight on "
+                             f"{fix.get('branch')!r} -- one staging branch at a "
+                             f"time; merge or abandon it first")
+        return fix
+    moved, why = ensure_port_branch(name)
+    if moved:
+        print(why, file=sys.stderr)
+        obj, _where = project_record(name)
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    if not obj.get("published_sha"):
+        raise ValueError(f"{name}: no published_sha records the port branch's "
+                         f"public tip -- `utils/upstream.py --apply` backfills "
+                         f"it from the finished PR first")
+    obj["fix"] = {"branch": branch, "base_sha": obj["published_sha"],
+                  "review_pr": None, "opened_at": now_iso(),
+                  "kind": "sync", "upstream_sha": tip}
+    save_record(name, obj,
+                f"{name}: sync round staged on {branch} -- absorb upstream "
+                f"{base_branch} at {tip[:12]} into the maintained port branch "
+                f"(base {obj['published_sha'][:12]})")
+    return obj["fix"]
+
+
 def set_fix_review_pr(name, url):
     """Record the fork review PR where a person approves the staged delta.
 
@@ -1769,25 +3011,85 @@ def set_fix_merged(name, new_published_sha):
     return obj
 
 
-def set_published_sha(name, sha):
-    """Stamp what the open upstream PR shows, on a record from before the fix flow.
+def abandon_fix(name, by, reason):
+    """A person's ruling that the staged round will never merge: upstream fixed the
+    problem itself (lc0 #2454 landed the fix our moat-fix-2420 round carried), the
+    maintainer withdrew the request, or the PR finished with the round still staged.
 
-    The caller (the upstream.py reconciler) has already verified `sha` against the
-    live PR head; this only guards the record's own consistency: the PR must still
-    be open, the value must agree with head_sha -- a record whose head disagrees
-    with the PR is the HEAD-MOVED case and needs a person, not a stamp -- and an
-    existing different value is never silently replaced (only the trusted merge
-    path advances one). Idempotent on a matching stamp."""
+    Clears the fix block and returns head_sha to the round's base -- the tip the PR
+    shows or shipped -- through the same platform pass as advance_head, so evidence
+    gathered on the discarded staging tip stops counting. The staging branch is left
+    on the fork as evidence. The ruling is appended to fix_abandoned so the record
+    still says what was staged and why it was dropped. Like a waiver: `by` is
+    required and never defaulted."""
+    if not by:
+        raise ValueError(f"{name}: --by is required -- abandoning a round is a "
+                         f"person's decision")
+    if not reason:
+        raise ValueError(f"{name}: --reason is required")
     obj, _where = project_record(name)
     if obj is None:
         raise FileNotFoundError(str(status_path(name)))
-    if obj.get("pr_state") != "open":
-        raise ValueError(f"{name}: pr_state is {obj.get('pr_state')!r}, not open -- "
-                         f"published_sha only describes an open PR")
-    if not same_commit(sha, obj.get("head_sha")):
-        raise ValueError(f"{name}: {sha[:12]} does not match head_sha "
-                         f"{(obj.get('head_sha') or '?')[:12]} -- a record that "
-                         f"disagrees with the PR is a person's to sort out")
+    fix = obj.get("fix")
+    if not fix:
+        raise ValueError(f"{name}: no fix round in flight")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    tip, base = obj.get("head_sha"), fix["base_sha"]
+    if not same_commit(tip, base):
+        repo = _fork_repo(name)
+        _move_head(obj, full_sha(base, repo), repo)
+    entry = {k: fix[k] for k in ("branch", "base_sha", "review_pr", "kind")
+             if fix.get(k) is not None}
+    entry.update({"tip_sha": tip, "by": by, "reason": reason, "at": now_iso()})
+    obj["fix"] = None
+    obj["fix_abandoned"] = (obj.get("fix_abandoned") or []) + [entry]
+    save_record(name, obj,
+                f"{name}: fix round {fix.get('branch')} abandoned by {by}; "
+                f"head_sha back to {base[:12]}")
+    return obj
+
+
+def set_published_sha(name, sha):
+    """Stamp what the upstream PR shows (open) or shipped (merged/closed), on a
+    record from before the field existed.
+
+    The caller (the upstream.py reconciler) has already verified `sha` against the
+    live PR head; this only guards the record's own consistency. For an OPEN PR
+    the value must agree with head_sha -- a record whose head disagrees with the
+    PR is the HEAD-MOVED case and needs a person, not a stamp. For a finished PR
+    the head may legitimately be AHEAD (follow-up commits landed after the merge),
+    so the guard is ancestry instead, judged where a clone holds both commits: the
+    shipped tip must be an ancestor of head_sha. Either way an existing different
+    value is never silently replaced (only the trusted merge path advances one),
+    and the stamp is idempotent on a match."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    st = obj.get("pr_state")
+    if st not in ("open", "merged", "closed"):
+        raise ValueError(f"{name}: pr_state is {st!r} -- published_sha describes a "
+                         f"recorded upstream PR")
+    if st == "open":
+        if not same_commit(sha, obj.get("head_sha")):
+            raise ValueError(f"{name}: {sha[:12]} does not match head_sha "
+                             f"{(obj.get('head_sha') or '?')[:12]} -- a record that "
+                             f"disagrees with the PR is a person's to sort out")
+    elif not same_commit(sha, obj.get("head_sha")):
+        repo = _fork_repo(name)
+        if (repo / ".git").exists() and obj.get("head_sha"):
+            have = all(subprocess.run(["git", "rev-parse", "--verify", "--quiet",
+                                       f"{c}^{{commit}}"], cwd=str(repo),
+                                      capture_output=True).returncode == 0
+                       for c in (sha, obj["head_sha"]))
+            if have and subprocess.run(["git", "merge-base", "--is-ancestor", sha,
+                                        obj["head_sha"]], cwd=str(repo),
+                                       capture_output=True).returncode != 0:
+                raise ValueError(
+                    f"{name}: the {st} PR's tip {sha[:12]} is not an ancestor of "
+                    f"head_sha {obj['head_sha'][:12]} -- the branch was rewritten "
+                    f"after the PR finished; a person sorts that out")
     cur = obj.get("published_sha")
     if cur and not same_commit(cur, sha):
         raise ValueError(f"{name}: published_sha is already {cur[:12]}; only the "
@@ -1795,8 +3097,9 @@ def set_published_sha(name, sha):
     if cur:
         return obj
     obj["published_sha"] = sha
-    save_record(name, obj, f"{name}: published_sha backfilled -- the open PR shows "
-                           f"{sha[:12]} (verified against the live PR head)")
+    save_record(name, obj, f"{name}: published_sha backfilled -- the {st} PR "
+                           f"{'shows' if st == 'open' else 'shipped'} {sha[:12]} "
+                           f"(verified against the live PR head)")
     return obj
 
 
@@ -1807,7 +3110,12 @@ def pr_state_of(name, refresh=False):
     not be READ, which is not the same answer as "no PR". `refresh` re-fetches the
     project's refs first, because the question is about a write another host made --
     a remote-tracking ref that predates the PR opening would answer "not open" about
-    a PR that is open."""
+    a PR that is open.
+
+    A standing maintained ruling answers "maintained" regardless of how the PR
+    ended, because the question every caller is asking is whether the port branch
+    is upstream-visible -- and a branch upstream's README tells people to clone
+    is, PR or no PR."""
     if refresh:
         _git("fetch", "--quiet", "origin",
              f"+refs/heads/port/{name}:refs/remotes/origin/port/{name}", check=False)
@@ -1817,6 +3125,10 @@ def pr_state_of(name, refresh=False):
     obj, where = project_record(name)
     if obj is None:
         return (None, f"no record for {name} on any ref")
+    if obj.get("maintained"):
+        return ("maintained", where)
+    if release_delivered(obj):
+        return ("delivered", where)
     return (obj.get("pr_state") or "none", where)
 
 
@@ -1829,19 +3141,33 @@ def pr_state_of(name, refresh=False):
 # trusted merge path after its approval checks pass.
 FORK_HOOK_MARKER = "# moat-fork-hook"
 _FORK_HOOK = """#!/usr/bin/env bash
-{marker} v2
-# Refuses pushes to the upstream PR's head branch while that PR is open.
+{marker} v4
+# Refuses pushes to the port branch while it is upstream-visible or frozen: the
+# head of an open upstream PR, a maintained branch upstream points its users at,
+# or a delivered (tagged) release line. Only states known to leave the branch
+# private let a push through, so a state added after this version refuses too
+# (an older hook, v3 and before, does not -- re-run protect-fork to replace it).
+# On a release line it also refuses pushes to the pristine mirror and any push
+# that moves or deletes an existing tag: release tags are fixed points.
 # Installed by `moatlib.py protect-fork {name}`; see AGENTS.md on fix rounds.
 set -u
 [ "${{MOAT_PUBLISH:-}}" = "1" ] && exit 0
 
-# Only the PR's head branch is guarded, so the staging branch and any scratch
-# branch push normally -- and the lookup below is paid for only on the one push
-# that could reach a maintainer.
+# Only the port branch (and, on a release line, its pristine mirror) is guarded,
+# so the staging branch and any scratch branch push normally -- and the lookup
+# below is paid for only on the one push that could reach a maintainer.
 targets=0
-while read -r _local _lsha remote _rsha; do
+mirror=0
+while read -r _local _lsha remote rsha; do
   [ "$remote" = "refs/heads/{branch}" ] && targets=1
+  {mirror_test}
 done
+if [ "$mirror" = 1 ]; then
+  echo >&2 "moat: {mirror} is the pristine copy of upstream's branch for {name}; only"
+  echo >&2 "moat: upstream's own commits go there, through:"
+  echo >&2 "moat:   python3 utils/moatlib.py mirror-branch {name}"
+  exit 1
+fi
 [ "$targets" = 1 ] || exit 0
 
 # stdout only, so nothing a warning or a git message writes to stderr can be read
@@ -1856,19 +3182,32 @@ if [ $? -ne 0 ]; then
   python3 "{moatlib}" pr-state "{name}" 2>&1 >/dev/null | sed >&2 's/^/moat:   /'
   exit 1
 fi
-if [ "$state" = "open" ]; then
-  echo >&2 "moat: {branch} is the head of an OPEN upstream PR -- a push to it is"
-  echo >&2 "moat: upstream-visible before anyone reviewed or approved it."
-  echo >&2 "moat: Stage the fix instead: python3 utils/moatlib.py fix-branch {name}"
-  echo >&2 "moat: (the approved merge runs through: utils/upstream.py --merge-fix)"
-  exit 1
-fi
-exit 0
+case "$state" in
+  none|merged|closed)
+    exit 0 ;;
+  open)
+    echo >&2 "moat: {branch} is the head of an OPEN upstream PR -- a push to it is"
+    echo >&2 "moat: upstream-visible before anyone reviewed or approved it."
+    echo >&2 "moat: Stage the fix instead: python3 utils/moatlib.py fix-branch {name}" ;;
+  maintained)
+    echo >&2 "moat: {branch} is a MAINTAINED branch -- upstream points its users at"
+    echo >&2 "moat: it, so a push to it is public before anyone reviewed or approved it."
+    echo >&2 "moat: Stage the change instead: python3 utils/moatlib.py sync-branch {name}" ;;
+  delivered)
+    echo >&2 "moat: {branch} is a DELIVERED release line -- approved, tagged and frozen."
+    echo >&2 "moat: Stage the change instead: python3 utils/moatlib.py sync-branch {name}" ;;
+  *)
+    echo >&2 "moat: {name} is in state '$state', which this hook does not know;"
+    echo >&2 "moat: refusing the push to {branch}. Re-run: moatlib.py protect-fork {name}" ;;
+esac
+echo >&2 "moat: (the approved merge runs through: utils/upstream.py --merge-fix)"
+exit 1
 """
 
 
 def protect_fork(name):
-    """Install the pre-push hook that keeps an open PR's branch from moving.
+    """Install the pre-push hook that keeps an open PR's branch -- or a maintained
+    or delivered one -- from moving.
 
     Returns (level, message) where level is "ok", "skip" or "warn"; the CLI sends
     "warn" to stderr so an unprotected clone is not indistinguishable from a
@@ -1887,9 +3226,22 @@ def protect_fork(name):
     if obj is None:
         return ("warn", f"{name}: a fork clone exists but no record does; cannot tell "
                         f"which branch to protect")
+    # A release line's mirror is the review base and must carry upstream's SHAs
+    # only, so its clones refuse pushes to it as well. Other forks keep their
+    # mirror unguarded: people fast-forward those from a clone, and nothing
+    # reviews a diff against them.
+    mirror = (obj.get("fork_default_branch") or "main") if release_line(obj) else ""
+    # A remote sha that is not all zeros means the tag already exists there, so
+    # the push would move or delete it.
+    test = (f'[ "$remote" = "refs/heads/{mirror}" ] && mirror=1\n'
+            f'  case "$remote" in refs/tags/*) case "$rsha" in *[!0]*) '
+            f'echo >&2 "moat: $remote already exists on the fork; release tags are '
+            f'never moved or deleted"; exit 1 ;; esac ;; esac'
+            if mirror else ":")
     text = _FORK_HOOK.format(marker=FORK_HOOK_MARKER, name=name,
                              moatlib=str(REPO_ROOT / "utils" / "moatlib.py"),
-                             branch=obj.get("fork_branch") or PORT_BRANCH)
+                             branch=obj.get("fork_branch") or PORT_BRANCH,
+                             mirror=mirror or "(none)", mirror_test=test)
     hook = git_dir / "hooks" / "pre-push"
     if hook.exists():
         current = hook.read_text()
@@ -1994,10 +3346,35 @@ def advance_head(name, new_sha, repo=None):
     failure is evidence about the commit it happened on, so a HEAD move normally
     retires it and sends the arch back to a validator (see failure_stands) -- but a
     delta that cannot change compiled output cannot be the fix, so the failure is
-    carried forward to the new head instead."""
+    carried forward to the new head instead.
+
+    A head move puts a finished project back in flight, so a trunk-resident folder
+    is re-homed to `port/<name>` before the write. Fix and sync rounds already do
+    this for a project with an upstream PR; a no-upstream project has no rounds
+    (its port branch is not frozen), so this is the only event it has."""
+    moved, why = ensure_port_branch(name)
+    if moved:
+        print(why, file=sys.stderr)
     obj = load_status(name)
     repo = repo or _fork_repo(name)
+    if Path(repo, ".git").exists():
+        r = subprocess.run(["git", "cat-file", "-e", f"{new_sha}^{{commit}}"],
+                           cwd=str(repo), capture_output=True, text=True)
+        if r.returncode != 0:
+            raise ValueError(f"{name}: {new_sha} is not a commit in {repo}; "
+                             "push the fork commit and fetch before advancing the head")
     new_sha = full_sha(new_sha, repo)
+    _move_head(obj, new_sha, repo)
+    if moved:
+        # The folder is on a branch this checkout is not standing on.
+        save_record(name, obj, f"{name}: head_sha -> {new_sha[:12]}")
+    else:
+        save_status(name, obj)
+    return obj
+
+
+def _move_head(obj, new_sha, repo):
+    """advance_head's platform pass, on a record already in hand."""
     prev_head = obj.get("head_sha")
     obj["head_sha"] = new_sha
     for plat in list(obj["platforms"]):
@@ -2043,8 +3420,6 @@ def advance_head(name, new_sha, repo=None):
             if failed != blk.get("failed_sha"):
                 blk["failed_sha"] = failed
                 blk["updated_at"] = now_iso()
-    save_status(name, obj)
-    return obj
 
 
 def carry_forward(name, platform, new_sha, method, detail):
@@ -2542,7 +3917,18 @@ def belongs_on_branch(obj):
     -- work the project owes, recorded outside the state machine."""
     if settled(obj):
         return False
-    if not obj.get("pr_state"):
+    # A recorded fix or sync round is work in flight by definition, whatever the
+    # validations say: its staging branch is being ported, reviewed and validated,
+    # and every step of the round writes this record.
+    if obj.get("fix"):
+        return True
+    # A no-upstream ruling stands in for the PR: there is nobody to offer the port
+    # to, so "not offered yet" can never become false and would pin the folder to
+    # its branch forever. Such a project is finished on the other half alone.
+    # A delivered release line is finished the same way: its tag is the
+    # deliverable, and there is no PR to wait for.
+    if not obj.get("pr_state") and not obj.get("no_upstream") \
+            and not release_delivered(obj):
         return True
     if outstanding(obj):
         return True
@@ -2663,6 +4049,13 @@ def arch_task(obj, platform):
     if blk.get("state") == "completed":
         if same_commit(blk.get("validated_sha"), obj.get("head_sha")):
             return None                  # this arch has proved this code
+        # Its hardware is gone for now (config/arches.toml [offline]) and every gate
+        # it carries is proven at this head by someone else: the refresh would be
+        # extra evidence nobody can produce, so it is not owed. With a gate it
+        # carries still unproven the task stands, so the gap stays visible.
+        if platform in OFFLINE_PLATFORMS \
+                and not (gates_for(platform) & unsatisfied_gates(obj)):
+            return None
         return ("validator", "revalidate")  # it proved an older one; refresh it
     # Nothing this arch has proved covers the current head: it never validated, or its
     # failure has been superseded by a fix. `port-ready` either way, which is the full
@@ -2763,7 +4156,20 @@ def fleet(platform):
     After a project's folder moves to its own branch, `next_task` cannot see it --
     correctly, since you cannot work a project whose files are not in your tree. But
     then nothing answers "what is out there", and work becomes invisible rather than
-    merely elsewhere. This scans the refs and says which branch to check out."""
+    merely elsewhere. This scans the refs and says which branch to check out.
+
+    The question is about the remote, so fetch before answering it. The scan reads
+    remote-tracking refs, which are only as fresh as the last fetch; orient fetches
+    before it asks, but a direct `moatlib.py fleet` between orients answered from
+    refs minutes stale, and on 2026-08-20 that offered faiss's review to a second
+    host while linux-gfx90a's already-pushed lock acquisition sat unfetched. The
+    lock protocol still refused the second entry -- this fetch narrows the window,
+    it does not carry the exclusion. Offline the scan degrades to the old behavior:
+    stale refs and a warning, which beats refusing to answer at all."""
+    r = _git("fetch", "origin", "--prune", check=False)
+    if r.returncode != 0:
+        sys.stderr.write("fleet: fetch failed; answering from possibly stale "
+                         "remote-tracking refs\n")
     out = []
     for name, where in sorted(all_projects().items()):
         obj, _ = project_record(name)
@@ -2838,7 +4244,8 @@ def release_awaiting_fork(org="AMD-Ecosystem", dry_run=False):
     for name, obj, _where in project_records():
         if project_stage(obj) != "awaiting-fork":
             continue
-        fork = obj.get("fork_url") or f"https://github.com/{org}/{name}"
+        fork = obj.get("fork_url") or \
+            f"https://github.com/{default_fork_slug(obj, org)}"
         slug = fork.replace("https://github.com/", "")
         r = subprocess.run(["gh", "api", f"repos/{slug}", "--jq", ".full_name"],
                            capture_output=True, text=True, timeout=60)
@@ -3069,8 +4476,19 @@ def existing_claim(name):
     return None
 
 
+PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
 def scaffold_project(full_name, upstream_url=None, default_branch="main",
-                     ext_type="unknown", priority=0.0, force=False, depends_on=None):
+                     ext_type="unknown", priority=0.0, force=False, depends_on=None,
+                     name=None):
+    """Adopt `owner/repo` as a MOAT project. The project is normally named after
+    the repository, but `name` may differ: a release line is one project per
+    upstream release (`warp-1.14`, `warp-1.15` beside the development line
+    `warp`), all against the same NVIDIA/warp. Everything that needs the
+    repository reads upstream_url, never the project name; the fork it guesses
+    when none is recorded is the upstream repository's name in the organization
+    (default_fork_slug), and a release line normally records fork_url outright."""
     # No `force` on this one. Everything else here is our own decision and a person
     # may overrule it; this is the maintainer's, and there is nobody on our side who
     # can overrule it.
@@ -3084,7 +4502,11 @@ def scaffold_project(full_name, upstream_url=None, default_branch="main",
         raise ValueError(
             f"{full_name} is marked skip ({disp.get('reason')}): {disp.get('note', '')}. "
             f"Use force=True / --force to adopt anyway.")
-    name = full_name.split("/")[-1]
+    name = name or full_name.split("/")[-1]
+    if not PROJECT_NAME_RE.match(name) or name.endswith((".", ".lock")) \
+            or ".." in name or not valid_ref_name(f"refs/heads/port/{name}"):
+        raise ValueError(f"{name!r} cannot name a project: it has to be a path "
+                         f"component and a valid `port/<name>` branch")
     if not force:
         held = existing_claim(name)
         if held:
@@ -3216,6 +4638,44 @@ def branch_lessons(base_ref="origin/main"):
         orphaned = obj is not None and not belongs_on_branch(obj)
         out.append((name, sorted(shared), orphaned))
     return sorted(out)
+
+
+LESSON_HEADING = re.compile(r"^## Lesson for (cuda-to-rocm|moat-porting): (.+?)\s*$", re.M)
+
+
+def lesson_candidates():
+    """Lessons recorded in project notes and not yet promoted: (name, skill, title).
+
+    The skills are trunk files with one organized copy, and a port branch may not edit
+    them (gate_branch_scope). A lesson learned on a port is written into that project's
+    notes.md under `## Lesson for cuda-to-rocm: <title>` (or `moat-porting`), so the
+    port's review reads it with the evidence beside it. A trunk session then promotes
+    it into the reference where its reader would look, rewritten to fit what is already
+    there, and records `Promoted to <file> in <sha>.` under the heading. That keeps the
+    review that caught wrong lessons before, without each branch carrying its own copy
+    of the skill."""
+    out = []
+    for name in sorted(all_projects()):
+        path = f"projects/{name}/notes.md"
+        raw = None
+        if current_branch() != f"port/{name}":
+            branch = port_branch_of(name)
+            if branch:
+                raw = _ref_read(f"origin/{branch}", path)
+        if raw is None:
+            p = PROJECTS / name / "notes.md"
+            if p.exists():
+                raw = p.read_text(encoding="utf-8", errors="replace")
+        if raw is None:
+            raw = _ref_read("origin/main", path)
+        if not raw:
+            continue
+        for m in LESSON_HEADING.finditer(raw):
+            end = raw.find("\n## ", m.end())
+            body = raw[m.end():end if end != -1 else len(raw)]
+            if "Promoted to " not in body:
+                out.append((name, m.group(1), m.group(2)))
+    return out
 
 
 def make_worktree(name, path=None, base_ref="origin/main"):
@@ -3472,9 +4932,12 @@ def commit_to_branch(branch, files, message):
     env = {**os.environ, "GIT_INDEX_FILE": idx}
 
     def g(*args, stdin=None):
-        r = subprocess.run(["git", *args], cwd=str(REPO_ROOT), env=env, input=stdin,
-                           capture_output=True, text=True, check=True)
-        return r.stdout.strip()
+        # Bytes, not text mode: on Windows text mode turns every LF written to
+        # hash-object into CRLF, so a one-line record edit rewrites the whole file.
+        r = subprocess.run(["git", *args], cwd=str(REPO_ROOT), env=env,
+                           input=None if stdin is None else stdin.encode("utf-8"),
+                           capture_output=True, check=True)
+        return r.stdout.decode("utf-8").strip()
     try:
         g("read-tree", base)
         for path, content in files.items():
@@ -3593,8 +5056,63 @@ def squash_carry_forward(name, new_sha, repo=None):
                    "skipped": skipped, "optional": optional, "stale": stale})
 
 
+def adds_nothing_to_upstream(name, obj):
+    """Does head_sha's tree already exist in upstream's history?
+
+    After a merged PR the port branch can move to upstream itself: upstream lands
+    its own fix for what a follow-up would have carried, and the branch is
+    re-pointed by a merge whose tree is upstream's (lc0, 2026-10-20). head_sha
+    then differs from published_sha while offering nothing, and only a tree
+    comparison can tell. True when head_sha, or a parent with the same tree, is
+    an ancestor of upstream's default branch tip.
+
+    Needs the local fork clone and a reachable upstream; without either it
+    returns False, so the follow-up stays listed rather than being hidden. A
+    worktree from make_worktree has no clone of its own, so the main checkout's
+    is used when this tree lacks one."""
+    sha, url = obj.get("head_sha"), obj.get("upstream_url")
+    repo = _fork_repo(name)
+    if not (repo / ".git").exists():
+        common = _git("rev-parse", "--path-format=absolute", "--git-common-dir",
+                      check=False).stdout.strip()
+        if common:
+            repo = Path(common).parent / "projects" / name / "src"
+    if not sha or not url or not (repo / ".git").exists():
+        return False
+    branch = obj.get("fork_default_branch") or "main"
+
+    def git(*args, timeout=60):
+        try:
+            return subprocess.run(["git", *args], cwd=str(repo), capture_output=True,
+                                  text=True, timeout=timeout)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+
+    r = git("ls-remote", url, f"refs/heads/{branch}")
+    tip = (r.stdout.split() or [""])[0] if r and not r.returncode else ""
+    if not tip:
+        return False
+    have = git("cat-file", "-e", f"{tip}^{{commit}}")
+    if not have or have.returncode:
+        f = git("fetch", "--quiet", url, f"refs/heads/{branch}", timeout=300)
+        have = git("cat-file", "-e", f"{tip}^{{commit}}")
+        if not f or f.returncode or not have or have.returncode:
+            return False
+    trees = git("rev-parse", f"{sha}^{{tree}}")
+    parents = git("rev-parse", f"{sha}^@")
+    if not trees or trees.returncode or not parents or parents.returncode:
+        return False
+    tree = trees.stdout.strip()
+    for c in [sha, *parents.stdout.split()]:
+        t = git("rev-parse", f"{c}^{{tree}}")
+        a = git("merge-base", "--is-ancestor", c, tip)
+        if t and t.stdout.strip() == tree and a and a.returncode == 0:
+            return True
+    return False
+
+
 def pr_ready(name):
-    """Is a port ready for its single upstream PR?
+    """Is a port ready for its next upstream PR?
 
     Readiness is expressed as GATES, not as a fixed platform list. Every gate in
     config/arches.toml `required` must be satisfied, and a gate is satisfied when
@@ -3612,6 +5130,10 @@ def pr_ready(name):
     the archs that could still satisfy it -- completing any ONE clears the gate.
     Archs documented non-viable (`blocked`) are reported separately so the PR body
     can scope its claim, and unscheduled archs (hardware gone) are never blockers.
+
+    A finished (merged or closed) PR does not settle the question: with content
+    past what it shipped, readiness describes the FOLLOW-UP -- same gates, same
+    waiver rules, judged at the current head_sha (see archive_pr).
 
     Returns (ready, blocking, nonviable)."""
     # The freshest record, not the nearest: load_status prefers the working tree,
@@ -3646,10 +5168,69 @@ def pr_ready(name):
                          f"{disp.get('reason')} (recorded in dispositions.json; "
                          f"not a PR candidate)")], [])
 
+    # A maintained ruling settles the PR question the other way round: upstream
+    # declined the merge and adopted the fork by reference, so no follow-up PR
+    # re-offers what a maintainer already declined. Work continues on the port
+    # branch through sync rounds (sync_branch), never a new upstream PR.
+    m = obj.get("maintained")
+    if m:
+        return (False, [("maintained",
+                         f"upstream adopted the fork by reference "
+                         f"({m.get('evidence')}) -- work continues on the "
+                         f"maintained port branch through sync rounds, not a "
+                         f"new upstream PR")], [])
+
+    # No upstream destination: the repository is archived or otherwise cannot
+    # take a pull request. Refused here, at the gate both routes upstream pass
+    # through, so the port leaves every ready-to-open list instead of waiting
+    # on a PR GitHub would reject. The fork's port branch is the deliverable.
+    nu = obj.get("no_upstream")
+    if nu:
+        return (False, [("no-upstream",
+                         f"upstream cannot take a pull request "
+                         f"({nu.get('evidence')}) -- the fork's port branch is "
+                         f"the deliverable")], [])
+
+    # A release line that was signed off and tagged is finished: nothing more is
+    # offered on its review PR, and later upstream patch releases arrive as sync
+    # rounds (fix_ready judges those). An undelivered release line falls through
+    # to the ordinary gates below, which are what its in-fork review PR needs.
+    rel = obj.get("release") if release_line(obj) else None
+    if rel:
+        return (False, [("delivered",
+                         f"release {rel.get('tag')} was approved and tagged at "
+                         f"{(rel.get('sha') or '?')[:12]} -- the port branch is "
+                         f"frozen; later work lands through sync rounds")], [])
+
     pr_state = obj.get("pr_state")
-    if pr_state:
-        return (False, [("pr-exists", f"the upstream PR is already {pr_state}")], [])
-    if obj.get("pr_url"):
+    if pr_state == "open":
+        return (False, [("pr-exists", "the upstream PR is already open")], [])
+    if pr_state in ("merged", "closed"):
+        # A finished PR is history, not a refusal: readiness then asks whether a
+        # FOLLOW-UP is ready, which needs content past what the finished PR
+        # shipped and a record of what that was. The finished PR itself moves
+        # into pr_history when the follow-up's review PR opens (archive_pr).
+        shipped = obj.get("published_sha")
+        if not shipped:
+            return (False, [("pr-exists",
+                             f"the upstream PR is already {pr_state} and the record "
+                             f"does not say what it shipped -- `utils/upstream.py "
+                             f"--apply` backfills published_sha from the live PR, "
+                             f"which is what makes a follow-up judgeable")], [])
+        if same_commit(obj.get("head_sha"), shipped):
+            return (False, [("pr-exists",
+                             f"the upstream PR is already {pr_state} and the branch "
+                             f"has nothing past what it shipped -- a follow-up "
+                             f"starts when new reviewed commits land")], [])
+        if adds_nothing_to_upstream(name, obj):
+            return (False, [("pr-exists",
+                             f"the upstream PR is already {pr_state} and head_sha "
+                             f"{obj['head_sha'][:12]} carries upstream's own tree "
+                             f"-- upstream absorbed the port, so a follow-up "
+                             f"would offer nothing")], [])
+        # A follow-up delta exists; the gates below judge it at head_sha exactly
+        # as they judge a first PR.
+    elif obj.get("pr_url"):
         return (False, [("pr-exists", "a PR is already recorded in status.json")], [])
 
     blocking, nonviable = _gate_blockers(name, obj)
@@ -3707,6 +5288,16 @@ def _gate_blockers(name, obj):
     if not lic_ok:
         blocking.append(("license", lic_why))
 
+    # Surface accounting: work recorded as owed (in scope, not yet done) blocks the
+    # PR until it is covered or a person rules it out of scope.
+    try:
+        sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+        import surface as _surface
+        for cid, why in _surface.owed(name).items():
+            blocking.append(("surface-owed", f"{cid} is still owed: {(why or '')[:120]}"))
+    except Exception as e:  # never let the accounting helper hide the real gates
+        blocking.append(("surface-owed", f"could not read owed surface items: {e}"))
+
     # Integrity gate: the validated content must be COMMITTED. A fork with
     # uncommitted tracked source/build edits means a validation built against local
     # edits that are NOT in the branch -- the upstream PR would be unbuildable (the
@@ -3726,13 +5317,15 @@ def _gate_blockers(name, obj):
 
 
 def fix_ready(name):
-    """Is a staged fix round ready for its fork review PR and merge?
+    """Is a staged fix or sync round ready for its fork review PR and merge?
 
     The same bar as pr_ready -- every required gate satisfied at the current
-    head_sha (the staging tip, under a fix round), licence standing, fork clean --
-    with the PR-existence check inverted: an OPEN upstream PR is the precondition
-    here, not a blocker. The opt-out check binds exactly as it does for a first
-    submission: a fix push is a new arrival in someone's repository.
+    head_sha (the staging tip, under a round), licence standing, fork clean --
+    with the PR-existence check inverted: the round's precondition is an OPEN
+    upstream PR (fix rounds) or a standing maintained ruling (sync rounds), not
+    a blocker. The opt-out check binds exactly as it does for a first
+    submission: a fix push is a new arrival in someone's repository, and a
+    maintained branch is what upstream sends its users to.
 
     Returns (ready, blocking, nonviable) like pr_ready."""
     obj, _where = project_record(name)
@@ -3743,13 +5336,21 @@ def fix_ready(name):
         return (False, [("opted-out",
                          f"{opt['who']} asked not to receive pull requests from this "
                          f"effort ({opt['source']})")], [])
-    if obj.get("pr_state") != "open":
-        return (False, [("no-open-pr", "fix rounds exist only while an upstream PR "
-                                       "is open")], [])
     fix = obj.get("fix")
+    if fix and fix.get("kind") == "sync":
+        if not (obj.get("maintained") or release_delivered(obj)):
+            return (False, [("not-maintained",
+                             "a sync round needs a standing maintained ruling "
+                             "(set-maintained) or a delivered release line; "
+                             "this one has neither")], [])
+    elif obj.get("pr_state") != "open":
+        return (False, [("no-open-pr", "fix rounds exist only while an upstream PR "
+                                       "is open; a maintained fork syncs through "
+                                       "sync-branch")], [])
     if not fix:
         return (False, [("no-fix-round", "no staging branch recorded "
-                                         "(moatlib.py fix-branch)")], [])
+                                         "(moatlib.py fix-branch, or sync-branch "
+                                         "for a maintained fork)")], [])
     if not obj.get("published_sha"):
         return (False, [("no-published-sha", "the record does not say what the open "
                                              "PR shows")], [])
@@ -3819,6 +5420,8 @@ def main(argv=None):
     s.add_argument("--priority", type=float, default=0.0)
     s.add_argument("--force", action="store_true", help="adopt even if marked skip")
     s.add_argument("--deps", nargs="*", default=[], help="MOAT project name(s) this depends on")
+    s.add_argument("--name", help="project name when it differs from the repository "
+                                  "name (a release line: --name warp-1.14 NVIDIA/warp)")
 
     s = sub.add_parser("next-task", help="print next actionable project for a platform")
     s.add_argument("platform", help="<os>-<gfx>, e.g. linux-gfx90a")
@@ -3847,9 +5450,10 @@ def main(argv=None):
     sub.add_parser("misplaced", help="projects whose folder is not where their state says")
 
     s = sub.add_parser("lessons",
-                       help="global edits on port branches; only the orphaned ones need acting on")
+                       help="lessons in project notes awaiting promotion to a skill, and "
+                            "old skill edits stranded on finished port branches")
     s.add_argument("--pending", action="store_true",
-                   help="also list the ones correctly awaiting their port's review")
+                   help="also list old skill/tooling edits on live port branches")
 
     sub.add_parser("waivers", help="gate waivers suggested but not yet approved")
 
@@ -3935,6 +5539,13 @@ def main(argv=None):
     s.add_argument("--by", required=True, help="who approved it (never an agent)")
     s.add_argument("--note", help="scope or conditions of the approval")
 
+    s = sub.add_parser("set-license-spdx",
+                       help="record or correct the project's licence (SPDX id) as read "
+                            "from the repository, with the licence file as evidence")
+    s.add_argument("name")
+    s.add_argument("spdx")
+    s.add_argument("--evidence", required=True, help="URL of the licence file")
+
     s = sub.add_parser("license-gate", help="may this port be offered upstream on licence grounds?")
     s.add_argument("name")
 
@@ -3962,6 +5573,8 @@ def main(argv=None):
                    help="list projects whose upstream PR is ready to open (honors recorded dispositions; "
                         "use this instead of scanning raw state==completed)")
 
+    s = sub.add_parser("audit-commits", help="report fork commits that break the commit-message rules")
+    s.add_argument("name", nargs="?")
     s = sub.add_parser("audit-clean", help="report forks with uncommitted tracked source/build edits (integrity-gap fingerprint)")
     s.add_argument("name", nargs="?", default=None, help="one project, or omit to scan every fork")
 
@@ -3997,11 +5610,108 @@ def main(argv=None):
     s.add_argument("name")
     s.add_argument("new_published_sha")
 
+    s = sub.add_parser("abandon-fix",
+                       help="a person's ruling that the staged fix round will never "
+                            "merge: clear it and return head_sha to its base")
+    s.add_argument("name")
+    s.add_argument("--by", required=True)
+    s.add_argument("--reason", required=True)
+
+    s = sub.add_parser("archive-pr",
+                       help="move a finished (merged/closed) upstream PR into "
+                            "pr_history, opening the record for a follow-up round "
+                            "(the follow-up review flow runs this; by hand it is "
+                            "recovery)")
+    s.add_argument("name")
+
     s = sub.add_parser("pr-state",
                        help="a project's recorded upstream PR state, from whichever ref holds it")
     s.add_argument("name")
     s.add_argument("--refresh", action="store_true",
                    help="fetch the project's refs first (the fork pre-push hook does)")
+
+    s = sub.add_parser("set-maintained",
+                       help="record a person's ruling that upstream adopted the fork "
+                            "by reference: the PR closed unmerged and upstream points "
+                            "its users at the port branch, which is now a long-lived "
+                            "deliverable kept current through sync rounds")
+    s.add_argument("name")
+    s.add_argument("--evidence",
+                   help="where upstream says so (README section, closing comment URL)")
+    s.add_argument("--by", help="who ruled it; required, never defaulted")
+    s.add_argument("--note")
+    s.add_argument("--clear", action="store_true",
+                   help="withdraw the ruling (upstream merged after all)")
+
+    s = sub.add_parser("set-no-upstream",
+                       help="record a person's ruling that upstream cannot take a "
+                            "pull request (archived, read-only): pr_ready refuses "
+                            "and the fork's port branch is the deliverable")
+    s.add_argument("name")
+    s.add_argument("--evidence",
+                   help="where it can be checked (the archived upstream's URL)")
+    s.add_argument("--by", help="who ruled it; required, never defaulted")
+    s.add_argument("--note")
+    s.add_argument("--clear", action="store_true",
+                   help="withdraw the ruling (upstream takes pull requests again)")
+
+    s = sub.add_parser("set-fork-url",
+                       help="record a person's ruling that the port lives in an "
+                            "existing repository (URL) instead of an organization "
+                            "fork; the port branch must already exist there")
+    s.add_argument("name")
+    s.add_argument("url")
+    s.add_argument("--by", help="who ruled it; required, never defaulted")
+    s.add_argument("--reason")
+
+    s = sub.add_parser("set-base-branch",
+                       help="record a person's ruling that the upstream PR targets "
+                            "BRANCH (sets fork_default_branch; the branch must "
+                            "already exist on the fork)")
+    s.add_argument("name")
+    s.add_argument("branch")
+    s.add_argument("--by", help="who ruled it; required, never defaulted")
+    s.add_argument("--reason")
+
+    s = sub.add_parser("set-fork-branch",
+                       help="record a person's ruling that the port lives on fork "
+                            "branch BRANCH instead of moat-port (a release line's "
+                            "release/<version>.amd<rev>)")
+    s.add_argument("name")
+    s.add_argument("branch")
+    s.add_argument("--by", help="who ruled it; required, never defaulted")
+    s.add_argument("--reason")
+
+    s = sub.add_parser("set-delivery",
+                       help="record a person's ruling on how the port is delivered "
+                            "when not as an upstream PR: fork-release makes it a "
+                            "release line (in-fork review PR, then tag and freeze "
+                            "through upstream.py --finish-release)")
+    s.add_argument("name")
+    s.add_argument("mode", nargs="?", choices=DELIVERY_MODES)
+    s.add_argument("--by", help="who ruled it; required, never defaulted")
+    s.add_argument("--tag-format",
+                   help="release tag built from {version}, {rev}, {name}, {branch} "
+                        "(default " + DEFAULT_RELEASE_TAG_FORMAT.replace("%", "%%")
+                        + "; version and rev come from a fork_branch ending in "
+                          "<version>.amd<rev>)")
+    s.add_argument("--reason")
+    s.add_argument("--clear", action="store_true",
+                   help="withdraw the ruling (refused once the line is delivered)")
+
+    s = sub.add_parser("mirror-branch",
+                       help="create or fast-forward the fork's pristine copy of "
+                            "upstream's fork_default_branch (refuses anything but a "
+                            "fast-forward), and create the port branch from it if "
+                            "absent")
+    s.add_argument("name")
+    s.add_argument("--dry-run", action="store_true")
+
+    s = sub.add_parser("sync-branch",
+                       help="establish the staging branch for a sync round on a "
+                            "maintained fork: absorb upstream's advance, then the "
+                            "normal porter/reviewer/validator cycle and approved merge")
+    s.add_argument("name")
 
     s = sub.add_parser("set-pr-merged", help="record that the upstream PR merged")
     s.add_argument("name")
@@ -4049,7 +5759,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     if args.cmd == "scaffold":
-        name = scaffold_project(args.full_name, args.url, args.branch, args.ext, args.priority, args.force, args.deps)
+        name = scaffold_project(args.full_name, args.url, args.branch, args.ext,
+                                args.priority, args.force, args.deps, name=args.name)
         print(f"scaffolded projects/{name}" + (f" (depends_on={args.deps})" if args.deps else ""))
     elif args.cmd == "next-task":
         t = next_task(args.platform)
@@ -4089,24 +5800,26 @@ def main(argv=None):
                   f"hardware, or `set-not-portable <name> --reason ... --by <who>`",
                   file=sys.stderr)
     elif args.cmd == "lessons":
+        cands = lesson_candidates()
+        for name, skill, title in cands:
+            print(f"{name}\tCANDIDATE\t{skill}: {title[:70]}")
         rows = branch_lessons()
         orphaned = [r for r in rows if r[2]]
-        pending = [r for r in rows if not r[2]]
         for name, paths, _o in orphaned:
             print(f"{name}\tORPHANED\t{','.join(paths[:4])}")
         if args.pending:
-            for name, paths, _o in pending:
-                print(f"{name}\tpending-review\t{','.join(paths[:4])}")
+            for name, paths, _o in (r for r in rows if not r[2]):
+                print(f"{name}\tlegacy-edit\t{','.join(paths[:4])}")
+        if cands:
+            print(f"-- {len(cands)} lesson(s) in project notes await promotion: once the "
+                  f"port's review has read them, put each in the skill on main where its "
+                  f"reader would look, then note `Promoted to <file> in <sha>.` under "
+                  f"its heading", file=sys.stderr)
         if orphaned:
-            print(f"-- {len(orphaned)} finished port(s) carry a global edit the trunk "
-                  f"does not have. Their branches are about to be deleted and nothing "
-                  f"will carry it: read each diff, then land it with the port",
-                  file=sys.stderr)
-        elif args.pending and pending:
-            print(f"-- {len(pending)} branch(es) carry a lesson awaiting their port's "
-                  f"review, which is where it belongs. Do NOT lift these to the trunk: "
-                  f"the review is what makes a lesson trustworthy",
-                  file=sys.stderr)
+            print(f"-- {len(orphaned)} finished port(s) carry a skill or tooling edit the "
+                  f"trunk does not have, from before port branches were limited to their "
+                  f"own folder. Read each diff and land what is still true when the "
+                  f"branch merges", file=sys.stderr)
     elif args.cmd == "misplaced":
         rows = misplaced_folders()
         for name, where, what, work in rows:
@@ -4209,6 +5922,10 @@ def main(argv=None):
     elif args.cmd == "record-license-clearance":
         c = record_license_clearance(args.name, args.by, args.note)
         print(f"{args.name}: tier {c['tier']} cleared upstream by {c['approved_by']}")
+    elif args.cmd == "set-license-spdx":
+        old = set_license_spdx(args.name, args.spdx, args.evidence)
+        ok, why = license_gate(args.name)
+        print(f"{args.name}: licence {old} -> {args.spdx}; license-ok={ok} ({why})")
     elif args.cmd == "license-gate":
         ok, why = license_gate(args.name)
         print(f"{args.name}: license-ok={ok} ({why})")
@@ -4282,14 +5999,47 @@ def main(argv=None):
             if "completed" not in states:
                 continue
             ready_names.append((n, nonviable))
+        # A release line passes the same gates for its IN-FORK review PR, but it
+        # is never an upstream PR candidate, so it is listed apart and named for
+        # what it is waiting on.
+        lines = [(n, nv) for n, nv in ready_names
+                 if release_line(project_record(n)[0])]
+        ready_names = [r for r in ready_names if r not in lines]
         for n, nonviable in ready_names:
             scope = f"  (scope PR to exclude non-viable: {', '.join(nonviable)})" if nonviable else ""
             print(f"{n}{scope}")
+        for n, nonviable in lines:
+            scope = f"  (non-viable: {', '.join(nonviable)})" if nonviable else ""
+            print(f"RELEASE-READY {n}{scope}")
         print(f"-- {len(ready_names)} PR-ready project(s); terminal-outcome, already-open, "
               "and all-blocked projects excluded")
+        if lines:
+            print(f"-- {len(lines)} release line(s) ready for sign-off: an in-fork "
+                  "review PR (upstream.py --review), never an upstream PR; approval "
+                  "is finished by upstream.py --finish-release")
         print("NOTE: pr_ready checks the licence gate and recorded dispositions itself; "
               "a project listed here has passed both. What it cannot judge is whether "
               "the change is worth sending -- read the diff before opening.")
+    elif args.cmd == "audit-commits":
+        names = ([args.name] if args.name
+                 else [n for n, _o, _w in project_records()])
+        problems, judged = [], 0
+        for n in names:
+            found = commit_message_problems(n)
+            if found is None:
+                continue                 # no clone here: did not run, not a pass
+            judged += 1
+            problems.extend(found)
+        for line in problems:
+            print(line)
+        if problems:
+            sys.exit(1)
+        if judged == 0:
+            print("audit-commits: NO local fork clone to judge here"
+                  + (f" ({args.name})" if args.name else "")
+                  + " -- the check did not run; it binds on the hosts holding the clones")
+        else:
+            print(f"OK: fork commit messages conform ({judged} local clone(s) judged)")
     elif args.cmd == "audit-clean":
         names = ([args.name] if args.name
                  else [n for n, _o, _w in project_records()])
@@ -4383,12 +6133,103 @@ def main(argv=None):
     elif args.cmd == "set-fix-merged":
         obj = set_fix_merged(args.name, args.new_published_sha)
         print(f"{args.name}: published_sha -> {obj['published_sha'][:12]}")
+    elif args.cmd == "abandon-fix":
+        obj = abandon_fix(args.name, args.by, args.reason)
+        print(f"{args.name}: fix round abandoned; head_sha -> {obj['head_sha'][:12]}")
+    elif args.cmd == "archive-pr":
+        e = archive_pr(args.name)
+        print(f"{args.name}: PR #{e['pr_number']} ({e['pr_state']}) archived; the "
+              f"record is open for a follow-up round")
     elif args.cmd == "pr-state":
         state, why = pr_state_of(args.name, refresh=args.refresh)
         if state is None:
             print(why, file=sys.stderr)
             return 1
         print(state)
+    elif args.cmd == "set-maintained":
+        if not args.by:
+            print("set-maintained: --by is required -- this records a person's "
+                  "ruling", file=sys.stderr)
+            return 2
+        obj = set_maintained(args.name, args.evidence, args.by,
+                             note=args.note, clear=args.clear)
+        if args.clear:
+            print(f"{args.name}: maintained ruling cleared")
+        else:
+            print(f"{args.name}: fork ruled MAINTAINED -- upstream points at "
+                  f"{obj.get('fork_branch') or PORT_BRANCH} "
+                  f"({obj['maintained']['evidence']}). The branch stays frozen "
+                  f"(sync rounds move it: moatlib.py sync-branch {args.name}); "
+                  f"`upstream.py --drift` watches upstream for conflicts.")
+    elif args.cmd == "set-no-upstream":
+        if not args.by:
+            print("set-no-upstream: --by is required -- this records a person's "
+                  "ruling", file=sys.stderr)
+            return 2
+        obj = set_no_upstream(args.name, args.evidence, args.by,
+                              note=args.note, clear=args.clear)
+        if args.clear:
+            print(f"{args.name}: no-upstream ruling cleared")
+        else:
+            print(f"{args.name}: ruled NO UPSTREAM DESTINATION "
+                  f"({obj['no_upstream']['evidence']}). No upstream PR will be "
+                  f"offered; the fork's {obj.get('fork_branch') or PORT_BRANCH} "
+                  f"branch is the deliverable.")
+    elif args.cmd == "set-fork-url":
+        if not args.by:
+            print("set-fork-url: --by is required -- this records a person's "
+                  "ruling", file=sys.stderr)
+            return 2
+        obj = set_fork_url(args.name, args.url, args.by, reason=args.reason)
+        print(f"{args.name}: fork is now {obj['fork_url']} "
+              f"(was {obj['fork_url_ruling']['previous']})")
+    elif args.cmd == "set-base-branch":
+        if not args.by:
+            print("set-base-branch: --by is required -- this records a person's "
+                  "ruling", file=sys.stderr)
+            return 2
+        obj = set_base_branch(args.name, args.branch, args.by, reason=args.reason)
+        print(f"{args.name}: PR base is now {obj['fork_default_branch']} "
+              f"(was {obj['base_branch_ruling']['previous']})")
+    elif args.cmd == "set-fork-branch":
+        if not args.by:
+            print("set-fork-branch: --by is required -- this records a person's "
+                  "ruling", file=sys.stderr)
+            return 2
+        obj = set_fork_branch(args.name, args.branch, args.by, reason=args.reason)
+        print(f"{args.name}: port branch is now {obj['fork_branch']} "
+              f"(was {obj['fork_branch_ruling']['previous'] or PORT_BRANCH})")
+    elif args.cmd == "set-delivery":
+        if not args.by:
+            print("set-delivery: --by is required -- this records a person's "
+                  "ruling", file=sys.stderr)
+            return 2
+        if not args.clear and not args.mode:
+            print("set-delivery: give a mode (fork-release) or --clear",
+                  file=sys.stderr)
+            return 2
+        obj = set_delivery(args.name, args.mode, args.by, tag_format=args.tag_format,
+                           reason=args.reason, clear=args.clear)
+        if args.clear:
+            print(f"{args.name}: delivery ruling cleared")
+        else:
+            try:
+                tag = release_tag(obj)
+            except ValueError:
+                tag = "(derived once set-fork-branch records the port branch)"
+            print(f"{args.name}: delivered as a release line -- review PR "
+                  f"{obj.get('fork_branch') or PORT_BRANCH} -> "
+                  f"{obj.get('fork_default_branch')}, approval tags {tag} and "
+                  f"freezes the branch (upstream.py --finish-release)")
+    elif args.cmd == "mirror-branch":
+        for line in mirror_branch(args.name, dry_run=args.dry_run):
+            print(f"{args.name}: {line}")
+    elif args.cmd == "sync-branch":
+        fix = sync_branch(args.name)
+        print(f"{args.name}: sync round on {fix['branch']} "
+              f"(base {(fix.get('base_sha') or '?')[:12]}, absorbing upstream "
+              f"{(fix.get('upstream_sha') or '?')[:12]}, review PR "
+              f"{fix.get('review_pr') or 'not yet open'})")
     elif args.cmd == "set-pr-merged":
         set_pr_merged(args.name)
         print(f"{args.name}: PR merged")
@@ -4482,4 +6323,6 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())

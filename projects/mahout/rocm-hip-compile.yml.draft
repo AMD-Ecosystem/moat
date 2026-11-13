@@ -1,0 +1,47 @@
+# DRAFT -- compile-only ROCm/HIP CI for the QDP module (mahout follow-up).
+# Separate PR, opened AFTER #1399 merges (it needs the `hip` feature #1399 adds).
+# No AMD GPU runners exist, so this never runs kernels -- it only guards the
+# hipcc/HIP build against bit-rot as the default CUDA path evolves.
+name: ROCm HIP compile
+
+on:
+  pull_request:
+    paths:
+      - 'qdp/**'
+      - '.github/workflows/rocm-hip-compile.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'qdp/**'
+
+jobs:
+  hip-compile:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ROCm (hipcc + HIP runtime + device libs, compile-only)
+        run: |
+          set -eux
+          sudo mkdir -p /etc/apt/keyrings
+          wget -qO- https://repo.radeon.com/rocm/rocm.gpg.key \
+            | sudo gpg --dearmor -o /etc/apt/keyrings/rocm.gpg
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/7.2.1 noble main" \
+            | sudo tee /etc/apt/sources.list.d/rocm.list
+          printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
+            | sudo tee /etc/apt/preferences.d/rocm-pin-600
+          sudo apt-get update
+          sudo apt-get install -y rocm-hip-runtime-dev rocm-device-libs hipcc
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Compile the QDP HIP kernels (gfx90a; no GPU required)
+        env:
+          QDP_USE_HIP: '1'
+          QDP_HIP_ARCH_LIST: gfx90a
+          ROCM_PATH: /opt/rocm
+        run: |
+          export PATH=/opt/rocm/bin:$PATH
+          cargo build -p qdp-kernels --no-default-features --features hip \
+            --manifest-path qdp/Cargo.toml

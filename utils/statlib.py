@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Aggregate projects/<name>/stats.jsonl into summary numbers. The stats are
 provenance of the MOAT endeavor: what the ports cost in compile/test wall,
 session wall, and tokens is a notable fact about the work, recorded so a person
@@ -7,11 +9,15 @@ is accurate. Thinking time is a residual (unattributed wall: model latency plus
 human-in-the-loop), not pure model thinking. Tokens are approximate. Nothing
 here fabricates a number; approximate values carry approx=True."""
 
+import os
 import json
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
 
 
 RETIRED = REPO_ROOT / "data" / "retired_stats.jsonl"
@@ -138,4 +144,6 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main(sys.argv[1:]))
