@@ -1398,3 +1398,79 @@ This clears the `nvcc compile at af0688d8 (mi355)` item owed in `## Curated hist
 ## gfx1201 finding goes in the PR body (jeff, 2026-11-13)
 
 jeff ruled: mention the gfx1201 result in the upstream PR body, not a separate issue. The PR body gets one sentence explaining why gfx1201 has no table: tuner-selected configs, and the existing gfx1100 table, measured 2-9% slower end to end than the generic configs on gfx1201 (identical output), so it keeps the generic fallback. Include it when the review PR body is drafted.
+## Review 2026-11-13 curated history moat-gpu-coverage af0688d8 (reviewer, linux-gfx942: review-passed)
+
+Scope: `d0185a2d..origin/moat-gpu-coverage` (af0688d8) on the fork, reviewed explicitly because `set-fork-branch` is not recorded yet and the tooling still resolves to `moat-port`. `git ls-remote`: `moat-gpu-coverage` = af0688d8 = `head_sha`, `moat-port` = 0c897402 (untouched), `master` = d0185a2d. Method: `pr-review` skill, local-branch mode; the code of every commit was already reviewed in its original form (`## Review 2026-11-13`, `## Review 2026-11-13 delta 2cda180e..0c897402`), so this round checks the curation, the rewritten messages against the durable evidence, and a build and regression at the new tip. Findings fact-checked inline.
+
+### Port Review: MMseqs2 (moat-gpu-coverage vs d0185a2d)
+
+Summary: four commits on upstream d0185a2d (generic AMD fallback with gfx-name dispatch, ClampToInvalid HIP device path, gfx90a and gfx950 tuned tables), content identical to the reviewed originals and with no Windows change. Approved for validation; one commit-message wording item below needs a person's call because fixing it means re-publishing the branch.
+
+#### Commit Hygiene (decision for jeff before the upstream PR)
+
+1. e530252b `[ROCm] Add tuned libmarv aligner configs for gfx90a`, first paragraph: "gfx90a (MI200) had no tuned aligner and, since the previous change, uses the generic AMD configs." In the curated series the previous commit is 5ee63b2d (ClampToInvalid); the change that made gfx90a use the generic configs is ae0dd8b3, two commits back. (The sentence was already off on `moat-port`, where the previous commit was the Windows 54edbc78; the curation was the chance to fix it.) Suggested wording: "gfx90a (MI200) had no tuned aligner and, with the generic AMD fallback added earlier in this series, uses the generic configs." The branch is published and plain pushes cannot rewrite it, so the fix is either a message-only re-creation on a new branch name (tree identical, so `squash-carry-forward` carries validation forward) or accepting the wording as is. Everything else in the message is accurate (below). Not a code defect, so it does not send the branch back.
+
+#### Checks run (all passed; recorded so the next round does not repeat them)
+
+- Patch-ids (`git show <c> | git patch-id --stable`): ae0dd8b3 = 84a8fb2e (4c9d9c5c7015), 5ee63b2d = 3c588b6f (da1a7204b8cf), e530252b = 2cda180e (b8abb22870d3), af0688d8 = 0c897402 (0a1f3c43aa27). Trees: ae0dd8b3 = 84a8fb2e and 5ee63b2d = 3c588b6f exactly (`git diff --quiet`). Parent chain linear from d0185a2d; author and committer Jeff Daily.
+- Tree against 0c897402: `git diff 0c897402 af0688d8 --stat` 9 files, +13/-155, exactly the files of 7c39308d and 54edbc78; `diff <(git diff af0688d8 0c897402) <(git diff 7c39308d~1 54edbc78)` identical (7c39308d~1 = 3c588b6f); on a scratch worktree at af0688d8, `git cherry-pick -n 7c39308d 54edbc78 && git write-tree` = 31ae6806... = `0c897402^{tree}`.
+- No dependency on the dropped commits: `git diff d0185a2d af0688d8 --stat` touches only libmarv (11 files, +850/-71: Readme, CMakeLists, MarvGpuArch.cmake, convert.cuh, the two dispatchers, headers, four tuned files); none of the 9 Windows files differs from upstream; `git grep -nE 'MARV_API|MARV_BUILDING_DLL|MARV_USING_DLL|_WIN32|WIN32|strtok_s|Windows' af0688d8 -- lib/libmarv`: no hits. Intermediate commit e530252b stands alone: libmarv standalone at e530252b, `cmake -S lib/libmarv/src -DENABLE_HIP=1 -DLIBRARY_ONLY=1 -DCMAKE_HIP_ARCHITECTURES='gfx90a;gfx942;gfx1201'` (configure prints `generic AMD aligner for gfx1201`), 16/16, 0 warnings. 5ee63b2d is the generic build the porter benchmarked and regression-tested in `## Curated history`; ae0dd8b3's tree is 84a8fb2e's.
+- Messages against the evidence: e530252b q1k "54.4-55.4 s against 66.7-67.6 s (1.22x)" = `reference/gfx90a-tuning/bench_q1k.txt` (tuned 55.42/54.45/54.48, mean 54.78; generic 67.62/66.75/66.65, mean 67.01; 1.223x); t8 "12.6-13.1 s against 16.7-18.2 s (1.34x)" = `bench_t8.txt` (tuned 12.66/13.06/13.01/12.65, mean 12.84; generic 18.19/17.02/16.99/16.66, mean 17.21; 1.340x); kernel trace "12.0 s against 15.9 s in the gapless kernels" = `kernel-stats/t8_*_kernel_stats.csv` summed over libmarv kernels, every one a gapless kernel (12.00 vs 15.92 s; all kernels 12.22 vs 16.32 s); rows and md5 identical in every run. "5.2-12.6x" = 1338/258 to 1338/106 GCUPS from `## Rescope porter round` (the raw gfx90a CSVs were scratch; the figure was recorded as measured in that round and accepted by `## Review 2026-11-13`). "removes every tile above 640 and every config with more than 20 items": the endpos multi-tile list in `make_aligner_endpos_amd_gfx90a.cu:63-66` is 512x16x16, 16x20, 32x16, 32x20 (tiles 256-640). af0688d8 "559-1219 GCUPS against 5177-5683 GCUPS with 20 items at the same group sizes" = the pooled ranges in `## gfx950 tuning porter round`, as the gfx950 ruling asked; 1.05x and 1.02x figures unchanged from 0c897402 and verified in the previous delta review. ae0dd8b3 and 5ee63b2d messages verbatim.
+- Hygiene: titles 54/65/51/51 characters, `[ROCm]`; "Authored with Claude.", no `Co-Authored-By`/noreply; ASCII; fenced Test Plans. `grep -iE 'windows|win32|dll|moat|msvc'` over the four messages and the added diff lines: no hits. `utils/jargon.py -C projects/MMseqs2/src --commits d0185a2d..moat-gpu-coverage` and `--diff d0185a2d..moat-gpu-coverage`: clean.
+- Build at af0688d8 on MI300X (gfx942:sramecc+:xnack-), TheRock HIP (AMD clang 24.0.0), `HIP_VISIBLE_DEVICES=3` (self-pinned, all GPUs idle), `ulimit -c 0`:
+  ```
+  R=$(hipconfig --rocmpath)
+  cmake -S projects/MMseqs2/src -B build-gfx942 -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DHAVE_TESTS=1 -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+  cmake --build build-gfx942 -j56 --target mmseqs
+  CUDA_VISIBLE_DEVICES=0 util/regression/run_regression.sh build-gfx942/src/mmseqs <scratch>
+  ```
+  312/312, 116 warning lines (Rust `block_aligner_c`, tinyexpr), none in aligner or convert files; `mmseqs version` af0688d8. Regression (submodule 19b9867b): 43/43 reports GOOD, 43 TEST SUCCESS; SEARCH_GPU 0.454819 = expected (28 s), SEARCH_GPU_SERVER 0.454819 = expected (28 s). No generic aligner configured, so the GPU tests ran upstream's gfx942 table. Review evidence only; the linux-gfx942 validator records its own run.
+
+#### Owed before the upstream PR (not review findings)
+
+- nvcc compile at af0688d8 on the mi355 host (this host has only CUDA 12.8; libmarv needs 13.2+). The removed hunks restore upstream code in CUDA-visible files (`marv.h`, `marv.cu`, `mapped_file.hpp`, `GpuUtil.cpp`), which upstream d0185a2d compiled under nvcc 13.5, so risk is low, but af0688d8's own message claims the CUDA build compiles.
+- `set-fork-branch MMseqs2 moat-gpu-coverage` (jeff, after review PR #1 closes); validators at af0688d8 on wave64 and wave32.
+
+### Replacement upstream PR title and body for moat-gpu-coverage
+
+Supersedes the draft in `## Review 2026-11-13`: the Windows bullet is gone, the tuning bullet covers gfx90a and gfx950 (stated plainly, per jeff's gfx950 ruling, with no MI355 headline), and the timing paragraph uses the curated-round gfx90a numbers (1.22x q1k, 1.34x 8x database, means) and the gfx950 numbers (1.05x, 1.02x). Title 69 characters; `utils/prose.py` and `utils/jargon.py` clean on the body; ASCII; no Windows mention. `upstream.py` appends the AI-assistance and opt-out note itself. Before it goes to jeff, confirm each Testing bullet against a record at the final head: the gfx942 bullet is this review's run at af0688d8; the gfx90a bullet is the porter run at af0688d8; the gfx950 and gfx1201 bullets are porter runs at 0c897402 (same libmarv tree plus Windows hunks) and need the validators' runs; the fat-binary, SIMD and CUDA bullets were checked at 2cda180e/0c897402 and the CUDA one is the nvcc item owed above. If e530252b is re-created per finding 1, nothing in the body changes.
+
+Title:
+
+====
+[ROCm] Run libmarv on untuned AMD GPUs, add gfx90a and gfx950 configs
+====
+
+Body:
+
+====
+libmarv's HIP backend builds and runs only on the four AMD targets with a tuned aligner file (gfx900, gfx942, gfx1100, gfx1150). Configuring for any other GPU, for example `-DCMAKE_HIP_ARCHITECTURES=gfx90a`, stops with `Cannot find source file: aligners/make_aligner_amd_gfx90a.cu`, and so does a default configure on a host with such a GPU, because CMake's native detection lists one entry per device. The runtime selection keys on compute capability, which does not identify an AMD ISA (gfx900, gfx906, gfx908 and gfx90a all report 9.0), so a binary built for gfx900 hands its kernels to a gfx90a and fails with `device kernel image is invalid`.
+
+This PR:
+
+- de-duplicates the HIP architecture list and builds the existing generic configs (`make_aligner_default_amd.cu`, `make_aligner_endpos_default_amd.cu`) once for every requested target without a tuned file, under their own inline namespace;
+- selects the AMD aligner by the device's gfx target name (`gcnArchName` without feature suffixes) and falls back to the generic configs, which the dispatchers already named in comments; without a generic build the error names the missing target;
+- makes `ClampToInvalid` take its per-byte device path under HIP as well (`__HIP_DEVICE_COMPILE__`), with an unsigned per-byte min since HIP has no `__vminu4`; the host fallback it used before clamps as signed `char`;
+- adds tuned gapless configs for gfx90a (MI250X) and gfx950 (MI355X), measured with libmarv's own `tuning_gapless` and laid out like the other AMD files; Smith-Waterman keeps the untuned AMD list, as on every AMD target.
+
+The tuned targets keep their own tables and the CUDA path is unchanged.
+
+On the first 1000 queries of the regression query set against the padded `targetannotation` database (`ungappedprefilter --gpu 1 --max-seqs 1000 -e 10000`), the gfx90a configs take 54.8 s against 67.0 s with the generic configs (1.22x, mean of three runs each), and with the first 200 queries against that database replicated 8 times 12.8 s against 17.2 s (1.34x). The generic configs were already close on gfx950, where the gain is 1.05x (45.5 s against 47.7 s) and 1.02x (9.9 s against 10.1 s). Results are identical in every case.
+
+Testing:
+
+```
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx90a
+cmake --build build --target mmseqs
+util/regression/run_regression.sh build/src/mmseqs scratch
+```
+
+- AMD Instinct MI250X (gfx90a): regression 43/43 including SEARCH_GPU and SEARCH_GPU_SERVER, with the gfx90a configs and with the generic configs alone; on the bundled example every query/target pair shared by the GPU and CPU searches has an identical output row.
+- AMD Instinct MI300X (gfx942, existing table): regression 43/43 including SEARCH_GPU and SEARCH_GPU_SERVER.
+- AMD Instinct MI355X (gfx950): regression 43/43 including SEARCH_GPU and SEARCH_GPU_SERVER with the gfx950 configs.
+- AMD Radeon AI PRO R9700 (gfx1201, generic configs): regression 43/43 including SEARCH_GPU and SEARCH_GPU_SERVER.
+- A build for gfx900, gfx90a, gfx942, gfx950, gfx1100, gfx1150, gfx1201 and gfx11-generic compiles and links, and on gfx90a selects the gfx90a table.
+- The CUDA build (`-DENABLE_CUDA=1`, sm_80 and sm_90) compiles and links; the SIMD backend (`-DENABLE_SIMD=1`) builds and its tests pass; a CPU-only build is unchanged.
+
+This work was authored with the assistance of Claude, an AI coding agent.
+====

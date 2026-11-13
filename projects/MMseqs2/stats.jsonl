@@ -117,3 +117,6 @@
 {"kind":"phase","ts":"2026-11-13T17:19:31Z","phase":"cuda-compile","seconds":179.006,"exit":0,"cmd":"../cudacheck/build.sh src marv"}
 {"kind":"phase","ts":"2026-11-13T17:19:33Z","phase":"cuda-compile","seconds":180.910,"exit":0,"cmd":"../cudacheck/build.sh upstream top"}
 {"kind":"phase","ts":"2026-11-13T17:19:34Z","phase":"cuda-compile","seconds":181.429,"exit":0,"cmd":"../cudacheck/build.sh src top"}
+{"kind":"session","ts":"2026-11-13T17:15:45Z","epoch":1794590145.643887065,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-13T17:18:10Z","phase":"compile","seconds":77.427,"exit":0,"cmd":"bash -c cmake -S projects/MMseqs2/src -B agent_space/build-gfx942 -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DHAVE_TESTS=1 -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/llvm/bin/clang++ > agent_space/cfg.log 2>&1 && cmake --build agent_space/build-gfx942 -j56 --target mmseqs > agent_space/build.log 2>&1"}
+{"kind":"phase","ts":"2026-11-13T17:23:48Z","phase":"test","seconds":323.671,"exit":0,"cmd":"bash -c cd projects/MMseqs2/src && util/regression/run_regression.sh ../../../agent_space/build-gfx942/src/mmseqs ../../../agent_space/reg > ../../../agent_space/reg.log 2>&1"}
