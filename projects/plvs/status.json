@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-11-13T01:00:22Z",
+  "updated_at": "2026-11-13T01:20:49Z",
   "head_sha": "2362bb2d7dbf33e74f830b971bc29c96dc9d5012",
   "depends_on": [
     "opencv_contrib"
@@ -190,5 +190,12 @@
     "since": "2026-11-12T03:44:08Z",
     "at": "2026-11-12T03:48:21Z"
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/plvs/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/plvs/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-13T01:03:05Z",
+    "head_sha": "2362bb2d7dbf33e74f830b971bc29c96dc9d5012",
+    "content_sha256": "1a47bd8e10d724e862218dbeba6f8d3e3bffa7f9255804070745c78743e60685",
+    "review_pr": "https://github.com/AMD-Ecosystem/plvs/pull/1"
+  }
 }
