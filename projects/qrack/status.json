@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T05:14:47Z",
-  "updated_at": "2026-11-04T07:47:18Z",
+  "updated_at": "2026-11-13T01:21:44Z",
   "head_sha": "b06652a8fdc198ce80147efa4b05b0777b874144",
   "depends_on": [],
   "waivers": {},
@@ -179,5 +179,12 @@
     "arch": "linux-gfx1100",
     "since": "2026-11-01T02:47:17Z",
     "at": "2026-11-01T02:48:20Z"
+  },
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-12T22:46:11Z",
+    "head_sha": "b06652a8fdc198ce80147efa4b05b0777b874144",
+    "content_sha256": "ff454dcee2e882662642ac4fab7d6393850d60e36bf3452aec92cd00f6520472",
+    "review_pr": "https://github.com/AMD-Ecosystem/qrack/pull/1"
   }
 }
