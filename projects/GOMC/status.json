@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-11-13T22:07:10Z",
+  "updated_at": "2026-11-13T22:08:48Z",
   "head_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
   "depends_on": [],
   "waivers": {},
@@ -185,5 +185,10 @@
     "head_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
     "content_sha256": "16833f3df26e58c9c5ba2b09683dddc7caa3a07bf51aec15fee253324e64f9c3",
     "review_pr": "https://github.com/AMD-Ecosystem/GOMC/pull/1"
-  }
+  },
+  "pr_url": "https://github.com/GOMC-WSU/GOMC/pull/562",
+  "pr_number": 562,
+  "pr_opened_at": "2026-11-13T22:08:48Z",
+  "pr_state": "open",
+  "published_sha": "b8d1aa911eefe23946cdd1c06160172541028864"
 }
