@@ -1394,3 +1394,7 @@ Results:
 - Not run: no NVIDIA GPU on this host, so compile and link only.
 
 This clears the `nvcc compile at af0688d8 (mi355)` item owed in `## Curated history on moat-gpu-coverage`.
+
+## gfx1201 finding goes in the PR body (jeff, 2026-11-13)
+
+jeff ruled: mention the gfx1201 result in the upstream PR body, not a separate issue. The PR body gets one sentence explaining why gfx1201 has no table: tuner-selected configs, and the existing gfx1100 table, measured 2-9% slower end to end than the generic configs on gfx1201 (identical output), so it keeps the generic fallback. Include it when the review PR body is drafted.
