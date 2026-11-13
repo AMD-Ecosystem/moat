@@ -1549,3 +1549,67 @@ VERDICT: PASS. linux-gfx90a -> completed at af0688d8.
 The reviewer noted that e530252b's message said gfx90a "since the previous change" uses the generic configs, which the curated order made wrong (the previous commit is ClampToInvalid). jeff ruled to fix it now. `moat-gpu-coverage-v2` re-creates the four commits on d0185a2d (0a471b70, bf920ed6, 3fa41eaf, a25e69fd); the only change is that sentence, now "gfx90a (MI200) had no tuned aligner, so it runs the generic AMD configs." Every commit's patch-id equals its af0688d8-branch original and `git diff af0688d8 a25e69fd` is empty, so `squash-carry-forward` moved head to a25e69fd and carried linux-gfx90a and linux-gfx1201 (both completed at af0688d8). `set-fork-branch MMseqs2 moat-gpu-coverage-v2 --by jeffdaily`. `moat-gpu-coverage` (af0688d8) and `moat-port` (0c897402) are untouched.
 
 Tooling note: the `review_pr` clear recorded in e422b607 was undone by the next merge of a fleet host's status.json (the reviewer's 9d88dc76 carried PR #1 back), so the moat-status merge driver appears to treat a cleared field as absent and take the other side. Cleared again here.
+
+## Validation 2026-11-13 (linux-gfx950, moat-gpu-coverage-v2 a25e69fd)
+
+jeff's request: back the gfx950, fat-binary, SIMD and CPU-only Testing bullets of `### Replacement upstream PR title and body for moat-gpu-coverage` with runs at exactly `head_sha` a25e69fd (`fork_branch` = `moat-gpu-coverage-v2`). Previous linux-gfx950 evidence was the porter run at 0c897402, so this is a full run, no carry-forward. Host: AMD Instinct MI355X (gfx950), `HIP_VISIBLE_DEVICES=6` (self-pinned, idle; the dispatcher set none), `CUDA_VISIBLE_DEVICES=0` for `--gpu`. TheRock `rocm-sdk-devel` (HIP 7.16.26385), gcc 13.3, CMake 3.31.6, Ninja, `-j32`. All GPU runs under `ulimit -c 0`. Fresh clone of the fork, `git checkout -B moat-gpu-coverage-v2 origin/moat-gpu-coverage-v2` = a25e69fd (`ls-remote` checked), submodule `util/regression` 19b9867b. `git diff origin/moat-gpu-coverage a25e69fd` is empty.
+
+### Bullet 1: gfx950 build, regression, GPU vs CPU
+
+```
+R=$(hipconfig --rocmpath)
+cmake -S . -B build-gfx950 -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DHAVE_TESTS=1 -DCMAKE_HIP_ARCHITECTURES=gfx950 -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+cmake --build build-gfx950 -j32 --target mmseqs
+CUDA_VISIBLE_DEVICES=0 HIP_VISIBLE_DEVICES=6 util/regression/run_regression.sh build-gfx950/src/mmseqs <scratch>
+```
+- Configure prints only `marv: HIP architectures gfx950` (no generic AMD aligner line), so the binary contains the gfx950 tables and nothing else. 312/312, 116 warning lines (same count as every earlier round), none in libmarv files.
+- Regression: 43 reports, 43 GOOD, 0 BAD, 43 TEST SUCCESS, 253 s. SEARCH_GPU 0.454819 = expected, SEARCH_GPU_SERVER 0.454819 = expected.
+- Example (`createdb examples/DB.fasta`, `makepaddedseqdb`, `easy-search examples/QUERY.fasta` padded `--gpu 1` vs unpadded `--gpu 0`): GPU 14482, CPU 12901, common 12438, all 12438 rows identical. Sorted GPU m8 md5 `288ea7efe151f8bcd59a02508fb6ede1`, the same as the gfx1201 generic-config run at af0688d8.
+
+Confirms: "AMD Instinct MI355X (gfx950): regression 43/43 including SEARCH_GPU and SEARCH_GPU_SERVER with the gfx950 configs."
+
+### Bullet 2: multi-target build and table selection
+
+```
+cmake -S . -B build-fat -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DHAVE_TESTS=1 "-DCMAKE_HIP_ARCHITECTURES=gfx900;gfx90a;gfx942;gfx950;gfx1100;gfx1150;gfx1201;gfx11-generic" -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+cmake --build build-fat -j32 --target mmseqs
+```
+- Configure: `marv: HIP architectures gfx900;gfx90a;gfx942;gfx950;gfx1100;gfx1150;gfx1201;gfx11-generic`, `marv: generic AMD aligner for gfx1201;gfx11-generic`. 324/324, compiles and links, 116 warning lines, none in libmarv files.
+- Selection on this GPU: `ROCR_VISIBLE_DEVICES=6 CUDA_VISIBLE_DEVICES=0 rocprofv3 --kernel-trace --output-format csv -- build-fat/src/mmseqs ungappedprefilter q dbp pref --gpu 1` (q = `examples/QUERY.fasta`, dbp = padded `examples/DB.fasta`; rocprofv3 aborts with "Conflicting visibility ... between HIP_VISIBLE_DEVICES and CUDA_VISIBLE_DEVICES" when both are set, hence ROCR_VISIBLE_DEVICES). Every aligner kernel launch, 1620 of them (permute_PSSM_for_gapless, GaplessFilter single tile, GaplessAlignment scalar single and multi tile), is in `libmarv::AMD_GFX950_`; none in `DEFAULT_AMD_`, `GFX90A_` or `GFX900_`. The other 276 libmarv launches are shared non-aligner code in the combined `AMD_GFX900_..._DEFAULT_AMD_` namespace of the `marv` target.
+- `easy-search` with the fat binary (`--gpu 1`): sorted output identical (md5 288ea7ef...) to the gfx950-only build.
+
+Confirms the compile/link half of "A build for gfx900, gfx90a, gfx942, gfx950, gfx1100, gfx1150, gfx1201 and gfx11-generic compiles and links, and on gfx90a selects the gfx90a table", and adds "on gfx950 selects the gfx950 table" at this head. The gfx90a half of that bullet is not observable here (its evidence is the gfx90a rescope round at 2cda180e, same libmarv tree); the bullet could read "and on gfx90a and gfx950 selects that GPU's table".
+
+### Bullet 3: SIMD backend
+
+```
+cmake -S lib/libmarv/src -B build-simd -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_SIMD=1
+cmake --build build-simd -j16
+ctest --test-dir build-simd --output-on-failure
+```
+11/11, links `libmarv.a` and `test_gapless`. One warning, `marv_simd_aligner.cpp:154:36: warning: AVX vector return without AVX enabled changes the ABI [-Wpsabi]`, in a file this branch does not touch (pre-existing upstream). ctest: 2/2 passed (`gapless_exactness_simd128` 82.5 s, `gapless_exactness_simd256` 95.3 s); the simd512 test is not registered on this configuration.
+
+Confirms: "the SIMD backend (`-DENABLE_SIMD=1`) builds and its tests pass".
+
+### Bullet 4: CPU-only build unchanged
+
+```
+cmake -S . -B build-cpu -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-cpu -j16 --target mmseqs
+```
+and the same at upstream d0185a2d (scratch worktree, removed afterwards). Both 300/300. `build.ninja` of the two builds lists the same object files, and none is from libmarv (the CPU-only build compiles no file this branch changes). `easy-search examples/QUERY.fasta examples/DB.fasta` with each binary: 12901 rows, sorted md5 `36fb2d2fad9cda7bfd3d5a77b8f9c62e` for both.
+
+Confirms: "a CPU-only build is unchanged".
+
+### Not covered by this run
+
+- The CUDA half of the last bullet: no rerun; `## CUDA compile check (nvcc 13.5.37) at af0688d8` covers it, and a25e69fd's tree is identical to af0688d8.
+- The gfx90a, gfx942 and gfx1201 bullets belong to other hosts.
+
+### Gates
+
+- `python3 utils/jargon.py --port MMseqs2`: clean.
+- Documentation: upstream's own `ENABLE_HIP` procedure; libmarv `Readme.md` lists the tuned arches and the generic fallback.
+- `git -C projects/MMseqs2/src status --porcelain`: empty. No fork edits, no throwaway patches.
+
+Result: linux-gfx950 `completed` at a25e69fd.
