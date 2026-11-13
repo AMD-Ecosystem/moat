@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-25T21:02:13Z",
-  "updated_at": "2026-11-13T01:35:32Z",
+  "updated_at": "2026-11-13T01:38:11Z",
   "head_sha": "d7d98677060e36cfa329db4229c8b3d14cf53b32",
   "depends_on": [],
   "waivers": {},
@@ -121,7 +121,7 @@
   },
   "pr_url": "https://github.com/burtscher/LC-framework/pull/2",
   "pr_number": 2,
-  "pr_opened_at": "2026-11-13T01:35:31Z",
+  "pr_opened_at": "2026-11-13T01:38:11Z",
   "pr_state": "open",
   "published_sha": "d7d98677060e36cfa329db4229c8b3d14cf53b32"
 }
