@@ -1,0 +1,16 @@
+2026-11-13T04:27:31Z start half2_t1: /var/lib/jenkins/fleet/jobs/gfx1201-20261112-201654-mmseqs-gfx1201/moat/agent_space/mm/build-tune/tuning_gapless --half2 --tiles 1
+2026-11-13T04:35:23Z end half2_t1 rc=0 472 s
+2026-11-13T04:35:23Z start f32_t1: /var/lib/jenkins/fleet/jobs/gfx1201-20261112-201654-mmseqs-gfx1201/moat/agent_space/mm/build-tune/tuning_gapless --float --int32 --tiles 1
+2026-11-13T04:41:37Z end f32_t1 rc=0 374 s
+2026-11-13T04:41:37Z start endpos_t1: /var/lib/jenkins/fleet/jobs/gfx1201-20261112-201654-mmseqs-gfx1201/moat/agent_space/mm/build-tune/tuning_gapless --float --int32 --endpos --tiles 1
+2026-11-13T04:51:18Z end endpos_t1 rc=0 581 s
+2026-11-13T04:51:18Z start half2_t4: /var/lib/jenkins/fleet/jobs/gfx1201-20261112-201654-mmseqs-gfx1201/moat/agent_space/mm/build-tune/tuning_gapless --half2 --tiles 4
+2026-11-13T05:51:42Z end half2_t4 rc=0 3624 s
+2026-11-13T05:51:42Z start f32_t4: /var/lib/jenkins/fleet/jobs/gfx1201-20261112-201654-mmseqs-gfx1201/moat/agent_space/mm/build-tune/tuning_gapless --float --int32 --tiles 4
+2026-11-13T06:27:59Z f32_t4 killed by 2h job limit (no output: the tuner prints only at exit); rerun
+2026-11-13T06:27:59Z start f32_t4: /var/lib/jenkins/fleet/jobs/gfx1201-20261112-201654-mmseqs-gfx1201/moat/agent_space/mm/build-tune/tuning_gapless --float --int32 --tiles 4
+2026-11-13T07:19:38Z end f32_t4 rc=0 3099 s
+2026-11-13T07:19:47Z start endpos_t4_b: /var/lib/jenkins/fleet/jobs/gfx1201-20261112-201654-mmseqs-gfx1201/moat/agent_space/mm/build-narrow-b/tuning_gapless --float --int32 --endpos --tiles 4
+2026-11-13T07:23:11Z end endpos_t4_b rc=0 204 s
+2026-11-13T07:23:11Z start endpos_t4_a: /var/lib/jenkins/fleet/jobs/gfx1201-20261112-201654-mmseqs-gfx1201/moat/agent_space/mm/build-narrow-a/tuning_gapless --float --int32 --endpos --tiles 4
+2026-11-13T07:46:29Z end endpos_t4_a rc=0 1398 s
