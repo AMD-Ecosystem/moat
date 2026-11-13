@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:24:21Z",
-  "updated_at": "2026-11-13T18:45:54Z",
+  "updated_at": "2026-11-13T20:16:40Z",
   "head_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
   "depends_on": [],
   "waivers": {
@@ -237,5 +237,6 @@
     "by": "jeffdaily",
     "at": "2026-11-13T18:15:38Z",
     "reason": "same tree as moat-gpu-coverage af0688d8; gfx90a commit message reworded so it no longer refers to the previous commit"
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/MMseqs2/pull/2"
 }
