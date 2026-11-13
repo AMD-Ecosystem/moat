@@ -642,3 +642,6 @@
 {"kind":"phase","ts":"2026-11-13T08:06:40Z","phase":"test","seconds":340.836,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261112-223724-oneflow-reval-14801-942/moat/agent_space/emb2.sh 2"}
 {"kind":"phase","ts":"2026-11-13T08:18:22Z","phase":"test","seconds":702.270,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261112-223724-oneflow-reval-14801-942/moat/agent_space/idsg.sh 10"}
 {"kind":"session","ts":"2026-11-13T08:27:39Z","epoch":1794558459.606545046,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-13T17:03:58Z","phase":"compile","seconds":835.284,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261113-084609-oneflow-idshuffle-rate-942/moat/agent_space/build.sh head 56"}
+{"kind":"phase","ts":"2026-11-13T17:04:01Z","phase":"compile","seconds":838.034,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261113-084609-oneflow-idshuffle-rate-942/moat/agent_space/build.sh old 56"}
+{"kind":"phase","ts":"2026-11-13T17:09:27Z","phase":"compile","seconds":209.843,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261113-084609-oneflow-idshuffle-rate-942/moat/agent_space/build_old.sh 112"}
