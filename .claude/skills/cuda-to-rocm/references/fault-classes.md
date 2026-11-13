@@ -18,15 +18,15 @@ to its entry here. Each entry names the project it was learned on.
   device compilation; there is no `__AMDGCN_WAVEFRONT_SIZE__` in ROCm 7.2.x, so the
   `__GFX*__` guards are the supported selector:
 
-        #if defined(__HIP_PLATFORM_AMD__)
-        #if defined(__GFX9__)
+        #if defined(__GFX8__) || defined(__GFX9__)
         static constexpr int kWarpSize = 64;   // CDNA: gfx90a, gfx94x
         #else
-        static constexpr int kWarpSize = 32;   // RDNA: gfx10xx, gfx11xx
+        static constexpr int kWarpSize = 32;   // RDNA (gfx10xx, gfx11xx, gfx12xx), CUDA
         #endif
-        #else
-        static constexpr int kWarpSize = 32;   // CUDA
-        #endif
+
+  Do not wrap this in `__HIP_PLATFORM_AMD__`: that macro comes from `hip/hip_runtime.h`,
+  so above the includes it is undefined and the gate silently picks 32 on wave64
+  hardware. The `__GFX*__` predefines need no header and nvcc never defines them.
 
 - **Never route both host and device through one shared constant.** A CMake-injected
   `-DWARP_SIZE=64` forces single-arch and mis-sizes host buffers in a fat binary. Device
@@ -1100,8 +1100,11 @@ on Windows that fails ("Failed to hipify files!"); prefix `${Python3_EXECUTABLE}
 backslash paths; fed to `file(GLOB_RECURSE)` they glob from the drive root and configure
 runs for many minutes -- normalise each element with `file(TO_CMAKE_PATH)`. (LEAP, windows)
 
-**CMake's HIP language on Windows only works when every C/C++ compiler is ROCm's GNU-style
-`clang++`; make the project choose it, do not document a workaround.** `Platform/Windows-Clang.cmake`
+**CMake's HIP language on Windows needs ONE clang driver for every language, and ROCm's
+GNU-style `clang++` is the one that works on every CMake version; make the project choose it,
+do not document a workaround.** (All-`clang-cl` also works from CMake 4.x, and LibTorch
+carries its own mixed setup: validation.md, "Windows: keep one clang driver across every
+CMake language", has the version table.) `Platform/Windows-Clang.cmake`
 is include-guarded and picks MSVC-style or GNU-style rules for ALL languages from whichever
 language includes it first (MSVC-style if any language's frontend variant is MSVC). So with
 cl.exe as CXX, `enable_language(HIP)` dies with "mixes Clang and MSVC" (`check_language(HIP)`
@@ -1457,7 +1460,7 @@ synchronize via `hipStreamSynchronize`. (mumax3: Go + cgo + runtime code-object 
 
 The same class with NVRTC instead of embedded PTX (CUDA C++ generated at run time) ports to hipRTC.
 Bind it by absolute path under `ROCM_PATH`/`HIP_PATH` before any bare name (on Windows the hipRTC DLL
-carries the version, `hiprtc0702.dll`, so scan `bin`). hipRTC declares `half`, `__hip_bfloat16` and
+carries the version in its name, e.g. `hiprtc0702.dll`, with a digit layout that varies by release, so scan `bin` for `hiprtc0*.dll`). hipRTC declares `half`, `__hip_bfloat16` and
 the fp16/bf16 intrinsics itself, but `#include <hip/hip_fp16.h>` fails without `-I<rocm>/include`:
 guard any include with `__has_include`. Spellings that differ or are missing in hipRTC:
 `__float2bfloat16` (no `_rn`), no `__double2half`, `__dp4a` or `llmin`/`llmax`. Pass

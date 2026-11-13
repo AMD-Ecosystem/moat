@@ -5,7 +5,7 @@ Goal: only `.cu`/`.hip` translation units see the HIP toolchain; host C++ is unt
 1. Add one CUDA-to-HIP compat header (e.g. `src/.../cuda_to_hip.h`). On ROCm it aliases the CUDA spellings the project uses to their HIP equivalents and includes the HIP runtime; on NVIDIA it is a no-op include of the CUDA runtime. Everywhere else keep the plain CUDA spelling (`cudaXxx`, `curand*`, `cublas*`). This header is the only file that knows about HIP.
 
        #pragma once
-       #if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
+       #if defined(USE_HIP) || defined(__HIP__)
        #include <hip/hip_runtime.h>
        #define cudaMalloc        hipMalloc
        #define cudaFree          hipFree

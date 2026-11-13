@@ -83,10 +83,11 @@ heading. `python3 utils/moatlib.py lessons` lists lessons awaiting promotion.
 - Fork GitHub Actions stay disabled. A CI-config commit does not force revalidation (the
   regression guard classifies it as inert); the rule exists because CPU-only workflows gate
   nothing.
-- A third-party defect found during validation (TheRock's missing `.CRT$XCU` section,
-  `therock-windows-lld-link-crt-xcu`; HIP Windows stream serialization,
+- A third-party defect found during validation (HIP Windows stream serialization,
   `hip-win-stream-serialization`) is registered with `utils/deferred.py` against the project
-  that found it; `deferred.py list` finds it across refs. The `/ALTERNATENAME` workaround's
+  that found it; `deferred.py list` finds it across refs. Check that a registered defect is
+  still believed before citing it: the `.CRT$XCU` diagnosis filed as
+  `therock-windows-lld-link-crt-xcu` was later retracted (`cuda-to-rocm`'s validation.md). The `/ALTERNATENAME` workaround's
   reproducer sits in the local `findings/` area; the owning project's `deferred.json`
   records whether it was filed. A failure caused by such a defect is never grounds to
   suggest a gate waiver: LichtFeld-Studio got a wrongly-suggested windows waiver that way.
@@ -124,23 +125,18 @@ reach an upstream reader include "lead"/"follower", "head_sha", "curated commit"
 grep new comments for the names of other projects MOAT has ported (arrayfire carried five
 such references the checker missed).
 
-### `jargon.py --port` alone misses an in-flight fix round
+### `jargon.py --port` picks the range; do not type one
 
-`--port` resolves its range from `obj.get("fork_branch") or PORT_BRANCH`, and nothing in
-`moatlib.py` writes `fork_branch`, so it always scans `moat-port`. Once a fix round is
-staged on `moat-fix-<pr#>` (the published `moat-port` is frozen while a PR is open), it
-silently scans the frozen branch and never sees the round's commits, so it can report clean
-while new jargon sits on the staging branch. Scan the real range explicitly:
+`--port` reads the range from the project's record: the base is `fork_default_branch` and
+the tip is the branch upstream will see, which is the staging branch while a fix or sync
+round is in flight and the port branch otherwise. It refuses a range it cannot resolve or
+one with no commits, instead of reporting clean. So never hand-type a `--commits`/`--diff`
+range for a port: that is how a round's commits went unscanned while the frozen branch
+read clean. (mahout)
 
-```
-python3 utils/jargon.py -C projects/<name>/src --commits <base>..<fix-branch> --diff <base>..<fix-branch>
-```
-
-Two things make this fail open: a shallow single-branch clone of the fork usually has no
-local `main`, and `scan_commits`/`scan_diff` (unlike `port_range`'s range-count check)
-report zero hits on an unresolvable range instead of erroring. Fetch first
-(`git fetch --depth 50 origin main:main`) and confirm the range resolves to a nonzero commit
-count before trusting "clean". (mahout)
+What it needs from the clone is the base branch as a LOCAL ref. A shallow single-branch
+clone has only the remote-tracking one, and `--port` then stops with "cannot resolve".
+Fetch it first (`git fetch --depth 50 origin <default>:<default>`).
 
 The opposite false alarm happens after an upstream sync: the scan's base is the clone's
 local default branch, and if that branch still points at the old mirror tip, every
