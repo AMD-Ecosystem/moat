@@ -4078,3 +4078,7 @@ Artifacts (job dir, not committed): `elas/{fixed,before}`, `elas/elas_leak.cpp` 
 ## PR-prep squash 2026-11-12
 
 jeff approved the 4-commit shape and confirmed that his 2026-11-04 force-push authorization (decision 13) covers the post-merge squash. Commit 1's Test Plan program was replaced by the corrected one from "Squash Test Plan check (elas_leak) 2026-11-12" (upstream `loadPGM` segfaults on the bundled one-line PGM headers) and its prose now says "after each of the 21 calls". moat-port was force-pushed eb1b369 -> 2362bb2d7dbf33e74f830b971bc29c96dc9d5012 with `--force-with-lease=moat-port:eb1b369...`; both trees are 6eb0fe00449fc63a3802b289ce26a04864f126f3. New series on upstream 632c55b: 3c894f5 (ElasGPU frees), b4f1449 (octree deferred deletion, with the comment fix folded in), d12a6ce (projection Jacobian), 2362bb2 (HIP support, Linux and Windows). a93e73d, 61e9640, 970cb1f, 46a26f4 and 59eb0da were dropped (upstream made the same fixes in 632c55b).
+
+## Licence rescan confirmed harmless (2026-11-13)
+
+jeffdaily confirmed `plvs-nvidia-proprietary-rescan` as harmless; the deferral is marked done. `include/cuda/helper_cuda.h` and `include/cuda/helper_string.h` are upstream's vendored CUDA-samples headers (EULA pointers). The port leaves both byte-identical to upstream (blob 0ba7a3a8 before and after); the ROCm build uses our own 40-line `hip_compat/cuda/helper_cuda.h`, which copies no NVIDIA text. The flagged file is upstream's own and the port neither modifies nor adds NVIDIA-licensed text; the 2026-08-06 licence clearance stands.
