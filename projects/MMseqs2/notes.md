@@ -1150,3 +1150,52 @@ Results:
 - Not run: this host has no NVIDIA GPU, so there is no CUDA runtime test. This is a compile and link check only.
 
 This clears the rescope round's `cuda-not-validated: no nvcc on linux-gfx90a` item for 2cda180e.
+
+## gfx950 tuning porter round (2026-11-13, linux-gfx950)
+
+jeff's request: the next item of the 2026-11-12 rescope, tuned libmarv aligner configs for gfx950, done exactly as the gfx90a round. Stage taken `review-passed -> porting` (lock linux-gfx950), `pr-state` none. Host: AMD Instinct MI355X (gfx950), `HIP_VISIBLE_DEVICES=7` (dispatcher pin, idle), `CUDA_VISIBLE_DEVICES=0` for `--gpu`. TheRock `rocm-sdk-devel` (HIP 7.16.26385), gcc 13.3, CMake 3.31.6, Ninja. All GPU runs under `ulimit -c 0`.
+
+### Tuner and selection
+
+```
+R=$(hipconfig --rocmpath)
+cmake -S lib/libmarv/src -B build-tune -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DBUILD_TUNING=1 -DONLY_BUILD_TUNING=1 \
+  -DCMAKE_HIP_ARCHITECTURES=gfx950 -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+cmake --build build-tune --target tuning_gapless -j64
+build-tune/tuning_gapless <args> --printBestConfigs --sleep 10
+```
+Sweep wall times on gfx950 (far faster than gfx90a): `--half2 --tiles 1` 241 s, `--float --tiles 1` 86 s, `--float --endpos --tiles 1` 146 s, `--half2 --tiles 4` 1321 s, `--float --tiles 4` 396 s, all over the full config space. `--float --endpos --tiles 4` used the same narrowed scratch tuner copies as gfx90a (`configtuples.hpp`: blocksize 512 x groups 2-16 x numItems 4-48, 211 s; and blocksize 512 x group 32 x numItems 8-24, 25 s). No `--checkResults` (as gfx90a). Raw CSVs and the generator (`agent_space/mmseqs/gen_tuned.py`: the gfx90a rules; the file text is the gfx90a file with tuple lists and hint arrays replaced, so SW lists and layout are identical) are scratch only.
+
+Selection rule unchanged: per tile the max-GCUPS config over upstream's AMD tile spans; single tile drops t when a larger T has `g_T * t / T > g_t`; multi tile keeps tiles >= 256 within 10% of the best multi-tile GCUPS.
+
+Result: half2 single 33 configs (16..1536, best 22861 GCUPS), half2 multi 21 (256..1536, 13301-14761), float single 31 (8..768, best 15660), float multi 11 (256..768, 10539-11512), endpos single 24 (8..768, best 8616), endpos multi 4 (16x16, 16x20, 32x16, 32x20: 5367-5683, the same four as gfx90a). The fp32 endpos multi-tile cliff reproduces on gfx950: numItems >= 24 runs 4.6-9.3x slower than numItems 20 at the same group size (559-1219 GCUPS against 5177-5683), so that list stops at 640.
+
+### Fork change
+
+0c897402 `[ROCm] Add tuned libmarv aligner configs for gfx950` (fast-forward 2cda180e..0c897402 on `moat-port`, no force): `make_aligner_amd_gfx950.cu` (217 lines), `make_aligner_endpos_amd_gfx950.cu` (101), declarations in `make_aligner_headers.cuh` (5), one `MARV_HAVE_AMD_GFX950` / `arch == "gfx950"` block after gfx942 in each of the 7 AMD dispatch branches (make_aligner.cu 4, make_aligner_endpos.cu 3), libmarv Readme tuned-arch list. CMake picks the files up by name (configure no longer prints `generic AMD aligner for gfx950`). `utils/jargon.py --port MMseqs2`: clean (needed a local `master` branch in the fresh clone: `git branch master origin/master`); `utils/prose.py` on the message: clean. Windows commits and history untouched.
+
+### Timing (q1k benchmark of 2026-10-30, as gfx90a)
+
+`mmseqs ungappedprefilter q1k t p --gpu 1 --max-seqs 1000 -e 10000 --threads 8`; generic = 2cda180e worktree built for gfx950 (no tuned file), tuned = 0c897402; runs alternated, host load 3.5-4.3 (one run at 21):
+- generic: 47.72 s, 47.64 s
+- tuned: 45.56 s, 45.50 s (1.05x)
+- both 1,000,000 rows, sorted createtsv md5 `6e2142dde4e8...`, identical to each other and to the gfx90a round.
+- `rocprofv3 --kernel-trace --stats` (CUDA_VISIBLE_DEVICES unset): gapless kernel time 46.77 s generic (top: DEFAULT_AMD_ half2 128/4/48 11.15 s, 128/4/32 10.72 s) vs 44.59 s tuned (top: AMD_GFX950_ half2 256/4/44 2.66 s, 256/4/36 2.63 s, 256/4/48 2.52 s). The kernels are the whole wall time, so the 1.05x is a kernel result, not host overhead.
+- The app reaches about 95 GCUPS on this benchmark (388,288 x 10.9M residues) against the tuner's 14,000-23,000, a gap gfx90a also had (about 80 vs 6130). An 8x replicated targetannotation (`t8`, first 200 queries) runs about 7x more efficiently (10 s for 1.6x the cells), so the 36k-sequence database underfills the 256-CU MI355X. The tuned-vs-generic ratio stays small there: generic 10.10 s, 10.13 s vs tuned 9.87 s, 9.88 s (1.02x), 200,000 rows, md5 identical. On gfx950 the generic configs are already close to tuned; the tables are still the measured best per tile.
+
+### Validation on gfx950 (head 0c897402)
+
+```
+cmake -S . -B build-tuned -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DHAVE_TESTS=1 -DCMAKE_HIP_ARCHITECTURES=gfx950 -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+cmake --build build-tuned -j64 --target mmseqs
+CUDA_VISIBLE_DEVICES=0 util/regression/run_regression.sh build-tuned/src/mmseqs <scratch>
+```
+- Build: 312/312, the same 116 warning lines as the generic build (Rust `block_aligner_c` ABI deprecations, tinyexpr `-Warray-bounds`), none in aligner files.
+- Regression (submodule 19b9867): 43/43 TEST SUCCESS, 0 failures; SEARCH_GPU 0.454819 = expected (26 s), SEARCH_GPU_SERVER 0.454819 = expected (25 s). The build has no generic aligner, so the GPU tests ran the gfx950 tables.
+- Example GPU-vs-CPU (`easy-search examples/QUERY.fasta` padded `--gpu 1` vs `--gpu 0`): GPU 14482, CPU 12901, common 12438, all 12438 rows identical; tuned GPU output identical (sorted) to the generic GPU output. Same counts as gfx90a.
+- CUDA path: installing the CUDA 13.5 wheels into this job was refused by the fleet guard, so the existing job-local prefix of the earlier mi355 CUDA job was used read-only (nvcc 13.5.37): `cmake -S . -B build-cuda -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_CUDA=1 -DCMAKE_CUDA_ARCHITECTURES="80;90" -DCMAKE_CUDA_COMPILER=$C/bin/nvcc -DCUDAToolkit_ROOT=$C`, `cmake --build build-cuda --target mmseqs`: 317/317, links, 116 warning lines as before. Compile only, no NVIDIA GPU.
+- Not re-run here: libmarv standalone `test_gapless` and the fat-binary selection check (the gfx90a round showed the gfx-name dispatch picks the exact table).
+
+### State
+
+`advance-head` 0c897402; every platform record is now behind head (validators owed on wave64, wave32, windows). surface.json: `tuning:gfx950` and `check:cuda-nvcc-compile` moved from owed to covered. Remaining rescope items: gfx1201 tuning (same recipe on that host), the Windows round, and the PR-prep curation from `## Review 2026-11-13` (the gfx950 commit joins the scope commits to keep).
