@@ -31,6 +31,7 @@ would hand everything back anyway -- and the round trip costs more than doing it
     python3 utils/upstream.py --dry-run          # where our record disagrees with GitHub (incl. a moved PR head)
     python3 utils/moatlib.py waivers             # gate waivers waiting on a maintainer
     python3 utils/deferred.py pending            # deferrals nobody has ruled on
+    python3 utils/moatlib.py lessons             # reviewed lessons waiting to reach a skill (section 8)
 
 The opt-out listing is section 0 and comes before everything else: a maintainer who
 asked us to stop is the one item here where continuing to work is worse than doing
@@ -89,7 +90,7 @@ lists ports with a standing objection as OBJECTED.
 Your job is to snapshot what they approved:
 
     python3 utils/upstream.py --publish            # what is approved and ready
-    python3 utils/upstream.py --publish --apply    # open it, close the review PR
+    python3 utils/upstream.py --publish --apply --name <p>  # open it, close the review PR
 
 That second command is the whole submission: it re-checks the approval, the gates, the
 licence, the fork's cleanliness (only where this host has the fork clone -- a host
@@ -507,6 +508,22 @@ there and pushed, and `decide` prints which branch it landed on. Working the who
 from wherever you happen to be is the intended use. The one refusal is a trunk-resident
 project while you are on a port branch: `main` is protected, so that ruling has to
 arrive by pull request like any other trunk change.
+
+## 8. Lessons waiting to be promoted
+
+    python3 utils/moatlib.py lessons
+
+A port writes a lesson in its notes under `## Lesson for cuda-to-rocm: <title>` (or
+`moat-porting`), because its branch may not edit a skill. Promote one once the port's
+review has read it: on `main`, put it in the reference its reader would open, merged into
+the existing text so the skill stays one organized document, written MOAT-free for
+`cuda-to-rocm` (`check.py skills` enforces it), naming the source project. Then add
+`Promoted to <file> in <sha>.` under the heading in the project's notes. A lesson the
+review found wrong is not promoted; note why under the heading instead.
+
+`ORPHANED` rows are older: skill or tooling edits made on a port branch before branches
+were limited to their own folder, on a port that is now finished. Read each diff and land
+what is still true when the branch merges to `main`.
 
 ## Stop and ask
 
