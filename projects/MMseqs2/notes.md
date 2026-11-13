@@ -1474,3 +1474,51 @@ util/regression/run_regression.sh build/src/mmseqs scratch
 
 This work was authored with the assistance of Claude, an AI coding agent.
 ====
+
+## Validation 2026-11-13 (linux-gfx1201, moat-gpu-coverage af0688d8)
+
+jeff's request: the Linux wave32 evidence for the upstream PR, at exactly `head_sha` af0688d8 (`fork_branch` = `moat-gpu-coverage`). Host: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32), four cards all idle, `HIP_VISIBLE_DEVICES=1` (self-pinned; the dispatcher set none), `CUDA_VISIBLE_DEVICES=0` for `--gpu`. TheRock `rocm-sdk-devel` (HIP 7.16.26385, AMD clang 24.0.0git), gcc 13.3, CMake 3.31.6, Ninja, `-j24` (physical cores). All GPU runs under `ulimit -c 0`. Fresh clone of the fork, `git checkout -B moat-gpu-coverage origin/moat-gpu-coverage` = af0688d8, submodule `util/regression` 19b9867b.
+
+gfx1201 has no tuned table on this branch (jeff dropped gfx1201 tuning), so every GPU result below ran the generic AMD configs (`make_aligner_default_amd.cu` / `make_aligner_endpos_default_amd.cu`): the path this PR adds for untuned AMD GPUs, observed on real hardware.
+
+### Build
+
+```
+R=$(hipconfig --rocmpath)
+cmake -S src -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DHAVE_TESTS=1 -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+cmake --build build -j24 --target mmseqs
+```
+Configure prints `marv: HIP architectures gfx1201` / `marv: generic AMD aligner for gfx1201`. 312/312, 116 warning lines (the same count as gfx942/gfx950/gfx90a), 135 s total; `mmseqs version` af0688d88121...
+
+### Regression suite
+
+```
+CUDA_VISIBLE_DEVICES=0 HIP_VISIBLE_DEVICES=1 src/util/regression/run_regression.sh build/src/mmseqs <scratch>
+```
+43/43 TEST SUCCESS, 43 GOOD, 0 BAD, 187 s. SEARCH_GPU 0.454819 = expected (19 s), SEARCH_GPU_SERVER 0.454819 = expected (19 s).
+
+### Example GPU vs CPU
+
+`createdb examples/DB.fasta`, `makepaddedseqdb`, `easy-search examples/QUERY.fasta` padded `--gpu 1` vs unpadded `--gpu 0`, plus `--prefilter-mode 1` (CPU ungapped):
+- GPU 14482, CPU 12901, common 12438, all 12438 rows identical (0 pairs differ in bitscore or pident by >0.5). The same counts as every earlier round on gfx90a, gfx1100, gfx942 and gfx950.
+- Against CPU ungapped: 34 GPU-only / 236 CPU-only boundary pairs, the same split as the gfx90a rescope round (upstream's CPU ungapped path changed after 50374396; not this branch's code).
+- Sorted GPU m8 md5 `288ea7efe151f8bcd59a02508fb6ede1`.
+
+### libmarv standalone
+
+```
+cmake -S src/lib/libmarv/src -B marv -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+cmake --build marv -j24
+```
+30/30, 0 warnings; targets `libmarv.a`, `align`, `makedb`, `test_gapless`. `test_cuda_multitile` and `test_db_copy` are CUDA-only targets (`ENABLE_CUDA` block of libmarv's CMakeLists) and do not exist in a HIP build; the nvcc check at af0688d8 linked them.
+- `test_gapless --gpu-compatible`: "all checks passed, digest 0xcba3a00c27ffe2df", the same digest as gfx90a. `ctest` alone fails to start it (`libamdhip64.so.7: cannot open shared object file`), the upstream RUNPATH gap recorded in the rescope round; with `LD_LIBRARY_PATH=$R/lib`, `ctest`: 1/1 passed (`gapless_exactness`).
+- `makedb lib/libmarv/allqueries.fasta` (20 sequences), then `align --scanType Gapless | SW_Endpos | Gapless+SW_Endpos --top 10 --tsv`: 200 rows each; each query's self-hit at rank 0 in 20/20 for all three scan types (e.g. LGB1_VICFA self score 719, SW end positions 143/143).
+
+### Gates
+
+- CUDA: not re-run; `## CUDA compile check (nvcc 13.5.37) at af0688d8` already covers this head.
+- `python3 utils/jargon.py --port MMseqs2` (scans `master..moat-gpu-coverage`): clean.
+- Documentation: the build is upstream's own `ENABLE_HIP` procedure; libmarv `Readme.md` lists the tuned arches and the generic fallback.
+- `git -C projects/MMseqs2/src status --porcelain`: no modified tracked files. No fork edits, no throwaway patches.
+
+Result: linux-gfx1201 `completed` at af0688d8.
