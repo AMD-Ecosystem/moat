@@ -60,17 +60,19 @@ import subprocess
 import sys
 
 OWNED_ORG = "AMD-Ecosystem"
-REPO = pathlib.Path(__file__).resolve().parents[1]
 
 # Stamped into the launcher so real_gh can recognise and skip it. MOAT runs on Windows
 # as well as Linux, so nothing here may assume a path layout, a shell, or an exec model
-# belonging to either.
-SHIM_MARKER = "moat-gh-guard v1"
+# belonging to either. v2 launchers run a host copy of the trunk's guard instead of a
+# file inside one checkout; installers that predate v2 look for the v1 stamp, so they
+# leave a v2 launcher alone instead of pointing it back at their own stale copy.
+SHIM_MARKER = "moat-gh-guard v2"
+SHIM_STAMP = "moat-gh-guard v"
 
 
 def is_shim(path):
     try:
-        return SHIM_MARKER in pathlib.Path(path).read_text(errors="ignore")
+        return SHIM_STAMP in pathlib.Path(path).read_text(errors="ignore")
     except OSError:
         return False
 
@@ -263,7 +265,7 @@ against a repo we do not own for a person. That covers creating the organization
 PR and issue comments, reviews, edited bodies, and opening anything upstream.
 
 The one automated route upstream is the approved one:
-    python3 utils/upstream.py --publish --apply
+    python3 utils/upstream.py --publish --apply --name <project>
 It re-checks the recorded approval and every required gate, then opens the PR with the
 approved title and body verbatim.
 
@@ -271,19 +273,26 @@ If a person has said yes and wants it done by hand, they can run {real} directly
 """
 
 
-def under_repo(path=None):
-    """Is the working directory inside this MOAT checkout?
+def is_moat_checkout(d):
+    """A MOAT checkout or worktree root: git metadata plus MOAT's own files."""
+    return ((d / ".git").exists() and (d / "AGENTS.md").is_file()
+            and (d / "utils" / "gh_guard.py").is_file())
 
-    The guard binds here and nowhere else. These machines are used for other work, and
+
+def under_repo(path=None):
+    """Is the working directory inside a MOAT checkout?
+
+    The guard binds there and nowhere else. These machines are used for other work, and
     a guard that broke `gh pr comment` on an unrelated repo would be uninstalled within
-    the day. Path.is_relative_to rather than string prefixes, so a sibling directory
-    named moat-scratch is not mistaken for the checkout.
+    the day. Any MOAT checkout counts -- the main clone, each of its worktrees, every
+    fleet job's clone: the launcher is one per host, and binding only to the checkout
+    it was installed from left every other one unguarded.
     """
     try:
         cwd = pathlib.Path(path or os.getcwd()).resolve()
     except OSError:
         return False
-    return cwd == REPO or cwd.is_relative_to(REPO)
+    return any(is_moat_checkout(d) for d in (cwd, *cwd.parents))
 
 
 def delegate(argv):

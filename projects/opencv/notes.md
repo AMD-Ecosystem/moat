@@ -93,8 +93,41 @@ Commands run: `python3 utils/moatlib.py set-blocked opencv linux-gfx942 "..."`.
 No PR interaction (PR #29285 is open; `moat-port` frozen, and this round pushed
 nothing to the fork).
 
+## Validation 2026-11-04 (linux-gfx1201)
+
+Dispatched as validator for linux-gfx1201 (gfx1201, wave32), which had no row in
+`platforms`, so `arch_task` derived `port-ready`. Same situation as the six existing
+rows: this fork has no standalone test suite, and the evidence for it lives with
+**opencv_contrib**, whose two-repo build tree is what exercises this fork's HIP/cudev
+code. No fork checkout, build or GPU run was made (nothing to run here); `wall_seconds`
+stays zero by design.
+
+Marked `linux-gfx1201` `blocked` with the identical reason recorded on the other rows.
+The record was trunk-resident with nothing outstanding, so this write went on a fresh
+`port/opencv` branch rather than to `main`; it needs the usual records merge back to
+trunk.
+
+opencv_contrib carries no `linux-gfx1201` row either (its wave32 gate is satisfied by
+windows-gfx1201 at contrib `041d5528`). Linux gfx1201 evidence for cv::cuda would come
+from an opencv_contrib validator dispatch on this card, not from this project.
+
+Commands run:
+
+```
+git checkout -b port/opencv origin/main
+bash utils/orient.sh
+python3 utils/moatlib.py set-blocked opencv linux-gfx1201 "<reason copied from linux-gfx90a>"
+python3 utils/moatlib.py next-task linux-gfx1201   # -> NONE
+```
+
+Integrity gate: no `projects/opencv/src` checkout exists, so no tracked edits.
+
 ## Install as a dependency
 
 Consumed through opencv_contrib's two-repo build, not on its own -- see the
 `## Install as a dependency` section of `projects/opencv_contrib/notes.md`. A dependent
 that needs `cv::cuda` depends on **opencv_contrib**; this fork comes with it.
+
+## Validation 2026-11-04 (linux-gfx950)
+
+No standalone run: this fork has no test suite of its own and is exercised only through opencv_contrib (jeff 2026-08-12). A fleet validator on gfx950 found nothing to run; linux-gfx950 is blocked with the same reason as the other rows. Revalidate opencv_contrib instead.
