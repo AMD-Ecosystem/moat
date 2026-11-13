@@ -1,0 +1,838 @@
+# gpuRIR notes
+
+## Porting 2026-05-30
+
+Ported to ROCm/HIP for gfx90a (MI250X, wave64) on ROCm 7.2.1. Strategy A
+ + a cuFFT->hipFFT and cuRAND->hipRAND library swap.
+
+### Build classification
+Pure CMake building a pybind11 MODULE (`gpuRIR_bind`) from one `.cu`
+(`src/gpuRIR_cuda.cu`) + a C++ host file (`src/python_bind.cpp`). Not a
+pytorch extension. `pip install .` drives CMake via a CMakeExtension shim.
+
+### CUDA surface
+One `.cu`. Kernels use only shared memory + `__syncthreads` reductions --
+**no warp intrinsics, no `__constant__`, no `__shfl/__ballot/__any`**, so the
+wave64 / popsift warp-packing fault class does NOT apply. cuFFT (R2C/C2R 1D
+plans for the FFT convolution), cuRAND host API (uniform noise for the
+diffuse tail), a 1D LUT texture (default-on), `cuda_fp16` half2 mixed
+precision (off by default), and 3D pitched copies.
+
+### Port changes (all HIP-guarded; CUDA path byte-for-byte unchanged)
+- `src/cuda_to_hip.h` (new): on USE_HIP include hip_runtime + hip_fp16 +
+  hipfft + hiprand and alias the cuda/cufft/curand symbols (names from
+  PyTorch's hipify map). `#else` includes the original CUDA headers verbatim.
+- `src/gpuRIR_cuda.cu`: swapped the 6 CUDA `#include`s for the shim; added
+  two small `#if defined(USE_HIP)` branches (texture fix) + one in
+  `activate_mixed_precision`.
+- `CMakeLists.txt`: `option(USE_HIP)`; under HIP -> project LANGUAGES CXX HIP,
+  `enable_language(HIP)`, mark the `.cu` `LANGUAGE HIP`, HIP_ARCHITECTURES
+  gfx90a, `-DUSE_HIP`, force-include the shim, link `hip::hipfft hip::hiprand`
+  instead of cuFFT/cuRAND, and **skip find_package(CUDA)**.
+- `setup.py`: forward `$CMAKE_ARGS` so `pip install .` is hands-free.
+
+### Fault classes / gotchas hit
+1. **Texture linear filter (popsift class).** The default LUT path uses a 1D
+   cudaArray texture with `cudaFilterModeLinear` + `cudaReadModeElementType`
+   -- AMD rejects hw linear filtering on element-read float textures. Fix:
+   on HIP create the texture `cudaFilterModePoint` and do the linear
+   interpolation in software in `image_sample_lut` (point-fetch 2 neighbors +
+   lerp, CUDA's unnormalized -0.5 texel-center convention). Verified: LUT vs
+   exact-sinc paths agree to 0.43% of peak.
+2. **`__fmaf_rz` missing in HIP** (only `__fmaf_rn`), exactly like CudaSift's
+   `__fmul_rz`. The only use computes a LUT index coordinate, so round-mode
+   is immaterial -> aliased to `__fmaf_rn` in the shim.
+3. **Host `memcpy`/`memset` resolve to HIP `__device__` overloads** inside a
+   `.cu` once `<hip/hip_runtime.h>` is in scope (the `PadData` host helper
+   failed to compile). Fix: include `<cstring>`/`<cstdlib>` BEFORE
+   hip_runtime in the shim so the libc host decls win overload resolution.
+4. **IPO/LTO breaks the pybind11 module under the HIP toolchain.** With
+   `INTERPROCEDURAL_OPTIMIZATION TRUE` the module `.so` came out as slim LTO
+   bitcode with no `PyInit_gpuRIR_bind` (ImportError, 5 KB .so). The HIP link
+   step does not finalize LTO. Fix: skip IPO when USE_HIP (it is explicitly
+   optional here). After: 340 KB .so with `PyInit_gpuRIR_bind` exported.
+5. **Mixed precision not ported.** The half2 device kernels are inside
+   `#if __CUDA_ARCH__ >= 530` (undefined on HIP) so they compile to empty
+   stubs. But host `cuda_arch` = major*100+minor*10 is 900 on gfx90a, which
+   would enable the (broken) path. Guarded `activate_mixed_precision` to
+   report unsupported on HIP, forcing it off so the stubs are never launched.
+   Default config (LUT on, mp off) is unaffected.
+6. `cudaMemcpyToArray` is still declared (deprecated) in ROCm 7.2 with the
+   CUDA signature, so it aliases directly -- no call-site rewrite needed
+   (unlike CudaSift on an older ROCm). `<cufftXt.h>` is included upstream but
+   none of its symbols are used; dropped on the HIP branch.
+
+### Build + validation
+- Build: `pip install ./projects/gpuRIR/src --no-build-isolation` with
+  `CMAKE_ARGS="-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/rocm"`.
+  Links libhipfft/libhiprand/librocfft/librocrand/libamdhip64, no CUDA.
+- Validated on gfx90a GPU 3 (`HIP_VISIBLE_DEVICES=3`):
+  agent_space/gpuRIR_validate.py -- shoebox room 4x5x3, src (1,1,1.5) ->
+  rcv (3,4,1.5), dist 3.6056 m, expected direct-path sample
+  round(dist/c*Fs)=168. Result: RIR finite, non-zero; first significant
+  arrival (>10% of peak) at sample 168 for BOTH LUT and exact-sinc paths,
+  silent before the direct path; hipFFT convolution (simulateTrajectory)
+  finite + non-zero. Repo `examples/example.py` (2 src x 3 rcv, cardioid
+  mic) also runs clean (exit 0). NOTE: the direct path is the first arrival,
+  NOT the global max -- constructive early reflections can be larger in a
+  reverberant room; a global-argmax check is wrong.
+
+## Validation 2026-05-30 (gfx1100, ROCm 7.2.1)
+
+GPU: 2x AMD Radeon Pro W7800 48GB, gfx1100 (RDNA3, wave32). ROCm 7.2.1.
+Fork branch: moat-port. Validated SHA: 6c912137c40fd1b7509722f8188bbc3f6fd0f702.
+
+### Build
+
+No source change needed for gfx1100 -- the CMakeLists.txt already correctly
+reads `${CMAKE_HIP_ARCHITECTURES}` from the CMake variable (defaulting to gfx90a
+only when unset), so passing `-DCMAKE_HIP_ARCHITECTURES=gfx1100` is sufficient.
+Because gfx1100 required no code change, the curated commit is left untouched at
+6c91213 (the SHA gfx90a was validated at): no head_sha churn, and gfx90a stays
+`completed` instead of being forced to revalidate. (An earlier pass amended a CI
+smoketest YAML into the commit, advancing the SHA to cc8736b and flipping gfx90a
+to revalidate; that was reverted -- a non-essential file must never churn an
+already-validated platform. A CI tripwire belongs in the lead-port commit.)
+
+```
+CMAKE_ARGS="-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/rocm" \
+  bash utils/timeit.sh gpuRIR compile -- \
+  pip install ./projects/gpuRIR/src --no-build-isolation --force-reinstall --no-deps
+```
+
+Result: build succeeded, gpurir-1.2.0 installed, .so = 333 KB (IPO/LTO skipped, no slim LTO bitcode regression).
+
+### gfx1100 code-object evidence
+
+```
+/opt/rocm/llvm/bin/llvm-objdump --offloading gpuRIR_bind.cpython-312-x86_64-linux-gnu.so
+```
+
+Output:
+```
+Extracting offload bundle: ...so.0.host-x86_64-unknown-linux-gnu-
+Extracting offload bundle: ...so.0.hipv4-amdgcn-amd-amdhsa--gfx1100
+```
+
+gfx1100 confirmed, no gfx90a objects. PyInit_gpuRIR_bind exported (nm -D confirms `T PyInit_gpuRIR_bind`).
+
+### Validation run
+
+```
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh gpuRIR test -- \
+  python3 agent_space/gpuRIR_validate_gfx1100.py
+```
+
+Shoebox room 4x5x3 m, src (1,1,1.5) -> rcv (3,4,1.5), c=343.0, Fs=16000.
+Distance = 3.6056 m, expected direct-path sample = round(3.6056/343.0*16000) = 168.
+
+- LUT path: first significant arrival (>10% of peak) at sample **168** (expected 168). PASS.
+- Exact-sinc path: first significant arrival at sample **168** (expected 168). PASS.
+- LUT vs sinc max diff: 0.000108, peak: 0.065515. Agreement: **0.165% of peak** (< 0.5% threshold). PASS.
+- Pre-direct silence: verified (no sample before index 168 exceeds 10% of peak). PASS.
+- hipFFT convolution (simulateTrajectory, 5-point trajectory): output shape (19199, 1), finite, non-zero. PASS.
+- examples/example.py (2 src x 3 rcv, cardioid mic, MPLBACKEND=Agg): exit 0. PASS.
+
+Results match gfx90a exactly (same sample 168, LUT/sinc agreement within rounding). No warp intrinsics in the kernel; RDNA3 wave32 is low numeric risk and confirmed numerically equivalent.
+
+### CI smoketest
+
+Intentionally NOT added during this follower validation. A rocm/dev-ubuntu-24.04
+compile-only tripwire (USE_HIP=ON builds, the gpuRIR_bind .so exceeds a few KB,
+PyInit_gpuRIR_bind exported) is worth having, but adding it here would have
+churned the curated commit and forced gfx90a to revalidate for a non-GPU file.
+It should be added to the lead-port commit instead, so no follower pays for it.
+
+## Windows gfx1151 (2026-05-31): BUILD PASS, validation pending (resumable)
+
+Build SUCCEEDED for gfx1151 with the all-clang Windows toolchain. Module
+gpuRIR_bind.cp313-win_amd64.pyd linked (links hipfft/hiprand; gpuRIRcu static lib;
+gfx1151 code object). Fork HEAD 6c91213 (no source change -- validate-first follower).
+Build script: agent_space/gpurir_build.sh.
+```
+cmake -S <src> -B build-win-gfx1151 -G Ninja \
+  -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_HIP_COMPILER=clang++ \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_PREFIX_PATH="<devel-root>;<libraries-root>" -DPYTHON_EXECUTABLE=<py> \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_HIP_STANDARD=17 -DCMAKE_CXX_STANDARD=17 \
+  -DCMAKE_CXX_FLAGS="-DNOMINMAX -DWIN32_LEAN_AND_MEAN" -DCMAKE_BUILD_TYPE=Release
+cmake --build build-win-gfx1151 --target gpuRIR_bind -j16
+```
+
+TO VALIDATE (next session, quick): place gpuRIR_bind.*.pyd on sys.path; deploy beside
+it amdhip64_7.dll + amd_comgr + rocm_kpack.dll + hipfft.dll + rocfft.dll + hiprand.dll
++ rocrand.dll (from _rocm_sdk_core/bin and _rocm_sdk_libraries/bin); the gfx1151 FFT/RAND
+kpacks (fft_lib_gfx1151.kpack, rand_lib_gfx1151.kpack) ship in _rocm_sdk_libraries/.kpack.
+pip install scipy numpy. Run the shoebox-room harness (4x5x3 room, src (1,1,1.5) ->
+rcv (3,4,1.5), expect direct-path sample at round(dist/c*Fs)=168, RIR finite/non-zero;
+compare to gfx90a/gfx1100). Status left port-ready (NOT completed -- GPU correctness
+not yet exercised on gfx1151).
+
+## Windows gfx1151 (2026-06-02): VALIDATED -> completed @ 6c91213
+
+GPU-validated on gfx1151 (AMD Radeon 8060S, TheRock ROCm) with the pre-built gpuRIR_bind.cp313-win_amd64.pyd (validate-first follower, no source change). Harness: agent_space/gpurir_validate.py (shoebox 4x5x3, src (1,1,1.5) -> rcv (3,4,1.5), fs 16000). Results match the gfx90a reference:
+- exact-sinc: first significant arrival at sample 168 (expected 168), finite/non-zero, pre-direct silence -- PASS
+- LUT path: direct path also at sample 168; LUT-vs-sinc agreement 0.005% near the direct path (full-RIR max 9.8% lands at sample 1619, deep in the dense reverberant tail = the LUT approximation summed over overlapping images, config-dependent, NOT a LUT-read fault) -- PASS
+- hipFFT convolution (simulateTrajectory, 5-pose trajectory): finite/non-zero -- PASS
+- examples/example.py (2 src x 3 rcv, cardioid mic, MPLBACKEND=Agg): exit 0 -- PASS
+No warp intrinsics in the kernels; RDNA3 wave32 numerically equivalent to gfx90a/gfx1100. DLL setup: os.add_dll_directory for the build dir + _rocm_sdk_core/bin (amdhip64_7/amd_comgr/rocm_kpack) + _rocm_sdk_libraries_gfx1151/bin (gfx1151 hipfft/rocfft/hiprand/rocrand; device code baked into the per-arch DLLs -- no separate .kpack in this TheRock layout). Marked completed, validated_sha=6c91213.
+
+## Audit 2026-06-03
+
+Audit of commit 6c912137c40fd1b7509722f8188bbc3f6fd0f702 (moat-port = fork/moat-port, matches status.json head_sha and validated_sha for all three platforms). No fork rewrite detected.
+
+### Safety check
+Local moat-port and fork/moat-port are identical at 6c91213. No force-push needed and none was observed.
+
+### Test discovery
+gpuRIR upstream has no formal test suite (no tests/ directory, no pytest, no unittest). The examples/ directory has five scripts (example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py); none self-validates with assertions -- they produce plots or audio files and rely on visual inspection. simulate_trajectory.py requires a source_signal.wav; time_vs_T60.py and time_vs_nbRIRs.py are timing benchmarks. The only programmatic validation is agent_space/gpuRIR_validate.py (written for this port): shoebox room with known direct-path geometry, checking finite/non-zero output, first significant arrival within 2 samples of the expected round(dist/c*Fs)=168, pre-direct silence, LUT vs exact-sinc agreement <5% of peak, and FFT convolution path finite/non-zero. This is the correct and maximal test achievable for this project.
+
+### Real GPU validation re-run (gfx90a, GCD 2, HIP_VISIBLE_DEVICES=2)
+
+Rebuilt from source at 6c91213 and re-ran on real GPU (MI250X, gfx90a, ROCm 7.2.1):
+
+```
+CMAKE_ARGS="-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/rocm" \
+  bash utils/timeit.sh gpuRIR compile -- \
+  pip install ./projects/gpuRIR/src --no-build-isolation --force-reinstall --no-deps
+
+HIP_VISIBLE_DEVICES=2 bash utils/timeit.sh gpuRIR test -- \
+  python3 agent_space/gpuRIR_validate.py
+```
+
+Results:
+- LUT path: first significant arrival at sample 168 (expected 168), finite/non-zero, pre-direct silent -- PASS
+- exact-sinc path: first significant arrival at sample 168 -- PASS
+- LUT vs sinc: max diff 2.47e-04 / peak 0.43% (< 5% threshold) -- PASS
+- hipFFT convolution (simulateTrajectory, 4-point trajectory): finite/non-zero -- PASS
+- examples/example.py (MPLBACKEND=Agg): exit 0 -- PASS
+
+All checks pass. Status remains `completed` for all three platforms.
+
+### Jargon / yml scan
+"Strategy A" and "colmap model" appear in the commit message body, a CMakeLists.txt comment (line 8 in the USE_HIP block), and the cuda_to_hip.h file banner comment (line 4). These are MOAT-internal vocabulary not meaningful to upstream readers. No other MOAT terms (head_sha, validated_sha, lead, follower, curated, smoketest, MOAT) appear in committed files. No .github/workflows file was added to the fork at any level outside the vendored third_party/pybind11 subtree (which is upstream content, not a moat addition). No spurious CI yaml was committed.
+
+The two "Strategy A / colmap model" occurrences in committed source (CMakeLists.txt and cuda_to_hip.h) are mild PR-readiness issues: they are intelligible without the MOAT context (the colmap project is publicly known as a reference for this pattern) but still carry internal vocabulary. They do not affect correctness. Flag for the porter to neutralize before the upstream PR (e.g., "compat-header pattern" or drop the parenthetical).
+
+### Conclusion
+Real tests: the agent_space/gpuRIR_validate.py harness is the maximal test for this project (upstream has no test suite); it checks physics-grounded correctness (direct-path timing, LUT accuracy, FFT conv). It was run on real gfx90a GPU in this audit and passes. Status: `completed` retained on all platforms, no state change required.
+
+## Validation 2026-06-16 (windows-gfx1101, ROCm 7.14.0a20260604)
+
+GPU: AMD Radeon PRO V710, gfx1101 (RDNA3, wave32), HIP_VISIBLE_DEVICES=0.
+Fork branch: moat-port. Validated SHA: 1cc434e6c9b2d36f0c2200d40f91bda113791027.
+No source change needed -- validate-first follower, CMakeLists.txt reads `${CMAKE_HIP_ARCHITECTURES}`.
+
+### Build
+
+Direct CMake/Ninja build (all-clang, ROCM_DEVEL = `_rocm_sdk_devel` from TheRock PyTorch venv):
+
+```
+VENV="B:/develop/TheRock/external-builds/pytorch/.venv"
+ROCM_DEVEL="$VENV/Lib/site-packages/_rocm_sdk_devel"
+cmake -S projects/gpuRIR/src -B projects/gpuRIR/build-win-gfx1101 -G Ninja \
+    -DCMAKE_CXX_COMPILER="$ROCM_DEVEL/lib/llvm/bin/clang++.exe" \
+    -DCMAKE_HIP_COMPILER="$ROCM_DEVEL/lib/llvm/bin/clang++.exe" \
+    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1101 \
+    -DCMAKE_PREFIX_PATH="$ROCM_DEVEL" \
+    -DPYTHON_EXECUTABLE="$VENV/Scripts/python.exe" \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_HIP_STANDARD=17 -DCMAKE_CXX_STANDARD=17 \
+    -DCMAKE_CXX_FLAGS="-DNOMINMAX -DWIN32_LEAN_AND_MEAN" -DCMAKE_BUILD_TYPE=Release
+cmake --build projects/gpuRIR/build-win-gfx1101 --target gpuRIR_bind -j32
+```
+
+Result: build succeeded. `gpuRIR_bind.cp312-win_amd64.pyd` = 362 KB. IPO/LTO skipped (USE_HIP), no slim-bitcode regression.
+
+### Validation run
+
+```
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh gpuRIR test -- \
+  python agent_space/gpurir_validate_gfx1101.py
+```
+
+Shoebox room 4x5x3 m, src (1,1,1.5) -> rcv (3,4,1.5), c=343.0, Fs=16000.
+Distance = 3.6056 m, expected direct-path sample = round(3.6056/343.0*16000) = 168.
+
+- exact-sinc: first significant arrival at sample **168** (expected 168). PASS.
+- exact-sinc: pre-direct silence verified. PASS.
+- LUT path: first significant arrival at sample **168** (expected 168). PASS.
+- LUT vs sinc near direct (samples 148-368): max diff=0.000080, peak=0.048074, **0.166% of peak** (<2% threshold). PASS.
+- LUT vs sinc full-RIR: 18.4% -- expected; divergence accumulates in dense reverberant tail (config-dependent, same behavior as gfx1151/gfx1201).
+- simulateTrajectory (hipFFT convolution, 5-point trajectory): output shape (6398,1), finite, non-zero. PASS.
+- examples/example.py (2 src x 3 rcv, cardioid mic, MPLBACKEND=Agg): exit 0. PASS.
+
+Results match gfx90a/gfx1100/gfx1151/gfx1201 exactly (same sample 168, 0.166% near-direct agreement). No warp intrinsics; RDNA3 wave32 numerically equivalent.
+
+## Validation 2026-06-07 (windows-gfx1201, ROCm 7.14.0a20260604)
+
+GPU: AMD Radeon RX 9070 XT, gfx1201 (RDNA4, wave32), HIP_VISIBLE_DEVICES=0 (V710 offline this session).
+Fork branch: moat-port. Validated SHA: 6c912137c40fd1b7509722f8188bbc3f6fd0f702.
+No source change needed -- validate-first follower, CMakeLists.txt reads `${CMAKE_HIP_ARCHITECTURES}`.
+
+### Build
+
+Direct CMake/Ninja build (all-clang, ROCM_DEVEL = `_rocm_sdk_devel` from TheRock PyTorch venv):
+
+```
+VENV="B:/develop/TheRock/external-builds/pytorch/.venv"
+ROCM_DEVEL="$VENV/Lib/site-packages/_rocm_sdk_devel"
+cmake -S projects/gpuRIR/src -B projects/gpuRIR/build-win-gfx1201 -G Ninja \
+    -DCMAKE_C_COMPILER="$ROCM_DEVEL/lib/llvm/bin/clang++.exe" \
+    -DCMAKE_CXX_COMPILER="$ROCM_DEVEL/lib/llvm/bin/clang++.exe" \
+    -DCMAKE_HIP_COMPILER="$ROCM_DEVEL/lib/llvm/bin/clang++.exe" \
+    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 \
+    -DCMAKE_PREFIX_PATH="$ROCM_DEVEL" \
+    -DPYTHON_EXECUTABLE="$VENV/Scripts/python.exe" \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_HIP_STANDARD=17 -DCMAKE_CXX_STANDARD=17 \
+    -DCMAKE_CXX_FLAGS="-DNOMINMAX -DWIN32_LEAN_AND_MEAN" -DCMAKE_BUILD_TYPE=Release
+cmake --build projects/gpuRIR/build-win-gfx1201 --target gpuRIR_bind -j32
+```
+
+Result: build succeeded. `gpuRIR_bind.cp312-win_amd64.pyd` = 366 KB. Code object verified: `hipv4-amdgcn-amd-amdhsa--gfx1201` and `PyInit_gpuRIR_bind` confirmed in binary. IPO/LTO skipped (USE_HIP), no slim-bitcode regression.
+
+### Validation run
+
+```
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh gpuRIR test -- \
+  python agent_space/gpurir_validate_gfx1201.py
+```
+
+Shoebox room 4x5x3 m, src (1,1,1.5) -> rcv (3,4,1.5), c=343.0, Fs=16000.
+Distance = 3.6056 m, expected direct-path sample = round(3.6056/343.0*16000) = 168.
+
+- exact-sinc: first significant arrival at sample **168** (expected 168). PASS.
+- exact-sinc: pre-direct silence verified. PASS.
+- LUT path: first significant arrival at sample **168** (expected 168). PASS.
+- LUT vs sinc near direct path (samples 148-368): max diff=0.000080, peak=0.048074, **0.166% of peak** (<2% threshold). PASS.
+- LUT vs sinc full-RIR: 18.4% -- expected; divergence accumulates in the dense reverberant tail over many image sources (config-dependent, same behavior as gfx1151). Not a LUT-read fault.
+- simulateTrajectory (hipFFT convolution, 5-point trajectory): output shape (6398,1), finite, non-zero. PASS.
+- examples/example.py (2 src x 3 rcv, cardioid mic, MPLBACKEND=Agg): exit 0. PASS.
+
+Results match gfx90a/gfx1100/gfx1151 exactly (same sample 168, 0.166% near-direct agreement). No warp intrinsics; RDNA4 wave32 numerically equivalent.
+
+## Upstream sync + gfx942 port 2026-10-29 (linux-gfx942, MI300X, TheRock ROCm 10.1.0)
+
+Requested by jeff before the upstream PR is opened: upstream #87 (06da27d, 2026-08-25) moved CMakeLists.txt from `find_package(CUDA)` to `find_package(CUDAToolkit REQUIRED)` and links `CUDA::cufft`/`CUDA::curand` PUBLIC on `gpuRIRcu`, conflicting with the port's CMakeLists. Porting lock taken as linux-gfx942.
+
+### Fork branches
+- Fork `master` fast-forwarded fd8af43 -> 06da27d (plain push, verified ancestor first).
+- `moat-port` 88a0749 -> 27a44c8, commits on top, no rebase/amend:
+  - c171ee7 merge of upstream master. Conflict resolution: `find_package(CUDAToolkit REQUIRED)` inside the non-HIP branch; links moved to upstream's structure: `gpuRIRcu` PUBLIC `CUDA::cufft CUDA::curand` (CUDA) / `hip::hipfft hip::hiprand` (HIP); `gpuRIR_bind` PRIVATE `gpuRIRcu pybind11::module` once for both. No other upstream file changed; upstream added no tests.
+  - 5fef7a4 gfx942 texture fix (below).
+  - 27a44c8 README: ROCm prerequisite sentence + `CMAKE_ARGS="-DUSE_HIP=ON ..."` install line (the porter doc step had never been done; the README had no ROCm mention).
+
+### gfx942 fault: texture API compiled out on gfx94x+
+First gfx942 build of the merge failed: `gpuRIR_cuda.cu:248: error: 'tex1D<float, nullptr>' is unavailable: The image/texture API not supported on the device` (known fault class, `__gfx94plus_clr__` -> `__HIP_NO_IMAGE_SUPPORT`). Not caused by the merge; the port had never been built for gfx94x. Fix, all HIP-guarded, CUDA texture path untouched: on HIP the sinc LUT is a plain device buffer of `lut_len + 1` floats (trailing zero = border texel) and `image_sample_lut` indexes it with the same software lerp it already used over a point-filtered texture. Index range: `|t-tau| < Tw/2` keeps `floor(c) >= 0`; high side can reach index `lut_len` at most, which is the zero. Removed the now-unused array/texture aliases from `cuda_to_hip.h`. Applies to all AMD arches (one path); results are the same arithmetic as before, so prior arches' numerics are expected unchanged, but they read `revalidate` after advance-head. Promoted a short note to `cuda-to-rocm/references/fault-classes.md` (Textures).
+
+### Build (direct CMake; this host's guard blocks pip, even `--target`, so the `setup.py` route was not exercised here)
+```
+R=$(rocm-sdk path --root)
+cmake -S projects/gpuRIR/src -B agent_space/gpurir/build-tip -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DPYTHON_EXECUTABLE=$(which python3) -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/gpurir/build-tip -j32
+```
+Result at 27a44c8: build OK, 333600-byte .so, offload bundle `hip-amdgcn-amd-amdhsa--gfx942`, `T PyInit_gpuRIR_bind`. Compile-only check with `-DCMAKE_HIP_ARCHITECTURES="gfx90a;gfx942;gfx1100;gfx1101;gfx1151;gfx1201"`: 0 errors, all six code objects present.
+Runtime (TheRock pip layout): `LD_LIBRARY_PATH=$SP/_rocm_sdk_libraries/lib:$SP/_rocm_sdk_core/lib`, `PYTHONPATH=<build dir>:projects/gpuRIR/src`, where SP is the venv site-packages; without it the import fails with `libhipfft.so.0: cannot open shared object file`.
+
+### Tests (HIP_VISIBLE_DEVICES=0, `ulimit -c 0`)
+Upstream has no test suite; the GPU suite is the validation harness plus all five upstream examples.
+- `python3 agent_space/gpurir/validate.py` (rewritten; the earlier harness was in a wiped agent_space): **12/12 PASS**.
+  - Direct-path-only RIR (nb_img [1,1,1]) vs a float64 reference: exact-sinc max rel err 9.49e-07, LUT (vs float64 LUT+lerp reference) 1.01e-06; threshold 2e-5, which separates the LUT and exact references (they differ by 1.30e-04), so the LUT check is discriminating.
+  - Shoebox 4x5x3, src (1,1,1.5) -> rcv (3,4,1.5), fs 16000: first arrival at sample 168 (expected 168) for LUT and exact, silence before the direct path, LUT vs exact near the direct path 0.165% of peak (matches the gfx1100/gfx1101/gfx1201 0.165-0.166%).
+  - simulateTrajectory (hipFFT): finite/non-zero, shape (14399,1); a static trajectory equals `np.convolve` to rel err 2.82e-07.
+  - Diffuse tail (hipRAND, Tdiff=0.1): finite, non-zero.
+- Examples, run from a scratch copy with a synthetic 2 s `source_signal.wav`. matplotlib and plotly are absent from the image and pip is blocked, so a no-op plotting stub was put on PYTHONPATH (the examples only plot; every GPU call runs): `example.py`, `simulate_trajectory.py` (wrote filtered_signal.wav), `polar_plots.py`, `time_vs_T60.py`, `time_vs_nbRIRs.py`: **5/5 exit 0**.
+Whether the plain-buffer LUT costs throughput on texture-capable arches (gfx90a/gfx11xx) was not timed; the time_vs_* examples there give a before/after if wanted.
+
+## Review 2026-10-29 (linux-gfx942, reviewer)
+
+Port Review: gpuRIR (`moat-port` 27a44c8 vs `master` 06da27d). Whole fork diff reviewed, with the three new commits (c171ee7 merge, 5fef7a4 LUT buffer, 27a44c8 README) read in full. `jargon.py --port gpuRIR`: clean.
+
+### Summary
+A HIP port of gpuRIR through a force-included compatibility header, with hipFFT/hipRAND swaps, a software-lerp LUT in a plain device buffer, and mixed precision disabled on HIP. **Request Changes**, for one finding: the CUDA LUT sampling line is not upstream's.
+
+### Minimal Footprint / Backward Compatibility (upstream)
+1. `src/gpuRIR_cuda.cu:243-258` (`image_sample_lut`): the CUDA path is not byte-identical to upstream. Upstream's single line `return (abs(t_tau)<Tw_2)? amp * tex1D<float>(sinc_lut, __fmaf_rz(t_tau,lut_oversamp,lut_center)) : 0.0f;` was rewritten for both backends as `if (abs(t_tau) >= Tw_2) return 0.0f;` followed by an `#if` split of the fetch. This came from a523c73, not from today's round. For finite input the two are equivalent. For NaN `tau` they differ: upstream's `<` is false and the function returns 0, while `>=` is also false and execution goes on to `tex1D(NaN)` on CUDA. Since 5fef7a4, HIP takes the same path into `(int)floorf(NaN)` and indexes `sinc_lut[i]`, which is UB in C++ (the old texture fetch was bounded by the border address mode). Fix: keep upstream's ternary verbatim in the `#else` (CUDA) branch, and give the HIP branch its own guard that keeps the NaN semantics, `if (!(abs(t_tau) < Tw_2)) return 0.0f;`, ahead of the coordinate and lerp. The CUDA source line is then unchanged, and HIP returns 0 exactly where CUDA does.
+
+### Fact-check record (claims verified, no finding)
+- CMake merge (c171ee7): `git diff -w master...moat-port -- CMakeLists.txt` is purely additive. The CUDA branch keeps `find_package(CUDAToolkit REQUIRED)`, `-D_FORCE_INLINES`, `CUDA_ARCHITECTURES all-major`, IPO, and the PUBLIC `CUDA::cufft CUDA::curand` link exactly as upstream has them. The only other CUDA-side edits are three trailing-space strips.
+- LUT buffer index range (5fef7a4): I brute-forced the HIP index math in float32 with a single-rounding fma, over Fs in {4k, 8k, 11.025k, 16k, 22.05k, 24k, 32k, 44.1k, 48k, 96k} and 2M `t_tau` samples each. The low index is always >= 0. The high `i+1` reaches exactly `lut_len` (the trailing zero) at Fs 4k/8k/11.025k/16k/22.05k/24k/32k/48k/96k, so the extra element is required and present. On HIP, point fetch at `i0+0.5` returned texel `i0`, so the buffer read is the same arithmetic as the old HIP path.
+- GPU spot check at 27a44c8, gfx942 (build: `cmake -S projects/gpuRIR/src -B agent_space/gpurir/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R`, R=`rocm-sdk path --root`). Direct-path RIR, LUT vs exact sinc, max error relative to peak: 8000 Hz 1.59e-3, 11025 Hz 1.29e-3, 16000 Hz 1.38e-4, 44100 Hz 6.85e-4, 48000 Hz 3.91e-4. All finite.
+- Lesson in `cuda-to-rocm/references/fault-classes.md` (Textures): accurate against `amd_device_functions.h` (`__gfx94plus_clr__` -> `__HIP_NO_IMAGE_SUPPORT`) and against the code.
+- Commit hygiene: all titles `[ROCm]`, <= 66 chars, no Co-Authored-By/noreply, AI disclosure and Test Plan present, ASCII only.
+
+## Porter round 2026-10-30 (linux-gfx942): Review 2026-10-29 addressed
+
+Review PR #1 on the fork has no line threads or review body; the only finding is the one in "Review 2026-10-29" above.
+
+### Finding 1 (image_sample_lut CUDA line not upstream's): fact-checked, fixed in af05f1d
+- Verified: `git show upstream/master:src/gpuRIR_cuda.cu` line 238 is the single ternary `return (abs(t_tau)<Tw_2)? amp * tex1D<float>(sinc_lut, __fmaf_rz(t_tau,lut_oversamp,lut_center)) : 0.0f;`, and the port replaced it for both backends with an early `>=` return. For NaN `t_tau` both comparisons are false, so the port fell through.
+- Verified on GPU that the NaN case is real on HIP, not just theoretical: at 27a44c8 (rebuilt in a detached worktree) a NaN receiver x gives an all-NaN RIR on the LUT path (800/800 samples NaN); the exact-sinc path returned zeros. (`(int)floorf(NaN)` is UB in C++; on AMDGPU the conversion evidently lands in range, and the NaN amp propagates.)
+- Fix: the `#else` (CUDA) branch is upstream's line verbatim; the HIP branch has its own `if (!(abs(t_tau) < Tw_2)) return 0.0f;` ahead of the coordinate and lerp. `git diff upstream/master -- src/gpuRIR_cuda.cu` now shows the upstream return line as unchanged context. The `sinc_lut_t` signature typedef stays (it is `cudaTextureObject_t` on CUDA, so the CUDA function is unchanged in type).
+
+### Build at af05f1d (gfx942, TheRock ROCm 10.1.0)
+```
+R=$(rocm-sdk path --root)
+cmake -S projects/gpuRIR/src -B agent_space/gpurir/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DPYTHON_EXECUTABLE=$(which python3) -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/gpurir/build -j16
+```
+OK, 333600-byte .so, `T PyInit_gpuRIR_bind`. Only warning is the pre-existing upstream nodiscard on `cudaGetDeviceProperties` (line 1069). Compile-only with `-DCMAKE_HIP_ARCHITECTURES="gfx90a;gfx942;gfx1100;gfx1101;gfx1151;gfx1201"`: 0 errors, six code objects in the .so.
+
+### Tests (HIP_VISIBLE_DEVICES=0, `ulimit -c 0`)
+Runtime env as in the 2026-10-29 sync round (`LD_LIBRARY_PATH=$SP/_rocm_sdk_libraries/lib:$SP/_rocm_sdk_core/lib`, `PYTHONPATH=<build>:projects/gpuRIR/src`).
+- `python3 agent_space/gpurir/validate.py` (harness rewritten again; agent_space was fresh): **16/16 PASS**.
+  - Direct path (nb_img [1,1,1]) vs float64 reference, exact and LUT, fs 8k/16k/44.1k/48k: max err/peak 4.6e-8 .. 1.54e-7 (reference LUT-vs-exact gap 1.38e-4, so discriminating). Harness gotcha: the reference must compute `dist` and `tau = dist/c*Fs` in float32 as the kernel does; a float64 tau gives ~3e-5 error at 44.1/48 kHz on BOTH paths (tau ~460 samples, float32 ulp).
+  - Shoebox 4x5x3, src (1,1,1.5) -> rcv (3,4,1.5), fs 16k: first arrival 168 (expected 168) LUT and exact; silent before `tau - Tw/2`. (Silence must be checked before the direct path's Hann half-window, not just a few samples before tau.)
+  - Diffuse tail (hipRAND) finite/non-zero; simulateTrajectory (hipFFT) shape (14399,1), static trajectory vs np.convolve rel err 2.64e-7.
+  - NaN receiver position: all-zero RIR on LUT and exact paths (LUT path was all-NaN at 27a44c8: 15/16 there).
+- Upstream examples (scratch copy, synthetic 2 s 16 kHz `source_signal.wav`, no-op matplotlib/plotly stub since neither is installed): example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py: **5/5 exit 0**.
+
+Commit af05f1d: `[ROCm]` title 57 chars, AI disclosure, Test Plan, no trailer; `jargon.py --port gpuRIR` clean, `prose.py` clean. Pushed plain to `moat-port` (27a44c8..af05f1d; no upstream PR open).
+
+## Review 2026-10-30 (linux-gfx942, reviewer)
+
+Port Review: gpuRIR (`moat-port` af05f1d vs `master` 06da27d). Re-review requested by jeff after the porter round above.
+
+### Summary
+A HIP port of gpuRIR through a force-included compatibility header, with hipFFT/hipRAND swaps, a software-lerp LUT in a plain device buffer, and mixed precision disabled on HIP. Review 2026-10-29 finding 1 is resolved. **Request Changes** for one new finding: a deferral that jeff ruled `now` has not been done.
+
+### Port Correctness
+1. Mixed precision is still not ported, although `projects/gpuRIR/deferred.json` item `gpurir-mixed-precision` is open and was ruled `now` by jeffdaily on 2026-08-13 (moat commit 8cab4aad). `moatlib.now_deferrals` counts it as ported work the project owes. Neither the 2026-10-29 sync round nor the 2026-10-30 porter round mentions it, and the 2026-10-29 review missed it. At af05f1d, `src/gpuRIR_cuda.cu:1091-1098` (`activate_mixed_precision`, HIP branch) still prints "Mixed precision is not supported on the HIP/ROCm build." and forces `mixed_precision = false`. Confirmed on gfx942: `gpuRIR.activateMixedPrecision(True)` prints that message. What to port: the half2 helpers and kernels are compiled out on HIP because `__CUDA_ARCH__` is undefined there: `#if __CUDA_ARCH__ >= 530` at lines 45, 167, 514, 537 and 562. Widen those guards for the HIP device pass (for example `|| defined(__HIP_DEVICE_COMPILE__)`; do not define `__CUDA_ARCH__` in the shim), then remove the HIP early return in `activate_mixed_precision`. The host `cuda_arch` gate (lines 718, 884, 1099) already passes on every AMD arch (major*100+minor*10 >= 900). Because `CUDART_VERSION` is undefined on HIP, line 13 (`#if CUDART_VERSION < 9000`) maps `__h2div` to `h2div`. That will fail to compile once the kernels are live: TheRock ROCm 10.1.0's HIP headers declare `__h2div` (`amd_hip_fp16.h:883`) and no `h2div`. Lines 508/730 likewise take the pre-9.2 path (`float Tw_inv`, converted in the kernel). Decide those `CUDART_VERSION` branches for HIP so that HIP gets the modern spelling, without changing the CUDA lines. Keep the CUDA lines byte-identical. Test: on a real GPU, compare mixed-precision output with the fp32 exact path (shoebox and direct-path cases) at the tolerance that half2 allows, and record the magnitudes. Then close the deferral with `utils/deferred.py set-status gpurir-mixed-precision done`. If the half2 path cannot be made correct on AMD, record the evidence and bring it to jeff. Do not leave the `now` ruling silently unmet.
+
+### Verification of Review 2026-10-29
+- Finding 1 (image_sample_lut CUDA line): resolved. In `git diff upstream/master -- src/gpuRIR_cuda.cu`, upstream's `return (abs(t_tau)<Tw_2)? amp * tex1D<float>(...)` appears as unchanged context in the `#else` branch (`src/gpuRIR_cuda.cu:257`). The HIP branch guards with `if (!(abs(t_tau) < Tw_2)) return 0.0f;` (line 245) ahead of the index math. Rebuilt af05f1d for gfx942 (same cmake line as the porter round, `-j16`). A NaN receiver x gives 0 NaN and 0 nonzero samples on both the LUT and exact paths, and the direct-path-only RIR peaks at sample 168 on both.
+- `jargon.py --port gpuRIR`: clean. af05f1d commit: `[ROCm]` title, AI disclosure, Test Plan, no trailer.
+
+## Porter round 2026-10-30 (linux-gfx942): mixed precision ported (Review 2026-10-30 finding 1)
+
+Requested by jeff: the `now` ruling on deferral `gpurir-mixed-precision` (2026-08-13) had not been carried out. Review PR #1 has no line threads or review body; the finding is the one in "Review 2026-10-30" above. No GitHub writes this round, so nothing was posted on the review PR.
+
+### Change (fork 39a7a9d on top of af05f1d)
+- `src/gpuRIR_cuda.cu`: the five `#if __CUDA_ARCH__ >= 530` guards (h2 constants, half2 helpers, the three mp kernels) become `#if __CUDA_ARCH__ >= 530 || defined(__HIP_DEVICE_COMPILE__)`. `__CUDA_ARCH__` is not defined in the shim.
+- The three `CUDART_VERSION` guards (line 13 `< 9000` -> `#define __h2div h2div`; lines 508 and 730 `< 9020` -> float `Tw_inv` converted in-kernel) become `#if !defined(USE_HIP) && CUDART_VERSION < ...`, so HIP takes the modern spelling: `__h2div` (declared in TheRock 10.1.0 `amd_hip_fp16.h:883`) and a host-side `__float2half2_rn` (`__HOST_DEVICE__` there, line 476). On CUDA each condition evaluates as before.
+- HIP early return in `activate_mixed_precision` removed; the function is now byte-identical to upstream (`git diff upstream/master` shows no hunk there).
+- Verified `__heq2`/`__hne2` on HIP return 1.0/0.0 half2 lanes (`-r` converted from the int mask), which `my_h2sinc` and the sign trick in `my_h2sinpi` rely on.
+- Code-object check: `generateRIR_mp_kernel` has 19 `v_pk_{fma,mul,add}_f16` instructions on gfx942, gfx90a, gfx1100 and gfx1201 (it was an empty stub before); `reduceRIR_mp_kernel` 2 on gfx942. Six-arch compile (gfx90a;gfx942;gfx1100;gfx1101;gfx1151;gfx1201): 0 errors.
+
+### Build at 39a7a9d (gfx942, TheRock ROCm 10.1.0)
+Same cmake line as the previous porter round (`agent_space/gpurir/build`, `-j16`). OK; only warning is the pre-existing nodiscard on `cudaGetDeviceProperties` (line 1069).
+
+### Tests (HIP_VISIBLE_DEVICES=0, `ulimit -c 0`, runtime env as in the 2026-10-29 sync round)
+`agent_space/gpurir/mp_validate.py`: **22/22 PASS**. Error is max |mp - float| / peak unless stated.
+- Direct path (nb_img [1,1,1]), room 4x5x3, src (1,1,1.5) -> rcv (3,4,1.5):
+
+  | fs | mp vs float exact | mp vs numpy float16 emulation of the kernel | float exact vs float64 | LUT vs exact |
+  |---|---|---|---|---|
+  | 8000 | 5.24e-4 | 5.5e-6 | 5.3e-8 | 1.59e-3 |
+  | 16000 | 7.95e-4 | 0 | 5.2e-8 | 1.38e-4 |
+  | 44100 | 3.72e-4 | 0 | 2.2e-6 | 6.85e-4 |
+  | 48000 | 6.76e-4 | 0 | 4.3e-8 | 3.91e-4 |
+
+  Peak sample identical (84/168/464/505). Thresholds: mp vs float in (0, 2e-3) -- the lower bound fails if mp silently falls back to float, as it did at af05f1d; emulation < 4e-3 (half ulp at peak is 7e-4..9.6e-4 of peak). The emulation replays the kernel's half2 polynomial sinpi/cospi, Hann window and `__h2div` in numpy float16 (fma as one float32 op then a cast); bit-exact at three of four rates, so the AMD half2 arithmetic matches IEEE half as the CUDA path assumes.
+- Reverberant shoebox, Sabine T60 0.6 s, Tmax 0.3 s, fs 16k, nb_img [52,42,69] (N=150696, multi-stage half2 reduction): max err/peak 7.09e-4, RMS rel 1.43e-3 (thresholds 3e-3 / 5e-3); first arrival 168 on both (expected 168).
+- 2 src x 3 cardioid rcv, Tdiff 0.15 s: ISM part max err/peak 1.29e-3 (threshold 5e-3); diffuse tail RMS mp/float 1.006.
+- Mode toggles: mp after LUT disables the LUT and gives the mp result; LUT after mp disables mp and gives the float result (bit-equal to a plain float run). Messages printed match upstream's.
+- Upstream examples (scratch copy, synthetic 2 s 16 kHz wav, no-op matplotlib/plotly stub incl. `plotly.subplots`): example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, plus example.py with `activateMixedPrecision(True)`/`activateLUT(False)`: **6/6 exit 0**.
+
+Deferral `gpurir-mixed-precision` set `done` with `utils/deferred.py set-status`. Commit 39a7a9d: `[ROCm]` title 51 chars, AI disclosure in prose, Test Plan, no trailer; `jargon.py --port gpuRIR` clean, `prose.py` clean on the body. Pushed plain to `moat-port` (af05f1d..39a7a9d; no upstream PR open). advance-head -> 39a7a9d, so every completed arch reads `revalidate` (the mp kernels now exist on all AMD arches; wave32 arches have not run them). Lesson promoted to `cuda-to-rocm/references/fault-classes.md` (Headers, includes and build): undefined `__CUDA_ARCH__`/`CUDART_VERSION` silently select stub or legacy branches on HIP.
+
+## Review 2026-10-30 (linux-gfx942, reviewer, second re-review)
+
+Port Review: gpuRIR (`moat-port` 39a7a9d vs `master` 06da27d). Re-review requested by jeff after the mixed-precision porter round. Whole fork diff reviewed; 39a7a9d read in full against the unchanged mp kernels, helpers and host gates. `jargon.py --port gpuRIR`: clean.
+
+### Summary
+A HIP port of gpuRIR through a force-included compatibility header, with hipFFT/hipRAND swaps, a software-lerp LUT in a plain device buffer, and the half2 mixed-precision path now compiled and enabled on HIP. **Approve** (review-passed). Review 2026-10-30 finding 1 (deferral `gpurir-mixed-precision` ruled `now`) is resolved.
+
+### PR preparation (not a code defect; history cannot be amended)
+- The a523c73 commit body still says the half2 kernels "are reported unsupported on HIP so their empty stubs are never launched", which 39a7a9d reverses. The squashed commit message and PR body must describe the final state (mixed precision works on HIP) and not carry that sentence forward. The Test Plans of af05f1d and 39a7a9d name `validate.py` / `mp_validate.py`, which are not in the repository; the PR Test Plan should either inline the check or describe it without naming a missing script.
+
+### Verification record (claims fact-checked, no finding)
+- Guards: all five `__CUDA_ARCH__ >= 530` sites gain `|| defined(__HIP_DEVICE_COMPILE__)`; all three `CUDART_VERSION` sites gain `!defined(USE_HIP) &&`. On nvcc both additions are constant-false/true respectively, so every CUDA condition evaluates as before. `activate_mixed_precision` is byte-identical to upstream (no hunk in `git diff master...HEAD`).
+- HIP headers (TheRock 10.1.0 `amd_hip_fp16.h`): `__float2half2_rn` is `__HOST_DEVICE__` (476), `__heq2`/`__hne2` (655/659), `__h2div` (883), `h2rint` (1050) present.
+- Fault classes in the newly live code: `reduceRIR_mp_kernel` is a shared-memory tree with `__syncthreads()` every step down to s=1 (no warp-synchronous tail, no 32-lane assumption); block dims (32x4, 128) are plain block sizes. Host gate `cuda_arch = major*100+minor*10` is >= 900 on every AMD arch.
+- Independent GPU run at 39a7a9d on gfx942 (own script, `HIP_VISIBLE_DEVICES=4`, `ulimit -c 0`; build `cmake -S projects/gpuRIR/src -B agent_space/gpurir/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release`, only the pre-existing nodiscard warning at line 1069). mp vs float exact, max |diff|/peak, all finite, mp output differs from float (so mp really ran), same peak sample:
+  - direct path: 8 kHz 5.24e-4, 16 kHz 7.95e-4, 44.1 kHz 3.72e-4, 48 kHz 6.76e-4, 96 kHz 3.93e-4 (first four match the porter's table exactly);
+  - reverberant shoebox, 2 src x 3 cardioid rcv, T60 0.6 s, Tmax 0.3 s, 16 kHz: 1.02e-3;
+  - odd sample count (Tmax 0.0300625 s at 16 kHz): 1.29e-3, shape identical to the float path.
+- Lesson in `cuda-to-rocm/references/fault-classes.md` (`__CUDA_ARCH__`/`CUDART_VERSION` undefined on HIP): accurate against the code and headers.
+- Commit hygiene: all seven titles `[ROCm]`, <= 61 chars; no Co-Authored-By/noreply; AI disclosure in prose; Test Plan present.
+
+## Validation 2026-10-30 (linux-gfx1100, TheRock ROCm 10.1.0)
+
+Requested by jeff after the second re-review approved 39a7a9d (half2 mixed-precision path enabled on HIP). GPU: Radeon gfx1100 (RDNA3, wave32), `HIP_VISIBLE_DEVICES=3`, every run under `ulimit -c 0`. Fork `moat-port` = head_sha 39a7a9d, fresh clone, `git status --porcelain` empty. `classify 88a0749..39a7a9d` = mixed (CMakeLists.txt, cuda_to_hip.h, gpuRIR_cuda.cu), so this is a full GPU run with no carry-forward.
+
+### Build
+```
+R=$(rocm-sdk path --root)
+cmake -S projects/gpuRIR/src -B agent_space/gpurir/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DPYTHON_EXECUTABLE=$(which python3) -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/gpurir/build -j32
+```
+OK (wrapped in `utils/timeit.sh gpuRIR compile`). 321456-byte .so, offload bundle `hip-amdgcn-amd-amdhsa--gfx1100` only, `T PyInit_gpuRIR_bind`. The only warning is the pre-existing upstream nodiscard on `cudaGetDeviceProperties` (line 1069). The gfx1100 code object has 19 `v_pk_{fma,mul,add}_f16` instructions in `generateRIR_mp_kernel` and 2 in `reduceRIR_mp_kernel` (same counts as gfx942), so the mp kernels are real code on wave32 too and not stubs.
+Runtime env: `LD_LIBRARY_PATH=$SP/_rocm_sdk_libraries/lib:$SP/_rocm_sdk_core/lib`, `PYTHONPATH=agent_space/gpurir/build:projects/gpuRIR/src` (SP = venv site-packages).
+
+### Tests
+Upstream has no test suite, so the GPU suite is a validation harness plus the five upstream examples. The harness was rewritten for this host because agent_space does not carry over between hosts.
+```
+ulimit -c 0
+bash utils/timeit.sh gpuRIR test -- python3 agent_space/gpurir/validate.py
+```
+**35/35 PASS**. The mp metric is the reviewer's: max |mp - float exact| / max |float exact|, where "float" is the default fp32 non-LUT path. A lower bound of 0 is part of each mp check, so it fails if mp silently falls back to float.
+- Float path, regression:
+  - Direct path (nb_img [1,1,1]) vs float64 reference with tau in float32, as the kernel computes it. Exact: 5.3e-8 / 5.2e-8 / 1.46e-7 / 4.3e-8 at 8k / 16k / 44.1k / 48k. LUT vs float64 LUT+lerp reference: 5.5e-8 / 6.0e-8 / 4.1e-8 / 4.7e-8. Threshold 2e-5; the LUT-vs-exact reference gap is 1.4e-4 to 1.6e-3, so the check can tell the two paths apart.
+  - Shoebox 4x5x3, Sabine T60 0.6 s, nb_img [52,42,69]: first arrival 168 (expected 168) on both exact and LUT. Samples [0,104) are silent, i.e. everything before tau - Tw/2. LUT vs exact near the direct path is 0.165% of peak, the same as gfx942/gfx1101/gfx1201.
+  - Diffuse tail (hipRAND, Tdiff 0.1): finite, non-zero.
+  - simulateTrajectory (hipFFT), static 3-rcv trajectory vs np.convolve: rel err 2.58e-7.
+  - NaN receiver position: all zeros (0 NaN) on both exact and LUT.
+- Mixed precision vs float:
+
+  | case | mp vs float max err/peak | other |
+  |---|---|---|
+  | direct path 8000 Hz | 5.24e-4 | vs float16 emulation of the kernel: 0; peak sample 84 = float |
+  | direct path 16000 Hz | 7.95e-4 | emulation 0; peak 168 = float |
+  | direct path 22050 Hz | 3.64e-4 | emulation 0; peak 232 = float |
+  | direct path 44100 Hz | 3.72e-4 | emulation 0; peak 464 = float |
+  | direct path 48000 Hz | 6.76e-4 | emulation 0; peak 505 = float |
+  | direct path 96000 Hz | 3.93e-4 | emulation 0; peak 1009 = float |
+  | reverberant shoebox T60 0.6, Tmax 0.3, 16000 Hz, N=150696 | 7.09e-4 | RMS rel 1.43e-3; first arrival 168 = float |
+  | same, 44100 Hz | 1.03e-3 | RMS rel 2.19e-3; first arrival 463 = float |
+  | reverberant 2 src x 3 cardioid rcv, 16000 Hz | 9.67e-4 | |
+  | odd count: 481 samples @ 16000 (Tmax 0.0300625) | 1.29e-3 | padded to 482, shape = float |
+  | odd count: 1329 samples @ 44100 | 1.79e-3 | padded to 1330, shape = float |
+  | odd count: 481 samples @ 22050 | 1.80e-3 | padded to 482, shape = float |
+  | mp + diffuse tail (Tdiff 0.1) | 1.59e-3 (ISM part) | tail RMS mp/float 1.059 |
+
+  Thresholds: direct path (0, 2e-3); reverberant (0, 3e-3) with RMS < 5e-3; multi-src, odd count and Tdiff (0, 5e-3); emulation < 4e-3. Every direct-path and single-source reverberant number matches gfx942 (porter and reviewer tables) to the digits shown. The float16 numpy emulation of `generateRIR_mp_kernel` (polynomial sinpi/cospi, Hann window, `__h2div`, half fma as one float32 op then a cast) is bit-exact at all six rates on gfx1100. On gfx942 it was off by 5.5e-6 at 8 kHz. So the RDNA3 half2 arithmetic matches IEEE half here.
+  - Mode toggles: LUT after mp equals a plain LUT run and mp after LUT equals a plain mp run. Both print upstream's messages.
+  - One harness bug was found and fixed during the run: the first odd-count case at 44.1 kHz used Tmax 0.0301 s, which gives 1328 samples (even). Its assertion failed (34/35) before any port behaviour was measured. Changed to 1329/44100 s; the 35/35 run above is the full re-run.
+- Upstream examples, from a scratch copy with a synthetic 2 s 16 kHz `source_signal.wav` and a no-op matplotlib/plotly stub on PYTHONPATH (neither is installed; the examples only plot, and every GPU call runs). Each was wrapped: `bash utils/timeit.sh gpuRIR test -- bash -c "cd agent_space/gpurir/ex && python3 <ex>"`. Results: example.py, simulate_trajectory.py (wrote filtered_signal.wav), polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, and example.py with `activateLUT(False)`/`activateMixedPrecision(True)`: **6/6 exit 0**.
+
+### CUDA gate
+cuda-not-validated: this host has no CUDA toolkit (no `/opt/conda`, no nvcc), and the headless job was not permitted to download one. The CUDA compile gate at 39a7a9d is still unrecorded; the next Linux host with the toolkit should run it. The reviewer's source reading of 39a7a9d: on nvcc, every added condition is constant (`defined(__HIP_DEVICE_COMPILE__)` false, `!defined(USE_HIP)` true), and `activate_mixed_precision` is byte-identical to upstream. That is not a compile.
+
+### Pre-completion checks
+`python3 utils/jargon.py --port gpuRIR`: clean. The README documents the ROCm build next to the CUDA prerequisites (lines 24 and 36). Fork tree clean at 39a7a9d.
+## Validation 2026-10-30 (linux-gfx90a, MI250X GCD, TheRock ROCm 10.1.0)
+
+Revalidation requested by jeff after the second re-review passed at 39a7a9d (half2 mixed-precision path enabled on HIP). Fork clone at `moat-port` 39a7a9d, `git status --porcelain` clean. Full GPU run, no carry-forward: the delta from the last gfx90a `validated_sha` (88a0749) includes the LUT buffer change and the newly live mp kernels.
+
+### Build (gfx90a)
+```
+R=$(rocm-sdk path --root)
+cmake -S projects/gpuRIR/src -B agent_space/gpurir/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DPYTHON_EXECUTABLE=$(which python3) -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/gpurir/build -j16
+```
+OK, 320304-byte .so, `T PyInit_gpuRIR_bind`. Only warning is the pre-existing nodiscard on `cudaGetDeviceProperties` (line 1069).
+
+### Tests (`HIP_VISIBLE_DEVICES=3`, `ulimit -c 0`)
+Runtime env: `LD_LIBRARY_PATH=$SP/_rocm_sdk_libraries/lib:$SP/_rocm_sdk_core/lib`, `PYTHONPATH=agent_space/gpurir/build:projects/gpuRIR/src` (SP = venv site-packages). Upstream has no test suite; the GPU suite is the harness plus the upstream examples.
+
+`python3 agent_space/gpurir/validate.py`: **28/28 PASS**. The mp metric is the reviewer's: max |mp - float exact| / peak of the float result.
+- Float paths vs float64 reference (direct path, nb_img [1,1,1], room 4x5x3, src (1,1,1.5) -> rcv (3,4,1.5); reference uses float32 dist/tau as the kernel does), max err/peak: exact 5.31e-8 / 5.21e-8 / 1.46e-7 / 4.33e-8, LUT 5.45e-8 / 5.98e-8 / 4.09e-8 / 4.72e-8 at fs 8k / 16k / 44.1k / 48k (threshold 2e-5; reference LUT-vs-exact gap 1.59e-3 / 1.38e-4 / 6.85e-4 / 3.91e-4, so the check is discriminating).
+- Shoebox (T60 0.4, nb_img [10,10,10], fs 16k): first arrival 168 (expected 168) on exact and LUT, exactly zero before tau - Tw/2.
+- Diffuse tail (hipRAND, Tdiff 0.1 s, nb_img t2n(Tdiff)): finite, tail max 5.85e-3. simulateTrajectory (hipFFT) static trajectory vs `np.convolve`: shape (18399,1), rel err 2.26e-7.
+- NaN receiver x: 0 NaN, 0 nonzero samples on exact and LUT.
+- Mixed precision vs float exact, direct path: fs 8000 5.24e-4, 11025 5.76e-4, 16000 7.95e-4, 22050 3.64e-4, 44100 3.72e-4, 48000 6.76e-4, 96000 3.93e-4; peak sample identical (84/116/168/232/464/505/1009); all > 0, so mp really ran (threshold < 2e-3). The 8k/16k/44.1k/48k/96k values equal the gfx942 porter and reviewer figures.
+- Mixed precision, reverberant room (Sabine T60 0.6 s, Tmax 0.3 s, fs 16k, nb_img [52,42,69]): 1 src omni max err/peak 7.09e-4, RMS rel 1.43e-3; 2 src x 3 cardioid rcv 1.06e-3, RMS rel 1.43e-3 (threshold 5e-3; gfx942 reviewer 1.02e-3, porter 7.09e-4).
+- Mixed precision, odd requested sample counts. `simulateRIR` pads `nSamples` and `nSamplesISM` to even (`gpuRIR_cuda.cu:873,875`), so the kernels never see an odd T; the case is an odd `ceil(Tmax*Fs)` that gets padded. Requested 481 at 16k -> T 482, 1.29e-3 (same as the gfx942 reviewer's "odd sample count" case); 885 at 44.1k -> 886, 1.76e-3; 3201 at 16k with Tdiff 0.0500625 s (ISM part 801 -> 802 samples) -> 3202, ISM part 1.55e-3, diffuse tail RMS mp/float 1.053. Shapes equal to the float path.
+- Mode toggles: mp after LUT disables the LUT and is bit-equal to a plain mp run; LUT after mp disables mp and is bit-equal to a plain LUT run. Messages match upstream's.
+- Harness notes: the reference length must be the GPU output length (T is the float32 `ceil` padded to even, e.g. 2206 at 44.1 kHz for 0.05 s); a diffuse-tail check needs `nb_img = t2n(Tdiff)`, since with too few images the energy-fit window before Tdiff is empty and the fitted tail is exactly 0 (first harness draft: 25/28 for these two harness reasons, no port fault).
+
+Upstream examples, run from a scratch copy (`agent_space/gpurir/ex`, synthetic 2 s 16 kHz `source_signal.wav`, no-op matplotlib/plotly stub on PYTHONPATH since neither is installed and pip is blocked): example.py, simulate_trajectory.py (wrote filtered_signal.wav), polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, plus example.py with `activateMixedPrecision(True)`/`activateLUT(False)`: **6/6 exit 0**.
+
+### CUDA gate
+cuda-not-validated on this host: no CUDA toolkit is installed (no conda, no nvcc), and the host's fleet guard blocks pip, so the conda/pip toolkit could not be set up. The CUDA compile gate at 39a7a9d is still open for a host that has the toolkit. The change at 39a7a9d only adds `|| defined(__HIP_DEVICE_COMPILE__)` and `!defined(USE_HIP) &&` to existing CUDA conditions (reviewer verification record above).
+
+### Pre-completion checks
+`python3 utils/jargon.py --port gpuRIR`: clean (master 06da27d .. moat-port 39a7a9d). README documents the ROCm build next to the CUDA one (`CMAKE_ARGS="-DUSE_HIP=ON ..."`). Fork tree clean.
+
+## CUDA gate 2026-10-30 (V100, CUDA 12.9)
+
+CUDA no-regression gate at head 39a7a9d93592 (fork `moat-port`), run on an NVIDIA Tesla V100-SXM2-32GB (driver 575.57.08), nvcc 12.9.86, gcc 13.2, CMake 3.31, Python 3.12, fresh clones. Upstream base for comparison: 06da27dd26 (fork `master`, the merge base). All runs under `ulimit -c 0`.
+
+Build (identical for port and base):
+```
+cmake -S src -B src/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE=$(which python)
+cmake --build src/build -j 12 -v
+```
+**PASS** at both shas. The arch is not a `-D` knob here: upstream's CMakeLists sets `CUDA_ARCHITECTURES all-major` on `gpuRIRcu`, so nvcc ran with `-arch=all-major`; `cuobjdump --list-elf libgpuRIRcu.a` shows one cubin each for sm_50, sm_60, sm_70, sm_80, sm_90, sm_100, sm_120 (sm_70 and sm_80 both present, no throwaway patch needed). 2 warnings at both shas, both pre-existing upstream (nvcc's pre-sm_75 deprecation notice and `cudaMemcpyToArray` deprecated at gpuRIR_cuda.cu:626).
+
+Runtime on the V100 (extra evidence; not the AMD gate). Upstream has no test suite, so a check script ran against both builds (`PYTHONPATH=src/build:src python gpurir_check.py out.npz`):
+- Shoebox 4x5x3, T60 0.6, Tmax 0.3, 16 kHz, src (1,1,1.5) -> rcv (3,4,1.5): first arrival at sample 168 (expected 168) for all four LUT x mixed-precision combinations; all finite.
+- LUT vs exact max err / peak 1.667e-3; mixed precision (half2 path is live on sm_70) vs float 7.086e-4; diffuse tail (cuRAND, Tdiff 0.1) finite and non-zero; simulateTrajectory (cuFFT) vs np.convolve rel err 3.84e-7.
+- 8/8 PASS on the port and 8/8 on the base. Every saved output (4 RIR variants, Tdiff shape, convolution) is **bit-identical port vs base**.
+- Upstream examples on the port build with a no-op matplotlib stub and a synthetic 2 s 16 kHz source_signal.wav: example.py, simulate_trajectory.py, time_vs_T60.py, time_vs_nbRIRs.py exit 0 (4/4); polar_plots.py not run (needs plotly, not installed).
+
+Result: CUDA gate **PASS** at 39a7a9d. The port's CUDA build is a passthrough and produces bit-identical results to upstream on NVIDIA hardware.
+
+## Validation 2026-10-31 (windows-gfx1151, Radeon 8060S, TheRock ROCm 7.14.0a20260612)
+
+GPU: AMD Radeon 8060S, gfx1151 (RDNA3.5, wave32, APU). Fork `moat-port` = head_sha 39a7a9d, fresh clone, `git status --porcelain` empty. Full run, `ulimit -c 0`, one GPU process at a time. Approved by jeff for this host.
+
+### Build (all-clang, Ninja)
+```
+source agent_space/win_rocm_env.sh
+cmake -S projects/gpuRIR/src -B agent_space/gpurir_build -G Ninja -DCMAKE_C_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang.exe \
+  -DCMAKE_CXX_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang++.exe \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DPYTHON_EXECUTABLE=<TheRock venv python 3.13> \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_HIP_STANDARD=17 -DCMAKE_CXX_STANDARD=17 \
+  -DCMAKE_CXX_FLAGS="-DNOMINMAX -DWIN32_LEAN_AND_MEAN" -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/gpurir_build --target gpuRIR_bind -j16     # wrapped in utils/timeit.sh gpuRIR compile
+```
+OK; `gpuRIR_bind.cp313-win_amd64.pyd`. Only warning: the pre-existing nodiscard on `cudaGetDeviceProperties` (line 1069).
+
+### Tests
+Upstream has no test suite; the GPU suite is a harness (rewritten for this host, `agent_space/gpurir_win/validate.py`, same checks and thresholds as the Linux 39a7a9d runs minus the float64 direct-path reference) plus the five upstream examples. Run with the cp313 torch_venv python (numpy/scipy) with `os.add_dll_directory` for TheRock `_rocm_sdk_core/bin`, `_rocm_sdk_libraries_gfx1151/bin` and the build dir.
+`utils/timeit.sh gpuRIR test -- python validate.py`: **37/37 PASS**.
+- Direct path, peak sample at 8k/16k/22.05k/44.1k/48k/96k = 84/168/232/464/505/1009 (all expected). LUT vs exact 1.59e-3 / 1.38e-4 / 1.47e-3 / 6.85e-4 / 3.91e-4 / 7.52e-4 (the gfx90a reference LUT-vs-exact gaps 1.59e-3 / 1.38e-4 / 6.85e-4 / 3.91e-4 match to the digits).
+- Mixed precision vs float exact, direct path: 5.24e-4 / 7.95e-4 / 3.64e-4 / 3.72e-4 / 6.76e-4 / 3.93e-4, identical to the gfx90a/gfx1100 tables to the digits shown; mp ran (error > 0) and peak sample = float.
+- Shoebox 4x5x3 T60 0.6 nb_img [52,42,69]: first arrival 168, exact zero before sample 104, mp max err 7.087e-4 / RMS 1.425e-3 (Linux 7.09e-4 / 1.43e-3). 2 src x 3 cardioid rcv mp 1.04e-3. Odd counts 481@16k -> 482 (8.4e-4), 1329@44.1k -> 1330 (1.03e-3), 481@22.05k -> 482 (5.5e-4), shapes equal float.
+- Diffuse tail (hipRAND) finite, non-zero, with and without mp. simulateTrajectory (hipFFT) vs np.convolve: rel err 2.21e-7 (Linux 2.3e-7 .. 2.6e-7). NaN receiver: all zeros, no NaN, exact and LUT.
+- Upstream examples (scratch copy, synthetic 2 s 16 kHz source_signal.wav, MagicMock matplotlib/plotly since neither is installed): example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, and example.py with mp on / LUT off: **6/6 exit 0**.
+No harness bugs this time; no runtime DLL problem (the process loaded TheRock's amdhip64 via add_dll_directory ahead of System32 without issue). No skips.
+
+### CUDA gate
+Not run on this host (no CUDA toolkit); recorded PASS at 39a7a9d by the V100 gate above.
+
+### Pre-completion checks
+`python3 utils/jargon.py --port gpuRIR`: clean. README documents the ROCm build (lines 24, 36). Fork tree clean at 39a7a9d.
+
+## Validation 2026-11-02 (windows-gfx1151): float64 reference and pip route
+
+Follow-up to the 2026-10-31 windows-gfx1151 section, closing two gaps. Same host (Radeon 8060S, gfx1151, TheRock ROCm 7.14.0a20260612, cp313 torch_venv python), fork `moat-port` = 39a7a9d, `ulimit -c 0`, one GPU process at a time, nothing pushed to the fork, platform state unchanged.
+
+### 1. float64 direct-path reference restored
+`agent_space/gpurir_win/validate.py` gained the Linux check: direct path (nb_img [1,1,1], room 4x5x3, src (1,1,1.5) -> rcv (3,4,1.5), beta 0, Tmax 0.05). The reference computes the source-receiver vector, dist (sqrtf), amp = 1/(4*pi*dist) and tau = dist/c*fs in float32 as `calcAmpTau_kernel` does, then evaluates the kernel formula in float64: exact path Hann(t-tau)*amp*sinc over |t-tau| < Tw/2 (Tw = round(8e-3f*fs)); LUT path rebuilds the 16x-oversampled table and applies the kernel's software linear interpolation (coord = 16*(t-tau)+lut_center, texel offset 0.5). The reference is zero-padded to the kernel's even sample count (44.1 kHz returns 2206 for 2205). Threshold 2e-5 of peak.
+```
+utils/timeit.sh gpuRIR test -- python agent_space/gpurir_win/validate.py      # 49/49 PASS
+bash agent_space/gpurir_win/runall.sh                                          # examples
+```
+| fs | exact kernel vs f64 ref | LUT kernel vs f64 LUT ref | LUT-ref vs exact-ref gap |
+|---|---|---|---|
+| 8000 | 5.31e-8 | 5.44e-8 | 1.588e-3 |
+| 16000 | 5.21e-8 | 5.98e-8 | 1.378e-4 |
+| 44100 | 1.461e-7 | 7.58e-8 | 6.852e-4 |
+| 48000 | 4.33e-8 | 1.059e-7 | 3.908e-4 |
+
+All values are max abs error / reference peak. They match the Linux gfx1100 numbers (5.3e-8 / 5.2e-8 / 1.46e-7 / 4.3e-8 exact; LUT-vs-exact gap 1.4e-4 to 1.6e-3). The gap is 4 to 5 orders above the 2e-5 threshold and the exact kernel is 1.377e-4..1.588e-3 away from the LUT reference, so the check discriminates the two paths (added as an explicit assertion per rate). Harness total 49/49 PASS (the earlier 37 plus 12 new); upstream examples 6/6 exit 0 (example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, example.py with mp on / LUT off). One harness bug on the first run: the reference was not padded to the kernel's even sample count at 44.1 kHz (shape 2206 vs 2205); fixed in the harness, no port change.
+
+### 2. `pip install .` route
+Scratch clone of the local fork checkout at 39a7a9d (`git status` clean, `build/` removed), install into a throwaway `--target` directory so the venv and other projects' packages are untouched (`pip list` shows no gpuRIR in the venv). `source agent_space/win_rocm_env.sh; unset CC CXX`, torch_venv python 3.13.13, pip 26.2.1, setuptools 81.0.0, CMake 3.31.0, ninja 1.13.0 (cmake and ninja from PATH; `--no-build-isolation` so pyproject's `cmake>=3.23` build requirement is not fetched).
+```
+CMAKE_ARGS="-G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang.exe \
+ -DCMAKE_CXX_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang++.exe \
+ -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+ -DCMAKE_HIP_STANDARD=17 -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_FLAGS=-DNOMINMAX" \
+python -m pip install --no-deps --no-build-isolation --target agent_space/gpurir_pip/target <clone>
+```
+Outcome: the documented route does NOT work on Windows with the README command alone, and fails in two stages that are both pre-existing upstream `setup.py`/source behavior, not ROCm port defects:
+1. **setup.py defect (Windows, non-Visual-Studio generator).** `setup.py` unconditionally appends `-A x64` and `-- /m` on Windows. HIP cannot be built with a Visual Studio generator, so a Ninja generator is required, and CMake rejects it: `CMake Error at CMakeLists.txt:14 (project): Generator Ninja does not support platform specification, but platform x64 was specified.` (attempt 1, exit 1, log `agent_space/gpurir_pip/pip1.log`). Not a configure option the user can pass; it needs `setup.py` to skip `-A`/`/m` for non-VS generators. Verified by removing those two lines in a scratch copy (`clone2`, not the fork): configure then succeeds.
+2. **Build type not set on Windows.** `setup.py` passes `CMAKE_BUILD_TYPE` only on non-Windows. With Ninja (single-config) and no build type, `NDEBUG` is not defined and upstream's `assert(pos_src.ndim == 2)` etc. in `python_bind.cpp` (lines 53-56, 98-99) compile; pybind11's `ndim` is a method so Clang errors: `python_bind.cpp:53:17: error: reference to non-static member function must be called` (6 errors, attempt 2, `pip2.log`). The same sources build in the Release build used by the 2026-10-31 run because that passed `-DCMAKE_BUILD_TYPE=Release`. Workaround, a documentable CMAKE_ARGS option: add `-DCMAKE_BUILD_TYPE=Release`.
+With both addressed (scratch `setup.py` minus the two lines, plus `-DCMAKE_BUILD_TYPE=Release`): attempt 3 `Successfully installed gpuRIR-1.2.0` (~28 s), `gpuRIR_bind.cp313-win_amd64.pyd` plus `gpuRIR/__init__.py` in the target. Harness rerun against the installed module only (`GPURIR_PIP_TARGET=<target>`, `gpuRIR_bind.__file__` confirmed in the target, with `os.add_dll_directory` for TheRock `_rocm_sdk_core/bin`, `_rocm_sdk_libraries_gfx1151/bin` and the target): **49/49 PASS**, f64 table identical to section 1.
+Environment note: nothing here was an environment failure. Fork not edited; the two upstream-script fixes were exercised only in the scratch clone. If the PR should make the pip route work on Windows, it needs a `setup.py` change (skip `-A x64`/`/m` when the generator is not Visual Studio, set `CMAKE_BUILD_TYPE` for single-config generators); that is a porter/maintainer decision and not made here. Linux `pip install` with `CMAKE_ARGS` is unaffected (setup.py sets the build type there).
+
+## Porter round 2026-11-02 (windows-gfx1151): setup.py Ninja route on Windows (214a51c)
+
+Closes the pip-route gap from the 2026-11-02 validation section. One commit on `moat-port`: 39a7a9d -> **214a51c** `[ROCm] Let setup.py build with Ninja on Windows` (fast-forward push; `pr-state` none, only the fork review PR AMD-Ecosystem/gpuRIR#1 exists). Host: Radeon 8060S gfx1151, TheRock ROCm 7.14.0a20260612, torch_venv python 3.13, CMake 3.31.0, ninja 1.13.0. `ulimit -c 0`, one GPU process at a time.
+
+### Change
+- `setup.py`: the generator is read from `-G<name>`/`-G <name>` in `CMAKE_ARGS` or from the `CMAKE_GENERATOR` env var. On Windows, `-A x64` and `-- /m` are appended only when no generator is given or it starts with `Visual Studio`; any other generator that is not `Multi-Config` gets `-DCMAKE_BUILD_TYPE=<cfg>` (so NDEBUG is defined and upstream's `python_bind.cpp` asserts compile out, as in the Linux path). Linux branch untouched. The `python_bind.cpp` asserts are untouched (upstream code).
+- `README.md`: one sentence after the ROCm `CMAKE_ARGS` example giving the Windows form: `-G Ninja`, `CMAKE_{C,CXX,HIP}_COMPILER=clang/clang++` (ROCm's Clang), `CMAKE_PREFIX_PATH=<ROCm path>`, `USE_HIP=ON`, `CMAKE_HIP_ARCHITECTURES=gfx1151`. No env-var prefix beyond `CMAKE_ARGS` itself. Probe showed `CMAKE_POLICY_VERSION_MINIMUM`, `CMAKE_{HIP,CXX}_STANDARD=17` and `-DNOMINMAX` are not needed for this pip build on CMake 3.31.
+- Note: a generator name with spaces (`Visual Studio 17 2022`, `Ninja Multi-Config`) cannot pass through `CMAKE_ARGS` because setup.py whitespace-splits it (pre-existing port behavior); use `CMAKE_GENERATOR` for those, which the change honors.
+
+### Argument-list regression check (dry run)
+Old (39a7a9d) vs new setup.py executed with `setuptools.setup` and `subprocess.check_call` monkeypatched, `platform.system` forced (scratch `dryrun.py`): identical cmake/build arguments for Linux (no CMAKE_ARGS; HIP args; `-G Ninja`), Windows with no generator, Windows `CMAKE_GENERATOR="Visual Studio 17 2022"`, Windows `CMAKE_ARGS=-DUSE_HIP=OFF`. Differences only where intended: Windows `-G Ninja`, `-GNinja`, `CMAKE_GENERATOR=Ninja` now drop `-A x64` and `-- /m` and add `-DCMAKE_BUILD_TYPE=Release`.
+
+### Validation (pip route, fresh clone at 214a51c, throwaway --target)
+```
+source agent_space/win_rocm_env.sh; unset CC CXX; L=$ROCM_ROOT/lib/llvm/bin
+CMAKE_ARGS="-G Ninja -DCMAKE_C_COMPILER=$L/clang.exe -DCMAKE_CXX_COMPILER=$L/clang++.exe -DCMAKE_HIP_COMPILER=$L/clang++.exe \
+ -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+ -DCMAKE_HIP_STANDARD=17 -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_FLAGS=-DNOMINMAX" \
+utils/timeit.sh gpuRIR compile -- <torch_venv python> -m pip install -v --no-deps --no-build-isolation --target <abs target> <abs clone>
+```
+(no build-type option). `Successfully installed gpuRIR-1.2.0`; CMakeCache `CMAKE_BUILD_TYPE=Release`, generator Ninja, empty platform; `-DNDEBUG` in build.ninja.
+- `GPURIR_PIP_TARGET=<target> utils/timeit.sh gpuRIR test -- python agent_space/gpurir_win/validate.py`: **49/49 PASS**, `gpuRIR` and `gpuRIR_bind.__file__` in the target. f64 direct-path table identical to the 2026-11-02 validation (exact 5.305e-8 / 5.213e-8 / 1.461e-7 / 4.330e-8; LUT 5.439e-8 / 5.979e-8 / 7.575e-8 / 1.059e-7 at 8k/16k/44.1k/48k); shoebox mp max 7.087e-4 / RMS 1.425e-3.
+- Examples against the target (`runall_pip.sh`, runex variant importing from the target only): example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, example.py mp on / LUT off: **6/6 exit 0**, all 6 report `gpuRIR_bind` from the target.
+- README form exactly (bare `clang`/`clang++`, ROCm `lib/llvm/bin` first on PATH, only the six README options): install OK, example.py exit 0 from that target.
+- Gotcha (harness, not port): prepending `D:/...` to a Git-Bash PATH splits at the colon, so `clang` resolves elsewhere and CMake fails "Failed to find ROCm root directory" / compiler identification unknown. Use `/d/...` in PATH.
+- `utils/timeit.sh` cds to the repo root, so pass absolute paths to the wrapped command (first attempt exit 127 on a relative python path).
+- The worktree's fork clone had no pre-push hook; `moatlib.py protect-fork gpuRIR` installed it before the push.
+
+### State
+`advance-head gpuRIR 214a51c`; windows-gfx1151 porting -> ported (lock released). All platforms validated at 39a7a9d now read revalidate at 214a51c. The change is setup.py/README only (no compiled source), so Linux revalidation should be a light check of the unchanged Linux arg list plus a normal run; the CUDA gate path (Linux or Windows default/VS generator) produces byte-identical CMake arguments.
+`python utils/jargon.py --port gpuRIR`: clean.
+
+## Review 2026-11-02 (linux-gfx942, reviewer): delta 39a7a9d..214a51c
+
+Port Review: gpuRIR (`moat-port` 214a51c, delta from 39a7a9d: setup.py, README.md). Requested by jeff after the windows-gfx1151 porter round. `jargon.py --port gpuRIR`: clean.
+
+### Summary
+setup.py now detects a non-Visual-Studio generator on Windows (so a Ninja HIP build works through `pip install`), and the README gives the Windows `CMAKE_ARGS`. **Request Changes**: one README problem.
+
+### Build System / documentation
+1. `README.md:36`: the Windows example passes `-DCMAKE_C_COMPILER=clang`, but the project never enables C. `CMakeLists.txt:14` is `project(gpuRIR LANGUAGES CXX HIP)` (`:19` is `CXX CUDA`), and pybind11 does not enable C either, so CMake ignores the option and prints `Manually-specified variables were not used by the project: CMAKE_C_COMPILER`. Reproduced here by configuring 214a51c with the README's exact option set (`-G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_HIP_COMPILER=clang++ -DCMAKE_PREFIX_PATH=$R -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942`, ROCm `lib/llvm/bin` first on PATH). Configure succeeds, then emits that warning. Fix: drop `-DCMAKE_C_COMPILER=clang` from the README sentence (and from the next commit's Test Plan). Confirm the Windows pip route still builds without it; the CMake code is the same on both OSes, so it should. A follow-up commit on top; no amend.
+
+### Verification record (claims fact-checked, no finding)
+- Generator detection (`setup.py:50-53`): `-G <name>`, `-G<name>` and `CMAKE_GENERATOR` are all detected, and a `-G` in `CMAKE_ARGS` overrides the env var, the same precedence CMake uses. The scan runs over the whole `cmake_args`, but the two fixed entries start with `-D`, so they cannot match. A trailing bare `-G` raises IndexError where CMake would itself refuse; that is malformed input and not counted. Generator names containing spaces cannot pass through `CMAKE_ARGS` because of the existing whitespace split (the porter noted this); `CMAKE_GENERATOR` covers them.
+- Dry run, my own script (`agent_space/gpurir_rev/dryrun.py`). It exec'd old (39a7a9d) and new `setup.py` with `setuptools.setup`, `subprocess.check_call`/`check_output`, `platform.system` and `sys.maxsize` patched, for each of Release/Debug and 64/32-bit:
+  - **identical** for Linux (no args; HIP args; `-G Ninja`; `-GNinja`; `CMAKE_GENERATOR=Ninja`), Windows with no generator (`-A x64`, `-- /m`), Windows `CMAKE_GENERATOR="Visual Studio 17 2022"`, Windows `-DUSE_HIP=OFF`, and Windows CUDA-style args;
+  - **intended differences only**: Windows `-G Ninja`, `-GNinja`, `CMAKE_GENERATOR=Ninja` and `NMake Makefiles` drop `-A`/`/m` and add `-DCMAKE_BUILD_TYPE=Release|Debug`. `CMAKE_GENERATOR="Ninja Multi-Config"` drops `-A`/`/m` and adds no build type. `--config <cfg>` remains in the build args for all of them, and a multi-config build needs it. A `-G Ninja` in CMAKE_ARGS wins over a VS `CMAKE_GENERATOR`.
+- A user `-DCMAKE_BUILD_TYPE` in CMAKE_ARGS is overridden by the appended one on Windows/Ninja, which is the same order the Linux branch has always used. Not a regression.
+- Footprint and style: 10 added lines, single quotes and `+=` list idiom as in the surrounding code, and one two-line comment. The Linux branch is byte-identical.
+- README: no device-selection variables before commands. A bare `clang`/`clang++` relies on ROCm's `lib/llvm/bin` being first on PATH (the porter's gotcha shows the failure otherwise). I judged that acceptable for an example that already says "the Clang compilers shipped with ROCm", because a full path differs between ROCm distributions (`bin/` vs `lib/llvm/bin/`).
+- Commit 214a51c: `[ROCm]` title, 47 chars; prose AI disclosure; no Co-Authored-By/noreply; fenced Test Plan. Its claim of "below 2e-7 of the peak" holds (max 1.461e-7, below).
+- Linux unaffected, GPU run on this host (MI300X gfx942, TheRock ROCm 10.1.0, `HIP_VISIBLE_DEVICES=3`, `ulimit -c 0`). Fresh clone at 214a51c, README Linux form plus this host's TheRock compiler/prefix:
+  ```
+  R=$(rocm-sdk path --root); export PATH=$R/lib/llvm/bin:$PATH
+  CMAKE_ARGS="-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R" \
+    utils/timeit.sh gpuRIR compile -- $FLEET_VENV/bin/python -m pip install -v --no-deps --no-build-isolation <clone>
+  ```
+  The install succeeded (job venv). CMakeCache has `CMAKE_BUILD_TYPE=Release` and generator Unix Makefiles, as before.
+  - Harness, rebuilt from the Linux checks in this file (`agent_space/gpurir_rev/validate.py`, run from /tmp against the installed module, `LD_LIBRARY_PATH=$SP/_rocm_sdk_libraries/lib:$SP/_rocm_sdk_core/lib`): **27/27 PASS**.
+    - f64 direct path, exact 5.305e-8 / 5.213e-8 / 1.461e-7 / 4.330e-8 and LUT 5.439e-8 / 5.979e-8 / 4.091e-8 / 4.718e-8 at 8k/16k/44.1k/48k. LUT-vs-exact reference gap 1.588e-3 / 1.378e-4 / 6.852e-4 / 3.908e-4, so the check discriminates. The exact figures are identical to windows-gfx1151.
+    - Shoebox: first arrival 168, silent before 104.
+    - mp vs float direct path 5.243e-4 / 7.952e-4 / 3.643e-4 / 3.720e-4 / 6.762e-4 / 3.928e-4 (8k..96k), the same as the other hosts. Reverberant mp 7.087e-4 / RMS 1.425e-3.
+    - Diffuse tail finite and non-zero; simulateTrajectory vs np.convolve 2.83e-7; NaN receiver gives all zeros for exact and LUT.
+    - Two harness bugs were fixed before the passing run, neither a port issue: the LUT reference used true division for the kernel's integer `lut_len/2`, and the first-arrival argmax spanned 300 samples and picked up a reflection at 272.
+  - Upstream examples (scratch copy, synthetic 2 s source_signal.wav, MagicMock matplotlib/plotly): example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py **5/5 exit 0**.
+
+## Porter round 2026-11-02 (windows-gfx1151): README C compiler option (cf0acba)
+
+Answers the linux-gfx942 review of 214a51c (one change requested). One commit on `moat-port`: 214a51c -> **cf0acba** `[ROCm] Drop the unused C compiler from the Windows README example` (fast-forward push; `pr-state` none). README.md only: `-DCMAKE_C_COMPILER=clang` removed from the Windows `CMAKE_ARGS` example sentence, nothing else. The commit's Test Plan uses the new form.
+
+### Check (build and plain import only; no GPU workload, another validator held the GPU)
+Host: Radeon 8060S gfx1151, TheRock ROCm 7.14.0a20260612, torch_venv python 3.13. Fresh clone at cf0acba (`status --porcelain` empty), the README's exact option set, bare `clang++` with ROCm `lib/llvm/bin` first on PATH (`/d/...` form), `CC`/`CXX` unset:
+```
+source agent_space/win_rocm_env.sh; unset CC CXX; export PATH=/d/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin:$PATH
+CMAKE_ARGS="-G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_HIP_COMPILER=clang++ -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151" \
+utils/timeit.sh gpuRIR compile -- <torch_venv python> -m pip install -v --no-deps --no-build-isolation --target <abs target> <abs clone>
+```
+- `Successfully installed gpuRIR-1.2.0`, exit 0; target has `gpuRIR/__init__.py` and `gpuRIR_bind.cp313-win_amd64.pyd`.
+- Log: no "Manually-specified variables were not used" and no `CMAKE_C_COMPILER` mention. Remaining warnings are pre-existing (setuptools license-classifier and distutils deprecations, vendored pybind11 `cmake_minimum_required` and `PYBIND11_CPP_STANDARD`).
+- `python -c "import gpuRIR"` from a temp cwd with `os.add_dll_directory` for TheRock `_rocm_sdk_core/bin`, `_rocm_sdk_libraries_gfx1151/bin` and the target: OK, `gpuRIR` and `gpuRIR_bind` resolve from the target.
+- `jargon.py --port gpuRIR`: clean.
+
+### State
+`advance-head gpuRIR cf0acba`; windows-gfx1151 porting -> ported. Platforms validated at 214a51c read revalidate; the delta is one README sentence, no code or build file, so revalidation is a light rerun. The GPU run on Windows happens in that revalidation.
+
+## Review 2026-11-02 (linux-gfx942, reviewer): delta 214a51c..cf0acba
+
+Port Review: gpuRIR (`moat-port` cf0acba, delta from 214a51c: README.md, one sentence). **Approve**: the one finding of the previous review (`-DCMAKE_C_COMPILER=clang` unused) is resolved, and nothing new is found. `jargon.py --port gpuRIR` (whole branch vs `master`): clean.
+
+### Verification record (claims fact-checked, no finding)
+- Diff is exactly `-DCMAKE_C_COMPILER=clang ` removed from the Windows `CMAKE_ARGS` example at `README.md:36`; nothing else changed. `git grep CMAKE_C_COMPILER cf0acba`: no hits. `CMakeLists.txt:14` is `project(gpuRIR LANGUAGES CXX HIP)`, and vendored pybind11 enables only CXX, so no C compiler is needed.
+- Configure on this host (MI300X gfx942, TheRock ROCm 10.1.0, `ulimit -c 0`) with the README's exact Windows option set, ROCm `lib/llvm/bin` first on PATH, fresh clone at cf0acba:
+  ```
+  R=$(rocm-sdk path --root); export PATH=$R/lib/llvm/bin:$PATH
+  utils/timeit.sh gpuRIR compile -- cmake -S projects/gpuRIR/src -B <build> -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_HIP_COMPILER=clang++ -DCMAKE_PREFIX_PATH=$R -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942
+  ```
+  Exit 0; no "Manually-specified variables were not used" and no `CMAKE_C_COMPILER` in the log. Only the pre-existing pybind11 warnings remain (`cmake_minimum_required` deprecation, `PYBIND11_CPP_STANDARD`).
+- Completeness for the Windows pip route: the sentence follows the generic `CMAKE_ARGS=... pip install gpuRIR/` example and supplies the generator, both compilers, the ROCm prefix and the HIP options, which is everything setup.py's Ninja branch (214a51c) and the CMake HIP path read. The windows-gfx1151 porter round installed with exactly these options and imported the module. Ninja must be on PATH (build isolation installs only `cmake` from `pyproject.toml`); "select the Ninja generator" carries that, and it was in the sentence already approved at 214a51c, so not a finding.
+- Commit cf0acba: `[ROCm]` title, 65 chars; prose AI disclosure ("Authored with Claude."); no Co-Authored-By or noreply; ASCII; Test Plan with literal commands in a fenced block, using the new option set. One fast-forward commit on top of 214a51c, no amend.
+- Fork clone: `git status --porcelain` empty.
+
+## Validation 2026-11-03 (linux-gfx1100, TheRock ROCm 10.1.0)
+
+Revalidation at head cf0acba (delta from this platform's validated 39a7a9d: setup.py generator detection from 214a51c plus the README sentence from cf0acba; `classify` = mixed on setup.py). Requested by jeff as a full run through the documented `pip install .` route, so the changed setup.py is what builds. GPU: Radeon gfx1100 (RDNA3, wave32), `HIP_VISIBLE_DEVICES=3`, every GPU run under `ulimit -c 0`. Fresh clone of the fork, `moat-port` = cf0acba47dd1, `git status --porcelain` empty before and after the build (pip builds into an untracked `build/`).
+
+### Build (pip route, job venv, python 3.11, pip 26.3, setuptools 79.0.1)
+```
+R=$(rocm-sdk path --root); export PATH=$R/lib/llvm/bin:$PATH
+CMAKE_ARGS="-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R" \
+  bash utils/timeit.sh gpuRIR compile -- $FLEET_VENV/bin/python -m pip install -v --no-deps --no-build-isolation projects/gpuRIR/src
+```
+`Successfully installed gpuRIR-1.2.0`, exit 0. CMakeCache: generator Unix Makefiles, `CMAKE_BUILD_TYPE=Release` (the Linux branch of setup.py is unchanged by 214a51c; the new generator scan only reads `CMAKE_ARGS`/`CMAKE_GENERATOR`). Installed `gpuRIR_bind.cpython-311-x86_64-linux-gnu.so` = 321456 bytes (same size as the 39a7a9d cmake build on this platform), offload bundle `hip-amdgcn-amd-amdhsa--gfx1100` only, `T PyInit_gpuRIR_bind`, 21 `v_pk_{fma,mul,add}_f16` in the gfx1100 code object (19 + 2, as before). Only warning: pre-existing nodiscard on `cudaGetDeviceProperties` (gpuRIR_cuda.cu:1069).
+
+### Tests (installed module only; `LD_LIBRARY_PATH=$SP/_rocm_sdk_libraries/lib:$SP/_rocm_sdk_core/lib`, SP = base site-packages)
+`gpuRIR.__file__` and `gpuRIR_bind.__file__` resolve to the job venv's site-packages, not the checkout. Harness is the 2026-10-30 gfx1100 `validate.py`, unchanged.
+```
+ulimit -c 0
+bash utils/timeit.sh gpuRIR test -- $FLEET_VENV/bin/python agent_space/v/validate.py
+```
+**35/35 PASS**, and the output is byte-identical (`diff` empty) to the 2026-10-30 gfx1100 log at 39a7a9d:
+- float32 paths vs float64 reference, direct path, max err/peak at 8k/16k/44.1k/48k: exact 5.31e-8 / 5.21e-8 / 1.46e-7 / 4.33e-8; LUT 5.45e-8 / 5.98e-8 / 4.09e-8 / 4.72e-8 (threshold 2e-5; LUT-vs-exact reference gap 1.59e-3 / 1.38e-4 / 6.85e-4 / 3.91e-4, so the check discriminates).
+- Shoebox T60 0.6, nb_img [52,42,69]: first arrival 168/168 (exact, LUT), silent before 104, LUT vs exact near direct 0.165% of peak. Diffuse tail (hipRAND) finite, non-zero. simulateTrajectory (hipFFT) vs np.convolve rel err 2.58e-7. NaN receiver: all zeros, exact and LUT.
+- Mixed precision vs float, direct path 8k..96k: 5.24e-4 / 7.95e-4 / 3.64e-4 / 3.72e-4 / 6.76e-4 / 3.93e-4, peak samples equal, float16 emulation diff 0 at all six rates. Reverberant 16k 7.09e-4 (RMS 1.43e-3), 44.1k 1.03e-3 (RMS 2.19e-3); 2 src x 3 cardioid 9.67e-4; odd counts 481@16k 1.29e-3, 1329@44.1k 1.79e-3, 481@22.05k 1.80e-3; mp + Tdiff ISM 1.59e-3, tail RMS ratio 1.059; mode toggles bit-equal.
+
+Upstream examples, fresh copies from the cf0acba checkout in a scratch dir with the synthetic 2 s 16 kHz `source_signal.wav` and the no-op matplotlib/plotly stub on PYTHONPATH (neither installed), each `bash utils/timeit.sh gpuRIR test -- bash -c "cd <scratch> && python <ex>"`: example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, example.py with `activateLUT(False)`/`activateMixedPrecision(True)`: **6/6 exit 0**, every one loading `gpuRIR_bind` from the venv. `filtered_signal.wav` from simulate_trajectory.py is bit-identical (`cmp`) to the 39a7a9d run's.
+
+### CUDA gate
+Not run here: no CUDA toolkit on this host (no nvcc, no /opt/conda). Recorded PASS at 39a7a9d on the V100 (2026-10-30). The delta since then is setup.py and README only; no compiled source or CMake file changed, and setup.py's Linux and Windows Visual Studio argument lists are unchanged (reviewer dry run, 2026-11-02).
+
+### Pre-completion checks
+`python3 utils/jargon.py --port gpuRIR`: clean (master 06da27d .. moat-port cf0acba). README documents the ROCm build next to the CUDA prerequisites and install line (Linux and Windows forms). Fork tree clean at cf0acba.
+## Validation 2026-11-03 (linux-gfx90a, MI250X GCD, TheRock ROCm 10.1.0): cf0acba via `pip install .`
+
+Revalidation at `moat-port` cf0acba (review-passed), requested by jeff. Delta from this platform's `validated_sha` 39a7a9d is `setup.py` (generator detection, Windows-only effect) and one README sentence; `classify` says `mixed`, so a full GPU run rather than a carry-forward. Fork clone at cf0acba, `git status --porcelain` empty. `HIP_VISIBLE_DEVICES=1` (one GCD), `ulimit -c 0`, job-private venv (Python 3.11.17, numpy 1.26.4, scipy 1.10.1), CMake 3.31.6, ninja from PATH. No JIT extension builds; nothing pushed to the fork.
+
+### Build: the documented route, fresh clone of cf0acba
+```
+R=$(rocm-sdk path --root); export PATH=$R/lib/llvm/bin:$PATH
+CMAKE_ARGS="-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R" \
+  utils/timeit.sh gpuRIR compile -- $FLEET_VENV/bin/python -m pip install -v --no-deps --no-build-isolation <clone>
+```
+`Successfully installed gpuRIR-1.2.0` into the job venv. CMakeCache: `CMAKE_BUILD_TYPE=Release`, generator Unix Makefiles (Linux setup.py arguments unchanged). The installed `.so` embeds only an `amdgcn-amd-amdhsa--gfx90a` code object. Warnings are the pre-existing ones (nodiscard `cudaGetDeviceProperties` at gpuRIR_cuda.cu:1069, vendored pybind11 CMake notices, setuptools license-classifier deprecation). The pip route works on this host now (the 2026-10-30 run had to use direct CMake because the guard blocked pip; the job-private `$FLEET_VENV` is allowed).
+
+Second build exercising the changed generator scan on Linux: same command plus `-G Ninja` at the front of `CMAKE_ARGS`, into a throwaway `--target` from a second fresh clone. Installed; CMakeCache generator Ninja, `CMAKE_BUILD_TYPE=Release`, `NDEBUG` in build.ninja.
+
+### Tests
+Runtime env: `LD_LIBRARY_PATH=$SP/_rocm_sdk_libraries/lib:$SP/_rocm_sdk_core/lib` (SP = the TheRock site-packages). Upstream has no test suite; the GPU suite is the harness rebuilt from the checks in this file plus the upstream examples. `gpuRIR.__file__` and `gpuRIR_bind.__file__` confirmed in the install location for each run.
+```
+utils/timeit.sh gpuRIR test -- $FLEET_VENV/bin/python agent_space/gpurir/validate.py     # 34/34 PASS (venv install)
+PYTHONPATH=<ninja target> $FLEET_VENV/bin/python agent_space/gpurir/validate.py         # 34/34 PASS (-G Ninja build)
+utils/timeit.sh gpuRIR test -- bash agent_space/gpurir/runall.sh                        # examples 6/6 exit 0
+```
+- float32 kernels vs float64 reference, direct path (nb_img [1,1,1], room 4x5x3, src (1,1,1.5) -> rcv (3,4,1.5), dist/amp/tau in float32 as `calcAmpTau_kernel`, kernel formula in float64, threshold 2e-5 of peak), max err / peak:
+
+  | fs | exact vs f64 ref | LUT vs f64 LUT ref | LUT-ref vs exact-ref gap |
+  |---|---|---|---|
+  | 8000 | 5.305e-8 | 5.439e-8 | 1.588e-3 |
+  | 16000 | 5.213e-8 | 5.979e-8 | 1.378e-4 |
+  | 44100 | 1.461e-7 | 4.091e-8 | 6.852e-4 |
+  | 48000 | 4.330e-8 | 4.718e-8 | 3.908e-4 |
+
+  Identical to the 2026-10-30 gfx90a run and the gfx942 review at 214a51c. The discrimination checks (gap > 1e-4 and exact kernel > 2e-5 from the LUT reference) pass at every rate.
+- Shoebox (T60 0.4, nb_img [10,10,10], fs 16k): first arrival 168 on exact and LUT, exactly zero over samples 0..103.
+- Diffuse tail (hipRAND, Tdiff 0.1, nb_img t2n = [18,14,23]): finite, tail max 5.851e-3 (2026-10-30: 5.85e-3). simulateTrajectory (hipFFT) vs `np.convolve`: shape (18399,1), rel err 2.44e-7.
+- NaN receiver x: 0 NaN, 0 nonzero on exact and LUT.
+- Mixed precision vs float exact, direct path: 5.243e-4 / 5.764e-4 / 7.952e-4 / 3.643e-4 / 3.720e-4 / 6.762e-4 / 3.928e-4 at 8k / 11.025k / 16k / 22.05k / 44.1k / 48k / 96k, peaks 84/116/168/232/464/505/1009; identical to 2026-10-30.
+- Mixed precision, reverberant (Sabine T60 0.6, Tmax 0.3, fs 16k, nb_img [52,42,69]): 1 src omni 7.087e-4, RMS rel 1.425e-3 (same as 2026-10-30); 2 src x 3 cardioid rcv 5.465e-4, RMS rel 1.517e-3 (this harness's geometry, not the earlier one, so not compared).
+- Mixed precision, odd requested counts (reverberant room, nb_img t2n(Tmax)): 481@16k -> T 482, 1.293e-3 (2026-10-30: 1.29e-3); 885@44.1k -> T 886, 1.664e-3; 3201@16k with Tdiff 0.0500625 -> T 3202, ISM part 802 samples 1.549e-3, diffuse tail RMS mp/float 1.053 (2026-10-30: 1.55e-3, 1.053).
+- Mode toggles: mp after LUT bit-equal to plain mp, LUT after mp bit-equal to plain LUT; upstream messages printed.
+- Harness bug on the first run (31/34): the discrimination check demanded a LUT/exact reference gap > 1e-3, which the 16k/44.1k/48k gaps (1.4e-4 to 6.9e-4) do not meet; corrected to > 1e-4 (5x the 2e-5 threshold). No port issue.
+
+Upstream examples from a scratch copy (synthetic 2 s 16 kHz `source_signal.wav`, matplotlib/plotly replaced by MagicMock through a `sitecustomize` on PYTHONPATH, since neither is installed): example.py, simulate_trajectory.py (wrote filtered_signal.wav), polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, example.py with `activateMixedPrecision(True)`/`activateLUT(False)`: **6/6 exit 0**.
+
+Result vs this platform's previous run (39a7a9d, 28/28 + 6/6): every figure the two harnesses share is identical; no regression.
+
+### CUDA gate
+Not rerun: no CUDA toolkit on this host. The compiled sources are unchanged since 39a7a9d, where the V100 CUDA gate passed (2026-10-30 section), and the delta's setup.py change only alters arguments on Windows with a non-Visual-Studio generator.
+
+### Pre-completion checks
+`python3 utils/jargon.py --port gpuRIR`: clean. README documents the ROCm build next to the CUDA one (Linux and Windows `CMAKE_ARGS` forms). Fork clone and both build clones: `git status --porcelain` empty.
+
+## Validation 2026-11-03 (windows-gfx1151, Radeon 8060S, TheRock ROCm 7.14.0a20260612): cf0acba
+
+Fresh clone of `moat-port` at cf0acba (src tree `status --porcelain` empty). Delta 39a7a9d..cf0acba is setup.py (Ninja route) and README only. `ulimit -c 0`, one GPU process at a time, cp313 torch_venv python.
+```
+source agent_space/win_rocm_env.sh; unset CC CXX; export PATH=/d/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin:$PATH
+CMAKE_ARGS="-G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_HIP_COMPILER=clang++ -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151" \
+utils/timeit.sh gpuRIR compile -- <python> -m pip install -v --no-deps --no-build-isolation --target <abs target> <abs clone>
+GPURIR_PIP_TARGET=<target> utils/timeit.sh gpuRIR test -- python agent_space/gpurir_win/validate.py
+bash agent_space/gpurir_win/runall_pip7.sh
+```
+- Build: README form (no C compiler), exit 0, no "not used" CMake warning, .pyd produced.
+- Harness against the installed module (confirmed from target): **49/49 PASS**, f64 table identical to earlier runs (exact 5.3e-8/5.2e-8/1.46e-7/4.3e-8).
+- Upstream examples: example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, example.py mp on / LUT off: **6/6 exit 0**.
+- No environment failures. CUDA gate not run (no toolkit on this host); recorded at 39a7a9d, delta has no compiled-source change. jargon.py clean; README documents the ROCm build.
+
+## Examples with real matplotlib/plotly, AMD vs CUDA (2026-11-04, cf0acba)
+
+Every earlier examples run replaced matplotlib/plotly with a no-op stub, so the figures were never drawn. jeff asked for a real-plot rerun before the review PR body is refreshed. Harness `gpurir_examples.py` (claude-shared `plans/gpurir-examples-ref/`): each example in its own subprocess with matplotlib Agg and real plotly; `plt.show()` saves PNG + line data, plotly `show()` writes HTML + polar trace data, first gpuRIR outputs saved; `np.random.seed(0)` before each example so the timing examples' random positions match; six runs (five examples + example.py with mixed precision on / LUT off).
+
+- V100 (CUDA 12.9, driver 575.57.08): port cf0acba vs upstream master 06da27d, all six exit 0, every saved array bit-identical (RIRs, polar traces, trajectory output, timing-example RIRs). Figures render as expected.
+- linux-gfx90a (MI250X, ROCm 10.1.0 TheRock pip SDK, HIP 7.16.26385; fleet job, plan `gpurir-examples-real-plots-gfx90a.md`): README Linux pip install into a private venv, `LD_LIBRARY_PATH` to `_rocm_sdk_libraries/lib:_rocm_sdk_core/lib` (TheRock pip layout). All six exit 0, figures sensible. Vs the V100 reference: image-source part (before Tdiff) max err/peak 1.5e-4 (example), 2.4e-4 (mp, LUT off), 9.2e-8 (polar_plots), 5.1e-6 (time_vs_T60), 1.3e-5 (time_vs_nbRIRs); polar traces 0 to 9.2e-8; diffuse tail not sample-identical (cuRAND vs hipRAND, same seed 1234, different sequences) but tail RMS ratio 0.988 to 1.009; simulate_trajectory corr 0.969 with the difference entirely from the tail (early+tail re-convolution check).

@@ -83,6 +83,9 @@ data/blindspot_candidates.json
 # owners will not see it. They stay on disk and in the private history.
 findings/
 
+# skillscope run reports (routing/behavioral JSON), written under the repo it grades.
+.skillscope/
+
 # Claude Code agent worktrees (isolated checkouts; their commits live on their own branches)
 .claude/worktrees/
 
