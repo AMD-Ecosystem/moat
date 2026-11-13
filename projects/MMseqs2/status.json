@@ -7,17 +7,14 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:24:21Z",
-  "updated_at": "2026-11-12T21:39:25Z",
-  "head_sha": "75a9b029",
+  "updated_at": "2026-11-13T02:10:51Z",
+  "head_sha": "2cda180ecefcff5988cdd50c7e0db6a91bc35783",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-12T21:39:25Z"
-  },
+  "porting": null,
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 63755587,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -26,7 +23,7 @@
       "validated_sha": "75a9b029",
       "started_at": "2026-06-04T05:24:44Z",
       "completed_at": "2026-06-23T22:43:20Z",
-      "updated_at": "2026-11-12T21:39:25Z",
+      "updated_at": "2026-11-13T02:10:51Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -134,5 +131,10 @@
       }
     }
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/MMseqs2/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/MMseqs2/pull/1",
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-12T21:39:25Z",
+    "at": "2026-11-13T02:10:51Z"
+  }
 }

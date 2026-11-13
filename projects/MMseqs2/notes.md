@@ -985,3 +985,74 @@ The requested rule ("keep upstream's new behaviour, re-apply the HIP port on top
 Not done because the refresh stopped: the fork `master` fast-forward (step 2), the HIP build and GPU tests, the CUDA compile check, jargon, push, `advance-head`.
 
 foldseek (and so the parallel foldseek refresh) is likely in the same situation. steineggerlab/foldseek tip 39b02b9 (2026-11-11) has pulled `lib/mmseqs` forward with a subtree squash (5b3bc29), so its vendored libmarv probably carries upstream's HIP backend. This was not checked further. `steineggerlab/metaeuk` returned "repository not found" at that URL; its upstream location was not looked up.
+
+## Rescope porter round (2026-11-12/13, linux-gfx90a)
+
+jeff's ruling of 2026-11-12 (recorded in plan.md `## Rescope (jeff, 2026-11-12)`): keep the port, rescoped to (1) AMD coverage beyond upstream's four tuned arches with a correct fallback plus gfx90a tuning, (2) Windows on top of upstream's `ENABLE_HIP`, (3) the `ClampToInvalid` HIP device guard. Out: the `asm volatile` hmax2/hmin2 change (upstream PR soedinglab/MMseqs2#1167) and anything upstream's HIP already does correctly.
+
+Host: MI250X GCD (gfx90a:sramecc+:xnack-), `HIP_VISIBLE_DEVICES=0` (dispatcher pin), `CUDA_VISIBLE_DEVICES=0` for `--gpu`. TheRock `rocm-sdk-devel` (HIP 7.16.26385, AMD clang 24.0.0git), gcc 13.3, CMake 3.31.6, Ninja. All GPU runs under `ulimit -c 0`.
+
+### Evidence first: upstream tip d0185a2d on gfx90a
+
+```
+R=$(hipconfig --rocmpath)
+cmake -S . -B build-gfx90a -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DHAVE_TESTS=1 \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+```
+- `-DCMAKE_HIP_ARCHITECTURES=gfx90a`: configure fails at generate: `CMake Error at lib/libmarv/src/CMakeLists.txt:103 (add_library): Cannot find source file: aligners/make_aligner_amd_gfx90a.cu` / `No SOURCES given to target: marv_aligner_amd_gfx90a`. Same for `gfx942;gfx90a`.
+- Default configure (no arch): CMake native detection yields `gfx90a;gfx90a;gfx90a;gfx90a` (one per GPU, not de-duplicated) and fails the same way (it would also try to create the same target four times).
+- Built for gfx942 (tuned; configures and builds), run on gfx90a: `terminate ... what(): No aligner found for detected AMD arch: major 9, minor 0` (easy-search `--gpu 1`).
+- Built for gfx900 (tuned, cc 9.0 like gfx90a), run on gfx90a: dispatch picks the gfx900 table, then `Asynchronous CUDA Error: device kernel image is invalid .../pssm.cuh 1051`.
+So no upstream configuration runs on gfx90a; the coverage gap is real. The cc dispatch is also wrong for fat binaries (gfx900/906/908/90a share 9.0; gfx1100-1102 share 11.0; gfx1150/1151 share 11.5).
+
+### Fork operations
+
+- Fork `master` fast-forwarded 17b688d2 -> d0185a2d (pushed `upstream/master` to the fork's `master`, ancestry checked first).
+- `moat-port` (was 75a9b029): `git merge --no-ff upstream/master` gave 17 conflicts, every one resolved to upstream (UU -> `checkout --theirs`, UD -> `git rm`): merge commit b29c9270. Follow-up 440e1197 returns every file to upstream (`git diff --exit-code upstream/master HEAD` clean): removes `cuda_to_hip.h`, `hip_compat/`, `marv_simd_amd.cuh`, the `USE_HIP` CMake, the hpc_helpers edits and the old Windows edits.
+- New-scope commits on top, fast-forward 75a9b029..2cda180e (no force):
+  - 84a8fb2e `[ROCm] Run libmarv on AMD GPUs without a tuned aligner`: `MarvGpuArch.cmake` de-duplicates the HIP arch list; `lib/libmarv/src/CMakeLists.txt` builds `make_aligner_amd_<arch>.cu` only for arches that have one, and one `marv_aligner_default_amd` object library (upstream's existing, previously unwired `make_aligner_default_amd.cu` / `make_aligner_endpos_default_amd.cu`) for all the others, inline namespace `DEFAULT_AMD_`, define `MARV_HAVE_AMD_DEFAULT`. The dispatchers in `aligners/make_aligner{,_endpos}.cu` select AMD tables by `gcnArchName` (suffix stripped; helper `getAmdGfxArchName` in make_aligner.cu) and fall back to the generic configs that the commented-out lines already named; without a generic build the error names the target. libmarv Readme statement updated.
+  - 3c588b6f `[ROCm] Clamp packed residues as unsigned bytes in HIP device code`: `convert.cuh` `#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)`, per-byte unsigned min on HIP (HIP has no `__vminu4`).
+  - 7c39308d `[ROCm] Build libmarv on Windows with the ROCm clang toolchain`: Win32 `MappedFile`, `strtok_s`, `MARV_API` keyed on `MARV_BUILDING_DLL`/`MARV_USING_DLL`, which CMake sets only for a WIN32 SHARED marv (upstream builds marv static by default, where the old unconditional dllimport would break consumers).
+  - 54edbc78 `[ROCm] Guard POSIX-only build steps and headers for Windows`: the resource compiler uses upstream's CMake-only path on WIN32 without `checkshell.sh`; tinyexpr drops `-fPIC` on WIN32; `sys/mman.h`/`fcntl.h` guards; GpuUtil server-mode stubs.
+  - 2cda180e `[ROCm] Add tuned libmarv aligner configs for gfx90a` (tables below).
+- Net diff vs upstream: 17 files, +647/-84, only the three scope items. Not carried: the old `CMAKE_HIP_USING_LINKER_DEFAULT` Windows workaround (tied to the old shared `-fgpu-rdc --hip-link` layout; the Windows host decides whether upstream's layout needs an equivalent) and `mmapbuffer.hpp` (POSIX, used only by the `makedb` tool, not the library).
+- `utils/jargon.py --port MMseqs2`: clean (range d0185a2d..moat-port, 11 commits). Upstream-contained and published-tip-ancestor checks pass.
+- One commit-message imprecision, left as is (no amend): 2cda180e says the fp32 endpos multi-tile configs with more than 20 items per thread "run 5-10x slower"; measured 5.2x to 12.6x (below).
+
+### gfx90a tuning (by measurement)
+
+Tuner: upstream's own. `cmake -S lib/libmarv/src -B build-tune -DENABLE_HIP=1 -DBUILD_TUNING=1 -DONLY_BUILD_TUNING=1 -DCMAKE_HIP_ARCHITECTURES=gfx90a`, `cmake --build build-tune --target tuning_gapless` (715 s). Runs (each `--printBestConfigs --sleep 10`): `--half2 --tiles 1`, `--float --tiles 1`, `--float --endpos --tiles 1`, `--half2 --tiles 4` and `--float --tiles 4` over the full config space (blocksize 128/256/512 x group 2-32 x numItems 4-64). `--float --endpos --tiles 4` was too slow over the full space (large tiles take minutes each, and one attempt was lost to a timeout because the tool prints only at exit), so it ran on a scratch copy of the tuner with `configtuples.hpp` narrowed to blocksize 512 (every multi-tile winner in the other sweeps and every upstream AMD multi-tile entry uses 512), groups 2-16 x numItems 4-48, plus a second run with group 32 x numItems 8-24. `--checkResults` was dropped after it proved about 16x slower (CPU recompute per iteration); the chosen tables' correctness is covered by the regression and GPU-vs-CPU runs below. Raw CSVs and the generator (`agent_space/scripts/gen_gfx90a.py`) are scratch only.
+
+Selection: per tile size the max-GCUPS config (as `printBestAsConfig` does), over the tile spans of upstream's AMD tables (half2 16..1536, float/endpos 8..768, multi-tile from 256). Single-tile: drop tile t when a larger tile T has `gcups_T * t / T > gcups_t`, since the chooser runs a query on the smallest tile >= its length; this reproduces exactly the 32 tile sizes of upstream's gfx942 half2 table. Multi-tile: keep tiles within 10% of the best measured multi-tile GCUPS, since without hints the chooser ignores speed. Hints recorded, `hasPerformanceHints()` false like every upstream table. SW tables: upstream's untuned AMD list (the tuner covers gapless only).
+
+Result: half2 single 32 configs (16..1536, best 6130 GCUPS at 8x32 tile 512; numItems >= 52 drop to about 4200), half2 multi 19 (320..1536, 3711-4028), float single 27, float multi 11 (256..768, 2439-2646), endpos single 30, endpos multi 4 (16x16, 16x20, 32x16, 32x20: 1284-1348). gfx90a-specific: fp32 endpos multi-tile collapses at numItems >= 24-28 (2x28 132, 16x24 235, 16x48 106, 32x24 258 GCUPS against 1338 at 16x20), so that list stops at 640.
+
+Timing (the 2026-10-30 benchmark: `mmseqs ungappedprefilter q1k t p --gpu 1 --max-seqs 1000 -e 10000 --threads 8`, q1k = first 1000 queries of `util/regression/data/query.fasta`, t = padded targetannotation; host load about 3.5 from other jobs, runs alternated):
+- generic fallback (gfx90a built with no tuned file): 68.09 s, 66.50 s
+- tuned gfx90a: 54.33 s, 54.42 s (1.23x)
+- fat binary `gfx900;gfx90a;gfx942;gfx950;gfx1100;gfx1150;gfx1201;gfx11-generic`: 54.45 s (the gfx90a table is chosen despite gfx900's matching cc 9.0)
+- all four: 1,000,000 rows, md5 of the sorted createtsv `6e2142dde4e8...` identical.
+
+### Validation on gfx90a (head 2cda180e)
+
+```
+cmake -S . -B build-tuned -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+cmake --build build-tuned -j64 --target mmseqs
+CUDA_VISIBLE_DEVICES=0 util/regression/run_regression.sh build-tuned/src/mmseqs <scratch>
+```
+- Regression (submodule 19b9867b): 43/43 GOOD, 0 BAD; SEARCH_GPU 0.454819 = expected, SEARCH_GPU_SERVER 0.454819 = expected. Also 43/43 on the fallback-only build before the gfx90a tables.
+- Example GPU-vs-CPU (`easy-search examples/QUERY.fasta` padded `--gpu 1` vs `--gpu 0`): GPU 14482, CPU 12901, common 12438, all 12438 rows identical. Tuned GPU output identical (sorted) to the fallback GPU output. Against `--prefilter-mode 1` (CPU ungapped) the GPU matches 14448 pairs exactly, with 34 GPU-only / 236 CPU-only boundary pairs; at 50374396 these were byte-identical, so upstream's CPU ungapped path changed in between (upstream code, untouched here; the GPU counts equal every earlier run).
+- libmarv standalone (`cmake -S lib/libmarv/src -DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx90a`, targets align makedb test_gapless): `test_gapless --gpu-compatible` "all checks passed, digest 0xcba3a00c27ffe2df"; `align` Gapless / SW_Endpos / Gapless+SW_Endpos run on `allqueries.fasta`. ctest itself cannot start `test_gapless` (`libamdhip64.so.7: cannot open shared object file`): its RUNPATH lacks the ROCm lib dir that `align` gets (upstream CMake: test_gapless links static marv without the HIP runtime's link interface); it passes with `LD_LIBRARY_PATH=$R/lib`. Upstream follow-up candidate, not in scope.
+- Missing-target error: a gfx942-only build on gfx90a now throws `No aligner compiled for detected AMD arch gfx90a`.
+- Upstream's tuned arches untouched: this branch's gfx942 aligner objects disassemble identically (309157 / 160713 lines) to upstream plus only the convert.cuh change; the fatbins differ only in the path-derived `__hip_cuid_*` symbol. The ClampToInvalid fix is the one intended device-code change on every AMD target. Runtime selection on a real gfx942/gfx1100 still needs those hosts.
+- CPU-only build (`cmake -S . -B build-cpu`, no GPU options): builds; example search output identical to the GPU build's `--gpu 0`.
+- Fat-binary compile check, gfx950/gfx1201/gfx11-generic (generic aligner) plus gfx900/gfx942/gfx1100/gfx1150 (tuned): builds and links, code objects for all 8 present.
+- CUDA path: NOT validated. No nvcc on this host, and creating a job venv with CUDA 13 pip wheels was refused by the fleet guard. Every CUDA-visible change sits in a HIP branch or an `ENABLE_HIP` CMake block (CUDA dispatch lines and the `__vminu4` path are unchanged), but this still needs a real nvcc compile on the mi355 host: `cuda-not-validated: no nvcc on linux-gfx90a`.
+
+### Open work (owed in surface.json)
+
+- gfx950 and gfx1201 tuning: on those hosts run the tuner as above (`-DCMAKE_HIP_ARCHITECTURES=gfx950` / `gfx1201`; the endpos multi-tile sweep needs the narrowed tuple or a long timeout), generate `aligners/make_aligner_amd_<gfx>.cu` + `make_aligner_endpos_amd_<gfx>.cu` in the gfx90a layout, add their declarations in `make_aligner_headers.cuh` and one `#ifdef MARV_HAVE_AMD_<GFX>` / `arch == "<gfx>"` block in each of the 7 AMD dispatch branches; CMake picks the files up by name. Time against the generic fallback with the q1k benchmark. Until then both use the generic configs (compile-checked here, not run).
+- Windows: build libmarv as a DLL on the Windows host with upstream's layout (`cmake -S lib/libmarv/src -DENABLE_HIP=1 -DLIBRARY_ONLY=1 -DBUILD_SHARED_LIBS=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201`), check whether an equivalent of the old `CMAKE_HIP_USING_LINKER_DEFAULT ""` workaround is needed, and rerun the Marv-API harness. The mmseqs-tree WIN32 guards are unbuilt and the mmseqs binary stays POSIX-only (DBReader/FileUtil mmap), so whether commit 54edbc78 stays is a call for the Windows round and jeff.
+- CUDA nvcc compile of 2cda180e on mi355.
+- Every platform record predates the rescope: after `advance-head` to 2cda180e, linux-gfx90a, linux-gfx1100, windows-gfx1101 and windows-gfx1201 are all behind head.
+- Review PR AMD-Ecosystem/MMseqs2#1 describes the old USE_HIP port, so its body is stale against the new scope (a reviewer/checkup matter, not touched here).

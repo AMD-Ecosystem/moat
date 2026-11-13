@@ -1,0 +1,1150 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "2cda180ecefc",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "lib/libmarv/src/aligners/make_aligner.cu",
+      "lib/libmarv/src/aligners/make_aligner_amd_gfx1100.cu",
+      "lib/libmarv/src/aligners/make_aligner_amd_gfx1150.cu",
+      "lib/libmarv/src/aligners/make_aligner_amd_gfx900.cu",
+      "lib/libmarv/src/aligners/make_aligner_amd_gfx90a.cu",
+      "lib/libmarv/src/aligners/make_aligner_amd_gfx942.cu",
+      "lib/libmarv/src/aligners/make_aligner_default_amd.cu",
+      "lib/libmarv/src/aligners/make_aligner_defaultptx.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_amd_gfx1100.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_amd_gfx1150.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_amd_gfx900.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_amd_gfx90a.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_amd_gfx942.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_amd_old.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_default_amd.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_defaultptx.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_sm100.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_sm103.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_sm110.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_sm120.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_sm121.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_sm75.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_sm80.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_sm86.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_sm87.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_sm89.cu",
+      "lib/libmarv/src/aligners/make_aligner_endpos_sm90.cu",
+      "lib/libmarv/src/aligners/make_aligner_headers.cuh",
+      "lib/libmarv/src/aligners/make_aligner_sm100.cu",
+      "lib/libmarv/src/aligners/make_aligner_sm103.cu",
+      "lib/libmarv/src/aligners/make_aligner_sm110.cu",
+      "lib/libmarv/src/aligners/make_aligner_sm120.cu",
+      "lib/libmarv/src/aligners/make_aligner_sm121.cu",
+      "lib/libmarv/src/aligners/make_aligner_sm75.cu",
+      "lib/libmarv/src/aligners/make_aligner_sm80.cu",
+      "lib/libmarv/src/aligners/make_aligner_sm86.cu",
+      "lib/libmarv/src/aligners/make_aligner_sm87.cu",
+      "lib/libmarv/src/aligners/make_aligner_sm89.cu",
+      "lib/libmarv/src/aligners/make_aligner_sm90.cu",
+      "lib/libmarv/src/aligners/score_only_alignment.cuh",
+      "lib/libmarv/src/aligners/score_only_alignment_interfaces.cuh",
+      "lib/libmarv/src/aligners/score_with_endpos_alignment.cuh",
+      "lib/libmarv/src/aligners/score_with_endpos_alignment_interfaces.cuh",
+      "lib/libmarv/src/alignment_algorithms/alignment_interface_data.cuh",
+      "lib/libmarv/src/alignment_algorithms/gapless/gapless_common.cuh",
+      "lib/libmarv/src/alignment_algorithms/gapless/pssmkernels_gapless.cuh",
+      "lib/libmarv/src/alignment_algorithms/gapless/pssmkernels_gapless_float.cuh",
+      "lib/libmarv/src/alignment_algorithms/gapless/pssmkernels_gapless_int8.cuh",
+      "lib/libmarv/src/alignment_algorithms/smithwaterman/pssmkernels_smithwaterman.cuh",
+      "lib/libmarv/src/config.hpp",
+      "lib/libmarv/src/convert.cuh",
+      "lib/libmarv/src/cuda_errorcheck.cuh",
+      "lib/libmarv/src/cuda_hip_compatibility.cuh",
+      "lib/libmarv/src/cuda_hip_rename.h",
+      "lib/libmarv/src/custom_score_types.cuh",
+      "lib/libmarv/src/dbbatching.cu",
+      "lib/libmarv/src/dbbatching.cuh",
+      "lib/libmarv/src/diagonal_rescore.cuh",
+      "lib/libmarv/src/gpudatabase.cu",
+      "lib/libmarv/src/gpudatabase.cuh",
+      "lib/libmarv/src/gpudatabaseallocation.cuh",
+      "lib/libmarv/src/hpc_helpers/all_helpers.cuh",
+      "lib/libmarv/src/hpc_helpers/coop_group_helpers.cuh",
+      "lib/libmarv/src/hpc_helpers/cuda_helpers.cuh",
+      "lib/libmarv/src/hpc_helpers/cuda_raiiwrappers.cuh",
+      "lib/libmarv/src/hpc_helpers/custom_thrust_allocators.cuh",
+      "lib/libmarv/src/hpc_helpers/hashers.cuh",
+      "lib/libmarv/src/hpc_helpers/nvtx_markers.cuh",
+      "lib/libmarv/src/hpc_helpers/packed_types.cuh",
+      "lib/libmarv/src/hpc_helpers/peer_access.cuh",
+      "lib/libmarv/src/hpc_helpers/simple_allocation.cuh",
+      "lib/libmarv/src/hpc_helpers/timers.cuh",
+      "lib/libmarv/src/hpc_helpers/utility_kernels.cuh",
+      "lib/libmarv/src/main2.cu",
+      "lib/libmarv/src/marv.cu",
+      "lib/libmarv/src/mathops.cuh",
+      "lib/libmarv/src/offset_iterator.cuh",
+      "lib/libmarv/src/pssm.cuh",
+      "lib/libmarv/src/ptx_wrappers.cuh",
+      "lib/libmarv/src/searches/score_endpos_search.cu",
+      "lib/libmarv/src/searches/score_endpos_search.cuh",
+      "lib/libmarv/src/searches/score_only_foldseek_search.cu",
+      "lib/libmarv/src/searches/score_only_foldseek_search.cuh",
+      "lib/libmarv/src/searches/score_only_search.cu",
+      "lib/libmarv/src/searches/score_only_search.cuh",
+      "lib/libmarv/src/searches/search_common.cuh",
+      "lib/libmarv/src/searches/topn_select.cuh",
+      "lib/libmarv/src/sequence_masking.cuh",
+      "lib/libmarv/src/sequence_masking_old.cuh",
+      "lib/libmarv/src/shims/cub/cub.cuh",
+      "lib/libmarv/src/shims/hipcub/hipcub.hpp",
+      "lib/libmarv/src/shims/host_backend.h",
+      "lib/libmarv/src/shims/thrust/thrust_impl.h",
+      "lib/libmarv/src/stream_ordered_allocation_helper.cuh",
+      "lib/libmarv/src/target_subject_ids.cuh",
+      "lib/libmarv/src/tuning/benchmark_float_scoreendpos_multiTile.cu",
+      "lib/libmarv/src/tuning/benchmark_float_scoreendpos_singleTile.cu",
+      "lib/libmarv/src/tuning/benchmark_float_scoreonly_multiTile.cu",
+      "lib/libmarv/src/tuning/benchmark_float_scoreonly_singleTile.cu",
+      "lib/libmarv/src/tuning/benchmark_functions.cuh",
+      "lib/libmarv/src/tuning/benchmark_half2_scoreendpos_multiTile.cu",
+      "lib/libmarv/src/tuning/benchmark_half2_scoreendpos_singleTile.cu",
+      "lib/libmarv/src/tuning/benchmark_half2_scoreonly_multiTile.cu",
+      "lib/libmarv/src/tuning/benchmark_half2_scoreonly_singleTile.cu",
+      "lib/libmarv/src/tuning/benchmark_int_scoreendpos_multiTile.cu",
+      "lib/libmarv/src/tuning/benchmark_int_scoreendpos_singleTile.cu",
+      "lib/libmarv/src/tuning/benchmark_int_scoreonly_multiTile.cu",
+      "lib/libmarv/src/tuning/benchmark_int_scoreonly_singleTile.cu",
+      "lib/libmarv/src/tuning/benchmark_scoreendpos.cuh",
+      "lib/libmarv/src/tuning/benchmark_scoreonly.cuh",
+      "lib/libmarv/src/tuning/benchmark_short2_scoreendpos_multiTile.cu",
+      "lib/libmarv/src/tuning/benchmark_short2_scoreendpos_singleTile.cu",
+      "lib/libmarv/src/tuning/benchmark_short2_scoreonly_multiTile.cu",
+      "lib/libmarv/src/tuning/benchmark_short2_scoreonly_singleTile.cu",
+      "lib/libmarv/src/tuning/benchmark_uint8x4_scoreendpos_multiTile.cu",
+      "lib/libmarv/src/tuning/benchmark_uint8x4_scoreendpos_singleTile.cu",
+      "lib/libmarv/src/tuning/benchmark_uint8x4_scoreonly_multiTile.cu",
+      "lib/libmarv/src/tuning/benchmark_uint8x4_scoreonly_singleTile.cu",
+      "lib/libmarv/src/tuning/benchmarkdata.cu",
+      "lib/libmarv/src/tuning/common.hpp",
+      "lib/libmarv/src/tuning/tuning_gapless.cu",
+      "lib/libmarv/src/util.cuh"
+    ],
+    "markers": {
+      "kernel": 61,
+      "device_code": 319,
+      "launch": 69,
+      "warp_intrinsic": 2
+    },
+    "libraries": {
+      "thrust": 388,
+      "cub": 32
+    }
+  },
+  "components": [
+    {
+      "id": "benchmark:tinyexpr_benchmark",
+      "kind": "benchmark",
+      "where": "lib/tinyexpr/CMakeLists.txt"
+    },
+    {
+      "id": "example:tinyexpr_example",
+      "kind": "example",
+      "where": "lib/tinyexpr/CMakeLists.txt"
+    },
+    {
+      "id": "example:tinyexpr_example2",
+      "kind": "example",
+      "where": "lib/tinyexpr/CMakeLists.txt"
+    },
+    {
+      "id": "example:tinyexpr_example3",
+      "kind": "example",
+      "where": "lib/tinyexpr/CMakeLists.txt"
+    },
+    {
+      "id": "executable:align",
+      "kind": "executable",
+      "where": "lib/libmarv/src/CMakeLists.txt"
+    },
+    {
+      "id": "executable:evaluate_results",
+      "kind": "executable",
+      "where": "util/regression/CMakeLists.txt"
+    },
+    {
+      "id": "executable:makedb",
+      "kind": "executable",
+      "where": "lib/libmarv/src/CMakeLists.txt"
+    },
+    {
+      "id": "executable:mmseqs${EXE_SUFFIX}",
+      "kind": "executable",
+      "where": "src/CMakeLists.txt"
+    },
+    {
+      "id": "executable:tuning_gapless",
+      "kind": "executable",
+      "where": "lib/libmarv/src/CMakeLists.txt"
+    },
+    {
+      "id": "library:alp",
+      "kind": "library",
+      "where": "lib/alp/CMakeLists.txt"
+    },
+    {
+      "id": "library:cpp-lib",
+      "kind": "library",
+      "where": "lib/corrosion/test/cpp2rust/cpp2rust/CMakeLists.txt"
+    },
+    {
+      "id": "library:cpp-lib2",
+      "kind": "library",
+      "where": "lib/corrosion/test/cpp2rust/cpp2rust/CMakeLists.txt"
+    },
+    {
+      "id": "library:cpp-lib3",
+      "kind": "library",
+      "where": "lib/corrosion/test/cpp2rust/cpp2rust/CMakeLists.txt"
+    },
+    {
+      "id": "library:cpp-lib4",
+      "kind": "library",
+      "where": "lib/corrosion/test/multitarget/multitarget/CMakeLists.txt"
+    },
+    {
+      "id": "library:cpp_lib",
+      "kind": "library",
+      "where": "lib/corrosion/test/cxxbridge/cxxbridge_cpp2rust/CMakeLists.txt"
+    },
+    {
+      "id": "library:ksw2",
+      "kind": "library",
+      "where": "lib/ksw2/CMakeLists.txt"
+    },
+    {
+      "id": "library:marv",
+      "kind": "library",
+      "where": "lib/libmarv/src/CMakeLists.txt"
+    },
+    {
+      "id": "library:marv_aligner_${suffix}",
+      "kind": "library",
+      "where": "lib/libmarv/src/CMakeLists.txt"
+    },
+    {
+      "id": "library:marv_aligner_default_amd",
+      "kind": "library",
+      "where": "lib/libmarv/src/CMakeLists.txt"
+    },
+    {
+      "id": "library:microtar",
+      "kind": "library",
+      "where": "lib/microtar/CMakeLists.txt"
+    },
+    {
+      "id": "library:mmseqs-framework",
+      "kind": "library",
+      "where": "src/CMakeLists.txt"
+    },
+    {
+      "id": "library:nedmalloc",
+      "kind": "library",
+      "where": "lib/nedmalloc/CMakeLists.txt"
+    },
+    {
+      "id": "library:nostd-cpp-lib",
+      "kind": "library",
+      "where": "lib/corrosion/test/nostd/nostd/CMakeLists.txt"
+    },
+    {
+      "id": "library:tantan",
+      "kind": "library",
+      "where": "lib/tantan/CMakeLists.txt"
+    },
+    {
+      "id": "library:tinyexpr",
+      "kind": "library",
+      "where": "lib/tinyexpr/CMakeLists.txt"
+    },
+    {
+      "id": "library:version",
+      "kind": "library",
+      "where": "src/version/CMakeLists.txt"
+    },
+    {
+      "id": "option:CORROSION_BUILD_TESTS",
+      "kind": "option",
+      "where": "lib/corrosion/CMakeLists.txt",
+      "default": "unset",
+      "doc": "Build Corrosion test project"
+    },
+    {
+      "id": "option:CORROSION_DEV_MODE",
+      "kind": "option",
+      "where": "lib/corrosion/CMakeLists.txt",
+      "default": "unset",
+      "doc": "Enables some additional features if you're developing Corrosion"
+    },
+    {
+      "id": "option:CORROSION_INSTALL_EXECUTABLE",
+      "kind": "option",
+      "where": "lib/corrosion/CMakeLists.txt",
+      "default": "unset",
+      "doc": "Controls whether corrosion-generator is installed with the package"
+    },
+    {
+      "id": "option:CORROSION_NATIVE_TOOLING",
+      "kind": "option",
+      "where": "lib/corrosion/cmake/Corrosion.cmake",
+      "default": "OFF",
+      "doc": "${CORROSION_NATIVE_TOOLING_DESCRIPTION}"
+    },
+    {
+      "id": "option:CORROSION_NO_WARN_PARSE_TARGET_TRIPLE_FAILED",
+      "kind": "option",
+      "where": "lib/corrosion/cmake/Corrosion.cmake",
+      "default": "OFF",
+      "doc": "Surpresses a warning if the parsing the target triple failed."
+    },
+    {
+      "id": "option:CORROSION_RESPECT_OUTPUT_DIRECTORY",
+      "kind": "option",
+      "where": "lib/corrosion/cmake/Corrosion.cmake",
+      "default": "ON",
+      "doc": "${CORROSION_RESPECT_OUTPUT_DIRECTORY_DESCRIPTION}"
+    },
+    {
+      "id": "option:CORROSION_TESTS",
+      "kind": "option",
+      "where": "lib/corrosion/test/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Enable Corrosion tests"
+    },
+    {
+      "id": "option:CORROSION_TESTS_CXXBRIDGE",
+      "kind": "option",
+      "where": "lib/corrosion/test/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build cxxbridge tests which requires cxxbridge executable being available"
+    },
+    {
+      "id": "option:CORROSION_TESTS_INSTALL_CORROSION",
+      "kind": "option",
+      "where": "lib/corrosion/test/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Install Corrosion to a test directory and let tests use the installed Corrosion"
+    },
+    {
+      "id": "option:CORROSION_TESTS_KEEP_BUILDDIRS",
+      "kind": "option",
+      "where": "lib/corrosion/test/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "By default corrosion tests will cleanup after themselves. This option limits the"
+    },
+    {
+      "id": "option:CORROSION_VERBOSE_OUTPUT",
+      "kind": "option",
+      "where": "lib/corrosion/cmake/Corrosion.cmake",
+      "default": "OFF",
+      "doc": "Enables verbose output from Corrosion and Cargo"
+    },
+    {
+      "id": "option:MARV_SIMD_NATIVE",
+      "kind": "option",
+      "where": "lib/libmarv/src/simd/MarvSimd.cmake",
+      "default": "OFF",
+      "doc": "Optimize SIMD for the build CPU (binary may require this CPU's instruction set)"
+    },
+    {
+      "id": "option:TE_NAT_LOG",
+      "kind": "option",
+      "where": "lib/tinyexpr/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Define the log function as natural logarithm."
+    },
+    {
+      "id": "option:TE_POW_FROM_RIGHT",
+      "kind": "option",
+      "where": "lib/tinyexpr/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Evaluate exponents from right to left."
+    },
+    {
+      "id": "option:ZSTD_BUILD_CONTRIB",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "BUILD CONTRIB"
+    },
+    {
+      "id": "option:ZSTD_BUILD_PROGRAMS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "BUILD PROGRAMS"
+    },
+    {
+      "id": "option:ZSTD_BUILD_SHARED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "BUILD SHARED LIBRARIES"
+    },
+    {
+      "id": "option:ZSTD_BUILD_STATIC",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "BUILD STATIC LIBRARIES"
+    },
+    {
+      "id": "option:ZSTD_BUILD_TESTS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "BUILD TESTS"
+    },
+    {
+      "id": "option:ZSTD_LEGACY_SUPPORT",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "LEGACY SUPPORT"
+    },
+    {
+      "id": "option:ZSTD_MULTITHREAD_SUPPORT",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "MULTITHREADING SUPPORT"
+    },
+    {
+      "id": "option:build_tinyexpr_bench",
+      "kind": "option",
+      "where": "lib/tinyexpr/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build TinyExpr benchmark."
+    },
+    {
+      "id": "option:build_tinyexpr_example",
+      "kind": "option",
+      "where": "lib/tinyexpr/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build TinyExpr example."
+    },
+    {
+      "id": "option:build_tinyexpr_example2",
+      "kind": "option",
+      "where": "lib/tinyexpr/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build TinyExpr example 2."
+    },
+    {
+      "id": "option:build_tinyexpr_example3",
+      "kind": "option",
+      "where": "lib/tinyexpr/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build TinyExpr example 3."
+    },
+    {
+      "id": "option:build_tinyexpr_test",
+      "kind": "option",
+      "where": "lib/tinyexpr/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build TinyExpr tests."
+    },
+    {
+      "id": "option:build_tinyexpr_test_pr",
+      "kind": "option",
+      "where": "lib/tinyexpr/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build TinyExpr tests PR."
+    },
+    {
+      "id": "test:NAME",
+      "kind": "test",
+      "where": "lib/corrosion/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:cargo_config_rustflags",
+      "kind": "test",
+      "where": "lib/corrosion/test/rustflags/CMakeLists.txt"
+    },
+    {
+      "id": "test:cargo_flags",
+      "kind": "test",
+      "where": "lib/corrosion/test/cargo_flags/CMakeLists.txt"
+    },
+    {
+      "id": "test:cbindgen_rust2cpp",
+      "kind": "test",
+      "where": "lib/corrosion/test/cbindgen/CMakeLists.txt"
+    },
+    {
+      "id": "test:cpp-exe",
+      "kind": "test",
+      "where": "lib/corrosion/test/crate_type/crate_type/CMakeLists.txt"
+    },
+    {
+      "id": "test:cpp-exe-shared",
+      "kind": "test",
+      "where": "lib/corrosion/test/rust2cpp/rust2cpp/CMakeLists.txt"
+    },
+    {
+      "id": "test:cpp2rust",
+      "kind": "test",
+      "where": "lib/corrosion/test/cpp2rust/CMakeLists.txt"
+    },
+    {
+      "id": "test:crate_type",
+      "kind": "test",
+      "where": "lib/corrosion/test/crate_type/CMakeLists.txt"
+    },
+    {
+      "id": "test:cuda_multitile_exactness",
+      "kind": "test",
+      "where": "lib/libmarv/src/CMakeLists.txt"
+    },
+    {
+      "id": "test:custom-profile-exe",
+      "kind": "test",
+      "where": "lib/corrosion/test/custom_profiles/custom_profiles/CMakeLists.txt"
+    },
+    {
+      "id": "test:custom_profiles_global",
+      "kind": "test",
+      "where": "lib/corrosion/test/custom_profiles/CMakeLists.txt"
+    },
+    {
+      "id": "test:custom_profiles_target_specific",
+      "kind": "test",
+      "where": "lib/corrosion/test/custom_profiles/CMakeLists.txt"
+    },
+    {
+      "id": "test:cxxbridge-exe",
+      "kind": "test",
+      "where": "lib/corrosion/test/cxxbridge/cxxbridge_rust2cpp/CMakeLists.txt"
+    },
+    {
+      "id": "test:cxxbridge_cpp2rust_1",
+      "kind": "test",
+      "where": "lib/corrosion/test/cxxbridge/CMakeLists.txt"
+    },
+    {
+      "id": "test:cxxbridge_cpp2rust_2",
+      "kind": "test",
+      "where": "lib/corrosion/test/cxxbridge/CMakeLists.txt"
+    },
+    {
+      "id": "test:cxxbridge_rust2cpp",
+      "kind": "test",
+      "where": "lib/corrosion/test/cxxbridge/CMakeLists.txt"
+    },
+    {
+      "id": "test:db_copy_exactness",
+      "kind": "test",
+      "where": "lib/libmarv/src/CMakeLists.txt"
+    },
+    {
+      "id": "test:db_copy_limited_threads",
+      "kind": "test",
+      "where": "lib/libmarv/src/CMakeLists.txt"
+    },
+    {
+      "id": "test:dev_profile",
+      "kind": "test",
+      "where": "lib/corrosion/test/custom_profiles/CMakeLists.txt"
+    },
+    {
+      "id": "test:envvar",
+      "kind": "test",
+      "where": "lib/corrosion/test/envvar/CMakeLists.txt"
+    },
+    {
+      "id": "test:features",
+      "kind": "test",
+      "where": "lib/corrosion/test/features/CMakeLists.txt"
+    },
+    {
+      "id": "test:features-cpp-exe",
+      "kind": "test",
+      "where": "lib/corrosion/test/features/features/CMakeLists.txt"
+    },
+    {
+      "id": "test:find_rust",
+      "kind": "test",
+      "where": "lib/corrosion/test/find_rust/CMakeLists.txt"
+    },
+    {
+      "id": "test:flags-exe",
+      "kind": "test",
+      "where": "lib/corrosion/test/cargo_flags/cargo_flags/CMakeLists.txt"
+    },
+    {
+      "id": "test:gapless_exactness",
+      "kind": "test",
+      "where": "lib/libmarv/src/CMakeLists.txt"
+    },
+    {
+      "id": "test:gapless_exactness_simd128",
+      "kind": "test",
+      "where": "lib/libmarv/src/simd/MarvSimd.cmake"
+    },
+    {
+      "id": "test:gapless_exactness_simd256",
+      "kind": "test",
+      "where": "lib/libmarv/src/simd/MarvSimd.cmake"
+    },
+    {
+      "id": "test:gapless_exactness_simd512",
+      "kind": "test",
+      "where": "lib/libmarv/src/simd/MarvSimd.cmake"
+    },
+    {
+      "id": "test:gensource",
+      "kind": "test",
+      "where": "lib/corrosion/test/gensource/CMakeLists.txt"
+    },
+    {
+      "id": "test:hostbuild",
+      "kind": "test",
+      "where": "lib/corrosion/test/hostbuild/CMakeLists.txt"
+    },
+    {
+      "id": "test:multitarget",
+      "kind": "test",
+      "where": "lib/corrosion/test/multitarget/CMakeLists.txt"
+    },
+    {
+      "id": "test:my_program",
+      "kind": "test",
+      "where": "lib/corrosion/test/workspace/workspace/CMakeLists.txt"
+    },
+    {
+      "id": "test:nostd",
+      "kind": "test",
+      "where": "lib/corrosion/test/nostd/CMakeLists.txt"
+    },
+    {
+      "id": "test:parse_target_triple",
+      "kind": "test",
+      "where": "lib/corrosion/test/parse_target_triple/CMakeLists.txt"
+    },
+    {
+      "id": "test:parse_target_triple_should_fail",
+      "kind": "test",
+      "where": "lib/corrosion/test/parse_target_triple/CMakeLists.txt"
+    },
+    {
+      "id": "test:program_requiring_rust_lib_with_envvar",
+      "kind": "test",
+      "where": "lib/corrosion/test/envvar/envvar/CMakeLists.txt"
+    },
+    {
+      "id": "test:release_profile",
+      "kind": "test",
+      "where": "lib/corrosion/test/custom_profiles/CMakeLists.txt"
+    },
+    {
+      "id": "test:rust2cpp",
+      "kind": "test",
+      "where": "lib/corrosion/test/rust2cpp/CMakeLists.txt"
+    },
+    {
+      "id": "test:rustflags",
+      "kind": "test",
+      "where": "lib/corrosion/test/rustflags/CMakeLists.txt"
+    },
+    {
+      "id": "test:rustflags-cpp-exe",
+      "kind": "test",
+      "where": "lib/corrosion/test/rustflags/rustflags/CMakeLists.txt"
+    },
+    {
+      "id": "test:rustup_proxy",
+      "kind": "test",
+      "where": "lib/corrosion/test/find_rust/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_cuda_multitile",
+      "kind": "test",
+      "where": "lib/libmarv/src/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_db_copy",
+      "kind": "test",
+      "where": "lib/libmarv/src/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_gapless",
+      "kind": "test",
+      "where": "lib/libmarv/src/CMakeLists.txt"
+    },
+    {
+      "id": "test:tinyexpr_test",
+      "kind": "test",
+      "where": "lib/tinyexpr/CMakeLists.txt"
+    },
+    {
+      "id": "test:tinyexpr_test_pr",
+      "kind": "test",
+      "where": "lib/tinyexpr/CMakeLists.txt"
+    },
+    {
+      "id": "test:workspace",
+      "kind": "test",
+      "where": "lib/corrosion/test/workspace/CMakeLists.txt"
+    },
+    {
+      "id": "platform:windows-libmarv",
+      "kind": "platform",
+      "where": "lib/libmarv/src (mapped_file.hpp, marv.h, marv.cu, CMakeLists.txt)"
+    },
+    {
+      "id": "platform:windows-mmseqs-tree",
+      "kind": "platform",
+      "where": "cmake/MMseqsResourceCompiler.cmake, lib/tinyexpr, src/commons/GpuUtil.cpp, src/prefiltering/ungappedprefilter.cpp, src/util/gpuserver.cpp"
+    },
+    {
+      "id": "tuning:gfx950",
+      "kind": "tuning",
+      "where": "lib/libmarv/src/aligners/make_aligner{,_endpos}_amd_gfx950.cu"
+    },
+    {
+      "id": "tuning:gfx1201",
+      "kind": "tuning",
+      "where": "lib/libmarv/src/aligners/make_aligner{,_endpos}_amd_gfx1201.cu"
+    },
+    {
+      "id": "check:cuda-nvcc-compile",
+      "kind": "check",
+      "where": "ENABLE_CUDA=1 build of the branch"
+    }
+  ],
+  "covered": [
+    {
+      "id": "executable:mmseqs${EXE_SUFFIX}",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "executable:align",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "executable:makedb",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "executable:tuning_gapless",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "executable:evaluate_results",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "library:marv",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "library:marv_aligner_${suffix}",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "library:marv_aligner_default_amd",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "library:mmseqs-framework",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "test:test_gapless",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "test:gapless_exactness",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "library:alp",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "library:ksw2",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "library:microtar",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "library:nedmalloc",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "library:tantan",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "library:tinyexpr",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    },
+    {
+      "id": "library:version",
+      "evidence": "built for gfx90a at 2cda180e; mmseqs regression 43/43 incl. SEARCH_GPU/SEARCH_GPU_SERVER, libmarv ctest gapless_exactness passed, align/makedb run (notes.md 2026-11-12 rescope)"
+    }
+  ],
+  "scoped_out": [
+    {
+      "id": "benchmark:tinyexpr_benchmark",
+      "reason": "tinyexpr example/test/benchmark/option; CPU-only expression parser, only its -fPIC flag changes on WIN32"
+    },
+    {
+      "id": "example:tinyexpr_example",
+      "reason": "tinyexpr example/test/benchmark/option; CPU-only expression parser, only its -fPIC flag changes on WIN32"
+    },
+    {
+      "id": "example:tinyexpr_example2",
+      "reason": "tinyexpr example/test/benchmark/option; CPU-only expression parser, only its -fPIC flag changes on WIN32"
+    },
+    {
+      "id": "example:tinyexpr_example3",
+      "reason": "tinyexpr example/test/benchmark/option; CPU-only expression parser, only its -fPIC flag changes on WIN32"
+    },
+    {
+      "id": "library:cpp-lib",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "library:cpp-lib2",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "library:cpp-lib3",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "library:cpp-lib4",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "library:cpp_lib",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "library:nostd-cpp-lib",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "option:CORROSION_BUILD_TESTS",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "option:CORROSION_DEV_MODE",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "option:CORROSION_INSTALL_EXECUTABLE",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "option:CORROSION_NATIVE_TOOLING",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "option:CORROSION_NO_WARN_PARSE_TARGET_TRIPLE_FAILED",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "option:CORROSION_RESPECT_OUTPUT_DIRECTORY",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "option:CORROSION_TESTS",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "option:CORROSION_TESTS_CXXBRIDGE",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "option:CORROSION_TESTS_INSTALL_CORROSION",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "option:CORROSION_TESTS_KEEP_BUILDDIRS",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "option:CORROSION_VERBOSE_OUTPUT",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "option:MARV_SIMD_NATIVE",
+      "reason": "libmarv CPU SIMD backend (ENABLE_SIMD), not a GPU path; untouched"
+    },
+    {
+      "id": "option:TE_NAT_LOG",
+      "reason": "tinyexpr example/test/benchmark/option; CPU-only expression parser, only its -fPIC flag changes on WIN32"
+    },
+    {
+      "id": "option:TE_POW_FROM_RIGHT",
+      "reason": "tinyexpr example/test/benchmark/option; CPU-only expression parser, only its -fPIC flag changes on WIN32"
+    },
+    {
+      "id": "option:ZSTD_BUILD_CONTRIB",
+      "reason": "vendored zstd build option; CPU-only, untouched"
+    },
+    {
+      "id": "option:ZSTD_BUILD_PROGRAMS",
+      "reason": "vendored zstd build option; CPU-only, untouched"
+    },
+    {
+      "id": "option:ZSTD_BUILD_SHARED",
+      "reason": "vendored zstd build option; CPU-only, untouched"
+    },
+    {
+      "id": "option:ZSTD_BUILD_STATIC",
+      "reason": "vendored zstd build option; CPU-only, untouched"
+    },
+    {
+      "id": "option:ZSTD_BUILD_TESTS",
+      "reason": "vendored zstd build option; CPU-only, untouched"
+    },
+    {
+      "id": "option:ZSTD_LEGACY_SUPPORT",
+      "reason": "vendored zstd build option; CPU-only, untouched"
+    },
+    {
+      "id": "option:ZSTD_MULTITHREAD_SUPPORT",
+      "reason": "vendored zstd build option; CPU-only, untouched"
+    },
+    {
+      "id": "option:build_tinyexpr_bench",
+      "reason": "tinyexpr example/test/benchmark/option; CPU-only expression parser, only its -fPIC flag changes on WIN32"
+    },
+    {
+      "id": "option:build_tinyexpr_example",
+      "reason": "tinyexpr example/test/benchmark/option; CPU-only expression parser, only its -fPIC flag changes on WIN32"
+    },
+    {
+      "id": "option:build_tinyexpr_example2",
+      "reason": "tinyexpr example/test/benchmark/option; CPU-only expression parser, only its -fPIC flag changes on WIN32"
+    },
+    {
+      "id": "option:build_tinyexpr_example3",
+      "reason": "tinyexpr example/test/benchmark/option; CPU-only expression parser, only its -fPIC flag changes on WIN32"
+    },
+    {
+      "id": "option:build_tinyexpr_test",
+      "reason": "tinyexpr example/test/benchmark/option; CPU-only expression parser, only its -fPIC flag changes on WIN32"
+    },
+    {
+      "id": "option:build_tinyexpr_test_pr",
+      "reason": "tinyexpr example/test/benchmark/option; CPU-only expression parser, only its -fPIC flag changes on WIN32"
+    },
+    {
+      "id": "test:NAME",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:cargo_config_rustflags",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:cargo_flags",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:cbindgen_rust2cpp",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:cpp-exe",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:cpp-exe-shared",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:cpp2rust",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:crate_type",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:cuda_multitile_exactness",
+      "reason": "CUDA-only libmarv test (built only when ENABLE_HIP is off upstream); covered by the nvcc compile check, not a ROCm target"
+    },
+    {
+      "id": "test:custom-profile-exe",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:custom_profiles_global",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:custom_profiles_target_specific",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:cxxbridge-exe",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:cxxbridge_cpp2rust_1",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:cxxbridge_cpp2rust_2",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:cxxbridge_rust2cpp",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:db_copy_exactness",
+      "reason": "CUDA-only libmarv test (built only when ENABLE_HIP is off upstream); covered by the nvcc compile check, not a ROCm target"
+    },
+    {
+      "id": "test:db_copy_limited_threads",
+      "reason": "CUDA-only libmarv test (built only when ENABLE_HIP is off upstream); covered by the nvcc compile check, not a ROCm target"
+    },
+    {
+      "id": "test:dev_profile",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:envvar",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:features",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:features-cpp-exe",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:find_rust",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:flags-exe",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:gapless_exactness_simd128",
+      "reason": "libmarv CPU SIMD backend (ENABLE_SIMD), not a GPU path; untouched"
+    },
+    {
+      "id": "test:gapless_exactness_simd256",
+      "reason": "libmarv CPU SIMD backend (ENABLE_SIMD), not a GPU path; untouched"
+    },
+    {
+      "id": "test:gapless_exactness_simd512",
+      "reason": "libmarv CPU SIMD backend (ENABLE_SIMD), not a GPU path; untouched"
+    },
+    {
+      "id": "test:gensource",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:hostbuild",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:multitarget",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:my_program",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:nostd",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:parse_target_triple",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:parse_target_triple_should_fail",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:program_requiring_rust_lib_with_envvar",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:release_profile",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:rust2cpp",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:rustflags",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:rustflags-cpp-exe",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:rustup_proxy",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    },
+    {
+      "id": "test:test_cuda_multitile",
+      "reason": "CUDA-only libmarv test (built only when ENABLE_HIP is off upstream); covered by the nvcc compile check, not a ROCm target"
+    },
+    {
+      "id": "test:test_db_copy",
+      "reason": "CUDA-only libmarv test (built only when ENABLE_HIP is off upstream); covered by the nvcc compile check, not a ROCm target"
+    },
+    {
+      "id": "test:tinyexpr_test",
+      "reason": "tinyexpr example/test/benchmark/option; CPU-only expression parser, only its -fPIC flag changes on WIN32"
+    },
+    {
+      "id": "test:tinyexpr_test_pr",
+      "reason": "tinyexpr example/test/benchmark/option; CPU-only expression parser, only its -fPIC flag changes on WIN32"
+    },
+    {
+      "id": "test:workspace",
+      "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
+    }
+  ],
+  "owed": [
+    {
+      "id": "platform:windows-libmarv",
+      "reason": "rescope item 2: Windows build and GPU validation of libmarv on upstream's ENABLE_HIP happen on the Windows host (BUILD_SHARED_LIBS=ON LIBRARY_ONLY=1); ported here compiling-in-principle only"
+    },
+    {
+      "id": "platform:windows-mmseqs-tree",
+      "reason": "rescope item 2: WIN32 guards in the mmseqs tree are unbuilt; the mmseqs binary itself stays POSIX-only, so the Windows host decides what of this is worth keeping"
+    },
+    {
+      "id": "tuning:gfx950",
+      "reason": "rescope item 1: tuned configs need tuning_gapless runs on a gfx950 (MI355) host; until then gfx950 uses the generic configs"
+    },
+    {
+      "id": "tuning:gfx1201",
+      "reason": "rescope item 1: tuned configs need tuning_gapless runs on a gfx1201 host; until then gfx1201 uses the generic configs"
+    },
+    {
+      "id": "check:cuda-nvcc-compile",
+      "reason": "no nvcc on the gfx90a host (a CUDA toolkit install into a job venv was refused by the fleet guard); compile the CUDA path on the mi355 host"
+    }
+  ],
+  "removed_from_floor": []
+}
