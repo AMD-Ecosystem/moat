@@ -24,8 +24,11 @@ import subprocess
 import sys
 import tomllib
 
-REPO = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "utils"))
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = pathlib.Path(__file__).resolve().parents[1]
+REPO = pathlib.Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
+sys.path.insert(0, str(TOOLS_ROOT / "utils"))
 
 # Anything that has no business in a control-plane repo. The usual sources of
 # these are .a/.so/.o from validators building in the repo root, and DEM CSV output
@@ -49,6 +52,78 @@ def _run(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO), **kw)
 
 
+ZERO = "0" * 40
+
+
+def push_updates():
+    """(local sha, remote ref, remote sha) for each ref the push in progress updates,
+    from the pre-push hook. None outside a push (a manual or CI run)."""
+    raw = os.environ.get("MOAT_PUSH_UPDATES")
+    if raw is None:
+        return None
+    out = []
+    for item in raw.split():
+        lsha, _, rest = item.partition(":")
+        rref, _, rsha = rest.rpartition(":")
+        if lsha and rref:
+            out.append((lsha, rref, rsha))
+    return out
+
+
+def port_only_push():
+    """True when the push in progress updates only port/<name> branches.
+
+    A port branch may change nothing outside its own project folder (gate_branch_scope),
+    so the gates that judge trunk-owned files -- the tooling's own lint, the generated
+    schema, the skills, the harness adapters -- have nothing of that branch's to judge.
+    Running them there judged whatever copy of those files the branch inherited, and
+    failed pushes over files the push never touched."""
+    ups = push_updates()
+    return bool(ups) and all(r.startswith("refs/heads/port/") for _, r, _ in ups)
+
+
+def gate_branch_scope():
+    """A push to `port/<name>` adds no commit that changes anything outside
+    `projects/<name>/`.
+
+    The trunk owns the tooling, the skills and the shared data. A port branch that edits
+    them carries its own version of trunk files, which is what made every trunk merge
+    into a branch, and every branch merge into the trunk, a conflict: thirty-seven
+    branches held edits to the same few skill and data files. Tooling fixes and lessons
+    go to the trunk; a port records a lesson in its notes until it is promoted there.
+
+    Only commits this push adds are judged, and merge commits are not: syncing the trunk
+    into a branch is a merge, and an old branch's earlier edits stay until it lands.
+    README.md is allowed because branch tooling regenerates it and the trunk's copy wins
+    every merge."""
+    ups = push_updates()
+    if not ups:
+        return []
+    problems = []
+    for lsha, rref, rsha in ups:
+        if not rref.startswith("refs/heads/port/") or lsha == ZERO:
+            continue
+        name = rref[len("refs/heads/port/"):]
+        own = f"projects/{name.lower()}/"
+        rng = [lsha, "^origin/main"]
+        if rsha and rsha != ZERO and _run(["git", "cat-file", "-e", rsha]).returncode == 0:
+            rng.append(f"^{rsha}")
+        commits = _run(["git", "rev-list", "--no-merges", *rng]).stdout.split()
+        for c in commits:
+            paths = _run(["git", "diff-tree", "--no-commit-id", "--name-only", "-r",
+                          c]).stdout.split("\n")
+            foreign = [x for x in (q.strip() for q in paths) if x
+                       and not x.lower().startswith(own) and x != "README.md"]
+            if foreign:
+                subj = _run(["git", "log", "-1", "--format=%s", c]).stdout.strip()
+                problems.append(
+                    f"port/{name}: {c[:9]} ({subj[:50]}) changes {', '.join(foreign[:3])}"
+                    f"{' ...' if len(foreign) > 3 else ''} outside projects/{name}/ -- "
+                    f"tooling, skills and shared data change on main; record a lesson "
+                    f"in the project's notes for promotion")
+    return problems
+
+
 def gate_code():
     """The Python actually resolves: no undefined names, no dead imports or locals.
 
@@ -60,6 +135,8 @@ def gate_code():
 
     Fails when pyflakes is absent rather than skipping, on the same principle as the
     schema gate: a check that quietly does not run is worse than one that is missing."""
+    if port_only_push():
+        return []
     if importlib.util.find_spec("pyflakes") is None:
         return ["pyflakes not installed (pip install pyflakes); cannot check code"]
     files = sorted(str(p) for p in (REPO / "utils").glob("*.py"))
@@ -71,16 +148,19 @@ def gate_code():
 def gate_schema():
     """status.json schema is generated from moatlib, and every file validates."""
     problems = []
-    r = _run([sys.executable, "utils/gen_schema.py", "--check"])
-    if r.returncode:
-        problems.append("schema/status.schema.json is stale (run utils/gen_schema.py)")
+    # The schema file is a trunk artifact; on a port-only push the branch's copy is not
+    # in play, and the records are validated against the trunk's schema below.
+    if not port_only_push():
+        r = _run([sys.executable, str(TOOLS_ROOT / "utils" / "gen_schema.py"), "--check"])
+        if r.returncode:
+            problems.append("schema/status.schema.json is stale (run utils/gen_schema.py)")
     try:
         import jsonschema
     except ImportError:
         problems.append("jsonschema not installed; cannot validate status files")
         return problems
     import moatlib as m
-    schema = json.loads((REPO / "schema" / "status.schema.json").read_text())
+    schema = json.loads((TOOLS_ROOT / "schema" / "status.schema.json").read_text())
     v = jsonschema.Draft202012Validator(schema)
     # Across refs: a record on its own branch still has to validate, and a checkout
     # that cannot see it must not report the file as fine by not looking.
@@ -119,19 +199,29 @@ def gate_readme():
     branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
     if branch.startswith("port/"):
         return []
+    # The checkout's branch is the wrong question for a push: recording a fact writes a
+    # commit straight to `port/<name>` from whatever is checked out (the publisher's
+    # approval snapshot does), and judging the trunk's table there refused the push
+    # because some other project's state had moved. The pre-push hook passes the refs
+    # being updated; unless one of them is the trunk, the table is not in play.
+    pushed = os.environ.get("MOAT_PUSH_REFS")
+    if pushed is not None and "refs/heads/main" not in pushed.split():
+        return []
     if not _run(["git", "for-each-ref", "--format=%(refname)",
                  "refs/remotes/origin/port/"]).stdout.strip():
         print("readme: skipped -- no port branches in this checkout, so the table "
               "cannot be verified here", file=sys.stderr)
         return []
-    r = _run([sys.executable, "utils/gen_readme.py", "--check"])
+    r = _run([sys.executable, str(TOOLS_ROOT / "utils" / "gen_readme.py"), "--check"])
     return [] if r.returncode == 0 else ["README table is stale (run utils/gen_readme.py)"]
 
 
 def gate_licenses():
     """Tier lists are well-formed, and no identifier sits in two tiers -- which
     would silently disable the review gate for that licence."""
-    r = _run([sys.executable, "utils/licenses.py", "--check-config"])
+    if port_only_push():
+        return []
+    r = _run([sys.executable, str(TOOLS_ROOT / "utils" / "licenses.py"), "--check-config"])
     return [] if r.returncode == 0 else [l for l in (r.stdout + r.stderr).splitlines() if l.strip()]
 
 
@@ -195,7 +285,7 @@ def gate_jargon():
     make those checks silently pass."""
     import re as _re
     try:
-        cfg = tomllib.load(open(REPO / "config" / "jargon.toml", "rb"))
+        cfg = tomllib.load(open(TOOLS_ROOT / "config" / "jargon.toml", "rb"))
     except Exception as e:
         return [f"config/jargon.toml will not load: {e}"]
     problems = []
@@ -261,7 +351,7 @@ def gate_surface():
     a surface.json on another project's branch is invisible here -- so on most
     checkouts the gate passes vacuously and says so out loud rather than reading
     as a clean bill."""
-    r = _run([sys.executable, "utils/surface.py", "check", "--all"])
+    r = _run([sys.executable, str(TOOLS_ROOT / "utils" / "surface.py"), "check", "--all"])
     if r.returncode == 0:
         if not list((REPO / "projects").glob("*/surface.json")):
             print("surface: VACUOUS -- no project in this checkout has a "
@@ -275,7 +365,7 @@ def gate_surface():
 def gate_forks():
     """No fork carries uncommitted source edits. A validation built against local
     changes that are not in the branch produces an unbuildable PR."""
-    r = _run([sys.executable, "utils/moatlib.py", "audit-clean"])
+    r = _run([sys.executable, str(TOOLS_ROOT / "utils" / "moatlib.py"), "audit-clean"])
     if r.returncode == 0:
         return []
     return [l for l in r.stdout.splitlines() if l.strip()][:10]
@@ -293,7 +383,7 @@ def gate_commits():
 
     Slow for the same reason as the fork gate: it shells out per clone.
     """
-    r = _run([sys.executable, "utils/moatlib.py", "audit-commits"])
+    r = _run([sys.executable, str(TOOLS_ROOT / "utils" / "moatlib.py"), "audit-commits"])
     if r.returncode == 0:
         return []
     return [l for l in r.stdout.splitlines() if l.strip()][:10]
@@ -313,7 +403,7 @@ def gate_published():
     Diverged (neither one an ancestor) is reported too -- the branch was rebased or
     rewritten under an open PR. Where no clone exists the gate says it judged
     nothing; the reconciler (`upstream.py --dry-run`) covers the remote side."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     problems, judged = [], 0
     for src in sorted((REPO / "projects").glob("*/src/.git")):
@@ -431,6 +521,8 @@ def gate_harness_adapters():
     only one side impossible to miss and hands the Codex config to a real Codex binary
     when one is installed.
     """
+    if port_only_push():
+        return []
     import shutil
 
     problems = []
@@ -605,6 +697,8 @@ MOAT_VOCABULARY = re.compile(
 
 def gate_skills():
     """The cuda-to-rocm skill names no MOAT tool, record, or state."""
+    if port_only_push():
+        return []
     problems = []
     paths = [STANDALONE_SKILL / "SKILL.md"]
     for sub in ("references", "assets"):
@@ -621,6 +715,7 @@ def gate_skills():
 
 GATES = {
     "gh-guard": (gate_gh_guard, False),
+    "branch-scope": (gate_branch_scope, False),
     "skills": (gate_skills, False),
     "harness-adapters": (gate_harness_adapters, False),
     "code": (gate_code, False),
@@ -672,4 +767,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())

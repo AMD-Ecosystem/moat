@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "hiprt-jit-and-cache-fixes",
+      "kind": "rocm-bug-report",
+      "component": "hiprt",
+      "summary": "Four HIPRT SDK fixes this port needs are absent from HIPRT HEAD (checked 2026-08-13 against GPUOpen-LibrariesAndSDKs/HIPRT, last push 2026-04-15) and are carried as local patches: (1) Compiler::getCacheFilename builds the JIT cache path from the raw device name, so any device whose name contains a slash -- e.g. 'AMD Instinct MI250X / MI250' -- writes into a non-existent directory and throws; sanitize '/' and '\\\\' to '_'. (2) Compiler::addCommonOpts passes no --offload-arch, so hiprtc targets a default arch set that excludes RDNA4 and BVH kernel loading fails with hipErrorInvalidImage (200) on gfx1201. (3) Compiler::buildProgram passes the full absolute path as the hiprtcCreateProgram source name; on Windows comgr fails silently (ret=6, empty log) when it starts with a drive letter, so pass the basename. (4) hiprt.cpp / hiprt_libpath.h / Orochi hipew.cpp use plain LoadLibraryA, which follows the legacy search order and picks the System32 display-driver amdhip64/hiprtc over the ROCm SDK copy; build full paths from ROCM_PATH/HIP_PATH. All four are genuine HIPRT bugs affecting any HIPRT user, not port-specific workarounds. Contributing them to GPUOpen is the durable fix and removes the 'apply this patch first' step from the port's ROCm build instructions.",
+      "refs": [
+        "projects/diff-surfel-tracing/plan.md",
+        "projects/EnvGS/hiprt-feasibility.md"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT/issues/67",
+      "created_at": "2026-08-13T04:04:03Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T18:42:21Z"
+      }
+    },
+    {
+      "id": "hiprt-collapse-reference-count-hang",
+      "kind": "rocm-bug-report",
+      "component": "hiprt",
+      "summary": "HIP RT's BVH Collapse kernel (hiprt/impl/BvhBuilderKernels.h) hangs the GPU on some geometry at tag 3.1.0.cb09c56. It is a persistent task-queue kernel, and a lane that never receives a task can only leave through 'atomicAdd(&header->m_referenceCount, 0) == referenceCount'. The counter is monotonic, so the exact comparison is missed permanently once the emitted count passes referenceCount -- and that is what happens: relaxing it to >= makes every hanging scene build and trace correctly, which proves the collapse emits more references than the primitive count it was given. referenceIndices is allocated with exactly primitives.getCount() entries, so the same overshoot also writes past the end of that temporary buffer, and >= alone would convert a hang into silent corruption rather than fix it. Reproduces from about 96 triangles (42 surfel disks) upward, is data dependent rather than size dependent (44 disks builds, 42 and 46 do not), and affects the LBVH, LBVH-without-triangle-pairing and PLOC builders alike because all three call the same Collapse kernel. It affects any HIP RT user whose geometry trips the miscount. Needs the miscount root-caused, then reported to GPUOpen.",
+      "refs": [
+        "projects/diff-surfel-tracing/notes.md"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT/issues/68",
+      "created_at": "2026-08-13T06:41:03Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T18:42:16Z"
+      }
+    },
+    {
+      "id": "hiprt-32bit-lane-masks-pair-and-pack",
+      "kind": "rocm-bug-report",
+      "component": "hiprt",
+      "summary": "Two more 32-bit-literal lane-mask defects in HIP RT's hiprt/impl/BvhBuilderKernels.h at tag 3.1.0.cb09c56, still present at HEAD on 2026-08-14, both fixed locally in third_party/hiprt-rocm-fixes.patch and both worth including in whatever report carries the three subwarpMask sites to GPUOpen. (1) PairTriangles line 405: 'activeMask &= ~( 1u << firstPairedLane )' computes the complement in 32 bits, so it zero-extends into the 64-bit AND and clears bits 32..63 of activeMask for every lane, whatever the shift count. The lane-at-a-time loop ends when the low 32 bits drain, lanes 32..63 keep pairedIndex == InvalidValue, and their triangles are never written to pairIndices -- so on a 64-wide wavefront half the triangles are silently absent from the BVH. Measured on gfx90a: 31 of 64 surfels traced before the fix, 62 of 64 after. No error, no hang, a plausible image. (2) PackLeavesWarp lines 1989 and 1993: 'packetMask ^= 1 << broadcastLane' is a signed int, so at lane 31 it sign-extends to 0xffffffff80000000 and sets bits 32..63 that the enclosing 'while ( packetMask )' cannot clear, hanging the leaf packing. That path builds TrianglePacketNode, selected for RTIP 3.1 and later (gfx1201), so it is reasoned from the source rather than measured. Both affect any HIP RT user on the respective architecture.",
+      "refs": [
+        "projects/diff-surfel-tracing/notes.md"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT/issues/68",
+      "created_at": "2026-08-14T05:10:36Z",
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T19:12:14Z"
+      }
+    },
+    {
+      "id": "orochi-32bit-ballot-onesweep-reorder",
+      "kind": "rocm-bug-report",
+      "component": "orochi",
+      "summary": "Orochi's radix sort corrupts its output on a 64-wide wavefront, faulting the GPU. ParallelPrimitives/RadixSortKernels.h OnesweepReorder splits a 256-thread block into eight logical warps of WARP_SIZE (32) lanes (RadixSortConfigs.h:45), then uses wave-wide __ballot(): 'u32 broThreads = __ballot( itemIndex < numberOfInputs )' (:465-471) and '( 0xFFFFFFFF * bit ) ^ __ballot( bit != 0 )' (:476-480) each store a 64-lane result in a u32, which keeps lanes 0..31, so every odd logical warp ranks its keys against the even warp's attendee set. warpOffsets and lpSum are then wrong for half the block and those prefix sums index the global outputKeys/outputValues writes. Measured on gfx90a (MI250X) through HIP RT's LBVH builder: a sort of more than SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI = 3072 keys, i.e. any scene above ~3072 primitives, dies with 'Memory access fault ... kernel: OnesweepReorderKeyPair64'; below that RadixSort.cpp:243 picks the single-pass kernel and the defect is unreachable. Fixed locally in third_party/hiprt-rocm-fixes.patch by reading the calling lane's own half of the wavefront ballot; bit-identical on a 32-wide wavefront and on the CUDA __ballot_sync path. This one is NOT HIP RT's own code: it is upstream GPUOpen-LibrariesAndSDKs/Orochi (blob 3fe3729 at Orochi HEAD 78fb3df, 2026-08-13), vendored byte-identically into HIP RT at tag 3.1.0.cb09c56 and still identical at HIP RT HEAD e3c01fc, so the report belongs to the Orochi repository while HIP RT picks it up by re-vendoring. Same wavefront-width fault class as hiprt-32bit-lane-masks-pair-and-pack and worth carrying in the same GPUOpen report, but a separate defect in a separate repository. Affects any Orochi user sorting more than 3072 elements on CDNA.",
+      "refs": [
+        "projects/diff-surfel-tracing/notes.md",
+        "projects/diff-surfel-tracing/src/third_party/hiprt-rocm-fixes.patch"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/GPUOpen-LibrariesAndSDKs/Orochi/issues/146",
+      "created_at": "2026-08-14T05:36:31Z",
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T18:53:15Z"
+      }
+    },
+    {
+      "id": "hiprt-warpsize-arch-allowlist",
+      "kind": "rocm-bug-report",
+      "component": "hiprt",
+      "summary": "HIP RT derives the wavefront width from an enumerated architecture list instead of from the compiler. hiprt/hiprt_common.h:202-206 sets 'constexpr uint32_t WarpSize = 64' for __gfx900/902/904/906/908/909/90a/90c/940/941/942__ and 32 for everything else, and the list is identical at HIP RT HEAD e3c01fc (checked 2026-08-14), so it is live upstream and not staleness in the pinned tag 3.1.0.cb09c56. gfx950 (MI350) is a 64-lane architecture that is not on the list, so HIP RT's runtime-compiled kernels would be built there with WarpSize = 32 against 64-lane hardware: 'laneIndex = threadIdx.x % WarpSize' stops being the lane index, and every subgroup carve, lane mask and ballot reduction downstream of it -- openNodes, FitBounds, Collapse, PairTriangles, PackLeavesWarp -- is then computed against the wrong half of the wavefront. This is the same hardcoded-wavefront fault class as the lane-mask defects already registered, and it is the root of them: the durable fix is __AMDGCN_WAVEFRONT_SIZE__ (or warpSize) rather than an allowlist that has to be extended for every new architecture. Not patched locally and deliberately so -- no host here has a gfx950, so a hunk adding __gfx950__ to the list could not be validated, and extending the list would perpetuate the enumeration rather than fix it. It is invisible to this port's own coverage for the same reason it matters: gfx90a and gfx942 are both on the allowlist, so the wave64 gate passes while the exposure is structural, and the README tells the user to set PYTORCH_ROCM_ARCH to whatever their GPU is. Belongs in the same GPUOpen report as the other HIP RT lane-mask defects.",
+      "refs": [
+        "projects/diff-surfel-tracing/notes.md",
+        "projects/diff-surfel-tracing/src/third_party/hiprt-rocm-fixes.patch"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT/issues/68",
+      "created_at": "2026-08-14T06:34:03Z",
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T19:13:41Z"
+      }
+    },
+    {
+      "id": "hiprt-32bit-subwarpmask-shift",
+      "kind": "rocm-bug-report",
+      "component": "hiprt",
+      "summary": "The measured ROOT CAUSE of the 64-lane BVH build failures, and the only one of the HIP RT lane-mask defects that had no deferral of its own -- it was fixed locally and promoted to the skill, but never registered for upstream reporting, even though the pair-and-pack record refers to 'whatever report carries the three subwarpMask sites'. hiprt/impl/BvhBuilderKernels.h builds a per-subgroup lane mask at lines 144, 709 and 1104 (tag 3.1.0.cb09c56) as '( ( 1 << BranchingFactor ) - 1 ) << static_cast<uint64_t>( BranchingFactor * subwarpIndex )'. The left operand is int, and a shift's result type is the promoted LEFT operand, so the whole expression evaluates in 32 bits and only then widens to uint64_t; the cast on the right operand changes nothing. With BranchingFactor 4 and WarpSize 64, subwarpIndex runs 0..15 and the shift count reaches 60. AMD neither traps nor saturates: the instruction uses the low 5 bits of the count, so it wraps and lanes 32..63 receive the mask of lanes 0..31. openNodes then selects a child with '__ffsll( ballot( maxArea == area ) & subwarpMask ) - 1', so the upper half of the wavefront reads the LOWER half's ballot bits and opens a subtree belonging to another task. The same subtree lands in two slots, Collapse emits more leaf references than there are primitives, and every lane spins in 'while ( hiprt::any( !done ) )' forever -- which is exactly the hiprt-collapse-reference-count-hang symptom, whose '>=' relaxation treats the symptom while the extra references remain real out-of-bounds writes to referenceIndices. Invisible on RDNA because subwarpIndex <= 7 there, so the shift count never reaches 32. Fixed locally with '1ull << BranchingFactor' at all three sites, bit-identical on wave32. Ruled now by Jeff Daily 2026-08-19: goes upstream to GPUOpen-LibrariesAndSDKs/HIPRT as the root cause in the lane-mask issue, with the Collapse hang presented as its symptom rather than as a separate defect.",
+      "refs": [
+        "projects/diff-surfel-tracing/notes.md"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT/issues/68",
+      "created_at": "2026-08-19T19:12:29Z",
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T19:12:38Z"
+      }
+    },
+    {
+      "id": "hiprt-buildprogram-silent-compile-failure",
+      "kind": "rocm-bug-report",
+      "component": "hiprt",
+      "summary": "HIPRT Compiler.cpp::buildProgram does not throw when orortcCompileProgram fails and the compile log is empty: it falls through silently and the caller then uses a program that was never compiled. Pristine upstream HIPRT code (tag 3.1.0.cb09c56), untouched by this project's hiprt-rocm-fixes.patch. Found while investigating the windows-gfx1151 access violation in hiprtBuildTraceKernels; proven present by a throwaway local edit forcing an unconditional throw, which rebuilt and ran cleanly but never fired -- so this defect is real and worth reporting, but is NOT the cause of that crash. Report upstream against HIPRT independently of the diff-surfel-tracing port.",
+      "refs": [
+        "projects/diff-surfel-tracing/notes.md ## Validation retry 2026-08-20"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-20T19:26:42Z",
+      "decided": null
+    }
+  ]
+}
