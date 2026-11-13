@@ -7,7 +7,7 @@
   "priority": 3.923,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-11-13T01:14:13Z",
+  "updated_at": "2026-11-13T01:15:38Z",
   "head_sha": "3efd11d28f61ac354469fa33d948098f9f390689",
   "porting": null,
   "waivers": {},
@@ -143,11 +143,9 @@
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/RWKV-CUDA/pull/1",
-  "pr_approval": {
-    "approved_by": "jeffdaily",
-    "at": "2026-11-12T21:34:46Z",
-    "head_sha": "3efd11d28f61ac354469fa33d948098f9f390689",
-    "content_sha256": "0fcd0eec0ec7d95ee405e04a28b7798c71e3b05720069849e915126efb6b9cef",
-    "review_pr": "https://github.com/AMD-Ecosystem/RWKV-CUDA/pull/1"
-  }
+  "pr_url": "https://github.com/BlinkDL/RWKV-CUDA/pull/23",
+  "pr_number": 23,
+  "pr_opened_at": "2026-11-13T01:15:38Z",
+  "pr_state": "open",
+  "published_sha": "3efd11d28f61ac354469fa33d948098f9f390689"
 }
