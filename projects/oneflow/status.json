@@ -7,7 +7,7 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-11-13T19:20:24Z",
+  "updated_at": "2026-11-13T19:46:56Z",
   "head_sha": "14801d8a83043e852b72a3671bc88e5896aec904",
   "waivers": {
     "windows": {
@@ -198,5 +198,11 @@
   "pr_number": 10697,
   "pr_opened_at": "2026-11-12T23:12:22Z",
   "pr_state": "open",
-  "published_sha": "14801d8a83043e852b72a3671bc88e5896aec904"
+  "published_sha": "14801d8a83043e852b72a3671bc88e5896aec904",
+  "fix": {
+    "branch": "moat-fix-10697",
+    "base_sha": "14801d8a83043e852b72a3671bc88e5896aec904",
+    "review_pr": null,
+    "opened_at": "2026-11-13T19:46:56Z"
+  }
 }
