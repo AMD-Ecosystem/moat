@@ -106,3 +106,5 @@
 {"kind":"phase","ts":"2026-11-13T08:00:42Z","phase":"test","seconds":186.606,"exit":0,"cmd":"bash -c cd projects/MMseqs2/src && util/regression/run_regression.sh /var/lib/jenkins/fleet/jobs/gfx1201-20261112-201654-mmseqs-gfx1201/moat/agent_space/mm/build-generic/src/mmseqs /var/lib/jenkins/fleet/jobs/gfx1201-20261112-201654-mmseqs-gfx1201/moat/agent_space/mm/regr"}
 {"kind":"session","ts":"2026-11-13T08:11:33Z","epoch":1794557493.784544245,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-13T08:14:48Z","epoch":1794557688.481718798,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-13T08:21:47Z","epoch":1794558107.102887535,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-13T08:22:21Z","epoch":1794558141.068852149,"event":"end","platform":"linux-gfx942"}
