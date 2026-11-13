@@ -1522,3 +1522,24 @@ cmake --build marv -j24
 - `git -C projects/MMseqs2/src status --porcelain`: no modified tracked files. No fork edits, no throwaway patches.
 
 Result: linux-gfx1201 `completed` at af0688d8.
+## Validation 2026-11-13 (linux-gfx90a, validated_sha af0688d8)
+
+jeff's request: Linux evidence for the upstream PR at the curated `moat-gpu-coverage` tip af0688d8. Previous linux-gfx90a record was 75a9b029 (the old USE_HIP port), so no carry-forward: full run. Host: AMD Instinct MI250X GCD (gfx90a), `HIP_VISIBLE_DEVICES=3` (dispatcher pin, idle), `CUDA_VISIBLE_DEVICES=0` for `--gpu`, TheRock `rocm-sdk-devel` (HIP 7.16.26385), gcc 13.3, CMake 3.31.6, Ninja. All GPU runs under `ulimit -c 0`. Fresh clone of the fork, detached at af0688d8 (= `origin/moat-gpu-coverage`, `ls-remote` checked), submodules initialized.
+
+Build:
+```
+R=$(hipconfig --rocmpath)
+cmake -S src -B src/build-gfx90a -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DHAVE_TESTS=1 -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+cmake --build src/build-gfx90a -j32 --target mmseqs
+```
+312/312, 76 warning lines (same count as the porter round); `mmseqs version` af0688d88121...
+
+Results:
+- Regression (submodule 19b9867): `CUDA_VISIBLE_DEVICES=0 util/regression/run_regression.sh build-gfx90a/src/mmseqs <scratch>`: 43 reports, 43 GOOD, 0 BAD, 43 TEST SUCCESS. SEARCH_GPU 0.454819 = expected, SEARCH_GPU_SERVER 0.454819 = expected. gfx90a-only build, so the GPU tests ran the gfx90a tables.
+- Example GPU-vs-CPU (`createdb examples/DB.fasta`, `makepaddedseqdb`, `easy-search examples/QUERY.fasta` padded `--gpu 1` vs unpadded `--gpu 0`): GPU 14482, CPU 12901, common 12438, all 12438 rows identical. Same counts as every earlier round.
+- libmarv standalone (`cmake -S lib/libmarv/src -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx90a ...`): 30/30, 0 warnings. `test_gapless --gpu-compatible`: "all checks passed, digest 0xcba3a00c27ffe2df" (same digest as the rescope round). `ctest` fails to start it (`libamdhip64.so.7: cannot open shared object file`, the known upstream RUNPATH gap recorded in `## Rescope porter round`); `LD_LIBRARY_PATH=$R/lib ctest`: 1/1 passed (gapless_exactness, 33.7 s). `makedb lib/libmarv/allqueries.fasta mdb`, then `align --query lib/libmarv/allqueries.fasta --db mdb --scanType {Gapless|SW_Endpos|Gapless+SW_Endpos} --tsv --top 5`: all exit 0, no errors, 95/95/93 hit rows, self-hits on top.
+- Non-GPU: CPU-only build (`cmake -S src -B src/build-cpu -G Ninja -DCMAKE_BUILD_TYPE=Release`, `--target mmseqs`) builds; example search 12901 rows, sorted output identical to the HIP build's `--gpu 0`. The 41 non-GPU regression tests pass in the HIP build above.
+- CUDA gate: already recorded at af0688d8 (`## CUDA compile check (nvcc 13.5.37) at af0688d8`), not repeated.
+- Completion checks: `utils/jargon.py --port MMseqs2` (master..moat-gpu-coverage, local branches created from origin): clean. Docs: the libmarv Readme states the tuned arches and the generic fallback; the build itself is upstream's documented `ENABLE_HIP` path, no new knob. Fork clone `status --porcelain`: no modified tracked files.
+
+VERDICT: PASS. linux-gfx90a -> completed at af0688d8.
