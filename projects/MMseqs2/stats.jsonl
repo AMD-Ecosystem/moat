@@ -114,3 +114,6 @@
 {"kind":"phase","ts":"2026-11-13T17:03:07Z","phase":"test","seconds":0.004,"exit":127,"cmd":"util/regression/run_regression.sh /var/lib/jenkins/fleet/jobs/mi200-20261113-084610-mmseqs-curate/moat/projects/MMseqs2/src/../../../agent_space/b-tuned/src/mmseqs /var/lib/jenkins/fleet/jobs/mi200-20261113-084610-mmseqs-curate/moat/projects/MMseqs2/src/../../../agent_space/regr"}
 {"kind":"phase","ts":"2026-11-13T17:08:52Z","phase":"test","seconds":323.522,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261113-084610-mmseqs-curate/moat/projects/MMseqs2/src/util/regression/run_regression.sh /var/lib/jenkins/fleet/jobs/mi200-20261113-084610-mmseqs-curate/moat/agent_space/b-tuned/src/mmseqs /var/lib/jenkins/fleet/jobs/mi200-20261113-084610-mmseqs-curate/moat/agent_space/regr"}
 {"kind":"session","ts":"2026-11-13T17:10:49Z","epoch":1794589849.529659556,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-13T17:19:31Z","phase":"cuda-compile","seconds":179.006,"exit":0,"cmd":"../cudacheck/build.sh src marv"}
+{"kind":"phase","ts":"2026-11-13T17:19:33Z","phase":"cuda-compile","seconds":180.910,"exit":0,"cmd":"../cudacheck/build.sh upstream top"}
+{"kind":"phase","ts":"2026-11-13T17:19:34Z","phase":"cuda-compile","seconds":181.429,"exit":0,"cmd":"../cudacheck/build.sh src top"}

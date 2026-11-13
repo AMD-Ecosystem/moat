@@ -1378,3 +1378,19 @@ CUDA_VISIBLE_DEVICES=0 HIP_VISIBLE_DEVICES=1 util/regression/run_regression.sh <
 - `moat-gpu-coverage` at af0688d8 on the fork; `moat-port` 0c897402 untouched (`git ls-remote` checked after publishing). `advance-head` af0688d8; stage `delta-ported` for the reviewer. Every platform record is behind head: the reviewer judges the curation (patch-ids, tree proof, message edits), then validators re-run at af0688d8 (wave64, wave32; windows is waived).
 - Owed: nvcc compile at af0688d8 (mi355); `set-fork-branch MMseqs2 moat-gpu-coverage` on the primary after review PR #1 closes (jeff). Until then `jargon.py --port`, `pr_ready` and `upstream.py` look at `moat-port`.
 - The PR body drafted in `## Review 2026-11-13` still has the Windows bullet and the old q1k figure; at PR prep drop the Windows bullet and use 1.22x q1k / 1.34x 8x for gfx90a.
+
+## CUDA compile check (nvcc 13.5.37) at af0688d8
+
+jeff's request (2026-11-13, linux-gfx950 fleet host): compile the CUDA path of the curated `moat-gpu-coverage` tip af0688d8 with real nvcc before the upstream PR. Its tree is 0c897402's minus the Windows commits (`## Curated history on moat-gpu-coverage`), but it is a new tree. No MOAT state, fork branch or review PR was changed; the fork was not edited. `orient.sh` ran for setup only (it selected reviewer; not dispatched).
+
+Toolchain: the earlier mi355 CUDA job's job-local CUDA 13.5 wheel prefix, used read-only (`C=<that job>/cuda13-wheels/nvidia/cu13`, `libcudart.so` symlink already present; cuobjdump/nvdisasm from its `cuda13-tools`). gcc 13.3, CMake 3.31.6, Ninja. CMake reports `CUDA compiler identification is NVIDIA 13.5.37`, `Found CUDAToolkit ... (found version "13.5.37")` and `marv: tuned kernels for 80;90; core architectures 80-real;90-real;90-virtual`. Fresh clones of the fork at af0688d8 (contained in `origin/moat-gpu-coverage`) and of upstream d0185a2d, submodules initialized. Commands exactly as `## CUDA compile check (nvcc 13.5.37) at 2cda180e` (top-level `-DENABLE_CUDA=1 -DCMAKE_CUDA_ARCHITECTURES="80;90"` `--target mmseqs`; standalone libmarv `-DENABLE_HIP=0 -DBUILD_TUNING=0 -DONLY_BUILD_TUNING=0 -DLIBRARY_ONLY=0`), each at `-j64` under `utils/timeit.sh MMseqs2 cuda-compile`, the three builds run concurrently (about 3 min each).
+
+Results:
+- Fork af0688d8, top-level mmseqs with libmarv: PASS. 317/317 steps, `src/mmseqs` links; `mmseqs version` prints af0688d88121...
+- Fork af0688d8, standalone libmarv (`LIBRARY_ONLY=0`): PASS. 40/40 steps: `libmarv.a`, `align`, `makedb`, `test_gapless`, `test_cuda_multitile`, `test_db_copy` link, 0 warnings.
+- Upstream d0185a2d, top-level with the same commands: PASS, 317/317. Both top-level builds give 116 warning lines, identical after path normalization (Rust `block_aligner_c` ABI deprecations, four tinyexpr `-Warray-bounds`); none in fork-changed files.
+- Device code unchanged against upstream: `cuobjdump -sass` of the fork and upstream `mmseqs` is byte-identical even before normalization (9,049,782 lines; 1043 SASS functions over 13 sm_80 and 20 sm_90 cubins). `cuobjdump -ptx` (1,002,322 lines, 234 entries) differs only in the per-translation-unit `_INTERNAL_<hash>` / `_GLOBAL__N__<hash>` prefixes and is identical once they are normalized. So the curated tree changes no CUDA kernel, as at 2cda180e.
+- `xxd or sed not found, compiling resources with CMake instead`: this host has no `xxd`; unchanged upstream behaviour, as before.
+- Not run: no NVIDIA GPU on this host, so compile and link only.
+
+This clears the `nvcc compile at af0688d8 (mi355)` item owed in `## Curated history on moat-gpu-coverage`.
