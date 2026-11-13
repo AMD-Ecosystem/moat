@@ -4673,12 +4673,26 @@ def _git(*args, check=True, cwd=None):
                           capture_output=True, text=True, check=check)
 
 
+# The merge driver command, as stored in the clone's git config. The config is
+# shared by every worktree of a clone, so the command names no path: it used to be
+# `python3 <absolute path of whichever checkout registered last>/utils/merge_status.py`,
+# and removing that one worktree turned every status.json merge in the clone into a
+# conflict. git runs a driver from the top of the working tree being merged, so
+# this takes the trunk's launcher out of the object store (as the pre-push hook
+# does) and lets it run the trunk's merge_status.py against that tree. It exits 1
+# -- a conflict, never a silent "ours" -- when there is no trunk to read, and it
+# finds `python` where a host has no `python3`.
+MERGE_DRIVER = ("sh -c 'p=python3; command -v \"$p\" >/dev/null 2>&1 || p=python; "
+                "t=$(git show origin/main:utils/trunk.py) || exit 1; "
+                "exec \"$p\" -c \"$t\" run merge_status.py \"$@\"' "
+                "moat-status %O %A %B %P")
+
+
 def ensure_git_config():
     """Register the semantic status.json merge driver (idempotent). A fresh
     clone needs this for .gitattributes merge=moat-status to take effect."""
-    drv = f"python3 {REPO_ROOT / 'utils' / 'merge_status.py'} %O %A %B %P"
     _git("config", "merge.moat-status.name", "MOAT status.json semantic merge", check=False)
-    _git("config", "merge.moat-status.driver", drv, check=False)
+    _git("config", "merge.moat-status.driver", MERGE_DRIVER, check=False)
 
 
 # Paths on the trunk whose change cannot alter how a port is done: the generated
