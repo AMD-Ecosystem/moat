@@ -263,7 +263,7 @@ against a repo we do not own for a person. That covers creating the organization
 PR and issue comments, reviews, edited bodies, and opening anything upstream.
 
 The one automated route upstream is the approved one:
-    python3 utils/upstream.py --publish --apply
+    python3 utils/upstream.py --publish --apply --name <project>
 It re-checks the recorded approval and every required gate, then opens the PR with the
 approved title and body verbatim.
 

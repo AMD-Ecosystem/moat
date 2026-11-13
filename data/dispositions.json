@@ -1167,6 +1167,24 @@
     "reason": "already-supported",
     "repo_id": 64991887
   },
+  "lightricks/ltx-2": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T21:38:03Z",
+    "disposition": "skip",
+    "full_name": "Lightricks/LTX-2",
+    "note": "gap-matrix intake follow-up 2026-11-12: maintainer ruled ROCm not planned (LTX-2 #141); default path is pure PyTorch needing only packaging, no test suite; a fork would only hold the opt-in ltx-kernels perf package; LTX-Video is superseded by LTX-2",
+    "reason": "not-a-target",
+    "repo_id": 1127234517
+  },
+  "lightricks/ltx-video": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T21:38:04Z",
+    "disposition": "skip",
+    "full_name": "Lightricks/LTX-Video",
+    "note": "gap-matrix intake follow-up 2026-11-12: maintainer ruled ROCm not planned (LTX-2 #141); default path is pure PyTorch needing only packaging, no test suite; a fork would only hold the opt-in ltx-kernels perf package; LTX-Video is superseded by LTX-2",
+    "reason": "not-a-target",
+    "repo_id": 891705470
+  },
   "linkedin/liger-kernel": {
     "by": "Jeff Daily",
     "decided": "2026-11-10T18:02:42Z",
@@ -1534,6 +1552,15 @@
     "reason": "not-a-target",
     "repo_id": 876545970
   },
+  "nvidia-bionemo/bionemo-recipes": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T21:23:00Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA-BioNeMo/bionemo-recipes",
+    "note": "gap-matrix intake follow-up 2026-11-12: out of scope for MOAT; recipe outcomes decided by ROCm TransformerEngine parity, Megatron/Evo2 recipes need binary-only/FA4-cu13 kernels; belongs with the ROCm TE team",
+    "reason": "not-a-target",
+    "repo_id": 705428944
+  },
   "nvidia-bionemo/nvmolkit": {
     "decided": "2026-05-29T23:57:04Z",
     "disposition": "skip",
@@ -1654,6 +1681,15 @@
     "note": "gap-matrix intake 2026-11-10: RDC, AMD SMI, RVS, device metrics exporter",
     "reason": "ported-elsewhere",
     "repo_id": 321811880
+  },
+  "nvidia/earth2studio": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T20:36:29Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/earth2studio",
+    "note": "gap-matrix intake follow-up 2026-11-12: out of scope for MOAT; two LicenseRef-NvidiaProprietary files, NATTEN DiT and cuDF model gaps, per-model validation",
+    "reason": "not-a-target",
+    "repo_id": 782634112
   },
   "nvidia/megatron-lm": {
     "by": "Jeff Daily",

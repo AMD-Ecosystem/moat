@@ -9,9 +9,11 @@ Accumulated across many real ports. This file is the index and the decision-crit
 everything else is in `references/`, loaded only when you need it.
 
 **Most porting bugs are not in symbol names.** Hipify handles the renaming. The bugs are
-semantic differences where AMD is strict and CUDA is lenient, and they surface at runtime
-on a build that compiled cleanly. Read the fault-class index below before concluding a
-port works.
+semantic differences where AMD is strict and CUDA is lenient. Most surface at runtime on a
+build that compiled cleanly, but a clean hipify is not a clean build: hipify leaves
+literals and types alone, so some idioms -- a 32-bit `*_sync` mask is the common one --
+hipify without complaint and then fail to compile under HIP. Read the fault-class index
+below before concluding a port works.
 
 ## Naming: ROCm or HIP?
 
@@ -149,6 +151,21 @@ and read their ISA and `.private_segment_fixed_size` before blaming tile tables.
 - `asm volatile` for a single ALU op serializes scheduling; it cost 2x against the builtin.
 - Tile-table choice and RDC/shared-library layout were second order (about 10% and nil).
 Method and numbers: `references/performance.md`.
+
+## Reviewing a port
+
+A review is a sweep, not a diagnosis. Finding one fault that explains the reported symptom
+does not end it; ported code usually carries several independent faults, and the one
+nobody asked about is the one that ships.
+
+1. Walk every section of the index above against the code: wavefront and warp semantics,
+   memory and lifetime, textures, floating point, headers and build, types and platform
+   limits. Note a hit or a clean pass for each.
+2. Check what will not compile under HIP separately from what will misbehave at runtime.
+   "Hipify ran clean" says nothing about the first.
+3. For each fresh allocation, check that its first access is not a read-modify-write
+   without a preceding memset or init kernel.
+4. Report every hit, each with its fix, even when it is unrelated to the question asked.
 
 ## Portability rule for shared code
 

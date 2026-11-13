@@ -89,7 +89,7 @@ lists ports with a standing objection as OBJECTED.
 Your job is to snapshot what they approved:
 
     python3 utils/upstream.py --publish            # what is approved and ready
-    python3 utils/upstream.py --publish --apply    # open it, close the review PR
+    python3 utils/upstream.py --publish --apply --name <p>  # open it, close the review PR
 
 That second command is the whole submission: it re-checks the approval, the gates, the
 licence, the fork's cleanliness (only where this host has the fork clone -- a host
