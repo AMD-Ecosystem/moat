@@ -1158,3 +1158,145 @@ Validator role, jeff's request: first Windows validation, toward the review PR. 
 ## Ruling 2026-11-12: -finline-hint-functions on every arch
 
 jeff ruled to keep `-finline-hint-functions` on src/gpu/h2o4gpuglm.cu for every Linux HIP architecture rather than gating it on gfx11/gfx12. Measured cost on gfx9: the GLM file's kernels are 20-55% slower on gfx942 (1-5% of total kernel time, no wall-time change) and repeated fits 2-5% slower on gfx90a (total GPU time +1.2%). No code change; 0e70429b stands.
+
+## Squash Test Plan check 2026-11-12 (linux-gfx942, MI300X, ROCm 10.1 pip SDK, clang 24.0.0git d6f6cb69) -- moat-port 0e70429b
+
+jeff's request: run the Test Plan scripts in the messages of the two squashed commits (A "[ROCm] Return KMeans results in malloc'd buffers sized for every row", B "[ROCm] Limit inlining in the GLM file on Linux HIP builds too") and the reproducers of h2oai/h2o4gpu#900 and #901, before the squash goes to jeff. No role, no state change, no fork change, nothing pushed.
+
+- Tree: fresh clone of `https://github.com/AMD-Ecosystem/h2o4gpu.git` `moat-port` = `0e70429b85679b1dd028b4c26f95c3131ffaa6e9` in the job directory; tracked tree clean afterwards (only untracked `build-hip/`). `ulimit -c 0`, LD_LIBRARY_PATH unset, OPENBLAS_NUM_THREADS=32 everywhere. apt `libopenblas-dev` 0.3.26 present. pip into the job venv: `swig==4.2.1 cython==3.0.11 meson-python ninja`.
+- **Only one GPU visible.** The dispatcher pin was `HIP_VISIBLE_DEVICES=2` (one MI300X), kept as instructed; `device_count(-1)` = (1, 1). `kmeans_init` clamps `n_gpus` to the visible count (`std::min(n_gpuvis, n_gputry)`), so every `n_gpus=2` case below silently ran on one GPU. **No 2-GPU result was produced in this check.**
+- Build (rc 0; library + SWIG modules only, no wheel):
+  ```
+  P=$FLEET_VENV/bin/python; R=$($P -m rocm_sdk path --root); export PATH=$FLEET_VENV/bin:$R/bin:$PATH CMAKE_PREFIX_PATH=$R
+  git submodule update --init tests/googletest
+  cmake -S . -B build-hip -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$P -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+  cmake --build build-hip -j56
+  make apply-sklearn PYTHON=$P
+  cp build-hip/_ch2o4gpu_*pu.so build-hip/ch2o4gpu_*pu.py src/interface_py/h2o4gpu/libs/
+  ```
+  `./build-hip/h2o4gpu_test`: 24/24 PASSED, 3 runs. Scripts run as `PYTHONPATH=src/interface_py $P <script>` (commit B's ElasticNet script says "from the installed wheel"; the source-tree package is the same code).
+
+### Commit A Test Plan (KMeans)
+Script run verbatim (5 runs, all rc 0). Output of run 1:
+```
+float32 20000 transform max err / max dist2 7.2231666e-07
+float32 20001 transform max err / max dist2 7.5730713e-07
+float64 20000 transform max err / max dist2 1.2964174081393354e-15
+float64 20001 transform max err / max dist2 1.5885558756854946e-15
+```
+Range over 6 runs (5 verbatim + the corrected script): float32 7.2e-7 to 1.0e-6, float64 1.3e-15 to 1.7e-15 (fit is not bit-reproducible run to run).
+
+Findings:
+1. **The `n_gpus=2` case measures nothing.** Its only check is `t.shape == (rows, 5)`, and that cannot fail: `KMeansH2O.transform` allocates `c_res = np.zeros(rows * k)` in Python, the `(DATA_TYPE** INPLACE_ARRAY1)` typemap (`src/swig/numpy.i:3195-3204`) only swaps that array's data pointer for the library's buffer, and `np.reshape(c_res, (rows, k))` keeps the Python-chosen size. The shape is `(rows, k)` before and after the fix, with any GPU count. The buffer size the commit claims to fix is only visible to an allocation probe (the prose's `calloc` interposer), which is not in the script. On this host the case also ran on one GPU (above).
+2. **The quoted magnitudes are not what this script prints.** The message says 1.5e-7 (float32) and 3.8e-16 (float64); this script gives 7.2e-7..1.0e-6 and 1.3e-15..1.7e-15. The quoted numbers come from the 2026-11-12 fix-round script (`agent_space/km`, different data). Both are float-rounding level, but the message should quote what its own script prints.
+3. **"where it previously allocated 100000"** is relative to `2c22a86` (an intermediate commit that already used `calloc`), not to the squash base: upstream allocated with `new thrust::host_vector`, which a `calloc` interposer never sees. In the squashed commit the comparison has no visible "previously".
+4. **The recipe fails on a fresh clone**: it has no `git submodule update --init tests/googletest`, and `CMakeLists.txt:405` `ADD_SUBDIRECTORY(tests/googletest)` then stops configure (`CMake Error at CMakeLists.txt:405 (ADD_SUBDIRECTORY): The source directory ... does not contain a CMakeLists.txt`; reproduced in a fresh local clone). Commit B's recipe has the line.
+
+Corrected script (adds the allocation probe as an assertion and prints the visible GPU count so a 1-GPU host cannot pass the 2-GPU case unnoticed); recipe gains the submodule line before `cmake`:
+```
+git submodule update --init tests/googletest
+cat > /tmp/calloc_log.c <<'EOF2'
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <stddef.h>
+#include <string.h>
+void *__libc_calloc(size_t, size_t);
+size_t last_gpu_calloc;
+void *calloc(size_t n, size_t s) {
+  Dl_info info;
+  if (dladdr(__builtin_return_address(0), &info) && info.dli_fname &&
+      strstr(info.dli_fname, "_ch2o4gpu_gpu"))
+    last_gpu_calloc = n * s;
+  return __libc_calloc(n, s);
+}
+EOF2
+cc -shared -fPIC -O2 -o /tmp/calloc_log.so /tmp/calloc_log.c -ldl
+LD_PRELOAD=/tmp/calloc_log.so PYTHONPATH=src/interface_py python - <<'EOF2'
+import ctypes, numpy as np
+from h2o4gpu.solvers.kmeans import KMeansH2O
+from h2o4gpu.util.gpu import device_count
+last = ctypes.c_size_t.in_dll(ctypes.CDLL(None), "last_gpu_calloc")
+print("visible GPUs", device_count(-1)[0])
+rng = np.random.RandomState(0)
+for dtype in (np.float32, np.float64):
+    for rows, n_gpus in ((20000, 1), (20001, 1), (20001, 2)):
+        X = rng.rand(rows, 10).astype(dtype)
+        km = KMeansH2O(n_clusters=5, n_gpus=n_gpus, random_state=0, max_iter=50).fit(X)
+        C = km.cluster_centers_
+        d = ((X[:, None, :] - C[None, :, :]) ** 2).sum(-1)
+        last.value = 0
+        t = km.transform(X)
+        print(dtype.__name__, rows, "n_gpus", n_gpus, "transform buffer elements", last.value // X.itemsize, "array elements", t.size)
+        assert last.value == t.nbytes
+        if n_gpus == 1:
+            assert (km.predict(X) == d.argmin(1)).all()
+            print(dtype.__name__, rows, "transform max err / max dist2", np.abs(t - d).max() / d.max())
+EOF2
+```
+(`EOF2` only because this block sits inside these notes; in the commit message it is plain `EOF`.) Output here (1 GPU, rc 0):
+```
+visible GPUs 1
+float32 20000 n_gpus 1 transform buffer elements 100000 array elements 100000
+float32 20000 transform max err / max dist2 7.213744e-07
+float32 20001 n_gpus 1 transform buffer elements 100005 array elements 100005
+float32 20001 transform max err / max dist2 8.483671e-07
+float32 20001 n_gpus 2 transform buffer elements 100005 array elements 100005
+float64 20000 n_gpus 1 transform buffer elements 100000 array elements 100000
+float64 20000 transform max err / max dist2 1.296417408139335e-15
+float64 20001 n_gpus 1 transform buffer elements 100005 array elements 100005
+float64 20001 transform max err / max dist2 1.5885558756854942e-15
+float64 20001 n_gpus 2 transform buffer elements 100005 array elements 100005
+```
+The `n_gpus 2` lines here are a 1-GPU run, so they show the probe works but not the 2-GPU sizing. The assertion also fails on the squash base: upstream allocated with `new`, so `last_gpu_calloc` stays 0. **Owed: one run of this script with 2 visible GPUs** (the 2-GPU `calloc(100005, ...)` evidence recorded in "Porter fix round 2026-11-12" was at `d0b78f3d`, with the interposer from agent_space, not this script).
+
+### Commit B Test Plan (GLM asm counter, ElasticNet)
+Counter script run verbatim on gfx942's `build-hip/compile_commands.json` (the real compile line has `-finline-hint-functions`; cross-compiles for all four targets, rc 0, 69 s):
+```
+default gfx1100 non-kernel long branches 478 through s[30:31] 478
+default gfx1201 non-kernel long branches 669 through s[30:31] 669
+default gfx90a non-kernel long branches 116 through s[30:31] 0
+default gfx942 non-kernel long branches 151 through s[30:31] 0
+-finline-hint-functions gfx1100 non-kernel long branches 0 through s[30:31] 0
+-finline-hint-functions gfx1201 non-kernel long branches 0 through s[30:31] 0
+-finline-hint-functions gfx90a non-kernel long branches 0 through s[30:31] 0
+-finline-hint-functions gfx942 non-kernel long branches 0 through s[30:31] 0
+```
+(The labels read backwards from the loop but are right: iteration `flag="-finline-hint-functions"` removes the flag and prints "default".) gfx1100 478 and gfx1201 669 without the flag, 0 with it, as the notes and message say.
+- **The counter's pattern matches the real asm; no correction needed.** Checked against the asm (kept in `<job>/tp/asm/`, both variants, four targets): every long branch is `s_getpc_b64 sX` with `.Lpost_getpc<N>:` on the next line, then the add/addc of `(.LBB..-.Lpost_getpc<N>)` and `s_setpc_b64 sX` (gfx11: `s_add_u32`/`s_addc_u32`; gfx12: `s_add_co_u32`/`s_add_co_ci_u32` with `s_wait_alu depctr_sa_sdst(0)` between them). The other `s_getpc_b64` (2 on gfx1100, 2 on gfx1201 without the flag; function-address uses, `@rel32@lo`) have no label, so the counter skips them correctly. An independent checker (function names from `.type ...,@function`, full sequence match, also counting kernels) gives the same non-kernel counts on all eight files, and: totals including kernels 478 / 682 / 336 / 371 (gfx1100/gfx1201/gfx90a/gfx942) without the flag and **0 on all four with it** (so "no long branches at all" holds, kernels included); the s[30:31] branches sit in 2 functions per RDNA target (float and double reduce), neither of which saves s30/s31 (`v_writelane`/`s_mov` from s30/s31: none).
+- One mismatch with the prose: the message says "336 on gfx90a" (all long branches, kernels included, matches), while its script prints 116 (non-kernel only). Suggest "(336 on gfx90a, 116 of them outside kernels)" or similar.
+
+ElasticNet script run verbatim, 3 runs, rc 0, identical output each time (~8 s):
+```
+float32 2000 20 r2 gap to Ridge 0.0
+float32 20000 20 r2 gap to Ridge 0.0
+float32 20001 7 r2 gap to Ridge 0.0
+float32 100000 50 r2 gap to Ridge 0.0
+float64 2000 20 r2 gap to Ridge 1.596056620201125e-12
+float64 20000 20 r2 gap to Ridge 1.2223555501122974e-13
+float64 20001 7 r2 gap to Ridge 8.704148513061227e-14
+float64 100000 50 r2 gap to Ridge 1.0436096431476471e-13
+```
+Consistent with "r2 gaps to Ridge of 6.4e-12 or less". The GPU path ran: under `rocprofv3 --kernel-trace` a diagnostic run (`<job>/tp/b_en_diag.py`) dispatched 186k kernels including the `FuncEvalF` rocPRIM reduce instances. The float32 0.0 is float32 rounding of r2 (r2 = 0.99999979, below float32 resolution of the gap), not an exact match: with r2 computed in float64 the float32 gaps are 3.5e-12 (2000x20) and 2.3e-12 (100000x50), max |pred diff| / max |y| 7e-7 to 1.3e-6. The script measures what it claims; optional tightening: `r2_score(y.astype(np.float64), ...)` on float64 copies so the float32 lines print a real number.
+
+### Issue #900 reproducer
+- **The posted reproducer does not use `np.sqrt`.** `gh issue view 900` (read-only; plain `gh issue view` fails on the Projects-classic GraphQL deprecation, `--json` works) shows `want = ((X[:, None, :] - C[None, :, :]) ** 2).sum(-1)  # transform returns squared distances`, and GraphQL `userContentEdits` / `lastEditedAt` are empty: the body was never edited, so it was filed with the squared comparison. The `np.sqrt` version is the pre-filing draft recorded in "KMeans multi-GPU reproducers 2026-11-12", which printed `max|got-want|=0.25` at n_gpus=1; that note's advice to drop the sqrt was applied before filing.
+- Run exactly as posted (2 runs, rc 0, 1 visible GPU):
+  ```
+  n_gpus=1 max|got-want|=8.88e-16 argmin agreement=1.000
+  n_gpus=2 max|got-want|=9.44e-16 argmin agreement=1.000
+  ```
+  (run 2: 1.05e-15 / 1.11e-15). n_gpus=1 matches to about 1e-15, as the issue says. The n_gpus=2 line ran on one GPU (clamped), so it does not show the bug here; the issue's 2-GPU figures (1.22, 42%) come from the 2-GPU run at `d0b78f3d` recorded on 2026-11-12, not re-run.
+- **transform returns squared Euclidean distances.** `calculate_distances` (`src/gpu/kmeans/kmeans_labels.cu:116-`, float at 184) forms `||x||^2 + ||y||^2 - 2 x.y` (make_all_dots, then gemm with alpha -2, beta 1) with no sqrt; `kmeans_transform` (`kmeans_h2o4gpu.cu:896-955`) copies `d_pairwise_distances` straight into the result; `KMeansH2O.transform` (`kmeans.py:389-422`) only reshapes. Same-data check: `max|got - d2|` 9.99e-16, `max|got - sqrt(d2)|` 0.25. (Its docstring says "distance", and sklearn's `transform` returns unsquared distances; an upstream API difference, outside this port.)
+
+### Issue #901 reproducer
+Run exactly as posted (2 runs, rc 0, 1 visible GPU):
+```
+n_gpus=1 predict last row on C[1]: 1, on C[2]: 2
+n_gpus=2 predict last row on C[1]: 1, on C[2]: 2
+```
+n_gpus=1 matches the issue. n_gpus=2 is a clamped 1-GPU run, so it shows the correct answer instead of the issue's `0, 0`; the bug needs 2 visible GPUs (recorded 2026-11-12 at `d0b78f3d`).
+
+### Summary for the squash
+- Commit A: runs and passes; its 2-GPU assertion is vacuous, its quoted magnitudes do not match its own script, its "previously 100000" refers to a commit outside the squash, and its recipe lacks the googletest submodule line. Replace the script with the corrected one above, quote 7e-7..1e-6 / 1.3e-15..1.7e-15 (or rerun on the final head and quote that), and run it once on a 2-GPU pin before approval.
+- Commit B: both scripts run and report what the message claims (478 / 669 without the flag, 0 with it; r2 gaps <= 1.6e-12). The counter is correct for gfx11 and gfx12 asm. Only the "336 vs 116" wording on gfx90a needs a clause.
+- #900 and #901: n_gpus=1 halves reproduce the issue text exactly; 2-GPU halves not reproducible on this 1-GPU pin.
