@@ -1094,6 +1094,40 @@ def _gh_json(*args):
         return None
 
 
+def _parse_json_pages(text):
+    """The items of every page `gh api --paginate` printed, or None if any of it is
+    not a JSON array. gh prints one array per page back to back (`[...][...]`), and
+    newer versions can merge them; decoding value by value reads both."""
+    dec, out, i, n = json.JSONDecoder(), [], 0, len(text)
+    while True:
+        while i < n and text[i].isspace():
+            i += 1
+        if i >= n:
+            return out
+        try:
+            page, i = dec.raw_decode(text, i)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(page, list):
+            return None
+        out.extend(page)
+
+
+def _gh_json_pages(path):
+    """Every item of a paginated REST list, or None if the call fails.
+
+    GitHub returns 30 items per page by default. A decision is the LATEST event per
+    author, so reading only the first page honours an early approval and never sees
+    the objection that came after it on a long review PR."""
+    sep = "&" if "?" in path else "?"
+    r = subprocess.run(["gh", "api", "--paginate", f"{path}{sep}per_page=100"],
+                       capture_output=True, text=True, encoding="utf-8",
+                       errors="replace")
+    if r.returncode != 0:
+        return None
+    return _parse_json_pages(r.stdout)
+
+
 def _pr_ref(url):
     """(owner/repo, number) from a PR URL."""
     m = re.search(r"github\.com/([^/]+/[^/]+)/pull/(\d+)", url or "")
@@ -1114,7 +1148,7 @@ def fetch_review_pr(url):
     slug, num = _pr_ref(pr.get("url") or url)
     if not slug:
         return None
-    raw = _gh_json("api", f"repos/{slug}/pulls/{num}/reviews")
+    raw = _gh_json_pages(f"repos/{slug}/pulls/{num}/reviews")
     if raw is None:
         return None
     pr["review_list"] = [{"login": (r.get("user") or {}).get("login"),
@@ -1126,7 +1160,11 @@ def fetch_review_pr(url):
                           "id": r.get("id")} for r in raw]
     # Ordinary conversation comments count too, so the approver can just type in the
     # box GitHub puts in front of them. See _approving_review for what that costs.
-    raw_c = _gh_json("api", f"repos/{slug}/issues/{num}/comments") or []
+    # A comments fetch that failed is not a PR with no comments: the objection this
+    # gate exists to honour may be in the page that did not arrive.
+    raw_c = _gh_json_pages(f"repos/{slug}/issues/{num}/comments")
+    if raw_c is None:
+        return None
     pr["comment_list"] = [{"login": (c.get("user") or {}).get("login"),
                            "state": "ISSUE_COMMENT",
                            "at": c.get("created_at"),
@@ -1228,8 +1266,48 @@ def _command_of(review):
 
 
 def _is_approval_comment(review):
+    # A DISMISSED review keeps its body, so one that said `/moat approve` would
+    # otherwise go on approving after somebody dismissed it.
     return (review.get("assoc") in APPROVE_ASSOC
+            and review.get("state") != "DISMISSED"
             and _command_of(review) == "approve")
+
+
+def review_pr_binding_problems(obj, pr):
+    """Why this fetched review PR is not a review of this project's validated port.
+
+    An approval says "publish what this page shows". The gates say "the recorded
+    head_sha passed". Nothing else ties the two together, so they are compared here:
+    the PR must be on this project's fork, from its port branch into its mirror
+    branch, with the branch tip equal to the commit the gates were satisfied at.
+    Without this, another project's approved review PR authorises this one, and a
+    commit pushed without `advance-head` ships under gates that never saw it."""
+    probs = []
+    fork = (obj.get("fork_url") or "").split("github.com/", 1)[-1].strip("/")
+    fork = fork.removesuffix(".git")
+    slug = pr.get("slug") or ""
+    if not fork:
+        probs.append("the record has no fork_url to check the review PR against")
+    elif slug.lower() != fork.lower():
+        probs.append(f"the review PR is on {slug or '?'}, not this project's fork "
+                     f"{fork}")
+    want_head = obj.get("fork_branch") or PORT_BRANCH
+    if pr.get("headRefName") != want_head:
+        probs.append(f"the review PR's head branch is {pr.get('headRefName') or '?'}, "
+                     f"not the port branch {want_head}")
+    want_base = obj.get("fork_default_branch") or "main"
+    if pr.get("baseRefName") != want_base:
+        probs.append(f"the review PR's base branch is {pr.get('baseRefName') or '?'}, "
+                     f"not the upstream mirror {want_base}")
+    tip, head = pr.get("headRefOid"), obj.get("head_sha")
+    if not tip or not head:
+        probs.append("cannot compare the review PR's tip with the recorded head_sha "
+                     "(one of them is missing)")
+    elif not same_commit(tip, head):
+        probs.append(f"the review PR's tip {tip[:12]} is not the recorded head_sha "
+                     f"{head[:12]} -- the gates were satisfied at a different commit; "
+                     f"record the push with advance-head and revalidate")
+    return probs
 
 
 def _decision_events(pr):
@@ -4306,13 +4384,65 @@ def github_repo_id(full_name):
         return None
 
 
-def load_dispositions():
-    if DISPOSITIONS.exists():
+_TRUNK_FRESH = []      # one-element cache: did this process fetch origin/main?
+_HEAD_HAS_TRUNK = []   # one-element cache: does HEAD contain origin/main?
+
+
+def refresh_trunk_data():
+    """Fetch origin/main once per process. True when it is current as of now.
+
+    The opt-out and disposition registries are trunk files, and a request to stop
+    reaches the trunk from whichever session recorded it. A caller about to write
+    upstream must refuse when this returns False: it cannot show that the request it
+    would be ignoring does not exist."""
+    if not _TRUNK_FRESH:
         try:
-            return json.loads(DISPOSITIONS.read_text())
-        except json.JSONDecodeError:
+            ok = subprocess.run(["git", "fetch", "-q", "origin", "main"],
+                                cwd=str(REPO_ROOT), capture_output=True,
+                                timeout=60).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            ok = False
+        _TRUNK_FRESH.append(ok)
+    return _TRUNK_FRESH[0]
+
+
+def _shared_data(path):
+    """Parsed contents of a trunk-owned registry under data/.
+
+    A port branch may not change data/ and a trunk merge is not triggered by it
+    (PORT_INERT), so the copy in a port-branch checkout is whatever the trunk held
+    the last time the branch happened to merge -- possibly from before a maintainer
+    asked us to stop. So the trunk's copy is read whenever HEAD does not already
+    contain the trunk; a checkout on or ahead of the trunk reads its own file,
+    which is where a new entry is written before it is pushed.
+
+    Malformed JSON raises. Reading it as empty turned a conflict-marked file into
+    "nobody opted out and nothing was declined", and the next write then replaced
+    the whole registry with one entry."""
+    if not _HEAD_HAS_TRUNK:
+        _HEAD_HAS_TRUNK.append(subprocess.run(
+            ["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"],
+            cwd=str(REPO_ROOT), capture_output=True).returncode == 0)
+    text = src = None
+    if not _HEAD_HAS_TRUNK[0]:
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        r = subprocess.run(["git", "show", f"origin/main:{rel}"], cwd=str(REPO_ROOT),
+                           capture_output=True)
+        if r.returncode == 0:
+            text, src = r.stdout.decode("utf-8"), f"origin/main:{rel}"
+    if text is None:
+        if not path.exists():
             return {}
-    return {}
+        text, src = path.read_text(encoding="utf-8"), str(path)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"{src} is not valid JSON ({e}); repair it before anything "
+                         f"reads it as empty") from e
+
+
+def load_dispositions():
+    return _shared_data(DISPOSITIONS)
 
 
 def save_dispositions(d):
@@ -4385,12 +4515,7 @@ OPTOUTS = REPO_ROOT / "data" / "optout.json"
 
 
 def load_optouts():
-    if OPTOUTS.exists():
-        try:
-            return json.loads(OPTOUTS.read_text())
-        except json.JSONDecodeError:
-            return {}
-    return {}
+    return _shared_data(OPTOUTS)
 
 
 def save_optouts(d):
@@ -5151,6 +5276,7 @@ def pr_ready(name):
     # binds work already finished, not just work not yet started. `optout.py record`
     # also writes a disposition, which the next block would catch; this does not rely
     # on that having happened.
+    refresh_trunk_data()      # best effort here; the publishing paths require it
     opt = optout_for(upstream_full_name(name) or "")
     if opt:
         return (False, [("opted-out",
@@ -5331,6 +5457,7 @@ def fix_ready(name):
     obj, _where = project_record(name)
     if obj is None:
         raise FileNotFoundError(str(status_path(name)))
+    refresh_trunk_data()      # best effort here; the publishing paths require it
     opt = optout_for(upstream_full_name(name) or "")
     if opt:
         return (False, [("opted-out",
