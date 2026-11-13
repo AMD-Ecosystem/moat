@@ -21,6 +21,14 @@ extends.
   port plan" or "your porting notes" instead of naming our files.
 - A lesson about MOAT's pipeline, records, tools or hosts: this skill.
 
+Both skills are trunk files, one organized copy each, and a port branch may not edit them
+(the pre-push `branch-scope` gate). Write the lesson in the project's `notes.md` under
+`## Lesson for cuda-to-rocm: <title>` or `## Lesson for moat-porting: <title>`, with the
+reference file it belongs in. The reviewer reads it with the port. After review, a trunk
+session promotes it: it puts the lesson where its reader would look, merges it with what
+is already there instead of appending, and adds `Promoted to <file> in <sha>.` under the
+heading. `python3 utils/moatlib.py lessons` lists lessons awaiting promotion.
+
 `python3 utils/check.py skills` enforces the boundary: it fails on MOAT vocabulary inside
 `.claude/skills/cuda-to-rocm/`.
 
@@ -133,6 +141,33 @@ local `main`, and `scan_commits`/`scan_diff` (unlike `port_range`'s range-count 
 report zero hits on an unresolvable range instead of erroring. Fetch first
 (`git fetch --depth 50 origin main:main`) and confirm the range resolves to a nonzero commit
 count before trusting "clean". (mahout)
+
+The opposite false alarm happens after an upstream sync: the scan's base is the clone's
+local default branch, and if that branch still points at the old mirror tip, every
+upstream commit the merge brought in is scanned as if it were the port's, and upstream's
+own wording ("Strategy B", "revalidate", "COLMAP model") is reported. Fast-forward the local
+default branch to the fetched upstream (`git branch -f master origin/master`) before
+scanning. (LichtFeld-Studio)
+
+### A rate-limited host can still get a usable fork clone: filter the blobs, sparse the tree
+
+Some hosts have GitHub blob traffic throttled hard enough that a full clone of a large repo is not survivable inside a stop-discipline budget (measured at roughly 1-3 MB/min for a ~110 MB repo, so more than half an hour before anything is readable). A lazy promisor checkout of the whole tree is no better -- it re-fetches per file and stalls part way through. But history and trees are cheap: a blob-filtered clone with the working tree narrowed to the files you actually need is seconds, not minutes.
+
+```
+git clone --filter=blob:none --no-checkout --branch <port-branch> <fork> <dest>
+git -C <dest> sparse-checkout init --no-cone
+git -C <dest> sparse-checkout set '/docs/*.md' '/*.md'    # the paths this round edits
+git -C <dest> checkout <port-branch>
+git -C <dest> branch master origin/master                 # or the fork's default branch
+```
+
+Why each line matters:
+
+- `--filter=blob:none` fetches every commit and tree but no file contents, so the diff, log, and `git ls-tree` all work immediately. `git show <ref>:<path>` then pulls single blobs on demand -- enough to read a handful of build files without ever checking them out.
+- Files outside the sparse set carry `skip-worktree`, so `git status --porcelain` stays clean and the integrity gate reads correctly rather than reporting the rest of the tree as deleted.
+- The last line is not optional for MOAT tooling: `jargon.py --port` resolves `<default>..<port-branch>` and fails with "cannot resolve" on a clone that has only the remote-tracking ref.
+
+This is a docs, diff, and review checkout, not a build checkout -- a compile needs the whole tree and there is no way around paying for it. Use it for a documentation-only porter round, a reviewer reading a delta, or a validator verifying that a delta is confined to another platform's guards. (LichtFeld-Studio)
 
 ## Fleet hosts
 

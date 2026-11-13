@@ -26,10 +26,12 @@ would hand everything back anyway -- and the round trip costs more than doing it
     python3 utils/upstream.py --fix-review       # staged fix rounds with no review PR open
     python3 utils/upstream.py --merge-fix        # approved fix rounds ready to fast-forward
     python3 utils/upstream.py --drift            # maintained forks vs upstream's advance
+    python3 utils/upstream.py --finish-release   # approved release lines ready to tag (section 3)
     python3 utils/upstream.py --approvals        # approvals overtaken by a push or a body edit
     python3 utils/upstream.py --dry-run          # where our record disagrees with GitHub (incl. a moved PR head)
     python3 utils/moatlib.py waivers             # gate waivers waiting on a maintainer
     python3 utils/deferred.py pending            # deferrals nobody has ruled on
+    python3 utils/moatlib.py lessons             # reviewed lessons waiting to reach a skill (section 8)
 
 The opt-out listing is section 0 and comes before everything else: a maintainer who
 asked us to stop is the one item here where continuing to work is worse than doing
@@ -88,7 +90,7 @@ lists ports with a standing objection as OBJECTED.
 Your job is to snapshot what they approved:
 
     python3 utils/upstream.py --publish            # what is approved and ready
-    python3 utils/upstream.py --publish --apply    # open it, close the review PR
+    python3 utils/upstream.py --publish --apply --name <p>  # open it, close the review PR
 
 That second command is the whole submission: it re-checks the approval, the gates, the
 licence, the fork's cleanliness (only where this host has the fork clone -- a host
@@ -365,6 +367,50 @@ if upstream is unarchived.
 Upstream merging the port for real someday is the happy ending: a person records
 `set-pr-merged` and clears the ruling with `set-maintained <name> --clear --by <who>`.
 
+### Release lines
+
+When upstream will never take AMD support (NVIDIA's Warp and cuCIM), the deliverable is
+one fork branch per upstream release, each its own MOAT project (`warp-1.14`, scaffolded
+with `--name` against `NVIDIA/warp`, depending on the previous line). A person makes
+three rulings -- `set-fork-branch <name> release/1.14.0.amd0`, `set-delivery <name>
+fork-release [--tag-format ...]`, and usually `set-fork-url` -- and `mirror-branch
+<name>` then creates the pristine copy of upstream's release branch (the recorded
+`fork_default_branch`, which only ever fast-forwards to upstream's SHAs) and the port
+branch as an exact copy of it. Never push to the pristine branch by hand: it is the
+review base, and the fork clone's hook refuses it.
+
+The review PR is the usual one (`upstream.py --review`, port branch into the pristine
+branch, same gates and approval rules) but it is never merged and carries no submission
+note. `pr-candidates` lists a ready line as `RELEASE-READY`; `--publish` skips release
+lines. After `/moat approve`:
+
+    python3 utils/upstream.py --finish-release            # READY / HELD / WAITING per line
+    python3 utils/upstream.py --finish-release --apply    # tag, record, close unmerged
+
+`--finish-release --apply` is pre-authorized on the `--publish` contract: it re-reads the
+approval and every gate, checks the review PR still runs port branch -> pristine base at
+the recorded `head_sha`, that the base is still upstream's own history (a merged review
+PR fails this), and that the tag is free; then it tags the approved commit, records
+`release`, closes the review PR unmerged and refreshes the clone's hook. If the record
+write fails after the tag, the review PR stays open and a rerun finishes the job (the
+tag push is idempotent at the same commit); if only the close failed, the line is
+listed as `RESUME` and a rerun does just the closing steps. Tags are annotated with
+the approver and the review PR. A delivered line is frozen like a maintained fork
+(`pr-state` says `delivered`; the hook also refuses moving or deleting a tag),
+`misplaced` treats it as finished, and `--drift` watches upstream's release branch for
+patch releases, which arrive as `sync-branch` rounds through `--fix-review` and
+`--merge-fix` like any sync. The merge tags the new tip as a release (`v1.14.1+rocm.0`
+from upstream's newest absorbed version tag, or the next `+rocm.<rev>` when there is
+none) and records it; a sync review PR may not carry `## Upstream reply`, since there
+is no upstream PR to post it on.
+
+Rollout: release-line records are `schema_version` 4, which tooling from before this
+feature refuses to load. A host must `branch-sync` and re-run `orient.sh` (which
+re-runs `protect-fork`, replacing v3 fork hooks that would let a push to a delivered
+branch through) before it touches a release line. Publishing
+the line's wheels as a GitHub release is a separate act that needs the person's
+approval of the exact content.
+
 ## 4. Keeping the record straight
 
 A protected trunk creates a bookkeeping gap: once a project's PR has merged into the
@@ -462,6 +508,22 @@ there and pushed, and `decide` prints which branch it landed on. Working the who
 from wherever you happen to be is the intended use. The one refusal is a trunk-resident
 project while you are on a port branch: `main` is protected, so that ruling has to
 arrive by pull request like any other trunk change.
+
+## 8. Lessons waiting to be promoted
+
+    python3 utils/moatlib.py lessons
+
+A port writes a lesson in its notes under `## Lesson for cuda-to-rocm: <title>` (or
+`moat-porting`), because its branch may not edit a skill. Promote one once the port's
+review has read it: on `main`, put it in the reference its reader would open, merged into
+the existing text so the skill stays one organized document, written MOAT-free for
+`cuda-to-rocm` (`check.py skills` enforces it), naming the source project. Then add
+`Promoted to <file> in <sha>.` under the heading in the project's notes. A lesson the
+review found wrong is not promoted; note why under the heading instead.
+
+`ORPHANED` rows are older: skill or tooling edits made on a port branch before branches
+were limited to their own folder, on a port that is now finished. Read each diff and land
+what is still true when the branch merges to `main`.
 
 ## Stop and ask
 
