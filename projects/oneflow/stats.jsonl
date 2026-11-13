@@ -645,3 +645,6 @@
 {"kind":"phase","ts":"2026-11-13T17:03:58Z","phase":"compile","seconds":835.284,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261113-084609-oneflow-idshuffle-rate-942/moat/agent_space/build.sh head 56"}
 {"kind":"phase","ts":"2026-11-13T17:04:01Z","phase":"compile","seconds":838.034,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261113-084609-oneflow-idshuffle-rate-942/moat/agent_space/build.sh old 56"}
 {"kind":"phase","ts":"2026-11-13T17:09:27Z","phase":"compile","seconds":209.843,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261113-084609-oneflow-idshuffle-rate-942/moat/agent_space/build_old.sh 112"}
+{"kind":"phase","ts":"2026-11-13T17:01:26Z","phase":"compile","seconds":646.912,"exit":0,"cmd":"bash agent_space/build.sh all"}
+{"kind":"phase","ts":"2026-11-13T17:34:08Z","phase":"test","seconds":1465.087,"exit":0,"cmd":"bash -c bash agent_space/loopv.sh 0 1 150 /var/lib/jenkins/fleet/jobs/mi200-20261113-084659-oneflow-idshuffle-rate-90a/moat/agent_space/j/B/g0 & bash agent_space/loopv.sh 1 151 300 /var/lib/jenkins/fleet/jobs/mi200-20261113-084659-oneflow-idshuffle-rate-90a/moat/agent_space/j/B/g1 & wait"}
+{"kind":"phase","ts":"2026-11-13T19:20:29Z","phase":"test","seconds":2372.310,"exit":0,"cmd":"bash -c bash agent_space/gpu0.sh & bash agent_space/gpu1.sh & wait"}
