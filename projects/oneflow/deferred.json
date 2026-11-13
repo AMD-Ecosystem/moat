@@ -1,0 +1,223 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "oneflow-libcuxx-lru-cache",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "lru_cache.cu (cuda::std::semaphore, no ROCm libcu++) not ported.",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T18:21:59Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T18:11:34Z"
+      }
+    },
+    {
+      "id": "therock-libllvm-symbol-interposition",
+      "kind": "rocm-bug-report",
+      "component": "llvm (rocm-sdk wheel libLLVM.so)",
+      "summary": "ROCm 10.1.0 rocm-sdk wheels: libamdhip64, libamd_comgr, hipblas, rocblas, rccl and others link the shared libLLVM.so.24.0git, which is built without -Bsymbolic-functions (readelf -d shows only FLAGS_1 NODELETE). A process that already loaded another LLVM (oneflow ships its own libLLVMSupport.so.17git as a NEEDED of liboneflow.so) gets its LLVM 24 static initializers bound to the LLVM 17 copies: import oneflow aborts with realloc(): invalid pointer in llvm::SmallVectorBase<unsigned long>::grow_pod called from libLLVM.so.24 __static_initialization_and_destruction_0. /opt/rocm 7.2.1 did not hit this (comgr there links LLVM statically). Workaround: LD_PRELOAD the SDK libLLVM.so.24.0git; a project-side fix is linking its own LLVM statically or with hidden visibility.",
+      "refs": [
+        "projects/oneflow/notes.md",
+        "projects/oneflow/notes.md#porter-round-2026-11-12"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-30T02:42:27Z",
+      "decided": null
+    },
+    {
+      "id": "hip-rdna-occupancy-ignores-workgroup-lds-limit",
+      "kind": "rocm-bug-report",
+      "component": "clr (HIP runtime: hipOccupancyMaxActiveBlocksPerMultiprocessor, kernel launch validation)",
+      "summary": "ROCm 10.1.0 (rocm-sdk wheels), gfx1100 W7800: hipOccupancyMaxActiveBlocksPerMultiprocessor returns 1 for dynamic shared memory between the 64 KiB per-workgroup limit and the 128 KiB per-WGP LDS (MaxSharedMemoryPerMultiprocessor=131072), where CUDA returns 0 for a block that cannot launch. Separately, the launch check compares dynamic shared memory alone against 65536: a kernel with 8 B static LDS launched with 65536 B dynamic is accepted (hipGetLastError success) and the queue then aborts with HSA_STATUS_ERROR_INVALID_ALLOCATION, killing the process, instead of failing with hipErrorInvalidValue as 65544 B does. hipFuncSetAttribute(MaxDynamicSharedMemorySize, 64504) succeeds and is not enforced. 20-line reproducer recipe in projects/oneflow/notes.md (Validation 2026-10-30, fd94e199a). Port-side workaround: check smem + static <= MaxSharedMemoryPerBlock before choosing a shared-memory kernel.",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-30T05:24:14Z",
+      "decided": null
+    },
+    {
+      "id": "oneflow-upstream-channels-last-native-pooling",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream oneflow defect, every device and build (CPU too): the native channels_last pooling kernels compute wrong values. Maxpool2dBackwardComputeCLast (oneflow/user/kernels/max_pool_kernel_util.h) indexes dy and indices as src_start + h*src_width + w, ignoring the channel, so max_pool_2d(data_format='channels_last') gradients land on the wrong elements (CPU float32 1x6x6x2 k3: max |dx - torch| 11.3; GPU dilated cases 288/288 wrong in every dtype); avg_pool_2d channels_last forward reads garbage on CPU (7.5e33) and is wrong on GPU float64. A CUDA build reaches these kernels for channels_last max pooling with dilation != 1 or return_indices, and for CPU tensors. Not fixed in the port (not a ROCm issue); the HIP double channels_last route deliberately avoids them by pooling an NCHW view. Evidence: agent_space/pool_one.py and pool_nhwc.py recipes in projects/oneflow/notes.md (porter round 2026-10-31).",
+      "refs": [
+        "projects/oneflow/notes.md",
+        "projects/oneflow/notes.md: Porter round 2026-11-03 (linux-gfx1100 ... upstream defects on the port branch)"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T07:04:15Z",
+      "decided": null
+    },
+    {
+      "id": "oneflow-fused-sparse-dot-interaction-hip",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "ONEFLOW_ONE_EMBEDDING_FUSE_EMBEDDING_INTERACTION=1 rewrites embedding_shuffle -> fused_dot_feature_interaction(_grad) to take sparse_feature/sparse_indices inputs; only the wmma tensor-core kernels implement that input, and they are compiled out on HIP, so the fused op aborts with 'sparse_feature is not supported' (the same CHECK a CUDA GPU below sm_70 would hit for float16). That pass is the only thing that sets skip_last_gather/skip_first_scatter, so the P2P embedding shuffle kernels (ported and validated directly in the 2026-10-31 round) are unreachable from a real model on ROCm until a non-wmma (or rocWMMA, wave64-aware) sparse-feature dot-interaction kernel exists. Default (fuse off) is unaffected.",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T07:04:16Z",
+      "decided": null
+    },
+    {
+      "id": "oneflow-float64-conv-hip",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "float64 convolution aborts on ROCm: MIOpen 3.6.1 has no FP64 convolution solver (Find logs 'Unsupported data types configuration: FP64xFP64xFP64' and fails compiling MIOpenIm2d2Col.cpp), so conv/deconv in float64 abort in CudnnConvAlgorithmSearch::HeuristicSearch on any AMD GPU, where cuDNN runs them on CUDA. Fix: a non-MIOpen double path in the HIP build (im2col + hipBLAS GEMM, as oneflow's CPU conv kernels do) for forward, data grad and filter grad. Found in the 2026-10-31 porter round answering the 0b04c09af review; not started.",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T10:58:10Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-10-31T22:54:00Z",
+        "note": "Ruled 'do it now' in the 2026-10-31 gfx942 porter dispatch; implemented in fork a12ca99e7."
+      }
+    },
+    {
+      "id": "hipblaslt-gfx1100-f64-null-algo",
+      "kind": "rocm-bug-report",
+      "component": "hipBLASLt",
+      "summary": "ROCm 10.1.0 SDK, gfx1100 (W7800): hipblasLtMatmul with algo == nullptr returns HIPBLAS_STATUS_INTERNAL_ERROR (6) for every f64 GEMM (COMPUTE_64F, R_64F; 4 shapes from 32x8x16 to 1024^3, TN), while hipblasLtMatmulAlgoGetHeuristic on the same descriptor returns an algo that computes the right result. f32 with a null algo works. Reproducer: agent_space/probe/lt64mm.cpp in the 2026-10-31 gfx1100 validation (notes.md). oneflow's cuBLASLt shim needs a workaround (query the heuristic when algo is null) regardless.",
+      "refs": [
+        "projects/oneflow/notes.md#validation-2026-10-31-linux-gfx1100"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T17:30:43Z",
+      "decided": null
+    },
+    {
+      "id": "rocblas-gemm-ex-longk-16bit-chunk-rounding",
+      "kind": "rocm-bug-report",
+      "component": "rocBLAS",
+      "summary": "rocBLAS 5.7 (ROCm 10.1) gemm_ex with float16/bfloat16 A/B/C/D and compute_type f32 splits k into chunks of floor((2^30-1)/ld) once ld*k of an operand reaches 2^30 and accumulates each chunk into the 16-bit D with beta=1, so D is rounded ~k/1023 times: at k=2^20 on MI300X the error is 25-50x a single rounding (fp16 7e-3, bf16 5e-2 relative; hipBLASLt 2.8e-4 / 2.5e-3), and the 1025 chunk launches take ~8 ms vs 45 us on hipBLASLt. The guard also fires for small operands (ld*k is not the footprint for a non-transposed B). The split is invisible to ROCBLAS_LAYER. Standalone reproducer in the plan oneflow-gfx942-longk-half-matmul (Results). oneflow works around it on HIP (fork d81b70795, hipBLASLt for these GEMMs). Filing, account and whether to check gfx90a first are for jeff.",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T23:04:59Z",
+      "decided": null
+    },
+    {
+      "id": "oneflow-gfx942-id-shuffle-p2p-intermittent-hang",
+      "kind": "other",
+      "component": null,
+      "summary": "gfx942 (MI300X, 2 GPUs over xGMI), fork a12ca99e7: the fused embedding-interaction training harness hangs intermittently (both GPUs 100% GFX, device spin) when ONEFLOW_ONE_EMBEDDING_ID_SHUFFLE_USE_P2P=1 is on with the embedding/gradient P2P shuffles: 3/20 untraced + 1/3 in the round runs + 1/10 traced, at random steps (2, 28, 40, 41 of 50). With id_shuffle P2P off and embedding+gradient P2P on: 0/20 plus 0/6. Traced hang: both ranks' last launches are BarrierAndComputeOut (id_shuffle P2P, e256dab86) then BarrierKernel and EmbeddingShuffleCopyKernel (embedding P2P); the spinning kernel is not identified (ptrace blocked on the host). id_shuffle P2P is upstream's opt-in knob and was never run on gfx942 before. Next: the id-shuffle-only result in notes, then a per-kernel device-side timeout/printf in the two barriers.",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T23:05:00Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-01T04:15:47Z",
+        "note": "Ruled 'fix it, not deferred' in the 2026-11-01 gfx942 porter dispatch; fixed in fork 42d68145d."
+      }
+    },
+    {
+      "id": "hipblaslt-gfx1100-longk-half-accuracy",
+      "kind": "rocm-bug-report",
+      "component": "hipBLASLt",
+      "summary": "On gfx1100 (W7800, ROCm 10.1.0) hipBLASLt's heuristic kernel for fp16 GEMMs with COMPUTE_32F and long k (Cijk_Alik_Bljk_HHS_BH_..._MT32x32x128_MI16x16x1_ISA1100) loses accuracy as k grows: (2 x 2^20)(16 x 2^20)^T is 7.1 ulp of fp16 (0.82 ulp at k = 2^16, 3.2 at 2^18), and 1 x 2^20 x 64 is 4.0e-3 relative vs 2.8e-4 for a float-accumulated GEMM. torch on the same GPU gives bit-identical errors. It fails oneflow's test_matmul_long_k on gfx1100. Related cost on the same GPU: an fp16 GEMM with a float D is 8-9x slower than with an fp16 D (lt_floatd.cpp, A^T B, COMPUTE_32F, heuristic top-1, 4 MiB workspace: 4096 x 40000 x 4096 16.2 vs 138.8 ms, 1024 x 65536 x 1024 1.85 vs 14.7 ms; the float-D choice is Cijk_Alik_Bljk_HSS_..._MT32x32x64 against HHS MT256x128x32), and 23-28x through torch (torch.mm out_dtype=float32, 4096 x 20000 x 4096: 367 vs 15.9 ms), so a float-D workaround for the drift is not cheap on gfx1100.",
+      "refs": [
+        "projects/oneflow/notes.md: Validation 2026-11-01 (linux-gfx1100 ... d9e41753e)",
+        "projects/oneflow/notes.md: Porter round 2026-11-01 (linux-gfx1100 ... 4423a5fd9 -> b269f0d80), lt_floatd.cpp",
+        "https://github.com/ROCm/rocm-libraries/issues/14993"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-libraries/issues/14993",
+      "created_at": "2026-11-01T14:48:16Z",
+      "decided": null
+    },
+    {
+      "id": "hipblaslt-gfx1201-mt16x16x192-longk-wrong",
+      "kind": "rocm-bug-report",
+      "component": "hipBLASLt",
+      "summary": "On gfx1201 (Radeon AI PRO R9700, ROCm 10.1.0 SDK, hipBLASLt 1.4.1 = 100401) the heuristic's first algorithm for 16-bit GEMMs with COMPUTE_32F, transA=T, transB=N and a small output (16x2, 8x3, 16x1), Cijk_Alik_Bljk_{HHS,BBS}_..._MT16x16x192_MI16x16x1_..._ISA1201, is wrong for many k above 2^17: fp16 D(16x2) = A^T B is 39 / 86 / 60 / 70 fp16 ulp at k = 163840 / 200000 / 2^18 / 2^20 (0.5 ulp at 2^16 and 2^17, 0.9 at 196608). Not accumulation drift: deterministic, independent of lda and of GemmTuning::setSplitK (which the kernel accepts and honours with a PostGSU pass), and constant inputs sum exactly, so A and B elements of different k are paired. torch a @ b.t() on the same GPU hits the same kernel (64 / 86 / 59 / 64 ulp). Standalone C++ and torch reproducers in projects/oneflow/notes.md (Porter round 2026-11-01, linux-gfx1201, 4423a5fd9). oneflow works around it by never giving hipBLASLt a long-k GEMM on gfx11/gfx12.",
+      "refs": [
+        "projects/oneflow/notes.md: Porter round 2026-11-01 (linux-gfx1201 ... ee180b9d5 -> 4423a5fd9)",
+        "https://github.com/ROCm/rocm-libraries/pull/11961"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-01T17:32:08Z",
+      "decided": null
+    },
+    {
+      "id": "oneflow-cg-first-graph-replay-fault",
+      "kind": "other",
+      "component": null,
+      "summary": "Wrong results, and in some runs a later illegal memory access 700, in oneflow's two-GPU nn.Graph checks on gfx1100 (ROCm 10.1 SDK, HIP 7.16.26385): cg_ws3.py / o2.py, first-captured 17x1023x513 graph on its first replays. The nn.Graph outputs are correct; torch's float64 reference on cuda:0 is the side that goes wrong. Timing-dependent and build-dependent: two builds of the same source give 8/8 vs 0/8 (o2.py) and 4/4 vs 0/4 (cg_ws3.py, 2026-11-03). Needs two active GPUs in one process; does not depend on graph capture, the long-k code, stream-ordered allocation, CU-mask queues or the SDMA engines (HSA_ENABLE_SDMA=0 moves the rate in either direction depending on the build, and the 700 occurs with it in a blit-kernel copy). An audit of oneflow's cross-device and host-memory synchronization on the HIP path found no ordering bug and nothing the port changed (2026-11-03). Interleaved on the faulting build: torch's reference uploaded from pinned host memory 0 of 4 against 4 of 4 at the default (p = 0.029), HIP_HOST_COHERENT=1 4 of 4; the 10.3.0a20261027 nightly libamdhip64 + libhsa-runtime64 preloaded: 0 of 13. Points at the 10.1 runtime's pageable host-to-device staging under two-device load, but not proven: no reproducer without oneflow (C++ stress programs and a torch-only workload were clean) and no single runtime commit identified. Not applied in the port: nothing on oneflow's side to fix. Next: a reproducer without oneflow (pageable H2D on device 0 while device 1 runs the captured-graph workload), or bisect clr between rocm-systems 7da43026e4 (therock-10.1) and 7607523411 (the nightly). Nothing filed.",
+      "refs": [
+        "projects/oneflow/notes.md: Porter round 2026-11-02 (linux-gfx1100 ... root-cause the intermittent first-graph replay fault)",
+        "projects/oneflow/notes.md: Porter round 2026-11-02 (linux-gfx1100 ... continue the root-cause of the first-graph replay fault)",
+        "projects/oneflow/notes.md: Porter round 2026-11-02 (linux-gfx1100 ... shrink the forward-order repro and find which component owns the first-graph replay fault)",
+        "projects/oneflow/notes.md: Porter round 2026-11-02 (linux-gfx1100 ... find the owner of the first-graph replay fault)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-02T07:36:55Z",
+      "decided": null
+    },
+    {
+      "id": "hip-graphexecupdate-memory-nodes-stale",
+      "kind": "rocm-bug-report",
+      "component": "HIP",
+      "summary": "ROCm 10.1.0 SDK (still present on the 10.3.0a20261103 nightly, gfx942 and gfx1201): hipGraphExecUpdate on an exec whose graph has memory alloc/free nodes (hipMallocAsync + kernels + hipFreeAsync captured, instantiated, replayed correctly, then the identical sequence re-captured) returns hipSuccess with hipGraphExecUpdateSuccess, and the next hipGraphLaunch faults (HSA_STATUS_ERROR_MEMORY_FAULT in the first kernel, at the stale allocation address). oneflow re-captures a kernel whose blobs changed (user_kernel.cpp:699-733) and calls cudaGraphExecUpdate on the existing exec (cuda_stream.cpp:110-128); the port's hip_compat/cudnn.h temporaries (:152, :907, :935) and the long-k stream-ordered tiles are allocated inside captures, so they are exposed. Needs CUDA graphs on (off by default) and a re-capture; not traced to a reachable oneflow scenario. Standalone reproducer: agent_space/g.cpp described in the Review 2026-11-01 (9166f2fb2..9636ca67b) dispatch checks. Possible port-side mitigation if a scenario is found: re-instantiate instead of updating when the graph has memory nodes.",
+      "refs": [
+        "https://github.com/ROCm/rocm-systems/issues/14950",
+        "projects/oneflow/notes.md: Review 2026-11-01 (reviewer, linux-gfx942 ... 9166f2fb2..9636ca67b), dispatch checks"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/14950",
+      "created_at": "2026-11-03T20:31:38Z",
+      "decided": null
+    },
+    {
+      "id": "hipblaslt-create-null-stream-memset-during-capture",
+      "kind": "rocm-bug-report",
+      "component": "hipBLASLt",
+      "summary": "hipblasLtCreate zero-fills its buffers with a synchronous null-stream hipMemset; while any thread captures a blocking stream that fails with hipErrorStreamCaptureImplicit (906) and the process exits with status 1 inside the call (miopenCreate too, via its hipBLASLt handle). cuBLASLt does not. Already tracked upstream as ROCm/rocm-libraries#11838 (no new report). oneflow works around it in 021f4ad34 by serializing handle creation against capture.",
+      "refs": [
+        "projects/oneflow/notes.md#porter-round-2026-11-04"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-libraries/issues/11838",
+      "created_at": "2026-11-04T08:29:54Z",
+      "decided": null
+    },
+    {
+      "id": "oneflow-de15305bb-body-wording",
+      "kind": "other",
+      "component": null,
+      "summary": "At the PR-prep squash, correct the de15305bb ([ROCm] Do not link libunwind in the ROCm build) body: it says glog and the backtrace code both fall back to _Unwind_Backtrace from <unwind.h>. With Unwind disabled, glog 0.5.0 leaves HAVE_UNWIND_H undefined and uses glibc backtrace() from <execinfo.h> (stacktrace_generic-inl.h); only backward-cpp (oneflow/extension/stack/stacktrace.h) uses _Unwind_Backtrace. The code comment was fixed in 8d470dcc1; the pushed body is not rewritten (no amend, no force-push).",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-09T17:44:13Z",
+      "decided": null
+    }
+  ]
+}

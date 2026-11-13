@@ -132,6 +132,17 @@ compat header with `-include`.
   `--offload-arch=<arch>`; `enable_language(HIP)` auto-detects. A pinned arch is the single
   most common reason a port builds on the machine it was written on and nowhere else.
   (TurboFNO, LC-framework)
+- **A build-time wavefront width must refuse a mixed arch list.** When the warp size reaches
+  a kernel template argument it has to be one macro visible to both compile passes (the
+  device-only `__GFX9__` cannot feed the host launch), so it is derived from
+  `CMAKE_HIP_ARCHITECTURES` -- and a list holding a gfx9 and a gfx10/11/12 arch silently
+  gives one family the other's width: wrong reductions, no error. Auto-detect produces such
+  a list on any host with both kinds of GPU. `message(FATAL_ERROR)` on a mixed list rather
+  than picking one. (oneflow)
+- **Take the ROCm include path from `find_package(hip)`, never `/opt/rocm/include`.** For
+  host `.cpp` that need HIP or hipCUB/RCCL headers, use `${hip_INCLUDE_DIRS}` (set by
+  hip-config.cmake) or `hip::host`'s include directories. The ROCm Python SDK wheels put the
+  tree under site-packages with no `/opt/rocm` at all. (oneflow)
 - **When the project drives CMake from its own shell scripts, the toggle belongs there too --
   and the toolchain probe must not hardcode `/opt/rocm`.** A bare `option(USE_HIP ...)` in
   `CMakeLists.txt` is unreachable from the documented build if users are told to run

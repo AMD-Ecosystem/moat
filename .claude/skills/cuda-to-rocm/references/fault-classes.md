@@ -196,6 +196,19 @@ or `BlockRadixSort` lowers to a single-wavefront op with no syncing epilogue; re
 first's reads. CUDA's 32-wide warp split the block in two and masked it. (CV-CUDA:
 OpPairwiseMatcher crossCheck.)
 
+**Warp-tiled dispatch tables written for 32 lanes break when `kWarpSize` becomes 64.**
+Making the warp-size constant arch-correct is not the end of it; audit what is built FROM
+it. Two shapes recur. (1) A square `kWarpSize x kWarpSize` block (one warp of columns times
+one warp of rows) is 1024 threads on CUDA and 4096 on wave64, which fails to launch with
+`invalid configuration argument`; cap it at 1024 and let the row count shrink. (2) A width
+ladder that picks a thread-group width of 4, 8, 16, 32 for narrow rows and then switches to
+"one full warp per row, `min_cols * kWarpSize` columns read unconditionally" rungs: on
+wave64 the first full-warp rung receives rows of 33..63 columns and reads past them, and
+pack-2 rows of 66..128 match no rung at all (`invalid argument`). Add a 64-wide rung
+compiled only when the wavefront is 64. Sweep every width 1..N on wave64; spot widths like
+200 and 1024 pass and hide it. (oneflow: `MatrixColReduceByWarpBlock`, and the LayerNorm
+and RMSNorm warp dispatch in `layer_norm.cuh`/`rms_norm.cuh`.)
+
 **`__smid()` can EXCEED `multiProcessorCount` on AMD.** NVIDIA's `%smid` is dense in
 `[0, multiProcessorCount)`, so host code routinely sizes a per-SM scratch pool to that
 count and indexes it `pool + smid()*POOL_SIZE`. AMD packs `(SE,CU)` sparsely -- gfx9 is
@@ -232,6 +245,61 @@ wave64 archive byte-identical to its old format, and lets a wave32 device use th
 slots. (dietgpu)
 
 ## Memory and lifetime
+
+**Cross-GPU flags in ordinary device memory are never seen by the peer on MI250X.** A barrier
+where each GPU writes a flag into its own buffer and spins on the peer's buffer through an IPC
+mapping (oneflow's P2P embedding shuffle) works on NVIDIA, where the owner's L2 is the point of
+coherence for peer accesses. With `hipMalloc` (coarse-grained) memory the write stays in the
+writer's L2 and the peer's read over xGMI goes to memory, so both GPUs spin forever -- even with
+`__hip_atomic_store`/`__hip_atomic_load` at `__HIP_MEMORY_SCOPE_SYSTEM`. A two-process
+reproducer hangs on the first barrier with `hipMalloc` and runs 20000 barriers with
+`hipExtMallocWithFlags(..., hipDeviceMallocUncached)` or `hipDeviceMallocFinegrained`; IPC
+handles work on both. Allocate any buffer that another GPU polls as uncached or fine-grained.
+(oneflow)
+
+**The DATA a peer reads, not only the flags, needs uncached memory -- and on gfx1100 fine-grained
+is not enough.** Fixing the flags alone left oneflow's P2P shuffle reading stale rows on two
+Radeon W7800 (gfx1100, PCIe): first step right, later steps wrong, run-to-run varying. A
+two-process reproducer (producer kernel writes iteration-dependent data, the system-scope
+barrier, peer kernel reads it over IPC) reads stale data in every element of every iteration
+for `hipMalloc` AND for `hipDeviceMallocFinegrained` buffers that fit in L2, and correctly for
+`hipDeviceMallocUncached`. On gfx11 neither the end of the producing kernel nor a
+`__ATOMIC_RELEASE`/`__HIP_MEMORY_SCOPE_SYSTEM` store writes the producer's L2 back (on gfx90a and
+gfx942 the system release does, which is why the same code passed there). A
+`hipEventRecord` of a `hipEventReleaseToSystem` event before the barrier fixes eager runs but is
+lost under hipGraph capture/replay. Robust fix: the kernel owns an uncached staging buffer,
+shares that over IPC, and copies or gathers the data into it before the barrier. Two traps for
+the regression test: buffers larger than L2 get evicted and pass anyway (oneflow's test needed
+a small batch to fail), and checking only the last iteration of a loop hides it. (oneflow)
+
+**Streams share hardware queues on HIP, so a spinning kernel can block another stream's work and
+deadlock two GPUs.** CUDA streams make progress independently. HIP runs ordinary streams on a pool
+of `GPU_MAX_HW_QUEUES` (default 4) hardware queues per device per priority, and with the pool full
+ROCclr picks the least loaded queue per submission (`AMD_LOG_LEVEL=3` shows `Selected queue
+(mode=1): ... refCount: 2`). A packet that must wait for earlier work in its own stream then waits
+for everything ahead of it in the shared queue, including a spinning kernel from another stream. A
+cross-GPU spin barrier (oneflow's P2P one_embedding shuffles) issued on one stream and an NCCL/RCCL
+collective issued on another, in no fixed order between ranks, deadlocks when the two GPUs queue
+them in opposite orders: random step, 5-30 percent of runs, both GPUs at 100 percent. Diagnose
+without a debugger by giving each spin loop a `wall_clock64()` timeout that `printf`s rank, phase,
+target and seen value (device printf flushes while the kernel still spins): oneflow showed one rank
+in the gradient barrier and the peer in no barrier. `GPU_MAX_HW_QUEUES=32` making the hang go away
+confirms it (oneflow: 6/20 hung at the default, 0/20 at 32). Fix: create the project's streams with
+`hipExtStreamCreateWithCUMask` over all CUs; ROCclr gives a CU-masked stream a hardware queue of
+its own outside the pool (a probe deadlocking 6/6 stream pairs at `GPU_MAX_HW_QUEUES=1` passes 30/30
+with CU-masked streams). Each priority (low, normal, high) has a separate pool of the same size,
+capped by the same `GPU_MAX_HW_QUEUES` (`Device::acquireQueue` in `rocdevice.cpp`), so streams from
+`hipStreamCreateWithPriority` deadlock the same way. The mask counts `multiProcessorCount` units: on
+RDNA in WGP mode that count and the mask bits are WGPs, and ROCclr expands each bit to the WGP's two
+CUs, so `multiProcessorCount` set bits cover every CU on CDNA and RDNA alike. CU-masked queues never
+enter the pool; `hipStreamDestroy` destroys the queue (`Device::releaseQueue`), and each costs
+device memory for its ring buffer (4 MiB on gfx942), so create them per long-lived stream, not per
+operation. Every stream that can carry a cross-GPU spinner or a collective needs this, including
+streams the project creates outside its stream wrapper, or an argument that no spinner can share
+their pool: oneflow leaves its collective-boxing executor and fused-MLP gradient streams on the
+pool, safe only because every spin kernel now runs on a CU-masked stream. A spinning kernel alone
+does not block a later kernel of another stream on the same queue; the later kernel has to wait on
+prior work in its own stream first. (oneflow)
 
 **Out-of-bounds reads.** CUDA often tolerates a read one element past an allocation; AMD
 faults. Kernels reading index +/-1 or +/-width at edges (stencils, neighbour gathers) must
@@ -424,6 +492,53 @@ on Linux gfx950/gfx1201.)
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
+**Creating a hipBLASLt or MIOpen handle while ANY thread captures a graph exits the process.**
+`hipblasLtCreate` zero-fills its buffers with a synchronous `hipMemset` on the null stream. That
+is refused with `hipErrorStreamCaptureImplicit` (906, "operation would make the legacy stream
+depend on a capturing blocking stream") while any blocking stream on the device is capturing:
+in another thread, in thread-local capture mode, and even when the capturing stream was created
+non-blocking. The process then exits with status 1 inside the call, so there is no status to
+check. `miopenCreate`
+creates a hipBLASLt handle and fails the same way, and so do `hipblasCreate` and
+`hipsolverDnCreate` whenever rocBLAS uses hipBLASLt (`ROCBLAS_USE_HIPBLASLT=1`, or by default on
+GPUs where rocBLAS routes GEMMs to it): rocBLAS creates its hipBLASLt handle eagerly at handle
+creation, not at the first GEMM. Test with that variable set even where it is off by default, or
+the rocBLAS and hipSOLVER creation sites look safe. `hipblasLtDestroy` and `hipFree` were fine
+(ROCm 10.1, hipBLASLt 1.4.1, MIOpen 3.6.1). cuBLASLt
+and cuDNN never touch the null stream at creation, so a CUDA framework that creates handles
+lazily (a new eager stream, an op's kernel state) while a graph runner captures on another
+thread breaks only on HIP. Switching the creating thread to relaxed capture mode does not help.
+Tracked as ROCm/rocm-libraries#11838; do not file it again. Pick the workaround by who creates
+the handle. If it is the capturing thread or a thread that issues work into the same capture
+(PyTorch's autograd worker), create the handles before capture begins and stock a shared pool
+those threads draw from; PyTorch does this (`ensureCublasLtHandlesAvailable`, called from
+`CUDAGraph::capture_begin`, pytorch #196399) and refuses creation under capture with a clear
+error. If unrelated threads create handles while another thread captures (an eager worker next
+to a graph runner in thread-local mode), nothing at capture begin can know how many handles they
+will need, so serialize instead: a process-wide shared mutex that each capture holds shared from
+begin to end, while every creation of a hipBLASLt, MIOpen, rocBLAS or hipSOLVER handle holds it
+exclusively. Skip the
+wait on a thread that is itself capturing, or it deadlocks. The mutex is deadlock-free only while
+no thread blocks on another thread inside its capture window; check that for every capture site. To find who creates the handle, break on `hipMemset` in gdb
+and read the backtrace: a log ordered by time alone suggests a lazy allocation inside the
+captured call, but here the call came from another thread. (oneflow, 021f4ad34: an eager fused
+MLP backward run right after an nn.Graph training step under `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`;
+and, with `ROCBLAS_USE_HIPBLASLT=1`, the first eager device-to-host copy after one, which
+constructs a stream with its rocBLAS and hipSOLVER handles.)
+
+**hipFFT plan creation fails the same way, but quietly.** `hipfftMakePlan*` /
+`hipfftXtMakePlanMany` (not `hipfftCreate`) runs null-stream work too. Under another thread's
+capture it does not exit: it returns `HIPFFT_PARSE_ERROR` (12), which reads like bad arguments,
+and the capturing thread's `hipStreamEndCapture` then fails with 901 (or its next library call
+fails). It does this with auto-allocation off and when an identical plan already exists. Put plan
+creation under the same exclusive lock as handle creation, which matters most where the framework
+makes a new plan on every FFT call. To reproduce a race like this in a test, issue the eager ops
+continuously from a second Python thread while the main thread runs several NEW graphs (each
+captures again on its first step). A loop of eager ops placed after the graph call mostly runs
+after the capture ends on an idle machine, and passes on the unfixed build. (oneflow: 8 graphs
+with an FFT thread failed 6 of 6 runs on gfx942 before the fix, and 200 FFTs after each graph call
+passed 2 of 2.)
+
 ## Textures
 
 **gfx94x+ (CDNA3 and newer: MI300-class) disables the HIP image/texture object API at COMPILE
@@ -572,6 +687,113 @@ Host `std::min(a,b)` is `b<a?b:a` and `std::max(a,b)` is `a<b?b:a`; a device ver
 bytes and comparing host gold against device output differ bit-for-bit. Spell the device
 ternaries to match the host forms exactly. (CV-CUDA: OpMorphology CLOSE on RGBAf32.)
 
+**rocBLAS `gemm_ex` rounds a 16-bit output once per k-chunk when k is long.** rocBLAS 5.7
+(ROCm 10.1) splits k exactly when `max(lda, ldb) * k >= 2^30` for 2-byte types
+(`gemm_tensile.hpp`: `safe_k = (2^31 - 1) / (max(ld_a, ld_b) * sizeof(Ti))`, split iff
+`safe_k < k`), with the leading dimensions as passed whatever the transposes, ignoring strides
+and batch count, into chunks of `safe_k`, and accumulates each chunk's product into D with
+beta = 1. ROCm 10.2 (rocm-libraries #12219) narrows the split to the operands k strides
+through, with the same 2^31-byte limit, so the 10.1 condition remains a safe superset. With a float16/bfloat16 D (`cublasGemmEx` -> `hipblasGemmEx` with compute type
+f32) the output is rounded about k / 1023 times for a contiguous k-major operand, so the error
+grows linearly with k: at k = 2^20 it is 25-50x a single rounding (fp16 7e-3, bf16 5e-2 relative),
+and the 1025 chunk launches also take ~8 ms. `ROCBLAS_LAYER` logs only the outer call; a kernel
+trace or `ROCBLAS_USE_HIPBLASLT=1` with the hipBLASLt log shows the chunks. A float D
+(written to scratch, cast once) restores accuracy but is ~10x slower still; hipBLASLt
+(`hipblasLtMatmul`, COMPUTE_32F, a few MiB of workspace) accumulates in float, rounds once and
+runs these shapes in 45-85 us on MI300X, which is what torch uses there. Route only 16-bit
+GEMMs with `max(lda, ldb) * k >= 2^30` to hipBLASLt so ordinary shapes keep their rocBLAS
+path; strided batched (including stride 0 broadcast) works the same way. A regression test
+needs k = 2^20 to clear a 4-ulp bound robustly; k = 2^15 splits only once. (oneflow: matmul
+primitive, grouped_matmul_bias, fused self-attention.)
+
+**gfx11 and gfx12 WMMA drift over long k, in every library, with any output type.** The float
+accumulator of `v_wmma_f32_16x16x16_f16` does not round to nearest: one wave carrying it through
+2^20 products is off by 3.4e-3 relative on gfx1100 and 1.7e-3 on gfx1201, against 3.1e-5 for an
+fp32 FMA chain, and the bias is toward zero (it grows linearly with k). So on gfx1100 every
+hipBLASLt algorithm for a long-k fp16 GEMM gives the same error (all 298 that fit 4 MiB, float D
+too: about 6-8 fp16 ulp at k = 2^20; gfx1201 2.5-3.7), torch matches it digit for digit, and
+rocBLAS does too wherever it does not chunk k itself (cuBLAS N,T, where neither operand is
+k-major). Choosing another algorithm does not help; shortening the chain does. Do the chunking
+yourself rather than asking hipBLASLt for a split-k: cut k into equal chunks of at most 2^15, run
+them as batched GEMMs (batch stride = chunk along k) that write each chunk's product to its own
+slice IN THE 16-BIT TYPE OF D, and sum the slices in float into D, rounding once. A 16-bit slice
+limits each chunk's sum to the range and precision of that type: a float16 chunk of 8192 tokens
+whose products average above 8 (loss-scaled weight gradients) is inf even when the chunks cancel to
+a finite result, and finite chunk sums far larger than the result they cancel to are rounded
+relative to their own size (x = 4, dy = +-1.9 in 8192-token blocks: chunk sums near 62000, results
+near 250, 820 ulp; one unchunked WMMA GEMM gives 89). In the kernel that sums the slices, compute
+a block of outputs again from A and B as float dot products over all of k when any element's slices
+are not finite or a BOUND on their rounding error exceeds 3 units of roundoff of the output type (3
+x 2^-11 float16, 3 x 2^-8 bfloat16) times the block's largest result. The bound is the sum of half
+an ulp of each slice in its type (the float's exponent bits times the unit roundoff; 0 below the
+smallest normal, so all-zero inputs never recompute, at the price of half a subnormal step per
+slice left out) plus half an ulp of each float partial sum. That needs no host sync, works under
+graph capture, keeps true inf/NaN inputs non-finite, and holds in the worst case. Do not use a
+root-sum-square test (rss of the slices against sqrt(3) times the block maximum): it bounds only
+the EXPECTED error, and chunk sums that all round the same way pass it and lose 4.2 / 4.5 / 9.4
+ulp at k = 2^16 / 2^19 / 2^20 (a dot product of ones whose chunk sums sit just short of a rounding
+midpoint: 8.8 ulp in float16 and bfloat16; oneflow's regression test). The bound never fires on
+full 32 x 8 blocks of random data up to k = 2^20, but it does in blocks with few valid elements
+(uniform random data, k = 2^16 / 2^20: 39 / 72% of 1-element blocks, 21 / 57% of 2, 7 / 38% of 4,
+1.4 / 19% of the 1 x 8 edge blocks of a matrix-vector product, 0 / 0.8% of 32), so the recompute
+must be cheap: one thread block walking k in 32-step tiles takes k / 32 serial steps (28 ms for one
+element at k = 2^20). Spread k over the block's threads with 16-byte loads and, when the output has
+few blocks, over several thread blocks per output block whose partial sums the last one to finish
+adds in a fixed order (deterministic); that brought one recomputed element at k = 2^20 to about 20
+us. A recomputed 1 x 8 block still reads its 8 rows of A again, so the bound's cost is the fired
+fraction of a second read of A: on gfx1100 (oneflow) (1024, 2^20) @ (2^20, 1) took
+5.1 ms against 4.2 without any recompute (+20%; root-sum-square +1-16%), (4096, 65536) @ (65536,
+33) and (64, 2^20) @ (2^20, 1) +3-4% over root-sum-square, and every other shape measured,
+including large weight gradients, the same as root-sum-square. Float slices for such thin
+outputs would stop those firings, but hipBLASLt has no float-D algorithm for 1 x 1 outputs and
+rocBLAS splits k into many launches for them, and per-shape costs went both ways (oneflow, not
+adopted).
+Watch the register count while doing it: a fully unrolled 32-load loop (which hipcc otherwise
+serializes, waiting on every load) took the kernel from 66 to 248 VGPRs and the common case 11%
+slower, and even 98 VGPRs (two 16-byte runs in flight) cost large GEMMs 2-3% and full-block
+recomputes 9-34%; one run in flight per operand kept 79 VGPRs. An output where every full block
+recomputes is still 30-120x slower. Chunking bounds the chain
+length, not cancellation: WMMA's error grows with the size of the partial sums, so ordinary
+unchunked gfx11 GEMMs are also tens of ulp off when large partial sums cancel (29-52 ulp at k =
+8192-32768 with x = 4, dy = +-3 in 4096-token blocks), and cancellation inside one chunk is
+invisible to the slice check (x = 4, dy = +-3 in 4096-token blocks of a 64 x k x 32 x^T @ dy:
+78 / 182 / 269 ulp at k = 2^16 / 2^18 / 2^20, where torch's single hipBLASLt GEMM, which splits k
+for such small outputs, gives 20 / 45 / 68; only a float accumulation without WMMA gets about 1,
+at 7-200x the cost). Realistic loss-scaled gradients (random data, results near 30000) stay at
+0.55-0.92 ulp. Do not give the chunks a float D: on gfx1100 hipBLASLt picks a much smaller tile for a float D (an fp16 4096 x
+40000 x 4096 GEMM takes 139 ms with a float D against 16 ms with an fp16 one; 23-28x through
+torch's `out_dtype=float32`), which made x^T @ dy weight gradients with 40000-65536 tokens
+10-28x slower than one unchunked GEMM. One rounding per slice costs little: chunks of about 2^13
+(at most 16 slices unless that would exceed 2^15) measured 0.9-1.2 ulp for large outputs and <=
+1.2 ulp in every layout up to k = 2^20 on gfx1100, more accurate than 2^15 chunks (1.2-1.5 ulp)
+and no slower. Run each chunk on the library ordinary GEMMs use (rocBLAS, about 1.5x faster than
+hipBLASLt for large outputs on gfx1100) unless rocBLAS would split it again
+(`max(lda, ldb) * chunk >= 2^30` in ROCm 10.1, see the rocBLAS entry above, where it rounds a
+16-bit D per inner chunk). With that, large weight gradients run within
+about 1.1x of one plain GEMM. Fold the batch into the chunk calls, tile the slices over m and n to
+a memory budget with balanced tiles, and if a library has no algorithm for one tile, run that
+tile alone through rocBLAS with a float D rather than failing the call after earlier tiles were
+written. Two reasons not to rely on `GemmTuning::setSplitK`: its partials need m * n * split
+floats of workspace, and on gfx1201 the heuristic's first kernel for k-major A and small outputs
+(`MT16x16x192`) is wrong by tens of ulp for many k above 2^17 and stays wrong with the split,
+which it accepts and runs. A GEMM whose k never exceeds 2^15 stays out of both. The gfx1100 costs
+above were not measured on gfx1201. Gate on the k length on the WMMA families, not on
+`ld * k`. gfx9 MFMA keeps fp32 accuracy. (oneflow: long-k matmul on gfx1100 and gfx1201.)
+
+**A GEMM workaround covers every entry point that reaches the library, fused epilogues included.**
+oneflow routed its matmul, bmm and grouped GEMMs to the chunked long-k path but its cuBLASLt
+compat (`cublasLtMatmul` on hipBLASLt, used by the fused linear and MLP kernels and their
+backward) still sent the whole k to hipBLASLt: 5.7-8.4 float16 ulp on gfx1100 at k = 2^20 and
+98.75 ulp on gfx1201 at k = 163840 (the ROCm 10.1 hipBLASLt DepthU-192 kernels, fixed in hipBLASLt
+1.5.0). Grep for every call into the BLAS libraries, including Lt/fused wrappers, and put the
+selection in the one compat function they share. Run the GEMM through the same path and apply
+the epilogue (bias, ReLU, ReLU bit mask, masked gradient, bias gradient) afterwards in separate
+kernels; the result then equals the unfused ops bit for bit, which also gives the test a check
+that the path was taken (gate it on ROCm: cuBLASLt applies the epilogue before rounding). If the
+long-k path needs another library's handle (rocBLAS here) and the compat only receives the Lt
+handle, create the second handle with the first: a kernel may first run inside a graph capture,
+where the 32 MiB a rocBLAS handle allocates at creation cannot be. (oneflow, 0e606373b.)
+
 **Host `min`/`max` on floating-point values truncate to int under hipcc.** CUDA declares
 host `min`/`max` for int, unsigned, long, long long, float and double. HIP's
 `__clang_hip_math.h` declares only `min`/`max(int, int)` on the host. So host code in a
@@ -640,6 +862,39 @@ headers into g++ and fails there. Put the shim in the lowest common layer, keep 
 includes (`hip_runtime.h`, `hipfft.h`) unconditional, and gate device-only ones behind
 `__CUDACC__` or `__HIPCC__ || __HIP_DEVICE_COMPILE__`. (SCAMP, stdgpu)
 
+**Defining `__CUDA_ARCH__` for the HIP device pass also feeds every numeric gate.** A compat
+header that sets `__CUDA_ARCH__` (to 1, say) so `#ifdef __CUDA_ARCH__` device/host selections
+work makes `#if __CUDA_ARCH__ < 530` TRUE in HIP device code. oneflow's `atomic.cuh` keeps a
+`half2` atomic-add overload under exactly that gate whose body is `__trap()`, for pre-sm_53 GPUs;
+on HIP it won overload resolution, so every `half2` atomic add raised an HSA hardware exception
+(code 0x1016, no fault address) in an otherwise ordinary kernel. Grep every numeric
+`__CUDA_ARCH__` comparison, not just `#ifdef`: `>=` gates silently drop native paths (slow but
+correct), `<` gates can select traps or legacy emulation. Guard each with `!defined(USE_HIP)`
+or the project's HIP macro at the site. (oneflow)
+
+The `>=` gates are not only slow paths. A "no half support" stub behind `#if __CUDA_ARCH__ >= 530`
+that does `printf(...); assert(false);` returns garbage silently, because release builds drop the
+assert (oneflow's float16 softmax-cross-entropy gradient was off by up to 0.99 with exit code 0).
+The same gate around a HOST launcher (`#if __CUDA_ARCH__ >= 530 || !defined(__CUDA_ARCH__)`)
+compiles the launch in the host pass but drops the kernel's instantiation in the device pass, so
+the launch fails "Cannot find Symbol" at run time. A first audit that looked only at trap bodies
+missed seven such sites; list every comparison (both operand orders, continuation lines) with its
+HIP resolution rather than sampling. (oneflow)
+
+**Audit every macro class that gates a dtype or arch path, not just `__CUDA_ARCH__`.** CUDA
+headers define feature macros that their HIP counterparts do not: `cuda_bf16.h` defines
+`__CUDA_BF16_TYPES_EXIST__`, `hip_bf16.h` does not, so a shim that maps `<cuda_bf16.h>` to
+`hip_bf16.h` turns every `#if defined(__CUDA_BF16_TYPES_EXIST__)` false. In oneflow that dropped
+the `ncclBfloat16` case (every bf16 collective aborted "UNIMPLEMENTED" although RCCL supports
+it), the bf16 gather/scatter kernels and five bf16 collective-kernel registrations, and two
+audits that listed only `__CUDA_ARCH__` comparisons missed it. Define the macro in the shim that
+stands in for the defining header, so it exists exactly where CUDA has it. Library version
+macros that HIP leaves undefined (`CUBLAS_VERSION`, `CUBLAS_VER_*`, `NVJPEG_VER_*`,
+`__CUDACC_VER_*`) read as 0 and silently skip whatever they gate (oneflow's
+`cublasSetWorkspace`), while a `CUDA_VERSION` the compat header pins (to 11080, say) makes every
+`< 12000` gate take the CUDA 11 branch. List each gate of each macro with its HIP resolution.
+(oneflow)
+
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which
@@ -647,6 +902,18 @@ masks the bug -- so the gate is correct only by accident and breaks for anyone b
 without hipify. Verify include order rather than trusting the prepend, and prefer the
 compiler's own `__GFX8__`/`__GFX9__`/`__GFX11__`/`__GFX12__` device-pass predefines, which
 need no header at all and are never defined by nvcc or by a host compiler. (LC-framework)
+
+**With the ROCm clang as the host compiler, a found system libunwind links but does not load.**
+The ROCm clang searches the `include/` directory next to its LLVM install ahead of the system
+include directories, so `<libunwind.h>` resolves to LLVM's header, while a `FindUnwind` module
+links the system GNU `libunwind.so`. GNU's header maps `unw_getcontext`, `unw_init_local`,
+`unw_step` and `unw_get_reg` to `_Ux86_64_*` through macros; LLVM's declares the plain names. The
+build succeeds and the library then fails to load with `undefined symbol: unw_getcontext`, but
+only on machines with `libunwind-dev` installed, so it hides until a host gains the package.
+Check `nm -D <lib> | grep ' U unw_'`. A bare `clang++ -E` may resolve the system header; run
+`-E -H` on the real compile command from `compile_commands.json`. glog also links libunwind when
+it finds it. Under the HIP option, set `CMAKE_DISABLE_FIND_PACKAGE_Unwind ON` before the
+dependencies are configured; backtrace code falls back to `_Unwind_Backtrace`. (oneflow)
 
 **Missing-include errors are usually pre-existing upstream omissions**, not port breakage:
 CUDA's headers supplied them transitively and the narrower HIP include graph unmasks them.
@@ -999,6 +1266,38 @@ the GPU by PCI address (`hipDeviceAttributePciDomainId`/`PciBusId`/`PciDeviceId`
 `amdsmi_get_power_info`: watts, `current_socket_power` on MI300 and later, unsupported
 fields read `UINT32_MAX`. (TornadoVM)
 
+**`__launch_bounds__(1024)` changes nothing on HIP and something on CUDA.** HIP-clang
+already gives every kernel `amdgpu-flat-work-group-size="1,1024"` (`.max_flat_workgroup_size:
+1024` in the code-object metadata) with or without the attribute -- check the metadata with
+`--offload-device-only -S` before crediting it with fixing a 1024-thread launch failure. On
+nvcc the same attribute caps registers per thread for every instantiation, which can move
+the occupancy-based block-size choice and with it the reduction order. If a port keeps it,
+put it behind a macro that is empty unless `USE_HIP`, so the CUDA kernels stay
+token-identical to upstream. (oneflow, ROCm SDK clang 24)
+
+**On RDNA, a nonzero occupancy does not mean the dynamic shared memory fits.** A common
+CUDA idiom picks a shared-memory kernel when `cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+..., smem)` returns > 0 and otherwise falls back to an uncached kernel (OneFlow's softmax,
+LayerNorm and RMSNorm, and the many projects that copied them). CUDA returns 0 once `smem`
+exceeds the per-block limit. On gfx1100 (ROCm 10.1.0) the HIP query counts against the 128 KiB
+WGP (`hipDeviceAttributeMaxSharedMemoryPerMultiprocessor`) and returns 1 for dynamic sizes
+between the 64 KiB per-workgroup limit and 128 KiB. The launch then either fails with
+`invalid argument` (dynamic > 64 KiB) or, when dynamic alone is <= 64 KiB but dynamic plus
+static is over it, is ACCEPTED and aborts the queue with `HSA_STATUS_ERROR_INVALID_ALLOCATION`,
+which kills the process. `hipFuncSetAttribute(MaxDynamicSharedMemorySize)` succeeds and is
+not enforced. The result is a crash window in the problem size, not a threshold: in oneflow
+fp32 LayerNorm forward failed at 16350..32568 columns and passed above it, because the query
+drops back to 0 at 128 KiB. gfx90a and gfx942 (64 KiB LDS per CU, equal to the per-block limit)
+answer 0 correctly, so wave64 runs there never see it. Fix: under `USE_HIP`, also require `smem + attr.sharedSizeBytes <=
+hipDeviceAttributeMaxSharedMemoryPerBlock` before taking the shared-memory path. With a
+compatibility header, map `cudaOccupancyMaxActiveBlocksPerMultiprocessor` to a small template
+that calls the HIP query and then reports 0 when dynamic plus static exceeds the per-block
+limit: that restores CUDA's answer for every caller at once (oneflow also had the idiom in its
+CTC decoder) and leaves the CUDA sources untouched. Check each candidate block size
+separately, because static shared memory (block-reduce scratch) grows with it. Sweep widths
+past 64 KiB/element-size on an RDNA card. Sweeping to 8192 only catches the
+8-byte-per-column backward kernels. (oneflow, gfx1100)
+
 **A ROCm-only branch inside a shared template still COMPILES on the CUDA path.** Gating the
 divergence on a `static constexpr bool` predicate that is false on NVIDIA (`if(needsCast())`)
 keeps the branch from RUNNING there, but a plain `if` instantiates both arms in every
@@ -1028,6 +1327,21 @@ rejects `HIPBLAS_COMPUTE_16F` and hipSPARSE rejects `HIP_R_16F` as an SpMM compu
 both call sites kept passing `half` scalars, and the hipBLASLt one survived review and three
 platform validations because the assertion that would have caught it was never reached.)
 
+**rocPRIM never asks for less than 4 bytes of temp storage.** Every rocPRIM-backed hipCUB
+device algorithm (`DeviceReduce`, `DeviceSegmentedReduce`, ...) reports
+`max(needed, 4)` from its size query, even when it needs nothing; CUB reports 1 there.
+Upstream code that sizes the scratch from the INPUT (`elem_cnt * sizeof(T)`) and then checks
+it against the query passes on NVIDIA and fails for a 2- or 3-element reduce of a one-byte
+type on AMD. Size the scratch as `max(own estimate, library query)`. (oneflow:
+`flow.tensor([True, False], device="cuda").all()` aborted.)
+
+**hipCUB's segmented `ArgMax` returns an out-of-range key for a segment of NaNs.** rocPRIM
+folds a seed `{INT_MAX, lowest}` into every segment and keeps it when no element compares
+greater, so an all-NaN row yields `INT_MAX - segment_begin`; CUB returns an index inside the
+row. Anything that then indexes with the result (one-hot scatter, gather) traps or faults.
+Clamp keys outside `[0, segment_size)` after the call. (oneflow: `gumbel_softmax(hard=True)`
+in half precision, where `rand` rounds to exactly 1.0 often enough to make a NaN column.)
+
 **A zero workspace size does not mean "skip the operation".** Upstream code shaped like
 `if(bufferSize > 0) { alloc; call; free; }` is correct only where the vendor always wants
 scratch. cuSPARSE always does for `CUSPARSE_SPMM_CSR_ALG2`, so the shortcut is invisible on
@@ -1051,7 +1365,51 @@ cuDNN's accumulate form (`beta = 1`, used by every backward pass that adds into 
 gradient) has to be rebuilt as an operation into a staging buffer followed by
 `miopenOpTensor(miopenTensorOpAdd, ...)`. MIOpen's pooling backward also reads the indices
 its forward pass recorded, so that workspace must outlive the forward call rather than being
-a local. (marian-dev)
+a local. (marian-dev) MIOpen also pools an NHWC tensor by transposing it through that workspace,
+in the forward pass and for average pooling too: `miopenPoolingForward` with a null workspace
+faults in `batched_transpose_*` at address 0 for channels-last input. Always query
+`miopenPoolingGetWorkSpaceSizeV2` and pass the workspace, even for an inference-only forward.
+(oneflow)
+
+**MIOpen runs a convolution only on a handle where Find ran for it.** Find registers the
+solution's invokers on the handle it ran on; `miopenConvolutionForward` (and the backward calls)
+on any other handle fails with "No invoker was registered for convolution forward. Was find
+executed?". A cuDNN-shaped caller that searches once on a pooled handle and then runs on each
+stream's own handle trips it. Before the first run of a problem on a handle, run a
+non-exhaustive Find there into the output buffer the run is about to overwrite. Also:
+`miopenGetConvolutionNdDescriptor` rejects a requested dimension count larger than the
+descriptor's (cuDNN returns what it has), and MIOpen pooling reads alpha/beta as float and has
+no double. Key the "Find ran here" record on the live handle and drop it in the destroy wrapper:
+`miopenCreate` hands out a destroyed handle's address again (about once in 60 create/destroy
+cycles on an MI250X with ROCm 10.1), and a record keyed on the bare address then skips the Find
+on a handle that never ran one. (oneflow)
+
+**MIOpen 3.6 (ROCm 10.1) lacks several cuDNN operations outright.** Measured on gfx90a:
+double batch norm finds no solver (and `miopenDeriveBNTensorDescriptor` always derives a FLOAT
+parameter descriptor, so a cuDNN-shaped type check on gamma fails first); double convolution has
+no solver either (Find fails compiling its im2col fallback); `miopenConvolutionBackwardBias` is
+deprecated and returns `miopenStatusNotImplemented` for every type and layout; and
+`miopenReduceTensor` ADD fails for bfloat16 (its runtime kernel does not compile) while float,
+half and double work. A shim that forwards these calls aborts the first time a user reaches
+them. Run double batch norm on small native kernels, and compute a bias gradient as dy times a
+ones vector with the project's own GEMM. Accumulate that sum in float: one GEMM per sample with
+beta = 1 into a half/bf16 output rounds N times (7-12x the single-rounding error at N = 256);
+reduce to float row sums with a mixed-type GEMM (`hipblasGemmEx`, f16/bf16 in, f32 out) and
+round once. (oneflow)
+
+**hipBLASLt epilogues are not cuBLASLt's, per type and per format.** On gfx90a with hipBLASLt
+1.4, DEFAULT/BIAS/RELU/RELU_BIAS exist for f32/f16/bf16 but double has only DEFAULT, and the
+AUX/DRELU/BGRAD epilogues exist only for f16. cuBLASLt's ReLU auxiliary output is a 1-bit mask
+(leading dimension a multiple of 128) that callers size and may write themselves; hipBLASLt's is
+the pre-activation matrix in the output type, so mapping the enum alone writes far past a buffer
+sized for a mask. Probe availability with `hipblasLtMatmulAlgoGetHeuristic` per type and fall
+back to a plain GEMM plus a small kernel. hipBLASLt cannot read a layout's TYPE back
+(`hipblasLtMatrixLayoutGetAttribute` returns invalid attribute) and fixes the compute type at
+descriptor creation, so a shim has to remember both. (oneflow)
+
+**Two ROCm library headers can collide.** `rpp.h` (RpptInterpolationType) and `miopen.h` both
+declare an unscoped enumerator `BILINEAR`; a translation unit cannot include both. Keep the RPP
+call in its own file behind a small interface. (oneflow)
 
 **hipSPARSE has no uniform half-precision SpMM.** Half operands are accepted only in the
 mixed-precision mode, which pairs half sparse and dense inputs with a FLOAT result matrix and
