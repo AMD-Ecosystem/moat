@@ -1,0 +1,34 @@
+{
+  "schema_version": 3,
+  "name": "stable-diffusion.cpp",
+  "upstream_url": "https://github.com/leejet/stable-diffusion.cpp",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T02:34:25Z",
+  "updated_at": "2026-11-06T02:40:14Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/leejet/stable-diffusion.cpp/blob/master/LICENSE",
+      "at": "2026-11-06T02:40:04Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream SD_HIPBLAS backend (docs/build.md, docs/hipBLAS_on_Windows.md), windows-latest-rocm CI, rocm-10.1.0 release binaries",
+    "viable": true,
+    "summary": "Diffusion inference on ggml; upstream SD_HIPBLAS build with ROCm 10.1 CI and Linux/Windows ROCm releases, own kernels built for HIP; only optional NVIDIA-tuned SageAttention/CUTLASS paths are CUDA-only",
+    "at": "2026-11-06T02:40:12Z"
+  }
+}

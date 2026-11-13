@@ -1001,3 +1001,7 @@ No cylinder test run (consistent with gfx1201 validation scope; cylinder error-7
 ### Disposition
 
 windows-gfx1101 -> completed, validated_sha = 5abe276. Both backends pass all 5 geometry types, exit 0, IDENTICAL counts to gfx1201. HIPRT hardware-RT uses gfx1101's RT units and produces identical output to the cuBQL software tracer.
+
+## Ruling 2026-11-11: deferral `barney-nvidia-proprietary-rescan` closed
+
+jeff ruled that the merged upstream PR (https://github.com/NVIDIA/barney/pull/46, merged at `acbe97ab`) settles the licence question: NVIDIA itself accepted the change into the repository that vendors the OptiX headers, so a re-screen with submodules initialized would change nothing. The deferral is closed as done without a rescan.
