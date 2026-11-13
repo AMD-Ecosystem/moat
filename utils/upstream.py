@@ -1036,7 +1036,7 @@ def report_publish(apply, only=None):
     if not apply:
         if ready:
             print(f"\n  --apply --name <project> opens that one upstream PR with "
-                  f"the approved title and body.")
+                  "the approved title and body.")
         return 0
     for r in ready:
         # Snapshot the approval BEFORE publishing, so the record of who authorised
