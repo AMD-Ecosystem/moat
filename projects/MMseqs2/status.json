@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:24:21Z",
-  "updated_at": "2026-11-13T20:46:36Z",
+  "updated_at": "2026-11-13T20:50:08Z",
   "head_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
   "depends_on": [],
   "waivers": {
@@ -245,5 +245,10 @@
     "head_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
     "content_sha256": "27864cb32a586b2e2dcf16b23f258795216ea31c38aa3c2943e2026b38318403",
     "review_pr": "https://github.com/AMD-Ecosystem/MMseqs2/pull/2"
-  }
+  },
+  "pr_url": "https://github.com/soedinglab/MMseqs2/pull/1174",
+  "pr_number": 1174,
+  "pr_opened_at": "2026-11-13T20:50:08Z",
+  "pr_state": "open",
+  "published_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d"
 }
