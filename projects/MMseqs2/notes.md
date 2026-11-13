@@ -1220,3 +1220,11 @@ The evidence supports the commit message as written, and the message does not ov
 - Upstream's tuned arch unaffected: that build's `mmseqs` on gfx942 (`HIP_VISIBLE_DEVICES=1`, `util/regression/run_regression.sh`, submodule 19b9867): 43/43 TEST SUCCESS, SEARCH_GPU 0.454819 = expected, SEARCH_GPU_SERVER 0.454819 = expected. With `MARV_HAVE_AMD_DEFAULT` undefined the run could only pass through the gfx942 table. Review evidence only; the linux-gfx942 validator records its own run at 0c897402.
 - Evidence against the message: q1k 47.72/47.64 s generic vs 45.56/45.50 s tuned = 1.047x, reported as 1.05x; kernel trace 46.77 vs 44.59 s; 8x database 10.10/10.13 vs 9.87/9.88 s; identical md5 and 12438/12438 identical GPU-vs-CPU rows; 43/43 regression on MI355X; CUDA build (nvcc 13.5.37, sm_80;90) 317/317. All match `## gfx950 tuning porter round`.
 - Commit hygiene: `[ROCm]` title, 51 characters; "Authored with Claude.", no `Co-Authored-By`/noreply; ASCII; Test Plan in a fenced block, same form as 2cda180e. `utils/jargon.py --port MMseqs2`: clean.
+
+## Windows split out as a separate feature (jeff, 2026-11-13)
+
+jeff ruled that Windows support, for libmarv and for the `mmseqs` command-line tool alike, is a second feature separate from the AMD GPU coverage work (fallback aligner for untuned arches, ClampToInvalid device guard, per-arch tuned tables). Consequences:
+
+- The upstream PR from this round carries no Windows commits. At PR-prep history curation, drop 7c39308d (`libmarv` Windows DLL build) and 54edbc78 (mmseqs-tree Windows guards) along with the superseded commits; the curated branch keeps only the fallback, ClampToInvalid and tuning commits.
+- Both commits stay reachable in `moat-port` history at 0c897402 and are the starting point for the Windows feature, registered as deferral `mmseqs2-windows-support` in `projects/MMseqs2/deferred.json`. The full CLI needs a Windows replacement for the Linux-only memory-mapped file reading; that work belongs to the Windows feature, not this PR.
+- The required `windows` gate cannot be met by this PR's tree (upstream MMseqs2 does not build on Windows without the dropped commits). How that gate is handled for this PR is a pending decision for jeff; an agent may only suggest a waiver.
