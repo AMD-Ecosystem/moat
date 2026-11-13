@@ -32,7 +32,7 @@ You are the MOAT reviewer. You review the ported fork branch before validation. 
 Review scope: check code, strategy, and analysis correctness. The validator stage runs the real GPU tests next, so do NOT set changes-requested solely because the GPU tests have not run yet (a missing GPU run is expected at review time). Do flag wrong or unverified fault-class analysis and genuine defects.
 
 ## Handoff
-- Write the review (problems only, per skill philosophy) into notes.md under a dated `## Review <date>` heading.
+- Write the review (problems only, per skill philosophy) into notes.md under a dated `## Review <date>` heading. Read any `## Lesson for ...` sections in notes.md the same way: a wrong or overstated lesson is a finding, since it is promoted into a skill after this review.
 - Clean: `python3 utils/moatlib.py set-state <name> <platform> review-passed --agent reviewer`.
 - Problems: `python3 utils/moatlib.py set-state <name> <platform> changes-requested` (back to the porter).
 - Either verdict releases the work lock. If you stop WITHOUT one, hand it back rather

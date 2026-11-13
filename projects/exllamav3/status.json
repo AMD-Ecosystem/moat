@@ -1,0 +1,34 @@
+{
+  "schema_version": 3,
+  "name": "exllamav3",
+  "upstream_url": "https://github.com/turboderp-org/exllamav3",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T00:59:04Z",
+  "updated_at": "2026-11-06T01:20:01Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/turboderp-org/exllamav3/blob/master/LICENSE",
+      "at": "2026-11-06T01:19:59Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream maintainer-owned ROCm/HIP backend (RDNA wave32), ROCm wheels each release since 1.6.x",
+    "viable": true,
+    "summary": "Quantized LLM inference (EXL3); upstream already ships a maintainer-owned RDNA ROCm backend and ROCm wheels; only CDNA/wave64 is uncovered, excluded by design",
+    "at": "2026-11-06T01:20:01Z"
+  }
+}
