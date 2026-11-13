@@ -27,6 +27,7 @@ round wrote it, so the range is the fork's default branch to `moat-port` -- whic
 Exit 1 if anything is found.
 """
 
+import os
 import argparse
 import re
 import pathlib
@@ -34,8 +35,11 @@ import subprocess
 import sys
 import tomllib
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-CONFIG = REPO_ROOT / "config" / "jargon.toml"
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = pathlib.Path(__file__).resolve().parents[1]
+REPO_ROOT = pathlib.Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
+CONFIG = TOOLS_ROOT / "config" / "jargon.toml"
 
 
 def load():
@@ -91,7 +95,7 @@ def port_range(name):
     Read from the project's own record so nobody types a range: the base is
     `fork_default_branch`, never the previous head. Raises if the project or its fork
     clone is not here, because a check that silently scans nothing passes."""
-    sys.path.insert(0, str(REPO_ROOT / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     obj, _where = moatlib.project_record(name)
     if obj is None:
@@ -181,4 +185,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())

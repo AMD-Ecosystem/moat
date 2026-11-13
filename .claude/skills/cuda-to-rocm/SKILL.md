@@ -9,9 +9,11 @@ Accumulated across many real ports. This file is the index and the decision-crit
 everything else is in `references/`, loaded only when you need it.
 
 **Most porting bugs are not in symbol names.** Hipify handles the renaming. The bugs are
-semantic differences where AMD is strict and CUDA is lenient, and they surface at runtime
-on a build that compiled cleanly. Read the fault-class index below before concluding a
-port works.
+semantic differences where AMD is strict and CUDA is lenient. Most surface at runtime on a
+build that compiled cleanly, but a clean hipify is not a clean build: hipify leaves
+literals and types alone, so some idioms -- a 32-bit `*_sync` mask is the common one --
+hipify without complaint and then fail to compile under HIP. Read the fault-class index
+below before concluding a port works.
 
 ## Naming: ROCm or HIP?
 
@@ -81,7 +83,7 @@ Scan this list against what you are doing. If any line could apply, open
 
 **Memory and lifetime**
 - Out-of-bounds reads: CUDA often tolerates one element past an allocation; AMD faults.
-- Fresh device allocations are NOT zeroed on ROCm, where CUDA's allocator often hands back zeroed pages.
+- Fresh device allocations are NOT zeroed on ROCm, where CUDA's allocator often hands back zeroed pages. Whenever you port or review code, trace every allocation whose first use is a read-modify-write -- an `atomicAdd` counter, an accumulator, histogram bins, a `+=` output -- and confirm a memset or init kernel runs first on the same stream. Report a missing one even when the rest of the review is about something else.
 - `cudaMemcpy*Async` from a soon-freed pageable host buffer: CUDA stages synchronously, HIP does not. The same hides an unsynchronized upload on one stream feeding a kernel on another.
 - Bitwise/min/max atomics on `hipMallocManaged` memory are silently dropped on discrete xnack- cards (PCIe AtomicOps); whether a build is hit depends on optimization level, so check the app's ISA.
 - Rule-of-five on resource handles: CUDA tolerates double-destroy of a texture/stream/event; AMD does not.
@@ -137,6 +139,21 @@ Two diagnostic methods in `references/validation.md` are worth knowing before yo
 suspected AMD fault: a per-tile "later data corrupts earlier" signature usually means the
 reproducer's input dtype is wrong, and SP-vs-DP triangulation distinguishes FP reassociation
 from a genuine wavefront bug. Both were learned the expensive way.
+
+## Reviewing a port
+
+A review is a sweep, not a diagnosis. Finding one fault that explains the reported symptom
+does not end it; ported code usually carries several independent faults, and the one
+nobody asked about is the one that ships.
+
+1. Walk every section of the index above against the code: wavefront and warp semantics,
+   memory and lifetime, textures, floating point, headers and build, types and platform
+   limits. Note a hit or a clean pass for each.
+2. Check what will not compile under HIP separately from what will misbehave at runtime.
+   "Hipify ran clean" says nothing about the first.
+3. For each fresh allocation, check that its first access is not a read-modify-write
+   without a preceding memset or init kernel.
+4. Report every hit, each with its fix, even when it is unrelated to the question asked.
 
 ## Portability rule for shared code
 

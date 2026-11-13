@@ -35,6 +35,7 @@ Output: data/candidates.json (ranked, filtered) and data/candidates.raw.jsonl
 (every unique hit before filtering, for audit). Adopt rows with
 `python3 utils/moatlib.py scaffold <owner/repo>`."""
 
+import os
 import argparse
 import datetime as _dt
 import json
@@ -48,8 +49,11 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-CONFIG = REPO_ROOT / "config" / "discover.toml"
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
+CONFIG = TOOLS_ROOT / "config" / "discover.toml"
 DATA = REPO_ROOT / "data"
 # The licence is fetched so candidates.json carries one from the start, since a
 # licence discovered after the port is finished can block the contribution the port
@@ -742,4 +746,6 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())
