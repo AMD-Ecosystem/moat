@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:05:27Z",
-  "updated_at": "2026-11-13T23:36:47Z",
+  "updated_at": "2026-11-13T23:43:12Z",
   "head_sha": "d743f11e296db53c67a2356a854bac0b314fef76",
   "depends_on": [],
   "waivers": {},
@@ -158,5 +158,6 @@
     "by": "jeffdaily",
     "at": "2026-11-04T19:32:26Z",
     "reason": "Upstream h2oai/h2o4gpu's branch is master; there is no main (jeff 2026-11-04)"
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/h2o4gpu/pull/1"
 }
