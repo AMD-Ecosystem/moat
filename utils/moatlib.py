@@ -5085,6 +5085,12 @@ def commit_to_branch(branch, files, message):
         tree = g("write-tree")
         commit = g("commit-tree", tree, "-p", base, "-m", message)
         g("push", "-q", "origin", f"{commit}:refs/heads/{branch}")
+        # What this process read from the branch before the push is now history.
+        # Left cached, a second record write in the same run started from the old
+        # snapshot and committed it over the first: --publish recorded the approval,
+        # then set_pr_open rewrote the record without it.
+        for key in [k for k in _REF_CACHE if k[0] in (branch, f"origin/{branch}")]:
+            del _REF_CACHE[key]
         return commit
     finally:
         if os.path.exists(idx):
