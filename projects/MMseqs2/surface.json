@@ -1132,21 +1132,20 @@
     {
       "id": "test:workspace",
       "reason": "vendored Rust build integration (corrosion) and its own tests/options; CPU-only, no GPU surface, untouched by this port"
-    }
-  ],
-  "owed": [
-    {
-      "id": "platform:windows-libmarv",
-      "reason": "rescope item 2: Windows build and GPU validation of libmarv on upstream's ENABLE_HIP happen on the Windows host (BUILD_SHARED_LIBS=ON LIBRARY_ONLY=1); ported here compiling-in-principle only"
-    },
-    {
-      "id": "platform:windows-mmseqs-tree",
-      "reason": "rescope item 2: WIN32 guards in the mmseqs tree are unbuilt; the mmseqs binary itself stays POSIX-only, so the Windows host decides what of this is worth keeping"
     },
     {
       "id": "tuning:gfx1201",
-      "reason": "rescope item 1: tuned on linux-gfx1201 2026-11-13 (notes.md `## gfx1201 tuning porter round`) and NOT committed: the tuner-selected tables are slower than the generic AMD configs on gfx1201 (q1k 0.91x, 8x database 0.98x, identical output), and so are upstream's gfx1100 tables run on gfx1201; gfx1201 keeps the generic configs. Awaiting jeff's ruling to scope this out (tables kept in reference/gfx1201-tuning/)"
+      "reason": "jeff ruled 2026-11-13: dropped from scope. Tuner-selected tables were slower than the generic AMD configs on gfx1201 (q1k 0.91x, 8x database 0.98x, identical output; notes.md `## gfx1201 tuning porter round`, raw evidence in reference/gfx1201-tuning/); gfx1201 keeps the generic fallback configs."
+    },
+    {
+      "id": "platform:windows-libmarv",
+      "reason": "jeff ruled 2026-11-13: Windows support is a separate feature, deferral mmseqs2-windows-support; windows gate waived for the GPU-coverage PR (notes.md `## Windows split out as a separate feature`)."
+    },
+    {
+      "id": "platform:windows-mmseqs-tree",
+      "reason": "jeff ruled 2026-11-13: Windows support is a separate feature, deferral mmseqs2-windows-support; windows gate waived for the GPU-coverage PR (notes.md `## Windows split out as a separate feature`)."
     }
   ],
+  "owed": [],
   "removed_from_floor": []
 }
