@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:24:21Z",
-  "updated_at": "2026-11-13T18:08:31Z",
-  "head_sha": "af0688d88121a9f0dbcaef013149abd294533f29",
+  "updated_at": "2026-11-13T18:15:38Z",
+  "head_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
   "depends_on": [],
   "waivers": {
     "windows": {
@@ -47,11 +47,11 @@
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "af0688d88121a9f0dbcaef013149abd294533f29",
+      "validated_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
       "failed_sha": null,
       "started_at": "2026-11-13T04:20:12Z",
       "completed_at": "2026-11-13T18:00:46Z",
-      "updated_at": "2026-11-13T18:00:46Z",
+      "updated_at": "2026-11-13T18:13:08Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -152,10 +152,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "af0688d88121a9f0dbcaef013149abd294533f29",
+      "validated_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
       "started_at": "2026-06-04T05:24:44Z",
       "completed_at": "2026-11-13T18:08:31Z",
-      "updated_at": "2026-11-13T18:08:31Z",
+      "updated_at": "2026-11-13T18:13:08Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -228,12 +228,12 @@
     "since": "2026-11-13T17:15:45Z",
     "at": "2026-11-13T17:34:17Z"
   },
-  "fork_branch": "moat-gpu-coverage",
+  "fork_branch": "moat-gpu-coverage-v2",
   "fork_branch_ruling": {
-    "branch": "moat-gpu-coverage",
-    "previous": null,
+    "branch": "moat-gpu-coverage-v2",
+    "previous": "moat-gpu-coverage",
     "by": "jeffdaily",
-    "at": "2026-11-13T17:23:35Z"
-  },
-  "review_pr": "https://github.com/AMD-Ecosystem/MMseqs2/pull/1"
+    "at": "2026-11-13T18:15:38Z",
+    "reason": "same tree as moat-gpu-coverage af0688d8; gfx90a commit message reworded so it no longer refers to the previous commit"
+  }
 }

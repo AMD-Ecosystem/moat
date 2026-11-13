@@ -1543,3 +1543,9 @@ Results:
 - Completion checks: `utils/jargon.py --port MMseqs2` (master..moat-gpu-coverage, local branches created from origin): clean. Docs: the libmarv Readme states the tuned arches and the generic fallback; the build itself is upstream's documented `ENABLE_HIP` path, no new knob. Fork clone `status --porcelain`: no modified tracked files.
 
 VERDICT: PASS. linux-gfx90a -> completed at af0688d8.
+
+## Port branch moat-gpu-coverage-v2 (jeff, 2026-11-13)
+
+The reviewer noted that e530252b's message said gfx90a "since the previous change" uses the generic configs, which the curated order made wrong (the previous commit is ClampToInvalid). jeff ruled to fix it now. `moat-gpu-coverage-v2` re-creates the four commits on d0185a2d (0a471b70, bf920ed6, 3fa41eaf, a25e69fd); the only change is that sentence, now "gfx90a (MI200) had no tuned aligner, so it runs the generic AMD configs." Every commit's patch-id equals its af0688d8-branch original and `git diff af0688d8 a25e69fd` is empty, so `squash-carry-forward` moved head to a25e69fd and carried linux-gfx90a and linux-gfx1201 (both completed at af0688d8). `set-fork-branch MMseqs2 moat-gpu-coverage-v2 --by jeffdaily`. `moat-gpu-coverage` (af0688d8) and `moat-port` (0c897402) are untouched.
+
+Tooling note: the `review_pr` clear recorded in e422b607 was undone by the next merge of a fleet host's status.json (the reviewer's 9d88dc76 carried PR #1 back), so the moat-status merge driver appears to treat a cleared field as absent and take the other side. Cleared again here.
