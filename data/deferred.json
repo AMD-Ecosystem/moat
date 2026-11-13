@@ -194,6 +194,129 @@
       "upstream_issue": null,
       "created_at": "2026-08-06T06:52:58Z",
       "decided": null
+    },
+    {
+      "id": "moat-gate-misses-conflict-markers",
+      "kind": "other",
+      "component": null,
+      "summary": "Neither utils/check.py nor the pre-push hook notices unresolved conflict markers in a committed file. During the 2026-08-19 fleet sync a merge resolution was committed and pushed to port/colmap with '<<<<<<< HEAD' still in .claude/skills/cuda-to-rocm/references/validation.md, and every gate reported ok; it was caught by hand afterwards and fixed forward in 7deba5c. 'git add' on a conflicted file marks it resolved, so this is easy to do under time pressure and the sweep makes it a bulk operation. A cheap gate would scan tracked text files for '^<<<<<<< ', '^>>>>>>> ' and a '^=======$' between them.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-19T16:11:16Z",
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T19:20:00Z"
+      },
+      "project": null
+    },
+    {
+      "id": "moat-no-gate-on-commit-message-rules",
+      "kind": "other",
+      "component": null,
+      "summary": "Nothing checks the commit-message rules AGENTS.md states, so a non-compliant body reaches upstream unnoticed. AGENTS.md requires every fork commit to start with [ROCm], keep the title to 72 characters, explain rationale, disclose AI assistance and carry a Test Plan. What exists: jargon.py --port scans the whole branch, but only for in-house vocabulary; pr_intent.py enforces TITLE_MAX=72 on the PULL REQUEST title in CI, not on commit titles; check.py has no commit-message gate; pr_ready checks platform gates and fork cleanliness only. Found on Quest, where c1d7fff shipped with no AI-assistance disclosure and three rounds of gates, review and pr-readiness reporting never mentioned it -- a human reviewer caught it. The same shape as the gh-guard and conflict-marker gates already added: a rule written down but never executed. A cheap gate would walk <fork default>..moat-port for each project with a local clone and check title prefix, title length, and the presence of a disclosure line and a Test Plan in the body.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-20T00:15:29Z",
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-20T04:30:19Z"
+      },
+      "project": null
+    },
+    {
+      "id": "nvidia-notice-cd-class-tidy",
+      "kind": "other",
+      "component": null,
+      "summary": "POLICY (2026-08-24): the C/D-class NVIDIA-notice items (dead-in-tree or text-only: EnvGS orphan script scripts/instant-ngp/colmap_to_nerf.py, OCTproZ about-dialog EULA copy shown even in AMD builds, LichtFeld-Studio nvImageCodec cmake pair, MASt3R-SLAM checkpoints notice, alien/plvs/cupoch vendored CUDA-path helpers, h2o4gpu dead vendored set) are not an immediate issue but should be tidied over time so it is clear AMD is not using them -- BSD swaps or bypass where possible, never deleting licence/notice files. LOW PRIORITY behind the A-class swaps (Velvet, TurboFNO) and pre-fork swaps (h2o4gpu, cuda_voxelizer, PhoenixOS header drop).",
+      "refs": [
+        "licensing review 2026-08-24"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-24T19:49:43Z",
+      "decided": null,
+      "project": null
+    },
+    {
+      "id": "upstream-followup-pr-flow",
+      "kind": "other",
+      "component": null,
+      "summary": "The upstream tooling has no path for a SECOND PR on a project whose first PR merged: pr-candidates and upstream.py --review exclude merged projects by design, and pr-ready reports 'pr-exists=the upstream PR is already merged' even when the moat-port branch carries new reviewed+revalidated commits. First hit: TurboFNO 2026-08-24 (three post-merge commits replacing vendor-sample-derived macro text, fully reviewed, platforms carrying forward). Interim: the person opens the follow-up PR manually from the fork and records it with set-pr-open once the tooling permits, or the record is kept in notes. Proper fix: a follow-up-PR flow (review PR on the fork, approval gate, publish) that treats the merged first PR as history rather than a terminal state.",
+      "refs": [
+        "projects/TurboFNO/notes.md 2026-08-24 rounds"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-24T22:25:33Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-25T18:06:14Z"
+      },
+      "project": null
+    },
+    {
+      "id": "mitsuba3-drjit-amd-backend",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): mitsuba-renderer/mitsuba3 GPU variants need a Dr.Jit AMD GPU backend, which does not exist (drjit-core has CUDA and LLVM backends only). Revisit when a Dr.Jit HIP backend lands upstream.",
+      "refs": [
+        "https://github.com/mitsuba-renderer/mitsuba3",
+        "https://github.com/mitsuba-renderer/drjit-core/pull/203",
+        "https://github.com/mitsuba-renderer/drjit/pull/520"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-12T16:46:37Z",
+      "decided": null,
+      "project": null
+    },
+    {
+      "id": "nemo-curator-rocm-ds",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): NVIDIA-NeMo/Curator needs a complete ROCm-DS stack, not just one RAPIDS library: GPU curation runs on cuDF, cuML, RAFT/cuVS and Dask-CUDA together (cuML is already declined for MOAT). Revisit when ROCm-DS covers that full set.",
+      "refs": [
+        "https://github.com/NVIDIA-NeMo/Curator"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-12T16:52:33Z",
+      "decided": null,
+      "project": null
+    },
+    {
+      "id": "maniskill-sapien-physx-warp",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): haosulab/ManiSkill GPU simulation needs SAPIEN's PhysX GPU backend and a vendored NVIDIA Warp. Revisit once the MOAT PhysX and Warp ports are delivered, starting with a screen of haosulab/SAPIEN.",
+      "refs": [
+        "https://github.com/haosulab/ManiSkill",
+        "https://github.com/haosulab/SAPIEN"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-12T16:59:21Z",
+      "decided": null,
+      "project": null
+    },
+    {
+      "id": "moat-doc-gate-failure-carry-forward",
+      "kind": "other",
+      "component": null,
+      "summary": "advance_head carries a validation-failed record forward across an arch-independent (doc-only) delta, but a failure caused by the documentation gate is fixed precisely by a doc-only delta. The arch then reads validation-failed at head and arch_task routes it back to a porter forever; only a validator recording completed clears it. Seen on LC-framework windows-gfx1151 (ea0df9b -> f0ce8ce). Consider recording why a validation failed, or letting a doc-gate failure retire on a doc-only advance.",
+      "refs": [
+        "projects/LC-framework/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-12T21:55:17Z",
+      "decided": null,
+      "project": null
     }
   ]
 }

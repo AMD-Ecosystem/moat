@@ -61,9 +61,20 @@ Two checks that are per-file, not top-level:
 - Grep the upstream's own docs: `grep -rniE 'amd|rocm|hip|gfx[0-9]' README* docs/`.
   Reference repos routinely link platform ports in a "notable forks" section, and that
   link IS the existing AMD port. Cheapest check available, highest signal.
+- List the upstream's OPEN pull requests and branches for the same work:
+  `gh pr list --repo <owner/repo> --state open --search "hip OR rocm OR amd" --json number,title,author,createdAt,isDraft`
+  and `gh api repos/<owner/repo>/branches --paginate --jq '.[].name' | grep -iE 'hip|rocm|amd'`.
+  An open draft PR is invisible to a docs grep and to a fork search, and it is the
+  strongest duplicate-effort signal there is: the maintainer or a contributor is
+  already doing the port. FLAMEGPU2 was adopted with the maintainer's own
+  "AMD GPU Support via HIP/ROCm" draft PR two months old and open on the upstream
+  repo; the screen missed it and a full parallel port was built before anyone
+  noticed. When such a PR exists, the recommendation is to contribute to it, not
+  to compete with it.
 - For the finer judgement -- is an existing port authoritative, and does that make the
   work "validate and improve" rather than "port from scratch" -- read the
-  `cuda-to-rocm` skill's `references/assess-existing-support.md`.
+  `cuda-to-rocm` skill's `references/assess-existing-support.md`, plus the `moat-porting` skill's
+  dispositions section.
 
 If a mature AMD port exists, recommend a decline with reason `already-supported`
 (`set-intake --reason`, see Outcomes) -- the skip itself is a person's, recorded through
@@ -75,12 +86,22 @@ a coordination question, not a race.
 Cheap checks only. Deep analysis is the planner's job.
 
 - Does it genuinely use CUDA? (`.cu`/`.cuh`, CUDA libraries, a compiled extension)
+  A candidate tagged `lane: validate` (seeded, no CUDA source) is in scope anyway:
+  the work is to build it on ROCm, fix what packaging needs (setup.py, extras,
+  wheel pins), run its GPU tests, and send upstream a docs change stating ROCm
+  support. Record its GPU dependencies (flash-attn, onnxruntime-gpu, cuDF, ...)
+  with `set-deps`; that is usually what decides whether it works.
+- A candidate tagged `nvidia-org` has no upstream PR to offer, and may still be
+  ported, but only on a licence that is clean file by file: run
+  `utils/licenses.py scan-nvidia` on a clone and read every hit.
 - Does it depend on other MOAT projects? Record with `moatlib.py set-deps`.
 - Is upstream archived or abandoned? **Note it, do not block on it.** An archived
   upstream cannot accept a pull request, so the port has no upstream destination --
   but the port itself still has value: someone looking for AMD support will find our
   fork and can build from it. Say so in notes.md and the queue write-up, so nobody
   later waits for a PR that can never be opened.
+  If the project is adopted anyway, the person who adopts it records
+  `moatlib.py set-no-upstream` so no PR is ever offered.
 
 ## 4. Claim it, then stop at the fork
 

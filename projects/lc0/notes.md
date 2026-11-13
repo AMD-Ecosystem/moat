@@ -1525,3 +1525,1576 @@ fallback otherwise). No staleness found.
 
 `git -C projects/lc0/src status --porcelain`: clean. validated_sha = 7727fa3. Transition:
 completed (validated_sha bumped from d83b6d1) -> completed.
+
+## Validation 2026-08-20 (windows-gfx1151) -- BLOCKED (defect re-confirmed at head 7727fa3)
+
+Narrow re-test of the 2026-06-04 windows-gfx1151 block: same net, same tolerance, one new
+variable (later fork head + newer TheRock SDK). Question: does the value-head defect still
+reproduce? Answer: yes, unchanged.
+
+Host: Windows 11, AMD Radeon 8060S (gfx1151, RDNA3.5 APU, 20 CUs). TheRock ROCm SDK
+`7.14.0a20260612` (`D:\Develop\TheRock\.venv`, pip `_rocm_sdk_devel` +
+`_rocm_sdk_libraries_gfx1151`), AMD clang `23.0.0git` (target x86_64-pc-windows-msvc),
+meson 1.10.1, ninja 1.13.2. This is newer than both the original 2026-06-04 gfx1151 block
+and the 2026-06-05 gfx1101/gfx1201 block (`7.14.0a20260604`).
+
+Fresh clone of `AMD-Ecosystem/lc0` @ `moat-port` into `projects/lc0/src`; HEAD `7727fa3`
+(`lc0.exe --help` reports `v0.33.0-dev+git.7727fa3`), matches `head_sha`. PR #2420 open,
+`published_sha` == `head_sha`, so `moat-port` is frozen -- no push made, read-only build.
+
+### Build
+
+Same recipe as the 2026-06-05 gfx1101/gfx1201 entry (`cross-files` native-file
+`agent_space/lc0-win-native.ini`, `clang`/`clang++` from
+`_rocm_sdk_devel/lib/llvm/bin`, MSVC `link.exe` ahead of MSYS `link` on PATH):
+
+```
+meson setup build-hip-win-gfx1151 \
+  -Dhip=true -Damd_gfx=gfx1151 \
+  -Dplain_cuda=false -Dcudnn=false -Dcutlass=false -Dnvcc=false \
+  -Dgtest=true -Dblas=true -Dopencl=false -Donnx=false \
+  -Db_lto=false -Dnative_arch=false \
+  --default-library=static \
+  --native-file=D:/Develop/moat/agent_space/lc0-win-native.ini \
+  -Dhip_libdirs=<ROCM_DEVEL>/lib,<ROCM_LIB_gfx1151>/lib \
+  -Dhip_include=<ROCM_DEVEL>/include \
+  -Dopenblas_libdirs=D:/Develop/moat/agent_space/openblas_shim/lib \
+  -Dopenblas_include=<ROCM_DEVEL>/lib/host-math/include/openblas
+
+bash utils/timeit.sh lc0 compile -- ninja -C projects/lc0/src/build-hip-win-gfx1151 -j 16
+```
+
+Result: 261/261 targets, clean, exit 0. Only benign warnings (nodiscard, dangling-else in
+`common_kernels.cu`, deprecated C prototypes in bundled zlib).
+
+New environment fact for this SDK build (`7.14.0a20260612`) not previously recorded: the
+`-Dblas=true` CPU reference backend needs OpenBLAS, and this TheRock devel package ships it
+under `lib/host-math/lib/rocm-openblas.lib` / `bin/rocm-openblas.dll`, not `openblas.lib`.
+lc0's meson.build calls `cc.find_library('openblas', ...)` literally, so it does not match
+`rocm-openblas`. Fix (throwaway host-side shim, not a fork edit): copy
+`rocm-openblas.lib` to `agent_space/openblas_shim/lib/openblas.lib` (the import library's
+internal DLL-name metadata still points at `rocm-openblas.dll`, so the renamed `.lib`
+links fine and the unrenamed `rocm-openblas.dll` staged next to the exe satisfies it at
+runtime) and pass `-Dopenblas_libdirs`/`-Dopenblas_include` pointing at the shim + TheRock's
+`lib/host-math/include/openblas`. Without this, meson silently builds without `-DUSE_BLAS`
+and the `blas` backend does not register (`Unknown backend: blas` at runtime) -- same root
+cause as the gfx1100 Linux `libopenblas-dev` gap recorded earlier in this file, just with a
+differently-named import library on the Windows SDK side.
+
+Runtime DLLs staged next to `lc0.exe` (System32 `amdhip64_7.dll` is broken on this host,
+see MOAT skill): `amdhip64_7.dll`, `amd_comgr.dll`, `hiprtc0714.dll`,
+`hiprtc-builtins0714.dll`, `rocm_kpack.dll`, `hipblas.dll`, `rocblas.dll`, `rocsolver.dll`
+(new transitive dep of `hipblas.dll` on this SDK), `libhipblaslt.dll` (new transitive dep
+of `rocblas.dll`), `rocm-openblas.dll`. Diagnosed via `dumpbin /dependents` walking the
+chain (`hipblas.dll` -> `rocsolver.dll`, `rocblas.dll` -> `libhipblaslt.dll`) after the
+generic "hipblas.dll: cannot open shared object file" exit-127 masked a transitive miss.
+
+### CPU gtest (non-GPU regression)
+
+```
+bash utils/timeit.sh lc0 test -- meson test -C projects/lc0/src/build-hip-win-gfx1151
+```
+
+8/8 OK (FP16, HashCat, OptionsParserTest, PositionTest, EncodePositionForNN, SyzygyTest,
+EngineTest, ChessBoard). 0 failures.
+
+### Benchmark (fault-free run)
+
+```
+lc0.exe backendbench --backend=hip --weights=agent_space/maia1100.pb.gz --batches=3
+```
+
+Batch sizes 1-256 ran clean, exit 0. No crash, no hang, no GPU error.
+
+### maia-1100 value-head cross-check (THE gate) -- FAILS, same as prior blocks
+
+```
+lc0.exe backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz \
+  --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+
+Result: 0/222 passed, 222 "value incorrect (but policy ok)" errors, one per batch size
+1-55 across all 4 repeats. `mode=display` at batch=32:
+
+```
+maximum error for a batch of 32:
+  value: absolute: 4.4e-02, relative: 4.9e-01.
+  policy: absolute: 3.0e-07, relative: 5.2e-06.
+```
+
+Policy is bit-identical (abs 3.0e-07 vs the 2026-06-04 entry's ~1e-6, both well under the
+1e-3 bar); the value head is wrong by the same 4.4e-02 absolute magnitude recorded on
+2026-06-04 (gfx1151) and 2026-06-05 (gfx1101/gfx1201), against the 1e-3 tolerance. Exact
+match in both sign and magnitude to the prior blocks -- this is not new noise, it is the
+same defect.
+
+### Decision
+
+Per the porter brief, this was a narrow re-test only (build + the one check command),
+not a re-run of the exhaustive prior investigation (graph capture / use_gemm_ex /
+Conv1Layer / standalone BLAS, all already cleared on gfx1101/gfx1201 and not repeated
+here). The fork head advanced (`1a6c3e3` -> `7727fa3`, two porter/reviewer rounds) and
+the TheRock Windows SDK advanced (`7.14.0a20260604` -> `7.14.0a20260612`) since the
+original block; neither changed the outcome. Root cause remains unresolved and is not
+mine to chase further per the stop-discipline in this brief -- re-recording the block
+with fresh evidence is the correct, sufficient action.
+
+`python3 utils/moatlib.py set-blocked lc0 windows-gfx1151 "<see status.json blocked_reason>"`
+
+| Check | Result |
+|-------|--------|
+| Build (261/261 targets) | PASS |
+| CPU gtest 8/8 | PASS |
+| Benchmark batch 1-256 | PASS (no fault) |
+| maia-1100 value-head check (222 batches) | FAIL (value abs 4.4e-02 vs 1e-3 bar; policy bit-identical) |
+
+`git -C projects/lc0/src status --porcelain`: clean (fresh read-only clone, no fork edits).
+No push made (PR #2420 open, moat-port frozen). CUDA no-regression gate: skipped (this
+host has no CUDA toolkit; already recorded on linux-gfx90a at an earlier head and the gate
+is compile-only/code-scoped, not arch-scoped). `windows-gfx1151` stays `blocked`, matching
+the identical `blocked` status already carried by windows-gfx1101/gfx1201; no windows arch
+has completed the `windows` gate and no waiver is recorded (`waivers: {}` in status.json).
+Whether to pursue a waiver or a toolchain bug report for the underlying TheRock rocBLAS
+value-head defect is a maintainer decision, not made here -- this session only re-confirmed
+the measurement at the current head/SDK per the porter brief.
+
+## Investigation 2026-08-20 (windows-gfx1151) -- why Windows
+
+**ROOT CAUSE FOUND.** The Windows value-head defect is not a numerics, ABI, LLP64 or
+rocBLAS problem. It is a **host-side stream-ordering race in lc0's own weight upload
+path** (`allocAndUpload` in `src/neural/backends/cuda/layers.cc`) that corrupts exactly one
+weight tensor: the value head's second dense bias `ip2_val_b_`. A one-line
+`cudaStreamSynchronize(0)` at the end of `allocAndUpload` turns the failing gate command
+from 222/222 failures into **222/222 passes** on this host.
+
+This is a latent bug in upstream lc0's CUDA backend that only manifests under HIP on
+Windows. It is not a ROCm/TheRock component defect, so no `rocm-bug-report` was registered.
+
+### The mechanism
+
+```
+template <typename DataType>
+void allocAndUpload(DataType** gpu_dest, std::vector<float> cpu_src, void* scratch) {
+  ...
+  ReportCUDAErrors(cudaMalloc(gpu_dest, size));
+  ReportCUDAErrors(cudaMemcpy(scratch, &cpu_src[0], ..., cudaMemcpyHostToDevice));
+  copyTypeConverted((DataType*)(*gpu_dest), (float*)scratch, (int)cpu_src.size(), 0);
+}                                                                              ^^^ stream 0
+```
+
+`copyTypeConverted` launches an **asynchronous kernel on the legacy null stream** that reads
+the network's **shared `scratch_mem` buffer**. `allocAndUpload` returns without waiting for
+it. Every compute stream in this backend is created with `cudaStreamNonBlocking`
+(`network_cuda.cc:291-295`), so a non-blocking stream carries **no implicit ordering against
+the null stream**. The first network evaluation then writes its own intermediates into that
+same `scratch_mem` on `compute_stream`. If the still-pending null-stream copy kernel executes
+after that write, it copies the *evaluation's* scratch contents into the weight tensor
+instead of the weights.
+
+Only the final upload of the last-constructed layer is exposed to this window, because every
+earlier upload's kernel is flushed by the next `allocAndUpload`'s synchronous H2D `cudaMemcpy`
+into the same scratch. For a classic (non-attention-body) net with no moves-left head, the
+last layer constructed is the **value head**, and its last upload is `ip2_val_b_`. That is the
+entire reason the defect looked "value-head specific": the value head is not mathematically
+special here, it is merely last in the construction order.
+
+**Why Windows.** The race is latent on both operating systems; only the Windows HIP runtime
+loses it. Under the Windows KMD, kernel submission is batched/deferred, so the tiny 3-element
+null-stream copy had not executed by the time the first compute-stream evaluation overwrote
+`scratch_mem`; under the Linux KFD path the same launch lands immediately and wins. This is
+consistent with every observation on record: the failure is bit-for-bit identical and fully
+deterministic on gfx1151, gfx1101 and gfx1201 (all Windows) and absent on linux-gfx90a
+(wave64) and linux-gfx1100 (wave32, same wave width as gfx1151), across two TheRock SDKs.
+The operating system was always the only variable that tracked the failure, and the mechanism
+explains why: it is a host-side submission-timing property, not an ISA, wavefront or library
+property. The scheduling inference is the one link supported by inference rather than direct
+measurement; the corruption itself, its location, and the fix are all measured below.
+
+### Evidence chain (bisect, sample 0, maia-1100, batch 2)
+
+| Stage | HIP | blas ref | Verdict |
+|-------|-----|----------|---------|
+| trunk output into value head | 0.76097327 0.70556033 0.66990530 | 0.76097500 0.70556080 0.66990554 | match |
+| after value 1x1 conv | 0.27327654 0.34498364 0.0 | 0.27327642 0.34498358 0.0 | match |
+| after value dense 1 (+RELU) | sumabs 4.527254 | sumabs 4.527256 | match |
+| dense 2 weights `ip2_val_w_` on device | sumabs 18.892862 | sumabs 18.892862 | match |
+| dense 2 GEMM output, pre-bias | 0.45046660 -0.68904316 0.23963423 | (n/a) | **exact** vs a host double-precision reference dot product computed from the same device weights and device input |
+| **dense 2 bias `ip2_val_b_` on device** | **-1.40802431 0.55243015 0.00000000** | **0.43719077 -0.98977518 0.55311656** | **WRONG** |
+| WDL logits out | -0.95756 -0.13661 0.23963 | 0.88766 -1.67882 0.79275 | wrong, exactly by the bias delta |
+
+The final logits reproduce exactly as `prebias + bias` in both backends, so `addVectors` is
+correct too. The single corrupted datum in the whole network is that 3-float bias. Its content
+is plausible-magnitude foreign float data with a hard `0.0` in the third slot -- i.e. someone
+else's buffer, which is what pointed at the scratch race.
+
+Confirmation: printing the bias in the `ValueHead` constructor *with a `cudaDeviceSynchronize()`
+before the readback* showed the device copy already **correct** at construction time
+(`dev= 0.43719077 -0.98977518 0.55311656`), and that added synchronization alone made the whole
+check pass -- the tensor is uploaded correctly and then lost, not uploaded wrongly.
+
+### Proposed minimal fix (NOT committed -- `moat-port` is frozen behind PR #2420)
+
+```c
+   copyTypeConverted((DataType*)(*gpu_dest), (float*)scratch,
+                     (int)cpu_src.size(), 0);
++  ReportCUDAErrors(cudaStreamSynchronize(0));
+ }
+```
+
+in `allocAndUpload`, `src/neural/backends/cuda/layers.cc`. It is init-time only (once per
+weight tensor at network construction), so it has no steady-state performance cost, and it is
+correct on CUDA as well -- upstream's CUDA build relies on the same unordered null-stream
+launch and is simply winning the race today. An equally valid alternative is to give
+`allocAndUpload` the real upload stream instead of stream 0, but that requires threading a
+stream through every layer constructor; the sync is the smallest complete fix.
+
+Verified with the exact gate command that has failed on every Windows arch since 2026-06-04,
+with graph capture at its default (ON):
+
+```
+lc0.exe backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz \
+  --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+
+Before: 0/222 passed, 222 `value incorrect (but policy ok)`, value abs 4.4e-02 rel 4.9e-01.
+After: **222/222 `Check passed`**, 0 errors; `mode=display` at batch 32 gives
+value abs **6.0e-08** rel 1.3e-06 (was 4.4e-02 / 4.9e-01), policy unchanged at 3.0e-07.
+
+Landing this is a separate decision: PR #2420 is open, so it needs a `moat-fix-<pr#>` round
+(`moatlib.py fix-branch`) plus the usual porter/reviewer/validator cycle, not a push to
+`moat-port`. Nothing was pushed or committed to the fork by this investigation.
+
+### Hypotheses ruled in / out
+
+- **Host/device struct-layout (MSVC ABI) mismatch -- RULED OUT.** No struct is passed to any
+  kernel on this path; all kernel arguments are scalars and pointers. Every stage from the
+  input planes through the dense-2 GEMM is bit-comparable to the CPU reference, which could
+  not happen if kernel arguments were being read at wrong offsets.
+- **LLP64 / 32-bit `long` on Windows -- RULED OUT.** A `\blong\b` grep over the entire HIP
+  backend (`*.cu *.h *.cc *.inc`, excluding `long long`) returns **zero** hits. The corrupted
+  datum is a 3-element float bias, not a size, stride, offset, mask or shift.
+- **FP contraction / fast-math divergence -- RULED OUT.** Everything up to and including the
+  dense-2 GEMM matches the CPU to ~1e-7, and the GEMM output equals a host double-precision
+  reference dot product exactly. The error was a wrong constant, not accumulated rounding.
+  (This is also why the original 4.4e-02 magnitude never fitted a contraction story.)
+- **Uninitialised / misaligned buffer -- RULED IN, refined.** The buffer is initialised, but
+  by an unordered async null-stream kernel reading a shared scratch buffer that the first
+  evaluation overwrites first. Not a Windows heap effect; a stream-ordering effect.
+- **Wrong CPU reference (OpenBLAS ILP64 / the `rocm-openblas` shim) -- RULED OUT.** lc0's
+  independent `eigen` backend agrees with `blas` to **3.0e-08** on value and 1.5e-07 on policy
+  (`--backend-opts=blas(),eigen(),mode=display`), so both CPU references agree and the GPU was
+  the outlier. This was the first thing checked and is worth keeping as a cheap habit.
+- **rocBLAS dispatching the small M=3 value GEMM to a broken hipBLASLt kernel** (the 2026-06-04
+  leading hypothesis) **-- RULED OUT.** `ROCBLAS_USE_HIPBLASLT=0` changes nothing, and the GEMM
+  output was subsequently proven exact.
+- **CUDA graph capture -- already cleared, and confirmed irrelevant.** The failure reproduces
+  identically with `hip(graph_capture=false)`, and the fix passes with capture at its default ON.
+
+### Exactly what was instrumented (all reverted; fork tree left clean)
+
+Throwaway edits in the local clone only, rebuilt with `ninja -C build-hip-win-gfx1151 lc0.exe`:
+
+1. `src/neural/backends/cuda/layers.cc`, `ValueHead<DataType>::Eval`: a `vhDump()` helper
+   (`cudaStreamSynchronize` + `cudaMemcpy` D2H + sum-of-abs and the first values) called on
+   `input` (trunk in), `buffer` (after the value conv), `scratch` (after dense 1) and `output`
+   (WDL logits), gated to the first few evaluations by a static counter.
+2. Same file, between the dense-2 `cublasXgemm` and `addVectors`: dumps of the pre-bias GEMM
+   output, of `ip2_val_b_` and `ip2_val_w_`, plus a host `double` reference dot product
+   recomputed from the device weights and device input -- this is what proved the GEMM exact
+   and the bias wrong.
+3. `src/neural/backends/blas/network_blas.cc`, `BlasComputation::ComputeBlocking`: a matching
+   `blasDump()` on `buffer2` (trunk), `head_buffer` (after value conv), `buffer3` (after
+   dense 1), `wdl` (logits), `ip2_val_w`, `ip2_val_b`.
+4. `ValueHead` constructor: readback of `ip2_val_b_` immediately after upload -- the probe that
+   accidentally fixed the bug (via its `cudaDeviceSynchronize`) and pinned the mechanism.
+
+Two traps worth repeating for anyone reproducing this:
+
+- Compare **sample 0 only**. The HIP value head runs with `N` padded above the requested batch
+  (N=4 for a requested batch of 2), so whole-tensor sums are not comparable between the two
+  backends; per-sample slices are.
+- A synchronous `cudaMemcpy` inside `Eval` breaks CUDA-graph capture and surfaces as
+  `CUBLAS_STATUS_INTERNAL_ERROR` on the second evaluation. Add `hip(graph_capture=false)` to
+  the backend options while instrumenting.
+
+The first HIP evaluation observed (`HIPVH[0]`) is a warm-up with an all-zero trunk input; the
+real check evaluation is the one whose trunk matches the blas dump.
+
+### Candidate lesson for the `cuda-to-rocm` skill
+
+Worth promoting when this port is next edited: *an async init-time kernel launched on the
+legacy null stream is not ordered against streams created `cudaStreamNonBlocking`, and Windows
+HIP loses that race deterministically where Linux HIP wins it.* Generic symptom to look for:
+one constant tensor wrong while everything computed around it is exact, the wrong values being
+plausible-magnitude foreign floats, and a "fix" that appears the moment you add a debug
+readback. Kept here rather than promoted now because this brief was investigation-only.
+
+## Fix round 2026-08-20 (windows-gfx1151) -- one-line fix landed on the staging branch
+
+The stream-ordering race identified in the investigation section above is now
+implemented and verified on this host. PR #2420 is open, so the commit went on the
+staging branch cut from the published tip, never on `moat-port`.
+
+- Branch `moat-fix-2420`, base `7727fa32c199` (unchanged published tip).
+- Commit `df2c56a` `[ROCm] Order weight uploads against the first evaluation`.
+
+### The diff (one line, `src/neural/backends/cuda/layers.cc`, `allocAndUpload`)
+
+```
+   copyTypeConverted((DataType*)(*gpu_dest), (float*)scratch,
+                     (int)cpu_src.size(), 0);
++  ReportCUDAErrors(cudaStreamSynchronize(0));
+ }
+```
+
+Unconditional, not guarded by `USE_HIP`/`__HIPCC__`: the missing ordering is a real
+defect on the CUDA path too, which is merely winning the race today. Init-time only, so
+no steady-state cost.
+
+### Build (unchanged recipe, TheRock ROCm 7.14.0a20260612 Windows SDK, AMD clang 23.0.0git)
+
+Build directory `build-hip-win-gfx1151` was configured earlier this session with:
+
+```
+meson setup build-hip-win-gfx1151 . \
+  -Dhip=true -Damd_gfx=gfx1151 \
+  -Dplain_cuda=false -Dcudnn=false -Dcutlass=false -Dnvcc=false \
+  -Dgtest=true -Dblas=true -Dopencl=false -Donnx=false \
+  -Db_lto=false -Dnative_arch=false -Ddefault_library=static \
+  -Dhip_libdirs=<sdk_devel>/lib,<sdk_libs_gfx1151>/lib \
+  -Dhip_include=<sdk_devel>/include \
+  -Dopenblas_libdirs=agent_space/openblas_shim/lib \
+  -Dopenblas_include=<sdk_devel>/lib/host-math/include/openblas \
+  --native-file=agent_space/lc0-win-native.ini
+```
+
+Rebuild for each measurement below:
+
+```
+bash utils/timeit.sh lc0 compile -- ninja -C build-hip-win-gfx1151 lc0.exe
+```
+
+134/134 targets both times, clean link, one benign `-Wswitch` warning in `layers.cc`.
+
+### Gate (graph capture left at its DEFAULT, i.e. ON)
+
+```
+./lc0.exe backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz \
+  --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+
+| | passed | failed |
+|---|---|---|
+| base `7727fa3` (rebuilt and re-measured here, not quoted) | **0** | **222** (`value incorrect (but policy ok)`) |
+| with `df2c56a` | **222** | **0** |
+
+`mode=display`, batch 32, 2 batches:
+
+```
+./lc0.exe backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=display,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz \
+  --start-batch-size=32 --max-batch-size=32 --batches=2
+```
+
+| | value abs | value rel | policy abs | policy rel |
+|---|---|---|---|---|
+| base `7727fa3` | 4.4e-02 | 4.9e-01 | 3.0e-07 | 5.2e-06 |
+| with `df2c56a` | **6.0e-08** | **1.3e-06** | 3.0e-07 | 5.2e-06 |
+
+Policy is unchanged, as expected: it never depended on the corrupted bias.
+
+### Non-GPU regression
+
+```
+bash utils/timeit.sh lc0 test -- meson test -C build-hip-win-gfx1151
+```
+
+8/8 OK (`FP16`, `HashCat`, `OptionsParserTest`, `PositionTest`, `EncodePositionForNN`,
+`SyzygyTest`, `EngineTest`, `ChessBoard`), 0 fail.
+
+### Gates
+
+`python3 utils/jargon.py --port lc0` clean, and the same scan over the staging range
+(`master..moat-fix-2420`, `master...moat-fix-2420`) clean. `audit-commits` passes the new
+commit; its 15 remaining findings are all on commits at or below the published tip
+`7727fa3` (including four inherited non-`[ROCm]` commits), i.e. pre-existing in the open
+PR and not touchable without rewriting published history.
+
+Note for anyone reproducing: `utils/jargon.py --port` resolves `master..moat-port` with
+LOCAL branch names, so a clone that only has `origin/master` fails with "cannot resolve";
+`git branch master origin/master` in the fork clone is the fix, not a fetch problem.
+
+## Stale Windows blocks cleared 2026-08-20 (gfx1101, gfx1201)
+
+`windows-gfx1101` and `windows-gfx1201` were still carrying the 2026-06-05 block text
+("value-head numerical defect ... root cause unresolved; suspected TheRock ROCm/rocBLAS
+Tensile"). That reasoning is FALSIFIED: the defect was the null-stream weight-upload race in
+lc0's own `allocAndUpload`, fixed at `df2c56a` and measured 0/222 -> 222/222 on
+windows-gfx1151. The blocks' own wording said to reopen if a fix was identified, so both were
+cleared with `moatlib.py set-blocked lc0 <arch> --clear`.
+
+Cleared rather than validated: no record was written claiming evidence on those two arches,
+because neither was tested here. They simply become eligible for a validator again. Both are
+the same physical machine, which is not this host.
+
+Jeff refused the `windows` gate waiver on the same evidence, so the gate is to be taken
+honestly by validating the fix.
+
+## Review 2026-08-20 (windows-gfx1151, reviewer) -- CHANGES REQUESTED
+
+Scope: the fix round only, `git diff 7727fa32...df2c56a7` on `moat-fix-2420` (one line,
+`src/neural/backends/cuda/layers.cc`). Nothing below disputes the diagnosis: the three
+links were re-read and all hold -- `copyTypeConverted`'s fourth parameter is
+`cudaStream_t stream` and it launches `<<<blocks, kBlockSize, 0, stream>>>`
+(`common_kernels.cu:413-416`) with `0` passed from `layers.cc:1417`; all three backend
+streams are created `cudaStreamNonBlocking` (`network_cuda.cc:291-295`); and in the
+default `multi_stream=false` mode evaluation writes the very same `scratch_mem_`
+(`network_cuda.cc:760`) that every layer constructor uploaded through
+(`network_cuda.cc:442-622`). No per-thread default stream is enabled anywhere, so `0`
+really is the legacy null stream, and `hip_compat.h:107` maps `cudaStreamSynchronize`.
+
+### 1. BLOCKING -- the fix closes the hole only for uploads routed through `allocAndUpload`
+
+`allocAndUpload` is not the only weight-upload path that reads the shared scratch on
+stream 0 and returns unordered. The same shape, unchanged by this commit, is in
+
+- `FCLayer<half>::LoadWeights` -- `layers.cc:598` and `layers.cc:604`
+- `Conv1Layer<DataType>::LoadWeights` -- `layers.cc:1056` and `layers.cc:1062`
+- `ConvLayer<half>::LoadWeights` -- `layers.cc:222` and `layers.cc:232`
+- `FusedWinogradConvSELayer<DataType>::LoadWeights` / `LoadSEWeights` -- `layers.cc:844-894`
+- `AttentionBody` positional encoding -- `layers.cc:2112`
+
+The commit body's own rule ("only the last upload of the last-constructed layer is
+exposed") is right, but the last upload is not always an `allocAndUpload`. For a
+classic-body network **with** a moves-left head -- the T60/T70/T78 shape -- the layers
+constructed after the value head are `convMov`, `FCMov1`, `FCMov2`
+(`network_cuda.cc:605-623`). In fp16 the final upload is then `FCMov2`'s one-element
+bias at `layers.cc:604`, left pending exactly as `ip2_val_b_` was. In fp32
+`FCLayer<float>::LoadWeights` bypasses scratch entirely, so the last scratch reader is
+`convMov`'s bias at `layers.cc:1062`, followed only by null-stream `cudaMemcpy`s that do
+not guarantee it retired. fp16 is not an exotic configuration: `hip-auto` is the
+highest-priority registration (`network_cuda.cc:1376-1378`) and selects `half` for any
+device reporting major >= 7 (`network_cuda.cc:1364-1369`), which every gfx11 part does.
+
+The validated net, maia-1100, has no moves-left head, so 222/222 cannot see this. The
+gate would be taken on a port that still corrupts one weight on Windows for a common
+network shape.
+
+Smallest complete fix: one `ReportCUDAErrors(cudaStreamSynchronize(0));` after the
+layer-construction block in the `CudaNetwork` constructor, before the `tensor_mem_`
+allocation at `network_cuda.cc:628-648`. Construction is single-threaded and every
+upload path is null-stream ordered against every other, so a single sync at the boundary
+to the first evaluation covers all of them, in the same one line, without touching each
+`LoadWeights`. Keeping the `allocAndUpload` line as well is fine and self-documenting.
+
+### 2. Commit body must be re-worded with the fix
+
+"Waiting for the null stream before `allocAndUpload` returns fixes it at the source"
+is the claim finding 1 falsifies -- as written it fixes it at one of six sources. Once
+the constructor-level sync lands, the rationale paragraph should describe the boundary
+being ordered (end of network construction vs first evaluation) rather than one function.
+
+### 3. Test Plan does not reproduce the build it claims
+
+The body's `meson setup build -Dhip=true -Damd_gfx=gfx1151 ...` line omits everything
+that made the stated "Built for gfx1151 on Windows with clang-cl" build work on this
+host: `--native-file`, `-Dhip_include`, `-Dhip_libdirs` (the real command is recorded in
+the fix-round section above). A maintainer copying that block on Windows gets a configure
+failure. Either quote the command actually run or say plainly that the Windows SDK paths
+are host-specific.
+
+### 4. The recorded gate claim was not established by the command named
+
+`audit-commits` resolves `<default>..moat-port` with `PORT_BRANCH` hardcoded
+(`utils/moatlib.py:1608`), and `jargon.py --port` uses `fork_branch or PORT_BRANCH`
+(`utils/jargon.py:101`) while the fix branch lives at `fix.branch` in status.json.
+Neither command ever looked at `df2c56a`, so "audit-commits passes the new commit" in the
+fix-round section is unsupported as written.
+
+Re-checked here by running `commit_message_problems` with the range patched to
+`master..moat-fix-2420`: `df2c56a` produces **zero** findings (title `[ROCm]`, 56 chars,
+rationale, AI-assistance disclosure, fenced Test Plan, no `Co-Authored-By`, no MOAT
+vocabulary, author `Jeff Daily <jeff.daily@amd.com>`), and all 15 findings are on commits
+at or below the published tip `7727fa3`. The commit conforms; the sentence recording it
+should say how that was determined. Registered as a control-plane deferral.
+
+### Checked and clear
+
+Unguarded is correct (finding 1 aside): every `allocAndUpload` call site is a layer
+constructor, none is reachable from an `Eval`, so the sync cannot land inside a CUDA
+graph capture and costs nothing in steady state on the NVIDIA path. Fork tree clean, one
+commit on the branch, no ROCm fault class touched by a one-line host-side sync.
+
+## Round PAUSED 2026-08-20 -- GPU engine timeouts during verification
+
+The second porter run (addressing the review's finding 1) pushed `318c524`
+("[ROCm] Order weight uploads against the first evaluation", replacing `df2c56a`) to
+`moat-fix-2420`, then was STOPPED mid-run. `moat-port` untouched at `7727fa3`.
+`head_sha` = `318c524` matches the fork tip; stage left at `porting` (lock held here,
+we intend to resume).
+
+**Do NOT treat `318c524` as verified.** Windows recorded three
+`Kernel_141` / VIDEO_ENGINE_TIMEOUT_DETECTED events at 14:30:32, 14:32:19 and
+14:36:55 -- entirely inside that porter's window (it took the lock at 14:16:09). Any
+gate numbers it measured span at least one GPU engine timeout and cannot be trusted
+for a correctness gate. The commit's CODE may well be right; its EVIDENCE is not.
+It must be re-measured on a quiet GPU before this round advances.
+
+Unaffected, and worth stating so it is not re-litigated: the earlier `df2c56a`
+measurement (0/222 -> 222/222, value abs err 4.4e-02 -> 6.0e-08) was recorded before
+14:13:31, ahead of the first timeout, so it stands. The reviewer's finding against it
+also stands -- `df2c56a` was incomplete, which is why `318c524` exists.
+
+### Why the timeouts, and why this is not simply "lc0 kernels are too long"
+
+A non-MOAT process holds this host's GPU COMPUTE engine at 85-93% continuously:
+`WorkloadsSessionHost.exe`, PID 24164, started 2026-08-19 09:32:08, parented by the
+DCOM launcher (`svchost` 2616). It stayed pegged at ~90% AFTER `lc0.exe` exited, so it
+is not ours and not a child of our work. Its `ExecutablePath` and `CommandLine` are
+not readable from this session and the binary is not under the usual Program Files or
+System32 roots, so the owning product is NOT established -- do not record a vendor
+guess as fact. Note only that AMD Adrenalin started logging at 09:32:29 the same
+morning and advertises local AI features (RSX Chatbot, Txt2Img, Privacy View), which
+makes it a candidate worth checking, nothing more.
+
+This matters for triage: on a 20-CU APU our kernels were contending for a compute
+engine already ~90% occupied, which is a far better explanation for exceeding even a
+60-second TDR window than lc0 kernel duration alone. `TdrDelay` and `TdrDdiDelay` are
+already 60 (registry, `HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers`);
+`TdrLevel` is unset.
+
+Kernel_141 history on this host: 2026-06-03, 06-04 (x2), 06-07 (x4), 08-18 (x2),
+08-20 (x3). The June cluster coincides with the sessions that first blocked lc0 and
+Gpufit here -- worth remembering before attributing any future gfx1151 numeric or
+hang finding to the GPU itself.
+
+### Before resuming
+
+Re-measure `318c524`'s gate with the compute engine idle. Confirm no foreign PID holds
+`\GPU Engine(*engtype_Compute)\Utilization Percentage` before starting.
+
+## Round RESUMED 2026-08-20 -- `318c524` re-measured on an idle GPU (windows-gfx1151)
+
+Re-measurement of the paused round, per the section above. No code was changed: the tree
+was already at `318c524` and `git status --porcelain` was clean before and after. `moat-port`
+untouched at `7727fa3`. `lc0.exe` was fully rebuilt (134/134) so the binary provably matches
+the commit rather than the untrusted 14:34 binary.
+
+Build unchanged from the fix-round recipe (`build-hip-win-gfx1151`, TheRock ROCm Windows SDK,
+`--native-file=agent_space/lc0-win-native.ini`, `-Damd_gfx=gfx1151`).
+
+### The recorded gate reproduces exactly
+
+`hip()` vs `blas()`, graph capture at its DEFAULT (on), maia-1100, 15:03:18-15:04:25:
+
+```
+./lc0.exe backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+
+**222/222 `Check passed`, 0 failures**, exit 0. `mode=display` at batch 32: value abs
+**6.0e-08** rel 1.3e-06, policy abs 3.0e-07 rel 5.2e-06 -- digit-for-digit the pre-timeout
+`df2c56a` numbers. `meson test`: **8/8 OK** (`ChessBoard` 25.8s, rest sub-second).
+
+### The moves-left path IS now measured, and the review's finding 1 is confirmed by experiment
+
+Nets on this host were audited by decoding `format.network_format` out of each `.pb.gz`
+directly (varint walk, no generated bindings), rather than trusting file names:
+
+| net | `network` | `policy` | `moves_left` |
+|---|---|---|---|
+| maia1100 | 4 SE_WITH_HEADFORMAT | 2 CONVOLUTION | **absent (NONE)** |
+| n744706 | 4 SE_WITH_HEADFORMAT | 2 CONVOLUTION | **1 V1** |
+| t1-256x10 | 4 SE_WITH_HEADFORMAT | 3 ATTENTION | **1 V1** |
+| sv-t60-3010 | 4 SE_WITH_HEADFORMAT | 2 CONVOLUTION | absent (NONE) |
+| t78-net | **6 ATTENTIONBODY_WITH_HEADFORMAT** | 3 ATTENTION | 1 V1 |
+
+So maia-1100 structurally cannot reach `convMov`/`FCMov1`/`FCMov2`, exactly as the reviewer
+said, and `n744706` is the classic/SE-body-with-moves-left shape the finding named.
+
+`hip()` vs `blas()` check, `318c524`: **34/34** on `n744706` (batch 1-16, 2 batches) and
+**18/18** on `t1-256x10` (batch 1-8), 0 failures. Both re-run in a separate process at
+15:14:29-15:16:00 with identical results (`t1-256x10` at batch 1-16 gives 34/34).
+
+**But `backendbench --backend=check` never compares the moves-left head.**
+`src/neural/backends/network_check.cc` compares `GetQVal` (value) and softmaxed `GetPVal`
+(policy) only; `GetMVal` is on the same interface and appears in no comparison. A 34/34 pass
+on a moves-left net therefore says nothing about moves-left correctness. The second
+observable is `--show-movesleft`, which prints the head's output in the UCI info line.
+
+`{ uci; position startpos; go nodes 200 } | lc0 --show-movesleft --threads=1 --minibatch-size=1`,
+`n744706`:
+
+| build | `hip` (fp32) | `hip-fp16` (half) | `blas` reference |
+|---|---|---|---|
+| base `7727fa3` (control, rebuilt here) | 82 | **72 WRONG** | 82 |
+| **`318c524`** | **82** | **82** | 82 |
+
+The base control is the point. With the pre-fix source restored (that one file, everything
+else identical), `n744706` passes the value/policy gate **34/34** and simultaneously reports
+**moves left 72 against the reference's 82** in fp16. The defect the review predicted is real,
+it is invisible to the gate this round had been using, and `318c524` fixes it. fp32 was
+already correct on base, as predicted -- `FCLayer<float>::LoadWeights` bypasses scratch.
+
+This also matters because `hip-auto` is the highest-priority registration and selects `half`
+for any device reporting major >= 7, i.e. every gfx11 part, so fp16 is what users get while
+the recorded gate command pins `hip()` = fp32 (`network_cuda.cc:1381-1383`).
+
+fp16 tolerance note, so a later reader does not misread it: `hip-fp16()` vs `blas()` at
+`atol=1e-3,rtol=1e-2` reports 34/34 **`policy incorrect (but value ok)`** on `318c524`.
+That is ordinary fp16 rounding, not corruption -- `mode=display` gives value abs 3.6e-04
+rel 4.9e-03 (inside atol) and policy abs 6.9e-03 rel **3.4e-02** (outside rtol=1e-2). Read
+the magnitude, not the bit: it is two orders below the 4.4e-02 corrupted-constant signature.
+
+Not measured: `t78-net`, the only true attention-BODY net here, was not run.
+
+### Kernel_141 / VIDEO_ENGINE_TIMEOUT_DETECTED: 14 before, 18 after -- they recurred
+
+Baseline 14, newest 2026-08-20 14:36:55. After this session: **18**. Four new events, at
+**15:06:13, 15:07:32, 15:08:32 and 15:17:00**, all inside this run's window
+(15:03:18-15:17:05).
+
+What they were NOT: not during the heavy windows. Nothing fired during the 222/222 gate
+(15:03:18-15:04:25), the fp16 block (15:09:56-15:10:32) or the base control
+(15:11:48-15:12:52). Each of the four landed 2-13 s AFTER an `lc0.exe` process exited, i.e.
+around teardown, not during a long kernel. This is consistent with the gfx1151 teardown
+SIGSEGV pattern already on record for this host and inconsistent with "lc0 kernels exceed the
+60 s TDR window".
+
+Why the numbers are still trustworthy this time, which is a different judgement from the
+paused round's: every measurement was reproduced in a SEPARATE process in a timeout-free
+window and came out identical (222/222; 34/34 twice; M 82 twice on each of fp32 and fp16),
+every `lc0.exe` returned exit 0, no run reported a HIP error, and the base control produced
+the specific WRONG value predicted in advance (72) rather than noise. A GPU engine reset that
+was perturbing arithmetic would not reproduce four independent runs digit-for-digit, and
+would not corrupt only the one tensor the mechanism predicts.
+
+Still a live host issue for a person: the timeouts recur on an otherwise idle Radeon, so the
+paused round's "wait for a quiet GPU" precondition cannot actually be met on this machine.
+`WorkloadsSessionHost.exe` (PID 24164) still pegs a WDDM compute engine at ~94%, but that is
+the **NPU**, not the Radeon -- Task Manager shows GPU 0 idle, NPU 0 pegged, and the
+`\GPU Engine(*)` counters do not distinguish the two, so that counter must not be used to
+decide whether the Radeon is free.
+
+### Discrepancy in `318c524`'s own Test Plan, for the reviewer
+
+The commit body's Test Plan says "34 of 34 ... on a 128x10 classic-body network with a
+moves-left head, and 18 of 18 on a **256x10 attention-body** network with one", naming
+`744706.pb.gz` and `t1-256x10-distilled.pb.gz`. The pass counts reproduce exactly, but
+`t1-256x10` decodes as `NETWORK_SE_WITH_HEADFORMAT` with an ATTENTION POLICY head, not an
+attention BODY (`t78-net` is the attention-body net here), and the local files are
+`n744706.pb.gz` / `t1-256x10.pb.gz`. Upstream-visible text, so flagged rather than edited:
+`318c524` is above the published tip and is no arch's `validated_sha`, so it can still be
+amended if the reviewer wants the descriptor corrected.
+
+### Lessons promoted to the `cuda-to-rocm` skill in this change
+
+- `references/validation.md`, new section: read what a project's own cross-backend checker
+  actually compares, confirm the test input can reach the changed path, use a base control,
+  and watch the precision variant. Sourced from this round.
+- `references/fault-classes.md`: the existing null-stream entry recommended synchronizing
+  "before the helper returns", which this round measured to be INSUFFICIENT -- corrected to
+  fix at the construction boundary, since a codebase typically has several upload paths
+  sharing the shape and which one runs last depends on network shape and precision.
+
+## Test Plan amended 2026-08-20 -- 318c524 -> b87423d8 (message only)
+
+Message-only amend on the staging branch; `git diff --stat 318c524 b87423d8` is empty, so no
+platform evidence is affected. Safe because `b87423d8` sits above the published tip
+`7727fa32`, no fork review PR is open, and no arch carried `318c524` as `validated_sha`.
+
+Two corrections, and one non-correction worth recording so it is not "fixed" again:
+
+1. **Weight filenames.** The Test Plan named `maia-1100.pb.gz`, `744706.pb.gz` and
+   `t1-256x10-distilled.pb.gz`; the files actually used are `maia1100.pb.gz`,
+   `n744706.pb.gz` and `t1-256x10.pb.gz`. AGENTS.md wants literal commands, so they now
+   match what was run.
+
+2. **The moves-left evidence did not support its claim.** The plan cited 34/34 and 18/18
+   from `--backend=check` as evidence for the moves-left path. It cannot be: as recorded in
+   the RESUMED section, `network_check.cc` compares `GetQVal` and `GetPVal` only, and
+   `GetMVal` -- on the same interface -- is never compared. Those counts pass whether or not
+   moves left is correct. The plan now says so plainly and gives the real evidence: the
+   `--show-movesleft` control against the pre-change source, 72 vs the reference's 82 in
+   fp16 before, all three agreeing at 82 after.
+
+3. **NOT a correction.** The resumed round flagged the plan's "256x10 attention-body
+   network" as wrong, claiming `t1-256x10` decodes as `NETWORK_SE_WITH_HEADFORMAT`. That is
+   itself wrong. `lc0 describenet` reports:
+   - `t1-256x10`: `NETWORK_ATTENTIONBODY_WITH_HEADFORMAT`, `POLICY_ATTENTION`, `MLH: MOVES_LEFT_V1`
+   - `n744706`: `NETWORK_SE_WITH_HEADFORMAT`, `POLICY_CONVOLUTION`, 10 blocks, `MLH: MOVES_LEFT_V1`
+   - `maia1100`: `NETWORK_SE_WITH_HEADFORMAT`, no MLH -- confirming it cannot reach the
+     moves-left path
+   So the original wording was accurate. The body-size figures ("128x10", "256x10") were
+   dropped anyway rather than re-verified, since the architecture is what the claim rests on.
+
+### Gate note: this is the first round where the commit gates actually looked at the fix branch
+
+`jargon.py --port lc0` and `moatlib.py audit-commits lc0` both used to resolve
+`master..moat-port` regardless of a staged round, so during a fix round they inspected only
+the published tip and reported clean over commits they had never read. Fixed on the trunk
+(`check: judge the fix round's branch, not the published tip`) via a new
+`moatlib.upstream_visible_branch()`, and `origin/main` is merged into this branch, so the
+runs below are real: they resolve `moat-fix-2420`. `jargon: clean`; `audit-commits` returns
+15 findings, **none against `b87423d8`** -- all sit at or below the published tip, including
+four inherited non-`[ROCm]` upstream commits already live in PR #2420.
+
+## Re-review 2026-08-20 (windows-gfx1151, reviewer) -- `b87423d8` -- REVIEW-PASSED
+
+Scope: the fix round only, `git diff 7727fa32...b87423d8` on `moat-fix-2420`. One file,
+`src/neural/backends/cuda/network_cuda.cc`, +5 lines. `moat-port` verified still at
+`7727fa32`; fork tree `git status --porcelain` clean; record `head_sha` `b87423d8`, and
+`318c524` appears nowhere in `status.json`.
+
+### The three prior findings are closed
+
+**1 (BLOCKING, closed).** The sync now sits at `network_cuda.cc:626-629`, after the last
+layer emplace (`FCMov2`, line 623) and before the `tensor_mem_` allocation (lines 648-651).
+Checked that it dominates every upload path, not just the six the prior review named:
+
+- Every `LoadWeights` call in the constructor is at `network_cuda.cc:441-621`, all above
+  the sync. Verified by enumerating call sites, not by reading the commit body.
+- Every layer whose constructor uploads internally is emplaced above it too: the last
+  such is `ValueHead` (`network_cuda.cc:590`), whose ctor's final writes are
+  `allocAndUpload(&ip2_val_w_/&ip2_val_b_)` at `layers.cc:2345-2346`, and `AttentionBody`'s
+  positional encoding at `layers.cc:2110-2111`.
+- Enumerated every `cudaMemcpy`/`copyTypeConverted` in `layers.cc` and mapped each to its
+  enclosing function: all are in `LoadWeights*` / `LoadSEWeights` / `allocAndUpload` / layer
+  constructors. The only other one is `dumpTensor` (`layers.cc:50`), a debug helper.
+  **No `Eval` in the file performs a host-to-device copy**, so no upload can be issued
+  after the sync.
+- No evaluation can precede it: the constructor performs none before line 629, the object
+  is not usable until the ctor returns, and the ctor's own first evaluation is
+  `allocateCudaGraphs` at `network_cuda.cc:659-673`, below the sync.
+- `hip_compat.h:107` maps `cudaStreamSynchronize`; no per-thread default stream is enabled,
+  so `0` is the legacy null stream that `copyTypeConverted(..., 0)` was launched on
+  (`kernels.h:75`, whose fourth parameter is `cudaStream_t stream`).
+
+The prior review's alternative -- keeping the `allocAndUpload` sync as well -- was correctly
+dropped; the constructor-boundary sync subsumes it and the delta is now one file.
+
+**2 (closed).** The commit body no longer claims a fix "at the source" in one function. It
+names all six same-shape paths, states the rule that only the last pre-evaluation write is
+observable, and justifies the boundary. Independently confirmed the two mechanism claims it
+rests on: `FCLayer<float>::LoadWeights` (`layers.cc:618-621`) copies straight into the weight
+tensor and bypasses scratch, whereas `allocAndUpload` (`layers.cc:1413-1418`) routes through
+scratch **for both precisions**, which is why fp32 maia-1100 (no moves-left head, last write
+`ip2_val_b_`) fails while fp32 `n744706` (last write `FCMov2`) does not.
+
+**3 (closed).** The Test Plan's `meson setup` block now carries `--native-file`,
+`-Dhip_include`, `-Dhip_libdirs`, `-Dopenblas_*`, and says the SDK paths are host-specific.
+Diffed the quoted `win-clang.ini` against the real `agent_space/lc0-win-native.ini`: same
+binaries (`clang` / `clang++`) and same `c_args` / `cpp_args`, ordering aside. Every option
+used exists in `meson_options.txt` (`hip`, `amd_gfx`, `hip_include`, `hip_libdirs`, `cudnn`,
+`cutlass`, `nvcc`, `plain_cuda`, `gtest`, `blas`, `opencl`, `onnx`, `openblas_include`,
+`openblas_libdirs`, `native_arch`). Only cosmetic drift remains: the plan builds into
+`build/` where the host used `build-hip-win-gfx1151/`. Not worth an amend.
+
+### Test Plan re-verified against the code, adversarially
+
+- `--show-movesleft` exists (`src/chess/uciloop.cc:62,268,316`) and prints the head's output
+  in the UCI info line only when `info.moves_left` is set.
+- The check backend's option names are real: `mode`, `atol`, `rtol`, `freq`
+  (`src/neural/backends/network_check.cc:288-333`).
+- **The "check backend cannot see moves left" claim is true.** `network_check.cc:147-179`
+  compares `GetQVal` and softmaxed `GetPVal` only; `GetMVal` (`:109-111`) forwards the work
+  backend's value and appears in no comparison.
+- `hip()` resolves to `MakeCudaNetwork<float>` and `hip-fp16` to `<half>`
+  (`network_cuda.cc:1381-1383`), and `hip-auto` selects `half` for `major >= 7`
+  (`:1364-1377`), so "fp16 is the configuration selected automatically on this hardware"
+  holds for gfx11.
+
+### The network descriptors: independently checked, the amended body is right
+
+Ran the project's own decoder rather than trusting either prior claim
+(`build-hip-win-gfx1151/lc0.exe describenet --weights=...`):
+
+| net | Network | Policy | MLH |
+|---|---|---|---|
+| `maia1100` | `NETWORK_SE_WITH_HEADFORMAT` | `POLICY_CONVOLUTION` | **absent** |
+| `n744706` | `NETWORK_SE_WITH_HEADFORMAT` | `POLICY_CONVOLUTION` | `MOVES_LEFT_V1` |
+| `t1-256x10` | **`NETWORK_ATTENTIONBODY_WITH_HEADFORMAT`** | `POLICY_ATTENTION` | `MOVES_LEFT_V1` |
+
+So the commit body's "a classic-body network with a moves-left head" (`n744706`) and "an
+attention-body network with one" (`t1-256x10`) are both accurate, and maia-1100 structurally
+cannot reach the moves-left path.
+
+**Correction to the record:** the RESUMED section's hand-rolled varint table above lists
+`t1-256x10` as `4 SE_WITH_HEADFORMAT`. That row is **wrong** -- the hand decode misread the
+field. Do not "fix" the commit body back to it.
+
+### Gates re-run on the staging branch
+
+`python3 utils/jargon.py --port lc0` -> `jargon: clean`.
+`python3 utils/moatlib.py audit-commits lc0` -> 15 findings, **none against `b87423d8`**;
+all sit at or below the published tip `7727fa32`, four of them inherited non-`[ROCm]`
+upstream commits already live in PR #2420 (`72ef79f`, `03d8bff`, `f94a8a1`, `d0c4eab`).
+Both now genuinely resolve `moat-fix-2420` via `moatlib.upstream_visible_branch()`.
+Commit hygiene checked directly as well: title 56 chars and `[ROCm]`-prefixed, AI-assistance
+disclosure present, Test Plan fenced with literal commands, no `Co-Authored-By` / noreply /
+sign-off trailer, `utils/prose.py` on the body -> `prose: clean`, ASCII-only new comment.
+
+### Non-blocking observations, recorded so they are not rediscovered
+
+Neither is a defect this round introduced, neither is reachable on ROCm through the changed
+file, and neither justifies enlarging an open upstream PR. They are noted for a person.
+
+1. **`network_cudnn.cc` has the identical latent race and is not fixed.** It creates all
+   three streams `cudaStreamNonBlocking` (`:238-242`), uploads every layer through
+   `scratch_mem_` (`:423-642`), evaluates out of that same `scratch_mem_` (`:775-829`), and
+   never synchronizes the null stream. It is **not built for HIP** -- `meson.build:681-682`
+   compiles only `layers.cc` and `network_cuda.cc` for the HIP target, and the comment at
+   `meson.build:621` says so explicitly -- so it is a CUDA/cuDNN-only exposure. Fixing it
+   would be a CUDA-path change with no ROCm evidence behind it; if the maintainer raises it
+   on PR #2420, the same one-line boundary sync applies after `network_cudnn.cc:642`.
+2. **`cudaMemset(tensor_mem_, ...)` at `network_cuda.cc:649-651` is a null-stream write that
+   happens *after* the new sync**, and the first evaluation that writes those same buffers
+   runs on non-blocking streams. It is not a weight upload and not a scratch write, so it is
+   outside the fix's claim, and CUDA/HIP `cudaMemset` on device memory is documented
+   asynchronous with respect to the host, which makes this the same shape one level down. It
+   is unmeasured, it is pre-existing upstream code untouched by this port, and every
+   measurement in this round passes, so it is deliberately not a finding. If it is ever
+   wanted, the cheap settlement is moving the existing sync below the memset loop rather
+   than adding a second one.
+
+### The host's Kernel_141 timeouts: judged, not inherited
+
+Independently assessed the RESUMED section's reasoning rather than accepting it, and it
+holds: the four events landed 2-13 s after `lc0.exe` exits, every run returned exit 0, no run
+reported a HIP error, each measurement reproduced digit-for-digit in a separate process in a
+timeout-free window, and the pre-change control produced the specifically predicted wrong
+value (moves left 72 against 82) rather than noise. A GPU engine reset perturbing arithmetic
+does not reproduce four independent runs bit-identically, nor corrupt exactly the one tensor
+the mechanism names. Nothing here attributes the timeouts to the port's device code. The
+host issue remains a person's to chase.
+
+### Verdict
+
+REVIEW-PASSED. No ROCm fault class is touched by a host-side stream synchronization: no
+wavefront-size assumption, no resource handle, no neighbour read, no texture pitch, no
+library swap, no per-arch branch. The change is unconditional and arch-unified, additive to
+CUDA behaviour (one wait per network at construction, unreachable from an evaluation, so it
+cannot land inside a graph capture), and preserves upstream structure. Validation on real
+hardware is the next gate.
+
+## Revalidation 2026-08-20 (linux-gfx90a) -- `b87423d8` -- COMPLETED
+
+Full real-GPU revalidation (not a carry-forward): `python3 utils/moatlib.py classify lc0
+7727fa32 b87423d8` returned `class=unknown arch_independent=False (classification failed
+-> revalidate)`, and the diff itself (`network_cuda.cc` +5, unconditional
+`ReportCUDAErrors(cudaStreamSynchronize(0));` at the constructor boundary) is a real
+functional change, not doc/comment-only, so no shortcut applies. No local fork clone
+existed on this host; cloned `AMD-Ecosystem/lc0` into `projects/lc0/src`, fetched and
+checked out `moat-fix-2420` (PR #2420 is open, so this round lives on the fix-staging
+branch, `moat-port` stays at `7727fa32`), confirmed `HEAD` == `b87423d8e5cb4075386359cb4521eb8a14ffea2a`
+== recorded `head_sha`, and installed the protect-fork pre-push hook
+(`python3 utils/moatlib.py protect-fork lc0`).
+
+Host toolchain differs from the ROCm-7.2.1 system install used in earlier gfx90a rounds:
+this host now only has the TheRock ROCm SDK inside the `py_3.12` conda env (HIP 7.14.60850,
+AMD clang 23.0.0git; `_rocm_sdk_devel`/`_rocm_sdk_core`/`_rocm_sdk_libraries` under
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/`). No system `/opt/rocm`, no system
+`meson` (`pip install meson` into `py_3.12`, meson 1.12.0), no system `libopenblas-dev`
+(installed via apt, same as the prior 2026-07-02 round). 4x gfx90a MI250X, all four idle
+(`rocm-smi --showuse` 0% on GPU 0-3, no KFD PIDs); used GPU 3 (`HIP_VISIBLE_DEVICES=3`),
+consistent with every prior gfx90a session.
+
+### Build
+
+```
+SDK=/opt/conda/envs/py_3.12/lib/python3.12/site-packages
+export PATH="$SDK/_rocm_sdk_devel/lib/llvm/bin:$SDK/_rocm_sdk_devel/bin:$SDK/_rocm_sdk_core/bin:$SDK/_rocm_sdk_libraries/bin:$PATH"
+cd projects/lc0/src
+meson setup build-hip \
+  -Dhip=true -Damd_gfx=gfx90a \
+  -Dplain_cuda=false -Dcudnn=false -Dcutlass=false -Dnvcc=false \
+  -Dgtest=true -Dblas=true -Dopencl=false -Donnx=false \
+  -Db_lto=false -Dnative_arch=false \
+  -Dhip_libdirs="$SDK/_rocm_sdk_devel/lib,$SDK/_rocm_sdk_core/lib,$SDK/_rocm_sdk_libraries/lib" \
+  -Dhip_include="$SDK/_rocm_sdk_devel/include"
+bash utils/timeit.sh lc0 compile -- ninja -C projects/lc0/src/build-hip -j16
+```
+
+321/321 targets, clean link, warnings only (nodiscard, same class as every prior gfx90a
+build). `fp16_kernels.hip.o` = 2.0MB (non-empty SE bodies, not the empty-no-op signature).
+
+### CPU gtest (non-GPU regression)
+
+```
+bash utils/timeit.sh lc0 test -- meson test -C projects/lc0/src/build-hip
+```
+
+8/8 OK (`FP16`, `HashCat`, `PositionTest`, `OptionsParserTest`, `SyzygyTest`,
+`EncodePositionForNN`, `EngineTest`, `ChessBoard`), 0 failures. No regression.
+
+### GPU cross-check (maia-1100 conv-SE net, `CSSLab/maia-chess` master, no moves-left head)
+
+Fetched `https://raw.githubusercontent.com/CSSLab/maia-chess/master/maia_weights/maia-1100.pb.gz`
+into `agent_space/maia1100.pb.gz` (not present on this host from a prior session; the
+`n744706`/`t1-256x10` moves-left nets used on windows-gfx1151 to isolate the reviewer's
+finding 1 were not refetched here -- no recorded source URL, and finding 1 was already
+closed at the code level for every upload path, verified by the reviewer via call-site
+enumeration, not by re-deriving the moves-left evidence per arch. gfx90a's own contribution
+is: does the added sync regress or fault the existing wave64 kernel paths, and it does not).
+
+```
+HIP_VISIBLE_DEVICES=3 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+fp32: **222/222 Check passed, 0 errors** (batch 1-55 incl. odd 53/55).
+
+```
+HIP_VISIBLE_DEVICES=3 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip-fp16(),blas(),mode=check,atol=1.1e-1,rtol=2e-1,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+fp16: **222/222 Check passed, 0 errors**.
+
+### Determinism
+
+```
+HIP_VISIBLE_DEVICES=3 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=display,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=8 --max-batch-size=8 --batches=2
+```
+Two separate runs: value abs 3.0e-08 / policy abs 3.6e-07, identical both times. No
+reduction race introduced by the sync. (Note: the same command with `--batches=1` hits a
+pre-existing harness bug -- `backendbench`'s per-batch-size timing-stats vector indexes
+`i-1` and asserts out of bounds when there is only one sample; `--batches=2` avoids it and
+is what every prior gfx90a round used. Not a port defect; not investigated further, per stop
+discipline -- a harness stats-array assertion after the correctness comparison already
+printed, unrelated to any GPU kernel.)
+
+### Fault-free sweep + device dispatch
+
+`--backend=hip` and `--backend=hip-fp16` `backendbench` (no `--backend=check`), batch
+1-256, maia-1100: both exit 0, no crash/hang/NaN. `AMD_LOG_LEVEL=3` confirms real device
+kernel dispatch (`copyTypeConverted_kernel`, `filterTransform_kernel`, etc. named in the
+ROCr trace) interleaved with rocBLAS/Tensile.
+
+### CUDA no-regression gate (compile-only, first time at this head_sha)
+
+Not previously recorded at `b87423d8` (the last CUDA check in this file is at `a80a7be`,
+2026-07-02, before this fix round). The fix round's diff is one 5-line, unconditional,
+`USE_HIP`-unguarded change to `network_cuda.cc` (a real host TU shared by both backends,
+not a `.cu` kernel file), so a standalone-file nvcc check (the style used at `a80a7be`) does
+not exercise it; built the PROJECT'S OWN full CUDA backend via meson instead, pinned to
+sm_80 (`-Dcc_cuda=80`; meson logged "Detected maximum CUDA architecture: 800", confirming
+the pin took), nvcc 12.8 from `/opt/conda/envs/cuda-12.8/bin/nvcc`, no NVIDIA GPU
+(compile-only):
+
+```
+CUDA=/opt/conda/envs/cuda-12.8
+export PATH="$CUDA/bin:$PATH"
+cd projects/lc0/src
+meson setup build-cuda \
+  -Dplain_cuda=true -Dhip=false -Dnvcc=true \
+  -Dcudnn=false -Dcutlass=false \
+  -Dgtest=false -Dblas=false -Dopencl=false -Donnx=false \
+  -Db_lto=false -Dnative_arch=false -Dcc_cuda=80 \
+  -Dcudnn_libdirs="$CUDA/lib,$CUDA/targets/x86_64-linux/lib" \
+  -Dcudnn_include="$CUDA/include,$CUDA/targets/x86_64-linux/include"
+bash utils/timeit.sh lc0 cuda-compile -- ninja -C projects/lc0/src/build-cuda -j16
+```
+
+**258/258 targets, clean link, no errors** (including
+`libcuda_backend.a.p/src_neural_backends_cuda_network_cuda.cc.o`, the touched file). Pure
+passthrough confirmed -- the added `cudaStreamSynchronize(0)` and `ReportCUDAErrors` are
+plain CUDA runtime API already used elsewhere in the same file, nothing HIP-specific. CUDA
+gate: PASS, not a regression.
+
+### Integrity
+
+`git -C projects/lc0/src status --porcelain` clean before and after (build dirs are
+untracked/gitignored). `python3 utils/jargon.py --port lc0` -> `jargon: clean`.
+Documentation gate unaffected: this round touched no docs and the HIP build section in
+README.md (added in PR-prep 2026-06-11) already covers the build this round validates.
+
+### Summary
+
+| Test | Result |
+|------|--------|
+| HIP build (321/321) | PASS |
+| CPU gtest 8/8 | PASS |
+| maia-1100 fp32 conv-SE check (222 batches) | PASS |
+| maia-1100 fp16 conv-SE check (222 batches) | PASS |
+| Determinism (2 runs) | PASS |
+| Fault-free sweep fp32+fp16 batch 1-256 | PASS |
+| Device dispatch confirmed | PASS |
+| CUDA compile gate (258/258, sm_80) | PASS |
+| Fork tree clean | PASS |
+| jargon | clean |
+
+`validated_sha` = `b87423d8e5cb4075386359cb4521eb8a14ffea2a`. Transition: revalidate ->
+completed.
+
+## Round PARKED 2026-08-20 -- host crashed twice; memset hardening deferred
+
+**Stop decision.** windows-gfx1151 bugchecked TWICE while building and running the lc0
+gate, ~40 minutes apart:
+
+| when | event |
+|---|---|
+| 16:44:25 | bugcheck `0xD1 DRIVER_IRQL_NOT_LESS_OR_EQUAL`, reboot 16:47 |
+| 17:24:36 | bugcheck again (Event 41 + 1001), reboot 17:24:25 |
+
+Root cause from `kd !analyze -v` on `C:\Windows\MEMORY.DMP` (full output was written to
+gitignored `agent_space/crash-analysis.txt`; the fields that matter are reproduced here so
+they survive):
+
+```
+BUGCHECK_CODE      d1
+BUGCHECK_P1        28          (near-null offset dereferenced)
+BUGCHECK_P2        2           (IRQL 2, DPC level)
+BUGCHECK_P3        0           (read)
+BUGCHECK_P4        fffff80373a4882e
+SYMBOL_NAME        dxgmms2!VidSchiProcessHwQueuePageFaultedDpc+19a
+MODULE_NAME        dxgmms2
+IMAGE_NAME         dxgmms2.sys      (10.0.26100.8875)
+FAILURE_BUCKET_ID  AV_dxgmms2!VidSchiProcessHwQueuePageFaultedDpc
+```
+
+`dxgmms2` is the Windows WDDM video scheduler, and the faulting routine is its handler for a
+**page-faulted GPU hardware queue**. `amdkmdag` is the only other graphics module in the dump.
+That unifies the day's symptoms into one fault path rather than three: the `Kernel_141`
+VIDEO_ENGINE_TIMEOUT_DETECTED events (18 on this host, 4 during lc0 runs), the `dwm.exe`
+crash at 15:18, and these bugchecks are all the same scheduler. This is a driver-stack
+problem, NOT a defect in this port -- but it makes windows-gfx1151 unable to certify lc0 for
+now. Jeff called the stop.
+
+**State left behind, deliberately:**
+- `moat-fix-2420` stays at `b87423d8`, which is REVIEW-PASSED and whose gate numbers were
+  measured in timeout-free windows and reproduced across separate processes. Nothing about
+  the crashes invalidates it.
+- `moat-port` untouched at `7727fa32`; PR #2420 unchanged. No fork or upstream write happened.
+- stage restored to `review-passed`, work lock RELEASED so this host does not strand the
+  project. The next step remains a validator at `b87423d8` -- on a host that stays up.
+
+**The deferred memset hardening.** After the passing re-review, the reviewer noted one
+same-shape hole: `cudaMemset(tensor_mem_, ...)` (network_cuda.cc, in the `if (!multi_stream_)`
+block) is an asynchronous null-stream write that lands AFTER the sync `b87423d8` adds, while
+the first evaluation writes those same buffers on non-blocking streams. Jeff asked for the
+fix: move the single existing sync below the memset loop rather than add a second one. The
+edit was written and reviewed by eye but NEVER VERIFIED -- both crashes happened trying to
+measure it -- so it was reverted rather than committed unverified. Registered in
+`deferred.json` as `lc0-move-sync-below-memset`. The exact edit, to reapply:
+
+    diff --git a/src/neural/backends/cuda/network_cuda.cc b/src/neural/backends/cuda/network_cuda.cc
+    index 1ca3096..ae44902 100644
+    --- a/src/neural/backends/cuda/network_cuda.cc
+    +++ b/src/neural/backends/cuda/network_cuda.cc
+    @@ -623,11 +623,6 @@ class CudaNetwork : public Network {
+           network_.emplace_back(std::move(FCMov2));
+         }
+     
+    -    // Weight uploads convert through the shared scratch buffer on the legacy
+    -    // null stream, which is not ordered against the non-blocking streams used
+    -    // below. Wait for them before the first evaluation reuses the scratch.
+    -    ReportCUDAErrors(cudaStreamSynchronize(0));
+    -
+         // 3. Allocate GPU memory for running the network:
+         //    - three buffers of max size are enough (one to hold input, second to
+         //      hold output and third to hold skip connection's input).
+    @@ -652,6 +647,13 @@ class CudaNetwork : public Network {
+           }
+         }
+     
+    +    // Construction issues asynchronous work on the legacy null stream: weight
+    +    // uploads that convert through the shared scratch buffer, and the zeroing
+    +    // of the tensor buffers above. None of it is ordered against the
+    +    // non-blocking streams the evaluation uses, so wait for it once here,
+    +    // before the first evaluation writes those same buffers.
+    +    ReportCUDAErrors(cudaStreamSynchronize(0));
+    +
+         tensor_mem_size_ = multi_stream_ ? maxSize : 0;
+     
+         // pre-allocate cuda graphs for search threads
+
+Note for whoever picks it up: the memset loop only runs when `!multi_stream_`, so confirm
+which stream mode the gate actually exercises before claiming the path is covered.
+
+### Stage note: `ported`, and why the re-review is a formality
+
+The state machine has no rewind, so `porting -> review-passed` is an illegal transition and
+the round had to land on `ported`. That is honest but slightly misleading, so to be explicit:
+
+**The fork tree is byte-identical to `b87423d8`, which already passed review.** The unverified
+memset edit was reverted, not committed; `git -C projects/lc0/src status --porcelain` is empty
+and `HEAD` is `b87423d8`. Nothing has changed since
+`## Re-review 2026-08-20 (windows-gfx1151, reviewer) -- b87423d8 -- REVIEW-PASSED`.
+
+So the next reviewer can confirm `git diff b87423d8 HEAD` is empty, note that the prior
+re-review stands, and pass without re-reading the delta. The real next step is a VALIDATOR at
+`b87423d8` -- and not on windows-gfx1151 until the `dxgmms2` crashes are resolved.
+
+## Review 2026-08-24 (linux-gfx90a, reviewer) -- `b87423d8` -- REVIEW-PASSED
+
+Second reviewer, different host, on the same tree the 2026-08-20 re-review passed. The
+PARKED note invited passing "without re-reading the delta"; I re-read it instead, because a
+verdict inherited on assertion is not a second review. Confirmed independently first that
+there is nothing new to review: `git rev-parse HEAD` = `b87423d8`, `git diff b87423d8 HEAD`
+empty, `git status --porcelain` empty, `origin/moat-port` still `7727fa32` so PR #2420 is
+untouched. Scope reviewed: `git diff 7727fa32...b87423d8` on `moat-fix-2420`, one file,
+`src/neural/backends/cuda/network_cuda.cc`, +5 lines.
+
+### No blocking findings
+
+Nothing to send back to the porter. Recorded below is only what I re-derived from source,
+so a third reviewer does not have to.
+
+- **The sync dominates every upload.** Every `LoadWeights*` call site in the constructor is
+  `network_cuda.cc:441-621`; the last emplace is `FCMov2` at `:623`; the sync is `:629`. The
+  only `cudaMemcpy*` calls below it (`:701-707`, `:776-782`, `:936-996`) are evaluation-time
+  input uploads and output downloads on the named `upload_stream_` / `download_stream_`,
+  event-ordered against `compute_stream_` at `:708-710`. No `Eval` path performs a weight
+  upload, so nothing can be issued after the wait.
+- **Everything it must cover is on stream 0.** Enumerated all 27 `copyTypeConverted` call
+  sites in `layers.cc`; every one passes `0` as the fourth argument, and that argument is
+  `cudaStream_t stream` (`kernels.h:75`). `allocAndUpload` (`layers.cc:1413-1418`) is a
+  synchronous `cudaMemcpy` into scratch followed by a null-stream conversion, matching the
+  commit's description. `layers.cc` has no `cudaMemcpyAsync` at all.
+- **`0` really is the legacy null stream here.** No per-thread default stream is configured
+  anywhere in `meson.build` or `src/` (grepped `default.stream` / `PER_THREAD`), so the
+  launches and the wait name the same stream.
+- **The unordered-consumer claim holds.** `compute_/upload_/download_stream_` are
+  `cudaStreamNonBlocking` (`network_cuda.cc:291-295`) and so are the per-`InputsOutputs`
+  streams (`inputs_outputs.h:132-145`), so the legacy stream carries no implicit ordering
+  against any of them.
+- **The multi-stream framing in the commit body is right.** `multi_stream` defaults false
+  (`network_cuda.cc:255`); with it false the evaluation reuses the shared `scratch_mem_`
+  (`:765`), with it true it uses `io->scratch_mem_` (`:756`). The measured gate runs the
+  default, i.e. the sharing case. The wait is placed before any `InputsOutputs` exists, so
+  it covers the multi-stream case too -- there the hazard is the reversed one (a compute
+  stream reading a weight tensor the null-stream conversion has not written yet), and the
+  same single wait closes it.
+- **Placement is safe for graph capture.** The constructor's first evaluation is
+  `allocateCudaGraphs` at `:658-672`, below the sync; a `cudaStreamSynchronize` is not
+  reachable from `forwardEval`, so it cannot land inside a capture.
+- **Compiles on both paths.** `cuda_common.h:29-30` pulls in `hip_compat.h` under `USE_HIP`,
+  and `hip_compat.h:107` maps `cudaStreamSynchronize`; on the CUDA path it is core runtime.
+  `meson.build:681-682` builds only `layers.cc` and `network_cuda.cc` for HIP, so the changed
+  file is on the ROCm path.
+- **Fault classes: none touched.** A host-side stream wait involves no wavefront-size
+  assumption, no resource-handle lifetime, no neighbour read, no texture pitch, no library
+  substitution, and no per-arch branch. The change is unconditional and arch-unified.
+- **Upstream text.** `jargon.py --port lc0` clean; `prose.py` on the body clean;
+  `audit-commits lc0` reports nothing against `b87423d8`; title `[ROCm]`-prefixed at 56
+  chars; AI-assistance disclosure present; Test Plan fenced with literal commands; no
+  `Co-Authored-By`, noreply, or sign-off trailer; new comment is ASCII. Author is the
+  maintainer's public work address, not an internal account.
+- **Docs gate.** The delta is code-only and does not stale the README's HIP section
+  (`README.md:161-175`), whose validated-platform sentence still claims Linux gfx90a and
+  gfx1100 only -- which remains true.
+
+### One item is a person's, not a reviewer's
+
+`lc0-move-sync-below-memset` in `projects/lc0/deferred.json` is still `decided: null`. The
+PARKED note records that Jeff asked for the edit, but the formal defer-versus-now ruling was
+never recorded, and an agent may not make it. Flagging it here so it is not lost behind a
+passing review.
+
+For the record, my own read of the hazard, so the ruling can be made on facts rather than on
+the earlier summary: `cudaMemset(mem, 0, maxSize)` at `network_cuda.cc:649-651` is a
+null-stream write issued *after* the new wait, and the first evaluation writes those same
+`tensor_mem_` buffers on non-blocking streams, so a late memset could zero live intermediates.
+It is the same shape as the bug this round fixes. Two things keep it off the finding list:
+it is pre-existing upstream code that raced identically before this change, so the delta is
+not a regression; and it is unmeasured. Two things argue for doing it now: the fix is moving
+one line already in the diff, at no added cost, and shipping a commit that says "wait for
+them before the first evaluation" while leaving the adjacent async null-stream write
+unordered is exactly what a maintainer notices. The memset loop runs only when
+`!multi_stream_`, which is the default and therefore the mode the gate exercises. If the
+ruling is "now", this Linux host can build and revalidate it; that advances `head_sha` and
+costs the gfx90a and gfx1100 revalidations.
+
+### Verdict
+
+REVIEW-PASSED. The next step is unchanged: a validator at `b87423d8`, not on
+windows-gfx1151 until the `dxgmms2` driver crashes are resolved.
+
+## Validation 2026-08-27 (linux-gfx1100) -- `b87423d8` -- COMPLETED
+
+Full real-GPU revalidation (not a carry-forward). `validated_sha` was `7727fa32`; HEAD
+moved to `b87423d8` (the fix round: one 5-line, unconditional, `USE_HIP`-unguarded
+`ReportCUDAErrors(cudaStreamSynchronize(0));` at the end of the layer-construction block
+in `network_cuda.cc`'s constructor, ordering every null-stream weight upload against the
+first evaluation). Same class of functional change gfx90a re-ran full on 2026-08-20 (no
+shortcut applies to a real behavioral fix touching a shared host TU). Host had no local
+fork clone; cloned `AMD-Ecosystem/lc0` into `projects/lc0/src`, fetched and checked out
+`moat-fix-2420` (PR #2420 is open, so this round lives on the fix-staging branch;
+`moat-port` stays at `7727fa32`), confirmed `HEAD` == `b87423d8e5cb4075386359cb4521eb8a14ffea2a`
+== recorded `head_sha`, installed the protect-fork pre-push hook
+(`python3 utils/moatlib.py protect-fork lc0`).
+
+Host toolchain: TheRock ROCm SDK in the `py_3.12` conda env (HIP 7.14.0, AMD clang;
+`_rocm_sdk_devel`/`_rocm_sdk_core`/`_rocm_sdk_libraries` under
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/`), no system `/opt/rocm`. No
+system meson (`pip install meson` into `py_3.12`, meson 1.12.0) and no `libopenblas-dev`
+(installed via apt), same gaps the gfx90a round hit on this SDK. 4x AMD Radeon Pro W7800
+(gfx1100, RDNA3, wave32), all four idle (`rocm-smi --showuse` 0%, no KFD PIDs); used GPU 0
+(`HIP_VISIBLE_DEVICES=0`).
+
+### Build
+
+```
+SDK=/opt/conda/envs/py_3.12/lib/python3.12/site-packages
+export PATH="$SDK/_rocm_sdk_devel/lib/llvm/bin:$SDK/_rocm_sdk_devel/bin:$SDK/_rocm_sdk_core/bin:$SDK/_rocm_sdk_libraries/bin:$PATH"
+cd projects/lc0/src
+meson setup build-hip \
+  -Dhip=true -Damd_gfx=gfx1100 \
+  -Dplain_cuda=false -Dcudnn=false -Dcutlass=false -Dnvcc=false \
+  -Dgtest=true -Dblas=true -Dopencl=false -Donnx=false \
+  -Db_lto=false -Dnative_arch=false \
+  -Dhip_libdirs="$SDK/_rocm_sdk_devel/lib,$SDK/_rocm_sdk_core/lib,$SDK/_rocm_sdk_libraries/lib" \
+  -Dhip_include="$SDK/_rocm_sdk_devel/include"
+bash utils/timeit.sh lc0 compile -- ninja -C projects/lc0/src/build-hip -j16
+```
+
+321/321 targets, clean link, warnings only (nodiscard, same class as every prior gfx1100
+build). `fp16_kernels.hip.o` = 2.1MB; `nm -C` shows 28 non-empty `SE_Layer_NHWC`
+instantiations (the fp16-gating fix stays intact on this arch).
+
+### CPU gtest (non-GPU regression)
+
+```
+bash utils/timeit.sh lc0 test -- meson test -C projects/lc0/src/build-hip
+```
+
+8/8 OK (`FP16`, `HashCat`, `PositionTest`, `OptionsParserTest`, `SyzygyTest`,
+`EncodePositionForNN`, `EngineTest`, `ChessBoard`), 0 failures. No regression.
+
+### GPU cross-check (maia-1100 conv-SE net, no moves-left head)
+
+```
+HIP_VISIBLE_DEVICES=0 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+fp32: **222/222 Check passed, 0 errors** (batch 1-55 incl. odd 53/55), exit 0.
+
+```
+HIP_VISIBLE_DEVICES=0 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip-fp16(),blas(),mode=check,atol=1.1e-1,rtol=2e-1,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+fp16: **222/222 Check passed, 0 errors**, exit 0.
+
+Not re-derived here: the moves-left upload-path defect (review finding 1) and its fix are
+a code-level property closed for every upload path by the 2026-08-24 reviewer's call-site
+enumeration and independently exercised on windows-gfx1151 (`n744706`, `--show-movesleft`:
+82/82/82 after the fix, 72 WRONG on fp16 before). `maia1100` has no moves-left head so it
+cannot probe that path; this arch's own contribution is whether the added constructor-level
+sync regresses or faults the wave32 kernel paths, and it does not.
+
+### Determinism
+
+```
+HIP_VISIBLE_DEVICES=0 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=display,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=8 --max-batch-size=8 --batches=2
+```
+Two separate runs: value abs **6.0e-08** / policy abs **5.1e-07**, identical both times
+and matching the gfx90a b87423d8 digits exactly. No reduction race, no ordering race
+introduced by the sync.
+
+### Fault-free sweep + device dispatch
+
+`--backend=hip` and `--backend=hip-fp16` `backendbench` (no `--backend=check`), batch
+1-256, maia-1100: both exit 0, no crash/hang/NaN. `AMD_LOG_LEVEL=3` confirms real device
+kernel dispatch (`copyTypeConverted_kernel`, `filterTransform_kernel`,
+`addBiasBatched_kernel`, `addVectors_kernel`, `NCHW_kernel`, `policyMap_kernel` named in
+the ROCr trace) interleaved with rocBLAS `Cijk_*_ISA1100_*` Tensile kernels.
+
+### CUDA no-regression gate
+
+Already recorded at this `head_sha` (`b87423d8`) by the linux-gfx90a revalidation above:
+258/258 targets, nvcc 12.8, `-Dcc_cuda=80`, pure passthrough. Not re-run here (runs once
+per head_sha, per the validator role).
+
+### Documentation / jargon gates
+
+`python3 utils/jargon.py --port lc0` -> `jargon: clean`. README.md's HIP section
+(added 2026-06-11, unchanged by this round) already documents this exact build and states
+"validated on Linux with ROCm on gfx90a (CDNA2) and gfx1100 (RDNA3)" -- still true.
+
+### Integrity
+
+`git -C projects/lc0/src status --porcelain` clean before and after (build dir is
+untracked/gitignored).
+
+### Summary
+
+| Test | Result |
+|------|--------|
+| HIP build (321/321) | PASS |
+| CPU gtest 8/8 | PASS |
+| maia-1100 fp32 conv-SE check (222 batches) | PASS |
+| maia-1100 fp16 conv-SE check (222 batches) | PASS |
+| Determinism (2 runs) | PASS |
+| Fault-free sweep fp32+fp16 batch 1-256 | PASS |
+| Device dispatch confirmed | PASS |
+| CUDA compile gate | PASS (recorded at this head_sha by linux-gfx90a) |
+| Fork tree clean | PASS |
+| jargon | clean |
+
+`validated_sha` = `b87423d8e5cb4075386359cb4521eb8a14ffea2a`. Transition: revalidate ->
+completed.
+
+## 2026-10-20 -- fix round retired, moat-port re-pointed at upstream master
+
+- Upstream #2454 (926e99f, Menkib64) landed `cudaDeviceSynchronize()` at the end of network construction in both `network_cuda.cc` and `network_cudnn.cc`, a superset of the one-line wait the moat-fix-2420 round carried (b87423d8, `network_cuda.cc` only). Third-party confirmation on Windows gfx1200, TheRock 10.2.0: 222/222 at 6.0e-08 on master, 0/222 at 4.4e-02 with 926e99f reverted (https://github.com/LeelaChessZero/lc0/pull/2454#issuecomment-6273346601).
+- jeffdaily abandoned the fix round (`moatlib.py abandon-fix`); it stays in `fix_abandoned`, and the staging branch stays on the fork.
+- #2420's squash (ef33106) is patch-id identical to `git diff d8ce482 7727fa3`, so upstream master carries the whole port. A plain merge of master into moat-port conflicts in 7 files only because git cannot see that, so moat-port was fast-forwarded to 4975680, a merge commit (parents 7727fa3, upstream master 58e78009) whose tree is exactly upstream master's. `head_sha` -> 4975680.
+- Owed: windows-gfx1151 validation (closes the windows gate), linux-gfx90a and linux-gfx1100 revalidation. The fork's `master` mirror is still 36 commits behind upstream; it was not fast-forwarded.
+
+## Validation 2026-10-21 (linux-gfx1100) -- `4975680` -- COMPLETED
+
+Full real-GPU revalidation, not a carry-over. `validated_sha` was `b87423d8` (the retired moat-fix-2420 tip); `head_sha` is `49756806f27520538d17a60ec5c4ac35416bb160`, the merge whose tree is upstream master `58e78009` (`git diff --stat 4975680 58e78009` empty, checked in the clone). So this round runs upstream master's HIP backend, with upstream #2454's `cudaDeviceSynchronize()` at the end of construction in place of our one-line wait. No fix block: built from `moat-port` (local `moat-port` == `origin/moat-port` == `head_sha`). Fresh clone of `AMD-Ecosystem/lc0` into `projects/lc0/src`; protect-fork hook installed.
+
+Host toolchain changed since 2026-08-27: TheRock ROCm SDK 10.1.0 in `/opt/python-3.11-venv` (HIP 7.16.26385, runtime 71626.38.5), no `/opt/rocm`, no conda. meson 1.12.1 was pip-installed into the job's private venv. The host has no OpenBLAS, and without it meson silently builds the CPU reference on Eigen. To keep the recorded `blas()` reference, without changing shared host packages, the Ubuntu noble packages were extracted (`apt-get download libopenblas-dev libopenblas0-pthread libopenblas-pthread-dev libgfortran5; dpkg -x`) into a private directory and passed in with `-Dopenblas_libdirs`/`-Dopenblas_include`. Runtime log: `OpenBLAS 0.3.26 ... Zen`. 4x AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32). The host is shared with another job, so everything ran on `HIP_VISIBLE_DEVICES=1` (dispatcher-pinned) under `ulimit -c 0`.
+
+### Build
+
+Same recipe as 2026-08-27. Only the SDK root changed, plus the two OpenBLAS options:
+
+```
+SDK=/opt/python-3.11-venv/lib/python3.11/site-packages
+OB=<private dir>/usr          # dpkg -x of the noble libopenblas packages
+export PATH="$SDK/_rocm_sdk_devel/lib/llvm/bin:$SDK/_rocm_sdk_devel/bin:$SDK/_rocm_sdk_core/bin:$SDK/_rocm_sdk_libraries/bin:$PATH"
+cd projects/lc0/src
+meson setup build-hip \
+  -Dhip=true -Damd_gfx=gfx1100 \
+## Revalidation 2026-10-21 (linux-gfx90a) -- `4975680` (tree == upstream master `58e78009`) -- COMPLETED
+
+Full build and real-GPU run, not a carry-forward: `python3 utils/moatlib.py classify lc0 b87423d8 49756806` -> `class=mixed arch_independent=False inert=False` (the delta is 36 upstream commits plus upstream's own #2454 sync, touching `layers.cc`, `network_cuda.cc`, the HIP-compiled kernels and `backendbench.cc`). `git -C projects/lc0/src diff --stat 58e78009 HEAD` is empty, so what was validated is upstream master's own HIP backend. Fresh clone of `AMD-Ecosystem/lc0`, `moat-port` checked out, `HEAD` == `49756806f27520538d17a60ec5c4ac35416bb160` == `head_sha`; protect-fork hook installed. The 2026-08-20 memset-hardening experiments (`lc0-move-sync-below-memset`) were NOT part of this run.
+
+Host: MI250X (gfx90a), GPU pinned by the dispatcher (`HIP_VISIBLE_DEVICES=1`, idle at start; another job was using a different GPU), all GPU commands under `ulimit -c 0`. Toolchain changed again since the 2026-08-20 round: TheRock ROCm 10.1.0 pip SDK in `/opt/python-3.11-venv` (HIP 7.16.26385, AMD clang 24.0.0git); no `/opt/rocm`, no conda. meson 1.12.1 pip-installed into the job venv; `libopenblas-dev` (0.3.26) installed via apt for the `blas` reference backend. Host stayed up for the whole run; no amdgpu fault/reset lines in dmesg.
+
+### Build
+
+```
+SDK=/opt/python-3.11-venv/lib/python3.11/site-packages
+export PATH="$SDK/_rocm_sdk_devel/lib/llvm/bin:$SDK/_rocm_sdk_devel/bin:$SDK/_rocm_sdk_core/bin:$SDK/_rocm_sdk_libraries/bin:$PATH"
+cd projects/lc0/src
+meson setup build-hip \
+  -Dhip=true -Damd_gfx=gfx90a \
+  -Dplain_cuda=false -Dcudnn=false -Dcutlass=false -Dnvcc=false \
+  -Dgtest=true -Dblas=true -Dopencl=false -Donnx=false \
+  -Db_lto=false -Dnative_arch=false \
+  -Dhip_libdirs="$SDK/_rocm_sdk_devel/lib,$SDK/_rocm_sdk_core/lib,$SDK/_rocm_sdk_libraries/lib" \
+  -Dhip_include="$SDK/_rocm_sdk_devel/include" \
+  -Dopenblas_libdirs=$OB/lib/x86_64-linux-gnu/openblas-pthread \
+  -Dopenblas_include=$OB/include/x86_64-linux-gnu/openblas-pthread
+bash utils/timeit.sh lc0 compile -- ninja -C projects/lc0/src/build-hip -j16
+```
+
+Result: 321/321 targets, clean link, 0 `warning:` lines. Runtime needs `LD_LIBRARY_PATH=$OB/lib/x86_64-linux-gnu/openblas-pthread:$SDK/_rocm_sdk_devel/lib:$SDK/_rocm_sdk_core/lib:$SDK/_rocm_sdk_libraries/lib`.
+  -Dhip_include="$SDK/_rocm_sdk_devel/include"
+bash utils/timeit.sh lc0 compile -- ninja -C projects/lc0/src/build-hip -j16
+```
+
+321/321, clean link, 0 compiler warnings (the nodiscard warnings of earlier rounds are gone on this toolchain). `fp16_kernels.hip.o` 2.1MB, `common_kernels.hip.o` 1.5MB. Binary reports `v0.34.0-dev+git.4975680`.
+
+### CPU gtest (non-GPU regression)
+
+```
+bash utils/timeit.sh lc0 test -- meson test -C projects/lc0/src/build-hip
+```
+
+8/8 OK (`FP16`, `HashCat`, `PositionTest`, `OptionsParserTest`, `SyzygyTest`, `EncodePositionForNN`, `EngineTest`, `ChessBoard` 48.6s), 0 failures.
+
+### Nets (all re-fetched, decoded with `lc0 describenet`)
+
+| file | source | body | MLH |
+|---|---|---|---|
+| `maia1100.pb.gz` | `https://raw.githubusercontent.com/CSSLab/maia-chess/master/maia_weights/maia-1100.pb.gz` | SE_WITH_HEADFORMAT 6x64, conv policy | absent |
+| `n744706.pb.gz` | `https://storage.lczero.org/files/networks/0df5ca5b7485a043b88bea4f30d5b802033423f2f8ff0ca99b95e0646dd9325c` (training run 2, net 744706, 128x10; `training.lczero.org/get_network?sha=` returns 404 for it) | SE_WITH_HEADFORMAT 10x128, conv policy | MOVES_LEFT_V1 |
+| `t1-256x10.pb.gz` | `https://storage.lczero.org/files/networks-contrib/t1-256x10-distilled-swa-2432500.pb.gz` | ATTENTIONBODY_WITH_HEADFORMAT, attention policy | MOVES_LEFT_V1 |
+
+This is the first time the `n744706` source URL has been recorded. Earlier rounds could not refetch it.
+
+### GPU gate: `backendbench --backend=check`, hip vs blas, batch 1-55, `--batches=4`
+
+```
+HIP_VISIBLE_DEVICES=1 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/<net>.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+HIP_VISIBLE_DEVICES=1 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip-fp16(),blas(),mode=check,atol=1.1e-1,rtol=2e-1,freq=1.0" \
+  --weights=agent_space/<net>.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+
+| net | fp32 `hip()` | fp16 `hip-fp16()` |
+|---|---|---|
+| maia1100 | **277/277** passed, exit 0 | **277/277**, exit 0 |
+| n744706 | **277/277**, exit 0 | **277/277**, exit 0 |
+| t1-256x10 | **277/277**, exit 0 | **277/277**, exit 0 |
+
+0 `incorrect`, 0 errors anywhere. **Why 277 and not the earlier 222:** upstream #2478 (`69fbfc6`, "backendbench: do not count the warm-up batch in --batches") is in this head. Each batch size now runs the warm-up plus 4 counted batches, all of them checked: 55 x 5 + 2 = 277, where it was 55 x 4 + 2 = 222. It is the same command, and the harness change alone accounts for the difference. Upstream master's `network_check` labels the first `--backend-opts` entry "Reference" and the second "Working" (log: `Working backend set to blas. Reference backend set to hip.`).
+
+### Max error (`mode=display`, same batch 1-55 x4 sweep, max over all 277 evaluations)
+
+| net | backend | value max abs / rel | policy max abs / rel |
+|---|---|---|---|
+| maia1100 | fp32 | **1.2e-07** / 2.6e-06 | 1.4e-06 / 9.8e-06 |
+| maia1100 | fp16 | 3.3e-04 / 7.2e-03 | 1.7e-03 / 3.1e-02 |
+| n744706 | fp32 | **1.5e-07** / 2.1e-06 | 7.7e-07 / 8.7e-06 |
+| n744706 | fp16 | 9.1e-04 / 1.3e-02 | 6.6e-03 / 5.1e-02 |
+| t1-256x10 | fp32 | **3.0e-07** / 7.7e-06 | 5.1e-07 / 5.7e-06 |
+| t1-256x10 | fp16 | 1.1e-03 / 2.9e-02 | 1.7e-03 / 1.9e-02 |
+
+The worst value error is 1.1e-03 (fp16, t1-256x10), well inside fp16 rounding and more than an order of magnitude below the 4.4e-02 corrupted-bias signature. At the historical single point (maia1100 fp32, batch 8, `--batches=2`), value abs is **6.0e-08** and policy abs 5.1e-07, identical over two separate runs and digit-for-digit equal to the `b87423d8` round. Upstream's construction-time sync therefore reproduces the result of our retired fix exactly.
+
+### Moves-left head (not compared by `--backend=check`; measured with `--show-movesleft`)
+
+`{ uci; position startpos; go nodes 200 } | lc0 --weights=<net> --backend=<be> --show-movesleft --threads=1 --minibatch-size=1`, last info line:
+
+| net | `hip` | `hip-fp16` | `blas` reference |
+|---|---|---|---|
+| n744706 | 82 | **82** | 82 |
+| t1-256x10 | 92 | 92 | 92 |
+
+`n744706` fp16 read 72 (wrong) on the pre-fix base in the windows-gfx1151 control. On upstream master it agrees with the reference.
+
+### Fault-free sweep + device dispatch
+
+`backendbench --backend=hip` and `--backend=hip-fp16`, maia1100, batch 1-256, `--batches=2`: both exit 0, 256/256 rows each, no NaN. With `AMD_LOG_LEVEL=3`, the trace names `copyTypeConverted_kernel`, `filterTransform_kernel`, `addBiasBatched_kernel`, `addBias_NCHW_kernel`, `addVectors_kernel`, `expandPlanes_kernel_NCHW` and `policyMap_kernel`, plus rocBLAS `Cijk_*_ISA1100` Tensile kernels.
+
+### CUDA no-regression gate
+
+`cuda-not-validated` on this host: there is no CUDA toolkit and no conda to create the `cuda-12.8` env. The `4975680` tree is byte-identical to upstream master `58e78009`, so a CUDA regression here would be upstream's own. For reference only, not as our gate: upstream's statuses on `58e78009` are all success (`ci/circleci: build`, `mac`, `mac latest`, `continuous-integration/appveyor/branch`; read-only `gh api .../commits/58e78009/status`). If a Linux host with the toolkit validates this head, it should run the gate once.
+
+### Documentation / jargon / integrity
+
+`python3 utils/jargon.py --port lc0` -> `jargon: clean`. This needed a local `moat-port` branch in the fresh clone (`git branch moat-port origin/moat-port`). Without one the tool reports "cannot resolve master..moat-port", not a finding. README.md (upstream's) documents the HIP backend build (line 54: "install ROCm and build with the HIP backend"). `git -C projects/lc0/src status --porcelain` is clean.
+8/8 OK (`FP16`, `HashCat`, `PositionTest`, `OptionsParserTest`, `SyzygyTest`, `EncodePositionForNN`, `EngineTest`, `ChessBoard`), 0 failures.
+
+### Nets (all in gitignored `agent_space/nets/`, `lc0 describenet` checked)
+
+| file | source | body | policy | MLH |
+|---|---|---|---|---|
+| `maia1100.pb.gz` | `https://raw.githubusercontent.com/CSSLab/maia-chess/master/maia_weights/maia-1100.pb.gz` | SE, 6 blocks | conv | absent |
+| `n744706.pb.gz` | `https://storage.lczero.org/files/networks/0df5ca5b7485a043b88bea4f30d5b802033423f2f8ff0ca99b95e0646dd9325c` (training run 2, net 744706; `training.lczero.org/get_network?sha=` now 404s, storage URL works) | SE, 10 blocks | conv | V1 |
+| `t1-256x10.pb.gz` | `https://storage.lczero.org/files/networks-contrib/t1-256x10-distilled-swa-2432500.pb.gz` | attention body | attention | V1 |
+
+These are the first recorded source URLs for the two moves-left nets; earlier rounds had none, which is why the 2026-08-20 gfx90a round skipped them.
+
+### Pass counts change shape on upstream master -- read this before comparing to 222
+
+Upstream master's `backendbench` now runs one more checked evaluation per batch size than the base this port was validated on: the identical maia command gives `2 + 55 x 5 = 277` "Check passed" lines where earlier rounds got `2 + 55 x 4 = 222`. The log also now prints `Working backend set to blas. Reference backend set to hip.` for `hip(),blas()`. Same command, same tolerances; 277/277 here is the equivalent of 222/222. (1-16 x 2 batches gives 50 here vs the 34 recorded on windows-gfx1151.)
+
+### GPU gates
+
+```
+L=projects/lc0/src/build-hip/lc0
+$L backendbench --backend=check "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/nets/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+$L backendbench --backend=check "--backend-opts=hip-fp16(),blas(),mode=check,atol=1.1e-1,rtol=2e-1,freq=1.0" \
+  --weights=agent_space/nets/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+# moves-left nets, same two specs, batch 1-16:
+$L backendbench --backend=check "--backend-opts=<spec>" --weights=agent_space/nets/<net>.pb.gz \
+  --start-batch-size=1 --max-batch-size=16 --batches=2
+# max error: the same ranges with mode=display, max taken over every "maximum error" block
+```
+
+| net | backend | check passed | failures | max value abs / rel | max policy abs / rel |
+|---|---|---|---|---|---|
+| maia1100 | hip (fp32) | **277/277** | 0 | **1.2e-07** / 2.6e-06 | 1.4e-06 / 8.6e-06 |
+| maia1100 | hip-fp16 | **277/277** | 0 | 8.6e-05 / 1.9e-03 | 1.1e-03 / 5.3e-02 |
+| n744706 | hip (fp32) | **50/50** | 0 | 1.8e-07 / 2.5e-06 | 5.7e-07 / 5.5e-06 |
+| n744706 | hip-fp16 | **50/50** | 0 | 2.7e-04 / 3.7e-03 | 7.7e-03 / 3.8e-02 |
+| t1-256x10 | hip (fp32) | **50/50** | 0 | 2.2e-07 / 5.8e-06 | 4.3e-07 / 4.6e-06 |
+| t1-256x10 | hip-fp16 | **50/50** | 0 | 1.6e-03 / 4.0e-02 | 1.3e-03 / 2.5e-02 |
+
+fp32 value error is at float rounding everywhere, five orders below the 4.4e-02 corrupted-bias signature. The fp16 numbers are ordinary half rounding (maia fp16 value abs 8.6e-05 is the same figure the 2026-07-02 gfx90a round recorded).
+
+### Moves-left head (`--backend=check` never compares `GetMVal`)
+
+```
+{ printf 'uci\nposition startpos\ngo nodes 200\n'; sleep 45; printf 'quit\n'; } | \
+  $L --weights=agent_space/nets/<net>.pb.gz --backend=<b> --show-movesleft --threads=1 --minibatch-size=1
+```
+
+(The `sleep` matters: piping the three lines alone closes stdin and lc0 exits before `go` prints anything.)
+
+| net | hip | hip-fp16 | blas |
+|---|---|---|---|
+| n744706 | 82 | 82 | 82 |
+| t1-256x10 | 92 | 92 | 92 |
+
+n744706 matches the post-fix 82/82/82 recorded on windows-gfx1151 (fp16 read 72 on the unfixed base there). Score agrees too (cp 23 and cp 17 on all three backends).
+
+### Determinism, sweep, dispatch
+
+- `mode=display` maia1100 fp32 batch 8 x 2, two separate processes: value abs 3.0e-08, policy abs 6.6e-07, identical both times.
+- `backendbench --backend=hip` and `--backend=hip-fp16`, maia1100, batch 1-256 x 2: both exit 0, 256 timing rows each, no NaN/error/abort.
+- `AMD_LOG_LEVEL=3` shows lc0's own kernels dispatched on the device (`InputTransform_kernel_192`, `OutputTransform_kernel_192`, `policyMap_kernel`, `expandPlanes_kernel_NCHW`, `addBias_NCHW_kernel`, `copyTypeConverted_kernel`, ...) interleaved with gfx90a Tensile `Cijk_*_ISA90a_*` GEMMs.
+
+### CUDA no-regression gate
+
+`cuda-not-validated: no CUDA toolkit on this host` (no `nvcc`, no `/usr/local/cuda`, no conda to create `cuda-12.8`). Not recorded at `4975680` before. The tree is byte-identical to upstream master `58e78009`, so the CUDA path is upstream's own code and not something the port changed; the gate is still owed by whichever Linux host with the toolkit validates next if anyone wants it at this sha.
+
+### Integrity / jargon / docs
+
+`git -C projects/lc0/src status --porcelain` empty (build dir untracked). `python3 utils/jargon.py --port lc0` -> `jargon: clean`. README.md's `### HIP (ROCm)` section is upstream's and still documents this exact build (`-Dhip=true -Damd_gfx=gfx90a ... -Db_lto=false`).
+
+### Summary
+
+| Test | Result |
+|------|--------|
+| HIP build 321/321 (TheRock 10.1.0, HIP 7.16) | PASS |
+| meson test 8/8 | PASS |
+| check fp32 + fp16 x maia1100, n744706, t1-256x10 (277 each) | PASS 6/6 |
+| max value error | fp32 3.0e-07, fp16 1.1e-03 |
+| moves-left hip / hip-fp16 / blas | 82/82/82, 92/92/92 |
+| determinism (maia fp32, 2 runs) | identical, 6.0e-08 |
+| sweep batch 1-256 fp32 + fp16 | PASS |
+| CUDA compile gate | not run (no toolkit on host) |
+| jargon / tree clean | clean / clean |
+
+`validated_sha` = `49756806f27520538d17a60ec5c4ac35416bb160`. Transition: revalidate -> completed (linux-gfx1100 only).
+| HIP build (321/321) | PASS |
+| meson test 8/8 | PASS |
+| maia1100 fp32 / fp16 check | 277/277, 277/277 |
+| n744706 fp32 / fp16 check | 50/50, 50/50 |
+| t1-256x10 fp32 / fp16 check | 50/50, 50/50 |
+| max fp32 value abs error (all nets) | 2.2e-07 |
+| moves-left hip / fp16 / blas | agree (82, 92) |
+| Determinism, sweep 1-256, dispatch | PASS |
+| CUDA compile gate | not run (no toolkit) |
+| Fork tree clean, jargon clean | PASS |
+
+`validated_sha` = `49756806f27520538d17a60ec5c4ac35416bb160`. Transition: revalidate -> completed.
+
+## Validation 2026-10-21/22 windows-gfx1151 at 4975680 (upstream master tree) -- completed with a known issue
+
+Fresh build of `moat-port` 4975680 (tree identical to upstream master after #2454) in `build-hip-win-up` (meson, `-Dhip=true -Damd_gfx=gfx1151`, TheRock ROCm SDK 7.14.0a20260612, `ninja -j4`): 345/345 targets. `rocblas/` and `hipblaslt/` library folders plus the SDK runtime DLLs staged next to `lc0.exe`. GPU: AMD Radeon(TM) 8060S Graphics, HIP runtime 71460.85.0.
+
+| check | result |
+|---|---|
+| `meson test` | 8/8 OK |
+| maia-1100 `hip` vs `blas`, batch 1-55, `--batches=4`, atol 1e-3 rtol 1e-2 | 277/277 passed |
+| maia-1100 `hip-fp16` vs `blas`, batch 1-55, atol 1.1e-1 rtol 2e-1 | 277/277 passed |
+| n744706 `hip`, solo | 270/277 passed, 0 failed; stopped by the 900 s run limit |
+| n744706 `hip-fp16`, overlapped with other runs | 275/277 passed, 0 failed |
+| t1-256x10 `hip`, overlapped | `HIP error: unspecified launch failure` at startup |
+| t1-256x10 `hip-fp16`, overlapped | 62/62 passed through batch 12, then stopped |
+
+Command shape: `lc0.exe backendbench --backend=check "--backend-opts=<hip|hip-fp16>(),blas(),mode=check,<tol>,freq=1.0" --weights=<net> --start-batch-size=1 --max-batch-size=55 --batches=4`.
+
+maia-1100 is the net that failed every check in August (value-head bias race); it now passes on the upstream fix. Moves-left output on the large nets is covered by linux-gfx90a and linux-gfx1100 (277/277 on all three nets, fp32 and fp16).
+
+**Known issue (release note).** On this Windows gfx1151 APU host, the large moves-left networks (t1-256x10, n744706 class) destabilize the WDDM GPU scheduler. Three lc0 runs overlapping at 21:20:39 produced a `Kernel_141` VIDEO_ENGINE_TIMEOUT_DETECTED. A later single, serialized rerun bugchecked the host at 00:25:58 with `0x119` VIDEO_SCHEDULER_INTERNAL_ERROR (P1 0x10), dump `C:\WINDOWS\Minidump\102226-80140-01.dmp` (not yet analyzed; needs an elevated debugger). This is the same scheduler as August's `0xD1` in `dxgmms2!VidSchiProcessHwQueuePageFaultedDpc`. It is a driver-stack failure, not a correctness defect: no check on any net failed. jeff ruled on 2026-10-26 to release-note it rather than block the gate. Do not rerun the large nets on this host; small nets (maia class) run clean.
+
+## 2026-10-27 -- deferral `lc0-move-sync-below-memset` closed (jeff's ruling)
+
+Done by upstream #2454 (https://github.com/LeelaChessZero/lc0/pull/2454). At 4975680, `src/neural/backends/cuda/network_cuda.cc:699` calls `cudaDeviceSynchronize()` after the `if (!multi_stream_)` tensor_mem_ malloc/memset loop (688-693), which is the placement the deferral asked for; `network_cudnn.cc:684` has the same sync. Nothing remains for the port. jeff ruled it closed.

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Binary-equivalence confirmer for the MOAT regression guard (validator-side).
 
 Ground truth for "did the compiled program change on this arch?": compare the
@@ -238,4 +240,6 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     raise SystemExit(main(sys.argv))

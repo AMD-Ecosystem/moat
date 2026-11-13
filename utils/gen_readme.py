@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Regenerate the MOAT project table in README.md between sentinel markers,
 preserving all hand-written prose outside them. Reads every project's record across
 refs, not just the folders on this branch -- the table is the progress board, so work
@@ -44,8 +46,16 @@ def load_projects():
         if disp and disp.get("disposition") == "skip":
             rec["disposition"] = disp.get("reason")
             rec["disposition_note"] = disp.get("note")
+        # A project whose AMD support already exists, upstream or in someone else's
+        # port, has no port of ours to show. Its disposition record keeps intake from
+        # repeating the work; a row would only pad the board. A PR of ours still shows.
+        if rec.get("disposition") in HIDDEN_DISPOSITIONS and not rec.get("pr_url"):
+            continue
         out.append(rec)
     return out
+
+
+HIDDEN_DISPOSITIONS = {"already-supported", "ported-elsewhere"}
 
 
 # A gate is proven, or it is not. Ranked best-first: a project with one architecture
@@ -136,15 +146,15 @@ def outcome_cell(p):
     """The Outcome column: what this project actually delivered. An upstream PR
     (any state) is shown by its glyph + number. Projects without a PR carry a recorded
     disposition in data/dispositions.json:
-      already-supported -- upstream already had a ROCm path, so there is no port to
-                    show. It is a screening result, not a row on a porting board:
-                    data/dispositions.json is its record and the table stays about
-                    ports. Falls through to ⚪ if such a project ever keeps a folder.
+      already-supported / ported-elsewhere -- AMD support exists without us, so
+                    there is no port to show. A screening result, not a row on a
+                    porting board: data/dispositions.json is its record, and
+                    load_projects drops the row unless we opened a PR.
       license-blocked -- the port may work, but the upstream license (non-commercial,
                     no-derivative, or otherwise incompatible) bars contributing it.
                     The platform cells stay truthful (the port was built/validated)
                     and the outcome carries ⚖️.
-      cant-port / not-a-target / duplicate / ported-elsewhere / declined -- set aside. ⚪
+      cant-port / not-a-target / duplicate / declined -- set aside. ⚪
       opted-out -- the maintainer asked not to receive our pull requests. Reads the
                     same ⚪, and deliberately so: whose decision it was belongs in the
                     record, not in a glyph on a board about ports.
@@ -152,13 +162,18 @@ def outcome_cell(p):
     if p.get("pr_url"):
         # pr_state is the authority: the PR lifecycle is one project-level fact, not
         # something an arch's validation record carries. pr_merged_at backs it up for
-        # any record written before that was true.
+        # any record written before that was true. A maintained ruling outranks the
+        # closure it rode in on: "closed" alone reads as declined-and-done, and the
+        # one thing this cell must not say about a branch upstream sends its users
+        # to is that nothing came of it.
         state = p.get("pr_state") or ("merged" if p.get("pr_merged_at") else "open")
         glyph = {"merged": "🟣", "closed": "🔴"}.get(state, "🟢")
         num = p.get("pr_number")
         if num is None:  # derive from the .../pull/<n> URL tail when not recorded
             tail = p["pr_url"].rstrip("/").rsplit("/", 1)[-1]
             num = tail if tail.isdigit() else "?"
+        if p.get("maintained"):
+            return f"🔵 [#{num}]({p['pr_url']}) fork is upstream's AMD path"
         return f"{glyph} [#{num}]({p['pr_url']})"
     disp = p.get("disposition")
     if disp == "license-blocked":
@@ -176,6 +191,18 @@ def outcome_cell(p):
         return "⚪ not-portable"
     if p.get("on_hold"):
         return "⏸ on hold"
+    # Finished work with nowhere upstream to send it. Not a blank: "nothing
+    # recorded" is the opposite of a port whose fork is the place to get it.
+    if p.get("no_upstream"):
+        return "🔵 fork is the AMD path; upstream takes no pull requests"
+    # A release line ships as a tagged branch on the fork, never as an upstream
+    # pull request: the tag once it is signed off, and the plan until then.
+    if moatlib.release_line(p):
+        rel = p.get("release")
+        if rel:
+            return (f"\U0001f535 released on the fork as `{rel.get('tag')}` "
+                    f"([branch]({p.get('fork_url')}/tree/{p.get('fork_branch')}))")
+        return "\u2014 fork release line; no upstream pull request"
     return "—"
 
 
@@ -210,10 +237,11 @@ def render_table(projects):
         "| ✅ | proven on the current code | | 🟣 | contribution merged upstream |",
         "| 🔄 | proven earlier; the code has moved since | | 🟢 | pull request open |",
         "| 🔧 | in progress | | 🔴 | pull request closed |",
-        "| ⬜ | not started | | ⚖️ | licence bars contributing the port |",
-        "| 🚫 | blocked, with a reason recorded | | ⚪ | set aside, with the reason recorded |",
-        "| 🎫 | waived for this project, with maintainer approval | | ⏸ | on hold, deliberately not being worked |",
-        "| — | nothing recorded | | — | nothing recorded |",
+        "| ⬜ | not started | | 🔵 | the fork is where AMD support lives: upstream points users at it instead of merging, is archived and takes no pull requests, or will never take the port and the fork ships tagged releases |",
+        "| 🚫 | blocked, with a reason recorded | | ⚖️ | licence bars contributing the port |",
+        "| 🎫 | waived for this project, with maintainer approval | | ⚪ | set aside, with the reason recorded |",
+        "| — | nothing recorded | | ⏸ | on hold, deliberately not being worked |",
+        "| | | | — | nothing recorded |",
         "",
         "The project name links upstream.",
     ])
@@ -263,4 +291,6 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())
