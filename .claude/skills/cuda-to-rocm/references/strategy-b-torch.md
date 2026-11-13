@@ -94,8 +94,8 @@ build. That fault class, with the two regressions that produced it, is in
 ### hipify rewrites a bundled header-only library it can see
 
 torch's hipify walks every `.hpp` under the extension's include dirs into its file set and
-content-rewrites the ones a source pulls in. Point `extra_compile_args` at a bundled GLM (or
-any header-only library vendored in the repo) and hipify mangles it: it copies only `.hpp`
+content-rewrites the ones a source pulls in. List a bundled GLM (or any header-only
+library vendored in the repo) in `include_dirs` and hipify mangles it: it copies only `.hpp`
 and `.h`, so the library's `.inl` implementation files are dropped, and it rewrites the
 library's own `__CUDACC__`/`__HIP__` compiler detection, so the library stops marking its
 functions `__device__`. The build then fails inside the third-party headers, which sends you
@@ -103,7 +103,11 @@ looking in the wrong place.
 
 The fix is to leave the library alone rather than to fix up what hipify did. A modern GLM
 already detects `__HIP__` (`glm/simd/platform.h` -> `GLM_COMPILER_HIP`) and compiles verbatim
-under `-x hip`. In `setup.py`, before `setup()`, monkeypatch hipify to skip the directory:
+under `-x hip`. First choice: take the vendored directory out of `include_dirs` and pass it
+as `-I` in `extra_compile_args`, which hipify never reads (see "A vendored header tree passed
+only as `-I` is never hipified" above). Only when the tree has to stay in `include_dirs`, and
+as a last resort because it pins a private torch API, monkeypatch hipify in `setup.py` before
+`setup()` to skip the directory:
 
     def _patch_hipify_ignore_glm():
         import torch

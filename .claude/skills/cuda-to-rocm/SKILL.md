@@ -105,14 +105,13 @@ Scan this list against what you are doing. If any line could apply, open
 - Gate hardware-vs-software texture paths on a VERIFIED runtime self-test, never on creation success or `_WIN32`.
 
 **Floating point**
-- `__fsqrt_rn` is not always correctly rounded on gfx90a or gfx1100 (1 ULP high); CUDA's is IEEE-correct. Map it to `sqrtf` when a test compares against host sqrt.
-- Without `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__` HIP's HOST `min`/`max` take int, so `min(float, float)` in `__host__ __device__` code silently truncates on the host (whole-pixel camera errors); define it for the HIP build.
+- `__fsqrt_rn` is not always correctly rounded (seen on gfx90a, 1 ULP high); CUDA's is IEEE-correct. Route the f32 device sqrt through `__dsqrt_rn` and cast back when a test needs bit-exact results.
 - clang(HIP) defaults to `-ffp-contract=fast` and forms FMAs ACROSS expressions; nvcc contracts expression-only.
 - Exact float-equality branches fed by `__fdividef` produce out-of-range indices.
 - HIP device `cuda::min`/`max` NaN-selection can differ from host `std::min`/`max`.
 - rocBLAS `gemm_ex` with a 16-bit D splits long k (`max(lda, ldb) * k >= 2^30` in ROCm 10.1) and rounds D once per chunk; send those GEMMs to hipBLASLt.
 - gfx11/gfx12 WMMA float accumulation drifts with k (biased toward zero) in hipBLASLt and rocBLAS alike; run k-chunks of <= 2^15 yourself with 16-bit per-chunk outputs summed in float (a float D is 8-28x slower on gfx1100), recomputing in float the outputs whose 16-bit chunk sums overflow or whose summed half-ulp rounding bound exceeds 3 units of roundoff of the result (a root-sum-square test is beaten by sums that round alike), not hipBLASLt split-k (a gfx1201 kernel is wrong at large k even when split). Route fused-epilogue (cuBLASLt) wrappers through the same path, with the epilogue applied afterwards.
-- HIP host `min`/`max` in `.cu` files exist only for `(int, int)`: float arguments silently truncate. Fix the call sites with `fmin`/`fmax`; the macro is ROCm >= 7.2 only and defaults off.
+- HIP host `min`/`max` in `.cu` files exist only for `(int, int)`: float arguments in `__host__ __device__` code silently truncate on the host (whole-pixel camera errors). Fix the call sites with `fmin`/`fmax`; do not rely on `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__`, which exists only from ROCm 7.2 and defaults off.
 
 **Headers, includes and build**
 - A shared compat header must be host-includable: gate device-only includes behind `__CUDACC__`/`__HIPCC__`, or CUB leaks into host TUs. Hit independently by two projects.
