@@ -1228,3 +1228,7 @@ jeff ruled that Windows support, for libmarv and for the `mmseqs` command-line t
 - The upstream PR from this round carries no Windows commits. At PR-prep history curation, drop 7c39308d (`libmarv` Windows DLL build) and 54edbc78 (mmseqs-tree Windows guards) along with the superseded commits; the curated branch keeps only the fallback, ClampToInvalid and tuning commits.
 - Both commits stay reachable in `moat-port` history at 0c897402 and are the starting point for the Windows feature, registered as deferral `mmseqs2-windows-support` in `projects/MMseqs2/deferred.json`. The full CLI needs a Windows replacement for the Linux-only memory-mapped file reading; that work belongs to the Windows feature, not this PR.
 - The required `windows` gate cannot be met by this PR's tree (upstream MMseqs2 does not build on Windows without the dropped commits). How that gate is handled for this PR is a pending decision for jeff; an agent may only suggest a waiver.
+
+## gfx950 tables kept (jeff, 2026-11-13)
+
+jeff ruled to keep the gfx950 tuned tables (0c897402) in the GPU-coverage PR as the last commit of the curated history. The PR body states the measured gain plainly (1.05x on q1k, 1.02x on the 8x database, identical output) and does not headline it as MI355 tuning; if the maintainer objects, drop the commit without argument. At curation, regenerate the raw tuner output behind the "4.6-9.3x slower" endpos figure or reword it to the ranges recorded here (reviewer caveat).
