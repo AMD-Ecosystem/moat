@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "symforce-38f16ea3-daa1a7bf-body-wording",
+      "kind": "other",
+      "component": null,
+      "summary": "At a PR-prep squash, correct two pushed commit bodies on moat-fix-465: 38f16ea3 says upstream 'now' uses cudaGetDeviceCount (it came from 2ee29780, already at the published head e994ef0b); daa1a7bf says the stale r_kp1_norm2_tot feeds beta and that fresh allocations hide it (it feeds only the PCG exit test, and from the second solver iteration on it adds onto the previous iteration's value).",
+      "refs": [
+        "projects/symforce/notes.md#review-2026-11-04"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-04T20:46:33Z",
+      "decided": null
+    }
+  ]
+}
