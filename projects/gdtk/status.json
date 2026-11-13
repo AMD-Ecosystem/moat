@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "makefile",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-11-13T01:18:01Z",
+  "updated_at": "2026-11-13T01:18:54Z",
   "head_sha": "b999234d59c8932d1808883ef96ac59ec08fd3c5",
   "depends_on": [],
   "porting": null,
@@ -139,11 +139,9 @@
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/gdtk/pull/1",
-  "pr_approval": {
-    "approved_by": "jeffdaily",
-    "at": "2026-11-12T23:27:17Z",
-    "head_sha": "b999234d59c8932d1808883ef96ac59ec08fd3c5",
-    "content_sha256": "8a62f84e20a945e96648dca8b3d89839f9816e988ff5faf4c409861b9e553704",
-    "review_pr": "https://github.com/AMD-Ecosystem/gdtk/pull/1"
-  }
+  "pr_url": "https://github.com/gdtk-uq/gdtk/pull/184",
+  "pr_number": 184,
+  "pr_opened_at": "2026-11-13T01:18:54Z",
+  "pr_state": "open",
+  "published_sha": "b999234d59c8932d1808883ef96ac59ec08fd3c5"
 }
