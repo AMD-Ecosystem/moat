@@ -1308,3 +1308,73 @@ Scope: the porter's 7bc8069a, which rewords the second paragraph of "Tile tables
 ## gfx1201 tuning dropped (jeff, 2026-11-13)
 
 jeff ruled to drop gfx1201 tuning: gfx1201 keeps the generic AMD fallback configs, which measured faster than the tuned tables. `surface.json` moves `tuning:gfx1201` to scoped_out, and the two Windows entries likewise per the Windows split ruling above; nothing is owed.
+
+## Curated history on moat-gpu-coverage (2026-11-13, linux-gfx90a)
+
+jeff's ruling (2026-11-13): the upstream PR carries only the GPU-coverage work, on a NEW fork branch `moat-gpu-coverage`; `moat-port` (0c897402) stays untouched as the starting point of the Windows feature. Stage taken `review-passed -> porting` (lock linux-gfx90a), `pr-state` none. Host: MI250X GCD (gfx90a), `HIP_VISIBLE_DEVICES=1` (self-pinned; all four GCDs idle, the dispatcher set none), `CUDA_VISIBLE_DEVICES=0` for `--gpu`, TheRock `rocm-sdk-devel`, gcc 13.3, CMake 3.31.6, Ninja, `-j64`. All GPU runs under `ulimit -c 0`. `set-fork-branch` NOT run (jeff's ruling; recorded on the primary after review PR #1 closes), so `upstream_visible_branch` and `utils/jargon.py --port` still resolve to `moat-port` until then.
+
+### Branch construction
+
+Fork `master` = upstream/master = d0185a2d (unmoved), so the branch starts there.
+
+```
+git checkout -b moat-gpu-coverage d0185a2d
+git cherry-pick 84a8fb2e 3c588b6f 2cda180e 0c897402      # no conflicts
+# the two tuning commits re-created with corrected messages, locally, before publishing:
+git checkout -B moat-gpu-coverage 5ee63b2d
+git cherry-pick -n 2cda180e && git commit --date=<orig> -F gfx90a-msg
+git cherry-pick -n 0c897402 && git commit --date=<orig> -F gfx950-msg
+# published as a new branch on the fork (plain, no force)
+```
+
+| new | original | title |
+|---|---|---|
+| ae0dd8b3 | 84a8fb2e | [ROCm] Run libmarv on AMD GPUs without a tuned aligner |
+| 5ee63b2d | 3c588b6f | [ROCm] Clamp packed residues as unsigned bytes in HIP device code |
+| e530252b | 2cda180e | [ROCm] Add tuned libmarv aligner configs for gfx90a |
+| af0688d8 | 0c897402 | [ROCm] Add tuned libmarv aligner configs for gfx950 |
+
+Not carried: 7c39308d, 54edbc78 (Windows), the USE_HIP commits c755847a..75a9b029, merge b29c9270, removal 440e1197. Each new commit's `git patch-id --stable` equals its original's (4c9d9c5c, da1a7204, b8abb228, 0a1f3c43), so the content of every commit is unchanged; ae0dd8b3 and 5ee63b2d keep their messages verbatim.
+
+### Tree-diff proof
+
+- `git diff 0c897402 moat-gpu-coverage --stat`: 9 files, 13 insertions, 155 deletions: cmake/MMseqsResourceCompiler.cmake, lib/libmarv/src/CMakeLists.txt (4), lib/libmarv/src/mapped_file.hpp, lib/libmarv/src/marv.cu, lib/libmarv/src/marv.h, lib/tinyexpr/CMakeLists.txt, src/commons/GpuUtil.cpp, src/prefiltering/ungappedprefilter.cpp, src/util/gpuserver.cpp. These are exactly the files of 7c39308d (first five) and 54edbc78 (last four), and the +/- lines of `git diff moat-gpu-coverage 0c897402` equal those of `git diff 7c39308d~1 54edbc78` line for line.
+- Exact: on a scratch worktree at the new tip, `git cherry-pick -n 7c39308d 54edbc78` then `git write-tree` gives 31ae6806..., which is `git rev-parse 0c897402^{tree}`. So the new tree is 0c897402's tree minus exactly the Windows changes.
+
+### Commit message changes
+
+- The "5-10x" figure is in the gfx90a commit (2cda180e), not the fallback commit; e530252b now says "5.2-12.6x slower on gfx90a" (measured in `## Rescope porter round`: 1338 GCUPS at 16x20 against 106-258 above 20 items). Its timing paragraph now carries this round's q1k and 8x numbers (below) and the kernel-trace figure.
+- gfx950 (af0688d8): "4.6-9.3x slower" reworded to the recorded ranges, since no raw gfx950 tuner output exists and this host cannot regenerate it: "reach 559-1219 GCUPS against 5177-5683 GCUPS with 20 items at the same group sizes".
+- No kept message and not the libmarv Readme mentions Windows (grep; the Readme line lists the tuned arches and the generic fallback only). Titles 51-65 chars, `[ROCm]`, "Authored with Claude.", fenced Test Plan, no Co-Authored-By/noreply. `utils/prose.py -` clean on all four messages.
+- Jargon: `utils/jargon.py --port MMseqs2` scans `master..moat-port` (the old branch, because fork_branch is not set), so the equivalent ran on the new range: `utils/jargon.py -C projects/MMseqs2/src --commits d0185a2d..moat-gpu-coverage` clean, `--diff d0185a2d..moat-gpu-coverage` clean (`--port` on moat-port also clean).
+
+### gfx90a tuned vs generic, q1k and 8x database
+
+generic = build of 5ee63b2d (configure prints `marv: generic AMD aligner for gfx90a`), tuned = build of 94e87c29 (pre-message-fix tip, tree identical to af0688d8). Both `cmake -S <src> -B <b> -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DHAVE_TESTS=1 -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++`, `cmake --build <b> --target mmseqs`: 312/312, 76 warning lines each. Benchmark as the gfx950/gfx1201 rounds: `mmseqs ungappedprefilter <Q> <T> p --gpu 1 --max-seqs 1000 -e 10000 --threads 8`, then `createtsv`, sorted md5. Runs alternated; other jobs were compiling on the host (1-min load 8-127, logged per run).
+
+| build | q1k vs t, wall s | q200 vs t8, wall s |
+|---|---|---|
+| generic | 67.62, 66.75, 66.65 (mean 67.01) | 18.19, 17.02, 16.99, 16.66 (mean 17.21) |
+| tuned gfx90a | 55.42, 54.45, 54.48 (mean 54.78) | 12.66, 13.06, 13.01, 12.65 (mean 12.84) |
+| gain | **1.22x** | **1.34x** |
+
+- Output identical: q1k 1,000,000 rows, md5 `6e2142dde4e89275a2c378e290a65088` (the same as the gfx90a, gfx950 and gfx1201 rounds, so the recipe matches); t8 200,000 rows, md5 `ac1fd287aa41b7fc5d860d1c61fa7934` for both builds. (gfx1201's t8 md5 is 461eebd4...; its header-suffix scheme was not recorded exactly, so the replicated DB differs in target names. Here: `_r0`..`_r7` appended to the first header token, recipe in the reference README.)
+- Kernel trace, t8 (`rocprofv3 --kernel-trace --stats --output-format csv`): libmarv kernels 15.92 s generic vs 12.00 s tuned (1.33x); all kernels 16.32 vs 12.22 s. Generic's top kernels are `DEFAULT_AMD_` half2 128/4/48 3.70 s, 128/4/32 3.25 s; tuned's `AMD_GFX90A_` 512/8/28 1.05 s, multitile 512/8/60 0.98 s.
+- Unlike gfx950 (1.05x -> 1.02x) and gfx1201 (slower), the gfx90a gain GROWS on the larger database (1.22x -> 1.34x). No 1.02x finding: the gfx90a table stays well justified.
+- Raw logs: `reference/gfx90a-tuning/` (bench_q1k.txt, bench_t8.txt, kernel-stats/t8_*_kernel_stats.csv, build.sh, bench.sh, README.txt with the DB recipes).
+
+### Validation at the new tip (porter evidence, not a validator record)
+
+```
+CUDA_VISIBLE_DEVICES=0 HIP_VISIBLE_DEVICES=1 util/regression/run_regression.sh <b-tuned>/src/mmseqs <scratch>
+```
+- Regression (submodule 19b9867): 43/43 TEST SUCCESS, 43 GOOD; SEARCH_GPU 0.454819 = expected (32 s), SEARCH_GPU_SERVER 0.454819 = expected (33 s). No generic aligner in this build, so the GPU tests ran the gfx90a tables.
+- Example GPU-vs-CPU (`easy-search examples/QUERY.fasta` padded DB `--gpu 1` vs unpadded `--gpu 0`): GPU 14482, CPU 12901, common 12438, all 12438 rows identical; tuned GPU output identical (sorted) to the generic GPU output. Same counts as every earlier round.
+- Fork clone `status --porcelain`: no modified tracked files.
+- CUDA: not re-run here (no nvcc). The new tree differs from the nvcc-checked 0c897402 only by removing the Windows hunks; a real nvcc compile of af0688d8 on the mi355 host is still owed before presenting.
+
+### State and what is owed
+
+- `moat-gpu-coverage` at af0688d8 on the fork; `moat-port` 0c897402 untouched (`git ls-remote` checked after publishing). `advance-head` af0688d8; stage `delta-ported` for the reviewer. Every platform record is behind head: the reviewer judges the curation (patch-ids, tree proof, message edits), then validators re-run at af0688d8 (wave64, wave32; windows is waived).
+- Owed: nvcc compile at af0688d8 (mi355); `set-fork-branch MMseqs2 moat-gpu-coverage` on the primary after review PR #1 closes (jeff). Until then `jargon.py --port`, `pr_ready` and `upstream.py` look at `moat-port`.
+- The PR body drafted in `## Review 2026-11-13` still has the Windows bullet and the old q1k figure; at PR prep drop the Windows bullet and use 1.22x q1k / 1.34x 8x for gfx90a.
