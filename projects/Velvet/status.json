@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-11-14T00:17:01Z",
+  "updated_at": "2026-11-14T00:18:11Z",
   "head_sha": "856c96bd7713ced9c1d8b1cb1398cd13b892ff06",
   "depends_on": [],
   "pr_url": "https://github.com/vitalight/Velvet/pull/9",
@@ -169,13 +169,8 @@
       }
     }
   },
-  "published_sha": "a9016bcb5efb7a328785f428ba5e609cf98513c2",
-  "fix": {
-    "branch": "moat-fix-9",
-    "base_sha": "a9016bcb5efb7a328785f428ba5e609cf98513c2",
-    "review_pr": "https://github.com/AMD-Ecosystem/Velvet/pull/2",
-    "opened_at": "2026-08-27T05:30:39Z"
-  },
+  "published_sha": "856c96bd7713ced9c1d8b1cb1398cd13b892ff06",
+  "fix": null,
   "porting_released": {
     "arch": "linux-gfx1100",
     "since": "2026-08-27T05:49:21Z",
@@ -188,5 +183,5 @@
     "content_sha256": "43e14ce0301c595fc61452a6cd6a96011ff4d03c371ed7f89512aba6a8f1b5c8",
     "review_pr": "https://github.com/AMD-Ecosystem/Velvet/pull/2"
   },
-  "fix_merged_at": "2026-08-25T17:09:27Z"
+  "fix_merged_at": "2026-11-14T00:18:11Z"
 }
