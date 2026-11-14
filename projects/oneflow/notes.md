@@ -764,3 +764,15 @@ MI250X, pin `HIP_VISIBLE_DEVICES=2,3` kept, `ulimit -c 0`, no `LD_PRELOAD`. Fres
 - Capture tests: 3 tests x 5 runs, hipBLASLt unset and =1, 30/30 pass, plus 3/3 with an outer CUDA graph. cg_grad: 6/6 bitwise. Long-k: PASS, equal to torch (fp16 numbers identical to c741328b7). Regression tests: all pass, except the known test_cublas_fused_mlp float32 item.
 - Two GPUs, 3 rounds: test_id_shuffle_global P2P 0/1, test_id_shuffle_p2p_global, test_one_embedding_p2p_shuffle_global, comm_ops bf16, nccl_logical bf16 and 2-rank test_oneembedding all pass on both ranks (the dynamic-allocation global test skips upstream). The one-GPU one_embedding files all pass.
 - jargon clean; docs unchanged; CUDA gate not owed (Python-only round).
+
+## Validation 2026-11-13 (linux-gfx942) at 44d5f04cd: completed
+
+Validator job on an MI300X host (gfx942, wave64), `HIP_VISIBLE_DEVICES=2,3` pinned, `ulimit -c 0`, no LD_PRELOAD on any run. HEAD and `origin/moat-fix-10697` were 44d5f04cd, `moat-port` 14801d8a8, tracked tree clean before and after; nothing pushed to the fork, no GitHub writes. The worker could not write this section: the fleet guard refused its notes heredoc as a GitHub write, a false match on the prose (the guard's `gh <group> <verb>` pattern matched words inside the heredoc text). It stopped as instructed. jeff ruled on 2026-11-14 that the result be recorded from the console host from the worker's report; this section is that record.
+
+- Build: clean, rc 0, 708 s, gfx942 warp 64, libLLVM symbol counts as at 14801d8a8. `import oneflow` works in both orders.
+- Graph suite: 152 pass / 2 fail / 3 error / 102 skip, identical per test id to 14801d8a8, with and without `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`. Tensor: 368 pass / 1 fail (`test_safetensors`, module not installed), identical per id.
+- Modules: 1614 pass / 53 fail / 5 error / 316 skip; 1980 of 1983 shared ids match. Differences: three known random flakes passed (tf32 matmul, `psi`, global `smooth_l1` grad_grad); `test_higher_derivative_loss` missed torch's BCE device trap this run, so its five ids were collected, three failing in the classes recorded for their global twins.
+- Capture tests 5/5 each with and without `ROCBLAS_USE_HIPBLASLT=1`; fused_mlp under outer CUDA graphs 3/3. Long-k passes, `test_matmul_long_k` 4/4. Regression tests pass except the known `test_cublas_fused_mlp` float32 tolerance item.
+- Two GPUs, 2 rounds: every test matches the record; `test_id_shuffle_global` with id_shuffle P2P on still aborts rc 1 on the recorded upstream IPC key collision (`kv_.emplace` CHECK, `IdShuffleP2PKernel` -> `RpcClient::PushKV`). Fused harness 10/10 with P2P on, losses equal to unfused at all 50 steps; embedding rounds 8/8.
+- Changed files, one fresh process per run: `test_id_shuffle.py` 200/200 (100 per GPU), 0 GatherNd faults, 0 other failures (the unfixed file's rate predicts about 5; P(0) about 1%); `test_dynamic_allocation_gradient_shuffle.py` 50/50.
+- `jargon.py --port oneflow` clean. No C++/HIP/CMake change, so no nvcc check owed.

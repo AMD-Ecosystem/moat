@@ -7,7 +7,7 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-11-14T01:08:52Z",
+  "updated_at": "2026-11-14T02:04:32Z",
   "head_sha": "44d5f04cdda699579b9f0825301b92317499f138",
   "waivers": {
     "windows": {
@@ -93,11 +93,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "14801d8a83043e852b72a3671bc88e5896aec904",
+      "validated_sha": "44d5f04cdda699579b9f0825301b92317499f138",
       "failed_sha": "14801d8a83043e852b72a3671bc88e5896aec904",
       "started_at": "2026-10-29T23:08:20Z",
-      "completed_at": "2026-11-13T19:20:24Z",
-      "updated_at": "2026-11-13T22:35:56Z",
+      "completed_at": "2026-11-14T02:04:32Z",
+      "updated_at": "2026-11-14T02:04:32Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -111,7 +111,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
+      "last_agent": "validator",
       "state": "completed"
     },
     "windows-gfx1151": {
