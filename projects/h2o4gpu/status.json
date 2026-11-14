@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:05:27Z",
-  "updated_at": "2026-11-14T02:38:09Z",
+  "updated_at": "2026-11-14T03:10:08Z",
   "head_sha": "bcc7bcd649793be2b28690fc591760b8a48a8476",
   "depends_on": [],
   "waivers": {},
@@ -27,14 +27,14 @@
   },
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx90a": {
+    "linux-gfx1100": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "d743f11e296db53c67a2356a854bac0b314fef76",
+      "validated_sha": "bcc7bcd649793be2b28690fc591760b8a48a8476",
       "failed_sha": null,
-      "started_at": "2026-11-04T19:37:52Z",
-      "completed_at": "2026-11-12T20:27:50Z",
-      "updated_at": "2026-11-13T23:36:47Z",
+      "started_at": "2026-11-12T19:33:59Z",
+      "completed_at": "2026-11-14T02:38:09Z",
+      "updated_at": "2026-11-14T02:38:09Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -104,6 +104,30 @@
       },
       "last_agent": "reviewer"
     },
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "bcc7bcd649793be2b28690fc591760b8a48a8476",
+      "failed_sha": null,
+      "started_at": "2026-11-04T19:37:52Z",
+      "completed_at": "2026-11-14T03:10:08Z",
+      "updated_at": "2026-11-14T03:10:08Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
@@ -127,30 +151,6 @@
       },
       "last_agent": "validator",
       "state": "completed"
-    },
-    "linux-gfx1100": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "bcc7bcd649793be2b28690fc591760b8a48a8476",
-      "failed_sha": null,
-      "started_at": "2026-11-12T19:33:59Z",
-      "completed_at": "2026-11-14T02:38:09Z",
-      "updated_at": "2026-11-14T02:38:09Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "last_agent": "validator"
     }
   },
   "porting_released": {
