@@ -6,4 +6,5 @@ projects/*/status.json merge=moat-status
 # Append-only docs + per-project timing logs: on concurrent edits keep both
 # sides instead of conflicting (multiple platforms append to the same file).
 projects/*/notes.md merge=union
+projects/*/notes-*.md merge=union
 projects/*/stats.jsonl merge=union
