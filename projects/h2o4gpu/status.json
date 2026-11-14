@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:05:27Z",
-  "updated_at": "2026-11-14T02:06:14Z",
+  "updated_at": "2026-11-14T02:24:35Z",
   "head_sha": "bcc7bcd649793be2b28690fc591760b8a48a8476",
   "depends_on": [],
   "waivers": {},
@@ -101,11 +101,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "d743f11e296db53c67a2356a854bac0b314fef76",
+      "validated_sha": "bcc7bcd649793be2b28690fc591760b8a48a8476",
       "failed_sha": null,
       "started_at": "2026-11-12T00:57:06Z",
-      "completed_at": "2026-11-12T20:13:35Z",
-      "updated_at": "2026-11-13T23:36:47Z",
+      "completed_at": "2026-11-14T02:24:35Z",
+      "updated_at": "2026-11-14T02:24:35Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -120,7 +120,13 @@
         "last_session_at": null
       },
       "last_agent": "validator",
-      "state": "completed"
+      "state": "completed",
+      "carry_forward": {
+        "to": "bcc7bcd649793be2b28690fc591760b8a48a8476",
+        "method": "binary-equiv",
+        "detail": "gfx942 builds at d743f11e and bcc7bcd6: codeobj_diff identical (device ISA + exports of _ch2o4gpu_gpu.so, _ch2o4gpu_cpu.so, h2o4gpu_test); no bwcheck/p2pbwcheck object",
+        "at": "2026-11-14T02:24:35Z"
+      }
     },
     "windows-gfx1151": {
       "blocked": false,

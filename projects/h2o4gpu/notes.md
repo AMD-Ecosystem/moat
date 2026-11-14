@@ -1371,3 +1371,42 @@ jeff's request (fleet job h2o-nvcc-prompt): repeat the nvcc compile check at the
 - One head-vs-control difference outside the restored files, already present at base: `_ch2o4gpu_gpu.so` imports `PyLong_AsLongLong`, from the `PyLong_AsLong` -> `PyLong_AsLongLong` change in `src/swig/solver/elastic_net.i` (the Windows build commit: `a95040c7` in the old history, `10ed0acc` at bcc7bcd6). Not new in this tip.
 - Not done: any NVIDIA GPU run (none on this host); the Makefile gbm recipes (untouched by this delta).
 - Build trees and the clone stay in the job directory (scratch).
+## Binary-equivalence carry-forward 2026-11-14 (linux-gfx942, MI300X, ROCm 10.1 pip SDK, clang 24.0.0git d6f6cb69) -- moat-port d743f11e -> bcc7bcd6
+
+Validator role, jeff's request. `moat-port` moved from `d743f11e296db53c67a2356a854bac0b314fef76` (validated here) to `bcc7bcd649793be2b28690fc591760b8a48a8476`: the 13 CUDA Samples files are no longer deleted, and the `USE_HIP` branch of `CMakeLists.txt` gains `list(FILTER GPU_SOURCES EXCLUDE REGEX ".*/(p2p)?bwcheck\\.cu$")`. jeff reported `classify` = `mixed`; on this host `moatlib.py classify` printed `class=unknown ... (classification failed -> revalidate)` because there is no local `projects/h2o4gpu/src` clone. Either way the source diff does not carry validation, so both shas were built and compared.
+
+### Builds (both rc 0, 35 s and 34 s at MAX_JOBS=112)
+Fresh clone of the fork, `d743f11e` fetched by sha (gone from the branch after the force push), one worktree per sha, submodules `tests/googletest LightGBM_rocm xgboost_rocm` initialized. `swig==4.2.1` pip-installed into the job venv. Each tree, under `ulimit -c 0`, LD_LIBRARY_PATH unset:
+```
+R=$($FLEET_VENV/bin/python -m rocm_sdk path --root); P=$FLEET_VENV/bin/python
+export PATH=$FLEET_VENV/bin:$R/bin:$PATH CMAKE_PREFIX_PATH=$R OMP_NUM_THREADS=$MAX_JOBS CMAKE_BUILD_PARALLEL_LEVEL=$MAX_JOBS
+cmake -S . -B build-hip -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$P -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build build-hip -j$MAX_JOBS
+```
+Both trees built `libgpuh2o4gpu.a`, `libcpuh2o4gpu.a`, `_ch2o4gpu_gpu.so`, `_ch2o4gpu_cpu.so`, `h2o4gpu_test`.
+
+### codeobj_diff: verdict=identical
+`utils/codeobj_diff.py` hard-codes `/opt/rocm/llvm/bin/llvm-nm`, `llvm-objdump` and `/opt/rocm/bin/roc-obj-ls`. This host has no `/opt/rocm` (pip SDK only), the pip SDK ships no `roc-obj-ls`, and the image venv's `roc-obj-ls` entry point fails (`ImportError: cannot import name 'roc_obj_ls' from 'rocm_sdk_core._cli'`). The first run therefore died with `FileNotFoundError` for `llvm-nm`. The trunk copy (`git show origin/main:utils/codeobj_diff.py`) was run unmodified through a wrapper that sets only its `NM`/`OBJDUMP` to `$R/lib/llvm/bin/` and `ROC_OBJ_LS` to a stand-in script. The stand-in parses the uncompressed `__CLANG_OFFLOAD_BUNDLE__` headers in `.hip_fatbin` and prints roc-obj-ls lines with file offsets. Check of the stand-in: for `_ch2o4gpu_gpu.so`, all 10 gfx942 slices are byte-identical to `clang-offload-bundler --unbundle --targets=hip-amdgcn-amd-amdhsa--gfx942` output, and they total 6,839,184 bytes of the 6,897,872-byte section.
+```
+python3 agent_space/cod/run.py agent_space/old/build-hip agent_space/new/build-hip
+verdict=identical
+  _ch2o4gpu_cpu.so: identical (exported symbols + device ISA identical (696 exports))
+  _ch2o4gpu_gpu.so: identical (exported symbols + device ISA identical (1677 exports))
+  h2o4gpu_test: identical (exported symbols + device ISA identical (3 exports))
+  (plus 8 CMake probe binaries, identical)
+```
+
+### No bwcheck / p2pbwcheck object in the new build
+- `src/gpu/bwcheck.cu` and `src/gpu/p2pbwcheck.cu` are present in the new tree. `grep -ci bwcheck build-hip/compile_commands.json` = 0 in both builds, and `find build-hip -iname '*bwcheck*'` = 0 in both.
+- `llvm-ar t libgpuh2o4gpu.a`: 21 members in each build, same list, no bwcheck.
+- compile_commands: 40 entries in each build, and the file lists are identical once the worktree path is normalized.
+
+### Host code (extra check; codeobj_diff does not compare host code)
+- `_ch2o4gpu_cpu.so`: host `.text` byte-identical.
+- `_ch2o4gpu_gpu.so` and `h2o4gpu_test`: every allocated section has the same size, but the bytes of `.text` differ (9574 bytes in the module). Every differing instruction is a RIP-relative `leaq` into `.rodata`. With those operands masked, the disassembly is identical (254,692 and 207,248 lines). After replacing the worktree path (`.../agent_space/old/` vs `.../new/`, same length) in `.rodata`, the NUL-split string multisets differ only in a few relocated relative jump-table blobs (10 and 8 diff lines). Cause: the linker places merged strings differently when the build path inside `__FILE__`/assert strings changes. That is not a change in the program.
+
+### Result
+`python3 utils/moatlib.py carry-forward h2o4gpu linux-gfx942 bcc7bcd649793be2b28690fc591760b8a48a8476 binary-equiv "<reason>"` -> `h2o4gpu/linux-gfx942 carried forward -> bcc7bcd6... (binary-equiv)`. Nothing was run on the GPU, and nothing was pushed to the fork.
+
+## Lesson for moat-porting: codeobj_diff needs /opt/rocm
+`utils/codeobj_diff.py` finds its tools only under `/opt/rocm`. On a pip-SDK host (no `/opt/rocm`, no `roc-obj-ls`) it crashes, or with paths patched it returns `indeterminate` for every binary. Two possible fixes: resolve `llvm-nm`/`llvm-objdump` from `rocm_sdk path --root`/`lib/llvm/bin`, and read the code objects from the `.hip_fatbin` offload bundles directly (or with `clang-offload-bundler`) when `roc-obj-ls` is missing. This run used a stand-in for `roc-obj-ls`, recorded above.
