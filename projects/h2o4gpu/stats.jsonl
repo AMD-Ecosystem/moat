@@ -248,3 +248,4 @@
 {"kind":"phase","ts":"2026-11-14T03:20:57Z","phase":"test","seconds":6.111,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/run_bcc.sh ../oracle.py f32,f64"}
 {"kind":"phase","ts":"2026-11-14T03:21:09Z","phase":"test","seconds":6.194,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/run_bcc.sh ../oracle.py f32,f64"}
 {"kind":"phase","ts":"2026-11-14T03:21:20Z","phase":"test","seconds":5.033,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/h2o_win/run_bcc.sh ../oracle.py f32,f64"}
+{"kind":"session","ts":"2026-11-14T03:26:27Z","epoch":1794626788.051406800,"event":"end","platform":"windows-gfx1151"}
