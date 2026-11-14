@@ -5442,3 +5442,88 @@ jeff's request (2026-11-13): validate the fix round `moat-fix-10697` at 44d5f04c
 
 ### To unblock (jeff's decision)
 Either allow this job to run the install written as `"$FLEET_VENV"/bin/python -m pip install -r dev-requirements.txt fsspec pytest-timeout pytest-repeat opencv-python-headless==4.10.0.84`, the form every earlier recipe in this file uses, or make the guard accept the job venv however its path is written. Then re-dispatch. The scripts from the c741328 gfx1100 job (`rx7900-20261111-194315-oneflow-reval-c741328-1100/moat/agent_space`: `env.sh`, `build.sh`, `suite.sh`, `cap.sh`, `reg.sh`, `run1.sh`, `cmp.py`, `t/{imp,cg_grad,longk}.py`) and its junit (`j/new_{graph,graph_cg,tensor,modules,cap,reg}`) still exist on this host, so the per-id comparison against c741328b7 is still possible. The last two-GPU one_embedding/P2P and fused-harness record on this platform is at d9e41753e ("Validation 2026-11-01 (linux-gfx1100, two W7800 ...)"), since the 8d470dcc1 and c741328b7 rounds had one GPU.
+
+## Validation 2026-11-13 (linux-gfx1100) at 44d5f04cd (validator, two Radeon Pro W7800 48GB, `HIP_VISIBLE_DEVICES=2,3` pinned by the dispatcher; jeff's request: validate the fix round staged for Oneflow-Inc/oneflow#10697, with NO LD_PRELOAD of libLLVM)
+
+Host: two Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), AMD Ryzen Threadripper PRO 5975WX (64 threads), ROCm 10.1.0 SDK wheels (`$FLEET_VENV-base-links/_rocm_sdk_devel`), Python 3.11.17, numpy 1.26.4, protobuf 3.20.3, torch 2.16.0a0+git6c3af02 symlinked read-only into `$FLEET_VENV-base-links` (torch, its dist-info, torchgen, functorch). venv: `"$FLEET_VENV"/bin/python -m pip install -q -r dev-requirements.txt fsspec pytest-timeout pytest-repeat opencv-python-headless==4.10.0.84 portalocker protobuf==3.20.3 numpy==1.26.4`. Written this way, the fleet guard allowed it (the earlier job's `$J/venv` spelling was refused, "Validation 2026-11-13 (linux-gfx1100) at 44d5f04cd (validator, NOT RUN ...)"). `ulimit -c 0` and `LD_PRELOAD` unset on every run (`agent_space/env.sh`; `t/imp.py` prints `None`), `OMP_NUM_THREADS=4`, `PYTHONDONTWRITEBYTECODE=1`, `ONEFLOW_TEST_DEVICE_NUM=1` for one-GPU runs and `=2` for two-rank runs, no JIT extension builds. Each one-GPU run set `HIP_VISIBLE_DEVICES` to 2 or 3, inside the pin. Fresh fork clone (`--reference` the c741328 gfx1100 job's clone, `--dissociate`), `protect-fork` installed. **Head confirmed: `HEAD` = `git ls-remote origin moat-fix-10697` = 44d5f04cdda699579b9f0825301b92317499f138; `moat-port` = 14801d8a83043e852b72a3671bc88e5896aec904 (unchanged); `git diff --stat 14801d8a8 HEAD` = the two test files only (+74 -24); `git status --porcelain --untracked-files=no` empty before the build and after every run.** Scripts in `agent_space/` (gitignored): the c741328 gfx1100 job's `env.sh`, `build.sh`, `run1.sh`, `suite.sh`, `cap.sh`, `reg.sh` (plus the six regression files gfx942 added), `cmp.py`, `t/{imp,longk,cg_grad}.py` with paths rewritten, and new `laneA.sh`, `laneB.sh`, `emb.sh`, `fh10.sh`, `loop.sh`, `ctl.sh`, `sumloop.sh`, `phase2.sh`, `t/{fused_harness,fhcmp}.py`.
+
+### Verdict: **completed**. Every check passes, or differs from this platform's c741328b7 record by a random-draw test that is explained below as not caused by the port. The two changed files: `expensive/test_id_shuffle.py` **200 of 200 passed** (0 GatherNd faults, 0 other failures) and `expensive/test_dynamic_allocation_gradient_shuffle.py` **50 of 50 passed**, as the fix predicts. On gfx1100 the GatherNd fault was never seen, before the fix or after. A pre-fix control of the same harness also ran clean (200 of 200 passed, 0 faults), so this arch's runs cannot show the fix removing the fault. They show that it breaks nothing and that the new fp16 bound does not fail here. The fault's removal rests on gfx942 (0/640 fixed against 3/100 control, "Porter round 2026-11-13 (fix 10697)").
+
+### Build (documented procedure, clean, this job's directory)
+`utils/timeit.sh oneflow compile -- bash agent_space/build.sh <src>` = `bash build_rocm.sh all` with `CMAKE_PREFIX_PATH=$R`, `ROCM_CLANG(_C)` from the SDK wheel, `CMAKE_HIP_ARCHITECTURES=gfx1100`, `JOBS=$MAX_JOBS` (32, the dispatcher's cap), job-local cold ccache, `pywrap/python3` first on PATH (drops cmake/python.cmake's `pip install --user`): **rc 0, 1257 s**, `CMAKE_HIP_ARCHITECTURES: gfx1100`, `OF_GPU_WARP_SIZE: 32`, liboneflow.so 1.00 GB. `readelf --dyn-syms`: libLLVMSupport.so.17git **3002** `@@ONEFLOW_LLVM`, libLLVMDemangle.so.17git **455**, liboneflow.so **4** `@ONEFLOW_LLVM` references, the counts of every earlier platform.
+
+### import without preload (`agent_space/t/imp.py`)
+| order | result |
+|---|---|
+| `import oneflow; import torch` | rc 0, `1.0.0+cu00.git.44d5f04cd`, `flow.cuda.is_available()` True, 64 x 1000 softmax sums to 64.0, 64 x 64 fp32 mm vs float64 numpy 8.2e-6 (torch 8.2e-6), torch -> oneflow round trip bitwise |
+| `import torch; import oneflow` | rc 0, the same (mm 6.3e-6, torch 6.3e-6) |
+No `realloc(): invalid pointer` in any log. The `capability 110 is not compatible` and `Runtime version ... compiletime version 11.8` warnings are pre-existing.
+
+### Suites (`agent_space/suite.sh`: one pytest per file, `--timeout=900` plus `timeout -k 30 1800`, junit per file; `utils/timeit.sh oneflow test`; per-id comparison `agent_space/cmp.py` against the c741328b7 gfx1100 junit, which still exists on this host: `rx7900-20261111-194315-oneflow-reval-c741328-1100/moat/agent_space/j/new_*`)
+| suite | 44d5f04cd: wall, pass / fail / error / skip (ids) | c741328b7, same host | per id | per-file rc |
+|---|---|---|---|---|
+| graph (92 files, 4 at a time, GPU 2) | 144 s, 152 / 2 / 3 / 102 (259) | 152 / 2 / 3 / 102 | **259 of 259 same** | identical |
+| graph, `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1` | 142 s, 152 / 2 / 3 / 102 (259) | the same | **259 of 259 same**, and 259 of 259 the same as without | identical; slowest file 25 s, no timeout or hang |
+| tensor (22 files, 4 at a time, GPU 2) | 81 s, 368 / 1 / 0 / 22 (391) | the same | **391 of 391 same** | identical |
+| modules (548 files, 6 at a time, GPU 3) | 942 s, 1614 / 53 / 5 / 316 (1988) | 1614 / 53 / 5 / 316 (1988) | **1986 of 1988 same** | identical |
+- Graph and tensor: the recorded nonzero files and classes (three `/dataset` aborts, three collection errors, test_fx_symbolic_trace_module and test_run_graph_by_vm 1 failure each; tensor only test_safetensors, module not installed).
+- Modules, the two differing ids (the totals are equal because they offset):
+  - `test_special_ops::test_flow_digamma_with_random_data` passed at c741328b7 and failed here: `op_kernel_not_found_error`, `op_type_name: digamma`, `DeviceType_Name: kCPU`, `DataType_Name: kFloat16`. The autotest drew CPU float16, and no build has a CPU float16 digamma kernel, the class recorded at c741328b7 for its sibling `test_flow_psi_with_random_data`. Three reruns of the file (`j/rr`): run 2 failed the same way (CPU float16 again), runs 1 and 3 passed. Not port-related, and the fix round touches no op.
+  - `test_higher_derivative_loss::test_smooth_l1_loss_grad_grad` failed at c741328b7 and passed here: the randomized autotest recorded since the fde793b9f rounds as flipping run to run (ZeroTensor to numpy, torch 2.16 drift). The file completed in the suite on both heads. Its three reruns (`j/rr`) each aborted in torch's own oracle before reaching that id: `HSA_STATUS_ERROR_EXCEPTION ... code: 0x1016` in `at::native::binary_cross_entropy_out_cuda` (rc 134 twice, and once rc 139 after `cudaSetDevice ... (719)`), the BCE oracle device trap root-caused in "Validation 2026-11-11 (linux-gfx90a) at c741328b7". So the reruns add nothing on smooth_l1 either way.
+  - Every other failure has the c741328b7 id and class (autotest endless loop, numpy `__bool__`, `KeyError: 'ONEFLOW_CI'`, `oneflow.char != int8`, higher-derivative oracles, `/dataset`, 5 collection errors, functional docstr, codegeex, the float32 tolerance pair test_cublas_fused_mlp / test_fused_matmul_bias_add_relu_dropout).
+
+### Capture tests (`agent_space/cap.sh`, GPU 2, one pytest process per run, sequential)
+| test | `ROCBLAS_USE_HIPBLASLT` unset | `=1` |
+|---|---|---|
+| graph/test_graph_fused_mlp_cuda_graph.py | **5 of 5 pass** | **5 of 5 pass** |
+| graph/test_graph_cuda_graph_stream_creation.py | **5 of 5 pass** | **5 of 5 pass** |
+| graph/test_graph_cuda_graph_fft_plan.py | **5 of 5 pass** | **5 of 5 pass** |
+No log (capture, regression, cg_grad) has a `(906)`, `(901)` or `PARSE_ERROR` line.
+
+### Regression tests (`agent_space/reg.sh`, GPU 2, one pytest per file)
+The c741328b7 list plus the six files gfx942 added (test_rmsnorm, test_layer_norm, test_softmax, test_sum, test_argmax, test_logical_reduce): 96 pass / 1 fail / 5 skip (102 ids). The 54 ids shared with c741328b7 are **54 of 54 the same**. The six added files pass (rc 0). The one failure is `test_cublas_fused_mlp::test_fused_matmul_op`, the known float32 tolerance item, as at c741328b7.
+
+### Long-k and cold-capture checks (GPU 2)
+- `t/longk.py`: **RESULT PASS**. fp16 oneflow mm 1/2/16 x 2^20 x 64 3.75e-4 / 3.15e-4 / 3.41e-4, transpose_b 3.75e-4, bmm 4 x (1 x 2^18 x 64) 3.37e-4, 1 x 2^16 x 64 2.88e-4: every fp16 value identical to c741328b7 (same seed). torch on the same inputs 3.9e-3 / 1.1e-3 / 8.7e-4 / 3.3e-3 for the four 2^20 cases, also as there. bf16 oneflow 2.5e-3 to 4.0e-3, torch 2.0e-3 to 5.0e-3.
+- `t/cg_grad.py <k>` with `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1 ONEFLOW_ONE_EMBEDDING_FUSED_MLP_ASYNC_GRAD=1`: **k = 64, 1024 and 2^20, `ROCBLAS_USE_HIPBLASLT` unset and `=1`: rc 0, 16 of 16 bitwise equal in all 6.**
+
+### Two GPUs: one_embedding, id_shuffle and P2P (`agent_space/emb.sh`, 2 rounds, GPUs 2 and 3; two-rank runs via `python3 -m oneflow.distributed.launch --nproc_per_node 2 --master_port <random> --redirect_stdout_and_stderr`, `ONEFLOW_TEST_DEVICE_NUM=2`, `setsid -w timeout -k 30 1200`, pytest with `-s -v`)
+**35 of 35 two-rank launches rc 0.** Results read from both ranks' stdout, none skipped for the device count:
+| test | both rounds, both ranks |
+|---|---|
+| expensive/test_id_shuffle_global.py, embedding + gradient P2P 0 | 3 passed |
+| expensive/test_id_shuffle_global.py, embedding + gradient P2P 1 | 3 passed |
+| modules/test_dynamic_allocation_gradient_shuffle_shuffle_global.py, P2P 0 and 1 | 1 skipped (upstream `@unittest.skip`) |
+| expensive/test_oneembedding.py, 2 ranks | 1 passed |
+| expensive/test_id_shuffle_p2p_global.py (id_shuffle P2P) | 1 passed |
+| expensive/test_one_embedding_p2p_shuffle_global.py (fused interaction + embedding/gradient P2P) | 1 passed |
+| modules/test_comm_ops.py -k bfloat16 | 2 passed |
+| graph/test_graph_nccl_logical_bfloat16.py | 3 passed |
+| fused harness: unfused / fused P2P off / fused embedding + gradient P2P / fused all P2P incl. id_shuffle | rc 0 |
+| one GPU: test_oneembedding, padding_idx, dynamic_allocation_gradient_shuffle, one_embedding_adagrad, sgd 1 passed each; adam, ftrl 1 skipped (upstream); test_fused_dot_feature_interaction 2 passed; test_id_shuffle 4 passed | rc 0 in both rounds |
+This matches the last two-GPU record on this platform (d9e41753e, "Validation 2026-11-01 (linux-gfx1100, two W7800 ...)"). id_shuffle P2P together with test_id_shuffle_global was not run: gfx942 showed that combination aborts on upstream's IPC key naming (`id_shuffle-0` per graph), and the d9e41753e recipe did not run it either.
+
+### Fused embedding-interaction harness (`agent_space/t/fused_harness.py`, rebuilt from this file's description because no copy survives on this host: 26 tables x 2000 rows, dim 128, device-mem store, seed 7, AMP, `fused_dot_feature_interaction([bottom(dense).unsqueeze(1), emb], output_concat=bottom(dense), output_padding=1)` -> Linear(480, 1) -> BCEWithLogits, SGD lr 0.5, 512 rows per rank, zipf ids, labels = parity of the first two ids, 50 steps, per-step print; each rank feeds its own slice)
+- **`fh10.sh`, 10 runs, `FUSE_EMBEDDING_INTERACTION=1` with embedding, gradient and id_shuffle P2P on, a run alive at 150 s counted as hung: 10 of 10 rc 0, 32 s each, 0 hangs.** Plus the 2 `emb.sh` rounds' all-P2P runs: 12 of 12.
+- The fused pass fires: every fused run's compiled job has 2 ops taking a `sparse_feature` input and `skip_last_gather` true (0 and false in the unfused runs).
+- Against `emb.sh` round 1 unfused (`t/fhcmp.py`, ranks identical): losses identical at all 50 steps in all 17 compared runs (unfused rerun, fused P2P off x2, fused P2P on x2, fused all-P2P x2, the 10 `fh10` runs; 0.6941 -> 0.6943). Top-weight relL2 5.96e-5 to 8.82e-5, bottom 3.7e-6 to 1.6e-5; the unfused rerun differs by 7.4e-5 / 1.6e-5, the same noise. As before, this harness learns little, so it shows that the fused P2P paths agree with the unfused path. It says nothing about training quality. My first version printed one rank's partial loss (0.346) and looked for `sparse_feature` as an attribute; both fixed before any counted run.
+
+### The two changed files (`agent_space/loop.sh`: one fresh `pytest -v --capture=sys --timeout=600` process per run, one file per process, `timeout -k 30 900`, `PYTHONUNBUFFERED=1`, `HIP_VISIBLE_DEVICES` 2 or 3; any non-zero or failing log kept in `j/<loop>/keep/`)
+| file (at 44d5f04cd) | GPU 2 | GPU 3 | total | GatherNd faults | other failures |
+|---|---|---|---|---|---|
+| expensive/test_id_shuffle.py (runs 1-100, 101-200; mean 9.4 s) | 100 of 100 pass | 100 of 100 pass | **200 of 200** | **0** | **0** |
+| expensive/test_dynamic_allocation_gradient_shuffle.py (runs 1-25, 26-50; mean 8.4 s) | 25 of 25 pass | 25 of 25 pass | **50 of 50** | **0** | **0** |
+| control: 14801d8a8's test_id_shuffle.py, a copy outside the fork (`t/old/`, `ctl.sh`) | 100 of 100 pass | 100 of 100 pass | **200 of 200** | **0** | **0** (the old fp16 check passed too; about 1.3 failures expected at the 8/1186 rate, Poisson P(0) = 0.26) |
+- No log is kept: every run was rc 0 with no `FAILED`, `AssertionError` or `MEMORY_FAULT`. Both new checks (the `[:np_num_unique]` gathers and the fp16 summation bound) ran in every one of the 250 runs.
+- Base rate on gfx1100: the fault has never been recorded on this platform. Earlier gfx1100 rounds ran the file a handful of times per round (5 at d9e41753e) without it, and the control above adds 200 pre-fix runs with 0 faults. Stale tail contents differ by arch (gfx942 7/300, gfx90a at most 1/844), and this one sits at the low end. So 0/200 here is consistent with the fix but cannot demonstrate it on this arch. The fp16 gradient-check failure was 8 of 1186 runs on gfx942/gfx90a with the old check. At that rate 1.3 would be expected in 200 runs, and the new bound cannot fail on a correct op.
+
+### Not run
+- CUDA compile gate: the round changes only Python test files, so no CUDA path changed; the last recorded check ("CUDA compile check at c741328b7", tree identical to 14801d8a8) stands. Not repeated.
+- `cg_ws2.py` / `cg_ws3.py`: not in the dispatch list, and no copy survives; the capture tests and `cg_grad.py` cover capture.
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow`: **clean** (after `git fetch origin master:master` and a local `moat-fix-10697` branch tracking origin in the clone; without them it cannot resolve the range).
+- Documentation: README's ROCm block and `build_rocm.sh` reproduced this build unchanged; no tracked file carries an LD_PRELOAD or libLLVM instruction.
+- `git -C projects/oneflow/src status --porcelain --untracked-files=no`: empty; HEAD = origin `moat-fix-10697` = 44d5f04cd. Nothing pushed to the fork, no gh writes.
+- Core dumps: `ulimit -c 0` on every run; "core dumped" was printed only for the known aborting files (test_dataset, test_loss, the `/dataset` graph files) and the higher-derivative reruns. No core file landed in the job directory.
+- Host load: 1-min load average 2 to 4 during the runs, no other job on GPUs 2 and 3.

@@ -7,7 +7,7 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-11-13T22:35:56Z",
+  "updated_at": "2026-11-14T00:34:50Z",
   "head_sha": "44d5f04cdda699579b9f0825301b92317499f138",
   "waivers": {
     "windows": {
@@ -136,10 +136,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": "GPU-validated on gfx1100 (RDNA3, wave32, ROCm 7.2.1). Fresh build from fork HEAD 68718f03: 190 gfx1100 code objects, OF_GPU_WARP_SIZE=32. Test slice: 73 passed / 2 failed (same pre-existing artifacts as gfx90a -- numpy __bool__ dtype-interop, not GPU faults). Wave32 warp reductions: softmax/layer_norm/rms_norm all produce correct results (softmax max_abs_diff=1.49e-08, layer_norm bwd gamma/beta no NaN, rms_norm bwd weight no NaN). LayerNormParamGrad wave64 fix is correct on wave32 (tile=32, block_dim_x=32, width=32 matches native wavefront). No fork changes needed. Fork 68718f0.",
-      "validated_sha": "14801d8a83043e852b72a3671bc88e5896aec904",
+      "validated_sha": "44d5f04cdda699579b9f0825301b92317499f138",
       "started_at": "2026-05-31T10:07:00Z",
-      "completed_at": "2026-11-12T05:57:49Z",
-      "updated_at": "2026-11-12T22:29:17Z",
+      "completed_at": "2026-11-14T00:34:50Z",
+      "updated_at": "2026-11-14T00:34:50Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
