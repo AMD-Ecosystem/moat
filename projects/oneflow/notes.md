@@ -776,3 +776,7 @@ Validator job on an MI300X host (gfx942, wave64), `HIP_VISIBLE_DEVICES=2,3` pinn
 - Two GPUs, 2 rounds: every test matches the record; `test_id_shuffle_global` with id_shuffle P2P on still aborts rc 1 on the recorded upstream IPC key collision (`kv_.emplace` CHECK, `IdShuffleP2PKernel` -> `RpcClient::PushKV`). Fused harness 10/10 with P2P on, losses equal to unfused at all 50 steps; embedding rounds 8/8.
 - Changed files, one fresh process per run: `test_id_shuffle.py` 200/200 (100 per GPU), 0 GatherNd faults, 0 other failures (the unfixed file's rate predicts about 5; P(0) about 1%); `test_dynamic_allocation_gradient_shuffle.py` 50/50.
 - `jargon.py --port oneflow` clean. No C++/HIP/CMake change, so no nvcc check owed.
+
+## Ruling 2026-11-14 (jeffdaily): linux-gfx90a completed at 44d5f04cd
+
+The one fused-harness hang in 73 runs (all P2P on, run 9, no error in either log, 60 clean reruns with stack capture) is not to be investigated: "I don't care about this hang. oneflow is not maintained. Let's just be done with it." The round changes only two Python test files the harness never loads, so the compiled code is the 14801d8a8 the open PR shows. Recorded completed on that ruling; no deferral.
