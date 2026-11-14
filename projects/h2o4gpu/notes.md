@@ -1495,3 +1495,31 @@ The 2026-11-06 gfx90a recipe, run in the same clone (`agent_space/wheel.sh`): `g
 
 ## Lesson for moat-porting: codeobj_diff on pip-SDK hosts and host-only binaries
 `utils/codeobj_diff.py` hardcodes `/opt/rocm` for `llvm-nm`, `llvm-objdump` and `roc-obj-ls`, so on a host with only the pip ROCm SDK every binary comes back `indeterminate (nm failed)`. The SDK has `lib/llvm/bin/llvm-{nm,objdump}` but no working `roc-obj-ls`: the pip entry point fails with `ImportError: cannot import name 'roc_obj_ls' from 'rocm_sdk_core._cli'`. Separately, a whole-build-tree run is `indeterminate` whenever the tree holds any host-only ELF (CMake's `CMakeFiles/` probe binaries are always there, plus any CPU-only module), because `roc-obj-ls` exits nonzero on a binary with no offload bundle. The tool already treats "no device code" as `""`, so it could treat that exit the same way and skip `CMakeFiles/`. As it stands, a cmake project's build directory can never come back `identical`, and the shortcut costs a full revalidation even when every output is byte-identical (h2o4gpu, 2026-11-14).
+
+## Validation 2026-11-14 (windows-gfx1151) at bcc7bcd6 -- object-list check, then full revalidation
+
+Validator role. Radeon 8060S (gfx1151, wave32 APU, one GPU), TheRock ROCm 7.14.0a20260612 pip SDK, clang-cl (clang 23) for C/C++/HIP, OpenBLAS from vcpkg, Python 3.12.10 venv (numpy 1.26.4, scikit-learn 1.9.1, swig 4.2.1). Clone `projects/h2o4gpu/src` at `bcc7bcd649793be2b28690fc591760b8a48a8476` (= head_sha), no modified tracked files. One process at a time, `ulimit -c 0`, each Python run under `timeout 300`, no large memory probes, DLLs staged next to the exe (`rocm_stage_runtime`).
+
+### Why not the binary-equivalence route
+`utils/codeobj_diff.py` cannot be run honestly here: it hardcodes `/opt/rocm`, recognizes binaries by `.so`/`.hsaco` suffix or the `\x7fELF` magic, and extracts device code with `roc-obj-ls`. This build's outputs are PE (`_ch2o4gpu_gpu.pyd`, `h2o4gpu_test.exe`), which the tool would skip, so any verdict would cover nothing. It was not run and not modified.
+
+### Builds (both rc 0, 54/54 targets, fresh trees)
+`agent_space/h2o_win/build_bcc.sh` (build-bcc, new head) and `build_old.sh` (build-old, a git worktree of the clone at `d743f11e296db53c67a2356a854bac0b314fef76`, `tests/googletest` copied from the clone). Recipe unchanged from "Validation 2026-11-12 (windows-gfx1151)": `cmake -G Ninja -S . -B <dir> -DUSE_CUDA=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_{C,CXX,HIP}_COMPILER=<TheRock clang-cl> -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DCMAKE_TOOLCHAIN_FILE=<vcpkg> -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=<venv>; cmake --build <dir> -j 12`.
+
+### Object-list check
+- `ninja -t commands all` lists 43 object outputs (`/Fo...obj`) in each build, 367 targets in each `ninja -t targets all`; the object lists (build-relative) are identical (`diff` empty), and neither contains `bwcheck` or `p2pbwcheck` (grep count 0 in objects and in the full command lists). `src/gpu/bwcheck.cu` and `p2pbwcheck.cu` are present in the new tree and filtered out by `CMakeLists.txt:340` (`list(FILTER GPU_SOURCES EXCLUDE REGEX ".*/(p2p)?bwcheck\.cu$")`). The compiled sources are the same set as before; object bytes were not compared (no applicable tool).
+
+### Results (bcc7bcd6, Release)
+- `build-bcc/h2o4gpu_test.exe`: **24/24 PASS, 3 consecutive runs** (rc 0, 0.44-0.56 s).
+- Python oracle (`oracle.py f32,f64`, one process, vs scikit-learn 1.9.1): **ALL PASS, 3 runs**. f32: KMeans v_measure 1.0, TSVD/PCA pass, PCA comp err 1.16e-5, ElasticNet r2 0.999989 vs Ridge 1.000000 (gap 1.09e-5). f64: KMeans center dist 7.5e-15..1.0e-14, TSVD sv 5.0e-16 / comp 2.9e-8, PCA ev 4.7e-15 / comp 3.0e-8, ElasticNet r2 0.999980 (gap 2e-5). Same magnitudes as the 0e70429b record.
+- KMeans odd row counts (`val/km2.py`, 20001 and 1001 rows, f32 and f64): PASS, 2 runs; predict and labels agree 1.0, transform argmin 1.0, max err/max dist2 about 4e-16 (f64).
+- GLM sweep (`val/glm.py`, 1 run each): en f32 2000x20 / 20001x7 gap 0; en f64 2000x20 1.65e-12, 20000x20 1.94e-13, 100000x50 3.31e-13 (9.6 s); logistic 20000x20 f32 and f64 acc 0.7171 = sklearn. All rc 0, identical to the 0e70429b sweep values. The f64 fit that hung at /Ob2 completes (the `/Ob1` workaround is in force; `h2o4gpuglm.cu` -inline-hint handling unchanged by this delta).
+- Not run on Windows: same list as the 0e70429b entry (multi-GPU KMeans, xgboost/LightGBM/Makefile/wheel, rocprofv3/roctx, CPU KMeans exercise).
+
+### Gates
+- CUDA no-regression: not run on this host; recorded at bcc7bcd6 by `## CUDA compile check at bcc7bcd6 (2026-11-14)`.
+- `python3 utils/jargon.py --port h2o4gpu`: clean. DEVEL.md documents the ROCm and Windows build. `audit-clean h2o4gpu`: OK. No fork edits or pushes (the extra `old-d743` worktree lives under `agent_space/h2o_win/`).
+- Verdict: windows-gfx1151 **completed** at `bcc7bcd6` by full revalidation.
+
+## Lesson for moat-porting: codeobj_diff is ELF/Linux-only
+On a Windows host the build outputs are PE (`.pyd`, `.dll`, `.exe`), which `utils/codeobj_diff.py` neither recognizes (suffix list `.so`/`.hsaco`, `\x7fELF` magic) nor can extract device code from (`/opt/rocm/bin/roc-obj-ls`), so it cannot give a binary-equivalence verdict for any windows platform; Windows `revalidate` after a mixed delta always needs a real run. A cheap, honest partial check that does run there: compare `ninja -t commands all` object outputs of both shas (relative `/Fo` paths) to prove the compiled source set is unchanged.
