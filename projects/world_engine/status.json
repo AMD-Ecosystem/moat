@@ -1,0 +1,60 @@
+{
+  "schema_version": 3,
+  "name": "world_engine",
+  "upstream_url": "https://github.com/Overworldai/world_engine",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "awaiting-fork",
+  "adopted_at": "2026-11-12T16:36:20Z",
+  "updated_at": "2026-11-12T19:45:26Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-12T17:08:14Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "GPL-3.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "GPL-3.0",
+      "evidence": "https://github.com/Overworldai/world_engine/blob/main/LICENSE",
+      "at": "2026-11-12T17:08:11Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "license-blocked",
+    "duplicate_effort": null,
+    "viable": null,
+    "summary": "declined by Jeff Daily 2026-11-12: GPL-3.0 (tier 3) needs licence clearance he cannot give; README AMD claim has no ROCm code; NVIDIA-specific stack (gemlite, NVFP4/FlashInfer)",
+    "at": "2026-11-12T19:45:23Z"
+  },
+  "on_hold": true,
+  "on_hold_reason": "declined by Jeff Daily 2026-11-12 (data/dispositions.json skip, license-blocked); awaiting-fork has no edge back to unclaimed, so held"
+}

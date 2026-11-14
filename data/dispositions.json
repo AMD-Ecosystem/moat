@@ -111,6 +111,15 @@
     "reason": "not-a-target",
     "repo_id": 330259597
   },
+  "apache/tvm": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:23Z",
+    "disposition": "skip",
+    "full_name": "apache/tvm",
+    "note": "gap-matrix intake 2026-11-10: upstream native ROCm backend",
+    "reason": "already-supported",
+    "repo_id": 70746484
+  },
   "archaeasoftware/cudahandbook": {
     "decided": "2026-05-30T00:31:01Z",
     "disposition": "skip",
@@ -214,6 +223,15 @@
     "note": "Simple GEMM tutorial/example code",
     "reason": "not-a-target",
     "repo_id": 944629361
+  },
+  "bitsandbytes-foundation/bitsandbytes": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:51Z",
+    "disposition": "skip",
+    "full_name": "bitsandbytes-foundation/bitsandbytes",
+    "note": "gap-matrix intake 2026-11-10: upstream HIP build, CDNA+RDNA",
+    "reason": "already-supported",
+    "repo_id": 373674258
   },
   "blinkdl/albatross": {
     "decided": "2026-06-05T01:19:15Z",
@@ -375,14 +393,6 @@
     "reason": "not-a-target",
     "repo_id": 53253009
   },
-  "cupy/cupy": {
-    "decided": "2026-05-29T22:55:39Z",
-    "disposition": "skip",
-    "full_name": "cupy/cupy",
-    "note": "ROCm/HIP build supported upstream",
-    "reason": "already-supported",
-    "repo_id": 72523920
-  },
   "cyberia-to/go-cyber": {
     "decided": "2026-06-05T01:18:19Z",
     "disposition": "skip",
@@ -398,6 +408,15 @@
     "note": "real/current HIP backend (research-confirmed)",
     "reason": "already-supported",
     "repo_id": 726718359
+  },
+  "dao-ailab/flash-attention": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:58Z",
+    "disposition": "skip",
+    "full_name": "Dao-AILab/flash-attention",
+    "note": "gap-matrix intake 2026-11-10: upstream ROCm backends, ROCm/flash-attention",
+    "reason": "already-supported",
+    "repo_id": 494232964
   },
   "dataplayer12/sam3-tensorrt": {
     "decided": "2026-06-05T01:21:32Z",
@@ -447,6 +466,24 @@
     "reason": "ported-elsewhere",
     "repo_id": 932038801
   },
+  "deepseek-ai/flashmla": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:41Z",
+    "disposition": "skip",
+    "full_name": "deepseek-ai/FlashMLA",
+    "note": "gap-matrix intake 2026-11-10: ROCm/aiter MLA",
+    "reason": "ported-elsewhere",
+    "repo_id": 936473202
+  },
+  "deepspeedai/deepspeed": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-05T20:46:51Z",
+    "disposition": "skip",
+    "full_name": "deepspeedai/DeepSpeed",
+    "note": "ROCm supported upstream (per jeff 2026-11-05); ROCm/DeepSpeed fork also active",
+    "reason": "already-supported",
+    "repo_id": 235860204
+  },
   "desilo/liberate-fhe": {
     "decided": "2026-06-05T04:44:26Z",
     "disposition": "skip",
@@ -462,6 +499,15 @@
     "note": "Authoritative upstream HIP backend; validated 2430/2432 tests pass. Analysis retained in history: `git show b40576d53399:projects/futhark/plan.md` (notes.md, plan.md).",
     "reason": "already-supported",
     "repo_id": 7960131
+  },
+  "dmlc/xgboost": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:22Z",
+    "disposition": "skip",
+    "full_name": "dmlc/xgboost",
+    "note": "gap-matrix intake 2026-11-10: ROCm/xgboost",
+    "reason": "ported-elsewhere",
+    "repo_id": 16587283
   },
   "dphnai/aphrodite-engine": {
     "decided": "2026-05-30T00:00:41Z",
@@ -599,6 +645,15 @@
     "reason": "already-supported",
     "repo_id": 514321895
   },
+  "facebookresearch/xformers": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:21Z",
+    "disposition": "skip",
+    "full_name": "facebookresearch/xformers",
+    "note": "gap-matrix intake 2026-11-10: upstream ROCm, ROCm/xformers",
+    "reason": "already-supported",
+    "repo_id": 416849738
+  },
   "fankang2021/gpu-health-expert": {
     "decided": "2026-06-05T04:44:12Z",
     "disposition": "skip",
@@ -678,6 +733,24 @@
     "note": "Physics simulation compiler; multi-platform JIT, not CUDA to port",
     "reason": "not-a-target",
     "repo_id": 994002809
+  },
+  "ggml-org/llama.cpp": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:01Z",
+    "disposition": "skip",
+    "full_name": "ggml-org/llama.cpp",
+    "note": "gap-matrix intake 2026-11-10: upstream GGML_HIP",
+    "reason": "already-supported",
+    "repo_id": 612354784
+  },
+  "ggml-org/whisper.cpp": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:20Z",
+    "disposition": "skip",
+    "full_name": "ggml-org/whisper.cpp",
+    "note": "gap-matrix intake 2026-11-10: upstream GGML_HIP",
+    "reason": "already-supported",
+    "repo_id": 541269386
   },
   "ginkgo-project/ginkgo": {
     "decided": "2026-05-30T00:04:56Z",
@@ -798,6 +871,15 @@
     "note": "Personal R&D lab website, not a library",
     "reason": "not-a-target",
     "repo_id": 172822195
+  },
+  "huggingface/peft": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:10Z",
+    "disposition": "skip",
+    "full_name": "huggingface/peft",
+    "note": "gap-matrix intake 2026-11-10: pure PyTorch",
+    "reason": "already-supported",
+    "repo_id": 570384908
   },
   "hybridizer-io/hybridizer-basic-samples": {
     "decided": "2026-06-05T01:16:26Z",
@@ -950,6 +1032,15 @@
     "reason": "not-a-target",
     "repo_id": 206801089
   },
+  "k2-fsa/sherpa-onnx": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:22:35Z",
+    "disposition": "skip",
+    "full_name": "k2-fsa/sherpa-onnx",
+    "note": "gap-matrix missed-project triage 2026-11-11: ONNX Runtime execution-provider plumbing only, no CUDA; AMD path is ORT's MIGraphX EP",
+    "reason": "not-a-target",
+    "repo_id": 531380835
+  },
   "kangruix/waveblender": {
     "decided": "2026-06-05T04:43:54Z",
     "disposition": "skip",
@@ -990,6 +1081,24 @@
     "reason": "not-a-target",
     "repo_id": 1032946320
   },
+  "kvcache-ai/ktransformers": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:59Z",
+    "disposition": "skip",
+    "full_name": "kvcache-ai/ktransformers",
+    "note": "gap-matrix intake 2026-11-10: upstream ROCm backend in kt-kernel",
+    "reason": "already-supported",
+    "repo_id": 833984877
+  },
+  "kvcache-ai/mooncake": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:46Z",
+    "disposition": "skip",
+    "full_name": "kvcache-ai/Mooncake",
+    "note": "gap-matrix intake 2026-11-10: upstream USE_HIP",
+    "reason": "already-supported",
+    "repo_id": 819733173
+  },
   "lammps/lammps": {
     "decided": "2026-06-03T23:28:39Z",
     "disposition": "skip",
@@ -1006,6 +1115,15 @@
     "reason": "already-supported",
     "repo_id": 1300564
   },
+  "leejet/stable-diffusion.cpp": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:11Z",
+    "disposition": "skip",
+    "full_name": "leejet/stable-diffusion.cpp",
+    "note": "gap-matrix intake 2026-11-10: upstream SD_HIPBLAS",
+    "reason": "already-supported",
+    "repo_id": 677953180
+  },
   "leimao/cutlass-examples": {
     "decided": "2026-06-05T01:24:37Z",
     "disposition": "skip",
@@ -1014,6 +1132,24 @@
     "reason": "not-a-target",
     "repo_id": 835036273
   },
+  "lh3/minibwa": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:07:44Z",
+    "disposition": "skip",
+    "full_name": "lh3/minibwa",
+    "note": "2026-11-11: not a CUDA-to-ROCm port. Upstream is CPU-only (same maintainer as minimap2, which refuses GPU code); AMD-Ecosystem/minibwa is part of AMD's life-science GPU product line built on the minimap2 fork's kernels, which MOAT should not touch.",
+    "reason": "declined",
+    "repo_id": 1075662152
+  },
+  "lh3/minimap2": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-11T23:55:05Z",
+    "disposition": "skip",
+    "full_name": "lh3/minimap2",
+    "note": "2026-11-11: not a CUDA-to-ROCm port. Upstream is CPU-only and refuses GPU code (#1258); AMD-Ecosystem/minimap2 is an AMD product build (ROCm/HIP GPU chaining + alignment, limited early access) that MOAT should not touch.",
+    "reason": "declined",
+    "repo_id": 97612481
+  },
   "librapid/librapid": {
     "decided": "2026-06-05T04:44:26Z",
     "disposition": "skip",
@@ -1021,6 +1157,42 @@
     "note": "Math library; multi-backend, CUDA optional",
     "reason": "not-a-target",
     "repo_id": 370833810
+  },
+  "lightgbm-org/lightgbm": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-05T20:46:53Z",
+    "disposition": "skip",
+    "full_name": "lightgbm-org/LightGBM",
+    "note": "Upstream ROCm/HIP support merged: #6086, #7039, #7185 (per jeff 2026-11-05)",
+    "reason": "already-supported",
+    "repo_id": 64991887
+  },
+  "lightricks/ltx-2": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T21:38:03Z",
+    "disposition": "skip",
+    "full_name": "Lightricks/LTX-2",
+    "note": "gap-matrix intake follow-up 2026-11-12: maintainer ruled ROCm not planned (LTX-2 #141); default path is pure PyTorch needing only packaging, no test suite; a fork would only hold the opt-in ltx-kernels perf package; LTX-Video is superseded by LTX-2",
+    "reason": "not-a-target",
+    "repo_id": 1127234517
+  },
+  "lightricks/ltx-video": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T21:38:04Z",
+    "disposition": "skip",
+    "full_name": "Lightricks/LTX-Video",
+    "note": "gap-matrix intake follow-up 2026-11-12: maintainer ruled ROCm not planned (LTX-2 #141); default path is pure PyTorch needing only packaging, no test suite; a fork would only hold the opt-in ltx-kernels perf package; LTX-Video is superseded by LTX-2",
+    "reason": "not-a-target",
+    "repo_id": 891705470
+  },
+  "linkedin/liger-kernel": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:42Z",
+    "disposition": "skip",
+    "full_name": "linkedin/Liger-Kernel",
+    "note": "gap-matrix intake 2026-11-10: upstream ROCm since v0.4.0",
+    "reason": "already-supported",
+    "repo_id": 838970603
   },
   "llnl/aluminum": {
     "decided": "2026-06-05T01:25:53Z",
@@ -1174,6 +1346,15 @@
     "reason": "not-a-target",
     "repo_id": 1226971484
   },
+  "meta-pytorch/torchcodec": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:17Z",
+    "disposition": "skip",
+    "full_name": "meta-pytorch/torchcodec",
+    "note": "gap-matrix intake 2026-11-10: rocJPEG in-tree by maintainer and AMD",
+    "reason": "duplicate",
+    "repo_id": 807642214
+  },
   "microsoft/repdl": {
     "decided": "2026-06-05T04:43:55Z",
     "disposition": "skip",
@@ -1199,11 +1380,12 @@
     "repo_id": 797553215
   },
   "mitsuba-renderer/drjit-core": {
-    "decided": "2026-06-05T01:19:01Z",
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T16:41:44Z",
     "disposition": "skip",
     "full_name": "mitsuba-renderer/drjit-core",
-    "note": "Dr.Jit JIT compiler has HIP/LLVM backend (see ext/drjit-core)",
-    "reason": "already-supported",
+    "note": "corrected 2026-11-12 (was already-supported, 'has HIP backend', which is wrong): Dr.Jit has CUDA (PTX) and LLVM (CPU) backends only, no HIP/AMD GPU backend; AMD's attempts drjit-core#203 and drjit#520 were closed upstream. A HIP backend is a new JIT backend, beyond a port; see deferred item mitsuba3-drjit-amd-backend",
+    "reason": "cant-port",
     "repo_id": 245897378
   },
   "mni-ml/framework": {
@@ -1222,6 +1404,15 @@
     "reason": "already-supported",
     "repo_id": 780323643
   },
+  "modular/modular": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:02Z",
+    "disposition": "skip",
+    "full_name": "modular/modular",
+    "note": "gap-matrix intake 2026-11-10: upstream native AMD backend",
+    "reason": "already-supported",
+    "repo_id": 634043200
+  },
   "moonshotai/flashkda": {
     "by": "Jeff Daily",
     "decided": "2026-08-20T19:12:56Z",
@@ -1230,6 +1421,15 @@
     "note": "Decided in-session 2026-08-20: skip as ported-elsewhere per the intake recommendation -- ROCm/aiter already ships Kimi Delta Attention on ROCm (kimi_delta_attn Triton ops with a flash_kda fused path, tests, benchmark, MI300 fixes), so a port would duplicate AMD's own work; the CUTLASS/CuTe+TMA cant-port argument holds independently. Analysis retained in history: `git show 5729ef615ea8:projects/FlashKDA/notes.md` (notes.md).",
     "reason": "ported-elsewhere",
     "repo_id": 1215986180
+  },
+  "mrforexample/comfyui-3d-pack": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:34Z",
+    "disposition": "skip",
+    "full_name": "MrForExample/ComfyUI-3D-Pack",
+    "note": "gap-matrix intake 2026-11-10: licence issues in bundled components",
+    "reason": "license-blocked",
+    "repo_id": 739562545
   },
   "mrshaw01/software-engineer": {
     "decided": "2026-05-30T00:45:17Z",
@@ -1343,6 +1543,24 @@
     "reason": "cant-port",
     "repo_id": 1035697953
   },
+  "nvidia-ai-blueprints/video-search-and-summarization": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:22:26Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA-AI-Blueprints/video-search-and-summarization",
+    "note": "gap-matrix missed-project triage 2026-11-11: orchestrates closed NVIDIA NIM/DeepStream containers, proprietary carve-outs, no portable CUDA",
+    "reason": "not-a-target",
+    "repo_id": 876545970
+  },
+  "nvidia-bionemo/bionemo-recipes": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T21:23:00Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA-BioNeMo/bionemo-recipes",
+    "note": "gap-matrix intake follow-up 2026-11-12: out of scope for MOAT; recipe outcomes decided by ROCm TransformerEngine parity, Megatron/Evo2 recipes need binary-only/FA4-cu13 kernels; belongs with the ROCm TE team",
+    "reason": "not-a-target",
+    "repo_id": 705428944
+  },
   "nvidia-bionemo/nvmolkit": {
     "decided": "2026-05-29T23:57:04Z",
     "disposition": "skip",
@@ -1359,6 +1577,42 @@
     "reason": "not-a-target",
     "repo_id": 905946140
   },
+  "nvidia-isaac/nvblox": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:07Z",
+    "disposition": "skip",
+    "full_name": "nvidia-isaac/nvblox",
+    "note": "gap-matrix intake 2026-11-10: proprietary files",
+    "reason": "license-blocked",
+    "repo_id": 468713635
+  },
+  "nvidia-rtx/rtxns": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:22:31Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA-RTX/RTXNS",
+    "note": "gap-matrix missed-project triage 2026-11-11: RTX SDK licence restricts use to NVIDIA GPUs; VK_NV_cooperative_vector, no CUDA",
+    "reason": "license-blocked",
+    "repo_id": 920294782
+  },
+  "nvidia-rtx/rtxntc": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:47Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA-RTX/RTXNTC",
+    "note": "gap-matrix intake 2026-11-10: NVIDIA proprietary licence",
+    "reason": "license-blocked",
+    "repo_id": 920294381
+  },
+  "nvidia/cosmos": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T18:55:42Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/Cosmos",
+    "note": "gap-matrix intake follow-up 2026-11-12: docs-only landing repo (no code); Cosmos 3 runs through diffusers and vLLM, which already support ROCm; cosmos-framework not taken up (MOAT scope); OpenMDW-1.1 stays tier 4",
+    "reason": "not-a-target",
+    "repo_id": 910176789
+  },
   "nvidia/cucollections": {
     "decided": "2026-08-06T04:28:48Z",
     "disposition": "skip",
@@ -1366,6 +1620,24 @@
     "note": "RAPIDS: the ROCm-DS team owns this domain",
     "reason": "ported-elsewhere",
     "repo_id": 226973898
+  },
+  "nvidia/cudf-spark": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:52Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/cudf-spark",
+    "note": "gap-matrix intake 2026-11-10: RAPIDS domain owned by ROCm-DS",
+    "reason": "ported-elsewhere",
+    "repo_id": 264043501
+  },
+  "nvidia/cudnn-frontend": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:53Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/cudnn-frontend",
+    "note": "gap-matrix intake 2026-11-10: hipDNN",
+    "reason": "ported-elsewhere",
+    "repo_id": 331998392
   },
   "nvidia/cuequivariance": {
     "decided": "2026-06-04T23:09:44Z",
@@ -1375,6 +1647,15 @@
     "reason": "cant-port",
     "repo_id": 876809949
   },
+  "nvidia/cuopt": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:55Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/cuopt",
+    "note": "gap-matrix intake 2026-11-10: for now: RAPIDS domain owned by ROCm-DS, not started",
+    "reason": "other",
+    "repo_id": 962899804
+  },
   "nvidia/cutlass": {
     "decided": "2026-06-05T08:06:38Z",
     "disposition": "skip",
@@ -1383,6 +1664,105 @@
     "reason": "already-supported",
     "repo_id": 112542515
   },
+  "nvidia/dali": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:36Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/DALI",
+    "note": "gap-matrix intake 2026-11-10: ROCm/rocAL",
+    "reason": "ported-elsewhere",
+    "repo_id": 135768037
+  },
+  "nvidia/dcgm": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:37Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/DCGM",
+    "note": "gap-matrix intake 2026-11-10: RDC, AMD SMI, RVS, device metrics exporter",
+    "reason": "ported-elsewhere",
+    "repo_id": 321811880
+  },
+  "nvidia/earth2studio": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T20:36:29Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/earth2studio",
+    "note": "gap-matrix intake follow-up 2026-11-12: out of scope for MOAT; two LicenseRef-NvidiaProprietary files, NATTEN DiT and cuDF model gaps, per-model validation",
+    "reason": "not-a-target",
+    "repo_id": 782634112
+  },
+  "nvidia/megatron-lm": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:43Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/Megatron-LM",
+    "note": "gap-matrix intake 2026-11-10: ROCm/Megatron-LM",
+    "reason": "ported-elsewhere",
+    "repo_id": 176982014
+  },
+  "nvidia/model-optimizer": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:44Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/Model-Optimizer",
+    "note": "gap-matrix intake 2026-11-10: amd/Quark covers the role",
+    "reason": "ported-elsewhere",
+    "repo_id": 790916393
+  },
+  "nvidia/nccl": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:03Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/nccl",
+    "note": "gap-matrix intake 2026-11-10: RCCL",
+    "reason": "ported-elsewhere",
+    "repo_id": 46153892
+  },
+  "nvidia/numba-cuda": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:04Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/numba-cuda",
+    "note": "gap-matrix intake 2026-11-10: numba.hip",
+    "reason": "ported-elsewhere",
+    "repo_id": 803332719
+  },
+  "nvidia/nvimagecodec": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:06Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/nvImageCodec",
+    "note": "gap-matrix intake 2026-11-10: rocJPEG/rocAL cover the need",
+    "reason": "not-a-target",
+    "repo_id": 700454162
+  },
+  "nvidia/transformerengine": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:48Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/TransformerEngine",
+    "note": "gap-matrix intake 2026-11-10: ROCm/TransformerEngine",
+    "reason": "ported-elsewhere",
+    "repo_id": 539057023
+  },
+  "nvidiagameworks/falcor": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:39Z",
+    "disposition": "skip",
+    "full_name": "NVIDIAGameWorks/Falcor",
+    "note": "gap-matrix intake 2026-11-10: D3D12/Vulkan renderer; no HIP deliverable",
+    "reason": "not-a-target",
+    "repo_id": 98350667
+  },
+  "nvidiagameworks/rtx-remix": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:22:28Z",
+    "disposition": "skip",
+    "full_name": "NVIDIAGameWorks/rtx-remix",
+    "note": "gap-matrix missed-project triage 2026-11-11: no CUDA; Vulkan runtime already runs on AMD; Toolkit needs Omniverse; dxvk-remix submodule has proprietary DLSS/NRC/NRD headers",
+    "reason": "not-a-target",
+    "repo_id": 615397988
+  },
   "nvlabs/nvdiffrast": {
     "decided": "2026-08-07T00:29:52Z",
     "disposition": "skip",
@@ -1390,6 +1770,24 @@
     "note": "Wholly under the NVIDIA Source Code License, proprietary non-commercial.",
     "reason": "license-blocked",
     "repo_id": 309488075
+  },
+  "nvlabs/nvdiffrec": {
+    "by": "jeffdaily",
+    "decided": "2026-11-04T18:18:37Z",
+    "disposition": "skip",
+    "full_name": "NVlabs/nvdiffrec",
+    "note": "Jeff Daily decided 2026-11-04: decline, license-blocked. nvdiffrec is wholly under the NVIDIA Source Code License (non-commercial, research-only, tier 4) and hard-depends on nvdiffrast, already declined license-blocked. Intake write-up: git show a043bed0ecc2:projects/nvdiffrec/notes.md",
+    "reason": "license-blocked",
+    "repo_id": 431420791
+  },
+  "nvlabs/tiny-cuda-nn": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:14Z",
+    "disposition": "skip",
+    "full_name": "NVlabs/tiny-cuda-nn",
+    "note": "gap-matrix intake 2026-11-10: for now: NVIDIA source licence restrictions",
+    "reason": "license-blocked",
+    "repo_id": 358678977
   },
   "oneapi-src/oneapi-samples": {
     "decided": "2026-05-29T23:13:18Z",
@@ -1447,6 +1845,15 @@
     "reason": "already-supported",
     "repo_id": 210299376
   },
+  "openrlhf/openrlhf": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:22:38Z",
+    "disposition": "skip",
+    "full_name": "OpenRLHF/OpenRLHF",
+    "note": "gap-matrix missed-project triage 2026-11-11: AMD upstream PR #1331 (MI300X support) open; dependencies (vLLM, DeepSpeed, Ray, flash-attn) are ROCm-capable",
+    "reason": "ported-elsewhere",
+    "repo_id": 672415139
+  },
   "openucx/ucc": {
     "decided": "2026-06-05T01:18:36Z",
     "disposition": "skip",
@@ -1470,6 +1877,15 @@
     "note": "benchmark suite / build or tuning tool, not a port target",
     "reason": "not-a-target",
     "repo_id": 285634219
+  },
+  "overworldai/world_engine": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T19:46:18Z",
+    "disposition": "skip",
+    "full_name": "Overworldai/world_engine",
+    "note": "gap-matrix intake follow-up 2026-11-12: GPL-3.0 (tier 3) needs licence clearance; README AMD claim has no ROCm code; NVIDIA-specific stack (gemlite, NVFP4/FlashInfer)",
+    "reason": "license-blocked",
+    "repo_id": 1100875802
   },
   "packtpublishing/gpu-programming-with-cpp-and-cuda": {
     "decided": "2026-06-05T01:25:52Z",
@@ -1543,6 +1959,15 @@
     "reason": "already-supported",
     "repo_id": 448873865
   },
+  "pola-rs/polars": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:22:40Z",
+    "disposition": "skip",
+    "full_name": "pola-rs/polars",
+    "note": "gap-matrix missed-project triage 2026-11-11: GPU engine is cudf-polars, carried by AMD's hipDF (ROCm-DS); nothing to port in polars",
+    "reason": "ported-elsewhere",
+    "repo_id": 263727855
+  },
   "pranjalssh/fast.cu": {
     "decided": "2026-05-30T00:45:17Z",
     "disposition": "skip",
@@ -1588,6 +2013,15 @@
     "note": "ROCm support upstream (per jeff)",
     "reason": "already-supported",
     "repo_id": 714073518
+  },
+  "pytorch/fbgemm": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:38Z",
+    "disposition": "skip",
+    "full_name": "pytorch/FBGEMM",
+    "note": "gap-matrix intake 2026-11-10: upstream ROCm support and CI",
+    "reason": "already-supported",
+    "repo_id": 150154628
   },
   "q-minh/physicsbasedanimationtoolkit": {
     "decided": "2026-06-05T04:44:26Z",
@@ -1909,6 +2343,15 @@
     "reason": "already-supported",
     "repo_id": 162446023
   },
+  "stanfordvl/behavior-1k": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T00:22:33Z",
+    "disposition": "skip",
+    "full_name": "StanfordVL/BEHAVIOR-1K",
+    "note": "gap-matrix missed-project triage 2026-11-11: built on Isaac Sim/Omniverse; 3 files carry an NVIDIA proprietary header",
+    "reason": "not-a-target",
+    "repo_id": 439439857
+  },
   "stereolabs/zed-sdk": {
     "decided": "2026-06-03T23:50:07Z",
     "disposition": "skip",
@@ -1957,6 +2400,33 @@
     "reason": "not-a-target",
     "repo_id": 956357429
   },
+  "tencent-hunyuan/hunyuanvideo": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T18:33:34Z",
+    "disposition": "skip",
+    "full_name": "Tencent-Hunyuan/HunyuanVideo",
+    "note": "gap-matrix intake follow-up 2026-11-12: Tencent Hunyuan Community Licence (tier 4, same family as HY-WorldPlay) excludes the EU, UK and South Korea and requires a separate Tencent licence above 100M MAU; Wan2.2 and LTX-2 (Apache-2.0) cover the same ground",
+    "reason": "license-blocked",
+    "repo_id": 895453957
+  },
+  "tencent-hunyuan/hunyuanvideo-1.5": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T18:33:43Z",
+    "disposition": "skip",
+    "full_name": "Tencent-Hunyuan/HunyuanVideo-1.5",
+    "note": "gap-matrix intake follow-up 2026-11-12: Tencent Hunyuan Community Licence (tier 4, same family as HY-WorldPlay) excludes the EU, UK and South Korea and requires a separate Tencent licence above 100M MAU; Wan2.2 and LTX-2 (Apache-2.0) cover the same ground",
+    "reason": "license-blocked",
+    "repo_id": 1100328089
+  },
+  "tencent-hunyuan/hy-worldplay": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T16:18:21Z",
+    "disposition": "skip",
+    "full_name": "Tencent-Hunyuan/HY-WorldPlay",
+    "note": "gap-matrix missed-project triage 2026-11-12: Tencent Hunyuan community licence (tier 4) excludes EU/UK/South Korea, caps use at 1M MAU, contributions only by private email; PyTorch with an inherited FastVideo ROCm shim",
+    "reason": "license-blocked",
+    "repo_id": 1113569067
+  },
   "tensorflow/recommenders-addons": {
     "decided": "2026-05-30T03:40:13Z",
     "disposition": "skip",
@@ -1972,6 +2442,24 @@
     "note": "AMD fork: github.com/EmbeddedLLM/SageAttention-rocm",
     "reason": "ported-elsewhere",
     "repo_id": 867007699
+  },
+  "tile-ai/tilelang": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:13Z",
+    "disposition": "skip",
+    "full_name": "tile-ai/tilelang",
+    "note": "gap-matrix intake 2026-11-10: upstream HIP backend",
+    "reason": "already-supported",
+    "repo_id": 867004514
+  },
+  "tinygrad/tinygrad": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:15Z",
+    "disposition": "skip",
+    "full_name": "tinygrad/tinygrad",
+    "note": "gap-matrix intake 2026-11-10: upstream AMD backends",
+    "reason": "already-supported",
+    "repo_id": 305144746
   },
   "tmcdonell/cuda": {
     "decided": "2026-06-05T01:19:14Z",
@@ -2013,6 +2501,42 @@
     "note": "Decided in-session 2026-08-20: decline as already supported. spconv-triton (Apache-2.0, PyPI, MI300X-verified) is a drop-in replacement for spconv 2.x on ROCm, and upstream is not a viable PR destination (no merged PR since 2022-12-27; the one AMD request, #780, was answered by pointing at spconv-triton). A port would mean an unbounded AMD backend for the cumm codegen rather than work on spconv itself. Screened seven times on four platforms, all agreeing. Analysis retained in history: `git show 2cc3927f97db:projects/spconv/notes.md` (notes.md).",
     "reason": "already-supported",
     "repo_id": 166499614
+  },
+  "triton-lang/triton": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:18Z",
+    "disposition": "skip",
+    "full_name": "triton-lang/triton",
+    "note": "gap-matrix intake 2026-11-10: upstream AMD backend",
+    "reason": "already-supported",
+    "repo_id": 23496542
+  },
+  "triton-lang/triton-windows": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:03:19Z",
+    "disposition": "skip",
+    "full_name": "triton-lang/triton-windows",
+    "note": "gap-matrix intake 2026-11-10: AMD on Windows supported",
+    "reason": "already-supported",
+    "repo_id": 1150749251
+  },
+  "turboderp-org/exllamav2": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:56Z",
+    "disposition": "skip",
+    "full_name": "turboderp-org/exllamav2",
+    "note": "gap-matrix intake 2026-11-10: upstream HIP path; development moved to exllamav3",
+    "reason": "already-supported",
+    "repo_id": 684980325
+  },
+  "turboderp-org/exllamav3": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-10T18:02:57Z",
+    "disposition": "skip",
+    "full_name": "turboderp-org/exllamav3",
+    "note": "gap-matrix intake 2026-11-10: upstream ROCm backend; consumer GPUs covered",
+    "reason": "already-supported",
+    "repo_id": 961394714
   },
   "uccl-project/mkernel": {
     "decided": "2026-06-05T01:18:36Z",
@@ -2140,6 +2664,15 @@
     "note": "Video denoiser plugin; consumer app, not a library",
     "reason": "not-a-target",
     "repo_id": 365500737
+  },
+  "xbillowy/diff-surfel-rasterizations": {
+    "by": "jeffdaily",
+    "decided": "2026-11-12T16:21:11Z",
+    "disposition": "skip",
+    "full_name": "xbillowy/diff-surfel-rasterizations",
+    "note": "Non-commercial licence; contributing needs written permission from the Inria/MPII GRAPHDECO copyright holders. The ported fork is the deliverable.",
+    "reason": "license-blocked",
+    "repo_id": 826182513
   },
   "xgbj/sparse-mask-attention": {
     "decided": "2026-06-05T01:25:52Z",
