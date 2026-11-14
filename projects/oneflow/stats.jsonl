@@ -665,3 +665,16 @@
 {"kind":"phase","ts":"2026-11-14T00:09:53Z","phase":"test","seconds":998.852,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261113-145326-oneflow-val-44d5-gfx1100/moat/agent_space/emb.sh /var/lib/jenkins/fleet/jobs/rx7900-20261113-145326-oneflow-val-44d5-gfx1100/moat/projects/oneflow/src /var/lib/jenkins/fleet/jobs/rx7900-20261113-145326-oneflow-val-44d5-gfx1100/moat/agent_space/j/emb 2"}
 {"kind":"phase","ts":"2026-11-14T00:15:13Z","phase":"test","seconds":319.480,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261113-145326-oneflow-val-44d5-gfx1100/moat/agent_space/fh10.sh /var/lib/jenkins/fleet/jobs/rx7900-20261113-145326-oneflow-val-44d5-gfx1100/moat/projects/oneflow/src /var/lib/jenkins/fleet/jobs/rx7900-20261113-145326-oneflow-val-44d5-gfx1100/moat/agent_space/j/fh10 10"}
 {"kind":"session","ts":"2026-11-14T00:34:50Z","epoch":1794616490.501782247,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-13T22:52:39Z","epoch":1794610359.849439486,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-13T23:01:42Z","phase":"compile","seconds":672.383,"exit":0,"cmd":"bash agent_space/build.sh all"}
+{"kind":"phase","ts":"2026-11-13T23:08:31Z","phase":"test","seconds":321.587,"exit":0,"cmd":"bash agent_space/suitesA.sh"}
+{"kind":"phase","ts":"2026-11-13T23:15:07Z","phase":"test","seconds":717.563,"exit":0,"cmd":"bash agent_space/suitesB.sh"}
+{"kind":"phase","ts":"2026-11-13T23:29:57Z","phase":"test","seconds":1600.120,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi200-20261113-144516-oneflow-val-44d5-gfx90a/moat/agent_space/chainA.sh"}
+{"kind":"phase","ts":"2026-11-13T23:41:31Z","phase":"test","seconds":936.221,"exit":0,"cmd":"bash agent_space/rate.sh ids_g3 3 expensive/test_id_shuffle.py 1 100"}
+{"kind":"phase","ts":"2026-11-13T23:45:01Z","phase":"test","seconds":882.868,"exit":0,"cmd":"bash agent_space/chainR.sh"}
+{"kind":"phase","ts":"2026-11-13T23:45:51Z","phase":"test","seconds":1195.833,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi200-20261113-144516-oneflow-val-44d5-gfx90a/moat/agent_space/chainA2.sh"}
+{"kind":"phase","ts":"2026-11-13T23:49:21Z","phase":"test","seconds":1142.608,"exit":0,"cmd":"bash agent_space/chainR2.sh"}
+{"kind":"phase","ts":"2026-11-14T00:29:52Z","phase":"test","seconds":2346.178,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi200-20261113-144516-oneflow-val-44d5-gfx90a/moat/agent_space/two.sh"}
+{"kind":"phase","ts":"2026-11-14T00:48:29Z","phase":"test","seconds":1077.152,"exit":0,"cmd":"bash agent_space/fhh.sh allp2p 1 30 ONEFLOW_ONE_EMBEDDING_FUSE_EMBEDDING_INTERACTION=1 ONEFLOW_ONE_EMBEDDING_EMBEDDING_SHUFFLE_USE_P2P=1 ONEFLOW_ONE_EMBEDDING_EMBEDDING_GRADIENT_SHUFFLE_USE_P2P=1 ONEFLOW_ONE_EMBEDDING_ID_SHUFFLE_USE_P2P=1"}
+{"kind":"phase","ts":"2026-11-14T01:07:26Z","phase":"test","seconds":1109.242,"exit":0,"cmd":"bash agent_space/fhh.sh allp2p 31 60 ONEFLOW_ONE_EMBEDDING_FUSE_EMBEDDING_INTERACTION=1 ONEFLOW_ONE_EMBEDDING_EMBEDDING_SHUFFLE_USE_P2P=1 ONEFLOW_ONE_EMBEDDING_EMBEDDING_GRADIENT_SHUFFLE_USE_P2P=1 ONEFLOW_ONE_EMBEDDING_ID_SHUFFLE_USE_P2P=1"}
+{"kind":"session","ts":"2026-11-14T01:08:52Z","epoch":1794618532.185024432,"event":"end","platform":"linux-gfx90a"}
