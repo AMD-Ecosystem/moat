@@ -11,6 +11,7 @@ advance_head). State transitions are validated; illegal jumps raise."""
 
 import os
 import argparse
+import atexit
 import collections
 import hashlib
 import json
@@ -2888,8 +2889,7 @@ def ensure_port_branch(name):
     # a cached miss for origin/port/<name> makes project_record fall back to the
     # working-tree copy, and save_record then writes the fact to the wrong place --
     # a checkout-local edit instead of the branch this just created.
-    for k in [k for k in _REF_CACHE if k[0] == f"origin/port/{name}"]:
-        del _REF_CACHE[k]
+    forget_ref(f"origin/port/{name}")
     return (True, f"{name}: re-homed onto port/{name} (cut from origin/main at "
                   f"{main_ref[:12]}) -- work in flight lives on its own branch")
 
@@ -3562,12 +3562,76 @@ def current_branch():
     return _BRANCH[0]
 
 
+_CAT_FILE = []       # one long-lived `git cat-file --batch`, started on first read
+
+
+def _cat_file_read(spec):
+    """`git cat-file --batch` for one object: bytes, or None if it does not exist.
+
+    A whole-repo scan reads one file per project per ref, and a `git show` per read
+    cost 0.4 s of process start on a Windows host under endpoint scanning: 232 of
+    them made the schema gate alone take minutes on every push. One process answers
+    them all."""
+    if _CAT_FILE and _CAT_FILE[0][0] != str(REPO_ROOT):
+        _cat_file_close()
+    if not _CAT_FILE:
+        _CAT_FILE.append((str(REPO_ROOT), subprocess.Popen(
+            ["git", "cat-file", "--batch"], cwd=str(REPO_ROOT),
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)))
+    p = _CAT_FILE[0][1]
+    p.stdin.write(spec.encode() + b"\n")
+    p.stdin.flush()
+    header = p.stdout.readline()
+    parts = header.split()
+    if len(parts) != 3 or parts[1] != b"blob":
+        # "<spec> missing", "<spec> ambiguous", or a tree/commit: none is a file.
+        if len(parts) == 3:
+            p.stdout.read(int(parts[2]) + 1)
+        if not header:
+            raise OSError("git cat-file --batch exited")
+        return None
+    data = p.stdout.read(int(parts[2]))
+    p.stdout.read(1)                     # the newline after each object
+    return data
+
+
+def _cat_file_close():
+    """Stop the batch reader; the next read starts a fresh one. It resolves each ref
+    as it reads, but caches what it resolved, so a ref this process moved must not be
+    read through the old reader."""
+    while _CAT_FILE:
+        _, p = _CAT_FILE.pop()
+        try:
+            p.stdin.close()
+            p.wait(timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            p.kill()
+            p.wait()
+        p.stdout.close()
+
+
+atexit.register(_cat_file_close)
+
+
+def forget_ref(*refs):
+    """Drop what this process read through `refs`, after it moved one of them."""
+    for k in [k for k in _REF_CACHE if k[0] in refs]:
+        del _REF_CACHE[k]
+    _cat_file_close()
+
+
 def _ref_read(ref, path):
     """A file's contents at a git ref, or None. Local object store, no network."""
     key = (ref, path)
     if key not in _REF_CACHE:
-        r = _git("show", f"{ref}:{path}", check=False)
-        _REF_CACHE[key] = r.stdout if r.returncode == 0 else None
+        try:
+            data = _cat_file_read(f"{ref}:{path}")
+            _REF_CACHE[key] = (None if data is None else
+                               data.decode("utf-8", errors="replace").replace("\r\n", "\n"))
+        except (OSError, ValueError):
+            _cat_file_close()
+            r = _git("show", f"{ref}:{path}", check=False)
+            _REF_CACHE[key] = r.stdout if r.returncode == 0 else None
     return _REF_CACHE[key]
 
 
@@ -5089,8 +5153,7 @@ def commit_to_branch(branch, files, message):
         # Left cached, a second record write in the same run started from the old
         # snapshot and committed it over the first: --publish recorded the approval,
         # then set_pr_open rewrote the record without it.
-        for key in [k for k in _REF_CACHE if k[0] in (branch, f"origin/{branch}")]:
-            del _REF_CACHE[key]
+        forget_ref(branch, f"origin/{branch}")
         return commit
     finally:
         if os.path.exists(idx):

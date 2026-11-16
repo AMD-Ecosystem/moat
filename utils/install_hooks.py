@@ -70,11 +70,17 @@ cd "$(git rev-parse --show-toplevel)" || exit 0
 # them to pre-push on stdin, one per line.
 MOAT_PUSH_REFS=""
 MOAT_PUSH_UPDATES=""
+only_deletes=1
 while read -r _lref lsha rref rsha; do
   MOAT_PUSH_REFS="$MOAT_PUSH_REFS $rref"
   MOAT_PUSH_UPDATES="$MOAT_PUSH_UPDATES $lsha:$rref:$rsha"
+  case "$lsha" in *[!0]*) only_deletes=0 ;; esac
 done
 export MOAT_PUSH_REFS MOAT_PUSH_UPDATES
+
+# A push that only deletes branches sends no content, so no gate has anything to
+# judge; running them all held a merged branch's deletion for minutes.
+[ "$only_deletes" = 1 ] && exit 0
 
 # --fast skips the fork-cleanliness gate: it walks every fork clone and would add
 # tens of seconds to every push. pr_ready enforces it where it matters.
