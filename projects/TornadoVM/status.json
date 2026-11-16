@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-16T22:19:43Z",
+  "updated_at": "2026-11-16T23:08:06Z",
   "head_sha": "c83908a5fda5757c309edea1ed00f89c9bbd252d",
   "depends_on": [],
   "waivers": {},
@@ -25,7 +25,7 @@
       "at": "2026-08-07T15:41:21Z"
     }
   },
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx942": {
       "blocked": false,
@@ -81,7 +81,7 @@
       "failed_sha": "af27a9f4b69e3f80eb5012ede0fa80294c6addd2",
       "started_at": "2026-11-10T01:43:44Z",
       "completed_at": "2026-11-16T20:26:28Z",
-      "updated_at": "2026-11-16T20:26:28Z",
+      "updated_at": "2026-11-16T23:08:06Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -95,7 +95,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "porter",
       "state": "completed"
     },
     "linux-gfx1100": {
@@ -204,5 +204,9 @@
     "content_sha256": "4660cc52f5d4d57208927af9291f6cd746336cbc19f148ffc608391359773425",
     "review_pr": "https://github.com/AMD-Ecosystem/TornadoVM/pull/2"
   },
-  "fix_merged_at": "2026-11-16T22:19:43Z"
+  "fix_merged_at": "2026-11-16T22:19:43Z",
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-16T23:08:06Z"
+  }
 }
