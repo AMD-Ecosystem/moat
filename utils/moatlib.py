@@ -2745,6 +2745,23 @@ _UNIT_SEP = chr(31)
 _REC_SEP = chr(30)
 
 
+def _published_tips(obj, repo):
+    """The commits this project's pull requests have shown upstream, current and
+    archived, that the local clone holds. A tip the clone lacks is left out, so the
+    commits behind it are judged rather than silently passed."""
+    shas = [obj.get("published_sha")]
+    shas += [e.get("published_sha") for e in obj.get("pr_history") or []]
+    tips = []
+    for sha in shas:
+        if not sha or not re.fullmatch(r"[0-9a-fA-F]{7,40}", sha) or sha in tips:
+            continue
+        r = subprocess.run(["git", "cat-file", "-e", sha + "^{commit}"],
+                           cwd=str(repo), capture_output=True)
+        if r.returncode == 0:
+            tips.append(sha)
+    return tips
+
+
 def commit_message_problems(name, obj=None):
     """What the fork branch's commits get wrong, one string per offence.
 
@@ -2752,6 +2769,12 @@ def commit_message_problems(name, obj=None):
     sends the branch as it stands: `upstream.py --publish` opens the pull request with
     `--head <fork>:<branch>`, and squashing first is supported but not enforced. Merges
     are skipped, since a trunk merge carries upstream's message rather than ours.
+
+    Commits a pull request has already shown upstream are skipped: they are frozen,
+    since rewording one means rewriting a branch a maintainer is reading, so an offence
+    there can never be fixed and would only block every later push of the record. What
+    is judged is everything past the published tips -- the whole branch before the first
+    publication, a fix or sync round's own commits after it.
 
     Returns None when this host holds no clone of the fork -- the check did not run,
     which is not the same as passing, the same distinction audit-clean draws.
@@ -2763,9 +2786,10 @@ def commit_message_problems(name, obj=None):
     base = obj.get("fork_default_branch") or "main"
     branch = upstream_visible_branch(obj)
     fmt = "%H" + _UNIT_SEP + "%s" + _UNIT_SEP + "%b" + _REC_SEP
+    skip = ["^" + sha for sha in _published_tips(obj, repo)]
     out = None
     for cand in (f"origin/{base}..{branch}", f"{base}..{branch}"):
-        r = subprocess.run(["git", "log", "--no-merges", "--format=" + fmt, cand],
+        r = subprocess.run(["git", "log", "--no-merges", "--format=" + fmt, cand] + skip,
                            cwd=str(repo), capture_output=True, text=True,
                            encoding="utf-8", errors="replace")
         if r.returncode == 0:
