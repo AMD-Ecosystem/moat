@@ -308,3 +308,12 @@
 {"kind":"session","ts":"2026-11-16T19:58:46Z","epoch":1794859126.390603279,"event":"end","platform":"linux-gfx1201"}
 {"kind":"session","ts":"2026-11-16T19:37:35Z","epoch":1794857856.231692800,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-16T20:26:52Z","epoch":1794860814.890919900,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-16T19:38:01Z","epoch":1794857881.579195667,"event":"start","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-16T19:38:06Z","epoch":1794857886.074909713,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-16T19:44:30Z","phase":"compile","seconds":188.280,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-16T20:11:06Z","phase":"cuda-compile","seconds":292.013,"exit":0,"cmd":"make -C agent_space/tvm-cuda jdk21 BACKEND=cuda"}
+{"kind":"phase","ts":"2026-11-16T20:11:38Z","phase":"cuda-compile","seconds":20.783,"exit":0,"cmd":"make -C agent_space/tvm-cuda jdk21 BACKEND=cuda,hip"}
+{"kind":"phase","ts":"2026-11-16T20:38:01Z","phase":"test","seconds":1924.226,"exit":0,"cmd":"bash agent_space/run.sh tornado-test --verbose --quickPass"}
+{"kind":"phase","ts":"2026-11-16T20:39:43Z","phase":"test","seconds":88.733,"exit":0,"cmd":"bash -c for c in $(cat agent_space/classes.txt); do bash agent_space/run.sh tornado-test -V $c; done"}
+{"kind":"phase","ts":"2026-11-16T20:40:36Z","phase":"test","seconds":15.045,"exit":0,"cmd":"make -C projects/TornadoVM/src test-nogpu JDK=jdk21"}
+{"kind":"session","ts":"2026-11-16T20:41:36Z","epoch":1794861696.294289089,"event":"end","platform":"linux-gfx950"}

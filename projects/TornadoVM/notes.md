@@ -1457,3 +1457,51 @@ Verdict: **completed**. Radeon 8060S (gfx1151, wave32). SDK built at exactly `c8
 Versus this platform's `8b9994f6a` run (2230 ran / 1433 pass / 795 unsupported / 2 failed): +1 ran, +1 pass = the new `testCopyDevicePointersMatrixDouble`; unsupported and failed unchanged. Library counts identical.
 
 Completion checks: `jargon.py -C <clone> --commits 986fbadfc..c83908a5f` and `--diff 986fbadfc...c83908a5f` clean (pinned to the upstream tip; the clone's `develop` ref does not resolve the project's default range). ROCm build documentation unchanged by this round. CUDA gate not run here (no toolkit on this host); the round is Java-only (HIP driver, one example, one test), no CUDA/native surface.
+## Validation 2026-11-16 (linux-gfx950, MI355X, validator at `c83908a5f`, fix round `moat-fix-1327`)
+
+jeff's request: full revalidation of the fix round's staging tip `c83908a5fda5757c309edea1ed00f89c9bbd252d` (`8b9994f6a..c83908a5f`: `6cc8eca69` HIP region mapping header/bounds/errors plus `testCopyDevicePointersMatrixDouble`, `c3cf80b99` ArrayAddIntPrebuilt kernel choice, `c83908a5f` HIP buffer release after an offset mapping), re-review passed. `classify` = mixed (HIP driver Java), so no carry-forward. Verdict: **completed**. Every count equals this platform's `8b9994f6a` run plus exactly the one new test.
+
+Host and toolchain (job directory only): one MI355X (gfx950, wave64), `HIP_VISIBLE_DEVICES=0` (dispatcher pin, kept), `ulimit -c 0` for every GPU run. ROCm 10.1 TheRock wheels (`ROCM_PATH` = `HIP_PATH` = the image venv's `_rocm_sdk_devel`), Temurin 21.0.13+9 (Adoptium API), CMake 3.31.6, `MAVEN_OPTS=-Dmaven.repo.local=<job>/m2`, `CMAKE_BUILD_PARALLEL_LEVEL=64`. hipDF/hipVS: the same five AMD PyPI rocm-7.2.3 wheels as the 2026-11-10 entry, unpacked with `python3 -I -m zipfile -e`; `HIPDF_HOME=<wheels>/x/libcudf`; run-time `LD_LIBRARY_PATH` = the five wheel `lib64` dirs, `$ROCM_PATH/lib/llvm/lib`, `$ROCM_PATH/lib`.
+
+Head and tree: fresh clone of `AMD-Ecosystem/TornadoVM`; `origin/moat-fix-1327` = `c83908a5f`, `origin/moat-port` = `8b9994f6a`, `origin/develop` = `986fbadfc` (the mirror is now fast-forwarded to upstream). Detached at `c83908a5f`, `git status --porcelain` empty before the build.
+
+```bash
+git clone --filter=blob:none https://github.com/AMD-Ecosystem/TornadoVM projects/TornadoVM/src
+git -C projects/TornadoVM/src fetch origin moat-fix-1327 && git -C projects/TornadoVM/src checkout --detach c83908a5f
+TORNADO_CK_REQUIRED=1 HIPDF_HOME=<wheels>/x/libcudf utils/timeit.sh TornadoVM compile -- make -C projects/TornadoVM/src jdk21 BACKEND=hip
+# BUILD SUCCESS, 3:01 min Maven wall; libtornado-ck.so and libtornado-hipdf.so in the SDK
+source projects/TornadoVM/src/setvars.sh; ulimit -c 0; export LD_LIBRARY_PATH=<wheel lib64s>:$ROCM_PATH/lib/llvm/lib:$ROCM_PATH/lib:$LD_LIBRARY_PATH
+tornado --devices
+tornado-test -V uk.ac.manchester.tornado.unittests.pointers.TestCopyDevicePointers
+tornado-selftest
+utils/timeit.sh TornadoVM test -- tornado-test --verbose --quickPass
+tornado-test -V uk.ac.manchester.tornado.unittests.<class>        # each class below
+tornado-test -V -J"-Dtornado.device.memory=1MB" uk.ac.manchester.tornado.unittests.fails.HeapFail#test03
+tornado -m tornado.examples/uk.ac.manchester.tornado.examples.arrays.ArrayAddIntPrebuilt
+tornado --jvm="-XX:-UseCompressedOops" -m tornado.examples/uk.ac.manchester.tornado.examples.arrays.ArrayAddIntPrebuilt
+gcc -O2 -D__HIP_PLATFORM_AMD__ -I$ROCM_PATH/include -o hiprtccheck hiprtccheck.c -L$ROCM_PATH/lib -lhiprtc -Wl,-rpath,$ROCM_PATH/lib   # in tornado-compiler/utils/hiprtccheck
+PATH=$PATH:/usr/local/cuda/bin make -C projects/TornadoVM/src test-nogpu JDK=jdk21
+```
+
+| Run (`c83908a5f`, CK + hipDF/hipVS SDK) | Result | This platform at `8b9994f6a` |
+|---|---|---|
+| `tornado --devices` | 1 HIPDriver device 0:0 AMD Instinct MI355X, 288.0 GB global, 160.0 KB local, 1024 block threads | same |
+| `TestCopyDevicePointers` | 4/0/0: testCopyDevicePointers, ...Matrix, **...MatrixDouble** (new), ...LargeRegion | 3/0/0 |
+| `tornado-selftest` | 20 pass, 1 skip (device/device-launch), rc 0. TC target "HIP gfx950, warp 64, tensor cores F16+FP8"; `mma-f16` 32x32x64, `mma-fp8` 16x16x64 PASS | 20 / 1 |
+| `tornado-test --verbose --quickPass` | 2231 ran: 1510 pass, 719 unsupported, 2 failed (`ComputeTests#testMandelbrot` `expected 8.0 but was 9.0`, `#testJuliaSets` `expected -1000.0 but was 1.5197568`, both whitelisted). rc 0, 1924 s | 2230 / 1509 / 719 / 2 |
+| MMA classes (ran/failed/unsupported) | TestMatrixMultiplicationMMA 18/0/0, MMABF16 7/0/0, MMAInt8 12/0/0, MMAFP8 8/0/0, MMACpAsync 8/0/0, TestMMAGlobalFragmentLoad 6/0/0, TestMMAInt8FragmentElementRead 4/0/0, TestMMAFragmentHelper 2/0/0 (65/65); TestMatrixMultiplicationKernelContext 3/0/0 | same |
+| Library classes | TestCuBlas 27/0/0, TestCuBlasLt 10/0/0, TestCuDnn 20/0/0, TestCutlass 26/0/0, TestCudf 24/0/0, TestCudfColumns 23/0/3 (the three ZSTD Parquet writes), TestCuVS 7/0/0, TestCuFft 9/0/0, TestCuRand 7/0/0, TestCusparse 17/0/0, TestNccl 30/0/10 (two GPUs needed), TestNcclMultiProcess 5/0/2, TestProfiler 9/0/0, TestProfilerTransferBytes 2/0/0, TestFP8 13/0/0 | same |
+| Other classes | TestArrayInit 11/0/0, TestConsumeFromUnifiedMemory 18/0/10, TestDeviceView 13/0/13 (CUDA only), TestUnsupportedKernelContextOps 10/0/3, TestDynamicParallelism 15/0/13, TestPrebuiltTaskOrdering 4/0/0 | same |
+| `HeapFail#test03` (1MB heap) | pass | -- |
+| `ArrayAddIntPrebuilt` (changed in `c3cf80b99`) | rc 0 with default flags (`add.hip`) and with `-XX:-UseCompressedOops` (`add_uncompressed.hip`). The example prints nothing, so this shows only that it loads and runs | -- |
+| `make test-nogpu JDK=jdk21` | BUILD SUCCESS, 14 s. 246 tests in 34 classes over 10 modules, 0 failures, 0 errors. Codegen LitTest 60/60 (with hiprtccheck), TcCompilerTest 29/29, HipMmaRoutingTest 1/1, HeaderlessRepresentationTest 3/3, frontend LitTest 12/12 | 246, 0 failures |
+
+Differences: quickPass +1 ran and +1 pass is `testCopyDevicePointersMatrixDouble`; nothing else moved, and no test that passed at `8b9994f6a` failed or turned unsupported. The quickPass wall time was 1924 s against 462 s on 2026-11-11, with the host CPU idle and the GPU free. An earlier attempt in this session was cut off by the harness's 20-minute background limit after 207 classes (1866 ran, 686 unsupported). It had one failure, `TestWarmUp#test01` ("warm-up took 2403 ms"), the timing test already seen under load on Windows on 2026-11-06 (whitelisted). The complete rerun passed it, so the per-JVM startup on this host was slow and the code is not at fault.
+
+CUDA no-regression gate at `c83908a5f` (real nvcc 12.8.93, host gcc 13.3.0, a separate worktree in `agent_space`): `utils/timeit.sh TornadoVM cuda-compile -- make jdk21 BACKEND=cuda` BUILD SUCCESS, 4:50 min ("The CUDA compiler identification is NVIDIA 12.8.93"); then `TORNADO_CK_SOURCE_DIR=/tmp make jdk21 BACKEND=cuda,hip` BUILD SUCCESS. Pass. (The delta is Java in the HIP driver, an example and a unit test, so no nvcc surface; the build was run anyway because the fix round goes to jeff next.)
+
+Completion checks:
+- `python3 utils/jargon.py --port TornadoVM` (clone's local `develop` = `origin/develop` = upstream `986fbadfc`, `moat-port` = `8b9994f6a`, `moat-fix-1327` = `c83908a5f`): clean. Also clean with `-C src --commits 986fbadfc..c83908a5f` and `--diff 986fbadfc...c83908a5f`.
+- Documentation: the delta touches no build; `BACKEND=hip` remains documented in `README.md`, `INSTALL_FROM_SOURCE.md` and `docs/source/developer-guidelines.rst`.
+- Integrity: HEAD `c83908a5f`; `git -C projects/TornadoVM/src status --porcelain` shows only the untracked `tornado-compiler/utils/hiprtccheck/hiprtccheck`. Validation only: nothing pushed to the fork.
+- Not covered: multi-GPU NCCL/RCCL (one pinned GPU); the `HIPMemorySegmentWrapper` release fix has no direct test (porter's note), and the classes above exercise it only indirectly.
