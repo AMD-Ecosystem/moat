@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-16T20:41:30Z",
+  "updated_at": "2026-11-16T20:52:02Z",
   "head_sha": "c83908a5fda5757c309edea1ed00f89c9bbd252d",
   "depends_on": [],
   "waivers": {},
@@ -199,7 +199,7 @@
   "fix": {
     "branch": "moat-fix-1327",
     "base_sha": "8b9994f6a54dec9ca4de062eb8491a1dcea083ad",
-    "review_pr": null,
+    "review_pr": "https://github.com/AMD-Ecosystem/TornadoVM/pull/2",
     "opened_at": "2026-11-16T18:28:52Z"
   }
 }
