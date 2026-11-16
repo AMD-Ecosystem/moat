@@ -296,3 +296,5 @@
 {"kind":"phase","ts":"2026-11-11T16:45:05Z","phase":"compile","seconds":0.427,"exit":0,"cmd":"cmd //c C:\\Users/<user>\\tvm-work\\build.bat"}
 {"kind":"phase","ts":"2026-11-11T16:48:46Z","phase":"compile","seconds":211.653,"exit":0,"cmd":"cmd /c C:\\Users/<user>\\tvm-work\\build.bat"}
 {"kind":"phase","ts":"2026-11-11T17:10:11Z","phase":"test","seconds":1241.162,"exit":0,"cmd":"cmd /c D:\\Develop\\moat\\agent_space\\tvm-val\\full.bat"}
+{"kind":"session","ts":"2026-11-16T19:02:17Z","epoch":1794855738.871227500,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-16T19:13:23Z","epoch":1794856404.047462100,"event":"end","platform":"windows-gfx1151"}
