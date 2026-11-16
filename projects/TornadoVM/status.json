@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-16T23:08:06Z",
-  "head_sha": "c83908a5fda5757c309edea1ed00f89c9bbd252d",
+  "updated_at": "2026-11-16T23:58:03Z",
+  "head_sha": "d7647e09501c130f6654903cb656d4bcb95af2fd",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "Apache-2.0",
@@ -25,7 +25,7 @@
       "at": "2026-08-07T15:41:21Z"
     }
   },
-  "stage": "porting",
+  "stage": "delta-ported",
   "platforms": {
     "linux-gfx942": {
       "blocked": false,
@@ -53,11 +53,11 @@
     "linux-gfx950": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "c83908a5fda5757c309edea1ed00f89c9bbd252d",
+      "validated_sha": "d7647e09501c130f6654903cb656d4bcb95af2fd",
       "failed_sha": null,
       "started_at": "2026-11-04T19:14:44Z",
-      "completed_at": "2026-11-16T20:41:30Z",
-      "updated_at": "2026-11-16T20:41:30Z",
+      "completed_at": "2026-11-16T23:57:47Z",
+      "updated_at": "2026-11-16T23:57:47Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -72,16 +72,22 @@
         "last_session_at": null
       },
       "last_agent": "validator",
-      "state": "completed"
+      "state": "completed",
+      "carry_forward": {
+        "to": "d7647e09501c130f6654903cb656d4bcb95af2fd",
+        "method": "binary-equiv",
+        "detail": "HipDialect.class bytecode identical (javap -c -p -constants) between c83908a5f and d7647e095; only line tables differ; lint-only constant-string split",
+        "at": "2026-11-16T23:57:47Z"
+      }
     },
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "c83908a5fda5757c309edea1ed00f89c9bbd252d",
+      "validated_sha": "d7647e09501c130f6654903cb656d4bcb95af2fd",
       "failed_sha": "af27a9f4b69e3f80eb5012ede0fa80294c6addd2",
       "started_at": "2026-11-10T01:43:44Z",
-      "completed_at": "2026-11-16T20:26:28Z",
-      "updated_at": "2026-11-16T23:08:06Z",
+      "completed_at": "2026-11-16T23:57:58Z",
+      "updated_at": "2026-11-16T23:58:03Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -96,7 +102,13 @@
         "last_session_at": null
       },
       "last_agent": "porter",
-      "state": "completed"
+      "state": "completed",
+      "carry_forward": {
+        "to": "d7647e09501c130f6654903cb656d4bcb95af2fd",
+        "method": "binary-equiv",
+        "detail": "HipDialect.class bytecode identical (javap -c -p -constants) between c83908a5f and d7647e095; only line tables differ; lint-only constant-string split",
+        "at": "2026-11-16T23:57:58Z"
+      }
     },
     "linux-gfx1100": {
       "blocked": false,
@@ -148,11 +160,11 @@
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "c83908a5fda5757c309edea1ed00f89c9bbd252d",
+      "validated_sha": "d7647e09501c130f6654903cb656d4bcb95af2fd",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-11-16T19:58:46Z",
-      "updated_at": "2026-11-16T19:58:46Z",
+      "completed_at": "2026-11-16T23:57:52Z",
+      "updated_at": "2026-11-16T23:57:52Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -167,13 +179,19 @@
         "last_session_at": null
       },
       "state": "completed",
-      "last_agent": "validator"
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "d7647e09501c130f6654903cb656d4bcb95af2fd",
+        "method": "binary-equiv",
+        "detail": "HipDialect.class bytecode identical (javap -c -p -constants) between c83908a5f and d7647e095; only line tables differ; lint-only constant-string split",
+        "at": "2026-11-16T23:57:52Z"
+      }
     }
   },
   "porting_released": {
     "arch": "windows-gfx1151",
-    "since": "2026-11-16T19:26:41Z",
-    "at": "2026-11-16T19:31:20Z"
+    "since": "2026-11-16T23:08:06Z",
+    "at": "2026-11-16T23:58:03Z"
   },
   "base_branch_ruling": {
     "branch": "develop",
@@ -196,7 +214,12 @@
   "pr_opened_at": "2026-11-11T20:14:47Z",
   "pr_state": "open",
   "published_sha": "c83908a5fda5757c309edea1ed00f89c9bbd252d",
-  "fix": null,
+  "fix": {
+    "branch": "moat-fix-1327",
+    "base_sha": "c83908a5fda5757c309edea1ed00f89c9bbd252d",
+    "review_pr": null,
+    "opened_at": "2026-11-16T23:10:48Z"
+  },
   "pr_approval": {
     "approved_by": "jeffdaily",
     "at": "2026-11-16T22:15:20Z",
@@ -205,8 +228,5 @@
     "review_pr": "https://github.com/AMD-Ecosystem/TornadoVM/pull/2"
   },
   "fix_merged_at": "2026-11-16T22:19:43Z",
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-16T23:08:06Z"
-  }
+  "porting": null
 }

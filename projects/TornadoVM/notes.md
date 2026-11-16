@@ -1512,3 +1512,12 @@ Completion checks:
 - hipDF question: https://github.com/beehive-lab/TornadoVM/pull/1327#issuecomment-6928079048 (counts from the earlier gfx950 validation).
 - CLA: jeff ruled no comment needed; the CLA-assistant check reports in CI.
 - Still owed: replies on the four Copilot threads (r4542882835, r4542882879, r4542882922, r4542882969), via the fix review PR's `## Upstream reply` after this round revalidates.
+
+## Fix round 2 on moat-fix-1327 (2026-11-16, windows-gfx1151): checkstyle failure on #1327
+
+After `c83908a5f` reached #1327, CI `code-quality` (`./mvnw checkstyle:check`, no profile) failed: `HipDialect.java:[190]`/`[191]` LineLength 238 > 200 in tc-codegen. Already failing at `8b9994f6a`; ours, from the original PR. Not a maintainer request.
+
+- `d7647e095` [ROCm] Wrap two HIP dialect lines over the checkstyle limit: the two `tc_f2l` literals split with constant `+` concatenation.
+- Checkstyle as CI runs it, on an LF clone (`git -c core.autocrlf=false clone`; a CRLF checkout reports tens of thousands of spurious errors, and `-Pjdk21` picks plugin 3.3.0 instead of CI's): `./mvnw -q checkstyle:check -fae` rc 0 with the fix, rc 1 without it with exactly the two CI violations, so no other module carries one.
+- `./mvnw -Pjdk21 -pl tornado-compiler/tc-codegen -am test -DskipTests=false -Dtest=LitTest -Dsurefire.failIfNoSpecifiedTests=false`: 60/60.
+- Binary equivalence: `HipDialect.class` compiled fresh at `c83908a5f` and at `d7647e095` (`./mvnw -o -Pjdk21 -pl tornado-compiler/tc-codegen -am compile`, both rc 0, distinct timestamps); `javap -c -p -constants` output identical (only the LineNumberTable differs). Carried forward linux-gfx950, linux-gfx1201, windows-gfx1151 with `binary-equiv`.
