@@ -7,7 +7,7 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-11-16T17:31:31Z",
+  "updated_at": "2026-11-16T17:34:10Z",
   "head_sha": "44d5f04cdda699579b9f0825301b92317499f138",
   "waivers": {
     "windows": {
@@ -198,11 +198,7 @@
   "pr_number": 10697,
   "pr_opened_at": "2026-11-12T23:12:22Z",
   "pr_state": "open",
-  "published_sha": "14801d8a83043e852b72a3671bc88e5896aec904",
-  "fix": {
-    "branch": "moat-fix-10697",
-    "base_sha": "14801d8a83043e852b72a3671bc88e5896aec904",
-    "review_pr": "https://github.com/AMD-Ecosystem/oneflow/pull/2",
-    "opened_at": "2026-11-13T19:46:56Z"
-  }
+  "published_sha": "44d5f04cdda699579b9f0825301b92317499f138",
+  "fix": null,
+  "fix_merged_at": "2026-11-16T17:34:10Z"
 }
