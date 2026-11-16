@@ -37,11 +37,20 @@ class CommitToBranch(unittest.TestCase):
                   mock.patch.object(moatlib, "_REF_CACHE", {})):
             p.start()
             self.addCleanup(p.stop)
+        # The batch reader runs inside the temporary repo; Windows cannot delete it
+        # while that process is alive.
+        self.addCleanup(moatlib._cat_file_close)
 
     def test_a_second_read_sees_the_first_write(self):
         self.assertEqual(moatlib._ref_read("origin/port/x", "rec.json"), '{"n": 0}\n')
         moatlib.commit_to_branch("port/x", {"rec.json": '{"n": 1}\n'}, "first")
         self.assertEqual(moatlib._ref_read("origin/port/x", "rec.json"), '{"n": 1}\n')
+
+    def test_a_missing_file_or_ref_reads_as_none(self):
+        self.assertIsNone(moatlib._ref_read("origin/port/x", "absent.json"))
+        self.assertIsNone(moatlib._ref_read("origin/port/nope", "rec.json"))
+        self.assertIsNone(moatlib._ref_read("origin/port/x", ""))   # a tree, not a file
+        self.assertEqual(moatlib._ref_read("origin/main", "rec.json"), '{"n": 0}\n')
 
     def test_two_writes_stack(self):
         moatlib.commit_to_branch("port/x", {"a.txt": "a\n"}, "first")

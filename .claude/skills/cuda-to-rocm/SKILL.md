@@ -103,6 +103,7 @@ Scan this list against what you are doing. If any line could apply, open
 - Layered `cudaArray` collapses across kernel launches -- use a non-layered 3D array (confirmed gfx90a bug).
 - Hardware linear-filter texture over an element-read float array is arch-specific, not a blanket AMD limitation.
 - Gate hardware-vs-software texture paths on a VERIFIED runtime self-test, never on creation success or `_WIN32`.
+- A graphics-interop mapped pointer is invalid after the unmap; a `hipMemcpy` against it returns an error and copies nothing. Scope map/unmap around each access and check the copy.
 
 **Floating point**
 - `__fsqrt_rn` is not always correctly rounded (seen on gfx90a, 1 ULP high); CUDA's is IEEE-correct. Route the f32 device sqrt through `__dsqrt_rn` and cast back when a test needs bit-exact results.
@@ -120,8 +121,13 @@ Scan this list against what you are doing. If any line could apply, open
 - Feature and version macros CUDA headers define but HIP headers do not (`__CUDA_BF16_TYPES_EXIST__`, `CUBLAS_VERSION`) silently drop whole dtype paths; audit gates by macro class, not only `__CUDA_ARCH__`.
 - Missing includes in a HIP port are usually pre-existing upstream omissions unmasked by the narrower include graph.
 - A `-include`d compat header creates no dependency edge: wipe objects after editing it or you validate stale code.
+- Never define `CUDART_VERSION` in a compat header: hip* library headers read it as "NVIDIA backend". rocThrust's `thrust/system/cuda/error.h` is CUDA-only; never reopen `namespace thrust::hip`.
+- `hip::hipcub`/`roc::rocthrust` targets leak `--offload-arch` into g++ sources of a mixed target; a HIP-linked target given `-fopenmp` loads clang's libomp next to g++'s libgomp.
+- A HIP-linked shared library or Python module gets no RUNPATH to the ROCm lib dir (an implicit link dir); set `BUILD_RPATH` from `hip::amdhip64` or it fails to load without `LD_LIBRARY_PATH`.
 - clang type-checks kernel bodies in the HIP host pass, where `__CUDA_ARCH__` is unset: a `__CUDA_ARCH__`-split debug macro calling host code fails only in Debug.
 - The CUDA Samples `helper_math.h` operators tie with `HIP_vector_type`'s own: guard its arithmetic block off on HIP, wholesale.
+- Vendored pre-2017 CUDA Samples helpers (`helper_cuda.h` and friends) carry an EULA notice: keep them off the HIP include path, write an independent substitute, and prove it with an `-H` include trace.
+- Never mark host `.cpp` files `LANGUAGE HIP` to dodge a flag leak: `__HIPCC__` then reaches host code and macros keyed on `__CUDACC__ || __HIPCC__` silently drop host default initializers.
 
 **Types, dispatch and platform limits**
 - Never name the pointee struct of an opaque handle (`CUstream_st`); use `std::remove_pointer_t<cudaStream_t>`.

@@ -503,6 +503,8 @@ Bisect with a sync on each side: only the one AFTER the copy fixes it. (TornadoV
 `NativeCommandQueue.mapOnDeviceMemoryNDRegion`, deterministic on Windows gfx1151, passing
 on Linux gfx950/gfx1201.)
 
+**A buffer that crosses into Python and gets released with `free()` must come from `malloc`.** Old SWIG/NumPy bindings often hand a C++ result to NumPy by overwriting the array's `data` pointer (a custom `T** INPLACE_ARRAY1` typemap passing `&PyArrayObject->data`), with the callee setting `*out = (new std::vector<T>(n))->data()` or a `thrust::host_vector` equivalent. NumPy later `free()`s it. On Linux, libstdc++ hands back the raw `malloc` pointer, so the mismatch passes silently. MSVC's `std::allocator` over-aligns every allocation of 4 KiB or more and returns an offset pointer, so `free()` corrupts the heap. The crash, `0xc0000374` (STATUS_HEAP_CORRUPTION), comes from a LATER, unrelated free: the next solver call or interpreter exit. Small outputs (a few centroids) survive while large ones (per-row labels) do not. Run each solver alone in a fresh process and read the real exit code (MSYS bash reports 127), and do not blame whichever solver happened to run last. Fix: fill a `malloc`/`calloc` buffer (with `thrust::copy` from device iterators straight into the raw pointer). That keeps the handoff contract on every OS. (h2o4gpu: KMeans fit/predict/transform; the failure had first been blamed on the ElasticNet call that ran after it.)
+
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
@@ -1082,6 +1084,47 @@ a member template whose parameter pack shadowed the class pack -- accepted by MS
 by Clang and GCC. Expect missing `typename`/`template` disambiguators, two-phase lookup
 failures and narrowing conversions. Fixes are additive and arch-independent, so they help
 the CUDA build too and are not HIP-specific hacks. (Velvet)
+
+**Never define `CUDART_VERSION` in a HIP compat header.** hipSPARSE, hipSOLVER and other
+hip* headers test `#if defined(CUDART_VERSION)` to select their NVIDIA backend; with it
+defined on AMD they skip their own type definitions (`hipsparseStatus_t` became an
+"unknown type"). If upstream code gates on `CUDART_VERSION`, guard that code, not the macro.
+(h2o4gpu)
+
+**rocThrust's `thrust/system/cuda/error.h` is CUDA-only.** It exists (so the include
+resolves) but its `errc_t` uses `cudaErrorXxx` enums. Shim it to `thrust/system/hip/error.h`
+plus `cuda_category() -> hip_category()` inside `THRUST_NAMESPACE_BEGIN`. Likewise never
+reopen `namespace thrust { namespace hip {} }` to alias `thrust::cuda`: current rocThrust
+declares its systems in a versioned inline namespace, so the empty one makes every
+`thrust::hip` ambiguous (AMD's xgboost 2.1.3 ROCm branch hit this). (h2o4gpu)
+
+**`hip::hipcub`/`roc::rocthrust`/`roc::rocprim` targets carry device flags.** Linking them
+to a target that also has g++ host sources puts `--offload-arch=...` on the g++ command
+line ("unrecognized command-line option"). These libraries are header-only; for a mixed
+target add their `INTERFACE_INCLUDE_DIRECTORIES` instead of linking the targets; the
+mechanism and a CMake recipe are under "Never mark the host `.cpp` files `LANGUAGE HIP`" in
+`strategy-a-cmake.md`. (h2o4gpu, Velvet)
+
+**OpenMP in a mixed g++/HIP library: one runtime only.** g++ objects call libgomp
+(`GOMP_*`); clang `-fopenmp` emits libomp (`__kmpc_*`). A target containing HIP objects is
+LINKED by clang, so an `-fopenmp` link flag there adds `libomp.so` + `libomptarget.so`
+next to libgomp -- two OpenMP runtimes in one process. Link `OpenMP::OpenMP_CXX` (libgomp)
+and drop `-fopenmp` from the HIP-linked target's link flags; compile the HIP TUs without
+OpenMP (their pragmas run serially) unless the whole build uses clang. Check with
+`readelf -d <lib> | grep NEEDED`. (h2o4gpu)
+
+**A HIP-linked shared library gets no RUNPATH to the ROCm lib dir.** The ROCm lib dir is
+one of the HIP compiler's implicit link directories, so CMake leaves it out of the build
+RUNPATH; clang adds it for executables (`h2o4gpu_test` had it) but not for a `SHARED` or
+`MODULE` target. Anything else that happened to inject it (h2o4gpu's was clang's
+`-fopenmp` link) hides the gap until it is removed. Then, with the pip/TheRock SDK and no
+`LD_LIBRARY_PATH`, the module fails to load -- and a Python loader that swallows the
+`ImportError` (h2o4gpu's `GPUlib.get()`) silently runs every solver on the CPU while the
+tests pass. Set it explicitly on the target:
+`BUILD_RPATH $<TARGET_FILE_DIR:hip::amdhip64>` (and `INSTALL_RPATH`), then check
+`readelf -d <lib> | grep RUNPATH` and run the GPU path with `LD_LIBRARY_PATH` unset.
+Whether a `/opt/rocm` package registers its lib dir with ld.so.conf was not verified; do
+not rely on it. (h2o4gpu)
 
 **CMake `LANGUAGE HIP` on host `.cpp` files drops OpenMP.** `OpenMP::OpenMP_CXX` adds
 `-fopenmp` through `$<$<COMPILE_LANGUAGE:CXX>:...>` and links the host compiler's runtime

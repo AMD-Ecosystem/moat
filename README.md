@@ -235,7 +235,7 @@ The project name links upstream.
 | [gpuRIR](https://github.com/DavidDiazGuerra/gpuRIR) ([fork](https://github.com/AMD-Ecosystem/gpuRIR/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#88](https://github.com/DavidDiazGuerra/gpuRIR/pull/88) |
 | [gRASPA](https://github.com/snurr-group/gRASPA) ([fork](https://github.com/AMD-Ecosystem/gRASPA/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#96](https://github.com/snurr-group/gRASPA/pull/96) |
 | [gtsam_points](https://github.com/koide3/gtsam_points) ([fork](https://github.com/AMD-Ecosystem/gtsam_points/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#99](https://github.com/koide3/gtsam_points/pull/99) |
-| [h2o4gpu](https://github.com/h2oai/h2o4gpu) ([fork](https://github.com/AMD-Ecosystem/h2o4gpu/tree/moat-port)) | ✅ | ✅ | ✅ | — |
+| [h2o4gpu](https://github.com/h2oai/h2o4gpu) ([fork](https://github.com/AMD-Ecosystem/h2o4gpu/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#902](https://github.com/h2oai/h2o4gpu/pull/902) |
 | [habitat-sim](https://github.com/facebookresearch/habitat-sim) ([fork](https://github.com/AMD-Ecosystem/habitat-sim/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [HEonGPU](https://github.com/Alisah-Ozcan/HEonGPU) ([fork](https://github.com/AMD-Ecosystem/HEonGPU/tree/moat-port)) | ✅ | ✅ | 🔧 | — |
 | [HierarchicalKV](https://github.com/NVIDIA-Merlin/HierarchicalKV) | ⬜ | ⬜ | ⬜ | — |
@@ -287,7 +287,7 @@ The project name links upstream.
 | [OCTproZ](https://github.com/spectralcode/OCTproZ) ([fork](https://github.com/AMD-Ecosystem/OCTproZ/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#31](https://github.com/spectralcode/OCTproZ/pull/31) |
 | [ohm](https://github.com/csiro-robotics/ohm) ([fork](https://github.com/AMD-Ecosystem/ohm/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [oidn](https://github.com/RenderKit/oidn) ([fork](https://github.com/AMD-Ecosystem/oidn/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
-| [oneflow](https://github.com/Oneflow-Inc/oneflow) ([fork](https://github.com/AMD-Ecosystem/oneflow/tree/moat-port)) | 🔄 | 🔄 | 🎫 | 🟢 [#10697](https://github.com/Oneflow-Inc/oneflow/pull/10697) |
+| [oneflow](https://github.com/Oneflow-Inc/oneflow) ([fork](https://github.com/AMD-Ecosystem/oneflow/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟢 [#10697](https://github.com/Oneflow-Inc/oneflow/pull/10697) |
 | [op43dgs](https://github.com/LetianHuang/op43dgs) ([fork](https://github.com/AMD-Ecosystem/op43dgs/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#15](https://github.com/LetianHuang/op43dgs/pull/15) |
 | [Open3D](https://github.com/isl-org/Open3D) ([fork](https://github.com/AMD-Ecosystem/Open3D/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#7509](https://github.com/isl-org/Open3D/pull/7509) |
 | [opencv](https://github.com/opencv/opencv) ([fork](https://github.com/AMD-Ecosystem/opencv/tree/moat-port)) | 🚫 | 🚫 | 🚫 | 🟢 [#29285](https://github.com/opencv/opencv/pull/29285) |

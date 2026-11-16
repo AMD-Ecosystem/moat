@@ -129,9 +129,9 @@ compat header with `-include`.
 
 Many CUDA projects vendor `helper_cuda.h` / `helper_math.h` / `helper_string.h` from a
 pre-2017 CUDA samples drop. Those copies carry "Please refer to the NVIDIA end user license
-agreement (EULA)", so they are proprietary-marked files, and the rule is that nothing AMD
-builds may compile, execute, or take them as a build input -- and that the port's diff must
-not modify them either (editing one makes the diff a derivative work of it). Never delete a
+agreement (EULA)", so they are proprietary-marked files. Keep them out of the HIP build
+completely -- not compiled, not executed, not a build input -- and do not modify them in the
+port's diff either (editing one makes the diff a derivative work of it). Never delete a
 licence or notice file to get there.
 
 Two moves, both needed:
@@ -235,7 +235,7 @@ the recorded compile line for a host object should carry neither `-x hip` nor
 should compile clean.
 
 Then expect the split to unmask missing standard-library includes in host headers, and build
-on every OS in the gate before calling the split done. The HIP and CUDA runtime headers drag
+on every supported OS before calling the split done. The HIP and CUDA runtime headers drag
 in a lot of the standard library, so a header that has always been compiled as a GPU source
 can use `std::vector` or `std::string` without including it and never be caught. Narrowing
 the language property makes it a plain C++ TU and the omission becomes a hard error that

@@ -4,7 +4,7 @@
 - Cover both wavefront widths and each OS the project supports: at least one wave64 (CDNA) GPU, one wave32 (RDNA) GPU, and Windows when the project builds there. Any GPU of the right family covers its width; each validates the same branch independently.
 - Validating on another architecture should not introduce a NEW commit for anything non-essential; if that arch needs no code change, leave the branch untouched. When a fix IS genuinely necessary (e.g. configurable arch), put it in a NEW commit on top -- NEVER amend a commit another arch has already validated: the amended commit is no longer the one that was tested, so every passed arch has to test again. A new commit is cheap by comparison, and one that changes only documentation, comments or formatting, or leaves the HIP code objects byte-identical, needs no new GPU run.
 - A CPU-only docker build (image `rocm/dev-ubuntu-24.04:7.2.4-complete`) proves the code compiles and links under ROCm. It cannot observe any fault-class bug, since no GPU runs, so it is never a validation gate. Do NOT wire it into CI that appears to gate the port: a workflow that proves nothing and emails failure noise at whoever watches the repository is pure cost. Run a CPU-only docker build locally if you want a manual compile check.
-- For a GUI, viewer or otherwise interactive port, a standalone synthetic kernel test is a SMOKE CHECK, never a validation. Launch the real binary, drive its default scene, and assert on the state the application itself computes (visible geometry, panel values, a per-frame NaN/extent count read back from the live buffers) -- a headless host cannot do this, so route such a project to a platform with a display rather than substituting a kernel test. Velvet was recorded `completed` on four platforms against a synthetic kernel program that never constructed the solver's parameter struct, never entered the solve loop and never opened the window; two defects that made the application useless (all simulation parameters zeroed, and a graphics-interop copy that silently transferred nothing) survived every one of those validations and were found the first time anyone ran the actual executable. If the project ships screenshots or a demo scene, reproducing one IS the test.
+- For a GUI, viewer or otherwise interactive port, a standalone synthetic kernel test is a SMOKE CHECK, never a validation. Launch the real binary, drive its default scene, and assert on the state the application itself computes (visible geometry, panel values, a per-frame NaN/extent count read back from the live buffers) -- a headless host cannot do this, so route such a project to a platform with a display rather than substituting a kernel test. Velvet was signed off on four platforms against a synthetic kernel program that never constructed the solver's parameter struct, never entered the solve loop and never opened the window; two defects that made the application useless (all simulation parameters zeroed, and a graphics-interop copy that silently transferred nothing) survived every one of those validations and were found the first time anyone ran the actual executable. If the project ships screenshots or a demo scene, reproducing one IS the test.
 - gfx90a and gfx942 are CDNA (wave64); the gfx11xx/gfx12xx parts are RDNA (wave32). A change that passes on one width can still fail on the other via the warp-size class, which is why each arch validates on its own hardware rather than inheriting a result.
 - PR-prep gate -- nvcc CUDA-build check: before opening any PR whose claim is "the CUDA/NVIDIA build is unchanged", compile the CUDA path (`USE_HIP=OFF`) with nvcc. No NVIDIA GPU is needed: a dedicated conda env works on a ROCm-only machine (`conda create -y -n cuda-12.8 -c nvidia cuda-toolkit=12.8` -- the full `cuda-toolkit`, not compiler-only `cuda-nvcc`, because the check must LINK; host gcc 13 works. ALWAYS pin the arch, e.g. `-DCMAKE_CUDA_ARCHITECTURES=80`: `native` autodetection on a host with no NVIDIA GPU silently degrades to an ancient arch, and `atomicAdd(double*)` "no instance of overloaded function" is that fingerprint, not a real failure). GPU validation on AMD cannot see a broken CUDA path -- writing "the CUDA path is preserved" in your notes is NOT the same as having compiled it. State it honestly in the PR ("compile-checked with nvcc, not run"). REQUIRED when the port adds a CUDA/HIP-split backend (e.g. `Foo_cuda.cpp` vs `Foo_hip.cpp`): that CUDA file is never compiled during HIP-only porting and can be badly broken. The check must reach the LINK stage (build one real target/demo, not compile-only of a single TU) -- the undefined-reference class (e.g. explicit instantiations that do not match real call-site signatures) only surfaces at link. If a fix leaves the HIP code objects byte-identical, it needs no new GPU run.
   - No conda on the host: the PyPI `nvidia-cuda-nvcc-cu12` 12.8 wheels ship only `ptxas`, `nvvm` and `crt` headers, no `nvcc` driver, so they cannot be the toolkit. Assemble a `CUDA_HOME` from NVIDIA's redistributable archives instead: `https://developer.download.nvidia.com/compute/cuda/redist/redistrib_12.8.1.json` lists each component (cuda_nvcc, cuda_cudart, cuda_cccl, libcublas, libcurand, libcufft, libcusolver, libcusparse, libnvjitlink, cuda_nvtx, cuda_cupti, plus libnvjpeg/libnpp if the build links them) with a sha256; extract them all with `--strip-components=1` into one directory and pass `-DCUDAToolkit_ROOT`. cuDNN and NCCL can come from their wheels after adding the unversioned `.so` symlinks CMake's `find_library` looks for. Old third-party pins may need a scratch-only fix under a new toolkit (oneflow's flash-attention needed `#include <cstdio>` with 12.8); patch the extracted copy, never the fork, and record it. (Source: oneflow, 2026-10-30.)
@@ -321,6 +321,14 @@ is lost. If a failing test's assertion is a timing ratio between a serial and a
 concurrent run, and every functional test passes, this is the cause and the port is not
 at fault. (FLAMEGPU2, where a 20-line repro was written.)
 
+## Windows: a hang can be one kernel that never finishes
+
+**A Windows "hang" that keeps the host blocked in `hipMemcpy` can be one kernel that never finishes.** Confirm it before you hunt a host-side loop: `AMD_LOG_LEVEL=3` shows the last `hipLaunchKernel` followed only by repeated `PAL fence isn't ready! result:3`. A symbol-carrying build that keeps Release codegen locates the call site (clang-cl: `-O2 -Ob2 -DNDEBUG -Z7` plus `-DEBUG` at link). If the hang depends on inlining (`/Ob2` hangs, `/Ob1` passes), check for the long-branch return-address bug below.
+
+## A hang that depends on inlining: long branches clobber the return address
+
+**A kernel that never finishes, or a device function that returns to the wrong place, only at the default inlining level can be llvm/llvm-project#224205.** In a large device function that is not a kernel (the callee of `s_swappc_b64 s[30:31]`, for example a library reduction body with a big functor inlined into it), AMDGPU long-branch relaxation can use `s[30:31]`, the return address, as its scratch pair. Confirm it in the asm: compile the file with its real compile line plus `--cuda-device-only -S` for the target, and in each non-kernel function count `s_getpc_b64 s[30:31]` ... `s_setpc_b64 s[30:31]` long-branch sequences with no save or restore of `s30`/`s31` anywhere in that function. Any count above zero is the defect pattern. It appears on RDNA (gfx11, gfx12) targets in Linux builds as well as Windows ones, and it does not always hang, so a passing run does not clear a build that shows the pattern. Workaround: limit inlining for that one translation unit, through `COMPILE_OPTIONS` on the source, `/Ob1` for clang-cl and `-finline-hint-functions` for clang or hipcc on Linux. The function stays out of line, small enough that no long branch is left; recount in the asm to confirm zero. (h2o4gpu: the `FuncEvalF` reduction in `h2o4gpuglm.cu`, float and double; the double-precision fit hung on gfx1151 on Windows, and gfx1100/gfx1201 Linux builds carry the same pattern without an observed hang.)
+
 ## Using a stream after `hipDeviceReset` corrupts the heap (Windows shows it)
 
 **A process that finishes its work and then dies at exit with `0xC0000374` (heap
@@ -619,32 +627,21 @@ Check each entry against the dependency's default branch, not the patch as a who
 
 - **A cascading wall of SegFault/OOM/"no kernel image available" partway through a long serial suite can be one poisoned physical card, not a port defect -- check `rocm-smi --showpids` against `--showmeminfo vram` before concluding anything.** arrayfire on an 8x MI300X host: a full `ctest` run started clean, crashed (SegFault) on an early binary, and every binary after it degraded -- more SegFaults, a "no kernel image is available for execution on the device" (hipErrorNoBinaryForGpu) on a JIT op, then explicit "Device out of memory". `rocm-smi --showmeminfo vram` showed that GPU pinned near its full capacity; `rocm-smi --showpids` showed *no process attached to it at all*, including after `kill -9` of every test binary -- the VRAM was orphaned at the KFD/driver level, not held by a live allocator, and a process crash should not leak GPU memory past its own exit. Re-running the identical suite (fresh JIT disk cache) on a different, verified-idle card on the same host, same build, same commit, came back 131/132 clean with no crash, no OOM, and no "no kernel image" anywhere. The disagreement between the two `rocm-smi` views is the tell: if `--showmeminfo` says a card is nearly full but `--showpids` shows nothing on it, that card's state cannot be trusted for this session -- switch cards to disambiguate before spending time on the port. (arrayfire)
 
-## Compiling host code as the GPU language can mask a missing standard-library include
+## A change in which files compile as the GPU language is a rebuild-everywhere change
 
-Marking every source file (host `.cpp` included) `LANGUAGE HIP` so a mixed-language CMake
-target avoids per-file flag headaches has a side effect beyond the obvious one (device-only
-macros like `__HIPCC__` now leak into host logic): it can also silently satisfy a missing
-standard-library include, because the GPU compiler's runtime headers transitively pull in
-things the file never explicitly asked for. Velvet's `Timer.hpp` used `std::vector` (via
-`using namespace std;`) with no `#include <vector>` -- invisible for months because
-`Timer.cpp` was compiled as HIP by clang. The day a later, correct fix narrowed
-`LANGUAGE HIP` to only the real device-code files (host code compiled as HIP had been
-zeroing a `__device__ __constant__` struct's default member initializers, a real bug), the
-same `Timer.cpp` became a plain C++ translation unit and the missing include surfaced as a
-hard error -- reproducing on BOTH gcc's and clang's libstdc++, so it was not a
-compiler-strictness fluke.
-
-The general lesson: a `LANGUAGE HIP`/`LANGUAGE CUDA` blanket on host sources is itself a code
-smell to check for during review, independent of whatever bug motivates removing it, because
-narrowing it later is exactly the kind of "obviously safe, mechanical" cleanup that exposes
-whatever it had been quietly compensating for. When a delta narrows which files compile as
-the GPU language, rebuild and treat any new missing-symbol/missing-include error in a file
-that changed compilation mode as a real regression to send back, not a toolchain quirk --
-even if an isolated single-file compile-only check of that same file already had the
-identical error recorded as pre-existing elsewhere (e.g. a CUDA-passthrough gate that never
-benefited from the masking in the first place, so it saw the bug all along and correctly
-called it pre-existing there). The two findings do not contradict: one path was always
-broken and stayed broken; the other was accidentally working and stopped.
+A `LANGUAGE HIP`/`LANGUAGE CUDA` blanket on host sources is a code smell to look for in
+review: besides leaking device-only macros into host logic, the GPU compiler's runtime
+headers can silently satisfy a standard-library include the file never asked for. Narrowing
+the blanket to the real device files is the right fix and looks mechanical, but it exposes
+whatever the blanket was compensating for (see "Never mark the host `.cpp` files
+`LANGUAGE HIP`" in `strategy-a-cmake.md`). When a delta changes which files compile as the
+GPU language, rebuild on every supported OS and with every host compiler, and treat a new
+missing-symbol or missing-include error in a file that changed compilation mode as a real
+regression to fix, not a toolchain quirk. A CUDA-path compile of the same file may already
+have recorded the identical error as pre-existing; the two findings do not contradict. One
+path was always broken and stayed broken; the other was accidentally working and stopped.
+(Velvet: `Timer.hpp` used `std::vector` with no `#include <vector>`, on gcc's and clang's
+libstdc++ alike.)
 
 ## A torch build used only as a test oracle can break a build two different ways as it drifts
 

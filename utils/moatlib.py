@@ -11,6 +11,7 @@ advance_head). State transitions are validated; illegal jumps raise."""
 
 import os
 import argparse
+import atexit
 import collections
 import hashlib
 import json
@@ -2744,6 +2745,23 @@ _UNIT_SEP = chr(31)
 _REC_SEP = chr(30)
 
 
+def _published_tips(obj, repo):
+    """The commits this project's pull requests have shown upstream, current and
+    archived, that the local clone holds. A tip the clone lacks is left out, so the
+    commits behind it are judged rather than silently passed."""
+    shas = [obj.get("published_sha")]
+    shas += [e.get("published_sha") for e in obj.get("pr_history") or []]
+    tips = []
+    for sha in shas:
+        if not sha or not re.fullmatch(r"[0-9a-fA-F]{7,40}", sha) or sha in tips:
+            continue
+        r = subprocess.run(["git", "cat-file", "-e", sha + "^{commit}"],
+                           cwd=str(repo), capture_output=True)
+        if r.returncode == 0:
+            tips.append(sha)
+    return tips
+
+
 def commit_message_problems(name, obj=None):
     """What the fork branch's commits get wrong, one string per offence.
 
@@ -2751,6 +2769,12 @@ def commit_message_problems(name, obj=None):
     sends the branch as it stands: `upstream.py --publish` opens the pull request with
     `--head <fork>:<branch>`, and squashing first is supported but not enforced. Merges
     are skipped, since a trunk merge carries upstream's message rather than ours.
+
+    Commits a pull request has already shown upstream are skipped: they are frozen,
+    since rewording one means rewriting a branch a maintainer is reading, so an offence
+    there can never be fixed and would only block every later push of the record. What
+    is judged is everything past the published tips -- the whole branch before the first
+    publication, a fix or sync round's own commits after it.
 
     Returns None when this host holds no clone of the fork -- the check did not run,
     which is not the same as passing, the same distinction audit-clean draws.
@@ -2762,9 +2786,10 @@ def commit_message_problems(name, obj=None):
     base = obj.get("fork_default_branch") or "main"
     branch = upstream_visible_branch(obj)
     fmt = "%H" + _UNIT_SEP + "%s" + _UNIT_SEP + "%b" + _REC_SEP
+    skip = ["^" + sha for sha in _published_tips(obj, repo)]
     out = None
     for cand in (f"origin/{base}..{branch}", f"{base}..{branch}"):
-        r = subprocess.run(["git", "log", "--no-merges", "--format=" + fmt, cand],
+        r = subprocess.run(["git", "log", "--no-merges", "--format=" + fmt, cand] + skip,
                            cwd=str(repo), capture_output=True, text=True,
                            encoding="utf-8", errors="replace")
         if r.returncode == 0:
@@ -2888,8 +2913,7 @@ def ensure_port_branch(name):
     # a cached miss for origin/port/<name> makes project_record fall back to the
     # working-tree copy, and save_record then writes the fact to the wrong place --
     # a checkout-local edit instead of the branch this just created.
-    for k in [k for k in _REF_CACHE if k[0] == f"origin/port/{name}"]:
-        del _REF_CACHE[k]
+    forget_ref(f"origin/port/{name}")
     return (True, f"{name}: re-homed onto port/{name} (cut from origin/main at "
                   f"{main_ref[:12]}) -- work in flight lives on its own branch")
 
@@ -3562,12 +3586,76 @@ def current_branch():
     return _BRANCH[0]
 
 
+_CAT_FILE = []       # one long-lived `git cat-file --batch`, started on first read
+
+
+def _cat_file_read(spec):
+    """`git cat-file --batch` for one object: bytes, or None if it does not exist.
+
+    A whole-repo scan reads one file per project per ref, and a `git show` per read
+    cost 0.4 s of process start on a Windows host under endpoint scanning: 232 of
+    them made the schema gate alone take minutes on every push. One process answers
+    them all."""
+    if _CAT_FILE and _CAT_FILE[0][0] != str(REPO_ROOT):
+        _cat_file_close()
+    if not _CAT_FILE:
+        _CAT_FILE.append((str(REPO_ROOT), subprocess.Popen(
+            ["git", "cat-file", "--batch"], cwd=str(REPO_ROOT),
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)))
+    p = _CAT_FILE[0][1]
+    p.stdin.write(spec.encode() + b"\n")
+    p.stdin.flush()
+    header = p.stdout.readline()
+    parts = header.split()
+    if len(parts) != 3 or parts[1] != b"blob":
+        # "<spec> missing", "<spec> ambiguous", or a tree/commit: none is a file.
+        if len(parts) == 3:
+            p.stdout.read(int(parts[2]) + 1)
+        if not header:
+            raise OSError("git cat-file --batch exited")
+        return None
+    data = p.stdout.read(int(parts[2]))
+    p.stdout.read(1)                     # the newline after each object
+    return data
+
+
+def _cat_file_close():
+    """Stop the batch reader; the next read starts a fresh one. It resolves each ref
+    as it reads, but caches what it resolved, so a ref this process moved must not be
+    read through the old reader."""
+    while _CAT_FILE:
+        _, p = _CAT_FILE.pop()
+        try:
+            p.stdin.close()
+            p.wait(timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            p.kill()
+            p.wait()
+        p.stdout.close()
+
+
+atexit.register(_cat_file_close)
+
+
+def forget_ref(*refs):
+    """Drop what this process read through `refs`, after it moved one of them."""
+    for k in [k for k in _REF_CACHE if k[0] in refs]:
+        del _REF_CACHE[k]
+    _cat_file_close()
+
+
 def _ref_read(ref, path):
     """A file's contents at a git ref, or None. Local object store, no network."""
     key = (ref, path)
     if key not in _REF_CACHE:
-        r = _git("show", f"{ref}:{path}", check=False)
-        _REF_CACHE[key] = r.stdout if r.returncode == 0 else None
+        try:
+            data = _cat_file_read(f"{ref}:{path}")
+            _REF_CACHE[key] = (None if data is None else
+                               data.decode("utf-8", errors="replace").replace("\r\n", "\n"))
+        except (OSError, ValueError):
+            _cat_file_close()
+            r = _git("show", f"{ref}:{path}", check=False)
+            _REF_CACHE[key] = r.stdout if r.returncode == 0 else None
     return _REF_CACHE[key]
 
 
@@ -5089,8 +5177,7 @@ def commit_to_branch(branch, files, message):
         # Left cached, a second record write in the same run started from the old
         # snapshot and committed it over the first: --publish recorded the approval,
         # then set_pr_open rewrote the record without it.
-        for key in [k for k in _REF_CACHE if k[0] in (branch, f"origin/{branch}")]:
-            del _REF_CACHE[key]
+        forget_ref(branch, f"origin/{branch}")
         return commit
     finally:
         if os.path.exists(idx):

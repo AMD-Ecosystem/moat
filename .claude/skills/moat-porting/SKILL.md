@@ -29,6 +29,13 @@ session promotes it: it puts the lesson where its reader would look, merges it w
 is already there instead of appending, and adds `Promoted to <file> in <sha>.` under the
 heading. `python3 utils/moatlib.py lessons` lists lessons awaiting promotion.
 
+When a project's `notes.md` nears the 1 MB file check (`check.py`), move its old dated
+round sections verbatim into `projects/<name>/notes-archive.md` in one commit on the port
+branch, and leave a pointer line under the title. Keep in `notes.md` the reference sections
+(architecture, build and test recipes), the latest validation baseline for each platform,
+everything from the current round, and every `## Lesson for` section, since `lessons`
+reads only `notes.md`. An archive merges by union like `notes.md` (`.gitattributes`).
+
 `python3 utils/check.py skills` enforces the boundary: it fails on MOAT vocabulary inside
 `.claude/skills/cuda-to-rocm/`.
 
