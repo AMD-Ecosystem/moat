@@ -300,3 +300,9 @@
 {"kind":"session","ts":"2026-11-16T19:13:23Z","epoch":1794856404.047462100,"event":"end","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-16T19:26:37Z","epoch":1794857198.664565600,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-16T19:31:23Z","epoch":1794857483.899565900,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-16T19:37:31Z","epoch":1794857851.706563632,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-16T19:46:26Z","phase":"compile","seconds":514.921,"exit":0,"cmd":"make -C projects/TornadoVM/src jdk21 BACKEND=hip"}
+{"kind":"phase","ts":"2026-11-16T19:55:15Z","phase":"test","seconds":507.896,"exit":0,"cmd":"tornado-test --verbose --quickPass"}
+{"kind":"phase","ts":"2026-11-16T19:56:47Z","phase":"test","seconds":73.953,"exit":0,"cmd":"bash agent_space/classes.sh"}
+{"kind":"phase","ts":"2026-11-16T19:57:15Z","phase":"test","seconds":8.465,"exit":0,"cmd":"make -C projects/TornadoVM/src test-nogpu JDK=jdk21"}
+{"kind":"session","ts":"2026-11-16T19:58:46Z","epoch":1794859126.390603279,"event":"end","platform":"linux-gfx1201"}

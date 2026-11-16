@@ -1394,3 +1394,49 @@ Both findings confirmed before fixing. Correction to the fix-round entry above: 
 ## Review 2026-11-16 (reviewer, windows-gfx1151 host, fix round `moat-fix-1327`, re-review delta `c3cf80b99..c83908a5f`)
 
 Verdict: review-passed. Both findings of the previous review are closed by `c83908a5f`. Finding 2: `HIPMemorySegmentWrapper.java:350-357` now leaves `bufferId`/`bufferIdBase` unchanged when the offset mapping returns the destination pointer, so `markAsFreeBuffer` releases the real allocation start; the zero-offset aliasing path still takes the source pointer as before, and a repeat zero-offset mapping onto an already aliased wrapper is a no-op. Finding 1: the Metal exclusion is gone from `testCopyDevicePointersMatrixDouble`, the commit body states the correct CUDA/OpenCL scope and that Metal was not run (in that test Metal's uncapped `copySize` stays inside the source, so the missing clamp there is not exercised), and the fix-round notes carry the correction. Title 60 chars, Test Plan present, no trailers, `jargon.py --commits/--diff c3cf80b99..c83908a5f` clean, fork tree clean.
+
+## Validation 2026-11-16 (linux-gfx1201) at c83908a5f, fix round `moat-fix-1327`
+
+Verdict: **pass**, linux-gfx1201 completed at `c83908a5f` (Radeon AI PRO R9700, wave32). Full revalidation, no carry-forward: the delta `8b9994f6a..c83908a5f` changes Java in the HIP driver (`HIPMemorySegmentWrapper`, `natives/NativeCommandQueue`), the `ArrayAddIntPrebuilt` example and `TestCopyDevicePointers` (classify = mixed). jeff asked for it after the re-review passed. Every count matches this platform's `8b9994f6a` run, plus exactly the one new test `testCopyDevicePointersMatrixDouble`.
+
+Host and toolchain (job directory only): same as the 2026-11-11 entry. ROCm 10.1 TheRock wheels (`ROCM_PATH` = `HIP_PATH` = the image venv's `_rocm_sdk_devel`), Temurin 21.0.13+9 from the Adoptium API unpacked in the job directory, `MAVEN_OPTS=-Dmaven.repo.local=<job>/m2`, `CMAKE_BUILD_PARALLEL_LEVEL=24`, dispatcher pin `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0` for every GPU run, `HIPDF_HOME` unset (no hipDF/hipVS for RDNA). Fresh clone of `AMD-Ecosystem/TornadoVM` with `origin/moat-fix-1327` = `c83908a5fda5757c309edea1ed00f89c9bbd252d`, detached there, `git status --porcelain` clean before the build.
+
+```bash
+TORNADO_CK_REQUIRED=1 make -C projects/TornadoVM/src jdk21 BACKEND=hip   # BUILD SUCCESS, 8:30 min; ck-hip 139 attention sources for the nine default targets incl. gfx1201, libtornado-ck.so in the SDK; hipDF skipped
+source projects/TornadoVM/src/setvars.sh
+tornado --devices                 # 1 driver, HIPDriver 0:0 AMD Radeon AI PRO R9700, 31.9 GB, 64 KB local
+tornado-selftest                  # rc 0
+tornado-test -V uk.ac.manchester.tornado.unittests.pointers.TestCopyDevicePointers
+tornado-test --verbose --quickPass
+tornado-test -V uk.ac.manchester.tornado.unittests.<class>   # each class below
+tornado-test -V -J"-Dtornado.device.memory=1MB" uk.ac.manchester.tornado.unittests.fails.HeapFail#test03
+tornado -m tornado.examples/uk.ac.manchester.tornado.examples.arrays.ArrayAddIntPrebuilt                      # and with --jvm="-XX:-UseCompressedOops"
+make -C projects/TornadoVM/src test-nogpu JDK=jdk21   # hiprtccheck built first (recipe in the 2026-11-06 entry)
+```
+
+| Run | `c83908a5f` | `8b9994f6a` (this platform, 2026-11-11) |
+|---|---|---|
+| `tornado-selftest` | 20 pass, 1 skip (device-launch); TC target "HIP gfx1201, warp 32, tensor cores F16+FP8"; `device/warp-sum`, `mma-f16` 32x32x64, `mma-fp8` 16x16x64 PASS | 20 / 1 |
+| `TestCopyDevicePointers` | 4/0/0 (testCopyDevicePointers, ...Matrix, ...MatrixDouble, ...LargeRegion) | 3/0/0 |
+| `tornado-test --verbose --quickPass` (CK SDK) | 2231 ran: 1458 pass, 771 unsupported, 2 failed (ComputeTests testMandelbrot, testJuliaSets, the whitelisted FMA-contraction pair); rc 0, 508 s | 2230: 1457 / 771 / 2 |
+| MMA classes (ran/failed/unsupported) | TestMatrixMultiplicationMMA 18/0/0, MMABF16 7/0/0, MMAInt8 12/0/0, MMAFP8 8/0/0, MMACpAsync 8/0/0, TestMMAGlobalFragmentLoad 6/0/0, TestMMAInt8FragmentElementRead 4/0/0, TestMMAFragmentHelper 2/0/0 (65/65) | 65/65 |
+| Library classes | TestCuBlas 27/0/0, TestCuBlasLt 10/0/0, TestCuDnn 20/0/0 (SDPA on CK gfx12), TestCutlass 26/0/0 (CK WMMA/DL), TestCuFft 9/0/0, TestCuRand 7/0/0, TestCusparse 17/0/0, TestNccl 30/0/10 (one GPU), TestNcclMultiProcess 5/0/2, TestCudf 24/0/24, TestCudfColumns 23/0/23, TestCuVS 7/0/7 (no hipDF/hipVS on RDNA), TestFP8 13/0/0, TestProfiler 9/0/0, TestProfilerTransferBytes 2/0/0 | identical |
+| Upstream classes added at the sync | TestArrayInit 11/0/0, TestConsumeFromUnifiedMemory 18/0/10, TestDeviceView 13/0/13 | identical |
+| KernelContext | TestUnsupportedKernelContextOps 10/0/3, TestDynamicParallelism 15/0/13 | identical |
+| `TestPrebuiltTaskOrdering` | 4/0/0 | -- |
+| `ArrayAddIntPrebuilt` | rc 0 with default flags and with `-XX:-UseCompressedOops`; the SDK ships `examples/generated/add.hip` and `add_uncompressed.hip`. The example checks no result, so this shows only that both kernel choices load and run | -- |
+| `HeapFail#test03` (1MB heap) | pass | pass |
+| `make test-nogpu JDK=jdk21` | BUILD SUCCESS, 34 test classes / 246 tests, 0 failures, 0 errors; lit ir 13, lower 7, opt 16, tornado 5, frontend 12, codegen 60 (hipRTC); HeaderlessRepresentationTest 3/3, HipMmaRoutingTest 1/1, TcCompilerTest 29/29 | same |
+
+Accounting: against `8b9994f6a` on this platform, +1 ran and +1 pass in quickPass, which is `testCopyDevicePointersMatrixDouble`. Nothing else differs.
+
+Negative control (the fix-round entry says the Double test was not run against the unfixed head): throwaway worktree at `8b9994f6a` with only `TestCopyDevicePointers.java` taken from `c83908a5f`, built with `TORNADO_CK_SOURCE_DIR=/tmp make jdk21 BACKEND=hip` (no CK). `testCopyDevicePointersMatrixDouble` **fails** there, `element 0 ==> expected: <480.5> but was: <0.5>`, and the other three pass. That is the 2-element shift the header fix removes, so the new test does detect the defect on real HIP hardware. The worktree was removed afterwards.
+
+Not observable here: the `bufferIdBase` release fix in `c83908a5f` has no test through the public API (as the porter noted). Every run above went through the changed `mapOnDeviceMemoryRegion` with no errors, and the full quickPass ran in one SDK with no leak symptom (no OOM, no `TornadoRuntimeException` from the new HIP status checks).
+
+Completion checks:
+- `python3 utils/jargon.py --port TornadoVM` (clone with local `develop` = `origin/develop`, now the upstream `986fbadfc` mirror, and `moat-fix-1327` = `origin/moat-fix-1327`): clean.
+- Documentation: unchanged by this delta. The `BACKEND=hip` build stays in `INSTALL_FROM_SOURCE.md`, `README.md` and `docs/source/developer-guidelines.rst`.
+- Integrity: `git -C projects/TornadoVM/src status --porcelain` shows only the untracked `tornado-compiler/utils/hiprtccheck/hiprtccheck`; HEAD `c83908a5f`; no tracked file is modified.
+- CUDA no-regression gate: not rerun. The delta touches no CUDA, PTX, native or CMake source. Its only files outside the HIP driver are `tornado-examples` and `tornado-unittests`, and those modules compile in every backend build, so this host compiled them at `c83908a5f`. The last real-nvcc pass is recorded at `8b9994f6a`.
+- Not covered here: multi-GPU NCCL/RCCL (one pinned GPU), cuDF/cuVS on RDNA (no hipDF/hipVS build exists for it).
