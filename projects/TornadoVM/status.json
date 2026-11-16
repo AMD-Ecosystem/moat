@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-11T20:14:47Z",
+  "updated_at": "2026-11-16T18:28:52Z",
   "head_sha": "8b9994f6a54dec9ca4de062eb8491a1dcea083ad",
   "depends_on": [],
   "waivers": {},
@@ -195,5 +195,11 @@
   "pr_number": 1327,
   "pr_opened_at": "2026-11-11T20:14:47Z",
   "pr_state": "open",
-  "published_sha": "8b9994f6a54dec9ca4de062eb8491a1dcea083ad"
+  "published_sha": "8b9994f6a54dec9ca4de062eb8491a1dcea083ad",
+  "fix": {
+    "branch": "moat-fix-1327",
+    "base_sha": "8b9994f6a54dec9ca4de062eb8491a1dcea083ad",
+    "review_pr": null,
+    "opened_at": "2026-11-16T18:28:52Z"
+  }
 }
