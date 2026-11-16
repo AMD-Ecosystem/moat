@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-16T19:58:46Z",
+  "updated_at": "2026-11-16T20:26:31Z",
   "head_sha": "c83908a5fda5757c309edea1ed00f89c9bbd252d",
   "depends_on": [],
   "waivers": {},
@@ -51,52 +51,6 @@
       "state": "completed",
       "last_agent": "validator"
     },
-    "linux-gfx1100": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": "2026-11-10T07:17:47Z",
-      "completed_at": null,
-      "updated_at": "2026-11-10T08:13:08Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
-    },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": "2026-11-05T00:35:44Z",
-      "completed_at": null,
-      "updated_at": "2026-11-10T03:30:56Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
-    },
     "linux-gfx1250": {
       "blocked": false,
       "blocked_reason": null,
@@ -121,14 +75,14 @@
       "state": "completed",
       "last_agent": "validator"
     },
-    "windows-gfx1151": {
+    "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "8b9994f6a54dec9ca4de062eb8491a1dcea083ad",
-      "failed_sha": "af27a9f4b69e3f80eb5012ede0fa80294c6addd2",
-      "started_at": "2026-11-10T01:43:44Z",
-      "completed_at": "2026-11-11T17:13:19Z",
-      "updated_at": "2026-11-16T19:31:20Z",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-05T00:35:44Z",
+      "completed_at": null,
+      "updated_at": "2026-11-10T03:30:56Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -142,7 +96,53 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
+      "last_agent": "reviewer"
+    },
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-10T07:17:47Z",
+      "completed_at": null,
+      "updated_at": "2026-11-10T08:13:08Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c83908a5fda5757c309edea1ed00f89c9bbd252d",
+      "failed_sha": "af27a9f4b69e3f80eb5012ede0fa80294c6addd2",
+      "started_at": "2026-11-10T01:43:44Z",
+      "completed_at": "2026-11-16T20:26:28Z",
+      "updated_at": "2026-11-16T20:26:28Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
       "state": "completed"
     },
     "linux-gfx950": {
@@ -201,6 +201,5 @@
     "base_sha": "8b9994f6a54dec9ca4de062eb8491a1dcea083ad",
     "review_pr": null,
     "opened_at": "2026-11-16T18:28:52Z"
-  },
-  "porting": null
+  }
 }

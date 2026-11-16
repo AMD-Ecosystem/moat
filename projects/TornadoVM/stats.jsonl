@@ -306,3 +306,5 @@
 {"kind":"phase","ts":"2026-11-16T19:56:47Z","phase":"test","seconds":73.953,"exit":0,"cmd":"bash agent_space/classes.sh"}
 {"kind":"phase","ts":"2026-11-16T19:57:15Z","phase":"test","seconds":8.465,"exit":0,"cmd":"make -C projects/TornadoVM/src test-nogpu JDK=jdk21"}
 {"kind":"session","ts":"2026-11-16T19:58:46Z","epoch":1794859126.390603279,"event":"end","platform":"linux-gfx1201"}
+{"kind":"session","ts":"2026-11-16T19:37:35Z","epoch":1794857856.231692800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-16T20:26:52Z","epoch":1794860814.890919900,"event":"end","platform":"windows-gfx1151"}

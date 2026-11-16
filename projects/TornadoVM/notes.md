@@ -1440,3 +1440,20 @@ Completion checks:
 - Integrity: `git -C projects/TornadoVM/src status --porcelain` shows only the untracked `tornado-compiler/utils/hiprtccheck/hiprtccheck`; HEAD `c83908a5f`; no tracked file is modified.
 - CUDA no-regression gate: not rerun. The delta touches no CUDA, PTX, native or CMake source. Its only files outside the HIP driver are `tornado-examples` and `tornado-unittests`, and those modules compile in every backend build, so this host compiled them at `c83908a5f`. The last real-nvcc pass is recorded at `8b9994f6a`.
 - Not covered here: multi-GPU NCCL/RCCL (one pinned GPU), cuDF/cuVS on RDNA (no hipDF/hipVS build exists for it).
+## Validation 2026-11-16 (windows-gfx1151) at c83908a5f (fix round moat-fix-1327)
+
+Verdict: **completed**. Radeon 8060S (gfx1151, wave32). SDK built at exactly `c83908a5fda5757c309edea1ed00f89c9bbd252d` (clone `C:\Users\jdaily\tvm-work\TornadoVM`, detached; `build.bat` log BUILD SUCCESS; only untracked hiprtccheck binaries, no modified tracked files). Env from `tvm-work/env.sh`, `ulimit -c 0`, one GPU process at a time, no loops.
+
+| Run | Result |
+|---|---|
+| `tornado.exe --devices` | HIPDriver 0:0 AMD Radeon(TM) 8060S Graphics |
+| `tornado.exe -m tornado.tc.selftest/...SelfTest` | 20 pass, 1 skip (device-launch), rc 0; mma-f16, mma-fp8 PASS (`tornado-selftest` wrapper fails from Git Bash only because of path mangling; the -m form is the recorded one) |
+| `TestCopyDevicePointers` | 4/4 (incl. testCopyDevicePointersMatrixDouble), also 4/4 inside the full run |
+| `TestPrebuiltTaskOrdering` | 4/4 |
+| `tornado-test --verbose --quickPass` | 2231 ran: 1434 pass, 795 unsupported, 2 failed (ComputeTests testMandelbrot, testJuliaSets: known whitelisted FMA-contraction pair), rc 0, 1948 s |
+| Libraries (ran/failed/unsupported) | TestCuBlas 27/0/0, CuBlasLt 10/0/1, CuFft 9/0/0, CuRand 7/0/0, Cusparse 17/0/0, CuDnn 20/0/0, Cutlass 26/0/0, Nccl 30/0/30, Cudf 24/0/24, CuVS 7/0/7, ArrayInit 11/0/0, ConsumeFromUnifiedMemory 18/0/10, DeviceView 13/0/13 |
+| MMA classes | MMA 18, BF16 7, Int8 12, FP8 8, CpAsync 8, GlobalFragmentLoad 6, Int8FragmentElementRead 4: all 0 failed |
+
+Versus this platform's `8b9994f6a` run (2230 ran / 1433 pass / 795 unsupported / 2 failed): +1 ran, +1 pass = the new `testCopyDevicePointersMatrixDouble`; unsupported and failed unchanged. Library counts identical.
+
+Completion checks: `jargon.py -C <clone> --commits 986fbadfc..c83908a5f` and `--diff 986fbadfc...c83908a5f` clean (pinned to the upstream tip; the clone's `develop` ref does not resolve the project's default range). ROCm build documentation unchanged by this round. CUDA gate not run here (no toolkit on this host); the round is Java-only (HIP driver, one example, one test), no CUDA/native surface.
