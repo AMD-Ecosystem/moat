@@ -1505,3 +1505,10 @@ Completion checks:
 - Documentation: the delta touches no build; `BACKEND=hip` remains documented in `README.md`, `INSTALL_FROM_SOURCE.md` and `docs/source/developer-guidelines.rst`.
 - Integrity: HEAD `c83908a5f`; `git -C projects/TornadoVM/src status --porcelain` shows only the untracked `tornado-compiler/utils/hiprtccheck/hiprtccheck`. Validation only: nothing pushed to the fork.
 - Not covered: multi-GPU NCCL/RCCL (one pinned GPU); the `HIPMemorySegmentWrapper` release fix has no direct test (porter's note), and the classes above exercise it only indirectly.
+
+### Upstream replies posted 2026-11-16 (approved by jeff, posted by jeff's handoff scripts)
+
+- jitllm question: https://github.com/beehive-lab/TornadoVM/pull/1327#issuecomment-6928038516 (jitllm's launcher maps only opencl/cuda/metal-backend; commits to trying jitllm on HIP after the PR lands).
+- hipDF question: https://github.com/beehive-lab/TornadoVM/pull/1327#issuecomment-6928079048 (counts from the earlier gfx950 validation).
+- CLA: jeff ruled no comment needed; the CLA-assistant check reports in CI.
+- Still owed: replies on the four Copilot threads (r4542882835, r4542882879, r4542882922, r4542882969), via the fix review PR's `## Upstream reply` after this round revalidates.
