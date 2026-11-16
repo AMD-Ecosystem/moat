@@ -4,6 +4,7 @@
 - Cover both wavefront widths and each OS the project supports: at least one wave64 (CDNA) GPU, one wave32 (RDNA) GPU, and Windows when the project builds there. Any GPU of the right family covers its width; each validates the same branch independently.
 - Validating on another architecture should not introduce a NEW commit for anything non-essential; if that arch needs no code change, leave the branch untouched. When a fix IS genuinely necessary (e.g. configurable arch), put it in a NEW commit on top -- NEVER amend a commit another arch has already validated: the amended commit is no longer the one that was tested, so every passed arch has to test again. A new commit is cheap by comparison, and one that changes only documentation, comments or formatting, or leaves the HIP code objects byte-identical, needs no new GPU run.
 - A CPU-only docker build (image `rocm/dev-ubuntu-24.04:7.2.4-complete`) proves the code compiles and links under ROCm. It cannot observe any fault-class bug, since no GPU runs, so it is never a validation gate. Do NOT wire it into CI that appears to gate the port: a workflow that proves nothing and emails failure noise at whoever watches the repository is pure cost. Run a CPU-only docker build locally if you want a manual compile check.
+- For a GUI, viewer or otherwise interactive port, a standalone synthetic kernel test is a SMOKE CHECK, never a validation. Launch the real binary, drive its default scene, and assert on the state the application itself computes (visible geometry, panel values, a per-frame NaN/extent count read back from the live buffers) -- a headless host cannot do this, so route such a project to a platform with a display rather than substituting a kernel test. Velvet was signed off on four platforms against a synthetic kernel program that never constructed the solver's parameter struct, never entered the solve loop and never opened the window; two defects that made the application useless (all simulation parameters zeroed, and a graphics-interop copy that silently transferred nothing) survived every one of those validations and were found the first time anyone ran the actual executable. If the project ships screenshots or a demo scene, reproducing one IS the test.
 - gfx90a and gfx942 are CDNA (wave64); the gfx11xx/gfx12xx parts are RDNA (wave32). A change that passes on one width can still fail on the other via the warp-size class, which is why each arch validates on its own hardware rather than inheriting a result.
 - PR-prep gate -- nvcc CUDA-build check: before opening any PR whose claim is "the CUDA/NVIDIA build is unchanged", compile the CUDA path (`USE_HIP=OFF`) with nvcc. No NVIDIA GPU is needed: a dedicated conda env works on a ROCm-only machine (`conda create -y -n cuda-12.8 -c nvidia cuda-toolkit=12.8` -- the full `cuda-toolkit`, not compiler-only `cuda-nvcc`, because the check must LINK; host gcc 13 works. ALWAYS pin the arch, e.g. `-DCMAKE_CUDA_ARCHITECTURES=80`: `native` autodetection on a host with no NVIDIA GPU silently degrades to an ancient arch, and `atomicAdd(double*)` "no instance of overloaded function" is that fingerprint, not a real failure). GPU validation on AMD cannot see a broken CUDA path -- writing "the CUDA path is preserved" in your notes is NOT the same as having compiled it. State it honestly in the PR ("compile-checked with nvcc, not run"). REQUIRED when the port adds a CUDA/HIP-split backend (e.g. `Foo_cuda.cpp` vs `Foo_hip.cpp`): that CUDA file is never compiled during HIP-only porting and can be badly broken. The check must reach the LINK stage (build one real target/demo, not compile-only of a single TU) -- the undefined-reference class (e.g. explicit instantiations that do not match real call-site signatures) only surfaces at link. If a fix leaves the HIP code objects byte-identical, it needs no new GPU run.
   - No conda on the host: the PyPI `nvidia-cuda-nvcc-cu12` 12.8 wheels ship only `ptxas`, `nvvm` and `crt` headers, no `nvcc` driver, so they cannot be the toolkit. Assemble a `CUDA_HOME` from NVIDIA's redistributable archives instead: `https://developer.download.nvidia.com/compute/cuda/redist/redistrib_12.8.1.json` lists each component (cuda_nvcc, cuda_cudart, cuda_cccl, libcublas, libcurand, libcufft, libcusolver, libcusparse, libnvjitlink, cuda_nvtx, cuda_cupti, plus libnvjpeg/libnpp if the build links them) with a sha256; extract them all with `--strip-components=1` into one directory and pass `-DCUDAToolkit_ROOT`. cuDNN and NCCL can come from their wheels after adding the unversioned `.so` symlinks CMake's `find_library` looks for. Old third-party pins may need a scratch-only fix under a new toolkit (oneflow's flash-attention needed `#include <cstdio>` with 12.8); patch the extracted copy, never the fork, and record it. (Source: oneflow, 2026-10-30.)
@@ -320,6 +321,14 @@ is lost. If a failing test's assertion is a timing ratio between a serial and a
 concurrent run, and every functional test passes, this is the cause and the port is not
 at fault. (FLAMEGPU2, where a 20-line repro was written.)
 
+## Windows: a hang can be one kernel that never finishes
+
+**A Windows "hang" that keeps the host blocked in `hipMemcpy` can be one kernel that never finishes.** Confirm it before you hunt a host-side loop: `AMD_LOG_LEVEL=3` shows the last `hipLaunchKernel` followed only by repeated `PAL fence isn't ready! result:3`. A symbol-carrying build that keeps Release codegen locates the call site (clang-cl: `-O2 -Ob2 -DNDEBUG -Z7` plus `-DEBUG` at link). If the hang depends on inlining (`/Ob2` hangs, `/Ob1` passes), check for the long-branch return-address bug below.
+
+## A hang that depends on inlining: long branches clobber the return address
+
+**A kernel that never finishes, or a device function that returns to the wrong place, only at the default inlining level can be llvm/llvm-project#224205.** In a large device function that is not a kernel (the callee of `s_swappc_b64 s[30:31]`, for example a library reduction body with a big functor inlined into it), AMDGPU long-branch relaxation can use `s[30:31]`, the return address, as its scratch pair. Confirm it in the asm: compile the file with its real compile line plus `--cuda-device-only -S` for the target, and in each non-kernel function count `s_getpc_b64 s[30:31]` ... `s_setpc_b64 s[30:31]` long-branch sequences with no save or restore of `s30`/`s31` anywhere in that function. Any count above zero is the defect pattern. It appears on RDNA (gfx11, gfx12) targets in Linux builds as well as Windows ones, and it does not always hang, so a passing run does not clear a build that shows the pattern. Workaround: limit inlining for that one translation unit, through `COMPILE_OPTIONS` on the source, `/Ob1` for clang-cl and `-finline-hint-functions` for clang or hipcc on Linux. The function stays out of line, small enough that no long branch is left; recount in the asm to confirm zero. (h2o4gpu: the `FuncEvalF` reduction in `h2o4gpuglm.cu`, float and double; the double-precision fit hung on gfx1151 on Windows, and gfx1100/gfx1201 Linux builds carry the same pattern without an observed hang.)
+
 ## Using a stream after `hipDeviceReset` corrupts the heap (Windows shows it)
 
 **A process that finishes its work and then dies at exit with `0xC0000374` (heap
@@ -470,6 +479,40 @@ not against a fix. Stopping at the first step is how one value-head error stayed
 recorded as a BLAS-library problem for two months before it turned out to be a
 null-stream upload race that was latent on CUDA too (lc0).
 
+## Getting a real hardware GL context on a headless RDNA host
+
+A headless Linux box with no display manager can still give a GUI/interop port a REAL,
+hardware-accelerated OpenGL context, if the GPU has a graphics pipeline (RDNA gfx11xx/gfx12xx;
+not CDNA gfx90a/gfx942, which the driver refuses outright -- see the smoke-check note above).
+Install `xserver-xorg-core` and `xserver-xorg-video-amdgpu`, then start `Xorg` on a spare
+display number against exactly one card. The naive config, a `Device` section with a legacy
+PCI `BusID`, fails with `(EE) No devices detected` even though the bus ID is correct: the
+amdgpu DDX is udev/platform-probed, not PCI-bus-probed, on a modern kernel, and a manual
+`BusID` fights the automatic `OutputClass` match rather than selecting it. Xorg then silently
+falls back to whatever other driver DOES probe successfully (on a server board this is
+frequently the BMC's own display chip, e.g. Aspeed AST, which is real hardware but has no 3D
+acceleration -- `glxinfo` then reports `swrast`/llvmpipe, not the discrete GPU, and looks like
+a headless-GL failure when it is actually a wrong-device failure). Drop `BusID` and target the
+render node directly instead: `Option "kmsdev" "/dev/dri/cardN"` in the `Device` section
+(find N via `cat /sys/class/drm/card*/device/uevent | grep -B5 amdgpu`, matching the PCI slot
+of the card you want), plus `Option "AutoAddGPU" "false"` so the other cards are not also
+attached. A correct start logs `AIGLX: Loaded and initialized radeonsi` and
+`GLX: Initialized DRI2 GL provider`; `DISPLAY=:N glxinfo -B` should then name the real card
+(`OpenGL renderer string: AMD Radeon ... (radeonsi, ...)`), not llvmpipe. No input devices, no
+monitor, and no physical display cable are needed for this to work.
+
+On a multi-GPU host, that Xorg `kmsdev` card and a `HIP_VISIBLE_DEVICES` index are
+independent numbering schemes with no guaranteed correspondence, and a GL-interop port needs
+both to name the *same physical GPU*. A mismatch fails the very first
+`cudaGraphicsGLRegisterBuffer`/`hipGraphicsGLRegisterBuffer` call with "invalid argument",
+which reads like a port defect (the kind of interop bug a HIP port would introduce) but is
+actually a host device-selection error external to the code. Decode `rocminfo`'s per-agent
+`BDFID` (`bus = (BDFID >> 8) & 0xff`, e.g. `BDFID=17152=0x4300` -> bus `0x43`) and compare it
+against the target card's PCI bus (`udevadm info --name=/dev/dri/cardN | grep DEVPATH`, the bus
+segment right before `/drm/cardN`) to find the `HIP_VISIBLE_DEVICES` index that matches the
+card Xorg is bound to, rather than assuming index 0 (or whatever index was used for a prior,
+single-purpose HIP-only check) is also the GL-backed one.
+
 ## Read what the project's own cross-backend checker actually compares
 
 A project that ships a "compare backend A against backend B" harness makes an attractive gate, but check which outputs it compares before trusting a pass, and check whether the test INPUT can reach the code you changed at all.
@@ -583,6 +626,22 @@ A port that pins a third-party dependency and carries fixes against it will want
 Check each entry against the dependency's default branch, not the patch as a whole, and record the commit you checked against with the date. Read-only GitHub API fetches of the patched paths plus a grep for the fixed expression is a few minutes for a dozen files, and it partitions the patch into backports (keep the hunk, it is needed at the pinned tag, but say why it is there) and genuine defects (keep the hunk AND report it). Then scope every upstream-visible sentence to the partition it is true of, and prefer sending the reader to the patch header over restating part of it in a README, so there is one place to keep correct. `diff-surfel-tracing` shipped "none of them is fixed at HEAD" over eleven entries; three of them were already on HIP RT's main branch, and it took three review rounds to stop restating the count wrongly. (diff-surfel-tracing)
 
 - **A cascading wall of SegFault/OOM/"no kernel image available" partway through a long serial suite can be one poisoned physical card, not a port defect -- check `rocm-smi --showpids` against `--showmeminfo vram` before concluding anything.** arrayfire on an 8x MI300X host: a full `ctest` run started clean, crashed (SegFault) on an early binary, and every binary after it degraded -- more SegFaults, a "no kernel image is available for execution on the device" (hipErrorNoBinaryForGpu) on a JIT op, then explicit "Device out of memory". `rocm-smi --showmeminfo vram` showed that GPU pinned near its full capacity; `rocm-smi --showpids` showed *no process attached to it at all*, including after `kill -9` of every test binary -- the VRAM was orphaned at the KFD/driver level, not held by a live allocator, and a process crash should not leak GPU memory past its own exit. Re-running the identical suite (fresh JIT disk cache) on a different, verified-idle card on the same host, same build, same commit, came back 131/132 clean with no crash, no OOM, and no "no kernel image" anywhere. The disagreement between the two `rocm-smi` views is the tell: if `--showmeminfo` says a card is nearly full but `--showpids` shows nothing on it, that card's state cannot be trusted for this session -- switch cards to disambiguate before spending time on the port. (arrayfire)
+
+## A change in which files compile as the GPU language is a rebuild-everywhere change
+
+A `LANGUAGE HIP`/`LANGUAGE CUDA` blanket on host sources is a code smell to look for in
+review: besides leaking device-only macros into host logic, the GPU compiler's runtime
+headers can silently satisfy a standard-library include the file never asked for. Narrowing
+the blanket to the real device files is the right fix and looks mechanical, but it exposes
+whatever the blanket was compensating for (see "Never mark the host `.cpp` files
+`LANGUAGE HIP`" in `strategy-a-cmake.md`). When a delta changes which files compile as the
+GPU language, rebuild on every supported OS and with every host compiler, and treat a new
+missing-symbol or missing-include error in a file that changed compilation mode as a real
+regression to fix, not a toolchain quirk. A CUDA-path compile of the same file may already
+have recorded the identical error as pre-existing; the two findings do not contradict. One
+path was always broken and stayed broken; the other was accidentally working and stopped.
+(Velvet: `Timer.hpp` used `std::vector` with no `#include <vector>`, on gcc's and clang's
+libstdc++ alike.)
 
 ## A torch build used only as a test oracle can break a build two different ways as it drifts
 
