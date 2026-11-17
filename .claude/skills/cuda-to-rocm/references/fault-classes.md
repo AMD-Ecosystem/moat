@@ -1784,6 +1784,91 @@ than skipping them on "it is Windows-gated" reasoning. Rebuilding is how both re
 above were caught; a reasoning-only skip would have shipped a broken build. (aihwkit,
 MMseqs2)
 
+## PTX carry-chain arithmetic (multi-word integers)
+
+Big-integer and modular-reduction code reaches for PTX because CUDA exposes the carry flag
+and C++ does not: `add.cc.u64` / `addc.cc.u64` / `subc.u64` chains, and `mul.lo.u64` +
+`mul.hi.u64` pairs. None of it survives hipify, so it is hand-translated, and the
+translation is easy to get subtly wrong in a way that compiles, runs, and silently corrupts
+results. Guard the original with `#ifdef __HIP_PLATFORM_AMD__` and leave the NVIDIA path
+byte-identical rather than replacing it for both.
+
+The two replacements, with the predicates spelled out, since these are what get fumbled:
+
+    // mul.lo/mul.hi -> 128-bit product
+    lo = a * b;
+    hi = __umul64hi(a, b);
+
+    // add.cc/addc chain -> carry out of a + b + carry_in
+    sum   = a + b + carry;
+    carry = (sum < a || (carry && sum == a)) ? 1 : 0;
+
+    // sub.cc/subc chain -> borrow out of a - b - borrow_in
+    diff   = a - b - borrow;
+    borrow = (a < b || (a == b && borrow)) ? 1 : 0;
+
+The add predicate needs both clauses. With `carry_in = 1` and `b == 2^64 - 1` the sum equals
+`a` exactly and a carry is nevertheless produced; testing only `sum < a` drops it. The
+symmetric case is why the borrow predicate tests `a == b && borrow` and reads the ORIGINAL
+`a` and `b`, not the computed difference.
+
+**Establish the limb order from the asm operand numbering before writing anything.** Outputs
+are numbered before inputs, so in
+
+    : "=l"(v.y), "=l"(v.x)        // %0 = v.y, %1 = v.x
+    : "l"(a), "l"(b)              // %2 = a,   %3 = b
+    mul.lo.u64 %1, %2, %3;        // -> v.x is the LOW limb
+
+a struct whose members are named `x` and `y` can carry low in either one, and the surrounding
+C++ shift operators are the cross-check. Getting this backwards produces plausible-looking
+garbage. (HEonGPU)
+
+## Shift counts of 0 or >= 64 in hand-rolled 128-bit arithmetic
+
+The same hand-rolled `uint128_t` (a pair of 64-bit limbs) that carries the PTX above almost
+always implements `operator<<` / `operator>>` as three unguarded limb shifts:
+
+    result.lo = value.lo >> shift;
+    result.lo = (value.hi << (64 - shift)) | result.lo;   // shift == 0 -> hi << 64
+    result.hi = value.hi >> shift;                        // shift >= 64 -> UB
+
+Shifting a 64-bit value by 64 or more, or by `64 - 0`, is undefined in C++ and **the two back
+ends resolve it differently**: PTX `shr.u64` / `shl.u64` clamp the count to the register
+width and so yield 0 for any count >= 64, while AMDGPU's `v_lshrrev_b64` uses only the LOW 6
+BITS of the count, so a shift of 64 acts as a shift of 0 and of 65 as a shift of 1. AMD
+returns the wrong limb OR-ed into the right one at every count >= 64. This is the 64-bit
+sibling of the 32-bit mask fault under "Wavefront and warp semantics" (a shift count that
+wraps at 32 because the mask was built in `int`).
+
+This is data-dependent, not arch-dependent, so it hides until the shift count crosses 64.
+Barrett reduction shifts by `modulus.bit + 3`, which reaches 64 at a 61-bit modulus: on
+HEonGPU every modular multiplication was correct up to 60 bits and garbage at 61 and 62, so
+CKKS (37-bit moduli) passed while BFV, whose decryption uses a 61-bit correction modulus,
+decrypted to noise. **Sweep the modulus/exponent width, not just the input values, when
+validating modular arithmetic** -- a probe that only tests the widths a passing scheme uses
+proves nothing about the one that fails.
+
+Fix by branching on `shift == 0`, `shift < 64` and `shift < 128` explicitly. No `#ifdef` is
+needed, but **do not tell the maintainer his CUDA numbers are unchanged**: the equivalence
+with PTX holds only for counts 0 through 64. At exactly 64 the clamp happens to give the
+right answer -- `lo >> 64` is 0, `hi << (64 - 64)` is `hi`, so the low limb already comes out
+as `hi` and the high limb as 0, which is what the explicit branch computes. From 65 up it
+does not: `64 - shift` underflows, PTX clamps every term and returns zero for the whole
+value, while the correct result (and what the explicit branch computes) is
+`hi >> (shift - 64)` in the low limb. So the guard is a CUDA-side fix too, at any count
+above 64 -- on HEonGPU that is a 62-bit modulus, which the class documents as supported.
+Check the reachable count range against the type's documented limits before writing
+"behaviour-preserving" in a commit message, and tell the maintainer about the CUDA-visible
+change. Audit `ROTL64`-style rotate macros in the same file for the `n == 0` case.
+(HEonGPU: GPU-NTT `modular_arith.cuh`.)
+
+Before carrying such a fix, and again at every upstream sync, check whether upstream has
+fixed the defect itself. A fix written in inline PTX does not reach the HIP build: give the
+HIP branch a helper with exactly the result of upstream's PTX for every shift count the
+callers can produce, and drop your own fix rather than keeping a second, different one.
+(HEonGPU: upstream GPU-NTT later fixed the 61-bit case with PTX shift helpers, and the port
+replaced its explicit branches with HIP helpers that return zero for counts of 64 or more.)
+
 ## Vulkan interop and image codecs
 
 **External memory ports 1:1; external semaphores do not.** `hipImportExternalMemory` with
