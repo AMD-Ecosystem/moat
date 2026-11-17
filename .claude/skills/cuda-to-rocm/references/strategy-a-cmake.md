@@ -337,6 +337,79 @@ AMD-specific -- say so in the commit message.
   `#ifdef __HIP_DEVICE_COMPILE__` -- an unguarded one in a `__global__` body is also evaluated
   in the host pass, where the answer is legitimately different. (LC-framework)
 
+## Install and consume the port, not just build it
+
+A project that ships `install()` rules and a `<Name>Config.cmake` has a second interface the
+in-tree tests never touch, and it is routinely left CUDA-only by a port that otherwise works:
+the exported config `find_dependency(CUDAToolkit)` unconditionally, the exported link
+interface names a HIP imported target with no `find_package` that defines it, a replacement
+for a CUDA-only dependency installs its export set without a config file to find it by, and
+the shim headers that resolve `cuda_runtime.h` / `curand_kernel.h` in the INSTALLED headers
+are neither installed nor on the interface include path. Every one of these is invisible
+until someone consumes the installation, so **install to a scratch prefix and build a
+five-line consumer project against it as part of the port**. `configure_file(... @ONLY)`
+makes the config-template fix a one-liner with no CMakeLists change:
+
+    if("@USE_HIP@")
+        find_dependency(hip REQUIRED)
+    else()
+        find_dependency(CUDAToolkit REQUIRED)
+    endif()
+
+Quote the substitution: when the option is not defined (the subproject built standalone) it
+expands to nothing, and a bare `if()` is a CMake error while `if("")` is false. Note also
+that `cmake --install --prefix` does NOT override a prefix a project baked into its install
+rules at configure time; reconfigure with `-DCMAKE_INSTALL_PREFIX` instead of concluding the
+install is broken. Write the downstream snippet into the docs only after the consumer
+actually configures, builds and runs. (HEonGPU)
+
+## Every optional target the project can build, not just the one you build
+
+`BUILD_TESTS` is on while you work, so the test targets get the full treatment -- source
+compiled as HIP, the `USE_HIP` definition, the shim include directory -- and `BUILD_EXAMPLES`
+and `BUILD_BENCHMARKS`, which default OFF, quietly do not. A half-converted branch of that
+kind is worse than no branch at all, because it reads as tested: on HEonGPU the example
+targets linked the HIP runtime but were still compiled as plain C++, so the first project
+header pulled in `cuda_runtime.h` and then rocThrust, and the benchmark targets still linked
+`CUDA::cudart` unconditionally and failed at configure time. **Turn every option the project
+documents ON once and build it**, then run one binary from each group; that is minutes, and
+it is the only way the claim in your commit message is true.
+
+## Submodules pinned to commits that do not exist
+
+**A port that edits a git submodule in place is lost the moment the clone is deleted, and
+the branch it leaves behind cannot even be cloned.** If the submodule's working tree is
+edited and the resulting gitlink is committed in the parent without the submodule commit
+being pushed anywhere, the gitlink names a SHA that exists in no repository. (HEonGPU pins
+GPU-NTT, GPU-FFT and RNGonGPU as submodules and lost its submodule port this way.)
+
+Check for it early: `git ls-tree HEAD <submodule-path>` in the port branch, then
+`git submodule update --init`. If the update cannot find the commit, the branch is
+unbuildable and no amount of local success proves otherwise.
+
+Forking every submodule is often not an option (a chain of forks has to be re-pointed in
+`.gitmodules` and kept in sync). The durable shape that needs no new repositories is to
+**reset the gitlinks to the real upstream commits and carry the submodule changes as patch
+files in the parent repo**, applied by whatever script the project already runs at configure
+time:
+
+    git submodule update --init --recursive
+    if [ "${1:-OFF}" = "ON" ]; then                       # only for AMD builds
+        for name in ...; do
+            patch="$here/patches/$name.patch"
+            git -C "$here/$name" apply --reverse --check "$patch" 2>/dev/null && continue
+            git -C "$here/$name" apply "$patch"
+        done
+    fi
+
+The reverse-check is what makes repeated configures idempotent. Pass the AMD flag in from
+CMake so an NVIDIA build sees the submodules untouched. Add `ignore = dirty` to each entry
+in `.gitmodules`: applying the patches permanently dirties those working trees, and without
+this every later `git status` reads as an unclean tree and fails any check for a clean tree,
+while a genuine gitlink bump still shows. This also states the honest upstream position --
+these changes belong in the submodules' own repositories, and the patch files are exactly
+the diffs to send there. (HEonGPU)
+
 ## Windows: CMake's HIP link rule mangles MSVC-style flags and paths
 
 On Windows, CMake's HIP link path routes through `hipcc.exe`, which invokes `clang.exe
@@ -365,3 +438,61 @@ hands the same path to `clang-offload-bundler` as both input and output and Wind
 rewrite a memory-mapped file (ROCm/TheRock#5615). A project can need the compile-rule fix, the
 link wrapper, or both -- they are independent. (alien, origin of the wrapper; LichtFeld-Studio,
 which needs the link half.)
+
+## Windows: a fetched ROCm-DS dependency has to be built static
+
+Measured on the hipMM 4.0 line. hipMM 5.0.0 does not yet compile on Windows at all
+(https://github.com/AMD-Ecosystem/hipMM/issues/11), so the hipMM-specific parts below apply
+again once it does; the `LINKER:` and `BUILD_SHARED_LIBS` points hold for any fetched
+dependency.
+
+ROCm-DS libraries -- hipMM (the RMM port) and the rapids_logger it fetches transitively --
+are built shared by default and neither one works that way under an MSVC-style toolchain.
+Two independent defects, both found porting HEonGPU, both in the dependency rather than in
+the port:
+
+- **They export nothing.** `rmm/detail/export.hpp` defines `RMM_EXPORT` as
+  `__attribute__((visibility("default")))` under `__GNUC__` and as nothing otherwise (its
+  comment says only glibc is supported); rapids_logger's macro is unconditionally the ELF
+  attribute with no `#else`. The DLLs themselves build and link, so the failure surfaces
+  far downstream at the **first executable link**, as `undefined symbol:
+  rmm::cuda_stream_view::...` / `rapids_logger::logger::log(...)`. Identify the fault class
+  with one command instead of chasing mangling or link order: `llvm-readobj --coff-exports
+  rmm.dll` (or `dumpbin /exports`) lists nothing at all for a library whose sources clearly
+  define those symbols, and returns 409 entries for the same DLL once
+  `WINDOWS_EXPORT_ALL_SYMBOLS` is on. If a shared build is genuinely required, the fix
+  is `set_target_properties(<tgt> PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)` on each of
+  them (measured to link cleanly), but see below for why static is better.
+- **A GNU-only linker option reaches an MSVC-style driver.** rapids_logger applies
+  `target_link_options(rapids_logger PRIVATE "LINKER:--exclude-libs,libspdlog")` whenever
+  `RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS` is ON, which is its default under
+  `BUILD_SHARED_LIBS`. CMake's `LINKER:` prefix translates only the *spelling* of the
+  driver's flag-passing convention, never the flag itself, so `--exclude-libs libspdlog`
+  arrives verbatim; lld-link warns that it does not know `--exclude-libs` and then treats
+  the bare word `libspdlog` as an input file name and fails. Generalize this: any GNU/ELF
+  linker idiom behind `LINKER:` (`--exclude-libs`, `--version-script`, `-Bsymbolic`,
+  `--as-needed`) passes through untranslated and is a Windows build break waiting to
+  happen.
+
+Setting `BUILD_SHARED_LIBS` OFF for the directory scope that fetches them disposes of
+both at once -- the export macros stop mattering, and rapids_logger's
+`cmake_dependent_option` forces its symbol hiding off for a static build -- and it also
+avoids a third problem, that Windows has no RPATH: with shared dependencies every
+executable needs `rmm.dll`, `rapids_logger.dll`, `spdlog.dll` and `fmt.dll` copied next to
+it before it will even start, which breaks `gtest_discover_tests` during the build itself
+(exit `0xc0000135` right after a successful link).
+
+Set it as a **normal variable in that directory scope**, not a cache entry. RMM declares
+`option(BUILD_SHARED_LIBS "Build RMM shared libraries" ON)` in its own CMakeLists, and an
+`option()` writes the cache, so fetching RMM silently flips every *later* fetch in the
+project to shared as well -- that is how a project's googletest turns into `gtest.dll`
+halfway through a port. Under CMP0077 NEW (any dependency requiring CMake 3.13+) an
+`option()` defers to an existing normal variable and creates no cache entry at all, so the
+scope-local `set(BUILD_SHARED_LIBS OFF)` keeps both the dependency and everything fetched
+after it on the default static path. Do not "harden" it into
+`set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)`: an `OFF` cache entry builds static too,
+so it is not what reintroduces the bug, but it overrides a `-DBUILD_SHARED_LIBS` the user
+set for their own build and persists in the build tree across reconfigures, including a
+later one that no longer takes this branch. Guard the whole thing on `MSVC` (true for clang-cl,
+and the correct predicate for "MSVC-style link driver") so Linux and the CUDA path are
+untouched. (HEonGPU)

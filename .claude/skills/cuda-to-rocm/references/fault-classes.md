@@ -1350,7 +1350,16 @@ __kmpc_fork_call`: clang emits libomp calls, the link brought libgomp).
 3.31. What worked: `target_compile_options(t PRIVATE $<$<COMPILE_LANGUAGE:HIP>:-fopenmp>)`,
 `target_link_options(t PRIVATE -fopenmp)`, and no `OpenMP::OpenMP_CXX` on the HIP target;
 clang links its own libomp and adds a runpath to it. Check with `grep -c fopenmp
-compile_commands.json` and `ldd` on the library. (LEAP version two.)
+compile_commands.json` and `ldd` on the library. (LEAP version two.) Keeping
+`OpenMP::OpenMP_CXX` as well gives the binary both runtimes (`readelf -d` shows
+`libgomp.so.1` and `libomp.so`), and it can look fine: ROCm ships `lib/llvm/lib/libgomp.so.1`
+as a symlink to its own `libomp.so`, so both names resolve to one runtime until a distro
+library path puts GNU's libgomp first. Then clang's `__kmpc_*` calls still fork a real team
+from libomp, but `omp_get_thread_num` answers from libgomp and reports 0 on every thread
+(measured: four distinct OS thread ids, `0 0 0 0`), so code that picks a per-thread resource
+by thread id has every thread pick element 0 while still printing correct results. Also drop
+any `LINKER_LANGUAGE CXX` left on the target: `$<LINK_LANGUAGE:HIP>` is false under a CXX
+link, so a HIP-conditioned OpenMP link flag silently never applies. (HEonGPU)
 
 **An all-clang Windows HIP build hides three CMake/export faults that MSVC builds never
 hit.** (1) `WIN32`-guarded export macros (`#ifdef WIN32` + `#ifdef PROJECTOR_EXPORTS` ->
