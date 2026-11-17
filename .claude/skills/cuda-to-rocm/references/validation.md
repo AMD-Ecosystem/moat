@@ -14,6 +14,9 @@
   - The class this catches that a HIP-only build cannot: an unconditional device-header include reaching host translation units. Used on 8 projects in one six-week window; it caught a template-shadow regression in Velvet and an stdgpu regression of exactly that include class. (stdgpu, SCAMP, cuSZ, mahout, lc0, cuPDLPx, TIGRE, Velvet)
   - A torch `CUDAExtension` cannot get this gate from the toolkit alone, so install a CUDA-built torch wheel in a throwaway venv first (the torch-extension bullet below). Where no such wheel can be installed, the check falls back to the host's torch: `torch/extension.h` pulls in the host's installed PyTorch, and on a machine whose only torch is a ROCm build with no CUDA-flavored counterpart, the check dies in the ambient install's headers before it can judge the port. See "CUDA gate for torch-extension ports" below for the fingerprints, the diagnosis, and how to record it. (FaithC, accelerated-scan)
   - A CUDA-path configure failure at `find_package(CUDA <ver> REQUIRED)` ("did not find CUDAConfig.cmake / cuda-config.cmake") on a project whose `cmake_minimum_required` floor is >= 3.27 is a CMake/toolchain incompatibility, not a port regression, if the project still calls the legacy `FindCUDA` module (as opposed to pure `enable_language(CUDA)` + `FindCUDAToolkit`, which is unaffected). CMake 3.27 added policy CMP0146 ("the FindCUDA module is removed"); once the project's minimum-required version reaches or exceeds a policy's introduction version, that policy defaults to NEW and the module self-disables (its file is found on disk but returns immediately) -- confirm with `--debug-find-pkg=CUDA`, which shows "The file was found at .../FindCUDA.cmake" right above the "did not find" error. `-DCMAKE_POLICY_DEFAULT_CMP0146=OLD` does NOT recover it once minimum-required is at/above the policy version (verified with a two-line reproducer CMakeLists.txt); only an in-project `cmake_policy(SET CMP0146 OLD)` before the `find_package(CUDA...)` call works, which would be an edit to code the port does not own. Confirm pre-existing by building the identical upstream base sha with the identical cmake/nvcc/gcc versions: if it fails identically, record the CUDA check as not validated, with the CMP0146 explanation, rather than as a port regression. (arbor)
+  - Also REQUIRED when the port moves `__device__` function BODIES into a header (a workaround reached for when HIP's `-fgpu-rdc` is not known), because a host TU that reaches that header then has to parse device code. HEonGPU shipped that break past two review rounds and a full 20/20 GPU validation; the nvcc check found it in one run, together with a cuRAND include the compat header put in front of the CUDA runtime headers for one of the library's four host TUs. See "Headers, includes and build" in references/fault-classes.md for both. (HEonGPU)
+  - A dependency that FetchContent-clones with full history can eat the whole budget (HEonGPU: RMM pulls NVIDIA/cccl). Do not conclude the check is unaffordable: read the pinned sha out of the dependency's own version file (rapids-cmake keeps it in `rapids-cmake/cpm/versions.json`), `git fetch --depth 1` that one commit, and point the build at the checkout. For a rapids-cmake project set BOTH `-DCPM_<Name>_SOURCE=` and `-DFETCHCONTENT_SOURCE_DIR_<NAME>=`, since CPM reads the first and plain FetchContent the second -- and mind that the two spell the name DIFFERENTLY. CPM looks up `CPM_${CPM_ARGS_NAME}_SOURCE` (`CPM_0.40.0.cmake:686`), i.e. the package name exactly as `CPMAddPackage` received it and case-sensitive, while CMake upper-cases the name for `FETCHCONTENT_SOURCE_DIR_<NAME>`. So on a lower-case package (`spdlog`, `fmt`) `-DCPM_SPDLOG_SOURCE=` is silently ignored and the full clone happens anyway -- the exact wall the recipe exists to avoid. Read the real spelling out of the dependency's own declaration: for rapids-cmake that is the key in `rapids-cmake/cpm/versions.json` (the same file the pinned sha comes from), otherwise the first argument of the project's `CPMAddPackage` call. It happened to be moot for HEonGPU only because rapids-cmake names the package `CCCL`. Same commit as the pin, so no version drift, and the check becomes a repeatable script. (HEonGPU)
+  - A rapids-cmake `rapids_hip_init_architectures` HIP-dependency (e.g. hipMM/RMM) can fail configure on a multi-GPU host with `mismatch between CMAKE_HIP_ARCHITECTURES and GPU_TARGETS` even though only one arch was requested: ROCm's `hip-config.cmake` auto-populates the `GPU_TARGETS` cache variable by enumerating every visible device rather than the set of distinct architectures, so four cards of the same gfx report `GPU_TARGETS='gfx1100;gfx1100;gfx1100;gfx1100'` against a single-valued `CMAKE_HIP_ARCHITECTURES='gfx1100'`, and the rapids-cmake string-equality check (not a set comparison) trips. This is a host-population artifact, not a port defect -- confirm by rerunning the identical configure with `HIP_VISIBLE_DEVICES=0` (or on a single-GPU host) and observing it pass. Work around it at the configure invocation, no source edit needed: pass `-DGPU_TARGETS=<arch> -DAMDGPU_TARGETS=<arch>` alongside `-DCMAKE_HIP_ARCHITECTURES=<arch>` so all three agree before rapids-cmake's check ever runs. This applies to the HIP build as much as to the CUDA check. (HEonGPU, gfx1100 4-GPU host)
   - For a torch-extension port (Strategy B), plain nvcc is not enough: the project's `setup.py` picks CUDA vs HIP by reading the installed torch (`hasattr(torch.version, 'hip') and torch.version.hip is not None`, or similar), so the CUDA leg needs a CUDA-*built* torch, not just the toolkit. This is still doable on a host with no NVIDIA GPU, and still compile/link-only: `pip install --index-url https://download.pytorch.org/whl/cu121 torch==<pinned>` into a throwaway venv (pick an older CUDA minor, e.g. cu121, so a prebuilt cp312 wheel exists; the wheel bundles its own `nvidia-*-cu12` shared libs, so no system CUDA runtime is needed for compile/link), point `CUDA_HOME` at the dedicated nvcc conda env, and pin `TORCH_CUDA_ARCH_LIST=8.0` (the `torch.utils.cpp_extension` analogue of `-DCMAKE_CUDA_ARCHITECTURES=80` -- unset, it calls `torch.cuda.get_device_capability()` via autodetection and fails or silently degrades on a host with no NVIDIA GPU). Build a scratch copy of the extension source (`git archive HEAD | tar -x`) rather than the project's own working tree, so the CUDA build's `build/` and `.o` files never land as untracked-and-possibly-unignored noise next to the ROCm ones. Confirm the pin took with `cuobjdump --list-elf` on the built `.so` (expect `sm_80` cubins, one per translation unit) the same way `llvm-objdump --offloading` confirms the HIP gfx target. (faster-gaussian-splatting)
 - Cross-OS HIP host-pass check from Windows: a Windows host can syntax-check the Linux HIP host pass of a `.cu` without a Linux box. No root is needed: in WSL, `apt-get download libstdc++-14-dev libgcc-14-dev libc6-dev linux-libc-dev libc6 libcrypt-dev` then `dpkg-deb -x` each into a directory and copy `usr/include` and `usr/lib/gcc` out (`tar -ch` to resolve symlinks). Then run the HIP clang with the TU's own `-D/-I/-include` flags plus `--target=x86_64-unknown-linux-gnu --sysroot=<dir> --gcc-install-dir=<dir>/usr/lib/gcc/x86_64-linux-gnu/14 -nogpulib -x hip --cuda-host-only -fsyntax-only`; `-E -dM` should show `__linux__`, `__GLIBCXX__` and no `_MSC_VER`. Use the same ROCm toolchain as the Linux validators, both the clang major and the HIP headers: in the LichtFeld-Studio `std::pow(__half, __half)` case, clang 23 with the ROCm 7.14 headers accepted the call that clang 24 with the 10.x headers (the Linux build's toolchain) rejected as ambiguous. `__half`'s conversion operators live in ROCm's `amd_hip_fp16.h`, and that run did not separate the compiler from the headers, so a check on an older toolchain proves nothing. Reproduce the Linux error first (negative control) before trusting a clean result. It is syntax evidence only; the Linux validator's real build stays the gate. (LichtFeld-Studio)
 
@@ -99,6 +102,55 @@ code. Cross-check the layout after any repair, since it moves between SDK
 versions -- `hipcc`, the device bitcode and `libexec/hipify` sat under
 `_rocm_sdk_core` on 7.13 and under `_rocm_sdk_devel` on 7.14.
 
+**Why the tree is half-expanded, and why it does not heal.** `rocm-sdk-devel` is
+distributed as a `_devel.tar` that expands on first use, and most of its entries are
+relative **symlinks** into the sibling runtime packages. Creating those needs
+`SeCreateSymbolicLinkPrivilege` -- Developer Mode on, or an elevated shell. Without it the
+expansion still "succeeds": the verbatim/hardlinkable files land under `bin/`, and `cmake/`,
+`include/`, `lib/`, `libexec/`, `share/` are left **empty**. That is what an empty
+`lib/cmake/hip/` actually means, so "TheRock ships no `hip`/`hiprand`/`rocthrust` CMake
+packages on Windows" is the wrong conclusion. TheRock's own
+`docs/development/windows_support.md` states the requirement. The expander deletes the
+tarball as its **last** step, and `get_devel_root()` then short-circuits on "`__init__.py`
+exists and no tarball", so **re-running `rocm-sdk init` does nothing** -- it believes it
+finished.
+
+Diagnose with the SDK's own check, not by eyeballing directories:
+
+```
+python -m rocm_sdk test          # healthy: "OK"; a half-expanded tree gave 1 failure + 12 errors
+```
+
+Put the venv's `Scripts/` on PATH first, or `testCLIUsesDevelRootPath` errors spuriously
+(it shells out to a bare `hipconfig`).
+
+Repair, from an **elevated** shell -- all four packages pinned to one version, because the
+devel tree symlinks into its siblings and cannot be mixed:
+
+```
+python -m pip uninstall -y rocm rocm-sdk-core rocm-sdk-devel rocm-sdk-libraries-<gfx>
+# then DELETE the leftover _rocm_sdk_* trees by hand: pip removes only files listed in
+# each RECORD, and an expanded devel tree is not in any RECORD
+python -m pip install --index-url https://rocm.nightlies.amd.com/v2/<gfx>/ \
+    "rocm==$V" "rocm-sdk-core==$V" "rocm-sdk-devel==$V" "rocm-sdk-libraries-<gfx>==$V"
+python -m rocm_sdk init && python -m rocm_sdk test
+```
+
+A healthy tree then has `lib/cmake/{hip,hip-lang,hiprand,rocprim,rocthrust}/*-config.cmake`,
+rocThrust's headers under `include/thrust/`, and `bin/hipcc.exe`. Point the build at
+`python -m rocm_sdk path --root`. The per-arch index (`/v2/<gfx>/`) carries release families
+the general multi-arch index has already moved past, and the reverse also holds: check both
+before concluding which ROCm version is the newest available for Windows.
+
+**Never hand-author CMake configs into the SDK tree.** A `hip-lang-config.cmake` stub
+written directly into `site-packages/_rocm_sdk_core/lib/cmake/` was found two months later,
+looked like a plausible dated file, and was taken for a shipped one. Fabricated files in a
+package directory are indistinguishable from shipped ones -- `pip uninstall` leaves them
+behind, since they are in no RECORD, so they even survive a reinstall. If a shim is
+genuinely unavoidable, put it in scratch space and pass `-D<name>_DIR=`; check any suspect
+file against the owning package's RECORD (`cut -d, -f1 <dist-info>/RECORD | grep lib/cmake`)
+before believing it. (HEonGPU)
+
 ## Windows: keep one clang driver across every CMake language, and check the CMake version
 
 With CMake's `HIP` language on Windows, all three of `CMAKE_C_COMPILER`,
@@ -137,6 +189,121 @@ Note the split with PyTorch extension ports, where `clang-cl` IS the required ho
 compiler (see strategy-b-torch.md): torch drives the compile itself and never goes
 through CMake's `HIP` language.
 
+## Windows: CRT flags, compiler-rt builtins and Git Bash flag mangling in a CMake HIP build
+
+**`MSVC_RUNTIME_LIBRARY` is not known for the HIP language, and disabling it removes the
+CRT flag from every language.** Seen with CMake 3.31 and clang-cl; the HEonGPU Windows
+builds on CMake 4.4.4 still passed the same flags, and whether 4.x still needs them was not
+checked. The `MSVC_RUNTIME_LIBRARY` target property has no entry for `HIP`
+(`Help/prop_tgt/MSVC_RUNTIME_LIBRARY.rst` documents C, CXX, CUDA, OBJC, OBJCXX, Fortran
+only): `CMake Error ... MSVC_RUNTIME_LIBRARY value 'MultiThreadedDLL' not known for this
+HIP compiler` at generate time, on the first HIP target CMake evaluates. It is not a CMP0091
+policy issue (OLD and NEW fail identically). `-DCMAKE_MSVC_RUNTIME_LIBRARY=""` (empty, not
+merely unset) disables the property mechanism -- but for **every** language, and nothing
+then supplies a CRT flag at all: no `/MD`, no `-D_DLL`, in `CMAKE_C_FLAGS`,
+`CMAKE_CXX_FLAGS` or `CMAKE_HIP_FLAGS` (read `CMAKE_CXX_FLAGS_RELEASE` out of
+`CMakeCache.txt` and confirm). clang-cl's no-flag default is the STATIC CRT, so every object
+you build gets `MT_StaticRelease` while conda-forge/vcpkg dependencies are
+`MD_DynamicRelease`, and lld-link then refuses the link with `/failifmismatch: mismatch
+detected for 'RuntimeLibrary'` naming one of your objects and one of theirs. Pass the CRT
+flag yourself to all three languages: `-DCMAKE_HIP_FLAGS="/MD ..."`,
+`-DCMAKE_CXX_FLAGS="... -EHsc -MD"`, `-DCMAKE_C_FLAGS="... -MD"`. Fixing only one language
+just moves the mismatch to the next pair, so read the two object names in each error and
+keep going until they agree. `-Dgtest_force_shared_crt=ON` does NOT solve this for a
+FetchContent googletest: googletest only rewrites an existing `/MD` into `/MT`, so where no
+CRT flag exists there is nothing for the option to rewrite. (HEonGPU)
+
+**clang-cl does not link the compiler-rt builtins.** Host code using 128-bit integer
+arithmetic -- ordinary in crypto and modular-arithmetic libraries -- links fine on Linux
+(libgcc/compiler-rt is implicit) and fails on Windows with `lld-link: error: undefined
+symbol: __udivti3` (or `__umodti3`, `__divti3`). The library ships with the toolchain: add
+`<rocm>/lib/llvm/lib/clang/<ver>/lib/windows` to `LIB` and `clang_rt.builtins-x86_64.lib` to
+`CMAKE_EXE_LINKER_FLAGS` and `CMAKE_SHARED_LINKER_FLAGS`. This is toolchain plumbing, not a
+port defect. (HEonGPU)
+
+**A leading-slash MSVC flag passed from Git Bash is mangled into a path.**
+`-DCMAKE_CXX_FLAGS="/DWIN32 ..."` reaches the compiler as `C:/Program Files/Git/DWIN32`
+(MSYS argument conversion), and the build fails with `clang-cl: error: no such file or
+directory: 'C:/Program'`. Use the dash spellings, which clang-cl accepts identically: `-MD`,
+`-EHsc`, `-DWIN32`. Do not reach for `MSYS_NO_PATHCONV=1`/`MSYS2_ARG_CONV_EXCL='*'` as a
+blanket escape -- it is inherited by every child process, so a project script that runs
+`git -C /d/path/...` inside the configure step stops resolving its own paths and fails with
+a much more confusing error. (HEonGPU)
+
+## Windows: Linux-only host APIs and LLP64 truncation inside third-party C APIs
+
+**A Linux-only host API can be the entire Windows blocker in an otherwise portable port**,
+and it will not surface until the first Windows build, however many Linux architectures
+have already validated. The recurring set is `<sys/sysinfo.h>` + `sysinfo()` (replace with
+`GlobalMemoryStatusEx()`/`MEMORYSTATUSEX::ullAvailPhys` under `#ifdef _WIN32`, leaving the
+POSIX branch untouched), the BSD typedefs `u_int32_t`/`u_int64_t` (the Microsoft headers
+have only the standard `uint32_t` spellings, which are the same types on Linux, so just
+change them), and GNU-style `-g`/`-O3` appended to `CMAKE_<LANG>_FLAGS_*` (unused
+arguments for clang-cl, which already receives `/Zi` and `/O2 /Ob2`, and *fatal* in any
+subproject that compiles with warnings as errors -- googletest does; guard them with
+`if(NOT MSVC)`). Grep for the whole set at once before the first Windows build rather than
+discovering them one failed compile at a time. (HEonGPU)
+
+**Windows is LLP64, so `unsigned long` is 32 bits -- and the dangerous instances are
+inside third-party C APIs, not in the port's own declarations.** Grepping the project for
+`long` finds nothing when the truncation lives in GMP's `mpz_*_ui` family, NTL's
+`conv(ZZ, long)`/`to_long`, or any other library whose "unsigned integer" entry points are
+typed `unsigned long`. On Linux those carry 64 bits and the code is correct; on Windows
+every value above 2^32 is silently cut to its low half, with no warning, because the
+implicit conversion is legal. Crypto, big-integer and modular-arithmetic libraries are
+saturated with this shape.
+
+What makes it expensive is that the symptom looks like a GPU or codegen fault. In HEonGPU
+the moduli reaching `mpz_mul_ui` were 30-55 bits, so every CRT constant was built for the
+wrong modulus chain: fifteen test binaries returned wrong numbers on Windows (gfx1151)
+while the identical source passed on three Linux architectures, one of them the same
+wavefront width. Nothing threw, nothing crashed, and the results were bit-for-bit
+reproducible run to run.
+
+Two things make it cheap to find instead. First, when Windows alone computes wrong values,
+grep for the `_ui`/`_si`/`long` entry points of every C library on the host path *before*
+suspecting the device: `mpz_.*_ui`, `to_long`, `static_cast<long>`, `%lu`. Second,
+bisect host versus device with a ten-line probe rather than by reading kernels -- replicate
+the library's host arithmetic in a standalone `clang-cl` program and check it against
+Python or `__uint128_t` truth, and run the same operations in a trivial kernel. Both coming
+back clean is what proves the fault is in the surrounding host plumbing.
+
+The fix is data-model-independent, not `#ifdef`-ed, so the LP64 result stays bit identical:
+`mpz_import(rop, 1, -1, sizeof(uint64_t), 0, 0, &value)` then `mpz_mul`/`mpz_mod`/
+`mpz_fdiv_q` instead of the `_ui` call, and `NTL::ZZFromBytes`/`NTL::BytesFromZZ` over the
+8-byte little-endian representation instead of `conv(ZZ, long)`/`to_long`. Note that
+`mpz_set_ui(x, 1)` and other small literals are fine -- only values that can exceed 2^32
+matter. The same width problem appears in dependencies' own constants (`1UL << 40`).
+(HEonGPU)
+
+## Windows: a dev package neither TheRock nor vcpkg ships
+
+conda-forge ships MSVC-toolchain win-64 builds of common C/C++ libraries (GMP, OpenSSL,
+zlib), compatible with clang-cl since both are MS-ABI. Fetch one directly with `curl`
+against `api.anaconda.org`'s redirect, with no `conda` or `vcpkg` installation: `.conda`
+files are zip archives containing `pkg-*.tar.zst`, and Windows's built-in `tar.exe` extracts
+`.zst` natively. When a download fails, check which specific domains are blocked before
+concluding the network is down. A library conda-forge does not ship for `win-64` either
+(check `api.anaconda.org/package/conda-forge/<name>`'s platform list) may still have its own
+historical Windows/MSVC fallback worth finding before assuming a from-scratch port is
+needed: NTL's `dosify`/`ResetFeatures`/`mach_desc.win`/`NTL_WINPACK` turned what looked like
+"write a Windows build system for a 76-file C++ library" into copying four pre-existing
+pieces and compiling directly with clang-cl. (HEonGPU)
+
+## Windows: a `core.autocrlf` mismatch can break `git apply` of a committed patch
+
+An in-tree `git apply` of a committed patch can fail with a real (non-whitespace) hunk
+mismatch, on Windows only, if the patch file and the tree it applies to were checked out
+under different `core.autocrlf` values at different times in the same working copy (e.g.
+because `git submodule update --init`, invoked from inside a build script, ran before a
+config change and something else ran after). Both sides being CRLF (or both LF) is what
+matters, not which value. Symptom: `patch does not apply` at a real hunk, not just a
+"trailing whitespace" warning. Fix locally without touching the tracked patch:
+`git config core.autocrlf false` (both in the repo and in the affected submodules) then
+force every affected file to be re-materialized from the index (`rm <file>; git checkout --
+<file>` -- a plain `git checkout -- .` does not always rewrite a file whose working-tree
+bytes already happen to match under the stale convention). (HEonGPU)
+
 ## Windows: stage the ROCm runtime next to the .exe, kpack included
 
 On a host whose System32 `amdhip64_7.dll` is broken, `PATH` does not save you -- Windows
@@ -149,6 +316,52 @@ import, not of a bad port.
 `llvm-objdump -p <binary> | grep "DLL Name"` walks the import table and finds the gap in
 seconds; run it on the DLLs too, not just the .exe, since the missing module is usually
 one level down.
+
+Why `PATH` loses: on Windows the *loader*, not the linker, picks the runtime. It searches
+the executable's own directory, then System32, and only then `PATH`, and the Adrenalin
+display driver ships its own `amdhip64_7.dll` and `amd_comgr*.dll` in System32. The `_7`
+suffix is a major-version name, so every ROCm 7.x maps onto the same filename, and a binary
+linked entirely against TheRock still runs on the driver's copy. The System32 copy need not
+be broken for this to fail; it only has to be a different vintage than the device bitcode
+the build used (measured: a 7.2 driver runtime against a 7.14 TheRock build). The runtime's
+internal blit/transfer kernels then fail to JIT-link (`undefined hidden symbol:
+__ockl_dm_init_v1`, `__amd_streamOpsWrite`) and the device transfer manager is never
+created. The visible symptom is narrow and easy to misread as a hardware limitation:
+`hipMemGetInfo` returns `hipErrorInvalidValue` with `free=0 total=0` while
+`hipDeviceTotalMem` still works, and kernels may hang or the process may crash at exit.
+Known upstream as ROCm/TheRock issues 2019 and 4755. Python/PyTorch processes escape it
+because `rocm_sdk.preload_libraries()` loads the runtime by absolute path first, which is
+why a torch extension can work on a host where a native CMake project fails.
+
+Two traps when triaging this:
+
+- A minimal reproducer that contains **no device code** does not reproduce it. The failure
+  needs the runtime to load a code object, so a ten-line program that only calls
+  `hipMemGetInfo` succeeds against the very driver that fails the real binary. Reproduce
+  against a binary that actually launches a kernel.
+- The API that reports the error is often not the API that caused it. Code in the shape
+  `someCall(...); CHECK(hipGetLastError());` reports the *sticky* error, so the blamed
+  line may be innocent. Check the call's own return value before naming a culprit.
+
+Do not work around this in the port. Sizing a memory pool from
+`hipDeviceProp_t::totalGlobalMem` when `hipMemGetInfo` fails is a source change to shared
+code that buys nothing once the right DLLs are in place. (HEonGPU)
+
+## An integrated APU reports the whole shared memory pool as device memory
+
+On an integrated APU `hipMemGetInfo` reports the shared system pool (tens of GB), so a
+library that eagerly reserves a fraction of *reported* device memory can ask for most of
+the machine. Suspect that shape when an APU run stalls at first allocation, and also when
+it is uniformly slow: measured on a Radeon 8060S (gfx1151, 72 GB unified) with a library
+whose default pool asked for 90% of free device memory (about 65 GB), the reservation
+succeeded and the suite then ran roughly 2x slower on the light tests and 3-4x on the heavy
+ones than the same code with no pooling. That comparison is pooling at a 90% default
+against no pooling at all, so it does not apportion the cost between the reservation and
+the allocator; measure before publishing numbers. The fix belongs to the application, not
+the port: pass the library's own pool configuration (a small initial fraction or a fixed
+size). Do not change a shared default that is correct for discrete cards, and do not
+special-case APUs in shared code; document the sizing where the project documents its
+defaults. (HEonGPU)
 
 ## Windows: a crash trace without a PDB names the wrong function
 
@@ -512,6 +725,33 @@ against the target card's PCI bus (`udevadm info --name=/dev/dri/cardN | grep DE
 segment right before `/drm/cardN`) to find the `HIP_VISIBLE_DEVICES` index that matches the
 card Xorg is bound to, rather than assuming index 0 (or whatever index was used for a prior,
 single-purpose HIP-only check) is also the GL-backed one.
+
+## A low-CU integrated GPU can outrun a fixed upstream test timeout without any fault
+
+A 20-CU integrated APU (gfx1151) can be genuinely, correctly ~40x slower than datacenter
+and desktop cards for the single heaviest kernel sequence in a suite, and a project's own
+`TIMEOUT` on `add_test`/`gtest_discover_tests` is usually sized against those faster cards.
+Found porting HEonGPU: `ctest` reported `TFHE_Gate_Boots` as `***Timeout` at the project's
+hardcoded 30-second per-test limit (`test/CMakeLists.txt`, identical on the CUDA path),
+while a gfx942 card finishes the entire 20-test suite in 13-15s. Running the same
+executable directly, outside ctest's harness, showed it was not hung or wrong -- it passed
+in 112.9s, `[ PASSED ]` from gtest's own assertions.
+
+Diagnose by running the flagged executable directly before concluding anything: `rc=0`
+plus a `[ PASSED ]`/correct-value line after the harness's cutoff means "too slow for this
+budget," not "broken." A hang or wrong answer looks different -- no completion line ever
+appears, or it appears with wrong values.
+
+Getting a clean harness-level pass count (worth doing when the bar is an exact N/N matching
+the other platforms) may need a throwaway local bump of the test's own `TIMEOUT` property:
+ctest's `--timeout <seconds>` flag does **not** override an explicit per-test `TIMEOUT` set
+via `set_tests_properties`/`gtest_discover_tests` -- confirmed, `ctest --timeout 180`
+against a `TIMEOUT 30` property still printed `***Timeout 30.07 sec`. Edit the property,
+reconfigure (cheap -- CMake only regenerates the test files if no source changed), rebuild
+only the one affected test target so `gtest_discover_tests`'s post-build discovery step
+re-runs and picks up the new property, run ctest, then `git checkout --` the file and verify
+`git status --porcelain` is empty. This is not a port fix and must not ship -- it exists
+only to prove the harness-level count. (HEonGPU)
 
 ## Read what the project's own cross-backend checker actually compares
 
