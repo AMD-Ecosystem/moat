@@ -8350,3 +8350,9 @@ This pull request was prepared with the help of an AI assistant acting as a codi
 
 If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
 ====
+
+## Windows dependency reports 2026-11-17
+
+- hipMM: jeffdaily filed https://github.com/AMD-Ecosystem/hipMM/issues/11 ("Windows build fails with clang-cl (TheRock ROCm): dlfcn.h, arena.hpp, fmt"). The defects are present at `dccfd94`, which is both the port's pin and the tip of hipMM `release/26.10`.
+- libhipcxx: nothing filed, by jeffdaily's ruling. The `_wassert` host-call defect at the port's pin `90b6a2b` (tip of libhipcxx `release/26.10`) is already fixed on `amd-develop` by `d0732ef3a` and `9c4589dac` (2026-10-23); he will not ask for a backport to the release branch. Whether hipMM 5.0.0 builds against libhipcxx `amd-develop` is untested.
+- The Windows waiver should be revisited when hipMM issue 11 is resolved and a hipMM release pairs with a libhipcxx that carries the assert fix.
