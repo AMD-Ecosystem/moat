@@ -471,3 +471,15 @@
 {"kind":"phase","ts":"2026-11-17T10:15:58Z","phase":"test","seconds":1.275,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static/bin/examples/mpc/1_multiparty_computation_bfv"}
 {"kind":"phase","ts":"2026-11-17T10:16:06Z","phase":"test","seconds":7.129,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static/bin/benchmark/tfhe_benchmark"}
 {"kind":"session","ts":"2026-11-17T10:17:03Z","epoch":1794910623.643409397,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-17T10:03:34Z","epoch":1794909814.777699600,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-17T10:05:01Z","phase":"compile","seconds":82.141,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure537.sh"}
+{"kind":"phase","ts":"2026-11-17T10:07:49Z","phase":"compile","seconds":116.142,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build537.sh"}
+{"kind":"phase","ts":"2026-11-17T10:12:17Z","phase":"compile","seconds":59.509,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure537w.sh"}
+{"kind":"phase","ts":"2026-11-17T10:14:56Z","phase":"compile","seconds":152.316,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build537w.sh"}
+{"kind":"phase","ts":"2026-11-17T10:21:03Z","phase":"compile","seconds":219.686,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build537w.sh"}
+{"kind":"phase","ts":"2026-11-17T10:22:45Z","phase":"compile","seconds":21.245,"exit":127,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build537w.sh"}
+{"kind":"phase","ts":"2026-11-17T10:24:00Z","phase":"compile","seconds":11.253,"exit":127,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build537w.sh"}
+{"kind":"phase","ts":"2026-11-17T10:27:15Z","phase":"test","seconds":16.743,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/ctest_w.sh -R CKKSContextIdentity|CKKSErrors|MemoryPool_Shrinks_Initial_Size_That_Does_Not_Fit|MemoryPool_Reads_The_Available_Host_Memory|MemoryPool_Classifies|MemoryPool_Reports"}
+{"kind":"phase","ts":"2026-11-17T10:30:57Z","phase":"test","seconds":186.150,"exit":8,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/ctest_w.sh -E MemoryPool_Context_Generation_With_Little_Free_Device_Memory"}
+{"kind":"phase","ts":"2026-11-17T10:50:12Z","phase":"test","seconds":178.690,"exit":8,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/ctest_w.sh -E MemoryPool_Context_Generation_With_Little_Free_Device_Memory"}
+{"kind":"session","ts":"2026-11-17T10:56:31Z","epoch":1794912992.316050800,"event":"end","platform":"windows-gfx1151"}
