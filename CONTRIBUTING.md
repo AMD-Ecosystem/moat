@@ -11,8 +11,8 @@ Install the hooks once per clone:
     python3 utils/install_hooks.py
 
 They run the same `check.py` gates as CI (both run `check.py --fast`, which skips the
-local-only `forks` scan). CI runs one more check the hook cannot: the pull request's
-title (`utils/pr_intent.py`), which does not exist at push time -- so a locally-clean
+slow local-only `forks` and `commits` scans). CI runs one more check the hook cannot: the pull request's
+title (`utils/pr_intent.py`; check one before opening with `pr_intent.py --check-title`), which does not exist at push time -- so a locally-clean
 push can still fail CI on its title, and only on that. To run what they run:
 
     python3 utils/check.py --fast
@@ -25,9 +25,9 @@ clones and is not part of either gate.
 `main` is protected. Work happens on a per-project branch, `port/<name>`, which is shared:
 every host and person working that project pushes state to it. **The branch existing on the
 remote is the claim** -- it is how another host knows the project is in flight, so there is
-no lock file and no expiry. Writes to the fork are serialised separately, by the
-`porting` {arch, since} lock in `status.json`, which the state transition takes and
-releases; that one is about who may push code, not about who holds the project.
+no lock file and no expiry. Planning, porting and reviewing are serialised separately, by the one
+`porting` {arch, since} work lock in `status.json`, which the state transition takes and
+releases; that one is about who may write the plan, the fork or the review verdict, not about who holds the project.
 
 The branch is deleted when its pull request merges -- that is what retires the claim. A
 `port/<name>` left behind reads as live work forever, and the selector has no timeout
@@ -120,9 +120,10 @@ That part is reported and not enforced, because a fleet-wide sweep legitimately 
 every project at once and a gate that fires on ordinary work is one people learn to
 ignore.
 
-Promoting a lesson to the `cuda-to-rocm` skill inside a port is the one crossing that
-belongs, and is expected rather than tolerated: the lesson and the evidence for it
-should land together.
+A port branch does not edit the skills or the tooling: the pre-push `branch-scope`
+gate refuses a port-branch commit outside `projects/<name>/`. A lesson the port taught
+is written in its notes, reviewed with the port, and promoted to the skill on `main`
+(see Porting knowledge).
 
 ## Sending it upstream
 
@@ -196,13 +197,29 @@ upstream PR. The finished PR moves into the record's history (`pr_history`) rath
 blocking the route, and every gate binds at the new head exactly as it did for the first
 PR. The `moat-checkup` skill walks the preconditions.
 
+## Release lines: when upstream will never take the port
+
+Some upstreams will not accept AMD support at all (NVIDIA's Warp and cuCIM), so the deliverable is a set of branches MOAT owns in the fork, one MOAT project per upstream release. `warp-1.14` and `warp-1.15` are projects against `NVIDIA/warp` beside the development line `warp`; each line depends on the one before it (`--deps warp-1.14`), so they are ported in order, each starting from the previous line's port plus upstream's delta.
+
+    python3 utils/moatlib.py scaffold NVIDIA/warp --name warp-1.14 --branch release-1.14 --deps ...
+    python3 utils/moatlib.py set-fork-branch warp-1.14 release/1.14.0.amd0 --by <who>
+    python3 utils/moatlib.py set-delivery warp-1.14 fork-release --by <who> [--tag-format ...]
+    python3 utils/moatlib.py set-fork-url warp-1.14 https://github.com/AMD-Ecosystem/warp --by <who>
+    python3 utils/moatlib.py mirror-branch warp-1.14
+
+The three rulings are a person's. `fork_default_branch` (here `release-1.14`) is a pristine copy of upstream's release branch under upstream's own name and SHAs: it is the review base, and the only thing that writes it is `mirror-branch`, which fast-forwards it to upstream and refuses anything else (a fork clone's pre-push hook refuses direct pushes to it too). `mirror-branch` also creates the port branch as an exact copy of the mirror when the fork lacks one; it copies upstream's commits only, so an agent may run it. The porter commits on top of `fork_branch`, versions the build `1.14.0+rocm.0`, and makes the project's release wheel buildable on every supported platform; the validator installs and tests the built wheel. Hosting the wheels (a GitHub release) is a separate GitHub-visible act that needs a person's approval of its exact content.
+
+Sign-off is the ordinary review PR, opened by `upstream.py --review` from the port branch into the pristine branch, with the same gates and the same `/moat approve` reading and staleness rules. It is never merged, and no submission note is appended because nothing is republished. Approval authorizes `upstream.py --finish-release --apply`, on the `--publish` contract: it re-reads the approval and every gate live, checks the review PR still runs port branch into base at the recorded head and that the base is still upstream's own history, then tags the approved commit (`v{version}+rocm.{rev}` from a branch ending in `<version>.amd<rev>`, unless the line's `--tag-format` says otherwise; a custom format must still name both `{version}` and `{rev}` so patch tags never repeat), records the delivery, closes the review PR unmerged, and refreshes the clone's pre-push hook. A delivered line is frozen exactly like a maintained fork: `pr-state` answers `delivered`, the hook refuses pushes to the branch, and later upstream patch releases (`v1.14.1`) arrive through `sync-branch` rounds with their own review PR and approval, merged by `--merge-fix`, which tags the merged tip as a release named for the newest upstream version tag it absorbed (`v1.14.1+rocm.0`; a sync that brings no new upstream version bumps the revision, `v1.14.0+rocm.1`). Every release tag is annotated with who approved it and the review PR, and the clone's hook refuses to move or delete an existing tag. A sync round's review PR body may not carry an `## Upstream reply` section: there is no upstream PR to post it on. If `--finish-release --apply` stops after tagging and recording (the review PR failed to close), the line stays listed as `RESUME` and a rerun completes only the remaining steps.
+
+Rollout: a release-line record carries `schema_version` 4, which `set-delivery` writes and tooling from before release lines refuses to load, so an out-of-date host fails closed instead of publishing the line upstream. Every host must `branch-sync --apply` to tooling that knows release lines and re-run `orient.sh`, whose `protect-fork` replaces older fork hooks (a v3 hook lets a push to a delivered branch through), before working a release line. `upstream.py --drift` watches delivered lines for upstream's advance. `pr-candidates` lists ready lines as `RELEASE-READY`, never as upstream PR candidates.
+
 ## Who opens the upstream pull request
 
 An attended session on the maintainer's own machine, running one command -- the
 person, or the agent working with them, since the content it publishes was already
 approved wholesale on the review PR and running it adds no new judgement:
 
-    python3 utils/upstream.py --publish --apply
+    python3 utils/upstream.py --publish --apply --name <project>
 
 It carries the approved title and body verbatim, re-checks the approval and every gate at
 that moment, opens the pull request, records it, and closes the review PR. `orient.sh`
@@ -219,8 +236,11 @@ someone runs the `moat-checkup` skill or `orient.sh`, not on a timer. That is a 
 trade: drift accumulates silently between sweeps, and on one measured sweep 6 of 74
 records disagreed with GitHub, two of them merges nobody had noticed. `orient.sh` nags
 when reconciliation has never run or is two weeks stale (it is silent below that), so
-the gap cannot grow unbounded without someone seeing it. The only
-workflow left is `ci.yml`, which gates pull requests and holds `contents: read`.
+the gap cannot grow unbounded without someone seeing it. Two
+workflows are left, both holding `contents: read`: `ci.yml`, which gates pull requests, and
+`amd-skills-workflow.yml`, which runs the structural checks of the published `cuda-to-rocm`
+skill on pull requests and uses an API key only for the routing and behavioral evaluations
+a person dispatches by hand.
 
 Two mechanisms that look like they would close the gap do not. A **GitHub App** acts only
 where it is installed, and we cannot install one in someone else's repository. A
@@ -242,15 +262,23 @@ fork-side work and neither reaches the part that matters.
 | `optout` | every opt-out record is well-formed, and no project whose owner opted out is still live in the pipeline. A malformed entry fails open -- the filters stop matching and the repos quietly return to the queue -- so the shape is checked rather than assumed |
 | `surface` | for a project carrying a `surface.json`, every component is covered or explicitly scoped out with a reason -- accounting, not coverage, so the failure it prevents is the silent omission. It judges only projects that have the file and only once the port claims success. Few projects carry one (colmap, on its own branch, was the first), and the gate sees only the current checkout, so where none is present it judges nothing and says so out loud. `utils/surface.py generate <name>` opts a project in |
 | `forks` | no fork carries uncommitted source edits (local only -- needs the clones) |
+| `commits` | every commit a port adds to its fork follows the commit-message rules: `[ROCm]` title within 72 characters, AI assistance disclosed, a Test Plan, no agent `Co-Authored-By` trailer (local only, slow; `moatlib.py audit-commits` is the same check by hand) |
+| `gh-guard` | the `gh` launcher on this host's PATH is the current guard, so a foreign GitHub write is refused before it is sent |
+| `branch-scope` | a port branch changes only its own `projects/<name>/`; tooling, skills, agent definitions and shared data change on `main` |
+| `skills` | the published `cuda-to-rocm` skill names no MOAT tool, record or state |
+| `harness-adapters` | every canonical skill and role has exactly one Codex adapter that agrees with it, and `AGENTS.md` stays within the size Codex loads |
+| `conflicts` | no tracked file carries merge-conflict markers |
+| `published` | a fork clone's port branch does not hold commits past what an open upstream PR shows; those belong on the staging branch |
 
 ## Adding a project
 
-Via PR, carrying the `projects/<name>/` folder, the regenerated README row, and any porting
-knowledge the work produced. `utils/moatlib.py scaffold <owner/repo>` creates the skeleton.
+Via PR, carrying the `projects/<name>/` folder. A lesson the work produced rides in its
+`notes.md` under `## Lesson for cuda-to-rocm: <title>` (or `moat-porting`) and is promoted into
+the skill on the trunk after that review; the README table is regenerated on the trunk. `utils/moatlib.py scaffold <owner/repo>` creates the skeleton.
 
 Licence is established at intake, before any porting effort, as a FACT rather than a
 judgement: read what upstream actually publishes and record the SPDX identifier in
-`status.json.license_spdx`. Do not trust GitHub's licence field alone -- it fails to parse a fifth of
+`status.json.license_spdx` with `moatlib.py set-license-spdx <name> <spdx> --evidence <URL>`. Do not trust GitHub's licence field alone -- it fails to parse a fifth of
 repos -- and do not leave it blank. An unrecorded licence blocks the route upstream exactly
 as a restrictive one does, and it is the worse of the two failures, because a restrictive
 licence announces itself while an empty field looks like nothing is wrong.
@@ -274,8 +302,16 @@ the checker missed, add it in the same change.
 ## Porting knowledge
 
 Capture per-project findings in `projects/<name>/notes.md`. If a lesson would help someone
-porting a **different** project, promote it into the `cuda-to-rocm` skill's `references/`
-at the moment you learn it, naming the source project. A later sweep is what failed before:
+porting a **different** project, write it in that project's notes the moment you learn it,
+under `## Lesson for cuda-to-rocm: <title>`, naming the reference file it belongs in. The
+port's review reads it there; a trunk session then promotes it into the skill's
+`references/`, fitted into the existing text rather than appended, names the source
+project, and adds `Promoted to <file> in <sha>.` under the heading. `moatlib.py lessons`
+lists the ones waiting. That skill is published outside MOAT
+as an AMD skill, so write the lesson for a reader who has never seen this repository: no
+`moatlib`, `notes.md`, gates, roles, states, or fleet hosts. A lesson about MOAT's own
+pipeline, records, tools, or hosts goes to the `moat-porting` skill, and
+`utils/check.py skills` fails when MOAT vocabulary lands in `cuda-to-rocm`. A later sweep is what failed before:
 an append-only file nobody was told to open went unused from the day it was created.
 
 File it by who needs it, not by where you found it. The activity that surfaces a lesson is

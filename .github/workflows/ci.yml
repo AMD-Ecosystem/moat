@@ -1,14 +1,15 @@
 name: checks
 
-# Runs on every pull request and on the trunk. NOT on pushes to other branches: the
-# pre-push hook runs the same gates locally, so a branch push would be the third time
-# the same checks ran, and the only thing it adds is mail. The gates themselves live
-# in utils/check.py -- implementing them twice is how CI and the hook end up
-# disagreeing.
+# Runs on every pull request, on the trunk, and on project branches. The pre-push
+# hook runs the same gates locally, but only in a clone that installed it: a record
+# pushed from a fresh clone is checked by nothing, and one invalid record then fails
+# every other host's pushes, because the gates judge every ref. So port/** is
+# covered here too. The gates themselves live in utils/check.py -- implementing
+# them twice is how CI and the hook end up disagreeing.
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, 'port/**']
   workflow_dispatch:
 
 # A branch pushed repeatedly should not queue a run per push; only the last one is
@@ -25,6 +26,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Every branch, full history: the tools re-run themselves from origin/main
+          # and the gates read every project branch, neither of which a shallow
+          # single-branch checkout has.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -55,6 +61,12 @@ jobs:
         # gate is enforced only by pr_ready (and a manual full check.py) on the
         # hosts where the clones actually exist.
         run: python3 utils/check.py --fast
+
+      - name: Unit tests
+        # The pure logic the gates and the publishing paths rest on: the status
+        # merge, the approval decisions, the guard's classifier. Standard library
+        # only, so there is nothing to install.
+        run: python3 -m unittest discover -s tests -t .
 
 # NOTE: there is deliberately no jargon job here. The no-in-house-vocabulary rule
 # applies to text that reaches an UPSTREAM project -- fork commit messages, PR

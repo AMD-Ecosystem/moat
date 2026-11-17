@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "hiprtc-win-absolute-program-name",
+      "kind": "rocm-bug-report",
+      "component": "hiprtc",
+      "summary": "hiprtc on Windows (TheRock 7.14) returns HIPRTC_ERROR_COMPILATION with an empty log when hiprtcCreateProgram's name is an absolute path (C:\\...\\k.cu or C:/.../k.cu); a relative name compiles the same source. CuPy works around it (base name).",
+      "refs": [
+        "projects/cupy/notes.md#porter-round-2026-11-05"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/TheRock/issues/9848",
+      "created_at": "2026-11-05T19:08:12Z",
+      "decided": null
+    },
+    {
+      "id": "hipcc-exe-unquoted-forwarded-args",
+      "kind": "rocm-bug-report",
+      "component": "hipcc",
+      "summary": "hipcc.exe on Windows rebuilds the clang command line without quoting: -DX=extern \"C\" becomes -DX=extern + file C, and -I paths with spaces are split. CuPy works around it.",
+      "refs": [
+        "projects/cupy/notes.md#porter-round-2026-11-05"
+      ],
+      "status": "done",
+      "upstream_issue": "https://github.com/ROCm/TheRock/issues/9849",
+      "created_at": "2026-11-05T19:08:39Z",
+      "decided": null
+    },
+    {
+      "id": "hiprtc-win-msvc-stl-complex-signbit",
+      "kind": "rocm-bug-report",
+      "component": "hiprtc",
+      "summary": "hiprtc on Windows with the MSVC STL include dirs: <complex> fails with 'call to signbit is ambiguous' (MSVC complex:575 vs hiprtc_runtime.h device signbit overloads). Breaks CuPy kernels that include C++ std headers (cupy/xsf, mdspan GUFunc-like kernels). Not worked around in the port.",
+      "refs": [
+        "projects/cupy/notes.md#porter-round-2026-11-05"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/TheRock/issues/9845",
+      "created_at": "2026-11-05T19:09:04Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-05T20:31:53Z",
+        "note": "bounded workaround attempt in the port (~2h); ROCm bug report either way"
+      }
+    },
+    {
+      "id": "clang-hip-math-win-nan-double-shift",
+      "kind": "rocm-bug-report",
+      "component": "clang_hip_math",
+      "summary": "On Windows __clang_hip_math.h nan(const char*) computes (uint64_t)mantissa | (0xFFF << 51) with an int-typed 0xFFF, so the shift is undefined/zero and double nan(\"\") returns 0.0 instead of NaN (nanf works). Fix: 0xFFFULL << 51 in the !_WIN32 else branch. Hits CuPy jit nan, special zeta/zetac, signal sawtooth/square on Windows ROCm.",
+      "refs": [
+        "projects/cupy/notes.md#validation-2026-11-06-windows-gfx1151-validator"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/llvm/llvm-project/pull/240615",
+      "created_at": "2026-11-06T19:24:38Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-09T17:04:37Z",
+        "note": "report to ROCm only; no workaround in the port; list the 7 failures as a known ROCm issue in the PR"
+      }
+    },
+    {
+      "id": "cupy-hipcc-to-amdclang",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Migrate CuPy's HIP build-time and runtime compiles from hipcc to amdclang++ (and ROCm discovery from hipconfig to rocm-sdk path --root), per TheRock's hipcc deprecation (docs/development/hipcc_migration.md; TheRock#9849). jeff 2026-11-09: a separate task from the Windows port.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-09T23:36:10Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-09T23:37:00Z",
+        "note": "separate task from the Windows port"
+      }
+    }
+  ]
+}
