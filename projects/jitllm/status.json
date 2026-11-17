@@ -6,14 +6,55 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-17T19:23:49Z",
-  "updated_at": "2026-11-17T19:23:51Z",
+  "updated_at": "2026-11-17T19:59:57Z",
   "head_sha": null,
   "depends_on": [
     "TornadoVM"
   ],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-17T19:59:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/beehive-lab/jitllm/blob/main/LICENSE",
+      "at": "2026-11-17T19:59:51Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none (AMD runs today only via generic OpenCL kernels; no AMD fork, PR, issue or branch)",
+    "viable": true,
+    "summary": "Pure-Java LLM engine on TornadoVM (MIT, no CUDA source); GPU paths are TornadoVM MMA intrinsics and cuBLAS/cuDNN library tasks the merged TornadoVM HIP backend already maps to hipBLAS/CK, so the port is jitllm-side backend enablement (launcher hip-backend, HIP capability grants, provider-agnostic library probes); maintainers asked for it on TornadoVM#1327",
+    "at": "2026-11-17T19:59:55Z"
+  }
 }
