@@ -7494,3 +7494,14 @@ Belongs in the Windows reference of the skill. With CMake and an MSVC-style clan
 ### Lesson for cuda-to-rocm: MSVC std::stringstream stops at 2 GiB
 
 Belongs in the Windows reference of the skill. MSVC STL's `basic_stringbuf` will not grow past `INT_MAX` bytes; writes beyond that set `badbit`. Code or tests that serialize multi-GB objects (FHE bootstrapping keys, large models) into a `std::stringstream` pass on Linux and fail on Windows with a generic "write failed". Measure the payload with a counting `streambuf` before suspecting the GPU port.
+
+## Porter round 2026-11-17 (linux-gfx942) -- hipMM 5.0.0 pin: stopped, state machine refused the lock
+
+Dispatched by Jeff Daily to implement his 2026-11-16 ruling (move the hipMM pin to hipMM 5.0.0, `dccfd94fc2d513abf3f9f62867e330433f9086e0` on `release/26.10` of AMD-Ecosystem/hipMM, and drop the RMM 25.x bridge from `2f4de2d`). The dispatch said: if the state machine refuses `delta-ported -> porting`, do not force it, report the refusal and stop. It refused:
+
+```
+$ python3 utils/moatlib.py set-state HEonGPU linux-gfx942 porting
+ValueError: HEonGPU/stage: illegal transition delta-ported -> porting
+```
+
+`utils/moatlib.py` transition table: `"delta-ported": {"reviewing"}`; `porting` is reachable only from `planned` and `changes-requested`. The only legal route to `porting` is `delta-ported -> reviewing -> changes-requested -> porting`, i.e. a reviewer verdict on `25b45ba` (the Windows `/EHsc` commit, not yet reviewed). Not taken: recording a review verdict the porter did not perform would be forcing it. Options for Jeff: (a) run the reviewer on `25b45ba` first; a `changes-requested` verdict (or the reviewer recording the hipMM 5.0.0 ruling as a requested change) opens `porting`; (b) a person rules some other entry. Nothing was changed: no lock taken, fork untouched at `25b45baff5e94e7fa07943c02bbdb45aac00d0c9`, `pr-state` read `none`, hipMM pin still `22732e49aa00`, no build or test run.
