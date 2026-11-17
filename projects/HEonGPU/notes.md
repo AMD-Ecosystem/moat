@@ -7885,6 +7885,8 @@ All three apply to pristine checkouts of the pinned submodules (`git apply --che
 
 ### Proposed review PR body, corrected for `537cdca`
 
+Superseded at `1b4e781` by the body in "Review 2026-11-17 (reviewer, linux-gfx942) -- documentation delta `537cdca..1b4e781`" below.
+
 Changes against the body in the previous review (`25b45ba..302003f`):
 
 - GPU-NTT: the "128-bit Barrett reduction" defect paragraph is removed (GPU-NTT `04b1103`, pinned by upstream, fixes it), and "Two of these also affect NVIDIA GPUs" becomes "One of these". What the GPU-NTT patch still does in source (HIP branches for the PTX arithmetic, including the shift helpers, and the `Modulus` device-pass gate) is now one sentence in the overview paragraph, since those are adaptations and not defects.
@@ -8250,3 +8252,101 @@ Files changed (`git diff --stat 537cdca..1b4e781`): `README.md` (+2), `docs/gett
 Source class: **documentation only**. No source, header, build file, CMake comment, patch or test changed, so the binaries are identical to `537cdca`; the Linux evidence at `537cdca` (gfx942, gfx1100, gfx90a) applies unchanged and is eligible for carry-forward. No build was run: a documentation-only change cannot affect the build, and no build file changed. `python3 utils/jargon.py --port HEonGPU` -> `jargon: clean`; `utils/prose.py` on the commit message -> clean.
 
 State after the round: `advance-head` to `1b4e781` carried the three Linux platforms forward by itself (source-class verdict `doc-only`, from `537cdca`); the porter marked no platform completed. `windows-gfx1151` stays `validation-failed` under the waiver. Stage `ported`, lock released; the reviewer is next.
+
+## Review 2026-11-17 (reviewer, linux-gfx942) -- documentation delta `537cdca..1b4e781`
+
+Dispatched by Jeff Daily. Stage read `ported` at fork head `1b4e781d83cf16e9090075f69db4e06688ab9d61`; `set-state HEonGPU linux-gfx942 reviewing` took the lock. Fresh clone of AMD-Ecosystem/HEonGPU at `projects/HEonGPU/src` (`moat-port` = `1b4e781`, local `main` = `origin/main` = `62fa9b9`). Verdict: **review-passed**. No finding.
+
+### Delta
+
+- `git diff --stat 537cdca..1b4e781`: `README.md` +2, `docs/getting_started.rst` +2, 4 insertions, nothing else; one commit. Each file gains one blank line and the sentence "The ROCm build is supported on Linux. It does not currently build on Windows, because hipMM 5.0 builds only on Linux.", after the AMD paragraph of README "AMD GPUs (ROCm)" and after the "On AMD GPUs, configure with ``-D USE_HIP=ON`` instead." paragraph of Step 2 in `getting_started.rst`. The rst paragraph has the same 4-space indent as the paragraph before it, so it stays inside the same block (by reading; no docutils on this host to render it).
+- Neither file takes part in a build, install or test: `git grep -iE 'README|getting_started|docs/'` outside `*.md`/`*.rst` hits only `.readthedocs.yaml` (Sphinx config `docs/conf.py`), Doxygen's stock `IMPLICIT_DIR_DOCS` comment in `docs/Doxyfile`, and `README.md` mentions in doc comments of `operator.cuh`. No CMake file, install rule, test or patch reads either file. The only consumer of `getting_started.rst` is the Read the Docs site.
+- `python3 utils/moatlib.py classify HEonGPU 537cdca 1b4e781` -> `class=doc-only arch_independent=True inert=True`, detail `no changes` (the classifier lists only code-file details, so a pure documentation delta prints "no changes"; it does not mean the diff is empty).
+
+### Is the sentence true and enough
+
+- True: the windows-gfx1151 validation at `537cdca` above shows hipMM 5.0.0 `dccfd94` failing to compile on Windows (`dlfcn.h`, `arena.hpp` LLP64 and iterator errors), and the waiver records the same. "Supported on Linux" matches gfx942, gfx1100 and gfx90a completed at `537cdca`. libhipcxx's Windows failure and the Windows SDK lacking `hipMemGetDefaultMemPool` are not named, but libhipcxx is fetched only for hipMM, so "because hipMM 5.0 builds only on Linux" is the cause a reader can act on. Nothing more is needed in the docs.
+- Nothing left says or implies a working ROCm build on Windows. `git grep -niE 'windows|win32|msvc|visual studio|linux|ubuntu|wsl'` over `*.md`, `*.rst`, `*.txt` and `docs/`, and the `+` lines of `git diff main...moat-port`, show: the two new sentences; upstream's "Linux environment" (`getting_started.rst:6`) and Ubuntu package lines, which agree; and the port's CMake comments on clang-cl/MSVC (`CMakeLists.txt:61-63` /Zi and /O2, `CMakeLists.txt:70-75` and `src/CMakeLists.txt:296-301` /EHsc, `thirdparty/CMakeLists.txt:49-67` static hipMM and logger). Those comments explain why Windows-conditional settings exist; none says the build works on Windows, so the new sentence contradicts none of them. The `_WIN32` source branches (`memorypool.cu`, `memorypool.cuh`, the test) are code, not claims. The port's doc additions (README AMD section, `getting_started.rst` AMD paragraphs and the "tests, examples and benchmarks all build and run there" sentence, `advanced_topics.rst` pool defaults and HIP consumer section) name no platform beyond what the new sentence now scopes. The validator's earlier remark about "the README's statement that the port builds hipMM static on Windows" refers to no text present at `537cdca` or `1b4e781` (the porter round says the same); the only such statement is the `thirdparty/CMakeLists.txt` comment.
+
+### Commit message and jargon
+
+- Title "[ROCm] Document that the ROCm build is Linux-only", 49 characters. Body gives the rationale, discloses "prepared with the help of an AI coding agent" in prose, has no `Co-Authored-By` or other trailer, and a Test Plan with a fenced command. ASCII only. `utils/prose.py` on the message: clean.
+- `python3 utils/jargon.py --port HEonGPU` -> `jargon: clean` (needed `git branch main origin/main` in the fresh clone first).
+- Fork clone `git status --porcelain` empty.
+
+### Build, CUDA and carry-forward
+
+- No build, GPU run or CUDA compile in this review: the delta is documentation only and no build input changed, so none is needed. The nvcc 12.8 compile at `537cdca` (Jeff's plan `moat-heongpu-cuda-compile-check-537cdca-mi355.md`, Results: configure and build rc 0, 376/376 steps, 0 failures, 9 warnings identical to upstream `62fa9b9`, all from upstream's `serialization_payload.cu`) applies unchanged to `1b4e781`.
+- Carry-forward: the porter's `advance-head` to `1b4e781` already carried linux-gfx942, linux-gfx1100 and linux-gfx90a forward by itself (`carry_forward` = `from 537cdca`, `to 1b4e781`, `method source-class`, `class doc-only`, at 2026-11-17T16:45:59Z), so all three are `completed` with `validated_sha` `1b4e781`. I did not run `moatlib.py carry-forward` on top: nothing is left to carry, and the command would overwrite each block's `carry_forward` with one that lacks `from` and `class` and reset `completed_at` to the time of this review, which loses provenance without adding evidence. windows-gfx1151 untouched (`validation-failed`, `failed_sha` `1b4e781`, carried by `advance-head` as an inert delta), under the waiver.
+
+### Proposed review PR body, corrected for `1b4e781`
+
+Changes against the `537cdca` body above, everything else kept as checked there:
+
+- Overview: "runs on AMD GPUs through ROCm on Linux", and a new paragraph after the commands: the ROCm build is validated on Linux only and does not currently build on Windows because hipMM 5.0 builds only on Linux; the Windows-specific changes are code changes only and no Windows test result is reported.
+- `/EHsc` bullet: reworded to the present tense as a mechanism ("would run to `std::terminate`"), so it no longer reads as a Windows result.
+- Testing: the "An earlier revision ... being run at the current head, and this description will be updated" paragraph, which announced a Windows 11 run on gfx1151, is replaced with the gfx90a (ROCm 7.16, static 317/317 once) and gfx1100 (ROCm 10.1, static 317/317 twice) results and shared 312/312 on both, from the validations at `537cdca` above.
+- CUDA: "is being compiled again at the current head" is replaced with the finished nvcc 12.8 result at `537cdca` (no errors; the same 9 warnings as upstream, from `serialization_payload.cu`). The MI300X, MI250X, W7800 and nvcc results were measured at `537cdca`; "the current head" holds because `1b4e781` changes only documentation.
+
+`utils/prose.py` and `utils/jargon.py` clean on it; ASCII only. Title unchanged: "Add HIP support for AMD GPUs". Not posted; review PR #1 untouched.
+
+====
+This adds a HIP build so HEonGPU runs on AMD GPUs through ROCm on Linux, alongside the existing CUDA build. The HIP build is selected with `-D USE_HIP=ON`. With the option off (the default) the CUDA build configures as before; the few source changes it shares with the HIP build are listed below under "Changes that also reach the CUDA build".
+
+```
+git submodule update --init --recursive
+cmake -S . -B build -D USE_HIP=ON -D CMAKE_HIP_ARCHITECTURES=gfx942 -D HEonGPU_BUILD_TESTS=ON
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+The ROCm build is validated on Linux only. It does not currently build on Windows, because hipMM 5.0, which the HIP build uses in place of RMM, builds only on Linux; the README and `docs/getting_started.rst` say so. The Windows-specific changes listed under "Defects found while porting" are code changes only, and this description reports no Windows test results.
+
+The kernel and host sources keep their CUDA spelling. `thirdparty/hip_compat/` holds shims for `cuda_runtime.h`, `curand_kernel.h` and the other CUDA headers the sources include; in a HIP build that directory comes first on the include path, so each CUDA runtime and cuRAND name resolves to its HIP or hipRAND counterpart, and the shims are installed with the library for projects that use the installed headers. `src/CMakeLists.txt` and the test, example and benchmark lists grow a HIP branch next to the CUDA one. The pinned GPU-NTT, GPU-FFT and RNGonGPU submodules are built for AMD GPUs from patches under `thirdparty/patches/`, which configuring applies only when `USE_HIP` is on. Besides the build files, the GPU-NTT patch gives the 128-bit arithmetic that GPU-NTT writes in inline PTX (subtraction, multiplication, and the shift helpers of the Barrett reduction) a HIP branch with the same result, including zero for shifts of 64 or more, and keeps the `Modulus` constructor's check for an oversized modulus out of the HIP device pass, where `__CUDA_ARCH__` is not defined. `cmake/Config.cmake.in` carries the same choice into the installed package. Hardcoded warp sizes are replaced with `warpSize` where the value has to follow the hardware, since AMD GPUs run 64-lane wavefronts on CDNA and 32-lane ones on RDNA. `-D HEonGPU_BUILD_SHARED=ON` also builds for AMD GPUs; sources that include the HEonGPU headers are still compiled as HIP there, as `docs/advanced_topics.rst` describes.
+
+## Changes that also reach the CUDA build
+
+- The definitions of `SmallForwardNTT` and `SmallInverseNTT` move from `src/lib/kernel/small_ntt.cu` into `small_ntt.cuh`, guarded so that only a device compiler sees them. The HIP build compiles without relocatable device code, where a `__device__` function defined in another translation unit does not link. The function bodies are unchanged apart from `inline`.
+- `HostVector` declares its copy and move operations explicitly, which clang requires where nvcc accepted the inherited ones, and `DeviceVector` gains a `shrink_to_fit(stream)` overload that forwards to `rmm::device_uvector`.
+- One kernel each in `encryption.cu`, `decryption.cu` and `keygeneration.cu` divides by `warpSize` instead of shifting by 5 to get the warp index (and, in the first two, the warp count), which gives the same values on NVIDIA GPUs. `u_int32_t`, a glibc name, becomes `uint32_t` in the BFV and CKKS Galois key code, and `util.cuh` includes `cuda_runtime.h` itself.
+- The GMP and NTL conversions described under "Defects found while porting" apply to both builds and leave LP64 results bit for bit unchanged.
+
+## RMM on AMD GPUs: hipMM
+
+RMM does not build for AMD GPUs. The HIP build fetches hipMM 5.0 (https://github.com/AMD-Ecosystem/hipMM) instead, the ROCm-DS port of RMM, pinned by commit, from the same FetchContent block that fetches RMM for CUDA. hipMM 5.0 is derived from RMM 26.06 and keeps RMM's `rmm` target, `rmm::` namespace, headers and resource API, so the memory pool compiles from the same source on both builds and no RMM replacement code is carried in this repository. `HEonGPU_USE_SYSTEM_RMM` and `HEonGPU_INSTALL_RMM` work the same way with hipMM, which has its own version numbers: `HEonGPU_USE_SYSTEM_RMM` and the installed package ask for `rmm` 5.0 on AMD GPUs and `rmm` 26.08 on NVIDIA GPUs.
+
+hipMM's build scripts needed two adjustments, both only in the HIP build. They look up rocThrust again from hipMM's own directory and make its targets global, which CMake allows only for imported targets that are already global, so the top-level lookup of rocThrust uses `GLOBAL`. They also download libhipcxx 3.4 (newer than the one ROCm ships) from a repository that is not public; `thirdparty/CMakeLists.txt` declares it first from https://github.com/ROCm/libhipcxx, pinned by commit, and that declaration can go once the scripts point at a public repository.
+
+## Defects found while porting
+
+One of these also affects NVIDIA GPUs and needs your attention first.
+
+**The Box-Muller error sampler is undefined behaviour, and fixing it for NVIDIA would change NVIDIA results.** The sampler in RNGonGPU wrote `static_cast<T>(z)` where `T` is the unsigned residue type and `z` is a signed sample, relying on the following `+ (flag & modulus)` to turn a negative sample into its representative. Converting an out-of-range floating-point value to an unsigned integer is undefined, and the two back ends resolve it differently: NVIDIA's `cvt.rzi.u64.f64` saturates a negative source to zero, while the AMD lowering of a 64-bit `fptoui` keeps the low 32 bits of the two's-complement value. On AMD that turned roughly half of every error polynomial into values near 2^32, so every ciphertext decrypted to noise. Routing the truncation through the signed type first makes it well defined on both back ends. **Applied to the CUDA build, this would deliberately not be behaviour-neutral**: it replaces the saturated zero with the correct negative representative, which is the value the surrounding arithmetic already assumes. Since a saturated zero makes the sample congruent to zero rather than `q - 2`, the CUDA build has been drawing from a thinner error distribution than intended, which is a security-relevant property of an RLWE scheme rather than a cosmetic difference. The fix is in `thirdparty/patches/RNGonGPU.patch`, so today it only applies to HIP builds; please decide how the CUDA build should behave rather than have us pick for you.
+
+The remaining fixes are AMD-only or Windows-only:
+
+- `<sys/sysinfo.h>` is Linux-only. `MemoryPool::get_host_avaliable_memory()` and the topology query `detail::query_device_memory_attributes()` call `sysinfo()`, and `memorypool.cuh` and `random.cuh` included the header. On Windows both calls use `GlobalMemoryStatusEx` instead (available and total physical memory), the `memorypool.cuh` include is guarded, the unused include in `random.cuh` is removed, and `MemoryPool_Reads_The_Available_Host_Memory` skips its `sysinfo()` comparison for the test host there.
+- GMP's `mpz_*_ui` entry points take `unsigned long`, which is 32 bits under LLP64. Every coefficient modulus wider than 32 bits was silently truncated before GMP saw it, so on Windows the CRT constants described a different modulus chain than the one in use. Values now go through `mpz_import`, which is exact under both data models and leaves LP64 results bit for bit unchanged. The NTL `long` conversions in the CKKS constant encoding had the same truncation and now go through NTL's byte conversions.
+- On Windows, hipMM and its logging library are built static: as shared libraries they export no symbols under an MSVC-style toolchain.
+- On Windows, CMake gives C++ sources `/EHsc` under clang-cl but gives HIP sources no exception flag, so HIP sources compile with C++ exceptions off: a `throw` still leaves the function, but every `catch` is dropped, and the exceptions HEonGPU throws for misuse would run to `std::terminate`. HIP sources now get `/EHsc` when the HIP compiler takes MSVC-style options, both in this build (including the fetched hipMM) and, through the `heongpu` target's interface, in programs that compile against HEonGPU as HIP.
+
+## Testing
+
+At the current head, on an AMD Instinct MI300X (gfx942, wave64) with ROCm 10.1 on Linux: the static HIP build compiles all 49 test, 28 example and 3 benchmark programs, and `ctest` passes 317 of 317 test cases in each of two runs. The shared build (`-D HEonGPU_BUILD_SHARED=ON`) compiles its 49 test programs and `ctest` passes 312 of 312 in one run, including both shared-state cases; it leaves out the seven noise-budget cases that launch a library kernel directly, as the test CMake file does for any shared build. Both builds were fresh. The BFV, TFHE, CKKS session and CKKS bootstrapping examples were run with their decrypted values checked, and the basic CKKS, multiparty and multi-stream examples ran to completion; the eight TFHE gate outputs match their truth tables bit for bit.
+
+One test bound differs in HIP builds. `MemoryPool_Releasing_Device_Pool_Returns_Unused_Memory` frees 1 GiB from a pool with a 64 MiB release threshold and allows 32 MiB of slack above the threshold afterwards; a HIP build allows 128 MiB. HIP's stream-ordered pools reserve device memory in blocks of 128 MiB and keep a block while any allocation in it is live, so after the free the pool keeps the one block that holds the context's allocations and returns the rest.
+
+At the current head, also on Linux, an AMD Instinct MI250X (gfx90a, wave64) with ROCm 7.16 and an AMD Radeon Pro W7800 (gfx1100, RDNA3, wave32) with ROCm 10.1 pass the same suites from fresh builds: 317 of 317 static (one run on the MI250X, two on the W7800) and 312 of 312 shared, with no test differing from the MI300X results.
+
+The CUDA build (`USE_HIP` off, the default) compiles with nvcc 12.8 at the current head, including the tests, examples and benchmarks, with no errors. It prints the same 9 warnings as the upstream tree it is based on, all from `src/lib/util/serialization_payload.cu`, and adds none.
+
+## Note on authorship
+
+This port was prepared with the assistance of an AI coding agent, with the results above measured on the listed hardware. Please review it as you would any other outside contribution.
+
+---
+
+This pull request was prepared with the help of an AI assistant acting as a coding agent and was read and approved by a person before it was opened. It comes from an ongoing effort to add AMD GPU support to widely used CUDA projects, one repository at a time: https://github.com/AMD-Ecosystem/moat -- that repository describes how the work is done and what a person checks before anything is submitted.
+
+If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
+====
