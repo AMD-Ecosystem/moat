@@ -113,9 +113,7 @@ Scan this list against what you are doing. If any line could apply, open
 - rocBLAS `gemm_ex` with a 16-bit D splits long k (`max(lda, ldb) * k >= 2^30` in ROCm 10.1) and rounds D once per chunk; send those GEMMs to hipBLASLt.
 - gfx11/gfx12 WMMA float accumulation drifts with k (biased toward zero) in hipBLASLt and rocBLAS alike; run k-chunks of <= 2^15 yourself with 16-bit per-chunk outputs summed in float (a float D is 8-28x slower on gfx1100), recomputing in float the outputs whose 16-bit chunk sums overflow or whose summed half-ulp rounding bound exceeds 3 units of roundoff of the result (a root-sum-square test is beaten by sums that round alike), not hipBLASLt split-k (a gfx1201 kernel is wrong at large k even when split). Route fused-epilogue (cuBLASLt) wrappers through the same path, with the epilogue applied afterwards.
 - HIP host `min`/`max` in `.cu` files exist only for `(int, int)`: float arguments in `__host__ __device__` code silently truncate on the host (whole-pixel camera errors). Fix the call sites with `fmin`/`fmax`; do not rely on `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__`, which exists only from ROCm 7.2 and defaults off.
-
 - Casting a NEGATIVE float to `uint64_t` diverges: AMD keeps the low 32 bits, NVIDIA saturates to 0. (The 32-bit cast agrees.)
-
 
 **Headers, includes and build**
 - A shared compat header must be host-includable: gate device-only includes behind `__CUDACC__`/`__HIPCC__`, or CUB leaks into host TUs. Hit independently by two projects.
@@ -131,9 +129,7 @@ Scan this list against what you are doing. If any line could apply, open
 - The CUDA Samples `helper_math.h` operators tie with `HIP_vector_type`'s own: guard its arithmetic block off on HIP, wholesale.
 - Vendored pre-2017 CUDA Samples helpers (`helper_cuda.h` and friends) carry an EULA notice: keep them off the HIP include path, write an independent substitute, and prove it with an `-H` include trace.
 - Never mark host `.cpp` files `LANGUAGE HIP` to dodge a flag leak: `__HIPCC__` then reaches host code and macros keyed on `__CUDACC__ || __HIPCC__` silently drop host default initializers.
-
 - A `__device__` body in its own `.cu` links two ways on AMD: `-fgpu-rdc` (HIP has it; CMake has no property for it, so set the compile AND link options yourself), or a `__CUDACC__`/`__HIPCC__` guard around definitions moved into the header. RDC leaves the sources untouched and still inlines cross-TU device calls, unlike nvcc `-rdc` without `-dlto`, but it puts flags on the library's link interface and every consumer must then enable the HIP language; the guard costs two edited files and asks nothing of consumers. Moving the bodies into the header WITHOUT the guard makes g++ parse device code and reject `__syncthreads`.
-
 
 **Types, dispatch and platform limits**
 - Never name the pointee struct of an opaque handle (`CUstream_st`); use `std::remove_pointer_t<cudaStream_t>`.

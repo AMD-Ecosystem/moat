@@ -112,55 +112,16 @@ Source: `diff-surfel-tracing` (OptiX to HIP RT), gfx942.
 
 ## RMM -> hipMM (and check ROCm-DS before stubbing any RAPIDS library)
 
-RMM (RAPIDS Memory Manager) does not build on HIP, and HEonGPU first shipped a
-bundled ~600-line stub of the five types it used. The stub was wrong twice over:
-hipMM (https://github.com/AMD-Ecosystem/hipMM, the ROCm-DS port of the RMM
-25.10 line) already existed, keeps RMM's target name, `rmm::` namespace and
-header layout, and replaced the stub without touching one source file. The
-standing rule (Jeff Daily, 2026-08-18): use the officially supported ROCm/AMD
-port instead of vendoring a rewrite -- check the ROCm-DS / AMD-Ecosystem orgs
-for a port of any RAPIDS library before writing a stub.
+RMM (RAPIDS Memory Manager) does not build on HIP. Do not vendor a stub of the types a project uses: hipMM (https://github.com/AMD-Ecosystem/hipMM, the ROCm-DS port of RMM) keeps RMM's `rmm` CMake target, `rmm::` namespace and header layout, so it replaces RMM without source changes. HEonGPU first shipped a 600-line stub and then deleted it. Check the ROCm-DS and AMD-Ecosystem organizations for a port of any RAPIDS library before writing a replacement. For prebuilt wheels instead of a source build, see "RAPIDS libraries: hipDF, hipVS and hipMM as C++ wheels" in references/fault-classes.md.
 
-Integration facts from the HEonGPU swap:
+Integration facts from fetching hipMM with FetchContent (HEonGPU, hipMM 5.0.0, ROCm 10.1):
 
-- The HIP arm of the same FetchContent block that fetches rmm on CUDA fetches
-  hipMM; its own install exports an `rmm` CMake package, so an installed
-  consumer's `find_dependency(rmm)` resolves exactly as on CUDA.
-- hipMM's own `.cpp` sources need a HIP-capable compiler (its hip dependency
-  injects `-x hip --offload-arch` into their compile flags; g++ rejects both).
-  Mark them `LANGUAGE HIP` after the fetch: `get_target_property(... SOURCES)`
-  returns paths relative to the TARGET's source dir, so `list(TRANSFORM ...
-  PREPEND <source_dir>/)` first or the property binds to nonexistent paths and
-  silently does nothing. Nothing propagates to plain C++ consumers (hipMM's
-  interface links hip::host).
-- Pin by commit sha: hipMM publishes no release tags, its `release/rocmds-*`
-  branches move, and layouts differ between them (25.10 is pre-`cpp/` -- a
-  `SOURCE_SUBDIR cpp` declare against it SILENTLY skips add_subdirectory and
-  only fails at link time as `-lrmm`).
-- Do not re-configure a build tree after `cmake --install` into a prefix on
-  the search path: rapids-cmake then finds the just-installed hipccl config,
-  which fails promoting `roc::rocthrust` to global scope. Fresh tree.
-- hipMM's README says Linux-only; a Windows gate needs its own evidence.
-- hipMM lags RMM's API. Its newest line (`release/rocmds-26.03`, package
-  version 4.0.0) still has the RMM 25.x resource API: templated
-  `pool_memory_resource<Upstream>` / `statistics_resource_adaptor<Upstream>`
-  under `rmm/mr/device/`, `allocate_async(bytes, alignment, stream)`, and
-  `set_current_device_resource_ref`. Upstream RMM changed this in steps, so
-  check the tag the project pins rather than its major version (checked
-  against the rapidsai/rmm release tags): 25.12 ships the resource headers
-  under both `rmm/mr/` and `rmm/mr/device/`, and 26.02 drops `rmm/mr/device/`;
-  26.02 also switches to stream-first `allocate(stream, bytes, alignment)`
-  plus `allocate_sync`; `pool_memory_resource` and
-  `statistics_resource_adaptor` stay templates through 26.04, and 26.06 is
-  the first release where they are non-templates and
-  `set_current_device_resource` returns an owning `cuda::mr::any_resource`.
-  So an upstream at 26.02-26.04 needs the header paths and the allocation
-  helpers on HIP but not the resource-type branches, and one at 25.12 that
-  uses `rmm/mr/device/` needs neither. When upstream reaches RMM 26.06+
-  first, no hipMM pin can match: keep the newest hipMM commit and confine
-  the difference to the resource types (`#if defined(__HIP_PLATFORM_AMD__)` in the header,
-  which consumers compiled as HIP also see) and to two or three call-site
-  helpers whose CUDA arms are verbatim the calls they replace. Tell the
-  maintainer the HIP arms go away once a hipMM with the 26.x API exists.
-  (HEonGPU, RMM 26.08 sync)
-
+- Match hipMM's version to the RMM API the project uses, not to RMM's version number. hipMM 4.0 has the RMM 25.x resource API (templated `pool_memory_resource<Upstream>`, headers under `rmm/mr/device/`); hipMM 5.0 is derived from RMM 26.06 (non-template resources, headers under `rmm/mr/`). If upstream is ahead of every hipMM release, wait for or ask for a newer hipMM before writing HIP-only branches around the difference.
+- The HIP arm of the FetchContent block that fetches rmm on CUDA fetches hipMM. Pin it by commit, and name the right subdirectory: a `SOURCE_SUBDIR cpp` against a line that predates the `cpp/` layout silently skips `add_subdirectory` and fails only at link time as `-lrmm`.
+- hipMM has its own version numbers. Where the CUDA build asks for a minimum `rmm` version (a system-package option, or `find_dependency(rmm <version>)` in an installed package config), the HIP branch needs hipMM's number, or an older hipMM with a different header layout is accepted and fails in the consumer's compile.
+- hipMM's own `.cpp` sources need a HIP-capable compiler, because its hip dependency adds `-x hip --offload-arch` to their flags. Mark them `LANGUAGE HIP` after the fetch. `get_target_property(... SOURCES)` returns paths relative to the target's source directory, so prepend that directory first or the property binds to nonexistent paths and silently does nothing.
+- If the project already called `find_package(rocthrust)` in a parent directory, hipMM's scripts fail with "Attempt to promote imported target ... to global scope". Use `find_package(rocthrust ... GLOBAL)` in the parent.
+- A dependency that hipMM's scripts download from a repository that does not resolve can be overridden without patching hipMM: FetchContent and CPM use the first `FetchContent_Declare` of a name, so declare it earlier with a working repository and a pinned commit. Check which copy was used with `git remote get-url origin` in the dependency's fetched source directory in the build tree. (HEonGPU did this for libhipcxx.)
+- hipMM 5.0 calls `hipMemGetDefaultMemPool`, so it needs a ROCm whose HIP declares it (present in HIP 7.16 with ROCm 10.1, absent in HIP 7.14).
+- hipMM is Linux-only, as its README says. hipMM 5.0.0 does not compile on Windows (https://github.com/AMD-Ecosystem/hipMM/issues/11), so a project that depends on it has no Windows ROCm build until that changes.
+- On the hipMM 4.0 line, re-configuring a build tree after `cmake --install` into a prefix on the search path failed while promoting `roc::rocthrust` to global scope; use a fresh tree. Not rechecked on 5.0.

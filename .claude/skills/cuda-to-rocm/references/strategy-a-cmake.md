@@ -375,66 +375,23 @@ header pulled in `cuda_runtime.h` and then rocThrust, and the benchmark targets 
 documents ON once and build it**, then run one binary from each group; that is minutes, and
 it is the only way the claim in your commit message is true.
 
-### OpenMP on a target you just switched to HIP: two runtimes, one binary
-
-An imported target found for another language only half applies to a HIP target, and both
-halves matter. `FindOpenMP.cmake` guards `OpenMP::OpenMP_CXX`'s `INTERFACE_COMPILE_OPTIONS`
-with `$<COMPILE_LANGUAGE:CXX>` (it sets `INTERFACE_LINK_OPTIONS` only for Fujitsu and
-IntelLLVM, so on GCC or Clang there are none), while `INTERFACE_LINK_LIBRARIES` -- the C++
-compiler's OpenMP runtime, `libgomp` under GCC -- is unguarded and reaches the link line of
-any target that links it. So on a source switched to `LANGUAGE HIP` the flag disappears and
-the GNU runtime does not.
-
-Compiled with no `-fopenmp`, the `#pragma omp` is ignored, the link against `libgomp` is
-clean, and the binary runs SERIALLY with `omp_get_thread_num` returning 0 -- no diagnostic
-at any stage. That is the default outcome and the one to watch for; the loud
-undefined-`__kmpc_*` link error belongs to the different, intermediate state where the
-compile got the flag and the link did not. Put `${OpenMP_CXX_FLAGS}` on both
-`$<COMPILE_LANGUAGE:HIP>` and `$<LINK_LANGUAGE:HIP>`, written the way `FindOpenMP` itself
-does it (`$<$<COMPILE_LANGUAGE:HIP>:SHELL:${OpenMP_CXX_FLAGS}>`), since the variable is a
-space-separated string and a compiler whose OpenMP flag is more than one token would
-otherwise arrive as a single argument.
-
-**Then remove `OpenMP::OpenMP_CXX` from that branch instead of keeping it as well.** With
-both, the binary carries two OpenMP runtimes: `readelf -d` shows `libgomp.so.1` and
-`libomp.so` together in DT_NEEDED. It can look fine, because ROCm ships
-`lib/llvm/lib/libgomp.so.1` as a symlink to its own `libomp.so`, so while DT_RUNPATH
-reaches ROCm first both names resolve to one runtime. Put GNU's `libgomp` ahead of it --
-any distro library path does -- and both load. The clang-compiled object's `__kmpc_*` calls
-can only come from LLVM's runtime, so it still forks a real team, but `omp_get_thread_num`,
-which both runtimes export, now answers from `libgomp`, which knows nothing about that
-team. Measured on HEonGPU with a minimal HIP+OpenMP binary linked the same way: four
-distinct OS thread ids, and `omp_get_thread_num` reporting `0 0 0 0`. Code that uses the
-thread id to pick a per-thread resource then has every thread pick element 0 (in HEonGPU's
-multi-stream example, one stream shared by the whole team) while still printing correct
-results.
-
-While you are there, drop any `LINKER_LANGUAGE CXX` left on the target from when it was
-C++. The reason is not that device code goes missing -- a non-RDC HIP object carries its
-own device image and `g++ obj.o -lamdhip64` links and runs it correctly -- but that
-`$<LINK_LANGUAGE:HIP>` is false under a CXX link, so the OpenMP link flag above silently
-never applies. (HEonGPU)
-
 ## Submodules pinned to commits that do not exist
 
 **A port that edits a git submodule in place is lost the moment the clone is deleted, and
-the branch it leaves behind cannot even be cloned.** HEonGPU pins GPU-NTT, GPU-FFT and
-RNGonGPU as submodules. A porter edited each submodule's working tree, committed the
-resulting gitlinks in the parent, and never pushed the submodule commits anywhere. The
-gitlinks then named three SHAs that existed in no repository on earth. Two later sessions
-each rebuilt the same submodule port from scratch before discovering this, and the second
-one saved its reconstruction only as patch files in gitignored scratch space, so it was
-lost a third time.
+the branch it leaves behind cannot even be cloned.** If the submodule's working tree is
+edited and the resulting gitlink is committed in the parent without the submodule commit
+being pushed anywhere, the gitlink names a SHA that exists in no repository. (HEonGPU pins
+GPU-NTT, GPU-FFT and RNGonGPU as submodules and lost its submodule port this way.)
 
 Check for it early: `git ls-tree HEAD <submodule-path>` in the port branch, then
 `git submodule update --init`. If the update cannot find the commit, the branch is
 unbuildable and no amount of local success proves otherwise.
 
-Forking every submodule is usually not available (fork creation is admin-only, and a chain
-of forks has to be re-pointed in `.gitmodules` and kept in sync). The durable shape that
-needs no new repositories is to **reset the gitlinks to the real upstream commits and carry
-the submodule changes as patch files in the parent repo**, applied by whatever script the
-project already runs at configure time:
+Forking every submodule is often not an option (a chain of forks has to be re-pointed in
+`.gitmodules` and kept in sync). The durable shape that needs no new repositories is to
+**reset the gitlinks to the real upstream commits and carry the submodule changes as patch
+files in the parent repo**, applied by whatever script the project already runs at configure
+time:
 
     git submodule update --init --recursive
     if [ "${1:-OFF}" = "ON" ]; then                       # only for AMD builds
@@ -448,12 +405,46 @@ project already runs at configure time:
 The reverse-check is what makes repeated configures idempotent. Pass the AMD flag in from
 CMake so an NVIDIA build sees the submodules untouched. Add `ignore = dirty` to each entry
 in `.gitmodules`: applying the patches permanently dirties those working trees, and without
-this every later `git status` reads as an unclean tree and trips the integrity gate, while
-a genuine gitlink bump still shows. This also states the honest upstream position -- these
-changes belong in the submodules' own repositories, and the patch files are exactly the
-diffs to send there. (HEonGPU)
+this every later `git status` reads as an unclean tree and fails any check for a clean tree,
+while a genuine gitlink bump still shows. This also states the honest upstream position --
+these changes belong in the submodules' own repositories, and the patch files are exactly
+the diffs to send there. (HEonGPU)
+
+## Windows: CMake's HIP link rule mangles MSVC-style flags and paths
+
+On Windows, CMake's HIP link path routes through `hipcc.exe`, which invokes `clang.exe
+--driver-mode=g++` for `--hip-link`. That GCC driver then receives CMake's MSVC-style
+response file and flags, and misreads them two ways: it treats bare MSVC linker flags
+(`/machine:x64`, `/subsystem:console`) as file paths, and it applies GNU backslash-escaping
+to the response file, eating every backslash so `D:\path\torch.lib` arrives as
+`D:pathtorch.lib`. CMake also injects `-fuse-ld=lld-link`, which conflicts with `--hip-link`.
+
+**This has nothing to do with `-fgpu-rdc`.** A project with no relocatable device code at all
+still hits it if it links HIP through CMake on Windows. Do not conclude you are safe because
+you are not using RDC -- that mistake was made once already and cost a round.
+
+Fix: interpose a wrapper on the link step, set as `CMAKE_HIP_LINK_EXECUTABLE`. The canonical
+copy is `assets/hip_link_win.py` in this skill. It strips `-fuse-ld=*`, converts `-Xlinker`
+pairs and bare MSVC `/flags` to `-Wl,` form, and rewrites `-lXXX.lib` to `-Xlinker XXX.lib`
+so lld-link resolves them via `LIB`. It is ~60 lines and carries no project-specific state.
+
+**Vendor a copy into the project** (conventionally `cmake/hip_link_win.py`) rather than
+referencing this skill: the project's CMake calls it, and the work is meant to be
+upstreamed, so a pull request cannot depend on a file that only exists here.
+
+Guard the override to Windows. Related and separate: the clang-cl `/Fo` bundler bug, where the
+CMake HIP compile rule must emit `-o <OBJECT>` instead of `/Fo<OBJECT>` because the driver
+hands the same path to `clang-offload-bundler` as both input and output and Windows refuses to
+rewrite a memory-mapped file (ROCm/TheRock#5615). A project can need the compile-rule fix, the
+link wrapper, or both -- they are independent. (alien, origin of the wrapper; LichtFeld-Studio,
+which needs the link half.)
 
 ## Windows: a fetched ROCm-DS dependency has to be built static
+
+Measured on the hipMM 4.0 line. hipMM 5.0.0 does not yet compile on Windows at all
+(https://github.com/AMD-Ecosystem/hipMM/issues/11), so the hipMM-specific parts below apply
+again once it does; the `LINKER:` and `BUILD_SHARED_LIBS` points hold for any fetched
+dependency.
 
 ROCm-DS libraries -- hipMM (the RMM port) and the rapids_logger it fetches transitively --
 are built shared by default and neither one works that way under an MSVC-style toolchain.
@@ -505,31 +496,3 @@ set for their own build and persists in the build tree across reconfigures, incl
 later one that no longer takes this branch. Guard the whole thing on `MSVC` (true for clang-cl,
 and the correct predicate for "MSVC-style link driver") so Linux and the CUDA path are
 untouched. (HEonGPU)
-## Windows: CMake's HIP link rule mangles MSVC-style flags and paths
-
-On Windows, CMake's HIP link path routes through `hipcc.exe`, which invokes `clang.exe
---driver-mode=g++` for `--hip-link`. That GCC driver then receives CMake's MSVC-style
-response file and flags, and misreads them two ways: it treats bare MSVC linker flags
-(`/machine:x64`, `/subsystem:console`) as file paths, and it applies GNU backslash-escaping
-to the response file, eating every backslash so `D:\path\torch.lib` arrives as
-`D:pathtorch.lib`. CMake also injects `-fuse-ld=lld-link`, which conflicts with `--hip-link`.
-
-**This has nothing to do with `-fgpu-rdc`.** A project with no relocatable device code at all
-still hits it if it links HIP through CMake on Windows. Do not conclude you are safe because
-you are not using RDC -- that mistake was made once already and cost a round.
-
-Fix: interpose a wrapper on the link step, set as `CMAKE_HIP_LINK_EXECUTABLE`. The canonical
-copy is `assets/hip_link_win.py` in this skill. It strips `-fuse-ld=*`, converts `-Xlinker`
-pairs and bare MSVC `/flags` to `-Wl,` form, and rewrites `-lXXX.lib` to `-Xlinker XXX.lib`
-so lld-link resolves them via `LIB`. It is ~60 lines and carries no project-specific state.
-
-**Vendor a copy into the project** (conventionally `cmake/hip_link_win.py`) rather than
-referencing this skill: the project's CMake calls it, and the work is meant to be
-upstreamed, so a pull request cannot depend on a file that only exists here.
-
-Guard the override to Windows. Related and separate: the clang-cl `/Fo` bundler bug, where the
-CMake HIP compile rule must emit `-o <OBJECT>` instead of `/Fo<OBJECT>` because the driver
-hands the same path to `clang-offload-bundler` as both input and output and Windows refuses to
-rewrite a memory-mapped file (ROCm/TheRock#5615). A project can need the compile-rule fix, the
-link wrapper, or both -- they are independent. (alien, origin of the wrapper; LichtFeld-Studio,
-which needs the link half.)

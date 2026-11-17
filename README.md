@@ -237,12 +237,13 @@ The project name links upstream.
 | [gtsam_points](https://github.com/koide3/gtsam_points) ([fork](https://github.com/AMD-Ecosystem/gtsam_points/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#99](https://github.com/koide3/gtsam_points/pull/99) |
 | [h2o4gpu](https://github.com/h2oai/h2o4gpu) ([fork](https://github.com/AMD-Ecosystem/h2o4gpu/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#902](https://github.com/h2oai/h2o4gpu/pull/902) |
 | [habitat-sim](https://github.com/facebookresearch/habitat-sim) ([fork](https://github.com/AMD-Ecosystem/habitat-sim/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
-| [HEonGPU](https://github.com/Alisah-Ozcan/HEonGPU) ([fork](https://github.com/AMD-Ecosystem/HEonGPU/tree/moat-port)) | ✅ | ✅ | 🔧 | — |
+| [HEonGPU](https://github.com/Alisah-Ozcan/HEonGPU) ([fork](https://github.com/AMD-Ecosystem/HEonGPU/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟢 [#41](https://github.com/enCRYPTON-labs/HEonGPU/pull/41) |
 | [HierarchicalKV](https://github.com/NVIDIA-Merlin/HierarchicalKV) | ⬜ | ⬜ | ⬜ | — |
 | [HugeCTR](https://github.com/NVIDIA-Merlin/HugeCTR) | ⬜ | ⬜ | ⬜ | — |
 | [icicle](https://github.com/ingonyama-zk/icicle) ([fork](https://github.com/AMD-Ecosystem/icicle/tree/moat-port)) | ✅ | ✅ | 🎫 | — |
 | [Isaac-GR00T](https://github.com/NVIDIA/Isaac-GR00T) | ⬜ | ⬜ | 🎫 | — |
 | [IsaacLab](https://github.com/isaac-sim/IsaacLab) ([fork](https://github.com/AMD-Ecosystem/IsaacLab/tree/moat-port)) | ✅ | ✅ | ⬜ | — |
+| [jitllm](https://github.com/beehive-lab/jitllm) | ⬜ | ⬜ | ⬜ | — |
 | [k2](https://github.com/k2-fsa/k2) ([fork](https://github.com/AMD-Ecosystem/k2/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#1353](https://github.com/k2-fsa/k2/pull/1353) |
 | [kaldi](https://github.com/kaldi-asr/kaldi) ([fork](https://github.com/AMD-Ecosystem/kaldi/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟢 [#4986](https://github.com/kaldi-asr/kaldi/pull/4986) |
 | [kaldifeat](https://github.com/csukuangfj/kaldifeat) ([fork](https://github.com/AMD-Ecosystem/kaldifeat/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#124](https://github.com/csukuangfj/kaldifeat/pull/124) |

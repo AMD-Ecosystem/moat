@@ -328,10 +328,9 @@ over another is an overflow of whatever the ratio is, and CUDA can absorb a larg
 silently -- HEonGPU's TFHE encryptor allocated 512 random states and initialized and used
 512 * 32 of them, a 32x overrun that only AMD turned into wrong answers. Grep every raw
 `cudaMalloc` for the expression it is sized by and check it against the grid the consuming
-kernel is launched with; when the two disagree, the launch geometry is the intent. This is a
-memory-safety bug on both platforms, so fix it for both rather than guarding it.
-(HEonGPU: `HEEncryptor<Scheme::TFHE>` cuda_rng.)
-
+kernel is launched with; when the two disagree, decide which one is the intent (in HEonGPU
+it was the launch geometry). This is a memory-safety bug on both platforms, so fix it for
+both rather than guarding it. (HEonGPU: `HEEncryptor<Scheme::TFHE>` cuda_rng.)
 
 **Rule-of-five on resource handles.** CUDA tolerates a default-constructed or
 double-destroyed texture/stream/event handle; AMD faults. Give RAII wrappers explicit
@@ -900,7 +899,6 @@ pure port change. (HEonGPU: RNGonGPU's Box-Muller Gaussian sampler; every cipher
 decrypted to noise while plaintext encoding, which samples no error, passed -- which is the
 tell that the fault is in a SAMPLER and not in the transform everything shares.)
 
-
 ## Headers, includes and build
 
 **A shared compat header must be host-includable.** Host `.cpp` TUs reach the shim through
@@ -956,11 +954,8 @@ cuda_runtime.h includes device_launch_parameters.h only under `#if defined(__CUD
 is not universal and you do not need it to be: one exposed TU is enough. Establish it by
 preprocessing rather than by reasoning about the include graph -- `g++ -E <the target's own
 flags> foo.cpp | grep -n 'device_launch_parameters.h"\|<shim>.h"'` gives the two line numbers
-and settles the order per TU. (In HEonGPU exactly one of the library's four host TUs was
-exposed: `lib/heongpu.cpp` reaches the shim at line 18 and the launch parameters at 58820,
-while `kernel/contextpool.cpp` gets them at 58806 and 59557 respectively because its own
-header includes GPU-NTT's `nttparameters.cuh` first, and two others reach the shim not at
-all.) Give a shim the runtime header only and leave the RNG include in the kernel headers
+and settles the order per TU. (In HEonGPU exactly one of the library's four host files was
+exposed.) Give a shim the runtime header only and leave the RNG include in the kernel headers
 that use it: those are reached later, after the launch parameters, which is why they are
 safe. If a host TU ever reaches the RNG header first, put `<device_launch_parameters.h>`
 ahead of it there rather than moving the include back into the shim. Nothing on the AMD
@@ -988,6 +983,9 @@ symbols one TU at a time, so without a flag it stops with
    target_link_options(mylib INTERFACE -fgpu-rdc)
    ```
 
+   On Windows, `-fgpu-rdc` under a clang-cl driver also meets the `/Fo` bundler bug described
+   in references/strategy-a-cmake.md; apply the fix given there before judging the flag.
+
 2. **A `__CUDACC__`/`__HIPCC__` guard** around the definitions moved into the header, with the
    declarations left unconditional (the shape and the two-phase-lookup reason are two entries
    below). It costs two edited files and it drops the `.cu` from the source list, but it puts
@@ -996,14 +994,11 @@ symbols one TU at a time, so without a flag it stops with
 Both were measured on the same project (HEonGPU, gfx90a, ROCm 7.2.1): 20/20 suites pass
 either way, benchmarks equal within run-to-run noise, so performance does not decide it. What
 decides it is whether the project ships an installed library to third parties. `-fgpu-rdc`
-imposes a contract on every consumer that the CUDA path does not impose (next entry), and
-`git log -S` on that project showed nothing had ever been on its link interface before. A
+imposes a contract on every consumer that the CUDA path does not impose (next entry). A
 library whose consumers are strangers should prefer the guard for that reason; an application,
 or a library built in-tree by its only consumer, can take `-fgpu-rdc` and keep the smaller
-diff. HEonGPU tried RDC, measured the consumer cost, and was ruled back to the guard. Whichever
-you choose, say in the code which one it is and why -- the reviewer's first question is why the
-other one was not used, and an answer invented after the fact is usually wrong (that project's
-first guard comment claimed RDC could not inline, which is false).
+diff. HEonGPU, an installed library, chose the guard. Whichever you choose, say in the code
+which one it is and why -- the reviewer's first question is why the other one was not used.
 
 **`-fgpu-rdc` changes the consumer contract, so the project's downstream docs owe a line
 about it.** This is the cost of option 1 above, and it is the reason to think twice about it.
@@ -1074,8 +1069,7 @@ unrecognized-option message for the undefined-symbol one. Fix it in prose -- whe
 project tells a CUDA consumer to set `CUDA_SEPARABLE_COMPILATION ON`, the HIP consumer needs
 the parallel sentence. None of this is fatal -- the contract is documentable and a consumer
 that enables the HIP language pays nothing -- but it is a requirement the CUDA path does not
-have, and on HEonGPU that asymmetry alone was enough to rule `-fgpu-rdc` out in favour of the
-guard. Weigh it before you adopt the flag, not after you have written the docs for it.
+have. Weigh it before you adopt the flag, not after you have written the docs for it.
 (HEonGPU)
 
 **Cross-TU `__device__` calls ARE inlined on AMD under `-fgpu-rdc`.** Do not repeat the nvcc
@@ -1114,24 +1108,20 @@ one. `__CUDA_ARCH__`/`__HIP_DEVICE_COMPILE__` would be wrong here -- they are fa
 nvcc's host pass, which still has to parse the same TU. Adding `inline` at the definition
 after a non-inline declaration is legal. The third arrangement, keeping the separate `.cu`
 for CUDA and the header definitions for HIP, is the worst of them: it duplicates the bodies
-in two files that must not drift. HEonGPU went guard -> `-fgpu-rdc` -> guard: the flag gave a
-zero-diff pair of source files and three lines of CMake, and it was given up because those
-three lines were on the library's link interface. Two edited source files that consumers
-never see beat a clean diff that changes how everyone links.
+in two files that must not drift.
 
 **No AMD build, review round or GPU validation can detect this class.** In HEonGPU two review
 rounds and a full 20/20 GPU validation passed over the inlined header; only compiling the
 CUDA path with nvcc found it. Any port that touches how device bodies are compiled owes an
 nvcc compile check (references/validation.md). Adding the guard is codegen-neutral on AMD --
-verified with `codeobj_diff.py`, identical exported symbols and device ISA on all 42 gfx90a
-binaries -- because every calling TU is a device TU where the guard is true. Switching to
-`-fgpu-rdc` is NOT: it changes the device ISA of every binary (the device link re-optimizes
-the whole image), so it is a real code delta and every arch owes a fresh GPU run. That cuts
-both ways, and it is a free correctness check if you ever switch back: reverting HEonGPU's
-`-fgpu-rdc` to the guard reproduced the pre-RDC build byte for byte in device ISA and
-exported symbols on all 42 binaries, which is what a clean revert should look like. Keep a
-snapshot of the earlier `bin/` around for exactly that comparison. (HEonGPU)
-
+verified with a comparison of device code objects, identical exported symbols and device ISA
+on all 42 gfx90a binaries -- because every calling TU is a device TU where the guard is true.
+Switching to `-fgpu-rdc` is NOT: it changes the device ISA of every binary (the device link
+re-optimizes the whole image), so it is a real code delta and every arch owes a fresh GPU
+run. That cuts both ways, and it is a free correctness check if you ever switch back:
+reverting HEonGPU's `-fgpu-rdc` to the guard reproduced the pre-RDC build byte for byte in
+device ISA and exported symbols on all 42 binaries, which is what a clean revert should look
+like. Keep a snapshot of the earlier `bin/` around for exactly that comparison. (HEonGPU)
 
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
@@ -1360,7 +1350,16 @@ __kmpc_fork_call`: clang emits libomp calls, the link brought libgomp).
 3.31. What worked: `target_compile_options(t PRIVATE $<$<COMPILE_LANGUAGE:HIP>:-fopenmp>)`,
 `target_link_options(t PRIVATE -fopenmp)`, and no `OpenMP::OpenMP_CXX` on the HIP target;
 clang links its own libomp and adds a runpath to it. Check with `grep -c fopenmp
-compile_commands.json` and `ldd` on the library. (LEAP version two.)
+compile_commands.json` and `ldd` on the library. (LEAP version two.) Keeping
+`OpenMP::OpenMP_CXX` as well gives the binary both runtimes (`readelf -d` shows
+`libgomp.so.1` and `libomp.so`), and it can look fine: ROCm ships `lib/llvm/lib/libgomp.so.1`
+as a symlink to its own `libomp.so`, so both names resolve to one runtime until a distro
+library path puts GNU's libgomp first. Then clang's `__kmpc_*` calls still fork a real team
+from libomp, but `omp_get_thread_num` answers from libgomp and reports 0 on every thread
+(measured: four distinct OS thread ids, `0 0 0 0`), so code that picks a per-thread resource
+by thread id has every thread pick element 0 while still printing correct results. Also drop
+any `LINKER_LANGUAGE CXX` left on the target: `$<LINK_LANGUAGE:HIP>` is false under a CXX
+link, so a HIP-conditioned OpenMP link flag silently never applies. (HEonGPU)
 
 **An all-clang Windows HIP build hides three CMake/export faults that MSVC builds never
 hit.** (1) `WIN32`-guarded export macros (`#ifdef WIN32` + `#ifdef PROJECTOR_EXPORTS` ->
@@ -1794,6 +1793,91 @@ than skipping them on "it is Windows-gated" reasoning. Rebuilding is how both re
 above were caught; a reasoning-only skip would have shipped a broken build. (aihwkit,
 MMseqs2)
 
+## PTX carry-chain arithmetic (multi-word integers)
+
+Big-integer and modular-reduction code reaches for PTX because CUDA exposes the carry flag
+and C++ does not: `add.cc.u64` / `addc.cc.u64` / `subc.u64` chains, and `mul.lo.u64` +
+`mul.hi.u64` pairs. None of it survives hipify, so it is hand-translated, and the
+translation is easy to get subtly wrong in a way that compiles, runs, and silently corrupts
+results. Guard the original with `#ifdef __HIP_PLATFORM_AMD__` and leave the NVIDIA path
+byte-identical rather than replacing it for both.
+
+The two replacements, with the predicates spelled out, since these are what get fumbled:
+
+    // mul.lo/mul.hi -> 128-bit product
+    lo = a * b;
+    hi = __umul64hi(a, b);
+
+    // add.cc/addc chain -> carry out of a + b + carry_in
+    sum   = a + b + carry;
+    carry = (sum < a || (carry && sum == a)) ? 1 : 0;
+
+    // sub.cc/subc chain -> borrow out of a - b - borrow_in
+    diff   = a - b - borrow;
+    borrow = (a < b || (a == b && borrow)) ? 1 : 0;
+
+The add predicate needs both clauses. With `carry_in = 1` and `b == 2^64 - 1` the sum equals
+`a` exactly and a carry is nevertheless produced; testing only `sum < a` drops it. The
+symmetric case is why the borrow predicate tests `a == b && borrow` and reads the ORIGINAL
+`a` and `b`, not the computed difference.
+
+**Establish the limb order from the asm operand numbering before writing anything.** Outputs
+are numbered before inputs, so in
+
+    : "=l"(v.y), "=l"(v.x)        // %0 = v.y, %1 = v.x
+    : "l"(a), "l"(b)              // %2 = a,   %3 = b
+    mul.lo.u64 %1, %2, %3;        // -> v.x is the LOW limb
+
+a struct whose members are named `x` and `y` can carry low in either one, and the surrounding
+C++ shift operators are the cross-check. Getting this backwards produces plausible-looking
+garbage. (HEonGPU)
+
+## Shift counts of 0 or >= 64 in hand-rolled 128-bit arithmetic
+
+The same hand-rolled `uint128_t` (a pair of 64-bit limbs) that carries the PTX above almost
+always implements `operator<<` / `operator>>` as three unguarded limb shifts:
+
+    result.lo = value.lo >> shift;
+    result.lo = (value.hi << (64 - shift)) | result.lo;   // shift == 0 -> hi << 64
+    result.hi = value.hi >> shift;                        // shift >= 64 -> UB
+
+Shifting a 64-bit value by 64 or more, or by `64 - 0`, is undefined in C++ and **the two back
+ends resolve it differently**: PTX `shr.u64` / `shl.u64` clamp the count to the register
+width and so yield 0 for any count >= 64, while AMDGPU's `v_lshrrev_b64` uses only the LOW 6
+BITS of the count, so a shift of 64 acts as a shift of 0 and of 65 as a shift of 1. AMD
+returns the wrong limb OR-ed into the right one at every count >= 64. This is the 64-bit
+sibling of the 32-bit mask fault under "Wavefront and warp semantics" (a shift count that
+wraps at 32 because the mask was built in `int`).
+
+This is data-dependent, not arch-dependent, so it hides until the shift count crosses 64.
+Barrett reduction shifts by `modulus.bit + 3`, which reaches 64 at a 61-bit modulus: on
+HEonGPU every modular multiplication was correct up to 60 bits and garbage at 61 and 62, so
+CKKS (37-bit moduli) passed while BFV, whose decryption uses a 61-bit correction modulus,
+decrypted to noise. **Sweep the modulus/exponent width, not just the input values, when
+validating modular arithmetic** -- a probe that only tests the widths a passing scheme uses
+proves nothing about the one that fails.
+
+Fix by branching on `shift == 0`, `shift < 64` and `shift < 128` explicitly. No `#ifdef` is
+needed, but **do not tell the maintainer his CUDA numbers are unchanged**: the equivalence
+with PTX holds only for counts 0 through 64. At exactly 64 the clamp happens to give the
+right answer -- `lo >> 64` is 0, `hi << (64 - 64)` is `hi`, so the low limb already comes out
+as `hi` and the high limb as 0, which is what the explicit branch computes. From 65 up it
+does not: `64 - shift` underflows, PTX clamps every term and returns zero for the whole
+value, while the correct result (and what the explicit branch computes) is
+`hi >> (shift - 64)` in the low limb. So the guard is a CUDA-side fix too, at any count
+above 64 -- on HEonGPU that is a 62-bit modulus, which the class documents as supported.
+Check the reachable count range against the type's documented limits before writing
+"behaviour-preserving" in a commit message, and tell the maintainer about the CUDA-visible
+change. Audit `ROTL64`-style rotate macros in the same file for the `n == 0` case.
+(HEonGPU: GPU-NTT `modular_arith.cuh`.)
+
+Before carrying such a fix, and again at every upstream sync, check whether upstream has
+fixed the defect itself. A fix written in inline PTX does not reach the HIP build: give the
+HIP branch a helper with exactly the result of upstream's PTX for every shift count the
+callers can produce, and drop your own fix rather than keeping a second, different one.
+(HEonGPU: upstream GPU-NTT later fixed the 61-bit case with PTX shift helpers, and the port
+replaced its explicit branches with HIP helpers that return zero for counts of 64 or more.)
+
 ## Vulkan interop and image codecs
 
 **External memory ports 1:1; external semaphores do not.** `hipImportExternalMemory` with
@@ -1937,99 +2021,4 @@ is a script rewriting a dependency choice (overlay paths, registries, user overr
 pkg-config caches all need handling) where the manifest has a declarative mechanism. The
 vcpkg toolchain caches `VCPKG_MANIFEST_DIR` with FORCE, so a build tree that ever pointed it
 elsewhere keeps doing so until reconfigured with `-UVCPKG_MANIFEST_DIR`. (LichtFeld-Studio)
-
-Validator corollary: a Windows-LABELED delta is NOT automatically inert elsewhere -- it can
-touch a shared header that compiles differently against another platform's ROCm or torch.
-When such a delta flips a passed arch to revalidate, REBUILD it rather than carrying forward
-on "it is Windows-gated" reasoning. A binary-equivalence carry-forward inherently builds,
-which is how both regressions above were caught; a reasoning-only skip would have shipped a
-broken build. (aihwkit, MMseqs2)
-
-## PTX carry-chain arithmetic (multi-word integers)
-
-Big-integer and modular-reduction code reaches for PTX because CUDA exposes the carry flag
-and C++ does not: `add.cc.u64` / `addc.cc.u64` / `subc.u64` chains, and `mul.lo.u64` +
-`mul.hi.u64` pairs. None of it survives hipify, so it is hand-translated, and the
-translation is easy to get subtly wrong in a way that compiles, runs, and silently corrupts
-results. Guard the original with `#ifdef __HIP_PLATFORM_AMD__` and leave the NVIDIA path
-byte-identical rather than replacing it for both.
-
-The two replacements, with the predicates spelled out, since these are what get fumbled:
-
-    // mul.lo/mul.hi -> 128-bit product
-    lo = a * b;
-    hi = __umul64hi(a, b);
-
-    // add.cc/addc chain -> carry out of a + b + carry_in
-    sum   = a + b + carry;
-    carry = (sum < a || (carry && sum == a)) ? 1 : 0;
-
-    // sub.cc/subc chain -> borrow out of a - b - borrow_in
-    diff   = a - b - borrow;
-    borrow = (a < b || (a == b && borrow)) ? 1 : 0;
-
-The add predicate needs both clauses. With `carry_in = 1` and `b == 2^64 - 1` the sum equals
-`a` exactly and a carry is nevertheless produced; testing only `sum < a` drops it. The
-symmetric case is why the borrow predicate tests `a == b && borrow` and reads the ORIGINAL
-`a` and `b`, not the computed difference.
-
-**Establish the limb order from the asm operand numbering before writing anything.** Outputs
-are numbered before inputs, so in
-
-    : "=l"(v.y), "=l"(v.x)        // %0 = v.y, %1 = v.x
-    : "l"(a), "l"(b)              // %2 = a,   %3 = b
-    mul.lo.u64 %1, %2, %3;        // -> v.x is the LOW limb
-
-a struct whose members are named `x` and `y` can carry low in either one, and the surrounding
-C++ shift operators are the cross-check. Getting this backwards produces plausible-looking
-garbage. (HEonGPU)
-
-## Shift counts of 0 or >= 64 in hand-rolled 128-bit arithmetic
-
-The same hand-rolled `uint128_t` (a pair of 64-bit limbs) that carries the PTX above almost
-always implements `operator<<` / `operator>>` as three unguarded limb shifts:
-
-    result.lo = value.lo >> shift;
-    result.lo = (value.hi << (64 - shift)) | result.lo;   // shift == 0 -> hi << 64
-    result.hi = value.hi >> shift;                        // shift >= 64 -> UB
-
-Shifting a 64-bit value by 64 or more, or by `64 - 0`, is undefined in C++ and **the two back
-ends resolve it differently**: PTX `shr.u64` / `shl.u64` clamp the count to the register
-width and so yield 0 for any count >= 64, while AMDGPU's `v_lshrrev_b64` uses only the LOW 6
-BITS of the count, so a shift of 64 acts as a shift of 0 and of 65 as a shift of 1. AMD
-returns the wrong limb OR-ed into the right one at every count >= 64.
-
-This is data-dependent, not arch-dependent, so it hides until the shift count crosses 64.
-Barrett reduction shifts by `modulus.bit + 3`, which reaches 64 at a 61-bit modulus: on
-HEonGPU every modular multiplication was correct up to 60 bits and garbage at 61 and 62, so
-CKKS (37-bit moduli) passed while BFV, whose decryption uses a 61-bit correction modulus,
-decrypted to noise. **Sweep the modulus/exponent width, not just the input values, when
-validating modular arithmetic** -- a probe that only tests the widths a passing scheme uses
-proves nothing about the one that fails.
-
-Fix by branching on `shift == 0`, `shift < 64` and `shift < 128` explicitly. No `#ifdef` is
-needed, but **do not tell the maintainer his CUDA numbers are unchanged**: the equivalence
-with PTX holds only for counts 0 through 64. At exactly 64 the clamp happens to give the
-right answer -- `lo >> 64` is 0, `hi << (64 - 64)` is `hi`, so the low limb already comes out
-as `hi` and the high limb as 0, which is what the explicit branch computes. From 65 up it
-does not: `64 - shift` underflows, PTX clamps every term and returns zero for the whole
-value, while the correct result (and what the explicit branch computes) is
-`hi >> (shift - 64)` in the low limb. So the guard is a CUDA-side fix too, at any count
-above 64 -- on HEonGPU that is a 62-bit modulus, which the class documents as supported.
-Check the reachable count range against the type's documented limits before writing
-"behaviour-preserving" in a commit message, and register the CUDA-visible change so the
-maintainer hears about it. Audit `ROTL64`-style rotate macros in the same file for the
-`n == 0` case. (HEonGPU: GPU-NTT `modular_arith.cuh`.)
-
-## Do not trust a bisection that contradicts a passing test
-
-When a probe says a primitive is broken but a shipping test that exercises that same
-primitive passes, the probe is wrong until proven otherwise. On HEonGPU a session concluded
-the inverse NTT miscomputed on gfx90a while the encode/decode tests -- which round-trip
-through exactly that inverse NTT -- kept passing. The contradiction was recorded in the same
-notes file and not reconciled, and the next session inherited the wrong suspect. Reconcile
-first: either the passing test does not use the path you think it does, or the probe set up
-its inputs differently from the library (mismatched tables, wrong API overload, wrong
-ordering convention). Write the probe against the library's OWN generated parameters and
-public entry points, never against parameters you regenerate by hand. (HEonGPU)
 
