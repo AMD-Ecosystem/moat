@@ -8442,3 +8442,30 @@ Not run in this round: there is no source change, `head_sha` stays `1b4e781`, an
 ### State
 
 The state table leaves `porting` only for `ported` or `delta-ported` (`utils/moatlib.py` `STAGE_TRANSITIONS`), so the stage is set to `ported`, which releases the lock; `head_sha` is unchanged and every completed platform stays completed. The empty `fix` round (`moat-fix-41`, base = tip = `1b4e781`, branch not on the fork) is still recorded. For Jeff: drop it with `python3 utils/moatlib.py abandon-fix HEonGPU --by <who> --reason "upstream fixed the TFHE torus32 conversion in 2c9a555/7c93d4d before the port merged them; no change"` -- a person's ruling, not taken here. Until then a reviewer dispatched at `ported` has an empty delta and no staging branch to scan.
+
+## Review 2026-11-17 (reviewer, linux-gfx942) -- no delta after the abandoned `moat-fix-41` round, `1b4e781`
+
+Dispatched by Jeff Daily to return the stage to `review-passed`: the stage read `ported` only because fix round `moat-fix-41` was opened and then abandoned (`abandon-fix`, jeffdaily) with no fork change. Lock taken with `set-state HEonGPU linux-gfx942 reviewing --agent reviewer`. Verdict: **review-passed, no findings.**
+
+Empty delta since the last passed review ("Review 2026-11-17 ... documentation delta `537cdca..1b4e781`"):
+
+```
+git ls-remote https://github.com/AMD-Ecosystem/HEonGPU   # refs/heads/moat-port 1b4e781d83cf16e9090075f69db4e06688ab9d61; refs/heads: main, moat-port only; no moat-fix-41
+git ls-remote https://github.com/enCRYPTON-labs/HEonGPU 'refs/pull/41/*'   # refs/pull/41/head 1b4e781d83cf16e9090075f69db4e06688ab9d61
+gh pr view 41 -R enCRYPTON-labs/HEonGPU --json headRefOid,state   # 1b4e781..., OPEN (head AMD-Ecosystem:moat-port)
+git rev-list --count 1b4e781d83cf16e9090075f69db4e06688ab9d61..origin/moat-port   # 0
+git diff --stat 1b4e781d83cf16e9090075f69db4e06688ab9d61 origin/moat-port         # empty
+```
+
+`status.json` `head_sha` = `published_sha` = `pr_approval.head_sha` = `1b4e781`. (`upstream_url` still names `Alisah-Ozcan/HEonGPU`; GitHub redirects it to `enCRYPTON-labs/HEonGPU`, the PR's repository.)
+
+Fact-check of the fix round's claim (every TFHE float-to-unsigned conversion at `1b4e781` goes through a signed or rounded intermediate), read independently against the tree:
+
+- `2c9a555` and `7c93d4d` are ancestors of `1b4e781` (`git merge-base --is-ancestor`).
+- `src/lib/host/secure_random.h:101-109` `detail::torus32`: `std::llround` of `frac * 2^32` with `frac` in (-1, 1) gives a `long long` in [-2^32, 2^32] (the endpoints are reachable by rounding, which the round's table writes as an open interval; harmless, 2^32 reduces to 0), then integer `uint32_t` and `int32_t` conversions. No float reaches an unsigned cast.
+- Callers: `src/lib/host/tfhe/keygenerator.cu:117` (bootstrapping-key noise) and `src/lib/host/tfhe/encryptor.cu:59-61` (LWE noise, `uint32_t(int32_t)`); `grep -rn torus32 src` finds no other caller. `encode_to_torus32` (`encryptor.cu:86`, `operator.cu:319`) is integer-only.
+- `src/lib/kernel/keygeneration.cu:879-889` `tfhe_generate_switchkey_kernel`: `static_cast<uint32_t>(llround(frac * 4294967296.0))`, signed intermediate. Its noise is host `normal_distribution<double>` samples copied as `double` (`keygenerator.cu:172-187`) and is converted nowhere else.
+- No other floating point in any TFHE path: `grep` for `double|float|round|trunc|floor` over `src/lib/host/tfhe/`, `src/include/heongpu/host/tfhe/`, the TFHE kernels in `src/lib/kernel/bootstrapping.cu:635-1450` (integer-only; `torus_modulus_switch_log` is `int32 -> uint32 -> uint64`) and `keygeneration.cu:800-1120` finds only variance bookkeeping and the switch-key site above. No `__double2uint`-style intrinsic anywhere in `src`, `example`, `benchmark` or `test`.
+- Spot-checked the non-TFHE sites the round listed: `encoding.cu:49-58` casts only `fabs` of the rounded value; `switchkey.cu:780-790` casts `round(r)` of a sum of non-negative quotients.
+
+The round's claim holds. Closing `heongpu-tfhe-torus32-saturates` as `done` is supported. No build or test run: no source change, and linux-gfx942, linux-gfx1100 and linux-gfx90a completed at exactly `1b4e781`. Nothing pushed to the fork (`moat-port` is frozen under the open PR).
