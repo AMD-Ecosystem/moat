@@ -1,0 +1,19 @@
+{
+  "schema_version": 3,
+  "name": "jitllm",
+  "upstream_url": "https://github.com/beehive-lab/jitllm",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-17T19:23:49Z",
+  "updated_at": "2026-11-17T19:23:51Z",
+  "head_sha": null,
+  "depends_on": [
+    "TornadoVM"
+  ],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
