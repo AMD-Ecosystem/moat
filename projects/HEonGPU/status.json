@@ -7,13 +7,13 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-11-17T05:01:04Z",
-  "head_sha": "640a8b5974e69a720454b1005e491b306e87e16d",
+  "updated_at": "2026-11-17T05:54:23Z",
+  "head_sha": "25b45baff5e94e7fa07943c02bbdb45aac00d0c9",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 866783897,
-  "stage": "porting",
+  "stage": "delta-ported",
   "platforms": {
     "linux-gfx942": {
       "blocked": false,
@@ -92,7 +92,7 @@
       "failed_sha": "640a8b5974e69a720454b1005e491b306e87e16d",
       "started_at": "2026-08-13T02:40:37Z",
       "completed_at": "2026-08-19T04:22:31Z",
-      "updated_at": "2026-11-17T05:01:04Z",
+      "updated_at": "2026-11-17T05:54:23Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -120,13 +120,9 @@
   },
   "review_pr": "https://github.com/AMD-Ecosystem/HEonGPU/pull/1",
   "porting_released": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-04T08:21:55Z",
-    "at": "2026-11-04T08:23:35Z"
-  },
-  "porting": {
     "arch": "windows-gfx1151",
     "since": "2026-11-17T05:01:04Z",
-    "holder": "2e86842d8592"
-  }
+    "at": "2026-11-17T05:54:23Z"
+  },
+  "porting": null
 }

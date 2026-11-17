@@ -381,3 +381,5 @@
 {"kind":"phase","ts":"2026-11-04T18:18:47Z","phase":"compile","seconds":6.431,"exit":127,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
 {"kind":"phase","ts":"2026-11-04T18:37:57Z","phase":"test","seconds":1136.530,"exit":8,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/runtests.sh"}
 {"kind":"session","ts":"2026-11-04T18:38:51Z","epoch":1793817531.718452400,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-17T05:19:27Z","phase":"compile","seconds":207.219,"exit":127,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-17T05:44:30Z","phase":"test","seconds":1224.998,"exit":8,"cmd":"ctest --test-dir /d/Develop/moat/agent_space/heongpu-win/build640 --output-on-failure -j1 -E MemoryPool_Context_Generation_With_Little_Free_Device_Memory|MemoryPool_Shrinks_Initial_Size_That_Does_Not_Fit"}
