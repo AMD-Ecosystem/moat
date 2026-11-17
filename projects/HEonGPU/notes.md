@@ -7489,7 +7489,7 @@ Fix: in the existing `if(USE_HIP)` block, before `add_subdirectory(thirdparty)` 
 
 ### Lesson for cuda-to-rocm: CMake gives clang-cl /EHsc for C++ but not for HIP sources
 
-Belongs in the Windows reference of the skill. With CMake and an MSVC-style clang (`clang-cl`) as `CMAKE_HIP_COMPILER`, `CMAKE_HIP_FLAGS_INIT` gets no `/EHsc` (CMake's `Windows-MSVC.cmake` sets `/GR /EHsc` only in `_FLAGS_CXX`). HIP sources then compile with C++ exceptions disabled, and clang does not reject `try`/`throw` in that mode: the throw still unwinds, but catch handlers are silently dropped, so every exception passes the code meant to catch it (tests see `EXPECT_THROW` fail with "C++ exception ... thrown in the test body"; retry-on-`bad_alloc` loops become dead). It looks like an ABI problem with multiply inherited exception classes but is not. Check `build.ninja` for `/EHsc` on HIP objects; fix with `if(CMAKE_HIP_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC") add_compile_options($<$<COMPILE_LANGUAGE:HIP>:/EHsc>) endif()` before fetched dependencies are added.
+Belongs in the Windows reference of the skill. With CMake and an MSVC-style clang (`clang-cl`) as `CMAKE_HIP_COMPILER`, `CMAKE_HIP_FLAGS_INIT` gets no `/EHsc` (CMake's `Windows-MSVC.cmake` sets `/GR /EHsc` only in `_FLAGS_CXX`). HIP sources then compile with C++ exceptions disabled, and clang does not reject `try`/`throw` in that mode: the throw still unwinds, but catch handlers are silently dropped, so every exception passes the code meant to catch it (tests see `EXPECT_THROW` fail with "C++ exception ... thrown in the test body"; retry-on-`bad_alloc` loops become dead). It looks like an ABI problem with multiply inherited exception classes but is not. Check `build.ninja` for `/EHsc` on HIP objects; fix with `if(CMAKE_HIP_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC") add_compile_options($<$<COMPILE_LANGUAGE:HIP>:/EHsc>) endif()` before fetched dependencies are added. That directory-scoped option reaches only the project's own build: a library whose public API throws, and whose consumers compile its headers as HIP, must also hand the flag to those consumers, either as an INTERFACE compile option on the exported target evaluated in the consumer's context (`target_compile_options(<lib> INTERFACE $<$<AND:$<COMPILE_LANGUAGE:HIP>,$<STREQUAL:$<HIP_COMPILER_FRONTEND_VARIANT>,MSVC>>:/EHsc>)`, CMake 3.30+, which is written verbatim into the installed targets file) or as a documented requirement; otherwise a consumer's catch around a library call is dropped the same way.
 
 ### Lesson for cuda-to-rocm: MSVC std::stringstream stops at 2 GiB
 
@@ -7532,3 +7532,92 @@ The `## Lesson for cuda-to-rocm: CMake gives clang-cl /EHsc for C++ but not for 
 ### Not verified here (Windows)
 
 Whether `/EHsc` actually reaches the HIP objects under clang-cl in a real Windows configure, and the 190/295 -> 289/293 test result, rest on the porter's record (`build640/build.ninja`, `ctest2.log` on the gfx1151 host). This Linux host cannot reproduce them, and I have not re-derived them. The other open Windows items in the porter's section (stringstream 2 GiB, the float pool-size rounding, the exit-time access violation, fmt under clang 23) are outside this delta and not findings against it.
+
+## Porter round 2026-11-17 (linux-gfx942) -- /EHsc for consumers, hipMM 5.0.0 pin, RMM 25.x bridge removed, `302003f`
+
+Dispatched by Jeff Daily at `changes-requested` (review of `640a8b5..25b45ba`), implementing his 2026-11-16 ruling: hipMM pin moves to hipMM 5.0.0 (`dccfd94fc2d513abf3f9f62867e330433f9086e0`, tip of `release/26.10` of AMD-Ecosystem/hipMM) and the RMM 25.x bridge from `2f4de2d` is dropped. `pr-state` read `none` before taking the lock and again before the push. `set-state HEonGPU linux-gfx942 porting` succeeded. Head `25b45ba` -> `302003f`, three commits, pushed to `moat-port` as a fast-forward:
+
+- `81e859f` [ROCm] Pass /EHsc to programs that compile against heongpu as HIP
+- `da5f5c2` [ROCm] Move to hipMM 5.0.0 and use the RMM 26.x memory pool code
+- `302003f` [ROCm] Describe the hipMM 5.0 build in the README and install guide
+
+The pin move and the bridge removal are one commit (`da5f5c2`), not two: hipMM 5.0.0 has no `rmm/mr/device/` headers, so the bridge does not compile against it, and upstream's 26.x code does not compile against the old pin. Every intermediate commit builds that way.
+
+Host: MI300X (gfx942), `HIP_VISIBLE_DEVICES=1` as pinned by the dispatcher, ROCm 10.1.0 pip SDK (`hipconfig --version` 7.16.26385, AMD clang 24.0.0git). CMake 4.1.3: the fleet guard refuses `pip install` into anything but `$FLEET_VENV`, which this job does not have, so the CMake 4.1.3 data directory (`cmake/data` of the PyPI wheel) was copied from the previous reviewer job's venv into this job's `tools/cmake` and run from there (nothing shared modified). `libgmp-dev` and `libntl-dev` installed with apt.
+
+### Review finding: /EHsc reaches consumers (`81e859f`)
+
+`src/CMakeLists.txt`, inside the existing `if(USE_HIP)` setup of `heongpu`: `target_compile_options(heongpu INTERFACE $<$<AND:$<COMPILE_LANGUAGE:HIP>,$<STREQUAL:$<HIP_COMPILER_FRONTEND_VARIANT>,MSVC>>:/EHsc>)`. The directory-scoped `add_compile_options` from `25b45ba` stays: it also covers hipMM's sources, which do not link `heongpu`. `$<HIP_COMPILER_FRONTEND_VARIANT>` exists in CMake 4.1.3 (a probe `file(GENERATE)` refused it only for not being in a binary-target context).
+
+Linux unchanged, by the reviewer's method: fresh configures of `25b45ba` and of the working tree with the commit, same options (`-G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON`, old hipMM pin). Every `*.ninja`, `*.cmake`, `*.txt`, `*.rsp` under the two build dirs outside `_deps/*-src` (216 files) compared after normalising the build-dir name: the only difference is `CMakeFiles/Export/.../HEonGPUTargets.cmake`, which gains the `INTERFACE_COMPILE_OPTIONS` line. `build.ninja` and `CMakeCache.txt` are identical, and the in-tree tests and examples link `heongpu`, so a GNU-frontend consumer gets nothing. Installed package (final head, `cmake --install build/static --prefix <job>/prefix`): `prefix/lib/cmake/HEonGPU-2.1/HEonGPUTargets.cmake:63` has `INTERFACE_COMPILE_OPTIONS "\$<\$<AND:\$<COMPILE_LANGUAGE:HIP>,\$<STREQUAL:\$<HIP_COMPILER_FRONTEND_VARIANT>,MSVC>>:/EHsc>"`. A standalone consumer (`find_package(HEonGPU 2.1)`, `main.cpp` with `LANGUAGE HIP`, links `HEonGPU::heongpu`, catches a `std::invalid_argument` and builds a CKKS context) configures against the prefix, builds, has no `EHsc` in its `build.ninja`, and runs (`caught probe`, `context ok`, rc 0). **The Windows effect (that clang-cl consumers now get `/EHsc`) is not observable here and is for the Windows validator to confirm.** CUDA build: the block is inside `if(USE_HIP)`.
+
+The reviewer's sentence is added to the lesson "CMake gives clang-cl /EHsc for C++ but not for HIP sources" in the 2026-11-16 porter round above.
+
+### hipMM 5.0.0 (`da5f5c2`)
+
+Leads checked against the source at `dccfd94`: `cpp/CMakeLists.txt` `project(RMM VERSION 5.0.0)`, `VERSION` file `5.0.00`; README "derived from the NVIDIA RAPIDS RMM project (version 26.06)"; resource headers only under `cpp/include/rmm/mr/` (no `mr/device/`); CCCL through `cpp/cmake/thirdparty/get_cccl.cmake` -> `rapids_cpm_cccl` from ROCmDS-cmake. hipMM publishes no tags (`git ls-remote --tags` empty), so the pin stays a commit.
+
+Bridge removal: the `src/include/heongpu/util/memorypool.cuh`, `src/lib/util/memorypool.cu` and `test/test_rmm_default.cpp` hunks of `2f4de2d` reverse-applied cleanly (`git show 2f4de2d -- <files> | git apply -R`). `git diff main -- <those three files>` afterwards: `test_rmm_default.cpp` identical to upstream; the other two differ only by the `_WIN32` sysinfo/`GlobalMemoryStatusEx` guards (Windows, not HIP). **No HIP-specific memory pool code remains**; upstream's RMM 26.08 code compiled and passed against hipMM 5.0.0 with no 26.06-vs-26.08 gap found in what HEonGPU uses (the whole static, shared and test builds compiled with 0 errors).
+
+What remains HIP-specific in the build, and why:
+
+1. `_heongpu_rmm_version` (thirdparty/CMakeLists.txt): now `5.0` on HIP (was `4.0`), `26.08` on CUDA. hipMM keeps its own version numbers, so `find_package(rmm 26.08)` for `HEonGPU_USE_SYSTEM_RMM` and the install-prefix warning would reject it. Stays as long as hipMM numbers differ from RMM's. `cmake/Config.cmake.in` still asks for unversioned `rmm` on HIP (unchanged).
+2. Attempt 1 (fresh configure, documented flags, no extra flags) failed twice in hipMM's CCCL path:
+   - `CMake Error at _deps/rapids-cmake-src/rapids-cmake/cmake/make_global.cmake:50 (set_target_properties): Attempt to promote imported target "roc::rocthrust" to global scope` (from `cpm/rocthrust.cmake:138` <- `cpm/hipccl.cmake:111` <- hipMM `get_cccl.cmake:12`). HEonGPU's top-level `find_package(rocthrust REQUIRED)` imported it non-global in the root directory; rapids-cmake's `make_global` promotes only non-global targets and CMake refuses that from another directory. Fix: `find_package(rocthrust REQUIRED GLOBAL)` in the root `if(USE_HIP)` block (`make_global` skips already-global targets).
+   - `fatal: repository 'https://github.com/AMD-Ecosystem/libhipcxx/' not found` (`Failed to clone repository`). ROCmDS-cmake's `versions.json` has `libhipcxx` 3.4.0 at `https://github.com/${rapids-cmake-rocm-org}/libhipcxx`, `release/26.10`, with `rapids-cmake-rocm-org` defaulting to `AMD-Ecosystem` (`cpm/detail/package_details.cmake:213`). That repo does not resolve publicly (also `gh repo view` -> "Could not resolve"). The SDK ships libhipcxx (`_rocm_sdk_devel/lib/cmake/libhipcxx`, `include/hipccl`), but `CCCL_VERSION 3000002` = 3.0.2 < 3.4.0, so CPM falls through to the download. `https://github.com/ROCm/libhipcxx` `release/26.10` is `90b6a2b5768fecb243d30fb3c0f34223031bd355`, `CCCL_VERSION 3004000`. Fix: in thirdparty/CMakeLists.txt, inside `if(USE_HIP)` before `FetchContent_MakeAvailable(rmm)`, `FetchContent_Declare(libhipcxx GIT_REPOSITORY https://github.com/ROCm/libhipcxx GIT_TAG 90b6a2b...)`; FetchContent's first declaration wins, so CPM uses it. Confirmed: `_deps/libhipcxx-src` origin `https://github.com/ROCm/libhipcxx` at `90b6a2b`. No README workaround; the README now says a HIP configure downloads libhipcxx.
+   - Attempt 2 (both fixes) configured and built. Two attempts total.
+3. Upstream's CCCL override block (`CPM_DOWNLOAD_CCCL`, unset `CCCL/Thrust/CUB/libcudacxx_DIR`) stays skipped on HIP: hipMM 5.0.0's `rapids_cpm_cccl` resolves to `hipccl` (rocThrust/hipCUB/rocPRIM from the SDK, local only, plus the libhipcxx above), and none of the cache variables that block clears are involved. Configure needed no extra flags after the two fixes.
+
+Dependency versions hipMM 5.0.0 pulled in (this Linux build): ROCmDS-cmake from the moving `release/26.10` branch of AMD-Ecosystem/ROCmDS-cmake (downloaded `RAPIDS.cmake`, then the rapids-cmake tree whose `VERSION` reads `4.00.00`; not pinned by hipMM, as with the old pin's branch); rocmds-logger (`rapids_logger`) 2.0.0, `https://github.com/AMD-Ecosystem/rocmds-logger` `release/26.10` = `69bb17b2c5232d144b74d7288173efaf6f1dc29b`; spdlog 1.14.1 (`v1.14.1`); fmt: with `BUILD_SHARED_LIBS` ON (Linux) the logger hides spdlog's symbols and so uses spdlog's **bundled fmt 10.2.1** (`FMT_VERSION 100201`, no fmt download, `SPDLOG_FMT_EXTERNAL[_HO]` OFF); libhipcxx 3.4.0 (ROCm/libhipcxx `90b6a2b`); hipCCL 3.4.0 (installed config); rocThrust/hipCUB 4.7.0 and rocPRIM 4.6.0 from the SDK. **Windows fmt (read, not built):** the port sets `BUILD_SHARED_LIBS OFF` for hipMM under MSVC, which makes the logger's `RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS` OFF and its `RAPIDS_LOGGER_FMT_OPTION` default `EXTERNAL_FMT_HO`, which fetches **fmt 11.0.2** (`rapids_logger-src/CMakeLists.txt:53`, `set(version 11.0.2)`) with spdlog 1.14.1. That is the same fmt as the old pin, so the clang 23 `FMT_STRING` consteval failure most likely survives the new pin on Windows; for the Windows validator to confirm.
+
+Installed package: hipMM installs `lib/cmake/rmm`, `lib/cmake/hipccl` and libhipcxx under `include/rapids/libhipcxx`; `rmm-dependencies.cmake` does `find_package(hipCCL 3.4.0)`; the consumer above found `hipCCL ... (found version "3.4.0")` in the prefix, so installed consumers do not need the SDK's older libhipcxx.
+
+Warnings: 6566 `-Wunused-value` lines in the static build ("ignoring return value of type 'hipError_t' declared with 'nodiscard'", upstream code that ignores CUDA return values). Not from the new pin: RNGonGPU's `aes.cu.o` rebuilt in the old-pin tree and in the new one gives 6 such warnings in each. Untouched.
+
+### Build and tests (fresh trees, documented command)
+
+```bash
+M=<job dir>; R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+common="-G Ninja -DCMAKE_PREFIX_PATH=$R -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DGPU_TARGETS=gfx942 -DAMDGPU_TARGETS=gfx942 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON"
+cmake -S projects/HEonGPU/src -B $M/build/static $common -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+cmake --build $M/build/static -j64
+cmake -S projects/HEonGPU/src -B $M/build/shared $common -DHEonGPU_BUILD_SHARED=ON
+cmake --build $M/build/shared -j64
+ulimit -c 0
+ctest --test-dir $M/build/static --output-on-failure   # twice
+ctest --test-dir $M/build/shared --output-on-failure
+cmake --install $M/build/static --prefix $M/prefix
+```
+
+All wrapped in `utils/timeit.sh HEonGPU compile|test`. Static: configure rc 0 (60 s), build rc 0, 299 ninja steps, 0 `error:` lines; 49 test, 28 example, 3 benchmark executables. Shared: rc 0, 242 steps, 0 errors, 49 test executables, `libheongpu.so.2.1.1`.
+
+| Run | Result | Time |
+|---|---|---|
+| static, serial, run 1 | **301/301 passed** | 781.89 s |
+| static, serial, run 2 | **301/301 passed** | 780.59 s |
+| shared, serial | **296/296 passed**, incl. both `Shared_Library_Users_Share_The_*` cases | 780.13 s |
+
+Same counts as gfx90a/gfx1100 at `640a8b5` (static 301, shared 296 = 301 - 7 noise-budget + 2 shared-state). Slower than gfx1100's 123 s: nearly every case here takes ~3.1 s (pool sizing against 192 GB of HBM per process); this host's previous record predates the 2.0 test suite, so there is no same-host baseline.
+
+Explicit runs (static build): `bin/test/rmm_default_testcases` 3/3 passed (also in ctest: `MemoryPool_Leaves_The_RMM_Default_Alone_Unless_Asked`, `MemoryPool_Keeps_A_Default_Set_By_The_Application`, `Shutdown_Restores_The_RMM_Default`, `RMM_Log_Level_Can_Be_Set` passed). `3_basic_memorypool_config` rc 0: device pool `Total 164534157312 / Used 657128 / Free 164533500184`, host pool `Total 268435456 / Used 0`. Examples, each rc 0, values as in earlier records: `1_basic_bfv` (`1,144,529,961,64,...` / `49,2916,36,10000,64,...`), `2_basic_ckks` (`50,200,450,800,...,4.5`), `9_multi_stream_usage_way1` ("Done."), `15_basic_tfhe` (inputs `1,1,0,1,0,1,0,0` / `1,0,1,0,1,1,1,0`, control `0,0,0,0,1,1,1,1`; NAND, AND, NOR, OR, XNOR, XOR, NOT, MUX all match the truth table), `17_ckks_session` (max error 3.86e-08, `Slot 0: 1.005, expected 1.005`), `bootstrapping/1_ckks_regular_bootstrapping` (`EXPECTED:0.2 + 0.4i - ACTUAL:0.200002 + 0.399993i`), `bootstrapping/3_ckks_bit_bootstrapping` (`EXPECTED:1 - ACTUAL:1 + 1.13e-10i`, `EXPECTED:0 - ACTUAL:7.4e-10`), `mpc/1_multiparty_computation_bfv` (`230,20300,65,...,5`), `benchmark/tfhe_benchmark` (XOR 11.55 ms, MUX 20.37 ms avg).
+
+Checks: `python3 utils/jargon.py --port HEonGPU` -> clean; `utils/prose.py` clean on all three commit bodies; titles 65, 64, 67 chars, ASCII; fork `git status --porcelain` empty at `302003f`.
+
+### CUDA path (no nvcc on this host)
+
+Every build-file change is inside a `USE_HIP` branch (root `if(USE_HIP)` block, `src/CMakeLists.txt` HIP arm, thirdparty `if(USE_HIP)` / HIP `_heongpu_rmm_version`). The memory pool sources are restored to upstream's exact text (apart from the pre-existing `_WIN32` guards), i.e. the code upstream compiles with nvcc against RMM 26.08. The nvcc compile check at `302003f` follows on the CUDA host.
+
+### Draft upstream tool bug for Jeff (not filed): ROCmDS-cmake libhipcxx URL
+
+Repository: AMD-Ecosystem/ROCmDS-cmake. Title: "libhipcxx is fetched from AMD-Ecosystem/libhipcxx, which is not public". Body: "`rapids-cmake/cpm/versions.json` on `release/26.10` declares libhipcxx 3.4.0 at `https://github.com/${rapids-cmake-rocm-org}/libhipcxx`, and `rapids-cmake-rocm-org` defaults to `AMD-Ecosystem`. That repository is not publicly accessible, so any project that builds hipMM 5.0.0 (release/26.10) from source on a system whose ROCm ships an older libhipcxx (ROCm 7.x ships 3.0.x) fails to configure with `fatal: repository 'https://github.com/AMD-Ecosystem/libhipcxx/' not found`. The public repository with the requested branch is https://github.com/ROCm/libhipcxx (`release/26.10`, CCCL 3.4.0). Pointing the libhipcxx entry at it (or making the AMD-Ecosystem repository public) fixes the build; setting `RAPIDS_CMAKE_ROCM_ORG=ROCm` works around it but redirects every package that uses the variable." Once fixed, the `FetchContent_Declare(libhipcxx ...)` in `thirdparty/CMakeLists.txt` can go.
+
+### Not done / owed
+
+- Windows (`windows-gfx1151`): `/EHsc` reaching consumers, the new libhipcxx fetch and the `find_package(rocthrust GLOBAL)` under clang-cl, and whether fmt 11.0.2 still fails, all for the Windows validator. The other Windows-only items (exit-time access violations, the 2 GiB stringstream test, `resolve_pool_size` float rounding) were left alone as instructed.
+- CUDA nvcc compile at `302003f` on the CUDA host.
+- Upstream `main` advanced to `62fa9b9` (2026-11-16) since the fork mirror `837ffc8`; not synced in this round.
+- No platform marked completed; validators rerun on every gate after review.
+
+### Lesson for cuda-to-rocm: override a broken dependency URL in a fetched project with an earlier FetchContent_Declare
+
+Belongs in the build-system reference of the skill. When a fetched dependency (here hipMM through its rapids-cmake/CPM scripts) downloads its own dependency from a URL that does not resolve, the consuming project can fix it without patching the dependency: CPM and FetchContent use the first `FetchContent_Declare` of a name, so declaring that name earlier, with the working repository and a pinned commit, before `FetchContent_MakeAvailable` of the parent, overrides the URL. Check which copy was used in `_deps/<name>-src` (`git remote get-url origin`). Related trap from the same build: if the consuming project already did `find_package(X)` in a parent directory, rapids-cmake's attempt to promote X's imported targets to global from the dependency's directory fails ("Attempt to promote imported target ... to global scope"); use `find_package(X ... GLOBAL)` in the parent.
