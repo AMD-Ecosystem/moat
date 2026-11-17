@@ -598,9 +598,13 @@ def save_status(name, obj):
     obj["updated_at"] = now_iso()
     p = status_path(name)
     p.parent.mkdir(parents=True, exist_ok=True)
-    with open(p, "w") as f:
+    # Written beside the target and renamed over it: a process killed mid-write
+    # used to leave a truncated record, which then read as "no such project".
+    tmp = p.with_name(p.name + ".tmp")
+    with open(tmp, "w") as f:
         json.dump(obj, f, indent=2, sort_keys=False)
         f.write("\n")
+    os.replace(tmp, p)
 
 
 _TRUNK_VOCAB = None
@@ -784,6 +788,18 @@ def _release_lock(obj):
     obj["porting"] = None
 
 
+def lock_holder():
+    """An opaque id for whoever is taking the work lock from this process.
+
+    The lock used to name only the platform, so two hosts with the same GPU -- or
+    two jobs on one host -- each read the other's lock as their own. This tells
+    them apart. It is a digest because the record is public and neither a hostname
+    nor a job id belongs in it; nothing needs to read it back, only compare it."""
+    import socket
+    who = f"{socket.gethostname()}/{os.environ.get('FLEET_JOB', '')}"
+    return hashlib.sha256(who.encode("utf-8")).hexdigest()[:12]
+
+
 def _publish_lock(name, arch):
     """Push a just-taken work lock and verify it survived the merge.
 
@@ -812,11 +828,16 @@ def _publish_lock(name, arch):
                              f"{name}: {arch} takes the work lock")
     obj = load_status(name)
     held = obj.get("porting") or {}
-    if held.get("arch") != arch:
+    # Same platform is not same holder: when the merged lock carries another
+    # holder's id, a second host with this GPU acquired at the same moment and won.
+    other = bool(held.get("holder")) and held.get("holder") != lock_holder()
+    if held.get("arch") != arch or other:
         raise ValueError(
             f"{name}: a concurrent acquisition won the work lock -- it is held "
-            f"by {held.get('arch') or 'nobody'} since {held.get('since')}. Back "
-            f"off and let that arch run; takeover is a person's decision "
+            f"by {held.get('arch') or 'nobody'}"
+            + (" (another host or job on the same platform)" if other else "")
+            + f" since {held.get('since')}. Back "
+            f"off and let that one run; takeover is a person's decision "
             f"(`moatlib.py port-lock {name} --take {arch}`)")
     if not pushed:
         sys.stderr.write(
@@ -825,7 +846,41 @@ def _publish_lock(name, arch):
     return obj
 
 
-def set_state(name, platform, new_state, agent=None, save=True):
+def _clone_head(name):
+    """The commit the local fork clone has checked out, or None with no clone."""
+    repo = _fork_repo(name)
+    if not Path(repo, ".git").exists():
+        return None
+    r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo),
+                       capture_output=True, text=True)
+    out = r.stdout.strip()
+    return out if r.returncode == 0 and len(out) == 40 else None
+
+
+def verdict_sha_problem(name, obj, platform, new_state, sha=None):
+    """Why a `completed` or `validation-failed` verdict may not be recorded now.
+
+    Both stamp the record's head_sha as the commit the verdict is about, and nothing
+    used to tie that to what was built: a host whose clone sat on an older commit, or
+    whose record had moved on mid-run, recorded a pass for code it never ran -- the
+    dead-sha trap, and the one that fakes a satisfied gate. The commit that was
+    built is `sha` when the caller names it (a build in a separate worktree or
+    directory), otherwise the local clone's HEAD. A host with no clone and no `sha`
+    has nothing to compare and is let through, as before."""
+    head = obj.get("head_sha")
+    if not head:
+        return (f"{name}/{platform}: the record has no head_sha, so {new_state} "
+                f"would describe no commit")
+    built, what = (sha, "--sha") if sha else (_clone_head(name), "the fork clone's HEAD")
+    if built and not same_commit(built, head):
+        return (f"{name}/{platform}: {what} is {built[:12]} but the recorded head_sha "
+                f"is {head[:12]} -- {new_state} would be stamped on a commit that was "
+                f"not the one built. Check out and build {head[:12]}, or pass "
+                f"`--sha {head[:12]}` if that IS what ran (a build outside the clone)")
+    return None
+
+
+def set_state(name, platform, new_state, agent=None, save=True, sha=None):
     """Validate and apply a transition with its side effects.
 
     One entry point for two machines, routed on which the state belongs to: a stage
@@ -851,6 +906,10 @@ def set_state(name, platform, new_state, agent=None, save=True):
             f"head_sha) and is never stored -- see arch_task")
     obj = load_status(name)
     is_stage = new_state in STAGE_STATES
+    if new_state in ("completed", "validation-failed"):
+        problem = verdict_sha_problem(name, obj, platform, new_state, sha)
+        if problem:
+            raise ValueError(problem)
     cur = project_stage(obj) or "unclaimed" if is_stage else \
         (obj["platforms"].get(platform) or {}).get("state")
     # Exclusivity is checked BEFORE the no-op short-circuit, because "the project is
@@ -918,7 +977,17 @@ def set_state(name, platform, new_state, agent=None, save=True):
     # would be a worse bug than the one this prevents. Serialising the porter's
     # DISPATCH is `actionable`'s job, and its guard already reads this field.
     if new_state in EXCLUSIVE_STAGES:          # refused above if another arch holds it
-        obj["porting"] = {"arch": platform, "since": now_iso()}
+        prev = obj.get("porting") or {}
+        if prev.get("holder") and prev.get("holder") != lock_holder():
+            # Picking up a round another host of this platform put down is ordinary
+            # and cannot be told from that host still running, so say it rather than
+            # refuse it. The simultaneous case is refused in _publish_lock.
+            sys.stderr.write(
+                f"WARNING {name}: the {platform} work lock was taken since "
+                f"{prev.get('since')} by a DIFFERENT host or job. Continuing as a "
+                f"resume; if that other one is still running, stop here\n")
+        obj["porting"] = {"arch": platform, "since": now_iso(),
+                          "holder": lock_holder()}
     elif cur in EXCLUSIVE_STAGES and obj.get("porting"):
         # Leaving an exclusive stage ends what the lock protected, so ANY arch
         # legally recording the exit releases it. Requiring the holder to be the
@@ -1044,7 +1113,8 @@ def port_lock(name, take=None, release=False):
         held = obj.get("porting")
         _release_lock(obj)                    # marker for the outgoing holder, if any
         if take:
-            obj["porting"] = {"arch": take, "since": now_iso()}
+            obj["porting"] = {"arch": take, "since": now_iso(),
+                              "holder": lock_holder()}
         save_status(name, obj)
         what = f"taken by {take}" if take else "released"
         prev = f" (was {held['arch']} since {held.get('since')})" if held else ""
@@ -1173,10 +1243,11 @@ def fetch_review_pr(url):
                            "body": c.get("body") or "",
                            "assoc": c.get("author_association")} for c in raw_c]
     # When an approval carries no commit of its own, this is what it is compared
-    # against. GitHub does not expose push time, so the tip's COMMITTER date stands
-    # in for it: a new or rebased commit trips the comparison, but an older commit
-    # pushed after the approval slips past. The review form's commit binding has no
-    # such gap, which is one more reason it is the preferred box.
+    # against. GitHub does not expose the time of an ordinary push, so the tip's
+    # COMMITTER date stands in for it, joined below by the last force-push event: a
+    # new, rebased or force-pushed commit trips the comparison, but an older commit
+    # fast-forwarded in after the approval still slips past. The review form's commit
+    # binding has no such gap, which is one more reason it is the preferred box.
     head = _gh_json("api", f"repos/{slug}/commits/{pr.get('headRefOid')}")
     pr["head_at"] = (((head or {}).get("commit") or {}).get("committer") or {}).get("date")
     pr["slug"], pr["number"] = slug, num
@@ -1184,8 +1255,10 @@ def fetch_review_pr(url):
     # lastEditedAt tracks BODY edits only; a title rename is a RenamedTitleEvent on
     # the timeline and does not move it, so both are fetched.
     q = ('{repository(owner:"%s",name:"%s"){pullRequest(number:%s){lastEditedAt '
-         'timelineItems(itemTypes:RENAMED_TITLE_EVENT,last:1){nodes{'
-         '... on RenamedTitleEvent{createdAt}}}}}}'
+         'renames:timelineItems(itemTypes:RENAMED_TITLE_EVENT,last:1){nodes{'
+         '... on RenamedTitleEvent{createdAt}}} '
+         'forced:timelineItems(itemTypes:HEAD_REF_FORCE_PUSHED_EVENT,last:1){nodes{'
+         '... on HeadRefForcePushedEvent{createdAt}}}}}}'
          % (owner, repo, num))
     g = _gh_json("api", "graphql", "-f", f"query={q}")
     if g is None:
@@ -1198,9 +1271,20 @@ def fetch_review_pr(url):
     node = ((((g or {}).get("data") or {}).get("repository") or {})
             .get("pullRequest") or {})
     pr["lastEditedAt"] = node.get("lastEditedAt")
-    renames = (node.get("timelineItems") or {}).get("nodes") or []
+    renames = (node.get("renames") or {}).get("nodes") or []
     pr["titleRenamedAt"] = (renames[0] or {}).get("createdAt") if renames else None
+    # A force-push is the one push GitHub does timestamp. The committer date alone
+    # misses a rewritten branch whose commits keep their old dates, which is exactly
+    # what a history rebuild produces, so the later of the two clocks is the tip's.
+    forced = (node.get("forced") or {}).get("nodes") or []
+    pr["head_at"] = later_of(pr.get("head_at"),
+                             (forced[0] or {}).get("createdAt") if forced else None)
     return pr
+
+
+def later_of(a, b):
+    """The later of two ISO-8601 UTC timestamps, either of which may be missing."""
+    return max((t for t in (a, b) if t), default=None)
 
 
 # The approval command. GitHub will not let a pull request's author approve it, and
@@ -3219,11 +3303,21 @@ def pr_state_of(name, refresh=False):
     is upstream-visible -- and a branch upstream's README tells people to clone
     is, PR or no PR."""
     if refresh:
-        _git("fetch", "--quiet", "origin",
-             f"+refs/heads/port/{name}:refs/remotes/origin/port/{name}", check=False)
-        _git("fetch", "--quiet", "origin",
-             "+refs/heads/main:refs/remotes/origin/main", check=False)
+        # A fetch that failed leaves the refs as old as the last one that worked,
+        # and an old ref answers "no PR" about a PR that has since opened -- so a
+        # failed refresh is "cannot tell", never the stale answer. The project
+        # branch not existing is not a failure: a finished project has none.
+        port = _git("fetch", "--quiet", "origin",
+                    f"+refs/heads/port/{name}:refs/remotes/origin/port/{name}",
+                    check=False)
+        trunk = _git("fetch", "--quiet", "origin",
+                     "+refs/heads/main:refs/remotes/origin/main", check=False)
         _PORT_BRANCH_MAP.clear()
+        gone = "couldn't find remote ref" in (port.stderr or "")
+        if trunk.returncode != 0 or (port.returncode != 0 and not gone):
+            why = (trunk.stderr if trunk.returncode else port.stderr or "").strip()
+            return (None, f"could not refresh {name}'s record from origin "
+                          f"({why.splitlines()[-1][:120] if why else 'fetch failed'})")
     obj, where = project_record(name)
     if obj is None:
         return (None, f"no record for {name} on any ref")
@@ -3243,7 +3337,7 @@ def pr_state_of(name, refresh=False):
 # trusted merge path after its approval checks pass.
 FORK_HOOK_MARKER = "# moat-fork-hook"
 _FORK_HOOK = """#!/usr/bin/env bash
-{marker} v4
+{marker} v5
 # Refuses pushes to the port branch while it is upstream-visible or frozen: the
 # head of an open upstream PR, a maintained branch upstream points its users at,
 # or a delivered (tagged) release line. Only states known to leave the branch
@@ -3272,16 +3366,21 @@ if [ "$mirror" = 1 ]; then
 fi
 [ "$targets" = 1 ] || exit 0
 
+# A host may have `python` and no `python3`; with neither the lookup fails and the
+# push is refused below, which is the safe direction.
+py=python3
+command -v "$py" >/dev/null 2>&1 || py=python
+
 # stdout only, so nothing a warning or a git message writes to stderr can be read
 # as the answer; the exit status is what says whether there IS an answer.
-state=$(python3 "{moatlib}" pr-state "{name}" --refresh 2>/dev/null)
+state=$("$py" "{moatlib}" pr-state "{name}" --refresh 2>/dev/null)
 if [ $? -ne 0 ]; then
   # A guard that cannot tell must not be the reason an unreviewed commit reached a
   # maintainer. Refuse, and say what to run to find out why.
   echo >&2 "moat: cannot tell whether {name} has an open upstream PR, so this push"
   echo >&2 "moat: to {branch} is refused rather than guessed at. Check with:"
-  echo >&2 "moat:   python3 {moatlib} pr-state {name}"
-  python3 "{moatlib}" pr-state "{name}" 2>&1 >/dev/null | sed >&2 's/^/moat:   /'
+  echo >&2 "moat:   python3 {moatlib} pr-state {name} --refresh"
+  "$py" "{moatlib}" pr-state "{name}" --refresh 2>&1 >/dev/null | sed >&2 's/^/moat:   /'
   exit 1
 fi
 case "$state" in
@@ -3321,9 +3420,16 @@ def protect_fork(name):
     git_dir = repo / ".git"
     if not git_dir.exists():
         return ("skip", f"{name}: no fork clone at {repo} -- nothing to protect")
-    if not git_dir.is_dir():
-        return ("warn", f"{name}: {repo} keeps its git dir elsewhere (a .git file), so "
-                        f"the hook path cannot be derived here -- UNPROTECTED")
+    # Ask git where the hook goes instead of assuming .git/hooks: a clone whose git
+    # dir lives elsewhere (a .git file) or that sets core.hooksPath runs its hooks
+    # from somewhere else, and a hook written where git never looks protects nothing.
+    r = subprocess.run(["git", "rev-parse", "--git-path", "hooks/pre-push"],
+                       cwd=str(repo), capture_output=True, text=True)
+    if r.returncode != 0 or not r.stdout.strip():
+        return ("warn", f"{name}: could not ask git where {repo} keeps its hooks "
+                        f"-- UNPROTECTED")
+    hook = Path(r.stdout.strip())
+    hook = (hook if hook.is_absolute() else repo / hook).resolve()
     obj, _where = project_record(name)
     if obj is None:
         return ("warn", f"{name}: a fork clone exists but no record does; cannot tell "
@@ -3344,7 +3450,6 @@ def protect_fork(name):
                              moatlib=str(REPO_ROOT / "utils" / "moatlib.py"),
                              branch=obj.get("fork_branch") or PORT_BRANCH,
                              mirror=mirror or "(none)", mirror_test=test)
-    hook = git_dir / "hooks" / "pre-push"
     if hook.exists():
         current = hook.read_text()
         if current == text:
@@ -3354,7 +3459,7 @@ def protect_fork(name):
                             f"not touching it -- {obj.get('fork_branch') or PORT_BRANCH} "
                             f"is UNPROTECTED in this clone")
     hook.parent.mkdir(parents=True, exist_ok=True)
-    hook.write_text(text)
+    hook.write_text(text, newline="\n")
     hook.chmod(hook.stat().st_mode | 0o111)
     return ("ok", f"{name}: fork pre-push hook installed")
 
@@ -3465,6 +3570,11 @@ def advance_head(name, new_sha, repo=None):
         if r.returncode != 0:
             raise ValueError(f"{name}: {new_sha} is not a commit in {repo}; "
                              "push the fork commit and fetch before advancing the head")
+    elif not re.fullmatch(r"[0-9a-fA-F]{40}", new_sha or ""):
+        # With no clone there is nothing to resolve an abbreviation against or to
+        # catch a typo with, and a head nobody can find strands every platform.
+        raise ValueError(f"{name}: no fork clone here to check {new_sha!r} against, so "
+                         "the head must be given as a full 40-character commit id")
     new_sha = full_sha(new_sha, repo)
     _move_head(obj, new_sha, repo)
     if moved:
@@ -3537,6 +3647,13 @@ def carry_forward(name, platform, new_sha, method, detail):
         raise ValueError(f"{name}/{platform}: carry_forward needs a completed validation "
                          f"to carry, not {blk.get('state')}")
     new_sha = full_sha(new_sha, _fork_repo(name))
+    # A validation carried to anything but the head satisfies no gate, and carried
+    # to a commit that is not the head it reads as current evidence about code
+    # nobody proved equivalent.
+    if not same_commit(new_sha, obj.get("head_sha")):
+        raise ValueError(f"{name}/{platform}: {str(new_sha)[:12]} is not the recorded "
+                         f"head_sha {str(obj.get('head_sha'))[:12]} -- a validation is "
+                         f"carried forward to the head; run advance-head first")
     ts = now_iso()
     blk["state"] = "completed"
     blk["completed_at"] = ts
@@ -3708,16 +3825,18 @@ def project_record(name):
     path = f"projects/{name}/status.json"
     on_branch = current_branch() == f"port/{name}"
     if not on_branch:
-        raw = _ref_read(f"origin/{port_branch_of(name) or f'port/{name}'}", path)
+        ref = f"origin/{port_branch_of(name) or f'port/{name}'}"
+        raw = _ref_read(ref, path)
         if raw:
             try:
                 return (json.loads(raw), "branch")
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as e:
+                _unreadable(name, ref, e)
     if status_path(name).exists():
         try:
             return (load_status(name), "local")
-        except (ValueError, json.JSONDecodeError):
+        except (ValueError, json.JSONDecodeError) as e:
+            _unreadable(name, "this checkout", e)
             return (None, None)
     for ref, where in (("origin/main", "trunk"),
                        (f"origin/port/{name}", "branch")):
@@ -3725,9 +3844,27 @@ def project_record(name):
         if raw:
             try:
                 return (json.loads(raw), where)
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as e:
+                _unreadable(name, ref, e)
     return (None, None)
+
+
+_UNREADABLE = set()
+
+
+def _unreadable(name, where, err):
+    """Say, once per process, that a record exists and could not be read.
+
+    Callers get None for it, the same answer as "no such project", so without this
+    a record that failed to parse simply vanished from the selector and every gate:
+    the project was skipped and nothing said why."""
+    if (name, where) in _UNREADABLE:
+        return
+    _UNREADABLE.add((name, where))
+    sys.stderr.write(f"WARNING {name}: the record on {where} is UNREADABLE and is "
+                     f"being skipped -- {str(err)[:160]}. Fix or restore "
+                     f"projects/{name}/status.json; until then this project is "
+                     f"invisible to the selector and the gates\n")
 
 
 def known_platforms():
@@ -4389,6 +4526,22 @@ def next_task(platform):
             "priority": -negprio, "rank": rank}
 
 
+def fork_lineage_problem(obj, slug, tsv):
+    """Why `slug` does not count as this project's fork, given gh's answer about it
+    (`full_name<TAB>parent<TAB>source`), or None when it is a fork of the upstream."""
+    want = (obj.get("upstream_url") or "").rstrip("/").split("github.com/", 1)[-1]
+    want = want.removesuffix(".git").lower()
+    parts = (tsv.strip("\n").split("\t") + ["", "", ""])[:3]
+    lineage = {p.strip().lower() for p in parts[1:] if p.strip()}
+    if not want:
+        return f"the record has no upstream_url to check {slug} against"
+    if not lineage:
+        return f"{slug} exists but is not a GitHub fork of anything"
+    if want not in lineage:
+        return f"{slug} is a fork of {', '.join(sorted(lineage))}, not of {want}"
+    return None
+
+
 def release_awaiting_fork(org="AMD-Ecosystem", dry_run=False):
     """Advance projects whose fork has appeared.
 
@@ -4413,10 +4566,21 @@ def release_awaiting_fork(org="AMD-Ecosystem", dry_run=False):
         fork = obj.get("fork_url") or \
             f"https://github.com/{default_fork_slug(obj, org)}"
         slug = fork.replace("https://github.com/", "")
-        r = subprocess.run(["gh", "api", f"repos/{slug}", "--jq", ".full_name"],
-                           capture_output=True, text=True, timeout=60)
+        r = subprocess.run(
+            ["gh", "api", f"repos/{slug}", "--jq",
+             '[.full_name, (.parent.full_name // ""), (.source.full_name // "")] | @tsv'],
+            capture_output=True, text=True, timeout=60,
+            encoding="utf-8", errors="replace")
         if r.returncode:
             continue                       # still no fork; leave it waiting
+        why = fork_lineage_problem(obj, slug, r.stdout)
+        if why:
+            # Creating the fork is the adoption decision, so only a fork of THIS
+            # upstream may stand for it. A same-named repository made for any other
+            # reason released the project for planning on nobody's decision.
+            print(f"{name}: {why} -- not released; a person must confirm the fork",
+                  file=sys.stderr)
+            continue
         if dry_run:
             released.append((name, slug))
             continue
@@ -4757,8 +4921,11 @@ def scaffold_project(full_name, upstream_url=None, default_branch="main",
 # ---- git sync --------------------------------------------------------------
 
 def _git(*args, check=True, cwd=None):
+    # Decoded as UTF-8 explicitly: `text=True` alone uses the locale code page, and
+    # on Windows that turns a non-ASCII commit subject or path into an exception.
     return subprocess.run(["git", *args], cwd=str(cwd or REPO_ROOT),
-                          capture_output=True, text=True, check=check)
+                          capture_output=True, text=True, check=check,
+                          encoding="utf-8", errors="replace")
 
 
 # The merge driver command, as stored in the clone's git config. The config is
@@ -5184,6 +5351,14 @@ def commit_to_branch(branch, files, message):
             os.unlink(idx)
 
 
+def _rebase_in_progress():
+    for d in ("rebase-merge", "rebase-apply"):
+        p = _git("rev-parse", "--git-path", d, check=False).stdout.strip()
+        if p and (Path(p) if Path(p).is_absolute() else REPO_ROOT / p).exists():
+            return True
+    return False
+
+
 def commit_and_push(paths, message, push=True, retries=3):
     """The single MOAT-repo write path: stage, commit-on-top, pull --rebase,
     push, bounded retry. Never amends, never force-pushes. No-op if nothing
@@ -5210,7 +5385,19 @@ def commit_and_push(paths, message, push=True, retries=3):
     for _ in range(retries):
         # --autostash so a concurrent agent's unstaged files in the shared
         # working tree don't abort our rebase (multi-agent MOAT runs).
-        _git("pull", "--rebase", "--autostash", check=False)
+        # --rebase=merges keeps a local merge commit a merge. A plain rebase
+        # flattens an unpushed trunk merge into a replay of every trunk commit on
+        # top of the port branch, which is thousands of commits of conflicts.
+        pulled = _git("pull", "--rebase=merges", "--autostash", check=False)
+        if pulled.returncode != 0 and _rebase_in_progress():
+            # A rebase left half done would be pushed from, or sat in, by the next
+            # command. Put the branch back the way the commit left it and stop.
+            _git("rebase", "--abort", check=False)
+            sys.stderr.write(
+                f"commit_and_push: pull --rebase of {branch or 'HEAD'} hit conflicts "
+                f"and was aborted; left committed locally and NOT pushed. Merge "
+                f"origin/{branch or '<branch>'} by hand, then push\n")
+            return False
         r = (_git("push", "-u", "origin", branch, check=False) if branch
              else _git("push", check=False))
         if r.returncode == 0:
@@ -5665,6 +5852,8 @@ def main(argv=None):
     s.add_argument("platform", help="<os>-<gfx>, e.g. linux-gfx90a")
     s.add_argument("new_state")
     s.add_argument("--agent")
+    s.add_argument("--sha", help="the fork commit that was built and run, when it was "
+                                 "not built in projects/<name>/src; must be head_sha")
 
     s = sub.add_parser("set-blocked",
                        help="record that an arch cannot run this, or clear that record")
@@ -6003,7 +6192,8 @@ def main(argv=None):
             return 0
         _print_json(t)
     elif args.cmd == "set-state":
-        set_state(args.name, args.platform, args.new_state, agent=args.agent)
+        set_state(args.name, args.platform, args.new_state, agent=args.agent,
+                  sha=args.sha)
         print(f"{args.name}/{args.platform} -> {args.new_state}")
     elif args.cmd == "set-blocked":
         if args.clear:

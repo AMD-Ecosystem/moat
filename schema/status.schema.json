@@ -103,6 +103,9 @@
         },
         "since": {
           "type": "string"
+        },
+        "holder": {
+          "type": "string"
         }
       }
     },

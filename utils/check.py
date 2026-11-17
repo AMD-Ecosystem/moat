@@ -49,6 +49,10 @@ BLOB_ALLOW = {
 
 
 def _run(cmd, **kw):
+    # UTF-8 explicitly: the locale code page on Windows raises on a non-ASCII
+    # commit subject or path in a tool's output.
+    kw.setdefault("encoding", "utf-8")
+    kw.setdefault("errors", "replace")
     return subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO), **kw)
 
 

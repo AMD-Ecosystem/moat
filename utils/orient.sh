@@ -9,8 +9,10 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-bash utils/setup_git.sh >/dev/null 2>&1 || true
-python3 utils/install_hooks.py >/dev/null 2>&1 || true
+bash utils/setup_git.sh >/dev/null 2>&1 \
+  || echo "orient: WARNING -- utils/setup_git.sh failed; the status merge driver may not be registered" >&2
+python3 utils/install_hooks.py >/dev/null 2>&1 \
+  || echo "orient: WARNING -- utils/install_hooks.py failed; run it by hand, the pre-push gates or the gh guard may be missing" >&2
 # Fork clones get their own pre-push hook: while a project's upstream PR is open,
 # its port branch may not move except through `upstream.py --merge-fix`. Only stdout
 # is discarded: a clone this could NOT protect reports on stderr, and an unprotected
@@ -36,8 +38,18 @@ fi
 # This pulls the CURRENT branch -- for a port branch that is the shared per-project
 # state another host may have pushed, which is what the selection below reads.
 if git remote 2>/dev/null | grep -q .; then
-  git pull --rebase --autostash >/dev/null 2>&1 \
-    || echo "orient: pull --rebase skipped (offline or local conflicts)" >&2
+  # --rebase=merges keeps an unpushed trunk merge a merge; a plain rebase replays
+  # every trunk commit onto the port branch. A rebase that stops on a conflict is
+  # aborted, so the checkout is never left mid-rebase for the next command.
+  if ! git pull --rebase=merges --autostash >/dev/null 2>&1; then
+    if [ -d "$(git rev-parse --git-path rebase-merge)" ] \
+        || [ -d "$(git rev-parse --git-path rebase-apply)" ]; then
+      git rebase --abort >/dev/null 2>&1
+      echo "orient: pull --rebase hit conflicts and was ABORTED -- this checkout is behind origin; merge it by hand" >&2
+    else
+      echo "orient: pull --rebase skipped (offline, or nothing to pull from)" >&2
+    fi
+  fi
 fi
 
 # The trunk carries the tooling, the agent definitions and the porting knowledge, and
@@ -45,13 +57,18 @@ fi
 # trunk push would put a merge commit on every branch for a README regeneration, so
 # look first and merge only when something a port can actually feel has moved. No-op
 # on the trunk itself.
-SYNC=$(python3 utils/moatlib.py branch-sync --apply 2>/dev/null)
+sync_err=$(mktemp)
+SYNC=$(python3 utils/moatlib.py branch-sync --apply 2>"$sync_err")
 case "$SYNC" in
   *"skip --"*|*"current --"*) ;;
   *"conflict --"*) echo "${SYNC/branch-sync: /branch   : }" >&2 ;;
-  "") ;;
+  "")
+    # No verdict at all means the tool itself failed, which is not "in sync".
+    echo "orient: WARNING -- branch-sync produced no verdict; this branch may be behind the trunk:" >&2
+    tail -3 "$sync_err" | sed 's/^/           /' >&2 ;;
   *) echo "${SYNC/branch-sync: /branch   : }" ;;
 esac
+rm -f "$sync_err"
 
 echo "== MOAT orient =="
 
@@ -209,8 +226,18 @@ case "$_branch" in
     exit 0 ;;
 esac
 
-NEXT=$(python3 utils/moatlib.py next-task "$PLATFORM" 2>/dev/null || echo NONE)
-if [ "$NEXT" = "NONE" ] || [ -z "$NEXT" ]; then
+# The selector failing is not the selector finding nothing. It prints NONE and
+# exits 0 when there is no work; any other exit is a broken tool, and reporting
+# that as "nothing to do" sends a host home with work waiting.
+next_err=$(mktemp)
+if ! NEXT=$(python3 utils/moatlib.py next-task "$PLATFORM" 2>"$next_err") || [ -z "$NEXT" ]; then
+  echo "next     : ERROR -- the selector failed; this is NOT 'nothing to do'"
+  tail -5 "$next_err" | sed 's/^/           /'
+  rm -f "$next_err"
+  exit 1
+fi
+rm -f "$next_err"
+if [ "$NEXT" = "NONE" ]; then
   echo "next     : NONE actionable on $PLATFORM"
   # "Nothing to do" and "waiting on a dependency nobody adopted" print the same way
   # otherwise, and the second one never resolves by itself.

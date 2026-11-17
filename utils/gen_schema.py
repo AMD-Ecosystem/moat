@@ -70,6 +70,8 @@ def build():
                 "properties": {
                     "arch": {"type": "string", "pattern": m.PLATFORM_RE.pattern},
                     "since": {"type": "string"},
+                    # Opaque id of the host and job that took it; see lock_holder.
+                    "holder": {"type": "string"},
                 },
             },
             # Explicit release marker naming the acquisition it ended (arch +

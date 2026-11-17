@@ -2502,12 +2502,25 @@ def publish(applied):
     if not stash:
         print("upstream: no changes to publish")
         return 0
+    # This checkout is shared with other sessions. The steps below discard every
+    # tracked modification and commit whatever was modified, so anything here that
+    # is not one of the records this run corrected would be both destroyed locally
+    # and swept into the pull request. Refuse instead and name it.
+    dirty = [f for f in git("diff", "--name-only", "HEAD").stdout.splitlines() if f]
+    foreign = [f for f in dirty if not re.fullmatch(r"projects/[^/]+/status\.json", f)]
+    if foreign:
+        print(f"upstream: {len(foreign)} modified file(s) in this checkout are not "
+              f"record corrections ({', '.join(foreign[:4])}"
+              f"{', ...' if len(foreign) > 4 else ''}); commit or restore them, or "
+              f"run from a clean checkout. Nothing was published or discarded.",
+              file=sys.stderr)
+        return 1
     started_on = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     git("checkout", "-q", "--", ".")                   # tree now matches HEAD
     git("fetch", "-q", "origin", trunk)
     git("checkout", "-q", "-B", BRANCH, f"origin/{trunk}")
     git("checkout", stash, "--", ".")                  # replay the edits onto the trunk
-    git("add", "-A")
+    git("add", "-u")                                   # tracked edits only, never strays
 
     if not git("diff", "--cached", "--quiet", check=False).returncode:
         print("upstream: branch matches the trunk; nothing to publish")

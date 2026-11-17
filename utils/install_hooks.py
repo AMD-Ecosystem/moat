@@ -355,7 +355,9 @@ def main():
               file=sys.stderr)
         return 1
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(PRE_PUSH)
+    # newline="\n": the default translates to CRLF on Windows, and the hook is a
+    # shell script.
+    p.write_text(PRE_PUSH, newline="\n")
     p.chmod(p.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     print(f"install_hooks: pre-push installed at {p}")
     return install_gh_guard()

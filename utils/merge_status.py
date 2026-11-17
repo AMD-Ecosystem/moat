@@ -222,6 +222,11 @@ def _merge_lock(a, b):
     lb = b.get("porting") if _live(b.get("porting")) else None
     if la and lb:
         if la.get("arch") == lb.get("arch"):
+            ha, hb = la.get("holder"), lb.get("holder")
+            if ha and hb and ha != hb:
+                # Two hosts of one platform acquired at once. Same rule as two
+                # platforms: the first acquisition wins and the loser finds out.
+                return min((la, lb), key=lambda l: (l.get("since") or "", l["holder"]))
             return lb if _b_is_later(la.get("since"), lb.get("since")) else la
         return min((la, lb), key=lambda l: (l.get("since") or "", l.get("arch") or ""))
     return la or lb
