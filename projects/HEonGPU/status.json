@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-11-17T20:26:42Z",
+  "updated_at": "2026-11-17T20:28:01Z",
   "head_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
   "depends_on": [],
   "waivers": {
@@ -23,13 +23,13 @@
   "stage": "ported",
   "platforms": {
     "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
+      "blocked": true,
+      "blocked_reason": "Blocked by jeffdaily's ruling of 2026-11-17: hipMM 5.0.0, which the port requires, does not build on Windows (https://github.com/AMD-Ecosystem/hipMM/issues/11); the windows gate is waived on the same ground. Clear the block when hipMM builds on Windows.",
       "validated_sha": "542ea1a127e7b963f92ca7a6c88d96cbbfbef439",
       "failed_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
       "started_at": "2026-08-13T02:40:37Z",
       "completed_at": "2026-08-19T04:22:31Z",
-      "updated_at": "2026-11-17T16:45:59Z",
+      "updated_at": "2026-11-17T20:28:01Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
