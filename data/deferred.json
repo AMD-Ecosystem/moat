@@ -330,7 +330,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-12T23:40:21Z",
-      "decided": null,
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-17T22:08:58Z",
+        "note": "Ruled 2026-11-17 after two items (gh-guard gate, TFHE torus32) had to be closed as done when they were superseded or not applicable."
+      },
       "project": null
     },
     {
