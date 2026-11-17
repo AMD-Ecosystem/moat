@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-11-17T16:55:26Z",
+  "updated_at": "2026-11-17T18:25:44Z",
   "head_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
   "depends_on": [],
   "waivers": {
@@ -155,5 +155,12 @@
     "since": "2026-11-17T16:52:18Z",
     "at": "2026-11-17T16:55:26Z"
   },
-  "porting": null
+  "porting": null,
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-17T17:48:09Z",
+    "head_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+    "content_sha256": "ae9ce471ca3881ae6a6223c13b4f54ec87784a5009c0416d178fdfd295163b91",
+    "review_pr": "https://github.com/AMD-Ecosystem/HEonGPU/pull/1"
+  }
 }
