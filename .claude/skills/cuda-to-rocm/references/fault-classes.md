@@ -322,6 +322,16 @@ thread decoded `AtomA 2147484974` and `AtomB 2305843010287440402` against a size
 an 18-exabyte offset from a `size_t*` base -- and the fix was moving the bounds test that
 already existed above the two loads it followed.)
 
+**An allocation sized by a different expression than the launch indexes it by.** A
+`cudaMalloc` whose count comes from one member and a kernel whose global thread id ranges
+over another is an overflow of whatever the ratio is, and CUDA can absorb a large one
+silently -- HEonGPU's TFHE encryptor allocated 512 random states and initialized and used
+512 * 32 of them, a 32x overrun that only AMD turned into wrong answers. Grep every raw
+`cudaMalloc` for the expression it is sized by and check it against the grid the consuming
+kernel is launched with; when the two disagree, decide which one is the intent (in HEonGPU
+it was the launch geometry). This is a memory-safety bug on both platforms, so fix it for
+both rather than guarding it. (HEonGPU: `HEEncryptor<Scheme::TFHE>` cuda_rng.)
+
 **Rule-of-five on resource handles.** CUDA tolerates a default-constructed or
 double-destroyed texture/stream/event handle; AMD faults. Give RAII wrappers explicit
 default init (`handle = 0`), move-only semantics, and a guarded destructor. (colmap
