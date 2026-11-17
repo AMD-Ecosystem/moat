@@ -940,6 +940,28 @@ macros that HIP leaves undefined (`CUBLAS_VERSION`, `CUBLAS_VER_*`, `NVJPEG_VER_
 `< 12000` gate take the CUDA 11 branch. List each gate of each macro with its HIP resolution.
 (oneflow)
 
+**cuRAND's device header is host-includable only AFTER the CUDA runtime headers**, which
+makes a shim the one place it must never go. The fault is ORDER, not host versus device:
+CUDA 12.8's `curand_mtgp32_kernel.h` declares `threadIdx`/`blockDim` with C++ linkage and
+`device_launch_parameters.h` declares the same names with C linkage, and g++ 13 rejects the
+pair only when curand was seen first. Reproducer in both directions, `g++ -fsyntax-only`:
+`<curand_kernel.h>` before `<cuda_runtime.h>` + `<device_launch_parameters.h>` gives two
+conflicting-declaration errors; the reverse order is clean. A shim tends to be reached very
+early -- the lowest common layer is where you put it -- so a curand include there lands in
+the failing order for any TU that gets to the shim before some `.cuh` has dragged in the
+launch parameters, and the shim's own `#include <cuda_runtime.h>` does not rescue it because
+cuda_runtime.h includes device_launch_parameters.h only under `#if defined(__CUDACC__)`. It
+is not universal and you do not need it to be: one exposed TU is enough. Establish it by
+preprocessing rather than by reasoning about the include graph -- `g++ -E <the target's own
+flags> foo.cpp | grep -n 'device_launch_parameters.h"\|<shim>.h"'` gives the two line numbers
+and settles the order per TU. (In HEonGPU exactly one of the library's four host files was
+exposed.) Give a shim the runtime header only and leave the RNG include in the kernel headers
+that use it: those are reached later, after the launch parameters, which is why they are
+safe. If a host TU ever reaches the RNG header first, put `<device_launch_parameters.h>`
+ahead of it there rather than moving the include back into the shim. Nothing on the AMD
+side can catch any of this, since the HIP branch of the shim includes hipRAND instead and hipRAND is
+host-safe. (HEonGPU)
+
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which
