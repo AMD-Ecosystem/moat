@@ -317,3 +317,5 @@
 {"kind":"phase","ts":"2026-11-16T20:39:43Z","phase":"test","seconds":88.733,"exit":0,"cmd":"bash -c for c in $(cat agent_space/classes.txt); do bash agent_space/run.sh tornado-test -V $c; done"}
 {"kind":"phase","ts":"2026-11-16T20:40:36Z","phase":"test","seconds":15.045,"exit":0,"cmd":"make -C projects/TornadoVM/src test-nogpu JDK=jdk21"}
 {"kind":"session","ts":"2026-11-16T20:41:36Z","epoch":1794861696.294289089,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-17T00:03:25Z","epoch":1794873810.331342400,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-17T00:12:14Z","epoch":1794874337.739260700,"event":"end","platform":"windows-gfx1151"}
