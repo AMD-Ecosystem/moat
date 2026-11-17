@@ -8248,3 +8248,5 @@ Change, fork commit `1b4e781d83cf16e9090075f69db4e06688ab9d61` "[ROCm] Document 
 Files changed (`git diff --stat 537cdca..1b4e781`): `README.md` (+2), `docs/getting_started.rst` (+2). Nothing else.
 
 Source class: **documentation only**. No source, header, build file, CMake comment, patch or test changed, so the binaries are identical to `537cdca`; the Linux evidence at `537cdca` (gfx942, gfx1100, gfx90a) applies unchanged and is eligible for carry-forward. No build was run: a documentation-only change cannot affect the build, and no build file changed. `python3 utils/jargon.py --port HEonGPU` -> `jargon: clean`; `utils/prose.py` on the commit message -> clean.
+
+State after the round: `advance-head` to `1b4e781` carried the three Linux platforms forward by itself (source-class verdict `doc-only`, from `537cdca`); the porter marked no platform completed. `windows-gfx1151` stays `validation-failed` under the waiver. Stage `ported`, lock released; the reviewer is next.
