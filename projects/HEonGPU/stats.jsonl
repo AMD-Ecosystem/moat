@@ -421,3 +421,5 @@
 {"kind":"phase","ts":"2026-11-17T08:52:41Z","phase":"test","seconds":795.505,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/final-shared --output-on-failure -j1"}
 {"kind":"session","ts":"2026-11-17T09:02:31Z","epoch":1794906151.342032237,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-17T09:11:59Z","epoch":1794906719.208351220,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T09:19:57Z","epoch":1794907197.594835486,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-17T09:20:27Z","phase":"compile","seconds":0.081,"exit":1,"cmd":"cmake -S projects/HEonGPU/src -B /var/lib/jenkins/fleet/jobs/mi200-20261117-011713-heongpu-validate-537cdca/build/static -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DGPU_TARGETS=gfx90a -DAMDGPU_TARGETS=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}

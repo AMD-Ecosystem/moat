@@ -7954,3 +7954,26 @@ This pull request was prepared with the help of an AI assistant acting as a codi
 
 If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
 ====
+
+## Validation 2026-11-17 (linux-gfx90a, MI250X, ROCm 7.16 pip SDK) -- not run: no CMake >= 4.0 obtainable in this job, state unchanged
+
+Dispatched by Jeff Daily: full real-GPU revalidation at `537cdcaf806f7bc17a8c93f93642fa4eef3c3416` (stage `review-passed`, derived state `revalidate` from `640a8b5`), fresh clone and fresh build trees, no carry-forward. Fleet job `mi200-20261117-011713-heongpu-validate-537cdca`, `HIP_VISIBLE_DEVICES=1` from the dispatcher (`rocminfo`: AMD Instinct MI250X / MI250, gfx90a), ROCm pip SDK `hipconfig --version` 7.16.26385.
+
+Done:
+- Fresh clone of AMD-Ecosystem/HEonGPU `moat-port`, detached at `537cdca`; `git submodule update --init --recursive` gives GPU-FFT `7f05858`, GPU-NTT `04b1103`, RNGonGPU `e2f4a85` (the pins the porter and reviewer recorded).
+- `python3 utils/jargon.py --port HEonGPU` -> `jargon: clean` (local `main` = `origin/main` = `62fa9b9`).
+- Fork `git status --porcelain` empty.
+
+Stopped at configure. Upstream's `CMakeLists.txt:7` is `cmake_minimum_required(VERSION 4.0 FATAL_ERROR)`; the image has CMake 3.31.6 only (`/opt/python-3.11-venv/bin/cmake`):
+
+```
+utils/timeit.sh HEonGPU compile -- cmake -S projects/HEonGPU/src -B <job>/build/static -G Ninja -DCMAKE_PREFIX_PATH=$R -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DGPU_TARGETS=gfx90a -DAMDGPU_TARGETS=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+CMake Error at CMakeLists.txt:7 (cmake_minimum_required):
+  CMake 4.0 or higher is required.  You are running version 3.31.6
+```
+
+Why no CMake 4 here: this job was dispatched without `--build`, so it has no `$FLEET_VENV`, and the fleet guard refuses any `pip install` outside `$FLEET_VENV` ("pip changing the Python environment every job on this host shares"), including into a fresh venv in the job directory. No other job directory on this host holds a CMake 4 tree to copy (every `venv/bin/cmake` found is 3.31.6), which is how the gfx942 porter got 4.1.3 on that host. Fetching Kitware's CMake 4.1.3 release tarball into the job directory was refused by the session's permission layer as a way around the guard, so it was not pursued further.
+
+Not a port result: nothing was built or run, no test count exists, and the port is neither passed nor failed on this platform at `537cdca`. The linux-gfx90a record is left as it was (`completed` at `640a8b5`, derived `revalidate`); `validation-failed` was not recorded because it would send a working port back to the porter for a host tooling gap.
+
+To unblock: redispatch with `--build` (gives the job a `$FLEET_VENV` that may `pip install cmake==4.1.3`), or provide CMake >= 4.0 on the host. The rest of the recipe is ready: GMP (`libgmp-dev` 6.3.0) and NTL (`libntl-dev` 11.5.1) are installed in the image, and the configure line above is the porter's `537cdca` line with gfx90a (this host has several GPUs, so `GPU_TARGETS`/`AMDGPU_TARGETS` are named explicitly for the fetched hipMM scripts). Physical cores 128, so `-j` up to 128 is within the cap.
