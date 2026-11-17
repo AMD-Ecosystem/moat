@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-11-17T20:28:01Z",
+  "updated_at": "2026-11-17T20:42:57Z",
   "head_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
   "depends_on": [],
   "waivers": {
@@ -168,10 +168,15 @@
   "pr_opened_at": "2026-11-17T18:45:29Z",
   "pr_state": "open",
   "published_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
-  "fix": {
-    "branch": "moat-fix-41",
-    "base_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
-    "review_pr": null,
-    "opened_at": "2026-11-17T20:22:22Z"
-  }
+  "fix": null,
+  "fix_abandoned": [
+    {
+      "branch": "moat-fix-41",
+      "base_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+      "tip_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+      "by": "jeffdaily",
+      "reason": "Defect already fixed upstream in 2c9a555 and 7c93d4d, both in the published head 1b4e781; no change needed. moat-fix-41 was never pushed.",
+      "at": "2026-11-17T20:42:57Z"
+    }
+  ]
 }
