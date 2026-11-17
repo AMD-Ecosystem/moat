@@ -109,10 +109,11 @@
       "component": "rocBLAS",
       "summary": "rocBLAS 5.7 (ROCm 10.1) gemm_ex with float16/bfloat16 A/B/C/D and compute_type f32 splits k into chunks of floor((2^30-1)/ld) once ld*k of an operand reaches 2^30 and accumulates each chunk into the 16-bit D with beta=1, so D is rounded ~k/1023 times: at k=2^20 on MI300X the error is 25-50x a single rounding (fp16 7e-3, bf16 5e-2 relative; hipBLASLt 2.8e-4 / 2.5e-3), and the 1025 chunk launches take ~8 ms vs 45 us on hipBLASLt. The guard also fires for small operands (ld*k is not the footprint for a non-transposed B). The split is invisible to ROCBLAS_LAYER. Standalone reproducer in the plan oneflow-gfx942-longk-half-matmul (Results). oneflow works around it on HIP (fork d81b70795, hipBLASLt for these GEMMs). Filing, account and whether to check gfx90a first are for jeff.",
       "refs": [
-        "projects/oneflow/notes.md"
+        "projects/oneflow/notes.md",
+        "https://github.com/ROCm/rocm-libraries/issues/12222 (2026-11-02 comment; #14250 backport to 10.2 denied 2026-11-17)"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-libraries/issues/12222",
       "created_at": "2026-10-31T23:04:59Z",
       "decided": null
     },
