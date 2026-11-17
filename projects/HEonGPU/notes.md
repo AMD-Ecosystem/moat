@@ -8108,3 +8108,67 @@ These are the same counts as the porter's MI300X runs at this head (static 317, 
 - Integrity: `git -C projects/HEonGPU/src status --porcelain` is empty and HEAD is `537cdca`. The submodule working trees hold only the committed patches, applied by configure.
 
 Verdict: `linux-gfx942` **completed** at `537cdcaf806f7bc17a8c93f93642fa4eef3c3416`.
+
+## Validation 2026-11-17 (linux-gfx90a, MI250X, ROCm 7.16 pip SDK) -- completed at `537cdca`
+
+Dispatched by Jeff Daily, redispatch of the run above that stopped for lack of CMake 4. Revalidation from this platform's `validated_sha` `640a8b5` to head `537cdcaf806f7bc17a8c93f93642fa4eef3c3416` (hipMM 5.0.0 pin, RMM 25.x bridge removed, merge of upstream `62fa9b9` with the new memory pool code, chunked serialization and new GPU-NTT/GPU-FFT pins): a full real-GPU run from a fresh clone and fresh build trees, no carry-forward. Fleet job `mi200-20261117-015758-heongpu-validate-537cdca-r2`. GPU: one MI250X GCD (`rocminfo`: AMD Instinct MI250X / MI250, gfx90a, `sramecc+:xnack-`, wave64), one of several in the host; `HIP_VISIBLE_DEVICES=1` as the dispatcher pinned it. ROCm pip SDK `_rocm_sdk_devel`, `hipconfig --version` 7.16.26385. Host: 2 x 64-core EPYC 7702; builds at `-j64`.
+
+Fresh clone of `AMD-Ecosystem/HEonGPU` into `projects/HEonGPU/src`, detached at `537cdca` (= `origin/moat-port`), `git submodule update --init --recursive`: GPU-FFT `7f05858`, GPU-NTT `04b1103`, RNGonGPU `e2f4a85`. The static configure applied the three committed `thirdparty/patches/*.patch` to the pristine submodules; afterwards each submodule's diff reverse-applies its patch (`git apply --check -R`), so it holds nothing else.
+
+Prerequisites (nothing shared modified):
+
+- CMake 4.1.3: `$FLEET_VENV/bin/pip install cmake==4.1.3` into this job's own venv (the image has 3.31.6; upstream needs >= 4.0), venv `bin` first on `PATH`.
+- GMP (`libgmp-dev` 6.3.0+dfsg-2ubuntu6.1) and NTL (`libntl-dev` 11.5.1-1) already installed in the image.
+
+```bash
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel; export PATH=$FLEET_VENV/bin:$PATH
+common="-G Ninja -DCMAKE_PREFIX_PATH=$R -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DGPU_TARGETS=gfx90a -DAMDGPU_TARGETS=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON"
+cmake -S projects/HEonGPU/src -B <job>/build/static $common -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+cmake --build <job>/build/static -j64
+cmake -S projects/HEonGPU/src -B <job>/build/shared $common -DHEonGPU_BUILD_SHARED=ON
+cmake --build <job>/build/shared -j64
+ulimit -c 0
+ctest --test-dir <job>/build/static --output-on-failure -j1
+ctest --test-dir <job>/build/shared --output-on-failure -j1
+```
+
+`GPU_TARGETS`/`AMDGPU_TARGETS` named explicitly because this is a multi-GPU host and the fetched hipMM scripts need them; no other flag was needed. Every configure and build step wrapped in `utils/timeit.sh HEonGPU compile`, every ctest run, explicit test, example and benchmark in `utils/timeit.sh HEonGPU test`.
+
+### Build
+
+- Static: configure rc 0 (15.5 s), build rc 0 (43.2 s, 288 ninja steps), 0 `error:` lines; 49 test, 28 example, 3 benchmark executables.
+- Shared: configure rc 0 (15.8 s), build rc 0 (40.3 s, 231 steps), 0 `error:` lines; 49 test executables, `libheongpu.so.2.1.1`.
+- Fetched dependencies as recorded by the porter: `_deps/rmm-src` = `https://github.com/AMD-Ecosystem/hipMM` at `dccfd94fc2d513abf3f9f62867e330433f9086e0` (hipMM 5.0.0), `_deps/libhipcxx-src` at `90b6a2b5768fecb243d30fb3c0f34223031bd355`.
+- (The ninja step counts are lower than gfx1100's 300/243 and gfx942's; the executable counts are identical. Not investigated: the step count includes fetched-dependency sub-steps, and the outputs that matter match.)
+
+### Tests (serial, `-j1`, `ulimit -c 0`)
+
+| Run | Result | Time |
+|---|---|---|
+| static | **317/317 passed** | 367.66 s |
+| shared (`HEonGPU_BUILD_SHARED=ON`) | **312/312 passed**, incl. `Shared_Library_Users_Share_The_Memory_Pool` and `_Random_Number_Generator` | 364.98 s |
+
+Same counts as the MI300X runs at this head (porter and gfx942 validator: static 317, shared 312) and gfx1100's; no test differs, no failures, no timeouts. Count change against this platform's `640a8b5` record (301/296): +16 each, the new upstream tests the porter listed. `MemoryPool_Releasing_Device_Pool_Returns_Unused_Memory` passed (0.32 s static, 0.30 s shared, with the HIP-only 128 MiB slack of `0f2a0f0`), `CKKSSession.Bootstrapping_Evaluator` passed (9.87 s). Each suite ran once, as dispatched. The HIP pool block size was not probed separately on gfx90a; the releasing-pool test passing with the 128 MiB slack is the only evidence here.
+
+### Explicit runs (static build, each rc 0; values checked against earlier records)
+
+- `bin/test/rmm_default_testcases`: 3/3 passed.
+- `3_basic_memorypool_config`: `Topology : discrete (integrated 0, host page tables 0, concurrent managed access 1)`, `Mode : copy`, `Kind : growing`, device pool `Total 54873239552 / Used 657128`, host pool `Total 268435456 / Used 0` (device total identical to this platform's `640a8b5` record; Used 657128 vs 657248 there, and 657128 on gfx942/gfx1100 at this head).
+- `1_basic_bfv`: `1,144,529,961,64,...` / `49,2916,36,10000,64,...`, then `6,864,3174,5766,384,...` / `294,17496,216,60000,384,...`, as recorded.
+- `2_basic_ckks`: `100,400,900,1600,...,9`, then `50,200,450,800,...,4.5`.
+- `9_multi_stream_usage_way1`: "Done.".
+- `15_basic_tfhe`: inputs `1,1,0,1,0,1,0,0` / `1,0,1,0,1,1,1,0`, control `0,0,0,0,1,1,1,1`; NAND `0,1,1,1,1,0,1,1`, AND `1,0,0,0,0,1,0,0`, NOR `0,0,0,0,0,0,0,1`, OR `1,1,1,1,1,1,1,0`, XNOR `1,0,0,0,0,1,0,1`, XOR `0,1,1,1,1,0,1,0`, NOT `0,0,1,0,1,0,1,1`, MUX `1,0,1,0,0,1,0,0`: every gate matches the truth table bit for bit.
+- `17_ckks_session`: maximum error 3.73e-08, `Slot 0: 1.005, expected 1.005` (640a8b5 here: 3.20e-08; gfx942 at this head 2.94e-08).
+- `bootstrapping/1_ckks_regular_bootstrapping`: `EXPECTED:0.2 + 0.4i - ACTUAL:0.199998 + 0.399995i`; largest deviation over the 16 printed slots 9.0e-06; 235.0 ms (640a8b5 here: 193 ms).
+- `bootstrapping/3_ckks_bit_bootstrapping`: every printed slot matches its 0/1; largest deviation over the 16 slots 2.05e-09 (640a8b5 here: ~1.1e-09); 184.5 ms (640a8b5: 145 ms).
+- `mpc/1_multiparty_computation_bfv`: `230,20300,65,...,65,5` from `1,10,100,7..` / `2,20,200,8..` / `3,30,300,9..` (alice*bob+charlie rotated by one slot): correct.
+- `benchmark/tfhe_benchmark`: XOR 14.69 ms, MUX 26.09 ms avg (640a8b5 here: 15.76 / 28.25).
+
+### Gates
+
+- CUDA no-regression: not run here, as dispatched; per Jeff's dispatch the nvcc compile at `537cdca` passed on another host (not recorded in these notes at the time of writing).
+- `python3 utils/jargon.py --port HEonGPU` -> `jargon: clean` (local `main` made from `origin/main` = `62fa9b9`).
+- Documentation: README "AMD GPUs (ROCm)" section (hipMM 5.0, libhipcxx download), `docs/getting_started.rst` and `docs/advanced_topics.rst` present and current.
+- Integrity: `git -C projects/HEonGPU/src status --porcelain` empty, HEAD `537cdca`. The submodule working trees hold only the committed patches, applied by configure.
+
+Verdict: `linux-gfx90a` **completed** at `537cdcaf806f7bc17a8c93f93642fa4eef3c3416`.
