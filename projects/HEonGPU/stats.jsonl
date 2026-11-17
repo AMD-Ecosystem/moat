@@ -400,3 +400,5 @@
 {"kind":"phase","ts":"2026-11-17T06:53:03Z","phase":"test","seconds":780.225,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/build/shared --output-on-failure"}
 {"kind":"phase","ts":"2026-11-17T07:07:19Z","phase":"test","seconds":780.688,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/build/static --output-on-failure"}
 {"kind":"session","ts":"2026-11-17T07:08:54Z","epoch":1794899334.374465800,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T07:17:49Z","epoch":1794899869.938955882,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T07:25:50Z","epoch":1794900350.225265445,"event":"end","platform":"linux-gfx942"}
