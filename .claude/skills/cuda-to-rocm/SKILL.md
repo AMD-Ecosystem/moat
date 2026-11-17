@@ -113,6 +113,7 @@ Scan this list against what you are doing. If any line could apply, open
 - rocBLAS `gemm_ex` with a 16-bit D splits long k (`max(lda, ldb) * k >= 2^30` in ROCm 10.1) and rounds D once per chunk; send those GEMMs to hipBLASLt.
 - gfx11/gfx12 WMMA float accumulation drifts with k (biased toward zero) in hipBLASLt and rocBLAS alike; run k-chunks of <= 2^15 yourself with 16-bit per-chunk outputs summed in float (a float D is 8-28x slower on gfx1100), recomputing in float the outputs whose 16-bit chunk sums overflow or whose summed half-ulp rounding bound exceeds 3 units of roundoff of the result (a root-sum-square test is beaten by sums that round alike), not hipBLASLt split-k (a gfx1201 kernel is wrong at large k even when split). Route fused-epilogue (cuBLASLt) wrappers through the same path, with the epilogue applied afterwards.
 - HIP host `min`/`max` in `.cu` files exist only for `(int, int)`: float arguments in `__host__ __device__` code silently truncate on the host (whole-pixel camera errors). Fix the call sites with `fmin`/`fmax`; do not rely on `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__`, which exists only from ROCm 7.2 and defaults off.
+- Casting a NEGATIVE float to `uint64_t` diverges: AMD keeps the low 32 bits, NVIDIA saturates to 0. (The 32-bit cast agrees.)
 
 **Headers, includes and build**
 - A shared compat header must be host-includable: gate device-only includes behind `__CUDACC__`/`__HIPCC__`, or CUB leaks into host TUs. Hit independently by two projects.
