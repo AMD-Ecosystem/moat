@@ -7726,3 +7726,110 @@ This pull request was prepared with the help of an AI assistant acting as a codi
 
 If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
 ====
+
+## Porter round 2026-11-17 (linux-gfx942) -- installed rmm 5.0, upstream sync to `62fa9b9`, `537cdca`
+
+Dispatched by Jeff Daily at `changes-requested` (review of `25b45ba..302003f`, two findings). `pr-state` read `none` before the lock and again before the push; `set-state HEonGPU linux-gfx942 porting` succeeded (`3b090fba`). Head `302003f` -> `537cdca`, six commits pushed to `moat-port` as a fast-forward (`302003f..537cdca`). The fork default branch `main` was not touched (still `837ffc8`); upstream was fetched as a remote of the clone. The local `main` of this clone was moved to `upstream/main` only so that `jargon.py --port` scans the port's commits rather than upstream's.
+
+- `0c5706a` [ROCm] Require hipMM 5.0 in the installed package (finding 1)
+- `db87f58` Merge remote-tracking branch 'upstream/main' (finding 2; parents `0c5706a`, `62fa9b9`)
+- `75ff0e9` [ROCm] Build the new memory pool and payload code with HIP
+- `27f6af0` [ROCm] Read the host memory size on Windows in the new pool code
+- `0f2a0f0` [ROCm] Allow for HIP's pool block size in the releasing pool test
+- `537cdca` [ROCm] Describe the pool defaults of GPUs that share host memory
+
+Host: MI300X (gfx942), `HIP_VISIBLE_DEVICES=1` from the dispatcher, ROCm 10.1.0 pip SDK (`_rocm_sdk_devel`, HIP 7.16.26385, AMD clang 24.0.0git). CMake 4.1.3: no `$FLEET_VENV` in this job, so the CMake 4.1.3 tree from the previous porter job (`mi300-20261116-221442-heongpu-hipmm5-porter-r2/tools/cmake`) was copied into this job's `tools/cmake` (read-only on the source). GMP (`libgmp-dev` 6.3.0) and NTL (`libntl-dev` 11.5.1) were already installed in the image. No Python packages installed.
+
+### Finding 1: installed package requires hipMM 5.0 (`0c5706a`)
+
+`cmake/Config.cmake.in`, HIP arm only: `find_dependency(rmm 5.0 REQUIRED)` (was unversioned), comment now says why 5.0 (the headers need hipMM 5.0's RMM 26.x layout). CUDA arm unchanged (`rmm 26.08`).
+
+Proof, by the reviewer's method, with CMake 4.1.3: built `0c5706a` alone in a worktree (`-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DHEonGPU_BUILD_TESTS=OFF`, Release) and installed to `<job>/prefix-c1` (`HEonGPUConfig.cmake:35` `find_dependency(rmm 5.0 REQUIRED)`, `lib/cmake/rmm` version 5.0.0). Stand-in rmm 4.0.0 at `<job>/f1test/fake/lib/cmake/rmm` (hipMM's own `rmm-config-version.cmake` with `PACKAGE_VERSION` set to 4.0.0, a config that only creates an `rmm::rmm` INTERFACE target), first in `CMAKE_PREFIX_PATH`; consumer `find_package(HEonGPU 2.1 REQUIRED)` printing `rmm_DIR`/`rmm_VERSION`:
+
+| installed `HEonGPUConfig.cmake` | result |
+|---|---|
+| unversioned lookup (a copy of the prefix with line 35 reverted, i.e. `302003f`'s text) | stand-in loaded, `rmm_DIR=.../fake/lib/cmake/rmm rmm_VERSION=4.0.0` |
+| `0c5706a` | `Found rmm: <prefix>/lib/cmake/rmm/rmm-config.cmake (found suitable version "5.0.0", minimum required is "5.0")`, `rmm_VERSION=5.0.0` |
+| `0c5706a`, prefix copy without `lib/cmake/rmm` | configure fails: `Could not find a configuration file for package "rmm" that is compatible with requested version "5.0"` listing the stand-in as `version: 4.0.0` |
+
+### Finding 2: merge of upstream main `62fa9b9` (`db87f58`)
+
+11 upstream commits `837ffc8..62fa9b9`. `git merge` reported exactly the two conflicts the reviewer's `merge-tree` found; ten other port-edited files auto-merged.
+
+- `src/lib/util/memorypool.cu` (content): upstream's text throughout; in `get_host_avaliable_memory()` the Windows `GlobalMemoryStatusEx` branch is reapplied around upstream's new body (`detail::read_available_host_memory()` with the sysinfo fallback). The `_WIN32` `<windows.h>` block at the top of the file auto-merged.
+- `src/lib/kernel/small_ntt.cu` (modify/delete): upstream's only change (`9191be5`) is the signatures: `const Root<T>* root_of_unity_table` -> `const T*`, `const Ninverse<T> n_inverse` -> `const T` (GPU-NTT `2f3274c` removed the `Root`/`Ninverse` aliases). Carried into the two definitions in `small_ntt.cuh` (the declarations at the top of the header auto-merged to upstream's). Bodies unchanged upstream and here. Diff of upstream's `.cu` definitions against the header's guarded block: identical apart from `inline` and clang-format's wrapping of the inverse signature (`diff -w` shows only that wrap). Upstream's explicit instantiations are not carried (templates in the header, instantiated at use). File stays deleted.
+- Port lines in every auto-merged file survived: for each of `src/CMakeLists.txt`, `util.cuh`, `util.cu`, `keygeneration.cu`, `bfv/context.cu`, `bfv/evaluationkey.cu`, `ckks/evaluationkey.cu`, `ckks/operator.cu`, `memorypool.cuh` the sorted `+/-` lines of `git diff upstream/main 537cdca` equal those of `git diff 837ffc8 302003f`. Over the whole tree the only files whose port lines changed are the ones this round edits on purpose (Config.cmake.in, small_ntt.cuh/.cu, memorypool.cu, serialization_payload.cu, test_memory_pool.cpp, cuda_runtime.h shim, the two patches, README, advanced_topics.rst).
+- Ancestry: `git merge-base --is-ancestor 62fa9b9 537cdca` and `--is-ancestor 302003f 537cdca` both true.
+- Warp-size audit of upstream's delta (`git diff 837ffc8 62fa9b9 -- src test example benchmark`, added lines, for shuffles, ballots, masks, `warpSize`, `& 31`, `>> 5`, `/ 32`, `long`, `mpz_*_ui`): nothing. New `__syncwarp()` calls only inside the GPU-NTT/GPU-FFT device APIs (`ntt_device.cuh:626,1046`, `fft_device.cuh:588`), the same last-stage race fix pattern as the small NTT; `__syncwarp` is native in HIP and correct at both widths for 32-thread groups (2026-11-04 round).
+- New CUDA runtime identifiers in upstream's delta checked against `thirdparty/hip_compat/` (same method as 2026-11-04): missing were `cudaMemPoolGetAttribute`, `cudaMemPoolAttrReservedMemCurrent`, `cudaDevAttrMemoryPoolsSupported` (added, `75ff0e9`), `cudaMemAllocationTypeManaged` (only inside upstream's `#if CUDART_VERSION >= 13000` managed-pool block, which HIP never compiles; HIP falls back as CUDA 12 does, the existing `CUDART_VERSION` fault class), and comment-only mentions (`cudaMallocManaged`, `cudaDevAttrIntegrated`, ...). `rmm::CUDA_ALLOCATION_ALIGNMENT`, `cuda_async_view_memory_resource` and `limiting_resource_adaptor` come from hipMM 5.0 and compiled.
+
+### Submodule patches against the new pins
+
+Upstream moved GPU-NTT `8a4daf1` -> `04b1103` (73 commits) and GPU-FFT `b743607` -> `7f05858` (42 commits); RNGonGPU unchanged (`e2f4a85`). Neither old patch applied (`git apply --check`: every hunk failed). Per hunk:
+
+GPU-NTT (321 -> 206 lines):
+- **Dropped, upstream fixed the same defect:** the port's rewritten `uint128_t::operator<<`/`>>` (the 61-bit Barrett shift-of-64 fix). GPU-NTT `04b1103` "Fix 128-bit shifts of 64 in the Barrett reduction" keeps the operators' original shape and routes each 64-bit shift through new `shift_left`/`shift_right` helpers written in PTX (`shl.b64`/`shr.b64`, which give 0 for counts >= 64), and `fd6cf48` "Reject moduli larger than the GPU Barrett reduction supports" caps `Modulus` at 61 bits for Data64 (`max_bit`, throws `std::invalid_argument`), so the shifts are 0..64 and the port's handling of 65+ is unreachable. But the upstream fix is inline PTX, which HIP cannot compile, so the patch now adds only a `#ifdef __HIP_PLATFORM_AMD__` branch to each helper: `return shift < 64 ? input << shift : 0;` (and `>>`), the PTX result. The operators themselves are upstream's text.
+- **Dropped, upstream fixed it:** the `customAssert(0 < logn <= N)` -> `&&` fixes in `nttparameters.cu`: GPU-NTT `f51615f` "Fix ring size range checks in NTTParameters" made the identical change (the 4-step functions the other hunks touched were removed in `eecff89`).
+- Kept (refitted): CMake HIP branches in `CMakeLists.txt` (project languages, `USE_HIP` option, `find_package(CUDAToolkit)` CUDA-only, HIP arch default), `cmake/Config.cmake.in` (`find_dependency(hip)`), `src/CMakeLists.txt` (LANGUAGE HIP, `hip::host`, HIP target properties); HIP branches of `uint128_t::operator-`, `operator-=` and `mult128` (still inline PTX upstream).
+- New: `Modulus(T1 mod)` became `__host__ __device__` upstream (`0e229b7`) with its oversized-modulus `throw` behind `#ifndef __CUDA_ARCH__`, which HIP's device pass does not define, so constructing a `Modulus` in a kernel failed to compile under HIP ("cannot use 'throw' in __host__ __device__ function"; found building GPU-NTT's own `test_ntt_helpers.cu`). Gate widened to `#if !defined(__CUDA_ARCH__) && !defined(__HIP_DEVICE_COMPILE__)` (existing fault class: `__CUDA_ARCH__` gates). HEonGPU itself does not construct `Modulus` in device code, but the header is installed.
+
+GPU-FFT (103 -> 106 lines): same three CMake hunks refitted to the 1.0.0 CMake files; no source change needed (upstream's new device API compiled as is).
+
+All three patches `git apply --check` cleanly on pristine worktrees at `04b1103`, `7f05858`, `e2f4a85`.
+
+Evidence for the dropped shift fix, from a scratch standalone HIP build of GPU-NTT at `04b1103` + the new patch (`<job>/scratch/gpuntt`, test CMake edited locally to build the tests as HIP; not committed anywhere): `ctest` **26/26 passed** (1071 s), including `modular_arith` (upstream's new test from `04b1103`: mult, reduce, reduce of two words, reduce_forced, add, sub on the GPU against an `unsigned __int128` host reference, for moduli of every width 2..30 bits (Data32) and 2..61 bits (Data64)): `modular_arith: 3204 of 3204 cases passed`. Counterfactual: with the HIP branches replaced by the plain C++ shift (`input << shift`, undefined at 64), `modular_arith_tests` did not finish in 21 minutes and was killed (the fixed build finishes in under a second); not diagnosed further.
+
+### Other changes needed by upstream's new code
+
+- `75ff0e9`: the three shim names above; and `src/lib/util/serialization_payload.cu` (new upstream) includes `hostvector.cuh` first. `hostvector.cuh` and `devicevector.cuh` include each other, so entered that way `DeviceVector` is defined while `HostVector` is only forward-declared, and clang rejects its non-dependent `HostVector<Complex64>`/`<uint64_t>`/`<int64_t>` constructors ("implicit instantiation of undefined template 'heongpu::HostVector<...>'", `devicevector.cuh:107,128,149`); nvcc defers. Fix inside `#ifdef __HIP_PLATFORM_AMD__`: include `devicevector.cuh` first in that file. Upstream's CUDA text unchanged. (A plain unconditional include would be the cleaner upstream fix; the guard follows Jeff's instruction to keep the CUDA text exact.)
+- `27f6af0` (Windows, not testable here): upstream's new `detail::query_device_memory_attributes()` calls `sysinfo()` for the total host memory, and the new test `MemoryPool_Reads_The_Available_Host_Memory` checks the test host with `sysinfo()`. `_WIN32` branches: `GlobalMemoryStatusEx` `ullTotalPhys`; the test's host check is skipped on Windows (its fake-root checks run everywhere). On Windows `read_available_host_memory()` returns 0 (no `/proc/meminfo`), and `get_host_avaliable_memory()` already takes its Windows branch before calling it. Not compiled under clang-cl in this round.
+- `0f2a0f0`: see the test results below.
+- `537cdca` docs: the README paragraph and the two `advanced_topics.rst` paragraphs advising a smaller pool on APUs (written for the old "50% of the whole machine" default) are removed: upstream's `390f46b`/`fe99747` classify a GPU with `integrated != 0` (or host page tables and memory within 10% of the host's) as unified and give both pools one budget of 80% of available host memory with a 64 MiB initial device pool (`defines.h` `unified_*`). The Memory Pool Sizes bullet now states both default sets. **Inferred, for the Windows validator to confirm:** that HIP reports `integrated = 1` on gfx1151 (HIP's header documents the field as "APU vs dGPU"), so the unified budget applies there; `3_basic_memorypool_config` prints the classification (`Topology : unified/discrete (...)`). On this MI300X: `Topology : discrete (integrated 0, host page tables 0, concurrent managed access 1)`, `Mode : copy`, `Kind : growing`. If gfx1151 also reports concurrent managed access, `memory_mode::automatic` selects the unified (managed-memory) mode there; untested on Windows.
+
+### Build and tests (fresh build trees, documented command, final head `537cdca`)
+
+```bash
+J=<job dir>; R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel; export PATH=$J/tools/cmake/bin:$PATH
+common="-G Ninja -DCMAKE_PREFIX_PATH=$R -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DGPU_TARGETS=gfx942 -DAMDGPU_TARGETS=gfx942 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON"
+cmake -S projects/HEonGPU/src -B $J/build/final-static $common -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+cmake --build $J/build/final-static -j96
+cmake -S projects/HEonGPU/src -B $J/build/final-shared $common -DHEonGPU_BUILD_SHARED=ON
+cmake --build $J/build/final-shared -j96
+ulimit -c 0
+ctest --test-dir $J/build/final-static --output-on-failure -j1   # twice
+ctest --test-dir $J/build/final-shared --output-on-failure -j1
+```
+
+All wrapped in `utils/timeit.sh HEonGPU compile|test`. Both builds rc 0, 0 `error:` lines; 49 test, 28 example, 3 benchmark executables (unchanged). (The submodule working trees already carried the new patches when these trees were configured, so configure's reverse-check skipped applying them; that they apply to pristine checkouts is shown above.)
+
+| Run | Result | Time |
+|---|---|---|
+| static, exploratory, before `0f2a0f0` | 316/317, `MemoryPool_Releasing_Device_Pool_Returns_Unused_Memory` failed | 804 s |
+| static, serial, run 1 | **317/317 passed** | 795.28 s |
+| static, serial, run 2 | **317/317 passed** | 798.44 s |
+| shared, serial | **312/312 passed** | 795.50 s |
+
+Count difference against `302003f` (static 301, shared 296): +16 in both, all new upstream tests: 12 `HEonGPU.MemoryPool_*` (`Classifies_The_Memory_Topology`, `Reports_The_Memory_Topology`, `Reads_The_Available_Host_Memory`, `Budget_Of_A_Discrete_GPU`, `Budget_Of_A_Unified_GPU`, `Selects_The_Memory_Mode`, `Reads_The_Memory_Mode_From_The_Environment`, `Allocates_Managed_Memory_In_The_Unified_Mode`, `Unified_Mode_Keeps_Objects_In_Device_Memory`, `Unified_Mode_Serializes_Without_Host_Memory`, `Selects_The_Device_Pool_Kind`, `Releasing_Device_Pool_Returns_Unused_Memory`), 2 `SerializationPayload.*` (`Chunks_Give_The_Same_Data`, `Truncated_Payload_Copies_The_Values_Read`), and `SerializationFormat.Loaded_Objects_Save_The_Same_Data` typed over two schemes. No test was removed.
+
+The one exploratory failure: `test_memory_pool.cpp:898` `Expected: (free + used) <= (threshold + (32ULL << 20)), actual: 134217728 vs 100663296` (copy mode, releasing pool forced, 64 MiB threshold, after freeing 1 GiB). Standalone HIP reproducer (`agent_space/pooltrim.hip`, `hipMemPoolCreate` + `hipMemPoolAttrReleaseThreshold` 64 MiB): holding 1 GiB reserves 1152 MiB; after the free and a sync, reserved is 0 MiB with nothing else live and **128 MiB with any live allocation (4 KiB, 1 MiB, 64 MiB, 97 MiB all give 128)**; `hipMemPoolTrimTo` does not go lower. This is the 128 MiB chunk behaviour already in `cuda-to-rocm` fault-classes (LichtFeld-Studio, deferral `hip-vmheap-unmap-threshold-lost-or-overtrimmed`); nothing new to promote. The memory above the threshold is returned; only the test's 32 MiB slack is finer than HIP's block. `0f2a0f0` makes the slack 128 MiB under `__HIP_PLATFORM_AMD__` only; CUDA bound unchanged. Whether the block is also 128 MiB on gfx1100/gfx1151 is for those validators to see.
+
+Explicit runs (final static build): `bin/test/rmm_default_testcases` 3/3 passed. Examples and benchmark, each rc 0: `3_basic_memorypool_config` (device pool `Total 162589687808 / Used 657128`, host pool `Total 268435456 / Used 0`, topology line above), `1_basic_bfv` (`6,864,3174,5766,384,...` / `294,17496,216,60000,384,...`), `2_basic_ckks`, `9_multi_stream_usage_way1` ("Done."), `15_basic_tfhe` (inputs `1,1,0,1,0,1,0,0` / `1,0,1,0,1,1,1,0`, control `0,0,0,0,1,1,1,1`; NAND, AND, NOR, OR, XNOR, XOR, NOT, MUX all match the truth table), `17_ckks_session` (max error 2.87e-08, `Slot 0: 1.005, expected 1.005`), `bootstrapping/1_ckks_regular_bootstrapping` (`EXPECTED:0.2 + 0.4i - ACTUAL:0.2 + 0.399994i`), `bootstrapping/3_ckks_bit_bootstrapping` (`EXPECTED:0 - ACTUAL:-5.3e-10 + 3.98e-10i`), `mpc/1_multiparty_computation_bfv`, `benchmark/tfhe_benchmark` (XOR 10.37 ms, MUX 18.01 ms avg).
+
+Checks: `python3 utils/jargon.py --port HEonGPU` -> clean; `utils/prose.py` clean on all six commit bodies; titles 49/41/58/64/65/64 chars (the merge keeps git's default subject without the " into <branch>" suffix, which the jargon check rejects, as in the 2026-11-04 sync), ASCII, no `Co-Authored-By`; fork `git status --porcelain` empty at `537cdca`; `origin/moat-port` = `537cdca` after the push.
+
+### Report items (no change made)
+
+- **`resolve_pool_size`:** touched by `fe99747` ("Share one memory budget between the pools on unified devices"). The lambda in `initialize()` became a member function `resolve_pool_size(bytes, fraction, total, default_bytes, default_fraction, label, bool precise = false)` with a comment "A fraction is taken in float, as before the shared budget, or in double when precise". `precise = true` (computes `double(total_memory) * f`) is passed only on the unified-GPU path (`resolve_unified_budget`: initial host and initial device; the budget total itself is `double(host_available) * 0.8`, commented "In double: a float is off by kilobytes at these sizes"). The discrete path (`resolve_discrete_budget`, all four sizes) still computes `static_cast<size_t>(total_memory * f)` in float. So upstream fixed the float rounding for unified devices only and deliberately kept it on discrete GPUs; the fraction parameter itself is still `float`. Relevant to Jeff's open decision; nothing changed here.
+- **`CKKSSession.Bootstrapping_Evaluator`:** `test/test_ckks_session.cpp` is not in the upstream delta; the test is unchanged. The serialization it exercises did change underneath it (`83b57d7`, `088c243` chunked payloads, `fe13d77`); it passed in all three final runs.
+- **`MemoryPool_*`:** the six existing ones in `test_memory_pool.cpp` and the two in `test_rmm_default.cpp` are unchanged (the delta to `test_memory_pool.cpp` has no removed lines); upstream added the twelve listed above.
+
+### Not done / owed
+
+- CUDA nvcc compile at `537cdca` (no nvcc here). CUDA-visible changes this round are only upstream's own text: every port line added is in a `USE_HIP`/`__HIP_PLATFORM_AMD__`/`_WIN32` branch or a patch applied only on HIP builds; the merge brings upstream's CUDA code as upstream wrote it.
+- Windows (`windows-gfx1151`): `27f6af0` compiled nowhere yet; the unified-topology detection and managed-memory mode on gfx1151; whether the libhipcxx fetch, `rocthrust GLOBAL` and `/EHsc` items from the previous round hold. Windows-only open items (exit-time crashes, the stringstream test, fmt under clang 23) left alone as instructed.
+- wave32 (`linux-gfx1100`) and every other gate: revalidation at `537cdca`. No platform marked completed.
+- Review PR #1 body: the reviewer's corrected body of the 2026-11-17 review needs, after this round, the GPU-NTT paragraph under "Defects found while porting" reworded: the 61-bit Barrett defect is now fixed upstream (GPU-NTT `04b1103`, pinned by upstream HEonGPU `9191be5`), and the HIP build only supplies a non-PTX version of upstream's shift helpers, so the paragraph should go, and the Testing section must be updated to the merged head. Not drafted here; for the next review.
+
+### Lesson for cuda-to-rocm: an upstream fix written in inline PTX does not fix the HIP build
+
+Belongs in `references/upstream-sync.md`, next to re-checking a port's own fixes after a sync. When upstream fixes a defect your port also fixed, the instinct is to drop your fix in favour of theirs, and that is right only if their fix reaches the HIP build. Upstream may fix undefined C++ behaviour by switching to inline PTX whose semantics are defined (GPU-NTT fixed a 64-bit shift by 64 with `shl.b64`/`shr.b64`, which return 0 for counts of 64 and more). HIP cannot compile the PTX, so the HIP branch that the port must add to that helper has to reproduce the PTX semantics (`shift < 64 ? x << shift : 0`), not the C++ expression upstream replaced, which is the original undefined shift (AMDGPU masks the count to 6 bits, so a shift by 64 is a shift by 0). Drop your old rewrite, keep upstream's structure, give each new PTX helper a HIP branch with the documented PTX result, and run upstream's new test for the defect on the AMD GPU. Also re-read upstream's input validation: a new bound (here moduli capped at 61 bits) can make the rest of your old fix unreachable.
