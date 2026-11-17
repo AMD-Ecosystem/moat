@@ -8227,3 +8227,9 @@ Verified: every command, count and error quoted above. Inferred: the 2 GiB strin
 ## Lesson for cuda-to-rocm: a Windows ROCm SDK can trail the Linux one by a HIP release
 
 Belongs in the Windows reference. A dependency written against the newest HIP runtime (here `hipMemGetDefaultMemPool`, HIP 7.16) fails on the Windows SDK of the same period (7.14) with an undeclared identifier. Check the HIP version of the Windows SDK against the dependency's minimum before attributing the error to the port. Separately: a library `(__HIP_PLATFORM_AMD__ && _WIN32)` branch copied from its `_MSC_VER` branch (libhipcxx `_wassert`) calls device-only functions from host code, and `1UL << 40` constants are 32-bit under LLP64.
+
+## Windows gate waived 2026-11-17 (ruling by jeffdaily)
+
+jeffdaily ruled on 2026-11-17 to waive the `windows` gate for now, recorded with `suggest-waiver` and `approve-waiver --by jeffdaily`. Ground: hipMM 5.0.0 and libhipcxx do not build on Windows (evidence in the windows-gfx1151 validation at `537cdca` above). He also ruled that only TheRock installations of ROCm are to be used on Windows, never AMD's HIP SDK installer; the failed validation already used TheRock wheels (7.14.0a20260612). TheRock 10.1.0 Windows wheels exist on the multi-arch nightly index (`rocm-sdk-core`, `rocm-sdk-libraries`, `rocm-sdk-device-gfx1151`, newest 10.1.0a20260822) and would likely supply `hipMemGetDefaultMemPool`; not installed or verified.
+
+Follow-ups: issues for Windows support to be filed by jeffdaily against hipMM and libhipcxx; the README must stop claiming a working Windows build before the review PR is approved; the PR body must scope Windows out. A Windows-only allocator bypassing hipMM (RMM is used only in `memorypool.cuh`, `memorypool.cu`, `devicevector.cuh`) was considered and not chosen.
