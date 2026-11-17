@@ -483,3 +483,5 @@
 {"kind":"phase","ts":"2026-11-17T10:30:57Z","phase":"test","seconds":186.150,"exit":8,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/ctest_w.sh -E MemoryPool_Context_Generation_With_Little_Free_Device_Memory"}
 {"kind":"phase","ts":"2026-11-17T10:50:12Z","phase":"test","seconds":178.690,"exit":8,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/ctest_w.sh -E MemoryPool_Context_Generation_With_Little_Free_Device_Memory"}
 {"kind":"session","ts":"2026-11-17T10:56:31Z","epoch":1794912992.316050800,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-17T16:45:11Z","epoch":1794933911.417938546,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T16:46:03Z","epoch":1794933963.943026044,"event":"end","platform":"linux-gfx942"}

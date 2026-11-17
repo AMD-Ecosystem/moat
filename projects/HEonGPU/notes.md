@@ -8233,3 +8233,18 @@ Belongs in the Windows reference. A dependency written against the newest HIP ru
 jeffdaily ruled on 2026-11-17 to waive the `windows` gate for now, recorded with `suggest-waiver` and `approve-waiver --by jeffdaily`. Ground: hipMM 5.0.0 and libhipcxx do not build on Windows (evidence in the windows-gfx1151 validation at `537cdca` above). He also ruled that only TheRock installations of ROCm are to be used on Windows, never AMD's HIP SDK installer; the failed validation already used TheRock wheels (7.14.0a20260612). TheRock 10.1.0 Windows wheels exist on the multi-arch nightly index (`rocm-sdk-core`, `rocm-sdk-libraries`, `rocm-sdk-device-gfx1151`, newest 10.1.0a20260822) and would likely supply `hipMemGetDefaultMemPool`; not installed or verified.
 
 Follow-ups: issues for Windows support to be filed by jeffdaily against hipMM and libhipcxx; the README must stop claiming a working Windows build before the review PR is approved; the PR body must scope Windows out. A Windows-only allocator bypassing hipMM (RMM is used only in `memorypool.cuh`, `memorypool.cu`, `devicevector.cuh`) was considered and not chosen.
+
+## Porter round 2026-11-17 (linux-gfx942 host, documentation only) -- `1b4e781`
+
+Dispatched by Jeff Daily after the Windows gate waiver: make the fork's documentation stop implying that the ROCm build works on Windows. Lock taken with `set-state HEonGPU linux-gfx942 porting` (accepted from `review-passed`). `pr-state` was `none` before the push.
+
+Search: `git diff origin/main...moat-port -- README.md docs/` and `git grep -niE 'windows|win32|msvc|linux' moat-port -- '*.md' '*.rst' docs`. The port's documentation text never names Windows; the README "AMD GPUs (ROCm)" section and the AMD paragraph of `docs/getting_started.rst` describe the ROCm build with no platform, which reads as covering Windows. Earlier records mention a README statement that hipMM builds static on Windows; no such text is in the docs at `537cdca`. The port's added CMake comments that mention clang-cl/MSVC (`CMakeLists.txt` /Zi-/O2 and /EHsc comments, `src/CMakeLists.txt` /EHsc comment, `thirdparty/CMakeLists.txt` static hipMM/logger comment) explain Windows-conditional logic and are accurate; none claims a working Windows build, so they are unchanged. `docs/advanced_topics.rst` (HIP consumers) makes no platform claim and is unchanged. Upstream's own text (`getting_started.rst` line 6, "Linux environment") untouched.
+
+Change, fork commit `1b4e781d83cf16e9090075f69db4e06688ab9d61` "[ROCm] Document that the ROCm build is Linux-only", one commit on top of `537cdca`:
+
+- `README.md`: added after the first paragraph of "AMD GPUs (ROCm)": "The ROCm build is supported on Linux. It does not currently build on Windows, because hipMM 5.0 builds only on Linux."
+- `docs/getting_started.rst`: the same sentence added after the "On AMD GPUs, configure with ``-D USE_HIP=ON`` instead." paragraph of Step 2.
+
+Files changed (`git diff --stat 537cdca..1b4e781`): `README.md` (+2), `docs/getting_started.rst` (+2). Nothing else.
+
+Source class: **documentation only**. No source, header, build file, CMake comment, patch or test changed, so the binaries are identical to `537cdca`; the Linux evidence at `537cdca` (gfx942, gfx1100, gfx90a) applies unchanged and is eligible for carry-forward. No build was run: a documentation-only change cannot affect the build, and no build file changed. `python3 utils/jargon.py --port HEonGPU` -> `jargon: clean`; `utils/prose.py` on the commit message -> clean.
