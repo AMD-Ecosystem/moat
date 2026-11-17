@@ -129,6 +129,7 @@ Scan this list against what you are doing. If any line could apply, open
 - The CUDA Samples `helper_math.h` operators tie with `HIP_vector_type`'s own: guard its arithmetic block off on HIP, wholesale.
 - Vendored pre-2017 CUDA Samples helpers (`helper_cuda.h` and friends) carry an EULA notice: keep them off the HIP include path, write an independent substitute, and prove it with an `-H` include trace.
 - Never mark host `.cpp` files `LANGUAGE HIP` to dodge a flag leak: `__HIPCC__` then reaches host code and macros keyed on `__CUDACC__ || __HIPCC__` silently drop host default initializers.
+- A `__device__` body in its own `.cu` links two ways on AMD: `-fgpu-rdc` (HIP has it; CMake has no property for it, so set the compile AND link options yourself), or a `__CUDACC__`/`__HIPCC__` guard around definitions moved into the header. RDC leaves the sources untouched and still inlines cross-TU device calls, unlike nvcc `-rdc` without `-dlto`, but it puts flags on the library's link interface and every consumer must then enable the HIP language; the guard costs two edited files and asks nothing of consumers. Moving the bodies into the header WITHOUT the guard makes g++ parse device code and reject `__syncthreads`.
 
 **Types, dispatch and platform limits**
 - Never name the pointee struct of an opaque handle (`CUstream_st`); use `std::remove_pointer_t<cudaStream_t>`.

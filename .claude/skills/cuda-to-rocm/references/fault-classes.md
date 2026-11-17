@@ -962,6 +962,167 @@ ahead of it there rather than moving the include back into the shim. Nothing on 
 side can catch any of this, since the HIP branch of the shim includes hipRAND instead and hipRAND is
 host-safe. (HEonGPU)
 
+**A `__device__` body in its own `.cu` has two answers on AMD, and the choice is about
+consumers, not about speed.** When a project keeps `__device__` function definitions in their
+own `.cu` with explicit instantiations, it is relying on relocatable device code (nvcc
+`-rdc`, which CMake's `CUDA_SEPARABLE_COMPILATION` turns on). A HIP compile resolves device
+symbols one TU at a time, so without a flag it stops with
+`lld: error: undefined hidden symbol`. Either of these makes it link:
+
+1. **`-fgpu-rdc`**, HIP's own relocatable device code, the direct counterpart of the setting
+   the CUDA side already has. It leaves the project's sources untouched -- often zero diff in
+   the files a maintainer cares about -- and it still inlines the cross-TU calls (see below).
+   CMake has no `HIP_SEPARABLE_COMPILATION` property (checked on CMake 4.0.3), so wire it by
+   hand, and remember the LINK side and the consumers:
+
+   ```cmake
+   target_compile_options(mylib PRIVATE $<$<COMPILE_LANGUAGE:HIP>:-fgpu-rdc>)
+   # whoever links the archive performs the device link, including a consumer of the
+   # installed export, so put it on the interface rather than in everyone's build
+   target_compile_options(mylib INTERFACE $<$<COMPILE_LANGUAGE:HIP>:-fgpu-rdc>)
+   target_link_options(mylib INTERFACE -fgpu-rdc)
+   ```
+
+   On Windows, `-fgpu-rdc` under a clang-cl driver also meets the `/Fo` bundler bug described
+   in references/strategy-a-cmake.md; apply the fix given there before judging the flag.
+
+2. **A `__CUDACC__`/`__HIPCC__` guard** around the definitions moved into the header, with the
+   declarations left unconditional (the shape and the two-phase-lookup reason are two entries
+   below). It costs two edited files and it drops the `.cu` from the source list, but it puts
+   NOTHING on the link interface, so consumers are unaffected.
+
+Both were measured on the same project (HEonGPU, gfx90a, ROCm 7.2.1): 20/20 suites pass
+either way, benchmarks equal within run-to-run noise, so performance does not decide it. What
+decides it is whether the project ships an installed library to third parties. `-fgpu-rdc`
+imposes a contract on every consumer that the CUDA path does not impose (next entry). A
+library whose consumers are strangers should prefer the guard for that reason; an application,
+or a library built in-tree by its only consumer, can take `-fgpu-rdc` and keep the smaller
+diff. HEonGPU, an installed library, chose the guard. Whichever you choose, say in the code
+which one it is and why -- the reviewer's first question is why the other one was not used.
+
+**`-fgpu-rdc` changes the consumer contract, so the project's downstream docs owe a line
+about it.** This is the cost of option 1 above, and it is the reason to think twice about it.
+The interface options make the common consumer work, they do not make the
+requirement go away, and a comment claiming the consumer need not know is wrong. An archive
+of relocatable device code carries no complete device image, so the device link happens at
+the consumer's final link and only the HIP driver in HIP link mode performs it. Two failure
+modes (ROCm 7.2.1, gfx90a): a `g++` link of the installed archive gives
+`undefined reference to __hip_gpubin_handle_<hash>` and `__hip_fatbin_<hash>`, and a
+gcc-driven link that does receive the interface flag does not even get that far
+(`g++: error: unrecognized command-line option '-fgpu-rdc'`). The trap is that a CMake
+consumer can hit either one, and which remedy it needs depends on who drives its link, so
+separate the two conditions before writing anything down, and note that both presuppose a
+third. HIP must be an ENABLED LANGUAGE in the consuming project, via
+`project(app LANGUAGES CXX HIP)` or `enable_language(HIP)`; `find_package(hip)` and linking
+`hip::host` do not enable it, and nothing the consumer sets on its own target substitutes for
+it -- but the PRODUCER can enable it for the consumer, see below. The DRIVER must be the HIP
+compiler, which CMake arranges -- once the language is enabled -- when the target has HIP
+sources of its own, when it links a target that has them,
+when it links an IMPORTED target whose `IMPORTED_LINK_INTERFACE_LANGUAGES` is HIP --
+`install(EXPORT)` records that for a library built from HIP sources, and it propagates even
+through a plain C++ intermediate library -- or when the target sets `LINKER_LANGUAGE HIP`.
+The LINE must also carry `--hip-link`, which CMake adds ONLY for a target that has HIP
+sources of ITS OWN. Measured against an installed export and against a hand-imported archive
+(ROCm 7.2.1, gfx90a, CMake 4.0.3):
+
+| consumer target | link driver | needs |
+| --- | --- | --- |
+| one of its own sources compiled as HIP | HIP, `--hip-link` added | nothing |
+| plain C++ in a HIP-enabled project, links the exported target directly or through a plain C++ library | HIP, no `--hip-link` | `target_link_options(app PRIVATE --hip-link)` |
+| plain C++ in a HIP-enabled project, links a local HIP-source library that links the archive | HIP, no `--hip-link` | same |
+| the same target in a project that never enabled HIP | gcc | `enable_language(HIP)`; nothing set on the target alone works |
+| plain C++ in a HIP-enabled project, links an IMPORTED archive with no link interface language | gcc | `LINKER_LANGUAGE HIP` AND `--hip-link`; `--hip-link` alone only adds a second unrecognized option |
+| the archive named by path in a HIP-enabled project, no imported target | gcc | `LINKER_LANGUAGE HIP`, `--hip-link` AND `-fgpu-rdc`, since nothing supplies the flag either |
+
+`LINKER_LANGUAGE HIP` never adds `--hip-link`, so it is useless alone and needed only where
+the driver is still gcc -- and it is available only where HIP is enabled, since otherwise
+CMake has no HIP link rule and fails at generate time with
+`Missing variable is: CMAKE_HIP_LINK_EXECUTABLE`. That is why the fourth row has no
+target-level remedy: the C++ driver rejects `-fgpu-rdc` and `--hip-link` alike, so nothing the
+consumer sets on its own target rescues that link. The remedy that does exist is the
+PRODUCER's, and if you are porting a library you are the producer. A package config file is
+included at the caller's file scope, so `enable_language(HIP)` as the first line of your
+`cmake/Config.cmake.in` enables the language in the consumer's scope. Measured against one
+installed export with the config file as the only difference (ROCm 7.2.1, gfx90a, CMake
+4.0.3): a `project(app LANGUAGES CXX)` consumer with a plain C++ executable goes from
+`unrecognized command-line option '-fgpu-rdc'` to configuring and linking under
+`/opt/rocm/lib/llvm/bin/clang++` with only `--hip-link` on the target, and it works the same
+when `find_package` is called from an `add_subdirectory`. Decline it deliberately rather than
+believing it does not exist, because the costs are real: `enable_language` must be called in
+file scope and in the highest directory common to all targets using the language, so a
+consumer that wraps `find_package` in a function gets no language at all -- measured, that
+configure still succeeds and the link then fails exactly as before -- and every consumer pays
+HIP compiler detection at configure time (0.9s to 2.9s on that tree). If you do decline it,
+the honest thing for the library's docs to say is that enabling the HIP language is a
+requirement rather than a suggestion. Be careful with the scope of any claim here: prose that
+offers `--hip-link` as THE fix is right for a HIP-enabled project consuming an installed
+export and wrong both for a hand-rolled import and for a C++-only project, and the reader who
+has no HIP source of their own is exactly the reader with no reason to have enabled the
+language. Say which shape
+you mean rather than generalizing from the one you happened to measure. Note also that an
+interface link option is unguarded unless you guard it, so `-fgpu-rdc` reaches even a
+consumer that pins `LINKER_LANGUAGE CXX` in a HIP-enabled project and breaks it, while the
+matching `target_compile_options(... INTERFACE $<$<COMPILE_LANGUAGE:HIP>:-fgpu-rdc>)` is
+conditioned; decide deliberately whether that asymmetry is what you want. Do NOT try to fix
+any of this by wrapping the interface flag in `$<LINK_LANGUAGE:HIP>`: that only trades the
+unrecognized-option message for the undefined-symbol one. Fix it in prose -- wherever the
+project tells a CUDA consumer to set `CUDA_SEPARABLE_COMPILATION ON`, the HIP consumer needs
+the parallel sentence. None of this is fatal -- the contract is documentable and a consumer
+that enables the HIP language pays nothing -- but it is a requirement the CUDA path does not
+have. Weigh it before you adopt the flag, not after you have written the docs for it.
+(HEonGPU)
+
+**Cross-TU `__device__` calls ARE inlined on AMD under `-fgpu-rdc`.** Do not repeat the nvcc
+intuition here: nvcc `-rdc=true` really does leave a call unless you add `-dlto`, but HIP's
+device link is a bitcode link followed by optimization of the whole image. Measured on gfx90a
+with ROCm 7.2.1, on a `__device__` function template with its explicit instantiation in one
+TU called from a `__global__` in another: the linked device image contains only the kernel,
+`s_swappc_b64` count 0, and the callee's `s_barrier`s appear inline in it. What `-fgpu-rdc`
+does cost is link time and image size, and both are worth measuring before deciding
+(HEonGPU, gfx90a: default library build 53.7 s vs 52.1 s, i.e. unchanged, but 193.6 s vs
+326.6 s once 42 test/example/benchmark executables are enabled, i.e. about 3.2 s of device
+link each, since every one of them device-links the whole library; device code per test
+binary 1,575,096 -> 1,684,264 bytes; TFHE gate timings and 20/20 suites identical either
+way, and BFV/CKKS benchmarks unchanged to within run-to-run noise).
+
+**Moving the bodies into a host-reachable header UNGUARDED silently breaks the CUDA build.**
+This is the tempting move: mark them
+`__device__ inline` in the header. It works on AMD, and g++ compiling any host TU that
+reaches the header must then parse device bodies and rejects `__syncthreads` ("there are no
+arguments to `__syncthreads` that depend on a template parameter") -- even though the
+templates are never instantiated in that TU, because `__syncthreads` is a non-dependent name
+and two-phase lookup resolves it at definition time. If you have a reason to keep the bodies
+in the header anyway, keep the declarations unconditional and guard the DEFINITIONS:
+
+```cpp
+template <typename T> __device__ void SmallForwardNTT(T*, ...);   // host TUs see this
+
+#if defined(__CUDACC__) || defined(__HIPCC__)
+template <typename T> __device__ inline void SmallForwardNTT(T*, ...) { ... __syncthreads(); }
+#endif
+```
+
+Test the COMPILER (`__CUDACC__`/`__HIPCC__`), not the target: the requirement is that only a
+device compiler parses a device body, and both back ends compile the calling `.cu` files with
+one. `__CUDA_ARCH__`/`__HIP_DEVICE_COMPILE__` would be wrong here -- they are false during
+nvcc's host pass, which still has to parse the same TU. Adding `inline` at the definition
+after a non-inline declaration is legal. The third arrangement, keeping the separate `.cu`
+for CUDA and the header definitions for HIP, is the worst of them: it duplicates the bodies
+in two files that must not drift.
+
+**No AMD build, review round or GPU validation can detect this class.** In HEonGPU two review
+rounds and a full 20/20 GPU validation passed over the inlined header; only compiling the
+CUDA path with nvcc found it. Any port that touches how device bodies are compiled owes an
+nvcc compile check (references/validation.md). Adding the guard is codegen-neutral on AMD --
+verified with a comparison of device code objects, identical exported symbols and device ISA
+on all 42 gfx90a binaries -- because every calling TU is a device TU where the guard is true.
+Switching to `-fgpu-rdc` is NOT: it changes the device ISA of every binary (the device link
+re-optimizes the whole image), so it is a real code delta and every arch owes a fresh GPU
+run. That cuts both ways, and it is a free correctness check if you ever switch back:
+reverting HEonGPU's `-fgpu-rdc` to the guard reproduced the pre-RDC build byte for byte in
+device ISA and exported symbols on all 42 binaries, which is what a clean revert should look
+like. Keep a snapshot of the earlier `bin/` around for exactly that comparison. (HEonGPU)
+
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which
