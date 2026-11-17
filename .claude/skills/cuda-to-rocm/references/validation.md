@@ -230,6 +230,32 @@ blanket escape -- it is inherited by every child process, so a project script th
 `git -C /d/path/...` inside the configure step stops resolving its own paths and fails with
 a much more confusing error. (HEonGPU)
 
+**CMake gives clang-cl `/EHsc` for C++ sources but not for HIP sources.** With CMake and an
+MSVC-style clang (`clang-cl`) as `CMAKE_HIP_COMPILER`, `CMAKE_HIP_FLAGS_INIT` gets no
+`/EHsc` (CMake's `Windows-MSVC.cmake` sets `/GR /EHsc` only in `_FLAGS_CXX`). HIP sources
+then compile with C++ exceptions disabled, and clang does not reject `try`/`throw` in that
+mode: the throw still unwinds, but catch handlers are silently dropped, so every exception
+passes the code meant to catch it (tests see `EXPECT_THROW` fail with "C++ exception ...
+thrown in the test body"; retry-on-`bad_alloc` loops become dead). It looks like an ABI
+problem with multiply inherited exception classes but is not. Check `build.ninja` for
+`/EHsc` on HIP objects; fix with
+`if(CMAKE_HIP_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC") add_compile_options($<$<COMPILE_LANGUAGE:HIP>:/EHsc>) endif()`
+before fetched dependencies are added. That directory-scoped option reaches only the
+project's own build: a library whose public API throws, and whose consumers compile its
+headers as HIP, must also hand the flag to those consumers, either as an INTERFACE compile
+option on the exported target evaluated in the consumer's context
+(`target_compile_options(<lib> INTERFACE $<$<AND:$<COMPILE_LANGUAGE:HIP>,$<STREQUAL:$<HIP_COMPILER_FRONTEND_VARIANT>,MSVC>>:/EHsc>)`,
+CMake 3.30+, which is written verbatim into the installed targets file) or as a documented
+requirement; otherwise a consumer's catch around a library call is dropped the same way.
+(HEonGPU: a two-file reproducer isolated it, and the fix took the Windows suite from 190 of
+295 passing to 289 of 293.)
+
+**A `std::stringstream` can fail on a multi-GB payload on Windows only.** Code or tests that
+serialize multi-GB objects (FHE bootstrapping keys, large models) into a `std::stringstream`
+pass on Linux and fail on Windows with a generic "write failed". Observed with a 4.8 GB
+payload under the MSVC STL, whose string buffer did not grow past about 2 GiB. Measure the
+payload with a counting `streambuf` before suspecting the GPU port. (HEonGPU)
+
 ## Windows: Linux-only host APIs and LLP64 truncation inside third-party C APIs
 
 **A Linux-only host API can be the entire Windows blocker in an otherwise portable port**,
