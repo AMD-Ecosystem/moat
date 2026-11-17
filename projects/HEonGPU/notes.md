@@ -8374,3 +8374,71 @@ With jeffdaily's approval of the exact text, the body of https://github.com/AMD-
 ## Skill text promoted to trunk 2026-11-17
 
 The cuda-to-rocm skill text that lived only on this branch (864 lines in five files) and the five lessons above were reviewed item by item with jeffdaily and promoted to trunk in 4a71b395, 836c35af, f8f93691, 9941e466, eeca2257, fb5cb3ab, 775f8a2e, 2b20b3c7, c27b34e9 and 7fb97256. Not carried, because trunk already had them or they were stale: the Windows-labelled-change corollary, four validation policy bullets, the torch-extension and CMP0146 notes, the CMake 3.31 version-detection bug, and the hipMM 4.0 bridge guidance (rewritten for hipMM 5.0). The branch's skill files now match trunk.
+
+## TFHE torus32 fix round 2026-11-17 (linux-gfx942)
+
+Dispatched by Jeff Daily as a porter fix round on the open upstream PR (enCRYPTON-labs/HEonGPU#41, `moat-port` at `1b4e781`), for the deferral `heongpu-tfhe-torus32-saturates` (ruled `now` 2026-08-13). `set-state HEonGPU linux-gfx942 porting` took the lock (`9dc3262c`); `fix-branch HEonGPU` named `moat-fix-41`, base `1b4e781` (recorded in `status.json` `fix`). Fork cloned at `projects/HEonGPU/src`, `protect-fork` installed, local `moat-fix-41` at `1b4e781`. **Result: the defect no longer exists at `1b4e781`; no fork change was made and `moat-fix-41` was never pushed.** Host MI300X (gfx942), `HIP_VISIBLE_DEVICES=1`, ROCm 10.1.0 pip SDK (`_rocm_sdk_devel`, hipcc from `/opt/python-3.11-venv/bin`).
+
+### Upstream fixed it before the port merged it
+
+Both sites named in the deferral were changed by the upstream author, and both commits are ancestors of `837ffc8` (the mirror tip the port synced from before the `62fa9b9` sync), hence of `1b4e781`:
+
+- `2c9a555` (2026-11-02, "Fix the noise of the TFHE key switching key, which was cast from a negative floating point number directly to an unsigned integer and so was never negative ...") replaces `static_cast<uint32_t>(floor(x + 0.5))` in `tfhe_generate_switchkey_kernel` with `static_cast<uint32_t>(llround(frac * 4294967296.0))` and adds `test/test_tfhe_gate_composition.cpp` (`tfhe_gate_composition_testcases`, `test/CMakeLists.txt:78`). Its message states the effect the deferral predicted, measured upstream: one-sided noise shifted every bootstrapped gate output by about -1/16.
+- `7c93d4d` (2026-10-05, "Fix secret key generation and handling across all schemes") deletes `tfhe_generate_bootkey_random_numbers_kernel` (the deferral's `:1202-1203` site) and `HEEncryptor<Scheme::TFHE>::double_to_torus32`, and moves bootstrapping-key and LWE encryption noise to the host through the new `detail::torus32` in `src/lib/host/secure_random.h`.
+
+### Every float-to-torus / float-to-unsigned conversion at `1b4e781`
+
+TFHE (complete: `grep` for `double|float` over `src/lib/host/tfhe/`, `src/include/heongpu/host/tfhe/`, `src/lib/kernel/bootstrapping.cu`, and for `const double* noise` over `src`):
+
+| site | conversion | negative value reaches an unsigned conversion? |
+|---|---|---|
+| `src/lib/host/secure_random.h:101-109` `detail::torus32(double)` | `std::llround((v - trunc(v)) * 2^32)` -> `long long`, then `static_cast<uint32_t>` -> `int32_t` | No. The rounding result is a signed integer in `(-2^32, 2^32)`, exactly representable in `long long`; signed-to-unsigned integer conversion is defined modulo 2^32. |
+| `src/lib/host/tfhe/keygenerator.cu:117` bootstrapping-key noise | `detail::torus32(boot_noise(random))` | No (same function). |
+| `src/lib/host/tfhe/encryptor.cu:59-61` LWE encryption noise | `uint32_t(messages[i]) + uint32_t(detail::torus32(...))` | No: `uint32_t(int32_t)` is an integer conversion. |
+| `src/lib/kernel/keygeneration.cu:879-889` `tfhe_generate_switchkey_kernel` (device) | `static_cast<uint32_t>(llround(frac * 4294967296.0))` | No: `llround` returns `long long`; same reasoning as the host. |
+| `src/lib/host/tfhe/keygenerator.cu:172-183` key-switching noise | host `std::normal_distribution<double>` samples copied as `double` to the device kernel above | Converted only in that kernel. |
+| `src/lib/kernel/keygeneration.cu:1032-1042` bootstrapping-key product | `uint64` -> `int64` -> `int32` -> `uint32` | Integer conversions only. |
+
+Other floating-point to unsigned conversions in the library (not TFHE, read because the dispatch asked for every floating-point sample):
+
+- CKKS encoders `src/lib/kernel/encoding.cu:51-58,112-118,176-183,206-213`, `addition.cu:235-242,280-287`, `multiplication.cu:347-354`: `signbit` is taken, then `fabs`, and only the non-negative magnitude is cast to `uint64_t`; the sign is reapplied in modular arithmetic. No negative cast.
+- RNS base conversion `src/lib/kernel/switchkey.cu:789-790,846-847,977-978,1041-1042`: `r` is a sum of `partial[i] / modulus` with both non-negative, rounded, then cast to `Data64`. Never negative.
+- CKKS MPC `src/lib/host/ckks/mpcmanager.cu:1053`: Gaussian doubles become a message vector fed to the CKKS encoder above (fabs path).
+- Gaussian error sampler in RNGonGPU (submodule `e2f4a85` with `thirdparty/patches/RNGonGPU.patch` applied in a scratch check, then reverted): all 12 Box-Muller sites in `src/lib/common/base_rng.cu` (209-381) and all 6 curand sites in `src/lib/rand_cuda/cuda_rng_kernels.cu` (217-343) go through `truncate_signed<T>` (`aes.cuh:626`). Unchanged from the port's earlier record.
+
+### Device probe on gfx942 (`agent_space/torus/probe.hip`, not committed)
+
+`hipcc --offload-arch=gfx942 -O2 probe.hip -o probe && ./probe`; inputs read from device memory so nothing is constant-folded. `old(dev)` is the pre-`2c9a555` expression, `new(dev)` the code at `1b4e781`, `host` is `detail::torus32` copied verbatim, `expected` is `round(frac * 2^32) mod 2^32`, the value the surrounding `int32_t` torus arithmetic assumes:
+
+```
+device gfx942:sramecc+:xnack-
+noise                      old(dev)     new(dev)         host     expected
+-3.0517578125e-05                 0   4294836224   4294836224   4294836224 new=host=expected
+-1e-07                            0   4294966867   4294966867   4294966867 new=host=expected
+-2.98023223877e-08                0   4294967168   4294967168   4294967168 new=host=expected
+-0.25                             0   3221225472   3221225472   3221225472 new=host=expected
+-0.5                              0   2147483648   2147483648   2147483648 new=host=expected
+-0.999999999                      0            4            4            4 new=host=expected
+3.0517578125e-05             131072       131072       131072       131072 new=host=expected
+0.25                     1073741824   1073741824   1073741824   1073741824 new=host=expected
+0                                 0            0            0            0 new=host=expected
+-1.5e-10                          0   4294967295   4294967295   4294967295 new=host=expected
+```
+
+The old expression saturated every negative sample to 0 on gfx942, as recorded on gfx90a in August; the current device code and the host agree with the expected representative for every input.
+
+A correction to the dispatch's framing: for this 32-bit site AMD and NVIDIA did not resolve the undefined conversion differently. Both saturate a negative `double` to 0 for `uint32_t` (gfx90a and now gfx942 measured; NVIDIA by PTX `cvt.rzi.u32.f64` semantics, not measured here). It was a defect on both platforms, not a port divergence; the divergent case is the 64-bit one (`uint64_t`, AMD keeps the low 32 bits), which is the Gaussian sampler fix. Upstream's fix is well defined on both back ends and is upstream's own CUDA text.
+
+### Build and tests
+
+Not run in this round: there is no source change, `head_sha` stays `1b4e781`, and linux-gfx942, linux-gfx1100 and linux-gfx90a completed at exactly that commit (static 317/317, shared 312/312 on MI300X per the validation record; the count includes `tfhe_gate_composition_testcases`). TFHE examples and benchmark not re-run for the same reason. `jargon.py` not run: nothing to push.
+
+### Deferrals
+
+- `heongpu-tfhe-torus32-saturates`: `done`, ref this section. Fixed upstream by `2c9a555` and `7c93d4d`; no fork change.
+- `heongpu-rmm-stub-vs-hipmm`: `done`. At `1b4e781` no tracked file contains "stub" (`git ls-files | grep -i stub` empty), `src/CMakeLists.txt:126,350,368` link `rmm::rmm`, `cmake/Config.cmake.in:33-35` does `find_dependency(rmm 5.0 REQUIRED)` on HIP, and the README (line 342) documents hipMM. Swap made in `2874454` (round 2026-08-18), now hipMM 5.0.
+- `heongpu-hip-link-interface-option`: `done`. Jeff's ruling was to revert the `-fgpu-rdc` design (Round 10, `6ac06d0`). At `1b4e781` the only `target_link_options` on `heongpu` is `PRIVATE "LINKER:--exclude-libs,ALL"` in the shared-library arm (`src/CMakeLists.txt:323`); no `-fgpu-rdc`/`--hip-link` appears in any CMake file or submodule patch. The installed exports from this host's earlier jobs (`hipmm5-porter-r2/prefix`, `sync-porter/prefix-c1*`, built from `0c5706a`, whose CMake files match `1b4e781` for link options) have no `INTERFACE_LINK_OPTIONS`, only `INTERFACE_COMPILE_OPTIONS` (the clang-cl `/EHsc` genex). Not rebuilt at `1b4e781`.
+
+### State
+
+The state table leaves `porting` only for `ported` or `delta-ported` (`utils/moatlib.py` `STAGE_TRANSITIONS`), so the stage is set to `ported`, which releases the lock; `head_sha` is unchanged and every completed platform stays completed. The empty `fix` round (`moat-fix-41`, base = tip = `1b4e781`, branch not on the fork) is still recorded. For Jeff: drop it with `python3 utils/moatlib.py abandon-fix HEonGPU --by <who> --reason "upstream fixed the TFHE torus32 conversion in 2c9a555/7c93d4d before the port merged them; no change"` -- a person's ruling, not taken here. Until then a reviewer dispatched at `ported` has an empty delta and no staging branch to scan.
