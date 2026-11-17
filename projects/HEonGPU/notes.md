@@ -7489,9 +7489,13 @@ Fix: in the existing `if(USE_HIP)` block, before `add_subdirectory(thirdparty)` 
 
 ### Lesson for cuda-to-rocm: CMake gives clang-cl /EHsc for C++ but not for HIP sources
 
+Promoted to references/validation.md in 7fb97256.
+
 Belongs in the Windows reference of the skill. With CMake and an MSVC-style clang (`clang-cl`) as `CMAKE_HIP_COMPILER`, `CMAKE_HIP_FLAGS_INIT` gets no `/EHsc` (CMake's `Windows-MSVC.cmake` sets `/GR /EHsc` only in `_FLAGS_CXX`). HIP sources then compile with C++ exceptions disabled, and clang does not reject `try`/`throw` in that mode: the throw still unwinds, but catch handlers are silently dropped, so every exception passes the code meant to catch it (tests see `EXPECT_THROW` fail with "C++ exception ... thrown in the test body"; retry-on-`bad_alloc` loops become dead). It looks like an ABI problem with multiply inherited exception classes but is not. Check `build.ninja` for `/EHsc` on HIP objects; fix with `if(CMAKE_HIP_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC") add_compile_options($<$<COMPILE_LANGUAGE:HIP>:/EHsc>) endif()` before fetched dependencies are added. That directory-scoped option reaches only the project's own build: a library whose public API throws, and whose consumers compile its headers as HIP, must also hand the flag to those consumers, either as an INTERFACE compile option on the exported target evaluated in the consumer's context (`target_compile_options(<lib> INTERFACE $<$<AND:$<COMPILE_LANGUAGE:HIP>,$<STREQUAL:$<HIP_COMPILER_FRONTEND_VARIANT>,MSVC>>:/EHsc>)`, CMake 3.30+, which is written verbatim into the installed targets file) or as a documented requirement; otherwise a consumer's catch around a library call is dropped the same way.
 
 ### Lesson for cuda-to-rocm: MSVC std::stringstream stops at 2 GiB
+
+Promoted to references/validation.md in 7fb97256.
 
 Belongs in the Windows reference of the skill. MSVC STL's `basic_stringbuf` will not grow past `INT_MAX` bytes; writes beyond that set `badbit`. Code or tests that serialize multi-GB objects (FHE bootstrapping keys, large models) into a `std::stringstream` pass on Linux and fail on Windows with a generic "write failed". Measure the payload with a counting `streambuf` before suspecting the GPU port.
 
@@ -7619,6 +7623,8 @@ Repository: AMD-Ecosystem/ROCmDS-cmake. Title: "libhipcxx is fetched from AMD-Ec
 - No platform marked completed; validators rerun on every gate after review.
 
 ### Lesson for cuda-to-rocm: override a broken dependency URL in a fetched project with an earlier FetchContent_Declare
+
+Promoted to references/no-hip-equivalent.md in fb5cb3ab.
 
 Belongs in the build-system reference of the skill. When a fetched dependency (here hipMM through its rapids-cmake/CPM scripts) downloads its own dependency from a URL that does not resolve, the consuming project can fix it without patching the dependency: CPM and FetchContent use the first `FetchContent_Declare` of a name, so declaring that name earlier, with the working repository and a pinned commit, before `FetchContent_MakeAvailable` of the parent, overrides the URL. Check which copy was used in `_deps/<name>-src` (`git remote get-url origin`). Related trap from the same build: if the consuming project already did `find_package(X)` in a parent directory, rapids-cmake's attempt to promote X's imported targets to global from the dependency's directory fails ("Attempt to promote imported target ... to global scope"); use `find_package(X ... GLOBAL)` in the parent.
 
@@ -7831,6 +7837,8 @@ Checks: `python3 utils/jargon.py --port HEonGPU` -> clean; `utils/prose.py` clea
 - Review PR #1 body: the reviewer's corrected body of the 2026-11-17 review needs, after this round, the GPU-NTT paragraph under "Defects found while porting" reworded: the 61-bit Barrett defect is now fixed upstream (GPU-NTT `04b1103`, pinned by upstream HEonGPU `9191be5`), and the HIP build only supplies a non-PTX version of upstream's shift helpers, so the paragraph should go, and the Testing section must be updated to the merged head. Not drafted here; for the next review.
 
 ### Lesson for cuda-to-rocm: an upstream fix written in inline PTX does not fix the HIP build
+
+Promoted to references/fault-classes.md in eeca2257.
 
 Belongs in `references/upstream-sync.md`, next to re-checking a port's own fixes after a sync. When upstream fixes a defect your port also fixed, the instinct is to drop your fix in favour of theirs, and that is right only if their fix reaches the HIP build. Upstream may fix undefined C++ behaviour by switching to inline PTX whose semantics are defined (GPU-NTT fixed a 64-bit shift by 64 with `shl.b64`/`shr.b64`, which return 0 for counts of 64 and more). HIP cannot compile the PTX, so the HIP branch that the port must add to that helper has to reproduce the PTX semantics (`shift < 64 ? x << shift : 0`), not the C++ expression upstream replaced, which is the original undefined shift (AMDGPU masks the count to 6 bits, so a shift by 64 is a shift by 0). Drop your old rewrite, keep upstream's structure, give each new PTX helper a HIP branch with the documented PTX result, and run upstream's new test for the defect on the AMD GPU. Also re-read upstream's input validation: a new bound (here moduli capped at 61 bits) can make the rest of your old fix unreachable.
 
@@ -8228,6 +8236,8 @@ Verified: every command, count and error quoted above. Inferred: the 2 GiB strin
 
 ## Lesson for cuda-to-rocm: a Windows ROCm SDK can trail the Linux one by a HIP release
 
+Not promoted, superseded (jeffdaily, 2026-11-17): the Windows host was on a stale per-arch TheRock pin (7.14) while TheRock's multi-arch index carries 10.1.0 Windows wheels, so the premise was wrong. The accurate advice (check both indexes) is in references/validation.md in c27b34e9; the LLP64 and host-called device function points are in c27b34e9 and fb5cb3ab.
+
 Belongs in the Windows reference. A dependency written against the newest HIP runtime (here `hipMemGetDefaultMemPool`, HIP 7.16) fails on the Windows SDK of the same period (7.14) with an undeclared identifier. Check the HIP version of the Windows SDK against the dependency's minimum before attributing the error to the port. Separately: a library `(__HIP_PLATFORM_AMD__ && _WIN32)` branch copied from its `_MSC_VER` branch (libhipcxx `_wassert`) calls device-only functions from host code, and `1UL << 40` constants are 32-bit under LLP64.
 
 ## Windows gate waived 2026-11-17 (ruling by jeffdaily)
@@ -8360,3 +8370,7 @@ If you would rather not receive pull requests from this effort, say so here or o
 ## Review PR body replaced 2026-11-17
 
 With jeffdaily's approval of the exact text, the body of https://github.com/AMD-Ecosystem/HEonGPU/pull/1 was replaced at 2026-11-17T17:30:03Z with the proposed body for `1b4e781` above, with one correction he approved separately: the MI250X paragraph in Testing now reads "also on Linux and with ROCm 10.1, an AMD Instinct MI250X (gfx90a, wave64) and an AMD Radeon Pro W7800 ..." instead of "MI250X ... with ROCm 7.16". 7.16 is the HIP version (`hipconfig --version` 7.16.26385 on all three Linux hosts; the other two are recorded as ROCm 10.1.0 with that same HIP build, so ROCm 10.1 for the MI250X is inferred). The live body was read back and equals the approved text; the disclosure note is present once; `prose.py` and `jargon.py` clean. Title unchanged. The standing `/moat changes-requested` is untouched; publication waits on jeffdaily's `/moat approve`.
+
+## Skill text promoted to trunk 2026-11-17
+
+The cuda-to-rocm skill text that lived only on this branch (864 lines in five files) and the five lessons above were reviewed item by item with jeffdaily and promoted to trunk in 4a71b395, 836c35af, f8f93691, 9941e466, eeca2257, fb5cb3ab, 775f8a2e, 2b20b3c7, c27b34e9 and 7fb97256. Not carried, because trunk already had them or they were stale: the Windows-labelled-change corollary, four validation policy bullets, the torch-extension and CMP0146 notes, the CMake 3.31 version-detection bug, and the hipMM 4.0 bridge guidance (rewritten for hipMM 5.0). The branch's skill files now match trunk.
