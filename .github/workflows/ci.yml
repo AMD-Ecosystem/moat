@@ -38,7 +38,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install check dependencies
-        run: pip install --quiet jsonschema pyflakes
+        # Exact versions: an unpinned pyflakes gains checks between releases, and the
+        # `code` gate would then fail a push that changed no code. Raise them on
+        # purpose, with the gates run under the new version first.
+        run: pip install --quiet jsonschema==4.26.0 pyflakes==4.0.3
 
       - name: Title and shape (backstop -- the real check runs before the PR is opened)
         # Whoever opens a pull request checks the title first, with
@@ -53,8 +56,10 @@ jobs:
         env:
           # Through the environment, never interpolated into the shell: a title is
           # attacker-controlled text and ${{ }} would paste it straight into bash.
+          # The base branch's name goes the same way, for the same reason.
           PR_TITLE: ${{ github.event.pull_request.title }}
-        run: python3 utils/pr_intent.py --base "origin/${{ github.base_ref }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          PR_BASE: ${{ github.base_ref }}
+        run: python3 utils/pr_intent.py --base "origin/$PR_BASE" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Run gates
         # --fast skips the forks and commits gates, which need the fork clones that

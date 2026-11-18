@@ -35,6 +35,7 @@ class Workflow(unittest.TestCase):
 
     def setUp(self):
         text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        self.text = text
         start = text.index("- name: Run gates")
         self.step = text[start:text.index("- name:", start + 1)]
 
@@ -47,6 +48,33 @@ class Workflow(unittest.TestCase):
     def test_event_values_reach_the_shell_through_env_only(self):
         run = self.step[self.step.index("run: |"):]
         self.assertNotIn("${{", run)
+
+    def test_no_step_interpolates_an_expression_into_its_script(self):
+        # Every `run:` in the file, single-line or block: a ${{ }} there is pasted
+        # into bash before bash parses it.
+        lines = self.text.splitlines()
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped.startswith("run:"):
+                continue
+            indent = len(line) - len(line.lstrip())
+            body = [stripped]
+            for more in lines[i + 1:]:
+                if more.strip() and len(more) - len(more.lstrip()) <= indent:
+                    break
+                body.append(more)
+            self.assertNotIn("${{", "\n".join(body), line)
+        self.assertIn('--base "origin/$PR_BASE"', self.text)
+        self.assertIn("PR_BASE: ${{ github.base_ref }}", self.text)
+
+    def test_check_dependencies_are_pinned_to_exact_versions(self):
+        line = next(ln for ln in self.text.splitlines() if "pip install" in ln)
+        packages = [w for w in line.split("pip install", 1)[1].split()
+                    if not w.startswith("-")]
+        self.assertEqual(sorted(p.split("==")[0] for p in packages),
+                         ["jsonschema", "pyflakes"])
+        for p in packages:
+            self.assertRegex(p, r"^[a-z]+==\d+\.\d+\.\d+$")
 
 
 class PushShape(unittest.TestCase):
