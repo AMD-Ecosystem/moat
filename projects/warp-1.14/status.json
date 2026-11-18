@@ -6,12 +6,16 @@
   "fork_default_branch": "release-1.14",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "screened",
+  "stage": "planning",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-18T17:41:00Z",
+  "updated_at": "2026-11-18T17:41:51Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-18T17:41:50Z",
+    "holder": "2e86842d8592"
+  },
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -21,7 +25,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-18T17:41:00Z",
+      "updated_at": "2026-11-18T17:41:50Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -35,7 +39,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "intake"
+      "last_agent": "planner"
     }
   },
   "license_spdx": "Apache-2.0",
