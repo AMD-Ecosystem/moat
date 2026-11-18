@@ -40,6 +40,20 @@
           "reason": "#809 commit 5 (f7ef26a) moved the peer-access setup in gpuUtils.cu into the CUDA-only #else branch, so three of the seven mappings are no longer compiled on HIP."
         }
       ]
+    },
+    {
+      "id": "tigre-release-on-error-hip-include",
+      "kind": "other",
+      "component": null,
+      "summary": "At the next moat-port sync with CERN/TIGRE master: Common/CUDA/tigre_release_on_error.hpp (added upstream in #854) includes <cuda_runtime_api.h> directly, which does not exist in the HIP build, so the synced fork fails to compile until that include goes through cuda_to_hip.h like the other CUDA sources. Found by the #856 prototype on master cac83e7, fixed there only in a never-pushed scratch tree.",
+      "refs": [
+        "https://github.com/CERN/TIGRE/issues/856",
+        "plan tigre-norm-double-partials-prototype.md, Setup"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T03:41:22Z",
+      "decided": null
     }
   ]
 }
