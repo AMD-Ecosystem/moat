@@ -946,6 +946,25 @@ pure port change. (HEonGPU: RNGonGPU's Box-Muller Gaussian sampler; every cipher
 decrypted to noise while plaintext encoding, which samples no error, passed -- which is the
 tell that the fault is in a SAMPLER and not in the transform everything shares.)
 
+**An uninitialised local passed by value lets clang delete a padding-lane guard, and the
+result is NaN that nvcc never produces.** The shape: a kernel declares locals without
+initialisers, assigns them only inside `if (idx < n)`, then passes one BY VALUE to a helper
+outside the guard (a masked block reduction, `Reduce(valid, value)`, is the usual case).
+Padding lanes read an indeterminate value, which is undefined behaviour. clang marks
+by-value parameters `noundef`, so LLVM concludes the padding-lane path cannot happen,
+inserts `llvm.assume(idx < n)`, and drops both the guard and the helper's
+`valid ? value : 0` mask. The padding lanes then compute on out-of-range inputs, store past
+the end of outputs, and feed inf/NaN into the reduction. nvcc does not exploit this, so the
+CUDA build passes and the HIP build (or CUDA built with clang) gives NaN on any problem
+size that leaves padding lanes. It was observed on wave64; the cause is in the compiler and
+not the wave width, so expect the same on wave32. To confirm, look for `llvm.assume` on the
+thread-index compare in the device IR (`--cuda-device-only -S -emit-llvm`);
+`-Xclang -no-enable-noundef-analysis` makes the symptom disappear, as a diagnostic and not
+a fix. Fix the source: initialise the locals (zero is the identity of a sum). When the
+kernels are generated, a vendored copy of the generator's output can predate the
+generator's own fix, so check that the vendored code really carries a fix its changelog
+claims. (symforce, colmap)
+
 ## Headers, includes and build
 
 **A shared compat header must be host-includable.** Host `.cpp` TUs reach the shim through
@@ -1326,6 +1345,25 @@ NOT pull it in, so the `USE_ROCM` arm of the guard is an include of that header 
 a rewritten reduction. Dropping the include outright is right only when the code uses just
 `this_grid()`, `this_thread_block()` and `thread_rank()` -- grep for `cg::reduce`,
 `reduce_update_async` and `plus<>` first. (diff-surfel-rasterizations)
+
+**Count cooperative-groups call sites per feature before calling them a blocker.** A grep
+for `cooperative_groups` or `cg::` counts include lines and namespace aliases, and generated
+code repeats those in every file: one project's "2392 references" were 2347 includes and
+aliases and 45 real calls in two runtime files. Count `cg::<feature>(` per feature, then
+check each against the installed HIP, not an older note. As probed on HIP 7.16 (the ROCm
+10.1 SDK), HIP provides `this_thread_block`, `this_grid().thread_rank()` in an ordinary
+launch, `tiled_partition<N>` with `meta_group_rank`, `cg::reduce` (include
+`<hip/cooperative_groups/hip_reduce.h>`), `coalesced_threads`, `binary_partition` and
+`memcpy_async` (include `<hip/cooperative_groups/memcpy_async.h>`). It lacks
+`labeled_partition`, `cg::wait` (use `group.sync()`, which HIP documents as the completion
+point), `atomicAdd_block` (alias it to `atomicAdd` for shared memory) and a `const`
+`thread_block::group_dim()`. A `labeled_partition` followed by a `reduce` is replaceable
+without assuming a wave width, by per-lane shared atomics or by `__match_any` with a 64-bit
+mask and a `__shfl` loop over its bits. A hand-written CUDA replacement that loops
+`lane < 32` with `__shfl_sync(mask32, v, lane)` does not port by widening the mask: on
+wave64, lanes 32-63 read lanes 0-31 and the sums are silently wrong. Use
+`__shfl(v, lane, 32)` with a per-half mask, and avoid `__shfl_sync` when the two halves
+take different paths, because HIP's mask check traps. (colmap)
 
 **An uninitialised header-only submodule fails as a HIP error, not as a missing file.**
 When a project bundles GLM (or Eigen, or any header-only library) as a submodule and the
