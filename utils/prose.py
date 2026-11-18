@@ -37,9 +37,23 @@ def _is_new_block(line):
         return True
     if t.startswith(LIST_MARKERS) or t.startswith("|") or t.startswith("#"):
         return True
+    # An HTML block (<details>, <summary>, <br>, <img ...>, a closing tag) and a
+    # thematic break start their own block: GitHub does not join them to the
+    # paragraph above, so a long line before one was not wrapped by hand.
+    if re.match(r"</?[A-Za-z][\w-]*(\s|/?>|$)", t) or re.fullmatch(r"(-{3,}|\*{3,}|_{3,})", t):
+        return True
     # ordered list: "1. ", "12) "
     head = t.split(" ", 1)[0]
     return head[:-1].isdigit() and head[-1:] in (".", ")")
+
+
+def _closes_html(line):
+    """A line that is only an HTML tag, or ends an HTML block: what follows it is a
+    new block, however long the tag line was."""
+    t = line.strip()
+    return bool(re.fullmatch(r"</?[A-Za-z][^<>]*>", t)) or t.endswith(("</summary>",
+                                                                      "</details>",
+                                                                      "<br>", "<br/>"))
 
 
 def hard_wrapped(text):
@@ -59,7 +73,7 @@ def hard_wrapped(text):
         if fenced:
             continue
         if line.strip() and prev.strip() and not _is_new_block(line) \
-                and len(prev.rstrip()) >= WRAP_SUSPECT:
+                and len(prev.rstrip()) >= WRAP_SUSPECT and not _closes_html(prev):
             out.append((i, line.strip()))
         prev = line
     return out
@@ -124,11 +138,34 @@ def check(text, label="text"):
     return problems
 
 
+USAGE = """usage: prose.py <file>...    check files
+       prose.py -            check standard input
+       <command> | prose.py  the same, when standard input is a pipe
+exit status 1 if anything is hard-wrapped, non-ASCII, or miscases ROCm"""
+
+
 def main(argv=None):
-    args = (argv if argv is not None else sys.argv[1:]) or ["-"]
+    args = list(argv if argv is not None else sys.argv[1:])
+    if any(a in ("-h", "--help") for a in args):
+        print(__doc__.strip() + "\n\n" + USAGE)
+        return 0
+    if not args:
+        # No arguments used to mean "read standard input", which on a terminal is a
+        # command that sits there waiting. A pipe still works without the dash.
+        if sys.stdin is None or sys.stdin.isatty():
+            print(USAGE, file=sys.stderr)
+            return 2
+        args = ["-"]
     problems = []
     for a in args:
-        text = sys.stdin.read() if a == "-" else open(a, encoding="utf-8").read()
+        if a == "-":
+            text = sys.stdin.read()
+        else:
+            try:
+                text = open(a, encoding="utf-8").read()
+            except OSError as e:
+                print(f"prose: cannot read {a}: {e.strerror or e}", file=sys.stderr)
+                return 2
         problems += check(text, a)
     for p in problems:
         print(p)
