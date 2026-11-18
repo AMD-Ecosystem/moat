@@ -31,7 +31,7 @@ will read as that project's work everywhere the branch is not shown.
 - [ ] Coverage gates satisfied, or a waiver approved by a maintainer (`moatlib.py pr-ready <name>`)
 - [ ] Fork working tree clean; nothing validated against uncommitted edits
 - [ ] No in-house vocabulary anywhere on the fork branch (`utils/jargon.py --port <name>` -- the whole branch, not the newest commit)
-- [ ] Generalizable lessons promoted to the `cuda-to-rocm` skill, in the file their reader would open, with the source project named
+- [ ] Generalizable lessons recorded in `notes.md` under `## Lesson for cuda-to-rocm: <title>` (MOAT-free) or `## Lesson for moat-porting: <title>` (MOAT workflow), naming the reference file each belongs in; they are promoted on the trunk after this review
 
 ## For a negative outcome
 

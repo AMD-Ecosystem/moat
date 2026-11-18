@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """File and check port-request issues -- the one intake queue.
 
 Two things feed it and they are the same thing. A community member suggests a CUDA
@@ -164,4 +166,6 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())

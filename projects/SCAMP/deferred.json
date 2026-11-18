@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "scamp-sumthresh-validation",
+      "kind": "other",
+      "component": null,
+      "summary": "Recorded GPU validation exercised only the default 1NN_INDEX profile; the wave64 SUM_THRESH reduction fix is unvalidated. Validate the SUM_THRESH path against the reference oracle on gfx90a (wave64).",
+      "refs": [
+        "projects/SCAMP/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T19:04:23Z",
+      "decided": null
+    }
+  ]
+}

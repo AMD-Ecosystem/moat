@@ -1,0 +1,159 @@
+{
+  "schema_version": 3,
+  "name": "gRASPA",
+  "upstream_url": "https://github.com/snurr-group/gRASPA",
+  "fork_url": "https://github.com/AMD-Ecosystem/gRASPA",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-05T04:44:12Z",
+  "updated_at": "2026-11-04T06:48:57Z",
+  "head_sha": "7e3c08b33df60cf2a970e2d9647a7a6922514458",
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 629335275,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "7e3c08b33df60cf2a970e2d9647a7a6922514458",
+      "started_at": null,
+      "completed_at": "2026-08-20T05:19:32Z",
+      "updated_at": "2026-08-20T05:19:32Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "7e3c08b33df60cf2a970e2d9647a7a6922514458",
+      "started_at": "2026-06-05T08:58:58Z",
+      "completed_at": "2026-08-20T02:20:07Z",
+      "updated_at": "2026-08-20T02:20:07Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "471060045dad654d6fcb50ec45a3cd3345da3d8a",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:49:26Z",
+      "updated_at": "2026-06-23T22:49:26Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "471060045dad654d6fcb50ec45a3cd3345da3d8a",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:49:26Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "471060045dad654d6fcb50ec45a3cd3345da3d8a",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:49:26Z",
+      "updated_at": "2026-06-23T22:49:26Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "471060045dad654d6fcb50ec45a3cd3345da3d8a",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:49:26Z"
+      }
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "7e3c08b33df60cf2a970e2d9647a7a6922514458",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-08-20T08:01:44Z",
+      "updated_at": "2026-08-20T08:01:44Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    }
+  },
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-08-20T02:10:23Z",
+    "at": "2026-08-20T02:14:30Z"
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/gRASPA/pull/1",
+  "pr_url": "https://github.com/snurr-group/gRASPA/pull/96",
+  "pr_number": 96,
+  "pr_opened_at": "2026-11-04T06:48:57Z",
+  "pr_state": "open",
+  "published_sha": "7e3c08b33df60cf2a970e2d9647a7a6922514458"
+}

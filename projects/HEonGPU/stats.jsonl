@@ -1,0 +1,491 @@
+{"kind": "tokens", "ts": "2026-06-05T01:24:21Z", "tokens": 88450, "source": "planner"}
+{"kind":"phase","ts":"2026-06-05T05:39:15Z","phase":"compile","seconds":6.417,"exit":0,"cmd":"make -j128"}
+{"kind":"phase","ts":"2026-06-05T05:53:02Z","phase":"compile","seconds":0.140,"exit":1,"cmd":"cmake --build . -j128"}
+{"kind":"phase","ts":"2026-06-05T05:58:07Z","phase":"compile","seconds":0.138,"exit":1,"cmd":"cmake --build . -j128"}
+{"kind": "tokens", "ts": "2026-06-05T06:04:29Z", "tokens": 135744, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T06:08:02Z", "tokens": 121473, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-05T06:12:25Z","phase":"compile","seconds":0.137,"exit":1,"cmd":"cmake --build . -j128"}
+{"kind": "tokens", "ts": "2026-06-05T06:20:26Z", "tokens": 86924, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T06:26:33Z", "tokens": 113947, "source": "reviewer"}
+{"kind": "tokens", "ts": "2026-06-05T07:01:41Z", "tokens": 191595, "source": "porter"}
+{"kind":"session","ts":"2026-06-11T23:06:27Z","epoch":1781219187.740182449,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-06-11T23:13:03Z","phase":"compile","seconds":8.959,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/HEonGPU/src/build && cmake --build . -j128 2>&1 | tail -50"}
+{"kind":"phase","ts":"2026-06-11T23:13:53Z","phase":"compile","seconds":4.108,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/HEonGPU/src/build && cmake --build . -j128 2>&1 | grep -iE \"error:|error [0-9]|fatal|Built target|Linking\" | grep -ivE \"warning|generate-line\" | tail -50"}
+{"kind":"phase","ts":"2026-06-11T23:15:29Z","phase":"compile","seconds":47.386,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/HEonGPU/src/build && cmake --build . -j128 2>&1 | grep -iE \"error:|error [0-9]|fatal|Built target|Linking HIP|Linking CXX.*heongpu\" | grep -ivE \"warning|generate-line\" | tail -40"}
+{"kind":"session","ts":"2026-06-11T23:28:43Z","epoch":1781220523.644553187,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-06-12T00:03:16Z", "tokens": 199055, "source": "porter"}
+{"kind":"phase","ts":"2026-08-11T14:55:26Z","phase":"compile","seconds":3.841,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/HEonGPU/src && cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON . > /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/cfg.log 2>&1; tail -20 /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/cfg.log"}
+{"kind":"phase","ts":"2026-08-11T14:55:53Z","phase":"compile","seconds":0.558,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/HEonGPU/src && cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON . > /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/cfg.log 2>&1; tail -12 /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/cfg.log"}
+{"kind":"phase","ts":"2026-08-11T15:00:21Z","phase":"compile","seconds":230.323,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/HEonGPU/src && cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON . > /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/cfg.log 2>&1; tail -8 /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/cfg.log"}
+{"kind":"phase","ts":"2026-08-11T15:00:29Z","phase":"compile","seconds":0.139,"exit":1,"cmd":"cmake --build build -j128"}
+{"kind":"phase","ts":"2026-08-11T15:01:46Z","phase":"compile","seconds":61.500,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-11T15:04:06Z","phase":"test","seconds":0.003,"exit":127,"cmd":"/var/lib/jenkins/moat/agent_space/HEonGPU-probe/probe 4 14 1"}
+{"kind":"phase","ts":"2026-08-11T15:06:41Z","phase":"test","seconds":13.317,"exit":8,"cmd":"ctest --test-dir /var/lib/jenkins/moat/projects/HEonGPU/src/build --output-on-failure -j1"}
+{"kind":"phase","ts":"2026-08-11T15:07:30Z","phase":"compile","seconds":0.401,"exit":1,"cmd":"cmake -B build -DRNGonGPU_BUILD_TESTS=ON /var/lib/jenkins/moat/projects/HEonGPU/src"}
+{"kind":"phase","ts":"2026-08-11T15:17:45Z","phase":"compile","seconds":43.238,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-11T15:18:07Z","phase":"test","seconds":13.414,"exit":8,"cmd":"ctest --test-dir /var/lib/jenkins/moat/projects/HEonGPU/src/build --output-on-failure -j1"}
+{"kind":"phase","ts":"2026-08-11T15:26:51Z","phase":"compile","seconds":44.949,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-11T15:27:04Z","phase":"test","seconds":13.392,"exit":8,"cmd":"ctest --test-dir /var/lib/jenkins/moat/projects/HEonGPU/src/build -j1"}
+{"kind":"phase","ts":"2026-08-11T15:29:09Z","phase":"compile","seconds":44.679,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-11T15:29:23Z","phase":"test","seconds":13.346,"exit":8,"cmd":"ctest --test-dir /var/lib/jenkins/moat/projects/HEonGPU/src/build -j1"}
+{"kind":"phase","ts":"2026-08-08T17:41:47Z","phase":"compile","seconds":2.757,"exit":1,"cmd":"cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON"}
+{"kind":"phase","ts":"2026-08-08T17:42:09Z","phase":"compile","seconds":2.896,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON"}
+{"kind":"phase","ts":"2026-08-08T17:43:00Z","phase":"compile","seconds":43.668,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j64"}
+{"kind":"phase","ts":"2026-08-08T17:43:18Z","phase":"test","seconds":11.650,"exit":8,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure --timeout 900"}
+{"kind": "tokens", "ts": "2026-08-08T17:57:43Z", "tokens": 135345, "source": "porter"}
+{"kind": "tokens", "ts": "2026-08-11T15:33:51Z", "tokens": 294580, "source": "porter"}
+{"kind":"phase","ts":"2026-08-11T15:46:07Z","phase":"compile","seconds":61.444,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-11T15:46:27Z","phase":"test","seconds":13.426,"exit":8,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-11T15:50:07Z","phase":"compile","seconds":62.221,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-11T15:50:35Z","phase":"test","seconds":13.394,"exit":8,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-11T15:52:11Z","phase":"compile","seconds":11.191,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-11T15:52:25Z","phase":"test","seconds":13.344,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build"}
+{"kind":"phase","ts":"2026-08-11T15:52:38Z","phase":"test","seconds":13.354,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build"}
+{"kind":"phase","ts":"2026-08-11T15:52:51Z","phase":"test","seconds":13.357,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build"}
+{"kind":"phase","ts":"2026-08-11T15:58:38Z","phase":"test","seconds":13.438,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build"}
+{"kind": "tokens", "ts": "2026-08-11T16:03:18Z", "tokens": 178757, "source": "porter"}
+{"kind":"session","ts":"2026-08-11T16:03:56Z","epoch":1786464236.660468966,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-11T16:19:01Z","epoch":1786465141.231605984,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-11T16:19:45Z", "tokens": 203109, "source": "reviewer"}
+{"kind":"phase","ts":"2026-08-11T16:24:04Z","phase":"compile","seconds":1.264,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-08-11T16:25:16Z","phase":"compile","seconds":62.008,"exit":2,"cmd":"cmake --build projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-11T16:26:07Z","phase":"compile","seconds":1.678,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-11T16:26:51Z","phase":"test","seconds":13.486,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-11T16:33:34Z","phase":"compile","seconds":63.060,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-11T16:33:47Z","phase":"test","seconds":13.329,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind": "tokens", "ts": "2026-08-11T16:39:10Z", "tokens": 161423, "source": "porter"}
+{"kind":"session","ts":"2026-08-11T16:39:56Z","epoch":1786466396.053140937,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-11T16:52:06Z","epoch":1786467126.750945654,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-11T16:52:52Z", "tokens": 152187, "source": "reviewer"}
+{"kind":"session","ts":"2026-08-11T16:54:33Z","epoch":1786467273.038309249,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-11T16:55:25Z","phase":"compile","seconds":1.770,"exit":0,"cmd":"bash -c cd projects/HEonGPU/src/build && cmake . > /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/cfg.log 2>&1 && cmake --build . -j$(nproc) > /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/build.log 2>&1"}
+{"kind":"phase","ts":"2026-08-11T16:58:25Z","phase":"test","seconds":13.352,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-11T16:59:04Z","phase":"test","seconds":13.471,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build"}
+{"kind":"phase","ts":"2026-08-11T16:59:17Z","phase":"test","seconds":13.398,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build"}
+{"kind":"phase","ts":"2026-08-11T16:59:36Z","phase":"test","seconds":13.445,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build"}
+{"kind":"session","ts":"2026-08-11T17:01:13Z","epoch":1786467673.800164575,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-11T17:02:24Z", "tokens": 79663, "source": "porter"}
+{"kind":"session","ts":"2026-08-11T17:02:55Z","epoch":1786467775.209276043,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-11T17:10:29Z","epoch":1786468229.360659152,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-11T17:11:15Z", "tokens": 90091, "source": "reviewer"}
+{"kind":"session","ts":"2026-08-11T17:12:03Z","epoch":1786468323.585794381,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-11T17:15:33Z","phase":"compile","seconds":176.369,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-08-11T17:16:42Z","phase":"compile","seconds":64.519,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-11T17:17:09Z","phase":"test","seconds":13.433,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-11T17:17:31Z","phase":"test","seconds":13.410,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"session","ts":"2026-08-11T17:52:13Z","epoch":1786470733.800182723,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-11T17:53:03Z", "tokens": 167491, "source": "validator"}
+{"kind":"session","ts":"2026-08-11T23:52:45Z","epoch":1786492365.225483149,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-11T23:54:20Z","phase":"compile","seconds":53.142,"exit":0,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build \\\n    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release \\\n    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n  && cmake --build projects/HEonGPU/src/build -j64\n"}
+{"kind":"phase","ts":"2026-08-11T23:54:50Z","phase":"test","seconds":11.817,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-11T23:55:06Z","phase":"test","seconds":11.723,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"session","ts":"2026-08-12T00:00:50Z","epoch":1786492850.596355838,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-12T19:55:11Z","epoch":1786564511.514712806,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-12T19:56:09Z","phase":"compile","seconds":47.884,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-12T19:59:37Z","phase":"compile","seconds":52.620,"exit":0,"cmd":"bash agent_space/heongpu-cuda-check.sh"}
+{"kind":"phase","ts":"2026-08-12T20:00:46Z","phase":"compile","seconds":48.206,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-12T20:01:04Z","phase":"test","seconds":13.310,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"session","ts":"2026-08-12T20:07:21Z","epoch":1786565241.972171786,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T20:09:04Z", "tokens": 103272, "source": "porter"}
+{"kind":"session","ts":"2026-08-12T20:15:01Z","epoch":1786565701.491366545,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-12T20:27:41Z","epoch":1786566461.398575495,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T20:28:26Z", "tokens": 120963, "source": "reviewer"}
+{"kind":"session","ts":"2026-08-12T20:30:10Z","epoch":1786566610.709290973,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-12T20:32:03Z","phase":"compile","seconds":50.258,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j64"}
+{"kind":"phase","ts":"2026-08-12T20:32:29Z","phase":"test","seconds":13.414,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"session","ts":"2026-08-12T20:37:01Z","epoch":1786567021.859048701,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T20:38:00Z", "tokens": 68542, "source": "porter"}
+{"kind":"session","ts":"2026-08-12T20:38:34Z","epoch":1786567114.161739076,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-12T20:49:49Z","epoch":1786567789.735687863,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-12T20:56:44Z","epoch":1786568205.225340700,"event":"end","platform":"windows-gfx1151"}
+{"kind": "tokens", "ts": "2026-08-12T20:50:36Z", "tokens": 107527, "source": "reviewer"}
+{"kind":"session","ts":"2026-08-12T20:52:06Z","epoch":1786567926.709364474,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-12T20:55:13Z","phase":"compile-rdc-configure","seconds":43.807,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build-rdc -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON"}
+{"kind":"phase","ts":"2026-08-12T20:56:23Z","phase":"compile-rdc","seconds":63.803,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build-rdc -j64"}
+{"kind":"phase","ts":"2026-08-12T20:56:43Z","phase":"test-rdc","seconds":13.442,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/moat/projects/HEonGPU/src/build-rdc"}
+{"kind":"phase","ts":"2026-08-12T20:57:24Z","phase":"compile-rdc-full","seconds":16.469,"exit":0,"cmd":"bash -c cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build-rdc -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON && cmake --build projects/HEonGPU/src/build-rdc -j64"}
+{"kind":"phase","ts":"2026-08-12T21:00:23Z","phase":"compile-rdc-install","seconds":1.915,"exit":0,"cmd":"bash -c cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build-rdc -DCMAKE_INSTALL_PREFIX=/tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/install-rdc >/dev/null && cmake --build projects/HEonGPU/src/build-rdc -j64 >/dev/null && cmake --install projects/HEonGPU/src/build-rdc >/dev/null"}
+{"kind":"phase","ts":"2026-08-12T21:04:34Z","phase":"compile-baseline-clean","seconds":193.576,"exit":0,"cmd":"bash -c cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build-base -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON >/dev/null 2>&1 && cmake --build projects/HEonGPU/src/build-base -j64 > /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/base-clean.log 2>&1"}
+{"kind":"phase","ts":"2026-08-12T21:10:16Z","phase":"compile-rdc-clean","seconds":326.647,"exit":0,"cmd":"bash -c cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build-rdc -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON >/dev/null 2>&1 && cmake --build projects/HEonGPU/src/build-rdc -j64 > /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/rdc-clean.log 2>&1"}
+{"kind":"phase","ts":"2026-08-12T21:11:45Z","phase":"compile-libonly-rdc","seconds":52.075,"exit":0,"cmd":"bash -c cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build-libonly-rdc -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1 && cmake --build projects/HEonGPU/src/build-libonly-rdc -j64 >/dev/null 2>&1"}
+{"kind":"phase","ts":"2026-08-12T21:12:53Z","phase":"compile-libonly-base","seconds":53.654,"exit":0,"cmd":"bash -c cmake -S /var/lib/jenkins/moat/projects/HEonGPU/src -B /var/lib/jenkins/moat/projects/HEonGPU/src/build-libonly-base -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1 && cmake --build /var/lib/jenkins/moat/projects/HEonGPU/src/build-libonly-base -j64 >/dev/null 2>&1"}
+{"kind":"phase","ts":"2026-08-12T21:15:01Z","phase":"compile","seconds":53.679,"exit":0,"cmd":"bash -c cmake -S /var/lib/jenkins/moat/projects/HEonGPU/src -B /var/lib/jenkins/moat/projects/HEonGPU/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON > /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/final-cfg.log 2>&1 && cmake --build /var/lib/jenkins/moat/projects/HEonGPU/src/build -j64 > /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/final-build.log 2>&1"}
+{"kind":"phase","ts":"2026-08-12T21:15:19Z","phase":"test","seconds":13.580,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/moat/projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-12T21:16:08Z","phase":"compile-cuda-check","seconds":37.701,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/heongpu-cuda-check.sh"}
+{"kind":"phase","ts":"2026-08-12T21:21:42Z","phase":"compile-comment","seconds":52.235,"exit":0,"cmd":"bash -c cmake --build /var/lib/jenkins/moat/projects/HEonGPU/src/build -j64 > /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/b2.log 2>&1"}
+{"kind":"phase","ts":"2026-08-12T21:21:55Z","phase":"test","seconds":13.469,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/moat/projects/HEonGPU/src/build"}
+{"kind":"phase","ts":"2026-08-12T21:22:55Z","phase":"compile-cuda-check","seconds":50.664,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/heongpu-cuda-check.sh"}
+{"kind":"session","ts":"2026-08-12T21:27:38Z","epoch":1786570058.211321283,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T21:28:31Z", "tokens": 174387, "source": "porter"}
+{"kind":"session","ts":"2026-08-12T22:19:44Z","epoch":1786573184.601308962,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-12T22:31:20Z","epoch":1786573880.293521530,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T22:32:07Z", "tokens": 150894, "source": "reviewer"}
+{"kind":"session","ts":"2026-08-12T22:33:23Z","epoch":1786574003.099699905,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-12T22:40:19Z","phase":"compile","seconds":1.624,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j64"}
+{"kind":"phase","ts":"2026-08-12T22:40:41Z","phase":"test","seconds":13.555,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-12T22:40:51Z","phase":"test","seconds":4.533,"exit":0,"cmd":"bash agent_space/heongpu-cuda-check.sh"}
+{"kind":"phase","ts":"2026-08-12T22:41:49Z","phase":"compile","seconds":1.604,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j64"}
+{"kind":"phase","ts":"2026-08-12T22:41:54Z","phase":"compile","seconds":0.361,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j64"}
+{"kind":"session","ts":"2026-08-12T22:47:59Z","epoch":1786574879.198295938,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T22:48:41Z", "tokens": 98681, "source": "porter"}
+{"kind":"session","ts":"2026-08-12T22:49:13Z","epoch":1786574953.615842401,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-12T22:56:38Z","epoch":1786575398.919117719,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T22:57:17Z", "tokens": 71429, "source": "reviewer"}
+{"kind":"session","ts":"2026-08-12T22:58:34Z","epoch":1786575514.350584346,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-12T23:01:00Z","phase":"compile","seconds":6.349,"exit":0,"cmd":"bash /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/matrix.sh"}
+{"kind":"phase","ts":"2026-08-12T23:01:38Z","phase":"compile","seconds":24.651,"exit":0,"cmd":"bash /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/matrix2.sh"}
+{"kind":"phase","ts":"2026-08-12T23:02:40Z","phase":"compile","seconds":6.575,"exit":0,"cmd":"bash /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/matrix3.sh"}
+{"kind":"phase","ts":"2026-08-12T23:03:11Z","phase":"compile","seconds":2.734,"exit":0,"cmd":"bash /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/matrix4.sh"}
+{"kind":"phase","ts":"2026-08-12T23:04:25Z","phase":"compile","seconds":2.951,"exit":0,"cmd":"bash /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/matrix5.sh"}
+{"kind":"session","ts":"2026-08-12T23:08:04Z","epoch":1786576084.274906626,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T23:08:57Z", "tokens": 88222, "source": "porter"}
+{"kind":"session","ts":"2026-08-12T23:09:31Z","epoch":1786576171.513881728,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-12T23:14:44Z","epoch":1786576484.539131123,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T23:15:25Z", "tokens": 59457, "source": "reviewer"}
+{"kind":"session","ts":"2026-08-12T23:16:10Z","epoch":1786576570.789361856,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-12T23:25:44Z","phase":"compile","seconds":1.287,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build"}
+{"kind":"session","ts":"2026-08-12T23:25:50Z","epoch":1786577150.584549301,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T23:27:00Z", "tokens": 87855, "source": "porter"}
+{"kind":"session","ts":"2026-08-12T23:27:32Z","epoch":1786577252.566956013,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-12T23:34:38Z","epoch":1786577678.208142714,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T23:35:19Z", "tokens": 74378, "source": "reviewer"}
+{"kind":"session","ts":"2026-08-12T23:36:15Z","epoch":1786577775.671170460,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-12T23:42:22Z","epoch":1786578142.088735988,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T23:43:06Z", "tokens": 74211, "source": "porter"}
+{"kind":"session","ts":"2026-08-12T23:43:38Z","epoch":1786578218.187305798,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-12T23:43:46Z","epoch":1786578226.655742206,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-12T23:47:56Z","epoch":1786578476.685669516,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-12T23:50:58Z","phase":"compile","seconds":7.014,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON -DCMAKE_INSTALL_PREFIX=/var/lib/jenkins/moat/agent_space/heongpu-r10/prefix"}
+{"kind":"phase","ts":"2026-08-12T23:52:07Z","phase":"compile","seconds":64.704,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j64"}
+{"kind":"phase","ts":"2026-08-12T23:52:33Z","phase":"test","seconds":13.398,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-12T23:54:36Z","phase":"compile","seconds":0.182,"exit":0,"cmd":"cmake --install projects/HEonGPU/src/build"}
+{"kind":"phase","ts":"2026-08-12T23:57:15Z","phase":"compile","seconds":37.686,"exit":0,"cmd":"bash agent_space/heongpu-cuda-check.sh"}
+{"kind":"phase","ts":"2026-08-12T23:58:48Z","phase":"compile","seconds":50.527,"exit":0,"cmd":"bash agent_space/heongpu-cuda-check.sh"}
+{"kind":"session","ts":"2026-08-13T00:02:40Z","epoch":1786579360.331517186,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-13T01:00:32Z","epoch":1786582832.588596237,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T01:09:31Z","epoch":1786583371.938514418,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T01:12:00Z","epoch":1786583520.969863677,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-08-13T01:12:14Z","phase":"compile","seconds":8.305,"exit":0,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON \\\n  -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_BUILD_TYPE=Release \\\n  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n  -DCMAKE_INSTALL_PREFIX=/var/lib/jenkins/moat/agent_space/heongpu-gfx942/prefix \\\n  2>&1 | tee /var/lib/jenkins/moat/agent_space/heongpu-gfx942-configure.log\n"}
+{"kind":"phase","ts":"2026-08-13T01:12:55Z","phase":"compile","seconds":36.564,"exit":0,"cmd":"bash -c \ncmake --build projects/HEonGPU/src/build -j$(nproc) 2>&1 | tee agent_space/heongpu-gfx942-build.log | tail -100\n"}
+{"kind":"phase","ts":"2026-08-13T01:13:14Z","phase":"test","seconds":13.308,"exit":0,"cmd":"bash -c \nctest --test-dir projects/HEonGPU/src/build --output-on-failure 2>&1 | tee agent_space/heongpu-gfx942-ctest1.log | tail -40\n"}
+{"kind":"phase","ts":"2026-08-13T01:13:33Z","phase":"test","seconds":15.617,"exit":0,"cmd":"bash -c \nctest --test-dir projects/HEonGPU/src/build --output-on-failure 2>&1 | tee agent_space/heongpu-gfx942-ctest2.log | tail -8\n"}
+{"kind":"session","ts":"2026-08-13T01:14:26Z","epoch":1786583666.050636746,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T01:16:46Z","epoch":1786583806.672118444,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-13T01:19:21Z","phase":"compile","seconds":52.659,"exit":0,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build \\\n    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release \\\n    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n    && cmake --build projects/HEonGPU/src/build -j$(nproc)\n"}
+{"kind":"phase","ts":"2026-08-13T01:19:46Z","phase":"test","seconds":11.769,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"session","ts":"2026-08-13T01:21:56Z","epoch":1786584116.107384420,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-13T02:24:21Z","epoch":1786587862.157530600,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-13T02:24:39Z","phase":"compile","seconds":1.735,"exit":1,"cmd":"C:/Program Files/CMake/bin/cmake.exe --build projects/HEonGPU/src/build -j6"}
+{"kind":"phase","ts":"2026-08-13T02:28:00Z","phase":"compile","seconds":5.436,"exit":1,"cmd":"C:/Program Files/CMake/bin/cmake.exe --build projects/HEonGPU/src/build -j6"}
+{"kind":"phase","ts":"2026-08-13T02:29:02Z","phase":"compile","seconds":8.156,"exit":1,"cmd":"C:/Program Files/CMake/bin/cmake.exe --build projects/HEonGPU/src/build -j6"}
+{"kind":"session","ts":"2026-08-13T02:34:39Z","epoch":1786588479.360282200,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T02:40:35Z","epoch":1786588835.814517200,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T02:40:44Z","epoch":1786588845.020493900,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-13T02:43:01Z","phase":"compile","seconds":10.600,"exit":1,"cmd":"bash agent_space/heongpu-win/build.sh"}
+{"kind":"phase","ts":"2026-08-13T02:45:08Z","phase":"compile","seconds":41.229,"exit":1,"cmd":"bash agent_space/heongpu-win/build.sh"}
+{"kind":"phase","ts":"2026-08-13T02:46:32Z","phase":"compile","seconds":49.933,"exit":127,"cmd":"bash agent_space/heongpu-win/build.sh"}
+{"kind":"phase","ts":"2026-08-13T02:47:54Z","phase":"compile","seconds":10.819,"exit":127,"cmd":"bash agent_space/heongpu-win/build.sh"}
+{"kind":"phase","ts":"2026-08-13T02:50:43Z","phase":"compile","seconds":61.469,"exit":127,"cmd":"bash agent_space/heongpu-win/build.sh"}
+{"kind":"phase","ts":"2026-08-13T02:51:49Z","phase":"compile","seconds":8.388,"exit":127,"cmd":"bash agent_space/heongpu-win/build.sh"}
+{"kind":"phase","ts":"2026-08-13T02:52:58Z","phase":"compile","seconds":8.104,"exit":1,"cmd":"bash agent_space/heongpu-win/build.sh"}
+{"kind":"phase","ts":"2026-08-13T02:54:56Z","phase":"compile","seconds":18.286,"exit":0,"cmd":"bash agent_space/heongpu-win/build.sh"}
+{"kind":"phase","ts":"2026-08-13T02:55:24Z","phase":"test","seconds":8.638,"exit":0,"cmd":"bash agent_space/heongpu-win/smoke.sh"}
+{"kind":"session","ts":"2026-08-13T03:04:01Z","epoch":1786590241.627957200,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T03:07:15Z","epoch":1786590435.524499100,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T03:20:07Z","epoch":1786591207.739256600,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T03:23:39Z","epoch":1786591419.695293700,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-13T03:42:31Z","phase":"compile","seconds":0.712,"exit":1,"cmd":"cmake --build build -j6"}
+{"kind":"phase","ts":"2026-08-13T03:43:36Z","phase":"compile","seconds":49.376,"exit":0,"cmd":"cmake --build /d/Develop/moat/projects/HEonGPU/src/build -j6"}
+{"kind":"phase","ts":"2026-08-13T03:56:10Z","phase":"compile","seconds":10.934,"exit":0,"cmd":"cmake --build /d/Develop/moat/projects/HEonGPU/src/build -j6"}
+{"kind":"phase","ts":"2026-08-13T03:57:14Z","phase":"test","seconds":2.976,"exit":0,"cmd":"bash -c tot=0; fail=0; for f in *_testcases.exe; do out=$(timeout 900 ./$f 2>&1); rc=$?; ok=$(echo \"$out\" | grep -cE \"^\\[       OK \\]\"); bad=$(echo \"$out\" | grep -cE \"^\\[  FAILED  \\] HEonGPU\"); tot=$((tot+ok)); fail=$((fail+bad)); printf \"%-42s rc=%d ok=%d failed=%d\\n\" \"$f\" \"$rc\" \"$ok\" \"$bad\"; done; echo \"TOTAL ok=$tot failed=$fail\""}
+{"kind":"phase","ts":"2026-08-13T04:03:51Z","phase":"test","seconds":380.808,"exit":0,"cmd":"bash -c cd /d/Develop/moat/projects/HEonGPU/src/build/bin/test; tot=0; fail=0; for f in *_testcases.exe; do out=$(timeout 900 ./$f 2>&1); rc=$?; ok=$(echo \"$out\" | grep -cE \"^\\[       OK \\]\"); bad=$(echo \"$out\" | grep -cE \"^\\[  FAILED  \\] HEonGPU\"); tot=$((tot+ok)); fail=$((fail+bad)); printf \"%-42s rc=%d ok=%d failed=%d\\n\" \"$f\" \"$rc\" \"$ok\" \"$bad\"; done; echo \"TOTAL ok=$tot failed=$fail\""}
+{"kind":"session","ts":"2026-08-13T04:19:56Z","epoch":1786594797.177654700,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T04:27:37Z","epoch":1786595257.460052900,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T04:59:33Z","epoch":1786597173.689892800,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T05:29:47Z","epoch":1786598987.619715800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T05:37:44Z","epoch":1786599464.400400900,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T05:51:43Z","epoch":1786600304.093292200,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T05:58:49Z","epoch":1786600729.319758400,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T08:32:53Z","epoch":1786609973.325714315,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-08-13T08:34:05Z","phase":"compile","seconds":49.600,"exit":0,"cmd":"bash -c cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON -DCMAKE_INSTALL_PREFIX=agent_space/heongpu-gfx942/prefix && cmake --build projects/HEonGPU/src/build -j$(nproc)"}
+{"kind":"phase","ts":"2026-08-13T08:34:32Z","phase":"test","seconds":13.623,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-13T08:34:50Z","phase":"test","seconds":14.568,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-13T08:37:52Z","phase":"cuda-compile","seconds":51.748,"exit":0,"cmd":"bash -c cmake --build /var/lib/jenkins/moat/agent_space/heongpu-cuda-gate/build -j$(nproc) 2>&1"}
+{"kind":"session","ts":"2026-08-13T08:39:04Z","epoch":1786610344.387952162,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T06:07:54Z","epoch":1786601274.608955500,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-13T06:12:21Z","phase":"compile","seconds":175.215,"exit":0,"cmd":"bash agent_space/heongpu-win/configure_clean.sh"}
+{"kind":"session","ts":"2026-08-13T16:15:30Z","epoch":1786637730.864586400,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-13T16:26:16Z","phase":"compile","seconds":149.225,"exit":0,"cmd":"bash agent_space/heongpu-win/configure_v2.sh"}
+{"kind":"session","ts":"2026-08-13T17:14:24Z","epoch":1786641264.663330700,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T23:59:43Z","epoch":1786665583.770698628,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-13T23:59:55Z","phase":"compile","seconds":7.187,"exit":1,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build \\\n    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release \\\n    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n    -DCMAKE_INSTALL_PREFIX=agent_space/heongpu-gfx90a-r19/prefix &&\ncmake --build projects/HEonGPU/src/build -j$(nproc)\n"}
+{"kind":"phase","ts":"2026-08-14T00:01:12Z","phase":"compile","seconds":63.783,"exit":0,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build \\\n    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release \\\n    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n    -DCMAKE_INSTALL_PREFIX=agent_space/heongpu-gfx90a-r19/prefix &&\ncmake --build projects/HEonGPU/src/build -j$(nproc)\n"}
+{"kind":"phase","ts":"2026-08-14T00:01:35Z","phase":"test","seconds":13.113,"exit":0,"cmd":"bash -c \nctest --test-dir projects/HEonGPU/src/build --output-on-failure\n"}
+{"kind":"session","ts":"2026-08-14T00:03:27Z","epoch":1786665807.557884720,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-17T22:40:27Z","epoch":1787006427.591775289,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-17T22:40:33Z","epoch":1787006433.726502628,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-17T22:42:00Z","phase":"compile","seconds":1.689,"exit":0,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON \\\n  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release \\\n  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n  > /tmp/claude-1000/-var-lib-jenkins-moat/16903182-ef2e-4065-a98a-7e4bd0136290/scratchpad/heongpu-configure.log 2>&1 \\\n&& cmake --build projects/HEonGPU/src/build -j64 \\\n  > /tmp/claude-1000/-var-lib-jenkins-moat/16903182-ef2e-4065-a98a-7e4bd0136290/scratchpad/heongpu-build.log 2>&1"}
+{"kind":"phase","ts":"2026-08-17T22:42:18Z","phase":"test","seconds":13.062,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"session","ts":"2026-08-17T22:44:35Z","epoch":1787006675.602464027,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-18T15:11:15Z","epoch":1787065875.357214621,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-18T15:15:10Z","epoch":1787066110.661830757,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-18T15:23:21Z","epoch":1787066601.157048573,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-18T15:23:41Z","phase":"compile","seconds":0.006,"exit":1,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B agent_space/heongpu-gfx90a-r20/build -DUSE_HIP=ON \\\n  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release \\\n  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n  -DCMAKE_INSTALL_PREFIX=agent_space/heongpu-gfx90a-r20/prefix \\\n  > agent_space/heongpu-gfx90a-r20/configure.log 2>&1 \\\n&& cmake --build agent_space/heongpu-gfx90a-r20/build -j64 \\\n  > agent_space/heongpu-gfx90a-r20/build.log 2>&1"}
+{"kind":"phase","ts":"2026-08-18T15:25:05Z","phase":"compile","seconds":76.769,"exit":0,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B agent_space/heongpu-gfx90a-r20/build -DUSE_HIP=ON \\\n  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release \\\n  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n  -DCMAKE_INSTALL_PREFIX=agent_space/heongpu-gfx90a-r20/prefix \\\n  > agent_space/heongpu-gfx90a-r20/configure.log 2>&1 \\\n&& cmake --build agent_space/heongpu-gfx90a-r20/build -j64 \\\n  > agent_space/heongpu-gfx90a-r20/build.log 2>&1"}
+{"kind":"phase","ts":"2026-08-18T15:25:37Z","phase":"test","seconds":13.049,"exit":0,"cmd":"ctest --test-dir agent_space/heongpu-gfx90a-r20/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-18T15:25:59Z","phase":"cuda-compile","seconds":0.006,"exit":1,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B agent_space/heongpu-cuda-gate/build \\\n  -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release \\\n  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \\\n  -DCMAKE_C_COMPILER=gcc-13 -DCMAKE_CXX_COMPILER=g++-13 \\\n  > agent_space/heongpu-cuda-gate/configure.log 2>&1 \\\n&& cmake --build agent_space/heongpu-cuda-gate/build -j64 \\\n  > agent_space/heongpu-cuda-gate/build.log 2>&1"}
+{"kind":"phase","ts":"2026-08-18T15:27:54Z","phase":"cuda-compile","seconds":106.224,"exit":0,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B agent_space/heongpu-cuda-gate/build \\\n  -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release \\\n  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \\\n  -DCMAKE_C_COMPILER=gcc-13 -DCMAKE_CXX_COMPILER=g++-13 \\\n  > agent_space/heongpu-cuda-gate/configure.log 2>&1 \\\n&& cmake --build agent_space/heongpu-cuda-gate/build -j64 \\\n  > agent_space/heongpu-cuda-gate/build.log 2>&1"}
+{"kind":"session","ts":"2026-08-18T15:28:35Z","epoch":1787066915.840761511,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-18T15:35:18Z","phase":"compile","seconds":69.393,"exit":0,"cmd":"bash -c \nHIP_VISIBLE_DEVICES=0 cmake -S projects/HEonGPU/src -B agent_space/heongpu-gfx90a-r21/build -DUSE_HIP=ON \\\n  -DCMAKE_BUILD_TYPE=Release \\\n  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n  > agent_space/heongpu-gfx90a-r21/configure.log 2>&1 \\\n&& cmake --build agent_space/heongpu-gfx90a-r21/build -j64 \\\n  > agent_space/heongpu-gfx90a-r21/build.log 2>&1"}
+{"kind":"phase","ts":"2026-08-18T15:35:57Z","phase":"test","seconds":13.070,"exit":0,"cmd":"ctest --test-dir agent_space/heongpu-gfx90a-r21/build"}
+{"kind":"phase","ts":"2026-08-18T15:37:42Z","phase":"cuda-compile","seconds":104.458,"exit":0,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B agent_space/heongpu-cuda-gate/build \\\n  -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release \\\n  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \\\n  -DCMAKE_C_COMPILER=gcc-13 -DCMAKE_CXX_COMPILER=g++-13 \\\n  > agent_space/heongpu-cuda-gate/configure.log 2>&1 \\\n&& cmake --build agent_space/heongpu-cuda-gate/build -j64 \\\n  > agent_space/heongpu-cuda-gate/build.log 2>&1"}
+{"kind":"session","ts":"2026-08-18T15:46:41Z","epoch":1787068001.572263905,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-18T15:53:10Z","epoch":1787068390.616786715,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-18T15:58:59Z","phase":"compile","seconds":7.860,"exit":2,"cmd":"cmake --build agent_space/heongpu-gfx90a-r22/build -j64"}
+{"kind":"phase","ts":"2026-08-18T16:02:57Z","phase":"compile","seconds":6.203,"exit":2,"cmd":"cmake --build agent_space/heongpu-gfx90a-r22/build -j64"}
+{"kind":"phase","ts":"2026-08-18T16:04:13Z","phase":"compile","seconds":53.542,"exit":0,"cmd":"cmake --build agent_space/heongpu-gfx90a-r22/build -j64"}
+{"kind":"phase","ts":"2026-08-18T16:05:15Z","phase":"test","seconds":50.006,"exit":0,"cmd":"ctest --test-dir agent_space/heongpu-gfx90a-r22/build"}
+{"kind":"phase","ts":"2026-08-18T16:08:34Z","phase":"cuda-compile","seconds":162.450,"exit":0,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B agent_space/heongpu-cuda-gate/build \\\n  -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release \\\n  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \\\n  -DCMAKE_C_COMPILER=gcc-13 -DCMAKE_CXX_COMPILER=g++-13 \\\n  > agent_space/heongpu-cuda-gate/configure.log 2>&1 \\\n&& cmake --build agent_space/heongpu-cuda-gate/build -j64 \\\n  > agent_space/heongpu-cuda-gate/build.log 2>&1"}
+{"kind":"phase","ts":"2026-08-18T16:12:33Z","phase":"compile","seconds":113.673,"exit":0,"cmd":"bash -c \nHIP_VISIBLE_DEVICES=0 cmake -S projects/HEonGPU/src -B agent_space/heongpu-gfx90a-r23/build -DUSE_HIP=ON \\\n  -DCMAKE_BUILD_TYPE=Release \\\n  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n  -DCMAKE_INSTALL_PREFIX=agent_space/heongpu-gfx90a-r23/prefix \\\n  > agent_space/heongpu-gfx90a-r23/configure.log 2>&1 \\\n&& cmake --build agent_space/heongpu-gfx90a-r23/build -j64 \\\n  > agent_space/heongpu-gfx90a-r23/build.log 2>&1"}
+{"kind":"phase","ts":"2026-08-18T16:13:23Z","phase":"test","seconds":50.038,"exit":0,"cmd":"ctest --test-dir agent_space/heongpu-gfx90a-r23/build"}
+{"kind":"session","ts":"2026-08-18T16:16:14Z","epoch":1787069774.710764684,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-18T15:38:56Z","epoch":1787067536.407808700,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-18T15:40:13Z","phase":"compile","seconds":69.195,"exit":0,"cmd":"bash agent_space/heongpu-win/configure_v2.sh"}
+{"kind":"phase","ts":"2026-08-18T15:41:58Z","phase":"compile","seconds":97.689,"exit":127,"cmd":"cmake --build projects/HEonGPU/src/build -j6"}
+{"kind":"phase","ts":"2026-08-18T15:42:07Z","phase":"compile","seconds":1.187,"exit":127,"cmd":"cmake --build projects/HEonGPU/src/build -j6 -- -k 0"}
+{"kind":"phase","ts":"2026-08-18T15:46:55Z","phase":"test","seconds":272.010,"exit":8,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-18T15:52:19Z","phase":"test","seconds":224.244,"exit":8,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure --timeout 400"}
+{"kind":"session","ts":"2026-08-18T18:45:14Z","epoch":1787078715.042663300,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-18T18:45:24Z","epoch":1787078724.954943400,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-18T18:47:36Z","phase":"compile","seconds":110.933,"exit":0,"cmd":"bash agent_space/heongpu-win-r24/configure.sh"}
+{"kind":"phase","ts":"2026-08-18T18:48:03Z","phase":"compile","seconds":11.133,"exit":1,"cmd":"cmake --build agent_space/heongpu-win-r24/build -j16"}
+{"kind":"phase","ts":"2026-08-18T18:48:24Z","phase":"compile","seconds":9.390,"exit":127,"cmd":"bash -c source agent_space/heongpu-win/env2.sh && cmake --build agent_space/heongpu-win-r24/build -j16"}
+{"kind":"session","ts":"2026-08-18T18:51:51Z","epoch":1787079112.068005700,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-18T19:05:06Z","phase":"compile","seconds":98.596,"exit":0,"cmd":"bash agent_space/heongpu-win/configure_q1.sh"}
+{"kind":"phase","ts":"2026-08-18T19:05:16Z","phase":"compile","seconds":3.826,"exit":0,"cmd":"cmake --build agent_space/heongpu-win/build-q1 --target rapids_logger -j 8"}
+{"kind":"phase","ts":"2026-08-18T19:05:32Z","phase":"compile","seconds":10.685,"exit":1,"cmd":"cmake --build agent_space/heongpu-win/build-q1 -j 8"}
+{"kind":"phase","ts":"2026-08-18T19:07:23Z","phase":"compile","seconds":82.923,"exit":127,"cmd":"cmake --build agent_space/heongpu-win/build-q1 -j 8"}
+{"kind":"phase","ts":"2026-08-18T19:14:07Z","phase":"test","seconds":0.931,"exit":0,"cmd":"bash -c cd agent_space/heongpu-win/build-q1 && ctest --output-on-failure -E 'TFHE_Gate_Boots' 2>&1 | tail -150"}
+{"kind":"phase","ts":"2026-08-18T19:23:39Z","phase":"test","seconds":525.452,"exit":0,"cmd":"bash -c cd agent_space/heongpu-win/build-q1 && ctest --output-on-failure -E 'TFHE_Gate_Boots' 2>&1 | tail -200"}
+{"kind":"phase","ts":"2026-08-18T19:31:30Z","phase":"compile","seconds":136.318,"exit":0,"cmd":"bash agent_space/heongpu-win/configure_q3.sh"}
+{"kind":"phase","ts":"2026-08-18T20:05:30Z","phase":"compile","seconds":64.822,"exit":1,"cmd":"bash agent_space/heongpu-win-r25/build.sh"}
+{"kind":"phase","ts":"2026-08-18T20:12:53Z","phase":"compile","seconds":148.458,"exit":0,"cmd":"bash agent_space/heongpu-win-r26/configure.sh"}
+{"kind":"phase","ts":"2026-08-18T20:14:11Z","phase":"compile","seconds":70.348,"exit":127,"cmd":"bash agent_space/heongpu-win-r26/build.sh"}
+{"kind":"phase","ts":"2026-08-18T20:15:10Z","phase":"test","seconds":0.143,"exit":127,"cmd":"./bfv_addition_testcases.exe"}
+{"kind":"phase","ts":"2026-08-18T20:15:39Z","phase":"test","seconds":19.129,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/heongpu-win-r26/build/bin/test && ./bfv_addition_testcases.exe"}
+{"kind":"phase","ts":"2026-08-18T20:24:44Z","phase":"test","seconds":531.122,"exit":8,"cmd":"bash -c ctest --test-dir /d/Develop/moat/agent_space/heongpu-win-r26/build --output-on-failure -E TFHE_Gate_Boots"}
+{"kind":"phase","ts":"2026-08-18T20:27:06Z","phase":"test","seconds":107.838,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/heongpu-win-r26/build/bin/test && ./bfv_relinearization_testcases.exe"}
+{"kind":"session","ts":"2026-08-18T20:33:25Z","epoch":1787085205.984015200,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-18T20:42:54Z","epoch":1787085774.592600800,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-18T20:47:52Z","phase":"compile","seconds":33.682,"exit":0,"cmd":"bash agent_space/heongpu-win-r26/configure.sh"}
+{"kind":"session","ts":"2026-08-18T20:54:39Z","epoch":1787086479.269580700,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-18T20:59:39Z","epoch":1787086779.260866200,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-18T21:05:41Z","phase":"compile","seconds":32.796,"exit":0,"cmd":"bash agent_space/heongpu-win-r26/configure.sh"}
+{"kind":"session","ts":"2026-08-18T22:53:44Z","epoch":1787093624.651120800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-18T22:56:48Z","epoch":1787093808.783493700,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-18T22:59:19Z","epoch":1787093959.580886900,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-18T23:01:51Z","phase":"compile","seconds":136.063,"exit":0,"cmd":"bash agent_space/heongpu-win-validate/configure.sh"}
+{"kind":"phase","ts":"2026-08-18T23:03:04Z","phase":"compile","seconds":67.053,"exit":127,"cmd":"bash agent_space/heongpu-win-validate/build.sh"}
+{"kind":"phase","ts":"2026-08-18T23:03:15Z","phase":"compile","seconds":3.043,"exit":127,"cmd":"bash agent_space/heongpu-win-validate/build.sh"}
+{"kind":"phase","ts":"2026-08-18T23:05:28Z","phase":"compile","seconds":97.791,"exit":127,"cmd":"bash agent_space/heongpu-win-validate/build.sh"}
+{"kind":"phase","ts":"2026-08-18T23:05:42Z","phase":"test","seconds":0.787,"exit":0,"cmd":"ctest --output-on-failure --timeout 400"}
+{"kind":"phase","ts":"2026-08-18T23:08:37Z","phase":"test","seconds":162.844,"exit":8,"cmd":"ctest --test-dir /d/Develop/moat/agent_space/heongpu-win-validate/build --output-on-failure --timeout 400"}
+{"kind":"phase","ts":"2026-08-18T23:23:04Z","phase":"test","seconds":833.089,"exit":0,"cmd":"ctest --test-dir /d/Develop/moat/agent_space/heongpu-win-validate/build --output-on-failure --timeout 400"}
+{"kind":"phase","ts":"2026-08-18T23:37:12Z","phase":"test","seconds":838.083,"exit":0,"cmd":"ctest --test-dir /d/Develop/moat/agent_space/heongpu-win-validate/build --output-on-failure --timeout 400"}
+{"kind":"session","ts":"2026-08-18T23:39:24Z","epoch":1787096364.321901800,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-19T04:19:28Z","phase":"compile","seconds":1.629,"exit":2,"cmd":"python3 -m sphinx -b html projects/HEonGPU/src/docs C:\\Users/<user>\\AppData\\Local\\Temp/heongpu_docs"}
+{"kind":"session","ts":"2026-08-19T04:54:07Z","epoch":1787115247.941241315,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-19T04:58:56Z","epoch":1787115536.516759245,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-19T04:52:22Z","epoch":1787115143.024627800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-19T05:03:26Z","epoch":1787115806.963721900,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-19T22:57:22Z","epoch":1787180242.922328696,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-19T22:59:50Z","phase":"compile","seconds":0.641,"exit":1,"cmd":"bash -c ls /opt/rocm/bin/hipcc >/dev/null 2>&1 && HIPCC=/opt/rocm/bin/hipcc || HIPCC=$(command -v hipcc); echo using $HIPCC; $HIPCC -std=c++17 -I projects/HEonGPU/src/src/include -o agent_space/heongpu-r24-check/defines_tu agent_space/heongpu-r24-check/defines_tu.cpp && agent_space/heongpu-r24-check/defines_tu"}
+{"kind":"phase","ts":"2026-08-19T22:59:57Z","phase":"compile","seconds":0.006,"exit":127,"cmd":"bash -c /opt/rocm/bin/hipcc -std=c++17 -I projects/HEonGPU/src/src/include -o agent_space/heongpu-r24-check/defines_tu agent_space/heongpu-r24-check/defines_tu.cpp && agent_space/heongpu-r24-check/defines_tu"}
+{"kind":"phase","ts":"2026-08-19T23:00:04Z","phase":"compile","seconds":1.275,"exit":0,"cmd":"bash -c hipcc -std=c++17 -I projects/HEonGPU/src/src/include -o agent_space/heongpu-r24-check/defines_tu agent_space/heongpu-r24-check/defines_tu.cpp && agent_space/heongpu-r24-check/defines_tu"}
+{"kind":"session","ts":"2026-08-19T23:01:58Z","epoch":1787180518.905261523,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-19T23:18:56Z","epoch":1787181536.134312772,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-19T23:24:55Z","epoch":1787181895.937720495,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-19T23:27:38Z","epoch":1787182058.425829639,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-19T23:32:23Z","phase":"compile","seconds":277.887,"exit":0,"cmd":"bash -c \nset -e\nHIP_VISIBLE_DEVICES=0 cmake -S agent_space/heongpu-gfx90a-old-src -B agent_space/heongpu-gfx90a-r25-old/build \\\n  -DUSE_HIP=ON -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON \\\n  -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON\ncmake --build agent_space/heongpu-gfx90a-r25-old/build -j64\n"}
+{"kind":"phase","ts":"2026-08-19T23:36:36Z","phase":"compile","seconds":129.919,"exit":0,"cmd":"bash -c \nset -e\nHIP_VISIBLE_DEVICES=0 cmake -S agent_space/heongpu-gfx90a-new-src -B agent_space/heongpu-gfx90a-r25-new/build \\\n  -DUSE_HIP=ON -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON \\\n  -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON\ncmake --build agent_space/heongpu-gfx90a-r25-new/build -j64\n"}
+{"kind":"phase","ts":"2026-08-19T23:39:19Z","phase":"misc","seconds":0.313,"exit":1,"cmd":"python3 utils/codeobj_diff.py agent_space/heongpu-gfx90a-r25-old/build agent_space/heongpu-gfx90a-r25-new/build"}
+{"kind":"phase","ts":"2026-08-19T23:41:25Z","phase":"test","seconds":50.019,"exit":0,"cmd":"bash -c \ncd agent_space/heongpu-gfx90a-r25-new/build\nHIP_VISIBLE_DEVICES=0 ctest --output-on-failure\n"}
+{"kind":"phase","ts":"2026-08-19T23:43:24Z","phase":"cuda-compile","seconds":98.631,"exit":0,"cmd":"bash -c \nset -x\ncmake -S agent_space/heongpu-gfx90a-new-src -B agent_space/heongpu-cuda-gate-542ea1a/build   -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release   -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON   -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc   -DCMAKE_C_COMPILER=gcc-13 -DCMAKE_CXX_COMPILER=g++-13\ncmake --build agent_space/heongpu-cuda-gate-542ea1a/build -j$(nproc)\n"}
+{"kind":"session","ts":"2026-08-19T23:45:05Z","epoch":1787183105.489296880,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-20T04:47:14Z","epoch":1787201234.614872172,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-20T04:47:41Z","phase":"compile","seconds":5.555,"exit":1,"cmd":"cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-08-20T04:48:43Z","phase":"compile","seconds":16.320,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DGPU_TARGETS=gfx1100 -DAMDGPU_TARGETS=gfx1100 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-08-20T04:49:40Z","phase":"compile","seconds":51.496,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j64"}
+{"kind":"phase","ts":"2026-08-20T04:50:06Z","phase":"test","seconds":16.582,"exit":0,"cmd":"bash -c cd projects/HEonGPU/src/build && ctest --output-on-failure"}
+{"kind":"phase","ts":"2026-08-20T04:50:27Z","phase":"test","seconds":16.467,"exit":0,"cmd":"bash -c cd projects/HEonGPU/src/build && ctest --output-on-failure"}
+{"kind":"session","ts":"2026-08-20T04:52:27Z","epoch":1787201547.218836576,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-04T00:22:54Z","epoch":1793751774.046183681,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T00:32:15Z","phase":"compile","seconds":3.028,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161941-heongpu-sync/venv/bin/cmake -S projects/HEonGPU/src -B agent_space/heongpu-sync/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DGPU_TARGETS=gfx90a -DAMDGPU_TARGETS=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-04T00:32:35Z","phase":"compile","seconds":11.997,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161941-heongpu-sync/venv/bin/cmake -S projects/HEonGPU/src -B agent_space/heongpu-sync/build -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DGPU_TARGETS=gfx90a -DAMDGPU_TARGETS=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-04T00:32:39Z","phase":"compile","seconds":0.080,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161941-heongpu-sync/venv/bin/cmake --build agent_space/heongpu-sync/build -j42 -k 0"}
+{"kind":"phase","ts":"2026-11-04T00:32:48Z","phase":"compile","seconds":0.086,"exit":2,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161941-heongpu-sync/venv/bin/cmake --build agent_space/heongpu-sync/build -j42 -- -k 0"}
+{"kind":"phase","ts":"2026-11-04T00:33:11Z","phase":"compile","seconds":15.168,"exit":2,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161941-heongpu-sync/venv/bin/cmake --build agent_space/heongpu-sync/build -j42 -- -k"}
+{"kind":"phase","ts":"2026-11-04T00:33:53Z","phase":"compile","seconds":19.257,"exit":2,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161941-heongpu-sync/venv/bin/cmake --build agent_space/heongpu-sync/build -j42 -- -k"}
+{"kind":"phase","ts":"2026-11-04T00:36:36Z","phase":"compile","seconds":74.578,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-161941-heongpu-sync/venv/bin/cmake --build agent_space/heongpu-sync/build -j42 -- -k"}
+{"kind":"phase","ts":"2026-11-04T00:39:06Z","phase":"test","seconds":143.936,"exit":8,"cmd":"ctest --test-dir agent_space/heongpu-sync/build -j4 --timeout 600"}
+{"kind":"phase","ts":"2026-11-04T00:45:21Z","phase":"test","seconds":342.176,"exit":0,"cmd":"ctest --test-dir agent_space/heongpu-sync/build --output-on-failure"}
+{"kind":"phase","ts":"2026-11-04T00:56:36Z","phase":"test","seconds":342.533,"exit":0,"cmd":"ctest --test-dir agent_space/heongpu-sync/build --output-on-failure"}
+{"kind":"session","ts":"2026-11-04T00:57:46Z","epoch":1793753866.044932918,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-04T07:17:59Z","epoch":1793776679.564444362,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-04T07:26:11Z","epoch":1793777171.461878398,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-04T07:38:23Z","epoch":1793777903.629904370,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T07:41:31Z","phase":"compile","seconds":137.510,"exit":0,"cmd":"agent_space/fix2/build.sh /var/lib/jenkins/fleet/jobs/mi200-20261103-232754-heongpu-fix2/moat/agent_space/fix2/static -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-04T07:43:45Z","phase":"compile","seconds":120.021,"exit":0,"cmd":"agent_space/fix2/build.sh /var/lib/jenkins/fleet/jobs/mi200-20261103-232754-heongpu-fix2/moat/agent_space/fix2/shared -DHEonGPU_BUILD_SHARED=ON"}
+{"kind":"phase","ts":"2026-11-04T07:48:09Z","phase":"test","seconds":341.930,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-232754-heongpu-fix2/venv/bin/ctest --test-dir agent_space/fix2/static --output-on-failure"}
+{"kind":"phase","ts":"2026-11-04T07:53:59Z","phase":"test","seconds":340.520,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-232754-heongpu-fix2/venv/bin/ctest --test-dir agent_space/fix2/shared --output-on-failure"}
+{"kind":"phase","ts":"2026-11-04T07:59:57Z","phase":"test","seconds":341.803,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-232754-heongpu-fix2/venv/bin/ctest --test-dir agent_space/fix2/static --output-on-failure"}
+{"kind":"phase","ts":"2026-11-04T08:05:38Z","phase":"test","seconds":340.819,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-232754-heongpu-fix2/venv/bin/ctest --test-dir agent_space/fix2/shared --output-on-failure"}
+{"kind":"session","ts":"2026-11-04T08:08:02Z","epoch":1793779682.167442825,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-04T08:12:15Z","epoch":1793779935.479545518,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-04T08:16:23Z","epoch":1793780183.878118893,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-04T08:21:55Z","epoch":1793780515.631064605,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-04T08:23:35Z","epoch":1793780615.529654270,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-04T08:34:01Z","epoch":1793781241.250796388,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-04T08:34:37Z","phase":"compile","seconds":9.911,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-003135-v-heon/venv/bin/cmake -S projects/HEonGPU/src -B agent_space/heon/static -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DGPU_TARGETS=gfx1100 -DAMDGPU_TARGETS=gfx1100 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-04T08:36:26Z","phase":"compile","seconds":108.839,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-003135-v-heon/venv/bin/cmake --build agent_space/heon/static -j16"}
+{"kind":"phase","ts":"2026-11-04T08:36:35Z","phase":"compile","seconds":8.910,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-003135-v-heon/venv/bin/cmake -S projects/HEonGPU/src -B agent_space/heon/shared -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DGPU_TARGETS=gfx1100 -DAMDGPU_TARGETS=gfx1100 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_SHARED=ON"}
+{"kind":"phase","ts":"2026-11-04T08:38:16Z","phase":"compile","seconds":101.543,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-003135-v-heon/venv/bin/cmake --build agent_space/heon/shared -j16"}
+{"kind":"phase","ts":"2026-11-04T08:40:30Z","phase":"test","seconds":123.111,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-003135-v-heon/venv/bin/ctest --test-dir agent_space/heon/static --output-on-failure"}
+{"kind":"phase","ts":"2026-11-04T08:42:33Z","phase":"test","seconds":122.513,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-003135-v-heon/venv/bin/ctest --test-dir agent_space/heon/static --output-on-failure"}
+{"kind":"phase","ts":"2026-11-04T08:44:35Z","phase":"test","seconds":122.248,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-003135-v-heon/venv/bin/ctest --test-dir agent_space/heon/shared --output-on-failure"}
+{"kind":"session","ts":"2026-11-04T08:45:38Z","epoch":1793781938.468940231,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-04T08:27:31Z","epoch":1793780851.020728505,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T08:30:18Z","phase":"compile","seconds":140.411,"exit":0,"cmd":"bash -c cmake -S projects/HEonGPU/src -B agent_space/val-640a8b5/shared -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DGPU_TARGETS=gfx90a -DAMDGPU_TARGETS=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_SHARED=ON && cmake --build agent_space/val-640a8b5/shared -j21"}
+{"kind":"phase","ts":"2026-11-04T08:33:28Z","phase":"compile","seconds":178.399,"exit":0,"cmd":"bash -c cmake -S projects/HEonGPU/src -B agent_space/val-640a8b5/static -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DGPU_TARGETS=gfx90a -DAMDGPU_TARGETS=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON && cmake --build agent_space/val-640a8b5/static -j42"}
+{"kind":"phase","ts":"2026-11-04T08:39:28Z","phase":"test","seconds":341.333,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi200-20261104-002549-v-heon/moat/agent_space/val-640a8b5/static --output-on-failure"}
+{"kind":"phase","ts":"2026-11-04T08:45:11Z","phase":"test","seconds":343.862,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi200-20261104-002549-v-heon/moat/agent_space/val-640a8b5/static --output-on-failure"}
+{"kind":"phase","ts":"2026-11-04T08:50:51Z","phase":"test","seconds":339.961,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi200-20261104-002549-v-heon/moat/agent_space/val-640a8b5/shared --output-on-failure"}
+{"kind":"phase","ts":"2026-11-04T08:51:17Z","phase":"test","seconds":20.205,"exit":0,"cmd":"bash agent_space/run_examples.sh /var/lib/jenkins/fleet/jobs/mi200-20261104-002549-v-heon/moat/agent_space/val-640a8b5"}
+{"kind":"session","ts":"2026-11-04T08:52:00Z","epoch":1793782320.637467269,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-04T18:06:10Z","epoch":1793815570.163693200,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-04T18:06:24Z","phase":"compile","seconds":13.717,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:08:20Z","phase":"compile","seconds":78.726,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:08:33Z","phase":"compile","seconds":7.321,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:09:20Z","phase":"compile","seconds":16.334,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:09:32Z","phase":"compile","seconds":7.672,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:10:29Z","phase":"compile","seconds":22.301,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:10:51Z","phase":"compile","seconds":11.655,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:10:57Z","phase":"compile","seconds":5.240,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:11:46Z","phase":"compile","seconds":14.533,"exit":127,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:11:56Z","phase":"compile","seconds":8.133,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:11:59Z","phase":"compile","seconds":16.391,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:12:23Z","phase":"compile","seconds":23.815,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:12:52Z","phase":"compile","seconds":13.991,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure_v640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:16:31Z","phase":"compile","seconds":218.220,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:17:32Z","phase":"compile","seconds":9.210,"exit":127,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:18:47Z","phase":"compile","seconds":6.431,"exit":127,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-04T18:37:57Z","phase":"test","seconds":1136.530,"exit":8,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/runtests.sh"}
+{"kind":"session","ts":"2026-11-04T18:38:51Z","epoch":1793817531.718452400,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-17T05:19:27Z","phase":"compile","seconds":207.219,"exit":127,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build640.sh"}
+{"kind":"phase","ts":"2026-11-17T05:44:30Z","phase":"test","seconds":1224.998,"exit":8,"cmd":"ctest --test-dir /d/Develop/moat/agent_space/heongpu-win/build640 --output-on-failure -j1 -E MemoryPool_Context_Generation_With_Little_Free_Device_Memory|MemoryPool_Shrinks_Initial_Size_That_Does_Not_Fit"}
+{"kind":"session","ts":"2026-11-17T06:03:28Z","epoch":1794895408.655269172,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-17T06:04:52Z","phase":"compile","seconds":11.170,"exit":1,"cmd":"cmake -S projects/HEonGPU/src -B agent_space/cfg-25b45ba -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DGPU_TARGETS=gfx942 -DAMDGPU_TARGETS=gfx942 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-17T06:05:21Z","phase":"compile","seconds":5.022,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B agent_space/cfg-25b45ba -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DGPU_TARGETS=gfx942 -DAMDGPU_TARGETS=gfx942 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON -DGMP_ROOT=/var/lib/jenkins/fleet/jobs/mi300-20261116-220238-heongpu-ehsc-review/depsroot/usr -DNTL_ROOT=/var/lib/jenkins/fleet/jobs/mi300-20261116-220238-heongpu-ehsc-review/depsroot/usr -DCMAKE_INCLUDE_PATH=/var/lib/jenkins/fleet/jobs/mi300-20261116-220238-heongpu-ehsc-review/depsroot/usr/include/x86_64-linux-gnu;/var/lib/jenkins/fleet/jobs/mi300-20261116-220238-heongpu-ehsc-review/depsroot/usr/include -DCMAKE_LIBRARY_PATH=/var/lib/jenkins/fleet/jobs/mi300-20261116-220238-heongpu-ehsc-review/depsroot/usr/lib/x86_64-linux-gnu"}
+{"kind":"phase","ts":"2026-11-17T06:06:18Z","phase":"compile","seconds":0.004,"exit":0,"cmd":"bash -c true"}
+{"kind":"session","ts":"2026-11-17T06:11:42Z","epoch":1794895902.094301134,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T06:15:52Z","epoch":1794896152.178430869,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-17T06:17:54Z","phase":"compile","seconds":26.385,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/scratch/conf.sh /var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/build/ehsc-before -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-17T06:18:17Z","phase":"compile","seconds":13.712,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/scratch/conf.sh /var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/build/ehsc-after -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-17T06:20:24Z","phase":"compile","seconds":29.277,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/scratch/conf.sh /var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/build/static -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-17T06:22:52Z","phase":"compile","seconds":60.011,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/scratch/conf.sh /var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/build/static -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-17T06:24:08Z","phase":"compile","seconds":27.692,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/tools/cmake/bin/cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/build/static -j64"}
+{"kind":"phase","ts":"2026-11-17T06:26:20Z","phase":"compile","seconds":17.076,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/scratch/conf.sh /var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/build/shared -DHEonGPU_BUILD_SHARED=ON"}
+{"kind":"phase","ts":"2026-11-17T06:26:47Z","phase":"compile","seconds":26.672,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/tools/cmake/bin/cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/build/shared -j64"}
+{"kind":"phase","ts":"2026-11-17T06:39:54Z","phase":"test","seconds":781.949,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/build/static --output-on-failure"}
+{"kind":"phase","ts":"2026-11-17T06:53:03Z","phase":"test","seconds":780.225,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/build/shared --output-on-failure"}
+{"kind":"phase","ts":"2026-11-17T07:07:19Z","phase":"test","seconds":780.688,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261116-221442-heongpu-hipmm5-porter-r2/build/static --output-on-failure"}
+{"kind":"session","ts":"2026-11-17T07:08:54Z","epoch":1794899334.374465800,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T07:17:49Z","epoch":1794899869.938955882,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T07:25:50Z","epoch":1794900350.225265445,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-17T07:33:15Z","phase":"compile","seconds":13.627,"exit":0,"cmd":"cmake -S /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/wt-c1 -B /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/c1 -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DGPU_TARGETS=gfx942 -DAMDGPU_TARGETS=gfx942 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=OFF"}
+{"kind":"phase","ts":"2026-11-17T07:33:31Z","phase":"compile","seconds":15.949,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/c1 -j64"}
+{"kind":"phase","ts":"2026-11-17T07:39:31Z","phase":"compile","seconds":32.998,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/static -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DGPU_TARGETS=gfx942 -DAMDGPU_TARGETS=gfx942 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-17T07:39:31Z","phase":"compile","seconds":0.006,"exit":1,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/static -j96 -k 0"}
+{"kind":"phase","ts":"2026-11-17T07:40:20Z","phase":"compile","seconds":23.115,"exit":1,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/static -j96 -- -k 0"}
+{"kind":"phase","ts":"2026-11-17T07:41:11Z","phase":"compile","seconds":6.868,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/static -j96 -- -k 0"}
+{"kind":"phase","ts":"2026-11-17T07:42:11Z","phase":"compile","seconds":50.412,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/shared -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DGPU_TARGETS=gfx942 -DAMDGPU_TARGETS=gfx942 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_SHARED=ON"}
+{"kind":"phase","ts":"2026-11-17T07:42:34Z","phase":"compile","seconds":22.508,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/shared -j96 -- -k 0"}
+{"kind":"phase","ts":"2026-11-17T07:54:45Z","phase":"test","seconds":804.407,"exit":8,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/static --output-on-failure -j1"}
+{"kind":"phase","ts":"2026-11-17T08:08:18Z","phase":"compile","seconds":189.204,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/final-static -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DGPU_TARGETS=gfx942 -DAMDGPU_TARGETS=gfx942 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-17T08:08:42Z","phase":"compile","seconds":23.173,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/final-static -j96 -- -k 0"}
+{"kind":"phase","ts":"2026-11-17T08:09:30Z","phase":"compile","seconds":48.428,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/final-shared -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DGPU_TARGETS=gfx942 -DAMDGPU_TARGETS=gfx942 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_SHARED=ON"}
+{"kind":"phase","ts":"2026-11-17T08:09:52Z","phase":"compile","seconds":22.103,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/final-shared -j96 -- -k 0"}
+{"kind":"phase","ts":"2026-11-17T08:12:45Z","phase":"test","seconds":1071.347,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/scratch/gpuntt/build --output-on-failure -j1"}
+{"kind":"phase","ts":"2026-11-17T08:26:07Z","phase":"test","seconds":795.292,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/final-static --output-on-failure -j1"}
+{"kind":"phase","ts":"2026-11-17T08:39:25Z","phase":"test","seconds":798.447,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/final-static --output-on-failure -j1"}
+{"kind":"phase","ts":"2026-11-17T08:52:41Z","phase":"test","seconds":795.505,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261116-233010-heongpu-sync-porter/build/final-shared --output-on-failure -j1"}
+{"kind":"session","ts":"2026-11-17T09:02:31Z","epoch":1794906151.342032237,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T09:11:59Z","epoch":1794906719.208351220,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T09:19:57Z","epoch":1794907197.594835486,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-17T09:20:27Z","phase":"compile","seconds":0.081,"exit":1,"cmd":"cmake -S projects/HEonGPU/src -B /var/lib/jenkins/fleet/jobs/mi200-20261117-011713-heongpu-validate-537cdca/build/static -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DGPU_TARGETS=gfx90a -DAMDGPU_TARGETS=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"session","ts":"2026-11-17T09:20:57Z","epoch":1794907257.093051007,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-17T09:18:28Z","epoch":1794907108.086561023,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-17T09:19:49Z","phase":"compile","seconds":15.069,"exit":0,"cmd":"cmake -S /var/lib/jenkins/fleet/jobs/rx7900-20261117-011654-heongpu-validate-537cdca/moat/projects/HEonGPU/src -B /var/lib/jenkins/fleet/jobs/rx7900-20261117-011654-heongpu-validate-537cdca/build/static -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DGPU_TARGETS=gfx1100 -DAMDGPU_TARGETS=gfx1100 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-17T09:21:03Z","phase":"compile","seconds":59.687,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/rx7900-20261117-011654-heongpu-validate-537cdca/build/static -j32"}
+{"kind":"phase","ts":"2026-11-17T09:21:28Z","phase":"compile","seconds":15.875,"exit":0,"cmd":"cmake -S /var/lib/jenkins/fleet/jobs/rx7900-20261117-011654-heongpu-validate-537cdca/moat/projects/HEonGPU/src -B /var/lib/jenkins/fleet/jobs/rx7900-20261117-011654-heongpu-validate-537cdca/build/shared -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DGPU_TARGETS=gfx1100 -DAMDGPU_TARGETS=gfx1100 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_SHARED=ON"}
+{"kind":"phase","ts":"2026-11-17T09:22:18Z","phase":"compile","seconds":50.740,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/rx7900-20261117-011654-heongpu-validate-537cdca/build/shared -j32"}
+{"kind":"phase","ts":"2026-11-17T09:24:37Z","phase":"test","seconds":133.135,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/rx7900-20261117-011654-heongpu-validate-537cdca/build/static --output-on-failure -j1"}
+{"kind":"phase","ts":"2026-11-17T09:26:58Z","phase":"test","seconds":133.903,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/rx7900-20261117-011654-heongpu-validate-537cdca/build/static --output-on-failure -j1"}
+{"kind":"phase","ts":"2026-11-17T09:29:11Z","phase":"test","seconds":133.309,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/rx7900-20261117-011654-heongpu-validate-537cdca/build/shared --output-on-failure -j1"}
+{"kind":"session","ts":"2026-11-17T09:31:28Z","epoch":1794907888.984247857,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-17T09:22:01Z","epoch":1794907321.239495307,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-17T09:22:43Z","phase":"compile","seconds":19.924,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B /var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/static -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DGPU_TARGETS=gfx942 -DAMDGPU_TARGETS=gfx942 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-17T09:23:13Z","phase":"compile","seconds":29.123,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/static -j64"}
+{"kind":"phase","ts":"2026-11-17T09:23:48Z","phase":"compile","seconds":16.532,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B /var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/shared -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DGPU_TARGETS=gfx942 -DAMDGPU_TARGETS=gfx942 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_SHARED=ON"}
+{"kind":"phase","ts":"2026-11-17T09:24:15Z","phase":"compile","seconds":26.583,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/shared -j64"}
+{"kind":"phase","ts":"2026-11-17T09:38:28Z","phase":"test","seconds":810.710,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/static --output-on-failure -j1"}
+{"kind":"phase","ts":"2026-11-17T09:52:16Z","phase":"test","seconds":805.207,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/shared --output-on-failure -j1"}
+{"kind":"phase","ts":"2026-11-17T09:52:27Z","phase":"test","seconds":0.418,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/static/bin/test/rmm_default_testcases"}
+{"kind":"phase","ts":"2026-11-17T09:52:31Z","phase":"test","seconds":3.178,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/static/bin/examples/basic/3_basic_memorypool_config"}
+{"kind":"phase","ts":"2026-11-17T09:52:36Z","phase":"test","seconds":5.087,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/static/bin/examples/basic/1_basic_bfv"}
+{"kind":"phase","ts":"2026-11-17T09:52:39Z","phase":"test","seconds":3.313,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/static/bin/examples/basic/2_basic_ckks"}
+{"kind":"phase","ts":"2026-11-17T09:52:43Z","phase":"test","seconds":3.553,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/static/bin/examples/basic/9_multi_stream_usage_way1"}
+{"kind":"phase","ts":"2026-11-17T09:52:46Z","phase":"test","seconds":3.528,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/static/bin/examples/basic/15_basic_tfhe"}
+{"kind":"phase","ts":"2026-11-17T09:52:50Z","phase":"test","seconds":3.354,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/static/bin/examples/basic/17_ckks_session"}
+{"kind":"phase","ts":"2026-11-17T09:52:53Z","phase":"test","seconds":3.683,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/static/bin/examples/bootstrapping/1_ckks_regular_bootstrapping"}
+{"kind":"phase","ts":"2026-11-17T09:52:57Z","phase":"test","seconds":3.760,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/static/bin/examples/bootstrapping/3_ckks_bit_bootstrapping"}
+{"kind":"phase","ts":"2026-11-17T09:53:00Z","phase":"test","seconds":3.189,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/static/bin/examples/mpc/1_multiparty_computation_bfv"}
+{"kind":"phase","ts":"2026-11-17T09:53:08Z","phase":"test","seconds":7.338,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261117-011634-heongpu-validate-537cdca/build/static/bin/benchmark/tfhe_benchmark"}
+{"kind":"session","ts":"2026-11-17T09:54:30Z","epoch":1794909270.649598960,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T10:00:53Z","epoch":1794909653.524630857,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-17T10:01:09Z","phase":"compile","seconds":15.534,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B /var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DGPU_TARGETS=gfx90a -DAMDGPU_TARGETS=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-17T10:01:52Z","phase":"compile","seconds":43.181,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static -j64"}
+{"kind":"phase","ts":"2026-11-17T10:02:26Z","phase":"compile","seconds":15.800,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B /var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/shared -G Ninja -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DGPU_TARGETS=gfx90a -DAMDGPU_TARGETS=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_SHARED=ON"}
+{"kind":"phase","ts":"2026-11-17T10:03:06Z","phase":"compile","seconds":40.319,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/shared -j64"}
+{"kind":"phase","ts":"2026-11-17T10:09:20Z","phase":"test","seconds":367.738,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static --output-on-failure -j1"}
+{"kind":"phase","ts":"2026-11-17T10:15:32Z","phase":"test","seconds":365.060,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/shared --output-on-failure -j1"}
+{"kind":"phase","ts":"2026-11-17T10:15:44Z","phase":"test","seconds":0.247,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static/bin/test/rmm_default_testcases"}
+{"kind":"phase","ts":"2026-11-17T10:15:45Z","phase":"test","seconds":1.233,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static/bin/examples/basic/3_basic_memorypool_config"}
+{"kind":"phase","ts":"2026-11-17T10:15:47Z","phase":"test","seconds":2.007,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static/bin/examples/basic/1_basic_bfv"}
+{"kind":"phase","ts":"2026-11-17T10:15:49Z","phase":"test","seconds":1.407,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static/bin/examples/basic/2_basic_ckks"}
+{"kind":"phase","ts":"2026-11-17T10:15:50Z","phase":"test","seconds":1.533,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static/bin/examples/basic/9_multi_stream_usage_way1"}
+{"kind":"phase","ts":"2026-11-17T10:15:52Z","phase":"test","seconds":1.437,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static/bin/examples/basic/15_basic_tfhe"}
+{"kind":"phase","ts":"2026-11-17T10:15:53Z","phase":"test","seconds":1.430,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static/bin/examples/basic/17_ckks_session"}
+{"kind":"phase","ts":"2026-11-17T10:15:55Z","phase":"test","seconds":1.915,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static/bin/examples/bootstrapping/1_ckks_regular_bootstrapping"}
+{"kind":"phase","ts":"2026-11-17T10:15:57Z","phase":"test","seconds":1.921,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static/bin/examples/bootstrapping/3_ckks_bit_bootstrapping"}
+{"kind":"phase","ts":"2026-11-17T10:15:58Z","phase":"test","seconds":1.275,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static/bin/examples/mpc/1_multiparty_computation_bfv"}
+{"kind":"phase","ts":"2026-11-17T10:16:06Z","phase":"test","seconds":7.129,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261117-015758-heongpu-validate-537cdca-r2/build/static/bin/benchmark/tfhe_benchmark"}
+{"kind":"session","ts":"2026-11-17T10:17:03Z","epoch":1794910623.643409397,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-17T10:03:34Z","epoch":1794909814.777699600,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-17T10:05:01Z","phase":"compile","seconds":82.141,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure537.sh"}
+{"kind":"phase","ts":"2026-11-17T10:07:49Z","phase":"compile","seconds":116.142,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build537.sh"}
+{"kind":"phase","ts":"2026-11-17T10:12:17Z","phase":"compile","seconds":59.509,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/configure537w.sh"}
+{"kind":"phase","ts":"2026-11-17T10:14:56Z","phase":"compile","seconds":152.316,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build537w.sh"}
+{"kind":"phase","ts":"2026-11-17T10:21:03Z","phase":"compile","seconds":219.686,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build537w.sh"}
+{"kind":"phase","ts":"2026-11-17T10:22:45Z","phase":"compile","seconds":21.245,"exit":127,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build537w.sh"}
+{"kind":"phase","ts":"2026-11-17T10:24:00Z","phase":"compile","seconds":11.253,"exit":127,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/build537w.sh"}
+{"kind":"phase","ts":"2026-11-17T10:27:15Z","phase":"test","seconds":16.743,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/ctest_w.sh -R CKKSContextIdentity|CKKSErrors|MemoryPool_Shrinks_Initial_Size_That_Does_Not_Fit|MemoryPool_Reads_The_Available_Host_Memory|MemoryPool_Classifies|MemoryPool_Reports"}
+{"kind":"phase","ts":"2026-11-17T10:30:57Z","phase":"test","seconds":186.150,"exit":8,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/ctest_w.sh -E MemoryPool_Context_Generation_With_Little_Free_Device_Memory"}
+{"kind":"phase","ts":"2026-11-17T10:50:12Z","phase":"test","seconds":178.690,"exit":8,"cmd":"bash /d/Develop/moat/agent_space/heongpu-win/ctest_w.sh -E MemoryPool_Context_Generation_With_Little_Free_Device_Memory"}
+{"kind":"session","ts":"2026-11-17T10:56:31Z","epoch":1794912992.316050800,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-17T16:45:11Z","epoch":1794933911.417938546,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T16:46:03Z","epoch":1794933963.943026044,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T16:52:18Z","epoch":1794934338.734711010,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T16:55:35Z","epoch":1794934535.206394551,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T20:45:46Z","epoch":1794948346.496806271,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-17T20:47:36Z","epoch":1794948456.770132370,"event":"end","platform":"linux-gfx942"}

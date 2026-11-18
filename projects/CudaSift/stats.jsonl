@@ -30,3 +30,82 @@
 {"kind": "tokens", "ts": "2026-06-11T22:43:36Z", "tokens": 70654, "source": "porter PR-prep"}
 {"kind": "tokens", "ts": "2026-06-07T03:41:10Z", "tokens": 62451, "source": "validator"}
 {"kind": "tokens", "ts": "2026-06-23T22:24:32Z", "tokens": 24752, "source": "gfx90a dead-code cleanup (batch B subagent, shared)"}
+{"kind":"phase","ts":"2026-10-16T17:35:10Z","phase":"compile","seconds":6.164,"exit":0,"cmd":"cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_CXX_COMPILER=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel -DOpenCV_DIR=/d/Develop/moat/agent_space/opencv_install/lib -DCMAKE_BUILD_TYPE=Release"}
+{"kind":"phase","ts":"2026-10-16T17:35:16Z","phase":"compile","seconds":3.768,"exit":1,"cmd":"cmake --build projects/CudaSift/src/build-hip -j16"}
+{"kind":"phase","ts":"2026-10-16T17:35:25Z","phase":"compile","seconds":1.122,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j16 --target cudasift_lib cudasift test_extract test_match test_homography"}
+{"kind":"phase","ts":"2026-10-16T17:35:37Z","phase":"test","seconds":0.550,"exit":127,"cmd":"./build-hip/test_extract.exe"}
+{"kind":"phase","ts":"2026-10-16T17:35:40Z","phase":"test","seconds":0.387,"exit":127,"cmd":"./build-hip/test_match.exe"}
+{"kind":"phase","ts":"2026-10-16T17:35:43Z","phase":"test","seconds":0.375,"exit":127,"cmd":"./build-hip/test_homography.exe"}
+{"kind":"phase","ts":"2026-10-16T17:36:22Z","phase":"test","seconds":0.547,"exit":1,"cmd":"D:/Develop/moat/projects/CudaSift/src/build-hip/test_extract.exe"}
+{"kind":"phase","ts":"2026-10-16T17:36:26Z","phase":"test","seconds":0.699,"exit":0,"cmd":"D:/Develop/moat/projects/CudaSift/src/build-hip/test_match.exe"}
+{"kind":"phase","ts":"2026-10-16T17:36:29Z","phase":"test","seconds":0.654,"exit":0,"cmd":"D:/Develop/moat/projects/CudaSift/src/build-hip/test_homography.exe"}
+{"kind":"phase","ts":"2026-10-16T17:36:39Z","phase":"test","seconds":1.200,"exit":0,"cmd":"bash -c cd /d/Develop/moat/projects/CudaSift/src && ./build-hip/test_extract.exe"}
+{"kind":"phase","ts":"2026-10-16T17:36:43Z","phase":"test","seconds":1.277,"exit":0,"cmd":"bash -c cd /d/Develop/moat/projects/CudaSift/src && ./build-hip/test_match.exe"}
+{"kind":"phase","ts":"2026-10-16T17:36:47Z","phase":"test","seconds":1.061,"exit":0,"cmd":"bash -c cd /d/Develop/moat/projects/CudaSift/src && ./build-hip/test_homography.exe"}
+{"kind":"session","ts":"2026-10-16T17:40:56Z","epoch":1792172457.098258500,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-16T17:43:00Z","epoch":1792172580.683601100,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-16T17:49:22Z","epoch":1792172962.100547432,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-16T17:50:38Z","phase":"compile","seconds":2.617,"exit":0,"cmd":"cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DCMAKE_BUILD_TYPE=Release"}
+{"kind":"phase","ts":"2026-10-16T17:50:41Z","phase":"compile","seconds":3.658,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j32"}
+{"kind":"phase","ts":"2026-10-16T17:51:01Z","phase":"test","seconds":0.566,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_extract"}
+{"kind":"phase","ts":"2026-10-16T17:51:01Z","phase":"test","seconds":0.661,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match"}
+{"kind":"phase","ts":"2026-10-16T17:51:02Z","phase":"test","seconds":0.570,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography"}
+{"kind":"phase","ts":"2026-10-16T17:54:23Z","phase":"cuda-compile","seconds":2.716,"exit":0,"cmd":"cmake -S projects/CudaSift/src -B /tmp/cudasift-build-cuda -GNinja -DUSE_HIP=OFF -DCMAKE_CUDA_COMPILER=/tmp/cuda-12.8/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release"}
+{"kind":"phase","ts":"2026-10-16T17:54:27Z","phase":"cuda-compile","seconds":4.012,"exit":0,"cmd":"cmake --build /tmp/cudasift-build-cuda -j32"}
+{"kind":"session","ts":"2026-10-16T17:55:44Z","epoch":1792173344.769118488,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T16:37:34Z","phase":"compile","seconds":1.726,"exit":0,"cmd":"cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DCMAKE_BUILD_TYPE=Release"}
+{"kind":"phase","ts":"2026-11-04T16:37:36Z","phase":"compile","seconds":2.736,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j32"}
+{"kind":"phase","ts":"2026-11-04T16:37:40Z","phase":"test","seconds":0.582,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_extract"}
+{"kind":"phase","ts":"2026-11-04T16:37:41Z","phase":"test","seconds":0.567,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match"}
+{"kind":"phase","ts":"2026-11-04T16:37:41Z","phase":"test","seconds":0.490,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography"}
+{"kind":"session","ts":"2026-11-04T16:44:12Z","epoch":1793810652.844350512,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-04T16:46:29Z","epoch":1793810789.988977893,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-04T16:50:26Z","epoch":1793811026.982122989,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-04T16:50:50Z","phase":"compile","seconds":1.724,"exit":0,"cmd":"cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DCMAKE_BUILD_TYPE=Release"}
+{"kind":"phase","ts":"2026-11-04T16:50:53Z","phase":"compile","seconds":2.740,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j32"}
+{"kind":"phase","ts":"2026-11-04T16:51:02Z","phase":"test","seconds":0.495,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_extract"}
+{"kind":"phase","ts":"2026-11-04T16:51:03Z","phase":"test","seconds":0.566,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match"}
+{"kind":"phase","ts":"2026-11-04T16:51:03Z","phase":"test","seconds":0.490,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography"}
+{"kind":"session","ts":"2026-11-04T16:51:37Z","epoch":1793811097.615715366,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-04T16:59:40Z","epoch":1793811580.519574603,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T16:59:59Z","phase":"compile","seconds":2.610,"exit":0,"cmd":"cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DCMAKE_BUILD_TYPE=Release"}
+{"kind":"phase","ts":"2026-11-04T17:00:03Z","phase":"compile","seconds":3.751,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j32"}
+{"kind":"phase","ts":"2026-11-04T17:00:07Z","phase":"test","seconds":0.640,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_extract"}
+{"kind":"phase","ts":"2026-11-04T17:00:08Z","phase":"test","seconds":0.745,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match"}
+{"kind":"phase","ts":"2026-11-04T17:00:08Z","phase":"test","seconds":0.631,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography"}
+{"kind":"session","ts":"2026-11-04T17:00:39Z","epoch":1793811639.511399526,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T17:02:18Z","phase":"test","seconds":0.211,"exit":127,"cmd":"./build-hip/test_extract.exe"}
+{"kind":"phase","ts":"2026-11-04T17:02:20Z","phase":"test","seconds":0.207,"exit":127,"cmd":"./build-hip/test_match.exe"}
+{"kind":"phase","ts":"2026-11-04T17:02:21Z","phase":"test","seconds":0.175,"exit":127,"cmd":"./build-hip/test_homography.exe"}
+{"kind":"phase","ts":"2026-11-04T17:02:31Z","phase":"test","seconds":0.770,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_extract.exe"}
+{"kind":"phase","ts":"2026-11-04T17:02:34Z","phase":"test","seconds":1.329,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match.exe"}
+{"kind":"phase","ts":"2026-11-04T17:02:36Z","phase":"test","seconds":0.800,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography.exe"}
+{"kind":"phase","ts":"2026-11-05T04:51:44Z","phase":"compile","seconds":1.763,"exit":0,"cmd":"cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"}
+{"kind":"phase","ts":"2026-11-05T04:51:47Z","phase":"compile","seconds":2.776,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j32"}
+{"kind":"phase","ts":"2026-11-05T04:53:35Z","phase":"compile","seconds":2.441,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j32"}
+{"kind":"phase","ts":"2026-11-05T04:53:59Z","phase":"compile","seconds":2.319,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j32"}
+{"kind":"phase","ts":"2026-11-05T04:54:08Z","phase":"compile","seconds":2.291,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j32"}
+{"kind":"phase","ts":"2026-11-05T04:54:08Z","phase":"test","seconds":0.536,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_extract"}
+{"kind":"phase","ts":"2026-11-05T04:54:09Z","phase":"test","seconds":0.573,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match"}
+{"kind":"phase","ts":"2026-11-05T04:54:09Z","phase":"test","seconds":0.495,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography"}
+{"kind":"session","ts":"2026-11-05T05:28:34Z","epoch":1793856514.209447334,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-05T05:30:01Z","phase":"compile","seconds":2.666,"exit":0,"cmd":"cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"}
+{"kind":"phase","ts":"2026-11-05T05:30:04Z","phase":"compile","seconds":3.729,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j32"}
+{"kind":"session","ts":"2026-11-05T05:36:22Z","epoch":1793856982.069272695,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-05T05:45:28Z","epoch":1793857528.970961966,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-05T05:45:53Z","phase":"compile","seconds":1.770,"exit":0,"cmd":"cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DCMAKE_BUILD_TYPE=Release"}
+{"kind":"phase","ts":"2026-11-05T05:45:57Z","phase":"compile","seconds":3.526,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j10"}
+{"kind":"phase","ts":"2026-11-05T05:46:12Z","phase":"test","seconds":0.533,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_extract"}
+{"kind":"phase","ts":"2026-11-05T05:46:12Z","phase":"test","seconds":0.572,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match"}
+{"kind":"phase","ts":"2026-11-05T05:46:13Z","phase":"test","seconds":0.488,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography"}
+{"kind":"session","ts":"2026-11-05T05:47:25Z","epoch":1793857645.596194515,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-05T05:49:59Z","epoch":1793857799.004466958,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-05T05:50:26Z","phase":"compile","seconds":2.641,"exit":0,"cmd":"cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DCMAKE_BUILD_TYPE=Release"}
+{"kind":"phase","ts":"2026-11-05T05:50:29Z","phase":"compile","seconds":3.746,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j32"}
+{"kind":"phase","ts":"2026-11-05T05:50:34Z","phase":"test","seconds":0.665,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_extract"}
+{"kind":"phase","ts":"2026-11-05T05:50:35Z","phase":"test","seconds":0.711,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_match"}
+{"kind":"phase","ts":"2026-11-05T05:50:36Z","phase":"test","seconds":0.608,"exit":0,"cmd":"bash -c cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/test_homography"}
+{"kind":"session","ts":"2026-11-05T05:51:10Z","epoch":1793857870.878244865,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-05T06:39:55Z","phase":"compile","seconds":10.100,"exit":0,"cmd":"bash agent_space/cs_build_f77.sh"}
+{"kind":"phase","ts":"2026-11-05T06:40:25Z","phase":"test","seconds":8.378,"exit":0,"cmd":"bash agent_space/cs_run_f77.sh"}
+{"kind":"phase","ts":"2026-11-05T06:41:07Z","phase":"test","seconds":5.127,"exit":0,"cmd":"bash agent_space/cs_run_match.sh"}

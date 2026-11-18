@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "marian-topk-cub-segsort",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "topk.cu CUB segmented-sort path not ported; Sort() falls back to an alternative.",
+      "refs": [
+        "projects/marian-dev/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T18:21:59Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff.daily",
+        "at": "2026-08-12T15:23:02Z",
+        "note": "Ship as disclosed: the PR body lists the unported CUB segmented-sort path under known limitations; Sort() uses the rocThrust sort-by-key path on HIP and only tests reach it."
+      }
+    },
+    {
+      "id": "marian-gfx1101-batched-gemm-spirv",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "marian-dev gfx1101 (Windows) e2e decoder fails: rocBLAS grouped-batched GEMM falls back to a generic SPIR-V (ISA000) kernel that Windows kpack_load_code_object can't load (hipErrorInvalidImage). Fix: add a _WIN32 && USE_HIP path in src/tensors/gpu/prod.cpp ProdBatchedTyped using hipblasGemmStridedBatchedEx (marian batched matrices are contiguous) or a sequential hipblasGemmEx loop -- ELF Tensile dispatch present for gfx1101. Optional platform; advancing head revalidates gfx90a/gfx1100/gfx1201.",
+      "refs": [
+        "projects/marian-dev/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-20T03:07:56Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff.daily",
+        "at": "2026-08-12T15:23:25Z",
+        "note": "Ship as disclosed: the PR body lists the gfx1101 Windows batched-GEMM kernel-image gap under known limitations as an external library issue; gfx1201 and gfx1151 are unaffected."
+      }
+    },
+    {
+      "id": "marian-poolingop-cse-alias",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream marian bug (pre-existing, identical on CUDA, not a port defect): PoolingOp::type() returns the literal \"layer_pooling\" for both avg and max mode and overrides neither equal() nor hash() for its mode field, so ExpressionGraph::add()'s short-term CSE aliases an avg_pooling node to a max_pooling node built on the same input in the same graph. Dead in practice -- avg_pooling has zero callers in the tree and max_pooling exactly one (examples/mnist/model_lenet.h) -- so no shipped model path hits it, and the code is CUDNN-gated. Found while writing the gfx90a MIOpen conv/pool correctness check on 2026-08-11; worked around there by giving each pooling mode its own graph. Deferred decision: whether to report it upstream separately from the ROCm port PR.",
+      "refs": [
+        "projects/marian-dev/notes.md"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/marian-nmt/marian-dev/issues/1044",
+      "created_at": "2026-08-11T01:20:38Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeff.daily",
+        "at": "2026-08-12T15:25:24Z",
+        "note": "Report upstream as its own issue (not mentioned in the ROCm PR): no existing marian-nmt/marian-dev issue covers it. Draft at agent_space/marian-dev-issue-pooling-cse.md; awaiting a person to run gh issue create (upstream write)."
+      }
+    }
+  ]
+}

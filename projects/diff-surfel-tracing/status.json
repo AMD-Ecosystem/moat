@@ -1,0 +1,134 @@
+{
+  "schema_version": 3,
+  "name": "diff-surfel-tracing",
+  "upstream_url": "https://github.com/xbillowy/diff-surfel-tracing",
+  "fork_url": "https://github.com/AMD-Ecosystem/diff-surfel-tracing",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-08-06T06:58:03Z",
+  "updated_at": "2026-11-10T05:11:58Z",
+  "head_sha": "e24c44cba2463988f011d582a7d2998f936bd371",
+  "depends_on": [],
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 911002454,
+  "stage": "review-passed",
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "e24c44cba2463988f011d582a7d2998f936bd371",
+      "failed_sha": "173f32a9d0182452a6dcc02433e093b34311f665",
+      "started_at": "2026-11-04T07:41:27Z",
+      "completed_at": "2026-11-04T11:19:13Z",
+      "updated_at": "2026-11-04T11:19:13Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "claude-validator"
+    },
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "e24c44cba2463988f011d582a7d2998f936bd371",
+      "failed_sha": null,
+      "started_at": "2026-08-14T03:52:18Z",
+      "completed_at": "2026-11-04T11:11:26Z",
+      "updated_at": "2026-11-04T11:11:26Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "e24c44cba2463988f011d582a7d2998f936bd371",
+      "failed_sha": "21f62d03da3348eaa146e3a18858c6766ba2020f",
+      "started_at": "2026-08-13T04:05:55Z",
+      "completed_at": "2026-11-04T11:10:01Z",
+      "updated_at": "2026-11-04T11:10:01Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
+    },
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "e24c44cba2463988f011d582a7d2998f936bd371",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-04T11:08:47Z",
+      "updated_at": "2026-11-04T11:08:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
+    }
+  },
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none outside MOAT: no AMD-Ecosystem/ROCm repo, no amd/rocm/hip mention upstream, no AMD forks; the only AMD work is our own EnvGS Stage 2",
+    "viable": true,
+    "summary": "Differentiable 2D-Gaussian OptiX ray tracer (MIT, verified by reading LICENSE; GitHub misreports NOASSERTION). Already rewritten onto HIPRT and GPU-validated under EnvGS Stage 2 -- taking it up buys a separate PR route to xbillowy, not new porting. Decided by two things: 9 NVIDIA-proprietary headers in the upstream OptiX submodule need a ruling, and moat-port vendors HIPRT/Orochi incl. a 1.9MB prebuilt DLL with no HIPRT/Orochi licence files.",
+    "at": "2026-08-13T03:18:42Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-04T10:03:18Z",
+    "at": "2026-11-04T10:07:50Z"
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/diff-surfel-tracing/pull/1",
+  "pr_url": "https://github.com/xbillowy/diff-surfel-tracing/pull/7",
+  "pr_number": 7,
+  "pr_opened_at": "2026-11-10T05:11:58Z",
+  "pr_state": "open",
+  "published_sha": "e24c44cba2463988f011d582a7d2998f936bd371"
+}

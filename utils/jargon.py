@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Scan upstream-visible text for MOAT in-house vocabulary.
 
 Everything MOAT publishes to an upstream project -- commit messages, PR titles and
@@ -25,6 +27,7 @@ round wrote it, so the range is the fork's default branch to `moat-port` -- whic
 Exit 1 if anything is found.
 """
 
+import os
 import argparse
 import re
 import pathlib
@@ -32,8 +35,11 @@ import subprocess
 import sys
 import tomllib
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-CONFIG = REPO_ROOT / "config" / "jargon.toml"
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = pathlib.Path(__file__).resolve().parents[1]
+REPO_ROOT = pathlib.Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
+CONFIG = TOOLS_ROOT / "config" / "jargon.toml"
 
 
 def load():
@@ -89,7 +95,7 @@ def port_range(name):
     Read from the project's own record so nobody types a range: the base is
     `fork_default_branch`, never the previous head. Raises if the project or its fork
     clone is not here, because a check that silently scans nothing passes."""
-    sys.path.insert(0, str(REPO_ROOT / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     obj, _where = moatlib.project_record(name)
     if obj is None:
@@ -98,7 +104,7 @@ def port_range(name):
     if not (repo / ".git").exists():
         raise ValueError(f"{name}: no fork clone at {repo} -- nothing to scan")
     base = obj.get("fork_default_branch") or "main"
-    branch = obj.get("fork_branch") or moatlib.PORT_BRANCH
+    branch = moatlib.upstream_visible_branch(obj)
     rng = f"{base}..{branch}"
     n = subprocess.run(["git", "-C", str(repo), "rev-list", "--count", rng],
                        capture_output=True, text=True, **_GIT_TEXT)
@@ -179,4 +185,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())

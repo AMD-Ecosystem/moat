@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Enumerate what a port has to cover, and check that it all got accounted for.
 
 The recurring failure this exists to stop: a port that claimed success while
@@ -25,6 +27,7 @@ empty CUDA census for a substantial port.
     python3 utils/surface.py check --all
 """
 
+import os
 import argparse
 import json
 import pathlib
@@ -32,7 +35,10 @@ import re
 import subprocess
 import sys
 
-REPO = pathlib.Path(__file__).resolve().parents[1]
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = pathlib.Path(__file__).resolve().parents[1]
+REPO = pathlib.Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
 
 CUDA_MARKERS = {
     "kernel": [r"__global__\b"],
@@ -188,6 +194,7 @@ def generate(name, src=None):
         "components": comps,
         "covered": [],
         "scoped_out": [],
+        "owed": [],
         "removed_from_floor": [],
     }
 
@@ -195,7 +202,7 @@ def generate(name, src=None):
 def claims_success(name):
     """Has this project asserted that its port WORKS? Until it does, an uncovered
     component is work not yet done rather than an omission."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     obj, _where = moatlib.project_record(name)
     if obj is None:
@@ -231,10 +238,15 @@ def check(name):
             scoped[s] = None
         else:
             scoped[s.get("id")] = s.get("reason")
+    owed = _id_reasons(d.get("owed", []))
     problems = []
     for c in d.get("components", []):
         cid = c["id"]
         if cid in covered:
+            continue
+        if cid in owed:
+            if not owed[cid]:
+                problems.append(f"{name}: {cid} owed with no reason")
             continue
         if cid in scoped:
             if not scoped[cid]:
@@ -246,6 +258,30 @@ def check(name):
         if isinstance(r, dict) and not r.get("reason"):
             problems.append(f"{name}: {r.get('id')} removed from the floor with no reason")
     return problems
+
+
+def _id_reasons(entries):
+    out = {}
+    for e in entries:
+        if isinstance(e, str):
+            out[e] = None
+        else:
+            out[e.get("id")] = e.get("reason")
+    return out
+
+
+def owed(name, root=None):
+    """Components still in scope but not yet done (`owed`), as {id: reason}.
+
+    `owed` exists because the only other way to account for in-scope, unfinished
+    work was `scoped_out`, which reads as a cut nobody made (h2o4gpu's Windows
+    platform, kept last by a ruling). The surface gate accepts an owed item with a
+    reason, so a port can claim success on the platforms it has done, and pr_ready
+    refuses while any remain, so owed work cannot reach an upstream PR unnoticed."""
+    p = (root or REPO) / "projects" / name / "surface.json"
+    if not p.is_file():
+        return {}
+    return _id_reasons(json.loads(p.read_text()).get("owed", []))
 
 
 def main():
@@ -283,4 +319,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())

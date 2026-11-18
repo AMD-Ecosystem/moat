@@ -1,0 +1,34 @@
+{
+  "schema_version": 3,
+  "name": "flash-attention",
+  "upstream_url": "https://github.com/Dao-AILab/flash-attention",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T11:11:19Z",
+  "updated_at": "2026-11-06T11:14:52Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "license_spdx": "BSD-3-Clause",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "BSD-3-Clause",
+      "evidence": "https://github.com/Dao-AILab/flash-attention/blob/main/LICENSE",
+      "at": "2026-11-06T11:14:50Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream ROCm backends; https://github.com/ROCm/flash-attention (AMD-owned)",
+    "viable": true,
+    "summary": "FlashAttention; upstream ships ROCm CK (MI200-MI355, RDNA3/4) and Triton/aiter backends, AMD-maintained via ROCm/flash-attention with AMD PRs landing",
+    "at": "2026-11-06T11:14:52Z"
+  }
+}

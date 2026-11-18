@@ -546,3 +546,432 @@ CudaSift 3e4df2b` carried all 5 completed platforms forward. `pr-ready`=True.
 
 PR draft written to projects/CudaSift/pr-draft.md (base=AdaLovelace). NOT
 opened -- awaiting jeff's approval.
+
+## Fix round moat-fix-97 (2026-10-16, windows-gfx1151) -- review 5545563533 on upstream PR #97
+
+Reviewer f-dy (not the maintainer; author of upstream #99/#100) checked #97 against open bug-fix PRs #96, #98, #99, #100:
+1. `CudaImage::CopyToTexture`: our HIP host path copied `pitch`-float rows from `h_data`, whose rows are `width` floats (see `Download`), reading `(pitch-width)*height` floats past the buffer and shearing the texture when `pitch != width`. ADOPTED their suggestion verbatim: `cudaMemcpy2DToArray` on both backends (host `width` rows, device `pitch` rows; the array is `pitch` floats wide so the device copy equals the original linear copy), dropping the `#if USE_HIP` branch. #99 changes the host line with a trailing comment and keeps `cudaMemcpyToArray` for the device line, so the lines are close to #99 but not identical; expect a small conflict whichever lands second.
+2. `cudaSiftH.cu` Laplace kernel upload: #99 resizes to `(MAX_OCTAVES+1)*12*16`, which needs #99's `MAX_OCTAVES`. NOT adopted; whichever PR merges second takes both changes.
+3. `__syncwarp()` added by #99: HIP provides the no-mask `__syncwarp()` by default (`include/hip/amd_detail/amd_warp_sync_functions.h:161`, ROCm 7.14), and #99 uses only that form. No mapping needed. (The masked form static_asserts a 64-bit mask.)
+
+Fork commit 6d1429a on moat-fix-97 (base fa25871).
+
+Build (windows-gfx1151, TheRock 7.14, OpenCV 4.9.0 from agent_space/opencv_install which lacks videoio, so demo_video is not built -- environment only):
+    cmake -S projects/CudaSift/src -B build-hip -GNinja -DUSE_HIP=ON -DCMAKE_CXX_COMPILER=<rocm>/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=<rocm>/lib/llvm/bin/clang++.exe -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=<rocm> -DOpenCV_DIR=<opencv>/lib -DCMAKE_BUILD_TYPE=Release
+    cmake --build build-hip -j16 --target cudasift_lib cudasift test_extract test_match test_homography
+Exit 0. Tests run from src/ (data paths are cwd-relative): test_extract 10/0, test_match 11/0, test_homography 8/0 (stereo 753 RANSAC matches).
+
+The suite never calls CopyToTexture. Scratch check agent_space/cudasift_c2t/c2t.cpp (port of #99's TestCopyToTextureFromHost plus a device-source case; 1000x700, pitch 1024), linked against cudasift_lib:
+- fa25871 (old): host -> texture 697480 of 700000 differ; device -> texture 0 of 716800 differ.
+- 6d1429a (new): host 0 of 700000; device 0 of 716800. PASS.
+
+## Review 2026-10-16 (fix round moat-fix-97, delta fa25871..6d1429a, windows-gfx1151)
+
+Verdict: review-passed. No findings.
+
+Checked: host copy (`cudaImage.cu:106`) uses `width`-float rows, matching `Download`/`Readback` (`cudaImage.cu:59,70`); device copy (`cudaImage.cu:108`) uses `pitch`-float rows into the `pitch`-wide array from `InitTexture` (`cudaImage.cu:84`), byte-identical to the old linear copy. CUDA path now uses the standard `cudaMemcpy2DToArray` (behavior change on CUDA host path is the upstream reviewer's requested bug fix). `cuda_to_hip.h:72-74` comment matches the code. Commit 6d1429a: `[ROCm]` title 62 chars, no trailers, AI disclosure present, Test Plan fenced; `utils/jargon.py --port CudaSift` clean.
+
+## Validation 2026-10-16 (windows-gfx1151) at 6d1429a -- fix round 97
+Fork tree clean at 6d1429a (only untracked build-hip/). Build and runs as recorded in "Fix round moat-fix-97" above, from this exact tree: test_extract 10 passed / 0 failed, test_match 11/0, test_homography 8/0 (stereo 753 RANSAC matches; reproducibility 1910/1910; scaleUp 3104 > 1910). CopyToTexture scratch check: host 0/700000 differ, device 0/716800 differ (old fa25871: host 697480/700000). No HIP fault, clean exit.
+
+## Validation 2026-10-16 (linux-gfx90a) at 6d1429a -- fix round 97
+
+GPU: AMD Instinct MI250X / MI250, gfx90a (wave64), pinned by the dispatcher with `HIP_VISIBLE_DEVICES=0` (one visible device, tests use devNum=0). ROCm from the `rocm` 10.1.0 pip wheel (HIP 7.16.26385, AMD clang 24.0.0git) under `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`; no `/opt/rocm` on this host. OpenCV 4.6.0 (`apt-get install libopencv-dev`, needed `apt-get update` first). Fresh fork clone, `moat-fix-97` checked out at 6d1429a (moat-port untouched: the upstream PR is open), tree clean apart from untracked `build-hip/`.
+
+Build (fresh `build-hip/`):
+    ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+    utils/timeit.sh CudaSift compile -- cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DCMAKE_BUILD_TYPE=Release
+    utils/timeit.sh CudaSift compile -- cmake --build projects/CudaSift/src/build-hip -j32
+Configure exit 0 (2.6 s), build exit 0 (3.7 s), all 9 targets; 158 warnings, all the pre-existing nodiscard `hipError_t` and `-ffast-math` literal/nan ones, no errors. `llvm-objdump --offloading` on the three test binaries shows only `hip-amdgcn-amd-amdhsa--gfx90a` bundles.
+
+Tests, each `utils/timeit.sh CudaSift test -- bash -c 'cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/<bin>'` (run from src/ so `data/` resolves):
+
+| test            | exit | result            | key numbers |
+|-----------------|------|-------------------|-------------|
+| test_extract    | 0    | 10 passed, 0 fail | basic 1910 kpts, descriptors unit-norm; thresh 7079/1910/542/6; octaves 1740/1876/1910/1919; reproducibility 1910/1910 = 100%; scaleUp 3104 > 1910 |
+| test_match      | 0    | 11 passed, 0 fail | self-match 1899/1910 score>0.95; cross 1910 vs 2084 feats, 1910 valid / 1909 good; homography 851 RANSAC / 828 inliers; match 0.55 ms |
+| test_homography | 0    | 8 passed, 0 fail  | translation (30,20) recovered h[2]=30.13 h[5]=20.27, 1646 matches; rotation 10deg 1195; scale 0.8 944; stereo L1452/R2082, 753 RANSAC |
+
+PASS: 29/29 sub-checks, all exit 0, no HIP fault or `safeCall` abort, dmesg shows no amdgpu entries. Numbers match the prior gfx90a runs at fe209b4/0523b54 within run-to-run RANSAC variation (stereo 753 vs 752/751, scale 944 vs 945) and the gfx1151 fix-round run (stereo 753).
+
+CopyToTexture scratch check (the suite never calls it). `agent_space/cudasift_c2t/c2t.cpp`, kept out of the fork: 1000x700 image, pitch 1024 floats (device buffers passed into `Allocate` so the pitch is fixed), host rows filled width-wide as `Download` expects, then `CopyToTexture(dst, true)` and `hipMemcpy2DFromArray` readback compared value-for-value; device case fills all pitch*height floats of `d_data`, `CopyToTexture(dst, false)`, compares all 716800. Built by compiling with `hipcc -c -x hip -DUSE_HIP -include cuda_to_hip.h -I src -I src/hip_compat` and linking with `-x none` against `build-hip/libcudasift_lib.a` plus `pkg-config --libs opencv4` (hipcc treats a `.a` given with `-x hip` as a source file, so the link step must be separate). Control build linked the same source against a `cudasift_lib` built from a throwaway worktree at fa25871 (removed afterwards).
+- 6d1429a (new): host -> texture 0 of 700000 differ; device -> texture 0 of 716800 differ. PASS, exit 0.
+- fa25871 (old): host -> texture 699000 of 700000 differ (every row after the first is sheared; the count differs from gfx1151's 697480 only because the fill pattern differs); device -> texture 0 of 716800 differ, as expected for the byte-identical linear copy. FAIL, exit 2.
+
+CUDA no-regression gate at 6d1429a (first time for this project; no Linux host had a CUDA toolkit before). No conda or nvcc on this host and the fleet guard forbids pip into the shared venv, so a self-contained Miniforge under /tmp provided `conda create -p /tmp/cuda-12.8 -c nvidia cuda-toolkit=12.8` (nvcc 12.8.93, host gcc 13.3.0):
+    utils/timeit.sh CudaSift cuda-compile -- cmake -S projects/CudaSift/src -B /tmp/cudasift-build-cuda -GNinja -DUSE_HIP=OFF -DCMAKE_CUDA_COMPILER=/tmp/cuda-12.8/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release
+    utils/timeit.sh CudaSift cuda-compile -- cmake --build /tmp/cudasift-build-cuda -j32
+Configure exit 0, build exit 0, 0 warnings, all 9 targets including the three tests. `cuobjdump --list-elf` shows `sm_89` cubins: the upstream CMakeLists hard-sets `CMAKE_CUDA_ARCHITECTURES 89` in its CUDA branch after the cache entry, so the `-D` pin does not reach, but 89 is itself a fixed arch (no `native` degradation). The `cudaMemcpy2DToArray` call that replaced the removed `#if USE_HIP` branch compiles as plain CUDA. Compile-only; no NVIDIA runtime claim.
+
+Pre-completion checks: `python3 utils/jargon.py --port CudaSift` clean (needs local `AdaLovelace` and `moat-fix-97` branches in the clone; a fresh clone has only the remote refs). README documents the ROCm build (`### Build for AMD GPUs (ROCm/HIP)`, `USE_HIP` option table row). `git status --porcelain` in src: only `?? build-hip/`.
+
+State: linux-gfx90a `revalidate` -> `completed` at 6d1429a via `python3 utils/moatlib.py set-state CudaSift linux-gfx90a completed --agent validator`.
+
+## Fix round moat-fix-97 (2026-11-04, linux-gfx1100) -- HIP mappings for #99's new calls
+
+Request: f-dy (author of competing upstream PR #99) posted on #97 (2026-10-27) how to resolve the two conflicts between #97 and #99 (CMakeLists.txt default CUDA arch moved before `project()` inside the CUDA branch; both Laplace uploads become `(MAX_OCTAVES+1)*12*16*sizeof(float), 0, cudaMemcpyHostToDevice`), and said they could not test the HIP build. A gfx1100 fleet check (`~/.claude/plans/cudasift-pr97-pr99-merged-hip-check.md`) found that merge does not build with HIP: #99 calls `cudaGetDevice` (`CurrentDeviceState()` in `cudaSiftH.cu`) and `cudaMemcpy2DFromArray` (CopyToTexture test in `tests/test_extract.cpp`), and `cuda_to_hip.h` mapped neither. jeff ruled #97 carries both mappings now so whichever PR merges second just works.
+
+Change: fork commit db7c163 on `moat-fix-97` (base/published 6d1429a), `[ROCm] Map cudaGetDevice and cudaMemcpy2DFromArray to HIP`: two `#define`s in `cuda_to_hip.h` (device-management block and next to `cudaMemcpy2DToArray`). Nothing else changed. `python3 utils/jargon.py --port CudaSift` clean. Pushed `moat-fix-97` only; `moat-port` still 6d1429a. `advance-head CudaSift db7c163...`.
+
+Environment: gfx1100 (AMD Radeon Pro W7800 48GB, wave32), `HIP_VISIBLE_DEVICES=1` pinned by the dispatcher (one visible device), ROCm 7.16.26385 (`rocm` pip wheel SDK at `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`), OpenCV 4.6.0. All GPU runs under `ulimit -c 0`.
+
+### Build 1: moat-fix-97 alone at db7c163
+
+    ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+    utils/timeit.sh CudaSift compile -- cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DCMAKE_BUILD_TYPE=Release
+    utils/timeit.sh CudaSift compile -- cmake --build projects/CudaSift/src/build-hip -j32
+    utils/timeit.sh CudaSift test -- bash -c 'cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/<bin>'   # test_extract, test_match, test_homography
+
+Configure and build exit 0, 158 warnings (same count as the gfx90a fix-round build at 6d1429a; pre-existing nodiscard `hipError_t` / fast-math ones), no errors. Results: test_extract 10 passed / 0 failed, test_match 11/0, test_homography 8/0, all exit 0. Keypoints 1910 (img1), thresh 7077/1910/542/6, octaves 1740/1876/1910/1919, scaleUp 3104, stereo L1452/R2082. Match: self-match 1902/1910 >0.95, RANSAC 849 / refined 826. Homography: translation h[2]=30.132 h[5]=20.2734, 1644 matches; rotation 1196; scale 944; stereo 750 RANSAC. Same counts as #97's recorded validations (10/11/8).
+
+Note on the bar in the dispatch prompt: it quoted "21 pass with 1 two-GPU skip, 11/11, 9/9" as #97's counts. Those are the #97+#99 merge counts; #97 alone has 10, 11 and 8 tests (notes above). Build 1 meets #97's own counts and Build 2 meets the merge counts.
+
+### Build 2: scratch merge of #99 into moat-fix-97 (evidence only, never pushed)
+
+Shas: moat-fix-97 db7c163aa8f48c939ef5e03afaf1a7823173eb3f; #97 head 6d1429a1988aab428b91f9113199eed5371712b7; #99 head 7db1a8494e2d233ee1ae57f6cac1a01180e8f659 (unchanged since the plan's check). Local merge commit 424b597cc66c406550eb088f0301630c92fd8b59 in `/var/lib/jenkins/fleet/jobs/rx7900-20261104-083332-fix-cudasift/scratch/CudaSift` only.
+
+    git clone https://github.com/Celebrandil/CudaSift && cd CudaSift
+    git fetch origin pull/97/head:pr97 pull/99/head:pr99
+    git fetch <fork clone> moat-fix-97:fix97
+    git checkout -b merged fix97 && git merge --no-edit pr99    # conflicts: CMakeLists.txt, cudaSiftH.cu only
+    # resolved exactly per f-dy: arch default block moved into else() before project(... CUDA), post-project set(... 89) removed;
+    # both Laplace uploads = safeCall(cudaMemcpyToSymbolAsync(d_LaplaceKernel, kernel, (MAX_OCTAVES+1)*12*16*sizeof(float), 0, cudaMemcpyHostToDevice));
+    cmake -S . -B build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DCMAKE_BUILD_TYPE=Release
+    cmake --build build-hip -j32
+    (ulimit -c 0; ./build-hip/test_extract; ./build-hip/test_match; ./build-hip/test_homography)
+
+No `cuda_to_hip.h` edit was needed in the merge: the two mappings come from db7c163. Configure and build exit 0, 180 warnings (the extra 22 lines are #99's new test code's unchecked `hipError_t` returns, as the plan's check found), no errors. Results: test_extract 21 passed, 0 failed, 1 skipped ("Same number of features on a second GPU (needs 2 GPUs)"); test_match 11/0; test_homography 9/0; all exit 0. TestCopyToTextureFromHost: "0 of 700000 texture values differ from the image" (host) and "0 of 700000 ... after a device copy", both PASS. Keypoint counts identical to Build 1 in every shared test (1910; 7077/1910/542/6; 1740/1876/1910/1919; scaleUp 3104; stereo 1452/2082). New #99 tests: pitch 1024 vs 1000 1050/1050 all in common; 4000x3000 3017/3017 with 7/8 octaves; 1920x1080 1922/1922; 30x12 6, 1920x10 5, 1920x3 0, 2x2 0. Match/RANSAC within run-to-run noise of Build 1: self-match 1902/1910, RANSAC 852 / 829 refined; translation h[2]=30.1343 h[5]=20.2742, 1646 matches; rotation 1195; scale 944; stereo 755.
+
+Reply check: every gfx1100 fact in the approved `## Upstream reply` holds at db7c163. The reply also names gfx90a; that evidence comes from the gfx90a job in the plan file / its revalidation at db7c163, not from this run.
+
+State: linux-gfx1100 porting -> ported (stage). Platforms revalidate at db7c163 (including linux-gfx1100: this porter build is not the validator record).
+
+### Proposed fix review PR body (for jeff)
+
+Title: `[ROCm] Map cudaGetDevice and cudaMemcpy2DFromArray to HIP`
+
+```
+f-dy, who has the overlapping bug-fix PR Celebrandil/CudaSift#99, posted on Celebrandil/CudaSift#97 how to resolve the two conflicts between the PRs (CMakeLists.txt CUDA arch default; Laplace kernel upload size) and said they could not test the HIP build.
+
+We built #99 merged into #97 with that resolution. It did not build with HIP: #99 adds calls to `cudaGetDevice` (`CurrentDeviceState()` in `cudaSiftH.cu`) and `cudaMemcpy2DFromArray` (the new CopyToTexture test in `tests/test_extract.cpp`), and `cuda_to_hip.h` mapped neither.
+
+Change: one commit, db7c163, adds `#define cudaGetDevice hipGetDevice` and `#define cudaMemcpy2DFromArray hipMemcpy2DFromArray` to `cuda_to_hip.h`. Nothing else changes, and nothing on this branch calls either yet, so the branch's own behaviour is unchanged; whichever of #97 and #99 merges second builds with HIP.
+
+Retested on gfx1100 (ROCm 7.16):
+- this branch alone: test_extract 10/10, test_match 11/11, test_homography 8/8, keypoint counts unchanged from 6d1429a;
+- #99 (7db1a84) merged into this branch with f-dy's resolution (scratch only, not pushed): builds; test_extract 21 passed, 1 skipped (needs two GPUs), test_match 11/11, test_homography 9/9; keypoint counts identical to this branch alone; TestCopyToTextureFromHost 0 of 700000 values wrong.
+
+gfx90a and the remaining gates revalidate at db7c163 before this merges.
+
+## Upstream reply
+
+Thanks for working through the conflicts. I built #99 merged into this PR with your resolution on two AMD GPUs (gfx90a and gfx1100). It needs two more HIP mappings, which #99's new code uses and this PR's `cuda_to_hip.h` lacked: `cudaGetDevice` (for `CurrentDeviceState()`) and `cudaMemcpy2DFromArray` (for the new CopyToTexture test). I've added both here. With them, the merge builds and passes `test_extract` (21 passed, 1 skipped, which needs two GPUs), `test_match` (11/11) and `test_homography` (9/9) on both GPUs. Keypoint counts are identical to this PR alone, and `TestCopyToTextureFromHost` finds 0 of 700,000 values wrong.
+```
+
+## Review 2026-11-04 (fix round moat-fix-97, delta 6d1429a..db7c163, linux-gfx90a)
+
+Verdict: review-passed on the code. One finding against the draft fix review PR body (wording only; corrected body below). One records gap.
+
+Code checked: `cuda_to_hip.h:32` `cudaGetDevice -> hipGetDevice` (`hipError_t hipGetDevice(int*)`, `hip_runtime_api.h:2449`, same as CUDA's `cudaGetDevice(int*)`); `cuda_to_hip.h:76` `cudaMemcpy2DFromArray -> hipMemcpy2DFromArray` (`(void*, size_t dpitch, hipArray_const_t, size_t wOffset, size_t hOffset, size_t width, size_t height, hipMemcpyKind)`, `hip_runtime_api.h:6063`, same order and types as CUDA's). #99's call site (`tests/test_extract.cpp:434,449`, cast `(cudaArray *)img.t_data`, `cudaMemcpyDeviceToHost`) uses only names the header already maps (`cudaArray`, `cudaMemcpyDeviceToHost`). No caller on the branch itself (grep), so the branch's HIP and CUDA builds are unchanged; the header is only force-included under `USE_HIP`. Placement and column alignment match the neighbouring blocks. Commit db7c163: `[ROCm]` title 57 chars, no trailer, AI disclosure, fenced Test Plan; `python3 utils/jargon.py --port CudaSift` clean, commit message jargon clean. Reviewer sanity build at db7c163 on gfx90a (ROCm 7.16 wheel SDK, `HIP_VISIBLE_DEVICES=1`, `ulimit -c 0`): build exit 0, test_extract 10/0, test_match 11/0, test_homography 8/0. Not the validator record.
+
+Upstream reply (approved, not edited): every claim checked against both merge runs and holds.
+- gfx1100: plan `cudasift-pr97-pr99-merged-hip-check.md` gfx1100 section and the porter's Build 2 above (21 passed / 1 skipped, 11/0, 9/0; keypoints identical to #97 alone; CopyToTexture 0 of 700000 host and device).
+- gfx90a: fleet job `mi200-20261103-230856-cudasift-merge` (exit 0). Raw logs in its scratch dir: `m_test_extract.log` "21 passed, 0 failed, 1 skipped" with the 2-GPU SKIP, `m_test_match.log` 11/0, `m_test_homography.log` 9/0, lines 470/475 "0 of 700000 texture values differ" (host and device copy); baseline logs 10/11/8; keypoints 7079/1910/542/6, 1740/1876/1910/1919, 3104, 1452/2082 identical to pr97. Its shim commit `df6e63d` adds exactly the same two `#define`s as db7c163 (cudaGetDevice placed after cudaSetDevice instead of before cudaGetDeviceCount; same tokens).
+- Both runs used #97 at 6d1429a plus the two lines, not db7c163 itself; the tree content is the same, so "I've added both here" and "with them, the merge builds and passes ... on both GPUs" are true. gfx90a, gfx1100 and Windows still owe validator runs at db7c163 before the fix review PR opens or `--merge-fix` runs.
+
+Records gap (not a code finding): the gfx90a section of `~/.claude/plans/cudasift-pr97-pr99-merged-hip-check.md` is not on claude-shared `main`. It exists only on `conflict/e604d8c8-20261104T071512Z` (commit fbbdd1e, sync 07:15:11Z); the gfx1100 section won the race on main, and the plan never got `DONE`. The porter note above ("evidence comes from the gfx90a job in the plan file") points at a file that lacks it. jeff: restore the gfx90a section from that branch onto main. The job's scratch logs are container-local and will be swept.
+
+Finding 1 (draft fix review PR body, last line): "gfx90a and the remaining gates revalidate at db7c163 before this merges." `python3 utils/jargon.py -` flags `revalidate`, and "gates" is also in-house vocabulary. It also leaves gfx1100 out, though the gfx1100 numbers in the body are a porter run, not a validator record. `utils/prose.py` clean. Corrected body (only that line changed; the `## Upstream reply` is untouched; jargon and prose clean):
+
+Title: `[ROCm] Map cudaGetDevice and cudaMemcpy2DFromArray to HIP`
+
+```
+f-dy, who has the overlapping bug-fix PR Celebrandil/CudaSift#99, posted on Celebrandil/CudaSift#97 how to resolve the two conflicts between the PRs (CMakeLists.txt CUDA arch default; Laplace kernel upload size) and said they could not test the HIP build.
+
+We built #99 merged into #97 with that resolution. It did not build with HIP: #99 adds calls to `cudaGetDevice` (`CurrentDeviceState()` in `cudaSiftH.cu`) and `cudaMemcpy2DFromArray` (the new CopyToTexture test in `tests/test_extract.cpp`), and `cuda_to_hip.h` mapped neither.
+
+Change: one commit, db7c163, adds `#define cudaGetDevice hipGetDevice` and `#define cudaMemcpy2DFromArray hipMemcpy2DFromArray` to `cuda_to_hip.h`. Nothing else changes, and nothing on this branch calls either yet, so the branch's own behaviour is unchanged; whichever of #97 and #99 merges second builds with HIP.
+
+Retested on gfx1100 (ROCm 7.16):
+- this branch alone: test_extract 10/10, test_match 11/11, test_homography 8/8, keypoint counts unchanged from 6d1429a;
+- #99 (7db1a84) merged into this branch with f-dy's resolution (scratch only, not pushed): builds; test_extract 21 passed, 1 skipped (needs two GPUs), test_match 11/11, test_homography 9/9; keypoint counts identical to this branch alone; TestCopyToTextureFromHost 0 of 700000 values wrong.
+
+gfx90a, gfx1100 and the Windows GPUs are re-tested at db7c163 before this merges.
+
+## Upstream reply
+
+Thanks for working through the conflicts. I built #99 merged into this PR with your resolution on two AMD GPUs (gfx90a and gfx1100). It needs two more HIP mappings, which #99's new code uses and this PR's `cuda_to_hip.h` lacked: `cudaGetDevice` (for `CurrentDeviceState()`) and `cudaMemcpy2DFromArray` (for the new CopyToTexture test). I've added both here. With them, the merge builds and passes `test_extract` (21 passed, 1 skipped, which needs two GPUs), `test_match` (11/11) and `test_homography` (9/9) on both GPUs. Keypoint counts are identical to this PR alone, and `TestCopyToTextureFromHost` finds 0 of 700,000 values wrong.
+```
+
+## Validation 2026-11-04 (linux-gfx1100) at db7c163 -- fix round 97
+
+GPU: AMD Radeon Pro W7800 48GB, gfx1100 (wave32), `HIP_VISIBLE_DEVICES=1` pinned by the dispatcher (one visible device, tests use devNum=0). ROCm 7.16 from the `rocm` pip wheel SDK at `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`. OpenCV 4.6.0. Fresh fork clone, `moat-fix-97` checked out at db7c163aa8f48c939ef5e03afaf1a7823173eb3f (moat-port untouched: upstream PR open). The #97+#99 merge was not built.
+
+Build (fresh `build-hip/`):
+    ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+    utils/timeit.sh CudaSift compile -- cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DCMAKE_BUILD_TYPE=Release
+    utils/timeit.sh CudaSift compile -- cmake --build projects/CudaSift/src/build-hip -j32
+Configure exit 0, build exit 0, 21/21 steps, 158 warnings (same count as the porter build at db7c163 and gfx90a at 6d1429a; pre-existing nodiscard `hipError_t` / fast-math ones), no errors. `llvm-objdump --offloading` on the three test binaries: only `hip-amdgcn-amd-amdhsa--gfx1100`.
+
+Tests, each `utils/timeit.sh CudaSift test -- bash -c 'cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/<bin>'`:
+
+| test            | exit | result            | key numbers |
+|-----------------|------|-------------------|-------------|
+| test_extract    | 0    | 10 passed, 0 fail | basic 1910; thresh 7077/1910/542/6; octaves 1740/1876/1910/1919; reproducibility 1910/1910; scaleUp 3104 |
+| test_match      | 0    | 11 passed, 0 fail | self-match 1902/1910 >0.95; cross 1910 vs 2084, 1910 valid / 1909 good; RANSAC 851 / 828 refined; match 0.32 ms |
+| test_homography | 0    | 8 passed, 0 fail  | translation h[2]=30.1347 h[5]=20.2747, 1643 matches; rotation 1195; scale 942; stereo L1452/R2082, 753 RANSAC / 675 inliers |
+
+PASS: 29/29, all exit 0, no HIP fault or `safeCall` abort. Matches the porter's run at db7c163 (10/11/8; keypoints 1910, 7077/1910/542/6, 1740/1876/1910/1919, 3104, 1452/2082 identical; RANSAC counts within run-to-run noise: 851/828 vs 849/826, stereo 753 vs 750, translation 1643 vs 1644, scale 942 vs 944) and this platform's earlier record at 0523b54 / carried to fa25871 (same 10/11/8 and same keypoint counts; stereo 675 inliers identical).
+
+CUDA no-regression gate: not re-run (no CUDA toolkit on this host). The delta 6d1429a..db7c163 is two `#define`s in `cuda_to_hip.h`, which is reached only by the HIP-only `-include` in CMakeLists.txt and the `hip_compat/` shims (HIP include path only), so every CUDA translation unit is source-identical to 6d1429a, where the gate passed on linux-gfx90a.
+
+Pre-completion checks: `python3 utils/jargon.py --port CudaSift` clean; README documents the ROCm build (`### Build for AMD GPUs (ROCm/HIP)`); `git status --porcelain` in src: only `?? build-hip/`.
+
+State: linux-gfx1100 `revalidate` -> `completed` at db7c163.
+
+## Validation 2026-11-04 (linux-gfx90a) at db7c163 -- fix round 97
+
+GPU: AMD Instinct MI250X / MI250, gfx90a (wave64), `HIP_VISIBLE_DEVICES=1` pinned by the dispatcher (one visible device, tests use devNum=0). ROCm 7.16 from the `rocm` pip wheel SDK at `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`. OpenCV 4.6.0. Fresh fork clone, `moat-fix-97` checked out at db7c163aa8f48c939ef5e03afaf1a7823173eb3f (moat-port untouched: upstream PR open). The #97+#99 merge was not built.
+
+Build (fresh `build-hip/`):
+    ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+    utils/timeit.sh CudaSift compile -- cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DCMAKE_BUILD_TYPE=Release
+    utils/timeit.sh CudaSift compile -- cmake --build projects/CudaSift/src/build-hip -j32
+Configure exit 0 (2.5 s), build exit 0, 21/21 steps, 158 warnings (same count as gfx90a at 6d1429a and gfx1100 at db7c163; pre-existing nodiscard `hipError_t` / fast-math ones), 0 errors. `llvm-objdump --offloading` on the three test binaries: only `hip-amdgcn-amd-amdhsa--gfx90a`.
+
+Tests, each `utils/timeit.sh CudaSift test -- bash -c 'cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/<bin>'`:
+
+| test            | exit | result            | key numbers |
+|-----------------|------|-------------------|-------------|
+| test_extract    | 0    | 10 passed, 0 fail | basic 1910; thresh 7079/1910/542/6; octaves 1740/1876/1910/1919; reproducibility pass; scaleUp 3104 |
+| test_match      | 0    | 11 passed, 0 fail | self-match 1899/1910 >0.95; cross 1910 valid / 1909 good; RANSAC 852 / 828 refined; match 0.56 ms |
+| test_homography | 0    | 8 passed, 0 fail  | translation h[2]=30.1342 h[5]=20.2742, 1645 matches; rotation 1195; scale 945; stereo L1452/R2082, 752 RANSAC |
+
+PASS: 29/29, all exit 0, no HIP fault or `safeCall` abort. Matches the porter's counts at db7c163 (10/11/8, keypoints unchanged from 6d1429a) and this platform's record at 6d1429a: keypoints 1910, 7079/1910/542/6, 1740/1876/1910/1919, 3104, 1452/2082 identical; self-match 1899/1910 and 828 refined inliers identical; RANSAC-dependent counts within run-to-run noise (852 vs 851, translation 1645 vs 1646, scale 945 vs 944, stereo 752 vs 753).
+
+CUDA no-regression gate: not re-run. The delta 6d1429a..db7c163 is two `#define`s in `cuda_to_hip.h`, reached only through the HIP-only `-include`, so every CUDA translation unit is source-identical to 6d1429a, where the gate passed on linux-gfx90a.
+
+Pre-completion checks: `python3 utils/jargon.py --port CudaSift` clean; README documents the ROCm build (`### Build for AMD GPUs (ROCm/HIP)`, `USE_HIP` row); `git status --porcelain` in src: only `?? build-hip/`.
+
+State: linux-gfx90a `revalidate` -> `completed` at db7c163.
+
+## Validation 2026-11-04 (windows-gfx1151) at db7c163 -- fix round 97
+
+GPU: AMD Radeon 8060S (gfx1151, CC 11.5, 20 CUs), HIP_VISIBLE_DEVICES=0. TheRock ROCm 7.14, OpenCV 4.9.0 (agent_space/opencv_install, no videoio, so demo_video is not built). Fork clone at `moat-fix-97` detached at db7c163 (delta over 6d1429a: two `#define`s in `cuda_to_hip.h`, mapping cudaGetDevice and cudaMemcpy2DFromArray); tracked tree clean, only untracked `build-hip/`.
+
+Build (existing configure from the 2026-10-16 recipe above, incremental):
+    utils/timeit.sh CudaSift compile -- cmake --build build-hip -j16 --target cudasift_lib cudasift test_extract test_match test_homography
+Exit 0, 12/12 steps.
+
+Tests, each `utils/timeit.sh CudaSift test -- bash -c 'cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/<bin>.exe'` (cwd src/ for data/):
+| test            | exit | result            | key numbers |
+|-----------------|------|-------------------|-------------|
+| test_extract    | 0    | 10 passed, 0 fail | basic 1910 kpts; thresh 7077/1910/542/6; octaves 1740/1876/1910/1919 |
+| test_match      | 0    | 11 passed, 0 fail | 1910 kpts; RANSAC 852 / 828 inliers; match 1.48 ms |
+| test_homography | 0    | 8 passed, 0 fail  | translation h[2]=30.13 h[5]=20.27; stereo 752 RANSAC / 675 inliers |
+
+PASS 29/29, no HIP fault. Keypoint counts identical to 6d1429a and to gfx90a/gfx1100 (1910, 7077/1910/542/6, 1740/1876/1910/1919); RANSAC counts within run-to-run variation (stereo 752 vs 753). CUDA gate and CopyToTexture check already recorded at 6d1429a; the delta is HIP-only defines.
+
+## CUDA compile check (nvcc 12.8) at db7c163
+
+Compile-only check on a Linux host with NVIDIA CUDA 12.8.93 (`/usr/local/cuda-12.8`, apt toolkit) and no NVIDIA GPU; GCC 13.3.0, CMake 3.31.6, OpenCV 4.6.0 (`apt-get install libopencv-dev`). Port: fork `moat-fix-97` at db7c163aa8f48c939ef5e03afaf1a7823173eb3f. Baseline: upstream Celebrandil/CudaSift `AdaLovelace` at ed5ef54c67354959e3d5fa829d30de5b278b4d62 (the merge base). Fresh clones, nothing modified.
+
+Upstream's documented build script (tests and examples ON, `CMAKE_CUDA_ARCHITECTURES 89` from CMakeLists), same for both:
+```bash
+CUDACXX=/usr/local/cuda-12.8/bin/nvcc VERBOSE=1 bash scripts/build.sh Release
+```
+- rc=0 on both. nvcc compiled the same 11 translation units on both: `cudaImage.cu`, `cudaSiftH.cu`, `matching.cu`, `mainSift.cpp`, `examples/demo_{extract,match,video}.cpp`, `tests/{benchmark,test_extract,test_match,test_homography}.cpp` (the .cpp files are LANGUAGE CUDA). `cuobjdump --list-elf build/libcudasift_lib.a` shows `sm_89.cubin` for cudaImage, cudaSiftH and matching on both.
+- Targets built, identical: cudasift_lib, cudasift, demo_extract, demo_match, demo_video, benchmark, test_extract, test_match, test_homography.
+- Warnings: baseline has 2 `-Wdeprecated-declarations` for `cudaMemcpyToArray` (`cudaImage.cu:106`, `:108`); the port's switch to `cudaMemcpy2DToArray` removes both. Port: zero warnings, zero errors. No new warnings.
+- `./build/test_extract`: both load the image and then stop at `cudaImage.cu` line 24 with `CUDA driver version is insufficient for CUDA runtime version` (rc=255; no NVIDIA driver). Environment, identical on baseline.
+- `matching.cu` MatchSiftPoints2 now uses signed `min(int,int)` where upstream mixed int and unsigned; `MatchSiftData` returns early when either point count is 0, so `numPts-1 >= 0` and both forms pick the same index.
+
+Result: no CUDA regression at db7c163. Platform states unchanged.
+
+## Fix round moat-fix-97 (2026-11-05, linux-gfx1100) -- HIP host min/max truncation in ExtractSift
+
+Request: jeff's sweep for HIP host `min`/`max` truncation (`~/claude-shared/plans/moat-hip-host-minmax-truncation-sweep.md`) hit `cudaSiftH.cu:114` and `:125`, `LowPass(lowImg, img, max(initBlur, 0.001f))` in the public `ExtractSift` (double, float). ROCm's `__clang_hip_math.h` defines host `min`/`max` only for `(int, int)` unless `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__` is set (unset here), so both arguments became int. CUDA's host `max(double, float)` is `fmax`. The previous round (db7c163) had merged, so `fix-branch` re-used the name `moat-fix-97`, cut from the published tip db7c163.
+
+Change: fork commit 5135acc on `moat-fix-97` (base/published db7c163), `[ROCm] Use fmax for the initial blur clamp in ExtractSift`: both call sites `max(` -> `fmax(` (no `#ifdef`, plain C++; `fmax(double, float)` resolves through the standard promoting overload to `fmax(double, double)`, the same as CUDA's `max(double, float)` body), plus `TestInitialBlur` in `tests/test_extract.cpp` (feature count must strictly decrease over initBlur 0, 0.5, 1, 1.6). Device code and `(int, int)` calls untouched. Pushed `moat-fix-97` only; `moat-port` still db7c163. `python3 utils/jargon.py --port CudaSift` clean; message `prose.py`/`jargon.py` clean; title 58 chars. `advance-head CudaSift 5135acc...`. nvcc compile not run (no CUDA on this host); the dispatcher runs it on the mi355 host.
+
+Environment: gfx1100 (Radeon Pro W7800, wave32), `HIP_VISIBLE_DEVICES=0` pinned by the dispatcher, ROCm 7.16 wheel SDK (`/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`), OpenCV 4.6.0, all GPU runs under `ulimit -c 0`. Build exactly as the 2026-11-04 gfx1100 entry (plus `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` for the sweep).
+
+### Re-sweep of the whole project (host-only, poisoned min/max)
+
+Every TU in `build-hip/compile_commands.json` recompiled with its real flags plus `--cuda-host-only -fsyntax-only -include poison.h` (`template<class A,class B> void min(A,B)=delete;` and the same for `max`), three times: as built, with `-DMANAGEDMEM`, and with `-DCUDART_VERSION=12000` (the guards that are off in this build). Only hits anywhere: `cudaSiftH.cu:114:26` and `:125:28`. After the fix: 0 hits in `cudaSiftH.cu`. Judged harmless / not applicable:
+- `-DMANAGEDMEM` fails with "no member named 'h_data' in 'SiftData'" in several files and `threads` undeclared at `cudaSiftH.cu:359`: that build option is already broken upstream, unrelated, and its regions contain no min/max (grep).
+- `-DCUDART_VERSION=12000` only switches device shuffle intrinsics in `cudautils.h` (static-assert on 32-bit masks is device-side, unrelated).
+- `geomFuncs.cpp` compiles with the host C++ compiler, never sees the HIP header, and has no min/max.
+- `match.cu` is not built by CMake; it has no min/max calls. `#if 0` regions in `cudaSiftH.cu`, `matching.cu`, `match.cu`: no min/max (grep over all sources, disabled regions included).
+- All other textual `min(`/`max(` hits are in `__global__`/`__device__` code in `cudaSiftD.cu` and `matching.cu` (device overloads cover float there), plus `std::min` in tests.
+
+Baseline build also showed the defect as 4 clang warnings: `cudaSiftH.cu:114:40` / `:125:42` "implicit conversion from 'float' to 'int' changes value from 0.001 to 0 [-Wliteral-conversion]" (each twice). Fresh full build after the fix: 154 warnings, the 158 baseline minus exactly those 4.
+
+### Run-time evidence (probe driver, outside the fork)
+
+`agent_space/probe/blur_probe.cpp` links `build-hip/libcudasift_lib.a`; for scaleUp 0/1 and initBlur 1.0/1.6/0.5 it extracts img1 and img2, counts NaN in position/scale/orientation/descriptor, runs `MatchSiftData` and `FindHomography(..., 10000, 0.00f, 0.80f, 5.0)`. Run from src/ (needs `data/`).
+
+| scaleUp | initBlur | before db7c163 kpts1/kpts2, RANSAC | after 5135acc kpts1/kpts2, RANSAC |
+|---|---|---|---|
+| 0 | 1.0 | 1910/2084, 847 | 1910/2084, 851 |
+| 0 | 1.6 | 1910/2084, 852 (same as 1.0) | 1262/1390, 631 |
+| 0 | 0.5 | 3600/3938, 1165 (no blur) | 2806/3042, 1073 |
+| 1 | 1.0 | 3104/3438, 1159 | 3104/3438, 1159 |
+| 1 | 1.6 | 3104/3438, 1158 (same as 1.0) | 2332/2536, 977 |
+| 1 | 0.5 | 4102/4514, 1354 (no blur) | 3805/4174, 1317 |
+
+NaN count 0 in every row, before and after. The predicted NaN for initBlur < 1 does not show in this build because CMake adds `-ffast-math`: `LowPass(scale=0)` computes `ivar2 = 1/(2*0*0)` and, compiled with `-O3 -ffast-math`, the kernel comes out `0 0 0 0 1 0 0 0 0` (identity, i.e. no blur); compiled with plain `-O3` it is all `-nan` (checked with a standalone copy of the kernel loop, `agent_space/probe/kern.cpp`). So in this build the effect of initBlur < 1 is an unblurred image (3600 vs 2806 keypoints at 0.5); a consumer building without fast-math would get NaN keypoints. RANSAC counts at 1.0 vary run to run (847 vs 851), as in earlier records.
+
+### Tests at 5135acc
+
+Without the fix (test source at 5135acc, `cudaSiftH.cu` temporarily restored to db7c163, then put back): `test_extract` exit 1, 10 passed / 1 failed; TestInitialBlur saw 3600, 3600, 1910, 1910.
+
+With the fix, each `utils/timeit.sh CudaSift test -- bash -c 'cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/<bin>'`:
+
+| test | exit | result | key numbers |
+|---|---|---|---|
+| test_extract | 0 | 11 passed, 0 fail | basic 1910; thresh 7077/1910/542/6; initBlur 0/0.5/1/1.6 -> 3600/2806/1910/1262; octaves 1740/1876/1910/1919; scaleUp 3104 |
+| test_match | 0 | 11 passed, 0 fail | self-match 1901/1910 >0.95; 1910 valid / 1909 good; RANSAC 850 / 827 refined |
+| test_homography | 0 | 8 passed, 0 fail | translation h[2]=30.1473 h[5]=20.2825, 1643 matches; rotation 1196; scale 944; stereo 752 RANSAC / 682 inliers |
+
+Against the gfx1100 validation at db7c163 (10/11/8): the only count change is test_extract +1, the new test. Every initBlur=1.0 keypoint count is identical (1910; 7077/1910/542/6; 1740/1876/1910/1919; 3104; stereo 1452/2082), as expected since `fmax(1.0, 0.001f)` and int `max(1, 0)` both give 1. RANSAC-dependent numbers are within the run-to-run noise seen before (850/827 vs 851/828; stereo 752 vs 753; inliers 682 vs 675; translation h within 0.02 px).
+
+Fault-class entry: already written for LEAP on `port/LEAP` (`references/fault-classes.md`); not duplicated here.
+
+State: linux-gfx1100 porting -> ported (stage). All platforms owe revalidation at 5135acc. Reviewer next.
+
+### Proposed fix review PR body (for jeff)
+
+Title: `[ROCm] Use fmax for the initial blur clamp in ExtractSift`
+
+```
+A sweep of ROCm ports for HIP host min/max truncation found two call sites here: `ExtractSift` in `cudaSiftH.cu` (lines 114 and 125) clamps the initial blur with `max(initBlur, 0.001f)` in host code. HIP defines host `max` only for `(int, int)` (ROCm's `__clang_hip_math.h`, unless `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__` is set), so under ROCm both values were converted to int; CUDA's host `max(double, float)` is `fmax`. Nothing upstream asked for this; it is our defect in the PR.
+
+Effect on gfx1100 at db7c163: initBlur 1.6 gave exactly the 1.0 result (1910 keypoints on img1), and any initBlur below 1 became 0, an unblurred image with this project's -ffast-math build (0.5 gave 3600 keypoints instead of 2806) and an all-NaN low-pass kernel without fast-math. Every existing test passes 1.0, so none caught it.
+
+Change: one commit, 5135acc, `max(` -> `fmax(` at both call sites (what CUDA resolves to; no #ifdef, CUDA unchanged) and a new `TestInitialBlur` in `tests/test_extract.cpp` that requires strictly fewer features as initBlur goes 0, 0.5, 1, 1.6. A host-only recompile of every file with min/max poisoned, including the MANAGEDMEM and CUDART_VERSION branches, found no other host call site.
+
+Tested on gfx1100 (ROCm 7.16): without the fix the new test fails (3600, 3600, 1910, 1910); with it test_extract 11/11 (3600, 2806, 1910, 1262), test_match 11/11, test_homography 8/8, and every initBlur 1.0 keypoint count is unchanged.
+
+gfx90a, gfx1100 and the Windows GPUs are re-tested at 5135acc, and the CUDA build is compile-checked with nvcc, before this merges.
+
+## Upstream reply
+
+I've pushed a follow-up commit that fixes a bug this PR introduced in the ROCm build: `ExtractSift` clamped `initBlur` with a host `max` that HIP only defines for integers, so any non-integer initial blur was truncated (1.6 ran as 1, and values below 1 as 0). It now calls `fmax`, which is what the CUDA build already used, and `test_extract` has a new check that fails without it.
+```
+
+## CUDA compile check (nvcc 12.8) at 5135acc
+
+Compile-only check on a Linux host with NVIDIA CUDA 12.8.93 (`/usr/local/cuda-12.8`) and no NVIDIA GPU; GCC 13.3.0, CMake 3.31.6, OpenCV 4.6.0. Head: fork `moat-fix-97` at 5135accf998c349dcfb05556769c9e416b39af3b. Parent: db7c163aa8f48c939ef5e03afaf1a7823173eb3f (the published tip, itself CUDA-checked above). Fresh clones under `/tmp/cs-nv/{head,parent}`, nothing modified. The commit changes only `max(` -> `fmax(` at `cudaSiftH.cu:114` and `:125` (no `fmin`/`fminf`/`fmaxf` anywhere in it) and adds `TestInitialBlur` to `tests/test_extract.cpp`.
+
+Upstream's documented build script, same recipe as the db7c163 check, run in each clone:
+```bash
+CUDACXX=/usr/local/cuda-12.8/bin/nvcc VERBOSE=1 bash scripts/build.sh Release
+```
+(Not wrapped in `utils/timeit.sh`; no telemetry recorded for this check.)
+- rc=0 on both. Same 12 compile lines on both: nvcc for `cudaImage.cu`, `cudaSiftH.cu`, `matching.cu`, `mainSift.cpp`, `examples/demo_{extract,match,video}.cpp`, `tests/{benchmark,test_extract,test_match,test_homography}.cpp`; `/usr/bin/c++` for `geomFuncs.cpp`. cudaSiftH.cu flags: `--use_fast_math -O3 -lineinfo -DNDEBUG -std=c++17 --generate-code=arch=compute_89,code=[compute_89,sm_89] -Xcompiler=-fPIC`.
+- Targets built, identical: cudasift_lib, cudasift, demo_extract, demo_match, demo_video, benchmark, test_extract, test_match, test_homography. `cuobjdump --list-elf build/libcudasift_lib.a`: `sm_89.cubin` for cudaImage, cudaSiftH, matching on both.
+- Warnings/errors: zero and zero on both (`grep -ci warning` = 0 in each full verbose log). No new warning in `cudaSiftH.cu` or `tests/test_extract.cpp`.
+- Generated code for the changed file is unchanged. CUDA 12.8's `crt/math_functions.hpp:1120` defines host `max(const double a, const float b)` as `return fmax(a, static_cast<double>(b));`, so the edit only names the function CUDA already called. Evidence on `cudaSiftH.cu.o`: host `objdump -dr` with symbolic labels stripped is identical (5214 lines; the raw diff was two `.LCn` label names, shifted because `.rodata.str1.1` embeds the clone path `/tmp/cs-nv/parent` vs `/tmp/cs-nv/head`); both objects reference `U fmax`; embedded PTX identical after dropping `.file`/`.b8` debug lines and normalising the path-derived `_INTERNAL_<hash>_` prefix. The sm_89 cubins are the same size (602592 bytes) and differ only in the path string and that hash. SASS not compared (no `nvdisasm` in this toolkit install).
+- No test binary run (no NVIDIA driver; the db7c163 check showed the expected "driver version is insufficient" stop).
+
+Result: no CUDA regression at 5135acc. Platform states unchanged.
+## Review 2026-11-05 (fix round moat-fix-97, delta db7c163..5135acc, linux-gfx90a)
+
+Verdict: review-passed. No findings against the code, the commit message, the proposed fix review PR body or the `## Upstream reply`.
+
+Environment: gfx90a (MI250X/MI250), `HIP_VISIBLE_DEVICES=1` pinned by the dispatcher, ROCm 7.16 wheel SDK, OpenCV 4.6.0, `ulimit -c 0`. Fresh fork clone, `moat-fix-97` at 5135accf998c349dcfb05556769c9e416b39af3b. Build as the 2026-11-04 gfx90a validation entry plus `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`: exit 0, 154 warnings, no `-Wliteral-conversion` (the db7c163 source built in a side dir `build-before/` shows exactly the 4: `cudaSiftH.cu:114:40`, `:125:42`, "changes value from 0.001 to 0").
+
+Checked:
+- Overload match. CUDA 12.9 `crt/math_functions.hpp:1120`: `static inline __host__ __device__ double max(const double a, const float b) { return fmax(a, static_cast<double>(b)); }`. HIP host AST (`--cuda-host-only -ast-dump`, real flags) for both new calls: `::fmax(double, double)` with a `FloatingCast` on `0.001f`, the same call. nvcc 12.9 on a host-only test `fmax(double, 0.001f)` resolves to libstdc++'s `std::fmax<double, float>`, which promotes and calls `fmax(double, double)`, so the CUDA build compiles and its value is unchanged (not a full CudaSift nvcc build; that is still owed on the mi355 host). Return type stays double, narrowed to `float scale` at `LowPass` exactly as before.
+- NaN. `fmax(NaN, 0.001f)` = 0.001 with the HIP host compiler at `-O3` and at `-O3 -ffast-math`, and with g++ `-O3` (CUDA's host-compiler side). Same as CUDA's `max(double, float)`.
+- Scope. Diff is the two host lines in `ExtractSift` (`cudaSiftH.cu:114`, `:125`) plus `TestInitialBlur`; no device code, no `(int, int)` call touched. Every caller in the tree passes 1.0 (`mainSift.cpp:63` and `demo_extract.cpp:71` use a variable set to 1.0f), as the commit says.
+- Host-only probe, re-run here: every TU in `compile_commands.json` with its real flags plus `--cuda-host-only -fsyntax-only -include poison.h` (deleted `template<class A,class B> min/max(A,B)`). 5135acc: 0 hits as built, 0 with `-DMANAGEDMEM`, 0 with `-DCUDART_VERSION=12000` (the latter two fail for the unrelated reasons the porter recorded: missing `h_data`, device shuffle mask static-asserts). Positive control with db7c163's `cudaSiftH.cu`: exactly `cudaSiftH.cu:114:26` and `:125:28` "call to deleted function 'max'".
+- -ffast-math explanation, confirmed. The HIP compile of `cudaSiftH.cu` carries `-ffast-math -O3` on the host side too (CMake `CMAKE_HIP_FLAGS`). A standalone copy of the `LowPass` kernel loop (`LOWPASS_R` 4): scale 0 at `-O3` gives all `-nan`; at `-O3 -ffast-math` gives `0 0 0 0 1 0 0 0 0` (identity), the same as scale 0.001 under either flag. nvcc's `--use_fast_math` is device-only and CUDA never reaches scale 0 (its max gives 0.001), so the CUDA build is unaffected.
+- Test, before and after on this GPU. 5135acc: test_extract exit 0, 11 passed (initBlur 0/0.5/1/1.6 -> 3600/2806/1910/1262), test_match 11/0, test_homography 8/0. db7c163 `cudaSiftH.cu` with 5135acc tests: test_extract exit 1, 10 passed / 1 failed, `[FAIL] More initial blur = fewer features (strict decrease)`, counts 3600/3600/1910/1910. Same numbers as the porter's gfx1100 run. initBlur 1.0 counts identical to the gfx90a validation at db7c163 (7079/1910/542/6, 1740/1876/1910/1919, 3104, stereo 1452/2082; translation h 30.1342/20.2742). Reviewer sanity run, not the validator record.
+- Commit 5135acc: `[ROCm]` title 57 chars, no trailer, "Authored with Claude.", fenced Test Plan; every factual claim in the body matches the evidence above. `python3 utils/jargon.py --port CudaSift` clean (needs a local `AdaLovelace` branch in the clone); message `jargon.py -` and `prose.py` clean.
+- Proposed fix review PR body and `## Upstream reply`: `jargon.py -` and `prose.py` clean on both; each claim checked against the porter's gfx1100 table and this run. The "no other host call site, including MANAGEDMEM" line rests on a probe of a build that does not compile under MANAGEDMEM; the porter's grep of those regions and this run's 0 deleted-function errors (below clang's error limit in every TU) back it.
+
+Outstanding before the fix review PR opens or `--merge-fix` runs (not review findings): validator runs at 5135acc on every gate, and the nvcc compile of the CUDA path on the mi355 host.
+
+## Validation 2026-11-05 (linux-gfx1100) at 5135acc -- fix round 97
+
+GPU: AMD Radeon Pro W7800 48GB, gfx1100 (wave32), `HIP_VISIBLE_DEVICES=2` pinned by the dispatcher (one visible device, tests use devNum=0), all GPU runs under `ulimit -c 0`. ROCm 7.16 wheel SDK at `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`, OpenCV 4.6.0. Fresh fork clone, detached at 5135accf998c349dcfb05556769c9e416b39af3b (= `origin/moat-fix-97`); nothing pushed.
+
+Build (fresh `build-hip/`):
+    ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+    utils/timeit.sh CudaSift compile -- cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DCMAKE_BUILD_TYPE=Release
+    utils/timeit.sh CudaSift compile -- cmake --build projects/CudaSift/src/build-hip -j10
+Configure exit 0, build exit 0, 21/21 steps, 154 warnings, 0 errors, 0 `-Wliteral-conversion` (db7c163 here had 158; the 4 removed are exactly the `cudaSiftH.cu:114`/`:125` float-to-int ones the fix targets). `llvm-objdump --offloading` on the three test binaries: only `hip-amdgcn-amd-amdhsa--gfx1100`.
+
+Tests, each `utils/timeit.sh CudaSift test -- bash -c 'cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/<bin>'`:
+
+| test            | exit | result            | key numbers |
+|-----------------|------|-------------------|-------------|
+| test_extract    | 0    | 11 passed, 0 fail | basic 1910; thresh 7077/1910/542/6; initBlur 0/0.5/1/1.6 -> 3600/2806/1910/1262; octaves 1740/1876/1910/1919; reproducibility 1910/1910; scaleUp 3104 |
+| test_match      | 0    | 11 passed, 0 fail | self-match 1902/1910 >0.95; cross 1910 vs 2084, 1910 valid / 1909 good; RANSAC 850 / 827 refined; match 0.32 ms |
+| test_homography | 0    | 8 passed, 0 fail  | translation h[2]=30.1344 h[5]=20.2747, 1646 matches; rotation 1195; scale 944; stereo L1452/R2082, 753 RANSAC / 674 inliers |
+
+PASS: 30/30, all exit 0, no HIP fault or `safeCall` abort.
+
+Against this platform's record at db7c163 (10/11/8 = 29): the only count change is test_extract +1, the new `TestInitialBlur`, whose counts 3600/2806/1910/1262 are identical to the porter's gfx1100 run and the reviewer's gfx90a run at 5135acc (and the strict decrease that failed as 3600/3600/1910/1910 without the fix). Every initBlur=1.0 keypoint count is identical to db7c163 (1910; 7077/1910/542/6; 1740/1876/1910/1919; 3104; 1910 vs 2084; stereo 1452/2082), as expected since `fmax(1.0, 0.001f)` and the old int `max(1, 0)` both give 1. RANSAC-dependent numbers are within the run-to-run noise already recorded (850/827 vs 851/828 at db7c163 and 850/827 porter; stereo 753/674 vs 753/675; translation 1646 vs 1643, h within 0.001 px; scale 944 vs 942; self-match 1902 vs 1902).
+
+CUDA no-regression gate: not run here (no CUDA toolkit on this host); already recorded at 5135acc in `## CUDA compile check (nvcc 12.8) at 5135acc`.
+
+Pre-completion checks: `python3 utils/jargon.py --port CudaSift` clean (after `git fetch origin moat-fix-97:moat-fix-97` and `AdaLovelace:AdaLovelace` in the clone so the range resolves); README documents the ROCm build (`### Build for AMD GPUs (ROCm/HIP)`); `git status --porcelain` in src: only `?? build-hip/`.
+
+State: linux-gfx1100 `revalidate` -> `completed` at 5135acc.
+
+## Validation 2026-11-05 (linux-gfx90a) at 5135acc -- fix round 97
+
+GPU: AMD Instinct MI250X / MI250, gfx90a (wave64), `HIP_VISIBLE_DEVICES=1` pinned by the dispatcher (one visible device, tests use devNum=0), all GPU runs under `ulimit -c 0`. ROCm 7.16 wheel SDK at `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`, OpenCV 4.6.0. Fresh fork clone, detached at 5135accf998c349dcfb05556769c9e416b39af3b (= `origin/moat-fix-97`); nothing pushed. Full run, no carry-forward (the delta changes the compiled host code of `ExtractSift`).
+
+Build (fresh `build-hip/`):
+    ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+    utils/timeit.sh CudaSift compile -- cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DCMAKE_BUILD_TYPE=Release
+    utils/timeit.sh CudaSift compile -- cmake --build projects/CudaSift/src/build-hip -j32
+Configure exit 0, build exit 0, 21/21 steps, 154 warnings, 0 errors, 0 `-Wliteral-conversion` (this platform at db7c163: 158; the 4 removed are the `cudaSiftH.cu:114`/`:125` float-to-int ones the fix targets, matching the reviewer's and the gfx1100 counts). `llvm-objdump --offloading` on the three test binaries: only `hip-amdgcn-amd-amdhsa--gfx90a`.
+
+Tests, each `utils/timeit.sh CudaSift test -- bash -c 'cd projects/CudaSift/src && ulimit -c 0 && ./build-hip/<bin>'`:
+
+| test            | exit | result            | key numbers |
+|-----------------|------|-------------------|-------------|
+| test_extract    | 0    | 11 passed, 0 fail | basic 1910; thresh 7079/1910/542/6; initBlur 0/0.5/1/1.6 -> 3600/2806/1910/1262; octaves 1740/1876/1910/1919; reproducibility 1910/1910; scaleUp 3104 |
+| test_match      | 0    | 11 passed, 0 fail | self-match 1899/1910 >0.95; cross 1910 vs 2084, 1910 valid / 1909 good; RANSAC 849 / 826 refined; match 0.55 ms |
+| test_homography | 0    | 8 passed, 0 fail  | translation h[2]=30.1344 h[5]=20.2745, 1646 matches; rotation 1196; scale 944; stereo L1452/R2082, 752 RANSAC / 674 inliers |
+
+PASS: 30/30, all exit 0, no HIP fault or `safeCall` abort.
+
+Against this platform's record at db7c163 (10/11/8 = 29): the only count change is test_extract +1, the new `TestInitialBlur`; its counts 3600/2806/1910/1262 are identical to the reviewer's gfx90a sanity run, the porter's gfx1100 run and the gfx1100 validation at 5135acc (and pass the strict decrease that failed as 3600/3600/1910/1910 without the fix). Every initBlur=1.0 keypoint count is identical to db7c163 on this platform (1910; 7079/1910/542/6; 1740/1876/1910/1919; 3104; 1910 vs 2084; stereo 1452/2082), and self-match 1899/1910 is identical too, as expected since `fmax(1.0, 0.001f)` and the old int `max(1, 0)` both give 1. RANSAC-dependent numbers are within the run-to-run noise already recorded (849/826 vs 852/828; translation 1646 vs 1645, h within 0.001 px; rotation 1196 vs 1195; scale 944 vs 945; stereo 752 vs 752).
+
+CUDA no-regression gate: not run here (no CUDA toolkit used on this host); already recorded at 5135acc in `## CUDA compile check (nvcc 12.8) at 5135acc`.
+
+Pre-completion checks: `python3 utils/jargon.py --port CudaSift` clean (with local `moat-fix-97` and `AdaLovelace` branches fetched in the clone); README documents the ROCm build (`### Build for AMD GPUs (ROCm/HIP)` at line 174, `USE_HIP` row); `git status --porcelain` in src: only `?? build-hip/`.
+
+State: linux-gfx90a `revalidate` -> `completed` at 5135acc via `python3 utils/moatlib.py set-state CudaSift linux-gfx90a completed --agent validator`.
+
+## Validation 2026-11-05 (windows-gfx1151) at 5135acc -- fix round 97
+
+jeff asked for this run. GPU: AMD Radeon 8060S (gfx1151, CC 11.5, 20 CUs), `HIP_VISIBLE_DEVICES=0`, TheRock ROCm 7.14, OpenCV 4.9.0 (`agent_space/opencv_install`, no videoio, so demo_video is not built). Fresh clone `agent_space/cs-win2` detached at 5135accf998c349dcfb05556769c9e416b39af3b (= `origin/moat-fix-97`), fresh `build-hip/`; `git status --porcelain`: untracked `build-hip/` only. Each test run once, serially, `ulimit -c 0`. Nothing pushed.
+
+Build (recipe of the 2026-10-16 / 2026-11-04 entries, fresh configure):
+    utils/timeit.sh CudaSift compile -- bash agent_space/cs_build_f77.sh
+      # cmake -S . -B build-hip -GNinja -DUSE_HIP=ON -DCMAKE_CXX_COMPILER=<rocm>/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=<same> -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=<rocm> -DOpenCV_DIR=<opencv>/lib -DCMAKE_BUILD_TYPE=Release
+      # cmake --build build-hip -j16 --target cudasift_lib cudasift test_extract test_match test_homography
+Exit 0, 13/13 steps, 0 errors, 0 `-Wliteral-conversion` (the Linux validators report the same removal of the `cudaSiftH.cu:114`/`:125` float-to-int warnings). Runtime DLLs (amdhip64_7, amd_comgr, hiprtc, rocm_kpack, OpenCV) staged next to the binaries. Tests: `utils/timeit.sh CudaSift test -- bash agent_space/cs_run_f77.sh` (cwd `src/` for data/; 8 s for the three).
+
+| test            | exit | result             | key numbers |
+|-----------------|------|--------------------|-------------|
+| test_extract    | 0    | 11 passed, 0 fail  | basic 1910; thresh 7077/1910/542/6; initBlur 0/0.5/1/1.6 -> 3600/2806/1910/1262; octaves 1740/1876/1910/1919; reproducibility 1910/1910; scaleUp 3104 |
+| test_match      | 1    | 10 passed, 1 fail  | self-match 1902/1910 >0.95; cross 1910 valid / 1909 good; RANSAC 851 / 828 refined; the one failure is `Matching completes in < 2 ms (optimal)`: avg 2.33 ms |
+| test_homography | 0    | 8 passed, 0 fail  | translation h[2]=30.1345 h[5]=20.2746; stereo L1452/R2082, 752 RANSAC |
+
+Result: 29/30 on the first run; all functional checks pass. Against this platform's record at db7c163 (10/11/8 = 29): test_extract +1 (the new `TestInitialBlur`, counts 3600/2806/1910/1262 identical to gfx90a and gfx1100 at 5135acc), every other keypoint count identical to db7c163 (1910; 7077/1910/542/6; 1740/1876/1910/1919; 3104; 1910 vs 2084; stereo 1452/2082), RANSAC numbers within recorded run-to-run noise (851/828 vs 852/828; translation h within 0.001 px; stereo 752).
+
+The one failure is a performance threshold, not a correctness check, and it is host load rather than the fix: `MatchSiftData` and its kernels are untouched by the delta (it changes only the `ExtractSift` initial-blur clamp), and the db7c163 record on this platform had avg matching 1.48 ms against the same 2 ms limit. A second run of test_match at 5135acc gave 2.05 ms (same single failure, RANSAC 848/825), and the **db7c163 binary built earlier (control, same host, same minute) gave 2.09 ms and the same single failure**. Another session's GPU process (a stereo-matching executable, 3 GB resident) was running on the shared APU throughout. So the timing difference is explained without the fix. Not repeated further (third run barred).
+
+CUDA gate: already recorded at 5135acc (`## CUDA compile check (nvcc 12.8) at 5135acc`); no toolkit on this host. `python utils/jargon.py --port CudaSift`: clean. README documents the ROCm build (`### Build for AMD GPUs (ROCm/HIP)`).
+
+Exclusions: none (no benchmark or demos run).
+
+State: windows-gfx1151 `revalidate` -> `completed` at 5135acc.

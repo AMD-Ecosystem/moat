@@ -723,3 +723,296 @@ on every host, and each one will find no porting work. This round did not write 
 stage. Two ways out, both a person's: `set-hold` until ptheywood answers, which is
 exactly what "parked on someone else's reply" means and touches no state; or a
 repair back to `review-passed`, where the gfx90a round found it.
+
+## Sync to the rebased amdgpu branch, 2026-10-20 (windows-gfx1151)
+
+Ruling from Jeff, 2026-10-20: keep `moat-port` as a ready-to-use build of the upstream HIP branch (FLAMEGPU/FLAMEGPU2 PR #1379, branch `amdgpu`) plus our fixes, sync it ONCE, then put the project on hold. Do not follow his rebases. Our fixes reach upstream by describing them in a reply on #1379 so he commits them himself: the FLAME GPU CLA is an individual exclusive licence whose own text requires employer approval or the entity version for work done as an employee, so no AMD code is sent.
+
+ptheywood force-pushed `amdgpu` on 2026-10-20 to `bfda5dec` (69 commits, 0 behind master): C++20 `source_location` error checking, CUDA >= 12.4, GCC >= 11, a Clang warning-fix series, the full `flamegpu::detail::gpu` abstraction series. Neither of our August fixes was in it.
+
+`moat-port` history, no force-push:
+
+```
+7977ab2b CMake: Define NOMINMAX on Windows for every compiler, not only MSVC
+ab5f31ce Fix: Add missing windows.h include in CUDAEnsemble.cu      (cherry-pick of 2ecf5a01)
+1f08a6f0 Fix: Delete CUDAEventTimer copy/move to avoid double event destroy (cherry-pick of 7f9f6a20)
+599ed869 Merge the current amdgpu branch (bfda5dec)                 (-s ours + read-tree: tree == bfda5dec exactly)
+a290861e previous head
+```
+
+Net diff vs `upstream/amdgpu`: 3 files, +13 -2.
+
+New fault on his tip: `src/CMakeLists.txt` defines `NOMINMAX` only for `CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"`. A Windows HIP build uses clang++, so the `windows.h` include brings in the min/max macros, which break `std::numeric_limits<T>::max()` in `detail/cuda.cuh:141`, `CUDAEnvironmentDirectedGraphBuffers.cuh:103-104` and rocPRIM's `functional.hpp` / `type_traits_functions.hpp` ("too few arguments provided to function-like macro invocation"). Without the include the same file fails instead with `use of undeclared identifier 'ES_CONTINUOUS'` (lines 54, 63, 516). Both changes are needed. Fixed by keying `NOMINMAX` on `WIN32`.
+
+Build (Windows 11, gfx1151, TheRock SDK 7.14, all languages on clang++; googletest pre-cloned because the in-CMake git clone fails on this host):
+
+```bash
+source agent_space/win_rocm_env.sh
+cmake -S $SRC -B $SRC/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFLAMEGPU_BACKEND=HIP \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_CXX_COMPILER="$ROCM_LLVM_BIN/clang++.exe" -DCMAKE_C_COMPILER="$ROCM_LLVM_BIN/clang.exe" \
+  -DCMAKE_HIP_COMPILER="$ROCM_LLVM_BIN/clang++.exe" -DCMAKE_PREFIX_PATH="$ROCM_ROOT" \
+  -DFLAMEGPU_BUILD_TESTS=ON -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=$DEPS/googletest-src
+sed -i 's/-fuse-ld=lld-link//g' $SRC/build/build.ninja
+cmake --build $SRC/build --target flamegpu boids_bruteforce tests -j16
+```
+
+Result: 212/212, `tests.exe` and `boids_bruteforce.exe` linked.
+
+## Review 2026-10-20 (windows-gfx1151, fork head 7977ab2b)
+
+Scope: `git diff upstream/amdgpu moat-port` only (3 files, +13 -2: 1f08a6f0, ab5f31ce, 7977ab2b). Confirmed `git diff upstream/amdgpu 599ed869` is empty (upstream/amdgpu = bfda5dec), so the merge carries no content of ours. The maintainer's code was not reviewed.
+
+Verdict: review-passed. No blocking findings.
+
+Checked and recorded so the next reader does not redo it:
+
+- `CUDAEventTimer` deleted copy/move: the only construction sites are `new detail::CUDAEventTimer()` in `src/flamegpu/simulation/CUDASimulation.cu:61` (wrapped in `std::unique_ptr<detail::Timer>`) and `tests/test_cases/detail/test_CUDAEventTimer.cu:24`; nothing in src, tests, examples or swig holds one by value or in a container, so the deletion cannot break a build.
+- `CUDAEnsemble.cu:17-19` `#ifdef _MSC_VER` include matches the guard of the three `SetThreadExecutionState` blocks (55, 64, 517) and of `AbstractSimRunner.cu:9`, `SimLogger.cu:12`, `MPISimRunner.cu:13`. Linux (CUDA and HIP): not compiled. Windows CUDA (MSVC host): windows.h was already reached transitively and NOMINMAX was already defined, so only the declaration source changes. Windows HIP (clang++ targeting msvc, defines `_MSC_VER`): needed, built 212/212. windows.h now precedes the flamegpu headers in this file; grep of `include/` found no identifier colliding with common windows.h macros.
+- `src/CMakeLists.txt:555` `if(WIN32)`: PRIVATE, so no consumer sees it; only non-MSVC Windows compilers (clang++, clang-cl, MinGW) gain NOMINMAX, and since MSVC already compiled the same sources with NOMINMAX, no source can depend on the min/max macros. windows.h appears only in src files (`Telemetry.cpp`, `CUDAEnsemble.cu`, `AbstractSimRunner.cu`, `SimLogger.cu`, `MPISimRunner.cu`), none in public headers, tests or examples, so PRIVATE remains sufficient.
+- Commits: titles 66/53/67 chars, author jeff.daily@amd.com, no trailers, `jargon.py --port FLAMEGPU2` clean. `Topic: sentence` style mirrors the upstream branch deliberately.
+
+Minor, not actionable (commits are pushed to origin/moat-port and must not be amended): the Test Plans of 1f08a6f0 and ab5f31ce cite the gfx90a run (1070 passed, 64 skipped) taken at the earlier maintainer tip 5e42a64, not at bfda5dec. The validator's run at 7977ab2b supersedes them; if the fixes are described in a reply on #1379, cite the new-head evidence there.
+
+## Validation 2026-10-20 (windows-gfx1151, fork head 7977ab2b)
+
+GPU: AMD Radeon 8060S Graphics (gfx1151, RDNA3.5, wave32), Windows 11. Runtime: TheRock 7.14 SDK DLLs co-located with the exes (telemetry reports `HIPVersion 7.14.60850`, not the System32 7.2 driver). Build as in the sync section above (212/212).
+
+```bash
+BIN=projects/FLAMEGPU2/src/build/bin/Release
+$BIN/tests.exe                                   # full suite, 1134 tests
+$BIN/tests.exe --gtest_filter='TestCleanup.CUDASimulation'
+$BIN/tests.exe --gtest_filter='TestCleanup.CUDAEnsemble'
+$BIN/tests.exe --gtest_filter='TestUtilNVTX.*:CXXNamespaceTest.*:RTCNamespaceTest.*:TestVersion.*'
+$BIN/boids_bruteforce.exe -s 2 -v
+```
+
+- Full run: 1121 tests ran before the process died after `TestCleanup.CUDASimulation` (exit 127): 1050 OK, 11 FAILED, 59 SKIPPED.
+- The 13 tests the full run did not reach, run separately: 9 passed, 5 skipped (RTC). `TestCleanup.CUDASimulation` passes in isolation.
+- Total: 1059 passed, 64 skipped (runtime compilation, not implemented on AMD, upstream #1368), 11 failed.
+- The 11 failures are all `TestCUDASimulationConcurrency.*`, the 1.5x stream-speedup assertion, identical to windows-gfx1201 and windows-gfx1101 in June. Functional, not correctness.
+- Process teardown: every process exits nonzero after its work completes (`tests.exe` with a single passing test returns 127; `boids_bruteforce.exe` completes the simulation, then exits `0xC0000374` heap corruption). gfx1101 hit the same exit-127 stop at `TestCleanup` in June, so this predates this round; all three fixes are compile-time only. Not characterised further.
+- CUDA no-regression gate: not run on this host (no CUDA toolkit); owed by the first Linux validator at this head.
+- Integrity: fork clone has no modified tracked files. `jargon.py --port FLAMEGPU2` clean.
+
+Verdict: completed (functional pass, same known Windows concurrency-speedup failures).
+
+## Validation 2026-10-21 (linux-gfx90a, fork head 7977ab2b)
+
+GPU: AMD Instinct MI250X (gfx90a, CDNA2, wave64), one GCD pinned with `HIP_VISIBLE_DEVICES` by the dispatcher (telemetry payload `"GPUDevices":"AMDInstinctMI250X/MI250"`). ROCm: TheRock python wheels `rocm-sdk-devel` / `rocm-sdk-core` 10.1.0 in the image venv (`libamdhip64.so.7.16`, AMD clang 24.0.0git); this host has no `/opt/rocm` and no conda. CMake 3.31.6. All runs under `ulimit -c 0`.
+
+Fork clone at `7977ab2b` (`moat-port`). Note: `upstream/amdgpu` has moved again since the sync (now `053cb687`, was `bfda5dec`); per the 2026-10-20 ruling it is not followed, and this run validates `7977ab2b` only.
+
+```bash
+SP=/opt/python-3.11-venv/lib/python3.11/site-packages
+ROCM=$SP/_rocm_sdk_devel; CORE=$SP/_rocm_sdk_core
+cmake -S projects/FLAMEGPU2/src -B projects/FLAMEGPU2/src/build -DCMAKE_BUILD_TYPE=Release \
+  -DFLAMEGPU_BACKEND=HIP -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_CXX_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_C_COMPILER=$ROCM/lib/llvm/bin/clang \
+  "-DCMAKE_PREFIX_PATH=$ROCM;$CORE" -DFLAMEGPU_BUILD_TESTS=ON
+cmake --build projects/FLAMEGPU2/src/build --target flamegpu boids_bruteforce tests -j 64
+projects/FLAMEGPU2/src/build/bin/Release/tests
+projects/FLAMEGPU2/src/build/bin/Release/boids_bruteforce --steps 10 -v
+```
+
+- Build: configure 15.9 s, compile 315 s, exit 0, 0 errors, 0 warnings.
+- `tests`: 1134 tests from 89 suites, **1070 passed, 64 skipped, 0 failed**, process exit **0**, 39.1 s. Identical to the June gfx90a run and the August run at 5e42a64 (1070/64/0). 46 `DISABLED_` tests upstream, not counted.
+- The 64 skips: 62 runtime-compilation (RTC) tests plus `TestUtilDetailCuda.cuDevicePrimaryContextIsActive` and `TestCUDASimulation.ApplyConfigDerivedContextCreation` ("Test not yet implemented for HIP/ROCm/AMD"), the same set as before.
+- `TestCUDASimulationConcurrency.*`: all 12 pass here (the 11 speedup tests plus `LayerConcurrencyDeviceException`), e.g. `LayerConcurrency` 1410 ms, `ConcurrentMessageOutputInput` 2817 ms. These are the tests that fail on every Windows host.
+- `TestCleanup.CUDASimulation` passes in the full run and the process exits 0, unlike Windows (exit 127). The underlying stale-stream use-after-free is present on Linux too (see the Linux control below); glibc simply did not detect it in this run.
+- `boids_bruteforce --steps 10 -v`: completes, Total Processing time 0.154859 s, exit 0.
+- CUDA no-regression gate (first run at this head): **pass**. CUDA 12.8.93 toolkit (`cuda-toolkit=12.8` from the nvidia channel, in a micromamba env under `agent_space/` since this host has no conda), host GCC 13.3.0, `-DCMAKE_CUDA_ARCHITECTURES=80` (confirmed in CMakeCache):
+  ```bash
+  C=agent_space/mamba/cuda-12.8
+  cmake -S projects/FLAMEGPU2/src -B agent_space/build-cuda -DCMAKE_BUILD_TYPE=Release -DFLAMEGPU_BACKEND=CUDA \
+    -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_CUDA_COMPILER=$C/bin/nvcc -DCUDAToolkit_ROOT=$C \
+    -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc -DFLAMEGPU_BUILD_TESTS=ON
+  cmake --build agent_space/build-cuda --target flamegpu boids_bruteforce tests -j 64
+  ```
+  Configure 29.8 s, build 239 s, exit 0, 0 errors, 0 warnings; `flamegpu`, `boids_bruteforce` and `tests` all linked. Compile-only; no NVIDIA runtime behaviour is claimed.
+- Integrity: `git -C projects/FLAMEGPU2/src status --porcelain` empty. `jargon.py --port FLAMEGPU2` clean. Documentation: unchanged from the 2026-10-20 review (the upstream README documents the HIP build; our three commits have no user-visible surface).
+
+Verdict: completed. This satisfies the wave64 gate at 7977ab2b.
+
+## ROCm defects found on Windows, 2026-10-21 (windows-gfx1151)
+
+Ruling from Jeff, 2026-10-21: windows-gfx1151 stays `completed` at 7977ab2b; both defects below are HIP runtime defects on Windows, not port defects, and are registered as `rocm-bug-report` deferrals on this project. Both reproduce without FLAMEGPU. Host: Radeon 8060S (gfx1151), Windows 11, TheRock SDK 7.14 (`amdhip64_7.dll` co-located, HIPVersion 7.14.60850). Build either repro with:
+
+```bash
+source agent_space/win_rocm_env.sh
+"$ROCM_LLVM_BIN/clang++.exe" -x hip --offload-arch=gfx1151 -O2 --rocm-path="$ROCM_ROOT" repro.hip -o repro.exe -L"$ROCM_ROOT/lib" -lamdhip64
+# co-locate the runtime: rocm_stage_runtime .
+```
+
+### 1. hipStreamDestroy on a stream after hipDeviceReset corrupts the heap (`hip-win-stream-destroy-after-reset`)
+
+FLAMEGPU trigger: `flamegpu::util::cleanup()` calls `hipDeviceReset()` on every device; a `CUDASimulation` still alive (boids `main`, `TestCleanup.CUDASimulation`) then destroys its streams. On CUDA that returns an error; on HIP/Windows the process dies at exit. This is the nonzero exit seen on every Windows host: `tests.exe` exit 127 after `TestCleanup.CUDASimulation`, `boids_bruteforce.exe` `0xC0000374`.
+
+```cpp
+#include <hip/hip_runtime.h>
+#include <cstdio>
+__global__ void touch(int *p) { p[threadIdx.x] = threadIdx.x; }
+int main() {
+    int *d; hipStream_t s;
+    hipMalloc(&d, 256 * sizeof(int));
+    hipStreamCreate(&s);
+    hipLaunchKernelGGL(touch, dim3(1), dim3(64), 0, s, d);
+    hipDeviceSynchronize();
+    printf("reset: %s\n", hipGetErrorName(hipDeviceReset()));
+    printf("hipStreamDestroy: %s\n", hipGetErrorName(hipStreamDestroy(s)));  // stale handle
+    return 0;
+}
+```
+
+Observed with this exact program, three runs: `0xC0000005`, `0xC0000374`, `0xC0000374`. With a variant that also allocated managed, `hipHostAlloc` and `__device__` symbol memory: `0xC0000409`, `0xC0000374`, `0xC0000374`, then one run hung and could not be killed (still resident in the process table after `taskkill /F` and `Stop-Process -Force`). An earlier, smaller variant of the program exited 0 once, so the corruption is not always detected. Controls that exit 0: no stale release at all; stale `hipFree` / `hipHostFree` on `hipMalloc`, `hipHostMalloc`, `hipMallocManaged` and `hipHostAlloc` memory (`hipErrorInvalidValue`, clean); stale `hipEventDestroy` (`hipSuccess`, clean); `hipDeviceReset()` with no stale release; and every FLAMEGPU test that destroys its simulation before `main`'s `cleanup()`. Expected: `hipErrorInvalidResourceHandle` (or similar), as CUDA returns. Not yet checked on Linux.
+
+### 2. Kernels on different streams do not run concurrently (`hip-win-stream-serialization`)
+
+FLAMEGPU trigger: the 11 `TestCUDASimulationConcurrency.*` tests assert >= 1.5x speedup from running independent agent functions on separate streams. They measure ~1.0x on every Windows host (gfx1101, gfx1201, gfx1151) and pass on Linux (gfx90a, gfx1100, June).
+
+```cpp
+#include <hip/hip_runtime.h>
+#include <chrono>
+#include <cstdio>
+// wall_clock64, not clock64: on gfx11 clock64 reads a 20-bit shader-cycle counter that wraps, so a long spin never ends
+__global__ void spin(long long ticks) { long long t0 = wall_clock64(); while (wall_clock64() - t0 < ticks) {} }
+static double run(int n, hipStream_t *s, long long ticks) {
+    hipDeviceSynchronize();
+    auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < 4; ++i) hipLaunchKernelGGL(spin, dim3(1), dim3(64), 0, s[i % n], ticks);
+    hipDeviceSynchronize();
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+}
+int main() {
+    int khz; hipDeviceGetAttribute(&khz, hipDeviceAttributeWallClockRate, 0);
+    long long ticks = 20LL * khz;  // 20 ms per kernel
+    hipStream_t s[4];
+    for (auto &x : s) hipStreamCreateWithFlags(&x, hipStreamNonBlocking);
+    run(1, s, ticks);
+    double one = run(1, s, ticks), four = run(4, s, ticks);
+    printf("1 stream %.1f ms, 4 streams %.1f ms, speedup %.2fx\n", one, four, one / four);
+}
+```
+
+Observed: four 1-block kernels, 5 ms each: 1 stream 20.3 ms, 4 streams 21.6 ms; 20 ms each: 80.5 ms vs 81.3 ms; 10 ms each: 40.3 ms vs 41.2 ms. `GPU_MAX_HW_QUEUES=4` and `=8` do not change it. Expected on a GPU with 20 CUs and four 1-block kernels: ~4x. Not yet run on Linux as a control (FLAMEGPU's own concurrency tests passing there is the indirect control).
+
+### Linux control (linux-gfx90a)
+
+Run 2026-10-21 on the linux-gfx90a validation host: MI250X (gfx90a), one GCD pinned with `HIP_VISIBLE_DEVICES`, Ubuntu 24.04, kernel 6.8, the same ROCm that built FLAMEGPU for the validation above (TheRock wheels 10.1.0, `libamdhip64.so.7.16.26385`, AMD clang 24.0.0git). Each program was copied verbatim from the fenced blocks above into `agent_space/repro/` and built and run with:
+
+```bash
+ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+$ROCM/lib/llvm/bin/clang++ -x hip --offload-arch=gfx90a -O2 --rocm-path=$ROCM repro.hip -o repro -L$ROCM/lib -lamdhip64
+ulimit -c 0; timeout 60 ./repro
+```
+
+Both built with only `-Wunused-value` (nodiscard `hipError_t`) warnings.
+
+**Repro 1 (stale `hipStreamDestroy` after `hipDeviceReset`): also defective on Linux.** Five plain runs:
+
+```
+--- run 1
+reset: hipSuccess
+hipStreamDestroy: hipSuccess
+exit=0
+--- run 2
+reset: hipSuccess
+hipStreamDestroy: hipSuccess
+exit=0
+--- run 3
+corrupted double-linked list
+timeout: the monitored command dumped core
+Aborted                 timeout 60 ./repro1
+exit=134
+--- run 4
+corrupted double-linked list
+timeout: the monitored command dumped core
+Aborted                 timeout 60 ./repro1
+exit=134
+--- run 5
+reset: hipSuccess
+hipStreamDestroy: hipSuccess
+exit=0
+```
+
+(`ulimit -c 0` was in effect; no core file was written.) In runs 3 and 4 glibc detected the corruption and aborted (SIGABRT, 134) before anything reached stdout. When the program does finish, `hipStreamDestroy` on the stale handle returns `hipSuccess` instead of an error.
+
+`MALLOC_CHECK_=3`, three runs: all printed `reset: hipSuccess` / `hipStreamDestroy: hipSuccess` and exited 0, so this checker does not catch it.
+
+`valgrind` 3.22.0 (`valgrind --error-limit=no --num-callers=30 ./repro1`), one run, exit 132: `ERROR SUMMARY: 11 errors from 9 contexts`, all of them use-after-free inside `hipStreamDestroy`. Representative error, with frames inside libamdhip64 shown as `???`:
+
+```
+Invalid read of size 4
+   at 0x4C51EF7: ??? (libamdhip64.so.7)
+   by 0x4D3D1DA: hipStreamDestroy (libamdhip64.so.7)
+   by 0x10C29E: main (repro1)
+ Address 0x1457d204 is 564 bytes inside a block of size 768 free'd
+   at 0x484A164: operator delete(void*)
+   by 0x4E496FF / 0x49B9179 / 0x49B8E08 / 0x49A492F: ??? (libamdhip64.so.7)
+   by 0x4CEF2A4: hipDeviceReset (libamdhip64.so.7)
+   by 0x10C27C: main (repro1)
+ Block was alloc'd at
+   at 0x4846FA3: operator new(unsigned long)
+   by 0x4C480EE / 0x4C49B02: ??? (libamdhip64.so.7)
+   by 0x4D3C54A: hipStreamCreate (libamdhip64.so.7)
+   by 0x10C1EC: main (repro1)
+```
+
+The others are reads of size 4 and 8, one write of size 1 and one write of size 4, all into the same 768-byte block (offsets 0 to 564). Then `valgrind: Unrecognised instruction at address 0x4c6712a` inside libamdhip64, reached through the same `0x4E496FF` frame that frees the block, and the process dies with SIGILL. Valgrind's own text says that means either a jump to a non-code location or an instruction it cannot decode; following a freed object, the first is more likely, but this run does not prove it. Neither `printf` line appeared (stdout was still buffered when SIGILL killed the process).
+
+Conclusion: a stream object that `hipStreamCreate` allocates is freed by `hipDeviceReset`, and `hipStreamDestroy` on the old handle then reads and writes that freed memory and frees it again. The defect is in the common HIP runtime, not the Windows backend. Linux only shows it less often: glibc aborted 2 of 5 plain runs, and the FLAMEGPU process that does the same thing (`TestCleanup.CUDASimulation`, boids `main`) exited 0 in this host's runs. The `hip-win-stream-destroy-after-reset` deferral names Windows; its scope should be widened to all platforms (a person's call, and the id is left alone here).
+
+**Repro 2 (kernels on separate streams): overlaps on Linux.** Three runs, all exit 0:
+
+```
+--- run 1
+1 stream 80.0 ms, 4 streams 20.1 ms, speedup 3.99x
+exit=0
+--- run 2
+1 stream 80.0 ms, 4 streams 20.1 ms, speedup 3.99x
+exit=0
+--- run 3
+1 stream 80.0 ms, 4 streams 20.1 ms, speedup 3.99x
+exit=0
+```
+
+Four 20 ms kernels run fully concurrently on four non-blocking streams (3.99x, the ideal is 4x), which matches the 12 `TestCUDASimulationConcurrency.*` passes above. The serialization seen on Windows is specific to the Windows runtime, so `hip-win-stream-serialization` is correctly scoped.
+
+## Correspondence 2026-10-21
+
+Posted (approved by Jeff) on FLAMEGPU/FLAMEGPU2#1379: https://github.com/FLAMEGPU/FLAMEGPU2/pull/1379#issuecomment-6328105164. Answers ptheywood's 2026-08-25 comment: CLA needs AMD approval or the entity version, so the three fixes are described for him to commit (all still absent at his tip 053cb68 = bfda5dec + one CI commit); gfx90a and gfx1151 results at 7977ab2b; Windows stream serialization; the hipStreamDestroy-after-hipDeviceReset use-after-free; #1387 not yet investigated. The reply commits us to raising both HIP defects with the ROCm runtime team.
+
+## Correction 2026-10-21: the stream-destroy crash is undefined behavior, not a HIP bug
+
+`cudaDeviceReset` documents: "It is the caller's responsibility to ensure that the resources are not accessed or passed in subsequent API calls and doing so will result in undefined behavior." (streams are on its list). `hipDeviceReset`'s header says it "deletes all streams created". So FLAMEGPU destroying a `CUDASimulation` after `util::cleanup()` is API misuse on both; CUDA tolerates it in practice, HIP use-after-frees. Recovery for NEW work after a reset is fine (gfx90a: the GPU tests after `TestCleanup.CUDASimulation` pass in the same process, exit 0). Section "ROCm defects found on Windows" above overstates repro 1 as a HIP defect; read it as a parity request (HIP should tolerate a stale stream as CUDA does, without a specific error code, since CUDA's actual return was not measured -- no NVIDIA GPU available). Stale `hipEventDestroy` returned `hipSuccess` and was not run under valgrind; the request should cover events too.
+
+Correction posted with Jeff's approval, in his voice: https://github.com/FLAMEGPU/FLAMEGPU2/pull/1379#issuecomment-6328248754
+
+## NVIDIA baseline 2026-10-26: what CUDA does with stale handles after `cudaDeviceReset`
+
+`agent_space/cuda-stale-after-reset.cu` (the HIP repro translated, plus `setvbuf(stdout, nullptr, _IONBF, 0)` and a fresh `cudaMalloc` after the stale release). Tesla V100-SXM2-32GB, CUDA 12.9 (V12.9.86), driver 575.57.08, `nvcc -O2 -arch=sm_70`, two different nodes, 20 runs per case per node:
+
+| case | result (40 runs) |
+|---|---|
+| none | 40 exit 0 |
+| `cudaStreamDestroy(stale)` | 40 exit 0, returns `cudaErrorInvalidResourceHandle`, later `cudaMalloc` succeeds |
+| `cudaEventDestroy(stale)` | 29 exit 0 returning `cudaErrorDeviceUninitialized`; 11 SIGSEGV (139) inside the call |
+| `cudaFree(stale)` | 40 exit 0, returns `cudaErrorInvalidValue` |
+
+Under `compute-sanitizer` the stream and event cases both die ("process didn't terminate successfully"), so CUDA's stale-stream check is not airtight either; valgrind is not installed on those nodes. Conclusion: the parity request is narrow and real for streams (CUDA validates the handle and returns `cudaErrorInvalidResourceHandle`; HIP returns `hipSuccess` after a use-after-free). For events there is no parity to ask for: CUDA itself segfaults about a quarter of the time.
+
+Filed with Jeff's approval as a parity request (UB acknowledged, streams only; events dropped because CUDA also segfaults on a stale `cudaEventDestroy`): https://github.com/ROCm/rocm-systems/issues/14322. Deferral `hip-win-stream-destroy-after-reset` is marked filed; its summary predates the correction and the Linux control, so read this section and the 2026-10-26 baseline over it.
+
+Windows stream serialization filed with Jeff's approval: https://github.com/ROCm/rocm-systems/issues/14323 (gfx1151 standalone repro at ROCm 7.14 vs gfx90a Linux 3.99x; gfx1101/gfx1201 evidence is FLAMEGPU's own concurrency tests). Deferral `hip-win-stream-serialization` marked filed. Both HIP issues promised in the #1379 reply are now open; FLAMEGPU2 stays held until ptheywood commits the three fixes or #1379 merges.
+
+## Correspondence 2026-10-22/23 and reset detection on HIP (2026-10-26)
+
+ptheywood replied 2026-10-22 (https://github.com/FLAMEGPU/FLAMEGPU2/pull/1379#issuecomment-6341669342): will re-implement the three fixes himself; will mark/skip the Windows `TestCUDASimulationConcurrency` tests; on the stale streams, FLAMEGPU's CUDA path already guards `destroyStreams()` with `cuDevicePrimaryCtxGetState` plus `cuCtxGetId` (so CUDA never actually passes a stale stream), the HIP path stubs both (`detail/cuda.cuh` `cuDevicePrimaryContextIsActive` returns true, `cuGetCurrentContextUniqueID` returns max), and he plans to use `hipExecutionCtxGetId` (ROCm >= 7.14) for the same check, leaking streams on older ROCm. 2026-10-23 comments are Robadob/ptheywood review threads, none addressed to us.
+
+Probe (`agent_space/hipprobe/ctx-reset-detect.hip`, gfx1151 Windows, HIP 7.14.60850): `hipDevicePrimaryCtxGetState` active=0 at every point (before init, after use, after `hipDeviceReset`, after re-init); `hipCtxGetCurrent` returns the same handle throughout; `hipDeviceGetExecutionCtx` + `hipExecutionCtxGetId` returns id 1 before and after the reset. CLR source on rocm-systems develop explains it on every platform: `hip::Device::Reset()` (`hip_device.cpp`) destroys streams and pools and calls `Create()` but never touches `primaryExecCtx_`, so the ID is unchanged; `hipDevicePrimaryCtxGetState` reports `Device::isActive_`, a one-way "work submitted" flag set by `hipSetDevice`/allocation paths and never cleared by reset. Neither API can detect a reset. Suggestion for upstream: since `flamegpu::util::cleanup()` is FLAMEGPU's own reset call, record a per-device reset generation there and have `destroyStreams()` skip destruction when it changed (works on every ROCm version). CLR also already has an internal `isValid(hipStream_t)` used by e.g. `hipStreamGetDevResource`, relevant to #14322.
+
+Confirmed 2026-10-26 on Linux: same probe on linux-gfx90a (MI250X, TheRock 10.1.0 wheels, HIP_VERSION 71626385) prints identical results (active=0 throughout, same `hipCtxGetCurrent` handle, execution-context id 1 before and after `hipDeviceReset`). CUDA control (V100, CUDA 12.9, driver API probe): `cuDevicePrimaryCtxGetState` active 0 -> 1 after `cudaFree(0)` -> 0 after `cudaDeviceReset` -> 1 after re-init; `cuCtxGetId` 1 -> `CUDA_ERROR_CONTEXT_IS_DESTROYED` after the reset -> 2 after re-init. So CUDA exposes the reset through both APIs and HIP through neither. HIP has no `hipCtxGetId`; `hipExecutionCtxGetId` mirrors CUDA 13's runtime `cudaExecutionCtxGetId`, which could not be run here (CUDA 13 dropped sm_70).
+
+Filed with Jeff's approval: https://github.com/ROCm/rocm-systems/issues/14328 (deferral `hip-reset-undetectable-ctx-state`, filed).
+
+Reply posted with Jeff's approval, 2026-10-26: https://github.com/FLAMEGPU/FLAMEGPU2/pull/1379#issuecomment-6431451088 (links #14322, #14323, #14328; hipExecutionCtxGetId cannot detect the reset; suggests a reset counter bumped in util::cleanup()).

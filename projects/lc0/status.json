@@ -7,14 +7,21 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-12T22:11:14Z",
-  "head_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
+  "updated_at": "2026-10-26T15:27:43Z",
+  "head_sha": "49756806f27520538d17a60ec5c4ac35416bb160",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
   "pr_opened_at": "2026-06-11T07:21:22Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
+  "waivers": {
+    "windows": {
+      "reason": "WITHDRAWN by the 2026-08-20 root-cause investigation -- DO NOT APPROVE. The earlier case for this waiver ('the obstacle is the Windows ROCm toolchain, a gfx-specific rocBLAS/Tensile fallback kernel for the value head's small GEMM shapes') has been FALSIFIED. The defect is a latent host-side stream-ordering bug in lc0's own weight-upload path, not a toolchain defect, and it is fixable in the port. allocAndUpload (src/neural/backends/cuda/layers.cc) launches copyTypeConverted on the legacy null stream, reading the shared scratch buffer, and returns without waiting; every compute stream is created cudaStreamNonBlocking so nothing orders that copy against the first evaluation, which overwrites the same scratch. The last upload of the last-constructed layer -- the value head's ip2_val_b_ -- loses the race, so exactly one 3-float bias is corrupted while every computed tensor around it is exact. Windows HIP loses this race deterministically where Linux HIP wins it. Measured on windows-gfx1151 at head 7727fa3: the dense-2 GEMM output equals a host double-precision reference exactly, the device bias reads -1.40802431 0.55243015 0.00000000 against the net's 0.43719077 -0.98977518 0.55311656, and adding cudaStreamSynchronize(0) at the end of allocAndUpload takes the gate check from 0/222 to 222/222 passing (value abs 6.0e-08, was 4.4e-02). rocBLAS/hipBLASLt was independently exonerated (ROCBLAS_USE_HIPBLASLT=0 changes nothing). Full evidence in projects/lc0/notes.md, section 'Investigation 2026-08-20 (windows-gfx1151) -- why Windows'. The correct route is a moat-fix-<pr#> round carrying the one-line fix, not a gate waiver; this suggestion is retained only to overwrite the falsified reasoning that stood here.",
+      "suggested_at": "2026-08-20T20:39:19Z",
+      "refused_by": "jeffdaily",
+      "refused_at": "2026-08-20T20:47:19Z",
+      "refused_note": "Refused on the 2026-08-20 root-cause evidence, which falsified the waiver's own rationale. The obstacle is NOT the Windows ROCm toolchain and NOT a gfx-specific rocBLAS/Tensile kernel: it is a latent host-side stream-ordering race in lc0's own code. allocAndUpload (src/neural/backends/cuda/layers.cc) memcpys into the shared scratch buffer, launches copyTypeConverted on the legacy null stream, and returns without synchronising; every compute stream is created cudaStreamNonBlocking, so nothing orders that copy against the first evaluation, which overwrites the same scratch. Only the last upload of the last-constructed layer survives to be observed, which for a classic net with no moves-left head is the value head's 3-float bias ip2_val_b_. Windows only loses the race because its KMD defers submission; the Linux KFD path lands the copy immediately. Verified fix is one line -- cudaStreamSynchronize(0) after the copy -- taking the gate from 0/222 to 222/222 and the value error from 4.4e-02 to 6.0e-08. Do not waive a real, fixable bug in our own port. Land the fix as a moat-fix-2420 round against open PR #2420, revalidate, and take the windows gate honestly."
+    }
+  },
+  "pr_state": "merged",
   "license_clearance": {
     "approved_by": "jeffdaily",
     "at": "2026-08-06T02:33:28Z",
@@ -25,14 +32,79 @@
   "upstream_repo_id": 135489692,
   "stage": "review-passed",
   "platforms": {
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "49756806f27520538d17a60ec5c4ac35416bb160",
+      "started_at": "2026-05-31T05:46:00Z",
+      "completed_at": "2026-10-21T07:17:03Z",
+      "updated_at": "2026-10-21T07:17:03Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-05-31T05:46:00Z",
+        "last_session_at": "2026-05-31T06:05:00Z"
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-20T21:05:06Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1101": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-20T21:05:04Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
     "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
+      "validated_sha": "49756806f27520538d17a60ec5c4ac35416bb160",
       "started_at": "2026-05-31T01:38:05Z",
-      "completed_at": "2026-08-08T23:24:36Z",
-      "updated_at": "2026-08-08T23:29:09Z",
+      "completed_at": "2026-10-21T07:17:05Z",
+      "updated_at": "2026-10-21T07:17:05Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -48,14 +120,14 @@
       },
       "last_agent": "validator"
     },
-    "linux-gfx1100": {
-      "state": "completed",
+    "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
-      "started_at": "2026-05-31T05:46:00Z",
-      "completed_at": "2026-08-08T02:03:02Z",
-      "updated_at": "2026-08-08T02:03:02Z",
+      "validated_sha": "49756806f27520538d17a60ec5c4ac35416bb160",
+      "failed_sha": null,
+      "started_at": "2026-08-20T20:49:17Z",
+      "completed_at": "2026-10-26T15:27:43Z",
+      "updated_at": "2026-10-26T15:27:43Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -65,60 +137,30 @@
           "test": 0,
           "misc": 0
         },
-        "session_count": 1,
-        "first_session_at": "2026-05-31T05:46:00Z",
-        "last_session_at": "2026-05-31T06:05:00Z"
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
       },
-      "last_agent": "reviewer",
-      "carry_forward": {
-        "to": "7727fa32c1992ef6702eacc1b8568715803b0701",
-        "method": "full-revalidation",
-        "detail": "Fresh full real-GPU revalidation at 7727fa3 (not a binary-equiv/source-class shortcut): 331-target build (no rebuild needed, README-only delta), 8/8 CPU gtest, 222/222+222/222 maia-1100 conv-SE fp32/f",
-        "at": "2026-08-08T02:03:02Z"
-      }
-    },
-    "windows-gfx1101": {
-      "blocked": true,
-      "blocked_reason": "Value-head numerical defect identical to gfx1151: builds+runs (344 targets, benchmark clean, 8/8 CPU gtest), policy bit-identical (~4.6e-07) but value wrong 4.4e-02 absolute (sign flips) at atol=1e-3 bar. Defect appears identically on gfx1201 under same TheRock ROCm 7.14 Windows SDK. Exhaustive investigation: graph capture off, use_gemm_ex=false, Conv1Layer loop replacement, standalone BLAS tests all PASS -- BLAS is correct for all relevant dimensions. Root cause unresolved; suspected TheRock ROCm 7.14 Windows HIP runtime issue in custom kernel path. Linux gfx90a+gfx1100 pass the same check on ROCm 7.2.1.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T12:02:47Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1201": {
-      "blocked": true,
-      "blocked_reason": "Value-head numerical defect identical to gfx1151 and gfx1101: builds+runs (344 targets, benchmark clean, 8/8 CPU gtest), policy bit-identical (~4.6e-07) but value wrong 4.4e-02 absolute (sign flips) at atol=1e-3 bar. Defect appears identically on gfx1101 under same TheRock ROCm 7.14 Windows SDK. Exhaustive investigation: graph capture off, use_gemm_ex=false, Conv1Layer loop replacement, standalone BLAS tests all PASS -- BLAS is correct for all relevant dimensions. Root cause unresolved; suspected TheRock ROCm 7.14 Windows HIP runtime issue in custom kernel path. Linux gfx90a+gfx1100 pass the same check on ROCm 7.2.1.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T12:02:56Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
+      "last_agent": "validator:claude-code",
+      "state": "completed"
     }
   },
-  "published_sha": "7727fa32c1992ef6702eacc1b8568715803b0701"
+  "published_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
+  "fix": null,
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-08-24T23:41:52Z",
+    "at": "2026-08-24T23:46:04Z"
+  },
+  "pr_merged_at": "2026-10-09T15:38:33Z",
+  "fix_abandoned": [
+    {
+      "branch": "moat-fix-2420",
+      "base_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
+      "tip_sha": "b87423d8e5cb4075386359cb4521eb8a14ffea2a",
+      "by": "jeffdaily",
+      "reason": "Superseded upstream: LeelaChessZero/lc0#2454 (926e99f) landed an equivalent, broader null-stream wait (cudaDeviceSynchronize at the end of construction in both the cuda and cudnn backends) after #2420 merged at 7727fa3 without our fix. Third-party confirmation on Windows gfx1200: https://github.com/LeelaChessZero/lc0/pull/2454#issuecomment-6273346601",
+      "at": "2026-10-20T22:07:38Z"
+    }
+  ]
 }

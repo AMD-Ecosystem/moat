@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Catch hard-wrapped, non-ASCII, or ROCm-miscased prose before it reaches GitHub.
 
 GitHub reflows markdown to the reader's width. Text wrapped by hand at 80 columns
@@ -136,4 +138,6 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())
