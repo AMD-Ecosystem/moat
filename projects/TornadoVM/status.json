@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "java-ffm-driver-api",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-11-17T00:33:08Z",
+  "updated_at": "2026-11-18T18:12:26Z",
   "head_sha": "d7647e09501c130f6654903cb656d4bcb95af2fd",
   "depends_on": [],
   "waivers": {},
@@ -212,7 +212,7 @@
   "pr_url": "https://github.com/beehive-lab/TornadoVM/pull/1327",
   "pr_number": 1327,
   "pr_opened_at": "2026-11-11T20:14:47Z",
-  "pr_state": "open",
+  "pr_state": "merged",
   "published_sha": "d7647e09501c130f6654903cb656d4bcb95af2fd",
   "fix": null,
   "pr_approval": {
@@ -223,5 +223,6 @@
     "review_pr": "https://github.com/AMD-Ecosystem/TornadoVM/pull/3"
   },
   "fix_merged_at": "2026-11-17T00:33:08Z",
-  "porting": null
+  "porting": null,
+  "pr_merged_at": "2026-11-18T18:12:26Z"
 }
