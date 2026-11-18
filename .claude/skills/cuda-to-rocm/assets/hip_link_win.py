@@ -12,8 +12,7 @@ rewrites the argument list and then runs the real link:
   - turns "-Xlinker <flag>" pairs and bare MSVC /flags into -Wl,<flag>
   - turns -lfoo.lib and bare foo.lib into "-Xlinker foo.lib", which lld-link
     resolves through the LIB environment variable
-Arguments that carry a path are passed through unchanged, and response files are
-not read or rewritten.
+Response files are not read or rewritten.
 
 Usage (as CMAKE_HIP_LINK_EXECUTABLE, on Windows only):
   python <this_script> <clang_exe> [args...]
@@ -49,11 +48,9 @@ def transform(args):
             out += ['-Xlinker', lib_name]
             i += 1
             continue
-        # Bare MSVC-style flags: /name or /name:value. The name has no file
-        # extension and no further slash, which keeps an MSYS-style path such as
-        # /d/build/foo out of this branch.
+        # Bare MSVC-style flags (start with / and no file extension)
         base = a.split(':')[0]
-        if a.startswith('/') and '.' not in base and '/' not in base[1:]:
+        if a.startswith('/') and '.' not in base:
             out.append('-Wl,' + a)
         # Bare .lib names (no directory separators): wrap for GCC driver
         elif a.endswith('.lib') and '/' not in a and '\\' not in a:
