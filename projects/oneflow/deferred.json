@@ -105,7 +105,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-10-31T17:30:43Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-18T18:52:21Z"
+      }
     },
     {
       "id": "rocblas-gemm-ex-longk-16bit-chunk-rounding",
