@@ -8,7 +8,24 @@
 # fork pre-push hooks, pulls, merges the trunk into a port branch and pushes that,
 # and releases projects whose fork has appeared. Only the selection at the end
 # reads without writing. Run this (or /port-next) when starting a CLI in the MOAT repo.
+#
+#   bash utils/orient.sh --read-only
+#
+# reports the same things and changes nothing: no hook or launcher is installed, no
+# fork is protected or released, nothing is pulled, merged, committed or pushed, and
+# it runs on the trunk without MOAT_ALLOW_TRUNK. It describes THIS CHECKOUT AS IT
+# STANDS, which may be behind origin and behind the trunk, so a real orient can
+# select differently afterwards. (The tools it calls may still refresh
+# remote-tracking refs as part of reading; the working tree and every branch are
+# left alone.) Every write below sits between a BEGIN WRITES and an END WRITES
+# marker, inside `if [ "$READ_ONLY" = 0 ]`; tests/test_shell_tools.py holds it there.
 set -uo pipefail
+READ_ONLY=0
+case "${1:-}" in
+  "") ;;
+  --read-only) READ_ONLY=1 ;;
+  *) echo "usage: bash utils/orient.sh [--read-only]" >&2; exit 2 ;;
+esac
 cd "$(dirname "$0")/.."
 . utils/lib.sh
 
@@ -18,6 +35,8 @@ if ! moat_resolve_py; then
   exit 3
 fi
 
+# BEGIN WRITES
+if [ "$READ_ONLY" = 0 ]; then
 bash utils/setup_git.sh >/dev/null 2>&1 \
   || echo "orient: WARNING -- utils/setup_git.sh failed; the status merge driver may not be registered" >&2
 # The hooks and the guard are the trunk's code, run from origin/main as this clone
@@ -38,13 +57,19 @@ fi
 # clone that looks exactly like a protected one is the failure this guards against.
 "$PY" utils/moatlib.py protect-fork >/dev/null \
   || echo "orient: moatlib.py protect-fork FAILED (exit $?) -- fork clones may be UNPROTECTED" >&2
+fi
+# END WRITES
+if [ "$READ_ONLY" = 1 ]; then
+  # Report an inert guard, but do not stop: nothing below writes to GitHub.
+  moat_gh_guard_problem >&2 || true
+fi
 
 # Refuse to work on the trunk. Project state belongs on a shared port/<name> branch,
 # and that branch existing on the remote is what tells another host the project is
 # claimed. MOAT_ALLOW_TRUNK=1 overrides, for control-plane work that is genuinely not
 # a port (tooling, docs) but still wants orient's platform detection.
 _branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-if [ -z "${MOAT_ALLOW_TRUNK:-}" ]; then
+if [ -z "${MOAT_ALLOW_TRUNK:-}" ] && [ "$READ_ONLY" = 0 ]; then
   case "$_branch" in
     main|master)
       echo "orient: on '$_branch' -- MOAT work happens on a port/<name> branch." >&2
@@ -54,6 +79,8 @@ if [ -z "${MOAT_ALLOW_TRUNK:-}" ]; then
   esac
 fi
 
+# BEGIN WRITES
+if [ "$READ_ONLY" = 0 ]; then
 # Sync the latest MOAT state. Best-effort: offline or local-only is fine.
 # This pulls the CURRENT branch -- for a port branch that is the shared per-project
 # state another host may have pushed, which is what the selection below reads.
@@ -89,8 +116,15 @@ case "$SYNC" in
   *) echo "${SYNC/branch-sync: /branch   : }" ;;
 esac
 rm -f "$sync_err"
+fi
+# END WRITES
 
-echo "== MOAT orient =="
+if [ "$READ_ONLY" = 1 ]; then
+  echo "== MOAT orient (read-only) =="
+  echo "note     : nothing installed, pulled, merged or pushed; this is the checkout as it stands"
+else
+  echo "== MOAT orient =="
+fi
 
 # Standing upkeep and the nags below need no GPU, so they run BEFORE platform
 # detection: a host whose GPU vanished (or that never had one) still releases
@@ -108,8 +142,18 @@ echo "== MOAT orient =="
 # Not silenced: this is the only thing that says a fork appeared for a project whose
 # branch nobody has checked out, and discarding it made "no one has to notice by hand"
 # false. Only the routine "nothing to do" lines are dropped.
+if [ "$READ_ONLY" = 1 ]; then
+  # Without --apply the sweep reports what it WOULD release and records nothing.
+  FORKS=$(moat_run "upstream.py --forks" "$PY" utils/upstream.py --forks)
+  printf '%s\n' "$FORKS" | grep -E "RELEASE|ADVANCE|WAITING" | sed 's/^/forks    : (not applied) /' || true
+else
+# BEGIN WRITES
+if [ "$READ_ONLY" = 0 ]; then
 FORKS=$(moat_run "upstream.py --forks --apply" "$PY" utils/upstream.py --forks --apply)
+fi
+# END WRITES
 printf '%s\n' "$FORKS" | grep -E "RELEASED|ADVANCED|WAITING" | sed 's/^/forks    : /' || true
+fi
 
 # Publishing is a project-level step and belongs to nobody's architecture, so the
 # per-arch selector below will never surface it. It comes first because it is cheap,

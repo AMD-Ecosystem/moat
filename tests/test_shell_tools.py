@@ -338,3 +338,60 @@ class HarnessHook(unittest.TestCase):
         self.assertEqual(len(pre), 1)
         self.assertIn("Bash", pre[0]["matcher"])
         self.assertIn("utils/gh_hook.sh", pre[0]["hooks"][0]["command"])
+
+
+class OrientReadOnly(unittest.TestCase):
+    """`orient.sh --read-only` changes nothing: every command that writes sits in a
+    block the flag switches off. orient is not run here (it reads the network)."""
+
+    # What orient does that changes a checkout, a host or a record.
+    WRITES = ("setup_git.sh", "install_hooks.py", "protect-fork", "git fetch",
+              "git pull", "git rebase", "branch-sync --apply", "--forks --apply")
+
+    def setUp(self):
+        self.lines = (UTILS / "orient.sh").read_text(encoding="utf-8").splitlines()
+
+    def blocks(self):
+        """(start, end) line indexes of each BEGIN WRITES .. END WRITES block."""
+        out, start = [], None
+        for i, line in enumerate(self.lines):
+            if line.strip() == "# BEGIN WRITES":
+                self.assertIsNone(start, f"nested BEGIN WRITES at line {i + 1}")
+                start = i
+            elif line.strip() == "# END WRITES":
+                self.assertIsNotNone(start, f"END WRITES with no BEGIN at line {i + 1}")
+                out.append((start, i))
+                start = None
+        self.assertIsNone(start, "BEGIN WRITES never closed")
+        return out
+
+    def test_every_write_is_inside_a_block_the_flag_switches_off(self):
+        blocks = self.blocks()
+        self.assertTrue(blocks)
+        for i, line in enumerate(self.lines):
+            if line.lstrip().startswith("#"):
+                continue
+            for w in self.WRITES:
+                if w in line:
+                    self.assertTrue(any(a < i < b for a, b in blocks),
+                                    f"orient.sh:{i + 1} runs `{w}` outside a WRITES block")
+
+    def test_each_block_opens_with_the_read_only_test_and_closes_it(self):
+        for a, b in self.blocks():
+            self.assertEqual(self.lines[a + 1].strip(), 'if [ "$READ_ONLY" = 0 ]; then',
+                             f"block at line {a + 1}")
+            self.assertEqual(self.lines[b - 1].strip(), "fi", f"block ending at line {b + 1}")
+
+    def test_no_apply_flag_outside_a_block(self):
+        blocks = self.blocks()
+        for i, line in enumerate(self.lines):
+            if "--apply" in line and not line.lstrip().startswith(("#", "echo")):
+                self.assertTrue(any(a < i < b for a, b in blocks),
+                                f"orient.sh:{i + 1}: {line.strip()}")
+
+    @unittest.skipUnless(support.bash(), "needs bash")
+    def test_an_unknown_argument_is_refused_before_anything_runs(self):
+        r = subprocess.run([support.bash(), support.posix(UTILS / "orient.sh"), "--nope"],
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--read-only", r.stderr)
