@@ -18,9 +18,9 @@
         static constexpr int kWarpSize = 32;   // RDNA (gfx10xx, gfx11xx, gfx12xx), CUDA
         #endif
 
-  Do not wrap this in `__HIP_PLATFORM_AMD__`: that macro comes from `hip/hip_runtime.h`,
-  so above the includes it is undefined and the gate silently picks 32 on wave64
-  hardware. The `__GFX*__` predefines need no header and nvcc never defines them.
+  Do not wrap this in `__HIP_PLATFORM_AMD__`: above the includes that macro is undefined
+  and the gate silently picks 32 on wave64 hardware (build-headers-macros.md). The
+  `__GFX*__` predefines need no header and nvcc never defines them.
 
 - **Never route both host and device through one shared constant.** A CMake-injected
   `-DWARP_SIZE=64` forces single-arch and mis-sizes host buffers in a fat binary. Device
@@ -152,9 +152,9 @@ byte-identically into HIP RT 3.1.0.cb09c56) is (b)+(c): a 256-thread block as ei
 logical warps, `u32 broThreads = __ballot( itemIndex < numberOfInputs )`, so every odd
 logical warp ranks its keys against the even warp's attendee set and the corrupted prefix
 sums index a GLOBAL write. Measured on gfx90a it is a hard `Memory access fault ... kernel:
-OnesweepReorderKeyPair64`, not a wrong answer. Fix it with the same arch-unified shift as
-the cuSZ entry below, `(u32)( __ballot( PRED ) >> ( ( threadIdx.x % warpSize ) / 32 * 32 ) )`,
-which is a no-op on wave32 and on the CUDA `__ballot_sync` path. Note the reachability
+OnesweepReorderKeyPair64`, not a wrong answer. Fix it with the arch-unified shift of
+the compat `__ballot_sync` entry below, which is a no-op on wave32 and on the CUDA
+`__ballot_sync` path. Note the reachability
 trap: the sort dispatches a single-pass kernel below 3072 elements and only reaches this one
 above it, so a small harness scene never executes the defect -- two review rounds passed
 44/44 over a back end that could not build an acceleration structure for any real scene. If
@@ -165,19 +165,21 @@ dependency.)
 **A compat `__ballot_sync` that casts `__ballot()` to `uint32_t` takes the LOW 32 lanes**,
 which are the wrong lanes for any logical warp not at the wavefront base -- with
 `blockDim (32,32)`, odd `threadIdx.y` rows sit in the high lanes. Arch-unified form:
-`(uint32_t)(__ballot(PRED) >> (__lane_id() & ~31u))`, where the shift is 0 on wave32. (cuSZ)
+`(uint32_t)(__ballot(PRED) >> (__lane_id() & ~31u))`, where the shift is 0 on wave32.
+(`__lane_id() & 32u`, and `(threadIdx.x % warpSize) / 32 * 32` in a one-dimensional block,
+are the same shift; use one spelling per project.) (cuSZ)
 
 **A full 64-bit `*_sync` mask in 32-lane group code traps in a HIP debug build on wave64.**
 HIP's `__shfl*_sync` / `__ballot_sync` run `__hip_check_mask`, which asserts that the mask
 equals the lanes that reached the call (`__ballot(true)`), and `__hip_assert` is a
 `__builtin_trap()` unless `NDEBUG` is defined. Code written for 32-lane CUDA warps and kept
 correct on wave64 by group-local folds (offsets below 32, width-32 shuffles, the
-`>> (__lane_id() & 32)` ballot) is still wrong to pass `0xffff...ffffull` wherever the two
+shifted ballot of the entry above) is still wrong to pass `0xffff...ffffull` wherever the two
 halves of a wavefront can reach the intrinsic separately: a per-group `continue`, a
 per-group trip count, or a cross-warp step that runs only `threadIdx.x < 32` (or
 `warp_id == 0` with `warp_id = threadIdx.x / 32`). Release builds are correct and wave32
 cannot see it, because a group is the whole wave, so only a wave64 debug run traps. Pass the
-caller's group mask, `0xffffffffull << (__lane_id() & 32u)`: it is the whole wave on wave32
+caller's group mask, `0xffffffffull << (__lane_id() & ~31u)`: it is the whole wave on wave32
 and one half on wave64. The check runs a waterfall over distinct mask values, so each half
 is validated against itself, whether the halves arrive together or apart. HIP evaluates the
 shuffle in the caller's context, so the mask changes only that check and the ballot's

@@ -360,22 +360,15 @@ the fixtures, so the same suite proves the check on a good driver and a bad one.
 switch the VA driver from inside the application. (LichtFeld-Studio; deferral
 `rocdecode-sdk-va-driver-gfx90a-wrong-frames`)
 
-### rocDecode frames wrong on one architecture: swap the VA driver before blaming the port
-
-rocDecode decodes through VA-API, and a TheRock SDK loads its own bundled Mesa VA driver
-(`<SDK>/lib/rocm_sysdeps/lib/radeonsi_drv_video.so`), not the distribution's. On gfx90a
-with SDK 10.1.0 (bundled "Mesa Gallium 26.3.0-devel", amdgpu-dkms 6.16.6) every H.264,
-HEVC and VP9 frame came back wrong in nearly every byte while `rocDecGetDecodeStatus`
-said success; gfx1100 with the same SDK was bit-exact. Three checks split it, each on
-valid streams only: `strace -f -e trace=openat` shows which render node and which
-`*_drv_video.so` the process opens (a wrong card is the other suspect); rerun the same
-test binary with `LIBVA_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/dri` (the distribution's
-Mesa; the bundled libva loads it), which was bit-exact; and decode the clip with the
-system `ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD<n>
--hwaccel_output_format vaapi -vf hwdownload,format=nv12` against a software decode,
-which proves the video engine itself. When comparing against software decode, compare
-luma only or keep the source's pixel format: `-pix_fmt nv12` on a full-range stream
-rescales the range and makes a correct decode look wrong. (LichtFeld-Studio)
+When frames are wrong on one architecture, split the cause with three checks before blaming
+the port, each on valid streams only. `strace -f -e trace=openat` shows which render node and
+which `*_drv_video.so` the process opens (a wrong card is the other suspect). Rerun the same
+test binary with `LIBVA_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/dri` (the distribution's Mesa;
+the bundled libva loads it). And decode the clip with the system `ffmpeg -hwaccel vaapi
+-hwaccel_device /dev/dri/renderD<n> -hwaccel_output_format vaapi -vf hwdownload,format=nv12`
+against a software decode, which proves the video engine itself. When comparing against
+software decode, compare luma only or keep the source's pixel format: `-pix_fmt nv12` on a
+full-range stream rescales the range and makes a correct decode look wrong.
 
 **The software fallback for AV1 needs libdav1d.** FFmpeg's built-in `av1` decoder only
 drives hardware accelerators (without one it fails with "Get current frame error"), and

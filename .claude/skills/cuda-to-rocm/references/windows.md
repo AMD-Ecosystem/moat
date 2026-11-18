@@ -481,20 +481,22 @@ Do not work around this in the port. Sizing a memory pool from
 `hipDeviceProp_t::totalGlobalMem` when `hipMemGetInfo` fails is a source change to shared
 code that buys nothing once the right DLLs are in place. (HEonGPU)
 
-**Read the top frame before forming any hypothesis.** Python's `-X faulthandler`
-prints the faulting frame first; `0x0000000000000000 <unknown module>` above a
-vendored DLL means a call through a NULL function pointer, which in an
-Orochi/hipew-style loader means the library that pointer comes from was never
-loaded. That was the whole diff-surfel-tracing crash, after two retries chased
-the JIT: TheRock names the runtime compiler `hiprtc07013.dll` (HIP 7.13 -- major
-in two digits, minor in three), while HIP RT, Orochi and the port all searched a
-fixed list of four-digit names (`hiprtc0714.dll` ... `hiprtc0503.dll`), so hiprtc
-silently stayed unloaded and the first `orortcCreateProgram` jumped to address 0.
-Any project that `LoadLibrary`s hiprtc (or amdhip64, amd_comgr) by a hard-coded
-versioned name has this fault on TheRock: list `${ROCM_PATH}/bin` for the
-versioned file instead (`hiprtc0*.dll` -- the `0` excludes
-`hiprtc-builtins*.dll`), and compare the names the loader tries against
-`ls $ROCM_PATH/bin` before anything else. (diff-surfel-tracing)
+### A null top frame above a vendored DLL means a runtime library was never loaded
+
+Read the top frame before forming any hypothesis. Python's `-X faulthandler` prints the
+faulting frame first; `0x0000000000000000 <unknown module>` above a vendored DLL means a call
+through a NULL function pointer, which in an Orochi/hipew-style loader means the library that
+pointer comes from was never loaded. The usual cause is a hard-coded versioned DLL name.
+TheRock names the runtime compiler after the HIP version with a digit layout that has changed
+between releases (`hiprtc0702.dll`, `hiprtc0714.dll`, and `hiprtc07013.dll` for HIP 7.13:
+major in two digits, minor in three), so a fixed list of four-digit names
+(`hiprtc0714.dll` ... `hiprtc0503.dll`) finds nothing, hiprtc silently stays unloaded, and
+the first `orortcCreateProgram` jumps to address 0. Any project that `LoadLibrary`s hiprtc
+(or amdhip64, amd_comgr) by a hard-coded versioned name has this fault: list
+`${ROCM_PATH}/bin` for the versioned file instead (`hiprtc0*.dll`; the `0` excludes
+`hiprtc-builtins*.dll`), and compare the names the loader tries against `ls $ROCM_PATH/bin`
+before anything else. (diff-surfel-tracing: HIP RT, Orochi and the port all searched the
+fixed list, and two rounds chased the JIT before anyone read the top frame.)
 
 ### `hipcc.exe` and hiprtc traps for setuptools/Python builds
 
@@ -506,7 +508,7 @@ Found porting CuPy's Windows build. Each one looks like a broken port and is not
 - **hiprtc rejects an absolute program name.** `hiprtcCreateProgram(..., name="C:\...\k.cu")` then `hiprtcCompileProgram` returns `HIPRTC_ERROR_COMPILATION` with an EMPTY log; `k.cu` or `dir\k.cu` compiles the same source. Pass a base name.
 - **hiprtc kernels that include C++ standard headers compile against the MSVC STL, and `<complex>` breaks.** Two failures, in order: `MSVC ...\include\complex:575: call to 'signbit' is ambiguous` (MSVC calls `std::signbit(long double)`; hiprtc declares only float and double), then, once that compiles, `ld.lld: error: undefined hidden symbol: _Exp` (MSVC's complex `exp`/`cosh`/`sinh` call the UCRT helpers `_Exp`, `_Cosh`, `_Sinh`, `_FExp`, `_FCosh`, `_FSinh`). TheRock ships no libc++ headers, so dropping the MSVC include dirs is no fix. A pre-included header guarded by `__HIPCC_RTC__ && _MSC_VER` that adds `signbit(long double)` (plus `namespace std { using ::signbit; }`) and defines the six helpers as `__device__ __attribute__((weak))` functions bound to the C names with `__asm__("_Exp")` etc. makes it compile and link; a plain `extern "C" __device__ _Exp` definition is refused ("`__host__ __device__` function cannot overload `__device__` function") because clang's `cuda_wrappers/complex` forces the STL declarations host-device. It must come before the first `<complex>` include. User `RawKernel`/`RawModule` code that does not include that header is still affected.
 - **A `friend` naming a `__device__` function template needs `__device__` itself** with the clang in ROCm 7.14 (Linux and Windows): without it the friend no longer matches, and the template loses access (`'x_' is a private member of ...`). NVRTC also rejects the unannotated friend unless `-default-device` is given. Annotate the friend; it is correct on both.
-- **The hiprtc DLL's name carries the HIP version, and the digit layout has changed between releases** (`hiprtc0702.dll`, `hiprtc0714.dll` and `hiprtc07013.dll` have all shipped), so it is not a soname-like name and must not be hard-coded: list `<rocm>/bin` for `hiprtc0*.dll` (the `0` excludes `hiprtc-builtins*.dll`).
+- **The hiprtc DLL's name carries the HIP version, and the digit layout has changed between releases** (`hiprtc0702.dll`, `hiprtc0714.dll` and `hiprtc07013.dll` have all shipped), so it is not a soname-like name and must not be hard-coded: see "A null top frame above a vendored DLL" above.
 - **A symbol looked up in your own extension by name must be `__declspec(dllexport)`.** `ctypes.CDLL(__file__)` / `GetProcAddress` sees only exported symbols on Windows; on Linux every non-static function is visible, so this is Windows-only and fails at first use, not at link.
 - **`os.add_dll_directory(<rocm>/bin)` is enough** for a Python extension that links the ROCm DLLs, even on a host whose System32 `amdhip64_7.dll` is broken: the extension-load search order puts the added directory before System32, and hiprtc's later by-name loads of `amd_comgr.dll` resolved from the same directory (checked with `GetModuleFileNameW`). No preloading by full path was needed. Keep the returned handle alive.
 - **A missing ROCm root does not fail the import; the extension binds the display driver's System32 `amdhip64_7.dll` without any error.** If the extension skips `add_dll_directory` because it cannot find the root, the import still succeeds against the driver's HIP runtime (7.12 on the gfx1151 host). The failure comes later and points elsewhere (cupy: `failed to load hiprtc0712.dll`, a hiprtc name derived from the wrong runtime version). TheRock's `hipconfig.exe` / `rocm-sdk.exe` are console scripts in the venv's `Scripts` directory, which is on PATH only when the venv is activated, so an unactivated `venv\Scripts\python.exe` (from an IDE, a service, or a build with `--no-build-isolation`) finds neither. Look up `shutil.which('hipconfig', path=sysconfig.get_path('scripts'))` when PATH has no hipconfig, and warn by name when no root is found. Verify which DLL loaded with `GetModuleFileNameW`. (Source: cupy.)

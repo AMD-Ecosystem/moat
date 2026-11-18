@@ -46,15 +46,37 @@ A clean hipify run does not mean every name resolved. Two gaps surface only as c
 - `<cooperative_groups/reduce.h>` has no mapping, so the mirror keeps the CUDA header name and fails with "file not found". HIP gained `cg::reduce` in `<hip/cooperative_groups/hip_reduce.h>` (not included by `<hip/hip_cooperative_groups.h>`) together with `cg::plus`/`cg::greater`/`cg::less` in the main header, all in one change (ROCm/rocm-systems `1fe7989f90`, 2026-03-23): present from `therock-7.13`, absent from every stable release through `rocm-7.2.4` and from `therock-7.12`. A port that must build on ROCm 7.2.x therefore needs both arms under `USE_ROCM`: `#if __has_include(<hip/cooperative_groups/hip_reduce.h>)` includes it, and the `#else` defines the functor and a `reduce(const thread_block_tile<size, ParentCGTy>&, T, Op)` in `namespace cooperative_groups` as a `size/2 .. 1` `tile.shfl_xor` loop, so the CUDA call site stays untouched. One `__has_include` gates both names because they arrived together; forcing the fallback on a newer HIP to test it collides with the built-in `greater`, so rename the fallback symbols in a scratch copy for that check. Prove the fallback arm against real 7.2.x headers: the `hip-dev`, `rocm-llvm`, `rocm-device-libs`, `hip-runtime-amd`, `hipcc`, `rocm-core`, `hipcub-dev` and `rocprim-dev` debs from `repo.radeon.com/rocm/apt/7.2.4` extract with `dpkg-deb -x` (no install) and compile the hipified TUs with `--rocm-path`; any extra include directory taken from a newer SDK must leave out its `hip/` subtree, or `__has_include` finds the newer `hip_reduce.h` and the test proves nothing. `<cooperative_groups/scan.h>` maps to `<hip/cooperative_groups/hip_scan.h>` only in builds newer than `therock-7.14` (absent at that tag), so bound it the same way.
 - `curand_Philox4x32_10` (one raw Philox4x32-10 evaluation from `<curand_philox4x32_x.h>`) is renamed to `hiprand_Philox4x32_10`, which exists in neither hipRAND nor rocRAND. rocRAND keeps the rounds `protected` inside `rocrand_device::philox4x32_10_engine`. Define the function under `USE_ROCM` instead: ten rounds with multipliers `0xD2511F53`/`0xCD9E8D57` and key increments `0x9E3779B9`/`0xBB67AE85` between rounds. Keep the CUDA name, because hipify renames the definition and the call in the same way. Check it against the Random123 known-answer vectors (counter 0, key 0 gives `6627e8d5 e169c58d bc57ac4c 9b00dbd8`) so the noise stays bit-compatible with CUDA for a given seed and offset. hipRAND is gaining the function itself (ROCm/rocm-libraries PR #14808), so prefer it when present, but select it with a feature test, not a `HIPRAND_VERSION` threshold: a version guessed before the release ships breaks the build if the number arrives without the function. In `setup.py`, under the ROCm branch only, run `hipcc -x hip -fsyntax-only` with the extension's `nvcc` flags and `-I` for `include_dirs + include_paths('cuda')` on a two-line source passed on stdin (include `<hiprand/hiprand_kernel.h>`, call the function in a `__device__` function), discard its output, and append a `-D` macro to the HIP flags only on success; the header keeps the local copy in the `#else`. Return False before building the hipcc path when `cpp_extension.ROCM_HOME` is None (a ROCm torch wheel on a machine without the SDK): `os.path.join(None, 'bin')` raises a TypeError that hides torch's own "ROCM_HOME environment variable is not set" error from `CUDAExtension`. Syntax-only from stdin writes no files and costs about 2 s. (faster-gaussian-splatting)
 
-### A vendored header tree passed only as `-I` is never hipified
+### A bundled header-only library (GLM): hipify sees only `include_dirs`
 
 Torch's AOT hipify does NOT walk every header the compiler can reach. `CUDAExtension` calls it with `header_include_dirs=kwargs.get('include_dirs', [])` and `hipify_extra_files_only=True` (`torch/utils/cpp_extension.py`; same call in 2.9 through 2.14), so it preprocesses the listed sources plus the headers under the extension's `include_dirs` -- and nothing else. A vendored tree supplied only as `-I<dir>` inside `extra_compile_args` is invisible to it and stays pristine on disk.
 
-So do not add a hipify override (monkeypatching `torch.utils.hipify.hipify_python.hipify` to extend `ignores` or strip `header_include_dirs`) to "protect" a bundled header library until you have SEEN it get mangled. Check how the tree reaches the compiler first. Such a patch is the largest and least palatable hunk in an otherwise mechanical diff, it pins a private torch API, and it is a no-op whenever the tree is `-I`-only.
+A tree that IS listed in `include_dirs` gets mangled: hipify copies only `.hpp`/`.h` into the mirror and content-rewrites them, so a header-only library with `.inl` bodies (GLM: 139 of them) loses files, and its own `__CUDACC__`/`__HIP__` compiler detection is rewritten, so it stops marking its functions `__device__`. The build then fails inside the third-party headers, which sends you looking in the wrong place.
 
-Cheap proof, one build each: build with and without the override, deleting `build/`, the hipified mirror (`hip_*/`, `*.hip`) and `*.egg-info` between runs, then `diff -rq` the mirrors and hash the vendored tree. Identical output plus an unmodified tree settles it.
+The fix is to leave the library alone rather than to fix up what hipify did. A modern GLM (0.9.9.9) already detects `__HIP__` (`glm/simd/platform.h` -> `GLM_COMPILER_HIP`) and compiles verbatim under `-x hip`, so it needs no shim at all. In order of preference:
 
-If the project DOES pass the tree in `include_dirs`, the exposure is real: hipify copies only `.hpp`/`.h` into the mirror and content-rewrites them, so a header-only library with `.inl` bodies (GLM: 139 of them) loses files and can mis-detect its compiler. Fix it by not putting the vendored dir in `include_dirs` rather than by patching torch. GLM 0.9.9.9 in particular already has a `GLM_COMPILER_HIP` path and compiles verbatim under `-x hip`, so it needs no shim at all. (op43dgs -- a monkeypatch carried over from a gsplat precedent whose include wiring differed; verified no-op on torch 2.9.1, 2.13 and 2.14, then deleted)
+1. Take the vendored directory out of `include_dirs` and pass it as `-I` in `extra_compile_args`, which hipify never reads.
+2. Only when the tree has to stay in `include_dirs`, and as a last resort because it pins a private torch API, monkeypatch hipify in `setup.py` before `setup()` to skip the directory:
+
+        def _patch_hipify_ignore_glm():
+            import torch
+            if not torch.version.hip:
+                return
+            from torch.utils.hipify import hipify_python
+            orig = hipify_python.hipify
+
+            def hipify_no_glm(*args, **kwargs):
+                kwargs["ignores"] = list(kwargs.get("ignores", ())) + [os.path.join(GLM_DIR, "*"), GLM_DIR + "*"]
+                kwargs["header_include_dirs"] = [
+                    d for d in kwargs.get("header_include_dirs", [])
+                    if os.path.abspath(d) != os.path.abspath(GLM_DIR)
+                ]
+                return orig(*args, **kwargs)
+
+            hipify_python.hipify = hipify_no_glm
+
+   Gate on `torch.version.hip` so the CUDA path returns immediately. `cpp_extension` looks `hipify_python.hipify` up as a module attribute at call time, so patching the attribute works even though `CUDAExtension` was imported first. (diff-surfel-rasterizations)
+
+Do not add the override to "protect" a bundled library until you have SEEN it get mangled. It is the largest and least palatable hunk in an otherwise mechanical diff, and it is a no-op whenever the tree is `-I`-only. Cheap proof, one build each: build with and without the override, deleting `build/`, the hipified mirror (`hip_*/`, `*.hip`) and `*.egg-info` between runs, then `diff -rq` the mirrors and hash the vendored tree. Identical output plus an unmodified tree settles it. (op43dgs -- a monkeypatch carried over from another port whose include wiring differed; verified no-op on torch 2.9.1, 2.13 and 2.14, then deleted)
 
 ### hipify generation: v1 renames, v2 masquerades
 
@@ -90,46 +112,6 @@ correlate only by accident on any given set of machines and can anti-correlate -
 older torch -- so a guard keyed on the wrong axis silently breaks the other platform's
 build. That fault class, with the two regressions that produced it, is in
 `fault-classes.md` under "Types, dispatch and platform limits". (aihwkit)
-
-### hipify rewrites a bundled header-only library it can see
-
-torch's hipify walks every `.hpp` under the extension's include dirs into its file set and
-content-rewrites the ones a source pulls in. List a bundled GLM (or any header-only
-library vendored in the repo) in `include_dirs` and hipify mangles it: it copies only `.hpp`
-and `.h`, so the library's `.inl` implementation files are dropped, and it rewrites the
-library's own `__CUDACC__`/`__HIP__` compiler detection, so the library stops marking its
-functions `__device__`. The build then fails inside the third-party headers, which sends you
-looking in the wrong place.
-
-The fix is to leave the library alone rather than to fix up what hipify did. A modern GLM
-already detects `__HIP__` (`glm/simd/platform.h` -> `GLM_COMPILER_HIP`) and compiles verbatim
-under `-x hip`. First choice: take the vendored directory out of `include_dirs` and pass it
-as `-I` in `extra_compile_args`, which hipify never reads (see "A vendored header tree passed
-only as `-I` is never hipified" above). Only when the tree has to stay in `include_dirs`, and
-as a last resort because it pins a private torch API, monkeypatch hipify in `setup.py` before
-`setup()` to skip the directory:
-
-    def _patch_hipify_ignore_glm():
-        import torch
-        if not torch.version.hip:
-            return
-        from torch.utils.hipify import hipify_python
-        orig = hipify_python.hipify
-
-        def hipify_no_glm(*args, **kwargs):
-            kwargs["ignores"] = list(kwargs.get("ignores", ())) + [os.path.join(GLM_DIR, "*"), GLM_DIR + "*"]
-            kwargs["header_include_dirs"] = [
-                d for d in kwargs.get("header_include_dirs", [])
-                if os.path.abspath(d) != os.path.abspath(GLM_DIR)
-            ]
-            return orig(*args, **kwargs)
-
-        hipify_python.hipify = hipify_no_glm
-
-The source keeps including `<glm/...>` through `-I`, resolved against the pristine tree.
-Gate on `torch.version.hip` so the CUDA path returns immediately. `cpp_extension` looks
-`hipify_python.hipify` up as a module attribute at call time, so patching the attribute works
-even though `CUDAExtension` was imported first. (diff-surfel-rasterizations)
 
 ### Where the hipified mirrors land depends on the hipify generation
 

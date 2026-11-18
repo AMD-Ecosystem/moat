@@ -2,13 +2,6 @@
 
 ## Which files compile as HIP
 
-**`hip::hipcub`/`roc::rocthrust`/`roc::rocprim` targets carry device flags.** Linking them
-to a target that also has g++ host sources puts `--offload-arch=...` on the g++ command
-line ("unrecognized command-line option"). These libraries are header-only; for a mixed
-target add their `INTERFACE_INCLUDE_DIRECTORIES` instead of linking the targets; the
-mechanism and a CMake recipe are under "Never mark the host `.cpp` files `LANGUAGE HIP`" in
-`strategy-a-cmake.md`. (h2o4gpu, Velvet)
-
 **A force-included compat header creates no build dependency edge.** After editing a header
 injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
 stale code and get a silent false pass. (lc0)
@@ -51,8 +44,10 @@ moved. It survived four platform validations because each used a standalone synt
 test rather than the real binary. Grep for `__CUDACC__` and `__CUDA_ARCH__` in host headers
 before choosing an all-HIP target, and treat a hit as a hard blocker on that shortcut.
 
-The failure the shortcut was dodging has its own fix, above: the HIP compile flags leak
-because `hip::hipcub` and `roc::rocthrust` reach `hip::device` transitively
+The failure the shortcut was dodging has its own fix. Linking `hip::hipcub`,
+`roc::rocthrust` or `roc::rocprim` to a target that also has g++ host sources puts
+`--offload-arch=...` on the g++ command line ("unrecognized command-line option"; h2o4gpu,
+Velvet). The flags leak because those targets reach `hip::device` transitively
 (`roc::rocprim_hip` -> `hip::device` in `rocprim-targets.cmake`), and `hip::device`'s
 interface is built by
 
@@ -107,21 +102,14 @@ on `unordered_map<string, vector<hipEvent_t>>` in a header including only `<iost
 project's own NVIDIA build on the same OS, so fixing it is upstream-friendly rather than
 AMD-specific -- say so in the commit message.
 
-### A change in which files compile as the GPU language is a rebuild-everywhere change
-
-A `LANGUAGE HIP`/`LANGUAGE CUDA` blanket on host sources is a code smell to look for in
-review: besides leaking device-only macros into host logic, the GPU compiler's runtime
-headers can silently satisfy a standard-library include the file never asked for. Narrowing
-the blanket to the real device files is the right fix and looks mechanical, but it exposes
-whatever the blanket was compensating for (see "Never mark the host `.cpp` files
-`LANGUAGE HIP`" in `strategy-a-cmake.md`). When a delta changes which files compile as the
-GPU language, rebuild on every supported OS and with every host compiler, and treat a new
-missing-symbol or missing-include error in a file that changed compilation mode as a real
-regression to fix, not a toolchain quirk. A CUDA-path compile of the same file may already
-have recorded the identical error as pre-existing; the two findings do not contradict. One
-path was always broken and stayed broken; the other was accidentally working and stopped.
-(Velvet: `Timer.hpp` used `std::vector` with no `#include <vector>`, on gcc's and clang's
-libstdc++ alike.)
+The same holds for any change in which files compile as the GPU language. A
+`LANGUAGE HIP`/`LANGUAGE CUDA` blanket on host sources is a smell to look for in review, and
+narrowing it to the real device files exposes whatever the blanket was compensating for, so
+the delta needs a rebuild on every supported OS and with every host compiler. A CUDA-path
+compile of the same file may already have recorded the identical error as pre-existing; the
+two findings do not contradict. One path was always broken and stayed broken; the other was
+accidentally working and stopped. (Velvet: `Timer.hpp` used `std::vector` with no
+`#include <vector>`, on gcc's and clang's libstdc++ alike.)
 
 ## Relocatable device code (-fgpu-rdc)
 

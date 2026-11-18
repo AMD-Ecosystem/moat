@@ -96,30 +96,8 @@ files changed), leaving the `.cu`/`.cuh` tree byte-identical to upstream. That w
 behaviour-preserving: bit-identical GPU results, and all 10 device code objects byte-identical
 across two architectures.
 
-### The shim header is mandatory, not just tidier, when the file is vendored NVIDIA code
-
-A project that vendors `helper_cuda.h`/`helper_string.h` from the CUDA samples is carrying a
-file whose header says "Please refer to the NVIDIA end user license agreement (EULA) ... Any
-use, reproduction, disclosure, or distribution of this software ... outside the terms of the
-EULA is strictly prohibited." Adding a `#if defined(USE_HIP)` branch INSIDE that file makes
-the port's own diff a derivative modification of NVIDIA-proprietary-marked code, which is a
-licence problem no amount of correct HIP is worth. plvs shipped exactly that for two months --
-41 lines of `check()`/`checkCudaErrors` inside the vendored `include/cuda/helper_cuda.h`, and
-the deleted block had mirrored NVIDIA's own signature and message strings -- and it took a
-scoped fix round to undo. Put the substitute in `hip_compat/cuda/helper_cuda.h` and leave the
-vendored file byte-identical; check with `git diff <base> -- <file>` printing nothing, not by
-eye. Search the tree early for NVIDIA-proprietary markers (`grep -rliE "end user license
-agreement|NVIDIA CORPORATION and its licensors" .`): the files it names are exactly the ones
-your diff must not touch. Reproducing the API NAMES the project's own sources call (`checkCudaErrors`) is
-unavoidable and fine; copying the vendored implementation's signature, control flow, or format
-strings is not -- write your own. (plvs)
-
-Do not justify the shim with "the vendored header does not parse under hipcc" without checking:
-plvs's does parse clean once the compat header is force-included, because its cuBLAS/cuFFT enum
-tables sit behind `#ifdef CUBLAS_API_H_` and compile out. The real reason there was narrower and
-worth stating accurately in the commit -- `checkCudaErrors` is defined inside
-`#ifdef __DRIVER_TYPES_H__`, a macro only the CUDA toolkit's `driver_types.h` sets, so on ROCm
-the header supplies nothing. A one-line probe TU that calls the macro settles it. (plvs)
+The shim is mandatory, not just tidier, when the header it shadows is vendored NVIDIA
+sample code under an EULA notice: see "Vendored CUDA-samples helpers" below.
 
 Prefer this when the project includes CUDA headers by name. It does not apply where sources
 use CUDA symbols without including a CUDA header, or where the build already injects a
@@ -167,6 +145,24 @@ the CUDA build. Verify rather than assume: compile the TUs that include them wit
 the host TUs with the host compiler) at both the base and the new sha and diff the results, and
 `-H`-trace one TU to confirm the swapped files are actually opened so the check is not vacuous.
 Record the upstream commit and the sha256 of each file you copied in. (plvs, Velvet.)
+
+**Never add a HIP branch inside the vendored file.** A `#if defined(USE_HIP)` block inside
+`helper_cuda.h` makes the port's own diff a derivative modification of
+NVIDIA-proprietary-marked code. plvs carried 41 lines of `check()`/`checkCudaErrors` inside
+the vendored `include/cuda/helper_cuda.h`, mirroring NVIDIA's own signature and message
+strings, and it took a scoped fix round to undo. Leave the vendored file byte-identical (check
+with `git diff <base> -- <file>` printing nothing, not by eye) and search the tree early for
+the markers: `grep -rliE "end user license agreement|NVIDIA CORPORATION and its licensors" .`
+names exactly the files the diff must not touch. Reproducing the API NAMES the project's own
+sources call (`checkCudaErrors`) is unavoidable and fine.
+
+Do not justify the shim with "the vendored header does not parse under hipcc" without
+checking: plvs's parses clean once the compat header is force-included, because its
+cuBLAS/cuFFT enum tables sit behind `#ifdef CUBLAS_API_H_` and compile out. The real reason
+there was narrower: `checkCudaErrors` is defined inside `#ifdef __DRIVER_TYPES_H__`, a macro
+only the CUDA toolkit's `driver_types.h` sets, so on ROCm the header supplies nothing. A
+one-line probe TU that calls the macro settles it, and the commit message should give the
+accurate reason. (plvs)
 
 ## Build hygiene
 
@@ -243,15 +239,3 @@ Record the upstream commit and the sha256 of each file you copied in. (plvs, Vel
   previous generation's content, with no diagnostic and a plausible-looking build. Delete
   the stale `*.prehip` (or work in a fresh copy of the tree) whenever a generator has
   rewritten a file that was already hipified. (LC-framework)
-- **Do not key a macro gate on `__HIP_PLATFORM_AMD__` when a compiler predefine says the same
-  thing.** `__HIP_PLATFORM_AMD__` comes from `hip/hip_runtime.h`, not from the compiler, so a
-  gate above the includes -- wave-width selection above all -- depends on hipify happening to
-  prepend that header at line 1, and evaluates as if the platform were CUDA whenever it does
-  not. That failure is silent: it compiles and runs, with wave32 code on wave64 hardware.
-  `__GFX8__`/`__GFX9__`/`__GFX11__`/`__GFX12__` are AMD-clang device-pass predefines that need
-  no header and are never defined by nvcc or by a host compiler, so
-  `#if defined(__GFX8__) || defined(__GFX9__)` is both shorter and self-contained. Verify a
-  candidate gate with `hipcc -x hip --offload-arch=<arch> -dM -E` on an empty file before
-  trusting it, and assert the result per arch with a `static_assert` under
-  `#ifdef __HIP_DEVICE_COMPILE__` -- an unguarded one in a `__global__` body is also evaluated
-  in the host pass, where the answer is legitimately different. (LC-framework)

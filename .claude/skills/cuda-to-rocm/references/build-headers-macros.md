@@ -110,13 +110,40 @@ behaviour is identical -- document it as an upstream type-identity deferral, not
 
 ## Macros CUDA defines and HIP does not
 
+**A macro that nvcc or a CUDA header defines and HIP does not reads as 0, and every gate on
+it silently takes the other branch.** Nothing fails to compile: an arch-gated kernel body
+becomes an empty stub or its `#else` printf, a dtype path disappears, and a feature looks
+built yet never runs. Before calling a port complete, list every gate of every macro below
+with the branch HIP takes.
+
+| macro | under HIP | what to do at the gate |
+|---|---|---|
+| `__CUDA_ARCH__` | undefined in both compile passes | widen it with `\|\| defined(__HIP_DEVICE_COMPILE__)`; read the `__CUDA_ARCH__` entry below before defining it in a shim |
+| `CUDART_VERSION`, `CUDA_VERSION` | undefined, unless the compat header pins one | guard the site (`\|\| defined(USE_HIP)`, or `!defined(USE_HIP) &&` in front of a legacy branch); never define `CUDART_VERSION` |
+| `__CUDACC__` | undefined; HIP sources get `__HIPCC__` | treat it as `defined(__CUDACC__) \|\| defined(__HIPCC__)`; never define it globally |
+| feature macros (`__CUDA_BF16_TYPES_EXIST__`) | not defined by the HIP counterpart header | define it in the shim that stands in for the defining header |
+| library version macros (`CUBLAS_VERSION`, `CUBLAS_VER_*`, `NVJPEG_VER_*`, `__CUDACC_VER_*`) | undefined | resolve each gate by hand |
+| `__HIP_PLATFORM_AMD__` (the reverse case) | defined by `hip/hip_runtime.h`, not by the compiler | above the includes use `__HIP__` or the `__GFX*__` predefines |
+
+The entries that follow give the detail for each row. Two checks apply to all of them. Where
+the legacy branch of a version guard names intrinsics HIP lacks (`h2div` against `__h2div`),
+make HIP take the modern spelling. And confirm with the disassembly that an arch-gated kernel
+was really built: it should contain real instructions (`v_pk_*_f16` for half2 code), not a
+stub. (gpuRIR, oneflow, h2o4gpu, LichtFeld-Studio)
+
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
-TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
-CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which
-masks the bug -- so the gate is correct only by accident and breaks for anyone building
-without hipify. Verify include order rather than trusting the prepend, and prefer the
-compiler's own `__GFX8__`/`__GFX9__`/`__GFX11__`/`__GFX12__` device-pass predefines, which
-need no header at all and are never defined by nvcc or by a host compiler. (LC-framework)
+TU.** It comes from the HIP headers, not from the compiler, so a gate in a header included
+BEFORE the runtime header (wave-width selection above all) silently takes the CUDA branch:
+it compiles and runs, with wave32 code on wave64 hardware. hipify-perl prepends the runtime
+include at line 1, which masks the bug, so the gate is correct only by accident and breaks
+for anyone building without hipify. Verify include order rather than trusting the prepend,
+and prefer the compiler's own `__GFX8__`/`__GFX9__`/`__GFX11__`/`__GFX12__` device-pass
+predefines, which need no header at all and are never defined by nvcc or by a host compiler:
+`#if defined(__GFX8__) || defined(__GFX9__)` is both shorter and self-contained. Verify a
+candidate gate with `hipcc -x hip --offload-arch=<arch> -dM -E` on an empty file before
+trusting it, and assert the result per arch with a `static_assert` under
+`#ifdef __HIP_DEVICE_COMPILE__` (an unguarded one in a `__global__` body is also evaluated in
+the host pass, where the answer is legitimately different). (LC-framework)
 
 **Defining `__CUDA_ARCH__` for the HIP device pass also feeds every numeric gate.** A compat
 header that sets `__CUDA_ARCH__` (to 1, say) so `#ifdef __CUDA_ARCH__` device/host selections
@@ -136,16 +163,6 @@ compiles the launch in the host pass but drops the kernel's instantiation in the
 the launch fails "Cannot find Symbol" at run time. A first audit that looked only at trap bodies
 missed seven such sites; list every comparison (both operand orders, continuation lines) with its
 HIP resolution rather than sampling. (oneflow)
-
-**`#if __CUDA_ARCH__ >= NNN` and `#if CUDART_VERSION < NNNN` silently pick the wrong branch on
-HIP**, because neither macro is defined there (it reads as 0). An arch-gated kernel body
-compiles to an empty stub or its `#else` printf with no error, so a feature can look "built"
-yet never run; grep for both macros before calling a port complete. Widen the arch guard with
-`|| defined(__HIP_DEVICE_COMPILE__)` (never define `__CUDA_ARCH__` in a shim; HIP headers and
-libraries test it), and prefix version guards with `!defined(USE_HIP) &&` so HIP takes the
-modern CUDA spelling -- the legacy branch may name intrinsics HIP lacks (`h2div` vs
-`__h2div`). Confirm with the disassembly: the kernel should contain real instructions
-(`v_pk_*_f16` for half2 code). (gpuRIR)
 
 **Audit every macro class that gates a dtype or arch path, not just `__CUDA_ARCH__`.** CUDA
 headers define feature macros that their HIP counterparts do not: `cuda_bf16.h` defines
@@ -174,7 +191,10 @@ a host callback blocks forever (a gated-producer test deadlocks; the async free 
 once). To prove the CUDA view unchanged, note that `unifdef -UUSE_HIP` leaves
 `#if X || defined(USE_HIP)` as written (it does not reduce `X || 0`); compare with
 `-UUSE_HIP -DCUDART_VERSION=<N>` on both the upstream and the port file, for an N on each
-side of every guard. Once the HIP default pool is in use, do not count on
+side of every guard. Never define `CUDART_VERSION` in the compat header to get the modern
+branches: hipSPARSE, hipSOLVER and other hip* headers test `#if defined(CUDART_VERSION)` to
+select their NVIDIA backend, and with it defined on AMD they skip their own type definitions
+(`hipsparseStatus_t` became an "unknown type"; h2o4gpu). Once the HIP default pool is in use, do not count on
 `hipMemPoolAttrReleaseThreshold`. On ROCm 10.1 (Linux) it reaches the pool's VM heap only if
 it is set after the pool's first allocation; set before it (as most code does, in setup), it
 is lost and freed blocks are unmapped at the next synchronize whatever its value. Even when
@@ -182,12 +202,6 @@ set late it keeps memory only in 128 MiB chunks, so a threshold below one chunk 
 64 MiB) keeps nothing, and a free can trim below the threshold. Correctness is unaffected;
 measure before working around it (deferral `hip-vmheap-unmap-threshold-lost-or-overtrimmed`,
 formerly `hip-mempool-release-threshold-ignored`). (LichtFeld-Studio)
-
-**Never define `CUDART_VERSION` in a HIP compat header.** hipSPARSE, hipSOLVER and other
-hip* headers test `#if defined(CUDART_VERSION)` to select their NVIDIA backend; with it
-defined on AMD they skip their own type definitions (`hipsparseStatus_t` became an
-"unknown type"). If upstream code gates on `CUDART_VERSION`, guard that code, not the macro.
-(h2o4gpu)
 
 **Project code that splits on `__CUDACC__` means "compiled by the device compiler", and HIP
 does not define it.** Upstreams increasingly hide host-only C++23 (`std::expected` error
@@ -212,17 +226,12 @@ objects without them to check. (LichtFeld-Studio)
 
 ## Syntax and spellings clang rejects
 
-**nvcc's EDG front end accepts a split launch chevron; clang does not.** `kernel << <grid,
-block >> >(args)` -- spaces inside the triple angle brackets -- compiles under nvcc and is a
-hard parse error under hipcc/clang, which lexes `<<<` as a single token. It is common in
-Inria-derived 3DGS/2DGS rasterizers, where every launch site is written that way. Respace to
-`<<<grid, block >>>`; the CUDA path is unaffected because this is whitespace inside a token
-sequence nvcc already accepts. Expect one edit per launch site, not per file.
-(diff-surfel-rasterizations)
-
-**nvcc accepts a spaced-out launch, `kernel << <grid, block >> > (...)`; clang does not.**
-Visual Studio's auto-formatter produces it, and clang reports only "expected expression" at
-the launch line. Rewrite it as `kernel<<<grid, block>>>(...)`, valid for both. (cuda_voxelizer)
+**nvcc accepts a split launch chevron, `kernel << <grid, block >> >(args)`; clang does not.**
+nvcc's front end tolerates spaces inside the triple angle brackets. clang lexes `<<<` as one
+token, so the spaced form is a hard parse error ("expected expression" at the launch line).
+Visual Studio's auto-formatter produces it, and Inria-derived 3DGS/2DGS rasterizers carry it
+at every launch site. Respace to `kernel<<<grid, block>>>(args)`, which both compilers accept;
+expect one edit per launch site, not per file. (diff-surfel-rasterizations, cuda_voxelizer)
 
 **Three CUDA spellings that do not resolve under HIP, all cheap to guard.** They travel
 together in the same family of projects, so check for all three at once:
@@ -329,13 +338,10 @@ there are three:
   unconditionally because `<amd_hip_bf16.h>` defines `__shfl_*_sync` on ROCm 7.14+, but on
   7.2.x `__syncwarp` lives inside the SAME guard, so the define stripped `__syncwarp` and
   broke Linux.)
-- **torch hipify generation** -> `torch.utils.hipify.__version__`. v2 STOPS renaming the
-  `c10`/`at` `cuda` classes to `hip`: the CUDA spellings stay public and the hip-spelled
-  symbols become `USE_ROCM`-only, where v1 renamed the other way. In a torch CUDAExtension
-  the TU IS hipified, so just write the CUDA spelling. In a NON-hipified TU -- a
-  CMake/`USE_HIP` port, or a host `.cpp` routed around hipify -- detect the version at build
-  time, pass a NEUTRAL define (`-DTORCH_HIPIFY_V2`, never one named after your team or tooling), and branch:
-  v2 -> `c10::cuda::getCurrentCUDAStream`, v1 -> `c10::hip::getCurrentHIPStream`. (aihwkit: a Windows commit hard-coded
+- **torch hipify generation** -> `torch.utils.hipify.__version__`. v1 renamed the `c10`/`at`
+  `cuda` classes to `hip`; v2 keeps the CUDA spellings public. It matters only in a TU hipify
+  never sees; strategy-b-torch.md ("hipify generation: v1 renames, v2 masquerades") has the
+  build-time detection and the neutral define. (aihwkit: a Windows commit hard-coded
   `c10::hip::getCurrentHIPStream`, needed on TheRock's older torch but absent on Linux's
   newer one, breaking that build.)
 
