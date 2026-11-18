@@ -17,8 +17,15 @@ push can still fail CI on its title, and only on that. To run what they run:
 
     python3 utils/check.py --fast
 
-A bare `python3 utils/check.py` runs the `forks` scan too, which needs the local
-clones and is not part of either gate.
+A bare `python3 utils/check.py` runs the `forks` and `commits` scans too, which need the
+local clones and are not part of either gate.
+
+Several gates scope themselves to the push being judged: a push that updates only `port/<name>`
+branches skips the gates over trunk-owned files (`code`, the generated schema file, `licenses`,
+`harness-adapters`, `skills`), and `branch-scope` judges the commits the push adds. The hook
+tells the gates what is being pushed through `MOAT_PUSH_UPDATES` and `MOAT_PUSH_REFS`; CI
+exports the same two variables from the push event, so both run the same gates on the same
+push. A pull request sets neither and every gate applies.
 
 ## Branch model
 
@@ -254,7 +261,7 @@ fork-side work and neither reaches the part that matters.
 |---|---|
 | `code` | the Python resolves: no undefined names, no dead imports or locals (pyflakes). Two NameErrors shipped on success paths before this existed, one of them in the approval gate |
 | `schema` | `status.json` validates against a schema generated from `moatlib`, so the two cannot disagree |
-| `readme` | the generated project table matches the data it describes (`python3 utils/gen_readme.py`). Judged only where it can be: the table renders across refs, so a CI checkout -- one branch, no port refs -- would call every branch-only row stale, and it skips there loudly. It also skips on a `port/<name>` branch, which is where most pushes come from: the board is a TRUNK artifact, regenerating it on a branch produces a commit thrown away at merge, and judging it there serialises the fleet, since every record any host pushes stales every other checkout's copy. So in practice it gates pushes from the trunk, and any port branch can be behind it |
+| `readme` | the generated project table matches the data it describes (`python3 utils/gen_readme.py`). Judged only where the pusher can act on it: the table renders across refs, so whether it is current depends on every port branch at the moment of the push. CI starts after the push, so a port branch that records a state in between would fail a trunk commit that was correct when pushed; CI skips the gate loudly and the pre-push hook judges it. It also skips on a `port/<name>` branch, which is where most pushes come from: the board is a TRUNK artifact, regenerating it on a branch produces a commit thrown away at merge, and judging it there serialises the fleet, since every record any host pushes stales every other checkout's copy. So in practice it gates pushes from the trunk, and any port branch can be behind it |
 | `licenses` | tier lists are well-formed and no identifier sits in two tiers, which would silently disable the review gate |
 | `blobs` | nothing tracked that looks like build output (`.a`, `.so`, `.o`, archives, wheels, model weights) and nothing over 1 MB without an entry in the allowlist saying why it is data rather than spill |
 | `states` | every state is one `moatlib` knows, every platform is a well-formed `<os>-<gfx>` with a known wavefront width, every waiver names a gate that may be waived, and every waiver states its case. It deliberately does NOT require a maintainer's approval: an unapproved waiver is what a *suggestion* is, and suggesting one is how the obstacle reaches a person at all. What stops an agent certifying its own way past a gate is that such a waiver satisfies nothing and blocks `pr_ready` -- enforced where it bites, not by failing the repo's checks over a decision nobody has made yet |

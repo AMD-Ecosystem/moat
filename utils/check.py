@@ -6,8 +6,16 @@
 CI and the pre-push hook both call this, so they cannot drift. Adding a gate here
 adds it to both; implementing it twice is how the two ended up disagreeing before.
 
+Several gates scope themselves to what the push in progress updates, which they read
+from MOAT_PUSH_UPDATES and MOAT_PUSH_REFS. The hook exports both from the refs git
+hands it; CI exports the same two from the push event (see .github/workflows/ci.yml).
+A gate must not ask "am I in CI" to decide its scope: when only the hook set those
+variables, CI judged a port branch by the trunk-owned files it had inherited and
+failed 28 pushes of one branch over a skill file the branch could not fix. (readme
+is the one gate that consults CI, and not for scope: see its docstring.)
+
     python3 utils/check.py              # everything
-    python3 utils/check.py --fast       # skip the forks gate (walks every fork clone)
+    python3 utils/check.py --fast       # skip the forks and commits gates (per fork clone)
     python3 utils/check.py schema readme
 
 Exit 1 if any gate fails. Each gate prints one line per problem, prefixed with its
@@ -60,8 +68,9 @@ ZERO = "0" * 40
 
 
 def push_updates():
-    """(local sha, remote ref, remote sha) for each ref the push in progress updates,
-    from the pre-push hook. None outside a push (a manual or CI run)."""
+    """(local sha, remote ref, remote sha) for each ref the push in progress updates.
+    The pre-push hook exports it from git's own list and CI from the push event, so
+    both judge a push the same way. None outside a push (a manual run, a pull request)."""
     raw = os.environ.get("MOAT_PUSH_UPDATES")
     if raw is None:
         return None
@@ -181,20 +190,18 @@ def gate_schema():
 def gate_readme():
     """The generated project table matches the data it claims to describe.
 
-    Only where the port branches are visible. The table now renders across refs, so a
-    project in flight appears on the board -- which means the table cannot be
-    reproduced without the refs it was generated from. A CI checkout fetches one
-    branch, so it sees neither the branch-only rows nor the current state of a project
-    that exists on both the trunk and its own branch, and calls both differences
-    staleness. Eight runs failed that way, then four more after the first fix, every
-    one a false alarm.
-
-    Fetching every ref in CI would trade those for something worse: with the branches
-    visible, any push to any port branch stales the trunk's table and fails the trunk's
-    next push, for whoever happens to make it.
-
-    So this is judged where it can be judged -- a full clone, which is what the
-    pre-push hook runs in -- and skipped, loudly, where it cannot."""
+    Judged only in a pre-push hook that is updating the trunk, and in a manual run.
+    The table renders across refs, so whether it is current depends on the state of
+    every port branch at the moment of the push. The pusher can act on that: the hook
+    refuses and they regenerate. A hosted CI run cannot: it starts after the push, and
+    any port branch that recorded a state in between makes the trunk's table read
+    stale for a commit that was correct when pushed (775f8a2e failed that way twenty
+    seconds after an unrelated port/jitllm push). So CI skips it, loudly, whatever
+    refs its checkout happens to hold."""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print("readme: skipped in CI -- the table depends on every port branch at "
+              "push time; the pre-push hook judges it", file=sys.stderr)
+        return []
     # The board is a TRUNK artifact. A port branch carries whatever copy it inherited,
     # regenerating it there produces a commit that is discarded when the branch merges,
     # and judging it there is what serialises concurrent work: every record any host
@@ -734,7 +741,7 @@ GATES = {
     "surface": (gate_surface, False),
     "published": (gate_published, False),
     "forks": (gate_forks, True),
-    "commits": (gate_commits, True),   # slow: shells out per fork clone      # slow: shells out per fork clone
+    "commits": (gate_commits, True),   # slow: shells out per fork clone
 }
 
 

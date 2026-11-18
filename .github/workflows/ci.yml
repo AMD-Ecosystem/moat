@@ -5,7 +5,8 @@ name: checks
 # pushed from a fresh clone is checked by nothing, and one invalid record then fails
 # every other host's pushes, because the gates judge every ref. So port/** is
 # covered here too. The gates themselves live in utils/check.py -- implementing
-# them twice is how CI and the hook end up disagreeing.
+# them twice is how CI and the hook end up disagreeing -- and this job hands them
+# the push the same way the hook does (see "Run gates").
 on:
   pull_request:
   push:
@@ -56,11 +57,32 @@ jobs:
         run: python3 utils/pr_intent.py --base "origin/${{ github.base_ref }}" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Run gates
-        # --fast skips the fork-cleanliness gate, which needs the fork clones that
-        # only exist on a porting host. The pre-push hook runs --fast too, so that
-        # gate is enforced only by pr_ready (and a manual full check.py) on the
-        # hosts where the clones actually exist.
-        run: python3 utils/check.py --fast
+        # --fast skips the forks and commits gates, which need the fork clones that
+        # only exist on a porting host. The pre-push hook runs --fast too, so those
+        # are enforced only by pr_ready (and a manual full check.py) on the hosts
+        # where the clones actually exist.
+        #
+        # A push is replayed to the gates exactly as the pre-push hook presents it:
+        # the same two variables, built from the event instead of from git's stdin.
+        # The gates scope themselves from them (a port branch is judged on its own
+        # project folder, not on the trunk files it inherited, and branch-scope has
+        # a commit range to judge). Without them this job ran a different set of
+        # gates than the hook and disagreed with it. tests/test_ci_scope.py fails if
+        # this export is removed. A pull request sets neither: it proposes a trunk
+        # change, so every gate applies.
+        shell: bash -eo pipefail {0}
+        env:
+          # Through the environment, never interpolated into the shell.
+          CI_EVENT: ${{ github.event_name }}
+          CI_REF: ${{ github.ref }}
+          CI_AFTER: ${{ github.sha }}
+          CI_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$CI_EVENT" = push ]; then
+            export MOAT_PUSH_REFS="$CI_REF"
+            export MOAT_PUSH_UPDATES="$CI_AFTER:$CI_REF:$CI_BEFORE"
+          fi
+          python3 utils/check.py --fast
 
       - name: Unit tests
         # The pure logic the gates and the publishing paths rest on: the status
