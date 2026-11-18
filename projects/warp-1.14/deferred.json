@@ -18,6 +18,24 @@
         "at": "2026-11-18T18:24:52Z",
         "note": "2026-11-18: defer, ship upstream's no-libmathdx behaviour in 1.14.0+rocm.0 and name the gap in the release notes"
       }
+    },
+    {
+      "id": "warp-hip-conditional-graph-nodes",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Conditional graph nodes on HIP: capture_if/capture_while inside a graph capture need cudaGraphAddNode conditional nodes (CUDA 12.4+), which HIP 7.14 does not have; the port reports them unsupported as upstream does for older CUDA. Adopt native HIP conditional nodes if ROCm ever ships them",
+      "refs": [
+        "projects/warp-1.14/plan.md Q4"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T18:55:17Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-18T18:55:18Z",
+        "note": "2026-11-18: report unsupported on HIP exactly as upstream does for old CUDA; HIP's plans are unknown and it may be a hardware limitation, so not expected soon"
+      }
     }
   ]
 }
