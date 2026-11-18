@@ -285,6 +285,8 @@ What this means for the port (Phase 7, and Phase 0 for detection):
 - Warp's own precompiled kernels stay an embedded fat binary built with a `--offload-arch` list; splitting them into per-ISA Warp device wheels is not done in this line.
 - Validation of the release wheel uses the TheRock wheels in a venv on each platform, so what is validated is what a user installs.
 
+RULED by Jeff Daily, 2026-11-18: the wheel is built against and pinned to ROCm 10.2 (`Requires-Dist: rocm>=10.2,<10.3`), the newest release on the stable index. The porter develops against those same TheRock wheels from Phase 0 (`pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ "rocm[devel]==10.2.*"` in the job's own venv, root from `rocm-sdk path --root`), not against a fleet host's system ROCm, so the ROCm being developed on is the ROCm that ships. Wherever this plan cites a HIP version (for example "HIP 7.14" for graph features), re-check the fact against ROCm 10.2's headers before relying on it. The stable index publishes 10.2 device packages for gfx908, gfx90a, gfx942, gfx950, gfx1010-1012, gfx1030-1036, gfx1100-1103, gfx1150-1153, gfx1200, gfx1201 and gfx1250 (Linux; Windows for the Radeon and APU targets).
+
 ## Rulings the source qualifies
 
 - Ruling 4 asks for a ROCm equivalent of libmathdx. None exists (no device-callable, LTO-linkable BLAS/solver/FFT on ROCm). Upstream 1.14 already ships cooperative **GPU** implementations for every libmathdx feature when built without it, so the HIP build loses no feature except non-power-of-two GPU FFT (Q1). These are GPU paths, not CPU fallbacks.
