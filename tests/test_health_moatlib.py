@@ -368,5 +368,75 @@ class DependencyPerOperatingSystem(NoDisposition):
         self.assertEqual(moatlib.unmet_deps(self.user), [])
 
 
+class PrLifecycleGuards(unittest.TestCase):
+    PR = {"pr_url": "https://github.com/o/proj/pull/7", "pr_number": 7}
+    FIX = {"branch": "moat-fix-7", "base_sha": OLD, "review_pr": None}
+
+    def test_recording_a_merge_twice_keeps_the_first_time(self):
+        s = Store(self, record(pr_state="merged", pr_merged_at="2026-01-01T00:00:00Z",
+                               **self.PR))
+        moatlib.set_pr_merged("proj")
+        self.assertEqual(s.saved, [])
+
+    def test_a_merged_pr_cannot_be_recorded_closed(self):
+        s = Store(self, record(pr_state="merged", pr_merged_at="2026-01-01T00:00:00Z",
+                               **self.PR))
+        with self.assertRaisesRegex(ValueError, "recorded MERGED"):
+            moatlib.set_pr_closed("proj", "withdrawn")
+        self.assertEqual(s.saved, [])
+
+    def test_recording_a_close_twice_keeps_the_first_time(self):
+        s = Store(self, record(pr_state="closed", pr_closed_at="2026-01-01T00:00:00Z",
+                               **self.PR))
+        moatlib.set_pr_closed("proj")
+        self.assertEqual(s.saved, [])
+        moatlib.set_pr_closed("proj", "superseded")
+        self.assertEqual(s.obj["pr_closed_at"], "2026-01-01T00:00:00Z")
+        self.assertEqual(s.obj["pr_closed_note"], "superseded")
+
+    def test_a_finish_with_a_round_staged_is_recorded_and_says_so(self):
+        for finish, state in ((moatlib.set_pr_merged, "merged"),
+                              (moatlib.set_pr_closed, "closed")):
+            with self.subTest(state=state):
+                s = Store(self, record(pr_state="open", fix=dict(self.FIX), **self.PR))
+                finish("proj")
+                self.assertEqual(s.obj["pr_state"], state)
+                self.assertIn("abandon-fix", s.err.getvalue())
+
+    def test_fix_merged_must_name_the_staging_tip(self):
+        s = Store(self, record(pr_state="open", fix=dict(self.FIX),
+                               published_sha=OLD, **self.PR),
+                  _fork_repo=lambda name: pathlib.Path("no-such-clone"))
+        with self.assertRaisesRegex(ValueError, "not the recorded head_sha"):
+            moatlib.set_fix_merged("proj", THIRD)
+        self.assertEqual(s.saved, [])
+        moatlib.set_fix_merged("proj", HEAD[:12])
+        self.assertEqual(s.obj["published_sha"], HEAD[:12])
+        self.assertIsNone(s.obj["fix"])
+
+
+class SyncRoundInFlight(unittest.TestCase):
+    def test_a_staged_sync_round_is_reported_after_upstream_moved(self):
+        fix = {"branch": "moat-sync-1111111", "base_sha": OLD, "review_pr": None,
+               "kind": "sync", "upstream_sha": "1" * 40}
+        s = Store(self, record(maintained={"evidence": "e", "by": "someone"}, fix=fix,
+                               published_sha=OLD))
+
+        def no_network(*a, **k):
+            raise AssertionError("an in-flight round must not need the upstream tip")
+        with mock.patch.object(moatlib.subprocess, "run", no_network):
+            self.assertEqual(moatlib.sync_branch("proj"), fix)
+        self.assertEqual(s.saved, [])
+
+    def test_a_fix_round_in_flight_still_refuses_a_sync_round(self):
+        Store(self, record(maintained={"evidence": "e", "by": "someone"},
+                           fix={"branch": "moat-fix-7", "base_sha": OLD},
+                           published_sha=OLD))
+        ls = mock.Mock(returncode=0, stdout="2" * 40 + "\trefs/heads/main\n")
+        with mock.patch.object(moatlib.subprocess, "run", lambda *a, **k: ls):
+            with self.assertRaisesRegex(ValueError, "already in flight"):
+                moatlib.sync_branch("proj")
+
+
 if __name__ == "__main__":
     unittest.main()

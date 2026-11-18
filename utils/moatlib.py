@@ -1969,11 +1969,28 @@ def set_pr_open(name, pr_url, pr_number):
     return obj
 
 
+def _warn_staged_round(name, obj, how):
+    """A PR that finished with a fix round still staged leaves a round that can
+    never merge (fix_ready needs the PR open). Recording the finish is still right
+    -- it is a fact about GitHub -- but the round has to be ruled on, so say so."""
+    fix = obj.get("fix")
+    if fix and fix.get("kind") != "sync":
+        sys.stderr.write(
+            f"WARNING {name}: the upstream PR {how} with the fix round on "
+            f"{fix.get('branch')} still staged. That round cannot merge into a "
+            f"finished PR: a person abandons it (`moatlib.py abandon-fix {name} "
+            f"--by <who> --reason ...`), and its commits go out as a follow-up\n")
+
+
 def set_pr_merged(name):
-    """Record that the upstream PR merged."""
+    """Record that the upstream PR merged. Recording it twice changes nothing: the
+    first merge time stands."""
     obj = load_status(name)
     if "pr_url" not in obj:
         raise ValueError(f"{name}: no PR recorded, cannot mark as merged")
+    if obj.get("pr_state") == "merged":
+        return obj
+    _warn_staged_round(name, obj, "merged")
     obj["pr_merged_at"] = now_iso()
     obj["pr_state"] = "merged"
     save_record(name, obj, f"{name}: upstream PR merged -- {obj['pr_url']}")
@@ -1981,12 +1998,26 @@ def set_pr_merged(name):
 
 
 def set_pr_closed(name, note=None):
-    """Record that the upstream PR closed without merging."""
+    """Record that the upstream PR closed without merging. Refused for a PR
+    recorded merged (a merged PR cannot close unmerged; if its work landed through
+    another PR that is set-pr-landed-via). Recording it twice keeps the first
+    close time."""
     obj = load_status(name)
     if "pr_url" not in obj:
         raise ValueError(f"{name}: no PR recorded, cannot mark as closed")
+    if obj.get("pr_state") == "merged":
+        raise ValueError(
+            f"{name}: the upstream PR is recorded MERGED"
+            + (f" at {obj.get('pr_merged_at')}" if obj.get("pr_merged_at") else "")
+            + " -- a merged PR cannot close without merging. If the record is "
+              "wrong, a person corrects it; this command will not overwrite a merge")
+    if obj.get("pr_state") == "closed" and (not note
+                                            or note == obj.get("pr_closed_note")):
+        return obj
+    if obj.get("pr_state") != "closed":
+        _warn_staged_round(name, obj, "closed")
+        obj["pr_closed_at"] = now_iso()
     obj["pr_state"] = "closed"
-    obj["pr_closed_at"] = now_iso()
     if note:
         obj["pr_closed_note"] = note
     save_record(name, obj, f"{name}: upstream PR closed without merging -- "
@@ -3305,6 +3336,13 @@ def sync_branch(name):
                          f"branch (set-maintained, or upstream.py "
                          f"--finish-release); while an upstream PR is open, "
                          f"changes stage through fix-branch")
+    # A sync round already in flight is reported as it stands. Its branch is named
+    # after the upstream tip it was staged against, and deriving the name again
+    # from TODAY's tip made this command an error ("a round is already in flight")
+    # the moment upstream moved, which on an active project is always.
+    fix = obj.get("fix")
+    if fix and fix.get("kind") == "sync":
+        return fix
     base_branch = obj.get("fork_default_branch") or "main"
     r = subprocess.run(["git", "ls-remote", obj["upstream_url"],
                         f"refs/heads/{base_branch}"],
@@ -3315,13 +3353,10 @@ def sync_branch(name):
                          f"{obj['upstream_url']} -- the round absorbs a named "
                          f"upstream tip, so it cannot start without one")
     branch = f"moat-sync-{tip[:7]}"
-    fix = obj.get("fix")
     if fix:
-        if fix.get("branch") != branch:
-            raise ValueError(f"{name}: a round is already in flight on "
-                             f"{fix.get('branch')!r} -- one staging branch at a "
-                             f"time; merge or abandon it first")
-        return fix
+        raise ValueError(f"{name}: a round is already in flight on "
+                         f"{fix.get('branch')!r} -- one staging branch at a "
+                         f"time; merge or abandon it first")
     moved, why = ensure_port_branch(name)
     if moved:
         print(why, file=sys.stderr)
@@ -3387,6 +3422,17 @@ def set_fix_merged(name, new_published_sha):
     if not fix:
         raise ValueError(f"{name}: no fix round in flight")
     new_published_sha = full_sha(new_published_sha, _fork_repo(name))
+    # The merged tip is the staging tip, and head_sha follows the staging tip
+    # through the round (the merge path checks exactly this before it pushes).
+    # Any other sha here is a typo or a different commit, and published_sha is
+    # the baseline every later ancestry check rests on.
+    if not same_commit(new_published_sha, obj.get("head_sha")):
+        raise ValueError(
+            f"{name}: {str(new_published_sha)[:12]} is not the recorded head_sha "
+            f"{str(obj.get('head_sha'))[:12]}, which is the staging tip the round "
+            f"was validated and approved at. Record the commit the PR branch was "
+            f"actually fast-forwarded to; if that is not head_sha, the record and "
+            f"the PR disagree and a person sorts it out")
     obj["published_sha"] = new_published_sha
     obj["fix"] = None
     obj["fix_merged_at"] = now_iso()
