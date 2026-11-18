@@ -57,6 +57,21 @@ class CFamily(unittest.TestCase):
         self.assertEqual(cls("c", old, same), "comment-only")
         self.assertEqual(cls("c", old, moved), "mixed")
 
+    def test_function_like_and_object_like_macros_differ(self):
+        self.assertEqual(cls("c", "#define A(x) f(x)\n", "#define A (x) f(x)\n"), "mixed")
+        self.assertEqual(cls("c", "#define A (x)\n", "#define A(x)\n"), "mixed")
+        self.assertEqual(cls("c", "#define A(x) x\n", "#  define A(x)   x // c\n"),
+                         "comment-only")
+
+    def test_multi_character_operators_are_one_token(self):
+        for a, b in (("int c = a+ +b;\n", "int c = a++b;\n"),
+                     ("int c = a- -b;\n", "int c = a--b;\n"),
+                     ("bool c = a< =b;\n", "bool c = a<=b;\n"),
+                     ("int c = a& &b;\n", "int c = a&&b;\n")):
+            with self.subTest(old=a):
+                self.assertEqual(cls("c", a, b), "mixed")
+        self.assertEqual(cls("c", "int c = a  +  b;\n", "int c = a+b;\n"), "comment-only")
+
     def test_comment_after_a_directive_is_comment_only(self):
         old = "#define N 4\nint a[N];\n"
         new = "#define N 4  // lanes\nint a[N];\n"
@@ -101,6 +116,35 @@ class CMake(unittest.TestCase):
 
     def test_changed_argument_is_mixed(self):
         self.assertEqual(cls("cmake", "set(X 1)\n", "set(X 2)\n"), "mixed")
+
+    def test_joining_or_splitting_arguments_is_mixed(self):
+        for a, b in (("add_compile_options(-Wall -Wextra)\n",
+                      "add_compile_options(-Wall-Wextra)\n"),
+                     ("add_definitions(-DA=1 -DB)\n", "add_definitions(-DA=1-DB)\n"),
+                     ("set(X a b)\n", "set(X a;b)\n")):
+            with self.subTest(old=a):
+                self.assertEqual(cls("cmake", a, b), "mixed")
+                self.assertEqual(cls("cmake", b, a), "mixed")
+
+    def test_whitespace_next_to_a_parenthesis_separates_nothing(self):
+        old = "if(A AND (B OR C))\n  set(X 1)\nendif()\n"
+        new = "if ( A AND(B OR C) )\n    set( X 1 )   # one\nendif ()\n"
+        self.assertEqual(cls("cmake", old, new), "comment-only")
+
+    def test_hash_inside_a_bracket_argument_is_not_a_comment(self):
+        old = "set(X [[a # b]])\n"
+        new = "set(X [[a # c]])\n"
+        self.assertEqual(cls("cmake", old, new), "mixed")
+        self.assertEqual(cls("cmake", "set(X [=[a # b]=])\n", "set(X [=[a # c]=])\n"),
+                         "mixed")
+
+    def test_bracket_comment_is_a_comment(self):
+        old = "set(X 1)\n"
+        new = "#[[ a note\n spanning lines ]]\nset(X 1)\n"
+        self.assertEqual(cls("cmake", old, new), "comment-only")
+
+    def test_unterminated_bracket_argument_bails(self):
+        self.assertEqual(cls("cmake", "set(X [[a)\n", "set(X [[a)\n# c\n"), "mixed")
 
 
 class DocPaths(unittest.TestCase):
