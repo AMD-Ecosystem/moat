@@ -1,3 +1,19 @@
 {"kind":"session","ts":"2026-11-18T17:39:53Z","epoch":1795023593.742423900,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-18T17:41:50Z","epoch":1795023710.408006400,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-18T17:54:27Z","epoch":1795024467.651134000,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-18T20:28:16Z","epoch":1795033696.600893782,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-18T20:52:00Z","phase":"compile","seconds":0.007,"exit":2,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261118-122134-warp114-porter-mi355-prompt/venv/bin/python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/mi355-20261118-122134-warp114-porter-mi355-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx950 -j 128"}
+{"kind":"phase","ts":"2026-11-18T20:52:23Z","phase":"compile","seconds":12.442,"exit":1,"cmd":"bash -c cd projects/warp-1.14/src && /var/lib/jenkins/fleet/jobs/mi355-20261118-122134-warp114-porter-mi355-prompt/venv/bin/python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/mi355-20261118-122134-warp114-porter-mi355-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx950 -j 128"}
+{"kind":"phase","ts":"2026-11-18T20:53:07Z","phase":"compile","seconds":20.857,"exit":0,"cmd":"agent_space/build_hip.sh --hip-arch gfx950"}
+{"kind":"phase","ts":"2026-11-18T20:54:39Z","phase":"test","seconds":0.012,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261118-122134-warp114-porter-mi355-prompt/venv/bin/python -m warp.tests -s autodetect -p test_version.py"}
+{"kind":"phase","ts":"2026-11-18T20:54:46Z","phase":"test","seconds":0.885,"exit":0,"cmd":"agent_space/wptest.sh -s autodetect -p test_version.py"}
+{"kind":"phase","ts":"2026-11-18T20:54:47Z","phase":"test","seconds":0.950,"exit":1,"cmd":"agent_space/wptest.sh -s autodetect -p test_devices.py"}
+{"kind":"phase","ts":"2026-11-18T20:54:49Z","phase":"test","seconds":1.337,"exit":1,"cmd":"agent_space/wptest.sh -s autodetect -p test_diagnostics.py"}
+{"kind":"phase","ts":"2026-11-18T20:55:15Z","phase":"test","seconds":0.928,"exit":0,"cmd":"agent_space/wptest.sh -s autodetect -p test_devices.py"}
+{"kind":"phase","ts":"2026-11-18T20:55:16Z","phase":"test","seconds":1.314,"exit":0,"cmd":"agent_space/wptest.sh -s autodetect -p test_diagnostics.py"}
+{"kind":"phase","ts":"2026-11-18T20:56:42Z","phase":"test","seconds":71.979,"exit":34,"cmd":"agent_space/wptest.sh -s autodetect -k cpu -m 32"}
+{"kind":"phase","ts":"2026-11-18T20:56:51Z","phase":"compile","seconds":26.088,"exit":0,"cmd":"agent_space/build_cuda.sh /var/lib/jenkins/fleet/jobs/mi355-20261118-122134-warp114-porter-mi355-prompt/moat/agent_space/cuda_wt --no-use-libmathdx"}
+{"kind":"phase","ts":"2026-11-18T20:58:34Z","phase":"compile","seconds":0.397,"exit":1,"cmd":"agent_space/build_cuda.sh /var/lib/jenkins/fleet/jobs/mi355-20261118-122134-warp114-porter-mi355-prompt/moat/agent_space/pristine_wt --no-cuda"}
+{"kind":"phase","ts":"2026-11-18T20:58:53Z","phase":"compile","seconds":11.404,"exit":0,"cmd":"agent_space/build_cpu.sh /var/lib/jenkins/fleet/jobs/mi355-20261118-122134-warp114-porter-mi355-prompt/moat/agent_space/pristine_wt"}
+{"kind":"phase","ts":"2026-11-18T21:00:20Z","phase":"test","seconds":81.261,"exit":0,"cmd":"agent_space/wptest_nogpu.sh /var/lib/jenkins/fleet/jobs/mi355-20261118-122134-warp114-porter-mi355-prompt/moat/agent_space/pristine_wt -s autodetect -k cpu -m 32"}
+{"kind":"phase","ts":"2026-11-18T21:01:45Z","phase":"test","seconds":84.762,"exit":3,"cmd":"agent_space/wptest_nogpu.sh /var/lib/jenkins/fleet/jobs/mi355-20261118-122134-warp114-porter-mi355-prompt/moat/projects/warp-1.14/src -s autodetect -k cpu -m 32"}
