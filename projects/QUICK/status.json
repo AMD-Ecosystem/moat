@@ -7,14 +7,16 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-08-21T04:35:14Z",
+  "updated_at": "2026-11-18T15:20:49Z",
   "head_sha": "d369e07",
   "depends_on": [],
   "porting": null,
   "waivers": {
     "windows": {
-      "reason": "The obstacle is the operating system toolchain, not the GPU. QUICK is a mixed Fortran/HIP build: .f90 modules compiled by gfortran, linked against rocBLAS/rocSOLVER Fortran bindings. There is no MSVC-ABI Fortran compiler available, so the Fortran half of the build cannot be produced in the ABI the rest of the Windows toolchain uses; this is a language-toolchain gap on the platform, not something the port can fix. Confirmed on windows-gfx1101 and windows-gfx1201. NOTE for the approver: approving this alone does NOT make QUICK PR-ready -- wave64 is also unsatisfied at head \n and still needs a gfx90a or gfx942 run. This suggestion only removes the windows gate from that list.",
-      "suggested_at": "2026-08-20T07:52:03Z"
+      "reason": "Upstream QUICK does not support Windows: its README lists \"Supported platforms: Linux (x86 and ARM), macOS (x86 and ARM)\", so there is no Windows CUDA build for a HIP port to stand beside. Secondary obstacle: QUICK is a mixed Fortran/HIP build and the Windows ROCm SDK ships no working Fortran compiler (flang.exe there is a clang driver), reported as https://github.com/ROCm/TheRock/issues/7596 and unanswered. The HIP work is validated at head d369e07 on linux-gfx90a (wave64) and linux-gfx1100 (wave32).",
+      "suggested_at": "2026-08-20T07:52:03Z",
+      "approved_by": "jeffdaily",
+      "at": "2026-11-18T15:20:49Z"
     }
   },
   "license_spdx": "MPL-2.0",
