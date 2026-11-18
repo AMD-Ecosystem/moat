@@ -11,6 +11,7 @@ worse than none: it rejects data that is actually correct.
     python3 utils/gen_schema.py --check    # fail if it is out of date (CI)
 """
 
+import argparse
 import json
 import pathlib
 import sys
@@ -489,17 +490,25 @@ def build():
     }
 
 
-def main():
+def main(argv=None):
+    # argparse, so that only the bare command writes: `--help` and a mistyped flag
+    # used to fall through to the write, and asking what the tool does rewrote the
+    # schema.
+    ap = argparse.ArgumentParser(
+        description="Generate schema/status.schema.json from moatlib.")
+    ap.add_argument("--check", action="store_true",
+                    help="write nothing; exit 1 if the checked-in schema is out of date")
+    args = ap.parse_args(argv)
     text = json.dumps(build(), indent=2) + "\n"
-    if "--check" in sys.argv:
-        if not OUT.exists() or OUT.read_text() != text:
+    if args.check:
+        if not OUT.exists() or OUT.read_text(encoding="utf-8") != text:
             print("gen_schema: schema/status.schema.json is out of date "
                   "(run utils/gen_schema.py)", file=sys.stderr)
             return 1
         print("gen_schema: schema is up to date")
         return 0
     OUT.parent.mkdir(exist_ok=True)
-    OUT.write_text(text)
+    OUT.write_text(text, encoding="utf-8", newline="\n")
     print(f"wrote {OUT.relative_to(m.REPO_ROOT)}")
     return 0
 
