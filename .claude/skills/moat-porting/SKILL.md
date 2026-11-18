@@ -77,6 +77,14 @@ what passes and what does not).
 - A dependency that already has a ROCm port (`spconv_rocm`, pyg-rocm-build wheels,
   `amd_gsplat`) is consumed through the `_deps/` mechanism as environment, not adopted as a
   deliverable.
+- Generated CUDA belongs to its generator. colmap vendors Caspar kernels that SymForce
+  generates; a colmap deferral placed the fix in colmap's `caspar_generate.py`, which
+  contains no CUDA, while the templates and runtime were already ported in MOAT's own
+  `symforce` project. When a deferral or plan names generated code, find the generator's
+  owner and check `moatlib.py show <owner>` before scoping. Do not port the output a
+  second time: record in the deferral or plan what the work waits on (here, the symforce
+  PR merging). `depends_on` is for hard build dependencies, which an optional backend
+  is not.
 
 ## Gates, fork commits and carry-forward (extends `validation.md` and `diagnosis.md`)
 

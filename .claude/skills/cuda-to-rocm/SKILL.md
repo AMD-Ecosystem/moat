@@ -235,6 +235,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Project code that splits on `__CUDACC__` means "compiled by the device compiler", and HIP ...
 - nvcc accepts a split launch chevron, `kernel << <grid, block >> >(args)`; clang does not
 - Three CUDA spellings that do not resolve under HIP, all cheap to guard
+- Count cooperative-groups call sites per feature before calling them a blocker
 - MSVC-only upstreams accept code that clang and gcc reject
 - An uninitialised header-only submodule fails as a HIP error, not as a missing file
 - clang checks kernel bodies in the HIP host pass; nvcc does not
