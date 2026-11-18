@@ -2681,8 +2681,9 @@ def main():
     on_branch = [r for r, where in landed if where == "branch"]
     local = [r for r, where in landed if where == "local"]
     if not (on_branch or local):
-        print("\nupstream: nothing to apply automatically (data/reconciled.json "
-              "was stamped; commit it with the next trunk change)")
+        print("\nupstream: nothing to apply automatically"
+              + (" (data/reconciled.json was stamped; commit it with the next trunk "
+                 "change)" if stamped else ""))
         return 0
     for r in on_branch:
         print(f"\nupstream: recorded {r['name']} on its own port branch "

@@ -155,7 +155,7 @@ def render(rows):
                 "Flagged with `triage.py verify` because something needs settling "
                 "before fork-or-decline is even the right question. They are in the "
                 "table above and they do need an answer -- just an answer to what is "
-                "written here. Clearing the flag (`triage.py unskip <owner/repo>`) "
+                "written here. Clearing the flag (`triage.py unskip <owner/repo> --by <who>`) "
                 "returns one to an ordinary row.", ""]
         out += [f"- `{r['full_name']}` -- {r.get('flag_note') or 'no note'}" for r in held]
     out += ["", "---", "_This table is a snapshot. It is regenerated in place only "
