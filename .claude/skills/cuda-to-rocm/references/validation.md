@@ -46,7 +46,7 @@ Ones seen so far, for orientation rather than as a roster:
 
   - For a torch-extension port (Strategy B), plain nvcc is not enough: the project's `setup.py` picks CUDA vs HIP by reading the installed torch (`hasattr(torch.version, 'hip') and torch.version.hip is not None`, or similar), so the CUDA leg needs a CUDA-*built* torch, not just the toolkit. This is still doable on a host with no NVIDIA GPU, and still compile/link-only: `pip install --index-url https://download.pytorch.org/whl/cu121 torch==<pinned>` into a throwaway venv (pick an older CUDA minor, e.g. cu121, so a prebuilt cp312 wheel exists; the wheel bundles its own `nvidia-*-cu12` shared libs, so no system CUDA runtime is needed for compile/link), point `CUDA_HOME` at the dedicated nvcc conda env, and pin `TORCH_CUDA_ARCH_LIST=8.0` (the `torch.utils.cpp_extension` analogue of `-DCMAKE_CUDA_ARCHITECTURES=80` -- unset, it calls `torch.cuda.get_device_capability()` via autodetection and fails or silently degrades on a host with no NVIDIA GPU). Build a scratch copy of the extension source (`git archive HEAD | tar -x`) rather than the project's own working tree, so the CUDA build's `build/` and `.o` files never land as untracked-and-possibly-unignored noise next to the ROCm ones. Confirm the pin took with `cuobjdump --list-elf` on the built `.so` (expect `sm_80` cubins, one per translation unit) the same way `llvm-objdump --offloading` confirms the HIP gfx target. (faster-gaussian-splatting)
 
-## CUDA gate for torch-extension ports: the host's installed PyTorch itself can be the wall
+### CUDA gate for torch-extension ports: the host's installed PyTorch itself can be the wall
 
 On a host whose only installed PyTorch is a ROCm dev build (built from source with `USE_ROCM=1`), nvcc-compiling a torch C++/CUDA extension fails for reasons that have nothing to do with the port. The first choice is still a genuine CUDA-flavored torch wheel in a throwaway venv (see the validation policy above), which gives a full `CUDAExtension` compile and link. Without one, the closest available check is a raw `nvcc -c` of the `.cu` against `torch.utils.cpp_extension.include_paths()` -- and that dies in the ambient install's headers. Two fingerprints of the same root cause:
 
@@ -63,7 +63,7 @@ Before settling for the diff-only fallback, check whether the project has a SECO
 
 ## What a pass does not prove
 
-## A passing assertion COUNT is not a list of what was tested
+### A passing assertion COUNT is not a list of what was tested
 
 Catch2 stops iterating a test case's remaining SECTIONs once one of them throws,
 so a single unported path that aborts hides every section after it. marian-dev's
@@ -78,7 +78,7 @@ port. Compare the assertion count against the CUDA build's, or filter the failin
 section out and watch whether the total moves. A deferral that makes a test case
 abort quietly defers the rest of the file with it. (marian-dev)
 
-## Read what the project's own cross-backend checker actually compares
+### Read what the project's own cross-backend checker actually compares
 
 A project that ships a "compare backend A against backend B" harness makes an attractive gate, but check which outputs it compares before trusting a pass, and check whether the test INPUT can reach the code you changed at all.
 
@@ -95,7 +95,7 @@ Watch the precision variant too: a gate pinned to the fp32 backend can miss a de
 
 ## A project with no tests
 
-## A project with no test suite: author the harness, then ship it WITH the port
+### A project with no test suite: author the harness, then ship it WITH the port
 
 Some projects have no tests at all -- no `tests/`, no CI, no assertions -- so the GPU gate has to be authored. Where the script lives is not bookkeeping, because the commit-message Test Plans name it: a Test Plan is a promise that a reader with the hardware can re-run the command, and a fenced `python3 validate_foo.py` that resolves to nothing in a clone of the fork reads as "there is a validation script you have not found" rather than "this lives elsewhere". Every fenced command in every commit body must be runnable from a clone of the fork.
 

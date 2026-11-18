@@ -1,6 +1,6 @@
 # Linux host setup for graphics and interop tests
 
-## Getting a real hardware GL context on a headless RDNA host
+### Getting a real hardware GL context on a headless RDNA host
 
 A headless Linux box with no display manager can still give a GUI/interop port a REAL,
 hardware-accelerated OpenGL context, if the GPU has a graphics pipeline (RDNA gfx11xx/gfx12xx;
@@ -34,7 +34,7 @@ segment right before `/drm/cardN`) to find the `HIP_VISIBLE_DEVICES` index that 
 card Xorg is bound to, rather than assuming index 0 (or whatever index was used for a prior,
 single-purpose HIP-only check) is also the GL-backed one.
 
-## Headless Vulkan on a Linux GPU host: Xvfb plus Mesa's software WSI
+### Headless Vulkan on a Linux GPU host: Xvfb plus Mesa's software WSI
 
 A Vulkan app or test that needs a window can run on a headless RDNA host under `xvfb-run`,
 but Xvfb has no DRI3, so RADV reports no presentation support and the app silently picks
@@ -43,7 +43,7 @@ llvmpipe (which lacks external memory/semaphore interop and skips the interop te
 RADV present through Mesa's software path and hides llvmpipe; the GPU still does all the
 rendering and interop. Screenshots come from `xwd -root -display :N`. (LichtFeld-Studio)
 
-## HIP and Vulkan in one process can oops the kernel on an old amdgpu-dkms
+### HIP and Vulkan in one process can oops the kernel on an old amdgpu-dkms
 
 A process that runs both HIP and RADV shares one amdgpu VM (libdrm hands both the same device
 file), and once KFD owns that VM it is a compute VM. amdgpu-dkms 6.16.13 dereferences a NULL

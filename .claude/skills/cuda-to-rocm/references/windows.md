@@ -2,7 +2,7 @@
 
 ## Toolchain install
 
-## Windows: use TheRock ROCm, not the Windows HIP SDK
+### Use TheRock ROCm, not the Windows HIP SDK
 
 **Build and run against a full ROCm distribution from TheRock (its PyTorch wheels and the
 venv around them), never the Windows HIP SDK.** The HIP SDK is a compiler-and-headers
@@ -18,7 +18,7 @@ a DLL-load error; rebuilding a correct binary against a broken runtime is the si
 biggest time sink on Windows. A port is not "broken on Windows" until it has been run
 against a full ROCm distribution.
 
-## Windows: TheRock's devel wheel can ship with hipCUB/rocThrust headers missing
+### TheRock's devel wheel can ship with hipCUB/rocThrust headers missing
 
 `_rocm_sdk_devel`'s `include/` can be present but genuinely empty (0 entries, no
 error) while `rocm-sdk init` reports success, and a sibling directory the extractor
@@ -118,7 +118,7 @@ genuinely unavoidable, put it in scratch space and pass `-D<name>_DIR=`; check a
 file against the owning package's RECORD (`cut -d, -f1 <dist-info>/RECORD | grep lib/cmake`)
 before believing it. (HEonGPU)
 
-## Windows: a torch wheel needs the matching `[device-<gfx>]` extra
+### A torch wheel needs the matching `[device-<gfx>]` extra
 
 TheRock publishes torch on several indexes and they do not carry the same thing. The
 PER-ARCH index (`.../v2/<gfx>/`) can lag a ROCm release behind, so matching a 7.14 SDK
@@ -135,7 +135,7 @@ correctly-detected device is a missing architecture in the wheel, never a port f
 Pin one date-stamp across torch, `rocm-sdk-core/libraries/devel` and the device packages,
 because they resolve against each other. (gfx1151, torch 2.12.0+rocm7.14.0a20260519.)
 
-## Windows: a dev package neither TheRock nor vcpkg ships
+### A dev package neither TheRock nor vcpkg ships
 
 conda-forge ships MSVC-toolchain win-64 builds of common C/C++ libraries (GMP, OpenSSL,
 zlib), compatible with clang-cl since both are MS-ABI. Fetch one directly with `curl`
@@ -150,6 +150,23 @@ needed: NTL's `dosify`/`ResetFeatures`/`mach_desc.win`/`NTL_WINPACK` turned what
 pieces and compiling directly with clang-cl. (HEonGPU)
 
 ## CMake and compiler drivers
+
+**An all-clang Windows HIP build hides three CMake/export faults that MSVC builds never
+hit.** (1) `WIN32`-guarded export macros (`#ifdef WIN32` + `#ifdef PROJECTOR_EXPORTS` ->
+`__declspec(dllexport)`) export NOTHING: clang predefines `_WIN32`, not `WIN32` (`WIN32` is
+CMake's `/DWIN32` in `Platform/Windows-MSVC.cmake` `CMAKE_<LANG>_FLAGS_INIT`, the MSVC-syntax
+flag `clang++ -x hip` rejects, so a build that works around that gap loses it), and where a
+header does pick `dllimport`, clang drops it on the definition instead of exporting as MSVC
+does. The DLL links fine and `ctypes` fails at the first symbol; check `dumpbin /exports` (and
+a ~1 KB import lib). Fix: `if (WIN32 AND <hip build>) target_compile_definitions(t PRIVATE
+WIN32 <X>_EXPORTS)`; defining `WIN32` also switches every other `#ifdef WIN32` path in the
+sources, so run the tests on that build. (2) The vendored `hipify_torch` `cmake/Hipify.cmake`
+(still so upstream in ROCm/hipify_torch at 1ea3231) runs `hipify_cli.py` and
+`replace_cuda_with_hip_files.py` as the `execute_process` program, relying on the shebang:
+on Windows that fails ("Failed to hipify files!"); prefix `${Python3_EXECUTABLE}` from
+`find_package(Python3 COMPONENTS Interpreter)`. (3) `get_hipified_list` returns native
+backslash paths; fed to `file(GLOB_RECURSE)` they glob from the drive root and configure
+runs for many minutes -- normalise each element with `file(TO_CMAKE_PATH)`. (LEAP, windows)
 
 **CMake's HIP language on Windows needs ONE clang driver for every language, and ROCm's
 GNU-style `clang++` is the one that works on every CMake version; make the project choose it,
@@ -194,7 +211,7 @@ option set and no generator chosen, appends `-GNinja` to `CMAKE_ARGS` in the `ge
 and `build_*` hooks; scikit-build-core (1.0 through 1.1.2) then also lists `ninja` as a build
 requirement when Ninja is missing, and every other build is untouched. (LEAP, windows-gfx1151)
 
-## Windows: keep one clang driver across every CMake language, and check the CMake version
+### Keep one clang driver across every CMake language, and check the CMake version
 
 With CMake's `HIP` language on Windows, all three of `CMAKE_C_COMPILER`,
 `CMAKE_CXX_COMPILER` and `CMAKE_HIP_COMPILER` must use the SAME clang driver. Mixing
@@ -232,24 +249,7 @@ Note the split with PyTorch extension ports, where `clang-cl` IS the required ho
 compiler (see strategy-b-torch.md): torch drives the compile itself and never goes
 through CMake's `HIP` language.
 
-**An all-clang Windows HIP build hides three CMake/export faults that MSVC builds never
-hit.** (1) `WIN32`-guarded export macros (`#ifdef WIN32` + `#ifdef PROJECTOR_EXPORTS` ->
-`__declspec(dllexport)`) export NOTHING: clang predefines `_WIN32`, not `WIN32` (`WIN32` is
-CMake's `/DWIN32` in `Platform/Windows-MSVC.cmake` `CMAKE_<LANG>_FLAGS_INIT`, the MSVC-syntax
-flag `clang++ -x hip` rejects, so a build that works around that gap loses it), and where a
-header does pick `dllimport`, clang drops it on the definition instead of exporting as MSVC
-does. The DLL links fine and `ctypes` fails at the first symbol; check `dumpbin /exports` (and
-a ~1 KB import lib). Fix: `if (WIN32 AND <hip build>) target_compile_definitions(t PRIVATE
-WIN32 <X>_EXPORTS)`; defining `WIN32` also switches every other `#ifdef WIN32` path in the
-sources, so run the tests on that build. (2) The vendored `hipify_torch` `cmake/Hipify.cmake`
-(still so upstream in ROCm/hipify_torch at 1ea3231) runs `hipify_cli.py` and
-`replace_cuda_with_hip_files.py` as the `execute_process` program, relying on the shebang:
-on Windows that fails ("Failed to hipify files!"); prefix `${Python3_EXECUTABLE}` from
-`find_package(Python3 COMPONENTS Interpreter)`. (3) `get_hipified_list` returns native
-backslash paths; fed to `file(GLOB_RECURSE)` they glob from the drive root and configure
-runs for many minutes -- normalise each element with `file(TO_CMAKE_PATH)`. (LEAP, windows)
-
-## Windows: CRT flags, compiler-rt builtins and Git Bash flag mangling in a CMake HIP build
+### CRT flags, compiler-rt builtins and Git Bash flag mangling in a CMake HIP build
 
 **`MSVC_RUNTIME_LIBRARY` is not known for the HIP language, and disabling it removes the
 CRT flag from every language.** Seen with CMake 3.31 and clang-cl; the HEonGPU Windows
@@ -310,7 +310,7 @@ requirement; otherwise a consumer's catch around a library call is dropped the s
 (HEonGPU: a two-file reproducer isolated it, and the fix took the Windows suite from 190 of
 295 passing to 289 of 293.)
 
-## Windows: TheRock clang 23 can hang in x86 register allocation
+### TheRock clang 23 can hang in x86 register allocation
 
 A host C++ TU that compiles in about a second at `-O1` but never finishes at `-O2`/`-O3`
 is a compiler fault, not a slow build. Find the function with
@@ -321,7 +321,7 @@ one source file keeps the optimization level and compiles it in a second.
 
 ## Linking
 
-## Windows: CMake's HIP link rule mangles MSVC-style flags and paths
+### CMake's HIP link rule mangles MSVC-style flags and paths
 
 On Windows, CMake's HIP link path routes through `hipcc.exe`, which invokes `clang.exe
 --driver-mode=g++` for `--hip-link`. That GCC driver then receives CMake's MSVC-style
@@ -350,7 +350,7 @@ rewrite a memory-mapped file (ROCm/TheRock#5615). A project can need the compile
 link wrapper, or both -- they are independent. (alien, origin of the wrapper; LichtFeld-Studio,
 which needs the link half.)
 
-## Windows: a fetched ROCm-DS dependency has to be built static
+### A fetched ROCm-DS dependency has to be built static
 
 Measured on the hipMM 4.0 line. hipMM 5.0.0 does not yet compile on Windows at all
 (https://github.com/AMD-Ecosystem/hipMM/issues/11), so the hipMM-specific parts below apply
@@ -408,7 +408,7 @@ later one that no longer takes this branch. Guard the whole thing on `MSVC` (tru
 and the correct predicate for "MSVC-style link driver") so Linux and the CUDA path are
 untouched. (HEonGPU)
 
-## Windows: a C++ LibTorch consumer must force the torch_hip.dll import
+### A C++ LibTorch consumer must force the torch_hip.dll import
 
 **A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a
 port that works perfectly**, because the executable never loads `torch_hip.dll` at all.
@@ -438,7 +438,7 @@ executable's import table first would have found the real cause.
 
 ## DLL loading
 
-## Windows: stage the ROCm runtime next to the .exe, kpack included
+### Stage the ROCm runtime next to the .exe, kpack included
 
 On a host whose System32 `amdhip64_7.dll` is broken, `PATH` does not save you -- Windows
 resolves System32 first -- so copy the SDK runtime into the directory holding each test
@@ -496,7 +496,7 @@ versioned file instead (`hiprtc0*.dll` -- the `0` excludes
 `hiprtc-builtins*.dll`), and compare the names the loader tries against
 `ls $ROCM_PATH/bin` before anything else. (diff-surfel-tracing)
 
-## Windows: `hipcc.exe` and hiprtc traps for setuptools/Python builds
+### `hipcc.exe` and hiprtc traps for setuptools/Python builds
 
 Found porting CuPy's Windows build. Each one looks like a broken port and is not:
 
@@ -513,7 +513,9 @@ Found porting CuPy's Windows build. Each one looks like a broken port and is not
 
 ## Source portability
 
-## Windows: Linux-only host APIs and LLP64 truncation inside third-party C APIs
+**A buffer that crosses into Python and gets released with `free()` must come from `malloc`.** Old SWIG/NumPy bindings often hand a C++ result to NumPy by overwriting the array's `data` pointer (a custom `T** INPLACE_ARRAY1` typemap passing `&PyArrayObject->data`), with the callee setting `*out = (new std::vector<T>(n))->data()` or a `thrust::host_vector` equivalent. NumPy later `free()`s it. On Linux, libstdc++ hands back the raw `malloc` pointer, so the mismatch passes silently. MSVC's `std::allocator` over-aligns every allocation of 4 KiB or more and returns an offset pointer, so `free()` corrupts the heap. The crash, `0xc0000374` (STATUS_HEAP_CORRUPTION), comes from a LATER, unrelated free: the next solver call or interpreter exit. Small outputs (a few centroids) survive while large ones (per-row labels) do not. Run each solver alone in a fresh process and read the real exit code (MSYS bash reports 127), and do not blame whichever solver happened to run last. Fix: fill a `malloc`/`calloc` buffer (with `thrust::copy` from device iterators straight into the raw pointer). That keeps the handoff contract on every OS. (h2o4gpu: KMeans fit/predict/transform; the failure had first been blamed on the ElasticNet call that ran after it.)
+
+### Linux-only host APIs and LLP64 truncation inside third-party C APIs
 
 **A Linux-only host API can be the entire Windows blocker in an otherwise portable port**,
 and it will not surface until the first Windows build, however many Linux architectures
@@ -559,9 +561,7 @@ The fix is data-model-independent, not `#ifdef`-ed, so the LP64 result stays bit
 matter. The same width problem appears in dependencies' own constants (`1UL << 40`).
 (HEonGPU)
 
-**A buffer that crosses into Python and gets released with `free()` must come from `malloc`.** Old SWIG/NumPy bindings often hand a C++ result to NumPy by overwriting the array's `data` pointer (a custom `T** INPLACE_ARRAY1` typemap passing `&PyArrayObject->data`), with the callee setting `*out = (new std::vector<T>(n))->data()` or a `thrust::host_vector` equivalent. NumPy later `free()`s it. On Linux, libstdc++ hands back the raw `malloc` pointer, so the mismatch passes silently. MSVC's `std::allocator` over-aligns every allocation of 4 KiB or more and returns an offset pointer, so `free()` corrupts the heap. The crash, `0xc0000374` (STATUS_HEAP_CORRUPTION), comes from a LATER, unrelated free: the next solver call or interpreter exit. Small outputs (a few centroids) survive while large ones (per-row labels) do not. Run each solver alone in a fresh process and read the real exit code (MSYS bash reports 127), and do not blame whichever solver happened to run last. Fix: fill a `malloc`/`calloc` buffer (with `thrust::copy` from device iterators straight into the raw pointer). That keeps the handoff contract on every OS. (h2o4gpu: KMeans fit/predict/transform; the failure had first been blamed on the ElasticNet call that ran after it.)
-
-## Windows: a `core.autocrlf` mismatch can break `git apply` of a committed patch
+### A `core.autocrlf` mismatch can break `git apply` of a committed patch
 
 An in-tree `git apply` of a committed patch can fail with a real (non-whitespace) hunk
 mismatch, on Windows only, if the patch file and the tree it applies to were checked out
@@ -577,7 +577,13 @@ bytes already happen to match under the stale convention). (HEonGPU)
 
 ## Runtime behaviour
 
-## Windows: kernels on different streams run one after another
+**A `std::stringstream` can fail on a multi-GB payload on Windows only.** Code or tests that
+serialize multi-GB objects (FHE bootstrapping keys, large models) into a `std::stringstream`
+pass on Linux and fail on Windows with a generic "write failed". Observed with a 4.8 GB
+payload under the MSVC STL, whose string buffer did not grow past about 2 GiB. Measure the
+payload with a counting `streambuf` before suspecting the GPU port. (HEonGPU)
+
+### Kernels on different streams run one after another
 
 **A test that asserts a speedup from multi-stream concurrency fails on every Windows host
 and passes on Linux.** HIP on Windows does not overlap kernels launched on separate
@@ -588,7 +594,7 @@ is lost. If a failing test's assertion is a timing ratio between a serial and a
 concurrent run, and every functional test passes, this is the cause and the port is not
 at fault. (FLAMEGPU2, where a 20-line repro was written.)
 
-## Windows: VMM address ranges that were mapped are never reused
+### VMM address ranges that were mapped are never reused
 
 On TheRock ROCm 7.14 for Windows (amdhip64_7.dll, gfx1151), `hipMemAddressFree` on a range
 that once had a chunk mapped (`hipMemCreate`, `hipMemMap`, `hipMemSetAccess`, then
@@ -603,15 +609,9 @@ passes alone and fails on its Nth repeat or deep into a suite. `AMD_LOG_LEVEL=3`
 climbing bases. Run such suites one gtest suite per process, with a per-test fallback, and
 treat it as a runtime defect, not a port bug. (LichtFeld-Studio)
 
-**A `std::stringstream` can fail on a multi-GB payload on Windows only.** Code or tests that
-serialize multi-GB objects (FHE bootstrapping keys, large models) into a `std::stringstream`
-pass on Linux and fail on Windows with a generic "write failed". Observed with a 4.8 GB
-payload under the MSVC STL, whose string buffer did not grow past about 2 GiB. Measure the
-payload with a counting `streambuf` before suspecting the GPU port. (HEonGPU)
-
 ## Debugging
 
-## Windows: a crash trace without a PDB names the wrong function
+### A crash trace without a PDB names the wrong function
 
 **The function names in a Windows crash trace from a binary linked without `/DEBUG` are
 the nearest EXPORTED symbol, not the function that was running.** The tell is the
@@ -637,7 +637,7 @@ their size from the same PE header. A `/STACK` change that "did not help" is wor
 checking with `llvm-readobj --file-headers <exe> | grep StackReserve` -- the flag may
 never have reached the linker.
 
-## Windows: a CPU crash that Linux never shows is often a heap over-read
+### A CPU crash that Linux never shows is often a heap over-read
 
 **An access violation that hits only the Windows build, in CPU code the port did not
 touch, and moves between functions from run to run, is worth reading as an
@@ -671,6 +671,6 @@ Getting file:line costs one rebuild and no admin rights:
   (plvs does), copy each exe and its PDB under a distinct name before building the next
   tree, or a run silently uses the other build.
 
-## Windows: a hang can be one kernel that never finishes
+### A hang can be one kernel that never finishes
 
 **A Windows "hang" that keeps the host blocked in `hipMemcpy` can be one kernel that never finishes.** Confirm it before you hunt a host-side loop: `AMD_LOG_LEVEL=3` shows the last `hipLaunchKernel` followed only by repeated `PAL fence isn't ready! result:3`. A symbol-carrying build that keeps Release codegen locates the call site (clang-cl: `-O2 -Ob2 -DNDEBUG -Z7` plus `-DEBUG` at link). If the hang depends on inlining (`/Ob2` hangs, `/Ob1` passes), check for the long-branch return-address bug below.

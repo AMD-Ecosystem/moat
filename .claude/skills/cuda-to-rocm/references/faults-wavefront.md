@@ -1,13 +1,5 @@
 # Faults: wavefront and warp width
 
-# Fault classes: AMD is strict where CUDA is lenient
-
-The real semantic differences. Most porting bugs are here, not in symbol names, and they
-surface at runtime on a build that compiled cleanly.
-
-Sections match the index in SKILL.md, so a line that looked relevant there leads straight
-to its entry here. Each entry names the project it was learned on.
-
 ## Choosing the width
 
 **Never hardcode 32.** NVIDIA warps are always 32 lanes. AMD wavefronts are 64 on CDNA

@@ -88,7 +88,7 @@ around primary contexts can stand the device in for the context and make it curr
 `hipSetDevice`. clang contracts `a * b + c` by default as NVRTC does; `-ffp-contract=off` is the
 `--fmad=false` equivalent. (TornadoVM: Java FFM bindings, TC-generated HIP C++.)
 
-## Runtime-compiled kernels inherit nothing from the host build
+### Runtime-compiled kernels inherit nothing from the host build
 
 Projects that compile device code at runtime -- an OptiX PTX pipeline ported to
 HIP RT/hiprtc, or any hiprtc/comgr JIT -- have two compilers, and only one of
@@ -144,7 +144,7 @@ Source: `diff-surfel-tracing` (OptiX to HIP RT), gfx942.
 
 ## Integrated APUs
 
-## An integrated APU reports the whole shared memory pool as device memory
+### An integrated APU reports the whole shared memory pool as device memory
 
 On an integrated APU `hipMemGetInfo` reports the shared system pool (tens of GB), so a
 library that eagerly reserves a fraction of *reported* device memory can ask for most of
@@ -160,7 +160,7 @@ size). Do not change a shared default that is correct for discrete cards, and do
 special-case APUs in shared code; document the sizing where the project documents its
 defaults. (HEonGPU)
 
-## An integrated APU can crash the device linker under build parallelism
+### An integrated APU can crash the device linker under build parallelism
 
     clang: error: amdgcn-link command failed due to signal (use -v to see invocation)
     clang: note: diagnostic msg: Error generating preprocessed source(s).
@@ -176,7 +176,7 @@ Halve the job count before investigating anything else, and do not read a signal
 same host has hard-reset under heavy parallelism plus sustained GPU load, so a build that
 takes the machine down is the same lesson one notch further along.
 
-## A low-CU integrated GPU can outrun a fixed upstream test timeout without any fault
+### A low-CU integrated GPU can outrun a fixed upstream test timeout without any fault
 
 A 20-CU integrated APU (gfx1151) can be genuinely, correctly ~40x slower than datacenter
 and desktop cards for the single heaviest kernel sequence in a suite, and a project's own

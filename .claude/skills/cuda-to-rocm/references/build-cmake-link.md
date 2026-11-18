@@ -2,7 +2,31 @@
 
 ## Which files compile as HIP
 
-## Never mark the host `.cpp` files `LANGUAGE HIP` to dodge the flag leak
+**`hip::hipcub`/`roc::rocthrust`/`roc::rocprim` targets carry device flags.** Linking them
+to a target that also has g++ host sources puts `--offload-arch=...` on the g++ command
+line ("unrecognized command-line option"). These libraries are header-only; for a mixed
+target add their `INTERFACE_INCLUDE_DIRECTORIES` instead of linking the targets; the
+mechanism and a CMake recipe are under "Never mark the host `.cpp` files `LANGUAGE HIP`" in
+`strategy-a-cmake.md`. (h2o4gpu, Velvet)
+
+**A force-included compat header creates no build dependency edge.** After editing a header
+injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
+stale code and get a silent false pass. (lc0)
+
+**Use the CUDA build's host compiler for host C++ in a large app.** HIP needs clang only for
+the HIP language; `CMAKE_C/CXX_COMPILER` can stay gcc. Upstream code tested only with gcc can
+trip clang-only C++ rejections unrelated to HIP (`__attribute__((visibility)) [[nodiscard]]`
+ordering; `std::expected<std::any, E>` constraint recursion with libstdc++ 14).
+(LichtFeld-Studio)
+
+**The vcpkg toolchain already overrides `add_library`/`add_executable`.** A second
+top-scope override (the MPPI retag trick) makes `_add_library` point at vcpkg's override,
+which recurses. In a vcpkg project retag `.cu` sources with a pass over all targets after
+the subdirectories are added: walk `BUILDSYSTEM_TARGETS` and `SUBDIRECTORIES`, and use
+`set_source_files_properties(... TARGET_DIRECTORY <tgt> PROPERTIES LANGUAGE HIP)` with paths
+made absolute against the target's `SOURCE_DIR`. (LichtFeld-Studio)
+
+### Never mark the host `.cpp` files `LANGUAGE HIP` to dodge the flag leak
 
 The tempting shortcut when a mixed CXX/HIP target fails to compile is to mark *every* source
 `LANGUAGE HIP` so one set of flags applies uniformly. Do not. That defines `__HIPCC__` for
@@ -83,14 +107,7 @@ on `unordered_map<string, vector<hipEvent_t>>` in a header including only `<iost
 project's own NVIDIA build on the same OS, so fixing it is upstream-friendly rather than
 AMD-specific -- say so in the commit message.
 
-**`hip::hipcub`/`roc::rocthrust`/`roc::rocprim` targets carry device flags.** Linking them
-to a target that also has g++ host sources puts `--offload-arch=...` on the g++ command
-line ("unrecognized command-line option"). These libraries are header-only; for a mixed
-target add their `INTERFACE_INCLUDE_DIRECTORIES` instead of linking the targets; the
-mechanism and a CMake recipe are under "Never mark the host `.cpp` files `LANGUAGE HIP`" in
-`strategy-a-cmake.md`. (h2o4gpu, Velvet)
-
-## A change in which files compile as the GPU language is a rebuild-everywhere change
+### A change in which files compile as the GPU language is a rebuild-everywhere change
 
 A `LANGUAGE HIP`/`LANGUAGE CUDA` blanket on host sources is a code smell to look for in
 review: besides leaking device-only macros into host logic, the GPU compiler's runtime
@@ -105,23 +122,6 @@ have recorded the identical error as pre-existing; the two findings do not contr
 path was always broken and stayed broken; the other was accidentally working and stopped.
 (Velvet: `Timer.hpp` used `std::vector` with no `#include <vector>`, on gcc's and clang's
 libstdc++ alike.)
-
-**A force-included compat header creates no build dependency edge.** After editing a header
-injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
-stale code and get a silent false pass. (lc0)
-
-**Use the CUDA build's host compiler for host C++ in a large app.** HIP needs clang only for
-the HIP language; `CMAKE_C/CXX_COMPILER` can stay gcc. Upstream code tested only with gcc can
-trip clang-only C++ rejections unrelated to HIP (`__attribute__((visibility)) [[nodiscard]]`
-ordering; `std::expected<std::any, E>` constraint recursion with libstdc++ 14).
-(LichtFeld-Studio)
-
-**The vcpkg toolchain already overrides `add_library`/`add_executable`.** A second
-top-scope override (the MPPI retag trick) makes `_add_library` point at vcpkg's override,
-which recurses. In a vcpkg project retag `.cu` sources with a pass over all targets after
-the subdirectories are added: walk `BUILDSYSTEM_TARGETS` and `SUBDIRECTORIES`, and use
-`set_source_files_properties(... TARGET_DIRECTORY <tgt> PROPERTIES LANGUAGE HIP)` with paths
-made absolute against the target's `SOURCE_DIR`. (LichtFeld-Studio)
 
 ## Relocatable device code (-fgpu-rdc)
 
@@ -352,7 +352,9 @@ files that use `__half` arithmetic then fail with "invalid operands ... '__half'
 includes LibTorch, `#undef` both in the force-included compat header under `__HIP__`.
 (LichtFeld-Studio)
 
-## A torch build used only as a test oracle can break a build two different ways as it drifts
+  - A rapids-cmake `rapids_hip_init_architectures` HIP-dependency (e.g. hipMM/RMM) can fail configure on a multi-GPU host with `mismatch between CMAKE_HIP_ARCHITECTURES and GPU_TARGETS` even though only one arch was requested: ROCm's `hip-config.cmake` auto-populates the `GPU_TARGETS` cache variable by enumerating every visible device rather than the set of distinct architectures, so four cards of the same gfx report `GPU_TARGETS='gfx1100;gfx1100;gfx1100;gfx1100'` against a single-valued `CMAKE_HIP_ARCHITECTURES='gfx1100'`, and the rapids-cmake string-equality check (not a set comparison) trips. This is a host-population artifact, not a port defect -- confirm by rerunning the identical configure with `HIP_VISIBLE_DEVICES=0` (or on a single-GPU host) and observing it pass. Work around it at the configure invocation, no source edit needed: pass `-DGPU_TARGETS=<arch> -DAMDGPU_TARGETS=<arch>` alongside `-DCMAKE_HIP_ARCHITECTURES=<arch>` so all three agree before rapids-cmake's check ever runs. This applies to the HIP build as much as to the CUDA check. (HEonGPU, gfx1100 4-GPU host)
+
+### A torch build used only as a test oracle can break a build two different ways as it drifts
 
 When a project's own tensor/rasterizer/etc. library is libtorch-free and pulls in a ROCm
 PyTorch build purely as a parity-test oracle (`find_package(Torch)` in the test target
@@ -387,9 +389,7 @@ in the same build, from the same torch version bump (LichtFeld-Studio, torch `2.
   `clang++ -std=c++20 -fsyntax-only -I<spdlog>/include` on a two-line TU calling
   `spdlog::info("{:.6e}", f)`, instead of rebuilding the project to find out.
 
-  - A rapids-cmake `rapids_hip_init_architectures` HIP-dependency (e.g. hipMM/RMM) can fail configure on a multi-GPU host with `mismatch between CMAKE_HIP_ARCHITECTURES and GPU_TARGETS` even though only one arch was requested: ROCm's `hip-config.cmake` auto-populates the `GPU_TARGETS` cache variable by enumerating every visible device rather than the set of distinct architectures, so four cards of the same gfx report `GPU_TARGETS='gfx1100;gfx1100;gfx1100;gfx1100'` against a single-valued `CMAKE_HIP_ARCHITECTURES='gfx1100'`, and the rapids-cmake string-equality check (not a set comparison) trips. This is a host-population artifact, not a port defect -- confirm by rerunning the identical configure with `HIP_VISIBLE_DEVICES=0` (or on a single-GPU host) and observing it pass. Work around it at the configure invocation, no source edit needed: pass `-DGPU_TARGETS=<arch> -DAMDGPU_TARGETS=<arch>` alongside `-DCMAKE_HIP_ARCHITECTURES=<arch>` so all three agree before rapids-cmake's check ever runs. This applies to the HIP build as much as to the CUDA check. (HEonGPU, gfx1100 4-GPU host)
-
-## Submodules pinned to commits that do not exist
+### Submodules pinned to commits that do not exist
 
 **A port that edits a git submodule in place is lost the moment the clone is deleted, and
 the branch it leaves behind cannot even be cloned.** If the submodule's working tree is
@@ -426,7 +426,7 @@ the diffs to send there. (HEonGPU)
 
 ## Installed packages and optional targets
 
-## Install and consume the port, not just build it
+### Install and consume the port, not just build it
 
 A project that ships `install()` rules and a `<Name>Config.cmake` has a second interface the
 in-tree tests never touch, and it is routinely left CUDA-only by a port that otherwise works:
@@ -452,7 +452,7 @@ rules at configure time; reconfigure with `-DCMAKE_INSTALL_PREFIX` instead of co
 install is broken. Write the downstream snippet into the docs only after the consumer
 actually configures, builds and runs. (HEonGPU)
 
-## Every optional target the project can build, not just the one you build
+### Every optional target the project can build, not just the one you build
 
 `BUILD_TESTS` is on while you work, so the test targets get the full treatment -- source
 compiled as HIP, the `USE_HIP` definition, the shim include directory -- and `BUILD_EXAMPLES`
@@ -466,7 +466,7 @@ it is the only way the claim in your commit message is true.
 
 ## Other build systems
 
-## A cached build-script decision from a wrong env var survives fixing the env var
+### A cached build-script decision from a wrong env var survives fixing the env var
 
 If a `build.rs` reads an env var (e.g. `ROCM_PATH`) to emit `cargo:rustc-link-search`, but
 does not also declare `cargo:rerun-if-env-changed=<that var>`, cargo has no reason to

@@ -341,7 +341,13 @@ there are three:
 
 ## Language standard
 
-## HIP + C++23 on an older toolchain: `isfinite cannot overload` (and how to stay forward-compatible)
+**rocRAND's device headers need C++14 from ROCm 10.1.** `rocrand_threefry_common.h` uses
+`std::enable_if_t`, so a TU that includes `hiprand_kernel.h` under `-std=c++11` fails with
+`no template named 'enable_if_t' in namespace 'std'`. ROCm 7.2 still accepted C++11, so a
+port validated there breaks only on a newer SDK. Look for a build script that pins
+`-std=c++11` for nvcc and reuses it for hipcc; raise it on the HIP path only. (TIGRE)
+
+### HIP + C++23 on an older toolchain: `isfinite cannot overload` (and how to stay forward-compatible)
 
 Symptom, on the first HIP translation unit compiled at `-std=c++23`:
 
@@ -419,9 +425,3 @@ was not vacuous.
 Nothing here is guarded on Windows. MSVC's STL is merely the first to implement P0533R9;
 ROCm/llvm-project#285 notes that libstdc++ doing so will break Linux identically. A
 `WIN32`-only guard, or a ROCm version check, would miss that. Probe for the capability.
-
-**rocRAND's device headers need C++14 from ROCm 10.1.** `rocrand_threefry_common.h` uses
-`std::enable_if_t`, so a TU that includes `hiprand_kernel.h` under `-std=c++11` fails with
-`no template named 'enable_if_t' in namespace 'std'`. ROCm 7.2 still accepted C++11, so a
-port validated there breaks only on a newer SDK. Look for a build script that pins
-`-std=c++11` for nvcc and reuses it for hipcc; raise it on the HIP path only. (TIGRE)

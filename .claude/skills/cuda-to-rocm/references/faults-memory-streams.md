@@ -101,7 +101,7 @@ stream holds about 8 MiB of host memory on TheRock 10.1. (LichtFeld-Studio:
 project save hung or crashed on gfx1100, and the review found three more holders; deferral
 `hip-event-query-destroyed-stream-uaf`.)
 
-## Using a stream after `hipDeviceReset` corrupts the heap (Windows shows it)
+### Using a stream after `hipDeviceReset` corrupts the heap (Windows shows it)
 
 **A process that finishes its work and then dies at exit with `0xC0000374` (heap
 corruption), `0xC0000409` or `0xC0000005` -- or `exit 127` under MSYS bash -- may be
@@ -120,7 +120,7 @@ checked under valgrind. Tell it apart from a missing DLL (which dies before `mai
 prints anything) by the work having completed first. A 12-line repro and a parity
 request to HIP are on FLAMEGPU2.
 
-## A duplicate `hipFree` in one thread can crash a different thread
+### A duplicate `hipFree` in one thread can crash a different thread
 
 When a library frees the same device pointer twice and another thread allocates between
 the two frees, the second free can release that thread's buffer. The failure then shows

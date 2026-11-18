@@ -130,7 +130,7 @@ pure port change. (HEonGPU: RNGonGPU's Box-Muller Gaussian sampler; every cipher
 decrypted to noise while plaintext encoding, which samples no error, passed -- which is the
 tell that the fault is in a SAMPLER and not in the transform everything shares.)
 
-## PTX carry-chain arithmetic (multi-word integers)
+### PTX carry-chain arithmetic (multi-word integers)
 
 Big-integer and modular-reduction code reaches for PTX because CUDA exposes the carry flag
 and C++ does not: `add.cc.u64` / `addc.cc.u64` / `subc.u64` chains, and `mul.lo.u64` +
@@ -169,7 +169,7 @@ a struct whose members are named `x` and `y` can carry low in either one, and th
 C++ shift operators are the cross-check. Getting this backwards produces plausible-looking
 garbage. (HEonGPU)
 
-## Shift counts of 0 or >= 64 in hand-rolled 128-bit arithmetic
+### Shift counts of 0 or >= 64 in hand-rolled 128-bit arithmetic
 
 The same hand-rolled `uint128_t` (a pair of 64-bit limbs) that carries the PTX above almost
 always implements `operator<<` / `operator>>` as three unguarded limb shifts:
