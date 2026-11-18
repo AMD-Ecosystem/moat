@@ -1,17 +1,79 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "name": "warp-1.14",
   "upstream_url": "https://github.com/NVIDIA/warp",
-  "fork_url": null,
+  "fork_url": "https://github.com/AMD-Ecosystem/warp",
   "fork_default_branch": "release-1.14",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "screened",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-18T17:38:39Z",
+  "updated_at": "2026-11-18T17:41:00Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-18T17:41:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVIDIA/warp/blob/release-1.14/LICENSE.md",
+      "at": "2026-11-18T17:39:09Z"
+    }
+  ],
+  "fork_branch": "release/1.14.0.amd0",
+  "fork_branch_ruling": {
+    "branch": "release/1.14.0.amd0",
+    "previous": null,
+    "by": "jeffdaily",
+    "at": "2026-11-18T17:39:10Z",
+    "reason": "Jeff Daily take-up ruling 2026-11-10 and base ruling 2026-11-11 (port/warp notes.md); start directed 2026-11-18"
+  },
+  "delivery": {
+    "mode": "fork-release",
+    "by": "jeffdaily",
+    "at": "2026-11-18T17:39:11Z",
+    "reason": "Jeff Daily take-up ruling 2026-11-10 and base ruling 2026-11-11 (port/warp notes.md); start directed 2026-11-18"
+  },
+  "fork_url_ruling": {
+    "url": "https://github.com/AMD-Ecosystem/warp",
+    "previous": null,
+    "by": "jeffdaily",
+    "at": "2026-11-18T17:39:12Z",
+    "reason": "Jeff Daily take-up ruling 2026-11-10 and base ruling 2026-11-11 (port/warp notes.md); start directed 2026-11-18"
+  },
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "AMD-Ecosystem/warp release/1.13.0.amd0 and amd-integration-halo (reference only by ruling 2026-11-11)",
+    "viable": true,
+    "summary": "Warp release-1.14 line: AMD-owned fork branch release/1.14.0.amd0 with wave64, wave32 and Windows support plus release wheels; taken up by ruling 2026-11-10",
+    "at": "2026-11-18T17:41:00Z"
+  }
 }
