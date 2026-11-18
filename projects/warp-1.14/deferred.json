@@ -54,6 +54,19 @@
         "at": "2026-11-18T20:08:21Z",
         "note": "2026-11-18: do not port it in this line, and make both switches fail clearly instead of misbehaving"
       }
+    },
+    {
+      "id": "rocprim-radix-sort-u64-end-bit-64",
+      "kind": "rocm-bug-report",
+      "component": "rocPRIM",
+      "summary": "rocPRIM 4.8 (ROCm 10.2 rocm-sdk wheels), gfx950: hipcub::DeviceRadixSort::SortKeys on uint64_t keys returns output that is not sorted by the selected bits when end_bit == 64 and begin_bit > 0 (tested 1, 4, 8, 16, 24, 31, 32, 33, 40) for more than 1024 keys; [0,64), [0,63), [1,63), [16,48), [32,56), [32,63) are correct. cuBQL's GPU builders sort {primID,nodeID} with bits [32,64), so leaves with several primitives were built wrong (Warp test_mesh_query_ray_count_intersections, cubql leaf size 4, 1337/5000 rays). Port works around it by sorting [0,64) under __HIPCC__ in the vendored sah_builder.h; sm_builder.h, elh_builder.h and rebinMortonBuilder.h (not used by Warp) have the same [32,64) sort, and upstream cuBQL's HIP path is affected too",
+      "refs": [
+        "projects/warp-1.14/notes.md (Phase 2, rocPRIM radix sort)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T22:37:15Z",
+      "decided": null
     }
   ]
 }
