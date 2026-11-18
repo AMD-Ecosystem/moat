@@ -7,14 +7,16 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:43:45Z",
-  "updated_at": "2026-08-20T18:57:36Z",
+  "updated_at": "2026-11-18T15:30:00Z",
   "head_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
   "depends_on": [],
   "porting": null,
   "waivers": {
     "windows": {
-      "reason": "PREFER THE CHEAPER FIX FIRST: this waiver is the fallback, not the recommendation. ESPResSo hard-requires MPI 3.0, which on Windows means MS-MPI. MS-MPI is absent on every Windows host in the fleet -- verified on windows-gfx1151 on 2026-08-20 (no 'C:\\Program Files\\Microsoft MPI', no mpiexec, no System32\\msmpi.dll) and previously recorded on windows-gfx1101/gfx1201, a different physical machine. It installs only via msmpisetup.exe, which needs administrator elevation that automated validation does not have. So the obstacle is Windows MPI packaging plus a permissions boundary, not the GPU and not the port: wave64 (linux-gfx90a) and wave32 (linux-gfx1100) are both completed at head 8e228b5d. RECOMMENDATION: rather than approve this, install MS-MPI on the gfx1151 host with admin rights and let the port be validated for real -- that is a few minutes of a person's time and yields genuine Windows evidence instead of an excused gate. Approve the waiver only if putting MPI on that host is unwanted. Honest scope note: no build was attempted on gfx1151, because the MPI prerequisite was checked first and is absent, so nothing could have linked.",
-      "suggested_at": "2026-08-20T18:57:36Z"
+      "reason": "Upstream ESPResSo has no native Windows build: its installation guide covers Windows only as \"Installing requirements on Windows via WSL\" (\"To run ESPResSo on Windows, use the Linux subsystem (WSL)\"), including for CUDA, so there is no Windows CUDA build for a HIP port to stand beside. Secondary obstacle: ESPResSo hard-requires MPI 3.0, which natively on Windows means MS-MPI; it is absent on every Windows host and its installer needs administrator rights. The HIP work is validated at head 8e228b5d on linux-gfx90a (wave64) and linux-gfx1100 (wave32).",
+      "suggested_at": "2026-08-20T18:57:36Z",
+      "approved_by": "jeffdaily",
+      "at": "2026-11-18T15:30:00Z"
     }
   },
   "license_clearance": {
