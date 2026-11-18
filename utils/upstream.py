@@ -896,6 +896,29 @@ def _land_local_record(name, message):
             f"`python3 utils/moatlib.py commit-project {name} \"{message}\"`")
 
 
+def pending_optout_problems(name):
+    """Why a request to stop that has not reached the trunk yet binds this project.
+
+    An opt-out is written to data/optout.json and reaches the trunk through a pull
+    request; until that merges, origin/main -- which is all pr_ready reads -- does
+    not have it, and a publish run on another host went ahead. `optout.py record`
+    therefore also pushes the registry to its own branch at once, and the two
+    writes to somebody else's repository read that branch here before acting."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+    import optout
+    full = moatlib.upstream_full_name(name) or ""
+    entry, problem = optout.pending_for(full, repo=REPO)
+    if problem:
+        return [f"{problem} -- a request to stop that cannot be read is not a "
+                f"request that was never made"]
+    if entry:
+        return [f"opted-out: {entry.get('who')} asked not to receive pull requests "
+                f"from this effort ({entry.get('source')}); recorded on the "
+                f"{optout.PENDING_BRANCH} branch, not yet on the trunk"]
+    return []
+
+
 def publish_blockers(name, row):
     """Everything that must hold before a port is submitted upstream, as a list of
     reasons it must not be. Checked at publish time rather than trusted from earlier:
@@ -929,6 +952,7 @@ def publish_blockers(name, row):
         bad.append("could not fetch origin/main, so the opt-out and disposition "
                    "records may be out of date -- a request to stop that cannot be "
                    "read is not a request that was never made")
+    bad += pending_optout_problems(name)
     # Gates, clean fork, no terminal outcome, no PR already open.
     ready, blocking, _ = moatlib.pr_ready(name)
     if not ready:
@@ -1638,6 +1662,8 @@ def merge_fix_blockers(name, d, fix, pr):
     if opt:
         bad.append(f"opted-out: {opt['who']} asked not to receive pull requests "
                    f"from this effort ({opt['source']})")
+    else:
+        bad += pending_optout_problems(name)
     # The merge ends in a record write. Discovering it cannot happen AFTER the open
     # PR has already moved leaves the worst state this flow can produce: the PR
     # advanced, published_sha naming the old tip, and the reconciler calling our own

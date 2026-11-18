@@ -38,11 +38,13 @@ already turns that into state.
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import identity  # noqa: E402
 import moatlib  # noqa: E402
 import prose  # noqa: E402
 
@@ -217,7 +219,8 @@ def record_accepts(accepts, by, apply=False):
         if not rec:
             out.append((full, "not screened, so there is no recommendation to answer"))
             continue
-        rec["decided"] = {"choice": "fork", "by": by, "at": moatlib.now_iso()}
+        rec["decided"] = identity.stamp(
+            {"choice": "fork", "by": by, "at": moatlib.now_iso()})
         obj["intake"] = rec
         # A project intake recommended DECLINING was never going to be forked, so
         # nothing was waiting on one. Overriding that to fork has to say so, or
@@ -273,15 +276,54 @@ def apply_decisions(declines, note, by, apply=False, accepts=()):
     if not apply:
         return ("would-record", "; ".join(f"{f} -> {r}: {n[:60]}" for f, r, n in parsed))
 
+    # This checkout is shared with other sessions, and the steps below move it to
+    # another branch. So it must be clean going in (anything modified would ride
+    # along or be lost), and it is put back on the branch it started on whatever
+    # happens: this used to leave the checkout standing on `intake-decisions`, where
+    # the next session's work then landed.
+    dirty = moatlib._git("status", "--porcelain", "--untracked-files=no",
+                         check=False).stdout.splitlines()
+    if dirty:
+        raise RuntimeError("this checkout has modified tracked files ("
+                           + ", ".join(l[3:] for l in dirty[:4])
+                           + "); commit or restore them first. Nothing was recorded.")
+    started = moatlib._git("rev-parse", "--abbrev-ref", "HEAD",
+                           check=False).stdout.strip()
+    if started in ("", "HEAD"):
+        started = moatlib._git("rev-parse", "HEAD", check=False).stdout.strip()
+    try:
+        return _record_declines(parsed, by, accepts)
+    finally:
+        now = moatlib._git("rev-parse", "--abbrev-ref", "HEAD",
+                           check=False).stdout.strip()
+        if started and now != started:
+            # -f: the tree was clean when this began, so anything modified now is
+            # this run's own half-finished write, which a re-run recreates.
+            back = moatlib._git("checkout", "-q", "-f", started, check=False)
+            if back.returncode:
+                print(f"intake-queue: WARNING -- could not return this checkout to "
+                      f"{started}; it is on {now}", file=sys.stderr)
+
+
+def _record_declines(parsed, by, accepts):
+    """The steps of apply_decisions that move the checkout to the decisions branch."""
     moatlib._git("fetch", "-q", "origin", "main", check=False)
     moatlib._git("checkout", "-q", "-B", BRANCH, "origin/main", check=True)
     for full, reason, why in parsed:
         moatlib.set_disposition(full, "skip", reason, why, by=by)
+    if identity.recorded_as():
+        d = moatlib.load_dispositions()
+        for full, _reason, _why in parsed:
+            if full.lower() in d:
+                identity.stamp(d[full.lower()])
+        moatlib.save_dispositions(d)
     # A disposition changes the project's Outcome cell, so the generated table moves
     # with it. Committing only dispositions.json left this tool opening a pull request
-    # that failed the repository's own README gate.
-    subprocess.run([sys.executable, "utils/gen_readme.py"], cwd=str(moatlib.REPO_ROOT),
-                   capture_output=True, text=True)
+    # that failed the repository's own README gate. Run from TOOLS_ROOT: under the
+    # trunk re-exec the checkout's own copy can be stale and would not re-run itself.
+    subprocess.run([sys.executable, str(moatlib.TOOLS_ROOT / "utils" / "gen_readme.py")],
+                   cwd=str(moatlib.REPO_ROOT), capture_output=True, text=True,
+                   env={**os.environ, "MOAT_REPO": str(moatlib.REPO_ROOT)})
     moatlib._git("add", "--", "data/dispositions.json", "README.md")
     if not moatlib._git("diff", "--cached", "--name-only", check=False).stdout.strip():
         return ("nothing", "these dispositions are already recorded")
@@ -334,7 +376,8 @@ def main(argv=None):
                         "and paired positionally")
     a.add_argument("--accept", action="append", default=[], metavar="owner/repo",
                    help="record that a person chose to fork; repeatable")
-    a.add_argument("--by", help="who decided; defaults to the authenticated account")
+    a.add_argument("--by", help="who decided (required): the person whose reply "
+                                "this carries, by name")
     a.add_argument("--apply", action="store_true")
     args = ap.parse_args(argv)
 
@@ -345,7 +388,16 @@ def main(argv=None):
         action, detail = publish(apply=args.apply)
         print(f"intake-queue: {action}\n{detail}")
         return 0
-    by = args.by or (gh(["api", "user", "--jq", ".login"]).stdout.strip() or "unknown")
+    # No default. This used to fill in the authenticated account, and agents run on
+    # the maintainer's credentials -- so an agent that ran `apply` recorded the
+    # maintainer as the decider without anyone having said so. The account the
+    # record was written under is stored beside it instead (identity.py).
+    if not args.by:
+        print("intake_queue apply: --by <who decided> is required; it is the person "
+              "whose reply is being carried into the record, not whoever is logged in",
+              file=sys.stderr)
+        return 2
+    by = args.by
     if args.accept:
         for full, detail in record_accepts(args.accept, by, apply=args.apply):
             print(f"  accept {full}: {detail}")
