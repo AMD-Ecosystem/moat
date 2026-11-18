@@ -21,6 +21,7 @@ contribution on the strength of a field that lies for that repo. So it writes a
 branch and opens a PR, and a human decides -- the same path everything else takes.
 
     python3 utils/upstream.py --dry-run          # report PR drift, change nothing
+    python3 utils/upstream.py --dry-run --stamp  # ... and record that the sweep ran
     python3 utils/upstream.py --apply            # record merges + verified published_sha
                                                  # backfills via the record-sync branch + PR
     python3 utils/upstream.py --forks            # report projects awaiting a fork
@@ -49,6 +50,7 @@ second one carrying overlapping changes.
 """
 
 import argparse
+import datetime
 import json
 import os
 import pathlib
@@ -74,8 +76,9 @@ def _run(*args, **kwargs):
     return subprocess.run(*args, **kwargs)
 
 
-TODAY = _run(["date", "-u", "+%Y-%m-%d"],
-                       capture_output=True, text=True).stdout.strip()
+# Not `date -u`: outside Git Bash on Windows there is no such program, and this
+# module is imported by tools that only wanted one of its functions.
+TODAY = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
 # One stable branch, deliberately not date-stamped: see publish().
 # Named for what it carries, not for who pushes it: every run of this is a person
 # in a session, so there is no bot identity for a reader to recognise.
@@ -172,6 +175,20 @@ def all_records(only=None):
         obj, where = moatlib.project_record(name)
         if obj is not None:
             yield name, obj, where
+
+
+def _tool(name):
+    """A sibling tool's path. From TOOLS_ROOT, not the checkout: under the trunk
+    re-exec this file runs from the trunk export while the checkout's copy of the
+    sibling can be weeks old, and the inherited MOAT_TRUNK_TOOLS stops that copy
+    re-running itself -- so a path relative to the checkout quietly ran stale code."""
+    return str(TOOLS_ROOT / "utils" / name)
+
+
+def _tool_env():
+    """The environment for a sibling tool: it acts on this checkout, whichever copy
+    of the code runs."""
+    return {**os.environ, "MOAT_REPO": str(REPO)}
 
 
 def gh_json(args):
@@ -871,8 +888,8 @@ def _land_local_record(name, message):
     # written changes it; regenerate it into the same commit rather than fail the push.
     extra = []
     if moatlib.current_branch() == "main":
-        _run([sys.executable, "utils/gen_readme.py"], cwd=str(REPO),
-             capture_output=True, text=True)
+        _run([sys.executable, _tool("gen_readme.py")], cwd=str(REPO),
+             capture_output=True, text=True, env=_tool_env())
         extra = ["README.md"]
     try:
         if moatlib.commit_project(name, message, extra_paths=extra):
@@ -2394,8 +2411,10 @@ RECONCILED = REPO / "data" / "reconciled.json"
 
 
 def stamp_reconciled(n_records, n_drift):
-    """Record that the upstream sweep ran. Written on every full poll, applied or not:
-    the question this answers is "has anyone LOOKED", not "did anything change"."""
+    """Record that the upstream sweep ran: the question this answers is "has anyone
+    LOOKED", not "did anything change". Written under --apply or --stamp only. It
+    is a tracked file, and a report that said "change nothing" while rewriting one
+    left every checkout that merely looked with a modified tree."""
     RECONCILED.parent.mkdir(parents=True, exist_ok=True)
     RECONCILED.write_text(json.dumps(
         {"at": TODAY, "records": n_records, "drifted": n_drift}, indent=2) + "\n")
@@ -2555,10 +2574,11 @@ def main():
     rows = recorded()
     drift, unreviewed, headdrift, backfill, errors = poll(rows)
     skipped = [r for r in rows if r.get("skipped")]
-    # The sweep just happened, so stamp it whether or not anything is applied.
     # Nothing runs on a schedule any more, so this timestamp is the only thing that
     # can tell anyone the record has gone unchecked; orient.sh reads it every run.
-    if not errors:
+    # Only when asked: a run made to LOOK must not modify a tracked file.
+    stamped = (a.apply or a.stamp) and not errors
+    if stamped:
         stamp_reconciled(len(rows), len(drift))
 
     print(f"upstream: {len(rows)} recorded PRs, {len(drift)} drifted, "
@@ -2614,6 +2634,12 @@ def main():
         if todo:
             print(f"\n  --apply {' and '.join(todo)} and opens a PR; closures and "
                   f"moved heads need a human decision.")
+        if stamped:
+            print("\n  stamped data/reconciled.json (tracked): commit it with the "
+                  "next trunk change")
+        elif not errors:
+            print("\n  nothing was written; --stamp records that this sweep ran "
+                  "(orient reports how long ago the last stamped one was)")
         return 0
 
     landed = [(r, apply_one(r)) for r in drift] \
@@ -2621,15 +2647,16 @@ def main():
     on_branch = [r for r, where in landed if where == "branch"]
     local = [r for r, where in landed if where == "local"]
     if not (on_branch or local):
-        print("\nupstream: nothing to apply automatically")
+        print("\nupstream: nothing to apply automatically (data/reconciled.json "
+              "was stamped; commit it with the next trunk change)")
         return 0
     for r in on_branch:
         print(f"\nupstream: recorded {r['name']} on its own port branch "
               f"(already pushed; not part of the record-sync PR)")
     if not local:
         return 0
-    _run([sys.executable, "utils/gen_readme.py"], cwd=str(REPO),
-                   capture_output=True)
+    _run([sys.executable, _tool("gen_readme.py")], cwd=str(REPO),
+         capture_output=True, env=_tool_env())
     return publish(local)
 
 
@@ -2644,10 +2671,17 @@ def publish(applied):
 
     Force-pushing is safe here precisely because nobody else edits this branch -- it
     is bot-owned and fully regenerated, never appended to."""
+    class GitFailed(Exception):
+        pass
+
     def git(*args, check=True):
         r = _run(["git", *args], cwd=str(REPO), capture_output=True, text=True)
         if check and r.returncode:
-            print(f"upstream: git {' '.join(args)}: {r.stderr.strip()}", file=sys.stderr)
+            # Stop at the first failure. This used to print and carry on, so a
+            # `checkout -B` that failed was followed by a commit on whatever branch
+            # the checkout was on and a force-push of it.
+            raise GitFailed(f"git {' '.join(args)}: "
+                            f"{(r.stderr or r.stdout).strip()[:300]}")
         return r
 
     trunk = git("symbolic-ref", "--short", "refs/remotes/origin/HEAD",
@@ -2663,8 +2697,13 @@ def publish(applied):
     # tracked modification and commit whatever was modified, so anything here that
     # is not one of the records this run corrected would be both destroyed locally
     # and swept into the pull request. Refuse instead and name it.
+    # The sweep's own stamp and the README it regenerated are this run's writes too;
+    # counting them as foreign made every --apply that had something to publish
+    # refuse itself.
     dirty = [f for f in git("diff", "--name-only", "HEAD").stdout.splitlines() if f]
-    foreign = [f for f in dirty if not re.fullmatch(r"projects/[^/]+/status\.json", f)]
+    foreign = [f for f in dirty
+               if not re.fullmatch(r"projects/[^/]+/status\.json", f)
+               and f not in RECORD_SYNC_PATHS]
     if foreign:
         print(f"upstream: {len(foreign)} modified file(s) in this checkout are not "
               f"record corrections ({', '.join(foreign[:4])}"
@@ -2673,6 +2712,33 @@ def publish(applied):
               file=sys.stderr)
         return 1
     started_on = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if started_on == "HEAD":                           # detached: return to the commit
+        started_on = git("rev-parse", "HEAD").stdout.strip()
+    try:
+        return _publish_branch(git, applied, trunk, stash, started_on)
+    except GitFailed as e:
+        # Put the checkout back the way it was found: the starting branch, with the
+        # corrections this run made still in the working tree (they exist nowhere
+        # else but the stash object). Nothing has been published unless the failure
+        # came after the push, and the message says which step it was.
+        print(f"upstream: {e}", file=sys.stderr)
+        git("checkout", "-q", "-f", started_on, check=False)
+        back = git("checkout", stash, "--", ".", check=False)
+        print("upstream: record-sync stopped at that step; this checkout is back on "
+              f"{started_on}"
+              + (" with the corrections restored to the working tree" if not
+                 back.returncode else f" but the corrections could NOT be restored "
+                 f"-- they are in the git object {stash}")
+              + ". Fix the cause and re-run.", file=sys.stderr)
+        return 1
+
+
+RECORD_SYNC_PATHS = ("README.md", "data/reconciled.json")
+
+
+def _publish_branch(git, applied, trunk, stash, started_on):
+    """The steps of publish() that move the checkout. Any git failure raises out of
+    here and publish() restores the starting state."""
     git("checkout", "-q", "--", ".")                   # tree now matches HEAD
     git("fetch", "-q", "origin", trunk)
     git("checkout", "-q", "-B", BRANCH, f"origin/{trunk}")
@@ -2726,13 +2792,14 @@ def publish(applied):
     else:
         # Check our own title before opening: a tool that enforces a convention on
         # everyone else and exempts itself teaches people the convention is optional.
-        chk = _run([sys.executable, "utils/pr_intent.py", "--check-title",
-                              "--branch", BRANCH, "--title", subject],
-                             cwd=str(REPO), capture_output=True, text=True)
+        chk = _run([sys.executable, _tool("pr_intent.py"), "--check-title",
+                    "--branch", BRANCH, "--title", subject],
+                   cwd=str(REPO), capture_output=True, text=True, env=_tool_env())
         if chk.returncode:
             print(chk.stdout.strip(), file=sys.stderr)
             print("upstream: refusing to open a pull request with that title",
                   file=sys.stderr)
+            git("checkout", "-q", started_on)
             return 1
         _run(["gh", "pr", "create", "--fill-first", "--body", body],
                        cwd=str(REPO), capture_output=True, text=True)
