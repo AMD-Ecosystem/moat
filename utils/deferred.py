@@ -344,8 +344,9 @@ def amend(args):
 
     The summary is what a person reads when ruling, so correcting it is a recorded
     operation: the old text, who replaced it, when and why go to `summary_history`,
-    oldest first. An existing ruling is left alone; its `at` against the amendment's
-    shows which text it was made on."""
+    oldest first. A ruling was made on the text it replaces, so it does not carry
+    over: it moves into that history entry and the item is pending again until a
+    person rules on the corrected text."""
     if not (args.by or "").strip():
         sys.exit("deferred: --by is required; an amendment names who made it")
     if not (args.reason or "").strip():
@@ -358,19 +359,22 @@ def amend(args):
     it = _find(obj, args.id)
     if args.summary == it.get("summary"):
         sys.exit(f"deferred: '{args.id}' already has that summary")
-    it.setdefault("summary_history", []).append(
-        {"summary": it.get("summary"), "by": args.by, "at": moatlib.now_iso(),
-         "reason": args.reason})
+    entry = {"summary": it.get("summary"), "by": args.by, "at": moatlib.now_iso(),
+             "reason": args.reason}
+    ruled = it.get("decided") or {}
+    if ruled.get("choice"):
+        entry["ruling_cleared"] = it.pop("decided")
+    it.setdefault("summary_history", []).append(entry)
     it["summary"] = args.summary
     msg = f"deferred: amend {args.id} summary ({args.by})"
     sha = _store(where, obj, msg)
     if not sha:
         _maybe_commit(args, where, msg)
     _report(where, sha, f"{args.id}: summary amended, by {args.by}")
-    ruled = it.get("decided") or {}
     if ruled.get("choice"):
         print(f"-- {args.id} was ruled `{ruled['choice']}` by {ruled.get('by')} on the "
-              f"previous text; the ruling stands unless that person rules again",
+              f"previous text; that ruling is cleared (kept in summary_history) and "
+              f"the item is pending again: `deferred.py decide {args.id} ...`",
               file=sys.stderr)
 
 

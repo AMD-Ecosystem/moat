@@ -525,8 +525,10 @@ statuses nor reopens a closed item.
 A summary recorded wrongly is corrected with
 `deferred.py amend <id> --summary '<text>' --by <who> --reason '<what was wrong>'`,
 which keeps the replaced text in the item's `summary_history`. Anyone may amend,
-agents included; an existing ruling stands, so tell the person who ruled when the
-correction changes what they ruled on.
+agents included. A ruling was made on the old text, so amending a ruled item clears
+the ruling (it is kept in that history entry) and the item is pending again: bring
+the corrected text to the person who ruled. A closed item is not reopened; register
+a new one that references it.
 
 A deferral lives in `projects/<name>/deferred.json` on that project's branch, with the
 notes and the plan it came out of, so it is reviewed with the port that produced it.
