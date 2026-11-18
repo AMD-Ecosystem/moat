@@ -6,12 +6,16 @@
   "fork_default_branch": "release-1.14",
   "priority": 0.0,
   "ext_type": "python-build-nvrtc",
-  "stage": "planned",
+  "stage": "porting",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-18T17:54:27Z",
+  "updated_at": "2026-11-18T20:28:14Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx950",
+    "since": "2026-11-18T20:28:14Z",
+    "holder": "29be5ec21a95"
+  },
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -36,6 +40,28 @@
         "last_session_at": null
       },
       "last_agent": "planner"
+    },
+    "linux-gfx950": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-18T20:28:14Z",
+      "completed_at": null,
+      "updated_at": "2026-11-18T20:28:14Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   },
   "license_spdx": "Apache-2.0",
