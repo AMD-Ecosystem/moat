@@ -7034,7 +7034,9 @@ def _main(argv=None):
     s = sub.add_parser("audit-clean", help="report forks with uncommitted tracked source/build edits (integrity-gap fingerprint)")
     s.add_argument("name", nargs="?", default=None, help="one project, or omit to scan every fork")
 
-    s = sub.add_parser("set-pr-open", help="record PR metadata after creating the upstream PR")
+    s = sub.add_parser("set-pr-open",
+                       help="record an upstream PR the record does not know (recovery "
+                            "only: upstream.py --publish records the PR it opens)")
     s.add_argument("name")
     s.add_argument("pr_url")
     s.add_argument("pr_number", type=int)
