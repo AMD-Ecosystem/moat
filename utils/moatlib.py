@@ -501,6 +501,39 @@ def _platform_block(initial_state):
     return block
 
 
+# How many earlier validated commits a block remembers (see _set_validated).
+VALIDATED_PRIOR_KEPT = 4
+# A validation-failed that is about CONTENT the build does not compile, recorded
+# with `set-state ... validation-failed --gate <which>`: the port's documentation
+# is missing, or the jargon check found workflow vocabulary in it.
+CONTENT_GATES = ("docs", "jargon")
+
+
+def _set_validated(blk, sha):
+    """Point a block's validated_sha at `sha`, remembering the commit it leaves.
+
+    A block holds one validated_sha, so revalidating at a fix round's staging tip
+    used to forget that the platform had validated the base: when the round was
+    abandoned and the head returned there, the platform was asked to validate a
+    commit it had already proven. The last few commits it validated are kept in
+    `validated_prior` (newest last), and _move_head restores from them."""
+    old = blk.get("validated_sha")
+    if old and not same_commit(old, sha):
+        prior = [p for p in (blk.get("validated_prior") or [])
+                 if not same_commit(p, old) and not same_commit(p, sha)]
+        blk["validated_prior"] = (prior + [old])[-VALIDATED_PRIOR_KEPT:]
+    elif blk.get("validated_prior"):
+        blk["validated_prior"] = [p for p in blk["validated_prior"]
+                                  if not same_commit(p, sha)]
+    blk["validated_sha"] = sha
+
+
+def _validated_before(blk, sha):
+    """Has this block's platform validated exactly `sha` at some point?"""
+    return any(same_commit(p, sha) for p in
+               [blk.get("validated_sha"), *(blk.get("validated_prior") or [])])
+
+
 def status_path(name):
     return PROJECTS / name / "status.json"
 
@@ -898,7 +931,7 @@ def verdict_sha_problem(name, obj, platform, new_state, sha=None):
     return None
 
 
-def set_state(name, platform, new_state, agent=None, save=True, sha=None):
+def set_state(name, platform, new_state, agent=None, save=True, sha=None, gate=None):
     """Validate and apply a transition with its side effects.
 
     One entry point for two machines, routed on which the state belongs to: a stage
@@ -909,10 +942,22 @@ def set_state(name, platform, new_state, agent=None, save=True, sha=None):
     A platform's record is created on first use rather than pre-seeded, so a host
     whose GPU nothing has recorded before simply starts working and its record
     appears. The platform still has to be well-formed and its wavefront width
-    known."""
+    known.
+
+    `gate` goes with `validation-failed` only, and says the failure is not about
+    what the GPU ran: the run was fine and the port's documentation (`docs`) or its
+    upstream-visible wording (`jargon`) is what sends it back. See _move_head for
+    why that has to be recorded: the fix for such a failure is a delta that cannot
+    change compiled output, which is exactly the delta a failure is carried
+    across."""
     problem = platform_problem(platform)
     if problem:
         raise ValueError(problem)
+    if gate is not None and (new_state != "validation-failed"
+                             or gate not in CONTENT_GATES):
+        raise ValueError(
+            f"{name}/{platform}: --gate is one of {', '.join(CONTENT_GATES)} and "
+            f"goes with validation-failed only (got {gate!r} with {new_state})")
     if new_state == "not-portable":
         raise ValueError(
             f"{name}: `not-portable` is a person's verdict on the codebase, not a "
@@ -975,9 +1020,13 @@ def set_state(name, platform, new_state, agent=None, save=True, sha=None):
     # an old failed_sha as stale and derives `port-ready`, so short-circuiting here left
     # the new failure unrecorded and sent the next validator to the same head again.
     refailed = (not is_stage and new_state == cur == "validation-failed"
-                and not same_commit(
+                and (not same_commit(
                     (obj["platforms"].get(platform) or {}).get("failed_sha"),
-                    obj.get("head_sha")))
+                    obj.get("head_sha"))
+                     # The same head failing for a different recorded reason: a
+                     # docs gap found after a test failure, or the reverse.
+                     or (obj["platforms"].get(platform) or {}).get("failed_gate")
+                     != gate))
     # The other same-state call that is not a no-op: entering an exclusive stage the
     # project is ALREADY in while holding no lock. That is the ordinary case of picking
     # up work another host put down, and it is the half the exclusivity check above does
@@ -1089,7 +1138,8 @@ def set_state(name, platform, new_state, agent=None, save=True, sha=None):
         blk["started_at"] = ts
     if new_state == "completed":
         blk["completed_at"] = ts
-        blk["validated_sha"] = obj.get("head_sha")
+        _set_validated(blk, obj.get("head_sha"))
+        blk.pop("failed_gate", None)
         # A real-GPU validation supersedes any prior carry-forward tag; drop the
         # stale annotation so the metadata reflects how this completion was reached.
         blk.pop("carry_forward", None)
@@ -1107,6 +1157,10 @@ def set_state(name, platform, new_state, agent=None, save=True, sha=None):
         # WHICH commit failed, so a failure reads the way a validation does: evidence
         # about one commit, not a permanent property of the arch. See failure_stands.
         blk["failed_sha"] = obj.get("head_sha")
+        if gate:
+            blk["failed_gate"] = gate
+        else:
+            blk.pop("failed_gate", None)
     obj["platforms"][platform] = blk
     if save:
         save_status(name, obj)
@@ -3534,7 +3588,9 @@ def abandon_fix(name, by, reason):
 
     Clears the fix block and returns head_sha to the round's base -- the tip the PR
     shows or shipped -- through the same platform pass as advance_head, so evidence
-    gathered on the discarded staging tip stops counting. The staging branch is left
+    gathered on the discarded staging tip stops counting, and a platform that had
+    validated the base before the round reads validated there again (see
+    _set_validated; a block keeps the last few commits it validated). The staging branch is left
     on the fork as evidence. The ruling is appended to fix_abandoned so the record
     still says what was staged and why it was dropped. Like a waiver: `by` is
     required and never defaulted."""
@@ -3947,9 +4003,21 @@ def _move_head(obj, new_sha, repo):
             old = blk.get("validated_sha")
             if same_commit(old, new_sha):
                 continue
+            # The head came BACK to a commit this arch validated (a fix round was
+            # abandoned and head returned to its base): that evidence is about
+            # exactly this commit and counts again.
+            if _validated_before(blk, new_sha):
+                _set_validated(blk, new_sha)
+                blk["updated_at"] = now_iso()
+                blk["carry_forward"] = {"from": old, "to": new_sha,
+                                        "method": "prior-validation",
+                                        "detail": "head returned to a commit this "
+                                                  "platform had validated",
+                                        "at": now_iso()}
+                continue
             verdict = _classify_safe(repo, old, new_sha)
             if verdict is not None and verdict.arch_independent:
-                blk["validated_sha"] = new_sha
+                _set_validated(blk, new_sha)
                 blk["updated_at"] = now_iso()
                 blk["carry_forward"] = {"from": old, "to": new_sha,
                                         "method": "source-class", "class": verdict.cls,
@@ -3973,13 +4041,38 @@ def _move_head(obj, new_sha, repo):
             old = blk.get("failed_sha") or prev_head
             if not old or same_commit(old, new_sha):
                 continue
+            # The head came back to a commit this arch PASSED, and the failure is
+            # about some other commit (the abandoned staging tip): the pass is the
+            # evidence about this head.
+            if _validated_before(blk, new_sha):
+                if old != blk.get("failed_sha"):
+                    blk["failed_sha"] = old
+                was = blk.get("validated_sha")
+                _set_validated(blk, new_sha)
+                blk["state"] = "completed"
+                blk["updated_at"] = now_iso()
+                blk["carry_forward"] = {"from": was, "to": new_sha,
+                                        "method": "prior-validation",
+                                        "detail": "head returned to a commit this "
+                                                  "platform had validated",
+                                        "at": now_iso()}
+                continue
             verdict = _classify_safe(repo, old, new_sha)
             # Inert: not the fix, so the failure moves up to the new head and goes on
             # standing. Anything else retires it -- and the sha is written down either
             # way, because a block that says only `validation-failed` cannot be judged
             # at all and would ask the porter for a fix it has already had.
-            failed = (new_sha if verdict is not None and verdict.arch_independent
-                      else old)
+            #
+            # The exception is a failure recorded against a CONTENT gate
+            # (`failed_gate`: the documentation, the jargon check). Its fix IS a
+            # delta that cannot change compiled output -- a README build block, a
+            # reworded comment -- so carrying it across one carried it across its
+            # own fix, and the arch asked the porter for it again on every head
+            # move, forever. Such a failure is retired by any head move, and the
+            # validator sent back judges whether the gap is closed.
+            carried = (verdict is not None and verdict.arch_independent
+                       and not blk.get("failed_gate"))
+            failed = new_sha if carried else old
             if failed != blk.get("failed_sha"):
                 blk["failed_sha"] = failed
                 blk["updated_at"] = now_iso()
@@ -4064,7 +4157,7 @@ def carry_forward(name, platform, new_sha, method, detail, host_checked=False):
     ts = now_iso()
     blk["state"] = "completed"
     blk["completed_at"] = ts
-    blk["validated_sha"] = new_sha
+    _set_validated(blk, new_sha)
     blk["updated_at"] = ts
     blk["carry_forward"] = {"from": old, "to": new_sha, "method": method,
                             "class": cls, "detail": detail[:200], "at": ts}
@@ -6119,7 +6212,7 @@ def squash_carry_forward(name, new_sha, repo=None):
         elif plat in failed:
             pass
         elif plat in current:
-            blk["validated_sha"] = new_sha
+            _set_validated(blk, new_sha)
             blk["updated_at"] = ts
             blk["carry_forward"] = {"from": old_head, "to": new_sha, "method": "squash",
                                     "detail": "tree-identical squash of the validated "
@@ -6568,6 +6661,12 @@ def _main(argv=None):
     s.add_argument("--agent")
     s.add_argument("--sha", help="the fork commit that was built and run, when it was "
                                  "not built in projects/<name>/src; must be head_sha")
+    s.add_argument("--gate", choices=list(CONTENT_GATES),
+                   help="with validation-failed: the GPU run was fine and this "
+                        "content check is what failed (missing ROCm build "
+                        "documentation, or a jargon hit). Such a failure is "
+                        "retired by the porter's fix even when that fix is "
+                        "documentation only")
 
     s = sub.add_parser("set-blocked",
                        help="record that an arch cannot run this, or clear that record")
@@ -6942,8 +7041,9 @@ def _main(argv=None):
             print(f"WARNING {t['project']}: {t['lock']}", file=sys.stderr)
     elif args.cmd == "set-state":
         set_state(args.name, args.platform, args.new_state, agent=args.agent,
-                  sha=args.sha)
-        print(f"{args.name}/{args.platform} -> {args.new_state}")
+                  sha=args.sha, gate=args.gate)
+        print(f"{args.name}/{args.platform} -> {args.new_state}"
+              + (f" ({args.gate} gate)" if args.gate else ""))
     elif args.cmd == "set-blocked":
         if args.clear:
             # The reason is not carried forward: it described a state of affairs that

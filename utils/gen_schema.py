@@ -481,8 +481,16 @@ def build():
                     # from these two shas and never stored (see failure_stands).
                     "failed_sha": {"type": ["string", "null"],
                                    "description": "head this arch last failed to validate"},
-                    "pr_url": {"type": ["string", "null"]},
-                    "pr_number": {"type": ["number", "null"]},
+                    # Set when the failure is about content the build does not
+                    # compile (set-state ... validation-failed --gate): such a
+                    # failure is retired by a documentation-only fix instead of
+                    # being carried across it. Absent on an ordinary failure.
+                    "failed_gate": {"enum": list(m.CONTENT_GATES) + [None]},
+                    # Commits this arch validated before validated_sha, newest
+                    # last, so evidence is not lost when the head returns to one
+                    # (an abandoned fix round).
+                    "validated_prior": {"type": "array", "items": {"type": "string"},
+                                        "maxItems": m.VALIDATED_PRIOR_KEPT},
                     "started_at": {"type": ["string", "null"]},
                     "completed_at": {"type": ["string", "null"]},
                     "updated_at": {"type": ["string", "null"]},

@@ -898,5 +898,135 @@ class CarryForwardIsClassified(unittest.TestCase):
             self.assertEqual(s.saved, [])
 
 
+class ContentGateFailure(NoDisposition):
+    """A failure that was about the documentation or the jargon check is retired by
+    the documentation-only fix that resolves it."""
+
+    P = "windows-gfx1151"
+
+    def moved(self, blk, cls):
+        obj = record(head_sha=OLD, reviewed_sha=OLD,
+                     platforms={self.P: blk, "linux-gfx90a": done(OLD)})
+        with classified(cls):
+            moatlib._move_head(obj, HEAD, "repo")
+        return obj
+
+    def test_the_gate_is_recorded_with_the_failure(self):
+        s = Store(self, record())
+        moatlib.set_state("proj", self.P, "validation-failed", gate="docs")
+        blk = s.obj["platforms"][self.P]
+        self.assertEqual((blk["state"], blk["failed_sha"], blk["failed_gate"]),
+                         ("validation-failed", HEAD, "docs"))
+        moatlib.validate_status(s.obj)
+
+    def test_a_gate_goes_with_a_failure_only(self):
+        s = Store(self, record())
+        with self.assertRaisesRegex(ValueError, "goes with validation-failed only"):
+            moatlib.set_state("proj", self.P, "completed", gate="docs")
+        with self.assertRaisesRegex(ValueError, "goes with validation-failed only"):
+            moatlib.set_state("proj", self.P, "validation-failed", gate="tests")
+        self.assertEqual(s.saved, [])
+
+    def test_a_doc_only_fix_retires_a_content_gate_failure(self):
+        for gate in moatlib.CONTENT_GATES:
+            with self.subTest(gate=gate):
+                obj = self.moved(failed(OLD, failed_gate=gate), "doc-only")
+                self.assertEqual(obj["platforms"][self.P]["failed_sha"], OLD)
+                self.assertFalse(moatlib.failure_stands(obj, obj["platforms"][self.P]))
+                # A validator is sent, not the porter again.
+                self.assertEqual(moatlib.arch_task(obj, self.P),
+                                 ("validator", "port-ready"))
+
+    def test_a_plain_failure_is_still_carried_across_a_doc_only_delta(self):
+        obj = self.moved(failed(OLD), "doc-only")
+        self.assertEqual(obj["platforms"][self.P]["failed_sha"], HEAD)
+        self.assertEqual(moatlib.arch_task(obj, self.P), ("porter", "validation-failed"))
+
+    def test_any_failure_is_retired_by_a_code_change(self):
+        for blk in (failed(OLD), failed(OLD, failed_gate="jargon")):
+            obj = self.moved(blk, "mixed")
+            self.assertEqual(obj["platforms"][self.P]["failed_sha"], OLD)
+
+    def test_a_later_plain_failure_or_a_pass_clears_the_gate(self):
+        s = Store(self, record(platforms={self.P: failed(HEAD, failed_gate="docs")}))
+        moatlib.set_state("proj", self.P, "validation-failed")
+        self.assertNotIn("failed_gate", s.obj["platforms"][self.P])
+        moatlib.set_state("proj", self.P, "validation-failed", gate="jargon")
+        self.assertEqual(s.obj["platforms"][self.P]["failed_gate"], "jargon")
+        moatlib.set_state("proj", self.P, "completed")
+        self.assertNotIn("failed_gate", s.obj["platforms"][self.P])
+
+    def test_the_cli_takes_the_gate(self):
+        s = Store(self, record())
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = moatlib.main(["set-state", "proj", self.P, "validation-failed",
+                                 "--gate", "jargon"])
+        self.assertEqual(code, 0)
+        self.assertEqual(s.obj["platforms"][self.P]["failed_gate"], "jargon")
+
+
+class EvidenceForAnEarlierHead(NoDisposition):
+    """A platform's validation of a commit counts again when the head returns."""
+
+    P = "linux-gfx90a"
+
+    def test_revalidating_remembers_the_commit_left_behind(self):
+        s = Store(self, record(platforms={self.P: done(OLD)}))
+        moatlib.set_state("proj", self.P, "completed")
+        blk = s.obj["platforms"][self.P]
+        self.assertEqual((blk["validated_sha"], blk["validated_prior"]), (HEAD, [OLD]))
+        moatlib.validate_status(s.obj)
+
+    def test_the_history_is_short_and_has_no_duplicates(self):
+        blk = done("1" * 40)
+        for n in "234567123":
+            moatlib._set_validated(blk, n * 40)
+        self.assertEqual(blk["validated_sha"], "3" * 40)
+        self.assertEqual(len(blk["validated_prior"]), moatlib.VALIDATED_PRIOR_KEPT)
+        self.assertEqual(len({p for p in blk["validated_prior"]}), len(blk["validated_prior"]))
+        self.assertNotIn("3" * 40, blk["validated_prior"])
+
+    def test_abandoning_a_round_restores_the_validation_of_its_base(self):
+        fix = {"branch": "moat-fix-7", "base_sha": OLD, "review_pr": None}
+        s = Store(self, record(fix=fix, pr_state="open", published_sha=OLD,
+                               platforms={self.P: done(HEAD, validated_prior=[OLD]),
+                                          "windows-gfx1151": done(OLD)}),
+                  record_writable_here=lambda name: (True, "here"),
+                  _fork_repo=lambda name: "repo")
+        with classified("mixed"):
+            moatlib.abandon_fix("proj", "someone", "upstream fixed it")
+        blk = s.obj["platforms"][self.P]
+        self.assertEqual(blk["validated_sha"], OLD)
+        self.assertEqual(blk["carry_forward"]["method"], "prior-validation")
+        self.assertIn(HEAD, blk["validated_prior"])
+        self.assertIsNone(moatlib.arch_task(s.obj, self.P))
+        self.assertEqual(moatlib.unsatisfied_gates(s.obj), set())
+
+    def test_a_failure_at_the_abandoned_tip_gives_way_to_the_pass_at_the_base(self):
+        blk = failed(HEAD, validated_sha=OLD)
+        obj = record(platforms={self.P: blk})
+        with classified("mixed"):
+            moatlib._move_head(obj, OLD, "repo")
+        self.assertEqual((blk["state"], blk["validated_sha"], blk["failed_sha"]),
+                         ("completed", OLD, HEAD))
+
+    def test_a_failure_at_the_commit_returned_to_still_stands(self):
+        blk = failed(OLD, validated_sha=OLD)
+        obj = record(platforms={self.P: blk})
+        with classified("mixed"):
+            moatlib._move_head(obj, OLD, "repo")
+        self.assertEqual(blk["state"], "validation-failed")
+        self.assertTrue(moatlib.failure_stands(obj, blk))
+
+    def test_a_commit_never_validated_is_still_owed(self):
+        blk = done(OLD)
+        obj = record(head_sha=OLD, platforms={self.P: blk})
+        with classified("mixed"):
+            moatlib._move_head(obj, THIRD, "repo")
+        self.assertEqual(blk["validated_sha"], OLD)
+        self.assertEqual(moatlib.arch_task(obj, self.P), ("reviewer", "delta-ported"))
+
+
 if __name__ == "__main__":
     unittest.main()
