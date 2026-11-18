@@ -5201,6 +5201,45 @@ def arch_task(obj, platform):
     return None
 
 
+def covered_failures(obj):
+    """Platforms whose failure of the current head no longer asks for a porter only
+    because ANOTHER platform's validation satisfies the gates they carry, as
+    [(platform, sorted gates so covered)].
+
+    arch_task stops dispatching a porter for a standing failure once no required
+    gate needs that platform. When a gate it carries was waived, a person ruled the
+    platform out and there is nothing more to say. When a sibling passed instead, the
+    failure is still evidence about hardware the port claims to support, and
+    nothing would otherwise bring it in front of anyone before publication: the
+    readiness gate asks for it to be fixed or explained (see _gate_blockers). A
+    blocked platform has its explanation already."""
+    head = obj.get("head_sha")
+    vals = validations(obj)
+    waivers = obj.get("waivers") or {}
+    out = []
+    for arch, blk in sorted(vals.items()):
+        if blk.get("blocked") or not failure_stands(obj, blk):
+            continue
+        gates = gates_for(arch)
+        if not gates or gates & unsatisfied_gates(obj):
+            continue                    # still porter work; arch_task says so
+        # A waiver on any gate this platform carries is a person's ruling about the
+        # platform itself (a Windows host under a waived `windows` gate): its
+        # failure needs no second explanation, even though a sibling covers the
+        # other gates it carries.
+        if any((waivers.get(g) or {}).get("approved_by") and g in WAIVABLE_GATES
+               for g in gates):
+            continue
+        by_sibling = sorted(
+            g for g in gates
+            if any(g in gates_for(a) and b.get("state") == "completed"
+                   and not b.get("blocked") and same_commit(b.get("validated_sha"), head)
+                   for a, b in vals.items() if a != arch))
+        if by_sibling:
+            out.append((arch, by_sibling))
+    return out
+
+
 def platform_state(obj, platform):
     """The state this platform is IN, whether or not anything is to be done about it.
 
@@ -6677,6 +6716,17 @@ def _gate_blockers(name, obj):
             # validation on a host carrying the attribute, not a waiver.
             blocking.append((gate, "no arch has attempted this gate yet -- validate "
                                    f"on a host with the {gate} attribute"))
+
+    # A failure of this head that a sibling platform's pass has covered. The selector
+    # no longer sends a porter after it, so this is the one place it is put in front
+    # of whoever is about to publish: fix it, or say why the port ships with it.
+    for arch, gates in covered_failures(obj):
+        blocking.append(
+            ("standing-failure",
+             f"{arch} failed this head and {', '.join(gates)} is satisfied by another "
+             f"platform, so nothing is asking for a fix. Fix it, or record why the "
+             f"port ships with it: `moatlib.py set-blocked {name} {arch} '<reason>'` "
+             f"(it is then listed as non-viable for the PR body)"))
 
     # Licence gate. Here rather than only in the publisher so that EVERY route to an
     # upstream PR passes it, whoever is doing the opening. Judged on the same record

@@ -726,6 +726,35 @@ class ReviewGate(NoDisposition):
         obj = record(reviewed_sha=HEAD, platforms=dict(self.FULL))
         self.assertEqual(self.blockers(obj), [])
 
+    def test_a_failure_covered_by_a_sibling_must_be_fixed_or_explained(self):
+        plats = dict(self.FULL, **{"linux-gfx1100": failed()})
+        obj = record(reviewed_sha=HEAD, platforms=plats)
+        self.assertIsNone(moatlib.arch_task(obj, "linux-gfx1100"))
+        found = self.blockers(obj)
+        self.assertEqual([b[0] for b in found], ["standing-failure"])
+        self.assertIn("linux-gfx1100", found[0][1])
+        self.assertIn("wave32", found[0][1])
+
+    def test_a_block_with_a_reason_is_the_explanation(self):
+        plats = dict(self.FULL, **{"linux-gfx1100": failed(blocked=True,
+                                                           blocked_reason="why")})
+        blocking, nonviable = moatlib._gate_blockers(
+            "proj", record(reviewed_sha=HEAD, platforms=plats))
+        self.assertEqual(blocking, [])
+        self.assertIn("linux-gfx1100", nonviable)
+
+    def test_a_failure_whose_gate_was_waived_needs_no_explanation(self):
+        waiver = {"windows": {"reason": "r", "approved_by": "someone"}}
+        plats = {"linux-gfx90a": done(), "linux-gfx1100": done(),
+                 "windows-gfx1151": failed()}
+        obj = record(reviewed_sha=HEAD, platforms=plats, waivers=waiver)
+        self.assertEqual(moatlib.covered_failures(obj), [])
+        self.assertEqual(self.blockers(obj), [])
+
+    def test_a_failure_of_an_older_head_is_not_asked_about(self):
+        plats = dict(self.FULL, **{"linux-gfx1100": failed(sha="c" * 40)})
+        self.assertEqual(self.blockers(record(reviewed_sha=HEAD, platforms=plats)), [])
+
     def test_a_record_from_before_the_field_is_not_made_unready(self):
         self.assertEqual(self.blockers(record(platforms=dict(self.FULL))), [])
 
