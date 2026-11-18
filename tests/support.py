@@ -25,10 +25,20 @@ def bash():
     return shutil.which("bash")
 
 
-def run_bash(script, *args, cwd=None, stdin="", env=None):
-    """Run a script file under bash; returns the CompletedProcess."""
-    return subprocess.run([bash(), str(script), *args], cwd=cwd, input=stdin,
-                          capture_output=True, text=True, env=env, timeout=120)
+def run_bash(script, *args, cwd=None, stdin="", env=None, path_first=None):
+    """Run a script file under bash; returns the CompletedProcess.
+
+    `path_first` is a directory to put at the very front of PATH. It is done inside
+    the shell, not through `env`: Git for Windows' bash puts its own directories and
+    $HOME/bin ahead of whatever PATH it was started with."""
+    argv = [bash(), str(script), *args]
+    if path_first:
+        argv = [bash(), "-c",
+                'd=$1; shift; command -v cygpath >/dev/null 2>&1 && d=$(cygpath -u "$d"); '
+                'PATH="$d:$PATH"; export PATH; exec bash "$@"',
+                "bash", posix(path_first), posix(script), *args]
+    return subprocess.run(argv, cwd=cwd, input=stdin, capture_output=True, text=True,
+                          env=env, timeout=120)
 
 
 def posix(path):

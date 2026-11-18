@@ -39,11 +39,12 @@ class PrePush(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def push(self, python=None, stdin=None, env=None):
+    def push(self, python=None, stdin=None, path_first=None):
         hook = support.write_script(self.repo / "hook.sh",
                                     install_hooks.pre_push_text(python))
         stdin = stdin or f"refs/heads/x {A} refs/heads/x {ZERO}\n"
-        return support.run_bash(hook, cwd=str(self.repo), stdin=stdin, env=env)
+        return support.run_bash(hook, cwd=str(self.repo), stdin=stdin,
+                                path_first=path_first)
 
     def ran(self):
         f = self.repo / "ran.txt"
@@ -71,26 +72,25 @@ class PrePush(unittest.TestCase):
         self.assertIsNone(self.ran())
 
     def fake_path(self, python3_works, python_works):
-        """A PATH whose `python3` and `python` either run the real interpreter or
-        cannot import anything, ahead of the real PATH (git has to stay findable)."""
+        """A directory whose `python3` and `python` either run the real interpreter
+        or cannot import anything, to go at the front of PATH."""
         bindir = pathlib.Path(self.tmp.name) / "bin"
         for name, works in (("python3", python3_works), ("python", python_works)):
             support.write_script(bindir / name, "#!/bin/sh\n" + (
                 f'exec "{support.PYTHON}" "$@"\n' if works else "exit 1\n"))
-        return {**os.environ, "PATH": support.posix(bindir) + os.pathsep
-                + os.environ["PATH"]}
+        return bindir
 
     def test_a_vanished_interpreter_falls_back_to_one_that_can_run_the_gates(self):
         gone = support.posix(pathlib.Path(self.tmp.name) / "venv" / "python")
         # `python3` here is the wrong Python (it cannot import the gates' packages),
         # which is exactly the host this was written for; `python` is the right one.
-        r = self.push(python=gone, env=self.fake_path(False, True))
+        r = self.push(python=gone, path_first=self.fake_path(False, True))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.ran()[1], "--fast")
 
     def test_no_usable_interpreter_refuses_and_says_why(self):
         gone = support.posix(pathlib.Path(self.tmp.name) / "venv" / "python")
-        r = self.push(python=gone, env=self.fake_path(False, False))
+        r = self.push(python=gone, path_first=self.fake_path(False, False))
         self.assertEqual(r.returncode, 1)
         self.assertIn("no Python that can run the pre-push gates", r.stderr)
         self.assertIn("install_hooks.py", r.stderr)
@@ -152,9 +152,7 @@ class Launchers(unittest.TestCase):
         for name in ("python3", "python"):
             support.write_script(bindir / name,
                                  f'#!/bin/sh\nexec "{support.PYTHON}" "$@"\n')
-        env = {**os.environ,
-               "PATH": support.posix(bindir) + os.pathsep + os.environ["PATH"]}
-        r = support.run_bash(sh, "version", env=env)
+        r = support.run_bash(sh, "version", path_first=bindir)
         self.assertEqual(r.stdout.splitlines(), ["--shim", "--", "version"])
 
     @unittest.skipUnless(os.name == "nt", "cmd launcher")
