@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
   "name": "HEonGPU",
-  "upstream_url": "https://github.com/Alisah-Ozcan/HEonGPU",
+  "upstream_url": "https://github.com/enCRYPTON-labs/HEonGPU",
   "fork_url": "https://github.com/AMD-Ecosystem/HEonGPU",
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-11-17T20:47:32Z",
+  "updated_at": "2026-11-18T03:53:36Z",
   "head_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
   "depends_on": [],
   "waivers": {
@@ -178,5 +178,12 @@
       "reason": "Defect already fixed upstream in 2c9a555 and 7c93d4d, both in the published head 1b4e781; no change needed. moat-fix-41 was never pushed.",
       "at": "2026-11-17T20:42:57Z"
     }
-  ]
+  ],
+  "upstream_url_ruling": {
+    "url": "https://github.com/enCRYPTON-labs/HEonGPU",
+    "previous": "https://github.com/Alisah-Ozcan/HEonGPU",
+    "by": "jeffdaily",
+    "at": "2026-11-18T03:53:36Z",
+    "reason": "Repository transferred from Alisah-Ozcan to the enCRYPTON-labs organization; upstream PR 41 lives there."
+  }
 }
