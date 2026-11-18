@@ -67,6 +67,32 @@
       "upstream_issue": null,
       "created_at": "2026-11-18T22:37:15Z",
       "decided": null
+    },
+    {
+      "id": "hip-mallocasync-null-stream-during-capture-segfault",
+      "kind": "rocm-bug-report",
+      "component": "HIP",
+      "summary": "HIP 7.17 (ROCm 10.2 wheels), gfx950: hipMallocAsync on the null stream (0) while another stream of the device is being captured in global mode segfaults inside libamdhip64 instead of returning an error (CUDA returns cudaErrorStreamCaptureImplicit). Seen through cuBQL's refit, which ran on stream 0 during a Warp graph capture (mesh with bvh_constructor=cubql, refit inside wp.ScopedCapture). The port now passes Warp's current stream to cuBQL's refit, which avoids the null stream; the HIP crash itself is unfixed",
+      "refs": [
+        "projects/warp-1.14/notes.md (Phase 3)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T23:07:23Z",
+      "decided": null
+    },
+    {
+      "id": "hip-module-occupancy-ignores-launch-bounds",
+      "kind": "rocm-bug-report",
+      "component": "HIP",
+      "summary": "HIP 7.17 (ROCm 10.2 wheels), gfx950: hipModuleOccupancyMaxPotentialBlockSize suggests 1024 threads for a hipRTC-compiled kernel declared __launch_bounds__(128), whose hipFuncGetAttribute(HIP_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK) is 128; a launch with the suggested size would fail. Passing the attribute as blockSizeLimit gives 128 (grid 4096). The port clamps the limit in its occupancy wrapper (cuda_util.cpp)",
+      "refs": [
+        "projects/warp-1.14/notes.md (Phase 3)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T23:07:23Z",
+      "decided": null
     }
   ]
 }
