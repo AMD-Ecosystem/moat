@@ -83,6 +83,10 @@ reads only `notes.md`. An archive merges by union like `notes.md` (`.gitattribut
   revalidation. Add a new commit instead: `advance-head` carries validation forward for
   documentation-only, comment/format-only and CI-config deltas, and a `codeobj_diff`
   binary-equivalence check can carry forward the rest.
+  For a host-only library (one that compiles no device translation unit) `codeobj_diff`
+  reports `indeterminate`, with "No kernel section found" on both sides; that is not
+  `differ`. Compare such a library with `sha256sum`, and `nm -D --defined-only` as a
+  second signal (CV-CUDA's `libnvcv_types.so`).
 - A Windows-labeled delta is not inert elsewhere. When it flips a passed platform to
   `revalidate`, rebuild rather than carrying forward on "it is Windows-gated" reasoning;
   a binary-equivalence carry-forward builds, which is how the aihwkit and MMseqs2

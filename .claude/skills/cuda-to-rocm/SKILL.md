@@ -72,6 +72,7 @@ Scan this list against what you are doing. If any line could apply, open
 **Wavefront and warp semantics**
 - Warp size: NVIDIA is always 32; AMD is 64 on CDNA (gfx9xx) and 32 on RDNA. Never hardcode.
 - Warp-derived array sizing: quantities scaling WITH `warpSize` need the 64 upper bound, quantities scaling as `blockDim/warpSize` need the 32 LOWER bound. Getting it backwards writes out of bounds.
+- A launch whose block is narrower than one wavefront makes `blockDim.x / warpSize` zero, and a block reduction keyed on it returns 0 on wave64; floor the block at the runtime wavefront width.
 - HIP's `*_sync` warp functions reject a 32-bit mask at compile time; CUDA's `0xffffffff` needs a 64-bit spelling on HIP.
 - A compat `__ballot_sync` that casts `__ballot()` to `uint32_t` returns the wrong 32 lanes on wave64.
 - An over-wide `__shfl*` width silently clamps to the physical wavefront instead of erroring; the symptom is a metric shift, not a crash.
@@ -146,6 +147,7 @@ Scan this list against what you are doing. If any line could apply, open
 - MIOpen pooling needs its workspace in the forward pass for NHWC input; MIOpen runs a convolution only on a handle where Find ran for it (and reuses destroyed handle addresses); MIOpen 3.6 has no double batch norm or convolution and no bias backward; hipBLASLt epilogues differ from cuBLASLt per type and in the ReLU aux format; rpp.h and miopen.h collide on `BILINEAR`.
 - On RDNA, `hipOccupancyMaxActiveBlocksPerMultiprocessor` counts the 128 KiB WGP and returns 1 for dynamic shared memory between 64 and 128 KiB, so "occupancy > 0, take the smem kernel" launches what cannot run.
 - Library swaps: cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE -> hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Handle types and v2-enum signatures differ.
+- NVTX ranges -> roctx (header moved between ROCm versions; the NVTX injection API has no analogue). Code reading cuRAND's Box-Muller state flag needs rocRAND's `has_float` predicate, not an alias.
 - nvJPEG/nvImageCodec -> rocJPEG for JPEG decode only (VCN; baseline SOF0 only: no SOF1 or progressive, nothing under 64x64, no encoder, no JPEG 2000); the rest needs a named CPU path, chosen from the frame header, not a catch-all. A JPEG with no scan hangs the VCN engine: validate markers on the host first. NVDEC -> FFmpeg demux + rocDecode's parser and decoder (no FFmpeg hwaccel); gate on profile as well as `rocDecGetDecoderCaps`, which has no profile and lets unsupported H.264 profiles decode wrong, and whose size limits are coded sizes (round the display size up to the block size); a success status can still carry wrong pixels on some GPU and VA driver pairs, so decode a reference clip per codec once per process before trusting it; the CPU path needs libdav1d for AV1. NVENC has no ROCm equivalent: name the software encoder path. See fault-classes "Vulkan interop and image codecs".
 - Runtime PTX + CUDA Driver API is a third build class beyond A and B.
 - MSVC-only upstreams accept code gcc/clang reject; the HIP build is a stricter compiler.

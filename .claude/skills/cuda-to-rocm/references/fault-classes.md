@@ -42,6 +42,19 @@ past the shared-memory region. Ask which way the divide goes before picking the 
 (SCAMP: `cov_handoff`, `2 * warps_per_block` scalars sized with 64, under-allocated on
 every wave32 device.)
 
+**A block NARROWER than one wavefront makes `blockDim.x / warpSize` zero, and a block
+reduction built on that count silently returns zero.** The idiom
+`val = (tid < blockDim.x / warpSize) ? warpSums[lane] : 0` is exact on NVIDIA for any block
+that is a multiple of 32, so a launch that sizes its block from the work
+(`block.x = work <= 32 ? 32 : ...`) is safe there and broken on wave64: the count is 0, every
+lane takes the empty branch, and the first stage shuffles lanes 32..63 that are not in the
+block. Nothing errors; the reduction just yields 0. Ceil-dividing the count is not enough,
+because it leaves the out-of-block shuffles. Floor the BLOCK at the wavefront width instead,
+from a host-side runtime query (`hipDeviceAttributeWarpSize`), so a wave32 device keeps the
+launch it had and a wave64 device gets a whole wavefront. Any launch whose block size is
+computed from a data size, rather than being a fixed 128 or 256, is a candidate. (CV-CUDA:
+OpFindHomography refinement, reachable at 16 or fewer point pairs.)
+
 **Lane masks must be 64-bit where the API takes one** -- `__shfl*`, `__ballot`,
 `__activemask`. A `uint32` mask is wrong on a 64-wide wavefront.
 
@@ -414,7 +427,15 @@ scope still works. ROCm's is genuinely asynchronous, so the freed and reused buf
 after the copy is enqueued. The corruption appears only in bytes the kernel does not
 overwrite, and the failing set varies run to run. This is a use-after-free that is latent UB
 on CUDA, not an allocator defect -- confirm by keeping the source alive and watching the
-failures vanish. (CV-CUDA: InterpolationVarShapeWrap.)
+failures vanish, or without touching the source at all by re-running under
+`AMD_SERIALIZE_COPY=3`, which makes a copy-lifetime bug pass and leaves a genuine numeric
+residual untouched. That one switch is also the cheapest way to tell the two apart when a
+suite mixes them: run it per failure cluster before admitting anything into a documented
+residual family. Expect more than one instance per project: the idiom appears wherever a
+test builds a staging buffer per loop iteration, and the giveaway is that only the side fed
+from the short-lived buffer is wrong, often carrying values the computation could not produce
+at all. (CV-CUDA: InterpolationVarShapeWrap, and independently TestOpColorTwist's planar
+upload, whose per-iteration deinterleave result feeds one async copy per channel.)
 
 The same staging difference hides a **cross-stream race** with no free involved: an upload
 by `cudaMemcpy*Async` from pageable memory on one stream, then a consumer kernel on ANOTHER
@@ -501,6 +522,18 @@ first fix synchronized `allocAndUpload` alone; on a net WITH a moves-left head t
 fp16 upload is `FCLayer<half>::LoadWeights` instead, which still corrupted the moves-left
 head while the value/policy gate passed 34/34. Upstream's own fix, lc0 #2454, is the
 reference shape: one `cudaDeviceSynchronize()` after the `tensor_mem_` malloc/memset loop.)
+
+The same race has an allocator-shaped variant that is easy to introduce while fixing the
+"fresh allocations are not zeroed" class above. A helper that zero-fills with
+`hipMemset`/`cudaMemset` runs the fill on the null stream, so a caller that allocates and then
+uploads with `hipMemcpyAsync` on a NON-BLOCKING stream can have the fill land AFTER its upload
+and wipe it. Fingerprint: inputs that arrive all-zero at the kernel while their device
+pointers are valid, only for callers on a non-blocking stream, and the failure disappears
+under `AMD_SERIALIZE_COPY=3 AMD_SERIALIZE_KERNEL=3` (which is the confirmation, not a
+workaround). An operator that checks for degenerate input then reports its own sentinel
+(NaNs, an identity model), so the symptom points at the math and not at the allocator. If a
+helper promises memory is zero by the time it returns, make that true: synchronize the null
+stream after the fill. (CV-CUDA: DefaultAllocator zero-fill against FindHomography varshape.)
 
 A plain `hipMemcpyDtoD`/`cuMemcpyDtoD` (or `hipMemcpy` with `hipMemcpyDeviceToDevice`) is
 the same race in a less suspicious costume: a device-to-device copy is asynchronous with
@@ -695,6 +728,20 @@ pinning one unconditionally: CV-CUDA needed `-ffp-contract=on` to match nvcc, wh
 LC-framework's nvcc recipe uses `-fmad=false -mno-fma -ffp-contract=off`, so pinning `on`
 there would diverge. Integer-only components are unaffected. (CV-CUDA OpWarpPerspective;
 LC-framework.)
+
+**One contraction setting cannot satisfy both kinds of bit-exact test.** A project can have
+tests that compare a kernel against a CPU gold (which want the contraction nvcc and the host
+use) AND tests that compare two GPU code paths against each other byte-for-byte (which want
+the same contraction in both instantiations). clang contracts a `float` instantiation and a
+`float4` instantiation of the same template differently, so a per-plane path and a per-pixel
+path that are bit-identical on NVIDIA differ by 1 ULP on ROCm under either setting. Measure
+before choosing, and clear unrelated defects out of the sample first: in one suite a third of
+the apparent contraction failures were an allocator ordering race and a test-fixture
+use-after-free, and a decision taken on the raw count would have rested on the wrong
+evidence. Treat the setting as a reviewed decision with numbers attached, and re-measure
+after every functional fix that lands in the same suite. (CV-CUDA: `-ffp-contract=off`
+removed most planar-versus-interleaved parity failures but regressed the cubic-versus-gold
+case, so `on` was kept and the parity residual documented.)
 
 **An exact float-equality branch fed by approximate division can HANG, not just drift.**
 HIP's `__fdividef` differs ~1 ULP from CUDA, so a downstream exact-equality test on the
@@ -1467,6 +1514,26 @@ found in a test probe.)
 **Library swaps.** cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE ->
 hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Mostly 1:1; watch handle types
 and a few signature differences such as the hipBLAS v2 enums.
+
+**NVTX -> roctx.** Profiling range calls (`nvtxRangePushA`/`nvtxRangePop`) map onto roctx,
+which the ROCm profilers report the same way, so a project whose build FATALS without NVTX
+headers does not need its ranges stubbed out. The header moved between ROCm versions: prefer
+`<rocprofiler-sdk-roctx/roctx.h>` and fall back to `<roctracer/roctx.h>` behind
+`__has_include`; both declare `roctxRangePushA`/`roctxRangePop`. Link `rocprofiler-sdk-roctx`
+or `roctx64` to match. A forwarding `nvtx3/nvToolsExt.h` on the HIP include path keeps every
+call site untouched. Only the ranges map: NVTX's injection API (`NvtxGetExportTableFunc_t`,
+`NVTX_ETID_CALLBACKS`, `NVTX_CBID_CORE_*`), which interposer and probe test helpers use, has
+no roctx analogue, so check whether the project builds such a helper before calling the shim
+complete. (CV-CUDA)
+
+**Code that reads cuRAND's device generator state internals needs a rocRAND translation, not
+an alias.** cuRAND caches one spare Box-Muller normal and flags it with
+`state.boxmuller_flag == EXTRA_FLAG_NORMAL`. rocRAND caches the same spare value but marks an
+EMPTY slot with a NaN sentinel in `boxmuller_float`, so the equivalent predicate is
+`rocrand_device::detail::engine_boxmuller_helper<Engine>::has_float(&engine)` rather than a
+flag compare. `skipahead` and the `*_normal2` generators exist natively. A kernel that skips
+ahead deterministically depends on this predicate being right, so a wrong translation is a
+silent numeric divergence, not a build error. (CV-CUDA: gaussian noise.)
 
 **Negative entries for that table.** CUPTI has no ROCm analogue -- stub the optional
 per-kernel profiling path inert and let the timer fall back to `hipEvent` wall-clock rather
