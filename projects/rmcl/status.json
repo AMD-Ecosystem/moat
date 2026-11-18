@@ -7,12 +7,14 @@
   "priority": 4.281,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:40:15Z",
-  "updated_at": "2026-08-20T19:13:20Z",
+  "updated_at": "2026-11-18T15:33:59Z",
   "head_sha": "2b7f439c1c7da079b36aae82f95f43f84fbcd932",
   "waivers": {
     "windows": {
-      "reason": "The obstacle is the platform's ROS 2 ecosystem, not the GPU and not the port. rmcl's device code exists ONLY inside the ROS 2 package rmcl_ros (librmcl_ros_cuda, from resampling.cu and particle_motion.cu); rmcl's core carries no .cu and delegates its GPU work to rmagine. Every validated build is a colcon/ament build against ROS 2 jazzy, so with no ROS 2 there is no GPU target to build and no GPU path to test -- not a case where a subset could stand in. Verified 2026-08-20 on windows-gfx1151: no ros2 on PATH, no ROS 2 installation. wave64 (linux-gfx942) and wave32 (linux-gfx1100) are both completed at head 2b7f439c. NOTE for the approver, and the reason this is weaker than the icicle or GooFit waivers: nobody has shown rmcl CANNOT work on Windows. ROS 2 ships a Windows binary distribution. The blocker is that provisioning it -- plus colcon/ament, plus a Windows rmagine install built WITH Embree (this host validated rmagine with Embree disabled) -- is multi-step host setup and a person's decision. If you would rather have real Windows evidence than an excused gate, refuse this and provision the host instead. Honest scope note: no build was attempted, because the ROS 2 prerequisite was checked first and is absent.",
-      "suggested_at": "2026-08-20T19:13:20Z"
+      "reason": "Upstream rmcl supports only Ubuntu: its README support table lists ROS 2 Humble on Ubuntu 22.04, Jazzy on 24.04 and Lyrical on 26.04, each with its own CI build, and the repository has no Windows build logic. Secondary obstacle: the device code exists only inside the ROS 2 package rmcl_ros, and no Windows host has ROS 2, colcon or an Embree-enabled rmagine installed. The HIP work is validated at head 2b7f439c on linux-gfx942 (wave64) and linux-gfx1100 (wave32).",
+      "suggested_at": "2026-08-20T19:13:20Z",
+      "approved_by": "jeffdaily",
+      "at": "2026-11-18T15:33:59Z"
     }
   },
   "license_spdx": "BSD-3-Clause",
