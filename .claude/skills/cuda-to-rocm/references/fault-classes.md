@@ -1327,6 +1327,25 @@ a rewritten reduction. Dropping the include outright is right only when the code
 `this_grid()`, `this_thread_block()` and `thread_rank()` -- grep for `cg::reduce`,
 `reduce_update_async` and `plus<>` first. (diff-surfel-rasterizations)
 
+**Count cooperative-groups call sites per feature before calling them a blocker.** A grep
+for `cooperative_groups` or `cg::` counts include lines and namespace aliases, and generated
+code repeats those in every file: one project's "2392 references" were 2347 includes and
+aliases and 45 real calls in two runtime files. Count `cg::<feature>(` per feature, then
+check each against the installed HIP, not an older note. As probed on HIP 7.16 (the ROCm
+10.1 SDK), HIP provides `this_thread_block`, `this_grid().thread_rank()` in an ordinary
+launch, `tiled_partition<N>` with `meta_group_rank`, `cg::reduce` (include
+`<hip/cooperative_groups/hip_reduce.h>`), `coalesced_threads`, `binary_partition` and
+`memcpy_async` (include `<hip/cooperative_groups/memcpy_async.h>`). It lacks
+`labeled_partition`, `cg::wait` (use `group.sync()`, which HIP documents as the completion
+point), `atomicAdd_block` (alias it to `atomicAdd` for shared memory) and a `const`
+`thread_block::group_dim()`. A `labeled_partition` followed by a `reduce` is replaceable
+without assuming a wave width, by per-lane shared atomics or by `__match_any` with a 64-bit
+mask and a `__shfl` loop over its bits. A hand-written CUDA replacement that loops
+`lane < 32` with `__shfl_sync(mask32, v, lane)` does not port by widening the mask: on
+wave64, lanes 32-63 read lanes 0-31 and the sums are silently wrong. Use
+`__shfl(v, lane, 32)` with a per-half mask, and avoid `__shfl_sync` when the two halves
+take different paths, because HIP's mask check traps. (colmap)
+
 **An uninitialised header-only submodule fails as a HIP error, not as a missing file.**
 When a project bundles GLM (or Eigen, or any header-only library) as a submodule and the
 clone did not recurse, the `-I` path still exists and is simply empty, so the compiler falls
