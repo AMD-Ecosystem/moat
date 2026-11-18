@@ -240,6 +240,24 @@ class OrientText(unittest.TestCase):
         # Fleet rows are parsed in one place, which knows the sixth column.
         self.assertNotIn("read -r proj where state stage branch", text)
 
+    def test_shell_scripts_are_lf_in_every_checkout(self):
+        root = UTILS.parent
+        names = sorted(p.name for p in UTILS.glob("*.sh"))
+        r = subprocess.run(["git", "check-attr", "text", "eol", "--",
+                            *(f"utils/{n}" for n in names)],
+                           cwd=str(root), capture_output=True, text=True, check=True)
+        for n in names:
+            self.assertIn(f"utils/{n}: eol: lf", r.stdout)
+            self.assertIn(f"utils/{n}: text: set", r.stdout)
+        # The attribute converts nothing: every script is already LF in the index.
+        r = subprocess.run(["git", "ls-files", "--eol", "--", "*.sh"],
+                           cwd=str(root), capture_output=True, text=True, check=True)
+        self.assertEqual([line for line in r.stdout.splitlines()
+                          if not line.startswith("i/lf")], [])
+        r = subprocess.run(["git", "check-attr", "merge", "--", "data/decisions.jsonl"],
+                           cwd=str(root), capture_output=True, text=True, check=True)
+        self.assertIn("merge: union", r.stdout)
+
     @unittest.skipUnless(support.bash(), "needs bash")
     def test_scripts_parse(self):
         for name in ("lib.sh", "orient.sh", "setup_git.sh", "timeit.sh", "session.sh",
