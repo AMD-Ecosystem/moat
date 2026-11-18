@@ -10,7 +10,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-import moatlib  # utils/ is put on sys.path by tests/__init__.py
+import changeclass  # utils/ is put on sys.path by tests/__init__.py
+import moatlib
 
 HEAD = "a" * 40
 OLD = "b" * 40
@@ -32,6 +33,14 @@ def done(sha=HEAD, **extra):
 
 def failed(sha=HEAD, **extra):
     return {"state": "validation-failed", "blocked": False, "failed_sha": sha, **extra}
+
+
+def classified(cls):
+    """Patch the source classifier to return one class for any delta (None: the
+    delta could not be classified)."""
+    verdict = None if cls is None else changeclass.Verdict(
+        cls, cls in ("doc-only", "comment-only"), f"x.cpp: {cls}")
+    return mock.patch.object(moatlib, "_classify_safe", lambda repo, a, b: verdict)
 
 
 class Store:
@@ -683,6 +692,131 @@ class WorkLockHolders(NoDisposition):
         self.assertEqual(task["project"], "proj")
         self.assertIn("another host or job", task["lock"])
         self.assertIn("another host or job", rows[0]["lock"])
+
+
+class ReviewGate(NoDisposition):
+    """Ready means reviewed, at this head."""
+
+    FULL = {"linux-gfx90a": done(), "windows-gfx1151": done()}
+
+    def setUp(self):
+        super().setUp()
+        for attr, value in (("license_gate", lambda name, o=None: (True, "ok")),
+                            ("uncommitted_source_files", lambda name: []),
+                            ("project_file", lambda name, fn: None),
+                            ("lock_holder", lambda: "me")):
+            p = mock.patch.object(moatlib, attr, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def blockers(self, obj):
+        return moatlib._gate_blockers("proj", obj)[0]
+
+    def classify_as(self, arch_independent):
+        return classified("doc-only" if arch_independent else "mixed")
+
+    def test_full_coverage_is_not_ready_before_the_review_passes(self):
+        for stage in ("ported", "reviewing", "changes-requested", "porting"):
+            with self.subTest(stage=stage):
+                found = self.blockers(record(stage=stage, platforms=dict(self.FULL)))
+                self.assertEqual([b[0] for b in found], ["review"])
+                self.assertIn(stage, found[0][1])
+
+    def test_reviewed_at_head_with_full_coverage_is_ready(self):
+        obj = record(reviewed_sha=HEAD, platforms=dict(self.FULL))
+        self.assertEqual(self.blockers(obj), [])
+
+    def test_a_record_from_before_the_field_is_not_made_unready(self):
+        self.assertEqual(self.blockers(record(platforms=dict(self.FULL))), [])
+
+    def test_a_review_of_an_older_commit_blocks(self):
+        obj = record(reviewed_sha=OLD, platforms=dict(self.FULL))
+        found = self.blockers(obj)
+        self.assertEqual([b[0] for b in found], ["review"])
+        self.assertIn(OLD[:12], found[0][1])
+
+    def test_completed_is_refused_until_the_review_has_passed(self):
+        for stage in ("ported", "reviewing", "changes-requested"):
+            with self.subTest(stage=stage):
+                s = Store(self, record(stage=stage))
+                with self.assertRaisesRegex(ValueError, "once the review has passed"):
+                    moatlib.set_state("proj", "linux-gfx90a", "completed")
+                self.assertEqual(s.saved, [])
+
+    def test_a_failure_is_recorded_in_any_stage(self):
+        s = Store(self, record(stage="reviewing"))
+        moatlib.set_state("proj", "linux-gfx90a", "validation-failed")
+        self.assertEqual(s.obj["platforms"]["linux-gfx90a"]["failed_sha"], HEAD)
+
+    def test_passing_the_review_stamps_the_commit_reviewed(self):
+        lock = {"arch": "linux-gfx90a", "since": "t", "holder": "me"}
+        s = Store(self, record(stage="reviewing", porting=lock))
+        moatlib.set_state("proj", "linux-gfx90a", "review-passed")
+        self.assertEqual(s.obj["reviewed_sha"], HEAD)
+
+    def test_a_head_move_by_a_real_change_leaves_the_review_behind(self):
+        obj = record(head_sha=OLD, reviewed_sha=OLD,
+                     platforms={"linux-gfx90a": done(OLD), "windows-gfx1151": done(OLD)})
+        with self.classify_as(False):
+            moatlib._move_head(obj, HEAD, "repo")
+        self.assertEqual(obj["reviewed_sha"], OLD)
+        self.assertTrue(moatlib.review_stale(obj))
+        self.assertEqual(moatlib.arch_task(obj, "linux-gfx90a"),
+                         ("reviewer", "delta-ported"))
+        # Even once every arch has validated the new head, it is not ready.
+        for blk in obj["platforms"].values():
+            blk["validated_sha"] = HEAD
+        self.assertEqual([b[0] for b in self.blockers(obj)], ["review"])
+
+    def test_an_inert_head_move_carries_the_review_like_a_validation(self):
+        obj = record(head_sha=OLD, reviewed_sha=OLD,
+                     platforms={"linux-gfx90a": done(OLD), "windows-gfx1151": done(OLD)})
+        with self.classify_as(True):
+            moatlib._move_head(obj, HEAD, "repo")
+        self.assertEqual(obj["reviewed_sha"], HEAD)
+        self.assertFalse(moatlib.review_stale(obj))
+        self.assertEqual(self.blockers(obj), [])
+
+    def test_a_legacy_record_heals_on_its_first_head_move(self):
+        obj = record(head_sha=OLD, platforms={"linux-gfx90a": done(OLD)})
+        with self.classify_as(False):
+            moatlib._move_head(obj, HEAD, "repo")
+        self.assertEqual(obj["reviewed_sha"], OLD)
+        self.assertTrue(moatlib.review_stale(obj))
+
+    def test_a_head_move_before_review_stamps_nothing(self):
+        obj = record(stage="porting", head_sha=OLD)
+        with self.classify_as(False):
+            moatlib._move_head(obj, HEAD, "repo")
+        self.assertNotIn("reviewed_sha", obj)
+
+    def test_a_stale_review_is_re_entered_and_re_stamped(self):
+        s = Store(self, record(reviewed_sha=OLD, platforms=dict(self.FULL)))
+        moatlib.set_state("proj", "linux-gfx90a", "reviewing")
+        self.assertEqual(s.obj["stage"], "reviewing")
+        moatlib.set_state("proj", "linux-gfx90a", "review-passed")
+        self.assertEqual(s.obj["reviewed_sha"], HEAD)
+        self.assertEqual(self.blockers(s.obj), [])
+
+    def test_a_tree_identical_squash_keeps_the_review(self):
+        s = Store(self, record(head_sha=OLD, reviewed_sha=OLD,
+                               platforms={"linux-gfx90a": done(OLD)}))
+        fake = mock.Mock(returncode=0, stdout="tree-id\n")
+        with mock.patch.object(moatlib.subprocess, "run", lambda *a, **k: fake), \
+                mock.patch.object(moatlib, "_fork_repo", lambda name: "repo"):
+            moatlib.squash_carry_forward("proj", HEAD)
+        self.assertEqual(s.obj["reviewed_sha"], HEAD)
+
+    def test_abandoning_a_round_returns_the_review_to_the_published_tip(self):
+        fix = {"branch": "moat-fix-7", "base_sha": OLD, "review_pr": None}
+        s = Store(self, record(reviewed_sha=HEAD, fix=fix, pr_state="open",
+                               published_sha=OLD, platforms={"linux-gfx90a": done()}),
+                  record_writable_here=lambda name: (True, "here"),
+                  _fork_repo=lambda name: "repo")
+        with self.classify_as(False):
+            moatlib.abandon_fix("proj", "someone", "upstream fixed it")
+        self.assertEqual(s.obj["head_sha"], OLD)
+        self.assertEqual(s.obj["reviewed_sha"], OLD)
 
 
 if __name__ == "__main__":

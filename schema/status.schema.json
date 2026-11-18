@@ -798,6 +798,13 @@
         "unclaimed"
       ]
     },
+    "reviewed_sha": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "head the review last passed"
+    },
     "not_portable": {
       "type": [
         "object",

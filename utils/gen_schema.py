@@ -414,6 +414,11 @@ def build():
             # written before this field existed are still readable while they are
             # migrated (see READABLE_SCHEMA_VERSIONS).
             "stage": {"enum": sorted(m.STAGE_STATES)},
+            # The commit the review passed, stamped on reviewing -> review-passed
+            # and carried across inert deltas like a validated_sha. Absent on a
+            # record reviewed before the field existed, which is not judged stale.
+            "reviewed_sha": {"type": ["string", "null"],
+                             "description": "head the review last passed"},
             # A person's verdict that the codebase cannot be ported at all, which is
             # what `stage: not-portable` stands on. Like a gate waiver and a licence
             # clearance, a record without `by` satisfies nothing -- an agent may build

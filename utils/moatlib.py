@@ -321,7 +321,12 @@ STAGE_TRANSITIONS = {
     # approved or a sibling arch satisfying the gate could not move it, so four
     # projects sat advertising porter work that did not exist. It is an arch state
     # only now, and the porter is reached from review-passed directly.
-    "review-passed": {"porting"},
+    #
+    # `reviewing` is reachable from here as well, for the one case where a passed
+    # review no longer covers the branch: head_sha moved past `reviewed_sha` by a
+    # change that is not inert (see review_stale). The reviewer takes the lock and
+    # reviews the delta without a porter having to pretend to port something.
+    "review-passed": {"porting", "reviewing"},
     # A person may revive a project judged unportable -- ROCm gains a library, an
     # upstream rewrite lands. Nothing else leads out.
     "not-portable": {"planned", "porting"},
@@ -923,6 +928,18 @@ def set_state(name, platform, new_state, agent=None, save=True, sha=None):
         problem = verdict_sha_problem(name, obj, platform, new_state, sha)
         if problem:
             raise ValueError(problem)
+    if new_state == "completed" and (project_stage(obj) or "unclaimed") != "review-passed":
+        # Validation comes after review, and nothing used to hold it there: an arch
+        # verdict was accepted in any stage, the gates read only the verdicts, and a
+        # port could reach "ready" with a review still open or changes requested.
+        # A failure is still recorded in any stage -- it is evidence, and it can
+        # only hold a port back.
+        raise ValueError(
+            f"{name}/{platform}: the project is at stage "
+            f"{project_stage(obj) or 'unclaimed'}, and `completed` is recorded only "
+            f"once the review has passed (stage review-passed). If the run was of "
+            f"the current head, record it when the stage returns there; "
+            f"`--sha` names the commit that was built")
     if new_state == "completed" and (obj["platforms"].get(platform) or {}).get("blocked"):
         raise ValueError(
             f"{name}/{platform}: this platform is recorded BLOCKED "
@@ -1055,6 +1072,14 @@ def set_state(name, platform, new_state, agent=None, save=True, sha=None):
     ts = now_iso()
     if is_stage:
         obj["stage"] = new_state
+        if new_state == "review-passed":
+            # WHICH commit the review passed, the way a validation names the commit
+            # it ran. Without it "review-passed" described whatever the branch held
+            # at the time, and went on describing whatever it holds now.
+            if obj.get("head_sha"):
+                obj["reviewed_sha"] = obj["head_sha"]
+            else:
+                obj.pop("reviewed_sha", None)
     else:
         blk["state"] = new_state
     blk["updated_at"] = ts
@@ -3531,6 +3556,11 @@ def abandon_fix(name, by, reason):
     if not same_commit(tip, base):
         repo = _fork_repo(name)
         _move_head(obj, full_sha(base, repo), repo)
+        # The base is the published tip: reviewed, approved by a person and
+        # shipped. A review recorded at the discarded staging tip does not make it
+        # unreviewed.
+        if obj.get("reviewed_sha"):
+            obj["reviewed_sha"] = obj["head_sha"]
     entry = {k: fix[k] for k in ("branch", "base_sha", "review_pr", "kind")
              if fix.get(k) is not None}
     entry.update({"tip_sha": tip, "by": by, "reason": reason, "at": now_iso()})
@@ -3894,6 +3924,22 @@ def _move_head(obj, new_sha, repo):
     """advance_head's platform pass, on a record already in hand."""
     prev_head = obj.get("head_sha")
     obj["head_sha"] = new_sha
+    # The review is evidence about one commit too. While the stage is
+    # review-passed, an inert delta carries it forward exactly as it carries a
+    # validation; anything else leaves reviewed_sha behind, which is what
+    # review_stale reads. A record reviewed before the field existed is stamped
+    # with the head being superseded -- the commit it was reviewed at, as far as
+    # the record can say -- so it heals the first time the branch moves, the way
+    # a failure without a failed_sha does below. In any other stage a review is
+    # still to come and will stamp the field itself.
+    if project_stage(obj) == "review-passed":
+        reviewed = obj.get("reviewed_sha") or prev_head
+        if reviewed and not same_commit(reviewed, new_sha):
+            verdict = _classify_safe(repo, reviewed, new_sha)
+            if verdict is not None and verdict.arch_independent:
+                reviewed = new_sha
+        if reviewed:
+            obj["reviewed_sha"] = reviewed
     for plat in list(obj["platforms"]):
         blk = obj["platforms"][plat]
         state = blk.get("state")
@@ -4681,6 +4727,22 @@ def gate_gaps(obj, roster=None):
     return out
 
 
+def review_stale(obj):
+    """Did the branch move past the commit the review passed, by more than an
+    inert change?
+
+    `review-passed` with reviewed_sha behind head_sha means exactly that: _move_head
+    carries reviewed_sha across a delta that cannot change compiled output and
+    leaves it behind otherwise (a porter pushed and ran advance-head without the
+    stage ever leaving review-passed). A record with no reviewed_sha predates the
+    field and cannot be judged, so it stands, as a failure without a failed_sha
+    does -- inventing staleness for it would un-ready every finished port."""
+    if project_stage(obj) != "review-passed":
+        return False
+    reviewed, head = obj.get("reviewed_sha"), obj.get("head_sha")
+    return bool(reviewed and head and not same_commit(reviewed, head))
+
+
 def failure_stands(obj, blk):
     """Does this arch's recorded failure still describe the code on the branch?
 
@@ -4726,6 +4788,13 @@ def arch_task(obj, platform):
     if stage != "review-passed":
         agent = STAGE_FOR_STATE.get(stage)
         return (agent, stage) if agent else None
+    # The branch moved past what was reviewed. That is the project's work again,
+    # not an arch's: a reviewer reads the delta (`reviewing` is legal from here),
+    # and validating meanwhile would spend GPU time proving code that may yet be
+    # sent back. Spelled `delta-ported` because that is what it is -- a port with a
+    # delta awaiting review -- and it is a state every reader already knows.
+    if review_stale(obj):
+        return ("reviewer", "delta-ported")
     # This arch tried and failed at the code that is still on the branch. Only IT is
     # sent to the porter: a wave32 fault does not invalidate a wave64 arch's evidence,
     # and what actually keeps a broken port from being submitted is pr_ready, which
@@ -5969,6 +6038,9 @@ def squash_carry_forward(name, new_sha, repo=None):
         return (False, f"not a tree-identical squash (old tree {str(t_old)[:8]} != new {str(t_new)[:8]}); "
                        f"validate the new content first / use advance_head")
     obj["head_sha"] = new_sha
+    # Same tree, so the review of the old head is the review of this one.
+    if same_commit(obj.get("reviewed_sha"), old_head):
+        obj["reviewed_sha"] = new_sha
     vals = validations(obj)
     # Only an arch validated at the OLD HEAD proved the tree the squash preserved.
     # A completed arch whose validated_sha lags it was owed a revalidation before
@@ -6193,12 +6265,27 @@ def pr_ready(name):
 
 
 def _gate_blockers(name, obj):
-    """The gate core shared by pr_ready and fix_ready: coverage gates, licence,
-    and fork integrity, judged at the record's current head_sha. Returns
-    (blocking, nonviable) with blockers deduped."""
+    """The gate core shared by pr_ready and fix_ready: the review, coverage gates,
+    licence, owed surface and fork integrity, judged at the record's current
+    head_sha. Returns (blocking, nonviable) with blockers deduped."""
     vals = validations(obj)
     blocking, nonviable = [], []
     waivers = obj.get("waivers") or {}
+
+    # Review gate. The coverage gates below read only what each arch recorded, and
+    # an arch verdict says nothing about review: with every gate satisfied, a port
+    # whose reviewer had requested changes, or whose branch had moved since the
+    # review, read as ready. Ready means reviewed, at this head.
+    stage = project_stage(obj) or "unclaimed"
+    if stage != "review-passed":
+        blocking.append(("review", f"stage is {stage}, not review-passed -- the "
+                                   f"reviewer has not passed this port"))
+    elif review_stale(obj):
+        blocking.append(("review",
+                         f"the review passed at {obj['reviewed_sha'][:12]} and "
+                         f"head_sha is {obj['head_sha'][:12]} -- the commits since "
+                         f"are unreviewed (`set-state <name> <platform> reviewing`, "
+                         f"then the verdict)"))
 
     for gate in REQUIRED_GATES:
         archs = [a for a in vals if gate in gates_for(a)]
