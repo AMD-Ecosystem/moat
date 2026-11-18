@@ -9,7 +9,7 @@
   `hipGetDeviceProperties(&prop, dev); prop.warpSize`, or `hipDeviceAttributeWarpSize`.
   PyTorch exposes `at::cuda::warp_size()`.
 - Device code uses a compile-time per-arch constant. `__GFX9__` is defined only during
-  device compilation; there is no `__AMDGCN_WAVEFRONT_SIZE__` in ROCm 7.2.x, so the
+  device compilation; there is no `__AMDGCN_WAVEFRONT_SIZE__` in ROCm 7.2.x or 7.14, so the
   `__GFX*__` guards are the supported selector:
 
         #if defined(__GFX8__) || defined(__GFX9__)
@@ -78,8 +78,10 @@ CUDA. (LC-framework)
 
 ## Lane masks and ballots
 
-**Lane masks must be 64-bit where the API takes one** -- `__shfl*`, `__ballot`,
-`__activemask`. A `uint32` mask is wrong on a 64-wide wavefront.
+**Lane masks are 64-bit on HIP: `__ballot` and `__activemask` RETURN `unsigned long long`,
+and the `*_sync` functions TAKE a 64-bit mask.** Store a ballot or an active mask in a 64-bit
+integer; a `uint32` keeps lanes 0..31 only and is wrong on a 64-wide wavefront. (The non-sync
+`__shfl*` forms take a width, not a mask.)
 
 The `*_sync` warp functions go further and refuse it at compile time. HIP's
 `__shfl*_sync`, `__ballot_sync`, `__any_sync`, `__all_sync`, `__match_*_sync` and

@@ -11,7 +11,7 @@ accumulation divergence. The checks for a real bug are cheap, so they come first
 
 - An unsynchronized upload: a `cudaMemcpy*Async` on one stream consumed by a kernel on
   another, or an init-time kernel on the null stream racing other streams (both in
-  fault-classes.md under streams and events). Run the same call 20 times and compare
+  faults-memory-streams.md under "Copies and stream ordering"). Run the same call 20 times and compare
   bitwise with the first; add one stream synchronize after the last upload and see
   whether the error disappears.
 - A device-to-device copy racing its producer, and an allocation the code reads before
@@ -19,8 +19,8 @@ accumulation divergence. The checks for a real bug are cheap, so they come first
 - A wavefront-width assumption: compare against a second architecture of the same width.
 - Single against double precision: if every GPU variant diverges from the
   double-precision result identically at the same positions, and the double path matches
-  the CPU, it is reassociation at a comparison boundary (see "Diagnosing a suspected AMD
-  fault before escalating" below).
+  the CPU, it is reassociation at a comparison boundary (see "Triangulate single- against
+  double-precision" under "Method" below).
 
 Only when those are clean is accumulation-order divergence the likely answer; RDNA3.5
 (gfx1151) is where it has shown up in iterative solvers. Then record the error magnitude

@@ -115,7 +115,7 @@ where glibc aborts only some runs). The port-side fix is to destroy the owning o
 before the reset; whether to change the project is the upstream maintainer's call when
 a test exercises the order on purpose. Stale `hipFree` and `hipHostFree` fail cleanly
 with `hipErrorInvalidValue` in a single-threaded process (in a multithreaded one, see the
-next section); stale `hipEventDestroy` returns `hipSuccess` and was not
+next entry); stale `hipEventDestroy` returns `hipSuccess` and was not
 checked under valgrind. Tell it apart from a missing DLL (which dies before `main`
 prints anything) by the work having completed first. A 12-line repro and a parity
 request to HIP are on FLAMEGPU2.
@@ -131,9 +131,8 @@ twice, and on gfx1100 4-5 of 13 dense-stereo SLAM runs died that way, against 0 
 runs of three controls (the double free removed, the CPU fallback, no GPU code). On
 gfx90a the same head never showed it, so a clean run on one architecture does not clear
 the code. Read the code for duplicate frees when a crash kind appears only where a newly
-enabled GPU path runs. Separate it from upstream races with the counting method under
-"Diagnosing a suspected AMD fault before escalating" (CPU-only control, many runs, one
-stack per crash kind). Without core dumps (`ulimit -c 0`), and when gdb slows the run too
+enabled GPU path runs. Separate it from upstream races with the counting method in
+diagnosis.md (CPU-only control, many runs, one stack per crash kind). Without core dumps (`ulimit -c 0`), and when gdb slows the run too
 much to finish, a 15-line `LD_PRELOAD` handler that calls `backtrace_symbols_fd` on
 SIGSEGV/SIGABRT still gives the stack. (plvs)
 
@@ -225,7 +224,7 @@ on Linux gfx950/gfx1201.)
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
-## Host callbacks
+## Host callbacks and fork
 
 **`cudaLaunchHostFunc`/`hipLaunchHostFunc` callback threads must not call ANY runtime API** -- an RAII deleter
 that frees inside one DEADLOCKS ROCm. HIP forbids it as CUDA does, but CUDA more often
@@ -242,6 +241,23 @@ move, no API call) and drain it from a user thread that already issues runtime c
 the existing queue mutex, draining on teardown too. Only the op that hands per-call
 allocations into a callback-retired queue trips this, which is why one gate hangs while
 everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`.)
+
+**A host-function callback must not block either.** The runtime runs
+`hipLaunchHostFunc` callbacks on its asynchronous-events thread, so a callback that waits on
+a host-side gate (a condition variable, a promise another stream fulfils) stalls every later
+event on that device, not just its own stream. CUDA runs such a test to completion. Keep
+callbacks to a flag store or a notify, and do the waiting on a user thread. (Seen as a hung
+multi-stream test on gfx1100; this entry is reconstructed from a one-line note, and the
+project it came from was not recorded.)
+
+**HIP after `fork()` crashes in the child.** A process that has initialized the HIP runtime
+and then forks without exec cannot use the GPU in the child: the child segfaults, typically
+in `hipEventQuery`. CUDA documents the same restriction but more code gets away with it. A
+test that forks and then touches the GPU fails on ROCm; so does a CPU-only test body run by a
+fork-based harness after an earlier test started the runtime (gtest death tests in their
+default style: diagnosis.md, "Failures that appear only when the whole suite runs in one
+process"). Re-exec instead of forking, or fork before the first HIP call. (Reconstructed from
+a one-line note plus the gtest case; the originating port was not recorded.)
 
 ## Graph capture
 

@@ -6,8 +6,9 @@
 injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
 stale code and get a silent false pass. (lc0)
 
-**Use the CUDA build's host compiler for host C++ in a large app.** HIP needs clang only for
-the HIP language; `CMAKE_C/CXX_COMPILER` can stay gcc. Upstream code tested only with gcc can
+**Use the CUDA build's host compiler for host C++ in a large app.** On Linux, HIP needs clang
+only for the HIP language; `CMAKE_C/CXX_COMPILER` can stay gcc. (Windows is the exception:
+every CMake language there must use one clang driver, see windows.md.) Upstream code tested only with gcc can
 trip clang-only C++ rejections unrelated to HIP (`__attribute__((visibility)) [[nodiscard]]`
 ordering; `std::expected<std::any, E>` constraint recursion with libstdc++ 14).
 (LichtFeld-Studio)
@@ -43,6 +44,12 @@ GPU, but the solver read zero substeps, zero iterations and zero gravity, so not
 moved. It survived four platform validations because each used a standalone synthetic kernel
 test rather than the real binary. Grep for `__CUDACC__` and `__CUDA_ARCH__` in host headers
 before choosing an all-HIP target, and treat a hit as a hard blocker on that shortcut.
+
+An all-HIP target is not wrong in itself. Projects whose host headers key nothing on those
+macros build every source as HIP and work (LEAP, HEonGPU). The default is still a mixed
+target with only the `.cu` files compiled as HIP, and an all-HIP target owes three checks:
+the grep above, the all-clang OpenMP wiring ("OpenMP and runtime library paths" below), and
+the host `min`/`max` detection pass over the former host files (faults-numerics.md).
 
 The failure the shortcut was dodging has its own fix. Linking `hip::hipcub`,
 `roc::rocthrust` or `roc::rocprim` to a target that also has g++ host sources puts
@@ -134,8 +141,9 @@ symbols one TU at a time, so without a flag it stops with
    target_link_options(mylib INTERFACE -fgpu-rdc)
    ```
 
-   On Windows, `-fgpu-rdc` under a clang-cl driver also meets the `/Fo` bundler bug described
-   in references/strategy-a-cmake.md; apply the fix given there before judging the flag.
+   On Windows, `-fgpu-rdc` under a clang-cl driver also meets the `/Fo` bundler bug
+   (windows.md, "CMake's HIP link rule mangles MSVC-style flags and paths"); apply the
+   compile-rule fix given there before judging the flag.
 
 2. **A `__CUDACC__`/`__HIPCC__` guard** around the definitions moved into the header, with the
    declarations left unconditional (the shape and the two-phase-lookup reason are two entries
@@ -264,7 +272,7 @@ in two files that must not drift.
 **No AMD build, review round or GPU validation can detect this class.** In HEonGPU two review
 rounds and a full 20/20 GPU validation passed over the inlined header; only compiling the
 CUDA path with nvcc found it. Any port that touches how device bodies are compiled owes an
-nvcc compile check (references/validation.md). Adding the guard is codegen-neutral on AMD --
+nvcc compile check (validation.md, "The CUDA no-regression compile"). Adding the guard is codegen-neutral on AMD --
 verified with a comparison of device code objects, identical exported symbols and device ISA
 on all 42 gfx90a binaries -- because every calling TU is a device TU where the guard is true.
 Switching to `-fgpu-rdc` is NOT: it changes the device ISA of every binary (the device link
@@ -275,6 +283,19 @@ device ISA and exported symbols on all 42 binaries, which is what a clean revert
 like. Keep a snapshot of the earlier `bin/` around for exactly that comparison. (HEonGPU)
 
 ## OpenMP and runtime library paths
+
+**One OpenMP runtime per binary; which one follows from who compiles the files that use
+OpenMP.** g++ objects call libgomp (`GOMP_*`), clang objects call libomp (`__kmpc_*`), and a
+target that contains HIP objects is LINKED by clang. The two entries after this one are the
+two rows of this table with their evidence; they prescribe opposite link lines because they
+are different build shapes.
+
+| target | compile | link |
+|---|---|---|
+| mixed: host `.cpp` compiled by g++, `.cu` compiled as HIP | OpenMP on the g++ files only; the HIP TUs without it (their pragmas run serially) | `OpenMP::OpenMP_CXX` (libgomp); no `-fopenmp` on the link line |
+| every source compiled by clang (all `LANGUAGE HIP`, or clang as the host compiler too) | `-fopenmp` on the HIP sources as well | `-fopenmp` on the link line (clang adds its own libomp and a runpath to it); no `OpenMP::OpenMP_CXX` |
+
+Check either with `readelf -d <lib> | grep NEEDED`: exactly one of `libgomp` and `libomp`.
 
 **OpenMP in a mixed g++/HIP library: one runtime only.** g++ objects call libgomp
 (`GOMP_*`); clang `-fopenmp` emits libomp (`__kmpc_*`). A target containing HIP objects is

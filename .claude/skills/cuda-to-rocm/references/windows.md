@@ -57,8 +57,8 @@ project's own documented build needs once a host's ROCm installation is intact.
 
 **Prefer repairing the SDK to carrying the scaffolding.** Reinstalling the four
 packages together (`rocm`, `rocm-sdk-core`, `rocm-sdk-devel`,
-`rocm-sdk-libraries-<gfx>`, all pinned to one date-stamp from the per-arch
-nightly index) restored a populated `include/` -- 30 entries, `hipcub/`,
+`rocm-sdk-libraries-<gfx>` on ROCm 7.14, all pinned to one date-stamp from the
+per-arch nightly index) restored a populated `include/` -- 30 entries, `hipcub/`,
 `rocprim/` and `thrust/` among them -- and LC-framework then rebuilt and passed
 every gate on gfx1151 with no `-I` scaffolding at all. Two things follow. The
 half-expanded tree is a local extraction failure, not a wheel that omits the
@@ -102,6 +102,13 @@ python -m pip install --index-url https://rocm.nightlies.amd.com/v2/<gfx>/ \
     "rocm==$V" "rocm-sdk-core==$V" "rocm-sdk-devel==$V" "rocm-sdk-libraries-<gfx>==$V"
 python -m rocm_sdk init && python -m rocm_sdk test
 ```
+
+The package names and the index in that recipe are those of the ROCm 7.13 and 7.14
+nightlies; that index is frozen at `7.14.0a20260612`. ROCm 10.x builds are at
+`https://nightly.repo.amd.com/rocm/whl-next/`, where `rocm-sdk-devel` is a thin metapackage
+and the per-architecture package is `rocm-sdk-device-<gfx>` instead of
+`rocm-sdk-libraries-<gfx>`. Substitute those names there, and list what is installed
+(`pip list | grep -i rocm`) rather than trusting either set from memory.
 
 A healthy tree then has `lib/cmake/{hip,hip-lang,hiprand,rocprim,rocthrust}/*-config.cmake`,
 rocThrust's headers under `include/thrust/`, and `bin/hipcc.exe`. Point the build at
@@ -170,9 +177,11 @@ runs for many minutes -- normalise each element with `file(TO_CMAKE_PATH)`. (LEA
 
 **CMake's HIP language on Windows needs ONE clang driver for every language, and ROCm's
 GNU-style `clang++` is the one that works on every CMake version; make the project choose it,
-do not document a workaround.** (All-`clang-cl` also works from CMake 4.x, and LibTorch
-carries its own mixed setup: validation.md, "Windows: keep one clang driver across every
-CMake language", has the version table.) `Platform/Windows-Clang.cmake`
+do not document a workaround.** Decision rule: default the project to the GNU-style driver
+for every language, which works from CMake 3.29 on; all-`clang-cl` is a valid second choice
+from CMake 4.0 (natural when the rest of the build passes MSVC-style flags) and fails on
+3.31; any other mix fails, except LibTorch's own setup. "Keep one clang driver across every
+CMake language" below has the version table. `Platform/Windows-Clang.cmake`
 is include-guarded and picks MSVC-style or GNU-style rules for ALL languages from whichever
 language includes it first (MSVC-style if any language's frontend variant is MSVC). So with
 cl.exe as CXX, `enable_language(HIP)` dies with "mixes Clang and MSVC" (`check_language(HIP)`
@@ -246,7 +255,7 @@ applies the same rules. See LichtFeld-Studio `cmake/HipCompute.cmake` and pytorc
 `cmake/public/LoadHIP.cmake`. (LichtFeld-Studio)
 
 Note the split with PyTorch extension ports, where `clang-cl` IS the required host
-compiler (see strategy-b-torch.md): torch drives the compile itself and never goes
+compiler (strategy-b-torch.md, "Windows"): torch drives the compile itself and never goes
 through CMake's `HIP` language.
 
 ### CRT flags, compiler-rt builtins and Git Bash flag mangling in a CMake HIP build
@@ -346,7 +355,11 @@ upstreamed, so a pull request cannot depend on a file that only exists here.
 Guard the override to Windows. Related and separate: the clang-cl `/Fo` bundler bug, where the
 CMake HIP compile rule must emit `-o <OBJECT>` instead of `/Fo<OBJECT>` because the driver
 hands the same path to `clang-offload-bundler` as both input and output and Windows refuses to
-rewrite a memory-mapped file (ROCm/TheRock#5615). A project can need the compile-rule fix, the
+rewrite a memory-mapped file (ROCm/TheRock#5615). The fix is a compile-rule override after
+`enable_language(HIP)`, under the MSVC frontend variant only, of the shape
+`set(CMAKE_HIP_COMPILE_OBJECT "<CMAKE_HIP_COMPILER> <DEFINES> <INCLUDES> <FLAGS> -o <OBJECT> -c <SOURCE>")`;
+start from the rule your CMake version defines (`CMakeHIPInformation.cmake`) and change only
+the output spelling, since the rule's other placeholders vary by version. A project can need the compile-rule fix, the
 link wrapper, or both -- they are independent. (alien, origin of the wrapper; LichtFeld-Studio,
 which needs the link half.)
 
@@ -432,9 +445,9 @@ the package loads every DLL, while the standalone C++ executable says there is n
 kernel tests that do not call `is_available()` first pass on the same run.
 
 Do not read it as "the project does not work on Windows" -- that mistake nearly dropped
-Windows support for LichtFeld-Studio. An earlier version of this entry blamed
-`lld-link` omitting `.CRT$XCU` from `torch_hip.dll`; that was wrong, and checking the
-executable's import table first would have found the real cause.
+Windows support for LichtFeld-Studio. Check the executable's import table before any linker
+theory: a plausible one (`lld-link` dropping the `.CRT$XCU` initializers of `torch_hip.dll`)
+was chased first and was wrong.
 
 ## DLL loading
 
@@ -660,7 +673,7 @@ build shows the over-reads in a run that exits 0, which makes it the cheaper sea
 Getting file:line costs one rebuild and no admin rights:
 - Build a CPU-only tree with `-DCMAKE_CXX_FLAGS="... -g -gcodeview"` and
   `-DCMAKE_EXE_LINKER_FLAGS="-Xlinker /DEBUG"` (the GNU-driver clang++ emits CodeView);
-  `/DEBUG` alone, as in the section above, gives function names but no lines or locals.
+  `/DEBUG` alone, as in the entry above, gives function names but no lines or locals.
 - `cdb.exe` without installing anything: download the WinDbg `.msixbundle` (the URL is
   in `https://windbg.download.prss.microsoft.com/dbazure/prod/1-0-0/windbg.appinstaller`),
   `unzip` the `windbg_win-x64.msix` out of it, and `unzip` that; `amd64/cdb.exe` runs
@@ -675,4 +688,4 @@ Getting file:line costs one rebuild and no admin rights:
 
 ### A hang can be one kernel that never finishes
 
-**A Windows "hang" that keeps the host blocked in `hipMemcpy` can be one kernel that never finishes.** Confirm it before you hunt a host-side loop: `AMD_LOG_LEVEL=3` shows the last `hipLaunchKernel` followed only by repeated `PAL fence isn't ready! result:3`. A symbol-carrying build that keeps Release codegen locates the call site (clang-cl: `-O2 -Ob2 -DNDEBUG -Z7` plus `-DEBUG` at link). If the hang depends on inlining (`/Ob2` hangs, `/Ob1` passes), check for the long-branch return-address bug below.
+**A Windows "hang" that keeps the host blocked in `hipMemcpy` can be one kernel that never finishes.** Confirm it before you hunt a host-side loop: `AMD_LOG_LEVEL=3` shows the last `hipLaunchKernel` followed only by repeated `PAL fence isn't ready! result:3`. A symbol-carrying build that keeps Release codegen locates the call site (clang-cl: `-O2 -Ob2 -DNDEBUG -Z7` plus `-DEBUG` at link). If the hang depends on inlining (`/Ob2` hangs, `/Ob1` passes), check for the long-branch return-address bug (diagnosis.md, "A hang that depends on inlining").

@@ -2,15 +2,37 @@
 
 ## Substitution table
 
-**Library swaps.** cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE ->
-hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Mostly 1:1; watch handle types
-and a few signature differences such as the hipBLAS v2 enums.
+**Library swaps.** "Drop-in" below means the hip* library keeps the CUDA library's call
+shapes, so a compat header can alias the names; it does not mean every routine or mode
+exists. A row marked "not verified" states what the library is, not what a port measured.
+
+| CUDA | ROCm | drop-in? | where it is not 1:1 |
+|---|---|---|---|
+| cuBLAS | hipBLAS (rocBLAS underneath) | yes | handle types; the v2 enums change a few signatures; 16-bit GEMM accuracy (faults-numerics.md) |
+| cuBLASLt | hipBLASLt | mostly | epilogues, compute types, the ReLU aux format ("BLAS, hipBLASLt and Composable Kernel" below) |
+| cuFFT | hipFFT (rocFFT) | yes | plan creation during graph capture (faults-memory-streams.md) |
+| cuRAND | hipRAND (rocRAND) | yes | device generator state internals; C++14 from ROCm 10.1 |
+| cuSPARSE | hipSPARSE (rocSPARSE) | yes | half-precision SpMM, zero workspace sizes, graph capture ("hipSPARSE" below) |
+| cuSOLVER | hipSOLVER (rocSOLVER) | partly; not verified | hipSOLVER has a cuSOLVER-style dense API (`hipsolverDn*`). None of the ports behind this file exercised more than handle creation, so check every routine you call against hipSOLVER's function list, and its workspace-size and `info` conventions, before assuming a rename is enough |
+| cuDNN | MIOpen | NO | a different API (descriptors, find-then-run instead of fixed algorithm enums): the call layer is rewritten, and whole operations are missing ("MIOpen" below) |
+| Thrust, CUB | rocThrust, hipCUB (rocPRIM) | yes | `thrust/system/cuda/error.h`, temp-storage sizes, segmented `ArgMax` ("rocThrust, hipCUB and rocPRIM" below) |
+| NCCL | RCCL | yes | same `nccl*` API under another soname (`librccl.so.1`); validation needs several GPUs ("RCCL" below) |
+| nvCOMP | hipCOMP (ROCm-DS) | not verified | ships inside the `amd-libhipdf` wheel; hipDF 3.0's Parquet writer still reports no Zstandard compressor, so do not assume codec parity |
+| NPP | RPP (`rpp.h`) | NO; not verified | AMD's image primitives have their own API, so calls are rewritten rather than renamed; coverage against NPP was not measured. `rpp.h` collides with `miopen.h` ("MIOpen" below) |
+| NVTX | roctx | ranges only | no analogue of the NVTX injection API |
+| NVML | AMD SMI | NO | a different API, keyed by PCI address |
+| nvJPEG, nvImageCodec | rocJPEG | decode only | 8-bit baseline JPEG; no encoder, no JPEG 2000 ("Image and video codecs" below) |
+| NVDEC (cuvid) | rocDecode | NO | no FFmpeg hwaccel; you drive the parser and decoder |
+| NVENC | none | -- | name the software encoder path |
+| CUPTI | none | -- | see the next entry |
+| RMM, cuDF, cuVS | hipMM, hipDF, hipVS (ROCm-DS) | yes | "RAPIDS (ROCm-DS)" below |
+| CUTLASS, CuTe, TensorRT | Composable Kernel, FlyDSL, MIGraphX | reimplementation | no-hip-equivalent.md |
 
 **Negative entries for that table.** CUPTI has no ROCm analogue -- stub the optional
 per-kernel profiling path inert and let the timer fall back to `hipEvent` wall-clock rather
 than substituting something. ck_tile's fused MHA ships headers but no prebuilt instance
 library in `/opt/rocm/lib`, so `fmha_fwd` is declared-only and using it means vendoring CK's
-codegen (how, below). (cuSZ, lc0)
+codegen ("Fused FP16 attention" below). (cuSZ, lc0)
 
 **Choosing the NVIDIA or AMD build of a library at run time.** A runtime with both a CUDA and a
 HIP backend must pick per device, from the device's own backend, and never by enumerating or
@@ -228,7 +250,7 @@ all-neighbors graph into device outputs only, and needs `libomp.so` from ROCm's
 
 ### RMM -> hipMM (and check ROCm-DS before stubbing any RAPIDS library)
 
-RMM (RAPIDS Memory Manager) does not build on HIP. Do not vendor a stub of the types a project uses: hipMM (https://github.com/AMD-Ecosystem/hipMM, the ROCm-DS port of RMM) keeps RMM's `rmm` CMake target, `rmm::` namespace and header layout, so it replaces RMM without source changes. HEonGPU first shipped a 600-line stub and then deleted it. Check the ROCm-DS and AMD-Ecosystem organizations for a port of any RAPIDS library before writing a replacement. For prebuilt wheels instead of a source build, see "RAPIDS libraries: hipDF, hipVS and hipMM as C++ wheels" in references/fault-classes.md.
+RMM (RAPIDS Memory Manager) does not build on HIP. Do not vendor a stub of the types a project uses: hipMM (https://github.com/AMD-Ecosystem/hipMM, the ROCm-DS port of RMM) keeps RMM's `rmm` CMake target, `rmm::` namespace and header layout, so it replaces RMM without source changes. HEonGPU first shipped a 600-line stub and then deleted it. Check the ROCm-DS and AMD-Ecosystem organizations for a port of any RAPIDS library before writing a replacement. For prebuilt wheels instead of a source build, see "RAPIDS libraries: hipDF, hipVS and hipMM as C++ wheels" above.
 
 Integration facts from fetching hipMM with FetchContent (HEonGPU, hipMM 5.0.0, ROCm 10.1):
 
@@ -255,7 +277,7 @@ consequences for scheduling on a multi-GPU host:
   device with `HIP_VISIBLE_DEVICES` -- is suspended for the duration of a
   collectives run. The run owns every device it uses; another job landing on a
   sibling GPU mid-run contends with it, and both results are suspect.
-- The one-device-per-process pin the mixed-arch section above prescribes must be
+- The one-device-per-process pin that diagnosis.md prescribes for mixed-architecture hosts must be
   LIFTED for the collectives process: give it exactly the same-architecture devices
   it should use (read the device list at run time, never a remembered index), and
   keep mixed-architecture pairs out of one process regardless.

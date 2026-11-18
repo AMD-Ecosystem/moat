@@ -10,6 +10,15 @@ Gate arch-specific selection on `__HIP_PLATFORM_AMD__` and force the portable co
 trust CC major/minor for arch dispatch on AMD. Found independently by both libmarv ports.
 (MMseqs2, foldseek: the CUDASW++ short2-DPX Smith-Waterman selector.)
 
+**A query HIP reports as unsupported leaves a sticky error that the NEXT check reports.**
+`cudaDeviceSetLimit(cudaLimitPrintfFifoSize, ...)` maps to a call that returns
+`hipErrorUnsupportedLimit`. Code that ignores that return value and later runs the usual
+`launch; CHECK(cudaGetLastError());` sees the stale error at the launch check and blames the
+kernel. Check or clear the error at the unsupported call, under the HIP branch only, so the
+CUDA path is unchanged. The same reading applies to any failure reported by a last-error
+check: confirm the blamed call's own return value first. (Reconstructed from a one-line note;
+the originating port was not recorded.)
+
 **`clock64()` is a 20-bit wrapping counter on RDNA3, so a cycle-bounded spin, delay or
 timeout misbehaves.** HIP's `clock64()` is `__builtin_readcyclecounter()`. On gfx11 (RDNA3/3.5)
 that lowers to `s_getreg_b32 hwreg(HW_REG_SHADER_CYCLES, 0, 20)`, which wraps about every
@@ -86,7 +95,7 @@ versioned `hipGetDevicePropertiesR0600`, whose layout that version fixes), and r
 by their HIP enum values, which differ from CUDA's. HIP's context API is deprecated: a backend built
 around primary contexts can stand the device in for the context and make it current with
 `hipSetDevice`. clang contracts `a * b + c` by default as NVRTC does; `-ffp-contract=off` is the
-`--fmad=false` equivalent. (TornadoVM: Java FFM bindings, TC-generated HIP C++.)
+`--fmad=false` equivalent (faults-numerics.md has where the two compilers still differ). (TornadoVM: Java FFM bindings, TC-generated HIP C++.)
 
 ### Runtime-compiled kernels inherit nothing from the host build
 

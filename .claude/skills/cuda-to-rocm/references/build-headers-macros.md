@@ -143,7 +143,10 @@ predefines, which need no header at all and are never defined by nvcc or by a ho
 candidate gate with `hipcc -x hip --offload-arch=<arch> -dM -E` on an empty file before
 trusting it, and assert the result per arch with a `static_assert` under
 `#ifdef __HIP_DEVICE_COMPILE__` (an unguarded one in a `__global__` body is also evaluated in
-the host pass, where the answer is legitimately different). (LC-framework)
+the host pass, where the answer is legitimately different). One caveat on "undefined": the
+`hip::host` and `hip::device` CMake targets put `-D__HIP_PLATFORM_AMD__=1` on the command
+line, so a target that links them has the macro everywhere, host `.cpp` files included; a
+bare `-x hip` compile, a Makefile build or a torch extension does not. (LC-framework)
 
 **Defining `__CUDA_ARCH__` for the HIP device pass also feeds every numeric gate.** A compat
 header that sets `__CUDA_ARCH__` (to 1, say) so `#ifdef __CUDA_ARCH__` device/host selections
@@ -154,6 +157,15 @@ on HIP it won overload resolution, so every `half2` atomic add raised an HSA har
 `__CUDA_ARCH__` comparison, not just `#ifdef`: `>=` gates silently drop native paths (slow but
 correct), `<` gates can select traps or legacy emulation. Guard each with `!defined(USE_HIP)`
 or the project's HIP macro at the site. (oneflow)
+
+Whether to define it at all: prefer not to. Widening each gate at its site with
+`|| defined(__HIP_DEVICE_COMPILE__)` touches nothing else, while a defined `__CUDA_ARCH__` is
+read by HIP's own headers: `hip/hip_common.h` takes a nonzero value to mean "this is the device
+pass" and sets `__HIP_DEVICE_COMPILE__` from it, so a definition that reaches the host pass, or
+precedes the HIP runtime include, mislabels host code as device code. Define it only when a
+codebase has more `#ifdef __CUDA_ARCH__` device/host selections than can be edited, and then
+only under `#ifdef __HIP_DEVICE_COMPILE__`, after the HIP runtime include, with every numeric
+comparison audited as above. (gpuRIR widened the gates; oneflow defined the macro.)
 
 The `>=` gates are not only slow paths. A "no half support" stub behind `#if __CUDA_ARCH__ >= 530`
 that does `printf(...); assert(false);` returns garbage silently, because release builds drop the
@@ -214,16 +226,6 @@ HIP sources, so plain C++ TUs keep the host branch. Do not define `__CUDACC__` g
 instead: rocThrust takes its CUDA-system path under it. Re-grep after every upstream sync,
 since new splits arrive with new code. (LichtFeld-Studio)
 
-**Extend a CUDA guard for HIP; never re-key it.** Upstream's `#ifndef __CUDACC__` around
-host fallbacks for `fminf`/`min`/`max`/`rsqrtf` (CUDA-Samples `helper_math.h` and its
-copies) also admits the HIP device pass, because HIP never defines `__CUDACC__`. Re-keying
-it to `!defined(__CUDA_ARCH__)` exposes the fallbacks to nvcc's HOST pass, where `int
-max(int, int)` redefines CUDA's and every TU including the header fails -- invisible on
-ROCm. Add the HIP macro to the original test instead (`!defined(__CUDACC__) &&
-!defined(__HIP__)`), which leaves the CUDA and plain C++ expansions identical. HIP's host
-pass does not need the fallbacks when no host-emitted code calls them; compile the host
-objects without them to check. (LichtFeld-Studio)
-
 ## Syntax and spellings clang rejects
 
 **nvcc accepts a split launch chevron, `kernel << <grid, block >> >(args)`; clang does not.**
@@ -243,13 +245,17 @@ then does not resolve), and `__trap()` (not declared by HIP's device runtime;
 Guard each with `#if !defined(USE_ROCM)` / `#if defined(USE_ROCM)` so the CUDA path is
 untouched. (diff-surfel-rasterizations)
 
-The include is the only thing missing in the cooperative-groups case: `cg::reduce` itself
-exists on ROCm. ROCm 7.14 ships `<hip/cooperative_groups/hip_reduce.h>` (implemented in
-`hip/amd_detail/amd_hip_cooperative_groups_reduce.h`), and `hip_cooperative_groups.h` does
-NOT pull it in, so the `USE_ROCM` arm of the guard is an include of that header rather than
-a rewritten reduction. Dropping the include outright is right only when the code uses just
-`this_grid()`, `this_thread_block()` and `thread_rank()` -- grep for `cg::reduce`,
-`reduce_update_async` and `plus<>` first. (diff-surfel-rasterizations)
+On a recent ROCm the include is the only thing missing in the cooperative-groups case:
+`cg::reduce` exists in `<hip/cooperative_groups/hip_reduce.h>` (implemented in
+`hip/amd_detail/amd_hip_cooperative_groups_reduce.h`), which `hip_cooperative_groups.h` does
+NOT pull in. That header arrived with the 7.13 nightlies and is in no stable release through
+ROCm 7.2.4, so the `USE_ROCM` arm must not be a plain include: use
+`#if __has_include(<hip/cooperative_groups/hip_reduce.h>)` and supply a fallback reduction in
+the `#else`. strategy-b-torch.md ("Headers and functions hipify leaves broken") has both arms
+and how to prove the fallback against real 7.2.x headers. Dropping the include outright is
+right only when the code uses just `this_grid()`, `this_thread_block()` and `thread_rank()` --
+grep for `cg::reduce`, `reduce_update_async` and `plus<>` first. (diff-surfel-rasterizations,
+faster-gaussian-splatting)
 
 **MSVC-only upstreams accept code that clang and gcc reject**, so the HIP build (and the
 CUDA build under nvcc) is a stricter compiler than the project has ever seen. Velvet carried
@@ -296,11 +302,31 @@ non-template FRIENDS, the rest as templates. helper_math's free non-template
 expression fails as ambiguous, on host and device, including inside helper_math itself
 (`smoothstep`). Do not guard the colliding functions one by one (about 40 of them): wrap the
 whole negate/add/subtract/multiply/divide block in `#if !defined(__HIP_PLATFORM_AMD__)` and
-let HIP's operators, which compute the same per-component results, take every case. Its
-host `min`/`max`/`fminf`/`fmaxf`/`rsqrtf` block is guarded on `#ifndef __CUDACC__`; extend it
-to `&& !defined(__HIPCC__)`, since clang's HIP math header defines host+device `min`/`max`
-and the copies become redefinitions in `.hip`/`LANGUAGE HIP` TUs. Host `.cpp` files still need
-the block. (cuda_voxelizer)
+let HIP's operators, which compute the same per-component results, take every case.
+(cuda_voxelizer)
+
+The header's second block, the host fallbacks for `fminf`/`fmaxf`/`min`/`max`/`rsqrtf` under
+`#ifndef __CUDACC__`, needs its guard extended as the next entry describes, because clang's
+HIP math header already defines host `min`/`max(int, int)` and the copies are redefinitions in
+`.hip`/`LANGUAGE HIP` TUs. Host `.cpp` files compiled by the host compiler still need the
+block. Guarding it off neither causes nor cures the separate truncation fault: stock
+helper_math never supplied a floating-point host `min`/`max`, CUDA's own headers did, and
+under HIP a host call with float arguments lands on `(int, int)` whatever this header does
+(faults-numerics.md, "Host `min`/`max` on floating-point values truncate to int under
+hipcc"). Run that entry's detection pass on any project that uses helper_math.
+
+**Extend a CUDA guard for HIP; never re-key it.** Upstream's `#ifndef __CUDACC__` around
+host fallbacks for `fminf`/`min`/`max`/`rsqrtf` (CUDA-Samples `helper_math.h` and its
+copies) also admits the HIP device pass, because HIP never defines `__CUDACC__`. Re-keying
+it to `!defined(__CUDA_ARCH__)` exposes the fallbacks to nvcc's HOST pass, where `int
+max(int, int)` redefines CUDA's and every TU including the header fails -- invisible on
+ROCm. Add the HIP macro to the original test instead (`!defined(__CUDACC__) &&
+!defined(__HIP__)`), which leaves the CUDA and plain C++ expansions identical. (clang
+predefines `__HIP__` and `__HIPCC__` alike in both passes of every HIP compile, so either
+spelling works; `__HIPCC__` is also set when HIP's headers wrap CUDA, so `__HIP__` is the
+narrower test. Pick one per project.) HIP's host
+pass does not need the fallbacks when no host-emitted code calls them; compile the host
+objects without them to check. (LichtFeld-Studio)
 
 ## Keeping the CUDA path intact
 
@@ -331,8 +357,8 @@ hipify generation works only by that accidental correlation. Guard on the real a
 there are three:
 
 - **OS and toolchain** -> `_WIN32`: MSVC-vs-MinGW linkage, DLL import libs, path
-  separators. (The `/ALTERNATENAME` workaround for missing inherited-constructor exports
-  belongs here.)
+  separators, and linker workarounds such as an MSVC `/ALTERNATENAME` directive standing in
+  for a symbol a DLL fails to export.
 - **HIP runtime version** -> `HIP_VERSION_MAJOR`/`MINOR`: header behaviour, added or
   removed symbols. (MMseqs2: a Windows commit defined `HIP_DISABLE_WARP_SYNC_BUILTINS`
   unconditionally because `<amd_hip_bf16.h>` defines `__shfl_*_sync` on ROCm 7.14+, but on

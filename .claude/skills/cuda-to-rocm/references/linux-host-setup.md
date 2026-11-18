@@ -4,7 +4,8 @@
 
 A headless Linux box with no display manager can still give a GUI/interop port a REAL,
 hardware-accelerated OpenGL context, if the GPU has a graphics pipeline (RDNA gfx11xx/gfx12xx;
-not CDNA gfx90a/gfx942, which the driver refuses outright -- see the smoke-check note above).
+not CDNA gfx90a/gfx942, which the driver refuses outright: faults-textures-interop.md,
+"Compute-only CDNA has no graphics pipeline").
 Install `xserver-xorg-core` and `xserver-xorg-video-amdgpu`, then start `Xorg` on a spare
 display number against exactly one card. The naive config, a `Device` section with a legacy
 PCI `BusID`, fails with `(EE) No devices detected` even though the bus ID is correct: the

@@ -2,9 +2,12 @@
 
 ## Contraction and rounding
 
-**clang for HIP defaults to `-ffp-contract=fast`** and forms FMAs ACROSS statements, where
-nvcc with `--fmad=true` contracts only within one expression. The extra contraction drifts
-results ~1 ULP from the CUDA build and CPU gold. MATCH UPSTREAM's setting rather than
+**clang for HIP defaults to `-ffp-contract=fast`** and forms FMAs ACROSS statements. nvcc
+contracts by default too (`--fmad=true`, and NVRTC likewise), so a single `a * b + c` is an
+FMA on both; what differs is where else contraction happens. The extra contraction drifts
+results ~1 ULP from the CUDA build and CPU gold. That nvcc contracts only within one
+expression is inferred from the result below (`-ffp-contract=on` reproduced nvcc's numbers),
+not taken from nvcc's documentation. `-ffp-contract=off` is the `--fmad=false` equivalent. MATCH UPSTREAM's setting rather than
 pinning one unconditionally: CV-CUDA needed `-ffp-contract=on` to match nvcc, while
 LC-framework's nvcc recipe uses `-fmad=false -mno-fma -ffp-contract=off`, so pinning `on`
 there would diverge. Integer-only components are unaffected. (CV-CUDA OpWarpPerspective;
@@ -82,7 +85,8 @@ the FBPlowpass window zeroed all but DC.) `std::min`/`std::max` are NOT safe eit
 hipify pass has run: hipify_torch (and torch's hipify, same table) rewrites them to
 `::min`/`::max`, which land on the same `(int, int)` host pair, so a correct
 `std::min(float, float)` in CUDA source truncates in the hipified copy. Run the detection
-on the hipified sources, not the originals. When a build compiles host `.cpp` files as
+on the hipified sources, not the originals. (torch's hipify stopped rewriting `std::` math in
+pytorch#200419, 2026-10; a torch older than that, and hipify_torch, still do.) When a build compiles host `.cpp` files as
 HIP too, those files are in scope, but unqualified calls there usually bind to `std::min`
 through `using namespace std` (a template exact match beats the int pair); to tell a real
 truncation from that, report only calls that land on `(int, int)` with ROCm's default
@@ -90,8 +94,9 @@ pair AND on a non-int overload with CUDA's full set. (LEAP version two: 27 sites
 them new, including `1.0 / max(fabs(v_min), fabs(v_max))` dividing by zero in the cone
 geometry setup.)
 
-**A HIP workaround in shared host code must not change CUDA's numbers.** HIP declares the
-scalar math builtins (`rsqrtf`, `min`/`max`) for the device only, and HIP's `__half`
+**A HIP workaround in shared host code must not change CUDA's numbers.** HIP declares
+`rsqrtf` for the device only and host `min`/`max` only for `(int, int)` (the entry above),
+and HIP's `__half`
 converts to every floating type through a template, so a port that rewrites a host call for
 HIP (`rsqrtf(x)` to `1.0f / std::sqrt(x)`, `std::pow(a, b)` to a cast through `double`,
 `__half` to an integer through `float`) silently changes the CUDA build too: `1.0f / sqrtf`
@@ -183,8 +188,8 @@ ends resolve it differently**: PTX `shr.u64` / `shl.u64` clamp the count to the 
 width and so yield 0 for any count >= 64, while AMDGPU's `v_lshrrev_b64` uses only the LOW 6
 BITS of the count, so a shift of 64 acts as a shift of 0 and of 65 as a shift of 1. AMD
 returns the wrong limb OR-ed into the right one at every count >= 64. This is the 64-bit
-sibling of the 32-bit mask fault under "Wavefront and warp semantics" (a shift count that
-wraps at 32 because the mask was built in `int`).
+sibling of the 32-bit mask fault in faults-wavefront.md (a shift count that wraps at 32
+because the mask was built in `int`).
 
 This is data-dependent, not arch-dependent, so it hides until the shift count crosses 64.
 Barrett reduction shifts by `modulus.bit + 3`, which reaches 64 at a 61-bit modulus: on
