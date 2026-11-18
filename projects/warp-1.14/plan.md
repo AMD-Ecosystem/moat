@@ -287,6 +287,10 @@ What this means for the port (Phase 7, and Phase 0 for detection):
 
 RULED by Jeff Daily, 2026-11-18: the wheel is built against and pinned to ROCm 10.2 (`Requires-Dist: rocm>=10.2,<10.3`), the newest release on the stable index. The porter develops against those same TheRock wheels from Phase 0 (`pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ "rocm[devel]==10.2.*"` in the job's own venv, root from `rocm-sdk path --root`), not against a fleet host's system ROCm, so the ROCm being developed on is the ROCm that ships. Wherever this plan cites a HIP version (for example "HIP 7.14" for graph features), re-check the fact against ROCm 10.2's headers before relying on it. The stable index publishes 10.2 device packages for gfx908, gfx90a, gfx942, gfx950, gfx1010-1012, gfx1030-1036, gfx1100-1103, gfx1150-1153, gfx1200, gfx1201 and gfx1250 (Linux; Windows for the Radeon and APU targets).
 
+RULED by Jeff Daily, 2026-11-18: the default `--offload-arch` list for the precompiled kernels is every target ROCm 10.2 supports on that OS (the 25 Linux targets above; on Windows the targets with a Windows device package), so the Warp wheel works wherever its ROCm dependency works. Derive the list from the installed ROCm where that is practical instead of hard-coding it twice; `--offload-arch` stays an option so a source build can narrow it. The porter measures wheel size and build time in Phase 7 and brings Jeff the numbers if either is unreasonable; it does not shorten the list itself. Release notes name which targets were run on hardware and which are compile-only.
+
+All eight planner questions and the two follow-ups are ruled (Q3 by an explicit instruction to benchmark in Phase 4 and bring the numbers). The porter may start.
+
 ## Rulings the source qualifies
 
 - Ruling 4 asks for a ROCm equivalent of libmathdx. None exists (no device-callable, LTO-linkable BLAS/solver/FFT on ROCm). Upstream 1.14 already ships cooperative **GPU** implementations for every libmathdx feature when built without it, so the HIP build loses no feature except non-power-of-two GPU FFT (Q1). These are GPU paths, not CPU fallbacks.
