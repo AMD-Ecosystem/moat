@@ -1165,6 +1165,25 @@ def port_lock(name, take=None, release=False):
     return obj.get("porting")
 
 
+def set_ext_type(name, ext_type):
+    """Record what the project's build IS (cmake, torch-extension, meson, ...).
+
+    The planner establishes it, and the only writer used to be `scaffold --ext`, so
+    planner.md told the planner to edit status.json by hand -- the one thing every
+    other instruction forbids. Free-form like the schema: the canonical values
+    drive strategy selection, and reality has more build systems than a list."""
+    ext_type = (ext_type or "").strip()
+    if not ext_type or any(c.isspace() for c in ext_type):
+        raise ValueError(f"{name}: ext_type must be one non-empty word "
+                         f"(cmake, torch-extension, meson, makefile, ...)")
+    obj = load_status(name)
+    if obj.get("ext_type") == ext_type:
+        return obj
+    obj["ext_type"] = ext_type
+    save_status(name, obj)
+    return obj
+
+
 def set_hold(name, on_hold, reason=None):
     """Project-wide postponement. A held project is skipped by the selector on
     every platform (actionable() returns False) without touching any platform
@@ -4447,6 +4466,30 @@ def outstanding(obj):
     return out
 
 
+def project_file(name, filename):
+    """The text of `projects/<name>/<filename>` from wherever the project's folder
+    lives, or None when it is nowhere.
+
+    Resolved the way project_record resolves the record, because every file in the
+    folder rides with it: the project's own branch unless that branch is the one
+    checked out, then the working tree, then the trunk. A gate that reads only the
+    working tree judges a project by a folder that is absent from a trunk checkout
+    (so nothing blocks) or by a stale pre-re-home copy of it."""
+    path = f"projects/{name}/{filename}"
+    raw = None
+    if current_branch() != f"port/{name}":
+        branch = port_branch_of(name)
+        if branch:
+            raw = _ref_read(f"origin/{branch}", path)
+    if raw is None:
+        p = PROJECTS / name / filename
+        if p.exists():
+            raw = p.read_text(encoding="utf-8", errors="replace")
+    if raw is None:
+        raw = _ref_read("origin/main", path)
+    return raw
+
+
 def now_deferrals(name):
     """Open deferral ids a person has ruled `now`: ported work the project owes.
 
@@ -4457,20 +4500,8 @@ def now_deferrals(name):
     question waiting on a person, not work an agent owes.
 
     Resolved the way project_record resolves, because the deferral rides the same
-    folder: the working tree when standing on the project's own branch, else the
-    branch ref, else the trunk."""
-    path = f"projects/{name}/deferred.json"
-    raw = None
-    if current_branch() != f"port/{name}":
-        branch = port_branch_of(name)
-        if branch:
-            raw = _ref_read(f"origin/{branch}", path)
-    if raw is None:
-        p = PROJECTS / name / "deferred.json"
-        if p.exists():
-            raw = p.read_text(encoding="utf-8")
-    if raw is None:
-        raw = _ref_read("origin/main", path)
+    folder (see project_file)."""
+    raw = project_file(name, "deferred.json")
     if not raw:
         return []
     try:
@@ -6151,11 +6182,15 @@ def _gate_blockers(name, obj):
         blocking.append(("license", lic_why))
 
     # Surface accounting: work recorded as owed (in scope, not yet done) blocks the
-    # PR until it is covered or a person rules it out of scope.
+    # PR until it is covered or a person rules it out of scope. Read from wherever
+    # the project's folder lives, like the record above: pr_ready is meant to run
+    # from a trunk checkout, where an in-flight project's surface.json is not in
+    # the tree, and reading only the tree made owed work block nothing there.
     try:
         sys.path.insert(0, str(TOOLS_ROOT / "utils"))
         import surface as _surface
-        for cid, why in _surface.owed(name).items():
+        owed = _surface.owed_in(project_file(name, "surface.json"))
+        for cid, why in owed.items():
             blocking.append(("surface-owed", f"{cid} is still owed: {(why or '')[:120]}"))
     except Exception as e:  # never let the accounting helper hide the real gates
         blocking.append(("surface-owed", f"could not read owed surface items: {e}"))
@@ -6243,9 +6278,12 @@ def record_tokens(name, tokens, source=None):
 
 def commit_project(name, message, extra_paths=()):
     """Commit a project's control-plane artifacts together: status.json,
-    notes.md, plan.md, stats.jsonl, surface.json and deferred.json (whichever
-    exist), plus any extra_paths. surface.json is here because it is judged by a gate: left
-    uncommitted it fails the check on the next push, from whichever host makes it.
+    notes.md, plan.md, stats.jsonl, surface.json, deferred.json and any
+    notes-*.md (whichever exist), plus any extra_paths. surface.json is here
+    because it is judged by a gate: left uncommitted it fails the check on the next
+    push, from whichever host makes it. notes-*.md is here because the moat-porting
+    skill has agents move old rounds into notes-archive.md, and a file this command
+    did not stage stayed uncommitted while notes.md lost the text.
     Agents call
     this for every state transition so the per-phase telemetry in stats.jsonl
     (compile/test wall-clock etc., written by timeit.sh -- provenance of the endeavor)
@@ -6255,6 +6293,8 @@ def commit_project(name, message, extra_paths=()):
              ("status.json", "notes.md", "plan.md", "stats.jsonl", "surface.json",
               "deferred.json")
              if (PROJECTS / name / fn).exists()]
+    paths.extend(f"projects/{name}/{p.name}"
+                 for p in sorted((PROJECTS / name).glob("notes-*.md")) if p.is_file())
     paths.extend(str(p) for p in extra_paths)
     return commit_and_push(paths, message)
 
@@ -6389,6 +6429,12 @@ def _main(argv=None):
     s.add_argument("name")
     s.add_argument("on_off", choices=["on", "off"])
     s.add_argument("--reason")
+
+    s = sub.add_parser("set-ext-type",
+                       help="record the project's build type (cmake, "
+                            "torch-extension, meson, ...); the planner's finding")
+    s.add_argument("name")
+    s.add_argument("ext_type")
 
     s = sub.add_parser("advance-head")
     s.add_argument("name")
@@ -6793,6 +6839,9 @@ def _main(argv=None):
         on = args.on_off == "on"
         set_hold(args.name, on, args.reason)
         print(f"{args.name} on_hold: {on}" + (f" ({args.reason})" if on and args.reason else ""))
+    elif args.cmd == "set-ext-type":
+        obj = set_ext_type(args.name, args.ext_type)
+        print(f"{args.name} ext_type = {obj['ext_type']}")
     elif args.cmd == "advance-head":
         obj = advance_head(args.name, args.sha)
         print(f"{args.name} head_sha -> {obj['head_sha']}")
@@ -6808,7 +6857,8 @@ def _main(argv=None):
             print(v.detail)
     elif args.cmd == "commit-project":
         ok = commit_project(args.name, args.message)
-        print(f"committed projects/{args.name} (status/notes/plan/surface/deferred/stats)" if ok else "(nothing to commit)")
+        print(f"committed projects/{args.name} (status/notes/notes-*/plan/surface/"
+              f"deferred/stats)" if ok else "(nothing to commit)")
     elif args.cmd == "record-tokens":
         r = record_tokens(args.name, args.tokens, args.source)
         print(f"recorded {r['tokens']} tokens for {args.name}" + (f" ({args.source})" if args.source else ""))

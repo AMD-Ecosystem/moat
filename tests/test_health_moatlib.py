@@ -476,5 +476,101 @@ class WritersUseLf(unittest.TestCase):
         self.assert_lf(moatlib.OPTOUTS)
 
 
+class ProjectFolderAcrossRefs(unittest.TestCase):
+    """A file in a project's folder is read from where the folder lives."""
+
+    SURFACE = '{"owed": [{"id": "test:gpu_tests", "reason": "windows is last"}]}\n'
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.projects = pathlib.Path(self._tmp.name) / "projects"
+        self.refs = {}
+        for attr, value in (
+                ("PROJECTS", self.projects),
+                ("current_branch", lambda: "main"),
+                ("port_branch_of", lambda name: "port/proj"),
+                ("_ref_read", lambda ref, path: self.refs.get((ref, path)))):
+            p = mock.patch.object(moatlib, attr, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def local(self, text):
+        d = self.projects / "proj"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "surface.json").write_text(text, encoding="utf-8")
+
+    def test_the_branch_copy_is_read_from_a_checkout_without_the_folder(self):
+        self.refs[("origin/port/proj", "projects/proj/surface.json")] = self.SURFACE
+        self.assertEqual(moatlib.project_file("proj", "surface.json"), self.SURFACE)
+
+    def test_the_branch_copy_outranks_a_stale_local_one(self):
+        self.refs[("origin/port/proj", "projects/proj/surface.json")] = self.SURFACE
+        self.local('{"owed": []}\n')
+        self.assertEqual(moatlib.project_file("proj", "surface.json"), self.SURFACE)
+
+    def test_on_the_projects_own_branch_the_working_tree_is_read(self):
+        self.refs[("origin/port/proj", "projects/proj/surface.json")] = '{"owed": []}\n'
+        self.local(self.SURFACE)
+        with mock.patch.object(moatlib, "current_branch", lambda: "port/proj"):
+            self.assertEqual(moatlib.project_file("proj", "surface.json"), self.SURFACE)
+
+    def test_the_trunk_is_the_last_resort_and_nowhere_is_none(self):
+        self.assertIsNone(moatlib.project_file("proj", "surface.json"))
+        self.refs[("origin/main", "projects/proj/surface.json")] = self.SURFACE
+        self.assertEqual(moatlib.project_file("proj", "surface.json"), self.SURFACE)
+
+    def test_owed_surface_blocks_the_pr_from_a_trunk_checkout(self):
+        self.refs[("origin/port/proj", "projects/proj/surface.json")] = self.SURFACE
+        obj = record(reviewed_sha=HEAD, platforms={"linux-gfx90a": done(),
+                                                   "windows-gfx1151": done()})
+        with mock.patch.object(moatlib, "license_gate", lambda name, o: (True, "ok")), \
+                mock.patch.object(moatlib, "uncommitted_source_files", lambda name: []):
+            blocking, _nonviable = moatlib._gate_blockers("proj", obj)
+        self.assertEqual([b[0] for b in blocking], ["surface-owed"])
+        self.assertIn("test:gpu_tests", blocking[0][1])
+
+    def test_surface_owed_reads_the_same_place(self):
+        import surface
+        self.refs[("origin/port/proj", "projects/proj/surface.json")] = self.SURFACE
+        self.assertEqual(surface.owed("proj"), {"test:gpu_tests": "windows is last"})
+        self.assertEqual(surface.owed("proj", root=self._tmp.name), {})
+
+
+class CommitProjectStaging(unittest.TestCase):
+    def test_archived_notes_are_staged_with_the_rest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = pathlib.Path(tmp) / "proj"
+            d.mkdir()
+            for fn in ("status.json", "notes.md", "notes-archive.md", "notes-2026.md",
+                       "scratch.txt"):
+                (d / fn).write_text("x\n", encoding="utf-8")
+            staged = []
+            with mock.patch.object(moatlib, "PROJECTS", pathlib.Path(tmp)), \
+                    mock.patch.object(moatlib, "commit_and_push",
+                                      lambda paths, message: staged.extend(paths) or True):
+                moatlib.commit_project("proj", "proj: archive old rounds")
+        self.assertEqual(sorted(staged), [
+            "projects/proj/notes-2026.md", "projects/proj/notes-archive.md",
+            "projects/proj/notes.md", "projects/proj/status.json"])
+
+
+class SetExtType(unittest.TestCase):
+    def test_the_planner_records_the_build_type(self):
+        s = Store(self, record(ext_type="unknown"))
+        moatlib.set_ext_type("proj", "torch-extension")
+        self.assertEqual(s.obj["ext_type"], "torch-extension")
+        moatlib.set_ext_type("proj", "torch-extension")
+        self.assertEqual(len(s.saved), 1)
+
+    def test_an_empty_or_multi_word_value_is_refused(self):
+        s = Store(self, record(ext_type="unknown"))
+        for bad in ("", "  ", "cmake and meson"):
+            with self.subTest(value=bad):
+                with self.assertRaisesRegex(ValueError, "one non-empty word"):
+                    moatlib.set_ext_type("proj", bad)
+        self.assertEqual(s.saved, [])
+
+
 if __name__ == "__main__":
     unittest.main()

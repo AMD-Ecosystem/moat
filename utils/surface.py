@@ -270,6 +270,14 @@ def _id_reasons(entries):
     return out
 
 
+def owed_in(text):
+    """The `owed` entries of a surface.json given as text, as {id: reason}. No
+    text (the project has no surface.json) owes nothing."""
+    if not text:
+        return {}
+    return _id_reasons(json.loads(text).get("owed", []))
+
+
 def owed(name, root=None):
     """Components still in scope but not yet done (`owed`), as {id: reason}.
 
@@ -277,11 +285,19 @@ def owed(name, root=None):
     work was `scoped_out`, which reads as a cut nobody made (h2o4gpu's Windows
     platform, kept last by a ruling). The surface gate accepts an owed item with a
     reason, so a port can claim success on the platforms it has done, and pr_ready
-    refuses while any remain, so owed work cannot reach an upstream PR unnoticed."""
-    p = (root or REPO) / "projects" / name / "surface.json"
-    if not p.is_file():
-        return {}
-    return _id_reasons(json.loads(p.read_text()).get("owed", []))
+    refuses while any remain, so owed work cannot reach an upstream PR unnoticed.
+
+    Read from wherever the project's folder lives (moatlib.project_file): its own
+    branch, then this working tree, then the trunk. Reading only the working tree
+    answered "nothing owed" from any checkout that does not carry the folder,
+    which is where the publishing commands run. `root` names one checkout to read
+    instead."""
+    if root is not None:
+        p = pathlib.Path(root) / "projects" / name / "surface.json"
+        return owed_in(p.read_text(encoding="utf-8") if p.is_file() else None)
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+    return owed_in(moatlib.project_file(name, "surface.json"))
 
 
 def main():
