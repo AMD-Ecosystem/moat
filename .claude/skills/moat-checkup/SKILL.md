@@ -497,6 +497,21 @@ required and never defaulted, the same rule as a licence clearance or a gate wai
 agent may surface a deferral and may not rule on one, because deciding a scoped-out
 feature stays scoped out is a judgement about what MOAT is delivering.
 
+A deferral that ends without its work being done is closed, not marked `done`:
+`deferred.py close <id> --as superseded|not-applicable --reason '<why>' --by <who>`
+(`--superseded-by <id-or-URL>` names what replaced it). `superseded` is for a defect
+someone else fixed or an item a newer one replaces; `not-applicable` is for one whose
+premise turned out to be wrong. It is a person's ruling like `decide`, it applies to an
+open or filed item, and the item then leaves `pending`, the default `list`, and the
+`now` deferrals that keep a project on its branch. `set-status` neither reaches these
+statuses nor reopens a closed item.
+
+A summary recorded wrongly is corrected with
+`deferred.py amend <id> --summary '<text>' --by <who> --reason '<what was wrong>'`,
+which keeps the replaced text in the item's `summary_history`. Anyone may amend,
+agents included; an existing ruling stands, so tell the person who ruled when the
+correction changes what they ruled on.
+
 A deferral lives in `projects/<name>/deferred.json` on that project's branch, with the
 notes and the plan it came out of, so it is reviewed with the port that produced it.
 `data/deferred.json` keeps only what is genuinely not project-scoped: a bug isolated
@@ -506,7 +521,8 @@ project that has since been removed.
 You do not have to check anything out to rule on one. A ruling is a record rather than
 a working file -- `pending` already gave you the entry, and nothing in `decide` opens a
 plan or a note -- so a deferral whose folder is on a port branch is written straight
-there and pushed, and `decide` prints which branch it landed on. Working the whole list
+there and pushed, and `decide` prints which branch it landed on (`close` and `amend`
+write the same way). Working the whole list
 from wherever you happen to be is the intended use. The one refusal is a trunk-resident
 project while you are on a port branch: `main` is protected, so that ruling has to
 arrive by pull request like any other trunk change.

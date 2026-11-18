@@ -94,7 +94,9 @@ reads only `notes.md`. An archive merges by union like `notes.md` (`.gitattribut
   `hip-win-stream-serialization`) is registered with `utils/deferred.py` against the project
   that found it; `deferred.py list` finds it across refs. Check that a registered defect is
   still believed before citing it: the `.CRT$XCU` diagnosis filed as
-  `therock-windows-lld-link-crt-xcu` was later retracted (`cuda-to-rocm`'s validation.md). The `/ALTERNATENAME` workaround's
+  `therock-windows-lld-link-crt-xcu` was later retracted (`cuda-to-rocm`'s validation.md). A
+  wrongly recorded summary is corrected with `deferred.py amend`; closing an item as
+  superseded or not applicable (`deferred.py close`) is a person's ruling. The `/ALTERNATENAME` workaround's
   reproducer sits in the local `findings/` area; the owning project's `deferred.json`
   records whether it was filed. A failure caused by such a defect is never grounds to
   suggest a gate waiver: LichtFeld-Studio got a wrongly-suggested windows waiver that way.
