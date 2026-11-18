@@ -946,6 +946,25 @@ pure port change. (HEonGPU: RNGonGPU's Box-Muller Gaussian sampler; every cipher
 decrypted to noise while plaintext encoding, which samples no error, passed -- which is the
 tell that the fault is in a SAMPLER and not in the transform everything shares.)
 
+**An uninitialised local passed by value lets clang delete a padding-lane guard, and the
+result is NaN that nvcc never produces.** The shape: a kernel declares locals without
+initialisers, assigns them only inside `if (idx < n)`, then passes one BY VALUE to a helper
+outside the guard (a masked block reduction, `Reduce(valid, value)`, is the usual case).
+Padding lanes read an indeterminate value, which is undefined behaviour. clang marks
+by-value parameters `noundef`, so LLVM concludes the padding-lane path cannot happen,
+inserts `llvm.assume(idx < n)`, and drops both the guard and the helper's
+`valid ? value : 0` mask. The padding lanes then compute on out-of-range inputs, store past
+the end of outputs, and feed inf/NaN into the reduction. nvcc does not exploit this, so the
+CUDA build passes and the HIP build (or CUDA built with clang) gives NaN on any problem
+size that leaves padding lanes. It was observed on wave64; the cause is in the compiler and
+not the wave width, so expect the same on wave32. To confirm, look for `llvm.assume` on the
+thread-index compare in the device IR (`--cuda-device-only -S -emit-llvm`);
+`-Xclang -no-enable-noundef-analysis` makes the symptom disappear, as a diagnostic and not
+a fix. Fix the source: initialise the locals (zero is the identity of a sum). When the
+kernels are generated, a vendored copy of the generator's output can predate the
+generator's own fix, so check that the vendored code really carries a fix its changelog
+claims. (symforce, colmap)
+
 ## Headers, includes and build
 
 **A shared compat header must be host-includable.** Host `.cpp` TUs reach the shim through
