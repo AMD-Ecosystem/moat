@@ -2,13 +2,13 @@
   "schema_version": 3,
   "name": "jitllm",
   "upstream_url": "https://github.com/beehive-lab/jitllm",
-  "fork_url": null,
+  "fork_url": "https://github.com/AMD-Ecosystem/jitllm",
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "awaiting-fork",
+  "stage": "screened",
   "adopted_at": "2026-11-17T19:23:49Z",
-  "updated_at": "2026-11-17T19:59:57Z",
+  "updated_at": "2026-11-18T00:20:31Z",
   "head_sha": null,
   "depends_on": [
     "TornadoVM"
