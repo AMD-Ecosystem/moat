@@ -8,9 +8,11 @@
   "ext_type": "torch-extension",
   "stage": "planning",
   "adopted_at": "2026-11-06T03:59:55Z",
-  "updated_at": "2026-11-10T07:20:40Z",
+  "updated_at": "2026-11-18T18:10:04Z",
   "head_sha": null,
-  "depends_on": [],
+  "depends_on": [
+    "cupy"
+  ],
   "porting": {
     "arch": "linux-gfx942",
     "since": "2026-11-10T07:15:56Z"
