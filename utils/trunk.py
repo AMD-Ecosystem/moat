@@ -18,7 +18,11 @@ means. Everything else is read from the checkout.
 
 Local tooling still runs when it is at least as new as the trunk: a checkout whose HEAD
 contains `origin/main` (tooling work on the trunk or ahead of it) is left alone, and so
-is one whose `utils/` matches. Nothing here fetches; orient and the publishing tools do.
+is one whose exported paths all match. All of them, not only `utils/`: the config is
+read from wherever the code runs, so a trunk commit that changes only
+`config/arches.toml` (an offline platform, a wave family, the waivable gates) has to
+reach a port branch the same way a code change does. Nothing here fetches; orient and
+the publishing tools do.
 
     python3 utils/trunk.py run check.py --fast   # run a trunk script against this checkout
     python3 utils/trunk.py path                  # print the export directory
@@ -66,19 +70,26 @@ def _toplevel(start):
     return pathlib.Path(out) if rc == 0 and out else None
 
 
+def _export_trees(repo, ref):
+    """The tree id of each of EXPORT_PATHS at `ref`, or None when one is missing."""
+    rc, out = _git(repo, "rev-parse", *(f"{ref}:{p}" for p in EXPORT_PATHS))
+    lines = out.splitlines()
+    return lines if rc == 0 and len(lines) == len(EXPORT_PATHS) else None
+
+
 def trunk_state(repo):
     """(trunk sha, export base dir, local tooling is current) for a checkout, or None
     when there is no trunk ref to run from (offline fresh clone, not a git checkout)."""
-    rc, out = _git(repo, "rev-parse", "--git-common-dir", TRUNK_REF, f"{TRUNK_REF}:utils")
+    rc, out = _git(repo, "rev-parse", "--git-common-dir", TRUNK_REF)
     lines = out.splitlines()
-    if rc or len(lines) != 3:
+    trunk_trees = _export_trees(repo, TRUNK_REF)
+    if rc or len(lines) != 2 or trunk_trees is None:
         return None
-    common, sha, trunk_utils = lines
+    common, sha = lines
     common = pathlib.Path(common)
     if not common.is_absolute():
         common = (pathlib.Path(repo) / common).resolve()
-    rc, head_utils = _git(repo, "rev-parse", "HEAD:utils")
-    current = rc == 0 and head_utils == trunk_utils
+    current = _export_trees(repo, "HEAD") == trunk_trees
     if not current:
         # HEAD already contains the trunk: tooling work on or ahead of it runs as is.
         current = subprocess.run(
