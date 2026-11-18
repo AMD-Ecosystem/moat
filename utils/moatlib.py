@@ -763,8 +763,15 @@ def validate_status(obj):
         # A migrated block may carry no state at all: what survives the split is what
         # an arch can know, and for an arch that never validated, that is only
         # `blocked` and its reason. Absent is a value here, not a missing field.
-        if blk.get("state") is not None and blk["state"] not in STATES:
-            raise ValueError(f"{plat}: invalid state {blk.get('state')!r}")
+        # Only what an architecture can record. This accepted any of STATES, so a
+        # stage (`porting`) or a derived word (`revalidate`) in a block loaded
+        # cleanly here and failed the generated schema, which has always allowed
+        # ARCH_STATES alone, on the next ref sweep.
+        if blk.get("state") is not None and blk["state"] not in ARCH_STATES:
+            raise ValueError(
+                f"{plat}: invalid state {blk.get('state')!r} -- a platform block "
+                f"records only {sorted(ARCH_STATES)}; the project's progress is "
+                f"`stage`, and port-ready/revalidate are derived, never stored")
         if not isinstance(blk.get("blocked"), bool):
             raise ValueError(f"{plat}: blocked must be boolean")
 

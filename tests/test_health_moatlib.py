@@ -161,5 +161,19 @@ class DepDocGaps(unittest.TestCase):
                     self.assertEqual(moatlib.dep_doc_gaps(), [])
 
 
+class PlatformStateVocabulary(unittest.TestCase):
+    def test_arch_states_are_accepted(self):
+        moatlib.validate_status(record(platforms={
+            "linux-gfx90a": done(), "linux-gfx1100": failed(),
+            "windows-gfx1151": {"blocked": True}}))
+
+    def test_stage_and_derived_words_are_refused_in_a_platform_block(self):
+        for state in ("porting", "review-passed", "revalidate", "port-ready"):
+            with self.subTest(state=state):
+                with self.assertRaisesRegex(ValueError, "invalid state"):
+                    moatlib.validate_status(record(platforms={
+                        "linux-gfx90a": {"state": state, "blocked": False}}))
+
+
 if __name__ == "__main__":
     unittest.main()
