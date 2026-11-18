@@ -263,7 +263,7 @@
       "id": "mitsuba3-drjit-amd-backend",
       "kind": "feature-port",
       "component": null,
-      "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): mitsuba-renderer/mitsuba3 GPU variants need a Dr.Jit AMD GPU backend, which does not exist (drjit-core has CUDA and LLVM backends only). Revisit when a Dr.Jit HIP backend lands upstream.",
+      "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): mitsuba-renderer/mitsuba3 GPU variants need a Dr.Jit AMD GPU backend, which does not exist (drjit-core has CUDA and LLVM backends only). The two pull requests that proposed one, drjit-core 203 and drjit 520, both closed unmerged (2026-06 and 2026-07), so nothing is in flight upstream as of 2026-11-18. Revisit when a Dr.Jit HIP backend lands upstream.",
       "refs": [
         "https://github.com/mitsuba-renderer/mitsuba3",
         "https://github.com/mitsuba-renderer/drjit-core/pull/203",
@@ -272,8 +272,20 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-12T16:46:37Z",
-      "decided": null,
-      "project": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-18T17:16:31Z"
+      },
+      "project": null,
+      "summary_history": [
+        {
+          "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): mitsuba-renderer/mitsuba3 GPU variants need a Dr.Jit AMD GPU backend, which does not exist (drjit-core has CUDA and LLVM backends only). Revisit when a Dr.Jit HIP backend lands upstream.",
+          "by": "jeffdaily",
+          "at": "2026-11-18T17:16:31Z",
+          "reason": "both cited Dr.Jit AMD backend PRs closed unmerged; the summary read as if upstream work was pending"
+        }
+      ]
     },
     {
       "id": "nemo-curator-rocm-ds",
