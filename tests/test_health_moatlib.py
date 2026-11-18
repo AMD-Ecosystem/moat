@@ -438,5 +438,43 @@ class SyncRoundInFlight(unittest.TestCase):
                 moatlib.sync_branch("proj")
 
 
+class WritersUseLf(unittest.TestCase):
+    """What the tools write has LF line endings on every host."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = pathlib.Path(self._tmp.name)
+        for attr, value in (("PROJECTS", self.root / "projects"),
+                            ("DISPOSITIONS", self.root / "data" / "dispositions.json"),
+                            ("OPTOUTS", self.root / "data" / "optout.json")):
+            p = mock.patch.object(moatlib, attr, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def assert_lf(self, path):
+        raw = path.read_bytes()
+        self.assertIn(b"\n", raw)
+        self.assertNotIn(b"\r", raw)
+
+    def test_status_json(self):
+        with mock.patch.object(moatlib, "current_branch", lambda: "port/proj"), \
+                mock.patch.object(moatlib, "_ref_read", lambda ref, path: None), \
+                mock.patch.object(moatlib, "check_against_trunk", lambda obj: []):
+            moatlib.save_status("proj", record())
+        self.assert_lf(self.root / "projects" / "proj" / "status.json")
+
+    def test_token_telemetry(self):
+        moatlib.record_tokens("proj", 10, "validator:test")
+        moatlib.record_tokens("proj", 20)
+        self.assert_lf(self.root / "projects" / "proj" / "stats.jsonl")
+
+    def test_shared_registries(self):
+        moatlib.save_dispositions({"o/r": {"disposition": "skip"}})
+        moatlib.save_optouts({"o": {"who": "o"}})
+        self.assert_lf(moatlib.DISPOSITIONS)
+        self.assert_lf(moatlib.OPTOUTS)
+
+
 if __name__ == "__main__":
     unittest.main()

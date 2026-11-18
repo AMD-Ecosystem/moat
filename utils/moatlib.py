@@ -604,7 +604,10 @@ def save_status(name, obj):
     # Written beside the target and renamed over it: a process killed mid-write
     # used to leave a truncated record, which then read as "no such project".
     tmp = p.with_name(p.name + ".tmp")
-    with open(tmp, "w") as f:
+    # LF whatever the host. Text mode on Windows writes CRLF, and a clone without
+    # core.autocrlf=true then commits it: one record on the trunk is stored that
+    # way, and every later edit of such a file is a whole-file diff.
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         json.dump(obj, f, indent=2, sort_keys=False)
         f.write("\n")
     os.replace(tmp, p)
@@ -5029,7 +5032,7 @@ def load_dispositions():
 
 def save_dispositions(d):
     DISPOSITIONS.parent.mkdir(parents=True, exist_ok=True)
-    with open(DISPOSITIONS, "w") as f:
+    with open(DISPOSITIONS, "w", encoding="utf-8", newline="\n") as f:
         json.dump(d, f, indent=2, sort_keys=True)
         f.write("\n")
 
@@ -5102,7 +5105,7 @@ def load_optouts():
 
 def save_optouts(d):
     OPTOUTS.parent.mkdir(parents=True, exist_ok=True)
-    with open(OPTOUTS, "w") as f:
+    with open(OPTOUTS, "w", encoding="utf-8", newline="\n") as f:
         json.dump(d, f, indent=2, sort_keys=True)
         f.write("\n")
 
@@ -5244,7 +5247,8 @@ def scaffold_project(full_name, upstream_url=None, default_branch="main",
         "platforms": {},
     }
     save_status(name, obj)
-    (pdir / "notes.md").write_text(f"# {name} notes\n")
+    (pdir / "notes.md").write_text(f"# {name} notes\n", encoding="utf-8",
+                                   newline="\n")
     return name
 
 
@@ -6232,7 +6236,7 @@ def record_tokens(name, tokens, source=None):
         rec["source"] = source
     p = PROJECTS / name / "stats.jsonl"
     p.parent.mkdir(parents=True, exist_ok=True)
-    with open(p, "a") as f:
+    with open(p, "a", encoding="utf-8", newline="\n") as f:
         f.write(json.dumps(rec) + "\n")
     return rec
 

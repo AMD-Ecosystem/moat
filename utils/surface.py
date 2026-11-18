@@ -303,7 +303,8 @@ def main():
             print()
         else:
             out = REPO / "projects" / a.project / "surface.json"
-            out.write_text(json.dumps(d, indent=2) + "\n")
+            out.write_text(json.dumps(d, indent=2) + "\n", encoding="utf-8",
+                           newline="\n")
             print(f"surface: wrote {out.relative_to(REPO)} -- "
                   f"{len(d['cuda']['files'])} CUDA files, {len(d['components'])} components")
         return 0
