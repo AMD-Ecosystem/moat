@@ -197,7 +197,8 @@ def recorded():
         ours = d.get("pr_state") or ("merged" if d.get("pr_merged_at") else None)
         out.append({"name": name, "repo": m.group(1), "num": m.group(2),
                     "url": pr, "ours": ours, "published": d.get("published_sha"),
-                    "head": d.get("head_sha")})
+                    "head": d.get("head_sha"),
+                    "landed_via": (d.get("landed_via") or {}).get("url")})
     return out
 
 
@@ -239,6 +240,11 @@ def poll(rows):
             r["skipped"] = UNTRUSTED[r["repo"]]
             continue
         implied = IMPLIES.get(r["real"])
+        # A person ruled this PR closed because its work merged through another
+        # one (moatlib.set_pr_landed_via): CLOSED here and "merged" in the record
+        # agree. Any other live state is still drift -- a reopened PR undoes it.
+        if r.get("landed_via") and r["real"] == "CLOSED" and r["ours"] == "merged":
+            implied = "merged"
         if implied and implied != r["ours"]:
             drift.append({**r, "closed": True} if implied == "closed" else r)
         # An open PR with changes requested is work waiting on us, not drift.

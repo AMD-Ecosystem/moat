@@ -2209,6 +2209,78 @@ def set_upstream_url(name, url, by, reason=None):
     return obj
 
 
+def set_pr_landed_via(name, url, by, note=None, content_differs=False):
+    """Record a person's ruling that the recorded upstream PR closed unmerged
+    because its work landed through another PR, `url`, in the same repository.
+
+    colmap is the origin case: the maintainer closed our #4635 and merged his own
+    #4795, which carried our commits plus his. GitHub reports ours CLOSED, so the
+    reconciler read a record saying "merged" as drift, and a record saying
+    "closed" would have said the port was declined. The truth is a third thing:
+    `pr_url` stays the PR we opened, `pr_state` is "merged" with the superseding
+    PR's merge time, and `landed_via` names where it landed.
+
+    Everything is read live and anything unverifiable is refused: our PR must be
+    closed and unmerged, the other must be merged in the same repository, and
+    every commit of ours must be among its commits. A maintainer who rewrote the
+    work instead of carrying the commits is recorded only with `content_differs`,
+    which a person asserts after reading both."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if not by:
+        raise ValueError(f"{name}: --by is required -- this records a person's ruling")
+    ours = _pr_ref(obj.get("pr_url"))
+    if not ours[0]:
+        raise ValueError(f"{name}: no upstream PR recorded, nothing to supersede")
+    theirs = _pr_ref(url)
+    if not theirs[0] or not url.startswith("https://github.com/"):
+        raise ValueError(f"{name}: expected https://github.com/<owner>/<repo>/pull/<n>, "
+                         f"got {url!r}")
+    if theirs[0].lower() != ours[0].lower():
+        raise ValueError(f"{name}: {url} is not in {ours[0]}, the repository of the "
+                         f"recorded PR")
+    if theirs[1] == ours[1]:
+        raise ValueError(f"{name}: {url} is the recorded PR itself")
+    fields = "state,mergedAt,mergeCommit,commits,url"
+    mine = _gh_json("pr", "view", ours[1], "--repo", ours[0], "--json", fields)
+    other = _gh_json("pr", "view", theirs[1], "--repo", theirs[0], "--json", fields)
+    if not mine or not other:
+        raise ValueError(f"{name}: cannot read both pull requests from GitHub -- "
+                         f"not verified, nothing written")
+    if mine.get("state") != "CLOSED" or mine.get("mergedAt"):
+        raise ValueError(f"{name}: recorded PR #{ours[1]} is {mine.get('state')}, not "
+                         f"closed unmerged -- nothing superseded it")
+    if other.get("state") != "MERGED" or not other.get("mergedAt"):
+        raise ValueError(f"{name}: #{theirs[1]} is {other.get('state')}, not merged")
+    have = {c.get("oid") for c in other.get("commits") or []}
+    missing = [c.get("oid") for c in mine.get("commits") or [] if c.get("oid") not in have]
+    if not mine.get("commits"):
+        missing = ["(the recorded PR lists no commits)"]
+    if missing and not content_differs:
+        raise ValueError(f"{name}: #{theirs[1]} does not carry {len(missing)} commit(s) "
+                         f"of #{ours[1]} ({', '.join(str(m)[:9] for m in missing[:5])}); "
+                         f"if the work landed rewritten, a person says so with "
+                         f"--content-differs")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    obj["landed_via"] = {"url": other.get("url") or url, "number": int(theirs[1]),
+                         "merged_at": other["mergedAt"],
+                         "carried": "content-differs" if missing else "commits",
+                         "by": by, "at": now_iso()}
+    mc = (other.get("mergeCommit") or {}).get("oid")
+    if mc:
+        obj["landed_via"]["merge_commit"] = mc
+    if note:
+        obj["landed_via"]["note"] = note
+    obj["pr_state"] = "merged"
+    obj["pr_merged_at"] = other["mergedAt"]
+    save_record(name, obj, f"{name}: PR #{ours[1]} landed via #{theirs[1]}, "
+                           f"ruled by {by}")
+    return obj
+
+
 def set_base_branch(name, branch, by, reason=None):
     """Record a person's ruling that the upstream PR targets `branch` rather than
     the default branch recorded at scaffold. GOMC is the origin case: upstream's
@@ -2846,14 +2918,14 @@ def archive_pr(name):
         raise ValueError(why)
     entry = {k: obj[k] for k in ("pr_url", "pr_number", "pr_state", "pr_opened_at",
                                  "pr_merged_at", "pr_closed_at", "pr_closed_note",
-                                 "published_sha", "review_pr")
+                                 "published_sha", "review_pr", "landed_via")
              if obj.get(k) is not None}
     if obj.get("fix_abandoned"):
         entry["fix_abandoned"] = obj["fix_abandoned"]
     entry["archived_at"] = now_iso()
     for k in ("pr_url", "pr_number", "pr_state", "pr_opened_at", "pr_merged_at",
               "pr_closed_at", "pr_closed_note", "published_sha", "review_pr",
-              "pr_approval", "fix", "fix_merged_at", "fix_abandoned"):
+              "pr_approval", "fix", "fix_merged_at", "fix_abandoned", "landed_via"):
         obj.pop(k, None)
     obj["pr_history"] = (obj.get("pr_history") or []) + [entry]
     obj["pr_round"] = (obj.get("pr_round") or 1) + 1
@@ -6132,6 +6204,18 @@ def main(argv=None):
     s.add_argument("--clear", action="store_true",
                    help="withdraw the ruling (upstream takes pull requests again)")
 
+    s = sub.add_parser("set-pr-landed-via",
+                       help="record a person's ruling that the recorded upstream PR "
+                            "closed unmerged because its work merged through "
+                            "another PR (URL) in the same repository; verified live")
+    s.add_argument("name")
+    s.add_argument("url")
+    s.add_argument("--by", help="who ruled it; required, never defaulted")
+    s.add_argument("--note")
+    s.add_argument("--content-differs", action="store_true",
+                   help="the merged PR does not carry our commits as they were; a "
+                        "person asserts the work landed rewritten")
+
     s = sub.add_parser("set-upstream-url",
                        help="record a person's ruling that the upstream repository "
                             "was renamed or transferred to URL; refused unless URL "
@@ -6662,6 +6746,16 @@ def main(argv=None):
                   f"({obj['no_upstream']['evidence']}). No upstream PR will be "
                   f"offered; the fork's {obj.get('fork_branch') or PORT_BRANCH} "
                   f"branch is the deliverable.")
+    elif args.cmd == "set-pr-landed-via":
+        if not args.by:
+            print("set-pr-landed-via: --by is required -- this records a person's "
+                  "ruling", file=sys.stderr)
+            return 2
+        obj = set_pr_landed_via(args.name, args.url, args.by, note=args.note,
+                                content_differs=args.content_differs)
+        lv = obj["landed_via"]
+        print(f"{args.name}: {obj['pr_url']} landed via {lv['url']} "
+              f"(merged {lv['merged_at']}, {lv['carried']})")
     elif args.cmd == "set-upstream-url":
         if not args.by:
             print("set-upstream-url: --by is required -- this records a person's "

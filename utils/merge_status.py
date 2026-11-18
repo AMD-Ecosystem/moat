@@ -92,7 +92,7 @@ STICKY = ("upstream_repo_id", "fork_url", "review_pr", "pr_approval",
           "pr_opened_at", "pr_merged_at", "pr_closed_at", "pr_closed_note",
           "adopted_at", "maintained", "no_upstream", "fix_abandoned",
           "base_branch_ruling", "fork_url_ruling", "fork_branch_ruling",
-          "upstream_url_ruling",
+          "upstream_url_ruling", "landed_via",
           "delivery", "release")
 UNION = ("platforms", "waivers")
 RESET = ("on_hold", "on_hold_reason")
@@ -102,7 +102,8 @@ RESET = ("on_hold", "on_hold_reason")
 PR_ROUND_FIELDS = ("pr_state", "pr_url", "pr_number", "pr_opened_at",
                    "pr_merged_at", "pr_closed_at", "pr_closed_note",
                    "published_sha", "review_pr", "pr_approval", "fix",
-                   "fix_merged_at", "fix_abandoned", "pr_history", "pr_round")
+                   "fix_merged_at", "fix_abandoned", "landed_via", "pr_history",
+                   "pr_round")
 
 
 def _round_of(x):
@@ -354,6 +355,13 @@ def merge(a, b, o=None):
             out["pr_state"] = sa if _pr_rank(sa) > _pr_rank(sb) else sb
         else:
             out["pr_state"] = newer.get("pr_state") or sa or sb
+
+    # A ruling that the PR landed through another one decides the state and the
+    # merge time: a host that polled GitHub before the ruling holds "closed", and
+    # must not write that back over it.
+    if out.get("landed_via"):
+        out["pr_state"] = "merged"
+        out["pr_merged_at"] = out["landed_via"]["merged_at"]
 
     if _round_of(a) != _round_of(b):
         # A follow-up round opened on one side. The higher round's PR block wins

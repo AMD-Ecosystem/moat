@@ -301,6 +301,51 @@
     "pr_closed_note": {
       "type": "string"
     },
+    "landed_via": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "url",
+        "number",
+        "merged_at",
+        "carried",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "number": {
+          "type": "integer"
+        },
+        "merged_at": {
+          "type": "string"
+        },
+        "merge_commit": {
+          "type": "string"
+        },
+        "carried": {
+          "enum": [
+            "commits",
+            "content-differs"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
     "published_sha": {
       "type": [
         "string",

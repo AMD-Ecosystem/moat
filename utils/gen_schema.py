@@ -170,6 +170,24 @@ def build():
             "pr_merged_at": {"type": "string"},
             "pr_closed_at": {"type": "string"},
             "pr_closed_note": {"type": "string"},
+            # A person's ruling that pr_url closed unmerged because its work
+            # merged through another PR in the same repository (colmap #4635 via
+            # the maintainer's #4795). pr_state reads "merged" and pr_merged_at is
+            # that PR's merge time.
+            "landed_via": {
+                "type": ["object", "null"],
+                "required": ["url", "number", "merged_at", "carried", "by", "at"],
+                "properties": {
+                    "url": {"type": "string", "minLength": 1},
+                    "number": {"type": "integer"},
+                    "merged_at": {"type": "string"},
+                    "merge_commit": {"type": "string"},
+                    "carried": {"enum": ["commits", "content-differs"]},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+            },
             # What the open upstream PR shows. While a fix round is staged,
             # head_sha runs ahead of this on the staging branch; only the trusted
             # merge path (upstream.py --merge-fix) advances it. Once the PR

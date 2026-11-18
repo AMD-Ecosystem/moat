@@ -67,6 +67,15 @@ old name is reused. A person records the move with
 URL is the canonical name of the recorded `upstream_repo_id`, so it follows a rename
 and cannot repoint a project at a different repository.
 
+A maintainer may close our PR and merge the same work through a PR of their own
+(colmap #4635 landed as the maintainer's #4795). GitHub then reports ours CLOSED, which
+is neither a decline nor a merge of that PR. A person records it with
+`moatlib.py set-pr-landed-via <name> <merged PR URL> --by <who>`: `pr_url` stays ours,
+`pr_state` reads `merged` with the other PR's merge time, `landed_via` names it, and the
+sweep stops reporting drift. It is verified live (ours closed unmerged, theirs merged in
+the same repository, every commit of ours among theirs); a rewrite of the work needs
+`--content-differs`, asserted by the person after reading both.
+
 ## The gate is the approval, and it covers exactly what was approved
 
 Approving the review PR on our own fork means approving the code, the title and the body.

@@ -174,6 +174,10 @@ def outcome_cell(p):
             num = tail if tail.isdigit() else "?"
         if p.get("maintained"):
             return f"🔵 [#{num}]({p['pr_url']}) fork is upstream's AMD path"
+        via = p.get("landed_via")
+        if via and state == "merged":
+            return (f"{glyph} [#{num}]({p['pr_url']}) via "
+                    f"[#{via['number']}]({via['url']})")
         return f"{glyph} [#{num}]({p['pr_url']})"
     disp = p.get("disposition")
     if disp == "license-blocked":
