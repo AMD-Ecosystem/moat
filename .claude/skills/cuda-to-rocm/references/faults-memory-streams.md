@@ -1,5 +1,19 @@
 # Faults: memory, lifetime and streams
 
+Where CUDA tolerates undefined behaviour in memory use, object lifetime and stream ordering, and HIP does not.
+
+<!-- toc:begin -->
+Contents:
+
+- Bounds and initial contents
+- Handle and object lifetime
+- Copies and stream ordering
+- Host callbacks and fork
+- Graph capture
+- Managed memory
+- Multi-GPU
+<!-- toc:end -->
+
 ## Bounds and initial contents
 
 **Out-of-bounds reads.** CUDA often tolerates a read one element past an allocation; AMD
@@ -153,7 +167,7 @@ from the short-lived buffer is wrong, often carrying values the computation coul
 at all. (CV-CUDA: InterpolationVarShapeWrap, and independently TestOpColorTwist's planar
 upload, whose per-iteration deinterleave result feeds one async copy per channel.)
 
-The same staging difference hides a **cross-stream race** with no free involved: an upload
+**The same staging difference hides a cross-stream race with no free involved.** An upload
 by `cudaMemcpy*Async` from pageable memory on one stream, then a consumer kernel on ANOTHER
 stream with no event or stream sync between them. On CUDA the copy has effectively landed
 before the launch; on ROCm the first kernel batch can read a partly written array.
@@ -195,8 +209,8 @@ misread as a rocBLAS problem for two months. A first fix that synchronized that 
 left the moves-left head corrupt on nets that have one. Upstream's own fix, lc0 #2454, is the
 reference shape: one `cudaDeviceSynchronize()` after the `tensor_mem_` malloc/memset loop.)
 
-The same race has an allocator-shaped variant that is easy to introduce while fixing the
-"fresh allocations are not zeroed" class above. A helper that zero-fills with
+**A zero-filling allocator helper races a non-blocking upload the same way.** The variant
+is easy to introduce while fixing the "fresh allocations are not zeroed" class. A helper that zero-fills with
 `hipMemset`/`cudaMemset` runs the fill on the null stream, so a caller that allocates and then
 uploads with `hipMemcpyAsync` on a NON-BLOCKING stream can have the fill land AFTER its upload
 and wipe it. Fingerprint: inputs that arrive all-zero at the kernel while their device
@@ -207,8 +221,9 @@ workaround). An operator that checks for degenerate input then reports its own s
 helper promises memory is zero by the time it returns, make that true: synchronize the null
 stream after the fill. (CV-CUDA: DefaultAllocator zero-fill against FindHomography varshape.)
 
-A plain `hipMemcpyDtoD`/`cuMemcpyDtoD` (or `hipMemcpy` with `hipMemcpyDeviceToDevice`) is
-the same race in a less suspicious costume: a device-to-device copy is asynchronous with
+**A plain device-to-device copy is the same race in a less suspicious costume.**
+`hipMemcpyDtoD`/`cuMemcpyDtoD` (or `hipMemcpy` with `hipMemcpyDeviceToDevice`) looks
+synchronous, but a device-to-device copy is asynchronous with
 respect to the host and runs on the legacy stream, so the "synchronous-looking" call returns
 before the copy lands and the next kernel on a non-blocking stream can read the destination
 first. Fingerprint: the destination reads exactly as it was before the copy (zeros, or the

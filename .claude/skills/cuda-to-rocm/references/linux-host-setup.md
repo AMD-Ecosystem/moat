@@ -1,5 +1,15 @@
 # Linux host setup for graphics and interop tests
 
+Getting a GL or Vulkan context on a headless Linux GPU host, for ports that need one to run their tests.
+
+<!-- toc:begin -->
+Contents:
+
+- Getting a real hardware GL context on a headless RDNA host
+- Headless Vulkan on a Linux GPU host: Xvfb plus Mesa's software WSI
+- HIP and Vulkan in one process can oops the kernel on an old amdgpu-dkms
+<!-- toc:end -->
+
 ### Getting a real hardware GL context on a headless RDNA host
 
 A headless Linux box with no display manager can still give a GUI/interop port a REAL,

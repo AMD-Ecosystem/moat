@@ -1,5 +1,15 @@
 # Platform limits and other build classes
 
+Device queries and counters that answer differently on AMD, kernels compiled at run time, and integrated APUs.
+
+<!-- toc:begin -->
+Contents:
+
+- Device queries and counters
+- Runtime-compiled kernels
+- Integrated APUs
+<!-- toc:end -->
+
 ## Device queries and counters
 
 **AMD compute-capability values COLLIDE with NVIDIA arch numbers**, so CC-keyed dispatch
@@ -84,7 +94,7 @@ and launch via `hipModuleLaunchKernel`. Two cgo-specific traps: `hiprand.h` does
 `import "C"`); and `hipCtxSynchronize`/`hipCtxGetApiVersion` return `hipErrorNotSupported` on ROCm 7.2.1, so
 synchronize via `hipStreamSynchronize`. (mumax3: Go + cgo + runtime code-object loading.)
 
-The same class with NVRTC instead of embedded PTX (CUDA C++ generated at run time) ports to hipRTC.
+**NVRTC (CUDA C++ generated at run time) ports to hipRTC.** It is the same build class with a run-time compiler instead of embedded PTX.
 Bind it by absolute path under `ROCM_PATH`/`HIP_PATH` before any bare name (on Windows the hipRTC DLL
 carries the version in its name, e.g. `hiprtc0702.dll`, with a digit layout that varies by release, so scan `bin` for `hiprtc0*.dll`). hipRTC declares `half`, `__hip_bfloat16` and
 the fp16/bf16 intrinsics itself, but `#include <hip/hip_fp16.h>` fails without `-I<rocm>/include`:

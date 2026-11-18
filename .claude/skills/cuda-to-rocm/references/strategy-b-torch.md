@@ -1,4 +1,16 @@
-## Strategy B: pytorch extension
+# Strategy B: pytorch extension
+
+<!-- toc:begin -->
+Contents:
+
+- Never commit the hipified mirror; add it to .gitignore instead
+- Headers and functions hipify leaves broken
+- A bundled header-only library (GLM): hipify sees only `include_dirs`
+- hipify generation: v1 renames, v2 masquerades
+- Clean the hipified mirror by the path rule, not with another port's clean step
+- Windows
+- Dependency environment for PyTorch projects (the install path is part of the port)
+<!-- toc:end -->
 
 Torch hipifies extension sources at build time. Do not add a compat header and do not hand-rename symbols.
 

@@ -1,5 +1,16 @@
 # Faults: floating point and integer arithmetic
 
+Results that differ from the CUDA build or a CPU reference although nothing crashed.
+
+<!-- toc:begin -->
+Contents:
+
+- Contraction and rounding
+- Host math under the HIP compiler
+- Conversions and multi-word integers
+- Half-precision GEMM accuracy
+<!-- toc:end -->
+
 ## Contraction and rounding
 
 **clang for HIP defaults to `-ffp-contract=fast`** and forms FMAs ACROSS statements. nvcc

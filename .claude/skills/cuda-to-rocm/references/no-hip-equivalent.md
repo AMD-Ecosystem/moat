@@ -1,5 +1,14 @@
 # When hipify has nothing to translate
 
+<!-- toc:begin -->
+Contents:
+
+- CUTLASS -> Composable Kernel
+- CuTe -> FlyDSL
+- TensorRT -> MIGraphX
+- What this means when deciding whether to port
+<!-- toc:end -->
+
 Some CUDA code has no HIP analogue to translate INTO. The build succeeds at finding nothing to do, which reads like a small port and is the opposite. This is the most common reason a project gets declared not portable, and it is worth separating two very different verdicts that get written the same way:
 
 - **No AMD-native target exists.** Genuinely not portable. NVIDIA-proprietary runtimes (TensorRT, OptiX), closed binary kernels shipped as wheels, or a codegen backend emitting PTX with no AMDGPU counterpart.

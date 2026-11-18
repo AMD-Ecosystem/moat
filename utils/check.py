@@ -720,10 +720,13 @@ MOAT_VOCABULARY = re.compile(
 
 
 def gate_skills():
-    """The cuda-to-rocm skill names no MOAT tool, record, or state."""
+    """The cuda-to-rocm skill names no MOAT tool, record, or state, and its generated
+    entry index and contents blocks match the reference files."""
     if port_only_push():
         return []
-    problems = []
+    import gen_skill_index
+    problems = [f"{rel}: generated index or contents is stale (run utils/gen_skill_index.py)"
+                for rel in gen_skill_index.stale(REPO)]
     paths = [STANDALONE_SKILL / "SKILL.md"]
     for sub in ("references", "assets"):
         paths += sorted(p for p in (STANDALONE_SKILL / sub).rglob("*") if p.is_file())

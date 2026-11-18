@@ -1,5 +1,17 @@
 # Diagnosing a suspected AMD fault
 
+How to tell a port fault from an environment fault, a test artifact or a ROCm defect before escalating.
+
+<!-- toc:begin -->
+Contents:
+
+- Start here
+- Method
+- Hangs and crashes
+- Memory measurements
+- Multi-GPU hosts
+<!-- toc:end -->
+
 ## Start here
 
 ### One architecture gets wrong numbers while the others pass

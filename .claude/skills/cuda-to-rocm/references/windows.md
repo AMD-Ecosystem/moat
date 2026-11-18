@@ -1,5 +1,19 @@
 # Windows
 
+Everything specific to building and running a HIP port on Windows.
+
+<!-- toc:begin -->
+Contents:
+
+- Toolchain install
+- CMake and compiler drivers
+- Linking
+- DLL loading
+- Source portability
+- Runtime behaviour
+- Debugging
+<!-- toc:end -->
+
 ## Toolchain install
 
 ### Use TheRock ROCm, not the Windows HIP SDK

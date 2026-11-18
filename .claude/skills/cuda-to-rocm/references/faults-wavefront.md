@@ -1,5 +1,17 @@
 # Faults: wavefront and warp width
 
+NVIDIA warps are always 32 lanes; AMD wavefronts are 64 on CDNA and 32 on RDNA. Everything here follows from code that assumed 32.
+
+<!-- toc:begin -->
+Contents:
+
+- Choosing the width
+- Lane masks and ballots
+- Shuffles and logical warps
+- Barriers and block collectives
+- Other per-wavefront assumptions
+<!-- toc:end -->
+
 ## Choosing the width
 
 **Never hardcode 32.** NVIDIA warps are always 32 lanes. AMD wavefronts are 64 on CDNA
@@ -192,8 +204,8 @@ softmax/norm block reductions, `block_reduce_min4`.)
 
 ## Shuffles and logical warps
 
-Width-32 LOGICAL warp ops (`__shfl*(...,32)`, `cub::WarpReduce<,32>`,
-`cg::tiled_partition<32>`) are arch-agnostic and fine -- they work within a 32-lane
+**Width-32 LOGICAL warp ops are arch-agnostic and fine.** `__shfl*(...,32)`,
+`cub::WarpReduce<,32>` and `cg::tiled_partition<32>` work within a 32-lane
 subgroup whatever the physical width. That includes the tile's `ballot()`: HIP's
 `thread_block_tile<N>::ballot` returns `unsigned long long`, but compacts the tile's lanes
 to bits `0..N-1` (`internal::helper::adjust_mask`), so storing it in a 32-bit integer and

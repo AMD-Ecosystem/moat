@@ -1,5 +1,16 @@
 # Faults: textures and graphics interop
 
+Texture objects, the GPUs that have none, and sharing memory with OpenGL and Vulkan.
+
+<!-- toc:begin -->
+Contents:
+
+- Texture objects
+- GPUs without texture support (gfx94x and later)
+- OpenGL interop
+- Vulkan interop
+<!-- toc:end -->
+
 ## Texture objects
 
 **Texture pitch alignment is 256 bytes on AMD against 32 on NVIDIA**, and it bites in two
@@ -96,7 +107,7 @@ and index it directly; the arithmetic, and so every result, is unchanged on ever
 Check the index range first -- here the caller's window bound kept the low index >= 0, so
 only the high side could touch the border. (gpuRIR `image_sample_lut`, gfx942.)
 
-A project that reads EVERYTHING through texture objects, with address modes, needs more than a pointer swap, but the emulation is still exact when no binding relies on hardware filtering (LEAP: its HIP port already created every texture point-mode and blended corners in software, so every fetch was a point fetch). Keep the handle type and every kernel signature: on an image-less GPU have the texture loader cudaMalloc one buffer holding a small header (extents, address mode) followed by the dense data, and return that buffer as the `hipTextureObject_t` (and as the `hipArray*` the call sites free). The device accessor applies the address mode in float before converting to an index (clamp: `fminf/fmaxf` to `[0, n-1]`; border: any axis outside `[0, n)` returns 0), reads `floor(c)` for a point fetch, and maps a non-finite coordinate to a finite one. Casting the header and data pointers to `__attribute__((address_space(4)))` (read-only constant) lets the compiler hoist the header into one `s_load_dwordx4` per kernel instead of reloading it around stores.
+**A project that reads EVERYTHING through texture objects, with address modes, needs more than a pointer swap.** The emulation is still exact when no binding relies on hardware filtering (LEAP: its HIP port already created every texture point-mode and blended corners in software, so every fetch was a point fetch). Keep the handle type and every kernel signature: on an image-less GPU have the texture loader cudaMalloc one buffer holding a small header (extents, address mode) followed by the dense data, and return that buffer as the `hipTextureObject_t` (and as the `hipArray*` the call sites free). The device accessor applies the address mode in float before converting to an index (clamp: `fminf/fmaxf` to `[0, n-1]`; border: any axis outside `[0, n)` returns 0), reads `floor(c)` for a point fetch, and maps a non-finite coordinate to a finite one. Casting the header and data pointers to `__attribute__((address_space(4)))` (read-only constant) lets the compiler hoist the header into one `s_load_dwordx4` per kernel instead of reloading it around stores.
 
 Measured on gfx90a (MI250X) against the point-mode texture build, LEAP: the emulation is exact (every forward, back and FBP output and every point-sampled kernel bit-identical, including point fetches at fractional coordinates, so the AMD sampler does not quantize where `floor` does not; the only differences were FMA-contraction ULPs, rel ~1e-7, from inlining different code), but 2-3x SLOWER where it feeds software trilinear blends (projection 3.0-3.3x, backprojection 1.8-2.5x): eight bounds-checked row-major loads replace eight `image_sample`s against a tiled image. A lone point read costs about what a hardware point fetch does. So unlike the LUT case above, do not apply it unconditionally. Use a dual path:
 - Device: select the buffer accessor under `#if __HIP_NO_IMAGE_SUPPORT`, which ROCm's `amd_device_functions.h` defines per target in the device pass (gfx942/gfx950, via `__gfx94plus_clr__`); every other target keeps the texture helpers byte-for-byte. A fat binary then carries the right code for each arch.

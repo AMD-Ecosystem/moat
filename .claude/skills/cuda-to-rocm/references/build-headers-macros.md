@@ -1,5 +1,18 @@
 # Build: headers, macros and source compatibility
 
+Compile errors, and code that compiles but is silently skipped, in the port's own sources and compat header.
+
+<!-- toc:begin -->
+Contents:
+
+- The compat header
+- Macros CUDA defines and HIP does not
+- Syntax and spellings clang rejects
+- helper_math.h and vector types
+- Keeping the CUDA path intact
+- Language standard
+<!-- toc:end -->
+
 ## The compat header
 
 **A shared compat header must be host-includable.** Host `.cpp` TUs reach the shim through

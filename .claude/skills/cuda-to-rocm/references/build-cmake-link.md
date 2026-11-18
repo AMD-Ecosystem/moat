@@ -1,5 +1,18 @@
 # Build: CMake, device linking and dependencies
 
+CMake's HIP language, device linking, OpenMP, runtime library paths and dependencies. Windows-specific build problems are in windows.md.
+
+<!-- toc:begin -->
+Contents:
+
+- Which files compile as HIP
+- Relocatable device code (-fgpu-rdc)
+- OpenMP and runtime library paths
+- Dependencies
+- Installed packages and optional targets
+- Other build systems
+<!-- toc:end -->
+
 ## Which files compile as HIP
 
 **A force-included compat header creates no build dependency edge.** After editing a header

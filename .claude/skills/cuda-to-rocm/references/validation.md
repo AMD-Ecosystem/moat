@@ -1,5 +1,18 @@
 # Validation
 
+What counts as validated, what a passing run does not prove, and how to check that the CUDA path still builds.
+
+<!-- toc:begin -->
+Contents:
+
+- Validation policy
+- Platforms
+- The CUDA no-regression compile
+- Other compile-only checks
+- What a pass does not prove
+- A project with no tests
+<!-- toc:end -->
+
 ## Validation policy
 
 - A port is validated only when the project's real test suite builds and passes on a real AMD GPU for the target arch, with no regression in non-GPU tests.

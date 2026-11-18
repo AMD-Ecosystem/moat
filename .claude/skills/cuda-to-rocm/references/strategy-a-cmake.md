@@ -1,4 +1,13 @@
-## Strategy A: pure CMake (preferred, minimal footprint)
+# Strategy A: pure CMake (preferred, minimal footprint)
+
+<!-- toc:begin -->
+Contents:
+
+- Large libraries: `--offload-compress` to fit the host image under the 2 GiB x86-64 relocation reach
+- The shim-header method: a port with zero source edits
+- Vendored CUDA-samples helpers: keep them off the AMD build entirely
+- Build hygiene
+<!-- toc:end -->
 
 Goal: only `.cu`/`.hip` translation units see the HIP toolchain; host C++ is untouched; the diff stays small.
 
@@ -68,7 +77,7 @@ Goal: only `.cu`/`.hip` translation units see the HIP toolchain; host C++ is unt
 
 This is how colmap was ported (PR 4420 plus follow-ups): one compat header, `.cu` marked `LANGUAGE HIP`, a few guarded fixes. PyTorch validated that this isolates HIP: on an MI250 build only the HIP translation units receive `-x hip`; host files are untouched.
 
-### Large libraries: `--offload-compress` to fit the host image under the 2 GiB x86-64 relocation reach
+## Large libraries: `--offload-compress` to fit the host image under the 2 GiB x86-64 relocation reach
 
 A heavily-templated library (cudf: rocThrust/rocPRIM `DeviceReduce`/`DeviceScan`/`DeviceRadixSort` instantiated over a full type x op matrix) embeds an enormous device code object PER translation unit. The HIP offload bundle is stored UNCOMPRESSED by default, so a single reduce `.o` can reach ~200 MB (~159 MB of which is the `.hip_fatbin`). Linking many such TUs into one shared object can push the HOST image past the +/-2 GiB reach of x86-64 32-bit PC-relative relocations -- the link fails with `R_X86_64_PC32` overflow first, then (if you reach for `-mcmodel=large`, which only fixes data refs) `R_X86_64_TLSGD`/`TLSLD`/`__tls_get_addr` and `.eh_frame` "PC offset too large", neither of which the large code model covers. nvcc fatbins are compact, so the CUDA build never hits this; it is a ROCm-specific build-scale wall, not a HIP-correctness one.
 

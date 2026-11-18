@@ -1,5 +1,21 @@
 # Libraries: substitutions and gaps
 
+Which ROCm library replaces which CUDA library, and where the replacement is not one-to-one.
+
+<!-- toc:begin -->
+Contents:
+
+- Substitution table
+- BLAS, hipBLASLt and Composable Kernel
+- MIOpen
+- hipSPARSE
+- rocThrust, hipCUB and rocPRIM
+- Random numbers, profiling and monitoring
+- RAPIDS (ROCm-DS)
+- RCCL
+- Image and video codecs
+<!-- toc:end -->
+
 ## Substitution table
 
 **Library swaps.** "Drop-in" below means the hip* library keeps the CUDA library's call
