@@ -386,7 +386,7 @@ in the same build, from the same torch version bump (LichtFeld-Studio, torch `2.
   at all. Confirm by swapping compilers (a different, unrelated compiler hitting the exact
   same error rules out a compiler-version quirk) and by checking whether `torch/include/
   fmt/format.h` exists and reports a newer `FMT_VERSION` than the system's `fmt/core.h`.
-  Fix without touching the fork: build `spdlog` from source with `-DSPDLOG_FMT_EXTERNAL=OFF`
+  Fix without touching the port: build `spdlog` from source with `-DSPDLOG_FMT_EXTERNAL=OFF`
   (bundles spdlog's own matched fmt copy) and point `spdlog_DIR` at that install -- the same
   "vendor a known-good copy locally" pattern already used for pinned `glm`/header-only deps.
   Pick the spdlog version by the fmt it bundles, not by whatever is newest in the distro:

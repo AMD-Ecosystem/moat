@@ -26,10 +26,10 @@ staged into can carry an ACL that even the file owner cannot read (`Access is
 denied` from a non-elevated PowerShell `Get-ChildItem`, even though `icacls` shows
 the parent directory itself is readable). `_devel.tar`, the archive `rocm-sdk init`
 would expand, is often already consumed (its `RECORD` entry exists but the file
-is gone) and there is no full re-download budget in a validation session. Confirm
+is gone), and a full re-download is slow. Confirm
 before assuming corruption: `tar -tf` the still-present tar (if any) and grep for
 the missing library by name -- an absent hit means the wheel build never packaged
-it, a present hit narrows it to this host's extraction. Either way it is a
+it, a present hit narrows it to this machine's extraction. Either way it is a
 toolchain gap, not a code fault: it fires identically for any project whose HIP
 path needs hipCUB or rocThrust, regardless of what the port touched.
 
@@ -51,9 +51,9 @@ normally expands (`hipcub_version.hpp`, `rocprim_version.hpp`,
 any plausible version number; nothing in this class of build reads the value) and
 point `-I` at `projects/hipcub/hipcub/include`, `projects/rocprim/rocprim/include`,
 and `projects/rocthrust` (its `thrust/` subdirectory is the include root). This is
-validator-side scaffolding to prove the port compiles and runs correctly on real
-hardware -- it is not part of the fork commit, and it does not change what the
-project's own documented build needs once a host's ROCm installation is intact.
+local scaffolding to prove the port compiles and runs correctly on real hardware -- it
+is not part of the port, and it does not change what the project's own documented build
+needs once the ROCm installation is intact.
 
 **Prefer repairing the SDK to carrying the scaffolding.** Reinstalling the four
 packages together (`rocm`, `rocm-sdk-core`, `rocm-sdk-devel`,
@@ -62,10 +62,9 @@ per-arch nightly index) restored a populated `include/` -- 30 entries, `hipcub/`
 `rocprim/` and `thrust/` among them -- and LC-framework then rebuilt and passed
 every gate on gfx1151 with no `-I` scaffolding at all. Two things follow. The
 half-expanded tree is a local extraction failure, not a wheel that omits the
-libraries, so `tar -tf` finding nothing does not settle it. And a
-`validation-failed` recorded against this class says nothing about the port:
-re-run it after the host is repaired before treating it as evidence about the
-code. Cross-check the layout after any repair, since it moves between SDK
+libraries, so `tar -tf` finding nothing does not settle it. And a failed run
+recorded against this class says nothing about the port: re-run it after the SDK is
+repaired before treating it as evidence about the code. Cross-check the layout after any repair, since it moves between SDK
 versions -- `hipcc`, the device bitcode and `libexec/hipify` sat under
 `_rocm_sdk_core` on 7.13 and under `_rocm_sdk_devel` on 7.14.
 
@@ -343,14 +342,18 @@ to the response file, eating every backslash so `D:\path\torch.lib` arrives as
 still hits it if it links HIP through CMake on Windows. Do not conclude you are safe because
 you are not using RDC -- that mistake was made once already and cost a round.
 
-Fix: interpose a wrapper on the link step, set as `CMAKE_HIP_LINK_EXECUTABLE`. The canonical
-copy is `assets/hip_link_win.py` in this skill. It strips `-fuse-ld=*`, converts `-Xlinker`
-pairs and bare MSVC `/flags` to `-Wl,` form, and rewrites `-lXXX.lib` to `-Xlinker XXX.lib`
-so lld-link resolves them via `LIB`. It is ~60 lines and carries no project-specific state.
+Fix: interpose a wrapper on the link step, set as `CMAKE_HIP_LINK_EXECUTABLE`.
+`assets/hip_link_win.py` is one. It strips `-fuse-ld=*`, converts `-Xlinker` pairs and bare
+MSVC `/flags` to `-Wl,` form, and rewrites `-lXXX.lib` and bare `XXX.lib` to
+`-Xlinker XXX.lib` so lld-link resolves them via `LIB`. It is under 100 lines of standard
+library Python and carries no project-specific state. **Copy it into the project**
+(conventionally `cmake/hip_link_win.py`): the project's CMake calls it, so a pull request
+cannot depend on a file outside the project.
 
-**Vendor a copy into the project** (conventionally `cmake/hip_link_win.py`) rather than
-referencing this skill: the project's CMake calls it, and the work is meant to be
-upstreamed, so a pull request cannot depend on a file that only exists here.
+Unresolved: the wrapper rewrites the argument list only. It does not read the response file
+and does nothing about the backslash loss described above, so either the projects that use
+it avoid that symptom another way or the symptom is no longer current. Verify on the next
+Windows CMake HIP build before relying on either statement.
 
 Guard the override to Windows. Related and separate: the clang-cl `/Fo` bundler bug, where the
 CMake HIP compile rule must emit `-o <OBJECT>` instead of `/Fo<OBJECT>` because the driver
@@ -438,7 +441,6 @@ every consumer keeps the DLL. ROCm LibTorch has no such option on `torch_hip`, s
 consumer has to add it to its own test target:
 `target_link_options(<tgt> PRIVATE "/INCLUDE:?warp_size@cuda@at@@YAHXZ")` under `WIN32`.
 With it, every torch-gated LichtFeld-Studio test that had failed now runs: 2044/2048 pass on gfx1151 and 2042/2048 on gfx1200.
-The missing interface option is tracked as `pytorch-windows-torch-hip-include-symbol`.
 
 The tell is the split: Python `import torch` reports devices correctly, because importing
 the package loads every DLL, while the standalone C++ executable says there is no GPU, and
@@ -524,7 +526,7 @@ Found porting CuPy's Windows build. Each one looks like a broken port and is not
 - **The hiprtc DLL's name carries the HIP version, and the digit layout has changed between releases** (`hiprtc0702.dll`, `hiprtc0714.dll` and `hiprtc07013.dll` have all shipped), so it is not a soname-like name and must not be hard-coded: see "A null top frame above a vendored DLL" above.
 - **A symbol looked up in your own extension by name must be `__declspec(dllexport)`.** `ctypes.CDLL(__file__)` / `GetProcAddress` sees only exported symbols on Windows; on Linux every non-static function is visible, so this is Windows-only and fails at first use, not at link.
 - **`os.add_dll_directory(<rocm>/bin)` is enough** for a Python extension that links the ROCm DLLs, even on a host whose System32 `amdhip64_7.dll` is broken: the extension-load search order puts the added directory before System32, and hiprtc's later by-name loads of `amd_comgr.dll` resolved from the same directory (checked with `GetModuleFileNameW`). No preloading by full path was needed. Keep the returned handle alive.
-- **A missing ROCm root does not fail the import; the extension binds the display driver's System32 `amdhip64_7.dll` without any error.** If the extension skips `add_dll_directory` because it cannot find the root, the import still succeeds against the driver's HIP runtime (7.12 on the gfx1151 host). The failure comes later and points elsewhere (cupy: `failed to load hiprtc0712.dll`, a hiprtc name derived from the wrong runtime version). TheRock's `hipconfig.exe` / `rocm-sdk.exe` are console scripts in the venv's `Scripts` directory, which is on PATH only when the venv is activated, so an unactivated `venv\Scripts\python.exe` (from an IDE, a service, or a build with `--no-build-isolation`) finds neither. Look up `shutil.which('hipconfig', path=sysconfig.get_path('scripts'))` when PATH has no hipconfig, and warn by name when no root is found. Verify which DLL loaded with `GetModuleFileNameW`. (Source: cupy.)
+- **A missing ROCm root does not fail the import; the extension binds the display driver's System32 `amdhip64_7.dll` without any error.** If the extension skips `add_dll_directory` because it cannot find the root, the import still succeeds against the driver's HIP runtime (7.12 on the machine where this was seen). The failure comes later and points elsewhere (cupy: `failed to load hiprtc0712.dll`, a hiprtc name derived from the wrong runtime version). TheRock's `hipconfig.exe` / `rocm-sdk.exe` are console scripts in the venv's `Scripts` directory, which is on PATH only when the venv is activated, so an unactivated `venv\Scripts\python.exe` (from an IDE, a service, or a build with `--no-build-isolation`) finds neither. Look up `shutil.which('hipconfig', path=sysconfig.get_path('scripts'))` when PATH has no hipconfig, and warn by name when no root is found. Verify which DLL loaded with `GetModuleFileNameW`. (cupy)
 
 ## Source portability
 
@@ -631,7 +633,7 @@ treat it as a runtime defect, not a port bug. (LichtFeld-Studio)
 **The function names in a Windows crash trace from a binary linked without `/DEBUG` are
 the nearest EXPORTED symbol, not the function that was running.** The tell is the
 offset: `save_object_data() + 0x214FE7 byte(s)` is two megabytes past that symbol, so it
-is not that function. plvs lost three porter sessions on two hosts to such a trace: a
+is not that function. plvs lost three debugging sessions on two machines to such a trace: a
 `0xC00000FD` stack overflow whose frames all read
 `boost::archive::...oserializer<...KeyFrame>::save_object_data` was diagnosed as
 "clang-cl miscompiles boost.serialization into infinite recursion", tried against

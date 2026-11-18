@@ -284,8 +284,7 @@ consequences for scheduling on a multi-GPU host:
 
 A single-GPU host cannot exercise the collectives path at all; record that as the
 arch's limitation rather than letting a collectives-off run stand in for it
-silently. Read the device list before concluding that, though: a host remembered
-as single-GPU may not be one. What the run has to show is the library announcing
+silently. Read the device list before concluding that, though. What the run has to show is the library announcing
 itself and the communicators constructing, plus a training job spanning every
 device converging and its model decoding correctly -- a job that starts and does
 not crash proves only that the collectives were never called. (marian-dev, on
@@ -323,7 +322,7 @@ defined quantization tables, a well-formed scan header and an end-of-image marke
 precaution against corrupt streams, and treats any failure as a decode error. Such a
 stream may appear only in a test of that host-side check, which is then the one barrier
 in front of the hardware: a regression in the check costs a ring reset, so run that test
-on a GPU no other job is using. (LichtFeld-Studio; deferral `rocjpeg-no-scan-jpeg-hangs-vcn`)
+on a GPU no other job is using. (LichtFeld-Studio)
 
 **NVDEC through FFmpeg becomes FFmpeg demux plus rocDecode.** FFmpeg has no rocDecode
 hwaccel, and the CUDA device context behind `*_cuvid` fails on AMD, so the code silently
@@ -356,8 +355,7 @@ The maxima (4096, 8192, 4352) are multiples of 16, so the display size gives the
 there. Also do not trust the parser's `video_signal_description` for VP9 and AV1:
 it reports limited range and matrix 0 for full-range streams; take those from FFmpeg's
 stream parameters (H.264/HEVC VUI values are right). Validate a port's decode against the
-software decoder frame by frame, not by eye. (LichtFeld-Studio; deferrals
-`rocdecode-h264-high444-420-silent-miscode`, `rocdecode-vp9-av1-signal-description-missing`)
+software decoder frame by frame, not by eye. (LichtFeld-Studio)
 
 **A rocDecode success status does not mean right pixels: check a reference clip once per
 process before trusting a codec.** On gfx90a (MI250X, amdgpu-dkms 6.16.6), rocDecode 1.10
@@ -379,8 +377,7 @@ codec. Even the intra frame was wrong, and 10-bit failed with 8-bit, but check e
 and depth: one codec's result is not evidence for another. Test it without a broken driver
 by injecting a wrong digest, and add a test that the verdict agrees with a full decode of
 the fixtures, so the same suite proves the check on a good driver and a bad one. Do not
-switch the VA driver from inside the application. (LichtFeld-Studio; deferral
-`rocdecode-sdk-va-driver-gfx90a-wrong-frames`)
+switch the VA driver from inside the application. (LichtFeld-Studio)
 
 When frames are wrong on one architecture, split the cause with three checks before blaming
 the port, each on valid streams only. `strace -f -e trace=openat` shows which render node and

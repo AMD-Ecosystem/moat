@@ -690,12 +690,32 @@ def gate_conflict_markers():
 # from it must stand alone. MOAT-only practice lives in the moat-porting skill. The
 # skill card and evals are catalog metadata, not guidance, and are not scanned.
 STANDALONE_SKILL = REPO / ".claude" / "skills" / "cuda-to-rocm"
+# One group of alternatives per class of leak. Each is narrow on purpose: "validation",
+# "validated", a documentation URL with /projects/ in it and the rocm-libraries
+# monorepo's own projects/<library> paths are ordinary technical text and must pass
+# (tests/test_skill_vocabulary.py holds both kinds of line).
 MOAT_VOCABULARY = re.compile(
+    # the repository, its tools and its records
     r"\bMOAT\b|moatlib|(?<![\w/.])utils/|\bnotes\.md\b|\bplan\.md\b|\bstatus\.json\b"
-    r"|\bsurface\.json\b|\bdeferred\.(?:py|json)\b|projects/<|\bfleet\b"
-    r"|\b(?:head|validated|published)_sha\b|\brevalidat|cuda-not-validated|codeobj_diff"
-    r"|advance[_-]head|config/(?:arches|jargon)\.toml|\bcant-port\b|\bdepends_on\b"
-    r"|(?<![\w/])_deps/|(?<![\w/])findings/|/var/lib/jenkins",
+    r"|\bsurface\.json\b|\bdeferred\.(?:py|json)\b|\bfleet\b"
+    r"|\b(?:head|validated|published)_sha\b|cuda-not-validated|codeobj_diff"
+    r"|advance[_-]head|config/(?:arches|jargon)\.toml|\bdepends_on\b"
+    r"|(?<![\w/])_deps/|(?<![\w/])findings/|/var/lib/jenkins|\bupstream-issues\b"
+    # a project folder: projects/<name>, or a real one such as projects/TornadoVM
+    r"|(?<![\w/.-])projects/(?!(?:hipcub|rocprim|rocthrust)\b)[\w<]"
+    # the fork organization, except the one upstream project that lives there
+    r"|\bAMD-Ecosystem/(?!hipMM\b)"
+    # branch and state names, dispositions
+    r"|\bmoat-(?:port|fix|sync)\b|\bport/<|\brevalidat|\bcarry-forward\b"
+    r"|\b(?:validation-failed|port-ready|review-passed|changes-requested|delta-ported)\b"
+    r"|\b(?:cant-port|not-portable|already-supported)\b"
+    # deferral ids and rulings
+    r"|\bdeferrals?\b"
+    # role names and the workflow around them
+    r"|\bporters?\b|\bvalidators?\b|\breviewer role\b|\bintake\b"
+    r"|\bintegrity gate\b|\bretry budget\b|\bstop[- ]discipline\b|\bfork commit\b"
+    # one host described as a fixture
+    r"|\bthe gfx\d\w* host\b",
     re.IGNORECASE)
 
 

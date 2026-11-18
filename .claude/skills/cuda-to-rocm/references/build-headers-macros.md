@@ -59,7 +59,7 @@ represented. A type-machinery layer must report `char` as the base type of the c
 `is_same_v<signed char, BaseType<MakeType<signed char,N>>>` then fails on HIP. This is
 dictated by the upstream HIP header, not the porting layer: forcing it would break the
 reference accessor or introduce a non-canonical vector family into shared code. Numeric
-behaviour is identical -- document it as an upstream type-identity deferral, not a bug.
+behaviour is identical -- document it as an upstream type-identity difference, not a bug.
 (CV-CUDA: TypeTraitsMakeTypeVectorTest/3.)
 
 - **A libtorch `c10/cuda/*.h` header a project's compat layer already aliases for can grow
@@ -74,9 +74,9 @@ behaviour is identical -- document it as an upstream type-identity deferral, not
   version bump. This is a real, small, escalatable gap (confirm every missing symbol has a
   `hip*` equivalent in the installed HIP runtime headers before reporting it, so the fix is
   known to be "add N aliases", not an open-ended investigation), and it is not something to
-  route around with an older pinned torch -- an older torch only hides the gap for one host's
-  one session; the same coverage will fall behind again on the next torch refresh. Send it
-  back to the porter with the exact symbol list and confirmed HIP counterparts.
+  route around with an older pinned torch -- an older torch only hides the gap on one
+  machine; the same coverage will fall behind again on the next torch refresh. Fix it in the
+  port's compat header, from the exact symbol list and confirmed HIP counterparts.
   **Treat the compiler's error list as a lower bound and alias the whole helper, not just the
   names it printed.** Two independent mechanisms hide a missing alias, and only one of them is
   the familiar template one. (a) Clang drops the undeclared-callee diagnostic when one of the
@@ -212,8 +212,7 @@ it is set after the pool's first allocation; set before it (as most code does, i
 is lost and freed blocks are unmapped at the next synchronize whatever its value. Even when
 set late it keeps memory only in 128 MiB chunks, so a threshold below one chunk (such as
 64 MiB) keeps nothing, and a free can trim below the threshold. Correctness is unaffected;
-measure before working around it (deferral `hip-vmheap-unmap-threshold-lost-or-overtrimmed`,
-formerly `hip-mempool-release-threshold-ignored`). (LichtFeld-Studio)
+measure before working around it. (LichtFeld-Studio)
 
 **Project code that splits on `__CUDACC__` means "compiled by the device compiler", and HIP
 does not define it.** Upstreams increasingly hide host-only C++23 (`std::expected` error

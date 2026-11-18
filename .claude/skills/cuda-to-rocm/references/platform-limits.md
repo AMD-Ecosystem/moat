@@ -149,7 +149,7 @@ default, so the binaries land in a `cache/` directory relative to the process
 working directory. Before concluding that a cache-clearing test cleared
 anything, find the `.bin` files.
 
-Source: `diff-surfel-tracing` (OptiX to HIP RT), gfx942.
+(diff-surfel-tracing: OptiX to HIP RT, gfx942.)
 
 ## Integrated APUs
 
@@ -158,7 +158,7 @@ Source: `diff-surfel-tracing` (OptiX to HIP RT), gfx942.
 On an integrated APU `hipMemGetInfo` reports the shared system pool (tens of GB), so a
 library that eagerly reserves a fraction of *reported* device memory can ask for most of
 the machine. Suspect that shape when an APU run stalls at first allocation, and also when
-it is uniformly slow: measured on a Radeon 8060S (gfx1151, 72 GB unified) with a library
+it is uniformly slow: measured on a gfx1151 APU with 72 GB of unified memory, with a library
 whose default pool asked for 90% of free device memory (about 65 GB), the reservation
 succeeded and the suite then ran roughly 2x slower on the light tests and 3-4x on the heavy
 ones than the same code with no pooling. That comparison is pooling at a 90% default
@@ -181,9 +181,9 @@ device-link step; the same variant alone at `MAX_JOBS=2` built immediately, and 
 between CPU and GPU, so concurrent device links compete with everything else on the box.
 
 Halve the job count before investigating anything else, and do not read a signal-killed
-`amdgcn-link` as evidence about the port. Related but distinct from the reboot class: the
-same host has hard-reset under heavy parallelism plus sustained GPU load, so a build that
-takes the machine down is the same lesson one notch further along.
+`amdgcn-link` as evidence about the port. An APU can also hard-reset under heavy build
+parallelism plus sustained GPU load; a build that takes the machine down is the same lesson
+one notch further along.
 
 ### A low-CU integrated GPU can outrun a fixed upstream test timeout without any fault
 

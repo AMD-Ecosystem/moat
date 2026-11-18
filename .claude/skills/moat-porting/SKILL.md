@@ -104,6 +104,25 @@ reads only `notes.md`. An archive merges by union like `notes.md` (`.gitattribut
   reproducer sits in the local `findings/` area; the owning project's `deferred.json`
   records whether it was filed. A failure caused by such a defect is never grounds to
   suggest a gate waiver: LichtFeld-Studio got a wrongly-suggested windows waiver that way.
+- `cuda-to-rocm` describes third-party defects without naming our ids for them. The ids:
+  `hip-event-query-destroyed-stream-uaf` (event query after its stream is destroyed),
+  `hip-vmheap-unmap-threshold-lost-or-overtrimmed` (formerly
+  `hip-mempool-release-threshold-ignored`; the HIP mempool release threshold),
+  `rocjpeg-no-scan-jpeg-hangs-vcn`, `rocdecode-h264-high444-420-silent-miscode`,
+  `rocdecode-vp9-av1-signal-description-missing`,
+  `rocdecode-sdk-va-driver-gfx90a-wrong-frames`, and
+  `pytorch-windows-torch-hip-include-symbol` (ROCm LibTorch lacks the `/INCLUDE` interface
+  option on `torch_hip`).
+- A Windows host with an RDNA card satisfies the `wave32` and `windows` gates in one run.
+- A failure that `cuda-to-rocm` classes as environment (a half-expanded TheRock SDK, a DLL
+  the loader took from System32, a poisoned card) is not evidence about the port. A
+  `validation-failed` recorded against one says nothing about the code: repair the host,
+  re-run, and only then record. Header scaffolding built to get past such a failure (the
+  sparse `rocm-libraries` checkout in `cuda-to-rocm`'s windows.md) is validator-side and
+  never part of the fork commit.
+- When validation finds that a compat header's alias list fell behind a torch bump
+  (`cuda-to-rocm`, build-headers-macros.md), do not pin an older torch on the host. Send it
+  back to the porter with the exact symbol list and the confirmed HIP counterparts.
 
 ### `classify` needs the fork cloned at `projects/<name>/src`
 
@@ -114,6 +133,17 @@ revalidation) that path does not exist and the tool fails closed --
 exactly like a genuine indeterminate verdict. Clone the fork's port branch there first, then
 classify; never read `unknown` as evidence the delta is functional before checking the clone
 exists. (SCAMP)
+
+### How far a validator takes a crash inside a vendored JIT (extends `diagnosis.md`)
+
+`cuda-to-rocm`'s forced-throw method is the validator's whole toolkit for a crash that
+bottoms out in a dependency's runtime JIT. A debugger or a minidump is porter and
+investigation scope, not a validator's. Two hypotheses fit one 30-minute retry budget: an
+environment-variable toggle and the forced throw. "Both falsified, same relative offset both
+times" is a complete, honest retry outcome and not a reason to escalate inside the validator
+role. Before deriving a diagnosis from scratch, check host-global scratch (a prior session's
+`upstream-issues` drafts) for one on the same dependency, and verify it against the current
+patched source. (diff-surfel-tracing)
 
 ## The CUDA no-regression compile on the fleet (extends `validation.md`)
 
@@ -185,4 +215,9 @@ This is a docs, diff, and review checkout, not a build checkout -- a compile nee
   `cuda-to-rocm`; the general Windows lessons there are written host-neutral.
 - `hip_link_win.py` and `HipCxx23Shim.cmake` have their canonical copies in
   `cuda-to-rocm/assets/`. Fix bugs there first, then re-copy into each fork that vendors
-  them.
+  them, so the copies do not drift and the next Windows CMake HIP port does not reinvent
+  them. Each fork MUST vendor its own copy (conventionally `cmake/hip_link_win.py`), copied
+  in and never symlinked or downloaded, because the work is meant to be upstreamed and a
+  pull request cannot depend on a file that lives only in this repository. The asset's own
+  docstring says none of this, since the vendored copy ships upstream. Known consumers of
+  `hip_link_win.py`: AMD-Ecosystem/alien (its origin) and LichtFeld-Studio.

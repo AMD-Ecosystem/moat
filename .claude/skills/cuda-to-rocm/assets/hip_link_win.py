@@ -1,35 +1,25 @@
 #!/usr/bin/env python3
 """
-Windows HIP device-link helper.
+Link wrapper for CMake's HIP language on Windows.
 
-CMake's HIP link rule on Windows injects -fuse-ld=lld-link and uses
-MSVC-style flags (/subsystem:console etc.) that conflict with or are not
-understood by clang++ in --hip-link (device-link) mode. This script:
-  - Strips -fuse-ld=* (conflicts with --hip-link)
-  - Converts -Xlinker <flag> pairs and bare MSVC /flags to -Wl,<flag> form
-  - Converts -lXXX.lib (GCC-style lib refs that lld-link ignores) to
-    -Xlinker XXX.lib (so lld-link finds them via LIB env)
-  - Wraps bare .lib names with -Xlinker for the GCC driver -> lld-link path
+On Windows, CMake's HIP link rule runs clang in --hip-link mode with the GNU-style
+driver but passes it MSVC-style arguments: -fuse-ld=lld-link, bare linker flags
+such as /subsystem:console, and import libraries spelled -lfoo.lib or foo.lib. The
+GNU-style driver takes the bare flags for input files and does not hand the
+libraries to lld-link in a form it resolves, so the link fails. This wrapper
+rewrites the argument list and then runs the real link:
+  - drops -fuse-ld=* (it conflicts with --hip-link)
+  - turns "-Xlinker <flag>" pairs and bare MSVC /flags into -Wl,<flag>
+  - turns -lfoo.lib and bare foo.lib into "-Xlinker foo.lib", which lld-link
+    resolves through the LIB environment variable
+Arguments that carry a path are passed through unchanged, and response files are
+not read or rewritten.
 
-Usage (set as CMAKE_HIP_LINK_EXECUTABLE):
-  python3 <this_script> <clang_exe> [args...]
+Usage (as CMAKE_HIP_LINK_EXECUTABLE, on Windows only):
+  python <this_script> <clang_exe> [args...]
 
-CANONICAL COPY. This file lives in the cuda-to-rocm skill so the vendored
-copies do not drift and the next Windows CMake-HIP port does not reinvent it.
-Each fork that needs it MUST vendor its own copy (conventionally
-cmake/hip_link_win.py): the project's CMake references it, and the work is
-meant to be upstreamed, so a pull request cannot depend on a file that lives
-only in this repository. Copy it in, do not symlink or download it.
-
-Fix bugs HERE first, then re-copy into the forks that carry it, so there is
-one source of truth. Known consumers: AMD-Ecosystem/alien (origin of this
-file). See references/strategy-a-cmake.md for when it is needed.
-
-This is NOT about -fgpu-rdc. alien happens to use RDC, but the wrapper exists
-because CMake's Windows HIP link rule hands MSVC-style flags and an MSVC-style
-response file to clang in --hip-link (GCC-driver) mode, which misreads them.
-A project with no RDC at all still needs it if it links HIP through CMake on
-Windows.
+This is unrelated to relocatable device code (-fgpu-rdc): any project that links
+HIP objects through CMake on Windows needs it. Standard library only.
 """
 import subprocess
 import sys
@@ -59,9 +49,11 @@ def transform(args):
             out += ['-Xlinker', lib_name]
             i += 1
             continue
-        # Bare MSVC-style flags (start with / and no file extension)
+        # Bare MSVC-style flags: /name or /name:value. The name has no file
+        # extension and no further slash, which keeps an MSYS-style path such as
+        # /d/build/foo out of this branch.
         base = a.split(':')[0]
-        if a.startswith('/') and '.' not in base:
+        if a.startswith('/') and '.' not in base and '/' not in base[1:]:
             out.append('-Wl,' + a)
         # Bare .lib names (no directory separators): wrap for GCC driver
         elif a.endswith('.lib') and '/' not in a and '\\' not in a:

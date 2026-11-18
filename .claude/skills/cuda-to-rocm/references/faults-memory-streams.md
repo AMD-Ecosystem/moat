@@ -98,8 +98,7 @@ the same device, flags and default priority. No stream an event ever saw is free
 pool is bounded by the peak number of live streams. Do not park without reuse: an idle used
 stream holds about 8 MiB of host memory on TheRock 10.1. (LichtFeld-Studio:
 `core/cuda/hip_stream_reuse`, which replaced a `PinnedMemoryAllocator::release_stream` sweep;
-project save hung or crashed on gfx1100, and the review found three more holders; deferral
-`hip-event-query-destroyed-stream-uaf`.)
+project save hung or crashed on gfx1100, and a review found three more holders.)
 
 ### Using a stream after `hipDeviceReset` corrupts the heap (Windows shows it)
 

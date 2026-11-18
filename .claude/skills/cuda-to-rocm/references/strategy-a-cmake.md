@@ -42,7 +42,7 @@ Goal: only `.cu`/`.hip` translation units see the HIP toolchain; host C++ is unt
 
    Marking the existing `.cu` files `LANGUAGE HIP` keeps the diff minimal and the NVIDIA build intact. Configure with `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a` (add `-DCMAKE_HIP_COMPILER=/opt/rocm/lib/llvm/bin/clang++` if CMake does not find it; ROCm releases older than the `lib/llvm` layout have it at `/opt/rocm/llvm/bin/clang++`). Because the target reads `${CMAKE_HIP_ARCHITECTURES}`, one commit builds for any AMD target with only `-DCMAKE_HIP_ARCHITECTURES=<arch>` and no source change, so validating on another architecture needs no commit of its own. Pass every architecture you can test at planning time so the first bring-up is right.
 
-   Test the auto-detect path once by configuring with no `-DCMAKE_HIP_ARCHITECTURES`. A target created before `enable_language(HIP)` runs gets its `HIP_ARCHITECTURES` property initialized empty. Any executable that links a library with HIP objects links as HIP, so configure stops with `HIP_ARCHITECTURES is empty for target <exe>`, while explicit-arch builds still work and hide the problem. Detection also returns one entry per GPU (`gfx942;gfx942;...`). The fix: after `enable_language(HIP)`, run `list(REMOVE_DUPLICATES CMAKE_HIP_ARCHITECTURES)`, read `get_property(... DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)`, and set `HIP_ARCHITECTURES` on every target in that list (source: qrack, where tests and examples were created before `cmake/CUDA.cmake` was included).
+   Test the auto-detect path once by configuring with no `-DCMAKE_HIP_ARCHITECTURES`. A target created before `enable_language(HIP)` runs gets its `HIP_ARCHITECTURES` property initialized empty. Any executable that links a library with HIP objects links as HIP, so configure stops with `HIP_ARCHITECTURES is empty for target <exe>`, while explicit-arch builds still work and hide the problem. Detection also returns one entry per GPU (`gfx942;gfx942;...`). The fix: after `enable_language(HIP)`, run `list(REMOVE_DUPLICATES CMAKE_HIP_ARCHITECTURES)`, read `get_property(... DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)`, and set `HIP_ARCHITECTURES` on every target in that list (qrack: tests and examples were created before `cmake/CUDA.cmake` was included).
 
    **Outside CMake you write that rule yourself, and the README has to say what you wrote.**
    A meson/Makefile project has no `enable_language(HIP)` to get this right for you, so the
@@ -150,7 +150,7 @@ Record the upstream commit and the sha256 of each file you copied in. (plvs, Vel
 `helper_cuda.h` makes the port's own diff a derivative modification of
 NVIDIA-proprietary-marked code. plvs carried 41 lines of `check()`/`checkCudaErrors` inside
 the vendored `include/cuda/helper_cuda.h`, mirroring NVIDIA's own signature and message
-strings, and it took a scoped fix round to undo. Leave the vendored file byte-identical (check
+strings, and it took a separate fix to undo. Leave the vendored file byte-identical (check
 with `git diff <base> -- <file>` printing nothing, not by eye) and search the tree early for
 the markers: `grep -rliE "end user license agreement|NVIDIA CORPORATION and its licensors" .`
 names exactly the files the diff must not touch. Reproducing the API NAMES the project's own

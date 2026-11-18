@@ -49,7 +49,7 @@ null-stream upload race that was latent on CUDA too (lc0).
 
 **A probe that contradicts a passing test, or that newly fails on a second arch, is wrong until proven otherwise: suspect the probe's own inputs first.** Two cases from one project. (1) A bisection concluded that HEonGPU's inverse NTT miscomputed on gfx90a while the encode/decode tests, which round-trip through exactly that inverse NTT, kept passing. The contradiction was written down and not reconciled, and the next person to pick up the work inherited the wrong suspect. Reconcile first: either the passing test does not use the path you think it does, or the probe set up its inputs differently from the library (mismatched tables, wrong API overload, wrong ordering convention). Write the probe against the library's OWN generated parameters and public entry points, never against parameters you regenerate by hand. (2) The Barrett-shift fix (61/62-bit moduli) verified clean on gfx90a; the identical probe strategy on gfx1100 showed 19998/20000 bad at those widths and looked like a wave32 regression the first arch had missed. The probe generated its test moduli as `2^bits - small_offset`, pathologically close to an exact power of two; the library's HOST-side `bit_generator()` computes `bit = (T1)(log2(value) + 1)` in plain `double`, and at 61-62 bits a value within roughly 1024 of a power of two rounds `log2` up to the boundary in double precision, over-counting the bit width by one and mis-sizing the unrelated Barrett `mu` constant -- identical behavior on any host, any back end, not a HIP or wavefront effect. Redrawing the probe's moduli uniformly across each target bit width (not clustered at the boundary) reproduced 0/20000 bad on both arches. Before concluding a fix regressed on a new arch, check whether the SECOND probe run's inputs, not just its outputs, differ from the first. (HEonGPU)
 
-**A cascading wall of SegFault/OOM/"no kernel image available" partway through a long serial suite can be one poisoned physical card, not a port defect -- check `rocm-smi --showpids` against `--showmeminfo vram` before concluding anything.** arrayfire on an 8x MI300X host: a full `ctest` run started clean, crashed (SegFault) on an early binary, and every binary after it degraded -- more SegFaults, a "no kernel image is available for execution on the device" (hipErrorNoBinaryForGpu) on a JIT op, then explicit "Device out of memory". `rocm-smi --showmeminfo vram` showed that GPU pinned near its full capacity; `rocm-smi --showpids` showed *no process attached to it at all*, including after `kill -9` of every test binary -- the VRAM was orphaned at the KFD/driver level, not held by a live allocator, and a process crash should not leak GPU memory past its own exit. Re-running the identical suite (fresh JIT disk cache) on a different, verified-idle card on the same host, same build, same commit, came back 131/132 clean with no crash, no OOM, and no "no kernel image" anywhere. The disagreement between the two `rocm-smi` views is the tell: if `--showmeminfo` says a card is nearly full but `--showpids` shows nothing on it, that card's state cannot be trusted for this session -- switch cards to disambiguate before spending time on the port. (arrayfire)
+**A cascading wall of SegFault/OOM/"no kernel image available" partway through a long serial suite can be one poisoned physical card, not a port defect -- check `rocm-smi --showpids` against `--showmeminfo vram` before concluding anything.** arrayfire on a host with eight MI300X cards: a full `ctest` run started clean, crashed (SegFault) on an early binary, and every binary after it degraded -- more SegFaults, a "no kernel image is available for execution on the device" (hipErrorNoBinaryForGpu) on a JIT op, then explicit "Device out of memory". `rocm-smi --showmeminfo vram` showed that GPU pinned near its full capacity; `rocm-smi --showpids` showed *no process attached to it at all*, including after `kill -9` of every test binary -- the VRAM was orphaned at the KFD/driver level, not held by a live allocator, and a process crash should not leak GPU memory past its own exit. Re-running the identical suite (fresh JIT disk cache) on a different, verified-idle card on the same host, same build, same commit, came back 131/132 clean with no crash, no OOM, and no "no kernel image" anywhere. The disagreement between the two `rocm-smi` views is the tell: if `--showmeminfo` says a card is nearly full but `--showpids` shows nothing on it, that card's state cannot be trusted for this session -- switch cards to disambiguate before spending time on the port. (arrayfire)
 
 ## Hangs and crashes
 
@@ -59,48 +59,35 @@ null-stream upload race that was latent on CUDA too (lc0).
 
 ### A fault inside a vendored JIT entry point: rebuild-with-a-forced-throw beats a debugger
 
-When a crash's stack bottoms out inside a vendored dependency's own runtime-JIT
-call (e.g. `hiprtBuildTraceKernels`, which drives HIP RT's own `hipRTC`/`comgr`
-compile of its BVH-builder and trace kernels) rather than in the port's own
-device code, do not reach for a debugger or a minidump first -- that is
-porter/investigation scope, not a validator's, and it is slow. A cheaper test
-that still yields real evidence: read the JIT call's own error-handling source
-for a place where a compile failure could be silently swallowed (a `result !=
-SUCCESS` check that only acts when an accompanying log string is non-empty is
-the classic shape -- an empty log on a genuine failure is common on Windows,
-where comgr can fail silently for reasons that have nothing to do with the
-actual compile), patch that ONE spot locally to unconditionally `throw` with
-the raw result code, rebuild just that translated unit (seconds, not the whole
-dependency), and rerun. Two outcomes, both informative and neither requiring a
-debugger:
+When a crash's stack bottoms out inside a vendored dependency's own runtime-JIT call (for
+example `hiprtBuildTraceKernels`, which drives HIP RT's own hipRTC/comgr compile of its
+BVH-builder and trace kernels) rather than in the port's device code, there is a cheaper
+first test than a debugger or a minidump. Read the JIT call's error handling for a place
+where a compile failure could be silently swallowed. The classic shape is a
+`result != SUCCESS` check that only acts when the accompanying log string is non-empty; an
+empty log on a genuine failure is common on Windows, where comgr can fail silently for
+reasons unrelated to the compile. Patch that ONE spot locally to `throw` unconditionally with
+the raw result code, rebuild just that translation unit (seconds, not the whole dependency),
+and rerun. Both outcomes are informative:
 
-- Your forced exception fires with a real code and message -- you have found
-  the actual failure, cheaply.
-- The crash is byte-for-byte identical (same fault address relative to the
-  containing function, e.g. `hiprtBuildTraceKernels() + 0x894` unchanged
-  across rebuilds even though ASLR moves the DLL's base) and your `throw`
-  never fires -- you have FALSIFIED that code path as the cause, which is
-  just as real a finding: the crash is earlier, or in a different function
-  entirely, and no further time should go into that call.
+- Your forced exception fires with a real code and message: you have found the actual
+  failure.
+- The crash is identical (same fault address relative to the containing function, for
+  example `hiprtBuildTraceKernels() + 0x894` unchanged across rebuilds even though ASLR moves
+  the DLL's base) and your `throw` never fires: you have FALSIFIED that code path as the
+  cause. The crash is earlier, or in a different function, and no more time should go into
+  that call.
 
-Revert the diagnostic edit before finishing (it is a throwaway, never
-committed) and record the falsification, not just "still crashes" -- a bare
-re-run tells the next person nothing they did not already know; a rebuild
-that proves a specific mechanism is NOT the cause narrows the search space
-for whoever picks it up next. Two independent hypotheses can be dispatched
-this way inside a single 30-minute retry budget: an environment-variable
-hypothesis (does the crash change when a plausible cause is toggled?) and a
-source-level hypothesis (does the crash change when the suspected swallowed
-error is forced to surface?) are both answerable without a debugger, and a
-"both falsified, same relative offset both times" result is a complete,
-honest retry outcome -- it is not a reason to escalate to a debugger inside
-the validator role. Also check host-global scratch (e.g. a prior session's
-`upstream-issues` drafts) for an existing diagnosis of the same dependency's
-JIT/loader class before re-deriving one from scratch -- but verify it against
-the CURRENT patched source rather than assuming it still applies: a
-previously-reported defect in the same call chain may already be fixed in the
-project's own vendored-dependency patch, which rules it out rather than
-explaining the new crash. (diff-surfel-tracing)
+A second hypothesis can be tested the same way, without a debugger: does the crash change
+when a plausible environment variable is toggled? Revert the diagnostic edit afterwards (it
+is a throwaway), and record the falsification, not just "still crashes": a rebuild that
+proves a specific mechanism is NOT the cause narrows the search for whoever picks it up
+next. If an earlier diagnosis of the same dependency's JIT or loader exists, verify it
+against the CURRENT patched source before assuming it applies: a defect reported earlier in
+the same call chain may already be fixed in the project's own patch to the vendored
+dependency, which rules it out rather than explaining the new crash. Before any of this, read
+the top frame: a null frame above the vendored DLL is a library that never loaded
+(windows.md, "A null top frame above a vendored DLL"). (diff-surfel-tracing)
 
 ### Failures that appear only when the whole suite runs in one process
 
@@ -155,7 +142,7 @@ installed in that machine, so a pinned `HIP_VISIBLE_DEVICES=1` copied from older
 notes silently selects a different card, or none. Read the device list at the time
 you use it (`rocminfo`, `hipInfo`).
 
-`amd-smi` numbers GPUs in its own order, which need not be HIP's. On a four-W7800 host
+`amd-smi` numbers GPUs in its own order, which need not be HIP's. On a host with four identical cards
 `HIP_VISIBLE_DEVICES=2` was amd-smi's GPU 0, the card another job was using, while amd-smi
 GPU 2 was HIP device 0. To pick an idle card, match by PCI address: print
 `hipDeviceGetPCIBusId` for each `HIP_VISIBLE_DEVICES=<i>`, compare with `amd-smi list`
