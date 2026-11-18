@@ -51,8 +51,8 @@
       "decided": {
         "choice": "defer",
         "by": "jeffdaily",
-        "at": "2026-08-12T16:21:40Z",
-        "note": "Deferred until after upstream PR colmap/colmap#4635 merges; then a candidate follow-on feature cycle (after/alongside Caspar). Unlocks MVS+SIFT on MI300/gfx942 and gfx950; MVS point-mode+border fetches and one FilterModeLinear binding (patch_match_cuda.cu:1630) are the whole emulation surface."
+        "at": "2026-11-18T03:45:41Z",
+        "note": "Ruled 2026-11-17: stays deferred until the symforce PR 465 fix round is through review. Probe on ROCm 10.1.0 (HIP 7.16) confirmed gfx942 and gfx950 still have no image/texture support, so the rewrite is still required for MI300 and MI350."
       }
     }
   ]
