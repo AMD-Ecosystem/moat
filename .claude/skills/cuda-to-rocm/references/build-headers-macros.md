@@ -238,8 +238,8 @@ untouched. (diff-surfel-rasterizations)
 On a recent ROCm the include is the only thing missing in the cooperative-groups case:
 `cg::reduce` exists in `<hip/cooperative_groups/hip_reduce.h>` (implemented in
 `hip/amd_detail/amd_hip_cooperative_groups_reduce.h`), which `hip_cooperative_groups.h` does
-NOT pull in. That header arrived with the 7.13 nightlies and is in no stable release through
-ROCm 7.2.4, so the `USE_ROCM` arm must not be a plain include: use
+NOT pull in. That header is present from ROCm 7.13 and absent in every 7.2.x release (through
+7.2.4), so the `USE_ROCM` arm must not be a plain include: use
 `#if __has_include(<hip/cooperative_groups/hip_reduce.h>)` and supply a fallback reduction in
 the `#else`. strategy-b-torch.md ("Headers and functions hipify leaves broken") has both arms
 and how to prove the fallback against real 7.2.x headers. Dropping the include outright is
@@ -414,7 +414,7 @@ version arithmetic -- ROCm cherry-picks, so commit ancestry misleads):
 
 | Toolchain | Has fix? |
 |---|---|
-| ROCm 7.14 (`7.14.0a20260612`, the last of the old nightly stream) | no |
+| ROCm 7.14 (checked on the nightly build `7.14.0a20260612`) | no |
 | ROCm 10.0 (`release/therock-10.0`, llvm pin 2026-07-28) | **no** -- it will ship without it |
 | ROCm 10.1 nightly (`10.1.0a20260823` and later) | **yes** |
 | ROCm/llvm-project `amd-compiler-2026-06` .. `-09`, and `main` | no |

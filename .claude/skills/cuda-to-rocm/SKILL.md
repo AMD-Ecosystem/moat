@@ -26,15 +26,25 @@ platform "HIP" or the kernel dialect "ROCm". Details: `references/naming.md`.
 
 ## ROCm version numbers in this skill
 
-Entries say where they were seen, and three series of numbers appear. ROCm 7.2.x (7.2.1 to
-7.2.4) are stable releases, usually installed under `/opt/rocm`. ROCm 7.13 and 7.14 are
-nightly builds distributed as pip wheels (the "TheRock" builds); they are newer code than
-7.2.x, and that nightly stream ended at 7.14. ROCm 10.0, 10.1 and 10.2 continue the same
-line after 7.14. So, as far as the evidence here shows, the order is 7.2.x, 7.13, 7.14,
-10.0, 10.1, 10.2. HIP has its own version number, which does not track ROCm's (the 7.14
-SDK reports HIP 7.13; ROCm 10.1 carries HIP 7.16), so gate code on a feature test or on
-`HIP_VERSION_*`, never on the ROCm number. A workaround tagged with a version or a date may
-have expired: re-check it on a newer ROCm before carrying it.
+Entries say where they were seen. The numbers compare the ordinary way: 7.2 < 7.13 < 7.14 <
+10.0 < 10.1 < 10.2 < 10.3. Three things can mislead:
+
+- **Dates do not order them.** The 7.2.x patch releases (7.2.1 to 7.2.4, March to May 2026)
+  came out alongside 7.11, 7.12 and 7.13, so 7.13 (May 2026) is newer code than 7.2.4
+  (also May 2026).
+- **The major number jumps from 7 to 10.** 7.14 was released in July 2026 (with a 7.14.1
+  patch in August), and the next releases are 10.0 (August 2026), 10.1 (October 2026) and
+  10.2 (November 2026). Nothing was released in between.
+- **A date suffix marks a nightly build, not a different series.** `7.14.0a20260612` is a
+  pre-release build of 7.14 and `10.3.0a20261118` one of 10.3; every version has such builds
+  before its release. An entry seen on a nightly says so, and may or may not hold on the
+  release of the same number.
+
+HIP has its own version number, which stayed on the 7.x line when ROCm's went to 10: ROCm
+7.14 carries HIP 7.14, ROCm 10.1 carries HIP 7.16, and the 10.2 and 10.3 builds carry 7.17
+and 7.18. So gate code on a feature test or on `HIP_VERSION_*`, never on the ROCm number. A
+workaround tagged with a version or a date may have expired: re-check it on a newer ROCm
+before carrying it.
 
 ## Which strategy
 
