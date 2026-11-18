@@ -1140,6 +1140,7 @@ def set_state(name, platform, new_state, agent=None, save=True, sha=None, gate=N
         blk["completed_at"] = ts
         _set_validated(blk, obj.get("head_sha"))
         blk.pop("failed_gate", None)
+        blk.pop("gpu_passed_sha", None)
         # A real-GPU validation supersedes any prior carry-forward tag; drop the
         # stale annotation so the metadata reflects how this completion was reached.
         blk.pop("carry_forward", None)
@@ -1158,9 +1159,15 @@ def set_state(name, platform, new_state, agent=None, save=True, sha=None, gate=N
         # about one commit, not a permanent property of the arch. See failure_stands.
         blk["failed_sha"] = obj.get("head_sha")
         if gate:
+            # `--gate` says the build and the GPU run PASSED at this commit and only
+            # the named content check failed. Keep that pass: when the fix turns
+            # out to be a change that cannot alter compiled output, carry-forward
+            # can complete the platform from it instead of repeating the GPU run.
             blk["failed_gate"] = gate
+            blk["gpu_passed_sha"] = obj.get("head_sha")
         else:
             blk.pop("failed_gate", None)
+            blk.pop("gpu_passed_sha", None)
     obj["platforms"][platform] = blk
     if save:
         save_status(name, obj)
@@ -4310,7 +4317,14 @@ def carry_forward(name, platform, new_sha, method, detail, host_checked=False):
     """
     obj = load_status(name)
     blk = (obj.get("platforms") or {}).get(platform)
-    if blk is None or blk.get("state") != "completed":
+    # A content-gate failure (`validation-failed --gate docs|jargon`) recorded a GPU
+    # pass with it, at gpu_passed_sha. Once the fix has moved the head, that pass is
+    # carried exactly as a completed validation is, under the same classifier rules,
+    # so a README fix does not cost the platform its GPU run a second time. The
+    # validator calling this is the one who checks that the content gap is closed.
+    from_gate = bool(blk and blk.get("state") == "validation-failed"
+                     and blk.get("failed_gate") and blk.get("gpu_passed_sha"))
+    if blk is None or (blk.get("state") != "completed" and not from_gate):
         raise ValueError(f"{name}/{platform}: carry_forward needs a completed validation "
                          f"to carry, not {(blk or {}).get('state')}")
     if blk.get("blocked"):
@@ -4325,11 +4339,15 @@ def carry_forward(name, platform, new_sha, method, detail, host_checked=False):
         raise ValueError(f"{name}/{platform}: {str(new_sha)[:12]} is not the recorded "
                          f"head_sha {str(obj.get('head_sha'))[:12]} -- a validation is "
                          f"carried forward to the head; run advance-head first")
-    old = blk.get("validated_sha")
+    old = blk.get("gpu_passed_sha") if from_gate else blk.get("validated_sha")
     if not old:
         raise ValueError(f"{name}/{platform}: the block records no validated_sha, so "
                          f"there is no validated commit to carry forward from")
     if same_commit(old, new_sha):
+        if from_gate:
+            raise ValueError(
+                f"{name}/{platform}: the {blk['failed_gate']} check failed at this "
+                f"head and the head has not moved, so nothing has fixed it yet")
         return obj                       # already validated at the head
     if method not in ("source-class", "binary-equiv"):
         raise ValueError(f"{name}/{platform}: unknown carry-forward method {method!r}")
@@ -4362,6 +4380,9 @@ def carry_forward(name, platform, new_sha, method, detail, host_checked=False):
     blk["updated_at"] = ts
     blk["carry_forward"] = {"from": old, "to": new_sha, "method": method,
                             "class": cls, "detail": detail[:200], "at": ts}
+    if from_gate:
+        blk["carry_forward"]["after_gate"] = blk.pop("failed_gate")
+        blk.pop("gpu_passed_sha", None)
     if method == "binary-equiv" and not (verdict is not None and verdict.inert):
         blk["carry_forward"]["host_checked"] = True
     save_status(name, obj)
@@ -6920,11 +6941,13 @@ def _main(argv=None):
     s.add_argument("--sha", help="the fork commit that was built and run, when it was "
                                  "not built in projects/<name>/src; must be head_sha")
     s.add_argument("--gate", choices=list(CONTENT_GATES),
-                   help="with validation-failed: the GPU run was fine and this "
-                        "content check is what failed (missing ROCm build "
-                        "documentation, or a jargon hit). Such a failure is "
-                        "retired by the porter's fix even when that fix is "
-                        "documentation only")
+                   help="with validation-failed: the build and the GPU run "
+                        "PASSED at this head and this content check is what failed "
+                        "(missing ROCm build documentation, or a jargon hit). The "
+                        "pass is kept: after a fix that cannot change compiled "
+                        "output, check the gap is closed and `carry-forward` the "
+                        "platform instead of rerunning the GPU. Never use it when "
+                        "the GPU run did not pass")
 
     s = sub.add_parser("set-blocked",
                        help="record that an arch cannot run this, or clear that record")

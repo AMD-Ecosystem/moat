@@ -486,6 +486,10 @@ def build():
                     # failure is retired by a documentation-only fix instead of
                     # being carried across it. Absent on an ordinary failure.
                     "failed_gate": {"enum": list(m.CONTENT_GATES) + [None]},
+                    # With failed_gate: the commit whose build and GPU run passed
+                    # when the content check failed, so carry-forward can complete
+                    # the platform after an inert fix without a second GPU run.
+                    "gpu_passed_sha": {"type": ["string", "null"]},
                     # Commits this arch validated before validated_sha, newest
                     # last, so evidence is not lost when the head returns to one
                     # (an abandoned fix round).

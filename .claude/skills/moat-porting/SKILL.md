@@ -124,7 +124,10 @@ what passes and what does not).
 - A failed GPU run is carried across an inert delta, because such a delta cannot have
   fixed it. A failure that is about content (a missing ROCm build document, a jargon
   hit) is recorded with `set-state <name> <platform> validation-failed --gate docs`
-  (or `jargon`), and any head move retires it, since its fix is an inert delta.
+  (or `jargon`), and any head move retires it, since its fix is an inert delta. `--gate`
+  also keeps the GPU pass of that run, so after an inert fix the validator checks the
+  gap is closed and completes the platform with `carry-forward`, without a second GPU
+  run.
 - Fork GitHub Actions stay disabled. A CI-config commit does not force revalidation (the
   regression guard classifies it as inert); the rule exists because CPU-only workflows gate
   nothing.

@@ -378,7 +378,10 @@ than a failure, which would send a porter after nothing.
 delta that cannot change compiled output, since such a delta cannot have fixed a GPU
 run. A missing build document or a vocabulary hit is fixed by exactly such a delta, so
 the validator records it with `validation-failed --gate docs` (or `jargon`) and any
-head move retires it.
+head move retires it. `--gate` asserts that the build and the GPU run passed, and keeps
+that pass: once the fix is in, the validator confirms the gap is closed and
+`carry-forward` completes the platform from it when the fix changed nothing that
+compiles, so a README fix does not cost a second GPU run.
 
 **A dependency counts per operating system.** The selector releases a dependent only
 when each hard dependency is validated on a platform with the same OS: a library

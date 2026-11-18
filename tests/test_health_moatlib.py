@@ -966,6 +966,45 @@ class ContentGateFailure(NoDisposition):
                 self.assertEqual(moatlib.arch_task(obj, self.P),
                                  ("validator", "port-ready"))
 
+    def test_the_gpu_pass_is_kept_with_a_content_gate_failure(self):
+        s = Store(self, record())
+        moatlib.set_state("proj", self.P, "validation-failed", gate="docs")
+        self.assertEqual(s.obj["platforms"][self.P]["gpu_passed_sha"], HEAD)
+        moatlib.validate_status(s.obj)
+        moatlib.set_state("proj", self.P, "validation-failed")      # a plain failure
+        self.assertNotIn("gpu_passed_sha", s.obj["platforms"][self.P])
+        self.assertNotIn("failed_gate", s.obj["platforms"][self.P])
+
+    def carried(self, cls, blk=None, **kw):
+        s = Store(self, record(reviewed_sha=HEAD, platforms={
+            self.P: blk or failed(OLD, failed_gate="docs", gpu_passed_sha=OLD),
+            "linux-gfx90a": done()}))
+        with classified(cls),                 mock.patch.object(moatlib, "full_sha", lambda sha, repo=None: sha),                 mock.patch.object(moatlib, "_fork_repo", lambda name: "repo"):
+            moatlib.carry_forward("proj", self.P, HEAD, kw.pop("method", "source-class"),
+                                  "README build block added; gap closed", **kw)
+        return s.obj["platforms"][self.P]
+
+    def test_an_inert_fix_completes_the_platform_from_the_kept_pass(self):
+        blk = self.carried("doc-only")
+        self.assertEqual((blk["state"], blk["validated_sha"]), ("completed", HEAD))
+        self.assertNotIn("failed_gate", blk)
+        self.assertNotIn("gpu_passed_sha", blk)
+        cf = blk["carry_forward"]
+        self.assertEqual((cf["from"], cf["to"], cf["after_gate"]), (OLD, HEAD, "docs"))
+
+    def test_a_code_change_cannot_be_carried_from_the_kept_pass(self):
+        with self.assertRaisesRegex(ValueError, "cannot be carried forward as source-class"):
+            self.carried("mixed")
+
+    def test_nothing_is_carried_before_the_head_moves(self):
+        with self.assertRaisesRegex(ValueError, "nothing has fixed it yet"):
+            self.carried("doc-only", blk=failed(HEAD, failed_gate="docs",
+                                                gpu_passed_sha=HEAD))
+
+    def test_a_plain_failure_has_no_pass_to_carry(self):
+        with self.assertRaisesRegex(ValueError, "needs a completed validation"):
+            self.carried("doc-only", blk=failed(OLD))
+
     def test_a_plain_failure_is_still_carried_across_a_doc_only_delta(self):
         obj = self.moved(failed(OLD), "doc-only")
         self.assertEqual(obj["platforms"][self.P]["failed_sha"], HEAD)
