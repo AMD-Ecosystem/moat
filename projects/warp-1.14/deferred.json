@@ -36,6 +36,19 @@
         "at": "2026-11-18T18:55:18Z",
         "note": "2026-11-18: report unsupported on HIP exactly as upstream does for old CUDA; HIP's plans are unknown and it may be a hardware limitation, so not expected soon"
       }
+    },
+    {
+      "id": "warp-hip-clang-jit",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Clang/LLVM GPU compiler options on HIP: wp.config.llvm_cuda (kernels JIT-compiled by the bundled Clang/LLVM instead of the vendor runtime compiler) and the --clang-build-toolchain build option are NVPTX-only; the bundled LLVM has no AMDGPU target. The port makes both fail with a clear error on HIP. Supporting them would mean building and shipping LLVM with the AMDGPU backend and ROCm device libraries; hipRTC is already Clang-based, so there is no known AMD use case",
+      "refs": [
+        "projects/warp-1.14/plan.md Q7"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T20:07:55Z",
+      "decided": null
     }
   ]
 }
