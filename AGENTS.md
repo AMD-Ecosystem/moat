@@ -80,7 +80,7 @@ Wrap build and test commands with `utils/timeit.sh <name> <phase> -- <command>` 
 
 # Where a lesson goes
 
-Capture project-specific evidence, recipes, and correspondence in `projects/<name>/notes.md`. Promote a lesson to the canonical `cuda-to-rocm` skill only when it would help someone porting a different project, written for a reader who has never heard of MOAT, and place it where a reader with that problem would look. A lesson about MOAT's own pipeline, records, tools, or hosts goes to the `moat-porting` skill instead. Each skill is one organized reference on `main`. A port records a lesson in its `notes.md` under `## Lesson for cuda-to-rocm: <title>` (or `moat-porting`), where the port's review reads it with its evidence; after that review a trunk session promotes it into the right place in the skill, fitted to what is already there, and adds `Promoted to <file> in <sha>.` under the heading. `moatlib.py lessons` lists lessons awaiting promotion.
+Capture project-specific evidence, recipes, and correspondence in `projects/<name>/notes.md`. Promote a lesson to the canonical `cuda-to-rocm` skill only when it would help someone porting a different project, written for a reader who has never heard of MOAT, and place it where a reader with that problem would look. A lesson about MOAT's own pipeline, records, tools, or hosts goes to the `moat-porting` skill instead. Each skill is one organized reference on `main`. A port records a lesson in its `notes.md` under `## Lesson for cuda-to-rocm: <title>` (or `moat-porting`), where the port's review reads it with its evidence; after that review a trunk session promotes it into the right place in the skill, fitted to what is already there, regenerates the skill's index (`utils/gen_skill_index.py`), and adds `Promoted to <file> in <sha>.` under the heading. `moatlib.py lessons` lists lessons awaiting promotion.
 
 # Scratch space
 
@@ -102,7 +102,7 @@ Always invoke the `pr-review` skill when reviewing a port. Review the local fork
 
 # Build
 
-Find the real build procedure in the project documentation and build files. Use standard package managers for missing build dependencies when appropriate, make the procedure repeatable, and record it in `notes.md`. Do not record mutable fleet inventory; reusable host or toolchain diagnostics belong in the validation reference of the `cuda-to-rocm` skill.
+Find the real build procedure in the project documentation and build files. Use standard package managers for missing build dependencies when appropriate, make the procedure repeatable, and record it in `notes.md`. Do not record mutable fleet inventory; reusable host or toolchain diagnostics belong in the `cuda-to-rocm` skill's references (`windows.md`, `linux-host-setup.md`, `diagnosis.md`).
 
 # Testing
 

@@ -1,4 +1,13 @@
-## Strategy A: pure CMake (preferred, minimal footprint)
+# Strategy A: pure CMake (preferred, minimal footprint)
+
+<!-- toc:begin -->
+Contents:
+
+- Large libraries: `--offload-compress` to fit the host image under the 2 GiB x86-64 relocation reach
+- The shim-header method: a port with zero source edits
+- Vendored CUDA-samples helpers: keep them off the AMD build entirely
+- Build hygiene
+<!-- toc:end -->
 
 Goal: only `.cu`/`.hip` translation units see the HIP toolchain; host C++ is untouched; the diff stays small.
 
@@ -20,7 +29,7 @@ Goal: only `.cu`/`.hip` translation units see the HIP toolchain; host C++ is unt
 
    Use hipify's mapping tables as the authoritative cuda->hip name source when adding aliases: `torch/utils/hipify/cuda_to_hip_mappings.py` in a pytorch checkout lists 3000+ symbol mappings.
 
-2. In CMake, gate the language on a HIP option instead of renaming files:
+2. In CMake, gate the language on a HIP option instead of renaming files. The `HIP` language needs CMake 3.21 or newer (3.29 on Windows, see windows.md):
 
        option(USE_HIP "Build with HIP for AMD GPUs" OFF)
        if(USE_HIP)
@@ -40,9 +49,9 @@ Goal: only `.cu`/`.hip` translation units see the HIP toolchain; host C++ is unt
          enable_language(CUDA)
        endif()
 
-   Marking the existing `.cu` files `LANGUAGE HIP` keeps the diff minimal and the NVIDIA build intact. Configure with `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a` (add `-DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++` if CMake does not find it). Because the target reads `${CMAKE_HIP_ARCHITECTURES}`, one commit builds for any AMD target with only `-DCMAKE_HIP_ARCHITECTURES=<arch>` and no source change, so validating on another architecture needs no commit of its own. Pass every architecture you can test at planning time so the first bring-up is right.
+   Marking the existing `.cu` files `LANGUAGE HIP` keeps the diff minimal and the NVIDIA build intact. Configure with `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a` (add `-DCMAKE_HIP_COMPILER=/opt/rocm/lib/llvm/bin/clang++` if CMake does not find it; ROCm releases older than the `lib/llvm` layout have it at `/opt/rocm/llvm/bin/clang++`). Because the target reads `${CMAKE_HIP_ARCHITECTURES}`, one commit builds for any AMD target with only `-DCMAKE_HIP_ARCHITECTURES=<arch>` and no source change, so validating on another architecture needs no commit of its own. Pass every architecture you can test at planning time so the first bring-up is right.
 
-   Test the auto-detect path once by configuring with no `-DCMAKE_HIP_ARCHITECTURES`. A target created before `enable_language(HIP)` runs gets its `HIP_ARCHITECTURES` property initialized empty. Any executable that links a library with HIP objects links as HIP, so configure stops with `HIP_ARCHITECTURES is empty for target <exe>`, while explicit-arch builds still work and hide the problem. Detection also returns one entry per GPU (`gfx942;gfx942;...`). The fix: after `enable_language(HIP)`, run `list(REMOVE_DUPLICATES CMAKE_HIP_ARCHITECTURES)`, read `get_property(... DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)`, and set `HIP_ARCHITECTURES` on every target in that list (source: qrack, where tests and examples were created before `cmake/CUDA.cmake` was included).
+   Test the auto-detect path once by configuring with no `-DCMAKE_HIP_ARCHITECTURES`. A target created before `enable_language(HIP)` runs gets its `HIP_ARCHITECTURES` property initialized empty. Any executable that links a library with HIP objects links as HIP, so configure stops with `HIP_ARCHITECTURES is empty for target <exe>`, while explicit-arch builds still work and hide the problem. Detection also returns one entry per GPU (`gfx942;gfx942;...`). The fix: after `enable_language(HIP)`, run `list(REMOVE_DUPLICATES CMAKE_HIP_ARCHITECTURES)`, read `get_property(... DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)`, and set `HIP_ARCHITECTURES` on every target in that list (qrack: tests and examples were created before `cmake/CUDA.cmake` was included).
 
    **Outside CMake you write that rule yourself, and the README has to say what you wrote.**
    A meson/Makefile project has no `enable_language(HIP)` to get this right for you, so the
@@ -68,7 +77,7 @@ Goal: only `.cu`/`.hip` translation units see the HIP toolchain; host C++ is unt
 
 This is how colmap was ported (PR 4420 plus follow-ups): one compat header, `.cu` marked `LANGUAGE HIP`, a few guarded fixes. PyTorch validated that this isolates HIP: on an MI250 build only the HIP translation units receive `-x hip`; host files are untouched.
 
-### Large libraries: `--offload-compress` to fit the host image under the 2 GiB x86-64 relocation reach
+## Large libraries: `--offload-compress` to fit the host image under the 2 GiB x86-64 relocation reach
 
 A heavily-templated library (cudf: rocThrust/rocPRIM `DeviceReduce`/`DeviceScan`/`DeviceRadixSort` instantiated over a full type x op matrix) embeds an enormous device code object PER translation unit. The HIP offload bundle is stored UNCOMPRESSED by default, so a single reduce `.o` can reach ~200 MB (~159 MB of which is the `.hip_fatbin`). Linking many such TUs into one shared object can push the HOST image past the +/-2 GiB reach of x86-64 32-bit PC-relative relocations -- the link fails with `R_X86_64_PC32` overflow first, then (if you reach for `-mcmodel=large`, which only fixes data refs) `R_X86_64_TLSGD`/`TLSLD`/`__tls_get_addr` and `.eh_frame` "PC offset too large", neither of which the large code model covers. nvcc fatbins are compact, so the CUDA build never hits this; it is a ROCm-specific build-scale wall, not a HIP-correctness one.
 
@@ -96,30 +105,8 @@ files changed), leaving the `.cu`/`.cuh` tree byte-identical to upstream. That w
 behaviour-preserving: bit-identical GPU results, and all 10 device code objects byte-identical
 across two architectures.
 
-### The shim header is mandatory, not just tidier, when the file is vendored NVIDIA code
-
-A project that vendors `helper_cuda.h`/`helper_string.h` from the CUDA samples is carrying a
-file whose header says "Please refer to the NVIDIA end user license agreement (EULA) ... Any
-use, reproduction, disclosure, or distribution of this software ... outside the terms of the
-EULA is strictly prohibited." Adding a `#if defined(USE_HIP)` branch INSIDE that file makes
-the port's own diff a derivative modification of NVIDIA-proprietary-marked code, which is a
-licence problem no amount of correct HIP is worth. plvs shipped exactly that for two months --
-41 lines of `check()`/`checkCudaErrors` inside the vendored `include/cuda/helper_cuda.h`, and
-the deleted block had mirrored NVIDIA's own signature and message strings -- and it took a
-scoped fix round to undo. Put the substitute in `hip_compat/cuda/helper_cuda.h` and leave the
-vendored file byte-identical; check with `git diff <base> -- <file>` printing nothing, not by
-eye. Search the tree early for NVIDIA-proprietary markers (`grep -rliE "end user license
-agreement|NVIDIA CORPORATION and its licensors" .`): the files it names are exactly the ones
-your diff must not touch. Reproducing the API NAMES the project's own sources call (`checkCudaErrors`) is
-unavoidable and fine; copying the vendored implementation's signature, control flow, or format
-strings is not -- write your own. (plvs)
-
-Do not justify the shim with "the vendored header does not parse under hipcc" without checking:
-plvs's does parse clean once the compat header is force-included, because its cuBLAS/cuFFT enum
-tables sit behind `#ifdef CUBLAS_API_H_` and compile out. The real reason there was narrower and
-worth stating accurately in the commit -- `checkCudaErrors` is defined inside
-`#ifdef __DRIVER_TYPES_H__`, a macro only the CUDA toolkit's `driver_types.h` sets, so on ROCm
-the header supplies nothing. A one-line probe TU that calls the macro settles it. (plvs)
+The shim is mandatory, not just tidier, when the header it shadows is vendored NVIDIA
+sample code under an EULA notice: see "Vendored CUDA-samples helpers" below.
 
 Prefer this when the project includes CUDA headers by name. It does not apply where sources
 use CUDA symbols without including a CUDA header, or where the build already injects a
@@ -168,86 +155,23 @@ the host TUs with the host compiler) at both the base and the new sha and diff t
 `-H`-trace one TU to confirm the swapped files are actually opened so the check is not vacuous.
 Record the upstream commit and the sha256 of each file you copied in. (plvs, Velvet.)
 
-## Never mark the host `.cpp` files `LANGUAGE HIP` to dodge the flag leak
+**Never add a HIP branch inside the vendored file.** A `#if defined(USE_HIP)` block inside
+`helper_cuda.h` makes the port's own diff a derivative modification of
+NVIDIA-proprietary-marked code. plvs carried 41 lines of `check()`/`checkCudaErrors` inside
+the vendored `include/cuda/helper_cuda.h`, mirroring NVIDIA's own signature and message
+strings, and it took a separate fix to undo. Leave the vendored file byte-identical (check
+with `git diff <base> -- <file>` printing nothing, not by eye) and search the tree early for
+the markers: `grep -rliE "end user license agreement|NVIDIA CORPORATION and its licensors" .`
+names exactly the files the diff must not touch. Reproducing the API NAMES the project's own
+sources call (`checkCudaErrors`) is unavoidable and fine.
 
-The tempting shortcut when a mixed CXX/HIP target fails to compile is to mark *every* source
-`LANGUAGE HIP` so one set of flags applies uniformly. Do not. That defines `__HIPCC__` for
-the whole program, and CUDA projects routinely key host-only behaviour off `__CUDACC__` --
-which the port then extends to `__HIPCC__`, correctly, for the device path. The classic
-shape is a macro that suppresses default member initializers, because a
-`__device__ __constant__` copy of the struct cannot be dynamically initialized:
-
-    #if defined(__CUDACC__) || defined(__HIPCC__)
-        #define HOST_INIT(val)
-    #else
-        #define HOST_INIT(val) = val
-    #endif
-
-    struct SimParams { int numSubsteps HOST_INIT(2); glm::vec3 gravity HOST_INIT(...); };
-
-On NVIDIA the `.cpp` files are plain C++ and never see `__CUDACC__`, so the host copy keeps
-its defaults. Compile them as HIP and the host copy silently loses every initializer. Velvet
-shipped that way from its first commit: the application ran, rendered and reported a healthy
-GPU, but the solver read zero substeps, zero iterations and zero gravity, so nothing ever
-moved. It survived four platform validations because each used a standalone synthetic kernel
-test rather than the real binary. Grep for `__CUDACC__` and `__CUDA_ARCH__` in host headers
-before choosing an all-HIP target, and treat a hit as a hard blocker on that shortcut.
-
-The failure the shortcut was dodging has its own fix, above: the HIP compile flags leak
-because `hip::hipcub` and `roc::rocthrust` reach `hip::device` transitively
-(`roc::rocprim_hip` -> `hip::device` in `rocprim-targets.cmake`), and `hip::device`'s
-interface is built by
-
-    function(hip_add_interface_compile_flags TARGET)
-      set_property(TARGET ${TARGET} APPEND PROPERTY
-        INTERFACE_COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:CXX>:${_HIP_SHELL}${ARGN}>")
-    endfunction()
-
-called with `-x hip` and `--offload-arch=<arch>`. Note the genex is `COMPILE_LANGUAGE:CXX`,
-so it hits exactly the plain C++ sources and never the HIP ones -- the opposite of what the
-name suggests. Those three packages are header only, so take their include directories and
-link `hip::host` (which carries only `__HIP_PLATFORM_AMD__=1` and the `amdhip64` import
-library, no compile flags) for the runtime:
-
-    set_source_files_properties(${CU_SOURCES} PROPERTIES LANGUAGE HIP)
-    foreach(rocm_target hip::hipcub roc::rocthrust roc::rocprim_hip)
-      if(TARGET ${rocm_target})
-        get_target_property(inc ${rocm_target} INTERFACE_INCLUDE_DIRECTORIES)
-        if(inc)
-          target_include_directories(<tgt> SYSTEM PRIVATE ${inc})
-        endif()
-      endif()
-    endforeach()
-    target_link_libraries(<tgt> PRIVATE hip::host)
-
-Before splitting, check two things or you trade a silent-zeros bug for a silent-no-op bug:
-no header that a `.cpp` includes may contain a `<<<>>>` launch (a launch macro gated on
-`__CUDACC__ || __HIPCC__` expands to nothing in the host units, so the launch disappears),
-and no variable whose initializer the macro suppresses may be an `inline`/`extern` variable
-that both language groups emit (the linker folds one COMDAT and may pick the uninitialized
-one). Velvet passed both: launches live only in the two `.cu` files, and the `inline`
-`Global::simParams` is included by no `.cu`.
-
-Verify the split landed rather than assuming: the build log should show "Building CXX
-object" for the host files (Velvet: 11 CXX against 2 HIP, where all 13 previously said HIP),
-the recorded compile line for a host object should carry neither `-x hip` nor
-`--offload-arch`, and a temporary `#if defined(__HIPCC__) #error` probe in one host file
-should compile clean.
-
-Then expect the split to unmask missing standard-library includes in host headers, and build
-on every supported OS before calling the split done. The HIP and CUDA runtime headers drag
-in a lot of the standard library, so a header that has always been compiled as a GPU source
-can use `std::vector` or `std::string` without including it and never be caught. Narrowing
-the language property makes it a plain C++ TU and the omission becomes a hard error that
-reads like a regression the split introduced; it is not, and the fix is the one-line
-`#include`, never a revert of the split. The masking is also platform-dependent, so the
-identical delta can pass on one OS and fail on another: MSVC's `<unordered_map>` supplies
-`<vector>`, libstdc++'s does not. Velvet's split passed a full Windows application
-validation and then failed to compile at all on Linux under both GCC 13 and the ROCm clang,
-on `unordered_map<string, vector<hipEvent_t>>` in a header including only `<iostream>`,
-`<unordered_map>` and `<string>`. Such a gap usually predates the port and breaks the
-project's own NVIDIA build on the same OS, so fixing it is upstream-friendly rather than
-AMD-specific -- say so in the commit message.
+Do not justify the shim with "the vendored header does not parse under hipcc" without
+checking: plvs's parses clean once the compat header is force-included, because its
+cuBLAS/cuFFT enum tables sit behind `#ifdef CUBLAS_API_H_` and compile out. The real reason
+there was narrower: `checkCudaErrors` is defined inside `#ifdef __DRIVER_TYPES_H__`, a macro
+only the CUDA toolkit's `driver_types.h` sets, so on ROCm the header supplies nothing. A
+one-line probe TU that calls the macro settles it, and the commit message should give the
+accurate reason. (plvs)
 
 ## Build hygiene
 
@@ -324,175 +248,3 @@ AMD-specific -- say so in the commit message.
   previous generation's content, with no diagnostic and a plausible-looking build. Delete
   the stale `*.prehip` (or work in a fresh copy of the tree) whenever a generator has
   rewritten a file that was already hipified. (LC-framework)
-- **Do not key a macro gate on `__HIP_PLATFORM_AMD__` when a compiler predefine says the same
-  thing.** `__HIP_PLATFORM_AMD__` comes from `hip/hip_runtime.h`, not from the compiler, so a
-  gate above the includes -- wave-width selection above all -- depends on hipify happening to
-  prepend that header at line 1, and evaluates as if the platform were CUDA whenever it does
-  not. That failure is silent: it compiles and runs, with wave32 code on wave64 hardware.
-  `__GFX8__`/`__GFX9__`/`__GFX11__`/`__GFX12__` are AMD-clang device-pass predefines that need
-  no header and are never defined by nvcc or by a host compiler, so
-  `#if defined(__GFX8__) || defined(__GFX9__)` is both shorter and self-contained. Verify a
-  candidate gate with `hipcc -x hip --offload-arch=<arch> -dM -E` on an empty file before
-  trusting it, and assert the result per arch with a `static_assert` under
-  `#ifdef __HIP_DEVICE_COMPILE__` -- an unguarded one in a `__global__` body is also evaluated
-  in the host pass, where the answer is legitimately different. (LC-framework)
-
-## Install and consume the port, not just build it
-
-A project that ships `install()` rules and a `<Name>Config.cmake` has a second interface the
-in-tree tests never touch, and it is routinely left CUDA-only by a port that otherwise works:
-the exported config `find_dependency(CUDAToolkit)` unconditionally, the exported link
-interface names a HIP imported target with no `find_package` that defines it, a replacement
-for a CUDA-only dependency installs its export set without a config file to find it by, and
-the shim headers that resolve `cuda_runtime.h` / `curand_kernel.h` in the INSTALLED headers
-are neither installed nor on the interface include path. Every one of these is invisible
-until someone consumes the installation, so **install to a scratch prefix and build a
-five-line consumer project against it as part of the port**. `configure_file(... @ONLY)`
-makes the config-template fix a one-liner with no CMakeLists change:
-
-    if("@USE_HIP@")
-        find_dependency(hip REQUIRED)
-    else()
-        find_dependency(CUDAToolkit REQUIRED)
-    endif()
-
-Quote the substitution: when the option is not defined (the subproject built standalone) it
-expands to nothing, and a bare `if()` is a CMake error while `if("")` is false. Note also
-that `cmake --install --prefix` does NOT override a prefix a project baked into its install
-rules at configure time; reconfigure with `-DCMAKE_INSTALL_PREFIX` instead of concluding the
-install is broken. Write the downstream snippet into the docs only after the consumer
-actually configures, builds and runs. (HEonGPU)
-
-## Every optional target the project can build, not just the one you build
-
-`BUILD_TESTS` is on while you work, so the test targets get the full treatment -- source
-compiled as HIP, the `USE_HIP` definition, the shim include directory -- and `BUILD_EXAMPLES`
-and `BUILD_BENCHMARKS`, which default OFF, quietly do not. A half-converted branch of that
-kind is worse than no branch at all, because it reads as tested: on HEonGPU the example
-targets linked the HIP runtime but were still compiled as plain C++, so the first project
-header pulled in `cuda_runtime.h` and then rocThrust, and the benchmark targets still linked
-`CUDA::cudart` unconditionally and failed at configure time. **Turn every option the project
-documents ON once and build it**, then run one binary from each group; that is minutes, and
-it is the only way the claim in your commit message is true.
-
-## Submodules pinned to commits that do not exist
-
-**A port that edits a git submodule in place is lost the moment the clone is deleted, and
-the branch it leaves behind cannot even be cloned.** If the submodule's working tree is
-edited and the resulting gitlink is committed in the parent without the submodule commit
-being pushed anywhere, the gitlink names a SHA that exists in no repository. (HEonGPU pins
-GPU-NTT, GPU-FFT and RNGonGPU as submodules and lost its submodule port this way.)
-
-Check for it early: `git ls-tree HEAD <submodule-path>` in the port branch, then
-`git submodule update --init`. If the update cannot find the commit, the branch is
-unbuildable and no amount of local success proves otherwise.
-
-Forking every submodule is often not an option (a chain of forks has to be re-pointed in
-`.gitmodules` and kept in sync). The durable shape that needs no new repositories is to
-**reset the gitlinks to the real upstream commits and carry the submodule changes as patch
-files in the parent repo**, applied by whatever script the project already runs at configure
-time:
-
-    git submodule update --init --recursive
-    if [ "${1:-OFF}" = "ON" ]; then                       # only for AMD builds
-        for name in ...; do
-            patch="$here/patches/$name.patch"
-            git -C "$here/$name" apply --reverse --check "$patch" 2>/dev/null && continue
-            git -C "$here/$name" apply "$patch"
-        done
-    fi
-
-The reverse-check is what makes repeated configures idempotent. Pass the AMD flag in from
-CMake so an NVIDIA build sees the submodules untouched. Add `ignore = dirty` to each entry
-in `.gitmodules`: applying the patches permanently dirties those working trees, and without
-this every later `git status` reads as an unclean tree and fails any check for a clean tree,
-while a genuine gitlink bump still shows. This also states the honest upstream position --
-these changes belong in the submodules' own repositories, and the patch files are exactly
-the diffs to send there. (HEonGPU)
-
-## Windows: CMake's HIP link rule mangles MSVC-style flags and paths
-
-On Windows, CMake's HIP link path routes through `hipcc.exe`, which invokes `clang.exe
---driver-mode=g++` for `--hip-link`. That GCC driver then receives CMake's MSVC-style
-response file and flags, and misreads them two ways: it treats bare MSVC linker flags
-(`/machine:x64`, `/subsystem:console`) as file paths, and it applies GNU backslash-escaping
-to the response file, eating every backslash so `D:\path\torch.lib` arrives as
-`D:pathtorch.lib`. CMake also injects `-fuse-ld=lld-link`, which conflicts with `--hip-link`.
-
-**This has nothing to do with `-fgpu-rdc`.** A project with no relocatable device code at all
-still hits it if it links HIP through CMake on Windows. Do not conclude you are safe because
-you are not using RDC -- that mistake was made once already and cost a round.
-
-Fix: interpose a wrapper on the link step, set as `CMAKE_HIP_LINK_EXECUTABLE`. The canonical
-copy is `assets/hip_link_win.py` in this skill. It strips `-fuse-ld=*`, converts `-Xlinker`
-pairs and bare MSVC `/flags` to `-Wl,` form, and rewrites `-lXXX.lib` to `-Xlinker XXX.lib`
-so lld-link resolves them via `LIB`. It is ~60 lines and carries no project-specific state.
-
-**Vendor a copy into the project** (conventionally `cmake/hip_link_win.py`) rather than
-referencing this skill: the project's CMake calls it, and the work is meant to be
-upstreamed, so a pull request cannot depend on a file that only exists here.
-
-Guard the override to Windows. Related and separate: the clang-cl `/Fo` bundler bug, where the
-CMake HIP compile rule must emit `-o <OBJECT>` instead of `/Fo<OBJECT>` because the driver
-hands the same path to `clang-offload-bundler` as both input and output and Windows refuses to
-rewrite a memory-mapped file (ROCm/TheRock#5615). A project can need the compile-rule fix, the
-link wrapper, or both -- they are independent. (alien, origin of the wrapper; LichtFeld-Studio,
-which needs the link half.)
-
-## Windows: a fetched ROCm-DS dependency has to be built static
-
-Measured on the hipMM 4.0 line. hipMM 5.0.0 does not yet compile on Windows at all
-(https://github.com/AMD-Ecosystem/hipMM/issues/11), so the hipMM-specific parts below apply
-again once it does; the `LINKER:` and `BUILD_SHARED_LIBS` points hold for any fetched
-dependency.
-
-ROCm-DS libraries -- hipMM (the RMM port) and the rapids_logger it fetches transitively --
-are built shared by default and neither one works that way under an MSVC-style toolchain.
-Two independent defects, both found porting HEonGPU, both in the dependency rather than in
-the port:
-
-- **They export nothing.** `rmm/detail/export.hpp` defines `RMM_EXPORT` as
-  `__attribute__((visibility("default")))` under `__GNUC__` and as nothing otherwise (its
-  comment says only glibc is supported); rapids_logger's macro is unconditionally the ELF
-  attribute with no `#else`. The DLLs themselves build and link, so the failure surfaces
-  far downstream at the **first executable link**, as `undefined symbol:
-  rmm::cuda_stream_view::...` / `rapids_logger::logger::log(...)`. Identify the fault class
-  with one command instead of chasing mangling or link order: `llvm-readobj --coff-exports
-  rmm.dll` (or `dumpbin /exports`) lists nothing at all for a library whose sources clearly
-  define those symbols, and returns 409 entries for the same DLL once
-  `WINDOWS_EXPORT_ALL_SYMBOLS` is on. If a shared build is genuinely required, the fix
-  is `set_target_properties(<tgt> PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)` on each of
-  them (measured to link cleanly), but see below for why static is better.
-- **A GNU-only linker option reaches an MSVC-style driver.** rapids_logger applies
-  `target_link_options(rapids_logger PRIVATE "LINKER:--exclude-libs,libspdlog")` whenever
-  `RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS` is ON, which is its default under
-  `BUILD_SHARED_LIBS`. CMake's `LINKER:` prefix translates only the *spelling* of the
-  driver's flag-passing convention, never the flag itself, so `--exclude-libs libspdlog`
-  arrives verbatim; lld-link warns that it does not know `--exclude-libs` and then treats
-  the bare word `libspdlog` as an input file name and fails. Generalize this: any GNU/ELF
-  linker idiom behind `LINKER:` (`--exclude-libs`, `--version-script`, `-Bsymbolic`,
-  `--as-needed`) passes through untranslated and is a Windows build break waiting to
-  happen.
-
-Setting `BUILD_SHARED_LIBS` OFF for the directory scope that fetches them disposes of
-both at once -- the export macros stop mattering, and rapids_logger's
-`cmake_dependent_option` forces its symbol hiding off for a static build -- and it also
-avoids a third problem, that Windows has no RPATH: with shared dependencies every
-executable needs `rmm.dll`, `rapids_logger.dll`, `spdlog.dll` and `fmt.dll` copied next to
-it before it will even start, which breaks `gtest_discover_tests` during the build itself
-(exit `0xc0000135` right after a successful link).
-
-Set it as a **normal variable in that directory scope**, not a cache entry. RMM declares
-`option(BUILD_SHARED_LIBS "Build RMM shared libraries" ON)` in its own CMakeLists, and an
-`option()` writes the cache, so fetching RMM silently flips every *later* fetch in the
-project to shared as well -- that is how a project's googletest turns into `gtest.dll`
-halfway through a port. Under CMP0077 NEW (any dependency requiring CMake 3.13+) an
-`option()` defers to an existing normal variable and creates no cache entry at all, so the
-scope-local `set(BUILD_SHARED_LIBS OFF)` keeps both the dependency and everything fetched
-after it on the default static path. Do not "harden" it into
-`set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)`: an `OFF` cache entry builds static too,
-so it is not what reintroduces the bug, but it overrides a `-DBUILD_SHARED_LIBS` the user
-set for their own build and persists in the build tree across reconfigures, including a
-later one that no longer takes this branch. Guard the whole thing on `MSVC` (true for clang-cl,
-and the correct predicate for "MSVC-style link driver") so Linux and the CUDA path are
-untouched. (HEonGPU)
