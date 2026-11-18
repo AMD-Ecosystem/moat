@@ -11,6 +11,7 @@ worse than none: it rejects data that is actually correct.
     python3 utils/gen_schema.py --check    # fail if it is out of date (CI)
 """
 
+import argparse
 import json
 import pathlib
 import sys
@@ -413,6 +414,11 @@ def build():
             # written before this field existed are still readable while they are
             # migrated (see READABLE_SCHEMA_VERSIONS).
             "stage": {"enum": sorted(m.STAGE_STATES)},
+            # The commit the review passed, stamped on reviewing -> review-passed
+            # and carried across inert deltas like a validated_sha. Absent on a
+            # record reviewed before the field existed, which is not judged stale.
+            "reviewed_sha": {"type": ["string", "null"],
+                             "description": "head the review last passed"},
             # A person's verdict that the codebase cannot be ported at all, which is
             # what `stage: not-portable` stands on. Like a gate waiver and a licence
             # clearance, a record without `by` satisfies nothing -- an agent may build
@@ -475,8 +481,16 @@ def build():
                     # from these two shas and never stored (see failure_stands).
                     "failed_sha": {"type": ["string", "null"],
                                    "description": "head this arch last failed to validate"},
-                    "pr_url": {"type": ["string", "null"]},
-                    "pr_number": {"type": ["number", "null"]},
+                    # Set when the failure is about content the build does not
+                    # compile (set-state ... validation-failed --gate): such a
+                    # failure is retired by a documentation-only fix instead of
+                    # being carried across it. Absent on an ordinary failure.
+                    "failed_gate": {"enum": list(m.CONTENT_GATES) + [None]},
+                    # Commits this arch validated before validated_sha, newest
+                    # last, so evidence is not lost when the head returns to one
+                    # (an abandoned fix round).
+                    "validated_prior": {"type": "array", "items": {"type": "string"},
+                                        "maxItems": m.VALIDATED_PRIOR_KEPT},
                     "started_at": {"type": ["string", "null"]},
                     "completed_at": {"type": ["string", "null"]},
                     "updated_at": {"type": ["string", "null"]},
@@ -489,17 +503,25 @@ def build():
     }
 
 
-def main():
+def main(argv=None):
+    # argparse, so that only the bare command writes: `--help` and a mistyped flag
+    # used to fall through to the write, and asking what the tool does rewrote the
+    # schema.
+    ap = argparse.ArgumentParser(
+        description="Generate schema/status.schema.json from moatlib.")
+    ap.add_argument("--check", action="store_true",
+                    help="write nothing; exit 1 if the checked-in schema is out of date")
+    args = ap.parse_args(argv)
     text = json.dumps(build(), indent=2) + "\n"
-    if "--check" in sys.argv:
-        if not OUT.exists() or OUT.read_text() != text:
+    if args.check:
+        if not OUT.exists() or OUT.read_text(encoding="utf-8") != text:
             print("gen_schema: schema/status.schema.json is out of date "
                   "(run utils/gen_schema.py)", file=sys.stderr)
             return 1
         print("gen_schema: schema is up to date")
         return 0
     OUT.parent.mkdir(exist_ok=True)
-    OUT.write_text(text)
+    OUT.write_text(text, encoding="utf-8", newline="\n")
     print(f"wrote {OUT.relative_to(m.REPO_ROOT)}")
     return 0
 

@@ -25,12 +25,18 @@ would lose real information:
 
   STICKY   a value that RECORDS A DECISION -- an approval, a clearance, a PR
            number. A writer who simply never had it must not erase it, so a
-           non-null beats a null regardless of which is newer. Deliberate
-           removal is rare and is a human editing the file, not a merge.
+           non-null beats a null regardless of which is newer. A deliberate
+           removal (`set-review-pr --clear`, `set-maintained --clear`) is told
+           apart by the ancestor: when it had the value, one side still has it
+           unchanged and the other dropped it, the removal stands. With no
+           ancestor the value is kept.
   UNION    per-key maps (platforms, waivers) where two hosts legitimately write
            different keys at the same time. Merge key by key, latest writer wins
            within a key.
-  RANKED   pr_state, which advances through a lifecycle. See _pr_rank.
+  RANKED   pr_state, which advances through a lifecycle. See _pr_rank. The rank
+           decides only what the ancestor cannot: a state one side alone changed
+           is that side's, so a PR recorded closed and then reopened is not put
+           back to closed by a host still carrying the close.
 
   RESET    a field cleared by REMOVING it, where absence is the new value rather
            than a writer who never had it. `set-hold off` pops on_hold, so it is
@@ -188,7 +194,7 @@ def _union(pa, pb, po=None):
     return out
 
 
-def _merge_lock(a, b):
+def _merge_lock(a, b, o=None):
     """Reconcile the fork-write lock. FIRST ACQUIRE WINS, deterministically.
 
     This is the one field where latest-writer-wins is actively wrong, and the
@@ -215,7 +221,17 @@ def _merge_lock(a, b):
     EITHER side matches it exactly; an unmatched lock survives no matter how new
     the lock-less record is. A release written by tooling that predates the
     marker leaves the lock held until the holder's next transition or a person's
-    `port-lock --release` -- failing closed, where the inference failed open."""
+    `port-lock --release` -- failing closed, where the inference failed open.
+
+    Only the newest marker is kept, so a lock that outlived TWO releases matched
+    none: a validator whose copy still carried the first acquisition wrote it back
+    over a record that had released it and a later one since, and the project sat
+    in `review-passed` under a lock nobody held. The ancestor `o` settles that
+    without a marker. A side whose lock is the ancestor's own did not acquire
+    anything -- it only still carries it -- so whatever the other side did to the
+    lock (released it, or released it and took a new one) is the one change, and
+    it stands. This is not the timestamp inference: a lock taken concurrently is
+    absent from the ancestor, differs from it, and survives as before."""
     rel = [r for r in (a.get("porting_released"), b.get("porting_released")) if r]
 
     def _live(lock):
@@ -224,6 +240,13 @@ def _merge_lock(a, b):
 
     la = a.get("porting") if _live(a.get("porting")) else None
     lb = b.get("porting") if _live(b.get("porting")) else None
+    lo = (o or {}).get("porting") or None
+    if lo:
+        ra, rb = a.get("porting") or None, b.get("porting") or None
+        if ra == lo and rb != lo:
+            return lb
+        if rb == lo and ra != lo:
+            return la
     if la and lb:
         if la.get("arch") == lb.get("arch"):
             ha, hb = la.get("holder"), lb.get("holder")
@@ -287,7 +310,10 @@ def merge(a, b, o=None):
     So a field only one side changed since the ancestor is that side's, whichever
     record is newer; recency decides only what both sides changed."""
     a_top, b_top = a.get("updated_at") or "", b.get("updated_at") or ""
-    newer, older = (b, a) if b_top > a_top else (a, b)
+    # Ties go to B, as they do within a platform block (_b_is_later): timestamps
+    # have one-second resolution, and the two levels used to break a tie opposite
+    # ways, so one merge could take the top-level fields from A and a block from B.
+    newer, older = (b, a) if _b_is_later(a_top, b_top) else (a, b)
     out = dict(older)
     out.update(newer)                       # default: latest writer wins per field
     out["updated_at"] = max(a_top, b_top)
@@ -303,6 +329,8 @@ def merge(a, b, o=None):
             out.pop(k, None)
 
     for k in STICKY:
+        if k in settled:
+            continue        # one side set or cleared it; the ancestor pass took that
         if out.get(k) is None:
             out[k] = a.get(k) if a.get(k) is not None else b.get(k)
         if k in out and out[k] is None:
@@ -328,7 +356,7 @@ def merge(a, b, o=None):
             out[k] = newer[k]
 
     if "porting" in a or "porting" in b:
-        lock = _merge_lock(a, b)
+        lock = _merge_lock(a, b, o)
         if lock is None:
             out.pop("porting", None)
         else:
@@ -351,7 +379,12 @@ def merge(a, b, o=None):
 
     if "pr_state" in a or "pr_state" in b:
         sa, sb = a.get("pr_state"), b.get("pr_state")
-        if _PR_RANKABLE and _pr_rank(sa) != _pr_rank(sb):
+        side = _one_sided("pr_state", a, b, o)
+        if side is not None:
+            out.pop("pr_state", None)
+            if side.get("pr_state") is not None:
+                out["pr_state"] = side["pr_state"]
+        elif _PR_RANKABLE and _pr_rank(sa) != _pr_rank(sb):
             out["pr_state"] = sa if _pr_rank(sa) > _pr_rank(sb) else sb
         else:
             out["pr_state"] = newer.get("pr_state") or sa or sb

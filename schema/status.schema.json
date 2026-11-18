@@ -798,6 +798,13 @@
         "unclaimed"
       ]
     },
+    "reviewed_sha": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "head the review last passed"
+    },
     "not_portable": {
       "type": [
         "object",
@@ -919,17 +926,19 @@
           ],
           "description": "head this arch last failed to validate"
         },
-        "pr_url": {
-          "type": [
-            "string",
-            "null"
+        "failed_gate": {
+          "enum": [
+            "docs",
+            "jargon",
+            null
           ]
         },
-        "pr_number": {
-          "type": [
-            "number",
-            "null"
-          ]
+        "validated_prior": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4
         },
         "started_at": {
           "type": [
