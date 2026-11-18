@@ -113,8 +113,10 @@ if ! "$MOAT_PY" -c 'import jsonschema, tomllib' >/dev/null 2>&1; then
   fi
 fi
 
-# --fast skips the fork-cleanliness gate: it walks every fork clone and would add
-# tens of seconds to every push. pr_ready enforces it where it matters.
+# --fast skips the two gates that walk every fork clone, forks and commits: they
+# would add tens of seconds to every push. pr_ready enforces fork cleanliness where
+# it matters; the commit rules are judged by a bare check.py, or by
+# `moatlib.py audit-commits`, on a host that has the clones.
 if git cat-file -e origin/main:utils/trunk.py 2>/dev/null; then
   "$MOAT_PY" -c "$(git show origin/main:utils/trunk.py)" run check.py --fast
 else

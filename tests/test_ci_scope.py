@@ -67,6 +67,20 @@ class Workflow(unittest.TestCase):
         self.assertIn('--base "origin/$PR_BASE"', self.text)
         self.assertIn("PR_BASE: ${{ github.base_ref }}", self.text)
 
+    def test_what_fast_skips_is_described_the_same_everywhere(self):
+        # `--fast` skips every slow gate, and each place that says what a bare
+        # check.py adds names all of them, not only the first one that existed.
+        import install_hooks
+        slow = sorted(g for g, (_fn, is_slow) in check.GATES.items() if is_slow)
+        self.assertEqual(slow, ["commits", "forks"])
+        fast_line = next(ln for ln in check.__doc__.splitlines() if "--fast" in ln)
+        hook = install_hooks.PRE_PUSH_TEMPLATE
+        hook_note = hook[hook.index("# --fast skips"):hook.index("if git cat-file")]
+        for gate in slow:
+            self.assertIn(gate, fast_line)
+            self.assertIn(gate, self.step[:self.step.index("shell:")])
+            self.assertIn(gate, hook_note)
+
     def test_check_dependencies_are_pinned_to_exact_versions(self):
         line = next(ln for ln in self.text.splitlines() if "pip install" in ln)
         packages = [w for w in line.split("pip install", 1)[1].split()

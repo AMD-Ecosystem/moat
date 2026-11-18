@@ -63,9 +63,9 @@ jobs:
 
       - name: Run gates
         # --fast skips the forks and commits gates, which need the fork clones that
-        # only exist on a porting host. The pre-push hook runs --fast too, so those
-        # are enforced only by pr_ready (and a manual full check.py) on the hosts
-        # where the clones actually exist.
+        # only exist on a porting host. The pre-push hook runs --fast too, so on the
+        # hosts where the clones exist fork cleanliness is enforced by pr_ready, and
+        # the commit rules only by a bare check.py or `moatlib.py audit-commits`.
         #
         # A push is replayed to the gates exactly as the pre-push hook presents it:
         # the same two variables, built from the event instead of from git's stdin.
