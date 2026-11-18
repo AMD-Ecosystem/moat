@@ -160,29 +160,31 @@ diff. HEonGPU, an installed library, chose the guard. Whichever you choose, say 
 which one it is and why -- the reviewer's first question is why the other one was not used.
 
 **`-fgpu-rdc` changes the consumer contract, so the project's downstream docs owe a line
-about it.** This is the cost of option 1 above, and it is the reason to think twice about it.
-The interface options make the common consumer work, they do not make the
-requirement go away, and a comment claiming the consumer need not know is wrong. An archive
-of relocatable device code carries no complete device image, so the device link happens at
-the consumer's final link and only the HIP driver in HIP link mode performs it. Two failure
-modes (ROCm 7.2.1, gfx90a): a `g++` link of the installed archive gives
-`undefined reference to __hip_gpubin_handle_<hash>` and `__hip_fatbin_<hash>`, and a
-gcc-driven link that does receive the interface flag does not even get that far
-(`g++: error: unrecognized command-line option '-fgpu-rdc'`). The trap is that a CMake
-consumer can hit either one, and which remedy it needs depends on who drives its link, so
-separate the two conditions before writing anything down, and note that both presuppose a
-third. HIP must be an ENABLED LANGUAGE in the consuming project, via
-`project(app LANGUAGES CXX HIP)` or `enable_language(HIP)`; `find_package(hip)` and linking
-`hip::host` do not enable it, and nothing the consumer sets on its own target substitutes for
-it -- but the PRODUCER can enable it for the consumer, see below. The DRIVER must be the HIP
-compiler, which CMake arranges -- once the language is enabled -- when the target has HIP
-sources of its own, when it links a target that has them,
-when it links an IMPORTED target whose `IMPORTED_LINK_INTERFACE_LANGUAGES` is HIP --
-`install(EXPORT)` records that for a library built from HIP sources, and it propagates even
-through a plain C++ intermediate library -- or when the target sets `LINKER_LANGUAGE HIP`.
-The LINE must also carry `--hip-link`, which CMake adds ONLY for a target that has HIP
-sources of ITS OWN. Measured against an installed export and against a hand-imported archive
-(ROCm 7.2.1, gfx90a, CMake 4.0.3):
+about it.** This is the cost of option 1 above. An archive of relocatable device code carries
+no complete device image, so the device link happens at the consumer's final link, and only
+the HIP driver in HIP link mode performs it. The interface options in the recipe make the
+common consumer work; they do not make the requirement go away.
+
+Symptoms at the consumer (ROCm 7.2.1, gfx90a): a `g++` link of the installed archive gives
+`undefined reference to __hip_gpubin_handle_<hash>` and `__hip_fatbin_<hash>`; a gcc-driven
+link that does receive the interface flag stops earlier with
+`g++: error: unrecognized command-line option '-fgpu-rdc'`.
+
+Three conditions have to hold, and which one a consumer lacks decides its remedy:
+
+1. HIP is an ENABLED LANGUAGE in the consuming project (`project(app LANGUAGES CXX HIP)` or
+   `enable_language(HIP)`). `find_package(hip)` and linking `hip::host` do not enable it, and
+   nothing set on a target substitutes for it.
+2. The link DRIVER is the HIP compiler. With the language enabled, CMake arranges that when
+   the target has HIP sources of its own, links a target that has them, links an IMPORTED
+   target whose `IMPORTED_LINK_INTERFACE_LANGUAGES` is HIP (`install(EXPORT)` records that for
+   a library built from HIP sources, and it propagates through a plain C++ intermediate
+   library), or sets `LINKER_LANGUAGE HIP`.
+3. The link LINE carries `--hip-link`, which CMake adds ONLY for a target that has HIP
+   sources of ITS OWN.
+
+Measured against an installed export and a hand-imported archive (ROCm 7.2.1, gfx90a, CMake
+4.0.3):
 
 | consumer target | link driver | needs |
 | --- | --- | --- |
@@ -194,42 +196,31 @@ sources of ITS OWN. Measured against an installed export and against a hand-impo
 | the archive named by path in a HIP-enabled project, no imported target | gcc | `LINKER_LANGUAGE HIP`, `--hip-link` AND `-fgpu-rdc`, since nothing supplies the flag either |
 
 `LINKER_LANGUAGE HIP` never adds `--hip-link`, so it is useless alone and needed only where
-the driver is still gcc -- and it is available only where HIP is enabled, since otherwise
-CMake has no HIP link rule and fails at generate time with
-`Missing variable is: CMAKE_HIP_LINK_EXECUTABLE`. That is why the fourth row has no
-target-level remedy: the C++ driver rejects `-fgpu-rdc` and `--hip-link` alike, so nothing the
-consumer sets on its own target rescues that link. The remedy that does exist is the
-PRODUCER's, and if you are porting a library you are the producer. A package config file is
-included at the caller's file scope, so `enable_language(HIP)` as the first line of your
-`cmake/Config.cmake.in` enables the language in the consumer's scope. Measured against one
-installed export with the config file as the only difference (ROCm 7.2.1, gfx90a, CMake
-4.0.3): a `project(app LANGUAGES CXX)` consumer with a plain C++ executable goes from
-`unrecognized command-line option '-fgpu-rdc'` to configuring and linking under
-`/opt/rocm/lib/llvm/bin/clang++` with only `--hip-link` on the target, and it works the same
-when `find_package` is called from an `add_subdirectory`. Decline it deliberately rather than
-believing it does not exist, because the costs are real: `enable_language` must be called in
-file scope and in the highest directory common to all targets using the language, so a
-consumer that wraps `find_package` in a function gets no language at all -- measured, that
-configure still succeeds and the link then fails exactly as before -- and every consumer pays
-HIP compiler detection at configure time (0.9s to 2.9s on that tree). If you do decline it,
-the honest thing for the library's docs to say is that enabling the HIP language is a
-requirement rather than a suggestion. Be careful with the scope of any claim here: prose that
-offers `--hip-link` as THE fix is right for a HIP-enabled project consuming an installed
-export and wrong both for a hand-rolled import and for a C++-only project, and the reader who
-has no HIP source of their own is exactly the reader with no reason to have enabled the
-language. Say which shape
-you mean rather than generalizing from the one you happened to measure. Note also that an
-interface link option is unguarded unless you guard it, so `-fgpu-rdc` reaches even a
-consumer that pins `LINKER_LANGUAGE CXX` in a HIP-enabled project and breaks it, while the
-matching `target_compile_options(... INTERFACE $<$<COMPILE_LANGUAGE:HIP>:-fgpu-rdc>)` is
-conditioned; decide deliberately whether that asymmetry is what you want. Do NOT try to fix
-any of this by wrapping the interface flag in `$<LINK_LANGUAGE:HIP>`: that only trades the
-unrecognized-option message for the undefined-symbol one. Fix it in prose -- wherever the
-project tells a CUDA consumer to set `CUDA_SEPARABLE_COMPILATION ON`, the HIP consumer needs
-the parallel sentence. None of this is fatal -- the contract is documentable and a consumer
-that enables the HIP language pays nothing -- but it is a requirement the CUDA path does not
-have. Weigh it before you adopt the flag, not after you have written the docs for it.
-(HEonGPU)
+the driver is still gcc; it exists only where HIP is enabled (otherwise generation fails with
+`Missing variable is: CMAKE_HIP_LINK_EXECUTABLE`), which is why the fourth row has no
+target-level remedy. Wrapping the interface flag in `$<LINK_LANGUAGE:HIP>` does not help
+either: it trades the unrecognized-option message for the undefined-symbol one. Note the
+asymmetry in the recipe: the interface compile option is conditioned on the HIP language and
+the interface link option is not, so `-fgpu-rdc` reaches, and breaks, a consumer that pins
+`LINKER_LANGUAGE CXX` in a HIP-enabled project. Decide deliberately whether that is what you
+want.
+
+The PRODUCER can enable the language for its consumers. A package config file is included at
+the caller's file scope, so `enable_language(HIP)` as the first line of
+`cmake/Config.cmake.in` takes a `project(app LANGUAGES CXX)` consumer from the
+unrecognized-option error to configuring and linking with only `--hip-link` on its target,
+also when `find_package` is called from an `add_subdirectory`. It has costs: `enable_language`
+must run at file scope in the highest directory common to all targets using the language, so
+a consumer that wraps `find_package` in a function gets no language at all (configure
+succeeds, the link fails as before), and every consumer pays HIP compiler detection at
+configure time (1 to 3 seconds).
+
+Either way, fix it in prose. Wherever the project tells a CUDA consumer to set
+`CUDA_SEPARABLE_COMPILATION ON`, the HIP consumer needs the parallel sentence, and if the
+config file does not enable the language the docs must say enabling HIP is a requirement, not
+a suggestion. Scope the sentence to the consumer shape it is true of: "add `--hip-link`" is
+right for a HIP-enabled project consuming an installed export and wrong both for a
+hand-rolled import and for a C++-only project. (HEonGPU)
 
 **Cross-TU `__device__` calls ARE inlined on AMD under `-fgpu-rdc`.** Do not repeat the nvcc
 intuition here: nvcc `-rdc=true` really does leave a call unless you add `-dlto`, but HIP's
@@ -361,42 +352,41 @@ files that use `__half` arithmetic then fail with "invalid operands ... '__half'
 includes LibTorch, `#undef` both in the force-included compat header under `__HIP__`.
 (LichtFeld-Studio)
 
-  - A rapids-cmake `rapids_hip_init_architectures` HIP-dependency (e.g. hipMM/RMM) can fail configure on a multi-GPU host with `mismatch between CMAKE_HIP_ARCHITECTURES and GPU_TARGETS` even though only one arch was requested: ROCm's `hip-config.cmake` auto-populates the `GPU_TARGETS` cache variable by enumerating every visible device rather than the set of distinct architectures, so four cards of the same gfx report `GPU_TARGETS='gfx1100;gfx1100;gfx1100;gfx1100'` against a single-valued `CMAKE_HIP_ARCHITECTURES='gfx1100'`, and the rapids-cmake string-equality check (not a set comparison) trips. This is a host-population artifact, not a port defect -- confirm by rerunning the identical configure with `HIP_VISIBLE_DEVICES=0` (or on a single-GPU host) and observing it pass. Work around it at the configure invocation, no source edit needed: pass `-DGPU_TARGETS=<arch> -DAMDGPU_TARGETS=<arch>` alongside `-DCMAKE_HIP_ARCHITECTURES=<arch>` so all three agree before rapids-cmake's check ever runs. This applies to the HIP build as much as to the CUDA check. (HEonGPU, gfx1100 4-GPU host)
+**On a multi-GPU host a rapids-cmake HIP dependency fails configure with `mismatch between
+CMAKE_HIP_ARCHITECTURES and GPU_TARGETS`.** ROCm's `hip-config.cmake` fills the `GPU_TARGETS`
+cache variable with one entry per visible device, not per distinct architecture, so four
+cards of one kind report `gfx1100;gfx1100;gfx1100;gfx1100` against a single-valued
+`CMAKE_HIP_ARCHITECTURES`, and the string comparison in `rapids_hip_init_architectures` (used
+by hipMM/RMM) trips although only one arch was requested. It is an artifact of the host, not
+a port defect: the identical configure passes with `HIP_VISIBLE_DEVICES=0`. Work around it on
+the command line, with no source edit: pass `-DGPU_TARGETS=<arch> -DAMDGPU_TARGETS=<arch>`
+alongside `-DCMAKE_HIP_ARCHITECTURES=<arch>`. (HEonGPU, four gfx1100)
 
-### A torch build used only as a test oracle can break a build two different ways as it drifts
+### LibTorch on the include path shadows the system `fmt`, and spdlog stops compiling
 
-When a project's own tensor/rasterizer/etc. library is libtorch-free and pulls in a ROCm
-PyTorch build purely as a parity-test oracle (`find_package(Torch)` in the test target
-only), that torch dependency is a moving target across sessions/hosts even though the
-port's own source did not change. Two independent fault shapes turned up on the same host,
-in the same build, from the same torch version bump (LichtFeld-Studio, torch `2.14.0a0`):
+Symptom: after a torch update, a project that links LibTorch only as a test oracle
+(`find_package(Torch)` in the test target) fails inside `spdlog/common.h` with a
+template-not-found error (`fmt::basic_format_string`), in a TU that has nothing to do with
+ROCm. Cause: recent PyTorch ships its own `fmt` under `torch/include/fmt/`. Its `core.h` is
+a reduced stub, but its `format.h` is the full current fmt (12.x), and once
+`-isystem .../torch/include` is on a TU's search path every `#include <fmt/...>`, including
+spdlog's, resolves to torch's copy first, because the compiler's implicit system directories
+are searched last. A distro `libspdlog` built against an older fmt API then does not compile.
+Confirm by checking that `torch/include/fmt/format.h` exists and reports a newer
+`FMT_VERSION` than the system's `fmt/core.h`; a second, unrelated compiler hitting the same
+error rules out a compiler quirk.
 
-- **Torch's vendored `fmt` shadows the system `fmt` any spdlog build expects.** Recent
-  PyTorch ships its own copy of `fmt` under `torch/include/fmt/` for its "stable ABI"
-  surface. `torch/include/fmt/core.h` is a small stub that, unless a project explicitly
-  opts in, includes only a reduced `base.h` -- but `torch/include/fmt/format.h` is the
-  REAL, full, current fmt (e.g. 12.x). Once `-isystem .../torch/include` is on a
-  translation unit's search path (added for the parity-oracle link), every `#include
-  <fmt/...>` in that TU -- including a completely unrelated `spdlog` header -- resolves to
-  torch's copy first, because a compiler's own implicit system directories (where the
-  distro's compatible `fmt`/`spdlog` actually live) are always searched last, after every
-  explicit `-I`/`-isystem`. If the distro's `libspdlog` was built against an older fmt API
-  (e.g. `fmt::basic_format_string`, renamed to `fmt::fstring` in fmt 12), the mismatch
-  surfaces as a template-not-found error inside `spdlog/common.h`, nothing about ROCm/HIP
-  at all. Confirm by swapping compilers (a different, unrelated compiler hitting the exact
-  same error rules out a compiler-version quirk) and by checking whether `torch/include/
-  fmt/format.h` exists and reports a newer `FMT_VERSION` than the system's `fmt/core.h`.
-  Fix without touching the port: build `spdlog` from source with `-DSPDLOG_FMT_EXTERNAL=OFF`
-  (bundles spdlog's own matched fmt copy) and point `spdlog_DIR` at that install -- the same
-  "vendor a known-good copy locally" pattern already used for pinned `glm`/header-only deps.
-  Pick the spdlog version by the fmt it bundles, not by whatever is newest in the distro:
-  bundled fmt 10.x and older hit `call to consteval function 'fmt::basic_format_string<...>'
-  is not a constant expression` from `FMT_STRING` under a recent Clang (seen with a ROCm SDK
-  carrying an LLVM 23 dev snapshot), which is a second, unrelated failure that looks like the
-  first one and reproduces with no torch include at all. spdlog 1.14.1 bundles fmt 10.2.1 and
-  fails; spdlog 1.15.3 bundles fmt 11.x and is clean. Triage both symptoms in a second with
-  `clang++ -std=c++20 -fsyntax-only -I<spdlog>/include` on a two-line TU calling
-  `spdlog::info("{:.6e}", f)`, instead of rebuilding the project to find out.
+Fix without touching the port: build spdlog from source with `-DSPDLOG_FMT_EXTERNAL=OFF`
+(it then uses its own bundled fmt) and point `spdlog_DIR` at that install. Pick the spdlog
+version by the fmt it bundles: bundled fmt 10.x and older fail under a recent clang with
+`call to consteval function 'fmt::basic_format_string<...>' is not a constant expression`,
+a second failure that looks like the first and reproduces with no torch include at all
+(spdlog 1.14.1 bundles fmt 10.2.1 and fails; 1.15.3 bundles fmt 11.x and is clean). Triage
+either symptom in a second with `clang++ -std=c++20 -fsyntax-only -I<spdlog>/include` on a
+two-line TU calling `spdlog::info("{:.6e}", f)`, instead of rebuilding the project. A torch
+used this way is a moving dependency even when the port's source does not change; the other
+fault the same torch bump produced is in build-headers-macros.md ("A torch header the compat
+layer already aliases for can grow new symbols"). (LichtFeld-Studio, torch 2.14.0a0)
 
 ### Submodules pinned to commits that do not exist
 
@@ -477,18 +467,14 @@ it is the only way the claim in your commit message is true.
 
 ### A cached build-script decision from a wrong env var survives fixing the env var
 
-If a `build.rs` reads an env var (e.g. `ROCM_PATH`) to emit `cargo:rustc-link-search`, but
-does not also declare `cargo:rerun-if-env-changed=<that var>`, cargo has no reason to
-re-run the script when only the env var changes -- so a build attempted once with a wrong
-value (e.g. an old `ROCM_PATH` copied from another host's notes, pointing at a path that
-doesn't exist on this one) caches the wrong `-L` search path in `target/debug/build/<crate>-<hash>/output`
-and keeps reusing it even after the env var is corrected. The compile step can appear to
-pass (a `.rlib`/static-archive target does not need the search path), while the FIRST
-step that actually links a final binary -- a `cargo test` binary, not `cargo build` of a
-lib -- fails with `unable to find library -l<name>`, which looks like a missing runtime
-library rather than a stale cache. Fix: `cargo clean -p <crate>` (not just re-running with
-the right env) before rebuilding. Generalizes beyond ROCm: always check `env | grep -i
-<toolkit>_path` against what the build script actually expects before trusting old notes
-from a different machine -- ROCm/CUDA install layouts (`/opt/rocm` vs a TheRock/pip
-`_rocm_sdk_devel` tree vs a conda env) are not portable between hosts, even ones set up by
-the same team. (mahout)
+If a Rust `build.rs` reads an env var such as `ROCM_PATH` to emit `cargo:rustc-link-search`
+but does not declare `cargo:rerun-if-env-changed=<that var>`, cargo does not re-run the script
+when only the variable changes. A build attempted once with a wrong value caches the wrong
+`-L` path in `target/debug/build/<crate>-<hash>/output` and keeps using it after the variable
+is corrected. The compile can appear to pass (an `.rlib` or static archive does not need the
+search path), and the FIRST step that links a final binary, typically a `cargo test` binary,
+fails with `unable to find library -l<name>`, which reads like a missing runtime library.
+Fix: `cargo clean -p <crate>` before rebuilding. More generally, check
+`env | grep -i <toolkit>_path` against what the build script expects before trusting a value
+copied from another machine: `/opt/rocm`, a pip-installed `_rocm_sdk_devel` tree and a conda
+env are different layouts. (mahout)

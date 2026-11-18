@@ -62,51 +62,29 @@ reference accessor or introduce a non-canonical vector family into shared code. 
 behaviour is identical -- document it as an upstream type-identity difference, not a bug.
 (CV-CUDA: TypeTraitsMakeTypeVectorTest/3.)
 
-- **A libtorch `c10/cuda/*.h` header a project's compat layer already aliases for can grow
-  new symbols the alias list has not caught up to.** A CUDA-graph-capture/user-object-retain
-  helper added to `c10/cuda/CUDAGraphsC10Utils.h` in a newer torch build referenced
-  `cudaGraph_t`/`cudaHostFn_t`/`cudaUserObject_t`/`cudaUserObjectNoDestructorSync`/
-  `cudaGraphUserObjectMove`/`cudaUserObjectRelease`/`cudaStreamGetCaptureInfo_v2` literally
-  (this header is never hipified for a plain CMake consumer -- torch only hipifies at
-  `CUDAExtension` build time), while the project's own compat header already aliased
-  *other* symbols from the very same file (`cudaStreamCaptureMode`, `cudaStreamBeginCapture`,
-  ...) -- proof the aliasing strategy is right and the coverage merely fell behind a torch
-  version bump. This is a real, small, escalatable gap (confirm every missing symbol has a
-  `hip*` equivalent in the installed HIP runtime headers before reporting it, so the fix is
-  known to be "add N aliases", not an open-ended investigation), and it is not something to
-  route around with an older pinned torch -- an older torch only hides the gap on one
-  machine; the same coverage will fall behind again on the next torch refresh. Fix it in the
-  port's compat header, from the exact symbol list and confirmed HIP counterparts.
-  **Treat the compiler's error list as a lower bound and alias the whole helper, not just the
-  names it printed.** Two independent mechanisms hide a missing alias, and only one of them is
-  the familiar template one. (a) Clang drops the undeclared-callee diagnostic when one of the
-  call's arguments is an *error-typed expression*. A variable declared with a missing type name
-  is error-typed only when clang cannot recover its declaration, i.e. when that type name has no
-  typo-correction candidate; most missing `cuda*` type names DO have one and clang then reports
-  the callee normally -- so **a type name clang does not correct** (here `cudaGraph_t`, printed
-  with no "did you mean") **masks every missing function alias in each call passing a value of
-  that type**, and those function names appear only in a second wave, after the type aliases are
-  added. What pins that to correctability rather than to the argument being a type: `#undef`-ing
-  a type whose name typo-corrects leaves the callee reported, redefining that same type to an
-  uncorrectable spelling suppresses both callees, and redefining `cudaGraph_t` to a correctable
-  spelling brings its callee back -- flip only the correctability and the suppression flips with
-  it, in both directions. In that header the unaliased `cudaGraph_t` hid
-  both `cudaGraphRetainUserObject(graph, ...)` -- whose arguments are all non-dependent, so
-  ordinary lookup would have rejected it at template-definition time -- and
-  `cudaStreamGetCaptureInfo_v2(..., &graph, ...)`, whose argument list contains no undeclared
-  name at all. An argument that is merely an undeclared *identifier* does not suppress the
-  callee when clang can typo-correct it (`cudaGraphUserObjectMove` -> "did you mean
-  'hipGraphUserObjectMove'?", and the call around it is still reported), so do not reason about
-  this from a synthetic reproducer whose undeclared name has no correction candidate; measure
-  on the real header with the probe below. (b) A call whose arguments *are* dependent is
-  looked up only at instantiation, so inside a template nobody instantiates it produces no
-  error at all while the helper is merely parsed (`cudaUserObjectCreate(&obj, data.get(), ...)`
-  on a `std::unique_ptr<T>`). Either way, covering the parameter types alone leaves the body
-  half translated. Check rather than reason about it: syntax-only compile the real torch header
-  behind the compat header, `#undef`-ing one alias at a time. Removal that still gives rc 0
-  means that name is diagnosed only at instantiation; removal that errors means it is required
-  at parse time, and if it was still absent from the original error list, something else in the
-  same call masked it. (LichtFeld-Studio)
+**A torch header the compat layer already aliases for can grow new symbols: alias the whole
+helper, not just the names the compiler printed.** A plain CMake consumer of LibTorch
+compiles `c10/cuda/*.h` un-hipified (torch hipifies only at `CUDAExtension` build time), so
+its compat header aliases the `cuda*` names those headers use, and a torch update can add
+names the alias list lacks (`cudaGraph_t`, `cudaHostFn_t`, `cudaUserObject_t`,
+`cudaGraphUserObjectMove`, `cudaUserObjectRelease`, `cudaStreamGetCaptureInfo_v2` arrived in
+`c10/cuda/CUDAGraphsC10Utils.h`). Do not route around it with an older pinned torch: that
+hides the gap on one machine until the next refresh. Confirm each missing name has a `hip*`
+counterpart in the installed HIP headers, then add the aliases.
+
+Treat the compiler's error list as a LOWER BOUND. Two mechanisms hide a missing alias. (a)
+clang drops the undeclared-callee diagnostic when one of the call's arguments is an
+error-typed expression, and a variable declared with a missing type name is error-typed
+exactly when that type name has no typo-correction candidate. So a type name clang does not
+offer a "did you mean" for (here `cudaGraph_t`) masks every missing function alias in each
+call that passes a value of that type; those names appear only in a second wave, after the
+type aliases are added. (b) A call whose arguments are dependent is looked up only at
+instantiation, so inside a template nobody instantiates it produces no error at all. Check
+rather than reason: syntax-only compile the real torch header behind the compat header,
+`#undef`-ing one alias at a time. A removal that still gives rc 0 means that name is
+diagnosed only at instantiation; a removal that errors means it is required at parse time,
+and if it was absent from the original error list, something in the same call masked it.
+(LichtFeld-Studio, torch 2.14.0a0)
 
 ## Macros CUDA defines and HIP does not
 

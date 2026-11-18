@@ -189,12 +189,10 @@ device-wide synchronize at the end of construction covers all of them in the sam
 line. Put it after the LAST null-stream operation, not merely after the uploads: an async
 `hipMemset` that zeroes the evaluation's own buffers is the same race, so a sync placed
 before that allocation loop leaves it open. (lc0: `allocAndUpload` in
-`neural/backends/cuda/layers.cc` corrupting the value head's `ip2_val_b_`; the same 4.4e-02
-value error on gfx1101, gfx1151 and gfx1201 under Windows and absent on linux-gfx90a and
-linux-gfx1100, which had been misread as a rocBLAS/Tensile problem for two months. The
-first fix synchronized `allocAndUpload` alone; on a net WITH a moves-left head the last
-fp16 upload is `FCLayer<half>::LoadWeights` instead, which still corrupted the moves-left
-head while the value/policy gate passed 34/34. Upstream's own fix, lc0 #2454, is the
+`neural/backends/cuda/layers.cc` corrupted the value head's last-uploaded bias; the same
+4.4e-02 value error appeared on three RDNA parts under Windows and on no Linux part, and was
+misread as a rocBLAS problem for two months. A first fix that synchronized that one helper
+left the moves-left head corrupt on nets that have one. Upstream's own fix, lc0 #2454, is the
 reference shape: one `cudaDeviceSynchronize()` after the `tensor_mem_` malloc/memset loop.)
 
 The same race has an allocator-shaped variant that is easy to introduce while fixing the

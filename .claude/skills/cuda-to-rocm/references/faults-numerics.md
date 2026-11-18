@@ -241,79 +241,61 @@ path; strided batched (including stride 0 broadcast) works the same way. A regre
 needs k = 2^20 to clear a 4-ulp bound robustly; k = 2^15 splits only once. (oneflow: matmul
 primitive, grouped_matmul_bias, fused self-attention.)
 
-**gfx11 and gfx12 WMMA drift over long k, in every library, with any output type.** The float
-accumulator of `v_wmma_f32_16x16x16_f16` does not round to nearest: one wave carrying it through
-2^20 products is off by 3.4e-3 relative on gfx1100 and 1.7e-3 on gfx1201, against 3.1e-5 for an
-fp32 FMA chain, and the bias is toward zero (it grows linearly with k). So on gfx1100 every
-hipBLASLt algorithm for a long-k fp16 GEMM gives the same error (all 298 that fit 4 MiB, float D
-too: about 6-8 fp16 ulp at k = 2^20; gfx1201 2.5-3.7), torch matches it digit for digit, and
-rocBLAS does too wherever it does not chunk k itself (cuBLAS N,T, where neither operand is
-k-major). Choosing another algorithm does not help; shortening the chain does. Do the chunking
-yourself rather than asking hipBLASLt for a split-k: cut k into equal chunks of at most 2^15, run
-them as batched GEMMs (batch stride = chunk along k) that write each chunk's product to its own
-slice IN THE 16-BIT TYPE OF D, and sum the slices in float into D, rounding once. A 16-bit slice
-limits each chunk's sum to the range and precision of that type: a float16 chunk of 8192 tokens
-whose products average above 8 (loss-scaled weight gradients) is inf even when the chunks cancel to
-a finite result, and finite chunk sums far larger than the result they cancel to are rounded
-relative to their own size (x = 4, dy = +-1.9 in 8192-token blocks: chunk sums near 62000, results
-near 250, 820 ulp; one unchunked WMMA GEMM gives 89). In the kernel that sums the slices, compute
-a block of outputs again from A and B as float dot products over all of k when any element's slices
-are not finite or a BOUND on their rounding error exceeds 3 units of roundoff of the output type (3
-x 2^-11 float16, 3 x 2^-8 bfloat16) times the block's largest result. The bound is the sum of half
-an ulp of each slice in its type (the float's exponent bits times the unit roundoff; 0 below the
-smallest normal, so all-zero inputs never recompute, at the price of half a subnormal step per
-slice left out) plus half an ulp of each float partial sum. That needs no host sync, works under
-graph capture, keeps true inf/NaN inputs non-finite, and holds in the worst case. Do not use a
-root-sum-square test (rss of the slices against sqrt(3) times the block maximum): it bounds only
-the EXPECTED error, and chunk sums that all round the same way pass it and lose 4.2 / 4.5 / 9.4
-ulp at k = 2^16 / 2^19 / 2^20 (a dot product of ones whose chunk sums sit just short of a rounding
-midpoint: 8.8 ulp in float16 and bfloat16; oneflow's regression test). The bound never fires on
-full 32 x 8 blocks of random data up to k = 2^20, but it does in blocks with few valid elements
-(uniform random data, k = 2^16 / 2^20: 39 / 72% of 1-element blocks, 21 / 57% of 2, 7 / 38% of 4,
-1.4 / 19% of the 1 x 8 edge blocks of a matrix-vector product, 0 / 0.8% of 32), so the recompute
-must be cheap: one thread block walking k in 32-step tiles takes k / 32 serial steps (28 ms for one
-element at k = 2^20). Spread k over the block's threads with 16-byte loads and, when the output has
-few blocks, over several thread blocks per output block whose partial sums the last one to finish
-adds in a fixed order (deterministic); that brought one recomputed element at k = 2^20 to about 20
-us. A recomputed 1 x 8 block still reads its 8 rows of A again, so the bound's cost is the fired
-fraction of a second read of A: on gfx1100 (oneflow) (1024, 2^20) @ (2^20, 1) took
-5.1 ms against 4.2 without any recompute (+20%; root-sum-square +1-16%), (4096, 65536) @ (65536,
-33) and (64, 2^20) @ (2^20, 1) +3-4% over root-sum-square, and every other shape measured,
-including large weight gradients, the same as root-sum-square. Float slices for such thin
-outputs would stop those firings, but hipBLASLt has no float-D algorithm for 1 x 1 outputs and
-rocBLAS splits k into many launches for them, and per-shape costs went both ways (oneflow, not
-adopted).
-Watch the register count while doing it: a fully unrolled 32-load loop (which hipcc otherwise
-serializes, waiting on every load) took the kernel from 66 to 248 VGPRs and the common case 11%
-slower, and even 98 VGPRs (two 16-byte runs in flight) cost large GEMMs 2-3% and full-block
-recomputes 9-34%; one run in flight per operand kept 79 VGPRs. An output where every full block
-recomputes is still 30-120x slower. Chunking bounds the chain
-length, not cancellation: WMMA's error grows with the size of the partial sums, so ordinary
-unchunked gfx11 GEMMs are also tens of ulp off when large partial sums cancel (29-52 ulp at k =
-8192-32768 with x = 4, dy = +-3 in 4096-token blocks), and cancellation inside one chunk is
-invisible to the slice check (x = 4, dy = +-3 in 4096-token blocks of a 64 x k x 32 x^T @ dy:
-78 / 182 / 269 ulp at k = 2^16 / 2^18 / 2^20, where torch's single hipBLASLt GEMM, which splits k
-for such small outputs, gives 20 / 45 / 68; only a float accumulation without WMMA gets about 1,
-at 7-200x the cost). Realistic loss-scaled gradients (random data, results near 30000) stay at
-0.55-0.92 ulp. Do not give the chunks a float D: on gfx1100 hipBLASLt picks a much smaller tile for a float D (an fp16 4096 x
-40000 x 4096 GEMM takes 139 ms with a float D against 16 ms with an fp16 one; 23-28x through
-torch's `out_dtype=float32`), which made x^T @ dy weight gradients with 40000-65536 tokens
-10-28x slower than one unchunked GEMM. One rounding per slice costs little: chunks of about 2^13
-(at most 16 slices unless that would exceed 2^15) measured 0.9-1.2 ulp for large outputs and <=
-1.2 ulp in every layout up to k = 2^20 on gfx1100, more accurate than 2^15 chunks (1.2-1.5 ulp)
-and no slower. Run each chunk on the library ordinary GEMMs use (rocBLAS, about 1.5x faster than
-hipBLASLt for large outputs on gfx1100) unless rocBLAS would split it again
-(`max(lda, ldb) * chunk >= 2^30` in ROCm 10.1, see the rocBLAS entry above, where it rounds a
-16-bit D per inner chunk). With that, large weight gradients run within
-about 1.1x of one plain GEMM. Fold the batch into the chunk calls, tile the slices over m and n to
-a memory budget with balanced tiles, and if a library has no algorithm for one tile, run that
-tile alone through rocBLAS with a float D rather than failing the call after earlier tiles were
-written. Two reasons not to rely on `GemmTuning::setSplitK`: its partials need m * n * split
-floats of workspace, and on gfx1201 the heuristic's first kernel for k-major A and small outputs
-(`MT16x16x192`) is wrong by tens of ulp for many k above 2^17 and stays wrong with the split,
-which it accepts and runs. A GEMM whose k never exceeds 2^15 stays out of both. The gfx1100 costs
-above were not measured on gfx1201. Gate on the k length on the WMMA families, not on
-`ld * k`. gfx9 MFMA keeps fp32 accuracy. (oneflow: long-k matmul on gfx1100 and gfx1201.)
+**gfx11 and gfx12 WMMA drift over long k, in every library, with any output type.**
+Symptom: a half-precision (float16 or bfloat16) GEMM with a long k is several units of
+roundoff off on RDNA3 and RDNA4 while the same call is accurate on CDNA. Every hipBLASLt
+algorithm gives the same error, torch matches it digit for digit, rocBLAS does too wherever
+it does not chunk k itself, and a float output does not help.
+
+Cause: the float accumulator of the WMMA instruction (`v_wmma_f32_16x16x16_f16`) does not
+round to nearest. The bias is toward zero and grows linearly with k: one wave carrying it
+through 2^20 products is off by 3.4e-3 relative on gfx1100 and 1.7e-3 on gfx1201, against
+3.1e-5 for an fp32 FMA chain (about 6-8 fp16 ulp at k = 2^20 on gfx1100, 2.5-3.7 on
+gfx1201). The error also grows with the size of the partial sums, so a GEMM whose large
+partial sums cancel is tens of ulp off even at k = 8192. gfx9 MFMA keeps fp32 accuracy.
+
+Fix: choosing another algorithm does not help; shortening the chain does. Chunk k yourself,
+gated on the k length on the WMMA families (not on `ld * k`). A GEMM whose k never exceeds
+2^15 needs none of this.
+
+- Cut k into equal chunks of at most 2^15 (chunks of about 2^13 measured slightly more
+  accurate, 0.9-1.2 ulp, and no slower). Run them as batched GEMMs (batch stride = chunk
+  along k) that write each chunk's product to its own slice IN THE 16-BIT TYPE OF D, then sum
+  the slices in float into D, rounding once.
+- Do not give the chunks a float D. On gfx1100 hipBLASLt picks a much smaller tile for a
+  float D and runs 9 to 28 times slower.
+- Do not rely on hipBLASLt's own split-k (`GemmTuning::setSplitK`). Its partials need
+  m * n * split floats of workspace, and on gfx1201 (ROCm 10.1) the heuristic's first kernel
+  for k-major A and small outputs is wrong by tens of ulp for many k above 2^17, with or
+  without the split.
+- A 16-bit slice limits each chunk's sum to that type's range and precision: a chunk can be
+  inf where the chunks cancel to a finite result, and large chunk sums that cancel are
+  rounded relative to their own size. So the kernel that sums the slices must recompute, from
+  A and B as float dot products over all of k, every block of outputs where a slice is not
+  finite or where a BOUND on the rounding error exceeds 3 units of roundoff of the output
+  type (3 x 2^-11 float16, 3 x 2^-8 bfloat16) times the block's largest result. The bound is
+  the sum of half an ulp of each slice in its type (0 below the smallest normal, so all-zero
+  inputs never recompute) plus half an ulp of each float partial sum. It needs no host sync,
+  works under graph capture and keeps true inf/NaN inputs non-finite.
+- Do not replace the bound with a root-sum-square test. That bounds only the EXPECTED error;
+  chunk sums that all round the same way pass it and lose 4 to 9 ulp.
+- The bound almost never fires on full blocks of ordinary data, but often on blocks with few
+  valid elements (thin outputs such as a matrix-vector product), so the recompute must be
+  cheap: spread k over the block's threads with 16-byte loads and, when the output has few
+  blocks, over several thread blocks whose partial sums are added in a fixed order. Watch the
+  register count while doing it: a fully unrolled load loop took the kernel from 66 to 248
+  VGPRs and made the common case 11% slower.
+- Run each chunk on the library ordinary GEMMs use (rocBLAS was about 1.5x faster than
+  hipBLASLt for large outputs on gfx1100) unless rocBLAS would split it again (the entry
+  above). Fold the batch into the chunk calls, tile the slices over m and n to a memory
+  budget, and if a library has no algorithm for one tile, run that tile alone through rocBLAS
+  with a float D rather than failing the call after earlier tiles were written.
+
+Limits: chunking bounds the chain length, not cancellation inside one chunk, which the slice
+check cannot see; only a float accumulation without WMMA brings such cases to about 1 ulp,
+at 7 to 200 times the cost. Realistic loss-scaled gradients stayed at 0.55-0.92 ulp, and
+with the scheme above large weight gradients ran within about 1.1x of one plain GEMM.
+(oneflow: long-k matmul on gfx1100 and gfx1201, ROCm 10.1; costs measured on gfx1100 only.)
 
 **A GEMM workaround covers every entry point that reaches the library, fused epilogues included.**
 oneflow routed its matmul, bmm and grouped GEMMs to the chunked long-k path but its cuBLASLt
