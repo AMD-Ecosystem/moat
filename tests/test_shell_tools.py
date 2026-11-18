@@ -270,3 +270,71 @@ class OrientText(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(support.bash(), "needs bash")
+class HarnessHook(unittest.TestCase):
+    """utils/gh_hook.sh, the PreToolUse command in .claude/settings.json."""
+
+    HOOK = UTILS / "gh_hook.sh"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = pathlib.Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def event(self, command):
+        return json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                           "tool_input": {"command": command}})
+
+    def run_hook(self, command):
+        env = dict(os.environ, HOME=support.posix(self.home))
+        return subprocess.run([support.bash(), support.posix(self.HOOK)],
+                              input=self.event(command), capture_output=True,
+                              text=True, env=env)
+
+    def install_launcher(self, body):
+        d = self.home / ".local" / "bin"
+        d.mkdir(parents=True)
+        support.write_script(d / "moat-gh-hook", "#!/bin/sh\n" + body)
+
+    def test_without_the_launcher_a_gh_command_is_refused(self):
+        for cmd in ("gh pr comment 5 --body hi", "cd x && gh.exe api repos/o/r",
+                    "bash -c 'gh issue create'"):
+            with self.subTest(cmd=cmd):
+                r = self.run_hook(cmd)
+                self.assertEqual(r.returncode, 2, r.stderr)
+                self.assertIn("install_hooks.py", r.stderr)
+
+    def test_without_the_launcher_the_install_command_still_runs(self):
+        # The hook runs before every shell command; refusing them all would refuse
+        # the one that installs the launcher.
+        for cmd in ("python3 utils/install_hooks.py", "git status", "ls high/right",
+                    "bash utils/orient.sh"):
+            with self.subTest(cmd=cmd):
+                r = self.run_hook(cmd)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertIn("not installed", r.stderr)
+
+    def test_with_the_launcher_its_verdict_is_the_hooks(self):
+        self.install_launcher("cat >/dev/null; echo refused by the guard >&2; exit 2\n")
+        r = self.run_hook("git status")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("refused by the guard", r.stderr)
+
+    def test_the_launcher_receives_the_event(self):
+        self.install_launcher('cat > "$HOME/seen.json"; exit 0\n')
+        r = self.run_hook("git status")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        seen = json.loads((self.home / "seen.json").read_text(encoding="utf-8"))
+        self.assertEqual(seen["tool_input"]["command"], "git status")
+
+    def test_settings_run_this_script_for_shell_tools(self):
+        settings = json.loads((UTILS.parent / ".claude" / "settings.json")
+                              .read_text(encoding="utf-8"))
+        pre = settings["hooks"]["PreToolUse"]
+        self.assertEqual(len(pre), 1)
+        self.assertIn("Bash", pre[0]["matcher"])
+        self.assertIn("utils/gh_hook.sh", pre[0]["hooks"][0]["command"])

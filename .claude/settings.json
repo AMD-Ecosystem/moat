@@ -59,5 +59,19 @@
       "Bash(gh repo fork:*)",
       "Bash(ghstack:*)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/utils/gh_hook.sh\"",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
   }
 }
