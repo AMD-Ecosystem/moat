@@ -124,3 +124,5 @@
 {"kind":"phase","ts":"2026-09-21T17:34:24Z","phase":"compile","seconds":239.185,"exit":0,"cmd":"cmake --build projects/colmap/src/build-hip-gui -j64"}
 {"kind":"phase","ts":"2026-09-21T17:35:24Z","phase":"test","seconds":7.598,"exit":0,"cmd":"xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --output-on-failure"}
 {"kind":"session","ts":"2026-09-21T17:36:50Z","epoch":1790012210.922790058,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-18T00:22:07Z","epoch":1794961327.246512256,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-18T00:47:09Z","epoch":1794962829.210111947,"event":"end","platform":"linux-gfx90a"}

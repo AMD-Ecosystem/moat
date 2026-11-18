@@ -2392,3 +2392,162 @@ already documented; this run only reconfirms both).
 ## Upstream outcome (2026-10-09)
 
 colmap/colmap#4635 reads CLOSED on GitHub but the port landed. The maintainer (ahojnnes) approved it on 2026-09-24 with minor comments, then opened colmap/colmap#4795 from this PR's head with every commit retained, addressed the remaining review comments there (HIP no-device error mapping, runtime GPU-test skip, ROCM_PATH docs, stale "requires CUDA" wordings, `num_gpu_devices` rename, a ClangTidy CI failure), and merged it on 2026-10-01. #4635 was closed as superseded. Recorded as merged on jeffdaily's instruction; the reconciler will keep reporting a DRIFT line (record says merged, GitHub says CLOSED) because the recorded PR number is #4635.
+
+## Caspar HIP scoping study (planner, linux-gfx90a, 2026-11-18)
+
+Requested by Jeff Daily on 2026-11-17: keep `colmap-symforce-caspar-hip` ruled `now` and bring him a scope and a cost before any porting. This section re-measures every claim in the deferral against colmap main and this host's ROCm. Nothing was pushed and the fork was not touched; all experiments ran in this job's scratch space.
+
+### State handling
+
+The planner's normal entry transition was refused, as expected for a follow-on feature on a project whose upstream PR is finished:
+
+    python3 utils/moatlib.py set-state colmap linux-gfx90a planning --agent planner
+    ValueError: colmap/stage: illegal transition review-passed -> planning
+
+Nothing was forced. The stage stays `review-passed`, `plan.md` was not edited (it is the SIFT port's design record and the role may not write it outside `planning`), and this study is a recorded investigation. Starting the feature cycle properly is a control-plane decision for a person (the sequencing note of 2026-08-11 already says the Caspar cycle should start as a fresh claim once the SIFT records reach `main`). Separately: `moatlib.py branch-sync --apply` on `port/colmap` refuses because this branch still carries old edits to `.claude/skills/cuda-to-rocm/references/{fault-classes,validation,strategy-a-cmake}.md` from before the `branch-scope` gate, which now conflict with `main`. That also needs a person (or a trunk session) before the branch can be synced or merged; this study read the trunk's skills from `origin/main` instead.
+
+### Toolchain on this host
+
+- GPU: AMD Instinct MI250X, gfx90a:sramecc+:xnack-, wavefront 64, `HIP_VISIBLE_DEVICES=1` (dispatcher pin).
+- ROCm: TheRock pip `rocm-sdk-devel` 10.1.0; HIP 7.16.26385 (`hip_version.h`); AMD clang 24.0.0git (ROCm/llvm-project d6f6cb69).
+- Headers present: `hip/hip_cooperative_groups.h`, `hip/cooperative_groups/{hip_reduce.h,hip_scan.h,memcpy_async.h}`, implemented in `hip/amd_detail/amd_hip_cooperative_groups{,_reduce,_scan,_memcpy}.h`. `cg::reduce` and `cg::memcpy_async` are NOT pulled in by `hip_cooperative_groups.h`; each needs its own include.
+
+### 1. Where Caspar lives at colmap main and how it is built
+
+colmap main at `137f2168` (2026-11-10). Caspar history since adoption: `c4ea0dd8` (#4018, 2026-05-05) initial, `7423cbad` GPU selection, `d707fb49`/`44e9f74d` MSVC fixes, `6016c0a8` rig support, `d4e68351` annotations, and the one change since the August deferral, `68b722be` (#4799, 2026-10-07) "Regenerate Caspar kernels with upstream SymForce fixes", 961 files, +80k/-94k lines, which also added a double-precision tree.
+
+- Location: `src/thirdparty/Symforce-Caspar/`: `caspar_generate.py` (403 lines), `generated/f32/` and `generated/f64/` (488 files each; 241 `.cu` each, 482 total), `msvc_compact.h`, `msvc_cuda_compact.h`, `LICENSE` (Apache-2.0).
+- Generation: `caspar_generate.py` only declares the bundle-adjustment factors (SimpleRadial and Pinhole, 15 fixed/tunable variants each, plus rig) and calls `symforce.caspar.CasparLibrary.generate()`. It contains no CUDA. Every line of CUDA in the generated tree comes from upstream SymForce: the Jinja templates `symforce/caspar/source/templates/*.jinja` and the hand-written runtime `symforce/caspar/source/runtime/{memops.cuh,shared_indices.cu,sort_indices.cu,solver_tools.cu,...}` that `generate()` copies verbatim. **The deferral's premise that "a real fix belongs in caspar_generate.py" is wrong: the fix belongs in symforce-org/symforce, and colmap then regenerates.**
+- Build gates (colmap main): `CMakeLists.txt:52-58` `CASPAR_ENABLED` (default OFF) and the new `CASPAR_USE_DOUBLE` (default OFF, selects `f64`); `src/thirdparty/CMakeLists.txt:154-156` `CASPAR_ENABLED AND NOT CUDA_ENABLED` -> `FATAL_ERROR "Caspar requires CUDA"` (still true); `:158-221` arch check (>= 75) and `FetchContent` of the generated tree's own `CMakeLists.txt` (which is `project(... LANGUAGES CXX CUDA)`, pins `CMAKE_CUDA_ARCHITECTURES 75 80-real 86-real 89-real`, links `CUDA::cudart`, `--use_fast_math`); `cmake/FindDependencies.cmake:399-423` CUDA arch >= 70 check inside the CUDA block; `src/colmap/estimators/CMakeLists.txt:49-55` links `caspar_lib_core`, and `colmap_util_cuda` only `if(CUDA_ENABLED)` (the link gap #4618's review found; `colmap_util_cuda` already exists under HIP, `src/colmap/util/CMakeLists.txt:259-268`).
+- colmap-side consumer: `src/colmap/estimators/bundle_adjustment_caspar.{h,cc}` (1166 lines) and `caspar/caspar_model_adapter.h`; plain C++, the only GPU-specific call is `FindBestCudaDevice()` (`bundle_adjustment_caspar.cc:956`), already HIP-capable through `colmap_util_cuda`.
+- Tests: `bundle_adjustment_caspar_test` (17 TESTs, `src/colmap/estimators/CMakeLists.txt:72-78`, only when `CASPAR_ENABLED`), the `CASPAR` parameterisation of `bundle_adjustment_test` (`bundle_adjustment_test.cc:13,65,332`), and option checks in `controllers/incremental_pipeline_test.cc:747-775`. All need a GPU. Upstream CI builds one Ubuntu config with `casparEnabled: true` (`.github/workflows/build-ubuntu.yml:73`), compile-only (no GPU runner).
+
+**f32 and f64 are out of sync, and f64 depends on an unmerged SymForce PR.** `generated/f32/memops.cuh` is byte-identical to upstream SymForce main's `runtime/memops.cuh`. `generated/f64/memops.cuh` differs by 41 diff lines: it carries symforce-org/symforce#472 ("Fix FlushSumShared warp reduction and zero-initialize reduction accumulators"), which is still OPEN. So colmap's "100% reproducible from caspar_generate.py" holds only with a privately patched SymForce for f64.
+
+### 2. Measured CUDA surface (generated tree at colmap main)
+
+**Cooperative groups.** The deferral's "2392 references" counted include lines. Measured over both trees:
+
+| token | count | what it is |
+|---|---|---|
+| `#include <cooperative_groups.h>` | 480 | include in every kernel/mapping file |
+| `#include <cooperative_groups/memcpy_async.h>` | 480 | include |
+| `namespace cg = cooperative_groups` (alias lines) | 480 | alias |
+| `#include <cooperative_groups/reduce.h>` | 478 | include |
+| `#include <cooperative_groups/details/partitioning.h>` | 474 | include of a CUDA-internal header |
+| actual `cg::` uses | 45 | all in two runtime files |
+
+The 45 real uses, all in `memops.cuh` and `shared_indices.cu` (per tree), no generated kernel body calls cooperative groups directly:
+
+| feature | f32 | f64 | use |
+|---|---|---|---|
+| `cg::this_thread_block()` | 2 | 2 | `SumStore` (tile parent); `SharedIndicesKernel` (block, `group_index()`, `group_dim()` on a `const` object) |
+| `cg::this_grid().thread_rank()` | 1 | 1 | global thread id in `SharedIndicesKernel`, ordinary (non-cooperative) launch, no grid sync anywhere |
+| `cg::tiled_partition<32>` | 1 | 1 | `SumStore`: two-level block reduction, 32-lane tiles, `meta_group_rank()` |
+| `cg::reduce(..., cg::plus<T>())` | 5 | 4 | on a 32-tile (`SumStore`, x2) and on coalesced groups (`FlushSumBlock`, `FlushSumBlockAdd`, `FlushSumShared`) |
+| `cg::coalesced_threads()` | 3 | 2 | parent of the partitions below |
+| `cg::binary_partition` | 2 | 2 | `FlushSumBlock`/`FlushSumBlockAdd`: reduce over valid lanes, leader does one `atomicAdd_block` |
+| `cg::labeled_partition` | 1 | 0 | `FlushSumShared` (f32): group lanes by target node id (arbitrary, non-contiguous lanes), reduce, leader `atomicAdd_block` |
+| `cg::memcpy_async` + `cg::wait` | 1+1 | 1+1 | `SharedIndicesKernel`: copy up to 1024 indices to shared memory |
+
+f64 replaces `labeled_partition` with #472's hand loop: `__activemask()` into a 32-bit `unsigned int`, `lane_id = threadIdx.x & 31`, and `__shfl_sync(mask, v, lane)` for `lane < 32`. That is hard-coded to a 32-lane warp.
+
+**Other CUDA surface, per tree (f32 = f64 unless noted):** `__global__` 281, `<<<` 281 (all `__launch_bounds__(1024, 1)` (237) or `(block_size, 1)` (38); block size 1024 throughout); `__syncthreads` 456 (f64 658); `__shared__` 618 (f64 598), static only, no `extern __shared__`; `atomicAdd` 14 (global and shared float/double); `atomicAdd_block` 5 (shared); `__syncwarp` 2 (Batcher sort stages <= 32 in `shared_indices.cu`); `__restrict__` 78; `rsqrtf` 2; f64 only: `__activemask` 1, `__shfl_sync` 2, `& 31` 1. No `__ballot`, `__match_any`, `warpSize`, inline asm, `__ldg`, textures, half/bf16, `cudaFuncSetAttribute`, streams or events. Host runtime: `cudaSetDevice` 392, `cudaMemcpy` 196, `cudaGetLastError` 38, `cudaMemset` 2, `cudaMalloc`/`cudaFree`/`cudaGetDeviceCount` 1 each. CUB: `cub::DeviceReduce::Sum` 2, `cub::DeviceRadixSort::SortPairs` 2, `SortKeys` 2 (`solver_tools.cu`, `sort_indices.cu`). No Thrust. Arch pins: generated `CMakeLists.txt` (75, 80-real, 86-real, 89-real), colmap `CASPAR_MIN_ARCH 75`, FindDependencies `>= 70`.
+
+### 3. What HIP 7.16 provides: one probe per feature
+
+Probes in `agent_space/probes/` (job-local), each a self-checking program run with 1024-thread blocks like Caspar, compiled `hipcc -O2 --offload-arch=gfx90a -std=c++17 -x hip`, run under `ulimit -c 0` on the pinned GPU, and also compiled (not run) for gfx942, gfx950, gfx1100, gfx1151 and gfx1201 with identical compile results on every target.
+
+| feature (as Caspar uses it) | HIP 7.16 | evidence |
+|---|---|---|
+| `this_thread_block()` + `thread_rank`/`size`/`group_index` | available | p01b PASS |
+| `group_dim()` on a `const thread_block` | **compile error**, substitute trivial | `error: 'this' argument to member function 'group_dim' has type 'const thread_block', but function is not marked const` (`amd_hip_cooperative_groups.h:300`). Non-const object or `blockDim.x`: p01b PASS. Wave-independent. |
+| `this_grid().thread_rank()`, non-cooperative launch | available | p02 PASS |
+| `tiled_partition<32>` + `meta_group_rank` + `cg::reduce(plus)` (`SumStore`, f32 and f64) | available, needs `<hip/cooperative_groups/hip_reduce.h>` | p04 PASS on wave64 (32-tiles inside a 64-wide wavefront), padding lanes poisoned and masked |
+| `coalesced_threads()` + `binary_partition` + `cg::reduce` on the coalesced group (`FlushSumBlock*`) | available | p05 PASS. (symforce#465 replaced these with per-lane shared atomics because ROCm 7.2.1 lacked `cg::reduce`; on 7.13+ the CUDA code compiles as written.) Header note says coalesced groups are "under development on Microsoft Windows". |
+| `labeled_partition` (`FlushSumShared`, f32) | **missing** | `error: no member named 'labeled_partition' in namespace 'cooperative_groups'; did you mean 'tiled_partition'?` |
+| substitute A: per-lane shared `atomicAdd` (symforce#465's choice) | works | p06c PASS. Wave-independent. Cost: one shared atomic per valid lane instead of one per label group. |
+| substitute B: `__match_any(label)` 64-bit mask + `__shfl` loop over the mask | works | p06b PASS. Wave-width agnostic as written (64-bit masks, `__lane_id()`), O(group size) shuffles per lane. |
+| `memcpy_async(block, dst, src, bytes)` | available, needs `<hip/cooperative_groups/memcpy_async.h>` | p08b PASS |
+| `cg::wait(block)` | **missing**, substitute documented | `error: no type named 'wait' in namespace 'cooperative_groups'`. HIP's own header says call `group.sync()` before reading `dst` (it drains the async counter where the async path exists); `block.sync()`: p08b PASS. Wave-independent. |
+| `atomicAdd_block` (float, double, shared) | **missing**, substitute trivial | `error: use of undeclared identifier 'atomicAdd_block'`. `#define atomicAdd_block atomicAdd` (block-scope is implied for shared memory): p09b PASS. |
+| raw includes `<cooperative_groups.h>`, `<cooperative_groups/{memcpy_async,reduce}.h>`, `<cooperative_groups/details/partitioning.h>`, `<cuda_runtime.h>` | **not found** | `fatal error: 'cooperative_groups.h' file not found` (each). Needs the template change to a compat header; `details/partitioning.h` has no HIP counterpart and is not needed. |
+| f64's #472 loop as vendored (32-bit mask) | **compile error** | `static assertion failed due to requirement 'sizeof(unsigned int) == 8': The mask must be a 64-bit integer.` |
+| same loop with only the mask widened to 64 bits | **wrong results on wave64** | p07a FAIL, 220 of 222 label sums wrong (e.g. block 0 label 4: 100.0 vs 225.0): lanes 32-63 read lanes 0-31. |
+| same loop with `__shfl(v, lane, 32)` and per-half mask | works | p07c PASS. The `__shfl_sync` form of this trapped (`HSA_STATUS_ERROR_EXCEPTION`) because `__hip_check_mask` asserts that every lane in the mask executes the same call, which the per-half skip breaks. |
+| `hipcub::DeviceReduce::Sum`, `DeviceRadixSort::SortPairs`/`SortKeys` | available | p11 PASS (100003 elements, checked against host) |
+
+Summary: of the eight distinct cooperative-groups features Caspar uses, five compile and run as written on HIP 7.16 (`this_thread_block`, `this_grid`, `tiled_partition<32>`, `cg::reduce`, `coalesced_threads`/`binary_partition`, `memcpy_async`); one needs a one-token change (`group_dim()` const); two are missing with cheap, wave-independent substitutes (`labeled_partition`, `cg::wait`); plus `atomicAdd_block` (alias). Nothing is missing without a substitute. This contradicts the deferral (written against ROCm 7.14), and it is also newer than what symforce#465 was written against (ROCm 7.2.1, where `cg::reduce` and `memcpy_async` were also missing).
+
+**Wave-width dependence.** Every substitute in symforce#465 and in the table above is wave-independent, except the one already in colmap's f64 tree (#472), which is wave32-only as written and silently wrong on wave64. The Batcher sort's `__syncwarp()` for stages of size <= 32 is safe on both widths (a wave64 `__syncwarp` covers a superset). `tiled_partition<32>` reductions are safe on both.
+
+### 4. Existing work: symforce-org/symforce#465 is the generator-level port
+
+MOAT's own `symforce` project (record on `main`, `projects/symforce/`) opened https://github.com/symforce-org/symforce/pull/465 "Add AMD GPU (ROCm/HIP) support to the Caspar backend" on 2026-06-16. Live state (read-only `gh pr view`, 2026-11-18): OPEN, `mergeable: MERGEABLE`, `mergeStateStatus: BLOCKED` (no approving review yet), 15 commits, head `AMD-Ecosystem/symforce:moat-port` at `e7e0b00` (2026-11-04), which contains upstream main `acdedd0`. Maintainer aaron-skydio on 2026-09-14: "I'm down to merge this", wants codegen and build tests; jeffdaily on 2026-11-05 merged main, added HIP builds of the `*_cuda_test.cc` tests and codegen checks, fixed `cudaGetDeviceCount` and an `r_kp1_norm2_tot` zeroing bug, tested on MI250X, W7800 and Radeon 8060S; aaron-skydio on 2026-11-05: "I'll try and get this merged when I have time".
+
+What #465 changes (non-test, 25 files, +351/-57): a `cuda_to_hip.h` compat header (runtime renames, `atomicAdd_block` alias, `namespace cub = hipcub`, host-safe CUDA arm), the templates `kernel.cu`, `kernel.h`, `caspar_mappings.{cu,h}`, `solver.{h,cc}` include it instead of the CUDA headers, the generated `CMakeLists.txt.jinja` gains a `USE_HIP` branch (`project(... CXX HIP)`, `hip::host`/`hip::hipcub`, `-ffp-contract=fast -fno-math-errno` in place of `--use_fast_math`), and `memops.cuh`/`shared_indices.cu` gain `#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)` arms (per-lane shared atomics for `FlushSumShared`/`FlushSumBlock*`, butterfly `shfl_xor` for `SumStore`, blockDim and a strided copy in `SharedIndicesKernel`). The CUDA arms are the original code.
+
+**Compile proof against colmap's real kernels.** In a scratch copy of colmap's `generated/f32/`, I applied #465's runtime diff (`git diff origin/main...amd-moat-port` of `memops.cuh`, `shared_indices.{cu,h}`, `sort_indices.{cu,h}`, `solver_tools.cu`; applied cleanly, one hunk fuzz 2) and replaced each file's CUDA include block with `#include "cuda_to_hip.h"`, which is exactly what #465's templates emit. All 241 `.cu` plus `solver.cc` compiled for gfx90a with `hipcc -c -O3 -std=c++17 -fPIC -DUSE_HIP -ffp-contract=fast -fno-math-errno --offload-arch=gfx90a`: 242 objects, 0 errors, 32 s at `-P 64`; the only warnings are 1744 `-Wunused-value` for ignored `hipError_t` returns. Resource usage (`-Rpass-analysis=kernel-resource-usage`): max LDS 40964 bytes/block (under the 64 KiB gfx90a and RDNA limit and under Caspar's own 48 KB budget), max 128 VGPRs, minimum occupancy 4 waves/SIMD, one kernel with non-zero scratch (`kernel_simple_radial_split_fixed_principal_point_res_jac_first`).
+
+**GPU run of colmap's own tests (scratch build, gfx90a, f32).** To get past compile evidence I built colmap main with that patched f32 tree, `HIP_ENABLED=ON`, `CASPAR_ENABLED=ON`, in this job's directory (Ceres 2.2.0 and GKlib/METIS built from source into the job prefix; system OpenImageIO's CMake config copied job-locally and repointed because it references a missing `/usr/bin/iconvert`). colmap changes in the scratch tree: the CMake edits listed in section 5 (8 lines added, 4 removed), nothing else.
+
+    cmake -S agent_space/colmap-hip -B <job>/colmap-hip-build -GNinja -DCUDA_ENABLED=OFF -DHIP_ENABLED=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release -DTESTS_ENABLED=ON -DGUI_ENABLED=OFF -DOPENGL_ENABLED=OFF -DCGAL_ENABLED=OFF -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF -DCASPAR_ENABLED=ON -DCMAKE_PREFIX_PATH=<job>/deps/prefix -DOpenImageIO_DIR=<job>/deps/oiio-cmake -DMETIS_INCLUDE_DIRS=<job>/deps/prefix/include -DMETIS_LIBRARIES=<job>/deps/prefix/lib/libmetis.so
+    ninja -j 64 colmap_estimators_bundle_adjustment_caspar_test colmap_estimators_bundle_adjustment_test colmap_controllers_incremental_pipeline_test
+
+Configure logged "Enabling Caspar support", precision f32.
+
+**A defect in symforce#465 found by this build.** The first build failed in six host `.cc` files compiled by g++ (`bundle_adjustment_caspar.cc`, `bundle_adjustment.cc`, `global_mapper.cc`, `incremental_pipeline.cc`, `option_manager.cc`, `bundle_adjustment_caspar_test.cc`), all via `bundle_adjustment_caspar.h:14` -> generated `solver.h:5` -> `cuda_to_hip.h:18` -> `hipcub/hipcub.hpp`: `rocprim/intrinsics/arch.hpp:49:12: error: '__builtin_amdgcn_wavefrontsize' was not declared in this scope`. #465 made the CUDA arm of `cuda_to_hip.h` host-safe (cooperative groups and CUB only under `__CUDACC__`) but its HIP arm still includes `hip_cooperative_groups.h` and `hipcub.hpp` unconditionally, so any host translation unit that includes a generated header breaks. SymForce's own tests do not include the generated headers from a g++ TU, which is why its HIP CI did not see it. The fix is the mirror of the CUDA arm: include those two and `namespace cub = hipcub` only under `__HIPCC__`. With that applied to the scratch copy the build completed (`rc=0`). This must go into symforce#465 before it merges (the "host-includable compat header" fault class in `cuda-to-rocm`).
+
+Results on the MI250X (`HIP_VISIBLE_DEVICES=1`, `LD_LIBRARY_PATH` set to the pip SDK's `_rocm_sdk_core/lib`; without it the binaries exit 127 on `libamdhip64.so.7`, an environment issue):
+
+- `bundle_adjustment_caspar_test`: **17/17 PASSED, 3 of 3 runs** (10.96 s per run).
+- `bundle_adjustment_test`: 39/40; the CASPAR parameterisation ran 13 tests, **12 passed, 1 failed**: `BundleAdjusterBackends/BundleAdjusterBackendTest.PartiallyContainedTracks/1, where GetParam() = CASPAR`, `bundle_adjustment_test.cc:27: Expected: (camera.params[focal_length_idx]) != (orig_camera.params[focal_length_idx]), actual: 1280 vs 1280`. Deterministic, 5 of 5 reruns. With `GLOG_v=2`: `score_init: nan`, `Caspar: CONVERGED_DIAG_EXIT after 3 iters (diag limit hit -> likely premature termination)`, later `score_current` finite (1.976806e+02, 1.981764e+02) but `score_best` stays NaN, so every step is rejected and the parameters are returned untouched. **This is the same signature MOAT reproduced on #4618 on MI300X in August**, now on gfx90a with symforce#465's runtime and colmap's #4799 regeneration, which already contains SymForce's register zero-initialisation (`a768308`). So that fix does not cure it here. One hypothesis was tested and ruled out: zeroing the solver's whole device arena right after its single `cudaMalloc` (`solver.cc:462`, scratch edit, reverted) leaves the NaN unchanged (3 of 3), so it is not a read of uninitialised arena memory. The test passes on CUDA per #4799's A100 run (40/40). `ConstantPoints3D/1`, which also failed on #4618, passes here.
+- `incremental_pipeline_test`: not run (`libhiprand.so.1` not found on this pip-SDK layout, an environment issue; not pursued within budget).
+- Not run: f64, wave32, Windows, CUDA, an end-to-end mapper run.
+
+### 5. Strategy
+
+The port is three pieces, in dependency order:
+
+1. **SymForce (upstream, already written).** symforce#465 lands. Nothing about it needs new design for colmap; it may need a rebase onto whatever SymForce merges first. Two interactions must be handled when it does: (a) symforce#472 (open) rewrites the CUDA `FlushSumShared` with the 32-lane `__shfl_sync` loop; if it merges, #465's HIP arm must stay in front of it, or #472 must be made wave-safe (`width 32` shuffles over a per-half 64-bit mask, as p07c shows) before colmap ever regenerates f64 for HIP; (b) upstream SymForce has moved since colmap's regeneration (`78e380a` "Use dynamic shared memory in generated kernels", `dc269a3` launch checks, 2026-10-13/23), so colmap's next regeneration brings those in regardless of HIP. With HIP 7.16 several of #465's HIP arms could be dropped in favour of the CUDA code (`cg::reduce`, `binary_partition`, `memcpy_async` now exist), but that would raise the minimum ROCm to 7.13, so it is an optional follow-up, not part of this scope.
+2. **colmap regeneration (mechanical).** Run `caspar_generate.py <out> f32` and `... f64` against SymForce main with #465, so both trees carry the HIP-capable includes and `CMakeLists.txt`. `caspar_generate.py` itself needs no change. The CUDA output changes only in the include lines (now through `cuda_to_hip.h`, which on CUDA includes the same headers) and in whatever upstream SymForce changed meanwhile; the CUDA kernel bodies are untouched by #465. The diff is large (~480 files per regeneration, mostly include lines) but entirely generated. Prefer one regeneration PR that is clearly "regenerate with SymForce main", as #4799 was.
+3. **colmap CMake (small, hand-written).** `src/thirdparty/CMakeLists.txt`: relax the FATAL_ERROR to `NOT (CUDA_ENABLED OR HIP_ENABLED)`, skip the CUDA arch check under HIP, set `USE_HIP ON` before `FetchContent_MakeAvailable(caspar)`, add a HIP `-w`. `src/colmap/estimators/CMakeLists.txt`: link `colmap_util_cuda` when `CUDA_ENABLED OR HIP_ENABLED`. Docs (`doc/faq.rst:653-660`, `doc/cli.rst:452`, install docs) mention ROCm. About 10-20 lines plus docs. The scratch build used 8 inserted / 4 removed lines in the two CMake files and configured cleanly.
+
+Mechanical vs design: everything in colmap is mechanical. The only design that existed (the `labeled_partition` substitute and the shared-index copy) is done in #465 and verified by the probes; the open design item is the f64 interaction with #472.
+
+**What must be proven on a GPU.** `bundle_adjustment_caspar_test` (17 tests), `bundle_adjustment_test` with the CASPAR backend, and `incremental_pipeline_test`, for both `CASPAR_USE_DOUBLE=OFF` and `ON`, on wave64 (gfx90a) and wave32 (gfx1100), plus Windows (gfx1151). The CUDA path needs an nvcc compile (and ideally a run, since the regenerated tree pulls in upstream SymForce changes) on the mi355 host's nvcc. Also an end-to-end mapper run with `--Mapper.ba_local_backend CASPAR --Mapper.ba_global_backend CASPAR`, which is what caught #4618's wave64 non-convergence. Platform limits: gfx942/gfx950 still cannot build colmap's MVS/SIFT texture code (`colmap-gfx942-texture-buffer-rewrite`), so they could test Caspar only with `-DMVS_ENABLED=OFF` and no GPU SIFT; Caspar itself uses no textures and compiles for both. On Windows, HIP's coalesced-group functions are documented "under development"; #465 avoids them in the HIP arm, which is a point in its favour.
+
+### 6. Verdict for Jeff
+
+**Feasible, with one named gap.** The blocker named in the deferral is not real on current ROCm: the "2392 cooperative-groups references" are include lines; the 45 real uses are in two SymForce runtime files; every feature either exists in HIP 7.16 or has a cheap wave-independent substitute; and those substitutes are already written in MOAT's own open symforce#465, which the SymForce maintainer has said he intends to merge. With #465 applied mechanically (plus one host-include fix) colmap's real f32 kernels build for gfx90a and 29 of 30 Caspar GPU tests pass.
+
+The named gap is a numerical one: `PartiallyContainedTracks` with the CASPAR backend fails deterministically on wave64 (`score_init: nan`, no step accepted). It is the same failure #4618 showed on MI300X, so it follows the AMD target rather than one port's code, and the known upstream fix (register zeroing) does not cure it. Its root cause is unpinned. Until it is found the port cannot be called correct, and the fix may land in SymForce's templates or runtime, not in colmap.
+
+Proposed scope (no cut is proposed; nothing found is unportable):
+1. symforce#465: add the `__HIPCC__` guard to the HIP arm of `cuda_to_hip.h` (a small push to MOAT's own PR, needs Jeff's go-ahead as an upstream-visible change), and carry it to merge.
+2. Root-cause the `PartiallyContainedTracks` NaN on wave64 and fix it where it lives (probably SymForce), with wave32 data to say whether it is wave-width related.
+3. Regenerate colmap's f32 and f64 trees from SymForce main, keeping #472's 32-lane loop out of any HIP build.
+4. The colmap CMake/doc change (about 10-20 lines).
+5. Validate f32 and f64 on wave64, wave32 and Windows, plus the CUDA compile and run on the nvcc host, plus an end-to-end CASPAR mapper run.
+
+Size: items 1, 3 and 4 plus validation are a few days of porter, reviewer and validator rounds once symforce#465 is merged. Item 2 is open-ended until the mechanism is known: plausibly one or two days of kernel bisection (find which kernel first writes the NaN in this 400-residual problem, compare against a CPU evaluation of the same factor), but I cannot bound it from this study. Calendar time on symforce#465 is outside MOAT's control. A colmap PR before #465 merges would point at an unmerged SymForce, the same reproducibility defect MOAT's review held against #4618.
+
+Main risks:
+1. **symforce#465 merge timing** (external; open five months, maintainer positive but slow).
+2. **f64 and symforce#472**: colmap's f64 tree already contains wave32-only code that is silently wrong on wave64 (p07a); whoever regenerates must not carry it into a HIP build. Needs a decision on whether to propose a wave-safe #472 upstream or rely on #465's HIP arm.
+3. **Numerical behaviour on wave64 (the named gap)**: `PartiallyContainedTracks/CASPAR` NaN reproduced here on gfx90a despite `a768308`; mechanism unknown; uninitialised arena memory ruled out. Could hide a broader class (the test exercises partially constant tracks with constant poses, the FIXED_* variant kernels with few factors).
+4. **Third-party overlap**: colmap/colmap#4618 (bjoernellens1) attempts the same feature by regenerating from a private SymForce; MOAT reviewed it locally on 2026-08-11 (Request Changes, nothing posted). Live state 2026-11-18: OPEN, `mergeStateStatus: DIRTY` (conflicts), last updated 2026-10-12. How to coordinate with it is Jeff's call.
+5. **Upstream motion**: Caspar is active (dynamic shared memory change upstream not yet in colmap); a regeneration lands whatever SymForce has at the time.
+6. **Performance**: per-lane shared atomics replace one-atomic-per-group in `FlushSumShared`; correct but not measured for speed. A `__match_any` variant (p06b) is the alternative if it matters.
+
+Verified versus inferred: verified on this host are the code census, the per-feature HIP probes (run on gfx90a, compiled for gfx942, gfx950, gfx1100, gfx1151, gfx1201), the full-tree gfx90a compile with #465 applied, the #465 host-include defect and its fix, the colmap f32 Caspar GPU test results above, and the PR states read from GitHub. Inferred or unmeasured: f64 on any GPU, wave32 and Windows runtime behaviour (compile-only here; #465's own records cover W7800, RX 9070 XT, V710 and Radeon 8060S for SymForce's tests), CUDA no-regression (no nvcc here), `incremental_pipeline_test`, an end-to-end mapper run, the NaN's mechanism, and the effort estimate.
+
+Scratch artefacts (job-local, not durable): `agent_space/probes/` (probe sources and logs), `agent_space/hipgen/f32/` (patched generated tree), `agent_space/colmap-hip/` (scratch colmap with the CMake change), Ceres 2.2.0 and METIS built into the job's `deps/prefix`, and a job-local OpenImageIO CMake config copy because the image's `OpenImageIOTargets.cmake` references a missing `/usr/bin/iconvert`.
+
+## Lesson for cuda-to-rocm: count cooperative-groups uses, not mentions
+
+Belongs in `references/no-hip-equivalent.md` (or the cooperative-groups part of `fault-classes.md`). A grep for `cooperative_groups` or `cg::` across generated code counts include lines and namespace aliases: one project's "2392 references" were 2347 includes/aliases and 45 real calls in two runtime files. Count `cg::<feature>(` call sites per feature before calling cooperative groups a blocker, and check them against the installed HIP rather than an older note: HIP 7.16 (ROCm 10.1 pip SDK) provides `this_thread_block`, `this_grid().thread_rank()` in an ordinary launch, `tiled_partition<N>` with `meta_group_rank`, `cg::reduce` (include `<hip/cooperative_groups/hip_reduce.h>`), `coalesced_threads`, `binary_partition`, and `memcpy_async` (include `<hip/cooperative_groups/memcpy_async.h>`); it lacks `labeled_partition`, `cg::wait` (use `group.sync()`, which HIP documents as the completion point), `atomicAdd_block` (alias to `atomicAdd` for shared memory) and a `const` `thread_block::group_dim()`. A `labeled_partition` + `reduce` is replaceable without wave-width assumptions by per-lane shared atomics or by `__match_any` with a 64-bit mask and a `__shfl` loop over its bits. A hand-written CUDA replacement that loops `lane < 32` with `__shfl_sync(mask32, v, lane)` does not port by widening the mask: on wave64 lanes 32-63 read lanes 0-31 and the sums are silently wrong; use `__shfl(v, lane, 32)` with a per-half mask, and avoid `__shfl_sync` when the two halves take different paths, because HIP's mask check traps.
+
+## Lesson for moat-porting: a generated CUDA tree's fix may belong to another MOAT project
+
+colmap vendors Caspar kernels generated by SymForce; the deferral placed the fix in colmap's `caspar_generate.py`, which contains no CUDA. The templates and runtime are SymForce's, and MOAT's own `symforce` project had already ported them in an open upstream PR. When a deferral or plan names generated code, find the generator's owner and check `moatlib.py show <owner>` before scoping; record the dependency (here colmap's Caspar cycle depends on symforce#465 merging) instead of re-porting.
