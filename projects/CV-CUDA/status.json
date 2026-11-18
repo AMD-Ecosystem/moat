@@ -7,7 +7,7 @@
   "priority": 6.119,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-11-18T15:08:21Z",
+  "updated_at": "2026-11-18T15:10:13Z",
   "head_sha": "358edc33955c58ecc1c219d21f3b3db59b10a50c",
   "pr_url": "https://github.com/CVCUDA/CV-CUDA/pull/293",
   "pr_number": 293,
@@ -115,13 +115,13 @@
       "failed_sha": "358edc33955c58ecc1c219d21f3b3db59b10a50c"
     },
     "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
+      "blocked": true,
+      "blocked_reason": "upstream SymbolVersioning.hpp uses ELF .symver unconditionally; no Windows build exists for CUDA or HIP (feasibility finding 2026-08-20 at 358edc33); windows gate waived by jeffdaily",
       "validated_sha": null,
       "failed_sha": "358edc33955c58ecc1c219d21f3b3db59b10a50c",
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-08-21T03:15:41Z",
+      "updated_at": "2026-11-18T15:10:13Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
