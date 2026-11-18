@@ -572,5 +572,118 @@ class SetExtType(unittest.TestCase):
         self.assertEqual(s.saved, [])
 
 
+class WorkLockHolders(NoDisposition):
+    """Two hosts of one platform are two holders."""
+
+    P = "linux-gfx942"
+
+    def setUp(self):
+        super().setUp()
+        p = mock.patch.object(moatlib, "lock_holder", lambda: "me")
+        p.start()
+        self.addCleanup(p.stop)
+        self.published = []
+
+    def store(self, stage, lock):
+        fields = {"porting": lock} if lock else {}
+        s = Store(self, record(stage=stage, **fields))
+        p = mock.patch.object(
+            moatlib, "_publish_lock",
+            lambda name, arch: self.published.append(arch) or copy.deepcopy(s.obj))
+        p.start()
+        self.addCleanup(p.stop)
+        return s
+
+    def lock(self, holder="other", arch=None):
+        out = {"arch": arch or self.P, "since": "2026-01-01T00:00:00Z"}
+        if holder:
+            out["holder"] = holder
+        return out
+
+    def test_a_second_host_of_the_platform_does_not_silently_join(self):
+        s = self.store("porting", self.lock("other"))
+        moatlib.set_state("proj", self.P, "porting")
+        self.assertEqual(s.obj["porting"]["holder"], "me")
+        self.assertNotEqual(s.obj["porting"]["since"], "2026-01-01T00:00:00Z")
+        self.assertIn("DIFFERENT host or job", s.err.getvalue())
+        self.assertEqual(self.published, [self.P])
+
+    def test_the_holder_re_entering_its_own_stage_is_a_no_op(self):
+        s = self.store("porting", self.lock("me"))
+        moatlib.set_state("proj", self.P, "porting")
+        self.assertEqual(s.saved, [])
+        self.assertEqual(self.published, [])
+        self.assertEqual(s.err.getvalue(), "")
+
+    def test_a_lock_from_before_holders_is_re_stamped_and_said(self):
+        s = self.store("planning", self.lock(None))
+        moatlib.set_state("proj", self.P, "planning")
+        self.assertEqual(s.obj["porting"]["holder"], "me")
+        self.assertIn("no holder id", s.err.getvalue())
+        self.assertEqual(self.published, [self.P])
+
+    def test_another_platform_is_still_refused_outright(self):
+        s = self.store("porting", self.lock("other", arch="linux-gfx90a"))
+        with self.assertRaisesRegex(ValueError, "work lock is held by linux-gfx90a"):
+            moatlib.set_state("proj", self.P, "porting")
+        self.assertEqual(s.saved, [])
+
+    def test_a_displaced_holder_cannot_release_the_new_holders_lock(self):
+        s = self.store("porting", self.lock("other"))
+        with self.assertRaisesRegex(ValueError, "another host or job has held"):
+            moatlib.set_state("proj", self.P, "ported")
+        self.assertEqual(s.saved, [])
+        self.assertEqual(s.obj["stage"], "porting")
+
+    def test_another_platform_cannot_record_the_exit(self):
+        s = self.store("reviewing", self.lock("other", arch="linux-gfx90a"))
+        with self.assertRaisesRegex(ValueError, "Only the holder leaves the stage"):
+            moatlib.set_state("proj", self.P, "review-passed")
+        self.assertEqual(s.saved, [])
+
+    def test_the_holder_leaves_and_the_lock_is_released(self):
+        s = self.store("porting", self.lock("me"))
+        moatlib.set_state("proj", self.P, "ported")
+        self.assertIsNone(s.obj["porting"])
+        self.assertEqual(s.obj["porting_released"]["arch"], self.P)
+        self.assertEqual(s.obj["stage"], "ported")
+
+    def test_a_resumer_enters_then_leaves(self):
+        s = self.store("porting", self.lock("other"))
+        moatlib.set_state("proj", self.P, "porting")
+        moatlib.set_state("proj", self.P, "ported")
+        self.assertEqual(s.obj["stage"], "ported")
+        self.assertIsNone(s.obj["porting"])
+
+    def test_a_holderless_lock_belongs_to_its_platform_on_exit(self):
+        s = self.store("planning", self.lock(None))
+        moatlib.set_state("proj", self.P, "planned")
+        self.assertEqual(s.obj["stage"], "planned")
+
+    def test_the_selector_says_whose_round_it_is_offering(self):
+        obj = record(stage="porting", porting=self.lock("other"))
+        self.assertIn("another host or job", moatlib.lock_note(obj, self.P, "porter"))
+        self.assertIn("2026-01-01T00:00:00Z", moatlib.lock_note(obj, self.P, "porter"))
+        self.assertIsNone(moatlib.lock_note(obj, self.P, "validator"))
+        mine = record(stage="porting", porting=self.lock("me"))
+        self.assertIsNone(moatlib.lock_note(mine, self.P, "porter"))
+        self.assertIsNone(moatlib.lock_note(record(stage="planned"), self.P, "porter"))
+
+    def test_next_task_and_fleet_carry_the_note(self):
+        obj = record(stage="porting", porting=self.lock("other"))
+        with mock.patch.object(moatlib, "project_records",
+                               lambda: iter([("proj", obj, "local")])), \
+                mock.patch.object(moatlib, "all_projects", lambda: {"proj": "local"}), \
+                mock.patch.object(moatlib, "project_record", lambda name: (obj, "local")), \
+                mock.patch.object(moatlib, "writable_here", lambda name, where: True), \
+                mock.patch.object(moatlib, "_git",
+                                  lambda *a, **k: mock.Mock(returncode=0, stdout="")):
+            task = moatlib.next_task(self.P)
+            rows = moatlib.fleet(self.P)
+        self.assertEqual(task["project"], "proj")
+        self.assertIn("another host or job", task["lock"])
+        self.assertIn("another host or job", rows[0]["lock"])
+
+
 if __name__ == "__main__":
     unittest.main()

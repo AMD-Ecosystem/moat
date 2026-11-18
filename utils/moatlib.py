@@ -974,8 +974,18 @@ def set_state(name, platform, new_state, agent=None, save=True, sha=None):
     # head, and this. Ask what is left to RECORD, not whether a token matches.
     acquires = (new_state in EXCLUSIVE_STAGES
                 and (obj.get("porting") or {}).get("arch") != platform)
+    # And a fourth: entering an exclusive stage whose lock names this PLATFORM but
+    # another HOLDER -- a second host with the same GPU, or a second job on this
+    # one. Same arch, so not refused above; same stage, so the short-circuit
+    # returned success, and the warning and the publish further down, which the
+    # comments there promised for exactly this case, were never reached: the
+    # second host silently joined the first one's round. A lock from before
+    # holders were recorded has none to compare and is treated the same way.
+    rejoins = (new_state in EXCLUSIVE_STAGES
+               and (obj.get("porting") or {}).get("arch") == platform
+               and (obj.get("porting") or {}).get("holder") != lock_holder())
     same = new_state == cur
-    if same and not (revalidated or refailed or acquires):
+    if same and not (revalidated or refailed or acquires or rejoins):
         return obj
     table = STAGE_TRANSITIONS if is_stage else ARCH_TRANSITIONS
     # Reached only when the state really changes, or when one of the cases above
@@ -998,21 +1008,49 @@ def set_state(name, platform, new_state, agent=None, save=True, sha=None):
     # DISPATCH is `actionable`'s job, and its guard already reads this field.
     if new_state in EXCLUSIVE_STAGES:          # refused above if another arch holds it
         prev = obj.get("porting") or {}
-        if prev.get("holder") and prev.get("holder") != lock_holder():
+        if prev and prev.get("holder") != lock_holder():
             # Picking up a round another host of this platform put down is ordinary
             # and cannot be told from that host still running, so say it rather than
-            # refuse it. The simultaneous case is refused in _publish_lock.
+            # refuse it. The lock is re-stamped to this holder and published below,
+            # so two hosts picking it up at once are arbitrated by _publish_lock,
+            # and the previous holder, if it is still running, is refused when it
+            # tries to leave the stage (see the exit branch).
+            who = ("a DIFFERENT host or job" if prev.get("holder")
+                   else "a host that recorded no holder id")
             sys.stderr.write(
-                f"WARNING {name}: the {platform} work lock was taken since "
-                f"{prev.get('since')} by a DIFFERENT host or job. Continuing as a "
-                f"resume; if that other one is still running, stop here\n")
+                f"WARNING {name}: the {platform} work lock was taken "
+                f"{prev.get('since')} by {who}. Re-stamping it to this one and "
+                f"continuing as a resume; if that other one is still running, "
+                f"stop here -- two writers on one branch is what the lock "
+                f"exists to prevent\n")
         obj["porting"] = {"arch": platform, "since": now_iso(),
                           "holder": lock_holder()}
     elif cur in EXCLUSIVE_STAGES and obj.get("porting"):
-        # Leaving an exclusive stage ends what the lock protected, so ANY arch
-        # legally recording the exit releases it. Requiring the holder to be the
-        # one leaving left the lock held forever when a different arch drove
-        # porting -> ported, with only `port-lock --release` to clean it up.
+        # Leaving an exclusive stage ends what the lock protected, and only its
+        # holder may end it. This used to let ANY arch record the exit, because a
+        # lock could then be left held forever when another arch drove
+        # porting -> ported. But that also meant a holder displaced by a person's
+        # `port-lock --take`, or by a second host resuming the stage, could still
+        # record the exit: it released the NEW holder's lock and moved the stage
+        # under it. Entering the stage is how a host becomes the holder (it
+        # re-stamps a same-platform lock, with a warning), so a resumer loses
+        # nothing by being asked to enter first, and another platform was never
+        # allowed in. A lock from before holders were recorded is the platform's.
+        held = obj["porting"]
+        if held.get("arch") != platform:
+            raise ValueError(
+                f"{name}: {cur} -> {new_state} would release the work lock, which "
+                f"{held.get('arch')} has held since {held.get('since')}, not "
+                f"{platform}. Only the holder leaves the stage; takeover is a "
+                f"person's decision (`moatlib.py port-lock {name} --take {platform}`)")
+        if held.get("holder") and held.get("holder") != lock_holder():
+            raise ValueError(
+                f"{name}: {cur} -> {new_state} would release the {platform} work "
+                f"lock, which another host or job has held since "
+                f"{held.get('since')}. If you are resuming this stage, enter it "
+                f"first (`moatlib.py set-state {name} {platform} {cur}`), which "
+                f"re-stamps the lock to you and says so; if that other one is still "
+                f"running, stop")
         _release_lock(obj)
     ts = now_iso()
     if is_stage:
@@ -4761,6 +4799,26 @@ def platform_state(obj, platform):
     return task[1] if task else None
 
 
+def lock_note(obj, platform, agent):
+    """What a host must be told before it is handed exclusive work whose lock names
+    its platform but not it, or None.
+
+    `actionable` and `fleet` exclude a lock held by another PLATFORM. A lock held
+    by another host or job of the SAME platform cannot be excluded: a round put
+    down by a host that stopped looks exactly like one still running, and waiting
+    it out would be a timeout takeover, which is a person's call. So the work is
+    still offered, and this says what it is being offered into -- when the lock was
+    taken is the one fact that helps the reader judge whether its holder is alive."""
+    lock = obj.get("porting") or {}
+    if (agent not in EXCLUSIVE_AGENTS or lock.get("arch") != platform
+            or lock.get("holder") == lock_holder()):
+        return None
+    who = ("another host or job on this platform" if lock.get("holder")
+           else "a host that recorded no holder id")
+    return (f"work lock taken {lock.get('since')} by {who}; entering the stage "
+            f"takes it over as a resume -- do not start if that one is still running")
+
+
 def actionable(obj, platform):
     """Is this platform pickable by an agent on this host right now?"""
     if obj.get("on_hold"):  # project-wide postponement of a whole dependency stack
@@ -4861,7 +4919,8 @@ def fleet(platform):
         branch = (port_branch_of(name) or "") if where == "branch" else ""
         out.append({"project": name, "where": where, "state": state,
                     "stage": agent, "branch": branch,
-                    "priority": float(obj.get("priority", 0))})
+                    "priority": float(obj.get("priority", 0)),
+                    "lock": lock_note(obj, platform, agent) or ""})
     out.sort(key=lambda r: (SELECT_RANK.get(r["state"], 99), -r["priority"], r["project"]))
     return out
 
@@ -4879,15 +4938,18 @@ def next_task(platform):
     for name, obj, where in project_records():
         if not writable_here(name, where) or not actionable(obj, platform):
             continue
-        state = arch_task(obj, platform)[1]
+        agent, state = arch_task(obj, platform)
         cands.append((SELECT_RANK.get(state, 99), -float(obj.get("priority", 0)),
-                      name, state))
+                      name, state, lock_note(obj, platform, agent)))
     if not cands:
         return None
-    cands.sort()
-    rank, negprio, name, state = cands[0]
-    return {"project": name, "state": state, "stage": STAGE_FOR_STATE[state],
-            "priority": -negprio, "rank": rank}
+    cands.sort(key=lambda c: c[:4])
+    rank, negprio, name, state, note = cands[0]
+    out = {"project": name, "state": state, "stage": STAGE_FOR_STATE[state],
+           "priority": -negprio, "rank": rank}
+    if note:
+        out["lock"] = note
+    return out
 
 
 def fork_lineage_problem(obj, slug, tsv):
@@ -6730,6 +6792,8 @@ def _main(argv=None):
             print("NONE")
             return 0
         _print_json(t)
+        if t.get("lock"):
+            print(f"WARNING {t['project']}: {t['lock']}", file=sys.stderr)
     elif args.cmd == "set-state":
         set_state(args.name, args.platform, args.new_state, agent=args.agent,
                   sha=args.sha)
@@ -7252,9 +7316,10 @@ def _main(argv=None):
             print("release-forks: nothing waiting on a fork")
         return 0
     elif args.cmd == "fleet":
+        # The lock note is a sixth column, after the five existing readers parse.
         for r in fleet(args.platform):
             print(f"{r['project']}\t{r['where']}\t{r['state']}\t{r['stage']}"
-                  f"\t{r['branch']}")
+                  f"\t{r['branch']}" + (f"\t{r['lock']}" if r["lock"] else ""))
     elif args.cmd == "dep-blocked":
         rows = dep_blocked(args.platform)
         for name, report in rows:
