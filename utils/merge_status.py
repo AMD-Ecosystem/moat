@@ -85,11 +85,14 @@ _PR_RANKABLE = set(PR_STATES) == {"open"} | _TERMINAL_PR
 # publish path against a person's ruling, and erasing the second would unfreeze a
 # tagged release branch. `fork_branch_ruling` decides fork_branch exactly as
 # base_branch_ruling decides fork_default_branch.
+# `upstream_url_ruling` decides upstream_url the same way: a host that read the
+# record before a rename was recorded must not write the old owner back.
 STICKY = ("upstream_repo_id", "fork_url", "review_pr", "pr_approval",
           "license_clearance", "license_spdx", "pr_number", "pr_url",
           "pr_opened_at", "pr_merged_at", "pr_closed_at", "pr_closed_note",
           "adopted_at", "maintained", "no_upstream", "fix_abandoned",
           "base_branch_ruling", "fork_url_ruling", "fork_branch_ruling",
+          "upstream_url_ruling",
           "delivery", "release")
 UNION = ("platforms", "waivers")
 RESET = ("on_hold", "on_hold_reason")
@@ -305,6 +308,8 @@ def merge(a, b, o=None):
             del out[k]
     if out.get("base_branch_ruling"):
         out["fork_default_branch"] = out["base_branch_ruling"]["branch"]
+    if out.get("upstream_url_ruling"):
+        out["upstream_url"] = out["upstream_url_ruling"]["url"]
     if out.get("fork_branch_ruling"):
         out["fork_branch"] = out["fork_branch_ruling"]["branch"]
     # A sticky delivery ruling keeps the release-line schema version with it, or a

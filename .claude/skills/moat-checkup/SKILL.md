@@ -60,6 +60,13 @@ answered is a finished port that cannot be submitted.
 Nothing runs on a schedule. This checkup IS the sweep, so the record only reconciles when
 someone runs it -- which is why `orient.sh` reports how long it has been.
 
+An upstream repository that was renamed or transferred (HEonGPU moved to an
+organization mid-review) keeps working through GitHub's redirect, but only until the
+old name is reused. A person records the move with
+`moatlib.py set-upstream-url <name> <new URL> --by <who>`; it writes only when the new
+URL is the canonical name of the recorded `upstream_repo_id`, so it follows a rename
+and cannot repoint a project at a different repository.
+
 ## The gate is the approval, and it covers exactly what was approved
 
 Approving the review PR on our own fork means approving the code, the title and the body.

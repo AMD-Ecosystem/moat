@@ -277,6 +277,21 @@ def build():
                     },
                 },
             },
+            # A person's ruling that the upstream repository was renamed or
+            # transferred (HEonGPU moved to an organization mid-review).
+            # upstream_url carries the value; upstream_repo_id proved it is the
+            # same repository.
+            "upstream_url_ruling": {
+                "type": ["object", "null"],
+                "required": ["url", "by", "at"],
+                "properties": {
+                    "url": {"type": "string", "minLength": 1},
+                    "previous": {"type": ["string", "null"]},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
             # A person's ruling that the port lives in an existing repository
             # instead of the organization fork intake assumes (ROCm/cupy is AMD's
             # staging fork for upstream CuPy). fork_url carries the value.

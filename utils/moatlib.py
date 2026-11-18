@@ -2155,6 +2155,60 @@ def set_fork_url(name, url, by, reason=None):
     return obj
 
 
+def set_upstream_url(name, url, by, reason=None):
+    """Record a person's ruling that the upstream repository now lives at `url`.
+
+    Repositories move: HEonGPU went from Alisah-Ozcan to the enCRYPTON-labs
+    organization while its port was in review. GitHub redirects the old name, but
+    only until someone reuses it, and the recorded URL is what the fork-lineage
+    check, the fetches and the dispositions key are derived from.
+
+    This follows a rename and nothing else. The record's `upstream_repo_id` is the
+    identity; the new URL must be the canonical name of the repository with that
+    id, as GitHub reports it now. A record with no id, an unreachable GitHub, a
+    different repository, or a name that merely redirects to the canonical one
+    are all refused, so the command can never repoint a project at other code."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if not by:
+        raise ValueError(f"{name}: --by is required -- this records a person's ruling")
+    url = url.rstrip("/").removesuffix(".git")
+    if not url.startswith("https://github.com/") or url.count("/") != 4:
+        raise ValueError(f"{name}: expected https://github.com/<owner>/<repo>, got {url!r}")
+    old = (obj.get("upstream_url") or "").rstrip("/").removesuffix(".git")
+    if url == old:
+        raise ValueError(f"{name}: upstream_url is already {url}")
+    rid = obj.get("upstream_repo_id")
+    if not rid:
+        raise ValueError(f"{name}: the record has no upstream_repo_id, so nothing "
+                         f"can show {url} is the same repository")
+    slug = url.split("github.com/", 1)[1]
+    live = _gh_json("api", f"repos/{slug}")
+    if not live or "id" not in live:
+        raise ValueError(f"{name}: cannot read {slug} from GitHub -- not verified, "
+                         f"nothing written")
+    if int(live["id"]) != int(rid):
+        raise ValueError(f"{name}: {slug} is repository {live['id']}, not the "
+                         f"recorded upstream {rid} -- a different repository, "
+                         f"not a rename")
+    canon = (live.get("full_name") or "")
+    if canon.lower() != slug.lower():
+        raise ValueError(f"{name}: {slug} redirects to {canon}; give the canonical "
+                         f"https://github.com/{canon}")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    url = f"https://github.com/{canon}"
+    obj["upstream_url"] = url
+    obj["upstream_url_ruling"] = {"url": url, "previous": old or None,
+                                  "by": by, "at": now_iso()}
+    if reason:
+        obj["upstream_url_ruling"]["reason"] = reason
+    save_record(name, obj, f"{name}: upstream {old} -> {url}, ruled by {by}")
+    return obj
+
+
 def set_base_branch(name, branch, by, reason=None):
     """Record a person's ruling that the upstream PR targets `branch` rather than
     the default branch recorded at scaffold. GOMC is the origin case: upstream's
@@ -6078,6 +6132,15 @@ def main(argv=None):
     s.add_argument("--clear", action="store_true",
                    help="withdraw the ruling (upstream takes pull requests again)")
 
+    s = sub.add_parser("set-upstream-url",
+                       help="record a person's ruling that the upstream repository "
+                            "was renamed or transferred to URL; refused unless URL "
+                            "is the canonical name of the recorded repository id")
+    s.add_argument("name")
+    s.add_argument("url")
+    s.add_argument("--by", help="who ruled it; required, never defaulted")
+    s.add_argument("--reason")
+
     s = sub.add_parser("set-fork-url",
                        help="record a person's ruling that the port lives in an "
                             "existing repository (URL) instead of an organization "
@@ -6599,6 +6662,14 @@ def main(argv=None):
                   f"({obj['no_upstream']['evidence']}). No upstream PR will be "
                   f"offered; the fork's {obj.get('fork_branch') or PORT_BRANCH} "
                   f"branch is the deliverable.")
+    elif args.cmd == "set-upstream-url":
+        if not args.by:
+            print("set-upstream-url: --by is required -- this records a person's "
+                  "ruling", file=sys.stderr)
+            return 2
+        obj = set_upstream_url(args.name, args.url, args.by, reason=args.reason)
+        print(f"{args.name}: upstream is now {obj['upstream_url']} "
+              f"(was {obj['upstream_url_ruling']['previous']})")
     elif args.cmd == "set-fork-url":
         if not args.by:
             print("set-fork-url: --by is required -- this records a person's "
