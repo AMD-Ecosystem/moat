@@ -218,6 +218,24 @@ Q1. **GPU `tile_fft` for non-power-of-two sizes.** Without libmathdx, upstream's
 
 Q2. **Value of `__CUDA_ARCH__` under hipRTC.** The ruling has the runtime compiler define what `__CUDA_ARCH__`-gated code needs; Warp's own headers will be HIP-first so the value only affects user/downstream snippets, and any value makes numeric gates in user code (`#if __CUDA_ARCH__ >= 700`) pick a branch that may contain PTX. Recommendation: define it to a low sentinel (e.g. `1`), so numeric user gates fall to their portable non-asm branches, and document it; the porter verifies with a probe that HIP's hipRTC builtin headers do not react to the macro before committing.
 
+RULED by Jeff Daily, 2026-11-18: a low sentinel is acceptable for portability, but it is not to be accepted blindly. Every `__CUDA_ARCH__` gate is judged by what it protects, and where the portable branch costs real performance or is wrong, HIP gets an explicit `#elif` branch. Audit done the same day (`grep -rn '__CUDA_ARCH__' warp` on 3601b2d0; `gh search code '__CUDA_ARCH__'` on newton-physics/newton and google-deepmind/mujoco_warp):
+
+Warp's own numeric gates (`builtin.h`). A low sentinel here is not merely slow, it is silently wrong (the `< 700` branches of the 16-bit atomics do nothing and return 0) and a high value selects inline PTX, so each one gets an explicit HIP branch, checked before any `__CUDA_ARCH__` test:
+
+| Site | Protects | HIP branch |
+|---|---|---|
+| `:337` (presence) | `float_to_half`/`half_to_float` by PTX `cvt` | the existing `#elif defined(__clang__)` `_Float16` path (native f16 on AMD) |
+| `:357` | `float_to_bfloat16` by PTX `cvt.rn.bf16.f32` (sm_80+) | software bit conversion (`wp_float_to_bfloat16_bits_sw`); porter checks whether clang `__bf16` on AMDGPU is correct and faster, and uses it only if measured |
+| `:452`, `:471` | native bf16 `+ - *` by PTX (sm_90) or `fma.rn.bf16` (sm_80) | float round-trip, the generic branch: AMD GPUs have no bf16 arithmetic, nothing faster exists |
+| `:2091` | `atomic_add(float16)` by `atomicAdd(__half*)` or PTX `atom.add.noftz.f16` | 16-bit compare-and-swap loop; must be atomic (AMD 1.13 shipped a non-atomic one) |
+| `:2125`, `:2129` | `atomic_add(bfloat16)` by PTX (sm_90) or 16-bit `atomicCAS` loop (sm_70) | the CAS loop, with whatever 16-bit CAS HIP/clang provides on AMDGPU |
+| `:2170` | `atomic_add(float64)` by PTX under NVRTC | `atomicAdd(buf, value)`, the existing clang branch |
+| `:2262`, `:2362` | `atomic_min`/`atomic_max(bfloat16)` by 16-bit CAS loop | the same CAS loop |
+
+The porter measures the f16/bf16 conversion and atomic paths against the generic branch on gfx942 and records the numbers; a HIP branch that is not faster or more correct than the generic one is not added.
+
+User and downstream snippets. Every gate found downstream is a presence test (`#if defined(__CUDA_ARCH__)`), none numeric, so the value does not change which branch they take; `1` is used. What defining the macro does is send them down device branches that call CUDA device intrinsics, so hipRTC compiles must provide each of these, mapped to the native AMD operation and not a slow emulation: `nextafterf` (Newton vbd), `__frsqrt_rn` (Newton sdf_contact, support_function), `__popcll`, `__ffsll`, `__clzll` (Newton kamino/steel, mujoco_warp block_cholesky), `__syncwarp`, `__threadfence`, `__shared__` (Newton steel, geometry). The porter verifies each compiles and is correct under hipRTC on wave64 and wave32, and adds what is missing to the HIP device prelude. Not fixable from Warp: Newton's steel solver hard-codes 32-lane warps (`tid & 31`, strides of 32) inside its device branch; that is wrong on wave64 whatever the macro's value, and is recorded as a downstream finding, not worked around.
+
 Q3. **rocWMMA/MFMA fast path for `tile_matmul` in this line?** The scalar GPU GEMM is correct on both wave widths; an AMD-native path would be faster for larger tiles but needs separate CDNA (MFMA) and RDNA (WMMA) handling. Recommendation: not in 1.14.0+rocm.0; register a deferred candidate for a later line.
 
 Q4. **Conditional graph nodes (`capture_if`/`capture_while` inside a capture).** HIP 7.14 has no conditional node API. Options: (a) report unsupported on HIP exactly as upstream does for CUDA < 12.4 (eager use outside a capture keeps working); (b) emulate (AMD's halo PR #21 does "conditional-graph emulation"), which changes capture semantics. Recommendation: (a), with a deferred candidate to adopt native HIP conditional nodes when ROCm ships them.
