@@ -3919,7 +3919,7 @@ done
 if [ "$mirror" = 1 ]; then
   echo >&2 "moat: {mirror} is the pristine copy of upstream's branch for {name}; only"
   echo >&2 "moat: upstream's own commits go there, through:"
-  echo >&2 "moat:   python3 utils/moatlib.py mirror-branch {name}"
+  echo >&2 "moat:   {py} utils/moatlib.py mirror-branch {name}"
   exit 1
 fi
 [ "$targets" = 1 ] || exit 0
@@ -3954,17 +3954,17 @@ case "$state" in
   open)
     echo >&2 "moat: {branch} is the head of an OPEN upstream PR -- a push to it is"
     echo >&2 "moat: upstream-visible before anyone reviewed or approved it."
-    echo >&2 "moat: Stage the fix instead: python3 utils/moatlib.py fix-branch {name}" ;;
+    echo >&2 "moat: Stage the fix instead: {py} utils/moatlib.py fix-branch {name}" ;;
   maintained)
     echo >&2 "moat: {branch} is a MAINTAINED branch -- upstream points its users at"
     echo >&2 "moat: it, so a push to it is public before anyone reviewed or approved it."
-    echo >&2 "moat: Stage the change instead: python3 utils/moatlib.py sync-branch {name}" ;;
+    echo >&2 "moat: Stage the change instead: {py} utils/moatlib.py sync-branch {name}" ;;
   delivered)
     echo >&2 "moat: {branch} is a DELIVERED release line -- approved, tagged and frozen."
-    echo >&2 "moat: Stage the change instead: python3 utils/moatlib.py sync-branch {name}" ;;
+    echo >&2 "moat: Stage the change instead: {py} utils/moatlib.py sync-branch {name}" ;;
   *)
     echo >&2 "moat: {name} is in state '$state', which this hook does not know;"
-    echo >&2 "moat: refusing the push to {branch}. Re-run: moatlib.py protect-fork {name}" ;;
+    echo >&2 "moat: refusing the push to {branch}. Re-run: {py} utils/moatlib.py protect-fork {name}" ;;
 esac
 echo >&2 "moat: (the approved merge runs through: utils/upstream.py --merge-fix)"
 exit 1
@@ -4037,7 +4037,7 @@ def protect_fork(name, repo=None):
             f'never moved or deleted"; exit 1 ;; esac ;; esac'
             if mirror else ":")
     text = _FORK_HOOK.format(marker=FORK_HOOK_MARKER, name=name,
-                             token=PUBLISH_TOKEN,
+                             token=PUBLISH_TOKEN, py=PY,
                              python=Path(sys.executable).as_posix(),
                              moatlib=(REPO_ROOT / "utils" / "moatlib.py").as_posix(),
                              branch=obj.get("fork_branch") or PORT_BRANCH,

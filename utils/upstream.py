@@ -61,6 +61,9 @@ import sys
 # The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
 # against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
 TOOLS_ROOT = pathlib.Path(__file__).resolve().parents[1]
+# The interpreter running this tool, for the commands it tells a reader to run: the
+# name `python3` is not MOAT's Python on every host.
+PY = pathlib.Path(sys.executable).stem if sys.executable else "python3"
 REPO = pathlib.Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
 
 
@@ -893,7 +896,7 @@ def _land_local_record(name, message):
     except Exception as e:                      # noqa: BLE001 - reported, not raised
         return f"recorded in this checkout but could not commit it: {e}"
     return ("recorded in this checkout but the commit did not push; run "
-            f"`python3 utils/moatlib.py commit-project {name} \"{message}\"`")
+            f"`{PY} utils/moatlib.py commit-project {name} \"{message}\"`")
 
 
 def pending_optout_problems(name):
@@ -1532,7 +1535,7 @@ def open_fix_review_pr(row, title, body, apply=False):
         # round still reading as "needs a review PR", which opens a second one.
         return ("unrecorded",
                 f"opened {url} but could NOT record it: {e}\n"
-                f"    record it by hand: python3 utils/moatlib.py set-fix-review-pr "
+                f"    record it by hand: {PY} utils/moatlib.py set-fix-review-pr "
                 f"{row['name']} {url}")
     _run(
         ["gh", "pr", "comment", url, "--body",
@@ -2434,7 +2437,7 @@ def report_drift(apply=False):
                       f"{info['mirror_behind']} commit(s) behind upstream -- "
                       f"--apply fast-forwards it")
     if rows:
-        print("\n  a CONFLICT or OVERLAP round starts with: python3 utils/moatlib.py "
+        print(f"\n  a CONFLICT or OVERLAP round starts with: {PY} utils/moatlib.py "
               "sync-branch <name>")
         print("  (then the normal porter/reviewer/validator cycle and the approved "
               "merge through --merge-fix)")

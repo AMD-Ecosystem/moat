@@ -675,6 +675,10 @@ def classify(argv, strict=True, stdin_text=None, env_repo=None, cwd=None,
     return settle(label, [target])
 
 
+# The interpreter running this tool, for the commands it tells a reader to run: the
+# name `python3` is not MOAT's Python on every host.
+PY = pathlib.Path(sys.executable).stem if sys.executable else "python3"
+
 REFUSAL = """moat: refused `gh {argv}`
 
 {reason}.
@@ -685,7 +689,7 @@ PR and issue comments, reviews, edited bodies, and opening anything upstream. A
 `/moat` decision on a review PR is a person's on any repository, from any directory.
 
 The one automated route upstream is the approved one:
-    python3 utils/upstream.py --publish --apply --name <project>
+    {py} utils/upstream.py --publish --apply --name <project>
 It re-checks the recorded approval and every required gate, then opens the PR with the
 approved title and body verbatim.
 
@@ -1236,7 +1240,7 @@ def main():
 
     if not d.allow:
         sys.stderr.write(REFUSAL.format(argv=" ".join(argv), reason=d.reason,
-                                        real=real_gh() or "gh"))
+                                        real=real_gh() or "gh", py=PY))
         return 13
 
     return delegate(argv, stdin_bytes)

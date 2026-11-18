@@ -345,7 +345,7 @@ def gate_optout():
         if disp.get("disposition") != "skip":
             problems.append(f"{name} ({full}): its owner opted out but the project is "
                             f"still live at stage {rec.get('stage')} -- "
-                            f"python3 utils/optout.py record retires it")
+                            f"{m.PY} utils/optout.py record retires it")
     return problems
 
 

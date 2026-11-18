@@ -62,6 +62,10 @@ class ForkHook(unittest.TestCase):
         self.assertIn(moatlib.FORK_HOOK_MARKER, text)
         self.assertIn(support.PYTHON, text)
         self.assertNotIn("MOAT_PUBLISH", text)
+        # The commands it tells a reader to run name the interpreter MOAT runs under.
+        self.assertIn(f"{moatlib.PY} utils/moatlib.py fix-branch proj", text)
+        if moatlib.PY != "python3":
+            self.assertNotIn("python3 utils/", text)
         self.assertNotIn("\r", self.hook.read_bytes().decode())
 
     def test_open_pr_freezes_the_port_branch_only(self):

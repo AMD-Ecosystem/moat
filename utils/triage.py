@@ -133,8 +133,8 @@ def cmd_review(args):
             tag += " [nvidia-org]"
         desc = (c.get("description") or "")[:64]
         print(f"{i:>3}  {c['priority']:>5}  {c['stars']:>7}  {c['full_name']}{tag} -- {desc}")
-    print(f"\nskip:   python3 utils/triage.py skip <owner/repo> --reason <{'|'.join(moatlib.SKIP_REASONS)}> --by <who> --note \"...\"")
-    print("verify: python3 utils/triage.py verify <owner/repo> --note \"...\"")
+    print(f"\nskip:   {moatlib.PY} utils/triage.py skip <owner/repo> --reason <{'|'.join(moatlib.SKIP_REASONS)}> --by <who> --note \"...\"")
+    print(f"verify: {moatlib.PY} utils/triage.py verify <owner/repo> --note \"...\"")
     return 0
 
 

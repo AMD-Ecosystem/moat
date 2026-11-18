@@ -298,6 +298,19 @@ class Launcher(unittest.TestCase):
              "--body", "/moat approve"], inside=False)
         self.assertEqual((rc, ran), (13, []))
 
+    def test_the_refusal_names_the_interpreter_that_is_running(self):
+        argv = ["pr", "comment", "9", "--repo", "pytorch/pytorch", "--body", "hi"]
+        err = io.StringIO()
+        with mock.patch.object(sys, "argv", ["gh_guard.py", "--shim", "--", *argv]), \
+                mock.patch.object(gh_guard, "under_repo", lambda: True), \
+                mock.patch.object(gh_guard, "real_gh", lambda: "gh"), \
+                mock.patch.object(gh_guard, "PY", "python-on-this-host"), \
+                mock.patch.object(sys, "stderr", err):
+            self.assertEqual(gh_guard.main(), 13)
+        self.assertIn("    python-on-this-host utils/upstream.py --publish --apply "
+                      "--name <project>", err.getvalue())
+        self.assertNotIn("python3", err.getvalue())
+
     def test_unrelated_write_outside_a_checkout_runs(self):
         argv = ["pr", "comment", "9", "--repo", "pytorch/pytorch", "--body", "hi"]
         rc, ran = self.run_shim(argv, inside=False)

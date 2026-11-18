@@ -418,7 +418,7 @@ def main(argv=None):
                     "undecided comes back as a fresh issue on the next "
                     "`python3 utils/intake_queue.py publish --apply`."], check=True)
                 print(f"\nclosed {issue['url']} -- republish the remainder with "
-                      f"`python3 utils/intake_queue.py publish --apply`")
+                      f"`{moatlib.PY} utils/intake_queue.py publish --apply`")
         return 0 if args.accept else 1
     action, detail = apply_decisions(args.decline, args.note, by, apply=args.apply,
                                      accepts=args.accept)

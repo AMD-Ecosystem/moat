@@ -226,7 +226,7 @@ def cmd_record(args):
             if r["review_pr"]:
                 print(f"  close our review PR: gh pr close {r['review_pr']} --comment \"...\"")
             if r["pr"] and r["pr_state"] not in ("merged", "closed"):
-                print(f"  close {r['pr']}, then: python3 utils/moatlib.py "
+                print(f"  close {r['pr']}, then: {moatlib.PY} utils/moatlib.py "
                       f"set-pr-closed {r['name']} --note \"maintainer opted out\"")
             if r["fork"]:
                 print("  delete the fork: gh repo delete "
