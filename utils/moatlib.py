@@ -2907,8 +2907,10 @@ def set_release_tagged(name, tag, sha, review_pr, approved_by, version=None,
 
 # Scratch clone for the fork writes a release line needs that copy existing commits
 # (the upstream mirror, the port branch's first tip, the release tag). Gitignored,
-# per project, reused across runs. A bare repo with no hooks: what it may push is
-# decided by the checks in mirror_branch and push_fork_tag, not by a hook.
+# per project, reused across runs. A bare repo. What it may push is decided by the
+# checks in mirror_branch and push_fork_tag; it carries the fork pre-push hook as
+# well, because it has a `fork` remote like any other clone of the fork, and a
+# push made from it by hand must meet the same freeze.
 MIRROR_CACHE = REPO_ROOT / "agent_space" / "mirror-cache"
 
 
@@ -2928,7 +2930,29 @@ def _mirror_repo(name, obj):
                           capture_output=True).returncode:
             subprocess.run(["git", "-C", str(d), "remote", "add", remote, url],
                            capture_output=True)
+    level, msg = protect_fork(name, repo=d)
+    if level == "warn":
+        print(f"moatlib: WARNING {msg}", file=sys.stderr)
     return d
+
+
+def _push_named(repo, sha, ref, timeout=3600):
+    """Push `sha` to `ref` on the cache's `fork` remote, announced to the pre-push
+    hook by a one-shot token naming exactly that update (as `upstream.py
+    --merge-fix` does for its own push). The caller has already proved the update
+    is one this tool may make; the hook refuses anything else pushed from here."""
+    token = write_publish_token(repo, [(sha, ref)])
+    try:
+        return subprocess.run(["git", "-C", str(repo), "push", "-q", "fork",
+                               f"{sha}:{ref}"],
+                              capture_output=True, text=True, timeout=timeout)
+    finally:
+        # The hook deletes the token when it reads it; a push that never reached
+        # the hook must not leave one behind for the next push to find.
+        try:
+            token.unlink()
+        except OSError:
+            pass
 
 
 def _remote_ref(repo, remote, ref):
@@ -3011,8 +3035,9 @@ def mirror_branch(name, dry_run=False):
         else:
             what = f"create at upstream's {up_tip[:12]}"
         if not dry_run:
-            p = git("push", "-q", "fork", f"{up_tip}:refs/heads/{base}",
-                    timeout=3600)
+            # On a release line the hook guards the mirror; this is upstream's own
+            # commit and a fast-forward (checked above), so it is named to it.
+            p = _push_named(repo, up_tip, f"refs/heads/{base}")
             if p.returncode:
                 raise ValueError(f"{name}: could not {what} on the fork: "
                                  f"{(p.stderr or p.stdout).strip()[:160]}")
@@ -3025,8 +3050,9 @@ def mirror_branch(name, dry_run=False):
                     f"created here)")
     else:
         if not dry_run:
-            p = git("push", "-q", "fork", f"{up_tip}:refs/heads/{port}",
-                    timeout=3600)
+            # Creating a branch the fork does not have, as a copy of upstream's tip:
+            # nothing upstream-visible moves, so the hook's freeze has no say.
+            p = _push_named(repo, up_tip, f"refs/heads/{port}")
             if p.returncode:
                 raise ValueError(f"{name}: could not create {port} on the fork: "
                                  f"{(p.stderr or p.stdout).strip()[:160]}")
@@ -3979,10 +4005,10 @@ def protect_fork(name, repo=None):
     and says so -- absence of a clone is absence of the risk.
 
     `repo` names another clone of the same fork to protect instead of the
-    project's own (a cache repository that carries a `fork` remote)."""
+    project's own (a cache repository that carries a `fork` remote; it may be
+    bare, as the mirror cache is)."""
     repo = Path(repo) if repo else _fork_repo(name)
-    git_dir = repo / ".git"
-    if not git_dir.exists():
+    if not (repo / ".git").exists() and not (repo / "HEAD").is_file():
         return ("skip", f"{name}: no fork clone at {repo} -- nothing to protect")
     # Ask git where the hook goes instead of assuming .git/hooks: a clone whose git
     # dir lives elsewhere (a .git file) or that sets core.hooksPath runs its hooks
