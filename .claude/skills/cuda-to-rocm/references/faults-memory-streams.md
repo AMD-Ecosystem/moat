@@ -277,9 +277,9 @@ everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`
 `hipLaunchHostFunc` callbacks on its asynchronous-events thread, so a callback that waits on
 a host-side gate (a condition variable, a promise another stream fulfils) stalls every later
 event on that device, not just its own stream. CUDA runs such a test to completion. Keep
-callbacks to a flag store or a notify, and do the waiting on a user thread. (Seen as a hung
-multi-stream test on gfx1100; this entry is reconstructed from a one-line note, and the
-project it came from was not recorded.)
+callbacks to a flag store or a notify, and do the waiting on a user thread.
+(LichtFeld-Studio: a multi-stream test that parks a callback on a host-side gate hangs on
+gfx1100.)
 
 **HIP after `fork()` crashes in the child.** A process that has initialized the HIP runtime
 and then forks without exec cannot use the GPU in the child: the child segfaults, typically
@@ -287,8 +287,10 @@ in `hipEventQuery`. CUDA documents the same restriction but more code gets away 
 test that forks and then touches the GPU fails on ROCm; so does a CPU-only test body run by a
 fork-based harness after an earlier test started the runtime (gtest death tests in their
 default style: diagnosis.md, "Failures that appear only when the whole suite runs in one
-process"). Re-exec instead of forking, or fork before the first HIP call. (Reconstructed from
-a one-line note plus the gtest case; the originating port was not recorded.)
+process"). Re-exec instead of forking, or fork before the first HIP call.
+(LichtFeld-Studio: an autosave test forks a child that then uses the GPU, and the child dies
+with SIGSEGV where the test expects its own SIGKILL; a CPU-only gtest death test fails the
+same way in the default fork style and passes with `--gtest_death_test_style=threadsafe`.)
 
 ## Graph capture
 

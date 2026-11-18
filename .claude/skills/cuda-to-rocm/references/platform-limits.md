@@ -21,13 +21,15 @@ trust CC major/minor for arch dispatch on AMD. Found independently by both libma
 (MMseqs2, foldseek: the CUDASW++ short2-DPX Smith-Waterman selector.)
 
 **A query HIP reports as unsupported leaves a sticky error that the NEXT check reports.**
-`cudaDeviceSetLimit(cudaLimitPrintfFifoSize, ...)` maps to a call that returns
-`hipErrorUnsupportedLimit`. Code that ignores that return value and later runs the usual
+Reading or setting `cudaLimitPrintfFifoSize` (`cudaDeviceGetLimit`/`cudaDeviceSetLimit`) maps
+to a call that returns `hipErrorUnsupportedLimit`. Code that ignores that return value and
+later runs the usual
 `launch; CHECK(cudaGetLastError());` sees the stale error at the launch check and blames the
 kernel. Check or clear the error at the unsupported call, under the HIP branch only, so the
 CUDA path is unchanged. The same reading applies to any failure reported by a last-error
-check: confirm the blamed call's own return value first. (Reconstructed from a one-line note;
-the originating port was not recorded.)
+check: confirm the blamed call's own return value first. (LichtFeld-Studio: a startup
+memory report read the printf FIFO limit, and model initialization then failed with
+`hipErrorUnsupportedLimit`.)
 
 **`clock64()` is a 20-bit wrapping counter on RDNA3, so a cycle-bounded spin, delay or
 timeout misbehaves.** HIP's `clock64()` is `__builtin_readcyclecounter()`. On gfx11 (RDNA3/3.5)
