@@ -9,8 +9,8 @@
       "refs": [
         "projects/QUICK/notes.md ## Fortran compiler availability on TheRock Windows (2026-08-20)"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/TheRock/issues/7596",
       "created_at": "2026-08-20T20:17:29Z",
       "decided": null
     }
