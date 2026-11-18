@@ -32,7 +32,8 @@ branch and opens a PR, and a human decides -- the same path everything else take
     python3 utils/upstream.py --publish --apply --name <p>  # open that one upstream PR
     python3 utils/upstream.py --fix-review       # staged fix rounds needing a review PR
     python3 utils/upstream.py --merge-fix        # approved fix rounds ready to merge
-    python3 utils/upstream.py --merge-fix --apply # fast-forward the open PR to the approved tip
+    python3 utils/upstream.py --merge-fix --apply --name <p>  # fast-forward that one
+                                                 # open PR to its approved tip
     python3 utils/upstream.py --drift            # maintained forks vs upstream's advance
     python3 utils/upstream.py --drift --apply    # also fast-forward a behind fork mirror
     python3 utils/upstream.py --finish-release   # approved release lines ready to tag
@@ -704,6 +705,44 @@ def review_candidates():
     return out
 
 
+def approval_instructions(head, what, review_url=None):
+    """The opening of the comment that tells the approver how to approve.
+
+    The approval line names the commit, because a conversation comment carries none
+    of its own: without the sha the gate could only compare dates, and a commit made
+    before the approval and pushed after it has an old date. `head` is the review
+    PR's head when the comment is posted; None prints a placeholder instead."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+    sha = head[:12] if head else "<the head commit's sha>"
+    return (
+        f"To approve {what}, leave a comment containing this line by itself:\n\n"
+        f"```\n{moatlib.APPROVE_COMMAND} {sha}\n```\n\n"
+        f"The sha is the commit you are approving: the head of this pull request "
+        f"as you reviewed it (at least 7 characters; the Commits tab shows it). An "
+        f"approval that names any other commit than the current head does not "
+        f"count, which is what stops a later push from riding out on it.\n\n"
+        f"To send it back to the porter instead:\n\n"
+        f"```\n{moatlib.CHANGES_COMMAND}\n```\n\n"
+        f"Both are commands because GitHub greys out the Approve and Request Changes "
+        f"buttons for a pull request's author, and this PR was opened on your "
+        f"credentials. Your latest command is the one that stands, and a command "
+        f"quoted in a code fence -- like the two above -- is ignored.\n\n"
+        f"Either box works: an ordinary conversation comment, or a review comment "
+        f"(*Review changes -> Comment*"
+        + (f", or `gh pr review {review_url} --comment --body "
+           f"'{moatlib.APPROVE_COMMAND} {sha}'`" if review_url else "")
+        + "). GitHub records which commit a review was written against, so in the "
+          "review form the sha may be left off; in a conversation comment it is "
+          "required.")
+
+
+def _pr_head(url):
+    """The head commit of a pull request we just opened, or None."""
+    d = gh_json(["pr", "view", url, "--json", "headRefOid"])
+    return (d or {}).get("headRefOid") or None
+
+
 def open_review_pr(row, title, body, apply=False):
     """Open the review PR on our own fork. The title and body ARE the upstream PR's,
     so they are checked for in-house vocabulary before anyone sees them -- this is
@@ -791,20 +830,8 @@ def open_review_pr(row, title, body, apply=False):
     # our approval command.
     _run(
         ["gh", "pr", "comment", url, "--body",
-         f"To approve this port, leave a comment containing this line by "
-         f"itself:\n\n```\n{moatlib.APPROVE_COMMAND}\n```\n\n"
-         f"To send it back to the porter instead:\n\n"
-         f"```\n{moatlib.CHANGES_COMMAND}\n```\n\n"
-         f"Both are commands because GitHub greys out the Approve and Request Changes "
-         f"buttons for a pull request's author, and this PR was opened on your "
-         f"credentials. Your latest command is the one that stands, and a command "
-         f"quoted in a code fence -- like the two above -- is ignored.\n\n"
-         f"Either box works: a review comment (*Review changes -> Comment*, or "
-         f"`gh pr review {url} --comment --body '{moatlib.APPROVE_COMMAND}'`) or an "
-         f"ordinary conversation comment. Prefer the review form -- it records which "
-         f"commit you were looking at, which is what proves the approval covers this "
-         f"code and not an earlier push; a conversation comment counts too, judged by "
-         f"its time against the branch tip.\n\n"
+         approval_instructions(_pr_head(url) or row.get("tip"), "this port", url)
+         + "\n\n"
          + (f"This is a release sign-off. Approving tags the approved commit, "
             f"closes this pull request WITHOUT merging it and freezes "
             f"`{row['branch']}`; never merge it, because `{row['base']}` must stay "
@@ -945,19 +972,43 @@ def publish_blockers(name, row):
     return bad
 
 
-def open_upstream(name, row):
+def fork_branch_tip(fork_url, branch):
+    """The commit `branch` points at on the fork right now, or None if it cannot
+    be read. Asked of the remote itself, not of a clone or of the API: this is the
+    last look before a branch NAME is handed to GitHub as a pull request's head."""
+    ls = _run(["git", "ls-remote", fork_url, f"refs/heads/{branch}"],
+              capture_output=True, text=True, timeout=60)
+    if ls.returncode:
+        return None
+    return (ls.stdout.split() or [None])[0]
+
+
+def open_upstream(name, row, approved=None):
     """Open the upstream PR with the approved title and body, verbatim.
 
     The record is resolved across refs like everything else here: a project with a
     standing approval and no PR yet lives on its own `port/<name>` branch by
     construction, so reading the working tree found nothing unless the session
-    happened to be standing on that branch."""
+    happened to be standing on that branch.
+
+    `approved` is the commit the approval covers. `gh pr create --head` takes a
+    branch name, not a commit, and the approval was judged minutes ago -- before
+    its snapshot was committed and pushed through the pre-push gates -- while the
+    port branch is not frozen until the upstream PR exists. So the branch is read
+    from the fork immediately before the create and the create is refused unless
+    it still points at the approved commit, and the new PR's head is read back
+    afterwards: a push that lands in the last instant is then reported for what
+    it is instead of being recorded as the approved commit."""
     sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     d, _where = moatlib.project_record(name)
     if d is None:
         return (None, f"no record for {name} in this checkout or on the refs")
+    approved = approved or (row.get("pr") or {}).get("headRefOid")
+    if not approved:
+        return (None, "the approved commit is not known, so the branch cannot be "
+                      "checked against it; nothing was opened")
     slug = d["upstream_url"].split("github.com/", 1)[-1]
     fork_owner = d["fork_url"].split("github.com/", 1)[-1].split("/")[0]
     branch = d.get("fork_branch") or moatlib.PORT_BRANCH
@@ -978,6 +1029,16 @@ def open_upstream(name, row):
     real = gh_guard.real_gh()
     if real is None:
         return (None, "gh is not installed")
+    tip = fork_branch_tip(d["fork_url"], branch)
+    if not tip:
+        return (None, f"cannot read {branch} on the fork ({d['fork_url']}) to "
+                      f"confirm it still holds the approved commit; nothing was "
+                      f"opened")
+    if not moatlib.same_commit(tip, approved):
+        return (None, f"the fork's {branch} is now at {tip[:12]}, not the approved "
+                      f"{approved[:12]} -- something was pushed after the approval "
+                      f"was judged; nothing was opened. Record the push with "
+                      f"advance-head, revalidate, and get a fresh approval")
     r = _run(
         [real, "pr", "create", "--repo", slug, "--base", base,
          "--head", f"{fork_owner}:{branch}", "--title", row["title"],
@@ -988,16 +1049,47 @@ def open_upstream(name, row):
     url = next((l.strip() for l in r.stdout.splitlines()
                 if "github.com" in l and "/pull/" in l), "")
     num = url.rstrip("/").rsplit("/", 1)[-1]
+    # What did GitHub actually open? The branch name was resolved on their side.
+    shown = None
+    if url:
+        back = _run([real, "pr", "view", url, "--json", "headRefOid"],
+                    capture_output=True, text=True, timeout=90, cwd=str(REPO))
+        try:
+            shown = json.loads(back.stdout).get("headRefOid") if not back.returncode \
+                else None
+        except (ValueError, AttributeError):
+            shown = None
+    moved = bool(shown) and not moatlib.same_commit(shown, approved)
     # Called rather than shelled out to, so a record that will not write is reported
     # here instead of vanishing into a subprocess nobody read the exit code of. The PR
     # is already open at this point, so failing to record it is worth saying loudly.
+    # A PR that opened on the wrong commit is still recorded as OPEN -- that is what
+    # freezes the branch against further pushes -- but with the commit it really
+    # shows, never the approved one.
     try:
-        moatlib.set_pr_open(name, url, num)
+        moatlib.set_pr_open(name, url, num, published_sha=shown if moved else None)
     except Exception as e:                      # noqa: BLE001 - reported, not raised
         return (url, f"opened {url} but could NOT record it: {e}")
     unlanded = _land_local_record(name, f"{name}: upstream PR opened -- {url}")
+    if moved:
+        return (url, f"UNAPPROVED CONTENT IS UPSTREAM: {url} opened showing "
+                     f"{shown[:12]}, but the approval covers {approved[:12]} -- the "
+                     f"fork's {branch} moved between the last check and the create. "
+                     f"The PR is recorded as open (which freezes {branch}) with "
+                     f"published_sha {shown[:12]}; it is NOT recorded as the approved "
+                     f"commit, and the review PR {row.get('url')} was left open. A "
+                     f"person must now decide, on GitHub: close {url}, or keep it and "
+                     f"have the commits past {approved[:12]} reviewed (compare "
+                     f"{approved[:12]}...{shown[:12]} on the fork). Nothing here will "
+                     f"close or change an upstream pull request by itself"
+                     + (f"; also: {unlanded}" if unlanded else ""))
     if unlanded:
         return (url, f"opened {url}; {unlanded}")
+    if url and not shown:
+        return (url, f"opened {url}, but its head could not be read back to confirm "
+                     f"it shows the approved {approved[:12]} -- check it by hand "
+                     f"(`gh pr view {url} --json headRefOid`). The review PR was "
+                     f"left open until that is confirmed")
 
     # The review PR has done its job -- the change it was reviewing is now in front of
     # the maintainers. Close it pointing at where the conversation continues, rather
@@ -1060,13 +1152,24 @@ def report_publish(apply, only=None):
         return 0
     for r in ready:
         # Snapshot the approval BEFORE publishing, so the record of who authorised
-        # this exists even if the PR creation then fails.
+        # this exists even if the PR creation then fails. The snapshot re-reads the
+        # review PR and re-judges it, so it also says which commit is approved NOW.
         try:
-            moatlib_record(r["name"])
+            snap = moatlib_record(r["name"])
         except Exception as e:                      # noqa: BLE001 - reported, not raised
             print(f"  FAILED to record the approval for {r['name']}: {e}")
             continue
-        url, err = open_upstream(r["name"], r)
+        judged = (r.get("pr") or {}).get("headRefOid")
+        approved = (snap or {}).get("head_sha")
+        sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+        import moatlib
+        if not approved or not judged or not moatlib.same_commit(approved, judged):
+            print(f"  FAILED: {r['name']}: the gates were judged at "
+                  f"{(judged or '?')[:12]} but the approval now recorded covers "
+                  f"{(approved or '?')[:12]} -- the review PR moved during this "
+                  f"run; nothing was opened")
+            continue
+        url, err = open_upstream(r["name"], r, approved=approved)
         if url and err:          # the PR is open but the record did not take
             print(f"  PARTIAL  {r['name']}: {err}")
         else:
@@ -1384,16 +1487,14 @@ def open_fix_review_pr(row, title, body, apply=False):
                 f"{row['name']} {url}")
     _run(
         ["gh", "pr", "comment", url, "--body",
-         f"To approve this fix round, leave a comment containing this line by "
-         f"itself:\n\n```\n{moatlib.APPROVE_COMMAND}\n```\n\n"
-         f"To send it back to the porter instead:\n\n"
-         f"```\n{moatlib.CHANGES_COMMAND}\n```\n\n"
-         f"Approving covers the commits on this branch"
+         approval_instructions(row.get("tip"), "this fix round", url)
+         + "\n\nApproving covers the commits on this branch"
          + (f" and the section under {REPLY_HEADING!r} in the body, which is "
             f"posted verbatim as a comment on the upstream pull request after "
             f"the merge, behind a standing line disclosing that it was drafted "
             f"by an AI assistant" if reply else "")
-         + ". `utils/upstream.py --merge-fix --apply` then fast-forwards the "
+         + ". `utils/upstream.py --merge-fix --apply --name <project>` then "
+           "fast-forwards the "
            "open upstream PR's branch to exactly the approved tip. Anything "
            "pushed afterwards, or any edit to the body, voids the approval and "
            "needs a fresh one."],
@@ -1496,6 +1597,10 @@ def merge_fix_blockers(name, d, fix, pr):
         bad.append(f"approval {code}: {why}")
     blockers, _notes = moatlib.moat_command_audit(pr)
     bad += blockers
+    # The approved page must be the review of THIS round: on this project's fork,
+    # from the staging branch, into the port branch. The publish path has had this
+    # check since review_pr_binding_problems; the merge path trusted the recorded URL.
+    bad += moatlib.fix_review_binding_problems(d, pr)
     ready, blocking, _ = moatlib.fix_ready(name)
     if not ready:
         bad.append("not fix-ready: " + ", ".join(f"{p}={s}" for p, s in blocking))
@@ -1861,8 +1966,9 @@ def report_merge_fix(apply, only=None):
         if not ok:
             ret = 1
     if rows and not apply:
-        print("\n  --merge-fix --apply performs the fast-forward push (and posts "
-              "the approved reply, where the body carries one).")
+        print("\n  --merge-fix --apply --name <project> performs that one "
+              "fast-forward push (and posts the approved reply, where the body "
+              "carries one).")
     return ret
 
 
@@ -2284,8 +2390,11 @@ def main():
     ap.add_argument("--review", action="store_true",
                     help="ports whose gates are met with no review PR open yet")
     ap.add_argument("--name", help="with --review --apply: which project to open; "
-                    "with --publish: check and submit only this project "
-                    "(required with --publish --apply)")
+                    "with --publish or --merge-fix: check and act on only this "
+                    "project (required with --apply)")
+    ap.add_argument("--stamp", action="store_true",
+                    help="with the plain sweep: record in data/reconciled.json that "
+                         "it ran (a tracked file; --apply stamps by itself)")
     ap.add_argument("--title", help="with --review --apply: the upstream PR title")
     ap.add_argument("--body-file", help="with --review --apply: file holding the body")
     ap.add_argument("--forks", action="store_true",
@@ -2388,6 +2497,13 @@ def main():
         print(f"fix-review-pr: {action} -- {detail}")
         return 0 if action in ("opened", "would-open") else 1
     if a.merge_fix:
+        # Moving an open upstream PR is one decision about one project, exactly as
+        # opening one is. Without --name an --apply run merged every READY round.
+        if a.apply and not a.name:
+            print("--merge-fix --apply needs --name <project>: it moves one open "
+                  "upstream PR per run. Run --merge-fix without --apply to list "
+                  "what is ready.", file=sys.stderr)
+            return 2
         return report_merge_fix(apply=a.apply, only=a.name)
     if a.finish_release:
         return report_finish_release(apply=a.apply, only=a.name)
