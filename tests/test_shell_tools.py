@@ -100,6 +100,30 @@ class Lib(unittest.TestCase):
         self.assertIn('export PATH="$HOME/.local/bin:$PATH"', r.stdout)
         self.assertIn("install_hooks.py", r.stdout)
 
+    def test_fleet_rows_with_and_without_a_lock_note(self):
+        rows = self.dir / "rows.txt"
+        with open(rows, "w", newline="\n") as f:
+            f.write("HAMi-core\tbranch\tported\treviewer\tport/hami-core\n"
+                    "colmap\tbranch\tporting\tporter\tport/colmap\t"
+                    "work lock taken 2026-11-10 by another host or job on this platform\n"
+                    "local\ttree\tplanned\tporter\tport/local\n"
+                    "nobranch\tbranch\tscreened\tplanner\t\n")
+        r = self.run_lib(f'moat_fleet_checkouts < "{support.posix(rows)}"')
+        self.assertEqual(r.stdout.splitlines(), [
+            "           HAMi-core (ported -> reviewer): git checkout port/hami-core",
+            "           colmap (porting -> porter): git checkout port/colmap",
+            "             WARNING -- work lock taken 2026-11-10 by another host or job "
+            "on this platform",
+            "           nobranch (screened -> planner): git checkout port/nobranch"])
+
+    def test_warnings_are_picked_out_of_a_tools_stderr(self):
+        err = self.dir / "err.txt"
+        with open(err, "w", newline="\n") as f:
+            f.write("moat: MOAT_LOCAL_TOOLS is set\nWARNING colmap: work lock taken\n")
+        r = self.run_lib(f'moat_warnings "{support.posix(err)}"; '
+                         f'moat_warnings "{support.posix(err)}.gone"; echo "rc=$?"')
+        self.assertEqual(r.stdout.splitlines(), ["colmap: work lock taken", "rc=0"])
+
     def test_now_is_a_number(self):
         r = self.run_lib(f'PY="{support.PYTHON}"; moat_now; EPOCHREALTIME=; '
                          f'unset EPOCHREALTIME; moat_now')
@@ -207,6 +231,14 @@ class OrientText(unittest.TestCase):
             if '"$PY"' in line:
                 self.assertNotIn("2>/dev/null", line, line)
                 self.assertNotIn("|| true", line, line)
+
+    def test_orient_prints_the_selectors_lock_warning(self):
+        text = "\n".join(self.code("orient.sh"))
+        self.assertLess(text.index('LOCKWARN=$(moat_warnings "$next_err")'),
+                        text.index('rm -f "$next_err"\nif [ "$NEXT" = "NONE" ]'))
+        self.assertIn('printf \'%s\\n\' "$LOCKWARN"', text)
+        # Fleet rows are parsed in one place, which knows the sixth column.
+        self.assertNotIn("read -r proj where state stage branch", text)
 
     @unittest.skipUnless(support.bash(), "needs bash")
     def test_scripts_parse(self):

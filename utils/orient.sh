@@ -253,10 +253,7 @@ case "$_branch" in
   main|master)
     echo "next     : NONE -- control-plane mode on '$_branch'; ports dispatch from a port/<name> branch"
     FLEET=$(moat_run "moatlib.py fleet" "$PY" utils/moatlib.py fleet "$PLATFORM")
-    printf '%s\n' "$FLEET" | awk -F'\t' '$2=="branch"' \
-      | while IFS=$'\t' read -r proj where state stage branch; do
-          echo "           $proj ($state -> $stage): git checkout ${branch:-port/$proj}"
-        done
+    printf '%s\n' "$FLEET" | moat_fleet_checkouts
     exit 0 ;;
 esac
 
@@ -270,6 +267,9 @@ if ! NEXT=$("$PY" utils/moatlib.py next-task "$PLATFORM" 2>"$next_err") || [ -z 
   rm -f "$next_err"
   exit 1
 fi
+# The selector succeeded, and may still have said something on stderr: the work it
+# offers is under a lock another host or job of this platform took.
+LOCKWARN=$(moat_warnings "$next_err")
 rm -f "$next_err"
 if [ "$NEXT" = "NONE" ]; then
   echo "next     : NONE actionable on $PLATFORM"
@@ -291,14 +291,10 @@ if [ "$NEXT" = "NONE" ]; then
   # and correctly so -- you cannot work files that are not in your tree. But that
   # must not read as "there is nothing to do", so name it and say where it is.
   FLEET=$(moat_run "moatlib.py fleet" "$PY" utils/moatlib.py fleet "$PLATFORM")
-  ELSEWHERE=$(printf '%s\n' "$FLEET" | awk -F'\t' '$2=="branch"')
+  ELSEWHERE=$(printf '%s\n' "$FLEET" | moat_fleet_checkouts)
   if [ -n "$ELSEWHERE" ]; then
     echo "elsewhere: actionable on another branch --"
-    # The 5th field is the branch as the remote spells it (port/hami-core for
-    # HAMi-core); reconstructing port/$proj here printed checkouts that failed.
-    printf '%s\n' "$ELSEWHERE" | while IFS=$'\t' read -r proj where state stage branch; do
-      echo "           $proj ($state -> $stage): git checkout ${branch:-port/$proj}"
-    done
+    printf '%s\n' "$ELSEWHERE"
   fi
   echo "hint     : adopt a project from data/candidates.json:"
   echo "           $PY utils/moatlib.py scaffold <owner/repo>"
@@ -309,6 +305,9 @@ read -r PROJECT STATE STAGE < <(echo "$NEXT" | "$PY" -c \
   'import sys,json;d=json.load(sys.stdin);print(d["project"],d["state"],d["stage"])')
 
 echo "next     : projects/$PROJECT  state=$STATE  -> dispatch: $STAGE"
+if [ -n "$LOCKWARN" ]; then
+  printf '%s\n' "$LOCKWARN" | sed 's/^/lock     : WARNING -- /'
+fi
 echo "triple   : $GFX_TRIPLE"
 echo "action   : Use the $STAGE role on projects/$PROJECT for $PLATFORM"
 echo "           (read AGENTS.md Pipeline + Human decisions first)"

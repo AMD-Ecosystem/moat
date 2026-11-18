@@ -72,6 +72,29 @@ moat_gh_guard_problem() {
   return 1
 }
 
+# moat_fleet_checkouts
+# Reads `moatlib.py fleet` rows on stdin and prints, for each project whose folder is
+# on another branch, the checkout that reaches it. The 5th field is the branch as the
+# remote spells it (port/hami-core for HAMi-core). A row may carry a 6th: the work
+# lock's note, when the round on offer was started by another host or job of this
+# platform. It gets its own line, because entering that stage takes the lock over.
+moat_fleet_checkouts() {
+  awk -F'\t' '$2 == "branch" {
+    printf "           %s (%s -> %s): git checkout %s\n", $1, $3, $4, ($5 != "" ? $5 : "port/" $1)
+    if ($6 != "") printf "             WARNING -- %s\n", $6
+  }'
+}
+
+# moat_warnings <file>
+# The WARNING lines a tool wrote to the stderr captured in <file>, one per line.
+# `next-task` prints its JSON on stdout and says on stderr when the work it offers is
+# under a lock another host or job took; a caller that only keeps stderr for the
+# failure case would drop the one line the next agent has to read.
+moat_warnings() {
+  [ -f "$1" ] || return 0
+  sed -n 's/^WARNING  *//p' "$1"
+}
+
 # moat_now: seconds since the epoch with a fraction, without GNU date's %N.
 moat_now() {
   if [ -n "${EPOCHREALTIME:-}" ]; then
