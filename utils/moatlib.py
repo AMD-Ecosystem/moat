@@ -3611,11 +3611,20 @@ def pr_state_of(name, refresh=False):
 # in the MOAT working tree: an in-flight project's folder lives on its own branch,
 # and `projects/<name>/status.json` is absent from every checkout standing anywhere
 # else. Reading the path directly made the hook exit 0 on exactly the hosts and
-# exactly the projects it exists to protect. MOAT_PUBLISH=1 is set only by the
-# trusted merge path after its approval checks pass.
+# exactly the projects it exists to protect.
+#
+# The trusted merge path is let through by a one-shot token, not by its environment.
+# The hook used to exit 0 on MOAT_PUBLISH=1, and an environment variable is ambient:
+# every process started from a shell that had it set -- by a wrapper script, a debug
+# session, a copied command line -- inherited the exemption for every branch and
+# tag. The token is a file under the clone's git directory that names the exact
+# commit and ref about to be pushed and expires; the hook reads it, deletes it, and
+# lets through only that update. Nothing a stray environment holds can satisfy it.
 FORK_HOOK_MARKER = "# moat-fork-hook"
+PUBLISH_TOKEN = "moat-publish-token"
+PUBLISH_TOKEN_TTL = 600
 _FORK_HOOK = """#!/usr/bin/env bash
-{marker} v5
+{marker} v6
 # Refuses pushes to the port branch while it is upstream-visible or frozen: the
 # head of an open upstream PR, a maintained branch upstream points its users at,
 # or a delivered (tagged) release line. Only states known to leave the branch
@@ -3625,14 +3634,31 @@ _FORK_HOOK = """#!/usr/bin/env bash
 # that moves or deletes an existing tag: release tags are fixed points.
 # Installed by `moatlib.py protect-fork {name}`; see AGENTS.md on fix rounds.
 set -u
-[ "${{MOAT_PUBLISH:-}}" = "1" ] && exit 0
+
+# The approved merge announces the exact update it is about to push in a one-shot
+# file (moatlib.write_publish_token). Read it, delete it, and exempt only the
+# updates it names: one push, one commit, one ref.
+token=""
+token_file=$(git rev-parse --git-path {token} 2>/dev/null)
+if [ -n "$token_file" ] && [ -f "$token_file" ]; then
+  expires=$(sed -n 's/^expires //p' "$token_file" | head -n 1)
+  case "$expires" in
+    ''|*[!0-9]*) ;;
+    *) [ "$(date +%s)" -le "$expires" ] && token=$(cat "$token_file") ;;
+  esac
+  rm -f "$token_file"
+fi
+authorised() {{
+  [ -n "$token" ] && printf '%s\\n' "$token" | grep -qxF "$1 $2"
+}}
 
 # Only the port branch (and, on a release line, its pristine mirror) is guarded,
 # so the staging branch and any scratch branch push normally -- and the lookup
 # below is paid for only on the one push that could reach a maintainer.
 targets=0
 mirror=0
-while read -r _local _lsha remote rsha; do
+while read -r _local lsha remote rsha; do
+  authorised "$lsha" "$remote" && continue
   [ "$remote" = "refs/heads/{branch}" ] && targets=1
   {mirror_test}
 done
@@ -3644,10 +3670,17 @@ if [ "$mirror" = 1 ]; then
 fi
 [ "$targets" = 1 ] || exit 0
 
-# A host may have `python` and no `python3`; with neither the lookup fails and the
-# push is refused below, which is the safe direction.
-py=python3
-command -v "$py" >/dev/null 2>&1 || py=python
+# The interpreter that installed this hook: `python3` on PATH is not everywhere the
+# Python MOAT runs under (on one host it is an unrelated virtual environment with
+# none of the tooling's dependencies, and the lookup below then failed with a
+# misleading message). If it has gone, probe; with nothing usable the lookup fails
+# and the push is refused below, which is the safe direction.
+py="{python}"
+if ! "$py" -c 'import jsonschema, tomllib' >/dev/null 2>&1; then
+  for py in python3 python; do
+    "$py" -c 'import jsonschema, tomllib' >/dev/null 2>&1 && break
+  done
+fi
 
 # stdout only, so nothing a warning or a git message writes to stderr can be read
 # as the answer; the exit status is what says whether there IS an answer.
@@ -3657,7 +3690,7 @@ if [ $? -ne 0 ]; then
   # maintainer. Refuse, and say what to run to find out why.
   echo >&2 "moat: cannot tell whether {name} has an open upstream PR, so this push"
   echo >&2 "moat: to {branch} is refused rather than guessed at. Check with:"
-  echo >&2 "moat:   python3 {moatlib} pr-state {name} --refresh"
+  echo >&2 "moat:   $py {moatlib} pr-state {name} --refresh"
   "$py" "{moatlib}" pr-state "{name}" --refresh 2>&1 >/dev/null | sed >&2 's/^/moat:   /'
   exit 1
 fi
@@ -3684,7 +3717,29 @@ exit 1
 """
 
 
-def protect_fork(name):
+def write_publish_token(repo, updates):
+    """Authorise exactly these pushes from `repo` through the fork pre-push hook:
+    `updates` is [(full commit sha, full ref name)]. Returns the token's path so the
+    caller can remove it if the push never reached the hook. Only the trusted merge
+    path calls this, after its approval checks pass."""
+    r = subprocess.run(["git", "rev-parse", "--git-path", PUBLISH_TOKEN],
+                       cwd=str(repo), capture_output=True, text=True)
+    if r.returncode != 0 or not r.stdout.strip():
+        raise RuntimeError(f"cannot find the git directory of {repo}")
+    path = Path(r.stdout.strip())
+    path = path if path.is_absolute() else Path(repo) / path
+    for sha, ref in updates:
+        if not re.fullmatch(r"[0-9a-f]{40}", sha or "") or not ref.startswith("refs/"):
+            raise ValueError(f"a publish token names a full sha and a full ref, "
+                             f"not {sha!r} -> {ref!r}")
+    now = int(datetime.now(timezone.utc).timestamp())
+    path.write_text(f"expires {now + PUBLISH_TOKEN_TTL}\n"
+                    + "".join(f"{sha} {ref}\n" for sha, ref in updates),
+                    newline="\n")
+    return path
+
+
+def protect_fork(name, repo=None):
     """Install the pre-push hook that keeps an open PR's branch -- or a maintained
     or delivered one -- from moving.
 
@@ -3693,8 +3748,11 @@ def protect_fork(name):
     protected one in orient's output. Idempotent; refuses to clobber a hook that is
     not ours (say so, loudly, rather than silently replacing whatever someone
     installed) but does replace an older moat hook. A missing clone installs nothing
-    and says so -- absence of a clone is absence of the risk."""
-    repo = _fork_repo(name)
+    and says so -- absence of a clone is absence of the risk.
+
+    `repo` names another clone of the same fork to protect instead of the
+    project's own (a cache repository that carries a `fork` remote)."""
+    repo = Path(repo) if repo else _fork_repo(name)
     git_dir = repo / ".git"
     if not git_dir.exists():
         return ("skip", f"{name}: no fork clone at {repo} -- nothing to protect")
@@ -3725,7 +3783,9 @@ def protect_fork(name):
             f'never moved or deleted"; exit 1 ;; esac ;; esac'
             if mirror else ":")
     text = _FORK_HOOK.format(marker=FORK_HOOK_MARKER, name=name,
-                             moatlib=str(REPO_ROOT / "utils" / "moatlib.py"),
+                             token=PUBLISH_TOKEN,
+                             python=Path(sys.executable).as_posix(),
+                             moatlib=(REPO_ROOT / "utils" / "moatlib.py").as_posix(),
                              branch=obj.get("fork_branch") or PORT_BRANCH,
                              mirror=mirror or "(none)", mirror_test=test)
     if hook.exists():

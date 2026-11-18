@@ -1755,10 +1755,29 @@ def do_merge_fix(name, d, fix, pr):
     fork_url = d.get("fork_url")
     branch = d.get("fork_branch") or "moat-port"
     tip = pr["headRefOid"]
-    env = {**os.environ, "MOAT_PUBLISH": "1"}
-    push = _run(["git", "-C", str(clone), "push", fork_url,
-                           f"{tip}:refs/heads/{branch}"],
-                          capture_output=True, text=True, timeout=120, env=env)
+    # The clone's pre-push hook refuses this push -- the branch is the head of an
+    # open PR -- unless a one-shot token names exactly this commit and this ref.
+    # Re-render the hook first: one from before the token would refuse the approved
+    # merge, and a clone with no hook at all should not leave here without one.
+    level, msg = moatlib.protect_fork(name)
+    if level == "warn":
+        return (False, f"the fork clone's pre-push hook is not ours to rely on "
+                       f"({msg}); nothing was pushed")
+    try:
+        token = moatlib.write_publish_token(clone, [(tip, f"refs/heads/{branch}")])
+    except (RuntimeError, ValueError, OSError) as e:
+        return (False, f"could not authorise the push: {e}")
+    try:
+        push = _run(["git", "-C", str(clone), "push", fork_url,
+                     f"{tip}:refs/heads/{branch}"],
+                    capture_output=True, text=True, timeout=120)
+    finally:
+        # The hook deletes the token when it reads it; a push that never reached
+        # the hook must not leave one behind for the next push to find.
+        try:
+            token.unlink()
+        except OSError:
+            pass
     if push.returncode:
         return (False, f"push failed: {(push.stderr or push.stdout).strip()[:200]}")
 
@@ -1805,12 +1824,12 @@ def do_merge_fix(name, d, fix, pr):
         tag = f"rocm-{TODAY.replace('-', '')}"
         tg = _run(["git", "-C", str(clone), "push", fork_url,
                              f"{tip}:refs/tags/{tag}"],
-                            capture_output=True, text=True, timeout=60, env=env)
+                            capture_output=True, text=True, timeout=60)
         if tg.returncode and "already exists" in (tg.stderr or ""):
             tag = f"rocm-{TODAY.replace('-', '')}-{tip[:7]}"
             tg = _run(["git", "-C", str(clone), "push", fork_url,
                                  f"{tip}:refs/tags/{tag}"],
-                                capture_output=True, text=True, timeout=60, env=env)
+                                capture_output=True, text=True, timeout=60)
         notes.append(f"tagged {tag}" if tg.returncode == 0 else
                      f"could NOT tag the tip ({(tg.stderr or tg.stdout).strip()[:80]}); "
                      f"push a rocm-<date> tag at {tip[:12]} by hand")
@@ -1819,7 +1838,7 @@ def do_merge_fix(name, d, fix, pr):
     # reuse the name.
     rm = _run(["git", "-C", str(clone), "push", fork_url,
                          f":refs/heads/{fix['branch']}"],
-                        capture_output=True, text=True, timeout=60, env=env)
+                        capture_output=True, text=True, timeout=60)
     if rm.returncode:
         notes.append(f"the staging branch {fix['branch']} is still on the fork "
                      f"and can be deleted by hand")
@@ -2216,6 +2235,14 @@ def _drift_repo(name, upstream_url, fork_url):
                           capture_output=True, text=True).returncode:
             _run(["git", "-C", str(d), "remote", "add", remote, url],
                            capture_output=True, text=True)
+    # This repository has a `fork` remote, so it can push the port branch exactly as
+    # the project's own clone can; give it the same pre-push hook. It used to have
+    # none, which made it the one clone where the freeze did not apply.
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+    level, msg = moatlib.protect_fork(name, repo=d)
+    if level == "warn":
+        print(f"  WARNING {msg}", file=sys.stderr)
     return d
 
 
@@ -2333,6 +2360,14 @@ def report_drift(apply=False):
             ret = 1
         elif info.get("mirror_behind"):
             if apply:
+                # On a release line the hook guards the mirror too; this push is
+                # upstream's own commit, fast-forward only, so it is named to it.
+                try:
+                    moatlib.write_publish_token(
+                        DRIFT_CACHE / name,
+                        [(info["base_tip"], f"refs/heads/{info['base']}")])
+                except (RuntimeError, ValueError, OSError):
+                    pass
                 p = _run(["git", "-C",
                                     str(DRIFT_CACHE / name), "push", "fork",
                                     f"{info['base_tip']}:refs/heads/{info['base']}"],
