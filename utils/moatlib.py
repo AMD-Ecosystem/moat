@@ -27,6 +27,9 @@ from pathlib import Path
 TOOLS_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
 PROJECTS = REPO_ROOT / "projects"
+# The interpreter's name, for a command a message tells someone to run. It was
+# spelled `python3`, which a Windows host does not have (or has as something else).
+PY = Path(sys.executable).stem if sys.executable else "python3"
 SCHEMA_VERSION = 3
 # Records are migrated in place, one ref at a time, so a checkout must not refuse the
 # ones the migration has not reached yet -- load_status validates, and a hard bump
@@ -594,7 +597,7 @@ def save_status(name, obj):
             f"{obj.get('name')}: this checkout would write {'; '.join(stale)}, which the "
             f"TRUNK's schema does not accept -- your tooling predates it. check.py judges "
             f"every ref, so writing it blocks pushes for every project from every host. "
-            f"Run `python3 utils/moatlib.py branch-sync --apply`, then redo this.")
+            f"Run `{PY} utils/moatlib.py branch-sync --apply`, then redo this.")
     obj["updated_at"] = now_iso()
     p = status_path(name)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -725,7 +728,7 @@ def save_record(name, obj, message):
         raise ValueError(
             f"{name}: this checkout would write {'; '.join(stale)} to {branch}, which "
             f"the TRUNK's schema does not accept -- your tooling predates it. Run "
-            f"`python3 utils/moatlib.py branch-sync --apply`, then redo this.")
+            f"`{PY} utils/moatlib.py branch-sync --apply`, then redo this.")
     return commit_to_branch(
         branch, {f"projects/{name}/status.json": json.dumps(obj, indent=2) + "\n"},
         message)
@@ -1061,6 +1064,13 @@ def set_not_portable(name, reason, by, clear=False):
     return the verdict, exactly as with a licence clearance or a gate waiver."""
     obj = load_status(name)
     if clear:
+        # Lifting a verdict that is not there used to reset whatever stage the
+        # project WAS in to `planned`: a mistyped name sent a review-passed port
+        # back to the porter with no transition checked.
+        if project_stage(obj) != "not-portable":
+            raise ValueError(
+                f"{name}: stage is {project_stage(obj) or 'unclaimed'}, not "
+                f"not-portable -- there is no verdict to lift")
         obj.pop("not_portable", None)
         obj["stage"] = "planned"
     else:
@@ -1072,6 +1082,12 @@ def set_not_portable(name, reason, by, clear=False):
             raise ValueError(f"{name}: --reason is required")
         obj["not_portable"] = {"reason": reason, "by": by, "at": now_iso()}
         obj["stage"] = "not-portable"
+        # The verdict can land while a porter or reviewer holds the stage. Nobody
+        # works an unportable project, so the lock ends with it; left held, a
+        # later revive on any other platform was refused until a person released
+        # a lock nobody had.
+        if obj.get("porting"):
+            _release_lock(obj)
     obj["updated_at"] = now_iso()
     save_status(name, obj)
     return obj
@@ -1108,6 +1124,12 @@ def port_lock(name, take=None, release=False):
     Takeover is deliberately a command a person runs and never a timeout: an agent
     that stops mid-port leaves a held lock, and the difference between that and an
     agent still working is not visible from here."""
+    if take:
+        # A typo here wrote a lock no platform matches, which nothing could enter
+        # and which failed the schema's platform pattern on every ref sweep.
+        problem = platform_problem(take)
+        if problem:
+            raise ValueError(f"{name}: cannot take the lock for {take!r} -- {problem}")
     obj = load_status(name)
     if release or take:
         held = obj.get("porting")
@@ -3121,7 +3143,7 @@ def record_writable_here(name):
     return (False,
             f"{name}: its record is on the trunk and this checkout is on "
             f"{current_branch()}, which may not write it. Work in flight belongs on "
-            f"`port/{name}`: `python3 utils/moatlib.py fix-branch {name}` re-homes "
+            f"`port/{name}`: `{PY} utils/moatlib.py fix-branch {name}` re-homes "
             f"the folder there before its first write")
 
 
@@ -4218,7 +4240,10 @@ def dep_doc_gaps():
         if obj is None:
             continue
         p = PROJECTS / dep / "notes.md"
-        notes = p.read_text() if p.exists() else None
+        # UTF-8 said out loud: the locale code page on Windows cannot decode a
+        # curly quote, and one in any provider's notes ended the whole report.
+        notes = (p.read_text(encoding="utf-8", errors="replace")
+                 if p.exists() else None)
         if notes is None:
             for ref in (f"origin/port/{dep}", "origin/main"):
                 notes = _ref_read(ref, f"projects/{dep}/notes.md")
@@ -5988,6 +6013,34 @@ def _print_json(obj):
 
 
 def main(argv=None):
+    """Run the CLI. A refusal is an answer, not a crash.
+
+    Every guard in this file refuses by raising, and with no handler each refusal
+    reached the caller as a Python traceback whose last line was the message. An
+    agent reading that sees a tool that broke, not a tool that said no. So the
+    refusal is printed as one line and the exit status is 1; set MOAT_TRACEBACK=1
+    to get the traceback when the refusal itself is what needs debugging."""
+    try:
+        return _main(argv)
+    except (ValueError, RuntimeError, FileNotFoundError,
+            subprocess.CalledProcessError) as e:
+        if os.environ.get("MOAT_TRACEBACK"):
+            raise
+        if isinstance(e, FileNotFoundError):
+            why = f"no such record or file: {e.filename or e}"
+        elif isinstance(e, subprocess.CalledProcessError):
+            err = e.stderr.decode("utf-8", "replace") if isinstance(e.stderr, bytes) \
+                else (e.stderr or "")
+            cmd = " ".join(str(c) for c in e.cmd) if isinstance(e.cmd, (list, tuple)) \
+                else str(e.cmd)
+            why = f"`{cmd[:120]}` failed ({e.returncode}): {err.strip() or 'no output'}"
+        else:
+            why = str(e)
+        print(f"moatlib: {' '.join(why.split())}", file=sys.stderr)
+        return 1
+
+
+def _main(argv=None):
     ap = argparse.ArgumentParser(prog="moatlib")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -6475,8 +6528,8 @@ def main(argv=None):
         set_hold(args.name, on, args.reason)
         print(f"{args.name} on_hold: {on}" + (f" ({args.reason})" if on and args.reason else ""))
     elif args.cmd == "advance-head":
-        advance_head(args.name, args.sha)
-        print(f"{args.name} head_sha -> {args.sha}")
+        obj = advance_head(args.name, args.sha)
+        print(f"{args.name} head_sha -> {obj['head_sha']}")
     elif args.cmd == "carry-forward":
         carry_forward(args.name, args.platform, args.sha, args.method, args.detail)
         print(f"{args.name}/{args.platform} carried forward -> {args.sha} ({args.method})")
@@ -6888,8 +6941,6 @@ def main(argv=None):
         for name, report in rows:
             for dep, verdict, detail in report:
                 print(f"{name}\t{dep}\t{verdict}\t{detail}")
-        if not rows:
-            print("", end="")
     elif args.cmd == "branch-sync":
         if args.all:
             rows = branch_sync_all(apply=args.apply)
