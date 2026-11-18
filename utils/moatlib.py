@@ -920,6 +920,13 @@ def set_state(name, platform, new_state, agent=None, save=True, sha=None):
         problem = verdict_sha_problem(name, obj, platform, new_state, sha)
         if problem:
             raise ValueError(problem)
+    if new_state == "completed" and (obj["platforms"].get(platform) or {}).get("blocked"):
+        raise ValueError(
+            f"{name}/{platform}: this platform is recorded BLOCKED "
+            f"({(obj['platforms'][platform].get('blocked_reason') or 'no reason')[:120]}"
+            f"), which says it cannot run the project. A pass here means the block "
+            f"is over: clear it first (`moatlib.py set-blocked {name} {platform} "
+            f"--clear`), then record the verdict")
     cur = project_stage(obj) or "unclaimed" if is_stage else \
         (obj["platforms"].get(platform) or {}).get("state")
     # Exclusivity is checked BEFORE the no-op short-circuit, because "the project is
@@ -3834,10 +3841,14 @@ def carry_forward(name, platform, new_sha, method, detail):
     delta whose compiled output is unchanged; advance_head handles the
     arch-independent source classes itself. Records provenance for audit."""
     obj = load_status(name)
-    blk = obj["platforms"][platform]
-    if blk.get("state") != "completed":
+    blk = (obj.get("platforms") or {}).get(platform)
+    if blk is None or blk.get("state") != "completed":
         raise ValueError(f"{name}/{platform}: carry_forward needs a completed validation "
-                         f"to carry, not {blk.get('state')}")
+                         f"to carry, not {(blk or {}).get('state')}")
+    if blk.get("blocked"):
+        raise ValueError(f"{name}/{platform}: this platform is recorded BLOCKED, which "
+                         f"says it cannot run the project; there is no validation to "
+                         f"carry until the block is cleared (`set-blocked --clear`)")
     new_sha = full_sha(new_sha, _fork_repo(name))
     # A validation carried to anything but the head satisfies no gate, and carried
     # to a commit that is not the head it reads as current evidence about code
@@ -4306,8 +4317,15 @@ def gate_satisfied(obj, gate):
     asks the same question and must get the same answer."""
     # No recorded head means there is no current content for a validation to
     # prove, so a completed arch satisfies nothing -- only a waiver can.
+    #
+    # A BLOCKED arch satisfies nothing either. `blocked` says this card cannot run
+    # the project, and a block that also reads `completed` at the head (a
+    # carry-forward onto a blocked arch did that once) is two records that cannot
+    # both be true. The cautious one wins, here and in squash_carry_forward, and
+    # set_state/carry_forward no longer let the pair arise: clear the block first.
     head = obj.get("head_sha")
     if head and any(gate in gates_for(a) and b.get("state") == "completed"
+                    and not b.get("blocked")
                     and same_commit(b.get("validated_sha"), head)
                     for a, b in validations(obj).items()):
         return True
@@ -5761,7 +5779,12 @@ def squash_carry_forward(name, new_sha, repo=None):
         the old head validated some earlier tree, is owed a revalidation, and is
         reported as `stale` rather than carried;
       - each `blocked` (non-viable, e.g. Windows-unportable) platform: left UNTOUCHED
-        -- never flipped from non-viable to passing;
+        -- never flipped from non-viable to passing, and never counted toward a
+        gate, before the squash or after it (gate_satisfied ignores it too);
+      - each platform whose `validation-failed` stands at the old head: the failure
+        is carried to new_sha. The squash changed no content, so it fixed nothing;
+        leaving failed_sha behind retired the failure and sent a validator, or
+        nobody, at code that still fails there;
       - an arch left un-validated because a sibling already satisfies every gate it
         could satisfy (see pr_ready): reported as `optional`, not a problem;
       - any other (actionable) state: left as-is (you should not be squashing yet).
@@ -5798,13 +5821,23 @@ def squash_carry_forward(name, new_sha, repo=None):
     # A gate already satisfied by some carried arch needs nothing more; an arch
     # that could only have satisfied such a gate is optional, not a blocker.
     satisfied = {g for a in current for g in gates_for(a)}
-    carried, kept_blocked, skipped, optional, stale = [], [], [], [], []
+    carried, kept_blocked, skipped, optional, stale, failed = [], [], [], [], [], []
+    ts = now_iso()
     for plat, blk in vals.items():
+        if failure_stands({"head_sha": old_head}, blk):
+            blk["failed_sha"] = new_sha
+            blk["updated_at"] = ts
+            failed.append(plat)
         if blk.get("blocked"):
             kept_blocked.append(plat)
+        elif plat in failed:
+            pass
         elif plat in current:
             blk["validated_sha"] = new_sha
-            blk["updated_at"] = now_iso()
+            blk["updated_at"] = ts
+            blk["carry_forward"] = {"from": old_head, "to": new_sha, "method": "squash",
+                                    "detail": "tree-identical squash of the validated "
+                                              "head", "at": ts}
             carried.append(plat)
         elif blk.get("state") == "completed":
             stale.append((plat, (blk.get("validated_sha") or "?")[:8]))
@@ -5814,7 +5847,8 @@ def squash_carry_forward(name, new_sha, repo=None):
             skipped.append((plat, blk.get("state")))
     save_status(name, obj)
     return (True, {"carried": carried, "kept_blocked": kept_blocked,
-                   "skipped": skipped, "optional": optional, "stale": stale})
+                   "skipped": skipped, "optional": optional, "stale": stale,
+                   "failed": failed})
 
 
 def adds_nothing_to_upstream(name, obj):
@@ -6723,6 +6757,9 @@ def _main(argv=None):
             if info.get("stale"):
                 msg += (f"; STALE completed {info['stale']} (validated an older head; "
                         f"owed a revalidation, not carried)")
+            if info.get("failed"):
+                msg += (f"; FAILURE carried {info['failed']} (the squash changed no "
+                        f"content, so it still fails there)")
             if info["skipped"]:
                 msg += f"; SKIPPED actionable {info['skipped']} (should not squash yet)"
             print(msg)

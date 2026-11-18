@@ -270,5 +270,70 @@ class GateGaps(NoDisposition):
                                            self.ROSTER), [])
 
 
+class BlockedNeverCounts(NoDisposition):
+    def test_a_blocked_block_completed_at_head_satisfies_no_gate(self):
+        obj = record(platforms={"linux-gfx90a": done(blocked=True, blocked_reason="r")})
+        self.assertFalse(moatlib.gate_satisfied(obj, "wave64"))
+        obj["platforms"]["linux-gfx90a"]["blocked"] = False
+        self.assertTrue(moatlib.gate_satisfied(obj, "wave64"))
+
+    def test_completed_cannot_be_recorded_on_a_blocked_platform(self):
+        s = Store(self, record(platforms={
+            "linux-gfx90a": {"blocked": True, "blocked_reason": "no GL context"}}))
+        with self.assertRaisesRegex(ValueError, "recorded BLOCKED"):
+            moatlib.set_state("proj", "linux-gfx90a", "completed")
+        self.assertEqual(s.saved, [])
+
+    def test_a_failure_can_still_be_recorded_on_a_blocked_platform(self):
+        s = Store(self, record(platforms={
+            "linux-gfx90a": {"blocked": True, "blocked_reason": "r"}}))
+        moatlib.set_state("proj", "linux-gfx90a", "validation-failed")
+        self.assertEqual(s.obj["platforms"]["linux-gfx90a"]["failed_sha"], HEAD)
+
+    def test_a_blocked_validation_is_not_carried_forward(self):
+        Store(self, record(platforms={"linux-gfx90a": done(OLD, blocked=True)}))
+        with self.assertRaisesRegex(ValueError, "recorded BLOCKED"):
+            moatlib.carry_forward("proj", "linux-gfx90a", HEAD, "binary-equiv", "same")
+
+
+class SquashCarry(NoDisposition):
+    def squash(self, platforms):
+        s = Store(self, record(head_sha=OLD, platforms=platforms))
+        fake = mock.Mock(returncode=0, stdout="tree-id\n")
+        with mock.patch.object(moatlib.subprocess, "run", lambda *a, **k: fake), \
+                mock.patch.object(moatlib, "_fork_repo", lambda name: "repo"):
+            ok, info = moatlib.squash_carry_forward("proj", HEAD)
+        self.assertTrue(ok)
+        return s.obj, info
+
+    def test_a_standing_failure_moves_with_the_squash(self):
+        obj, info = self.squash({"linux-gfx90a": done(OLD),
+                                 "windows-gfx1151": failed(OLD)})
+        self.assertEqual(info["failed"], ["windows-gfx1151"])
+        self.assertEqual(obj["platforms"]["windows-gfx1151"]["failed_sha"], HEAD)
+        self.assertEqual(moatlib.arch_task(obj, "windows-gfx1151"),
+                         ("porter", "validation-failed"))
+
+    def test_a_failure_already_superseded_is_left_behind(self):
+        obj, info = self.squash({"linux-gfx90a": done(OLD),
+                                 "windows-gfx1151": failed(THIRD)})
+        self.assertEqual(info["failed"], [])
+        self.assertEqual(obj["platforms"]["windows-gfx1151"]["failed_sha"], THIRD)
+
+    def test_a_carried_platform_records_how_it_got_there(self):
+        obj, info = self.squash({"linux-gfx90a": done(OLD)})
+        cf = obj["platforms"]["linux-gfx90a"]["carry_forward"]
+        self.assertEqual((cf["method"], cf["from"], cf["to"]), ("squash", OLD, HEAD))
+        self.assertEqual(info["carried"], ["linux-gfx90a"])
+
+    def test_a_blocked_platform_counts_neither_before_nor_after(self):
+        before = record(head_sha=OLD, platforms={"linux-gfx90a": done(OLD, blocked=True)})
+        self.assertFalse(moatlib.gate_satisfied(before, "wave64"))
+        obj, info = self.squash({"linux-gfx90a": done(OLD, blocked=True)})
+        self.assertEqual(info["kept_blocked"], ["linux-gfx90a"])
+        self.assertEqual(obj["platforms"]["linux-gfx90a"]["validated_sha"], OLD)
+        self.assertFalse(moatlib.gate_satisfied(obj, "wave64"))
+
+
 if __name__ == "__main__":
     unittest.main()
