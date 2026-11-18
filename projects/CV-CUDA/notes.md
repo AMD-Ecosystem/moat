@@ -1459,3 +1459,134 @@ This supersedes the refused waiver text with the specific evidence it asked for:
 genuinely fixable source defect (ELF-only symbol versioning with no Windows branch), not an
 unfixable platform limit -- so this stays a `validation-failed` routed to a porter, not a renewed
 waiver suggestion. Kernel_141 WER report count: 18 before, 18 after (no GPU load was ever reached).
+
+## Lesson for cuda-to-rocm: skill edits this branch carried before the trunk owned the skill
+
+This branch edited `.claude/skills/cuda-to-rocm/references/` directly, before port branches were limited to their own folder. The trunk never received these edits, and they conflicted with every trunk merge. The merge of 2026-11-18 took the trunk copy of the skill; the branch-only text is kept here verbatim, as a diff against the merge base, for promotion. Five entries in fault-classes.md (a block narrower than one wavefront, a null-stream memset racing a non-blocking stream, one contraction setting versus two kinds of bit-exact test, NVTX to roctx, curand generator-state internals), an extension of the InterpolationVarShapeWrap entry, and one validation.md note.
+
+```diff
+diff --git a/.claude/skills/cuda-to-rocm/references/fault-classes.md b/.claude/skills/cuda-to-rocm/references/fault-classes.md
+index 8e4b6206..fb9aa23f 100644
+--- a/.claude/skills/cuda-to-rocm/references/fault-classes.md
++++ b/.claude/skills/cuda-to-rocm/references/fault-classes.md
+@@ -43,6 +43,18 @@ past the shared-memory region. Ask which way the divide goes before picking the
+ (SCAMP: `cov_handoff`, `2 * warps_per_block` scalars sized with 64, under-allocated on
+ every wave32 device.)
+ 
++**A block NARROWER than one wavefront makes `blockDim.x / warpSize` zero and the block
++reduction silently returns zero.** The idiom `val = (tid < blockDim.x / warpSize) ? warpSums[lane]
++: 0` is exact on NVIDIA for any block that is a multiple of 32, so a launch that sizes its block
++from the work (`block.x = work <= 32 ? 32 : ...`) is safe there and broken on wave64: the count is
++0, every lane takes the empty branch, and the first stage shuffles lanes 32..63 that are not in the
++block. Nothing errors -- the reduction just yields 0. Ceil-dividing the count is not enough,
++because it leaves the out-of-block shuffles; floor the BLOCK at the wavefront width instead, from a
++host-side runtime query (`hipDeviceAttributeWarpSize`), so a wave32 device keeps the launch it had
++and a wave64 device gets a whole wavefront. Any launch whose block size is computed from a data
++size, rather than being a fixed 128/256, is a candidate. (CV-CUDA: OpFindHomography refinement,
++reachable at 16 or fewer point pairs.)
++
+ **Lane masks must be 64-bit where the API takes one** -- `__shfl*`, `__ballot`,
+ `__activemask`. A `uint32` mask is wrong on a 64-wide wavefront.
+ 
+@@ -147,13 +159,35 @@ The reliance is a latent upstream bug, not a ROCm defect: zero explicitly
+ (`hipMemsetAsync`) before the partial-write kernel, and audit any kernel whose write set is
+ smaller than its output allocation. (opencv_contrib: cudastereo census_transform border.)
+ 
++**The fix for that -- a blocking memset on the NULL stream -- is NOT ordered against a
++non-blocking stream.** `hipMemset`/`cudaMemset` on device memory is still enqueued on the null
++stream, and a stream created with `hipStreamNonBlocking` does not synchronize with the null
++stream. An allocator that zero-fills this way therefore races every caller that allocates and
++then uploads with `hipMemcpyAsync` on such a stream: the fill can land AFTER the upload and wipe
++it. Fingerprint: inputs that arrive all-zero at the kernel while their device pointers are
++perfectly valid, only for callers using a non-blocking stream, and the failure disappears under
++`AMD_SERIALIZE_COPY=3 AMD_SERIALIZE_KERNEL=3` -- which is the confirmation, not a workaround.
++An operator that checks for degenerate input will then report its own sentinel (NaNs, an identity
++model), so the symptom points at the math and not at the allocator. If a helper promises memory
++is zero by the time it returns, make that true: synchronize the null stream after the fill
++(the allocation call itself already synchronizes, so nothing structural is added). (CV-CUDA:
++DefaultAllocator zero-fill vs. FindHomography varshape.)
++
+ **`cudaMemcpy*Async` from a soon-freed pageable host buffer.** CUDA stages pageable async
+ copies synchronously, so a test that copies from a local `std::vector` and lets it go out of
+ scope still works. ROCm's is genuinely asynchronous, so the freed and reused buffer is read
+ after the copy is enqueued. The corruption appears only in bytes the kernel does not
+ overwrite, and the failing set varies run to run. This is a use-after-free that is latent UB
+ on CUDA, not an allocator defect -- confirm by keeping the source alive and watching the
+-failures vanish. (CV-CUDA: InterpolationVarShapeWrap.)
++failures vanish, or without touching the source at all by re-running under `AMD_SERIALIZE_COPY=3`,
++which makes a copy-lifetime bug pass and leaves a genuine numeric residual untouched. That one
++switch is also the cheapest way to tell the two apart when a suite mixes them: run it per cluster
++before admitting anything into a documented residual family. Expect more than one instance per
++project -- the same idiom appears wherever a test builds a staging buffer per loop iteration, and
++the giveaway is that only the side fed from the short-lived buffer is wrong, often carrying values
++the computation could not produce at all. (CV-CUDA: InterpolationVarShapeWrap, and independently
++TestOpColorTwist's planar upload, whose per-iteration `DeinterleaveToPlanes` result feeds one async
++copy per channel.)
+ 
+ **A functor returning a reference to a by-value or forwarded parameter** binds to a
+ temporary that expires at the return. nvcc and CUB happen to keep the value live in
+@@ -264,6 +298,22 @@ LC-framework's nvcc recipe uses `-fmad=false -mno-fma -ffp-contract=off`, so pin
+ there would diverge. Integer-only components are unaffected. (CV-CUDA OpWarpPerspective;
+ LC-framework.)
+ 
++**One contraction setting cannot satisfy both kinds of bit-exact test.** A project can have
++tests that compare a kernel against a CPU gold (which wants the contraction nvcc/host use) AND
++tests that compare two GPU code paths against each other byte-for-byte (which want the same
++contraction in both instantiations). clang contracts a `float` instantiation and a `float4`
++instantiation of the same template differently, so a per-plane path and a per-pixel path that are
++bit-identical on NVIDIA differ by 1 ULP on ROCm. Measure before choosing, and clear unrelated
++defects out of the sample first: on CV-CUDA v0.17 `-ffp-contract=on` left 39
++planar-vs-interleaved parity failures and 2 a vectorized-vs-scalar comparison, against 48 before --
++6 of the original 48 were an allocator ordering race and 2 more were a use-after-free in a test
++fixture, so a THIRD of the sample was never about contraction at all, and a decision taken on the
++raw count would have been taken on the wrong evidence.
++`-ffp-contract=off` removed most of the parity failures but regressed the cubic-vs-gold case the
++`on` pin was added for, so `on` was kept. Treat the choice as a reviewed decision with numbers
++attached, not a default, and re-measure after every functional fix that lands in the same suite.
++(CV-CUDA)
++
+ **An exact float-equality branch fed by approximate division can HANG, not just drift.**
+ HIP's `__fdividef` differs ~1 ULP from CUDA, so a downstream exact-equality test on the
+ quotient -- selecting a loop start or end index -- can flip on AMD. When that index feeds an
+@@ -316,6 +366,28 @@ the CUDA build too and are not HIP-specific hacks. (Velvet)
+ hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Mostly 1:1; watch handle types
+ and a few signature differences such as the hipBLAS v2 enums.
+ 
++**NVTX -> roctx.** Profiling range macros (`nvtxRangePushA`/`nvtxRangePop`) map onto roctx,
++which rocprof reports the same way, so a project whose build FATALS without NVTX headers does not
++need its ranges stubbed out. The header moved between ROCm versions: prefer
++`<rocprofiler-sdk-roctx/roctx.h>` and fall back to `<roctracer/roctx.h>` behind `__has_include`;
++both declare `roctxRangePushA`/`roctxRangePop`. Link `rocprofiler-sdk-roctx` or `roctx64`. A
++forwarding `nvtx3/nvToolsExt.h` on the HIP include path keeps every call site untouched. Only the
++range macros map: NVTX's INJECTION api (`NvtxGetExportTableFunc_t`, `NVTX_ETID_CALLBACKS`,
++`NVTX_CBID_CORE_*`), which interposer and probe test helpers use, has no roctx analogue, so a
++forwarding header that covers the ranges will still fail to compile such a helper. Check whether
++the project builds one before assuming the shim is complete; CV-CUDA's probe helper sits behind
++Python-only build options that its ROCm configuration leaves off, so it was never configured and
++the gap is untested rather than handled. (CV-CUDA)
++
++**Code that reads curand's generator state internals needs a rocRAND translation, not an alias.**
++curand caches one spare Box-Muller normal and flags it with `state.boxmuller_flag ==
++EXTRA_FLAG_NORMAL`; rocRAND caches the same spare value but marks an EMPTY slot with a NaN
++sentinel and keeps the field private, so the predicate is
++`rocrand_device::detail::engine_boxmuller_helper<rocrand_state_xorwow>::has_float(&state)`.
++`skipahead` and `*_normal2` exist natively. Kernels that skip ahead deterministically depend on
++this predicate being right, so a wrong answer is a silent numeric divergence, not a build error.
++(CV-CUDA gaussian noise)
++
+ **Negative entries for that table.** CUPTI has no ROCm analogue -- stub the optional
+ per-kernel profiling path inert and let the timer fall back to `hipEvent` wall-clock rather
+ than substituting something. ck_tile's fused MHA ships headers but no prebuilt instance
+diff --git a/.claude/skills/cuda-to-rocm/references/validation.md b/.claude/skills/cuda-to-rocm/references/validation.md
+index 77b5b4a4..c5daea89 100644
+--- a/.claude/skills/cuda-to-rocm/references/validation.md
++++ b/.claude/skills/cuda-to-rocm/references/validation.md
+@@ -11,6 +11,7 @@
+   - The class this catches that a HIP-only build cannot: an unconditional device-header include reaching host translation units. Used on 8 projects in one six-week window; it caught a template-shadow regression in Velvet and an stdgpu regression of exactly that include class. (stdgpu, SCAMP, cuSZ, mahout, lc0, cuPDLPx, TIGRE, Velvet)
+   - A torch `CUDAExtension` cannot get this gate the same way: `torch/extension.h` pulls in the fleet's ONLY installed PyTorch, a ROCm dev build with no CUDA-flavored counterpart on hand, so the check dies in the ambient install's headers before it can judge the port. See "CUDA gate for torch-extension ports" below for the fingerprints, the diagnosis, and the `cuda-not-validated` recording convention. (FaithC, accelerated-scan)
+   - A CUDA-path configure failure at `find_package(CUDA <ver> REQUIRED)` ("did not find CUDAConfig.cmake / cuda-config.cmake") on a project whose `cmake_minimum_required` floor is >= 3.27 is a CMake/toolchain incompatibility, not a port regression, if the project still calls the legacy `FindCUDA` module (as opposed to pure `enable_language(CUDA)` + `FindCUDAToolkit`, which is unaffected). CMake 3.27 added policy CMP0146 ("the FindCUDA module is removed"); once the project's minimum-required version reaches or exceeds a policy's introduction version, that policy defaults to NEW and the module self-disables (its file is found on disk but returns immediately) -- confirm with `--debug-find-pkg=CUDA`, which shows "The file was found at .../FindCUDA.cmake" right above the "did not find" error. `-DCMAKE_POLICY_DEFAULT_CMP0146=OLD` does NOT recover it once minimum-required is at/above the policy version (verified with a two-line reproducer CMakeLists.txt); only an in-project `cmake_policy(SET CMP0146 OLD)` before the `find_package(CUDA...)` call works, which would be an edit to code the port does not own. Confirm pre-existing by building the identical upstream base sha with the identical cmake/nvcc/gcc versions: if it fails identically, record `cuda-not-validated` with the CMP0146 explanation, not a gate. (arbor)
++- `codeobj_diff.py` on a host-only shared library (one that compiles no `.cu`/`.hip` TU) reports `indeterminate` with `roc-obj-ls: "No kernel section found"` on BOTH sides -- there is no device-code section to extract because there was never one to begin with, not because the tool failed to compare. Do not read that as `differ`; fall back to `sha256sum` on the two `.so` files (and `nm -D --defined-only | sort | diff` as a second signal) for a definitive binary-equivalence verdict. Seen on CV-CUDA's `libnvcv_types.so` (pure C++ host library alongside the HIP-kernel-bearing `libcvcuda.so` in the same build) during a carry-forward revalidation: sha256 was byte-identical across both shas, which is a stronger equivalence proof than codeobj_diff's own symbols+ISA verdict for the libraries that do have device code.
+ ## Platforms
+ 
+ A platform is `<os>-<gfx>`, and the set is open: whatever GPU your host reports is a
+```
