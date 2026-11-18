@@ -406,6 +406,18 @@
         "at": "2026-11-18T20:57:47Z"
       },
       "project": null
+    },
+    {
+      "id": "hip-link-win-msys-path-and-response-file",
+      "kind": "other",
+      "component": "cuda-to-rocm-skill",
+      "summary": "The skill asset .claude/skills/cuda-to-rocm/assets/hip_link_win.py (the Windows CMake HIP link wrapper that ports vendor as cmake/hip_link_win.py) has two open questions that need one real Windows CMake HIP link to settle, on a port that uses it (alien is its origin). (1) Its bare-flag test wraps any dot-free argument starting with / as -Wl,<arg>, so an MSYS-style path such as /d/build/foo would be wrapped; a fix was written during the 2026-11 skill restructure (also require no further slash in the flag name) and deliberately left out because it was tested only by calling transform() directly. (2) The skill's Windows reference says the wrapper exists because the linker response file loses its backslashes, but the script never reads or rewrites response files; that mismatch is marked Unresolved in references/windows.md. Settle both on a real link, then fix the asset and the prose together and re-copy into the forks that vendor it.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T22:00:18Z",
+      "decided": null,
+      "project": null
     }
   ]
 }
