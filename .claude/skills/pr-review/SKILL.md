@@ -118,7 +118,7 @@ What the port does (1 sentence), then the verdict.
 [Problems only -- changed CUDA/CPU behavior, non-additive change]
 
 ### Commit Hygiene
-[Problems only -- title not [ROCm]/over 72 chars, noreply trailer, ghstack, bare --force, AMD-internal account references]
+[Problems only -- ROCm-specific commit without [ROCm], [ROCm] on a shared-code fix, title over 72 chars, noreply trailer, ghstack, bare --force, AMD-internal account references]
 
 ### Recommendation
 **Approve** / **Request Changes** / **Needs Discussion**

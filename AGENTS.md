@@ -110,7 +110,7 @@ Find the project's automated tests in its documentation and build files. Focus o
 
 # Commit messages and upstream-visible text
 
-Commit titles start with `[ROCm]` and are at most 72 characters. Commit bodies explain the rationale, disclose assistance from an AI coding agent, and include a Test Plan with literal commands in fenced blocks. Do not add a `Co-Authored-By` trailer for an agent.
+Commit titles are at most 72 characters and start with `[ROCm]` when the change is ROCm-specific; a fix to shared code that is not (a missing include, a non-portable typedef) carries no prefix, and the commit gate requires the prefix only where the added lines name HIP, ROCm or an AMD target. Commit bodies explain the rationale, disclose assistance from an AI coding agent, and include a Test Plan with literal commands in fenced blocks. Do not add a `Co-Authored-By` trailer for an agent.
 
 No MOAT vocabulary may appear in upstream-visible commit messages, comments, code, PR titles, or PR bodies. Run `python3 utils/jargon.py --port <name>` before pushing. Write GitHub-rendered prose as one line per paragraph; run `utils/prose.py` on drafted bodies. Use ASCII in new comments and upstream prose.
 

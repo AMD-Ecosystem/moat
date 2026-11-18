@@ -2954,6 +2954,27 @@ _DISCLOSURE_TOKENS = ("ai coding agent", "ai agent", "ai assistant",
 _UNIT_SEP = chr(31)
 _REC_SEP = chr(30)
 
+# What makes a change ROCm-specific as far as a diff can show: its added lines
+# name HIP, ROCm, an AMD library or an AMD GPU target. Word-bounded, so "ship" and
+# "relationship" do not count, and CUDA-only identifiers never do.
+_ROCM_SPECIFIC = re.compile(
+    r"\b(?:hip(?:cc|cub|ify|blas|fft|rand|solver|sparse|tensor)?|hip[A-Z_]\w*"
+    r"|HIP\w*|__HIP\w*|rocm\w*|ROCm\w*|ROCM\w*|\w*_ROCM\w*|\w*_HIP\w*"
+    r"|roc[A-Z]\w+|rocprim|rocthrust|MIOpen\w*|amdgcn\w*|AMD\w*|gfx\d\w*)\b")
+
+
+def _rocm_specific_lines(repo, sha):
+    """The lines a commit adds that name something ROCm-specific, or None when the
+    diff cannot be read (the caller then cannot excuse a missing prefix)."""
+    r = subprocess.run(["git", "show", "--format=", "--unified=0", "--no-color", sha],
+                       cwd=str(repo), capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    if r.returncode != 0:
+        return None
+    return [ln[1:].strip() for ln in r.stdout.split("\n")
+            if ln.startswith("+") and not ln.startswith("+++")
+            and _ROCM_SPECIFIC.search(ln)]
+
 
 def _published_tips(obj, repo):
     """The commits this project's pull requests have shown upstream, current and
@@ -3010,7 +3031,11 @@ def commit_message_problems(name, obj=None):
 
     records = [r for r in (x.strip(chr(10)) for x in out.split(_REC_SEP)) if r]
     titles = [r.split(_UNIT_SEP)[1] for r in records if len(r.split(_UNIT_SEP)) > 1]
-    ours = [t for t in titles if t.startswith("[ROCm]")]
+    # Ours carry the prefix or, for a change to shared code that is not
+    # ROCm-specific, at least the AI disclosure every commit of ours has.
+    ours = [r for r in records if len(r.split(_UNIT_SEP)) > 1
+            and (r.split(_UNIT_SEP)[1].startswith("[ROCm]")
+                 or any(t in r.lower() for t in _DISCLOSURE_TOKENS))]
     # The fork default is meant to be an unmodified upstream mirror. When it falls behind,
     # base..moat-port stops describing our work and fills up with upstream's own commits,
     # which of course do not follow our rules. Reporting each of those as an offence buries
@@ -3032,7 +3057,19 @@ def commit_message_problems(name, obj=None):
         sha, title = parts[0][:7], parts[1]
         body = parts[2] if len(parts) > 2 else ""
         if not title.startswith("[ROCm]"):
-            problems.append(f"{name} {sha}: title does not start with [ROCm] -- {title[:50]}")
+            # The prefix marks a ROCm-specific commit. A fix to shared code that
+            # CUDA builds compile too (a missing include, a glibc-only typedef)
+            # must not claim it, so it is required only where the diff itself
+            # shows the change is ROCm-specific. Whether a prefixed commit
+            # deserves the prefix is the reviewer's call; a diff cannot show it.
+            hits = _rocm_specific_lines(repo, parts[0])
+            if hits is None:
+                problems.append(f"{name} {sha}: title does not start with [ROCm] and "
+                                f"the diff could not be read -- {title[:50]}")
+            elif hits:
+                problems.append(f"{name} {sha}: title does not start with [ROCm] but "
+                                f"the change is ROCm-specific ({len(hits)} added "
+                                f"line(s), first: {hits[0][:60]}) -- {title[:50]}")
         if len(title) > COMMIT_TITLE_MAX:
             problems.append(f"{name} {sha}: title is {len(title)} chars, over {COMMIT_TITLE_MAX}")
         low = body.lower()
