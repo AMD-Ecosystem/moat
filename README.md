@@ -336,6 +336,7 @@ The project name links upstream.
 | [visionaray](https://github.com/szellmann/visionaray) ([fork](https://github.com/AMD-Ecosystem/visionaray/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#51](https://github.com/szellmann/visionaray/pull/51) |
 | [Wan2.2](https://github.com/Wan-Video/Wan2.2) ([fork](https://github.com/AMD-Ecosystem/Wan2.2/tree/moat-port)) | ⬜ | 🔧 | 🎫 | — |
 | [warp](https://github.com/NVIDIA/warp) | ⬜ | ⬜ | ⬜ | — |
+| [warp-1.14](https://github.com/NVIDIA/warp) ([fork](https://github.com/AMD-Ecosystem/warp/tree/release/1.14.0.amd0)) | ⬜ | 🔧 | 🔧 | — fork release line; no upstream pull request |
 | [wenet](https://github.com/wenet-e2e/wenet) ([fork](https://github.com/AMD-Ecosystem/wenet/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [world_engine](https://github.com/Overworldai/world_engine) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- gap-matrix intake follow-up 2026-11-12: GPL-3 |
 | [yalm](https://github.com/andrewkchan/yalm) ([fork](https://github.com/AMD-Ecosystem/yalm/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#12](https://github.com/andrewkchan/yalm/pull/12) |
