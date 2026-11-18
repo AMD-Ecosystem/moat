@@ -4795,9 +4795,9 @@ def misplaced_folders():
     for name, obj, where in project_records():
         # A held project is parked where it stands. Nobody writes it while it is
         # held, so its folder is asked to move in neither direction: not to main
-        # (it is not finished, see settled) and not to a branch (four held projects
-        # live on the trunk by a person's choice). `set-hold off` brings it back
-        # into this report.
+        # (it is not finished, see settled) and not to a branch (a project held
+        # while its folder was on the trunk stays there). `set-hold off` brings it
+        # back into this report.
         if obj.get("on_hold"):
             continue
         want_branch = belongs_on_branch(obj)
