@@ -1462,6 +1462,8 @@ waiver suggestion. Kernel_141 WER report count: 18 before, 18 after (no GPU load
 
 ## Lesson for cuda-to-rocm: skill edits this branch carried before the trunk owned the skill
 
+Promoted to .claude/skills/cuda-to-rocm/references/fault-classes.md in a529427b. (The validation.md note went to .claude/skills/moat-porting/SKILL.md in the same commit.)
+
 This branch edited `.claude/skills/cuda-to-rocm/references/` directly, before port branches were limited to their own folder. The trunk never received these edits, and they conflicted with every trunk merge. The merge of 2026-11-18 took the trunk copy of the skill; the branch-only text is kept here verbatim, as a diff against the merge base, for promotion. Five entries in fault-classes.md (a block narrower than one wavefront, a null-stream memset racing a non-blocking stream, one contraction setting versus two kinds of bit-exact test, NVTX to roctx, curand generator-state internals), an extension of the InterpolationVarShapeWrap entry, and one validation.md note.
 
 ```diff
