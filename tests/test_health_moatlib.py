@@ -335,5 +335,38 @@ class SquashCarry(NoDisposition):
         self.assertFalse(moatlib.gate_satisfied(obj, "wave64"))
 
 
+class DependencyPerOperatingSystem(NoDisposition):
+    def setUp(self):
+        super().setUp()
+        dep = record(name="dep", platforms={"linux-gfx90a": done()})
+        p = mock.patch.object(moatlib, "project_record",
+                              lambda name: (dep, "branch") if name == "dep"
+                              else (None, None))
+        p.start()
+        self.addCleanup(p.stop)
+        self.dep = dep
+        self.user = record(name="user", stage="planned", depends_on=["dep"])
+
+    def test_a_linux_validation_releases_linux_dependents(self):
+        self.assertEqual(moatlib.dep_status("dep", "linux-gfx1100"), ("ok", "completed"))
+        self.assertTrue(moatlib.actionable(self.user, "linux-gfx1100"))
+
+    def test_it_does_not_release_a_windows_dependent(self):
+        verdict, detail = moatlib.dep_status("dep", "windows-gfx1151")
+        self.assertEqual(verdict, "waiting")
+        self.assertIn("windows", detail)
+        self.assertFalse(moatlib.actionable(self.user, "windows-gfx1151"))
+        self.assertEqual(moatlib.dep_report(self.user, "windows-gfx1151"),
+                         [("dep", "waiting", detail)])
+
+    def test_a_windows_validation_of_the_dependency_does(self):
+        self.dep["platforms"]["windows-gfx1201"] = done()
+        self.assertTrue(moatlib.actionable(self.user, "windows-gfx1151"))
+
+    def test_without_a_platform_any_validation_counts(self):
+        self.assertEqual(moatlib.dep_status("dep"), ("ok", "completed"))
+        self.assertEqual(moatlib.unmet_deps(self.user), [])
+
+
 if __name__ == "__main__":
     unittest.main()

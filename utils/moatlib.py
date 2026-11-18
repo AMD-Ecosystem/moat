@@ -4190,7 +4190,7 @@ def disposition_for_project(name):
     return hits[0] if len(hits) == 1 else None
 
 
-def dep_status(dep):
+def dep_status(dep, platform=None):
     """Where a dependency stands, for a project that needs it built.
 
     Returns (verdict, detail). Verdicts:
@@ -4200,9 +4200,22 @@ def dep_status(dep):
                    whatever depends on it cannot be built either
       unknown   -- not adopted and not dispositioned; nobody has looked at it yet,
                    so it needs an intake request before anything can proceed
+
+    With `platform`, "validated" means validated on that platform's operating
+    system. A dependency proven only on Linux says nothing about whether it builds
+    on Windows, and releasing a Windows dependent on it sent a host to build
+    against a library nobody had built there. Without `platform` the question is
+    the project-wide one (`moatlib.py deps`): validated anywhere.
     """
     state = project_port_state(dep)
     if state in PORT_DONE_STATES:
+        os_name = parse_platform(platform)[0] if platform else None
+        if os_name:
+            dobj, _where = project_record(dep)
+            if not any(b.get("state") in PORT_DONE_STATES
+                       and parse_platform(a)[0] == os_name
+                       for a, b in validations(dobj or {}).items()):
+                return ("waiting", f"validated, but not on {os_name} yet")
         return ("ok", state)
     disp = disposition_for_project(dep) or {}
     reason = disp.get("reason") if disp.get("disposition") == "skip" else None
@@ -4222,18 +4235,20 @@ def dep_status(dep):
     return ("unknown", "not adopted")
 
 
-def unmet_deps(obj):
-    """MOAT-internal projects this one depends_on that cannot be built against yet.
+def unmet_deps(obj, platform=None):
+    """MOAT-internal projects this one depends_on that cannot be built against yet
+    (on `platform`'s operating system, when one is given -- see dep_status).
     A project is not portable until these clear: its build links/uses the ported
     dependency. See DEPENDENCIES.md."""
-    return [d for d in obj.get("depends_on", []) if dep_status(d)[0] != "ok"]
+    return [d for d in obj.get("depends_on", [])
+            if dep_status(d, platform)[0] != "ok"]
 
 
-def dep_report(obj):
+def dep_report(obj, platform=None):
     """Every unmet dependency with its verdict, for explaining a block to a person.
     `unmet_deps` answers "may this be selected"; this answers "why not"."""
-    return [(d, *dep_status(d)) for d in obj.get("depends_on", [])
-            if dep_status(d)[0] != "ok"]
+    rows = [(d, *dep_status(d, platform)) for d in obj.get("depends_on", [])]
+    return [r for r in rows if r[1] != "ok"]
 
 
 INSTALL_DEP_HEADING = re.compile(r"^## Install as a dependency\s*$", re.M)
@@ -4693,7 +4708,8 @@ def actionable(obj, platform):
     lock = obj.get("porting")
     if lock and lock.get("arch") != platform and task[0] in EXCLUSIVE_AGENTS:
         return False
-    if unmet_deps(obj):  # deps-first ordering: wait until depended-on ports complete
+    # deps-first ordering: wait until depended-on ports complete, on this OS
+    if unmet_deps(obj, platform):
         return False
     return True
 
@@ -4715,7 +4731,7 @@ def dep_blocked(platform):
             continue
         if arch_task(obj, platform) is None:
             continue
-        report = dep_report(obj)
+        report = dep_report(obj, platform)
         if report:
             out.append((name, report))
     return out
@@ -4750,7 +4766,7 @@ def fleet(platform):
         if disp and disp.get("disposition") == "skip":
             continue
         task = arch_task(obj, platform)
-        if task is None or unmet_deps(obj):
+        if task is None or unmet_deps(obj, platform):
             continue
         agent, state = task
         # The same exclusion `actionable` applies: porter/planner/reviewer work whose
