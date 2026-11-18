@@ -130,9 +130,13 @@ class TrunkOwnedGates(unittest.TestCase):
             skill = repo / ".claude" / "skills" / "cuda-to-rocm"
             skill.mkdir(parents=True)
             (skill / "SKILL.md").write_text("run moatlib here\n", encoding="utf-8")
+            import gen_skill_index
+            # The index half of the gate needs the real reference files; only the
+            # vocabulary half is under test here.
             where = (mock.patch.object(check, "REPO", repo),
-                     mock.patch.object(check, "STANDALONE_SKILL", skill))
-            with where[0], where[1]:
+                     mock.patch.object(check, "STANDALONE_SKILL", skill),
+                     mock.patch.object(gen_skill_index, "stale", lambda repo: []))
+            with where[0], where[1], where[2]:
                 with pushing("refs/heads/main"):
                     self.assertEqual(len(check.gate_skills()), 1)
                 with pushing("refs/heads/port/x"):
