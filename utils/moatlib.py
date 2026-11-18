@@ -5267,6 +5267,22 @@ def lesson_candidates():
     return out
 
 
+def _local_only_commits(local, ref):
+    """Commits on the local branch whose CHANGE the remote ref does not have, as
+    "<sha9> <subject>" strings. Empty when the local branch does not exist.
+
+    Counted by patch-id (`git cherry`), not ancestry: a remote that was rebased,
+    squashed or re-cut leaves the local ref on an old line whose shas are all absent
+    from the remote while every change on it is already there."""
+    if not _git("rev-parse", "--verify", "-q", f"refs/heads/{local}",
+                check=False).stdout.strip():
+        return []
+    return [f"{sha[:9]} {subject[:60]}" for sha, _, subject in
+            (ln[2:].strip().partition(" ") for ln in
+             _git("cherry", "-v", ref, local, check=False).stdout.splitlines()
+             if ln.startswith("+"))]
+
+
 def make_worktree(name, path=None, base_ref="origin/main"):
     """Create a worktree on `port/<name>` and bring it up to the trunk. Returns the path.
 
@@ -5299,16 +5315,12 @@ def make_worktree(name, path=None, base_ref="origin/main"):
     # work `+`, and when everything is `-` the reset discards nothing and should just
     # proceed -- which is the common case.
     local = f"port/{name}"
-    if _git("rev-parse", "--verify", "-q", local, check=False).stdout.strip():
-        only_here = [f"{sha[:9]} {subject[:60]}" for sha, _, subject in
-                     (ln[2:].strip().partition(" ") for ln in
-                      _git("cherry", "-v", ref, local, check=False).stdout.splitlines()
-                      if ln.startswith("+"))]
-        if only_here:
-            raise ValueError(
-                f"{name}: {len(only_here)} commit(s) exist only on the local {local}, and "
-                f"creating the worktree would reset it onto {ref} and discard them: "
-                f"{'; '.join(only_here[:3])}. Push them first.")
+    only_here = _local_only_commits(local, ref)
+    if only_here:
+        raise ValueError(
+            f"{name}: {len(only_here)} commit(s) exist only on the local {local}, and "
+            f"creating the worktree would reset it onto {ref} and discard them: "
+            f"{'; '.join(only_here[:3])}. Push them first.")
     path.parent.mkdir(parents=True, exist_ok=True)
     r = _git("worktree", "add", "-q", "-B", local, str(path), ref, check=False)
     if r.returncode:
@@ -5482,6 +5494,16 @@ def branch_sync_all(apply=False, base_ref="origin/main", worktree=None):
             if branch in held:
                 results.append((branch, "held", "checked out elsewhere; its host syncs it"))
                 continue
+            # The `-B` below resets the local branch onto the remote, in a dry run
+            # too. commit_and_push leaves work committed locally when its pushes
+            # fail, and a sweep then discarded it on every branch not checked out,
+            # leaving it in the reflog alone. Same guard as make_worktree.
+            only_here = _local_only_commits(branch, f"origin/{branch}")
+            if only_here:
+                results.append((branch, "local-work",
+                                f"{len(only_here)} commit(s) only on the local branch "
+                                f"({only_here[0]}); push them, then sweep again"))
+                continue
             if not made:
                 _git("worktree", "add", "--detach", "-f", str(wt), base_ref, check=False)
                 made = True
@@ -5502,45 +5524,110 @@ def branch_sync_all(apply=False, base_ref="origin/main", worktree=None):
     return results
 
 
-def commit_to_branch(branch, files, message):
+def _onto_moved_branch(path, ours, base, theirs, branch):
+    """The content to commit for `path` when the branch moved since it was read.
+
+    `ours` was derived from `base`; the branch now holds `theirs`. A status.json
+    goes through the same semantic merge a pull would give it, with ours as the
+    record being written. Any other file that changed underneath has no merge
+    here, and writing ours over it would drop the other host's edit."""
+    def norm(text):
+        return None if text is None else text.replace("\r\n", "\n")
+    if norm(theirs) == norm(base) or norm(theirs) == norm(ours):
+        return ours
+    if path.endswith("/status.json") and theirs is not None:
+        d = str(Path(__file__).resolve().parent)
+        if d not in sys.path:
+            sys.path.insert(0, d)
+        import merge_status
+        try:
+            merged = merge_status.merge(json.loads(ours), json.loads(theirs),
+                                        json.loads(base) if base else None)
+        except (json.JSONDecodeError, TypeError, AttributeError, KeyError) as e:
+            raise ValueError(f"{path}: origin/{branch} moved since it was read and "
+                             f"the two records could not be merged ({e})")
+        return json.dumps(merged, indent=2) + "\n"
+    raise ValueError(f"{path}: origin/{branch} changed this file since it was read; "
+                     f"fetch and redo the command so it starts from the current one")
+
+
+def commit_to_branch(branch, files, message, retries=3):
     """Commit files onto a branch WITHOUT checking it out, and push. Returns the sha.
 
     Plumbing rather than checkout because the branch may be held by a worktree, and
     because switching the working tree to write one file is a large side effect for a
     small edit. This is also the shape the migration needs generally: an in-flight
     project's record lives on its own branch, and a decision recorded on the trunk has
-    to reach it somehow."""
-    import os
+    to reach it somehow.
+
+    The parent used to be the local `origin/<branch>` ref as it stood, with one push
+    and no retry: if another host had pushed since the last fetch the push was
+    rejected and a CalledProcessError went up the stack -- for set_pr_open and
+    set_fix_merged AFTER the upstream write they record had already happened, leaving
+    the record behind reality. Now the branch is fetched first, the content is
+    carried onto its current tip (see _onto_moved_branch), and a rejected push is
+    retried a bounded number of times against the new tip."""
     import tempfile
-    base = _git("rev-parse", f"origin/{branch}", check=False).stdout.strip()
-    if not base:
-        raise ValueError(f"origin/{branch} does not exist")
+    ref = f"origin/{branch}"
+
+    def tip_of():
+        return _git("rev-parse", "--verify", "-q", ref, check=False).stdout.strip()
+
+    def blob(commit, path):
+        r = subprocess.run(["git", "cat-file", "blob", f"{commit}:{path}"],
+                           cwd=str(REPO_ROOT), capture_output=True)
+        return r.stdout.decode("utf-8", "replace") if r.returncode == 0 else None
+
+    seen = tip_of()             # what the caller's content was derived from
+    if not seen:
+        raise ValueError(f"{ref} does not exist")
     fd, idx = tempfile.mkstemp(prefix="moat-index-")
     os.close(fd)
     os.unlink(idx)
     env = {**os.environ, "GIT_INDEX_FILE": idx}
 
-    def g(*args, stdin=None):
+    def g(*args, stdin=None, check=True):
         # Bytes, not text mode: on Windows text mode turns every LF written to
         # hash-object into CRLF, so a one-line record edit rewrites the whole file.
-        r = subprocess.run(["git", *args], cwd=str(REPO_ROOT), env=env,
-                           input=None if stdin is None else stdin.encode("utf-8"),
-                           capture_output=True, check=True)
+        return subprocess.run(["git", *args], cwd=str(REPO_ROOT), env=env,
+                              input=None if stdin is None else stdin.encode("utf-8"),
+                              capture_output=True, check=check)
+
+    def out(r):
         return r.stdout.decode("utf-8").strip()
+
+    why = "no attempt was made"
     try:
-        g("read-tree", base)
-        for path, content in files.items():
-            blob = g("hash-object", "-w", "--stdin", stdin=content)
-            g("update-index", "--add", "--cacheinfo", f"100644,{blob},{path}")
-        tree = g("write-tree")
-        commit = g("commit-tree", tree, "-p", base, "-m", message)
-        g("push", "-q", "origin", f"{commit}:refs/heads/{branch}")
-        # What this process read from the branch before the push is now history.
-        # Left cached, a second record write in the same run started from the old
-        # snapshot and committed it over the first: --publish recorded the approval,
-        # then set_pr_open rewrote the record without it.
-        forget_ref(branch, f"origin/{branch}")
-        return commit
+        for _attempt in range(max(1, retries)):
+            # Best effort: offline, the push below fails and says so.
+            _git("fetch", "-q", "origin",
+                 f"+refs/heads/{branch}:refs/remotes/origin/{branch}", check=False)
+            tip = tip_of() or seen
+            if os.path.exists(idx):
+                os.unlink(idx)
+            g("read-tree", tip)
+            for path, content in files.items():
+                if tip != seen:
+                    content = _onto_moved_branch(path, content, blob(seen, path),
+                                                 blob(tip, path), branch)
+                h = out(g("hash-object", "-w", "--stdin", stdin=content))
+                g("update-index", "--add", "--cacheinfo", f"100644,{h},{path}")
+            tree = out(g("write-tree"))
+            commit = out(g("commit-tree", tree, "-p", tip, "-m", message))
+            r = g("push", "-q", "origin", f"{commit}:refs/heads/{branch}", check=False)
+            # What this process read from the branch before the push is now history.
+            # Left cached, a second record write in the same run started from the old
+            # snapshot and committed it over the first: --publish recorded the
+            # approval, then set_pr_open rewrote the record without it.
+            forget_ref(branch, ref)
+            if r.returncode == 0:
+                return commit
+            lines = r.stderr.decode("utf-8", "replace").strip().splitlines()
+            why = lines[-1][:160] if lines else "no output"
+        raise ValueError(
+            f"could not push to {branch} after {max(1, retries)} attempt(s) ({why}). "
+            f"NOTHING was recorded: {message!r} is not on the branch. Fix the push "
+            f"(network, credentials, the pre-push gates) and run the command again")
     finally:
         if os.path.exists(idx):
             os.unlink(idx)
@@ -5556,15 +5643,20 @@ def _rebase_in_progress():
 
 def commit_and_push(paths, message, push=True, retries=3):
     """The single MOAT-repo write path: stage, commit-on-top, pull --rebase,
-    push, bounded retry. Never amends, never force-pushes. No-op if nothing
-    staged."""
+    push, bounded retry. Never amends, never force-pushes. No-op if none of
+    `paths` changed; anything else staged in the tree is left staged."""
     ensure_git_config()
     rels = [str(Path(p)) for p in (paths if isinstance(paths, (list, tuple)) else [paths])]
     _git("add", "--", *rels)
-    staged = _git("diff", "--cached", "--name-only", check=False).stdout.strip()
+    staged = _git("diff", "--cached", "--name-only", "--", *rels,
+                  check=False).stdout.strip()
     if not staged:
         return False
-    _git("commit", "-m", message)
+    # Commit these paths and nothing else. The working tree is shared, and a bare
+    # `git commit` took whatever another agent or the user had staged with it,
+    # under a message about a work lock; on a port branch the branch-scope gate
+    # then refused the push and the lock stayed unpublished.
+    _git("commit", "-m", message, "--", *rels)
     if not push:
         return True
     # Name the remote and branch explicitly. A bare `git push` needs an upstream, and
@@ -6958,7 +7050,8 @@ def _main(argv=None):
                   + ", ".join(f"{n} {a}" for a, n in sorted(counts.items())))
             if not args.apply:
                 print("branch-sync --all: dry run; add --apply to merge and push")
-            return 1 if counts.get("conflict") or counts.get("error") else 0
+            return 1 if (counts.get("conflict") or counts.get("error")
+                         or counts.get("local-work")) else 0
         action, detail = branch_sync(apply=args.apply)
         print(f"branch-sync: {action} -- {detail}")
         return 1 if action == "conflict" else 0
