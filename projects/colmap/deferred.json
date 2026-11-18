@@ -67,7 +67,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-18T15:28:23Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-18T15:28:39Z",
+        "note": "until symforce PR 465 merges (ruled 2026-11-18)"
+      }
     }
   ]
 }
