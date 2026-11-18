@@ -231,15 +231,27 @@
       "id": "nvidia-notice-cd-class-tidy",
       "kind": "other",
       "component": null,
-      "summary": "POLICY (2026-08-24): the C/D-class NVIDIA-notice items (dead-in-tree or text-only: EnvGS orphan script scripts/instant-ngp/colmap_to_nerf.py, OCTproZ about-dialog EULA copy shown even in AMD builds, LichtFeld-Studio nvImageCodec cmake pair, MASt3R-SLAM checkpoints notice, alien/plvs/cupoch vendored CUDA-path helpers, h2o4gpu dead vendored set) are not an immediate issue but should be tidied over time so it is clear AMD is not using them -- BSD swaps or bypass where possible, never deleting licence/notice files. LOW PRIORITY behind the A-class swaps (Velvet, TurboFNO) and pre-fork swaps (h2o4gpu, cuda_voxelizer, PhoenixOS header drop).",
+      "summary": "POLICY (2026-08-24): the C/D-class NVIDIA-notice items (dead-in-tree or text-only) are not an immediate issue but should be tidied over time so it is clear AMD is not using them -- BSD swaps or bypass where possible, never deleting licence/notice files. LOW PRIORITY behind the A-class swaps (Velvet, TurboFNO) and pre-fork swaps (cuda_voxelizer, PhoenixOS header drop). Items as of 2026-11-18: EnvGS orphan script scripts/instant-ngp/colmap_to_nerf.py (review-passed, no upstream PR yet: the one item that can still ride along before publication); OCTproZ about-dialog EULA copy shown even in AMD builds, MASt3R-SLAM checkpoints notice, plvs vendored CUDA-path helpers (upstream PRs open, so a tidy is a fix round); alien and cupoch vendored CUDA-path helpers (upstream PRs merged, so a tidy is a follow-up PR); LichtFeld-Studio nvImageCodec cmake pair (project on hold). Done: h2o4gpu's dead vendored set (12 EULA-notice files deleted in the first port commit).",
       "refs": [
         "licensing review 2026-08-24"
       ],
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-24T19:49:43Z",
-      "decided": null,
-      "project": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-18T17:25:17Z"
+      },
+      "project": null,
+      "summary_history": [
+        {
+          "summary": "POLICY (2026-08-24): the C/D-class NVIDIA-notice items (dead-in-tree or text-only: EnvGS orphan script scripts/instant-ngp/colmap_to_nerf.py, OCTproZ about-dialog EULA copy shown even in AMD builds, LichtFeld-Studio nvImageCodec cmake pair, MASt3R-SLAM checkpoints notice, alien/plvs/cupoch vendored CUDA-path helpers, h2o4gpu dead vendored set) are not an immediate issue but should be tidied over time so it is clear AMD is not using them -- BSD swaps or bypass where possible, never deleting licence/notice files. LOW PRIORITY behind the A-class swaps (Velvet, TurboFNO) and pre-fork swaps (h2o4gpu, cuda_voxelizer, PhoenixOS header drop).",
+          "by": "jeffdaily",
+          "at": "2026-11-18T17:25:17Z",
+          "reason": "h2o4gpu's vendored set was since deleted, and most named ports are now behind an open or merged upstream PR"
+        }
+      ]
     },
     {
       "id": "upstream-followup-pr-flow",
