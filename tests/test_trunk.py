@@ -1,6 +1,9 @@
 # Copyright Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
 """When a checkout runs its own tooling and when it runs the trunk's."""
+import contextlib
+import io
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -75,3 +78,45 @@ class TrunkState(unittest.TestCase):
     def test_no_trunk_ref_means_no_answer(self):
         with mock.patch.object(trunk, "TRUNK_REF", "no-such-ref"):
             self.assertIsNone(trunk.trunk_state(self.repo))
+
+
+class EnvironmentSwitches(unittest.TestCase):
+    """A switch that keeps the checkout's own tooling running says so on stderr."""
+
+    FILE = str(pathlib.Path(trunk.__file__))
+
+    def reexec(self, **env):
+        clean = {k: v for k, v in os.environ.items()
+                 if k not in (trunk.ENV_ACTIVE, trunk.ENV_LOCAL, trunk.ENV_NOTED)}
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, {**clean, **env}, clear=True), \
+                contextlib.redirect_stderr(err):
+            trunk.reexec(self.FILE)
+            noted = os.environ.get(trunk.ENV_NOTED)
+        return err.getvalue(), noted
+
+    def test_local_tools_is_announced_once(self):
+        err, noted = self.reexec(MOAT_LOCAL_TOOLS="1")
+        self.assertIn("MOAT_LOCAL_TOOLS is set", err)
+        self.assertIn("this checkout's own tooling is deciding", err)
+        self.assertEqual(err.count("\n"), 1)
+        self.assertEqual(noted, "1")
+
+    def test_a_tool_started_by_one_that_said_so_stays_quiet(self):
+        err, _ = self.reexec(MOAT_LOCAL_TOOLS="1", MOAT_TOOLS_NOTED="1")
+        self.assertEqual(err, "")
+
+    def test_a_hand_set_trunk_tools_is_announced(self):
+        err, _ = self.reexec(MOAT_TRUNK_TOOLS="1")
+        self.assertIn("MOAT_TRUNK_TOOLS is set", err)
+
+    def test_the_launchers_own_markers_are_not(self):
+        export = pathlib.Path(self.FILE).resolve().parents[1].name
+        for value in ("local", export):
+            err, noted = self.reexec(MOAT_TRUNK_TOOLS=value)
+            self.assertEqual(err, "", value)
+            self.assertIsNone(noted)
+
+
+if __name__ == "__main__":
+    unittest.main()

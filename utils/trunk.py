@@ -41,10 +41,15 @@ import sys
 import tarfile
 import tempfile
 
-TRUNK_REF = os.environ.get("MOAT_TRUNK_REF", "origin/main")   # override for tests only
+# Three switches for testing a tooling change on a branch (CONTRIBUTING.md, "Testing a
+# tooling change"): MOAT_TRUNK_REF names another ref as the trunk, and MOAT_LOCAL_TOOLS
+# (or MOAT_TRUNK_TOOLS set by hand) keeps the checkout's own copy running.
+TRUNK_REF = os.environ.get("MOAT_TRUNK_REF", "origin/main")
 EXPORT_PATHS = ("utils", "config", "schema")
 ENV_REPO = "MOAT_REPO"
 ENV_ACTIVE = "MOAT_TRUNK_TOOLS"
+ENV_LOCAL = "MOAT_LOCAL_TOOLS"
+ENV_NOTED = "MOAT_TOOLS_NOTED"
 KEEP = 3
 
 
@@ -140,10 +145,30 @@ def _run_from(dest, repo, script, args):
     return subprocess.run([sys.executable, str(target), *args], env=env).returncode
 
 
+def _note_override(file):
+    """Say so, once, when an environment switch is why this checkout's own tooling is
+    deciding. The launcher sets MOAT_TRUNK_TOOLS itself, to the export it runs from or
+    to `local` when the checkout's tooling is the trunk's, and neither is news. Set by
+    hand, either switch makes a stale port branch's tools decide in silence."""
+    active = os.environ.get(ENV_ACTIVE)
+    if os.environ.get(ENV_LOCAL):
+        why = ENV_LOCAL
+    elif active != "local" and active != tools_root(file).name:
+        why = ENV_ACTIVE
+    else:
+        return
+    if os.environ.get(ENV_NOTED):
+        return
+    os.environ[ENV_NOTED] = "1"                  # tools this one starts stay quiet
+    sys.stderr.write(f"moat: {why} is set, so this checkout's own tooling is deciding, "
+                     f"not the trunk's ({TRUNK_REF})\n")
+
+
 def reexec(file):
     """Re-run the calling script from the trunk export when the checkout's tooling is
     not the trunk's. Returns only when the caller should run itself."""
-    if os.environ.get(ENV_ACTIVE) or os.environ.get("MOAT_LOCAL_TOOLS"):
+    if os.environ.get(ENV_ACTIVE) or os.environ.get(ENV_LOCAL):
+        _note_override(file)
         return
     repo = pathlib.Path(file).resolve().parents[1]
     try:
