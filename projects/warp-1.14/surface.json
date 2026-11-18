@@ -1,0 +1,362 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "3601b2d07708",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "warp\\examples\\cpp\\00_cubin_launch\\main.cu",
+      "warp\\examples\\cpp\\01_source_include\\main.cu",
+      "warp\\examples\\cpp\\02_apic_visualization\\main.cu",
+      "warp\\native\\apic.cu",
+      "warp\\native\\builtin.h",
+      "warp\\native\\bvh.cu",
+      "warp\\native\\bvh.h",
+      "warp\\native\\cuBQL\\math\\common.h",
+      "warp\\native\\cuBQL\\math\\constants.h",
+      "warp\\native\\cuBQL\\traversal\\aggregateApproximate.h",
+      "warp\\native\\cuda_crt.h",
+      "warp\\native\\cuda_util.cpp",
+      "warp\\native\\cuda_util.h",
+      "warp\\native\\hashgrid.cu",
+      "warp\\native\\mesh.cu",
+      "warp\\native\\mesh.h",
+      "warp\\native\\nanovdb\\NanoVDB.h",
+      "warp\\native\\nanovdb\\PNanoVDB.h",
+      "warp\\native\\nanovdb\\cuda\\GridHandle.cuh",
+      "warp\\native\\nanovdb\\cuda\\NodeManager.cuh",
+      "warp\\native\\nanovdb\\math\\Math.h",
+      "warp\\native\\nanovdb\\tools\\cuda\\GridChecksum.cuh",
+      "warp\\native\\nanovdb\\tools\\cuda\\PointsToGrid.cuh",
+      "warp\\native\\nanovdb\\util\\Util.h",
+      "warp\\native\\nanovdb\\util\\cuda\\Util.h",
+      "warp\\native\\reduce.cu",
+      "warp\\native\\runlength_encode.cu",
+      "warp\\native\\scan.cu",
+      "warp\\native\\sort.cu",
+      "warp\\native\\sparse.cu",
+      "warp\\native\\texture.h",
+      "warp\\native\\tile.h",
+      "warp\\native\\tile_bvh.h",
+      "warp\\native\\tile_cholesky.h",
+      "warp\\native\\tile_mesh.h",
+      "warp\\native\\tile_radix_sort.h",
+      "warp\\native\\tile_reduce.h",
+      "warp\\native\\tile_scan.h",
+      "warp\\native\\volume.cu",
+      "warp\\native\\volume_builder.cu",
+      "warp\\native\\warp.cu"
+    ],
+    "markers": {
+      "driver_api": 117,
+      "device_code": 507,
+      "kernel": 74,
+      "warp_intrinsic": 28,
+      "launch": 55,
+      "texture": 1,
+      "runtime_ptx": 28
+    },
+    "libraries": {
+      "cub": 42,
+      "cublas": 27,
+      "cufft": 26,
+      "cusolver": 39,
+      "thrust": 2
+    }
+  },
+  "components": [
+    {
+      "id": "example:00_cubin_launch",
+      "kind": "example",
+      "where": "warp\\examples\\cpp\\00_cubin_launch\\CMakeLists.txt"
+    },
+    {
+      "id": "example:01_source_include",
+      "kind": "example",
+      "where": "warp\\examples\\cpp\\01_source_include\\CMakeLists.txt"
+    },
+    {
+      "id": "example:02_apic_visualization",
+      "kind": "example",
+      "where": "warp\\examples\\cpp\\02_apic_visualization\\CMakeLists.txt"
+    },
+    {
+      "id": "example:03_apic_visualization_cpu",
+      "kind": "example",
+      "where": "warp\\examples\\cpp\\03_apic_visualization_cpu\\CMakeLists.txt"
+    },
+    {
+      "id": "library:cuBQL_${device}_${T}${D}",
+      "kind": "library",
+      "where": "warp\\native\\cuBQL\\CMakeLists.txt"
+    },
+    {
+      "id": "library:cuBQL_${device}_${T}${D}_static",
+      "kind": "library",
+      "where": "warp\\native\\cuBQL\\CMakeLists.txt"
+    },
+    {
+      "id": "library:glad",
+      "kind": "library",
+      "where": "warp\\examples\\cpp\\02_apic_visualization\\CMakeLists.txt"
+    },
+    {
+      "id": "test:apic_visualization_cpu_smoke",
+      "kind": "test",
+      "where": "warp\\examples\\cpp\\03_apic_visualization_cpu\\CMakeLists.txt"
+    },
+    {
+      "id": "test:apic_visualization_smoke",
+      "kind": "test",
+      "where": "warp\\examples\\cpp\\02_apic_visualization\\CMakeLists.txt"
+    },
+    {
+      "id": "test:cubin_launch_test",
+      "kind": "test",
+      "where": "warp\\examples\\cpp\\00_cubin_launch\\CMakeLists.txt"
+    },
+    {
+      "id": "test:source_include_test",
+      "kind": "test",
+      "where": "warp\\examples\\cpp\\01_source_include\\CMakeLists.txt"
+    },
+    {
+      "id": "library:warp-native-aot",
+      "kind": "library",
+      "where": "build_lib.py:493-533 (19 .cpp + 11 .cu -> warp.so/warp.dll)"
+    },
+    {
+      "id": "build_path:build_lib-hip-linux",
+      "kind": "build_path",
+      "where": "build_lib.py, warp/_src/build_dll.py:720-830 (Unix branch)"
+    },
+    {
+      "id": "build_path:build_lib-hip-windows",
+      "kind": "build_path",
+      "where": "build_lib.py, warp/_src/build_dll.py:590-700 (MSVC branch; clang-cl for HIP)"
+    },
+    {
+      "id": "runtime:driver-api-dynamic-load",
+      "kind": "driver_api",
+      "where": "warp/native/cuda_util.cpp:41-266 (75 pfn_cu*, nvcuda.dll/libcuda.so)"
+    },
+    {
+      "id": "runtime:nvrtc-to-hiprtc",
+      "kind": "runtime_compile",
+      "where": "warp/native/warp.cu:4395-4735 wp_cuda_compile_program; :3680-3810 conditional module; context.py:2910,3102,3951,6013-6127"
+    },
+    {
+      "id": "runtime:device-arch-selection",
+      "kind": "runtime_compile",
+      "where": "warp.cu:331,2399 (int arch ABI kept); context.py:3901,4250-4290; new gcnArchName export"
+    },
+    {
+      "id": "runtime:device-compile-predicate",
+      "kind": "device_code",
+      "where": "109 __CUDA_ARCH__ sites in 16 warp/native headers, 9 numeric in builtin.h; __CUDA_ARCH__ defined under hipRTC for user snippets"
+    },
+    {
+      "id": "runtime:cuda-crt-header",
+      "kind": "device_code",
+      "where": "warp/native/cuda_crt.h (714 __nv_*, 16 asm), crt.h:237"
+    },
+    {
+      "id": "device:ptx-inline-asm",
+      "kind": "device_code",
+      "where": "builtin.h 15 asm blocks, tile.h 1"
+    },
+    {
+      "id": "device:tile-wavefront-width",
+      "kind": "warp_intrinsic",
+      "where": "tile_reduce.h:14-690, tile_scan.h:61-139, tile_radix_sort.h:91-794"
+    },
+    {
+      "id": "feature:libmathdx-replacement",
+      "kind": "library",
+      "where": "WP_ENABLE_MATHDX=0 on HIP; tile_matmul/cholesky/solve/fft cooperative GPU paths; warp.cu:4373-5002 compiled out"
+    },
+    {
+      "id": "feature:cub-to-hipcub",
+      "kind": "library",
+      "where": "sort.cu, sparse.cu, reduce.cu, scan.cu, runlength_encode.cu, bvh.cu, volume_builder.cu, nanovdb PointsToGrid.cuh"
+    },
+    {
+      "id": "feature:bvh-mesh-hashgrid",
+      "kind": "library",
+      "where": "bvh.cu, mesh.cu, hashgrid.cu, tile_bvh.h, tile_mesh.h"
+    },
+    {
+      "id": "feature:cubql-backend",
+      "kind": "library",
+      "where": "warp/native/cuBQL/**, bvh.cu:22-1016 (optional, WP_DISABLE_CUBQL)"
+    },
+    {
+      "id": "feature:nanovdb-volume",
+      "kind": "library",
+      "where": "volume.cu, volume_builder.cu, warp/native/nanovdb/**/cuda"
+    },
+    {
+      "id": "feature:sparse",
+      "kind": "library",
+      "where": "sparse.cu"
+    },
+    {
+      "id": "feature:apic",
+      "kind": "library",
+      "where": "apic.cu, apic.cpp"
+    },
+    {
+      "id": "feature:graph-capture",
+      "kind": "runtime",
+      "where": "cudaGraph*, cudaStreamBeginCaptureToGraph (CUDA<12.3 guard kept), user objects, mem nodes"
+    },
+    {
+      "id": "feature:conditional-graph-nodes",
+      "kind": "runtime",
+      "where": "warp.cu:3677-4290, context.py:9983-10370 (no HIP API; Q4)"
+    },
+    {
+      "id": "feature:mempools",
+      "kind": "runtime",
+      "where": "cudaMallocAsync/cudaMemPool*, context.py:3912"
+    },
+    {
+      "id": "feature:ipc-peer-pinned-managed",
+      "kind": "runtime",
+      "where": "cuIpc*, peer access, cudaMallocHost, unified memory"
+    },
+    {
+      "id": "feature:streams-events",
+      "kind": "runtime",
+      "where": "cuStream*/cuEvent*"
+    },
+    {
+      "id": "feature:device-textures",
+      "kind": "texture",
+      "where": "texture.cpp, texture.h, warp/_src/texture.py (Phase 5, AMD-Ecosystem/warp issue 20)"
+    },
+    {
+      "id": "feature:gl-interop",
+      "kind": "runtime",
+      "where": "cuGraphicsGL* in cuda_util.cpp; warp/_src/render/render_opengl.py"
+    },
+    {
+      "id": "feature:clang-cuda-jit",
+      "kind": "runtime_compile",
+      "where": "warp/native/clang/clang.cpp:176,579-592 NVPTX; tests/cuda/test_clang_cuda.py (Q7)"
+    },
+    {
+      "id": "feature:python-device-plumbing",
+      "kind": "library",
+      "where": "context.py is_hip/arch name; dlpack.py kDLROCM; torch.py, jax, paddle.py"
+    },
+    {
+      "id": "packaging:version-1.14.0+rocm.0",
+      "kind": "build_path",
+      "where": "VERSION.md, warp/config.py:122, warp/native/version.h:7"
+    },
+    {
+      "id": "packaging:wheel-linux",
+      "kind": "build_path",
+      "where": "setup.py, python -m build --wheel -C--build-option=-Plinux-x86_64"
+    },
+    {
+      "id": "packaging:wheel-windows",
+      "kind": "build_path",
+      "where": "setup.py, python -m build --wheel -C--build-option=-Pwindows-x86_64"
+    },
+    {
+      "id": "packaging:wheel-licences",
+      "kind": "build_path",
+      "where": "setup.py license_files: drop cuda/libmathdx notices in the ROCm wheel"
+    },
+    {
+      "id": "test:warp-tests-default-suite",
+      "kind": "test",
+      "where": "python -m warp.tests (warp/tests/unittest_suites.py default_suite)"
+    },
+    {
+      "id": "test:tile",
+      "kind": "test",
+      "where": "warp/tests/tile/ (22 modules)"
+    },
+    {
+      "id": "test:cuda-runtime",
+      "kind": "test",
+      "where": "warp/tests/cuda/ (15 modules)"
+    },
+    {
+      "id": "test:texture",
+      "kind": "test",
+      "where": "warp/tests/cuda/test_texture.py"
+    },
+    {
+      "id": "test:geometry-bvh-volume",
+      "kind": "test",
+      "where": "warp/tests/geometry/ (10 modules)"
+    },
+    {
+      "id": "test:fem",
+      "kind": "test",
+      "where": "warp/tests/fem/ (9 modules)"
+    },
+    {
+      "id": "test:graph-capture",
+      "kind": "test",
+      "where": "test_graph.py, cuda/test_*capture*.py, test_conditional*.py"
+    },
+    {
+      "id": "test:interop",
+      "kind": "test",
+      "where": "warp/tests/interop/ (4 modules)"
+    },
+    {
+      "id": "test:matrix",
+      "kind": "test",
+      "where": "warp/tests/matrix/ (7 modules)"
+    },
+    {
+      "id": "test:aot",
+      "kind": "test",
+      "where": "warp/tests/aot/test_module_aot.py"
+    },
+    {
+      "id": "test:examples",
+      "kind": "test",
+      "where": "warp/tests/test_examples.py (warp/examples/**)"
+    },
+    {
+      "id": "test:cpu-regression",
+      "kind": "test",
+      "where": "default suite with GPUs hidden, compared with pristine release-1.14"
+    },
+    {
+      "id": "test:wheel-install",
+      "kind": "test",
+      "where": "default suite from the installed wheel in a clean venv, Linux and Windows"
+    },
+    {
+      "id": "test:cuda-nvcc-compile",
+      "kind": "test",
+      "where": "build_lib.py with nvcc on the mi355 fleet host"
+    },
+    {
+      "id": "platform:wave64",
+      "kind": "platform",
+      "where": "gfx90a/gfx942/gfx950"
+    },
+    {
+      "id": "platform:wave32",
+      "kind": "platform",
+      "where": "gfx1100/gfx1101/gfx1201 Radeon"
+    },
+    {
+      "id": "platform:windows",
+      "kind": "platform",
+      "where": "windows-gfx1151"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}

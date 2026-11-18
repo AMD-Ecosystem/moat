@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/warp",
   "fork_default_branch": "release-1.14",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "python-build-nvrtc",
+  "stage": "planned",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-18T17:41:51Z",
+  "updated_at": "2026-11-18T17:54:27Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-18T17:41:50Z",
-    "holder": "2e86842d8592"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -25,7 +21,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-18T17:41:50Z",
+      "updated_at": "2026-11-18T17:54:27Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -79,5 +75,10 @@
     "viable": true,
     "summary": "Warp release-1.14 line: AMD-owned fork branch release/1.14.0.amd0 with wave64, wave32 and Windows support plus release wheels; taken up by ruling 2026-11-10",
     "at": "2026-11-18T17:41:00Z"
+  },
+  "porting_released": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-18T17:41:50Z",
+    "at": "2026-11-18T17:54:27Z"
   }
 }
