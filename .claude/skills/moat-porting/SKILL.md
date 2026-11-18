@@ -31,7 +31,8 @@ heading. `python3 utils/moatlib.py lessons` lists lessons awaiting promotion.
 
 When a project's `notes.md` nears the 1 MB file check (`check.py`), move its old dated
 round sections verbatim into `projects/<name>/notes-archive.md` in one commit on the port
-branch, and leave a pointer line under the title. Keep in `notes.md` the reference sections
+branch (`moatlib.py commit-project` stages every `notes-*.md` beside `notes.md`), and
+leave a pointer line under the title. Keep in `notes.md` the reference sections
 (architecture, build and test recipes), the latest validation baseline for each platform,
 everything from the current round, and every `## Lesson for` section, since `lessons`
 reads only `notes.md`. An archive merges by union like `notes.md` (`.gitattributes`).
@@ -75,14 +76,26 @@ reads only `notes.md`. An archive merges by union like `notes.md` (`.gitattribut
   `windows`). A platform is `<os>-<gfx>`; its gates follow from its name. An unknown
   architecture family is refused until its wavefront width is added under `[wave]`.
   Records made against a platform no longer in service still satisfy gates; a platform
-  under `[offline]` owes no revalidation while its gates are satisfied.
+  under `[offline]` owes no revalidation while its gates are satisfied. A platform
+  recorded `blocked` satisfies no gate, whatever else its record says: `completed` and
+  `carry-forward` are refused on it until `set-blocked <name> <platform> --clear`.
+- Review is a gate too. `pr-ready` and `fix-ready` need stage `review-passed` with
+  `reviewed_sha` (stamped when the review passes) at `head_sha`, and `completed` is
+  refused before `review-passed`. `advance-head` carries `reviewed_sha` across a delta
+  that cannot change compiled output; any other head move at `review-passed` sends the
+  project back to the reviewer before a platform validates.
 - No platform leads: whichever host picks the project up ports it, and the others validate
   the same `head_sha` independently and in parallel.
 - Never amend a commit any platform has validated. Amending orphans its `validated_sha`,
   `classify` can no longer judge the delta, and every passed platform drops to a full
   revalidation. Add a new commit instead: `advance-head` carries validation forward for
   documentation-only, comment/format-only and CI-config deltas, and a `codeobj_diff`
-  binary-equivalence check can carry forward the rest.
+  binary-equivalence check can carry forward the rest. `carry-forward` classifies the
+  delta itself: `source-class` only for a delta the classifier calls arch-independent,
+  and `binary-equiv` over a `mixed` delta only with `--host-checked`, your statement
+  that you read the delta and its host-side code and data are unchanged (the build
+  comparison sees exported symbols and device code only). `codeobj_diff` compares ELF;
+  a Windows (PE/COFF) binary answers `indeterminate`.
   For a host-only library (one that compiles no device translation unit) `codeobj_diff`
   reports `indeterminate`, with "No kernel section found" on both sides; that is not
   `differ`. Compare such a library with `sha256sum`, and `nm -D --defined-only` as a
@@ -91,6 +104,10 @@ reads only `notes.md`. An archive merges by union like `notes.md` (`.gitattribut
   `revalidate`, rebuild rather than carrying forward on "it is Windows-gated" reasoning;
   a binary-equivalence carry-forward builds, which is how the aihwkit and MMseqs2
   regressions were caught.
+- A failed GPU run is carried across an inert delta, because such a delta cannot have
+  fixed it. A failure that is about content (a missing ROCm build document, a jargon
+  hit) is recorded with `set-state <name> <platform> validation-failed --gate docs`
+  (or `jargon`), and any head move retires it, since its fix is an inert delta.
 - Fork GitHub Actions stay disabled. A CI-config commit does not force revalidation (the
   regression guard classifies it as inert); the rule exists because CPU-only workflows gate
   nothing.
@@ -130,7 +147,12 @@ exists. (SCAMP)
 
 ## Upstream-visible text (extends `naming.md` and the write-up section of `SKILL.md`)
 
-Run `python3 utils/jargon.py --port <name>` before pushing; it scans the whole branch.
+Run `python3 utils/jargon.py --port <name>` before pushing; it scans the whole branch,
+one commit message and one file at a time. Fenced code blocks and command lines are
+scanned as well, for the `[fenced]` table only: our tool names, record files,
+`agent_space`, `/var/lib/jenkins` and home-directory paths. So a Test Plan gives the
+commands a maintainer can run in their own checkout, not ours. A drafted body is
+checked on stdin (`python3 utils/jargon.py - < body.md`).
 Terms and their replacements are in `config/jargon.toml`. In-house words that must never
 reach an upstream reader include "lead"/"follower", "head_sha", "curated commit",
 "validated_sha", "revalidate", and any define or identifier named after MOAT
@@ -177,6 +199,37 @@ Why each line matters:
 - The last line is not optional for MOAT tooling: `jargon.py --port` resolves `<default>..<port-branch>` and fails with "cannot resolve" on a clone that has only the remote-tracking ref.
 
 This is a docs, diff, and review checkout, not a build checkout -- a compile needs the whole tree and there is no way around paying for it. Use it for a documentation-only porter round, a reviewer reading a delta, or a validator verifying that a delta is confined to another platform's guards. (LichtFeld-Studio)
+
+## Traps in MOAT's own tools
+
+- A tool run on a port branch is the trunk's copy, not the branch's (`utils/trunk.py`).
+  `MOAT_LOCAL_TOOLS=1` runs the checkout's own and says so on stderr; it is for
+  testing a tooling change (CONTRIBUTING.md), never for porting work.
+- Commands are documented as `python3`. On a host where that name is not MOAT's
+  interpreter (the Windows laptop), type `python`; the shell entry points, the hooks
+  and the `gh` launcher resolve it themselves, and `MOAT_PYTHON` names one outright.
+- `orient.sh` is not read-only: it installs hooks, pulls, merges the trunk into a port
+  branch and pushes that, and releases forks. It exits 2 on `main` without
+  `MOAT_ALLOW_TRUNK=1`, and 3 when `gh` on PATH is not the guard launcher (put
+  `~/.local/bin` first) or no Python can import the tooling's dependencies.
+- Only the work lock's holder can leave `planning`, `porting` or `reviewing`. When you
+  resume a stage, run `set-state <name> <platform> <stage>` first; if another host or
+  job of this platform took the lock it is re-stamped to you with a WARNING. A person
+  clears a lock nobody holds with `moatlib.py port-lock <name> --release`, or moves
+  it with `--take <platform>`.
+- The gh guard judges every `gh` call made inside a checkout. Pass `--repo` on every
+  write, and in a `gh api graphql` call write the repository's owner and name
+  literally in the query: a write whose target it cannot read is refused, and so are
+  gh aliases and extensions. `python3 utils/gh_guard.py --explain -- <gh arguments>`
+  says how a call would be judged without making it.
+- A `moatlib.py` refusal is one line starting `moatlib:` and exit 1. It is an answer,
+  not a crash; `MOAT_TRACEBACK=1` shows the traceback when it is one.
+- `timeit.sh` and `session.sh` refuse a `projects/<name>` that does not exist (exit
+  2, and `timeit.sh` then runs nothing), so a mistyped name is caught, not recorded.
+- Platform detection is `bash utils/detect_arch.sh`. `MOAT_PLATFORM=<os>-<gfx>`
+  bypasses it, `MOAT_OS` overrides only the operating system, `MOAT_HIPINFO` names
+  the Windows `hipInfo` binary, and a gitignored `.moat.local` in the repository root
+  (or the file `MOAT_LOCAL_ENV` names) is sourced first for host-local settings.
 
 ## Fleet hosts
 
