@@ -819,5 +819,84 @@ class ReviewGate(NoDisposition):
         self.assertEqual(s.obj["reviewed_sha"], OLD)
 
 
+class CarryForwardIsClassified(unittest.TestCase):
+    """A carry-forward claim is checked against the source classifier."""
+
+    P = "linux-gfx90a"
+
+    def carry(self, cls, method, **kw):
+        s = Store(self, record(platforms={self.P: done(OLD)}),
+                  _fork_repo=lambda name: "repo")
+        with classified(cls):
+            moatlib.carry_forward("proj", self.P, HEAD, method, "why", **kw)
+        return s.obj["platforms"][self.P]
+
+    def refused(self, cls, method, pattern, **kw):
+        s = Store(self, record(platforms={self.P: done(OLD)}),
+                  _fork_repo=lambda name: "repo")
+        with classified(cls), self.assertRaisesRegex(ValueError, pattern):
+            moatlib.carry_forward("proj", self.P, HEAD, method, "why", **kw)
+        self.assertEqual(s.saved, [])
+
+    def test_source_class_needs_an_arch_independent_delta(self):
+        for cls in ("doc-only", "comment-only"):
+            with self.subTest(cls=cls):
+                blk = self.carry(cls, "source-class")
+                self.assertEqual(blk["validated_sha"], HEAD)
+                self.assertEqual(blk["carry_forward"]["class"], cls)
+                self.assertEqual(blk["carry_forward"]["from"], OLD)
+
+    def test_source_class_is_not_an_override_of_the_classifier(self):
+        for cls in ("mixed", "rename-only", None):
+            with self.subTest(cls=cls):
+                self.refused(cls, "source-class", "cannot be carried forward as source-class")
+
+    def test_binary_equiv_confirms_an_inert_delta(self):
+        for cls in ("comment-only", "rename-only", "doc-only"):
+            with self.subTest(cls=cls):
+                blk = self.carry(cls, "binary-equiv")
+                self.assertEqual(blk["validated_sha"], HEAD)
+                self.assertNotIn("host_checked", blk["carry_forward"])
+
+    def test_binary_equiv_over_a_code_change_needs_the_host_side_checked(self):
+        for cls in ("mixed", None):
+            with self.subTest(cls=cls):
+                self.refused(cls, "binary-equiv", "invisible to it")
+
+    def test_the_stated_host_check_is_recorded(self):
+        blk = self.carry("mixed", "binary-equiv", host_checked=True)
+        self.assertEqual(blk["validated_sha"], HEAD)
+        self.assertEqual(blk["carry_forward"]["class"], "mixed")
+        self.assertIs(blk["carry_forward"]["host_checked"], True)
+
+    def test_a_host_check_does_not_rescue_a_source_class_claim(self):
+        self.refused("mixed", "source-class", "source-class", host_checked=True)
+
+    def test_a_real_classification_of_a_host_only_change(self):
+        """End to end with the real classifier: device code untouched, host launch
+        dimensions changed -- the delta codeobj_diff would call identical."""
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            def git(*args):
+                return subprocess.run(
+                    ["git", "-c", "user.name=t", "-c", "user.email=t@example.com",
+                     "-c", "commit.gpgsign=false", *args], cwd=tmp, check=True,
+                    capture_output=True, text=True).stdout.strip()
+            git("init", "-q")
+            src = pathlib.Path(tmp) / "launch.cpp"
+            src.write_text("void run() { launch(kernel, 64, 64); }\n", encoding="utf-8")
+            git("add", "-A")
+            git("commit", "-q", "-m", "base")
+            old = git("rev-parse", "HEAD")
+            src.write_text("void run() { launch(kernel, 32, 64); }\n", encoding="utf-8")
+            git("commit", "-q", "-am", "host only")
+            new = git("rev-parse", "HEAD")
+            s = Store(self, record(head_sha=new, platforms={self.P: done(old)}),
+                      _fork_repo=lambda name: pathlib.Path(tmp))
+            with self.assertRaisesRegex(ValueError, "`mixed`"):
+                moatlib.carry_forward("proj", self.P, new, "binary-equiv", "identical")
+            self.assertEqual(s.saved, [])
+
+
 if __name__ == "__main__":
     unittest.main()

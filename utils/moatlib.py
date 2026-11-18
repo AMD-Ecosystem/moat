@@ -3985,13 +3985,35 @@ def _move_head(obj, new_sha, repo):
                 blk["updated_at"] = now_iso()
 
 
-def carry_forward(name, platform, new_sha, method, detail):
+def carry_forward(name, platform, new_sha, method, detail, host_checked=False):
     """Carry one platform's validation forward to new_sha without a GPU re-run,
     because the change was proven behavior-preserving. method is 'source-class'
     (doc/comment-only) or 'binary-equiv' (compiled code objects identical on this
     arch, dynamic symbol table included). The validator calls this on a revalidate
     delta whose compiled output is unchanged; advance_head handles the
-    arch-independent source classes itself. Records provenance for audit."""
+    arch-independent source classes itself. Records provenance for audit.
+
+    The claim is checked against the source classifier here, not taken on the
+    caller's word. It used to be: any delta was accepted under either method, so
+    `source-class` was recorded over code changes on a one-line argument, and
+    `binary-equiv` rested on codeobj_diff alone, which compares exported symbols
+    and the device instruction stream and nothing else -- a delta that changes only
+    host C++ (launch dimensions, allocation sizes) or constant data reads
+    `identical` there.
+
+      source-class  the classifier must call validated_sha..new_sha
+                    arch-independent (doc-only, or comment-only with no line
+                    hazard). advance_head already carries those itself, so this is
+                    for a host that advanced the head without a clone to classify
+                    with; it is never an override of the classifier.
+      binary-equiv  accepted as is over a delta the classifier calls inert
+                    (comment-only with a line shift, rename-only): the source says
+                    nothing changed and the build confirms it. Over a `mixed` or
+                    unclassifiable delta the build comparison cannot see the host
+                    side, so the caller must state that it was checked
+                    (`host_checked`, `--host-checked`), and the record says that
+                    the claim rests on that statement.
+    """
     obj = load_status(name)
     blk = (obj.get("platforms") or {}).get(platform)
     if blk is None or blk.get("state") != "completed":
@@ -4009,12 +4031,45 @@ def carry_forward(name, platform, new_sha, method, detail):
         raise ValueError(f"{name}/{platform}: {str(new_sha)[:12]} is not the recorded "
                          f"head_sha {str(obj.get('head_sha'))[:12]} -- a validation is "
                          f"carried forward to the head; run advance-head first")
+    old = blk.get("validated_sha")
+    if not old:
+        raise ValueError(f"{name}/{platform}: the block records no validated_sha, so "
+                         f"there is no validated commit to carry forward from")
+    if same_commit(old, new_sha):
+        return obj                       # already validated at the head
+    if method not in ("source-class", "binary-equiv"):
+        raise ValueError(f"{name}/{platform}: unknown carry-forward method {method!r}")
+    verdict = _classify_safe(_fork_repo(name), old, new_sha)
+    cls = verdict.cls if verdict is not None else "unclassified"
+    delta = f"{str(old)[:12]}..{str(new_sha)[:12]}"
+    if method == "source-class" and not (verdict is not None
+                                         and verdict.arch_independent):
+        raise ValueError(
+            f"{name}/{platform}: the source classifier calls {delta} `{cls}`"
+            + ("" if verdict is not None else
+               " (no fork clone here holds both commits)")
+            + ", not an arch-independent documentation or comment change, so it "
+              "cannot be carried forward as source-class. Build both commits and "
+              "compare them (utils/codeobj_diff.py, then `binary-equiv`), or "
+              "revalidate on the GPU")
+    if method == "binary-equiv" and not (verdict is not None and verdict.inert) \
+            and not host_checked:
+        raise ValueError(
+            f"{name}/{platform}: the source classifier calls {delta} `{cls}`, and "
+            f"binary equivalence compares only exported symbols and device code: "
+            f"a change to host (CPU-side) code or to data is invisible to it. "
+            f"Read the delta. If nothing in it changes what this platform's host "
+            f"side builds or does, say so with --host-checked and name what you "
+            f"checked in the detail; otherwise revalidate on the GPU")
     ts = now_iso()
     blk["state"] = "completed"
     blk["completed_at"] = ts
     blk["validated_sha"] = new_sha
     blk["updated_at"] = ts
-    blk["carry_forward"] = {"to": new_sha, "method": method, "detail": detail[:200], "at": ts}
+    blk["carry_forward"] = {"from": old, "to": new_sha, "method": method,
+                            "class": cls, "detail": detail[:200], "at": ts}
+    if method == "binary-equiv" and not (verdict is not None and verdict.inert):
+        blk["carry_forward"]["host_checked"] = True
     save_status(name, obj)
     return obj
 
@@ -6596,6 +6651,10 @@ def _main(argv=None):
     s.add_argument("sha")
     s.add_argument("method", choices=["source-class", "binary-equiv"])
     s.add_argument("detail")
+    s.add_argument("--host-checked", action="store_true",
+                   help="binary-equiv over a delta the classifier calls mixed: state "
+                        "that you read it and its host-side code and data are "
+                        "unchanged, or not built, on this platform")
 
     s = sub.add_parser("classify",
                        help="classify a fork delta: doc-only/comment-only/rename-only/mixed")
@@ -6997,7 +7056,8 @@ def _main(argv=None):
         obj = advance_head(args.name, args.sha)
         print(f"{args.name} head_sha -> {obj['head_sha']}")
     elif args.cmd == "carry-forward":
-        carry_forward(args.name, args.platform, args.sha, args.method, args.detail)
+        carry_forward(args.name, args.platform, args.sha, args.method, args.detail,
+                      host_checked=args.host_checked)
         print(f"{args.name}/{args.platform} carried forward -> {args.sha} ({args.method})")
     elif args.cmd == "classify":
         v = _classify_safe(_fork_repo(args.name), args.old_sha, args.new_sha)
