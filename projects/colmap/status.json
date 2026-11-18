@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-10T13:58:57Z",
-  "updated_at": "2026-10-09T15:50:56Z",
+  "updated_at": "2026-11-18T14:55:17Z",
   "head_sha": "cfe7336fe0efc297cdf7e2520b87a6dac38e2bf6",
   "depends_on": [],
   "fork_branch": "moat-port",
@@ -152,5 +152,15 @@
     "since": "2026-09-21T15:50:30Z",
     "at": "2026-09-21T15:52:20Z"
   },
-  "pr_merged_at": "2026-10-09T15:50:56Z"
+  "pr_merged_at": "2026-10-01T11:45:32Z",
+  "landed_via": {
+    "url": "https://github.com/colmap/colmap/pull/4795",
+    "number": 4795,
+    "merged_at": "2026-10-01T11:45:32Z",
+    "carried": "commits",
+    "by": "jeffdaily",
+    "at": "2026-11-18T14:55:17Z",
+    "merge_commit": "60c5ce07c14bff99e49885bcee503aa2a6a4c65c",
+    "note": "maintainer closed #4635 and merged it as #4795 with his own follow-up commits"
+  }
 }
