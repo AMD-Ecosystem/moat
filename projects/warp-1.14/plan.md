@@ -38,7 +38,7 @@ Evidence:
 **A compat header plus a HIP backend in the Python build driver and in the runtime compiler, with per-site guards only where semantics differ.** Strategy-A-shaped, written by hand because the build is not CMake.
 
 1. One compat header `warp/native/hip_compat.h` (name final at porter's discretion; AMD's 1.13 calls it `hip_util.h`, 578 lines), included from `cuda_util.h` and from the `.cu` files only when the build defines `WP_ENABLE_HIP=1`. It maps the CUDA runtime (95 distinct `cuda*` identifiers: `grep -ohE "\bcuda[A-Z][A-Za-z0-9_]*" warp/native/*.cu warp/native/*.cpp warp/native/*.h | sort -u | wc -l`), the driver API (75 `pfn_cu*`), and NVRTC to HIP/hipRTC, and maps `cub::` to `hipcub::`. On CUDA builds it is never included, so the CUDA build is byte-identical.
-2. `build_dll.py`/`build_lib.py` gain an explicit HIP backend: `--rocm-path`/`--hip` and `--hip-arch` options, `hipcc`/ROCm clang for `.cu`, `--offload-arch` list, `-DWP_ENABLE_HIP=1`, linking `amdhip64` + `hiprtc`, libmathdx forced off. **HIP is never auto-selected over CUDA**; it is selected by an explicit option (or by `--no-cuda`-style mutual exclusion that errors when both are requested). A host with only ROCm and no CUDA Toolkit gets a clear message pointing at the option, not a silent CPU-only build. Exact UX is open question Q6.
+2. `build_dll.py`/`build_lib.py` gain a HIP backend: `--rocm-path` and `--hip-arch` options, `hipcc`/ROCm clang for `.cu`, `--offload-arch` list, `-DWP_ENABLE_HIP=1`, linking `amdhip64` + `hiprtc`, libmathdx forced off. Backend selection is auto-detected, as upstream already auto-detects CUDA (ruled by Jeff Daily 2026-11-18, Q6): with no toolkit named on the command line, a ROCm install and no CUDA Toolkit builds HIP; a CUDA Toolkit and no ROCm builds CUDA as upstream; neither builds CPU-only as upstream; **both detected is an error** that tells the user to pick one with `--cuda-path` or `--rocm-path`. Naming one toolkit explicitly selects it even when the other is installed; naming both is an error. No separate `--hip` switch is needed.
 3. `wp_cuda_compile_program` gets a hipRTC branch (code object output, gfx target string, hipRTC option spelling, no PCH, no LTO).
 4. Per-site guards for semantic differences only: the device-compile predicate (`__CUDA_ARCH__` sites), inline PTX `asm` blocks (HIP branch first), wavefront width in the tile collectives, conditional graph nodes, CUDA-version gates, and texture sampling.
 
@@ -182,7 +182,7 @@ Each phase ends with a buildable tree, a commit (or a few) on `release/1.14.0.am
 
 ## Build commands
 
-Executing arch decides `--hip-arch`; option names below follow the plan and may be finalised by Q6.
+Executing arch decides `--hip-arch`; backend selection follows the Q6 ruling: where a command below shows `--hip`, read it as auto-detection on a ROCm-only host or `--rocm-path <dir>`.
 
 Linux (ROCm 7.x, system `/opt/rocm` or TheRock `rocm[libraries,devel]` in the venv):
 ```
@@ -224,7 +224,7 @@ Q4. **Conditional graph nodes (`capture_if`/`capture_while` inside a capture).**
 
 Q5. **cuBQL backend on HIP.** Optional, experimental upstream (`bvh_constructor="cubql"`). Recommendation: port it (guards + hipCUB; AMD's 1.13 rewrote it in 26 files, which is reference only); if a construct proves unportable in budget, build with `WP_DISABLE_CUBQL` on HIP so the option raises cleanly, and bring that to you as a deferral rather than deciding it.
 
-Q6. **How a ROCm build is selected.** Upstream auto-detects CUDA; the ruling forbids HIP silently replacing CUDA. Recommendation: an explicit `--hip`/`--rocm-path` option; if both a CUDA Toolkit and HIP are requested, error; if no CUDA Toolkit is found and ROCm is, print a one-line hint to use `--hip` (no silent switch either way). Confirm, since it defines the "documented command" for ruling 5.
+Q6. **How a ROCm build is selected.** RULED by Jeff Daily, 2026-11-18. Backend selection is auto-detected, as upstream already auto-detects CUDA (ruled by Jeff Daily 2026-11-18, Q6): with no toolkit named on the command line, a ROCm install and no CUDA Toolkit builds HIP; a CUDA Toolkit and no ROCm builds CUDA as upstream; neither builds CPU-only as upstream; **both detected is an error** that tells the user to pick one with `--cuda-path` or `--rocm-path`. Naming one toolkit explicitly selects it even when the other is installed; naming both is an error. No separate `--hip` switch is needed. (The planner's original recommendation, an explicit `--hip` option with no auto-detection, was not adopted; "HIP must never silently replace CUDA" was a finding of the AMD 1.13 review, not a ruling, and the both-detected error satisfies it.)
 
 Q7. **Clang-CUDA JIT (`warp-clang` NVPTX target, `test_clang_cuda.py`, `--clang-build-toolchain`).** It is an NVIDIA-only alternative to NVRTC; the HIP analogue would be an AMDGPU target in the bundled LLVM, which the packman LLVM build may not include. hipRTC is already clang-based, so HIP gets no capability from it. Recommendation: not ported in this line; the option reports unsupported on HIP devices and the tests skip by capability; registered as a deferred candidate.
 
