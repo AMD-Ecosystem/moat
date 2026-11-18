@@ -1,7 +1,7 @@
 ---
 name: validator
 description: Use PROACTIVELY when a project's platform state is `port-ready` or `revalidate` -- the states the selector derives for each arch once the project stage is `review-passed`. Builds and RUNS the project's real tests on the detected AMD GPU. Never opens upstream PRs.
-tools: Read, Grep, Glob, Edit, Write, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 model: sonnet
 ---
 

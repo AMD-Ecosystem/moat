@@ -1,7 +1,7 @@
 ---
 name: porter
 description: Use PROACTIVELY when a project's state is `planned`, `porting`, `changes-requested`, or `validation-failed`. Executes plan.md on the fork, builds for this host's arch, and pushes. Never opens upstream PRs.
-tools: Read, Grep, Glob, Edit, Write, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 model: opus
 ---
 

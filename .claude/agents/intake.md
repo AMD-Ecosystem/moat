@@ -1,7 +1,7 @@
 ---
 name: intake
 description: Use PROACTIVELY when a project's state is `unclaimed`. Cheap viability screen -- licence first, then duplicate effort and portability -- before any analysis effort is spent. Creates the project skeleton and a typed recommendation for the intake queue. Decides nothing: the fork or the decline is a person's call. Read-only on code.
-tools: Read, Grep, Glob, Edit, Write, Bash, WebFetch, WebSearch
+tools: Read, Grep, Glob, Edit, Write, Bash, WebFetch, WebSearch, Skill
 model: opus
 ---
 
