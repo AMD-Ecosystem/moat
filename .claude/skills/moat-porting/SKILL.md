@@ -16,7 +16,10 @@ extends.
 - A fact about one port: `projects/<name>/notes.md`. Fault-class entries in `cuda-to-rocm`
   name the project they were learned on; the full incident lives in that project's notes.
 - A lesson that would help someone porting a DIFFERENT project, with no MOAT tooling in it:
-  `cuda-to-rocm`, in the file its reader would open. Write it for a reader who has never
+  `cuda-to-rocm`, in the file its reader would open. The "Where to look" table in its
+  `SKILL.md` names the file for each kind of problem: `faults-*.md` for runtime faults,
+  `build-*.md` and `windows.md` for build and link problems, `libraries.md`,
+  `platform-limits.md`, `diagnosis.md`, `validation.md`. Write it for a reader who has never
   heard of MOAT: no `moatlib`, `notes.md`, gates, roles, states or fleet hosts. Say "your
   port plan" or "your porting notes" instead of naming our files.
 - A lesson about MOAT's pipeline, records, tools or hosts: this skill.
@@ -27,7 +30,11 @@ Both skills are trunk files, one organized copy each, and a port branch may not 
 reference file it belongs in. The reviewer reads it with the port. After review, a trunk
 session promotes it: it puts the lesson where its reader would look, merges it with what
 is already there instead of appending, and adds `Promoted to <file> in <sha>.` under the
-heading. `python3 utils/moatlib.py lessons` lists lessons awaiting promotion.
+heading. An entry is a bold lead sentence or a `###` heading, followed by symptom, cause,
+fix and where it was seen (project in parentheses, ROCm version or date where the workaround
+may expire). After promoting, run `python3 utils/gen_skill_index.py`: the index in
+`SKILL.md` and each file's contents list are generated, and `check.py skills` fails when
+they are stale. `python3 utils/moatlib.py lessons` lists lessons awaiting promotion.
 
 When a project's `notes.md` nears the 1 MB file check (`check.py`), move its old dated
 round sections verbatim into `projects/<name>/notes-archive.md` in one commit on the port
@@ -37,7 +44,9 @@ everything from the current round, and every `## Lesson for` section, since `les
 reads only `notes.md`. An archive merges by union like `notes.md` (`.gitattributes`).
 
 `python3 utils/check.py skills` enforces the boundary: it fails on MOAT vocabulary inside
-`.claude/skills/cuda-to-rocm/`.
+`.claude/skills/cuda-to-rocm/` (tool, record, state, branch and role names, deferral ids,
+`projects/<name>` paths, a host named as a fixture; `tests/test_skill_vocabulary.py` shows
+what passes and what does not).
 
 ## Assessing existing support (extends `assess-existing-support.md`)
 
@@ -69,7 +78,7 @@ reads only `notes.md`. An archive merges by union like `notes.md` (`.gitattribut
   `amd_gsplat`) is consumed through the `_deps/` mechanism as environment, not adopted as a
   deliverable.
 
-## Gates, fork commits and carry-forward (extends `validation.md`)
+## Gates, fork commits and carry-forward (extends `validation.md` and `diagnosis.md`)
 
 - Coverage is the required gates in `config/arches.toml` (currently `wave64`, `wave32`,
   `windows`). A platform is `<os>-<gfx>`; its gates follow from its name. An unknown
@@ -98,7 +107,8 @@ reads only `notes.md`. An archive merges by union like `notes.md` (`.gitattribut
   `hip-win-stream-serialization`) is registered with `utils/deferred.py` against the project
   that found it; `deferred.py list` finds it across refs. Check that a registered defect is
   still believed before citing it: the `.CRT$XCU` diagnosis filed as
-  `therock-windows-lld-link-crt-xcu` was later retracted (`cuda-to-rocm`'s validation.md). A
+  `therock-windows-lld-link-crt-xcu` was later retracted (`cuda-to-rocm`'s windows.md, the
+  `torch_hip.dll` import entry). A
   wrongly recorded summary is corrected with `deferred.py amend`; closing an item as
   superseded or not applicable (`deferred.py close`) is a person's ruling. The `/ALTERNATENAME` workaround's
   reproducer sits in the local `findings/` area; the owning project's `deferred.json`
@@ -149,7 +159,7 @@ patched source. (diff-surfel-tracing)
 
 - Run it on a fleet host that has nvcc. On a GPU-less Linux host the dedicated env is
   `/opt/conda/envs/cuda-12.8/bin/nvcc`, created with the `conda create` line in
-  `cuda-to-rocm`'s `validation.md`.
+  `cuda-to-rocm`'s `validation.md` ("The CUDA no-regression compile").
 - When the check cannot run for reasons outside the port (a ROCm-only PyTorch on the host
   for a torch extension; legacy `FindCUDA` under CMP0146), record
   `cuda-not-validated: <the exact error>` instead of failing the gate. Fleet hosts carry a
@@ -212,7 +222,9 @@ This is a docs, diff, and review checkout, not a build checkout -- a compile nee
 
 - Host and toolchain diagnostics specific to MOAT's machines (the gfx1151 laptop's System32
   runtime, TheRock layouts per host) belong in project notes or memory, not in
-  `cuda-to-rocm`; the general Windows lessons there are written host-neutral.
+  `cuda-to-rocm`. Its `windows.md`, `linux-host-setup.md` and `platform-limits.md` are
+  written host-neutral: they describe a kind of machine (an integrated APU, a host with
+  several identical cards), never one of ours, and the skills gate refuses "the gfx<n> host".
 - `hip_link_win.py` and `HipCxx23Shim.cmake` have their canonical copies in
   `cuda-to-rocm/assets/`. Fix bugs there first, then re-copy into each fork that vendors
   them, so the copies do not drift and the next Windows CMake HIP port does not reinvent

@@ -9,13 +9,10 @@ Use with SKILL.md. Spawn sub-agents to verify items against the actual code. Rep
 - [ ] Strategy B: no hand-renamed symbols and no compat header; only fixes hipify cannot do (e.g. warp size) are in source, guarded by USE_ROCM.
 
 ## 2. Fault classes (AMD strict where CUDA lenient)
-- [ ] No hardcoded warp/lane count of 32. Device code uses a per-arch constant (64 on __GFX9__, else 32); host code queries warpSize at runtime. A static array sized WITH the wave width (per lane) uses the upper bound 64; one sized as blockDim/warpSize (per warp) uses the LOWER bound 32, or wave32 writes out of bounds.
-- [ ] Lane masks for __shfl*/__ballot/__activemask are 64-bit where the API takes a mask; no uint32 mask assumes wave32.
-- [ ] Texture/stream/event RAII wrappers have rule-of-five: default-init handle to 0, move-only, guarded destructor. No double-free of a default handle.
-- [ ] Kernels reading neighbor indices (+/-1, +/-width, stencils) clamp at edges; no read one-past-end relied upon.
-- [ ] No allocation is read before it is written: CUDA often hands back zeros where HIP does not, so every buffer the port touches is initialized explicitly (the uninitialized-allocation audit in `cuda-to-rocm`).
-- [ ] Pitched 2D texture binds respect 256-byte row pitch on AMD; point-sampled fetches prefer a linear bind to avoid pitch.
-- [ ] Library calls swapped correctly (cuBLAS->hipBLAS, cuFFT->hipFFT, cuRAND->hipRAND, cuSPARSE->hipSPARSE, cuDNN->MIOpen, Thrust/CUB->rocThrust/hipCUB); handle types and v2-enum signature differences handled.
+The list of fault classes is the index at the end of the `cuda-to-rocm` skill's `SKILL.md`: one line per entry, grouped by reference file, generated from the files so it is complete. Do not review against a remembered subset.
+- [ ] Every group of that index was walked against the diff and the code around it, and each got a hit or a clean pass: `faults-wavefront.md`, `faults-memory-streams.md`, `faults-textures-interop.md`, `faults-numerics.md`, `build-headers-macros.md`, `build-cmake-link.md`, `libraries.md`, `platform-limits.md`, and `windows.md` when the project builds there. For a hit, the fix is the one in the entry.
+- [ ] The three that every port meets were checked by reading code, not by grep alone: no hardcoded warp or lane count of 32 (device code uses a per-arch constant, host code queries `warpSize`, and a static array uses the bound that matches the direction the width enters its size); ballot and active-mask results are stored in 64 bits and `*_sync` masks are 64-bit on HIP; no allocation is read, or read-modify-written, before it is initialized.
+- [ ] Library substitutions follow the table in `libraries.md`, including its "not 1:1" column: a cuDNN call layer is rewritten for MIOpen, not renamed, and a routine or mode the ROCm library lacks has a named fallback.
 
 ## 3. Minimal footprint
 - [ ] Host (non-.cu) C++ is untouched except where genuinely required; the diff is small.
@@ -78,7 +75,7 @@ Use with SKILL.md. Spawn sub-agents to verify items against the actual code. Rep
 - [ ] No em-dash; ASCII only; "ROCm" casing in prose.
 
 ## 9. Generalizable lessons promoted
-- [ ] If this port produced knowledge that would help someone port a DIFFERENT project -- a new fault class, a strategy improvement, a diagnostic method, or a correction to an existing entry -- it is in the `cuda-to-rocm` skill's `references/`, with the source project named and no MOAT tool, record, or state in it (MOAT-workflow lessons go to the `moat-porting` skill). A lesson left only in `projects/<name>/notes.md` is invisible to the next porter, and the same bug then gets paid for twice. A correction counts as much as an addition.
+- [ ] If this port produced knowledge that would help someone port a DIFFERENT project -- a new fault class, a strategy improvement, a diagnostic method, or a correction to an existing entry -- it is in the `cuda-to-rocm` skill's `references/` (the topic file its reader would open, per the skill's "Where to look" table), with the source project named and no MOAT tool, record, or state in it (MOAT-workflow lessons go to the `moat-porting` skill). A lesson left only in `projects/<name>/notes.md` is invisible to the next porter, and the same bug then gets paid for twice. A correction counts as much as an addition.
 - [ ] **Read the lesson as carefully as the code, because merging this branch publishes it to every agent.** It rides the port branch deliberately so that you are the gate; there is no second review later. Check the claim against the source it describes, not against the porter's summary, and check that any code block in it is the FIXED form -- one entry reproduced verbatim the CMake defect it was documenting, which would have made that bug the recipe for every future port of that kind. A wrong lesson is a Request Changes on its own: the whole point of it reaching `main` is that others will follow it.
 
 ## 10. General code quality

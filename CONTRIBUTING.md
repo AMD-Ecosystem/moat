@@ -305,8 +305,10 @@ Capture per-project findings in `projects/<name>/notes.md`. If a lesson would he
 porting a **different** project, write it in that project's notes the moment you learn it,
 under `## Lesson for cuda-to-rocm: <title>`, naming the reference file it belongs in. The
 port's review reads it there; a trunk session then promotes it into the skill's
-`references/`, fitted into the existing text rather than appended, names the source
-project, and adds `Promoted to <file> in <sha>.` under the heading. `moatlib.py lessons`
+`references/` (one topic per file; the "Where to look" table in its `SKILL.md` says which),
+fitted into the existing text rather than appended, names the source project, regenerates
+the index with `python3 utils/gen_skill_index.py`, and adds `Promoted to <file> in <sha>.`
+under the heading. `moatlib.py lessons`
 lists the ones waiting. That skill is published outside MOAT
 as an AMD skill, so write the lesson for a reader who has never seen this repository: no
 `moatlib`, `notes.md`, gates, roles, states, or fleet hosts. A lesson about MOAT's own
