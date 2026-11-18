@@ -20,7 +20,7 @@ would hand everything back anyway -- and the round trip costs more than doing it
 ## The checkup, in order
 
     gh issue list --repo AMD-Ecosystem/moat --label opt-out --state open   # anyone who asked us to stop
-    bash utils/orient.sh                         # approved ports, fork releases, next work
+    MOAT_ALLOW_TRUNK=1 bash utils/orient.sh      # approved ports, fork releases, next work
     python3 utils/upstream.py --review           # finished ports with no review PR open
     python3 utils/upstream.py --attention        # who is waiting on us
     python3 utils/upstream.py --fix-review       # staged fix rounds with no review PR open
@@ -28,16 +28,21 @@ would hand everything back anyway -- and the round trip costs more than doing it
     python3 utils/upstream.py --drift            # maintained forks vs upstream's advance
     python3 utils/upstream.py --finish-release   # approved release lines ready to tag (section 3)
     python3 utils/upstream.py --approvals        # approvals overtaken by a push or a body edit
-    python3 utils/upstream.py --dry-run          # where our record disagrees with GitHub (incl. a moved PR head)
+    python3 utils/upstream.py --dry-run --stamp  # where our record disagrees with GitHub (incl. a moved PR head)
     python3 utils/moatlib.py waivers             # gate waivers waiting on a maintainer
-    python3 utils/moatlib.py stalled             # projects every architecture gave up on, before review
+    python3 utils/moatlib.py stalled             # projects every architecture gave up on, and gate gaps
     python3 utils/deferred.py pending            # deferrals nobody has ruled on
     python3 utils/moatlib.py lessons             # reviewed lessons waiting to reach a skill (section 8)
 
 The opt-out listing is section 0 and comes before everything else: a maintainer who
 asked us to stop is the one item here where continuing to work is worse than doing
-nothing. `orient.sh` names any port whose approval is standing and whose gates are
-met. `--review` is where work piles up: a port cannot be approved until its review PR
+nothing. The checkup runs from `main`, where `orient.sh` refuses to go past its
+hook and guard checks unless `MOAT_ALLOW_TRUNK=1` is set; with it, it runs the
+upkeep (fork releases, the approved-port and waiver lists, lessons, misplaced
+folders, deferrals) and lists actionable branches instead of dispatching a port.
+On a port branch the plain command does the same upkeep. It is not read-only
+either way: it installs hooks, pulls, and releases forks. `orient.sh` names any
+port whose approval is standing and whose gates are met. `--review` is where work piles up: a port cannot be approved until its review PR
 exists, and nothing opens one automatically, so ports sit finished and unreviewable --
 the report names them all; do not trust any remembered count. A port whose earlier
 PR already merged reappears here as a FOLLOW-UP, tagged with the PR it follows, once
@@ -54,7 +59,13 @@ push -- a conflict there means the round must merge the base and resolve it.
 (section 3) has no live PR whose mergeable field anyone computes, so this sweep is
 the only thing that notices upstream moving against the port. `--approvals` catches a review GitHub still shows as green over content
 nobody approved. `--dry-run` is bookkeeping, and a HEAD-MOVED line in it is section
-2's maintainer-push case. The waiver listing is section 6: a waiver nobody has
+2's maintainer-push case; `--stamp` records in `data/reconciled.json` that the sweep
+ran (a tracked file, so a plain `--dry-run` writes nothing), which is what quiets
+orient's "last reconciled" nag. `stalled` prints two kinds of row: projects every
+architecture gave up on before review, and `<name> gate-gap <gate>: <why>` for a
+reviewed project with a required gate nothing can be sent to satisfy (every
+platform that carries it is blocked or offline). Both wait on a person: other
+hardware, clearing a block, a waiver, or `set-not-portable`. The waiver listing is section 6: a waiver nobody has
 answered is a finished port that cannot be submitted.
 
 Nothing runs on a schedule. This checkup IS the sweep, so the record only reconciles when
@@ -85,19 +96,23 @@ happens here rather than on a schedule, because the credentials to open a PR on 
 else's repository belong in a session and not in a standing secret.
 
 The approval happens in ONE place -- that PR page -- and the maintainer does one thing
-there: leave a comment containing `/moat approve` on a line by itself, in either box
-GitHub offers -- a review comment or an ordinary conversation comment. Not the
+there: leave a comment containing `/moat approve <sha>` on a line by itself, in either
+box GitHub offers -- a review comment or an ordinary conversation comment. `<sha>` is
+the head commit they reviewed, 7 or more characters; the instructions comment the
+tool posts on the review PR shows the line with the head filled in. Not the
 Approved button: they authored the pull request, because agents open it with their
-credentials, and GitHub greys the button out for an author. The review form is the
-better box because it carries the commit it was written against, so the gate can tell
-an approval of this code from an approval of an earlier push; a conversation comment
-counts too, judged by its time against the branch tip. Do not ask them to also read a
-copy of the body somewhere in this repo.
+credentials, and GitHub greys the button out for an author. The sha is what lets
+the gate tell an approval of this code from an approval of an earlier push: it
+counts only while that commit is the review PR's head. The review form carries the
+commit it was written against, so there the sha may be left off; a conversation
+comment without one reads `unbound` and approves nothing -- `--publish` says so and
+prints the line to post. Do not ask them to also read a copy of the body somewhere
+in this repo.
 
 Rejection is a command too, because the author's Request Changes button is greyed out
 exactly as Approve is: `/moat changes-requested` on a line by itself (or
 `/moat request-changes`; both spellings are accepted) sends the port
-back to the porter and blocks publish until that person posts `/moat approve`. Only
+back to the porter and blocks publish until that person posts `/moat approve <sha>`. Only
 each author's latest command stands, a command quoted inside a code fence is ignored
 (the instructions comment quotes both), and an unrecognized `/moat` line from someone
 with write access blocks publish rather than being read as chatter. Audit a review
@@ -129,8 +144,8 @@ Under the hood it snapshots the approval first:
 
     python3 utils/moatlib.py record-pr-approval <name>
 
-reads the review PR and records the approver, the exact commit the review was attached to,
-and a hash of the title and body. Before opening upstream, `moatlib.py pr-approval <name>`
+reads the review PR and records the approver, the exact commit the approval names or was
+attached to, and a hash of the title and body; it refuses an approval that is not current. Before opening upstream, `moatlib.py pr-approval <name>`
 re-reads that PR and refuses if the approval was withdrawn or someone has changes
 requested, if any commit landed after the approval, or if the title or body was edited
 after it. An unreachable PR refuses too, and says which it is -- an outage is not a
@@ -145,7 +160,7 @@ the answer is a fresh approval.
 `upstream.py --approvals` REPORTS overtaken approvals -- snapshotted or not, since the
 usual drift window (approved, then a push lands before anyone submits) predates the
 publish-time snapshot; `--approvals --apply` marks them stale on the review PR. A
-plain APPROVED review is dismissed; a `/moat approve` comment (the form every
+plain APPROVED review is dismissed; a `/moat approve <sha>` comment (the form every
 self-authored review PR uses) has nothing GitHub can dismiss, so the stale notice is
 a comment asking for a fresh approval. Nothing surfaces these on its own, so running
 the report is a step of this checkup rather than something you react to. Marking
@@ -175,7 +190,11 @@ honouring an ambiguous no is one project.
 Recording it is the one decision of this kind an agent may make alone: it is the
 maintainer's decision, carried into the record, and it can only ever cause less work.
 It retires the projects it covers and blocks discovery, adoption and both routes
-upstream. What is left over -- closing the open pull request, deleting the fork -- is
+upstream. `record` also pushes the registry to the `optout-pending` branch at once,
+and `--publish` and `--merge-fix` on every host read that branch before they act,
+so the block on upstream writes does not wait for the pull request that carries
+`data/optout.json` to the trunk. Open that pull request too: discovery and
+adoption read the trunk's copy. What is left over -- closing the open pull request, deleting the fork -- is
 visible on their repository and stays with a person; the command prints exactly what
 to run.
 
@@ -211,7 +230,10 @@ a full review, and a bare range also skips the added-lines scan the review gate 
 This rule was written down and still kept reaching PRs, which is why it is now a
 command rather than a reminder.
 
-Then record it: `moatlib.py set-pr-open <name> <pr_url> <pr_number>`.
+`--publish --apply --name <p>` records the PR it opens. `moatlib.py set-pr-open <name>
+<pr_url> <pr_number>` is for recovery only -- a PR that exists upstream and that the
+record does not know -- like `set-fix-merged`; it is never a step of opening one by
+hand.
 
 ## 2. Maintainer rounds
 
@@ -249,12 +271,15 @@ has reviewed, revalidated, or approved it:
    the tool prepends (`REPLY_NOTE` in `utils/upstream.py`) -- do not write the
    disclosure into the draft by hand. That section ends at the next `##`
    heading, so anything written for our own eyes goes after one.
-4. `/moat approve` on that PR, then `upstream.py --merge-fix --apply` re-checks the
-   live approval and every gate, fast-forwards `moat-port` to exactly the approved
-   tip, posts the approved reply, records `published_sha`, and deletes the staging
+4. `/moat approve <sha>` on that PR, then `upstream.py --merge-fix --apply --name <p>`
+   re-checks the live approval and every gate, and that the review PR really is
+   this fork's staging branch into its port branch, fast-forwards `moat-port` to
+   exactly the approved tip, posts the approved reply, records `published_sha`, and deletes the staging
    branch. Same contract as `--publish --apply`: mechanical because a person
    approved exactly this content. Do not push `moat-port` by hand -- the fork's
-   pre-push hook (`moatlib.py protect-fork`) refuses it while the PR is open.
+   pre-push hook (`moatlib.py protect-fork`) refuses it while the PR is open, and
+   lets the approved merge through only on a one-shot token the tool writes for
+   that exact commit and ref.
 
    Run it from a host that has the fork clone AND can write the record; it reports
    HELD rather than moving the PR when either is missing, because the one thing this
@@ -277,11 +302,13 @@ itself (lc0 #2454 did, while moat-fix-2420 sat staged), the maintainer withdraws
 request, or the PR merges or closes with the round still recorded. Whether to drop it is
 a person's call; they record it with `moatlib.py abandon-fix <name> --by <who> --reason
 "<why>"`, which clears the round, returns `head_sha` to the round's base (so evidence
-gathered on the dropped tip stops counting), and keeps the dropped branch and tip in
-`fix_abandoned`. The staging branch stays on the fork as evidence.
+gathered on the dropped tip stops counting, and a platform that had validated the
+base before the round reads validated there again), and keeps the dropped branch and
+tip in `fix_abandoned`. The staging branch stays on the fork as evidence.
 
 If a maintainer signals they will not take the contribution, stop and record it rather
-than pushing. Record it with `moatlib.py set-pr-closed <name> --note "<why>"`, and if the
+than pushing. Record it with `moatlib.py set-pr-closed <name> --note "<why>"` (refused
+for a PR recorded merged; repeating it changes nothing), and if the
 project is settled for good ask for a disposition; a declined PR is a real result and
 belongs in the record. One decline is not settled: a maintainer who closes the PR but
 points their users at the fork instead -- a README section, a closing comment naming the
@@ -290,7 +317,10 @@ section 3, recorded by a person with `set-maintained`.
 
 ## 3. Merge and after
 
-On merge: `moatlib.py set-pr-merged <name>`.
+On merge: `moatlib.py set-pr-merged <name>`. Recording it twice keeps the first merge
+time. If a fix round is still staged when the PR merges or closes, the command
+records the finish and warns: the round can no longer merge, so a person rules
+`abandon-fix`.
 
 A merged PR is not the end of the port branch. When later work lands on it --
 reviewed and revalidated exactly like the first round, with the same gates binding
@@ -343,7 +373,7 @@ port's commits, unchanged, onto `arrayfire/arrayfire` `experimental/hip`, and po
 README there rather than at the fork. Record it the same way -- the fork's `moat-port`
 stays the writable mirror of that branch and every behavior above still holds, `--drift`
 included, as long as the two tips stay equal. What changes is DELIVERY: a sync round's
-`--merge-fix --apply` can only move the fork branch, so each round additionally needs an
+`--merge-fix --apply --name <p>` can only move the fork branch, so each round additionally needs an
 upstream PR whose base is the maintainer's branch, and `--publish` cannot open that yet
 (it targets the default branch). Until it can, that PR is a person's hand-approved
 step. Say so in the `--note` when ruling, so the next sync round does not stall at
@@ -351,11 +381,12 @@ step. Say so in the `--note` when ruling, so the next sync round does not stall 
 
 A sync round is a fix round with upstream's advance as its content, and it rides the
 same machinery end to end: `moatlib.py sync-branch <name>` stages `moat-sync-<sha7>`
-from the published tip and pins the upstream tip being absorbed; the porter MERGES
+from the published tip and pins the upstream tip being absorbed (run again while a
+round is staged, it reports that round as it stands and stages nothing); the porter MERGES
 that tip in (never a rebase -- it would rewrite the commits upstream tells people to
 clone), resolves, builds; head_sha follows the staging tip, so validated platforms
 flip to revalidate on their own; `--fix-review` opens the fork review PR, `/moat
-approve` gates it, and `--merge-fix --apply` fast-forwards `moat-port` -- then tags
+approve <sha>` gates it, and `--merge-fix --apply --name <p>` fast-forwards `moat-port` -- then tags
 the tip `rocm-<date>`, so followers have fixed points to pin while the branch moves.
 There is rarely an `## Upstream reply` here: nobody asked for the round. The PR-flow
 states still bound the record: the project re-enters `porting` for the round and
@@ -401,10 +432,11 @@ branch, same gates and approval rules) but it is never merged and carries no sub
 note. `pr-candidates` lists a ready line as `RELEASE-READY`; `--publish` skips release
 lines. After `/moat approve`:
 
-    python3 utils/upstream.py --finish-release            # READY / HELD / WAITING per line
-    python3 utils/upstream.py --finish-release --apply    # tag, record, close unmerged
+    python3 utils/upstream.py --finish-release                      # READY / HELD / WAITING per line
+    python3 utils/upstream.py --finish-release --apply --name <p>   # tag, record, close unmerged
 
-`--finish-release --apply` is pre-authorized on the `--publish` contract: it re-reads the
+`--finish-release --apply --name <p>` is pre-authorized on the `--publish` contract, one
+named line per run like the other two writes: it re-reads the
 approval and every gate, checks the review PR still runs port branch -> pristine base at
 the recorded `head_sha`, that the base is still upstream's own history (a merged review
 PR fails this), and that the tag is free; then it tags the approved commit, records
@@ -434,9 +466,21 @@ A protected trunk creates a bookkeeping gap: once a project's PR has merged into
 control plane, later events -- the upstream PR merging, closing, or a maintainer requesting
 changes -- still need recording, and the trunk cannot be written directly.
 
-Poll the recorded `pr_url`s, update state, regenerate the README table, and open a small
-automated PR with the result. Without this, every upstream merge needs a hand-made PR and
-the table silently rots.
+`python3 utils/upstream.py --apply` does this: it polls the recorded `pr_url`s, records
+merges and verified `published_sha` backfills, regenerates the README table, and puts
+the result on the one `record-sync` branch with a small pull request (regenerated from
+the trunk and updated in place on every run, never a second one). A record that lives
+on its own `port/<name>` branch is written there directly. It proposes and a person
+merges; a closed-unmerged PR is reported, not recorded, because GitHub's fields are
+wrong for some repositories. It refuses a checkout that holds other modified files,
+and on a failed git step it stops and returns the checkout to the branch it started
+on. Without this, every
+upstream merge needs a hand-made PR and the table silently rots.
+
+A port branch that falls behind the trunk's tooling is synced by `orient.sh`, or on
+demand with `moatlib.py branch-sync --apply`. `branch-sync --all --apply` sweeps
+every port branch; it skips one whose local copy holds commits the remote lacks
+(reported as `local-work`, exit 1) instead of merging over them.
 
 Also reactivate `awaiting-upstream` projects: those are parked on an external event (a
 third party's PR landing, say), and when it happens the project becomes workable again.
@@ -461,8 +505,12 @@ Handing an agent a project whose plan and notes are absent from its tree is the 
 that must not happen, and releasing a fork does not do that.
 
 Declines do not happen here. They are recorded through the intake queue --
-`intake_queue.py apply --decline`, carrying a person's answer -- and the labels that
-older documents describe record nothing.
+`intake_queue.py apply --decline ... --by <who decided>`, carrying a person's answer
+-- and the labels that older documents describe record nothing. `triage.py skip` is
+the other writer of `data/dispositions.json`: a person's disposition of a candidate
+that never went through the queue (it takes `--by` too), never an agent's shortcut
+past it. `triage.py unskip <owner/repo> --by <who>` reverses one and keeps the
+removed entry in `data/decisions.jsonl`.
 
 ## 6. Gate waivers awaiting a maintainer
 
@@ -508,7 +556,10 @@ Work a port set aside, with no person having decided it should stay set aside. A
 deferral is cheap to record and easy to forget, and it fails silently: "we will get to
 it" becomes nobody ever looked, and the port ships covering less than anyone realises.
 
-`deferred.py decide <id> --choice defer|now --by <who>` records the ruling. `--by` is
+`deferred.py decide <id> --choice defer|now --by <who>` records the ruling. Progress on
+an item is not a ruling and an agent may record it: `deferred.py set-status <id> filed
+--upstream <issue URL>` once the report is filed, `done` once the work is, `open` to
+put it back. `--by` is
 required and never defaulted, the same rule as a licence clearance or a gate waiver: an
 agent may surface a deferral and may not rule on one, because deciding a scoped-out
 feature stays scoped out is a judgement about what MOAT is delivering.
