@@ -1028,5 +1028,24 @@ class EvidenceForAnEarlierHead(NoDisposition):
         self.assertEqual(moatlib.arch_task(obj, self.P), ("reviewer", "delta-ported"))
 
 
+class HeldFoldersStayPut(NoDisposition):
+    def misplaced(self, obj, has_branch):
+        ref = mock.Mock(stdout="abc\n" if has_branch else "")
+        with mock.patch.object(moatlib, "project_records",
+                               lambda: iter([("proj", obj, "branch")])), \
+                mock.patch.object(moatlib, "_git", lambda *a, **k: ref):
+            return moatlib.misplaced_folders()
+
+    def test_a_held_project_is_asked_to_move_in_neither_direction(self):
+        held = record(on_hold=True, platforms={"linux-gfx90a": done(OLD)})
+        self.assertEqual(self.misplaced(held, has_branch=True), [])
+        self.assertEqual(self.misplaced(held, has_branch=False), [])
+
+    def test_releasing_the_hold_brings_it_back_into_the_report(self):
+        obj = record(platforms={"linux-gfx90a": done(OLD)})
+        rows = self.misplaced(obj, has_branch=False)
+        self.assertEqual([(r[0], r[1]) for r in rows], [("proj", "trunk")])
+
+
 if __name__ == "__main__":
     unittest.main()
