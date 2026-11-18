@@ -4324,10 +4324,16 @@ def settled(obj):
 
     A `verify` disposition is NOT this: it flags a project for a closer look, which is
     the opposite of settled, and only a `skip` retires one. Reading any disposition as
-    terminal put two projects on the wrong side of that."""
+    terminal put two projects on the wrong side of that.
+
+    A HOLD is not this either. `set-hold on` parks a project and touches no state:
+    the selector skips it (actionable, fleet, dep_blocked test `on_hold` themselves)
+    and everything it owes is still owed. Counting a hold as settled made a held
+    in-flight project read as finished -- `misplaced` said to merge its branch to
+    main, and its lessons were listed as orphaned."""
     disp = disposition_for_project(obj.get("name") or "")
     return bool((disp and disp.get("disposition") == "skip")
-                or obj.get("stage") == "not-portable" or obj.get("on_hold"))
+                or obj.get("stage") == "not-portable")
 
 
 def outstanding(obj):
@@ -4478,10 +4484,50 @@ def stalled(obj):
     # recorded as dispositions -- an opt-out retirement leaves the arch records in
     # place, and without this check the project would reappear here asking a person
     # for a decision that was already given.
-    if stage == "review-passed" or stage in INERT_STAGES or settled(obj):
+    if stage == "review-passed" or stage in INERT_STAGES or settled(obj) \
+            or obj.get("on_hold"):
         return False
     blocks = list(validations(obj).values())
     return bool(blocks) and all(b.get("blocked") for b in blocks)
+
+
+def gate_gaps(obj, roster=None):
+    """Required gates that nothing can currently be dispatched to satisfy, as
+    [(gate, why)]. Empty for a project that is not review-passed.
+
+    Past review a project advances only by a platform validating, and the selector
+    offers that to whoever carries an unsatisfied gate. When every platform that
+    carries one is blocked or offline, no task is produced anywhere, `stalled` is
+    silent by design (it is about projects that gave up BEFORE review), and the
+    project simply stops: only `pr-ready`, asked by name, shows it. The next move is
+    a person's -- new hardware, clearing a block, or a waiver -- so it is reported.
+
+    `roster` is every platform any record names (known_platforms()), which is the
+    fleet as far as the records know it."""
+    if project_stage(obj) != "review-passed" or settled(obj) or obj.get("on_hold"):
+        return []
+    vals = validations(obj)
+    roster = set(known_platforms() if roster is None else roster) | set(vals)
+    out = []
+    for gate in sorted(unsatisfied_gates(obj)):
+        carriers = sorted(p for p in roster if gate in gates_for(p))
+        blocked = [p for p in carriers if (vals.get(p) or {}).get("blocked")]
+        offline = [p for p in carriers if p in OFFLINE_PLATFORMS and p not in blocked]
+        if len(blocked) + len(offline) < len(carriers):
+            continue                     # someone can still be sent
+        parts = []
+        if blocked:
+            parts.append(f"blocked: {', '.join(blocked)}")
+        if offline:
+            parts.append(f"offline: {', '.join(offline)}")
+        if not carriers:
+            parts.append("no platform in any record carries it")
+        w = (obj.get("waivers") or {}).get(gate) or {}
+        if w and not w.get("approved_by"):
+            parts.append("waiver refused" if w.get("refused_by")
+                         else "waiver suggested, awaiting a maintainer")
+        out.append((gate, "; ".join(parts)))
+    return out
 
 
 def failure_stands(obj, blk):
@@ -4542,7 +4588,16 @@ def arch_task(obj, platform):
     # and a validator is sent to judge the fix. Nothing rewrites the block to make that
     # happen -- the record keeps saying what it saw, and staleness follows from the two
     # shas, which is the same reason `revalidate` is not stored either.
+    #
+    # Asked only where a REQUIRED GATE still needs this arch, the same test the
+    # un-validated case below applies. Once every gate it carries is satisfied -- a
+    # maintainer approved the waiver, or a sibling validated the head -- there is
+    # nothing a fix here would unblock, and the failure stays in the record as what
+    # was seen. Without this the arch kept demanding a porter, ranked ahead of
+    # nearly everything, until the head happened to move.
     if failure_stands(obj, blk):
+        if not (gates_for(platform) & unsatisfied_gates(obj)):
+            return None
         return ("porter", "validation-failed")
     if blk.get("state") == "completed":
         if same_commit(blk.get("validated_sha"), obj.get("head_sha")):
@@ -6183,7 +6238,9 @@ def _main(argv=None):
     s.add_argument("name")
     s.add_argument("--path", help="where to put it (default agent_space/wt-<name>)")
 
-    sub.add_parser("stalled", help="projects every architecture gave up on, before review")
+    sub.add_parser("stalled", help="projects every architecture gave up on, before "
+                                   "review, and reviewed projects with a gate nothing "
+                                   "can be sent to satisfy")
 
     sub.add_parser("misplaced", help="projects whose folder is not where their state says")
 
@@ -6558,6 +6615,16 @@ def _main(argv=None):
         if rows:
             print(f"-- {len(rows)} project(s) waiting on a person: continue on other "
                   f"hardware, or `set-not-portable <name> --reason ... --by <who>`",
+                  file=sys.stderr)
+        roster = known_platforms()
+        gaps = [(n, g, why) for n, o, _w in project_records()
+                for g, why in gate_gaps(o, roster)]
+        for n, g, why in sorted(gaps):
+            print(f"{n}\tgate-gap\t{g}: {why[:100]}")
+        if gaps:
+            print(f"-- {len(gaps)} required gate(s) on reviewed project(s) that no "
+                  f"platform can be sent to satisfy: clear a block, bring hardware "
+                  f"back, or rule on a waiver (`suggest-waiver`, `approve-waiver`)",
                   file=sys.stderr)
     elif args.cmd == "lessons":
         cands = lesson_candidates()

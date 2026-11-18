@@ -175,5 +175,100 @@ class PlatformStateVocabulary(unittest.TestCase):
                         "linux-gfx90a": {"state": state, "blocked": False}}))
 
 
+class NoDisposition(unittest.TestCase):
+    """Derivation tests: no dispositions, no dependencies, nothing read from git."""
+
+    def setUp(self):
+        for attr, value in (("disposition_for_project", lambda name: None),
+                            ("now_deferrals", lambda name: [])):
+            p = mock.patch.object(moatlib, attr, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+
+class HoldTouchesNoState(NoDisposition):
+    def held(self, **fields):
+        return record(on_hold=True, on_hold_reason="parked", **fields)
+
+    def test_a_held_project_still_owes_what_it_owed(self):
+        obj = self.held(platforms={"linux-gfx90a": done(OLD)})
+        self.assertFalse(moatlib.settled(obj))
+        self.assertEqual(moatlib.outstanding(obj), [("linux-gfx90a", "revalidate")])
+        self.assertTrue(moatlib.belongs_on_branch(obj))
+
+    def test_the_selector_still_skips_it(self):
+        obj = self.held(platforms={"linux-gfx90a": done(OLD)})
+        with mock.patch.object(moatlib, "unmet_deps", lambda o, platform=None: []):
+            self.assertFalse(moatlib.actionable(obj, "linux-gfx90a"))
+
+    def test_a_held_project_is_parked_not_stalled(self):
+        obj = self.held(stage="porting",
+                        platforms={"linux-gfx90a": {"blocked": True}})
+        self.assertFalse(moatlib.stalled(obj))
+
+
+class FailedArchAfterItsGateIsMet(NoDisposition):
+    WAIVER = {"windows": {"reason": "r", "approved_by": "someone"}}
+
+    def test_a_standing_failure_asks_for_a_porter_while_its_gate_is_open(self):
+        obj = record(platforms={"windows-gfx1151": failed(), "linux-gfx90a": done()})
+        self.assertEqual(moatlib.arch_task(obj, "windows-gfx1151"),
+                         ("porter", "validation-failed"))
+
+    def test_an_approved_waiver_ends_the_demand(self):
+        obj = record(platforms={"windows-gfx1151": failed(), "linux-gfx90a": done(),
+                                "linux-gfx1100": done()}, waivers=self.WAIVER)
+        self.assertIsNone(moatlib.arch_task(obj, "windows-gfx1151"))
+        self.assertEqual(moatlib.outstanding(obj), [])
+
+    def test_a_sibling_satisfying_the_gate_ends_it_too(self):
+        obj = record(platforms={"linux-gfx1100": failed(), "linux-gfx90a": done(),
+                                "windows-gfx1151": done()})
+        self.assertIsNone(moatlib.arch_task(obj, "linux-gfx1100"))
+
+    def test_a_waiver_for_one_gate_does_not_excuse_another(self):
+        # windows-gfx1151 also carries wave32, which nothing else satisfies here.
+        obj = record(platforms={"windows-gfx1151": failed(), "linux-gfx90a": done()},
+                     waivers=self.WAIVER)
+        self.assertEqual(moatlib.arch_task(obj, "windows-gfx1151"),
+                         ("porter", "validation-failed"))
+
+
+class GateGaps(NoDisposition):
+    ROSTER = {"linux-gfx90a", "linux-gfx1100", "windows-gfx1151"}
+
+    def test_a_gate_whose_only_platform_is_blocked_is_reported(self):
+        obj = record(platforms={"linux-gfx90a": done(), "linux-gfx1100": done(),
+                                "windows-gfx1151": {"blocked": True}})
+        gaps = moatlib.gate_gaps(obj, self.ROSTER)
+        self.assertEqual([g for g, _ in gaps], ["windows"])
+        self.assertIn("blocked: windows-gfx1151", gaps[0][1])
+        self.assertIsNone(moatlib.arch_task(obj, "windows-gfx1151"))
+
+    def test_an_offline_platform_cannot_be_sent_either(self):
+        obj = record(platforms={"linux-gfx90a": done(), "linux-gfx1100": done()})
+        with mock.patch.object(moatlib, "OFFLINE_PLATFORMS", {"windows-gfx1151"}):
+            gaps = moatlib.gate_gaps(obj, self.ROSTER)
+        self.assertEqual(gaps, [("windows", "offline: windows-gfx1151")])
+
+    def test_a_dispatchable_platform_means_no_gap(self):
+        obj = record(platforms={"linux-gfx90a": done(), "linux-gfx1100": done()})
+        with mock.patch.object(moatlib, "OFFLINE_PLATFORMS", set()):
+            self.assertEqual(moatlib.gate_gaps(obj, self.ROSTER), [])
+
+    def test_a_pending_waiver_is_named(self):
+        obj = record(platforms={"linux-gfx90a": done(), "linux-gfx1100": done(),
+                                "windows-gfx1151": {"blocked": True}},
+                     waivers={"windows": {"reason": "r"}})
+        self.assertIn("awaiting a maintainer", moatlib.gate_gaps(obj, self.ROSTER)[0][1])
+
+    def test_only_reviewed_unheld_projects_are_judged(self):
+        blocked = {"windows-gfx1151": {"blocked": True}}
+        self.assertEqual(moatlib.gate_gaps(record(stage="porting", platforms=blocked),
+                                           self.ROSTER), [])
+        self.assertEqual(moatlib.gate_gaps(record(on_hold=True, platforms=blocked),
+                                           self.ROSTER), [])
+
+
 if __name__ == "__main__":
     unittest.main()
