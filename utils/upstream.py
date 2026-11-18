@@ -96,14 +96,10 @@ BRANCH = "record-sync"
 # the note: editing the wording is fine, editing the marker orphans every review PR
 # already approved.
 #
-# EDITING THE NOTE: the jargon checker cannot see the paragraph carrying the repo URL.
-# `MOAT` is a jargon term, and config/jargon.toml allows any line matching
-# `https?://\S*moat` or `github\.com/\S+` so ordinary links do not trip it -- but the
-# allowance skips the WHOLE line, and a GitHub body is written one line per paragraph,
-# so everything beside that URL goes unscanned. Dropping "the lead platform validated at
-# head_sha" into it yields zero hits; the same words on their own line yield three. So
-# check any wording change here by eye: this is the one paragraph the gate below cannot
-# check for you.
+# The paragraph carrying the repo URL is scanned like any other: the jargon checker
+# masks the URL itself (`MOAT` is a jargon term and the address contains it) and reads
+# the rest of the line. It used to skip the whole line, and a GitHub body is one line
+# per paragraph, so everything beside the URL went unchecked.
 SUBMISSION_MARKER = "prepared with the help of an AI assistant"
 SUBMISSION_NOTE = (
     "---\n\n"
@@ -956,20 +952,25 @@ def publish_blockers(name, row):
     msgs = _run(
         ["gh", "api", "--paginate",
          f"repos/{pr['slug']}/pulls/{pr['number']}/commits",
-         "--jq", ".[].commit.message"],
+         "--jq", "[.[] | {sha: .sha[0:9], message: .commit.message}]"],
         capture_output=True, text=True, timeout=90)
-    if msgs.returncode:
+    # One commit message at a time, and one file's added lines at a time: joined
+    # into one text, a single unclosed code fence in any of them hid every message
+    # and every file after it from the scan.
+    commits = None if msgs.returncode else moatlib._parse_json_pages(msgs.stdout)
+    if commits is None:
         bad.append("cannot re-check the branch's commit messages for in-house "
                    "vocabulary (gh api failed) -- a gate that cannot run is not a "
                    "gate that passed")
     else:
-        bhits = jargon.scan_text(msgs.stdout, "branch commits", terms, allow)
+        bhits = jargon.scan_units([(c.get("sha") or "?", c.get("message") or "")
+                                   for c in commits], "branch commit", terms, allow)
         added, why = _pr_added_lines(pr["slug"], pr["number"], row["url"])
         if added is None:
             bad.append("cannot re-check the branch's added lines for in-house "
                        f"vocabulary ({why})")
         else:
-            bhits += jargon.scan_text(added, "branch added lines", terms, allow)
+            bhits += jargon.scan_units(added, "branch added lines", terms, allow)
         if bhits:
             bad.append("in-house vocabulary on the branch: "
                        + ", ".join(sorted({h[2] for h in bhits})[:4]))
@@ -1256,14 +1257,15 @@ def _delta_hits_local(clone, base, head, terms, allow):
         if _run(["git", "-C", str(clone), "cat-file", "-e", f"{rev}^{{commit}}"],
                           capture_output=True, text=True).returncode:
             return None
-    msgs = _run(["git", "-C", str(clone), "log", "--format=%B",
+    # %x00 after each message and one unit per file, so every commit message and
+    # every file is scanned by itself (see jargon.scan_text on unclosed fences).
+    msgs = _run(["git", "-C", str(clone), "log", "--format=%B%x00",
                            f"{base}..{head}"], capture_output=True, text=True)
     diff = _run(["git", "-C", str(clone), "diff", f"{base}...{head}"],
                           capture_output=True, text=True)
     if msgs.returncode or diff.returncode:
         return None
-    added = [l[1:] for l in diff.stdout.splitlines()
-             if l.startswith("+") and not l.startswith("+++")]
+    added = jargon.added_by_file(diff.stdout)
     # A sync round merges upstream's tip, so the delta also carries upstream's own
     # commits and code, which upstream already has and which are not ours to word.
     # Scan only what is new relative to every merged-in upstream parent.
@@ -1283,7 +1285,7 @@ def _delta_hits_local(clone, base, head, terms, allow):
             return None
         theirs = sorted(independent.stdout.split())
     if theirs:
-        msgs = _run(["git", "-C", str(clone), "log", "--format=%B",
+        msgs = _run(["git", "-C", str(clone), "log", "--format=%B%x00",
                      f"{base}..{head}", "--not", *theirs],
                     capture_output=True, text=True)
         if msgs.returncode:
@@ -1295,9 +1297,12 @@ def _delta_hits_local(clone, base, head, terms, allow):
                 return None
             mine = {l[1:] for l in ours.stdout.splitlines()
                     if l.startswith("+") and not l.startswith("+++")}
-            added = [l for l in added if l in mine]
-    hits = jargon.scan_text(msgs.stdout, "delta commit", terms, allow)
-    return hits + jargon.scan_text("\n".join(added), "delta added lines", terms, allow)
+            added = [(path, "\n".join(l for l in text.split("\n") if l in mine))
+                     for path, text in added]
+    hits = jargon.scan_units([(str(n), m) for n, m in
+                              enumerate(msgs.stdout.split("\x00"), 1) if m.strip()],
+                             "delta commit", terms, allow)
+    return hits + jargon.scan_units(added, "delta added lines", terms, allow)
 
 
 def _fix_delta_hits(fork, base, head, clone=None):
@@ -1338,24 +1343,27 @@ def _fix_delta_hits(fork, base, head, clone=None):
     hits = []
     for msg in commits:
         hits += jargon.scan_text(msg, "delta commit", terms, allow)
-    added = "\n".join(l[1:] for p in (cmp.get("patches") or [])
-                      for l in p.splitlines()
-                      if l.startswith("+") and not l.startswith("+++"))
-    hits += jargon.scan_text(added, "delta added lines", terms, allow)
+    for n, patch in enumerate(cmp.get("patches") or [], 1):
+        added = "\n".join(l[1:] for l in patch.splitlines()
+                          if l.startswith("+") and not l.startswith("+++"))
+        hits += jargon.scan_text(added, f"delta added lines (file {n})", terms, allow)
     return hits
 
 
 def _pr_added_lines(slug, number, url):
-    """The added lines of a PR's diff, or (None, reason) when they cannot all be read.
+    """The added lines of a PR's diff as [(file, text)], or (None, reason) when they
+    cannot all be read.
 
     `gh pr diff` is refused for a diff over 20000 lines (HTTP 406), which a large port
     exceeds (TornadoVM's HIP backend is about 30000). The per-file listing has no such
     cap, so it is the fallback; it lists at most 3000 files and omits `patch` on a file
     too large to render, and either means a partial answer, which is refused rather
     than scanned -- a partial answer that reads like a clean one is worse than none."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import jargon
     diff = _run(["gh", "pr", "diff", url], capture_output=True, text=True, timeout=180)
     if not diff.returncode:
-        lines = diff.stdout.splitlines()
+        return jargon.added_by_file(diff.stdout), None
     else:
         files = _run(["gh", "api", "--paginate", f"repos/{slug}/pulls/{number}/files",
                       "--jq", ".[] | {f: .filename, p: .patch, a: .additions}"],
@@ -1371,9 +1379,9 @@ def _pr_added_lines(slug, number, url):
         if nopatch:
             return None, (f"{len(nopatch)} file(s) listed without a patch, e.g. "
                           f"{nopatch[0]}")
-        lines = [l for r in rows for l in (r.get("p") or "").splitlines()]
-    return "\n".join(l[1:] for l in lines
-                     if l.startswith("+") and not l.startswith("+++")), None
+        return [(r["f"], "\n".join(l[1:] for l in (r.get("p") or "").splitlines()
+                                   if l.startswith("+") and not l.startswith("+++")))
+                for r in rows], None
 
 
 def _round_live(d, fix):
