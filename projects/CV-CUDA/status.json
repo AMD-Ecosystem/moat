@@ -7,15 +7,17 @@
   "priority": 6.119,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-08-21T03:15:41Z",
+  "updated_at": "2026-11-18T15:08:21Z",
   "head_sha": "358edc33955c58ecc1c219d21f3b3db59b10a50c",
   "pr_url": "https://github.com/CVCUDA/CV-CUDA/pull/293",
   "pr_number": 293,
   "pr_opened_at": "2026-06-18T21:22:26Z",
   "waivers": {
     "windows": {
-      "reason": "The CV-CUDA port was deliberately scoped Linux-only, so the obstacle is the platform rather than the GPU. No Windows build work was implemented in the port at all; the Windows platforms are untried followers reusing the Linux branch, and the record notes this was a maintainer call rather than an unexplored gap. Confirmed on windows-gfx1101 and windows-gfx1201. The HIP work is validated at head on linux-gfx90a (wave64) and linux-gfx1100 (wave32); windows is the only gate not satisfied at head. NOTE for the approver: unlike icicle or gpu4pyscf, this is a scoping decision rather than a demonstrated upstream impossibility -- if you would rather see Windows attempted than waived, refuse this and it becomes porter work. Nobody has established that CV-CUDA cannot build on Windows.",
-      "suggested_at": "2026-08-20T07:51:32Z"
+      "reason": "CV-CUDA cannot build natively on Windows with any compiler until upstream changes it: src/nvcv/util/SymbolVersioning.hpp emits ELF .symver inline assembly for every public API entry point with no platform guard, and clang-cl rejects it (error: unknown directive). Established by the windows-gfx1151 feasibility run of 2026-08-20 at 358edc33 (notes.md, Validation 2026-08-20 windows-gfx1151), which an earlier refused waiver asked for. Upstream supports Linux only; the HIP work is validated at head on linux-gfx90a (wave64) and linux-gfx1100 (wave32).",
+      "suggested_at": "2026-08-20T07:51:32Z",
+      "approved_by": "jeffdaily",
+      "at": "2026-11-18T15:08:21Z"
     }
   },
   "pr_state": "open",
