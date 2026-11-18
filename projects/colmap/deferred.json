@@ -54,6 +54,20 @@
         "at": "2026-11-18T03:45:41Z",
         "note": "Ruled 2026-11-17: stays deferred until the symforce PR 465 fix round is through review. Probe on ROCm 10.1.0 (HIP 7.16) confirmed gfx942 and gfx950 still have no image/texture support, so the rewrite is still required for MI300 and MI350."
       }
+    },
+    {
+      "id": "colmap-caspar-hip-regenerate-and-build",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Caspar bundle adjustment on HIP: regenerate the vendored f32 and f64 Caspar kernel trees from SymForce (this also adds the register zero-init the f32 tree lacks, the cause of the PartiallyContainedTracks NaN on HIP), add the CMake and docs change, validate on all platforms. Wait until symforce PR 465 merges, so no unmerged generator code is vendored.",
+      "refs": [
+        "https://github.com/symforce-org/symforce/pull/465",
+        "projects/colmap/notes.md: Caspar HIP scoping study"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T15:28:23Z",
+      "decided": null
     }
   ]
 }
