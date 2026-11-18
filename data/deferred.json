@@ -390,6 +390,22 @@
       "created_at": "2026-08-19T06:32:33Z",
       "decided": null,
       "project": null
+    },
+    {
+      "id": "codeobj-diff-windows-pe-support",
+      "kind": "other",
+      "component": "moat-tooling",
+      "summary": "utils/codeobj_diff.py compares ELF binaries only, so on a Windows host it answers indeterminate and a binary-equiv carry-forward is never available there: every non-inert change to a port costs the only Windows host a full revalidation, even when the change is Linux-only. Add PE/COFF support: extract the device code objects (the HIP fat-binary section) and the export table from .dll/.exe/.pyd and compare them as for ELF. Validate against real Windows builds of a few ports with a known-identical pair and a known-different pair before its verdicts are trusted; a wrong identical is worse than indeterminate. Own piece of work with its own review, not part of the 2026-11 health-fix branch (jeff, 2026-11-18).",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T20:57:46Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-18T20:57:47Z"
+      },
+      "project": null
     }
   ]
 }
