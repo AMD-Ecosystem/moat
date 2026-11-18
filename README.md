@@ -167,7 +167,7 @@ The project name links upstream.
 | [candle](https://github.com/huggingface/candle) ([fork](https://github.com/AMD-Ecosystem/candle/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [catboost](https://github.com/catboost/catboost) ([fork](https://github.com/AMD-Ecosystem/catboost-moat/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#3111](https://github.com/catboost/catboost/pull/3111) |
 | [Clair3](https://github.com/HKU-BAL/Clair3) | ⬜ | ⬜ | 🎫 | — |
-| [colmap](https://github.com/colmap/colmap) ([fork](https://github.com/AMD-Ecosystem/colmap/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟣 [#4635](https://github.com/colmap/colmap/pull/4635) |
+| [colmap](https://github.com/colmap/colmap) ([fork](https://github.com/AMD-Ecosystem/colmap/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟣 [#4635](https://github.com/colmap/colmap/pull/4635) via [#4795](https://github.com/colmap/colmap/pull/4795) |
 | [ColossalAI](https://github.com/hpcaitech/ColossalAI) ([fork](https://github.com/AMD-Ecosystem/ColossalAI/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [ComfyUI-3D-Pack](https://github.com/MrForExample/ComfyUI-3D-Pack) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- gap-matrix intake 2026-11-10: licence issues in bundled components |
 | [cosmos](https://github.com/NVIDIA/cosmos) | ⬜ | ⬜ | ⬜ | ⚪ not-a-target |
