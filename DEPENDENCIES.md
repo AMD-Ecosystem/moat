@@ -5,10 +5,10 @@ Some target projects build on top of other targets -- e.g. `barney` builds on `c
 ## The model
 
 - Each project's `status.json` carries `depends_on: [<MOAT project name>, ...]` -- the OTHER MOAT targets its build links or uses.
-- The selector (`next_task` / `orient.sh`) will NOT pick a project until every entry in `depends_on` clears. There is no lead platform: ANY arch at `completed` satisfies a dependency, because a validated port is a validated port whoever ran it. `moatlib.py deps` shows the graph; `moatlib.py dep-blocked <platform>` shows what is waiting and why.
+- The selector (`next_task` / `orient.sh`) will NOT pick a project until every entry in `depends_on` clears. There is no lead platform: any arch at `completed` on the same operating system as the asking host satisfies a dependency, because a validated port is a validated port whoever ran it, while a library proven only on Linux says nothing about whether it builds on Windows. `moatlib.py deps` shows the graph; `moatlib.py dep-blocked <platform>` shows what is waiting and why.
 - A dependency clears four different ways, and they are NOT the same answer:
-  - **ok** -- some arch reached `completed`, OR the dependency is dispositioned `already-supported` / `ported-elsewhere`, meaning it needs no port from us. Build against it.
-  - **waiting** -- adopted and in the pipeline. It clears on its own.
+  - **ok** -- some arch on this host's operating system reached `completed` (`moatlib.py deps`, which asks for no platform, counts any arch), OR the dependency is dispositioned `already-supported` / `ported-elsewhere`, meaning it needs no port from us. Build against it.
+  - **waiting** -- adopted and in the pipeline, or validated but not yet on this operating system. It clears on its own.
   - **doomed** -- dispositioned as anything short of a port existing: `cant-port`, `license-blocked`, `declined`, `duplicate`, `not-a-target`, `opted-out` or `other`. It will not be ported, so neither is anything that links it. Scope the dependent around that feature or recommend a disposition for it too; do not proceed and find out at build time.
   - **unknown** -- nobody has looked at it. File an intake request with `python3 utils/port_request.py file <owner/repo> --blocks <project> --why "..." --apply`, record the edge with `set-deps` (which REPLACES the whole `depends_on` list -- repeat the existing deps alongside the new one), and stop. A person decides whether to fork it.
 - `depends_on` is for HARD build dependencies of the project's CORE. A *module-level* optional dependency (only one extra feature needs another project) is documented in the project's `notes.md`, not added to `depends_on`, so it does not gate the whole port.
@@ -26,8 +26,8 @@ When `orient.sh` hands you a project P, check `depends_on` (it is in `status.jso
 1. Clone the ported dependency (the `moat-port` branch is the deliverable):
    `git clone -b moat-port https://github.com/AMD-Ecosystem/<D> _deps/<D>/src`
    (`_deps/` at the repo root is gitignored -- it is a local build/install area, never committed.)
-2. Build + install D following the **`## Install as a dependency`** section of `projects/<D>/notes.md` -- typically `cmake -S _deps/<D>/src -B _deps/<D>/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=<arch> ... && cmake --build _deps/<D>/build --target install` with `-DCMAKE_INSTALL_PREFIX=/var/lib/jenkins/moat/_deps/<D>/install`.
-3. Point P's build at it: `-DCMAKE_PREFIX_PATH=/var/lib/jenkins/moat/_deps/<D>/install` (so P's `find_package(<D>)` resolves the ROCm build), or the include/lib paths that D's notes document.
+2. Build + install D following the **`## Install as a dependency`** section of `projects/<D>/notes.md` -- typically `cmake -S _deps/<D>/src -B _deps/<D>/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=<arch> ... && cmake --build _deps/<D>/build --target install` with `-DCMAKE_INSTALL_PREFIX=<repo>/_deps/<D>/install`, where `<repo>` is the absolute path of this MOAT checkout (`git rev-parse --show-toplevel`).
+3. Point P's build at it: `-DCMAKE_PREFIX_PATH=<repo>/_deps/<D>/install` (so P's `find_package(<D>)` resolves the ROCm build), or the include/lib paths that D's notes document.
 4. If a dependency is somehow not actually usable when you need it, `set-blocked` P with a concrete "needs <D>" reason and move on -- do NOT port the dependency inline unless it is trivial.
 
 ## The "Install as a dependency" convention (for ported base libraries)
