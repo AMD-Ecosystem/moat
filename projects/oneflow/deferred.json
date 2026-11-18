@@ -214,9 +214,10 @@
       "component": null,
       "summary": "At the PR-prep squash, correct the de15305bb ([ROCm] Do not link libunwind in the ROCm build) body: it says glog and the backtrace code both fall back to _Unwind_Backtrace from <unwind.h>. With Unwind disabled, glog 0.5.0 leaves HAVE_UNWIND_H undefined and uses glibc backtrace() from <execinfo.h> (stacktrace_generic-inl.h); only backward-cpp (oneflow/extension/stack/stacktrace.h) uses _Unwind_Backtrace. The code comment was fixed in 8d470dcc1; the pushed body is not rewritten (no amend, no force-push).",
       "refs": [
-        "projects/oneflow/notes.md"
+        "projects/oneflow/notes.md",
+        "corrected at the PR-prep squash: the published commit 14801d8a8 in Oneflow-Inc/oneflow#10697 says glog uses glibc backtrace() and only the backtrace code uses _Unwind_Backtrace"
       ],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-11-09T17:44:13Z",
       "decided": null
