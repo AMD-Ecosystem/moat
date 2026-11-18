@@ -42,6 +42,8 @@ has looked at yet. It is recorded in [`data/optout.json`](data/optout.json), and
 not a promise to remember: the record is enforced in three places in the tooling --
 your repositories drop out of the candidate list, no project can be adopted from them,
 and nothing can be submitted to them even if the port is already finished and approved.
+The last of those holds on every machine we work from as soon as the request is
+recorded, before the record itself has been merged.
 Closing anything of ours still open and deleting the fork are done by a person, because
 anything that touches your repository always is. Withdrawing an opt-out needs a person
 on our side and someone asking on yours; an agent may carry that decision into the
@@ -87,8 +89,9 @@ the title or body, voids it and the submission step refuses. That check compares
 against GitHub -- the commit the review was attached to against the branch tip now --
 because the local record is a file agents can write and the approval is not.
 
-Opening the upstream pull request is one command run by a person in their own session,
-never by an unattended job.
+Opening the upstream pull request is one command run in an attended session -- by the
+person, or by the agent working with them, since what it publishes was already
+approved -- and never by an unattended job.
 
 ## Suggest a project to port
 
