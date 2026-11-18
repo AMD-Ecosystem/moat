@@ -38,7 +38,8 @@ branch and opens a PR, and a human decides -- the same path everything else take
     python3 utils/upstream.py --drift            # maintained forks vs upstream's advance
     python3 utils/upstream.py --drift --apply    # also fast-forward a behind fork mirror
     python3 utils/upstream.py --finish-release   # approved release lines ready to tag
-    python3 utils/upstream.py --finish-release --apply # tag, close the review PR, freeze
+    python3 utils/upstream.py --finish-release --apply --name <p>  # tag that one line,
+                                                 # close its review PR, freeze it
 
 Record maintenance and one publishing step. None of it does any porting -- that needs a
 GPU host and a session. These keep the record true, tell someone, and send an approved
@@ -2141,7 +2142,7 @@ def do_finish_release(name, d, pr, tag):
     except Exception as e:                      # noqa: BLE001 - reported, not raised
         return (True, f"tagged {tag} at {tip[:12]} but could NOT record the "
                       f"delivery: {e}; the review PR is left open and a rerun of "
-                      f"--finish-release --apply completes it")
+                      f"--finish-release --apply --name {name} completes it")
     return (True, "; ".join(notes + [_close_release_review(name, d, url, tag, tip)]))
 
 
@@ -2170,8 +2171,8 @@ def _close_release_review(name, d, url, tag, tip):
     else:
         notes.append(f"could NOT close the review PR "
                      f"({(c.stderr or c.stdout).strip()[:80]}); a rerun of "
-                     f"--finish-release --apply retries it (close it by hand "
-                     f"without merging if that keeps failing)")
+                     f"--finish-release --apply --name {name} retries it (close it "
+                     f"by hand without merging if that keeps failing)")
     level, msg = moatlib.protect_fork(name)
     if level != "skip":
         notes.append(msg)
@@ -2189,9 +2190,9 @@ def report_finish_release(apply, only=None):
             print(f"  ERROR      {name:26} {type(e).__name__}: {e}"[:120])
             ret = 1
     if rows and not apply:
-        print("\n  --finish-release --apply tags each READY line's approved commit, "
-              "records the delivery (freezing the branch) and closes the review PR "
-              "unmerged.")
+        print("\n  --finish-release --apply --name <p> tags that READY line's "
+              "approved commit, records the delivery (freezing the branch) and closes "
+              "the review PR unmerged.")
     return ret
 
 
@@ -2481,8 +2482,8 @@ def main():
     ap.add_argument("--review", action="store_true",
                     help="ports whose gates are met with no review PR open yet")
     ap.add_argument("--name", help="with --review --apply: which project to open; "
-                    "with --publish or --merge-fix: check and act on only this "
-                    "project (required with --apply)")
+                    "with --publish, --merge-fix or --finish-release: check and "
+                    "act on only this project (required with --apply)")
     ap.add_argument("--stamp", action="store_true",
                     help="with the plain sweep: record in data/reconciled.json that "
                          "it ran (a tracked file; --apply stamps by itself)")
@@ -2507,7 +2508,7 @@ def main():
     ap.add_argument("--finish-release", action="store_true",
                     help="release lines approved on their in-fork review PR: tag "
                          "the approved commit, freeze the branch and close the "
-                         "review PR unmerged (--apply to write; --name for one)")
+                         "review PR unmerged (--apply --name <p> to write)")
     ap.add_argument("--resolve-threads", action="store_true",
                     help="with --name: resolve fork review PR threads whose last "
                          "word is ours (--apply to write)")
@@ -2597,6 +2598,14 @@ def main():
             return 2
         return report_merge_fix(apply=a.apply, only=a.name)
     if a.finish_release:
+        # Tagging and freezing a release line is one decision about one line, like
+        # the two writes above. Without --name an --apply run finished every READY
+        # line at once.
+        if a.apply and not a.name:
+            print("--finish-release --apply needs --name <project>: it tags and "
+                  "freezes one release line per run. Run --finish-release without "
+                  "--apply to list what is ready.", file=sys.stderr)
+            return 2
         return report_finish_release(apply=a.apply, only=a.name)
     if a.resolve_threads:
         if not a.name:

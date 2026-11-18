@@ -147,6 +147,19 @@ class Arguments(unittest.TestCase):
         self.assertEqual(called, [{"apply": True, "only": "proj"},
                                   {"apply": False, "only": None}])
 
+    def test_finish_release_apply_needs_a_name(self):
+        called = []
+        with mock.patch.object(upstream, "report_finish_release",
+                               lambda **kw: called.append(kw) or 0):
+            rc, _out, err = self.run_main("--finish-release", "--apply")
+            self.assertEqual((rc, called), (2, []))
+            self.assertIn("--name", err)
+            self.assertEqual(self.run_main("--finish-release", "--apply",
+                                           "--name", "warp-1.14")[0], 0)
+            self.assertEqual(self.run_main("--finish-release")[0], 0)
+        self.assertEqual(called, [{"apply": True, "only": "warp-1.14"},
+                                  {"apply": False, "only": None}])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -134,7 +134,7 @@ fi
 FINISH=$(moat_run "upstream.py --finish-release" "$PY" utils/upstream.py --finish-release)
 RELEASE=$(printf '%s\n' "$FINISH" | sed -n 's/^  \(READY\|RESUME\) *\([^ ]*\).*/\2/p' | tr '\n' ' ')
 if [ -n "${RELEASE// /}" ]; then
-  echo "approved : ${RELEASE}-- finish the release: $PY utils/upstream.py --finish-release --apply"
+  echo "approved : ${RELEASE}-- finish the release: $PY utils/upstream.py --finish-release --apply --name <project>"
   echo "           (tags the approved commit, freezes the branch, closes the review PR unmerged)"
 fi
 
