@@ -192,7 +192,7 @@ The project name links upstream.
 | [CuRast](https://github.com/m-schuetz/CuRast) ([fork](https://github.com/AMD-Ecosystem/CuRast/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#2](https://github.com/m-schuetz/CuRast/pull/2) |
 | [curobo](https://github.com/NVlabs/curobo) ([fork](https://github.com/AMD-Ecosystem/curobo/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [cuSZ](https://github.com/szcompressor/cuSZ) ([fork](https://github.com/AMD-Ecosystem/cuSZ/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#91](https://github.com/szcompressor/cuSZ/pull/91) |
-| [CV-CUDA](https://github.com/CVCUDA/CV-CUDA) ([fork](https://github.com/AMD-Ecosystem/CV-CUDA/tree/moat-port)) | ✅ | ✅ | 🔧 | 🟢 [#293](https://github.com/CVCUDA/CV-CUDA/pull/293) |
+| [CV-CUDA](https://github.com/CVCUDA/CV-CUDA) ([fork](https://github.com/AMD-Ecosystem/CV-CUDA/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟢 [#293](https://github.com/CVCUDA/CV-CUDA/pull/293) |
 | [DEM-Engine](https://github.com/projectchrono/DEM-Engine) ([fork](https://github.com/AMD-Ecosystem/DEM-Engine/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#69](https://github.com/projectchrono/DEM-Engine/pull/69) |
 | [dgSPARSE-Lib](https://github.com/dgSPARSE/dgSPARSE-Lib) ([fork](https://github.com/AMD-Ecosystem/dgSPARSE-Lib/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#39](https://github.com/dgSPARSE/dgSPARSE-Lib/pull/39) |
 | [dietgpu](https://github.com/facebookresearch/dietgpu) ([fork](https://github.com/AMD-Ecosystem/dietgpu/tree/moat-port)) | ✅ | ✅ | ✅ | 🔵 fork is the AMD path; upstream takes no pull requests |
