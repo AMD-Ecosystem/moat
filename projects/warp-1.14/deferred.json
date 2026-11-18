@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "warp-tile-fft-non-pow2-gpu",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "GPU tile_fft for non-power-of-two sizes on HIP: without libmathdx the GPU path supports only power-of-two sizes divisible by block_dim and raises ValueError otherwise (builtins.py:13435-13448); ROCm has no device-callable FFT, so closing the gap means an in-tree Bluestein or direct-DFT path upstream does not have",
+      "refs": [
+        "projects/warp-1.14/plan.md Q1"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T18:24:31Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-18T18:24:52Z",
+        "note": "2026-11-18: defer, ship upstream's no-libmathdx behaviour in 1.14.0+rocm.0 and name the gap in the release notes"
+      }
+    }
+  ]
+}
