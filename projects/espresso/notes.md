@@ -459,3 +459,53 @@ ctest --test-dir build-hip -LE gpu --timeout 900 -j 16
 - Jargon: `utils/jargon.py --port espresso` clean. Docs: "AMD GPU acceleration" in doc/sphinx/installation.rst (87cbc046d).
 - CUDA no-regression compile: `cuda-not-validated: this host has no CUDA toolkit (no nvcc, no /opt/conda to create the cuda-12.8 env)`. The CUDA-side delta of this round is CMake-only (`NOT USE_HIP` on the Kokkos CUDA gate; `Kokkos::kokkos` in the CUDA `cuda_test` branch, exactly as upstream has it). It still needs the nvcc compile on the CUDA fleet host before the PR goes to jeff.
 - Still owed before PR prep: gfx90a (wave64) and gfx1100 (wave32) were validated at 8e228b5d, not at this head. This run satisfies wave64 at 87cbc046d; wave32 needs a run on an RDNA host.
+
+## Validation 2026-11-19 (linux-gfx1201, RDNA4 wave32)
+
+State: port-ready -> completed. GPU: gfx1201 (`rocminfo`: Wavefront Size 32), HIP_VISIBLE_DEVICES=0. ROCm: pip ROCm SDK 10.1.0 (HIP 7.16.26385, AMD clang 24.0.0, no /opt/rocm). Validated sha: 87cbc046d27c1eabd33eec8c208014bface17b07, the same head the gfx942 run validated. Fork clone at `projects/espresso/src` clean at head throughout.
+
+### Build
+
+Host has no system MPI/Boost/FFTW/hwloc and no CUDA toolkit, same as the gfx942 host. Deps built from source into a job-local prefix `$DEPS_PREFIX` with the versions of "Upstream sync 2026-11-19": hwloc 2.11.2 (`--disable-cairo --disable-opencl --disable-cuda --disable-nvml --disable-rsmi --disable-levelzero`), OpenMPI 5.0.8 (`--with-hwloc=$DEPS_PREFIX --without-cuda --without-rocm --disable-mpi-fortran`), FFTW 3.3.10 double and float (`--enable-shared --enable-openmp --enable-threads`), Boost 1.87.0 (`--with-libraries=mpi,serialization,test,filesystem,system`, b2 `--without-python link=shared`, `using mpi : $DEPS_PREFIX/bin/mpicxx ;`). Python 3.12.3 venv by `uv` inside the job venv: numpy 2.5.5, scipy 1.18.1, Cython 3.3.1, tqdm, matplotlib, pint. `PATH` and `LD_LIBRARY_PATH` carry `$DEPS_PREFIX/bin` and `$DEPS_PREFIX/lib` for build and ctest.
+
+Configure line is the gfx942 one with `-DCMAKE_HIP_ARCHITECTURES=gfx1201` (`ROCM_SDK=$(rocm-sdk path --root)`):
+
+```
+cmake --build build-hip -j 24
+cmake --build build-hip -j 24 --target python_test_data cuda_test local_samples local_benchmarks
+```
+
+Build: PASS, 236/236 plus the test-data targets. Cache: `Kokkos_ENABLE_CUDA=OFF`, `Kokkos_ENABLE_HIP=OFF`, `Heffte_ENABLE_CUDA=OFF`. `llvm-objdump --offloading build-hip/src/core/espresso_core.so`: 4 bundles, all `hip-amdgcn-amd-amdhsa--gfx1201`. Warnings: 20, all the known ROCm 10.1 `nodiscard` `hipError_t` `-Wunused-value`.
+
+### Tests (default myconfig, the gfx942 recipe)
+
+```
+ctest --test-dir build-hip -L gpu --timeout 900 -j 8
+cmake --build build-hip -j 24 --target check_unit_tests
+ctest --test-dir build-hip -LE gpu --timeout 900 -j 16
+```
+
+- GPU suite (`-L gpu`): 74/74 with no failure ("100% tests passed"): 71 Passed and 3 reported by ctest as Skipped. All core consistency gates pass, re-run verbose to confirm what ran inside each: coulomb_cloud_wall (5 ran, 1 skipped: SCAFACOS), coulomb_cloud_wall_duplicated, p3m_madelung (6), p3m_electrostatic_pressure, elc_nonneutral, dawaanr-and-dds-gpu, dipolar_direct_summation, dipolar_interface, coulomb_interface, gpu_availability, coulomb_tuning, long_range_actors, the GPU checkpoint tests, `cuda_test` and `code_info`. The default config compiles out DIPOLE_FIELD_TRACKING and MMM1D, so dipole_field_tracking runs 0 of 3 cases there; the maxset run below covers them.
+- The 3 ctest Skipped: `sample_p3m_with_gpu` and `benchmark_p3m_with_gpu` run their whole GPU script on import (P3M tuning and timed integration print; `pypresso maintainer/benchmarks/p3m.py --particles_per_core 400 --gpu` run directly exits 0). The test class has no test methods, so Python 3.12's unittest exits 5 ("no tests ran"), which these tests map to `SKIP_RETURN_CODE 5`. Expected; not a GPU fault. `benchmark_lb_with_gpu` raises `FeaturesError: Missing features WALBERLA` (out of scope). A run of `-L gpu` right after another fails these 3 with "already processed, cannot overwrite" until `local_samples local_benchmarks` are rebuilt (already in the notes).
+- Unit tests (`check_unit_tests`): 136/136 PASS.
+- Non-GPU suite (`-LE gpu`, 403 tests): 346 Passed, 29 exit-5 Skipped (samples and benchmarks whose test is the import, as above), 28 failed, all environmental: 26 `tutorial_*` Not Run (no Jupyter/tutorials target), `test_convert` (`ModuleNotFoundError: No module named 'nbformat'`), `test_install` (diffs files under /usr/local; never installed). Same set as gfx942, less its `pint` failure (pint was installed here up front). No regression.
+
+### Extra wave32 coverage: maxset build
+
+Upstream's maximal feature config, to run GPU cases the default config skips:
+
+```
+cmake ... -DESPRESSO_MYCONFIG_FILE=<src>/maintainer/configs/maxset.hpp   # otherwise the same configure line
+cmake --build build-max -j 24
+cmake --build build-max -j 24 --target python_test_data cuda_test local_samples local_benchmarks
+ctest --test-dir build-max -L gpu --timeout 900 -j 8 --output-on-failure
+ctest --test-dir build-max -L gpu -E 'sample_|benchmark_' -V --timeout 900 -j 8
+```
+
+Build: PASS. GPU suite: 74/74, 0 failures (the same 3 exit-5 Skipped). New cases that ran and passed: dipole_field_tracking test_dds, test_dds_gpu, test_dp3m; dipolar_direct_summation test_dds_gpu, test_inner_loop_consistency_gpu, test_min_image_convention_gpu, the pressure-tensor checks. Every unittest-level skip left in the verbose log names an out-of-scope or not-built feature (WALBERLA/WALBERLA_FFT, MMM1D, STOKESIAN_DYNAMICS, SCAFACOS, SCAFACOS_DIPOLES, H5MD, THERMAL_STONER_WOHLFARTH) or is a mode filter inside the test.
+
+### Gates
+
+- Jargon: `python3 utils/jargon.py --port espresso` clean. Docs: "AMD GPU acceleration" at doc/sphinx/installation.rst:300 and `USE_HIP` at :918.
+- CUDA no-regression compile: `cuda-not-validated: this host has no CUDA toolkit (no nvcc, no /usr/local/cuda, no /opt/conda to create the cuda-12.8 env)`. Still owed on the nvcc fleet host before the PR goes to jeff (see gfx942 section).
+- With gfx942 (wave64) and this run (wave32) at 87cbc046d, both required Linux gates are met at head; windows is waived.
