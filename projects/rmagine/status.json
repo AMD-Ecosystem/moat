@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-11-19T22:29:31Z",
+  "updated_at": "2026-11-19T22:29:48Z",
   "head_sha": "e1b7ac57c740121150a87ba5e4279f718a80f331",
   "depends_on": [],
   "waivers": {},
@@ -204,14 +204,9 @@
   "pr_number": 25,
   "pr_opened_at": "2026-10-29T23:03:18Z",
   "pr_state": "open",
-  "published_sha": "cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93",
+  "published_sha": "e1b7ac57c740121150a87ba5e4279f718a80f331",
   "porting": null,
-  "fix": {
-    "branch": "moat-fix-25",
-    "base_sha": "cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93",
-    "review_pr": "https://github.com/AMD-Ecosystem/rmagine/pull/2",
-    "opened_at": "2026-11-19T04:10:18Z"
-  },
+  "fix": null,
   "porting_released": {
     "arch": "linux-gfx942",
     "since": "2026-11-19T04:16:49Z",
@@ -224,5 +219,6 @@
     "head_sha": "e1b7ac57c740121150a87ba5e4279f718a80f331",
     "content_sha256": "fc1824b501396ce21b55e5b403bb09f8ba72fa493db1aca0eaca44b7bd5edd78",
     "review_pr": "https://github.com/AMD-Ecosystem/rmagine/pull/2"
-  }
+  },
+  "fix_merged_at": "2026-11-19T22:29:48Z"
 }
