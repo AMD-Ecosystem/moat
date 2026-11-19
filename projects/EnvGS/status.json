@@ -7,7 +7,7 @@
   "priority": 4.133,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-07T07:04:31Z",
+  "updated_at": "2026-11-19T06:21:26Z",
   "head_sha": "7528e8dbd94fca6e56c845f6b53b8dcce04ac29b",
   "porting": null,
   "waivers": {},
@@ -120,5 +120,7 @@
       },
       "last_agent": "validator"
     }
-  }
+  },
+  "on_hold": true,
+  "on_hold_reason": "jeffdaily 2026-11-18: upstream zju3dv/EnvGS changed its licence on 2026-09-15 to a Project Registration License v1.0 (after our 2026-08-05 clearance, which describes a different licence); hold all work until jeff has read the new terms. Also: the port only repoints two submodules (tracer PR xbillowy/diff-surfel-tracing#7 unanswered, rasterizer licence-blocked), the pinned tracer commit 415f0a4 is unreferenced and AMD-only, and upstream has never taken a pull request. No upstream PR."
 }
