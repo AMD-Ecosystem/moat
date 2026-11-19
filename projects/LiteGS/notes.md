@@ -832,3 +832,73 @@ Warnings, compared after normalizing paths:
 - gaussian_raster: the only difference is a warning the port removes. Base has `warning #2361-D: invalid narrowing conversion from "double" to "float"` at transform.cu:38 (15 lines, 3 per arch) and at transform.cu:1379 (20 lines, 4 per arch). The port keeps the first one (now transform.cu:42, the same `float3 t{...}` line) and loses the second, because its `(float)` casts on the `input_matrix` initializer silence it. No new warning anywhere: the 35 respaced launches, the 64-bit ballot path in compact.cu, and `torch::zeros` in transform.cu compile clean under nvcc.
 
 Verdict: the CUDA path compiles and links with real nvcc at head 38aa67c, with no new error or warning against upstream's base. This closes the "nvcc compile still owed" item recorded by the gfx90a and gfx1201 validations. Stage and platform records are unchanged by this check. `git status --porcelain` is empty in the port clone and its submodule.
+
+## Ruling 2026-11-19 (jeffdaily): fused_ssim submodule moves to AMD-Ecosystem/fused-ssim moat-port
+
+jeffdaily ruled on 2026-11-19: LiteGS's pin `kemchenj/fused-ssim` 409da0b (branch `fused-l1-ssim-loss`) is one commit by Kem Chen, "Add fused L1 SSIM loss and backward functions", which is rahul-goel/fused-ssim PR 33, open since December 2025 with the maintainer undecided. Its base is 14 commits behind rahul-goel `main`. The original repository has had no commit since February 2026 and no maintainer reply since March 2026, and five later PRs (one an AMD build fix) are unanswered. So our fork `AMD-Ecosystem/fused-ssim` carries a `moat-port` branch with everything LiteGS needs, with Kem Chen's change brought in as a cherry-pick that keeps his authorship, and LiteGS's submodule points at that branch. Nothing is sent to the fused-ssim maintainers or to Kem Chen. This settles the "Windows: open question for jeff" above.
+
+## fused-ssim fork commits and tests (AMD-Ecosystem/fused-ssim, no project record of its own)
+
+fused-ssim has no MOAT project folder (recorded as already supported upstream), so its round is recorded here.
+
+`moat-port` before: 6f9a620 = rahul-goel `main` (a7c48d6) + 666987f (validation, README), 767e3f6 (Windows `_winhip.cu` shim), cdfe1fa (Windows `FUSED_SSIM_HIP` guard), 6f9a620 (comment wording). Pushed 6f9a620..**d3213b4** (fast-forward, one commit):
+
+- **d3213b4** "Add fused L1 SSIM loss and backward functions": `git cherry-pick -x 409da0b`, author Kem Chen <chenkem@gmail.com> (2025-11-11), committer Jeff Daily. Two textual conflicts, resolved and described in the commit message:
+  - `ext.cpp`: `fusedl1ssim_loss` / `fusedl1ssim_loss_backward` are registered inside the existing `#if defined(FUSED_SSIM_CUDA) || defined(FUSED_SSIM_HIP)` block next to `fusedssim3d`, not unconditionally as in 409da0b, because the Metal (`ssim.mm`) and SYCL (`ssim_sycl.cpp`) backends compile the same `ext.cpp` and define neither function (the same reason upstream 0ac916a guarded the 3D ones). The block comment now reads "3D SSIM and fused L1 + SSIM loss (CUDA/HIP only)".
+  - `fused_ssim/__init__.py`: the CUDA branch imports the 2D, 3D and fused L1 functions and keeps `is_3D_supported = True`; `FusedL1SSIMLossMap` and `fused_l1_ssim_loss` are appended after `fused_ssim` unchanged. The MPS and XPU branches import exactly what they did before.
+  - `ssim.cu`, `ssim.h`, `tests/test_fused_l1_ssim_loss.py` applied cleanly and are byte-identical to 409da0b's additions.
+- No HIP commit was needed: the new kernels hipify and build zero-edit. Their only literal 32 (`warp_id = tid / 32`, `col += 32` in `fusedl1ssim_loss_backwardCUDA`) is the same plain tiling loop as the existing `fusedssim_backwardCUDA`, with no warp-synchronous operation, so it is correct on wave64 and wave32.
+- No Windows commit was needed (reasoned, not built here): on Windows ROCm the setup.py shim (767e3f6) compiles `ext.cpp` as a copy `ext_winhip.cu` through hipcc, where `-DFUSED_SSIM_CUDA` arrives as `-DFUSED_SSIM_HIP`; the new registrations sit in the same guarded block as the 3D ones that cdfe1fa made reachable on Windows, and the kernels are in `ssim.cu`, which Windows already compiles.
+- Commit message checked: `python3 utils/jargon.py -C <clone> --commits 6f9a620..d3213b4` and `--diff` both clean; read by hand against the upstream-text rules.
+
+Build (gfx90a, this host): image torch `2.16.0a0+git6c3af02`, `torch.version.hip` 7.16.26385, ROCm 10.1 pip SDK, Python 3.11, from `/tmp` with `PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32`: `python -m pip install -v --no-build-isolation --no-deps <fused-ssim clone>` -> built; only torch-header `-Wnan-infinity-disabled` warnings from `-ffast-math`.
+
+Tests, the whole `tests/` directory, run from a scratch copy of `tests/` + `images/` (several scripts write into `../images`), `HIP_VISIBLE_DEVICES=0` (MI250X GCD):
+| script | result |
+|---|---|
+| `test.py` (2D vs reference and pytorch_msssim, 100 iterations of asserts) | PASS |
+| `test_3D.py` (3D, 10 iterations of asserts) | PASS |
+| `test_fused_l1_ssim_loss.py` as a script (100 iterations of `test_fused_l1_ssim_loss` + benchmark) | PASS; fused 1.16 ms vs l1 + fused_ssim 1.45 ms fwd+bwd at 3x1080x1920 |
+| `pytest test_fused_l1_ssim_loss.py` | 1 passed |
+| `train_image.py`, `train_image_3D.py` | PASS (final SSIM 0.9999 / 0.99990) |
+| `genplot.py` | PASS |
+| `genplot_3D.py` | PASS after one scratch-copy fix of an upstream harness bug: line 2 `from fused_ssim3d import fused_ssim3d` names a module that has never existed; changed to `from fused_ssim import fused_ssim3d` in the copy only |
+`train_image*.py` and `genplot.py` first failed only at the final image save: the device name "AMD Instinct MI250X / MI250" contains a slash, so the save path names a missing directory. Creating that directory in the scratch copy let them finish. Upstream harness artifacts, not port faults; nothing changed in the fork for them.
+
+Margin probe, fused loss vs `l1 + fused_ssim` (`torch.isclose` defaults, as the test uses), same padding and valid, plus two-run bitwise determinism:
+- random 3x1080x1920, random B2 C3 545x979, near-copy (gt + 1e-3 noise), piecewise-flat (rounded) images: loss |d| <= 1.2e-7, gradient max |d| <= 5e-12, deterministic, finite.
+- **near-constant images (0.7 + 1e-4 noise, 256x256): disagree beyond the test's tolerance.** Loss 9.426e-5 (fused) vs 9.964e-5 (l1 + fused_ssim); gradient max |d| 5.2e-7 of 5.3e-6.
+
+Finding (investigated, not loosened, kernels not changed): the cause is upstream 0f89827 ("Fix numerical stability in SSIM calculation", in fused-ssim `main` after Kem Chen's base). It clamps `sigma^2 >= 0` and `SSIM` to `[-1, 1]` in `fusedssimCUDA`. Kem's `fusedl1ssim_lossCUDA` duplicates the older SSIM arithmetic without the clamps. In near-constant windows float32 `E[x^2] - mu^2` cancels catastrophically (76,082 of 196,608 float32 pixels have SSIM > 1 before the clamp, max 1.0005). A pure-PyTorch reference gives float64 exact 9.4389e-5 (the same with or without clamps), float32 unclamped 9.379e-5, and float32 clamped 1.129e-4. So the fused kernel (9.426e-5) is the closer of the two to the exact value, the clamp biases fused_ssim there, and the split is pure float32 arithmetic, the same on CUDA. It is not a HIP fault. Random and natural images do not reach it (the truck runs below match the earlier pin). **For jeff:** whether the fused loss should adopt 0f89827's clamps (a commit of ours on fused-ssim `moat-port`, which would make it agree with `fused_ssim` but move it away from the exact value in such windows) is a ruling, not done here.
+
+## Porter round 2026-11-19 (3) (linux-gfx90a): submodule repointed to AMD-Ecosystem/fused-ssim
+
+Fork commit on `moat-port`, pushed e24abb2..**1664e6d** (one new commit, nothing rewritten): "[ROCm] Move the fused_ssim submodule to a branch on current fused-ssim". `.gitmodules` url `https://github.com/kemchenj/fused-ssim.git` -> `https://github.com/AMD-Ecosystem/fused-ssim`, `branch = fused-l1-ssim-loss` -> `branch = moat-port`; gitlink 409da0b -> d3213b4. Nothing else (`git show --stat`: 2 files, 3+/3-).
+
+jargon: `python3 utils/jargon.py --port LiteGS` exits 1 with 2 hits, both the `.gitmodules` line `branch = moat-port` (the term "moat-port"/"moat"). That line names the actual branch, as jeffdaily's instruction for this round required ("keep whatever `branch =` convention the file uses, naming `moat-port`"). The commit message itself is clean. Clearing it would need either dropping the `branch =` line or a fused-ssim branch under a plain name (for example `rocm` or `fused-l1-ssim-loss`) and a new `.gitmodules` commit; that choice is jeff's. All older-commit hits are gone (the e24abb2 squash).
+
+Environment this round: the job venv (`$FLEET_VENV`) is isolated from the image torch, so a `.pth` in it adds the image site-packages (read-only); deps installed into the job venv: `plyfile<1.1 opencv-python-headless<4.11 torchmetrics numpy==1.26.4 tqdm pytorch_msssim tifffile matplotlib`. Scene `tandt_db.zip` sha256 `816e62f2...26d7e1` verified, `tandt/truck` (251 images).
+
+Build (from `/tmp`, fresh clone of the fork at the new commit, `git submodule sync && git submodule update --init --recursive` fetched d3213b4 from the new URL), `PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32`, `python -m pip install -v --no-build-isolation --no-deps <src>/litegs/submodules/{simple-knn,fused_ssim,gaussian_raster}`: all three built (only the known `nodiscard hipError_t` warnings). `import torch, simple_knn._C, fused_ssim, litegs_fused` OK; `fused_ssim` exposes `fused_ssim`, `fused_ssim3d`, `fused_l1_ssim_loss`.
+
+Real trainer (`example_train.py` unchanged, through `train_probe.py`; same commands as the 38aa67c validation):
+| run | iterations | first iter loss / PSNR | last iter loss / PSNR | first-50 -> last-50 mean loss / PSNR | finite | wall |
+|---|---|---|---|---|---|---|
+| truck 1 | 2761 | 0.28567 / 11.18 dB | 0.08003 / 22.19 dB | 0.22978 / 13.65 -> 0.07711 / 22.84 | yes | 36.8 s |
+| truck 2 | 2761 | 0.26825 / 12.44 dB | 0.07387 / 23.50 dB | 0.22118 / 14.20 -> 0.07709 / 22.78 | yes | 36.0 s |
+| truck 3 | 2761 | 0.27948 / 11.87 dB | 0.07561 / 23.45 dB | 0.22401 / 13.93 -> 0.07609 / 22.91 | yes | 37.1 s |
+| truck --eval | 2847 | 0.25989 / 11.94 dB | 0.09337 / 19.20 dB | 0.22319 / 14.04 -> 0.09933 / 20.80 | yes | 47.3 s |
+
+`example_metrics.py --eval` (LPIPS stubbed): Trainingset SSIM 0.7575 / PSNR 22.21 dB; **Testset SSIM 0.7520 / PSNR 21.83 dB**.
+
+Compared with 38aa67c (gfx90a, kemchenj 409da0b): plain runs last-50 loss 0.0761-0.0771 vs 0.0760-0.0786, last-50 PSNR 22.78-22.91 vs 22.62-22.94 dB; testset 0.7520 / 21.83 vs 0.7501 / 21.77 (trainset 0.7575 / 22.21 vs 0.7547 / 22.14). All within run-to-run spread. The --eval run's last-50 training-view window (0.0993 / 20.80) is below 38aa67c's single --eval run (0.0920 / 21.38). That window covers 50 random training views of one run, and the held-out metrics, which measure the model, are slightly better, so I read it as spread. No 0x1016, `hipError` or `HSA_STATUS` in any run log.
+
+Integrity: `git status --porcelain` empty in the fork clone and the submodule at 1664e6d.
+
+## For the Windows validation (next, on a Windows host)
+
+- Fork head 1664e6d; submodule `litegs/submodules/fused_ssim` = AMD-Ecosystem/fused-ssim **d3213b4** (`moat-port`). Run `git submodule sync && git submodule update --init --recursive` in an existing clone, since the URL changed.
+- fused_ssim's Windows path: `setup.py` copies `ext.cpp` to `ext_winhip.cu` when `os.name == 'nt' and torch.version.hip` (767e3f6), so hipcc builds the pybind module and `-DFUSED_SSIM_CUDA` arrives as `-DFUSED_SSIM_HIP`. `ext.cpp` registers under `#if defined(FUSED_SSIM_CUDA) || defined(FUSED_SSIM_HIP)`: `fusedssim3d`, `fusedssim_backward3d`, `fusedl1ssim_loss`, `fusedl1ssim_loss_backward`; `fusedssim` / `fusedssim_backward` are unconditional. No new build flag: the HIP flags are unchanged (`-O3 -DFUSED_SSIM_CUDA -ffast-math`). Check `from fused_ssim_cuda import fusedl1ssim_loss, fusedl1ssim_loss_backward, fusedssim3d` after the build, because `fused_ssim/__init__.py` imports all six at module load and LiteGS's trainer calls `fused_l1_ssim_loss` every step.
+- The Windows fused-ssim build with the cherry-pick has not been run anywhere; this round reasoned it from the code only. LiteGS's own two setup.py Windows shims (in e24abb2) are unchanged.
+- README.MD:89 still scopes the AMD build note to Linux ("On Linux with AMD GPUs"). If Windows passes, widening it is a separate commit.
+- Neither Windows record may be carried forward; both need a fresh run with the real trainer, as on Linux.
