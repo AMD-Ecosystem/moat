@@ -231,15 +231,27 @@
       "id": "nvidia-notice-cd-class-tidy",
       "kind": "other",
       "component": null,
-      "summary": "POLICY (2026-08-24): the C/D-class NVIDIA-notice items (dead-in-tree or text-only: EnvGS orphan script scripts/instant-ngp/colmap_to_nerf.py, OCTproZ about-dialog EULA copy shown even in AMD builds, LichtFeld-Studio nvImageCodec cmake pair, MASt3R-SLAM checkpoints notice, alien/plvs/cupoch vendored CUDA-path helpers, h2o4gpu dead vendored set) are not an immediate issue but should be tidied over time so it is clear AMD is not using them -- BSD swaps or bypass where possible, never deleting licence/notice files. LOW PRIORITY behind the A-class swaps (Velvet, TurboFNO) and pre-fork swaps (h2o4gpu, cuda_voxelizer, PhoenixOS header drop).",
+      "summary": "POLICY (2026-08-24): the C/D-class NVIDIA-notice items (dead-in-tree or text-only) are not an immediate issue but should be tidied over time so it is clear AMD is not using them -- BSD swaps or bypass where possible, never deleting licence/notice files. LOW PRIORITY behind the A-class swaps (Velvet, TurboFNO) and pre-fork swaps (cuda_voxelizer, PhoenixOS header drop). Items as of 2026-11-18: EnvGS orphan script scripts/instant-ngp/colmap_to_nerf.py (review-passed, no upstream PR yet: the one item that can still ride along before publication); OCTproZ about-dialog EULA copy shown even in AMD builds, MASt3R-SLAM checkpoints notice, plvs vendored CUDA-path helpers (upstream PRs open, so a tidy is a fix round); alien and cupoch vendored CUDA-path helpers (upstream PRs merged, so a tidy is a follow-up PR); LichtFeld-Studio nvImageCodec cmake pair (project on hold). Done: h2o4gpu's dead vendored set (12 EULA-notice files deleted in the first port commit).",
       "refs": [
         "licensing review 2026-08-24"
       ],
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-24T19:49:43Z",
-      "decided": null,
-      "project": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-18T17:25:17Z"
+      },
+      "project": null,
+      "summary_history": [
+        {
+          "summary": "POLICY (2026-08-24): the C/D-class NVIDIA-notice items (dead-in-tree or text-only: EnvGS orphan script scripts/instant-ngp/colmap_to_nerf.py, OCTproZ about-dialog EULA copy shown even in AMD builds, LichtFeld-Studio nvImageCodec cmake pair, MASt3R-SLAM checkpoints notice, alien/plvs/cupoch vendored CUDA-path helpers, h2o4gpu dead vendored set) are not an immediate issue but should be tidied over time so it is clear AMD is not using them -- BSD swaps or bypass where possible, never deleting licence/notice files. LOW PRIORITY behind the A-class swaps (Velvet, TurboFNO) and pre-fork swaps (h2o4gpu, cuda_voxelizer, PhoenixOS header drop).",
+          "by": "jeffdaily",
+          "at": "2026-11-18T17:25:17Z",
+          "reason": "h2o4gpu's vendored set was since deleted, and most named ports are now behind an open or merged upstream PR"
+        }
+      ]
     },
     {
       "id": "upstream-followup-pr-flow",
@@ -263,7 +275,7 @@
       "id": "mitsuba3-drjit-amd-backend",
       "kind": "feature-port",
       "component": null,
-      "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): mitsuba-renderer/mitsuba3 GPU variants need a Dr.Jit AMD GPU backend, which does not exist (drjit-core has CUDA and LLVM backends only). Revisit when a Dr.Jit HIP backend lands upstream.",
+      "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): mitsuba-renderer/mitsuba3 GPU variants need a Dr.Jit AMD GPU backend, which does not exist (drjit-core has CUDA and LLVM backends only). The two pull requests that proposed one, drjit-core 203 and drjit 520, both closed unmerged (2026-06 and 2026-07), so nothing is in flight upstream as of 2026-11-18. Revisit when a Dr.Jit HIP backend lands upstream.",
       "refs": [
         "https://github.com/mitsuba-renderer/mitsuba3",
         "https://github.com/mitsuba-renderer/drjit-core/pull/203",
@@ -272,8 +284,20 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-12T16:46:37Z",
-      "decided": null,
-      "project": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-18T17:16:31Z"
+      },
+      "project": null,
+      "summary_history": [
+        {
+          "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): mitsuba-renderer/mitsuba3 GPU variants need a Dr.Jit AMD GPU backend, which does not exist (drjit-core has CUDA and LLVM backends only). Revisit when a Dr.Jit HIP backend lands upstream.",
+          "by": "jeffdaily",
+          "at": "2026-11-18T17:16:31Z",
+          "reason": "both cited Dr.Jit AMD backend PRs closed unmerged; the summary read as if upstream work was pending"
+        }
+      ]
     },
     {
       "id": "nemo-curator-rocm-ds",
@@ -286,7 +310,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-12T16:52:33Z",
-      "decided": null,
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-18T17:21:01Z"
+      },
       "project": null
     },
     {
@@ -301,7 +329,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-12T16:59:21Z",
-      "decided": null,
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-18T17:22:18Z"
+      },
       "project": null
     },
     {
@@ -356,6 +388,34 @@
       "status": "done",
       "upstream_issue": null,
       "created_at": "2026-08-19T06:32:33Z",
+      "decided": null,
+      "project": null
+    },
+    {
+      "id": "codeobj-diff-windows-pe-support",
+      "kind": "other",
+      "component": "moat-tooling",
+      "summary": "utils/codeobj_diff.py compares ELF binaries only, so on a Windows host it answers indeterminate and a binary-equiv carry-forward is never available there: every non-inert change to a port costs the only Windows host a full revalidation, even when the change is Linux-only. Add PE/COFF support: extract the device code objects (the HIP fat-binary section) and the export table from .dll/.exe/.pyd and compare them as for ELF. Validate against real Windows builds of a few ports with a known-identical pair and a known-different pair before its verdicts are trusted; a wrong identical is worse than indeterminate. Own piece of work with its own review, not part of the 2026-11 health-fix branch (jeff, 2026-11-18).",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T20:57:46Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-18T20:57:47Z"
+      },
+      "project": null
+    },
+    {
+      "id": "hip-link-win-msys-path-and-response-file",
+      "kind": "other",
+      "component": "cuda-to-rocm-skill",
+      "summary": "The skill asset .claude/skills/cuda-to-rocm/assets/hip_link_win.py (the Windows CMake HIP link wrapper that ports vendor as cmake/hip_link_win.py) has two open questions that need one real Windows CMake HIP link to settle, on a port that uses it (alien is its origin). (1) Its bare-flag test wraps any dot-free argument starting with / as -Wl,<arg>, so an MSYS-style path such as /d/build/foo would be wrapped; a fix was written during the 2026-11 skill restructure (also require no further slash in the flag name) and deliberately left out because it was tested only by calling transform() directly. (2) The skill's Windows reference says the wrapper exists because the linker response file loses its backslashes, but the script never reads or rewrites response files; that mismatch is marked Unresolved in references/windows.md. Settle both on a real link, then fix the asset and the prose together and re-copy into the forks that vendor it.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T22:00:18Z",
       "decided": null,
       "project": null
     }

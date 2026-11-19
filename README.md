@@ -329,7 +329,7 @@ The project name links upstream.
 | [tiny-vllm](https://github.com/jmaczan/tiny-vllm) ([fork](https://github.com/AMD-Ecosystem/tiny-vllm/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#2](https://github.com/jmaczan/tiny-vllm/pull/2) |
 | [torch-linear-assignment](https://github.com/ivan-chai/torch-linear-assignment) ([fork](https://github.com/AMD-Ecosystem/torch-linear-assignment/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#31](https://github.com/ivan-chai/torch-linear-assignment/pull/31) |
 | [torchcodec](https://github.com/meta-pytorch/torchcodec) | ⬜ | ⬜ | ⬜ | ⚪ duplicate |
-| [TornadoVM](https://github.com/beehive-lab/TornadoVM) ([fork](https://github.com/AMD-Ecosystem/TornadoVM/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#1327](https://github.com/beehive-lab/TornadoVM/pull/1327) |
+| [TornadoVM](https://github.com/beehive-lab/TornadoVM) ([fork](https://github.com/AMD-Ecosystem/TornadoVM/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#1327](https://github.com/beehive-lab/TornadoVM/pull/1327) |
 | [TRELLIS.2](https://github.com/microsoft/TRELLIS.2) ([fork](https://github.com/AMD-Ecosystem/TRELLIS.2/tree/moat-port)) | ⬜ | 🔧 | ⬜ | — |
 | [tsne-cuda](https://github.com/CannyLab/tsne-cuda) ([fork](https://github.com/AMD-Ecosystem/tsne-cuda/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#145](https://github.com/CannyLab/tsne-cuda/pull/145) |
 | [TTT3R](https://github.com/Inception3D/TTT3R) ([fork](https://github.com/AMD-Ecosystem/TTT3R/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#31](https://github.com/Inception3D/TTT3R/pull/31) |
@@ -339,6 +339,7 @@ The project name links upstream.
 | [visionaray](https://github.com/szellmann/visionaray) ([fork](https://github.com/AMD-Ecosystem/visionaray/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#51](https://github.com/szellmann/visionaray/pull/51) |
 | [Wan2.2](https://github.com/Wan-Video/Wan2.2) ([fork](https://github.com/AMD-Ecosystem/Wan2.2/tree/moat-port)) | ⬜ | 🔧 | 🎫 | — |
 | [warp](https://github.com/NVIDIA/warp) | ⬜ | ⬜ | ⬜ | — |
+| [warp-1.14](https://github.com/NVIDIA/warp) ([fork](https://github.com/AMD-Ecosystem/warp/tree/release/1.14.0.amd0)) | 🔧 | 🔧 | 🔧 | — fork release line; no upstream pull request |
 | [wenet](https://github.com/wenet-e2e/wenet) ([fork](https://github.com/AMD-Ecosystem/wenet/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
 | [world_engine](https://github.com/Overworldai/world_engine) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- gap-matrix intake follow-up 2026-11-12: GPL-3 |
 | [yalm](https://github.com/andrewkchan/yalm) ([fork](https://github.com/AMD-Ecosystem/yalm/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#12](https://github.com/andrewkchan/yalm/pull/12) |
