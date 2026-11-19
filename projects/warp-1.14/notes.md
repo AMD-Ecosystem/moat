@@ -194,3 +194,323 @@ This job is pinned to `HIP_VISIBLE_DEVICES=0` (kept, per fleet rules). Plan Phas
 3. Wave32: the Phase 1-3 sets and tile/* on a gfx1100/gfx1201 host (separate session).
 4. Multi-GPU Phase 3 leftovers on a session with two or more GPUs.
 5. Open for Jeff: unsafe atomics (Phase 1 notes), filing the three registered ROCm defects (rocPRIM sort, HIP occupancy, hipMallocAsync null-stream crash).
+
+## Porting session 4 (2026-11-19, linux-gfx950 MI355X, porter): Phase 4 steps 1-2 on gfx950
+
+Fork head unchanged at `8d13d596` (`release/1.14.0.amd0`): the whole tile set passed without a source change, so there is no new commit, no `advance-head` and no new nvcc run (the CUDA no-regression check at `8d13d596` from session 3 still applies). Stage stays `porting`, lock held by this host.
+
+### Step 1: wave64 tile test set on gfx950 (all pass, no fork change)
+Command per file (job venv, `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, warp.so from `build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx950`):
+```
+cd projects/warp-1.14/src
+for f in $(cd warp/tests/tile && ls test_tile*.py) test_block_dim_dispatch.py test_template_launch_bounds.py; do
+  python -m warp.tests -s autodetect -p "$f" -m 32
+done
+```
+`-p` is a file-name pattern that `unittest` discovery applies in every subdirectory, so `test_tile_sort.py` finds `warp/tests/tile/test_tile_sort.py` (a directory-style pattern such as `tile/*` matches nothing).
+
+| file | ran | result | file | ran | result |
+|---|---|---|---|---|---|
+| test_tile | 126 | OK | test_tile_matmul_no_mathdx | 22 | OK |
+| test_tile_atomic_bitwise | 3 | OK | test_tile_mlp | 3 | OK, 1 skipped (a) |
+| test_tile_cholesky | 33 | OK | test_tile_reduce | 62 | OK |
+| test_tile_cholesky_no_mathdx | 16 | OK | test_tile_shared_memory | 30 | OK |
+| test_tile_empty | 20 | OK | test_tile_solve | 5 | OK, 1 skipped (b) |
+| test_tile_fft | 20 | OK, 8 skipped (c) | test_tile_solve_no_mathdx | 28 | OK |
+| test_tile_fft_no_mathdx | 16 | OK | test_tile_sort | 2 | OK |
+| test_tile_func_arg | 27 | OK | test_tile_stack | 40 | OK |
+| test_tile_fused_ops | 36 | OK | test_tile_view | 16 | OK |
+| test_tile_large_offsets | 1 | OK | test_block_dim_dispatch | 2 | OK |
+| test_tile_load | 64 | OK | test_template_launch_bounds | 36 | OK |
+| test_tile_mathdx | 6 | OK (scalar paths) | | | |
+| test_tile_matmul | 22 | OK | | | |
+
+Skips are upstream's own no-libmathdx rules, not port skips: (a) "Skipping test on CUDA device without MathDx (tolerance)" (test_multi_layer_nn); (b) "MathDx is not enabled" (singular-matrix solve); (c) "Warp was not built with MathDx support" for the 2D/3D `tile_fft`/`tile_ifft` vec2f/vec2d cases (the Q1 gap). Total 636 run, 10 skipped, 0 failures.
+
+Coverage the plan asked for, checked rather than assumed: `git diff origin/release-1.14 -- warp/tests/tile warp/tests/test_block_dim_dispatch.py warp/tests/test_template_launch_bounds.py` is empty, so every file runs at upstream's sizes. test_tile_sort sweeps `block_dim` 2^5..2^9 against lengths 2^i+1 up to 2049 (int32/int64/uint64/float32), so the 32-thread case the earlier AMD tree skipped runs and passes. block_dim < 64 (fewer threads than one gfx950 wavefront) is exercised widely: 59 `block_dim=32` launches across tile/*, plus `block_dim=1` cases; all pass on the Phase 2 wave64 collectives (`632a2edf`).
+
+### Step 2: Q3 `tile_matmul` benchmark, gfx950 (raw numbers for Jeff; no decision taken)
+- What it times: the cooperative scalar GEMM (`partitioned_gemm::scalar_matmul`, `tile_matmul.h:164`), the only GPU GEMM path in the HIP build. Square MxM tiles, M in {16, 32, 64}; fp16, fp32, fp64; `block_dim` in {32, 64, 128, 256} (the matmul tests use 32 and 64; other tile tests 128); 16384 blocks (64 per CU on the 256-CU MI355X). "fwd": 32 accumulating `tile_matmul(a, b, c)` per block after one load, so loads and stores are amortized; GFLOP/s = 2*M^3*32*blocks/time. "adj": one `C = A @ B` per block, timed `tape.backward()` (plus the three `fill_`/`zero_` memsets that seed `C.grad` and clear `A.grad`/`B.grad`); GFLOP/s counts the two adjoint GEMMs only (the backward kernel also replays the forward GEMM, and `adj_tile_load` adds into the gradient arrays with `atomic_add`, `tile.h:3033`). Each row checks block 0 against NumPy (forward) and adj_A against `ones @ B0^T` (backward).
+- Command, three runs: `python bench_tile_matmul.py --blocks 16384 --iters 50 --csv gfx950_run<n>.csv` (wrapped in `utils/timeit.sh warp-1.14 bench`), merged with `summarize.py`; both scripts are below. Run-to-run spread is 0-3%. An earlier pair of runs had a benchmark bug (the backward consumes `C.grad`, so replays after the first ran with a zero seed; all adj rows failed the check); those numbers were discarded and the script fixed before the three recorded runs.
+- fp64 64x64 adjoint cannot launch on gfx950: the backward kernel needs 196608 bytes of shared memory and the device allows 163840 per block ("Failed to configure kernel dynamic shared memory ... 196608 bytes, but maximum available is 163840"; Warp then reports `hipErrorInvalidValue` on launch, and the gradient check catches the untouched gradient). That is a hardware limit (A, B, C and their three adjoints at 32 KiB each), not a port defect; its adj columns below are meaningless. On an NVIDIA part with 227 KiB opt-in shared memory the same kernel would launch.
+- fp16 adjoint is 3-4x slower than fp32 at 16x16 and 32x32. A likely contributor is the gradient accumulation: fp16 `atomic_add` on HIP is the 32-bit CAS loop (Phase 1 notes, the unsafe-atomics question left for Jeff). Not measured further; recorded so the ruling can take it into account.
+- No NVIDIA GPU on this host (`nvidia-smi` absent, no `/dev/nvidia*`), so there are no libmathdx/no-libmathdx reference numbers.
+
+gfx950 (MI355X, HIP 7.17, ROCm 10.2.0 wheels), fork `8d13d596`, no libmathdx:
+
+| dtype | tile | block_dim | fwd ms (min-max) | fwd GFLOP/s (best) | adj ms (min-max) | adj GFLOP/s (best) | check |
+|---|---|---|---|---|---|---|---|
+| float16 | 16x16 | 32 | 0.316-0.316 | 13602 | 0.287-0.287 | 936 | ok |
+| float16 | 16x16 | 64 | 0.185-0.188 | 23241 | 0.334-0.335 | 803 | ok |
+| float16 | 16x16 | 128 | 0.153-0.155 | 27985 | 0.313-0.314 | 857 | ok |
+| float16 | 16x16 | 256 | 0.216-0.219 | 19877 | 0.308-0.308 | 872 | ok |
+| float16 | 32x32 | 32 | 1.352-1.356 | 25415 | 1.475-1.486 | 1456 | ok |
+| float16 | 32x32 | 64 | 0.645-0.648 | 53296 | 1.661-1.677 | 1293 | ok |
+| float16 | 32x32 | 128 | 0.699-0.705 | 49149 | 2.050-2.113 | 1047 | ok |
+| float16 | 32x32 | 256 | 0.890-0.899 | 38589 | 1.857-1.891 | 1157 | ok |
+| float16 | 64x64 | 32 | 12.068-12.125 | 22777 | 12.879-12.969 | 1334 | ok |
+| float16 | 64x64 | 64 | 6.462-6.480 | 42536 | 9.750-9.834 | 1762 | ok |
+| float16 | 64x64 | 128 | 5.120-5.200 | 53684 | 6.889-6.909 | 2494 | ok |
+| float16 | 64x64 | 256 | 4.644-4.649 | 59196 | 5.623-5.647 | 3056 | ok |
+| float32 | 16x16 | 32 | 0.416-0.418 | 10313 | 0.155-0.159 | 1730 | ok |
+| float32 | 16x16 | 64 | 0.344-0.345 | 12479 | 0.087-0.088 | 3072 | ok |
+| float32 | 16x16 | 128 | 0.218-0.220 | 19696 | 0.082-0.083 | 3260 | ok |
+| float32 | 16x16 | 256 | 0.270-0.272 | 15890 | 0.084-0.085 | 3182 | ok |
+| float32 | 32x32 | 32 | 2.173-2.177 | 15811 | 1.115-1.116 | 1927 | ok |
+| float32 | 32x32 | 64 | 1.401-1.405 | 24518 | 0.701-0.708 | 3064 | ok |
+| float32 | 32x32 | 128 | 1.264-1.270 | 27181 | 0.681-0.698 | 3153 | ok |
+| float32 | 32x32 | 256 | 1.470-1.474 | 23369 | 0.663-0.674 | 3237 | ok |
+| float32 | 64x64 | 32 | 14.575-14.672 | 18860 | 19.338-19.426 | 888 | ok |
+| float32 | 64x64 | 64 | 7.881-7.954 | 34877 | 9.341-9.483 | 1839 | ok |
+| float32 | 64x64 | 128 | 7.124-7.126 | 38585 | 5.404-5.414 | 3179 | ok |
+| float32 | 64x64 | 256 | 8.018-8.099 | 34281 | 3.404-3.472 | 5047 | ok |
+| float64 | 16x16 | 32 | 0.523-0.524 | 8215 | 0.198-0.199 | 1353 | ok |
+| float64 | 16x16 | 64 | 0.402-0.403 | 10696 | 0.120-0.121 | 2228 | ok |
+| float64 | 16x16 | 128 | 0.386-0.391 | 11139 | 0.190-0.191 | 1409 | ok |
+| float64 | 16x16 | 256 | 0.471-0.476 | 9119 | 0.190-0.191 | 1410 | ok |
+| float64 | 32x32 | 32 | 3.110-3.114 | 11048 | 2.230-2.232 | 963 | ok |
+| float64 | 32x32 | 64 | 2.247-2.257 | 15290 | 1.376-1.382 | 1561 | ok |
+| float64 | 32x32 | 128 | 2.009-2.011 | 17106 | 1.089-1.106 | 1971 | ok |
+| float64 | 32x32 | 256 | 2.821-2.827 | 12180 | 1.046-1.055 | 2053 | ok |
+| float64 | 64x64 | 32 | 76.567-76.793 | 3590 | (no launch) | - | ADJ-FAILED (smem) |
+| float64 | 64x64 | 64 | 40.331-40.375 | 6816 | (no launch) | - | ADJ-FAILED (smem) |
+| float64 | 64x64 | 128 | 22.716-22.785 | 12100 | (no launch) | - | ADJ-FAILED (smem) |
+| float64 | 64x64 | 256 | 20.865-20.954 | 13174 | (no launch) | - | ADJ-FAILED (smem) |
+
+The Q3 ruling's hardware context, checked on this host with the ROCm 10.2 compiler (`<rocm>/lib/llvm/bin/clang -x hip --cuda-device-only -nogpulib -c`, probes in `agent_space/bench/mma/`), not assumed:
+- MFMA: `__builtin_amdgcn_mfma_f32_16x16x4f32`, `mfma_f64_16x16x4f64`, `mfma_f32_16x16x16f16`, `mfma_f32_16x16x16bf16_1k` all compile for gfx90a, gfx942 and gfx950. So the Instinct matrix cores take fp16, bf16, fp32 and fp64 inputs, on 16x16 fragments per wavefront (32x32 and 4x4 variants also exist).
+- WMMA: gfx1100 (`wmma_f32_16x16x16_f16_w32`) and gfx1201 (`..._w32_gfx12`) compile; the compiler's WMMA set on those targets is f16, bf16, int8/int4, plus fp8/bf8 on gfx12, and no fp32 or fp64 input form. The fp32-input `__builtin_amdgcn_wmma_f32_16x16x4_f32` is refused for gfx1100 and gfx1201 ("needs target feature gfx1250-insts,wavefrontsize32") and compiles for gfx1250. So "WMMA takes fp16/bf16/int8 only" holds for RDNA3/RDNA4, but not for gfx1250. Fragments are 16x16 on every target.
+- cuBLASDx is **not** a SIMT-only GEMM, contrary to the ruling's working assumption: NVIDIA's documentation (https://docs.nvidia.com/cuda/cublasdx/index.html) lists "Static database dispatching to appropriate FMA / MMA instruction configuration", "LDSM / STSM MMA loading instructions", and from 0.5.0 "WGMMA / 1SM UTCMMA" instructions. That is, it selects tensor-core MMA where its database says so (the page does not list which precisions). So a CUDA build with libmathdx can run `tile_matmul` on tensor cores, where this HIP build always uses the scalar path.
+
+`bench_tile_matmul.py` (as run; copy into a file to reproduce):
+```python
+# tile_matmul throughput: square MxM tiles, one tile GEMM chain per block.
+# Usage: python bench_tile_matmul.py [--device cuda:0] [--mathdx on|off] [--csv out.csv]
+# fwd:  REPS accumulating tile_matmul calls per block (C += A @ B), loads/stores amortized.
+# adj:  one C = A @ B per block, timed tape.backward (adj_A = adj_C B^T, adj_B = A^T adj_C);
+#       adj_gflops counts those 2 GEMMs (the backward kernel also replays the forward GEMM).
+import argparse
+import csv
+import sys
+
+import numpy as np
+
+import warp as wp
+
+p = argparse.ArgumentParser()
+p.add_argument("--device", default="cuda:0")
+p.add_argument("--mathdx", choices=["on", "off"], default="off")
+p.add_argument("--csv", default=None)
+p.add_argument("--blocks", type=int, default=4096)
+p.add_argument("--reps", type=int, default=32)
+p.add_argument("--iters", type=int, default=20)
+args = p.parse_args()
+
+wp.init()
+wp.config.enable_mathdx_gemm = args.mathdx == "on"
+dev = wp.get_device(args.device)
+
+SIZES = (16, 32, 64)
+DTYPES = (wp.float16, wp.float32, wp.float64)
+BLOCK_DIMS = (32, 64, 128, 256)
+REPS = args.reps
+
+
+def make_kernels(M, dtype):
+    @wp.kernel(enable_backward=False, module="unique")
+    def fwd(A: wp.array3d(dtype=dtype), B: wp.array3d(dtype=dtype), C: wp.array3d(dtype=dtype)):
+        i = wp.tid()
+        a = wp.tile_load(A[i], shape=(M, M))
+        b = wp.tile_load(B[i], shape=(M, M))
+        c = wp.tile_zeros(shape=(M, M), dtype=dtype)
+        for _r in range(REPS):
+            wp.tile_matmul(a, b, c)
+        wp.tile_store(C[i], c)
+
+    @wp.kernel(module="unique")
+    def one(A: wp.array3d(dtype=dtype), B: wp.array3d(dtype=dtype), C: wp.array3d(dtype=dtype)):
+        i = wp.tid()
+        a = wp.tile_load(A[i], shape=(M, M))
+        b = wp.tile_load(B[i], shape=(M, M))
+        c = wp.tile_matmul(a, b)
+        wp.tile_store(C[i], c)
+
+    return fwd, one
+
+
+def timed(fn, iters):
+    fn()  # warm-up, includes module load
+    wp.synchronize_device(dev)
+    with wp.ScopedDevice(dev):
+        s = wp.Event(enable_timing=True)
+        e = wp.Event(enable_timing=True)
+        wp.record_event(s)
+        for _ in range(iters):
+            fn()
+        wp.record_event(e)
+        wp.synchronize_device(dev)
+    return wp.get_event_elapsed_time(s, e) / iters  # ms
+
+
+rows = []
+rng = np.random.default_rng(0)
+print(f"device={dev.name} arch={dev.arch} mathdx={args.mathdx} blocks={args.blocks} reps={REPS}", flush=True)
+print("dtype,M,block_dim,fwd_ms,fwd_gflops,adj_ms,adj_gflops,check", flush=True)
+for dtype in DTYPES:
+    for M in SIZES:
+        fwd, one = make_kernels(M, dtype)
+        npt = wp.dtype_to_numpy(dtype)
+        A = wp.array(rng.uniform(-1, 1, (args.blocks, M, M)).astype(npt), dtype=dtype, device=dev, requires_grad=True)
+        B = wp.array(rng.uniform(-1, 1, (args.blocks, M, M)).astype(npt), dtype=dtype, device=dev, requires_grad=True)
+        C = wp.zeros((args.blocks, M, M), dtype=dtype, device=dev, requires_grad=True)
+        for bd in BLOCK_DIMS:
+            def run_fwd():
+                wp.launch_tiled(fwd, dim=[args.blocks], inputs=[A, B, C], block_dim=bd, device=dev)
+
+            fwd_ms = timed(run_fwd, args.iters)
+            # correctness on block 0: C = REPS * A0 @ B0
+            ref = REPS * (A.numpy()[0].astype(np.float64) @ B.numpy()[0].astype(np.float64))
+            got = C.numpy()[0].astype(np.float64)
+            tol = {wp.float16: 5e-2, wp.float32: 1e-4, wp.float64: 1e-10}[dtype]
+            ok = np.allclose(got, ref, rtol=tol, atol=tol * REPS * M)
+
+            tape = wp.Tape()
+            with tape:
+                wp.launch_tiled(one, dim=[args.blocks], inputs=[A, B, C], block_dim=bd, device=dev)
+            def run_adj():
+                # the backward pass consumes (zeroes) adj_C, so seed it on every replay
+                C.grad.fill_(1.0)
+                A.grad.zero_()
+                B.grad.zero_()
+                tape.backward()
+
+            adj_ms = timed(run_adj, args.iters)
+            # adj_A[0] = adj_C @ B0^T with adj_C = ones; a failed launch leaves it zero
+            gref = np.ones((M, M)) @ B.numpy()[0].astype(np.float64).T
+            gok = np.allclose(A.grad.numpy()[0].astype(np.float64), gref, rtol=tol, atol=tol * M)
+            fl = 2.0 * M * M * M * args.blocks
+            check = "ok" if ok and gok else ("MISMATCH" if not ok else "ADJ-FAILED")
+            r = (dtype.__name__, M, bd, fwd_ms, fl * REPS / fwd_ms / 1e6, adj_ms, 2 * fl / adj_ms / 1e6, check)
+            rows.append(r)
+            print("%s,%d,%d,%.4f,%.1f,%.4f,%.1f,%s" % r, flush=True)
+
+if args.csv:
+    with open(args.csv, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["dtype", "M", "block_dim", "fwd_ms", "fwd_gflops", "adj_ms", "adj_gflops", "check"])
+        w.writerows(rows)
+sys.exit(0 if all(r[-1] == "ok" for r in rows) else 1)
+```
+The script exits 1 whenever any row is not `ok`, so on gfx950 it always exits 1 because of the four fp64 64x64 rows; read the CSV, not the exit code.
+
+`summarize.py`:
+```python
+# Merge bench_tile_matmul.py CSVs from repeated runs into a Markdown table (min and max per row).
+# Usage: python summarize.py run1.csv run2.csv ...
+import csv
+import sys
+from collections import defaultdict
+
+rows = defaultdict(list)
+order = []
+for path in sys.argv[1:]:
+    with open(path) as f:
+        for r in csv.DictReader(f):
+            key = (r["dtype"], int(r["M"]), int(r["block_dim"]))
+            if key not in rows:
+                order.append(key)
+            rows[key].append(r)
+
+print("| dtype | tile | block_dim | fwd ms (min-max) | fwd GFLOP/s (best) | adj ms (min-max) | adj GFLOP/s (best) | check |")
+print("|---|---|---|---|---|---|---|---|")
+for key in order:
+    rs = rows[key]
+    fwd = [float(r["fwd_ms"]) for r in rs]
+    adj = [float(r["adj_ms"]) for r in rs]
+    fg = max(float(r["fwd_gflops"]) for r in rs)
+    ag = max(float(r["adj_gflops"]) for r in rs)
+    checks = sorted({r["check"] for r in rs})
+    print(
+        f"| {key[0]} | {key[1]}x{key[1]} | {key[2]} | {min(fwd):.3f}-{max(fwd):.3f} | {fg:.0f} "
+        f"| {min(adj):.3f}-{max(adj):.3f} | {ag:.0f} | {'/'.join(checks)} |"
+    )
+```
+
+### Next step (handoff: what each remaining host runs, from these notes alone)
+The project stays in `porting` with the work lock held by linux-gfx950. The remaining Phase 4 work runs on other hardware, and the plan treats it as porting, not validation. So a session on another host needs the lock moved to it first. That is a person's decision (AGENTS.md: takeover is never automatic), or this host releases it when Jeff says so. Nothing below needs a source change unless a test fails; if one does, that host fixes it on `release/1.14.0.amd0`, compiles the CUDA path with nvcc on the mi355 host, and records `advance-head`.
+
+**Common setup on every host** (Linux, TheRock ROCm 10.2 wheels, a job-private venv with Python 3.11; replace `<gfx>` with the host's target, e.g. gfx942, gfx1100 or gfx1201):
+```
+cd <moat clone> && git checkout port/warp-1.14 && git pull --ff-only && bash utils/orient.sh
+git clone https://github.com/AMD-Ecosystem/warp projects/warp-1.14/src   # skip if present (fork_url in status.json)
+python3 utils/moatlib.py protect-fork warp-1.14
+cd projects/warp-1.14/src
+git fetch origin && git checkout release/1.14.0.amd0 && git pull --ff-only
+git rev-parse HEAD                            # expect 8d13d596e6787841adccfc47d75406ef6bcf460a (or a later recorded head_sha)
+git lfs install --local --skip-repo && git lfs pull
+python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple \
+    "rocm[devel,device-<gfx>]==10.2.0" "torch[device-<gfx>]==2.15.0+rocm10.2.0" numpy usd-core
+rocm-sdk init
+python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch <gfx> -j "$MAX_JOBS"
+ulimit -c 0
+python -c "import warp as wp; wp.init()"      # greeting must show HIP 7.17 and the <gfx> device
+```
+Without the `device-<gfx>` extra torch's own kernels fail with hipErrorInvalidKernelFile (session 3). For CPU-only runs hide GPUs with `HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99`, never `-1` (ROCm torch aborts on it). Copy `bench_tile_matmul.py` and `summarize.py` from the blocks above into a scratch directory. Every command below runs from `projects/warp-1.14/src` with one GPU pinned unless stated.
+
+The tile set, used by **A** and **B**:
+```
+for f in $(cd warp/tests/tile && ls test_tile*.py) test_block_dim_dispatch.py test_template_launch_bounds.py; do
+  python -m warp.tests -s autodetect -p "$f" -m 32
+done
+```
+Expected on gfx950: 636 run, 10 skipped (the three upstream no-libmathdx skips listed in step 1), 0 failures. Any other skip or a failure is a finding.
+
+The benchmark, used by **A** and **B**:
+```
+for n in 1 2 3; do python <scratch>/bench_tile_matmul.py --blocks 16384 --iters 50 --csv <host>_run$n.csv; done
+python <scratch>/summarize.py <host>_run1.csv <host>_run2.csv <host>_run3.csv
+```
+Record the table, the device name and CU count, and the run-to-run spread. Expect `ADJ-FAILED` only where the backward kernel's shared memory exceeds the device's per-block limit (the Warp UserWarning names the byte counts; 64 KiB-LDS parts will lose more rows than gfx950); anything else is a finding. No matrix-core decision on any host: the numbers go to Jeff.
+
+**A. gfx942 host (MI300X/MI325X), wave64 (plan's Phase 4 primary target):**
+1. Common setup with `<gfx>` = gfx942.
+2. The tile set above; record the per-file table as in step 1.
+3. The benchmark above (the Q3 numbers the plan asks for on gfx942).
+4. Optionally (useful for the Q2 ruling, not required by Phase 4): the Phase 1 atomic timings the notes deferred; skip unless Jeff asks.
+
+**B. wave32 Radeon host (gfx1100/gfx1101 or gfx1201), closes the wave32 gate:**
+1. Common setup with `<gfx>` = the host's target. Confirm `python -c "import warp as wp; wp.init(); print(wp.get_device('cuda:0').arch_name)"` names the gfx11/gfx12 part. `WP_TILE_WARP_SIZE` is chosen at compile time from the target (`tile_reduce.h:15`: 64 when `__GFX9__`, else 32), so wave32 needs no build switch; a gfx10+ part compiled in wave64 mode would break that assumption, which is why this run matters.
+2. The tile set above (the first time the tile collectives run at wavefront 32).
+3. The benchmark above (the Q3 wave32 numbers).
+4. The Phase 1-3 sets at wavefront 32, one `-p` pattern per line:
+```
+for p in test_codegen.py test_snippet.py test_arithmetic.py test_math.py test_fp16.py test_bf16.py test_atomic.py \
+    test_atomic_bitwise.py test_atomic_cas.py test_array.py test_copy.py test_launch.py test_fast_math.py test_grad.py \
+    test_kernel_cache.py test_module_hashing.py test_print.py 'test_mat*.py' 'test_vec*.py' 'test_quat*.py' \
+    'test_spatial*.py' test_rand.py test_noise.py test_clang_cuda.py \
+    test_runlength_encode.py test_array_reduce.py test_sparse.py test_linear_solvers.py test_coloring.py \
+    test_bvh.py test_grouped_bvh.py test_hash_grid.py test_marching_cubes.py 'test_mesh*.py' test_volume.py \
+    test_volume_write.py test_apic.py test_apic_mesh.py 'test_fem*.py' \
+    test_graph.py test_array_fill_capture.py test_capture_mode.py test_conditional_captures.py test_conditional.py \
+    test_async.py test_streams.py test_mempool.py test_pinned.py test_unified_memory.py test_occupancy.py \
+    test_allocator.py test_allocation_tracker.py test_dlpack.py test_torch.py test_map.py test_reload.py \
+    test_cuda_arch_suffix.py; do
+  python -m warp.tests -s autodetect -p "$p" -m 32
+done
+```
+   Compare with the gfx950 counts in the Phase 1, 2 and 3 result sections above (same files, same patterns); skips should differ only where a wave64-only path or a device property differs, and each difference needs a reason in the notes. Known wave32 differences to expect: hardware atomics differ per the Phase 1 ISA table (gfx1100 CAS for f32/f64 add; gfx1201 hardware f32 add), and `test_unified_memory`'s pageable-memory cases depend on the part.
+5. The CPU-only suite with GPUs hidden (`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32`): expect 2282 run with torch installed, 0 failures (session 3).
+
+**C. Two-GPU session on a wave64 host (gfx950 or gfx942), Phase 3 leftovers and plan risk 11:**
+1. Dispatch with two GPUs, e.g. `HIP_VISIBLE_DEVICES=0,1` (keep whatever pin the dispatcher sets; it must expose two devices of the same arch). Common setup with that `<gfx>`; confirm `wp.get_cuda_devices()` lists `cuda:0` and `cuda:1`.
+2. With two identical devices Warp's default test mode (`unique_or_2x`, `unittest_utils.py:28`) adds `cuda:1` to every device test, so the multi-GPU cases and the non-primary-ordinal captures run without editing tests:
+```
+for p in test_multigpu.py test_peer.py test_mempool.py test_streams.py test_graph.py test_ipc.py test_unified_memory.py \
+    test_allocator.py test_async.py test_sparse.py test_fem_integrate.py test_array.py test_copy.py; do
+  python -m warp.tests -s autodetect -p "$p" -m 32
+done
+```
+   Risk 11 (the earlier AMD tree restricted the in-capture mempool tests of `test_sparse.py` and `fem/test_fem_integrate.py` to ordinal 0, hiding a fault on non-primary devices): the `_cuda_1` variants of the capture tests in those two files must pass. A failure there is the fault the plan asks to reproduce; fix it or register it with `utils/deferred.py add rocm-bug-report --project warp-1.14`.
+3. Expected from gfx950 single-GPU runs: test_multigpu 5 registered (all skipped there), test_peer 2 skipped, test_mempool 2 skipped, test_streams 2 skipped, test_graph 3 skipped. With two GPUs the device-count skips should disappear; peer-access skips may remain if the two GPUs report no peer access (record `wp.is_peer_access_supported("cuda:0", "cuda:1")`).
+
+**Still open for Jeff (unchanged):** unsafe atomics (Phase 1 notes; the fp16 adjoint numbers above are relevant), the Q3 matrix-core ruling once A and B have run, filing the three registered ROCm defects (rocPRIM radix sort, HIP occupancy launch bounds, hipMallocAsync null stream during capture).
