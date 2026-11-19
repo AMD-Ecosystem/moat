@@ -7,10 +7,14 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:43:45Z",
-  "updated_at": "2026-11-18T15:30:00Z",
+  "updated_at": "2026-11-19T04:05:53Z",
   "head_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-19T04:05:53Z",
+    "holder": "9a77498377e2"
+  },
   "waivers": {
     "windows": {
       "reason": "Upstream ESPResSo has no native Windows build: its installation guide covers Windows only as \"Installing requirements on Windows via WSL\" (\"To run ESPResSo on Windows, use the Linux subsystem (WSL)\"), including for CUDA, so there is no Windows CUDA build for a HIP port to stand beside. Secondary obstacle: ESPResSo hard-requires MPI 3.0, which natively on Windows means MS-MPI; it is absent on every Windows host and its installer needs administrator rights. The HIP work is validated at head 8e228b5d on linux-gfx90a (wave64) and linux-gfx1100 (wave32).",
@@ -27,7 +31,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 1524644,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -137,6 +141,28 @@
       "started_at": null,
       "completed_at": null,
       "updated_at": "2026-08-20T18:57:24Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-19T04:05:53Z",
+      "completed_at": null,
+      "updated_at": "2026-11-19T04:05:53Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
