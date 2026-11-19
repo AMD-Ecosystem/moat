@@ -2492,7 +2492,7 @@ Progress is recorded here as it happens.
 
 ### topk_filtering: done, fork `016d24c`
 
-Environment for this round: MI300X (gfx942, wave64, 304 CUs), `HIP_VISIBLE_DEVICES=0`; PyTorch 2.16.0a0+git6c3af02 with the pip ROCm SDK 10.1.0 (`torch.version.hip` 7.16.26385, no `/opt/rocm`), Python 3.11.17 from the image venv exposed to the job venv through a `.pth` file, `transformers==4.37.2` and `tokenizers==0.15.2` installed in the job venv. Baseline at `c9828e2` on this GPU: the five in-scope suites 124 passed.
+Environment for this round: MI300X (gfx942, wave64; this device is a compute partition reporting 38 CUs -- "304 CUs" was first written here in error), `HIP_VISIBLE_DEVICES=0`; PyTorch 2.16.0a0+git6c3af02 with the pip ROCm SDK 10.1.0 (`torch.version.hip` 7.16.26385, no `/opt/rocm`), Python 3.11.17 from the image venv exposed to the job venv through a `.pth` file, `transformers==4.37.2` and `tokenizers==0.15.2` installed in the job venv. Baseline at `c9828e2` on this GPU: the five in-scope suites 124 passed.
 
 Under `USE_HIP`, `kernels/include/topk/decode_select_k.cuh` carries a one-block radix select of its own (RAFT stays the CUDA path, behind `#else`). It is RAFT kRadix8bits' algorithm: cub key twiddle inverted for "greater", 8 bits per pass, values beating the k-th go to `out[0 : k-needed]`, ties fill `out[k-needed : k]` from the back. RAFT orders both groups by `atomicAdd`, so its tie choice is unspecified; the HIP kernel takes both groups in input order (scan over contiguous per-thread slices), so the lowest-positioned ties win, which is one of the orders RAFT can produce. Block barriers and shared atomics only, so wave-size independent. The `buf` argument is unused on HIP.
 
@@ -2674,3 +2674,52 @@ The delta touches only the `USE_HIP` mask macro and two Markdown files, so the d
 - PR-preparation squash, including the 9be60fc/cbc3890 pair and the fenced Test Plan above.
 - jeff's ruling on deferral `quest-prefill-matrix-cores` (prefill 30-50x slower than SDPA; numbers re-measured and accurate last round).
 - Wave32 (gfx1100) and Windows (gfx1151) validation of the new prefill and top-k paths, which no RDNA GPU has run yet. That run should also record the RDNA LDS attribute the lesson asks for.
+
+## Validation 2026-11-19 (linux-gfx942, at `6e7d8db`)
+
+AMD Instinct MI300X, `gcnArchName` `gfx942:sramecc+:xnack-`, wave64, a compute partition reporting 38 CUs and 64 KB shared memory per CU; `HIP_VISIBLE_DEVICES=0` (pinned by the job). PyTorch 2.16.0a0+git6c3af02 (`torch.version.hip` 7.16.26385) on the pip ROCm SDK `rocm`/`rocm-sdk-core` 10.1.0 (no `/opt/rocm`), Python 3.11.17. Fork at `6e7d8db` == `origin/moat-port` == `head_sha`, tree clean. Review passed at this sha (pass 2).
+
+### Build
+
+Clean (build directory wiped), from `quest/ops`:
+
+```
+mkdir build && cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DPython_EXECUTABLE=$FLEET_VENV/bin/python \
+  -DCMAKE_PREFIX_PATH=$(python -c 'import torch;print(torch.utils.cmake_prefix_path)') ..
+ninja      # wrapped: utils/timeit.sh Quest compile
+ln -sf $PWD/_kernels*.so ../../
+```
+
+`CMAKE_BUILD_TYPE:STRING=Release` from the new default (none passed); all 8 compile lines carry `-O3` and `--offload-arch=gfx942` only. 18m51s wall, 0 errors, the two pre-existing nodiscard-`hipError_t` warnings.
+
+### GPU tests (transformers 4.37.2, tokenizers 0.15.2)
+
+```
+PYTHONPATH=<fork> python -m pytest quest/tests -p no:cacheprovider -q     # wrapped: timeit.sh Quest test
+```
+
+**202 passed, 28 skipped, 0 failed** (23.7 s). Per suite: test_rope 64 passed; test_estimate 9; test_decode_attention 6; test_approx_attention 42; test_decode_launch_shape 3; test_topk 49 passed, 15 skipped; test_prefill_attention 29 passed, 13 skipped. The 28 skips are the tests' own `k > kv_len` / `qo_len > kv_len` skips. Compared with the `c9828e2` baseline on this GPU (five suites, 124 passed, the other two `AttributeError`), the two previously missing suites now pass and nothing regressed. The project has no CPU-only test path.
+
+### End-to-end (transformers 4.45.2, tokenizers 0.20.3, accelerate 1.0.1 -- the pyproject pins)
+
+`scripts/example_textgen.py` (copy with only `MODEL_PATH` changed) on `NousResearch/Llama-2-7b-chat-hf@351844e7` in the job directory, greedy (`do_sample: false` in the downloaded `generation_config.json`), each wrapped in `timeit.sh Quest test`:
+
+```
+python example_textgen.py --method hg
+python example_textgen.py --method quest --token_budget 1024
+python example_textgen.py --method quest --token_budget 128
+```
+
+All exit 0, prompt 103 tokens, byte-identical text from "Input Sequence Length" on (md5 prefix `b900af27eeb4`, same as at `661449c`). The kernel trace recorded at `661449c` (prefill 32 calls, HIP top-k and page estimate 2130 calls each at budget 128) is not repeated: the delta since (`2ab01dd`, `6e7d8db`) changes only the `rms_norm` mask expression and Markdown.
+
+### CUDA no-regression gate
+
+`cuda-not-validated: no CUDA toolkit on this host` (no nvcc, no `/opt/conda`, and creating one would write outside the job). Owed at this head: Jeff will have the changed CUDA-visible files compiled with nvcc on the host that has it (see "CUDA path and nvcc" above). The pre-existing RAFT branch-24.02 `CUDA::nvToolsExt` wall is unchanged.
+
+### Content checks and integrity
+
+`jargon.py --port Quest` clean; the ROCm build is documented in `README.md` beside the CUDA build. `audit-commits` reports only the known `6e7d8db` fenced-Test-Plan gap recorded for PR preparation. `git -C projects/Quest/src status --porcelain` empty at completion.
+
+State: linux-gfx942 `completed` at `6e7d8db` (wave64 gate). linux-gfx90a, linux-gfx1100 and windows-gfx1151 read `revalidate` at this head; the wave32 and Windows runs are the first on the new prefill and top-k paths, and should record `hipDeviceAttributeMaxSharedMemoryPerMultiprocessor` for the LDS lesson.
