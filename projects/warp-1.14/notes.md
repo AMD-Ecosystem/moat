@@ -542,6 +542,19 @@ Requested by Jeff Daily. The work lock stays with linux-gfx950. This session cha
 
 ### A.2: tile set on gfx942 (one GPU): 636 run, 10 skipped, 4 failures
 Same loop as step 1 of session 4 (`-p <file> -m 32`, from `projects/warp-1.14/src`).
+## Evidence session (2026-11-19, linux-gfx1100, Radeon Pro W7800, evidence only): handoff item B (wave32)
+
+Requested by Jeff Daily. The work lock stays with linux-gfx950. This session changed nothing in the fork, stage, lock, head or platform records. The clone was read-only at the recorded `head_sha` `8d13d596` (`git status --porcelain` clean apart from untracked test output). Local experiments ran in a separate `git worktree` of the clone, outside `projects/warp-1.14/src`. That way the warp.so the tests used was never rebuilt mid-run. This is the first run of the port on a wave32 GPU.
+
+### Setup (deviations from the common setup block)
+- Device: "AMD Radeon Pro W7800 48GB", `gfx1100` (no target features in `arch_name`), Warp `arch` 110, `sm_count` 35 (HIP's `multiProcessorCount`, which counts WGPs on RDNA3; the part has 70 CUs), warp size 32 (`wp_cuda_device_get_warp_size`), 64 KiB LDS per workgroup (`hipDeviceAttributeMaxSharedMemoryPerBlock` = 65536). Dispatcher pin `HIP_VISIBLE_DEVICES=0` kept. The host has four such GPUs.
+- The job venv came with TheRock 10.1.0 wheels. Installed into it: `rocm[devel,device-gfx1100]==10.2.0`, `torch[device-gfx1100]==2.15.0+rocm10.2.0`, `numpy==1.26.4`, `usd-core`, then `rocm-sdk init`. As on gfx942, the stale `rocm-sdk-device-gfx*==10.1.0` entries stay visible through the read-only `venv-base-links` path. The venv's own 10.2 `rocm_sdk`/`_rocm_sdk_core` shadow them (checked: `rocm_sdk.__file__` is in the venv, HIP 7.17.26434).
+- Trap seen here (it cost one experiment): `venv-base-links` also puts the image's `rocm-sdk` 10.1 console script on the path when the venv's `bin` is not first on `PATH`. In `cd x && PATH=$FLEET_VENV/bin:$PATH python build_lib.py --rocm-path "$(rocm-sdk path --root)"`, the `$(...)` runs before the `PATH=` prefix applies. It returned `/opt/python-3.11-venv/.../_rocm_sdk_devel` (10.1) and the build linked the 10.1 runtime. `export PATH=$FLEET_VENV/bin:$PATH` first. Check the result with `readelf -d warp/bin/warp.so | grep RUNPATH`. The build used for all results below has the venv's 10.2 RUNPATH.
+- `git-lfs` 3.4.1 installed with apt, then `git lfs install --local --skip-repo && git lfs pull` (test_volume reads the `.nvdb` assets).
+- Build: `export PATH=$FLEET_VENV/bin:$PATH; python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1100 -j 32` (32 = physical cores) -> "Warp build succeeded", 33 s (timeit). Greeting: `HIP 7.17`, `"cuda:0" : "AMD Radeon Pro W7800 48GB" (45 GiB, gfx1100, mempool enabled)`.
+- Every run used a private `WARP_CACHE_PATH` under `agent_space/`. All GPU runs were under `ulimit -c 0`. Runner per file: `python -m warp.tests -s autodetect -p "<pattern>" -m 32` from `projects/warp-1.14/src`.
+
+### B.2: tile set at wavefront 32: 636 run, 10 skipped, 4 failures (the same 4 as gfx942, not wave-related)
 
 | file | ran | result | file | ran | result |
 |---|---|---|---|---|---|
@@ -639,6 +652,65 @@ python summarize.py gfx942_run1.csv gfx942_run2.csv gfx942_run3.csv
 | float64 | 32x32 | 64 | 3.241-3.244 | 10602 | 2.725-2.740 | 788 | ok |
 | float64 | 32x32 | 128 | 2.708-2.729 | 12687 | 1.919-1.942 | 1119 | ok |
 | float64 | 32x32 | 256 | 3.087-3.113 | 11132 | 1.511-1.526 | 1421 | ok |
+Skips: the three upstream no-libmathdx skips (a), (b), (c) of session 4, nothing else.
+
+The four failures are exactly the gfx942 four (`test_tile_reduce_axis_tier2_cuda_0`, `test_tile_reduce_axis_tier2_single_warp_cuda_0`, `test_tile_shared_mem_large_cuda_0`, `test_tile_assign_2d_cuda_0`), with the same signature: one `Warp CUDA error 1: invalid argument (in function wp_cuda_launch_kernel, warp.cu:5466)` per test, and an all-zero output or gradient. The cause is the one the gfx942 section measured: the kernel asks for 65536 bytes of dynamic LDS, and the 64 KiB per-workgroup limit leaves no room for its static LDS. Measured here: `test_tile_shared_mem_large`'s forward kernel has `.group_segment_fixed_size: 1024` (`llvm-readelf --notes` on the cached `.hsaco`). Taken from the hipRTC LLVM IR (`-fgpu-rdc` bitcode through `llvm-dis`), those 1024 bytes are the only static LDS global: `tile_shared_storage_t::get_smem_base()::smem_base`, upstream's per-thread allocator offset table `__shared__ unsigned int smem_base[WP_TILE_BLOCK_DIM]` (`tile.h:1143`, 4 B x block_dim 256). It is upstream code and is present on CUDA too. So the same four tests would also fail on an NVIDIA part whose per-block limit is 64 KiB. The probe `agent_space/probe/smem_large.py` with tile `64x120` (61440 dynamic bytes) passes; `64x128` (65536) fails.
+
+Wave32 itself is not the problem. The same kernels at half size, forward and backward at wavefront 32, all correct (`agent_space/probe/half_lds.py`):
+
+| kernel | block_dim | backward dyn. LDS | forward | gradient |
+|---|---|---|---|---|
+| tile_sum axis 2, (8,8,128) as in the test | 64 / 32 | 65536 | ok / ok | launch fails / launch fails |
+| tile_sum axis 2, (8,8,64) | 64 / 32 | 32768 | ok / ok | ok / ok |
+| tile_assign, (16,32,8) as in the test | 32 | 65536 | ok | launch fails |
+| tile_assign, (16,32,4) | 32 | 32768 | ok | ok |
+
+The `cuFuncSetAttribute_f` emulation diff proposed in the gfx942 section was confirmed here too, as an uncommitted experiment in a separate worktree built against the venv's 10.2. With it, all four kernels print Warp's own "Failed to configure kernel dynamic shared memory ... 65536 bytes, but maximum available is 65536" UserWarning before the (still failing) launch, the way CUDA does. The tests still fail, as expected. My version was the same change plus a `&& hfunc` guard on the `hipFuncGetAttribute` call; either is fine. One wording point for whoever lands it: the warning's "maximum available" comes from `device.max_shared_memory_per_block` (65536) and does not subtract the kernel's static bytes, so the message reads "65536 bytes, but maximum available is 65536". The message is upstream's Python and is the same on CUDA, so it is noted here and not proposed.
+
+Side observation, not followed up: the build that accidentally linked the image's ROCm 10.1 runtime (setup trap above) did not reject the oversize launch. `hipModuleLaunchKernel` returned hipSuccess, the dispatch went out with `group_seg_size=66560`, and the queue aborted with `HSA_STATUS_ERROR_INVALID_ALLOCATION`, which Warp then reports as error 700 on the next copy. The 10.2 runtime returns `hipErrorInvalidValue` for the same launch, from Warp and from a standalone `hipModuleLoad` + `hipModuleLaunchKernel` reproducer (`agent_space/probe/ldsval/`), with or without a prior `hipFuncGetAttribute`. The wheel pins ROCm 10.2, so this is recorded only.
+
+### B.3: Q3 `tile_matmul` benchmark on gfx1100 (raw numbers for Jeff; no decision taken)
+Device "AMD Radeon Pro W7800 48GB" (gfx1100, 70 CUs / 35 WGPs, wave32), HIP 7.17, ROCm 10.2.0 wheels, fork `8d13d596`, no libmathdx, `HIP_VISIBLE_DEVICES=0`. Scripts `bench_tile_matmul.py` and `summarize.py` extracted verbatim from session 4. Command, each run wrapped in `utils/timeit.sh warp-1.14 bench` (161 s for the first run, which includes the kernel compiles, then 54 s and 53 s):
+```
+for n in 1 2 3; do python bench_tile_matmul.py --blocks 16384 --iters 50 --csv gfx1100_run$n.csv; done
+python summarize.py gfx1100_run1.csv gfx1100_run2.csv gfx1100_run3.csv
+```
+16384 blocks as on gfx950/gfx942, for comparability (about 234 blocks per CU on this part).
+
+| dtype | tile | block_dim | fwd ms (min-max) | fwd GFLOP/s (best) | adj ms (min-max) | adj GFLOP/s (best) | check |
+|---|---|---|---|---|---|---|---|
+| float16 | 16x16 | 32 | 1.074-1.123 | 4000 | 0.295-0.300 | 909 | ok |
+| float16 | 16x16 | 64 | 1.066-1.164 | 4027 | 0.283-0.288 | 950 | ok |
+| float16 | 16x16 | 128 | 0.911-0.989 | 4714 | 0.257-0.268 | 1044 | ok |
+| float16 | 16x16 | 256 | 1.274-1.381 | 3371 | 0.299-0.307 | 899 | ok |
+| float16 | 32x32 | 32 | 3.545-3.729 | 9691 | 4.299-4.424 | 499 | ok |
+| float16 | 32x32 | 64 | 3.983-4.240 | 8627 | 2.395-2.478 | 897 | ok |
+| float16 | 32x32 | 128 | 4.918-5.313 | 6987 | 1.864-1.943 | 1152 | ok |
+| float16 | 32x32 | 256 | 6.316-6.816 | 5440 | 1.818-1.960 | 1181 | ok |
+| float16 | 64x64 | 32 | 32.239-33.227 | 8526 | 60.545-60.710 | 284 | ok |
+| float16 | 64x64 | 64 | 26.391-27.793 | 10416 | 33.613-33.716 | 511 | ok |
+| float16 | 64x64 | 128 | 26.454-28.234 | 10391 | 16.997-17.437 | 1011 | ok |
+| float16 | 64x64 | 256 | 16.794-18.081 | 16368 | 13.297-13.819 | 1292 | ok |
+| float32 | 16x16 | 32 | 1.761-1.900 | 2439 | 0.409-0.431 | 657 | ok |
+| float32 | 16x16 | 64 | 1.924-2.027 | 2233 | 0.339-0.345 | 792 | ok |
+| float32 | 16x16 | 128 | 1.223-1.287 | 3512 | 0.383-0.407 | 700 | ok |
+| float32 | 16x16 | 256 | 1.560-1.620 | 2753 | 0.419-0.461 | 641 | ok |
+| float32 | 32x32 | 32 | 7.470-7.936 | 4600 | 6.469-6.569 | 332 | ok |
+| float32 | 32x32 | 64 | 7.901-8.492 | 4349 | 3.280-3.450 | 655 | ok |
+| float32 | 32x32 | 128 | 7.585-8.291 | 4530 | 2.534-2.674 | 847 | ok |
+| float32 | 32x32 | 256 | 9.065-9.886 | 3791 | 2.688-3.051 | 799 | ok |
+| float32 | 64x64 | 32 | 68.598-69.710 | 4007 | (no launch) | - | ADJ-FAILED (smem) |
+| float32 | 64x64 | 64 | 42.993-44.342 | 6394 | (no launch) | - | ADJ-FAILED (smem) |
+| float32 | 64x64 | 128 | 38.867-41.488 | 7072 | (no launch) | - | ADJ-FAILED (smem) |
+| float32 | 64x64 | 256 | 48.129-50.039 | 5711 | (no launch) | - | ADJ-FAILED (smem) |
+| float64 | 16x16 | 32 | 6.602-6.851 | 651 | 1.387-1.450 | 194 | ok |
+| float64 | 16x16 | 64 | 6.515-6.805 | 659 | 0.989-1.012 | 271 | ok |
+| float64 | 16x16 | 128 | 6.638-6.949 | 647 | 1.280-1.356 | 210 | ok |
+| float64 | 16x16 | 256 | 6.589-6.907 | 652 | 1.242-1.330 | 216 | ok |
+| float64 | 32x32 | 32 | 56.860-57.329 | 604 | 23.149-23.249 | 93 | ok |
+| float64 | 32x32 | 64 | 49.601-50.236 | 693 | 13.046-13.252 | 165 | ok |
+| float64 | 32x32 | 128 | 45.203-46.083 | 760 | 8.844-9.041 | 243 | ok |
+| float64 | 32x32 | 256 | 46.405-47.247 | 740 | 7.912-8.057 | 271 | ok |
 | float64 | 64x64 | 32 | (no launch) | - | (no launch) | - | MISMATCH (smem) |
 | float64 | 64x64 | 64 | (no launch) | - | (no launch) | - | MISMATCH (smem) |
 | float64 | 64x64 | 128 | (no launch) | - | (no launch) | - | MISMATCH (smem) |
@@ -799,3 +871,332 @@ IOMMU heuristic: Warp's `check_p2p()` (`warp/_src/utils.py:1747`) returns False 
 3. Register C1, C2 and C3 with `deferred.py` (ids proposed above) and bring them to Jeff for filing. Decide whether test_mempool_access, the unified-memory mempool test and the `_cuda_1` capture tests get capability skips naming those registrations.
 4. C4: priority-timing test on gfx942.
 5. The Q3 gfx942 numbers above go to Jeff together with the wave32 numbers from item B.
+- LDS-limited rows are the same as on gfx942 (64 KiB per workgroup), with Warp's UserWarnings naming the bytes: fp32 64x64 adjoint needs 98304 (backward), and fp64 64x64 needs 98304 (forward) and 196608 (backward). Their timed values are memsets or launch failures (the raw CSV below keeps them: about 1.19 ms fp32 adj, about 0.02 ms fp64 fwd). They are meaningless and shown as "(no launch)".
+- Run-to-run spread over the 56 timing cells of the 28 all-ok rows: median 4.6%, maximum 14% (fp32 32x32 bd256 adj). 26 cells are above 5%. The pattern is systematic, not noise: run 1 is the fastest in almost every forward cell, and runs 2 and 3 are 3-9% slower. That fits clocks dropping as this workstation card warms up under back-to-back runs. Clocks were not recorded (no `rocm-smi` in this container). The "best" columns therefore come from run 1.
+- fp16 forward is faster than fp32 forward at every size here (best 16368 vs 7072 GFLOP/s at 64x64). fp64 is 6-14x slower than fp32. fp16 adjoint is again slower than fp32 at 32x32 bd32 (fp16 `atomic_add` is the CAS loop, ruled to stay, see the unsafe-atomics ruling above). Numbers only; no interpretation is drawn here.
+- No NVIDIA GPU on this host, so no libmathdx reference numbers.
+
+Raw per-run timings, ms (`gfx1100_run<n>.csv` merged; checks identical across runs):
+```
+dtype,M,block_dim,fwd_ms_r1,fwd_ms_r2,fwd_ms_r3,adj_ms_r1,adj_ms_r2,adj_ms_r3,check
+float16,16,32,1.0736,1.1152,1.1232,0.2954,0.2980,0.3004,ok
+float16,16,64,1.0665,1.1639,1.1596,0.2841,0.2826,0.2876,ok
+float16,16,128,0.9111,0.9706,0.9887,0.2572,0.2637,0.2675,ok
+float16,16,256,1.2742,1.3464,1.3806,0.2987,0.3029,0.3073,ok
+float16,32,32,3.5454,3.7013,3.7293,4.2994,4.3821,4.4236,ok
+float16,32,64,3.9828,4.2204,4.2405,2.3945,2.4780,2.4720,ok
+float16,32,128,4.9177,5.2821,5.3128,1.8641,1.9432,1.9410,ok
+float16,32,256,6.3164,6.8108,6.8161,1.8179,1.9603,1.9526,ok
+float16,64,32,32.2393,33.1857,33.2275,60.5488,60.7100,60.5453,ok
+float16,64,64,26.3912,27.7929,27.3382,33.6135,33.7163,33.6232,ok
+float16,64,128,26.4536,28.2339,27.3993,16.9968,17.4369,17.1895,ok
+float16,64,256,16.7938,18.0810,17.4252,13.2974,13.8193,13.5415,ok
+float32,16,32,1.7610,1.9001,1.8533,0.4087,0.4306,0.4109,ok
+float32,16,64,1.9238,2.0268,1.9680,0.3390,0.3454,0.3450,ok
+float32,16,128,1.2230,1.2867,1.2411,0.3834,0.4075,0.3945,ok
+float32,16,256,1.5603,1.6199,1.5623,0.4186,0.4607,0.4509,ok
+float32,32,32,7.4703,7.9364,7.7204,6.4692,6.5691,6.5138,ok
+float32,32,64,7.9014,8.4922,8.2303,3.2805,3.4502,3.3850,ok
+float32,32,128,7.5852,8.2912,7.9819,2.5344,2.6738,2.6386,ok
+float32,32,256,9.0645,9.8857,9.5215,2.6883,3.0513,2.9950,ok
+float32,64,32,68.5983,69.7095,68.8262,1.2021,1.2059,1.2036,ADJ-FAILED
+float32,64,64,43.0511,44.3421,42.9927,1.1828,1.1927,1.1921,ADJ-FAILED
+float32,64,128,41.4885,40.0710,38.8672,1.1821,1.1924,1.1919,ADJ-FAILED
+float32,64,256,48.1286,50.0389,48.6761,1.1810,1.1928,1.1916,ADJ-FAILED
+float64,16,32,6.6023,6.8514,6.6832,1.3867,1.4502,1.4318,ok
+float64,16,64,6.5154,6.8051,6.6362,0.9893,1.0124,1.0040,ok
+float64,16,128,6.6380,6.9486,6.8079,1.2803,1.3560,1.3319,ok
+float64,16,256,6.5893,6.9068,6.7651,1.2425,1.3297,1.3156,ok
+float64,32,32,56.8597,57.3286,56.9156,23.1491,23.2490,23.1692,ok
+float64,32,64,49.6009,50.2361,49.6633,13.0458,13.2523,13.1529,ok
+float64,32,128,45.2028,46.0826,45.3639,8.8441,9.0414,8.9385,ok
+float64,32,256,46.4047,47.2472,46.5232,7.9123,8.0572,7.9521,ok
+float64,64,32,0.0211,0.0196,0.0192,2.5090,2.5072,2.5090,MISMATCH
+float64,64,64,0.0199,0.0180,0.0192,2.4874,2.4877,2.4876,MISMATCH
+float64,64,128,0.0182,0.0186,0.0232,2.4866,2.4876,2.4876,MISMATCH
+float64,64,256,0.0177,0.0187,0.0190,2.4866,2.4884,2.4865,MISMATCH
+```
+
+### B.4: Phase 1-3 test files at wavefront 32: all pass except the 2 known fem isolation failures
+Same patterns as the handoff list, one `-p` per line, `-m 32`, one GPU visible. Compared with the gfx950 counts of sessions 2 and 3:
+
+| file / pattern | ran | result | same as gfx950 |
+|---|---|---|---|
+| test_codegen | 117 | OK | yes |
+| test_snippet | 12 | OK | yes |
+| test_arithmetic | 126 | OK | yes |
+| test_math | 16 | OK | yes |
+| test_fp16 | 6 | OK | yes |
+| test_bf16 | 48 | OK | yes |
+| test_atomic | 164 | OK | yes |
+| test_atomic_bitwise | 6 | OK | yes |
+| test_atomic_cas | 24 | OK | yes (GPU cases filtered by capability, as ruled) |
+| test_array | 139 | OK | gfx950 Phase 1 recorded 138; test_array.py is unchanged since then (`git log fda7eb27..8d13d596 -- warp/tests/test_array.py` empty); all pass |
+| test_copy | 14 | OK | yes |
+| test_launch | 32 | OK | yes |
+| test_fast_math | 12 | OK, 1 skipped | yes (PTX content check) |
+| test_grad | 41 | OK | yes |
+| test_kernel_cache | 5 | OK | yes |
+| test_module_hashing | 8 | OK | yes |
+| test_print | 10 | OK | yes |
+| test_mat*.py | 601 | OK | yes |
+| test_vec*.py | 531 | OK | yes |
+| test_quat*.py | 173 | OK | yes |
+| test_spatial*.py | 207 | OK | yes |
+| test_rand | 10 | OK | yes |
+| test_noise | 14 | OK | yes |
+| test_clang_cuda | 7 | OK, 6 skipped | yes (NVIDIA-only) |
+| test_runlength_encode | 16 | OK | yes |
+| test_array_reduce | 16 | OK | yes |
+| test_sparse | 47 | OK | yes |
+| test_linear_solvers | 34 | OK | yes |
+| test_coloring | 3 | OK | yes |
+| test_bvh | 13 | OK | yes |
+| test_grouped_bvh | 11 | OK | yes |
+| test_hash_grid | 23 | OK | yes |
+| test_marching_cubes | 17 | OK | yes |
+| test_mesh*.py | 49 | OK | yes (usd-core installed, 0 skipped) |
+| test_volume | 59 | OK | yes |
+| test_volume_write | 5 | OK | yes |
+| test_apic | 52 | OK | yes (session 3 count) |
+| test_apic_mesh | 12 | OK | yes (session 3 count) |
+| test_fem*.py | 107 | 2 failures | yes: test_gimp_quadrature and test_cube_shape_functions, "Unexpected output" = Warp's init greeting captured by the first check_output test in its worker, the upstream isolation behaviour recorded in session 2 |
+| test_graph | 35 | OK, 3 skipped | yes |
+| test_array_fill_capture | 3 | OK | yes |
+| test_capture_mode | 2 | OK | yes |
+| test_conditional_captures | 32 | OK, 16 skipped | yes (Q4) |
+| test_conditional | 50 | OK | yes |
+| test_async | 2373 | OK | yes |
+| test_streams | 24 | OK, 2 skipped | yes |
+| test_mempool | 7 | OK, 2 skipped | yes |
+| test_pinned | 1 | OK | yes |
+| test_unified_memory | 27 | OK, 8 skipped | yes: 2 "cuda:0 cannot access CPU memory" (the W7800 also reports no pageable-memory access), 6 multi-device mempool/peer cases |
+| test_occupancy | 6 | OK | yes |
+| test_allocator | 16 | OK, 3 skipped | yes |
+| test_allocation_tracker | 34 | OK | yes |
+| test_dlpack | 16 | OK | yes |
+| test_torch | 34 | OK | yes |
+| test_map | 45 | OK | yes |
+| test_reload | 14 | OK | yes |
+| test_cuda_arch_suffix | 10 | all skipped | yes (NVIDIA-only registration) |
+
+Every skip reason across the tile and Phase 1-3 runs (`grep -h "skipped '"` over all logs): Conditional graph nodes not supported 16, Warp was not built with MathDx support 8, MathDx is not enabled 1, Skipping test on CUDA device without MathDx (tolerance) 1, No suitable devices to run the test 17, Requires at least two CUDA devices 2, Multi-GPU not available 2, mempool/peer-access device-pair requirements 10, cuda:0 cannot access CPU memory 2, flakiness in memory usage measurement 1, rmm not installed 1. None names wavefront size or AMD.
+
+### B.1 / Q2: user-snippet intrinsics under hipRTC at wavefront 32
+Probe `agent_space/probe/snip32.py` (full source below). Each case is a `wp.func_native` snippet whose device code sits under `#if defined(__CUDA_ARCH__)`, with a sentinel in the `#else` branch, so the host branch would be caught. Each case compiles in its own module, launches 256 threads with `block_dim=64` (two 32-lane wavefronts per block), and is compared against NumPy.
+
+| case | result | detail |
+|---|---|---|
+| `nextafterf` | ok | exact, 256 values |
+| `__frsqrt_rn` | **not correctly rounded** | max 1 ulp; see below |
+| `__popcll` | ok | exact |
+| `__ffsll` | ok | exact |
+| `__clzll` | ok | exact |
+| `__syncwarp` + `__shared__` (lane `^ 1` exchange) | ok | exact |
+| `__shared__` + `__syncthreads` across two wavefronts | ok | exact |
+| `__threadfence` | ok | exact |
+| `warpSize` | ok | 32 |
+| `__activemask()` | ok | 0xFFFFFFFF (32 lanes) |
+| `__ballot_sync(~0ull, pred)` | ok | 0xAAAAAAAA |
+| `__ballot_sync(0xffffffff, pred)` (CUDA spelling) | **compile error** | hipRTC: `static assertion failed ... 'sizeof(unsigned int) == 8': The mask must be a 64-bit integer` (`hiprtc_runtime.h:7981`) |
+| `__shfl_xor_sync(0xffffffff, v, 1, 32)` (CUDA spelling) | **compile error** | same static assertion (`hiprtc_runtime.h:7862`) |
+
+All eight intrinsics the Q2 ruling lists compile and take the device branch at wavefront 32. Seven of them give exact results. The exception is `__frsqrt_rn`: HIP defines it as `__builtin_amdgcn_rsqf(x)` (`lib/llvm/lib/clang/24/include/__clang_hip_math.h:289`), the hardware `v_rsq_f32` approximation. CUDA's `__frsqrt_rn` is the IEEE round-to-nearest reciprocal square root. Measured over 2^20 inputs spread over 2^-60..2^60 (`agent_space/probe/frsqrt.py`), compared with `1/sqrt` computed in float64 and rounded to float32: `__frsqrt_rn` max 1 ulp, 11.0% not correctly rounded, bit-identical to `rsqrtf`. The portable `1.0f/sqrtf(x)` is worse (1 ulp, 27.0%). This is a HIP header semantic, the same on every AMD target, wave64 included. Session 2's gfx950 probe reported `__frsqrt_rn` exact, probably on inputs whose result is exact (an inference: that probe is not in the repository). It maps to the native AMD operation, as the ruling asked, and is within 1 ulp. Newton's uses (sdf_contact, support_function) look tolerance-based, but that was not checked. Whether Warp's hipRTC prelude should provide a correctly rounded `__frsqrt_rn` (it cannot simply redefine clang's inline, so it would need a different spelling or a header-order change) is open for the lock holder or Jeff. Nothing proposed here.
+
+Not on the ruling's list, but relevant to downstream snippets: HIP refuses a 32-bit lane mask in `__ballot_sync`, `__shfl*_sync` and the other `*_sync` intrinsics at compile time, on every AMD target, wave32 included. A snippet copied from CUDA with `0xffffffff` masks therefore fails to build instead of misbehaving, and needs `~0ull` (or `__activemask()`) on HIP. Newton's steel solver, recorded under Q2 as hard-coding 32-lane warps, is the kind of code that hits this. On wave32 its `tid & 31` lane logic is correct; only the mask spelling breaks.
+
+`snip32.py`:
+```python
+# Q2 user-snippet probe: CUDA intrinsics in `#if defined(__CUDA_ARCH__)` device branches of wp.func_native,
+# launched with block_dim 64 (two 32-lane wavefronts on gfx11). Each case compiles in its own module.
+import sys
+import numpy as np
+import warp as wp
+
+wp.init()
+dev = wp.get_device("cuda:0")
+print(f"device {dev.name} arch_name={dev.arch_name}")
+N = 256
+BD = 64
+results = []
+
+
+def run(name, snippet, check, dtype=wp.uint64, n=N):
+    try:
+        f = wp.func_native(snippet)
+
+        def native(out: wp.array(dtype=dtype), tid: int): ...
+
+        native.__name__ = f"snip{len(results)}"
+        native.__qualname__ = native.__name__
+        nf = f(native)
+
+        @wp.kernel(module="unique")
+        def k(out: wp.array(dtype=dtype)):
+            tid = wp.tid()
+            nf(out, tid)
+
+        out = wp.zeros(n, dtype=dtype, device=dev)
+        wp.launch(k, dim=n, inputs=[out], block_dim=BD, device=dev)
+        got = out.numpy()
+        ok, detail = check(got)
+        results.append((name, "ok" if ok else "WRONG", detail))
+    except Exception as e:  # compile failure or launch error
+        results.append((name, "COMPILE/RUN ERROR", str(e).splitlines()[0][:160]))
+
+
+def eq(expected):
+    def c(got):
+        bad = np.nonzero(got != expected)[0]
+        return (len(bad) == 0, "exact" if len(bad) == 0 else f"{len(bad)} mismatches, first idx {bad[0]}: got {got[bad[0]]} want {expected[bad[0]]}")
+    return c
+
+
+tids = np.arange(N, dtype=np.uint64)
+
+# the value the device branch must take; -1 sentinel marks the host branch
+run("nextafterf", """
+#if defined(__CUDA_ARCH__)
+    out[tid] = nextafterf(1.0f + tid, 1.0e9f);
+#else
+    out[tid] = -1.0f;
+#endif
+""", eq(np.nextafter(np.float32(1.0) + np.arange(N, dtype=np.float32), np.float32(1e9))), dtype=wp.float32)
+
+xs = (np.arange(N, dtype=np.float32) * 0.37 + 0.01).astype(np.float32)
+rs = (1.0 / np.sqrt(xs.astype(np.float64))).astype(np.float32)  # correctly rounded reference
+run("__frsqrt_rn", """
+#if defined(__CUDA_ARCH__)
+    float x = (float)tid * 0.37f + 0.01f;
+    out[tid] = __frsqrt_rn(x);
+#else
+    out[tid] = -1.0f;
+#endif
+""", lambda got: (lambda d: (d.max() == 0, f"max ulp diff {d.max()}, {np.count_nonzero(d)} of {N} not correctly rounded"))(np.abs(got.view(np.int32).astype(np.int64) - rs.view(np.int32).astype(np.int64))), dtype=wp.float32)
+
+vals = (np.uint64(0x9E3779B97F4A7C15) * (tids + np.uint64(1))) >> (tids % np.uint64(64))
+SEED = """unsigned long long v = (0x9E3779B97F4A7C15ull * ((unsigned long long)tid + 1ull)) >> (tid % 64);"""
+run("__popcll", f"""
+#if defined(__CUDA_ARCH__)
+    {SEED}
+    out[tid] = (unsigned long long)__popcll(v);
+#else
+    out[tid] = 999;
+#endif
+""", eq(np.array([bin(int(v)).count("1") for v in vals], dtype=np.uint64)))
+
+
+def ffs(v):
+    v = int(v)
+    return 0 if v == 0 else (v & -v).bit_length()
+
+
+def clz(v):
+    return 64 - int(v).bit_length()
+
+
+run("__ffsll", f"""
+#if defined(__CUDA_ARCH__)
+    {SEED}
+    out[tid] = (unsigned long long)__ffsll((long long)(v << (tid % 61)));
+#else
+    out[tid] = 999;
+#endif
+""", eq(np.array([ffs((int(v) << (i % 61)) & (2**64 - 1)) for i, v in enumerate(vals)], dtype=np.uint64)))
+run("__clzll", f"""
+#if defined(__CUDA_ARCH__)
+    {SEED}
+    out[tid] = (unsigned long long)__clzll((long long)v);
+#else
+    out[tid] = 999;
+#endif
+""", eq(np.array([clz(v) for v in vals], dtype=np.uint64)))
+
+# warp-synchronous exchange through shared memory between neighbouring lanes (tid & 31 style)
+run("__syncwarp+__shared__", """
+#if defined(__CUDA_ARCH__)
+    __shared__ unsigned long long s[64];
+    int lane = threadIdx.x;
+    s[lane] = (unsigned long long)tid * 3ull;
+    __syncwarp();
+    out[tid] = s[lane ^ 1];
+#else
+    out[tid] = 999;
+#endif
+""", eq((tids ^ np.uint64(1)) * np.uint64(3)))
+
+run("__shared__+__syncthreads (2 wavefronts)", """
+#if defined(__CUDA_ARCH__)
+    __shared__ unsigned long long s[64];
+    s[threadIdx.x] = (unsigned long long)tid;
+    __syncthreads();
+    unsigned long long sum = 0;
+    for (int i = 0; i < 64; ++i) sum += s[i];
+    out[tid] = sum;
+#else
+    out[tid] = 999;
+#endif
+""", eq(np.repeat([tids[b:b + 64].sum() for b in range(0, N, 64)], 64).astype(np.uint64)))
+
+run("__threadfence", """
+#if defined(__CUDA_ARCH__)
+    out[tid] = (unsigned long long)tid + 7ull;
+    __threadfence();
+    out[tid] += 1ull;
+#else
+    out[tid] = 999;
+#endif
+""", eq(tids + np.uint64(8)))
+
+run("warpSize", """
+#if defined(__CUDA_ARCH__)
+    out[tid] = (unsigned long long)warpSize;
+#else
+    out[tid] = 999;
+#endif
+""", eq(np.full(N, 32, dtype=np.uint64)))
+
+# Beyond the plan's list: CUDA-style 32-bit-mask warp intrinsics as Newton-like snippets write them
+run("__shfl_xor_sync(0xffffffff,..,32)", """
+#if defined(__CUDA_ARCH__)
+    out[tid] = (unsigned long long)__shfl_xor_sync(0xffffffff, (int)tid, 1, 32);
+#else
+    out[tid] = 999;
+#endif
+""", eq(tids ^ np.uint64(1)))
+run("__ballot_sync(0xffffffff,..)", """
+#if defined(__CUDA_ARCH__)
+    out[tid] = (unsigned long long)__ballot_sync(0xffffffff, (tid & 1) == 1);
+#else
+    out[tid] = 999;
+#endif
+""", eq(np.full(N, 0xAAAAAAAA, dtype=np.uint64)))
+run("__ballot_sync(~0ull,..)", """
+#if defined(__CUDA_ARCH__)
+    out[tid] = (unsigned long long)__ballot_sync(~0ull, (tid & 1) == 1);
+#else
+    out[tid] = 999;
+#endif
+""", eq(np.full(N, 0xAAAAAAAA, dtype=np.uint64)))
+run("__activemask", """
+#if defined(__CUDA_ARCH__)
+    out[tid] = (unsigned long long)__activemask();
+#else
+    out[tid] = 999;
+#endif
+""", eq(np.full(N, 0xFFFFFFFF, dtype=np.uint64)))
+
+print("| case | result | detail |")
+print("|---|---|---|")
+for r in results:
+    print(f"| `{r[0]}` | {r[1]} | {r[2]} |")
+```
+
+### B.5: CPU-only suite with GPUs hidden
+`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32` (wrapped in `utils/timeit.sh warp-1.14 test`; the greeting confirms "HIP runtime or AMD GPU devices not available", only `cpu` listed): **Ran 2282 tests, OK (skipped=15)**. That matches the session 3 expectation (2282 with torch installed, 0 failures). Skips: "No suitable devices to run the test" 10, "Requires CUDA" 2, "Requires both CUDA and CPU devices" 2, "CUDA not available" 1. The `example_torch_cpu` artefact of session 3 does not appear with the `99` hiding values.
+
+### Summary for the lock holder and Jeff
+- Wave32 found no wavefront-size defect. The tile collectives (reductions, scans, radix sort in 32-thread groups, the tier-2 axis reduction with `WP_TILE_WARP_THREADS`), all of tile/*, and the Phase 1-3 sets give the gfx950 results at wavefront 32. The exceptions are the four 64 KiB-LDS tile tests (also failing on gfx942, a hardware limit, with the shim diagnostic diff proposed in the gfx942 section and confirmed here) and the two known fem isolation failures. The CPU-only suite is green (2282 OK).
+- Q2: the eight listed intrinsics work at wave32. `__frsqrt_rn` is 1-ulp approximate on HIP (all AMD targets). CUDA-spelled 32-bit `*_sync` masks do not compile under HIP.
+- Q3: gfx1100 numbers above, for Jeff's matrix-core ruling. No decision taken.
+- Nothing was committed to the fork; no record other than this notes section and the telemetry lines changed.
