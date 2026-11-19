@@ -96,3 +96,4 @@
 {"kind":"phase","ts":"2026-11-19T05:33:26Z","phase":"test","seconds":77.985,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261118-212156-litegs-val32-prompt/venv/bin/python /var/lib/jenkins/fleet/jobs/gfx1201-20261118-212156-litegs-val32-prompt/moat/agent_space/train_probe.py /var/lib/jenkins/fleet/jobs/gfx1201-20261118-212156-litegs-val32-prompt/moat/projects/LiteGS/src -s /var/lib/jenkins/fleet/jobs/gfx1201-20261118-212156-litegs-val32-prompt/data/scene/tandt/train -i images -m /var/lib/jenkins/fleet/jobs/gfx1201-20261118-212156-litegs-val32-prompt/runs/train --iterations 7000"}
 {"kind":"session","ts":"2026-11-19T05:34:44Z","epoch":1795066484.194478,"event":"end","platform":"linux-gfx1201"}
 {"kind":"session","ts":"2026-11-19T21:47:26Z","epoch":1795124846.840753,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-19T21:50:19Z","epoch":1795125019.590334,"event":"end","platform":"linux-gfx90a"}
