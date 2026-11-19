@@ -941,3 +941,17 @@ CUDA no-regression compile: `cuda-not-validated: no nvcc on this host (no /opt/c
 Gates: documentation present (README.MD:89, Linux scope). **Jargon is not clean**: `python3 utils/jargon.py --port LiteGS` exits 1 with 2 hits, both the `.gitmodules` line `branch = moat-port`, which jeffdaily's instruction for this round required verbatim. A validator may not waive it, so this platform is recorded `validation-failed --gate jargon` with the GPU pass kept (`gpu_passed_sha` = 1664e6d). **For jeff:** either rule the line acceptable for the PR, or give fused-ssim's port branch a plain name (or drop the `branch =` line) in a new `.gitmodules` commit; such a commit changes no compiled output, so a validator then completes this platform with `carry-forward ... source-class` from this pass.
 
 Integrity: `git status --porcelain` empty in the fork clone and the submodule at 1664e6d.
+
+## Porter round 2026-11-19 (4) (linux-gfx1201): `branch =` line dropped from `.gitmodules`
+
+Instruction from jeffdaily: the 1664e6d `.gitmodules` line `branch = moat-port` is in-house vocabulary in a maintainer-visible diff, and a submodule is pinned by its commit, so remove the line and change nothing else.
+
+Fork commit on `moat-port`, pushed 1664e6d..**a995109** (one new commit, nothing rewritten, plain push): "Drop the branch line from the fused_ssim submodule entry" (no `[ROCm]` prefix: the added lines name nothing ROCm-specific). `git show --stat`: `.gitmodules | 1 -`. Gitlink unchanged at AMD-Ecosystem/fused-ssim d3213b4. The entry against upstream `master` now differs in the `url` line (kemchenj `.git` URL -> `https://github.com/AMD-Ecosystem/fused-ssim`) and in the absence of upstream's `branch = fused-l1-ssim-loss` line; no other line.
+
+Side effect, for the reviewer and jeff: `git submodule update --remote` (which upstream's README does not use) now follows the remote's default branch (fused-ssim's `main` mirror) instead of a named branch; `--init` and plain `update` check out the gitlink exactly as before.
+
+Checks:
+- Fresh clone (`git clone` of the fork, `git checkout moat-port`, `git submodule update --init --recursive`): `Submodule path 'litegs/submodules/fused_ssim': checked out 'd3213b4956811f0250f9a4968b9ee673a312e4b5'`, remote URL `https://github.com/AMD-Ecosystem/fused-ssim`. d3213b4 is reachable on the fork's `moat-port` branch, so the default fetch finds it without a `branch` hint.
+- `python3 utils/jargon.py --port LiteGS`: **clean** (exit 0) over the whole branch `master..moat-port`, code and commit messages. No old commit message hit remains (the e24abb2 squash already removed them; the only hits at 1664e6d were the `.gitmodules` line).
+- `python3 utils/moatlib.py audit-commits LiteGS`: OK.
+- Build (gfx1201, `$FLEET_VENV` with a `.pth` to the image site-packages, torch `2.16.0a0+git6c3af02`, HIP 7.16.26385), from `/tmp`, `PYTORCH_ROCM_ARCH=gfx1201`, `utils/timeit.sh LiteGS compile -- python -m pip install -v --no-build-isolation --no-deps <src>/litegs/submodules/{simple-knn,fused_ssim,gaussian_raster}`: all three built; `fused_ssim` exposes `fused_ssim`, `fused_ssim3d`, `fused_l1_ssim_loss`.
