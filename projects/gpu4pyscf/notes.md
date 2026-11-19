@@ -4960,3 +4960,15 @@ Scope: `git diff 7cbd3d2f..06477124`, one commit (pbc/df/grad/rhf.py `indexed_sc
 - The 3 newly reached RSH GDF gradient misses (krks/kuks test_df_rsh_grad, rks test_df_sr_rsh_grad) failed at the hipRTC compile before and at an FD bound now; the kernel they newly reach is exact, so the classification "not caused by this change, not root-caused" stands. The no-multigrid 1.10e-5 rerun (agent/rsh_fd.py) was taken as recorded, not repeated.
 
 Not covered: wave32 and Windows have not run 0647712 (validator's job). The pr-1054-hiprtc-cucomplex branch (0e23c1e1) was read only, not reviewed as part of this delta; its Test Plan already carries the standalone numbers above.
+
+## Validation 2026-11-19 (validator, linux-gfx942 MI300X, fork moat-port @ 0647712) -- COMPLETED
+
+Same fleet job as the porter round, after the review of the 7cbd3d2..0647712 delta passed. Evidence: the runs in the porter section "seventh fix" above. projects/gpu4pyscf/src checked out at 0647712 (== head_sha). Built with upstream's documented procedure (`USE_HIP=1 GPU_ARCHITECTURES=gfx942 python setup.py build_py`, no extra configure arguments, `utils/timeit.sh gpu4pyscf compile`) from a fresh clone: 12 libraries for gfx942. The tree built is the head's tree (the commit was made after the build, with no content change). GPU: AMD Instinct MI300X (gfx942:sramecc+:xnack-), `HIP_VISIBLE_DEVICES=1`, TheRock ROCm SDK 10.1.0, CuPy-ROCm 14.2.0, PySCF 2.14.0, pytest 9.2.0.
+
+Result, upstream CI selection, one pytest process per test file over all 254 files (`utils/timeit.sh gpu4pyscf test`): **2218 passed / 39 failed / 109 skipped / 0 errors**, or 2215/39/109/0 over the 2363 tests of the 7cbd3d2 record (2171/83/109/0). Each of the 39 is classified in the porter section (36 from the 7cbd3d2 classification, 3 RSH GDF gradient finite-difference misses newly reached when the hiprtc error went away). No test that passed at 7cbd3d2 fails. No hang, no sticky HIP error.
+
+CUDA no-regression gate at this head: no nvcc on this host. The delta changes no compiled CUDA source (`git diff --stat 7cbd3d2 0647712`: pbc/df/grad/rhf.py only), so the nvcc 12.8.93 build at 7cbd3d2 (porter section of the rescope round) covers every .cu file at this head. The one changed runtime-compiled kernel was compiled with NVRTC 12.9 to PTX byte-identical with the old source at compute_70/80/90 (reviewer reran it).
+
+Other gates: `jargon.py --port gpu4pyscf` clean. Documentation: upstream's README "Building for AMD GPUs (ROCm)" unchanged and still accurate (nothing new is needed to build). Integrity: `git -C projects/gpu4pyscf/src status --porcelain` shows only untracked build output.
+
+Not covered: wave32 (gfx1100, gfx1201) and gfx90a have not run 0647712.

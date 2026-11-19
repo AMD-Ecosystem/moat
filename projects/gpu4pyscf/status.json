@@ -7,7 +7,7 @@
   "priority": 4.871,
   "ext_type": "cmake-cupy-plugin",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-11-19T22:57:26Z",
+  "updated_at": "2026-11-19T22:58:32Z",
   "head_sha": "06477124c88075009ae5741ce7cbe4173062f1e7",
   "waivers": {
     "windows": {
@@ -93,11 +93,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "7cbd3d2fa9df649641a1277ea0478a9a6a30784e",
+      "validated_sha": "06477124c88075009ae5741ce7cbe4173062f1e7",
       "failed_sha": null,
       "started_at": "2026-10-29T23:07:20Z",
-      "completed_at": "2026-11-19T20:32:13Z",
-      "updated_at": "2026-11-19T22:57:26Z",
+      "completed_at": "2026-11-19T22:58:32Z",
+      "updated_at": "2026-11-19T22:58:32Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -114,7 +114,8 @@
       "last_agent": "reviewer",
       "state": "completed",
       "validated_prior": [
-        "5a87452f319573c586fdd9776d280a0a2e980dd9"
+        "5a87452f319573c586fdd9776d280a0a2e980dd9",
+        "7cbd3d2fa9df649641a1277ea0478a9a6a30784e"
       ]
     },
     "windows-gfx1201": {
