@@ -670,6 +670,19 @@
     "reason": "cant-port",
     "repo_id": 1614410
   },
+  "flamegpu/flamegpu2": {
+    "by": "jeffdaily",
+    "decided": "2026-11-19T05:27:44Z",
+    "disposition": "skip",
+    "full_name": "FLAMEGPU/FLAMEGPU2",
+    "note": "Upstream merged its own AMD support (FLAMEGPU/FLAMEGPU2 PR 1379, 2026-11-11) for Linux C++ ahead-of-time models. Two of our three fixes are in it; the third (NOMINMAX for non-MSVC Windows compilers) was reported on issue 1370. moat-port has nothing else upstream lacks. Upstream does not cover Windows, runtime-compiled models or Python (issues 1370, 1368).",
+    "reason": "already-supported",
+    "recorded_as": {
+      "gh_host": "github.com",
+      "login": "jeffdaily"
+    },
+    "repo_id": 34064755
+  },
   "flashinfer-ai/flashinfer": {
     "decided": "2026-06-03T23:31:16Z",
     "disposition": "skip",
