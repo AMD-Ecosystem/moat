@@ -7,15 +7,10 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-15T22:09:37Z",
-  "updated_at": "2026-11-19T04:02:37Z",
+  "updated_at": "2026-11-19T05:13:44Z",
   "head_sha": "1a2b9bb3d90ae5e6d0513ed217a2437550656158",
   "depends_on": [],
-  "pr_url": "https://github.com/NVIDIA/cuBQL/pull/35",
-  "pr_number": 35,
-  "pr_opened_at": "2026-06-17T00:33:21Z",
-  "pr_merged_at": "2026-06-18T18:53:23Z",
   "waivers": {},
-  "pr_state": "merged",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 1072553476,
   "stage": "review-passed",
@@ -172,11 +167,23 @@
       "state": "completed"
     }
   },
-  "published_sha": "b0ea6a1712b40809df28950c9bb3746bc6e99083",
   "porting_released": {
     "arch": "linux-gfx950",
     "since": "2026-11-19T03:47:54Z",
     "at": "2026-11-19T03:50:08Z"
   },
-  "reviewed_sha": "1a2b9bb3d90ae5e6d0513ed217a2437550656158"
+  "reviewed_sha": "1a2b9bb3d90ae5e6d0513ed217a2437550656158",
+  "pr_history": [
+    {
+      "pr_url": "https://github.com/NVIDIA/cuBQL/pull/35",
+      "pr_number": 35,
+      "pr_state": "merged",
+      "pr_opened_at": "2026-06-17T00:33:21Z",
+      "pr_merged_at": "2026-06-18T18:53:23Z",
+      "published_sha": "b0ea6a1712b40809df28950c9bb3746bc6e99083",
+      "archived_at": "2026-11-19T05:13:40Z"
+    }
+  ],
+  "pr_round": 2,
+  "review_pr": "https://github.com/AMD-Ecosystem/cuBQL/pull/1"
 }
