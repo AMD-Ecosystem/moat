@@ -16,7 +16,10 @@ extends.
 - A fact about one port: `projects/<name>/notes.md`. Fault-class entries in `cuda-to-rocm`
   name the project they were learned on; the full incident lives in that project's notes.
 - A lesson that would help someone porting a DIFFERENT project, with no MOAT tooling in it:
-  `cuda-to-rocm`, in the file its reader would open. Write it for a reader who has never
+  `cuda-to-rocm`, in the file its reader would open. The "Where to look" table in its
+  `SKILL.md` names the file for each kind of problem: `faults-*.md` for runtime faults,
+  `build-*.md` and `windows.md` for build and link problems, `libraries.md`,
+  `platform-limits.md`, `diagnosis.md`, `validation.md`. Write it for a reader who has never
   heard of MOAT: no `moatlib`, `notes.md`, gates, roles, states or fleet hosts. Say "your
   port plan" or "your porting notes" instead of naming our files.
 - A lesson about MOAT's pipeline, records, tools or hosts: this skill.
@@ -27,10 +30,24 @@ Both skills are trunk files, one organized copy each, and a port branch may not 
 reference file it belongs in. The reviewer reads it with the port. After review, a trunk
 session promotes it: it puts the lesson where its reader would look, merges it with what
 is already there instead of appending, and adds `Promoted to <file> in <sha>.` under the
-heading. `python3 utils/moatlib.py lessons` lists lessons awaiting promotion.
+heading. An entry is a bold lead sentence or a `###` heading, followed by symptom, cause,
+fix and where it was seen (project in parentheses, ROCm version or date where the workaround
+may expire). After promoting, run `python3 utils/gen_skill_index.py`: the index in
+`SKILL.md` and each file's contents list are generated, and `check.py skills` fails when
+they are stale. `python3 utils/moatlib.py lessons` lists lessons awaiting promotion.
+
+When a project's `notes.md` nears the 1 MB file check (`check.py`), move its old dated
+round sections verbatim into `projects/<name>/notes-archive.md` in one commit on the port
+branch (`moatlib.py commit-project` stages every `notes-*.md` beside `notes.md`), and
+leave a pointer line under the title. Keep in `notes.md` the reference sections
+(architecture, build and test recipes), the latest validation baseline for each platform,
+everything from the current round, and every `## Lesson for` section, since `lessons`
+reads only `notes.md`. An archive merges by union like `notes.md` (`.gitattributes`).
 
 `python3 utils/check.py skills` enforces the boundary: it fails on MOAT vocabulary inside
-`.claude/skills/cuda-to-rocm/`.
+`.claude/skills/cuda-to-rocm/` (tool, record, state, branch and role names, deferral ids,
+`projects/<name>` paths, a host named as a fixture; `tests/test_skill_vocabulary.py` shows
+what passes and what does not).
 
 ## Assessing existing support (extends `assess-existing-support.md`)
 
@@ -61,35 +78,89 @@ heading. `python3 utils/moatlib.py lessons` lists lessons awaiting promotion.
 - A dependency that already has a ROCm port (`spconv_rocm`, pyg-rocm-build wheels,
   `amd_gsplat`) is consumed through the `_deps/` mechanism as environment, not adopted as a
   deliverable.
+- Generated CUDA belongs to its generator. colmap vendors Caspar kernels that SymForce
+  generates; a colmap deferral placed the fix in colmap's `caspar_generate.py`, which
+  contains no CUDA, while the templates and runtime were already ported in MOAT's own
+  `symforce` project. When a deferral or plan names generated code, find the generator's
+  owner and check `moatlib.py show <owner>` before scoping. Do not port the output a
+  second time: record in the deferral or plan what the work waits on (here, the symforce
+  PR merging). `depends_on` is for hard build dependencies, which an optional backend
+  is not.
 
-## Gates, fork commits and carry-forward (extends `validation.md`)
+## Gates, fork commits and carry-forward (extends `validation.md` and `diagnosis.md`)
 
 - Coverage is the required gates in `config/arches.toml` (currently `wave64`, `wave32`,
   `windows`). A platform is `<os>-<gfx>`; its gates follow from its name. An unknown
   architecture family is refused until its wavefront width is added under `[wave]`.
   Records made against a platform no longer in service still satisfy gates; a platform
-  under `[offline]` owes no revalidation while its gates are satisfied.
+  under `[offline]` owes no revalidation while its gates are satisfied. A platform
+  recorded `blocked` satisfies no gate, whatever else its record says: `completed` and
+  `carry-forward` are refused on it until `set-blocked <name> <platform> --clear`.
+- Review is a gate too. `pr-ready` and `fix-ready` need stage `review-passed` with
+  `reviewed_sha` (stamped when the review passes) at `head_sha`, and `completed` is
+  refused before `review-passed`. `advance-head` carries `reviewed_sha` across a delta
+  that cannot change compiled output; any other head move at `review-passed` sends the
+  project back to the reviewer before a platform validates.
 - No platform leads: whichever host picks the project up ports it, and the others validate
   the same `head_sha` independently and in parallel.
 - Never amend a commit any platform has validated. Amending orphans its `validated_sha`,
   `classify` can no longer judge the delta, and every passed platform drops to a full
   revalidation. Add a new commit instead: `advance-head` carries validation forward for
   documentation-only, comment/format-only and CI-config deltas, and a `codeobj_diff`
-  binary-equivalence check can carry forward the rest.
+  binary-equivalence check can carry forward the rest. `carry-forward` classifies the
+  delta itself: `source-class` only for a delta the classifier calls arch-independent,
+  and `binary-equiv` over a `mixed` delta only with `--host-checked`, your statement
+  that you read the delta and its host-side code and data are unchanged (the build
+  comparison sees exported symbols and device code only). `codeobj_diff` compares ELF;
+  a Windows (PE/COFF) binary answers `indeterminate`.
+  For a host-only library (one that compiles no device translation unit) `codeobj_diff`
+  reports `indeterminate`, with "No kernel section found" on both sides; that is not
+  `differ`. Compare such a library with `sha256sum`, and `nm -D --defined-only` as a
+  second signal (CV-CUDA's `libnvcv_types.so`).
 - A Windows-labeled delta is not inert elsewhere. When it flips a passed platform to
   `revalidate`, rebuild rather than carrying forward on "it is Windows-gated" reasoning;
   a binary-equivalence carry-forward builds, which is how the aihwkit and MMseqs2
   regressions were caught.
+- A failed GPU run is carried across an inert delta, because such a delta cannot have
+  fixed it. A failure that is about content (a missing ROCm build document, a jargon
+  hit) is recorded with `set-state <name> <platform> validation-failed --gate docs`
+  (or `jargon`), and any head move retires it, since its fix is an inert delta. `--gate`
+  also keeps the GPU pass of that run, so after an inert fix the validator checks the
+  gap is closed and completes the platform with `carry-forward`, without a second GPU
+  run.
 - Fork GitHub Actions stay disabled. A CI-config commit does not force revalidation (the
   regression guard classifies it as inert); the rule exists because CPU-only workflows gate
   nothing.
-- A third-party defect found during validation (TheRock's missing `.CRT$XCU` section,
-  `therock-windows-lld-link-crt-xcu`; HIP Windows stream serialization,
+- A third-party defect found during validation (HIP Windows stream serialization,
   `hip-win-stream-serialization`) is registered with `utils/deferred.py` against the project
-  that found it; `deferred.py list` finds it across refs. The `/ALTERNATENAME` workaround's
+  that found it; `deferred.py list` finds it across refs. Check that a registered defect is
+  still believed before citing it: the `.CRT$XCU` diagnosis filed as
+  `therock-windows-lld-link-crt-xcu` was later retracted (`cuda-to-rocm`'s windows.md, the
+  `torch_hip.dll` import entry). A
+  wrongly recorded summary is corrected with `deferred.py amend`; closing an item as
+  superseded or not applicable (`deferred.py close`) is a person's ruling. The `/ALTERNATENAME` workaround's
   reproducer sits in the local `findings/` area; the owning project's `deferred.json`
   records whether it was filed. A failure caused by such a defect is never grounds to
   suggest a gate waiver: LichtFeld-Studio got a wrongly-suggested windows waiver that way.
+- `cuda-to-rocm` describes third-party defects without naming our ids for them. The ids:
+  `hip-event-query-destroyed-stream-uaf` (event query after its stream is destroyed),
+  `hip-vmheap-unmap-threshold-lost-or-overtrimmed` (formerly
+  `hip-mempool-release-threshold-ignored`; the HIP mempool release threshold),
+  `rocjpeg-no-scan-jpeg-hangs-vcn`, `rocdecode-h264-high444-420-silent-miscode`,
+  `rocdecode-vp9-av1-signal-description-missing`,
+  `rocdecode-sdk-va-driver-gfx90a-wrong-frames`, and
+  `pytorch-windows-torch-hip-include-symbol` (ROCm LibTorch lacks the `/INCLUDE` interface
+  option on `torch_hip`).
+- A Windows host with an RDNA card satisfies the `wave32` and `windows` gates in one run.
+- A failure that `cuda-to-rocm` classes as environment (a half-expanded TheRock SDK, a DLL
+  the loader took from System32, a poisoned card) is not evidence about the port. A
+  `validation-failed` recorded against one says nothing about the code: repair the host,
+  re-run, and only then record. Header scaffolding built to get past such a failure (the
+  sparse `rocm-libraries` checkout in `cuda-to-rocm`'s windows.md) is validator-side and
+  never part of the fork commit.
+- When validation finds that a compat header's alias list fell behind a torch bump
+  (`cuda-to-rocm`, build-headers-macros.md), do not pin an older torch on the host. Send it
+  back to the porter with the exact symbol list and the confirmed HIP counterparts.
 
 ### `classify` needs the fork cloned at `projects/<name>/src`
 
@@ -101,11 +172,22 @@ exactly like a genuine indeterminate verdict. Clone the fork's port branch there
 classify; never read `unknown` as evidence the delta is functional before checking the clone
 exists. (SCAMP)
 
+### How far a validator takes a crash inside a vendored JIT (extends `diagnosis.md`)
+
+`cuda-to-rocm`'s forced-throw method is the validator's whole toolkit for a crash that
+bottoms out in a dependency's runtime JIT. A debugger or a minidump is porter and
+investigation scope, not a validator's. Two hypotheses fit one 30-minute retry budget: an
+environment-variable toggle and the forced throw. "Both falsified, same relative offset both
+times" is a complete, honest retry outcome and not a reason to escalate inside the validator
+role. Before deriving a diagnosis from scratch, check host-global scratch (a prior session's
+`upstream-issues` drafts) for one on the same dependency, and verify it against the current
+patched source. (diff-surfel-tracing)
+
 ## The CUDA no-regression compile on the fleet (extends `validation.md`)
 
 - Run it on a fleet host that has nvcc. On a GPU-less Linux host the dedicated env is
   `/opt/conda/envs/cuda-12.8/bin/nvcc`, created with the `conda create` line in
-  `cuda-to-rocm`'s `validation.md`.
+  `cuda-to-rocm`'s `validation.md` ("The CUDA no-regression compile").
 - When the check cannot run for reasons outside the port (a ROCm-only PyTorch on the host
   for a torch extension; legacy `FindCUDA` under CMP0146), record
   `cuda-not-validated: <the exact error>` instead of failing the gate. Fleet hosts carry a
@@ -116,7 +198,12 @@ exists. (SCAMP)
 
 ## Upstream-visible text (extends `naming.md` and the write-up section of `SKILL.md`)
 
-Run `python3 utils/jargon.py --port <name>` before pushing; it scans the whole branch.
+Run `python3 utils/jargon.py --port <name>` before pushing; it scans the whole branch,
+one commit message and one file at a time. Fenced code blocks and command lines are
+scanned as well, for the `[fenced]` table only: our tool names, record files,
+`agent_space`, `/var/lib/jenkins` and home-directory paths. So a Test Plan gives the
+commands a maintainer can run in their own checkout, not ours. A drafted body is
+checked on stdin (`python3 utils/jargon.py - < body.md`).
 Terms and their replacements are in `config/jargon.toml`. In-house words that must never
 reach an upstream reader include "lead"/"follower", "head_sha", "curated commit",
 "validated_sha", "revalidate", and any define or identifier named after MOAT
@@ -124,23 +211,18 @@ reach an upstream reader include "lead"/"follower", "head_sha", "curated commit"
 grep new comments for the names of other projects MOAT has ported (arrayfire carried five
 such references the checker missed).
 
-### `jargon.py --port` alone misses an in-flight fix round
+### `jargon.py --port` picks the range; do not type one
 
-`--port` resolves its range from `obj.get("fork_branch") or PORT_BRANCH`, and nothing in
-`moatlib.py` writes `fork_branch`, so it always scans `moat-port`. Once a fix round is
-staged on `moat-fix-<pr#>` (the published `moat-port` is frozen while a PR is open), it
-silently scans the frozen branch and never sees the round's commits, so it can report clean
-while new jargon sits on the staging branch. Scan the real range explicitly:
+`--port` reads the range from the project's record: the base is `fork_default_branch` and
+the tip is the branch upstream will see, which is the staging branch while a fix or sync
+round is in flight and the port branch otherwise. It refuses a range it cannot resolve or
+one with no commits, instead of reporting clean. So never hand-type a `--commits`/`--diff`
+range for a port: that is how a round's commits went unscanned while the frozen branch
+read clean. (mahout)
 
-```
-python3 utils/jargon.py -C projects/<name>/src --commits <base>..<fix-branch> --diff <base>..<fix-branch>
-```
-
-Two things make this fail open: a shallow single-branch clone of the fork usually has no
-local `main`, and `scan_commits`/`scan_diff` (unlike `port_range`'s range-count check)
-report zero hits on an unresolvable range instead of erroring. Fetch first
-(`git fetch --depth 50 origin main:main`) and confirm the range resolves to a nonzero commit
-count before trusting "clean". (mahout)
+What it needs from the clone is the base branch as a LOCAL ref. A shallow single-branch
+clone has only the remote-tracking one, and `--port` then stops with "cannot resolve".
+Fetch it first (`git fetch --depth 50 origin <default>:<default>`).
 
 The opposite false alarm happens after an upstream sync: the scan's base is the clone's
 local default branch, and if that branch still points at the old mirror tip, every
@@ -169,11 +251,49 @@ Why each line matters:
 
 This is a docs, diff, and review checkout, not a build checkout -- a compile needs the whole tree and there is no way around paying for it. Use it for a documentation-only porter round, a reviewer reading a delta, or a validator verifying that a delta is confined to another platform's guards. (LichtFeld-Studio)
 
+## Traps in MOAT's own tools
+
+- A tool run on a port branch is the trunk's copy, not the branch's (`utils/trunk.py`).
+  `MOAT_LOCAL_TOOLS=1` runs the checkout's own and says so on stderr; it is for
+  testing a tooling change (CONTRIBUTING.md), never for porting work.
+- Commands are documented as `python3`. On a host where that name is not MOAT's
+  interpreter (the Windows laptop), type `python`; the shell entry points, the hooks
+  and the `gh` launcher resolve it themselves, and `MOAT_PYTHON` names one outright.
+- `orient.sh` is not read-only: it installs hooks, pulls, merges the trunk into a port
+  branch and pushes that, and releases forks. It exits 2 on `main` without
+  `MOAT_ALLOW_TRUNK=1`, and 3 when `gh` on PATH is not the guard launcher (put
+  `~/.local/bin` first) or no Python can import the tooling's dependencies.
+- Only the work lock's holder can leave `planning`, `porting` or `reviewing`. When you
+  resume a stage, run `set-state <name> <platform> <stage>` first; if another host or
+  job of this platform took the lock it is re-stamped to you with a WARNING. A person
+  clears a lock nobody holds with `moatlib.py port-lock <name> --release`, or moves
+  it with `--take <platform>`.
+- The gh guard judges every `gh` call made inside a checkout. Pass `--repo` on every
+  write, and in a `gh api graphql` call write the repository's owner and name
+  literally in the query: a write whose target it cannot read is refused, and so are
+  gh aliases and extensions. `python3 utils/gh_guard.py --explain -- <gh arguments>`
+  says how a call would be judged without making it.
+- A `moatlib.py` refusal is one line starting `moatlib:` and exit 1. It is an answer,
+  not a crash; `MOAT_TRACEBACK=1` shows the traceback when it is one.
+- `timeit.sh` and `session.sh` refuse a `projects/<name>` that does not exist (exit
+  2, and `timeit.sh` then runs nothing), so a mistyped name is caught, not recorded.
+- Platform detection is `bash utils/detect_arch.sh`. `MOAT_PLATFORM=<os>-<gfx>`
+  bypasses it, `MOAT_OS` overrides only the operating system, `MOAT_HIPINFO` names
+  the Windows `hipInfo` binary, and a gitignored `.moat.local` in the repository root
+  (or the file `MOAT_LOCAL_ENV` names) is sourced first for host-local settings.
+
 ## Fleet hosts
 
 - Host and toolchain diagnostics specific to MOAT's machines (the gfx1151 laptop's System32
   runtime, TheRock layouts per host) belong in project notes or memory, not in
-  `cuda-to-rocm`; the general Windows lessons there are written host-neutral.
+  `cuda-to-rocm`. Its `windows.md`, `linux-host-setup.md` and `platform-limits.md` are
+  written host-neutral: they describe a kind of machine (an integrated APU, a host with
+  several identical cards), never one of ours, and the skills gate refuses "the gfx<n> host".
 - `hip_link_win.py` and `HipCxx23Shim.cmake` have their canonical copies in
   `cuda-to-rocm/assets/`. Fix bugs there first, then re-copy into each fork that vendors
-  them.
+  them, so the copies do not drift and the next Windows CMake HIP port does not reinvent
+  them. Each fork MUST vendor its own copy (conventionally `cmake/hip_link_win.py`), copied
+  in and never symlinked or downloaded, because the work is meant to be upstreamed and a
+  pull request cannot depend on a file that lives only in this repository. The asset's own
+  docstring says none of this, since the vendored copy ships upstream. Known consumers of
+  `hip_link_win.py`: AMD-Ecosystem/alien (its origin) and LichtFeld-Studio.

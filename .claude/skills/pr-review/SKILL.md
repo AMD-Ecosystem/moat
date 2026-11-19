@@ -103,7 +103,7 @@ What the port does (1 sentence), then the verdict.
 [Problems only -- wrong strategy, mis-hipified symbols, broken kernels]
 
 ### Fault Classes
-[Problems only -- warpSize/32, rule-of-five, OOB reads, texture pitch, lane masks, library swaps]
+[Problems only -- any entry of the `cuda-to-rocm` index: wavefront width, memory and stream lifetime, textures, numerics, macros and headers, library gaps]
 
 ### Minimal Footprint
 [Problems only -- host C++ touched needlessly, files renamed instead of LANGUAGE HIP, unguarded divergence, NVIDIA build broken]
@@ -118,7 +118,7 @@ What the port does (1 sentence), then the verdict.
 [Problems only -- changed CUDA/CPU behavior, non-additive change]
 
 ### Commit Hygiene
-[Problems only -- title not [ROCm]/over 72 chars, noreply trailer, ghstack, bare --force, AMD-internal account references]
+[Problems only -- ROCm-specific commit without [ROCm], [ROCm] on a shared-code fix, title over 72 chars, noreply trailer, ghstack, bare --force, AMD-internal account references]
 
 ### Recommendation
 **Approve** / **Request Changes** / **Needs Discussion**
