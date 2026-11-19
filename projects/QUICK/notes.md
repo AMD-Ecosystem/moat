@@ -991,3 +991,74 @@ Checked independently (not taken from the porter's section):
 - Commit a49289d5: title 65 characters (the porter's note says 64; still within 72), `[ROCm]` correct (HIP-only change), AI disclosure in prose, fenced Test Plan with literal commands, no `Co-Authored-By`/noreply trailer, no AMD-internal references. `python3 utils/jargon.py --port QUICK`: clean. Fork clone has no modified tracked files (only untracked `build-old/`, `build-new/`).
 
 Records correction for the validator: the porter section says the test-tree per-test table "is in the validator section that follows (that run is the validator's)". No validator section follows it, and that run happened before `review-passed`, so it is porter-side evidence only. gfx90a still needs a validator record at a49289d5 (or a `carry-forward`, which fits: device ISA identical). Still owed elsewhere, unchanged by this delta: the nvcc compile gate at a49289d5, wave32 validation at a49289d5, and the PR-preparation items listed under "Still open" (`CMake-Options.md:33` gfx1100, `[ROCm]` prefixes on a0122945/2146b22a, fork mirror fast-forward).
+
+## Validation 2026-11-19 (linux-gfx90a, MI250X, head a49289d5, TEST TREE): PASSED
+
+Validator run after `review-passed` at a49289d5 (the porter's pre-push run of the same tree is porter evidence only, per the review). Full real-GPU run: the platform returned from `validation-failed`, so no carry-forward.
+
+Test tree, per jeff's ruling of 2026-11-18: `agent_space/quick-testtree`, local branch `testtree` = fork `moat-port` a49289d5 + `git merge --no-ff pr512` (upstream merzlab/QUICK#512 head 0b8a13c5, still open), local merge 6f18c90d, never pushed. One conflict, the gfx `FATAL_ERROR` line, resolved as `Possible values are gfx908, gfx90a, gfx942, gfx1100, gfx1201.` `git diff pr512 HEAD` touches only `quick-cmake/QUICKCudaConfig.cmake`. PR 512 is not on the port branch.
+
+Toolchain: ROCm 10.1.0 pip SDK (HIP 7.16.26385, AMD clang 24.0.0git d6f6cb69), gfortran 13, one GCD (`HIP_VISIBLE_DEVICES=2`), every GPU run under `ulimit -c 0`. hipcc probed the GPU and built gfx90a code objects. Build (exit 0; libquick_hip link line carries `-mllvm -amdgpu-long-branch-factor=0`):
+
+```
+export ROCM_PATH=$(rocm-sdk path --root)
+GFL=$(dirname $(gfortran -print-file-name=libgfortran.so))
+cmake .. -DHIP=ON -DCOMPILER=GNU -DQUICK_USER_ARCH=gfx90a -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=$ROCM_PATH -DHIP_TOOLKIT_ROOT_DIR=$ROCM_PATH \
+  -DCMAKE_SHARED_LINKER_FLAGS="-L$GFL" -DCMAKE_EXE_LINKER_FLAGS="-L$GFL"
+make -j42 VERBOSE=1 && make install DESTDIR=$PWD/../install
+```
+
+Method as in the earlier rounds: each test of `test/testlist_short_gpu.txt` through the real harness on its own (a one-line list per `./runtest --hip`, the full list restored afterwards), `bin/quick.hip` wrapped in `exec timeout --signal=KILL 300 quick.hip.real "$@"`, `QUICK_HOME=<install>/usr/local QUICK_BASIS=$QUICK_HOME/basis LD_LIBRARY_PATH=$QUICK_HOME/lib:$(rocm-sdk path --root)/lib`. Pass = diff checks printed `PASSED`, runtest summary `Total tests: 0/1 (failed/total)`, and no `possible FAILURE` or `execution failed`.
+
+**Result: 37 PASS, 3 SKIPPED, 0 FAIL, 0 TIMEOUT** (all 40 tests; 335 s wall). The 3 skips are not passes: runtest skips them because upstream's default build has no f functions.
+
+| test | result | wall |
+|---|---|---|
+| ene_psb5_rhf_631g | PASS | 7s |
+| ene_psb5_rhf_631gss | PASS | 8s |
+| ene_acetone_rhf_321g | PASS | 6s |
+| ene_psb3_blyp_631g | PASS | 6s |
+| ene_psb3_blyp_631gss | PASS | 7s |
+| ene_psb3_b3lyp_631g | PASS | 7s |
+| ene_psb3_b3lyp_631gss | PASS | 7s |
+| ene_C2H6_b3lyp_def2tzvp | SKIPPED by runtest: "code not compiled with f function support" (upstream default build has no `-DENABLEF`) | 1s |
+| ene_psb3_libxc_lda_631g | PASS | 6s |
+| ene_psb3_libxc_gga_631g | PASS | 6s |
+| ene_psb3_libxc_hgga_631g | PASS | 6s |
+| ene_wat2_mp2_631g | PASS | 6s |
+| ene_wat2_mp2_631gss | PASS | 6s |
+| grad_psb3_b3lyp_631g | PASS | 8s |
+| grad_psb3_b3lyp_631gss | PASS | 10s |
+| grad_ch3conhch3_b3lyp_ccpvdz | PASS | 10s |
+| grad_NaCl_b3lyp_def2svp | PASS | 8s |
+| grad_CH4_pbe0_6311g2df2pd | SKIPPED by runtest: "code not compiled with f function support" (upstream default build has no `-DENABLEF`) | 1s |
+| grad_nma_rhf_def2tzvp | SKIPPED by runtest: "code not compiled with f function support" (upstream default build has no `-DENABLEF`) | 0s |
+| grad_wat_b3lyp_ccpvdz | PASS | 8s |
+| grad_c10h9o2s_b3lyp_def2svp | PASS | 16s |
+| grad_daspi_meoh_b3lyp_6-31g | PASS | 12s |
+| grad_rpsb_meoh_rhf_321g | PASS | 10s |
+| grad_ohrad_b3lyp_631gss | PASS | 8s |
+| opt_wat_rhf_631g | PASS | 7s |
+| opt_wat_rhf_ccpvdz | PASS | 8s |
+| opt_nh4_pbe0_def2svp | PASS | 9s |
+| opt_hsoh_pbe0_def2svp | PASS | 10s |
+| opt_c3h4_rhf_631g | PASS | 7s |
+| opt_caffeine_b3lyp_3-21g | PASS | 21s |
+| opt_c2h5rad_uhf_631gss | PASS | 10s |
+| opt_methoxyrad_ub3lyp_ccpvdz | PASS | 11s |
+| opt_const_dist_h2o_hf_3-21g | PASS | 7s |
+| opt_const_ang_h2o_hf_3-21g | PASS | 7s |
+| opt_const_dh_c2h4f2_hf_3-21g | PASS | 8s |
+| opt_const_freeze_c2h4f2_hf_3-21g | PASS | 9s |
+| api_water_rhf_631g | PASS | 7s |
+| esp_charge_acetone_b3lyp_def2svp | PASS | 7s |
+| chk_acetate_xyz_density | PASS | 22s |
+| ene_benzene_b3lyp_aug-cc-pvdz | PASS | 11s |
+
+### Gates
+
+- CUDA no-regression gate: not run here (no CUDA toolkit on this host: no `nvcc`, no `/opt/conda/envs`). Still owed at a49289d5 on the mi355 host. The delta since the last CUDA-gated head is inside `if(HIP)` only.
+- `jargon.py --port QUICK`: clean (clone's local `master` = upstream 7e8aeb2c).
+- Integrity: `git -C projects/QUICK/src status --porcelain` shows no modified tracked files; the fork clone is at a49289d5.
+- Documentation: the HIP build is documented upstream (`CMake-Options.md`: `-DHIP=TRUE`, `-DHIP_TOOLKIT_ROOT_DIR`, and `QUICK_USER_ARCH` listing gfx90a), so the gfx90a build is reproducible from the docs. Correction to the 2026-08-09 "Jargon and documentation gates" note: `CMake-Options.md` does document HIP options and the HIP arch values, and it does not list the port's `gfx1100` value (`CMake-Options.md:33`). Not a gfx90a gate; flagged by both 2026-11-19 reviews for the PR-preparation round, and jeff may want it treated as a docs gate before the wave32 record.
