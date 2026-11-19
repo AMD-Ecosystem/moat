@@ -70,8 +70,10 @@ what passes and what does not).
 - `cant-port` means "no AMD-native target exists", not "hipify will not do it". When the
   blocker is CUTLASS or CuTe, the intake recommendation names the reimplementation target
   and a rough cost, and a person decides.
-- FlashKDA, NATTEN, mirage and spconv are recorded `cant-port` on CUTLASS/CuTe grounds from
-  before FlyDSL was available. Revisiting them is a person's call, not an agent's.
+- NATTEN and mirage are recorded `cant-port` on CUTLASS/CuTe grounds from before FlyDSL was
+  available. Revisiting them is a person's call, not an agent's. (This line used to name
+  FlashKDA and spconv too; their recorded dispositions are `ported-elsewhere` and
+  `already-supported`. Read `data/dispositions.json`, not a list in prose.)
 - MOAT ported OpenCV's CUDA modules (opencv/opencv_contrib#4147). A project blocked on
   "OpenCV CUDA has no ROCm build" records `depends_on: [opencv_contrib]` rather than a
   decline.
@@ -328,5 +330,6 @@ This is a docs, diff, and review checkout, not a build checkout -- a compile nee
   them. Each fork MUST vendor its own copy (conventionally `cmake/hip_link_win.py`), copied
   in and never symlinked or downloaded, because the work is meant to be upstreamed and a
   pull request cannot depend on a file that lives only in this repository. The asset's own
-  docstring says none of this, since the vendored copy ships upstream. Known consumers of
-  `hip_link_win.py`: AMD-Ecosystem/alien (its origin) and LichtFeld-Studio.
+  docstring says none of this, since the vendored copy ships upstream. The only fork that
+  carries `hip_link_win.py` is AMD-Ecosystem/alien (its origin): it is needed only with a
+  clang-cl host and `-fgpu-rdc`, not by a port that uses the GNU-style clang++ throughout.
