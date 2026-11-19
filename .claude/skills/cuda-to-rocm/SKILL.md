@@ -88,7 +88,7 @@ AMD-native target is not the same verdict as "no target exists"; say which.
 | numbers that differ from CUDA or the CPU: FMA contraction, rounding, `min`/`max`, half-precision GEMM, big-integer arithmetic | `references/faults-numerics.md` |
 | a compile error, or code silently skipped: macros HIP does not define, includes, `__CUDA_ARCH__`, `helper_math.h`, C++23 | `references/build-headers-macros.md` (C++23: `assets/HipCxx23Shim.cmake`) |
 | CMake, link or load errors: `LANGUAGE HIP`, `-fgpu-rdc`, OpenMP, RUNPATH, LibTorch, installed packages, submodules | `references/build-cmake-link.md` |
-| anything on Windows: SDK install, clang drivers, CRT and link errors, DLL loading, Windows-only wrong results, debugging | `references/windows.md` (link wrapper: `assets/hip_link_win.py`) |
+| anything on Windows: SDK install, clang drivers, CRT and link errors, DLL loading, Windows-only wrong results, debugging | `references/windows.md` (link wrapper for a clang-cl host with `-fgpu-rdc`: `assets/hip_link_win.py`) |
 | a CUDA library to replace, or a missing routine or mode: cuBLAS, cuSOLVER, cuDNN, cuSPARSE, Thrust/CUB, cuRAND, NCCL, RAPIDS, nvJPEG, NVDEC, NVML | `references/libraries.md` |
 | a device query that answers differently, `clock64`, occupancy, kernels compiled at run time (PTX, NVRTC), an integrated APU | `references/platform-limits.md` |
 | a failure you cannot place yet, or a suspected ROCm bug | `references/diagnosis.md` |
@@ -326,7 +326,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - CRT flags, compiler-rt builtins and Git Bash flag mangling in a CMake HIP build
 - Bundled third-party libraries that break under the clang toolchain: take them from vcpkg
 - TheRock clang 23 can hang in x86 register allocation
-- CMake's HIP link rule mangles MSVC-style flags and paths
+- Linking HIP through CMake: what each compiler arrangement needs
 - A ROCm library linked by name may have no `.lib`
 - A fetched ROCm-DS dependency has to be built static
 - A C++ LibTorch consumer must force the torch_hip.dll import

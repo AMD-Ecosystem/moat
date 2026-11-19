@@ -328,5 +328,6 @@ This is a docs, diff, and review checkout, not a build checkout -- a compile nee
   them. Each fork MUST vendor its own copy (conventionally `cmake/hip_link_win.py`), copied
   in and never symlinked or downloaded, because the work is meant to be upstreamed and a
   pull request cannot depend on a file that lives only in this repository. The asset's own
-  docstring says none of this, since the vendored copy ships upstream. Known consumers of
-  `hip_link_win.py`: AMD-Ecosystem/alien (its origin) and LichtFeld-Studio.
+  docstring says none of this, since the vendored copy ships upstream. The only fork that
+  carries `hip_link_win.py` is AMD-Ecosystem/alien (its origin): it is needed only with a
+  clang-cl host and `-fgpu-rdc`, not by a port that uses the GNU-style clang++ throughout.
