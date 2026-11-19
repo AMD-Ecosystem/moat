@@ -6429,3 +6429,339 @@ wait
 
 ### Head moved during this session
 While these runs were in progress, the porter advanced the head to `de4e07a3` ("[ROCm] Wait for the previous graph launch on Windows"). The fork delta `fda2f89a..de4e07a3` is `warp/native/hip_compat.h` +18. All of it is inside `#if defined(_WIN32)`, and the Linux branch keeps `#define cudaGraphLaunch hipGraphLaunch` unchanged. So the Linux build at `de4e07a3` is the same as at `fda2f89a`, and no kernel-cache header (`tile_matmul_mma.h`, `crt.h`, `builtin.h`) changed. This session did not run anything at `de4e07a3`. Whether these results carry forward to it is the validator's call (`carry-forward`); no record was changed here.
+
+## Evidence session (2026-11-19, linux-gfx1100, evidence only): bf16 WMMA at `fda2f89a`
+
+Requested by Jeff Daily. **Every gfx1100 item in Porting session 13's Next step matched its expected result.** The gfx11 bf16 layout probe passes on gfx1100. `mma_check_bf16.py` and `mma_check.py` both report FAILURES 0, with bf16 WMMA in exactly the expected 34 code objects. The tile set gives 639 run, 15 skipped, 0 failures. **bf16 WMMA beats the scalar tree in all 11 cells where it runs, by 2.21x to 5.89x. 64x64 at block_dim 256 is 1.03x, because both trees are scalar there by construction.** The 82-pattern set gives 81 OK plus the two known fem isolation failures, and the CPU-only suite gives 2294 OK. The porting lock stays with windows-gfx1151. Nothing was committed or pushed to the fork, and no stage, lock, head, platform or deferral record changed. The fork head moved to `de4e07a3` during this session. That delta is `hip_compat.h` +18, entirely inside `#if defined(_WIN32)`, so it does not change the Linux build. The evidence here is at `fda2f89a`, as requested.
+
+### Setup
+- Device "AMD Radeon Pro W7800 48GB" (gfx1100, wave32, 64 KiB shared memory per block). The dispatcher pin `HIP_VISIBLE_DEVICES=0` was kept; that is PCI bus 0x43. Every GPU run was under `ulimit -c 0` with its own fresh `WARP_CACHE_PATH`.
+- The job venv came with TheRock 10.1.0 wheels. Installed into `$FLEET_VENV`, as the earlier gfx1100 sessions did: `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx1100]==10.2.0" "torch[device-gfx1100]==2.15.0+rocm10.2.0" numpy==1.26.4 usd-core`, then `rocm-sdk init`. `PATH=$FLEET_VENV/bin:$PATH`. This gives HIP 7.17.26434 and torch 2.15.0+rocm10.2.0. `R=$(rocm-sdk path --root)` is the venv's 10.2 `_rocm_sdk_devel`.
+- The fork was cloned read-only into `agent_space/warp-src` (`release/1.14.0.amd0`) and checked out detached at `fda2f89a145836d8d51ce6360439d28217fce7a5`. LFS assets were present. At the end, `git status --porcelain` shows only the untracked `example_apic_fluid.usd` written by an example. Nothing was pushed.
+- Build: `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1100 -j 32` -> "Warp build succeeded" (32.9 s). The RUNPATH of `warp.so` is the venv's 10.2 `_rocm_sdk_devel/lib`.
+- Scripts were extracted verbatim from these notes: `wmma_layout_bf16.hip` and `isa_count.py` from Porting session 13; `mma_check.py` and `mma_check_bf16.py` from Porting session 10 (the fixed versions); `bench_tile_matmul.py` from Porting session 4.
+- Telemetry: the `utils/timeit.sh` lines for this session (compile 32.9 s; mma_check_bf16 86.7 s; mma_check 344.1 s; tile set 724.9 s; one 6 s line for an aborted benchmark attempt; then the benchmark, the 82-pattern set and the CPU-only suite) were **lost**. I reverted the uncommitted `stats.jsonl` with `git checkout` before pulling. That was my error. They were not re-created by hand. From the log mtimes: the benchmark took about 8.5 min for all six runs, the 82-pattern set about 42 min, and the CPU-only suite 151 s of test time.
+
+### 1. bf16 WMMA layout probe: PASS
+`$R/lib/llvm/bin/clang++ -x hip --rocm-path=$R --offload-arch=gfx1100 -O2 -w wmma_layout_bf16.hip -o wmma_layout_bf16 -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib && ./wmma_layout_bf16` -> exit 0:
+```
+bf16 WMMA family 11, layout (non-negative)  K=16: 0 of 256 wrong
+bf16 WMMA family 11, layout (non-negative)  K=32: 0 of 256 wrong
+bf16 WMMA family 11, layout (non-negative)  K=64: 0 of 256 wrong
+bf16 WMMA family 11, layout (position)      K=16: 0 of 256 wrong
+bf16 WMMA family 11, layout (position)      K=32: 0 of 256 wrong
+bf16 WMMA family 11, layout (position)      K=64: 0 of 256 wrong
+bf16 WMMA family 11, accumulation           K=16: 0 of 256 over the bound, worst error 0.27 of the bound
+bf16 WMMA family 11, accumulation           K=32: 0 of 256 over the bound, worst error 0.13 of the bound
+bf16 WMMA family 11, accumulation           K=64: 0 of 256 over the bound, worst error 0.08 of the bound
+```
+gfx1151 measured 0.21/0.15/0.07 of the bound.
+
+### 2. `mma_check_bf16.py`, `mma_check.py`, `isa_count.py`: as expected
+- `python mma_check_bf16.py` -> **FAILURES 0**, exit 0. It ran 55 cases with no shared-memory limit. Max abs difference against the CPU at bd 64: 1.2e-7 (16^3), 9.5e-7 (32^3), 1.9e-6 (64^3), 4.8e-7 (16x48x32), 9.5e-7 (48x16x64), 3.6e-7 (32x64x16), 9.5e-7 (64x32x48), and 0 for the four scalar shapes.
+- `python isa_count.py <that cache> gfx1100`: **`v_wmma_f32_16x16x16_bf16` appears in 34 of the 55 code objects**. That is exactly the 7 shapes with 16-multiple M, N and K at all 5 block_dims, **except 64x64x64 at block_dim 256, which is scalar**. The 4 other shapes are scalar at every block_dim. This is the same as the gfx1151 table. Instruction counts per object: 16^3 2; 16x48x32 4 (8 at bd 64); 32^3 16/8/8/4/4; 32x64x16 16/8/8/4/2; 48x16x64 8/16/8/8/8; 64x32x48 12/12/24/12/6; 64^3 32/32/64/32/scalar (bd 32/64/96/128/256).
+- `python mma_check.py` -> **FAILURES 0**, exit 0. It reports 15 "SMEM-LIMIT (forward not launched)" and 25 "SMEM-LIMIT (backward not launched)", the same 40 cases as in Evidence session 8 at `a8e95dcb`.
+
+### 3. test_tile_matmul and the tile set: match
+`python -m warp.tests -s autodetect -p "<file>" -m 32`, one run per file of the 24-file tile set (`warp/tests/tile/test_tile*.py` plus `test_block_dim_dispatch.py` and `test_template_launch_bounds.py`), each with a fresh cache. Result: **639 run, 15 skipped, 0 failures**, including **test_tile_matmul Ran 25, OK**. The 15 skips are as before: test_tile_fft 8, test_tile_mlp 1, test_tile_reduce 2, test_tile_shared_memory 2, test_tile_solve 1 and test_tile_view 1. No log has a `Warp CUDA error` line. The only shared-memory warning is the known `test_tile_load_scoped` backward one (65536 bytes).
+
+### 4. bf16 benchmark against the scalar tree: no bf16 cell below 1.0x
+- Trees: "shipped" = the clone at `fda2f89a`. "scalar" = `git worktree add --detach scalar_wt fda2f89a`, then `git -C scalar_wt checkout a8e95dcb -- warp/native/tile_matmul_mma.h` (`git diff --cached --stat`: that one file, +2/-49, which reverts `6761183c`), then the clone's `warp/bin/*.so` copied in. The worktree was removed afterwards. Only the bf16 code differs between the trees. fp16, fp32 and fp64 are controls with identical code in both: fp16 is on WMMA in both, fp32 and fp64 are scalar in both.
+- Script: `bench_tile_matmul_bf16.py`, the Phase 4 `bench_tile_matmul.py` plus a bf16 mode (diff below). The bf16 kernel loads bf16 A and B tiles, accumulates into a float32 C tile with 32 `tile_matmul` calls per block, and runs with `module_options={"enable_backward": False}`. It is forward only, because tile_matmul rejects a bf16 backward. Each cell checks block 0 against an fp64 reference computed from the bf16-rounded inputs (rtol 1e-4). Tiles are 16/32/64 at block_dim 32/64/128/256, the same cells as fp16. The first attempt passed `enable_backward=False` to `@wp.kernel` instead. Codegen refused it ("does not support bfloat16 'a' or 'b' tiles when the backward pass is enabled"), so I stopped it after the first run's first module, fixed the script and ran it again. The aborted attempt produced no data.
+- Command: `bench_both.sh` (below), `--blocks 16384 --iters 50`, three runs of the shipped tree and then three of the scalar tree, each with a fresh cache.
+- GPU idle check before the run: `gpu_busy_percent` was 0 for card1 (bus 0x43, this job's GPU). Another job's GPU, card4, was at 100% throughout, as it had been since the start of the session. `monitor.sh` (below) logged the host load average and every card's busy percent every 5 s during the six runs (120 samples). Load average was at most 2.00. card1 was busy only while the benchmark ran.
+- **Clean:** no value is above 1.5x its median. Over the 144 launched series, the run-to-run spread (max-min)/median has a median of 4.4% and a maximum of 11.5% (fp32 32x32 bd 256 adjoint, shipped). Run 1 is the fastest of three in most cells, the warm-up pattern this card has shown since the first session. Over all 168 series, including the non-launched fp64 64x64 forwards, the maximum spread is 22.7%.
+- Every run exits 1. That comes from the known 64 KiB rows in both trees, all six runs: fp32 64x64 `ADJ-FAILED` (the backward kernel does not launch) and fp64 64x64 `MISMATCH` (the forward kernel does not launch; about 0.02 ms). These are the same as the fp32/fp64 rows in Evidence session 6 at `c9595bce`. Every bf16 and fp16 cell is `ok` in every run.
+
+**bf16 input / float32 output, forward, median of 3 runs (ms):**
+
+| tile | block_dim | scalar fwd ms | shipped (WMMA) fwd ms | speedup | check |
+|---|---|---|---|---|---|
+| 16x16 | 32 | 1.150 | 0.254 | 4.53x | ok |
+| 16x16 | 64 | 1.286 | 0.276 | 4.66x | ok |
+| 16x16 | 128 | 1.017 | 0.378 | 2.69x | ok |
+| 16x16 | 256 | 1.528 | 0.444 | 3.44x | ok |
+| 32x32 | 32 | 4.369 | 1.733 | 2.52x | ok |
+| 32x32 | 64 | 5.082 | 2.085 | 2.44x | ok |
+| 32x32 | 128 | 6.358 | 2.882 | 2.21x | ok |
+| 32x32 | 256 | 8.513 | 2.926 | 2.91x | ok |
+| 64x64 | 32 | 69.603 | 11.820 | 5.89x | ok |
+| 64x64 | 64 | 44.503 | 11.702 | 3.80x | ok |
+| 64x64 | 128 | 33.375 | 13.459 | 2.48x | ok |
+| 64x64 | 256 | 35.735 | 34.579 | 1.03x (both scalar) | ok |
+
+- **No bf16 cell is below 1.0x.** The 11 WMMA cells are 2.21x to 5.89x faster. The 64x64 bd 256 cell is scalar in both trees, as `isa_count.py` shows above, and reads 1.03x. That is within its run spread (shipped 33.41/34.58/35.23 ms, scalar 34.04/36.01/35.74 ms), and it is the same tree-order offset that the identical fp16 cells show (1.00x-1.02x).
+- The bf16 WMMA forward times are close to the fp16 WMMA forward times from the same runs: 16x16 0.25-0.44 ms against 0.29-0.48; 32x32 1.73-2.93 against 1.81-2.69; 64x64 bd 32-128 11.7-13.5 against 13.7-18.8. The bf16 scalar path is much slower than the fp16 WMMA path. For example, 64x64 bd 32 takes 69.6 ms, and the fp16 *scalar* time for that cell at `a8e95dcb` was 33.2 ms. That is why the 64x64 bf16 speedups are larger than fp16's were.
+- **Controls**, shipped against scalar (identical code): fp16 forward 1.00x-1.02x, fp16 adjoint 0.99x-1.01x, fp32 0.98x-1.02x. fp64 is 0.99x-1.00x in the launched cells. The fp16 shipped medians agree with Evidence session 8 within its spread; for example, 64x64 bd 256 forward is 17.31 ms against 16.78 ms, and its adjoint is 8.96 ms against 8.83 ms.
+
+Full merged table (`compare_bf16.py`):
+
+| dtype | tile | block_dim | scalar fwd ms | shipped fwd ms | fwd speedup | scalar adj ms | shipped adj ms | adj speedup | checks |
+|---|---|---|---|---|---|---|---|---|---|
+| bfloat16 | 16x16 | 32 | 1.150 | 0.254 | 4.53x | n/a | n/a | - | ok |
+| bfloat16 | 16x16 | 64 | 1.286 | 0.276 | 4.66x | n/a | n/a | - | ok |
+| bfloat16 | 16x16 | 128 | 1.017 | 0.378 | 2.69x | n/a | n/a | - | ok |
+| bfloat16 | 16x16 | 256 | 1.528 | 0.444 | 3.44x | n/a | n/a | - | ok |
+| bfloat16 | 32x32 | 32 | 4.369 | 1.733 | 2.52x | n/a | n/a | - | ok |
+| bfloat16 | 32x32 | 64 | 5.082 | 2.085 | 2.44x | n/a | n/a | - | ok |
+| bfloat16 | 32x32 | 128 | 6.358 | 2.882 | 2.21x | n/a | n/a | - | ok |
+| bfloat16 | 32x32 | 256 | 8.513 | 2.926 | 2.91x | n/a | n/a | - | ok |
+| bfloat16 | 64x64 | 32 | 69.603 | 11.820 | 5.89x | n/a | n/a | - | ok |
+| bfloat16 | 64x64 | 64 | 44.503 | 11.702 | 3.80x | n/a | n/a | - | ok |
+| bfloat16 | 64x64 | 128 | 33.375 | 13.459 | 2.48x | n/a | n/a | - | ok |
+| bfloat16 | 64x64 | 256 | 35.735 | 34.579 | 1.03x | n/a | n/a | - | ok |
+| float16 | 16x16 | 32 | 0.292 | 0.285 | 1.02x | 0.235 | 0.233 | 1.01x | ok |
+| float16 | 16x16 | 64 | 0.287 | 0.287 | 1.00x | 0.207 | 0.209 | 0.99x | ok |
+| float16 | 16x16 | 128 | 0.429 | 0.427 | 1.00x | 0.208 | 0.209 | 1.00x | ok |
+| float16 | 16x16 | 256 | 0.479 | 0.475 | 1.01x | 0.252 | 0.256 | 0.99x | ok |
+| float16 | 32x32 | 32 | 1.824 | 1.809 | 1.01x | 2.685 | 2.658 | 1.01x | ok |
+| float16 | 32x32 | 64 | 1.877 | 1.857 | 1.01x | 1.686 | 1.674 | 1.01x | ok |
+| float16 | 32x32 | 128 | 2.676 | 2.640 | 1.01x | 1.193 | 1.179 | 1.01x | ok |
+| float16 | 32x32 | 256 | 2.723 | 2.691 | 1.01x | 1.179 | 1.165 | 1.01x | ok |
+| float16 | 64x64 | 32 | 13.903 | 13.660 | 1.02x | 54.133 | 53.998 | 1.00x | ok |
+| float16 | 64x64 | 64 | 18.995 | 18.820 | 1.01x | 30.239 | 30.225 | 1.00x | ok |
+| float16 | 64x64 | 128 | 14.075 | 13.930 | 1.01x | 14.747 | 14.726 | 1.00x | ok |
+| float16 | 64x64 | 256 | 17.431 | 17.307 | 1.01x | 8.998 | 8.961 | 1.00x | ok |
+| float32 | 16x16 | 32 | 1.838 | 1.832 | 1.00x | 0.404 | 0.395 | 1.02x | ok |
+| float32 | 16x16 | 64 | 2.003 | 1.994 | 1.00x | 0.353 | 0.346 | 1.02x | ok |
+| float32 | 16x16 | 128 | 1.300 | 1.296 | 1.00x | 0.403 | 0.400 | 1.01x | ok |
+| float32 | 16x16 | 256 | 1.664 | 1.664 | 1.00x | 0.459 | 0.467 | 0.98x | ok |
+| float32 | 32x32 | 32 | 7.700 | 7.663 | 1.00x | 6.516 | 6.508 | 1.00x | ok |
+| float32 | 32x32 | 64 | 8.216 | 8.218 | 1.00x | 3.367 | 3.376 | 1.00x | ok |
+| float32 | 32x32 | 128 | 7.973 | 7.992 | 1.00x | 2.617 | 2.624 | 1.00x | ok |
+| float32 | 32x32 | 256 | 9.505 | 9.529 | 1.00x | 2.971 | 2.979 | 1.00x | ok |
+| float32 | 64x64 | 32 | 68.867 | 68.895 | 1.00x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 64 | 43.588 | 43.606 | 1.00x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 128 | 41.881 | 41.994 | 1.00x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 256 | 48.593 | 48.129 | 1.01x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float64 | 16x16 | 32 | 6.714 | 6.733 | 1.00x | 1.420 | 1.432 | 0.99x | ok |
+| float64 | 16x16 | 64 | 6.645 | 6.689 | 0.99x | 0.993 | 1.007 | 0.99x | ok |
+| float64 | 16x16 | 128 | 6.805 | 6.818 | 1.00x | 1.326 | 1.338 | 0.99x | ok |
+| float64 | 16x16 | 256 | 6.770 | 6.791 | 1.00x | 1.313 | 1.313 | 1.00x | ok |
+| float64 | 32x32 | 32 | 56.989 | 56.992 | 1.00x | 23.219 | 23.235 | 1.00x | ok |
+| float64 | 32x32 | 64 | 49.838 | 49.870 | 1.00x | 13.219 | 13.224 | 1.00x | ok |
+| float64 | 32x32 | 128 | 45.592 | 45.581 | 1.00x | 8.948 | 8.968 | 1.00x | ok |
+| float64 | 32x32 | 256 | 46.882 | 46.806 | 1.00x | 8.004 | 8.008 | 1.00x | ok |
+| float64 | 64x64 | 32 | 0.020 | 0.021 | 0.96x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 64 | 0.019 | 0.017 | 1.16x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 128 | 0.020 | 0.019 | 1.03x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 256 | 0.019 | 0.020 | 0.95x | (no launch) | (no launch) | - | MISMATCH |
+run-to-run spread (max-min)/median over 168 cells: median 4.3%, max 22.7%; cells above 1.5x median: 0
+
+Raw bf16 forward timings per run, ms (`bench_<tree>_run<n>.csv`):
+```
+tree,dtype,M,block_dim,fwd_r1,fwd_r2,fwd_r3
+scalar,bfloat16,16,32,1.1424,1.1498,1.1606
+scalar,bfloat16,16,64,1.2399,1.2858,1.2959
+scalar,bfloat16,16,128,0.9666,1.0189,1.0170
+scalar,bfloat16,16,256,1.4241,1.5275,1.5353
+scalar,bfloat16,32,32,4.3580,4.3693,4.4465
+scalar,bfloat16,32,64,4.9709,5.0825,5.1888
+scalar,bfloat16,32,128,6.2122,6.3577,6.5024
+scalar,bfloat16,32,256,8.1289,8.5130,8.6934
+scalar,bfloat16,64,32,69.2900,69.6030,69.6595
+scalar,bfloat16,64,64,42.8238,44.5440,44.5028
+scalar,bfloat16,64,128,32.1624,33.5842,33.3753
+scalar,bfloat16,64,256,34.0359,36.0114,35.7351
+shipped,bfloat16,16,32,0.2495,0.2537,0.2566
+shipped,bfloat16,16,64,0.2708,0.2757,0.2775
+shipped,bfloat16,16,128,0.3673,0.3784,0.3816
+shipped,bfloat16,16,256,0.4325,0.4437,0.4479
+shipped,bfloat16,32,32,1.6740,1.7329,1.7684
+shipped,bfloat16,32,64,2.0115,2.0850,2.1228
+shipped,bfloat16,32,128,2.7649,2.8817,2.9413
+shipped,bfloat16,32,256,2.8058,2.9262,2.9950
+shipped,bfloat16,64,32,11.2988,11.8199,12.1108
+shipped,bfloat16,64,64,10.9296,11.7212,11.7018
+shipped,bfloat16,64,128,12.8223,13.4590,13.8491
+shipped,bfloat16,64,256,33.4074,34.5786,35.2329
+```
+
+### 5. 82-pattern set and CPU-only suite: match
+- 82-pattern set: the Porting session 6 handoff B.5 list (`run82.sh`, below), `python -m warp.tests -s autodetect -p "<pattern>" -m 32` per pattern with a fresh cache each, from the clone, under `utils/timeit.sh warp-1.14 test`. Result: **82 patterns, 81 OK, 1 with the 2 known fem isolation failures**. `test_fem*` ran 107: `test_gimp_quadrature` and `test_cube_shape_functions` failed with "Unexpected output", the upstream isolation behaviour. The counts match the gfx1100 column of Porting session 13's table, and torch is installed here, so the torch-dependent files also run: test_array 139, test_dlpack 16, test_torch 34 and test_tile_mlp 3 (1 skipped). Also test_bf16 48 OK with no skip, test_mesh* 49 OK with no skip, test_coloring 3 OK, test_print 10 OK, test_streams 24 (3 skipped), test_texture 120 (1 skipped), test_tile_matmul 25 OK, and the tile files as in item 3. No log has a `Warp CUDA error` line. The only shared-memory warning is the known `test_tile_load_scoped` one.
+- CPU-only suite: `HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32`, with a fresh cache, run alongside the 82-pattern set (it does not touch the GPU). Result: **Ran 2294, OK (skipped=15)**. The log has no `cuda:0`.
+
+### Scripts from this session
+`bench_tile_matmul_bf16.py` is `bench_tile_matmul.py` (Porting session 4) with this diff:
+```diff
+@@ -1,5 +1,6 @@
+ # tile_matmul throughput: square MxM tiles, one tile GEMM chain per block.
+-# Usage: python bench_tile_matmul.py [--device cuda:0] [--mathdx on|off] [--csv out.csv]
++# Usage: python bench_tile_matmul_bf16.py [--device cuda:0] [--mathdx on|off] [--csv out.csv]
++# bfloat16 rows: bf16 A and B, float32 C, forward only (tile_matmul has no bf16 backward), so adj is n/a.
+ # fwd:  REPS accumulating tile_matmul calls per block (C += A @ B), loads/stores amortized.
+ # adj:  one C = A @ B per block, timed tape.backward (adj_A = adj_C B^T, adj_B = A^T adj_C);
+ #       adj_gflops counts those 2 GEMMs (the backward kernel also replays the forward GEMM).
+@@ -25,7 +26,7 @@
+ dev = wp.get_device(args.device)
+ 
+ SIZES = (16, 32, 64)
+-DTYPES = (wp.float16, wp.float32, wp.float64)
++DTYPES = (wp.bfloat16, wp.float16, wp.float32, wp.float64)
+ BLOCK_DIMS = (32, 64, 128, 256)
+ REPS = args.reps
+ 
+@@ -52,6 +53,32 @@
+     return fwd, one
+ 
+ 
++def make_bf16_kernel(M):
++    @wp.kernel(module="unique", module_options={"enable_backward": False})
++    def fwd(A: wp.array3d(dtype=wp.bfloat16), B: wp.array3d(dtype=wp.bfloat16), C: wp.array3d(dtype=float)):
++        i = wp.tid()
++        a = wp.tile_load(A[i], shape=(M, M))
++        b = wp.tile_load(B[i], shape=(M, M))
++        c = wp.tile_zeros(shape=(M, M), dtype=float)
++        for _r in range(REPS):
++            wp.tile_matmul(a, b, c)
++        wp.tile_store(C[i], c)
++
++    return fwd
++
++
++@wp.kernel
++def to_bf16(x: wp.array3d(dtype=float), y: wp.array3d(dtype=wp.bfloat16)):
++    i, j, k = wp.tid()
++    y[i, j, k] = wp.bfloat16(x[i, j, k])
++
++
++def round_bf16(x):
++    u = x.astype(np.float32).view(np.uint32)
++    u = (u + np.uint32(0x7FFF) + ((u >> np.uint32(16)) & np.uint32(1))) & np.uint32(0xFFFF0000)
++    return u.view(np.float32)
++
++
+ def timed(fn, iters):
+     fn()  # warm-up, includes module load
+     wp.synchronize_device(dev)
+@@ -72,6 +99,27 @@
+ print("dtype,M,block_dim,fwd_ms,fwd_gflops,adj_ms,adj_gflops,check", flush=True)
+ for dtype in DTYPES:
+     for M in SIZES:
++        if dtype == wp.bfloat16:
++            fwd = make_bf16_kernel(M)
++            An = round_bf16(rng.uniform(-1, 1, (args.blocks, M, M)))
++            Bn = round_bf16(rng.uniform(-1, 1, (args.blocks, M, M)))
++            A = wp.zeros((args.blocks, M, M), dtype=wp.bfloat16, device=dev)
++            B = wp.zeros((args.blocks, M, M), dtype=wp.bfloat16, device=dev)
++            wp.launch(to_bf16, dim=An.shape, inputs=[wp.array(An, device=dev), A], device=dev)
++            wp.launch(to_bf16, dim=Bn.shape, inputs=[wp.array(Bn, device=dev), B], device=dev)
++            C = wp.zeros((args.blocks, M, M), dtype=float, device=dev)
++            for bd in BLOCK_DIMS:
++                def run_fwd():
++                    wp.launch_tiled(fwd, dim=[args.blocks], inputs=[A, B, C], block_dim=bd, device=dev)
++
++                fwd_ms = timed(run_fwd, args.iters)
++                ref = REPS * (An[0].astype(np.float64) @ Bn[0].astype(np.float64))
++                ok = np.allclose(C.numpy()[0].astype(np.float64), ref, rtol=1e-4, atol=1e-4 * REPS * M)
++                fl = 2.0 * M * M * M * args.blocks
++                r = ("bfloat16", M, bd, fwd_ms, fl * REPS / fwd_ms / 1e6, float("nan"), float("nan"), "ok" if ok else "MISMATCH")
++                rows.append(r)
++                print("%s,%d,%d,%.4f,%.1f,%.4f,%.1f,%s" % r, flush=True)
++            continue
+         fwd, one = make_kernels(M, dtype)
+         npt = wp.dtype_to_numpy(dtype)
+         A = wp.array(rng.uniform(-1, 1, (args.blocks, M, M)).astype(npt), dtype=dtype, device=dev, requires_grad=True)
+```
+
+`bench_both.sh` (the `A` path is this job's `agent_space`):
+```bash
+#!/bin/bash
+# bf16/fp16/fp32/fp64 tile_matmul benchmark, three runs each against the shipped tree and the scalar tree (gfx1100).
+ulimit -c 0
+A=<job>/moat/agent_space
+mkdir -p $A/bf16/bench
+for tree in ${TREES:-shipped scalar}; do
+  if [ $tree = shipped ]; then src=$A/warp-src; else src=$A/scalar_wt; fi
+  for n in 1 2 3; do
+    PYTHONPATH=$src WARP_CACHE_PATH=$(mktemp -d $A/bf16/kc/bench.XXXXXX) "$FLEET_VENV/bin/python" $A/bf16/bench_tile_matmul_bf16.py \
+      --blocks 16384 --iters 50 --csv $A/bf16/bench/bench_${tree}_run$n.csv > $A/bf16/bench/bench_${tree}_run$n.log 2>&1
+    echo "$tree run$n rc=$?"
+  done
+done
+```
+
+`compare_bf16.py` (run in the directory that holds the six CSVs):
+```python
+# Merge the three runs of each tree (bench_<tree>_run<n>.csv in the current directory): median ms per cell,
+# shipped speedup over scalar, run-to-run spread, cells above 1.5x their median. bfloat16 rows have no adjoint.
+import csv
+import math
+import statistics
+from collections import defaultdict
+
+data = defaultdict(lambda: defaultdict(list))
+checks = defaultdict(set)
+for tree in ("scalar", "shipped"):
+    for n in (1, 2, 3):
+        for r in csv.DictReader(open(f"bench_{tree}_run{n}.csv")):
+            key = (r["dtype"], int(r["M"]), int(r["block_dim"]))
+            data[key][tree + "_fwd"].append(float(r["fwd_ms"]))
+            if not math.isnan(float(r["adj_ms"])):
+                data[key][tree + "_adj"].append(float(r["adj_ms"]))
+            checks[key].add(f"{tree}:{r['check']}")
+spread, outliers = [], 0
+order = ["bfloat16", "float16", "float32", "float64"]
+print("| dtype | tile | block_dim | scalar fwd ms | shipped fwd ms | fwd speedup | scalar adj ms | shipped adj ms | adj speedup | checks |")
+print("|---|---|---|---|---|---|---|---|---|---|")
+for key in sorted(data, key=lambda k: (order.index(k[0]), k[1], k[2])):
+    d = data[key]
+    m = {k: statistics.median(v) for k, v in d.items()}
+    for v in d.values():
+        med = statistics.median(v)
+        spread.append((max(v) - min(v)) / med)
+        outliers += sum(x > 1.5 * med for x in v)
+    ck = sorted(checks[key])
+    if key[0] == "bfloat16":
+        adj = "n/a | n/a | -"
+    elif all(c.endswith(":ok") for c in ck):
+        adj = f"{m['scalar_adj']:.3f} | {m['shipped_adj']:.3f} | {m['scalar_adj'] / m['shipped_adj']:.2f}x"
+    else:
+        adj = "(no launch) | (no launch) | -"
+    print(f"| {key[0]} | {key[1]}x{key[1]} | {key[2]} | {m['scalar_fwd']:.3f} | {m['shipped_fwd']:.3f} | {m['scalar_fwd'] / m['shipped_fwd']:.2f}x | {adj} | {'/'.join(sorted(set(c.split(':')[1] for c in ck)))} |")
+spread.sort()
+print(f"run-to-run spread (max-min)/median over {len(spread)} cells: median {100 * statistics.median(spread):.1f}%, max {100 * spread[-1]:.1f}%; cells above 1.5x median: {outliers}")
+```
+
+`monitor.sh`:
+```bash
+#!/bin/bash
+# Every 5 s: load average and gpu_busy_percent of every amdgpu card. Usage: monitor.sh <log>
+while true; do
+  echo "$(date +%T) load $(cut -d' ' -f1 /proc/loadavg) busy $(for c in /sys/class/drm/card[0-9]/device/gpu_busy_percent; do printf '%s=%s ' $(basename $(dirname $(dirname $c))) $(cat $c 2>/dev/null); done)" >> "$1"
+  sleep 5
+done
+```
+
+`run82.sh` (paths shortened to `<A>` = this job's `agent_space`):
+```bash
+#!/bin/bash
+# The 82-pattern Phase 1-5 set (Porting session 6 handoff B.5), one pattern per run, fresh kernel cache each.
+ulimit -c 0
+cd <A>/warp-src
+n=0
+for p in test_codegen.py test_snippet.py test_arithmetic.py test_math.py test_fp16.py test_bf16.py test_atomic.py \
+    test_atomic_bitwise.py test_atomic_cas.py test_array.py test_copy.py test_launch.py test_fast_math.py test_grad.py \
+    test_kernel_cache.py test_module_hashing.py test_print.py 'test_mat*.py' 'test_vec*.py' 'test_quat*.py' \
+    'test_spatial*.py' test_rand.py test_noise.py test_clang_cuda.py \
+    test_runlength_encode.py test_array_reduce.py test_sparse.py test_linear_solvers.py test_coloring.py \
+    test_bvh.py test_grouped_bvh.py test_hash_grid.py test_marching_cubes.py 'test_mesh*.py' test_volume.py \
+    test_volume_write.py test_apic.py test_apic_mesh.py 'test_fem*.py' \
+    test_graph.py test_array_fill_capture.py test_capture_mode.py test_conditional_captures.py test_conditional.py \
+    test_async.py test_streams.py test_mempool.py test_pinned.py test_unified_memory.py test_occupancy.py \
+    test_allocator.py test_allocation_tracker.py test_dlpack.py test_torch.py test_map.py test_reload.py \
+    test_cuda_arch_suffix.py \
+    test_tile.py test_tile_atomic_bitwise.py test_tile_cholesky.py test_tile_cholesky_no_mathdx.py test_tile_empty.py \
+    test_tile_fft.py test_tile_fft_no_mathdx.py test_tile_func_arg.py test_tile_fused_ops.py test_tile_large_offsets.py \
+    test_tile_load.py test_tile_mathdx.py test_tile_matmul.py test_tile_matmul_no_mathdx.py test_tile_mlp.py \
+    test_tile_reduce.py test_tile_shared_memory.py test_tile_solve.py test_tile_solve_no_mathdx.py test_tile_sort.py \
+    test_tile_stack.py test_tile_view.py test_block_dim_dispatch.py test_template_launch_bounds.py \
+    test_texture.py; do
+  n=$((n+1)); log=<A>/bf16/p82/$(printf %02d $n)_$(echo "$p" | tr -d '*').log
+  WARP_CACHE_PATH=$(mktemp -d <A>/bf16/kc/p82.XXXXXX) python -m warp.tests -s autodetect -p "$p" -m 32 > "$log" 2>&1
+  echo "$p rc=$? $(grep -E '^Ran |^OK|^FAILED' "$log" | tr '\n' ' ')"
+done
+echo "patterns: $n"
+```
+
+The tile-set loop (item 3) is the session 4 loop, with a fresh `WARP_CACHE_PATH=$(mktemp -d ...)` for each file.
