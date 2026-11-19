@@ -76,3 +76,12 @@
 {"kind":"phase","ts":"2026-11-19T18:22:41Z","phase":"test","seconds":95.456,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/gfx1201-20261119-094342-espresso-val32-prompt/build-max -L gpu --timeout 900 -j 8 --output-on-failure"}
 {"kind":"phase","ts":"2026-11-19T18:26:50Z","phase":"test","seconds":173.937,"exit":8,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/gfx1201-20261119-094342-espresso-val32-prompt/build-hip -LE gpu --timeout 900 -j 16"}
 {"kind":"session","ts":"2026-11-19T18:27:25Z","epoch":1795112845.393909,"event":"end","platform":"linux-gfx1201"}
+{"kind":"session","ts":"2026-11-19T17:59:22Z","epoch":1795111162.175573,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-19T18:16:06Z","phase":"compile","seconds":393.187,"exit":0,"cmd":"bash ../deps/build_deps.sh"}
+{"kind":"phase","ts":"2026-11-19T18:20:03Z","phase":"compile","seconds":89.011,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261119-094402-espresso-val64-prompt/deps/configure.sh /var/lib/jenkins/fleet/jobs/mi300c-20261119-094402-espresso-val64-prompt/build-hip /var/lib/jenkins/fleet/jobs/mi300c-20261119-094402-espresso-val64-prompt/moat/projects/espresso/src"}
+{"kind":"phase","ts":"2026-11-19T18:20:48Z","phase":"compile","seconds":43.931,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300c-20261119-094402-espresso-val64-prompt/build-hip -j 96"}
+{"kind":"phase","ts":"2026-11-19T18:29:19Z","phase":"compile","seconds":4.61,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300c-20261119-094402-espresso-val64-prompt/build-hip -j 96 --target python_test_data cuda_test local_samples local_benchmarks"}
+{"kind":"phase","ts":"2026-11-19T18:34:17Z","phase":"test","seconds":297.634,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300c-20261119-094402-espresso-val64-prompt/build-hip -L gpu --timeout 900 -j 8"}
+{"kind":"phase","ts":"2026-11-19T18:42:03Z","phase":"test","seconds":151.512,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300c-20261119-094402-espresso-val64-prompt/build-hip -j 96 --target check_unit_tests"}
+{"kind":"phase","ts":"2026-11-19T18:46:35Z","phase":"test","seconds":271.386,"exit":8,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300c-20261119-094402-espresso-val64-prompt/build-hip -LE gpu --timeout 900 -j 16"}
+{"kind":"session","ts":"2026-11-19T18:48:08Z","epoch":1795114088.006517,"event":"end","platform":"linux-gfx942"}

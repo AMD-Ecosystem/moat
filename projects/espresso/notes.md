@@ -696,3 +696,27 @@ Build: PASS. GPU suite: **74/74, 0 failed** (the same 3 exit-5 Skipped); verbose
 - Jargon: `python3 utils/jargon.py --port espresso` clean (needs the fork's `python` branch fetched in the clone; a fresh `-b moat-port` clone reports "cannot resolve python..moat-port" until it is). Docs: "AMD GPU acceleration" at doc/sphinx/installation.rst:300, `USE_HIP` at :918.
 - CUDA no-regression compile: not rerun; already PASS at 01090739c (542/542, nvcc 12.8.93, gfx950 section). This host has no CUDA toolkit.
 - With gfx950 (wave64) and this run (wave32) at 01090739c, both required Linux gates are met at head; windows is waived. The questions for jeff listed at the end of the gfx950 section are unchanged.
+
+## Validation 2026-11-19 (linux-gfx942, MI300X wave64, revalidate at 01090739c)
+
+State: revalidate -> completed. GPU: AMD Instinct MI300X (gfx942, `rocminfo` Wavefront Size 64), `HIP_VISIBLE_DEVICES=1`, `ulimit -c 0`. ROCm: pip ROCm SDK 10.1.0 (`rocm-sdk version`; HIP 7.16.26385, AMD clang 24.0.0, no /opt/rocm). Validated sha: 01090739cf852d70549a5699c5984b0f17414214, a fresh fork clone at `projects/espresso/src`, clean at head throughout. Full run, no carry-forward (the classifier calls 87cbc046d..01090739c `mixed`, and jeff asked for the real tests).
+
+Build: the recipe of "Upstream sync 2026-11-19 (Host build recipe)". Deps were rebuilt from source into this job's own prefix (hwloc 2.11.2, OpenMPI 5.0.8, FFTW 3.3.10 double+float omp/threads, Boost 1.87.0 mpi/serialization/test/filesystem/system `--without-python link=shared`), with the configure flags listed in the gfx1201 section. Python 3.12.3 venv by `uv` inside the job venv: numpy 2.5.5, scipy 1.18.1, Cython 3.3.1, tqdm, matplotlib, pint. Configure line as recorded, with `-DCMAKE_HIP_ARCHITECTURES=gfx942`.
+
+```
+cmake --build build-hip -j 96
+cmake --build build-hip -j 96 --target python_test_data cuda_test local_samples local_benchmarks
+ctest --test-dir build-hip -L gpu --timeout 900 -j 8
+cmake --build build-hip -j 96 --target check_unit_tests
+cmake --build build-hip -j 96 --target local_samples local_benchmarks
+ctest --test-dir build-hip -LE gpu --timeout 900 -j 16
+```
+
+- Build: PASS, 236/236 plus the test-data targets. Cache: `Kokkos_ENABLE_CUDA=OFF`, `Kokkos_ENABLE_HIP=OFF`, `Heffte_ENABLE_CUDA=OFF`. `llvm-objdump --offloading build-hip/src/core/espresso_core.so`: 4 bundles, all `hip-amdgcn-amd-amdhsa--gfx942`. 20 warnings, all the known ROCm 10.1 `nodiscard` `hipError_t` `-Wunused-value`.
+- GPU suite (`-L gpu`): **74/74, 0 failed** ("100% tests passed", 297.5 s): 71 Passed, 3 ctest Skipped by exit code 5. The 3 are the same ones the gfx950 and gfx1201 runs explain: `sample_p3m_with_gpu` and `benchmark_p3m_with_gpu` run the whole script on import and have no test methods (re-run with `-V`: P3M tuning output, then "Ran 0 tests ... NO TESTS RAN"), and `benchmark_lb_with_gpu` needs WALBERLA, which is not built. Every core consistency gate passed: coulomb_cloud_wall, coulomb_cloud_wall_duplicated, p3m_madelung, p3m_electrostatic_pressure, elc_nonneutral, dawaanr-and-dds-gpu, dipolar_direct_summation, dipolar_interface, coulomb_interface, dipole_field_tracking, gpu_availability, coulomb_tuning, long_range_actors, and the 4 GPU checkpoint save/test cases. The earlier gfx942 run at 87cbc046d wrote "74/74 PASS". This run is the same result, with ctest's exit-5 Skipped shown separately.
+- `cuda_test` (pinned-host allocator) PASS in both `check_unit_tests` and `-LE gpu`. `code_info` PASS.
+- Unit tests (`check_unit_tests`): **136/136 PASS**.
+- Non-GPU suite (`-LE gpu`, 403 tests): 346 Passed, 29 exit-5 Skipped, 28 failed, all environmental. That is the same set as gfx950 and gfx1201: 26 `tutorial_*` Not Run (no Jupyter, no tutorials target), `test_convert` (`ModuleNotFoundError: No module named 'nbformat'`) and `test_install` (`diff: /usr/local/lib/python3.12/site-packages/espressomd/...: No such file or directory`; it was never installed). No regression.
+- CUDA no-regression gate: already recorded at 01090739c (nvcc 12.8.93, 542/542, "Validation 2026-11-19 (linux-gfx950)"), so it is not repeated here. This host has no CUDA toolkit anyway.
+- Jargon: `python3 utils/jargon.py --port espresso` clean (needed `git -C projects/espresso/src branch python origin/python` in a fresh clone). Docs: "AMD GPU acceleration" at doc/sphinx/installation.rst:300 and `USE_HIP` at :918.
+- Nothing was edited in the fork and nothing was pushed to it.
