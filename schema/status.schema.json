@@ -308,7 +308,6 @@
       ],
       "required": [
         "url",
-        "number",
         "merged_at",
         "carried",
         "by",
@@ -321,6 +320,9 @@
         },
         "number": {
           "type": "integer"
+        },
+        "commit": {
+          "type": "string"
         },
         "merged_at": {
           "type": "string"

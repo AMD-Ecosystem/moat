@@ -177,10 +177,13 @@ def build():
             # that PR's merge time.
             "landed_via": {
                 "type": ["object", "null"],
-                "required": ["url", "number", "merged_at", "carried", "by", "at"],
+                "required": ["url", "merged_at", "carried", "by", "at"],
                 "properties": {
                     "url": {"type": "string", "minLength": 1},
+                    # One of the two: the PR it merged through, or (MMseqs2) the
+                    # commit that brought it in with no pull request.
                     "number": {"type": "integer"},
+                    "commit": {"type": "string"},
                     "merged_at": {"type": "string"},
                     "merge_commit": {"type": "string"},
                     "carried": {"enum": ["commits", "content-differs"]},
