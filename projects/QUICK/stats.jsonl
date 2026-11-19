@@ -65,3 +65,7 @@
 {"kind":"phase","ts":"2026-11-19T18:29:07Z","phase":"compile","seconds":0.002,"exit":2,"cmd":"make -j16"}
 {"kind":"phase","ts":"2026-11-19T18:44:26Z","phase":"test","seconds":214.831,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261119-102525-quick-roles-prompt/moat/agent_space/quick-run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261119-102525-quick-roles-prompt/moat/agent_space/quick-testtree/install/usr/local /var/lib/jenkins/fleet/jobs/rx7900-20261119-102525-quick-roles-prompt/moat/agent_space/quick-results2"}
 {"kind":"session","ts":"2026-11-19T18:45:52Z","epoch":1795113952.077444,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-19T19:07:27Z","phase":"compile","seconds":138.651,"exit":0,"cmd":"bash -c cd projects/QUICK/src/build-old && make -j42 VERBOSE=1 > make.log 2>&1"}
+{"kind":"phase","ts":"2026-11-19T19:11:14Z","phase":"compile","seconds":138.698,"exit":0,"cmd":"bash -c cd projects/QUICK/src/build-new && make -j42 VERBOSE=1 > make.log 2>&1"}
+{"kind":"phase","ts":"2026-11-19T19:24:12Z","phase":"compile","seconds":167.987,"exit":0,"cmd":"bash -c cd agent_space/quick-testtree/build && make -j42 VERBOSE=1 > make.log 2>&1 && make install DESTDIR=$PWD/../install > install.log 2>&1"}
+{"kind":"phase","ts":"2026-11-19T19:31:45Z","phase":"test","seconds":432.413,"exit":0,"cmd":"agent_space/lb/runall.sh /var/lib/jenkins/fleet/jobs/mi200-20261119-110120-quick-linkflag-prompt/moat/agent_space/quick-testtree/install/usr/local /var/lib/jenkins/fleet/jobs/mi200-20261119-110120-quick-linkflag-prompt/moat/agent_space/lb/run1"}

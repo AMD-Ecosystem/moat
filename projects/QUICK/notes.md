@@ -684,7 +684,7 @@ The ISA column comes from `hipcc gpu_get2e.cu --cuda-device-only -S --offload-ar
 | `--offload-arch=gfx1100` (legacy atomics) | 0 | June: 38/38 passed |
 | second ROCm version (7.11.0 wheels on repo.amd.com) | -- | **not run**: the fleet guard refused `pip install` even into a fresh job-local venv. Not routed around. jeff: allow a job-local SDK install if you want this row. |
 
-With the flag, the long branches in `ERint_vertical_spd` use `s[4:5]`/`s[6:7]` from the register scavenger. All four gfx90a code objects of the final `libquick_hip.so` (including the `-fgpu-rdc` libxc objects linked at the end) have 0 such sequences in non-kernel functions. Before the fix, only `gpu_get2e.cu`'s object had any. Kernel time with the fix (`AMD_LOG_LEVEL=3` trace of the water run): `get2e_kernel_spd` 10 launches, mean 6.6 ms; `get2e_kernel_sp` 10 launches, mean 8.9 ms. `ene_psb5_rhf_631gss`, the June core dump, now takes 7.9 s in total (upstream's saved TITAN V output: 9.4 s), energy -402.013889799 vs saved -402.013889796. So there is no residual d-function slowness on gfx90a.
+With the flag, the long branches in `ERint_vertical_spd` use `s[4:5]`/`s[6:7]` from the register scavenger. All four gfx90a code objects of the final `libquick_hip.so` (including the `-fgpu-rdc` libxc objects linked at the end) have 0 such sequences in non-kernel functions. Before the fix, only `gpu_get2e.cu`'s object had any. (Correction, porter round of 2026-11-19 after the review: at 7a3149ff the flag did not reach the `-fgpu-rdc` libxc device code, so their 0 count was not the flag's doing; a49289d5 adds it to the device link. See "Porter round 2026-11-19 (a49289d5)".) Kernel time with the fix (`AMD_LOG_LEVEL=3` trace of the water run): `get2e_kernel_spd` 10 launches, mean 6.6 ms; `get2e_kernel_sp` 10 launches, mean 8.9 ms. `ene_psb5_rhf_631gss`, the June core dump, now takes 7.9 s in total (upstream's saved TITAN V output: 9.4 s), energy -402.013889799 vs saved -402.013889796. So there is no residual d-function slowness on gfx90a.
 
 ### The fix: 7a3149ff `[ROCm] Route AMDGPU long branches through the register scavenger`
 
@@ -934,3 +934,43 @@ Method as in the earlier rounds: one `./runtest --hip` per test with a one-line 
 - CUDA compile gate: no CUDA toolkit on this host (`/opt/conda/envs` absent, no `nvcc`). Still owed at the new head on the mi355 host.
 - `jargon.py --port QUICK`: clean at 7a3149ff (with the clone's local `master` set to upstream 7e8aeb2c, because the fork mirror is still stale).
 - No source edit and no fork push (jeff's limit for this job): the porter's `GPU_LD_FLAGS` follow-up is for another host.
+
+## jeff's ruling of 2026-11-19 (recorded 2026-11-19)
+
+Ruled by jeff (jeffdaily), 2026-11-19: the `-mllvm -amdgpu-long-branch-factor=0` workaround for llvm/llvm-project#224205 stays in the upstream pull request. This answers the "Question for jeff" in the Diagnosis section ("keep it in the upstream PR as is, or hold it out?").
+
+## Porter round 2026-11-19 (a49289d5, linux-gfx90a, MI250X): review finding 1
+
+Fork `moat-port` 7a3149ff -> a49289d5 `[ROCm] Pass the long-branch workaround to the HIP device link too`. One hunk in `quick-cmake/QUICKCudaConfig.cmake`, inside the existing `if (${HIP_VERSION} VERSION_GREATER_EQUAL 6.2.1)` block: `list(APPEND GPU_LD_FLAGS "SHELL:-mllvm -amdgpu-long-branch-factor=0")`, plus one comment line. `GPU_LD_FLAGS` is what `src/CMakeLists.txt:198` and `:258` pass to `target_link_options` for `libquick_hip` and `libquick_mpi_hip`, the two `-fgpu-rdc --hip-link` device links. `SHELL:` because `target_link_options` de-duplicates its options and would merge a second `-mllvm` token if one is ever added. Port diff vs upstream master is still the one file.
+
+### Proof it reaches the device link
+
+Builds: `src/build-old` at 7a3149ff and `src/build-new` at a49289d5, same fork checkout, same recipe (the reviewer's block in "Review 2026-11-19 (delta ...)": pip ROCm 10.1 SDK, HIP 7.16.26385, AMD clang 24.0.0git d6f6cb69, `-L$GFL`, `-DQUICK_USER_ARCH=gfx90a`, `make -j42 VERBOSE=1`). Both exit 0.
+
+- Link command line (`build-*/src/CMakeFiles/libquick_hip.dir/link.txt`, same line in `make.log`): before `hipcc -fPIC -fgpu-rdc --hip-link -Wl,--dependency-file=...`, no `-mllvm`; after `hipcc -fPIC -fgpu-rdc --hip-link -mllvm -amdgpu-long-branch-factor=0 -Wl,--dependency-file=... -o libquick_hip.so ...`.
+- Where it lands: re-running each tree's real link line with `-v` (output redirected to a scratch file): in the after build the device `ld.lld` invocation (`-plugin-opt=mcpu=gfx90a -plugin-opt=O3`, the full-LTO codegen over the 123 relocatable device objects, the last being `xc_hip_generated_gpu_getxc.cu-amdgcn-amd-amdhsa-gfx90a-*.o`) carries `-mllvm -amdgpu-long-branch-factor=0`, and the device `clang` driver above it carries `-Xlinker -amdgpu-long-branch-factor=0`. In the before build neither has it. lld's `-mllvm` sets the backend option in the LTO codegen, which is where this device code is generated.
+- Long-branch count in `libquick_hip.so` device code (`llvm-objdump --offloading`, then `-d` per code object; a sequence = `s_getpc_b64 s[30:31]`; kernel vs non-kernel from the `.kd` symbols):
+
+| code object (gfx90a) | contents | s[30:31] long branches, non-kernel: before -> after | in kernels: before -> after | all `s_getpc_b64`: before -> after |
+|---|---|---|---|---|
+| 0 | rdc link output (libxc kernels, `gpu_getxc.cu`; 135 functions, 11 kernels) | 0 -> 0 | 1 -> 1 | 176 -> 176 |
+| 1 | `quick_hip_kernels` ERI/grad (22 functions, 12 kernels) | 0 -> 0 | 60 -> 60 | 1586 -> 1586 |
+| 2 | (4 functions, 2 kernels) | 0 -> 0 | 0 -> 0 | 14 -> 14 |
+| 3 | (3 functions, 1 kernel) | 0 -> 0 | 0 -> 0 | 4 -> 4 |
+
+  `python3 utils/codeobj_diff.py src/build-old src/build-new`: `verdict=identical` for all six binaries (exported symbols and device ISA). The code-object files differ in bytes (md5), not in disassembly. As the review predicted, no change on this toolchain: the rdc device code has no non-kernel function with a long branch through the return address. The kernel-side sequences are harmless (a kernel never returns through s[30:31]); the one in code object 0 stays because in a kernel s[30:31] is a free pair the scavenger may legitimately pick.
+- Tried and dropped (two attempts, a different hypothesis would be needed): a probe that rdc-compiles `gpu_get2e.cu` alone and device-links it with and without the flag, to show a link-time count change of 11 -> 0. The standalone device link fails `ld.lld: error: undefined symbol: devSim` (the device bitcode references an external `devSim` that a stub definition did not satisfy). The `-v` evidence above shows the option on the codegen step instead.
+
+### Test tree at the new head, before the push
+
+`agent_space/quick-testtree`, local branch `testtree` = a49289d5 + `git merge --no-ff pr512` (PR merzlab/QUICK#512 head 0b8a13c5, still open; local merge 6f18c90d, never pushed), the one `FATAL_ERROR` conflict resolved as before (`Possible values are gfx908, gfx90a, gfx942, gfx1100, gfx1201.`). `git diff pr512 HEAD` touches only `quick-cmake/QUICKCudaConfig.cmake`. Built with the same recipe plus `make install DESTDIR=$PWD/../install`; link line carries the flag. Full short GPU list, one `./runtest --hip` per test, one GCD (`HIP_VISIBLE_DEVICES=2`), `ulimit -c 0`, 300 s kill wrapper on `quick.hip`: **37 PASS, 3 SKIPPED, 0 FAIL, 0 TIMEOUT**, every per-test summary `Total tests: 0/1 (failed/total)`, 331 s of test time. Same 37/3 as at 7a3149ff. The per-test table is in the validator section that follows (that run is the validator's).
+
+### Gates
+
+`jargon.py --port QUICK` clean (clone's local `master` set to upstream/master 7e8aeb2c; the fork mirror is still stale, see the sync section). `prose.py` on the commit body clean. Commit title 64 characters, `[ROCm]`, AI disclosure, fenced Test Plan, no trailer. `git status --porcelain` in the fork clone: no modified tracked files. CUDA path untouched (`GPU_LD_FLAGS` is only extended inside `if(HIP)`); the nvcc compile gate on the mi355 host is still owed at the new head.
+
+### Still open (not this round)
+
+- `CMake-Options.md:33` does not list `gfx1100` (the gfx1100 reviewer's extra point). Not part of finding 1, left for the PR-preparation round.
+- Fork mirror fast-forward and the `[ROCm]` prefix on a0122945/2146b22a, both from the sync round.
+- wave32 (gfx1100) validation at the new head.
