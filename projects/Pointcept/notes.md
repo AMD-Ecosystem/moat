@@ -886,12 +886,16 @@ numerically-confirmed status on gfx1100, recorded here rather than blocking on i
 
 ## Lesson for cuda-to-rocm: any pip install with torch in its graph can replace a source-built ROCm torch
 
+Promoted to cuda-to-rocm/references/strategy-b-torch.md, moat-porting/SKILL.md in bb61ae96.
+
 Moved here on 2026-11-19 from a direct edit this branch had made to `references/strategy-b-torch.md` in August (port branches now change only the project folder; the edit was never on main). Proposed text for the skill's dependency-environment list:
 
 - The same trap fires on ANY pip install that has torch in its dependency graph, not just a requirements file, and a source-built ROCm torch is the worst case. `pip install timm torch_geometric` on a host whose torch is a locally built dev wheel (`2.14.0a0+git<sha>`) replaced torch with the PyPI CUDA build, pulled the whole `nvidia-*` stack, and swapped `triton` 3.8.0 for the CUDA `triton` 3.7.1 -- the dev version is on no index, so pip cannot put it back and nothing warns you. Default to `pip install --no-deps <pkg>` for every dependency on such a host, add the handful of pure-Python transitive deps by hand, and before you start, find the wheel that produced the current torch so a restore is `pip install --no-deps --force-reinstall <wheel>`. Verify with `python -c "import torch; print(torch.__version__, torch.version.hip)"` after any install that touched a torch-dependent package.
 - In the "a common dep usually already has a ROCm port" item: `spconv` -> `spconv-triton` (Apache-2.0 on PyPI, a drop-in for the spconv 2.x API in Triton; the GitHub repository named `spconv-rocm` (jiaqiwang969/spconv-rocm) is empty, and the one live derivative found, HYGON-AI/spconv-das, targets Hygon DCU (hcu), not AMD GPUs -- checked 2026-11; the `moat-porting` skill's Dispositions section still names `spconv_rocm` as a ROCm port to consume and should be corrected in the same promotion); `torch_scatter`/`torch_cluster` build from sdist on ROCm 7.14 with `PYTORCH_ROCM_ARCH=<arch> FORCE_ONLY_CUDA=1 pip install . --no-build-isolation --no-deps`, torch_scatter 2.1.2 needing its `at::Half` shuffle wrappers widened to a 64-bit mask first.
 
 ## Lesson for cuda-to-rocm: a Triton-based ROCm dependency can cold-compile an order of magnitude slower on RDNA than on CDNA
+
+Promoted to cuda-to-rocm/references/strategy-b-torch.md in bb61ae96.
 
 Moved here on 2026-11-19 from a direct edit this branch had made to `references/validation.md` in August. Proposed text:
 
