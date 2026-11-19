@@ -17,6 +17,24 @@
         "by": "jeffdaily",
         "at": "2026-08-13T18:21:06Z"
       }
+    },
+    {
+      "id": "plumed2-cudacoord-conda-rocm",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "plugins/cudaCoord/conda.mk builds conda packages only for CUDA (mutually exclusive cuda-coordination variants); there is no ROCm/HIP package variant. Ruled defer by jeffdaily 2026-11-18: conda packaging for ROCm is not part of the current port.",
+      "refs": [
+        "projects/plumed2/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-19T06:25:04Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-19T06:25:10Z",
+        "note": "jeff's answer to question 2 of the 2026-11-19 upstream-sync notes, given 2026-11-18 in the dispatch of the check-gpu round"
+      }
     }
   ]
 }

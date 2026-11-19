@@ -773,3 +773,95 @@ used the MPICH wrapper as `-ccbin`), and running on an NVIDIA GPU.
 
 Verdict: the CUDA path compiles and links with real nvcc 12.8 at head
 388fcc10f, identically to upstream's merge base. No port regression.
+
+## jeff's answers to the four questions (jeffdaily, 2026-11-18)
+
+Answers to "Questions for jeff" in the 2026-11-19 upstream-sync section, given by
+jeff (jeffdaily) on 2026-11-18 with the dispatch of the check-gpu round:
+
+1. `make check-gpu`: port it for the HIP build and run it as part of this round
+   (done; see the next section).
+2. Conda packaging for ROCm (`conda.mk` has only CUDA variants): jeff ruled
+   **defer**. Registered as `plumed2-cudacoord-conda-rocm` in
+   `projects/plumed2/deferred.json`, decided defer by jeffdaily.
+3. The new file `plugins/cudaCoord/src/cuda_to_hip.h` keeps its siblings' header
+   as it is (Daniele Rapetti / The plumed team, "cudaOnPlumed").
+4. The fork commits (including the two June ones `audit-commits` flags) are
+   squashed when the pull request is prepared, not now.
+
+## check-gpu round 2026-11-19 (porter, linux-gfx942)
+
+Fork commit `b0e0fb6d1` "[ROCm] Run make check-gpu with the HIP build of
+cudaCoord", on top of `388fcc10f` (no rewrite), pushed to `moat-port`; head
+advanced. 4 files, +15/-3:
+
+- `plugins/openaccPTM/gpucheck/Makefile`: an `ifdef USE_HIP` block after the
+  variables: `HIPCC ?= hipcc`, `CUDACXX = $(HIPCC) -x hip --offload-host-only
+  -I$(CURDIR)/../../cudaCoord/src`. The compile rule is untouched (its flags,
+  `-std=c++17 -I... -D... -ldl`, work with hipcc; hipcc links libamdhip64).
+  `--offload-host-only` because the program has no kernels; it also means no
+  offload arch is needed. USE_HIP reaches this sub-make through MAKEFLAGS when
+  given on the plugin's command line (`make USE_HIP=1 check-gpu`) and through the
+  environment when exported; nothing was added to cudaCoord's Makefile.
+- `plugins/openaccPTM/gpucheck/device_check.cpp`: `#include <cuda_runtime.h>`
+  becomes `#ifdef __HIP__ / #include "cuda_to_hip.h" / #else / cuda_runtime.h`.
+  Nothing else in openaccPTM changed.
+- `plugins/cudaCoord/src/cuda_to_hip.h`: two mappings added (`cudaMemset`,
+  `cudaDeviceSynchronize`; the program's other eight names were already
+  mapped) and its comment names gpucheck as a user. The header includes hipCUB
+  and defines a `__device__` helper; both compile cleanly in the host-only HIP
+  compile of device_check.cpp (no warnings from it).
+- `plugins/cudaCoord/README.md`: the HIP paragraph and "Which GPU is used" name
+  `make USE_HIP=1 check-gpu`.
+
+The openaccPTM plugin itself has no HIP build (OpenACC; see the
+`plumed2-openacc-gpu` deferral), so the HIP check-gpu is reachable from
+cudaCoord only; that is why borrowing cudaCoord's header is acceptable.
+
+Host: MI300X gfx942 x2 visible (HIP_VISIBLE_DEVICES=2,3 as the dispatcher pinned,
+so they are GPU 0 and 1 to the program), ROCm 10.1 Python wheels (HIP
+7.16.26385, AMD clang 24.0.0git), g++ 13.3, MPICH 4.2.3 built from source into the
+job directory (`--disable-fortran --with-device=ch3 --enable-fast=O2`), PLUMED
+upstream `422109dc3` with `./configure --prefix=<job>/deps/plumed CXX=mpicxx
+CC=mpicc`.
+
+```bash
+cd plugins/cudaCoord
+USE_HIP=1 ./configure.sh
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942
+ulimit -c 0
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942 check-gpu
+```
+
+Result: PASS in both modes, first run, no change to the plugin needed.
+- `follow` (caller on GPU 1, no setGpuDeviceId): 17 OK lines, "log says \"c runs
+  on GPU 1\"", "follow: 0 failure(s)".
+- `md` (caller on GPU 1, setGpuDeviceId 0): 17 OK lines, caller GPU 1 current and
+  its 1 MiB buffer usable (hipMemset + hipDeviceSynchronize) after init, after the
+  input, after each of 3 steps and after PLUMED is destroyed; forces finite and
+  non-zero at every step; "log says \"c runs on GPU 0\"", "md: 0 failure(s)".
+
+So the plugin's GPU selection (`chooseGPU`, `deviceGuard`) behaves on HIP as the
+test requires; the area where HIP and CUDA could differ (which device is current
+for the thread after a plugin call) shows no difference. The plugin and the
+program share one libamdhip64.so, so they see the same per-thread device.
+
+Supporting evidence (scratch, nothing committed):
+- AMD_LOG_LEVEL=3 trace of `md`: every plugin section is bracketed by
+  `hipSetDevice ( 0 )` ... `hipSetDevice ( 1 )` (5 and 6 calls), and all 9
+  kernel launches, both priority streams and the plugin's hipMallocs happen
+  inside a bracket, i.e. on GPU 0. Trace of `follow`: the only hipSetDevice is the
+  caller's `( 1 )`; the plugin never changes device, 9 launches on GPU 1.
+- Negative control: a scratch copy of the plugin whose `~deviceGuard` does not
+  call `cudaSetDevice(previous_)` gives `md: 5 failure(s)` ("caller GPU 1 is
+  current after the input (found 0)", then after each step and after destroy);
+  `follow` still passes, as expected (no device change to undo). So the HIP
+  build of the check is not vacuous.
+
+CUDA path: `make -B -n device_check` in gpucheck prints the identical nvcc
+command before and after the change; device_check.cpp compiles and links with
+nvcc 12.8.93 (conda-forge toolkit, used read-only from the sync job's directory
+on this host). cuda_to_hip.h's change is inside `#ifdef __HIP__` apart from a
+comment, so the plugin's CUDA objects are unaffected.
+
+`jargon.py --port plumed2` clean; `prose.py` clean on the commit message.
