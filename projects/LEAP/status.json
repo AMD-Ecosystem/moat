@@ -1,0 +1,183 @@
+{
+  "schema_version": 3,
+  "name": "LEAP",
+  "upstream_url": "https://github.com/llnl/LEAP",
+  "fork_url": "https://github.com/AMD-Ecosystem/LEAP",
+  "fork_default_branch": "main",
+  "priority": 4.426,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-05-30T01:04:51Z",
+  "updated_at": "2026-11-10T15:42:57Z",
+  "head_sha": "70ab397485760680867b95a405c33908a8aac3e7",
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 644559794,
+  "stage": "review-passed",
+  "platforms": {
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c77df45b3fcd9d659b3a9f77cc2fdfef673a19e0",
+      "started_at": null,
+      "completed_at": "2026-06-16T09:52:08Z",
+      "updated_at": "2026-08-20T00:08:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "70ab397485760680867b95a405c33908a8aac3e7",
+      "started_at": "2026-06-02T13:30:00Z",
+      "completed_at": "2026-11-10T09:07:49Z",
+      "updated_at": "2026-11-10T09:07:49Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T13:30:00Z",
+        "last_session_at": "2026-06-02T14:00:00Z"
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c77df45b3fcd9d659b3a9f77cc2fdfef673a19e0",
+      "started_at": null,
+      "completed_at": "2026-06-16T06:33:12Z",
+      "updated_at": "2026-08-20T00:08:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "4e102c9cfd371b5900c68461bdc8f2a320d71017",
+        "method": "source-class",
+        "detail": "Comment-only docstring reword in host-side validation script unitTests/gpu_vs_cpu_validate.py (bit-identical -> identical); no device code, no compiled artifact, arch-independent",
+        "at": "2026-06-16T06:33:12Z"
+      }
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "70ab397485760680867b95a405c33908a8aac3e7",
+      "failed_sha": "b8595bb15253f44ebfd6c9cf549259137ec59ced",
+      "started_at": "2026-11-09T22:28:09Z",
+      "completed_at": "2026-11-10T09:27:09Z",
+      "updated_at": "2026-11-10T09:27:09Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "70ab397485760680867b95a405c33908a8aac3e7",
+      "started_at": "2026-06-02T08:08:39Z",
+      "completed_at": "2026-11-10T09:18:54Z",
+      "updated_at": "2026-11-10T09:18:54Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "70ab397485760680867b95a405c33908a8aac3e7",
+      "failed_sha": null,
+      "started_at": "2026-11-04T17:10:14Z",
+      "completed_at": "2026-11-10T09:06:15Z",
+      "updated_at": "2026-11-10T09:06:15Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
+    }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/1",
+  "porting_released": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-10T08:30:14Z",
+    "at": "2026-11-10T08:32:42Z"
+  },
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-10T15:31:32Z",
+    "head_sha": "70ab397485760680867b95a405c33908a8aac3e7",
+    "content_sha256": "f9af345159f1accff0d78825d576ec7051b07d16727566973d8b60c4f893b31a",
+    "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/2"
+  },
+  "pr_url": "https://github.com/llnl/LEAP/pull/216",
+  "pr_number": 216,
+  "pr_opened_at": "2026-11-05T07:11:41Z",
+  "pr_state": "open",
+  "published_sha": "70ab397485760680867b95a405c33908a8aac3e7",
+  "fix": null,
+  "fix_merged_at": "2026-11-10T15:42:57Z"
+}
