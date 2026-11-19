@@ -1044,3 +1044,82 @@ Environment notes (host, not port): the `torchmetrics` import chain in this venv
 CUDA no-regression compile: `cuda-not-validated: Windows host, ROCm-only PyTorch` (the nvcc compile of the d3213b4 pin recorded as owed in Review (3) still stands).
 
 Gates: `python utils/jargon.py --port LiteGS`: **clean**. Documentation: README.MD:89 is still scoped "On Linux with AMD GPUs". That is true as written, and the same three commands with `--no-build-isolation` did build here, but only with the Windows host setup listed above (ROCm SDK variables, `HIP_DEVICE_LIB_PATH`, `DISTUTILS_USE_SDK=1`, clang-cl as `CC`/`CXX`, MSVC `link.exe` first on `PATH`). **For jeff:** whether the README (and the pull request text) should now say Windows works, and how much of that setup to name, is a porter documentation commit; it changes no compiled output. Integrity: `git status --porcelain` empty in the fork clone and the submodule at a995109 (only ignored build output: `*.hip`, `*_winhip.cu`, `build/`, `*.egg-info`).
+## CUDA compile check 2026-11-19 (2) (nvcc, compile and link only) -- PASS at a995109; fused_ssim d3213b4 compiles to the same CUDA code as its two sources
+
+Requested by jeffdaily: repeat the 38aa67c nvcc check at head_sha a995109, and show that the fused-ssim cherry-pick resolution (d3213b4) did not change what a CUDA user compiles. Compile, link and import only; no NVIDIA GPU on this host, and the AMD GPU was not used.
+
+Host and toolchain as in the 38aa67c check: CUDA 12.8 (`nvcc` V12.8.93, `/usr/local/cuda`), gcc 13.3.0, Python 3.11.17, PyTorch `2.11.0+cu128` from `https://download.pytorch.org/whl/cu128`, installed into the job's own venv. SASS was read with `cuobjdump -sass`; this toolkit has no `nvdisasm`, so the one in the same venv's triton wheel (CUDA 12.8.55) was put on PATH.
+
+Trees, cloned fresh, `git submodule update --init --recursive`:
+- port: AMD-Ecosystem/LiteGS `a995109ec81235aeb9dab69bfc6209ceeae3e053`; submodule AMD-Ecosystem/fused-ssim `d3213b4`. Its `simple-knn` and `gaussian_raster` sources are the same as at 38aa67c: `git diff --stat 38aa67c a995109` is `.gitmodules` and the gitlink only.
+- base: MooreThreads/LiteGS `master` = `004b952` (unchanged since the first check); submodule kemchenj/fused-ssim `409da0b`.
+- original fused-ssim: rahul-goel/fused-ssim `main` = `a7c48d6` (2026-02-02), built standalone.
+
+Recipe (the earlier one, with `--target` so every build stays side by side), from `/tmp`, build dir removed first:
+```
+export PATH=/usr/local/cuda/bin:$VENV/bin:$PATH CUDA_HOME=/usr/local/cuda MAX_JOBS=64
+export TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0;10.0;12.0"
+python -m pip install -v --no-build-isolation --no-deps --target <out>/<label> <tree>/litegs/submodules/<ext>
+```
+The `TORCH_CUDA_ARCH_LIST` note from the first check still applies. The `torch.cuda.is_available = lambda: True` sitecustomize shim was needed only for 409da0b: its `setup.py` takes the SYCL branch whenever `hasattr(torch, 'xpu')` and then fails on `icpx` (reproduced, exit 127). d3213b4 and a7c48d6 check `torch.xpu.is_available()` and fall through to the CUDA branch without help. All three fused-ssim builds got the same fallback gencodes, `--maxrregcount=32 --use_fast_math -gencode` sm_75/sm_80/sm_89. The only flag difference: d3213b4 and a7c48d6 pass `-DFUSED_SSIM_CUDA` to c++ and nvcc, and 409da0b passes nothing (its `setup.py` predates that define). No source was edited.
+
+| build | result | ninja steps | warnings |
+|---|---|---|---|
+| port simple-knn | built | 3/3 | 8 |
+| base simple-knn | built | 3/3 | 8 |
+| port gaussian_raster (`litegs_fused`) | built | 6/6 | 15 (+5 nvcc remark lines) |
+| base gaussian_raster | built | 6/6 | 35 (+5 remark lines) |
+| port fused_ssim d3213b4 | built | 3/3 (`ext.cpp`, `ssim.cu`, `ssim3d.cu`) | 0 |
+| base fused_ssim 409da0b | built | 2/2 (`ext.cpp`, `ssim.cu`) | 0 |
+| original fused-ssim a7c48d6 | built | 3/3 (`ext.cpp`, `ssim.cu`, `ssim3d.cu`) | 0 |
+
+No errors anywhere. Cubins: `litegs_fused` 4 and `simple_knn._C` 2 per arch for sm_80/86/90/100/120 in both trees. The fused_ssim modules have one cubin per source per arch for sm_75/80/89.
+
+Warnings after path normalization are the same as at 38aa67c:
+- simple-knn: identical except the line number of the 6 `"__CUDACC__" redefined` warnings (simple_knn.cu:24 on base, :27 on port, where the port added 3 lines above). Both trees also have the 2 deprecated `Tensor.data<T>()` warnings at spatial.cu:23.
+- gaussian_raster: base has `#2361-D invalid narrowing conversion from "double" to "float"` at transform.cu(38) x15 and transform.cu(1379) x20. The port has transform.cu(42) x15 (the same line, moved) and no 1379 warning, which its `(float)` casts remove. Nothing new.
+- fused_ssim: none in any of the three builds.
+
+### fused_ssim: what d3213b4 is made of (source)
+
+Kem Chen's commit 409da0b sits on 88169c5, which is 14 commits behind a7c48d6. In each file:
+- `ssim.cu`: d3213b4 = a7c48d6 plus exactly Kem's two hunks. `git diff a7c48d6 d3213b4 -- ssim.cu` has the same hunks as `git diff 88169c5 409da0b -- ssim.cu` (`#define HALO2 HALO * 2` after `HALO`, then the appended block), with the changed lines identical; only the second hunk's line offset differs (+2). Per top-level definition (sha1 of each definition's text):
+  - Identical to 409da0b: `fusedl1ssim_lossCUDA`, `fusedl1ssim_loss_backwardCUDA`, and the host wrappers `fusedl1ssim_loss` and `fusedl1ssim_loss_backward`.
+  - Identical to a7c48d6: `fusedssimCUDA`, `fusedssim_backwardCUDA`, `fusedssim`, `fusedssim_backward`.
+  - The only definition that differs between 409da0b and d3213b4 is `fusedssimCUDA`, the 2D forward. d3213b4 has a7c48d6's version, which carries upstream 0f89827: `fmaxf(0, .)` on `sigma1_sq`/`sigma2_sq`, SSIM clamped to [-1, 1], and zero partial derivatives where clamped. That is 14 lines in `git diff 409da0b d3213b4 -- ssim.cu`, and nothing else.
+- `ssim.h`: identical to 409da0b (= a7c48d6's plus Kem's two declarations).
+- `ssim3d.cu`, `ssim3d.h`: identical to a7c48d6. 409da0b has no 3D at all.
+- `ext.cpp`: compared with a7c48d6, the guard is `#if defined(FUSED_SSIM_CUDA) || defined(FUSED_SSIM_HIP)` (from fork commit cdfe1fa) instead of `#ifdef FUSED_SSIM_CUDA`, and Kem's two `m.def`s sit inside that block with the 3D ones. Compared with 409da0b, the only change is that the two `m.def`s are now inside that guard. For a CUDA build the guard is true, because the c++ line carries `-DFUSED_SSIM_CUDA` (in the ninja log), so all six functions are registered (see the import below).
+- `fused_ssim/__init__.py`: `FusedL1SSIMLossMap` and `fused_l1_ssim_loss` are text-identical to 409da0b (compared by AST source segment), and `FusedSSIMMap`, `fused_ssim`, `fused_ssim3d` are text-identical to a7c48d6. The CUDA branch adds one import line for the two fused functions.
+- `setup.py`: a7c48d6 plus the Windows-ROCm `_winhip.cu` block (767e3f6), which is gated on `os.name == 'nt' and torch.version.hip` and does nothing in a CUDA build. The nvcc command lines of d3213b4 and a7c48d6 are identical.
+
+### fused_ssim: what nvcc made of it (SASS, per kernel)
+
+Each kernel's `cuobjdump -sass` text was hashed per arch with the address comments and column padding stripped. The instruction encodings are kept, so equal hashes mean identical machine code:
+
+| kernel | sm_75 / sm_80 / sm_89, d3213b4 vs 409da0b | d3213b4 vs a7c48d6 |
+|---|---|---|
+| `fusedl1ssim_lossCUDA` | identical on all three | (absent in a7c48d6) |
+| `fusedl1ssim_loss_backwardCUDA` | identical on all three | (absent) |
+| `fusedssimCUDA` (2D fwd) | differs on all three (0f89827 clamps) | identical on all three |
+| `fusedssim_backwardCUDA` (2D bwd) | identical on all three | identical on all three |
+| `fusedssim3dCUDA`, `fusedssim_backward3dCUDA` | (absent in 409da0b) | identical on all three |
+
+So a CUDA user of the new pin gets Kem Chen's fused L1+SSIM kernels exactly as 409da0b compiled them, and the original fused-ssim 2D and 3D kernels exactly as a7c48d6 compiles them. Against LiteGS's old pin, the one change in compiled device code is the 2D forward kernel behind `fused_ssim()`, which picks up upstream's numerical-stability clamps. LiteGS's trainer calls only `fused_l1_ssim_loss` (trainer.py:145), and that path compiles to the same code as before. The open question for jeff in "fused-ssim fork commits and tests" (whether the fused kernel should adopt the clamps) is unchanged.
+
+### Imports and exports
+
+Each built module, imported from its `--target` directory (no device). The package listing patched `torch.cuda.is_available` to True so `fused_ssim/__init__.py` takes its CUDA branch and binds the native functions. A plain import without the patch also succeeds for all three.
+- `simple_knn._C` (port and base): `distCUDA2`.
+- `litegs_fused` (port and base, the same 26 public names; 32 with the module dunders, the count used at 38aa67c): `activate_backward adamUpdate createCov2dDirectly_backward createCov2dDirectly_forward createTransformMatrix_backward createTransformMatrix_forward create_table create_viewproj_backward create_viewproj_forward cull_compact_activate eigh_and_inv_2x2matrix_forward frustum_culling_aabb get_allocate_size gpu_driven_pipeline_sparse_op inv_2x2matrix_backward jacobianRayspace mvp_transform_backward mvp_transform_forward rasterize_backward rasterize_forward rasterize_forward_packed sh2rgb_backward sh2rgb_forward tileRange world2ndc_backword world2ndc_forward`.
+- `fused_ssim_cuda`:
+  - d3213b4: `fusedl1ssim_loss fusedl1ssim_loss_backward fusedssim fusedssim3d fusedssim_backward fusedssim_backward3d`.
+  - 409da0b: `fusedl1ssim_loss fusedl1ssim_loss_backward fusedssim fusedssim_backward`.
+  - a7c48d6: `fusedssim fusedssim3d fusedssim_backward fusedssim_backward3d`.
+- `fused_ssim` package (functions and classes):
+  - d3213b4: `FusedL1SSIMLossMap FusedSSIMMap fused_l1_ssim_loss fused_ssim fused_ssim3d`.
+  - 409da0b: `FusedL1SSIMLossMap FusedSSIMMap fused_l1_ssim_loss fused_ssim`.
+  - a7c48d6: `FusedSSIMMap fused_ssim fused_ssim3d`.
+  - So d3213b4 is the union of the other two, with nothing missing and nothing extra.
+
+Verdict: at head a995109 the CUDA path of all three extensions compiles and links with real nvcc, with the same results and warnings as upstream master 004b952 apart from the narrowing warning the port removes. The fused-ssim pin d3213b4 builds clean with nvcc. In device code it is 409da0b's fused L1+SSIM kernels plus a7c48d6's 2D and 3D kernels, instruction for instruction. This closes the "nvcc compile of 1664e6d with d3213b4" item owed since Review (3); the a995109 delta over 1664e6d is `.gitmodules` only. Stage and platform records are unchanged by this check. `git status --porcelain` is empty in the port and base clones, their submodules, and the a7c48d6 clone.
