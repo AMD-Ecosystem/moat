@@ -2292,3 +2292,14 @@ Command: the handoff's 82-pattern loop, `python -m warp.tests -s autodetect -p "
 
 ### Summary
 At `2f5b9d65`, the wave32 half of the same-head requirement is met. The Phase 1-5 set passes on gfx1100 apart from the two known fem isolation failures, which gfx950 shows identically. The texture fix as committed passes test_texture, the SDF probe and tex_alias.py on real image hardware. Both registered HIP defects reproduce with the porter's rewritten reproducers. One cosmetic fix to `m3d_capture.cpp` is needed (line 47, `float(i + 1)`). The CPU-only suite is green. Nothing new needs a fork change.
+
+## Ruling on textures for AMD GPUs without image support (2026-11-18, Jeff Daily)
+
+RULED: option B, in this line. gfx942 and gfx950 (and any AMD GPU HIP reports without image support) get a GPU software sampler instead of refusing textures. Evidence he asked for first: the GPU-loads measurement in this file (534x to 1834x faster than sampling on the CPU and copying back; Warp's CPU device is single-threaded).
+
+Design constraint from Jeff: minimise the diff carried forward into every later Warp release. So:
+- Kernel side (`texture.h`): no new sampler. Remove the HIP no-image-support branch that returns zero so those device compiles fall through to upstream's existing software sampler (`cpu_sample_*_channel`); selection stays at compile time through `__HIP_NO_IMAGE_SUPPORT`, with no per-sample run-time branch. The handle is then a pointer to a `Texture` struct in device memory whose `data` points at device memory.
+- Native side: the second storage kind (struct plus texels in ordinary device memory; create, copy in and out, destroy) lives in a new file of the port's own, reached from the existing `texture.cpp` functions through one capability check each. Touch as few upstream lines as possible; no parallel copies of upstream functions.
+- Python side: smallest change that works; `cuda_array`, `cuda_surface` and `cuda_texture` interop properties raise a clear error on these devices; `Device.is_texture_supported` becomes True where the software path serves it, and a separate capability says whether sampling is hardware.
+- Tests: `test_texture` runs on these devices, registered by capability, never by arch; results must match Warp's CPU textures (expected bit-identical, since it is the same sampler), with hardware-filtering tolerances only where a test compares against the hardware path.
+- Release notes: textures on MI300/MI355 are sampled in software on the GPU; say how that differs from hardware sampling in precision and speed.
