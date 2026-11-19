@@ -495,3 +495,34 @@ Smoke: `ene_acetone_rhf_321g` TOTAL ENERGY -190.882196695 vs saved -190.88219669
 ### Question for jeff
 
 Upstream master's HIP Libxc path is broken by upstream PR 473 and fixed by open PR 512 (`src/gpu/hip/gpu_libxc.h`: `hipHostMallocNumaUser | hipHostMallocPortable` -> `hipHostMallocMapped`). The port currently ships upstream's broken state, so every Libxc test fails on HIP at 2146b22a. Options: (a) carry PR 512's exact `gpu_libxc.h` hunk on `moat-port` (identical text, so it merges cleanly with PR 512 whichever lands first; the upstream PR body would say so), or (b) wait for PR 512 to merge and sync again. This round did neither, as instructed.
+
+## Review 2026-11-19 (upstream sync)
+
+Reviewer, linux-gfx90a. Scope: `git diff master...moat-port` (master = upstream 7e8aeb2c; one file, `quick-cmake/QUICKCudaConfig.cmake` +13/-3) and the round's commits c548e334, a0122945, f89c1afa, 2146b22a on top of d369e07. Head 2146b22a.
+
+**Verdict: changes requested** (finding 1).
+
+### Port Correctness / Build System
+
+1. `quick-cmake/QUICKCudaConfig.cmake:439-442` (f89c1afa): the fallback feeds hipcc's *HIP* version into a guard written against *ROCm* versions, and the two do not compare. The HIP patch field is a build number, so ROCm 6.2.0 (`HIP version: 6.2.41133`), one of the releases the guard at `:453` exists to reject (scalar register fill/spill miscompile, ROCm >= 5.4.3 and < 6.2.1), parses as 6.2.41133 >= 6.2.1 and is accepted. ROCm 5.4.0-5.4.2 (HIP 5.4.228xx) are wrongly rejected the same way. On the pip SDK the HIP and ROCm versions diverge entirely (this host: HIP 7.16.26385, `include/rocm-core/rocm_version.h` says ROCm 10.1.0), so the "ROCm/HIP version" label at `:446-448` is wrong as well. Before this commit an unversioned install failed configuration outright; now an unversioned ROCm 6.2.0 (distro packages, Spack, a non-symlinked /opt/rocm) silently builds with the known-bad compiler. Verified with `cmake -P` over the exact regex sequence: `HIP version: 6.2.41133` with no `rocm-` path -> `6.2.41133 -> accepted`. Fix: in the fallback branch read `ROCM_VERSION_MAJOR/MINOR/PATCH` from `${HIP_TOOLKIT_ROOT_DIR}/include/rocm-core/rocm_version.h` (present in /opt/rocm since 5.x and in the pip SDK; `file(STRINGS ... REGEX)`), and use hipcc's `HIP version:` only if that header is missing, with the patch field dropped (major.minor.0) so 6.2.0 still falls in the rejected range. Fix the commit message's claim that the `HIP version` line is the ROCm version in the same follow-up commit.
+
+### Records
+
+2. `projects/QUICK/notes.md` "## Port Summary" (items 1-3) and `plan.md:71,119,125,151-153` still describe the port as removing the configure HIP exit, fixing the hipcc path in configure, and adding C++ includes. All three are gone at 2146b22a (configure and the two HIP sources match upstream; the port is one CMake file). Whoever drafts the upstream PR body from these records would describe changes the branch no longer makes. Rewrite the Port Summary to the current diff (`-munsafe-fp-atomics` for gfx90a/gfx942, the gfx1100 branch, the HIP-version fallback) and mark the plan's configure route as superseded by 2146b22a.
+
+### Commit Hygiene
+
+3. a0122945 (`Drop C header includes now provided by upstream`, touches only `src/gpu/hip/gpu.cu` and `src/gpu/hip/gpu_utils.h`) and 2146b22a (`Restore upstream's configure script`, touches only the `--hip` block of `configure`) are ROCm-specific and carry no `[ROCm]` prefix. Both are reverts of earlier port commits to upstream text, so the net PR diff has no trace of them; with no amend or force-push the fix belongs at PR preparation: squash the branch to its net diff (which also drops the June configure/include commits and their reverts from the history upstream would read) or give these titles the prefix there.
+
+### Fact-check of the porter's sync account (claims that held, recorded so they are not re-derived)
+
+- Upstream mirrored every `src/gpu/cuda` change into `src/gpu/hip`: per-file deltas `bc80f985..master` of `gpu.cu`, `gpu_type.h`, `gpu_utils.cu`, `mgpu.h`, compared after cuda->hip spelling, differ only in upstream's `<string.h>` adds and `hipHostMalloc`->`hipHostAlloc`; the only extra HIP-tree change is `rocblas/quick_rocblas_module.f90` `use ..., only:`. Upstream's changes outside `src/gpu` guard HIP and CUDA together. No new unported CUDA surface.
+- Upstream changed `QUICKCudaConfig.cmake` only in the `if(CUDA AND NOT HIP)` block (one hunk at line 137); `configure` unchanged upstream.
+- `src/gpu/hip/Makefile` on master still builds `$(objfolder)/xc_redistribute.o` from `%.cpp` in the backend directory while the file lives in `src/gpu/`; the configure restore rationale holds.
+- `git merge-tree --write-tree moat-port pr512`: one conflict, the `FATAL_ERROR` line only (gfx1100 vs gfx1201 additions).
+- Libxc regression: `gpu_libxc.h:84-85` passes `hipHostMallocNumaUser | hipHostMallocPortable` to `gpuHostAlloc`, which at bc80f985 called `hipHostMalloc` and at master (87cdf67a, 2026-06-18) calls `hipHostAlloc`. `init_gpu_libxc` is reached only through `gpu_upload_libxc_` with `nof_functionals > 0`, so the June RHF core dump and slow d-function tests (pre-87cdf67a, no Libxc) are unrelated to PR 512's fix. Analysis correct.
+
+### Not verified
+
+- Removed includes (a0122945) were checked only by the porter's HIP 7.16 (pip SDK) build; no /opt/rocm 7.0-7.2 toolchain on this host. Note upstream PR 512 also adds `<string.h>` to `src/gpu/hip/gpu_info.cu` (uses `strncpy`/`strnlen` with only `<stdio.h>`), suggesting some ROCm 7 toolchain fails there on master; the port's June includes never covered that file, so it is upstream's state, but the validators on other ROCm installs should watch for it.
+- MPI (`HIP_MPIV`) variant not built this round.
