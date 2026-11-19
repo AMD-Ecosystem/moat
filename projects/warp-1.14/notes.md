@@ -1458,3 +1458,281 @@ Skips there: 7 C2 (`test_graph_launch_array_access_mode_checked_mempool_access_c
 ### Next step for the lock holder
 - A.1, A.2 and C at `2505f4a3` on gfx942 are done; results above. Nothing new needs a fork change. Optional: size `test_tile_shared_mem_func` like the other four, to silence its harmless backward-kernel warning on 64 KiB parts.
 - Still open for Jeff, as listed in session 5: the 64 KiB sizing vs a capability skip (the sizing is now proven on real 64 KiB hardware), C4's direction, textures on gfx942/gfx950, and the defer/now rulings on the registered ROCm defects.
+## Evidence session 2 (2026-11-19, linux-gfx1100, Radeon Pro W7800, evidence only): Phase 5 handoff items B.1-B.4
+
+Requested by Jeff Daily. The work lock stays with linux-gfx950. Nothing was committed to the fork, and no stage, lock, head, platform or deferral record changed. The clone was updated read-only to the recorded `head_sha` `2505f4a3d7dd8a6bb4fd52f535ff846bd2d48800` (`git status --porcelain` clean). Experiments ran in a separate `git worktree` outside `projects/warp-1.14/src`. B.5 (`__frsqrt_rn` cost) is marked optional, only if Jeff asks, so it was not run.
+
+Setup as in the first gfx1100 session (same venv, ROCm 10.2.0 wheels, HIP 7.17.26434). Build: `export PATH=$FLEET_VENV/bin:$PATH; python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1100 -j 32` -> "Warp build succeeded" (33 s). `readelf -d warp/bin/warp.so` RUNPATH points at the venv's `_rocm_sdk_devel/lib`. Private `WARP_CACHE_PATH`, `ulimit -c 0`, `HIP_VISIBLE_DEVICES=0`.
+
+### Results at `2505f4a3` (unpatched)
+
+| item | command | expected | result |
+|---|---|---|---|
+| B.1 | `python -c "import warp as wp; wp.init(); d = wp.get_device('cuda:0'); print(d.arch_name, d.is_texture_supported)"` | True | `gfx1100 True` |
+| B.2 | `python -m warp.tests -s autodetect -p test_texture.py -m 32` | 119 run, 0 skipped | **Ran 120, FAILED (errors=64, skipped=1)** |
+| B.3 | `python sdf_probe.py cuda:0` (`cpu` first, as the probe's self-check) | PASS | `cpu` PASS (0 / 1.28e-3 / 0); **`cuda:0` RuntimeError "Failed to copy to texture: Invalid destination memory type 3"** |
+| B.4 | `test_tile_shared_memory.py`, `test_tile_reduce.py`, `test_tile_view.py` | 30, 62, 16 OK | **30 OK, 62 OK, 16 OK**: the 64 KiB tile sizing (`59d873af`) fixes the four B.2 failures on a real 64 KiB part |
+
+B.2 count: 120 = 50 CPU cases (all ok) + 67 `cuda_0` cases + 2 `new_del_None` cases (ok) + 1 skip. The skip is `test_texture_unsupported_device_raises`, registered with an empty `devices_without_textures` list, which `add_function_test` turns into a placeholder skip ("No suitable devices to run the test."). So "not registered" in the handoff expectation is in substance a placeholder skip, not a defect. Of the 67 GPU cases, 3 passed and **64 errored, all with the same `RuntimeError: Failed to copy to texture: Invalid destination memory type 3`**.
+
+### Finding 1 (port defect): texture copies pass CUDA's memory-type numbers to HIP
+`warp/_src/texture.py:65-73` `MemoryType` is the CUDA driver enum by value (HOST 1, DEVICE 2, ARRAY 3). `wp_texture_copy_device` (`texture.cpp:183-235`) compares the incoming int against `CU_MEMORYTYPE_*` and casts it into `copy_params.*MemoryType`. On HIP, `hip_compat.h:247` maps `CU_MEMORYTYPE_ARRAY` to `hipMemoryTypeArray`, which is **10** (`hip_runtime_api.h`: Unregistered 0, Host 1, Device 2, **Managed 3**, Array 10, Unified 11). Every copy into or out of a texture array is therefore refused ("Invalid destination memory type 3"). If the check were bypassed, 3 would be read as `hipMemoryTypeManaged`. gfx950 could not see this because it refuses textures before any copy. The fix translates Warp's values instead of casting (below, `texture.cpp` part). With only this fix, B.3 passes, and B.2 goes from 64 errors to 30 failures, which are findings 2 and 3.
+
+### Finding 2 (HIP defect): `hipDrvMemcpy3DAsync` and `hipMemcpy3DAsync` access pageable host memory after returning
+Symptom after finding 1: textures built from NumPy data have their first 16 bytes wrong (pointer-like garbage), in the array itself (the readback through `copy_to` shows the same values, so sampling is faithful). Measured with `agent_space/p5/tex_small.py` (1D widths 4..256: always exactly 4 floats wrong) and `tex_async.py`:
+
+| source of the upload | bad elements of 32 |
+|---|---|
+| A: constructor from NumPy (Warp copies into a temporary CPU array, freed on return) | 4 |
+| B: constructor from a CPU Warp array kept alive | 0 |
+| C: CPU Warp array dropped right after the constructor | 4 |
+| E: device array | 0 |
+
+That is glibc writing its free-list header into the freed temporary while the copy still reads it. Standalone reproducer without Warp (`agent_space/probe/memcpy3d/m3d.cpp`: `hipArray3DCreate`, `hipDrvMemcpy3DAsync` from a `malloc` buffer on a created stream, `memset` of the buffer right after the call returns, `hipStreamSynchronize`, read back): **every element** holds the overwritten value, at 1D w=32/256/4096 and 2D 2x2, 64x64 and 1024x1024. The runtime-API `hipMemcpy3DAsync` with `hipMemcpy3DParms` behaves the same (`rt.cpp`: 2048 of 2048 wrong). The linear `hipMemcpyAsync` H2D does stage pageable memory (`lin.cpp`: 0 bad at n = 32, 4096, 1M). CUDA documents that an async copy from pageable host memory returns only after the source is staged, so the caller may reuse it at once. Warp relies on that. Proposed registration (for the lock holder; not registered here): `utils/deferred.py add rocm-bug-report --project warp-1.14`, slug `hip-memcpy3d-async-pageable-host-read-after-return`.
+
+### Finding 3 (HIP defect): `hipDrvMemcpy3DAsync` on a capturing stream copies at once and records no graph node
+After finding 1 plus a stream sync for host copies, B.2 has 5 failures left: `test_texture{2d,3d}_cuda_array_copy_api_graph_capture{,_explicit_stream}` and `test_texture2d_cuda_surface_property_graph_capture_stability`, with 100% mismatch. Standalone (`agent_space/probe/memcpy3d/cap.cpp`, 64x32 float array, device->array and array->device copies captured in global mode): every call returns success, **the captured graph has 0 nodes**, the copy has already happened before instantiation, and a replay after changing the source copies nothing (2048 of 2048 wrong). The runtime-API `hipMemcpy3DAsync` captures correctly: 2 memcpy nodes, both replays right, in all three capture modes and for 1 and 4 channels (`rt.cpp`). `hipDrvGraphAddMemcpyNode` also works, but it needs a `hipCtx_t` (null gives invalid argument), and `hipCtxGetCurrent` is deprecated, which is an error under the host `-Werror`. One more constraint, found while building the workaround: `hipArray3DGetDescriptor` returns `hipErrorStreamCaptureUnsupported` during a global-mode capture, which invalidates the capture. So the copy cannot query the array's format at that point. Proposed registration (not registered here): slug `hip-drv-memcpy3d-async-not-captured`.
+
+### Proposed fix, confirmed as an uncommitted experiment
+Two parts:
+- `texture.cpp`: translate Warp's memory-type values.
+- `cuda_util.cpp`, HIP branch: `cuMemcpy3DAsync_f` builds `hipMemcpy3DParms` and calls the runtime `hipMemcpy3DAsync`. That call is captured correctly. Its extent width is in elements, so each array's element size is recorded when `cuArrayCreate_f`/`cuArray3DCreate_f` create it, and dropped in `cuArrayDestroy_f`, because the descriptor query is not allowed during capture. Outside a capture, a copy with a host side synchronizes the stream, which gives CUDA's pageable-memory semantics.
+
+The CUDA build is untouched: both files' changes sit in HIP-only code or in code whose CUDA expansion is unchanged. The `texture_memory_type` helper is shared, but it maps 1/2/3 to the same CUDA constants. The CUDA path was not compiled with nvcc here (no nvcc on this host).
+
+Results with the patch (gfx1100, same build flags):
+- **test_texture: Ran 120, OK (skipped=1)**: all 67 GPU cases, 50 CPU cases and 2 `new_del_None` cases pass, plus the placeholder skip. Run twice, both OK.
+- **`sdf_probe.py cuda:0`: PASS**. SDF vs CPU sampler max abs diff 4.78e-05; SDF vs analytic 1.31e-03 (grid spacing 1.56e-02; the CPU run gives 1.28e-03); RGBA8 vs CPU sampler 2.52e-03 (values in [0, 1], about 0.64/255). Both GPU-vs-CPU differences are consistent with hardware linear filtering, whose interpolation weights have less precision than the CPU sampler's float math. They are within the probe's tolerances.
+- `tex_async.py` A/B/C/E all 0 bad; `tex_small.py` 1D widths 4..256 readback and sampling all exact; graph capture probe `tex_cap.py` 0 bad.
+
+```diff
+diff --git a/warp/native/cuda_util.cpp b/warp/native/cuda_util.cpp
+index f7b86437..8714b49f 100644
+--- a/warp/native/cuda_util.cpp
++++ b/warp/native/cuda_util.cpp
+@@ -15,7 +15,9 @@
+ #include <dlfcn.h>
+ #endif
+ 
++#include <mutex>
+ #include <queue>
++#include <unordered_map>
+ #include <unordered_set>
+ #include <vector>
+ 
+@@ -448,16 +450,62 @@ CUresult cuIpcOpenMemHandle_f(CUdeviceptr* pdptr, CUipcMemHandle handle, unsigne
+ CUresult cuIpcCloseMemHandle_f(CUdeviceptr dptr) { return hipIpcCloseMemHandle(dptr); }
+ 
+ // Texture functions
++// Bytes per array element, recorded at creation: the 3D copy needs it and HIP's descriptor
++// query is not permitted while a stream is capturing
++static std::mutex g_array_element_size_mutex;
++static std::unordered_map<hipArray_t, size_t> g_array_element_size;
++
++static size_t hip_array_format_size(hipArray_Format format, unsigned int num_channels)
++{
++    switch (format) {
++    case HIP_AD_FORMAT_UNSIGNED_INT8:
++    case HIP_AD_FORMAT_SIGNED_INT8:
++        return num_channels;
++    case HIP_AD_FORMAT_UNSIGNED_INT16:
++    case HIP_AD_FORMAT_SIGNED_INT16:
++    case HIP_AD_FORMAT_HALF:
++        return 2 * num_channels;
++    default:
++        return 4 * num_channels;
++    }
++}
++
++static void record_array_element_size(hipArray_t array, hipArray_Format format, unsigned int num_channels)
++{
++    std::lock_guard<std::mutex> lock(g_array_element_size_mutex);
++    g_array_element_size[array] = hip_array_format_size(format, num_channels);
++}
++
++static size_t hip_array_element_size(hipArray_t array)
++{
++    std::lock_guard<std::mutex> lock(g_array_element_size_mutex);
++    auto it = g_array_element_size.find(array);
++    return it != g_array_element_size.end() ? it->second : 0;
++}
++
+ CUresult cuArrayCreate_f(CUarray* pHandle, const CUDA_ARRAY_DESCRIPTOR* pAllocateArray)
+ {
+-    return hipArrayCreate(pHandle, pAllocateArray);
++    hipError_t result = hipArrayCreate(pHandle, pAllocateArray);
++    if (result == hipSuccess)
++        record_array_element_size(*pHandle, pAllocateArray->Format, pAllocateArray->NumChannels);
++    return result;
+ }
+ 
+-CUresult cuArrayDestroy_f(CUarray hArray) { return hipArrayDestroy(hArray); }
++CUresult cuArrayDestroy_f(CUarray hArray)
++{
++    {
++        std::lock_guard<std::mutex> lock(g_array_element_size_mutex);
++        g_array_element_size.erase(hArray);
++    }
++    return hipArrayDestroy(hArray);
++}
+ 
+ CUresult cuArray3DCreate_f(CUarray* pHandle, const CUDA_ARRAY3D_DESCRIPTOR* pAllocateArray)
+ {
+-    return hipArray3DCreate(pHandle, pAllocateArray);
++    hipError_t result = hipArray3DCreate(pHandle, pAllocateArray);
++    if (result == hipSuccess)
++        record_array_element_size(*pHandle, pAllocateArray->Format, pAllocateArray->NumChannels);
++    return result;
+ }
+ 
+ CUresult cuArray3DGetDescriptor_f(CUDA_ARRAY3D_DESCRIPTOR* pArrayDescriptor, CUarray hArray)
+@@ -474,7 +522,63 @@ CUresult cuMemcpy2DAsync_f(const CUDA_MEMCPY2D* pCopy, CUstream hStream)
+ 
+ CUresult cuMemcpy3D_f(const CUDA_MEMCPY3D* pCopy) { return hipDrvMemcpy3D(pCopy); }
+ 
+-CUresult cuMemcpy3DAsync_f(const CUDA_MEMCPY3D* pCopy, CUstream hStream) { return hipDrvMemcpy3DAsync(pCopy, hStream); }
++static hipPitchedPtr hip_linear_side(
++    hipMemoryType type, const void* host, hipDeviceptr_t device, size_t pitch, size_t width, size_t height
++)
++{
++    void* ptr = type == hipMemoryTypeHost ? const_cast<void*>(host) : reinterpret_cast<void*>(device);
++    return make_hipPitchedPtr(ptr, pitch, width, height);
++}
++
++// Warp's 3D copies always have an array on at least one side and no offsets. They go through the
++// runtime-API hipMemcpy3DAsync because hipDrvMemcpy3DAsync on a capturing stream copies at once
++// and records no graph node.
++CUresult cuMemcpy3DAsync_f(const CUDA_MEMCPY3D* pCopy, CUstream hStream)
++{
++    hipArray_t array = pCopy->dstMemoryType == hipMemoryTypeArray ? pCopy->dstArray : pCopy->srcArray;
++    size_t element_size = hip_array_element_size(array);
++    if (element_size == 0)
++        return hipErrorInvalidValue;
++
++    size_t height = pCopy->Height ? pCopy->Height : 1;
++    size_t depth = pCopy->Depth ? pCopy->Depth : 1;
++
++    hipMemcpy3DParms params = {};
++    params.extent = make_hipExtent(pCopy->WidthInBytes / element_size, height, depth);
++    if (pCopy->srcMemoryType == hipMemoryTypeArray)
++        params.srcArray = pCopy->srcArray;
++    else
++        params.srcPtr = hip_linear_side(
++            pCopy->srcMemoryType, pCopy->srcHost, pCopy->srcDevice, pCopy->srcPitch, params.extent.width,
++            pCopy->srcHeight ? pCopy->srcHeight : height
++        );
++    if (pCopy->dstMemoryType == hipMemoryTypeArray)
++        params.dstArray = pCopy->dstArray;
++    else
++        params.dstPtr = hip_linear_side(
++            pCopy->dstMemoryType, pCopy->dstHost, pCopy->dstDevice, pCopy->dstPitch, params.extent.width,
++            pCopy->dstHeight ? pCopy->dstHeight : height
++        );
++    if (pCopy->srcMemoryType == hipMemoryTypeHost)
++        params.kind = hipMemcpyHostToDevice;
++    else if (pCopy->dstMemoryType == hipMemoryTypeHost)
++        params.kind = hipMemcpyDeviceToHost;
++    else
++        params.kind = hipMemcpyDeviceToDevice;
++
++    hipStreamCaptureStatus status = hipStreamCaptureStatusNone;
++    hipError_t result = hipStreamIsCapturing(hStream, &status);
++    if (result == hipSuccess)
++        result = hipMemcpy3DAsync(&params, hStream);
++
++    // CUDA stages pageable host memory before cuMemcpy3DAsync returns, so callers free or
++    // reuse the buffer at once; HIP's 3D copies still access it afterwards
++    if (result == hipSuccess && status == hipStreamCaptureStatusNone
++        && (pCopy->srcMemoryType == hipMemoryTypeHost || pCopy->dstMemoryType == hipMemoryTypeHost))
++        result = hipStreamSynchronize(hStream);
++
++    return result;
++}
+ 
+ CUresult cuTexObjectCreate_f(
+     CUtexObject* pTexObject,
+diff --git a/warp/native/texture.cpp b/warp/native/texture.cpp
+index 68955b23..85876af7 100644
+--- a/warp/native/texture.cpp
++++ b/warp/native/texture.cpp
+@@ -181,6 +181,25 @@ void wp_texture_destroy_device(void* context, uint64_t array_handle)
+     }
+ }
+ 
++// MemoryType in texture.py carries the CUDA driver values (host 1, device 2, array 3);
++// HIP numbers its array type differently, so translate rather than cast
++static bool texture_memory_type(int warp_memory_type, CUmemorytype* memory_type)
++{
++    switch (warp_memory_type) {
++    case 1:
++        *memory_type = CU_MEMORYTYPE_HOST;
++        return true;
++    case 2:
++        *memory_type = CU_MEMORYTYPE_DEVICE;
++        return true;
++    case 3:
++        *memory_type = CU_MEMORYTYPE_ARRAY;
++        return true;
++    default:
++        return false;
++    }
++}
++
+ bool wp_texture_copy_device(
+     void* context,
+     unsigned width_bytes,
+@@ -206,30 +225,34 @@ bool wp_texture_copy_device(
+     copy_params.Height = height;
+     copy_params.Depth = depth;
+ 
+-    copy_params.dstMemoryType = static_cast<CUmemorytype>(dst_memory_type);
+-    if (dst_memory_type == CU_MEMORYTYPE_HOST) {
++    CUmemorytype dst_type;
++    if (!texture_memory_type(dst_memory_type, &dst_type)) {
++        wp::set_error_string("Invalid destination memory type %d", dst_memory_type);
++        return false;
++    }
++    copy_params.dstMemoryType = dst_type;
++    if (dst_type == CU_MEMORYTYPE_HOST) {
+         copy_params.dstHost = reinterpret_cast<void*>(dst_handle);
+-    } else if (dst_memory_type == CU_MEMORYTYPE_DEVICE) {
++    } else if (dst_type == CU_MEMORYTYPE_DEVICE) {
+         copy_params.dstDevice = (CUdeviceptr)dst_handle;
+-    } else if (dst_memory_type == CU_MEMORYTYPE_ARRAY) {
+-        copy_params.dstArray = reinterpret_cast<CUarray>(dst_handle);
+     } else {
+-        wp::set_error_string("Invalid destination memory type %d", dst_memory_type);
+-        return false;
++        copy_params.dstArray = reinterpret_cast<CUarray>(dst_handle);
+     }
+     copy_params.dstPitch = dst_pitch;
+     copy_params.dstHeight = dst_height;
+ 
+-    copy_params.srcMemoryType = static_cast<CUmemorytype>(src_memory_type);
+-    if (src_memory_type == CU_MEMORYTYPE_HOST) {
++    CUmemorytype src_type;
++    if (!texture_memory_type(src_memory_type, &src_type)) {
++        wp::set_error_string("Invalid source memory type %d", src_memory_type);
++        return false;
++    }
++    copy_params.srcMemoryType = src_type;
++    if (src_type == CU_MEMORYTYPE_HOST) {
+         copy_params.srcHost = reinterpret_cast<void*>(src_handle);
+-    } else if (src_memory_type == CU_MEMORYTYPE_DEVICE) {
++    } else if (src_type == CU_MEMORYTYPE_DEVICE) {
+         copy_params.srcDevice = (CUdeviceptr)src_handle;
+-    } else if (src_memory_type == CU_MEMORYTYPE_ARRAY) {
+-        copy_params.srcArray = reinterpret_cast<CUarray>(src_handle);
+     } else {
+-        wp::set_error_string("Invalid source memory type %d", src_memory_type);
+-        return false;
++        copy_params.srcArray = reinterpret_cast<CUarray>(src_handle);
+     }
+     copy_params.srcPitch = src_pitch;
+     copy_params.srcHeight = src_height;
+```
+
+### Not done
+- B.5 (`__frsqrt_rn` throughput on wave32): optional, only if Jeff asks.
+- No nvcc compile of the proposed diff (no CUDA toolkit on this host); the lock holder's usual mi355 nvcc check applies if it is taken.
+- The patched build was used only for test_texture and the probes above. The rest of the suite was not rerun against it.
