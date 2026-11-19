@@ -196,3 +196,118 @@ class Stamp(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LockAfterTwoReleases(unittest.TestCase):
+    """A host still carrying a lock that has since been released twice over."""
+
+    L1 = {"arch": "linux-gfx942", "since": "2026-01-01T01:00:00Z", "holder": "aaaa"}
+    L2 = {"arch": "linux-gfx90a", "since": "2026-01-01T03:00:00Z", "holder": "bbbb"}
+
+    def test_a_lock_only_carried_from_the_ancestor_is_not_written_back(self):
+        o = edit(base(), "2026-01-01T01:00:00Z", stage="porting", porting=self.L1)
+        # Upstream: L1 released (ported), L2 taken (reviewing), L2 released -- the
+        # one marker left names L2, so nothing matches the L1 the validator carries.
+        upstream = edit(o, "2026-01-01T04:00:00Z", stage="review-passed", porting=None,
+                        porting_released={"arch": "linux-gfx90a",
+                                          "since": self.L2["since"],
+                                          "at": "2026-01-01T04:00:00Z"})
+        validator = edit(o, "2026-01-01T05:00:00Z")
+        for a, b in ((validator, upstream), (upstream, validator)):
+            self.assertIsNone(merge(a, b, o).get("porting"))
+
+    def test_the_other_sides_new_lock_wins_over_the_carried_one(self):
+        o = edit(base(), "2026-01-01T01:00:00Z", porting=self.L1)
+        upstream = edit(o, "2026-01-01T03:00:00Z", porting=self.L2,
+                        porting_released={"arch": "linux-gfx942",
+                                          "since": self.L1["since"],
+                                          "at": "2026-01-01T02:00:00Z"})
+        stale = edit(o, "2026-01-01T05:00:00Z")
+        for a, b in ((stale, upstream), (upstream, stale)):
+            self.assertEqual(merge(a, b, o)["porting"], self.L2)
+
+    def test_a_concurrent_acquisition_still_survives_a_lockless_writer(self):
+        o = edit(base(), "2026-01-01T01:00:00Z")
+        holder = edit(o, "2026-01-01T02:00:00Z", porting=self.L1)
+        other = edit(o, "2026-01-01T03:00:00Z")
+        for a, b in ((holder, other), (other, holder)):
+            self.assertEqual(merge(a, b, o)["porting"], self.L1)
+
+    def test_without_an_ancestor_an_unmatched_lock_stays_held(self):
+        holder = edit(base(), "2026-01-01T02:00:00Z", porting=self.L1)
+        other = edit(base(), "2026-01-01T03:00:00Z")
+        self.assertEqual(merge(holder, other)["porting"], self.L1)
+
+
+class DeliberateClear(unittest.TestCase):
+    """A STICKY field one side removed on purpose, proven by the ancestor."""
+
+    RULING = {"evidence": "https://example.invalid/readme", "by": "someone",
+              "at": "2026-01-01T00:30:00Z"}
+
+    def test_a_one_sided_clear_stands(self):
+        for key, value in (("review_pr", "https://example.invalid/pull/1"),
+                           ("maintained", self.RULING), ("no_upstream", self.RULING)):
+            with self.subTest(key=key):
+                o = edit(base(), "2026-01-01T01:00:00Z", **{key: value})
+                cleared = edit(o, "2026-01-01T02:00:00Z")
+                del cleared[key]
+                other = edit(o, "2026-01-01T03:00:00Z", head_sha="y" * 40)
+                for a, b in ((cleared, other), (other, cleared)):
+                    self.assertNotIn(key, merge(a, b, o))
+
+    def test_a_host_that_never_had_it_does_not_erase_it(self):
+        o = edit(base(), "2026-01-01T01:00:00Z")
+        ruled = edit(o, "2026-01-01T02:00:00Z", maintained=self.RULING)
+        stale = edit(o, "2026-01-01T03:00:00Z", head_sha="y" * 40)
+        for a, b in ((ruled, stale), (stale, ruled)):
+            self.assertEqual(merge(a, b, o)["maintained"], self.RULING)
+
+    def test_without_an_ancestor_the_value_is_kept(self):
+        ruled = edit(base(), "2026-01-01T02:00:00Z", maintained=self.RULING)
+        without = edit(base(), "2026-01-01T03:00:00Z")
+        self.assertEqual(merge(ruled, without)["maintained"], self.RULING)
+
+    def test_a_cleared_delivery_does_not_keep_the_release_schema_version(self):
+        o = edit(base(), "2026-01-01T01:00:00Z", schema_version=4,
+                 delivery={"mode": "fork-release", "by": "someone"})
+        cleared = edit(o, "2026-01-01T02:00:00Z", schema_version=3)
+        del cleared["delivery"]
+        other = edit(o, "2026-01-01T03:00:00Z", head_sha="y" * 40)
+        out = merge(cleared, other, o)
+        self.assertNotIn("delivery", out)
+        self.assertEqual(out["schema_version"], 3)
+
+
+class ReopenedPr(unittest.TestCase):
+    def test_a_reopen_is_not_undone_by_a_host_still_saying_closed(self):
+        o = edit(base(), "2026-01-01T01:00:00Z", pr_state="closed", pr_number=7)
+        reopened = edit(o, "2026-01-01T02:00:00Z", pr_state="open")
+        stale = edit(o, "2026-01-01T03:00:00Z", head_sha="y" * 40)
+        for a, b in ((reopened, stale), (stale, reopened)):
+            self.assertEqual(merge(a, b, o)["pr_state"], "open")
+
+    def test_a_close_still_beats_a_host_that_has_not_seen_it(self):
+        o = edit(base(), "2026-01-01T01:00:00Z", pr_state="open", pr_number=7)
+        closed = edit(o, "2026-01-01T02:00:00Z", pr_state="closed")
+        stale = edit(o, "2026-01-01T03:00:00Z", head_sha="y" * 40)
+        for a, b in ((closed, stale), (stale, closed)):
+            self.assertEqual(merge(a, b, o)["pr_state"], "closed")
+
+    def test_without_an_ancestor_the_terminal_state_outranks_open(self):
+        closed = edit(base(), "2026-01-01T02:00:00Z", pr_state="closed")
+        opened = edit(base(), "2026-01-01T03:00:00Z", pr_state="open")
+        self.assertEqual(merge(closed, opened)["pr_state"], "closed")
+
+
+class Ties(unittest.TestCase):
+    def test_top_level_and_block_ties_break_the_same_way(self):
+        at = "2026-01-01T02:00:00Z"
+        a = edit(base(), at, head_sha="a" * 40)
+        b = edit(base(), at, head_sha="b" * 40)
+        for rec, sha in ((a, "a" * 40), (b, "b" * 40)):
+            rec["platforms"]["linux-gfx90a"] = {"state": "completed",
+                                                "validated_sha": sha, "updated_at": at}
+        out = merge(a, b)
+        self.assertEqual(out["head_sha"], "b" * 40)
+        self.assertEqual(out["platforms"]["linux-gfx90a"]["validated_sha"], "b" * 40)

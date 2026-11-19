@@ -6,8 +6,16 @@
 CI and the pre-push hook both call this, so they cannot drift. Adding a gate here
 adds it to both; implementing it twice is how the two ended up disagreeing before.
 
+Several gates scope themselves to what the push in progress updates, which they read
+from MOAT_PUSH_UPDATES and MOAT_PUSH_REFS. The hook exports both from the refs git
+hands it; CI exports the same two from the push event (see .github/workflows/ci.yml).
+A gate must not ask "am I in CI" to decide its scope: when only the hook set those
+variables, CI judged a port branch by the trunk-owned files it had inherited and
+failed 28 pushes of one branch over a skill file the branch could not fix. (readme
+is the one gate that consults CI, and not for scope: see its docstring.)
+
     python3 utils/check.py              # everything
-    python3 utils/check.py --fast       # skip the forks gate (walks every fork clone)
+    python3 utils/check.py --fast       # skip the forks and commits gates (per fork clone)
     python3 utils/check.py schema readme
 
 Exit 1 if any gate fails. Each gate prints one line per problem, prefixed with its
@@ -15,6 +23,7 @@ own name, so a CI log says which gate to look at.
 """
 
 import argparse
+import importlib.metadata
 import importlib.util
 import json
 import os
@@ -60,8 +69,9 @@ ZERO = "0" * 40
 
 
 def push_updates():
-    """(local sha, remote ref, remote sha) for each ref the push in progress updates,
-    from the pre-push hook. None outside a push (a manual or CI run)."""
+    """(local sha, remote ref, remote sha) for each ref the push in progress updates.
+    The pre-push hook exports it from git's own list and CI from the push event, so
+    both judge a push the same way. None outside a push (a manual run, a pull request)."""
     raw = os.environ.get("MOAT_PUSH_UPDATES")
     if raw is None:
         return None
@@ -128,6 +138,12 @@ def gate_branch_scope():
     return problems
 
 
+# The pyflakes CI installs (.github/workflows/ci.yml; tests/test_ci_scope.py holds the
+# two together). pyflakes gains checks between releases, so a host on another version
+# can pass what CI fails.
+PYFLAKES_PIN = "4.0.3"
+
+
 def gate_code():
     """The Python actually resolves: no undefined names, no dead imports or locals.
 
@@ -143,6 +159,13 @@ def gate_code():
         return []
     if importlib.util.find_spec("pyflakes") is None:
         return ["pyflakes not installed (pip install pyflakes); cannot check code"]
+    have = importlib.metadata.version("pyflakes")
+    if have != PYFLAKES_PIN:
+        # A warning, not a failure: the result below still stands for this host, but
+        # CI may disagree with it in either direction.
+        print(f"check: code: this host has pyflakes {have} and CI runs {PYFLAKES_PIN}, "
+              f"so the two can disagree (pip install pyflakes=={PYFLAKES_PIN})",
+              file=sys.stderr)
     files = sorted(str(p) for p in (REPO / "utils").glob("*.py"))
     r = _run([sys.executable, "-m", "pyflakes", *files])
     out = (r.stdout + r.stderr).strip()
@@ -181,20 +204,18 @@ def gate_schema():
 def gate_readme():
     """The generated project table matches the data it claims to describe.
 
-    Only where the port branches are visible. The table now renders across refs, so a
-    project in flight appears on the board -- which means the table cannot be
-    reproduced without the refs it was generated from. A CI checkout fetches one
-    branch, so it sees neither the branch-only rows nor the current state of a project
-    that exists on both the trunk and its own branch, and calls both differences
-    staleness. Eight runs failed that way, then four more after the first fix, every
-    one a false alarm.
-
-    Fetching every ref in CI would trade those for something worse: with the branches
-    visible, any push to any port branch stales the trunk's table and fails the trunk's
-    next push, for whoever happens to make it.
-
-    So this is judged where it can be judged -- a full clone, which is what the
-    pre-push hook runs in -- and skipped, loudly, where it cannot."""
+    Judged only in a pre-push hook that is updating the trunk, and in a manual run.
+    The table renders across refs, so whether it is current depends on the state of
+    every port branch at the moment of the push. The pusher can act on that: the hook
+    refuses and they regenerate. A hosted CI run cannot: it starts after the push, and
+    any port branch that recorded a state in between makes the trunk's table read
+    stale for a commit that was correct when pushed (775f8a2e failed that way twenty
+    seconds after an unrelated port/jitllm push). So CI skips it, loudly, whatever
+    refs its checkout happens to hold."""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print("readme: skipped in CI -- the table depends on every port branch at "
+              "push time; the pre-push hook judges it", file=sys.stderr)
+        return []
     # The board is a TRUNK artifact. A port branch carries whatever copy it inherited,
     # regenerating it there produces a commit that is discarded when the branch merges,
     # and judging it there is what serialises concurrent work: every record any host
@@ -334,11 +355,15 @@ def gate_optout():
         full = (rec.get("upstream_url") or "").split("github.com/", 1)[-1]
         if not full or not m.optout_for(full):
             continue
+        # A fork a person ruled we keep working is not retired by an opt-out: it
+        # offers no pull request, and its branch stays on our fork.
+        if rec.get("maintained"):
+            continue
         disp = m.get_disposition(full) or {}
         if disp.get("disposition") != "skip":
             problems.append(f"{name} ({full}): its owner opted out but the project is "
                             f"still live at stage {rec.get('stage')} -- "
-                            f"python3 utils/optout.py record retires it")
+                            f"{m.PY} utils/optout.py record retires it")
     return problems
 
 
@@ -690,20 +715,43 @@ def gate_conflict_markers():
 # from it must stand alone. MOAT-only practice lives in the moat-porting skill. The
 # skill card and evals are catalog metadata, not guidance, and are not scanned.
 STANDALONE_SKILL = REPO / ".claude" / "skills" / "cuda-to-rocm"
+# One group of alternatives per class of leak. Each is narrow on purpose: "validation",
+# "validated", a documentation URL with /projects/ in it and the rocm-libraries
+# monorepo's own projects/<library> paths are ordinary technical text and must pass
+# (tests/test_skill_vocabulary.py holds both kinds of line).
 MOAT_VOCABULARY = re.compile(
+    # the repository, its tools and its records
     r"\bMOAT\b|moatlib|(?<![\w/.])utils/|\bnotes\.md\b|\bplan\.md\b|\bstatus\.json\b"
-    r"|\bsurface\.json\b|\bdeferred\.(?:py|json)\b|projects/<|\bfleet\b"
-    r"|\b(?:head|validated|published)_sha\b|\brevalidat|cuda-not-validated|codeobj_diff"
-    r"|advance[_-]head|config/(?:arches|jargon)\.toml|\bcant-port\b|\bdepends_on\b"
-    r"|(?<![\w/])_deps/|(?<![\w/])findings/|/var/lib/jenkins",
+    r"|\bsurface\.json\b|\bdeferred\.(?:py|json)\b|\bfleet\b"
+    r"|\b(?:head|validated|published)_sha\b|cuda-not-validated|codeobj_diff"
+    r"|advance[_-]head|config/(?:arches|jargon)\.toml|\bdepends_on\b"
+    r"|(?<![\w/])_deps/|(?<![\w/])findings/|/var/lib/jenkins|\bupstream-issues\b"
+    # a project folder: projects/<name>, or a real one such as projects/TornadoVM
+    r"|(?<![\w/.-])projects/(?!(?:hipcub|rocprim|rocthrust)\b)[\w<]"
+    # the fork organization, except the one upstream project that lives there
+    r"|\bAMD-Ecosystem/(?!hipMM\b)"
+    # branch and state names, dispositions
+    r"|\bmoat-(?:port|fix|sync)\b|\bport/<|\brevalidat|\bcarry-forward\b"
+    r"|\b(?:validation-failed|port-ready|review-passed|changes-requested|delta-ported)\b"
+    r"|\b(?:cant-port|not-portable|already-supported)\b"
+    # deferral ids and rulings
+    r"|\bdeferrals?\b"
+    # role names and the workflow around them
+    r"|\bporters?\b|\bvalidators?\b|\breviewer role\b|\bintake\b"
+    r"|\bintegrity gate\b|\bretry budget\b|\bstop[- ]discipline\b|\bfork commit\b"
+    # one host described as a fixture
+    r"|\bthe gfx\d\w* host\b",
     re.IGNORECASE)
 
 
 def gate_skills():
-    """The cuda-to-rocm skill names no MOAT tool, record, or state."""
+    """The cuda-to-rocm skill names no MOAT tool, record, or state, and its generated
+    entry index and contents blocks match the reference files."""
     if port_only_push():
         return []
-    problems = []
+    import gen_skill_index
+    problems = [f"{rel}: generated index or contents is stale (run utils/gen_skill_index.py)"
+                for rel in gen_skill_index.stale(REPO)]
     paths = [STANDALONE_SKILL / "SKILL.md"]
     for sub in ("references", "assets"):
         paths += sorted(p for p in (STANDALONE_SKILL / sub).rglob("*") if p.is_file())
@@ -734,7 +782,7 @@ GATES = {
     "surface": (gate_surface, False),
     "published": (gate_published, False),
     "forks": (gate_forks, True),
-    "commits": (gate_commits, True),   # slow: shells out per fork clone      # slow: shells out per fork clone
+    "commits": (gate_commits, True),   # slow: shells out per fork clone
 }
 
 
