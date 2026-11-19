@@ -941,3 +941,72 @@ linux-gfx1100) reads revalidate at b0e0fb6d1; windows waived. The delta is a
 host-only test program plus two `#define`s inside `#ifdef __HIP__`, so a wave32
 host can probably carry forward with `binary-equiv` (plugin code objects should
 be identical), but that is for the wave32 validator to establish.
+
+## CUDA compile check 2026-11-19 (real nvcc, mi355 host, head b0e0fb6d1)
+
+Evidence only: no stage or platform record changed, nothing pushed to the fork,
+no GitHub write. Compile and link only; the host has no NVIDIA GPU. This repeats
+the earlier check (done at 388fcc10f) with the full kernel + plugin recipe in both
+trees at the current head, which adds the check-gpu commit.
+
+Trees (fresh clones in the job directory; plumed2 has no submodules, so
+`git submodule update --init --recursive` was a no-op):
+- port: AMD-Ecosystem/plumed2 at head_sha `b0e0fb6d12474c1e1bd8925a87e6332ce781bd88`
+- base: plumed/plumed2 at the port's merge base `422109dc3e9aa3aa72a55f326dee473231a1039f`
+  (`git merge-base b0e0fb6d1 upstream/master`; still upstream master's tip)
+
+Toolkit: system CUDA 12.8, `/usr/local/cuda/bin/nvcc` ("Cuda compilation tools,
+release 12.8, V12.8.93", Build cuda_12.8.r12.8/compiler.35583870_0); host
+compiler g++ 13.3.0 (Ubuntu 24.04); no MPI (serial kernel).
+
+Recipe: upstream CI does not build cudaCoord (linuxWF.yml builds only the
+nvhpc/openacc plugin), so the plugin README was followed: PLUMED kernel with its
+autotools build, then the plugin's `configure.sh` and `make`. Neither is CMake,
+so Ninja does not apply; steps are counted as make reports them. Same commands
+for both trees (`<t>` = base or port, `J` = the job's build directory):
+
+```bash
+cd $J/<t>
+./configure --prefix=$J/install-<t>
+make -j64 && make install
+export PATH=$J/install-<t>/bin:/usr/local/cuda/bin:$PATH
+export PLUMED_KERNEL=$J/install-<t>/lib/libplumedKernel.so
+export LD_LIBRARY_PATH=$J/install-<t>/lib
+cd plugins/cudaCoord
+./configure.sh
+make                                                   # documented default (nvcc default arch, -dc -dlto)
+make -B NVCCCFLAGS="-dc -dlto --gpu-architecture=sm_80" NVCCLDFLAGS="-shared -dlto --gpu-architecture=sm_80"   # README's explicit-SM form
+make -C ../openaccPTM/gpucheck device_check            # the nvcc program behind make check-gpu
+plumed --load $PWD/CudaCoordination.so manual --action CUDACOORDINATION
+```
+
+| | base 422109dc3 | port b0e0fb6d1 |
+|---|---|---|
+| kernel configure | rc 0 | rc 0 |
+| kernel make / install | rc 0 / rc 0 | rc 0 / rc 0 |
+| plugin configure.sh | rc 0 | rc 0 |
+| plugin make, default arch | 3/3 (Coordination.o, cudaHelpers.o, link) | 3/3 |
+| plugin make, sm_80 | 3/3 | 3/3 |
+| gpucheck device_check (nvcc) | 1/1 | 1/1 |
+| plumed --load ... manual | rc 0 | rc 0 |
+| first error | none | none |
+
+Warnings: only nvcc's "Support for offline compilation for architectures prior
+to '<compute/sm/lto>_75' will be removed" once per nvcc call in the default-arch
+plugin build and in device_check, identical in both trees; the sm_80 build has none.
+
+Equivalence:
+- `make -B -n` in cudaCoord plus `make -B -n -C ../openaccPTM/gpucheck device_check`
+  print identical command lines in both trees once tree paths are masked
+  (`-ccbin g++`, `-Xlinker -soname,"CudaCoordination.so"`, `-Xlinker -z -Xlinker nodelete`).
+- `Makefile.conf` from `configure.sh` differs only in the install prefix path.
+- Both .so: SONAME CudaCoordination.so, FLAGS_1 NODELETE, NEEDED libplumedKernel.so
+  plus libstdc++/libm/libgcc_s/libc/ld-linux (cudart static); `cuobjdump -lelf`
+  lists one `lto.sm_80.cubin` in each sm_80 build. The .so files are not
+  byte-identical (embedded paths differ between the trees).
+- The load check registers CUDACOORDINATION in both trees (dlopen only, no GPU work).
+
+Not covered: an MPI kernel build and running on an NVIDIA GPU.
+
+Verdict: the CUDA path compiles and links with real nvcc 12.8 at head b0e0fb6d1,
+the same as on upstream's merge base 422109dc3. No port regression.
