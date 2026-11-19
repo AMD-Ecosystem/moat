@@ -250,10 +250,14 @@
       "refs": [
         "projects/warp-1.14/notes.md (Porting session 15)"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/16277",
       "created_at": "2026-11-19T19:47:04Z",
-      "decided": null,
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-11-19T21:33:20Z"
+      },
       "summary_history": [
         {
           "summary": "HIP 7.17 (ROCm 10.2 wheels), Windows, gfx1151 (Radeon 8060S); same code in rocm-systems develop: with no direct dispatch (the Windows default), the first launch of a graph holding a memory allocation node runs GraphMemAllocNode::VirtualMemAllocNode::submit on the worker thread, which calls amd::MemObjMap::RemoveMemObj on the reserved VA (registered by CreateCommand on the launching thread), then AllocateMemory (milliseconds for large sizes) and only then maps and registers the sub-object. A call on another thread that validates a pointer into the allocation inside that window returns hipErrorInvalidValue. Standalone reproducer graph_alloc_first_launch.hip (capture hipMallocAsync + kernel, no free, instantiate with AutoFreeOnLaunch, launch once, hipMemcpyAsync 4 KiB D2H on the same stream right after hipGraphLaunch returns) fails 5 of 5 at 1 MiB and 256 MiB; hipStreamSynchronize after the launch passes. Seen through Warp test_graph test_cuda_graph_alloc_transient_stream and test_map test_graph_capture (wp_memcpy_d2h invalid argument after wp.capture_launch). A rarer variant fails inside hipGraphLaunch itself ('Command creation for node id(3) failed!', hipErrorInvalidValue) on a 2-stream graph, consistent with the launching thread validating a memcpy node's pointer while another worker is inside that allocation's window; not reproduced standalone. Warp now synchronizes after hipGraphLaunch on Windows (hip_compat.h). Fix would be to keep the VA registered (or replace the entry atomically) while the alloc node maps physical memory",
