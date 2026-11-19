@@ -7,7 +7,7 @@
   "priority": 5.432,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-08-07T07:04:51Z",
+  "updated_at": "2026-10-09T15:39:59Z",
   "head_sha": "d505eff",
   "pr_url": "https://github.com/ddemidov/amgcl/pull/315",
   "pr_number": 315,
@@ -135,5 +135,6 @@
         "at": "2026-06-09T16:10:47Z"
       }
     }
-  }
+  },
+  "published_sha": "d505eff83b112816ecf1f4c48ea659350cde115c"
 }

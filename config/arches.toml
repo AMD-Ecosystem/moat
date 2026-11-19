@@ -51,3 +51,14 @@ waivable = ["windows", "wave64"]
 [wave]
 wave64 = ["gfx8", "gfx9"]                 # GCN, CDNA
 wave32 = ["gfx10", "gfx11", "gfx12"]      # RDNA
+
+# Platforms whose hardware is not available right now. This is the one place a
+# platform is named, and it grants nothing: an offline platform's old validations
+# stay on record as what they are. It only stops such a platform from OWING a
+# revalidation after the fork moves, and only while every gate it carries is already
+# satisfied at the current head by a platform that is online. If a gate it carries is
+# unproven, the revalidation stays owed and visible, because that is real missing
+# coverage that some other platform has to supply. Remove a platform from the list
+# when its hardware is back; nothing else needs to change.
+[offline]
+platforms = ["windows-gfx1101", "windows-gfx1201"]
