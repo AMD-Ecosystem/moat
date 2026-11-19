@@ -3090,3 +3090,37 @@ PYTHONPATH=<fork> python -m pytest quest/tests -p no:cacheprovider -q -rs
 ```
 
 **202 passed, 28 skipped, 0 failed** (21.7 s); skips are the tests' own (`test_prefill_attention.py:51` qo_len > kv_len, 13; `test_topk.py:27` k >= kv_len, 15). Per suite (separate runs): test_approx_attention 42; test_decode_attention 6; test_decode_launch_shape 3; test_estimate 9; test_prefill_attention 29 passed, 13 skipped; test_rope 64; test_topk 49 passed, 15 skipped. Identical to `6e7d8db` on this GPU. End-to-end Llama-2 run not repeated: the delta touches no kernel and no compiled code (the generated `build.ninja` is identical to `6e7d8db`'s, per the review above).
+
+## Porter round 2026-11-19 (windows-gfx1151), answering review pass 3 -- fork `3c7754f`
+
+One commit on top of `a70f4d9`, nothing rewritten: `3c7754f` `[ROCm] Find the ROCm SDK from Python_EXECUTABLE on Windows` (`quest/ops/CMakeLists.txt` +31/-2, `README.md` 1 line). Every CMake change is inside `CMAKE_HOST_WIN32`/`WIN32` guards in the `USE_HIP` branch; CUDA path, kernels, tests and Linux untouched. No validation recorded.
+
+Finding 1 reproduced at `a70f4d9` first (clean shell: venv not activated and not on PATH; `CC`, `CXX`, `HIPCXX`, `PYTORCH_ROCM_ARCH`, `HIP_PATH`, `ROCM_PATH`, `VIRTUAL_ENV`, `CONDA_PREFIX` unset; README arguments plus `-DPython_EXECUTABLE=<venv>/Scripts/python.exe`, prefix path from the same python): rc 1 at `CMakeLists.txt:54`, "CMake was given .../cl.exe ... Unset the CXX environment variable", as the reviewer read it.
+
+### The change
+
+- hipconfig lookup (pre-`project()` Windows block): extra `find_program` hints: the directory of `Python_EXECUTABLE` and its `Scripts` subdirectory when `Python_EXECUTABLE` is given, and `$ENV{VIRTUAL_ENV}/Scripts`, `$ENV{CONDA_PREFIX}/Scripts`.
+- A second wall the review did not see, found by running the case: with the compiler found, `find_package(Torch)` still printed "ROCM_PATH environment variable is not set and C:/opt/rocm does not exist. Building without ROCm support." and generation failed on `hip::amdhip64` (`c10_hip`, `torch_hip`, `torch_hip_library` link interfaces). torch's `LoadHIP.cmake` locates ROCm only through `ENV{ROCM_PATH}` or `find_program(rocm-sdk)` on PATH, and `rocm-sdk.exe` is also a venv `Scripts` console script. Fix: after `enable_language(HIP)`, on `WIN32` with `ENV{ROCM_PATH}` undefined, `set(ENV{ROCM_PATH} "${CMAKE_HIP_COMPILER_ROCM_ROOT}")` (the root CMake derived for the HIP compiler; configure-process environment only, re-derived on every re-configure since the compiler is cached). This also covers `-DCMAKE_HIP_COMPILER=...` in a shell with no environment.
+- Error messages: when the lookup ran and found no clang++ and CMake fell back to an MSVC-style compiler, the message now says none was found and names the remedies (activate the environment, `-DPython_EXECUTABLE=<its python.exe>`, or `-DCMAKE_HIP_COMPILER=<ROCm>/lib/llvm/bin/clang++.exe`). The "CMake was given ... Unset the CXX" message remains for a compiler the user chose.
+- README: the `-DPython_EXECUTABLE` sentence adds "and use that same `python.exe` in the `CMAKE_PREFIX_PATH` command; the ROCm SDK installed in that environment is then found from it" (the documented `$(python -c ...)` would otherwise run whichever python is on PATH).
+
+### Evidence (torch312_venv, CMake 3.31.0, Ninja; scratch in `agent_space/quest_porter/`; out-of-tree `-S quest/ops -B <scratch>`)
+
+Case 1, environment not activated and not on PATH, the variables above unset:
+
+```
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 "-DCMAKE_PREFIX_PATH=<venv python: torch.utils.cmake_prefix_path>" -DPython_EXECUTABLE=<venv>/Scripts/python.exe -S quest/ops -B b1
+ninja -C b1 -j2 -v CMakeFiles/_kernels.dir/csrc/rms_norm.cu.obj CMakeFiles/_kernels.dir/csrc/bsk_ops.cu.obj     # utils/timeit.sh Quest compile
+```
+
+Configure rc 0: `CMAKE_CXX_COMPILER` and `CMAKE_HIP_COMPILER` both `<venv>/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe` (GNU-like), `CMAKE_BUILD_TYPE=Release` (`-O3 -DNDEBUG`), Python `<venv>/Scripts/python.exe` 3.12.10, `_quest_hipconfig=<venv>/Scripts/hipconfig.exe`, gfx1151. The two objects compiled, 2/2, rc 0, `--offload-arch=gfx1151` on both, warnings only (the known `hipError_t` nodiscard ones). `build.ninja` equals the `a70f4d9` build's (`quest/ops/build`, the previous round) after replacing the build directory: the only differing lines are the 6 that spell the build directory with backslashes.
+
+Case 2, environment activated (`Activate.ps1` from the same clean shell, `case2_configure.ps1`), README command as written (source directory given by path instead of `..`): rc 0. `CMakeCache.txt` against the `a70f4d9` build's, build directory normalized: 2 differing entries, `CMAKE_CACHEFILE_DIR` (the directory) and `_quest_hipconfig` (`<venv>/Scripts/hipconfig.exe` now; the previous round's shell also had the SDK `bin` on PATH and found `_rocm_sdk_devel/bin/hipconfig.exe`; both report the same clang path). Compilers, build type, flags, Python and every `*_DIR` identical. `build.ninja`: same 6 path-only lines. So **no full rebuild and no pytest rerun**: the generated build is the one `a70f4d9` built and tested (202 passed, 28 skipped), differing in paths only.
+
+Messages: no environment and no `-DPython_EXECUTABLE` -> the new "none was found (no hipconfig on PATH or in the Python environment) ..." error; `CXX=cl` -> the "CMake was given ... (MSVC-style command line). Unset the CXX ..." error as before. `-DCMAKE_HIP_COMPILER=<sdk>/lib/llvm/bin/clang++.exe` with `-DPython_EXECUTABLE`, no environment: configures, both compilers that clang++.
+
+`python utils/jargon.py --port Quest` clean; commit ASCII, no trailer; fork tree clean apart from the untracked runtime DLLs staged in `quest/` and the old `quest/ops/build`. Linux hosts: the delta is Windows-guarded configure logic plus one README sentence.
+
+## Lesson for cuda-to-rocm: find_package(Torch) on Windows needs ROCM_PATH when the environment is not activated
+
+For `references/windows.md`, "CMake and compiler drivers", beside the `hipconfig --hipclangpath` recipe. Finding the HIP `clang++` through the Python interpreter's directory is not enough for a CMake torch extension configured with an unactivated pip ROCm environment (`-DPython_EXECUTABLE=<venv>/Scripts/python.exe`): torch's `LoadHIP.cmake` locates ROCm only through `ENV{ROCM_PATH}` or `find_program(rocm-sdk)` on PATH (`rocm-sdk.exe` is a venv `Scripts` console script too), prints "ROCM_PATH environment variable is not set and C:/opt/rocm does not exist. Building without ROCm support." as a STATUS line, and the configure only fails at generate time with `The link interface of target "c10_hip" contains: hip::amdhip64 but the target was not found`. Fix in the project, on `WIN32`, after `enable_language(HIP)` and before `find_package(Torch)`: when `ENV{ROCM_PATH}` is undefined, `set(ENV{ROCM_PATH} "${CMAKE_HIP_COMPILER_ROCM_ROOT}")`. Test the documented non-activated fallback in a shell that has neither the environment's `Scripts` nor the SDK `bin` on PATH; a build shell that exports them hides both this and the hipconfig miss. (Quest)
