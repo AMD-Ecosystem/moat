@@ -5313,3 +5313,7 @@ index b5aa12d4..8b82aead 100644
 ## Ruling on bf16 scope for matrix-core tile_matmul (2026-11-19, Jeff Daily)
 
 RULED: accept the current scope. bf16 is accelerated only as upstream's API allows it: bf16 inputs with a float32 output, forward only, on the MFMA path. No change to upstream's Python-level rejection of bf16 outputs and bf16 backward, and no bf16 on the WMMA path in this line.
+
+### Correction to the bf16 scope entry above (2026-11-19)
+
+The entry above wrongly bundled two things. What Jeff accepted is upstream's API restriction (bf16 inputs, float32 output, forward only). He did not agree to leaving bf16 off WMMA: his Q3 ruling asked for WMMA on Radeon for fp16 and bf16 on gfx11/gfx12, and the previous porter's omission of bf16 there was a deviation from that ruling, not a consequence of the API restriction (MFMA accelerates the same restricted case). bf16 inputs on WMMA for gfx11/gfx12 are owed in this line; assigned to the Windows porter session (gfx1151 is a gfx11 WMMA GPU), with the benchmark owed on gfx1100 and gfx1201.
