@@ -4291,3 +4291,216 @@ Telemetry note: one `test` phase line of 0.004 s with exit 1 at 08:40:04Z in `st
 
 ### Summary
 At `c9595bce`, every gfx1201 item gives the expected result. The committed WMMA condition engages WMMA for fp16 tiles that fit, with no switch, and falls back to scalar for the rest. The tile set and test_tile_matmul pass, the fixed `mma_check.py` reports FAILURES 0 with results identical to the validated experiment, and the full 82-pattern set is unchanged from `930d0098`. Nothing needs a fork change. (The CPU-only suite and the benchmark were not in this host's list for this head and were not run.)
+## Evidence session 6 (2026-11-19, linux-gfx1100, Radeon Pro W7800, evidence only): gfx11 WMMA switch-on sequence at `c9595bce`
+
+Requested by Jeff Daily. The work lock stays with linux-gfx950. Nothing was committed to the fork, and no stage, lock, head, platform or deferral record changed. The clone was updated read-only to the recorded `head_sha` `c9595bcedee56cffa5b8181372e9f46643a087e8` and rebuilt (`export PATH=$FLEET_VENV/bin:$PATH; python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1100 -j 32` -> "Warp build succeeded"; RUNPATH is the venv's ROCm 10.2 `_rocm_sdk_devel/lib`). Same venv (HIP 7.17.26434), `ulimit -c 0`, `HIP_VISIBLE_DEVICES=0`.
+
+The experiment ran in a separate `git worktree` (`agent_space/wmma_wt`), and the scalar baseline in another (`agent_space/scalar_wt`: `git checkout 974cd4bf -- warp/native/tile_matmul.h`). Each got a copy of this build's `warp/bin/*.so`; the native code is identical and the kernel headers are read from each tree at kernel compile time. Both worktrees were removed at the end. The main clone was never modified (`git status --porcelain` clean).
+
+**A fresh `WARP_CACHE_PATH` was used for every run of every tree:** each `mma_check` script, each test file, each ISA check and each benchmark run. This matters, not just in theory: the fp16 tile_matmul test module has the same name (`wp_k_1212a376_ecb1985.gfx1100.hsaco`) in the shipped tree and in the experiment tree, as Porting session 10 item 4 predicts (the module hash does not cover the native headers). A shared cache would have handed one tree the other's code object.
+
+The items are the "gfx1100" line of the `c9595bce` Next step, i.e. Porting session 10 item 2's sequence, then the as-shipped checks, in that order.
+
+### Step 1: fixed `wmma_layout.hip`: PASS
+Built as given (`clang++ -x hip --rocm-path=$R --offload-arch=gfx1100 -O2 -w wmma_layout.hip -o wmma_layout -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib`), script verbatim from Porting session 10:
+```
+WMMA family 11, layout (non-negative)  K=16: 0 of 256 wrong
+WMMA family 11, layout (non-negative)  K=32: 0 of 256 wrong
+WMMA family 11, layout (non-negative)  K=64: 0 of 256 wrong
+WMMA family 11, layout (position)      K=16: 0 of 256 wrong
+WMMA family 11, layout (position)      K=32: 0 of 256 wrong
+WMMA family 11, layout (position)      K=64: 0 of 256 wrong
+WMMA family 11, accumulation           K=16: 0 of 256 over the bound, worst error 0.33 of the bound
+WMMA family 11, accumulation           K=32: 0 of 256 over the bound, worst error 0.38 of the bound
+WMMA family 11, accumulation           K=64: 0 of 256 over the bound, worst error 0.26 of the bound
+(exit 0)
+```
+
+### Step 2: the switch-on experiment (uncommitted, worktree only)
+The diff, exactly the one-term widening of Porting session 10 item 2 (`git diff` in the experiment worktree; apply with `git apply`):
+```diff
+diff --git a/warp/native/tile_matmul_mma.h b/warp/native/tile_matmul_mma.h
+index 220000d7..1855ce1f 100644
+--- a/warp/native/tile_matmul_mma.h
++++ b/warp/native/tile_matmul_mma.h
+@@ -86,7 +86,8 @@ template <> struct op<bfloat16> {
+ };
+ #endif
+ 
+-#elif (defined(WP_TILE_WMMA) && WP_TILE_WMMA) || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12)
++#elif (defined(WP_TILE_WMMA) && WP_TILE_WMMA) || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12) \
++    || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32)
+ // 32-lane WMMA. The gfx12 fp16 layout is measured and on; the gfx11 and gfx1250 paths stay off
+ // unless WP_TILE_WMMA is defined to 1 (each WMMA builtin exists on exactly one target family).
+ #define WP_TILE_MMA 1
+```
+
+| check | expected | result |
+|---|---|---|
+| `python mma_check.py` (fixed) | FAILURES 0, the 64 KiB limits as SMEM-LIMIT | **FAILURES 0**; 15 "SMEM-LIMIT (forward not launched)" and 25 "SMEM-LIMIT (backward not launched)" (list below) |
+| `python mma_check_bf16.py` | FAILURES 0 | **FAILURES 0** (55 cases; no shared-memory limit) |
+| 24-file tile set | 639 run, 15 known skips, 0 failures | **639 run, 15 skipped, 0 failures**. Skips: 8 "Warp was not built with MathDx support", 1 "MathDx is not enabled", 1 "Skipping test on CUDA device without MathDx (tolerance)", and the five "Needs <N> bytes of shared memory per block, device has 65536". No `Warp CUDA error`; the only shared-memory warning is the known `test_tile_load_scoped` one |
+| `test_tile_matmul.py` | 25 OK | **Ran 25, OK** (part of the tile set run) |
+| `v_wmma_f32_16x16x16_f16` in the fp16 objects | present | **16** in the fp16 32x32x32 forward+backward module, the count gfx12 shows; the fp32 module has 0 (scalar, 1729 `v_fma*_f32`) |
+
+- `mma_check.py`, fp16 results: shapes whose dimensions are multiples of 16 differ from the CPU by about 1e-3 (WMMA with fp32 accumulation). For example, at bd 64: 16x16x16 c 1.6e-03; 32x32x32 c 1.2e-03, gA 1.2e-03; 64x32x48 c 1.1e-03, gB 3.5e-03. The non-multiple shapes (8x8x8, 24x16x16, 16x16x12, 17x33x15) are bit-identical to the CPU, i.e. they take the scalar path, as the selection intends.
+- ISA check (`agent_space/p10/isa_check.py`, 32x32x32 fp16 and fp32 at block_dim 64, forward and backward, against float64): with the switch, fp16 forward max err 1.9e-03 and adj_A 2.6e-03. As shipped (scalar), fp16 forward 1.1e-02 and adj_A 1.3e-02. fp32 is identical in both (1.4e-06 / 9.3e-07).
+- The 40 shared-memory limits of `mma_check.py`, every one recognised by the script as a launch that did not happen:
+```
+float32  M 64 N 64 K 64 bd  32: c 1.0e+00 d 1.1e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float32  M 64 N 64 K 64 bd  64: c 1.0e+00 d 1.1e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float32  M 64 N 64 K 64 bd  96: c 1.0e+00 d 1.1e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float32  M 64 N 64 K 64 bd 128: c 1.0e+00 d 1.1e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float32  M 64 N 64 K 64 bd 256: c 1.0e+00 d 1.1e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float32  M 64 N 32 K 48 bd  32: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float32  M 64 N 32 K 48 bd  64: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float32  M 64 N 32 K 48 bd  96: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float32  M 64 N 32 K 48 bd 128: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float32  M 64 N 32 K 48 bd 256: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 32 N 32 K 32 bd  32: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 32 N 32 K 32 bd  64: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 32 N 32 K 32 bd  96: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 32 N 32 K 32 bd 128: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 32 N 32 K 32 bd 256: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 64 N 64 K 64 bd  32: c 1.0e+00 d 9.7e-01 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float64  M 64 N 64 K 64 bd  64: c 1.0e+00 d 9.7e-01 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float64  M 64 N 64 K 64 bd  96: c 1.0e+00 d 9.7e-01 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float64  M 64 N 64 K 64 bd 128: c 1.0e+00 d 9.7e-01 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float64  M 64 N 64 K 64 bd 256: c 1.0e+00 d 9.7e-01 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float64  M 48 N 16 K 64 bd  32: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 48 N 16 K 64 bd  64: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 48 N 16 K 64 bd  96: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 48 N 16 K 64 bd 128: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 48 N 16 K 64 bd 256: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 32 N 64 K 16 bd  32: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 32 N 64 K 16 bd  64: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 32 N 64 K 16 bd  96: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 32 N 64 K 16 bd 128: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 32 N 64 K 16 bd 256: c 0.0e+00 d 0.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float64  M 64 N 32 K 48 bd  32: c 1.0e+00 d 1.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float64  M 64 N 32 K 48 bd  64: c 1.0e+00 d 1.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float64  M 64 N 32 K 48 bd  96: c 1.0e+00 d 1.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float64  M 64 N 32 K 48 bd 128: c 1.0e+00 d 1.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float64  M 64 N 32 K 48 bd 256: c 1.0e+00 d 1.0e+00 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (forward not launched)
+float16  M 64 N 64 K 64 bd  32: c 1.9e-03 d 1.7e-03 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float16  M 64 N 64 K 64 bd  64: c 1.9e-03 d 1.7e-03 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float16  M 64 N 64 K 64 bd  96: c 1.9e-03 d 1.7e-03 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float16  M 64 N 64 K 64 bd 128: c 1.9e-03 d 1.7e-03 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+float16  M 64 N 64 K 64 bd 256: c 1.9e-03 d 1.7e-03 gA 1.0e+00 gB 1.0e+00 SMEM-LIMIT (backward not launched)
+```
+
+### Step 2: fp16 benchmark against the scalar tree
+Porting session 9's `bench_both.sh` with this host's paths (trees `wmma_wt` and `scalar_wt`, `bench_tile_matmul.py --blocks 16384 --iters 50`, a fresh `WARP_CACHE_PATH` per run), three runs per tree, merged with `compare.py` (labels changed from MFMA to WMMA). The benchmark covers all dtypes; only fp16 changes on gfx11, and the fp32/fp64 rows (scalar in both trees) serve as a control.
+
+**The benchmark was run twice.** In the first set, WMMA run 1 was disturbed: 32 cells exceeded 1.5x their median, and these included fp32 and fp64 cells whose code is identical in both trees (for example fp32 32x32 bd64 adjoint 9.1x). WMMA run 2 had one more such cell (fp16 16x16 bd32 forward, 7.0 ms against 0.27 ms). That is interference on the GPU during those runs, not a property of the code. I did not find the source; the host's other GPUs belong to other jobs. So the whole benchmark was repeated (set 2) with a 5-second load and GPU-busy monitor. Set 2 has no cell above 1.5x its median, and its run-to-run spread over the 112 launched cells is median 0.6%, max 5.4%. **The table is set 2**:
+
+| dtype | tile | block_dim | scalar fwd ms | WMMA fwd ms | fwd speedup | scalar adj ms | WMMA adj ms | adj speedup | checks |
+|---|---|---|---|---|---|---|---|---|---|
+| float16 | 16x16 | 32 | 1.123 | 0.272 | 4.13x | 0.296 | 0.235 | 1.26x | ok |
+| float16 | 16x16 | 64 | 1.132 | 0.281 | 4.02x | 0.282 | 0.207 | 1.36x | ok |
+| float16 | 16x16 | 128 | 0.976 | 0.422 | 2.31x | 0.266 | 0.207 | 1.28x | ok |
+| float16 | 16x16 | 256 | 1.392 | 0.474 | 2.94x | 0.306 | 0.248 | 1.23x | ok |
+| float16 | 32x32 | 32 | 3.711 | 1.825 | 2.03x | 4.406 | 2.674 | 1.65x | ok |
+| float16 | 32x32 | 64 | 4.259 | 1.870 | 2.28x | 2.474 | 1.660 | 1.49x | ok |
+| float16 | 32x32 | 128 | 5.318 | 2.664 | 2.00x | 1.936 | 1.177 | 1.64x | ok |
+| float16 | 32x32 | 256 | 6.848 | 2.715 | 2.52x | 1.957 | 1.164 | 1.68x | ok |
+| float16 | 64x64 | 32 | 33.274 | 13.875 | 2.40x | 60.700 | 54.099 | 1.12x | ok |
+| float16 | 64x64 | 64 | 27.490 | 18.984 | 1.45x | 33.660 | 30.238 | 1.11x | ok |
+| float16 | 64x64 | 128 | 27.634 | 14.103 | 1.96x | 17.228 | 14.726 | 1.17x | ok |
+| float16 | 64x64 | 256 | 17.624 | 19.408 | 0.91x | 13.607 | 8.582 | 1.59x | ok |
+| float32 | 16x16 | 32 | 1.856 | 1.835 | 1.01x | 0.403 | 0.400 | 1.01x | ok |
+| float32 | 16x16 | 64 | 2.028 | 2.001 | 1.01x | 0.347 | 0.347 | 1.00x | ok |
+| float32 | 16x16 | 128 | 1.308 | 1.297 | 1.01x | 0.403 | 0.399 | 1.01x | ok |
+| float32 | 16x16 | 256 | 1.675 | 1.667 | 1.01x | 0.469 | 0.462 | 1.01x | ok |
+| float32 | 32x32 | 32 | 7.724 | 7.689 | 1.00x | 6.501 | 6.508 | 1.00x | ok |
+| float32 | 32x32 | 64 | 8.267 | 8.222 | 1.01x | 3.383 | 3.373 | 1.00x | ok |
+| float32 | 32x32 | 128 | 8.058 | 7.996 | 1.01x | 2.629 | 2.620 | 1.00x | ok |
+| float32 | 32x32 | 256 | 9.593 | 9.545 | 1.01x | 2.987 | 2.962 | 1.01x | ok |
+| float32 | 64x64 | 32 | 69.112 | 68.934 | 1.00x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 64 | 43.826 | 43.236 | 1.01x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 128 | 42.229 | 42.013 | 1.01x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 256 | 48.787 | 48.149 | 1.01x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float64 | 16x16 | 32 | 6.763 | 6.737 | 1.00x | 1.436 | 1.421 | 1.01x | ok |
+| float64 | 16x16 | 64 | 6.704 | 6.690 | 1.00x | 0.999 | 1.000 | 1.00x | ok |
+| float64 | 16x16 | 128 | 6.860 | 6.835 | 1.00x | 1.335 | 1.333 | 1.00x | ok |
+| float64 | 16x16 | 256 | 6.842 | 6.795 | 1.01x | 1.317 | 1.314 | 1.00x | ok |
+| float64 | 32x32 | 32 | 57.046 | 57.089 | 1.00x | 23.186 | 23.222 | 1.00x | ok |
+| float64 | 32x32 | 64 | 49.950 | 49.885 | 1.00x | 13.181 | 13.239 | 1.00x | ok |
+| float64 | 32x32 | 128 | 45.799 | 45.722 | 1.00x | 9.005 | 8.992 | 1.00x | ok |
+| float64 | 32x32 | 256 | 47.134 | 46.998 | 1.00x | 8.048 | 8.036 | 1.00x | ok |
+| float64 | 64x64 | 32 | 0.020 | 0.020 | 1.00x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 64 | 0.019 | 0.019 | 0.96x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 128 | 0.017 | 0.019 | 0.90x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 256 | 0.018 | 0.020 | 0.90x | (no launch) | (no launch) | - | MISMATCH |
+run-to-run spread (max-min)/median over 144 cells: median 0.5%, max 15.7%
+
+(The final spread line counts the meaningless "(no launch)" cells. The launched-cell figures are above. The fp64 64x64 "speedups" are launch-failure timings.)
+
+**fp16 cells slower than scalar (the ruling asks for each):** one cell in set 2, **64x64, block_dim 256, forward: WMMA 18.64/19.42/19.41 ms against scalar 17.63/17.62/17.62 ms (0.91x)**. It was also slower in set 1 (19.37-19.55 ms in its two undisturbed runs against 16.64-18.05 ms). No fp16 adjoint cell is slower in set 2. In set 1, four adjoint cells (16x16 bd32, 32x32 bd64/128/256) had a WMMA median above scalar. In each of them WMMA runs 1 and 2 were slower than scalar and run 3 faster: 16x16 bd32 0.891/0.703/0.234 ms, 32x32 bd64 2.694/2.645/1.680, 32x32 bd128 13.116/1.986/1.190, 32x32 bd256 8.895/3.472/1.174, against scalar about 0.29, 2.46, 1.93 and 1.95. Run 1 is the disturbed run. Run 2 shows no disturbance in the fp32/fp64 control cells, so the cause of its slow fp16 adjoint values is not established. Set 2's three runs show all four cells faster than scalar (1.26x-1.68x) with run-to-run spread of at most 1.52%. Every other fp16 cell is faster: forward 1.45x-4.13x, adjoint 1.11x-1.68x. The 64x64 bd256 forward cell is the one the lock holder must explain or give a fallback, as the ruling requires. Two facts it may help to know: at block_dim 256 (8 wavefronts) a 64x64 tile has 16 16x16 fragments, two per wavefront. The scalar path is at its fastest there (17.6 ms is its best 64x64 forward, while WMMA's best is 13.9 ms at bd32 and 14.1 ms at bd128). No explanation is proposed here.
+
+Raw fp16 timings per run, ms (set 1, then set 2; `agent_space/p10/set1|set2/bench_<tree>_run<n>.csv`):
+```
+--- set 1 (WMMA run 1 disturbed)
+tree,dtype,M,block_dim,fwd_r1,fwd_r2,fwd_r3,adj_r1,adj_r2,adj_r3
+scalar,float16,16,32,1.1033,1.1158,1.1245,0.2860,0.2901,0.2919
+scalar,float16,16,64,1.0878,1.1399,1.1342,0.2856,0.2842,0.2842
+scalar,float16,16,128,0.9131,0.9692,0.9754,0.2587,0.2570,0.2608
+scalar,float16,16,256,1.3007,1.3889,1.3933,0.3033,0.3104,0.3109
+scalar,float16,32,32,3.6287,3.7196,3.7107,4.3063,4.3918,4.3932
+scalar,float16,32,64,4.0299,4.2393,4.2569,2.3949,2.4600,2.4731
+scalar,float16,32,128,4.9882,5.2744,5.2960,1.8569,1.9266,1.9331
+scalar,float16,32,256,6.3856,6.8216,6.8429,1.8221,1.9493,1.9463
+scalar,float16,64,32,32.4149,33.2914,33.2335,60.5661,60.6982,60.6824
+scalar,float16,64,64,26.3514,27.8515,27.3947,33.6102,33.6937,33.6242
+scalar,float16,64,128,26.5723,28.2518,27.4997,16.9763,17.4226,17.2193
+scalar,float16,64,256,16.6433,18.0510,17.5354,13.2033,13.8048,13.5788
+wmma,float16,16,32,0.5380,7.0096,0.2671,0.8907,0.7028,0.2337
+wmma,float16,16,64,0.2791,0.2942,0.2774,0.2080,0.1996,0.2016
+wmma,float16,16,128,0.4884,0.4406,0.4209,0.2283,0.2027,0.2087
+wmma,float16,16,256,0.8347,0.5127,0.4723,0.2632,0.2457,0.2540
+wmma,float16,32,32,2.7707,2.0006,1.8155,7.8170,3.9979,2.6716
+wmma,float16,32,64,5.3456,2.1104,1.8616,2.6937,2.6453,1.6804
+wmma,float16,32,128,4.7396,2.6714,2.6634,13.1156,1.9862,1.1895
+wmma,float16,32,256,9.9486,6.1324,2.7078,8.8949,3.4718,1.1742
+wmma,float16,64,32,37.6842,20.7396,13.8167,115.5697,53.7518,54.1822
+wmma,float16,64,64,19.2462,19.2210,18.9349,83.2576,30.2919,30.1955
+wmma,float16,64,128,43.4118,14.2349,14.0375,122.9680,14.7503,14.7494
+wmma,float16,64,256,89.7136,19.5513,19.3675,12.3484,8.6330,8.5829
+--- set 2
+tree,dtype,M,block_dim,fwd_r1,fwd_r2,fwd_r3,adj_r1,adj_r2,adj_r3
+scalar,float16,16,32,1.1216,1.1244,1.1235,0.2962,0.2996,0.2882
+scalar,float16,16,64,1.1321,1.1336,1.1248,0.2822,0.2918,0.2767
+scalar,float16,16,128,0.9823,0.9750,0.9760,0.2655,0.2661,0.2664
+scalar,float16,16,256,1.3919,1.3918,1.3931,0.3022,0.3067,0.3056
+scalar,float16,32,32,3.7115,3.7172,3.7047,4.4064,4.4238,4.3829
+scalar,float16,32,64,4.2588,4.2643,4.2423,2.4599,2.4830,2.4743
+scalar,float16,32,128,5.3180,5.3272,5.3147,1.9309,1.9356,1.9374
+scalar,float16,32,256,6.8343,6.8522,6.8484,1.9417,1.9570,1.9587
+scalar,float16,64,32,33.2193,33.2737,33.2762,60.6513,60.7004,60.7208
+scalar,float16,64,64,27.4896,27.4768,27.4961,33.6349,33.6601,33.6869
+scalar,float16,64,128,27.6343,27.6018,27.6393,17.2279,17.2567,17.2229
+scalar,float16,64,256,17.6258,17.6240,17.6227,13.6071,13.6252,13.5968
+wmma,float16,16,32,0.2632,0.2724,0.2764,0.2340,0.2347,0.2376
+wmma,float16,16,64,0.2779,0.2888,0.2815,0.1968,0.2081,0.2069
+wmma,float16,16,128,0.4101,0.4220,0.4234,0.2076,0.2072,0.2055
+wmma,float16,16,256,0.4570,0.4739,0.4759,0.2474,0.2519,0.2481
+wmma,float16,32,32,1.7499,1.8250,1.8287,2.6415,2.6756,2.6745
+wmma,float16,32,64,1.7893,1.8723,1.8704,1.6557,1.6628,1.6595
+wmma,float16,32,128,2.5431,2.6712,2.6644,1.1768,1.1752,1.1773
+wmma,float16,32,256,2.5966,2.7298,2.7153,1.1642,1.1656,1.1631
+wmma,float16,64,32,13.1597,13.8748,13.8780,54.0294,54.2363,54.0986
+wmma,float16,64,64,18.2244,19.0131,18.9842,30.1680,30.2615,30.2384
+wmma,float16,64,128,13.4162,14.1031,14.1115,14.6703,14.7264,14.7493
+wmma,float16,64,256,18.6374,19.4181,19.4080,8.3958,8.6002,8.5818
+```
+
+### As shipped (switch off): gfx11 unchanged, no WMMA
+- 24-file tile set in the main clone, a fresh cache per file: **639 run, 15 skipped (same reasons as above), 0 failures**; test_tile_matmul **Ran 25, OK**.
+- ISA check (same script, fresh cache): **0 `v_wmma`** in both modules. fp16 is 1456 `v_mul_f16` (scalar); fp32 is 1729 `v_fma*_f32`.
+
+### Summary for the lock holder
+- The fixed probe passes on gfx1100.
+- With the one-term widening above, gfx11 passes `mma_check.py` and `mma_check_bf16.py` (FAILURES 0 each), the tile set (639/15/0) and test_tile_matmul (25), and emits 16 `v_wmma_f32_16x16x16_f16` in the fp16 module.
+- The fp16 benchmark (clean set 2) is faster than scalar in 23 of 24 fp16 forward/adjoint cells. The exception is 64x64 bd256 forward, at 0.91x.
+- The shipped code is scalar on gfx11 and unchanged.
+- Committing the widening, and what to do about the 64x64 bd256 cell, is the lock holder's and Jeff's call.
