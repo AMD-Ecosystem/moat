@@ -1392,3 +1392,29 @@ Evidence behind the verdict (fresh fork clone, worktrees at both commits, CMake 
 - **Windows block** read inline only (no Windows host here): arch detection runs only when neither `CMAKE_HIP_ARCHITECTURES` nor `HIPARCHS` is set, caches the deduplicated `amdgpu-arch` list, and warns otherwise; the porter's gfx1151 run at the e9149bb tree (66/66 GPU, 76/76 CPU) is that block's evidence. `WIN32` via `add_compile_definitions` duplicates `/DWIN32` with the same value under an MSVC-style compiler, which is harmless.
 - Commits: 659a15d shared, no prefix; e9149bb ROCm-only, `[ROCm]`; titles 27/38 chars, "Authored with Claude.", no trailer. `python3 utils/jargon.py --port ohm`: clean.
 - The `-fuse-ld=lld-link` lesson is scoped to a HIP link that goes straight to clang++ and names the CMake and clang versions tested; it is accurate as written. The promoting session has to reconcile it with windows.md's "conflicts with `--hip-link`" sentence, which describes the hipcc route.
+
+## Validation 2026-11-19 (linux-gfx90a, moat-port e9149bb)
+
+**GPU**: AMD Instinct MI250X (gfx90a), one GCD pinned by the dispatcher (`HIP_VISIBLE_DEVICES` kept), `ulimit -c 0`. **Toolchain**: ROCm 10.1 TheRock pip SDK (`_rocm_sdk_devel`), CMake 3.31.6, Ninja, g++ 13.3, glm 1.0.1 headers (GitHub release tarball). Fork clone at e9149bbedcf8c8e1f6763884c0fcaeb3d70c31ee (`moat-port`); `git status --porcelain` empty after both builds. Full rebuild and full test run, not a carry-forward (the review above already showed the Linux HIP build graph identical to 7c09435's).
+
+```bash
+ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+cmake -B agent_space/build-hip -S projects/ohm/src -G Ninja -DCMAKE_BUILD_TYPE=Release -DOHM_FEATURE_HIP=ON -DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DGLM_INCLUDE_DIRS=$PWD/agent_space/dl/g101/glm-1.0.1
+utils/timeit.sh ohm compile -- cmake --build agent_space/build-hip -j 64     # 231/231
+export LD_LIBRARY_PATH=$ROCM/lib
+utils/timeit.sh ohm test -- $PWD/agent_space/build-hip/bin/<suite>
+```
+
+Arch auto-detected (`CMAKE_HIP_ARCHITECTURES=gfx90a;gfx90a;gfx90a;gfx90a`). `AMD_LOG_LEVEL=3` on `gputiltestcuda --gtest_filter='GpuKernel.*'` shows the `matrixMultiply` kernel dispatched on the device.
+
+| Suite | e9149bb (gfx90a) | 7c09435 (gfx90a, 2026-11-04) |
+|-------|------------------|------------------------------|
+| gputiltestcuda | 8/8 (3 suites, 3.9 s) | 8/8 |
+| ohmtestcuda | 58/58 (16 suites, 69.7 s) | 58/58 |
+| ohmtest | 53/53 (18 suites) | 53/53 |
+| ohmtestheightmap | 19/19 | 19/19 |
+| slamiotest | 4/4 | 4/4 |
+
+CPU-only build (cache `OHM_FEATURE_CUDA/HIP/OPENCL=OFF`), same flags without the HIP options, 161/161: ohmtest 53/53, ohmtestheightmap 19/19, slamiotest 4/4 PASSED.
+
+Checks: `python3 utils/jargon.py --port ohm` clean. readme.md has the "Building for AMD GPUs" section and the new Windows paragraph. CUDA gate: cuda-not-validated on this host (no CUDA toolkit, no conda); the nvcc compile at e9149bb is still owed on the mi355 host.

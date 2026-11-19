@@ -154,3 +154,14 @@
 {"kind":"phase","ts":"2026-11-19T05:31:04Z","phase":"test","seconds":3.792,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-vcpkg/bin/ohmtestheightmap.exe"}
 {"kind":"phase","ts":"2026-11-19T05:31:05Z","phase":"test","seconds":0.188,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-vcpkg/bin/slamiotest.exe"}
 {"kind":"session","ts":"2026-11-19T05:38:51Z","epoch":1795066731.840072,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-19T05:43:57Z","phase":"compile","seconds":13.276,"exit":0,"cmd":"cmake --build agent_space/build-hip -j 64"}
+{"kind":"phase","ts":"2026-11-19T05:44:06Z","phase":"test","seconds":4.074,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261118-213534-ohm-roles-prompt/moat/agent_space/build-hip/bin/gputiltestcuda"}
+{"kind":"phase","ts":"2026-11-19T05:45:16Z","phase":"test","seconds":69.939,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261118-213534-ohm-roles-prompt/moat/agent_space/build-hip/bin/ohmtestcuda"}
+{"kind":"phase","ts":"2026-11-19T05:45:28Z","phase":"test","seconds":11.899,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261118-213534-ohm-roles-prompt/moat/agent_space/build-hip/bin/ohmtest"}
+{"kind":"phase","ts":"2026-11-19T05:45:32Z","phase":"test","seconds":3.631,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261118-213534-ohm-roles-prompt/moat/agent_space/build-hip/bin/ohmtestheightmap"}
+{"kind":"phase","ts":"2026-11-19T05:45:32Z","phase":"test","seconds":0.063,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261118-213534-ohm-roles-prompt/moat/agent_space/build-hip/bin/slamiotest"}
+{"kind":"phase","ts":"2026-11-19T05:45:55Z","phase":"compile","seconds":12.522,"exit":0,"cmd":"cmake --build agent_space/build-cpu -j 64"}
+{"kind":"phase","ts":"2026-11-19T05:46:07Z","phase":"test","seconds":11.799,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261118-213534-ohm-roles-prompt/moat/agent_space/build-cpu/bin/ohmtest"}
+{"kind":"phase","ts":"2026-11-19T05:46:11Z","phase":"test","seconds":3.628,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261118-213534-ohm-roles-prompt/moat/agent_space/build-cpu/bin/ohmtestheightmap"}
+{"kind":"phase","ts":"2026-11-19T05:46:11Z","phase":"test","seconds":0.064,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261118-213534-ohm-roles-prompt/moat/agent_space/build-cpu/bin/slamiotest"}
+{"kind":"session","ts":"2026-11-19T05:46:38Z","epoch":1795067198.149597,"event":"end","platform":"linux-gfx90a"}
