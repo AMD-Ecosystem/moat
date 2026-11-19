@@ -101,3 +101,12 @@
 {"kind":"session","ts":"2026-08-21T04:33:32Z","epoch":1787286812.735382100,"event":"end","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-19T16:56:28Z","epoch":1795107388.26679,"event":"start","platform":"linux-gfx942"}
 {"kind":"phase","ts":"2026-11-19T17:02:01Z","phase":"compile","seconds":118.069,"exit":0,"cmd":"agent_space/build_libs.sh"}
+{"kind":"phase","ts":"2026-11-19T17:29:10Z","phase":"compile","seconds":113.141,"exit":0,"cmd":"agent_space/build_libs.sh"}
+{"kind":"phase","ts":"2026-11-19T17:29:46Z","phase":"test","seconds":30.303,"exit":0,"cmd":"agent_space/run_pointops2_tests.sh"}
+{"kind":"phase","ts":"2026-11-19T17:31:44Z","phase":"test","seconds":0.014,"exit":2,"cmd":"env PYTHONPATH=. /var/lib/jenkins/fleet/jobs/mi300b-20261119-085103-pointcept-sync-prompt/venv/bin/python ../../../agent_space/pointcept_sparse_conv_e2e.py --steps 20"}
+{"kind":"phase","ts":"2026-11-19T17:53:14Z","phase":"test","seconds":5.229,"exit":1,"cmd":"agent_space/e2e.sh --steps 20"}
+{"kind":"phase","ts":"2026-11-19T18:20:05Z","phase":"test","seconds":1262.985,"exit":0,"cmd":"agent_space/e2e.sh --steps 20"}
+{"kind":"phase","ts":"2026-11-19T18:20:42Z","phase":"test","seconds":29.667,"exit":0,"cmd":"agent_space/e2e.sh --steps 20"}
+{"kind":"phase","ts":"2026-11-19T18:22:38Z","phase":"test","seconds":107.804,"exit":0,"cmd":"agent_space/e2e.sh --steps 20 --only ptv3"}
+{"kind":"phase","ts":"2026-11-19T18:23:09Z","phase":"test","seconds":21.802,"exit":0,"cmd":"agent_space/e2e.sh --steps 20 --only ptv3"}
+{"kind":"session","ts":"2026-11-19T18:24:18Z","epoch":1795112658.609337,"event":"end","platform":"linux-gfx942"}

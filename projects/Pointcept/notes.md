@@ -893,11 +893,13 @@ Moved here on 2026-11-19 from a direct edit this branch had made to `references/
 - The same trap fires on ANY pip install that has torch in its dependency graph, not just a requirements file, and a source-built ROCm torch is the worst case. `pip install timm torch_geometric` on a host whose torch is a locally built dev wheel (`2.14.0a0+git<sha>`) replaced torch with the PyPI CUDA build, pulled the whole `nvidia-*` stack, and swapped `triton` 3.8.0 for the CUDA `triton` 3.7.1 -- the dev version is on no index, so pip cannot put it back and nothing warns you. Default to `pip install --no-deps <pkg>` for every dependency on such a host, add the handful of pure-Python transitive deps by hand, and before you start, find the wheel that produced the current torch so a restore is `pip install --no-deps --force-reinstall <wheel>`. Verify with `python -c "import torch; print(torch.__version__, torch.version.hip)"` after any install that touched a torch-dependent package.
 - In the "a common dep usually already has a ROCm port" item: `spconv` -> `spconv-triton` (Apache-2.0 on PyPI, a drop-in for the spconv 2.x API in Triton; the GitHub repository named `spconv-rocm` (jiaqiwang969/spconv-rocm) is empty, and the one live derivative found, HYGON-AI/spconv-das, targets Hygon DCU (hcu), not AMD GPUs -- checked 2026-11; the `moat-porting` skill's Dispositions section still names `spconv_rocm` as a ROCm port to consume and should be corrected in the same promotion); `torch_scatter`/`torch_cluster` build from sdist on ROCm 7.14 with `PYTORCH_ROCM_ARCH=<arch> FORCE_ONLY_CUDA=1 pip install . --no-build-isolation --no-deps`, torch_scatter 2.1.2 needing its `at::Half` shuffle wrappers widened to a 64-bit mask first.
 
-## Lesson for cuda-to-rocm: a Triton-based ROCm dependency can cold-compile an order of magnitude slower on RDNA than on CDNA
+## Lesson for cuda-to-rocm: a Triton-based ROCm dependency can spend tens of minutes cold-compiling its first step; keep a persistent Triton cache
 
 Promoted to cuda-to-rocm/references/strategy-b-torch.md in bb61ae96.
 
 Moved here on 2026-11-19 from a direct edit this branch had made to `references/validation.md` in August. Proposed text:
+
+Correction from the 2026-11-19 gfx942 validation (below): the RDNA-versus-CDNA framing is not supported. On MI300X (CDNA3) the cold first SpUNet step took 1123 s and a warm one 10 s, so promote this as "large on every AMD architecture, slower on smaller GPUs; set a persistent `TRITON_CACHE_DIR`", not as an RDNA property.
 
 A pip-installed, pure-Python-plus-Triton ROCm drop-in library (e.g. a spconv reimplementation) can spend tens of minutes inside `triton/backends/amd/compiler.py:make_amdgcn` autotuning a single model's first forward+backward pass on an RDNA (gfx11xx, wave32) host, when the identical recipe completes quickly on a CDNA (gfx90a, wave64) host. Before concluding a hang, distinguish real (if slow) compilation from a stuck process: `py-spy dump --pid <pid>` repeatedly and confirm every sample lands inside `make_amdgcn` or `torch.cuda.synchronize` (benchmarking an autotune candidate), and watch the Triton cache directory grow. If a bounded validation window elapses without a completed step, record the wall-clock magnitude, confirm the backend selection independently, and stop. A persistent Triton cache (`TRITON_CACHE_DIR`) makes the cost one-time per kernel shape and arch.
 
@@ -940,3 +942,78 @@ Checked:
 - No competing upstream work: `gh pr list --repo Pointcept/Pointcept --state all --search ROCm` returns only #604 (merged); `--search spconv` adds only the unrelated #474; no ROCm issue.
 - `audit-commits` reports nothing for Pointcept; `jargon.py --port Pointcept` clean. The merge commit title matches the August merge 2abd848.
 - Lessons: the first `## Lesson for cuda-to-rocm` overstated "`spconv_rocm` ... is an empty repo"; reworded above to what was verified. The second lesson matches the gfx1100 record.
+
+## Validation 2026-11-19 (validator, linux-gfx942, at f33fdb6)
+
+Platform: linux-gfx942, AMD Instinct MI300X (gfx942, wave64), HIP_VISIBLE_DEVICES=0 (pinned by the dispatcher). First record for this platform; it is the one architecture spconv-triton's own README says it verified on AMD ("Verified with: ... AMD MI300X", torch 2.4 to 2.13).
+Fork: AMD-Ecosystem/Pointcept `moat-port` @ f33fdb6 (= head_sha = reviewed_sha), clone at `projects/Pointcept/src`.
+Environment (job venv only; every pip install `--no-deps`, torch re-checked afterwards):
+- torch 2.16.0a0+git6c3af02, torch.version.hip 7.16.26385 (the host's source-built wheel, installed `--no-deps` into the venv), ROCm SDK from the TheRock 10.1.0 wheels, triton 3.9.0+gitfc8d31a5 (source build).
+- spconv-triton 1.0.0 (still the only PyPI release), timm 0.9.7, torch_geometric 2.6.1, torchvision 0.30.0a0+4260301 (pytorch/vision main, CPU-only source build: `FORCE_CUDA=0 TORCHVISION_USE_NVJPEG=0 TORCHVISION_USE_VIDEO_CODEC=0 pip install . --no-deps --no-build-isolation`), torch_scatter 2.1.2 and torch_cluster 1.6.3 from sdist (`PYTORCH_ROCM_ARCH=gfx942 FORCE_ONLY_CUDA=1 pip install . --no-build-isolation --no-deps`; torch_scatter needed the same 64-bit shuffle-mask patch as before, still required with ROCm 10.1), peft 0.15.2, transformers 4.50.3, tokenizers 0.21.1, wandb 0.19.11 (current wandb imports opentelemetry), pydantic 2.11.7 + pydantic-core 2.33.2 (pydantic-core 2.50 imports `typing_extensions.Sentinel`, missing from typing_extensions 4.16), addict, einops, termcolor, yapf, ftfy, regex, docker-pycreds, sentry-sdk, platformdirs. sparsehash headers built into a job-local prefix for pointgroup_ops (no apt).
+
+### Build (timeit compile 113.1s, exit 0)
+From a clean `git clean -xfd libs`:
+```
+export PYTORCH_ROCM_ARCH=gfx942
+cd libs/pointops && python setup.py install
+cd libs/pointops2 && python setup.py install
+cd libs/pointgroup_ops && python setup.py install --include_dirs=<sparsehash prefix>/include
+cd libs/pointrope && python setup.py install
+```
+All four build and import (`--offload-arch=gfx942` on every hipcc line).
+
+### pointops2 in-tree tests (timeit test)
+`yes "" | python test_<...>.py` from `libs/pointops2/functions/`:
+- test_attention_op_step1.py: EXIT 0, `((attn_flat-attn_flat_v2)**2 < 1e-8).all()` True.
+- test_attention_op_step1_v2.py: EXIT 0, True, max sq err 9.09e-13.
+- test_attention_op_step2.py: EXIT 1, the pre-existing upstream `NameError: name 'x' is not defined` (same on every platform; forward and backward ran first).
+- test_relative_pos_encoding_op_step1.py: EXIT 0.
+- test_relative_pos_encoding_op_step1_v2.py: EXIT 0, max sq err 1.78e-10.
+- test_relative_pos_encoding_op_step1_v3.py: EXIT 0, max sq err 2.95e-10.
+- test_relative_pos_encoding_op_step2.py: EXIT 0.
+- test_relative_pos_encoding_op_step2_v2.py: EXIT 0, forward 7.13e-10, attn_grad 2.594e-21, v_grad 2.237e-21, table_grad 1.098e-16 (gfx90a/gfx1100: 7.13e-10 / 2.594e-21 / 1.9-3.4e-21 / 1.10e-16).
+7/8 EXIT 0, 1/8 the known upstream test bug.
+
+### Sparse-conv end-to-end through spconv-triton (the evidence this round was for)
+The August driver was host-local and not on this host, so it was recreated from its description in `agent_space/pointcept_sparse_conv_e2e.py` (host-local, uncommitted): each config built with `Config.fromfile` + `build_model`, 2 synthetic scenes x 20000 unique voxels on a 64^3 grid, labels and instances from 16^3 spatial blocks (so the loss can fall), seeded inputs, AdamW lr 1e-3, 20 optimizer steps, `torch.cuda.synchronize()` around each step. Wrapper `agent_space/e2e.sh` runs it from `src` with `PYTHONPATH=.`:
+```
+TRITON_CACHE_DIR=<persistent dir> utils/timeit.sh Pointcept test -- agent_space/e2e.sh --steps 20
+```
+Backend reported `spconv_triton.pytorch` (the ROCm branch of `pointcept/models/utils/spconv.py`, selected automatically from `torch.version.hip`).
+
+Cold (empty `TRITON_CACHE_DIR`, one process, configs in this order; timeit 1263.0s total):
+| config | first step | steady step (5-19) | loss step 0 -> 19 | result |
+|---|---|---|---|---|
+| semseg-spunet-v1m1-0-base | 1123.2 s | 0.054 s | 3.0259 -> 2.0823 | PASS |
+| semseg-oacnns-v1m1-0-base | 118.7 s | 0.282 s | 3.0608 -> 1.3663 | PASS |
+| insseg-pointgroup-v1m1-0-spunet-base | 0.85 s (reuses SpUNet's kernels, same process) | 0.054 s | 4.3857 -> 2.7814 | PASS |
+
+Warm (new process, same cache, 1754 entries / 525 MB, which did not grow; timeit 29.7s total):
+| config | first step | steady step | loss step 0 -> 19 | result |
+|---|---|---|---|---|
+| semseg-spunet-v1m1-0-base | 10.05 s | 0.051 s | 3.0259 -> 2.0823 | PASS |
+| semseg-oacnns-v1m1-0-base | 0.79 s | 0.273 s | 3.0608 -> 1.3694 | PASS |
+| insseg-pointgroup-v1m1-0-spunet-base | 0.11 s | 0.053 s | 4.3857 -> 2.7814 | PASS |
+
+Losses reproduce between the cold and warm runs (SpUNet and PointGroup bit-identical; OACNNs' last step differs in the third decimal). The cold cost is almost all in step 0: `sudo py-spy dump` at 11 minutes showed the main thread in `backward` and a compile thread in `triton/backends/amd/compiler.py:make_llir` under `Autotuner._bench` for `spconv_triton/pytorch/_impl/gemm.py:conv_backward_input`, so Triton compiles every autotune candidate for every new conv shape. spconv-triton sets `cache_results=True` on its autotuners (Triton >= 3.3), so a persistent cache keeps the compiled kernels and the chosen configs; the warm SpUNet first step's remaining 10 s is cache loading and module setup. So the cold cost is about 19 minutes once per (shape set, arch, Triton version) even on MI300X, the architecture spconv-triton was tuned on. That makes the gfx1100 record (28 and 36 minutes without finishing step 0) look like the same cost on a slower host rather than a separate RDNA defect. The second `## Lesson for cuda-to-rocm` above should be reworded to say this before it is promoted: the cost is not RDNA-specific, it is large on CDNA too, and a persistent `TRITON_CACHE_DIR` is the remedy.
+
+### A model the August run only import-checked: PTv3 (point_transformer_v3m1_base)
+```
+TRITON_CACHE_DIR=<same dir> utils/timeit.sh Pointcept test -- agent_space/e2e.sh --steps 20 --only ptv3
+```
+Config `configs/scannet/semseg-pt-v3m1-0-base.py` with one override: `enable_flash=False` (plus `upcast_attention/upcast_softmax=True`), because `flash_attn` is not installed in this environment; that is the config's own non-flash path. It exercises spconv-triton's `SubMConv3d` (stem and the conditional positional encoding, k=5 and k=3 with shared indice keys), serialization, torch_scatter, and `DefaultSegmentorV2` with CrossEntropy + Lovasz.
+- patch size 128 (first run, PTv3's conv shapes cold): step 0 96.4 s, steady 0.11 s, loss 4.3452 -> 0.6398. PASS.
+- upstream default patch size 1024 (same cache): step 0 10.7 s, steady 0.116 s, loss 4.3488 -> 0.6618. PASS.
+Not tried: PTv3 with `enable_flash=True`, which needs a ROCm flash-attn build (the CK or Triton backend of flash-attn); Sonata, Utonia and LitePT (same spconv surface as PTv3; not run for budget).
+
+### Would a stock released ROCm PyTorch wheel have sufficed?
+Not tested by a run. The fleet guard refuses `pip install` into any venv other than this job's, so a second venv with the released wheel could not be built (the request is recorded here instead of worked around). The evidence from the released wheels' metadata (read over HTTP range requests, nothing installed): `torch 2.15.0+rocm7.14` and `torch 2.15.0+rocm10.0` (newest releases on download.pytorch.org) declare `Requires-Dist: triton-rocm~=3.9.0` (the package is now `triton-rocm` on download.pytorch.org/whl/triton-rocm, which has 3.9.0; it replaced `pytorch-triton-rocm`, last released at 3.5.1). This run used Triton 3.9.0 (source build, same minor) under a 2.16 dev torch. spconv-triton needs only `torch>=2.4` and `numpy`, and its kernels use nothing beyond that Triton. So on this evidence the stock wheel plus its own `triton-rocm` should suffice for the sparse-conv path: no source-built torch or Triton was needed for anything spconv-triton does. What did need source builds, with any torch: torch_scatter (64-bit shuffle mask patch) and torch_cluster (no ROCm wheel for this torch), and torchvision only because a dev torch has no matching wheel (a released torch has a matching ROCm torchvision on the same index). A one-command check on a host where a second venv is allowed: `pip install torch==2.15.0 torchvision --index-url https://download.pytorch.org/whl/rocm7.14 && pip install spconv-triton`, then the driver above.
+
+### CUDA no-regression gate
+`cuda-not-validated: no CUDA toolkit on this host` (`/opt/conda/envs/` does not exist, no `nvcc` on PATH). The delta since the last CUDA attempt is upstream's own Python and shell code; the port's nvcc-visible content (`libs/pointrope/setup.py`'s flag branch, all `.cu` files byte-identical to upstream) is unchanged since round 1. The real-nvcc compile on the NVIDIA-toolkit fleet host is still owed before the pull request is brought to jeff.
+
+### Integrity and content gates
+`git -C projects/Pointcept/src status --porcelain`: 62 entries, all untracked hipify artifacts (`*hip*`), no modified tracked file. `jargon.py --port Pointcept` clean. README documents the ROCm build (requirements line, `PYTORCH_ROCM_ARCH` block, `pip install spconv-triton`).
+
+### For jeff (decision not taken here)
+Backend selection stays automatic on `torch.version.hip`, as instructed. Data point for the ruling on an explicit switch: on a CUDA torch the module imports `spconv.pytorch` exactly as before; on ROCm there is no other spconv, so a switch would only matter for someone who wants spconv-triton on NVIDIA too.
