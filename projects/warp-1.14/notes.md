@@ -1942,7 +1942,7 @@ static int run(bool runtime_api)
     CK(hipMalloc(&src, n * 4));
     CK(hipMalloc(&dst, n * 4));
     std::vector<float> h1(n), h2(n), back(n);
-    for (size_t i = 0; i < n; ++i) { h1[i] = float(i); h2[i] = float(2 * i + 1); }
+    for (size_t i = 0; i < n; ++i) { h1[i] = float(i + 1); h2[i] = float(2 * i + 1); }
     hipStream_t s;
     CK(hipStreamCreate(&s));
     CK(hipMemcpy(src, h1.data(), n * 4, hipMemcpyHostToDevice));
@@ -2320,3 +2320,180 @@ Porter, next session:
 RULED: option A. The port leaves both intrinsics as the HIP toolchain defines them and adds no override; the release notes say that on AMD GPUs `__frsqrt_rn` and `__fsqrt_rn` are within 1 ulp but not correctly rounded (wrong in the last bit on about 11 and 15 percent of inputs), unlike CUDA's. Whether to report it upstream is not ruled; Jeff asked why AMD would see it as a defect and not a deliberate choice.
 
 Where the definitions are (read from the ROCm 10.2 clang resource header `lib/clang/23/include/__clang_hip_math.h`, lines 283-303; this is the compiler's header, not HIP's): the `_rn` family is implemented twice. With `OCML_BASIC_ROUNDED_OPERATIONS` defined, `__fadd_rn`, `__fdiv_rn`, `__fmul_rn`, `__frcp_rn`, `__fmaf_rn` and `__fsqrt_rn` call `__ocml_*_rte_f32` (round to nearest even). Without it, add, div, mul, rcp and fma fall back to the plain IEEE operation, which is correctly rounded, but `__fsqrt_rn` falls back to `__ocml_native_sqrt_f32` (approximate) and not to `__builtin_sqrtf`. `__frsqrt_rn` is `__builtin_amdgcn_rsqf` in both configurations; there is no rounded form of it in the header at all. Not checked: whether defining `OCML_BASIC_ROUNDED_OPERATIONS` works with ROCm 10.2's device libraries.
+## Porting session 7 (2026-11-19, linux-gfx950 MI355X, porter): textures option B, GPU software sampler
+
+Fork `release/1.14.0.amd0` advanced `2f5b9d65..495d7c5a` (pushed, `advance-head` recorded): `495d7c5a` [ROCm] Sample textures in software on AMD GPUs without image support. One commit, so the whole option can be reviewed or dropped as a unit. nvcc 12.8 build at `495d7c5a` succeeded (it compiles `texture_software.cpp` too); offline NVRTC of the texture module gave `sm86.cubin` and `sm90.ptx` with the same 8 `tex.{1d,2d,3d}.v4.f32.f32` instructions as before; the tile/atomic NVRTC check also passes. `audit-commits` OK, `jargon.py --port` clean.
+
+### Design as built, against Jeff's constraints
+- `texture.h`: the HIP no-image `#elif defined(__HIP_DEVICE_COMPILE__) return zero();` pair removed at all 9 sites (plus a comment line), nothing else. Device compiles with `__HIP_NO_IMAGE_SUPPORT` now fall through to upstream's existing `#else` branch, the software sampler (`cpu_sample_*_channel` on a `const Texture*`); the choice stays at compile time, with no per-sample run-time branch. `git diff 2f5b9d65 -- warp/native/texture.h`: only those 18 lines removed and 1 comment line changed; every `WP_TEXTURE_HW_SAMPLING` line is byte-identical.
+- New `warp/native/texture_software.{h,cpp}` (35 + 131 lines, SPDX licence line only, like the port's other new files): `SoftwareTextureArray` (device texel buffer + shape/channels/dtype) stands in for a CUDA array; create/destroy (`wp_alloc_device`/`wp_free_device`), copy (one `wp_memcpy_h2d/d2h/d2d` block per copy: texels and Warp's linear sides are dense, pitched copies refused with a clear error; none occur in Warp), texture object create (a `Texture` built on the stack with the 1-texel 1D constructor, fields set, `data` swapped to the device texels, copied to a `wp_alloc_device` struct with `wp_memcpy_h2d` the way `mesh.cu` copies its descriptor, then `data` restored so the destructor frees its own 1-byte buffer), object destroy. It uses only Warp's exported functions, so it has no HIP code, and it builds in the CUDA build as well (never reached there). Added to `build_lib.py`'s source list (1 line).
+- `texture.cpp`: one include and one capability check per device function (`wp_texture_create_device`, `wp_texture_destroy_device`, `wp_texture_copy_device`, `wp_texture_object_create_device`, `wp_texture_object_destroy_device`): `if (wp_texture_software_enabled(context)) return wp_texture_software_...(...)`, 18 added lines, no upstream line changed. `wp_texture_software_enabled` = the device has no texture hardware (`wp_cuda_device_is_texture_hardware_supported(wp_cuda_context_get_device_ordinal(context))`), so it is false for every CUDA device and for AMD GPUs with image support. Surface and external-array functions need no hook: Python refuses those first.
+- Native capability renamed to what it measures: `DeviceInfo.is_texture_hardware_supported` / `wp_cuda_device_is_texture_hardware_supported` (HIP image-support attribute; 1 on CUDA). Both were the port's own additions, so the rename costs no upstream lines.
+- Python: `Device.is_texture_supported` is now True on every device; new `Device.is_texture_hardware_supported` (False on CPU and on AMD GPUs without image support; documented in the Device docstring). `texture.py`: the session 5 refusal removed; one static helper `_require_texture_hardware` raising "<name> is not available on cuda:0: it has no texture hardware and samples textures in software", called by the `cuda_array`, `cuda_texture` and `cuda_surface` properties and by the `cuda_array=` constructor argument; the four internal copy paths use `_array_handle` instead of the `cuda_array` property (else every copy would have raised).
+- Tests (`test_texture.py`): upstream's `cuda_devices`/`all_devices` lists restored; the 9 tests that use the interop handles are registered on `interop_cuda_devices`/`interop_devices` (devices with texture hardware, plus CPU where the test has a CPU branch); the refusal test is replaced by `test_texture_interop_requires_hardware`, registered on CUDA devices without texture hardware (the three properties and `cuda_array=` raise; `id` works). Everything else, interpolation, uint8/uint16 normalization, address modes, graph-capture copies, runs on these GPUs with upstream's tolerances.
+
+Diff carried against upstream `release-1.14` after this commit (`git diff --numstat origin/release-1.14`; added/deleted lines), with this commit's share:
+
+| file | vs release-1.14 | this commit | before (at `2f5b9d65`) |
+|---|---|---|---|
+| `warp/native/texture.h` | +31 / -18 | +2 / -19 | +48 / -18 |
+| `warp/native/texture.cpp` | +60 / -19 | +18 / -0 | +42 / -19 |
+| `warp/_src/texture.py` | +15 / -4 | +15 / -9 | +5 / -0 |
+| `warp/native/texture_software.cpp` (new) | +131 | +131 | - |
+| `warp/native/texture_software.h` (new) | +35 | +35 | - |
+
+`texture.h` got smaller; the 42 earlier `texture.cpp` lines are the memory-type translation of session 6, not this option. Other files this commit touched: `build_lib.py` +1, `context.py` +7/-4, `warp.cu`/`warp.h`/`warp.cpp` renames (+6/-6, +1/-1, +1/-1), `test_texture.py` (+36/-9 against upstream in total).
+
+### Hardware path unchanged, checked three ways
+- Source: as above, no line of the `WP_TEXTURE_HW_SAMPLING` branches changed in `texture.h`; in `texture.cpp` the hardware code is untouched and only reached when the check is false.
+- HIP targets with image support: the all-combinations sampling module (`agent_space/p5/tex/xcompile.py`, 9 samples) recompiled through Warp's hipRTC path at `495d7c5a` gives code objects **byte-identical** (md5) to session 5's for gfx1100, gfx1201, gfx1151 and gfx90a (9 `image_sample` each). gfx942/gfx950 now compile the software sampler (128000-byte objects, `flat_load_*` instead of `image_sample`).
+- CUDA: the NVRTC PTX keeps its 8 hardware `tex.` instructions; nvcc builds.
+
+### Tests and probes on gfx950 (first host that runs the new path; `HIP_VISIBLE_DEVICES=0`)
+- `python -m warp.tests -s autodetect -p test_texture.py -m 32`: **Ran 118, OK (skipped=7)**. 59 `cuda_0` cases pass, among them the four `cuda_array_copy_api_graph_capture{,_explicit_stream}` tests (2D and 3D) and `test_texture_interop_requires_hardware_cuda_0`; the 7 skips are the placeholders of the 7 interop-only registrations that have no device here ("No suitable devices to run the test."). Before this commit gfx950 ran 70 with 17 placeholders and no texture case on the GPU.
+- `sdf_probe.py cuda:0`: PASS; SDF vs CPU sampler 5.96e-08, SDF vs analytic 1.28e-03 (the CPU's own value), RGBA8 vs CPU sampler 1.55e-06.
+- Graph capture with textures (`tex_capture.py`, below: one graph uploads a source array into a 32^3 texture and samples it at 4096 points; replayed three times after changing the source): every replay matches the CPU sampler within 1.19e-07: PASS.
+- External-array probe (`tex_alias.py`): not applicable on these GPUs, by design; it now stops at `Texture2D(cuda_array=...)` with "cuda_array is not available on cuda:0: it has no texture hardware and samples textures in software".
+- test_devices 13, test_diagnostics 14, test_codegen 117, test_tile_load 64: OK. CPU-only suite with GPUs hidden: **Ran 2294, OK (skipped=15)**.
+
+**Bit-identity with the CPU sampler: only with contraction off.** The ruling expected bit-identical results. They are bit-identical when the module is built with `fuse_fp=False` (`wp.set_module_options({"fuse_fp": False})`): SDF and RGBA8 differences 0, and in the benchmark below 0 differing values out of 1.6e7. With the default (`fuse_fp=True`, so hipRTC compiles with `-ffp-contract=on`) the GPU compiler fuses the sampler's `a * (1 - f) + b * f` lerps into FMAs and about a third of the samples differ from the CPU in the last bits (max 1.79e-07 on values in [0, 1)). The CPU build of the same C++ does not contract. Warp's own generated kernel code is not affected the same way (the hand-written kernel matches the CPU exactly with either setting). The tests pass with upstream's tolerances either way; no test asserts bit-identity. Recorded for Jeff: if he wants bit-identity by default, the sampler's lerps would need an explicit no-contract form (a `texture.h` change, so more carried diff); not done.
+
+### Real sampler vs the hand-written kernel (same benchmark as the earlier measurement)
+`wp.Texture3D` on cuda:0 (the real software sampler, (d)) vs the hand-written trilinear kernel ((a), from the "Measurement for Jeff" section), float32 3D, trilinear, clamp, normalized coordinates, median of 5 timed runs after warm-up with `wp.synchronize()` around each, default `fuse_fp`. The host was noisier than during the earlier measurement ((a) at 64^3 / 1.6e7 is 0.52-0.64 ms here against 0.30 ms then), so four runs are listed; the ratio is the figure to read. One more run with `fuse_fp=False` gave ratios 1.36x, 1.84x, 0.61x, 1.49x and bit-identical results.
+
+First run (default `fuse_fp`):
+
+| volume | samples | (a) ms | (d) ms | (d)/(a) | (d) vs CPU sampler max abs | values differing | (a) vs CPU sampler |
+|---|---|---|---|---|---|---|---|
+| 64^3 | 1.0e6 | 0.040 | 0.055 | 1.39x | 1.79e-07 | 338479 of 1000000 | 0 |
+| 64^3 | 1.6e7 | 0.522 | 0.935 | 1.79x | 1.79e-07 | 5416499 of 16000000 | 0 |
+| 256^3 | 1.0e6 | 1.597 | 0.215 | 0.13x | 1.79e-07 | 340617 of 1000000 | 0 |
+| 256^3 | 1.6e7 | 1.502 | 3.064 | 2.04x | 1.79e-07 | 5454682 of 16000000 | 0 |
+
+Three repeat runs (same columns):
+```
+== run 1
+| 64^3 | 1.0e+06 | 0.091 | 0.109 | 1.20x | 1.79e-07 | 338479 of 1000000 | 0.00e+00 |
+| 64^3 | 1.6e+07 | 0.570 | 0.812 | 1.43x | 1.79e-07 | 5416499 of 16000000 | 0.00e+00 |
+| 256^3 | 1.0e+06 | 0.138 | 0.185 | 1.34x | 1.79e-07 | 340617 of 1000000 | 0.00e+00 |
+| 256^3 | 1.6e+07 | 1.449 | 2.023 | 1.40x | 1.79e-07 | 5454682 of 16000000 | 0.00e+00 |
+== run 2
+| 64^3 | 1.0e+06 | 0.081 | 0.102 | 1.26x | 1.79e-07 | 338479 of 1000000 | 0.00e+00 |
+| 64^3 | 1.6e+07 | 0.523 | 0.953 | 1.82x | 1.79e-07 | 5416499 of 16000000 | 0.00e+00 |
+| 256^3 | 1.0e+06 | 0.329 | 0.524 | 1.59x | 1.79e-07 | 340617 of 1000000 | 0.00e+00 |
+| 256^3 | 1.6e+07 | 1.331 | 1.976 | 1.48x | 1.79e-07 | 5454682 of 16000000 | 0.00e+00 |
+== run 3
+| 64^3 | 1.0e+06 | 0.102 | 0.112 | 1.10x | 1.79e-07 | 338479 of 1000000 | 0.00e+00 |
+| 64^3 | 1.6e+07 | 0.642 | 0.947 | 1.47x | 1.79e-07 | 5416499 of 16000000 | 0.00e+00 |
+| 256^3 | 1.0e+06 | 0.137 | 0.211 | 1.54x | 1.79e-07 | 340617 of 1000000 | 0.00e+00 |
+| 256^3 | 1.6e+07 | 1.548 | 1.991 | 1.29x | 1.79e-07 | 5454682 of 16000000 | 0.00e+00 |
+```
+Median ratio over the four default runs per cell: 1.23x (64^3, 1e6), 1.63x (64^3, 1.6e7), 1.44x (256^3, 1e6; the 0.13x cell of the first run is a disturbed (a) timing, 1.597 ms against 0.14-0.33 ms in the others), 1.44x (256^3, 1.6e7). So the real software sampler costs about 1.2x to 1.8x the hand-written kernel (the extra work is the per-sample dtype, address-mode and channel switches and the handle dereference), and it is still about three orders of magnitude faster than sampling on the CPU and copying back (2128.6 ms for 256^3 / 1.6e7 in the earlier measurement, against about 2-3 ms here).
+
+Release-notes text for Phase 7 (from the ruling): "On AMD Instinct MI300 and MI355 GPUs (gfx942, gfx950), which have no texture hardware, textures are sampled in software on the GPU with the same code as Warp's CPU textures. Results match CPU textures (bit for bit with `fuse_fp=False`, otherwise to the last bits) rather than NVIDIA or AMD texture hardware, whose linear filtering uses reduced-precision weights; linear filtering of normalized 8-bit data can differ from hardware sampling by a few 1e-3 (2.5e-3 measured on a Radeon GPU), float32 data by about 5e-5. Sampling is about 1.2x to 1.8x slower than a hand-written trilinear lookup in a Warp array on the same GPU, and much slower than texture hardware would be. The CUDA interop properties `cuda_array`, `cuda_texture` and `cuda_surface`, and wrapping an external CUDA array, are not available on these GPUs; `Device.is_texture_hardware_supported` tells whether a device samples in hardware." The 1e-3 figure comes from the gfx1100 probe (RGBA8 vs CPU 2.52e-03 absolute, SDF 4.78e-05); there is no gfx950 hardware figure, since it has no texture hardware.
+
+`tex_capture.py`:
+```python
+# A graph that uploads into a texture and samples it; replayed after changing the source array,
+# the samples must follow the new data. Compared with the same steps on the CPU device.
+import sys
+
+import numpy as np
+
+import warp as wp
+
+wp.init()
+device = wp.get_device(sys.argv[1] if len(sys.argv) > 1 else "cuda:0")
+
+
+@wp.kernel
+def sample(tex: wp.Texture3D, pts: wp.array(dtype=wp.vec3), out: wp.array(dtype=float)):
+    i = wp.tid()
+    out[i] = wp.texture_sample(tex, pts[i], dtype=float)
+
+
+rng = np.random.default_rng(0)
+n, s = 4096, 32
+pts_np = rng.random((n, 3), dtype=np.float32)
+vols = [rng.random((s, s, s), dtype=np.float32) for _ in range(3)]
+
+
+def reference(vol):
+    tex = wp.Texture3D(vol, filter_mode=wp.TextureFilterMode.LINEAR, device="cpu")
+    out = wp.zeros(n, dtype=float, device="cpu")
+    wp.launch(sample, dim=n, inputs=[tex, wp.array(pts_np, dtype=wp.vec3, device="cpu"), out], device="cpu")
+    return out.numpy()
+
+
+tex = wp.Texture3D(np.zeros((s, s, s), dtype=np.float32), filter_mode=wp.TextureFilterMode.LINEAR, device=device)
+src = wp.array(vols[0], dtype=float, device=device)
+pts = wp.array(pts_np, dtype=wp.vec3, device=device)
+out = wp.zeros(n, dtype=float, device=device)
+wp.load_module(device=device)
+with wp.ScopedCapture(device=device) as cap:
+    tex.copy_from(src)
+    wp.launch(sample, dim=n, inputs=[tex, pts, out], device=device)
+ok = True
+for k, vol in enumerate(vols):
+    src.assign(vol)
+    wp.capture_launch(cap.graph)
+    d = np.abs(out.numpy() - reference(vol)).max()
+    print(f"replay {k}: max abs diff vs CPU {d:.2e}")
+    ok = ok and d < 1e-6
+print("PASS" if ok else "FAIL")
+sys.exit(0 if ok else 1)
+```
+
+Benchmark: `agent_space/p7/tex_sw_vs_manual.py` is the earlier `tex_cpu_vs_gpu.py` with the same imports, `timed`, `sample_manual` and `sample_tex`, and this main part in place of the CPU-route measurement:
+```python
+rows = []
+for size in (64, 256):
+    rng = np.random.default_rng(size)
+    vol_np = rng.random((size, size, size), dtype=np.float32)
+    vol_gpu = wp.array(vol_np, dtype=float, device=gpu)
+    kw = dict(filter_mode=wp.TextureFilterMode.LINEAR, address_mode=wp.TextureAddressMode.CLAMP, normalized_coords=True)
+    tex_gpu = wp.Texture3D(vol_np, device=gpu, **kw)
+    tex_cpu = wp.Texture3D(vol_np, device=cpu, **kw)
+    for n in (1_000_000, 16_000_000):
+        pts_np = rng.random((n, 3), dtype=np.float32)
+        pts_gpu = wp.array(pts_np, dtype=wp.vec3, device=gpu)
+        out_a = wp.empty(n, dtype=float, device=gpu)
+        out_d = wp.empty(n, dtype=float, device=gpu)
+        a = timed(lambda: wp.launch(sample_manual, dim=n, inputs=[vol_gpu, pts_gpu, out_a], device=gpu))
+        d = timed(lambda: wp.launch(sample_tex, dim=n, inputs=[tex_gpu, pts_gpu, out_d], device=gpu))
+        pts_cpu = wp.array(pts_np, dtype=wp.vec3, device=cpu)
+        out_c = wp.empty(n, dtype=float, device=cpu)
+        wp.launch(sample_tex, dim=n, inputs=[tex_cpu, pts_cpu, out_c], device=cpu)
+        ra, rd, rc = out_a.numpy(), out_d.numpy(), out_c.numpy()
+        rows.append((size, n, a, d, np.abs(rd - rc).max(), int(np.count_nonzero(rd != rc)), np.abs(ra - rc).max()))
+        print(rows[-1], flush=True)
+
+print("| volume | samples | (a) hand-written kernel ms | (d) wp.Texture3D on cuda:0 ms | (d)/(a) | (d) vs CPU sampler max abs | values differing | (a) vs CPU sampler max abs |")
+print("|---|---|---|---|---|---|---|---|")
+for s, n, a, d, md, nd, ma in rows:
+    print(f"| {s}^3 | {n:.1e} | {a:.3f} | {d:.3f} | {d / a:.2f}x | {md:.2e} | {nd} of {n} | {ma:.2e} |")
+```
+
+### Reproducer correction
+`m3d_capture.cpp` in Porting session 6 now fills `h1[i] = float(i + 1)` (the wave32 host's correction), so element 0 no longer matches the zeroed destination by accident and the runtime line reports 0 copied before instantiation. Rebuilt for gfx1100: compiles.
+
+### Next step (head `495d7c5a`; what each host must re-run)
+The project stays in `porting`, lock held by linux-gfx950. Common setup as before, at `git rev-parse HEAD` = `495d7c5a03ff3cacf5f48270f1bc9581650dd2da`. This commit changes texture behaviour on every AMD GPU without image support and adds a source file to the build, so every host rebuilds.
+
+**gfx942 (one GPU):** the second host for the new path.
+1. `python -c "import warp as wp; wp.init(); d = wp.get_device('cuda:0'); print(d.is_texture_supported, d.is_texture_hardware_supported)"`: expect `True False`.
+2. `python -m warp.tests -s autodetect -p test_texture.py -m 32`: expect Ran 118, OK (skipped=7), 59 `cuda_0` cases passing (the gfx950 result).
+3. `python sdf_probe.py cuda:0` (Porting session 5): PASS; `python tex_capture.py cuda:0` (above): PASS; record the differences.
+4. The full Phase 1-5 set (82 patterns, Porting session 6 handoff B.5): gfx942 has not run it since `8d13d596`. Expected: the gfx950 counts of Porting session 6 item 5, with test_texture 118 (7 skipped); known failures the two fem isolation tests and `test_stream_priority_timings` (C4).
+
+**Two-GPU session (gfx942 or gfx950, `HIP_VISIBLE_DEVICES=0,1`):** the 13-file C.2 loop (expect Evidence session 2 gfx942's result: no errors, C1/C2 skips naming the defects, C4 failures only), plus `python -m warp.tests -s autodetect -p test_texture.py -m 32`: with two identical devices the `cuda_1` texture cases register too, which checks the software path on a non-primary device (device-memory allocation and copies on ordinal 1). Expect all `cuda_0` and `cuda_1` cases to pass.
+
+**Wave32 host (gfx1100 or gfx1201; image hardware):** confirms the hardware path is unchanged at the new head.
+1. `python -m warp.tests -s autodetect -p test_texture.py -m 32`: expect Ran 120, OK (skipped=1) (50 CPU, 67 `cuda_0` including all interop tests, 2 deviceless, and the placeholder of `test_texture_interop_requires_hardware`, which has no device there); the same total as at `2f5b9d65`.
+2. `python sdf_probe.py cuda:0` and `python tex_alias.py cuda:0`: PASS with the values of Evidence session 3 (SDF 4.78e-05, RGBA8 2.52e-03).
+3. The full Phase 1-5 set (82 patterns) and the CPU-only suite (expect 2294 OK), since the head moved.
+4. Optional: rebuild and run `m3d_capture.cpp` with the corrected line to see "copied before instantiation 0 of 2048" on the runtime line.
+
+**gfx950 (this host):** the new path is covered above; the full 82-pattern set at `495d7c5a` was not re-run this session (only test_texture, test_devices, test_diagnostics, test_codegen, test_tile_load and the CPU-only suite). The next gfx950 session runs it, so that both wave families pass the set at the same head before Phase 6.
+
+**Still open for Jeff:** whether default results should be bit-identical to CPU textures (would need a no-contract form of the sampler's lerps in `texture.h`); and, unchanged from session 6: the 64 KiB tile sizing vs capability skips, C4, `__frsqrt_rn` and the lane-mask documentation, defer/now on the six undecided `rocm-bug-report` entries, the Q3 matrix-core ruling. Phase 6 not started.
