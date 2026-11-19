@@ -198,6 +198,20 @@ def build():
             # finishes, it records what that PR shipped -- the baseline a
             # follow-up round's delta is judged against.
             "published_sha": {"type": ["string", "null"]},
+            # A person's ruling that a push to the open PR's branch from outside
+            # the fix flow (a maintainer's merge) is accepted: published_sha moved
+            # from `from` to `to` (accept-pr-head).
+            "pr_head_accepted": {
+                "type": ["object", "null"],
+                "required": ["from", "to", "by", "at"],
+                "properties": {
+                    "from": {"type": "string"},
+                    "to": {"type": "string"},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+            },
             # Which upstream-PR round the pr_* fields above describe; absent means
             # the first. archive_pr moves a finished PR into pr_history and
             # increments this, and the merge driver hands the whole PR block to
