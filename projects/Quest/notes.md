@@ -2645,3 +2645,32 @@ Findings 4-7 (records and lessons) are corrected in place above: the transformer
 **Commit-audit gap, left for PR preparation:** `moatlib.py audit-commits Quest` reports `Quest 6e7d8db: Test Plan has no fenced command block` (the commit is documentation only and its Test Plan is prose). I pushed before reading the full audit output (a `| tail -1` hid the exit status), and the round's instruction is never to rewrite existing commits, so it stands; the PR-preparation squash (already owed for `9be60fc`/`cbc3890`) must give the squashed message a fenced Test Plan.
 
 Tests at `6e7d8db`, MI300X, Release build (incremental from the reviewed tree plus `rms_norm.cu`), job venv on `transformers==4.37.2`/`tokenizers==0.15.2`: rope 64 passed, estimate 9, decode_attention 6, approx_attention 42, decode_launch_shape 3, topk 49 passed + 15 skipped, prefill_attention 29 passed + 13 skipped: **202 passed, 28 skipped, 0 failed**. End-to-end, venv switched to `transformers==4.45.2` (`tokenizers` 0.20.3), `accelerate==1.0.1`: `example_textgen.py --method hg`, `--method quest --token_budget 1024`, `--method quest --token_budget 128` all exit 0 with byte-identical text from "Input Sequence Length: 103" on (md5 prefix `b900af27eeb4`), the same continuation as at `661449c`.
+
+## Review 2026-11-19 pass 2 (linux-gfx942, delta 661449c..6e7d8db, whole branch main...6e7d8db)
+
+Verdict: **PASS.** Two new commits on 661449c (`2ab01dd`, `6e7d8db`), nothing rewritten; `moat-port` == `origin/moat-port` == `6e7d8db`, working tree clean. I checked every previous finding against the code, the build output and the records, not against the porter's summary.
+
+### Previous findings
+
+1. **rms_norm mask: closed.** `rms_norm.cu:51` is now `(0xffffffffULL << (__lane_id() & ~31u))` under `USE_HIP`. That names one half of a wave64 and the whole wave on wave32; the CUDA branch is unchanged. Both `warpReduceSum` calls in `blockReduceSum` are reached by every thread, so each 32-lane half calls with exactly its own mask. I verified it through the real module with my own script (`agent_space/quest-review/rms_dbg.py`): `rms_norm_forward` on [1, 7, h] fp16 against a float reference, h = 256/2304/2816/3328/4096/5120/8192 (32 to 1024 threads, including the odd multiples of 32). On the Debug tree `agent_space/quest/build_dbg` (`CMAKE_BUILD_TYPE=Debug`, its `rms_norm.cu.o` newer than the source) every size passes, max abs error <= 3.0e-3. On the Release module every size passes, max abs error <= 3.3e-3. The negative control (old mask traps on a partial wave) was shown last round with `mask.hip`.
+2. **hip_compat README: closed.** `kernels/include/hip_compat/README.md` lists all eight shims, matching `find kernels/include/hip_compat -type f`: cuda_runtime.h, cuda_fp16.h, cuda_bf16.h, cooperative_groups.h, cuda/pipeline, flashinfer/{math,mma,vec_dtypes}.cuh. It separates the include-path shims from the three force-included ones, as `CMakeLists.txt:97-109` does, and no longer claims the kernel sources are unedited.
+3. **README evaluation note: closed.** `README.md:73` says the model wrappers and `example_textgen.py` run on ROCm and that the evaluation scripts need a ROCm flash-attention. That matches the evidence: example_textgen was run, the evaluation scripts were not, and they import flash_attn.
+4. **test_rope / transformers records: closed.** The correction under "Round result" says the suites need 4.37.2. I reproduced it at 6e7d8db with the job venv switched to transformers 4.37.2 / tokenizers 0.15.2: `PYTHONPATH=$PWD python -m pytest quest/tests -q -p no:cacheprovider` -> **202 passed, 28 skipped**. I restored the venv to 4.45.2 / 0.20.3 afterwards.
+5. **`__hmax2` lesson and note: closed.** Both now state the argument-dependent-lookup ambiguity and the loud compile failure. No "cannot collide" claim remains outside the previous review's text.
+6. **`__launch_bounds__` lesson: closed.** It limits "took it to 0" to the inlined probe and gives the shipped 240-848 B/lane figure.
+7. **LDS lesson: closed.** It says MI300X only and asks for the RDNA value to be checked on gfx1100/gfx1151.
+
+### Commit-audit gap (6e7d8db Test Plan has no fenced block): does not block
+
+`moatlib.py audit-commits Quest` fails on `6e7d8db: Test Plan has no fenced command block`; the commit is documentation only and its Test Plan is prose. Fixing it means rewriting a pushed commit, which jeff's standing rule (no amend, no force-push; new commits go on top) forbids. The branch already owes a PR-preparation squash for 9be60fc/cbc3890, and that squash writes new messages. So this is carried as a PR-preparation requirement, not a porter round: the squashed message must carry a fenced Test Plan, and `audit-commits` must pass before the review PR is opened. `jargon.py --port Quest` is clean.
+
+### Re-read of the whole branch
+
+The delta touches only the `USE_HIP` mask macro and two Markdown files, so the device code and CMake checked last round are unaffected. Last round's "checked and correct" list stands for 6e7d8db (mma shim layouts and wave-size safety, HIP top-k semantics and race freedom, tile sizing, the CMake build-type default, the CUDA path preprocessing to the original).
+
+### Still owed (not review findings)
+
+- nvcc compile of the changed CUDA-visible files before the port goes to jeff.
+- PR-preparation squash, including the 9be60fc/cbc3890 pair and the fenced Test Plan above.
+- jeff's ruling on deferral `quest-prefill-matrix-cores` (prefill 30-50x slower than SDPA; numbers re-measured and accurate last round).
+- Wave32 (gfx1100) and Windows (gfx1151) validation of the new prefill and top-k paths, which no RDNA GPU has run yet. That run should also record the RDNA LDS attribute the lesson asks for.

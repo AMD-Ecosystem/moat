@@ -95,3 +95,5 @@
 {"kind":"session","ts":"2026-11-19T07:44:23Z","epoch":1795074263.062869,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-19T09:49:09Z","epoch":1795081749.605706,"event":"end","platform":"linux-gfx942"}
 {"kind":"phase","ts":"2026-11-19T09:51:33Z","phase":"compile","seconds":27.575,"exit":0,"cmd":"ninja -C projects/Quest/src/quest/ops/build"}
+{"kind":"session","ts":"2026-11-19T10:17:24Z","epoch":1795083444.213124,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-19T10:19:44Z","epoch":1795083584.989984,"event":"end","platform":"linux-gfx942"}
