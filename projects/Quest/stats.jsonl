@@ -145,3 +145,7 @@
 {"kind":"phase","ts":"2026-11-19T22:06:15Z","phase":"compile","seconds":1142.26,"exit":0,"cmd":"bash agent_space/porter/build.sh"}
 {"kind":"phase","ts":"2026-11-19T22:08:03Z","phase":"test","seconds":25.949,"exit":0,"cmd":"bash agent_space/porter/test.sh"}
 {"kind":"session","ts":"2026-11-19T22:12:35Z","epoch":1795126355.432096,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-19T23:31:56Z","epoch":1795131116.158582,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-19T23:44:51Z","phase":"compile","seconds":614.902,"exit":0,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/gfx1201-20261119-152826-quest-val-gfx1201-prompt/moat/projects/Quest/src"}
+{"kind":"phase","ts":"2026-11-19T23:45:26Z","phase":"test","seconds":20.064,"exit":0,"cmd":"bash agent_space/test.sh"}
+{"kind":"session","ts":"2026-11-19T23:46:26Z","epoch":1795131986.728425,"event":"end","platform":"linux-gfx1201"}

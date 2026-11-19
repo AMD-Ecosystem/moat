@@ -3342,3 +3342,56 @@ The 7 compile lines of `ninja -t commands _kernels` are byte-identical between t
 Every one of them includes `bsk_ops.h`, which includes the touched `decode/decode_handler.cuh`, `prefill/prefill.cuh` and `topk/decode_select_k.cuh`, so all 7 are "touched or include a touched header", and all were compiled through the real CMake build; no file needed a hand-assembled nvcc line and none could not be compiled. Only `approx_attn.cu`'s object differs in size (the decode-header changes); the other six objects are the same size in both trees. `hip_compat/` is not on the CUDA include path. Both modules export the same 651 text symbols and identical undefined dynamic symbol lists (`nm -D`, diffed). Import smoke test: each `.so` copied to its own directory imports under `<venv>/bin/python -I` from `/tmp` after `import torch`, exposing the same 8 public names (`BatchDecodeWithPagedKVCachePyTorchWrapper`, `append_kv_cache_decode`, `append_kv_cache_prefill`, `apply_rope_in_place`, `estimate_attn_score`, `prefill_with_paged_kv_cache`, `rms_norm_forward`, `topk_filtering`). No kernel ran (no GPU).
 
 **Verdict: the CUDA path compiles and links with real nvcc 12.8 at `2b938d8`, with the same result as upstream `01c1623`. No port regression.** The only build failures are RAFT's optional compiled library, identical on unmodified upstream; the `CUDA::nvToolsExt` configure wall reproduces identically on both trees with a toolkit lacking legacy nvToolsExt and is cleared for both by the one-target shim.
+
+## Validation 2026-11-19 (linux-gfx1201, at `2b938d8`)
+
+AMD Radeon AI PRO R9700, `gcnArchName` `gfx1201`, wave32, 32 CUs, 31.9 GiB VRAM; `HIP_VISIBLE_DEVICES=1` (pinned by the job). PyTorch 2.16.0a0+git6c3af02 (`torch.version.hip` 7.16.26385) on the pip ROCm SDK (no `/opt/rocm`; HIP compiler `_rocm_sdk_devel/lib/llvm/bin/clang++`), Python 3.11.17 (`/opt/python-3.11-venv`), CMake 3.31.6. The job venv has no torch, so the image interpreter ran the build and tests (read-only). Fork cloned fresh at `2b938d8` == `origin/moat-port` == `head_sha`; submodules initialized with `git submodule update --init --depth 1` (same SHAs as the gfx950 nvcc record). Review passed at this sha (pass 5). Full revalidation, not a carry-forward: `classify 6e7d8db 2b938d8` is `mixed` (`quest/ops/CMakeLists.txt`, token count differs).
+
+### Build
+
+The README Linux command with the architecture changed, in a fresh build directory (`rm -rf build` first), `CMAKE_BUILD_TYPE` and `PYTORCH_ROCM_ARCH` unset, no `-DPython_EXECUTABLE`, image Python first on `PATH`, wrapped `utils/timeit.sh Quest compile -- bash agent_space/build.sh <fork>`:
+
+```
+cd quest/ops
+mkdir -p build && cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 \
+  -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'` ..
+ninja -j 12
+ln -sf $PWD/_kernels*.so ../../
+```
+
+Only change from the README is `-j 12` on ninja, because the fleet job caps `MAX_JOBS` at 12 on this shared host. rc 0, 8 of 8 in 615 s (6e7d8db on this GPU: 10m04s at `-j 8`). `CMAKE_BUILD_TYPE:STRING=Release` from the default; all 8 compile lines carry `-O3` and `--offload-arch=gfx1201` (no other arch); C++ is `/usr/bin/c++`. 0 errors. Warnings: 18 nodiscard-`hipError_t` (`-Wunused-value`) and 1536 `-Wpass-failed=transform-warning` "loop not unrolled" lines, the same counts as the linux-gfx942 build at this head.
+
+### GPU tests (transformers 4.37.2, tokenizers 0.15.2, huggingface-hub 0.24.7, pytest 7.3.2)
+
+Test dependencies installed with `$FLEET_VENV/bin/pip install --no-deps --target <job>/pylib-test` (the shared environment stays untouched). Wrapped `utils/timeit.sh Quest test`, `ulimit -c 0`:
+
+```
+PYTHONPATH=<fork>:<job>/pylib-test python -m pytest quest/tests -p no:cacheprovider -q -rs
+```
+
+**202 passed, 28 skipped, 0 failed** (18.9 s). Each suite on its own, beside this GPU's `6e7d8db` run:
+
+| suite | `2b938d8` | `6e7d8db` (gfx1201) |
+|---|---|---|
+| test_approx_attention | 42 passed | 42 passed |
+| test_decode_attention | 6 passed | 6 passed |
+| test_decode_launch_shape | 3 passed | 3 passed |
+| test_estimate | 9 passed | 9 passed |
+| test_prefill_attention | 29 passed, 13 skipped | 29 passed, 13 skipped |
+| test_rope | 64 passed | 64 passed |
+| test_topk | 49 passed, 15 skipped | 49 passed, 15 skipped |
+
+The skips are the tests' own conditions (`test_prefill_attention.py:51` qo_len > kv_len, `test_topk.py:27` k >= kv_len). Identical to `6e7d8db` here and to linux-gfx942 at `2b938d8`.
+
+The end-to-end Llama-2 run was not repeated: no kernel or compiled source changed since `6e7d8db`, where it ran on this GPU (byte-identical text for hg and quest at budgets 1024 and 128, md5 `b900af27eeb4170a5c47bc5940a2ca60`, same as gfx942). The delta is configure logic only, and the default configure builds the same 8 compile lines (`-O3`, the one offload arch).
+
+### CUDA no-regression gate
+
+Not rerun: already recorded at this head (real nvcc 12.8 on the linux-gfx950 host, `2b938d8`, PASS, no port regression). This host has no CUDA toolkit anyway.
+
+### Content checks and integrity
+
+`jargon.py --port Quest` clean. `audit-commits Quest` reports only the known `6e7d8db` fenced-Test-Plan gap carried to PR preparation. ROCm build documented in `README.md` beside the CUDA build; the command above is that documentation verbatim apart from the architecture and the job cap. `git -C projects/Quest/src status --porcelain` empty (`build/` and the `_kernels` symlink are ignored). No fork edit, no push to the fork, no GitHub write.
+
+State: linux-gfx1201 `completed` at `2b938d8` (wave32 gate).
