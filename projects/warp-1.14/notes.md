@@ -7099,3 +7099,13 @@ Session 16's program with a fourth mode, same graph otherwise (built with the sa
 - Ruling (Jeff Daily, 2026-11-19): the capture-time fill workaround (`19b6a5ad`) stays and the alloc-node pointer window is reported; filed as https://github.com/ROCm/rocm-systems/issues/16277.
 - Full 82-pattern set on gfx1151 (`agent_space/warp-win/p6/run82c.sh`, one pattern at a time, `-m 2`, fresh cache per pattern, DLL built at `3d74932e`, working tree = `3d74932e` plus the `ea013807` test edit): **82 of 82 patterns OK** (`logs/p18pat/summary.txt`), including test_streams 24 OK (3 skipped), test_graph 35 OK (3 skipped), test_map 45 OK, test_fem* 108 OK (2 skipped, 199 s), test_mesh* 49 OK. No driver reset or hang.
 - Next: lock back to linux-gfx950 for the nvcc check and Phase 7 (wheels); the Linux hosts' passes are at `fda2f89a`, and the commits since are Windows-guarded (`de4e07a3`, `6b639456`, `19b6a5ad`), test-only (`9d9a6161` and its reversal `3d74932e`, `ea013807`).
+
+## Release goal for this line (stated by Jeff Daily, 2026-11-19)
+
+The deliverable is a 1.14 release on `AMD-Ecosystem/warp` that mirrors upstream's `v1.14.0` release: a GitHub Release carrying a similar set of wheels, built for ROCm 10.2, for manylinux and Windows. The wheels that get uploaded are validated first (the built artifacts themselves, not only a source build at the same commit). The release is not created until the wheels are ready, so the tag, the release and the wheels go out together.
+
+Facts this sets against (checked 2026-11-19):
+- Upstream `v1.14.0` assets: `warp_lang-1.14.0+cu12` and `+cu13` wheels for `manylinux_2_28_x86_64`, `manylinux_2_34_aarch64` and `win_amd64` (111 to 140 MB each), plus `+cpu` for `macosx_11_0_arm64` (25 MB). The ROCm counterparts are `manylinux_2_28_x86_64` and `win_amd64`; ROCm has no aarch64 or macOS target.
+- `upstream.py --finish-release --apply` tags the approved commit, records the delivery, closes the review PR and freezes the branch. It does not create a GitHub Release or upload assets, so the release creation is a separate GitHub write that Jeff approves and runs.
+- `AMD-Ecosystem/warp` has no GitHub Releases today.
+- Consequences for the remaining order of work: the wheels are built from the exact final approved commit; each gate platform validates by installing the wheel file that will be uploaded (recorded by sha256); a head move after wheel validation means rebuilding and revalidating the wheels; a published wheel is never replaced under the same version (the kernel cache key does not include native headers), a respin is `+rocm.1`.
