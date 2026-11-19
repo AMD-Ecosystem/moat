@@ -85,7 +85,10 @@ is neither a decline nor a merge of that PR. A person records it with
 `pr_state` reads `merged` with the other PR's merge time, `landed_via` names it, and the
 sweep stops reporting drift. It is verified live (ours closed unmerged, theirs merged in
 the same repository, every commit of ours among theirs); a rewrite of the work needs
-`--content-differs`, asserted by the person after reading both.
+`--content-differs`, asserted by the person after reading both. When the maintainer took
+the work in a commit with no pull request (MMseqs2 #1174, synced from their own source
+repository), pass that commit's URL instead: it must be on the default branch of the same
+repository, and `--content-differs` is then always required.
 
 ## The gate is the approval, and it covers exactly what was approved
 

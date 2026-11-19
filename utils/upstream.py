@@ -156,6 +156,9 @@ UNTRUSTED = {
         "pytorchbot lands via Meta's internal flow and never sets the merged flag, "
         "so a landed PR reads CLOSED with mergedAt null",
     "pytorch/pytorch": "same pytorchbot merge flow",
+    "facebookresearch/faiss":
+        "meta-codesync lands via Meta's internal flow: a landed PR reads CLOSED with "
+        "mergedAt null, a `Merged` label and a bot comment naming the commit",
 }
 
 

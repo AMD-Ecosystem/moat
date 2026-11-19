@@ -2511,10 +2511,15 @@ def set_pr_landed_via(name, url, by, note=None, content_differs=False):
     ours = _pr_ref(obj.get("pr_url"))
     if not ours[0]:
         raise ValueError(f"{name}: no upstream PR recorded, nothing to supersede")
+    commit = re.fullmatch(r"https://github\.com/([^/]+/[^/]+)/commit/([0-9a-f]{7,40})/?",
+                          url or "")
+    if commit:
+        return _landed_via_commit(name, obj, ours, commit.group(1), commit.group(2),
+                                  by, note, content_differs)
     theirs = _pr_ref(url)
     if not theirs[0] or not url.startswith("https://github.com/"):
-        raise ValueError(f"{name}: expected https://github.com/<owner>/<repo>/pull/<n>, "
-                         f"got {url!r}")
+        raise ValueError(f"{name}: expected https://github.com/<owner>/<repo>/pull/<n> "
+                         f"or .../commit/<sha>, got {url!r}")
     if theirs[0].lower() != ours[0].lower():
         raise ValueError(f"{name}: {url} is not in {ours[0]}, the repository of the "
                          f"recorded PR")
@@ -2556,6 +2561,56 @@ def set_pr_landed_via(name, url, by, note=None, content_differs=False):
     obj["pr_merged_at"] = other["mergedAt"]
     save_record(name, obj, f"{name}: PR #{ours[1]} landed via #{theirs[1]}, "
                            f"ruled by {by}")
+    return obj
+
+
+def _landed_via_commit(name, obj, ours, repo, sha, by, note, content_differs):
+    """set_pr_landed_via for work that landed as a COMMIT with no pull request.
+
+    MMseqs2 is the origin case: the maintainer closed our #1174, took the changes
+    into the project's own source repository and synced them to the public one in
+    a commit. There is no merged PR to name and the commit is not one of ours, so
+    this is always a rewrite a person asserts (`content_differs`). What is
+    verified live: our PR is closed unmerged, and the commit exists in the same
+    repository and is on its default branch."""
+    if repo.lower() != ours[0].lower():
+        raise ValueError(f"{name}: that commit is not in {ours[0]}, the repository "
+                         f"of the recorded PR")
+    if not content_differs:
+        raise ValueError(f"{name}: a commit outside any pull request does not carry "
+                         f"our commits; a person who compared the two says the work "
+                         f"landed with --content-differs")
+    mine = _gh_json("pr", "view", ours[1], "--repo", ours[0], "--json",
+                    "state,mergedAt")
+    c = _gh_json("api", f"repos/{repo}/commits/{sha}")
+    info = _gh_json("api", f"repos/{repo}")
+    if not mine or not c or not c.get("sha") or not info:
+        raise ValueError(f"{name}: cannot read the pull request and the commit from "
+                         f"GitHub -- not verified, nothing written")
+    if mine.get("state") != "CLOSED" or mine.get("mergedAt"):
+        raise ValueError(f"{name}: recorded PR #{ours[1]} is {mine.get('state')}, not "
+                         f"closed unmerged -- nothing superseded it")
+    default = info.get("default_branch") or ""
+    cmp = _gh_json("api", f"repos/{repo}/compare/{c['sha']}...{default}")
+    if not cmp or cmp.get("status") not in ("ahead", "identical"):
+        raise ValueError(f"{name}: {c['sha'][:12]} is not on {repo}'s default branch "
+                         f"({default or 'unknown'}) -- the work has not landed there")
+    when = ((c.get("commit") or {}).get("committer") or {}).get("date")
+    if not when:
+        raise ValueError(f"{name}: {c['sha'][:12]} carries no commit date")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    obj["landed_via"] = {"url": c.get("html_url")
+                         or f"https://github.com/{repo}/commit/{c['sha']}",
+                         "commit": c["sha"], "merged_at": when,
+                         "carried": "content-differs", "by": by, "at": now_iso()}
+    if note:
+        obj["landed_via"]["note"] = note
+    obj["pr_state"] = "merged"
+    obj["pr_merged_at"] = when
+    save_record(name, obj, f"{name}: PR #{ours[1]} landed via commit "
+                           f"{c['sha'][:12]}, ruled by {by}")
     return obj
 
 

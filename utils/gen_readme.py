@@ -176,8 +176,9 @@ def outcome_cell(p):
             return f"🔵 [#{num}]({p['pr_url']}) fork is upstream's AMD path"
         via = p.get("landed_via")
         if via and state == "merged":
-            return (f"{glyph} [#{num}]({p['pr_url']}) via "
-                    f"[#{via['number']}]({via['url']})")
+            where = (f"#{via['number']}" if via.get("number") is not None
+                     else (via.get("commit") or "commit")[:9])
+            return f"{glyph} [#{num}]({p['pr_url']}) via [{where}]({via['url']})"
         return f"{glyph} [#{num}]({p['pr_url']})"
     disp = p.get("disposition")
     if disp == "license-blocked":
