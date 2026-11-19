@@ -21,6 +21,7 @@ contribution on the strength of a field that lies for that repo. So it writes a
 branch and opens a PR, and a human decides -- the same path everything else takes.
 
     python3 utils/upstream.py --dry-run          # report PR drift, change nothing
+    python3 utils/upstream.py --dry-run --stamp  # ... and record that the sweep ran
     python3 utils/upstream.py --apply            # record merges + verified published_sha
                                                  # backfills via the record-sync branch + PR
     python3 utils/upstream.py --forks            # report projects awaiting a fork
@@ -29,12 +30,16 @@ branch and opens a PR, and a human decides -- the same path everything else take
     python3 utils/upstream.py --approvals --apply # dismiss them and re-request review
     python3 utils/upstream.py --review           # report ports needing a review PR
     python3 utils/upstream.py --publish          # report approved ports ready to submit
-    python3 utils/upstream.py --publish --apply  # open the upstream PRs
+    python3 utils/upstream.py --publish --apply --name <p>  # open that one upstream PR
     python3 utils/upstream.py --fix-review       # staged fix rounds needing a review PR
     python3 utils/upstream.py --merge-fix        # approved fix rounds ready to merge
-    python3 utils/upstream.py --merge-fix --apply # fast-forward the open PR to the approved tip
+    python3 utils/upstream.py --merge-fix --apply --name <p>  # fast-forward that one
+                                                 # open PR to its approved tip
     python3 utils/upstream.py --drift            # maintained forks vs upstream's advance
     python3 utils/upstream.py --drift --apply    # also fast-forward a behind fork mirror
+    python3 utils/upstream.py --finish-release   # approved release lines ready to tag
+    python3 utils/upstream.py --finish-release --apply --name <p>  # tag that one line,
+                                                 # close its review PR, freeze it
 
 Record maintenance and one publishing step. None of it does any porting -- that needs a
 GPU host and a session. These keep the record true, tell someone, and send an approved
@@ -46,6 +51,7 @@ second one carrying overlapping changes.
 """
 
 import argparse
+import datetime
 import json
 import os
 import pathlib
@@ -53,9 +59,30 @@ import re
 import subprocess
 import sys
 
-REPO = pathlib.Path(__file__).resolve().parents[1]
-TODAY = subprocess.run(["date", "-u", "+%Y-%m-%d"],
-                       capture_output=True, text=True).stdout.strip()
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = pathlib.Path(__file__).resolve().parents[1]
+# The interpreter running this tool, for the commands it tells a reader to run: the
+# name `python3` is not MOAT's Python on every host.
+PY = pathlib.Path(sys.executable).stem if sys.executable else "python3"
+REPO = pathlib.Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
+
+
+def _run(*args, **kwargs):
+    """subprocess.run, decoding text output as UTF-8 rather than the locale's code page.
+
+    gh and git emit UTF-8. On Windows the default decoder is cp1252, which raises on
+    bytes it has no mapping for (a PR thread containing an emoji is enough), and the
+    reader thread dies leaving stdout None -- `--attention` crashed that way."""
+    if kwargs.get("text"):
+        kwargs.setdefault("encoding", "utf-8")
+        kwargs.setdefault("errors", "replace")
+    return subprocess.run(*args, **kwargs)
+
+
+# Not `date -u`: outside Git Bash on Windows there is no such program, and this
+# module is imported by tools that only wanted one of its functions.
+TODAY = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
 # One stable branch, deliberately not date-stamped: see publish().
 # Named for what it carries, not for who pushes it: every run of this is a person
 # in a session, so there is no bot identity for a reader to recognise.
@@ -73,14 +100,10 @@ BRANCH = "record-sync"
 # the note: editing the wording is fine, editing the marker orphans every review PR
 # already approved.
 #
-# EDITING THE NOTE: the jargon checker cannot see the paragraph carrying the repo URL.
-# `MOAT` is a jargon term, and config/jargon.toml allows any line matching
-# `https?://\S*moat` or `github\.com/\S+` so ordinary links do not trip it -- but the
-# allowance skips the WHOLE line, and a GitHub body is written one line per paragraph,
-# so everything beside that URL goes unscanned. Dropping "the lead platform validated at
-# head_sha" into it yields zero hits; the same words on their own line yield three. So
-# check any wording change here by eye: this is the one paragraph the gate below cannot
-# check for you.
+# The paragraph carrying the repo URL is scanned like any other: the jargon checker
+# masks the URL itself (`MOAT` is a jargon term and the address contains it) and reads
+# the rest of the line. It used to skip the whole line, and a GitHub body is one line
+# per paragraph, so everything beside the URL went unchecked.
 SUBMISSION_MARKER = "prepared with the help of an AI assistant"
 SUBMISSION_NOTE = (
     "---\n\n"
@@ -133,26 +156,46 @@ UNTRUSTED = {
         "pytorchbot lands via Meta's internal flow and never sets the merged flag, "
         "so a landed PR reads CLOSED with mergedAt null",
     "pytorch/pytorch": "same pytorchbot merge flow",
+    "facebookresearch/faiss":
+        "meta-codesync lands via Meta's internal flow: a landed PR reads CLOSED with "
+        "mergedAt null, a `Merged` label and a bot comment naming the commit",
 }
 
 
-def all_records():
+def all_records(only=None):
     """(name, record, where) for every project across refs, not just this checkout.
+
+    With `only`, just that project: reading every record across refs is most of the
+    cost of a sweep, and a run aimed at one project should not pay it.
 
     Everything below used to glob the local tree. That was equivalent while every
     project's folder sat on the trunk, and stops being so the moment one moves to its
     own branch: a sweep run from any single branch would silently skip the rest, and a
     skipped project is indistinguishable from one with nothing to report."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
-    for name in sorted(moatlib.all_projects()):
+    for name in [only] if only else sorted(moatlib.all_projects()):
         obj, where = moatlib.project_record(name)
         if obj is not None:
             yield name, obj, where
 
 
+def _tool(name):
+    """A sibling tool's path. From TOOLS_ROOT, not the checkout: under the trunk
+    re-exec this file runs from the trunk export while the checkout's copy of the
+    sibling can be weeks old, and the inherited MOAT_TRUNK_TOOLS stops that copy
+    re-running itself -- so a path relative to the checkout quietly ran stale code."""
+    return str(TOOLS_ROOT / "utils" / name)
+
+
+def _tool_env():
+    """The environment for a sibling tool: it acts on this checkout, whichever copy
+    of the code runs."""
+    return {**os.environ, "MOAT_REPO": str(REPO)}
+
+
 def gh_json(args):
-    r = subprocess.run(["gh"] + args, capture_output=True, text=True, timeout=90)
+    r = _run(["gh"] + args, capture_output=True, text=True, timeout=90)
     if r.returncode:
         return None
     try:
@@ -175,7 +218,8 @@ def recorded():
         ours = d.get("pr_state") or ("merged" if d.get("pr_merged_at") else None)
         out.append({"name": name, "repo": m.group(1), "num": m.group(2),
                     "url": pr, "ours": ours, "published": d.get("published_sha"),
-                    "head": d.get("head_sha")})
+                    "head": d.get("head_sha"),
+                    "landed_via": (d.get("landed_via") or {}).get("url")})
     return out
 
 
@@ -201,7 +245,7 @@ def poll(rows):
     without the stamp a follow-up cannot be judged (pr_ready refuses to guess the
     baseline). Stamped only when our record already agrees with GitHub about the
     state -- a drifting record gets corrected first, not annotated."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     drift, unreviewed, headdrift, backfill, errors = [], [], [], [], []
     for r in rows:
@@ -217,6 +261,11 @@ def poll(rows):
             r["skipped"] = UNTRUSTED[r["repo"]]
             continue
         implied = IMPLIES.get(r["real"])
+        # A person ruled this PR closed because its work merged through another
+        # one (moatlib.set_pr_landed_via): CLOSED here and "merged" in the record
+        # agree. Any other live state is still drift -- a reopened PR undoes it.
+        if r.get("landed_via") and r["real"] == "CLOSED" and r["ours"] == "merged":
+            implied = "merged"
         if implied and implied != r["ours"]:
             drift.append({**r, "closed": True} if implied == "closed" else r)
         # An open PR with changes requested is work waiting on us, not drift.
@@ -331,7 +380,7 @@ def apply_one(r):
     having just recorded several merges."""
     if r["real"] != "MERGED":
         return False
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     local = moatlib.status_path(r["name"]).exists()
     try:
@@ -347,7 +396,7 @@ def apply_backfill(r):
     merges are: poll() only routes a row here when the live PR head agrees with the
     record, and set_published_sha re-checks that agreement plus the record's own
     consistency before writing. Returns "local"/"branch" like apply_one, or False."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     local = moatlib.status_path(r["name"]).exists()
     try:
@@ -377,7 +426,7 @@ def fork_poll(apply=False, stale_weeks=3):
     a session. This only makes the project eligible and tells someone.
     """
     import datetime
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     released = [{"name": n, "slug": s}
                 for n, s in moatlib.release_awaiting_fork(dry_run=not apply)]
@@ -386,8 +435,8 @@ def fork_poll(apply=False, stale_weeks=3):
     for name, d, _where in all_records():
         if name in got or moatlib.project_stage(d) != "awaiting-fork":
             continue
-        slug = (d.get("fork_url") or f"https://github.com/AMD-Ecosystem/{name}") \
-            .replace("https://github.com/", "")
+        slug = (d.get("fork_url") or "").replace("https://github.com/", "") \
+            or moatlib.default_fork_slug(d)
         waiting.append({"name": name, "slug": slug, "since": d.get("updated_at") or ""})
 
     print(f"fork-poll: {len(released)} released, {len(waiting)} still waiting\n")
@@ -431,13 +480,13 @@ def approval_drift():
     (pr_approval_status); one without is judged from the PR alone
     (approval_currency), and a port still awaiting its first approval is not drift
     and is not reported."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     rows = []
     for name, d, _where in all_records():
-        if d.get("pr_state"):
-            continue          # already published
+        if d.get("pr_state") or moatlib.release_delivered(d):
+            continue          # already published, or a release already tagged
         url = (d.get("pr_approval") or {}).get("review_pr") or d.get("review_pr")
         if not url:
             continue          # no review PR for an approval to drift from
@@ -472,7 +521,7 @@ def refresh_approval(r):
 
     This is our own fork, inside the autonomy boundary -- unlike anything upstream,
     which always needs its own explicit yes."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     pr = moatlib.fetch_review_pr(r["url"])
@@ -491,7 +540,7 @@ def refresh_approval(r):
         return gh_json(["api", "-X", "PUT",
                         f"repos/{slug}/pulls/{num}/reviews/{review['id']}/dismissals",
                         "-f", f"message={msg}", "-f", "event=DISMISS"]) is not None
-    res = subprocess.run(["gh", "pr", "comment", r["url"], "--body", msg],
+    res = _run(["gh", "pr", "comment", r["url"], "--body", msg],
                          capture_output=True, text=True, timeout=90)
     return res.returncode == 0
 
@@ -518,7 +567,7 @@ def report_approvals(apply):
     return 0
 
 
-def publishable():
+def publishable(only=None):
     """Ports whose review PR carries a standing approval and are ready to submit.
 
     Returns (ready, unreachable). This is what makes clicking Approve mean something.
@@ -541,14 +590,16 @@ def publishable():
     unreachable remote is a warning and not a clean bill (existing_claim), and
     "nothing released" is not "nothing waiting" (release-forks). This was the one
     place still reading an outage as an answer."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     out, unreachable, objected = [], [], []
-    for name, d, _where in all_records():
+    for name, d, _where in all_records(only):
         url = (d.get("pr_approval") or {}).get("review_pr") or d.get("review_pr")
         if not url or d.get("pr_state"):
             continue                      # no review PR, or already submitted
+        if moatlib.release_line(d):
+            continue                      # never published; --finish-release
         pr = moatlib.fetch_review_pr(url)
         if pr is None:
             unreachable.append({"name": name, "url": url})
@@ -580,7 +631,7 @@ def review_candidates():
     contract. A follow-up held only by coverage gates is reported rather than
     silently skipped, because no other list names it; a finished PR with nothing
     new past it stays silent, which is most of the fleet."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     out = []
@@ -621,7 +672,7 @@ def review_candidates():
         if not fork:
             continue
         row = {"name": name, "fork": fork, "branch": branch, "base": base,
-               "problem": None}
+               "problem": None, "release": moatlib.release_line(d)}
         if followup:
             row["followup"] = d.get("pr_number")
             row["prior_url"] = d.get("pr_url")
@@ -674,18 +725,59 @@ def review_candidates():
     return out
 
 
+def approval_instructions(head, what, review_url=None):
+    """The opening of the comment that tells the approver how to approve.
+
+    The approval line names the commit, because a conversation comment carries none
+    of its own: without the sha the gate could only compare dates, and a commit made
+    before the approval and pushed after it has an old date. `head` is the review
+    PR's head when the comment is posted; None prints a placeholder instead."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+    sha = head[:12] if head else "<the head commit's sha>"
+    return (
+        f"To approve {what}, leave a comment containing this line by itself:\n\n"
+        f"```\n{moatlib.APPROVE_COMMAND} {sha}\n```\n\n"
+        f"The sha is the commit you are approving: the head of this pull request "
+        f"as you reviewed it (at least 7 characters; the Commits tab shows it). An "
+        f"approval that names any other commit than the current head does not "
+        f"count, which is what stops a later push from riding out on it.\n\n"
+        f"To send it back to the porter instead:\n\n"
+        f"```\n{moatlib.CHANGES_COMMAND}\n```\n\n"
+        f"Both are commands because GitHub greys out the Approve and Request Changes "
+        f"buttons for a pull request's author, and this PR was opened on your "
+        f"credentials. Your latest command is the one that stands, and a command "
+        f"quoted in a code fence -- like the two above -- is ignored.\n\n"
+        f"Either box works: an ordinary conversation comment, or a review comment "
+        f"(*Review changes -> Comment*"
+        + (f", or `gh pr review {review_url} --comment --body "
+           f"'{moatlib.APPROVE_COMMAND} {sha}'`" if review_url else "")
+        + "). GitHub records which commit a review was written against, so in the "
+          "review form the sha may be left off; in a conversation comment it is "
+          "required.")
+
+
+def _pr_head(url):
+    """The head commit of a pull request we just opened, or None."""
+    d = gh_json(["pr", "view", url, "--json", "headRefOid"])
+    return (d or {}).get("headRefOid") or None
+
+
 def open_review_pr(row, title, body, apply=False):
     """Open the review PR on our own fork. The title and body ARE the upstream PR's,
     so they are checked for in-house vocabulary before anyone sees them -- this is
     the last point where that is cheap to fix."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     import jargon
     import prose
 
     # Attached before the checks below, not after, so the note is scanned like the
     # rest of the body and shown in the --review preview exactly as it will publish.
-    body = with_submission_note(body)
+    # Not on a release line: its review PR is the sign-off itself and nothing is
+    # republished to an upstream maintainer, who is who the note addresses.
+    if not row.get("release"):
+        body = with_submission_note(body)
 
     terms, allow = jargon.load()
     hits = (jargon.scan_text(title, "title", terms, allow)
@@ -728,6 +820,8 @@ def open_review_pr(row, title, body, apply=False):
                 f"({row['commits']} commits, {row['files']} files"
                 + (f"; follow-up to PR #{row['followup']}, delta past "
                    f"{row['base_sha'][:12]}" if row.get("followup") else "")
+                + ("; release line: approval tags and freezes, never merges"
+                   if row.get("release") else "")
                 + f")\n\n{title}\n\n{body}")
     if row.get("followup"):
         # The finished PR becomes history BEFORE anything external happens: if
@@ -740,7 +834,7 @@ def open_review_pr(row, title, body, apply=False):
         except Exception as e:              # noqa: BLE001 - reported, not raised
             return ("error", f"could not archive the finished PR "
                              f"#{row['followup']}: {e}")
-    r = subprocess.run(["gh", "pr", "create", "--repo", row["fork"],
+    r = _run(["gh", "pr", "create", "--repo", row["fork"],
                         "--head", row["branch"], "--base", row["base"],
                         "--title", title, "--body", body],
                        capture_output=True, text=True, timeout=90)
@@ -748,28 +842,26 @@ def open_review_pr(row, title, body, apply=False):
         return ("error", (r.stderr or r.stdout).strip())
     url = r.stdout.strip().splitlines()[-1]
     moatlib.set_review_pr(row["name"], url)
+    unlanded = _land_local_record(row["name"], f"{row['name']}: review PR opened -- {url}")
+    if unlanded:
+        print(f"  WARNING {row['name']}: {unlanded}", file=sys.stderr)
     # How to approve goes in a COMMENT, never in the body: the body is republished
     # verbatim as the upstream pull request, and an external maintainer has no use for
     # our approval command.
-    subprocess.run(
+    _run(
         ["gh", "pr", "comment", url, "--body",
-         f"To approve this port, leave a comment containing this line by "
-         f"itself:\n\n```\n{moatlib.APPROVE_COMMAND}\n```\n\n"
-         f"To send it back to the porter instead:\n\n"
-         f"```\n{moatlib.CHANGES_COMMAND}\n```\n\n"
-         f"Both are commands because GitHub greys out the Approve and Request Changes "
-         f"buttons for a pull request's author, and this PR was opened on your "
-         f"credentials. Your latest command is the one that stands, and a command "
-         f"quoted in a code fence -- like the two above -- is ignored.\n\n"
-         f"Either box works: a review comment (*Review changes -> Comment*, or "
-         f"`gh pr review {url} --comment --body '{moatlib.APPROVE_COMMAND}'`) or an "
-         f"ordinary conversation comment. Prefer the review form -- it records which "
-         f"commit you were looking at, which is what proves the approval covers this "
-         f"code and not an earlier push; a conversation comment counts too, judged by "
-         f"its time against the branch tip.\n\n"
-         f"The title and body above are what gets opened upstream, verbatim, so approving "
-         f"here approves all three: the code, the title and the body. Anything pushed "
-         f"afterwards, or any edit to the title or body, voids it and needs a fresh one."
+         approval_instructions(_pr_head(url) or row.get("tip"), "this port", url)
+         + "\n\n"
+         + (f"This is a release sign-off. Approving tags the approved commit, "
+            f"closes this pull request WITHOUT merging it and freezes "
+            f"`{row['branch']}`; never merge it, because `{row['base']}` must stay "
+            f"an exact copy of upstream's branch. Anything pushed afterwards, or any "
+            f"edit to the title or body, voids the approval and needs a fresh one."
+            if row.get("release") else
+            "The title and body above are what gets opened upstream, verbatim, so "
+            "approving here approves all three: the code, the title and the body. "
+            "Anything pushed afterwards, or any edit to the title or body, voids it "
+            "and needs a fresh one.")
          + (f"\n\nThis is a follow-up to {row.get('prior_url') or 'the previous pull request'}, "
             f"which is finished: only the delta since it is under review here, and "
             f"publishing opens a new upstream pull request carrying it."
@@ -778,11 +870,67 @@ def open_review_pr(row, title, body, apply=False):
     return ("opened", url)
 
 
+def _land_local_record(name, message):
+    """Commit and push a record a moatlib setter wrote into this working tree.
+
+    `save_record` writes a fact to the project's branch when the record lives on one,
+    but when it resolves to this checkout (a trunk-resident project, or standing on
+    `port/<name>`) it only rewrites the local status.json and leaves the commit to the
+    caller. Every caller here records something GitHub already shows -- a review PR, an
+    upstream PR, an approval, a merged round -- so leaving it uncommitted means every
+    other checkout keeps the stale state: cuda_voxelizer's upstream PR went unrecorded
+    for a day and TornadoVM's review PR was invisible to the next publish run. Returns
+    None when nothing was left behind, else what went wrong."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+    r = _run(["git", "status", "--porcelain", "--", f"projects/{name}/status.json"],
+             cwd=str(REPO), capture_output=True, text=True)
+    if not r.stdout.strip():
+        return None
+    # On the trunk the push is judged on the README table too, and the record just
+    # written changes it; regenerate it into the same commit rather than fail the push.
+    extra = []
+    if moatlib.current_branch() == "main":
+        _run([sys.executable, _tool("gen_readme.py")], cwd=str(REPO),
+             capture_output=True, text=True, env=_tool_env())
+        extra = ["README.md"]
+    try:
+        if moatlib.commit_project(name, message, extra_paths=extra):
+            return None
+    except Exception as e:                      # noqa: BLE001 - reported, not raised
+        return f"recorded in this checkout but could not commit it: {e}"
+    return ("recorded in this checkout but the commit did not push; run "
+            f"`{PY} utils/moatlib.py commit-project {name} \"{message}\"`")
+
+
+def pending_optout_problems(name):
+    """Why a request to stop that has not reached the trunk yet binds this project.
+
+    An opt-out is written to data/optout.json and reaches the trunk through a pull
+    request; until that merges, origin/main -- which is all pr_ready reads -- does
+    not have it, and a publish run on another host went ahead. `optout.py record`
+    therefore also pushes the registry to its own branch at once, and the two
+    writes to somebody else's repository read that branch here before acting."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+    import optout
+    full = moatlib.upstream_full_name(name) or ""
+    entry, problem = optout.pending_for(full, repo=REPO)
+    if problem:
+        return [f"{problem} -- a request to stop that cannot be read is not a "
+                f"request that was never made"]
+    if entry:
+        return [f"opted-out: {entry.get('who')} asked not to receive pull requests "
+                f"from this effort ({entry.get('source')}); recorded on the "
+                f"{optout.PENDING_BRANCH} branch, not yet on the trunk"]
+    return []
+
+
 def publish_blockers(name, row):
     """Everything that must hold before a port is submitted upstream, as a list of
     reasons it must not be. Checked at publish time rather than trusted from earlier:
     a gate that passed when the reviewer looked is not evidence about now."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     import jargon
     import prose
@@ -800,6 +948,18 @@ def publish_blockers(name, row):
     # fails closed rather than publishing over an objection nobody re-read.
     blockers, _notes = moatlib.moat_command_audit(row["pr"])
     bad += blockers
+    # The approved page must be a review of THIS project's validated commit.
+    d, _where = moatlib.project_record(name)
+    if d is None:
+        bad.append(f"no record for {name} in this checkout or on the refs")
+    else:
+        bad += moatlib.review_pr_binding_problems(d, row["pr"])
+    # pr_ready below reads the opt-out and disposition registries from the trunk.
+    if not moatlib.refresh_trunk_data():
+        bad.append("could not fetch origin/main, so the opt-out and disposition "
+                   "records may be out of date -- a request to stop that cannot be "
+                   "read is not a request that was never made")
+    bad += pending_optout_problems(name)
     # Gates, clean fork, no terminal outcome, no PR already open.
     ready, blocking, _ = moatlib.pr_ready(name)
     if not ready:
@@ -820,26 +980,28 @@ def publish_blockers(name, row):
     # staleness check will not catch it either -- and this is the last gate before
     # that commit ships.
     pr = row["pr"]
-    msgs = subprocess.run(
+    msgs = _run(
         ["gh", "api", "--paginate",
          f"repos/{pr['slug']}/pulls/{pr['number']}/commits",
-         "--jq", ".[].commit.message"],
+         "--jq", "[.[] | {sha: .sha[0:9], message: .commit.message}]"],
         capture_output=True, text=True, timeout=90)
-    if msgs.returncode:
+    # One commit message at a time, and one file's added lines at a time: joined
+    # into one text, a single unclosed code fence in any of them hid every message
+    # and every file after it from the scan.
+    commits = None if msgs.returncode else moatlib._parse_json_pages(msgs.stdout)
+    if commits is None:
         bad.append("cannot re-check the branch's commit messages for in-house "
                    "vocabulary (gh api failed) -- a gate that cannot run is not a "
                    "gate that passed")
     else:
-        bhits = jargon.scan_text(msgs.stdout, "branch commits", terms, allow)
-        diff = subprocess.run(["gh", "pr", "diff", row["url"]],
-                              capture_output=True, text=True, timeout=180)
-        if diff.returncode:
+        bhits = jargon.scan_units([(c.get("sha") or "?", c.get("message") or "")
+                                   for c in commits], "branch commit", terms, allow)
+        added, why = _pr_added_lines(pr["slug"], pr["number"], row["url"])
+        if added is None:
             bad.append("cannot re-check the branch's added lines for in-house "
-                       "vocabulary (gh pr diff failed)")
+                       f"vocabulary ({why})")
         else:
-            added = "\n".join(l[1:] for l in diff.stdout.splitlines()
-                              if l.startswith("+") and not l.startswith("+++"))
-            bhits += jargon.scan_text(added, "branch added lines", terms, allow)
+            bhits += jargon.scan_units(added, "branch added lines", terms, allow)
         if bhits:
             bad.append("in-house vocabulary on the branch: "
                        + ", ".join(sorted({h[2] for h in bhits})[:4]))
@@ -859,19 +1021,43 @@ def publish_blockers(name, row):
     return bad
 
 
-def open_upstream(name, row):
+def fork_branch_tip(fork_url, branch):
+    """The commit `branch` points at on the fork right now, or None if it cannot
+    be read. Asked of the remote itself, not of a clone or of the API: this is the
+    last look before a branch NAME is handed to GitHub as a pull request's head."""
+    ls = _run(["git", "ls-remote", fork_url, f"refs/heads/{branch}"],
+              capture_output=True, text=True, timeout=60)
+    if ls.returncode:
+        return None
+    return (ls.stdout.split() or [None])[0]
+
+
+def open_upstream(name, row, approved=None):
     """Open the upstream PR with the approved title and body, verbatim.
 
     The record is resolved across refs like everything else here: a project with a
     standing approval and no PR yet lives on its own `port/<name>` branch by
     construction, so reading the working tree found nothing unless the session
-    happened to be standing on that branch."""
-    sys.path.insert(0, str(REPO / "utils"))
+    happened to be standing on that branch.
+
+    `approved` is the commit the approval covers. `gh pr create --head` takes a
+    branch name, not a commit, and the approval was judged minutes ago -- before
+    its snapshot was committed and pushed through the pre-push gates -- while the
+    port branch is not frozen until the upstream PR exists. So the branch is read
+    from the fork immediately before the create and the create is refused unless
+    it still points at the approved commit, and the new PR's head is read back
+    afterwards: a push that lands in the last instant is then reported for what
+    it is instead of being recorded as the approved commit."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     d, _where = moatlib.project_record(name)
     if d is None:
         return (None, f"no record for {name} in this checkout or on the refs")
+    approved = approved or (row.get("pr") or {}).get("headRefOid")
+    if not approved:
+        return (None, "the approved commit is not known, so the branch cannot be "
+                      "checked against it; nothing was opened")
     slug = d["upstream_url"].split("github.com/", 1)[-1]
     fork_owner = d["fork_url"].split("github.com/", 1)[-1].split("/")[0]
     branch = d.get("fork_branch") or moatlib.PORT_BRANCH
@@ -892,7 +1078,17 @@ def open_upstream(name, row):
     real = gh_guard.real_gh()
     if real is None:
         return (None, "gh is not installed")
-    r = subprocess.run(
+    tip = fork_branch_tip(d["fork_url"], branch)
+    if not tip:
+        return (None, f"cannot read {branch} on the fork ({d['fork_url']}) to "
+                      f"confirm it still holds the approved commit; nothing was "
+                      f"opened")
+    if not moatlib.same_commit(tip, approved):
+        return (None, f"the fork's {branch} is now at {tip[:12]}, not the approved "
+                      f"{approved[:12]} -- something was pushed after the approval "
+                      f"was judged; nothing was opened. Record the push with "
+                      f"advance-head, revalidate, and get a fresh approval")
+    r = _run(
         [real, "pr", "create", "--repo", slug, "--base", base,
          "--head", f"{fork_owner}:{branch}", "--title", row["title"],
          "--body", row["body"]],
@@ -902,13 +1098,47 @@ def open_upstream(name, row):
     url = next((l.strip() for l in r.stdout.splitlines()
                 if "github.com" in l and "/pull/" in l), "")
     num = url.rstrip("/").rsplit("/", 1)[-1]
+    # What did GitHub actually open? The branch name was resolved on their side.
+    shown = None
+    if url:
+        back = _run([real, "pr", "view", url, "--json", "headRefOid"],
+                    capture_output=True, text=True, timeout=90, cwd=str(REPO))
+        try:
+            shown = json.loads(back.stdout).get("headRefOid") if not back.returncode \
+                else None
+        except (ValueError, AttributeError):
+            shown = None
+    moved = bool(shown) and not moatlib.same_commit(shown, approved)
     # Called rather than shelled out to, so a record that will not write is reported
     # here instead of vanishing into a subprocess nobody read the exit code of. The PR
     # is already open at this point, so failing to record it is worth saying loudly.
+    # A PR that opened on the wrong commit is still recorded as OPEN -- that is what
+    # freezes the branch against further pushes -- but with the commit it really
+    # shows, never the approved one.
     try:
-        moatlib.set_pr_open(name, url, num)
+        moatlib.set_pr_open(name, url, num, published_sha=shown if moved else None)
     except Exception as e:                      # noqa: BLE001 - reported, not raised
         return (url, f"opened {url} but could NOT record it: {e}")
+    unlanded = _land_local_record(name, f"{name}: upstream PR opened -- {url}")
+    if moved:
+        return (url, f"UNAPPROVED CONTENT IS UPSTREAM: {url} opened showing "
+                     f"{shown[:12]}, but the approval covers {approved[:12]} -- the "
+                     f"fork's {branch} moved between the last check and the create. "
+                     f"The PR is recorded as open (which freezes {branch}) with "
+                     f"published_sha {shown[:12]}; it is NOT recorded as the approved "
+                     f"commit, and the review PR {row.get('url')} was left open. A "
+                     f"person must now decide, on GitHub: close {url}, or keep it and "
+                     f"have the commits past {approved[:12]} reviewed (compare "
+                     f"{approved[:12]}...{shown[:12]} on the fork). Nothing here will "
+                     f"close or change an upstream pull request by itself"
+                     + (f"; also: {unlanded}" if unlanded else ""))
+    if unlanded:
+        return (url, f"opened {url}; {unlanded}")
+    if url and not shown:
+        return (url, f"opened {url}, but its head could not be read back to confirm "
+                     f"it shows the approved {approved[:12]} -- check it by hand "
+                     f"(`gh pr view {url} --json headRefOid`). The review PR was "
+                     f"left open until that is confirmed")
 
     # The review PR has done its job -- the change it was reviewing is now in front of
     # the maintainers. Close it pointing at where the conversation continues, rather
@@ -916,7 +1146,7 @@ def open_upstream(name, row):
     # keeps the review thread readable; only the branch it reviewed matters now, and
     # that branch is the upstream PR's head.
     if url:
-        subprocess.run(
+        _run(
             ["gh", "pr", "close", row["url"], "--comment",
              f"Submitted upstream as {url} with the title and body approved here. "
              f"Closing this review PR; the discussion continues on the upstream one."],
@@ -924,8 +1154,8 @@ def open_upstream(name, row):
     return (url, None)
 
 
-def report_publish(apply):
-    rows, unreachable, objected = publishable()
+def report_publish(apply, only=None):
+    rows, unreachable, objected = publishable(only)
     print(f"upstream: {len(rows)} approved port(s) awaiting submission"
           + (f", {len(objected)} with a standing objection" if objected else "")
           + (f", {len(unreachable)} review PR(s) UNREACHABLE" if unreachable else "")
@@ -966,18 +1196,29 @@ def report_publish(apply):
               f"when GitHub is reachable.")
     if not apply:
         if ready:
-            print(f"\n  --apply opens {len(ready)} upstream PR(s) with the approved "
-                  f"title and body.")
+            print("\n  --apply --name <project> opens that one upstream PR with "
+                  "the approved title and body.")
         return 0
     for r in ready:
         # Snapshot the approval BEFORE publishing, so the record of who authorised
-        # this exists even if the PR creation then fails.
+        # this exists even if the PR creation then fails. The snapshot re-reads the
+        # review PR and re-judges it, so it also says which commit is approved NOW.
         try:
-            moatlib_record(r["name"])
+            snap = moatlib_record(r["name"])
         except Exception as e:                      # noqa: BLE001 - reported, not raised
             print(f"  FAILED to record the approval for {r['name']}: {e}")
             continue
-        url, err = open_upstream(r["name"], r)
+        judged = (r.get("pr") or {}).get("headRefOid")
+        approved = (snap or {}).get("head_sha")
+        sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+        import moatlib
+        if not approved or not judged or not moatlib.same_commit(approved, judged):
+            print(f"  FAILED: {r['name']}: the gates were judged at "
+                  f"{(judged or '?')[:12]} but the approval now recorded covers "
+                  f"{(approved or '?')[:12]} -- the review PR moved during this "
+                  f"run; nothing was opened")
+            continue
+        url, err = open_upstream(r["name"], r, approved=approved)
         if url and err:          # the PR is open but the record did not take
             print(f"  PARTIAL  {r['name']}: {err}")
         else:
@@ -986,9 +1227,13 @@ def report_publish(apply):
 
 
 def moatlib_record(name):
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
-    return moatlib.record_pr_approval(name)
+    a = moatlib.record_pr_approval(name)
+    unlanded = _land_local_record(name, f"{name}: approval recorded")
+    if unlanded:
+        raise RuntimeError(unlanded)
+    return a
 
 
 # ---- fix rounds: review and merge ------------------------------------------
@@ -1035,24 +1280,60 @@ def _delta_hits_local(clone, base, head, terms, allow):
     Preferred over the API because it reads the WHOLE delta: `compare` caps its
     answer, and this scan is the last thing between in-house vocabulary and a
     stranger's repository."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import jargon
     if not (clone / ".git").exists():
         return None
     for rev in (base, head):
-        if subprocess.run(["git", "-C", str(clone), "cat-file", "-e", f"{rev}^{{commit}}"],
+        if _run(["git", "-C", str(clone), "cat-file", "-e", f"{rev}^{{commit}}"],
                           capture_output=True, text=True).returncode:
             return None
-    msgs = subprocess.run(["git", "-C", str(clone), "log", "--format=%B",
+    # %x00 after each message and one unit per file, so every commit message and
+    # every file is scanned by itself (see jargon.scan_text on unclosed fences).
+    msgs = _run(["git", "-C", str(clone), "log", "--format=%B%x00",
                            f"{base}..{head}"], capture_output=True, text=True)
-    diff = subprocess.run(["git", "-C", str(clone), "diff", f"{base}...{head}"],
+    diff = _run(["git", "-C", str(clone), "diff", f"{base}...{head}"],
                           capture_output=True, text=True)
     if msgs.returncode or diff.returncode:
         return None
-    hits = jargon.scan_text(msgs.stdout, "delta commit", terms, allow)
-    added = "\n".join(l[1:] for l in diff.stdout.splitlines()
-                      if l.startswith("+") and not l.startswith("+++"))
-    return hits + jargon.scan_text(added, "delta added lines", terms, allow)
+    added = jargon.added_by_file(diff.stdout)
+    # A sync round merges upstream's tip, so the delta also carries upstream's own
+    # commits and code, which upstream already has and which are not ours to word.
+    # Scan only what is new relative to every merged-in upstream parent.
+    merges = _run(["git", "-C", str(clone), "rev-list", "--merges", "--parents",
+                   f"{base}..{head}"], capture_output=True, text=True)
+    if merges.returncode:
+        return None
+    theirs = sorted({p for l in merges.stdout.splitlines() for p in l.split()[2:]})
+    if len(theirs) > 1:
+        # Upstream's own merges come along too (GPUMD: 332 parents, one diff of
+        # millions of lines each). A parent reachable from another one adds
+        # nothing but time: subtracting fewer upstream lines can only keep more
+        # lines in the scan, never fewer.
+        independent = _run(["git", "-C", str(clone), "merge-base", "--independent",
+                            *theirs], capture_output=True, text=True)
+        if independent.returncode:
+            return None
+        theirs = sorted(independent.stdout.split())
+    if theirs:
+        msgs = _run(["git", "-C", str(clone), "log", "--format=%B%x00",
+                     f"{base}..{head}", "--not", *theirs],
+                    capture_output=True, text=True)
+        if msgs.returncode:
+            return None
+        for parent in theirs:
+            ours = _run(["git", "-C", str(clone), "diff", f"{parent}...{head}"],
+                        capture_output=True, text=True)
+            if ours.returncode:
+                return None
+            mine = {l[1:] for l in ours.stdout.splitlines()
+                    if l.startswith("+") and not l.startswith("+++")}
+            added = [(path, "\n".join(l for l in text.split("\n") if l in mine))
+                     for path, text in added]
+    hits = jargon.scan_units([(str(n), m) for n, m in
+                              enumerate(msgs.stdout.split("\x00"), 1) if m.strip()],
+                             "delta commit", terms, allow)
+    return hits + jargon.scan_units(added, "delta added lines", terms, allow)
 
 
 def _fix_delta_hits(fork, base, head, clone=None):
@@ -1064,7 +1345,7 @@ def _fix_delta_hits(fork, base, head, clone=None):
     commits and 300 files and omits `patch` on large ones, and a partial answer that
     reads like a clean one is worse than no answer. A gate that cannot run is not a
     gate that passed."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import jargon
     terms, allow = jargon.load()
     if clone is not None:
@@ -1093,11 +1374,45 @@ def _fix_delta_hits(fork, base, head, clone=None):
     hits = []
     for msg in commits:
         hits += jargon.scan_text(msg, "delta commit", terms, allow)
-    added = "\n".join(l[1:] for p in (cmp.get("patches") or [])
-                      for l in p.splitlines()
-                      if l.startswith("+") and not l.startswith("+++"))
-    hits += jargon.scan_text(added, "delta added lines", terms, allow)
+    for n, patch in enumerate(cmp.get("patches") or [], 1):
+        added = "\n".join(l[1:] for l in patch.splitlines()
+                          if l.startswith("+") and not l.startswith("+++"))
+        hits += jargon.scan_text(added, f"delta added lines (file {n})", terms, allow)
     return hits
+
+
+def _pr_added_lines(slug, number, url):
+    """The added lines of a PR's diff as [(file, text)], or (None, reason) when they
+    cannot all be read.
+
+    `gh pr diff` is refused for a diff over 20000 lines (HTTP 406), which a large port
+    exceeds (TornadoVM's HIP backend is about 30000). The per-file listing has no such
+    cap, so it is the fallback; it lists at most 3000 files and omits `patch` on a file
+    too large to render, and either means a partial answer, which is refused rather
+    than scanned -- a partial answer that reads like a clean one is worse than none."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import jargon
+    diff = _run(["gh", "pr", "diff", url], capture_output=True, text=True, timeout=180)
+    if not diff.returncode:
+        return jargon.added_by_file(diff.stdout), None
+    else:
+        files = _run(["gh", "api", "--paginate", f"repos/{slug}/pulls/{number}/files",
+                      "--jq", ".[] | {f: .filename, p: .patch, a: .additions}"],
+                     capture_output=True, text=True, timeout=300)
+        if files.returncode:
+            return None, "gh pr diff and the PR file listing both failed"
+        rows = [json.loads(l) for l in files.stdout.splitlines() if l.strip()]
+        if len(rows) >= 3000:
+            return None, f"the PR file listing stops at {len(rows)} files"
+        # A binary file has no patch and no added lines; a text file too large to
+        # render has added lines but no patch.
+        nopatch = [r["f"] for r in rows if r.get("p") is None and r.get("a")]
+        if nopatch:
+            return None, (f"{len(nopatch)} file(s) listed without a patch, e.g. "
+                          f"{nopatch[0]}")
+        return [(r["f"], "\n".join(l[1:] for l in (r.get("p") or "").splitlines()
+                                   if l.startswith("+") and not l.startswith("+++")))
+                for r in rows], None
 
 
 def _round_live(d, fix):
@@ -1105,13 +1420,15 @@ def _round_live(d, fix):
     needs its upstream PR open; a sync round needs the maintained ruling standing.
     A round whose backing vanished is not silently a different kind of round."""
     if fix.get("kind") == "sync":
-        return bool(d.get("maintained"))
+        sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+        import moatlib
+        return bool(d.get("maintained") or moatlib.release_delivered(d))
     return d.get("pr_state") == "open"
 
 
 def fix_review_rows():
     """Staged fix and sync rounds whose gates are met, with no review PR yet."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     out = []
     for name, d, _where in all_records():
@@ -1154,7 +1471,7 @@ def fix_review_rows():
             continue
         out.append({"name": name, "fork": fork, "fix": fix, "base": base,
                     "tip": tip["sha"], "problem": None,
-                    "branch": fix["branch"],
+                    "branch": fix["branch"], "pr_url": d.get("pr_url"),
                     "target": d.get("fork_branch") or moatlib.PORT_BRANCH})
     return out
 
@@ -1165,7 +1482,7 @@ def open_fix_review_pr(row, title, body, apply=False):
     Unlike open_review_pr, the title and body are NOT republished upstream -- the
     upstream-visible content is the delta's commits, scanned here, plus the
     optional reply section, scanned as the upstream prose it is about to become."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     import jargon
     import prose
@@ -1184,6 +1501,11 @@ def open_fix_review_pr(row, title, body, apply=False):
     if REPLY_HEADING in (body or "") and not reply:
         return ("reply", f"the body carries {REPLY_HEADING!r} with nothing under "
                          f"it -- drop the heading or write the reply")
+    if reply and not row.get("pr_url"):
+        # A release line's sync round has no upstream PR to reply on; refusing
+        # here beats discovering it after the merge push already moved the branch.
+        return ("reply", f"the body carries {REPLY_HEADING!r} but there is no "
+                         f"upstream PR to post it on -- drop the section")
     if reply:
         terms, allow = jargon.load()
         rhits = jargon.scan_text(reply, "upstream reply", terms, allow)
@@ -1199,7 +1521,7 @@ def open_fix_review_pr(row, title, body, apply=False):
                 f"(base {row['base'][:12]}, tip {row['tip'][:12]}"
                 + (", carries an upstream reply" if reply else "")
                 + f")\n\n{title}\n\n{body}")
-    r = subprocess.run(["gh", "pr", "create", "--repo", row["fork"],
+    r = _run(["gh", "pr", "create", "--repo", row["fork"],
                         "--head", row["branch"], "--base", row["target"],
                         "--title", title, "--body", body],
                        capture_output=True, text=True, timeout=90)
@@ -1208,25 +1530,27 @@ def open_fix_review_pr(row, title, body, apply=False):
     url = r.stdout.strip().splitlines()[-1]
     try:
         moatlib.set_fix_review_pr(row["name"], url)
+        unlanded = _land_local_record(row["name"],
+                                      f"{row['name']}: fix review PR opened -- {url}")
+        if unlanded:
+            raise RuntimeError(unlanded)
     except Exception as e:                      # noqa: BLE001 - reported, not raised
         # The PR exists on GitHub now. Raising here would lose the URL and leave the
         # round still reading as "needs a review PR", which opens a second one.
         return ("unrecorded",
                 f"opened {url} but could NOT record it: {e}\n"
-                f"    record it by hand: python3 utils/moatlib.py set-fix-review-pr "
+                f"    record it by hand: {PY} utils/moatlib.py set-fix-review-pr "
                 f"{row['name']} {url}")
-    subprocess.run(
+    _run(
         ["gh", "pr", "comment", url, "--body",
-         f"To approve this fix round, leave a comment containing this line by "
-         f"itself:\n\n```\n{moatlib.APPROVE_COMMAND}\n```\n\n"
-         f"To send it back to the porter instead:\n\n"
-         f"```\n{moatlib.CHANGES_COMMAND}\n```\n\n"
-         f"Approving covers the commits on this branch"
+         approval_instructions(row.get("tip"), "this fix round", url)
+         + "\n\nApproving covers the commits on this branch"
          + (f" and the section under {REPLY_HEADING!r} in the body, which is "
             f"posted verbatim as a comment on the upstream pull request after "
             f"the merge, behind a standing line disclosing that it was drafted "
             f"by an AI assistant" if reply else "")
-         + ". `utils/upstream.py --merge-fix --apply` then fast-forwards the "
+         + ". `utils/upstream.py --merge-fix --apply --name <project>` then "
+           "fast-forwards the "
            "open upstream PR's branch to exactly the approved tip. Anything "
            "pushed afterwards, or any edit to the body, voids the approval and "
            "needs a fresh one."],
@@ -1253,35 +1577,44 @@ def base_conflict(name, d, tip):
     review-PR gate skips (the documented only-where-a-clone-lives backstop
     pattern), the merge gate refuses, because the one place that must never
     guess is the one about to move the open PR."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
     clone = REPO / "projects" / name / "src"
     if not (clone / ".git").exists():
         return ("unknown", "no fork clone here to test-merge with")
-    m = re.search(r"github\.com/([^/]+/[^/]+)/pull/(\d+)", d.get("pr_url") or "")
-    if not m:
-        return ("unknown", "no upstream PR recorded")
-    up, num = m.group(1), m.group(2)
-    pr = gh_json(["pr", "view", num, "--repo", up, "--json", "baseRefName"])
-    base_ref = (pr or {}).get("baseRefName")
-    if not base_ref:
-        return ("unknown", f"cannot read the base branch of {up}#{num}")
-    f = subprocess.run(["git", "-C", str(clone), "fetch",
-                        f"https://github.com/{up}",
+    if moatlib.release_line(d):
+        # A release line has no upstream PR by construction. What its rounds
+        # must keep merging with is upstream's release branch -- the branch the
+        # pristine mirror copies, under the same name.
+        base_ref = d.get("fork_default_branch") or "main"
+        source, up = d.get("upstream_url") or "", d.get("upstream_url") or "?"
+    else:
+        m = re.search(r"github\.com/([^/]+/[^/]+)/pull/(\d+)", d.get("pr_url") or "")
+        if not m:
+            return ("unknown", "no upstream PR recorded")
+        up, num = m.group(1), m.group(2)
+        pr = gh_json(["pr", "view", num, "--repo", up, "--json", "baseRefName"])
+        base_ref = (pr or {}).get("baseRefName")
+        if not base_ref:
+            return ("unknown", f"cannot read the base branch of {up}#{num}")
+        source = f"https://github.com/{up}"
+    f = _run(["git", "-C", str(clone), "fetch", source,
                         f"+refs/heads/{base_ref}:refs/moat/base"],
                        capture_output=True, text=True, timeout=120)
     if f.returncode:
         return ("unknown", f"cannot fetch {base_ref} from {up}")
-    have = subprocess.run(["git", "-C", str(clone), "cat-file", "-e",
+    have = _run(["git", "-C", str(clone), "cat-file", "-e",
                            f"{tip}^{{commit}}"], capture_output=True, text=True)
     if have.returncode:
         # GitHub serves any reachable commit by full sha, so the staged tip can
         # be fetched directly even when no local ref names it yet.
-        got = subprocess.run(["git", "-C", str(clone), "fetch",
+        got = _run(["git", "-C", str(clone), "fetch",
                               d.get("fork_url") or "", tip],
                              capture_output=True, text=True, timeout=120)
         if got.returncode:
             return ("unknown", f"the staged tip {tip[:12]} is not in the clone "
                                f"and could not be fetched")
-    mt = subprocess.run(["git", "-C", str(clone), "merge-tree", "--write-tree",
+    mt = _run(["git", "-C", str(clone), "merge-tree", "--write-tree",
                          "--name-only", "refs/moat/base", tip],
                         capture_output=True, text=True, timeout=120)
     if mt.returncode == 0:
@@ -1307,9 +1640,24 @@ def merge_fix_rows():
             yield name, d, fix
 
 
+def optout_merge_blockers(d, pr, opted):
+    """What a request to stop (`opted`, the opt-out problems found) blocks at the
+    merge gate. Everything, except on a maintained fork with its PR closed.
+
+    A request to stop is about what reaches THEIR repository. A branch a person
+    ruled we keep working on our own fork has no open pull request for the merge to
+    move, so the merge is ours alone -- provided it says nothing to them either."""
+    if opted and d.get("maintained") and d.get("pr_state") == "closed":
+        if REPLY_HEADING in (pr.get("body") or ""):
+            return [f"{opted[0]}; the body carries {REPLY_HEADING!r}, and a "
+                    f"maintainer who asked us to stop is sent no reply"]
+        return []
+    return list(opted)
+
+
 def merge_fix_blockers(name, d, fix, pr):
     """Everything that must hold before the PR branch moves, re-checked live."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     import prose
     import jargon
@@ -1320,9 +1668,25 @@ def merge_fix_blockers(name, d, fix, pr):
         bad.append(f"approval {code}: {why}")
     blockers, _notes = moatlib.moat_command_audit(pr)
     bad += blockers
+    # The approved page must be the review of THIS round: on this project's fork,
+    # from the staging branch, into the port branch. The publish path has had this
+    # check since review_pr_binding_problems; the merge path trusted the recorded URL.
+    bad += moatlib.fix_review_binding_problems(d, pr)
     ready, blocking, _ = moatlib.fix_ready(name)
     if not ready:
         bad.append("not fix-ready: " + ", ".join(f"{p}={s}" for p, s in blocking))
+    # A merge moves an open PR and may post a reply, so a request to stop binds it
+    # exactly as it binds opening one.
+    if not moatlib.refresh_trunk_data():
+        bad.append("could not fetch origin/main, so the opt-out record may be out "
+                   "of date")
+    opt = moatlib.optout_for(moatlib.upstream_full_name(name) or "")
+    if opt:
+        opted = [f"opted-out: {opt['who']} asked not to receive pull requests "
+                 f"from this effort ({opt['source']})"]
+    else:
+        opted = pending_optout_problems(name)
+    bad += optout_merge_blockers(d, pr, opted)
     # The merge ends in a record write. Discovering it cannot happen AFTER the open
     # PR has already moved leaves the worst state this flow can produce: the PR
     # advanced, published_sha naming the old tip, and the reconciler calling our own
@@ -1343,6 +1707,10 @@ def merge_fix_blockers(name, d, fix, pr):
     reply = fix_reply_of(pr.get("body"))
     if REPLY_HEADING in (pr.get("body") or "") and not reply:
         bad.append(f"the body carries {REPLY_HEADING!r} with nothing under it")
+    if reply and not d.get("pr_url"):
+        bad.append(f"the body carries {REPLY_HEADING!r} but there is no upstream "
+                   f"PR to post it on (a release line) -- drop the section and "
+                   f"get a fresh approval")
     if reply:
         terms, allow = jargon.load()
         rhits = jargon.scan_text(reply, "upstream reply", terms, allow)
@@ -1360,7 +1728,7 @@ def merge_fix_blockers(name, d, fix, pr):
         return bad
     fork_url = d.get("fork_url")
     branch = d.get("fork_branch") or "moat-port"
-    ls = subprocess.run(["git", "-C", str(clone), "ls-remote", fork_url,
+    ls = _run(["git", "-C", str(clone), "ls-remote", fork_url,
                          f"refs/heads/{branch}"],
                         capture_output=True, text=True, timeout=60)
     remote_tip = (ls.stdout.split() or [""])[0]
@@ -1371,17 +1739,17 @@ def merge_fix_blockers(name, d, fix, pr):
                    f"published {(pub or '?')[:12]} -- the PR branch moved outside "
                    f"the fix flow; a person sorts that out first")
     if tip:
-        f = subprocess.run(["git", "-C", str(clone), "fetch", fork_url,
+        f = _run(["git", "-C", str(clone), "fetch", fork_url,
                             f"+refs/heads/{fix['branch']}:refs/moat/fix"],
                            capture_output=True, text=True, timeout=120)
-        have = subprocess.run(["git", "-C", str(clone), "rev-parse", "--verify",
+        have = _run(["git", "-C", str(clone), "rev-parse", "--verify",
                                "--quiet", "refs/moat/fix"],
                               capture_output=True, text=True)
         if f.returncode or not moatlib.same_commit(have.stdout.strip(), tip):
             bad.append(f"the fork's {fix['branch']} tip does not match the "
                        f"approved {tip[:12]} -- fetch failed or the branch moved")
         elif pub:
-            anc = subprocess.run(["git", "-C", str(clone), "merge-base",
+            anc = _run(["git", "-C", str(clone), "merge-base",
                                   "--is-ancestor", pub, tip],
                                  capture_output=True, text=True)
             if anc.returncode:
@@ -1425,18 +1793,18 @@ def _sync_local_port_branch(clone, branch, tip):
     disagrees with the open PR -- and it fails its own `published` gate for it, on
     every push, until someone works out why. Best effort and never fatal: the
     upstream write has already happened and a local ref cannot un-happen it."""
-    cur = subprocess.run(["git", "-C", str(clone), "symbolic-ref", "--quiet",
+    cur = _run(["git", "-C", str(clone), "symbolic-ref", "--quiet",
                           "--short", "HEAD"], capture_output=True, text=True)
     if cur.stdout.strip() == branch:
         # Checked out: only git may move it, and only with a clean tree.
-        r = subprocess.run(["git", "-C", str(clone), "merge", "--ff-only", tip],
+        r = _run(["git", "-C", str(clone), "merge", "--ff-only", tip],
                            capture_output=True, text=True, timeout=120)
         if r.returncode:
             return (f"the clone's {branch} still points at the old tip "
                     f"({(r.stderr or r.stdout).strip()[:80]}); `git -C {clone} "
                     f"merge --ff-only {tip[:12]}` once the tree is clean")
         return None
-    r = subprocess.run(["git", "-C", str(clone), "update-ref",
+    r = _run(["git", "-C", str(clone), "update-ref",
                         f"refs/heads/{branch}", tip], capture_output=True, text=True)
     return (f"could not fast-forward the clone's {branch}: "
             f"{(r.stderr or r.stdout).strip()[:80]}") if r.returncode else None
@@ -1454,17 +1822,36 @@ def do_merge_fix(name, d, fix, pr):
     and failing to record leaves a moved PR, a published_sha naming the old tip, and
     a fix block pointing at a branch that no longer exists -- which the reconciler
     then reports as a maintainer push."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
 
     clone = REPO / "projects" / name / "src"
     fork_url = d.get("fork_url")
     branch = d.get("fork_branch") or "moat-port"
     tip = pr["headRefOid"]
-    env = {**os.environ, "MOAT_PUBLISH": "1"}
-    push = subprocess.run(["git", "-C", str(clone), "push", fork_url,
-                           f"{tip}:refs/heads/{branch}"],
-                          capture_output=True, text=True, timeout=120, env=env)
+    # The clone's pre-push hook refuses this push -- the branch is the head of an
+    # open PR -- unless a one-shot token names exactly this commit and this ref.
+    # Re-render the hook first: one from before the token would refuse the approved
+    # merge, and a clone with no hook at all should not leave here without one.
+    level, msg = moatlib.protect_fork(name)
+    if level == "warn":
+        return (False, f"the fork clone's pre-push hook is not ours to rely on "
+                       f"({msg}); nothing was pushed")
+    try:
+        token = moatlib.write_publish_token(clone, [(tip, f"refs/heads/{branch}")])
+    except (RuntimeError, ValueError, OSError) as e:
+        return (False, f"could not authorise the push: {e}")
+    try:
+        push = _run(["git", "-C", str(clone), "push", fork_url,
+                     f"{tip}:refs/heads/{branch}"],
+                    capture_output=True, text=True, timeout=120)
+    finally:
+        # The hook deletes the token when it reads it; a push that never reached
+        # the hook must not leave one behind for the next push to find.
+        try:
+            token.unlink()
+        except OSError:
+            pass
     if push.returncode:
         return (False, f"push failed: {(push.stderr or push.stdout).strip()[:200]}")
 
@@ -1476,7 +1863,7 @@ def do_merge_fix(name, d, fix, pr):
         if real is None:
             notes.append("gh is not installed; the approved reply was NOT posted")
         else:
-            c = subprocess.run([real, "pr", "comment", d["pr_url"],
+            c = _run([real, "pr", "comment", d["pr_url"],
                                 "--body", with_reply_note(reply)],
                                capture_output=True, text=True, timeout=90)
             notes.append("posted the approved reply" if c.returncode == 0 else
@@ -1485,6 +1872,9 @@ def do_merge_fix(name, d, fix, pr):
 
     try:
         moatlib.set_fix_merged(name, tip)
+        unlanded = _land_local_record(name, f"{name}: fix round merged at {tip[:12]}")
+        if unlanded:
+            raise RuntimeError(unlanded)
     except Exception as e:                      # noqa: BLE001 - reported, not raised
         notes.append(f"could NOT record it: {e}; the staging branch is kept so the "
                      f"round can be recorded by hand "
@@ -1494,35 +1884,74 @@ def do_merge_fix(name, d, fix, pr):
     stale = _sync_local_port_branch(clone, branch, tip)
     if stale:
         notes.append(stale)
-    if fix.get("kind") == "sync":
+    if fix.get("kind") == "sync" and moatlib.release_delivered(d):
+        # A delivered release line names each approved patch sync as a release
+        # (v1.14.1+rocm.0 for upstream's v1.14.1), annotated with who approved it
+        # and where, and records it so the next one is numbered from it.
+        notes.append(_tag_release_sync(name, d, fix, pr, tip))
+    elif fix.get("kind") == "sync":
         # A maintained branch has followers who clone it by name and get whatever
         # the tip is that day. Tagging each approved sync gives them a fixed
         # point to pin -- and gives us the exact tip any report is about. The
         # date names the tag because "the sync of Sept 8" is how a person refers
         # to it; the sha inside disambiguates a second same-day sync.
         tag = f"rocm-{TODAY.replace('-', '')}"
-        tg = subprocess.run(["git", "-C", str(clone), "push", fork_url,
+        tg = _run(["git", "-C", str(clone), "push", fork_url,
                              f"{tip}:refs/tags/{tag}"],
-                            capture_output=True, text=True, timeout=60, env=env)
+                            capture_output=True, text=True, timeout=60)
         if tg.returncode and "already exists" in (tg.stderr or ""):
             tag = f"rocm-{TODAY.replace('-', '')}-{tip[:7]}"
-            tg = subprocess.run(["git", "-C", str(clone), "push", fork_url,
+            tg = _run(["git", "-C", str(clone), "push", fork_url,
                                  f"{tip}:refs/tags/{tag}"],
-                                capture_output=True, text=True, timeout=60, env=env)
+                                capture_output=True, text=True, timeout=60)
         notes.append(f"tagged {tag}" if tg.returncode == 0 else
                      f"could NOT tag the tip ({(tg.stderr or tg.stdout).strip()[:80]}); "
                      f"push a rocm-<date> tag at {tip[:12]} by hand")
     # The branch's job is done and its commits are on the PR branch; a person
     # ruled that staging branches are deleted on merge so the next round can
     # reuse the name.
-    rm = subprocess.run(["git", "-C", str(clone), "push", fork_url,
+    rm = _run(["git", "-C", str(clone), "push", fork_url,
                          f":refs/heads/{fix['branch']}"],
-                        capture_output=True, text=True, timeout=60, env=env)
+                        capture_output=True, text=True, timeout=60)
     if rm.returncode:
         notes.append(f"the staging branch {fix['branch']} is still on the fork "
                      f"and can be deleted by hand")
     return (True, f"fast-forwarded {branch} to {tip[:12]}"
                   + ("; " + "; ".join(notes) if notes else ""))
+
+
+def _release_message(name, tag, pr, url):
+    review = None
+    try:
+        sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+        import moatlib
+        review = moatlib._approving_review(pr)
+    except Exception:                           # noqa: BLE001 - message only
+        pass
+    who = (review or {}).get("login") or "?"
+    return who, f"{name} {tag}\n\nApproved by {who} on {url}\n"
+
+
+def _tag_release_sync(name, d, fix, pr, tip):
+    """Tag and record an approved sync round's tip on a delivered release line.
+    Best effort like the rest of the post-push steps: the branch already moved, so
+    a failure is reported with the command that finishes it by hand."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+    url = pr.get("url") or fix.get("review_pr")
+    try:
+        tag, version, rev = moatlib.release_sync_tag(name, d, fix.get("upstream_sha")
+                                                     or tip)
+        who, msg = _release_message(name, tag, pr, url)
+        moatlib.push_fork_tag(name, tip, tag, msg)
+        moatlib.set_release_tagged(name, tag, tip, url, who, version, rev)
+        unlanded = _land_local_record(name, f"{name}: release {tag} tagged")
+        if unlanded:
+            return f"tagged {tag}; {unlanded}"
+        return f"tagged {tag} (annotated)"
+    except Exception as e:                      # noqa: BLE001 - reported, not raised
+        return (f"could NOT tag or record the release at {tip[:12]}: {e}; push an "
+                f"annotated release tag there by hand and record it")
 
 
 def resolve_threads(name, apply):
@@ -1538,7 +1967,7 @@ def resolve_threads(name, apply):
     Only threads whose LAST comment is the PR author's are touched: on a
     self-authored review PR the author's reply is the porter's answer, so a
     thread where the reviewer answered back stays open for a person."""
-    sys.path.insert(0, str(REPO / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import gh_guard
     obj, _where = next(((d, w) for n, d, w in all_records() if n == name), (None, None))
     if obj is None:
@@ -1561,7 +1990,7 @@ def resolve_threads(name, apply):
     q = ('query($o: String!, $r: String!, $n: Int!) { repository(owner: $o, name: $r) {'
          ' pullRequest(number: $n) { author { login } reviewThreads(first: 100) { nodes {'
          ' id isResolved path comments(last: 1) { nodes { author { login } } } } } } } }')
-    r = subprocess.run([real, "api", "graphql", "-f", f"query={q}", "-f", f"o={m.group(1)}",
+    r = _run([real, "api", "graphql", "-f", f"query={q}", "-f", f"o={m.group(1)}",
                         "-f", f"r={m.group(2)}", "-F", f"n={m.group(3)}"],
                        capture_output=True, text=True, timeout=90)
     if r.returncode:
@@ -1583,7 +2012,7 @@ def resolve_threads(name, apply):
             continue
         mq = ('mutation($t: ID!) { resolveReviewThread(input: {threadId: $t}) '
               '{ thread { isResolved } } }')
-        rr = subprocess.run([real, "api", "graphql", "-f", f"query={mq}", "-f", f"t={t['id']}"],
+        rr = _run([real, "api", "graphql", "-f", f"query={mq}", "-f", f"t={t['id']}"],
                             capture_output=True, text=True, timeout=90)
         if rr.returncode:
             print(f"  FAILED     {t['path']}: {(rr.stderr or rr.stdout).strip()[:120]}")
@@ -1598,7 +2027,7 @@ def report_merge_fix(apply, only=None):
     print(f"upstream: {len(rows)} fix round(s) with a review PR recorded\n")
     ret = 0
     for name, d, fix in rows:
-        sys.path.insert(0, str(REPO / "utils"))
+        sys.path.insert(0, str(TOOLS_ROOT / "utils"))
         import moatlib
         pr = moatlib.fetch_review_pr(fix["review_pr"])
         if pr is None:
@@ -1630,9 +2059,217 @@ def report_merge_fix(apply, only=None):
         if not ok:
             ret = 1
     if rows and not apply:
-        print("\n  --merge-fix --apply performs the fast-forward push (and posts "
-              "the approved reply, where the body carries one).")
+        print("\n  --merge-fix --apply --name <project> performs that one "
+              "fast-forward push (and posts the approved reply, where the body "
+              "carries one).")
     return ret
+
+
+# ---- release lines: finishing an approved release ----------------------------
+#
+# A release line (moatlib.set_delivery fork-release) is never published upstream.
+# Its review PR runs from the port branch into the fork's pristine copy of
+# upstream's release branch, and a person's `/moat approve` there is the sign-off.
+# --finish-release is the trusted step that follows, on the --publish contract:
+# the live approval, every gate and the fork's own state are re-checked right
+# before acting, and it is a dry run unless --apply. It tags the approved commit,
+# records the delivery (which freezes the branch: the fork pre-push hook and
+# pr-state read it), and closes the review PR unmerged. Merging that PR would
+# write the pristine mirror, so nothing here ever merges it.
+
+def finish_release_rows(only=None):
+    """Release lines with a review PR recorded and no release yet, plus delivered
+    ones whose finishing run stopped before the review PR's closure was recorded
+    (those only need the remaining steps)."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+    for name, d, _where in all_records(only):
+        if not moatlib.release_line(d) or not d.get("review_pr"):
+            continue
+        rel = d.get("release")
+        if rel and not rel.get("review_closed_at"):
+            yield name, d
+        elif not rel and not d.get("fix"):
+            yield name, d
+
+
+def finish_release_blockers(name, d, pr):
+    """(blockers, tag): everything that must hold before the release is tagged,
+    re-checked live."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+
+    bad = []
+    # Covers a closed or MERGED review PR too: approval_currency refuses on any
+    # state but OPEN, and a merged one means the mirror was written.
+    code, why = moatlib.approval_currency(pr)
+    if code != "ok":
+        bad.append(f"approval {code}: {why}")
+    blockers, _notes = moatlib.moat_command_audit(pr)
+    bad += blockers
+    ready, blocking, _ = moatlib.pr_ready(name)
+    if not ready:
+        bad.append("not release-ready: "
+                   + ", ".join(f"{p}={s}" for p, s in blocking))
+    writable, why = moatlib.record_writable_here(name)
+    if not writable:
+        bad.append(why)
+    fork = (d.get("fork_url") or "").replace("https://github.com/", "")
+    base = d.get("fork_default_branch") or "main"
+    branch = d.get("fork_branch") or moatlib.PORT_BRANCH
+    if (pr.get("slug") or "").lower() != fork.lower():
+        bad.append(f"the review PR is on {pr.get('slug')}, not the fork {fork}")
+    if pr.get("headRefName") != branch or pr.get("baseRefName") != base:
+        bad.append(f"the review PR runs {pr.get('headRefName')} -> "
+                   f"{pr.get('baseRefName')}, not {branch} -> {base}")
+    tip = pr.get("headRefOid")
+    if not tip or not moatlib.same_commit(tip, d.get("head_sha")):
+        bad.append(f"the review PR's head {(tip or '?')[:12]} is not the recorded "
+                   f"head_sha {(d.get('head_sha') or '?')[:12]}")
+    tag = None
+    try:
+        tag = moatlib.release_tag(d)
+    except ValueError as e:
+        bad.append(str(e))
+    if tip and d.get("fork_url"):
+        bad += moatlib.release_fork_problems(name, d, tip, tag)
+    return bad, tag
+
+
+def do_finish_release(name, d, pr, tag):
+    """The pre-authorized write: tag, record, close. Ordered so a failure leaves
+    the least to undo -- the tag first (idempotent, so a retry passes it), then
+    the record (which is what freezes the branch), and the review PR is closed
+    only once the delivery is recorded, so an open PR always means "not yet
+    finished" and a rerun completes the job."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+
+    tip = pr["headRefOid"]
+    url = pr.get("url") or d.get("review_pr")
+    _who, msg = _release_message(name, tag, pr, url)
+    try:
+        notes = [moatlib.push_fork_tag(name, tip, tag, msg)]
+    except Exception as e:                      # noqa: BLE001 - reported, not raised
+        return (False, f"could not tag: {e}")
+    try:
+        moatlib.set_release_delivered(name, tag, tip, url)
+        unlanded = _land_local_record(name, f"{name}: release {tag} delivered at "
+                                            f"{tip[:12]}")
+        if unlanded:
+            raise RuntimeError(unlanded)
+    except Exception as e:                      # noqa: BLE001 - reported, not raised
+        return (True, f"tagged {tag} at {tip[:12]} but could NOT record the "
+                      f"delivery: {e}; the review PR is left open and a rerun of "
+                      f"--finish-release --apply --name {name} completes it")
+    return (True, "; ".join(notes + [_close_release_review(name, d, url, tag, tip)]))
+
+
+def _close_release_review(name, d, url, tag, tip):
+    """The last step: close the review PR unmerged, record that, refresh the hook.
+    Also the whole of a resumed run, so an interrupted finish converges."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+    notes = []
+    c = _run(["gh", "pr", "close", url, "--comment",
+              f"Approved and released as `{tag}` at {tip}. `{d.get('fork_branch')}` "
+              f"is now frozen; later upstream patch releases arrive as separate "
+              f"sync rounds, each with its own review. Closing without merging: "
+              f"`{d.get('fork_default_branch')}` stays an exact copy of upstream's "
+              f"branch."],
+             capture_output=True, text=True, timeout=90)
+    if c.returncode == 0:
+        notes.append("closed the review PR unmerged")
+        try:
+            moatlib.set_release_review_closed(name)
+            unlanded = _land_local_record(name, f"{name}: review PR for {tag} closed")
+            if unlanded:
+                notes.append(unlanded)
+        except Exception as e:                  # noqa: BLE001 - reported, not raised
+            notes.append(f"could NOT record the closure ({e}); a rerun records it")
+    else:
+        notes.append(f"could NOT close the review PR "
+                     f"({(c.stderr or c.stdout).strip()[:80]}); a rerun of "
+                     f"--finish-release --apply --name {name} retries it (close it "
+                     f"by hand without merging if that keeps failing)")
+    level, msg = moatlib.protect_fork(name)
+    if level != "skip":
+        notes.append(msg)
+    return "; ".join(notes)
+
+
+def report_finish_release(apply, only=None):
+    rows = list(finish_release_rows(only))
+    print(f"upstream: {len(rows)} release line(s) with a review PR recorded\n")
+    ret = 0
+    for name, d in rows:
+        try:
+            ret |= _finish_one(name, d, apply)
+        except Exception as e:                  # noqa: BLE001 - one line, not the sweep
+            print(f"  ERROR      {name:26} {type(e).__name__}: {e}"[:120])
+            ret = 1
+    if rows and not apply:
+        print("\n  --finish-release --apply --name <p> tags that READY line's "
+              "approved commit, records the delivery (freezing the branch) and closes "
+              "the review PR unmerged.")
+    return ret
+
+
+def _finish_one(name, d, apply):
+    """One line's report (and, with apply, its finishing). Returns 0 or 1."""
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+    rel = d.get("release")
+    if rel:
+        # Delivered, but the run stopped before the review PR's closure was
+        # recorded. Only the closing steps remain; the approval was consumed
+        # by the tag, so it is not re-judged.
+        pr = moatlib.fetch_review_pr(rel.get("review_pr") or d["review_pr"])
+        state = (pr or {}).get("state")
+        print(f"  RESUME     {name:26} {rel.get('tag')} is tagged and recorded; "
+              f"review PR {str(state or 'UNREACHABLE').lower()}")
+        if apply and pr is not None:
+            url = pr.get("url") or d["review_pr"]
+            if state == "OPEN":
+                detail = _close_release_review(name, d, url, rel.get("tag"),
+                                               rel.get("sha") or "")
+            else:
+                moatlib.set_release_review_closed(name)
+                detail = (_land_local_record(name, f"{name}: review PR for "
+                                                   f"{rel.get('tag')} closed")
+                          or "recorded the closure")
+            print(f"  {'RELEASED':10} {name:26} {detail}")
+        return 1 if pr is None else 0
+    pr = moatlib.fetch_review_pr(d["review_pr"])
+    if pr is None:
+        print(f"  UNREACHABLE {name:25} could not read {d['review_pr']} -- "
+              f"an outage is not a withdrawn approval")
+        return 1
+    if moatlib._approving_review(pr) is None and pr.get("state") == "OPEN":
+        blockers, _notes = moatlib.moat_command_audit(pr)
+        print(f"  {'OBJECTED' if blockers else 'WAITING':10} {name:26} "
+              + (blockers[0][:78] if blockers else
+                 f"no {moatlib.APPROVE_COMMAND!r} on {d['review_pr']} yet"))
+        return 0
+    bad, tag = finish_release_blockers(name, d, pr)
+    if bad:
+        print(f"  HELD       {name:26} {bad[0][:78]}")
+        for b in bad[1:]:
+            print(f"             {'':26} {b[:78]}")
+        return 0
+    print(f"  READY      {name:26} tag {tag} at "
+          f"{(pr.get('headRefOid') or '?')[:12]} and freeze "
+          f"{d.get('fork_branch') or moatlib.PORT_BRANCH}")
+    if not apply:
+        return 0
+    try:
+        moatlib_record(name)     # who authorised this, before anything moves
+    except Exception as e:                  # noqa: BLE001 - reported, not raised
+        print(f"  FAILED to record the approval for {name}: {e}")
+        return 1
+    ok, detail = do_finish_release(name, d, pr, tag)
+    print(f"  {'RELEASED' if ok else 'FAILED':10} {name:26} {detail}")
+    return 0 if ok else 1
 
 
 # ---- maintained forks: the drift sweep --------------------------------------
@@ -1664,14 +2301,22 @@ def _drift_repo(name, upstream_url, fork_url):
     d = DRIFT_CACHE / name
     if not (d / ".git").exists():
         d.mkdir(parents=True, exist_ok=True)
-        if subprocess.run(["git", "init", "-q", str(d)],
+        if _run(["git", "init", "-q", str(d)],
                           capture_output=True, text=True).returncode:
             return None
     for remote, url in (("upstream", upstream_url), ("fork", fork_url)):
-        if subprocess.run(["git", "-C", str(d), "remote", "set-url", remote, url],
+        if _run(["git", "-C", str(d), "remote", "set-url", remote, url],
                           capture_output=True, text=True).returncode:
-            subprocess.run(["git", "-C", str(d), "remote", "add", remote, url],
+            _run(["git", "-C", str(d), "remote", "add", remote, url],
                            capture_output=True, text=True)
+    # This repository has a `fork` remote, so it can push the port branch exactly as
+    # the project's own clone can; give it the same pre-push hook. It used to have
+    # none, which made it the one clone where the freeze did not apply.
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+    level, msg = moatlib.protect_fork(name, repo=d)
+    if level == "warn":
+        print(f"  WARNING {msg}", file=sys.stderr)
     return d
 
 
@@ -1690,7 +2335,7 @@ def drift_status(name, d):
         return ("unknown", {"why": "cannot create the drift cache repo"})
 
     def git(*a, timeout=120):
-        return subprocess.run(["git", "-C", str(repo), *a],
+        return _run(["git", "-C", str(repo), *a],
                               capture_output=True, text=True, timeout=timeout)
 
     for remote, ref, local in (("upstream", base, "refs/drift/base"),
@@ -1711,7 +2356,7 @@ def drift_status(name, d):
     # The mirror ride-along: the fork's default branch is an unmodified upstream
     # mirror, and letting it rot makes every compare and review diff stale.
     # Fast-forward only, and only under --apply; a diverged mirror is a person's.
-    ls = subprocess.run(["git", "ls-remote", fork_url, f"refs/heads/{base}"],
+    ls = _run(["git", "ls-remote", fork_url, f"refs/heads/{base}"],
                         capture_output=True, text=True, timeout=60)
     mirror_tip = (ls.stdout.split() or [""])[0]
     if mirror_tip and mirror_tip != info["base_tip"]:
@@ -1748,9 +2393,13 @@ def drift_status(name, d):
 
 
 def report_drift(apply=False):
-    sys.path.insert(0, str(REPO / "utils"))
-    rows = [(n, d) for n, d, _w in all_records() if d.get("maintained")]
-    print(f"upstream: {len(rows)} maintained fork(s)\n")
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
+    import moatlib
+    # A delivered release line is watched the same way: upstream's release branch
+    # gaining a patch release is exactly the drift its sync rounds absorb.
+    rows = [(n, d) for n, d, _w in all_records()
+            if d.get("maintained") or moatlib.release_delivered(d)]
+    print(f"upstream: {len(rows)} maintained fork(s) and delivered release line(s)\n")
     ret = 0
     for name, d in sorted(rows):
         state, info = drift_status(name, d)
@@ -1785,10 +2434,28 @@ def report_drift(apply=False):
             ret = 1
         elif info.get("mirror_behind"):
             if apply:
-                p = subprocess.run(["git", "-C",
-                                    str(DRIFT_CACHE / name), "push", "fork",
-                                    f"{info['base_tip']}:refs/heads/{info['base']}"],
-                                   capture_output=True, text=True, timeout=120)
+                # On a release line the hook guards the mirror too; this push is
+                # upstream's own commit, fast-forward only, so it is named to it.
+                token = None
+                try:
+                    token = moatlib.write_publish_token(
+                        DRIFT_CACHE / name,
+                        [(info["base_tip"], f"refs/heads/{info['base']}")])
+                except (RuntimeError, ValueError, OSError):
+                    pass
+                try:
+                    p = _run(["git", "-C",
+                              str(DRIFT_CACHE / name), "push", "fork",
+                              f"{info['base_tip']}:refs/heads/{info['base']}"],
+                             capture_output=True, text=True, timeout=120)
+                finally:
+                    # A push that never reached the hook must not leave the token
+                    # behind for the next push from this cache to find.
+                    try:
+                        if token:
+                            token.unlink()
+                    except OSError:
+                        pass
                 print(f"  MIRROR     {name:26} "
                       + (f"fast-forwarded the fork's {info['base']} to "
                          f"{info['base_tip'][:12]}" if p.returncode == 0 else
@@ -1800,7 +2467,7 @@ def report_drift(apply=False):
                       f"{info['mirror_behind']} commit(s) behind upstream -- "
                       f"--apply fast-forwards it")
     if rows:
-        print("\n  a CONFLICT or OVERLAP round starts with: python3 utils/moatlib.py "
+        print(f"\n  a CONFLICT or OVERLAP round starts with: {PY} utils/moatlib.py "
               "sync-branch <name>")
         print("  (then the normal porter/reviewer/validator cycle and the approved "
               "merge through --merge-fix)")
@@ -1811,8 +2478,10 @@ RECONCILED = REPO / "data" / "reconciled.json"
 
 
 def stamp_reconciled(n_records, n_drift):
-    """Record that the upstream sweep ran. Written on every full poll, applied or not:
-    the question this answers is "has anyone LOOKED", not "did anything change"."""
+    """Record that the upstream sweep ran: the question this answers is "has anyone
+    LOOKED", not "did anything change". Written under --apply or --stamp only. It
+    is a tracked file, and a report that said "change nothing" while rewriting one
+    left every checkout that merely looked with a modified tree."""
     RECONCILED.parent.mkdir(parents=True, exist_ok=True)
     RECONCILED.write_text(json.dumps(
         {"at": TODAY, "records": n_records, "drifted": n_drift}, indent=2) + "\n")
@@ -1841,7 +2510,12 @@ def main():
     g.add_argument("--apply", action="store_true")
     ap.add_argument("--review", action="store_true",
                     help="ports whose gates are met with no review PR open yet")
-    ap.add_argument("--name", help="with --review --apply: which project to open")
+    ap.add_argument("--name", help="with --review --apply: which project to open; "
+                    "with --publish, --merge-fix or --finish-release: check and "
+                    "act on only this project (required with --apply)")
+    ap.add_argument("--stamp", action="store_true",
+                    help="with the plain sweep: record in data/reconciled.json that "
+                         "it ran (a tracked file; --apply stamps by itself)")
     ap.add_argument("--title", help="with --review --apply: the upstream PR title")
     ap.add_argument("--body-file", help="with --review --apply: file holding the body")
     ap.add_argument("--forks", action="store_true",
@@ -1860,6 +2534,10 @@ def main():
                     help="maintained forks: how far upstream has moved and whether "
                          "the port branch still merges (--apply also fast-forwards "
                          "a behind mirror)")
+    ap.add_argument("--finish-release", action="store_true",
+                    help="release lines approved on their in-fork review PR: tag "
+                         "the approved commit, freeze the branch and close the "
+                         "review PR unmerged (--apply --name <p> to write)")
     ap.add_argument("--resolve-threads", action="store_true",
                     help="with --name: resolve fork review PR threads whose last "
                          "word is ours (--apply to write)")
@@ -1900,7 +2578,15 @@ def main():
         print(f"review-pr: {action} -- {detail}")
         return 0 if action in ("opened", "would-open") else 1
     if a.publish:
-        return report_publish(apply=a.apply)
+        # Opening an upstream PR is one person's decision about one project, so the
+        # write names it. Without --name an --apply run once opened every approved
+        # port at the same time, including ones nobody meant to send that day.
+        if a.apply and not a.name:
+            print("--publish --apply needs --name <project>: it opens one upstream PR "
+                  "per run. Run --publish without --apply to list what is ready.",
+                  file=sys.stderr)
+            return 2
+        return report_publish(apply=a.apply, only=a.name)
     if a.fix_review:
         rows = fix_review_rows()
         if not a.apply and not a.name:
@@ -1932,7 +2618,24 @@ def main():
         print(f"fix-review-pr: {action} -- {detail}")
         return 0 if action in ("opened", "would-open") else 1
     if a.merge_fix:
+        # Moving an open upstream PR is one decision about one project, exactly as
+        # opening one is. Without --name an --apply run merged every READY round.
+        if a.apply and not a.name:
+            print("--merge-fix --apply needs --name <project>: it moves one open "
+                  "upstream PR per run. Run --merge-fix without --apply to list "
+                  "what is ready.", file=sys.stderr)
+            return 2
         return report_merge_fix(apply=a.apply, only=a.name)
+    if a.finish_release:
+        # Tagging and freezing a release line is one decision about one line, like
+        # the two writes above. Without --name an --apply run finished every READY
+        # line at once.
+        if a.apply and not a.name:
+            print("--finish-release --apply needs --name <project>: it tags and "
+                  "freezes one release line per run. Run --finish-release without "
+                  "--apply to list what is ready.", file=sys.stderr)
+            return 2
+        return report_finish_release(apply=a.apply, only=a.name)
     if a.resolve_threads:
         if not a.name:
             print("resolve-threads: pass --name <project>")
@@ -1946,10 +2649,11 @@ def main():
     rows = recorded()
     drift, unreviewed, headdrift, backfill, errors = poll(rows)
     skipped = [r for r in rows if r.get("skipped")]
-    # The sweep just happened, so stamp it whether or not anything is applied.
     # Nothing runs on a schedule any more, so this timestamp is the only thing that
     # can tell anyone the record has gone unchecked; orient.sh reads it every run.
-    if not errors:
+    # Only when asked: a run made to LOOK must not modify a tracked file.
+    stamped = (a.apply or a.stamp) and not errors
+    if stamped:
         stamp_reconciled(len(rows), len(drift))
 
     print(f"upstream: {len(rows)} recorded PRs, {len(drift)} drifted, "
@@ -2005,6 +2709,12 @@ def main():
         if todo:
             print(f"\n  --apply {' and '.join(todo)} and opens a PR; closures and "
                   f"moved heads need a human decision.")
+        if stamped:
+            print("\n  stamped data/reconciled.json (tracked): commit it with the "
+                  "next trunk change")
+        elif not errors:
+            print("\n  nothing was written; --stamp records that this sweep ran "
+                  "(orient reports how long ago the last stamped one was)")
         return 0
 
     landed = [(r, apply_one(r)) for r in drift] \
@@ -2012,15 +2722,17 @@ def main():
     on_branch = [r for r, where in landed if where == "branch"]
     local = [r for r, where in landed if where == "local"]
     if not (on_branch or local):
-        print("\nupstream: nothing to apply automatically")
+        print("\nupstream: nothing to apply automatically"
+              + (" (data/reconciled.json was stamped; commit it with the next trunk "
+                 "change)" if stamped else ""))
         return 0
     for r in on_branch:
         print(f"\nupstream: recorded {r['name']} on its own port branch "
               f"(already pushed; not part of the record-sync PR)")
     if not local:
         return 0
-    subprocess.run([sys.executable, "utils/gen_readme.py"], cwd=str(REPO),
-                   capture_output=True)
+    _run([sys.executable, _tool("gen_readme.py")], cwd=str(REPO),
+         capture_output=True, env=_tool_env())
     return publish(local)
 
 
@@ -2035,10 +2747,17 @@ def publish(applied):
 
     Force-pushing is safe here precisely because nobody else edits this branch -- it
     is bot-owned and fully regenerated, never appended to."""
+    class GitFailed(Exception):
+        pass
+
     def git(*args, check=True):
-        r = subprocess.run(["git", *args], cwd=str(REPO), capture_output=True, text=True)
+        r = _run(["git", *args], cwd=str(REPO), capture_output=True, text=True)
         if check and r.returncode:
-            print(f"upstream: git {' '.join(args)}: {r.stderr.strip()}", file=sys.stderr)
+            # Stop at the first failure. This used to print and carry on, so a
+            # `checkout -B` that failed was followed by a commit on whatever branch
+            # the checkout was on and a force-push of it.
+            raise GitFailed(f"git {' '.join(args)}: "
+                            f"{(r.stderr or r.stdout).strip()[:300]}")
         return r
 
     trunk = git("symbolic-ref", "--short", "refs/remotes/origin/HEAD",
@@ -2050,12 +2769,57 @@ def publish(applied):
     if not stash:
         print("upstream: no changes to publish")
         return 0
+    # This checkout is shared with other sessions. The steps below discard every
+    # tracked modification and commit whatever was modified, so anything here that
+    # is not one of the records this run corrected would be both destroyed locally
+    # and swept into the pull request. Refuse instead and name it.
+    # The sweep's own stamp and the README it regenerated are this run's writes too;
+    # counting them as foreign made every --apply that had something to publish
+    # refuse itself.
+    dirty = [f for f in git("diff", "--name-only", "HEAD").stdout.splitlines() if f]
+    foreign = [f for f in dirty
+               if not re.fullmatch(r"projects/[^/]+/status\.json", f)
+               and f not in RECORD_SYNC_PATHS]
+    if foreign:
+        print(f"upstream: {len(foreign)} modified file(s) in this checkout are not "
+              f"record corrections ({', '.join(foreign[:4])}"
+              f"{', ...' if len(foreign) > 4 else ''}); commit or restore them, or "
+              f"run from a clean checkout. Nothing was published or discarded.",
+              file=sys.stderr)
+        return 1
     started_on = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if started_on == "HEAD":                           # detached: return to the commit
+        started_on = git("rev-parse", "HEAD").stdout.strip()
+    try:
+        return _publish_branch(git, applied, trunk, stash, started_on)
+    except GitFailed as e:
+        # Put the checkout back the way it was found: the starting branch, with the
+        # corrections this run made still in the working tree (they exist nowhere
+        # else but the stash object). Nothing has been published unless the failure
+        # came after the push, and the message says which step it was.
+        print(f"upstream: {e}", file=sys.stderr)
+        git("checkout", "-q", "-f", started_on, check=False)
+        back = git("checkout", stash, "--", ".", check=False)
+        print("upstream: record-sync stopped at that step; this checkout is back on "
+              f"{started_on}"
+              + (" with the corrections restored to the working tree" if not
+                 back.returncode else f" but the corrections could NOT be restored "
+                 f"-- they are in the git object {stash}")
+              + ". Fix the cause and re-run.", file=sys.stderr)
+        return 1
+
+
+RECORD_SYNC_PATHS = ("README.md", "data/reconciled.json")
+
+
+def _publish_branch(git, applied, trunk, stash, started_on):
+    """The steps of publish() that move the checkout. Any git failure raises out of
+    here and publish() restores the starting state."""
     git("checkout", "-q", "--", ".")                   # tree now matches HEAD
     git("fetch", "-q", "origin", trunk)
     git("checkout", "-q", "-B", BRANCH, f"origin/{trunk}")
     git("checkout", stash, "--", ".")                  # replay the edits onto the trunk
-    git("add", "-A")
+    git("add", "-u")                                   # tracked edits only, never strays
 
     if not git("diff", "--cached", "--quiet", check=False).returncode:
         print("upstream: branch matches the trunk; nothing to publish")
@@ -2097,22 +2861,23 @@ def publish(applied):
               "never applied automatically -- withdrawn, rejected and superseded look "
               "identical to the API and mean different things.\n")
     if existing:
-        subprocess.run(["gh", "pr", "edit", str(existing[0]["number"]), "--body", body],
+        _run(["gh", "pr", "edit", str(existing[0]["number"]), "--body", body],
                        cwd=str(REPO), capture_output=True, text=True)
         print(f"\nupstream: updated existing PR {existing[0]['url']} "
               f"({len(applied)} correction(s))")
     else:
         # Check our own title before opening: a tool that enforces a convention on
         # everyone else and exempts itself teaches people the convention is optional.
-        chk = subprocess.run([sys.executable, "utils/pr_intent.py", "--check-title",
-                              "--branch", BRANCH, "--title", subject],
-                             cwd=str(REPO), capture_output=True, text=True)
+        chk = _run([sys.executable, _tool("pr_intent.py"), "--check-title",
+                    "--branch", BRANCH, "--title", subject],
+                   cwd=str(REPO), capture_output=True, text=True, env=_tool_env())
         if chk.returncode:
             print(chk.stdout.strip(), file=sys.stderr)
             print("upstream: refusing to open a pull request with that title",
                   file=sys.stderr)
+            git("checkout", "-q", started_on)
             return 1
-        subprocess.run(["gh", "pr", "create", "--fill-first", "--body", body],
+        _run(["gh", "pr", "create", "--fill-first", "--body", body],
                        cwd=str(REPO), capture_output=True, text=True)
         print(f"\nupstream: opened a PR with {len(applied)} merge(s)")
     git("checkout", "-q", started_on)                  # leave the caller where it was
@@ -2120,4 +2885,6 @@ def publish(applied):
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())

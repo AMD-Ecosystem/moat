@@ -1,0 +1,11 @@
+; Uses each KernelContext MMA shape once, so that TC emits every HIP MMA helper; harness.hip calls them.
+device @tc_mma_all(%a: vec<4 x i32>, %b: vec<2 x i32>, %c: vec<4 x f32>, %ci: vec<4 x i32>) -> f32 {
+^entry:
+  %h = tornado.mma.m16n8k16(%a, %b, %c) : vec<4 x f32>
+  %bf = tornado.mma.m16n8k16_bf16(%a, %b, %h) : vec<4 x f32>
+  %e4 = tornado.mma.m16n8k32_e4m3(%a, %b, %bf) : vec<4 x f32>
+  %e5 = tornado.mma.m16n8k32_e5m2(%a, %b, %e4) : vec<4 x f32>
+  %s8 = tornado.mma.m16n8k32_s8(%a, %b, %ci) : vec<4 x i32>
+  %x = tornado.vector.lane<lane = 0>(%e5) : f32
+  ret %x
+}

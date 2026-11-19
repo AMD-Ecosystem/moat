@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-10-30T15:56:30Z",
+  "updated_at": "2026-11-04T07:10:09Z",
   "head_sha": "6b9b6005ee39d8c667481a57b23d605e445a835b",
   "depends_on": [],
   "waivers": {},
@@ -163,6 +163,8 @@
   "pr_url": "https://github.com/prism-em/prismatic/pull/122",
   "pr_number": 122,
   "pr_opened_at": "2026-10-30T15:56:30Z",
-  "pr_state": "open",
-  "published_sha": "6b9b6005ee39d8c667481a57b23d605e445a835b"
+  "pr_state": "closed",
+  "published_sha": "6b9b6005ee39d8c667481a57b23d605e445a835b",
+  "pr_closed_at": "2026-11-04T07:10:09Z",
+  "pr_closed_note": "declined 2026-10-30 by lerandc: upstream no longer actively maintained and has no AMD GPUs to test; fork moat-port remains the ROCm build"
 }
