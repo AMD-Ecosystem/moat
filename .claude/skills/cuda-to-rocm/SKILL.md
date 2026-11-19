@@ -162,11 +162,13 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A compat `__ballot_sync` that casts `__ballot()` to `uint32_t` takes the LOW 32 lanes
 - A full 64-bit `*_sync` mask in 32-lane group code traps in a HIP debug build on wave64
 - Width-32 LOGICAL warp ops are arch-agnostic and fine
+- Pass that logical width on BOTH paths, and prefer the project's own pre-CUDA-9 branch ...
 - An over-wide `__shfl*` width does not error, it silently degenerates
 - Do not hardcode wave64 GEOMETRY either
 - Intra-wave barrier divergence
 - `cub`/`hipCUB` block collectives race on a 64-thread block without an explicit ...
 - `__smid()` can EXCEED `multiProcessorCount` on AMD
+- A leader-only write broadcast by shuffle must be initialised on every lane
 - Validate wave-size work on BOTH widths, and where there is no host reference use a ...
 
 **`references/faults-memory-streams.md`** -- Faults: memory, lifetime and streams
@@ -174,6 +176,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Out-of-bounds reads
 - A latent OOB that stopped reproducing is still there, and index math on `size_t` operands ...
 - An allocation sized by a different expression than the launch indexes it by
+- `atomicInc(p, val)` is a WRAPPING increment, so the bounded-slot idiom ...
 - Fresh device allocations are NOT zero on ROCm
 - An uninitialised local passed by value lets clang delete a padding-lane guard, and the ...
 - Rule-of-five on resource handles
@@ -217,6 +220,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 
 - clang for HIP defaults to `-ffp-contract=fast`
 - One contraction setting cannot satisfy both kinds of bit-exact test
+- `-ffast-math` implies `-ffinite-math-only` under clang; nvcc's `--use_fast_math` does not ...
 - `__fsqrt_rn` is not always correctly rounded on gfx90a
 - Device `cuda::min`/`cuda::max` NaN-selection can differ from host `std::min`/`std::max`
 - An exact float-equality branch fed by approximate division can HANG, not just drift
@@ -249,12 +253,16 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - nvcc accepts a split launch chevron, `kernel << <grid, block >> >(args)`; clang does not
 - Three CUDA spellings that do not resolve under HIP, all cheap to guard
 - Count cooperative-groups call sites per feature before calling them a blocker
+- HIP's bf16 header has no `make_bfloat162` and no `__floats2bfloat162_rn`
+- A `__shared__` array of a struct that has default member initializers is a hard error on ...
 - MSVC-only upstreams accept code that clang and gcc reject
 - An uninitialised header-only submodule fails as a HIP error, not as a missing file
 - clang checks kernel bodies in the HIP host pass; nvcc does not
 - The CUDA Samples `helper_math.h` makes vector arithmetic ambiguous under HIP
 - Extend a CUDA guard for HIP; never re-key it
 - A ROCm-only branch inside a shared template still COMPILES on the CUDA path
+- "Portable" is a claim to verify against nvcc, not a property of how the edit reads
+- C++17 `std::clamp` and friends work in HIP device code but not under nvcc
 - An arch-specific fix keyed on the OS or the ROCm version can BREAK an already-validated ...
 - rocRAND's device headers need C++14 from ROCm 10.1
 - HIP + C++23 on an older toolchain: `isfinite cannot overload` (and how to stay ...
@@ -277,6 +285,8 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - With the ROCm clang as the host compiler, a found system libunwind links but does not load
 - LibTorch's CMake package adds `-D__HIP_NO_HALF_OPERATORS__=1 ...
 - On a multi-GPU host a rapids-cmake HIP dependency fails configure with `mismatch between ...
+- A source-built HIP library and a PyTorch wheel in one process must load the same ROCm ...
+- A vcpkg-manifest project needs `autoconf-archive` on the build machine, and a full vcpkg ...
 - LibTorch on the include path shadows the system `fmt`, and spdlog stops compiling
 - Submodules pinned to commits that do not exist
 - Install and consume the port, not just build it
@@ -293,8 +303,10 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - CMake's HIP language on Windows needs ONE clang driver for every language, and ROCm's ...
 - Keep one clang driver across every CMake language, and check the CMake version
 - CRT flags, compiler-rt builtins and Git Bash flag mangling in a CMake HIP build
+- Bundled third-party libraries that break under the clang toolchain: take them from vcpkg
 - TheRock clang 23 can hang in x86 register allocation
 - CMake's HIP link rule mangles MSVC-style flags and paths
+- A ROCm library linked by name may have no `.lib`
 - A fetched ROCm-DS dependency has to be built static
 - A C++ LibTorch consumer must force the torch_hip.dll import
 - Stage the ROCm runtime next to the .exe, kpack included
@@ -328,6 +340,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - hipSPARSE has no uniform half-precision SpMM
 - Library calls inside HIP graph capture
 - rocThrust's `thrust/system/cuda/error.h` is CUDA-only
+- Prefer the specific hipCUB algorithm header over the `<hipcub/hipcub.hpp>` umbrella
 - rocPRIM never asks for less than 4 bytes of temp storage
 - hipCUB's segmented `ArgMax` returns an out-of-range key for a segment of NaNs
 - Code that reads cuRAND's device generator state internals needs a rocRAND translation ...
@@ -374,6 +387,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A "fixed seed" run that relies on C `rand()` is not reproducible on some ROCm builds: the ...
 - A hang that depends on inlining: long branches clobber the return address
 - A fault inside a vendored JIT entry point: rebuild-with-a-forced-throw beats a debugger
+- scikit-learn's KMeans can crash a Python test on a machine with very many cores
 - Failures that appear only when the whole suite runs in one process
 - A free-memory leak check measures the whole GPU, not your process
 - A free-memory-delta test can fail once per process on gfx90a
@@ -381,17 +395,23 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 
 **`references/validation.md`** -- Validation
 
+- Proving a binary really carries device code for the target architecture: use ...
 - Compile and link the CUDA path with nvcc before claiming the CUDA build is unchanged
 - A CUDA toolkit for the check on a machine with no NVIDIA GPU
+- Diff the PTX to prove the CUDA path is byte-restored, not merely compiling
+- With a conda toolkit, legacy `find_package(CUDA)` does not find the headers, and many ...
 - The newest toolkit is not the whole check when the port touches `__half` in host code
 - A legacy `FindCUDA` project fails the CUDA configure under CMake 3.27 or newer; that is ...
 - A dependency that FetchContent-clones with full history can eat the whole time budget of ...
 - A torch extension needs a CUDA-built torch for this check, not just the toolkit
+- `nvcc fatal: Unsupported gpu architecture 'compute_35'` at the first ...
 - CUDA gate for torch-extension ports: the host's installed PyTorch itself can be the wall
 - A Windows machine can syntax-check the Linux HIP host pass of a `.cu` without a Linux box
 - A passing assertion COUNT is not a list of what was tested
 - Read what the project's own cross-backend checker actually compares
 - A project with no test suite: author the harness, then ship it WITH the port
+- A GPU test the port adds must skip on a machine with no device, and an in-`main` check ...
+- Golden-differential validation for a behavior-preserving rewrite
 
 **`references/linux-host-setup.md`** -- Linux host setup for graphics and interop tests
 

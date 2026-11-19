@@ -264,6 +264,21 @@ ohm's first port added such a directory (~3,800 lines). The masquerade was +157/
   depending on whether the grep honors `.gitignore`, which usually excludes them. Note that
   hipify prepends `#include "hip/hip_runtime.h"`, which breaks a g++ CPU reference build, so
   build that from a separate non-hipified copy. (LC-framework)
+- **When the project's hipify step rewrites TRACKED files in place, its output leaks into
+  your commits.** A configure-time hipify (faiss runs `faiss/gpu/hipify.sh` from
+  `execute_process`) edits the checked-in sources themselves, in faiss 154 tracked files per
+  configure, so any file you then edit for a real fix gets committed with the translator's
+  changes riding along. The one that escaped was `#include "hip/hip_runtime.h"` prepended as
+  line 1 of a GPU *test* `.cpp`, above the copyright header. That file also builds under
+  CUDA, where no HIP header exists, so it would have broken upstream's NVIDIA CI. Before
+  committing, diff against the pristine tree and restore everything the translator touched
+  (`git checkout -- <dirs>`), keeping only your own hunks; `git status` after a configure
+  shows the blast radius. Do not "fix" a leaked include by guarding it: delete it. The
+  hipify step re-inserts it on every ROCm configure, the file did not need it, and
+  hipify-perl is NOT idempotent for that insertion: run on a file that already has the
+  include, it adds a SECOND copy. Beware the plausible rationalization ("made explicit in
+  source for the MSVC build"); running hipify-perl on the pristine file and diffing takes a
+  minute and settles it. (faiss)
 - **`-inplace` re-hipifies from the `.prehip` backup, not from the file on disk.** The first
   run saves `foo.cu` as `foo.cu.prehip`; every later run reads the backup and overwrites
   `foo.cu` from it. So regenerating a file and hipifying it again silently resurrects the

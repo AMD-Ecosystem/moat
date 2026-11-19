@@ -47,6 +47,19 @@ kernel is launched with; when the two disagree, decide which one is the intent (
 it was the launch geometry). This is a memory-safety bug on both platforms, so fix it for
 both rather than guarding it. (HEonGPU: `HEEncryptor<Scheme::TFHE>` cuda_rng.)
 
+**`atomicInc(p, val)` is a WRAPPING increment, so the bounded-slot idiom
+`buf[atomicInc(&count[row], CAPACITY) + row*CAPACITY]` writes one slot past the row.** It
+stores `old >= val ? 0 : old+1` and returns `old` (identically on CUDA and HIP), so the
+counter does reach `CAPACITY`; the next insert returns `CAPACITY` before resetting, and that
+return is used as the slot index. The correct capacity argument is `CAPACITY-1`. Audit this
+wherever a bucket, ring or per-row insert list uses `atomicInc`: the overflow is a cross-row
+write in general and a past-the-end write for the last row. Two traps when you assess it. It
+is usually PRE-EXISTING upstream code, so it is outside a minimal port: report it rather than
+folding the fix into the port's diff. And a clean AMD run is NOT evidence of safety, because
+a one-element overrun of a large allocation lands inside the same page and corrupts silently
+instead of faulting; say that in the audit rather than citing the green run.
+(3DUNDERWORLD-SLS-GPU_CPU: `GPUBucketsObj::add2Bucket`, 110-entry buckets.)
+
 **Fresh device allocations are NOT zero on ROCm**, where CUDA's allocator often hands back
 zeroed pages. A kernel writing only a sub-region and implicitly relying on a zero start
 passes on CUDA and reads garbage on ROCm. Fingerprint: a zero-tolerance test that PASSES in
@@ -83,7 +96,9 @@ thread-index compare in the device IR (`--cuda-device-only -S -emit-llvm`);
 a fix. Fix the source: initialise the locals (zero is the identity of a sum). When the
 kernels are generated, a vendored copy of the generator's output can predate the
 generator's own fix, so check that the vendored code really carries a fix its changelog
-claims. (symforce, colmap)
+claims. The same mechanism with a different symptom, a counter that advances by `warpSize`
+times the real count, is in faults-wavefront.md ("A leader-only write broadcast by shuffle
+must be initialised on every lane"). (symforce, colmap)
 
 ## Handle and object lifetime
 

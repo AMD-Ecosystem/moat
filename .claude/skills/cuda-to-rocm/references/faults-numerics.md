@@ -45,6 +45,15 @@ after every functional fix that lands in the same suite. (CV-CUDA: `-ffp-contrac
 removed most planar-versus-interleaved parity failures but regressed the cubic-versus-gold
 case, so `on` was kept and the parity residual documented.)
 
+**`-ffast-math` implies `-ffinite-math-only` under clang; nvcc's `--use_fast_math` does
+not assume finite math.** Translating the flag one for one therefore changes behaviour: any
+algorithm that uses Infinity or NaN as a sentinel (depth sentinels, NaN clear values,
+NaN-compare early-outs) silently produces nothing. The clang warning "use of infinity is
+undefined behavior due to the currently enabled floating-point options" is the fingerprint;
+treat it as fatal, not as noise. Drop the finite-math assumption on the HIP side
+(`-fno-finite-math-only` after `-ffast-math`, or the individual fast-math flags the code
+actually tolerates). (CuRast, whose runtime-compiled renderer drew nothing.)
+
 **`__fsqrt_rn` is not always correctly rounded on gfx90a** (1 ULP high) where CUDA's
 `sqrt.rn.f32` is IEEE correctly-rounded, so bit-exact tests pass on NVIDIA and fail on
 gfx90a. Route the f32 device sqrt through the correctly-rounded f64 `__dsqrt_rn` and cast

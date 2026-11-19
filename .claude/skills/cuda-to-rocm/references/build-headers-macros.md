@@ -60,6 +60,13 @@ when that code is also listed. Define each as `static_cast<hipError_t>(<CUDA val
 checking no `hipError_t` enumerator uses the value: the labels stay distinct, and since HIP
 never returns them they are unreachable. (LichtFeld-Studio)
 
+The library status enums have the same gap. A `switch` that names every `cublasStatus_t` or
+`cufftResult` value loses a label: hipBLAS has no `CUBLAS_STATUS_LICENSE_ERROR`, and hipFFT
+1.0.26 (ROCm 10.1) has dropped `HIPFFT_LICENSE_ERROR` (its enum now skips 15). In a shim,
+map each to a distinct value: `HIPBLAS_STATUS_UNKNOWN`, and `static_cast<hipfftResult>(15)`
+(inside the enum's range, and the value cuFFT used). Do not define `CUDART_VERSION` to switch
+the cases off: rocThrust and hipCUB key on it. (tsne-cuda)
+
 **Never name the pointee struct of an opaque CUDA handle.** `CUstream_st`/`CUevent_st` do
 not exist under HIP. Spell it `std::remove_pointer_t<cudaStream_t>` so it survives the
 typedef swap. (cuSZ)
@@ -216,6 +223,27 @@ HIP sources, so plain C++ TUs keep the host branch. Do not define `__CUDACC__` g
 instead: rocThrust takes its CUDA-system path under it. Re-grep after every upstream sync,
 since new splits arrive with new code. (LichtFeld-Studio)
 
+That rule is for a split whose host branch fails under HIP or hides a device path. A guard
+that only keeps a language feature away from nvcc is different, and widening it by reflex is
+a mistake. The shape:
+
+    #if !defined(__CUDACC__) && defined(__cpp_concepts) && __cpp_concepts >= 201907L
+    #define PROJECT_REQUIRES(...) requires(__VA_ARGS__)
+    #else
+    #define PROJECT_REQUIRES(...)
+    #endif
+
+Under HIP the guard is TRUE, so the `requires` clauses DO reach device compilation, the
+opposite of the CUDA build. The guard exists because of an nvcc front-end limitation; hipcc
+is clang, and clang compiles constrained templates in device code without complaint
+(verified on ROCm 7.2, clang 22, `-std=c++23 -Werror`). Adding `&& !defined(__HIPCC__)`
+would drop overload constraints on the AMD path only, a behavioural divergence introduced to
+fix a problem that does not exist. So grep for every `!defined(__CUDACC__)` guard, TEST what
+the AMD build does with the branch it takes, and extend the guard only if that compile
+actually fails, saying so in the commit message. A force-included compat header that
+deliberately leaves `__CUDACC__` undefined (because rocThrust keys its backend on it) is what
+keeps such a guard live. (CubbyFlow)
+
 **Upstream CCCL 3.0 compat shims are CUDA-only by construction: keep them out of the HIP
 path.** CCCL 3.0 (CUDA 13) removed the CUB fancy iterators (`cub::TransformInputIterator`,
 `cub::CountingInputIterator`), so upstreams are adding alias shims keyed to
@@ -277,6 +305,34 @@ mask and a `__shfl` loop over its bits. A hand-written CUDA replacement that loo
 wave64, lanes 32-63 read lanes 0-31 and the sums are silently wrong. Use
 `__shfl(v, lane, 32)` with a per-half mask, and avoid `__shfl_sync` when the two halves
 take different paths, because HIP's mask check traps. (colmap)
+
+`cg::grid_group` is thinner than CUDA's as well: it offers `thread_rank()`, `size()`,
+`num_threads()` and `sync()` and nothing else (`amd_hip_cooperative_groups.h`), so
+`grid.block_rank()` and `grid.thread_index()` are CUDA-only. Substitute the raw builtins,
+`blockIdx.x` for a one-dimensional launch grid and `blockIdx.x*blockDim.x + threadIdx.x` for
+`thread_index()`, and note in a comment the grid dimensionality the substitution assumes.
+(CuRast: `kernel_stage4_blend`.)
+
+**HIP's bf16 header has no `make_bfloat162` and no `__floats2bfloat162_rn`.**
+`amd_hip_bf16.h` offers only `__float22bfloat162_rn` (from a `float2`); the two-scalar
+builders that FasterTransformer-derived kernels (masked MHA, `cuda_bf16_fallbacks.cuh`) call
+everywhere are absent from every ROCm release checked, through clr trunk. Define them under
+`__HIP_PLATFORM_AMD__` in the project's own bf16 fallback header (set `.x`/`.y`, and
+`__float22bfloat162_rn(make_float2(a, b))`), not in a force-included compat header, where a
+later ROCm definition would collide in every TU. (llm-awq)
+
+**A `__shared__` array of a struct that has default member initializers is a hard error on
+HIP and silently accepted by nvcc.** Shared variables cannot be initialized; nvcc drops the
+initializers with no diagnostic at all (measured on CUDA 12.8.93, and equally silent under
+`-Xcudafe --display_error_number`), while clang reports `initialization is not supported for
+__shared__ variables` and stops. The fingerprint is a struct that looks innocent,
+`struct S { float sum = 0.0; float max = -1.0; };`, declared as
+`__shared__ S sdata[blockSize]`. Check whether the kernel writes both members before reading
+them (it usually does, because the initializers were never reachable in device code anyway):
+if so, deleting the initializers is correct on every architecture and changes nothing on
+CUDA. Only if a host caller genuinely relies on the defaults do you need an aligned byte
+buffer plus `reinterpret_cast`. (rmcl: `SimpleLikelihoodStats` in the reduction of
+`resampling.cu`.)
 
 **MSVC-only upstreams accept code that clang and gcc reject**, so the HIP build (and the
 CUDA build under nvcc) is a stricter compiler than the project has ever seen. Velvet carried
@@ -368,6 +424,28 @@ disable macro; a recent toolkit hides the bug unless the project opts out. Prefe
 literal (`0.f`) in half comparisons anywhere, and compile-check the CUDA path against 12.1
 headers or older, not only the newest toolkit installed -- bisected against the real
 headers, 12.1 fails and 12.2.53 onward compiles. (marian-dev)
+
+**"Portable" is a claim to verify against nvcc, not a property of how the edit reads.** A
+device primitive that only one back end has, replaced by something that looks neutral, can
+still be HIP-only. 3DUNDERWORLD-SLS-GPU_CPU swapped a never-taken overflow guard's
+`asm("trap;")` (illegal on amdgcn) for `__builtin_trap()`, unconditionally, with a commit
+message calling it portable. True for clang, where it is device-callable; false for nvcc,
+which rejects `__builtin_trap()` as a host-only function called from `__device__` and fails
+the CUDA build outright. Ask of every edit inside a `.cu`/`.cuh` touched for HIP: does this
+identical text also compile under nvcc, or does it only build because the port never tried?
+The repair that keeps it from recurring is a compat-header macro
+(`#define gpuTrap() __builtin_trap()` on the HIP side, `#define gpuTrap() asm("trap;")` on
+the CUDA side) called at the use site, not an open-coded `#if defined(USE_HIP)` in the
+`.cuh`: the back-end condition then lives in the one file that owns the `cuda*`-to-`hip*`
+aliases, and the CUDA branch reproduces upstream's text verbatim. A device intrinsic with no
+cross-toolchain spelling is a compat-header entry like any alias. validation.md ("Diff the
+PTX") has the proof that the CUDA path was restored exactly. (3DUNDERWORLD-SLS-GPU_CPU)
+
+**C++17 `std::clamp` and friends work in HIP device code but not under nvcc.** clang treats
+a `constexpr` function as implicitly `__host__ __device__`, so `std::clamp` compiles in a
+HIP kernel; nvcc rejects it without `--expt-relaxed-constexpr`. Fine inside an AMD-only
+branch, a build break in SHARED device code that nvcc also compiles. Check which side of
+the guard it lands on. (popsift)
 
 **An arch-specific fix keyed on the OS or the ROCm version can BREAK an already-validated
 arch**, because those are only PROXIES for the real dependency. A Windows setup on TheRock

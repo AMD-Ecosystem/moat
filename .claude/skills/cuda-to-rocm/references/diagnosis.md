@@ -41,6 +41,17 @@ not against a fix. Stopping at the first step is how one value-head error stayed
 recorded as a BLAS-library problem for two months before it turned out to be a
 null-stream upload race that was latent on CUDA too (lc0).
 
+The same class also shows up as a threshold-boundary detection COUNT, not only as a fit
+residual. PopSift's cross-architecture check is exact feature and descriptor counts on six
+reference images (the Oxford boat set). On gfx90a, the only wave64 architecture in the
+comparison, one image came back one feature and one descriptor short (7945/9451 against the
+7946/9452 that gfx1100, gfx1101, gfx1151 and gfx1201 all reported at the same commit), fully
+deterministic across 5 repeat runs, with the other five images exact. A single detection
+sitting right at a threshold flips between one wavefront width's warp reduction and the
+other's without being a correctness bug in either. Treat a single-digit count divergence on
+one input out of many, with everything else exact and deterministic, the same way: record it
+and stop. (popsift)
+
 ## Method
 
 **A "data-dependent, later-data-corrupts-earlier, per-tile" corruption signature is the fingerprint of a REPRODUCER bug, not a codegen fault.** cuSZ chased a suspected miscompile to a BLOCKED state and an IR bisect; the actual cause was the test input -- `np.arange(..., dtype=float32) * (python float)` promotes to float64, so `.tofile()` wrote 8 bytes per element and the tool read the stream as f32. Validate the byte width and dtype of any binary test input before escalating to an ISA bisect or a ROCm bug report. (cuSZ)
@@ -102,6 +113,17 @@ the same call chain may already be fixed in the project's own patch to the vendo
 dependency, which rules it out rather than explaining the new crash. Before any of this, read
 the top frame: a null frame above the vendored DLL is a library that never loaded
 (windows.md, "A null top frame above a vendored DLL"). (diff-surfel-tracing)
+
+### scikit-learn's KMeans can crash a Python test on a machine with very many cores
+
+A Python test that scores an embedding or a clustering with `sklearn.cluster.KMeans` can
+exit with SIGSEGV or SIGABRT on a 224-thread machine after every assertion passed, about
+half the time. The fault is in scipy's bundled OpenBLAS (`sgemm_incopy_*`) called from a
+libgomp worker hundreds of threads deep, and it reproduces with KMeans alone, without the
+port loaded (4 of 6 runs; 0 of 6 with `OMP_NUM_THREADS=16`). It is not the GPU and not the
+port. Cap the threads around the call, `with threadpoolctl.threadpool_limits(8):`
+(threadpoolctl is a scikit-learn dependency), rather than exporting an environment variable
+the next person to run the test will not know to set. (tsne-cuda)
 
 ### Failures that appear only when the whole suite runs in one process
 

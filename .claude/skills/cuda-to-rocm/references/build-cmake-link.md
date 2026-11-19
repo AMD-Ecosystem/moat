@@ -93,6 +93,23 @@ library, no compile flags) for the runtime:
     endforeach()
     target_link_libraries(<tgt> PRIVATE hip::host)
 
+The same holds for linking `hip::device` directly, which most hand-written HIP CMake does:
+on a mixed target the plain `.cpp` files fail with `c++: error: unrecognized command-line
+option '--offload-arch=gfx942'`. PRIVATE does not help (it only stops the flags reaching
+consumers, not the target's own C++ sources), and `$<COMPILE_LANGUAGE:HIP>` cannot rescue it
+either, because that genex is rejected in `target_link_libraries`. The link half is a
+separate helper, `hip_add_interface_link_flags`, which puts `--hip-link` and `--offload-arch`
+into `INTERFACE_LINK_LIBRARIES`; whether it is language-gated depends on the version pair
+(ROCm 7.14 wraps them in `$<$<LINK_LANGUAGE:CXX>:...>` on CMake 3.20+ and leaves them ungated
+below it), so assume `hip::device` also reaches a consumer's link line. With
+`enable_language(HIP)` and `LANGUAGE HIP` on the sources you do not need `hip::device` at
+all: CMake emits the offload flags for the HIP sources from `CMAKE_HIP_ARCHITECTURES` and
+links the HIP runtime itself. A target that is 100% HIP sources never shows any of this,
+which is why it surfaces the first time a port compiles kernels into an existing mixed
+library. (rmcl: `rmcl_ros_cuda`, five C++ sensor sources next to two `.cu`; CuRast, which
+took `${hipcub_INCLUDE_DIRS}` from `find_package(hipcub REQUIRED)` instead of linking
+`hip::hipcub`.)
+
 Before splitting, check two things or you trade a silent-zeros bug for a silent-no-op bug:
 no header that a `.cpp` includes may contain a `<<<>>>` launch (a launch macro gated on
 `__CUDACC__ || __HIPCC__` expands to nothing in the host units, so the launch disappears),
@@ -374,6 +391,42 @@ by hipMM/RMM) trips although only one arch was requested. It is an artifact of t
 a port defect: the identical configure passes with `HIP_VISIBLE_DEVICES=0`. Work around it on
 the command line, with no source edit: pass `-DGPU_TARGETS=<arch> -DAMDGPU_TARGETS=<arch>`
 alongside `-DCMAKE_HIP_ARCHITECTURES=<arch>`. (HEonGPU, four gfx1100)
+
+**A source-built HIP library and a PyTorch wheel in one process must load the same ROCm
+runtime.** A process gets one `libamdhip64.so.7`. When a port builds a HIP library from
+source (Warp, a native extension, a JIT runtime) and the project also imports PyTorch, build
+the library against the ROCm that the PyTorch wheel brings, not against whatever ROCm the
+machine happens to have. IsaacLab on MI300X: AMD Warp built against a TheRock HIP 7.16 plus
+`torch==2.11.0+rocm7.2` from download.pytorch.org fails in an order-dependent way. With
+torch imported first, Warp prints `CUDA Toolkit 71626.38, Driver 70226.1 (insufficient CUDA
+driver version!)` and exposes no GPU; with Warp imported first, torch raises `RuntimeError:
+No CUDA GPUs are available`. Neither message names the runtime clash, and both look like a
+broken port or a driver problem. Building Warp against apt ROCm 7.2 to match the wheel
+stalled (hipCUB `DeviceReduce` compiling for over 25 minutes). What worked: TheRock's Python
+packages carry the SDK and a matching PyTorch together. Install `torch==X+rocmV`,
+`torchvision==Y+rocmV` and `"rocm[libraries,devel]==V"` from
+`https://repo.amd.com/rocm/whl/<gfx-family>/` (with uv, give that index as
+`--extra-index-url` next to PyPI as `--index-url`; uv favours the extra index, and the
+reverse resolves PyPI's CUDA torch). Then build the library with
+`ROCM_PATH=$(rocm-sdk path --root)`, and keep `ROCM_PATH` and
+`LD_LIBRARY_PATH=$ROCM_PATH/lib` (prepended) set at run time: a runtime compiler (hipRTC)
+finds its headers through `ROCM_PATH`, and torch preloads `libamdhip64`/`libhiprtc` but not
+every library a separately built `.so` links (`libhiprtc-builtins.so.7` for Warp). Triage
+first: print which `libamdhip64` each import resolved (`/proc/<pid>/maps`, or the version
+each library reports) before rebuilding anything. (IsaacLab)
+
+**A vcpkg-manifest project needs `autoconf-archive` on the build machine, and a full vcpkg
+clone.** A project that moved its dependencies to a vcpkg manifest configures with
+`VCPKG_ROOT` set and builds the whole dependency set during configure. If the manifest pulls
+`pybind11`, vcpkg builds its own `python3`, whose `libb2` dependency fails `autoreconf` with
+a bare `error: building libb2:x64-linux failed with: BUILD_FAILED` unless `autoconf-archive`
+is installed; it is routinely missing from the project's documented apt list. Install
+`autoconf autoconf-archive automake libtool pkg-config python3-dev zip unzip curl` before
+the first configure. And do not clone vcpkg shallow: a `--depth 1` clone fails the first
+manifest configure with `vcpkg install failed` and "vcpkg was cloned as a shallow
+repository... failed to git show versions/baseline.json" for every port, because
+versioned-baseline resolution walks vcpkg's own history. Both look like a project build
+failure and neither involves the port. (CubbyFlow)
 
 ### LibTorch on the include path shadows the system `fmt`, and spdlog stops compiling
 

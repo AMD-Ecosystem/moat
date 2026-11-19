@@ -11,6 +11,7 @@ Contents:
 - Other compile-only checks
 - What a pass does not prove
 - A project with no tests
+- Validating a rewrite
 <!-- toc:end -->
 
 ## Validation policy
@@ -42,6 +43,20 @@ silently.
 A Windows machine with an RDNA card covers the wave32 and the Windows requirement in one
 run.
 
+**Proving a binary really carries device code for the target architecture: use
+`llvm-objdump --offloading`, since `roc-obj-ls` does not work from the pip-installed SDK.**
+`roc-obj-ls <binary>` lists the embedded code objects, but it is a packaged-ROCm script. On
+an SDK-wheel layout (no `/opt/rocm` at all) the wheel installs the console script on PATH
+and its entry point does not exist, so the whole `roc-obj*` family dies with `ImportError:
+cannot import name 'roc_obj_ls' from 'rocm_sdk_core._cli'` instead of command-not-found. The
+portable equivalent is `$(hipconfig --hipclangpath)/llvm-objdump --offloading <binary>`,
+which prints one `hipv4-amdgcn-amd-amdhsa--gfxNNNN` bundle per device translation unit. Do
+not conclude that a build is untargeted, or that the ROCm install is broken, because
+`roc-obj-ls` tracebacks or is missing. `hipconfig --hipclangpath` also gives the
+`CMAKE_HIP_COMPILER` value to pass when CMake cannot find the HIP compiler on such a
+machine, which keeps a documented configure command runnable outside `/opt/rocm`.
+(3DUNDERWORLD-SLS-GPU_CPU on gfx942.)
+
 ## The CUDA no-regression compile
 
 **Compile and link the CUDA path with nvcc before claiming the CUDA build is unchanged.**
@@ -71,6 +86,49 @@ function" is that fingerprint, not a real failure.
 - No conda: the PyPI `nvidia-cuda-nvcc-cu12` 12.8 wheels ship only `ptxas`, `nvvm` and `crt` headers, no `nvcc` driver, so they cannot be the toolkit. Assemble a `CUDA_HOME` from NVIDIA's redistributable archives instead: `https://developer.download.nvidia.com/compute/cuda/redist/redistrib_12.8.1.json` lists each component (cuda_nvcc, cuda_cudart, cuda_cccl, libcublas, libcurand, libcufft, libcusolver, libcusparse, libnvjitlink, cuda_nvtx, cuda_cupti, plus libnvjpeg/libnpp if the build links them) with a sha256; extract them all with `--strip-components=1` into one directory and pass `-DCUDAToolkit_ROOT`. cuDNN and NCCL can come from their wheels after adding the unversioned `.so` symlinks CMake's `find_library` looks for. Old third-party pins may need a scratch-only fix under a new toolkit (oneflow's flash-attention needed `#include <cstdio>` with 12.8); patch the extracted copy, never the port, and record it. (oneflow)
 - Setup: point `-I` at the project's deps (vcpkg include dir, plus any CUDA-Samples headers it uses -- `helper_cuda.h`, `helper_math.h`, `helper_string.h`) and select the project's non-MATLAB/Python build macro. For a Thrust/CUB project also install `cuda-cccl`: on CUDA 13.x they ship there under `include/cccl/{thrust,cub}` (nvcc finds them automatically, but a host-compiler OpenMP-backend check needs that path on `-I` explicitly, and stdgpu's CMake wants `THRUST_INCLUDE_DIR` pointed at it).
 - For a header-only or template library the changed headers only compile when instantiated: CMake-configure the CUDA backend to generate its config headers, then `nvcc -c` a small TU that `template class`-instantiates the affected containers, rather than compiling headers alone.
+
+**Diff the PTX to prove the CUDA path is byte-restored, not merely compiling.** When a fix
+is meant to put the CUDA side back exactly as upstream had it, compare the PTX of the port
+against the PTX of the pre-port sources; it is much stronger than "the build went green"
+and costs one command per translation unit:
+
+```bash
+nvcc -arch=sm_80 -ptx -I src/lib -o after.ptx src/lib/<X>.cu
+git archive <merge-base> src/lib | tar -x -C base
+nvcc -arch=sm_80 -ptx -I base/src/lib -I src/lib -o before.ptx base/src/lib/<X>.cu
+diff before.ptx after.ptx
+```
+
+Give the extracted base tree the PORT's include path as a fallback (`-I src/lib` second)
+when the port added headers the base does not have; the base's own `-I` comes first so its
+versions still win and the diff stays honest. (3DUNDERWORLD-SLS-GPU_CPU)
+
+**With a conda toolkit, legacy `find_package(CUDA)` does not find the headers, and many
+projects then build with CUDA silently OFF.** conda's `cuda-toolkit=12.x` puts
+`cuda_runtime.h` under `<env>/targets/x86_64-linux/include/`, not `<env>/include/`. The
+deprecated `FindCUDA` module (projects that predate `enable_language(CUDA)`) looks in
+`CUDA_TOOLKIT_ROOT_DIR/include` and reports `Could NOT find CUDA (missing:
+CUDA_INCLUDE_DIRS) (found version "12.8")` although `nvcc --version` works. The trap is what
+happens next: projects commonly write `find_package(CUDA)` / `if (CUDA_FOUND) ... else()
+set(USE_CUDA OFF) endif()`, so the configure SUCCEEDS, the build succeeds, and NOT ONE CUDA
+file was compiled. A `cmake --build` that returns 0 is worthless evidence here. Confirm the
+project's `Using CUDA: <version>` line (or its equivalent) in the configure output, or grep
+`compile_commands.json` for `nvcc`, before recording the check as passed. Passing
+`-DCUDA_INCLUDE_DIRS=` does not help (FindCUDA recomputes it), and `-DCMAKE_CUDA_COMPILER=`
+is ignored by legacy `FindCUDA` ("Manually-specified variables were not used"); it matters
+only once the project calls `enable_language(CUDA)`. Two fixes that worked:
+
+- Point the legacy variables at the `targets` subtree:
+  `-DCUDA_TOOLKIT_ROOT_DIR=<env>/targets/x86_64-linux`,
+  `-DCUDA_TOOLKIT_INCLUDE=<env>/targets/x86_64-linux/include`,
+  `-DCUDA_CUDART_LIBRARY=<env>/lib/libcudart.so`, with `<env>/nvvm/bin` on `PATH` so nvcc
+  finds `cicc`. (CubbyFlow)
+- Build a throwaway directory of symlinks (`bin -> <env>/bin`,
+  `include -> <env>/targets/x86_64-linux/include`, `lib` and `lib64 -> <env>/lib`) and point
+  `-DCUDA_TOOLKIT_ROOT_DIR` at it. (3DUNDERWORLD-SLS-GPU_CPU)
+
+Such a project has no `CMAKE_CUDA_ARCHITECTURES` to pin, so pin the arch with
+`-DCUDA_NVCC_FLAGS="-arch=sm_80"` instead.
 
 **The newest toolkit is not the whole check when the port touches `__half` in host code.** A
 host TU that touches `__half` can be ill-formed on every CUDA release the project supports
@@ -126,6 +184,30 @@ land beside the ROCm ones. Confirm the pin took with `cuobjdump --list-elf` on t
 confirms the HIP target. Where no CUDA-built wheel can be installed, the check falls back to
 the machine's own torch, and the next entry describes how that fails.
 (faster-gaussian-splatting, FaithC, accelerated-scan)
+
+Details that cost time on CuMesh. Name an index explicitly, the one matching the toolkit's
+major.minor where it has a wheel for your Python (toolkit 12.8:
+`--index-url https://download.pytorch.org/whl/cu128`); PyPI's default `pip install torch`
+pulls whatever CUDA minor is current and can mismatch the toolkit. The CUDA-built wheel is the reliable lever because its `torch.version.hip` is
+`None`; merely unsetting `ROCM_HOME`/`ROCM_PATH` in a ROCm environment is not, since torch
+can rediscover ROCm from its SDK package, from `hipcc` on `PATH` or from `/opt/rocm`. If the
+project has an explicit back-end override (`BUILD_TARGET=cuda`), set it as well. The conda
+toolkit keeps `cuda.h`/`cuda_runtime.h` under `targets/x86_64-linux/include/`, so a TU the
+HOST compiler builds (not nvcc) that includes them needs that directory on
+`CPLUS_INCLUDE_PATH`/`C_INCLUDE_PATH`. Run `setup.py build_ext` from the extension's own
+directory when its `sources` list is relative to the working directory. (CuMesh)
+
+**`nvcc fatal: Unsupported gpu architecture 'compute_35'` at the first
+`enable_language(CUDA)` test compile is a torch-wheel and toolkit mismatch, not a port
+fault.** It fires inside `Caffe2Config.cmake`/`public/cuda.cmake`, before the project's own
+CMakeLists runs, for a project that does a plain `find_package(Torch REQUIRED)`: a
+`pip install torch --index-url .../cu128` wheel's exported `CMAKE_CUDA_FLAGS` can still
+contain `-gencode arch=compute_35,code=sm_35` (Kepler), which nvcc from CUDA 12.0 on no
+longer accepts. Confirm by building the merge-base upstream commit with the same toolchain
+and wheel: the same message at the same call stack means it is pre-existing. Pick an older
+toolkit (12.1) or an older matching torch wheel to exercise the check, or record the CUDA
+check as not done with this explanation. Do not patch the project's CMake for it; the
+failure is inside PyTorch's shipped CMake config. (k2)
 
 ### CUDA gate for torch-extension ports: the host's installed PyTorch itself can be the wall
 
@@ -184,3 +266,87 @@ Watch the precision variant too: a gate pinned to the fp32 backend can miss a de
 Some projects have no tests at all -- no `tests/`, no CI, no assertions -- so the GPU gate has to be authored. Where the script lives is not bookkeeping, because the commit-message Test Plans name it: a Test Plan is a promise that a reader with the hardware can re-run the command, and a fenced `python3 validate_foo.py` that resolves to nothing in a clone of the fork reads as "there is a validation script you have not found" rather than "this lives elsewhere". Every fenced command in every commit body must be runnable from a clone of the fork.
 
 Default to shipping the harness in the port when it is ONE standalone file importing only the standard library, the framework the project already depends on, and the project itself. That is a script, not an imposed test framework, so "we cannot invent a test framework for someone else's repository" is not a reason to keep it out; and it is the direct answer to "how do I know this works on my machine" for a PR that asks a maintainer to take a whole new back end on trust. Put it beside whatever standalone script the project already ships (its `example/` or `demo/` directory), name it for what it actually checks (a script that asserts `torch.version.hip` is the ROCm check, not a general test), and point at it from the same doc section that documents the ROCm build. Keep ONE copy -- move it, do not copy it, because two copies drift and the drifting one is the one the gate runs. Keep it in your own porting records only when it genuinely cannot ship: it needs fixtures, data, or a framework the project does not have. Never leave it in an untracked scratch directory: a harness written there is lost to every other machine. (diff-surfel-tracing, EnvGS)
+
+### A GPU test the port adds must skip on a machine with no device, and an in-`main` check cannot always do it
+
+A test you add is usually gated on the GPU back end being *installed*, which says nothing
+about a device being present, so a build machine without one turns "runs nothing" into a
+red test. Which mechanism you need is decided by whether the test process reaches `main` on
+a device-less machine, not by preference.
+
+**Nothing aborts before `main`.** Ask the runtime for a device count in `main` and return
+77, with `set_tests_properties(<test> PROPERTIES SKIP_RETURN_CODE 77)`. Add the device-count
+spellings to the compat header rather than reaching for the HIP names directly, so the CUDA
+build keeps compiling.
+
+**A dependency constructs a GPU context at load time.** A namespace-scope global that builds
+one is constructed while its shared library is loaded, so on a machine with no device the
+process throws out of `cudaGetDeviceProperties`/`hipGetDeviceProperties` and aborts before
+`main`. The in-`main` 77 check can then never execute, and two CTest mechanisms that look
+like they rescue it do not, both measured: `SKIP_REGULAR_EXPRESSION` is not consulted for a
+process that dies by a signal, and a `FIXTURES_SETUP` probe either lets the dependent test
+run anyway (probe skipped) or reports it `***Not Run` and counts both as failures (probe
+failed). Only a normal exit can produce a skip, so the decision has to be made by a process
+that never loads that library. Register a launcher as the test command: a probe executable
+links the GPU runtime *only*, not the library that pulls the dependency in, and exits 77
+when it counts no device, and a `cmake -P` script runs the probe first. On 77, and on 77
+alone, the script stops with `message(FATAL_ERROR "no GPU device available, skipping")`,
+which the matching `SKIP_REGULAR_EXPRESSION` turns into a skip because the script itself
+exits normally. Any other nonzero probe result must fail with the status it returned:
+routing every nonzero result to the skip path reports a probe that segfaulted or could not
+load the runtime as a machine without a GPU, hiding a test that never ran. With a device,
+the script runs the real test and forwards its status, so a failing test stays a failure.
+Measured on one build: `Passed` with a device, `***Skipped` under `HIP_VISIBLE_DEVICES=-1`,
+and `***Failed` with `device probe exited with 1` for a broken probe. The real fix belongs
+in the dependency (a lazy context), so raise it there as well instead of leaving the
+launcher as the whole answer. (rmcl ships this; its `rmagine` dependency defines
+`CudaContextPtr cuda_def_ctx(new CudaContext(0));` at namespace scope.)
+
+## Validating a rewrite
+
+### Golden-differential validation for a behavior-preserving rewrite
+
+When a round REWRITES working code instead of adding guarded edits (a licence cleanup, a
+de-vendoring, a structural refactor), the project's own test suite is too coarse: it samples
+a few hundred points where the rewrite changed thousands of lines. Validate differentially
+against the code being replaced. (Method built for cubvh's clean-room BVH rewrite.)
+
+- Capture goldens from the OLD build FIRST, before any rewrite lands: deterministic
+  procedurally generated inputs (include the nasty cases: open meshes, degenerate zero-area
+  faces), fixed query sets, every public operation, AND the serialized state. Each
+  architecture captures its own goldens from the old commit. A machine that arrives late can
+  still do so because the old commit stays in history, but it must capture BEFORE validating
+  the new head, not after.
+- Compare with an ADJUDICATED policy, not blind equality:
+  - Floats: a documented absolute tolerance per operation (observed FMA-reordering noise
+    about 1e-7 on unit-scale scenes; 2e-5 is generous and still catches algorithm errors).
+  - Discrete winners (nearest-element ids, argmin results): exact match across builds is
+    UNACHIEVABLE on tie-dense inputs. Tie winners are decided by 1-ulp differences, and
+    hipcc at `-O3` contracts FMAs differently per inlining context, so even IDENTICAL source
+    produces 1-ulp differences between translation units. Gate the NON-TIE mismatch fraction
+    (a mismatch whose value gap exceeds the tolerance) and verify that every remaining
+    mismatch is a genuine tie.
+  - Intentional behavior changes: MASK the affected queries out of old-against-new, and
+    gate them with a SELF-consistency check instead (cubvh: zero-area faces became invisible
+    to distance queries; the new build on the full mesh must equal the new build on the mesh
+    with those faces removed, exact 0.0 there).
+  - Serialization: load the OLD build's serialized state into the NEW build and require
+    identical query behavior. That is the layout and encoding contract, and it catches what
+    struct-level `static_assert`s cannot (index-encoding semantics).
+- For a clean-room rewrite specifically: separate the spec author from the implementer (the
+  author reads the derived code and writes a behavior spec; the implementer never sees the
+  originals, so blank those files in the working tree and a stray read returns nothing).
+  Then verify independence mechanically: normalized `difflib` similarity plus the fraction
+  of verbatim non-trivial lines of each new file against the ANCESTOR snapshot (era-matched,
+  not upstream HEAD) and against the old files, and inspect every residual match. Run the
+  scan even on code classified "original, keep verbatim": on cubvh it caught three functions
+  that a careful manual provenance analysis had misclassified as original and that were in
+  fact derived.
+- Performance is a deliverable of a rewrite, not a sanity check: same machine, old commit
+  against new commit back to back, at least 5 repetitions, medians, several input scales,
+  every hot operation. First rewrites commonly regress 10 to 25 percent on GPU hot loops
+  through innocent structure (early-out branches that diverge where the old code was
+  single-exit; runtime-bound child loops where the old code unrolled a compile-time fan-out;
+  a data-dependent insertion sort where a fixed compare-exchange network ran; an extra cross
+  product or sqrt per primitive test). All of those reclaim to parity without behavior
+  changes; re-run the goldens after each performance fix. (cubvh)

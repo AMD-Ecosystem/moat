@@ -201,6 +201,15 @@ reopen `namespace thrust { namespace hip {} }` to alias `thrust::cuda`: current 
 declares its systems in a versioned inline namespace, so the empty one makes every
 `thrust::hip` ambiguous (AMD's xgboost 2.1.3 ROCm branch hit this). (h2o4gpu)
 
+**Prefer the specific hipCUB algorithm header over the `<hipcub/hipcub.hpp>` umbrella.** The
+umbrella pulls in `device/device_for.hpp` -> `util_mdspan.hpp`, which needs C++23
+`std::extents` (`<mdspan>`, libstdc++ 15 or newer). With libstdc++ 13 that is about 20 errors
+("no template named 'extents' in namespace 'std'") in a TU that only wanted a radix sort.
+`#include <hipcub/device/device_radix_sort.hpp>` compiles cleanly. CUB's umbrella header does
+not have this problem, so the umbrella include is what the CUDA source will have. A
+`namespace cub = hipcub;` alias next to the guarded include keeps every call site in the CUB
+spelling on both back ends. (CuRast: `src/CubSort.cu`, ROCm 7.2.3 with GCC 13.)
+
 **rocPRIM never asks for less than 4 bytes of temp storage.** Every rocPRIM-backed hipCUB
 device algorithm (`DeviceReduce`, `DeviceSegmentedReduce`, ...) reports
 `max(needed, 4)` from its size query, even when it needs nothing; CUB reports 1 there.

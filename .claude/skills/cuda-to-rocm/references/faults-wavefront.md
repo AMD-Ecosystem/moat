@@ -220,6 +220,19 @@ to bits `0..N-1` (`internal::helper::adjust_mask`), so storing it in a 32-bit in
 indexing it with `__ffs`/`__popc`/`__fns` is correct on wave64. Only a RAW `__ballot`
 truncated to 32 bits (the next entry) is the fault. (faster-gaussian-splatting)
 
+**Pass that logical width on BOTH paths, and prefer the project's own pre-CUDA-9 branch over
+remapping `__shfl_*_sync` in the compat header.** An `#ifdef USE_HIP` pair that spells the
+same reduction twice, width 32 on HIP and bare on CUDA, reads as an AMD-specific hack and
+draws review churn. The 32 is algorithmic (block.x, one descriptor row, a bitonic network),
+so writing it unconditionally is both correct and clearer, and NVIDIA generates the same
+code. Better still, many projects already select between `__shfl_*_sync` and the mask-free
+`__shfl*` on a configure-time flag for CUDA before 9.0. HIP's spelling IS the mask-free one,
+with a width up to 64, so setting that existing flag to 0 on the HIP path removes the
+compat-header macros entirely, and with them the `<hip/hip_bf16.h>` include-ordering
+workaround, since newer ROCm declares real `__shfl_*_sync` templates that function-like
+macros of the same name would rewrite. (popsift, from the maintainer's review of its pull
+request.)
+
 **An over-wide `__shfl*` width does not error, it silently degenerates.**
 `__shfl_up(v, delta, 64)` lowers to `__builtin_amdgcn_ds_bpermute` with a clamp of
 `self & ~(width-1)`; on wave32 that clamp is 0, so the permute domain becomes the
@@ -276,6 +289,25 @@ every allocation paired with a `smid()*STRIDE` kernel; pools indexed by `blockId
 `gridDim == multiProcessorCount` launch are self-consistent and fine. Keep the CUDA path at
 `multiProcessorCount`. Prove the fix with a sentinel region after the pool. (gpu4pyscf:
 int3c2e fill pool, ~4MB silent OOB.)
+
+**A leader-only write broadcast by shuffle must be initialised on every lane.** The
+warp-aggregated atomic idiom, `int base; if (lane == 0) base = atomicAdd(ctr, n);
+base = __shfl(base, 0);`, reads `base` uninitialised on every other lane. That is undefined
+behaviour, and "the shuffle only reads lane 0, so it is harmless" is wrong. clang marks
+by-value parameters `noundef`, so passing the indeterminate value into a by-value shuffle
+wrapper makes the `lane != 0` path undefined; the optimizer replaces the branch with
+`llvm.assume(threadIdx.x == 0)`, EVERY lane performs the atomic (the counter advances by
+`warpSize * n`), and any `(1u << lane) - 1` prefix offset folds to 0. The symptom is a count
+exactly `warpSize` times the real number of writes, with the surplus slots never written
+(zeroed or stale entries downstream). Declare `int base = 0;` or use a ternary; both give
+identical ISA, so it costs nothing. A volatile counter does not help. To check a suspect
+site, emit device IR (`--cuda-device-only -S -emit-llvm`) and grep for `llvm.assume`;
+`-Xclang -no-enable-noundef-analysis` making it vanish confirms the cause. Measured by an
+upstream user on gfx1201, ROCm 7.2.1, against popsift's pre-port `extrema_count()`. The same
+construct left in a CUDA `#else` branch is the same undefined behaviour waiting for a
+compiler, so grep the port for the idiom and initialise it on both paths. The padding-lane
+form of this compiler behaviour is in faults-memory-streams.md ("An uninitialised local
+passed by value"). (popsift, upstream issue 193)
 
 **Validate wave-size work on BOTH widths, and where there is no host reference use a
 CROSS-ARCH CONSISTENCY gate.** "Deterministic, non-zero and plausible" passes a wrong

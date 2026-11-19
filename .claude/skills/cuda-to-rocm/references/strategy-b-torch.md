@@ -6,7 +6,10 @@ Contents:
 - Never commit the hipified mirror; add it to .gitignore instead
 - Headers and functions hipify leaves broken
 - A bundled header-only library (GLM): hipify sees only `include_dirs`
+- A vendored library with its own sources: the `includes` pattern decides which headers are hipified
+- Keep compiler flags in the right command-line namespace
 - hipify generation: v1 renames, v2 masquerades
+- A torch API used by a ROCm-only branch is a version floor nobody sees
 - Clean the hipified mirror by the path rule, not with another port's clean step
 - Windows
 - Dependency environment for PyTorch projects (the install path is part of the port)
@@ -90,6 +93,35 @@ The fix is to leave the library alone rather than to fix up what hipify did. A m
 
 Do not add the override to "protect" a bundled library until you have SEEN it get mangled. It is the largest and least palatable hunk in an otherwise mechanical diff, and it is a no-op whenever the tree is `-I`-only. Cheap proof, one build each: build with and without the override, deleting `build/`, the hipified mirror (`hip_*/`, `*.hip`) and `*.egg-info` between runs, then `diff -rq` the mirrors and hash the vendored tree. Identical output plus an unmodified tree settles it. (op43dgs -- a monkeypatch carried over from another port whose include wiring differed; verified no-op on torch 2.9.1, 2.13 and 2.14, then deleted)
 
+### A vendored library with its own sources: the `includes` pattern decides which headers are hipified
+
+Known first half: `matched_files_iter` in `torch/utils/hipify/hipify_python.py` PRUNES `third_party/` from its file walk (it re-adds only `third_party/nvfuser`), so a vendored library's `.cu` sources are reported "[ignored, not to be hipified]" and the raw CUDA is handed to the compiler. The usual workaround is to run `hipify_python.hipify()` yourself, rooted at the vendored library, so the prune does not apply.
+
+The second half is the one that bites: **which HEADERS get rewritten is decided by the `includes` pattern, not by the walk.** `hipify()` extends `all_files` with every file under `header_include_dirs` that matches `includes`, and the include-rewrite hook then recursively hipifies any `#include`d header whose basename appears in `all_files`. Root your own pass at the library's `src/` with `includes=[<lib>/src/*]` and its `include/` tree stays raw, even though you passed the include directory in `header_include_dirs`.
+
+That asymmetry is why this hides on one platform and breaks on another. torch's own pass uses `project_directory=<extension root>` with `includes=[<root>/*]`, and that pattern DOES match `third_party/<lib>/include/...` although the walk pruned it, so torch quietly hipifies the vendored headers for you. A hand-rolled pass rooted narrower does not, and the platform that needs the hand-rolled pass is the only one that breaks.
+
+The symptom is not a missing symbol, it is two header trees in one TU. A vendored header that includes `<ATen/cuda/CUDAContext.h>` stays raw while the source's `#ifdef USE_ROCM` include pulls `<ATen/hip/...>`, and those trees are alternatives that were never meant to coexist: torch's hipified `c10/hip/HIPStream.h` opens `namespace c10::cuda {` and declares the same `class CUDAStream` that `c10/cuda/CUDAStream.h` declares. You get a redefinition cascade across `c10/hip/HIPStream.h`, `HIPException.h`, `HIPFunctions.h` and `HIPDeviceAssertionHost.h`, plus `unknown type name 'cudaStreamCaptureStatus'; did you mean 'hipStreamCaptureStatus'` from `is_capturing()` in `c10/cuda/CUDAStream.h`. That method arrived with a torch update (the port had last built against 2.9.1 and failed against 2.12.0+rocm7.14.0a20260519), so it reads like a hand-written `cuda.h`/`cuda_runtime.h` shim that fell behind, and on Windows, where TheRock's SDK ships no CUDA compat headers, such a shim is usually present to be blamed.
+
+**Fix the scope, not the symptom.** Add the library's include directory to `includes` (`includes=[<lib>/src/*, <lib>/include/*]`, rooted at `<lib>`) so hipify emits `api_hip.h` carrying `<ATen/hip/HIPContext.h>` and rewrites the including source to match. Adding the missing capture symbols to the shim looks like the fix and is not: it silences the first error and leaves the redefinition cascade untouched. Keep the patterns tight; a bare `<lib>/*` would drag a nested Eigen or other vendored headers into hipify's scope.
+
+Two diagnostics worth carrying:
+
+- If you see "redefinition" of `c10/hip/*` classes, look UP the include chain for a raw `ATen/cuda` include, not for a missing symbol. `ATen/cuda/*` and `ATen/hip/*` are mutually exclusive in a single TU.
+- Prefer making hipify's WALK find your sources over listing them in `extra_files`. The walk unix-normalizes each path; the `extra_files` append does not, and `preprocess_file_and_save_result` tests membership against the normalized form, so on Windows an `extra_files` entry outside the walk root can be silently skipped.
+
+(CuMesh, whose bundled `cubvh` failed exactly this way on Windows while Linux had built it for months.)
+
+### Keep compiler flags in the right command-line namespace
+
+Torch's `CUDAExtension` uses the `"nvcc"` entry in `extra_compile_args` for both nvcc on CUDA builds and hipcc on ROCm builds. That does not make their flag syntaxes interchangeable: hipcc accepts GCC/clang host flags such as `-fvisibility=hidden` directly, while nvcc needs the same flag wrapped as `-Xcompiler=-fvisibility=hidden` and rejects it bare (`nvcc fatal : Unknown option '-fvisibility=hidden'`). The `"cxx"` entry is a separate host-compiler command line and keeps the bare spelling. A flag added for the HIP build and appended to the shared list unguarded therefore looks clean on every AMD machine and breaks the CUDA build.
+
+Map a shared host flag according to all three cases: pass it bare to hipcc, wrap it for nvcc with a GCC/clang host, and drop it for nvcc with MSVC when there is no MSVC equivalent. Derive the wrapped list from the bare list so the two cannot drift. Do not use only an `IS_HIP` guard: that misses the Windows CUDA case and can hand cl.exe an unsupported `-f...` option.
+
+Verify the wrap POSITIVELY, not just that the build stopped failing: a mis-wrapped flag can be accepted and dropped, so the build goes green while the intent (here, symbol hiding) is gone. Confirm the effect in the artifact: `nm -D --defined-only <ext>.so | grep <ns>` should show only the module entry point while `nm --defined-only` shows the namespace's symbols as local. In CuMesh's `_cubvh` that was 1 exported symbol (`PyInit__cubvh`) against 309 local `cubvh::` symbols. And when a build-flag fix is meant to touch only the CUDA path, prove the ROCm path is untouched by DIFFING the generated flag lists instead of arguing from the source diff: monkeypatch `setuptools.setup` to print each extension's `extra_compile_args` and exit, run it on either side of the change with the ROCm back end selected, and diff. An identical dump is a much stronger claim than "the guard looks right", and it shows the architectures that already passed that nothing changed for them.
+
+A cheap diagnostic for a failing CUDA compile check: if the flag or construct does not appear anywhere in the pre-port upstream source (`git show <upstream_sha>:<file> | grep <token>` is empty), it is new port code, not pre-existing breakage, and there is no need to build upstream to compare. (CuMesh: `setup.py` appended `-fvisibility=hidden -fvisibility-inlines-hidden` to the `"nvcc"` key for both back ends.)
+
 ### hipify generation: v1 renames, v2 masquerades
 
 Which generation runs decides what the `c10`/`at` CUDA classes are called, so it is worth
@@ -125,6 +157,16 @@ older torch -- so a guard keyed on the wrong axis silently breaks the other plat
 build. That fault, with the two regressions that produced it, is in
 build-headers-macros.md ("An arch-specific fix keyed on the OS or the ROCm version"). (aihwkit)
 
+### A torch API used by a ROCm-only branch is a version floor nobody sees
+
+A HIP branch compiles only against the ROCm PyTorch on the porting machine, which is usually far newer than the project's pinned torch, and one failing call takes the whole extension down with it, kernels that already worked included.
+
+`ROCM_VERSION` is never defined in a `cpp_extension` build. Only PyTorch's own CMake sets it (`add_definitions(-DROCM_VERSION=...)` in `cmake/Dependencies.cmake`); `cpp_extension` passes only `-D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1` (plus `-DHIPBLAS_V2`), no installed torch header defines it, and `rocm_version.h` has only `ROCM_VERSION_MAJOR/MINOR/PATCH`. Checked at v2.2.0, v2.3.0, v2.4.0, v2.8.0, v2.9.0 and main. So every `ROCM_VERSION` guard in an installed header reads false in an extension, current releases included: v2.8.0 `ATen/cuda/CUDADataType.h` maps the fp8 types only under `!defined(USE_ROCM) || ROCM_VERSION >= 60300`, so on ROCm an extension never sees those cases.
+
+`getCurrentCUDABlasLtHandle()` in `ATen/cuda/CUDAContextLight.h` is the case that broke llm-awq: up to 2.3 the declaration and the `<cublasLt.h>` include sit under `... (defined(USE_ROCM) && ROCM_VERSION >= 50700)`, so it is undeclared in an extension; 2.4 (ae9a4fa, "enforce ROCM_VERSION >= 6.0") dropped that guard, which is the only reason the handle is reachable from 2.4 on. `getCUDABlasLtWorkspace()` and `getCUDABlasLtWorkspaceSize()` exist only from 2.9. Before calling a torch API from a HIP branch, `git show <oldest supported tag>:<header>` and read the preprocessor guard around the declaration, not just whether the name is present. A guard inside an inline function body (`ROCM_VERSION < 50201` in `deviceCount()` of `HIPGuardImplMasqueradingAsCUDA.h`) changes behaviour, not what is declared.
+
+When calling hipBLASLt directly, keep the handle and workspace in the extension: one `hipblasLtHandle_t` per device from `hipblasLtCreate` on first use (mutex-guarded, never destroyed, as torch does), the current stream, and a byte-tensor workspace (`at::empty({n}, input.options().dtype(at::kByte))`, sized from the chosen heuristic's `workspaceSize`, none when zero). The hipBLASLt API is itself a floor: 0.3 (ROCm 5.7) takes `hipblasDatatype_t` and `hipblasLtComputeType_t` in `hipblasLtMatrixLayoutCreate` / `hipblasLtMatmulDescCreate`; 0.6 (ROCm 6.0) takes `hipDataType` and `hipblasComputeType_t` (`HIP_R_8I`, `HIPBLAS_COMPUTE_32I`). Gate the hipBLASLt code on `HIPBLASLT_VERSION_MAJOR/MINOR` from `<hipblaslt/hipblaslt-version.h>` (installed by both) and keep a portable kernel for older releases, instead of letting it raise the ROCm floor of the whole extension. (llm-awq)
+
 ### Clean the hipified mirror by the path rule, not with another port's clean step
 
 A stale mirror gets recompiled in place of the source you edited, so the clean step has to
@@ -145,8 +187,9 @@ On Windows a ROCm torch builds a `CUDAExtension` with `clang-cl` as the host com
 drives the compile itself and never goes through CMake's `HIP` language, so the
 one-clang-driver rule for CMake HIP builds does not apply here. The rest of the Windows
 knowledge is in windows.md: the torch wheel needs its per-architecture device package
-("A torch wheel needs the matching `[device-<gfx>]` extra"), and a C++ program that links
-LibTorch must force the `torch_hip.dll` import.
+("A torch wheel needs the matching `[device-<gfx>]` extra"), a C++ program that links
+LibTorch must force the `torch_hip.dll` import, and an extension that links a ROCm library
+by name may find no `.lib` for it ("A ROCm library linked by name may have no `.lib`").
 
 ### Dependency environment for PyTorch projects (the install path is part of the port)
 

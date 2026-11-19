@@ -137,6 +137,34 @@ Two related traps in the same place:
   the HIP device headers are already in scope. Guard the typedefs out on the
   ROCm side rather than trying to match the type.
 
+hipRTC is not NVRTC in ways the API does not show, so a port that maps `nvrtcXxx` to
+`hiprtcXxx` and stops will build, load a 0-byte or wrong code object, and render nothing.
+A project whose whole pipeline is runtime-compiled hits all of these at once (CuRast):
+
+- **No `-default-device` equivalent.** NVRTC can make every unmarked free function
+  `__device__`; clang cannot. Wrap each block of helper functions in
+  `#pragma clang attribute push (__attribute__((device)), apply_to=function)` / `pop`,
+  guarded by `#if defined(__HIPCC_RTC__)`. The pragma conflicts with `__global__`, so the
+  regions must EXCLUDE the kernel entry points: regions, not whole files.
+- **Do not count on fixed-width types being predeclared.** NVRTC supplies
+  `uint32_t`/`uint64_t` implicitly. Under hipRTC a header that used them without
+  `#include <cstdint>` failed with a cascade of "unknown type name" in CuRast, while the
+  typedef collision above shows a hipRTC that had `uint64_t` in scope; which names arrive
+  for free evidently depends on the release and on what else the source includes. Add the
+  `<cstdint>` include: it is a real omission, it is correct either way, and it helps the
+  offline build too.
+- **A translated fast-math flag assumes finite math.** `-ffast-math` implies
+  `-ffinite-math-only` under clang where NVRTC's `--use_fast_math` does not, and sentinel
+  values then vanish (faults-numerics.md).
+- **The host runtime headers are not on the include path**, so a shared compat header must
+  skip its `hip/hip_runtime.h` include under `__HIPCC_RTC__` and provide the handful of
+  intrinsics that came with it (`__float_as_uint` and friends) as macros. Macros, not inline
+  functions: one combined TU can reach the same header by two relative paths, where
+  `#pragma once` does not dedupe and duplicate definitions are an error.
+- **Do not pass `-fgpu-rdc`** (it produces 0-byte code objects). Pass the clang resource
+  directory and the ROCm include root as absolute `-isystem`/`-I` (derive them from
+  `ROCM_PATH`), and NUL-terminate the `hiprtcGetProgramLog` buffer yourself.
+
 Diagnosing this is easy once you know to look: the runtime compiler's log is
 usually printed to stderr and then swallowed, and the visible symptom is a
 launch failure (`hipErrorInvalidHandle`) or an outright hang from launching a

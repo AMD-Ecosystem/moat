@@ -117,6 +117,16 @@ what passes and what does not).
   reports `indeterminate`, with "No kernel section found" on both sides; that is not
   `differ`. Compare such a library with `sha256sum`, and `nm -D --defined-only` as a
   second signal (CV-CUDA's `libnvcv_types.so`).
+  Build both commits for a `codeobj_diff` at the SAME absolute source path: check out
+  the old sha in place, build into its own build directory, check out the new sha in
+  the same tree, build into a second one, and compare the two. A second worktree or
+  clone at another path can read `differ` with nothing changed, because a path the
+  compiler embeds can reach an exported symbol: CuMesh fed `__FILE__` through a check
+  macro into a template argument (`torchCheckMsgImpl<char[N], ...>`), so the mangled
+  name carried the LENGTH of the build path. Demangle a differing symbol (`c++filt`);
+  if the only difference is a `char[N]` length, rebuild at one path. (The
+  per-translation-unit `__hip_cuid_*` symbols, which also follow the path, are already
+  ignored by the tool.) (CuMesh, alien, k2)
 - A Windows-labeled delta is not inert elsewhere. When it flips a passed platform to
   `revalidate`, rebuild rather than carrying forward on "it is Windows-gated" reasoning;
   a binary-equivalence carry-forward builds, which is how the aihwkit and MMseqs2
