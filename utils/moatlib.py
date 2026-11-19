@@ -3283,6 +3283,14 @@ def archive_pr(name):
         raise ValueError(f"{name}: a fix round is still recorded on "
                          f"{obj['fix'].get('branch')!r} -- a finished PR should "
                          f"carry none; a person sorts that record out first")
+    if obj.get("pr_url") and not obj.get("pr_number"):
+        # Records from before pr_number existed carry only the URL. The number is
+        # IN the URL, so derive it rather than refusing: without this, the
+        # follow-up review flow opened a review PR while skipping this archive
+        # (cubvh, 2026-08-26).
+        _, num = _pr_ref(obj["pr_url"])
+        if num:
+            obj["pr_number"] = int(num)
     if not obj.get("pr_url") or not obj.get("pr_number"):
         raise ValueError(f"{name}: the finished PR has no pr_url/pr_number recorded")
     shipped = obj.get("published_sha")
@@ -6794,6 +6802,35 @@ def squash_carry_forward(name, new_sha, repo=None):
                    "failed": failed})
 
 
+def _adds_nothing_by_api(obj):
+    """adds_nothing_to_upstream for a host with no fork clone, asked of GitHub.
+
+    Most hosts that list PR candidates carry no clone, and without this every port
+    whose pull request was squash-merged stayed listed as ready for a follow-up
+    forever: its head is not the squash commit, so only a tree comparison shows
+    the two are the same content (k2, stdgpu). True when the port branch has no
+    commit upstream's default branch lacks (visionaray, whose follow-up had
+    already merged), or when head_sha's tree is the tree of the commit the
+    finished pull request shipped. Any failed read is False: stay listed."""
+    up = (obj.get("upstream_url") or "").split("github.com/", 1)[-1].strip("/")
+    fork = (obj.get("fork_url") or "").split("github.com/", 1)[-1].strip("/")
+    sha, shipped = obj.get("head_sha"), obj.get("published_sha")
+    if not up or not fork or not sha:
+        return False
+    base = obj.get("fork_default_branch") or "main"
+    cmp = _gh_json("api", f"repos/{up}/compare/{base}...{fork.split('/')[0]}:{sha}")
+    if cmp and cmp.get("ahead_by") == 0:
+        return True
+    if not shipped:
+        return False
+    ours = _gh_json("api", f"repos/{fork}/git/commits/{sha}")
+    theirs = (_gh_json("api", f"repos/{up}/git/commits/{shipped}")
+              or _gh_json("api", f"repos/{fork}/git/commits/{shipped}"))
+    t1 = ((ours or {}).get("tree") or {}).get("sha")
+    t2 = ((theirs or {}).get("tree") or {}).get("sha")
+    return bool(t1) and t1 == t2
+
+
 def adds_nothing_to_upstream(name, obj):
     """Does head_sha's tree already exist in upstream's history?
 
@@ -6815,8 +6852,10 @@ def adds_nothing_to_upstream(name, obj):
                       check=False).stdout.strip()
         if common:
             repo = Path(common).parent / "projects" / name / "src"
-    if not sha or not url or not (repo / ".git").exists():
+    if not sha or not url:
         return False
+    if not (repo / ".git").exists():
+        return _adds_nothing_by_api(obj)
     branch = obj.get("fork_default_branch") or "main"
 
     def git(*args, timeout=60):
