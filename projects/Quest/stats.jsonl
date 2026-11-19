@@ -94,3 +94,4 @@
 {"kind":"phase","ts":"2026-11-19T07:38:50Z","phase":"test","seconds":24.302,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300c-20261118-212043-quest-finish-prompt/moat/projects/Quest/src && PYTHONPATH=/var/lib/jenkins/fleet/jobs/mi300c-20261118-212043-quest-finish-prompt/moat/projects/Quest/src /var/lib/jenkins/fleet/jobs/mi300c-20261118-212043-quest-finish-prompt/venv/bin/python -m pytest quest/tests -q -p no:cacheprovider"}
 {"kind":"session","ts":"2026-11-19T07:44:23Z","epoch":1795074263.062869,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-19T09:49:09Z","epoch":1795081749.605706,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-19T09:51:33Z","phase":"compile","seconds":27.575,"exit":0,"cmd":"ninja -C projects/Quest/src/quest/ops/build"}
