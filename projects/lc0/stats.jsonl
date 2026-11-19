@@ -95,3 +95,60 @@
 {"kind":"phase","ts":"2026-08-08T23:19:09Z","phase":"test","seconds":72.426,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=check --backend-opts=hip-fp16(),blas(),mode=check,atol=2.5e-2,rtol=1e-1,freq=1.0 --weights=agent_space/testnet.pb.gz --start-batch-size=1 --max-batch-size=32 --batches=4"}
 {"kind":"phase","ts":"2026-08-08T23:19:30Z","phase":"test","seconds":6.843,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=hip --weights=agent_space/maia1100.pb.gz --batches=3"}
 {"kind":"phase","ts":"2026-08-08T23:19:43Z","phase":"test","seconds":8.240,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=hip-fp16 --weights=agent_space/maia1100.pb.gz --batches=3"}
+{"kind":"phase","ts":"2026-08-20T16:37:21Z","phase":"compile","seconds":104.476,"exit":0,"cmd":"ninja -C projects/lc0/src/build-hip-win-gfx1151 -j 16"}
+{"kind":"phase","ts":"2026-08-20T16:37:22Z","phase":"compile","seconds":97.522,"exit":0,"cmd":"ninja -C projects/lc0/src/build-hip-win-gfx1151 -j 16"}
+{"kind":"phase","ts":"2026-08-20T16:39:30Z","phase":"test","seconds":57.634,"exit":0,"cmd":"meson test -C projects/lc0/src/build-hip-win-gfx1151"}
+{"kind":"phase","ts":"2026-08-20T16:44:11Z","phase":"compile","seconds":39.636,"exit":0,"cmd":"ninja -C projects/lc0/src/build-hip-win-gfx1151 -j 16"}
+{"kind":"phase","ts":"2026-08-20T16:45:31Z","phase":"test","seconds":56.022,"exit":0,"cmd":"meson test -C projects/lc0/src/build-hip-win-gfx1151"}
+{"kind":"phase","ts":"2026-08-20T20:51:16Z","phase":"compile","seconds":19.032,"exit":0,"cmd":"bash agent_space/lc0_fix_build.sh"}
+{"kind":"phase","ts":"2026-08-20T20:53:11Z","phase":"test","seconds":104.035,"exit":0,"cmd":"bash agent_space/lc0_fix_gate.sh"}
+{"kind":"phase","ts":"2026-08-20T20:54:43Z","phase":"compile","seconds":18.534,"exit":0,"cmd":"bash agent_space/lc0_fix_build.sh"}
+{"kind":"phase","ts":"2026-08-20T20:55:58Z","phase":"test","seconds":67.057,"exit":0,"cmd":"bash agent_space/lc0_fix_gate.sh"}
+{"kind":"phase","ts":"2026-08-20T20:57:42Z","phase":"test","seconds":52.096,"exit":0,"cmd":"bash agent_space/lc0_fix_gtest.sh"}
+{"kind":"session","ts":"2026-08-20T21:06:21Z","epoch":1787259981.597514800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-20T21:13:30Z","epoch":1787260410.967038500,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-20T21:17:31Z","phase":"compile","seconds":0.233,"exit":1,"cmd":"ninja -C build-hip-win-gfx1151 lc0.exe"}
+{"kind":"phase","ts":"2026-08-20T21:19:52Z","phase":"compile","seconds":16.432,"exit":0,"cmd":"ninja -C /d/Develop/moat/projects/lc0/src/build-hip-win-gfx1151 lc0.exe"}
+{"kind":"phase","ts":"2026-08-20T21:29:35Z","phase":"test","seconds":35.629,"exit":0,"cmd":"meson test -C /d/Develop/moat/projects/lc0/src/build-hip-win-gfx1151"}
+{"kind":"phase","ts":"2026-08-20T21:37:32Z","phase":"test","seconds":35.483,"exit":0,"cmd":"meson test -C /d/Develop/moat/projects/lc0/src/build-hip-win-gfx1151"}
+{"kind":"phase","ts":"2026-08-20T22:02:44Z","phase":"compile","seconds":0.224,"exit":1,"cmd":"ninja -C build-hip-win-gfx1151 lc0.exe"}
+{"kind":"phase","ts":"2026-08-20T22:03:07Z","phase":"compile","seconds":16.257,"exit":0,"cmd":"ninja -C /d/Develop/moat/projects/lc0/src/build-hip-win-gfx1151 lc0.exe"}
+{"kind":"phase","ts":"2026-08-20T22:09:56Z","phase":"test","seconds":39.043,"exit":0,"cmd":"meson test -C /d/Develop/moat/projects/lc0/src/build-hip-win-gfx1151"}
+{"kind":"session","ts":"2026-08-20T22:36:33Z","epoch":1787265393.381454200,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-20T22:33:24Z","epoch":1787265204.502648122,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T22:40:31Z","epoch":1787265631.354404488,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T22:46:37Z","epoch":1787265997.499648300,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-20T22:55:05Z","epoch":1787266505.567578100,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-20T23:26:42Z","epoch":1787268402.502638329,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-20T23:29:04Z","phase":"compile","seconds":73.085,"exit":0,"cmd":"ninja -C /var/lib/jenkins/moat/projects/lc0/src/build-hip -j16"}
+{"kind":"phase","ts":"2026-08-20T23:30:38Z","phase":"test","seconds":85.440,"exit":0,"cmd":"meson test -C /var/lib/jenkins/moat/projects/lc0/src/build-hip"}
+{"kind":"phase","ts":"2026-08-20T23:37:54Z","phase":"cuda-compile","seconds":94.734,"exit":0,"cmd":"ninja -C /var/lib/jenkins/moat/projects/lc0/src/build-cuda -j16"}
+{"kind":"session","ts":"2026-08-20T23:39:09Z","epoch":1787269149.809159163,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-20T23:42:35Z","phase":"compile","seconds":0.224,"exit":1,"cmd":"ninja -C build-hip-win-gfx1151 lc0.exe"}
+{"kind":"phase","ts":"2026-08-20T23:43:21Z","phase":"compile","seconds":17.282,"exit":0,"cmd":"ninja -C /d/Develop/moat/projects/lc0/src/build-hip-win-gfx1151 lc0.exe"}
+{"kind":"phase","ts":"2026-08-21T00:20:20Z","phase":"compile","seconds":18.388,"exit":0,"cmd":"ninja -C projects/lc0/src/build-hip-win-gfx1151 lc0.exe"}
+{"kind":"session","ts":"2026-08-24T23:41:47Z","epoch":1787614907.182326868,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-24T23:46:09Z","epoch":1787615169.375356805,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-27T04:59:54Z","phase":"compile","seconds":44.811,"exit":0,"cmd":"ninja -C /var/lib/jenkins/moat/projects/lc0/src/build-hip -j16"}
+{"kind":"phase","ts":"2026-08-27T05:01:16Z","phase":"test","seconds":53.323,"exit":0,"cmd":"meson test -C /var/lib/jenkins/moat/projects/lc0/src/build-hip"}
+{"kind":"session","ts":"2026-10-21T06:50:06Z","epoch":1792565406.997723220,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-21T06:52:07Z","phase":"compile","seconds":55.864,"exit":0,"cmd":"ninja -C projects/lc0/src/build-hip -j16"}
+{"kind":"phase","ts":"2026-10-21T06:55:46Z","phase":"test","seconds":48.817,"exit":0,"cmd":"meson test -C projects/lc0/src/build-hip"}
+{"kind":"phase","ts":"2026-10-21T07:04:07Z","phase":"test","seconds":494.967,"exit":0,"cmd":"bash agent_space/gates.sh"}
+{"kind":"session","ts":"2026-10-21T07:17:04Z","epoch":1792567024.004436087,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-21T06:57:05Z","epoch":1792565825.758762360,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T06:59:41Z","phase":"compile","seconds":76.682,"exit":0,"cmd":"ninja -C projects/lc0/src/build-hip -j16"}
+{"kind":"phase","ts":"2026-10-21T07:01:05Z","phase":"test","seconds":80.136,"exit":0,"cmd":"meson test -C projects/lc0/src/build-hip"}
+{"kind":"phase","ts":"2026-10-21T07:05:14Z","phase":"test","seconds":30.340,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=check --backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0 --weights=agent_space/nets/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4"}
+{"kind":"phase","ts":"2026-10-21T07:05:57Z","phase":"test","seconds":30.878,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=check --backend-opts=hip-fp16(),blas(),mode=check,atol=1.1e-1,rtol=2e-1,freq=1.0 --weights=agent_space/nets/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4"}
+{"kind":"phase","ts":"2026-10-21T07:07:47Z","phase":"test","seconds":19.656,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=check --backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0 --weights=agent_space/nets/t1-256x10.pb.gz --start-batch-size=1 --max-batch-size=16 --batches=2"}
+{"kind":"phase","ts":"2026-10-21T07:08:07Z","phase":"test","seconds":19.307,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=check --backend-opts=hip-fp16(),blas(),mode=check,atol=1.1e-1,rtol=2e-1,freq=1.0 --weights=agent_space/nets/t1-256x10.pb.gz --start-batch-size=1 --max-batch-size=16 --batches=2"}
+{"kind":"phase","ts":"2026-10-21T07:09:58Z","phase":"test","seconds":9.568,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=check --backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0 --weights=agent_space/nets/n744706.pb.gz --start-batch-size=1 --max-batch-size=16 --batches=2"}
+{"kind":"phase","ts":"2026-10-21T07:10:08Z","phase":"test","seconds":9.556,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=check --backend-opts=hip-fp16(),blas(),mode=check,atol=1.1e-1,rtol=2e-1,freq=1.0 --weights=agent_space/nets/n744706.pb.gz --start-batch-size=1 --max-batch-size=16 --batches=2"}
+{"kind":"phase","ts":"2026-10-21T07:15:17Z","phase":"test","seconds":5.971,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=hip --weights=agent_space/nets/maia1100.pb.gz --start-batch-size=1 --max-batch-size=256 --batches=2"}
+{"kind":"phase","ts":"2026-10-21T07:15:25Z","phase":"test","seconds":7.554,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=hip-fp16 --weights=agent_space/nets/maia1100.pb.gz --start-batch-size=1 --max-batch-size=256 --batches=2"}
+{"kind":"session","ts":"2026-10-21T07:17:09Z","epoch":1792567029.434320146,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-21T22:40:08Z","epoch":1792622408.314829800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-10-21T22:42:53Z","phase":"compile","seconds":139.845,"exit":0,"cmd":"ninja -C /d/Develop/moat/projects/lc0/src/build-hip-win-up -j4"}
+{"kind":"phase","ts":"2026-10-21T22:44:03Z","phase":"test","seconds":39.019,"exit":0,"cmd":"meson test -C /d/Develop/moat/projects/lc0/src/build-hip-win-up"}
+{"kind":"session","ts":"2026-10-26T15:27:44Z","epoch":1793028464.309132600,"event":"end","platform":"windows-gfx1151"}
