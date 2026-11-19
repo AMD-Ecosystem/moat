@@ -418,3 +418,27 @@ Results, gfx950 MI355X, ROCm 10.2.0 wheels, HIP_VISIBLE_DEVICES=2, `ulimit -c 0`
 CUDA, nvcc 12.8.93: `cuBQL_cuda_float3 cubql_builder_leaves cubql_morton_sort_range` build clean in build-cuda (sm_80). Preprocessed with `nvcc -std=c++17 -x cu -E -Xcompiler -P -DCUBQL_HAVE_CUDA=1 -DCUBQL_INSTANTIATE_T=float -DCUBQL_INSTANTIATE_D=3 -arch=sm_80 -I. -Itests`, blank lines dropped, upstream `6bd4a51` vs `1a2b9bb`: `instantiate_builders.cu` 135484 lines identical, `tests/morton_sort_range.cu` 139239 lines identical.
 
 `jargon.py --port cuBQL`, `audit-commits cuBQL`, `prose.py` on the commit body: clean. Pushed `e26657f..1a2b9bb`, `advance-head cuBQL 1a2b9bb...`, handed back as `delta-ported` (review scope for this round: `e26657f..1a2b9bb` plus the notes draft).
+
+## Review 2026-11-19 (reviewer, linux-gfx950): changes-requested round, head 1a2b9bb
+
+Scope: the delta past what PR #35 shipped (`b0ea6a1..1a2b9bb`); the port's own part is `6bd4a51..1a2b9bb` (`e26657f` + `1a2b9bb`), with this round's new commit `1a2b9bb` and the corrected draft PR body read in full. Upstream's 19 commits `b0ea6a1..6bd4a51` were covered by the previous review.
+
+No findings. Checked:
+
+- Both earlier findings are addressed: `1a2b9bb` adds exactly the four aliases inside the `__HIPCC__` block of `cuBQL/math/common.h` (CUDA preprocessing unaffected) and builds `cubql_morton_sort_range` under `CUBQL_HAVE_CUDA OR CUBQL_HAVE_HIP` with `LANGUAGE HIP`; the `CUBQL_HAVE_CUDA=1` define under HIP matches how `cuBQL/CMakeLists.txt` defines it for the HIP-compiled instantiation targets. The draft body now scopes the partly empty scene to the three prim builders and names the morton test on HIP.
+- Sort coverage: every `DeviceRadixSort` call in `cuBQL/builder/cuda/` either uses `CUBQL_UPPER_HALF_SORT_BEGIN_BIT` (sm/sah/elh `SortKeys`, `rebinMortonBuilder.h:1072/1083`) or begin bit 0 (`radix.h:697/713` `0,SortEndBit`; `rebinMortonBuilder.h:1106/1119` `0,64`; `:1235/1250` `0,32`), so no remaining call hits the rocPRIM defect's begin>0/end=64 shape.
+- `tests/morton_sort_range.cu` uses no warp intrinsics or warp-width constants; its only HIP-relevant names are the four now mapped (`:514-518`).
+- Commit hygiene: both titles `[ROCm]`, under 72 chars, AI disclosure in prose, no trailer; `audit-commits cuBQL` OK, `jargon.py --port cuBQL` clean.
+- Lessons: the cuda-to-rocm lesson's 5-12% figure matches the recorded bench (0.0419/0.0374, 0.0696/0.0655, 0.1772/0.1686) and its narrowing criterion is correct; the moat-porting lesson still holds on trunk (`ensure_port_branch` exists in `moatlib.py` but no subcommand exposes it).
+
+Independent run, gfx950 MI355X, ROCm 10.1.0 (image wheels, not the porter's 10.2.0), HIP_VISIBLE_DEVICES=2, `ulimit -c 0`:
+
+    cmake -S projects/cuBQL/src -B agent_space/cubql-build -G Ninja -DCUBQL_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx950 -DCMAKE_BUILD_TYPE=Release -DCUBQL_BUILD_TESTS=ON -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_HIP_COMPILER_ROCM_ROOT=$R -DCMAKE_BUILD_RPATH=$R/lib
+    cmake --build agent_space/cubql-build -j 32 --target cubql_morton_sort_range cubql_builder_leaves
+    ctest --test-dir agent_space/cubql-build --output-on-failure   -> 2/2 passed (builder_leaves 2.51 s)
+    cubql_morton_sort_range               -> exit 0, 27 status=PASS, 0 FAIL, 2 query_oracle=PASS
+    cubql_morton_sort_range --benchmark   -> exit 0, validation=PASS
+
+CUDA, nvcc at /usr/local/cuda, `-DCMAKE_CUDA_ARCHITECTURES=80 -DCUBQL_BUILD_TESTS=ON`: `cuBQL_cuda_float3 cubql_builder_leaves cubql_morton_sort_range` build clean at `1a2b9bb`.
+
+Recommendation: **Approve**. Next: revalidation on wave64, wave32 and windows at `1a2b9bb` (s02-s06 need a `bunny.obj`), then jeff's decision on opening the follow-up PR from the draft above.
