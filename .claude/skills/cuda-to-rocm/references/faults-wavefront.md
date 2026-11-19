@@ -199,8 +199,16 @@ is validated against itself, whether the halves arrive together or apart. HIP ev
 shuffle in the caller's context, so the mask changes only that check and the ballot's
 `& mask`, never the data movement. Mask-free `__shfl(v, s, 32)` / `__ballot` also work but
 drop the check entirely. Folds over the native wavefront (`warp_id = threadIdx.x /
-warpSize`) keep the full mask. (LichtFeld-Studio: fastgs/gsplat 32-lane tile macros, nn
-softmax/norm block reductions, `block_reduce_min4`.)
+warpSize`) keep the full mask. A PARTIAL mask needs the same move. Kernels that tile a block
+into 32-lane warps (`warp = threadIdx.x >> 5`) and pass a sub-group mask
+(`atom_mask = 0xf << 4*k`) to a masked `__syncwarp`/`__shfl*_sync` do not compile with the
+32-bit mask, and a mask that is only widened still names lanes of the first tile, so it
+differs from `__ballot(true)` of the lanes passing it and can trap. Move it to the lanes the
+tile occupies, `(unsigned long long)mask << (__lane_id() & 32)` (shift 0 on wave32), behind
+a compat-header macro that is the identity for CUDA. Also pass the tile width explicitly:
+`__shfl_sync(m, v, 0)` defaults to `warpSize`, so on wave64 lane 0 of the first tile is
+broadcast to both. (LichtFeld-Studio: fastgs/gsplat 32-lane tile macros, nn
+softmax/norm block reductions, `block_reduce_min4`; GPUMD: NEP-spin.)
 
 ## Shuffles and logical warps
 

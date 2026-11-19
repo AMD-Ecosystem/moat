@@ -13,16 +13,23 @@ Contents:
 
 ## Contraction and rounding
 
-**clang for HIP defaults to `-ffp-contract=fast`** and forms FMAs ACROSS statements. nvcc
-contracts by default too (`--fmad=true`, and NVRTC likewise), so a single `a * b + c` is an
-FMA on both; what differs is where else contraction happens. The extra contraction drifts
-results ~1 ULP from the CUDA build and CPU gold. That nvcc contracts only within one
-expression is inferred from the result below (`-ffp-contract=on` reproduced nvcc's numbers),
-not taken from nvcc's documentation. `-ffp-contract=off` is the `--fmad=false` equivalent. MATCH UPSTREAM's setting rather than
-pinning one unconditionally: CV-CUDA needed `-ffp-contract=on` to match nvcc, while
+**clang for HIP defaults to `-ffp-contract=fast`** and forms FMAs ACROSS statements -- and
+so does nvcc. nvcc contracts by default too (`--fmad=true`, and NVRTC likewise), and not
+only within one expression: `float d = a*b; r = d + c;` compiles to one `fma.rn.f32` in PTX
+and one FFMA in SASS (nvcc 12.8, sm_90; GPUMD), the same as the one-expression `a * b + c`.
+`-ffp-contract=on` is therefore STRICTER than nvcc, not a match for it: it fuses only within
+one source expression (clang emits `llvm.fmuladd` in the front end), while `fast` lets the
+backend fuse whatever survives inlining. FMA formation still differs between the compilers,
+so results can drift ~1 ULP from the CUDA build and CPU gold under either setting.
+`-ffp-contract=off` is the `--fmad=false` equivalent. MATCH UPSTREAM's setting rather than
+pinning one unconditionally: CV-CUDA's tests passed with `-ffp-contract=on`, while
 LC-framework's nvcc recipe uses `-fmad=false -mno-fma -ffp-contract=off`, so pinning `on`
-there would diverge. Integer-only components are unaffected. (CV-CUDA OpWarpPerspective;
-LC-framework.)
+there would diverge. Choose `on` for what it guarantees: two template instantiations or call
+sites built from the same source expressions form the same FMAs. GPUMD's
+batched-vs-per-slot replica tests compare such instantiations bitwise and failed on gfx90a
+under `fast`. It did not make CV-CUDA's `float` and `float4` instantiations of one template
+agree (next entry). Integer-only components are unaffected.
+(CV-CUDA OpWarpPerspective; LC-framework; GPUMD.)
 
 **One contraction setting cannot satisfy both kinds of bit-exact test.** A project can have
 tests that compare a kernel against a CPU gold (which want the contraction nvcc and the host
