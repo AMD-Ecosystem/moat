@@ -5341,3 +5341,462 @@ Added on Jeff's request today (he accepted upstream's restricted bf16 scope: bf1
 - test_tile_matmul (fresh cache): Ran 25, OK.
 - `cells_bf16.py` (below): bf16 and fp16 modules (16x16 bd64, 32x32 bd64, 64x64 bd128, 64x64 bd256) compiled through hipRTC for gfx1151, gfx1100, gfx1201, gfx950, gfx942, gfx90a with this commit's headers ("new") and `13e4e46e`'s ("old", worktree with the same `warp.dll`): 38 of 48 code objects byte-identical, including every MFMA object (gfx950, gfx942, gfx90a, bf16 and fp16) and every fp16 object. The 10 that differ are the gfx11/gfx12 bf16 ones that gained WMMA (16 instructions at 64x64 bd128; gfx1201 64x64 bd256 now 8, as its fp16 twin); gfx1151 and gfx1100 64x64 bd256 bf16 stay scalar and byte-identical.
 - **bf16 WMMA speed is unmeasured** (no benchmarks on this laptop). It mirrors the fp16 selection; gfx1100 and gfx1201 must benchmark it against the scalar tree (Next step).
+
+### The `test_mesh.py` crash: not order-dependent, intermittent, cause not established (test unmodified)
+Budget was 6 crashing runs; 3 used. Script `agent_space/warp-win/p6/mesh_seq.py` (below) replays test_mesh.py's GPU steps in one process with a print after each graph launch: `exc` = `test_mesh_exceptions(cuda:0)`, `graph` = `test_mesh_refit_graph(cuda:0)` (for sah, median, lbvh: new Mesh, capture `mesh.refit()`, 10 x `wp.capture_launch`, sync), `graphkeep`/`graphkg`/`graphkm` = the same but keeping the previous constructor's mesh and graph / graph only / mesh only alive, `trace` = also print around every native graph launch, graph destroy and free.
+
+| run | steps | result |
+|---|---|---|
+| 1 | exc graph | **crash** (access violation in `amdhip64_7.dll` worker thread) at median replay 6 |
+| 2 | exc gc graph | pass (`gc.collect()` found 0 objects) |
+| 3 | exc graph (repeat of 1) | **crash** at median replay 5-6 |
+| 4 | trace exc graph | pass (host slowed by the tracing prints) |
+| 5 | exc graph:median (median only) | pass |
+| 6 | exc graphkeep | pass |
+| 7 | exc graphkg | pass |
+| 8 | exc graphkm | pass |
+| 9 | graph (no exception test first) | **crash** at median replay 7 |
+
+What this establishes:
+- **The experiment's order dependence was a red herring.** Run 9 crashes with no other test before it, so none of the four tests the experiment named is needed (three of them never touch the GPU; `test_mesh_exceptions` only allocates and frees small arrays). `-k refit` passing in the experiment was timing.
+- The crash needs a previous refit graph (sah) to have been replayed and destroyed (its Mesh freed, its graph and graph exec destroyed) before the next mesh's graph (median) is captured and replayed back to back; it happens on the 5th-7th replay, on a runtime worker thread, while the main thread is inside `hipGraphLaunch`. Faulting address in all three: `amdhip64_7.dll + 0x160C6C` (the export-relative names faulthandler prints are meaningless; the DLL is stripped).
+- It is timing-dependent: slowing the host between launches (run 4) or a different preceding call (run 2) avoids it, and single runs that keep the previous mesh and/or graph alive passed (runs 6-8; one run each, so "keeping them alive avoids it" is suggestive, not proven).
+- The refit graph contains kernels, a stream-ordered allocation and free around a hipCUB inclusive scan (`scan_device` allocates its temp storage inside the capture, so the graph gets mem-alloc/mem-free nodes), a memset and the BVH refit kernel, and Warp instantiates graphs with `hipGraphInstantiateFlagAutoFreeOnLaunch`. The code involved (`wp_cuda_graph_*`, `wp_alloc/free_device_async`, the capture bookkeeping) is upstream's, unchanged by the port, and the port's HIP wrappers on this path are identical on Linux, where test_mesh passes on all five GPUs. No port code runs on this path only on Windows (the Windows commits touch only the build and the DLL loader).
+- Standalone reproducer attempt (`agent_space/warp-win/p6/graphrepro/graph_memnode.hip`: the same node sequence with a hipCUB scan, AutoFreeOnLaunch, 6 rounds x 10 launches, graph destroyed and buffers freed between rounds): **does not reproduce** (PASS). So the evidence leans towards the Windows HIP runtime (graph replay after a destroyed graph with memory nodes) but does not prove it, and nothing was registered. `test_mesh.py` is left unmodified; `test_mesh_refit_graph_cuda_0` can crash the worker on this laptop.
+- Next diagnostic step if someone takes it up (not in this budget): a HIP-only replay of Warp's exact call sequence via `WARP_DEBUG`/API tracing (`AMD_LOG_LEVEL=4` on one crashing run), or the reproducer with Warp's real kernels and its non-null-stream capture plus `hipFreeAsync(ptr, nullptr)` on the null stream for the freed mesh.
+
+### Default-target `warp.dll` size (numbers for Jeff; nothing changed)
+`agent_space/warp-win/p6/fatbin_sizes.py` (below) parses the 11 clang offload bundles (one per `.cu`) in the experiment's 22-target `warp.dll` (290.5 MB, `python build_lib.py -j 8`, about 12.5 min) and in a gfx1151-only one (17.9 MB):
+- Device code: 285.2 MB of the 290.5 MB; **12.7-13.2 MB per target** (gfx1200/1201 13.16, gfx11xx 13.08-13.09, gfx908 13.02, gfx101x 12.88, gfx1031-1036 12.86, gfx1030 and gfx90a 12.67). Host code and data: about 5 MB (17.9 - 13.1 for the single-target DLL). So size is linear in the target count: about 5 MB + 13 MB x targets.
+- Compressibility: each target's code objects deflate (zlib level 6) to about **1.07 MB** (12x). The whole 22-target DLL zipped (deflate 6, as a wheel stores it) is **24.4 MB**; the single-target DLL zips to 2.1 MB. The bundles are stored uncompressed (no `CCOB` compressed-bundle marker); clang's `--offload-compress` would store them compressed inside the DLL (installed size near the zipped size) at some load-time cost, unmeasured. Not tried: the target list and the compression switch are Jeff's decision.
+
+### Scripts from this session
+
+`loadcheck.py`:
+```python
+# Usage: python loadcheck.py [no-rocm-sdk] [marker-override-root]
+# Initializes Warp, runs one kernel on cuda:0 and prints which HIP runtime files the process loaded.
+import importlib.util
+import os
+import sys
+
+import psutil
+
+if "no-rocm-sdk" in sys.argv[1:]:
+    _orig = importlib.util.find_spec
+    importlib.util.find_spec = lambda name, *a, **k: None if name == "rocm_sdk" else _orig(name, *a, **k)
+
+import warp as wp
+
+wp.init()
+print("rocm_sdk imported:", "rocm_sdk" in sys.modules)
+for m in psutil.Process().memory_maps():
+    b = os.path.basename(m.path).lower()
+    if b.startswith(("amdhip", "hiprtc", "amd_comgr")):
+        print("loaded:", m.path)
+
+
+@wp.kernel
+def k(a: wp.array(dtype=float)):
+    i = wp.tid()
+    a[i] = float(i) * 2.0
+
+
+a = wp.zeros(8, dtype=float, device="cuda:0")
+wp.launch(k, dim=8, inputs=[a], device="cuda:0")
+print(wp.get_device("cuda:0").arch_name, a.numpy().tolist())
+```
+
+`mesh_seq.py`:
+```python
+# Replays test_mesh.py's GPU steps in order with prints, to find which preceding step makes the
+# refit graph replay crash. Usage: python mesh_seq.py <step>...  steps: exc, refit, graph
+import faulthandler
+import sys
+import unittest
+
+faulthandler.enable()
+import warp as wp
+from warp.tests.geometry import test_mesh as tm
+
+wp.config.log_level = wp.LOG_WARNING
+wp.init()
+dev = wp.get_device("cuda:0")
+tc = unittest.TestCase()
+kept = []
+if "trace" in sys.argv:
+    import gc
+
+    gc.callbacks.append(lambda phase, info: print("  gc", phase, info, flush=True))
+    core = wp._src.context.runtime.core
+    for name in ("wp_cuda_graph_destroy", "wp_cuda_graph_exec_destroy", "wp_mesh_destroy_device", "wp_free_device_async", "wp_cuda_graph_launch"):
+        fn = getattr(core, name)
+
+        def wrap(*a, _fn=fn, _name=name):
+            print("  call", _name, a[1:] if _name != "wp_cuda_graph_launch" else "", flush=True)
+            r = _fn(*a)
+            print("  ret", _name, flush=True)
+            return r
+
+        setattr(core, name, wrap)
+for step in [a for a in sys.argv[1:] if a != "trace"]:
+    if step == "gc":
+        import gc
+
+        print("collected", gc.collect(), flush=True)
+    elif step == "nogc":
+        import gc
+
+        gc.disable()
+    elif step == "exc":
+        tm.test_mesh_exceptions(tc, dev)
+    elif step == "refit":
+        tm.test_mesh_refit(tc, dev)
+    elif step.startswith("graph"):
+        ctors = step.split(":")[1].split(",") if ":" in step else ["sah", "median", "lbvh"]
+        for c in ctors:
+            points = wp.array(tm.POINT_POSITIONS, dtype=wp.vec3, device=dev)
+            indices = wp.array(tm.RIGHT_HANDED_FACE_VERTEX_INDICES, dtype=int, device=dev)
+            mesh = wp.Mesh(points=points, indices=indices, bvh_constructor=c)
+            wp.capture_begin(dev, force_module_load=False)
+            try:
+                mesh.refit()
+            finally:
+                graph = wp.capture_end(dev)
+            print("captured", c, flush=True)
+            for i in range(10):
+                wp.capture_launch(graph)
+                print(" launch", c, i, flush=True)
+            wp.synchronize_device(dev)
+            print("done", c, flush=True)
+            if step.startswith("graphkeep"):
+                kept.append((mesh, graph))
+            elif step.startswith("graphkg"):
+                kept.append(graph)
+            elif step.startswith("graphkm"):
+                kept.append(mesh)
+    wp.synchronize_device(dev)
+    print("step ok:", step, flush=True)
+```
+
+`graphrepro/graph_memnode.hip`:
+```cpp
+// A graph with a stream-ordered allocation inside it (kernel, hipMallocAsync, kernels using the
+// allocation (a hipCUB inclusive scan), hipFreeAsync, memset, kernel), instantiated with hipGraphInstantiateFlagAutoFreeOnLaunch
+// and launched back to back; then destroyed and the next round captured with fresh buffers.
+// Usage: graph_memnode [rounds] [launches]
+#include <hip/hip_runtime.h>
+#include <hipcub/hipcub.hpp>
+#include <cstdio>
+#include <cstdlib>
+#define CK(x) do { hipError_t e = (x); if (e != hipSuccess) { printf("%s:%d %s -> %s\n", __FILE__, __LINE__, #x, hipGetErrorString(e)); exit(1); } } while (0)
+
+__global__ void fill(float* a, int n, float v) { int i = blockIdx.x * blockDim.x + threadIdx.x; if (i < n) a[i] = v * i; }
+__global__ void scan_like(const float* a, float* t, int n) { int i = blockIdx.x * blockDim.x + threadIdx.x; if (i < n) t[i] = a[i] + (i ? a[i - 1] : 0.f); }
+__global__ void reduce_one(const float* t, float* out, int n) { if (threadIdx.x == 0 && blockIdx.x == 0) out[0] = t[n - 1] / n; }
+__global__ void bounds(const float* a, float* lo, float* hi, int n) { int i = blockIdx.x * blockDim.x + threadIdx.x; if (i < n) { lo[i] = a[i] - 1; hi[i] = a[i] + 1; } }
+__global__ void refit(int* counts, const float* lo, float* nodes, int n) { int i = blockIdx.x * blockDim.x + threadIdx.x; if (i < n) { atomicAdd(&counts[i % 7], 1); nodes[i] = lo[i]; } }
+
+int main(int argc, char** argv) {
+    int rounds = argc > 1 ? atoi(argv[1]) : 3, launches = argc > 2 ? atoi(argv[2]) : 10;
+    const int n = 12;
+    CK(hipSetDevice(0));
+    hipStream_t s;
+    CK(hipStreamCreateWithPriority(&s, hipStreamDefault, 0));
+    for (int r = 0; r < rounds; ++r) {
+        float *pts, *lo, *hi, *out, *nodes; int* counts;
+        CK(hipMallocAsync((void**)&pts, n * 4, s)); CK(hipMallocAsync((void**)&lo, n * 4, s));
+        CK(hipMallocAsync((void**)&hi, n * 4, s)); CK(hipMallocAsync((void**)&out, 64, s));
+        CK(hipMallocAsync((void**)&nodes, 2 * n * 4, s)); CK(hipMallocAsync((void**)&counts, 2 * n * 4, s));
+        fill<<<1, 64, 0, s>>>(pts, n, 1.f + r);
+        CK(hipStreamSynchronize(s));
+
+        hipGraph_t g; hipGraphExec_t ge;
+        CK(hipStreamBeginCapture(s, hipStreamCaptureModeThreadLocal));
+        fill<<<1, 64, 0, s>>>(lo, n, 0.5f);
+        size_t tsz = 0;
+        CK(hipcub::DeviceScan::InclusiveSum(nullptr, tsz, lo, lo, n, s));
+        void* tmp;
+        CK(hipMallocAsync(&tmp, tsz, s));
+        CK(hipcub::DeviceScan::InclusiveSum(tmp, tsz, lo, lo, n, s));
+        CK(hipFreeAsync(tmp, s));
+        reduce_one<<<1, 64, 0, s>>>(lo, out, n);
+        bounds<<<1, 64, 0, s>>>(pts, lo, hi, n);
+        CK(hipMemsetAsync(counts, 0, 2 * n * 4, s));
+        refit<<<1, 64, 0, s>>>(counts, lo, nodes, n);
+        CK(hipStreamEndCapture(s, &g));
+        CK(hipGraphInstantiateWithFlags(&ge, g, hipGraphInstantiateFlagAutoFreeOnLaunch));
+        for (int i = 0; i < launches; ++i) CK(hipGraphLaunch(ge, s));
+        CK(hipStreamSynchronize(s));
+        CK(hipGraphDestroy(g));
+        CK(hipGraphExecDestroy(ge));
+        float h[2]; CK(hipMemcpy(h, nodes, 8, hipMemcpyDeviceToHost));
+        CK(hipFreeAsync(pts, nullptr)); CK(hipFreeAsync(lo, nullptr)); CK(hipFreeAsync(hi, nullptr));
+        CK(hipFreeAsync(out, nullptr)); CK(hipFreeAsync(nodes, nullptr)); CK(hipFreeAsync(counts, nullptr));
+        CK(hipDeviceSynchronize());
+        printf("round %d ok (%g %g)\n", r, h[0], h[1]); fflush(stdout);
+    }
+    printf("PASS\n");
+    return 0;
+}
+```
+
+`bf16/wmma_layout_bf16.hip`:
+```cpp
+// Check the bf16 WMMA 16x16 fragment layouts on one 32-lane wavefront, before tile_matmul_mma.h
+// relies on them, and separately bound the accumulation error. lane l: lo = l % 16, g = l / 16.
+// Assumed (the fp16 layouts of the same family):
+//   gfx11 (wmma_f32_16x16x16_bf16_w32): A[lo][v], B[v][lo] for v < 16 in both half-waves;
+//       accumulator r is C[2 r + g][lo]
+//   gfx12 (wmma_f32_16x16x16_bf16_w32_gfx12): A[lo][8 g + v], B[8 g + v][lo] for v < 8;
+//       accumulator r is C[8 g + r][lo]
+// Tests, for K = 16, 32, 64:
+//   layout (non-negative): small non-negative integers (exact in bf16), every sum exact in f32
+//       whatever the accumulation order, so any wrong cell is a layout error
+//   layout (position): A[i][0] = i, A[i][1] = 1, B[0][j] = 1, B[1][j] = 16 j (exact in bf16), so
+//       C[i][j] = i + 16 j names its own position
+//   accumulation: random signed bf16 in [-1, 1]; |C - exact| must stay within
+//       (K / 16 + 1) * FLT_EPSILON * sum |a b| (one f32 rounding per instruction, plus one)
+#include <hip/hip_runtime.h>
+#include <cfloat>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+typedef float f8 __attribute__((ext_vector_type(8)));
+
+// the values used are exact in bf16, so truncating the f32 bit pattern is exact
+__device__ short bf16_bits(double x) { return short(__float_as_uint(float(x)) >> 16); }
+
+static double round_bf16(double x)
+{
+    float f = float(x);
+    unsigned u;
+    memcpy(&u, &f, 4);
+    u = (u + 0x7FFF + ((u >> 16) & 1)) & 0xFFFF0000u;  // round to nearest even
+    memcpy(&f, &u, 4);
+    return f;
+}
+
+__global__ void k(const double* A, const double* B, double* C, int K, int* kind)
+{
+    int l = threadIdx.x, lo = l % 16, g = l / 16;
+    f8 acc = {};
+#if __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_bf16_w32)
+    typedef short V __attribute__((ext_vector_type(16)));
+    for (int k0 = 0; k0 < K; k0 += 16) {
+        V a, b;
+        for (int v = 0; v < 16; ++v) {
+            a[v] = bf16_bits(A[lo * K + k0 + v]);
+            b[v] = bf16_bits(B[(k0 + v) * 16 + lo]);
+        }
+        acc = __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32(a, b, acc);
+    }
+    for (int r = 0; r < 8; ++r) C[(2 * r + g) * 16 + lo] = acc[r];
+    if (l == 0) *kind = 11;
+#elif __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_bf16_w32_gfx12)
+    typedef short V __attribute__((ext_vector_type(8)));
+    for (int k0 = 0; k0 < K; k0 += 16) {
+        V a, b;
+        for (int v = 0; v < 8; ++v) {
+            a[v] = bf16_bits(A[lo * K + k0 + 8 * g + v]);
+            b[v] = bf16_bits(B[(k0 + 8 * g + v) * 16 + lo]);
+        }
+        acc = __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32_gfx12(a, b, acc);
+    }
+    for (int r = 0; r < 8; ++r) C[(8 * g + r) * 16 + lo] = acc[r];
+    if (l == 0) *kind = 12;
+#else
+    if (l == 0) *kind = -1;
+#endif
+}
+
+static void fill(int test, int K, double* A, double* B)
+{
+    for (int x = 0; x < 16 * K; ++x) {
+        int i = x / K, kk = x % K;
+        if (test == 0) A[x] = double((x * 7 + 3) % 9);
+        if (test == 1) A[x] = kk == 0 ? double(i) : (kk == 1 ? 1.0 : 0.0);
+        if (test == 2) A[x] = round_bf16(2.0 * rand() / RAND_MAX - 1.0);
+    }
+    for (int x = 0; x < K * 16; ++x) {
+        int kk = x / 16, j = x % 16;
+        if (test == 0) B[x] = double((x * 5 + 1) % 7);
+        if (test == 1) B[x] = kk == 0 ? 1.0 : (kk == 1 ? 16.0 * j : 0.0);
+        if (test == 2) B[x] = round_bf16(2.0 * rand() / RAND_MAX - 1.0);
+    }
+}
+
+int main()
+{
+    const char* names[] = {"layout (non-negative)", "layout (position)", "accumulation"};
+    int fails = 0, kind_seen = 0;
+    srand(1);
+    for (int test = 0; test < 3; ++test)
+        for (int K : {16, 32, 64}) {
+            double *A, *B, *C;
+            int* kind;
+            hipMallocManaged(&A, 16 * K * 8);
+            hipMallocManaged(&B, K * 16 * 8);
+            hipMallocManaged(&C, 256 * 8);
+            hipMallocManaged(&kind, 4);
+            fill(test, K, A, B);
+            memset(C, 0, 256 * 8);
+            *kind = 0;
+            k<<<1, 32>>>(A, B, C, K, kind);
+            hipDeviceSynchronize();
+            kind_seen = *kind;
+            int bad = 0;
+            double worst = 0;
+            for (int i = 0; i < 16; ++i)
+                for (int j = 0; j < 16; ++j) {
+                    double ref = 0, mag = 0;
+                    for (int kk = 0; kk < K; ++kk) {
+                        ref += A[i * K + kk] * B[kk * 16 + j];
+                        mag += fabs(A[i * K + kk] * B[kk * 16 + j]);
+                    }
+                    double err = fabs(C[i * 16 + j] - ref);
+                    if (test < 2) {
+                        bad += err != 0.0;
+                    } else {
+                        double bound = (K / 16 + 1) * FLT_EPSILON * mag;
+                        bad += err > bound;
+                        worst = fmax(worst, err / bound);
+                    }
+                }
+            if (test < 2)
+                printf("bf16 WMMA family %d, %-22s K=%2d: %d of 256 wrong\n", *kind, names[test], K, bad);
+            else
+                printf("bf16 WMMA family %d, %-22s K=%2d: %d of 256 over the bound, worst error %.2f of the bound\n",
+                       *kind, names[test], K, bad, worst);
+            fails += bad != 0 || *kind <= 0;
+            hipFree(A); hipFree(B); hipFree(C); hipFree(kind);
+        }
+    if (kind_seen <= 0) printf("no bf16 WMMA instruction on this target\n");
+    return fails ? 1 : 0;
+}
+```
+
+`isa_count.py`:
+```python
+# For every code object in a Warp kernel cache: block_dim, the first two tile_load shapes (A and B),
+# and the count of each matrix instruction. Usage: python isa_count.py <cache_dir> <gfx>
+import glob
+import os
+import re
+import subprocess
+import sys
+
+R = subprocess.check_output([sys.executable, "-m", "rocm_sdk", "path", "--root"]).decode().strip()
+rows = []
+for hs in glob.glob(os.path.join(sys.argv[1], "**", "*.hsaco"), recursive=True):
+    src = open(hs.rsplit(".", 2)[0] + ".cu").read()
+    bd = re.search(r"#define WP_TILE_BLOCK_DIM (\d+)", src).group(1)
+    loads = re.findall(r"tile_load<wp::(\w+), \w+, \w+, (\d+), (\d+)>", src)
+    if len(loads) < 2:
+        continue
+    (ta, m, k), (tb, k2, n) = loads[0], loads[1]
+    dis = subprocess.run([os.path.join(R, "lib", "llvm", "bin", "llvm-objdump"), "-d", f"--mcpu={sys.argv[2]}", hs], capture_output=True, text=True).stdout
+    ops = {}
+    for line in dis.splitlines():
+        w = line.split()
+        if w and (w[0].startswith("v_wmma") or w[0].startswith("v_mfma")):
+            ops[w[0]] = ops.get(w[0], 0) + 1
+    rows.append((ta, int(m), int(n), int(k), int(bd), ops))
+for r in sorted(rows, key=lambda r: r[:5]):
+    print(f"{r[0]:9s} M{r[1]:3d} N{r[2]:3d} K{r[3]:3d} bd{r[4]:4d}: {r[5] or 'scalar'}")
+```
+
+`cells_bf16.py`:
+```python
+# bf16-input/float32-output and fp16 tile_matmul modules (forward only) per (tile, block_dim), compiled
+# through Warp's hipRTC path for other targets; prints matrix instructions per module and an md5 of each
+# code object. Usage: python cells_bf16.py <outdir> <tag> <gfx>...
+import glob
+import hashlib
+import os
+import subprocess
+import sys
+
+import warp as wp
+import warp._src.build as build
+
+wp.init()
+CELLS = [(16, 64), (32, 64), (64, 128), (64, 256)]
+R = subprocess.check_output([sys.executable, "-m", "rocm_sdk", "path", "--root"]).decode().strip()
+
+
+def make(M, dt):
+    if dt == "bf16":
+
+        @wp.kernel(module="unique", module_options={"enable_backward": False})
+        def mm(A: wp.array2d(dtype=wp.bfloat16), B: wp.array2d(dtype=wp.bfloat16), C: wp.array2d(dtype=float)):
+            c = wp.tile_zeros(shape=(M, M), dtype=float)
+            wp.tile_matmul(wp.tile_load(A, shape=(M, M)), wp.tile_load(B, shape=(M, M)), c)
+            wp.tile_store(C, c)
+
+    else:
+
+        @wp.kernel(module="unique", module_options={"enable_backward": False})
+        def mm(A: wp.array2d(dtype=wp.float16), B: wp.array2d(dtype=wp.float16), C: wp.array2d(dtype=wp.float16)):
+            wp.tile_store(C, wp.tile_matmul(wp.tile_load(A, shape=(M, M)), wp.tile_load(B, shape=(M, M))))
+
+    return mm
+
+
+out_dir, tag = sys.argv[1], sys.argv[2]
+os.makedirs(out_dir, exist_ok=True)
+for dt in ("bf16", "fp16"):
+    for M, bd in CELLS:
+        k = make(M, dt)
+        before = set(glob.glob(os.path.join(wp.config.kernel_cache_dir, "**", "*.cu"), recursive=True))
+        wp.load_module(k.module, device="cuda:0", block_dim=bd)
+        src = sorted(set(glob.glob(os.path.join(wp.config.kernel_cache_dir, "**", "*.cu"), recursive=True)) - before)[-1]
+        for target in sys.argv[3:]:
+            out = os.path.join(out_dir, f"{tag}_{dt}_mm{M}_bd{bd}_{target}.hsaco")
+            build.build_cuda(src, 0, out, pch_dir=None, hip_target=target)
+            dis = subprocess.run([R + "/lib/llvm/bin/llvm-objdump", "-d", f"--mcpu={target}", out], capture_output=True, text=True).stdout
+            ops = {}
+            for line in dis.splitlines():
+                w = line.split()
+                if w and (w[0].startswith("v_wmma") or w[0].startswith("v_mfma")):
+                    ops[w[0]] = ops.get(w[0], 0) + 1
+            md5 = hashlib.md5(open(out, "rb").read()).hexdigest()[:12]
+            print(f"{tag} {dt} {M}x{M} bd{bd:3d} {target:7s} md5 {md5} {ops or 'scalar'}", flush=True)
+```
+
+`fatbin_sizes.py`:
+```python
+# Sum the device code objects embedded in a HIP DLL per offload target, by parsing every
+# __CLANG_OFFLOAD_BUNDLE__ header in the file (one bundle per .cu translation unit).
+# Usage: python fatbin_sizes.py <dll>
+import collections
+import struct
+import sys
+import zlib
+
+data = open(sys.argv[1], "rb").read()
+magic = b"__CLANG_OFFLOAD_BUNDLE__"
+per = collections.Counter()
+per_z = collections.Counter()
+bundles = 0
+pos = data.find(magic)
+compressed = data.count(b"CCOB")
+while pos >= 0:
+    n = struct.unpack_from("<Q", data, pos + 24)[0]
+    off = pos + 32
+    for _ in range(n):
+        o, size, tl = struct.unpack_from("<QQQ", data, off)
+        triple = data[off + 24 : off + 24 + tl].decode()
+        off += 24 + tl
+        tgt = triple.split("-")[-1] if "amdgcn" in triple else triple
+        per[tgt] += size
+        per_z[tgt] += len(zlib.compress(data[pos + o : pos + o + size], 6))
+    bundles += 1
+    pos = data.find(magic, pos + 1)
+total = sum(per.values())
+print(f"file {len(data) / 1e6:.1f} MB, bundles {bundles}, CCOB markers {compressed}, device code {total / 1e6:.1f} MB")
+for t, s in sorted(per.items(), key=lambda kv: -kv[1]):
+    print(f"  {t:28s} {s / 1e6:7.2f} MB  (zlib -6: {per_z[t] / 1e6:6.2f} MB)")
+```
