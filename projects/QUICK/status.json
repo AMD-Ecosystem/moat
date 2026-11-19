@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-11-19T22:34:44Z",
+  "updated_at": "2026-11-19T22:52:52Z",
   "head_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009",
   "depends_on": [],
   "waivers": {
@@ -164,5 +164,6 @@
     "at": "2026-11-19T21:43:31Z"
   },
   "reviewed_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009",
-  "porting": null
+  "porting": null,
+  "review_pr": "https://github.com/AMD-Ecosystem/QUICK/pull/1"
 }
