@@ -912,3 +912,32 @@ Notes for jeff (not blocking, recorded per instruction):
 - The near-constant-image disagreement is reproduced on this host (MI250X, `$FLEET_VENV` build of d3213b4): `fused_l1_ssim_loss` 9.4263e-5 vs `l1 + fused_ssim` 9.9640e-5; float64 reference 9.4389e-5 with or without clamps; float32 unclamped 9.3787e-5, clamped 1.1291e-4; 76,082 of 196,608 float32 pixels exceed SSIM 1 before the clamp. `fusedssimCUDA` carries 0f89827's clamps (ssim.cu:247-272) and `fusedl1ssim_lossCUDA` does not (ssim.cu:680-715). Random, near-copy and piecewise-flat cases agree under `isclose`, deterministic. It does not block this delta: the kernel LiteGS calls is unchanged from the previous pin, so LiteGS's loss is the same as before; only `fused_ssim` moved (it gained the clamp upstream). Whether to add the clamps to the fused kernel is correctly left as jeff's ruling. The porter's "the same on CUDA" is reasoned from the code (the clamp is backend independent), not measured.
 - fused-ssim d3213b4's body (Kem Chen's message plus an agent-written conflict-resolution paragraph) has no AI-assistance line and no Test Plan, unlike the four earlier fork commits (666987f, 767e3f6, cdfe1fa, 6f9a620). It is already pushed on `moat-port` and LiteGS pins it, so changing it means rewriting a published branch, which the no-force-push rule forbids; recorded for jeff rather than requested.
 - Owed before presenting (not a review gate): an nvcc compile of 1664e6d with d3213b4 (the new kernels and the moved `m.def`s have not been compiled with nvcc in this round), and the Windows fused-ssim build with the cherry-pick, which notes say has only been reasoned.
+
+## Validation 2026-11-19 (3) (validator, linux-gfx90a) -- GPU PASS at 1664e6d; recorded validation-failed --gate jargon
+
+Device: AMD Instinct MI250X GCD (gfx90a:sramecc+:xnack-), `HIP_VISIBLE_DEVICES=0`. PyTorch `2.16.0a0+git6c3af02` (source build), `torch.version.hip` 7.16.26385, ROCm 10.1.0 pip SDK, Python 3.11. head_sha `1664e6da19e9fd89b437bcd6e38db1e654edb6b1`, fused_ssim submodule AMD-Ecosystem/fused-ssim d3213b4.
+
+Build: clean (`git clean -fdx` in the fork and the submodule, the three packages uninstalled from the job venv). From `/tmp`, `PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32`, each wrapped in `utils/timeit.sh LiteGS compile --`: `python -m pip install -v --no-build-isolation --no-deps <src>/litegs/submodules/{simple-knn,fused_ssim,gaussian_raster}`. All three built. Code objects: litegs_fused 4, simple_knn._C 1, fused_ssim_cuda 2 (ssim + ssim3d), all `amdgcn-amd-amdhsa--gfx90a`. `transform.hip:453` has `torch::zeros` for `view_position`.
+
+Self-check (`selfcheck.py`, `validate()` per class): 2 PASS / 2 mismatch / 2 TypeError of 6, identical to the 38aa67c and 2026-06-01 baselines (known upstream harness artifacts).
+
+fused_ssim's own tests at d3213b4: see "fused-ssim fork commits and tests" above (all pass on this GPU).
+
+Real trainer (`example_train.py` unchanged, through `train_probe.py`; absolute scene paths, since `timeit.sh` changes cwd; each wrapped in `utils/timeit.sh LiteGS test --`):
+| run | iterations | first iter loss / PSNR | last iter loss / PSNR | first-50 -> last-50 mean loss / PSNR | finite | wall |
+|---|---|---|---|---|---|---|
+| truck 1 | 2761 | 0.26825 / 12.44 dB | 0.07751 / 24.19 dB | 0.22832 / 13.78 -> 0.07866 / 22.74 | yes | 37.0 s |
+| truck 2 | 2761 | 0.28639 / 11.39 dB | 0.09336 / 20.97 dB | 0.23220 / 13.61 -> 0.08030 / 22.53 | yes | 35.9 s |
+| truck 3 | 2761 | 0.26131 / 12.65 dB | 0.07323 / 23.53 dB | 0.22774 / 13.75 -> 0.08049 / 22.58 | yes | 35.5 s |
+| truck --eval | 2847 | 0.29844 / 11.25 dB | 0.10008 / 20.41 dB | 0.23669 / 13.50 -> 0.09452 / 21.09 | yes | 47.3 s |
+| train (301 img) | 6923 | 0.36493 / 9.13 dB | 0.09926 / 19.19 dB | 0.28864 / 11.89 -> 0.09719 / 21.54 | yes | 134.4 s |
+
+`example_metrics.py --eval` (LPIPS stubbed): Trainingset SSIM 0.7534 / PSNR 22.19 dB; **Testset SSIM 0.7468 / PSNR 21.79 dB**.
+
+Against 38aa67c (409da0b pin): truck last-50 loss 0.0787-0.0805 here, 0.0761-0.0771 in the porter round at this head, 0.0760-0.0786 at 38aa67c gfx90a, 0.0774-0.0792 at 38aa67c gfx1201; testset 21.79 / 0.7468 vs 21.77 / 0.7501 (gfx90a) and 21.86 / 0.7514 (gfx1201); train last-50 0.0972 / 21.54 vs 0.0925 / 22.09 (gfx90a) and 0.0967 / 21.71 (gfx1201). Within run-to-run spread (random frame order; the fused loss kernel LiteGS calls is the same code as at 409da0b). No 0x1016, `hipError` or `HSA_STATUS` in any run log: 5 runs, about 18,900 iterations. (A first attempt of the runs failed at once with `FileNotFoundError` on a relative scene path because `timeit.sh` changes cwd; an environment error, not a port result.)
+
+CUDA no-regression compile: `cuda-not-validated: no nvcc on this host (no /opt/conda, headless worker)`. The CUDA-relevant delta since the nvcc-checked 38aa67c is the fused_ssim submodule (409da0b -> d3213b4: rahul-goel main + 3D + Windows setup shim + the same fused-loss code); an nvcc compile of 1664e6d with its submodule is owed before the port is presented.
+
+Gates: documentation present (README.MD:89, Linux scope). **Jargon is not clean**: `python3 utils/jargon.py --port LiteGS` exits 1 with 2 hits, both the `.gitmodules` line `branch = moat-port`, which jeffdaily's instruction for this round required verbatim. A validator may not waive it, so this platform is recorded `validation-failed --gate jargon` with the GPU pass kept (`gpu_passed_sha` = 1664e6d). **For jeff:** either rule the line acceptable for the PR, or give fused-ssim's port branch a plain name (or drop the `branch =` line) in a new `.gitmodules` commit; such a commit changes no compiled output, so a validator then completes this platform with `carry-forward ... source-class` from this pass.
+
+Integrity: `git status --porcelain` empty in the fork clone and the submodule at 1664e6d.
