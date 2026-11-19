@@ -7,10 +7,14 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-11-19T04:09:12Z",
+  "updated_at": "2026-11-19T04:09:53Z",
   "head_sha": "2146b22a8293172df82a0c713059149892c1825b",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-19T04:09:53Z",
+    "holder": "d0a4cb1194a5"
+  },
   "waivers": {
     "windows": {
       "reason": "Upstream QUICK does not support Windows: its README lists \"Supported platforms: Linux (x86 and ARM), macOS (x86 and ARM)\", so there is no Windows CUDA build for a HIP port to stand beside. Secondary obstacle: QUICK is a mixed Fortran/HIP build and the Windows ROCm SDK ships no working Fortran compiler (flang.exe there is a clang driver), reported as https://github.com/ROCm/TheRock/issues/7596 and unanswered. The HIP work is validated at head d369e07 on linux-gfx90a (wave64) and linux-gfx1100 (wave32).",
@@ -21,7 +25,7 @@
   },
   "license_spdx": "MPL-2.0",
   "upstream_repo_id": 172423631,
-  "stage": "delta-ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -30,7 +34,7 @@
       "validated_sha": "d369e071b2fbf5641fe239dcb4aab54334719aa5",
       "started_at": "2026-06-05T00:11:32Z",
       "completed_at": "2026-08-09T00:13:53Z",
-      "updated_at": "2026-11-19T04:09:12Z",
+      "updated_at": "2026-11-19T04:09:53Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
