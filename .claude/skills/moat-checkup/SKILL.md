@@ -214,7 +214,7 @@ whether a port this one depends on is still unmerged, whether upstream is archiv
 whether the branch still has anything upstream lacks. A port it flags goes back through
 a porter round that merges upstream (review and validation follow as usual) before
 anyone drafts its title and body. Then read the diff itself against upstream's base, as
-a maintainer will: of the first nine ports prepared after this check existed, the read
+a maintainer will: of the first seven ports read this way (2026-11), the read
 found a submodule repointed at a deleted fork (training broken for CUDA users too), a
 port that changed no source of its own, a product whose entry points could not run,
 validations that never ran the real program, and upstreams that had never merged an

@@ -7877,6 +7877,7 @@ def _main(argv=None):
     elif args.cmd == "pr-candidates":
         names = [n for n, _o, _w in project_records()]
         ready_names = []
+        held = []
         for n in names:
             try:
                 ready, _, nonviable = pr_ready(n)
@@ -7888,6 +7889,13 @@ def _main(argv=None):
             # An all-blocked project is "ready" only vacuously (everything non-viable).
             states = {b.get("state") for b in load_status(n)["platforms"].values()}
             if "completed" not in states:
+                continue
+            # A person parked it, with a reason. Its gates still hold, which is why
+            # it used to be listed here as ready, and four held ports were then
+            # prepared for a pull request their hold said not to open.
+            rec = project_record(n)[0] or {}
+            if rec.get("on_hold"):
+                held.append((n, rec.get("on_hold_reason") or "on hold"))
                 continue
             ready_names.append((n, nonviable))
         # A release line passes the same gates for its IN-FORK review PR, but it
@@ -7914,6 +7922,8 @@ def _main(argv=None):
         for n, nonviable in lines:
             scope = f"  (non-viable: {', '.join(nonviable)})" if nonviable else ""
             print(f"RELEASE-READY {n}{scope}")
+        for n, why in held:
+            print(f"HELD {n}  ({why[:140]})")
         print(f"-- {len(ready_names)} PR-ready project(s); terminal-outcome, already-open, "
               "and all-blocked projects excluded")
         if lines:
