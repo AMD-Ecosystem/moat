@@ -24,9 +24,10 @@
       "component": "moat-control-plane",
       "summary": "audit-commits and jargon --port never judge a staged fix round: commit_message_problems (utils/moatlib.py:1608) resolves <default>..PORT_BRANCH and jargon.py:101 uses fork_branch or PORT_BRANCH, while the staging branch is recorded at status.json fix.branch; both should prefer fix.branch when a fix block is present",
       "refs": [
-        "projects/lc0/notes.md#review-2026-08-20"
+        "projects/lc0/notes.md#review-2026-08-20",
+        "fixed on trunk in 047735f5 (2026-08-20): upstream_visible_branch prefers fix.branch"
       ],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-08-20T21:13:18Z",
       "decided": null

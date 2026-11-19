@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-11-05T06:12:25Z",
-  "head_sha": "e7e0b00c5e343e57724226aca38b92438868cc6b",
+  "updated_at": "2026-11-18T15:19:12Z",
+  "head_sha": "c665e5cc723ccefd02e3505b0adeabc99cdb4838",
   "depends_on": [],
   "pr_url": "https://github.com/symforce-org/symforce/pull/465",
   "pr_number": 465,
@@ -19,14 +19,37 @@
   "upstream_repo_id": 444900243,
   "stage": "review-passed",
   "platforms": {
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c665e5cc723ccefd02e3505b0adeabc99cdb4838",
+      "started_at": "2026-08-20T17:36:40Z",
+      "completed_at": "2026-11-18T05:12:29Z",
+      "updated_at": "2026-11-18T05:12:29Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator:claude"
+    },
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "e7e0b00c5e343e57724226aca38b92438868cc6b",
-      "failed_sha": null,
+      "validated_sha": "c665e5cc723ccefd02e3505b0adeabc99cdb4838",
+      "failed_sha": "aa31e636e72ba79fc676a04657fdd8bb6bf3c91f",
       "started_at": null,
-      "completed_at": "2026-11-05T05:03:09Z",
-      "updated_at": "2026-11-05T05:03:09Z",
+      "completed_at": "2026-11-18T05:16:14Z",
+      "updated_at": "2026-11-18T05:16:14Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -41,29 +64,6 @@
         "last_session_at": null
       },
       "state": "completed",
-      "last_agent": "validator:claude"
-    },
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "e7e0b00c5e343e57724226aca38b92438868cc6b",
-      "started_at": "2026-06-05T00:23:29Z",
-      "completed_at": "2026-11-04T21:50:10Z",
-      "updated_at": "2026-11-04T21:50:10Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
       "last_agent": "validator:claude"
     },
     "windows-gfx1201": {
@@ -95,14 +95,14 @@
         "at": "2026-06-23T22:23:19Z"
       }
     },
-    "linux-gfx1100": {
+    "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "e7e0b00c5e343e57724226aca38b92438868cc6b",
-      "started_at": "2026-08-20T17:36:40Z",
-      "completed_at": "2026-11-04T21:51:41Z",
-      "updated_at": "2026-11-04T21:51:41Z",
+      "validated_sha": "c665e5cc723ccefd02e3505b0adeabc99cdb4838",
+      "started_at": "2026-06-05T00:23:29Z",
+      "completed_at": "2026-11-18T05:13:20Z",
+      "updated_at": "2026-11-18T05:13:20Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -116,7 +116,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator:claude"
+      "last_agent": "reviewer"
     },
     "windows-gfx1101": {
       "state": "completed",
@@ -148,19 +148,19 @@
       }
     }
   },
-  "published_sha": "e7e0b00c5e343e57724226aca38b92438868cc6b",
+  "published_sha": "c665e5cc723ccefd02e3505b0adeabc99cdb4838",
   "fix": null,
   "porting_released": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-04T21:33:18Z",
-    "at": "2026-11-04T21:38:50Z"
+    "arch": "linux-gfx90a",
+    "since": "2026-11-18T04:53:56Z",
+    "at": "2026-11-18T05:01:58Z"
   },
   "pr_approval": {
     "approved_by": "jeffdaily",
-    "at": "2026-11-05T06:09:29Z",
-    "head_sha": "e7e0b00c5e343e57724226aca38b92438868cc6b",
-    "content_sha256": "343ea17dd6ab8aeea0fc38200eb7b3eda0532552e2ddf8c0f2d6c1fabb22a8e2",
-    "review_pr": "https://github.com/AMD-Ecosystem/symforce/pull/2"
+    "at": "2026-11-18T15:16:37Z",
+    "head_sha": "c665e5cc723ccefd02e3505b0adeabc99cdb4838",
+    "content_sha256": "993cab39e53691ac7e4f577934919c8842b6b05bbd0dcdbfab60d3f8a9d98fd5",
+    "review_pr": "https://github.com/AMD-Ecosystem/symforce/pull/3"
   },
-  "fix_merged_at": "2026-11-05T06:12:25Z"
+  "fix_merged_at": "2026-11-18T15:19:12Z"
 }

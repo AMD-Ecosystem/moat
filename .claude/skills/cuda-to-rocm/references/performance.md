@@ -1,31 +1,45 @@
 # Performance: what a correct port can still lose
 
-A port that is byte-identical to CUDA can still be an order of magnitude slower on AMD. The
-causes below were measured, not guessed: each was swapped in and out one at a time on the
-same binary and input. Check them before calling a port done, and before blaming tile
-tables or wavefront size.
+A port whose results match CUDA can still be many times slower on AMD: how to find the cost, and the causes measured so far.
 
-## How to find the cost in an hour
+<!-- toc:begin -->
+Contents:
+
+- Finding the cost
+- Measured causes
+<!-- toc:end -->
+
+## Finding the cost
+
+### Profile the hot kernels and read their ISA before blaming tile tables or wavefront size
+
+A port that is byte-identical in output can still be an order of magnitude slower. The
+causes in this file were measured, not guessed: each was swapped in and out one at a time
+on the same binary and input. An hour is enough to find the cost:
 
 1. `rocprofv3 --kernel-trace --stats -d <dir> -o run --output-format csv -- <cmd>` gives
    per-kernel time and call counts (`run_kernel_stats.csv`). rocprofv3 aborts if
    `HIP_VISIBLE_DEVICES` and `CUDA_VISIBLE_DEVICES` are both set, so unset the CUDA one.
 2. Pull the code objects out of the binary (`llvm-objdump --offloading <bin>`, which writes
-   `<bin>.N.hip-amdgcn-amd-amdhsa--gfxXXXX` next to it) and read
-   `llvm-readelf --notes` for each hot kernel: `.vgpr_count`, `.vgpr_spill_count`,
-   `.private_segment_fixed_size` (scratch). Then `llvm-objdump -d` the hot kernel and count
-   instructions in its inner loop. Compare against a reference build (upstream's own HIP
-   path, or the CUDA path's intent) at the same kernel.
+   `<bin>.N.hip-amdgcn-amd-amdhsa--gfxXXXX` next to it) and read `llvm-readelf --notes` for
+   each hot kernel: `.vgpr_count`, `.vgpr_spill_count`, `.private_segment_fixed_size`
+   (scratch). Then `llvm-objdump -d` the hot kernel and count instructions in its inner
+   loop. Compare against a reference build (upstream's own HIP path, or the CUDA path's
+   intent) at the same kernel.
 3. Swap one difference at a time. When the hot code lives in a shared library, build only
    that target per variant and point `LD_LIBRARY_PATH` at it; `DT_RUNPATH` yields to it.
 
-## Scalar emulation of a packed intrinsic
+(MMseqs2)
+
+## Measured causes
+
+### Scalar emulation of a packed intrinsic (`__hmax2` as two `__hmax`) cost 15x or more
 
 CUDA has `__hmax2`/`__hmin2` for `half2`; HIP (checked through HIP 7.16) has only the
-scalar `__hmax`/`__hmin`, and ROCm's scalar `__hmax` is three explicit `__hisnan` tests
-plus a compare. Emulating `__hmax2` as two scalar `__hmax` calls is correct but the
-compiler keeps the NaN tests as compares, selects and `s_and_saveexec` branches instead of
-one `v_pk_max_f16`. In a max-heavy inner loop that is roughly 14x more instructions per
+scalar `__hmax`/`__hmin`, and ROCm's scalar `__hmax` is three explicit `__hisnan` tests plus
+a compare. Emulating `__hmax2` as two scalar `__hmax` calls is correct, but the compiler
+keeps the NaN tests as compares, selects and `s_and_saveexec` branches instead of one
+`v_pk_max_f16`. In a max-heavy inner loop that is roughly 14x more instructions per
 iteration, and the bloat then pushes `#pragma unroll` loops over the unroll threshold, so
 per-thread register arrays land in scratch.
 
@@ -48,27 +62,28 @@ row): scalar `__hmax` emulation 328 s; `asm volatile` 19.4-21.0 s; non-volatile 
 11.4 s; `__builtin_elementwise_max` 9.2-10.5 s. The same pattern applies to any SIMD-in-word
 CUDA intrinsic emulated lane by lane (`__vmaxs2`, `__viaddmax_*`, `__vadd4`): check whether
 a packed AMD instruction or an `__builtin_elementwise_*` form exists before writing scalar
-lanes, and look at the ISA of the result either way.
+lanes, and look at the ISA of the result either way. (MMseqs2)
 
-## Tile tables are second order
+### Tile and block-size tables are second order, and a project's own autotuner can pick a slower one
 
 Pinning a conservative NVIDIA tile table (T4/sm75) instead of an AMD-tuned one cost about
 10% once the arithmetic was fast, and the "AMD-tuned" table was the slower of the two on
-RDNA3. With the slow scalar emulation the tuned table was 37% slower, because its larger
-per-thread tiles spill. Fix the instruction stream first, then tune tiles with the profiler.
+RDNA3. With the slow scalar emulation above, the tuned table was 37% slower, because its
+larger per-thread tiles spill. Fix the instruction stream first, then tune tiles with the
+profiler.
 
 A project's own autotuner can still pick the wrong table. On an RDNA4 card (gfx1201) a full
 sweep of MMseqs2/libmarv's tuner, choosing the fastest config per tile size, gave a table
 that was 2-9% slower end to end than the untuned generic one on two database sizes, with
 identical results. The tuner ranked 512-thread blocks 10-40% above the generic 128-thread
 configs, but in the application the generic table, built from 128-thread configs, was
-faster. A different RDNA table did no better. Time the real
-workload against the existing configs before keeping a tuned table, and keep the raw tuner
-output so the comparison can be checked.
+faster, and a different RDNA table did no better. Time the real workload against the
+existing configs before keeping a tuned table, and keep the raw tuner output so the
+comparison can be checked. (MMseqs2)
 
-## What did not matter
+### What did not matter: RDC layout and maskless shuffles
 
-A SHARED library with `-fgpu-rdc` versus a static library with CMake's device link: same
+A SHARED library with `-fgpu-rdc` versus a static library with CMake's device link: the same
 time within noise for the same source. Redirecting `__shfl_*_sync` to maskless shuffles had
-no effect because the hot kernels use cooperative-groups tile shuffles, which compile to the
-same `ds_bpermute_b32` either way.
+no effect, because the hot kernels use cooperative-groups tile shuffles, which compile to
+the same `ds_bpermute_b32` either way. (MMseqs2)
