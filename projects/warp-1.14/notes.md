@@ -528,3 +528,274 @@ RULED: keep the narrowing of the spin-lock test to devices with independent thre
 Who depends on the spin-lock behaviour (asked by Jeff; `git grep atomic_cas|atomic_exch` on release-1.14 outside tests and docs): no library code. `atomic_cas`/`atomic_exch` are user-facing builtins added in eaa3cf3d ("Expose atomic cas and and atomic exch GH-767"); the only callers in the tree are `warp/tests/test_atomic_cas.py` and two examples, neither registered in the test suite: `warp/examples/core/example_spin_lock.py` (the same `while atomic_cas(lock,0,0,1) == 1: pass` spin lock, so it is expected to hang on AMD GPUs) and `warp/examples/core/example_work_queue.py` (a lock-free queue: CAS retry loops where no thread waits on another to release, so it is expected to make progress; not yet run).
 
 Porter, next session: (1) add the AMD-capable `atomic_cas`/`atomic_exch` test; (2) run `example_work_queue.py` on an AMD GPU under a timeout and record the result; (3) make `example_spin_lock.py` end with a clear message on a GPU without independent thread scheduling instead of hanging, using the same capability the test uses; (4) release notes: spin locks contended inside one wavefront hang on AMD GPUs, and `example_spin_lock.py` is the in-tree case.
+
+## Evidence session (2026-11-19, linux-gfx942, 2x MI300X, evidence only): handoff items A and C
+
+Requested by Jeff Daily. The work lock stays with linux-gfx950. This session changed nothing in the fork, stage, lock, head or platform records. The clone was read-only at the recorded `head_sha` `8d13d596`, and local experiments in it were reverted (`git status --porcelain` clean at the end). Where a fix is proposed below, it is a diff for the lock holder to judge.
+
+### Setup (deviations from the common setup block)
+- Host: 2x "AMD Instinct MI300X HF" (192 GiB each, `gfx942:sramecc+:xnack-`, 304 CUs), dispatched with `HIP_VISIBLE_DEVICES=0,1`. Items A ran with `HIP_VISIBLE_DEVICES=0` (one GPU, as on gfx950) and item C with `0,1`. No system ROCm on the loader path.
+- The job venv came with TheRock 10.1.0 wheels. Installed into it: `rocm[devel,device-gfx942]==10.2.0`, `torch[device-gfx942]==2.15.0+rocm10.2.0`, `numpy==1.26.4` and `usd-core` (index `https://stable.repo.amd.com/rocm/whl-next/`, extra index PyPI), then `rocm-sdk init`. The stale `rocm-sdk-device-gfx*==10.1.0` packages remain visible through the job's read-only `venv-base-links` path (pip cannot uninstall them there). Warp uses none of the ROCm math libraries, so they do not matter here. HIP 7.17.26434, torch 2.15.0+rocm10.2.0, Python 3.11.17.
+- `git-lfs` is not installed on this host, so `git lfs pull` was skipped. None of the files run here read LFS assets.
+- Build: `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx942 -j 112` (112 = physical cores) -> "Warp build succeeded", 30.5 s at 56 workers. Greeting: `HIP 7.17`, both devices listed, "CUDA peer access: Supported fully (all-directional)". `wp.is_peer_access_supported("cuda:0", "cuda:1")` = True.
+- Every run used a private `WARP_CACHE_PATH` under `agent_space/`, because the test runner clears its kernel cache at start and the default `~/.cache/warp` is shared with other jobs on the host. All GPU runs were under `ulimit -c 0`.
+
+### A.2: tile set on gfx942 (one GPU): 636 run, 10 skipped, 4 failures
+Same loop as step 1 of session 4 (`-p <file> -m 32`, from `projects/warp-1.14/src`).
+
+| file | ran | result | file | ran | result |
+|---|---|---|---|---|---|
+| test_tile | 126 | OK | test_tile_matmul_no_mathdx | 22 | OK |
+| test_tile_atomic_bitwise | 3 | OK | test_tile_mlp | 3 | OK, 1 skipped (a) |
+| test_tile_cholesky | 33 | OK | test_tile_reduce | 62 | **FAILED (failures=2)** |
+| test_tile_cholesky_no_mathdx | 16 | OK | test_tile_shared_memory | 30 | **FAILED (failures=1)** |
+| test_tile_empty | 20 | OK | test_tile_solve | 5 | OK, 1 skipped (b) |
+| test_tile_fft | 20 | OK, 8 skipped (c) | test_tile_solve_no_mathdx | 28 | OK |
+| test_tile_fft_no_mathdx | 16 | OK | test_tile_sort | 2 | OK |
+| test_tile_func_arg | 27 | OK | test_tile_stack | 40 | OK |
+| test_tile_fused_ops | 36 | OK | test_tile_view | 16 | **FAILED (failures=1)** |
+| test_tile_large_offsets | 1 | OK | test_block_dim_dispatch | 2 | OK |
+| test_tile_load | 64 | OK | test_template_launch_bounds | 36 | OK |
+| test_tile_mathdx | 6 | OK | | | |
+| test_tile_matmul | 22 | OK | | | |
+
+The skips are the same three upstream no-libmathdx skips as on gfx950: (a), (b), (c).
+
+The four failures: `test_tile_reduce_axis_tier2_cuda_0`, `test_tile_reduce_axis_tier2_single_warp_cuda_0`, `test_tile_shared_mem_large_cuda_0`, `test_tile_assign_2d_cuda_0`. In each one, the output or gradient array stays all zeros, and the log has exactly one `Warp CUDA error 1: invalid argument (in function wp_cuda_launch_kernel, warp.cu:5466)` per failing test.
+
+Cause, measured: each failing kernel asks for exactly 65536 bytes of dynamic shared memory. Per module meta: tier2 sum-axis2 backward 65536, assign_2d backward 65536, shared_mem_large forward 65536. On top of that it carries static LDS. `llvm-readobj --notes` on the cached code objects gives `group_segment_fixed_size` of 1024 (shared_mem_large forward), 392 and 520 (tier2 sum-axis2 backward at the two block_dims) and 128 (assign_2d backward). gfx942 allows 65536 bytes of LDS per workgroup in total (`hipDeviceAttributeMaxSharedMemoryPerBlock`), so 65536 + static > limit, and `hipModuleLaunchKernel` returns `hipErrorInvalidValue`. The 1024 static bytes in shared_mem_large are Warp's own per-thread allocator offsets, `__shared__ unsigned int smem_base[WP_TILE_BLOCK_DIM]` (`tile.h:1143`, 256 x 4 B). Upstream has the same array on CUDA, where the opt-in limit (up to 227 KiB) leaves room for it. gfx950 has 160 KiB, which is why these four pass there. This is the same hardware-capacity class as the fp64 64x64 adjoint row on gfx950, not a miscompile. Upstream's test comment says as much: "set dimensions that require 64kb for the forward kernel ... checks that we can configure shared memory > 48kb default".
+
+Port defect found while diagnosing it: Warp printed no "Failed to configure kernel dynamic shared memory" warning for these kernels. On gfx950 it does print one for the fp64 adjoint. The HIP emulation of `cuFuncSetAttribute_f(CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES)` (`cuda_util.cpp:410-428`) compares the requested dynamic size alone against the per-block limit. CUDA's `cuFuncSetAttribute` fails when dynamic + static exceeds the limit, so the emulation lets these kernels through to a launch failure. Proposed fix, tested as an uncommitted local experiment: with it, the shared_mem_large probe prints `Warp UserWarning: Failed to configure kernel dynamic shared memory ... for 65536 bytes, but maximum available is 65536` before the launch error. The kernel still cannot run, by hardware limit.
+```diff
+--- a/warp/native/cuda_util.cpp
++++ b/warp/native/cuda_util.cpp
+@@ -409,19 +409,20 @@ CUresult cuModuleGetGlobal_f(CUdeviceptr* dptr, size_t* bytes, CUmodule hmod, co
+ 
+ CUresult cuFuncSetAttribute_f(CUfunction hfunc, CUfunction_attribute attrib, int value)
+ {
+-    (void)hfunc;
+-
+     // AMD GPUs have no opt-in for dynamic shared memory: a kernel may use up to the
+-    // per-block limit without configuration
++    // per-block limit, shared with its static shared memory, without configuration
+     if (attrib == CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES) {
+         hipDevice_t device;
+         int max_smem_bytes = 0;
++        int static_smem_bytes = 0;
+         hipError_t result = hipGetDevice(&device);
+         if (result == hipSuccess)
+             result = hipDeviceGetAttribute(&max_smem_bytes, hipDeviceAttributeMaxSharedMemoryPerBlock, device);
++        if (result == hipSuccess)
++            result = hipFuncGetAttribute(&static_smem_bytes, HIP_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, hfunc);
+         if (result != hipSuccess)
+             return result;
+-        return value <= max_smem_bytes ? hipSuccess : hipErrorInvalidValue;
++        return value <= max_smem_bytes - static_smem_bytes ? hipSuccess : hipErrorInvalidValue;
+     }
+ 
+     return hipErrorNotSupported;
+```
+Open for the lock holder or Jeff, not decided here: the four tests cannot pass on any 64 KiB-LDS part (gfx90a and gfx942 among the wave64 targets; RDNA parts too). Options include a capability-based skip when the kernel's dynamic + static shared memory exceeds `device.max_shared_memory_per_block`, or keeping them as known failures on 64 KiB parts. No test was changed.
+
+### A.3: Q3 `tile_matmul` benchmark on gfx942 (raw numbers for Jeff; no decision taken)
+Device "AMD Instinct MI300X HF", 304 CUs, HIP 7.17, ROCm 10.2.0 wheels, fork `8d13d596`, no libmathdx, `HIP_VISIBLE_DEVICES=0`. Scripts: `bench_tile_matmul.py` and `summarize.py` exactly as in session 4, extracted verbatim from these notes. Command, wrapped in `utils/timeit.sh warp-1.14 bench` (160 s for the three runs):
+```
+for n in 1 2 3; do python bench_tile_matmul.py --blocks 16384 --iters 50 --csv gfx942_run$n.csv; done
+python summarize.py gfx942_run1.csv gfx942_run2.csv gfx942_run3.csv
+```
+16384 blocks is the same count as on gfx950, for comparability. On this 304-CU part that is about 54 blocks per CU, against 64 on gfx950.
+
+| dtype | tile | block_dim | fwd ms (min-max) | fwd GFLOP/s (best) | adj ms (min-max) | adj GFLOP/s (best) | check |
+|---|---|---|---|---|---|---|---|
+| float16 | 16x16 | 32 | 0.324-0.325 | 13261 | 0.340-0.347 | 790 | ok |
+| float16 | 16x16 | 64 | 0.190-0.194 | 22593 | 0.350-0.370 | 768 | ok |
+| float16 | 16x16 | 128 | 0.183-0.187 | 23468 | 0.301-0.323 | 891 | ok |
+| float16 | 16x16 | 256 | 0.239-0.242 | 17998 | 0.292-0.313 | 918 | ok |
+| float16 | 32x32 | 32 | 2.126-2.130 | 16159 | 2.190-2.195 | 980 | ok |
+| float16 | 32x32 | 64 | 0.861-0.869 | 39898 | 1.940-1.955 | 1107 | ok |
+| float16 | 32x32 | 128 | 0.938-0.963 | 36642 | 2.077-2.094 | 1034 | ok |
+| float16 | 32x32 | 256 | 1.121-1.141 | 30664 | 1.831-1.842 | 1173 | ok |
+| float16 | 64x64 | 32 | 25.694-25.699 | 10698 | 29.794-29.832 | 577 | ok |
+| float16 | 64x64 | 64 | 13.584-13.592 | 20235 | 19.028-19.040 | 903 | ok |
+| float16 | 64x64 | 128 | 9.159-9.198 | 30010 | 11.452-11.457 | 1500 | ok |
+| float16 | 64x64 | 256 | 6.317-6.352 | 43517 | 7.818-7.829 | 2197 | ok |
+| float32 | 16x16 | 32 | 0.416-0.417 | 10316 | 0.253-0.269 | 1061 | ok |
+| float32 | 16x16 | 64 | 0.341-0.345 | 12582 | 0.124-0.138 | 2161 | ok |
+| float32 | 16x16 | 128 | 0.231-0.233 | 18616 | 0.092-0.099 | 2908 | ok |
+| float32 | 16x16 | 256 | 0.276-0.280 | 15544 | 0.091-0.099 | 2941 | ok |
+| float32 | 32x32 | 32 | 3.125-3.141 | 10995 | 2.236-2.256 | 960 | ok |
+| float32 | 32x32 | 64 | 1.543-1.559 | 22270 | 1.275-1.467 | 1684 | ok |
+| float32 | 32x32 | 128 | 1.421-1.435 | 24175 | 1.132-1.142 | 1897 | ok |
+| float32 | 32x32 | 256 | 1.579-1.604 | 21766 | 0.883-0.896 | 2433 | ok |
+| float32 | 64x64 | 32 | 38.033-38.039 | 7227 | (no launch) | - | ADJ-FAILED (smem) |
+| float32 | 64x64 | 64 | 18.730-18.734 | 14676 | (no launch) | - | ADJ-FAILED (smem) |
+| float32 | 64x64 | 128 | 13.437-13.448 | 20456 | (no launch) | - | ADJ-FAILED (smem) |
+| float32 | 64x64 | 256 | 9.886-9.950 | 27805 | (no launch) | - | ADJ-FAILED (smem) |
+| float64 | 16x16 | 32 | 0.588-0.589 | 7305 | 0.321-0.330 | 835 | ok |
+| float64 | 16x16 | 64 | 0.442-0.450 | 9724 | 0.166-0.330 | 1613 | ok |
+| float64 | 16x16 | 128 | 0.437-0.449 | 9819 | 0.209-0.214 | 1281 | ok |
+| float64 | 16x16 | 256 | 0.527-0.536 | 8143 | 0.209-0.213 | 1286 | ok |
+| float64 | 32x32 | 32 | 5.952-5.958 | 5773 | 4.579-4.584 | 469 | ok |
+| float64 | 32x32 | 64 | 3.241-3.244 | 10602 | 2.725-2.740 | 788 | ok |
+| float64 | 32x32 | 128 | 2.708-2.729 | 12687 | 1.919-1.942 | 1119 | ok |
+| float64 | 32x32 | 256 | 3.087-3.113 | 11132 | 1.511-1.526 | 1421 | ok |
+| float64 | 64x64 | 32 | (no launch) | - | (no launch) | - | MISMATCH (smem) |
+| float64 | 64x64 | 64 | (no launch) | - | (no launch) | - | MISMATCH (smem) |
+| float64 | 64x64 | 128 | (no launch) | - | (no launch) | - | MISMATCH (smem) |
+| float64 | 64x64 | 256 | (no launch) | - | (no launch) | - | MISMATCH (smem) |
+
+- LDS-limited rows (64 KiB per workgroup on gfx942), with the Warp UserWarnings that name the bytes. fp32 64x64 adjoint: the backward kernel needs 98304 bytes, so it did not launch. Its timed 0.25 ms (67 TFLOP/s reported by the script) is the three memsets alone. fp64 64x64: the forward kernel needs 98304 and the backward 196608, so neither launched. The forward then fails the check (`MISMATCH`), and its 0.014 ms "timings" (about 20 PFLOP/s reported) are launch failures. Those columns are meaningless and are replaced by "(no launch)" above; the raw values are in the CSV below. As expected from the handoff, this part loses one row group more than gfx950 (fp32 64x64 adjoint).
+- Run-to-run spread over the 56 timing cells of the 28 all-ok rows: median 1.0%. Above 5%: fp64 16x16 bd64 adj 98% (runs 1-2 at 0.169/0.166 ms, run 3 at 0.330 ms: one outlier run), fp32 32x32 bd64 adj 15%, fp32 16x16 bd64 adj 11%, fp32 16x16 bd256 adj 8%, fp16 16x16 bd128 adj 7%, fp16 16x16 bd256 adj 7%. All are sub-0.4 ms adjoint cells, where the three seeding memsets are a large share.
+- gfx942 vs gfx950 at the same settings (best forward GFLOP/s, ratio gfx942/gfx950): fp16 64x64 bd256 0.74, fp32 32x32 bd128 0.89, fp32 64x64 bd128 0.53, fp64 32x32 bd128 0.74. Numbers only; no interpretation is drawn here.
+- As on gfx950, fp16 adjoint is much slower than fp32 at 16x16 and 32x32 (fp16 atomic_add is the 32-bit CAS loop, Phase 1 notes).
+- No NVIDIA GPU on this host, so no libmathdx reference numbers.
+
+Raw per-run timings, ms (`gfx942_run<n>.csv` merged; checks identical across runs):
+```
+dtype,M,block_dim,fwd_ms_r1,fwd_ms_r2,fwd_ms_r3,adj_ms_r1,adj_ms_r2,adj_ms_r3,check
+float16,16,32,0.3239,0.3251,0.3243,0.3473,0.3397,0.3407,ok
+float16,16,64,0.1945,0.1901,0.1903,0.3695,0.3497,0.3503,ok
+float16,16,128,0.1874,0.1862,0.1830,0.3235,0.3013,0.3013,ok
+float16,16,256,0.2419,0.2386,0.2421,0.3127,0.2927,0.2925,ok
+float16,32,32,2.1264,2.1299,2.1290,2.1946,2.1904,2.1938,ok
+float16,32,64,0.8612,0.8641,0.8691,1.9550,1.9399,1.9470,ok
+float16,32,128,0.9377,0.9601,0.9632,2.0938,2.0769,2.0804,ok
+float16,32,256,1.1205,1.1407,1.1293,1.8424,1.8327,1.8313,ok
+float16,64,32,25.6960,25.6989,25.6941,29.7936,29.8107,29.8318,ok
+float16,64,64,13.5915,13.5904,13.5842,19.0395,19.0280,19.0316,ok
+float16,64,128,9.1594,9.1970,9.1979,11.4572,11.4573,11.4522,ok
+float16,64,256,6.3166,6.3444,6.3523,7.8291,7.8182,7.8188,ok
+float32,16,32,0.4163,0.4169,0.4173,0.2692,0.2541,0.2529,ok
+float32,16,64,0.3448,0.3414,0.3415,0.1381,0.1242,0.1259,ok
+float32,16,128,0.2333,0.2314,0.2307,0.0985,0.0923,0.0929,ok
+float32,16,256,0.2803,0.2771,0.2763,0.0986,0.0913,0.0935,ok
+float32,32,32,3.1414,3.1305,3.1249,2.2560,2.2362,2.2443,ok
+float32,32,64,1.5429,1.5563,1.5588,1.2902,1.4674,1.2749,ok
+float32,32,128,1.4213,1.4347,1.4316,1.1382,1.1422,1.1318,ok
+float32,32,256,1.5786,1.5964,1.6038,0.8898,0.8825,0.8958,ok
+float32,64,32,38.0388,38.0330,38.0333,0.2576,0.2509,0.2508,ADJ-FAILED
+float32,64,64,18.7341,18.7326,18.7296,0.2602,0.2549,0.2539,ADJ-FAILED
+float32,64,128,13.4477,13.4372,13.4421,0.2603,0.2547,0.2552,ADJ-FAILED
+float32,64,256,9.8860,9.9363,9.9502,0.2609,0.2563,0.2576,ADJ-FAILED
+float64,16,32,0.5882,0.5891,0.5880,0.3300,0.3213,0.3231,ok
+float64,16,64,0.4417,0.4498,0.4493,0.1693,0.1664,0.3299,ok
+float64,16,128,0.4374,0.4493,0.4490,0.2141,0.2113,0.2095,ok
+float64,16,256,0.5275,0.5365,0.5354,0.2128,0.2087,0.2099,ok
+float64,32,32,5.9578,5.9534,5.9521,4.5795,4.5832,4.5844,ok
+float64,32,64,3.2444,3.2409,3.2442,2.7309,2.7254,2.7401,ok
+float64,32,128,2.7084,2.7288,2.7254,1.9290,1.9191,1.9417,ok
+float64,32,256,3.0867,3.1087,3.1134,1.5162,1.5113,1.5264,ok
+float64,64,32,0.0151,0.0144,0.0143,0.3937,0.3830,0.3853,MISMATCH
+float64,64,64,0.0144,0.0150,0.0138,0.3938,0.3833,0.3841,MISMATCH
+float64,64,128,0.0144,0.0140,0.0137,0.3922,0.3832,0.3811,MISMATCH
+float64,64,256,0.0144,0.0136,0.0137,0.3914,0.3820,0.3843,MISMATCH
+```
+
+### C: two-GPU session (gfx942, `HIP_VISIBLE_DEVICES=0,1`, default `unique_or_2x` mode adds `cuda:1`)
+Command: the loop of handoff item C.2 (13 files, `-p <file> -m 32`), wrapped in `utils/timeit.sh warp-1.14 test` (420 s).
+
+| file | ran | result | failing / notable |
+|---|---|---|---|
+| test_multigpu | 5 | OK, 2 skipped | pingpong x2: "Peer-to-Peer transfers not supported" (IOMMU heuristic, below) |
+| test_peer | 5 | OK, 1 skipped | "Requires devices without peer access support" (expected) |
+| test_mempool | 10 | **errors=1**, 1 skipped | `test_mempool_access` (finding C2) |
+| test_streams | 42 | **failures=2**, 2 skipped | `test_stream_priority_timings_cuda_0/_1` (finding C4); 2 mgpu graph tests skipped by the IOMMU heuristic |
+| test_graph | 61 | **errors=1**, 4 skipped | `test_cuda_graph_alloc_transient_stream_cuda_1` (finding C1); skips: 2 IOMMU heuristic, 2 upstream "flakiness in memory usage measurement" |
+| test_ipc | 8 | OK | |
+| test_unified_memory | 40 | **errors=1**, 8 skipped | `..._device_can_access_uses_mempool_state_when_target_mempools_enabled` (C2); skips: 4 IOMMU heuristic, 4 "cuda:N cannot access CPU memory" |
+| test_allocator | 16 | OK, 1 skipped | rmm not installed |
+| test_async | 3533 | OK | |
+| test_sparse | 71 | **errors=1** | `test_capturability_cuda_1` (C1, plan risk 11) |
+| test_fem_integrate | 25 | **failures=1, errors=1** | `test_capturability_cuda_1` (C1, plan risk 11); `test_integrate_gradient_cuda_0` (C5, collateral of C1) |
+| test_array | 207 | OK | |
+| test_copy | 30 | OK | |
+
+Single-GPU control runs (same build, one GPU visible) of test_streams, test_fem_integrate, test_graph and test_sparse, with physical GPU 0 alone and physical GPU 1 alone. GPU0: streams 24 run, failures=1 (priority timings), 2 skipped; fem_integrate 17 OK; graph 35 OK (3 skipped); sparse 47 OK. GPU1 alone: identical. So the capture failures need a non-primary ordinal, not a particular physical GPU. The priority-timing failure is a gfx942 property.
+
+**C1. Plan risk 11 reproduced: a ROCm defect in graph instantiation for host<->graph-allocated copies. Not a port defect.** All three `_cuda_1` capture failures are `Warp CUDA error 801: operation not supported (in function wp_cuda_graph_create_exec, warp.cu:3493)`, that is, `hipGraphInstantiateWithFlags` returning `hipErrorNotSupported`. Each also reproduces when run alone (`-k <name> -m 1`). Narrowed with Warp (`cap_red.py`): on `cuda:1`, a capture containing a kernel, `wp.zeros`/`wp.ones`/`wp.empty` allocations and a side stream instantiates fine. Adding a copy from a pinned CPU array into an array allocated in the capture fails, on the main stream or a side stream. The sparse/fem captures contain no such host-to-device copy, but they do contain `hipMemcpyAsync(..., hipMemcpyDeviceToHost)` from in-capture allocations into pinned memory (HIP API trace, `AMD_LOG_LEVEL=3 AMD_LOG_MASK=1`). The `Failed hsa_amd_vmem_set_access ... status 4099` lines that HIP logs at every in-capture `hipMallocAsync` also appear on device 0 and in passing graphs, so they are noise. Standalone HIP reproducer (no Warp), results with `HIP_VISIBLE_DEVICES=0,1`, one case per process:
+
+| capture device | pinned buffer allocated with current device | copy | copy endpoint allocated in the capture (`hipMallocAsync`) | result |
+|---|---|---|---|---|
+| 0 | 0 | H2D or D2H | yes | OK |
+| 0 | 1 | H2D | yes | **segfault in the process** |
+| 0 | 1 | D2H | yes | **instantiate 801** |
+| 1 | 0 or 1 | H2D | yes | **instantiate 801** |
+| 1 | 0 | D2H | yes | **instantiate 801** |
+| 1 | 1 | D2H | yes | OK |
+| any | any | H2D or D2H | no (plain `hipMalloc` endpoint) | OK |
+
+Retaining a user object or freeing the buffer inside the capture changes nothing. Plain-HIP graphs on device 1 with in-capture alloc/free, kernels and D2D copies all instantiate and run correctly (`cap1.hip`). So HIP appears to pick the wrong device for a memcpy node between pinned host memory and graph-allocated (virtual, not yet mapped) memory, unless every device involved is the same. That is inferred from the matrix, not from the runtime source. On device 0 a mismatch can crash the process. Reproducer (ROCm clang from the TheRock wheels: `clang++ -x hip --rocm-path=$R --offload-arch=gfx942 -O2 h2d2.hip -o h2d2 -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib`; run `./h2d2 <dev> <pinned_dev> <async_dst> <userobj> <free> [d2h]`, e.g. `./h2d2 1 1 1 0 0` -> 801, `./h2d2 0 1 1 0 0` -> segfault):
+```cpp
+// Device `dev`: capture { hipMallocAsync(dst) ; hipMemcpyAsync(dst <- pinned host, HostToDevice) ; [hipFreeAsync] },
+// optionally retaining a user object, pinned buffer allocated while `alloc_dev` was current.
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#define CK(x) do { hipError_t e = (x); if (e != hipSuccess) printf("  %s -> %d %s\n", #x, e, hipGetErrorString(e)); } while (0)
+static void dtor(void*) {}
+static int g_d2h = 0;
+static void run(int dev, int alloc_dev, int async_dst, int uobj, int free_in) {
+    const size_t n = 1024;
+    CK(hipSetDevice(alloc_dev));
+    float* h; CK(hipHostMalloc((void**)&h, n * 4, 0));
+    for (size_t i = 0; i < n; ++i) h[i] = 42.f;
+    CK(hipSetDevice(dev));
+    hipStream_t s; CK(hipStreamCreate(&s));
+    float* out; CK(hipMalloc(&out, n * 4));
+    hipGraph_t g = nullptr; hipGraphExec_t ge = nullptr;
+    CK(hipStreamBeginCapture(s, hipStreamCaptureModeGlobal));
+    float* d = out;
+    if (async_dst) CK(hipMallocAsync((void**)&d, n * 4, s));
+    if (g_d2h) { CK(hipMemcpyAsync(d, out, n * 4, hipMemcpyDeviceToDevice, s)); CK(hipMemcpyAsync(h, d, n * 4, hipMemcpyDeviceToHost, s)); }
+    else CK(hipMemcpyAsync(d, h, n * 4, hipMemcpyHostToDevice, s));
+    if (async_dst) { CK(hipMemcpyAsync(out, d, n * 4, hipMemcpyDeviceToDevice, s)); if (free_in) CK(hipFreeAsync(d, s)); }
+    CK(hipStreamEndCapture(s, &g));
+    if (uobj) { hipUserObject_t u; CK(hipUserObjectCreate(&u, nullptr, dtor, 1, hipUserObjectNoDestructorSync)); CK(hipGraphRetainUserObject(g, u, 1, hipGraphUserObjectMove)); }
+    hipError_t e = hipGraphInstantiateWithFlags(&ge, g, hipGraphInstantiateFlagAutoFreeOnLaunch);
+    printf("dev %d pinned-on %d async_dst %d userobj %d free %d: instantiate -> %d %s", dev, alloc_dev, async_dst, uobj, free_in, e, hipGetErrorString(e));
+    if (e == hipSuccess) { CK(hipGraphLaunch(ge, s)); CK(hipStreamSynchronize(s)); float v = 0; CK(hipMemcpy(&v, out, 4, hipMemcpyDeviceToHost)); printf(", out[0]=%g", v); CK(hipGraphExecDestroy(ge)); }
+    printf("\n");
+    if (g) CK(hipGraphDestroy(g));
+    CK(hipFree(out)); CK(hipStreamDestroy(s)); CK(hipHostFree(h));
+}
+#include <cstdlib>
+int main(int argc, char** argv) { setvbuf(stdout, nullptr, _IONBF, 0);
+    g_d2h = argc > 6 ? atoi(argv[6]) : 0;
+    run(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]), atoi(argv[4]), atoi(argv[5]));
+    return 0;
+}
+```
+This is the fault the earlier AMD tree hid by restricting the capture tests to ordinal 0. Warp-side mitigation is limited. `wp_alloc_pinned` (`warp.cu:747`) calls `hipHostMalloc` with whatever device is current, but even matching devices fail for H2D on device 1, so allocator changes cannot fix it. Proposed registration for the lock holder (not run here, because this session writes no project records other than these notes): `python3 utils/deferred.py add rocm-bug-report --project warp-1.14` with id `hip-graph-memcpy-host-graph-alloc-device-mismatch` and the matrix and reproducer above.
+
+**C2. ROCm defect: `hipMemPoolSetAccess` cannot revoke peer access.** `test_mempool_access` and `test_unified_memory..._device_can_access_uses_mempool_state_when_target_mempools_enabled` fail with `Warp CUDA error 101: invalid device ordinal (in function wp_cuda_set_mempool_access_enabled, warp.cu:3059)` -> "Failed to disable memory pool access from device cuda:1 to device cuda:0". Standalone (`poolacc.hip`): on device 0's default pool, `hipMemPoolSetAccess({device 1, ProtReadWrite})` succeeds and `hipMemPoolGetAccess` then reports flags 3. `hipMemPoolSetAccess({device 1, ProtNone})` returns `hipErrorInvalidDevice` (101), with or without an outstanding allocation, and access stays 3. CUDA documents `ProtNone` as revoking access. Warp's call (`warp.cu:3024-3066`) is correct, so this is not a port defect. Once a mempool peer grant is made it cannot be undone, so the tests' restore step fails too. Reproducer:
+```cpp
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#define CK(x) do { hipError_t e = (x); printf("%-50s -> %d %s\n", #x, e, hipGetErrorString(e)); } while (0)
+int main() {
+    hipMemPool_t pool; CK(hipDeviceGetDefaultMemPool(&pool, 0));
+    hipMemAccessDesc d; d.location.type = hipMemLocationTypeDevice; d.location.id = 1;
+    d.flags = hipMemAccessFlagsProtReadWrite; CK(hipMemPoolSetAccess(pool, &d, 1));   // 0
+    d.flags = hipMemAccessFlagsProtNone;      CK(hipMemPoolSetAccess(pool, &d, 1));   // 101 hipErrorInvalidDevice
+    hipMemAccessFlags f; hipMemLocation loc = d.location; CK(hipMemPoolGetAccess(&f, pool, &loc)); printf("flags %d\n", (int)f);  // 3
+}
+```
+Proposed registration (not run): `deferred.py add rocm-bug-report --project warp-1.14`, id `hip-mempool-set-access-cannot-revoke`.
+
+**C3. HIP limitation: one graph cannot hold kernel nodes for two devices.** This was found only with the IOMMU heuristic overridden (next paragraph). `test_stream_arg_graph_mgpu` and `test_stream_scope_graph_mgpu` capture on a `cuda:0` stream, fork to a `cuda:1` stream and launch a kernel on each device. Instantiation returns 801, and the follow-up `wp_cuda_context_synchronize` reports 900 (still capturing). Standalone (`mdev.hip`, peer access enabled both ways, default allocators): fork/join plus a kernel on device 0 instantiates, with or without a peer copy from device 1. Adding a kernel on device 1 in the same capture -> `hipGraphInstantiate` 801. CUDA supports multi-device graphs. Proposed registration (not run): id `hip-graph-multi-device-kernel-nodes`, kind rocm-bug-report, or a documented limitation if HIP declares it one.
+
+IOMMU heuristic: Warp's `check_p2p()` (`warp/_src/utils.py:1747`) returns False on Linux whenever `/sys/class/iommu` or `/sys/kernel/iommu_groups` is non-empty. This host boots with `amd_iommu=on iommu=pt` (passthrough), so 8 tests skip with "Peer-to-Peer transfers not supported", although HIP reports full peer access. That is upstream behaviour and was left alone. With `check_p2p()` forced to return True (local edit, reverted): test_multigpu 5/5 OK (both pingpong tests pass), `test_graph_launch_array_access_mode_checked_peer_access_cuda_capture` OK, `..._mempool_access_cuda_capture` error (C2), unified_memory "Slices of CUDA mempool allocations..." OK, the other three peer/mempool cases error (C2: 5 revoke failures in that file), and test_streams' two mgpu graph tests error (C3).
+
+**C4. `test_stream_priority_timings` fails on gfx942 (one or two GPUs). Not a port defect.** 5 of 5 single-GPU reruns fail by 0.5-1% (for example 1.1212 vs 1.1184 ms). A probe with the test's workload (`prio.py`, 2 x 128 Mi-float D2D copies per stream, 5 repetitions per cell) shows that issue order decides the result and priority has no measurable effect. With the low-priority stream's copies issued first, the high-priority stream is slower 5/5, at priority -1 and also at equal priority 0. With the high-priority stream issued first, it wins 5/5 at either priority. Stream priorities are applied (`Stream.priority` reads 0 and -1), but they do not affect these same-device copies on gfx942. The test passed on gfx950 in session 3. Whether to keep, skip or rework it is for the lock holder or Jeff.
+
+**C5. `test_fem_integrate.test_integrate_gradient_cuda_0`: collateral of C1.** It fails 3/3 in full-file two-GPU runs (202/256 gradient entries wrong, max abs diff 0.0267) and passes 5/5 alone. Pairwise: `-k capturability_cuda_1 -k integrate_gradient_cuda_0` fails, `-k capturability_cuda_0 -k integrate_gradient_cuda_0` passes. So the failed `cuda:1` capture leaves state that corrupts a later `cuda:0` computation in the same process. Likely candidates are temporaries cached during the never-instantiated capture; not traced further, because it should disappear with C1. Worth rechecking once C1 is fixed or worked around.
+
+### Not done in this session
+- Handoff item A.4 (optional atomic timings): not requested.
+- Item B (wave32) and the gfx950 two-GPU variant of C: other hosts.
+
+### Next step for the lock holder
+1. Decide on the `cuFuncSetAttribute_f` static-LDS fix above (shared HIP shim code, not CUDA). If adopted: commit it, compile the CUDA path with nvcc, and `advance-head`.
+2. Decide how the four 64 KiB-LDS tile tests are handled on 64 KiB parts (A.2).
+3. Register C1, C2 and C3 with `deferred.py` (ids proposed above) and bring them to Jeff for filing. Decide whether test_mempool_access, the unified-memory mempool test and the `_cuda_1` capture tests get capability skips naming those registrations.
+4. C4: priority-timing test on gfx942.
+5. The Q3 gfx942 numbers above go to Jeff together with the wave32 numbers from item B.
