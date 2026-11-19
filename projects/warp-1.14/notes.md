@@ -2581,3 +2581,64 @@ The project stays in `porting`, lock held by linux-gfx950. Common setup as befor
 3. The full 82-pattern set and the CPU-only suite (expect 2294 OK). Expected: Evidence session 3's B.5 counts, with test_texture 120 (1 skipped), the five tile skips, test_streams with the priority test skipped.
 
 **Before Phase 6 (not started):** gfx942/wave32 pass the full set at this head (or a later one gfx950 also re-runs); then windows-gfx1151 per the plan's Phase 6. Still open for Jeff: defer/now on the six undecided `rocm-bug-report` entries; the Q3 matrix-core ruling.
+
+## Evidence session 4 (2026-11-19, linux-gfx1100, Radeon Pro W7800, evidence only): wave32 re-run at `974cd4bf`
+
+Requested by Jeff Daily. The work lock stays with linux-gfx950. Nothing was committed to the fork, and no stage, lock, head, platform or deferral record changed. The clone was updated read-only to the recorded `head_sha` `974cd4bf864080331cc3090a5ca0ed8d17da1ce5` (`git status --porcelain` clean). This host last built `2f5b9d65`, not `495d7c5a`, so it rebuilt: `export PATH=$FLEET_VENV/bin:$PATH; python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1100 -j 32` -> "Warp build succeeded" (32 s), with RUNPATH pointing at the venv's ROCm 10.2 `_rocm_sdk_devel/lib`. Same venv (HIP 7.17.26434, torch 2.15.0+rocm10.2.0), private `WARP_CACHE_PATH`, `ulimit -c 0`, `HIP_VISIBLE_DEVICES=0`. Items are the "Wave32 host" list of the `974cd4bf` Next step.
+
+### Item 1: hardware texture path unchanged
+
+| check | expected | result |
+|---|---|---|
+| `print(d.is_texture_supported, d.is_texture_hardware_supported)` (extra, not in the list) | - | `True True` (the hardware path is selected on gfx1100) |
+| `python -m warp.tests -s autodetect -p test_texture.py -m 32` | Ran 120, OK (skipped=1) | **Ran 120, OK (skipped=1)**; the skip is `test_texture_interop_requires_hardware`'s placeholder ("No suitable devices to run the test.") |
+| `python sdf_probe.py cuda:0` | PASS, Evidence session 3 values | **PASS**: SDF vs CPU sampler 4.78e-05, SDF vs analytic 1.31e-03 (grid spacing 1.56e-02), RGBA8 vs CPU sampler 2.52e-03, identical to session 3 |
+| `python tex_alias.py cuda:0` | PASS | **PASS**: "plain: 0 of 2048 wrong", "graph capture: 0 of 2048 wrong" |
+
+### Item 2: the capability skips on a 64 KiB part
+
+`for f in test_tile_shared_memory.py test_tile_reduce.py test_tile_view.py; do python -m warp.tests -s autodetect -p "$f" -m 32; done`:
+- test_tile_shared_memory: Ran 30, OK (skipped=2)
+- test_tile_reduce: Ran 62, OK (skipped=2)
+- test_tile_view: Ran 16, OK (skipped=1)
+
+The five skips, with exactly the expected byte counts:
+```
+test_tile_shared_mem_large_cuda_0              skipped 'Needs 67584 bytes of shared memory per block, device has 65536'
+test_tile_shared_mem_func_cuda_0               skipped 'Needs 67584 bytes of shared memory per block, device has 65536'
+test_tile_reduce_axis_tier2_cuda_0             skipped 'Needs 66816 bytes of shared memory per block, device has 65536'
+test_tile_reduce_axis_tier2_single_warp_cuda_0 skipped 'Needs 66688 bytes of shared memory per block, device has 65536'
+test_tile_assign_2d_cuda_0                     skipped 'Needs 66688 bytes of shared memory per block, device has 65536'
+```
+No "Failed to configure kernel dynamic shared memory" warning in any of the three logs (`grep -c` = 0), so `test_tile_shared_mem_func` now skips before building.
+
+### Item 3: full 82-pattern set and CPU-only suite
+Command: the 82 patterns of the Porting session 6 handoff (B.5), the same list Evidence session 3 ran, `python -m warp.tests -s autodetect -p "<pattern>" -m 32` each, from `projects/warp-1.14/src`, wrapped in `utils/timeit.sh warp-1.14 test`. (The first launch built its pattern list from notes.md and picked up 139 entries from several loops. It was stopped after the first file, and the run was restarted with the verified 82-pattern list. The stopped run wrote no telemetry line and its logs were discarded.)
+
+**82 patterns: 81 OK, 1 with the 2 known failures** (`test_fem*`: `test_gimp_quadrature`, `test_cube_shape_functions`, "Unexpected output" holding the init greeting, the upstream isolation behaviour). Against Evidence session 3's B.5 table (`diff` of the per-pattern summary lines, timings stripped), exactly four patterns differ (three diff hunks), all as expected:
+
+| pattern | session 3 (`2f5b9d65`) | this run (`974cd4bf`) |
+|---|---|---|
+| test_streams | Ran 24, OK (skipped=2) | Ran 24, OK (skipped=3): `test_stream_priority_timings_cuda_0` skipped "HIP maps stream priorities to normal priority, so priority has no scheduling effect."; `test_stream_priority_basics_cuda_0` still runs and passes |
+| test_tile_reduce | Ran 62, OK | Ran 62, OK (skipped=2) |
+| test_tile_shared_memory | Ran 30, OK | Ran 30, OK (skipped=2) |
+| test_tile_view | Ran 16, OK | Ran 16, OK (skipped=1) |
+
+Every other count is unchanged: test_atomic_cas 48, test_array 139, tile set 636 run, now 15 skipped (the 10 upstream no-libmathdx skips plus the five capability skips of item 2), test_texture 120 (1 skipped).
+
+- Skip reasons across the 82 logs: as in session 3 plus "Needs 67584 bytes ..." 2, "Needs 66816 bytes ..." 1, "Needs 66688 bytes ..." 2, and the stream-priority skip 1.
+- The only "Failed to configure kernel dynamic shared memory" line in the 82 logs is the known one from `test_tile_load_scoped`'s backward kernel (the test passes; forward only).
+- No `Warp CUDA error` line in any log.
+
+#### CPU-only suite with GPUs hidden
+`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32` (timeit-wrapped, no `cuda:0` in the log): **Ran 2294 tests, OK (skipped=15)**, as expected.
+
+### Summary
+At `974cd4bf`, every wave32 item gives the expected result:
+- The hardware texture path is unchanged (test_texture 120 OK; SDF probe and tex_alias.py PASS with the session 3 values).
+- The five capability skips appear on this 64 KiB part with the predicted byte counts, and no shared-memory warning comes from the skipped tests.
+- The stream-priority timing assertion skips with the HIP message.
+- The full 82-pattern set matches session 3 apart from those six skips and the two known fem isolation failures.
+- The CPU-only suite is green.
+
+With gfx950's result at this head (Porting session 8), both Linux wave families have passed the Phase 1-5 set at `974cd4bf`. Nothing here needs a fork change.
