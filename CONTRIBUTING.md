@@ -75,9 +75,12 @@ no lock file and no expiry. Planning, porting and reviewing are serialised separ
 `porting` {arch, since, holder} work lock in `status.json`, which the state transition takes and
 releases; that one is about who may write the plan, the fork or the review verdict, not about who holds the project.
 
-Delete the branch when its pull request merges -- that is what retires the claim, and
-nothing does it for you: the repository is not set to delete merged branches and no
-tool does (`moatlib.py misplaced` lists the branches that are ready to merge). A
+Delete the branch when its record has merged -- that is what retires the claim, and
+nothing does it unasked: the repository is not set to delete merged branches.
+`moatlib.py misplaced` (orient prints it) lists the branches that are ready to merge and,
+for one already merged, the command that deletes it: `moatlib.py retire-branch <name>
+--apply`. That command refuses unless the project has nothing outstanding, its folder is
+on `main`, and the branch carries no edit to a shared file that `main` lacks. A
 `port/<name>` left behind reads as live work forever, and the selector has no timeout
 that would notice; taking over one that is genuinely stale is a human decision, not an
 expiry.

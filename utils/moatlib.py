@@ -5033,7 +5033,13 @@ def misplaced_folders():
         if want_branch and not on_branch:
             out.append((name, "trunk", "should be on port/%s" % name, outstanding(obj)))
         elif on_branch and not want_branch:
-            out.append((name, "branch", "nothing outstanding; merge port/%s to main" % name, []))
+            # Once the branch holds nothing the trunk lacks, the only step left is
+            # deleting it, which nothing does on its own: name the command.
+            _sha, why = branch_retirable(name)
+            what = ("merged; delete it: moatlib.py retire-branch %s --apply" % name
+                    if not why else
+                    "nothing outstanding; merge port/%s to main" % name)
+            out.append((name, "branch", what, []))
     return sorted(out)
 
 
@@ -5926,24 +5932,97 @@ def branch_lessons(base_ref="origin/main"):
     for ref in _git("for-each-ref", "--format=%(refname:short)",
                     "refs/remotes/origin/port/", check=False).stdout.split():
         name = ref.split("port/", 1)[1]
-        base = _git("merge-base", ref, base_ref, check=False).stdout.strip()
-        if not base:
-            continue
-        changed = _git("diff", "--name-only", base, ref, check=False).stdout.splitlines()
-        cands = [c.strip() for c in changed
-                 if c.strip() and not c.startswith(f"projects/{name}/")
-                 and c.strip() not in ("README.md",)]
-        shared = []
-        for c in cands:
-            d = _git("diff", base_ref, ref, "--", c, check=False).stdout.splitlines()
-            if any(l.startswith("+") and not l.startswith("+++") for l in d):
-                shared.append(c)
+        shared = _branch_shared_edits(name, ref, base_ref)
         if not shared:
             continue
         obj, _where = project_record(name)
         orphaned = obj is not None and not belongs_on_branch(obj)
-        out.append((name, sorted(shared), orphaned))
+        out.append((name, shared, orphaned))
     return sorted(out)
+
+
+def _branch_shared_edits(name, ref, base_ref="origin/main"):
+    """Paths outside `projects/<name>/` where `ref` has lines `base_ref` lacks."""
+    base = _git("merge-base", ref, base_ref, check=False).stdout.strip()
+    if not base:
+        return []
+    changed = _git("diff", "--name-only", base, ref, check=False).stdout.splitlines()
+    cands = [c.strip() for c in changed
+             if c.strip() and not c.startswith(f"projects/{name}/")
+             and c.strip() not in ("README.md",)]
+    shared = []
+    for c in cands:
+        d = _git("diff", base_ref, ref, "--", c, check=False).stdout.splitlines()
+        if any(l.startswith("+") and not l.startswith("+++") for l in d):
+            shared.append(c)
+    return sorted(shared)
+
+
+def branch_retirable(name, base_ref="origin/main"):
+    """Whether `origin/port/<name>` holds nothing the trunk lacks: (sha, why_not).
+
+    The branch existing is the project claim, so a finished project's branch has to
+    go, and deleting it destroys whatever only it holds. Three things must be true of
+    the refs as fetched: the record says nothing is outstanding, the project folder
+    reached the trunk (the tip is an ancestor of it, or -- after a squash merge --
+    the folder is identical on both), and the branch carries no edit to a shared
+    file that the trunk does not have. `sha` is the tip that was judged, so the
+    delete can be refused if the branch moved afterwards."""
+    ref = f"origin/port/{name}"
+    sha = _git("rev-parse", "--verify", "-q", ref, check=False).stdout.strip()
+    if not sha:
+        return ("", f"there is no port/{name} on the remote")
+    obj, _where = project_record(name)
+    if obj is None:
+        return (sha, f"no record for {name} can be read")
+    if obj.get("on_hold"):
+        return (sha, "the project is on hold; it stays where it stands")
+    if belongs_on_branch(obj):
+        return (sha, "the project still has work outstanding, so the branch is its claim")
+    merged = _git("merge-base", "--is-ancestor", sha, base_ref, check=False).returncode == 0
+    if not merged:
+        folder = f"projects/{name}"
+        if not _git("ls-tree", "-d", "--name-only", base_ref, folder,
+                    check=False).stdout.strip():
+            return (sha, f"{folder} is not on {base_ref}: merge port/{name} first")
+        if _git("diff", "--quiet", base_ref, sha, "--", folder, check=False).returncode:
+            return (sha, f"{folder} differs between port/{name} and {base_ref}: "
+                         f"merge port/{name} first")
+        shared = _branch_shared_edits(name, sha, base_ref)
+        if shared:
+            return (sha, f"the branch carries edits to shared files the trunk does not "
+                         f"have ({', '.join(shared[:4])}): land what is still true "
+                         f"first (`moatlib.py lessons`)")
+    return (sha, "")
+
+
+def retire_branch(name, apply=False):
+    """Delete a finished project's `port/<name>` from the remote. Message, or raises.
+
+    Judged against a fresh fetch, and the delete is conditional on the tip that was
+    judged, so a push that lands in between is not lost. Without `apply` it only
+    reports."""
+    r = _git("fetch", "-q", "origin", "--prune", check=False)
+    if r.returncode:
+        raise ValueError(f"{name}: cannot fetch origin, so cannot tell whether "
+                         f"port/{name} is merged: {(r.stderr or r.stdout).strip()}")
+    _PORT_BRANCH_MAP.clear()
+    forget_ref(f"origin/port/{name}")
+    sha, why = branch_retirable(name)
+    if why:
+        raise ValueError(f"{name}: port/{name} is not deleted: {why}")
+    if not apply:
+        return (f"{name}: port/{name} at {sha[:12]} holds nothing the trunk lacks; "
+                f"`retire-branch {name} --apply` deletes it from the remote")
+    r = _git("push", "-q", f"--force-with-lease=refs/heads/port/{name}:{sha}",
+             "origin", f":refs/heads/port/{name}", check=False)
+    if r.returncode:
+        raise ValueError(f"{name}: could not delete port/{name}: "
+                         f"{(r.stderr or r.stdout).strip()}")
+    _git("update-ref", "-d", f"refs/remotes/origin/port/{name}", check=False)
+    _PORT_BRANCH_MAP.clear()
+    forget_ref(f"origin/port/{name}")
+    return f"{name}: deleted port/{name} (was {sha[:12]}); its record is on the trunk"
 
 
 LESSON_HEADING = re.compile(r"^## Lesson for (cuda-to-rocm|moat-porting): (.+?)\s*$", re.M)
@@ -6968,6 +7047,13 @@ def _main(argv=None):
 
     sub.add_parser("misplaced", help="projects whose folder is not where their state says")
 
+    s = sub.add_parser("retire-branch",
+                       help="delete a finished project's port/<name> from the remote, "
+                            "only when it holds nothing the trunk lacks")
+    s.add_argument("name")
+    s.add_argument("--apply", action="store_true",
+                   help="delete it (default: report whether it could be)")
+
     s = sub.add_parser("lessons",
                        help="lessons in project notes awaiting promotion to a skill, and "
                             "old skill edits stranded on finished port branches")
@@ -7396,6 +7482,8 @@ def _main(argv=None):
             print(f"-- {len(rows)} misplaced ({n} on the trunk with work outstanding, "
                   f"which under branch protection turns every status write into a PR)",
                   file=sys.stderr)
+    elif args.cmd == "retire-branch":
+        print(retire_branch(args.name, apply=args.apply))
     elif args.cmd == "waivers":
         rows = pending_waivers()
         for name, gate, reason, at in rows:
