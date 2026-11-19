@@ -1368,3 +1368,27 @@ Body: `CMakeDetermineHIPCompiler.cmake` (3.31 and 4.3) chooses the default `CMAK
 ## Lesson for cuda-to-rocm: -fuse-ld=lld-link on a Windows CMake HIP link is not a failure by itself
 
 Belongs in references/windows.md, "CMake's HIP link rule mangles MSVC-style flags and paths" (which says the injected flag "conflicts with --hip-link"). CMake 3.29+ adds `-fuse-ld=lld-link` to every clang link line on Windows (`Platform/Windows-Clang.cmake`, `CMAKE_<LANG>_USING_LINKER_DEFAULT`), HIP included. When the HIP link goes straight to ROCm's GNU-style `clang++` (CMake's own rule, not through hipcc), `clang++ --hip-link --rtlib=compiler-rt -fuse-ld=lld-link ...` links fine with CMake 3.31.0 and 4.3.2 and ROCm 7.14 clang 23. Do not strip it from `build.ninja` out of habit: build once without touching it and read the actual link error first. A recipe that carried the strip for months turned out to need none of it. (ohm)
+
+## Review 2026-11-19 (linux-gfx90a reviewer, delta 7c09435..e9149bb on moat-port)
+
+pr-review on `git diff 7c09435..e9149bb` (659a15d, e9149bb; 4 files, +44). No findings; review passed.
+
+Evidence behind the verdict (fresh fork clone, worktrees at both commits, CMake 3.31.6, Ninja, g++ 13.3, ROCm 10.1 TheRock pip SDK):
+
+- **Linux HIP untouched.** `OhmHip.cmake` is included only from `OhmCuda.cmake:3-6` under `OHM_FEATURE_HIP`, and the new block is inside `if(WIN32)` before `enable_language(HIP)`. Configured both commits with `-DOHM_FEATURE_HIP=ON -DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DGLM_INCLUDE_DIRS=<glm-1.0.1>`: `build.ninja` and `CMakeCache.txt` are identical after normalising the source and build paths (`CMAKE_HIP_ARCHITECTURES=gfx90a;...` in both).
+- **CPU build untouched.** Same comparison with no GPU feature, against Ubuntu 24.04's `libglm-dev` 0.9.9.8 config package (extracted with `apt-get download`, not installed) and against `-DGLM_INCLUDE_DIRS=<glm-1.0.1>`: `build.ninja` identical. The `ohm` objects for `CovarianceVoxel.cpp`, `NdtMap.cpp` and `RayMapperNdt.cpp` (the TUs that reach `CovarianceVoxel.h`) are byte-identical between the commits with both glm versions, so the new `<glm/gtc/quaternion.hpp>` include changes no code where glm already pulled it in. No `.cu`/`.cl` file in `ohmgpu/gpu` or `gputil` reaches `CovarianceVoxel.h`, so device code is unaffected.
+- **CUDA and OpenCL.** Not configurable here (no nvcc, no OpenCL headers). By construction: their CMake paths never include `OhmHip.cmake`, and the only shared deltas are the Findglm branch and the header include covered above. The nvcc compile at e9149bb noted as owed by the porter is still owed (mi355 host) before the port goes to jeff.
+- **Findglm fallback cannot change which glm a working build picks up.** `find_package(glm MODULE REQUIRED)` (`CMakeLists.txt:106`), and before 659a15d a `glm::glm` with no `INTERFACE_INCLUDE_DIRECTORIES` left `GLM_INCLUDE_DIRS` as `-NOTFOUND`, a fatal configure error. The new branch is entered only in that case. Targets link `glm::glm` either way; `GLM_INCLUDE_DIRS` feeds only `FIND_PACKAGE_HANDLE_STANDARD_ARGS`. Matrix (configure rc old/new, glm found):
+
+| glm source | 7c09435 | e9149bb |
+|---|---|---|
+| Ubuntu libglm-dev 0.9.9.8 config (`glm::glm` carries include dirs) | 0, deb include | 0, same |
+| `-DGLM_INCLUDE_DIRS=<glm-1.0.1>`, no package | 0, that dir | 0, same |
+| glm 1.0.1 source install, `GLM_BUILD_LIBRARY=OFF` | 1, missing GLM_INCLUDE_DIRS | 0, prefix include |
+| glm 1.0.1 source install, `GLM_BUILD_LIBRARY=ON` | 1 | 0 |
+| glm 1.0.3 source install, `GLM_BUILD_LIBRARY=ON` | 1 | 0 |
+
+  Upstream glm's own installed config (1.0.1 and 1.0.3, library on or off) puts the include dirs only on `glm::glm-header-only`, so the fallback also fixes source installs, not only vcpkg. With `-DGLM_INCLUDE_DIRS=<glm-1.0.3>`, `CovarianceVoxel.cpp.o` fails to build at 7c09435 and builds at e9149bb (the `glm::dquat` include).
+- **Windows block** read inline only (no Windows host here): arch detection runs only when neither `CMAKE_HIP_ARCHITECTURES` nor `HIPARCHS` is set, caches the deduplicated `amdgpu-arch` list, and warns otherwise; the porter's gfx1151 run at the e9149bb tree (66/66 GPU, 76/76 CPU) is that block's evidence. `WIN32` via `add_compile_definitions` duplicates `/DWIN32` with the same value under an MSVC-style compiler, which is harmless.
+- Commits: 659a15d shared, no prefix; e9149bb ROCm-only, `[ROCm]`; titles 27/38 chars, "Authored with Claude.", no trailer. `python3 utils/jargon.py --port ohm`: clean.
+- The `-fuse-ld=lld-link` lesson is scoped to a HIP link that goes straight to clang++ and names the CMake and clang versions tested; it is accurate as written. The promoting session has to reconcile it with windows.md's "conflicts with `--hip-link`" sentence, which describes the hipcc route.

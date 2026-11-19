@@ -7,13 +7,13 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-11-19T05:38:51Z",
+  "updated_at": "2026-11-19T05:43:02Z",
   "head_sha": "e9149bbedcf8c8e1f6763884c0fcaeb3d70c31ee",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 150693169,
-  "stage": "reviewing",
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -22,7 +22,7 @@
       "validated_sha": "7c09435fcf06ec3351ae6757c25d1b3b201a2134",
       "started_at": "2026-06-05T09:20:15Z",
       "completed_at": "2026-11-04T17:15:44Z",
-      "updated_at": "2026-11-19T05:38:51Z",
+      "updated_at": "2026-11-19T05:43:02Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -168,13 +168,10 @@
   },
   "review_pr": "https://github.com/AMD-Ecosystem/ohm/pull/1",
   "porting_released": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-19T05:10:16Z",
-    "at": "2026-11-19T05:34:14Z"
-  },
-  "porting": {
     "arch": "linux-gfx90a",
     "since": "2026-11-19T05:38:51Z",
-    "holder": "deb63c27aadc"
-  }
+    "at": "2026-11-19T05:43:02Z"
+  },
+  "porting": null,
+  "reviewed_sha": "e9149bbedcf8c8e1f6763884c0fcaeb3d70c31ee"
 }

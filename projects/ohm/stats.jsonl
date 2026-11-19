@@ -153,3 +153,4 @@
 {"kind":"phase","ts":"2026-11-19T05:30:59Z","phase":"test","seconds":9.367,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-vcpkg/bin/ohmtest.exe"}
 {"kind":"phase","ts":"2026-11-19T05:31:04Z","phase":"test","seconds":3.792,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-vcpkg/bin/ohmtestheightmap.exe"}
 {"kind":"phase","ts":"2026-11-19T05:31:05Z","phase":"test","seconds":0.188,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-vcpkg/bin/slamiotest.exe"}
+{"kind":"session","ts":"2026-11-19T05:38:51Z","epoch":1795066731.840072,"event":"start","platform":"linux-gfx90a"}
