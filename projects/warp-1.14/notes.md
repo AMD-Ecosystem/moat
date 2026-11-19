@@ -5806,3 +5806,148 @@ print(f"file {len(data) / 1e6:.1f} MB, bundles {bundles}, CCOB markers {compress
 for t, s in sorted(per.items(), key=lambda kv: -kv[1]):
     print(f"  {t:28s} {s / 1e6:7.2f} MB  (zlib -6: {per_z[t] / 1e6:6.2f} MB)")
 ```
+
+### Commits 3 and 4 (after the validation loop)
+- `9cc2ab02` [ROCm] Document building for AMD GPUs: `docs/user_guide/installation.rst` +15, a paragraph and code block after the CUDA build options in "Building from Source" (ROCm Python packages install line, `python build_lib.py`, detection order, both-toolkits error, default and `--hip-arch` target lists, the Windows toolchain, no MathDx). The README defers build steps to the docs, so it is unchanged.
+- `fda2f89a` [ROCm] Fix device assert in debug kernels compiled on Windows: `crt.h` +7. Found by the loop: test_map's three `TestMapDebug` cases failed with "HIP kernel build failed with error code 6", hipRTC log `builtin.h:2032:26: error: use of undeclared identifier '__assert_fail'`. The HIP headers (`hip/amd_detail/hip_assert.h`) declare `__assert_fail` only off Windows; on Windows they declare `_wassert(const wchar_t*, const wchar_t*, unsigned)`, which only traps. The hipRTC `assert` now has an `#elif defined(_WIN32)` branch: `printf` of the expression and location, then `__builtin_trap()`. Inside `#if defined(__HIPCC_RTC__)`, so the DLL build, CUDA and Linux are unaffected. After the fix (fresh cache): test_map Ran 45, OK.
+- Both pushed; `advance-head` to `fda2f89a`. jargon clean, audit-commits OK, the four commits carry no CR.
+
+### Validation at `6761183c` (gfx1151-only `warp.dll`, rebuilt at that head; `fda2f89a` re-checked for test_map only)
+- Capability line: `gfx1151 True True True` (textures supported, hardware, 3D hardware). Loaded runtime: `_rocm_sdk_core\bin\amdhip64_7.dll`, `hiprtc0717.dll`, `amd_comgr.dll` (psutil), never System32.
+- gfx11 fp16 WMMA layout probe (`wmma_layout.hip`, Porting session 10 version): "WMMA family 11", six layout lines 0 of 256 wrong, accumulation 0 over the bound (worst 0.40/0.39/0.21 of the bound).
+- `sdf_probe.py cuda:0`: PASS (SDF vs CPU sampler 4.78e-05, vs analytic 1.31e-03, RGBA8 2.52e-03). `tex_alias.py cuda:0`: PASS (plain 0 of 2048 wrong, graph capture 0 of 2048 wrong).
+- **82-pattern set**, `agent_space/warp-win/p6/run82.sh`: one pattern at a time, `python -m warp.tests -s autodetect -p "<pattern>.py" -m 2`, 900 s timeout each, under `utils/timeit.sh warp-1.14 test`, stopping on a timeout or a device-lost/launch-failure line. Two restarts, neither a GPU event: after pattern 19 (my first stop regex matched ordinary test names; fixed, resumed at 20) and after pattern 39 (the fem timeout, below; resumed at 40). No driver reset, no device-lost line, no GPU hang. A quoting slip made all patterns share one kernel cache instead of one per pattern; it was one build, so the headers were the same throughout. Result: **78 patterns OK, 4 not OK** (test_map fixed since):
+
+| pattern | ran | result vs gfx1100 | pattern | ran | result vs gfx1100 |
+|---|---|---|---|---|---|
+| test_codegen | 117 | OK = | test_capture_mode | 2 | OK = |
+| test_snippet | 12 | OK = | test_conditional_captures | 32 | OK, 16 skipped = |
+| test_arithmetic | 126 | OK = | test_conditional | 50 | OK = |
+| test_math | 16 | OK = | test_async | 2373 | OK = |
+| test_fp16 | 6 | OK = | test_streams | 24 | **1 failure**, 3 skipped (b) |
+| test_bf16 | 48 | OK, 5 skipped (env: ml_dtypes) | test_mempool | 7 | OK, 2 skipped = |
+| test_atomic | 164 | OK = | test_pinned | 1 | OK = |
+| test_atomic_bitwise | 6 | OK = | test_unified_memory | 27 | OK, 8 skipped = |
+| test_atomic_cas | 48 | OK = | test_occupancy | 6 | OK = |
+| test_array | 138 | OK (139: one torch test not registered) | test_allocator | 16 | OK, 3 skipped = |
+| test_copy | 14 | OK = | test_allocation_tracker | 34 | OK = |
+| test_launch | 32 | OK = | test_dlpack | 8 | OK (16: torch half not registered) |
+| test_fast_math | 12 | OK, 1 skipped = | test_torch | 0 | (34: torch not installed) |
+| test_grad | 41 | OK = | test_map | 45 | **3 errors**, fixed in `fda2f89a` (45 OK) |
+| test_kernel_cache | 5 | OK = | test_reload | 14 | OK = |
+| test_module_hashing | 8 | OK = | test_cuda_arch_suffix | 10 | OK, 10 skipped = |
+| test_print | 10 | OK, 8 skipped (upstream Windows stdout skip) | test_tile | 126 | OK = |
+| test_mat* | 601 | OK = | test_tile_atomic_bitwise | 3 | OK = |
+| test_vec* | 531 | OK = | test_tile_cholesky | 33 | OK = |
+| test_quat* | 173 | OK = | test_tile_cholesky_no_mathdx | 16 | OK = |
+| test_spatial* | 207 | OK = | test_tile_empty | 20 | OK = |
+| test_rand | 10 | OK = | test_tile_fft | 20 | OK, 8 skipped = |
+| test_noise | 14 | OK = | test_tile_fft_no_mathdx | 16 | OK = |
+| test_clang_cuda | 7 | OK, 6 skipped = | test_tile_func_arg | 27 | OK = |
+| test_runlength_encode | 16 | OK = | test_tile_fused_ops | 36 | OK = |
+| test_array_reduce | 16 | OK = | test_tile_large_offsets | 1 | OK = |
+| test_sparse | 47 | OK = | test_tile_load | 64 | OK = |
+| test_linear_solvers | 34 | OK = | test_tile_mathdx | 6 | OK = |
+| test_coloring | 3 | OK, 1 skipped (env: usd-core) | test_tile_matmul | 25 | OK = |
+| test_bvh | 13 | OK = | test_tile_matmul_no_mathdx | 22 | OK = |
+| test_grouped_bvh | 11 | **1 error** (a) | test_tile_mlp | 0 | (3: torch not installed) |
+| test_hash_grid | 23 | OK = | test_tile_reduce | 62 | OK, 2 skipped (64 KiB capability) = |
+| test_marching_cubes | 17 | OK = | test_tile_shared_memory | 30 | OK, 2 skipped (64 KiB) = |
+| test_mesh* | 49 | OK, 18 skipped (env: usd-core) | test_tile_solve | 5 | OK, 1 skipped = |
+| test_volume | 59 | OK = | test_tile_solve_no_mathdx | 28 | OK = |
+| test_volume_write | 5 | OK = | test_tile_sort | 2 | OK = |
+| test_apic | 52 | OK = | test_tile_stack | 40 | OK = |
+| test_apic_mesh | 12 | OK = | test_tile_view | 16 | OK, 1 skipped (64 KiB) = |
+| test_fem* | 108 | **99 ok, then the worker pool broke** (c) | test_block_dim_dispatch | 2 | OK = |
+| test_graph | 35 | OK, 3 skipped = | test_template_launch_bounds | 36 | OK = |
+| test_array_fill_capture | 3 | OK = | test_texture | 120 | OK, 1 skipped = |
+
+"=" means the same counts as gfx1100 (Evidence session 2 B.5 table, with the later tile_matmul 25 and the 64 KiB capability skips). Tile set (22 tile files + 2): 636 run, 14 skipped, 0 failures, which is gfx1100's 639/15 minus test_tile_mlp (torch). This laptop's venv has no torch, usd-core, ml_dtypes or rmm (the Linux hosts had torch and usd-core); every skip reason above was read from the logs.
+
+Non-passing items:
+- **(a) test_grouped_bvh: `test_grouped_capture_bvh_rebuild_cuda_0` ERROR**, `RuntimeError: Graph launch error: Warp CUDA error 1: invalid argument (in function wp_cuda_graph_launch, warp.cu:4411)`; the next test then prints the same sticky error from `radix_sort_pairs_device` (`sort.cu:84`) and passes. That test alone with `AMD_LOG_LEVEL=1`: **passes** (Ran 1, OK; the log has only PAL "Virtual address present, but not mapped yet" lines and trap-handler setup warnings). So it is order- or timing-dependent, like the test_mesh crash (replay of a graph holding a BVH rebuild with stream-ordered allocations inside the capture). Not narrowed further. Linux passes this file on every host.
+- **(b) test_streams: `test_event_external_cuda_0` FAIL** (`c` all 0, expected 20). Shown to be a race in the upstream test, exposed by Windows submission timing (`agent_space/warp-win/p6/event_ext.py`): the arrays are zeroed by `wp.zeros` on the device's stream, then the two graphs run on two new `wp.Stream()`s with nothing ordering them after the zeroing, and `c.numpy()` reads on the device stream without waiting for `stream2`. Only the first such round in a process fails (`a`, `b`, `c` all 0 even after `wp.synchronize()`: the memsets landed after the graph launches); a second identical round passes; the same first round passes when `wp.synchronize()` follows the `wp.zeros` (mode `zeros-synced`). A plain graph launched 10 times on a new stream as the first graph work of the process gave `a[0] = 1` (9 of 10 increments overwritten by the late memset); launched on the device stream it gave 10. A standalone HIP program with a synchronous memset (`graph_newstream.hip`) passes, consistent with that explanation. Nothing orders the two streams on CUDA either (two blocking non-null streams), so this is not a port defect; the test is left unchanged.
+- **(c) test_fem*: the process pool broke.** 108 tests in 10 suites across 2 processes; 99 reported ok; then "Warning: Process pool broken during parallel execution. Switching to isolated single-process fallback." while the workers were in `test_mesh_multi_env_cpu` and `test_cube_shape_functions`. The runner's isolated fallback then failed on Windows for every suite ("Failed to create isolated process ...: [WinError 2] The system cannot find the file specified", a Windows problem of upstream's test runner), so all 108 were marked crashed. The pattern ended at 899 s and the 900 s timeout fired during the runner's cache cleanup (rc 124): not a GPU hang. Which test killed the worker is unknown (no faulthandler output). `test_cube_shape_functions` is one of the two known isolation failures on Linux ("Unexpected output"); whether it or a GPU test crashed the worker here is open. fem was not re-run (each test once on this laptop).
+- test_map: fixed (above). test_mesh*: all 49 passed this time, `test_mesh_refit_graph_cuda_0` included (consistent with an intermittent crash).
+- **CPU-only suite** (GPU hidden; run alongside the second half of the loop because it does not touch the GPU): `HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 4` -> **Ran 2276, OK (skipped=34)**, no `cuda:0` in the log, 477 s. Linux: 2294 OK (skipped=15). The 18 fewer tests are torch and ml_dtypes registrations; the extra skips are "Requires usd-core" 13, the upstream Windows stdout skip 5, and one more whose reason line wraps.
+- Not run on this laptop: `mma_check.py` (fp16/fp32/fp64, 165 kernels; the bf16 check ran), tests on the 22-target DLL beyond init (experiment), examples, benchmarks (forbidden here).
+
+`event_ext.py` (final form):
+```python
+# test_streams.test_event_external, with the read done (a) as the test does it and (b) after waiting for
+# stream2 explicitly. Usage: python event_ext.py
+import numpy as np
+
+import warp as wp
+from warp.tests.cuda.test_streams import inc, sum
+
+wp.init()
+with wp.ScopedDevice("cuda:0"):
+    for mode in __import__("sys").argv[1:]:
+        if mode.startswith("noevent"):
+            n = 1_000_000
+            a = wp.zeros(n, dtype=float)
+            with wp.ScopedCapture() as cap:
+                wp.launch(inc, dim=n, inputs=[a])
+            st = wp.Stream() if mode == "noevent-stream" else None
+            for _ in range(10):
+                wp.capture_launch(cap.graph, stream=st)
+            wp.synchronize()
+            print(mode, "a[0] =", a.numpy()[0], "expected 10; c[0] n/a", flush=True)
+            continue
+        event = wp.Event()
+        n = 1_000_000
+        a, b, c = (wp.zeros(n, dtype=float) for _ in range(3))
+        if mode == "zeros-synced":
+            wp.synchronize()
+        with wp.ScopedCapture() as capture1:
+            wp.launch(inc, dim=n, inputs=[a])
+            wp.launch(inc, dim=n, inputs=[b])
+            wp.record_event(event, external=True)
+        with wp.ScopedCapture() as capture2:
+            wp.wait_event(event, external=True)
+            wp.launch(sum, dim=n, inputs=[a, b, c])
+        stream1, stream2 = wp.Stream(), wp.Stream()
+        for _ in range(10):
+            wp.capture_launch(capture1.graph, stream=stream1)
+            wp.capture_launch(capture2.graph, stream=stream2)
+        if mode == "sync-stream2":
+            wp.synchronize_stream(stream2)
+        got = c.numpy()
+        wp.synchronize()
+        print(mode, "a[0] =", a.numpy()[0], "b[0] =", b.numpy()[0], "c[0] =", got[0], "expected 20; after a device sync c[0] =", c.numpy()[0], flush=True)
+```
+
+## Lesson for cuda-to-rocm: on Windows, HIP device code has no `__assert_fail`
+Reference file: `references/windows.md`. Code that supplies its own device `assert` for a runtime compiler (hipRTC has no `<assert.h>`) often expands it to `__assert_fail(expr, file, line, func)`, the glibc name that HIP's `hip/amd_detail/hip_assert.h` defines as a printing device function. That header declares `__assert_fail` only when `_WIN32` is not defined; on Windows it declares `_wassert(const wchar_t*, const wchar_t*, unsigned)` instead, which traps without printing. Debug-mode kernels then fail to compile only on Windows ("use of undeclared identifier '__assert_fail'"), while release builds (`NDEBUG`) hide it. Give the Windows branch its own expansion (`printf`, then `__builtin_trap()`), or call `_wassert` with wide strings. (warp-1.14, Warp's `crt.h`)
+
+## Lesson for cuda-to-rocm: Windows HIP submission timing exposes missing cross-stream ordering
+Reference file: `references/diagnosis.md`. On Windows the HIP runtime can submit work on one stream noticeably later than work issued afterwards on another stream. Tests that zero or fill buffers on one stream and then launch kernels or graphs on a freshly created second stream, with no event or synchronization between them, pass on Linux and on CUDA by timing and fail on Windows with results that look like "the kernel never ran" (the late fill overwrites the output). Before suspecting the runtime, add a `synchronize` after the fill: if the failure disappears, the test has a race. Warp's `test_event_external` is an example: only the first round in a process failed. (warp-1.14)
+
+### Next step (head `fda2f89a`; written by the windows-gfx1151 porter)
+The project stays in `porting`, lock held by windows-gfx1151, as directed: Phase 7 (wheels), the Linux nvcc check and the hosts below still follow, and the lock goes back to linux-gfx950 by Jeff's decision. Fork commits this session, `a8e95dcb..fda2f89a`: `13e4e46e` Windows HIP build (Windows-only code in `build_dll.py` and the DLL loader, plus a `builtin.h` guard that is a no-op off MSVC); `6761183c` bf16 WMMA (gfx11/gfx12 device code only); `9cc2ab02` docs; `fda2f89a` Windows hipRTC debug assert (Windows-only).
+
+**Open on this platform (windows-gfx1151):**
+1. The three graph-related Windows findings: the intermittent `test_mesh_refit_graph` access violation, the order-dependent `test_grouped_capture_bvh_rebuild` "invalid argument" from `hipGraphLaunch`, and the fem worker crash (unknown test). The first two share a shape (replay of graphs that hold stream-ordered allocations around a hipCUB/rocPRIM call, after other graphs were destroyed); the simple standalone reproducer did not fail. Suggested next step: one crashing run each under `AMD_LOG_LEVEL=3` and faulthandler, then a reproducer with Warp's real call sequence; then either a port fix or a `rocm-bug-report` registration plus a capability-named skip.
+2. fem* once more in a single process (`-m 1`, or the file list run one at a time) to find which test kills the worker; `mma_check.py` (165 kernels).
+3. `test_event_external`: upstream test race, not a port defect; no action unless Jeff wants a test-only fix carried.
+
+**gfx1100 (wave32, gfx11 bf16 WMMA; must re-run at `fda2f89a`; only `6761183c` affects Linux):**
+1. `wmma_layout_bf16.hip` (above) built for gfx1100 (`clang++ -x hip --rocm-path=$R --offload-arch=gfx1100 -O2 -w wmma_layout_bf16.hip -o wmma_layout_bf16 -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib`): expect "bf16 WMMA family 11", six layout lines 0 of 256 wrong, accumulation 0 over the bound. If any line is wrong, stop and record.
+2. `mma_check_bf16.py` and `mma_check.py` (Porting session 10 versions): FAILURES 0 each. `isa_count.py <cache> gfx1100` on the `mma_check_bf16.py` cache: `v_wmma_f32_16x16x16_bf16` in 34 code objects, 64x64x64 at block_dim 256 scalar (as the gfx1151 table above).
+3. test_tile_matmul (25 OK) and the 24-file tile set (639 run, 15 skipped, 0 failures).
+4. **bf16 benchmark against the scalar tree** (unmeasured anywhere so far): the Phase 4 `bench_tile_matmul.py` has no bf16 mode, so add a bf16-input/float32-output forward kernel next to the fp16 one (same tiles 16/32/64, same block_dims as the fp16 cells; forward only, tile_matmul rejects a bf16 backward); three runs per tree with the load monitor; scalar tree = a worktree at `fda2f89a` with `warp/native/tile_matmul_mma.h` checked out from `a8e95dcb` (bf16 scalar on gfx11/gfx12; same `warp.so`). Expect bf16 like the fp16 forward cells; **any bf16 cell below 1.0x is a finding**; 64x64 at block_dim 256 is scalar in both trees by construction.
+5. The 82-pattern set and the CPU-only suite (expect 81 OK + the fem pair; 2294 OK).
+
+**gfx1201 (wave32, gfx12 bf16 WMMA, layout assumed from gfx12 fp16, never measured):**
+1. `wmma_layout_bf16.hip` built for gfx1201: expect "bf16 WMMA family 12", all layout lines 0 wrong, accumulation within the bound. **If it fails, the gfx12 `op<bfloat16>` in `tile_matmul_mma.h` must be removed before anything else** (porter's job; the validator records the counts).
+2. `mma_check_bf16.py`, `mma_check.py`: FAILURES 0; `isa_count.py <cache> gfx1201`: bf16 WMMA in all 35 cases with 16-multiple dimensions (gfx12 has no scalar exclusion; `cells_bf16.py` showed 8 instructions at 64x64 block_dim 256).
+3. test_tile_matmul, the tile set, the bf16 benchmark as for gfx1100, the 82-pattern set, the CPU-only suite.
+
+**gfx950, gfx942, gfx90a:** no device-code change for them (every MFMA code object byte-identical between `13e4e46e` and `6761183c` in `cells_bf16.py`; `13e4e46e` and `fda2f89a` change only Windows code; `9cc2ab02` is documentation). Whether their `e78ee32f` passes carry forward is a validation decision.
+
+**linux-gfx950 (after the lock returns):** the nvcc 12.8 CUDA compile at the Phase 6 head, as every round (the Windows CUDA compile above passed at `13e4e46e`; `crt.h`'s change is inside `__HIPCC_RTC__`).
+
+**Phase 7 (wheels):** `setup.py` must ship `warp/bin/warp.dll.rocm` in a Windows ROCm wheel, or the installed wheel's loader cannot tell it is a HIP build and binds the System32 runtime. A wheel built on CI records the build machine's ROCm root; harmless, because the loader prefers `rocm_sdk`, which the wheel depends on.
+
+**For Jeff (no decision taken):** the default Windows target list costs about 13 MB uncompressed and 1.07 MB zipped per target (22 targets: 290.5 MB DLL, 24.4 MB zipped); `--offload-compress` is the untried alternative to a shorter list.
