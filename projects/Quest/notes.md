@@ -2723,3 +2723,74 @@ All exit 0, prompt 103 tokens, byte-identical text from "Input Sequence Length" 
 `jargon.py --port Quest` clean; the ROCm build is documented in `README.md` beside the CUDA build. `audit-commits` reports only the known `6e7d8db` fenced-Test-Plan gap recorded for PR preparation. `git -C projects/Quest/src status --porcelain` empty at completion.
 
 State: linux-gfx942 `completed` at `6e7d8db` (wave64 gate). linux-gfx90a, linux-gfx1100 and windows-gfx1151 read `revalidate` at this head; the wave32 and Windows runs are the first on the new prefill and top-k paths, and should record `hipDeviceAttributeMaxSharedMemoryPerMultiprocessor` for the LDS lesson.
+
+## CUDA no-regression compile 2026-11-19 (linux-gfx950 host, real nvcc, at `6e7d8db`) -- PASS, no port regression
+
+Asked for by Jeff Daily before the port is offered upstream: show that the CUDA path still compiles with real nvcc at the current head. Evidence only; no stage or platform record changed, nothing pushed to the fork.
+
+Trees (both with `git submodule update --init --recursive`, identical submodule SHAs: flashinfer `9f49803`, pybind `768cebe`, raft `1e4961e`, googletest, nvbench):
+
+- port: `AMD-Ecosystem/Quest` at `6e7d8db768950aab224fece523f1f640d2f5b6c9` (= `head_sha`)
+- base: `mit-han-lab/Quest` at `01c1623bf9395009520874e989e29f683203b357`, the merge base, which is also upstream `main` today
+
+Toolchain: CUDA 12.8 (`/usr/local/cuda`, `nvcc` V12.8.93, build cuda_12.8.r12.8/compiler.35583870_0), CMake 3.31.6, Ninja, gcc/g++ 11.5.0 (Ubuntu `11.5.0-1ubuntu1~24.04.1` debs from `apt-get download`, unpacked with `dpkg -x` into the job directory; nothing installed on the host), PyTorch `2.5.0+cu124` (the `pyproject.toml` pin) in a job venv, Python 3.11.17. There is no NVIDIA GPU on the host, so this is compile and link only.
+
+Recipe: upstream's own `quest/ops/setup.sh` (`cmake -GNinja` + plain `ninja`), with three changes forced by the host and applied the same way to both trees. (1) `CMakeLists.txt` hard-codes `/usr/bin/gcc-11`, which this host does not have, so a toolchain file points C, CXX and the CUDA host compiler at the unpacked gcc-11 (a toolchain file is read inside `project()`, so it overrides the earlier `set()`). (2) The arch is pinned to `-DCMAKE_CUDA_ARCHITECTURES=80` because `native` needs a GPU. (3) `TORCH_CUDA_ARCH_LIST=8.0`; without it, torch's CMake adds sm_50..sm_90a on a host with no GPU, where upstream's GPU machine would get only its own arch. Upstream has no CI.
+
+```
+cat > gcc11.cmake <<'X'
+set(CMAKE_C_COMPILER "<job>/gcc11/root/usr/bin/gcc-11")
+set(CMAKE_CXX_COMPILER "<job>/gcc11/root/usr/bin/g++-11")
+set(CMAKE_CUDA_HOST_COMPILER "<job>/gcc11/root/usr/bin/g++-11")
+X
+cd <tree>/quest/ops
+TORCH_CUDA_ARCH_LIST=8.0 PATH=<venv-cuda>/bin:/usr/local/cuda/bin:$PATH cmake -GNinja \
+  -DCMAKE_TOOLCHAIN_FILE=<job>/gcc11.cmake -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DPython_EXECUTABLE=<venv-cuda>/bin/python \
+  -DCMAKE_PREFIX_PATH=$(<venv-cuda>/bin/python -c 'import torch;print(torch.utils.cmake_prefix_path)') \
+  -S . -B <job>/build-<tree>
+ninja -C <job>/build-<tree> -j64 -k 0
+```
+
+### The RAFT `CUDA::nvToolsExt` wall does not reproduce on this toolkit
+
+Unmodified upstream **configures and generates successfully** here. The wall recorded since August came from the `/opt/conda/envs/cuda-12.8` toolkit, which has no `libnvToolsExt.so`. `/usr/local/cuda` 12.8 on this host still ships the legacy `include/nvToolsExt.h` and `lib64/libnvToolsExt.so*`, so `FindCUDAToolkit` creates `CUDA::nvToolsExt`, and RAFT's `cpp/CMakeLists.txt:262` gets only a CMake dev deprecation warning ("nvToolsExt has been superseded by nvtx3"). The first base configure without the torch prefix stopped at `find_package(Torch)` after RAFT had configured cleanly. So the wall depends on how the toolkit was installed, not on its version; neither Quest source nor the command line had to supply the target. Step (1) of the requested fallback order therefore went straight to a full build of both trees.
+
+### Results
+
+| | base `01c1623` | port `6e7d8db` |
+|---|---|---|
+| configure + generate | OK | OK |
+| ninja steps (all) | 162 of 179 succeeded, 15 failed, 2 not run | 162 of 179 succeeded, 15 failed, 2 not run |
+| `_kernels` target | 8 of 8 (7 `.cu` + link), `_kernels.cpython-311-x86_64-linux-gnu.so` 18,681,432 B | 8 of 8, 18,714,200 B |
+| wall (two builds in parallel, -j64 each) | 332 s | 331 s |
+
+The 15 failures are the same set in both trees, all in RAFT's optional compiled library `raft_objs` (`libraft.so`/`libraft.a` are the 2 steps that never ran). Quest's module links only the header-only `raft::raft`, so these do not affect it. Files: `src/neighbors/detail/cagra/search_single_cta_{float,int8,uint8}_uint32_dim{128_t8,256_t16,512_t32,1024_t32}.cu` (12) and `src/neighbors/ivfpq_search_{float,int8_t,uint8_t}_int64_t.cu` (3). First error, identical on both:
+
+```
+_deps/raft-src/cpp/include/raft/neighbors/detail/cagra/search_single_cta_kernel-inl.cuh(467): error #20281-D: in whole program compilation mode ("-rdc=false"), a __global__ function template instantiation or specialization ("raft::neighbors::cagra::detail::single_cta_search::search_kernel<8u, 64u, 64u, 0u, 128u, float, float, unsigned int, ::raft::neighbors::filtering::none_cagra_sample_filter>") will be required to have a definition in the current translation unit, when "-static-global-template-stub" will be set to "true" by default in t[he future]
+```
+
+This is RAFT branch-24.02 against CUDA 12.8 (`-static-global-template-stub` diagnostics turned into errors). It is upstream's problem and occurs on unmodified upstream. All 30 `warning` lines in each build log come from RAFT's dependency trees (`_deps/{raft,cccl,cuco,cutlass,rmm,fmt,spdlog,hnswlib}-src`); none come from Quest.
+
+### Per-file comparison of Quest's own `.cu` files
+
+To get each file's diagnostics on its own, each of the 7 `_kernels` compile lines from `ninja -t commands _kernels` was rerun separately in both trees. After the tree paths are normalized, the compile lines are identical between base and port: same defines (`-DBSK_TORCH_CHECK`, RAFT/thrust/torch defines, no `USE_HIP`), same include order, `-gencode arch=compute_80,code=sm_80`, `--expt-extended-lambda --expt-relaxed-constexpr`.
+
+| file | base | port |
+|---|---|---|
+| `csrc/approx_attn.cu` | rc 0, 0 warnings | rc 0, 0 warnings |
+| `csrc/batch_prefill.cu` (includes `prefill/prefill.cuh`, touched) | rc 0, 0 warnings | rc 0, 0 warnings |
+| `csrc/bsk_ops.cu` | rc 0, 0 warnings | rc 0, 0 warnings |
+| `csrc/estimate.cu` (decode headers, touched) | rc 0, 0 warnings | rc 0, 0 warnings |
+| `csrc/page.cu` | rc 0, 0 warnings | rc 0, 0 warnings |
+| `csrc/rms_norm.cu` (touched) | rc 0, 0 warnings | rc 0, 0 warnings |
+| `csrc/topk.cu` (includes `topk/decode_select_k.cuh`, touched) | rc 0, 0 warnings | rc 0, 0 warnings |
+
+Every nvcc output was empty. This covers every `.cu` file in the module, and so every `.cu` file the port touches or that includes a header the port touches (`decode_attn.cuh`, `decode_handler.cuh`, `decode_page.cuh`, `prefill.cuh`, `decode_select_k.cuh`, `rms_norm.cu`). The `kernels/include/hip_compat/` shims are not on the CUDA include path, and the compile lines confirm it. No file needed the direct-nvcc fallback, and none failed to compile. Both modules export the same 651 text symbols and the same undefined dynamic symbol list (`nm -D --undefined-only`, diffed). An import smoke test of the built modules was not run: the CUDA wheel venv lacked `typing_extensions`, and the fleet guard refused the `pip install` into it.
+
+**Verdict: the CUDA path compiles and links with real nvcc 12.8 at `6e7d8db`, with the same result as upstream `01c1623`. There is no port regression.** The only failures are RAFT's optional compiled library, identical on unmodified upstream. This settles the "nvcc compile owed before the port goes to jeff" items from the 2026-11-19 review and validation sections, and it supersedes the standing `cuda-not-validated` RAFT-wall note for any host with a full `/usr/local/cuda` toolkit.
+
+### Lesson for moat-porting: the RAFT `CUDA::nvToolsExt` configure wall is a toolkit-layout artifact
+
+The conda `cuda-12.8` env that the fleet recipe names has no legacy `libnvToolsExt.so`, so `FindCUDAToolkit` creates no `CUDA::nvToolsExt`, and any RAPIDS 24.x dependency (RAFT, rmm) fails at configure. A `/usr/local/cuda` 12.8 install from NVIDIA's packages still ships it, and the same configure passes. Before recording that wall as `cuda-not-validated`, retry with a full system toolkit. Also, a hard-coded `CMAKE_C/CXX_COMPILER` such as `/usr/bin/gcc-11` can be met without root: `apt-get download` the gcc-11 debs, `dpkg -x` them into the job directory (gcc resolves its own libraries relative to its binary), and point a `-DCMAKE_TOOLCHAIN_FILE` at them; the toolchain file is read inside `project()` and wins over the earlier `set()`. (Quest)
