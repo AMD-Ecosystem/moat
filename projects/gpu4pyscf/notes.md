@@ -3783,6 +3783,8 @@ gpu4pyscf's Windows support needs CuPy-ROCm on Windows, which is being ported as
 
 ## Lesson for cuda-to-rocm: entries stranded on this branch's copy of the skill (2026-11-19)
 
+Promoted to cuda-to-rocm/references/faults-wavefront.md, cuda-to-rocm/references/platform-limits.md, cuda-to-rocm/references/libraries.md, cuda-to-rocm/references/diagnosis.md in bb61ae96.
+
 Earlier gpu4pyscf rounds wrote these entries directly into the branch's copy of the skill, before port branches were limited to their own folder. The trunk has since split `fault-classes.md` into `faults-*.md` topic files and never received them, so the 2026-11-19 trunk merge took the trunk's skill files and the text is preserved here verbatim for promotion. The validation.md nvcc-wheel note is already on the trunk and is omitted.
 
 ### SKILL.md index bullets (belong in the fault-class index)
