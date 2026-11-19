@@ -7,13 +7,13 @@
   "priority": 3.866,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-11-19T21:38:41Z",
-  "head_sha": "3c7754f8b967df918728101a1990038d53fcb14c",
+  "updated_at": "2026-11-19T21:43:03Z",
+  "head_sha": "2b938d8ab5eea6b19d522a53681a68819bf04dca",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 815507746,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
@@ -95,7 +95,7 @@
       "failed_sha": null,
       "started_at": "2026-11-19T05:25:42Z",
       "completed_at": "2026-11-19T10:43:36Z",
-      "updated_at": "2026-11-19T21:38:41Z",
+      "updated_at": "2026-11-19T21:43:03Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -138,13 +138,9 @@
   },
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-11-19T21:19:36Z",
-    "at": "2026-11-19T21:27:49Z"
-  },
-  "porting": {
-    "arch": "linux-gfx942",
     "since": "2026-11-19T21:38:41Z",
-    "holder": "199d4323c4cb"
+    "at": "2026-11-19T21:43:03Z"
   },
+  "porting": null,
   "reviewed_sha": "6e7d8db768950aab224fece523f1f640d2f5b6c9"
 }

@@ -2958,7 +2958,7 @@ PYTHONPATH=<fork> python -m pytest <fork>/quest/tests --rootdir <fork> -p no:cac
 
 ## Lesson for cuda-to-rocm: a pip ROCm torch on Windows needs PYTORCH_ROCM_ARCH for find_package(Torch)
 
-For `references/windows.md`, "CMake and compiler drivers" (beside the `rocm_agent_enumerator`/gfx906 fallback note). A CMake torch extension on Windows that names its target with `-DCMAKE_HIP_ARCHITECTURES` still fails in `find_package(Torch)` with `LoadHIP.cmake: No GPU arch specified for ROCm build`: torch's `torch_hip_get_arch_list` reads only the `PYTORCH_ROCM_ARCH` environment variable or `rocm_agent_enumerator`, which ROCm does not ship on Windows. A build environment that exports `PYTORCH_ROCM_ARCH` hides this from whoever writes the README. Fix in the project: on `WIN32`, when `ENV{PYTORCH_ROCM_ARCH}` is undefined, `set(ENV{PYTORCH_ROCM_ARCH} ...)` from the resolved `CMAKE_HIP_ARCHITECTURES` before `find_package(Torch)`, and stop with a message when no architecture is given at all. Also: the Release-default idiom (`if(NOT CMAKE_BUILD_TYPE) set(... Release ...)`) must run before `project()` on Windows, because `Windows-Clang.cmake` sets `CMAKE_BUILD_TYPE_INIT Debug` and `project()` caches it; and FindPython on Windows follows an activated environment (`VIRTUAL_ENV`/`CONDA_PREFIX`), not PATH order. (Quest)
+For `references/windows.md`, "CMake and compiler drivers" (beside the `rocm_agent_enumerator`/gfx906 fallback note). A CMake torch extension on Windows that names its target with `-DCMAKE_HIP_ARCHITECTURES` still fails in `find_package(Torch)` with `LoadHIP.cmake: No GPU arch specified for ROCm build`: torch's `torch_hip_get_arch_list` reads only the `PYTORCH_ROCM_ARCH` environment variable or `rocm_agent_enumerator`, which ROCm does not ship on Windows. A build environment that exports `PYTORCH_ROCM_ARCH` hides this from whoever writes the README. Fix in the project: on `WIN32`, when `ENV{PYTORCH_ROCM_ARCH}` is undefined, `set(ENV{PYTORCH_ROCM_ARCH} ...)` from the resolved `CMAKE_HIP_ARCHITECTURES` before `find_package(Torch)`, and stop with a message when no architecture is given at all. Also: the Release-default idiom must run before `project()` on Windows, because `Windows-Clang.cmake` sets `CMAKE_BUILD_TYPE_INIT Debug` and `project()` caches it. Before `project()` it must also check the `CMAKE_BUILD_TYPE` environment variable, which CMake (3.22+) applies only inside `project()`, or it forces Release over a build type the user gave there: `get_property(_mc GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)` then `if(NOT CMAKE_BUILD_TYPE AND "$ENV{CMAKE_BUILD_TYPE}" STREQUAL "" AND NOT _mc) set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)`; and FindPython on Windows follows an activated environment (`VIRTUAL_ENV`/`CONDA_PREFIX`), not PATH order. (Quest)
 
 ## Review 2026-11-19 pass 3 (linux-gfx942, delta 6e7d8db..a70f4d9) -- CHANGES REQUESTED
 
@@ -3157,3 +3157,23 @@ linux-gfx942 (MI300X), CMake 3.31.6, torch 2.16.0a0+git6c3af02 / HIP 7.16, pip R
 ### Recommendation
 
 **Request Changes** (finding 1). The fix is one condition in the pre-`project()` block plus the lesson text. For the default Linux configure it produces the same `build.ninja` (checked above). The Linux build and tests at a70f4d9 (202 passed, 28 skipped), whose `build.ninja` also equals 6e7d8db's, therefore describe the compiled module, and the next Linux validation can judge whether to carry forward on that basis.
+
+## Porter round 2026-11-19 (linux-gfx942), answering review pass 4 -- fork `2b938d8`
+
+One commit on top of `3c7754f`, nothing rewritten: `2b938d8` `[ROCm] Keep a build type given in the environment` (`quest/ops/CMakeLists.txt` +3/-2: the comment and the one condition). The condition is the review's: `if(NOT CMAKE_BUILD_TYPE AND "$ENV{CMAKE_BUILD_TYPE}" STREQUAL "" AND NOT _quest_multi_config)`. Kept as is: an empty environment value behaves like an unset one in CMake (same cached result), `NOT CMAKE_BUILD_TYPE` still catches `-DCMAKE_BUILD_TYPE=` (empty), and the multi-config guard is unchanged. The Windows-guarded blocks are not touched. The pending lesson ("a pip ROCm torch on Windows needs PYTORCH_ROCM_ARCH ...") now spells the corrected idiom.
+
+Host: linux-gfx942 (MI300X), CMake 3.31.6 (pip), torch 2.16.0a0+git6c3af02 / HIP 7.16 on the pip ROCm SDK, `/opt/python-3.11-venv`. Configure only, fresh build directory each, `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=<torch cmake prefix> -S <tree>/quest/ops`, `CMAKE_BUILD_TYPE` and `PYTORCH_ROCM_ARCH` unset unless stated. Trees: the fork at `2b938d8` and a worktree at `6e7d8db` (`agent_space/porter/cases.sh <tree> <outdir>`, both trees in parallel):
+
+| configure | `6e7d8db` | `3c7754f` | `2b938d8` |
+|---|---|---|---|
+| `-GNinja`, nothing given | Release | (Release, review pass 4) | Release |
+| env `CMAKE_BUILD_TYPE=Debug` | Debug | **Release** (rerun here) | Debug |
+| env `CMAKE_BUILD_TYPE=` (empty) | Release | -- | Release |
+| `-DCMAKE_BUILD_TYPE=RelWithDebInfo` | RelWithDebInfo | -- | RelWithDebInfo |
+| env Debug plus `-DCMAKE_BUILD_TYPE=MinSizeRel` | MinSizeRel | -- | MinSizeRel |
+| `-G "Ninja Multi-Config"` | none; Debug;Release;RelWithDebInfo | -- | same |
+| `-G "Ninja Multi-Config"`, env Debug | none; Debug;Release;RelWithDebInfo | -- | same |
+
+All configures rc 0. For the default, env-Debug, RelWithDebInfo and multi-config cases, `CMakeCache.txt` and `build.ninja` are identical between `6e7d8db` and `2b938d8` once the build directory and then the source directory are replaced by placeholders. Default case: 8 compile lines with `-O3`, 8 with `--offload-arch=gfx942`. So the default generated build is the one `6e7d8db` produced (and `a70f4d9` was built and tested from: 202 passed, 28 skipped). Not run: Windows (whether an environment `CMAKE_BUILD_TYPE` beats `Windows-Clang.cmake`'s `CMAKE_BUILD_TYPE_INIT Debug` there is the review's reading, unverified on hardware; with nothing in the environment the Windows behaviour is unchanged from `3c7754f`).
+
+`python3 utils/jargon.py --port Quest` clean; `utils/prose.py` on the commit message clean; title 48 chars, fenced Test Plan, AI disclosure, no trailer, ASCII. Pushed plainly (`3c7754f..2b938d8`); fork tree clean.
