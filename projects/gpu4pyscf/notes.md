@@ -4631,3 +4631,16 @@ All six bodies still need `utils/prose.py` and `jargon.py` on the final text whe
 
 ### Notes corrections (findings 8, 9)
 Applied in place: the hiprtc row now reads pbc/df 20 (test_pbc_df_derivatives 17, test_pbc_hcore_derivatives 3), pbc/grad 26, pbc/scf 1; the J-engine mask row now says the mask feeds `__shfl_down_sync` and HIP's `__hip_check_mask` loop (not compiled out under NDEBUG; deleted by the optimizer on gfx942), and the wave64 shift remains undefined behaviour upstream.
+
+## Review 2026-11-19 follow-up (reviewer, linux-gfx942, fork moat-port @ 7cbd3d2 unchanged; porter answers above) -- REVIEW PASSED
+
+Verified:
+- Findings 1-3: the standalone summary lines in agent_space/gpu4pyscf/sa-{a,b,c,d}-{before,after}.log match the porter's table exactly (a 10/47/1 -> 48/1/1; b 34/27/1 -> 57/2/1; c 46/22+5E/1 -> 64/9/1; d 49/15/3 -> 58/1/8). The remaining 9 in (c) are the 4 cause-B, 3 cause-A and 2 multigrid tests, as named. Pytest counts subtests in its failed totals, which is why (a) before (58 items) and after (50) do not add up to the same total; the numbers are pytest's own summary lines and reproduce as written.
+- (e): sa-e-*.log contain no results (sa_run.sh appends its own `-k 'not _high_cost'` after the caller's `-k linear_dependency`, so nothing of interest ran there). I reran it myself on copies of the 61c2a1e tree (agent_space/review-e/{before,after}, after = fa3c484b applied with patch), `pytest gpu4pyscf/mp/tests/test_dfmp2_utilities.py gpu4pyscf/pbc/df/tests/test_rsdf_builder.py -k linear_dependency`, HIP_VISIBLE_DEVICES=6: before "2 failed, 2 passed" (SUBFAILED test_get_j2c_decomp_linear_dependency `'cd' == 'eig'`, FAILED test_decompose_j2c_linear_dependency[False] `'CD' == 'ED'`), after "3 passed". The porter's (e) numbers and the SUBFAILED correction stand.
+- Finding 7: licm_perf.py measures what the table says (converged SCF, 5 synchronized get_jk/get_veff, fresh SCF wall time; s/p 6-31G so both builds are correct). Accepted as stated, including its limits (gfx942 and ROCm 10.1 only).
+- Findings 8 and 9: applied in place (classification row and dropped-inventory row read correctly now).
+
+Recording the corrected messages in notes rather than rewriting moat-port resolves findings 1-6: moat-port is not amended, and each commit reaches upstream only through its own cherry-picked branch, which is where the corrected body is applied and where a person approves it on the fork review PR. Owed at that step, in addition to the porter's list:
+- The standalone runs for (a), (b) and (c) also used builds carrying `-mllvm -disable-machine-licm`; (b) and (c) include d-shell molecular tests that hang without it on ROCm 10.1. Add the same sentence the porter wrote for (d) to the (a), (b) and (c) Test Plans.
+- The earlier "Owed / next" line in the porter's rescope section still says "8 failures in mp/tests/test_mp2.py"; the corrected (d) text (7) supersedes it.
+- Run `jargon.py` and `prose.py` on each final body, and the commit gate on each branch.
