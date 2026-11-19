@@ -1,14 +1,16 @@
 name: checks
 
-# Runs on every pull request and on the trunk. NOT on pushes to other branches: the
-# pre-push hook runs the same gates locally, so a branch push would be the third time
-# the same checks ran, and the only thing it adds is mail. The gates themselves live
-# in utils/check.py -- implementing them twice is how CI and the hook end up
-# disagreeing.
+# Runs on every pull request, on the trunk, and on project branches. The pre-push
+# hook runs the same gates locally, but only in a clone that installed it: a record
+# pushed from a fresh clone is checked by nothing, and one invalid record then fails
+# every other host's pushes, because the gates judge every ref. So port/** is
+# covered here too. The gates themselves live in utils/check.py -- implementing
+# them twice is how CI and the hook end up disagreeing -- and this job hands them
+# the push the same way the hook does (see "Run gates").
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, 'port/**']
   workflow_dispatch:
 
 # A branch pushed repeatedly should not queue a run per push; only the last one is
@@ -25,13 +27,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Every branch, full history: the tools re-run themselves from origin/main
+          # and the gates read every project branch, neither of which a shallow
+          # single-branch checkout has.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install check dependencies
-        run: pip install --quiet jsonschema pyflakes
+        # Exact versions: an unpinned pyflakes gains checks between releases, and the
+        # `code` gate would then fail a push that changed no code. Raise them on
+        # purpose, with the gates run under the new version first.
+        run: pip install --quiet jsonschema==4.26.0 pyflakes==4.0.3
 
       - name: Title and shape (backstop -- the real check runs before the PR is opened)
         # Whoever opens a pull request checks the title first, with
@@ -46,15 +56,44 @@ jobs:
         env:
           # Through the environment, never interpolated into the shell: a title is
           # attacker-controlled text and ${{ }} would paste it straight into bash.
+          # The base branch's name goes the same way, for the same reason.
           PR_TITLE: ${{ github.event.pull_request.title }}
-        run: python3 utils/pr_intent.py --base "origin/${{ github.base_ref }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          PR_BASE: ${{ github.base_ref }}
+        run: python3 utils/pr_intent.py --base "origin/$PR_BASE" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Run gates
-        # --fast skips the fork-cleanliness gate, which needs the fork clones that
-        # only exist on a porting host. The pre-push hook runs --fast too, so that
-        # gate is enforced only by pr_ready (and a manual full check.py) on the
-        # hosts where the clones actually exist.
-        run: python3 utils/check.py --fast
+        # --fast skips the forks and commits gates, which need the fork clones that
+        # only exist on a porting host. The pre-push hook runs --fast too, so on the
+        # hosts where the clones exist fork cleanliness is enforced by pr_ready, and
+        # the commit rules only by a bare check.py or `moatlib.py audit-commits`.
+        #
+        # A push is replayed to the gates exactly as the pre-push hook presents it:
+        # the same two variables, built from the event instead of from git's stdin.
+        # The gates scope themselves from them (a port branch is judged on its own
+        # project folder, not on the trunk files it inherited, and branch-scope has
+        # a commit range to judge). Without them this job ran a different set of
+        # gates than the hook and disagreed with it. tests/test_ci_scope.py fails if
+        # this export is removed. A pull request sets neither: it proposes a trunk
+        # change, so every gate applies.
+        shell: bash -eo pipefail {0}
+        env:
+          # Through the environment, never interpolated into the shell.
+          CI_EVENT: ${{ github.event_name }}
+          CI_REF: ${{ github.ref }}
+          CI_AFTER: ${{ github.sha }}
+          CI_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$CI_EVENT" = push ]; then
+            export MOAT_PUSH_REFS="$CI_REF"
+            export MOAT_PUSH_UPDATES="$CI_AFTER:$CI_REF:$CI_BEFORE"
+          fi
+          python3 utils/check.py --fast
+
+      - name: Unit tests
+        # The pure logic the gates and the publishing paths rest on: the status
+        # merge, the approval decisions, the guard's classifier. Standard library
+        # only, so there is nothing to install.
+        run: python3 -m unittest discover -s tests -t .
 
 # NOTE: there is deliberately no jargon job here. The no-in-house-vocabulary rule
 # applies to text that reaches an UPSTREAM project -- fork commit messages, PR

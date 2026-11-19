@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "octproz-app-kernel-validation",
+      "kind": "other",
+      "component": null,
+      "summary": "Validation used a proxy microbenchmark; never exercised OCTproZ app kernels, GL-interop, or the 3D-volume surface-write path (riskiest ported feature compiled but not run) on real GPU. Re-validate by launching the built app through its OCT processing pipeline.",
+      "refs": [
+        "projects/OCTproZ/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T19:04:23Z",
+      "decided": null
+    },
+    {
+      "id": "octproz-nvidia-proprietary-rescan",
+      "kind": "other",
+      "component": null,
+      "summary": "Rescan with the fixed scan_nvidia: octproz_project/octproz/aboutdata/thirdparty_licenses/cuda_license.txt is a disclosure copy of the NVIDIA CUDA EULA shown in the about dialog. Almost certainly benign (documenting the toolkit licence, not licensing project code), but no ruling is recorded; needs a person's confirmation.",
+      "refs": [
+        "moat main b336246 (case/wording-proof scan_nvidia)"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T17:08:19Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T19:24:17Z"
+      }
+    }
+  ]
+}

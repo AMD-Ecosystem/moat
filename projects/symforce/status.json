@@ -7,56 +7,26 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-07T07:05:32Z",
-  "head_sha": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
+  "updated_at": "2026-11-18T15:19:12Z",
+  "head_sha": "c665e5cc723ccefd02e3505b0adeabc99cdb4838",
   "depends_on": [],
   "pr_url": "https://github.com/symforce-org/symforce/pull/465",
   "pr_number": 465,
   "pr_opened_at": "2026-06-16T18:19:20Z",
-  "porting": null,
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 444900243,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
-      "started_at": "2026-06-05T00:23:29Z",
-      "completed_at": "2026-06-16T17:53:29Z",
-      "updated_at": "2026-06-23T22:23:18Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer",
-      "carry_forward": {
-        "to": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:23:18Z"
-      }
-    },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
-      "started_at": null,
-      "completed_at": "2026-06-23T22:23:18Z",
-      "updated_at": "2026-06-23T22:23:18Z",
+      "validated_sha": "c665e5cc723ccefd02e3505b0adeabc99cdb4838",
+      "started_at": "2026-08-20T17:36:40Z",
+      "completed_at": "2026-11-18T05:12:29Z",
+      "updated_at": "2026-11-18T05:12:29Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -70,22 +40,16 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:23:18Z"
-      }
+      "last_agent": "validator:claude"
     },
-    "windows-gfx1101": {
-      "state": "completed",
+    "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
+      "validated_sha": "c665e5cc723ccefd02e3505b0adeabc99cdb4838",
+      "failed_sha": "aa31e636e72ba79fc676a04657fdd8bb6bf3c91f",
       "started_at": null,
-      "completed_at": "2026-06-23T22:23:19Z",
-      "updated_at": "2026-06-23T22:23:19Z",
+      "completed_at": "2026-11-18T05:16:14Z",
+      "updated_at": "2026-11-18T05:16:14Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -99,13 +63,8 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:23:19Z"
-      }
+      "state": "completed",
+      "last_agent": "validator:claude"
     },
     "windows-gfx1201": {
       "state": "completed",
@@ -135,7 +94,73 @@
         "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
         "at": "2026-06-23T22:23:19Z"
       }
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c665e5cc723ccefd02e3505b0adeabc99cdb4838",
+      "started_at": "2026-06-05T00:23:29Z",
+      "completed_at": "2026-11-18T05:13:20Z",
+      "updated_at": "2026-11-18T05:13:20Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:23:19Z",
+      "updated_at": "2026-06-23T22:23:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:23:19Z"
+      }
     }
   },
-  "published_sha": "e994ef0b441d5502b07cd58e21a0fc2489eccec3"
+  "published_sha": "c665e5cc723ccefd02e3505b0adeabc99cdb4838",
+  "fix": null,
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-18T04:53:56Z",
+    "at": "2026-11-18T05:01:58Z"
+  },
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-18T15:16:37Z",
+    "head_sha": "c665e5cc723ccefd02e3505b0adeabc99cdb4838",
+    "content_sha256": "993cab39e53691ac7e4f577934919c8842b6b05bbd0dcdbfab60d3f8a9d98fd5",
+    "review_pr": "https://github.com/AMD-Ecosystem/symforce/pull/3"
+  },
+  "fix_merged_at": "2026-11-18T15:19:12Z"
 }
