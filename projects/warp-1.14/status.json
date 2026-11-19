@@ -8,7 +8,7 @@
   "ext_type": "python-build-nvrtc",
   "stage": "porting",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-19T22:13:57Z",
+  "updated_at": "2026-11-19T22:22:28Z",
   "head_sha": "ea01380780cd485af123fd741296c6352c21c9ee",
   "depends_on": [],
   "porting": {
@@ -83,9 +83,9 @@
   },
   "delivery": {
     "mode": "fork-release",
-    "by": "jeffdaily",
-    "at": "2026-11-18T17:39:11Z",
-    "reason": "Jeff Daily take-up ruling 2026-11-10 and base ruling 2026-11-11 (port/warp notes.md); start directed 2026-11-18"
+    "by": "Jeff Daily",
+    "at": "2026-11-19T22:22:28Z",
+    "tag_format": "v{version}+rocm10.2.{rev}"
   },
   "fork_url_ruling": {
     "url": "https://github.com/AMD-Ecosystem/warp",
