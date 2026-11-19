@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-11-19T18:42:54Z",
+  "updated_at": "2026-11-19T19:03:43Z",
   "head_sha": "7a3149ff9cc6be0beb566f67166e78686dd68e4b",
   "depends_on": [],
   "waivers": {
@@ -20,7 +20,7 @@
   },
   "license_spdx": "MPL-2.0",
   "upstream_repo_id": 172423631,
-  "stage": "changes-requested",
+  "stage": "porting",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -52,7 +52,7 @@
       "validated_sha": "d369e071b2fbf5641fe239dcb4aab54334719aa5",
       "started_at": "2026-06-05T00:11:32Z",
       "completed_at": "2026-08-09T00:13:53Z",
-      "updated_at": "2026-11-19T18:42:54Z",
+      "updated_at": "2026-11-19T19:03:43Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -145,5 +145,10 @@
     "since": "2026-11-19T18:27:34Z",
     "at": "2026-11-19T18:42:54Z"
   },
-  "reviewed_sha": "4b17590a1e7e9b7bb047fa9fbac6aec158f26a5b"
+  "reviewed_sha": "4b17590a1e7e9b7bb047fa9fbac6aec158f26a5b",
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-19T19:03:43Z",
+    "holder": "c9fa8d5c87fd"
+  }
 }
