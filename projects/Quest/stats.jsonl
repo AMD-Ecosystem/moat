@@ -89,3 +89,6 @@
 {"kind":"phase","ts":"2026-08-20T06:24:27Z","phase":"compile","seconds":47.318,"exit":0,"cmd":"ninja -C projects/Quest/src/quest/ops/build"}
 {"kind":"phase","ts":"2026-08-20T06:25:12Z","phase":"test","seconds":28.492,"exit":0,"cmd":"/opt/conda/envs/py_3.12/bin/python3 -m pytest projects/Quest/src/quest/tests/test_rope.py projects/Quest/src/quest/tests/test_estimate.py projects/Quest/src/quest/tests/test_decode_attention.py projects/Quest/src/quest/tests/test_approx_attention.py projects/Quest/src/quest/tests/test_decode_launch_shape.py -q"}
 {"kind":"session","ts":"2026-08-20T06:27:32Z","epoch":1787207252.889552161,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-19T05:25:49Z","epoch":1795065949.151392,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-19T07:35:48Z","phase":"compile","seconds":1130.358,"exit":0,"cmd":"ninja -C projects/Quest/src/quest/ops/build"}
+{"kind":"phase","ts":"2026-11-19T07:38:50Z","phase":"test","seconds":24.302,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300c-20261118-212043-quest-finish-prompt/moat/projects/Quest/src && PYTHONPATH=/var/lib/jenkins/fleet/jobs/mi300c-20261118-212043-quest-finish-prompt/moat/projects/Quest/src /var/lib/jenkins/fleet/jobs/mi300c-20261118-212043-quest-finish-prompt/venv/bin/python -m pytest quest/tests -q -p no:cacheprovider"}

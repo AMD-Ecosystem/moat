@@ -67,6 +67,19 @@
       "upstream_issue": null,
       "created_at": "2026-08-20T00:14:40Z",
       "decided": null
+    },
+    {
+      "id": "quest-prefill-matrix-cores",
+      "kind": "other",
+      "component": null,
+      "summary": "Quest's HIP prefill (prefill_with_paged_kv_cache) emulates mma.sync/ldmatrix with lane shuffles and fp32 FMA: correct on wave32 and wave64, but 30-50x slower than torch SDPA on MI300X (4096x4096 causal: 431 ms vs 14 ms). Options: AMD-native MFMA/WMMA rewrite of prefill.cuh, or route the HIP operator through at::scaled_dot_product_attention after gathering pages. Needs a ruling on whether either is wanted before upstream submission.",
+      "refs": [
+        "projects/Quest/notes.md#prefill-performance-correct-but-on-the-vector-units----a-decision-for-jeff"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-19T07:42:41Z",
+      "decided": null
     }
   ]
 }

@@ -2481,3 +2481,119 @@ remains satisfied by this arch at the new head. CUDA gate: `cuda-not-validated`,
 recorded fresh at this head_sha by linux-gfx1100, no penalty, not re-run here. Wall clock:
 build ~1 min, in-scope tests ~30s (includes the subprocess-based launch-shape suite), forced
 single/split log-evidence re-runs a few minutes; well within the ~60 minute budget.
+
+## Ruling 2026-11-18 (Jeff Daily): finish the port, do not ship it partial
+
+Jeff Daily ruled on 2026-11-18 that the Quest port is to be finished rather than sent upstream or kept partial. At `c9828e2` the HIP build compiles out `topk_filtering` and `prefill_with_paged_kv_cache` (`quest/ops/csrc/bsk_ops.{cu,h}`); both are reached from `quest/models/QuestAttention.py`, so no Quest model, evaluation or example runs on an AMD GPU, and `test_topk.py` and `test_prefill_attention.py` fail with `AttributeError`. This round (linux-gfx942, MI300) implements both operators for HIP, removes the compile-outs, folds in the two minor review leftovers (unreachable branch in `test_decode_launch_shape.py`, placement of the `QUEST_DECODE_LAUNCH_SHAPE` documentation), and runs all seven suites plus an end-to-end model run. No upstream PR is open, so `moat-port` is private and pushed directly.
+
+## Porter round 2026-11-19 (linux-gfx942): topk_filtering and prefill for HIP
+
+Progress is recorded here as it happens.
+
+### topk_filtering: done, fork `016d24c`
+
+Environment for this round: MI300X (gfx942, wave64, 304 CUs), `HIP_VISIBLE_DEVICES=0`; PyTorch 2.16.0a0+git6c3af02 with the pip ROCm SDK 10.1.0 (`torch.version.hip` 7.16.26385, no `/opt/rocm`), Python 3.11.17 from the image venv exposed to the job venv through a `.pth` file, `transformers==4.37.2` and `tokenizers==0.15.2` installed in the job venv. Baseline at `c9828e2` on this GPU: the five in-scope suites 124 passed.
+
+Under `USE_HIP`, `kernels/include/topk/decode_select_k.cuh` carries a one-block radix select of its own (RAFT stays the CUDA path, behind `#else`). It is RAFT kRadix8bits' algorithm: cub key twiddle inverted for "greater", 8 bits per pass, values beating the k-th go to `out[0 : k-needed]`, ties fill `out[k-needed : k]` from the back. RAFT orders both groups by `atomicAdd`, so its tie choice is unspecified; the HIP kernel takes both groups in input order (scan over contiguous per-thread slices), so the lowest-positioned ties win, which is one of the orders RAFT can produce. Block barriers and shared atomics only, so wave-size independent. The `buf` argument is unused on HIP.
+
+Verification: `test_topk.py` 49 passed, 15 skipped (the test skips k > kv_len). `agent_space/quest/topk_semantics.py` (not committed) checked 8704 rows against a reference of RAFT's rule: fp16 random, heavily tied (9 distinct values), all-equal, and 5% NaN / 5% +inf / 5% -inf / 10% +0 / 10% -0 inputs; lengths 1, 2, 13, 255-257, 1000, 1023, 4096, 8191, 8192; k in {1, 2, 7, 63, 64, 255, 256, len}; random non-contiguous `in_idx`. 0 failures: front group equals the set of values beating the k-th, back group is `needed` distinct ties, and `out` is bitwise equal to the input at each returned index.
+
+### prefill_with_paged_kv_cache: builds and passes its suite (uncommitted at time of writing)
+
+Approach: keep `kernels/include/prefill/prefill.cuh` (vendored FlashInfer FA2) as it is and give HIP a replacement for `flashinfer/mma.cuh` in `kernels/include/hip_compat/flashinfer/mma.cuh`, same include guard, force-included like `math.cuh` and `vec_dtypes.cuh` (`permuted_smem.cuh` reaches it by a sibling-relative include, and the original's `#error` branches fire at preprocessing under HIP). The shim reproduces the PTX fragment layouts exactly: `ldmatrix.m8n8.x4` (plain and `.trans`) and `stmatrix` emulated by shuffling the row address from the lane that supplied it and reading/writing LDS directly (bit-identical data movement); `mma.sync.m16n8k16` (f32 and f16 accumulate) by gathering the lane's A rows and B columns with width-32 shuffles and fp32 FMA; `rowsum` by a 4-lane butterfly. All shuffles state width 32, so the two 32-lane warps a wave64 holds stay independent: one code path for wave32 and wave64. This is the TornadoVM recipe in `cuda-to-rocm/references/no-hip-equivalent.md` without the matrix-instruction step (see "Why no MFMA/WMMA" below).
+
+Two more HIP-only fixes the kernel needed:
+- `__hmax2(half2, half2)` does not exist in HIP's fp16 header (only the bf16 overload). Added to the math shim inside `namespace flashinfer`, so a future HIP global definition cannot collide; CUDA NaN semantics via `__hmax`.
+- Tile sizing: the dispatcher assumes two blocks per SM and halves `cudaDevAttrMaxSharedMemoryPerMultiprocessor`. MI300X reports 64 KB per CU, so half leaves `max_num_frags_z_smem = 0` at `num_frags_x = 2`, and `SWITCH_NUM_FRAGS_Z` then only prints `Unsupported max_frags_z` to stderr and returns success with `o` uninitialized (a silent upstream failure mode on any GPU with that little shared memory). Under `USE_HIP` the full per-CU amount is used (one block per CU); frags_z then caps at 4 from the register limit and the largest tile is exactly 64 KB at head_dim 128. Alias `cudaDevAttrMaxSharedMemoryPerMultiprocessor` added to the runtime shim.
+
+`test_prefill_attention.py`: 29 passed, 13 skipped (qo_len > kv_len, by the test's design), MI300X, first build.
+
+### Performance investigation: the ROCm build never optimized device code
+
+The first wider prefill sweep showed correct results but ~1 s per call at qo=1, kv=1024 (rocprofv3 kernel trace: `BatchPrefillWithPagedKVCacheKernel` 957 ms; `AppendPagedKVCachePrefillKernel`, an operator validated since August, 11 ms for 1024 tokens). Counters (`SQ_INSTS_VALU` 35M, `SQ_INSTS_SALU` 51M, `SQ_INSTS_FLAT` 13M per wave over 16 KV iterations) were ~100x what the optimized ISA contains. Cause: `quest/ops/CMakeLists.txt` sets no build type, the compile lines carry no `-O` flag, and clang compiles HIP device code at `-O0` then (single-instantiation probe without `-O3`: 77 VGPR + 256 AGPR, 7384 B/lane scratch, matching the module). nvcc optimizes device code whatever the build type, so the CUDA build never had this problem. The Windows validator hit the same thing as a Debug default and pinned `-DCMAKE_BUILD_TYPE=Release` on its command line (validation 2026-08-20) without the recipe changing. Fix: under `USE_HIP`, an unset build type defaults to `Release` in the CMake file (single-config generators only). Every earlier ROCm validation ran unoptimized kernels; correctness evidence stands, any timing taken from them does not.
+
+Two kernel-level changes found on the way, both measured with a one-instantiation probe (`agent_space/quest/probe.sh`, `-Rpass-analysis=kernel-resource-usage`, gfx942, `-O3`):
+- `__launch_bounds__(num_warps * warp_size)` on the prefill kernel under `USE_HIP`. Without it the compiler budgets for 1024-thread blocks (64 VGPR + 64 AGPR at this tile shape) though the kernel launches 128 threads.
+- `#pragma unroll 1` on the k loop inside the shim's `m16n8k16`: full unrolling there let the scheduler keep every shuffle result of the caller's unrolled fragment loops live, 4456 B/lane scratch at nfx=2; with it, 0 B (256 VGPR + 212 AGPR, occupancy 1).
+
+### Round result: fork `661449c` (four new commits on `c9828e2`, nothing rewritten)
+
+| commit | what |
+|---|---|
+| `016d24c` | `[ROCm] Build top-k page filtering with a self-contained radix select` |
+| `c79b3cd` | `[ROCm] Optimize device code when no build type is given` (CMake: unset build type -> Release under `USE_HIP`) |
+| `70492bc` | `[ROCm] Build prefill attention for AMD GPUs` (mma shim, `__hmax2`, tile sizing, launch bounds, all `USE_HIP` compile-outs and the explicit HIP source list removed) |
+| `661449c` | `Document the decode launch-shape knob beside the CUDA build` (review leftovers 1 and 2 of the 2026-08-20 review) |
+
+The final shim keeps `m16n8k16` `__noinline__` and its k loop `#pragma unroll 1`. Build (clean, `ninja`, gfx942, Release by the new default) 18m50s wall: `batch_prefill.cu` is one translation unit with 768 prefill instantiations compiled serially; fully inlining the emulation pushed it past 30 minutes (stopped), and the optimized kernel body dominates even with the helper out of line (probe: ~0.2 s per instantiation net of ~1.5 s header parse with the helper out of line, ~2 s inlined, ~0.4 s with a trivial body). The CUDA build compiles the same 768 instantiations.
+
+GPU tests at `661449c`, MI300X, `HIP_VISIBLE_DEVICES=0`, from the fork root:
+
+```
+PYTHONPATH=$PWD python -m pytest quest/tests -q -p no:cacheprovider
+```
+
+| suite | result |
+|---|---|
+| test_rope.py | 64 passed |
+| test_estimate.py | 9 passed |
+| test_decode_attention.py | 6 passed |
+| test_approx_attention.py | 42 passed |
+| test_decode_launch_shape.py | 3 passed |
+| test_topk.py | 49 passed, 15 skipped (k > kv_len, the test's own skip) |
+| test_prefill_attention.py | 29 passed, 13 skipped (qo_len > kv_len, the test's own skip) |
+| **all seven** | **202 passed, 28 skipped, 0 failed** (23 s) |
+
+Suites first run with `transformers==4.37.2`; after switching the venv to the project's own pins (`transformers==4.45.2`, `accelerate==1.0.1`, `sentencepiece==0.2.0`, from `pyproject.toml`) for the end-to-end run, the per-suite runs above were made with those.
+
+Prefill accuracy sweep (`agent_space/quest/prefill_sweep.py`, not committed): qo_len x kv_len in {1x17, 1x4096, 16x16, 63x700, 64x64, 65x1000, 128x129, 511x2048, 1024x4096, 2048x2048, 3000x8000}, causal and not, fp32 and fp16 QK accumulation (the fp16 form is compiled but `quest.utils.prefill_forward` hard-wires `False`; the sweep calls `_kernels` directly), against fp64: 44/44 within `5e-3 + 5e-3*max|ref|`, worst 4.37e-3 (2048x2048 causal fp16-accumulate). With fp32 accumulation the max error was <= torch's own fp16 attention error on the same inputs in every case.
+
+### End-to-end: `scripts/example_textgen.py`, Llama-2-7b-chat
+
+Model: `NousResearch/Llama-2-7b-chat-hf` at revision `351844e75ed0bcbbe3f10671b3c808d2b83894ee` (an ungated copy of `meta-llama/Llama-2-7b-chat-hf`, the model the script names), downloaded into the job directory (`models/Llama-2-7b-chat-hf`, safetensors). It is the smallest model the Quest path accepts: `topk_filtering` is instantiated for exactly 32 heads (`decode_select_k<..., 32>` and `CHECK_EQ(32, num_heads)`) and prefill supports head_dim 64 and 128 only, so a Llama-2-7B shape is the floor. Two deviations from the stock script, both outside the fork: a copy with only `MODEL_PATH` changed (`agent_space/quest/e2e/example_textgen.py`), and `do_sample` set to `false` in the downloaded `generation_config.json` (the original is kept as `generation_config.json.orig`) so the two methods are compared under greedy decoding instead of sampling.
+
+```
+PYTHONPATH=<fork> python example_textgen.py --method hg
+PYTHONPATH=<fork> python example_textgen.py --method quest --token_budget 1024
+PYTHONPATH=<fork> python example_textgen.py --method quest --token_budget 128
+```
+
+All three print the identical continuation (103-token prompt; "Reason: The rabbit is the only one who is not working hard. ... can also mean \"lazy.\""). Wall 13.9 s / 11.9 s / 11.8 s including model load. `rocprofv3 --kernel-trace --stats` on the budget-128 run shows the Quest path really ran: `BatchPrefillWithPagedKVCacheKernel<1,16,true,kNone,2,8,4,4,...>` 32 calls (one per layer, 942 us each), `quest_radix_topk_one_block_kernel<__half,int,256>` 2130 calls (19.9 us), `MaxPossibleSampleWithPagedKVCacheKernel` (page estimate) 2130 calls = 71 sparse decode steps x 30 layers (Quest skips layers 0-1), `BatchDecodeWithPagedKVCacheKernel` 3072, `VariableLengthMergeStatesKernel` 3072, `AppendPagedKVCachePrefillKernel` 32 at 26 us (11 ms at `-O0`). At budget 1024 the context (~200 tokens) never exceeds the budget, so that run exercises prefill and dense decode only.
+
+### Prefill performance: correct, but on the vector units -- a decision for Jeff
+
+On MI300X, causal, 32 heads x 128 (`agent_space/quest/prefill_time.py`, mean of 5 after warmup):
+
+| qo x kv | HIP prefill | torch SDPA |
+|---|---|---|
+| 1 x 4096 | 13.8 ms | 0.26 ms |
+| 128 x 4096 | 29.1 ms | 0.55 ms |
+| 1024 x 1024 | 34.5 ms | 1.03 ms |
+| 4096 x 4096 | 431 ms | 14.1 ms |
+| 8192 x 8192 | 1664 ms | 38.3 ms |
+
+So 30-50x slower than a native AMD attention kernel. Decode (Quest's contribution) is unaffected; a long-context prefill (the evaluation's 32k prompts) will take tens of seconds per prompt. Why no MFMA/WMMA in this round: the kernel's softmax, masking and output code index the accumulator in the PTX m16n8 per-lane layout, so a matrix instruction would need the same operand and result shuffles around it (the skill's TornadoVM recipe: ~64 shuffles per 16x16x16 versus the emulation's 48 shuffles + 128 FMAs), and on CDNA the 16x16 MFMA is wavefront-wide while the kernel's warp is 32 lanes, which forces the 4x4x4 block form; the measured headroom is the shuffle-bound part, not the FMAs. A real speedup means reworking `prefill.cuh` itself around MFMA (wave64) and WMMA (wave32, gfx11 and gfx12 layouts differ) fragments, which is the planner's "Stage 2 AMD-native rewrite", not a small diff. A cheaper alternative under `USE_HIP`: gather the request's pages and call `at::scaled_dot_product_attention` (CK/aotriton flash attention on ROCm) inside `prefill_with_paged_kv_cache`. Neither was done; recorded as deferral `quest-prefill-matrix-cores` for Jeff to rule on.
+
+### CUDA path and nvcc
+
+No `nvcc` on this host (`which nvcc` empty, no CUDA toolkit), so the changed CUDA-visible files were not compiled with nvcc here. What the CUDA build sees from this round: `kernels/include/topk/decode_select_k.cuh` (RAFT path moved under `#else`, otherwise byte-identical plus a trailing newline), `kernels/include/prefill/prefill.cuh` (two `#if defined(USE_HIP)` blocks only), `quest/ops/CMakeLists.txt` (the source glob now precedes the `if(USE_HIP)` and the HIP-only build-type default), `quest/ops/csrc/bsk_ops.{cu,h}` (now byte-identical to upstream). Jeff will have a direct nvcc compile of the changed `.cu`/`.cuh` done on the host that has nvcc. The standing CUDA no-regression gap (RAFT branch-24.02 `CUDA::nvToolsExt` wall) is unchanged.
+
+### For pull-request preparation
+
+The commit series contains a self-reverting pair: `9be60fc` ("Always split the decode KV range across blocks") is undone by `cbc3890` ("Fix the single-block decode path and re-enable it"). The pull-request preparation must squash them. The four commits of this round add no further pair.
+
+## Lesson for cuda-to-rocm: an unset CMake build type runs every HIP kernel unoptimized
+
+For `references/build-cmake-link.md` (cross-reference from `faults-memory-streams.md`, which already notes device `-O0` as a fault trigger). Symptom: a HIP port passes its tests but its kernels are tens to hundreds of times slower than expected; `-Rpass-analysis=kernel-resource-usage` shows kilobytes of scratch per lane. Cause: nvcc optimizes device code whatever `CMAKE_BUILD_TYPE` says, but with no build type CMake passes no `-O` flag and clang compiles HIP device code at `-O0`; a README configure command without `-DCMAKE_BUILD_TYPE` is the usual trigger, and a Windows generator defaulting to Debug is the same thing. Fix: in the project's CMake, when the HIP backend is selected and `NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES`, set the cache entry to `Release`; check `ninja -t commands` for `-O3`. Seen: Quest (MI300X, ROCm SDK 10.1): paged KV append 11 ms -> 26 us, FA2 prefill at qo=1 went from 957 ms for kv=1024 (unoptimized) to 13.8 ms for kv=4096 once combined with the next lesson.
+
+## Lesson for cuda-to-rocm: a kernel launched with fewer than 1024 threads needs __launch_bounds__ on HIP to get its registers
+
+For `references/platform-limits.md`, next to the existing `__launch_bounds__(1024)` entry (that one says 1024 changes nothing on HIP; the converse matters). HIP-clang assumes a 1024-thread block when a kernel has no launch bounds and caps registers to fit it (64 VGPR + 64 AGPR on gfx942), where nvcc gives a kernel up to 255 registers regardless. A register-heavy kernel (FlashAttention-2 tiles, 128 fp32 accumulators per lane) launched with 128 threads then spills to scratch. Fix: `__launch_bounds__(<actual block size>)` under the HIP guard; verify with `-Rpass-analysis=kernel-resource-usage`. A second spill source showed up in the same kernel: emulating a matrix instruction with shuffles inside fully unrolled fragment loops let the scheduler keep every shuffle result live (4.4 KB/lane scratch at 256 VGPR + 256 AGPR); `#pragma unroll 1` on the emulation's inner loop took it to 0. (Quest)
+
+## Lesson for cuda-to-rocm: AMD's 64 KB LDS breaks "half the per-SM shared memory" tile heuristics
+
+For `references/platform-limits.md`. FlashInfer-derived dispatchers size tiles from `cudaDevAttrMaxSharedMemoryPerMultiprocessor / 2` (two blocks per SM). MI300X and RDNA report 64 KB per CU, so half leaves room for no tile at head_dim 128, and FlashInfer's `SWITCH_NUM_FRAGS_Z` then prints `Unsupported max_frags_z` to stderr and returns success without launching: the output tensor is whatever `torch::empty` held. Size for one block per CU under the HIP guard (the largest tile is exactly 64 KB). Check every such `SWITCH_*` default branch in a port: an unlaunched kernel looks like a numerics bug. (Quest)
+
+## Lesson for cuda-to-rocm: HIP has no half2 overload of __hmax2
+
+For `references/build-headers-macros.md` (or the half-precision operator traps). `amd_hip_fp16.h` provides `__hmax`/`__hmin` for `__half` and `__hmax2` only for `__hip_bfloat162`, so `__hmax2(half2, half2)` fails with "no matching function" and a conversion error from `__hip_bfloat162`. Define it in the project's own namespace (inner-scope lookup wins, so a future HIP definition cannot collide) from `__hmax` on `__low2half`/`__high2half`, which keeps CUDA's NaN rule (a NaN yields the other input). (Quest, ROCm SDK 10.1)
