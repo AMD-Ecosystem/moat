@@ -442,3 +442,42 @@ Independent run, gfx950 MI355X, ROCm 10.1.0 (image wheels, not the porter's 10.2
 CUDA, nvcc at /usr/local/cuda, `-DCMAKE_CUDA_ARCHITECTURES=80 -DCUBQL_BUILD_TESTS=ON`: `cuBQL_cuda_float3 cubql_builder_leaves cubql_morton_sort_range` build clean at `1a2b9bb`.
 
 Recommendation: **Approve**. Next: revalidation on wave64, wave32 and windows at `1a2b9bb` (s02-s06 need a `bunny.obj`), then jeff's decision on opening the follow-up PR from the draft above.
+
+## Validation 2026-11-19 (linux-gfx950)
+
+Validated `1a2b9bb` (moat-port; port delta past upstream main `6bd4a51` is `e26657f` + `1a2b9bb`) on linux-gfx950, AMD Instinct MI355X, one GPU pinned with HIP_VISIBLE_DEVICES, `ulimit -c 0`. Toolchain: TheRock ROCm 10.2.0 wheels installed into the job directory (not the system or image ROCm), AMD clang 24.0.0git, rocPRIM 4.8.0 (`ROCPRIM_VERSION 400800`); `ldd` confirms the binaries load `libamdhip64.so.7` from the 10.2 tree.
+
+    python -m pip install --target <job>/rocm-10.2 --index-url https://stable.repo.amd.com/rocm/whl-next/ 'rocm[libraries,devel]==10.2.0' rocm-sdk-device-gfx950==10.2.0
+    PYTHONPATH=<job>/rocm-10.2 python -m rocm_sdk init
+    R=<job>/rocm-10.2/_rocm_sdk_devel
+    cmake -S projects/cuBQL/src -B projects/cuBQL/src/build-hip -G Ninja -DCUBQL_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx950 \
+      -DCMAKE_BUILD_TYPE=Release -DCUBQL_BUILD_TESTS=ON -DCMAKE_PREFIX_PATH=$R \
+      -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_HIP_COMPILER_ROCM_ROOT=$R -DCMAKE_BUILD_RPATH=$R/lib
+    cmake --build projects/cuBQL/src/build-hip -j 64 --target cuBQL_cuda_float3 cubql_builder_leaves cubql_morton_sort_range \
+      cuBQL_sample01_points_closestPoint_cuda cuBQL_sample01_points_closestPoint_wideBVH_cuda sample02_distanceToTriangleMesh \
+      sample03_insideOutside sample04_boxOverlapsOrInsideSurfaceMesh sample05_lineOfSight sample06_anyTriangleWithinRadius \
+      sample07_aggregateNBody cuBQL_cpu_float3 cuBQL_sample01_points_closestPoint_cpu
+    ctest --test-dir projects/cuBQL/src/build-hip --output-on-failure
+
+Build: 30/30 steps, clean (host-side warnings only).
+
+Tests:
+
+- ctest: 2/2 passed (`cubql_morton_sort_range` 0.52 s, `cubql_builder_leaves` 2.93 s).
+- `cubql_builder_leaves` run directly: 135 ok, 0 FAILED, `PASSED` (missing/duplicated/invalid/containment all 0, including the with-empty scene).
+- `cubql_morton_sort_range`: exit 0, 27 `status=PASS`, 0 FAIL, 2 `query_oracle=PASS`; `--benchmark`: exit 0, `validation=PASS`, `benchmark_device=AMD Instinct MI355X`.
+
+Samples (all exit 0), with the 4968-triangle Stanford bunny (`https://graphics.stanford.edu/~mdfisher/Data/Meshes/bunny.obj`, the same mesh the 2026-06 validations used):
+
+- s01 closest point, binary and wide BVH: output identical to the CPU sample (all 20 queries).
+- s02 distanceToTriangleMesh: 4968 triangles, closest-triangle answers printed.
+- s03 insideOutside -n 32: 32x32x25 volume, values {0,1}, 6715 inside.
+- s04 boxOverlapsOrInsideSurfaceMesh -n 32: values {0,1,2}, 8466 nonzero.
+- s05 lineOfSight -n 64 64: image written.
+- s06 anyTriangleWithinRadius -n 32: values {0,1}, 10885 nonzero.
+- s07 aggregateNBody: 100000 data points.
+- CPU sample and `cuBQL_cpu_float3`: build and run clean.
+
+CUDA gate: not rerun; it is already recorded at `1a2b9bb` (nvcc 12.8.93, sm_80, `cuBQL_cuda_float3 cubql_builder_leaves cubql_morton_sort_range` clean, preprocessed `instantiate_builders.cu` and `morton_sort_range.cu` identical to upstream `6bd4a51`; changes-requested round and its review above).
+
+Content checks: `python3 utils/jargon.py --port cuBQL` clean (the fresh fork clone needs local `main` and `moat-port` branches for it to resolve the range). README documents the ROCm build next to the CUDA build (`README.md:319`). Fork tree clean apart from untracked `build-hip/`.
