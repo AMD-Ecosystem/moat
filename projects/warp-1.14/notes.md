@@ -3487,3 +3487,165 @@ Reading the table:
 
 #### Addendum: reading this beside gfx1100's Evidence session 5 (same head, run in parallel)
 This section was written before gfx1100's Evidence session 5 landed, so its "gfx11 has not run its probe yet" lines are out of date. gfx1100 found the gfx11 layout correct but its WMMA f16->f32 accumulation off by up to about 1 ulp of f32 when products of mixed sign cancel, so the probe's exact-equality check fails there. On gfx1201 the same probe, with the same signed integer data (`A = (x*7+3)%9 - 4`, `B = (x*5+1)%7 - 3`), was **exact in all 768 cells** (K = 16, 32, 64). So RDNA4's gfx12 WMMA accumulates these exactly where RDNA3's does not, and for gfx12 the probe's pass is a real exact-equality pass, not a tolerance pass. The proposed gfx12-only condition above stands as written: it enables nothing on gfx11. Whether gfx11 is enabled as well (layout correct, f32-level accumulation differences, which `mma_check.py`'s tolerances would cover) is the lock holder's and Jeff's call, after a gfx11 switch-on run of `mma_check.py`, the tile set and the benchmark.
+## Evidence session 5 (2026-11-19, linux-gfx942, MI300X, evidence only): MFMA tile_matmul at `930d0098` (gfx942 items 1-5)
+
+Requested by Jeff Daily. The lock stays with linux-gfx950. No fork commit and no stage, lock, head, platform or deferred record changed. The read-only clone was moved from `974cd4bf` to the recorded `head_sha` `930d0098dafa5ef08945a4382b87c07d89c9a7f0` (`git status --porcelain` empty before and after; LFS assets present since evidence session 4; fork pre-push hook unchanged). Build: `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx942 -j 112` -> "Warp build succeeded", 30.5 s. One GPU (`HIP_VISIBLE_DEVICES=0`), `ulimit -c 0`, a fresh private `WARP_CACHE_PATH` per run. Items run in the handoff's order. `mfma_layout.hip`, `mma_check.py`, `bench_both.sh` and `compare.py` were extracted verbatim from Porting session 9; `bench_both.sh` only had its `A=` path changed to this host and `export HIP_VISIBLE_DEVICES=0` added.
+
+### 1. MFMA layouts on gfx942: all match gfx950
+`clang++ -x hip --rocm-path=$R --offload-arch=gfx942 -O2 -w mfma_layout.hip -o mfma_layout -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib && ./mfma_layout`: **0 of 256 wrong on all twelve lines** (f32 16x16x4, f64 16x16x4, f16 16x16x16, bf16 16x16x16, each at K = 16, 32, 64). The MFMA path's operand and accumulator layouts, including the f64 output layout, hold on gfx942.
+
+### 2. `mma_check.py` and `mma_check_bf16.py`
+**`mma_check_bf16.py` had no source in the notes**, only the description in Porting session 9. I wrote it from that description, following the API form of upstream's `test_tile_gemm_bf16`: bf16 A/B arrays converted on the device, a float32 C tile, the accumulating `wp.tile_matmul(a, b, c)`, `module_options={"enable_backward": False}`. 9 shapes x block_dims (32, 64, 96, 128, 256): (16,16,16), (32,32,32), (64,64,64), (16,48,32), (48,16,64), (32,64,16), (64,32,48), (24,16,16), (17,33,15). Each GPU result is compared with the CPU device and with a float64 NumPy product of the bf16-rounded inputs. Source below. Result: **45 cases, 0 failures, max difference to the CPU 9.54e-07** (gfx950: 9.5e-07). Its code objects contain 121 `v_mfma_f32_16x16x16_bf16`.
+
+`mma_check.py`: 165 cases, script exit 1 with **"FAILURES 15"**. On examination none of the 15 is a matrix-core or correctness problem: they are shared-memory limits of this 64 KiB part that the script does not classify.
+- The 15 are fp32 64x64x64, fp64 64x64x64 and fp64 64x32x48, at all five block_dims. In each, the *forward* output is wrong too (c ~1.0) and Warp prints `Warp CUDA error 1: invalid argument (in function wp_cuda_launch_kernel)`. Warp's warnings show the forward kernels need 65536 (fp32 64x64x64: A, B, C and D tiles of 16 KiB each, plus Warp's static allocation, which does not fit 65536), 69632 (fp64 64x32x48) and 131072 bytes (fp64 64x64x64). `mma_check.py` labels a case SMEM-LIMIT only when the forward results are correct and the gradients are zero, so a forward kernel that cannot launch is counted as FAIL. On gfx950 (163840 bytes per block) these kernels fit, which is why it saw only the fp64 64x64x64 adjoint limit.
+- 25 more cases report SMEM-LIMIT (backward not launched): fp32 64x32x48, fp64 32x32x32, fp64 48x16x64, fp64 32x64x16 and fp16 64x64x64, each at all five block_dims. Warp's backward warnings ask for 65536 to 262144 bytes.
+- Control, with the same script against a scalar tree (the step 4 worktree: `930d0098` with only `tile_matmul.h` reverted to `974cd4bf`, same `warp.so`): **the identical 40 non-ok cases** (15 FAIL + 25 SMEM-LIMIT, `diff` of the case lists empty), and its kernel caches contain 0 `v_mfma` instructions. So every non-ok case is the shared-memory limit, on either path.
+- Matrix instructions engaged in the MFMA run: 948 `v_mfma_f32_16x16x16_f16`, 3864 `v_mfma_f32_16x16x4_f32`, 3864 `v_mfma_f64_16x16x4_f64` in its code objects.
+- Accuracy on the cases that launch, vs the CPU device (relative max over C, D, gA, gB, from the bd 64 lines the script prints): fp32 and fp64 **bit-identical (0.0e+00) for every shape**, MFMA and fallback shapes alike, as on gfx950. fp16: 1.0e-03 to 3.5e-03 on MFMA shapes (fp32 accumulation, rounded once), 0 on the fallback shapes (8,8,8), (24,16,16), (16,16,12), (17,33,15). In the scalar control, fp16 is 0 everywhere. All within the script's tolerances.
+- Suggestion for the lock holder (not applied; `mma_check.py` is the porter's script): count a forward-launch failure whose Warp warning names the forward kernel as SMEM-LIMIT too, so the script exits 0 on 64 KiB parts.
+
+### 3. Tile set (22 files + test_block_dim_dispatch + test_template_launch_bounds)
+**639 run, 15 skipped, 0 failures**, every file OK. The skips are the 10 upstream no-libmathdx skips plus the five "Needs <N> bytes of shared memory per block, device has 65536" skips of session 8. `test_tile_matmul` ran 25: `test_tile_matmul_fragment_shapes_float16_cuda_0`, `_float32_cuda_0` and `_float64_cuda_0` all OK.
+
+### 4. Benchmark, scalar against MFMA (gfx942)
+Scalar worktree as the handoff says: `git -C projects/warp-1.14/src worktree add --detach agent_space/scalar_wt 930d0098`, `git -C agent_space/scalar_wt checkout 974cd4bf -- warp/native/tile_matmul.h` (-6 lines, the hook), `warp/bin/*.so` copied from the main clone. Then `bench_both.sh` (three runs per tree of `bench_tile_matmul.py --blocks 16384 --iters 50`, 16 min under `utils/timeit.sh warp-1.14 bench`) and `compare.py` (medians of three). Every run exits 1, as the script always does on a part that cannot launch some backward kernels (session 1). The three MFMA-tree kernel caches each contain 3036 `v_mfma` instructions; the three scalar-tree caches contain 0. The worktree was removed afterwards.
+
+| dtype | tile | block_dim | scalar fwd ms | MFMA fwd ms | fwd speedup | scalar adj ms | MFMA adj ms | adj speedup | checks |
+|---|---|---|---|---|---|---|---|---|---|
+| float16 | 16x16 | 32 | 0.325 | 0.325 | 1.00x | 0.341 | 0.340 | 1.00x | ok |
+| float16 | 16x16 | 64 | 0.195 | 0.072 | 2.70x | 0.350 | 0.293 | 1.19x | ok |
+| float16 | 16x16 | 128 | 0.191 | 0.078 | 2.45x | 0.301 | 0.298 | 1.01x | ok |
+| float16 | 16x16 | 256 | 0.246 | 0.080 | 3.07x | 0.293 | 0.292 | 1.00x | ok |
+| float16 | 32x32 | 32 | 2.132 | 2.132 | 1.00x | 2.192 | 2.190 | 1.00x | ok |
+| float16 | 32x32 | 64 | 0.867 | 0.342 | 2.54x | 1.942 | 1.461 | 1.33x | ok |
+| float16 | 32x32 | 128 | 0.958 | 0.381 | 2.52x | 2.094 | 1.212 | 1.73x | ok |
+| float16 | 32x32 | 256 | 1.125 | 0.450 | 2.50x | 1.844 | 1.134 | 1.63x | ok |
+| float16 | 64x64 | 32 | 25.703 | 25.704 | 1.00x | 29.771 | 29.813 | 1.00x | ok |
+| float16 | 64x64 | 64 | 13.588 | 5.296 | 2.57x | 19.076 | 17.076 | 1.12x | ok |
+| float16 | 64x64 | 128 | 9.182 | 2.469 | 3.72x | 11.497 | 10.663 | 1.08x | ok |
+| float16 | 64x64 | 256 | 6.349 | 2.330 | 2.73x | 7.836 | 7.101 | 1.10x | ok |
+| float32 | 16x16 | 32 | 0.416 | 0.416 | 1.00x | 0.257 | 0.258 | 1.00x | ok |
+| float32 | 16x16 | 64 | 0.344 | 0.111 | 3.11x | 0.129 | 0.068 | 1.90x | ok |
+| float32 | 16x16 | 128 | 0.240 | 0.112 | 2.13x | 0.095 | 0.062 | 1.53x | ok |
+| float32 | 16x16 | 256 | 0.286 | 0.116 | 2.47x | 0.098 | 0.064 | 1.53x | ok |
+| float32 | 32x32 | 32 | 3.136 | 3.135 | 1.00x | 2.240 | 2.246 | 1.00x | ok |
+| float32 | 32x32 | 64 | 1.552 | 0.761 | 2.04x | 1.273 | 0.760 | 1.68x | ok |
+| float32 | 32x32 | 128 | 1.428 | 0.707 | 2.02x | 1.128 | 0.460 | 2.45x | ok |
+| float32 | 32x32 | 256 | 1.580 | 1.107 | 1.43x | 0.889 | 0.332 | 2.68x | ok |
+| float32 | 64x64 | 32 | 38.043 | 38.037 | 1.00x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 64 | 18.732 | 14.583 | 1.28x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 128 | 13.450 | 7.846 | 1.71x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 256 | 9.941 | 4.842 | 2.05x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float64 | 16x16 | 32 | 0.589 | 0.589 | 1.00x | 0.322 | 0.322 | 1.00x | ok |
+| float64 | 16x16 | 64 | 0.446 | 0.289 | 1.55x | 0.166 | 0.117 | 1.42x | ok |
+| float64 | 16x16 | 128 | 0.449 | 0.291 | 1.55x | 0.211 | 0.109 | 1.94x | ok |
+| float64 | 16x16 | 256 | 0.533 | 0.285 | 1.87x | 0.210 | 0.109 | 1.92x | ok |
+| float64 | 32x32 | 32 | 5.952 | 5.952 | 1.00x | 4.576 | 4.569 | 1.00x | ok |
+| float64 | 32x32 | 64 | 3.239 | 1.637 | 1.98x | 2.720 | 2.119 | 1.28x | ok |
+| float64 | 32x32 | 128 | 2.724 | 1.390 | 1.96x | 1.909 | 1.301 | 1.47x | ok |
+| float64 | 32x32 | 256 | 3.110 | 2.079 | 1.50x | 1.502 | 0.708 | 2.12x | ok |
+| float64 | 64x64 | 32 | 0.014 | 0.014 | 0.99x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 64 | 0.014 | 0.014 | 1.00x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 128 | 0.014 | 0.014 | 1.01x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 256 | 0.014 | 0.014 | 1.00x | (no launch) | (no launch) | - | MISMATCH |
+run-to-run spread (max-min)/median over 144 cells: median 1.0%, max 15.2%
+
+- **No launched cell is slower on MFMA than scalar.** block_dim 32 is scalar by construction (1.00x). The 0.99x and 1.01x figures are the fp64 64x64 rows, whose forward kernel does not launch on either tree (131072 bytes of shared memory). Their 0.014 ms are launch-failure times, not GEMMs, and the check column says MISMATCH for that reason, as in session 1. "(no launch)" adjoints: fp32 and fp64 64x64, backward over 64 KiB, as in session 1.
+- Smallest gains: the fp16 adjoints at 16x16 bd 128/256 (1.00-1.01x) and at 64x64 (1.08-1.12x), the same pattern gfx950 showed. Porting session 9 suggested a cause (fp16 gradient accumulation through the CAS-loop `atomic_add`), not measured here either.
+- Run-to-run spread: median 1.0% over the 144 cells, max 15.2%. The five largest are all MFMA adjoint cells of 0.06-0.13 ms (fp64 16x16 bd128 15.2%, fp32 16x16 bd128 14.4%, fp32 16x16 bd64 14.3%, fp32 16x16 bd256 13.6%), where the three seeding memsets dominate. Medians are used.
+- Against gfx950 (Porting session 9 table): forward speedups are similar or higher on gfx942 (fp16 64x64 bd128 3.72x vs 2.29x; fp32 16x16 bd64 3.11x vs 3.31x; fp64 32x32 bd64 1.98x vs 2.09x).
+
+### 5. Full 82-pattern set and CPU-only suite at `930d0098`
+Same 82-pattern list and loop as evidence session 3, 2526 s together with the CPU-only suite under `utils/timeit.sh warp-1.14 test`. **81 patterns OK, 1 with the 2 known failures**: `test_fem*` 107, `test_gimp_quadrature` and `test_cube_shape_functions` ("Unexpected output", upstream test isolation). Compared line by line with evidence sessions 3/4 at `974cd4bf`, the only count change is `test_tile_matmul` 22 -> 25 (the three new fragment-shape tests). The LFS-dependent files are as in session 4 (`test_coloring` 3, `test_mesh*` 49, `test_volume` 59 OK; `example_adaptive_grid` passes). Skips are unchanged: five 64 KiB tile skips, priority timing skipped.
+
+CPU-only suite (`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32`): **Ran 2294, OK (skipped=15)**.
+
+The untracked `example_apic_fluid.usd` an example writes into the clone was deleted after the run.
+
+`mma_check_bf16.py` (as run):
+```python
+# bf16 A and B tiles with a float32 accumulator tile (the only bf16 form upstream tile_matmul allows:
+# accumulating, backward disabled), GPU against the CPU device and against a float64 NumPy product of
+# the bf16-rounded inputs, for tile shapes x block_dims. Usage: python mma_check_bf16.py
+import sys
+
+import numpy as np
+
+import warp as wp
+
+wp.init()
+gpu = wp.get_device("cuda:0")
+SHAPES = [(16, 16, 16), (32, 32, 32), (64, 64, 64), (16, 48, 32), (48, 16, 64), (32, 64, 16), (64, 32, 48),
+          (24, 16, 16), (17, 33, 15)]  # fmt: skip
+BLOCK_DIMS = (32, 64, 96, 128, 256)
+
+
+@wp.kernel
+def to_bf16(x: wp.array2d(dtype=wp.float32), y: wp.array2d(dtype=wp.bfloat16)):
+    i, j = wp.tid()
+    y[i, j] = wp.bfloat16(x[i, j])
+
+
+@wp.kernel
+def to_f32(x: wp.array2d(dtype=wp.bfloat16), y: wp.array2d(dtype=wp.float32)):
+    i, j = wp.tid()
+    y[i, j] = wp.float32(x[i, j])
+
+
+def make(M, N, K):
+    @wp.kernel(module="unique", module_options={"enable_backward": False})
+    def gemm(A: wp.array2d(dtype=wp.bfloat16), B: wp.array2d(dtype=wp.bfloat16), C: wp.array2d(dtype=wp.float32)):
+        a = wp.tile_load(A, shape=(M, K))
+        b = wp.tile_load(B, shape=(K, N))
+        c = wp.tile_load(C, shape=(M, N))
+        wp.tile_matmul(a, b, c)
+        wp.tile_store(C, c)
+
+    return gemm
+
+
+def bf16(x, dev):
+    y = wp.zeros(x.shape, dtype=wp.bfloat16, device=dev)
+    wp.launch(to_bf16, dim=x.shape, inputs=[wp.array(x, dtype=wp.float32, device=dev), y], device=dev)
+    return y
+
+
+def run(dev, kern, A, B, C0, bd):
+    a, b = bf16(A, dev), bf16(B, dev)
+    c = wp.array(C0, dtype=wp.float32, device=dev)
+    wp.launch_tiled(kern, dim=[1], inputs=[a, b, c], block_dim=bd, device=dev)
+    af = wp.zeros(A.shape, dtype=wp.float32, device=dev)
+    bf = wp.zeros(B.shape, dtype=wp.float32, device=dev)
+    wp.launch(to_f32, dim=A.shape, inputs=[a, af], device=dev)
+    wp.launch(to_f32, dim=B.shape, inputs=[b, bf], device=dev)
+    return c.numpy().astype(np.float64), af.numpy().astype(np.float64), bf.numpy().astype(np.float64)
+
+
+rng = np.random.default_rng(0)
+fails = 0
+worst = 0.0
+for M, N, K in SHAPES:
+    kern = make(M, N, K)
+    A = rng.uniform(-1, 1, (M, K)).astype(np.float32)
+    B = rng.uniform(-1, 1, (K, N)).astype(np.float32)
+    C0 = rng.uniform(-1, 1, (M, N)).astype(np.float32)
+    for bd in BLOCK_DIMS:
+        ref_cpu, _, _ = run("cpu", kern, A, B, C0, bd)
+        got, aq, bq = run(gpu, kern, A, B, C0, bd)
+        exact = C0.astype(np.float64) + aq @ bq
+        e_cpu = np.abs(got - ref_cpu).max()
+        e_np = np.abs(got - exact).max()
+        worst = max(worst, e_cpu)
+        ok = e_cpu <= 1e-5 * max(1, K / 16) and e_np <= 1e-5 * max(1, K / 16)
+        fails += not ok
+        if not ok or bd == 64:
+            print(f"bf16->f32 M{M:3d} N{N:3d} K{K:3d} bd{bd:4d}: vs cpu {e_cpu:.1e} vs float64 {e_np:.1e} {'ok' if ok else 'FAIL'}", flush=True)
+print(f"max difference to the CPU {worst:.2e}")
+print("FAILURES", fails)
+sys.exit(1 if fails else 0)
+```
+
+### Next step for the lock holder
+- gfx942 items 1-5 at `930d0098` are done. The MFMA layouts hold on gfx942, and correctness, the tile set, the full set and the CPU-only suite are unchanged apart from the new tests. No MFMA cell is slower than scalar. Nothing needs a fork change.
+- Optional: teach `mma_check.py` that a forward kernel over the shared-memory limit is SMEM-LIMIT, not FAIL (item 2), and record `mma_check_bf16.py` in the notes (source above) so other hosts run the same script.
