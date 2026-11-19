@@ -341,6 +341,8 @@ arch-unified, correct on CUDA too, and needs no guard; upstream GooFit made the 
 change to its own `CompositePdf` (#384) on those grounds. Treat it as hygiene worth doing in
 passing, not as a bug to chase when your numbers are wrong. (GooFit)
 
+**A copy kind that disagrees with the pointers is `hipErrorInvalidValue`.** HIP checks the explicit kind: `hipMemcpyAsync(dst, src, n, hipMemcpyDeviceToHost, s)` with a pageable `malloc` source returns `invalid argument` (gfx942, ROCm 7.16). `hipMemcpyDefault` lets HIP pick the direction from the pointers and copies correctly. Tests that stand in host buffers for device addresses hit this first; check whether upstream ever runs them on a real GPU (a project whose CI uses a simulated host-memory backend may never have). CUDA documents a mismatched `cudaMemcpyKind` as undefined, so do not claim the HIP failure diverges from CUDA without a CUDA run; describe only what HIP did. Do not fix this by mapping `cudaMemcpy{HostToDevice,DeviceToHost,DeviceToDevice}` to `hipMemcpyDefault` in a compat header: the shim must honour the caller's kind, as CUDA's API contract says, and the tests stay as upstream wrote them. If upstream runs them only on a simulated backend, record them as simulated-backend tests and run them in that build (e.g. `-DRUNTIME_ENVIRONMENT=simu`), where they pass; on the GPU they are expected failures. (unified-cache-management: cache2 `DumpThenLoad*` integration tests; a remap tried there was dropped.)
+
 ## Host callbacks and fork
 
 **`cudaLaunchHostFunc`/`hipLaunchHostFunc` callback threads must not call ANY runtime API** -- an RAII deleter

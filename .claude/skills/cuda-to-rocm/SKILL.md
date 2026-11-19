@@ -195,6 +195,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A plain device-to-device copy is the same race in a less suspicious costume
 - `hipFree` is synchronizing
 - Device-side `new[]`/`delete[]` per thread is worth replacing, but it is NOT a known ...
+- A copy kind that disagrees with the pointers is `hipErrorInvalidValue`
 - `cudaLaunchHostFunc`/`hipLaunchHostFunc` callback threads must not call ANY runtime API
 - A host-function callback must not block either
 - HIP after `fork()` crashes in the child
