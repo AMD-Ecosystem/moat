@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-15T22:09:37Z",
-  "updated_at": "2026-11-19T05:13:44Z",
+  "updated_at": "2026-11-19T05:16:19Z",
   "head_sha": "1a2b9bb3d90ae5e6d0513ed217a2437550656158",
   "depends_on": [],
   "waivers": {},
@@ -185,5 +185,12 @@
     }
   ],
   "pr_round": 2,
-  "review_pr": "https://github.com/AMD-Ecosystem/cuBQL/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/cuBQL/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-19T05:15:34Z",
+    "head_sha": "1a2b9bb3d90ae5e6d0513ed217a2437550656158",
+    "content_sha256": "763765c7b9fbea614113f957969cd8e24948c9b7136ad9d11e07474cf801e5a1",
+    "review_pr": "https://github.com/AMD-Ecosystem/cuBQL/pull/1"
+  }
 }
