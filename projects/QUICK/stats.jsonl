@@ -52,3 +52,7 @@
 {"kind":"session","ts":"2026-11-19T04:13:13Z","epoch":1795061593.372427,"event":"end","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-11-19T04:25:43Z","epoch":1795062343.572991,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-11-19T04:27:07Z","epoch":1795062427.065087,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-19T04:43:27Z","phase":"test","seconds":1813.873,"exit":0,"cmd":"bash agent_space/run_val.sh"}
+{"kind":"phase","ts":"2026-11-19T04:53:48Z","phase":"test","seconds":608.015,"exit":0,"cmd":"bash agent_space/run_val2.sh"}
+{"kind":"phase","ts":"2026-11-19T05:57:02Z","phase":"test","seconds":3766.981,"exit":0,"cmd":"bash agent_space/run_each.sh"}
+{"kind":"session","ts":"2026-11-19T06:11:14Z","epoch":1795068674.938755,"event":"end","platform":"linux-gfx90a"}

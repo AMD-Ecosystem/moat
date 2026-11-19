@@ -544,3 +544,82 @@ Reviewer, linux-gfx90a. Scope: `git diff 2146b22a..4b17590a` (`quick-cmake/QUICK
 **Verdict: review passed.** Findings 1 and 2 of the 2026-11-19 review are resolved; finding 3 (missing `[ROCm]` on a0122945 and 2146b22a) stays open for PR preparation (squash to the net diff or retitle), as the porter recorded.
 
 Verification: `cmake -P` over the committed logic gave pip SDK header (ROCm 10.1.0) -> 10.1.0 accepted; no header with `HIP version: 6.2.41133` -> 6.2.0 rejected; `/opt/rocm-6.2.1` path -> 6.2.1 accepted; no header with `HIP version: 6.1.40091` -> 6.1.0 rejected. The header is read from `HIP_TOOLKIT_ROOT_DIR` (default `/opt/rocm`, `QUICKCudaConfig.cmake:364`), the same root the build already takes rocBLAS and the other libraries from. Commit title 64 characters, AI disclosure and Test Plan present, no trailer; `jargon.py --port QUICK` clean.
+
+## Validation 2026-11-19 (linux-gfx90a, upstream sync head 4b17590a): FAILED
+
+Full short GPU list (`test/testlist_short_gpu.txt`, all 40 tests: energy, gradient, optimization, API, ESP, checkpoint), not just the s/p subset. MI250X (gfx90a), one GCD (`HIP_VISIBLE_DEVICES=1`), ROCm 10.1 pip SDK (HIP 7.16.26385, AMD clang 24).
+
+**Result: 15 PASS, 12 TIMEOUT, 10 FAIL, 3 SKIPPED.** Every test that passes uses s/p basis functions only. Every test with d functions either hits the cap, faults in the closed-shell SPD ERI kernel, or dies earlier on the Libxc allocation regression.
+
+### Build (exact head)
+
+Built 4b17590a in `src/build-new` with the recipe in "Upstream sync 2026-11-19 (porter)" (the `-L$GFL` and `CMAKE_PREFIX_PATH`/`HIP_TOOLKIT_ROOT_DIR` flags), `make install DESTDIR=$PWD/../install-new`. `python3 utils/codeobj_diff.py src/build-val src/build-new` (2146b22a vs 4b17590a): `verdict=identical` for all six binaries (device ISA and exported symbols); only the cached `HIP_VERSION` string differs (7.16.26385 vs 10.1.0).
+
+### How the tests were run
+
+`runtest` stops the whole run at the first "quick.hip execution failed", and an uncapped run of test 2 (`ene_psb5_rhf_631gss`) sat for 30 minutes in its first SCF cycle (gdb: main thread in `hipMemcpy` from `gpu_get_cshell_eri_`, GPU at 100%; upstream's saved TITAN V output finishes all 12 cycles in 9.4 s), so a single `./runtest --hip` cannot cover the list. Instead each test went through the real harness on its own: a one-line `test/testlist_short_gpu.txt` per invocation, `./runtest --hip`, with `bin/quick.hip` replaced by a wrapper `exec timeout --signal=KILL 300 quick.hip.real "$@"`. Environment per run:
+
+```
+export QUICK_HOME=<install>/usr/local QUICK_BASIS=$QUICK_HOME/basis
+export LD_LIBRARY_PATH=$QUICK_HOME/lib:$(rocm-sdk path --root)/lib
+cd $QUICK_HOME && ./runtest --hip
+```
+
+Pass = every diff check printed PASSED and nothing said `possible FAILURE` or `execution failed`. The runtest "Test Summary" is NOT usable with per-test invocations: it re-parses `$QUICK_HOME/.quick.hip.runtest.log`, which accumulates across runs, so it reported passing tests as failed. Total wall time about 63 minutes.
+
+| test | result | wall | cause |
+|---|---|---|---|
+| ene_psb5_rhf_631g | PASS | 6s |  |
+| ene_psb5_rhf_631gss | TIMEOUT (300 s cap) | 300s | d functions |
+| ene_acetone_rhf_321g | PASS | 5s |  |
+| ene_psb3_blyp_631g | FAIL | 2s | Libxc `hipHostAlloc` invalid argument (gpu_libxc.h:85) |
+| ene_psb3_blyp_631gss | FAIL | 2s | Libxc `hipHostAlloc` invalid argument (gpu_libxc.h:85) |
+| ene_psb3_b3lyp_631g | PASS | 6s |  |
+| ene_psb3_b3lyp_631gss | TIMEOUT (300 s cap) | 301s | d functions |
+| ene_C2H6_b3lyp_def2tzvp | SKIPPED by runtest (no f-function support compiled) | 0s |  |
+| ene_psb3_libxc_lda_631g | FAIL | 2s | Libxc `hipHostAlloc` invalid argument (gpu_libxc.h:85) |
+| ene_psb3_libxc_gga_631g | FAIL | 2s | Libxc `hipHostAlloc` invalid argument (gpu_libxc.h:85) |
+| ene_psb3_libxc_hgga_631g | FAIL | 2s | Libxc `hipHostAlloc` invalid argument (gpu_libxc.h:85) |
+| ene_wat2_mp2_631g | PASS | 5s |  |
+| ene_wat2_mp2_631gss | TIMEOUT (300 s cap) | 301s | d functions |
+| grad_psb3_b3lyp_631g | PASS | 9s |  |
+| grad_psb3_b3lyp_631gss | TIMEOUT (300 s cap) | 300s | d functions |
+| grad_ch3conhch3_b3lyp_ccpvdz | TIMEOUT (300 s cap) | 300s | d functions |
+| grad_NaCl_b3lyp_def2svp | TIMEOUT (300 s cap) | 301s | d functions |
+| grad_CH4_pbe0_6311g2df2pd | SKIPPED by runtest (no f-function support compiled) | 0s |  |
+| grad_nma_rhf_def2tzvp | SKIPPED by runtest (no f-function support compiled) | 1s |  |
+| grad_wat_b3lyp_ccpvdz | TIMEOUT (300 s cap) | 300s | d functions |
+| grad_c10h9o2s_b3lyp_def2svp | TIMEOUT (300 s cap) | 300s | d functions |
+| grad_daspi_meoh_b3lyp_6-31g | PASS | 12s |  |
+| grad_rpsb_meoh_rhf_321g | PASS | 10s |  |
+| grad_ohrad_b3lyp_631gss | FAIL | 3s | Libxc `hipHostAlloc` invalid argument (gpu_libxc.h:85) |
+| opt_wat_rhf_631g | PASS | 8s |  |
+| opt_wat_rhf_ccpvdz | FAIL | 7s | `get2e_kernel_spd` memory aperture violation (illegal address); standalone and on a harness rerun it instead hits the cap |
+| opt_nh4_pbe0_def2svp | FAIL | 3s | Libxc `hipHostAlloc` invalid argument (gpu_libxc.h:85) |
+| opt_hsoh_pbe0_def2svp | FAIL | 3s | Libxc `hipHostAlloc` invalid argument (gpu_libxc.h:85) |
+| opt_c3h4_rhf_631g | PASS | 8s |  |
+| opt_caffeine_b3lyp_3-21g | PASS | 22s |  |
+| opt_c2h5rad_uhf_631gss | TIMEOUT (300 s cap) | 300s | d functions |
+| opt_methoxyrad_ub3lyp_ccpvdz | FAIL | 4s | Libxc `hipHostAlloc` invalid argument (gpu_libxc.h:85) |
+| opt_const_dist_h2o_hf_3-21g | PASS | 7s |  |
+| opt_const_ang_h2o_hf_3-21g | PASS | 7s |  |
+| opt_const_dh_c2h4f2_hf_3-21g | PASS | 8s |  |
+| opt_const_freeze_c2h4f2_hf_3-21g | PASS | 9s |  |
+| api_water_rhf_631g | PASS | 8s |  |
+| esp_charge_acetone_b3lyp_def2svp | TIMEOUT (300 s cap) | 300s | d functions |
+| chk_acetate_xyz_density | TIMEOUT (300 s cap) | 300s | d functions |
+| ene_benzene_b3lyp_aug-cc-pvdz | TIMEOUT (300 s cap) | 300s | d functions |
+
+### The three failure classes
+
+1. **Libxc regression from upstream (9 tests):** BLYP (the `BLYP` keyword routes through Libxc, `quick_method_module.f90:614-617`), the three explicit Libxc tests, PBE0/PBEH, and the unrestricted B3LYP tests all abort with `[ERROR] GPU error: hipHostAlloc failure ... gpu_libxc.h line 85 ... invalid argument`. This is upstream master's state since PR 473, fixed in open PR 512; see the question in the porter section. Native restricted B3LYP does not use Libxc and passes on s/p bases.
+2. **d-function tests do not finish (12 TIMEOUT):** same symptom as June (`ene_psb5_rhf_631gss` was recorded then as taking >30 minutes or core dumping). Unchanged by the sync and not introduced by it: the port's diff does not touch these kernels.
+3. **Memory fault in `get2e_kernel_spd` (opt_wat_rhf_ccpvdz):** in the harness run it died after 7 s with `HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION ... kernel: get2e_kernel_spd()` (`grid=[26624,1,1] workgroup=[256,1,1] private_seg_size=2468`), then `hipMemcpy failure ... gpu_type.h line 817 ... Error code: 700 an illegal memory access`. Standalone and on a second harness run the same input instead ran to the 300 s cap. So the SPD ERI path on gfx90a is not only slow: it reads out of bounds, sometimes fatally. That is the likeliest explanation of June's "Aborted (core dumped)" as well.
+
+### Lead for whoever takes the d-function problem (not a diagnosis)
+
+Kernel metadata from the gfx90a code object (`llvm-objdump --offloading` on `libquick_hip.so`, then `llvm-readelf --notes`): `get2e_kernel_spd` and `get_oshell_eri_kernel_spd` use 512 VGPRs (one wave per SIMD) with a 2468-byte private segment and 48 / 58 SGPR spills; the spdf gradient kernels spill 1000-1600 VGPRs each. Upstream's CMake refuses ROCm 5.4.3 to 6.2.0 for "a known compiler scalar register fill/spill bug" triggered by these HIP codes. An SPD kernel with heavy SGPR spills that faults on gfx90a and runs correctly on gfx1100 (June: 38/38 including SPD) fits that bug class, which would make it a compiler defect still present in AMD clang 24 for gfx90a. Next experiments: build `get2e_kernel_spd` at -O1 or with `__launch_bounds__` to shrink register pressure, and run under a debug HIP runtime / `AMD_LOG_LEVEL` to locate the faulting access; compare against gfx942 if one is available.
+
+### Verdict and what it means for the PR
+
+`validation-failed` on linux-gfx90a at 4b17590a. Not a regression of the port: the s/p results match June, the d-function behaviour matches June, and the Libxc failures are upstream's. But on gfx90a the full short GPU list does not pass, so jeff has two decisions (beyond the PR 512 question already recorded): whether the d-function fault on gfx90a must be fixed before the PR (porter/compiler work), or the PR goes ahead stating that CDNA2 d-function runs are broken, as June's completion implicitly accepted. The gfx1100 record (completed at d369e07) is stale at the new head and needs a revalidation run on a wave32 host.
