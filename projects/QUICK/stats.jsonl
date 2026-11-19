@@ -76,3 +76,9 @@
 {"kind":"session","ts":"2026-11-19T19:42:34Z","epoch":1795117354.37619,"event":"end","platform":"linux-gfx90a"}
 {"kind":"phase","ts":"2026-11-19T21:14:23Z","phase":"compile","seconds":53.703,"exit":0,"cmd":"agent_space/scripts/cuda_build.sh agent_space/quick-port cmake"}
 {"kind":"phase","ts":"2026-11-19T21:14:23Z","phase":"compile","seconds":53.705,"exit":0,"cmd":"agent_space/scripts/cuda_build.sh agent_space/quick-base cmake"}
+{"kind":"session","ts":"2026-11-19T21:12:53Z","epoch":1795122773.478332,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-19T21:15:53Z","phase":"compile","seconds":146.336,"exit":0,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261119-131039-quick-val-rx7900-prompt/moat/agent_space/quick-testtree"}
+{"kind":"phase","ts":"2026-11-19T21:16:31Z","phase":"test","seconds":2.069,"exit":0,"cmd":"bash agent_space/runtests.sh /var/lib/jenkins/fleet/jobs/rx7900-20261119-131039-quick-val-rx7900-prompt/moat/agent_space/quick-testtree/install/usr/local /var/lib/jenkins/fleet/jobs/rx7900-20261119-131039-quick-val-rx7900-prompt/moat/agent_space/run1"}
+{"kind":"phase","ts":"2026-11-19T21:20:18Z","phase":"test","seconds":215.984,"exit":0,"cmd":"bash agent_space/runtests.sh /var/lib/jenkins/fleet/jobs/rx7900-20261119-131039-quick-val-rx7900-prompt/moat/agent_space/quick-testtree/install/usr/local /var/lib/jenkins/fleet/jobs/rx7900-20261119-131039-quick-val-rx7900-prompt/moat/agent_space/run2"}
+{"kind":"phase","ts":"2026-11-19T21:26:10Z","phase":"test","seconds":333.261,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261119-131039-quick-val-rx7900-prompt/moat/agent_space/quick-testtree/install/usr/local && timeout 2400 ./runtest --serial > /var/lib/jenkins/fleet/jobs/rx7900-20261119-131039-quick-val-rx7900-prompt/moat/agent_space/cpu_serial.log 2>&1"}
+{"kind":"session","ts":"2026-11-19T21:27:09Z","epoch":1795123629.646801,"event":"end","platform":"linux-gfx1100"}
