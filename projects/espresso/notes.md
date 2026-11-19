@@ -363,3 +363,57 @@ if MPI were available (gfx1201 is wave32, same as gfx1100, and the port has no
 warp-size assumptions). A future validation would succeed if MS-MPI is installed
 by an admin before the session, or if the project is rebuilt on Linux where MPI
 is available as a standard package.
+
+## Upstream sync 2026-11-19 (porter, linux-gfx942)
+
+Directed by jeff: bring the port up to date with upstream before the PR is prepared. No upstream PR is open, so `moat-port` was pushed directly.
+
+- Fork mirror `python` fast-forwarded 62c745e14 -> c0e34ecc0 (`moatlib.py mirror-branch espresso`; upstream's own commits, no merge).
+- `moat-port` 8e228b5d -> 87cbc046d: merge commit 06adcac90 (upstream c0e34ecc0, 75 commits past the old base eafab258), then a15c89169 (code_info) and 87cbc046d (docs). No rebase; validated commits untouched.
+
+### What upstream changed that mattered
+
+- **Kokkos GPU infrastructure (#5400, #5391).** Upstream now turns on `Kokkos_ENABLE_CUDA` when `ESPRESSO_BUILD_WITH_CUDA` is on, waLBerla is off and the CUDA compiler is not nvcc (i.e. clang-CUDA), and `espresso_set_kokkos_properties_on_source_files` may recompile every core `.cpp` as CUDA. A HIP build has no CUDA compiler id, so the condition would have been TRUE and tried to build Kokkos with CUDA. Every Kokkos call in `src/core` still runs on `Kokkos::DefaultHostExecutionSpace` / `HostSpace` (grep: no `DefaultExecutionSpace`, `CudaSpace` or device policy anywhere outside walberla), and nvcc builds never enable the Kokkos CUDA backend, so no GPU code is lost by keeping it off. Gated with `AND NOT USE_HIP` (in the merge commit). Enabling Kokkos HIP would be a later decision if upstream ever moves kernels to a device execution space.
+- **kokkos-fft (new, ON by default)** with `KokkosFFT_ENABLE_CUFFT ${ESPRESSO_BUILD_WITH_CUDA}`. kokkos-fft v2.0.0 reads that option only under `Kokkos_ENABLE_CUDA` (`cmake/KokkosFFT_tpls.cmake`), so it is inert on HIP (and on nvcc builds); P3MFFTKokkos uses the host execution space and FFTW. No change.
+- **heFFTe/Kokkos/Cabana fetch rework, HDF5 block moved before Cabana, Thrust >= 2.5 check.** The Thrust check is inside the CUDA-compiler branch, which a HIP build never enters.
+- **`device_qualifier.hpp`** gained `HOST_ONLY_QUALIFIER` and `#pragma once`; merged cleanly under the port's `__CUDACC__ || __HIPCC__` test.
+- **`p3m_gpu_cuda.cu`**: launch topology factored into `p3m_calc_topology` (block <= 1024 threads, 2D grid); `KERNELCALL` uses `__VA_OPT__`. Both fine under clang-HIP, no change.
+- **`GpuParticleData_cuda.cu`**: `resize_or_replace` thrust workaround removed in favour of plain `resize`; fine with rocThrust (GPU tests pass).
+- **New `testsuite/python/code_info.py` toolchain test** asserts `CMAKE_CUDA_COMPILER_ID/VERSION` are set when the CUDA feature is on. Empty under HIP -> new commit a15c89169 fills them from `CMAKE_HIP_COMPILER_ID/VERSION`, scoped to `src/config/CMakeLists.txt` only (the directory that generates `cmake_config.hpp`), so no other CMake logic sees a CUDA compiler. Passes.
+- Floors raised: CMake 3.31.6, GCC 13.3, Python 3.12, NumPy 2.2.4, Cython 3.0.11, Boost 1.83.
+
+### Conflicts and resolutions
+
+- `CMakeLists.txt`: git produced one large conflict because upstream moved the HDF5 block ahead of Cabana and rewrote the heFFTe/Kokkos/Cabana fetches. Took upstream's file whole and re-applied the four port hunks verbatim (USE_HIP option; HIP compiler branch before the CUDA branch; OpenMP CUDA component guard; heFFTe CUDA guard), plus the new Kokkos CUDA guard above.
+- `src/core/unit_tests/CMakeLists.txt`: upstream added `Kokkos::kokkos` to `cuda_test`'s deps; added to both the HIP and CUDA branches.
+- Everything else auto-merged; each auto-merged GPU file was read against upstream's delta (above).
+
+### Port doc gap closed
+
+The port had never documented the ROCm build. 87cbc046d adds an "AMD GPU acceleration" section next to "Nvidia GPU acceleration" in `doc/sphinx/installation.rst` and lists `USE_HIP` under the external-feature options.
+
+### Host build recipe (gfx942, pip ROCm SDK 10.1.0, no /opt/rocm)
+
+This host has no system MPI/Boost/FFTW/hwloc headers and no /opt/rocm. Built into a job-local prefix from source (hwloc 2.11.2, OpenMPI 5.0.8, FFTW 3.3.10 double+float with omp/threads, Boost 1.87.0 mpi/serialization/test with `--without-python`; a Boost built with Python makes Boost::mpi drag in libboost_python and `cuda_test` fails to link). Python 3.12 venv (numpy 2.5.5, scipy 1.18.1, Cython 3.3.1) created with `uv` inside the job venv.
+
+```
+cmake -S <src> -B build-hip -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DESPRESSO_BUILD_WITH_CUDA=ON -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$ROCM_SDK/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH="$DEPS_PREFIX;$ROCM_SDK" \
+  -DMPI_C_COMPILER=$DEPS_PREFIX/bin/mpicc -DMPI_CXX_COMPILER=$DEPS_PREFIX/bin/mpicxx \
+  -DBoost_ROOT=$DEPS_PREFIX -DPython_EXECUTABLE=<py312> \
+  -DESPRESSO_BUILD_WITH_WALBERLA=OFF -DESPRESSO_BUILD_WITH_HDF5=OFF \
+  -DESPRESSO_BUILD_WITH_SCAFACOS=OFF -DESPRESSO_BUILD_WITH_STOKESIAN_DYNAMICS=OFF \
+  -DESPRESSO_BUILD_WITH_GSL=OFF -DESPRESSO_BUILD_WITH_NLOPT=OFF \
+  -DESPRESSO_BUILD_WITH_CALIPER=OFF -DESPRESSO_BUILD_WITH_FFTW=ON \
+  -DESPRESSO_BUILD_WITH_PYTHON=ON -DESPRESSO_BUILD_TESTS=ON
+cmake --build build-hip -j 96
+cmake --build build-hip -j 96 --target python_test_data cuda_test
+```
+
+Build: PASS (ROCm clang 24.0.0). Cache confirms `Kokkos_ENABLE_CUDA=OFF`, `Kokkos_ENABLE_HIP=OFF`, `Heffte_ENABLE_CUDA=OFF`. New with ROCm 10.1 headers: `-Wunused-value` warnings for discarded `hipError_t` (`nodiscard`) on existing upstream lines (e.g. `GpuParticleData_cuda.cu:240`, `init_cuda.cu:88`); warnings only, not addressed.
+
+Porter smoke (before commit, identical tree): `ctest -L gpu -j 8` 69/74 pass; the 5 failures are `sample_*_with_gpu` / `benchmark_*_with_gpu` FileNotFoundError on `local_samples/*.py` / `local_benchmarks/*.py` (known test-data gap, see "Test data targets"). `cuda_test` and `code_info` pass.
+
+CUDA no-regression compile: NOT run in this round (this host has no nvcc, and a headless fleet worker cannot dispatch to the nvcc host). The CUDA-path changes are CMake-only: the `NOT USE_HIP` guard (USE_HIP defaults OFF) and `Kokkos::kokkos` added to the CUDA branch exactly as upstream has it. It still needs an nvcc compile on the CUDA fleet host before jeff gets the PR.
