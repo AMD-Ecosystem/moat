@@ -3257,3 +3257,88 @@ The end-to-end Llama-2 run was not repeated. No kernel or compiled source change
 ### Content checks and integrity
 
 `jargon.py --port Quest` is clean. The ROCm build is documented in `README.md` beside the CUDA build, and the command above is that documentation verbatim apart from the architecture. `git -C projects/Quest/src status --porcelain` was empty at completion (the `_kernels` symlink and `build/` are ignored).
+
+## CUDA no-regression compile 2026-11-19 (linux-gfx950 host, real nvcc, at `2b938d8`) -- PASS, no port regression
+
+Asked for by Jeff Daily before the port is offered upstream: show that the CUDA path still compiles with real nvcc at the current `head_sha`. Evidence only; no stage or platform record changed, nothing pushed to the fork, no GitHub write. Same recipe as the `a70f4d9` run above, from fresh clones in this job's directory (`<job>/nvcc`).
+
+Trees (fresh `git clone` + `git submodule update --init --recursive`; identical submodule SHAs in both: flashinfer `9f49803b`, its googletest `40412d85` and nvbench `f57aa9c9`, googletest `6a593823`, nvbench `d8dced8a`, pybind `768cebe1`, raft `1e4961e2`):
+
+- port: `AMD-Ecosystem/Quest` at `2b938d8ab5eea6b19d522a53681a68819bf04dca` (= `head_sha`)
+- base: `mit-han-lab/Quest` at `01c1623bf9395009520874e989e29f683203b357` (`git merge-base up/main 2b938d8`; also upstream `main` today, port 0 behind)
+
+The port touches 18 files against the base. Since `a70f4d9` only `quest/ops/CMakeLists.txt` (+33/-3) and `README.md` (1 line) changed.
+
+Toolchain: CUDA 12.8 at `/usr/local/cuda` (`nvcc` V12.8.93, build cuda_12.8.r12.8/compiler.35583870_0; the only toolkit on this host), CMake 3.31.6, Ninja 1.13.0, g++-11 11.5.0 (`11.5.0-1ubuntu1~24.04.1`, unpacked debs copied into the job directory), PyTorch `2.5.0+cu124` (the `pyproject.toml` pin, `pip install torch==2.5.0 --index-url https://download.pytorch.org/whl/cu124` into `$FLEET_VENV`), Python 3.11.17. No NVIDIA GPU: compile and link only. Upstream has no CI; the recipe is its `quest/ops/setup.sh` (`cmake -GNinja` + `ninja`) with the three host-forced changes, applied to both trees: a toolchain file for the hard-coded `/usr/bin/gcc-11`, `-DCMAKE_CUDA_ARCHITECTURES=80` (`native` needs a GPU), `TORCH_CUDA_ARCH_LIST=8.0`.
+
+```
+# <job>/nvcc/gcc11.cmake sets CMAKE_C_COMPILER, CMAKE_CXX_COMPILER, CMAKE_CUDA_HOST_COMPILER to <job>/nvcc/gcc11/root/usr/bin/{gcc-11,g++-11}
+# run.sh <tree> <builddir> <cudaroot> [extra]:
+cd <job>/nvcc/<tree>/quest/ops
+TORCH_CUDA_ARCH_LIST=8.0 PATH=<venv>/bin:<cudaroot>/bin:$PATH cmake -GNinja \
+  -DCMAKE_TOOLCHAIN_FILE=<job>/nvcc/gcc11.cmake -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_CUDA_COMPILER=<cudaroot>/bin/nvcc -DCUDAToolkit_ROOT=<cudaroot> -DPython_EXECUTABLE=<venv>/bin/python \
+  -DCMAKE_PREFIX_PATH=$(<venv>/bin/python -c 'import torch;print(torch.utils.cmake_prefix_path)') \
+  [extra] -S . -B <job>/nvcc/<builddir>
+ninja -C <job>/nvcc/build-<tree> -j64 -k 0
+```
+
+### The RAFT `CUDA::nvToolsExt` wall
+
+With the real `/usr/local/cuda`, unmodified upstream **configures and generates** (rc 0, `CMAKE_BUILD_TYPE=Release`): CUDA 12.8 here still ships `nvToolsExt.h` and `libnvToolsExt.so*`, so `CUDA::nvToolsExt` exists and RAFT only prints the deprecation warning. The wall therefore does not occur on this host's toolkit, and there is no older toolkit to try.
+
+To reproduce it, `<job>/nvcc/cuda-nontx` is a symlink copy of `/usr/local/cuda-12.8` whose `targets/x86_64-linux/{lib,include}` (and so `lib64`, `include`) omit `libnvToolsExt*` and `nvToolsExt*.h`, keeping `include/nvtx3`. Note for whoever repeats this: a first copy that replaced only the top-level `include`/`lib64` leaked, because `FindCUDAToolkit` still found `targets/x86_64-linux/lib/libnvToolsExt.so` (only the torch error appeared); the `targets` directory has to be stripped too. With the correct copy (`run.sh <tree> build-wall-<tree> <job>/nvcc/cuda-nontx`), **both base and port** run configure to the end and fail at generate, rc 1, with the same two errors (diff of the error blocks empty after path normalization), no Quest source reached:
+
+```
+CMake Error at <venv>/.../torch/share/cmake/Caffe2/public/cuda.cmake:182 (set_property):
+  The link interface of target "torch::nvtoolsext" contains: CUDA::nvToolsExt but the target was not found.
+CMake Error at <build>/_deps/raft-src/cpp/CMakeLists.txt:262 (target_link_libraries):
+  The link interface of target "raft" contains: CUDA::nvToolsExt ...
+```
+
+Step (1) of the fallback order works without touching Quest sources: `<job>/nvcc/nvtx-shim.cmake`
+
+```
+find_package(CUDAToolkit REQUIRED)
+if(NOT TARGET CUDA::nvToolsExt)
+  add_library(CUDA::nvToolsExt INTERFACE IMPORTED GLOBAL)
+  target_link_libraries(CUDA::nvToolsExt INTERFACE CUDA::nvtx3)
+endif()
+```
+
+passed as `-DCMAKE_PROJECT__kernels_INCLUDE=<job>/nvcc/nvtx-shim.cmake`. Base and port then configure and generate on `cuda-nontx` (rc 0), and `ninja -C build-shim-<tree> -j32 _kernels` builds 8 of 8 in both, rc 0. The modules are byte-for-byte the same size as the real-toolkit full builds (18,681,432 / 18,714,200 B). The nvcc path step (2) was not needed.
+
+### Results (real `/usr/local/cuda`, full build, all targets)
+
+| | base `01c1623` | port `2b938d8` |
+|---|---|---|
+| configure + generate | OK (rc 0), Release | OK (rc 0), Release |
+| ninja steps (all, 179 total) | 162 succeeded, 15 failed, 2 not run (rc 1) | 162 succeeded, 15 failed, 2 not run (rc 1) |
+| `_kernels` target | 8 of 8 (7 `.cu` + link), 18,681,432 B | 8 of 8, 18,714,200 B |
+| wall (both in parallel, -j64 each) | 344 s | 341 s |
+
+The 15 failures are the same set in both trees (sorted `FAILED:` lists diff empty): RAFT's optional compiled `raft_objs` (`libraft.so`/`libraft.a` are the 2 that never ran), which Quest's module does not link (it uses header-only `raft::raft`): `src/neighbors/detail/cagra/search_single_cta_{float,int8,uint8}_uint32_dim{128_t8,256_t16,512_t32,1024_t32}.cu` (12) and `src/neighbors/ivfpq_search_{float,int8_t,uint8_t}_int64_t.cu` (3). First error, identical in both:
+
+```
+<build>/_deps/raft-src/cpp/include/raft/neighbors/detail/cagra/search_single_cta_kernel-inl.cuh(467): error #20281-D: in whole program compilation mode ("-rdc=false"), a __global__ function template instantiation or specialization ("raft::neighbors::cagra::detail::single_cta_search::search_kernel<...
+```
+
+That is RAFT branch-24.02 under CUDA 12.8 with `-Werror=all-warnings`: upstream's failure. Each log has 30 warning lines, all from RAFT's dependency trees on the failed `raft_objs` lines; 0 warning or error lines name `quest/ops/csrc` or `kernels/include`.
+
+### Per-file comparison of Quest's `.cu` files
+
+The 7 compile lines of `ninja -t commands _kernels` are byte-identical between trees after replacing tree and build paths (diff empty; no `USE_HIP`; `-gencode arch=compute_80,code=sm_80`; `-O3` on all 7). Each was rerun on its own in both trees with `-o` redirected to a scratch object:
+
+| file | base | port |
+|---|---|---|
+| `csrc/approx_attn.cu` | rc 0, no output, 2,453,208 B | rc 0, no output, 2,526,512 B |
+| `csrc/batch_prefill.cu` | rc 0, no output | rc 0, no output |
+| `csrc/bsk_ops.cu` | rc 0, no output | rc 0, no output |
+| `csrc/estimate.cu` | rc 0, no output | rc 0, no output |
+| `csrc/page.cu` | rc 0, no output | rc 0, no output |
+| `csrc/rms_norm.cu` (touched) | rc 0, no output | rc 0, no output |
+| `csrc/topk.cu` | rc 0, no output | rc 0, no output |
+
+Every one of them includes `bsk_ops.h`, which includes the touched `decode/decode_handler.cuh`, `prefill/prefill.cuh` and `topk/decode_select_k.cuh`, so all 7 are "touched or include a touched header", and all were compiled through the real CMake build; no file needed a hand-assembled nvcc line and none could not be compiled. Only `approx_attn.cu`'s object differs in size (the decode-header changes); the other six objects are the same size in both trees. `hip_compat/` is not on the CUDA include path. Both modules export the same 651 text symbols and identical undefined dynamic symbol lists (`nm -D`, diffed). Import smoke test: each `.so` copied to its own directory imports under `<venv>/bin/python -I` from `/tmp` after `import torch`, exposing the same 8 public names (`BatchDecodeWithPagedKVCachePyTorchWrapper`, `append_kv_cache_decode`, `append_kv_cache_prefill`, `apply_rope_in_place`, `estimate_attn_score`, `prefill_with_paged_kv_cache`, `rms_norm_forward`, `topk_filtering`). No kernel ran (no GPU).
+
+**Verdict: the CUDA path compiles and links with real nvcc 12.8 at `2b938d8`, with the same result as upstream `01c1623`. No port regression.** The only build failures are RAFT's optional compiled library, identical on unmodified upstream; the `CUDA::nvToolsExt` configure wall reproduces identically on both trees with a toolkit lacking legacy nvToolsExt and is cleared for both by the one-target shim.
