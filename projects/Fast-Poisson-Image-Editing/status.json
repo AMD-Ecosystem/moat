@@ -7,7 +7,7 @@
   "priority": 4.518,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-07T07:04:33Z",
+  "updated_at": "2026-10-09T15:39:02Z",
   "head_sha": "4c6411be2d3801babf65fba4b5166a15f5a3d883",
   "pr_url": "https://github.com/Trinkle23897/Fast-Poisson-Image-Editing/pull/25",
   "pr_number": 25,
@@ -157,5 +157,6 @@
         "at": "2026-06-03T14:17:38Z"
       }
     }
-  }
+  },
+  "published_sha": "4c6411be2d3801babf65fba4b5166a15f5a3d883"
 }
