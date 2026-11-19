@@ -649,3 +649,50 @@ ctest --test-dir build-hip -LE gpu --timeout 900 -j 16
 - Jargon: `python3 utils/jargon.py --port espresso` clean. Docs: "AMD GPU acceleration" in `doc/sphinx/installation.rst` (87cbc046d), unchanged.
 - Gates: wave64 is satisfied at 01090739c by this run. gfx942 and gfx1201 validated 87cbc046d; the delta 87cbc046d..01090739c is one line in the NVIDIA-only `#else` branch of `cuda_to_hip.h`, so the HIP preprocessed sources are unchanged; wave32 (gfx1201) owes revalidation or a carry-forward at this head (not this host's arch).
 - Open for jeff before PR prep: the plan-destroy guard question (porter and review sections), and the review's three wording fixes for the squash/PR body (ROCm 10.1 not 7.16 in 01090739c's Test Plan; corrected guard rationale in 6d36cb6aa's body; "only file that knows about HIP" comment in `cuda_to_hip.h:28`).
+
+## Validation 2026-11-19 (linux-gfx1201, RDNA4 wave32, revalidate at 01090739c)
+
+State: revalidate -> completed. GPU: gfx1201 (`rocminfo`: Wavefront Size 32), `HIP_VISIBLE_DEVICES=1`, `ulimit -c 0`. ROCm: pip ROCm SDK 10.1.0 (`rocm-sdk version`; HIP 7.16.26385, AMD clang 24.0.0 from `rocm-sdk path --root`, no /opt/rocm). Validated sha: 01090739cf852d70549a5699c5984b0f17414214 (the CUDA path fix head). Fresh fork clone at `projects/espresso/src`, clean at head throughout. Full GPU rerun rather than a carry-forward, at jeff's request (`classify 87cbc046d 01090739c` -> `mixed`, `cuda_to_hip.h` token count differs).
+
+### Build
+
+Host deps rebuilt from source into a job-local prefix with the recipe and versions of the earlier gfx1201 section (hwloc 2.11.2, OpenMPI 5.0.8, FFTW 3.3.10 double+float, Boost 1.87.0 mpi/serialization/test/filesystem/system, `--without-python`). Python 3.12.3 venv by `uv` inside the job venv: numpy 2.5.5, scipy 1.18.1, Cython 3.3.1, tqdm, matplotlib, pint. `$DEPS_PREFIX/bin` and `$DEPS_PREFIX/lib` on `PATH`/`LD_LIBRARY_PATH` for build and ctest. Configure line: the gfx942 one in "Upstream sync 2026-11-19" with `-DCMAKE_HIP_ARCHITECTURES=gfx1201`, `-DCMAKE_C_COMPILER=/usr/bin/gcc -DCMAKE_CXX_COMPILER=/usr/bin/g++`.
+
+```
+cmake --build build-hip -j 24
+cmake --build build-hip -j 24 --target python_test_data cuda_test local_samples local_benchmarks
+```
+
+Build: PASS, 236/236 plus the test-data targets. 20 warnings, all the known ROCm 10.1 `nodiscard` `hipError_t` `-Wunused-value`. Cache: `Kokkos_ENABLE_CUDA=OFF`, `Kokkos_ENABLE_HIP=OFF`, `Heffte_ENABLE_CUDA=OFF`. `llvm-objdump --offloading build-hip/src/core/espresso_core.so`: 4 bundles, all `hip-amdgcn-amd-amdhsa--gfx1201`.
+
+### Tests (default myconfig)
+
+```
+ctest --test-dir build-hip -L gpu --timeout 900 -j 8 --output-on-failure
+cmake --build build-hip -j 12 --target check_unit_tests
+cmake --build build-hip -j 24 --target local_samples local_benchmarks
+ctest --test-dir build-hip -LE gpu --timeout 900 -j 16
+```
+
+- GPU suite (`-L gpu`): **74/74, 0 failed** ("100% tests passed"): 71 Passed, 3 ctest Skipped by exit code 5 (`sample_p3m_with_gpu`, `benchmark_p3m_with_gpu`: script runs on import, no test methods; `benchmark_lb_with_gpu`: WALBERLA not built), the same three as every earlier run. All core gates passed: coulomb_cloud_wall, coulomb_cloud_wall_duplicated, p3m_madelung, p3m_electrostatic_pressure, p3m_tuning_exceptions, elc, elc_nonneutral, elc_vs_analytic, dawaanr-and-dds-gpu, dipolar_direct_summation, dipolar_interface, coulomb_interface, dipole_field_tracking, gpu_availability, coulomb_tuning, long_range_actors, the GPU save/test checkpoint pairs.
+- `cuda_test` and `code_info`: PASS.
+- Unit tests (`check_unit_tests`): **136/136 PASS**.
+- Non-GPU suite (`-LE gpu`, 403 tests): 346 Passed, 29 exit-5 Skipped, 28 failed, all environmental and the same set as the earlier gfx1201 and gfx950 runs: 26 `tutorial_*` Not Run (no Jupyter/tutorials target), `test_convert` (`ModuleNotFoundError: No module named 'nbformat'`), `test_install` (`diff: /usr/local/lib/python3.12/site-packages/espressomd/...: No such file or directory`; never installed). No regression.
+
+### Extra wave32 coverage: maxset build
+
+```
+cmake ... -DESPRESSO_MYCONFIG_FILE=<src>/maintainer/configs/maxset.hpp   # otherwise the same configure line
+cmake --build build-max -j 12
+cmake --build build-max -j 12 --target python_test_data cuda_test local_samples local_benchmarks
+ctest --test-dir build-max -L gpu --timeout 900 -j 8 --output-on-failure
+ctest --test-dir build-max -L gpu -E 'sample_|benchmark_' -V --timeout 900 -j 8
+```
+
+Build: PASS. GPU suite: **74/74, 0 failed** (the same 3 exit-5 Skipped); verbose run 68/68. Cases the default config compiles out ran and passed: dipole_field_tracking test_dds, test_dds_gpu, test_dp3m; dipolar_direct_summation test_dds_gpu, test_inner_loop_consistency_gpu, test_min_image_convention_gpu. Every unittest-level skip names an out-of-scope or not-built feature (WALBERLA/WALBERLA_FFT, MMM1D, STOKESIAN_DYNAMICS, SCAFACOS, SCAFACOS_DIPOLES, H5MD, THERMAL_STONER_WOHLFARTH) or is a mode filter inside the test, the same profile as the 87cbc046d run.
+
+### Gates
+
+- Jargon: `python3 utils/jargon.py --port espresso` clean (needs the fork's `python` branch fetched in the clone; a fresh `-b moat-port` clone reports "cannot resolve python..moat-port" until it is). Docs: "AMD GPU acceleration" at doc/sphinx/installation.rst:300, `USE_HIP` at :918.
+- CUDA no-regression compile: not rerun; already PASS at 01090739c (542/542, nvcc 12.8.93, gfx950 section). This host has no CUDA toolkit.
+- With gfx950 (wave64) and this run (wave32) at 01090739c, both required Linux gates are met at head; windows is waived. The questions for jeff listed at the end of the gfx950 section are unchanged.
