@@ -31,7 +31,7 @@ findings/<dir> bug report that is not yet registered, so a prepared report canno
 silently fall off the radar, and `pending` lists the ones no person has ruled on.
 
     python3 utils/deferred.py list                 # open items + unregistered findings
-    python3 utils/deferred.py list --all           # include filed/done
+    python3 utils/deferred.py list --all           # include filed/done/closed
     python3 utils/deferred.py list --kind rocm-bug-report
     python3 utils/deferred.py add rocm-bug-report \
         --id hipcub-rocprim-beginbit --component rocPRIM \
@@ -41,6 +41,10 @@ silently fall off the radar, and `pending` lists the ones no person has ruled on
         --upstream https://github.com/ROCm/rocPRIM/issues/NNN
     python3 utils/deferred.py pending                 # awaiting a person's ruling
     python3 utils/deferred.py decide <id> --choice now --by <who>
+    python3 utils/deferred.py close <id> --as superseded --by <who> \
+        --reason "fixed upstream by someone else" --superseded-by <id-or-URL>
+    python3 utils/deferred.py amend <id> --summary "<corrected text>" \
+        --by <who> --reason "what was wrong with the old text"
 """
 
 import argparse
@@ -55,6 +59,11 @@ REGISTRY = moatlib.REPO_ROOT / "data" / "deferred.json"
 FINDINGS = moatlib.REPO_ROOT / "findings"
 KINDS = ("rocm-bug-report", "feature-port", "other")
 STATUSES = ("open", "filed", "done")
+# Ways an item ends without its work being done. Kept apart from STATUSES because
+# `set-status` must not reach them: each needs a reason and a person, which `close`
+# records. Nothing that asks "is this open" matches them, so a closed item leaves
+# `pending`, the default `list`, and moatlib.now_deferrals with no change there.
+CLOSED = ("superseded", "not-applicable")
 
 
 def _empty():
@@ -259,9 +268,16 @@ def set_status(args):
     if not where:
         sys.exit(f"deferred: unknown id '{args.id}'")
     it = _find(obj, args.id)
+    if it.get("status") in CLOSED:
+        sys.exit(f"deferred: '{args.id}' was closed as {it['status']} by "
+                 f"{(it.get('closed') or {}).get('by', '?')}; set-status does not "
+                 f"reopen a person's ruling")
     it["status"] = args.status
     if args.upstream:
         it["upstream_issue"] = args.upstream
+    for ref in args.ref or []:
+        if ref not in it.setdefault("refs", []):
+            it["refs"].append(ref)
     msg = f"deferred: {args.id} -> {args.status}"
     sha = _store(where, obj, msg)
     if not sha:
@@ -289,6 +305,77 @@ def decide(args):
     if not sha:
         _maybe_commit(args, where, msg)
     _report(where, sha, f"{args.id}: {args.choice}, by {args.by}")
+
+
+def close(args):
+    """Record a person's ruling that this item ends without the work being done.
+
+    `done` says the work happened. An item whose defect somebody else fixed, or whose
+    premise turned out to be wrong, was marked `done` for want of anything else, and
+    the record then claimed work nobody did. `--by` and `--reason` are required for
+    the reason `decide` requires `--by`: dropping set-aside work from every listing
+    is a judgement about what MOAT is delivering."""
+    if not (args.by or "").strip():
+        sys.exit("deferred: --by is required; closing a deferral is a person's call")
+    if not (args.reason or "").strip():
+        sys.exit("deferred: --reason is required; a closure with no reason reads "
+                 "like finished work")
+    where, obj = _owner(args.id)
+    if not where:
+        sys.exit(f"deferred: unknown id '{args.id}'")
+    it = _find(obj, args.id)
+    if it.get("status") not in ("open", "filed"):
+        sys.exit(f"deferred: '{args.id}' is already {it.get('status')}; "
+                 f"only an open or filed item can be closed")
+    it["status"] = args.as_
+    it["closed"] = {"as": args.as_, "reason": args.reason, "by": args.by,
+                    "at": moatlib.now_iso(),
+                    **({"superseded_by": args.superseded_by}
+                       if args.superseded_by else {})}
+    msg = f"deferred: {args.id} closed as {args.as_} ({args.by})"
+    sha = _store(where, obj, msg)
+    if not sha:
+        _maybe_commit(args, where, msg)
+    _report(where, sha, f"{args.id}: closed as {args.as_}, by {args.by}")
+
+
+def amend(args):
+    """Replace an item's summary, keeping the text it replaces.
+
+    The summary is what a person reads when ruling, so correcting it is a recorded
+    operation: the old text, who replaced it, when and why go to `summary_history`,
+    oldest first. A ruling was made on the text it replaces, so it does not carry
+    over: it moves into that history entry and the item is pending again until a
+    person rules on the corrected text."""
+    if not (args.by or "").strip():
+        sys.exit("deferred: --by is required; an amendment names who made it")
+    if not (args.reason or "").strip():
+        sys.exit("deferred: --reason is required; say what was wrong with the old text")
+    if not (args.summary or "").strip():
+        sys.exit("deferred: --summary is required")
+    where, obj = _owner(args.id)
+    if not where:
+        sys.exit(f"deferred: unknown id '{args.id}'")
+    it = _find(obj, args.id)
+    if args.summary == it.get("summary"):
+        sys.exit(f"deferred: '{args.id}' already has that summary")
+    entry = {"summary": it.get("summary"), "by": args.by, "at": moatlib.now_iso(),
+             "reason": args.reason}
+    ruled = it.get("decided") or {}
+    if ruled.get("choice"):
+        entry["ruling_cleared"] = it.pop("decided")
+    it.setdefault("summary_history", []).append(entry)
+    it["summary"] = args.summary
+    msg = f"deferred: amend {args.id} summary ({args.by})"
+    sha = _store(where, obj, msg)
+    if not sha:
+        _maybe_commit(args, where, msg)
+    _report(where, sha, f"{args.id}: summary amended, by {args.by}")
+    if ruled.get("choice"):
+        print(f"-- {args.id} was ruled `{ruled['choice']}` by {ruled.get('by')} on the "
+              f"previous text; that ruling is cleared (kept in summary_history) and "
+              f"the item is pending again: `deferred.py decide {args.id} ...`",
+              file=sys.stderr)
 
 
 def pending(args):
@@ -324,6 +411,14 @@ def list_items(args):
         up = f"  filed: {it['upstream_issue']}" if it.get("upstream_issue") else ""
         print(f"- ({it['status']}) {it['kind']}{proj}{comp} {it['id']}{up}{rule}")
         print(f"    {it['summary']}")
+        shut = it.get("closed")
+        if shut:
+            by = f" by {shut['superseded_by']}" if shut.get("superseded_by") else ""
+            print(f"    closed{by} ({shut['by']}): {shut['reason']}")
+        if it.get("summary_history"):
+            last = it["summary_history"][-1]
+            print(f"    summary amended {len(it['summary_history'])}x, "
+                  f"last by {last['by']}: {last['reason']}")
         for ref in it.get("refs", []):
             print(f"    ref: {ref}")
 
@@ -363,9 +458,11 @@ def main(argv=None):
     s.add_argument("id")
     s.add_argument("status", choices=STATUSES)
     s.add_argument("--upstream", help="upstream issue URL once filed")
+    s.add_argument("--ref", action="append",
+                   help="add a findings/ path, notes ref or URL to the item (repeatable)")
 
     l = sub.add_parser("list", help="list deferred items (open by default)")
-    l.add_argument("--all", action="store_true", help="include filed/done")
+    l.add_argument("--all", action="store_true", help="include filed/done/closed")
     l.add_argument("--kind", choices=KINDS)
     l.add_argument("--project")
 
@@ -377,10 +474,27 @@ def main(argv=None):
     d.add_argument("--by", required=True, help="who decided; never an agent")
     d.add_argument("--note")
 
+    c = sub.add_parser("close", help="a person's ruling: ends without being done")
+    c.add_argument("id")
+    c.add_argument("--as", dest="as_", required=True, choices=CLOSED)
+    c.add_argument("--reason", required=True, help="why it ends without the work")
+    c.add_argument("--by", required=True, help="who decided; never an agent")
+    c.add_argument("--superseded-by",
+                   help="what replaces it: a deferral id, or an issue/PR URL")
+
+    m = sub.add_parser("amend", help="correct an item's summary, keeping the old text")
+    m.add_argument("id")
+    m.add_argument("--summary", required=True, help="the corrected summary")
+    m.add_argument("--by", required=True, help="who changed it")
+    m.add_argument("--reason", required=True, help="what was wrong with the old text")
+
     args = p.parse_args(argv)
     {"add": add, "set-status": set_status, "list": list_items,
-     "pending": pending, "decide": decide}[args.cmd](args)
+     "pending": pending, "decide": decide, "close": close,
+     "amend": amend}[args.cmd](args)
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     main()

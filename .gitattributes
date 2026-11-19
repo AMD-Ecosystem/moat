@@ -6,4 +6,14 @@ projects/*/status.json merge=moat-status
 # Append-only docs + per-project timing logs: on concurrent edits keep both
 # sides instead of conflicting (multiple platforms append to the same file).
 projects/*/notes.md merge=union
+projects/*/notes-*.md merge=union
 projects/*/stats.jsonl merge=union
+
+# Shell scripts are LF in every checkout. A Windows clone with core.autocrlf=true
+# otherwise writes them CRLF, and a script shared from that tree with a Linux host
+# (a mounted worktree, a copied file) fails under bash at its first line ending.
+*.sh text eol=lf
+
+# Append-only log of removed dispositions and opt-outs (triage.py unskip, optout.py
+# remove): concurrent appends keep both lines.
+data/decisions.jsonl merge=union
