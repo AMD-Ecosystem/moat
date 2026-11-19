@@ -277,7 +277,7 @@ The project name links upstream.
 | [minibwa](https://github.com/lh3/minibwa) | ⬜ | ⬜ | ⬜ | ⚪ declined |
 | [minimap2](https://github.com/lh3/minimap2) | ⬜ | ⬜ | ⬜ | ⚪ declined |
 | [mistral.rs](https://github.com/EricLBuehler/mistral.rs) ([fork](https://github.com/AMD-Ecosystem/mistral.rs/tree/moat-port)) | ⬜ | 🔧 | 🔧 | — |
-| [MMseqs2](https://github.com/soedinglab/MMseqs2) ([fork](https://github.com/AMD-Ecosystem/MMseqs2/tree/moat-gpu-coverage-v2)) | ✅ | ✅ | 🎫 | 🟢 [#1174](https://github.com/soedinglab/MMseqs2/pull/1174) |
+| [MMseqs2](https://github.com/soedinglab/MMseqs2) ([fork](https://github.com/AMD-Ecosystem/MMseqs2/tree/moat-gpu-coverage-v2)) | ✅ | ✅ | 🎫 | 🟣 [#1174](https://github.com/soedinglab/MMseqs2/pull/1174) via [21691c1f7](https://github.com/soedinglab/MMseqs2/commit/21691c1f7f7b5743feb80e237c20440a60075fcf) |
 | [MONAI](https://github.com/Project-MONAI/MONAI) ([fork](https://github.com/AMD-Ecosystem/MONAI/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
 | [MONAILabel](https://github.com/Project-MONAI/MONAILabel) ([fork](https://github.com/AMD-Ecosystem/MONAILabel/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
 | [MPPI-Generic](https://github.com/ACDSLab/MPPI-Generic) ([fork](https://github.com/AMD-Ecosystem/MPPI-Generic/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#37](https://github.com/ACDSLab/MPPI-Generic/pull/37) |
