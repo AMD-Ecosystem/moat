@@ -6426,3 +6426,6 @@ while read -r p; do
 done < $B/full_set.txt
 wait
 ```
+
+### Head moved during this session
+While these runs were in progress, the porter advanced the head to `de4e07a3` ("[ROCm] Wait for the previous graph launch on Windows"). The fork delta `fda2f89a..de4e07a3` is `warp/native/hip_compat.h` +18. All of it is inside `#if defined(_WIN32)`, and the Linux branch keeps `#define cudaGraphLaunch hipGraphLaunch` unchanged. So the Linux build at `de4e07a3` is the same as at `fda2f89a`, and no kernel-cache header (`tile_matmul_mma.h`, `crt.h`, `builtin.h`) changed. This session did not run anything at `de4e07a3`. Whether these results carry forward to it is the validator's call (`carry-forward`); no record was changed here.
