@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T07:03:06Z",
-  "updated_at": "2026-11-10T05:10:39Z",
-  "head_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2",
+  "updated_at": "2026-11-19T03:43:15Z",
+  "head_sha": "a4f07f0bc98e09deaf487fb3598ecde35edcd3ab",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "MIT",
@@ -30,11 +30,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2",
+      "validated_sha": "a4f07f0bc98e09deaf487fb3598ecde35edcd3ab",
       "failed_sha": null,
       "started_at": "2026-11-04T07:12:52Z",
-      "completed_at": "2026-11-06T07:08:07Z",
-      "updated_at": "2026-11-06T07:08:07Z",
+      "completed_at": "2026-11-19T03:22:17Z",
+      "updated_at": "2026-11-19T03:22:17Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -49,7 +49,10 @@
         "last_session_at": null
       },
       "last_agent": "validator",
-      "state": "completed"
+      "state": "completed",
+      "validated_prior": [
+        "5a9b7cfec7038a101eebbe661de25999b31410c2"
+      ]
     },
     "linux-gfx942": {
       "blocked": false,
@@ -77,11 +80,11 @@
     "linux-gfx90a": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2",
+      "validated_sha": "a4f07f0bc98e09deaf487fb3598ecde35edcd3ab",
       "failed_sha": "689b8856ccd436ee36021dc416807a212e7955f8",
       "started_at": "2026-11-04T09:03:29Z",
-      "completed_at": "2026-11-06T04:37:16Z",
-      "updated_at": "2026-11-06T04:37:16Z",
+      "completed_at": "2026-11-19T02:30:17Z",
+      "updated_at": "2026-11-19T02:30:17Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -96,16 +99,19 @@
         "last_session_at": null
       },
       "state": "completed",
-      "last_agent": "validator"
+      "last_agent": "validator",
+      "validated_prior": [
+        "5a9b7cfec7038a101eebbe661de25999b31410c2"
+      ]
     },
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2",
+      "validated_sha": "a4f07f0bc98e09deaf487fb3598ecde35edcd3ab",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-11-06T04:31:05Z",
-      "updated_at": "2026-11-06T04:31:05Z",
+      "completed_at": "2026-11-19T02:47:19Z",
+      "updated_at": "2026-11-19T02:47:19Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -120,7 +126,10 @@
         "last_session_at": null
       },
       "state": "completed",
-      "last_agent": "validator"
+      "last_agent": "validator",
+      "validated_prior": [
+        "5a9b7cfec7038a101eebbe661de25999b31410c2"
+      ]
     },
     "linux-gfx950": {
       "blocked": false,
@@ -146,21 +155,32 @@
     }
   },
   "porting_released": {
-    "arch": "linux-gfx1201",
-    "since": "2026-11-05T08:19:36Z",
-    "at": "2026-11-05T08:35:01Z"
+    "arch": "linux-gfx90a",
+    "since": "2026-11-19T01:56:31Z",
+    "at": "2026-11-19T01:58:41Z"
   },
   "review_pr": "https://github.com/AMD-Ecosystem/cuda_voxelizer/pull/1",
   "pr_approval": {
     "approved_by": "jeffdaily",
-    "at": "2026-11-10T01:03:43Z",
-    "head_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2",
-    "content_sha256": "94fd072b48759d5e44fe679773d635aae3ea0c428b4dc02e3d0f2a99743d9d36",
-    "review_pr": "https://github.com/AMD-Ecosystem/cuda_voxelizer/pull/1"
+    "at": "2026-11-19T03:41:25Z",
+    "head_sha": "a4f07f0bc98e09deaf487fb3598ecde35edcd3ab",
+    "content_sha256": "4c513515a6e6742c18df6c7792ca950ffe79c38ed37e170e362b10d851ddff75",
+    "review_pr": "https://github.com/AMD-Ecosystem/cuda_voxelizer/pull/2"
   },
   "pr_url": "https://github.com/Forceflow/cuda_voxelizer/pull/84",
   "pr_number": 84,
   "pr_opened_at": "2026-11-10T05:10:39Z",
   "pr_state": "open",
-  "published_sha": "5a9b7cfec7038a101eebbe661de25999b31410c2"
+  "published_sha": "a4f07f0bc98e09deaf487fb3598ecde35edcd3ab",
+  "pr_head_accepted": {
+    "from": "5a9b7cfec7038a101eebbe661de25999b31410c2",
+    "to": "c8ff8cbf7b8fe8e701d7a796c654478d2e6647c0",
+    "by": "jeffdaily",
+    "at": "2026-11-19T01:49:30Z",
+    "note": "Maintainer merged main into the PR branch on 2026-11-13 to resolve a CMakeLists conflict (c8ff8cbf). Accepted 2026-11-18; the merge left an unconditional FIND_PACKAGE(CUDAToolkit REQUIRED) that a fix round removes."
+  },
+  "fix": null,
+  "porting": null,
+  "reviewed_sha": "a4f07f0bc98e09deaf487fb3598ecde35edcd3ab",
+  "fix_merged_at": "2026-11-19T03:43:15Z"
 }
