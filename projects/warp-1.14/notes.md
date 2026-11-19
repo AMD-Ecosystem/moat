@@ -6888,3 +6888,10 @@ If the in-launch failure is to be kept out of release runs before the runtime is
 - Jeff: the runtime bug report gains a second defect (the alloc-node window, deterministic in the standalone reproducer, `graph_alloc_first_launch 5 1 d2h`), either as a second report or a second section of the same one.
 - The in-launch variant stays open as a known intermittent Windows failure of one test (about 1 in 3 to 5 runs alone); decide skip versus ship-as-known.
 - Then continue session 13's Next step (review, then the Windows validation record) at the new head.
+
+## Rulings on the Windows graph-launch workaround (2026-11-19, Jeff Daily)
+
+- Keep the Windows-only workaround in `hip_compat.h` and report the runtime bug (ruled on `de4e07a3`, wait before launch). The relaunch race is filed as https://github.com/ROCm/rocm-systems/issues/16265.
+- After porting session 15 changed the form to launch-then-wait (`6b639456`, which also covers the first-launch allocation window): keep launch-then-wait. Accepted cost: on Windows HIP a graph launch blocks until the graph finishes; not measured. This goes in the release notes.
+- A Linux check on gfx950 (plan `hip-graph-autofree-relaunch-direct-dispatch-check-mi355.md`) showed the runtime forces direct dispatch on for Linux even with `AMD_DIRECT_DISPATCH=0`, and the relaunch reproducer passed 30 of 30 runs on ROCm 10.1 and 10.2, so the `_WIN32` guard is the right scope.
+- Still open for Jeff: the intermittent in-launch failure of `test_cuda_graph_alloc_transient_stream`, whether to report `hip-graph-alloc-node-va-unregistered-on-worker`, and the upstream `test_event_external` race.
