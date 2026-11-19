@@ -414,3 +414,29 @@ CUDA no-regression gate: skipped (follower platform).
 Fork tree clean: git status --porcelain shows only untracked build artifacts.
 
 windows-gfx1101 -> completed (validated_sha = e5a657a).
+
+
+## Licence scope answered by upstream (2026-08-26)
+
+Asked which files LICENSE_NVIDIA covers, the upstream author replied (private
+email to Jeff Daily, paraphrased): several files borrow original code lines
+from instant-ngp -- src/bvh.cu, include/gpu/triangle.cuh, and
+include/gpu/bounding_box.cuh -- and LICENSE_NVIDIA was included for exactly
+that reason; the author suggested it may be better to rewrite them. So the
+NVIDIA Source Code License (non-commercial) plausibly covers derived code in
+the project's core, even though no per-file notice marks it. Relevant exposure:
+src/bvh.cu is compiled into every build including AMD, bvh.cu includes the
+derived headers, our merged PR #33 modified src/bvh.cu, and CuMesh vendors all
+of it with its own PR open. The licensing review has these facts.
+
+## Provenance quantified (2026-08-26)
+
+A file-by-file comparison against instant-ngp (at cubvh's 2022 ancestor
+snapshot) and tiny-cuda-nn quantified the derivation the author described:
+roughly 1,200 raw lines across bvh.cu, bounding_box.cuh, triangle.cuh,
+bvh.cuh, and a block of common.h descend from instant-ngp; the marching-cubes
+files share only the canonical published lookup table; gpu_memory.h is
+tiny-cuda-nn BSD-3 and compliant as retained. All derived material implements
+published algorithms, so an independent reimplementation from the literature
+is feasible; the port's own edits intersect the derived regions in only two
+lines. The detailed report is with the licensing review.

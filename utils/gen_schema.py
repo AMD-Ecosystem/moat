@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Generate schema/status.schema.json from moatlib.
 
 Generated rather than hand-written so the schema and the code that enforces it
@@ -9,6 +11,7 @@ worse than none: it rejects data that is actually correct.
     python3 utils/gen_schema.py --check    # fail if it is out of date (CI)
 """
 
+import argparse
 import json
 import pathlib
 import sys
@@ -68,6 +71,8 @@ def build():
                 "properties": {
                     "arch": {"type": "string", "pattern": m.PLATFORM_RE.pattern},
                     "since": {"type": "string"},
+                    # Opaque id of the host and job that took it; see lock_holder.
+                    "holder": {"type": "string"},
                 },
             },
             # Explicit release marker naming the acquisition it ended (arch +
@@ -166,13 +171,85 @@ def build():
             "pr_merged_at": {"type": "string"},
             "pr_closed_at": {"type": "string"},
             "pr_closed_note": {"type": "string"},
+            # A person's ruling that pr_url closed unmerged because its work
+            # merged through another PR in the same repository (colmap #4635 via
+            # the maintainer's #4795). pr_state reads "merged" and pr_merged_at is
+            # that PR's merge time.
+            "landed_via": {
+                "type": ["object", "null"],
+                "required": ["url", "merged_at", "carried", "by", "at"],
+                "properties": {
+                    "url": {"type": "string", "minLength": 1},
+                    # One of the two: the PR it merged through, or (MMseqs2) the
+                    # commit that brought it in with no pull request.
+                    "number": {"type": "integer"},
+                    "commit": {"type": "string"},
+                    "merged_at": {"type": "string"},
+                    "merge_commit": {"type": "string"},
+                    "carried": {"enum": ["commits", "content-differs"]},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+            },
             # What the open upstream PR shows. While a fix round is staged,
             # head_sha runs ahead of this on the staging branch; only the trusted
-            # merge path (upstream.py --merge-fix) advances it.
+            # merge path (upstream.py --merge-fix) advances it. Once the PR
+            # finishes, it records what that PR shipped -- the baseline a
+            # follow-up round's delta is judged against.
             "published_sha": {"type": ["string", "null"]},
-            # A maintainer-requested fix round in flight: the staging branch cut
-            # from the published tip, and the fork review PR where a person
-            # approves the delta. Cleared when the round merges.
+            # A person's ruling that a push to the open PR's branch from outside
+            # the fix flow (a maintainer's merge) is accepted: published_sha moved
+            # from `from` to `to` (accept-pr-head).
+            "pr_head_accepted": {
+                "type": ["object", "null"],
+                "required": ["from", "to", "by", "at"],
+                "properties": {
+                    "from": {"type": "string"},
+                    "to": {"type": "string"},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+            },
+            # Which upstream-PR round the pr_* fields above describe; absent means
+            # the first. archive_pr moves a finished PR into pr_history and
+            # increments this, and the merge driver hands the whole PR block to
+            # the higher round -- the per-field rules would otherwise resurrect
+            # the finished round from a host still carrying it.
+            "pr_round": {"type": "integer", "minimum": 1},
+            # Finished upstream PRs, one entry per PR, appended when a follow-up
+            # round opens. Write-once: the merge driver unions entries by
+            # pr_number and never rewrites one.
+            "pr_history": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["pr_url", "pr_number", "pr_state",
+                                 "published_sha", "archived_at"],
+                    "properties": {
+                        "pr_url": {"type": "string"},
+                        "pr_number": {"type": "integer"},
+                        "pr_state": {"enum": ["merged", "closed"]},
+                        "pr_opened_at": {"type": "string"},
+                        "pr_merged_at": {"type": "string"},
+                        "pr_closed_at": {"type": "string"},
+                        "pr_closed_note": {"type": "string"},
+                        # The tip this PR shipped: the base a follow-up's delta
+                        # starts from.
+                        "published_sha": {"type": "string"},
+                        "review_pr": {"type": "string"},
+                        "fix_abandoned": {"$ref": "#/$defs/fix_abandoned"},
+                        "archived_at": {"type": "string"},
+                    },
+                },
+            },
+            # A staged round in flight: the staging branch cut from the published
+            # tip, and the fork review PR where a person approves the delta.
+            # Cleared when the round merges. kind "sync" marks a maintained-fork
+            # round absorbing upstream's advance (moatlib.sync_branch), with the
+            # upstream tip it absorbs pinned; absent kind means a
+            # maintainer-requested fix round on an open PR.
             "fix": {
                 "type": ["object", "null"],
                 "required": ["branch", "base_sha"],
@@ -181,9 +258,156 @@ def build():
                     "base_sha": {"type": "string", "minLength": 1},
                     "review_pr": {"type": ["string", "null"]},
                     "opened_at": {"type": "string"},
+                    "kind": {"enum": ["sync"]},
+                    "upstream_sha": {"type": "string", "minLength": 1},
                 },
             },
             "fix_merged_at": {"type": "string"},
+            # Rounds a person ruled will never merge (moatlib.abandon_fix), with
+            # the staging tip that was dropped and why. Append-only.
+            "fix_abandoned": {"$ref": "#/$defs/fix_abandoned"},
+            # A person's ruling that upstream adopted the fork BY REFERENCE: the
+            # PR closed unmerged and upstream points its users at the port
+            # branch, which is now a long-lived public deliverable. pr_ready
+            # refuses while this stands, the fork pre-push hook keeps the branch
+            # frozen, later work lands through sync rounds, and `upstream.py
+            # --drift` watches upstream for conflicts. Like a waiver: a record
+            # without `by` grants nothing.
+            "maintained": {
+                "type": ["object", "null"],
+                "required": ["evidence", "by", "at"],
+                "properties": {
+                    "evidence": {"type": "string", "minLength": 1},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+            },
+            # A person's ruling that the port has no upstream destination: the
+            # upstream repository is archived or otherwise cannot take a pull
+            # request, so pr_ready refuses and the fork's port branch is the
+            # deliverable. Unlike `maintained`, nothing freezes the branch and
+            # nothing watches upstream. A record without `by` grants nothing.
+            "no_upstream": {
+                "type": ["object", "null"],
+                "required": ["evidence", "by", "at"],
+                "properties": {
+                    "evidence": {"type": "string", "minLength": 1},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+            },
+            # Corrections to license_spdx after intake: what it was, what it became,
+            # and the licence file that shows it.
+            "license_spdx_history": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["to", "evidence", "at"],
+                    "properties": {
+                        "from": {"type": ["string", "null"]},
+                        "to": {"type": "string", "minLength": 1},
+                        "evidence": {"type": "string", "minLength": 1},
+                        "at": {"type": "string"},
+                    },
+                },
+            },
+            # A person's ruling that the upstream repository was renamed or
+            # transferred (HEonGPU moved to an organization mid-review).
+            # upstream_url carries the value; upstream_repo_id proved it is the
+            # same repository.
+            "upstream_url_ruling": {
+                "type": ["object", "null"],
+                "required": ["url", "by", "at"],
+                "properties": {
+                    "url": {"type": "string", "minLength": 1},
+                    "previous": {"type": ["string", "null"]},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
+            # A person's ruling that the port lives in an existing repository
+            # instead of the organization fork intake assumes (ROCm/cupy is AMD's
+            # staging fork for upstream CuPy). fork_url carries the value.
+            "fork_url_ruling": {
+                "type": ["object", "null"],
+                "required": ["url", "by", "at"],
+                "properties": {
+                    "url": {"type": "string", "minLength": 1},
+                    "previous": {"type": ["string", "null"]},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
+            # A person's ruling that the upstream PR targets a branch other than
+            # the default recorded at scaffold (upstream asks for PRs against
+            # `development`, say). fork_default_branch carries the value; this
+            # records who changed it, from what, and why.
+            "base_branch_ruling": {
+                "type": ["object", "null"],
+                "required": ["branch", "by", "at"],
+                "properties": {
+                    "branch": {"type": "string", "minLength": 1},
+                    "previous": {"type": ["string", "null"]},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
+            # A person's ruling that the port lives on a fork branch other than
+            # moat-port (a release line's release/<version>.amd<rev>). fork_branch
+            # carries the value; this records who changed it, from what, and why.
+            "fork_branch_ruling": {
+                "type": ["object", "null"],
+                "required": ["branch", "by", "at"],
+                "properties": {
+                    "branch": {"type": "string", "minLength": 1},
+                    "previous": {"type": ["string", "null"]},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
+            # A person's ruling on how the port is delivered when it is not an
+            # upstream PR. fork-release makes the project a release line: the
+            # review PR runs from fork_branch into the pristine mirror
+            # fork_default_branch, and approval tags and freezes the branch
+            # (`upstream.py --finish-release`) instead of publishing.
+            "delivery": {
+                "type": ["object", "null"],
+                "required": ["mode", "by", "at"],
+                "properties": {
+                    "mode": {"enum": list(m.DELIVERY_MODES)},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "tag_format": {"type": "string", "minLength": 1},
+                    "reason": {"type": "string"},
+                },
+            },
+            # A delivered release line: the tag pushed at the approved commit, and
+            # the sign-off it rests on. From here the port branch is frozen and
+            # later upstream patch releases arrive as sync rounds.
+            "release": {
+                "type": ["object", "null"],
+                "required": ["tag", "sha", "at"],
+                "properties": {
+                    "tag": {"type": "string", "minLength": 1},
+                    "sha": {"type": "string", "minLength": 1},
+                    "review_pr": {"type": ["string", "null"]},
+                    "approved_by": {"type": "string"},
+                    "at": {"type": "string"},
+                    # The upstream version and revision the tag names, so the
+                    # next patch sync is numbered from them.
+                    "version": {"type": "string"},
+                    "rev": {"type": "integer"},
+                    "review_closed_at": {"type": "string"},
+                    # Earlier releases of this line, oldest first.
+                    "history": {"type": "array", "items": {"type": "object"}},
+                },
+            },
             # The review PR on our own fork: where a maintainer sees the code, title
             # and body together, and approves once.
             "review_pr": {"type": "string"},
@@ -207,6 +431,11 @@ def build():
             # written before this field existed are still readable while they are
             # migrated (see READABLE_SCHEMA_VERSIONS).
             "stage": {"enum": sorted(m.STAGE_STATES)},
+            # The commit the review passed, stamped on reviewing -> review-passed
+            # and carried across inert deltas like a validated_sha. Absent on a
+            # record reviewed before the field existed, which is not judged stale.
+            "reviewed_sha": {"type": ["string", "null"],
+                             "description": "head the review last passed"},
             # A person's verdict that the codebase cannot be ported at all, which is
             # what `stage: not-portable` stands on. Like a gate waiver and a licence
             # clearance, a record without `by` satisfies nothing -- an agent may build
@@ -234,6 +463,23 @@ def build():
             # Only what an ARCHITECTURE can record. port-ready and revalidate are
             # derived from (stage, validated_sha, head_sha) and never stored.
             "archstate": {"enum": sorted(m.ARCH_STATES)},
+            "fix_abandoned": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["branch", "base_sha", "by", "reason", "at"],
+                    "properties": {
+                        "branch": {"type": "string", "minLength": 1},
+                        "base_sha": {"type": "string", "minLength": 1},
+                        "tip_sha": {"type": ["string", "null"]},
+                        "review_pr": {"type": "string"},
+                        "kind": {"enum": ["sync"]},
+                        "by": {"type": "string", "minLength": 1},
+                        "reason": {"type": "string", "minLength": 1},
+                        "at": {"type": "string"},
+                    },
+                },
+            },
             "arch": {
                 "type": "object",
                 # `state` is not required: a migrated block holds only what this arch
@@ -252,8 +498,20 @@ def build():
                     # from these two shas and never stored (see failure_stands).
                     "failed_sha": {"type": ["string", "null"],
                                    "description": "head this arch last failed to validate"},
-                    "pr_url": {"type": ["string", "null"]},
-                    "pr_number": {"type": ["number", "null"]},
+                    # Set when the failure is about content the build does not
+                    # compile (set-state ... validation-failed --gate): such a
+                    # failure is retired by a documentation-only fix instead of
+                    # being carried across it. Absent on an ordinary failure.
+                    "failed_gate": {"enum": list(m.CONTENT_GATES) + [None]},
+                    # With failed_gate: the commit whose build and GPU run passed
+                    # when the content check failed, so carry-forward can complete
+                    # the platform after an inert fix without a second GPU run.
+                    "gpu_passed_sha": {"type": ["string", "null"]},
+                    # Commits this arch validated before validated_sha, newest
+                    # last, so evidence is not lost when the head returns to one
+                    # (an abandoned fix round).
+                    "validated_prior": {"type": "array", "items": {"type": "string"},
+                                        "maxItems": m.VALIDATED_PRIOR_KEPT},
                     "started_at": {"type": ["string", "null"]},
                     "completed_at": {"type": ["string", "null"]},
                     "updated_at": {"type": ["string", "null"]},
@@ -266,20 +524,30 @@ def build():
     }
 
 
-def main():
+def main(argv=None):
+    # argparse, so that only the bare command writes: `--help` and a mistyped flag
+    # used to fall through to the write, and asking what the tool does rewrote the
+    # schema.
+    ap = argparse.ArgumentParser(
+        description="Generate schema/status.schema.json from moatlib.")
+    ap.add_argument("--check", action="store_true",
+                    help="write nothing; exit 1 if the checked-in schema is out of date")
+    args = ap.parse_args(argv)
     text = json.dumps(build(), indent=2) + "\n"
-    if "--check" in sys.argv:
-        if not OUT.exists() or OUT.read_text() != text:
+    if args.check:
+        if not OUT.exists() or OUT.read_text(encoding="utf-8") != text:
             print("gen_schema: schema/status.schema.json is out of date "
                   "(run utils/gen_schema.py)", file=sys.stderr)
             return 1
         print("gen_schema: schema is up to date")
         return 0
     OUT.parent.mkdir(exist_ok=True)
-    OUT.write_text(text)
+    OUT.write_text(text, encoding="utf-8", newline="\n")
     print(f"wrote {OUT.relative_to(m.REPO_ROOT)}")
     return 0
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())

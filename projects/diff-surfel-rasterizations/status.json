@@ -1,0 +1,104 @@
+{
+  "schema_version": 3,
+  "name": "diff-surfel-rasterizations",
+  "upstream_url": "https://github.com/xbillowy/diff-surfel-rasterizations",
+  "fork_url": "https://github.com/AMD-Ecosystem/diff-surfel-rasterizations",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-08-06T06:58:03Z",
+  "updated_at": "2026-08-13T20:59:05Z",
+  "head_sha": "f08867994378172a519cf065290963cd908ac88b",
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T16:10:16Z",
+    "tier": 4,
+    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
+  },
+  "license_spdx": "non-commercial (Inria Gaussian-Splatting License)",
+  "upstream_repo_id": 826182513,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-13T03:17:45Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f08867994378172a519cf065290963cd908ac88b",
+      "failed_sha": null,
+      "started_at": "2026-08-13T06:44:08Z",
+      "completed_at": "2026-08-13T08:30:24Z",
+      "updated_at": "2026-08-13T08:30:24Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "state": "completed"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f08867994378172a519cf065290963cd908ac88b",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-08-13T20:59:04Z",
+      "updated_at": "2026-08-13T20:59:04Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed"
+    }
+  },
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "ours: AMD-Ecosystem/diff-surfel-rasterizations @ moat-port (3 commits, from the EnvGS stage-1 port); no third-party AMD/ROCm effort found",
+    "viable": true,
+    "summary": "2DGS surfel rasterizer EnvGS renders through; AMD-Ecosystem fork already carries a HIP port of 3 of 14 variants, GPU-exercised via EnvGS on 4 platforms but with no record of its own -- what decides it is that tier-4 Inria non-commercial licensing plus a 2-star upstream with zero PRs means there is no upstream PR destination, so the fork itself is the deliverable and the only new work is the 11 unported variants.",
+    "at": "2026-08-13T03:17:41Z"
+  }
+}
