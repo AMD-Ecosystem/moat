@@ -632,3 +632,54 @@ ctest --test-dir agent_space/icicle_rework_build/tests -R PqcTest -V --output-on
 ### Verdict
 
 PASS. 58/58 backend KAT gtests + 6/6 frontend dispatch tests on gfx1100 (AMD Radeon Pro W7800, wave32) at 98d8bca. Repointed test_data (cuda_pqc shared source) correctly provides all 9 KAT data files to the hip_pqc tests. The previously-fixed wave32 LDS race (d8e04fd __syncwarp in generate_error_vector) remains intact; all k=768/1024 tests pass deterministically. No non-GPU regressions. Fork clean.
+
+## CUDA-path compile check 2026-11-19 (linux-gfx950 host, real nvcc, no NVIDIA GPU) -- PASS, no port regression
+
+Evidence only: no stage or platform record changed, nothing pushed to the fork. Purpose: the port touches three shared files (`icicle/CMakeLists.txt` PQC default, `icicle/cmake/backend_include.cmake`, `icicle/tests/test_pqc_api.cpp` "CUDA-PQC" -> `main_device()`), and no nvcc build of the CUDA path had been recorded at any head. Compile and link only; nothing was run (no NVIDIA GPU on this host).
+
+Trees: fork `moat-port` at 2609ca44361c7ebc6c3b8ca5af7985a256b5b79f ("port") and the port's base 625532a624e5aaa6e9d31a1c92587f1fcc30dc76 ("base"), both cloned from AMD-Ecosystem/icicle into the job directory (`$W` below).
+
+Toolchain: CUDA 12.8 (`nvcc` release 12.8, V12.8.93), host GCC 13.3.0, CMake 3.31.6. HIP side (combined configure only): pip ROCm SDK 10.1.0, clang 24.0.0.
+
+Flags: upstream's own CI PQC job (`.github/workflows/ci.yml`, job `test-pqc-ml-kem`: `-DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DDISABLE_ALL_FEATURES=ON -DCUDA_PQC_BACKEND=ON`) plus `-DCUDA_ARCH="80;86;89"` from upstream's `scripts/release/build_release_and_tar.sh`. `CUDA_ARCH` is needed on a GPU-less host: `backend/cuda_pqc/cmake/Common.cmake` otherwise sets `CMAKE_CUDA_ARCHITECTURES native`, which needs a visible GPU. (The CMake cache still shows `CMAKE_CUDA_ARCHITECTURES=52`; the effective value is the parent-scope override, confirmed in `flags.make` as `--generate-code` for compute_80/86/89 and by `cuobjdump --list-elf` showing sm_80/86/89 cubins in `libicicle_backend_cuda_pqc.so`.)
+
+```
+# same for T=base and T=port
+cmake --fresh -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DDISABLE_ALL_FEATURES=ON \
+  -DCUDA_PQC_BACKEND=ON -DCUDA_ARCH="80;86;89" \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
+  -S $W/$T/icicle -B $W/$T/icicle/build
+cmake --build $W/$T/icicle/build -j 64
+```
+
+| tree | configure | build | first error |
+|---|---|---|---|
+| base 625532a | OK (7.6 s) | exit 0; 35/35 compile+link steps, 17/17 targets, `[100%] Built target test_ml_kem` (34 s) | none |
+| port 2609ca44 | OK (7.6 s) | exit 0; 35/35 compile+link steps, 17/17 targets, `[100%] Built target test_ml_kem` (34 s) | none |
+
+Targets built in both: icicle_device, icicle_pqc, icicle_backend_cuda_pqc, copy_pqc_libs, copy_test_data, gtest, gtest_main, test_device_api, test_pqc_api, test_kyber, test_ml_kem, test_kyber_hashes, test_ml_kem_keygen, test_ml_kem_encaps, test_ml_kem_decaps, test_pke_encrypt, test_pke_decrypt. Configure logs are identical apart from paths ("Building CUDA-PQC backend" in both; the port's `PQC` default resolves ON from `CUDA_PQC_BACKEND` exactly as upstream's `option(PQC ... ${CUDA_PQC_BACKEND})` did). Build logs, sorted and with paths and percentages stripped, are identical, including the same 53 warning lines (all pre-existing upstream). `test_pqc_api` compiles with `IcicleTestBase::main_device()` (PqcTest derives from IcicleTestBase, whose SetUpTestSuite picks the first non-CPU registered device, which is CUDA-PQC in this build); whether it selects CUDA-PQC at runtime was not observed (no NVIDIA GPU).
+
+Verdict: no CUDA-path compile or link regression from the port.
+
+### Combined `-DCUDA_PQC_BACKEND=ON -DHIP_PQC_BACKEND=ON` configure (first attempt ever) -- FAILS
+
+```
+R=<pip ROCm SDK root>   # rocm-sdk path --root
+cmake --fresh -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DDISABLE_ALL_FEATURES=ON \
+  -DCUDA_PQC_BACKEND=ON -DHIP_PQC_BACKEND=ON -DCUDA_ARCH="80;86;89" \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
+  -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++ -DCMAKE_HIP_ARCHITECTURES=gfx950 -DCMAKE_PREFIX_PATH=$R \
+  -S $W/port/icicle -B $W/port/icicle/build-combo
+# -- Configuring incomplete, errors occurred!   (exit 1)
+```
+
+Both backends are entered ("Building CUDA-PQC backend", then "Building HIP-PQC backend (ROCm)", HIP compiler detected), then 9 CMake errors (CMP0002, duplicate target names), all from `backend/hip_pqc/tests/CMakeLists.txt` colliding with `backend/cuda_pqc/tests/CMakeLists.txt`. First error:
+
+```
+CMake Error at backend/hip_pqc/tests/CMakeLists.txt:45 (add_custom_target):
+  add_custom_target cannot create target "copy_test_data" because another
+  target with the same name already exists.  The existing target is a custom
+  target created in source directory ".../icicle/backend/cuda_pqc/tests".
+```
+
+The other 8 are `add_executable` at hip_pqc/tests/CMakeLists.txt:53 (macro `add_hip_test`, lines 78-85) for test_kyber, test_ml_kem, test_kyber_hashes, test_ml_kem_keygen, test_ml_kem_encaps, test_ml_kem_decaps, test_pke_encrypt, test_pke_decrypt. All errors are in the backend test directories, which only exist under `BUILD_TESTS=ON`; a combined configure with tests off was not tried (one configure, as asked). Separately, the review of d66e92a already noted that `backend_include.cmake` sets `BACKEND_BUILD_DIR` last-wins, so in a combined build the HIP value would win for the frontend tests. Not fixed here: the combination is outside the port's validated configurations, and whether to support it is a decision for whoever owns the port.
