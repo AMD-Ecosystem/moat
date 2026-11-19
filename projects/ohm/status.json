@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-11-19T20:39:04Z",
+  "updated_at": "2026-11-19T20:39:44Z",
   "head_sha": "e9149bbedcf8c8e1f6763884c0fcaeb3d70c31ee",
   "depends_on": [],
   "waivers": {},
@@ -209,5 +209,10 @@
     "head_sha": "e9149bbedcf8c8e1f6763884c0fcaeb3d70c31ee",
     "content_sha256": "22f8c99d5f5f2ea2543f3fc792390310065b2cb5d41b43bd2ae00ac49b9298fc",
     "review_pr": "https://github.com/AMD-Ecosystem/ohm/pull/2"
-  }
+  },
+  "pr_url": "https://github.com/csiro-robotics/ohm/pull/10",
+  "pr_number": 10,
+  "pr_opened_at": "2026-11-19T20:39:44Z",
+  "pr_state": "open",
+  "published_sha": "e9149bbedcf8c8e1f6763884c0fcaeb3d70c31ee"
 }
