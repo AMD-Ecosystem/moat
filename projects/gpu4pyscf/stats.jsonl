@@ -230,3 +230,4 @@
 {"kind":"phase","ts":"2026-11-04T07:36:29Z","phase":"test","seconds":450.251,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261103-232146-gpu4pyscf-gfx942/moat/agent_space/targets.sh"}
 {"kind":"phase","ts":"2026-11-04T08:47:14Z","phase":"test","seconds":4227.114,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300-20261103-232146-gpu4pyscf-gfx942/moat/agent_space/runtree.sh"}
 {"kind":"session","ts":"2026-11-04T08:48:00Z","epoch":1793782080.880570909,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-19T07:04:49Z","phase":"test","seconds":4921.316,"exit":1,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261118-213225-gpu4pyscf-upstream-eval-prompt/ue/scripts/runtree.sh"}
