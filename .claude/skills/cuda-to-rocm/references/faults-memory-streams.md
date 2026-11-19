@@ -170,26 +170,82 @@ SIGSEGV/SIGABRT still gives the stack. (plvs)
 
 ## Copies and stream ordering
 
-**`cudaMemcpy*Async` from a soon-freed pageable host buffer.** CUDA stages pageable async
-copies synchronously, so a test that copies from a local `std::vector` and lets it go out of
-scope still works. ROCm's is genuinely asynchronous, so the freed and reused buffer is read
-after the copy is enqueued. The corruption appears only in bytes the kernel does not
-overwrite, and the failing set varies run to run. This is a use-after-free that is latent UB
-on CUDA, not an allocator defect -- confirm by keeping the source alive and watching the
-failures vanish, or without touching the source at all by re-running under
-`AMD_SERIALIZE_COPY=3`, which makes a copy-lifetime bug pass and leaves a genuine numeric
-residual untouched. That one switch is also the cheapest way to tell the two apart when a
-suite mixes them: run it per failure cluster before admitting anything into a documented
-residual family. Expect more than one instance per project: the idiom appears wherever a
-test builds a staging buffer per loop iteration, and the giveaway is that only the side fed
-from the short-lived buffer is wrong, often carrying values the computation could not produce
-at all. (CV-CUDA: InterpolationVarShapeWrap, and independently TestOpColorTwist's planar
-upload, whose per-iteration deinterleave result feeds one async copy per channel.)
+**`cudaMemcpy*Async` lifetime and ordering: a pageable 1D source is safe, a pageable 2D or
+3D source is not on HIP.** CUDA code that copies from a local `std::vector` with
+`cudaMemcpy2DAsync` and lets it go out of scope works on CUDA in practice and copies garbage
+on ROCm, where the freed and reused buffer is read after the call has returned. The
+corruption appears only in bytes the kernel does not overwrite, and the failing set varies
+run to run. This is a use-after-free in the application, not an allocator defect: CUDA does
+not document that a pageable H2D async copy reads its source before the call returns; HIP's
+header claims it for 1D and 2D, and the measurements below show the claim holds only for 1D.
+NVIDIA's "API synchronization behavior" page
+(https://docs.nvidia.com/cuda/cuda-runtime-api/api-sync-behavior.html, Memcpy, Asynchronous)
+says only that a transfer with pageable host memory "might be synchronous with respect to
+host" and that the driver "may" synchronize with the stream and stage the copy into pinned
+memory; the "returns once the pageable buffer has been copied to the staging memory"
+guarantee is in the Synchronous section, for `cudaMemcpy`. That CUDA stages pageable H2D
+copies, 2D included, before return is observed (CV-CUDA, below), not documented, and has
+not been probed here. HIP's `hip_runtime_api.h` says "If host or dst are not pinned, the
+memory copy will be performed synchronously" for `hipMemcpyAsync` and `hipMemcpy2DAsync`;
+a 1D copy of at most 64 KiB is staged rather than synchronous, a larger 1D copy blocks in
+the call, and a 2D copy is neither; for 1D the source can be reused or freed right after the
+call, and for 2D it cannot. Measured with a pageable `std::vector` source overwritten (and
+freed) right after the call, with and without a 0.5 s `wall_clock64()` spin kernel ahead of
+the copy on the stream, at 234 B, 64 KiB and 512 KiB, tight and padded device pitch (HIP
+7.16.26385, gfx942 and gfx1100):
 
-**The same staging difference hides a cross-stream race with no free involved.** An upload
+- 1D `hipMemcpyAsync` H2D of at most 64 KiB is staged at call time and returns while the
+  stream is still busy; a larger one blocks until the stream drains. The device always sees
+  the original bytes, so a 1D source may be freed or reused at once.
+- `hipMemcpy2DAsync` and `hipMemcpy3DAsync` H2D (both arches) return in under 0.1 ms at
+  every size, even on an idle stream, and read the source later: the device sees the
+  overwrite, or freed-heap bytes when the buffer was deleted.
+
+So a pageable 2D or 3D source must stay alive and unchanged until the stream (or an event
+recorded after the copy) is synchronized. On HIP that is measured; on CUDA reading the
+source before return is not guaranteed either, so do not rely on it there unless NVIDIA
+documents it. CV-CUDA is this case: `TestInterpolationVarShapeWrap.cpp` frees a
+per-iteration pageable `dstVec` after `cudaMemcpy2DAsync`, and on ROCm 7.2.1 garbage
+appeared in the row padding the kernel never writes; keeping `dstVec` alive until the stream
+sync fixed it with no sync change. Confirm a suspected instance the same way, by keeping the
+source alive and watching the failures vanish, or without touching the source at all by
+re-running under `AMD_SERIALIZE_COPY=3`, which makes a copy-lifetime bug pass and leaves a
+genuine numeric residual untouched. That one switch is also the cheapest way to tell the two
+apart when a suite mixes them: run it per failure cluster before admitting anything into a
+documented residual family. Expect more than one instance per project: the idiom appears
+wherever a test builds a staging buffer per loop iteration, and the giveaway is that only
+the side fed from the short-lived buffer is wrong, often carrying values the computation
+could not produce at all. Other copy variants (D2H, `hipMemcpyToSymbolAsync`, arrays) are
+unmeasured; probe before relying on them.
+
+The other hazards, on both platforms: (1) a PINNED or registered source (`hipHostMalloc`,
+`hipHostRegister`, a pinned-vector class) freed or overwritten before the stream reaches the
+copy, because that copy really is asynchronous; and (2) cross-stream ordering, where a
+kernel on another stream (or the legacy null stream against a non-blocking stream, below)
+reads the destination before the copy lands. Fix those with a stream or event sync before
+the buffer is reused, or an event wait on the consuming stream. To probe a runtime, queue a
+long spin kernel on the stream that waits on `wall_clock64()` (constant rate; `clock64()`
+wraps at 20 bits on gfx11, see platform-limits.md, and a 2e8-tick `clock64()` spin hung for
+over 4.5 minutes on gfx1100), issue the copy (for 2D or 3D, `hipMemcpy2DAsync` or
+`hipMemcpy3DAsync` the same way), overwrite the source at once, then sync and compare; time
+the call to see whether it staged, blocked or deferred. (GPUMD: `main_replica` Ewald
+`find_k_and_G`, and the probe above; CV-CUDA: InterpolationVarShapeWrap, and independently
+TestOpColorTwist's planar upload, whose per-iteration deinterleave result feeds one async
+copy per channel.)
+
+**Do not add a sync after a 1D pageable upload "for HIP".** It is a cost with no benefit,
+because the source of a pageable 1D `hipMemcpyAsync` has been read by the time the call
+returns (previous entry; HIP 7.16.26385). In GPUMD's `gpumd_replica`, where one thread
+interleaves the streams of all replicas on a GPU, a per-call sync after the 1D Ewald
+k-vector uploads made an 8-replica run about 21% slower on gfx1100 (four runs each) and
+2.5x slower on gfx942 (one run each), and was removed. A sync that orders the upload
+against a consumer on another stream (next entry) is a different thing and stays. (GPUMD)
+
+**A pageable async upload also hides a cross-stream race with no free involved.** An upload
 by `cudaMemcpy*Async` from pageable memory on one stream, then a consumer kernel on ANOTHER
 stream with no event or stream sync between them. On CUDA the copy has effectively landed
-before the launch; on ROCm the first kernel batch can read a partly written array.
+before the launch (observed, not documented); on ROCm the first kernel batch can read a
+partly written array, whether or not the source bytes were staged at call time.
 Fingerprint: an intermittent wrong result confined to the first launch's outputs, while a
 sibling code path that ends its setup with a device sync stays bitwise stable. Detect it by
 running the same call 20 times and comparing bitwise with the first; one

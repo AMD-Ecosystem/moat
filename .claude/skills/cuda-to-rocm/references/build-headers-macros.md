@@ -216,6 +216,18 @@ HIP sources, so plain C++ TUs keep the host branch. Do not define `__CUDACC__` g
 instead: rocThrust takes its CUDA-system path under it. Re-grep after every upstream sync,
 since new splits arrive with new code. (LichtFeld-Studio)
 
+**Upstream CCCL 3.0 compat shims are CUDA-only by construction: keep them out of the HIP
+path.** CCCL 3.0 (CUDA 13) removed the CUB fancy iterators (`cub::TransformInputIterator`,
+`cub::CountingInputIterator`), so upstreams are adding alias shims keyed to
+`CUB_VERSION >= 300000` right after `#include <cub/cub.cuh>` -- which is exactly where a HIP
+guard around the CUB include ends, so a later merge of upstream conflicts there and git can
+even match the shim's closing `#endif` with the guard's. Resolve by placing the shim inside
+the CUDA branch of the guard: only CUDA's CUB defines `CUB_VERSION`, and hipCUB (through
+ROCm 7.14 at least) still ships `hipcub/iterator/transform_input_iterator.hpp` and
+`counting_input_iterator.hpp`, so call sites reaching iterators through a
+namespace-qualifier macro need no HIP-side counterpart. Expect this shim to appear in any
+CUB-using upstream as it adopts CUDA 13. (aihwkit)
+
 ## Syntax and spellings clang rejects
 
 **nvcc accepts a split launch chevron, `kernel << <grid, block >> >(args)`; clang does not.**
