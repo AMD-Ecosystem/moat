@@ -2037,3 +2037,166 @@ done
 2. A new head means the wave64 set runs again on gfx950 (this section's item 5 is the reference). If B needs a fix, the gfx950 re-run follows that fix.
 3. Decisions for Jeff that change code or tests before the line can close (none blocks starting Phase 6, but each may move the head): the 64 KiB tile sizing (`59d873af` + `2f5b9d65`) vs capability skips; C4 (`test_stream_priority_timings`, now seen on gfx942 and gfx950); device textures on gfx942/gfx950 (refuse, as now, or GPU software sampling); `__frsqrt_rn`/`OCML_BASIC_ROUNDED_OPERATIONS` and the lane-mask documentation; defer/now on the six undecided `rocm-bug-report` entries (`python3 utils/deferred.py pending`: `hip-graph-memcpy-host-graph-alloc-device-mismatch`, `hip-mempool-set-access-cannot-revoke`, `hip-graph-multi-device-kernel-nodes`, `amdgpu-earlycse-sqrt-keeps-fpmath`, `hip-memcpy3d-async-pageable-host-read-after-return`, `hip-drv-memcpy3d-async-not-captured`); the Q3 matrix-core ruling (numbers for gfx950, gfx942 and gfx1100 are in these notes).
 4. Phase 6 itself (not started, as instructed): the plan's Phase 6 section (clang-cl/ROCm clang branch of `build_dll.py`, DLL loading by path, the Phase 1-5 set within the APU's limits) on windows-gfx1151, after item 1.
+
+## Measurement for Jeff (2026-11-19, linux-gfx950 MI355X, evidence only): CPU texture sampling plus copies vs texel loads on the GPU
+
+Asked by Jeff Daily for the gfx942/gfx950 texture decision (refuse, or a GPU software sampler). No fork commit, no state change; the existing build at fork head `2f5b9d65` (HIP, `--hip-arch gfx950`), `HIP_VISIBLE_DEVICES=0`.
+
+**(a) approximates the proposed GPU software sampler; it is not that sampler.** It is a hand-written kernel that does the same trilinear filter as Warp's CPU texture sampler (normalized coordinates to texel space `c * n - 0.5`, clamp addressing, floor, neighbour indices clamped, 8 loads, the same nested lerps in the same order) from a `wp.array3d(dtype=float)` in device memory, with the coordinates and results on the GPU. A real sampler would also dereference the texture handle and switch on dtype, address mode and channel count per sample, so it would be somewhat slower than (a); hardware texture units cannot be compared on this GPU (none exist).
+
+Setup: float32 1-channel volumes of 64^3 and 256^3 (random values), 1e6 and 1.6e7 random sample points in [0, 1)^3, normalized coordinates, linear filter, clamp addressing. Each figure is the median of 5 timed runs after one warm-up, with `wp.synchronize()` before and after every timed region (wall clock, `time.perf_counter`). (b) is what a user would have to do today: coordinates already in a GPU `wp.array(dtype=wp.vec3)`, `wp.copy` into a preallocated CPU array (pageable, Warp's default CPU allocation), launch `wp.texture_sample` on a CPU `wp.Texture3D` built from the same volume, `wp.copy` the results into a preallocated GPU array; the three steps are timed separately and then together. (c) is the same CPU kernel with coordinates and results already on the CPU.
+
+CPU: AMD EPYC 9575F 64-Core Processor, 2 sockets x 64 cores x 2 threads (256 logical CPUs, all in the job's affinity mask). Warp's CPU device ran each kernel on **one** of them: the generated CPU entry point is a serial `for (size_t task_index = 0; task_index < dim->size; ++task_index)` loop (checked in the module's generated `.cpp`), and Warp has no CPU thread pool.
+
+| volume | samples | (a) GPU manual ms | (b) D2H ms | (b) CPU kernel ms | (b) H2D ms | (b) total ms | (c) CPU kernel ms | (b) total / (a) | (a) vs (c) max abs | max ulp | values differing |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 64^3 | 1.0e6 | 0.039 | 0.23 | 20.5 | 0.08 | 20.8 | 20.5 | 534x | 0 | 0 | 0 of 1000000 |
+| 64^3 | 1.6e7 | 0.299 | 3.42 | 331.8 | 1.14 | 335.1 | 329.3 | 1121x | 0 | 0 | 0 of 16000000 |
+| 256^3 | 1.0e6 | 0.089 | 0.22 | 134.1 | 0.08 | 135.5 | 137.2 | 1519x | 0 | 0 | 0 of 1000000 |
+| 256^3 | 1.6e7 | 1.160 | 3.42 | 2141.7 | 1.14 | 2128.6 | 2108.0 | 1834x | 0 | 0 | 0 of 16000000 |
+
+Numerics: (a) and (c) are bit-identical on every sample at all four sizes (max abs 0, max 0 ulp, 0 values differing), so the GPU arithmetic matches Warp's CPU sampler exactly.
+
+Reading of the numbers, for Jeff's decision (no decision taken here):
+- Doing the texel loads on the GPU is three orders of magnitude faster than the CPU route: 534x to 1834x end to end, growing with volume size (the 256^3 volume, 64 MiB, no longer fits the CPU's cache, while the GPU's bandwidth hides it: 1.6e7 samples in 1.16 ms).
+- The CPU route is dominated by the single-threaded CPU kernel (98-99% of (b)); the two copies together cost 0.3 ms per 1e6 samples (D2H 12 bytes and H2D 4 bytes per sample, pageable). (b)'s CPU kernel time matches (c) within noise, so the copies do not slow the CPU kernel.
+- Even a CPU sampler spread perfectly over all 128 cores (Warp has none today) would be at best about 9x (64^3) to 14x (256^3) slower than (a) at 1.6e7 samples, before the copies; that bound is arithmetic from the table, not a measurement.
+
+Script (`agent_space/p7/tex_cpu_vs_gpu.py`, run with `utils/timeit.sh warp-1.14 bench`, 51 s wall including the module builds):
+```python
+# Trilinear float32 3D texture sampling: (a) a hand-written trilinear kernel on the GPU reading a
+# wp.array3d in device memory (approximates a GPU software sampler, it is not that sampler);
+# (b) coordinates on the GPU -> copy to CPU -> wp.Texture3D sampled on the CPU device -> results
+# copied back to the GPU; (c) the CPU texture kernel alone, everything already on the CPU.
+# Median of 5 timed runs after one warm-up, wp.synchronize() around every timed region.
+import statistics
+import sys
+import time
+
+import numpy as np
+
+import warp as wp
+
+wp.init()
+gpu = wp.get_device("cuda:0")
+cpu = wp.get_device("cpu")
+RUNS = 5
+
+
+@wp.func
+def clampi(i: int, n: int):
+    return wp.min(wp.max(i, 0), n - 1)
+
+
+@wp.func
+def texel(c: float, n: int):
+    # same as the CPU sampler: normalized -> texel space, clamp addressing
+    t = c * float(n) - 0.5
+    return wp.min(wp.max(t, 0.0), float(n) - 1.0)
+
+
+@wp.kernel
+def sample_manual(vol: wp.array3d(dtype=float), pts: wp.array(dtype=wp.vec3), out: wp.array(dtype=float)):
+    i = wp.tid()
+    p = pts[i]
+    d = vol.shape[0]
+    h = vol.shape[1]
+    w = vol.shape[2]
+    tx = texel(p[0], w)
+    ty = texel(p[1], h)
+    tz = texel(p[2], d)
+    x0 = int(wp.floor(tx))
+    y0 = int(wp.floor(ty))
+    z0 = int(wp.floor(tz))
+    fx = tx - float(x0)
+    fy = ty - float(y0)
+    fz = tz - float(z0)
+    x1 = clampi(x0 + 1, w)
+    y1 = clampi(y0 + 1, h)
+    z1 = clampi(z0 + 1, d)
+    x0 = clampi(x0, w)
+    y0 = clampi(y0, h)
+    z0 = clampi(z0, d)
+    v000 = vol[z0, y0, x0]
+    v100 = vol[z0, y0, x1]
+    v010 = vol[z0, y1, x0]
+    v110 = vol[z0, y1, x1]
+    v001 = vol[z1, y0, x0]
+    v101 = vol[z1, y0, x1]
+    v011 = vol[z1, y1, x0]
+    v111 = vol[z1, y1, x1]
+    v00 = v000 * (1.0 - fx) + v100 * fx
+    v10 = v010 * (1.0 - fx) + v110 * fx
+    v01 = v001 * (1.0 - fx) + v101 * fx
+    v11 = v011 * (1.0 - fx) + v111 * fx
+    v0 = v00 * (1.0 - fy) + v10 * fy
+    v1 = v01 * (1.0 - fy) + v11 * fy
+    out[i] = v0 * (1.0 - fz) + v1 * fz
+
+
+@wp.kernel
+def sample_tex(tex: wp.Texture3D, pts: wp.array(dtype=wp.vec3), out: wp.array(dtype=float)):
+    i = wp.tid()
+    out[i] = wp.texture_sample(tex, pts[i], dtype=float)
+
+
+def timed(fn):
+    fn()  # warm-up
+    wp.synchronize()
+    ts = []
+    for _ in range(RUNS):
+        wp.synchronize()
+        t0 = time.perf_counter()
+        fn()
+        wp.synchronize()
+        ts.append(time.perf_counter() - t0)
+    return statistics.median(ts) * 1e3  # ms
+
+
+print(f"Warp CPU device: {cpu.name}; Warp launches CPU kernels on one thread (no thread pool)")
+rows = []
+for size in (64, 256):
+    rng = np.random.default_rng(size)
+    vol_np = rng.random((size, size, size), dtype=np.float32)
+    vol_gpu = wp.array(vol_np, dtype=float, device=gpu)
+    tex_cpu = wp.Texture3D(
+        vol_np, filter_mode=wp.TextureFilterMode.LINEAR, address_mode=wp.TextureAddressMode.CLAMP,
+        normalized_coords=True, device=cpu,
+    )  # fmt: skip
+    for n in (1_000_000, 16_000_000):
+        pts_np = rng.random((n, 3), dtype=np.float32)
+        pts_gpu = wp.array(pts_np, dtype=wp.vec3, device=gpu)
+        out_gpu = wp.empty(n, dtype=float, device=gpu)
+        pts_cpu = wp.empty(n, dtype=wp.vec3, device=cpu)
+        out_cpu = wp.empty(n, dtype=float, device=cpu)
+        pts_cpu_c = wp.array(pts_np, dtype=wp.vec3, device=cpu)
+        out_cpu_c = wp.empty(n, dtype=float, device=cpu)
+
+        a = timed(lambda: wp.launch(sample_manual, dim=n, inputs=[vol_gpu, pts_gpu, out_gpu], device=gpu))
+        b_d2h = timed(lambda: wp.copy(pts_cpu, pts_gpu))
+        b_kern = timed(lambda: wp.launch(sample_tex, dim=n, inputs=[tex_cpu, pts_cpu, out_cpu], device=cpu))
+        b_h2d = timed(lambda: wp.copy(out_gpu, out_cpu))
+
+        def b_all():
+            wp.copy(pts_cpu, pts_gpu)
+            wp.launch(sample_tex, dim=n, inputs=[tex_cpu, pts_cpu, out_cpu], device=cpu)
+            wp.copy(out_gpu, out_cpu)
+
+        b_tot = timed(b_all)
+        c = timed(lambda: wp.launch(sample_tex, dim=n, inputs=[tex_cpu, pts_cpu_c, out_cpu_c], device=cpu))
+
+        # numerics: (a) vs (c) on the same points
+        wp.launch(sample_manual, dim=n, inputs=[vol_gpu, pts_gpu, out_gpu], device=gpu)
+        ra = out_gpu.numpy()
+        rc = out_cpu_c.numpy()
+        diff = np.abs(ra - rc)
+        ulp = np.abs(ra.view(np.int32).astype(np.int64) - rc.view(np.int32).astype(np.int64))
+        rows.append((size, n, a, b_d2h, b_kern, b_h2d, b_tot, c, diff.max(), int(ulp.max()), int(np.count_nonzero(ulp))))
+        print(rows[-1], flush=True)
+
+print("| volume | samples | (a) GPU manual ms | (b) D2H ms | (b) CPU kernel ms | (b) H2D ms | (b) total ms | (c) CPU kernel ms | (b)/(a) | (a) vs (c) max abs | max ulp | values differing |")
+print("|---|---|---|---|---|---|---|---|---|---|---|---|")
+for s, n, a, d2h, k, h2d, tot, c, md, mu, nd in rows:
+    print(f"| {s}^3 | {n:.1e} | {a:.3f} | {d2h:.2f} | {k:.1f} | {h2d:.2f} | {tot:.1f} | {c:.1f} | {tot / a:.0f}x | {md:.2e} | {mu} | {nd} of {n} |")
+sys.exit(0)
+```
