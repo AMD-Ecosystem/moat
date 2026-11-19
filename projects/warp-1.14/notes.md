@@ -2200,3 +2200,95 @@ for s, n, a, d2h, k, h2d, tot, c, md, mu, nd in rows:
     print(f"| {s}^3 | {n:.1e} | {a:.3f} | {d2h:.2f} | {k:.1f} | {h2d:.2f} | {tot:.1f} | {c:.1f} | {tot / a:.0f}x | {md:.2e} | {mu} | {nd} of {n} |")
 sys.exit(0)
 ```
+## Evidence session 3 (2026-11-19, linux-gfx1100, Radeon Pro W7800, evidence only): Phase 5 re-run at `2f5b9d65` (handoff B.1-B.6)
+
+Requested by Jeff Daily. The work lock stays with linux-gfx950. Nothing was committed to the fork, and no stage, lock, head, platform or deferral record changed. The clone was updated read-only to the recorded `head_sha` `2f5b9d657295a2d5ba5371ae1f7ff4582ade7acf` (`git status --porcelain` clean). Same venv as the earlier gfx1100 sessions (TheRock ROCm 10.2.0 wheels, HIP 7.17.26434, torch 2.15.0+rocm10.2.0). Build: `export PATH=$FLEET_VENV/bin:$PATH; python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1100 -j 32` -> "Warp build succeeded". RUNPATH points at the venv's `_rocm_sdk_devel/lib`. Private `WARP_CACHE_PATH`, `ulimit -c 0`, `HIP_VISIBLE_DEVICES=0`. Scripts extracted verbatim from Porting sessions 5 and 6.
+
+### B.1-B.3: textures at the new head: all as expected
+
+| item | expected | result |
+|---|---|---|
+| B.1 `python -m warp.tests -s autodetect -p test_texture.py -m 32` | Ran 120, OK (skipped=1) | **Ran 120, OK (skipped=1)**; the skip is the `test_texture_unsupported_device_raises` placeholder ("No suitable devices to run the test.") |
+| B.2 `python sdf_probe.py cpu` | PASS | PASS: SDF vs CPU sampler 0.00e+00, SDF vs analytic 1.28e-03 (grid spacing 1.56e-02), RGBA8 vs CPU sampler 0.00e+00 |
+| B.2 `python sdf_probe.py cuda:0` | PASS | **PASS**: SDF vs CPU sampler 4.78e-05, SDF vs analytic 1.31e-03 (grid spacing 1.56e-02), RGBA8 vs CPU sampler 2.52e-03 (identical to the patched experiment of evidence session 2) |
+| B.3 `python tex_alias.py cuda:0` | PASS, 0 wrong plain and under capture | **PASS**: "plain: 0 of 2048 wrong", "graph capture: 0 of 2048 wrong" |
+
+So the porter's version of the fix, with its two additions (element size recorded from `cuArray3DGetDescriptor_f` for external arrays, and the offset/no-array fallback), behaves on real image hardware like the experiment did. The external-array path that `tex_alias.py` covers also works under capture.
+
+### B.4: the two rewritten HIP reproducers: both reproduce
+Built as the handoff says: `clang++ -x hip --rocm-path=$R --offload-arch=gfx1100 -O2 <file>.cpp -o <name> -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib`, with `R=$(rocm-sdk path --root)`. Both compile without warnings.
+
+```
+$ ./m3d_pageable 64 64            (exit 1)
+hipDrvMemcpy3DAsync    64x64: 4096 of 4096 elements wrong
+hipMemcpy3DAsync       64x64: 4096 of 4096 elements wrong
+$ ./m3d_capture                   (exit 1)
+hipDrvMemcpy3DAsync    graph nodes 0, copied before instantiation 2048 of 2048, wrong after replay 2048 of 2048
+hipMemcpy3DAsync       graph nodes 2, copied before instantiation 1 of 2048, wrong after replay 0 of 2048
+```
+
+- `hip-memcpy3d-async-pageable-host-read-after-return`: reproduces exactly as registered (all elements wrong, both APIs).
+- `hip-drv-memcpy3d-async-not-captured`: reproduces as registered (driver call: 0 nodes, copied eagerly, all wrong after replay; runtime call: 2 nodes, 0 wrong after replay). The registration text needs no `deferred.py amend`.
+- One correction to the reproducer, not to the finding: the runtime line's "copied before instantiation 1 of 2048" should read 0. `m3d_capture.cpp:47` fills `h1[i] = float(i)`, so `h1[0]` is 0.0. Line 51 zeroes `dst` with `hipMemset`, so element 0 matches at line 62 without any copy having happened. Proposed one-line change before the reproducer goes into a report: `h1[i] = float(i + 1)` (line 47). The exit codes are by design: each program returns 1 when the defect reproduces.
+
+### B.5: full Phase 1-5 set (82 patterns)
+Command: the handoff's 82-pattern loop, `python -m warp.tests -s autodetect -p "<pattern>" -m 32` each, from `projects/warp-1.14/src`, wrapped in `utils/timeit.sh warp-1.14 test`. **82 patterns: 81 OK, 1 with the 2 known failures** (fem). Every count matches the handoff's expectation:
+
+| pattern | ran | result | pattern | ran | result |
+|---|---|---|---|---|---|
+| test_codegen | 117 | OK | test_capture_mode | 2 | OK |
+| test_snippet | 12 | OK | test_conditional_captures | 32 | OK, 16 skipped |
+| test_arithmetic | 126 | OK | test_conditional | 50 | OK |
+| test_math | 16 | OK | test_async | 2373 | OK |
+| test_fp16 | 6 | OK | test_streams | 24 | OK, 2 skipped |
+| test_bf16 | 48 | OK | test_mempool | 7 | OK, 2 skipped |
+| test_atomic | 164 | OK | test_pinned | 1 | OK |
+| test_atomic_bitwise | 6 | OK | test_unified_memory | 27 | OK, 8 skipped |
+| test_atomic_cas | 48 | OK | test_occupancy | 6 | OK |
+| test_array | 139 | OK | test_allocator | 16 | OK, 3 skipped |
+| test_copy | 14 | OK | test_allocation_tracker | 34 | OK |
+| test_launch | 32 | OK | test_dlpack | 16 | OK |
+| test_fast_math | 12 | OK, 1 skipped | test_torch | 34 | OK |
+| test_grad | 41 | OK | test_map | 45 | OK |
+| test_kernel_cache | 5 | OK | test_reload | 14 | OK |
+| test_module_hashing | 8 | OK | test_cuda_arch_suffix | 10 | OK, 10 skipped |
+| test_print | 10 | OK | test_tile | 126 | OK |
+| test_mat* | 601 | OK | test_tile_atomic_bitwise | 3 | OK |
+| test_vec* | 531 | OK | test_tile_cholesky | 33 | OK |
+| test_quat* | 173 | OK | test_tile_cholesky_no_mathdx | 16 | OK |
+| test_spatial* | 207 | OK | test_tile_empty | 20 | OK |
+| test_rand | 10 | OK | test_tile_fft | 20 | OK, 8 skipped |
+| test_noise | 14 | OK | test_tile_fft_no_mathdx | 16 | OK |
+| test_clang_cuda | 7 | OK, 6 skipped | test_tile_func_arg | 27 | OK |
+| test_runlength_encode | 16 | OK | test_tile_fused_ops | 36 | OK |
+| test_array_reduce | 16 | OK | test_tile_large_offsets | 1 | OK |
+| test_sparse | 47 | OK | test_tile_load | 64 | OK |
+| test_linear_solvers | 34 | OK | test_tile_mathdx | 6 | OK |
+| test_coloring | 3 | OK | test_tile_matmul | 22 | OK |
+| test_bvh | 13 | OK | test_tile_matmul_no_mathdx | 22 | OK |
+| test_grouped_bvh | 11 | OK | test_tile_mlp | 3 | OK, 1 skipped |
+| test_hash_grid | 23 | OK | test_tile_reduce | 62 | OK |
+| test_marching_cubes | 17 | OK | test_tile_shared_memory | 30 | OK |
+| test_mesh* | 49 | OK | test_tile_solve | 5 | OK, 1 skipped |
+| test_volume | 59 | OK | test_tile_solve_no_mathdx | 28 | OK |
+| test_volume_write | 5 | OK | test_tile_sort | 2 | OK |
+| test_apic | 52 | OK | test_tile_stack | 40 | OK |
+| test_apic_mesh | 12 | OK | test_tile_view | 16 | OK |
+| test_fem* | 107 | **2 failures** | test_block_dim_dispatch | 2 | OK |
+| test_graph | 35 | OK, 3 skipped | test_template_launch_bounds | 36 | OK |
+| test_array_fill_capture | 3 | OK | test_texture | 120 | OK, 1 skipped |
+
+- Phase 1-3: the B.4 counts of the first gfx1100 session, with test_atomic_cas now 48 (the 24 new AMD-capable `atomic_cas`/`atomic_exch` cases pass at wavefront 32) and test_array 139.
+- test_fem*: 107 run, failures=2: `test_gimp_quadrature` and `test_cube_shape_functions`, "Unexpected output" whose first line is Warp's init greeting. These are the known upstream isolation failures; nothing else in fem fails.
+- test_streams: 24 run, OK (2 skipped). The C4 case `test_stream_priority_timings_cuda_0`, which fails on gfx942 and gfx950, passes here.
+- Tile set (22 tile files + test_block_dim_dispatch + test_template_launch_bounds): 636 run, 10 skipped (the three upstream no-libmathdx skips), 0 failures. The 64 KiB sizing commits work on this part: test_tile_shared_memory 30, test_tile_reduce 62 and test_tile_view 16 OK, and `test_tile_shared_mem_func` prints no shared-memory warning.
+- One shared-memory warning remains in the whole set, from a test the sizing commits did not touch: test_tile_load prints `Failed to configure kernel dynamic shared memory ... test_tile_load_scoped_kernel_..._cuda_kernel_backward kernel for 65536 bytes, but maximum available is 65536`. The test passes, because it launches only the forward kernel (`test_tile_load.py:949`, no tape). Warp configures both kernels' shared memory when the module loads, and the backward kernel (64 KiB dynamic plus static LDS) cannot fit on a 64 KiB part. This is the corrected diagnostic from the shim fix, not a failure. My first gfx1100 run (old shim) printed nothing here. The same arithmetic predicts the line on gfx942 (not checked here). Recorded for the lock holder; no change proposed, since the test does what upstream intends and a launch of that backward kernel would fail on any 64 KiB part, NVIDIA included.
+- test_texture: 120 run, OK (1 skipped, the placeholder).
+- Skip reasons across all 82 logs (`grep -h "skipped '"`): Conditional graph nodes not supported 16, Warp was not built with MathDx support 8, MathDx is not enabled 1, Skipping test on CUDA device without MathDx (tolerance) 1, No suitable devices to run the test 18 (17 as before plus the texture placeholder), Requires at least two CUDA devices 2, Multi-GPU not available 2, mempool/peer-access device-pair requirements 10, cuda:0 cannot access CPU memory 2, flakiness in memory usage measurement 1, rmm not installed 1. None names wavefront size, textures or AMD.
+- No `Warp CUDA error` line in any of the 82 logs.
+
+### B.6: CPU-only suite with GPUs hidden
+`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32` (timeit-wrapped; greeting lists only `cpu`): **Ran 2294 tests, OK (skipped=15)**. That matches the expectation (session 5 on gfx950). Skips: No suitable devices 10, Requires CUDA 2, Requires both CUDA and CPU devices 2, CUDA not available 1.
+
+### Summary
+At `2f5b9d65`, the wave32 half of the same-head requirement is met. The Phase 1-5 set passes on gfx1100 apart from the two known fem isolation failures, which gfx950 shows identically. The texture fix as committed passes test_texture, the SDF probe and tex_alias.py on real image hardware. Both registered HIP defects reproduce with the porter's rewritten reproducers. One cosmetic fix to `m3d_capture.cpp` is needed (line 47, `float(i + 1)`). The CPU-only suite is green. Nothing new needs a fork change.
