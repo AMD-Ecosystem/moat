@@ -1637,6 +1637,21 @@ def merge_fix_rows():
             yield name, d, fix
 
 
+def optout_merge_blockers(d, pr, opted):
+    """What a request to stop (`opted`, the opt-out problems found) blocks at the
+    merge gate. Everything, except on a maintained fork with its PR closed.
+
+    A request to stop is about what reaches THEIR repository. A branch a person
+    ruled we keep working on our own fork has no open pull request for the merge to
+    move, so the merge is ours alone -- provided it says nothing to them either."""
+    if opted and d.get("maintained") and d.get("pr_state") == "closed":
+        if REPLY_HEADING in (pr.get("body") or ""):
+            return [f"{opted[0]}; the body carries {REPLY_HEADING!r}, and a "
+                    f"maintainer who asked us to stop is sent no reply"]
+        return []
+    return list(opted)
+
+
 def merge_fix_blockers(name, d, fix, pr):
     """Everything that must hold before the PR branch moves, re-checked live."""
     sys.path.insert(0, str(TOOLS_ROOT / "utils"))
@@ -1664,10 +1679,11 @@ def merge_fix_blockers(name, d, fix, pr):
                    "of date")
     opt = moatlib.optout_for(moatlib.upstream_full_name(name) or "")
     if opt:
-        bad.append(f"opted-out: {opt['who']} asked not to receive pull requests "
-                   f"from this effort ({opt['source']})")
+        opted = [f"opted-out: {opt['who']} asked not to receive pull requests "
+                 f"from this effort ({opt['source']})"]
     else:
-        bad += pending_optout_problems(name)
+        opted = pending_optout_problems(name)
+    bad += optout_merge_blockers(d, pr, opted)
     # The merge ends in a record write. Discovering it cannot happen AFTER the open
     # PR has already moved leaves the worst state this flow can produce: the PR
     # advanced, published_sha naming the old tip, and the reconciler calling our own

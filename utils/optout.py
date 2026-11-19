@@ -185,6 +185,7 @@ def affected(who):
         if full.lower() != who and full.lower().split("/")[0] != who:
             continue
         out.append({"name": name, "full_name": full, "stage": d.get("stage"),
+                    "maintained": bool(d.get("maintained")),
                     "fork": d.get("fork_url"), "pr": d.get("pr_url"),
                     "pr_state": d.get("pr_state"), "review_pr": d.get("review_pr")})
     return out
@@ -209,6 +210,14 @@ def cmd_record(args):
         # submitted. This is the one disposition an agent may write, for the same reason
         # the opt-out itself is: the decision was made by the maintainer.
         print(f"\n{len(rows)} adopted project(s) covered by this:")
+        # A fork a person ruled we keep working (`set-maintained`) is not retired:
+        # the request is not to receive pull requests, and that ruling already
+        # means none is ever offered. Its branch stays on our fork and keeps
+        # absorbing upstream through sync rounds.
+        for r in (r for r in rows if r["maintained"]):
+            print(f"  {r['name']} ({r['full_name']}) is a maintained fork -- kept: "
+                  f"no pull request is offered, and its branch stays on our fork")
+        rows = [r for r in rows if not r["maintained"]]
         for r in rows:
             moatlib.set_disposition(r["full_name"], "skip", "opted-out",
                                     f"maintainer asked us to stop: {rec['source']}",

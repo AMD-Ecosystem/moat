@@ -262,6 +262,53 @@ class IntakeQueue(Scratch):
         self.assertEqual((decided["by"], decided["recorded_as"]), ("someone", ACCOUNT))
 
 
+class OptOutKeepsAMaintainedFork(unittest.TestCase):
+    """A request to stop ends pull requests, not a branch we keep on our own fork."""
+    OPTED = ["opted-out: Owner asked not to receive pull requests"]
+
+    def test_the_merge_gate_blocks_an_ordinary_round(self):
+        d = {"pr_state": "open"}
+        self.assertEqual(upstream.optout_merge_blockers(d, {"body": ""}, self.OPTED),
+                         self.OPTED)
+        d = {"pr_state": "open", "maintained": {"by": "p"}}
+        self.assertEqual(upstream.optout_merge_blockers(d, {"body": ""}, self.OPTED),
+                         self.OPTED)
+
+    def test_the_merge_gate_lets_a_maintained_fork_merge_and_sends_no_reply(self):
+        d = {"pr_state": "closed", "maintained": {"by": "p"}}
+        self.assertEqual(upstream.optout_merge_blockers(d, {"body": "x"}, self.OPTED), [])
+        body = f"x\n\n{upstream.REPLY_HEADING}\n\nhello\n"
+        (why,) = upstream.optout_merge_blockers(d, {"body": body}, self.OPTED)
+        self.assertIn("sent no reply", why)
+        self.assertEqual(upstream.optout_merge_blockers(d, {"body": body}, []), [])
+
+    def test_recording_retires_a_project_but_not_a_maintained_fork(self):
+        rows = [{"name": "kept", "full_name": "Owner/kept", "stage": "review-passed",
+                 "maintained": True, "fork": None, "pr": None, "pr_state": "closed",
+                 "review_pr": None},
+                {"name": "gone", "full_name": "Owner/gone", "stage": "porting",
+                 "maintained": False, "fork": None, "pr": None, "pr_state": None,
+                 "review_pr": None}]
+        retired = []
+        rec = {"who": "Owner", "scope": "owner", "source": "https://x/1", "note": ""}
+        patches = [
+            mock.patch.object(moatlib, "record_optout", lambda *a: rec),
+            mock.patch.object(moatlib, "set_disposition",
+                              lambda full, *a, **k: retired.append(full)),
+            mock.patch.object(optout, "stamp_optout", lambda who: None),
+            mock.patch.object(optout, "publish_pending", lambda **k: (True, "ok")),
+            mock.patch.object(optout, "affected", lambda who: rows),
+            mock.patch.object(identity, "recorded_as", lambda: None),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        _rc, out, _err = quiet(optout.cmd_record,
+                               mock.Mock(who="Owner", source="https://x/1", note=""))
+        self.assertEqual(retired, ["Owner/gone"])
+        self.assertIn("kept (Owner/kept) is a maintained fork", out)
+
+
 class OptOutPending(Scratch):
     REC = {"who": "Owner", "scope": "owner", "source": "https://x/issue/1", "note": ""}
 
