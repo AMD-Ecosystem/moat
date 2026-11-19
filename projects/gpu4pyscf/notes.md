@@ -4644,3 +4644,241 @@ Recording the corrected messages in notes rather than rewriting moat-port resolv
 - The standalone runs for (a), (b) and (c) also used builds carrying `-mllvm -disable-machine-licm`; (b) and (c) include d-shell molecular tests that hang without it on ROCm 10.1. Add the same sentence the porter wrote for (d) to the (a), (b) and (c) Test Plans.
 - The earlier "Owed / next" line in the porter's rescope section still says "8 failures in mp/tests/test_mp2.py"; the corrected (d) text (7) supersedes it.
 - Run `jargon.py` and `prose.py` on each final body, and the commit gate on each branch.
+
+## Pull request preparation for issue 1054 (2026-11-19, fleet job, linux-gfx942 MI300X, upstream master 61c2a1e)
+
+Requested by jeff: one pull request per item of the Tracking checklist in https://github.com/pyscf/gpu4pyscf/issues/1054, each cut from upstream's current master and tested alone. This round changed no stage, lock, head or platform record and did not touch `moat-port` (still 7cbd3d2f after the push). The only GitHub write was pushing the six `pr-1054-*` branches to AMD-Ecosystem/gpu4pyscf. No pull request was opened and nothing was posted on the issue: jeff opens each pull request himself after reading the drafts below. GPU work ran under `ulimit -c 0` on the dispatcher's `HIP_VISIBLE_DEVICES=0`. Scratch was under the fleet job directory (`w/`, `res/`, `agent/`), not durable.
+
+### Inputs checked
+- Fork `moat-port` at the start: merge a8b4c30e then 6a0f3f24, 7998a680, eac332be, 3bb435b2, fa3c484b, 7cbd3d2f, exactly the list in the request. The porter had not added or changed commits.
+- Upstream master `61c2a1e4` (#1051) at the start and again just before the push (`git ls-remote`).
+- Each commit cherry-picks cleanly onto 61c2a1e alone, and each pr branch's patch is identical to its moat-port commit (`git patch-id --stable`). The commits were then re-made on the pr branches with corrected messages (`git cherry-pick -n` + `git commit -F`, before the first push, tree unchanged).
+- The 2026-11-19 review of 7cbd3d2 (section above, which landed while this round ran) was reconciled against the pushed messages: items 1, 2, 3, 5 and 6 are fixed in them (counts re-measured on each branch alone, "every test fails" corrected, "DF-MP2" corrected in both places, no "next change"). Item 4 (Cholesky "no NaN appears" stated as deterministic) was checked and holds on this host: `cupy.linalg.cholesky(diag(4,-1e-5,1))` gave `diag(2,-1e-5,1)` with no NaN in 20 of 20 calls, likewise a 50x50 and a 200x200 indefinite matrix, and test_get_j2c_decomp_linear_dependency failed 5 of 5 runs on master (the porter's single pass was not reproduced); the message was left as it is. Item 7 (LICM cost) was measured, see fix (f); the result is in the PR draft, not in the already pushed commit body.
+
+### Environment
+MI300X (gfx942:sramecc+:xnack-), TheRock ROCm SDK 10.1.0 pip (AMD clang 24.0.0 d6f6cb69, HIP 7.16), no /opt/rocm, cmake 3.28.3 from /usr/bin first on PATH. Job venv: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, basis-set-exchange 0.12, MCFun 0.2.6, pytest 9.2.0, pytest-xdist 3.8.0, pytest-timeout 2.4.0 (the evaluation's set).
+
+### Builds
+In-tree, upstream's setup.py path, one git worktree per tree, run in parallel: `USE_HIP=1 CMAKE_BUILD_ARGS=--verbose python setup.py build_py`, plus for the **flag build** `CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm -DCMAKE_SHARED_LINKER_FLAGS=-mllvm=-disable-machine-licm"` (the evaluation's spelling). Trees: master as-is (no flag), master flag build, branches (a)-(e) flag build, branch (f) with no environment flag, and two local-only comparison trees (b+c together, and all six = moat-port). Every build exit 0 in 161-172 s, 12 libraries, 100 HIP compile lines and 12 `--hip-link` lines; `-disable-machine-licm` on 100/100 and 12/12 in every flag build and in branch (f), on 0 in master as-is.
+
+### Test method, and why it differs from the evaluation's
+The CI marker selection (`-m 'not slow and not benchmark and not special' -k 'not _high_cost'`, `OMP_NUM_THREADS=2`, `PYTHONPATH=<tree>`, `LD_LIBRARY_PATH=$R/lib`) with **one pytest process per test file** (`-p no:xdist`, four files at a time, `agent/run2.sh`). The first attempt used the evaluation's per-directory `-n 4 --dist loadfile` and gave counts that moved between runs of identical code (scf+dft: 32 failures on master, 39 on the ft-ao branch, which touches neither): an xdist worker that hits cause C keeps the broken rocBLAS handle for whatever file it gets next, so the failure set depends on how files are dealt to workers. With a process per file, cascades stay inside their file and the counts repeat (scf+dft 336/12/23/0 on master and on the ft-ao branch). Counts are passed/failed/skipped/errors from the junit files. Three test streams shared the GPU; the reruns quoted below ran alone.
+
+Known noise in the sanity set: scf/tests/test_stability.py test_stability_rhf_unstable fails intermittently on unmodified master (3 runs of the file alone: 10/0, 10/0, 9/1), so a 335/13 against master's 336/12 that differs only by it is not a regression.
+
+| tree | scf + dft (passed/failed/skipped/errors) | differs from master by (+ now passes, - now fails) |
+|---|---|---|
+| master, flag build | 336/12/23/0 | (12: dftu linear response x2, mcol_gks_mgga noise floor, d-aug basis, gdm_uks_spin_neq_0, SAD guess x4, int4c2e x3) |
+| (a) ft-ao-wave64 | 336/12/23/0 | nothing |
+| (b) eigh-std-fallback | 338/10/23/0 | +gdm_uks, +3 SAD UHF/UKS; -sad_guess_rks, -sad_guess_rks_vv10 (intermittent, see (b)) |
+| (c) hipsolver-handle | 338/10/23/0 | +dftu x2, +sad_guess_rhf_pcm; -stability flake |
+| (d) hip-shm-size | 338/10/23/0 | +int4c2e x3; -stability flake |
+| (e) cholesky-info | 335/13/23/0 | -stability flake |
+| (f) hip-machine-licm, no environment flag | 335/13/23/0 | -stability flake |
+| b+c together (local only) | 342/6/23/0 | the 6: mcol noise floor, d-aug basis, int4c2e x3, stability flake |
+
+### Found on the way (not in the six; for jeff)
+- **The hiprtc `cuComplex.h` RawKernel (pbc/df/grad/rhf.py `indexed_scale`) is a real failure behind cause A**: with (a) alone, 39 tests in pbc/{df,grad,scf} fail with `HIPRTC_ERROR_COMPILATION ... 'cuComplex.h' file not found` (the porter counted 47 over the whole tree at 7cbd3d2). This is the seventh candidate the porter recorded; it is not in the issue's checklist.
+- **k-point SOSCF energies miss their hard-coded 8-place references by about 1e-8** (pbc/scf test_pbc_soscf test_nr_krhf, nr_kuhf, nr_krks_lda, nr_krks_rsh, nr_kuks_lda), also with all six fixes applied (14/5/0/0); the porter showed CPU PySCF 2.14 gives the GPU's value, so the references do not match this PySCF. Cause C hid them before.
+- **A failed hipSOLVER call on CuPy's handle can leave silently wrong results**, not only exceptions: test_df_jk.py test_ghf_get_jk_real gave a K matrix 1.44 off after test_jk_hermi0's rocblas_status_memory_error in the same process, and passes alone. This strengthens the case for (c).
+- **Upstream's AI policy** (AI_POLICY.md, "Disclosure") asks a pull request to say which tool was used and briefly how. The requested closing sentence names no tool; the commit bodies say "Authored with Claude.", which names it. jeff may want to add the tool name to the sentence.
+- Upstream has no pull request template; CONTRIBUTING.md asks for tests against PySCF and CUDA sm_70 compatibility; recent upstream titles carry no bracket prefix. The drafts keep the `[ROCm]` prefix on the five ROCm-specific changes per jeff's commit rule.
+
+### CUDA impact, how it was checked
+There is no nvcc on this host (the porter's host had nvcc 12.8 and built the `pbc` target at 7cbd3d2; see its section). pip's nvidia-cuda-nvcc wheels carry ptxas but no nvcc driver, so ft_ao.cu, the only CUDA source any of the six changes, was checked with the ROCm SDK's clang in CUDA mode against pip-installed CUDA 12.9 headers (`amdclang++ -x cuda --cuda-path=<pip cuda root> --cuda-gpu-arch=sm_70`): `-fsyntax-only` passes on master and on (a), and `--cuda-device-only -S -emit-llvm -O2` gives **byte-identical device LLVM IR** for master and (a) (this clang has no NVPTX backend, so no PTX). The removed `#include "../warp_size.h"` leaves nothing undefined on CUDA: ft_ao.cu no longer uses WARP_SIZE or the warp-size helper, and ft_ao.cuh keeps its own `WARP_SIZE 32` fallback.
+
+### (a) ft_aopair_kernel Gv tile on 64-wide wavefronts (cause A)
+- Branch `pr-1054-ft-ao-wave64`, tip **756fca851a8a6d0d16856b48c06ba2dd40e5dc69** (from moat-port 6a0f3f24). Stands alone: yes.
+- Message changes: Test Plan rewritten (environment flag stated, counts measured on this branch alone, "every test fails" corrected per review item 1). Title and cause paragraphs unchanged.
+- Tests: pbc/{df,dft,grad,gw,scf,properties} (all 53 test files) before **366/315/50/38**, 269 failures + 25 setup errors at `ft_ao.py:746 nsp_max` assert; after **595/111/50/13**, 0 at the assert. The 124 left: 58 rocblas_status_memory_error (C), 39 hiprtc cuComplex.h, 8 + 4 setup syevd assert (B), 7 NumInt2C (G), the rest the evaluation's individual margins and unresolved PBC tests. scf+dft 336/12/23/0 before and after.
+- CUDA impact: touches code CUDA runs (lib/pbc/ft_ao.cu kernel, pbc/df/ft_ao.py default). WARP_SIZE was 32 on CUDA, so `THREADS / WARPS` = 32 is the same value; device LLVM IR for sm_70 is byte-identical before and after (clang CUDA mode, see above); the porter's nvcc 12.8 build of the `pbc` target at 7cbd3d2 passed. Not run on an NVIDIA GPU.
+
+````markdown
+Title: [ROCm] Keep ft_aopair_kernel's Gv tile at 32 on 64-wide wavefronts
+
+On GCN/CDNA GPUs (64-wide wavefronts, e.g. MI300X), every periodic Fourier-transform call fails at `assert np.all(nsp_max > 0)` in `ft_ao_scheme` (pbc/df/ft_ao.py), for any basis. On an MI300X this is 269 failures and 25 setup errors across pbc/{df,dft,grad,gw,scf,properties}.
+
+Cause: `ft_aopair_kernel` tiles its 256-thread block as `WARPS` (8) groups of `nGv_per_block` threads, and `nGv_per_block` was `WARP_SIZE`, which is 64 on these GPUs. The host side then gets `rem_threads = 256 // 64 = 4`, so the (3,4), (4,3) and (4,4) scheme entries (gout_stride 8) get `nsp_max = 0`. The device side does not match either: only 4 of the 8 groups exist, `nsp_per_block` is twice what the host sized shared memory for, and `img_counts[4..7]` are read unwritten. RDNA GPUs (32-wide) are not affected, which is why it did not show on gfx1151.
+
+Change: the Gv group is `THREADS / WARPS` = 32 threads on every GPU (nothing in the kernel needs it to be a hardware wavefront), `ft_ao_scheme` defaults to 32 again, and the now unused `PBC_warp_size()` is removed. CUDA is unchanged: `WARP_SIZE` was already 32 there, and the CUDA device code for ft_ao.cu compiles to the same LLVM IR before and after (clang in CUDA mode, sm_70).
+
+Test plan, MI300X (gfx942), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, CI marker selection, one pytest process per test file, built with `-mllvm -disable-machine-licm` passed through `CMAKE_CONFIGURE_ARGS` (without it the ROCm 10.1 compiler miscompiles the Rys J/K kernels; see the separate pull request):
+
+| tests | master | this branch |
+|---|---|---|
+| pbc/{df,dft,grad,gw,scf,properties} (passed/failed/skipped/errors) | 366/315/50/38 | 595/111/50/13 |
+| of which at the nsp_max assert | 294 | 0 |
+| scf, dft | 336/12/23/0 | 336/12/23/0 |
+
+The remaining pbc failures have other causes (solver calls after a hipSOLVER call, batched `eigh_std` input, a RawKernel that includes cuComplex.h under hiprtc, the CPU XC fallback for GKS, tolerance misses).
+
+Part of #1054.
+
+This pull request was prepared with the help of an AI coding agent and was read and approved by a person before it was opened.
+````
+
+### (b) eigh_std batched and float32 inputs (cause B)
+- Branch `pr-1054-eigh-std-fallback`, tip **2e2d8a5c1db34c6524cde692a50d6f1b8341db92** (from 7998a680). Applies and builds alone and fixes its 60 tests alone. **Decision for jeff: it should land after (c), or travel with it.** With (b) alone, tests that used to stop at the syevd assert get far enough to reach cause C: in one of three runs of scf/tests/test_init_guess.py, test_sad_guess_rks and test_sad_guess_rks_vv10 (which pass on master) then failed with wrong values (0.19 against 1e-7) after a rocblas_status_memory_error; in the other two only test_sad_guess_rhf_pcm (cause C, failing on master too) failed: 23/1/0/0 against master's 20/4/0/0. With b+c together (local tree, not pushed) test_init_guess.py passes in full and scf+dft is 342/6/23/0. Nothing in (b)'s code depends on (c); the dependency is through the test outcome only. The PR draft says this ordering.
+- Message changes: "the next change (a separate hipSOLVER handle)" replaced (review item 6); Test Plan rewritten with this branch's counts.
+- Tests: the 15 cause-B files (df test_df_ghf, test_df_jk, test_df_rhf_grad, test_df_tdrhf_nac_batch, test_df_tdrks_nac_batch, test_df_tdrks_ris_nac_batch; md test_fssh; pbc/df test_pbc_df_derivatives; properties test_eda, test_polarizability; scf test_gdm, test_init_guess; tdscf test_diffuse_orbital_tdscf, test_krylov, test_ris) before **52/83/3/4**, 60 at the syevd assert; after **105/30/3/4**, 0 at the assert. Left: 25 cause A (test_pbc_df_derivatives), 6 cause C, test_ghf_get_jk_real (follow-on of C, passes alone), d-aug basis, test_krylov_eigenvalue margin (1.336e-5 vs places=5). b+c together: 112/23/3/4 (A 25, basis, krylov). scf+dft 338/10/23/0.
+- CUDA impact: none; the change is inside `if cupy.cuda.runtime.is_hip`.
+
+````markdown
+Title: [ROCm] Keep batched and float32 eigh_std inputs on cupy.linalg.eigh
+
+On ROCm, batched density matrices (`df_jk.decompose_rdm1_svd`, used by the DF NAC, TDDFT-gradient and FSSH paths) and the single-precision Krylov subspace in tdscf/_krylov_tools.py fail with a bare `AssertionError` on any AMD GPU.
+
+Cause: `eigh_std` sends every HIP input to the hipSOLVER `syevd`/`heevd` path, which asserts a 2-D float64 or complex128 matrix.
+
+Change: only the inputs `syevd` takes go to `syevd`; batched and other-dtype inputs stay on `cupy.linalg.eigh`, as on CUDA. The square float64/complex128 fast path is unchanged, and so is CUDA (the change is inside the HIP branch).
+
+Test plan, MI300X (gfx942), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, CI marker selection, one pytest process per test file, built with `-mllvm -disable-machine-licm` passed through `CMAKE_CONFIGURE_ARGS` (see the separate pull request):
+
+| tests | master | this branch |
+|---|---|---|
+| 15 files with batched or float32 eigh (df, md, pbc/df, properties, scf, tdscf) | 52/83/3/4 | 105/30/3/4 |
+| of which at the syevd assert | 60 | 0 |
+| scf, dft | 336/12/23/0 | 338/10/23/0 |
+
+Most remaining failures are the separate `ft_ao_scheme` wave64 assert (25) and `rocblas_status_memory_error` after a hipSOLVER call on CuPy's handle (6). That second problem has its own pull request, and this one should go in after it: with this change alone, the SAD-guess UHF tests in test_init_guess.py get far enough to hit that error, and in one of three runs it then left test_sad_guess_rks and test_sad_guess_rks_vv10 failing. With both changes, test_init_guess.py passes in full. test_krylov_eigenvalue now runs and misses its eigenvector bound by 1.34e-5 against places=5; the miss is the same with numpy.linalg.eigh as the subspace solver.
+
+Part of #1054.
+
+This pull request was prepared with the help of an AI coding agent and was read and approved by a person before it was opened.
+````
+
+### (c) Own hipSOLVER handle for sygvd/hegvd (cause C)
+- Branch `pr-1054-hipsolver-handle`, tip **3778b1226b6dd5f0d138efc0fa1ca167e3ef978f** (from eac332be). Stands alone: yes.
+- Message changes: Test Plan rewritten with counts on this branch alone (review item 2) and a standalone reproducer, run here: master raises rocblas_status_memory_error, the branch prints ok.
+- Tests: the 14 cause-C files (df test_df_jk; dft test_dftu; pbc/dft test_pbc_krkspu, test_pbc_kucdft, test_pbc_kukspu; pbc/grad test_pbc_grad_kucdft; pbc/scf test_pbc_scf_ghf, test_pbc_scf_smearing, test_pbc_scf_uhf, test_pbc_soscf; pbc/x2c test_pbc_x2c; properties test_eda; scf test_diffuse_orbital, test_init_guess) before **56/67/2/5**, 38 rocblas_status_memory_error + 9 hipErrorIllegalAddress follow-ons (test_init_guess.py aborted at exit in that run with a rocBLAS handle-destructor error, after writing its junit); after **96/32/2/0**, 0 rocblas errors. Left: 15 cause A, 5 cause B, 2 G, 2 multigrid-not-selected-on-HIP, 2 GDF GHF properties, 4 SOSCF 1e-8 references, PBC X2C to_cpu, d-aug basis. scf+dft 338/10/23/0.
+- CUDA impact: none at run time; the CUDA branch of `eigh` is unchanged and the handle it creates at import (`_dn('Create')`) already existed upstream as `_syevd_handle`, only renamed.
+
+````markdown
+Title: [ROCm] Run the HIP sygvd/hegvd eigh on its own hipSOLVER handle
+
+On ROCm, after any `lib.cusolver.eigh` call, CuPy's own solver routines (`cupy.linalg.solve`, `inv`) fail with `CUSOLVERError: rocblas_status_memory_error` whenever they need more workspace than the hipSOLVER call left. This breaks DFT+U linear response, CDFT, the TDDFT subspace inverse, k-point HF smearing and SOSCF, ALMO-EDA and the PCM SAD guess. A failed call can also leave wrong results in later calculations in the same process.
+
+Cause: `eigh` passes CuPy's handle (`device.get_cusolver_handle()`, a rocBLAS handle) to `hipsolverDnDsygvd`/`Zhegvd`. The module already gives `syevd` a dedicated handle for this reason; `eigh` was not changed with it.
+
+Change: on HIP, `eigh` uses that dedicated handle (renamed `_dn_handle`) with the current stream set on it. CUDA keeps CuPy's handle and is unchanged.
+
+Test plan, MI300X (gfx942), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, CI marker selection, one pytest process per test file, built with `-mllvm -disable-machine-licm` passed through `CMAKE_CONFIGURE_ARGS` (see the separate pull request):
+
+```
+python -c "import cupy; from gpu4pyscf.lib import cusolver; a = cupy.random.rand(10, 10); a = a + a.T; cusolver.eigh(a, cupy.eye(10)); [cupy.linalg.solve(cupy.eye(n) * 2, cupy.ones(n)) for n in (10, 50, 200, 1000)]; print('ok')"
+```
+master: `rocblas_status_memory_error`; this branch: `ok`.
+
+| tests | master | this branch |
+|---|---|---|
+| 14 files with solver calls after eigh (df, dft, pbc/dft, pbc/grad, pbc/scf, pbc/x2c, properties, scf) | 56/67/2/5 | 96/32/2/0 |
+| of which rocblas_status_memory_error | 38 (plus 9 follow-on hipErrorIllegalAddress) | 0 |
+| scf, dft | 336/12/23/0 | 338/10/23/0 |
+
+The remaining failures have other causes (the `ft_ao_scheme` wave64 assert, batched `eigh_std` input, the CPU XC fallback for GKS, the multigrid numint the HIP build does not select, k-point SOSCF energies 1e-8 from their 8-place references). The scf/dft difference is three fixed tests (DFT+U linear response x2, PCM SAD guess) and test_stability_rhf_unstable, which also fails intermittently on master (1 run in 3).
+
+Part of #1054.
+
+This pull request was prepared with the help of an AI coding agent and was read and approved by a person before it was opened.
+````
+
+### (d) Static shared-memory reserve in the HIP shm_size (cause D)
+- Branch `pr-1054-hip-shm-size`, tip **5be4ebdc7b5df1dd07f2bb2f318bc08c04572508** (from 3bb435b2). Stands alone: yes.
+- Message changes: "DF-MP2" corrected to "conventional MP2 (fill_int4c2e)" in the first paragraph and the Test Plan (owed correction and review item 5); counts re-measured.
+- Tests: cc/tests, mp/tests, scf/tests/test_int4c2e.py, gto/tests/test_ecp.py before **19/18/0/0** (13 fill_int4c2e, 4 ECP derivative, test_get_j2c_decomp_linear_dependency); after **31/1/5/0** (the 5 ECP derivative tests skip; the one failure is cause H). scf+dft 338/10/23/0.
+- CUDA impact: none; inside `if cupy.cuda.runtime.is_hip` in the non-opt-in branch.
+
+````markdown
+Title: [ROCm] Leave room for static shared memory in the HIP shm_size
+
+On ROCm, CCSD, conventional MP2 and `int4c2e` fail with `Failed to set CUDA shm size 65496: invalid argument` followed by `RuntimeError: fill_int4c2e kernel for (pp|ps) failed`.
+
+Cause: HIP reports no `sharedMemPerBlockOptin`, so `__config__.shm_size` falls back to `sharedMemPerBlock`, the full 64 KB of LDS. Kernels whose dynamic shared buffer is sized from it then ask for almost all of it on top of their static `__shared__` variables (96 bytes for `int4c2e_kernel` on gfx942), and `hipFuncSetAttribute` refuses.
+
+Change: on HIP, subtract 1 KB from the fallback, the counterpart of the 2 KB reserve on the CUDA opt-in path. CUDA is unchanged. A side effect: with `shm_size` below 64 KB, the five ECP derivative tests in gto/tests/test_ecp.py skip ("Not enough shared memory") on AMD GPUs instead of running; four of them fail there today because the g-shell ECP derivative kernels need more than 64 KB of LDS, which is what the skip is for.
+
+Test plan, MI300X (gfx942), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, CI marker selection, one pytest process per test file, built with `-mllvm -disable-machine-licm` passed through `CMAKE_CONFIGURE_ARGS` (see the separate pull request):
+
+| tests | master | this branch |
+|---|---|---|
+| cc/tests, mp/tests, scf/tests/test_int4c2e.py, gto/tests/test_ecp.py | 19/18/0/0 | 31/1/5/0 |
+| of which fill_int4c2e | 13 | 0 |
+| scf, dft | 336/12/23/0 | 338/10/23/0 |
+
+The one failure left is test_get_j2c_decomp_linear_dependency (Cholesky failure detection, separate pull request). The scf/dft difference is the three test_int4c2e.py tests and test_stability_rhf_unstable, which also fails intermittently on master (1 run in 3).
+
+Part of #1054.
+
+This pull request was prepared with the help of an AI coding agent and was read and approved by a person before it was opened.
+````
+
+### (e) j2c Cholesky failure from potrf's info (cause H)
+- Branch `pr-1054-cholesky-info`, tip **2c1fc334ca1ba5221889246bf2883fce25540635** (from fa3c484b). Stands alone: yes.
+- **Prefix dropped**: the title is now "Detect a failed j2c Cholesky from potrf's info, not from NaN" (60 chars). The change replaces a check of cuSOLVER-specific behaviour with a generic one and runs on CUDA as well, so it is not ROCm-specific. "The behaviour on CUDA is unchanged" softened to "should be unchanged" and "Not run on CUDA." added; counts re-measured on this branch alone (review item 3). Review item 4 checked and left as written (see "Inputs checked").
+- Tests: mp/tests and pbc/df/tests/test_rsdf_builder.py before **19/43/0/0**, after **21/41/0/0**: test_get_j2c_decomp_linear_dependency and test_decompose_j2c_linear_dependency[False] fail before, pass after; the other 41 are 34 cause A and 7 cause D, the same on both. scf+dft 335/13/23/0 (stability flake).
+- CUDA impact: **yes, this path runs on CUDA.** `lib.cusolver.cholesky` calls CuPy's cuSOLVER `dpotrf`/`zpotrf` bindings and raises `LinAlgError` on a nonzero info; on CUDA a non-PD j2c that used to give NaN now raises and takes the same fallback. Not run on CUDA (no NVIDIA GPU or nvcc here). Two things for jeff to weigh, from reading the code: `lib.cusolver.cholesky` has no other caller in the tree (`cupy_helper.cholesky` aliases it, unused), so this makes it live on CUDA for the first time; and both call sites keep the `except ValueError` that #1015 added for dpnp (Intel), but `lib.cusolver.cholesky` uses `cupy_backends` cuSOLVER bindings that a dpnp backend may not provide. Whether dpnp runs these modules at all was not checked (the modules already import `eigh_std` from lib.cusolver).
+
+````markdown
+Title: Detect a failed j2c Cholesky from potrf's info, not from NaN
+
+On ROCm, a linearly dependent j2c metric is factorized with a wrong Cholesky factor instead of falling back to the eigendecomposition. test_dfmp2_utilities.py::test_get_j2c_decomp_linear_dependency (`assert 'cd' == 'eig'`) and test_rsdf_builder.py::test_decompose_j2c_linear_dependency (`assert 'CD' == 'ED'`) fail.
+
+Cause: `get_j2c_decomp` (mp/dfmp2_addons.py) and `cholesky_decomposed_metric` (pbc/df/rsdf_builder.py) call `cupy.linalg.cholesky`, which raises nothing on a matrix that is not positive definite, and look for NaN in the factor. That is cuSOLVER's behaviour; rocSOLVER's `potrf` stops at the first non-positive pivot and leaves the rest of the matrix as it was. `cupy.linalg.cholesky(diag(4, -1e-5, 1))` returns `diag(2, -1e-5, 1)` on an MI300X.
+
+Change: use `lib.cusolver.cholesky`, which already checks `potrf`'s info value and raises `LinAlgError`, in both places. It returns the same lower factor as `cupy.linalg.cholesky`. On CUDA a failure that used to show up as NaN now raises `LinAlgError` and takes the same fallback. This path also runs on CUDA, and I could not test it there.
+
+Test plan, MI300X (gfx942), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, CI marker selection, one pytest process per test file, built with `-mllvm -disable-machine-licm` passed through `CMAKE_CONFIGURE_ARGS` (see the separate pull request):
+
+| tests | master | this branch |
+|---|---|---|
+| mp/tests, pbc/df/tests/test_rsdf_builder.py | 19/43/0/0 | 21/41/0/0 |
+| scf, dft | 336/12/23/0 | 335/13/23/0 |
+
+The two tests above fail on master and pass here. The other 41 failures are unrelated and the same on both (34 at the `ft_ao_scheme` wave64 assert, 7 at the `fill_int4c2e` shared-memory request; separate pull requests). The scf/dft difference is test_stability_rhf_unstable, which also fails intermittently on master (1 run in 3).
+
+Part of #1054.
+
+This pull request was prepared with the help of an AI coding agent and was read and approved by a person before it was opened.
+````
+
+### (f) -mllvm -disable-machine-licm for the ROCm 10.1 compiler
+- Branch `pr-1054-hip-machine-licm`, tip **e647eb2fa92122d3430da63c940d30fbc66812be** (from 7cbd3d2f). Stands alone: yes; tested with no environment flag.
+- Message changes: Test Plan rewritten with this round's measurements (in-tree build command, RHF water, scf as-is vs branch). The cause and version paragraphs are unchanged. The LICM cost (review item 7) is in the PR draft, measured after the push.
+- Tests: RHF water vs CPU PySCF, master as-is: sto-3g 1.3e-12, def2-svp `HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION` in `rys_k_kernel` then hang (faulthandler at 150 s, in scf/jk.py:907 get_k). Branch: sto-3g 1.3e-12, def2-svp 1.7e-11, cc-pvtz 6.0e-12. scf directory (19 files, 150 s limit per file) master as-is: 7 files hang (test_hf_lowmem, test_init_guess, test_rhf, test_scf, test_scf_j_engine, test_scf_jk, test_uhf), 2 abort with hipErrorIllegalAddress (test_ghf, test_scf_ecp), the 12 that write junit give 83/18/8/0; branch 202/10/14/0 over all 19. scf+dft on the branch 335/13/23/0 (= master flag build plus the stability flake).
+- Cost: master as-is against master flag build on vitamin C/6-31g (no d shells, runs correctly without the flag), `OMP_NUM_THREADS=32`, two repeats: get_jk best of 10 0.0451/0.0451 s without, 0.0438/0.0438 s with; RHF best of 3 0.922/0.924 s without, 0.910/0.906 s with; DF-B3LYP 0.776/0.790 s without, 0.771/0.745 s with; energies identical (-680.6109869656). No slowdown found on gfx942; gfx1100 and ROCm 10.2+ cost not measured.
+- CUDA impact: none; inside `if(USE_HIP)` in lib/CMakeLists.txt.
+
+````markdown
+Title: [ROCm] Build HIP kernels with -mllvm -disable-machine-licm
+
+With ROCm 10.1 on gfx942 (MI300X) and gfx90a (MI200), any Hartree-Fock or DFT calculation with d shells faults in `rys_k_kernel` (`HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION`) and the process then hangs instead of exiting. RHF water with def2-svp is enough to show it. The CI test selection cannot finish on these GPUs.
+
+Cause: a compiler bug, not a gpu4pyscf bug. In the ROCm 10.1 compiler (AMD clang 24.0.0, release/therock-10.1 at d6f6cb69), machine LICM hoists the zero used as the atomicAdd offset out of the persistent loop of the Rys J/K kernels, and a register coalescer bug then lets a load inside the loop overwrite it. LLVM 8c6e07731faf fixes it; ROCm 10.2 and newer contain the fix (from branch ancestry and a static check of the compiled kernel, not a 10.2 run). gfx1100 with ROCm 10.1 did not show the fault, and #1042 was tested with ROCm 10.3.
+
+Change: pass `-mllvm -disable-machine-licm` to HIP compiles, behind a CMake option `HIP_DISABLE_MACHINE_LICM` (default ON). It is on for every HIP build because the 10.1 and 10.2 compilers both report clang 24.0.0, so CMake cannot select by version. Under `-fgpu-rdc` the device code is generated at link time, and CMake's HIP link rule passes `CMAKE_HIP_FLAGS` there too. CUDA builds are unaffected. This is a workaround for an old compiler; if you would rather not carry it, close this and ROCm 10.1 users can pass the flag themselves through `CMAKE_CONFIGURE_ARGS`.
+
+Test plan, MI300X (gfx942), ROCm 10.1.0 (HIP 7.16), CuPy 14.2.0, PySCF 2.14.0, built as the README describes with no extra flags; CI marker selection, one pytest process per test file:
+
+```
+python -c "from pyscf import gto; from gpu4pyscf import scf; mol = gto.M(atom='O 0 0 0; H 0 -0.757 0.587; H 0 0.757 0.587', basis='def2-svp'); print(scf.RHF(mol).kernel())"
+```
+
+| | master | this branch |
+|---|---|---|
+| RHF water, def2-svp | faults in rys_k_kernel, hangs | -75.96097516696524 (1.7e-11 from CPU PySCF) |
+| RHF water, cc-pvtz | not reached (the def2-svp run hangs) | 6.0e-12 from CPU PySCF |
+| scf directory, 19 test files (passed/failed/skipped/errors) | 7 files hang (stopped after 150 s each), 2 abort with hipErrorIllegalAddress after the fault; the 12 that report give 83/18/8/0 | 202/10/14/0, all 19 files |
+| scf, dft | cannot finish | 335/13/23/0 |
+
+Cost of the flag, measured on work that runs correctly without it (vitamin C from benchmarks/molecules, 6-31g, no d shells, nao 124; best of 10 or 3 runs, repeated twice): `get_jk` 0.0451 s without the flag and 0.0438 s with it, RHF 0.922 s and 0.908 s, DF-B3LYP 0.78 s and 0.75-0.77 s (within run-to-run noise), with identical energies. So no slowdown was found on gfx942.
+
+The verbose build log shows the flag on 100/100 HIP compile lines and 12/12 `--hip-link` lines. The branch's scf/dft result matches master built with the flag passed from the environment (336/12/23/0), apart from test_stability_rhf_unstable, which also fails intermittently there (1 run in 3).
+
+Part of #1054.
+
+This pull request was prepared with the help of an AI coding agent and was read and approved by a person before it was opened.
+````
+
+### Left undone
+- No run on wave32 (gfx1100/gfx1201) or gfx90a for these branches, and no NVIDIA run.
+- The LICM cost was not added to commit 7cbd3d2f's or e647eb2f's body (the branch was already pushed; no force-push). It is in the PR draft.
