@@ -43,6 +43,7 @@ ENTRY_FILES = (
     "libraries.md",
     "platform-limits.md",
     "diagnosis.md",
+    "performance.md",
     "validation.md",
     "linux-host-setup.md",
 )

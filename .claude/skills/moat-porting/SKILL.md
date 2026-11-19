@@ -75,9 +75,11 @@ what passes and what does not).
 - MOAT ported OpenCV's CUDA modules (opencv/opencv_contrib#4147). A project blocked on
   "OpenCV CUDA has no ROCm build" records `depends_on: [opencv_contrib]` rather than a
   decline.
-- A dependency that already has a ROCm port (`spconv_rocm`, pyg-rocm-build wheels,
+- A dependency that already has a ROCm port (`spconv-triton`, pyg-rocm-build wheels,
   `amd_gsplat`) is consumed through the `_deps/` mechanism as environment, not adopted as a
-  deliverable.
+  deliverable. (This list used to name `spconv_rocm`; the GitHub repository of that name
+  is empty, checked 2026-11 by the Pointcept port. `cuda-to-rocm`'s strategy-b-torch.md
+  has the details.)
 - Generated CUDA belongs to its generator. colmap vendors Caspar kernels that SymForce
   generates; a colmap deferral placed the fix in colmap's `caspar_generate.py`, which
   contains no CUDA, while the templates and runtime were already ported in MOAT's own
@@ -111,12 +113,35 @@ what passes and what does not).
   delta itself: `source-class` only for a delta the classifier calls arch-independent,
   and `binary-equiv` over a `mixed` delta only with `--host-checked`, your statement
   that you read the delta and its host-side code and data are unchanged (the build
-  comparison sees exported symbols and device code only). `codeobj_diff` compares ELF;
-  a Windows (PE/COFF) binary answers `indeterminate`.
-  For a host-only library (one that compiles no device translation unit) `codeobj_diff`
-  reports `indeterminate`, with "No kernel section found" on both sides; that is not
-  `differ`. Compare such a library with `sha256sum`, and `nm -D --defined-only` as a
-  second signal (CV-CUDA's `libnvcv_types.so`).
+  comparison sees exported symbols and device code only). `codeobj_diff` compares ELF
+  only, and that is open work, not a setting: a Windows (PE/COFF) binary (`.pyd`, `.dll`,
+  `.exe`) answers `indeterminate`, so no windows platform can get a binary-equivalence
+  verdict and a Windows `revalidate` after a mixed delta always needs a real run. A
+  cheap partial check that does run there, as supporting evidence and not a verdict:
+  compare the object outputs of `ninja -t commands all` for both shas (relative `/Fo`
+  paths) to show the compiled source set is unchanged (h2o4gpu). On Linux it runs on a
+  pip-SDK host with no `/opt/rocm` and on a whole CMake build tree (it finds the LLVM
+  tools from `ROCM_PATH`, the pip SDK root, `/opt/rocm`, then PATH, reads `.hip_fatbin`
+  itself and skips `CMakeFiles/`); a compressed offload bundle is `indeterminate`.
+  It compares normalized device ISA,
+  so its two builds may sit in different directories; the manual `.hip_fatbin` hash
+  comparison may not (`cuda-to-rocm`'s validation.md, "Proving two builds carry the same
+  device code"), and is the fallback only where the tool cannot run.
+  For a host-only binary (one that carries no device code) the tool has nothing but
+  the exported symbols to compare, and since it does not read host code, `identical`
+  there says only that the exports match. (Before 2026-11-16 such a binary answered
+  `indeterminate`, which made every CMake build tree indeterminate.) Compare a
+  host-only library with `sha256sum` as well (CV-CUDA's `libnvcv_types.so`).
+  Build both commits for a `codeobj_diff` at the SAME absolute source path: check out
+  the old sha in place, build into its own build directory, check out the new sha in
+  the same tree, build into a second one, and compare the two. A second worktree or
+  clone at another path can read `differ` with nothing changed, because a path the
+  compiler embeds can reach an exported symbol: CuMesh fed `__FILE__` through a check
+  macro into a template argument (`torchCheckMsgImpl<char[N], ...>`), so the mangled
+  name carried the LENGTH of the build path. Demangle a differing symbol (`c++filt`);
+  if the only difference is a `char[N]` length, rebuild at one path. (The
+  per-translation-unit `__hip_cuid_*` symbols, which also follow the path, are already
+  ignored by the tool.) (CuMesh, alien, k2)
 - A Windows-labeled delta is not inert elsewhere. When it flips a passed platform to
   `revalidate`, rebuild rather than carrying forward on "it is Windows-gated" reasoning;
   a binary-equivalence carry-forward builds, which is how the aihwkit and MMseqs2
@@ -268,6 +293,14 @@ This is a docs, diff, and review checkout, not a build checkout -- a compile nee
   job of this platform took the lock it is re-stamped to you with a WARNING. A person
   clears a lock nobody holds with `moatlib.py port-lock <name> --release`, or moves
   it with `--take <platform>`.
+- A follow-up round on a project whose upstream PR merged, and whose folder is on
+  `main` with no `port/<name>`, has no command that re-homes the folder before the
+  porter takes the lock. `set-state <name> <platform> porting` on `main` commits the
+  lock to the trunk, `fix-branch` refuses without an open PR, `sync-branch` refuses
+  without a maintained ruling, and `advance-head` (which does re-home) belongs inside
+  `porting`. cuBQL's round called `moatlib.ensure_port_branch(<name>)` from Python,
+  checked out the new branch and took the lock there. Still open as of 2026-11-19:
+  `set_state` does not call `ensure_port_branch`. (cuBQL)
 - The gh guard judges every `gh` call made inside a checkout. Pass `--repo` on every
   write, and in a `gh api graphql` call write the repository's owner and name
   literally in the query: a write whose target it cannot read is refused, and so are
