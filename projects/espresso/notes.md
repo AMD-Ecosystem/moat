@@ -509,3 +509,62 @@ Build: PASS. GPU suite: 74/74, 0 failures (the same 3 exit-5 Skipped). New cases
 - Jargon: `python3 utils/jargon.py --port espresso` clean. Docs: "AMD GPU acceleration" at doc/sphinx/installation.rst:300 and `USE_HIP` at :918.
 - CUDA no-regression compile: `cuda-not-validated: this host has no CUDA toolkit (no nvcc, no /usr/local/cuda, no /opt/conda to create the cuda-12.8 env)`. Still owed on the nvcc fleet host before the PR goes to jeff (see gfx942 section).
 - With gfx942 (wave64) and this run (wave32) at 87cbc046d, both required Linux gates are met at head; windows is waived.
+
+## CUDA no-regression compile 2026-11-19 (nvcc, mi355 host) -- PORT REGRESSION
+
+Evidence only, requested by jeff before the PR: compile and link the CUDA configuration of the port at head and of upstream at the merge base with real nvcc. No NVIDIA GPU on this host, so compile/link only, nothing run. Stage and platform records untouched; nothing pushed to the fork.
+
+Verdict: **the port breaks the nvcc build.** Upstream base builds 542/542; the port tree stops at `p3m_gpu_cuda.cu`, 501/542 (the remaining 41 steps are `espresso_core.so` and everything that links it). Not fixed here, as instructed.
+
+### Trees
+
+- Port: `AMD-Ecosystem/espresso` at `87cbc046d27c1eabd33eec8c208014bface17b07` (record `head_sha`).
+- Base: `espressomd/espresso` at `c0e34ecc0912dbd01467fe71295598579e1a8339` (`git merge-base 87cbc046d origin/python`).
+- Both cloned with `--recurse` submodule init; Kokkos 5.0.2, kokkos-fft v2.0.0, Cabana 0.8.0, heFFTe v2.4.1, waLBerla 623a60c1 FetchContent'd by each tree's own configure.
+
+### Toolchain
+
+- CUDA 12.8 (`nvcc` release 12.8, V12.8.93) at /usr/local/cuda, host compiler GCC 13.3.0 (`CMAKE_CUDA_HOST_COMPILER=/usr/bin/g++`), CMake 3.31.6, Ninja.
+- Default CUDA archs from upstream's CMake: `ESPRESSO_CMAKE_CUDA_ARCHITECTURES=75;86;89`.
+- Host deps built job-locally (the host has no MPI headers and no Boost.MPI): OpenMPI 5.0.8 (`--disable-mpi-fortran --disable-opencl --disable-cuda --disable-nvml --disable-gl --disable-rsmi --disable-levelzero --enable-mca-no-build=accelerator`; the bundled hwloc breaks on `--without-cuda`), and Boost 1.83 `mpi`/`serialization`/`unit_test_framework` compiled from the boostorg `boost-1.83.0` tags against the system 1.83 headers, found through a minimal hand-written `BoostConfig.cmake`. System FFTW 3.3.10.
+
+### Recipe (upstream CI `cuda12-maxset` job, reduced to what this host has)
+
+Upstream's CUDA CI (`.gitlab-ci.yml` `cuda12-maxset` -> `maintainer/CI/build_cmake.sh`) uses `myconfig=maxset`, `ESPRESSO_BUILD_WITH_CUDA=ON`, `ESPRESSO_WARNINGS_ARE_ERRORS=ON`, waLBerla ON, Ninja. Kept those; turned off the optional packages not on the host (ScaFaCoS, Stokesian dynamics, NLopt, Caliper, HDF5, GSL) and the Python bindings (Python 3.12 + NumPy would need a pip install into a venv, which the host's job guard refuses; the bindings are Cython host code that nvcc never compiles). With Python off, `Python_EXECUTABLE` must still be passed because `src/config` runs its generator scripts through it (stdlib only). Identical for both trees:
+
+```
+cp <tree>/maintainer/configs/maxset.hpp <build>/myconfig.hpp
+CUDACXX=/usr/local/cuda/bin/nvcc CUDAHOSTCXX=/usr/bin/g++ \
+cmake -G Ninja -S <tree> -B <build> \
+  -D CMAKE_BUILD_TYPE=Release -D CMAKE_CXX_EXTENSIONS=OFF \
+  -D CMAKE_C_COMPILER=/usr/bin/gcc -D CMAKE_CXX_COMPILER=/usr/bin/g++ \
+  -D CMAKE_CUDA_HOST_COMPILER=/usr/bin/g++ \
+  -D CUDAToolkit_ROOT=/usr/local/cuda -D Kokkos_CUDA_DIR=/usr/local/cuda \
+  -D CMAKE_PREFIX_PATH=$DEPS -D Boost_DIR=$DEPS/lib/cmake/Boost-1.83.0 \
+  -D MPI_C_COMPILER=$DEPS/bin/mpicc -D MPI_CXX_COMPILER=$DEPS/bin/mpicxx \
+  -D ESPRESSO_WARNINGS_ARE_ERRORS=ON -D ESPRESSO_BUILD_WITH_CUDA=ON \
+  -D ESPRESSO_BUILD_WITH_WALBERLA=ON -D ESPRESSO_BUILD_WITH_FFTW=ON \
+  -D ESPRESSO_BUILD_WITH_PYTHON=OFF -D Python_EXECUTABLE=/usr/bin/python3.12 \
+  -D ESPRESSO_BUILD_TESTS=ON \
+  -D ESPRESSO_BUILD_WITH_HDF5=OFF -D ESPRESSO_BUILD_WITH_SCAFACOS=OFF \
+  -D ESPRESSO_BUILD_WITH_STOKESIAN_DYNAMICS=OFF -D ESPRESSO_BUILD_WITH_GSL=OFF \
+  -D ESPRESSO_BUILD_WITH_NLOPT=OFF -D ESPRESSO_BUILD_WITH_CALIPER=OFF
+ninja -C <build> -k 0 -j32 all <the 53 unit-test executables, cuda_test included>
+```
+
+The unit tests are `EXCLUDE_FROM_ALL`; their 53 executable targets were listed with `ninja -t targets all` (same list in both trees) and built explicitly, giving 542 Ninja steps per tree.
+
+### Results
+
+| | configure | build steps | first error |
+|---|---|---|---|
+| base c0e34ecc0 | PASS | **542/542** | none (`espresso_core.so` carries sm_75/86/89 cubins; `cuda_test` links) |
+| port 87cbc046d | PASS | **501/542** | `p3m_gpu_cuda.cu(82): error: identifier "cufftComplex" is undefined` |
+
+Both caches: `CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc`, `Kokkos_ENABLE_CUDA=OFF` (upstream's own gate keeps the Kokkos CUDA backend off for nvcc; the port's `AND NOT USE_HIP` changes nothing here), `Heffte_ENABLE_CUDA=ON`, waLBerla ON; port has `USE_HIP=OFF`. All other port CUDA TUs (the other six core `.cu` files and all waLBerla CUDA objects) compile under `--Werror=all-warnings`.
+
+Port failure, the only failing edge (`FAILED: src/core/CMakeFiles/espresso_core.dir/electrostatics/p3m_gpu_cuda.cu.o`), 24 errors, all cuFFT names: `cufftComplex`, `cufftHandle`, `cufftDestroy`, `cufftPlan3d`, `CUFFT_R2C`, `CUFFT_C2R`, `CUFFT_SUCCESS`, `cufftExecR2C`, `cufftExecC2R`, plus `name followed by "::" must be a class or namespace name` at lines 305-317.
+
+Cause: the port deleted `#include <cuda.h>` and `#include <cufft.h>` from `src/core/electrostatics/p3m_gpu_cuda.cu` (upstream has `#include <cufft.h>` at line 66) and routed the TU through `src/core/cuda/cuda_to_hip.h` via `cuda/utils.cuh`. That header's NVIDIA branch includes only `<cuda.h>` and `<cuda_runtime.h>`, not `<cufft.h>`, although its comment says it "includes the CUDA runtime and cuFFT" on NVIDIA. Introduced in 6d36cb6aa ("[ROCm] Add HIP support for core electrostatics and magnetostatics", 2026-06-04; `git log -S'#include <cufft.h>'`), so the June port was already broken for nvcc and today's sync did not cause it; the earlier "NVIDIA path byte-identical" claim was never checked with nvcc. Fix belongs to the porter (restore `#include <cufft.h>` on the CUDA path, in the TU or in the header's NVIDIA branch), followed by re-review, an nvcc re-run of this recipe, and whatever HIP revalidation the head move needs.
+
+Job-local artifacts (container-local, not durable): builds and logs under the job directory `espresso/` (`build-{base,port}-wal`, `build-{base,port}.log`, `build-{base,port}2.log`).
