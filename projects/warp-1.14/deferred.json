@@ -160,6 +160,32 @@
       "upstream_issue": null,
       "created_at": "2026-11-19T01:28:49Z",
       "decided": null
+    },
+    {
+      "id": "hip-memcpy3d-async-pageable-host-read-after-return",
+      "kind": "rocm-bug-report",
+      "component": "HIP",
+      "summary": "HIP 7.17 (ROCm 10.2 wheels), gfx1100 (W7800): hipDrvMemcpy3DAsync and the runtime hipMemcpy3DAsync from pageable (malloc) host memory into a hipArray still read the host buffer after the call returns: overwriting the buffer right after the call and then synchronizing leaves every element of the array with the overwritten value (1D w=32/256/4096, 2D 2x2/64x64/1024x1024; runtime API 2048 of 2048 wrong). Linear hipMemcpyAsync H2D stages pageable memory correctly (0 bad). CUDA stages pageable memory before an async copy returns, and Warp relies on that: textures built from NumPy data had their first 16 bytes replaced by glibc free-list pointers once the temporary host copy was freed. Warp now synchronizes the stream after a host-side 3D copy outside a capture. Reproducer m3d_pageable.cpp in the notes",
+      "refs": [
+        "projects/warp-1.14/notes.md (Evidence session 2 linux-gfx1100, Finding 2; Porting session 6)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-19T02:16:11Z",
+      "decided": null
+    },
+    {
+      "id": "hip-drv-memcpy3d-async-not-captured",
+      "kind": "rocm-bug-report",
+      "component": "HIP",
+      "summary": "HIP 7.17 (ROCm 10.2 wheels), gfx1100 (W7800): hipDrvMemcpy3DAsync on a stream capturing in global mode returns success but copies immediately and adds no node to the graph (device->array->device: graph has 0 nodes, the copy has happened before instantiation, a replay after changing the source copies nothing, 2048 of 2048 wrong). The runtime hipMemcpy3DAsync captures correctly (2 memcpy nodes, replays right, all three capture modes, 1 and 4 channels). Related: hipArray3DGetDescriptor returns hipErrorStreamCaptureUnsupported during a global capture and invalidates it. Warp now routes its 3D texture copies through hipMemcpy3DAsync with element sizes recorded at array creation. Reproducer m3d_capture.cpp in the notes",
+      "refs": [
+        "projects/warp-1.14/notes.md (Evidence session 2 linux-gfx1100, Finding 3; Porting session 6)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-19T02:16:11Z",
+      "decided": null
     }
   ]
 }

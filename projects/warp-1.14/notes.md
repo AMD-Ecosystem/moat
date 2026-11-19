@@ -542,19 +542,6 @@ Requested by Jeff Daily. The work lock stays with linux-gfx950. This session cha
 
 ### A.2: tile set on gfx942 (one GPU): 636 run, 10 skipped, 4 failures
 Same loop as step 1 of session 4 (`-p <file> -m 32`, from `projects/warp-1.14/src`).
-## Evidence session (2026-11-19, linux-gfx1100, Radeon Pro W7800, evidence only): handoff item B (wave32)
-
-Requested by Jeff Daily. The work lock stays with linux-gfx950. This session changed nothing in the fork, stage, lock, head or platform records. The clone was read-only at the recorded `head_sha` `8d13d596` (`git status --porcelain` clean apart from untracked test output). Local experiments ran in a separate `git worktree` of the clone, outside `projects/warp-1.14/src`. That way the warp.so the tests used was never rebuilt mid-run. This is the first run of the port on a wave32 GPU.
-
-### Setup (deviations from the common setup block)
-- Device: "AMD Radeon Pro W7800 48GB", `gfx1100` (no target features in `arch_name`), Warp `arch` 110, `sm_count` 35 (HIP's `multiProcessorCount`, which counts WGPs on RDNA3; the part has 70 CUs), warp size 32 (`wp_cuda_device_get_warp_size`), 64 KiB LDS per workgroup (`hipDeviceAttributeMaxSharedMemoryPerBlock` = 65536). Dispatcher pin `HIP_VISIBLE_DEVICES=0` kept. The host has four such GPUs.
-- The job venv came with TheRock 10.1.0 wheels. Installed into it: `rocm[devel,device-gfx1100]==10.2.0`, `torch[device-gfx1100]==2.15.0+rocm10.2.0`, `numpy==1.26.4`, `usd-core`, then `rocm-sdk init`. As on gfx942, the stale `rocm-sdk-device-gfx*==10.1.0` entries stay visible through the read-only `venv-base-links` path. The venv's own 10.2 `rocm_sdk`/`_rocm_sdk_core` shadow them (checked: `rocm_sdk.__file__` is in the venv, HIP 7.17.26434).
-- Trap seen here (it cost one experiment): `venv-base-links` also puts the image's `rocm-sdk` 10.1 console script on the path when the venv's `bin` is not first on `PATH`. In `cd x && PATH=$FLEET_VENV/bin:$PATH python build_lib.py --rocm-path "$(rocm-sdk path --root)"`, the `$(...)` runs before the `PATH=` prefix applies. It returned `/opt/python-3.11-venv/.../_rocm_sdk_devel` (10.1) and the build linked the 10.1 runtime. `export PATH=$FLEET_VENV/bin:$PATH` first. Check the result with `readelf -d warp/bin/warp.so | grep RUNPATH`. The build used for all results below has the venv's 10.2 RUNPATH.
-- `git-lfs` 3.4.1 installed with apt, then `git lfs install --local --skip-repo && git lfs pull` (test_volume reads the `.nvdb` assets).
-- Build: `export PATH=$FLEET_VENV/bin:$PATH; python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1100 -j 32` (32 = physical cores) -> "Warp build succeeded", 33 s (timeit). Greeting: `HIP 7.17`, `"cuda:0" : "AMD Radeon Pro W7800 48GB" (45 GiB, gfx1100, mempool enabled)`.
-- Every run used a private `WARP_CACHE_PATH` under `agent_space/`. All GPU runs were under `ulimit -c 0`. Runner per file: `python -m warp.tests -s autodetect -p "<pattern>" -m 32` from `projects/warp-1.14/src`.
-
-### B.2: tile set at wavefront 32: 636 run, 10 skipped, 4 failures (the same 4 as gfx942, not wave-related)
 
 | file | ran | result | file | ran | result |
 |---|---|---|---|---|---|
@@ -652,65 +639,6 @@ python summarize.py gfx942_run1.csv gfx942_run2.csv gfx942_run3.csv
 | float64 | 32x32 | 64 | 3.241-3.244 | 10602 | 2.725-2.740 | 788 | ok |
 | float64 | 32x32 | 128 | 2.708-2.729 | 12687 | 1.919-1.942 | 1119 | ok |
 | float64 | 32x32 | 256 | 3.087-3.113 | 11132 | 1.511-1.526 | 1421 | ok |
-Skips: the three upstream no-libmathdx skips (a), (b), (c) of session 4, nothing else.
-
-The four failures are exactly the gfx942 four (`test_tile_reduce_axis_tier2_cuda_0`, `test_tile_reduce_axis_tier2_single_warp_cuda_0`, `test_tile_shared_mem_large_cuda_0`, `test_tile_assign_2d_cuda_0`), with the same signature: one `Warp CUDA error 1: invalid argument (in function wp_cuda_launch_kernel, warp.cu:5466)` per test, and an all-zero output or gradient. The cause is the one the gfx942 section measured: the kernel asks for 65536 bytes of dynamic LDS, and the 64 KiB per-workgroup limit leaves no room for its static LDS. Measured here: `test_tile_shared_mem_large`'s forward kernel has `.group_segment_fixed_size: 1024` (`llvm-readelf --notes` on the cached `.hsaco`). Taken from the hipRTC LLVM IR (`-fgpu-rdc` bitcode through `llvm-dis`), those 1024 bytes are the only static LDS global: `tile_shared_storage_t::get_smem_base()::smem_base`, upstream's per-thread allocator offset table `__shared__ unsigned int smem_base[WP_TILE_BLOCK_DIM]` (`tile.h:1143`, 4 B x block_dim 256). It is upstream code and is present on CUDA too. So the same four tests would also fail on an NVIDIA part whose per-block limit is 64 KiB. The probe `agent_space/probe/smem_large.py` with tile `64x120` (61440 dynamic bytes) passes; `64x128` (65536) fails.
-
-Wave32 itself is not the problem. The same kernels at half size, forward and backward at wavefront 32, all correct (`agent_space/probe/half_lds.py`):
-
-| kernel | block_dim | backward dyn. LDS | forward | gradient |
-|---|---|---|---|---|
-| tile_sum axis 2, (8,8,128) as in the test | 64 / 32 | 65536 | ok / ok | launch fails / launch fails |
-| tile_sum axis 2, (8,8,64) | 64 / 32 | 32768 | ok / ok | ok / ok |
-| tile_assign, (16,32,8) as in the test | 32 | 65536 | ok | launch fails |
-| tile_assign, (16,32,4) | 32 | 32768 | ok | ok |
-
-The `cuFuncSetAttribute_f` emulation diff proposed in the gfx942 section was confirmed here too, as an uncommitted experiment in a separate worktree built against the venv's 10.2. With it, all four kernels print Warp's own "Failed to configure kernel dynamic shared memory ... 65536 bytes, but maximum available is 65536" UserWarning before the (still failing) launch, the way CUDA does. The tests still fail, as expected. My version was the same change plus a `&& hfunc` guard on the `hipFuncGetAttribute` call; either is fine. One wording point for whoever lands it: the warning's "maximum available" comes from `device.max_shared_memory_per_block` (65536) and does not subtract the kernel's static bytes, so the message reads "65536 bytes, but maximum available is 65536". The message is upstream's Python and is the same on CUDA, so it is noted here and not proposed.
-
-Side observation, not followed up: the build that accidentally linked the image's ROCm 10.1 runtime (setup trap above) did not reject the oversize launch. `hipModuleLaunchKernel` returned hipSuccess, the dispatch went out with `group_seg_size=66560`, and the queue aborted with `HSA_STATUS_ERROR_INVALID_ALLOCATION`, which Warp then reports as error 700 on the next copy. The 10.2 runtime returns `hipErrorInvalidValue` for the same launch, from Warp and from a standalone `hipModuleLoad` + `hipModuleLaunchKernel` reproducer (`agent_space/probe/ldsval/`), with or without a prior `hipFuncGetAttribute`. The wheel pins ROCm 10.2, so this is recorded only.
-
-### B.3: Q3 `tile_matmul` benchmark on gfx1100 (raw numbers for Jeff; no decision taken)
-Device "AMD Radeon Pro W7800 48GB" (gfx1100, 70 CUs / 35 WGPs, wave32), HIP 7.17, ROCm 10.2.0 wheels, fork `8d13d596`, no libmathdx, `HIP_VISIBLE_DEVICES=0`. Scripts `bench_tile_matmul.py` and `summarize.py` extracted verbatim from session 4. Command, each run wrapped in `utils/timeit.sh warp-1.14 bench` (161 s for the first run, which includes the kernel compiles, then 54 s and 53 s):
-```
-for n in 1 2 3; do python bench_tile_matmul.py --blocks 16384 --iters 50 --csv gfx1100_run$n.csv; done
-python summarize.py gfx1100_run1.csv gfx1100_run2.csv gfx1100_run3.csv
-```
-16384 blocks as on gfx950/gfx942, for comparability (about 234 blocks per CU on this part).
-
-| dtype | tile | block_dim | fwd ms (min-max) | fwd GFLOP/s (best) | adj ms (min-max) | adj GFLOP/s (best) | check |
-|---|---|---|---|---|---|---|---|
-| float16 | 16x16 | 32 | 1.074-1.123 | 4000 | 0.295-0.300 | 909 | ok |
-| float16 | 16x16 | 64 | 1.066-1.164 | 4027 | 0.283-0.288 | 950 | ok |
-| float16 | 16x16 | 128 | 0.911-0.989 | 4714 | 0.257-0.268 | 1044 | ok |
-| float16 | 16x16 | 256 | 1.274-1.381 | 3371 | 0.299-0.307 | 899 | ok |
-| float16 | 32x32 | 32 | 3.545-3.729 | 9691 | 4.299-4.424 | 499 | ok |
-| float16 | 32x32 | 64 | 3.983-4.240 | 8627 | 2.395-2.478 | 897 | ok |
-| float16 | 32x32 | 128 | 4.918-5.313 | 6987 | 1.864-1.943 | 1152 | ok |
-| float16 | 32x32 | 256 | 6.316-6.816 | 5440 | 1.818-1.960 | 1181 | ok |
-| float16 | 64x64 | 32 | 32.239-33.227 | 8526 | 60.545-60.710 | 284 | ok |
-| float16 | 64x64 | 64 | 26.391-27.793 | 10416 | 33.613-33.716 | 511 | ok |
-| float16 | 64x64 | 128 | 26.454-28.234 | 10391 | 16.997-17.437 | 1011 | ok |
-| float16 | 64x64 | 256 | 16.794-18.081 | 16368 | 13.297-13.819 | 1292 | ok |
-| float32 | 16x16 | 32 | 1.761-1.900 | 2439 | 0.409-0.431 | 657 | ok |
-| float32 | 16x16 | 64 | 1.924-2.027 | 2233 | 0.339-0.345 | 792 | ok |
-| float32 | 16x16 | 128 | 1.223-1.287 | 3512 | 0.383-0.407 | 700 | ok |
-| float32 | 16x16 | 256 | 1.560-1.620 | 2753 | 0.419-0.461 | 641 | ok |
-| float32 | 32x32 | 32 | 7.470-7.936 | 4600 | 6.469-6.569 | 332 | ok |
-| float32 | 32x32 | 64 | 7.901-8.492 | 4349 | 3.280-3.450 | 655 | ok |
-| float32 | 32x32 | 128 | 7.585-8.291 | 4530 | 2.534-2.674 | 847 | ok |
-| float32 | 32x32 | 256 | 9.065-9.886 | 3791 | 2.688-3.051 | 799 | ok |
-| float32 | 64x64 | 32 | 68.598-69.710 | 4007 | (no launch) | - | ADJ-FAILED (smem) |
-| float32 | 64x64 | 64 | 42.993-44.342 | 6394 | (no launch) | - | ADJ-FAILED (smem) |
-| float32 | 64x64 | 128 | 38.867-41.488 | 7072 | (no launch) | - | ADJ-FAILED (smem) |
-| float32 | 64x64 | 256 | 48.129-50.039 | 5711 | (no launch) | - | ADJ-FAILED (smem) |
-| float64 | 16x16 | 32 | 6.602-6.851 | 651 | 1.387-1.450 | 194 | ok |
-| float64 | 16x16 | 64 | 6.515-6.805 | 659 | 0.989-1.012 | 271 | ok |
-| float64 | 16x16 | 128 | 6.638-6.949 | 647 | 1.280-1.356 | 210 | ok |
-| float64 | 16x16 | 256 | 6.589-6.907 | 652 | 1.242-1.330 | 216 | ok |
-| float64 | 32x32 | 32 | 56.860-57.329 | 604 | 23.149-23.249 | 93 | ok |
-| float64 | 32x32 | 64 | 49.601-50.236 | 693 | 13.046-13.252 | 165 | ok |
-| float64 | 32x32 | 128 | 45.203-46.083 | 760 | 8.844-9.041 | 243 | ok |
-| float64 | 32x32 | 256 | 46.405-47.247 | 740 | 7.912-8.057 | 271 | ok |
 | float64 | 64x64 | 32 | (no launch) | - | (no launch) | - | MISMATCH (smem) |
 | float64 | 64x64 | 64 | (no launch) | - | (no launch) | - | MISMATCH (smem) |
 | float64 | 64x64 | 128 | (no launch) | - | (no launch) | - | MISMATCH (smem) |
@@ -871,6 +799,101 @@ IOMMU heuristic: Warp's `check_p2p()` (`warp/_src/utils.py:1747`) returns False 
 3. Register C1, C2 and C3 with `deferred.py` (ids proposed above) and bring them to Jeff for filing. Decide whether test_mempool_access, the unified-memory mempool test and the `_cuda_1` capture tests get capability skips naming those registrations.
 4. C4: priority-timing test on gfx942.
 5. The Q3 gfx942 numbers above go to Jeff together with the wave32 numbers from item B.
+
+## Evidence session (2026-11-19, linux-gfx1100, Radeon Pro W7800, evidence only): handoff item B (wave32)
+
+Requested by Jeff Daily. The work lock stays with linux-gfx950. This session changed nothing in the fork, stage, lock, head or platform records. The clone was read-only at the recorded `head_sha` `8d13d596` (`git status --porcelain` clean apart from untracked test output). Local experiments ran in a separate `git worktree` of the clone, outside `projects/warp-1.14/src`. That way the warp.so the tests used was never rebuilt mid-run. This is the first run of the port on a wave32 GPU.
+
+### Setup (deviations from the common setup block)
+- Device: "AMD Radeon Pro W7800 48GB", `gfx1100` (no target features in `arch_name`), Warp `arch` 110, `sm_count` 35 (HIP's `multiProcessorCount`, which counts WGPs on RDNA3; the part has 70 CUs), warp size 32 (`wp_cuda_device_get_warp_size`), 64 KiB LDS per workgroup (`hipDeviceAttributeMaxSharedMemoryPerBlock` = 65536). Dispatcher pin `HIP_VISIBLE_DEVICES=0` kept. The host has four such GPUs.
+- The job venv came with TheRock 10.1.0 wheels. Installed into it: `rocm[devel,device-gfx1100]==10.2.0`, `torch[device-gfx1100]==2.15.0+rocm10.2.0`, `numpy==1.26.4`, `usd-core`, then `rocm-sdk init`. As on gfx942, the stale `rocm-sdk-device-gfx*==10.1.0` entries stay visible through the read-only `venv-base-links` path. The venv's own 10.2 `rocm_sdk`/`_rocm_sdk_core` shadow them (checked: `rocm_sdk.__file__` is in the venv, HIP 7.17.26434).
+- Trap seen here (it cost one experiment): `venv-base-links` also puts the image's `rocm-sdk` 10.1 console script on the path when the venv's `bin` is not first on `PATH`. In `cd x && PATH=$FLEET_VENV/bin:$PATH python build_lib.py --rocm-path "$(rocm-sdk path --root)"`, the `$(...)` runs before the `PATH=` prefix applies. It returned `/opt/python-3.11-venv/.../_rocm_sdk_devel` (10.1) and the build linked the 10.1 runtime. `export PATH=$FLEET_VENV/bin:$PATH` first. Check the result with `readelf -d warp/bin/warp.so | grep RUNPATH`. The build used for all results below has the venv's 10.2 RUNPATH.
+- `git-lfs` 3.4.1 installed with apt, then `git lfs install --local --skip-repo && git lfs pull` (test_volume reads the `.nvdb` assets).
+- Build: `export PATH=$FLEET_VENV/bin:$PATH; python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1100 -j 32` (32 = physical cores) -> "Warp build succeeded", 33 s (timeit). Greeting: `HIP 7.17`, `"cuda:0" : "AMD Radeon Pro W7800 48GB" (45 GiB, gfx1100, mempool enabled)`.
+- Every run used a private `WARP_CACHE_PATH` under `agent_space/`. All GPU runs were under `ulimit -c 0`. Runner per file: `python -m warp.tests -s autodetect -p "<pattern>" -m 32` from `projects/warp-1.14/src`.
+
+### B.2: tile set at wavefront 32: 636 run, 10 skipped, 4 failures (the same 4 as gfx942, not wave-related)
+
+| file | ran | result | file | ran | result |
+|---|---|---|---|---|---|
+| test_tile | 126 | OK | test_tile_matmul_no_mathdx | 22 | OK |
+| test_tile_atomic_bitwise | 3 | OK | test_tile_mlp | 3 | OK, 1 skipped (a) |
+| test_tile_cholesky | 33 | OK | test_tile_reduce | 62 | **FAILED (failures=2)** |
+| test_tile_cholesky_no_mathdx | 16 | OK | test_tile_shared_memory | 30 | **FAILED (failures=1)** |
+| test_tile_empty | 20 | OK | test_tile_solve | 5 | OK, 1 skipped (b) |
+| test_tile_fft | 20 | OK, 8 skipped (c) | test_tile_solve_no_mathdx | 28 | OK |
+| test_tile_fft_no_mathdx | 16 | OK | test_tile_sort | 2 | OK |
+| test_tile_func_arg | 27 | OK | test_tile_stack | 40 | OK |
+| test_tile_fused_ops | 36 | OK | test_tile_view | 16 | **FAILED (failures=1)** |
+| test_tile_large_offsets | 1 | OK | test_block_dim_dispatch | 2 | OK |
+| test_tile_load | 64 | OK | test_template_launch_bounds | 36 | OK |
+| test_tile_mathdx | 6 | OK | | | |
+| test_tile_matmul | 22 | OK | | | |
+
+Skips: the three upstream no-libmathdx skips (a), (b), (c) of session 4, nothing else.
+
+The four failures are exactly the gfx942 four (`test_tile_reduce_axis_tier2_cuda_0`, `test_tile_reduce_axis_tier2_single_warp_cuda_0`, `test_tile_shared_mem_large_cuda_0`, `test_tile_assign_2d_cuda_0`), with the same signature: one `Warp CUDA error 1: invalid argument (in function wp_cuda_launch_kernel, warp.cu:5466)` per test, and an all-zero output or gradient. The cause is the one the gfx942 section measured: the kernel asks for 65536 bytes of dynamic LDS, and the 64 KiB per-workgroup limit leaves no room for its static LDS. Measured here: `test_tile_shared_mem_large`'s forward kernel has `.group_segment_fixed_size: 1024` (`llvm-readelf --notes` on the cached `.hsaco`). Taken from the hipRTC LLVM IR (`-fgpu-rdc` bitcode through `llvm-dis`), those 1024 bytes are the only static LDS global: `tile_shared_storage_t::get_smem_base()::smem_base`, upstream's per-thread allocator offset table `__shared__ unsigned int smem_base[WP_TILE_BLOCK_DIM]` (`tile.h:1143`, 4 B x block_dim 256). It is upstream code and is present on CUDA too. So the same four tests would also fail on an NVIDIA part whose per-block limit is 64 KiB. The probe `agent_space/probe/smem_large.py` with tile `64x120` (61440 dynamic bytes) passes; `64x128` (65536) fails.
+
+Wave32 itself is not the problem. The same kernels at half size, forward and backward at wavefront 32, all correct (`agent_space/probe/half_lds.py`):
+
+| kernel | block_dim | backward dyn. LDS | forward | gradient |
+|---|---|---|---|---|
+| tile_sum axis 2, (8,8,128) as in the test | 64 / 32 | 65536 | ok / ok | launch fails / launch fails |
+| tile_sum axis 2, (8,8,64) | 64 / 32 | 32768 | ok / ok | ok / ok |
+| tile_assign, (16,32,8) as in the test | 32 | 65536 | ok | launch fails |
+| tile_assign, (16,32,4) | 32 | 32768 | ok | ok |
+
+The `cuFuncSetAttribute_f` emulation diff proposed in the gfx942 section was confirmed here too, as an uncommitted experiment in a separate worktree built against the venv's 10.2. With it, all four kernels print Warp's own "Failed to configure kernel dynamic shared memory ... 65536 bytes, but maximum available is 65536" UserWarning before the (still failing) launch, the way CUDA does. The tests still fail, as expected. My version was the same change plus a `&& hfunc` guard on the `hipFuncGetAttribute` call; either is fine. One wording point for whoever lands it: the warning's "maximum available" comes from `device.max_shared_memory_per_block` (65536) and does not subtract the kernel's static bytes, so the message reads "65536 bytes, but maximum available is 65536". The message is upstream's Python and is the same on CUDA, so it is noted here and not proposed.
+
+Side observation, not followed up: the build that accidentally linked the image's ROCm 10.1 runtime (setup trap above) did not reject the oversize launch. `hipModuleLaunchKernel` returned hipSuccess, the dispatch went out with `group_seg_size=66560`, and the queue aborted with `HSA_STATUS_ERROR_INVALID_ALLOCATION`, which Warp then reports as error 700 on the next copy. The 10.2 runtime returns `hipErrorInvalidValue` for the same launch, from Warp and from a standalone `hipModuleLoad` + `hipModuleLaunchKernel` reproducer (`agent_space/probe/ldsval/`), with or without a prior `hipFuncGetAttribute`. The wheel pins ROCm 10.2, so this is recorded only.
+
+### B.3: Q3 `tile_matmul` benchmark on gfx1100 (raw numbers for Jeff; no decision taken)
+Device "AMD Radeon Pro W7800 48GB" (gfx1100, 70 CUs / 35 WGPs, wave32), HIP 7.17, ROCm 10.2.0 wheels, fork `8d13d596`, no libmathdx, `HIP_VISIBLE_DEVICES=0`. Scripts `bench_tile_matmul.py` and `summarize.py` extracted verbatim from session 4. Command, each run wrapped in `utils/timeit.sh warp-1.14 bench` (161 s for the first run, which includes the kernel compiles, then 54 s and 53 s):
+```
+for n in 1 2 3; do python bench_tile_matmul.py --blocks 16384 --iters 50 --csv gfx1100_run$n.csv; done
+python summarize.py gfx1100_run1.csv gfx1100_run2.csv gfx1100_run3.csv
+```
+16384 blocks as on gfx950/gfx942, for comparability (about 234 blocks per CU on this part).
+
+| dtype | tile | block_dim | fwd ms (min-max) | fwd GFLOP/s (best) | adj ms (min-max) | adj GFLOP/s (best) | check |
+|---|---|---|---|---|---|---|---|
+| float16 | 16x16 | 32 | 1.074-1.123 | 4000 | 0.295-0.300 | 909 | ok |
+| float16 | 16x16 | 64 | 1.066-1.164 | 4027 | 0.283-0.288 | 950 | ok |
+| float16 | 16x16 | 128 | 0.911-0.989 | 4714 | 0.257-0.268 | 1044 | ok |
+| float16 | 16x16 | 256 | 1.274-1.381 | 3371 | 0.299-0.307 | 899 | ok |
+| float16 | 32x32 | 32 | 3.545-3.729 | 9691 | 4.299-4.424 | 499 | ok |
+| float16 | 32x32 | 64 | 3.983-4.240 | 8627 | 2.395-2.478 | 897 | ok |
+| float16 | 32x32 | 128 | 4.918-5.313 | 6987 | 1.864-1.943 | 1152 | ok |
+| float16 | 32x32 | 256 | 6.316-6.816 | 5440 | 1.818-1.960 | 1181 | ok |
+| float16 | 64x64 | 32 | 32.239-33.227 | 8526 | 60.545-60.710 | 284 | ok |
+| float16 | 64x64 | 64 | 26.391-27.793 | 10416 | 33.613-33.716 | 511 | ok |
+| float16 | 64x64 | 128 | 26.454-28.234 | 10391 | 16.997-17.437 | 1011 | ok |
+| float16 | 64x64 | 256 | 16.794-18.081 | 16368 | 13.297-13.819 | 1292 | ok |
+| float32 | 16x16 | 32 | 1.761-1.900 | 2439 | 0.409-0.431 | 657 | ok |
+| float32 | 16x16 | 64 | 1.924-2.027 | 2233 | 0.339-0.345 | 792 | ok |
+| float32 | 16x16 | 128 | 1.223-1.287 | 3512 | 0.383-0.407 | 700 | ok |
+| float32 | 16x16 | 256 | 1.560-1.620 | 2753 | 0.419-0.461 | 641 | ok |
+| float32 | 32x32 | 32 | 7.470-7.936 | 4600 | 6.469-6.569 | 332 | ok |
+| float32 | 32x32 | 64 | 7.901-8.492 | 4349 | 3.280-3.450 | 655 | ok |
+| float32 | 32x32 | 128 | 7.585-8.291 | 4530 | 2.534-2.674 | 847 | ok |
+| float32 | 32x32 | 256 | 9.065-9.886 | 3791 | 2.688-3.051 | 799 | ok |
+| float32 | 64x64 | 32 | 68.598-69.710 | 4007 | (no launch) | - | ADJ-FAILED (smem) |
+| float32 | 64x64 | 64 | 42.993-44.342 | 6394 | (no launch) | - | ADJ-FAILED (smem) |
+| float32 | 64x64 | 128 | 38.867-41.488 | 7072 | (no launch) | - | ADJ-FAILED (smem) |
+| float32 | 64x64 | 256 | 48.129-50.039 | 5711 | (no launch) | - | ADJ-FAILED (smem) |
+| float64 | 16x16 | 32 | 6.602-6.851 | 651 | 1.387-1.450 | 194 | ok |
+| float64 | 16x16 | 64 | 6.515-6.805 | 659 | 0.989-1.012 | 271 | ok |
+| float64 | 16x16 | 128 | 6.638-6.949 | 647 | 1.280-1.356 | 210 | ok |
+| float64 | 16x16 | 256 | 6.589-6.907 | 652 | 1.242-1.330 | 216 | ok |
+| float64 | 32x32 | 32 | 56.860-57.329 | 604 | 23.149-23.249 | 93 | ok |
+| float64 | 32x32 | 64 | 49.601-50.236 | 693 | 13.046-13.252 | 165 | ok |
+| float64 | 32x32 | 128 | 45.203-46.083 | 760 | 8.844-9.041 | 243 | ok |
+| float64 | 32x32 | 256 | 46.405-47.247 | 740 | 7.912-8.057 | 271 | ok |
+| float64 | 64x64 | 32 | (no launch) | - | (no launch) | - | MISMATCH (smem) |
+| float64 | 64x64 | 64 | (no launch) | - | (no launch) | - | MISMATCH (smem) |
+| float64 | 64x64 | 128 | (no launch) | - | (no launch) | - | MISMATCH (smem) |
+| float64 | 64x64 | 256 | (no launch) | - | (no launch) | - | MISMATCH (smem) |
+
 - LDS-limited rows are the same as on gfx942 (64 KiB per workgroup), with Warp's UserWarnings naming the bytes: fp32 64x64 adjoint needs 98304 (backward), and fp64 64x64 needs 98304 (forward) and 196608 (backward). Their timed values are memsets or launch failures (the raw CSV below keeps them: about 1.19 ms fp32 adj, about 0.02 ms fp64 fwd). They are meaningless and shown as "(no launch)".
 - Run-to-run spread over the 56 timing cells of the 28 all-ok rows: median 4.6%, maximum 14% (fp32 32x32 bd256 adj). 26 cells are above 5%. The pattern is systematic, not noise: run 1 is the fastest in almost every forward cell, and runs 2 and 3 are 3-9% slower. That fits clocks dropping as this workstation card warms up under back-to-back runs. Clocks were not recorded (no `rocm-smi` in this container). The "best" columns therefore come from run 1.
 - fp16 forward is faster than fp32 forward at every size here (best 16368 vs 7072 GFLOP/s at 64x64). fp64 is 6-14x slower than fp32. fp16 adjoint is again slower than fp32 at 32x32 bd32 (fp16 `atomic_add` is the CAS loop, ruled to stay, see the unsafe-atomics ruling above). Numbers only; no interpretation is drawn here.
@@ -1201,6 +1224,7 @@ for r in results:
 - Q3: gfx1100 numbers above, for Jeff's matrix-core ruling. No decision taken.
 - Nothing was committed to the fork; no record other than this notes section and the telemetry lines changed.
 
+
 ## Porting session 5 (2026-11-19, linux-gfx950 MI355X, porter): rulings, evidence follow-ups, then Phase 5
 
 Fork `release/1.14.0.amd0` advanced `8d13d596..f4f27aa8` (pushed, `advance-head` recorded). nvcc 12.8 CUDA build at `f4f27aa8` (`build_lib.py --cuda-path /usr/local/cuda --no-use-libmathdx`, worktree `agent_space/cuda_wt`): "Warp build succeeded". `audit-commits` OK, `jargon.py --port` clean. One GPU visible (`HIP_VISIBLE_DEVICES=0`, kept).
@@ -1458,6 +1482,7 @@ Skips there: 7 C2 (`test_graph_launch_array_access_mode_checked_mempool_access_c
 ### Next step for the lock holder
 - A.1, A.2 and C at `2505f4a3` on gfx942 are done; results above. Nothing new needs a fork change. Optional: size `test_tile_shared_mem_func` like the other four, to silence its harmless backward-kernel warning on 64 KiB parts.
 - Still open for Jeff, as listed in session 5: the 64 KiB sizing vs a capability skip (the sizing is now proven on real 64 KiB hardware), C4's direction, textures on gfx942/gfx950, and the defer/now rulings on the registered ROCm defects.
+
 ## Evidence session 2 (2026-11-19, linux-gfx1100, Radeon Pro W7800, evidence only): Phase 5 handoff items B.1-B.4
 
 Requested by Jeff Daily. The work lock stays with linux-gfx950. Nothing was committed to the fork, and no stage, lock, head, platform or deferral record changed. The clone was updated read-only to the recorded `head_sha` `2505f4a3d7dd8a6bb4fd52f535ff846bd2d48800` (`git status --porcelain` clean). Experiments ran in a separate `git worktree` outside `projects/warp-1.14/src`. B.5 (`__frsqrt_rn` cost) is marked optional, only if Jeff asks, so it was not run.
@@ -1736,3 +1761,232 @@ index 68955b23..85876af7 100644
 - B.5 (`__frsqrt_rn` throughput on wave32): optional, only if Jeff asks.
 - No nvcc compile of the proposed diff (no CUDA toolkit on this host); the lock holder's usual mi355 nvcc check applies if it is taken.
 - The patched build was used only for test_texture and the probes above. The rest of the suite was not rerun against it.
+
+## Porting session 6 (2026-11-19, linux-gfx950 MI355X, porter): Phase 5 evidence follow-ups
+
+Fork `release/1.14.0.amd0` advanced `2505f4a3..2f5b9d65` (pushed, `advance-head` recorded). nvcc 12.8 CUDA build at `2f5b9d65` (`build_lib.py --cuda-path /usr/local/cuda --no-use-libmathdx`, worktree `agent_space/cuda_wt`): "Warp build succeeded"; offline NVRTC compiles (`agent_space/nvrtc_check/nvrtc_tex.py`, texture sampling; `nvrtc_offline.py`, tile/atomics): both OK. `audit-commits` OK, `jargon.py --port` clean. One GPU visible (`HIP_VISIBLE_DEVICES=0`, kept).
+
+### 1. The gfx1100 texture-copy fix, reviewed and applied
+The diff from "Evidence session 2 (linux-gfx1100) / Proposed fix" applied cleanly to `2505f4a3` (`git apply`, extracted verbatim from these notes). Review before committing:
+- `texture.cpp` (`texture_memory_type`): shared code. CUDA's `cuda.h` defines `CU_MEMORYTYPE_HOST/DEVICE/ARRAY` as 1/2/3, Warp's `MemoryType` values, so on CUDA the translation is the identity, values other than 1-3 are rejected with the same messages as before, and the descriptor gets the same fields. Behaviour unchanged on CUDA; the nvcc build compiles it.
+- `cuda_util.cpp`: every change is in the `#if WP_ENABLE_HIP` branch except two `#include`s (`<mutex>`, `<unordered_map>`) added to the shared include block, harmless for CUDA. Callers of `cuMemcpy3DAsync_f`: only `wp_texture_copy_device` (`grep -rn cuMemcpy3DAsync_f warp/native`), and `texture.py` always puts the texture's own array on one side.
+- Two gaps found and fixed on top of the proposal: (a) a texture that wraps an external array (`Texture2D(cuda_array=...)`) never went through `cuArray*Create_f`, so its element size was unrecorded and every copy into it would have returned `hipErrorInvalidValue` where the old driver call worked. `cuArray3DGetDescriptor_f`, which the `cuda_array=` constructor calls (`wp_texture_descriptor_from_cuda_array`), now records the element size too, so such copies also work inside a capture; for anything still unrecorded, `hip_array_element_size` falls back to `hipArray3DGetDescriptor` (fails only during a global capture). (b) A copy with offsets (`src/dstXInBytes`, `Y`, `Z`, `LOD`) or with no array side keeps the original `hipDrvMemcpy3DAsync`, since the runtime-parameter translation assumes neither; Warp issues no such copy today.
+- Accepted as is: the host-side `hipStreamSynchronize` outside a capture also applies to pinned host buffers, where CUDA would stay asynchronous (a performance difference only, and texture uploads are rare); during a capture no sync is done.
+Commits: `c14d2019` [ROCm] Translate texture copy memory types instead of casting them; `8de519f3` [ROCm] Copy texture arrays with hipMemcpy3DAsync. gfx950 cannot create texture arrays, so these paths are not exercised here; the gfx1100 host ran its version (without (a)/(b)) with test_texture 120 OK and the SDF probe PASS. The wave32 re-run below covers the final code, including the new `tex_alias.py` probe for (a).
+
+Re-run on gfx950 for the shared wrapper changes (`-p <file> -m 32`, all OK, counts identical to Phase 3): test_graph 35 (3 skipped), test_array_fill_capture 3, test_capture_mode 2, test_conditional_captures 32 (16 skipped, Q4), test_conditional 50, test_async 2373, test_streams 24 (2 skipped), test_mempool 7 (2 skipped), test_multigpu 5 (5 skipped, one GPU), test_peer 4 (2 skipped), test_ipc 4, test_pinned 1, test_unified_memory 27 (8 skipped), test_occupancy 6, test_allocator 16 (3 skipped), test_allocation_tracker 34, test_dlpack 16, test_torch 34, test_map 45, test_copy 14, test_array 139, test_texture 70 (17 skipped), test_launch 32. After the review changes (a)/(b): test_texture 70, test_graph 35, test_array_fill_capture 3, test_copy 14, all OK.
+
+`tex_alias.py` (copies into a texture wrapping an external array, plain and captured; for the wave32 host):
+```python
+# Copies into and out of a texture that wraps an array Warp did not record (cuda_array=...),
+# plain and inside a graph capture. Usage: python tex_alias.py [device]
+import sys
+
+import numpy as np
+
+import warp as wp
+
+wp.init()
+device = wp.get_device(sys.argv[1] if len(sys.argv) > 1 else "cuda:0")
+rng = np.random.default_rng(0)
+h, w = 16, 32
+owner = wp.Texture2D(np.zeros((h, w, 4), dtype=np.float32), device=device)
+alias = wp.Texture2D(cuda_array=owner.cuda_array, device=device)
+
+ok = True
+for label, capture in (("plain", False), ("graph capture", True)):
+    data = rng.random((h, w, 4), dtype=np.float32)
+    src = wp.array(data, dtype=wp.vec4f, device=device)
+    dst = wp.zeros((h, w), dtype=wp.vec4f, device=device)
+    if capture:
+        with wp.ScopedCapture(device=device) as cap:
+            alias.copy_from(src)
+            owner.copy_to(dst)
+        wp.capture_launch(cap.graph)
+    else:
+        alias.copy_from(src)
+        owner.copy_to(dst)
+    bad = int(np.count_nonzero(dst.numpy() != data))
+    print(f"{label}: {bad} of {data.size} wrong")
+    ok = ok and bad == 0
+print("PASS" if ok else "FAIL")
+sys.exit(0 if ok else 1)
+```
+
+### 2. The two HIP defects from the gfx1100 run, registered
+`deferred.py add rocm-bug-report --project warp-1.14 --component HIP` with the proposed ids: `hip-memcpy3d-async-pageable-host-read-after-return` (Finding 2) and `hip-drv-memcpy3d-async-not-captured` (Finding 3). Their original reproducers (`m3d.cpp`, `rt.cpp`, `lin.cpp`, `cap.cpp`) were in the gfx1100 host's `agent_space/` and are not in these notes, so standalone reproducers were rewritten here from the recorded descriptions and compiled for gfx1100 with ROCm clang (`clang++ -x hip --rocm-path=$R --offload-arch=gfx1100 -O2 <file>.cpp -o <name> -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib`, both build). They cannot run on gfx950 (`hipArray3DCreate -> hipErrorNotSupported`); the wave32 host runs them (handoff below) to confirm they reproduce before Jeff files anything.
+
+`m3d_pageable.cpp` (expected on HIP 7.17: both lines report all elements wrong; on a correct runtime, 0):
+```cpp
+// hipDrvMemcpy3DAsync / hipMemcpy3DAsync from pageable host memory into an array: the source is
+// overwritten right after the call returns; CUDA stages pageable memory before returning, so the
+// array must hold the original values. Usage: ./m3d_pageable [width] [height]
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
+
+#define CK(x) do { hipError_t err_ = (x); if (err_ != hipSuccess) { printf("%s -> %s\n", #x, hipGetErrorName(err_)); exit(1); } } while (0)
+
+static int run(bool runtime_api, size_t w, size_t h)
+{
+    HIP_ARRAY3D_DESCRIPTOR d = {};
+    d.Width = w;
+    d.Height = h;
+    d.Format = HIP_AD_FORMAT_FLOAT;
+    d.NumChannels = 1;
+    hipArray_t a;
+    CK(hipArray3DCreate(&a, &d));
+    hipStream_t s;
+    CK(hipStreamCreate(&s));
+    size_t n = w * (h ? h : 1);
+    float* src = (float*)malloc(n * 4);  // pageable
+    for (size_t i = 0; i < n; ++i) src[i] = float(i);
+    if (runtime_api) {
+        hipMemcpy3DParms p = {};
+        p.srcPtr = make_hipPitchedPtr(src, w * 4, w, h ? h : 1);
+        p.dstArray = a;
+        p.extent = make_hipExtent(w, h ? h : 1, 1);
+        p.kind = hipMemcpyHostToDevice;
+        CK(hipMemcpy3DAsync(&p, s));
+    } else {
+        HIP_MEMCPY3D c = {};
+        c.WidthInBytes = w * 4;
+        c.Height = h ? h : 1;
+        c.Depth = 1;
+        c.srcMemoryType = hipMemoryTypeHost;
+        c.srcHost = src;
+        c.srcPitch = w * 4;
+        c.srcHeight = h ? h : 1;
+        c.dstMemoryType = hipMemoryTypeArray;
+        c.dstArray = a;
+        CK(hipDrvMemcpy3DAsync(&c, s));
+    }
+    memset(src, 0xff, n * 4);  // the caller reuses its buffer, as CUDA allows
+    CK(hipStreamSynchronize(s));
+    std::vector<float> back(n);
+    HIP_MEMCPY3D r = {};
+    r.WidthInBytes = w * 4;
+    r.Height = h ? h : 1;
+    r.Depth = 1;
+    r.srcMemoryType = hipMemoryTypeArray;
+    r.srcArray = a;
+    r.dstMemoryType = hipMemoryTypeHost;
+    r.dstHost = back.data();
+    r.dstPitch = w * 4;
+    r.dstHeight = h ? h : 1;
+    CK(hipDrvMemcpy3D(&r));
+    size_t bad = 0;
+    for (size_t i = 0; i < n; ++i) bad += back[i] != float(i);
+    printf("%-22s %zux%zu: %zu of %zu elements wrong\n", runtime_api ? "hipMemcpy3DAsync" : "hipDrvMemcpy3DAsync", w, h, bad, n);
+    free(src);
+    CK(hipArrayDestroy(a));
+    CK(hipStreamDestroy(s));
+    return bad != 0;
+}
+
+int main(int argc, char** argv)
+{
+    size_t w = argc > 1 ? atoi(argv[1]) : 64, h = argc > 2 ? atoi(argv[2]) : 64;
+    int fails = run(false, w, h) + run(true, w, h);
+    return fails ? 1 : 0;
+}
+```
+
+`m3d_capture.cpp` (expected on HIP 7.17: the driver line reports 0 graph nodes, the copy done before instantiation and all elements wrong after the replay; the runtime line 2 nodes and 0 wrong):
+```cpp
+// hipDrvMemcpy3DAsync on a capturing stream: device -> array -> device copies captured in global
+// mode. A correct capture has 2 memcpy nodes and a replay copies the source's current contents.
+// The runtime hipMemcpy3DAsync is run the same way for comparison.
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+
+#define CK(x) do { hipError_t err_ = (x); if (err_ != hipSuccess) { printf("%s -> %s\n", #x, hipGetErrorName(err_)); exit(1); } } while (0)
+
+static void copy(bool runtime_api, hipArray_t a, float* dev, bool to_array, size_t w, size_t h, hipStream_t s)
+{
+    if (runtime_api) {
+        hipMemcpy3DParms p = {};
+        p.extent = make_hipExtent(w, h, 1);
+        p.kind = hipMemcpyDeviceToDevice;
+        if (to_array) { p.srcPtr = make_hipPitchedPtr(dev, w * 4, w, h); p.dstArray = a; }
+        else { p.srcArray = a; p.dstPtr = make_hipPitchedPtr(dev, w * 4, w, h); }
+        CK(hipMemcpy3DAsync(&p, s));
+    } else {
+        HIP_MEMCPY3D c = {};
+        c.WidthInBytes = w * 4;
+        c.Height = h;
+        c.Depth = 1;
+        if (to_array) {
+            c.srcMemoryType = hipMemoryTypeDevice; c.srcDevice = (hipDeviceptr_t)dev; c.srcPitch = w * 4; c.srcHeight = h;
+            c.dstMemoryType = hipMemoryTypeArray; c.dstArray = a;
+        } else {
+            c.srcMemoryType = hipMemoryTypeArray; c.srcArray = a;
+            c.dstMemoryType = hipMemoryTypeDevice; c.dstDevice = (hipDeviceptr_t)dev; c.dstPitch = w * 4; c.dstHeight = h;
+        }
+        CK(hipDrvMemcpy3DAsync(&c, s));
+    }
+}
+
+static int run(bool runtime_api)
+{
+    const size_t w = 64, h = 32, n = w * h;
+    HIP_ARRAY3D_DESCRIPTOR d = {};
+    d.Width = w; d.Height = h; d.Format = HIP_AD_FORMAT_FLOAT; d.NumChannels = 1;
+    hipArray_t a;
+    CK(hipArray3DCreate(&a, &d));
+    float *src, *dst;
+    CK(hipMalloc(&src, n * 4));
+    CK(hipMalloc(&dst, n * 4));
+    std::vector<float> h1(n), h2(n), back(n);
+    for (size_t i = 0; i < n; ++i) { h1[i] = float(i); h2[i] = float(2 * i + 1); }
+    hipStream_t s;
+    CK(hipStreamCreate(&s));
+    CK(hipMemcpy(src, h1.data(), n * 4, hipMemcpyHostToDevice));
+    CK(hipMemset(dst, 0, n * 4));
+
+    hipGraph_t g;
+    CK(hipStreamBeginCapture(s, hipStreamCaptureModeGlobal));
+    copy(runtime_api, a, src, true, w, h, s);
+    copy(runtime_api, a, dst, false, w, h, s);
+    CK(hipStreamEndCapture(s, &g));
+    size_t nodes = 0;
+    CK(hipGraphGetNodes(g, nullptr, &nodes));
+    CK(hipMemcpy(back.data(), dst, n * 4, hipMemcpyDeviceToHost));
+    size_t early = 0;
+    for (size_t i = 0; i < n; ++i) early += back[i] == h1[i];
+
+    hipGraphExec_t ge;
+    CK(hipGraphInstantiate(&ge, g, nullptr, nullptr, 0));
+    CK(hipMemcpy(src, h2.data(), n * 4, hipMemcpyHostToDevice));  // replay must copy the new contents
+    CK(hipGraphLaunch(ge, s));
+    CK(hipStreamSynchronize(s));
+    CK(hipMemcpy(back.data(), dst, n * 4, hipMemcpyDeviceToHost));
+    size_t bad = 0;
+    for (size_t i = 0; i < n; ++i) bad += back[i] != h2[i];
+    printf("%-22s graph nodes %zu, copied before instantiation %zu of %zu, wrong after replay %zu of %zu\n",
+           runtime_api ? "hipMemcpy3DAsync" : "hipDrvMemcpy3DAsync", nodes, early, n, bad, n);
+    CK(hipGraphExecDestroy(ge));
+    CK(hipGraphDestroy(g));
+    CK(hipArrayDestroy(a));
+    CK(hipFree(src));
+    CK(hipFree(dst));
+    CK(hipStreamDestroy(s));
+    return bad != 0 || nodes != 2;
+}
+
+int main()
+{
+    int fails = run(false) + run(true);
+    return fails ? 1 : 0;
+}
+```
+
+### 3. `test_tile_shared_mem_func` sized like the other four
+`2f5b9d65` Size test_tile_shared_mem_func from the device's shared memory per block: the larger tile's rows are `select_shared_memory_fit(device, (64, 32), rows * 64 * 4 * 2 * 2, 256)` (the backward kernel needs twice the forward's 32 KiB, 64 KiB at 64 rows); the 16x16 small tile stays smaller, which is what the test checks, and the expected byte counts are computed from the selected size. gfx950 (`agent_space/p6/smemfunc.py`): real 163840-byte limit -> 64 rows (upstream), OK; limit reported as 65536 -> 32 rows (32768 backward bytes), OK. test_tile_shared_memory 30 OK. It uses the helper from `59d873af`, so if Jeff rules for capability skips instead of sizing, drop both commits together.
+
+### 4. notes.md merge untangled
+The first gfx942 evidence section (commit `42c8596b`) had been interleaved with the first gfx1100 section (`e12a96ff`, committed on top through a union merge): the gfx1100 heading appeared right after "Same loop as step 1 of session 4", and the gfx942 A.2 table, A.3, C and Next step followed inside the gfx1100 text. Rebuilt in this session (script `agent_space/p6/rebuild.py`): the gfx942 section is now its own commit's text, verbatim and contiguous (272 lines from `git show 42c8596b:projects/warp-1.14/notes.md`), followed by the gfx1100 section, which is the 401 lines only it wrote, in their original order (`difflib` alignment against the gfx942 text: all 272 gfx942 lines matched in order, the rest unmatched), plus copies of the 23 lines the union merge had kept only once because both sessions wrote them identically: the 15-line tile-set table after the B.2 heading (gfx942's A.2 table had the same rows and failures), the four fp64 64x64 "(no launch)" rows ending the B.3 table, and four blank lines around them. A line-multiset check showed no line of the old region missing from the new one. A blank line was also added between the second gfx942 section and the second gfx1100 heading, which had been joined without one (that pair was not interleaved). Nothing else changed.
