@@ -323,8 +323,13 @@ naming `index_elementwise_kernel`) only when the stale slot happens to hold an o
 so the failure looks intermittent. Diagnose by checking the sort output right after the sort for
 duplicates (`bincount(idx).max() > 1`), not only for range. Fix on the caller's side: never sort
 uninitialized data (zero-fill the buffer or sort only the valid prefix). Observed on the ROCm 10.1
-pip SDK (rocPRIM 4.6.0, hipCUB 4.7.0) on gfx90a (wave64) and gfx1201 (wave32); other ROCm versions
-not checked. Exact duplicate and missing counts vary run to run. (LiteGS)
+pip SDK (rocPRIM 4.6.0, hipCUB 4.7.0) on gfx90a, gfx942 and gfx1201, and unchanged on
+10.3.0a20261119 (rocPRIM 5.1.0); CUDA 12.9 sorts the same keys correctly. It affects float and
+double keys, pairs and keys-only, for 1025 to 1,048,576 elements: in that range rocPRIM merges
+radix-sorted 1024-item tiles with a comparator that adds zero to each key to fold -0.0, which
+quiets signaling NaNs, so the merge order disagrees with the tile order. Sizes outside the range
+take other paths and pass. Reported as ROCm/rocm-libraries#16364. Exact duplicate and missing
+counts vary run to run. (LiteGS)
 
 **rocPRIM radix sort of 64-bit keys is wrong when `end_bit` is 64 and `begin_bit` is not 0.** With
 rocPRIM 4.8 (ROCm 10.2), `hipcub::DeviceRadixSort::SortKeys` on 64-bit keys returns keys not ordered
