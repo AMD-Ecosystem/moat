@@ -3177,3 +3177,32 @@ Host: linux-gfx942 (MI300X), CMake 3.31.6 (pip), torch 2.16.0a0+git6c3af02 / HIP
 All configures rc 0. For the default, env-Debug, RelWithDebInfo and multi-config cases, `CMakeCache.txt` and `build.ninja` are identical between `6e7d8db` and `2b938d8` once the build directory and then the source directory are replaced by placeholders. Default case: 8 compile lines with `-O3`, 8 with `--offload-arch=gfx942`. So the default generated build is the one `6e7d8db` produced (and `a70f4d9` was built and tested from: 202 passed, 28 skipped). Not run: Windows (whether an environment `CMAKE_BUILD_TYPE` beats `Windows-Clang.cmake`'s `CMAKE_BUILD_TYPE_INIT Debug` there is the review's reading, unverified on hardware; with nothing in the environment the Windows behaviour is unchanged from `3c7754f`).
 
 `python3 utils/jargon.py --port Quest` clean; `utils/prose.py` on the commit message clean; title 48 chars, fenced Test Plan, AI disclosure, no trailer, ASCII. Pushed plainly (`3c7754f..2b938d8`); fork tree clean.
+
+## Review 2026-11-19 pass 5 (linux-gfx942, delta 6e7d8db..2b938d8) -- PASS
+
+### Summary
+
+Delta `a70f4d9`, `3c7754f`, `2b938d8` on top of the last reviewed head `6e7d8db` (merge base with upstream main `01c1623`, 0 behind). Pass 4's finding is fixed: `quest/ops/CMakeLists.txt:20` now reads `if(NOT CMAKE_BUILD_TYPE AND "$ENV{CMAKE_BUILD_TYPE}" STREQUAL "" AND NOT _quest_multi_config)`, and the comment at `:15-18` says why. The pending lesson "a pip ROCm torch on Windows needs PYTORCH_ROCM_ARCH ..." now spells that same corrected idiom. Pass 3's finding stays closed (hints at `:33-43`, `ROCM_PATH` hand-off at `:116-118`). No new findings.
+
+### Checked on this host, no finding
+
+linux-gfx942 (MI300X), CMake 3.31.6, torch 2.16.0a0+git6c3af02 / HIP 7.16 (`/opt/python-3.11-venv`). I reran the porter's `agent_space/porter/cases.sh` myself into `agent_space/reviewer5/{old,new}`: the fork at `2b938d8` and the worktree at `6e7d8db`, configure only, fresh build directory each, `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=<torch>`. `CMAKE_BUILD_TYPE` and `PYTORCH_ROCM_ARCH` were unset unless stated. All runs rc 0:
+
+| configure | `6e7d8db` | `2b938d8` |
+|---|---|---|
+| `-GNinja`, nothing given | Release | Release |
+| env `CMAKE_BUILD_TYPE=Debug` | Debug | Debug (Release at `3c7754f`, pass 4) |
+| env `CMAKE_BUILD_TYPE=` (empty) | Release | Release |
+| `-DCMAKE_BUILD_TYPE=RelWithDebInfo` | RelWithDebInfo | RelWithDebInfo |
+| env Debug plus `-DCMAKE_BUILD_TYPE=MinSizeRel` | MinSizeRel | MinSizeRel |
+| `-G "Ninja Multi-Config"`, with and without env Debug | none; Debug;Release;RelWithDebInfo | same |
+
+- In the default, env-Debug, RelWithDebInfo and multi-config cases, `CMakeCache.txt` and `build.ninja` are identical between the two heads once the source and build paths are normalized. The default build has 8 compile lines with `-O3` and 8 with `--offload-arch=gfx942`, and C++ is `/usr/bin/c++`, so the default Linux build is unchanged.
+- `--trace-expand --trace-source=quest/ops/CMakeLists.txt` at `2b938d8`: every Windows guard evaluates false and no body is entered: `:26` (`CMAKE_HOST_WIN32 ...`, which holds all the hipconfig/Python hint logic), `:71`/`:78` (MSVC-variant errors), `:99` (no-architecture error), `:110` (`PYTORCH_ROCM_ARCH`), `:116` (`ROCM_PATH`).
+- Windows claim in `2b938d8` and in the lesson, that an environment `CMAKE_BUILD_TYPE` wins over `Windows-Clang.cmake:238`'s `CMAKE_BUILD_TYPE_INIT Debug`: this cannot run on Linux, so I checked it with a proxy. In a toy project, `CMAKE_USER_MAKE_RULES_OVERRIDE` set `CMAKE_BUILD_TYPE_INIT MinSizeRel`. With no environment value it gave MinSizeRel; with env `CMAKE_BUILD_TYPE=Debug` it gave Debug. The environment value is cached before `CMakeInitializeConfigs.cmake` makes its non-FORCE `set(CMAKE_BUILD_TYPE "${CMAKE_BUILD_TYPE_INIT}" CACHE ...)`, which is the same path the Windows platform file's INIT takes. This is consistent with the claim but was not run on Windows.
+- CUDA path: `git diff 6e7d8db..2b938d8` edits only the new `else()` (USE_HIP) branch before `project()` and the inside of `if(USE_HIP)`. No CUDA, rapids, raft or gcc-11 line changed. `2b938d8` touches 3 lines of the HIP pre-`project()` block that a CUDA configure never enters, so the real-nvcc compile at `a70f4d9` still describes the CUDA path.
+- `jargon.py --port Quest` clean. `audit-commits Quest` reports only the known `6e7d8db` fenced-Test-Plan gap, which is carried to PR preparation. Commit titles are 49/58/61 chars (`2b938d8`/`3c7754f`/`a70f4d9`), all `[ROCm]` with HIP-specific added lines. Each has a fenced Test Plan and an AI disclosure, and none has a Co-Authored-By trailer. Fork tree clean (`git ls-files -m` empty).
+
+### Recommendation
+
+**Pass.** The Windows behaviour was validated by the windows-gfx1151 porter rounds (activated and `-DPython_EXECUTABLE` cases, build.ninja path-only equal to the `a70f4d9` build, which passed 202 / skipped 28). For Linux the delta is configure-only, with an identical generated build.
