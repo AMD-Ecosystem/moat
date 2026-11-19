@@ -8,8 +8,8 @@
   "ext_type": "python-build-nvrtc",
   "stage": "porting",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-19T16:28:08Z",
-  "head_sha": "13e4e46ea4d35ac71c150eeae9902c1ba08a3c5c",
+  "updated_at": "2026-11-19T16:44:11Z",
+  "head_sha": "6761183caf5a3ab0620e87b5c1bda4f2f8619fee",
   "depends_on": [],
   "porting": {
     "arch": "windows-gfx1151",
