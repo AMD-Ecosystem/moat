@@ -2314,3 +2314,9 @@ Porter, next session:
 - Leave `test_tile_load_scoped` alone; its shared-memory warning for a backward kernel it never launches is a correct diagnostic.
 - No spill-to-global-memory fallback for oversized shared tiles: upstream has none on any GPU.
 - Release notes: shared-memory tiles are limited to 64 KiB per block (tiles plus Warp's small static allocation) on gfx90a, gfx942 and Radeon GPUs, 160 KiB on gfx950; Warp warns when a kernel's request does not fit.
+
+## Ruling on `__frsqrt_rn` / `__fsqrt_rn` accuracy (2026-11-18, Jeff Daily)
+
+RULED: option A. The port leaves both intrinsics as the HIP toolchain defines them and adds no override; the release notes say that on AMD GPUs `__frsqrt_rn` and `__fsqrt_rn` are within 1 ulp but not correctly rounded (wrong in the last bit on about 11 and 15 percent of inputs), unlike CUDA's. Whether to report it upstream is not ruled; Jeff asked why AMD would see it as a defect and not a deliberate choice.
+
+Where the definitions are (read from the ROCm 10.2 clang resource header `lib/clang/23/include/__clang_hip_math.h`, lines 283-303; this is the compiler's header, not HIP's): the `_rn` family is implemented twice. With `OCML_BASIC_ROUNDED_OPERATIONS` defined, `__fadd_rn`, `__fdiv_rn`, `__fmul_rn`, `__frcp_rn`, `__fmaf_rn` and `__fsqrt_rn` call `__ocml_*_rte_f32` (round to nearest even). Without it, add, div, mul, rcp and fma fall back to the plain IEEE operation, which is correctly rounded, but `__fsqrt_rn` falls back to `__ocml_native_sqrt_f32` (approximate) and not to `__builtin_sqrtf`. `__frsqrt_rn` is `__builtin_amdgcn_rsqf` in both configurations; there is no rounded form of it in the header at all. Not checked: whether defining `OCML_BASIC_ROUNDED_OPERATIONS` works with ROCm 10.2's device libraries.
