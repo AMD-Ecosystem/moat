@@ -3124,3 +3124,36 @@ Messages: no environment and no `-DPython_EXECUTABLE` -> the new "none was found
 ## Lesson for cuda-to-rocm: find_package(Torch) on Windows needs ROCM_PATH when the environment is not activated
 
 For `references/windows.md`, "CMake and compiler drivers", beside the `hipconfig --hipclangpath` recipe. Finding the HIP `clang++` through the Python interpreter's directory is not enough for a CMake torch extension configured with an unactivated pip ROCm environment (`-DPython_EXECUTABLE=<venv>/Scripts/python.exe`): torch's `LoadHIP.cmake` locates ROCm only through `ENV{ROCM_PATH}` or `find_program(rocm-sdk)` on PATH (`rocm-sdk.exe` is a venv `Scripts` console script too), prints "ROCM_PATH environment variable is not set and C:/opt/rocm does not exist. Building without ROCm support." as a STATUS line, and the configure only fails at generate time with `The link interface of target "c10_hip" contains: hip::amdhip64 but the target was not found`. Fix in the project, on `WIN32`, after `enable_language(HIP)` and before `find_package(Torch)`: when `ENV{ROCM_PATH}` is undefined, `set(ENV{ROCM_PATH} "${CMAKE_HIP_COMPILER_ROCM_ROOT}")`. Test the documented non-activated fallback in a shell that has neither the environment's `Scripts` nor the SDK `bin` on PATH; a build shell that exports them hides both this and the hipconfig miss. (Quest)
+
+## Review 2026-11-19 pass 4 (linux-gfx942, delta 6e7d8db..3c7754f) -- CHANGES REQUESTED
+
+### Summary
+
+`a70f4d9` and `3c7754f` make the README's ROCm configure work on Windows, activated or through `-DPython_EXECUTABLE`. Pass 3's finding (hipconfig from `Python_EXECUTABLE`) is closed by the new hints at `quest/ops/CMakeLists.txt:33-43` plus the `ROCM_PATH` hand-off at `:115-117`. One new finding, on Linux, where the moved Release default overrides a build type given through the environment.
+
+### Build System / Backward Compatibility
+
+1. **`quest/ops/CMakeLists.txt:19`: the Release default, now run before `project()`, overrides the `CMAKE_BUILD_TYPE` environment variable on Linux (and Windows).** CMake (3.22+) documents that variable as "a default value for the `CMAKE_BUILD_TYPE` variable when there is no explicit configuration given on the first run". CMake applies it inside `project()`. At 6e7d8db the check ran after `project()`, saw the environment's value and left it alone. Now it runs first, sees no cache entry, and FORCEs Release. Reproduced on this host: fresh build directory, `CMAKE_BUILD_TYPE=Debug cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=<torch> -S quest/ops -B <dir>` caches **Debug at 6e7d8db and Release at 3c7754f**. This contradicts the claim in `a70f4d9` that Linux "behaves as before". The fix is to also require the variable to be empty: `if(NOT CMAKE_BUILD_TYPE AND "$ENV{CMAKE_BUILD_TYPE}" STREQUAL "" AND NOT _quest_multi_config)`. Checked in a scratch copy of 3c7754f with only that line changed (never committed): env Debug -> Debug; nothing given -> Release; env set but empty -> Release; `-DCMAKE_BUILD_TYPE=RelWithDebInfo` -> RelWithDebInfo; the default-case `build.ninja` is identical to 3c7754f's. On Windows the same condition lets an environment `CMAKE_BUILD_TYPE` win over `Windows-Clang.cmake`'s `CMAKE_BUILD_TYPE_INIT Debug`, as the user intends. The lesson "a pip ROCm torch on Windows needs PYTORCH_ROCM_ARCH ..." recommends the same idiom ("`if(NOT CMAKE_BUILD_TYPE)` ... must run before `project()`"), so correct it in the same round. Otherwise the skill would teach the regression.
+
+### Checked on this host, no finding (evidence for the next round)
+
+linux-gfx942 (MI300X), CMake 3.31.6, torch 2.16.0a0+git6c3af02 / HIP 7.16, pip ROCm SDK 10.1. Configure only, fresh build directory each, `-GNinja -DUSE_HIP=ON -DCMAKE_PREFIX_PATH=<torch>`, `PYTORCH_ROCM_ARCH` and `CMAKE_BUILD_TYPE` unset unless stated:
+
+| configure | 6e7d8db | 3c7754f |
+|---|---|---|
+| `-DCMAKE_HIP_ARCHITECTURES=gfx942`, no build type | Release | Release |
+| same, `-DCMAKE_BUILD_TYPE=` (empty) | Release | Release |
+| same, `-DCMAKE_BUILD_TYPE=RelWithDebInfo` | -- | RelWithDebInfo |
+| same, `-DCMAKE_BUILD_TYPE=Debug` | -- | Debug |
+| same, env `CMAKE_BUILD_TYPE=Debug` | **Debug** | **Release** (finding 1) |
+| no architecture (auto-detect) | -- | Release, 8 lines `--offload-arch=gfx942` |
+| `-G "Ninja Multi-Config"` | no `CMAKE_BUILD_TYPE`, Debug;Release;RelWithDebInfo | same |
+
+- With no build type, `CMakeCache.txt` and `build.ninja` are identical between 6e7d8db and 3c7754f after normalizing the source and build paths. The default Linux build is unchanged, and the README Linux command still yields Release with `-O3` on all 8 compile lines.
+- `--trace-expand --trace-source=quest/ops/CMakeLists.txt` at 3c7754f: every Windows guard evaluates false and no body is entered: `:25` (`CMAKE_HOST_WIN32 AND ...`, which contains all of the hipconfig/Python hint logic), `:70`/`:77` (MSVC-variant errors), `:98` (no-architecture error), `:109` (`PYTORCH_ROCM_ARCH`), `:115` (`ROCM_PATH`). C++ stays `/usr/bin/c++`.
+- CUDA path: `git diff 6e7d8db..3c7754f` adds an `else()` to the existing `if(NOT USE_HIP)` before `project()` and otherwise edits only inside `if(USE_HIP)`. No CUDA line changed (the nvcc compile at a70f4d9 above agrees, and 3c7754f adds no CUDA-visible line).
+- `jargon.py --port Quest` clean. `audit-commits` reports only the known `6e7d8db` fenced-Test-Plan gap carried to PR preparation. `a70f4d9` and `3c7754f`: `[ROCm]` titles of 62 and 58 chars, fenced Test Plans, AI disclosure, no trailer, ASCII.
+
+### Recommendation
+
+**Request Changes** (finding 1). The fix is one condition in the pre-`project()` block plus the lesson text. For the default Linux configure it produces the same `build.ninja` (checked above). The Linux build and tests at a70f4d9 (202 passed, 28 skipped), whose `build.ninja` also equals 6e7d8db's, therefore describe the compiled module, and the next Linux validation can judge whether to carry forward on that basis.
