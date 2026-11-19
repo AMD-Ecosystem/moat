@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "walberla",
+  "upstream_url": "https://github.com/lssfau/walberla",
+  "fork_url": null,
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-19T23:41:44Z",
+  "updated_at": "2026-11-19T23:41:44Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
