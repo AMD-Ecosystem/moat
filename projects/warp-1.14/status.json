@@ -8,13 +8,13 @@
   "ext_type": "python-build-nvrtc",
   "stage": "porting",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-19T22:02:59Z",
+  "updated_at": "2026-11-19T22:13:57Z",
   "head_sha": "ea01380780cd485af123fd741296c6352c21c9ee",
   "depends_on": [],
   "porting": {
     "arch": "linux-gfx950",
-    "since": "2026-11-19T22:02:59Z",
-    "holder": "2e86842d8592"
+    "since": "2026-11-19T22:13:57Z",
+    "holder": "06f1c783051d"
   },
   "waivers": {},
   "platforms": {
@@ -48,7 +48,7 @@
       "failed_sha": null,
       "started_at": "2026-11-18T20:28:14Z",
       "completed_at": null,
-      "updated_at": "2026-11-18T20:28:14Z",
+      "updated_at": "2026-11-19T22:13:57Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
