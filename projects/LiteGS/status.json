@@ -7,7 +7,7 @@
   "priority": 4.566,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-11-19T04:43:40Z",
+  "updated_at": "2026-11-19T05:34:37Z",
   "head_sha": "38aa67ca155b8d2db59a3b2895d4348045377203",
   "porting": null,
   "waivers": {},
@@ -132,6 +132,32 @@
         "detail": "fused_ssim submodule bump: ext.cpp adds || defined(FUSED_SSIM_HIP) to expose fusedssim3d on Windows ROCm; validation Tier 1/2/3 tests do not use 3D SSIM, behavior-preserving for the validated test sui",
         "at": "2026-06-16T09:38:57Z"
       }
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": "38aa67ca155b8d2db59a3b2895d4348045377203",
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-19T05:34:37Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "validation-failed",
+      "last_agent": "validator",
+      "failed_gate": "jargon",
+      "gpu_passed_sha": "38aa67ca155b8d2db59a3b2895d4348045377203"
     }
   },
   "porting_released": {

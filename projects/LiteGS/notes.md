@@ -684,7 +684,7 @@ The three earlier fork commits carry in-house terms that `jargon.py --port LiteG
 
 ## Lesson for cuda-to-rocm: rocPRIM radix sort corrupts float keys that mix signaling and quiet NaNs (libraries.md)
 
-hipCUB/rocPRIM `DeviceRadixSort::SortPairs` on float keys that contain both signaling and quiet NaNs returns a broken permutation: values duplicated and missing, and output slots never written. CUDA's cub sorts the bit patterns and is unaffected. Either NaN kind alone sorts correctly. Uninitialized device memory (a `torch::empty` buffer only partly written by a kernel) is where such keys come from, and `torch.sort` on ROCm inherits the defect. The symptom is usually far from the sort: a later gather on the sorted indices trips torch's device-side index assert (`HSA_STATUS_ERROR_EXCEPTION 0x1016` naming `index_elementwise_kernel`) only when the stale slot happens to hold an out-of-range value, so the failure looks intermittent. Diagnose by checking the sort output right after the sort for duplicates (`bincount(idx).max() > 1`), not only for range. Fix on the caller's side: never sort uninitialized data (zero-fill the buffer or sort only the valid prefix). Observed on ROCm 10.1 pip SDK (rocPRIM 4.6.0, hipCUB 4.7.0) on gfx90a only; other architectures and ROCm versions not checked. Exact duplicate/missing counts vary run to run. (LiteGS)
+hipCUB/rocPRIM `DeviceRadixSort::SortPairs` on float keys that contain both signaling and quiet NaNs returns a broken permutation: values duplicated and missing, and output slots never written. CUDA's cub sorts the bit patterns and is unaffected. Either NaN kind alone sorts correctly. Uninitialized device memory (a `torch::empty` buffer only partly written by a kernel) is where such keys come from, and `torch.sort` on ROCm inherits the defect. The symptom is usually far from the sort: a later gather on the sorted indices trips torch's device-side index assert (`HSA_STATUS_ERROR_EXCEPTION 0x1016` naming `index_elementwise_kernel`) only when the stale slot happens to hold an out-of-range value, so the failure looks intermittent. Diagnose by checking the sort output right after the sort for duplicates (`bincount(idx).max() > 1`), not only for range. Fix on the caller's side: never sort uninitialized data (zero-fill the buffer or sort only the valid prefix). Observed on ROCm 10.1 pip SDK (rocPRIM 4.6.0, hipCUB 4.7.0) on gfx90a (wave64) and gfx1201 (wave32); other ROCm versions not checked. Exact duplicate/missing counts vary run to run. (LiteGS)
 
 ## Review 2026-11-19 (reviewer, linux-gfx90a) -- changes requested
 
@@ -751,3 +751,44 @@ Gates before completion: documentation is present (README "Getting Started", Lin
 Integrity: `git status --porcelain` is empty in the fork and in the submodule at 38aa67c.
 
 Other platforms: linux-gfx1100 reads `revalidate` at this head (its d65b6ab record carried the broken submodule). windows-gfx1101 and windows-gfx1201 must not be carried forward across a8d1e6f, and the Windows fused_ssim build is the open question above.
+
+## Validation 2026-11-19 (validator, linux-gfx1201) -- GPU PASS at 38aa67c; recorded validation-failed --gate jargon
+
+Device: AMD Radeon AI PRO R9700, gfx1201 (RDNA4, wave32; `torch.cuda.get_device_properties(0).warp_size` = 32), one GPU pinned by `HIP_VISIBLE_DEVICES`. PyTorch `2.16.0a0+git6c3af02` (source build, the same torch as the gfx90a run), `torch.version.hip` `7.16.26385`, ROCm 10.1.0 pip SDK (`rocm-sdk-*` 10.1.0 wheels, `ROCM_HOME=.../site-packages/_rocm_sdk_devel`, no `/opt/rocm`; rocPRIM 4.6.0 (`ROCPRIM_VERSION 400600`), hipCUB 4.7.0 (`HIPCUB_VERSION 400700`)). Python 3.11.17. head_sha `38aa67ca155b8d2db59a3b2895d4348045377203`, fused_ssim submodule at 409da0b (kemchenj, upstream's pin).
+
+Environment: the job venv sees the image site-packages (torch) through a `.pth` file. Deps were installed into it: `plyfile<1.1 opencv-python-headless<4.11 matplotlib torchmetrics numpy==1.26.4`. torchvision is absent, so LPIPS is stubbed to nan as before.
+
+Build: a fresh clone of the fork at 38aa67c, `git submodule update --init --recursive`. Then from `/tmp` with `PYTORCH_ROCM_ARCH=gfx1201 MAX_JOBS=6`:
+```
+for d in simple-knn fused_ssim gaussian_raster; do
+  utils/timeit.sh LiteGS compile -- python -m pip install --no-build-isolation --no-deps <src>/litegs/submodules/$d
+done
+```
+All three built with no source change. Each installed `.so` carries only `amdgcn-amd-amdhsa--gfx1201` code objects (litegs_fused 4, simple_knn 1, fused_ssim_cuda 1). The hipified `transform.hip:453` has `view_position = torch::zeros(...)` (633f0b7).
+
+Self-check (`litegs.utils.wrapper`, `validate()` per subclass, since `check()` stops at the first exception): CreateTransformMatrix PASS, CreateCov2dDirectly PASS. SphericalHarmonicToRGB prints backward tensor #3 mismatch (dir_grad, never written by the kernel). CreateRaySpaceTransformMatrix and Binning raise TypeError (the `test_inputs` do not match the fused signatures). Those four are the known upstream harness artifacts, identical to gfx90a. **EighAndInverse2x2Matrix differs from gfx90a, but not because of the port.** Its default input (a batch of 524,288 2x2 matrices) makes the pure-PyTorch *reference* `torch.linalg.eigh` raise `hipErrorInvalidConfiguration` ("invalid configuration argument") on gfx1201. The fused LiteGS kernel ran fine on that same input. Plain `torch.linalg.eigh(torch.randn(n,2,2))` reproduces it with no LiteGS code: n=1024 and n=65536 OK, n=131072 and n=524288 fail. This is a torch/rocSOLVER batched-eigh limit on this arch and ROCm build, outside the port and not registered as a deferral. With the same generator at n=65536, `validate()` reports forward tensor #1 (eigenvectors) mismatch, as on gfx90a. Checked directly: eigenvalue max rel err 3.7e-3 (threshold 1e-2), inverse 1.7e-4, eigenvectors differ only in sign (sign-aligned max abs diff 7.7e-6). Net: no new failure caused by the port.
+
+Real trainer (`example_train.py` unchanged, run through `train_probe.py`, which wraps `fused_ssim.fused_l1_ssim_loss` to log per-step loss and training-view PSNR; scene `tandt_db.zip`, 682,628,995 bytes, sha256 `816e62f2...26d7e1` verified, same mirror as the porter section):
+```
+utils/timeit.sh LiteGS test -- python train_probe.py <src> -s tandt/truck -i images -m <out> --iterations 3000          # x3
+utils/timeit.sh LiteGS test -- python train_probe.py <src> -s tandt/truck -i images -m <out_eval> --eval --iterations 3000
+utils/timeit.sh LiteGS test -- python metrics_nolpips.py <src> -s tandt/truck -i images -m <out_eval> --eval              # example_metrics.py, LPIPS stubbed
+utils/timeit.sh LiteGS test -- python train_probe.py <src> -s tandt/train -i images -m <out_train> --iterations 7000
+```
+| run | iterations | first iter loss / PSNR | last iter loss / PSNR | first-50 -> last-50 mean loss / PSNR | finite | wall |
+|---|---|---|---|---|---|---|
+| truck 1 | 2761 | 0.31424 / 10.72 dB | 0.07062 / 23.26 dB | 0.22532 / 13.88 -> 0.07795 / 22.77 | yes | 25.7 s |
+| truck 2 | 2761 | 0.28549 / 11.61 dB | 0.07231 / 23.52 dB | 0.22559 / 13.89 -> 0.07736 / 22.92 | yes | 25.7 s |
+| truck 3 | 2761 | 0.30003 / 11.36 dB | 0.08177 / 22.31 dB | 0.21949 / 14.06 -> 0.07918 / 22.57 | yes | 25.7 s |
+| truck --eval | 2847 | 0.27394 / 11.94 dB | 0.08217 / 22.45 dB | 0.22444 / 14.00 -> 0.09233 / 21.30 | yes | 30.3 s |
+| train (301 img) | 6923 | 0.32219 / 10.64 dB | 0.13705 / 19.13 dB | 0.27136 / 12.48 -> 0.09668 / 21.71 | yes | 75.3 s |
+
+(train's last single iteration is one noisy view; its last-50 mean, 21.71 dB, is in line with gfx90a's 22.09.) `example_metrics.py --eval` on the truck --eval model: Trainingset SSIM 0.7574 / PSNR 22.24 dB; **Testset (31 held-out views) SSIM 0.7514 / PSNR 21.86 dB** (gfx90a: 0.7501 / 21.77). Wall times include data load. No 0x1016, no `hipError`, no `HSA_STATUS` in any log: 5 runs, about 18,900 iterations, every one completed.
+
+The rocPRIM mixed-NaN sort defect also occurs on this arch. The reproducer from the porter section, built with `hipcc --offload-arch=gfx1201 -O2` from the same SDK: 2000 qNaN + 50 sNaN -> 29433 duplicated / 34590 missing, CORRUPT. 200 + 6 -> 163 / 163, CORRUPT. 2000 qNaN alone and 50 sNaN alone are ok. So it is not gfx90a- or wave64-specific (the lesson's "other arches not checked" can now name gfx1201). The trainer completing here confirms that 633f0b7 keeps LiteGS clear of it on wave32 too.
+
+CUDA no-regression compile: `cuda-not-validated: no nvcc on this host` (no `/opt/conda`; headless worker). Still owed before the port is presented, as recorded for gfx90a.
+
+Gates: documentation present (README.MD:89, Linux scope). **Jargon is not clean**: `python3 utils/jargon.py --port LiteGS` exits 1 with the same 12 hits as on gfx90a, all in commit messages of the three earlier commits (602ce5a: 3, d7990e3: 7, d65b6ab: 2). Fixing them takes the person-made PR-prep squash described above, so this platform is recorded `validation-failed --gate jargon` with the GPU pass kept (`gpu_passed_sha` = 38aa67c). After the squash, a validator checks jargon and completes with `carry-forward`. (To run jargon in a fresh clone, create local `master` and `moat-port` branches first; it resolves `master..moat-port` by local name.)
+
+Integrity: `git status --porcelain` is empty in the fork and in the submodule; the clone is on `moat-port` at 38aa67c. No source edit, no fork push.
