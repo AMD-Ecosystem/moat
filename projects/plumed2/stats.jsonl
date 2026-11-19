@@ -28,3 +28,5 @@
 {"kind":"session","ts":"2026-11-19T04:03:01Z","epoch":1795060981.400419,"event":"start","platform":"linux-gfx942"}
 {"kind":"phase","ts":"2026-11-19T04:16:42Z","phase":"compile","seconds":7.747,"exit":0,"cmd":"make -C projects/plumed2/src/plugins/cudaCoord USE_HIP=1 HIP_ARCHITECTURES=gfx942 -j2"}
 {"kind":"phase","ts":"2026-11-19T04:17:36Z","phase":"test","seconds":32.576,"exit":0,"cmd":"make -C projects/plumed2/src/plugins/cudaCoord USE_HIP=1 HIP_ARCHITECTURES=gfx942 check"}
+{"kind":"session","ts":"2026-11-19T04:27:20Z","epoch":1795062440.686032,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-19T04:27:57Z","epoch":1795062477.111795,"event":"start","platform":"linux-gfx942"}
