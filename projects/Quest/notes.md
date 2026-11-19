@@ -2802,3 +2802,55 @@ Every nvcc output was empty. This covers every `.cu` file in the module, and so 
 ### Lesson for moat-porting: the RAFT `CUDA::nvToolsExt` configure wall is a toolkit-layout artifact
 
 The conda `cuda-12.8` env that the fleet recipe names has no legacy `libnvToolsExt.so`, so `FindCUDAToolkit` creates no `CUDA::nvToolsExt`, and any RAPIDS 24.x dependency (RAFT, rmm) fails at configure. A `/usr/local/cuda` 12.8 install from NVIDIA's packages still ships it, and the same configure passes. Before recording that wall as `cuda-not-validated`, retry with a full system toolkit. Also, a hard-coded `CMAKE_C/CXX_COMPILER` such as `/usr/bin/gcc-11` can be met without root: `apt-get download` the gcc-11 debs, `dpkg -x` them into the job directory (gcc resolves its own libraries relative to its binary), and point a `-DCMAKE_TOOLCHAIN_FILE` at them; the toolchain file is read inside `project()` and wins over the earlier `set()`. (Quest)
+## Validation 2026-11-19 (linux-gfx1201, at `6e7d8db`)
+
+AMD Radeon AI PRO R9700, `gcnArchName` `gfx1201`, wave32, 32 CUs, 31.9 GiB VRAM; `HIP_VISIBLE_DEVICES=2` (pinned by the job). PyTorch 2.16.0a0+git6c3af02 (`torch.version.hip` 7.16.26385, hipcc "HIP version: 7.16.26385", AMD clang 24.0.0git) on the pip ROCm SDK `rocm`/`rocm-sdk-core` 10.1.0 (no `/opt/rocm`), Python 3.11 from the image venv exposed to the job venv through a `.pth` file. Same toolchain as the linux-gfx942 run. Fork cloned fresh at `6e7d8db` == `origin/moat-port` == `head_sha`; submodules `kernels/3rdparty/{flashinfer,pybind}` initialized with `git submodule update --init --depth 1` (a full flashinfer clone was too slow on this host's link). First RDNA / wave32 run of the HIP prefill and top-k paths.
+
+### LDS attribute (asked for by the LDS lesson)
+
+`hipDeviceGetAttribute` on gfx1201 (small host program, `agent_space/lds.hip`): `hipDeviceAttributeMaxSharedMemoryPerMultiprocessor` = **131072** (128 KB), `hipDeviceAttributeMaxSharedMemoryPerBlock` = 65536, `hipDeviceAttributeSharedMemPerBlockOptin` = 65536. `torch.cuda.get_device_properties(0)` agrees (128 KB per multiprocessor, 64 KB per block). So on RDNA4 the per-multiprocessor value is twice what one workgroup may allocate (it is the WGP's LDS). The HIP dispatcher in `prefill.cuh` sizes tiles from the full per-CU value, i.e. 128 KB here; what keeps the launch legal is the `max_num_frags_z_reg` cap of 4, which makes the largest tile (head_dim 128, `num_frags_x` 2, 4 warps, z 4) exactly 64 KB = the per-block limit. That is the bound the 2026-11-19 review already relied on ("the z = 4 cap keeps the dynamic LDS at 64 KB or less"); this host confirms it holds with the per-CU value above the per-block limit. For the lesson: the "half the per-SM shared memory" heuristic gives 64 KB on gfx1201 (it would have fitted), but the per-SM attribute is not a per-block budget on RDNA4.
+
+### Build
+
+Clean, from `quest/ops`, job venv's Python first on `PATH`:
+
+```
+mkdir build && cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 \
+  -DPython_EXECUTABLE=$FLEET_VENV/bin/python \
+  -DCMAKE_PREFIX_PATH=$(python -c 'import torch;print(torch.utils.cmake_prefix_path)') ..
+ninja -j 8     # wrapped: utils/timeit.sh Quest compile
+ln -sf $PWD/_kernels*.so ../../
+```
+
+`CMAKE_BUILD_TYPE:STRING=Release` from the HIP default (none passed); all 8 compile lines carry `-O3` and `--offload-arch=gfx1201` only. 10m04s wall, 0 errors. Warnings: the pre-existing nodiscard-`hipError_t` ones (`decode_handler.cuh:197`, `prefill.cuh:986`, `approx_attn.cu:65`), and 1536 `prefill.cuh:694: loop not unrolled ... [-Wpass-failed=transform-warning]` (one per prefill instantiation, repeated at link by ld.lld). The gfx942 records do not say whether that warning appeared there; it is a missed-unroll diagnostic, not an error, and the prefill results below are correct.
+
+### GPU tests (transformers 4.37.2, tokenizers 0.15.2, pytest 7.3.2)
+
+```
+PYTHONPATH=<fork> python -m pytest quest/tests -p no:cacheprovider -q     # wrapped: timeit.sh Quest test
+```
+
+**202 passed, 28 skipped, 0 failed** (17.2 s). Per suite: test_rope 64 passed; test_estimate 9; test_decode_attention 6; test_approx_attention 42; test_decode_launch_shape 3 (both decode launch shapes forced); test_topk 49 passed, 15 skipped; test_prefill_attention 29 passed, 13 skipped. The skips are only `test_topk.py:27: k should be less than kv_len` and `test_prefill_attention.py:51: qo_len > kv_len is not supported` (`-rs`), the tests' own conditions. Identical counts to the linux-gfx942 run at this head; nothing skipped that the 64-lane run ran.
+
+### End-to-end (transformers 4.45.2, tokenizers 0.20.3, accelerate 1.0.1, sentencepiece 0.2.0 -- the pyproject pins)
+
+The GPU holds the 7B model in fp16, so the same model as on gfx942: `NousResearch/Llama-2-7b-chat-hf@351844e75ed0bcbbe3f10671b3c808d2b83894ee` (safetensors) downloaded into the job directory; `do_sample: false` in its `generation_config.json` (original kept as `.orig`), and the unused `pytorch_model.bin.index.json` moved aside. `scripts/example_textgen.py` copy with only `MODEL_PATH` changed, each run wrapped in `timeit.sh Quest test`:
+
+```
+python example_textgen.py --method hg
+python example_textgen.py --method quest --token_budget 1024
+python example_textgen.py --method quest --token_budget 128
+```
+
+All exit 0 (15.3 / 14.6 / 14.7 s wall including model load), prompt 103 tokens, byte-identical text from "Input Sequence Length" on: md5 `b900af27eeb4170a5c47bc5940a2ca60`, the same digest as the linux-gfx942 run, so the output also matches across wave64 and wave32. `rocprofv3 --kernel-trace --stats` on the budget-128 run (its generated text identical again) shows the Quest path ran on this GPU: `BatchPrefillWithPagedKVCacheKernel<1,16,true,kNone,2,8,4,4,...,__half,float,__half,int>` 32 calls (433 us avg), `quest_radix_topk_one_block_kernel<__half,int,256>` 2130 calls (11.2 us), `MaxPossibleSampleWithPagedKVCacheKernel` 2130 (5.0 us), `BatchDecodeWithPagedKVCacheKernel` 3072 (13.0 us), `VariableLengthMergeStatesKernel` 3072, `AppendPagedKVCacheDecodeKernel` 3072, `AppendPagedKVCachePrefillKernel` 32 (19.3 us). Call counts equal the gfx942 trace at `661449c`.
+
+### CUDA no-regression gate
+
+`cuda-not-validated: no CUDA toolkit on this host` (no nvcc, no `/opt/conda`, no `/usr/local/cuda`). Still owed at this head on a host with nvcc, as the gfx942 record says.
+
+### Content checks and integrity
+
+`jargon.py --port Quest` clean. `audit-commits` reports only the known `6e7d8db` fenced-Test-Plan gap carried to PR preparation. ROCm build documented in `README.md` beside the CUDA build (followed as written, with the arch changed). `git -C projects/Quest/src status --porcelain` empty. No fork edit, no push to the fork.
+
+State: linux-gfx1201 `completed` at `6e7d8db` (wave32 gate).
