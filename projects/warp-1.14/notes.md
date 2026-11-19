@@ -5018,3 +5018,124 @@ for M, bd in CELLS:
         insn = hashlib.md5("\n".join(l for l in dis.splitlines() if "file format" not in l).encode()).hexdigest()[:12]
         print(f"{tag} {M}x{M} bd{bd:3d} {target:7s} forward {counts.get('forward', 0):3d} backward {counts.get('backward', 0):3d} insn-md5 {insn}")
 ```
+
+## Evidence session 8 (2026-11-19, linux-gfx1100, Radeon Pro W7800, evidence only): gfx1100 re-run at `a8e95dcb`
+
+**Verdict: every item matched its expected result.** That covers the tile set, test_tile_matmul, both `mma_check` scripts, the `cells_fb.py` table (with identical instruction hashes), the fp16 benchmark (64x64 bd256 forward equal to scalar, adjoint back on WMMA at 1.54x, no fp16 cell below 1.0x), the 82-pattern set and the CPU-only suite. One extra check outside the list (item 2) confirms the changed backward kernel is correct, because `mma_check.py` cannot launch it on a 64 KiB part.
+
+Requested by Jeff Daily. The work lock stays with linux-gfx950. Nothing was committed to the fork, and no stage, lock, head, platform or deferral record changed. The clone was updated read-only to the recorded `head_sha` `a8e95dcb748c474f63b866ac07227cdde22650c4` (`git diff --stat e78ee32f HEAD`: only `warp/native/tile_matmul_mma.h`, +11/-6) and rebuilt (`export PATH=$FLEET_VENV/bin:$PATH; python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1100 -j 32` -> "Warp build succeeded"; RUNPATH is the venv's ROCm 10.2). `git status --porcelain` is clean at the end. Same venv (HIP 7.17.26434), `ulimit -c 0`, `HIP_VISIBLE_DEVICES=0`. A fresh `WARP_CACHE_PATH` was used for every run, script, tree and test pattern. The scalar baseline was a worktree at `a8e95dcb` with `tile_matmul.h` from `974cd4bf` and this build's `warp/bin/*.so`, removed afterwards. Items are the "gfx1100 must re-run at `a8e95dcb`" list, in order.
+
+### Item 1: test_tile_matmul and the tile set: match
+`python -m warp.tests -s autodetect -p "<file>" -m 32` per file of the 24-file tile set: **639 run, 15 skipped, 0 failures**, with **test_tile_matmul Ran 25, OK**. The per-file summary lines (timings stripped) are identical to the `e78ee32f` run. The 15 skips are the 10 upstream no-libmathdx skips and the five 64 KiB capability skips. No `Warp CUDA error` line.
+
+### Item 2: `mma_check.py` and `mma_check_bf16.py` (Porting session 10 versions): match
+- `mma_check.py`: **FAILURES 0**; 15 forward and 25 backward shared-memory limits, the same 40 cases as at `e78ee32f` (`diff` of the SMEM lines with error columns stripped: empty).
+- `mma_check_bf16.py`: **FAILURES 0** (55 cases).
+- A coverage gap, recorded for the lock holder: on this 64 KiB part every fp16 64x64x64 case of `mma_check.py` is "SMEM-LIMIT (backward not launched)" at every block_dim, at `e78ee32f` as at `a8e95dcb`. Its kernel holds two products. So `mma_check.py` never executes the backward kernel this commit changed. I therefore ran the extra check below.
+
+**Extra check (not in the list): the changed backward kernel, directly.** `agent_space/p12/bwd_check.py` (source below): a one-product fp16 64x64x64 kernel (fits in 64 KiB), forward and backward at block_dim 256, 128 and 64 on `cuda:0`, plus the same kernel on the CPU device. It compares against float64 products of the fp16 inputs:
+```
+cpu    bd256: rel err vs float64  C 1.7e-03 adjA 2.8e-03 adjB 2.1e-03 | vs CPU kernel  C 0.0e+00 adjA 0.0e+00 adjB 0.0e+00 | grads nonzero True
+cuda:0 bd256: rel err vs float64  C 1.7e-03 adjA 3.6e-04 adjB 4.0e-04 | vs CPU kernel  C 0.0e+00 adjA 2.9e-03 adjB 2.0e-03 | grads nonzero True
+cuda:0 bd128: rel err vs float64  C 3.5e-04 adjA 3.6e-04 adjB 4.0e-04 | vs CPU kernel  C 1.8e-03 adjA 2.9e-03 adjB 2.0e-03 | grads nonzero True
+cuda:0 bd 64: rel err vs float64  C 3.5e-04 adjA 3.6e-04 adjB 4.0e-04 | vs CPU kernel  C 1.8e-03 adjA 2.9e-03 adjB 2.0e-03 | grads nonzero True
+```
+At block_dim 256 the forward is bit-identical to the CPU kernel, i.e. scalar, as the rule intends. The gradients have the WMMA (fp32-accumulating) error profile, 3.6e-04 and 4.0e-04 against float64, which is more accurate than the scalar/CPU fp16 path's 2.8e-03 and 2.1e-03. They are equal to the gradients of the all-WMMA block_dims 128 and 64. So the backward kernel the commit moved to WMMA is correct.
+
+### Item 3: `cells_fb.py` for gfx1100: match
+`python cells_fb.py <dir> new gfx1100` (verbatim from Porting session 12), with the instruction hashes identical to the porter's table:
+```
+new 64x64 bd256 gfx1100 forward   0 backward  16 insn-md5 fe55400c0d71
+new 64x64 bd128 gfx1100 forward  16 backward  48 insn-md5 0ff181fe0323
+new 32x32 bd256 gfx1100 forward   2 backward   6 insn-md5 03335d85c25e
+```
+
+### Item 4: fp16 benchmark, shipped tree against the scalar tree: matches
+Porting session 9 `bench_both.sh` with this host's paths, `bench_tile_matmul.py --blocks 16384 --iters 50`, three runs per tree, fresh cache per run, 5-second load/GPU-busy monitor. **Clean:** no cell above 1.5x its median, launched-cell spread median 1.1%, max 11.8%. fp16 rows:
+
+| dtype | tile | block_dim | scalar fwd ms | shipped fwd ms | fwd speedup | scalar adj ms | shipped adj ms | adj speedup | checks |
+|---|---|---|---|---|---|---|---|---|---|
+| float16 | 16x16 | 32 | 1.123 | 0.268 | 4.19x | 0.291 | 0.238 | 1.23x | ok |
+| float16 | 16x16 | 64 | 1.145 | 0.277 | 4.14x | 0.277 | 0.204 | 1.36x | ok |
+| float16 | 16x16 | 128 | 0.980 | 0.413 | 2.37x | 0.268 | 0.200 | 1.34x | ok |
+| float16 | 16x16 | 256 | 1.391 | 0.464 | 3.00x | 0.304 | 0.246 | 1.24x | ok |
+| float16 | 32x32 | 32 | 3.714 | 1.772 | 2.10x | 4.397 | 2.627 | 1.67x | ok |
+| float16 | 32x32 | 64 | 4.256 | 1.812 | 2.35x | 2.458 | 1.636 | 1.50x | ok |
+| float16 | 32x32 | 128 | 5.312 | 2.570 | 2.07x | 1.924 | 1.163 | 1.65x | ok |
+| float16 | 32x32 | 256 | 6.841 | 2.624 | 2.61x | 1.949 | 1.150 | 1.69x | ok |
+| float16 | 64x64 | 32 | 33.239 | 13.297 | 2.50x | 60.513 | 53.891 | 1.12x | ok |
+| float16 | 64x64 | 64 | 27.438 | 18.336 | 1.50x | 33.642 | 30.188 | 1.11x | ok |
+| float16 | 64x64 | 128 | 27.581 | 13.535 | 2.04x | 17.222 | 14.718 | 1.17x | ok |
+| float16 | 64x64 | 256 | 17.598 | 16.778 | 1.05x | 13.594 | 8.826 | 1.54x | ok |
+
+- **No fp16 cell below 1.0x.**
+- **64x64 bd256 adjoint is back on WMMA:** shipped 8.53/8.83/8.99 ms against scalar 13.58/13.59/13.63 ms, **1.54x** (expected about 8.6 ms and 1.59x; set 2 at `c9595bce` measured 8.40-8.60 ms; this run's median is 2.6% above that, within this cell's 5% spread).
+- **64x64 bd256 forward is about equal in both trees** (both scalar): shipped 16.20/16.78/17.30 against scalar 17.57/17.60/17.64 ms. The 1.05x is the same tree-order offset as at `e78ee32f`: the shipped tree runs first, and the fp32/fp64 control cells, identical code in both trees, also read 1.00x-1.03x.
+- The other 22 fp16 cells are as in `c9595bce` set 2. The largest deviation of a shipped median from set 2's WMMA median is 4.2% (64x64 bd32 forward, faster now). The 64x64 bd256 forward is excluded from that comparison, since it is now scalar by design.
+
+Raw fp16 timings per run, ms (`agent_space/p12/bench/bench_<tree>_run<n>.csv`):
+```
+tree,dtype,M,block_dim,fwd_r1,fwd_r2,fwd_r3,adj_r1,adj_r2,adj_r3
+scalar,float16,16,32,1.1203,1.1231,1.1264,0.2962,0.2892,0.2912
+scalar,float16,16,64,1.1339,1.1553,1.1454,0.2767,0.2855,0.2773
+scalar,float16,16,128,0.9854,0.9754,0.9798,0.2675,0.2599,0.2795
+scalar,float16,16,256,1.3915,1.3933,1.3914,0.3045,0.3168,0.3037
+scalar,float16,32,32,3.7142,3.7190,3.7138,4.4015,4.3813,4.3970
+scalar,float16,32,64,4.2557,4.2531,4.2638,2.4563,2.4673,2.4584
+scalar,float16,32,128,5.3033,5.3253,5.3124,1.9239,1.9309,1.9230
+scalar,float16,32,256,6.8148,6.8407,6.8435,1.9486,1.9541,1.9473
+scalar,float16,64,32,33.2017,33.2388,33.2874,60.6047,60.4180,60.5127
+scalar,float16,64,64,27.4288,27.4380,27.5134,33.6419,33.6178,33.6533
+scalar,float16,64,128,27.5813,27.5806,27.6167,17.2054,17.2223,17.2328
+scalar,float16,64,256,17.5655,17.5976,17.6421,13.5791,13.5943,13.6253
+shipped,float16,16,32,0.2606,0.2680,0.2760,0.2485,0.2327,0.2376
+shipped,float16,16,64,0.2719,0.2768,0.2803,0.2039,0.2020,0.2048
+shipped,float16,16,128,0.3960,0.4130,0.4232,0.1962,0.2101,0.2004
+shipped,float16,16,256,0.4467,0.4638,0.4731,0.2446,0.2534,0.2459
+shipped,float16,32,32,1.7110,1.7719,1.8092,2.6226,2.6274,2.6642
+shipped,float16,32,64,1.7113,1.8124,1.8625,1.6072,1.6358,1.6633
+shipped,float16,32,128,2.4652,2.5696,2.6564,1.1114,1.1635,1.1793
+shipped,float16,32,256,2.4900,2.6240,2.7110,1.1154,1.1504,1.1596
+shipped,float16,64,32,12.9131,13.2969,13.7305,53.8897,53.9096,53.8913
+shipped,float16,64,64,18.0630,18.3358,18.8592,30.1620,30.1884,30.1949
+shipped,float16,64,128,12.8994,13.5354,13.9891,14.7282,14.7037,14.7184
+shipped,float16,64,256,16.2038,16.7782,17.2962,8.5304,8.8261,8.9859
+```
+
+### Item 5: 82-pattern set and CPU-only suite
+- 82-pattern set (the same list as Evidence sessions 3-7, `-p "<pattern>" -m 32`, fresh cache per pattern, timeit-wrapped): **82 patterns, 81 OK, 1 with the 2 known fem isolation failures** (`test_gimp_quadrature`, `test_cube_shape_functions`). The per-pattern summary lines (timings stripped) are **identical** to the `e78ee32f` run. No `Warp CUDA error` line in any log; the only shared-memory warning is the known `test_tile_load_scoped` one.
+- CPU-only suite (`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32`, `PYTHONPATH` set inside the wrapped command, no `cuda:0` in the log): **Ran 2294, OK (skipped=15)**.
+
+`bwd_check.py`:
+```python
+# Extra (not in the handoff list): correctness of the fp16 64x64x64 tile_matmul backward at block_dim 256
+# (the kernel a8e95dcb moved back to WMMA on gfx11), one product per kernel so it fits in 64 KiB.
+# GPU gradients against float64 references of the fp16 inputs, and against the same kernel on the CPU device.
+import numpy as np
+import warp as wp
+wp.init()
+M = 64
+@wp.kernel(module="unique")
+def one(A: wp.array2d(dtype=wp.float16), B: wp.array2d(dtype=wp.float16), C: wp.array2d(dtype=wp.float16)):
+    wp.tile_store(C, wp.tile_matmul(wp.tile_load(A, shape=(M, M)), wp.tile_load(B, shape=(M, M))))
+rng = np.random.default_rng(3)
+An, Bn, Gn = (rng.uniform(-1, 1, (M, M)) for _ in range(3))
+res = {}
+for dev in ("cpu", "cuda:0"):
+    for bd in ((256,) if dev == "cpu" else (256, 128, 64)):
+        a = wp.array(An, dtype=wp.float16, device=dev, requires_grad=True)
+        b = wp.array(Bn, dtype=wp.float16, device=dev, requires_grad=True)
+        c = wp.zeros((M, M), dtype=wp.float16, device=dev, requires_grad=True)
+        t = wp.Tape()
+        with t:
+            wp.launch_tiled(one, dim=[1], inputs=[a, b, c], block_dim=bd, device=dev)
+        c.grad = wp.array(Gn, dtype=wp.float16, device=dev)
+        t.backward()
+        res[(dev, bd)] = [x.numpy().astype(np.float64) for x in (c, a.grad, b.grad)]
+a16, b16, g16 = (np.asarray(x, dtype=np.float16).astype(np.float64) for x in (An, Bn, Gn))
+ref = [a16 @ b16, g16 @ b16.T, a16.T @ g16]
+for key, got in res.items():
+    rel = [np.abs(g - r).max() / np.abs(r).max() for g, r in zip(got, ref)]
+    vs_cpu = [np.abs(g - r).max() / np.abs(r).max() for g, r in zip(got, res[("cpu", 256)])]
+    print(f"{key[0]:6s} bd{key[1]:3d}: rel err vs float64  C {rel[0]:.1e} adjA {rel[1]:.1e} adjB {rel[2]:.1e} | vs CPU kernel  C {vs_cpu[0]:.1e} adjA {vs_cpu[1]:.1e} adjB {vs_cpu[2]:.1e} | grads nonzero {bool(got[1].any() and got[2].any())}")
+```
