@@ -1123,3 +1123,28 @@ Each built module, imported from its `--target` directory (no device). The packa
   - So d3213b4 is the union of the other two, with nothing missing and nothing extra.
 
 Verdict: at head a995109 the CUDA path of all three extensions compiles and links with real nvcc, with the same results and warnings as upstream master 004b952 apart from the narrowing warning the port removes. The fused-ssim pin d3213b4 builds clean with nvcc. In device code it is 409da0b's fused L1+SSIM kernels plus a7c48d6's 2D and 3D kernels, instruction for instruction. This closes the "nvcc compile of 1664e6d with d3213b4" item owed since Review (3); the a995109 delta over 1664e6d is `.gitmodules` only. Stage and platform records are unchanged by this check. `git status --porcelain` is empty in the port and base clones, their submodules, and the a7c48d6 clone.
+
+## Porter round 2026-11-19 (5) (windows-gfx1151): README AMD note widened to Windows -- fork 1872600
+
+Documentation only, on jeff's request: one new commit `1872600b13894318a76d56b1e012990dad5970d7` on top of a995109 (plain push, `pr-state` = none). README.MD line 89 keeps the Linux text and gains one sentence:
+
+> On Windows, run them from an x64 developer command prompt for the MSVC build tools with `DISTUTILS_USE_SDK=1`, `ROCM_PATH` set to the ROCm SDK root (`rocm-sdk path --root` prints it for the pip packages) and `HIP_DEVICE_LIB_PATH` set to its `lib/llvm/amdgcn/bitcode` directory.
+
+Which of the validation's settings are requirements was decided by rebuilding a scratch copy of `simple-knn` (clean `build/` each time, `--target` scratch dir, one build at a time, each under `utils/timeit.sh LiteGS compile --`; same venv as the validation, torch `2.12.0+rocm7.14.0a20260519`; logs in `agent_space/litegs_val/chk/t1..t4.log`). The shell had the x64 Visual Studio environment active (`VSCMD_ARG_TGT_ARCH=x64`), as a developer prompt does.
+
+| build | set | result |
+|---|---|---|
+| t1 | `ROCM_PATH` | FAIL: torch `UserWarning: ... the VC environment is activated but DISTUTILS_USE_SDK is not set` (`cpp_extension.py:1220`) |
+| t2 | `ROCM_PATH`, `DISTUTILS_USE_SDK=1` | FAIL: `clang: error: cannot find ROCm device library` on all 3 TUs |
+| t3 | `ROCM_PATH`, `DISTUTILS_USE_SDK=1`, `HIP_DEVICE_LIB_PATH` | PASS: 3 TUs `--offload-arch=gfx1151`, `simple_knn/_C.cp313-win_amd64.pyd`; `import torch; from simple_knn._C import distCUDA2` ok (import only, no GPU run) |
+| t4 | t3 without `ROCM_PATH`, venv `Scripts` (which has `hipcc.exe`) on `PATH` | FAIL: `CreateProcess failed: The system cannot find the file specified` (torch derives `<venv>/bin/hipcc.exe` from the `Scripts` shim) |
+
+So required and documented: `DISTUTILS_USE_SDK=1` (in an activated VC environment), `ROCM_PATH`, `HIP_DEVICE_LIB_PATH`. Not required, not documented:
+- `PYTORCH_ROCM_ARCH`: optional, t3 built without it (torch takes the arch of the visible GPUs, with a warning). The existing README sentence about it already reads as optional and covers both systems.
+- `CC`/`CXX=clang-cl`: t3 built without it. With the `*_winhip.cu` shims every TU of all three extensions goes through `hipcc.exe` (validation logs: 3/3, 3/3, 6/6 hipcc compile lines), so the host compiler is only asked for its version. It is a requirement for torch extensions that compile `.cpp` with the host compiler, not for this project.
+- `HIP_PATH`: unset in t3.
+- MSVC `link.exe` first on `PATH`: a Git Bash matter (`/usr/bin/link` shadows it); a developer command prompt has no other `link`. The check builds kept the MSVC directory first for that reason. Covered by "x64 developer command prompt".
+
+Only t3's three-variable set was built for `simple-knn`; `fused_ssim` and `gaussian_raster` were not rebuilt with the reduced set (their validation builds had the full set), the inference being that they use the same torch build path and compile only through hipcc. A plain (non-developer) prompt, where torch activates the VC environment itself, was not tried. `HIP_DEVICE_LIB_PATH` was shown necessary for the pip-package SDK layout only; a different SDK install was not tried.
+
+`advance-head` from inside `porting` classified the delta as inert and moved `validated_sha` of the two platforms completed at a995109 (linux-gfx1201, windows-gfx1151) to 1872600 by itself; this round recorded no validation. `python utils/jargon.py --port LiteGS`: clean. No change to code, build files or `.gitmodules`; the fused-ssim fork was not touched.

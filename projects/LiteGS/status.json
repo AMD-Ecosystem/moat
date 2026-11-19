@@ -7,13 +7,9 @@
   "priority": 4.566,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-11-19T23:43:55Z",
-  "head_sha": "a995109ec81235aeb9dab69bfc6209ceeae3e053",
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-19T23:43:55Z",
-    "holder": "2e86842d8592"
-  },
+  "updated_at": "2026-11-19T23:45:11Z",
+  "head_sha": "1872600b13894318a76d56b1e012990dad5970d7",
+  "porting": null,
   "waivers": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
@@ -23,7 +19,7 @@
   },
   "license_spdx": "non-commercial",
   "upstream_repo_id": 877079178,
-  "stage": "porting",
+  "stage": "delta-ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "validation-failed",
@@ -146,11 +142,11 @@
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "a995109ec81235aeb9dab69bfc6209ceeae3e053",
+      "validated_sha": "1872600b13894318a76d56b1e012990dad5970d7",
       "failed_sha": "e24abb264834ee89f2d5f61e83c34aa17950d01a",
       "started_at": "2026-11-19T22:56:10Z",
       "completed_at": "2026-11-19T23:12:12Z",
-      "updated_at": "2026-11-19T23:12:12Z",
+      "updated_at": "2026-11-19T23:44:40Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -167,17 +163,26 @@
       "state": "completed",
       "last_agent": "validator",
       "validated_prior": [
-        "e24abb264834ee89f2d5f61e83c34aa17950d01a"
-      ]
+        "e24abb264834ee89f2d5f61e83c34aa17950d01a",
+        "a995109ec81235aeb9dab69bfc6209ceeae3e053"
+      ],
+      "carry_forward": {
+        "from": "a995109ec81235aeb9dab69bfc6209ceeae3e053",
+        "to": "1872600b13894318a76d56b1e012990dad5970d7",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-11-19T23:44:40Z"
+      }
     },
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "a995109ec81235aeb9dab69bfc6209ceeae3e053",
+      "validated_sha": "1872600b13894318a76d56b1e012990dad5970d7",
       "failed_sha": null,
       "started_at": "2026-11-19T23:43:55Z",
       "completed_at": "2026-11-19T23:39:55Z",
-      "updated_at": "2026-11-19T23:43:55Z",
+      "updated_at": "2026-11-19T23:45:11Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -192,13 +197,24 @@
         "last_session_at": null
       },
       "state": "completed",
-      "last_agent": "validator"
+      "last_agent": "validator",
+      "validated_prior": [
+        "a995109ec81235aeb9dab69bfc6209ceeae3e053"
+      ],
+      "carry_forward": {
+        "from": "a995109ec81235aeb9dab69bfc6209ceeae3e053",
+        "to": "1872600b13894318a76d56b1e012990dad5970d7",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-11-19T23:44:40Z"
+      }
     }
   },
   "porting_released": {
-    "arch": "linux-gfx1201",
-    "since": "2026-11-19T23:00:14Z",
-    "at": "2026-11-19T23:00:36Z"
+    "arch": "windows-gfx1151",
+    "since": "2026-11-19T23:43:55Z",
+    "at": "2026-11-19T23:45:11Z"
   },
   "reviewed_sha": "a995109ec81235aeb9dab69bfc6209ceeae3e053"
 }
