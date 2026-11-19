@@ -1300,3 +1300,71 @@ for HIP adds a diff and no behaviour. Three things nvcc did silently need statin
 ohm's first port added such a directory (~3,800 lines). The masquerade was +157/-16 over
 24 files and passed the same GPU tests (8/8 and 58/58 on gfx90a). (ohm)
 
+
+## 2026-11-18 (windows-gfx1151 porter) -- Windows HIP build from the documented command, 7c09435 -> e9149bb
+
+Why: the gfx1151 validation at 7c09435 only built after `sed -i 's/-fuse-ld=lld-link//g' build.ninja` plus hand-passed `-DWIN32 -D_USE_MATH_DEFINES -DNOMINMAX`, glm 1.0.1 headers (and a copied glm tree to beat include shadowing), `GTest_DIR`/`Eigen3_DIR`/`ZLIB_ROOT` and `-DCMAKE_HIP_ARCHITECTURES=gfx1151`. jeff's rule: the documented command must work, with workarounds in the build files, guarded.
+
+### Reproduction and classification (fresh clone of moat-port 7c09435, TheRock ROCm 7.14 pip SDK, clang 23)
+
+- **`-fuse-ld=lld-link` is not a failure.** It comes from CMake's `Modules/Platform/Windows-Clang.cmake` (`CMAKE_<LANG>_USING_LINKER_DEFAULT "-fuse-ld=lld-link"`, the 3.29+ linker selection, applied to HIP too), not from the project or ROCm. Without the sed, every HIP link (`ohmpopcuda.exe` plain clang++ link, `gputiltestcuda.exe` with `--hip-link --rtlib=compiler-rt -fuse-ld=lld-link`) succeeds with CMake 3.31.0 and with TheRock's CMake 4.3.2 (`D:/Develop/TheRock/.venv/Scripts/cmake.exe`, gputiltestcuda + ohmpopcuda built). None of the earlier gfx1151 build logs (`agent_space/ohm-win-build{,2,3,4}.log`) shows a link error from it: the sed was carried over from the 2026-06 gfx1201/gfx1101 recipe (CMake 4.3, an older 7.14 nightly) without being re-tested. No change for it; no tool bug to draft for it.
+- What really failed with a plain configure (`-G Ninja -DOHM_FEATURE_HIP=ON`, clang/clang++ for C/CXX/HIP, `CMAKE_PREFIX_PATH=<rocm>`, deps found by hand):
+  1. `CMAKE_HIP_ARCHITECTURES=gfx906`: CMake (3.31 and 4.3 `CMakeDetermineHIPCompiler.cmake`) only asks `rocm_agent_enumerator`, which ROCm on Windows does not ship, then takes the compiler default. CMake gap (draft below). Project fix.
+  2. `OhmTestUtil.cpp:22: fatal error: 'unistd.h' file not found`: the GNU-style clang driver defines `_WIN32` but not `WIN32` (CMake's MSVC rules add `/DWIN32`). Project fix (the HIP Windows build has to use the GNU driver on CMake 3.31).
+  3. `CovarianceVoxel.h:67: no type named 'dquat' in namespace 'glm'` with glm 1.0.3: upstream latent missing include (glm 1.0.1 `gtx/norm.hpp` includes `gtx/quaternion.hpp`; 1.0.3 does not; checked in both header trees). Not ROCm, not Windows.
+  4. `Could NOT find glm (missing: GLM_INCLUDE_DIRS)` with a glm 1.0 CONFIG package that builds the library (vcpkg glm 1.0.3: `glm::glm` is STATIC IMPORTED with `INTERFACE_LINK_LIBRARIES glm::glm-header-only`; the include dirs are only on the header-only target). This also breaks upstream's own documented vcpkg build today. Not ROCm.
+- `_USE_MATH_DEFINES`/`NOMINMAX` are NOT needed: ohm's `*Config.in.h` headers already define both. TBB/zlib/gtest/eigen paths were this machine's installs; vcpkg manifest mode (upstream's documented Windows route) supplies them. `OHM_FEATURE_THREADS` stays OFF even with vcpkg TBB present (`ohm_feature(THREADS ... FIND tbb)`), pre-existing upstream behaviour, left alone.
+
+### Commits (on top of 7c09435, pushed `7c09435..e9149bb moat-port`)
+
+```
+659a15d Build with GLM 1.0 packages                 # Findglm.cmake fallback to glm::glm-header-only; <glm/gtc/quaternion.hpp> in CovarianceVoxel.h (+6)
+e9149bb [ROCm] Configure HIP builds on Windows      # OhmHip.cmake if(WIN32): add_compile_definitions(WIN32); amdgpu-arch arch detection; readme Windows paragraph (+38)
+```
+
+659a15d is a shared-code fix with no prefix, carried on the port branch like the `<utility>` commit (upstream inactive since 2023-02). Everything ROCm sits inside `if(WIN32)` in `OhmHip.cmake`, which only `OHM_FEATURE_HIP=ON` includes: CUDA, OpenCL and Linux HIP builds are unchanged. The two shared lines (an include of a header every glm version has; a branch only entered when `glm::glm` has no include dirs) do not change the Ubuntu libglm-dev path. `jargon.py --port ohm`: clean. Titles 27/38 chars, "Authored with Claude.", no trailer, ASCII.
+
+### Documented Windows command, as run (b-vcpkg)
+
+```bash
+source /d/Develop/moat/agent_space/win_rocm_env.sh; unset CC CXX
+export PATH="/d/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel/bin:$PATH"   # this host only, see below
+L=$ROCM_ROOT/lib/llvm/bin
+cd projects/ohm/src
+cmake -B ../../../agent_space/b-vcpkg -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=D:/Develop/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_MANIFEST_FEATURES=test -DOHM_FEATURE_HIP=ON -DCMAKE_C_COMPILER=$L/clang.exe -DCMAKE_CXX_COMPILER=$L/clang++.exe -DCMAKE_HIP_COMPILER=$L/clang++.exe -DCMAKE_PREFIX_PATH="$ROCM_ROOT"
+utils/timeit.sh ohm compile -- cmake --build agent_space/b-vcpkg -j 12     # 219/219, no sed, no extra flags
+```
+
+Configure took 543 s (vcpkg built glm 1.0.3, zlib, gtest, eigen3, tbb). `CMAKE_HIP_ARCHITECTURES=gfx1151` (auto-detected), `OHM_SYSTEM_GTEST=ON`, `OHM_FEATURE_OPENCL=OFF` by default. A second variant without vcpkg's toolchain (`CMAKE_PREFIX_PATH="$ROCM_ROOT;D:/Develop/vcpkg/installed/x64-windows"`, b-pfx) also configured and built 231/231 (it also picks up HEIGHTMAP_IMAGE from the classic vcpkg tree).
+
+Host-specific, not in the build files: this laptop's broken `System32\amdhip64_7.dll` makes `amdgpu-arch.exe` exit 1 with no output unless the SDK's `bin` is on PATH (then it prints `gfx1151`). On a machine with a working driver runtime it needs nothing; on failure the project warns "No AMD GPU detected. Set CMAKE_HIP_ARCHITECTURES...". In Git Bash, `export PATH="$ROCM_ROOT/bin:$PATH"` with the `D:/...` form breaks PATH splitting at the colon; use `/d/...`.
+
+Upstream readme's vcpkg block says `scripts/buildsystem/vcpkg.cmake` (missing `s`); the new Windows paragraph uses the correct `buildsystems`. Upstream typo left alone.
+
+### Tests at the e9149bb tree (b-vcpkg, `ulimit -c 0`, runtime DLLs staged with `rocm_stage_runtime`; vcpkg applocal copied the gtest/z DLLs)
+
+```bash
+for t in gputiltestcuda ohmtestcuda ohmtest ohmtestheightmap slamiotest; do utils/timeit.sh ohm test -- $PWD/agent_space/b-vcpkg/bin/$t.exe; done
+```
+
+| Suite | e9149bb (gfx1151) | 7c09435 (gfx1151, 2026-11-04) |
+|-------|-------------------|-------------------------------|
+| gputiltestcuda | 8/8 (5.1 s) | 8/8 |
+| ohmtestcuda | 58/58 (48.7 s) | 58/58 (73.4 s) |
+| ohmtest | 53/53 | 53/53 |
+| ohmtestheightmap | 19/19 | 19/19 |
+| slamiotest | 4/4 | 4/4 |
+
+GPU 66/66, CPU 76/76. The tests ran on the build of the working tree just before the commit and push; afterwards `git status --porcelain` is empty and `ninja -n` reports no work, so the binaries are e9149bb's. Not a validation record: the platform record is left for the reviewer and validator.
+
+Owed: nvcc compile of the CUDA path at e9149bb (mi355 host). The only shared-code delta is 659a15d (one include, one Findglm branch); the CMake changes sit behind `OHM_FEATURE_HIP`. Linux HIP revalidation (gfx90a, gfx1100) is owed by the head move.
+
+### Draft tool issue for jeff (CMake; not filed)
+
+Title: HIP: CMAKE_HIP_ARCHITECTURES default ignores the GPUs present on Windows
+
+Body: `CMakeDetermineHIPCompiler.cmake` (3.31 and 4.3) chooses the default `CMAKE_HIP_ARCHITECTURES` by running `rocm_agent_enumerator` from `CMAKE_HIP_COMPILER_ROCM_ROOT/bin`. ROCm on Windows does not ship `rocm_agent_enumerator`, so CMake silently takes the compiler's default (gfx906) and the binaries do not run on the installed GPU. ROCm's LLVM ships `amdgpu-arch` (and `offload-arch`) next to clang on Linux and Windows; it prints one architecture per GPU. Suggest falling back to `amdgpu-arch` from the HIP compiler's directory when `rocm_agent_enumerator` is not found, and warning when neither reports a GPU instead of defaulting silently. Reproduced with CMake 3.31.0 and 4.3.2, ROCm 7.14 (TheRock) clang 23, Radeon 8060S (gfx1151).
+
+## Lesson for cuda-to-rocm: -fuse-ld=lld-link on a Windows CMake HIP link is not a failure by itself
+
+Belongs in references/windows.md, "CMake's HIP link rule mangles MSVC-style flags and paths" (which says the injected flag "conflicts with --hip-link"). CMake 3.29+ adds `-fuse-ld=lld-link` to every clang link line on Windows (`Platform/Windows-Clang.cmake`, `CMAKE_<LANG>_USING_LINKER_DEFAULT`), HIP included. When the HIP link goes straight to ROCm's GNU-style `clang++` (CMake's own rule, not through hipcc), `clang++ --hip-link --rtlib=compiler-rt -fuse-ld=lld-link ...` links fine with CMake 3.31.0 and 4.3.2 and ROCm 7.14 clang 23. Do not strip it from `build.ninja` out of habit: build once without touching it and read the actual link error first. A recipe that carried the strip for months turned out to need none of it. (ohm)

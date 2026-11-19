@@ -139,3 +139,17 @@
 {"kind":"phase","ts":"2026-11-04T17:26:29Z","phase":"test","seconds":3.711,"exit":0,"cmd":"D:/Develop/moat/agent_space/ohm-win-build/bin/ohmtestheightmap.exe"}
 {"kind":"phase","ts":"2026-11-04T17:26:30Z","phase":"test","seconds":0.246,"exit":0,"cmd":"D:/Develop/moat/agent_space/ohm-win-build/bin/slamiotest.exe"}
 {"kind":"phase","ts":"2026-11-04T17:27:45Z","phase":"test","seconds":74.051,"exit":0,"cmd":"D:/Develop/moat/agent_space/ohm-win-build/bin/ohmtestcuda.exe"}
+{"kind":"phase","ts":"2026-11-19T05:12:21Z","phase":"compile","seconds":0.207,"exit":1,"cmd":"cmake --build agent_space/b-plain -j 12 -k 0"}
+{"kind":"phase","ts":"2026-11-19T05:12:58Z","phase":"compile","seconds":28.779,"exit":1,"cmd":"cmake --build agent_space/b-plain -j 12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-19T05:18:24Z","phase":"compile","seconds":30.444,"exit":0,"cmd":"cmake --build agent_space/b-pfx -j 12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-19T05:28:46Z","phase":"compile","seconds":26.796,"exit":0,"cmd":"cmake --build agent_space/b-vcpkg -j 12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-19T05:29:36Z","phase":"test","seconds":0.134,"exit":127,"cmd":"./gputiltestcuda.exe"}
+{"kind":"phase","ts":"2026-11-19T05:29:37Z","phase":"test","seconds":0.127,"exit":127,"cmd":"./ohmtestcuda.exe"}
+{"kind":"phase","ts":"2026-11-19T05:29:39Z","phase":"test","seconds":0.147,"exit":127,"cmd":"./ohmtest.exe"}
+{"kind":"phase","ts":"2026-11-19T05:29:40Z","phase":"test","seconds":0.096,"exit":127,"cmd":"./ohmtestheightmap.exe"}
+{"kind":"phase","ts":"2026-11-19T05:29:41Z","phase":"test","seconds":0.099,"exit":127,"cmd":"./slamiotest.exe"}
+{"kind":"phase","ts":"2026-11-19T05:29:58Z","phase":"test","seconds":5.385,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-vcpkg/bin/gputiltestcuda.exe"}
+{"kind":"phase","ts":"2026-11-19T05:30:48Z","phase":"test","seconds":49.118,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-vcpkg/bin/ohmtestcuda.exe"}
+{"kind":"phase","ts":"2026-11-19T05:30:59Z","phase":"test","seconds":9.367,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-vcpkg/bin/ohmtest.exe"}
+{"kind":"phase","ts":"2026-11-19T05:31:04Z","phase":"test","seconds":3.792,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-vcpkg/bin/ohmtestheightmap.exe"}
+{"kind":"phase","ts":"2026-11-19T05:31:05Z","phase":"test","seconds":0.188,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-vcpkg/bin/slamiotest.exe"}
