@@ -92,6 +92,7 @@ AMD-native target is not the same verdict as "no target exists"; say which.
 | a CUDA library to replace, or a missing routine or mode: cuBLAS, cuSOLVER, cuDNN, cuSPARSE, Thrust/CUB, cuRAND, NCCL, RAPIDS, nvJPEG, NVDEC, NVML | `references/libraries.md` |
 | a device query that answers differently, `clock64`, occupancy, kernels compiled at run time (PTX, NVRTC), an integrated APU | `references/platform-limits.md` |
 | a failure you cannot place yet, or a suspected ROCm bug | `references/diagnosis.md` |
+| correct results but far slower than the CUDA build: profiling, kernel ISA, emulated packed intrinsics | `references/performance.md` |
 | what counts as validated; compiling the CUDA path with nvcc | `references/validation.md` |
 | a headless Linux GPU host that needs a GL or Vulkan context | `references/linux-host-setup.md` |
 | an open PR that upstream has moved under | `references/upstream-sync.md` |
@@ -162,6 +163,8 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A compat `__ballot_sync` that casts `__ballot()` to `uint32_t` takes the LOW 32 lanes
 - A full 64-bit `*_sync` mask in 32-lane group code traps in a HIP debug build on wave64
 - Width-32 LOGICAL warp ops are arch-agnostic and fine
+- A compat layer for CUDA's `*_sync` warp functions must pin every member to 32 lanes, and ...
+- A fixed-cluster warp reduction is wavefront-safe exactly when the cluster size equals the ...
 - Pass that logical width on BOTH paths, and prefer the project's own pre-CUDA-9 branch ...
 - An over-wide `__shfl*` width does not error, it silently degenerates
 - Do not hardcode wave64 GEOMETRY either
@@ -191,6 +194,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A zero-filling allocator helper races a non-blocking upload the same way
 - A plain device-to-device copy is the same race in a less suspicious costume
 - `hipFree` is synchronizing
+- Device-side `new[]`/`delete[]` per thread is worth replacing, but it is NOT a known ...
 - `cudaLaunchHostFunc`/`hipLaunchHostFunc` callback threads must not call ANY runtime API
 - A host-function callback must not block either
 - HIP after `fork()` crashes in the child
@@ -220,10 +224,12 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 
 - clang for HIP defaults to `-ffp-contract=fast`
 - One contraction setting cannot satisfy both kinds of bit-exact test
+- `-ffast-math` is NOT the HIP translation of nvcc's `--use_fast_math`, and reaching for it ...
 - `-ffast-math` implies `-ffinite-math-only` under clang; nvcc's `--use_fast_math` does not ...
 - `__fsqrt_rn` is not always correctly rounded on gfx90a
 - Device `cuda::min`/`cuda::max` NaN-selection can differ from host `std::min`/`std::max`
 - An exact float-equality branch fed by approximate division can HANG, not just drift
+- A hand-written Jacobi/eigenvalue sweep replacing a library solver must normalize first
 - Host `min`/`max` on floating-point values truncate to int under hipcc
 - A HIP workaround in shared host code must not change CUDA's numbers
 - Converting a NEGATIVE float to an UNSIGNED integer diverges silently between the back ends
@@ -236,8 +242,10 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 **`references/build-headers-macros.md`** -- Build: headers, macros and source compatibility
 
 - A shared compat header must be host-includable
+- Do not name compat macros after the warp functions ROCm declares
 - Missing-include errors are usually pre-existing upstream omissions
 - cuRAND's device header is host-includable only AFTER the CUDA runtime headers
+- Before gating or moving a device-library include that a compat header already has, check ...
 - For plain C++ TUs the HIP headers `#define __noinline__ __attribute__((noinline))`
 - CUDA error codes HIP lacks still appear in switch labels
 - Never name the pointee struct of an opaque CUDA handle
@@ -256,9 +264,12 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - HIP's bf16 header has no `make_bfloat162` and no `__floats2bfloat162_rn`
 - A `__shared__` array of a struct that has default member initializers is a hard error on ...
 - MSVC-only upstreams accept code that clang and gcc reject
+- Eigen DECOMPOSITIONS called from `__device__` code do not survive the move to hipcc, even ...
+- `__ldg` is usually a non-problem on HIP; check before working around it
 - An uninitialised header-only submodule fails as a HIP error, not as a missing file
 - clang checks kernel bodies in the HIP host pass; nvcc does not
 - The CUDA Samples `helper_math.h` makes vector arithmetic ambiguous under HIP
+- A helper whose name the standard library also declares must NOT be guarded on ...
 - Extend a CUDA guard for HIP; never re-key it
 - A ROCm-only branch inside a shared template still COMPILES on the CUDA path
 - "Portable" is a claim to verify against nvcc, not a property of how the edit reads
@@ -278,6 +289,9 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Cross-TU `__device__` calls ARE inlined on AMD under `-fgpu-rdc`
 - Moving the bodies into a host-reachable header UNGUARDED silently breaks the CUDA build
 - No AMD build, review round or GPU validation can detect this class
+- `-fgpu-rdc` on the compile line alone trades the first link error for a more confusing ...
+- `-flto` on the COMPILE line does not survive a `-fgpu-rdc` device link
+- Settle any "which flags does this build actually use" question by reading the generated ...
 - One OpenMP runtime per binary; which one follows from who compiles the files that use ...
 - OpenMP in a mixed g++/HIP library: one runtime only
 - CMake `LANGUAGE HIP` on host `.cpp` files drops OpenMP
@@ -326,6 +340,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 
 - Library swaps
 - Negative entries for that table
+- A swapped library may be less defensive about bad arguments than the CUDA one
 - Choosing the NVIDIA or AMD build of a library at run time
 - A scalar's WIDTH follows the compute/scale type, not the matrix type
 - hipBLASLt epilogues are not cuBLASLt's, per type and per format
@@ -374,8 +389,11 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 **`references/diagnosis.md`** -- Diagnosing a suspected AMD fault
 
 - One architecture gets wrong numbers while the others pass
+- Rule out a stale tree and the toolchain version before accepting "arch-specific"
 - A "data-dependent, later-data-corrupts-earlier, per-tile" corruption signature is the ...
 - Triangulate single- against double-precision before blaming the wavefront
+- Test "it reads uninitialized device memory" with a fill-pattern differential, not an audit
+- To close an "it might silently fall back" risk, trace it; then bound it from the code ...
 - A once-per-suite host crash that stress reruns never reproduce: widen the suspected race ...
 - ROCm 10.1 `AMD_LOG_MASK` takes decimal only, and graph replays are invisible to it
 - Before blaming the code under test for a wrong result, save the output, the inputs as ...
@@ -393,9 +411,16 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A free-memory-delta test can fail once per process on gfx90a
 - Two GPUs visible to one process can crash the runtime
 
+**`references/performance.md`** -- Performance: what a correct port can still lose
+
+- Profile the hot kernels and read their ISA before blaming tile tables or wavefront size
+- Scalar emulation of a packed intrinsic (`__hmax2` as two `__hmax`) cost 15x or more
+- Tile and block-size tables are second order, and a project's own autotuner can pick a ...
+- What did not matter: RDC layout and maskless shuffles
+
 **`references/validation.md`** -- Validation
 
-- Proving a binary really carries device code for the target architecture: use ...
+- `-mwavefrontsize64` on an RDNA card checks lane logic, and cannot judge an application
 - Compile and link the CUDA path with nvcc before claiming the CUDA build is unchanged
 - A CUDA toolkit for the check on a machine with no NVIDIA GPU
 - Diff the PTX to prove the CUDA path is byte-restored, not merely compiling
@@ -407,7 +432,9 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - `nvcc fatal: Unsupported gpu architecture 'compute_35'` at the first ...
 - CUDA gate for torch-extension ports: the host's installed PyTorch itself can be the wall
 - A Windows machine can syntax-check the Linux HIP host pass of a `.cu` without a Linux box
+- Proving two builds carry the same device code: build both in the SAME directory
 - A passing assertion COUNT is not a list of what was tested
+- A green result does not prove a GPU test ran: count kernel dispatches
 - Read what the project's own cross-backend checker actually compares
 - A project with no test suite: author the harness, then ship it WITH the port
 - A GPU test the port adds must skip on a machine with no device, and an in-`main` check ...
@@ -417,5 +444,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 
 - Getting a real hardware GL context on a headless RDNA host
 - Headless Vulkan on a Linux GPU host: Xvfb plus Mesa's software WSI
+- Driving a compute demo whose only entry point is an interactive GL window
+- A GPU test that hangs only under `ctest -jN` is usually the software GL stack
 - HIP and Vulkan in one process can oops the kernel on an old amdgpu-dkms
 <!-- index:end -->

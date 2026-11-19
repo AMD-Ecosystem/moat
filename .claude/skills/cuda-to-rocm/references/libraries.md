@@ -50,6 +50,20 @@ than substituting something. ck_tile's fused MHA ships headers but no prebuilt i
 library in `/opt/rocm/lib`, so `fmha_fwd` is declared-only and using it means vendoring CK's
 codegen ("Fused FP16 attention" below). (cuSZ, lc0)
 
+**A swapped library may be less defensive about bad arguments than the CUDA one.** Where
+cuFFT returns an error code, rocFFT can hang. `hipfftPlan1d(&plan, 0, HIPFFT_C2C, 1)` --
+transform length zero -- never returns on ROCm 7.2.3, while cuFFT answers
+`CUFFT_INVALID_SIZE`; `hipfftPlan1d(..., batch=0)` returns SUCCESS rather than an error.
+This bites when you deliberately force an error to test a port's error-check macros or its
+failure paths: pick a trigger that is verified to return, such as
+`hipfftExecC2C(plan, nullptr, nullptr, dir)` (status 6, on a planned or unplanned handle).
+For hipBLAS the equivalent verified trigger is a GEMM with negative extents:
+`hipblasCgemm(handle, HIPBLAS_OP_N, HIPBLAS_OP_N, -1, -1, -1, &alpha, nullptr, 1, nullptr,
+1, &beta, nullptr, 1)` returns `HIPBLAS_STATUS_INVALID_VALUE` (3) on a valid handle and
+touches no device memory, so it is safe to fire from a probe. More generally, before
+concluding a port hangs, reproduce the hang in a few-line program that includes none of the
+project's headers: that separates a library bug from your change. (TurboFNO)
+
 **Choosing the NVIDIA or AMD build of a library at run time.** A runtime with both a CUDA and a
 HIP backend must pick per device, from the device's own backend, and never by enumerating or
 starting every installed backend: creating a backend that cannot start (HIP on an NVIDIA host)

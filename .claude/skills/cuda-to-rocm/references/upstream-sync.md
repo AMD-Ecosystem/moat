@@ -15,6 +15,22 @@ A fourth is a textual conflict that resolves wrongly: upstream adds a CUDA-only 
 
 So after every sync, read upstream's own delta rather than only the merged result: `git log <old-base>..upstream/main -- <ported subtree>` and `git diff <old-base> upstream/main -- <ported subtree>`, then check each addition against every abstraction the port introduced (vendor backends, platform cfgs, feature gates, shim headers). A useful closing check is that the merged tree differs from your previous published tip by EXACTLY upstream's delta plus the port-side lines you deliberately added -- anything else means the merge dropped or duplicated port intent.
 
+Measure the drift itself before each review and again before opening the PR: `git fetch`
+upstream's default branch and check that `git rev-list --count <port-branch>..origin/<default>`
+is 0. **`git diff <default>...<branch>` will not tell you**: three dots diff from the MERGE
+BASE, so a branch cut months ago shows a clean, plausible diff against code upstream has
+since rewritten. GooFit sat 19 commits behind through two full review rounds this way; one
+of those commits repointed the very submodule the port special-cased and rewrote the exact
+CMake block the port wrapped, so the diff under review was not the diff that would have been
+proposed. After bringing the branch up to date, look for two things besides the checks
+above: whether upstream has independently adopted part of your change (drop your copy
+rather than proposing it twice), and whether a project-wide configure probe now answers
+differently (GooFit's `check_ipo_supported()` flipped NO -> YES across the sync, so every
+conclusion drawn from the cached value was stale). Re-measure such a probe rather than
+trusting a cache or an earlier review, and remember that what a probe reports and what the
+build generates are different questions (build-cmake-link.md, "Settle any 'which flags
+does this build actually use' question"). (GooFit)
+
 Then confirm mergeability and publishability with two ancestry checks, not by reading the GitHub badge: `git merge-base --is-ancestor upstream/main <branch>` (upstream is contained, so merging back is a fast-forward) and `git merge-base --is-ancestor <published-tip> <branch>` (the reviewed tip is still an ancestor, so the PR branch can be fast-forwarded to this work).
 
 ## A patch you carry against a pinned dependency: check "unfixed upstream" per entry

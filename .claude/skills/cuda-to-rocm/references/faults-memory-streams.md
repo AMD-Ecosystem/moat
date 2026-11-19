@@ -326,6 +326,21 @@ on Linux gfx950/gfx1201.)
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
+**Device-side `new[]`/`delete[]` per thread is worth replacing, but it is NOT a known
+correctness fault: do not go hunting one.** GooFit's kernels did `new fptype[10]` and
+`delete[]` per thread, and a wrong fitted parameter on gfx90a was once blamed on it. That
+did not hold up: restoring the original `new`/`delete[]` and rebuilding on gfx1100 with
+ROCm 7.2.3 gave 24/24 tests passing and a fitted parameter identical to the fixed version,
+digit for digit, and the gfx90a observation turned out to follow the ROCm version, not the
+allocation (diagnosis.md, "Rule out a stale tree and the toolchain version"). What remains
+true is the ordinary reason to avoid it: device-side dynamic allocation serializes on a
+global heap whose default size is modest, and can return nullptr under realistic thread
+counts. Replacing it with a fixed-size automatic array bounded by the constant the code
+already has (GooFit: `new fptype[10]` -> `fptype[MAX_NUM_OBSERVABLES]`, which is also 10) is
+arch-unified, correct on CUDA too, and needs no guard; upstream GooFit made the identical
+change to its own `CompositePdf` (#384) on those grounds. Treat it as hygiene worth doing in
+passing, not as a bug to chase when your numbers are wrong. (GooFit)
+
 ## Host callbacks and fork
 
 **`cudaLaunchHostFunc`/`hipLaunchHostFunc` callback threads must not call ANY runtime API** -- an RAII deleter

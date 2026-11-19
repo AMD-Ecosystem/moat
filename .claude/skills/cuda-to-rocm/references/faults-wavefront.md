@@ -181,7 +181,7 @@ which are the wrong lanes for any logical warp not at the wavefront base -- with
 `blockDim (32,32)`, odd `threadIdx.y` rows sit in the high lanes. Arch-unified form:
 `(uint32_t)(__ballot(PRED) >> (__lane_id() & ~31u))`, where the shift is 0 on wave32.
 (`__lane_id() & 32u`, and `(threadIdx.x % warpSize) / 32 * 32` in a one-dimensional block,
-are the same shift; use one spelling per project.) (cuSZ)
+are the same shift; use one spelling per project.) (cuSZ, GPU_IPC)
 
 **A full 64-bit `*_sync` mask in 32-lane group code traps in a HIP debug build on wave64.**
 HIP's `__shfl*_sync` / `__ballot_sync` run `__hip_check_mask`, which asserts that the mask
@@ -219,6 +219,48 @@ subgroup whatever the physical width. That includes the tile's `ballot()`: HIP's
 to bits `0..N-1` (`internal::helper::adjust_mask`), so storing it in a 32-bit integer and
 indexing it with `__ffs`/`__popc`/`__fns` is correct on wave64. Only a RAW `__ballot`
 truncated to 32 bits (the next entry) is the fault. (faster-gaussian-splatting)
+
+**A compat layer for CUDA's `*_sync` warp functions must pin every member to 32 lanes, and
+ROCm's native `*_sync` functions are not that layer.** A CUDA warp is always 32 lanes, so
+`__shfl_down_sync(0xffffffff, v, d)` is BY DEFINITION a 32-lane operation. Mapping it to the
+unqualified `__shfl_down(v, d)` silently retargets it to the WAVEFRONT width, which is right
+on RDNA and wrong on CDNA. Write the whole family with the width in it -- `__shfl(v, lane,
+32)`, `__shfl_down(v, d, 32)`, `__shfl_up`, `__shfl_xor` -- beside the shifted ballot of the
+compat `__ballot_sync` entry above, and the header is correct on both wavefront sizes with
+no arch branch. Check the shuffles even when the ballot looks handled: GPU_IPC's header had
+a plausible ballot and unqualified shuffles, and the shuffles were the half that would have
+broken CDNA, since its PCG and BVH reductions loop `delta = 1,2,4,8,16` over logical
+32-element groups. Do not later "simplify" such a layer into ROCm's own `*_sync` functions
+called the CUDA way: ROCm's `__ballot_sync` returns a 64-bit WAVEFRONT-wide mask, and its
+`__shfl_*_sync` default `width` to `warpSize`, which is 64 on CDNA. That substitution looks
+like a cleanup, compiles everywhere, passes on RDNA and silently changes behaviour on
+gfx90a/gfx94x. (The native functions are usable with an explicit width of 32 and the group
+mask of the debug-trap entry above; what breaks is relying on their defaults.) Write the
+layer as functions under project-owned names, not as macros named after the intrinsics
+(build-headers-macros.md, "Do not name compat macros after the warp functions ROCm
+declares"). (GPU_IPC)
+
+**A fixed-cluster warp reduction is wavefront-safe exactly when the cluster size equals the
+pinned shuffle width AND the clusters are aligned to it: check that, do not restructure the
+branch.** Code that partitions work into fixed 32-element clusters (GPU_IPC's `BANKSIZE 32`
+preconditioner banks) commonly guards a reduction on a cluster-uniform predicate:
+`if (__popc(connectMsk) == BANKSIZE) { for (d = 1; d < 32; d <<= 1) v += shfl_down(v, d,
+32); }`. At wave64 one cluster can take that branch while its sibling in the same wavefront
+does not, which invites the "fix" of hoisting the reduction above the branch so the whole
+wavefront participates. Resist it. Once the compat layer pins the width to 32 (previous
+entry), `ds_bpermute` clamps every source index with `self & ~(width-1)`, so a lane only
+ever reads its own 32-lane group; with `laneId = threadIdx.x % BANKSIZE` that group IS the
+cluster, and the reduction is correct at wave32, at wave64 and on CUDA whatever the sibling
+cluster did. The invariant to verify is: cluster size == pinned width, cluster base aligned
+to it, predicate uniform over the cluster -- the same invariant that makes the reduction
+meaningful on CUDA in the first place. Hoisting is not merely unnecessary, it can ADD a
+fault: look for an earlier early-return that leaves a PARTIAL group. GPU_IPC launches this
+kernel over `totalNodes = vertNum`, which is not padded to BANKSIZE (38386 vertices, so 18
+live lanes in the last bank and 14 that already returned). The guarded form never shuffles
+there, because a partial bank cannot reach `popc == BANKSIZE`; the hoisted form does, with a
+full `0xffffffff` member mask naming returned lanes -- an undefined source-lane read on both
+back ends, bought for nothing. (GPU_IPC `__buildMultiLevelR_optimized`, where the hoist was
+written, measured clean, and then reverted for exactly this reason.)
 
 **Pass that logical width on BOTH paths, and prefer the project's own pre-CUDA-9 branch over
 remapping `__shfl_*_sync` in the compat header.** An `#ifdef USE_HIP` pair that spells the
@@ -314,3 +356,5 @@ CROSS-ARCH CONSISTENCY gate.** "Deterministic, non-zero and plausible" passes a 
 wave32 result -- popsift's gfx1100 reported deterministic non-zero features from a
 miscounted extrema path, a false pass. Where the algorithm is deterministic, diff the
 wave32 output against the wave64 output for the same input. (popsift)
+`-mwavefrontsize64` on an RDNA card is not a substitute for the wave64 run; what it can and
+cannot show is in validation.md ("`-mwavefrontsize64` on an RDNA card checks lane logic").

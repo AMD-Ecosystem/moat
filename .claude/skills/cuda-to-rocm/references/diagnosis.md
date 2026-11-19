@@ -41,6 +41,46 @@ not against a fix. Stopping at the first step is how one value-head error stayed
 recorded as a BLAS-library problem for two months before it turned out to be a
 null-stream upload race that was latent on CUDA too (lc0).
 
+### Rule out a stale tree and the toolchain version before accepting "arch-specific"
+
+GooFit's HIP backend was reported to drive an unbinned maximum-likelihood fit to a
+parameter's upper bound on gfx90a (`alpha` at the +10 bound instead of the true -1,
+`FunctionMinimum is invalid: Edm is above max`, 21/25 ctest failures) while the identical
+commit passed on gfx1100 (wave32) and on the CPU/OpenMP backend, both giving
+`alpha = -1.001102381`. It was recorded as wave64-specific, and that was wrong: the same
+commit on the same card under a later ROCm gives the correct answer. Two cheaper
+explanations come before "genuinely arch-specific", and both have produced a false report on
+that one project:
+
+1. **A stale or uncommitted tree.** Reproduce from a *fresh clone* of the exact commit, not
+   a working tree that may carry local edits from earlier debugging. A clean
+   `git status --porcelain` before the build is necessary but not sufficient.
+2. **Toolchain or driver version.** Compare `hipcc --version` against the version the
+   passing architecture ran. A divergence that appears only on a newer or older ROCm than
+   the passing run's is a toolchain difference to report, not an arch fault. Matching the
+   version of an earlier FAILING run does not rule this out: it only shows the failure
+   reproduces on that version, which is the wrong direction. The discriminating run is the
+   same arch on a DIFFERENT, current ROCm, because where there is one machine per
+   architecture the arch and its ROCm install are confounded: whatever is installed on the
+   only gfx90a box is a property of that box, not of gfx90a. Do that run before writing any
+   code. GooFit's divergence was accepted as gfx90a-specific on exactly the wrong-direction
+   reasoning (the failure reproduced again on the ROCm 7.2.1 series an earlier attempt had
+   used, which said nothing about the architecture); a later session on the same
+   hardware with ROCm 7.14 built the same commit from a fresh clone and got 25/25 with the
+   fitted parameter digit-identical to every passing arch, after someone had gone hunting
+   for a lifetime bug in code that had none.
+
+What the failing session did establish -- a fresh clone, and kernels demonstrably
+dispatching (`AMD_LOG_LEVEL=3` shows 112 `hipLaunchKernel` calls, `roc-obj-ls` shows one
+gfx90a code object) -- is only that real GPU execution produced the wrong answer, i.e. that
+it was not a stale tree or an "it never ran on the GPU" artifact. Use those checks to
+eliminate the build and the environment, then change the ROCm. Perturbing the allocator and
+serialising the runtime (`HSA_DISABLE_FRAGMENT_ALLOCATOR=1`,
+`AMD_SERIALIZE_KERNEL=3 AMD_SERIALIZE_COPY=3`) are the cheap follow-ups on the passing
+version that argue against latent undefined behaviour a newer runtime merely hides; they
+are evidence, not proof, so say so in the record. A divergence that survives a current,
+different ROCm on the same card is the one the entry above is about. (GooFit)
+
 The same class also shows up as a threshold-boundary detection COUNT, not only as a fit
 residual. PopSift's cross-architecture check is exact feature and descriptor counts on six
 reference images (the Oxford boat set). On gfx90a, the only wave64 architecture in the
@@ -57,6 +97,10 @@ and stop. (popsift)
 **A "data-dependent, later-data-corrupts-earlier, per-tile" corruption signature is the fingerprint of a REPRODUCER bug, not a codegen fault.** cuSZ chased a suspected miscompile to a BLOCKED state and an IR bisect; the actual cause was the test input -- `np.arange(..., dtype=float32) * (python float)` promotes to float64, so `.tofile()` wrote 8 bytes per element and the tool read the stream as f32. Validate the byte width and dtype of any binary test input before escalating to an ISA bisect or a ROCm bug report. (cuSZ)
 
 **Triangulate single- against double-precision before blaming the wavefront.** When a warp-collective rewrite shows SP divergence, run a second GPU variant and compare both to the DP oracle. If both GPU variants diverge from DP identically at the same positions, and the DP path is bit-identical to the CPU oracle, it is floating-point reassociation at a comparison boundary -- not a wave-size fault. SCAMP used this to clear a ~0.5 divergence at 10/8093 positions as a threshold-boundary artifact. (SCAMP)
+
+**Test "it reads uninitialized device memory" with a fill-pattern differential, not an audit.** The hypothesis is common for an unattributed hang, crash or wrong result in a project that over-allocates worst-case buffers (a collision-pair or candidate-list buffer sized for the theoretical maximum and governed by a live counter is the classic shape), because ROCm does not hand back zeroed memory the way CUDA often does (faults-memory-streams.md, "Fresh device allocations are NOT zero on ROCm"). Auditing every `hipMalloc` for a matching `hipMemset` is slow, easy to get wrong, and proves nothing about whether an unaudited site matters at run time. Test it instead: temporarily wrap the allocator so every fresh allocation gets a controlled fill, behind a compile define so the unmodified build stays a pure passthrough (`#if defined(DEBUG_MALLOC_FILL)`: a template `debug_hipMalloc(T** ptr, size_t size)` that calls `hipMalloc` and, on `hipSuccess`, `hipMemset(*ptr, DEBUG_MALLOC_FILL, size)`, plus `#define cudaMalloc(ptr, size) debug_hipMalloc(ptr, size)`), and run the SAME source three ways: unmodified, zero-fill and 0xFF-fill. 0xFF is the decisive pattern, not 0x00: as an IEEE-754 float or double every all-0xFF value is NaN, and as an index it is -1 or UINT_MAX. A genuine live-uninitialized read on the hot path then shows as an immediate NaN cascade, a crash on an out-of-range index, or a wildly different run length, none of which a healthy program produces by chance. On GPU_IPC (gfx1100) the unmodified, zero-fill and 0xFF-fill builds all stalled in the same narrow frame window (31-37, inside the pre-existing 25-36 range) with zero NaN and zero HIP errors across hundreds of recorded lines each, and every reported index in all three was small and in range: that is what a buffer correctly gated behind a live counter looks like under adversarial fill, and it rules the hypothesis OUT instead of leaving it unaudited. Revert the wrapper afterwards; it is a throwaway diagnostic, not something to land. (GPU_IPC)
+
+**To close an "it might silently fall back" risk, trace it; then bound it from the code, not from the trace.** A dispatch count (validation.md, "A green result does not prove a GPU test ran") proves which backend ran on the run you measured. When the worry is that some ORDER of events could flip a global backend flag ("if the fallback initializes first, the compute flag is cleared and the suite still goes green"), a Release build with no debug info is enough for a trace: statics like `Foo::_UseBackend` and ordinary member functions are in the symbol table, so gdb can breakpoint the decision function (`break *0x<addr>` with `commands` / `silent` / `printf "decide(arg=%d) flag=%d\n", (int)$rdi, *(int*)0x<addr of flag>` / `continue` / `end`), breakpoint each backend's constructor, and `watch *(int*)0x<addr of flag>`. The counts answer outright: how often the decision function was entered and with what argument, how often each backend was constructed, and every value the flag took. In colmap that turned "did not materialise on the machine we happened to use" into "the clearing line did not run once in this binary, and the flag was written exactly once, `0 -> 1`". Then be careful what you claim, because this is where a trace gets oversold: it covers the paths the binary took with the options it ran with, so it is evidence for "not reached in this configuration" and never for "unreachable". colmap's first write-up made that jump ("the clearing line is unreachable, because the only caller always requests the compute backend") and review disproved it with one probe: a public option (`darkness_adaptivity`, with the default negative GPU index) makes the caller omit the flag that selects the compute backend, and the supposedly dead line runs. Upgrading "not reached here" to "cannot happen" takes an argument from the CODE; the one that held was that the API re-asserts the flag on every freshly constructed object that requests the compute backend, so no earlier user can leave it cleared for a later one. When such an argument holds, ask what ELSE the failing path wrote: the initialization that clears flag A usually sets siblings in the same function. In colmap the failed GLSL init also zeroes a second global meaning "this process has no usable GL"; it is sticky (the init returns immediately once it is 0 and never retries), and every later extractor, the compute ones included, early-returns on it and is constructed as a null: a hard failure with nothing extracted, not the silent degrade the risk was written about, and still a live defect. Enumerate every write on the failure path, and for each ask who resets it and who reads it later; sticky-on-failure, process-wide and consulted by a user that would otherwise have worked is the shape that bites. Two traps each produce a confidently wrong answer. Reading a global AFTER the inferior exits gives the ELF initial value, not the last live value: gdb falls back to the executable's `.data`/`.bss` image and prints it without complaint (in colmap, exactly the cleared-flag state the reviewer had predicted, from a run where the flag was never cleared), so read the flag at a breakpoint inside the live process, or watch it. And `LD_PRELOAD` on a GL or driver entry point does not intercept a Qt (or any `GetProcAddress`-style) caller: Qt resolves GL through `QOpenGLFunctions`/`eglGetProcAddress`, so the preloaded symbol is bypassed while a directly-linked caller in the same process IS intercepted; prove a preload shim fires with a positive control first. (colmap)
 
 **A once-per-suite host crash that stress reruns never reproduce: widen the suspected race window instead of rerunning.** If the stack sits in runtime code the port does not touch (`git diff` empty there), read it for a publish-before-register ordering, insert a temporary sleep between the two steps, rebuild, and run a tiny loop. A crash that becomes deterministic, and also happens with CPU-only work, is an upstream race that a fast GPU merely exposes; revert, rebuild and record it. oneflow's `LaunchLazyJob` pushed a graph's SourceTick before `EnqueueNNGraph`, so a tiny graph's finish callback could pop an empty queue: 1 crash in ~550 suite files on two arches, 0 in 70 stress reruns, 5 of 5 with a 20 ms sleep (CPU graphs included). (oneflow)
 

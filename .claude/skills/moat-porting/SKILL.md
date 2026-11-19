@@ -112,7 +112,10 @@ what passes and what does not).
   and `binary-equiv` over a `mixed` delta only with `--host-checked`, your statement
   that you read the delta and its host-side code and data are unchanged (the build
   comparison sees exported symbols and device code only). `codeobj_diff` compares ELF;
-  a Windows (PE/COFF) binary answers `indeterminate`.
+  a Windows (PE/COFF) binary answers `indeterminate`. It compares normalized device ISA,
+  so its two builds may sit in different directories; the manual `.hip_fatbin` hash
+  comparison may not (`cuda-to-rocm`'s validation.md, "Proving two builds carry the same
+  device code"), and is the fallback only where the tool cannot run.
   For a host-only library (one that compiles no device translation unit) `codeobj_diff`
   reports `indeterminate`, with "No kernel section found" on both sides; that is not
   `differ`. Compare such a library with `sha256sum`, and `nm -D --defined-only` as a
