@@ -536,3 +536,11 @@ Reviewer, linux-gfx90a. Scope: `git diff master...moat-port` (master = upstream 
 - Finding 1 (HIP version used against a ROCm-version guard): fixed in 4b17590a `[ROCm] Read the ROCm version from rocm_version.h in the fallback`, a new commit on top (f89c1afa not amended). Fallback now reads `ROCM_VERSION_MAJOR/MINOR/PATCH` from `${HIP_TOOLKIT_ROOT_DIR}/include/rocm-core/rocm_version.h`; only without that header does it use hipcc's HIP major.minor with patch 0. Checked: configure on this host prints `Detected ROCm/HIP version: 10.1.0` (pip SDK); `cmake -P` of the same logic with no header and `HIP version: 6.2.41133` gives 6.2.0 -> rejected by the guard, and a `/opt/rocm-6.2.0` path still gives 6.2.0 -> rejected. Both 7.16.26385 (old) and 10.1.0 (new) take the same `>= 6.0.0` / `>= 5.3.0` branches, so on this host the compiled output is unchanged.
 - Finding 2 (stale records): Port Summary in this file and a "Current scope" paragraph at the top of plan.md's Port Strategy now describe the one-file diff.
 - Finding 3 (`[ROCm]` prefix missing on a0122945 and 2146b22a): agreed; both are reverts of earlier port commits and cannot be retitled without rewriting history. To handle at PR preparation (squash to the net diff, which is one CMake file, or retitle there). Recorded for jeff.
+
+## Re-review 2026-11-19
+
+Reviewer, linux-gfx90a. Scope: `git diff 2146b22a..4b17590a` (`quick-cmake/QUICKCudaConfig.cmake:439-450`, commit 4b17590a) and the rewritten Port Summary (notes.md) and "Current scope" paragraph (plan.md:68).
+
+**Verdict: review passed.** Findings 1 and 2 of the 2026-11-19 review are resolved; finding 3 (missing `[ROCm]` on a0122945 and 2146b22a) stays open for PR preparation (squash to the net diff or retitle), as the porter recorded.
+
+Verification: `cmake -P` over the committed logic gave pip SDK header (ROCm 10.1.0) -> 10.1.0 accepted; no header with `HIP version: 6.2.41133` -> 6.2.0 rejected; `/opt/rocm-6.2.1` path -> 6.2.1 accepted; no header with `HIP version: 6.1.40091` -> 6.1.0 rejected. The header is read from `HIP_TOOLKIT_ROOT_DIR` (default `/opt/rocm`, `QUICKCudaConfig.cmake:364`), the same root the build already takes rocBLAS and the other libraries from. Commit title 64 characters, AI disclosure and Test Plan present, no trailer; `jargon.py --port QUICK` clean.
