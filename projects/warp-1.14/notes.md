@@ -4504,3 +4504,44 @@ wmma,float16,64,256,18.6374,19.4181,19.4080,8.3958,8.6002,8.5818
 - The fp16 benchmark (clean set 2) is faster than scalar in 23 of 24 fp16 forward/adjoint cells. The exception is 64x64 bd256 forward, at 0.91x.
 - The shipped code is scalar on gfx11 and unchanged.
 - Committing the widening, and what to do about the 64x64 bd256 cell, is the lock holder's and Jeff's call.
+## Evidence session 6 (2026-11-19, linux-gfx942, 2x MI300X, evidence only): gfx942 and two-GPU items at `c9595bce`
+
+Requested by Jeff Daily. The lock stays with linux-gfx950. No fork commit and no stage, lock, head, platform or deferred record changed. The read-only clone was moved from `930d0098` to the recorded `head_sha` `c9595bcedee56cffa5b8181372e9f46643a087e8` (`git status --porcelain` empty before and after; LFS assets present; fork pre-push hook unchanged). Build: `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx942 -j 112` -> "Warp build succeeded", 30.4 s. Every run used a fresh kernel cache (`WARP_CACHE_PATH=$(mktemp -d agent_space/kc_p10_<run>.XXXX)`), as the handoff's item 4 asks. `ulimit -c 0`. Items run in the handoff's order.
+
+### gfx942 (one GPU, `HIP_VISIBLE_DEVICES=0`)
+1. `python mma_check.py` (the fixed version from Porting session 10, extracted verbatim): **FAILURES 0**, exit 0. The 15 cases evidence session 5 reported as FAIL now read **"SMEM-LIMIT (forward not launched)"**: fp32 64x64x64, fp64 64x32x48 and fp64 64x64x64, each at all five block_dims. The other 25 are "SMEM-LIMIT (backward not launched)" as before. The code objects contain 948 `v_mfma_f32_16x16x16_f16`, 3864 `v_mfma_f32_16x16x4_f32` and 3864 `v_mfma_f64_16x16x4_f64`, the same counts as at `930d0098`.
+2. `python -m warp.tests -s autodetect -p test_texture.py -m 32`: **Ran 118, OK (skipped=7**, all "No suitable devices to run the test."); 59 `cuda_0` cases pass. Unchanged from `974cd4bf`/`930d0098`. `Device` capabilities on the MI300X: `is_texture_supported` True, `is_texture_hardware_supported` False, `is_texture3d_hardware_supported` False (all software, as before).
+3. Full 82-pattern set (optional, run because time allowed; same list and loop as evidence sessions 3-5; 2445 s): **81 OK, 1 with the 2 known failures** (`test_fem*`: `test_gimp_quadrature`, `test_cube_shape_functions`, upstream test isolation). Per-pattern counts are **identical line by line** to evidence session 5 at `930d0098` (including test_tile_matmul 25, test_texture 118 with 7 skipped, the five 64 KiB tile skips, test_coloring 3, test_mesh* 49, test_volume 59).
+
+### Two-GPU session (`HIP_VISIBLE_DEVICES=0,1`): test_texture, then the 13-file loop
+
+| file | ran | result |
+|---|---|---|
+| test_texture | 177 | OK, 7 skipped: 59 `cuda_0` and 59 `cuda_1` cases pass |
+| test_multigpu | 5 | OK, 2 skipped |
+| test_peer | 5 | OK, 1 skipped |
+| test_mempool | 10 | OK, 2 skipped |
+| test_streams | 42 | OK, 4 skipped |
+| test_graph | 61 | OK, 5 skipped |
+| test_ipc | 8 | OK |
+| test_unified_memory | 40 | OK, 9 skipped |
+| test_allocator | 16 | OK, 1 skipped |
+| test_async | 3533 | OK |
+| test_sparse | 71 | OK, 1 skipped |
+| test_fem_integrate | 25 | OK, 1 skipped |
+| test_array | 207 | OK |
+| test_copy | 30 | OK |
+
+**No errors and no failures**; the counts and skips are identical to evidence session 3 at `974cd4bf`:
+- 3 C1 and 2 C2 skips, each naming the HIP defect.
+- 2 C4 skips ("HIP maps stream priorities to normal priority ...").
+- 10 IOMMU-heuristic skips and 4 "cuda:N cannot access CPU memory".
+- 2 upstream memory-usage flakiness skips and 7 test_texture "No suitable devices".
+- 1 each of the device-property and rmm skips.
+
+With two devices, the texture handle bookkeeping of `c9595bce` (the software set shared between devices) works on the non-primary ordinal: all 59 `cuda_1` texture cases pass. The only `Warp CUDA error` line in all 14 logs is the known harmless 900 from `test_synchronize_during_capture_cuda_1` (evidence session 3).
+
+The untracked `example_apic_fluid.usd` an example writes into the clone during the full set was deleted afterwards.
+
+### Next step for the lock holder
+gfx942 and two-GPU items at `c9595bce` are complete and match every expectation; nothing needs a fork change.
