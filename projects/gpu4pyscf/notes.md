@@ -4882,3 +4882,9 @@ This pull request was prepared with the help of an AI coding agent and was read 
 ### Left undone
 - No run on wave32 (gfx1100/gfx1201) or gfx90a for these branches, and no NVIDIA run.
 - The LICM cost was not added to commit 7cbd3d2f's or e647eb2f's body (the branch was already pushed; no force-push). It is in the PR draft.
+
+### Reconciliation with the porter's review answers (landed concurrently)
+The porter's "answers to the 2026-11-19 review" section and the passing follow-up review were committed while this round ran; the pushed pr branches were written without them. They agree on substance: the corrected (d) wording, no "next change" in (b), the environment-flag sentence in every Test Plan of (a)-(e) (which the follow-up review asked for), and the LICM cost (porter: direct J/K 2-3% faster with the flag on Inosine and Tamoxifen 6-31G; here: 3% on vitamin C 6-31G). Differences for jeff to settle when reading the drafts:
+- **(e) wording.** The porter planned "the factor need not contain NaN" for finding 4. The pushed commit keeps "leaves the rest of the matrix as it was, so on ROCm no NaN appears", because finding 4 rested on the porter's "passed once" record, which the porter has since withdrawn (a SUBFAILED line its filter missed), and because 20 of 20 calls here returned no NaN. Changing the pushed commit would need a force-push of the fork branch, which was not done; the PR body (a person can still edit it) already says "need not" nowhere and states the measured example.
+- **(e) prefix.** Dropped here (generic behaviour, runs on CUDA); the porter's corrected text kept the title as it was.
+- **Counts.** The porter's standalone numbers use its own Test Plan file lists with `-n 4 --dist loadfile`; the pushed Test Plans and the drafts use whole cause-table file sets, one process per file, and add the scf/dft sanity set. Both are standalone on 61c2a1e; they are not comparable number for number.
