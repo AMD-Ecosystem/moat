@@ -7034,3 +7034,61 @@ Draft text for the bug report, in-launch section: "Without direct dispatch (Wind
 - Jeff: whether to skip `test_graph_alloc` on Windows HIP too (same defect, 2 of 6 test_graph runs here, and the test after it hung both times), with the same helper, or ship it as known.
 - Jeff: report `hip-graph-alloc-node-va-unregistered-on-worker` (both parts; draft above), and the upstream `test_event_external` race (still open).
 - Then continue session 13's Next step (review, then the Windows validation record) at 9d9a6161.
+
+## Porting session 17 (2026-11-19, windows-gfx1151 laptop, porter)
+
+Follow-up to session 16 under Jeff's ruling of today: on Windows HIP, while a stream is capturing, fill with a kernel instead of `hipMemsetAsync`, so no memset node enters the graph; if it works, the `9d9a6161` skip comes out. Lock and stage untouched (`porting`, windows-gfx1151). Fork `release/1.14.0.amd0` advanced `9d9a6161..3d74932e` (pushed, `advance-head` recorded). Environment as session 15 (`agent_space/warp-win/p6env.sh`). Scripts in `agent_space/warp-win/p17/`, logs in `agent_space/warp-win/logs/p17/` (builds, reproducer), `logs/p17v/` and `logs/p17v2/` (test_graph x6 on each build), `logs/p17r/` (the pattern set). No driver reset, device-lost line, hang or display glitch.
+
+### Premise check (clr source, rocm-systems clone `agent_space/rocm-sys` at 8a0a4db; rocclr files read with `git show HEAD:` because the clone is sparse)
+- **The premise is only half right.** A kernel node's command creation does look its pointer arguments up in `amd::MemObjMap` on the launching thread, without `WorkerThreadLock_`: `GraphKernelNode::CreateCommand` (hipamd/src/hip_graph_internal.hpp:1999) -> `ihipLaunchKernelCommand` (hip_module.cpp:689) -> `ihipCreateKernelCommand` -> `NDRangeKernelCommand::captureHIPArgsAndValidate` (hip_module.cpp:664; rocclr/platform/command.cpp:702) -> `KernelParameters::captureHIPArgs` (rocclr/platform/kernel.cpp:93), which for every `T_POINTER` argument does `if (!AMD_DIRECT_DISPATCH) memArg = amd::MemObjMap::FindMemObj(ptr)` (kernel.cpp:106-112). **But a miss is not an error**: it stores `nullptr` in the command's memory-object slot and returns true, so command creation succeeds and the launch does not fail. The memset node, by contrast, returns `hipErrorInvalidValue` on a miss (hip_graph_internal.hpp:3194/3204).
+- **What a kernel-node miss costs (reading only, not observed).** At submit, PAL's `VirtualGPU::submitKernelInternal` (rocclr/device/pal/palvirtual.cpp, about 3834-3853) skips a null memory object: no `addVmMemory` (residency list) and no `memoryDependency().validate` (the intra-queue RAW/WAW barrier tracking, enabled with `GPU_NUM_MEM_DEPENDENCY` = 256 for this ASIC family, palsettings.cpp:221), except that when the device reports fine-grained system SVM a null pointer adds a conservative barrier. So a miss can in principle drop a dependency barrier between two kernels on one queue. Every Warp kernel that takes a capture allocation already passes through this same lookup (the kernels after `wp.zeros` in a capture always did), so the fill kernel adds no new kind of exposure; it removes the one node type that turns the miss into a launch failure. No wrong values seen in any run below.
+- **Other node types whose command creation looks pointers up without the lock (would fail the same way on a miss):** memset (`GraphMemsetNode::CreateCommand`, :3186, both the 1D and 2D lookups); memcpy 2D/3D (`GraphMemcpyNode::CreateCommand`, :2284 -> `ihipMemcpy3DCommand` -> `ihipGetMemcpyParam3DCommand`, hip_memory.cpp:2345, which dispatches to the HtoD/DtoH/DtoD/array command builders that resolve device pointers); driver-API memcpy (`GraphDrvMemcpyNode`, :3904, same builder); memcpy from/to symbol when not delegated to the 1D path (`GraphMemcpyNodeFromSymbol` :2843 lookups at :2862-2863, `GraphMemcpyNodeToSymbol` :2996 lookups at :3015-3016, both `return hipErrorInvalidValue` on a miss). Locked: `GraphMemcpyNode1D::CreateCommand` (:2536, lock at :2549 when `!AMD_DIRECT_DISPATCH`). Memory free nodes use `FindVirtualMemObj` (:3858), a different map, unlocked; not examined further. Event record/wait, empty, host and external-semaphore nodes take no device pointer.
+- **What Warp captures after a capture-time allocation:** kernels (unlocked lookup, benign miss as above), `wp_memset_device` (memset node: the failure), 1D `cudaMemcpyAsync` H2D/D2H/D2D/Default (locked), `cudaFreeAsync` (free node). Warp's native code calls no 2D/3D or symbol memcpy on a capture path (`grep -rn "cudaMemcpy2D\|cudaMemcpy3D\|cudaMemcpyToSymbol" warp/native`: only cuBQL's macro table and nanovdb's DeviceBuffer, neither on a capture path). So the change covers only the memset. `wp_memtile_device`'s 1-byte branch calls synchronous `cudaMemset` (null stream), which does not add a node to Warp's capture stream; left alone.
+
+### The change: 19b6a5ad [ROCm] Fill with a kernel instead of a memset node on Windows captures
+`warp/native/warp.cu`, +20/-0, all under `#if WP_ENABLE_HIP && defined(_WIN32)`: a forward declaration of the existing `memtile_value_kernel` template before `wp_memset_device`, and in `wp_memset_device` one branch at the single `cudaMemsetAsync` call site: when `wp_cuda_stream_is_capturing(cuda_stream)`, and `n > 0`, launch on `cuda_stream` the existing `memset_kernel` (int words, pattern `byte * 0x01010101u`) when `dest` and `n` are 4-byte aligned, otherwise `memtile_value_kernel<uint8_t>` (one thread per byte); `check_cuda(cudaGetLastError())` after the launch. Zero-length fill launches nothing (returns true, as `hipMemsetAsync(.., 0, ..)` does). Handles any memset value (memset semantics, low byte), not only zero: the defect is the node type, and the branch is no simpler for zero only. Outside a capture the call is the unchanged `cudaMemsetAsync`. APIC recording after it is untouched. clang-format 22.1.2 clean (CR-stripped diff against the formatted file is empty).
+
+Other paths, from the diff: the Linux HIP build compiles `warp.cu` without `_WIN32`, so its preprocessed source, host and device, is identical to before (the only new tokens sit inside the guard); the CUDA build has `WP_ENABLE_HIP` = 0, so its translation unit is unchanged as well. The Linux nvcc check still runs later on another host.
+
+### Reproducer variant (`p17/graph_memset_first_launch.hip`, mode `kernel`)
+Session 16's program with a fourth mode, same graph otherwise (built with the same command, TheRock DLLs next to the exe; `p17/runv.sh kernel 1 kernel`, 20 process starts, one at a time):
+
+```diff
++//   mode kernel : as two with the memset replaced by a zero-fill kernel (same graph otherwise)
++__global__ void zero_bytes(unsigned char* buf, size_t n)
++{
++    size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
++    if (i < n) buf[i] = 0;
++}
+-    bool warp = !strcmp(mode, "warp"), nomemset = !strcmp(mode, "nomemset");
++    bool warp = !strcmp(mode, "warp"), nomemset = !strcmp(mode, "nomemset"), kfill = !strcmp(mode, "kernel");
+-    if (!nomemset) CK(hipMemsetAsync(a, 0, bytes, s1));
++    if (kfill) {
++        zero_bytes<<<(unsigned)((bytes + 255) / 256), 256, 0, s1>>>((unsigned char*)a, bytes);
++        CK(hipGetLastError());
++    } else if (!nomemset) {
++        CK(hipMemsetAsync(a, 0, bytes, s1));
++    }
+```
+
+| variant | runs | launch failures |
+|---|---|---|
+| `two` (session 16, memset node) | 11 | 2 |
+| `nomemset` (session 16) | 21 | 0 |
+| `kernel`, 1 MiB (this session) | 20 | **0** (20 PASS lines, values checked) |
+
+### Verification
+- Builds: `python build_lib.py --hip-arch gfx1151 -j 8` (wrapped in `utils/timeit.sh warp-1.14 compile -- bash -c "cd <src> && <venv python> build_lib.py ..."`), "Warp build succeeded", twice: build 1 with a first draft (it launched a zero-size grid for an unaligned zero-length fill and computed the word pattern in signed int), build 2 with the committed code. For value 0 and n > 0 the two drafts execute identically.
+- Graph shape check (`p17/node_types.py`, hipGraphGetNodes/hipGraphNodeGetType through ctypes): a capture of `wp.zeros(131, int8)` plus `a.zero_()` on a pre-filled array yields node types `[10, 0, 0]` (alloc, kernel, kernel): no memset node.
+- Zero-fill values (`p17/zero_fill_check.py`, compared with NumPy on the CPU): for 1, 3, 128 and 1000003 bytes, `int8` `zero_()` in a capture on a 7-filled array, `zero_()` of `b[1:]` (odd address) leaving `b[0]` = 7, `wp.zeros` allocated in the capture followed by an add-one kernel, and `zero_()` of a 3-byte `vector(3, int8)` array (1, 1, 42, 333334 elements): all 16 checks OK on build 1 and on build 2.
+- test_graph with the `9d9a6161` skip removed (working tree), six runs each as run82.sh (`python -m warp.tests -s autodetect -p "test_graph.py" -m 2`, fresh kernel cache per run, 900 s watchdog that kills the process tree): build 1 (`logs/p17v`) 6 of 6 `Ran 35 tests OK (skipped=3)`; build 2 (`logs/p17v2`) 6 of 6 `Ran 35 tests OK (skipped=3)`. `test_cuda_graph_alloc_transient_stream_cuda_0 ... ok` and `test_graph_alloc_cuda_0 ... ok` in all 12. Session 16 for comparison: 2 of 6 runs failed test_graph_alloc and then hung.
+- Pattern set on build 2, once each (`p17/run_rest.sh`, fresh cache per pattern, 1800 s watchdog; `logs/p17r/summary.txt`): test_graph 35 OK (3 skipped); test_map 45 OK; test_capture_mode 2 OK; test_array_fill_capture 3 OK; test_conditional_captures 32 OK (16 skipped); test_conditional 50 OK; test_mesh* 49 OK (18 skipped); test_grouped_bvh 11 OK; test_array 138 OK; test_copy 14 OK; test_streams 24 run, 1 failure = the known upstream `test_event_external` race (3 skipped); test_mempool 7 OK (2 skipped); test_apic* 64 OK; test_fem* 108 OK (2 skipped), 307 s (session 15: 579 s, not investigated, no benchmarks on this host). The transient test ran (no skip) in every test_graph run.
+
+### Skip removal: 3d74932e [ROCm] Run the transient-stream graph test on Windows HIP again
+`git show 9d9a6161 -- warp/tests | git apply -R` (the helper `is_graph_launch_with_memset_of_capture_allocation_reliable`, the reason `GRAPH_LAUNCH_WITH_MEMSET_OF_CAPTURE_ALLOCATION_UNRELIABLE` and its use in `test_cuda_graph_alloc_transient_stream`), committed as a new commit; ruff 0.15.9 check and format clean (the files return to their pre-`9d9a6161` content).
+
+### Next step
+- Review, then the Windows validation record, at the new head (session 13's Next step). Every completed platform now reads `revalidate`; the Linux platforms need only a rebuild-and-run, the change being Windows-only by construction, so a carry-forward on a binary-equivalence build is a candidate there (a person or the validator decides).
+- CUDA nvcc compile check on the mi355 host before presenting (the CUDA translation unit is unchanged by construction, but the rule is to compile it).
+- Jeff: the session 16 bug report draft for `hip-graph-alloc-node-va-unregistered-on-worker` still stands; add the kernel-node finding above (unlocked `FindMemObj` in `captureHIPArgs`, a miss silently drops residency and dependency tracking on PAL) as a second, lower-severity point.
+- Jeff: the upstream `test_event_external` race (still open).
