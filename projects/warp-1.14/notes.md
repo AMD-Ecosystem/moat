@@ -3913,3 +3913,348 @@ sys.exit(1 if fails else 0)
 - gfx90a passes everything at `930d0098` except textures. The 82-pattern set matches gfx942's at this head, plus `example_diffusion_mgpu` (P2P registration, passes). The CPU-only suite is green, and the MFMA path is correct (layouts, checks, tile set) and never slower than scalar where it runs.
 - **Decision needed (Jeff): 3D textures with linear filtering on gfx90a.** HIP refuses them by design (`hip_texture.cpp:85-89`). Options A/B/C are in the finding above; A is recommended. Until then, `Texture3D` with default arguments raises on MI200, and `test_texture` has 14 errors there. Nothing to register as a ROCm defect: it is a documented gfx90a limitation that HIP enforces deliberately.
 - Release-notes items from this run: gfx90a has no 3D linear texture filtering in hardware; shared-memory tiles are limited to 64 KiB on gfx90a (already in the notes text).
+
+## Porting session 10 (2026-11-19, linux-gfx950 MI355X, porter): WMMA on gfx12, probe and check fixes, gfx90a 3D textures
+
+Fork `release/1.14.0.amd0` advanced `930d0098..c9595bce` (pushed, `advance-head` recorded): `43331f4a` [ROCm] Use WMMA for float16 tile_matmul on gfx12 GPUs; `c9595bce` [ROCm] Sample 3D textures in software on gfx90a (its own commit, droppable). nvcc 12.8 build at `c9595bce`: "Warp build succeeded". NVRTC compiles of the tile_matmul module and of the texture module with the native headers of `930d0098` and of `c9595bce`: identical PTX and cubin (tile `0805dcc9fb1a`/`6f630854bc9f`, texture `98d84c023888`/`7b52ca293caf`), so the CUDA path is unchanged. `audit-commits` OK, `jargon.py --port` clean.
+
+### 1. WMMA on for gfx12 (`43331f4a`)
+The gfx1201 host's proposed condition, unchanged: `#elif (defined(WP_TILE_WMMA) && WP_TILE_WMMA) || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12)` (3 lines in `tile_matmul_mma.h`, comment included). A compiler feature, no arch name. Checked through Warp's hipRTC path (`agent_space/p9/wmma_xcompile.py`, fp16 and fp32 32x32x32 tile_matmul forward and backward at block_dim 64, compiled as shipped and with `#define WP_TILE_WMMA 1` prepended): gfx1201 and gfx1200 now emit 16 `v_wmma_f32_16x16x16_f16` as shipped, and their shipped instructions are identical to the switch-on build that gfx1201 validated (disassembly compared with addresses stripped; the binaries differ only through the prepended line's source positions, which also makes gfx950's two builds differ while its instructions are identical); gfx1100 and gfx1250 have no WMMA as shipped (only with the switch); gfx950's MFMA code is unchanged (32 `v_mfma_f32_16x16x16_f16`, 128 `v_mfma_f32_16x16x4_f32`, the same as session 9).
+
+Release-notes text update: "On Radeon gfx12 GPUs (RX 9000 / Radeon AI PRO R9700 class, gfx1200 and gfx1201) float16 `tile_matmul` uses WMMA matrix instructions when the tile dimensions are multiples of 16 and the block is a whole number of 32-thread wavefronts, accumulating in float32 (results can differ from the scalar path in the last bits and are closer to the exact product). float32 and float64 stay on the scalar path there (RDNA4 has no WMMA instruction for them), and other Radeon GPUs use the scalar path in this release."
+
+### 2. The WMMA probe, fixed; gfx11 stays off
+`wmma_layout.hip` (below) now separates the two questions the gfx1100 host pulled apart. Per family and K = 16, 32, 64: **layout (non-negative)**, small non-negative integers, every partial sum an exact integer below 2^24 (max 804 at K = 64), so any wrong cell is a layout error, never accumulation order; **layout (position)**, `C[i][j] = i + 100 j` names its own position; both require exact equality. **accumulation**, random signed fp16 in [-1, 1], requires `|C - exact| <= (K/16 + 1) * FLT_EPSILON * sum |a b|` (one f32 rounding per instruction, plus one) and prints the worst error as a fraction of that bound; gfx1100's measured worst case (1.32e-7 relative to the magnitude sum at K = 64, about 1.1 epsilon) is about a fifth of the bound there (5 epsilon). Built here for gfx1100, gfx1201 and gfx1250 (all compile); not runnable on gfx950. gfx11 stays switched off in the committed code.
+
+What the gfx1100 host must run to switch gfx11 on (in this order; stop at the first failure and record it):
+1. `clang++ -x hip --rocm-path=$R --offload-arch=gfx1100 -O2 -w wmma_layout.hip -o wmma_layout -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib && ./wmma_layout`: expect "WMMA family 11", the six layout lines 0 of 256 wrong, the three accumulation lines 0 of 256 over the bound (worst well below 1.00), exit 0.
+2. As an uncommitted experiment in a separate worktree (as gfx1201 did), widen the selection in `warp/native/tile_matmul_mma.h` by one term:
+```diff
+-#elif (defined(WP_TILE_WMMA) && WP_TILE_WMMA) || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12)
++#elif (defined(WP_TILE_WMMA) && WP_TILE_WMMA) || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12) \
++    || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32)
+```
+   (gfx1250's fp32 block stays behind `WP_TILE_WMMA`.) Then: `python mma_check.py` (the fixed version below; expect FAILURES 0, the 64 KiB forward and backward limits reported as SMEM-LIMIT); `python mma_check_bf16.py` (fp32 output with bf16 inputs stays scalar on gfx11; expect FAILURES 0); the 24-file tile set (expect 639 run, the 15 known skips, 0 failures); `test_tile_matmul.py` (25 OK); confirm `v_wmma_f32_16x16x16_f16` in the fp16 code objects (`llvm-objdump -d --mcpu=gfx1100`); the fp16 benchmark against the scalar tree (Porting session 9 `bench_both.sh`/`compare.py`), three runs.
+3. Report the diff, the counts and the benchmark table; any fp16 cell slower than scalar must be listed. The lock holder then commits that one-line widening (or a fix). Fresh `WARP_CACHE_PATH` for each tree (item 4).
+
+### 3. `mma_check.py` fixed; the bf16 check's source recorded
+`mma_check.py` (below) now also recognises a *forward* kernel over the device's shared memory: Warp warns and does not launch it, so `c` stays all zero and `d` keeps exactly its initial values (the script records `d` before the launch); such a case is "SMEM-LIMIT (forward not launched)", the backward form as before, and neither counts as a failure. The premise was checked on gfx950 with a forward kernel over its 160 KiB (`agent_space/p10/fwd_limit.py`: float32 128x128x64, 196608 bytes): Warp's "Failed to configure kernel dynamic shared memory ... forward kernel for 196608 bytes" warning, then `c` all zero and `d` unchanged. (A full `mma_check.py` case of that size cannot be used for this, because the CPU reference crashes: Warp's CPU tile allocator has a fixed 256 KiB block, upstream behaviour.) On gfx950 the fixed script gives FAILURES 0 with the 5 known backward limits and no forward limit; on 64 KiB parts the 15 cases gfx942 and gfx90a reported as FAIL become forward limits. `mma_check_bf16.py` (below) now covers all 11 shapes and the same forward-limit rule; gfx950: 55 cases, FAILURES 0.
+
+### 4. Kernel cache and the native headers: can a wheel upgrade reuse a stale kernel?
+Read from the source (`warp/_src/build.py` `init_kernel_cache`, `warp/_src/context.py` `ModuleHasher`, module output naming at `context.py:2895`):
+- The module hash covers the kernels' Python source, their native snippets and the module options; it does **not** cover Warp's native headers (`builtin.h`, `texture.h`, `tile_matmul.h`, `tile_matmul_mma.h`, ...). So a change that only touches a header does not change any module hash.
+- The cache root is `<cache dir>/<warp.config.version>/` for every way the cache location is chosen (`kernel_cache_dir`, `WARP_CACHE_PATH`, the default user cache through `appdirs` with `version=warp.config.version`).
+- The code object name contains the full target name (`<module>.gfx950_sramecc+_xnack-.hsaco`), so GPUs of different architectures sharing a cache never share code objects.
+Answer: a user who upgrades the wheel gets a new version string (this line releases as `1.14.0+rocm.0`, then `+rocm.1` and so on, by the release-tag scheme), hence a new cache directory, and cannot reuse kernels built against the old headers; that covers both `tile_matmul_mma.h` and the texture changes. The stale case needs two different native trees under the same version string: a source build reinstalled after a header change, a local experiment that toggles a header switch (as the gfx1201 and gfx1100 hosts did, and avoided with fresh caches), or a re-published wheel without a version bump. Upstream has the same property (its version is also the only header-dependent key). For this line: every published wheel must carry a new `+rocm.N`; no code change proposed. A user can clear a suspected stale cache with `wp.clear_kernel_cache()`.
+
+### 5. gfx90a 3D textures in software (`c9595bce`, option A, its own commit)
+- `texture.h`: the three `sample_3d` sites test `WP_TEXTURE_HW_SAMPLING_3D` instead of `WP_TEXTURE_HW_SAMPLING`, defined as hardware sampling `&& !defined(__gfx90a__)` (5 lines with its comment). No compiler feature macro describes the limitation (the gfx90a host checked: hipRTC defines `__gfx90a__`, not `__HIP_NO_IMAGE_SUPPORT`), and HIP's own refusal keys on the same name.
+- Native: `texture_software.cpp` keeps a mutex-guarded set of the array and texture handles it created, because hardware and software textures now coexist on one device: create asks `wp_texture_software_enabled(context, ndim)`; copy, destroy, object create and object destroy ask `wp_texture_software_owns(handle)` (copy: either array side). The five hook lines in `texture.cpp` changed only their condition (+5/-5). The device capability is per dimension: `wp_cuda_device_is_texture_hardware_supported(ordinal, ndim)` (the port's own export, signature widened) and `DeviceInfo.is_texture3d_hardware_supported`, set at init from the image-support attribute and the same `gfx90a` name test, so the runtime always agrees with the compiled kernels (a run-time probe could disagree with the compile-time selection if HIP ever lifted the check, which would hand hardware texture objects to kernels compiled for the software sampler).
+- Python: `Device.is_texture3d_hardware_supported` (documented); the interop check follows the texture's dimension (`cuda_array`/`cuda_texture`/`cuda_surface` and `cuda_array=` on a 3D texture raise on gfx90a). Tests: the four 3D interop registrations (`test_texture3d_cuda_interop_handles`, `test_texture_handle_properties_host_vs_cuda`, `test_texture3d_cuda_surface_property_api`, `..._requires_surface_access`) use the 3D capability.
+- Evidence without gfx90a hardware: the all-combinations sampling module (`agent_space/p5/tex/xcompile.py`, 9 samples, 3 per dimension) through Warp's hipRTC path: gfx90a now 6 `image_sample` (1D and 2D on hardware, 3D in software, 27448-byte object), gfx1100 and gfx1201 9 each and **byte-identical** to session 5's objects, gfx942 0 (all software, as before). On gfx950 (every texture software, so the new handle set is exercised end to end): test_texture 118 OK (7 skipped), test_devices 13 OK, `sdf_probe.py cuda:0` PASS, `tex_capture.py cuda:0` PASS.
+- Diff of this commit: `texture.h` +8/-3, `texture.cpp` +5/-5, `texture.py` +6/-6, `context.py` +10/-2, `texture_software.cpp` +36/-3, `texture_software.h` +8/-5, `warp.cu` +8/-2, `warp.h`/`warp.cpp` +1/-1 each, `test_texture.py` +6/-4. If Jeff rules option C instead, drop `c9595bce` (nothing later depends on it).
+- Release notes: "On MI200 (gfx90a), which has no 3D linear texture filtering in hardware, 3D textures are sampled in software on the GPU (same results as Warp's CPU textures, slower than hardware); 1D and 2D textures use texture hardware, and the CUDA interop handles of 3D textures are not available there."
+
+### Carried diff against `release-1.14` after this session (upstream files touched by textures and tile_matmul)
+`warp/native/texture.h` +36/-18, `warp/native/texture.cpp` +60/-19, `warp/_src/texture.py` +15/-4, `warp/native/tile_matmul.h` +14/-8, `warp/tests/cuda/test_texture.py` +38/-9; the port's own files `texture_software.{h,cpp}` and `tile_matmul_mma.h` are new.
+
+### gfx950 results at `c9595bce`
+Tile set (24 files): 639 run, 10 skipped, 0 failures. `mma_check.py` (fixed): FAILURES 0 (5 backward shared-memory limits, 0 forward). `mma_check_bf16.py`: FAILURES 0 (55 cases). test_texture 118 OK. CPU-only suite with GPUs hidden: Ran 2294, OK (skipped=15).
+
+### Next step (head `c9595bce`)
+Project stays in `porting`, lock held by linux-gfx950. Common setup as before at `git rev-parse HEAD` = `c9595bcedee56cffa5b8181372e9f46643a087e8`; rebuild (native texture changes); fresh `WARP_CACHE_PATH` per run (item 4).
+
+**gfx90a (MI200):** the new path's first run.
+1. `python -c "import warp as wp; wp.init(); d = wp.get_device('cuda:0'); print(d.is_texture_hardware_supported, d.is_texture3d_hardware_supported)"`: expect `True False`.
+2. `python -m warp.tests -s autodetect -p test_texture.py -m 32`: expect 0 errors (the 14 from the evidence session gone): the 3D linear cases pass through the software sampler, the 4 3D interop tests register no `cuda_0` case (placeholders), 1D/2D hardware cases unchanged.
+3. `python sdf_probe.py cuda:0` and `python tex_capture.py cuda:0`: PASS (3D software); `python tex_alias.py cuda:0`: PASS (2D hardware, external array); `tex3d.cpp` unchanged (HIP still refuses 3D linear, by design).
+4. `python mma_check.py` (fixed, below): FAILURES 0 with the 64 KiB forward cases now SMEM-LIMIT; `python mma_check_bf16.py`: FAILURES 0.
+5. The tile set and the full 82-pattern set at this head, and the CPU-only suite.
+
+**gfx1100:** the gfx11 switch-on sequence of item 2 (fixed probe, experiment, checks, benchmark); then, as shipped, test_tile_matmul (25 OK) and the tile set (WMMA still absent: confirm 0 `v_wmma`).
+
+**gfx1201 (gfx12):** the committed code is the validated experiment: the tile set, test_tile_matmul (25 OK, `v_wmma_f32_16x16x16_f16` in the fp16 objects as shipped, no switch), `mma_check.py` (fixed; expect FAILURES 0) and the full 82-pattern set at this head.
+
+**gfx942:** `mma_check.py` (fixed; the 15 earlier FAILs should now read SMEM-LIMIT (forward not launched), FAILURES 0) and test_texture (unchanged: 118 OK) at this head; the full set only if time allows (no change affects gfx942 except the texture handle bookkeeping, which test_texture covers).
+
+**Two-GPU session:** test_texture at this head (the software handle set on two devices, including `cuda:1`), plus the 13-file loop.
+
+**Still open for Jeff:** gfx90a 3D textures, option A as committed or C (drop `c9595bce`); gfx11 WMMA after the gfx1100 run; defer/now on the six undecided `rocm-bug-report` entries. Phase 6 not started.
+
+`wmma_layout.hip` (fixed):
+```cpp
+// Check the WMMA 16x16 fragment layouts that warp/native/tile_matmul_mma.h assumes, on one 32-lane
+// wavefront, and separately bound the accumulation error. lane l: lo = l % 16, g = l / 16.
+//   gfx11 f16 (wmma_f32_16x16x16_f16_w32): A[lo][v], B[v][lo] for v < 16 in both half-waves;
+//       accumulator r is C[2 r + g][lo]
+//   gfx12 f16 (wmma_f32_16x16x16_f16_w32_gfx12): A[lo][8 g + v], B[8 g + v][lo] for v < 8;
+//       accumulator r is C[8 g + r][lo]
+//   gfx1250 f32 (wmma_f32_16x16x4_f32): A[lo][2 g + v], B[2 g + v][lo] for v < 2; accumulator as gfx12
+// Tests, for K = 16, 32, 64:
+//   layout (non-negative): small non-negative integers, every sum exact in f32 whatever the
+//       accumulation order, so any wrong cell is a layout error
+//   layout (position): A[i][0] = i, A[i][1] = 1, B[0][j] = 1, B[1][j] = 100 j, so C[i][j] = i + 100 j
+//       names its own position
+//   accumulation: random signed fp16 in [-1, 1]; |C - exact| must stay within
+//       (K / 16 + 1) * FLT_EPSILON * sum |a b| (one f32 rounding per instruction, plus one)
+#include <hip/hip_runtime.h>
+#include <cfloat>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+typedef float f8 __attribute__((ext_vector_type(8)));
+
+__global__ void k(const double* A, const double* B, double* C, int K, int* kind)
+{
+    int l = threadIdx.x, lo = l % 16, g = l / 16;
+    f8 acc = {};
+#if __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32)
+    typedef _Float16 V __attribute__((ext_vector_type(16)));
+    for (int k0 = 0; k0 < K; k0 += 16) {
+        V a, b;
+        for (int v = 0; v < 16; ++v) {
+            a[v] = _Float16(A[lo * K + k0 + v]);
+            b[v] = _Float16(B[(k0 + v) * 16 + lo]);
+        }
+        acc = __builtin_amdgcn_wmma_f32_16x16x16_f16_w32(a, b, acc);
+    }
+    for (int r = 0; r < 8; ++r) C[(2 * r + g) * 16 + lo] = acc[r];
+    if (l == 0) *kind = 11;
+#elif __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12)
+    typedef _Float16 V __attribute__((ext_vector_type(8)));
+    for (int k0 = 0; k0 < K; k0 += 16) {
+        V a, b;
+        for (int v = 0; v < 8; ++v) {
+            a[v] = _Float16(A[lo * K + k0 + 8 * g + v]);
+            b[v] = _Float16(B[(k0 + 8 * g + v) * 16 + lo]);
+        }
+        acc = __builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12(a, b, acc);
+    }
+    for (int r = 0; r < 8; ++r) C[(8 * g + r) * 16 + lo] = acc[r];
+    if (l == 0) *kind = 12;
+#elif __has_builtin(__builtin_amdgcn_wmma_f32_16x16x4_f32)
+    typedef float V __attribute__((ext_vector_type(2)));
+    for (int k0 = 0; k0 < K; k0 += 4) {
+        V a = {float(A[lo * K + k0 + 2 * g]), float(A[lo * K + k0 + 2 * g + 1])};
+        V b = {float(B[(k0 + 2 * g) * 16 + lo]), float(B[(k0 + 2 * g + 1) * 16 + lo])};
+        acc = __builtin_amdgcn_wmma_f32_16x16x4_f32(false, a, false, b, (short)0, acc, false, false);
+    }
+    for (int r = 0; r < 8; ++r) C[(8 * g + r) * 16 + lo] = acc[r];
+    if (l == 0) *kind = 1250;
+#else
+    if (l == 0) *kind = -1;
+#endif
+}
+
+// fill A (16 x K) and B (K x 16) for one test; returns the per-cell bound (0 = exact required)
+static void fill(int test, int K, double* A, double* B)
+{
+    for (int x = 0; x < 16 * K; ++x) {
+        int i = x / K, kk = x % K;
+        if (test == 0) A[x] = double((x * 7 + 3) % 9);
+        if (test == 1) A[x] = kk == 0 ? double(i) : (kk == 1 ? 1.0 : 0.0);
+        if (test == 2) A[x] = double(_Float16(2.0 * rand() / RAND_MAX - 1.0));
+    }
+    for (int x = 0; x < K * 16; ++x) {
+        int kk = x / 16, j = x % 16;
+        if (test == 0) B[x] = double((x * 5 + 1) % 7);
+        if (test == 1) B[x] = kk == 0 ? 1.0 : (kk == 1 ? 100.0 * j : 0.0);
+        if (test == 2) B[x] = double(_Float16(2.0 * rand() / RAND_MAX - 1.0));
+    }
+}
+
+int main()
+{
+    const char* names[] = {"layout (non-negative)", "layout (position)", "accumulation"};
+    int fails = 0, kind_seen = 0;
+    srand(1);
+    for (int test = 0; test < 3; ++test)
+        for (int K : {16, 32, 64}) {
+            double *A, *B, *C;
+            int* kind;
+            hipMallocManaged(&A, 16 * K * 8);
+            hipMallocManaged(&B, K * 16 * 8);
+            hipMallocManaged(&C, 256 * 8);
+            hipMallocManaged(&kind, 4);
+            fill(test, K, A, B);
+            memset(C, 0, 256 * 8);
+            *kind = 0;
+            k<<<1, 32>>>(A, B, C, K, kind);
+            hipDeviceSynchronize();
+            kind_seen = *kind;
+            int bad = 0;
+            double worst = 0;  // largest error as a fraction of the allowed bound
+            for (int i = 0; i < 16; ++i)
+                for (int j = 0; j < 16; ++j) {
+                    double ref = 0, mag = 0;
+                    for (int kk = 0; kk < K; ++kk) {
+                        ref += A[i * K + kk] * B[kk * 16 + j];
+                        mag += fabs(A[i * K + kk] * B[kk * 16 + j]);
+                    }
+                    double err = fabs(C[i * 16 + j] - ref);
+                    if (test < 2) {
+                        bad += err != 0.0;
+                    } else {
+                        double bound = (K / 16 + 1) * FLT_EPSILON * mag;
+                        bad += err > bound;
+                        worst = fmax(worst, err / bound);
+                    }
+                }
+            if (test < 2)
+                printf("WMMA family %d, %-22s K=%2d: %d of 256 wrong\n", *kind, names[test], K, bad);
+            else
+                printf("WMMA family %d, %-22s K=%2d: %d of 256 over the bound, worst error %.2f of the bound\n", *kind,
+                       names[test], K, bad, worst);
+            fails += bad != 0 || *kind <= 0;
+            hipFree(A); hipFree(B); hipFree(C); hipFree(kind);
+        }
+    if (kind_seen <= 0) printf("no WMMA instruction on this target\n");
+    return fails ? 1 : 0;
+}
+```
+
+`mma_check.py` (fixed):
+```python
+# tile_matmul forward (C = A @ B and C += A @ B) and adjoint on the GPU against the same kernels on
+# the CPU device, for dtypes x tile shapes x block_dims. Usage: python mma_check.py [dtype ...]
+import sys
+
+import numpy as np
+
+import warp as wp
+
+wp.init()
+gpu = wp.get_device("cuda:0")
+DTYPES = {"float32": wp.float32, "float64": wp.float64, "float16": wp.float16}  # tile_matmul rejects bf16
+SHAPES = [(16, 16, 16), (32, 32, 32), (64, 64, 64), (16, 48, 32), (48, 16, 64), (32, 64, 16), (64, 32, 48),
+          (8, 8, 8), (24, 16, 16), (16, 16, 12), (17, 33, 15)]  # fmt: skip
+BLOCK_DIMS = (32, 64, 96, 128, 256)
+TOL = {wp.float32: 2e-5, wp.float64: 1e-12, wp.float16: 1e-2}
+
+
+def make(M, N, K, dtype):
+    @wp.kernel(module="unique")
+    def fwd(A: wp.array2d(dtype=dtype), B: wp.array2d(dtype=dtype), C: wp.array2d(dtype=dtype), D: wp.array2d(dtype=dtype)):
+        a = wp.tile_load(A, shape=(M, K))
+        b = wp.tile_load(B, shape=(K, N))
+        c = wp.tile_matmul(a, b)
+        d = wp.tile_load(D, shape=(M, N))
+        wp.tile_matmul(a, b, d)
+        wp.tile_store(C, c)
+        wp.tile_store(D, d)
+
+    return fwd
+
+
+def run(dev, kern, A, B, D0, bd, M, N, K, dtype):
+    a = wp.array(A, dtype=dtype, device=dev, requires_grad=True)
+    b = wp.array(B, dtype=dtype, device=dev, requires_grad=True)
+    c = wp.zeros((M, N), dtype=dtype, device=dev, requires_grad=True)
+    d = wp.array(D0, dtype=dtype, device=dev, requires_grad=True)
+    d_init = d.numpy().astype(np.float64)
+    tape = wp.Tape()
+    with tape:
+        wp.launch_tiled(kern, dim=[1], inputs=[a, b, c, d], block_dim=bd, device=dev)
+    c.grad = wp.array(np.ones((M, N)), dtype=dtype, device=dev)
+    d.grad = wp.array(np.full((M, N), 0.5), dtype=dtype, device=dev)
+    tape.backward()
+    return [x.numpy().astype(np.float64) for x in (c, d, a.grad, b.grad)], d_init
+
+
+rng = np.random.default_rng(0)
+fails = 0
+for name in sys.argv[1:] or DTYPES:
+    dtype = DTYPES[name]
+    for M, N, K in SHAPES:
+        kern = make(M, N, K, dtype)
+        A = rng.uniform(-1, 1, (M, K))
+        B = rng.uniform(-1, 1, (K, N))
+        D0 = rng.uniform(-1, 1, (M, N))
+        for bd in BLOCK_DIMS:
+            ref, _ = run("cpu", kern, A, B, D0, bd, M, N, K, dtype)
+            got, d_init = run(gpu, kern, A, B, D0, bd, M, N, K, dtype)
+            errs = [np.abs(g - r).max() / max(1.0, np.abs(r).max()) for g, r in zip(got, ref)]
+            ok = all(e <= TOL[dtype] * max(1, K / 16) for e in errs)
+            # a kernel that needs more shared memory than the device has does not launch (Warp warns):
+            # forward: c stays zero and d keeps its initial values; backward: the gradients stay zero
+            no_grads = not got[2].any() and not got[3].any()
+            smem_fwd = not ok and not got[0].any() and np.array_equal(got[1], d_init) and no_grads
+            smem_bwd = not ok and all(e <= TOL[dtype] * max(1, K / 16) for e in errs[:2]) and no_grads
+            smem = smem_fwd or smem_bwd
+            fails += not ok and not smem
+            if not ok or bd == 64:
+                status = "ok" if ok else (
+                    "SMEM-LIMIT (forward not launched)" if smem_fwd else "SMEM-LIMIT (backward not launched)" if smem_bwd else "FAIL"
+                )
+                print(f"{name:8s} M{M:3d} N{N:3d} K{K:3d} bd{bd:4d}: c {errs[0]:.1e} d {errs[1]:.1e} gA {errs[2]:.1e} gB {errs[3]:.1e} {status}", flush=True)
+print("FAILURES", fails)
+sys.exit(1 if fails else 0)
+```
+
+`mma_check_bf16.py`:
+```python
+# tile_matmul with bf16 inputs and a float32 output (forward only; tile_matmul rejects a bf16 backward),
+# GPU against the CPU device, shapes x block_dims.
+import sys
+
+import numpy as np
+
+import warp as wp
+
+wp.init()
+SHAPES = [(16, 16, 16), (32, 32, 32), (64, 64, 64), (16, 48, 32), (48, 16, 64), (32, 64, 16), (64, 32, 48),
+          (8, 8, 8), (24, 16, 16), (16, 16, 12), (17, 33, 15)]  # fmt: skip
+
+
+def make(M, N, K):
+    @wp.kernel(module="unique", module_options={"enable_backward": False})
+    def fwd(A: wp.array2d(dtype=wp.bfloat16), B: wp.array2d(dtype=wp.bfloat16), C: wp.array2d(dtype=float), D: wp.array2d(dtype=float)):
+        a = wp.tile_load(A, shape=(M, K))
+        b = wp.tile_load(B, shape=(K, N))
+        c = wp.tile_zeros(shape=(M, N), dtype=float)
+        wp.tile_matmul(a, b, c)
+        d = wp.tile_load(D, shape=(M, N))
+        wp.tile_matmul(a, b, d)
+        wp.tile_store(C, c)
+        wp.tile_store(D, d)
+
+    return fwd
+
+
+@wp.kernel
+def to_bf16(x: wp.array2d(dtype=float), y: wp.array2d(dtype=wp.bfloat16)):
+    i, j = wp.tid()
+    y[i, j] = wp.bfloat16(x[i, j])
+
+
+rng = np.random.default_rng(0)
+fails = 0
+for M, N, K in SHAPES:
+    kern = make(M, N, K)
+    A = rng.uniform(-1, 1, (M, K)).astype(np.float32)
+    B = rng.uniform(-1, 1, (K, N)).astype(np.float32)
+    D0 = rng.uniform(-1, 1, (M, N)).astype(np.float32)
+    for bd in (32, 64, 96, 128, 256):
+        out = {}
+        for dev in ("cpu", "cuda:0"):
+            a = wp.zeros((M, K), dtype=wp.bfloat16, device=dev)
+            b = wp.zeros((K, N), dtype=wp.bfloat16, device=dev)
+            wp.launch(to_bf16, dim=(M, K), inputs=[wp.array(A, device=dev), a], device=dev)
+            wp.launch(to_bf16, dim=(K, N), inputs=[wp.array(B, device=dev), b], device=dev)
+            c = wp.zeros((M, N), dtype=float, device=dev)
+            d = wp.array(D0, device=dev)
+            wp.launch_tiled(kern, dim=[1], inputs=[a, b, c, d], block_dim=bd, device=dev)
+            out[dev] = (c.numpy(), d.numpy())
+        e = max(np.abs(out["cuda:0"][i] - out["cpu"][i]).max() for i in (0, 1))
+        ok = e <= 2e-5 * max(1, K / 16)
+        # a forward kernel over the device's shared memory does not launch: c stays zero, d unchanged
+        smem = not ok and not out["cuda:0"][0].any() and np.array_equal(out["cuda:0"][1], D0)
+        fails += not ok and not smem
+        if not ok or bd == 64:
+            status = "ok" if ok else ("SMEM-LIMIT (forward not launched)" if smem else "FAIL")
+            print(f"bf16->f32 M{M:3d} N{N:3d} K{K:3d} bd{bd:4d}: max abs diff {e:.1e} {status}", flush=True)
+print("FAILURES", fails)
+sys.exit(1 if fails else 0)
+```
