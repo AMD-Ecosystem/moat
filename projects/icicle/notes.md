@@ -730,3 +730,25 @@ Checked (independently, not from the porter's notes):
 - Commit 7d1cb07: title 62 chars, `[ROCm]` prefix fits (hip_pqc-only content plus a byte restore), rationale per item, prose AI disclosure, no trailer, fenced Test Plan. `jargon.py --port icicle` and `audit-commits` report only the pre-existing hits on 98d8bca and 2609ca4.
 
 Outside this delta (not gating, for jeff at PR prep): `icicle/backend/hip_pqc/tests/CMakeLists.txt:43-44` (unchanged since 98d8bca) says the KAT vectors are "copied into the build dir at configure time"; `copy_hip_test_data` is an `ALL` custom target, so the copy happens at build time, as the new README correctly says.
+
+## Validation 2026-11-19 (revalidate, linux-gfx90a, fork moat-port 7d1cb0708462b3dfa712e49c524622930f42fe3f)
+
+GPU as the system reports it: `amd-smi static -g 1` -> MARKET_NAME: AMD Instinct MI250X / MI250, TARGET_GRAPHICS_VERSION: gfx90a; rocminfo agent `amdgcn-amd-amdhsa--gfx90a:sramecc+:xnack-`. HIP_VISIBLE_DEVICES=1 (one GCD). Pip ROCm SDK 10.1.0 (`R=$(rocm-sdk path --root)`, no /opt/rocm on this host), CMake 3.31.6. First real GPU run since 98d8bca on gfx1100 and 036c92c on gfx90a (2609ca4 had reached both by carry-forward only). Fork clone clean at head.
+
+Fresh build dir, under `ulimit -c 0`:
+```
+cmake -S projects/icicle/src/icicle -B agent_space/bval -DCMAKE_BUILD_TYPE=Release \
+  -DCPU_BACKEND=ON -DHIP_PQC_BACKEND=ON -DCUDA_PQC_BACKEND=OFF -DPQC=ON -DBUILD_TESTS=ON \
+  -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++ -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$R
+cmake --build agent_space/bval -j 64     # [100%] Built target hip_test_ml_kem, exit 0
+ctest --test-dir agent_space/bval/backend/hip_pqc/tests -V --output-on-failure
+ctest --test-dir agent_space/bval/tests -R PqcTest -V --output-on-failure
+```
+- Backend gtests: 58 passed, 0 failed, 0 skipped (17.37 s). By suite: KyberTest 29, MLKemKeygenTest 7, MLKemDecapsTest 6, HashTest 4, MLKemTest 3, MLKemEncapsTest 3, PkeEncryptTest 3, PkeDecryptTest 3. This includes the exact-match NIST KAT vectors for ML-KEM-512/768/1024 keygen, encaps, decaps and PKE encrypt/decrypt, read from `test_data` copied by `copy_hip_test_data`.
+- Frontend `PqcTest`: 6 passed, 0 failed, 0 skipped (1.28 s), Main-device=HIP-PQC.
+- Dispatch: `AMD_LOG_LEVEL=3 ./hip_test_ml_kem_decaps --gtest_filter=MLKemDecapsTest.MlKemDecaps512Batch` shows `ml_kem_decaps_kernel` launching; the auto-detect build (porter section above) showed `ml_kem_keygen_kernel`.
+- CUDA gate: not re-run this round. No nvcc on this host. The 2026-11-19 gfx950 nvcc check covers 2609ca4; this delta touches no CUDA-path file except restoring upstream's bytes in `cmake/backend_include.cmake`. The combined CUDA+HIP configure is still owed on an nvcc host (see the porter section).
+- Docs: ROCm build documented in `backend/hip_pqc/README.md` (from the repository root), matching the Test Plans.
+- Jargon: `python3 utils/jargon.py --port icicle` NOT clean, 1 hit, in a commit message from an earlier round: commit 98d8bca line 18, Test Plan `git -C projects/icicle/src grep ...` ("use a path relative to the project's own checkout"). `audit-commits` also flags 2609ca4 ("Test Plan has no fenced command block"). Recorded `validation-failed --gate jargon` as validator.md step 4 requires; the GPU pass at 7d1cb07 is kept (`gpu_passed_sha`). A new commit cannot fix a commit message, so the fix is a history rewrite: a PR-prep squash to an identical tree. Pushing that is a person's call (porter.md step 6); afterwards `squash-carry-forward`/`carry-forward` completes the platforms from the kept pass without another GPU run. Decision for jeff: squash now (and in which form), or another ruling.
+
+Verdict: GPU PASS (58/58 backend, 6/6 frontend, 0 skipped) at 7d1cb07; platform recorded validation-failed --gate jargon for the commit-message hit only.
