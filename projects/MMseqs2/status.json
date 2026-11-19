@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:24:21Z",
-  "updated_at": "2026-11-13T20:50:08Z",
+  "updated_at": "2026-11-19T01:39:52Z",
   "head_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
   "depends_on": [],
   "waivers": {
@@ -249,6 +249,16 @@
   "pr_url": "https://github.com/soedinglab/MMseqs2/pull/1174",
   "pr_number": 1174,
   "pr_opened_at": "2026-11-13T20:50:08Z",
-  "pr_state": "open",
-  "published_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d"
+  "pr_state": "merged",
+  "published_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
+  "landed_via": {
+    "url": "https://github.com/soedinglab/MMseqs2/commit/21691c1f7f7b5743feb80e237c20440a60075fcf",
+    "commit": "21691c1f7f7b5743feb80e237c20440a60075fcf",
+    "merged_at": "2026-11-15T10:08:04Z",
+    "carried": "content-differs",
+    "by": "jeffdaily",
+    "at": "2026-11-19T01:39:52Z",
+    "note": "Maintainer closed PR 1174 saying he pulled the relevant changes into their own repository and synced. Compared 2026-11-18 against upstream master: the four gfx90a/gfx950 tuning files are identical; untuned GPUs are mapped to a related tuned table instead of our generic default; the signed-char clamp is fixed by an unsigned cast instead of our HIP per-byte min. An arch outside the gfx9/10/11/12 families is refused at configure time, where ours ran untuned."
+  },
+  "pr_merged_at": "2026-11-15T10:08:04Z"
 }
