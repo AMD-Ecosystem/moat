@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:43:45Z",
-  "updated_at": "2026-11-19T22:13:35Z",
-  "head_sha": "4861f483930b774eccb14a26125de323d1a33851",
+  "updated_at": "2026-11-19T23:11:35Z",
+  "head_sha": "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
   "depends_on": [],
   "waivers": {
     "windows": {
@@ -31,11 +31,11 @@
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "4861f483930b774eccb14a26125de323d1a33851",
+      "validated_sha": "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
       "failed_sha": null,
       "started_at": null,
       "completed_at": "2026-11-19T22:01:58Z",
-      "updated_at": "2026-11-19T22:01:58Z",
+      "updated_at": "2026-11-19T23:11:35Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -52,17 +52,25 @@
       "state": "completed",
       "validated_prior": [
         "87cbc046d27c1eabd33eec8c208014bface17b07",
-        "01090739cf852d70549a5699c5984b0f17414214"
-      ]
+        "01090739cf852d70549a5699c5984b0f17414214",
+        "4861f483930b774eccb14a26125de323d1a33851"
+      ],
+      "carry_forward": {
+        "from": "4861f483930b774eccb14a26125de323d1a33851",
+        "to": "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-19T23:11:35Z"
+      }
     },
     "linux-gfx950": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "4861f483930b774eccb14a26125de323d1a33851",
+      "validated_sha": "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
       "failed_sha": null,
       "started_at": "2026-11-19T06:32:15Z",
       "completed_at": "2026-11-19T21:27:08Z",
-      "updated_at": "2026-11-19T21:27:08Z",
+      "updated_at": "2026-11-19T23:11:35Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -79,8 +87,16 @@
       "last_agent": "validator",
       "state": "completed",
       "validated_prior": [
-        "01090739cf852d70549a5699c5984b0f17414214"
-      ]
+        "01090739cf852d70549a5699c5984b0f17414214",
+        "4861f483930b774eccb14a26125de323d1a33851"
+      ],
+      "carry_forward": {
+        "from": "4861f483930b774eccb14a26125de323d1a33851",
+        "to": "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-19T23:11:35Z"
+      }
     },
     "linux-gfx90a": {
       "state": "completed",
@@ -114,11 +130,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "4861f483930b774eccb14a26125de323d1a33851",
+      "validated_sha": "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
       "failed_sha": null,
       "started_at": "2026-11-19T04:05:53Z",
       "completed_at": "2026-11-19T22:13:35Z",
-      "updated_at": "2026-11-19T22:13:35Z",
+      "updated_at": "2026-11-19T23:11:35Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -136,8 +152,16 @@
       "state": "completed",
       "validated_prior": [
         "87cbc046d27c1eabd33eec8c208014bface17b07",
-        "01090739cf852d70549a5699c5984b0f17414214"
-      ]
+        "01090739cf852d70549a5699c5984b0f17414214",
+        "4861f483930b774eccb14a26125de323d1a33851"
+      ],
+      "carry_forward": {
+        "from": "4861f483930b774eccb14a26125de323d1a33851",
+        "to": "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-19T23:11:35Z"
+      }
     },
     "linux-gfx1100": {
       "state": "completed",
@@ -238,5 +262,5 @@
     "since": "2026-11-19T21:11:40Z",
     "at": "2026-11-19T21:14:34Z"
   },
-  "reviewed_sha": "4861f483930b774eccb14a26125de323d1a33851"
+  "reviewed_sha": "bc8d73dd948fc2e1f93756c648529d6d1510b41c"
 }
