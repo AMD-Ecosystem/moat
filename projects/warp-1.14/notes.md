@@ -3150,3 +3150,100 @@ int main()
     return fails ? 1 : 0;
 }
 ```
+
+## Evidence session 5 (2026-11-19, linux-gfx1100, Radeon Pro W7800, evidence only): WMMA items at `930d0098`
+
+Requested by Jeff Daily. The work lock stays with linux-gfx950. Nothing was committed to the fork, and no stage, lock, head, platform or deferral record changed. The clone was updated read-only to the recorded `head_sha` `930d0098dafa5ef08945a4382b87c07d89c9a7f0` and rebuilt (`export PATH=$FLEET_VENV/bin:$PATH; python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1100 -j 32` -> "Warp build succeeded"; RUNPATH is the venv's ROCm 10.2). `git status --porcelain` is clean at the end. The items are the "Wave32 host" list of the `930d0098` Next step, run in its order. Same venv, `ulimit -c 0`, `HIP_VISIBLE_DEVICES=0`, private `WARP_CACHE_PATH`.
+
+### Item 1: `wmma_layout.hip`: FAILS, so the switch-on experiment (item 2) was not run
+Built exactly as the handoff says (`clang++ -x hip --rocm-path=$R --offload-arch=gfx1100 -O2 -w wmma_layout.hip -o wmma_layout -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib`), script verbatim from the Next step:
+```
+WMMA family 11, K=16: 96 of 256 wrong
+WMMA family 11, K=32: 69 of 256 wrong
+WMMA family 11, K=64: 220 of 256 wrong
+(exit 1)
+```
+All three lines are wrong, so per the handoff (and Jeff's instruction for this session) the WMMA part stopped here: `WP_TILE_WMMA` was **not** switched on, and `mma_check.py`, the tile set with the switch and the fp16 benchmark were not run. There is no experiment diff to apply. The switch-on stays the one-line `#define WP_TILE_WMMA 1` after `#pragma once` in `warp/native/tile_matmul_mma.h` that the handoff describes, and whether to make it is the lock holder's and Jeff's call given the diagnosis below.
+
+### Diagnosis: the assumed gfx11 layout is correct; the probe's exact-equality check fails on mixed-sign accumulation
+Three standalone probes on gfx1100 (`agent_space/p9/`, ROCm clang 10.2, same build line):
+
+1. **One-hot register decode** (`wmma_decode.hip`: one-hot `a` in lane la slot va with all-ones `b`, and the reverse, then which accumulator (lane, register) cells light up; then one-hot A x one-hot B to pair K slots). For `__builtin_amdgcn_wmma_f32_16x16x16_f16_w32`:
+   - Output rows in half-wave g come only from that half's copy of A and B. A one-hot in lane 0 lights row 0 (register 0, lanes 0-15). Lane 17 lights row 1 (register 0, lanes 16-31). Lanes 1 and 16 light nothing, because row 1 is read from the upper half and row 0 from the lower. A and B must therefore be duplicated across both half-waves, which `tile_matmul_mma.h` and the probe both do.
+   - A B one-hot in lane lb lights all 8 registers of lane lb, which is column lb % 16 in that half's rows.
+   - K slot v of A pairs with K slot v of B, for v = 0, 1, 7, 8, 15.
+   - This is exactly the header's gfx11 statement: A[lo][v], B[v][lo] in both halves; accumulator r is C[2r + g][lo].
+2. **Position-coded decode** (`wmma_posdecode.hip`, the probe's own kernel at K = 16, with the handoff's encoding A[i][0] = i, A[i][1] = 1, B[0][j] = 1, B[1][j] = 100 j): **all 256 cells exact**. `C[i][j] = i + 100 j` everywhere.
+3. **Which data fails** (same kernel, K = 16): the probe's data shifted to be non-negative (A + 4, B + 3) gives 0 of 256 wrong. The probe's signed data gives 96 wrong. The position decode negated (A[i][0] = -i, B[1][j] = -100 j) is wrong in every cell outside row 0 and column 0. The wrong values are the exact result **plus or minus 1 ulp of f32**, not misplaced elements: `C[0][2]` 18.999998092651367 for 19, `C[0][4]` 13.999999046325684 for 14, `C[1][1]` -101.00000762939453 for -101, `C[1][2]` -201.00001525878906 for -201.
+
+So on gfx11 the WMMA f16->f32 accumulation is not exact when products of mixed sign cancel, even for small integers whose exact sum is representable. The error is at f32 rounding level. Measured with `wmma_err.hip` (below; the same accumulating K/16-call loop as the header), as the maximum of |err| / sum |a*b| over the 256 cells:
+
+| data | K | cells differing from the rounded exact result | max abs err | max abs err / sum abs(a*b) |
+|---|---|---|---|---|
+| probe ints | 16 | 96 | 1.91e-06 | 3.41e-08 |
+| probe ints | 32 | 69 | 3.81e-06 | 3.08e-08 |
+| probe ints | 64 | 220 | 3.81e-06 | 1.55e-08 |
+| random fp16 in [-1, 1] | 16 | 150 | 4.47e-07 | 8.68e-08 |
+| random fp16 in [-1, 1] | 32 | 191 | 8.42e-07 | 1.07e-07 |
+| random fp16 in [-1, 1] | 64 | 227 | 1.90e-06 | 1.32e-07 |
+
+That is at most about f32 epsilon (1.19e-7) relative to the magnitude sum, the ordinary bound for an f32 dot product. It is several orders below `mma_check.py`'s fp16 tolerance (1e-2 x max(1, K/16)) and below fp16's own epsilon (9.8e-4). gfx950's MFMA passed the same exact-equality test, so CDNA's MFMA and RDNA3's WMMA differ here.
+
+For the lock holder: `wmma_layout.hip`'s pass criterion (`C != ref` with exact equality) cannot pass on gfx11, although the layout is right. A layout check that does not depend on exact accumulation would be either non-negative integer data (mode 2 above: 0 wrong) or the position-coded encoding (all cells exact). Either measures the layout. The precision difference itself is a separate fact for the WMMA path's tests, which `mma_check.py` would cover with its tolerances. Whether this justifies the switch-on, with the probe corrected, is not decided here.
+
+### Item 3: shipped state (switch off): wave32 unchanged, scalar everywhere
+- Full 82-pattern set (same list as Evidence sessions 3 and 4, `-p "<pattern>" -m 32`, timeit-wrapped): **82 patterns, 81 OK, 1 with the 2 known fem isolation failures** (`test_gimp_quadrature`, `test_cube_shape_functions`). Against Evidence session 4 at `974cd4bf` (diff of per-pattern summary lines, timings stripped), the only difference is test_tile_matmul: **Ran 25, OK** (was 22): the three new `test_tile_matmul_fragment_shapes_{float16,float32,float64}_cuda_0` pass. The tile set is therefore 639 run, 15 skipped (10 upstream no-libmathdx skips + the five 64 KiB capability skips), 0 failures. test_streams 24 OK (3 skipped, the priority skip). test_texture 120 OK (1 skipped). No `Warp CUDA error` line in any log, and the only shared-memory warning is the known `test_tile_load_scoped` one.
+- Scalar on wave32, checked rather than assumed (`agent_space/p9/isa_check.py`: a 32x32 `tile_matmul` at block_dim 64 for fp16 and fp32, then `llvm-objdump -d --mcpu=gfx1100` on the two cached `.hsaco`): **0 `v_wmma` instructions in both**. The fp16 module's arithmetic is 1456 `v_mul_f16` with scalar adds; the fp32 module is scalar FMAs. Results correct (fp16 max abs err 0.024 against the float64 product of the fp16 inputs, fp16-storage level; fp32 3.1e-06).
+- The CPU-only suite was not in this host's list for this head and was not run.
+
+`wmma_err.hip`:
+```cpp
+// gfx11 WMMA f16 -> f32: size of the deviation from the exact result, for the probe's signed data and
+// for random fp16 data, K = 16, 32, 64 (accumulating over K/16 WMMA calls, as tile_matmul_mma.h does).
+#include <hip/hip_runtime.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+typedef _Float16 V __attribute__((ext_vector_type(16)));
+typedef float f8 __attribute__((ext_vector_type(8)));
+__global__ void k(const float* A, const float* B, float* C, int K)
+{
+    int l = threadIdx.x, lo = l % 16, g = l / 16;
+    f8 acc = {};
+    for (int k0 = 0; k0 < K; k0 += 16) {
+        V a, b;
+        for (int v = 0; v < 16; ++v) { a[v] = _Float16(A[lo * K + k0 + v]); b[v] = _Float16(B[(k0 + v) * 16 + lo]); }
+        acc = __builtin_amdgcn_wmma_f32_16x16x16_f16_w32(a, b, acc);
+    }
+    for (int r = 0; r < 8; ++r) C[(2 * r + g) * 16 + lo] = acc[r];
+}
+static float h(float x) { return (float)(_Float16)x; }
+int main()
+{
+    srand(1);
+    for (int data = 0; data < 2; ++data)
+        for (int K : {16, 32, 64}) {
+            float *A, *B, *C;
+            hipMallocManaged(&A, 16 * K * 4); hipMallocManaged(&B, K * 16 * 4); hipMallocManaged(&C, 256 * 4);
+            for (int x = 0; x < 16 * K; ++x) A[x] = data ? h(2.f * rand() / RAND_MAX - 1.f) : float((x * 7 + 3) % 9) - 4.f;
+            for (int x = 0; x < K * 16; ++x) B[x] = data ? h(2.f * rand() / RAND_MAX - 1.f) : float((x * 5 + 1) % 7) - 3.f;
+            k<<<1, 32>>>(A, B, C, K); hipDeviceSynchronize();
+            int bad = 0; double maxabs = 0, maxrel_sum = 0, maxulp = 0;
+            for (int i = 0; i < 16; ++i)
+                for (int j = 0; j < 16; ++j) {
+                    double ref = 0, absum = 0;
+                    for (int kk = 0; kk < K; ++kk) { ref += double(A[i * K + kk]) * B[kk * 16 + j]; absum += fabs(double(A[i * K + kk]) * B[kk * 16 + j]); }
+                    float rf = (float)ref;
+                    double e = fabs(C[i * 16 + j] - ref);
+                    bad += C[i * 16 + j] != rf;
+                    maxabs = fmax(maxabs, e);
+                    maxrel_sum = fmax(maxrel_sum, e / absum);
+                    double ulp = fabs(nextafterf(rf, INFINITY) - rf);
+                    maxulp = fmax(maxulp, e / ulp);
+                }
+            printf("%-12s K=%2d: %3d of 256 differ from the rounded exact result; max |err| %.3g, max |err|/sum|a*b| %.3g, max %.2f ulp\n",
+                   data ? "random fp16" : "probe ints", K, bad, maxabs, maxrel_sum, maxulp);
+        }
+}
+```
