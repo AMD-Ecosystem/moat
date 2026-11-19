@@ -1418,3 +1418,36 @@ Arch auto-detected (`CMAKE_HIP_ARCHITECTURES=gfx90a;gfx90a;gfx90a;gfx90a`). `AMD
 CPU-only build (cache `OHM_FEATURE_CUDA/HIP/OPENCL=OFF`), same flags without the HIP options, 161/161: ohmtest 53/53, ohmtestheightmap 19/19, slamiotest 4/4 PASSED.
 
 Checks: `python3 utils/jargon.py --port ohm` clean. readme.md has the "Building for AMD GPUs" section and the new Windows paragraph. CUDA gate: cuda-not-validated on this host (no CUDA toolkit, no conda); the nvcc compile at e9149bb is still owed on the mi355 host.
+
+## CUDA compile check 2026-11-19 (nvcc 12.8) at e9149bb
+
+Compile and link only: Linux x86_64 host with NVIDIA's CUDA toolkit and no NVIDIA GPU. Toolkit: nvcc `release 12.8, V12.8.93` (`/usr/local/cuda-12.8/bin/nvcc`); host compiler GNU 13.3.0; CMake 3.31.6; Ninja 1.13.0. Upstream has no CI workflow (no `.github/`), so the recipe is the readme's CMake build with the CUDA feature, the same as the 7c09435 check above. Fresh clones, no submodules in either tree: `port` = AMD-Ecosystem/ohm at e9149bbedcf8c8e1f6763884c0fcaeb3d70c31ee, `base` = csiro-robotics/ohm at 4e2e76945e550eb8a96cef9c4434e7c1811dd030 (`git merge-base e9149bb upstream/master`; upstream master is still 4e2e769). Both trees `git status --porcelain` clean of tracked changes after the builds.
+
+glm: (a) Ubuntu 24.04 `libglm-dev` 0.9.9.8 (`glm_DIR=/usr/share/cmake/glm`), the glm the 7c09435 run used; (b) glm 1.0.3 from the GitHub release tarball, built and installed with its own CMake defaults (`GLM_BUILD_LIBRARY=ON`, so `glm::glm` is the static library and the include dirs sit on `glm::glm-header-only`):
+
+```bash
+cmake -S glm-1.0.3 -B glm-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGLM_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=$PWD/glm-1.0.3-prefix
+cmake --build glm-build -j 32 && cmake --install glm-build
+```
+
+In each tree (`<extra>` per row below):
+
+```bash
+cmake -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release -DOHM_FEATURE_CUDA=ON -DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc <extra>
+cmake --build <build> -j 32 -- -k 0
+```
+
+As before, `OhmCuda.cmake` replaces `CMAKE_CUDA_ARCHITECTURES` with the default `OHM_CUDA_ARCHITECTURES` (`50;52;53;60;61;62;70;72;75;80;86`), so all 11 archs were compiled.
+
+| tree | glm | `<extra>` | configure | build steps | first error |
+|---|---|---|---|---|---|
+| port e9149bb | 0.9.9.8 | none | 0 | 227/227 | none |
+| base 4e2e769 | 0.9.9.8 | none | 0 | 204/227, 2 FAILED | `ohmutil/PlyPointStream.cpp:112: 'exchange' is not a member of 'std'` (also `ohm/VoxelBuffer.cpp:24`) |
+| base 4e2e769 | 0.9.9.8 | `-DCMAKE_CXX_FLAGS="-include utility"` | 0 | 227/227 | none |
+| port e9149bb | 1.0.3 package | `-DCMAKE_PREFIX_PATH=<glm-1.0.3-prefix>` | 0 (`glm_DIR=<prefix>/share/glm`, `-isystem <prefix>/include` on every TU) | 227/227 | none |
+| base 4e2e769 | 1.0.3 package | same, plus `-include utility` | 1 | not generated | `cmake/Findglm.cmake:52: Could NOT find glm (missing: GLM_INCLUDE_DIRS)` |
+| base 4e2e769 | 1.0.3 headers | `-DGLM_INCLUDE_DIRS=<prefix>/include -DCMAKE_IGNORE_PATH=/usr/share/cmake/glm -include utility` | 0 | 207/227, 3 FAILED | `ohm/CovarianceVoxel.h:67: 'glm::dquat' has not been declared` (CovarianceVoxel.cpp, ohmtools/OhmCloud.cpp, CovarianceTestUtil.cpp) |
+
+All base failures are upstream's (GCC 13 libstdc++ `<utility>`; glm 1.0 config package and missing `gtc/quaternion.hpp` include), and the port's 4ad6bfc and 659a15d clear exactly them. No port-only failure: no CUDA regression at e9149bb. Note that `-DGLM_INCLUDE_DIRS=<glm-1.0.3>` alone does not select glm 1.0.3 on a host with `libglm-dev`: `find_package(glm CONFIG)` in Findglm finds Ubuntu's 0.9.9.8 first and the build silently uses `/usr/include/glm` (a first attempt built 227/227 that way); `CMAKE_IGNORE_PATH` is needed to test the headers alone.
+
+Warnings: port (0.9.9.8) and base with `-include utility` have identical sorted warning lists (16 lines: 9x nvcc `architectures prior to '<compute/sm/lto>_75' will be removed`, one per `.cu`; `ohm/VoxelLayout.cpp:216 -Wstringop-truncation`; CMake deprecation/dev warnings), and the port's glm 1.0.3 build has the same list. nvcc really compiled the kernels: `ninja -t commands` lists 9 `/usr/local/cuda-12.8/bin/nvcc` invocations in every configuration (8 `ohmgpu/gpu/*.cu`, `tests/gputiltest/cuda/matrix_kernel.cu`); `cuobjdump --list-elf lib/libohmcuda.a` gives 8 ELF images for each of sm_50..sm_86 (88) in both port builds. No compile command in any CUDA build references `hip_compat`, `OHM_FEATURE_HIP` or `__HIP`. Binaries in both port builds: `gputiltestcuda ohm2ply ohmcmp ohmfilter ohmheightmap ohminfo ohmpopcpu ohmpopcuda ohmprob ohmquerycuda ohmsubmap ohmtest ohmtestcuda ohmtestheightmap slamiotest`, the same list as at 7c09435. No GPU run; no stage or platform record changed.
