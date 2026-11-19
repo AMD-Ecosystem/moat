@@ -119,9 +119,7 @@ fix was needed; the gfx90a/gfx1100 fat binary covers the followers.
 
 ## CMake option
 
-`option(USE_HIP ...)` (default OFF). With ESPRESSO_BUILD_WITH_CUDA=ON it enables
-language HIP, defaults CMAKE_HIP_ARCHITECTURES to gfx90a only-if-unset, flips the
-7 core .cu to LANGUAGE HIP, links hip::hipfft, and pins -ffp-contract=on.
+`option(ESPRESSO_BUILD_WITH_HIP ...)` (default OFF; named `USE_HIP` before 4861f4839). With ESPRESSO_BUILD_WITH_CUDA=ON it stops at configure if ESPRESSO_BUILD_WITH_WALBERLA is ON, enables language HIP (an explicit CMAKE_HIP_ARCHITECTURES is honoured, otherwise the build host's GPUs are auto-detected; the gfx90a default was removed in 8e228b5d), flips the 7 core .cu to LANGUAGE HIP, links hip::hipfft, and pins -ffp-contract=on. No C++ macro is derived from it; the sources test `__HIP__` / `__HIPCC__`.
 
 ## Review 2026-06-04
 
@@ -760,3 +758,27 @@ What I checked myself:
 Non-blocking, for whoever drafts the upstream PR body:
 - The Test Plan's CUDA block starts with `cp maintainer/configs/maxset.hpp build-cuda/myconfig.hpp`, which runs before anything creates `build-cuda`, so it fails as written ("No such file or directory"). The 01090739c message has the same line. Fixing it in the commit would mean rewriting history, so do not; add `mkdir -p build-cuda` in the PR body's Test Plan. In the same block, the `pre-commit run --files` line names 3 of the 6 touched files. The command is correct but narrower than the change.
 - Records: the `## CMake option` section near the top of this file still says `option(USE_HIP ...)` and mentions a gfx90a default (which 8e228b5d0 already dropped). It is a stale project record, not fork content.
+
+## Validation 2026-11-19 (linux-gfx950, MI355X wave64, polish round 4861f4839)
+
+State: revalidate -> completed. GPU: AMD Instinct MI355X (gfx950), `HIP_VISIBLE_DEVICES=3`, `ulimit -c 0`. ROCm: pip ROCm SDK 10.1.0 (HIP 7.16.26385, clang from `rocm-sdk path --root`, no /opt/rocm). Validated sha: 4861f483930b774eccb14a26125de323d1a33851, fork clone `projects/espresso/src` clean at head. Builds: the porter's `build-hip` of "Porter 2026-11-19 (polish round)" (default myconfig, gfx950, 236/236) and a new `build-max`, same configure line plus `-DESPRESSO_MYCONFIG_FILE=<src>/maintainer/configs/maxset.hpp` (236/236 plus `python_test_data cuda_test`; 30 warnings, all the known ROCm 10.1 `nodiscard` `-Wunused-value`; 4 offload bundles, all gfx950). OpenMPI 5.0.8 runtime prefix and Boost 1.83 from the earlier jobs on this host, first on `PATH`/`LD_LIBRARY_PATH`.
+
+```
+cmake --build <build> -j 32 --target local_samples local_benchmarks   # before each ctest run
+ctest --test-dir build-hip -L gpu --timeout 900 -j 8
+cmake --build build-hip -j 48 --target check_unit_tests
+ctest --test-dir build-max -L gpu --timeout 900 -j 8 --output-on-failure
+ctest --test-dir build-max -L gpu -E 'sample_|benchmark_' -V --timeout 900 -j 8
+cmake --build build-max -j 48 --target check_unit_tests
+ctest --test-dir build-hip -LE gpu --timeout 900 -j 16
+```
+
+Counts are passed / skipped / failed (ctest's "Skipped" is the exit-5 mapping; earlier records wrote 71 + 3 as "74/74").
+
+- GPU suite, default myconfig (`-L gpu`, 74 tests): **71 passed / 3 skipped / 0 failed**. Skipped: `sample_p3m_with_gpu`, `benchmark_p3m_with_gpu` (script runs on import, no test methods, exit 5), `benchmark_lb_with_gpu` (WALBERLA not built). The same three as every earlier run.
+- GPU suite, maxset myconfig (`-L gpu`, 74 tests): **71 passed / 3 skipped / 0 failed**, the same three skipped. **First maxset run on an Instinct (wave64) GPU**; it had run only on gfx1201. Verbose rerun without samples/benchmarks: 68/68 passed. Cases the default config compiles out ran and passed: dipole_field_tracking test_dds, test_dds_gpu; dipolar_direct_summation test_dds_gpu, test_inner_loop_consistency_gpu, test_min_image_convention_gpu; dawaanr-and-dds-gpu test_dds_gpu, test_dds_mixed_particles, test_dds_replica_cpu, test_dp3m_dlc/metallic/non_metallic. Every unittest-level skip names a feature not built or out of scope (WALBERLA, WALBERLA_FFT, MMM1D, STOKESIAN_DYNAMICS, SCAFACOS, SCAFACOS_DIPOLES, THERMAL_STONER_WOHLFARTH, H5MD) or is a mode or combination filter inside the test.
+- Unit tests (`check_unit_tests`): default **136 passed / 0 skipped / 0 failed**; maxset **136 passed / 0 skipped / 0 failed**.
+- Non-GPU suite, default (`-LE gpu`, 403 tests): 346 passed / 29 skipped (exit 5) / 28 failed, all environmental and the same set as every earlier run: 26 `tutorial_*` Not Run (no Jupyter/tutorials target), `test_convert` (no `nbformat`), `test_install` (never installed). No regression.
+- CUDA no-regression at this head: PASS, nvcc 12.8.93, 542/542 steps, 0 FAILED, 0 warnings (porter section above).
+- Jargon: `python3 utils/jargon.py --port espresso` clean. Docs: "AMD GPU acceleration" in `doc/sphinx/installation.rst`; the `sphinx` target (`-W`) builds.
+- Gates: wave64 satisfied at 4861f4839 by this run. wave32 (gfx1201) validated 01090739c; the delta is CMake option rename + a configure-time error + a comment + docs + cmake-format, so compiled output with the option on should be unchanged, but it is `mixed` to the classifier: wave32 owes a revalidation or a binary-equivalence carry-forward on an RDNA host. windows is waived.
