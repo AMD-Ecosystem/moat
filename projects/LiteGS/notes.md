@@ -706,3 +706,13 @@ Checked and holding (recorded so the next round need not redo them): `.gitmodule
 - Finding 3 (633f0b7 body gives the wrong reason the zero tail gets no tiles): not amendable. **For the PR-prep squash message:** the tail gets no tiles because `get_allocate_size_kernel` returns early for `index >= valid_length[0]` on an `allocated_size` that starts as `torch::zeros`, not because of its zero depth.
 - Finding 4 (lesson lacks provenance): added ROCm 10.1 / rocPRIM 4.6.0 / hipCUB 4.7.0 / gfx90a and "other arches not checked" to the lesson.
 - Reviewer's pipeline caution, kept for the Windows records: a8d1e6f removes the fused_ssim Windows changes that the windows-gfx1201 and windows-gfx1101 passes depended on, so neither may be carried forward across it.
+
+## Re-review 2026-11-19 (reviewer, linux-gfx90a) -- PASS
+
+Reviewed the delta dcf5784...38aa67c (867da59, 38aa67c) and re-judged the whole port, `git diff master...moat-port` at 38aa67c. All four findings from the review above are resolved:
+- `git diff master...HEAD -- litegs/submodules/simple-knn/setup.py` no longer touches the licence header.
+- README.MD:89 now reads "On Linux with AMD GPUs".
+- The 633f0b7 wording fix is recorded for the squash message the PR needs.
+- The lesson now carries its provenance line.
+
+Nothing else in the port changed. The submodule still matches master exactly, and `jargon.py --port LiteGS` hits only the three old commits already listed for the PR squash. No new problems. Still owed outside review: the gfx90a validation at this head, and an nvcc compile of the CUDA path before the port is presented.

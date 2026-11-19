@@ -71,3 +71,5 @@
 {"kind":"phase","ts":"2026-11-19T04:22:56Z","phase":"test","seconds":19.003,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261118-195834-litegs-fix-prompt/venv/bin/python -u agent_space/litegs/metrics_nolpips.py /var/lib/jenkins/fleet/jobs/mi200-20261118-195834-litegs-fix-prompt/moat/projects/LiteGS/src -s /var/lib/jenkins/fleet/jobs/mi200-20261118-195834-litegs-fix-prompt/data/scenes/tandt/truck -i images -m /var/lib/jenkins/fleet/jobs/mi200-20261118-195834-litegs-fix-prompt/data/out/truck_eval --eval"}
 {"kind":"session","ts":"2026-11-19T04:27:15Z","epoch":1795062435.87093,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-11-19T04:31:22Z","epoch":1795062682.098853,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-19T04:33:17Z","epoch":1795062797.623087,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-19T04:33:50Z","epoch":1795062830.906054,"event":"end","platform":"linux-gfx90a"}
