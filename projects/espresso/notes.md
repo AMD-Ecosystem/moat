@@ -439,3 +439,23 @@ Verdict: review-passed. No blocking defect. The items below are non-blocking; fi
 - Upstream GPU source delta: `p3m_calc_topology` keeps blocks <= 1024 threads (valid on AMD), `__VA_OPT__` in `KERNELCALL` is fine under clang-HIP, no warp intrinsics / `warpSize` / hardcoded 32 / textures in any `src/core` `.cu`. New GPU test `elc_nonneutral.py` (GPU_SLOTS 1) runs under `-L gpu`; new walberla `.cu` tests are out of scope (waLBerla OFF). `-Werror` applies to CXX and CUDA only, so the new ROCm-10.1 `nodiscard` `-Wunused-value` warnings in HIP TUs cannot fail a warnings-as-errors build.
 - Docs: rocThrust needs no CMake hint (headers come from the ROCm include dir that clang-HIP and `hip::hipfft` both add); waLBerla OFF is genuinely required (see finding above); `CMAKE_HIP_COMPILER` is optional on a standard /opt/rocm install but harmless; `|p3m|` substitution and the `:ref:` label resolve (conf.py.in:254, label at installation.rst:298).
 - Commits: titles 62/56/42 chars; `[ROCm]` on the two ROCm-only commits, none on the merge; AI disclosure in prose; fenced Test Plans; no Co-Authored-By/noreply trailer; no AMD-internal references; `python3 utils/jargon.py --port espresso` clean; diff is ASCII.
+
+## Validation 2026-11-19 (linux-gfx942, MI300X wave64)
+
+State: port-ready -> completed. GPU: AMD Instinct MI300X (gfx942), HIP_VISIBLE_DEVICES=0. ROCm: pip ROCm SDK 10.1.0 (clang 24.0.0, no /opt/rocm). Validated sha: 87cbc046d27c1eabd33eec8c208014bface17b07 (upstream sync head). Built `-DCMAKE_HIP_ARCHITECTURES=gfx942`, the recipe in "Upstream sync 2026-11-19" above; tree clean at head.
+
+```
+cmake --build build-hip -j 96
+cmake --build build-hip -j 96 --target python_test_data cuda_test local_samples local_benchmarks
+ctest --test-dir build-hip -L gpu --timeout 900 -j 8
+cmake --build build-hip -j 96 --target check_unit_tests
+ctest --test-dir build-hip -LE gpu --timeout 900 -j 16
+```
+
+- GPU suite (`-L gpu`): **74/74 PASS** in one clean run. This includes every core consistency gate from earlier rounds (coulomb_cloud_wall, coulomb_cloud_wall_duplicated, p3m_madelung, p3m_electrostatic_pressure, dawaanr-and-dds-gpu, dipolar_direct_summation, dipolar_interface, coulomb_interface, dipole_field_tracking, gpu_availability), upstream's new and extended GPU tests (elc_nonneutral, the extended p3m_madelung and dipolar_direct_summation), coulomb_tuning, long_range_actors, the GPU checkpoint tests, and, for the first time on this port, the `sample_*_with_gpu` / `benchmark_*_with_gpu` tests. Those need the `local_samples` / `local_benchmarks` targets plus `tqdm` and `matplotlib` in the Python environment; the earlier "fails on CUDA too" note was a missing target and missing packages, not a property of the tests. The samples copy must be rebuilt before each ctest run: a second run fails with "already processed, cannot overwrite".
+- `cuda_test` and `code_info` (the new toolchain test fixed by a15c89169): PASS.
+- Unit tests (`check_unit_tests`, GTest-free Boost.Test executables, multi-rank MPI included): **136/136 PASS**.
+- Non-GPU suite (`-LE gpu`, 403 tests): 374 pass. The 29 failures are all environmental: 26 `tutorial_*` Not Run (tutorial notebooks need Jupyter/nbconvert and the tutorials target), `test_convert` (no `nbformat`), `test_install` (`cmake --install` never run; it diffs files under /usr/local), and `benchmark_mc_acid_base_reservoir`, which needed `pint` and passes on rerun after installing it. No regression.
+- Jargon: `utils/jargon.py --port espresso` clean. Docs: "AMD GPU acceleration" in doc/sphinx/installation.rst (87cbc046d).
+- CUDA no-regression compile: `cuda-not-validated: this host has no CUDA toolkit (no nvcc, no /opt/conda to create the cuda-12.8 env)`. The CUDA-side delta of this round is CMake-only (`NOT USE_HIP` on the Kokkos CUDA gate; `Kokkos::kokkos` in the CUDA `cuda_test` branch, exactly as upstream has it). It still needs the nvcc compile on the CUDA fleet host before the PR goes to jeff.
+- Still owed before PR prep: gfx90a (wave64) and gfx1100 (wave32) were validated at 8e228b5d, not at this head. This run satisfies wave64 at 87cbc046d; wave32 needs a run on an RDNA host.
