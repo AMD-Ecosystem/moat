@@ -7,23 +7,19 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-08T13:34:12Z",
-  "updated_at": "2026-11-19T17:03:15Z",
+  "updated_at": "2026-11-19T17:04:09Z",
   "head_sha": "f33fdb60e68ad499c0e3b43c76b4f6c8f3d2b197",
   "depends_on": [],
   "pr_url": "https://github.com/Pointcept/Pointcept/pull/604",
   "pr_number": 604,
   "pr_opened_at": "2026-06-24T18:20:48Z",
   "pr_merged_at": "2026-07-06T02:49:04Z",
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-19T17:03:15Z",
-    "holder": "668b246f9c39"
-  },
+  "porting": null,
   "waivers": {},
   "pr_state": "merged",
   "license_spdx": "MIT",
   "upstream_repo_id": 617093311,
-  "stage": "reviewing",
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -163,7 +159,7 @@
       "failed_sha": null,
       "started_at": "2026-11-19T16:56:28Z",
       "completed_at": null,
-      "updated_at": "2026-11-19T17:03:15Z",
+      "updated_at": "2026-11-19T17:04:09Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -182,8 +178,9 @@
   },
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-11-19T16:56:28Z",
-    "at": "2026-11-19T17:02:43Z"
+    "since": "2026-11-19T17:03:15Z",
+    "at": "2026-11-19T17:04:09Z"
   },
-  "published_sha": "95f4a51cafc42523364ada3381e71a85a860cd68"
+  "published_sha": "95f4a51cafc42523364ada3381e71a85a860cd68",
+  "reviewed_sha": "f33fdb60e68ad499c0e3b43c76b4f6c8f3d2b197"
 }
