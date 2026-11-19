@@ -57,3 +57,4 @@
 {"kind":"phase","ts":"2026-11-19T06:22:37Z","phase":"test","seconds":0.003,"exit":2,"cmd":"make USE_HIP=1 HIP_ARCHITECTURES=gfx942 check-gpu"}
 {"kind":"phase","ts":"2026-11-19T06:22:48Z","phase":"test","seconds":3.07,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261118-221113-plumed2-checkgpu-prompt/moat/projects/plumed2/src/plugins/cudaCoord USE_HIP=1 HIP_ARCHITECTURES=gfx942 check-gpu"}
 {"kind":"session","ts":"2026-11-19T06:26:10Z","epoch":1795069570.355492,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-19T06:27:41Z","epoch":1795069661.773273,"event":"end","platform":"linux-gfx942"}
