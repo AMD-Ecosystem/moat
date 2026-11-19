@@ -23,6 +23,7 @@ own name, so a CI log says which gate to look at.
 """
 
 import argparse
+import importlib.metadata
 import importlib.util
 import json
 import os
@@ -137,6 +138,12 @@ def gate_branch_scope():
     return problems
 
 
+# The pyflakes CI installs (.github/workflows/ci.yml; tests/test_ci_scope.py holds the
+# two together). pyflakes gains checks between releases, so a host on another version
+# can pass what CI fails.
+PYFLAKES_PIN = "4.0.3"
+
+
 def gate_code():
     """The Python actually resolves: no undefined names, no dead imports or locals.
 
@@ -152,6 +159,13 @@ def gate_code():
         return []
     if importlib.util.find_spec("pyflakes") is None:
         return ["pyflakes not installed (pip install pyflakes); cannot check code"]
+    have = importlib.metadata.version("pyflakes")
+    if have != PYFLAKES_PIN:
+        # A warning, not a failure: the result below still stands for this host, but
+        # CI may disagree with it in either direction.
+        print(f"check: code: this host has pyflakes {have} and CI runs {PYFLAKES_PIN}, "
+              f"so the two can disagree (pip install pyflakes=={PYFLAKES_PIN})",
+              file=sys.stderr)
     files = sorted(str(p) for p in (REPO / "utils").glob("*.py"))
     r = _run([sys.executable, "-m", "pyflakes", *files])
     out = (r.stdout + r.stderr).strip()

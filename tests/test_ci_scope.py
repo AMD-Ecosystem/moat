@@ -89,6 +89,8 @@ class Workflow(unittest.TestCase):
                          ["jsonschema", "pyflakes"])
         for p in packages:
             self.assertRegex(p, r"^[a-z]+==\d+\.\d+\.\d+$")
+        # The hook warns when the host's pyflakes is not the one CI installs.
+        self.assertIn(f"pyflakes=={check.PYFLAKES_PIN}", packages)
 
 
 class PushShape(unittest.TestCase):
