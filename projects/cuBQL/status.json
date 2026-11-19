@@ -7,19 +7,23 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-15T22:09:37Z",
-  "updated_at": "2026-10-09T15:39:59Z",
+  "updated_at": "2026-11-19T03:25:37Z",
   "head_sha": "b0ea6a1712b40809df28950c9bb3746bc6e99083",
   "depends_on": [],
   "pr_url": "https://github.com/NVIDIA/cuBQL/pull/35",
   "pr_number": 35,
   "pr_opened_at": "2026-06-17T00:33:21Z",
   "pr_merged_at": "2026-06-18T18:53:23Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx950",
+    "since": "2026-11-19T03:25:37Z",
+    "holder": "d11d62a29ec8"
+  },
   "waivers": {},
   "pr_state": "merged",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 1072553476,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -126,6 +130,28 @@
         "method": "source-class",
         "detail": "comment-only fix to a CMake comment; no code change",
         "at": "2026-06-17T00:28:41Z"
+      }
+    },
+    "linux-gfx950": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-19T03:25:37Z",
+      "completed_at": null,
+      "updated_at": "2026-11-19T03:25:37Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
       }
     }
   },
