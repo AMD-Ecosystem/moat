@@ -7,9 +7,13 @@
   "priority": 4.566,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-11-19T22:01:11Z",
+  "updated_at": "2026-11-19T22:56:10Z",
   "head_sha": "1664e6da19e9fd89b437bcd6e38db1e654edb6b1",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx1201",
+    "since": "2026-11-19T22:56:10Z",
+    "holder": "0e6e5a381797"
+  },
   "waivers": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
@@ -19,7 +23,7 @@
   },
   "license_spdx": "non-commercial",
   "upstream_repo_id": 877079178,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "validation-failed",
@@ -144,9 +148,9 @@
       "blocked_reason": null,
       "validated_sha": "e24abb264834ee89f2d5f61e83c34aa17950d01a",
       "failed_sha": "e24abb264834ee89f2d5f61e83c34aa17950d01a",
-      "started_at": null,
+      "started_at": "2026-11-19T22:56:10Z",
       "completed_at": "2026-11-19T20:43:42Z",
-      "updated_at": "2026-11-19T20:43:42Z",
+      "updated_at": "2026-11-19T22:56:10Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -161,7 +165,7 @@
         "last_session_at": null
       },
       "state": "completed",
-      "last_agent": "validator",
+      "last_agent": "porter",
       "carry_forward": {
         "from": "38aa67ca155b8d2db59a3b2895d4348045377203",
         "to": "e24abb264834ee89f2d5f61e83c34aa17950d01a",
