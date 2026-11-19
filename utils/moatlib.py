@@ -2433,6 +2433,32 @@ def set_fork_url(name, url, by, reason=None):
     return obj
 
 
+def _repoint_pr_urls(obj, old, new):
+    """Rewrite the pull-request links recorded under the repository's old address.
+    Returns how many changed. Pull requests travel with a transferred repository
+    and keep their numbers, and the old address is only a redirect until someone
+    reuses the name (ffpa-attn's was reused within the day, and every lookup of
+    our merged PR then failed)."""
+    if not old or not new or old.lower() == new.lower():
+        return 0
+    prefix = old.rstrip("/") + "/"
+
+    def moved(u):
+        return (new.rstrip("/") + "/" + u[len(prefix):]
+                if isinstance(u, str) and u.lower().startswith(prefix.lower()) else u)
+    n = 0
+    holders = [obj] + [h for h in obj.get("pr_history") or [] if isinstance(h, dict)]
+    for h in holders:
+        if moved(h.get("pr_url")) != h.get("pr_url"):
+            h["pr_url"] = moved(h["pr_url"])
+            n += 1
+        via = h.get("landed_via")
+        if isinstance(via, dict) and moved(via.get("url")) != via.get("url"):
+            via["url"] = moved(via["url"])
+            n += 1
+    return n
+
+
 def set_upstream_url(name, url, by, reason=None):
     """Record a person's ruling that the upstream repository now lives at `url`.
 
@@ -2456,6 +2482,14 @@ def set_upstream_url(name, url, by, reason=None):
         raise ValueError(f"{name}: expected https://github.com/<owner>/<repo>, got {url!r}")
     old = (obj.get("upstream_url") or "").rstrip("/").removesuffix(".git")
     if url == old:
+        # Already ruled, by tooling that left the PR links on the old address:
+        # finish that, and refuse only when there is nothing left to do.
+        prev = (obj.get("upstream_url_ruling") or {}).get("previous")
+        ok, why = record_writable_here(name)
+        if prev and ok and _repoint_pr_urls(obj, prev, url):
+            save_record(name, obj, f"{name}: pull-request links follow the "
+                                   f"upstream to {url}")
+            return obj
         raise ValueError(f"{name}: upstream_url is already {url}")
     rid = obj.get("upstream_repo_id")
     if not rid:
@@ -2479,6 +2513,7 @@ def set_upstream_url(name, url, by, reason=None):
         raise ValueError(why)
     url = f"https://github.com/{canon}"
     obj["upstream_url"] = url
+    _repoint_pr_urls(obj, old, url)
     obj["upstream_url_ruling"] = {"url": url, "previous": old or None,
                                   "by": by, "at": now_iso()}
     if reason:
