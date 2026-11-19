@@ -668,3 +668,37 @@ reads revalidate at this head; it must confirm the dropped runtime-init helper,
 see the upstream-sync section), and jeff's answers to the four questions in the
 upstream-sync section. linux-gfx90a also reads revalidate (extra wave64 evidence;
 this platform satisfies wave64 at head).
+
+## Validation 2026-11-19 (linux-gfx1201)
+
+Validated sha: 388fcc10fd9a7d0c8e01362ec1d43ee830313368 (fresh fork clone checked out at head, no modified tracked files). GPU: AMD Radeon RDNA4 gfx1201, wavefront size 32 (rocminfo), HIP_VISIBLE_DEVICES=1 (one GPU visible; logs say "runs on GPU 0"). ROCm 10.1 Python wheels (HIP 7.16.26385, AMD clang 24.0.0git), g++ 13.3.0, MPICH 4.2.3 built from source into the job directory (`--with-device=ch3 --disable-fortran`), PLUMED upstream master 422109dc3 (the head's merge parent) built with `./configure --prefix=<job>/deps/plumed CXX=mpicxx CC=mpicc` and installed. Same Makefile.conf flags as gfx942 (`-O3 -fPIC ... -std=c++17 -fno-gnu-unique -fopenmp`, `-D__PLUMED_HAS_MPI=1`).
+
+Build:
+```bash
+export PATH=<plumed>/bin:<mpich>/bin:$PATH PLUMED_KERNEL=<plumed>/lib/libplumedKernel.so LD_LIBRARY_PATH=<plumed>/lib:<mpich>/lib:$LD_LIBRARY_PATH
+cd plugins/cudaCoord
+USE_HIP=1 ./configure.sh
+make USE_HIP=1 HIP_ARCHITECTURES=gfx1201
+```
+Built clean; only code object amdgcn-amd-amdhsa--gfx1201. 88 warnings, all the known harmless ones (84 nodiscard `hipError_t` ignored in upstream destructors/guards, 4 -Wreorder-ctor). Plugin NEEDED: libamdhip64.so.7, libplumedKernel.so, no libomp; SONAME CudaCoordination.so; FLAGS_1 NODELETE.
+
+Tests:
+```bash
+cd regtest && ln -s ../../../regtest/scripts . && cd ..
+make USE_HIP=1 HIP_ARCHITECTURES=gfx1201 check
+```
+Result: PASS. "34 tests performed, 0 tests not applicable, 0 errors found": cudatest 14/14 (includes rt-double-rotatedbox and rt-input-errors), cudatestPair 8/8, cudatestWB 12/12 (rt-double-orthopbc-mpi with mpiprocs=2). The same set the gfx942 run had; nothing skipped. The regtests cover THREADS=64/128/256/512/1024 and the default; none uses THREADS=32.
+
+Runtime init (the dropped June `ensureHipRuntimeInitialized()` helper): no segfault, no hang on this wave32 host in any run (34 regtests plus the extra runs below); the constructor's `chooseGPU`/`deviceGuard` path initializes HIP before the first allocation as the review reasoned. (This is gfx1201, not the gfx1100 that showed the June segfault; it is the same wave32 family and runtime path.)
+
+THREADS=32 (and wave32-specific) extra run, scratch inputs only (nothing committed), with `plumed --no-mpi driver`, each GPU action against CPU COORDINATION, DUMPDERIVATIVES at %14.8f (values and every derivative), on both the release plugin above and a debug copy built from the same sources with `-DNDEBUG=1` removed from Makefile.conf (HIP's device-side shuffle mask assertions live):
+- traj-nopbc.xyz (10 frames): self THREADS=32 (log: "threads per block (a warp per atom): 32"), THREADS=64, default (256); dual GROUPA=GROUPB=1-108 THREADS=32; PAIR 1-107/2-108 THREADS=32; self D_MAX=1.45 with THREADS=32 and with the default.
+- traj-ortho.xyz: self 1-108 R_0=0.4 THREADS=32; dual 1-50 / 51-108 THREADS=32.
+- traj-rotating.xyz with FIT_TO_TEMPLATE (rotated box, as rt-double-rotatedbox): dual 1-20 / 21-220, dual single-atom GROUPA=1 with NL_CUTOFF=2.9, self 1-220, each THREADS=32, NN=6 MM=12 D_MAX=2.5.
+Result: max |GPU - CPU| = 0 for every column in all 9 files of each build (rows: 3330 to 6570 per file), release and debug alike; no trap, no assertion. So the per-group `warpMask()` is correct when the 32-lane logical warp is the whole wavefront, at 32-thread blocks and larger.
+
+CUDA gate: not rerun; already recorded at this head_sha in the linux-gfx942 validation (compile and link with nvcc 12.8.93, SASS identical to upstream).
+
+Content checks: `python3 utils/jargon.py --port plumed2` clean (needed local `master`/`moat-port` refs in the fresh clone: `git branch master origin/master`); the HIP build is documented in plugins/cudaCoord/README.md next to the nvcc build.
+
+With this run wave32 is satisfied at head (wave64 by linux-gfx942; windows waived). Still open for pr-ready: jeff's answers to the four questions in the upstream-sync section.
