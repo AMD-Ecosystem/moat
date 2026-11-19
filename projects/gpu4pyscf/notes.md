@@ -4947,3 +4947,16 @@ Four trees, each built alone with upstream's command plus `CMAKE_CONFIGURE_ARGS=
 
 ### Gates
 `jargon.py --port gpu4pyscf`: clean. `prose.py` on both commit bodies: clean. `audit-commits gpu4pyscf`: OK. Integrity: `git -C projects/gpu4pyscf/src status --porcelain` shows only untracked build output.
+
+## Review 2026-11-19 (reviewer, linux-gfx942, fork moat-port @ 0647712 delta from 7cbd3d2) -- REVIEW PASSED
+
+Scope: `git diff 7cbd3d2f..06477124`, one commit (pbc/df/grad/rhf.py `indexed_scale`, `cuDoubleComplex` -> `double2`, `#include <cuComplex.h>` dropped). No findings. The porter's claims were checked independently:
+- CUDA unchanged: `typedef double2 cuDoubleComplex;` is at line 186 of the CUDA 12.9 cuComplex.h (cudapip). agent/rhf_{old,new}.py are byte-identical to the 7cbd3d2f and 06477124 blobs; rerunning agent/nvrtc_cmp.py (NVRTC 12.9.86) gives identical 1462-byte PTX at compute_70/80/90.
+- No other runtime-compiled source in the tree includes a CUDA-only header or uses cuComplex types: the only `#include` lines in any .py are the four `<cupy/complex.cuh>` (multigrid.py:794, multigrid_v3.py:1175/1261/1409); the remaining kernel sites are `cp.fuse` (gw, pbc/gw, dft/numint), the `__init__` ElementwiseKernel probe, and include-free RawKernel/RawModule sources.
+- Upstream convention: d9a78f71 (#1042) replaced `<cuComplex.h>`/`cuDoubleComplex` with `double2` in multigrid_v3 `apply_Gv_1j`/`contract_Gv_1j` the same way.
+- Kernel on this GPU (HIP_VISIBLE_DEVICES=1, fresh CuPy cache so hipRTC compiled it): exact against NumPy (max diff 0.0) for (4x8, idx [1,3]), (50x3001, 4 rows; exercises the blockDim stride loop past 1024), (10x1024, all rows) and an empty idx.
+- Commit message: title 65 chars, no prefix (shared code, added lines name no HIP/ROCm; correct per the rule), cause/change rationale, "Authored with Claude.", no Co-Authored-By or noreply, ASCII, fenced Test Plan. `jargon.py --port gpu4pyscf` clean, `audit-commits gpu4pyscf` OK, fork tree clean apart from untracked build output.
+- Numbers against res/ (junit_sum2.py): before-pbc 438/68/10/0, head-pbc 482/24/10/0, head-all 2218/39/109/0, sa-master-pbc = sa-pr7-pbc 221/268/10/17 with identical failure and error sets, sa-a-pbc 396/97/10/13 -> sa-a7-pbc 432/61/10/13, scf+dft 336/12/23/0 both sides with the same 12. No test fails at head that passed before (fork and standalone (a)+this).
+- The 3 newly reached RSH GDF gradient misses (krks/kuks test_df_rsh_grad, rks test_df_sr_rsh_grad) failed at the hipRTC compile before and at an FD bound now; the kernel they newly reach is exact, so the classification "not caused by this change, not root-caused" stands. The no-multigrid 1.10e-5 rerun (agent/rsh_fd.py) was taken as recorded, not repeated.
+
+Not covered: wave32 and Windows have not run 0647712 (validator's job). The pr-1054-hiprtc-cucomplex branch (0e23c1e1) was read only, not reviewed as part of this delta; its Test Plan already carries the standalone numbers above.
