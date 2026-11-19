@@ -388,7 +388,7 @@ python3 utils/moatlib.py classify tiny-vllm ace290fe32e4597ddb7f86ae6dc58a353eb0
    src/cuda_to_hip.h: comment-only (comments/format only)
 ```
 
-Confirmed with `git diff ace290f d6b1ab3` directly: the only change is removal of two comment lines (`// Copyright (c) 2026 Advanced Micro Devices, Inc.` and `// Author: Jeff Daily <jeff.daily@amd.com>`) from `src/cuda_to_hip.h` -- the same PR-fix-round-2026-07-02 commit already carried forward to linux-gfx1100/windows-gfx1101/windows-gfx1201. No code, no CMake, nothing that touches codegen.
+Confirmed with `git diff ace290f d6b1ab3` directly: the only change is removal of two comment lines (`// Copyright (c) 2026 Advanced Micro Devices, Inc.` and `// Author: Jeff Daily <author email>`) from `src/cuda_to_hip.h` -- the same PR-fix-round-2026-07-02 commit already carried forward to linux-gfx1100/windows-gfx1101/windows-gfx1201. No code, no CMake, nothing that touches codegen.
 
 Carried forward with no rebuild and no GPU re-run:
 ```

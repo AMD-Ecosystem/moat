@@ -1,0 +1,60 @@
+{
+  "schema_version": 3,
+  "name": "tvm",
+  "upstream_url": "https://github.com/apache/tvm",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "awaiting-fork",
+  "adopted_at": "2026-11-06T01:31:43Z",
+  "updated_at": "2026-11-11T18:53:12Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-06T02:01:29Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/apache/tvm/blob/main/LICENSE",
+      "at": "2026-11-06T01:59:55Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": null,
+    "viable": null,
+    "summary": "declined by Jeff Daily 2026-11-10 (gap-matrix intake): Apache TVM has a native, maintained upstream ROCm backend",
+    "at": "2026-11-11T18:53:10Z"
+  },
+  "on_hold": true,
+  "on_hold_reason": "declined by Jeff Daily 2026-11-10 (data/dispositions.json skip, already-supported); stage awaiting-fork has no legal edge back to unclaimed, so held to keep release-forks and the selector off it"
+}
