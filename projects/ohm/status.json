@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-11-19T19:25:57Z",
+  "updated_at": "2026-11-19T20:32:32Z",
   "head_sha": "e9149bbedcf8c8e1f6763884c0fcaeb3d70c31ee",
   "depends_on": [],
   "waivers": {},
@@ -201,5 +201,6 @@
     "at": "2026-11-19T05:43:02Z"
   },
   "porting": null,
-  "reviewed_sha": "e9149bbedcf8c8e1f6763884c0fcaeb3d70c31ee"
+  "reviewed_sha": "e9149bbedcf8c8e1f6763884c0fcaeb3d70c31ee",
+  "review_pr": "https://github.com/AMD-Ecosystem/ohm/pull/2"
 }
