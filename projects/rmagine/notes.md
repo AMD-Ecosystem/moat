@@ -3388,3 +3388,100 @@ on: README does not mention USE_HIP"): the review PR body states the option.
 linux-gfx942 VALIDATED at `e1b7ac5`: 8/8 cuda_ (2 runs) + 12/12 core_ PASS on MI300X. The wave64
 gate is satisfied at the staging tip. Still to revalidate at this head: wave32 (linux-gfx1100) and
 windows (gfx1151 last, per the Linux-before-Windows rule), plus the nvcc gate above.
+
+## Validation 2026-11-19 (linux-gfx1201, Radeon AI PRO R9700, fix round moat-fix-25 at e1b7ac5) -- PASS
+
+Fork AMD-Ecosystem/rmagine `moat-fix-25` at `e1b7ac57c740121150a87ba5e4279f718a80f331`
+(`head_sha`), fresh clone in `projects/rmagine/src`, detached at that commit. First record for
+this platform, so a full run (no carry-forward). GPU: AMD Radeon AI PRO R9700,
+`amdgcn-amd-amdhsa--gfx1201` (RDNA4, wave32), one GPU pinned with `HIP_VISIBLE_DEVICES`.
+ROCm 10.1.0 pip SDK (`_rocm_sdk_devel`, AMD clang 24.0.0git), CMake 3.31.6, Ninja.
+No HIPRT SDK on this host, so `rmagine_hiprt` is skipped by CMake (CMake warning, same as every
+non-gfx90a platform).
+
+### Build dependencies (built from source into `<job>/deps/prefix`, not the shared image)
+
+This host has no Boost, Eigen3 or assimp headers (TBB 2021.11 is installed). Built:
+
+```
+# assimp
+git clone --depth 1 -b v5.3.1 https://github.com/assimp/assimp assimp-src
+cmake -S assimp-src -B assimp-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DASSIMP_BUILD_TESTS=OFF \
+  -DASSIMP_BUILD_ASSIMP_TOOLS=OFF -DASSIMP_WARNINGS_AS_ERRORS=OFF -DCMAKE_INSTALL_PREFIX=<job>/deps/prefix
+cmake --build assimp-build -j 8 && cmake --install assimp-build
+# Eigen3 (header-only + config)
+git clone --depth 1 -b 3.4.0 https://gitlab.com/libeigen/eigen.git eigen-src
+cmake -S eigen-src -B eigen-build -DCMAKE_INSTALL_PREFIX=<job>/deps/prefix -DBUILD_TESTING=OFF && cmake --install eigen-build
+# Boost 1.83.0 (rmagine needs find_package(Boost CONFIG); headers + BoostConfig.cmake)
+curl -sSfL -o boost.tar.gz https://archives.boost.io/release/1.83.0/source/boost_1_83_0.tar.gz && tar xzf boost.tar.gz
+cd boost_1_83_0 && ./bootstrap.sh --with-libraries=system && ./b2 -j8 install --prefix=<job>/deps/prefix
+```
+
+### Configure + build (fresh build directory)
+
+```
+ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+B=agent_space/rmagine_gfx1201_val
+utils/timeit.sh rmagine compile -- cmake -S projects/rmagine/src -B $B -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 \
+  -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ "-DCMAKE_PREFIX_PATH=$ROCM;<job>/deps/prefix" \
+  -DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON -DRMAGINE_VULKAN_DISABLE=ON \
+  -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON -DRMAGINE_OUSTER_DISABLE=ON \
+  -DRMAGINE_BUILD_TESTS=ON -DRMAGINE_BUILD_TOOLS=OFF
+utils/timeit.sh rmagine compile -- cmake --build $B -j 8
+```
+
+76/76 targets, 0 errors. 115 warnings, all existing classes: 66 `-Wunused-value`, 46
+`-Wdeprecated-declarations` (`hipCtx*`, `hipDevicePrimaryCtx{Retain,Release}`), 3
+`-Wunused-result` (nodiscard `hipError_t`). `strings lib/librmagine-cuda.so.2.4.3` shows only the
+`gfx1201` code object.
+
+### Test results
+
+```
+utils/timeit.sh rmagine test -- ctest --test-dir $B --output-on-failure -R '^cuda_'
+# Run 1: 8/8 PASS (3.27 s); Run 2: 8/8 PASS (2.36 s)
+utils/timeit.sh rmagine test -- ctest --test-dir $B --output-on-failure -R '^core_'
+# 12/12 PASS (2.42 s) -- non-GPU set, no regression
+```
+
+20 tests registered (`ctest -N`), all run; the same 8 cuda_ and 12 core_ tests as the gfx942 run
+at this head, none skipped.
+
+Run-to-run output comparison of each `bin/rmagine_tests_cuda_*` (two runs, both rc=0): memory,
+memory_slicing, math_statistics, math_reduction_correctness and public_headers are byte-identical.
+The three that differ are explained by the tests themselves, not by the GPU: `cuda_math` prints
+wall-clock runtimes; `cuda_math_reduction` prints device `printf` lines whose block order varies
+(sorted output md5-identical across runs, `26b32355...`); `cuda_math_svd` seeds its inputs with
+`srand(time(0))` / `Eigen::Matrix3f::Random`.
+
+### GPU dispatch and the new primary-context path (wave32)
+
+`AMD_LOG_LEVEL=3 ./bin/rmagine_tests_cuda_math_reduction_correctness` dispatches
+`rmagine::cuda::sum_kernel<1024u, Vector3_<float>>`, `cov_kernel<1024u>` and
+`divNx1Inplace_kernel<Vector3_<float>>` on the R9700, prints
+`PASS: rm::sum/mean/cov match CPU reference and are deterministic`, exit 0. These are the
+1024-thread block reductions whose wave-size hardening tails the fix round's memory_math.cu
+merge had to keep; they are correct at wavefront width 32.
+`AMD_LOG_LEVEL=3 ./bin/rmagine_tests_cuda_math` logs one `hipDevicePrimaryCtxRetain ( ..., 0 )`
+at startup and one `hipDevicePrimaryCtxRelease ( 0 )` at exit, prints
+`[Rmagine - CudaContext] Construct context on device 0 - AMD Radeon AI PRO R9700`, exit 0 with no
+teardown fault: upstream's `createPrimary(0)` default context through the two new mappings.
+
+### CUDA no-regression gate
+
+cuda-not-validated (this host): no CUDA toolkit and no conda. Still owed at `e1b7ac5`: the
+compile-only nvcc build on the mi355 host, as recorded in the gfx942 section above.
+
+### Integrity, jargon, documentation
+
+`git -C projects/rmagine/src status --porcelain` empty; HEAD equals `head_sha`.
+`python3 utils/jargon.py --port rmagine`: clean (in a fresh clone it first needs local `main`
+and `moat-fix-25` branches; it refuses with "cannot resolve main..moat-fix-25" otherwise).
+Documentation: unchanged by this round; the earlier ruling on the README stands.
+
+### Verdict
+
+linux-gfx1201 VALIDATED at `e1b7ac5`: 8/8 cuda_ (2 runs) + 12/12 core_ PASS on Radeon AI PRO
+R9700 (wave32). The wave32 gate is satisfied at the staging tip. Still to revalidate at this
+head: windows (gfx1151, last), plus the nvcc gate.
