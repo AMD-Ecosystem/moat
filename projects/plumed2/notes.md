@@ -1012,3 +1012,43 @@ Not covered: an MPI kernel build and running on an NVIDIA GPU.
 
 Verdict: the CUDA path compiles and links with real nvcc 12.8 at head b0e0fb6d1,
 the same as on upstream's merge base 422109dc3. No port regression.
+
+## Validation 2026-11-19 (linux-gfx1201, check-gpu head)
+
+Validated sha: b0e0fb6d12474c1e1bd8925a87e6332ce781bd88 (fork clone checked out at head, `git status --porcelain` empty). Full run, not a carry-forward. GPU: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wavefront size 32 per rocminfo), HIP_VISIBLE_DEVICES=0 as the dispatcher pinned (one GPU visible). ROCm 10.1.0 Python wheels (rocm-sdk-devel 10.1.0, HIP 7.16.26385, AMD clang 24.0.0git), g++ 13.3.0, MPICH 4.2.3 built from source into the job directory (`--with-device=ch3 --disable-fortran --enable-fast=O2`), PLUMED upstream 422109dc3 (the head's merge parent) built with `./configure --prefix=<job>/deps/plumed CXX=mpicxx CC=mpicc` and installed. All GPU runs under `ulimit -c 0`.
+
+Build:
+```bash
+export PATH=<plumed>/bin:<mpich>/bin:$PATH PLUMED_KERNEL=<plumed>/lib/libplumedKernel.so LD_LIBRARY_PATH=<plumed>/lib:<mpich>/lib:$LD_LIBRARY_PATH
+cd plugins/cudaCoord
+USE_HIP=1 ./configure.sh
+make USE_HIP=1 HIP_ARCHITECTURES=gfx1201
+```
+rc 0; only code object amdgcn-amd-amdhsa--gfx1201. 88 warnings, the known harmless set (84 nodiscard `hipError_t` -Wunused-value in upstream code, 4 -Wreorder-ctor). SONAME CudaCoordination.so, FLAGS_1 NODELETE, NEEDED libamdhip64.so.7 and libplumedKernel.so, no libomp (this PLUMED also found zlib/LAPACK/BLAS, so those appear in NEEDED through its DYNAMIC_LIBS).
+
+Regtests:
+```bash
+cd regtest && ln -s ../../../regtest/scripts . && cd ..
+make USE_HIP=1 HIP_ARCHITECTURES=gfx1201 check
+```
+PASS: "34 tests performed, 0 tests not applicable, 0 errors found", and the `checkfail` pass the same. cudatest 14/14 (includes rt-double-rotatedbox and rt-input-errors), cudatestPair 8/8, cudatestWB 12/12 (rt-double-orthopbc-mpi: "Running over 2 nodes"). Same set as the gfx942 run; nothing skipped.
+
+THREADS=32 over the full regtest set (scratch only, nothing committed): the regtest tree copied out, and every uncommented CUDACOORDINATION/CUDACOORDINATIONFLOAT line rewritten to `THREADS=32` (existing THREADS=N replaced, otherwise appended; 154 action lines; the LOAD path made absolute), then `make` in the copy with the same references. PASS: "34 tests performed, 0 tests not applicable, 0 errors found"; all 154 actions logged "threads per block (a warp per atom): 32", so every GPU kernel ran with the 32-lane logical warp equal to the whole wavefront. (A first attempt reported 2 errors in cudatest and cudatestWB rt-double-d_0-nopbc, caused by my rewrite putting `THREADS=32` in front of a commented-out `#gpu64:` line ("Action \"THREADS=32\" is not known"). The rewrite was fixed to skip comment lines and the rerun is the result above. Not a plugin failure.)
+
+Debug-assertion build: a scratch copy of the plugin (same sources, same Makefile.conf with `-DNDEBUG=1` removed) built with `make USE_HIP=1 HIP_ARCHITECTURES=gfx1201`. Without NDEBUG, HIP's `__shfl_*_sync` check the mask with `__hip_check_mask` (`__hip_assert`, a `__builtin_trap` on a mask that is zero or does not match the active lanes; `amd_detail/amd_warp_sync_functions.h`, `hip_assert.h`). Against it: the default regtest set 34/34, 0 errors, and the THREADS=32 set 34/34, 0 errors; no trap, no abort. So the per-group `warpMask()` is accepted by HIP's own mask check on wave32 at 32-thread blocks and at the default sizes.
+
+GPU check:
+```bash
+make USE_HIP=1 HIP_ARCHITECTURES=gfx1201 check-gpu
+```
+rc 0. gpucheck compiled with `hipcc -x hip --offload-host-only -I.../cudaCoord/src -std=c++17 ...`; 2 warnings, the nodiscard ones the review predicted (device_check.cpp:103, :182).
+- `follow`: 17/17 OK, "follow: 0 failure(s)".
+- `md`: "SKIP md mode needs at least 2 GPUs". The dispatcher pinned one GPU and the pin was kept; md mode passed on linux-gfx942 at this head with two GPUs visible. Device selection is host code with no wavefront dependence.
+
+Runtime init: no segfault and no hang in any of the 34 x 4 regtest runs or check-gpu on this wave32 host.
+
+CUDA gate: not rerun; already recorded at this head_sha (linux-gfx942 validation and the mi355 real-nvcc check, both PASS).
+
+Content checks: `python3 utils/jargon.py --port plumed2` clean (local `master`/`moat-port` refs created from origin); the HIP build and `make USE_HIP=1 check` / `check-gpu` are documented in plugins/cudaCoord/README.md next to the nvcc build.
+
+Gates at head after this run: wave64 by linux-gfx942, wave32 by this platform, windows waived. No upstream PR is open; nothing was pushed to the fork.
