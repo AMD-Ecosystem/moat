@@ -683,3 +683,36 @@ CMake Error at backend/hip_pqc/tests/CMakeLists.txt:45 (add_custom_target):
 ```
 
 The other 8 are `add_executable` at hip_pqc/tests/CMakeLists.txt:53 (macro `add_hip_test`, lines 78-85) for test_kyber, test_ml_kem, test_kyber_hashes, test_ml_kem_keygen, test_ml_kem_encaps, test_ml_kem_decaps, test_pke_encrypt, test_pke_decrypt. All errors are in the backend test directories, which only exist under `BUILD_TESTS=ON`; a combined configure with tests off was not tried (one configure, as asked). Separately, the review of d66e92a already noted that `backend_include.cmake` sets `BACKEND_BUILD_DIR` last-wins, so in a combined build the HIP value would win for the frontend tests. Not fixed here: the combination is outside the port's validated configurations, and whether to support it is a decision for whoever owns the port.
+
+## Pre-PR polish round 2026-11-19 (porter, linux-gfx90a, fork moat-port 2609ca4 -> 7d1cb07)
+
+Ruling: jeffdaily, 2026-11-19. Small finds from reading the diff as an upstream maintainer get one more small round before the PR is sent (his standing ruling, first given for another port and applied here). Four finds, all fixed in the one commit 7d1cb07 ("[ROCm] hip_pqc: format shim, rename test targets, README fixes"), pushed plainly on top of 2609ca4 (no upstream PR open, nothing forced).
+
+a. `check-format`: `icicle/backend/hip_pqc/include/cuda_to_hip.h` needed 28 replacements under clang-format 19 (upstream's `scripts/format_all.sh` names 19 for its docker image). Installed `clang-format==19.*` (19.1.7) with pip into the job venv. After `clang-format -i`, `git diff -w` shows only a line join (`sub32_group_in_wave()` collapsed to one line); the change is whitespace only. `./scripts/format_all.sh . --check --exclude "build|wrappers"` (upstream's exact CI line) -> "All files processed successfully.", exit 0, whole tree.
+b. Combined `CUDA_PQC_BACKEND=ON HIP_PQC_BACKEND=ON BUILD_TESTS=ON` duplicate targets: `backend/hip_pqc/tests/CMakeLists.txt` now names `copy_hip_test_data` and `hip_<test>` executables (macro `add_hip_test(test)` sets `name hip_${test}`; source stays `ml_kem/${test}.cu`). gtest names and `ctest --test-dir build/backend/hip_pqc/tests` are unchanged. A static scan of `add_library/add_executable/add_custom_target` in both backend trees finds no shared name left (cuda: copy_pqc_libs, copy_test_data, icicle_backend_cuda_pqc[_interface], test_*; hip: copy_hip_pqc_libs, copy_hip_test_data, icicle_backend_hip_pqc[_interface], hip_test_*). The combined configure was NOT re-run here: this host has no nvcc. Two attempts both failed before reaching the backend tests: pip `nvidia-cuda-nvcc-cu12` 12.8.93 ships only ptxas, not the nvcc driver; Clang-as-CUDA with a stub nvcc failed at CUDA compiler identification. The wheels were uninstalled afterwards. The combined configure still has to be confirmed on a host with real nvcc (the gfx950 host that ran the CUDA-path check).
+   `BACKEND_BUILD_DIR` (recorded, not redesigned): upstream's CUDA-PQC block in `cmake/backend_include.cmake` sets no directory-scope `BACKEND_BUILD_DIR`; only the HIP-PQC block does (to `build/backend/hip_pqc`), after both `add_subdirectory` calls. So the backend test dirs are unaffected (each sets its own per-target define, and both subdirectories are added before the directory define), but in a combined build the frontend tests under `icicle/tests` (test_pqc_api etc.) get `ICICLE_BACKEND_INSTALL_DIR=build/backend/hip_pqc` (unless that env var is already set; `setenv(..., 0)`) and so load only the HIP-PQC backend. With CUDA_BACKEND and HIP_PQC_BACKEND together, two different `-DBACKEND_BUILD_DIR` values reach the frontend targets. Neither affects the HIP-only configuration that is validated.
+c. `icicle/cmake/backend_include.cmake:27` restored to upstream's bytes (six trailing spaces); `git diff main -- icicle/cmake/backend_include.cmake` is now only the added HIP-PQC block.
+d. `icicle/backend/hip_pqc/README.md`: tests read "the NIST KAT vectors in `backend/cuda_pqc/tests/ml_kem/test_data` ... which the build copies next to the tests" (not "bundled"); the MSM/NTT/EC sentence now says "those primitives live in the separate backend repositories and are not part of this backend"; the build block says "From the repository root:" and is the Test Plan's command (`-S icicle`, `-DCUDA_PQC_BACKEND=OFF` added); the arch sentence adds "or leave it unset to build for the GPUs CMake detects on the build host" (backed by the auto-detect build below); the test line names `ctest --test-dir build/backend/hip_pqc/tests` from the repository root.
+
+### Build and test (gfx90a, AMD Instinct MI250X / MI250, HIP_VISIBLE_DEVICES=1, pip ROCm SDK 10.1.0, CMake 3.31.6)
+
+This host has no /opt/rocm; `R=$(rocm-sdk path --root)` stands in for it.
+```
+cmake -S projects/icicle/src/icicle -B agent_space/b90a -DCMAKE_BUILD_TYPE=Release \
+  -DCPU_BACKEND=ON -DHIP_PQC_BACKEND=ON -DCUDA_PQC_BACKEND=OFF -DPQC=ON -DBUILD_TESTS=ON \
+  -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++ -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$R
+cmake --build agent_space/b90a -j 64        # [100%] Built target hip_test_ml_kem
+ctest --test-dir agent_space/b90a/backend/hip_pqc/tests --output-on-failure   # 58/58 passed, 17.46 s
+ctest --test-dir agent_space/b90a/tests -R PqcTest --output-on-failure        # 6/6 passed, Main-device=HIP-PQC
+```
+Test data copied into `agent_space/b90a/backend/hip_pqc/tests/test_data` (ml_kem_{512,768,1024}_data) by `copy_hip_test_data`. Build warnings are the pre-existing `-Wunused-value` nodiscard `hipError_t` ones from gpu-utils (`CHK_ERR`/`CHK_LAST`).
+
+`CMAKE_HIP_ARCHITECTURES` unset (first recorded build with CMake auto-detection):
+```
+cmake -S projects/icicle/src/icicle -B agent_space/bauto <same flags, no -DCMAKE_HIP_ARCHITECTURES>
+cmake --build agent_space/bauto -j 64       # exit 0
+```
+CMake set `CMAKE_HIP_ARCHITECTURES:STRING=gfx90a;gfx90a;gfx90a;gfx90a`: one entry per GPU that `amdgpu-arch` lists (it lists all four GCDs even with HIP_VISIBLE_DEVICES=1), so flags.make carries `--offload-arch=gfx90a` four times. clang accepts the duplicates and the build is correct, so nothing to fix in the port. Backend 58/58 and PqcTest 6/6 pass from that build too; `AMD_LOG_LEVEL=3` shows `ml_kem_keygen_kernel` launching.
+
+### Pre-existing jargon/commit-gate hits on earlier commits (not this round's)
+`jargon.py --port icicle` flags commit 98d8bca's Test Plan (`git -C projects/icicle/src grep ...`), and `audit-commits` flags 2609ca4 ("Test Plan has no fenced command block"). Commit 7d1cb07 is clean. These are in already-validated commits and can only change at PR-prep squash time, which is a person's push.
