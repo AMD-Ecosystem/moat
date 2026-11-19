@@ -177,3 +177,9 @@
 {"kind":"phase","ts":"2026-11-19T06:35:17Z","phase":"test","seconds":2.971,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261118-222628-ohm-val32-prompt/moat/agent_space/build-cpu/bin/ohmtestheightmap"}
 {"kind":"phase","ts":"2026-11-19T06:35:17Z","phase":"test","seconds":0.026,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261118-222628-ohm-val32-prompt/moat/agent_space/build-cpu/bin/slamiotest"}
 {"kind":"session","ts":"2026-11-19T06:35:49Z","epoch":1795070149.258265,"event":"end","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-19T19:03:15Z","phase":"compile","seconds":32.415,"exit":0,"cmd":"cmake --build agent_space/b-val -j 12"}
+{"kind":"phase","ts":"2026-11-19T19:03:29Z","phase":"test","seconds":6.447,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-val/bin/gputiltestcuda.exe"}
+{"kind":"phase","ts":"2026-11-19T19:04:25Z","phase":"test","seconds":55.104,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-val/bin/ohmtestcuda.exe"}
+{"kind":"phase","ts":"2026-11-19T19:04:36Z","phase":"test","seconds":9.796,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-val/bin/ohmtest.exe"}
+{"kind":"phase","ts":"2026-11-19T19:04:42Z","phase":"test","seconds":3.817,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-val/bin/ohmtestheightmap.exe"}
+{"kind":"phase","ts":"2026-11-19T19:04:43Z","phase":"test","seconds":0.238,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-ohm/agent_space/b-val/bin/slamiotest.exe"}

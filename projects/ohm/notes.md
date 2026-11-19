@@ -1481,3 +1481,30 @@ GPU 66/66, CPU-side suites of the HIP build 76/76. No skipped or disabled tests 
 CPU-only build (cache `OHM_FEATURE_CUDA/HIP/OPENCL=OFF`), same flags without the HIP options, 157/157: ohmtest 53/53, ohmtestheightmap 19/19, slamiotest 4/4 PASSED. (Ninja step totals here are 227 and 157 against 231 and 161 in the gfx90a notes; the GPU and CPU binary lists are the same as the CUDA check's, and every suite's count matches.)
 
 Checks: `python3 utils/jargon.py --port ohm` clean. readme.md has "Building for AMD GPUs" and the Windows paragraph. CUDA gate: already recorded at e9149bb (nvcc 12.8 compile check above); not repeated.
+
+## Validation 2026-11-19 (windows-gfx1151 validator, e9149bb)
+
+Platform windows-gfx1151 (Radeon 8060S APU), TheRock ROCm 7.14 pip SDK, clang 23, CMake 3.31, Ninja, vcpkg manifest mode. Fork clone clean and at head_sha e9149bb. CUDA nvcc gate: recorded by the Linux validators at this head, not repeated here (no CUDA toolkit on this host's validation path). `jargon.py --port ohm`: clean. Readme documents the Windows HIP build (OHM_FEATURE_HIP paragraph).
+
+Documented Windows command, unmodified, FRESH build directory (agent_space/b-val), no edits to generated files, no sed, no extra flags (only this host's SDK `bin` on PATH so amdgpu-arch runs, see the 2026-11-18 note):
+
+```bash
+L=$ROCM_ROOT/lib/llvm/bin
+cd projects/ohm/src
+cmake -B ../../../agent_space/b-val -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=D:/Develop/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_MANIFEST_FEATURES=test -DOHM_FEATURE_HIP=ON -DCMAKE_C_COMPILER=$L/clang.exe -DCMAKE_CXX_COMPILER=$L/clang++.exe -DCMAKE_HIP_COMPILER=$L/clang++.exe -DCMAKE_PREFIX_PATH="$ROCM_ROOT"
+utils/timeit.sh ohm compile -- cmake --build agent_space/b-val -j 12
+```
+
+Configure rc 0 (18 s; vcpkg binary cache warm), `CMAKE_HIP_ARCHITECTURES=gfx1151` auto-detected, glm 1.0.x from vcpkg. Build 219/219, rc 0.
+
+Tests (`ulimit -c 0`, runtime DLLs staged next to the exes with `rocm_stage_runtime`), each via `utils/timeit.sh ohm test -- <exe>`:
+
+| Suite | Result |
+|-------|--------|
+| gputiltestcuda | 8/8 |
+| ohmtestcuda | 58/58 |
+| ohmtest | 53/53 |
+| ohmtestheightmap | 19/19 |
+| slamiotest | 4/4 |
+
+GPU 66/66, CPU 76/76, no failures or skips; identical to the porter run of 2026-11-18 and to the Linux validators. Only difference from yesterday: configure took 18 s instead of 543 s (vcpkg cache). Logs: agent_space/val-cfg.log, val-build.log, v-*.log.
