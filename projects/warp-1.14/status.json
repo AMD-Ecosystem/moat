@@ -8,13 +8,13 @@
   "ext_type": "python-build-nvrtc",
   "stage": "porting",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-19T11:56:13Z",
+  "updated_at": "2026-11-19T16:15:14Z",
   "head_sha": "a8e95dcb748c474f63b866ac07227cdde22650c4",
   "depends_on": [],
   "porting": {
-    "arch": "linux-gfx950",
-    "since": "2026-11-18T20:28:14Z",
-    "holder": "29be5ec21a95"
+    "arch": "windows-gfx1151",
+    "since": "2026-11-19T16:15:13Z",
+    "holder": "2e86842d8592"
   },
   "waivers": {},
   "platforms": {
@@ -103,8 +103,8 @@
     "at": "2026-11-18T17:41:00Z"
   },
   "porting_released": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-18T17:41:50Z",
-    "at": "2026-11-18T17:54:27Z"
+    "arch": "linux-gfx950",
+    "since": "2026-11-18T20:28:14Z",
+    "at": "2026-11-19T16:15:13Z"
   }
 }
