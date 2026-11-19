@@ -792,3 +792,41 @@ CUDA no-regression compile: `cuda-not-validated: no nvcc on this host` (no `/opt
 Gates: documentation present (README.MD:89, Linux scope). **Jargon is not clean**: `python3 utils/jargon.py --port LiteGS` exits 1 with the same 12 hits as on gfx90a, all in commit messages of the three earlier commits (602ce5a: 3, d7990e3: 7, d65b6ab: 2). Fixing them takes the person-made PR-prep squash described above, so this platform is recorded `validation-failed --gate jargon` with the GPU pass kept (`gpu_passed_sha` = 38aa67c). After the squash, a validator checks jargon and completes with `carry-forward`. (To run jargon in a fresh clone, create local `master` and `moat-port` branches first; it resolves `master..moat-port` by local name.)
 
 Integrity: `git status --porcelain` is empty in the fork and in the submodule; the clone is on `moat-port` at 38aa67c. No source edit, no fork push.
+
+## CUDA compile check 2026-11-19 (nvcc, compile and link only) -- PASS at 38aa67c, no port regression
+
+Host: Linux x86_64, no NVIDIA GPU (compile, link and import only; nothing ran on a device). CUDA toolkit 12.8 (`nvcc` release 12.8, V12.8.93, `/usr/local/cuda`), gcc 13.3.0, Python 3.11.17, ninja via `torch.utils.cpp_extension.BuildExtension`. PyTorch `2.11.0+cu128` from the official wheel index (`https://download.pytorch.org/whl/cu128`, matching the 12.8 toolkit), installed into the job's own venv.
+
+Trees, each cloned fresh with `git submodule update --init --recursive`:
+- port: AMD-Ecosystem/LiteGS at head_sha `38aa67ca155b8d2db59a3b2895d4348045377203`.
+- base: MooreThreads/LiteGS at the merge base `004b95215c90c36cdaf4b354301132b700ac287b` ("remove: delete obsolete/unused scripts"), which is upstream `master`'s tip today.
+- fused_ssim is kemchenj/fused-ssim `409da0b` in both trees (same gitlink).
+
+Recipe: upstream has no CI; its README builds each extension with `pip install litegs/submodules/<ext>`. The same command, run against the CUDA torch with verbose output, from `/tmp`, with the build dir removed first:
+```
+export PATH=/usr/local/cuda/bin:$VENV/bin:$PATH CUDA_HOME=/usr/local/cuda MAX_JOBS=64
+export TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0;10.0;12.0"
+for d in simple-knn fused_ssim gaussian_raster; do
+  python -m pip install -v --no-build-isolation --no-deps --force-reinstall <tree>/litegs/submodules/$d
+done
+python -c "import torch, simple_knn._C, fused_ssim, litegs_fused"
+```
+Two settings are needed only because this host has no NVIDIA GPU, and they apply identically to both trees:
+- `TORCH_CUDA_ARCH_LIST` must be set: with no device, torch 2.11 derives an empty arch list and `_get_cuda_arch_flags` raises `IndexError` before compiling. The list must start at sm_80: with 7.5 included, `raster.cu` fails on both trees with `identifier "__reduce_add_sync" is undefined` / `"__reduce_max_sync"` (those intrinsics need sm_80+). That is upstream's minimum arch, not a port issue.
+- fused_ssim's `setup.py` chooses its backend from `torch.cuda.is_available()`; with no device it falls through to `hasattr(torch, 'xpu')` and compiles with `icpx` (exit 127). For fused_ssim only, a scratch `sitecustomize.py` on `PYTHONPATH` (`import torch; torch.cuda.is_available = lambda: True`) sends it down its CUDA branch, where `current_device()` fails and it uses its own fallback gencodes (sm_75/80/89, `--maxrregcount=32 --use_fast_math`). No source was edited.
+
+| extension | base 004b952 | port 38aa67c |
+|---|---|---|
+| simple-knn | built, ninja 3/3, 8 warnings | built, ninja 3/3, 8 warnings |
+| fused_ssim | built, ninja 2/2, 0 warnings | built, ninja 2/2, 0 warnings |
+| gaussian_raster (litegs_fused) | built, ninja 6/6, 40 warning lines | built, ninja 6/6, 20 warning lines |
+| import of all three | OK | OK |
+
+Configure (setup.py) succeeded for all six builds; there is no separate configure step. No errors on either tree. `litegs_fused` from the port tree carries 4 cubins for each of sm_80, sm_86, sm_90, sm_100 and sm_120 (`cuobjdump --list-elf`). `litegs_fused` exports 32 names in both trees; `fused_ssim` exposes `fused_ssim` and `fused_l1_ssim_loss` in both.
+
+Warnings, compared after normalizing paths:
+- simple-knn: identical. 6x `"__CUDACC__" redefined` (simple_knn.cu:24 on base, :27 on port, the same line moved by the port's added lines) and 2x deprecated `Tensor.data<T>()` in spatial.cu.
+- fused_ssim: none on either tree.
+- gaussian_raster: the only difference is a warning the port removes. Base has `warning #2361-D: invalid narrowing conversion from "double" to "float"` at transform.cu:38 (15 lines, 3 per arch) and at transform.cu:1379 (20 lines, 4 per arch). The port keeps the first one (now transform.cu:42, the same `float3 t{...}` line) and loses the second, because its `(float)` casts on the `input_matrix` initializer silence it. No new warning anywhere: the 35 respaced launches, the 64-bit ballot path in compact.cu, and `torch::zeros` in transform.cu compile clean under nvcc.
+
+Verdict: the CUDA path compiles and links with real nvcc at head 38aa67c, with no new error or warning against upstream's base. This closes the "nvcc compile still owed" item recorded by the gfx90a and gfx1201 validations. Stage and platform records are unchanged by this check. `git status --porcelain` is empty in the port clone and its submodule.
