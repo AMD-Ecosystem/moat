@@ -2497,3 +2497,9 @@ The project stays in `porting`, lock held by linux-gfx950. Common setup as befor
 **gfx950 (this host):** the new path is covered above; the full 82-pattern set at `495d7c5a` was not re-run this session (only test_texture, test_devices, test_diagnostics, test_codegen, test_tile_load and the CPU-only suite). The next gfx950 session runs it, so that both wave families pass the set at the same head before Phase 6.
 
 **Still open for Jeff:** whether default results should be bit-identical to CPU textures (would need a no-contract form of the sampler's lerps in `texture.h`); and, unchanged from session 6: the 64 KiB tile sizing vs capability skips, C4, `__frsqrt_rn` and the lane-mask documentation, defer/now on the six undecided `rocm-bug-report` entries, the Q3 matrix-core ruling. Phase 6 not started.
+
+## Stream priority on HIP (2026-11-18, Jeff Daily)
+
+Stated by Jeff: stream priorities are essentially ignored in the current HIP runtime; high-priority streams exist as an API feature but map to normal priority. He does not expect a test that measures a timing difference to achieve anything on HIP. This settles C4 without the proposed kernel-workload measurement (step 1 of the C4 proposal is dropped): it is known HIP behaviour, not a defect to register.
+
+Porter, next session: in `test_stream_priority_timings`, keep everything that does not depend on scheduling (creating streams with a priority, reading the priority back) and skip only the timing assertion on HIP devices, with the fewest lines possible, through a device capability (not an arch or vendor name in the test) and a skip message saying HIP maps stream priorities to normal priority. Release notes: stream priority is accepted but has no scheduling effect on AMD GPUs.
