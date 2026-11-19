@@ -69,3 +69,5 @@
 {"kind":"phase","ts":"2026-11-19T19:11:14Z","phase":"compile","seconds":138.698,"exit":0,"cmd":"bash -c cd projects/QUICK/src/build-new && make -j42 VERBOSE=1 > make.log 2>&1"}
 {"kind":"phase","ts":"2026-11-19T19:24:12Z","phase":"compile","seconds":167.987,"exit":0,"cmd":"bash -c cd agent_space/quick-testtree/build && make -j42 VERBOSE=1 > make.log 2>&1 && make install DESTDIR=$PWD/../install > install.log 2>&1"}
 {"kind":"phase","ts":"2026-11-19T19:31:45Z","phase":"test","seconds":432.413,"exit":0,"cmd":"agent_space/lb/runall.sh /var/lib/jenkins/fleet/jobs/mi200-20261119-110120-quick-linkflag-prompt/moat/agent_space/quick-testtree/install/usr/local /var/lib/jenkins/fleet/jobs/mi200-20261119-110120-quick-linkflag-prompt/moat/agent_space/lb/run1"}
+{"kind":"session","ts":"2026-11-19T19:33:29Z","epoch":1795116809.223168,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-19T19:35:43Z","epoch":1795116943.035941,"event":"end","platform":"linux-gfx90a"}

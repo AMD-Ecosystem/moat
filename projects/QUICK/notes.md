@@ -974,3 +974,20 @@ Builds: `src/build-old` at 7a3149ff and `src/build-new` at a49289d5, same fork c
 - `CMake-Options.md:33` does not list `gfx1100` (the gfx1100 reviewer's extra point). Not part of finding 1, left for the PR-preparation round.
 - Fork mirror fast-forward and the `[ROCm]` prefix on a0122945/2146b22a, both from the sync round.
 - wave32 (gfx1100) validation at the new head.
+
+## Review 2026-11-19 (delta 7a3149ff..a49289d5)
+
+Reviewer, linux-gfx90a (MI250X), under the work lock. Scope: commit a49289d5 and the whole port `git diff master...moat-port` (local `master` = upstream 7e8aeb2c; still one file, `quick-cmake/QUICKCudaConfig.cmake`). Head a49289d5.
+
+**Verdict: review passed.** No findings. Finding 1 of the previous review is resolved, and its Diagnosis rewording request is done (correction appended at the `All four gfx90a code objects` paragraph).
+
+Checked independently (not taken from the porter's section):
+
+- `GPU_LD_FLAGS` has three sites only: set empty at `QUICKCudaConfig.cmake:7`, set to `-fgpu-rdc --hip-link` at `:363` inside `if(HIP)`, appended at `:483` inside the `>= 6.2.1` block. Its only consumers are `src/CMakeLists.txt:198` (`libquick_hip`) and `:258` (`libquick_mpi_hip`), both `target_link_options(... PRIVATE ...)`, so no other target or executable inherits it. In `build-new` only `src/CMakeFiles/libquick_hip.dir/link.txt` carries the option (grep over every `link.txt`); `build-old` has it nowhere. MPI was not built here; the MPI target takes the same variable by the same call.
+- `SHELL:` adds no CMake requirement: `target_link_options` (CMake 3.13, already used upstream above the 3.12 `cmake_minimum_required`) supports the `SHELL:` group form from its first release.
+- Device link only: in `agent_space/lb/relink_new.log` the option appears exactly three times: `clang-linker-wrapper` as `--device-linker=amdgcn-amd-amdhsa=-mllvm ...`, the device `clang` driver as `-Xlinker -mllvm -Xlinker -amdgpu-long-branch-factor=0`, and the device `ld.lld` LTO codegen (`-plugin-opt=mcpu=gfx90a`, 123 device `.o` inputs) as `-mllvm -amdgpu-long-branch-factor=0`. The host `ld.lld` (`-m elf_x86_64`) line has no `-mllvm`. `relink_old.log` has 0 occurrences; the device ld.lld lines differ only by that option (temp-name normalized diff).
+- ISA unchanged, re-derived from the two `libquick_hip.so` files with `llvm-objdump --offloading` then `-d --no-show-raw-insn`: all four gfx90a code objects disassemble identically old vs new; `s_getpc_b64 s[30:31]` totals 1 / 60 / 0 / 0 and all `s_getpc_b64` 176 / 1586 / 14 / 4, matching the porter's table. (Extracts were written beside the libraries by objdump and deleted afterwards.)
+- Version condition and CUDA path: the append is inside the existing `if (${HIP_VERSION} VERSION_GREATER_EQUAL 6.2.1)` block (rationale in the previous review's "Checked and holding"), all inside `if(HIP)`; the CUDA block is untouched.
+- Commit a49289d5: title 65 characters (the porter's note says 64; still within 72), `[ROCm]` correct (HIP-only change), AI disclosure in prose, fenced Test Plan with literal commands, no `Co-Authored-By`/noreply trailer, no AMD-internal references. `python3 utils/jargon.py --port QUICK`: clean. Fork clone has no modified tracked files (only untracked `build-old/`, `build-new/`).
+
+Records correction for the validator: the porter section says the test-tree per-test table "is in the validator section that follows (that run is the validator's)". No validator section follows it, and that run happened before `review-passed`, so it is porter-side evidence only. gfx90a still needs a validator record at a49289d5 (or a `carry-forward`, which fits: device ISA identical). Still owed elsewhere, unchanged by this delta: the nvcc compile gate at a49289d5, wave32 validation at a49289d5, and the PR-preparation items listed under "Still open" (`CMake-Options.md:33` gfx1100, `[ROCm]` prefixes on a0122945/2146b22a, fork mirror fast-forward).
