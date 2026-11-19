@@ -1227,3 +1227,11 @@ Reviewer, linux-gfx1100, under the work lock, pr-review skill in local-branch mo
 **Verdict: review passed.** No findings.
 
 Checked independently: the word diff adds only `|gfx1100` to the `QUICK_USER_ARCH` value list at `CMake-Options.md:33`. The value matches the HIP branch at `quick-cmake/QUICKCudaConfig.cmake:411-418` (its `STREQUAL "gfx1100"` case and the FATAL_ERROR list `gfx908, gfx90a, gfx942, gfx1100`). `git grep` over `*.md`/`*.rst`/`*.txt` at 349fb05f finds no other file listing HIP arch values. The porter's account of AGENTS.md (CUDA values only), the cache help string and `configure` holds. `CMake-Options.md` lists `gfx906`, which the CMake HIP branch rejects; that is upstream text, not part of the port, so it is not a finding. No compiled file changed, so no CUDA or CPU behaviour changed. Commit 349fb05f: `[ROCm]` is right (it names an AMD target), title 52 characters, AI disclosure in prose, fenced Test Plan, no `Co-Authored-By` trailer. `jargon.py --port QUICK` clean.
+
+## Validation 2026-11-19 (linux-gfx1100, Radeon Pro W7800, head 349fb05f): carry-forward, PASSED
+
+Validator, after `review-passed` at 349fb05f. The platform came back `port-ready` because 349fb05f retired its `--gate docs` failure. No GPU rerun, as the validator role directs for a docs-gate fix: `classify QUICK a49289d5 349fb05f` -> `class=doc-only arch_independent=True inert=True`. Gap closed: `CMake-Options.md:33` at 349fb05f lists `gfx1100`, and `jargon.py --port QUICK` is clean. `projects/QUICK/src` is at 349fb05f with `git status --porcelain` empty. Recorded `carry-forward QUICK linux-gfx1100 349fb05f source-class` from the kept GPU pass at a49289d5 (37 PASS, 3 SKIPPED, 0 FAIL, 0 TIMEOUT; CPU short list 32/32; see the a49289d5 section above).
+
+linux-gfx90a was not touched here: `advance-head` carried its a49289d5 validation forward to 349fb05f by itself (doc-only, inert), so it already reads `completed` at 349fb05f.
+
+Still owed, unchanged by this round: the CUDA nvcc compile gate passed at a49289d5 (mi355 section above), and the delta since then is Markdown only. The PR-preparation items stay open: the `[ROCm]` prefix on a0122945/2146b22a and the fork mirror fast-forward (sync round).

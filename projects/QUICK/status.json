@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-11-19T21:43:31Z",
+  "updated_at": "2026-11-19T21:43:50Z",
   "head_sha": "349fb05f985c7c12262b26336dd473ae76ad6b03",
   "depends_on": [],
   "waivers": {
@@ -23,13 +23,13 @@
   "stage": "review-passed",
   "platforms": {
     "linux-gfx1100": {
-      "state": "validation-failed",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "d369e07",
+      "validated_sha": "349fb05f985c7c12262b26336dd473ae76ad6b03",
       "started_at": "2026-11-19T21:40:50Z",
-      "completed_at": "2026-06-05T14:30:35Z",
-      "updated_at": "2026-11-19T21:43:31Z",
+      "completed_at": "2026-11-19T21:43:50Z",
+      "updated_at": "2026-11-19T21:43:50Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -45,8 +45,18 @@
       },
       "last_agent": "reviewer",
       "failed_sha": "a49289d5269210de98e5a97387c0d69d0c321a51",
-      "failed_gate": "docs",
-      "gpu_passed_sha": "a49289d5269210de98e5a97387c0d69d0c321a51"
+      "validated_prior": [
+        "d369e07"
+      ],
+      "carry_forward": {
+        "from": "a49289d5269210de98e5a97387c0d69d0c321a51",
+        "to": "349fb05f985c7c12262b26336dd473ae76ad6b03",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "Docs gate closed: 349fb05f adds gfx1100 to the QUICK_USER_ARCH list in CMake-Options.md (doc-only delta over a49289d5); GPU pass at a49289d5 (37 PASS/3 SKIP/0 FAIL, W7800) stands; jargon clean",
+        "at": "2026-11-19T21:43:50Z",
+        "after_gate": "docs"
+      }
     },
     "linux-gfx90a": {
       "state": "completed",
