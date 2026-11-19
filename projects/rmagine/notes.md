@@ -3485,3 +3485,120 @@ Documentation: unchanged by this round; the earlier ruling on the README stands.
 linux-gfx1201 VALIDATED at `e1b7ac5`: 8/8 cuda_ (2 runs) + 12/12 core_ PASS on Radeon AI PRO
 R9700 (wave32). The wave32 gate is satisfied at the staging tip. Still to revalidate at this
 head: windows (gfx1151, last), plus the nvcc gate.
+
+## Validation 2026-11-19 (windows-gfx1151, fix round moat-fix-25 at e1b7ac5) -- PASS
+
+Fork AMD-Ecosystem/rmagine `moat-fix-25` at `e1b7ac57c740121150a87ba5e4279f718a80f331`
+(`head_sha`), fresh clone in `projects/rmagine/src`, detached at that commit; nothing pushed to
+the fork (`moat-port` stays at `cc6f8d2`, upstream PR 25 open; `protect-fork` hook installed).
+Full revalidation, not a carry-forward (Windows binaries cannot use the binary-equivalence
+shortcut, and the delta changes compiled host code). Host: gfx1151 laptop, AMD Radeon 8060S
+(RDNA3.5, wave32), Windows 11, MSVC 14.44 BuildTools, TheRock pip SDK (`_rocm_sdk_devel`, AMD
+clang 23.0.0git, HIP runtime 7.14 reporting `71460.85.0`), CMake 3.31.0, Ninja, vcpkg
+x64-windows deps (assimp, tbb, eigen3, boost) as in the 2026-08-14 and 2026-08-19 rounds.
+
+### What the fix delta touches that Windows builds
+
+`git diff cc6f8d2..e1b7ac5 --stat`: 70 files, +994/-263. Most of it is OptiX, Vulkan and Embree
+code plus CI workflows, none of which this recipe builds (all three backends disabled, as in
+every earlier round). What the Windows build does compile:
+
+- `src/rmagine_cuda/src/util/cuda/CudaContext.cpp` / `CudaContext.hpp`: upstream's rework to
+  factories (`createPrimary` / `createStandalone` / `fromExternal`) with shared_ptr deleters; the
+  namespace-scope default context is now `CudaContext::createPrimary(0)`. This is the
+  Windows-relevant part: the global lives in `rmagine-cuda.dll`, so the primary context is
+  retained during DLL static initialisation and released during DLL teardown, through
+  `hipDevicePrimaryCtxRetain` / `hipDevicePrimaryCtxRelease` on the Windows HIP runtime.
+- `cuda_to_hip.h`: the two new mappings for those calls (the round's only non-upstream lines).
+- `memory_math.cu`: a 5-line comment removed (upstream now carries the same `multNx1_kernel` fix).
+- `rmagine_core` headers `SimulationResults.hpp`, new `SimulatorSettings.hpp` (header-only types).
+- `CMakeLists.txt` version 2.4.2 -> 2.4.3; `tests/CMakeLists.txt` re-enables the Vulkan tests
+  behind `if(TARGET rmagine-vulkan)`, not created here.
+
+### Configure + build (same recipe as 2026-08-19, new build directory)
+
+```
+source agent_space/win_rocm_env.sh
+ROCM="$ROCM_ROOT"; ROCM_LLVM="$ROCM_ROOT/lib/llvm/bin"; VCPKG="D:/vcpkg/installed/x64-windows"
+B=D:/Develop/moat/agent_space/rmagine_gfx1151_build_e1b7ac5
+utils/timeit.sh rmagine compile -- cmake -S projects/rmagine/src -B $B \
+  -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_C_COMPILER="$ROCM_LLVM/amdclang.exe" \
+  -DCMAKE_CXX_COMPILER="$ROCM_LLVM/amdclang++.exe" \
+  -DCMAKE_HIP_COMPILER="$ROCM_LLVM/amdclang++.exe" \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_PREFIX_PATH="$ROCM;$VCPKG" \
+  -DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON \
+  -DRMAGINE_VULKAN_DISABLE=ON -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON \
+  -DRMAGINE_OUSTER_DISABLE=ON -DRMAGINE_BUILD_TESTS=ON \
+  -DRMAGINE_BUILD_TOOLS=OFF \
+  -DCMAKE_CXX_FLAGS="-D_USE_MATH_DEFINES -DNOMINMAX" \
+  -DCMAKE_C_FLAGS="-D_USE_MATH_DEFINES" \
+  -DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=TRUE
+sed -i 's/-fuse-ld=lld-link//g' $B/build.ninja
+utils/timeit.sh rmagine compile -- cmake --build $B -j6
+```
+
+`rmagine_hiprt` skipped by CMake with the usual warning (no HIPRT SDK). 74/74 targets, 0 errors.
+118 warnings, existing classes: 69 `-Wunused-value`, 46 `-Wdeprecated-declarations` (`hipCtx*`,
+now also `hipDevicePrimaryCtx{Retain,Release}`), 2 `-Wimplicit-exception-spec-mismatch`, 1
+`-Wunused-command-line-argument`. `strings bin/rmagine-cuda.dll` shows only the `gfx1151` code
+object.
+
+### Runtime DLL staging
+
+Unchanged from the earlier rounds; no DLL-not-found or error 719 this time:
+
+```
+rocm_stage_runtime $B/bin
+cp "$ROCM_ROOT/bin/hiprand.dll" "$ROCM_ROOT/bin/rocrand.dll" $B/bin/
+cp D:/vcpkg/installed/x64-windows/bin/{assimp-vc145-mt,tbb12,poly2tri,minizip,z,kubazip,pugixml}.dll $B/bin/
+```
+
+### Test results
+
+```
+export HIP_VISIBLE_DEVICES=0
+utils/timeit.sh rmagine test -- ctest --test-dir $B --output-on-failure -R "^cuda_"
+# Run 1: 8/8 PASS (2.62 s); Run 2: 8/8 PASS (2.34 s)
+utils/timeit.sh rmagine test -- ctest --test-dir $B --output-on-failure -R "^core_"
+# 12/12 PASS (2.00 s) -- non-GPU set, no regression
+```
+
+20 tests registered (`ctest -N`), all run, none excluded: the notes mark no rmagine test as
+failing or crashing on this laptop. Same 8 cuda_ and 12 core_ tests as the 2026-08-19 run at
+`cc6f8d2` (8/8 twice, 6.58 s / 6.95 s, and 12/12) and as the gfx942 and gfx1201 runs at this
+head. The cuda_ set is about 4 s faster than in August; the default context is now the primary
+context rather than a `hipCtxCreate` one, which is the likely reason (not measured further).
+
+### GPU dispatch and the new primary-context path
+
+`./bin/rmagine_tests_cuda_math.exe`: `[Rmagine - CudaContext] CUDA Driver Version / Runtime
+Version: 71460.85.0 / 71460.85.0`, `Construct context on device 0 - AMD Radeon(TM) 8060S
+Graphics`, exit 0. The device name is followed by two garbage bytes: upstream streams
+`info.luid` (a raw byte array) after it. The published tip has the same line, so it is not from
+this round, and it is cosmetic.
+`./bin/rmagine_tests_cuda_math_reduction_correctness.exe`: `PASS: rm::sum/mean/cov match CPU
+reference and are deterministic`, exit 0.
+`AMD_LOG_LEVEL=3 ./bin/rmagine_tests_cuda_math.exe`: one `hipDevicePrimaryCtxRetain ( ..., 0 )`
+returning `hipSuccess` at startup and one `hipDevicePrimaryCtxRelease ( 0 )` returning
+`hipSuccess` at exit, exit 0, no teardown fault. So the release from the DLL-global's deleter
+runs cleanly at process exit on Windows.
+
+### CUDA no-regression gate
+
+Not run here (no GPU-independent reason to: the gate runs once per head on a host with nvcc, and
+this is a Windows host). Still owed at `e1b7ac5`: the compile-only nvcc build on the mi355 host,
+as recorded in the gfx942 section.
+
+### Integrity, jargon, documentation
+
+`git -C projects/rmagine/src status --porcelain` empty; HEAD equals `head_sha`.
+`python utils/jargon.py --port rmagine`: clean. Documentation: unchanged by this round; the
+earlier README ruling stands.
+
+### Verdict
+
+windows-gfx1151 VALIDATED at `e1b7ac5`: 8/8 cuda_ (2 runs) + 12/12 core_ PASS on Radeon 8060S.
+The windows gate is satisfied at the staging tip, beside wave64 (linux-gfx942) and wave32
+(linux-gfx1201). Still owed for the round: the nvcc compile gate.
