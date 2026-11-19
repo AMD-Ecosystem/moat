@@ -4879,6 +4879,51 @@ Part of #1054.
 This pull request was prepared with the help of an AI coding agent and was read and approved by a person before it was opened.
 ````
 
+### (g) hiprtc cannot compile the `indexed_scale` RawKernel (`cuComplex.h`), added 2026-11-19 per jeff's ruling
+- Branch `pr-1054-hiprtc-cucomplex`, tip **0e23c1e1e0164fac0473eff59b052c007b041dfc** (from moat-port 0647712; `git patch-id --stable` identical; re-made with `git cherry-pick -n` + `git commit -F` so its Test Plan carries the standalone counts). Parent upstream master 61c2a1e4 (still upstream's tip at the push). Stands alone: yes (applies and builds alone; built in its own worktree with the flag build, exit 0, 12 libraries). Same fleet job as the porter round of this date, `HIP_VISIBLE_DEVICES=1`, same environment and test method as above (one pytest process per test file, `agent/run.sh`).
+- Title has no prefix in the commit either: the change is shared code (a non-portable include) and its added lines name no HIP or ROCm (AGENTS.md commit rule, commit gate OK). Per jeff's ruling the pull-request title carries no prefix in any case.
+- **It shows nothing alone on gfx942.** On master every test that calls `indexed_scale` stops at the cause-A `nsp_max` assert first (232 failures there), so pbc/{df,grad,scf} is 221/268/10/17 with and without it. The measured effect is with fix (a) underneath (local trees master + 6a0f3f24, with and without this commit): 396/97/10/13 -> 432/61/10/13, hiprtc failures 39 -> 0, no newly failing test; 3 of the 39 then miss a finite-difference bound (RSH GDF gradients, see the porter section of this date). Like (b) after (c), it is best merged after (a), though nothing in the code depends on it. On wave32 cause A is absent, so the hiprtc error should be the first failure on master there; not run (no wave32 GPU in this job). Direct reproducer: master raises the hiprtc error, the branch prints 0.0. scf+dft 336/12/23/0 on master and the branch, the same 12 failures.
+- CUDA impact: none. `cuDoubleComplex` is `typedef double2` in CUDA's cuComplex.h; NVRTC 12.9 (pip, through ctypes) gives byte-identical PTX for the old and new kernel source at compute_70/80/90 (1462 bytes; the reviewer reran it). Not run on an NVIDIA GPU.
+- Checks on the final text: `prose.py` and `jargon.py` clean on this draft; `jargon.py --commits/--diff 61c2a1e4..pr-1054-hiprtc-cucomplex` clean.
+
+````markdown
+Title: Use double2 instead of cuComplex.h in the indexed_scale RawKernel
+
+On ROCm, every periodic GDF gradient, stress and hcore-derivative calculation fails with `CompileException: HIPRTC_ERROR_COMPILATION ... fatal error: 'cuComplex.h' file not found`, raised from `indexed_scale` in pbc/df/grad/rhf.py. On an MI300X this is 47 tests in pbc/df, pbc/grad and pbc/scf once the other fixes from #1054 are in.
+
+Cause: the RawKernel source includes `<cuComplex.h>`, a CUDA Toolkit header that NVRTC finds and the ROCm runtime compiler (hipRTC) does not have. The kernel only uses `cuDoubleComplex` and its `.x`/`.y` members.
+
+Change: drop the include and declare the array as `double2`, the built-in vector type both runtime compilers provide, the same change #1042 made in the multigrid_v3 kernels (`add_j3c_oo` in pbc/df/grad/krhf.py is written this way too). CUDA's cuComplex.h has `typedef double2 cuDoubleComplex;`, so the CUDA kernel is the same: NVRTC 12.9 gives byte-identical PTX for the old and new source at compute_70, compute_80 and compute_90.
+
+Test plan, MI300X (gfx942), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, CI marker selection, one pytest process per test file, built with `-mllvm -disable-machine-licm` passed through `CMAKE_CONFIGURE_ARGS` (see the separate pull request):
+
+```
+python -c "import cupy; from gpu4pyscf.pbc.df.grad.rhf import indexed_scale; a = cupy.random.rand(4, 8) + 1j * cupy.random.rand(4, 8); b = cupy.random.rand(8); r = a.get(); r[[1, 3]] *= b.get(); print(abs(indexed_scale(a, [1, 3], b).get() - r).max())"
+```
+master: `fatal error: 'cuComplex.h' file not found`; this branch: `0.0`.
+
+| tests (passed/failed/skipped/errors) | master | this branch |
+|---|---|---|
+| pbc/df, pbc/grad, pbc/scf | 221/268/10/17 | 221/268/10/17 |
+| same, with the `ft_ao_scheme` fix applied to both | 396/97/10/13 | 432/61/10/13 |
+| of which at the hipRTC error | 39 | 0 |
+| scf, dft | 336/12/23/0 | 336/12/23/0 |
+
+On 64-wide GPUs these tests first stop at the separate `ft_ao_scheme` assert (232 of the master failures), which hides this error, so the first row does not move; the second row is measured on master plus that pull request, with and without this change. On 32-wide GPUs that assert does not occur and this error should be the first failure; I did not run one for this change. Three of the 39 now run to the end and miss a finite-difference bound (test_df_rsh_grad in test_pbc_grad_krks.py and test_pbc_grad_kuks.py, 1.08e-5; test_df_sr_rsh_grad in test_pbc_grad_rks.py, 3.5e-6), as test_sr_rsh_grad already does on master (2.5e-6); they miss by the same amount without multigrid numint, and `indexed_scale` itself matches NumPy exactly. No test that passes on master fails here.
+
+Part of #1054.
+
+This pull request was prepared with Claude Code (Anthropic), which wrote the change and ran the tests on our hardware; I read and approved it before opening.
+````
+
+Checklist line to add to the issue's Tracking section (draft; nothing posted), placed before the ECP line since the ECP kernels come after the small fixes:
+
+```
+- [ ] `cuComplex.h` in the `indexed_scale` RawKernel (pbc/df/grad/rhf.py), which hipRTC cannot compile
+```
+
+The six drafts above still carry the `[ROCm]` title prefix (on (a)-(d) and (f)) and the old closing sentence; jeff's ruling of 2026-11-19 (section "Ruling 2026-11-19 (jeff): the seventh candidate becomes a seventh pull request") replaces both when each is opened. The six pushed branches were not touched.
+
 ### Left undone
 - No run on wave32 (gfx1100/gfx1201) or gfx90a for these branches, and no NVIDIA run.
 - The LICM cost was not added to commit 7cbd3d2f's or e647eb2f's body (the branch was already pushed; no force-push). It is in the PR draft.
