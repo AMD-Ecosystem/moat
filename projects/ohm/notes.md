@@ -1276,6 +1276,8 @@ Checks: `python3 utils/jargon.py --port ohm` could not run here (no fork clone u
 
 ## Lesson for cuda-to-rocm: a per-backend directory is not a reason to add a HIP directory
 
+Promoted to references/strategy-a-cmake.md in 3b04af8c.
+
 Written on this branch as an edit to the skill's strategy-a-cmake.md (and one pointer sentence in SKILL.md) before port branches were limited to their own folder; moved here unchanged on 2026-11-18 so the branch can merge the trunk.
 
 Projects with a GPU abstraction often keep one directory per backend (`gpu/cl/`, `gpu/cuda/`)
