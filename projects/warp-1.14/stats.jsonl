@@ -182,3 +182,4 @@
 {"kind":"phase","ts":"2026-11-19T17:05:33Z","phase":"test","seconds":1075.309,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/warp-win/p6/run82.sh"}
 {"kind":"phase","ts":"2026-11-19T17:32:52Z","phase":"test","seconds":1524.665,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/warp-win/p6/run82.sh"}
 {"kind":"phase","ts":"2026-11-19T17:44:27Z","phase":"test","seconds":484.38,"exit":0,"cmd":"bash -c source /d/Develop/moat/agent_space/warp-win/p6env.sh; export WARP_CACHE_PATH=\"D:\\Develop\\moat\\agent_space\\warp-win\\wpcache-cpuonly\" HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99; cd /d/Develop/moat/agent_space/warp-win/p6 && timeout 5400 $VPY -m warp.tests -s autodetect -k cpu -m 4 > $LOGS/p6_cpuonly.log 2>&1; echo rc=$? >> $LOGS/p6_cpuonly.log"}
+{"kind":"phase","ts":"2026-11-19T18:01:11Z","phase":"test","seconds":1497.752,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/warp-win/p6/run82.sh"}
