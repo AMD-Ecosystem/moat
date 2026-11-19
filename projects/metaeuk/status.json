@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T04:44:13Z",
-  "updated_at": "2026-11-12T23:00:46Z",
+  "updated_at": "2026-11-19T06:25:36Z",
   "head_sha": "e6070cc18e4cad1ab59de1f8fe16b1da202d5e74",
   "depends_on": [],
   "porting": null,
@@ -138,7 +138,6 @@
       }
     }
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/metaeuk/pull/1",
   "on_hold": true,
   "on_hold_reason": "jeff 2026-11-12: upstream MMseqs2 shipped its own HIP libmarv (c7eee558, ENABLE_HIP); our USE_HIP libmarv port is superseded. Wait for the MMseqs2 rescope (arch fallback/tuning, Windows, ClampToInvalid), then rescope this port to what remains on top of ENABLE_HIP."
 }
