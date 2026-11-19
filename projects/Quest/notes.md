@@ -2959,3 +2959,35 @@ PYTHONPATH=<fork> python -m pytest <fork>/quest/tests --rootdir <fork> -p no:cac
 ## Lesson for cuda-to-rocm: a pip ROCm torch on Windows needs PYTORCH_ROCM_ARCH for find_package(Torch)
 
 For `references/windows.md`, "CMake and compiler drivers" (beside the `rocm_agent_enumerator`/gfx906 fallback note). A CMake torch extension on Windows that names its target with `-DCMAKE_HIP_ARCHITECTURES` still fails in `find_package(Torch)` with `LoadHIP.cmake: No GPU arch specified for ROCm build`: torch's `torch_hip_get_arch_list` reads only the `PYTORCH_ROCM_ARCH` environment variable or `rocm_agent_enumerator`, which ROCm does not ship on Windows. A build environment that exports `PYTORCH_ROCM_ARCH` hides this from whoever writes the README. Fix in the project: on `WIN32`, when `ENV{PYTORCH_ROCM_ARCH}` is undefined, `set(ENV{PYTORCH_ROCM_ARCH} ...)` from the resolved `CMAKE_HIP_ARCHITECTURES` before `find_package(Torch)`, and stop with a message when no architecture is given at all. Also: the Release-default idiom (`if(NOT CMAKE_BUILD_TYPE) set(... Release ...)`) must run before `project()` on Windows, because `Windows-Clang.cmake` sets `CMAKE_BUILD_TYPE_INIT Debug` and `project()` caches it; and FindPython on Windows follows an activated environment (`VIRTUAL_ENV`/`CONDA_PREFIX`), not PATH order. (Quest)
+
+## Review 2026-11-19 pass 3 (linux-gfx942, delta 6e7d8db..a70f4d9) -- CHANGES REQUESTED
+
+### Summary
+
+`a70f4d9` makes the README's ROCm configure work on Windows: it chooses ROCm's clang++ for C++, moves the Release default before `project()`, stops on an MSVC-style C++ compiler or a missing architecture, and hands the architecture to `find_package(Torch)`. On Linux it changes nothing (checked below). One finding, in the Windows fallback the README documents.
+
+### Build System
+
+1. **`quest/ops/CMakeLists.txt:31` plus `README.md:73`: the README's fallback for a shell with no active environment ("outside one, add `-DPython_EXECUTABLE=<path to python.exe>`") does not work with the pip ROCm SDK, and the error it gives points the wrong way.** `find_program(_quest_hipconfig hipconfig HINTS ENV HIP_PATH ENV ROCM_PATH PATH_SUFFIXES bin)` finds `hipconfig.exe` only on PATH or under `HIP_PATH`/`ROCM_PATH`. The pip SDK installs it in the environment's `Scripts` directory, which is on PATH only when the environment is activated, and it sets neither variable. In the non-activated case the README describes, the lookup misses, CMake falls back to `cl.exe`, and the line 53 FATAL_ERROR fires telling the user to "Unset the CXX environment variable", which the README has already told them to leave unset. The `cuda-to-rocm` Windows reference (`references/windows.md`, the `hipconfig --hipclangpath` recipe) already names the fix: add the Python interpreter's directory as a hint, i.e. `get_filename_component(... "${Python_EXECUTABLE}" DIRECTORY)` when `Python_EXECUTABLE` is given (it is a cache entry before `project()` when passed with `-D`), and `$ENV{VIRTUAL_ENV}/Scripts` / `$ENV{CONDA_PREFIX}/Scripts`. The other option is a README that says the non-activated shell also needs the environment's `Scripts` directory on PATH. Either way, run the non-activated case on the Windows host to prove it. Evidence: code reading against CMake 3.31's `find_program` search order and the SDK layout recorded in notes (the porter round, "the pip SDK puts `hipconfig.exe` in the venv `Scripts`"); not run here (this is a Linux host). The documented activated-environment command is unaffected; the porter ran it.
+
+### Checked on this host, no finding (evidence for the next round)
+
+linux-gfx942 (MI300X), CMake 3.31.6 (pip), torch 2.16.0a0+git6c3af02 / HIP 7.16 on the pip ROCm SDK 10.1. Configure only, `-GNinja -DUSE_HIP=ON -DCMAKE_PREFIX_PATH=<torch cmake prefix>`, fresh build directory each, `--trace-expand --trace-source=quest/ops/CMakeLists.txt`:
+
+| configure | `a70f4d9` | `6e7d8db` |
+|---|---|---|
+| `-DCMAKE_HIP_ARCHITECTURES=gfx942`, no build type, `PYTORCH_ROCM_ARCH` unset | Release | Release |
+| same, `-DCMAKE_BUILD_TYPE=RelWithDebInfo` | RelWithDebInfo | RelWithDebInfo |
+| `-DCMAKE_BUILD_TYPE=Debug` (`a70f4d9`, env `PYTORCH_ROCM_ARCH` set) | Debug | -- |
+| no architecture, no build type, `PYTORCH_ROCM_ARCH` unset (auto-detect) | Release, 8 lines `--offload-arch=gfx942` | same |
+| `-G "Ninja Multi-Config"` | `CMAKE_BUILD_TYPE` not set, configs Debug;Release;RelWithDebInfo | -- |
+
+- With identical options, `6e7d8db` and `a70f4d9` produce the same `CMakeCache.txt` (only the build-dir path differs) and the same `build.ninja` once source and build paths are normalized. The Linux build is unchanged.
+- The trace shows each Windows guard evaluated false with its body not entered: line 25 `if(CMAKE_HOST_WIN32 AND ...)`, 53 `if(WIN32 AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT ...)`, 74 `if(WIN32 AND NOT CMAKE_HIP_ARCHITECTURES)`, 85 `if(WIN32 AND NOT DEFINED ENV{PYTORCH_ROCM_ARCH})`. C++ stays `/usr/bin/c++`.
+- CUDA path: the diff adds an `else()` branch to the existing `if(NOT USE_HIP)` and edits only inside `if(USE_HIP)`; no CUDA line changed. The upstream main tip is `01c1623`, the branch's merge base (0 behind).
+- Claims in the commit and the lesson, checked against the source: `Windows-Clang.cmake:238` sets `CMAKE_BUILD_TYPE_INIT Debug` and `CMakeInitializeConfigs.cmake:22` caches it without FORCE, so a cache entry set before `project()` wins; `torch_hip_get_arch_list` (`Caffe2/public/utils.cmake:280`) reads only `ENV{PYTORCH_ROCM_ARCH}` or `rocm_agent_enumerator` and splits on spaces, which matches the commit's space join; FindPython honours `VIRTUAL_ENV`/`CONDA_PREFIX` (`FindPython/Support.cmake:1716`). The lesson's exact Windows error text (`LoadHIP.cmake:70` versus the macro's own "Could not detect ROCm arch" message) depends on the Windows torch 2.12 files, which this host does not have; not a finding.
+- `jargon.py --port Quest` clean; `audit-commits` reports only the known `6e7d8db` fenced-Test-Plan gap. `a70f4d9`: `[ROCm]` title 62 chars, fenced Test Plan, "Authored with Claude.", no trailer.
+
+### Recommendation
+
+**Request Changes** (finding 1). The fix stays inside the Windows-guarded block or the README, so on Linux it should be a source-class delta to the configure checks above.
