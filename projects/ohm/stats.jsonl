@@ -165,3 +165,15 @@
 {"kind":"phase","ts":"2026-11-19T05:46:11Z","phase":"test","seconds":3.628,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261118-213534-ohm-roles-prompt/moat/agent_space/build-cpu/bin/ohmtestheightmap"}
 {"kind":"phase","ts":"2026-11-19T05:46:11Z","phase":"test","seconds":0.064,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261118-213534-ohm-roles-prompt/moat/agent_space/build-cpu/bin/slamiotest"}
 {"kind":"session","ts":"2026-11-19T05:46:38Z","epoch":1795067198.149597,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-19T06:33:13Z","epoch":1795069993.595804,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-19T06:33:44Z","phase":"compile","seconds":10.258,"exit":0,"cmd":"cmake --build agent_space/build-hip -j 24"}
+{"kind":"phase","ts":"2026-11-19T06:33:55Z","phase":"test","seconds":5.223,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261118-222628-ohm-val32-prompt/moat/agent_space/build-hip/bin/gputiltestcuda"}
+{"kind":"phase","ts":"2026-11-19T06:34:32Z","phase":"test","seconds":36.363,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261118-222628-ohm-val32-prompt/moat/agent_space/build-hip/bin/ohmtestcuda"}
+{"kind":"phase","ts":"2026-11-19T06:34:40Z","phase":"test","seconds":7.984,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261118-222628-ohm-val32-prompt/moat/agent_space/build-hip/bin/ohmtest"}
+{"kind":"phase","ts":"2026-11-19T06:34:43Z","phase":"test","seconds":3.123,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261118-222628-ohm-val32-prompt/moat/agent_space/build-hip/bin/ohmtestheightmap"}
+{"kind":"phase","ts":"2026-11-19T06:34:43Z","phase":"test","seconds":0.024,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261118-222628-ohm-val32-prompt/moat/agent_space/build-hip/bin/slamiotest"}
+{"kind":"phase","ts":"2026-11-19T06:35:06Z","phase":"compile","seconds":8.549,"exit":0,"cmd":"cmake --build agent_space/build-cpu -j 24"}
+{"kind":"phase","ts":"2026-11-19T06:35:14Z","phase":"test","seconds":8.032,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261118-222628-ohm-val32-prompt/moat/agent_space/build-cpu/bin/ohmtest"}
+{"kind":"phase","ts":"2026-11-19T06:35:17Z","phase":"test","seconds":2.971,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261118-222628-ohm-val32-prompt/moat/agent_space/build-cpu/bin/ohmtestheightmap"}
+{"kind":"phase","ts":"2026-11-19T06:35:17Z","phase":"test","seconds":0.026,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261118-222628-ohm-val32-prompt/moat/agent_space/build-cpu/bin/slamiotest"}
+{"kind":"session","ts":"2026-11-19T06:35:49Z","epoch":1795070149.258265,"event":"end","platform":"linux-gfx1201"}

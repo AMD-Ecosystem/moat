@@ -1451,3 +1451,31 @@ As before, `OhmCuda.cmake` replaces `CMAKE_CUDA_ARCHITECTURES` with the default 
 All base failures are upstream's (GCC 13 libstdc++ `<utility>`; glm 1.0 config package and missing `gtc/quaternion.hpp` include), and the port's 4ad6bfc and 659a15d clear exactly them. No port-only failure: no CUDA regression at e9149bb. Note that `-DGLM_INCLUDE_DIRS=<glm-1.0.3>` alone does not select glm 1.0.3 on a host with `libglm-dev`: `find_package(glm CONFIG)` in Findglm finds Ubuntu's 0.9.9.8 first and the build silently uses `/usr/include/glm` (a first attempt built 227/227 that way); `CMAKE_IGNORE_PATH` is needed to test the headers alone.
 
 Warnings: port (0.9.9.8) and base with `-include utility` have identical sorted warning lists (16 lines: 9x nvcc `architectures prior to '<compute/sm/lto>_75' will be removed`, one per `.cu`; `ohm/VoxelLayout.cpp:216 -Wstringop-truncation`; CMake deprecation/dev warnings), and the port's glm 1.0.3 build has the same list. nvcc really compiled the kernels: `ninja -t commands` lists 9 `/usr/local/cuda-12.8/bin/nvcc` invocations in every configuration (8 `ohmgpu/gpu/*.cu`, `tests/gputiltest/cuda/matrix_kernel.cu`); `cuobjdump --list-elf lib/libohmcuda.a` gives 8 ELF images for each of sm_50..sm_86 (88) in both port builds. No compile command in any CUDA build references `hip_compat`, `OHM_FEATURE_HIP` or `__HIP`. Binaries in both port builds: `gputiltestcuda ohm2ply ohmcmp ohmfilter ohmheightmap ohminfo ohmpopcpu ohmpopcuda ohmprob ohmquerycuda ohmsubmap ohmtest ohmtestcuda ohmtestheightmap slamiotest`, the same list as at 7c09435. No GPU run; no stage or platform record changed.
+
+## Validation 2026-11-19 (linux-gfx1201, moat-port e9149bb)
+
+**GPU**: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32), one GPU pinned by the dispatcher (`HIP_VISIBLE_DEVICES=0` kept), `ulimit -c 0`. **Toolchain**: ROCm 10.1.0 TheRock pip SDK (`_rocm_sdk_devel`, `hipconfig --version` 7.16.26385-0000000), CMake 3.31.6, Ninja, glm 1.0.1 headers (GitHub release tarball). Fresh fork clone at e9149bbedcf8c8e1f6763884c0fcaeb3d70c31ee (== `origin/moat-port` per `git ls-remote`); `git status --porcelain` empty after both builds. Full build and full test run, same recipe and suites as the gfx90a run above, nothing skipped.
+
+```bash
+ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+cmake -B agent_space/build-hip -S projects/ohm/src -G Ninja -DCMAKE_BUILD_TYPE=Release -DOHM_FEATURE_HIP=ON -DOHM_FEATURE_OPENCL=OFF -DOHM_FEATURE_TEST=ON -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM -DGLM_INCLUDE_DIRS=$PWD/agent_space/dl/g101/glm-1.0.1
+utils/timeit.sh ohm compile -- cmake --build agent_space/build-hip -j 24     # 227/227, 0 errors
+export LD_LIBRARY_PATH=$ROCM/lib
+for t in gputiltestcuda ohmtestcuda ohmtest ohmtestheightmap slamiotest; do utils/timeit.sh ohm test -- $PWD/agent_space/build-hip/bin/$t; done
+```
+
+Arch auto-detected (`CMAKE_HIP_ARCHITECTURES=gfx1201;gfx1201;gfx1201;gfx1201`, `--offload-arch=gfx1201` on the HIP compile lines). `AMD_LOG_LEVEL=3` on `gputiltestcuda --gtest_filter='GpuKernel.*'` shows `matrixMultiply(float*, float*, float*, unsigned int)` launched on the device (`hipLaunchKernel ... {32,1,1}`, `hipSuccess`).
+
+| Suite | e9149bb (gfx1201) | e9149bb (gfx90a, 2026-11-19) |
+|-------|-------------------|------------------------------|
+| gputiltestcuda | 8/8 (3 suites, 5.1 s) | 8/8 |
+| ohmtestcuda | 58/58 (16 suites, 36.2 s) | 58/58 |
+| ohmtest | 53/53 (18 suites) | 53/53 |
+| ohmtestheightmap | 19/19 | 19/19 |
+| slamiotest | 4/4 | 4/4 |
+
+GPU 66/66, CPU-side suites of the HIP build 76/76. No skipped or disabled tests reported.
+
+CPU-only build (cache `OHM_FEATURE_CUDA/HIP/OPENCL=OFF`), same flags without the HIP options, 157/157: ohmtest 53/53, ohmtestheightmap 19/19, slamiotest 4/4 PASSED. (Ninja step totals here are 227 and 157 against 231 and 161 in the gfx90a notes; the GPU and CPU binary lists are the same as the CUDA check's, and every suite's count matches.)
+
+Checks: `python3 utils/jargon.py --port ohm` clean. readme.md has "Building for AMD GPUs" and the Windows paragraph. CUDA gate: already recorded at e9149bb (nvcc 12.8 compile check above); not repeated.

@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-11-19T05:46:38Z",
+  "updated_at": "2026-11-19T06:35:43Z",
   "head_sha": "e9149bbedcf8c8e1f6763884c0fcaeb3d70c31ee",
   "depends_on": [],
   "waivers": {},
@@ -167,6 +167,29 @@
         "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
         "at": "2026-06-23T22:44:43Z"
       }
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "e9149bbedcf8c8e1f6763884c0fcaeb3d70c31ee",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-19T06:35:43Z",
+      "updated_at": "2026-11-19T06:35:43Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/ohm/pull/1",
