@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-11-19T21:40:50Z",
-  "head_sha": "a49289d5269210de98e5a97387c0d69d0c321a51",
+  "updated_at": "2026-11-19T21:42:56Z",
+  "head_sha": "349fb05f985c7c12262b26336dd473ae76ad6b03",
   "depends_on": [],
   "waivers": {
     "windows": {
@@ -20,7 +20,7 @@
   },
   "license_spdx": "MPL-2.0",
   "upstream_repo_id": 172423631,
-  "stage": "porting",
+  "stage": "delta-ported",
   "platforms": {
     "linux-gfx1100": {
       "state": "validation-failed",
@@ -29,7 +29,7 @@
       "validated_sha": "d369e07",
       "started_at": "2026-11-19T21:40:50Z",
       "completed_at": "2026-06-05T14:30:35Z",
-      "updated_at": "2026-11-19T21:40:50Z",
+      "updated_at": "2026-11-19T21:42:56Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -52,10 +52,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "a49289d5269210de98e5a97387c0d69d0c321a51",
+      "validated_sha": "349fb05f985c7c12262b26336dd473ae76ad6b03",
       "started_at": "2026-06-05T00:11:32Z",
       "completed_at": "2026-11-19T19:42:29Z",
-      "updated_at": "2026-11-19T19:42:29Z",
+      "updated_at": "2026-11-19T21:42:42Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -72,8 +72,17 @@
       "last_agent": "validator",
       "failed_sha": "4b17590a1e7e9b7bb047fa9fbac6aec158f26a5b",
       "validated_prior": [
-        "d369e071b2fbf5641fe239dcb4aab54334719aa5"
-      ]
+        "d369e071b2fbf5641fe239dcb4aab54334719aa5",
+        "a49289d5269210de98e5a97387c0d69d0c321a51"
+      ],
+      "carry_forward": {
+        "from": "a49289d5269210de98e5a97387c0d69d0c321a51",
+        "to": "349fb05f985c7c12262b26336dd473ae76ad6b03",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-11-19T21:42:42Z"
+      }
     },
     "windows-gfx1101": {
       "blocked": true,
@@ -141,14 +150,10 @@
     }
   },
   "porting_released": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-19T19:33:29Z",
-    "at": "2026-11-19T19:35:42Z"
-  },
-  "reviewed_sha": "a49289d5269210de98e5a97387c0d69d0c321a51",
-  "porting": {
     "arch": "linux-gfx1100",
     "since": "2026-11-19T21:40:50Z",
-    "holder": "e1726326c5ee"
-  }
+    "at": "2026-11-19T21:42:56Z"
+  },
+  "reviewed_sha": "a49289d5269210de98e5a97387c0d69d0c321a51",
+  "porting": null
 }

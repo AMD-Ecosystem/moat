@@ -1203,3 +1203,19 @@ Same install, `./runtest --serial` (the CPU `bin/quick` built alongside, `test/t
 - `jargon.py --port QUICK`: clean.
 - Integrity: `projects/QUICK/src` at a49289d5, `git status --porcelain` empty.
 - Documentation: FAILED, see the verdict above (`CMake-Options.md:33` lacks `gfx1100`).
+
+## Porter round 2026-11-19 (349fb05f, linux-gfx1100, Radeon Pro W7800): docs gate
+
+Requested by jeff: one doc-only commit answering the gfx1100 validator's `--gate docs` failure. Fork `moat-port` a49289d5 -> 349fb05f `[ROCm] List gfx1100 among the QUICK_USER_ARCH values` (fresh clone `projects/QUICK/src`, `protect-fork` installed, plain fast-forward push). One line: `CMake-Options.md:33` value list `...|gfx90a|gfx942>` -> `...|gfx90a|gfx942|gfx1100>`. No other file.
+
+Every place upstream documents `QUICK_USER_ARCH` values, checked at upstream master 7e8aeb2c:
+
+- `CMake-Options.md:33`: the only list of HIP values. Fixed.
+- `AGENTS.md:48` (upstream's agent guide): the option table lists CUDA values only ("`volta`, `turing`, ... etc.", described as "CUDA GPU architecture"), and `:51` defers HIP to `QUICKCudaConfig.cmake` and `CMake-Options.md`. Lists no HIP value, so nothing to make consistent; left alone.
+- `QUICKCudaConfig.cmake:58` cache help string: lists no values (it says "cuda and cudampi versions only", which is pre-existing upstream text and not about gfx1100); left alone.
+- `README.md`: no build options; installation defers to the external quick-docs readthedocs site, a separate repository not in this fork. Not checked or edited here; if that site lists HIP arch values, it is the one place left uncovered.
+- `configure` (`--arch` help, makefile build): upstream's legacy makefile GPU path, which the port does not touch (restored to upstream; see the 2026-11-19 sync section). It has no gfx1100 case, so listing it there would be wrong.
+
+Other AMD values the port introduced: none. `git diff master...moat-port` adds only `gfx1100`; gfx908/gfx90a/gfx942 were upstream's already. (Pre-existing upstream mismatch, not ours: `CMake-Options.md` lists `gfx906`, which the CMake HIP branch rejects with FATAL_ERROR. Out of scope; not changed.)
+
+Check: `cmake .. -DHIP=ON -DCOMPILER=GNU -DQUICK_USER_ARCH=gfx1100 -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$ROCM_PATH -DHIP_TOOLKIT_ROOT_DIR=$ROCM_PATH -DCMAKE_SHARED_LINKER_FLAGS=-L$GFL` (pip ROCm 10.1 SDK) exits 0 and prints `Configuring QUICK for gfx1100`; the scratch build dir was deleted. No compile: the delta is a Markdown file. `prose.py` on the commit body clean, `jargon.py --port QUICK` clean, title 52 characters, AI disclosure in prose, fenced Test Plan, no trailer. `git status --porcelain` empty.
