@@ -7,7 +7,7 @@
   "priority": 4.507,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-11-19T23:48:39Z",
+  "updated_at": "2026-11-19T23:48:55Z",
   "head_sha": "1baeec230ebc9e169c822e408333d347140786ad",
   "porting": null,
   "waivers": {
@@ -150,5 +150,10 @@
     "head_sha": "1baeec230ebc9e169c822e408333d347140786ad",
     "content_sha256": "731f7f61d08e7438f49406cac4b5cd6ab27601aa844cf95b0c8e5f5c18f96534",
     "review_pr": "https://github.com/AMD-Ecosystem/icicle/pull/1"
-  }
+  },
+  "pr_url": "https://github.com/ingonyama-zk/icicle/pull/1048",
+  "pr_number": 1048,
+  "pr_opened_at": "2026-11-19T23:48:55Z",
+  "pr_state": "open",
+  "published_sha": "1baeec230ebc9e169c822e408333d347140786ad"
 }
