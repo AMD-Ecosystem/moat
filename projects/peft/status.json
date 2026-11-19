@@ -1,0 +1,34 @@
+{
+  "schema_version": 3,
+  "name": "peft",
+  "upstream_url": "https://github.com/huggingface/peft",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T02:12:02Z",
+  "updated_at": "2026-11-06T11:45:00Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "none needed: pure PyTorch, runs on ROCm via torch; AMD ROCm docs ship PEFT/LoRA guides",
+    "viable": true,
+    "summary": "PEFT: pure-PyTorch adapter library; only CUDA is a 3 KB optional BOFT JIT kernel with a torch fallback, and AMD's ROCm docs already cover PEFT/LoRA on Instinct",
+    "at": "2026-11-06T02:20:18Z"
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/huggingface/peft/blob/main/LICENSE",
+      "at": "2026-11-06T11:45:00Z"
+    }
+  ]
+}

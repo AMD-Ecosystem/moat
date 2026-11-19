@@ -3780,3 +3780,162 @@ lib +3: test_hip_einsum_complex_large, test_hip_einsum_complex_split, test_hip_s
 
 ## Optional dependency: cupy (Windows only), ruling 2026-11-04 (jeff)
 gpu4pyscf's Windows support needs CuPy-ROCm on Windows, which is being ported as MOAT project `cupy` (port on ROCm/cupy moat-port, PR to cupy/cupy). It is NOT a hard `depends_on`: the approved windows waiver stands and the Linux PR proceeds on its own. Deferral `gpu4pyscf-windows-after-cupy` tracks validating and offering Windows support once the CuPy Windows port lands.
+
+## Lesson for cuda-to-rocm: entries stranded on this branch's copy of the skill (2026-11-19)
+
+Earlier gpu4pyscf rounds wrote these entries directly into the branch's copy of the skill, before port branches were limited to their own folder. The trunk has since split `fault-classes.md` into `faults-*.md` topic files and never received them, so the 2026-11-19 trunk merge took the trunk's skill files and the text is preserved here verbatim for promotion. The validation.md nvcc-wheel note is already on the trunk and is omitted.
+
+### SKILL.md index bullets (belong in the fault-class index)
+
+- A block collective called in a loop without a barrier races only under concurrent GPU load; the fault surfaces in a later kernel that reads unfilled `-1` indices.
+- A kernel that opts in to more than 64 KB of shared memory per block (static plus dynamic) cannot launch on most AMD GPUs; move scratch to a per-block global workspace for those cases.
+- rocBLAS `gemv` with more than 65535 batches (m < 2n) returns wrong entries (missing barrier in its batch loop); CuPy's `einsum` reaches it through batched dot products.
+- gfx12 work-group IDs y and z are 16 bits: grid y/z above 65536 is rejected or silently wraps, and rocBLAS complex GEMM with n > 2^21 leaves columns unwritten.
+
+### fault-classes.md entries (belong in `faults-wavefront.md`, `build-headers-macros.md`, `libraries.md` and `platform-limits.md` as fits)
+
+The same missing barrier on a multi-wave block is timing-dependent, so it can pass every
+serial run. A `BlockScan` called once per loop iteration on the same storage, with no
+`__syncthreads()` between iterations, gave some threads wrong offsets only when other
+processes shared the GPU (pytest-xdist workers), on wave32 gfx1100. The symptom was
+`hipErrorIllegalAddress` in a LATER kernel that read the unwritten `-1` slots as indices.
+Before blaming the kernel that faults, check the index arrays it was given for unfilled
+entries, and run the producer under concurrent load. Fix it unconditionally: the barrier is
+CUB's documented requirement on CUDA too. (gpu4pyscf: `put_pairs_on_blocks_kernel`.)
+
+**A host-side launch heuristic keyed on the register count can break a kernel whose block
+width is a compile-time constant.** A launcher that doubles the block when
+`cudaFuncGetAttributes(...).numRegs <= 128` is harmless for kernels that read
+`blockDim.x`, but a kernel that hard-codes `constexpr int nsq_per_block = 256` then runs
+every task twice and overlaps its per-thread shared-memory slices. NVIDIA builds of those
+kernels sat above 128 registers, so the mismatch was latent; on gfx90a/gfx942 one landed at
+exactly `.vgpr_count: 128` and the analytic gradient came out wrong by orders of magnitude,
+different on every run, while gfx1100 passed. When results are wrong and nondeterministic on
+one wave size only, compare each launcher's block geometry with the constants inside the
+kernel it launches; `llvm-readelf --notes` on the extracted code object gives the VGPR count.
+(gpu4pyscf)
+
+**`<complex.h>` defines the macro `I`, which rocPRIM uses as a template parameter name.** A
+TU that includes `<complex.h>` before a hipCUB shim fails deep inside
+`rocprim/types/tuple.hpp` with `expected ')'` and `_Complex float` conversion errors. If the
+TU does not use `I`, `#undef I` in the shim before including hipCUB. (gpu4pyscf)
+
+**CuPy-ROCm gaps a CuPy-based port meets at runtime.** `cupy.cuda.runtime.deviceSetLimit` is a
+stub that always raises hipErrorUnknown (`cupy_backends/hip/cupy_hip_runtime.h`); call
+`hipDeviceSetLimit` through ctypes from `libamdhip64.so.<major>`, the library CuPy already
+loaded (`runtimeGetVersion() // 10000000`). RawKernel sources compile with hiprtc, which has
+no `cuComplex.h` (use `hip/hip_complex.h` and alias `cuDoubleComplex`, `make_cuDoubleComplex`,
+`cuCreal`, `cuCimag`) and rejects a 32-bit mask in `__shfl_down_sync`; prepend those
+definitions on ROCm only, leaving the CUDA source untouched. CuPy-ROCm ships no cuTENSOR
+binding (fall back to `cupy.einsum`) and CUTLASS-based extension kernels need a
+replacement such as one GEMM per group. (gpu4pyscf)
+
+**Kernels that opt in to more than 64 KB of shared memory per block.** CUDA lets a kernel
+raise its dynamic shared memory with `cudaFuncSetAttribute(...MaxDynamicSharedMemorySize...)`
+up to `sharedMemPerBlockOptin` (99 KB to 227 KB on recent NVIDIA GPUs). AMD gives a block 64 KB
+of LDS on gfx90a, gfx942 and RDNA (gfx950 has 160 KB), and HIP counts the kernel's static
+`__shared__` arrays against the same limit, so a launch whose static plus dynamic size exceeds
+it fails at `hipFuncSetAttribute` with invalid argument even when the dynamic part alone fits.
+Find the cases by computing the driver's size formula over the whole parameter range and
+adding each kernel's `.group_segment_fixed_size` (from `llvm-readelf --notes` on the extracted
+code object). CuPy-ROCm has no `sharedMemPerBlockOptin`, so a Python guard on it needs a
+fallback. Fix for the over-limit cases only, chosen at run time from
+`hipDeviceAttributeMaxSharedMemoryPerBlock` plus `hipFuncGetAttributes().sharedSizeBytes`:
+move the largest scratch arrays that the inner loop does not read to a per-block
+global-memory workspace, size the grid to the resident blocks
+(`hipOccupancyMaxActiveBlocksPerMultiprocessor` times CUs) with each block looping over tasks
+so the workspace does not scale with the task count, and allocate it with
+`hipMallocAsync`/`hipFreeAsync` on the launch stream. Put the variant in a HIP-only file so the
+CUDA translation unit stays identical. In gpu4pyscf's ECP derivative kernels the variant gave
+bit-identical results and, at a few hundred tasks or more, ran in 0.6x the time of the
+LDS-heavy kernel, because its smaller LDS footprint keeps more blocks resident. (gpu4pyscf)
+
+**rocBLAS `gemv` over more than 65535 batches returns wrong entries; `cupy.einsum` reaches it.**
+Root cause (https://github.com/ROCm/rocm-libraries/issues/14819): for transA=N and m < 2n,
+rocBLAS selects `rocblas_gemvn_kernel<32,16>`, which loops over the batches inside the kernel
+in steps of 65535 (the grid z limit) and has no `__syncthreads()` after its shared-memory
+reduction, so a wave starting the next batch overwrites partial sums another wave is still
+reading. Only non-final loop iterations are corrupted, so batch_count <= 65535 is always
+clean, and large m is affected too (m = n = 16 fails, m = 32 with n = 64 fails under load).
+`gemv_strided_batched` reaches it on gfx11xx/gfx12xx; on gfx942/gfx90a small shapes take a
+different kernel and the rest fail only under heavy load. `gemm_strided_batched_ex` with
+m or n = 1 reaches it where rocBLAS routes that call to gemv (gfx1100); on gfx1201 and gfx942
+it goes to Tensile, which splits the batch on the host, and is clean. complex128 fails on an
+idle RDNA GPU; float64 mostly needs a second process on the GPU, so test-runner parallelism
+decides whether CI sees it. CuPy computes each einsum pairwise step as `(B, L, K) @ (B, K, R)`
+after dropping size-1 axes, so any step with L or R = 1 is a candidate, for example
+`einsum('xg,xg->g')`, and so is a structurally clean contraction whose free index has size 1
+(one state, spin set or k-point). Fix in the project, not in CuPy: do not replace
+`cupy.matmul` on the CuPy module (a process-global monkeypatch of a third-party library that
+misses `@`; a reviewer rejected it). Add a project-local `einsum` that follows CuPy's default
+pairwise order and, on ROCm, computes a matrix-vector step with more than 65535 batches as a
+broadcast multiply and sum (on CUDA it is `cupy.einsum` itself). The simulation must drop
+each operand's size-1 axes before it decides which labels the operands still waiting keep:
+CuPy builds a step's kept labels from the squeezed subscripts, so a label of size 1 in an
+earlier operand is contracted, not batched. Taking the full subscripts misses steps such as
+`'da,deab,dac->'` with the first operand shaped (1, 4), a matrix-vector product over `a`, and
+reroutes some steps that are not one. Test the trigger differentially: record the shapes
+`cupy.matmul` receives inside `cupy.einsum` (it looks the attribute up per call) over random
+patterns with size-1 broadcasting, with the batch threshold lowered so small shapes reach it,
+and require the helper to reroute exactly the calls that issue a matrix-vector step.
+The recorder sees the pairwise steps only when cuTENSOR is not a CuPy routine accelerator
+(CUDA CI often sets `CUPY_ACCELERATORS=cub,cutensor`), so clear the list with
+`cupy._core._accelerator.set_routine_accelerators([])` for the test and restore it in a
+`finally`; CuPy reads it on every call.
+Splitting the batch into chunks of 65535 also avoids the kernel loop, but measured on gfx1201 the multiply and sum is
+4x to 250x faster than the rocBLAS call for these shapes. Bind it as the contraction wrapper's
+einsum and switch the direct `cupy.einsum` sites to it; find them statically by simulating
+CuPy's pairwise order from the subscripts, then judge `numpy.einsum` calls that may receive
+CuPy arrays. Do not hunt for sites with an LD_PRELOAD shim on rocBLAS that takes the GIL in
+every call: two W7800s wedged (first H2D copy never completes, 95% GFX activity with no
+process) during such a run with 8 to 12 workers. (gpu4pyscf; reproducer, site list and
+rewrite tool in its notes.)
+
+**gfx12 work-group IDs y and z are 16 bits: grid y/z above 65536 wraps or is rejected, and rocBLAS complex GEMM with n > 2^21 leaves columns unwritten.**
+On gfx12 (gfx1200/gfx1201) the compiler reads `blockIdx.y` as `ttmp7 & 0xffff` and
+`blockIdx.z` as `ttmp7 >> 16`; gfx11 and gfx9 receive 32-bit IDs in SGPRs (check with
+`hipcc --cuda-device-only -S` per arch). `hipGetDeviceProperties` reports
+`maxGridSize = (2^31-1, 65535, 65535)`; 65536 still works. Above it the launch API decides
+what happens: `hipLaunchKernel`/`hipExtLaunchKernel` return hipErrorInvalidConfiguration and
+run nothing (unchecked, that is silently missing output: MIOpen's RNN bias op,
+https://github.com/ROCm/rocm-libraries/issues/10551), while `hipModuleLaunchKernel` and
+`hipExtModuleLaunchKernel` return success and run every work-group with the y/z index taken
+modulo 65536, so work-group 65536 + i redoes work-group i and the tail is never touched.
+rocBLAS (5.7.0, TheRock 10.1) has only generic `fallback` Tensile kernels for complex types on
+gfx12 (`Cijk_..._ZB/CB_MT32x32x8_..._WG16_16_1_WGM8`), launched through
+`hipExtModuleLaunchKernel` with the 32-column tiles of n in grid y: every zgemm/cgemm (all four
+transposes) with n > 65536 * 32 = 2^21 returns columns >= 2^21 unwritten (a poisoned output
+keeps its poison), independent of m and k. Real GEMMs run hipBLASLt-generated kernels with
+the tiles in grid x and are clean to n = 8M; batched complex GEMM over 65536 batches is clean
+(the batch is split on the host). `AMD_LOG_LEVEL=3` prints each `hipExtModuleLaunchKernel`
+with its global sizes, which shows the grid. CuPy's einsum reaches it through k-point
+transforms such as `einsum('Lk,pLqG->kpqG')`, where n = p*q*G is millions. In a CuPy port
+fix it in the project-local einsum (above): for a complex pairwise step whose row or column
+count exceeds 2^21, split the outermost free output axis of the larger side and recurse. Split
+the outermost axis, not the largest: splitting the innermost axis made the strided writes into
+the result cost 1.5x, the outermost-axis split costs 1.1x to 1.5x at 3.5M to 6.9M columns and
+is 0.26x (faster than the unsplit call) at 26M. Gate the split on the device's
+`gcnArchName` starting with `gfx12` (cached per device), so other GPUs keep the path they
+validated, and force the gate in the regression tests so CI on any GPU checks the split. A kernel of your own that needs more than
+65536 work-groups in y or z must fold them into x. (gpu4pyscf; reproducers in its notes.)
+
+
+### validation.md entries (belong in `validation.md` / `diagnosis.md`)
+
+That rule is for small, deterministic deviations. An error that is large (orders of
+magnitude) or changes from run to run on one wave size is a defect until shown otherwise:
+gpu4pyscf's analytic gradients failed only on gfx90a/gfx942 for months and turned out to be
+a launch-geometry mismatch (see the register-count heuristic in the fault classes). Reduce
+it to the smallest input that still fails (H2/STO-3G reached a single kernel) before
+calling it numerical.
+
+## Seeded `cupy.random` inputs differ between CUDA and ROCm
+
+CuPy-ROCm draws from hipRAND/rocRAND, so `cp.random.seed(n)` gives different numbers than
+CUDA's cuRAND. A test that hard-codes a fingerprint of results computed from such inputs
+fails on ROCm even when the computation is right. Do not count it as a GPU failure or edit
+it away: rerun the same inputs through the CPU reference (or the test's own CPU cross-check
+with only the fingerprint assertion disabled, in a scratch copy) and record that comparison.
+`np.random`-seeded tests are unaffected. (gpu4pyscf)
+
+- **Proving a real miscompile: catch the faulting instruction, then flip one backend pass.** An `HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION` is reported imprecisely. Run the process under `rocgdb -batch -ex 'set amdgpu precise-memory on' -ex run -ex 'x/12i $pc-40' -ex 'p/x $v20'` (rocgdb ships in TheRock's `bin/`) to stop on the exact instruction and read its registers per lane. In gpu4pyscf the faulting op was `global_atomic_add v1, v20, v1, s[20:21]` (the persistent-kernel `atomicAdd(head, 1)`). Its zero offset register v20 held garbage in lane 0 only, and `llvm-objdump -d` of the extracted code object showed v20 set to 0 once and then reused as the destination of a predicated `global_load_dwordx2 v[20:21]` inside the loop. Rebuilding with `-mllvm -disable-machine-licm` in `CMAKE_HIP_FLAGS` made results match the CPU reference to 1e-13. `-O1` did not help. The defect was TheRock ROCm 10.1 (AMD clang 24.0.0git) MachineLICM, and the same pattern appears in gfx90a code from that compiler, so it is a toolchain fault, not an architecture fault. It does not reproduce on every target, though: the same compiler and committed flags ran correctly on gfx1100, so before adding the flag, test whether each arch shows the fault with one d-shell run. Under `-fgpu-rdc` device codegen runs at link time, and CMake's HIP link rule reuses `CMAKE_HIP_FLAGS`, so that one setting reaches both; a copy in `CMAKE_SHARED_LINKER_FLAGS` can be silently overwritten by the project (gpu4pyscf's own `set(CMAKE_SHARED_LINKER_FLAGS ...)` did) and protects nothing, so confirm with a verbose build that every compile and link line carries the flag. Carrying a compiler workaround in the port is a person's decision; once made, put it under the HIP build only with a comment naming the compiler version and the arches affected, and the condition for removing it. (gpu4pyscf)

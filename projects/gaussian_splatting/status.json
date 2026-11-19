@@ -7,14 +7,14 @@
   "priority": 3.571,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-07T07:05:08Z",
+  "updated_at": "2026-11-19T00:46:32Z",
   "head_sha": "dfb1dd1cbcc508e08c7395b27953620121dad1fc",
   "pr_url": "https://github.com/joeyan/gaussian_splatting/pull/37",
   "pr_number": 37,
   "pr_opened_at": "2026-06-17T14:06:59Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "open",
+  "pr_state": "merged",
   "license_spdx": "MIT",
   "upstream_repo_id": 745697813,
   "stage": "review-passed",
@@ -132,5 +132,6 @@
       }
     }
   },
-  "published_sha": "dfb1dd1cbcc508e08c7395b27953620121dad1fc"
+  "published_sha": "dfb1dd1cbcc508e08c7395b27953620121dad1fc",
+  "pr_merged_at": "2026-11-19T00:46:32Z"
 }

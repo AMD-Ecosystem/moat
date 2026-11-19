@@ -10,26 +10,77 @@ Install the hooks once per clone:
 
     python3 utils/install_hooks.py
 
+It installs the pre-push hook and the `gh` guard launchers (`gh` and `moat-gh-hook`)
+under `~/.local/bin`, which must come first on `PATH`: `orient.sh` stops with exit 3
+when `gh` resolves to anything else, because a guard PATH never reaches checks
+nothing. Bypassing the hook (`git push --no-verify`) is a person's call, never an
+agent's.
+
 They run the same `check.py` gates as CI (both run `check.py --fast`, which skips the
-local-only `forks` scan). CI runs one more check the hook cannot: the pull request's
-title (`utils/pr_intent.py`), which does not exist at push time -- so a locally-clean
+slow local-only `forks` and `commits` scans). CI runs one more check the hook cannot: the pull request's
+title (`utils/pr_intent.py`; check one before opening with `pr_intent.py --check-title`), which does not exist at push time -- so a locally-clean
 push can still fail CI on its title, and only on that. To run what they run:
 
     python3 utils/check.py --fast
 
-A bare `python3 utils/check.py` runs the `forks` scan too, which needs the local
-clones and is not part of either gate.
+A bare `python3 utils/check.py` runs the `forks` and `commits` scans too, which need the
+local clones and are not part of either gate.
+
+Several gates scope themselves to the push being judged: a push that updates only `port/<name>`
+branches skips the gates over trunk-owned files (`code`, the generated schema file, `licenses`,
+`harness-adapters`, `skills`), and `branch-scope` judges the commits the push adds. The hook
+tells the gates what is being pushed through `MOAT_PUSH_UPDATES` and `MOAT_PUSH_REFS`; CI
+exports the same two variables from the push event, so both run the same gates on the same
+push. A pull request sets neither and every gate applies.
+
+## Testing a tooling change
+
+Every Python tool under `utils/` re-runs itself from an export of `origin/main` when the
+checkout's `utils/`, `config/` or `schema/` differ from the trunk's and the checkout does
+not already contain the trunk (`utils/trunk.py`). That is what keeps a stale port branch's
+tools from deciding anything, and it is also what makes a tooling branch that is behind
+`main` silently run the trunk's code instead of the code under test. Three environment
+variables are the way around it, for testing only:
+
+- `MOAT_LOCAL_TOOLS=1` runs the checkout's own copy. The tool says so in one line on
+  stderr, once per command.
+- `MOAT_TRUNK_REF=<ref>` names another ref as the trunk. On a port branch,
+  `MOAT_TRUNK_REF=origin/<tooling-branch> python3 utils/moatlib.py show <name>` runs that
+  branch's tools against the port branch's records without merging anything.
+- `MOAT_TRUNK_TOOLS` is the launcher's own marker (the export a tool is running from, or
+  `local`). Set by hand it has the same effect as `MOAT_LOCAL_TOOLS` and is announced
+  the same way; never export either from a shell profile.
+
+A branch that already contains `origin/main` needs none of them. The usual loop:
+
+    python3 -m unittest discover -s tests -t .
+    MOAT_LOCAL_TOOLS=1 python3 utils/check.py code schema skills harness-adapters
+
+`MOAT_TRACEBACK=1` makes `moatlib.py` raise instead of printing its one-line refusal.
+
+Commands in this repository's documents are spelled `python3`. The shell entry points
+(`orient.sh`, `setup_git.sh`, `timeit.sh`, `session.sh`) do not depend on that name: they
+take the first of `python3`, `python` that can import the tooling's dependencies
+(`moat_resolve_py` in `utils/lib.sh`), or `MOAT_PYTHON` when it is set, and the installed
+hooks and the `gh` launcher carry the interpreter that installed them. On a host where
+`python3` is something else (one Windows host has an unrelated virtual environment under
+that name), type `python`.
 
 ## Branch model
 
 `main` is protected. Work happens on a per-project branch, `port/<name>`, which is shared:
 every host and person working that project pushes state to it. **The branch existing on the
 remote is the claim** -- it is how another host knows the project is in flight, so there is
-no lock file and no expiry. Writes to the fork are serialised separately, by the
-`porting` {arch, since} lock in `status.json`, which the state transition takes and
-releases; that one is about who may push code, not about who holds the project.
+no lock file and no expiry. Planning, porting and reviewing are serialised separately, by the one
+`porting` {arch, since, holder} work lock in `status.json`, which the state transition takes and
+releases; that one is about who may write the plan, the fork or the review verdict, not about who holds the project.
 
-The branch is deleted when its pull request merges -- that is what retires the claim. A
+Delete the branch when its record has merged -- that is what retires the claim, and
+nothing does it unasked: the repository is not set to delete merged branches.
+`moatlib.py misplaced` (orient prints it) lists the branches that are ready to merge and,
+for one already merged, the command that deletes it: `moatlib.py retire-branch <name>
+--apply`. That command refuses unless the project has nothing outstanding, its folder is
+on `main`, and the branch carries no edit to a shared file that `main` lacks. A
 `port/<name>` left behind reads as live work forever, and the selector has no timeout
 that would notice; taking over one that is genuinely stale is a human decision, not an
 expiry.
@@ -59,7 +110,9 @@ confirmation.
 recommends a reason; it never records one. Screens collect into one issue
 (`utils/intake_queue.py publish --apply`), a person replies in prose, and an agent
 round-trips that reading as a small pull request carrying the declines (plus the
-regenerated board, which moves with them). Merging that is the record -- approving is
+regenerated board, which moves with them): `intake_queue.py apply --decline ... --by
+<who decided>`. `--by` has no default, and each record also stores `recorded_as`, the
+GitHub account that was authenticated when it was written. Merging that is the record -- approving is
 impossible on a self-authored pull request, and the merge carries the same actor and
 timestamp. Reasons are the `SKIP_REASONS` in `moatlib`; `declined` exists for a
 deliberate no whose reasoning is intentionally not written down, since this repo is
@@ -80,6 +133,13 @@ this file that needs a person is *our* judgement about a project, while this is 
 else's decision about us, carried into the record. The only thing recording it can do is
 less work, so the failure mode of getting it wrong points the safe way.
 
+A record binds every host at once. `data/optout.json` reaches the trunk through a pull
+request, and until that merges only one checkout has it, so `record` also pushes the
+registry to its own branch, `optout-pending`, immediately; both writes to an upstream
+repository (`--publish` and `--merge-fix`) read that branch before they act and
+refuse on a match, or when they cannot fetch it. The pull request is still how the
+record reaches discovery and adoption.
+
 Recording it retires the adopted projects it covers and blocks the rest mechanically:
 discovery stops offering those repos, `scaffold` refuses them, and `pr_ready` refuses
 them, which is what both routes upstream pass through. That last one is the point --
@@ -91,7 +151,8 @@ the open pull request and deleting the fork. `optout.py record` prints the comma
 stops there.
 
 Removing an opt-out resumes contact with someone who asked us to stop, so it takes a
-person and `--by`.
+person and `--by`, and the removed entry is kept in `data/decisions.jsonl` (as is a
+disposition cleared with `triage.py unskip --by <who>`).
 
 ## What a pull request should look like
 
@@ -120,9 +181,10 @@ That part is reported and not enforced, because a fleet-wide sweep legitimately 
 every project at once and a gate that fires on ordinary work is one people learn to
 ignore.
 
-Promoting a lesson to the `cuda-to-rocm` skill inside a port is the one crossing that
-belongs, and is expected rather than tolerated: the lesson and the evidence for it
-should land together.
+A port branch does not edit the skills or the tooling: the pre-push `branch-scope`
+gate refuses a port-branch commit outside `projects/<name>/`. A lesson the port taught
+is written in its notes, reviewed with the port, and promoted to the skill on `main`
+(see Porting knowledge).
 
 ## Sending it upstream
 
@@ -132,18 +194,24 @@ approving it alone would approve a file that merely *asserts* the port works; th
 is the actual diff, and review comments there attach to the code and persist for whoever
 picks the project up next.
 
-Approve it with a comment carrying `/moat approve` on a line by itself -- either box
-GitHub offers counts, a review comment or an ordinary conversation comment. The
-Approved button is unavailable: agents open the pull request with the maintainer's
-credentials, so it is self-authored, and GitHub does not let an author approve. Prefer
-the review form: it records the commit it was written against, which is what the
-staleness checks rest on, while a conversation comment is judged only by its time
-against the branch tip.
+Approve it with a comment carrying `/moat approve <sha>` on a line by itself, where
+`<sha>` is the head commit you reviewed (7 or more characters; the instructions
+comment the tool posts on the review PR shows the line with the head filled in).
+Either box GitHub offers counts, a review comment or an ordinary conversation
+comment. The Approved button is unavailable: agents open the pull request with the
+maintainer's credentials, so it is self-authored, and GitHub does not let an author
+approve. The sha is what binds the approval to the code: it counts only while that
+commit is the review PR's head, so a commit made before the approval and pushed
+after it cannot ride out on it. The review form records the commit it was written
+against, so there the sha may be left off; a conversation comment without one reads
+`unbound` and approves nothing. (A conversation comment older than
+`SHA_REQUIRED_FROM` in `utils/moatlib.py` is judged by its time against the branch
+tip, as all of them once were.)
 
 Send it back the same way: `/moat changes-requested` on a line by itself (or
 `/moat request-changes`; both spellings are accepted) -- the
 Request Changes button is greyed out for an author exactly as Approve is. It stands,
-and blocks submission, until the same person posts `/moat approve`. Your latest
+and blocks submission, until the same person posts `/moat approve <sha>`. Your latest
 command is the one that counts; a command quoted inside a code fence is ignored, and
 an unrecognized `/moat` line blocks submission until it is cleaned up rather than
 being read as chatter.
@@ -178,8 +246,10 @@ shape one level down. The open PR's branch is frozen (a push to it lands in fron
 maintainer unreviewed; a pre-push hook in the fork clone refuses it), so the fix stages on
 `moat-fix-<pr#>`, is reviewed and revalidated at the staging tip, and gets its own fork
 review PR (`upstream.py --fix-review`) whose diff is exactly the delta. Approving it with
-`/moat approve` authorizes `upstream.py --merge-fix --apply` to fast-forward the PR branch
-to exactly the approved tip -- and to post the reply drafted under the body's
+`/moat approve <sha>` authorizes `upstream.py --merge-fix --apply --name <project>` to
+fast-forward the PR branch to exactly the approved tip (the hook lets that one push
+through on a one-shot token the tool writes, naming the exact commit and ref; no
+environment variable opens it) -- and to post the reply drafted under the body's
 `## Upstream reply` heading, verbatim behind a standing line disclosing that it was
 drafted by an AI assistant (`REPLY_NOTE` in `utils/upstream.py`, prepended by the tool
 at post time for the same reason `SUBMISSION_NOTE` is appended: a standing obligation
@@ -196,13 +266,29 @@ upstream PR. The finished PR moves into the record's history (`pr_history`) rath
 blocking the route, and every gate binds at the new head exactly as it did for the first
 PR. The `moat-checkup` skill walks the preconditions.
 
+## Release lines: when upstream will never take the port
+
+Some upstreams will not accept AMD support at all (NVIDIA's Warp and cuCIM), so the deliverable is a set of branches MOAT owns in the fork, one MOAT project per upstream release. `warp-1.14` and `warp-1.15` are projects against `NVIDIA/warp` beside the development line `warp`; each line depends on the one before it (`--deps warp-1.14`), so they are ported in order, each starting from the previous line's port plus upstream's delta.
+
+    python3 utils/moatlib.py scaffold NVIDIA/warp --name warp-1.14 --branch release-1.14 --deps ...
+    python3 utils/moatlib.py set-fork-branch warp-1.14 release/1.14.0.amd0 --by <who>
+    python3 utils/moatlib.py set-delivery warp-1.14 fork-release --by <who> [--tag-format ...]
+    python3 utils/moatlib.py set-fork-url warp-1.14 https://github.com/AMD-Ecosystem/warp --by <who>
+    python3 utils/moatlib.py mirror-branch warp-1.14
+
+The three rulings are a person's. `fork_default_branch` (here `release-1.14`) is a pristine copy of upstream's release branch under upstream's own name and SHAs: it is the review base, and the only thing that writes it is `mirror-branch`, which fast-forwards it to upstream and refuses anything else (a fork clone's pre-push hook refuses direct pushes to it too, and so does the scratch repository `mirror-branch` itself pushes from, which lets through only the two pushes that command names). `mirror-branch` also creates the port branch as an exact copy of the mirror when the fork lacks one; it copies upstream's commits only, so an agent may run it. The porter commits on top of `fork_branch`, versions the build `1.14.0+rocm.0`, and makes the project's release wheel buildable on every supported platform; the validator installs and tests the built wheel. Hosting the wheels (a GitHub release) is a separate GitHub-visible act that needs a person's approval of its exact content.
+
+Sign-off is the ordinary review PR, opened by `upstream.py --review` from the port branch into the pristine branch, with the same gates and the same `/moat approve` reading and staleness rules. It is never merged, and no submission note is appended because nothing is republished. Approval authorizes `upstream.py --finish-release --apply --name <project>`, on the `--publish` contract: it re-reads the approval and every gate live, checks the review PR still runs port branch into base at the recorded head and that the base is still upstream's own history, then tags the approved commit (`v{version}+rocm.{rev}` from a branch ending in `<version>.amd<rev>`, unless the line's `--tag-format` says otherwise; a custom format must still name both `{version}` and `{rev}` so patch tags never repeat), records the delivery, closes the review PR unmerged, and refreshes the clone's pre-push hook. A delivered line is frozen exactly like a maintained fork: `pr-state` answers `delivered`, the hook refuses pushes to the branch, and later upstream patch releases (`v1.14.1`) arrive through `sync-branch` rounds with their own review PR and approval, merged by `--merge-fix`, which tags the merged tip as a release named for the newest upstream version tag it absorbed (`v1.14.1+rocm.0`; a sync that brings no new upstream version bumps the revision, `v1.14.0+rocm.1`). Every release tag is annotated with who approved it and the review PR, and the clone's hook refuses to move or delete an existing tag. A sync round's review PR body may not carry an `## Upstream reply` section: there is no upstream PR to post it on. If `--finish-release --apply --name <project>` stops after tagging and recording (the review PR failed to close), the line stays listed as `RESUME` and a rerun completes only the remaining steps.
+
+Rollout: a release-line record carries `schema_version` 4, which `set-delivery` writes and tooling from before release lines refuses to load, so an out-of-date host fails closed instead of publishing the line upstream. Every host must `branch-sync --apply` to tooling that knows release lines and re-run `orient.sh`, whose `protect-fork` replaces older fork hooks (a v3 hook lets a push to a delivered branch through), before working a release line. `upstream.py --drift` watches delivered lines for upstream's advance. `pr-candidates` lists ready lines as `RELEASE-READY`, never as upstream PR candidates.
+
 ## Who opens the upstream pull request
 
 An attended session on the maintainer's own machine, running one command -- the
 person, or the agent working with them, since the content it publishes was already
 approved wholesale on the review PR and running it adds no new judgement:
 
-    python3 utils/upstream.py --publish --apply
+    python3 utils/upstream.py --publish --apply --name <project>
 
 It carries the approved title and body verbatim, re-checks the approval and every gate at
 that moment, opens the pull request, records it, and closes the review PR. `orient.sh`
@@ -215,12 +301,17 @@ Keeping the credential in a human session costs one command and removes a standi
 
 **Nothing here runs on a schedule.** Record maintenance -- polling upstream pull requests,
 releasing projects whose fork has appeared, reporting overtaken approvals -- happens when
-someone runs the `moat-checkup` skill or `orient.sh`, not on a timer. That is a real
+someone runs the `moat-checkup` skill or `orient.sh`, not on a timer. (`orient.sh` is
+not a read-only command: it installs hooks, pulls, merges the trunk into a port
+branch and pushes that, and releases forks, before it selects anything.) That is a real
 trade: drift accumulates silently between sweeps, and on one measured sweep 6 of 74
 records disagreed with GitHub, two of them merges nobody had noticed. `orient.sh` nags
 when reconciliation has never run or is two weeks stale (it is silent below that), so
-the gap cannot grow unbounded without someone seeing it. The only
-workflow left is `ci.yml`, which gates pull requests and holds `contents: read`.
+the gap cannot grow unbounded without someone seeing it. Two
+workflows are left, both holding `contents: read`: `ci.yml`, which gates pull requests, and
+`amd-skills-workflow.yml`, which runs the structural checks of the published `cuda-to-rocm`
+skill on pull requests and uses an API key only for the routing and behavioral evaluations
+a person dispatches by hand.
 
 Two mechanisms that look like they would close the gap do not. A **GitHub App** acts only
 where it is installed, and we cannot install one in someone else's repository. A
@@ -234,7 +325,7 @@ fork-side work and neither reaches the part that matters.
 |---|---|
 | `code` | the Python resolves: no undefined names, no dead imports or locals (pyflakes). Two NameErrors shipped on success paths before this existed, one of them in the approval gate |
 | `schema` | `status.json` validates against a schema generated from `moatlib`, so the two cannot disagree |
-| `readme` | the generated project table matches the data it describes (`python3 utils/gen_readme.py`). Judged only where it can be: the table renders across refs, so a CI checkout -- one branch, no port refs -- would call every branch-only row stale, and it skips there loudly. It also skips on a `port/<name>` branch, which is where most pushes come from: the board is a TRUNK artifact, regenerating it on a branch produces a commit thrown away at merge, and judging it there serialises the fleet, since every record any host pushes stales every other checkout's copy. So in practice it gates pushes from the trunk, and any port branch can be behind it |
+| `readme` | the generated project table matches the data it describes (`python3 utils/gen_readme.py`). Judged only where the pusher can act on it: the table renders across refs, so whether it is current depends on every port branch at the moment of the push. CI starts after the push, so a port branch that records a state in between would fail a trunk commit that was correct when pushed; CI skips the gate loudly and the pre-push hook judges it. It also skips on a `port/<name>` branch, which is where most pushes come from: the board is a TRUNK artifact, regenerating it on a branch produces a commit thrown away at merge, and judging it there serialises the fleet, since every record any host pushes stales every other checkout's copy. So in practice it gates pushes from the trunk, and any port branch can be behind it |
 | `licenses` | tier lists are well-formed and no identifier sits in two tiers, which would silently disable the review gate |
 | `blobs` | nothing tracked that looks like build output (`.a`, `.so`, `.o`, archives, wheels, model weights) and nothing over 1 MB without an entry in the allowlist saying why it is data rather than spill |
 | `states` | every state is one `moatlib` knows, every platform is a well-formed `<os>-<gfx>` with a known wavefront width, every waiver names a gate that may be waived, and every waiver states its case. It deliberately does NOT require a maintainer's approval: an unapproved waiver is what a *suggestion* is, and suggesting one is how the obstacle reaches a person at all. What stops an agent certifying its own way past a gate is that such a waiver satisfies nothing and blocks `pr_ready` -- enforced where it bites, not by failing the repo's checks over a decision nobody has made yet |
@@ -242,15 +333,72 @@ fork-side work and neither reaches the part that matters.
 | `optout` | every opt-out record is well-formed, and no project whose owner opted out is still live in the pipeline. A malformed entry fails open -- the filters stop matching and the repos quietly return to the queue -- so the shape is checked rather than assumed |
 | `surface` | for a project carrying a `surface.json`, every component is covered or explicitly scoped out with a reason -- accounting, not coverage, so the failure it prevents is the silent omission. It judges only projects that have the file and only once the port claims success. Few projects carry one (colmap, on its own branch, was the first), and the gate sees only the current checkout, so where none is present it judges nothing and says so out loud. `utils/surface.py generate <name>` opts a project in |
 | `forks` | no fork carries uncommitted source edits (local only -- needs the clones) |
+| `commits` | every commit a port adds to its fork follows the commit-message rules: title within 72 characters and prefixed `[ROCm]` when the change is ROCm-specific, AI assistance disclosed, a Test Plan, no agent `Co-Authored-By` trailer (local only, slow; `moatlib.py audit-commits` is the same check by hand) |
+| `gh-guard` | the guard classifies its table of cases correctly, and the `gh` launcher on this host's PATH is the current guard, so a foreign GitHub write is refused before it is sent. It fails after any change to the guard until `install_hooks.py` is run again |
+| `branch-scope` | a port branch changes only its own `projects/<name>/`; tooling, skills, agent definitions and shared data change on `main` |
+| `skills` | the published `cuda-to-rocm` skill names no MOAT tool, record or state |
+| `harness-adapters` | every canonical skill and role has exactly one Codex adapter that agrees with it, and `AGENTS.md` stays within the size Codex loads |
+| `conflicts` | no tracked file carries merge-conflict markers |
+| `published` | a fork clone's port branch does not hold commits past what an open upstream PR shows; those belong on the staging branch |
+
+## Why the state machine refuses what it refuses
+
+`AGENTS.md` states these rules in a sentence each; the reasons are here.
+
+**Ready means reviewed, at this head.** The coverage gates read what each platform
+recorded, and a platform's verdict says nothing about review, so a port could once read
+as ready with changes requested or with commits nobody had reviewed. Passing a review
+stamps `reviewed_sha`; `pr-ready` and `fix-ready` require stage `review-passed` with
+`reviewed_sha` at `head_sha`; `completed` is refused at any earlier stage (a failure is
+still recorded at any stage, since it can only hold a port back). A head move that
+cannot change compiled output carries `reviewed_sha` forward. Any other head move at
+`review-passed` leaves it behind, and the selector then sends a reviewer (as
+`delta-ported`) before any platform validates, because validating meanwhile spends GPU
+time on code that may be sent back.
+
+**Only the holder leaves an exclusive stage.** The work lock names a platform and a
+holder (a digest of the host and job, never a hostname). Two hosts with the same GPU,
+or two jobs on one host, used to read each other's lock as their own. Another platform
+is refused; another holder on the same platform is let in as a resume, because a round
+put down by a host that stopped cannot be told from one still running and waiting it
+out would be a timeout takeover. Entering re-stamps the lock and prints a warning, and
+the displaced holder is refused when it tries to leave. `next-task`, `fleet` and
+`orient.sh` say when the work they offer is such a round.
+
+**A carry-forward is checked, not asserted.** `carry-forward` classifies
+`validated_sha..head_sha` itself. `source-class` is accepted only when the classifier
+calls the delta arch-independent. `binary-equiv` rests on `codeobj_diff.py`, which
+compares exported symbols and device code and cannot see a change to host code or to
+data, so over a `mixed` delta the caller must add `--host-checked`, and the record then
+says the claim rests on that statement.
+
+**A blocked platform satisfies no gate.** `blocked` says this card cannot run the
+project. `completed` and `carry-forward` are refused on a blocked platform until
+`set-blocked <name> <platform> --clear`, and a host with no GPU records a block rather
+than a failure, which would send a porter after nothing.
+
+**A content failure is retired by its fix.** A failure is normally carried across a
+delta that cannot change compiled output, since such a delta cannot have fixed a GPU
+run. A missing build document or a vocabulary hit is fixed by exactly such a delta, so
+the validator records it with `validation-failed --gate docs` (or `jargon`) and any
+head move retires it. `--gate` asserts that the build and the GPU run passed, and keeps
+that pass: once the fix is in, the validator confirms the gap is closed and
+`carry-forward` completes the platform from it when the fix changed nothing that
+compiles, so a README fix does not cost a second GPU run.
+
+**A dependency counts per operating system.** The selector releases a dependent only
+when each hard dependency is validated on a platform with the same OS: a library
+proven on Linux says nothing about whether it builds on Windows.
 
 ## Adding a project
 
-Via PR, carrying the `projects/<name>/` folder, the regenerated README row, and any porting
-knowledge the work produced. `utils/moatlib.py scaffold <owner/repo>` creates the skeleton.
+Via PR, carrying the `projects/<name>/` folder. A lesson the work produced rides in its
+`notes.md` under `## Lesson for cuda-to-rocm: <title>` (or `moat-porting`) and is promoted into
+the skill on the trunk after that review; the README table is regenerated on the trunk. `utils/moatlib.py scaffold <owner/repo>` creates the skeleton.
 
 Licence is established at intake, before any porting effort, as a FACT rather than a
 judgement: read what upstream actually publishes and record the SPDX identifier in
-`status.json.license_spdx`. Do not trust GitHub's licence field alone -- it fails to parse a fifth of
+`status.json.license_spdx` with `moatlib.py set-license-spdx <name> <spdx> --evidence <URL>`. Do not trust GitHub's licence field alone -- it fails to parse a fifth of
 repos -- and do not leave it blank. An unrecorded licence blocks the route upstream exactly
 as a restrictive one does, and it is the worse of the two failures, because a restrictive
 licence announces itself while an empty field looks like nothing is wrong.
@@ -269,13 +417,27 @@ our vocabulary. Check before pushing:
     python3 utils/jargon.py --port <name>
 
 Terms and their replacements are in `config/jargon.toml`. If you find in-house vocabulary
-the checker missed, add it in the same change.
+the checker missed, add it in the same change. Fenced code blocks and command lines are
+scanned too, for the `[fenced]` table in that file: the names of our tools and record
+files, `agent_space`, and paths that exist only on our hosts. A Test Plan is a list of
+commands an outside maintainer should be able to run, so it names none of them; the
+publish and merge steps hold a branch that does.
 
 ## Porting knowledge
 
 Capture per-project findings in `projects/<name>/notes.md`. If a lesson would help someone
-porting a **different** project, promote it into the `cuda-to-rocm` skill's `references/`
-at the moment you learn it, naming the source project. A later sweep is what failed before:
+porting a **different** project, write it in that project's notes the moment you learn it,
+under `## Lesson for cuda-to-rocm: <title>`, naming the reference file it belongs in. The
+port's review reads it there; a trunk session then promotes it into the skill's
+`references/` (one topic per file; the "Where to look" table in its `SKILL.md` says which),
+fitted into the existing text rather than appended, names the source project, regenerates
+the index with `python3 utils/gen_skill_index.py`, and adds `Promoted to <file> in <sha>.`
+under the heading. `moatlib.py lessons`
+lists the ones waiting. That skill is published outside MOAT
+as an AMD skill, so write the lesson for a reader who has never seen this repository: no
+`moatlib`, `notes.md`, gates, roles, states, or fleet hosts. A lesson about MOAT's own
+pipeline, records, tools, or hosts goes to the `moat-porting` skill, and
+`utils/check.py skills` fails when MOAT vocabulary lands in `cuda-to-rocm`. A later sweep is what failed before:
 an append-only file nobody was told to open went unused from the day it was created.
 
 File it by who needs it, not by where you found it. The activity that surfaces a lesson is

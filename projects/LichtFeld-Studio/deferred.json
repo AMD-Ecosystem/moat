@@ -1,0 +1,482 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "lichtfeld-test-gate-coverage",
+      "kind": "other",
+      "component": null,
+      "summary": "HIP validation gate omits built GPU kernels: tensor_nn_ops.cu (max_pool2d, adaptive_avg_pool2d, bias_relu, relu) has no test, and ~51 compute-only test files are excluded from LFS_HIP_TEST_FILES (beyond the 3 the validator caught). Add test_tensor_nn_ops.cpp and the compute-only tests to the gate.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T19:04:23Z",
+      "decided": null
+    },
+    {
+      "id": "therock-windows-lld-link-crt-xcu",
+      "kind": "rocm-bug-report",
+      "component": "TheRock",
+      "summary": "TheRock's PyTorch Windows build links torch_hip.dll with lld-link, which emits no .CRT$XCU section, so _DllMainCRTStartup's CRT init pointer is NULL and _initterm never runs. REGISTER_CUDA_HOOKS static initializers therefore never execute, CUDAHooksRegistry in torch_cpu.dll stays empty, getCUDAHooks() returns a no-op stub, and torch::cuda::is_available() returns false in any standalone C++ executable -- while the GPU is fully functional (the Python ctypes path reports devices correctly). Any C++ test harness gating on is_available() then fails wholesale against a working port: LichtFeld-Studio loses 564 of 914 tests this way while 320 pass on real gfx1101. Traced on Windows 11, torch 2.9.1+rocm7.14.0a20260604: CRT init ptr at RVA 0x399e8f0 = NULL; TLS callbacks at RVA 0x0288aa90 and 0x0288ab40 fire only on DLL_THREAD_ATTACH/DETACH, and DLL_PROCESS_ATTACH calls DisableThreadLibraryCalls. Untried workarounds: /WHOLEARCHIVE or a forced reference into the hooks TU, calling _initterm on the DLL CRT section directly, or spawning a thread after load to fire the TLS callbacks. Not reported upstream to TheRock yet.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-07T23:07:19Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T18:46:00Z"
+      }
+    },
+    {
+      "id": "lichtfeld-studio-nvidia-proprietary-rescan",
+      "kind": "other",
+      "component": null,
+      "summary": "Rescan with the fixed scan_nvidia: vendored nvImageCodec build files (external/nvImageCodec/cmake/Dependencies.cmake, Utils.cmake) are tagged SPDX-License-Identifier: LicenseRef-NvidiaProprietary with the reworded 'affiliates and licensors retain' notice. Needs a person's licence ruling for fork redistribution.",
+      "refs": [
+        "moat main b336246 (case/wording-proof scan_nvidia)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T17:09:13Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T19:28:28Z"
+      }
+    },
+    {
+      "id": "lfs-commit-msg-drop-alien-ref",
+      "kind": "other",
+      "component": null,
+      "summary": "Before the upstream PR, reword 53c363f8's commit body to drop the cross-project reference to AMD-Ecosystem/alien; keep the disclosure that a custom link wrapper is the follow-up. Do it in the PR-prep squash, not by amending 53c363f8.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#review-2026-08-24"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-24T18:01:33Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-10-09T22:44:13Z",
+        "note": "Do the reword in the PR-prep squash as planned; gated on the windows gate being satisfied first."
+      }
+    },
+    {
+      "id": "lfs-advance-head-carries-doc-gate-failure",
+      "kind": "other",
+      "component": null,
+      "summary": "moatlib advance_head carries a validation-failed record forward across an inert (doc-only) delta, on the rule that a delta which cannot change compiled output cannot have fixed anything. That rule is wrong for a DOCUMENTATION-GATE failure, which a doc-only commit is exactly the fix for: linux-gfx90a failed 53c363f8 for missing ROCm build docs, the porter's doc-only fix 0c820fd1 was classified inert, and failed_sha was advanced to 0c820fd1, so failure_stands() keeps returning True and arch_task will route linux-gfx90a back to the porter forever once the stage reaches review-passed. ARCH_TRANSITIONS allows validation-failed -> completed only, so no porter-legal call clears it; only a validator recording a real GPU pass does. Needs a person's ruling: either advance_head should not carry a failure forward when the failure was a documentation/prose gate rather than a code failure (it cannot tell today), or there should be an explicit way to retire a stale failure record.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md",
+        "utils/moatlib.py:2159-2183 (advance_head), :2740-2758 (failure_stands), :211-215 (ARCH_TRANSITIONS)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-24T22:28:54Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-10-09T22:27:12Z",
+        "note": "Nothing is stuck on it today: linux-gfx90a later recorded a real pass. If the gap is closed, prefer an explicit retire-failure command over teaching advance_head to classify failures."
+      }
+    },
+    {
+      "id": "lfs-commit-msg-jargon-13e585d-e24593f",
+      "kind": "other",
+      "component": null,
+      "summary": "jargon.py --port reports 3 in-house-vocabulary instances still on moat-port, all in commit bodies older than 5cbfdf1a and none contributed by later commits: 13e585d47:31 'Authored with Claude (claude-sonnet-4-6 via MOAT).' and e24593f4e:14 'Strategy A (colmap model)' (two hits: 'Strategy A' and 'colmap model'). They are upstream-visible because the whole branch ships. They cannot be fixed by amending, since 13e585d47/e24593f4e are at or below shas archs have validated; the fix belongs in the same PR-prep message rewrite as lfs-commit-msg-drop-alien-ref. Rewrites: drop 'via MOAT' from the disclosure; say 'a single compatibility header' rather than 'Strategy A (colmap model)'.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-24T22:29:06Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-10-20T04:55:34Z",
+        "note": "jeff 2026-10-19 approved a one-time message-only rewrite of moat-port"
+      }
+    },
+    {
+      "id": "pytorch-windows-torch-hip-include-symbol",
+      "kind": "rocm-bug-report",
+      "component": "pytorch",
+      "summary": "On Windows, ROCm LibTorch gives standalone C++ consumers no way to keep the torch_hip.dll import: caffe2/CMakeLists.txt adds -INCLUDE:?warp_size@cuda@at@@YAHXZ as an INTERFACE link option on torch_cuda for MSVC (lines 1414-1418) but has no torch_hip equivalent, so an exe that references no torch_hip symbol drops the DLL and torch::cuda::is_available() is false. LichtFeld-Studio works around it with the same /INCLUDE on its test exe (fork d36fedb7). Supersedes therock-windows-lld-link-crt-xcu, whose .CRT$XCU diagnosis was wrong.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#windows-round-2026-10-19"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/pytorch/pytorch/pull/201445",
+      "created_at": "2026-10-20T01:01:02Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-10-20T04:19:55Z",
+        "note": "jeff 2026-10-19: work it now"
+      }
+    },
+    {
+      "id": "hip-windows-vmm-va-not-reused",
+      "kind": "rocm-bug-report",
+      "component": "hip-runtime-windows",
+      "summary": "TheRock ROCm 7.14 Windows (amdhip64_7.dll, gfx1151): after a hipMemAddressReserve range has had a chunk mapped (hipMemCreate/hipMemMap/hipMemSetAccess, then hipMemUnmap/hipMemRelease), hipMemAddressFree returns hipSuccess but the VA range is never handed out again; every later reservation lands higher. After ~240 GiB of cumulative reservations hipMemAddressReserve logs 'failed to create a va range mem object' and then raises an access violation (0xC0000005) inside amdhip64_7.dll instead of returning an error. Without the map step the same 16 GiB reserve/free loop reuses one address. 40-line reproducer in projects/LichtFeld-Studio/notes.md (Sync round 2026-10-19). LichtFeld-Studio's gsplat intersection cache reserves 16+16+8+16+8 GiB per cache, so a process dies after about four caches; the Windows gate run isolates test suites per process to work around it.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-20T08:34:04Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-10-31T20:39:01Z",
+        "note": "2026-10-31: important; dig in once the laptop is free of other Windows validators. First question: does a newer ROCm than 7.14 (10.1.0, a >=10.2 nightly, develop source) still leak the VA range?"
+      }
+    },
+    {
+      "id": "lfs-hip-stream-ordered-mempool",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "The tensor library's stream-ordered memory pool (cudaMallocAsync/cudaFreeAsync default mempool, release threshold) is compiled only under '#if CUDART_VERSION >= 12080' (13 sites in src/core/tensor/internal/memory_pool.hpp). CUDART_VERSION is undefined in the HIP build, so since the first HIP port the library has used the non-pooled fallback (hipMalloc/hipFree plus device syncs); the log line 'CUDA memory pooling not available (requires CUDA >= 12.8)' is that path. Upstream's newer tests exercise the pooled behaviour: AllocCounterTest.PoolCacheHitDoesNotIncrement fails, and test_tensor_multistream.cpp fails three cases and deadlocks in BucketCrossStreamReuseIsOrdered (pool.deallocate -> hipFree + hipDeviceSynchronize while the producer stream is held by a host callback), so that file is left out of lfs_compute_tests. HIP has hipMallocAsync/hipFreeAsync and hipMemPool* equivalents; enabling them would change allocator behaviour on every AMD platform and needs validation on wave32, wave64 and Windows. Needs a person's ruling: port now, or defer.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-10-20T11:05:03Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-30T18:47:14Z",
+        "note": "jeff 2026-10-30: port the stream-ordered pool to hipMallocAsync/hipFreeAsync/hipMemPool* now; restore test_tensor_multistream.cpp to the HIP test build; validate on wave32, wave64 and Windows."
+      }
+    },
+    {
+      "id": "lfs-upstream-binary-inplace-no-stream-join",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream library defect (not a port or HIP defect): Tensor::add_/sub_/mul_/div_(Tensor) -> binary_op_inplace_generic (src/core/tensor/internal/tensor_impl.hpp:913-961 at ca01b056) launches on this->stream() after pin_operands, which only materializes deferred operands; nothing calls sync_to_stream/prepare_inputs_for_stream for other_dense, so a source last written on another stream is read unordered. CudaTest.D1_BinaryInPlaceWaitsForGatedProducer (tests/test_tensor_hardening_theme_d.cpp:134) fails on gfx1151 with a correct 100 ms gate (reads 1 instead of 3); CUDA is expected to fail it too (no workflow runs the hardening tier; tests/CMakeLists.txt:1224-1227 calls it the known-failure tier). Belongs in a separate upstream change, not moat-port.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#porter-round-2026-10-20"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-20T13:30:47Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-10-31T21:13:52Z",
+        "note": "2026-10-31: at PR prep, after the sync round onto upstream master, recheck on master and raise as a small separate upstream PR off master (draft to jeff first); not in moat-port; check whether upstream #3956 changed binary_op_inplace_generic"
+      }
+    },
+    {
+      "id": "lfs-upstream-d4-prime-unordered",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream test defect: TensorD4FromBlobHomeStreamTest.{ItemTypedDrainsStampedHome, StampedBlobThroughPinnedOpCrossStream} prime the buffer with cudaMemset(0x7f) on the legacy stream, then cudaMemsetAsync(0) on a non-blocking producer (test_tensor_d4_from_blob_stream.cpp:121-127, :332-335). The two writes are unordered by the API contract; the test relies on the legacy-stream write landing first. On TheRock Windows HIP the null-stream memset is not executed until a later null-stream call, so it lands last every time (0x7F7F7F7F read), independent of gate length. Fix belongs upstream (synchronize after the prime, or prime on the producer stream before close()).",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#porter-round-2026-10-20"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-20T13:31:11Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-10-31T21:13:57Z",
+        "note": "2026-10-31: at PR prep, after the sync round onto upstream master, recheck on master and raise as a small separate upstream PR off master (draft to jeff first); not in moat-port"
+      }
+    },
+    {
+      "id": "hip-windows-null-stream-work-not-submitted",
+      "kind": "rocm-bug-report",
+      "component": "hip-runtime",
+      "summary": "TheRock ROCm 7.14 Windows (PAL), gfx1151: a hipMemset on the null stream returns but is not executed until a later null-stream call; hipStreamQuery(nullptr) still returns hipErrorNotReady after a non-blocking stream gated 100 ms behind it has completed and synchronized. Deterministic standalone reproducer (no kernels: hipMemset(null) then hostfunc-gated hipMemsetAsync on a non-blocking stream, sync it, query null, hipMemcpy D2H) reads the null-stream value 3/3 runs; with hipStreamSynchronize(nullptr) after the first memset it reads the later value 3/3. Not a CUDA ordering guarantee, but a forward-progress difference from CUDA (Linux ROCr not checked) that turns unordered-but-timely test setups into deterministic failures. Needs a person's ruling on whether to report.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#porter-round-2026-10-20"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-20T13:31:37Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-10-31T06:51:35Z",
+        "note": "2026-10-31: deferred by jeff"
+      }
+    },
+    {
+      "id": "lfs-hip-o0-ut-projection-hang",
+      "kind": "rocm-bug-report",
+      "component": "amdclang",
+      "summary": "TheRock ROCm SDK 10.1.0 clang, gfx90a: at -O0 (HIP Debug) gsplat_lfs::projection_ut_3dgs_fused_kernel<float> never completes; rocgdb shows waves parked at the closing brace of world_gaussian_to_image_gaussian_unscented_transform_shutter_pose<PerfectPinholeCameraModel> (Cameras.cuh:1370) with the frame returning into itself. Same source with -O2 and asserts on passes (327 ms). Upstream code, no warp intrinsics. No standalone reproducer yet.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#revalidation-2026-10-21-validator-linux-gfx90a"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-21T07:21:19Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-10-31T20:53:42Z",
+        "note": "2026-10-31: Debug-only (-O0) on gfx90a; Release and -O2+asserts pass. First step when picked up: a second rocgdb sample minutes later to confirm a real hang rather than a very slow kernel"
+      }
+    },
+    {
+      "id": "lfs-upstream-bgblend-zero-grad-sign",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream test defect: FusedBgBlendTest.BackwardGradsMatchWithBlendedImage (tests/test_fused_bg_blend.cpp, new in the ca01b056 sync) asserts two identical Adam steps give means within 1e-6. Splat 2 sits at x=0.0 on the mirror axis of a symmetric scene (cx=W/2, uniform grad_out=1), so its true d/dmean_x is zero and the computed value is cancellation round-off whose sign depends on the float atomicAdd order into grad_mean2d (kernels_backward.cuh). With Adam eps=1e-15 the first step is lr*sign(g), so means[2].x lands at -0.01 or +0.01 and the diff is 0.0200001 = 2*lr. linux-gfx1100: fails 35/40 alone in a fresh process, 334/500 with --gtest_repeat, 2 of 3 full-suite runs, and the same rate on the ce822a31 binary (336/500), so the 61ea877f delta did not cause it. The port's edit there only swaps the 32-lane mask, which on wave32 is the whole wave. Fix belongs upstream (break the symmetry, or compare with a sign-tolerant check or larger eps).",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#revalidation-2026-10-21b"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-21T08:49:37Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-10-31T21:13:46Z",
+        "note": "2026-10-31: at PR prep, after the sync round onto upstream master, recheck on master and raise as a small separate upstream PR off master (draft to jeff first); not in moat-port"
+      }
+    },
+    {
+      "id": "hip-timeline-semaphore-import-range-check",
+      "kind": "rocm-bug-report",
+      "component": "clr",
+      "summary": "hipImportExternalSemaphore (clr/hipamd/src/hip_memory.cpp L285-288 at rocm-systems develop e57be12c, 2026-10-31) rejects every handle type above hipExternalSemaphoreHandleTypeD3D12Fence (4) with hipErrorInvalidValue, so hipExternalSemaphoreHandleTypeTimelineSemaphoreFd (9) and TimelineSemaphoreWin32 (10) can never import, on Linux (TheRock ROCm SDK 10.1.0, HIP 7.16.26385, gfx1100: 1 hipErrorInvalidValue, 2026-10-26 and again 2026-10-31) or Windows (7.14, gfx1151). On Windows the PAL layer handles timeline semaphores (paldevice.cpp sets flags.timeline, but sets sharedViaNtHandle only for OpaqueWin32/D3D12Fence, so a fix likely needs TimelineSemaphoreWin32 there too); the same VkSemaphore imported as OpaqueWin32 keeps full timeline semantics. hipDeviceProp_t::timelineSemaphoreInteropSupported is hard-coded 0 (hip_device.cpp L838) and hipDeviceAttribute_t has no counterpart of cudaDevAttrTimelineSemaphoreInteropSupported. Matches ROCm/hip#3909 (Windows gfx1102, 7.2.6); comment drafted in notes.md, not posted.",
+      "refs": [
+        "claude-shared plans/lichtfeld-full-app-port.md, Results"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/hip/issues/3909#issuecomment-6548445774",
+      "created_at": "2026-10-26T15:38:27Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-31T06:30:48Z",
+        "note": "2026-10-31: harden on current ROCm, then comment on ROCm/hip#3909"
+      }
+    },
+    {
+      "id": "hip-linux-external-semaphore-unsupported",
+      "kind": "rocm-bug-report",
+      "component": "rocr",
+      "summary": "On Linux no Vulkan semaphore can be imported into HIP: binary OPAQUE_FD import returns hipErrorNotSupported (801) because ROCr hsa_amd_external_semaphore_handle_open supports only Win32 handles and libhsakmt hsaKmtImportExternalSemaphore/signal/wait (libhsakmt/src/extsem.c) are stubs. HSA has no timeline handle type and the rocclr ROCm backend maps none, so relaxing the HIP range check alone would turn the timeline failure into 801. Unchanged at rocm-systems develop e57be12c (2026-10-31). Seen on TheRock ROCm SDK 10.1.0 (HIP 7.16.26385), gfx1100, RADV Mesa 25.2.8, 2026-10-26 (amdgpu 6.16.13) and 2026-10-31 (amdgpu 6.19.14). Forces host-side sync for Vulkan-HIP interop on Linux.",
+      "refs": [
+        "claude-shared plans/lichtfeld-full-app-port.md, Results"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/14767",
+      "created_at": "2026-10-26T15:38:42Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-31T06:35:27Z",
+        "note": "2026-10-31: with hip-timeline-semaphore-import-range-check; recheck, then draft a feature request"
+      }
+    },
+    {
+      "id": "rocjpeg-output-row-overrun",
+      "kind": "rocm-bug-report",
+      "component": "rocJPEG",
+      "summary": "rocJPEG 1.10 (ROCm SDK 10.1.0, gfx1100, VCN backend): rocJpegDecode's output conversion writes each output row out to a multiple of 8 pixels regardless of the destination pitch. With a tight pitch (width*3 for ROCJPEG_OUTPUT_RGB) the overrun lands on the first pixels of the next row, so the left edge of every row is corrupted nondeterministically (bicycle 1237x822: 19 of 20 repeat decodes differ in columns 0-2 by up to 171; 642x480 needs 18 bytes of row padding). RGB_PLANAR has the same overrun per plane. Reproducer: agent_space/rocjpeg_probe/det.cpp described in notes.md. The port pads staging rows to 16 pixels. Recheck 2026-10-30 (notes.md 'ROCm bug drafts 2026-10-30'): reproduced on Radeon AI PRO R9700 (gfx1201) with ROCm 10.1.0 (rocJPEG 1.10.0) and the ROCm 10.3.0a20261030 nightly (rocJPEG 1.13.0), identical numbers: RGB writes 9/18/21 bytes past the row end at widths 1237/642/641, RGB_PLANAR 3/6/7 per plane, and an odd height (641x481) also writes one whole row below the image, i.e. past a pitch*height buffer. Still in rocm-systems develop 5843ab4: rocjpeg_decoder.cpp:912-913 and 997-998 round to 8-pixel by 2-row blocks, rocjpeg_hip_kernels.cpp:445-455 and 474-508 store unconditionally. Pad staging rows and also round the height up to even. The new reproducer (rowover.cpp, replacing det.cpp) is verbatim in the issue draft in notes.md; not filed.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/14754",
+      "created_at": "2026-10-27T17:31:25Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-30T21:12:58Z",
+        "note": "jeff 2026-10-30: report now. Recheck against the latest rocJPEG first, then draft the issue for jeff's approval."
+      }
+    },
+    {
+      "id": "lfs-hip-video-hw-codec",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "LichtFeld-Studio full-app HIP port: FFmpeg video decode (NVDEC *_cuvid) and encode (h264_nvenc) open AV_HWDEVICE_TYPE_CUDA, which fails on AMD, so video import/export falls back to FFmpeg's software codecs. rocDecode could replace NVDEC for decode (ROCm has no video encoder; VA-API/AMF are outside ROCm). Not in the Phase 2 work order; needs jeff's ruling: port decode to rocDecode now, or defer.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-10-27T17:31:25Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-30T16:47:37Z",
+        "note": "jeff 2026-10-30: port video decode to rocDecode in this porting effort, not deferred. CPU fallback only where rocDecode cannot do it (bug or missing feature), named as such. Encode stays on FFmpeg software codecs only because ROCm has no video encoder."
+      }
+    },
+    {
+      "id": "rocjpeg-no-scan-jpeg-hangs-vcn",
+      "kind": "rocm-bug-report",
+      "component": "rocjpeg",
+      "summary": "rocJPEG 1.10 (TheRock ROCm SDK 10.1.0 wheels, librocjpeg.so.1.10.0, hardware backend) accepts a JPEG that ends before its start-of-scan marker: rocJpegStreamParse and rocJpegGetImageInfo both return ROCJPEG_STATUS_SUCCESS (128x96, 3 components), and rocJpegDecode then submits it to the VCN JPEG engine, which hangs until the kernel driver resets the ring; the calling process loses its GPU context ('amdgpu: The CS has cancelled because the context is lost. This context is guilty of a hard recovery.', then abort). Smallest input: a 609-byte stream, a 128x96 baseline JPEG from libjpeg-turbo defaults at quality 95 (4:2:0) cut just before its FF DA marker (SOI, APP0, two DQT, SOF0, four DHT, no scan, no EOI); sha256 eae81db984182916e53d37f3a023a31189fc617126b71663ae4cad9c4a35b12e. Regenerate with agent_space/rocjpeg_hang/gen_hang_jpeg.c (recipe in notes.md). Host: Radeon Pro W7800 (gfx1100), amdgpu-dkms 6.19.14.31400100, kernel 6.8.0-138-generic. dmesg 2026-10-28 16:05:44 (lichtfeld_tests pid 92066): 'ring jpeg_dec timeout', then 'Ring jpeg_dec reset succeeded' and 'device wedged, but recovered through reset'. A scan header with no data and a stream without EOI also parse as SUCCESS; whether they hang was not tested (each try costs a ring reset on a shared GPU). Expected: rocJpegStreamParse returns ROCJPEG_STATUS_BAD_JPEG for a stream with no scan, and a malformed bitstream never hangs the engine. Workaround in the LichtFeld-Studio port: a host-side marker walk rejects such streams before rocJPEG sees them. Recheck 2026-10-31 (linux-gfx1201, notes.md 'rocJPEG no-scan hang recheck 2026-10-31'): fixed upstream, not yet released. rocm-systems develop rejects a stream with no SOS (PR #12403, 7a400ac5b2, merged 2026-09-30) and a scan with no entropy-coded data (PR #12516, 9613d5ee13, merged 2026-10-05); a missing EOI is still accepted on purpose. Both are on release/therock-10.2 (rocJPEG 1.13.0), so ROCm 10.2.0 is the first release with the fix; rocJPEG 1.10.0 (rocm-systems 7da43026, TheRock therock-10.1) has no SOS check. Parse-only run, no decode: 1.10.0 returns SUCCESS for no-SOS, SOS-without-data and no-EOI; nightly 1.13.0 (10.3.0a20261030) returns BAD_JPEG for the first two, SUCCESS for no-EOI. No existing issue reports the hang and the 1.13.0 CHANGELOG does not mention it. A draft issue asking for a CHANGELOG Resolved-issues line and a 10.1.x backport answer is in notes.md for jeff's approval; nothing filed. The port's host-side check stays needed on ROCm 10.1. jeff ruled 2026-10-31: not filed; already fixed upstream (rocm-systems #12403, #12516; first release ROCm 10.2.0, rocJPEG 1.13.0). The port's host-side marker walk stays for ROCm 10.1.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-10-28T21:19:27Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-31T20:50:29Z",
+        "note": "2026-10-31: recheck on develop, then draft the issue"
+      }
+    },
+    {
+      "id": "rocdecode-h264-high444-420-silent-miscode",
+      "kind": "rocm-bug-report",
+      "component": "rocdecode",
+      "summary": "rocDecode 1.10 (TheRock SDK 10.1.0) and develop e57be12c (1.12.0, built from source), Radeon Pro W7800 gfx1100: H.264 lossless streams (qpprime_y_zero_transform_bypass_flag 1, High 4:4:4 Predictive) decode to wrong pixels with rocDecodeStatus_Success on every picture (h264_full.mp4 max dY 177; an x264 --qp 0 testsrc2 stream max dY 223). Root cause (2026-10-31): the transform-bypass flag, not the profile -- a profile_idc 244 4:2:0 stream with the flag 0 decodes bit-exact. rocDecode's output is byte-identical to FFmpeg's VA-API decode forced with allow_profile_mismatch (both the SDK's Mesa 26.3.0-devel driver and Ubuntu's 25.2.8); unforced FFmpeg refuses ('Codec h264 profile 244 not supported for hardware decode'). VA-API has no H.264 4:4:4 profile or bypass field; Mesa's VCN AVC message has no bypass bit and radeonsi/RADV advertise only Baseline/Main/High (inferred: VCN has no H.264 lossless decode). So the defect is in rocDecode: it reads the flag (avc_parser.cpp:987) but never refuses (no RocdecAvcPicParams field, no profile in RocdecDecodeCaps, VA backend always opens VAProfileH264Main, vaapi_videodecoder.cpp:584/1219). Not Mesa. Fix: fail the sequence in AvcVideoParser::NotifyNewSps when the flag is set. The port's profile gate (CPU for High 4:4:4) stays right. Issue draft for ROCm/rocm-systems awaits jeff's approval in notes.md, section 'H.264 4:4:4 root cause 2026-10-31 (no pipeline role, linux-gfx1100)'.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/14765",
+      "created_at": "2026-10-30T17:36:17Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-31T06:20:27Z",
+        "note": "2026-10-31: harden root cause, then draft a report"
+      }
+    },
+    {
+      "id": "rocdecode-vp9-av1-signal-description-missing",
+      "kind": "rocm-bug-report",
+      "component": "rocdecode",
+      "summary": "rocDecode 1.10 (TheRock SDK 10.1.0) and 1.12 (nightly 10.3.0a20261030), gfx1100 and gfx1201: for VP9 and AV1 the parser's RocdecVideoFormat.video_signal_description is all zeros (range 0, matrix 0, primaries 0, transfer 0, video_format 0) for every stream, while H.264/HEVC VUI values are right. Root cause (2026-10-31, source at rocm-systems develop e57be12c and therock-10.1): the parsers read the fields (VP9 ColorConfig color_space/color_range, vp9_parser.cpp:724-744; AV1 ParseColorConfig, av1_parser.cpp:1469-1492, also used for the VA pic params) but NotifyNewSequence zeroes video_signal_description and never fills it (vp9_parser.cpp:268, av1_parser.cpp:274); AVC/HEVC copy their VUI after the same zeroing. Not a mapping or decoder issue: all streams decode 3/3. Fix: copy AV1 color_config; map VP9 color_space to matrix codes (FFmpeg's table), primaries/transfer 2. Range and matrix in FFmpeg's codecpar for vp9_full.webm/av1_full.mkv are bitstream values (IVF copies agree), so the port's codecpar workaround is right; VP9 primaries/transfer exist only in the WebM Colour element. Issue draft for ROCm/rocm-systems awaits jeff's approval in notes.md, section 'VP9/AV1 signal description root cause 2026-10-31'.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/14766",
+      "created_at": "2026-10-30T17:36:18Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-31T06:23:34Z",
+        "note": "2026-10-31: harden root cause, then draft a report"
+      }
+    },
+    {
+      "id": "hip-vmheap-unmap-threshold-lost-or-overtrimmed",
+      "kind": "rocm-bug-report",
+      "component": "clr (rocclr)",
+      "summary": "(Formerly hip-mempool-release-threshold-ignored.) TheRock ROCm SDK 10.1.0 (hipconfig 7.16.26385), Linux, gfx1100: the default memory pool's hipMemPoolAttrReleaseThreshold reaches the pool's VM heap in rocclr only partly, so freed memory is unmapped at hipFreeAsync + hipStreamSynchronize below the threshold. The attribute always sets and reads back. Two defects, read in ROCm/rocm-systems develop 58b6920, projects/clr/rocclr/platform: (1) Threshold lost when set before the pool's first allocation. hipMemPoolSetAttribute -> Heap::SetReleaseThreshold (hipamd/src/hip_mempool_impl.hpp:129-132) -> VmHeapArray::SetUnmapThreshold (vmheap.cpp:465-473), which copies the value only into heaps already created_. A heap is created lazily on its first Alloc (vmheap.cpp:217-220) and its own unmap_threshold_ defaults to 0 (vmheap.hpp:152), so it never gets the value; VmHeap::FreeBlock -> UnmapPhysMemory (vmheap.cpp:170-196) then unmaps every 128 MiB chunk (kChunkSize, vmheap.hpp:52) wholly inside the freed block. Only the array-level copy survives, and VmHeapArray::Free uses it to trim further (2). (2) Trimmed below the threshold. VmHeapArray::Free (vmheap.cpp:423-444) trims, when the free mapped size exceeds the threshold by extra, to threshold - extra, or to 0 once extra >= threshold (line 441), instead of to the threshold. Measured (projects/LichtFeld-Studio/notes.md, 'Porter round 2026-10-30d'; thr <threshold> <alloc MiB> early|late, late = after one 1 MiB alloc/free/sync; ReservedMemCurrent after alloc -> after free + sync; mean alloc/free/sync cycle of the same size): threshold max or 1024 MiB with 512 MiB: early 640 -> 128 MiB (device free memory +512 MiB, cycle 4.6-5.2 ms), late 640 -> 640 MiB (cycle 0.03 ms). Threshold 64 MiB with 512 MiB: 640 -> 0 MiB early and late (cycle 5.7-7.0 ms): a threshold below one chunk keeps nothing either way, because UnmapPhysMemory unmaps chunk by chunk while the free mapped size is above the threshold (with a block of exactly four chunks a late 64 MiB reaches 0 in that loop alone; with 512 MiB the last chunk is left to VmHeapArray::Free, whose trim takes it, as a trim to the threshold would too), and early the array-level trim (2) goes to 0 and also takes the one chunk that the 1024 MiB and max cases keep. That chunk is the block's last, partly covered one, not its first: VmHeap::Alloc asks AllocBlock for size + 256 bytes (vmheap.cpp:224, block_alignment_ = kMinBlockAlignment = 256 at line 87) from heap offset 0, so a 512 MiB request spans 5 chunks and its fifth is never wholly freed; a request of 512 MiB - 256 bytes maps 4 chunks and, set early, keeps 0 MiB at max and 1024 MiB ('Review 2026-10-30e'). Late 256 MiB with three 200 MiB blocks freed 1, 0, 2: reserved 640 -> 640 -> 384 -> 128 MiB, ending at 128 MiB instead of 256 MiB; late 512 MiB with four 200 MiB blocks dips to 312 MiB free mapped before returning to 512 MiB. Separately, MemoryPool::FreeMemory (hipamd/src/hip_mempool_impl.cpp:262-266) force-releases the free heap with 0 bytes held when it grows over the busy heap under AMD_DIRECT_DISPATCH; not isolated by these reproducers. Heap::ReleaseAllMemory's !use_vm_heap_ condition (hip_mempool_impl.cpp:137-139) is deliberate (the VM heap applies the threshold itself) and is not the cause. Effect on LichtFeld-Studio: none on correctness; the library sets its 64 MiB threshold before the first allocation, so pool-tier blocks are re-mapped after synchronizes. Honouring the threshold (LD_PRELOAD re-setting it after the first allocation, 'Review 2026-10-30d') did not change training time, so no workaround is applied. Nothing filed. Recheck 2026-10-30 (notes.md 'ROCm bug drafts 2026-10-30'): already reported as ROCm/rocm-systems#11690 (gfx1201, ROCm 7.2.1), fix PR ROCm/clr#287 open, both unmerged; develop 5843ab4 unchanged. #11690 covers (1) and the VmHeap::TrimPhysMemory override but says the sync path honours the threshold; (2) is a distinct caller on that sync path (same numbers with AMD_DIRECT_DISPATCH=0, so not the FreeMemory pressure path), which #287's TrimPhysMemory clamp would also stop (by reading, untested). gfx1201 numbers identical to gfx1100 on ROCm 10.1.0 and the 10.3.0a20261030 nightly. Drafted a comment for #11690 adding (2), not a new issue; not posted.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/11690#issuecomment-6539822496",
+      "created_at": "2026-10-30T19:41:35Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-30T21:13:19Z",
+        "note": "jeff 2026-10-30: prepare and report if the conclusion holds. Recheck against the latest clr/rocclr first, then draft the issue for jeff's approval."
+      }
+    },
+    {
+      "id": "rocdecode-sdk-va-driver-gfx90a-wrong-frames",
+      "kind": "rocm-bug-report",
+      "component": "Mesa radeonsi VA driver as bundled by TheRock ROCm SDK 10.1.0 (rocm_sysdeps); fixed upstream",
+      "summary": "TheRock ROCm SDK 10.1.0 (rocDecode 1.10.0) on gfx90a (MI250X, amdgpu-dkms 6.16.6, kernel 6.8.0-101): through the bundled VA driver rocm_sysdeps/lib/radeonsi_drv_video.so (Mesa 26.3.0-devel, upstream Mesa main 29299f8d per the SDK's therock_manifest.json, sha256 9c3d6f36...b747a2) rocDecode returns wrong H.264, HEVC and VP9 frames (8- and 10-bit) with a success status; Ubuntu's Mesa 25.2.8 driver is bit-exact on the same card. Root cause (2026-10-31, linux-gfx90a, no pipeline role): the bundled driver, not the kernel. TheRock builds Mesa without OpenGL, Vulkan, CLC or VA encode, so radeonsi is configured with no GFX/compute at all. At that Mesa snapshot si_video_buffer_create_with_modifiers (the path rocDecode takes, since it asks for a linear modifier) did not set PIPE_BIND_SHARED, so small surfaces (under the 1 MiB slab limit) are suballocated; vaExportSurfaceHandle then moves them into their own BO via si_reallocate_texture_inplace, whose pixel copy si_resource_copy_region is an empty stub in a no-GFX/compute build, so the exported surface reads as zeros. rocDecode exports each surface after its first decode, so every first use of a surface (every frame of a short clip) is wrong. Separating experiments, all on the same kernel module: (1) plain libavcodec VA-API with linear surfaces through the bundled driver is bit-exact 13/13 without export and 0/13 when each surface is exported as rocDecode does (MD5 of all-zero frames), Ubuntu's driver 13/13 both ways, so the defect is below rocDecode and in the export step; (2) Mesa 29299f8d built in the job dir with TheRock's meson flags reproduces it (0/13), the same commit with LLVM 20 and GFX/compute is correct (13/13), the same TheRock configuration plus only upstream Mesa fc8ba4378f37 'radeonsi/mm: Set PIPE_BIND_SHARED also for video buffers with modifiers' (David Rosca, 2026-10-27, MR !45679) is correct (13/13, and rocDecode's own tests 15/15), and TheRock main's current pin 4b0d67e1 (contains fc8ba437) with TheRock's flags is correct (13/13, rocDecode 15/15). Mesa 25.2.8 cannot run TheRock's configuration on gfx90a at all (ACO refuses CDNA), with LLVM it is correct. No kernel interface is in the failing path, so the kernel source was not needed. Not separated: why gfx1100 is bit-exact with the same bundled binary (the stub is GPU-independent, so gfx1100 must not reach the reallocation; unverified, no gfx1100 here). No newer TheRock nightly than the 10.1.0 release is published (newest whl-multi-arch rocm-sdk-core is 10.1.0a20260822), so the fix in a shipped SDK is not verified; the first SDK built from TheRock main after #9622 should carry it. Report: none needed for Mesa (already fixed upstream); a request for a 10.1.x SDK with the mesa-fork bump would go to ROCm/TheRock; nothing for the amdgpu kernel driver. Nothing filed. Port workaround (fork 0f2ac46f, unchanged): a per-process reference-clip self-check routes a codec to the CPU when rocDecode returns wrong frames; LIBVA_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/dri restores the hardware path on 10.1.0 (TheRock b04778ebc makes later SDKs load the bundled driver first, so that override stops working there, where the fix is present). Reproducer: lichtfeld_tests --gtest_filter='Fixtures/RocDecodeMatchesSoftware.*' with and without LIBVA_DRIVERS_PATH, or the libavcodec harness in notes.md. Valid streams only; no hang risk. jeff ruled 2026-10-31: no upstream report (fixed in Mesa fc8ba437); documented in the port at 204cdab0.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md \"Revalidation 2026-10-30 (validator, linux-gfx90a\"",
+        "projects/LichtFeld-Studio/notes.md \"Porter round 2026-10-31b (porter, linux-gfx90a\"",
+        "projects/LichtFeld-Studio/notes.md \"VA driver root cause 2026-10-31 (no pipeline role, linux-gfx90a)\""
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-10-30T22:35:48Z",
+      "decided": null
+    },
+    {
+      "id": "hip-event-query-destroyed-stream-uaf",
+      "kind": "rocm-bug-report",
+      "component": "hip-runtime",
+      "summary": "TheRock ROCm SDK 10.1.0 (hipconfig 7.16.26385), Linux, gfx1100; still present in rocm-systems develop (projects/clr/hipamd/src/hip_event.cpp, checked 2026-10-30): hipEventRecord stores the recording stream in the event (Event::captureStream_, set on every record, not only under capture). hipEventQuery and hipEventSynchronize call checkEventCaptureRestrictions, which dereferences that stream (GetCaptureStatus, then IsEventCaptured: locks the stream's mutex and hashes into its captured-event set) with no hip::isValid check. hipEventRecord, hipEventDestroy and hipStreamWaitEvent do guard with hip::isValid. CUDA allows querying an event after its stream is destroyed, so querying an event whose stream was synchronized and destroyed is a use-after-free: it returns hipSuccess while the freed hip::Stream memory is untouched, and hangs, segfaults or raises SIGFPE (bucket count 0 in the hash) once the heap reuses it. A 50-line reproducer (notes.md 'Porter round 2026-10-30e') reuses the freed chunk with malloc and hangs in hipEventQuery 3 of 3 runs, with the same libamdhip64 frames (+0x17c6c2 / +0x17d1a5) as the app. In LichtFeld-Studio it hung or crashed project save (pinned-cache events recorded on SplatChapterPayload::capture's destroyed transfer stream), and review found three more holders (blocks the pinned cache waits on after dropping its lock, the trainer's reader-done ring on the viewer's render stream, the arena's last-frame event on the training stream). The fork works around the whole class under USE_HIP: the compatibility header routes stream create/destroy to core/cuda/hip_stream_reuse, which synchronizes and parks destroyed streams and reuses them by device, flags and priority, so no stream an event was recorded on is freed (2fc0ca2b; the earlier release_stream sweep is reverted in 1d459baf). Fix: guard checkEventCaptureRestrictions with hip::isValid like the other entry points, or clear captureStream_ in every event recorded on a stream when that stream is destroyed.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/14755",
+      "created_at": "2026-10-30T23:11:22Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-31T06:04:20Z",
+        "note": "2026-10-31: file upstream now"
+      }
+    },
+    {
+      "id": "lfs-commit-msg-566be1cd-test-plan-configure",
+      "kind": "other",
+      "component": null,
+      "summary": "Before the upstream PR, fix the Test Plan configure line in 566be1cd ('[ROCm] Decode AV1 on the CPU with libdav1d'): 'cmake -S . -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DBUILD_TESTS=ON' cannot configure as written, because with BUILD_TESTS=ON the ROCm build needs -DTorch_DIR to a ROCm LibTorch (tests/CMakeLists.txt:513-526 otherwise points at the NVIDIA external/libtorch and find_package(Torch REQUIRED) fails), and the recipe in docs/building_and_distribution.md also sets the host and HIP compilers and the vcpkg triplet options. Use the documented ROCm configure line, or say 'configure as in docs/building_and_distribution.md'. Do it in the PR-prep message rewrite/squash, not by amending 566be1cd (validated history).",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md \"Review 2026-10-31b\""
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T02:53:19Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-10-31T20:16:32Z",
+        "note": "2026-10-31: settled by the PR-prep squash with 001fc728"
+      }
+    },
+    {
+      "id": "lfs-squash-566be1cd-001fc728-at-pr-prep",
+      "kind": "other",
+      "component": null,
+      "summary": "Before the upstream PR, squash 566be1cd ('[ROCm] Decode AV1 on the CPU with libdav1d') and 001fc728 ('[ROCm] Add FFmpeg's dav1d feature through a vcpkg manifest feature') into one commit. As separate commits, upstream would read a commit that adds cmake/HipVcpkgManifest.cmake (76 lines) followed by one that deletes it, and 001fc728's second paragraph (VCPKG_MANIFEST_DIR cached at the copy, reconfigure with -UVCPKG_MANIFEST_DIR) describes build trees that exist only for fork 566be1cd and no upstream user ever had. The squashed message keeps 001fc728's rationale and complete Test Plan, drops the 'previous commit' sentence and the stale-tree paragraph, and so also settles lfs-commit-msg-566be1cd-test-plan-configure. Do it in the PR-prep squash (squash-carry-forward), not by rewriting validated history now.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md \"Review 2026-10-31c\""
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T06:33:01Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-10-31T20:16:02Z",
+        "note": "2026-10-31: do in the PR-prep squash (squash-carry-forward)"
+      }
+    },
+    {
+      "id": "lfs-commit-msg-afe6ab6c-test-plan",
+      "kind": "other",
+      "component": null,
+      "summary": "Before the upstream PR, reword afe6ab6c ('[ROCm] Order Vulkan timeline semaphores on the host on Windows too') in the PR-prep squash, not by amending: (1) the Windows block must not give a fenced command for tl_test.hip, which is not in the tree; describe the standalone Vulkan+HIP bounce test in prose (50 queued submits, 8 MiB external buffer, 10 runs, no stale reads, Radeon 8060S gfx1151) and fence only in-tree commands; (2) the Linux block must state only observed results: replace it with the lichtfeld_tests interop filter and pass counts from the gfx1100/gfx90a revalidation at the validated head. Corrected text is in notes.md 'Porter response 2026-11-11'.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#review-2026-11-11"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-11T19:30:12Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-12T19:02:37Z",
+        "note": "Reword in the PR-prep squash; Linux values from the gfx1100 revalidation 2026-11-11 (notes.md)"
+      }
+    }
+  ]
+}
