@@ -4901,3 +4901,49 @@ Not covered by this record: wave32 (gfx1100, gfx1201) and gfx90a have not run 7c
 ## Ruling 2026-11-19 (jeff): the seventh candidate becomes a seventh pull request
 
 jeffdaily ruled on 2026-11-19, in the request that dispatched the round below: the hiprtc `cuComplex.h` failure of the `indexed_scale` RawKernel (pbc/df/grad/rhf.py, 47 tests on gfx942 at 7cbd3d2; the "seventh candidate" above) becomes a seventh pull request for issue 1054, fixed by one new commit on `moat-port` and cut onto upstream master by itself like the six. In the same request he ruled, for all seven pull-request drafts: the pull-request title carries no `[ROCm]` bracket prefix (upstream's titles have none; a commit keeps its prefix), and the closing disclosure sentence is exactly "This pull request was prepared with Claude Code (Anthropic), which wrote the change and ran the tests on our hardware; I read and approved it before opening." "Part of #1054." stays.
+
+## Porter 2026-11-19 (porter, linux-gfx942 MI300X, fork moat-port 7cbd3d2 -> 0647712, pushed) -- seventh fix: hiprtc `cuComplex.h` in `indexed_scale`
+
+Took the lock (`set-state gpu4pyscf linux-gfx942 porting`). `HIP_VISIBLE_DEVICES=1` from the dispatcher; GPU work under `ulimit -c 0`. Environment as in the pull-request preparation section (TheRock ROCm SDK 10.1.0 pip, cmake 3.28.3 from /usr/bin first on PATH; job venv numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, basis-set-exchange 0.12, MCFun 0.2.6, pytest 9.2.0, pytest-xdist 3.8.0, pytest-timeout 2.4.0). Scratch under the fleet job directory (`agent/`, `w/`, `res/`), not durable.
+
+### Change: one commit, 0647712 "Use double2 instead of cuComplex.h in the indexed_scale RawKernel"
+pbc/df/grad/rhf.py, +2/-3: the RawKernel source drops `#include <cuComplex.h>` and declares `double2 *a` / `double2 val` instead of `cuDoubleComplex`. The kernel used only `.x`/`.y`, so nothing else changes. No prefix: the change is shared code (a non-portable header include), and its added lines name no HIP or ROCm (AGENTS.md commit rule; the commit gate agrees, `audit-commits` OK).
+- **Upstream's convention, followed rather than our old machinery.** Upstream's own AMD port (#1042, d9a78f71) fixed the same defect in multigrid_v3.py's `apply_Gv_1j` / `contract_Gv_1j` by exactly this: drop `<cuComplex.h>`, use `double2` and `.x`/`.y`. pbc/df/grad/krhf.py `add_j3c_oo` (upstream) is written with `double2` too. Upstream has no helper for HIP kernel source in `cupy_helper` (its two `is_hip` uses there are the stack-limit skip and a cuBLAS/hipBLAS choice), so our old `kernel_source()` preamble (dc45713) was not brought back.
+- **CUDA unchanged, and how that is known.** CUDA's cuComplex.h has `typedef double2 cuDoubleComplex;` (line 186 in the CUDA 12.9 header), so the type is the same. NVRTC 12.9 (pip `nvidia-cuda-nvrtc-cu12`, what CuPy uses on CUDA; `agent/nvrtc_cmp.py` through ctypes) compiles the old source (with the CUDA include path) and the new source to **byte-identical PTX** at compute_70, compute_80 and compute_90 (1462 bytes each). No NVIDIA GPU run.
+- **Other runtime-compiled sources checked** (all `RawKernel`, `RawModule`, `ElementwiseKernel`, `cupy.fuse` and every `#include` in a .py file of the tree): the only CUDA-only header is this one. multigrid.py:794 and multigrid_v3.py:1175, 1261, 1409 include `<cupy/complex.cuh>`, which CuPy ships for both backends and hiprtc resolves (multigrid_v3 tests pass on this GPU). No other source uses `cuDoubleComplex`, `cuCreal`/`cuCimag`, `cuda_fp16`, `cub` or `cooperative_groups`. fci/direct_spin1.py's RawModule, the cupy_helper, multigrid_v3, krhf and cuest_wrapper kernels include nothing. Nothing else to fix.
+- Direct check (`agent/repro7.py`): at 7cbd3d2 `indexed_scale` raises `CompileException ... fatal error: 'cuComplex.h' file not found` (`HIPRTC_ERROR_COMPILATION (6)`); at 0647712 it matches NumPy's `a[idx] *= b` exactly (max diff 0.0).
+
+### Build
+`USE_HIP=1 GPU_ARCHITECTURES=gfx942 CMAKE_BUILD_ARGS="--parallel 48 --verbose" python setup.py build_py` in projects/gpu4pyscf/src (fresh clone), wrapped in `utils/timeit.sh gpu4pyscf compile`: exit 0 in 140 s, 12 libraries, `--offload-arch=gfx942` and `-disable-machine-licm` (from the committed CMake option) on every compile and link line. The change is Python only, so the libraries equal 7cbd3d2's.
+
+### Affected directories, one pytest process per file (`agent/run.sh`, CI marker selection, four files at a time)
+pbc/df, pbc/grad, pbc/scf (36 files). "Before" is a 7cbd3d2 worktree carrying the same built libraries.
+
+| directory | 7cbd3d2 | 0647712 |
+|---|---|---|
+| pbc/df | 121/21/6/0 | 141/1/6/0 |
+| pbc/grad | 163/31/2/0 | 186/8/2/0 |
+| pbc/scf | 154/16/2/0 | 155/15/2/0 |
+| **total** | **438/68/10/0** (47 at `cuComplex.h`) | **482/24/10/0** (0 at it) |
+
+The 7cbd3d2 counts equal the recorded Step 3 table for these directories. All 47 hiprtc tests now get past the kernel: 44 pass, and **3 newly reached tests miss a finite-difference bound**: test_pbc_grad_krks.py and test_pbc_grad_kuks.py `test_df_rsh_grad` (analytic -2.756104 vs FD -2.756115, 1.08e-5 against delta 1e-5 and 4e-6) and test_pbc_grad_rks.py `test_df_sr_rsh_grad` (3.46e-6 vs 2e-6). Same family as the already failing `test_sr_rsh_grad` (2.5e-6 vs 2e-6, not root-caused at 7cbd3d2): range-separated hybrids with GDF. Not the kernel (exact against NumPy) and not multigrid: the krks case without `multigrid_numint()` misses by 1.10e-5 too (`agent/rsh_fd.py`). Not root-caused; recorded as newly reached. No test that passed at 7cbd3d2 fails now.
+
+### Whole upstream CI selection at 0647712, one pytest process per file
+All 254 test files under 42 directories, `utils/timeit.sh gpu4pyscf test`, wall 1499 s: **2218 passed / 39 failed / 109 skipped / 0 errors**. The 42nd directory is gpu4pyscf/sem/scf/test (named `test`, 3 tests, all pass), which the earlier per-directory runner's 41 directories did not include; on the same 2363 tests the result is **2215/39/109/0 against the recorded 2171/83/109/0 at 7cbd3d2**. Every directory other than pbc/df, pbc/grad and pbc/scf has the same counts as the Step 3 table. No timeout, no hang, no sticky HIP error.
+
+The 39, against the Step 3 classification: 7 XC CPU fallback (G), 3 missing d-aug basis (I), 5 upstream HIP design choices, 13 margins/noise/unresolved PBC, the 8 earlier newly reached (soscf 5, gdm_kuhf, sr_rsh_grad, krylov), and the 3 new RSH GDF gradient misses above. 83 - 47 + 3 = 39.
+
+### Standalone measurements for the pull-request branch (upstream master 61c2a1e, flag build)
+Four trees, each built alone with upstream's command plus `CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm -DCMAKE_SHARED_LINKER_FLAGS=-mllvm=-disable-machine-licm"` as for the six (each exit 0, about 143 s): master, master + this commit (the branch tree), and, local only, master + 6a0f3f24 (fix (a)) with and without this commit. One process per file.
+
+| tests | master | master + this | master + (a) | master + (a) + this |
+|---|---|---|---|---|
+| pbc/{df,grad,scf} | 221/268/10/17 | 221/268/10/17 | 396/97/10/13 | 432/61/10/13 |
+| of which at `cuComplex.h` | 0 | 0 | 39 | 0 |
+| of which at `nsp_max > 0` (cause A) | 232 | 232 | 0 | 0 |
+| scf, dft | 336/12/23/0 | 336/12/23/0 (same 12) | | |
+
+**On gfx942 the fix alone changes no count**: every test that calls `indexed_scale` stops at the ft_ao wave64 assert (cause A) first. With (a) underneath it fixes 36 of the 39 and the other 3 are the RSH misses above; no newly failing test. On 32-wide GPUs (gfx1100, gfx1151) cause A does not exist, so there the hiprtc error should be the first failure on master; not run here (no wave32 GPU in this job). The direct reproducer fails on master and passes on the branch.
+
+### Gates
+`jargon.py --port gpu4pyscf`: clean. `prose.py` on both commit bodies: clean. `audit-commits gpu4pyscf`: OK. Integrity: `git -C projects/gpu4pyscf/src status --porcelain` shows only untracked build output.
