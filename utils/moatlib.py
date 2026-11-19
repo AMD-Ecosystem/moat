@@ -4726,6 +4726,19 @@ def project_record(name):
                 return (json.loads(raw), "branch")
             except json.JSONDecodeError as e:
                 _unreadable(name, ref, e)
+        # Standing on ANOTHER project's port branch, this checkout's copy of the
+        # folder is only a snapshot of the trunk from the last time that branch
+        # merged it: a port branch changes its own folder and nothing else. The
+        # trunk is the record. Reading the snapshot made the optout gate refuse
+        # every push from a branch that had not merged the trunk since GPUMD was
+        # ruled a maintained fork (2026-11-19): the stale copy still said otherwise.
+        if current_branch().startswith("port/"):
+            raw = _ref_read("origin/main", path)
+            if raw:
+                try:
+                    return (json.loads(raw), "trunk")
+                except json.JSONDecodeError as e:
+                    _unreadable(name, "origin/main", e)
     if status_path(name).exists():
         try:
             return (load_status(name), "local")
