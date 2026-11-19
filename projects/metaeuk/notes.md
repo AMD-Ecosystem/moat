@@ -636,3 +636,53 @@ Taking upstream's side of every conflict (`git checkout --theirs` on the 9 files
 ### Question for jeff
 
 For metaeuk (and MMseqs2/foldseek): (a) retire the port in favour of upstream's HIP support (close review PR #1; optionally offer upstream the `ClampToInvalid` guard and the `--gpu 1` workflow issue drafted above), or (b) re-scope it to a Windows libmarv delivery rebuilt on upstream's `ENABLE_HIP` CMake (merge upstream taking its libmarv, drop the dead `USE_HIP` layer, re-port the Windows pieces, revalidate wave64/wave32/windows)? Under (b) the merge resolution is: `--theirs` on all 9 conflicted files, then delete `cuda_to_hip.h`, `marv_simd_amd.cuh`, `hip_compat/` and the `USE_HIP` CMake edits, keep `convert.cuh`'s guard, then redo the Windows CMake fixes against upstream's libmarv `CMakeLists.txt`.
+
+## Sync onto upstream tip on linux-gfx942 (2026-11-19): nothing left to port on Linux, stopped before pushing, needs jeff
+
+jeff's request: bring the port up to date with upstream before the upstream PR (porter merge, review, validation). Stopped before any write, as the request says to do when nothing is left: no lock taken, no fork mirror fast-forward, no push, no `advance-head`, no state change. The project is also still `set-hold` from 2026-11-12 (reason: wait for the MMseqs2 rescope, then rescope this port onto `ENABLE_HIP`); only a person lifts that.
+
+### What upstream changed, and what it means for the port
+
+- Upstream metaeuk `master` is still `2b5193a8` (2026-09-22), 8 commits past the fork's `master`/port base `ccf0362`; nothing new since the 2026-11-12 attempt above. The fork `master` fast-forwards cleanly (`git merge-base --is-ancestor`).
+- The commit that matters is the `lib/mmseqs` subtree update `ef21cbf`/`eadaf81`: it brings MMseqs2 50374396's own HIP libmarv (`ENABLE_HIP`, `cuda_hip_compatibility.cuh`, `cuda_hip_rename.h`, HIP-gated CMake). That vendored libmarv dispatches AMD devices by compute capability to inline gfx90a and gfx942 gapless/SW tables, and every other AMD device to the gfx942 table (`getOptimalKernelConfigs_gapless_amd_default`), so it builds and runs for any AMD target named in `CMAKE_HIP_ARCHITECTURES`.
+- Upstream metaeuk does NOT yet carry MMseqs2 21691c1f (the AMD-coverage work we landed upstream as soedinglab/MMseqs2#1174: generic aligner, gfx-name dispatch, gfx90a/gfx950 tables, `ClampToInvalid` HIP device path). MMseqs2 `master` (`ab57c0b9`) is 51 commits past metaeuk's vendored 50374396, including the libmarv API rewrite (Metal and SIMD backends, `7af25903` "Port ungapped GPU prefilter to new libmarv API"), and 21691c1f sits on top of that. Getting it into metaeuk is a full `lib/mmseqs` subtree update, which upstream metaeuk does itself from MMseqs2 `master` (its last one was `eadaf81`), not a port change.
+- Other upstream commits (Dockerfile/azure Rust, `cmake_minimum_required` 3.5, tests submodule bump, GFF CDS phase fix) do not touch the port's files.
+
+### Trial merge (local only, aborted)
+
+`git merge --no-commit --no-ff upstream/master` on `origin/moat-port` (`e6070cc`): the same 9 conflicted files as on 2026-11-12 (libmarv `CMakeLists.txt`, `gapless_kernel_config.cuh`, `hpc_helpers/cuda_helpers.cuh`, `cuda_raiiwrappers.cuh`, `peer_access.cuh`, `mathops.cuh`, `pssmkernels_smithwaterman.cuh`, `smithwaterman_kernel_config.cuh`, `lib/mmseqs/src/CMakeLists.txt`). Every hunk is our `USE_HIP` code against upstream's `ENABLE_HIP` code for the same lines. Resolving them keeping both sides' intent is not possible: both sides are a HIP port of the same code, and keeping upstream's (the request's rule) leaves our `USE_HIP` layer (`cuda_to_hip.h`, `marv_simd_amd.cuh`, `hip_compat/`, the `USE_HIP` CMake option) dead.
+
+### Upstream's own HIP build on this host (gfx942), no port code
+
+Host: AMD Instinct MI300X (gfx942), `HIP_VISIBLE_DEVICES=0` (dispatcher pin), `CUDA_VISIBLE_DEVICES=0` for `--gpu`. TheRock `rocm-sdk-devel`, HIP 7.16.26385. Upstream `2b5193a8`, tests submodule `f7c3999d`. All GPU runs under `ulimit -c 0`.
+
+```
+R=$(hipconfig --rocmpath)
+cmake -S . -B build-hip -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+utils/timeit.sh metaeuk compile -- cmake --build build-hip -j64
+utils/timeit.sh metaeuk test -- bash -c "cd tests && ./run.sh ../build-hip/src/metaeuk"
+```
+
+- Build: 313/313, links; warnings only the Rust `block_aligner_c` ABI deprecations and tinyexpr, as on the other hosts.
+- Regression (CPU k-mer path): rc=0, 8/8 "ALL OKAY" plus test_agg_tax.
+- GPU path (scratch script: per case `createdb`, `makepaddedseqdb proteins proteins_pad`, `predictexons ... --prefilter-mode 1 --gpu {0|1}`, `unitesetstofasta`, `reduceredundancy`, `unitesetstofasta`; `--gpu 0` is the CPU ungapped oracle): `predExFlat.fas` and `predRedFlat.fas` byte-identical GPU vs CPU in 6/6 cases (minus_strand 6 predictions, multi_exon 6, two_contigs 16, target_overlap 8, cluster_rep 3, target_cov 1; the same counts as gfx90a and gfx1100 on 2026-10-29); each GPU log runs `ungappedprefilter`.
+- Kernels really ran: `AMD_LOG_LEVEL=3` on minus_strand shows 1063 kernel launches, including `cudasw4::kernelparamzero::GaplessFilter_strided_PSSM_singletile_kernel<__half2, 512, 4, ...>` and `cudasw4::permute_PSSM_for_gapless_kernel`.
+
+With gfx90a and gfx1100 (2026-10-29 sections above), upstream metaeuk's own HIP build now has GPU-exact results on wave64 CDNA2, CDNA3 and wave32 RDNA3.
+
+### What the port still has that upstream lacks
+
+1. Linux: nothing. Upstream builds and runs on every AMD GPU we have tested, with GPU results identical to CPU.
+2. Windows libmarv pieces (Win32 `MappedFile`, `MARV_API` exports, tinyexpr `-fPIC` guard). jeff ruled on 2026-11-13 (MMseqs2 notes) that Windows is a separate feature (deferral `mmseqs2-windows-support`), and metaeuk's mmseqs tree does not build on Windows without that feature, so these give metaeuk users nothing alone.
+3. The `ClampToInvalid` HIP device path: latent (residue codes are below 128, so the signed host fallback gives the same result; GPU output matches CPU above). Already fixed in MMseqs2 `master` by 21691c1f, so it reaches metaeuk with upstream's next subtree update.
+4. Not a port item: `predictexons`/`easy-predict` `--gpu 1` never reaches the GPU (forced `--prefilter-mode 0`, see 2026-10-29). It affects CUDA and HIP alike, and the issue draft is above.
+
+### Question for jeff
+
+Nothing is left to port on Linux, so I stopped before merging or pushing. Options:
+
+(a) retire the metaeuk port in favour of upstream's own HIP support: close review PR AMD-Ecosystem/metaeuk#1 and record the disposition. Optional follow-ups, each needing your approval: the `--gpu 1` issue draft above, and asking upstream to update the `lib/mmseqs` subtree so metaeuk picks up 21691c1f.
+(b) Keep the project open for Windows only, once the MMseqs2 Windows feature lands upstream.
+(c) Refresh the port as a `lib/mmseqs` subtree update to MMseqs2 `master`. That is upstream's own maintenance and a large unrelated diff (51 MMseqs2 commits, API rewrite), so I do not recommend it.
+
+If you rule (b) or (c), the 2026-11-12 recipe still applies: merge `upstream/master` taking `--theirs` on all 9 files, then delete the dead `USE_HIP` layer.
