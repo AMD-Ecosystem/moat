@@ -309,6 +309,28 @@ class OptOutKeepsAMaintainedFork(unittest.TestCase):
         self.assertIn("kept (Owner/kept) is a maintained fork", out)
 
 
+class OptOutGate(unittest.TestCase):
+    def problems(self, rec):
+        import check
+        rec = {"upstream_url": "https://github.com/Owner/repo", "stage": "review-passed",
+               **rec}
+        fakes = (("load_optouts", lambda: {}), ("all_projects", lambda: {"proj": 1}),
+                 ("project_record", lambda name: (rec, "branch")),
+                 ("optout_for", lambda full: {"who": "Owner"}),
+                 ("get_disposition", lambda full, i=None: None))
+        with contextlib.ExitStack() as st:
+            for name, fake in fakes:
+                st.enter_context(mock.patch.object(moatlib, name, fake))
+            return check.gate_optout()
+
+    def test_a_live_project_of_an_opted_out_owner_is_reported(self):
+        (why,) = self.problems({})
+        self.assertIn("still live", why)
+
+    def test_a_maintained_fork_is_not(self):
+        self.assertEqual(self.problems({"maintained": {"by": "p"}}), [])
+
+
 class OptOutPending(Scratch):
     REC = {"who": "Owner", "scope": "owner", "source": "https://x/issue/1", "note": ""}
 

@@ -355,6 +355,10 @@ def gate_optout():
         full = (rec.get("upstream_url") or "").split("github.com/", 1)[-1]
         if not full or not m.optout_for(full):
             continue
+        # A fork a person ruled we keep working is not retired by an opt-out: it
+        # offers no pull request, and its branch stays on our fork.
+        if rec.get("maintained"):
+            continue
         disp = m.get_disposition(full) or {}
         if disp.get("disposition") != "skip":
             problems.append(f"{name} ({full}): its owner opted out but the project is "
