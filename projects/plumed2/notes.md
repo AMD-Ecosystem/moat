@@ -38,6 +38,8 @@ make USE_HIP=1 check
 
 ## Port notes
 
+Superseded: this section describes the June HIP layer, replaced by 388fcc10f; see "## Upstream sync 2026-11-19 (porter, linux-gfx942)".
+
 ### hipFuncGetAttributes workaround
 
 HIP's `hipFuncGetAttributes` doesn't support templated kernel function pointers
@@ -618,3 +620,51 @@ The review found no problems in the fork branch. What was checked:
 Records only (does not gate the fork): the `## Port notes` section near the top of this file (the "hipFuncGetAttributes workaround" via `hipDeviceGetAttribute` and "Tested on linux-gfx90a: 32 tests") describes the June HIP layer that 388fcc10f replaced; the next porter round on this project should mark it superseded by `## Upstream sync 2026-11-19` so a reader does not take it as the current design.
 
 Verdict: review-passed at 388fcc10fd9a7d0c8e01362ec1d43ee830313368. GPU validation (wave64 and the wave32 gfx1100 run, which also settles the runtime-init question) is the validator's next step.
+
+## Validation 2026-11-19 (linux-gfx942)
+
+Validated sha: 388fcc10fd9a7d0c8e01362ec1d43ee830313368 (fork clone checked out at
+head, no modified tracked files). GPU: AMD Instinct MI300X (gfx942, wave64,
+partitioned), HIP_VISIBLE_DEVICES=1. ROCm 10.1 Python wheels (HIP 7.16, AMD clang
+24), g++ 13.3, MPICH 4.2.3 (built from source), PLUMED upstream master 422109dc3
+built with `./configure CXX=mpicxx CC=mpicc` and installed.
+
+Build (clean, after `make clean`):
+```bash
+cd plugins/cudaCoord
+USE_HIP=1 ./configure.sh
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942
+```
+
+Tests:
+```bash
+cd regtest && ln -s ../../../regtest/scripts . && cd ..
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942 check
+```
+Result: PASS. "34 tests performed, 0 tests not applicable, 0 errors found":
+cudatest 14/14 (includes the new rt-double-rotatedbox and rt-input-errors),
+cudatestPair 8/8, cudatestWB 12/12 (rt-double-orthopbc-mpi ran with 2 MPI ranks).
+THREADS 64/128/256/512/1024 variants are compared against CPU COORDINATION inside
+the tests. The wave64 debug-assertion run with THREADS=32 is recorded in the
+upstream-sync section above (exact match with CPU; full 64-bit mask traps).
+The change touches only plugins/cudaCoord, so PLUMED's own (non-GPU) regtests are
+not affected by it.
+
+CUDA gate at this head: PASS (compile and link only, no NVIDIA GPU). nvcc 12.8.93
+(conda-forge env in the job directory), on `git archive 388fcc10f
+plugins/cudaCoord`:
+```bash
+./configure.sh
+make NVCCCFLAGS="-dc -dlto --gpu-architecture=sm_80" NVCCLDFLAGS="-shared -dlto --gpu-architecture=sm_80"
+```
+CudaCoordination.so built, no errors or warnings; SASS identical per function to
+pristine upstream (porter's comparison above).
+
+Content checks: `python3 utils/jargon.py --port plumed2` clean; the HIP build is
+documented in plugins/cudaCoord/README.md next to the nvcc instructions.
+
+Still needed for pr-ready: wave32 (linux-gfx1100 recorded cb90687f8 only, so it
+reads revalidate at this head; it must confirm the dropped runtime-init helper,
+see the upstream-sync section), and jeff's answers to the four questions in the
+upstream-sync section. linux-gfx90a also reads revalidate (extra wave64 evidence;
+this platform satisfies wave64 at head).
