@@ -7,10 +7,10 @@ remaining actionable candidates. Decisions persist in data/dispositions.json and
 block accidental adoption (moatlib scaffold refuses a skipped project).
 
 Usage:
-  python3 utils/triage.py review [--top N] [--all]
+  python3 utils/triage.py review [--top N] [--all] [--cache-ids]
   python3 utils/triage.py skip <owner/repo> --reason <r> --by <who> [--note "..."]
   python3 utils/triage.py verify <owner/repo> [--note "..."]
-  python3 utils/triage.py unskip <owner/repo>
+  python3 utils/triage.py unskip <owner/repo> --by <who>
   python3 utils/triage.py skipped
   python3 utils/triage.py backfill-ids
 
@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import identity  # noqa: E402
 import moatlib  # noqa: E402
 
 CANDIDATES = moatlib.REPO_ROOT / "data" / "candidates.json"
@@ -53,9 +54,11 @@ def cmd_review(args):
     # is built from the dispositions that do.
     skip_ids = {v["repo_id"] for v in disp.values()
                 if v.get("disposition") == "skip" and v.get("repo_id")}
-    # Resolved ids are written back into candidates.json. Asking GitHub for ~40 of them
-    # takes a couple of minutes and the answer never changes, so it is paid once. A
-    # candidate that discovery has not seen before still costs one call.
+    # Resolved ids can be written back into candidates.json (--cache-ids). Asking
+    # GitHub for ~40 of them takes a couple of minutes and the answer never changes,
+    # so it is worth paying once -- but only when asked: `review` is the command
+    # people run to LOOK, and it used to rewrite a tracked file every time it met a
+    # candidate it had not seen.
     id_cache = {c["full_name"]: c["repo_id"] for c in cands_all if c.get("repo_id")}
     resolved_now = []
 
@@ -103,13 +106,16 @@ def cmd_review(args):
     pending = [c for c in pending if c not in renamed]
     n_skip = sum(1 for c in cands if c["full_name"].lower() in skips) + len(renamed)
     n_adopt = sum(1 for c in cands if is_adopted(c["full_name"]))
-    if resolved_now:
+    if resolved_now and args.cache_ids:
         for c in cands_all:
             if c["full_name"] in id_cache and id_cache[c["full_name"]]:
                 c["repo_id"] = id_cache[c["full_name"]]
         CANDIDATES.write_text(json.dumps(cands_all, indent=1) + "\n")
         print(f"# cached {len(resolved_now)} newly resolved repo id(s) into "
               f"data/candidates.json")
+    elif resolved_now:
+        print(f"# resolved {len(resolved_now)} repo id(s) from GitHub and wrote "
+              f"nothing; --cache-ids saves them into data/candidates.json")
     shown = pending if args.all else pending[:args.top]
     print(f"# {len(pending)} pending ({n_skip} skipped, {n_adopt} adopted"
           + (f", {n_optout} opted out" if n_optout else "")
@@ -127,14 +133,25 @@ def cmd_review(args):
             tag += " [nvidia-org]"
         desc = (c.get("description") or "")[:64]
         print(f"{i:>3}  {c['priority']:>5}  {c['stars']:>7}  {c['full_name']}{tag} -- {desc}")
-    print(f"\nskip:   python3 utils/triage.py skip <owner/repo> --reason <{'|'.join(moatlib.SKIP_REASONS)}> --by <who> --note \"...\"")
-    print("verify: python3 utils/triage.py verify <owner/repo> --note \"...\"")
+    print(f"\nskip:   {moatlib.PY} utils/triage.py skip <owner/repo> --reason <{'|'.join(moatlib.SKIP_REASONS)}> --by <who> --note \"...\"")
+    print(f"verify: {moatlib.PY} utils/triage.py verify <owner/repo> --note \"...\"")
     return 0
+
+
+def stamp_disposition(full_name):
+    """Add the authenticated account to a disposition just written (identity.py)."""
+    d = moatlib.load_dispositions()
+    entry = d.get(full_name.lower())
+    if entry is not None and identity.recorded_as():
+        identity.stamp(entry)
+        moatlib.save_dispositions(d)
+    return entry
 
 
 def cmd_skip(args):
     d = moatlib.set_disposition(args.repo, "skip", args.reason, args.note or "",
                                 by=args.by)
+    stamp_disposition(args.repo)
     print(f"skip {d['full_name']} ({d['reason']}, by {d['by']}) {d['note']}".rstrip())
     return 0
 
@@ -146,7 +163,16 @@ def cmd_verify(args):
 
 
 def cmd_unskip(args):
-    print("unskipped" if moatlib.clear_disposition(args.repo) else "no disposition for that repo")
+    # Clearing a skip reverses a person's decision to decline, so it names who
+    # decided, exactly as the skip did. The entry is deleted, so what it said and
+    # who cleared it go to the decision log; before this, un-skipping left no trace
+    # outside a commit made under the one identity everything commits under.
+    was = moatlib.get_disposition(args.repo)
+    if not moatlib.clear_disposition(args.repo):
+        print("no disposition for that repo")
+        return 0
+    identity.log_removal(moatlib.REPO_ROOT, "unskip", args.repo, args.by, was)
+    print(f"unskipped {args.repo} (by {args.by}); recorded in data/decisions.jsonl")
     return 0
 
 
@@ -192,6 +218,9 @@ def main(argv=None):
     r = sub.add_parser("review", help="show undecided candidates")
     r.add_argument("--top", type=int, default=40)
     r.add_argument("--all", action="store_true")
+    r.add_argument("--cache-ids", action="store_true",
+                   help="write repo ids resolved during this run into "
+                        "data/candidates.json (a tracked file)")
     r.set_defaults(fn=cmd_review)
     s = sub.add_parser("skip", help="mark a project not-to-port")
     s.add_argument("repo")
@@ -207,6 +236,9 @@ def main(argv=None):
     v.set_defaults(fn=cmd_verify)
     u = sub.add_parser("unskip", help="remove a disposition")
     u.add_argument("repo")
+    u.add_argument("--by", required=True,
+                   help="who decided to clear it -- reversing a decline is a "
+                        "person's call, and the record must say whose")
     u.set_defaults(fn=cmd_unskip)
     k = sub.add_parser("skipped", help="list all dispositions")
     k.set_defaults(fn=cmd_skipped)
@@ -217,4 +249,6 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())
