@@ -1279,14 +1279,14 @@ the `cuda_`/`core_` ctest suites in the dependency's build tree as a smoke check
 ### Install layout
 
 ```
-<prefix>/include/rmagine-2.4.2/rmagine/...        headers (core + cuda)
-<prefix>/lib/librmagine-core.so.2.4.2             CPU library
-<prefix>/lib/librmagine-cuda.so.2.4.2             GPU compute library (HIP)
-<prefix>/lib/cmake/rmagine-2.4.2/rmagine-config.cmake
-<prefix>/lib/cmake/rmagine-2.4.2/rmagine-core-config.cmake
-<prefix>/lib/cmake/rmagine-2.4.2/rmagine-cuda-config.cmake
-<prefix>/lib/cmake/rmagine-2.4.2/rmagine-{core,cuda}-targets.cmake
-<prefix>/share/rmagine-2.4.2/package.xml
+<prefix>/include/rmagine-2.4.3/rmagine/...        headers (core + cuda)
+<prefix>/lib/librmagine-core.so.2.4.3             CPU library
+<prefix>/lib/librmagine-cuda.so.2.4.3             GPU compute library (HIP)
+<prefix>/lib/cmake/rmagine-2.4.3/rmagine-config.cmake
+<prefix>/lib/cmake/rmagine-2.4.3/rmagine-core-config.cmake
+<prefix>/lib/cmake/rmagine-2.4.3/rmagine-cuda-config.cmake
+<prefix>/lib/cmake/rmagine-2.4.3/rmagine-{core,cuda}-targets.cmake
+<prefix>/share/rmagine-2.4.3/package.xml
 ```
 
 ### What a dependent does
@@ -3162,3 +3162,111 @@ For PR prep: upstream `uos/rmagine` `main` is now `2962242`, **7 commits ahead**
 `6b93e86`. `--publish` test-merges, so a conflict would be caught there, but expect this to
 want an upstream-main merge round before or shortly after the upstream PR opens (same shape
 as the popsift `develop` merge).
+
+## Fix round 2026-11-19 (porter, linux-gfx942) -- merge upstream main into PR #25 (moat-fix-25)
+
+Why: uos/rmagine#25 (head `cc6f8d2`, open since 2026-10-29, no maintainer response) went
+CONFLICTING after upstream merged #26 (2026-11-10) and #28 (2026-11-11). Staged with
+`moatlib.py fix-branch rmagine` -> `moat-fix-25`, cut from the published tip `cc6f8d2`.
+Merged upstream `main` at `cc603ab` (version 2.4.3, 26 commits past our base `6b93e86`) with
+a merge commit, no rebase. Staging tip: `e1b7ac57c740121150a87ba5e4279f718a80f331`.
+`moat-port` was not pushed (still `cc6f8d2`).
+
+### What upstream changed (6b93e86..cc603ab)
+
+- #28 (saqibkh): `multNx1(Memory<Quaternion>, ...)` launches `multNx1_kernel` instead of
+  `multNxN_kernel` -- the same out-of-bounds fix this port carried.
+- #26 (feature/rascal-updates): `CudaContext` reworked around the device primary context:
+  public constructors replaced by `createPrimary` / `createStandalone` / `fromExternal`
+  factories with custom shared_ptr deleters; the default global context is now
+  `CudaContext::createPrimary(0)` (still a namespace-scope global). New driver calls
+  `cuDevicePrimaryCtxRetain` / `cuDevicePrimaryCtxRelease`. `OptixContext` uses `createPrimary`.
+- OptiX: configurable culling (`rmagine/simulation/SimulatorSettings.hpp`, new `Culling`
+  enum in core), barycentrics output (`Barycentrics<MemT>` added to `IntAttrAll`),
+  multi-sensor simulation test, FindOptiX rework.
+- Vulkan: updatable scenes / acceleration structures, vulkan tests re-enabled in
+  `tests/CMakeLists.txt`.
+- Version 2.4.2 -> 2.4.3; CI workflows for Ubuntu 26.04 and ROS 2 Lyrical; README badges.
+
+### Conflicts and how each was resolved
+
+- `src/rmagine_cuda/src/math/memory_math.cu` (the only textual conflict): upstream's line
+  and ours were identical (`multNx1_kernel`); the conflict was our 5-line explanatory
+  comment. Took upstream's side for that hunk only, so the port no longer touches that
+  function. Every other port hunk in the file (wave-size hardening tails, typed-zero seed)
+  is kept. Gotcha: a first attempt used `git checkout --theirs <file>`, which takes
+  upstream's WHOLE file and silently dropped those other hunks; caught by the delta check
+  below before anything was pushed, merge redone with a per-hunk resolution.
+
+### Clean auto-merges that needed HIP coverage
+
+- `CudaContext.cpp` merged cleanly with our HIP-guarded no-op shared-memory bank-size
+  accessors (upstream only made whitespace changes there, the same ones we had made).
+  The new `cuDevicePrimaryCtxRetain` / `cuDevicePrimaryCtxRelease` calls had no mapping:
+  added both to `cuda_to_hip.h` (-> `hipDevicePrimaryCtxRetain` / `hipDevicePrimaryCtxRelease`)
+  in the merge commit, per the cuda-to-rocm upstream-sync rule (new names go into every
+  backend in the same commit). All `cu*` driver names used under `src/rmagine_cuda` and
+  `tests/cuda` are now either mapped or HIP-guarded (`cuCtx{Set,Get}SharedMemConfig`).
+- Nothing in `rmagine_hiprt` (the port's additive HIPRT backend) uses `CudaContext`,
+  `SimulatorSettings` or the result bundles; it has its own `HiprtSimulationData`, so the
+  OptiX-side features above do not reach it. Not ported: culling and barycentrics in the
+  HIPRT backend (feature parity for an experimental backend, not CUDA surface the HIP build
+  compiles). Recorded as a suggestion only; whether to add them is jeff's call.
+- The new upstream test directory (`tests/vulkan`) and OptiX tests are gated on their own
+  targets, which a HIP build does not create; no predicate the port introduced hides them.
+
+### Delta check (merged tree vs published tip)
+
+`git diff upstream/main e1b7ac5` equals `git diff 6b93e86 cc6f8d2` exactly, minus the
+multNx1 hunk and the `CudaContext.cpp` whitespace lines upstream made itself, plus the two
+new `#define`s (compared line by line over `+`/`-` lines). Ancestry:
+`git merge-base --is-ancestor upstream/main moat-fix-25` and
+`git merge-base --is-ancestor cc6f8d2 moat-fix-25` both true.
+
+### Build and smoke test (linux-gfx942, MI300X, ROCm 10.1 pip SDK, clang 24.0.0)
+
+assimp is not installed on this host; built v5.3.1 from source into the job directory
+(`deps/prefix`, `-DASSIMP_BUILD_TESTS=OFF -DASSIMP_BUILD_ASSIMP_TOOLS=OFF`) instead of an apt
+install into the shared image.
+
+```
+ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+utils/timeit.sh rmagine compile -- cmake -S projects/rmagine/src -B agent_space/rmagine_gfx942_build \
+  -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ "-DCMAKE_PREFIX_PATH=$ROCM;<job>/deps/prefix" \
+  -DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON -DRMAGINE_VULKAN_DISABLE=ON \
+  -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON -DRMAGINE_OUSTER_DISABLE=ON \
+  -DRMAGINE_BUILD_TESTS=ON -DRMAGINE_BUILD_TOOLS=OFF
+utils/timeit.sh rmagine compile -- cmake --build agent_space/rmagine_gfx942_build -j 56
+ctest --test-dir agent_space/rmagine_gfx942_build -R '^(cuda|core)_'
+```
+
+76/76 targets, 0 errors; warnings are the existing classes (nodiscard `hipError_t`,
+deprecated `hipCtx*`), now also `hipDevicePrimaryCtx{Retain,Release}` deprecated (same class
+as the `hipCtx*` calls the port already maps). 20/20 tests pass (8 cuda_, 12 core_).
+No HIPRT SDK on this host, so `rmagine_hiprt` is skipped by CMake (as on every non-gfx90a
+platform before).
+
+### Owed before this round reaches jeff
+
+- CUDA no-regression compile with real nvcc (mi355 host): not run. This host has no nvcc
+  and the fleet guard refused a job-local pip install of the CUDA 12.8 toolkit. The round's
+  only non-upstream change is two `#define`s inside the HIP branch of `cuda_to_hip.h`, so
+  the CUDA path is upstream's own code plus the already-validated port, but the gate is a
+  real nvcc build of the merged tree.
+- `moatlib.py audit-commits rmagine` reports the fork's `main` is behind upstream (it still
+  sits at `6b93e86`) and so judges nothing; fast-forwarding it is a GitHub write outside this
+  round's limits. By hand: the round has no non-merge commits
+  (`git log --no-merges cc6f8d2..moat-fix-25 ^upstream/main` is empty), the merge title is
+  52 characters with `[ROCm]`, and `jargon.py --port rmagine` is clean.
+- Open deferrals `rmagine-lazy-default-gpu-context` and `rmagine-per-header-include-gate`
+  (both ruled `now` on 2026-08-13) are untouched. Upstream #26 kept the default context a
+  namespace-scope global (`createPrimary(0)`), so the lazy-context item still stands.
+
+### Tooling note (MOAT, this host)
+
+`port/rmagine` had not merged the trunk since 2026-10-29, so its old `utils/check.py` failed
+under this host's Python 3.11 (argparse rejects the empty `nargs="*"` default against
+`choices`) and every record push was refused. Merged `origin/main` into `port/rmagine`
+taking the trunk side for every conflict outside `projects/rmagine/` (`branch-sync --apply`
+refuses those by design); the gates then pass.
