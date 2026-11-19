@@ -3692,3 +3692,79 @@ merge base `cc603ab`: same components, same CUDA objects, same warnings, same ex
 only the port's two test executables. The published tip `cc6f8d2` compares the same way against
 `6b93e86`. This discharges the "CUDA no-regression compile with real nvcc" item owed for the fix
 round. No source edits, fork pushes or GitHub writes were made.
+## Validation 2026-11-19 (linux-gfx90a, MI250X, fix round moat-fix-25 at e1b7ac5, with rmagine_hiprt) -- PASS
+
+Fork AMD-Ecosystem/rmagine `moat-fix-25` at `e1b7ac57c740121150a87ba5e4279f718a80f331` (`head_sha`), fresh clone in `projects/rmagine/src`, detached at that commit; nothing pushed to the fork. Full run, not a carry-forward. Why this host: the three other platforms that validated this head have no HIPRT SDK, so the port's own ray-tracing backend `rmagine_hiprt` had not even been compiled at the new head. GPU: AMD Instinct MI250X / MI250, `amdgcn-amd-amdhsa--gfx90a:sramecc+:xnack-` (wave64), one GCD pinned with `HIP_VISIBLE_DEVICES`. ROCm 10.1.0 pip SDK (`_rocm_sdk_devel`, HIP 7.16, AMD clang 24.0.0git), CMake 3.31.6, Ninja, g++ 13. Eigen3, TBB and Boost 1.83 from the image; assimp v5.3.1 built from source into `<job>/deps/prefix`, as on gfx942.
+
+### HIPRT SDK (gone from this host; rebuilt in the job directory)
+
+The SDK the 2026-06 runs used (`/var/lib/jenkins/moat/third_party/HIPRT`) no longer exists, and so does the June harness, which was never committed. Rebuilt both: HIPRT 3.1.1 (GPUOpen-LibrariesAndSDKs/HIPRT `243d376`, untagged, version.txt `3 1 1 edfd561`), built from source into `<job>/deps/HIPRT` -> `dist/bin/Release/libhiprt0300164.so`, the name the port's CMake looks for. Full recipe, the version-to-library-name rule, two runtime gotchas, and the harness source are in `notes-hiprt-harness.md`. Summary of the gotchas:
+
+- HIPRT 3.1.0 (the `3.1.0.cb09c56` tag, tried first) fails on MI250X: the device name `AMD Instinct MI250X / MI250` goes into the kernel-cache file name, the `/` makes the path a missing directory, and `hiprtBuildGeometry` returns error 2 with nothing logged. HIPRT fixed it in 3.1.1. A one-line local patch on 3.1.0 gave identical results; the evidence below is from unpatched 3.1.1. Not an rmagine defect. A reader of the port does need to know that MI250X requires HIPRT >= 3.1.1, and only 3.1.x matches the CMake library name; whether the port documents that is the porter's or jeff's call.
+- With a pip ROCm SDK, `$ROCM/lib` must be on `LD_LIBRARY_PATH`: HIPRT dlopens `libhiprtc.so.7` by bare name, and otherwise the BVH build segfaults at address 0.
+
+### Configure + build (fresh build directory)
+
+```
+J=<job>; ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+B=$PWD/agent_space/rmagine_gfx90a_val
+export HIPRT_PATH=$J/deps/HIPRT
+utils/timeit.sh rmagine compile -- cmake -S $PWD/projects/rmagine/src -B $B -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ "-DCMAKE_PREFIX_PATH=$ROCM;$J/deps/prefix" \
+  -DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON -DRMAGINE_VULKAN_DISABLE=ON \
+  -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON -DRMAGINE_OUSTER_DISABLE=ON \
+  -DRMAGINE_BUILD_TESTS=ON -DRMAGINE_BUILD_TOOLS=OFF
+utils/timeit.sh rmagine compile -- cmake --build $B -j 42
+```
+
+Configure: `rmagine_hiprt: Building HIPRT backend (Pinhole, Spherical, O1Dn, OnDn sensors)`. Build: 86/86 targets, 0 errors (76 without HIPRT on the other hosts; 84 at 4223818 in June). `lib/librmagine_hiprt.so` links `libhiprt0300164.so` from the job directory. Warnings are the existing classes: 46 `-Wdeprecated-declarations` (`hipCtx*`, `hipDevicePrimaryCtx*`), 22 `-Wunused-result` (nodiscard `hipError_t`, 19 of them in `rmagine_hiprt` HiprtScene.cpp/HiprtMesh.cpp, as in June), 66 `-Wunused-value`. `strings lib/librmagine-cuda.so.2.4.3` shows the `gfx90a` code object.
+
+### Test results
+
+```
+utils/timeit.sh rmagine test -- ctest --test-dir $B --output-on-failure -R '^cuda_'
+# Run 1: 8/8 PASS (2.18 s); Run 2: 8/8 PASS (2.18 s)
+utils/timeit.sh rmagine test -- ctest --test-dir $B --output-on-failure -R '^core_'
+# 12/12 PASS (3.06 s) -- non-GPU set, no regression
+# rmagine_hiprt: out-of-tree harness (notes-hiprt-harness.md), run from a scratch dir
+agent_space/hiprt_harness/build.sh $PWD/projects/rmagine/src $B $J/deps/HIPRT $ROCM
+HIPRT_PATH=$J/deps/HIPRT LD_LIBRARY_PATH=$J/deps/HIPRT/dist/bin/Release:$ROCM/lib \
+  utils/timeit.sh rmagine test -- $PWD/agent_space/hiprt_harness/test_all_simulators
+# 4/4 simulators PASS, exit 0; run twice (second run loads kernels from HIPRT's cache), identical output
+```
+
+`ctest -N`: 20 tests registered, all run. HIPRT harness, per simulator (3 poses each, a non-identity Tsb; every ray compared with a CPU ray-triangle reference):
+
+| simulator | rays | hits | max abs range error | hit/miss or range mismatches |
+|---|---|---|---|---|
+| PinholeSimulatorHiprt | 576 | 100 | 0 | 0 |
+| SphericalSimulatorHiprt | 3075 | 411 | 4.77e-07 | 0 |
+| O1DnSimulatorHiprt | 600 | 219 | 0 | 0 |
+| OnDnSimulatorHiprt | 324 | 78 | 0 | 0 |
+
+Beside the earlier gfx90a counts:
+
+| set | 2026-06-05 (4223818, ROCm 7.2.1) | 2026-08-14 (1213551) | this run (e1b7ac5, ROCm 10.1) |
+|---|---|---|---|
+| cuda_ | 7/7 | 8/8 (x2) | 8/8 (x2) |
+| core_ | 12/12 | 12/12 | 12/12 |
+| rmagine_hiprt | 5/5 cases, 4 simulators (hit counts + one range each) | not built (no SDK) | 4/4 simulators, 4575 rays checked per ray, 0 mismatches |
+
+The June harness checked hit counts and a centre or mean range; this one checks every ray, so the two HIPRT numbers are not the same test. Both cover the four simulators.
+
+### GPU dispatch confirmed (AMD_LOG_LEVEL=3)
+
+`rmagine_tests_cuda_math_reduction_correctness` dispatches `sum_kernel<1024u, Vector3_<float>>`, `cov_kernel<1024u>` and `divNx1Inplace_kernel<Vector3_<float>>` (`Gfx Major/Minor/Stepping: 9/0/10`) and prints `PASS: rm::sum/mean/cov match CPU reference and are deterministic`. `rmagine_tests_cuda_math` logs `hipDevicePrimaryCtxRetain ( ..., 0 )` and `hipDevicePrimaryCtxRelease ( 0 )`: upstream's new primary-context default through the round's two new mappings, with no teardown fault. The HIPRT harness dispatches HIPRT's BVH build kernels (`InitGeomData`, `ComputeCentroidBox_TriangleMesh`, `ComputeMortonCodes_TriangleMesh`, `SortSinglePassKVKernel`, `EmitTopologyAndFitBounds_TriangleMesh`, `Collapse_TrianglePairNode_ScratchNode`, `CompactTasks`, `PackLeaves_TriangleMesh_TrianglePairNode`) and the port's JIT trace kernels `pinhole_trace_kernel`, `spherical_trace_kernel`, `o1dn_trace_kernel`, `ondn_trace_kernel` (2 launches each, ranges then hits).
+
+### CUDA no-regression gate
+
+cuda-not-validated (this host): no CUDA toolkit, no conda, no `/usr/local/cuda`. Still owed at `e1b7ac5`: the compile-only nvcc build on the mi355 host, as recorded in the gfx942 section.
+
+### Integrity, jargon, documentation
+
+`git -C projects/rmagine/src status --porcelain` empty; HEAD equals `head_sha`. `python3 utils/jargon.py --port rmagine`: clean (needed local `main` and `moat-fix-25` branches in the fresh clone first; without them it says `cannot resolve main..moat-fix-25`). Documentation: unchanged by this round; the earlier README ruling stands. No source edits; HIPRT and assimp live under the job directory, not the image.
+
+### Verdict
+
+linux-gfx90a VALIDATED at `e1b7ac5`, with `rmagine_hiprt` built and tested: 8/8 cuda_ (2 runs) + 12/12 core_ PASS, and all four HIPRT simulators agree with the CPU reference on every ray, on MI250X. This is the only record at this head where the HIPRT backend was compiled. Still owed for the round: the nvcc compile gate.
