@@ -3247,3 +3247,240 @@ int main()
         }
 }
 ```
+## Evidence session (2026-11-19, linux-gfx1201, Radeon AI PRO R9700, evidence only): first gfx12 run, WMMA layout and switch-on experiment at `930d0098`
+
+Requested by Jeff Daily. The work lock stays with linux-gfx950. Nothing was committed or pushed to the fork, and no stage, lock, head, platform or deferral record changed. The fork was cloned read-only and checked out detached at the recorded `head_sha` `930d0098dafa5ef08945a4382b87c07d89c9a7f0`. The WMMA switch-on experiment ran in a separate `git worktree` of that clone, so the clone under test was never edited. The worktree was removed afterwards, and `git status --porcelain` in the clone is empty. This is the port's first run on a gfx12 GPU.
+
+### Setup (deviations from the common setup block)
+- Device: "AMD Radeon AI PRO R9700" (32 GiB), `arch_name` `gfx1201` (no target features), Warp `arch` 120, `sm_count` 32 (HIP's `multiProcessorCount`, which counts WGPs on RDNA; the part has 64 CUs), wavefront 32, `max_shared_memory_per_block` 65536, `is_texture_supported`/`is_texture_hardware_supported` `True True`, UVA and mempool True. Dispatcher pin `HIP_VISIBLE_DEVICES=2` kept (the host has four GPUs). Host CPU: Threadripper PRO 7965WX, 24 physical cores; builds used the job's `MAX_JOBS=12`.
+- The job venv came with TheRock 10.1.0 wheels. Installed into it: `rocm[devel,device-gfx1201]==10.2.0`, `torch[device-gfx1201]==2.15.0+rocm10.2.0`, `numpy==1.26.4`, `usd-core` (index `https://stable.repo.amd.com/rocm/whl-next/`, extra index PyPI), then `rocm-sdk init`. `export PATH=$FLEET_VENV/bin:$PATH` first (the gfx1100 trap); `rocm-sdk path --root` is the venv's 10.2 `_rocm_sdk_devel`. HIP 7.17, Python 3.11.17.
+- `git-lfs` 3.4.1 installed with `sudo apt-get install -y git-lfs`, then `git lfs install --local --skip-repo && git lfs pull` in the clone (the `.nvdb`/`.usd` assets are real files). `protect-fork warp-1.14` installed the fork pre-push hook (no LFS hook was present).
+- Build: `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1201 -j 12` -> "Warp build succeeded" (33.5 s under `utils/timeit.sh`, .cu build 31.0 s). `readelf -d warp/bin/warp.so` RUNPATH is the venv's 10.2 `_rocm_sdk_devel/lib`. Greeting: `HIP 7.17`, `"cuda:0" : "AMD Radeon AI PRO R9700" (32 GiB, gfx1201, mempool enabled)`.
+- Every run used a private `WARP_CACHE_PATH` under `agent_space/`, and every GPU run was under `ulimit -c 0`. Runner per pattern: `python -m warp.tests -s autodetect -p "<pattern>" -m 32` from `projects/warp-1.14/src`. Scripts (`sdf_probe.py`, `tex_alias.py`, `mma_check.py`, `wmma_layout.hip`, `bench_tile_matmul.py`, `summarize.py`, `compare.py`) were extracted verbatim from these notes.
+
+### Textures (hardware path, first gfx12 run)
+| check | expected (gfx1100) | gfx1201 |
+|---|---|---|
+| `python -m warp.tests -s autodetect -p test_texture.py -m 32` | Ran 120, OK (skipped=1) | **Ran 120, OK (skipped=1)**; the skip is `test_texture_interop_requires_hardware`'s placeholder ("No suitable devices to run the test.") |
+| `python sdf_probe.py cpu` | PASS | PASS: SDF vs CPU sampler 0.00e+00, SDF vs analytic 1.28e-03 (grid spacing 1.56e-02), RGBA8 0.00e+00 |
+| `python sdf_probe.py cuda:0` | PASS, 4.78e-05 / 1.31e-03 / 2.52e-03 | **PASS**: SDF vs CPU sampler 4.78e-05, SDF vs analytic 1.31e-03, RGBA8 vs CPU sampler 2.52e-03 (identical to gfx1100) |
+| `python tex_alias.py cuda:0` | PASS | **PASS**: "plain: 0 of 2048 wrong", "graph capture: 0 of 2048 wrong" |
+
+### Full Phase 1-5 set (82 patterns, as shipped: no WMMA)
+The 82 patterns of the Porting session 6 handoff (B.5), extracted from these notes (82 lines, no duplicates), one per line, 1992 s under `utils/timeit.sh warp-1.14 test`. **81 patterns OK, 1 with the 2 known failures**: `test_fem*` 107 run, failures=2, `test_gimp_quadrature` and `test_cube_shape_functions`, "Unexpected output" holding the init greeting (the upstream isolation behaviour seen on every host).
+- Phase 1: test_codegen 117, test_snippet 12, test_arithmetic 126, test_math 16, test_fp16 6, test_bf16 48, test_atomic 164, test_atomic_bitwise 6, test_atomic_cas 48, test_array 139, test_copy 14, test_launch 32, test_fast_math 12 (1 skipped), test_grad 41, test_kernel_cache 5, test_module_hashing 8, test_print 10, test_mat* 601, test_vec* 531, test_quat* 173, test_spatial* 207, test_rand 10, test_noise 14, test_clang_cuda 7 (6 skipped): all OK.
+- Phase 2: test_runlength_encode 16, test_array_reduce 16, test_sparse 47, test_linear_solvers 34, test_coloring 3, test_bvh 13, test_grouped_bvh 11, test_hash_grid 23, test_marching_cubes 17, test_mesh* 49, test_volume 59, test_volume_write 5, test_apic 52, test_apic_mesh 12: OK; test_fem* as above.
+- Phase 3: test_graph 35 (3 skipped), test_array_fill_capture 3, test_capture_mode 2, test_conditional_captures 32 (16 skipped, Q4), test_conditional 50, test_async 2373, test_streams 24 (3 skipped, incl. the HIP stream-priority skip), test_mempool 7 (2 skipped), test_pinned 1, test_unified_memory 27 (8 skipped), test_occupancy 6, test_allocator 16 (3 skipped), test_allocation_tracker 34, test_dlpack 16, test_torch 34, test_map 45, test_reload 14, test_cuda_arch_suffix 10 (10 skipped): all OK.
+- Phase 4, tile set (24 files): 639 run, 15 skipped, 0 failures, per file:
+
+| file | ran | result |
+|---|---|---|
+| test_tile.py | 126 | OK |
+| test_tile_atomic_bitwise.py | 3 | OK |
+| test_tile_cholesky.py | 33 | OK |
+| test_tile_cholesky_no_mathdx.py | 16 | OK |
+| test_tile_empty.py | 20 | OK |
+| test_tile_fft.py | 20 | OK (skipped=8) |
+| test_tile_fft_no_mathdx.py | 16 | OK |
+| test_tile_func_arg.py | 27 | OK |
+| test_tile_fused_ops.py | 36 | OK |
+| test_tile_large_offsets.py | 1 | OK |
+| test_tile_load.py | 64 | OK |
+| test_tile_mathdx.py | 6 | OK |
+| test_tile_matmul.py | 25 | OK |
+| test_tile_matmul_no_mathdx.py | 22 | OK |
+| test_tile_mlp.py | 3 | OK (skipped=1) |
+| test_tile_reduce.py | 62 | OK (skipped=2) |
+| test_tile_shared_memory.py | 30 | OK (skipped=2) |
+| test_tile_solve.py | 5 | OK (skipped=1) |
+| test_tile_solve_no_mathdx.py | 28 | OK |
+| test_tile_sort.py | 2 | OK |
+| test_tile_stack.py | 40 | OK |
+| test_tile_view.py | 16 | OK (skipped=1) |
+| test_block_dim_dispatch.py | 2 | OK |
+| test_template_launch_bounds.py | 36 | OK |
+
+  Skips: the 10 upstream no-libmathdx skips (fft 8, mlp 1, solve 1) and the five 64 KiB capability skips, with the predicted byte counts: `test_tile_shared_mem_large` and `test_tile_shared_mem_func` "Needs 67584 bytes of shared memory per block, device has 65536", `test_tile_reduce_axis_tier2` 66816, `test_tile_reduce_axis_tier2_single_warp` and `test_tile_assign_2d` 66688. `test_tile_matmul` 25 includes the three `test_tile_matmul_fragment_shapes_*` cases (scalar path on gfx1201 as shipped).
+- Phase 5: test_texture 120 (1 skipped) OK.
+- Across the 82 logs: no `Warp CUDA error` line. The only "Failed to configure kernel dynamic shared memory" line is the known one from `test_tile_load_scoped`'s backward kernel (65536 bytes; the test passes, forward only, as ruled). Skip reasons are the same set as gfx1100 at `974cd4bf`.
+- Compared with gfx1100 at `974cd4bf` (Evidence session 4), every count is the same except `test_tile_matmul`, now 25 (the three new tests, expected). So gfx12 behaves like gfx11 on the whole set.
+- An example test leaves an untracked `example_apic_fluid.usd` in the clone, as on gfx942; deleted after the run.
+
+### CPU-only suite with GPUs hidden
+`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32` (timeit-wrapped, no `cuda:0` in the log): **Ran 2294 tests, OK (skipped=15)**, as expected. (It ran while the 82-pattern set was on its Phase 1 files; GPU results are unaffected, the CPU suite does not touch the GPU.)
+
+### WMMA step 1: layout probe (passes)
+`wmma_layout.hip` from Porting session 9, built with `$R/lib/llvm/bin/clang++ -x hip --rocm-path=$R --offload-arch=gfx1201 -O2 -w wmma_layout.hip -o wmma_layout -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib` (`R=$(rocm-sdk path --root)`, ROCm 10.2), run on the pinned GPU:
+```
+WMMA family 12, K=16: 0 of 256 wrong
+WMMA family 12, K=32: 0 of 256 wrong
+WMMA family 12, K=64: 0 of 256 wrong
+```
+Exit 0. So the gfx12 fp16 layout the header assumes is right on real hardware: lanes 0-15 hold K 0-7 and lanes 16-31 K 8-15 of their A row / B column, and accumulator r of lane l is `C[8 (l / 16) + r][l % 16]`. Checked as well: `tile_matmul_mma.h`'s gfx12 `op<half>` uses exactly that (`kpl = 8`, `k_split = true`, so `k_offset = 8 g`, `k_step = 16`, `row(g, r) = 8 g + r`), so the probe tests the code that ships, not just the instruction. The gfx11 lines were not run here (gfx1100 host).
+
+### WMMA step 2: switch-on experiment (uncommitted, reverted)
+The experiment's diff, applied in a separate worktree of the clone at `930d0098` (`git -C projects/warp-1.14/src worktree add --detach agent_space/wt_wmma 930d0098`, `warp/bin/*.so` copied in from the clone's build, used through `PYTHONPATH=agent_space/wt_wmma`):
+```diff
+--- a/warp/native/tile_matmul_mma.h
++++ b/warp/native/tile_matmul_mma.h
+@@ -9,6 +9,7 @@
+ // feature through __has_builtin.
+ 
+ #pragma once
++#define WP_TILE_WMMA 1
+ 
+ #if defined(__HIP_DEVICE_COMPILE__)
+ 
+```
+Removed afterwards with `git worktree remove --force` and `git worktree prune`; the clone was never edited (`git status --porcelain` empty, `git worktree list` shows only the clone).
+
+**`python mma_check.py` (3 dtypes x 11 shapes x 5 block_dims), with the switch on and, for comparison, as shipped:** the script prints FAILURES 15 in both trees, and the per-case status lines are identical (`diff` of the status lists: no difference): 25 printed ok, 25 SMEM-LIMIT (backward not launched), 15 FAIL. **None of the 15 FAILs is caused by WMMA.** All are fp32 or fp64 cases, which have no WMMA instruction on gfx12 and stay scalar in both trees. Their *forward* kernel needs more than the 64 KiB per-block limit, so nothing launches, and the script's SMEM-LIMIT rule only recognises a failed backward: fp32 64x64x64 (forward 65536 dynamic bytes plus the static allocation, backward 131072), fp64 (64,32,48) (forward 69632, backward 139264) and fp64 64x64x64 (forward 131072, backward 262144), each at all 5 block_dims. The Warp UserWarning before each FAIL names the forward kernel's byte count. On gfx950's 160 KiB these launch, which is why its run had no FAIL. A fix for the script (not needed for this evidence): treat a case whose `c` and `d` are also all zero after a forward "Failed to configure" warning as SMEM-LIMIT (forward).
+
+fp16 with the switch on, every case `ok` (or SMEM-LIMIT for the 64x64x64 backward at 65536 bytes, all 5 block_dims, the same in the shipped tree). Max relative difference to the CPU device (bd 64 lines; tolerance `1e-2 * max(1, K/16)`):
+
+| fp16 shape (M,N,K) | as shipped (scalar) c / d / gA / gB | WMMA c / d / gA / gB |
+|---|---|---|
+| 16,16,16 | 0 / 0 / 0 / 0 | 1.6e-03 / 1.5e-03 / 3.4e-04 / 4.1e-04 |
+| 32,32,32 | 0 / 0 / 0 / 0 | 1.2e-03 / 1.2e-03 / 1.2e-03 / 1.6e-03 |
+| 64,64,64 (fwd only) | 0 / 0 / - / - | 1.9e-03 / 1.7e-03 / - / - |
+| 16,48,32 | 0 / 0 / 0 / 0 | 1.1e-03 / 1.2e-03 / 2.0e-03 / 1.2e-03 |
+| 48,16,64 | 0 / 0 / 0 / 0 | 1.9e-03 / 1.9e-03 / 8.2e-04 / 1.3e-03 |
+| 32,64,16 | 0 / 0 / 0 / 0 | 1.0e-03 / 1.1e-03 / 1.4e-03 / 6.9e-04 |
+| 64,32,48 | 0 / 0 / 0 / 0 | 1.1e-03 / 1.0e-03 / 1.3e-03 / 3.5e-03 |
+| 8,8,8; 24,16,16; 16,16,12; 17,33,15 (do not fit, scalar) | 0 | 0 |
+
+The scalar GPU path agrees bit for bit with the CPU (same fp16 accumulation order). WMMA accumulates in fp32 and rounds once, so it differs from both. Which side is more accurate was checked against a float64 NumPy reference (`acc64.py`: fp16 `C = A @ B`, block_dim 64, max abs error):
+
+| M,N,K | CPU | GPU as shipped | GPU WMMA |
+|---|---|---|---|
+| 32,32,32 | 9.67e-03 | 9.67e-03 | 1.94e-03 |
+| 64,64,64 | 2.16e-02 | 2.16e-02 | 3.82e-03 |
+| 64,32,48 | 1.14e-02 | 1.14e-02 | 2.86e-03 |
+
+So WMMA is 4-6x closer to the exact result, the same direction gfx950 measured for MFMA fp16 (3.8e-03 vs 2.2e-02 at 64x64x64).
+
+**Tile set with the switch on** (24 files, worktree tree): **639 run, 15 skipped, 0 failures**, the same per-file counts and the same 15 skips as the shipped run above (`test_tile_matmul` 25 OK).
+
+**Engagement, checked in the code objects** (`$R/lib/llvm/bin/llvm-objdump -d --mcpu=gfx1201` on the cached `.hsaco`):
+- `mma_check.py`: switch on, 165 code objects with 1336 `v_wmma_f32_16x16x16_f16` in total; as shipped, 165 code objects with 0.
+- `test_tile_matmul.py` alone, fresh cache: switch on, 28 code objects, 4 with WMMA (32 `v_wmma_f32_16x16x16_f16`), Ran 25 OK; as shipped, 28 with 0, Ran 25 OK. (The tile-set loop could not be inspected directly: the parallel runner clears its cache at the start of every file, so only the last file's objects remain.)
+- Benchmark caches: every fp16 module contains `v_wmma_f32_16x16x16_f16` (2 to 52 per module); the fp32 and fp64 modules are byte-identical between the two trees (48 of 48 `cmp`-equal), as they must be with no WMMA instruction for those dtypes.
+- block_dim 32 is one whole 32-lane wavefront, so on gfx12 it takes WMMA too (on gfx950 it is below one 64-lane wavefront and stays scalar).
+
+Observation for whoever toggles the switch: the module hash does not cover the native headers. `acc64.py` printed the same module hash (`1176892` for cuda:0) in both trees. So with a shared kernel cache, adding or removing `WP_TILE_WMMA` would silently reuse code objects built the other way. Every run here used a fresh private `WARP_CACHE_PATH`. Upstream behaves the same way. For a committed change this does not matter: the cache directory is keyed on `config.version`, and a rebuilt install starts clean. It matters only for local experiments like this one.
+
+### Benchmark: scalar (Phase 4, three runs) and WMMA fp16 comparison
+Method: the Phase 4 `bench_tile_matmul.py` (16384 blocks, 50 timed iterations, fwd = 32 accumulating `tile_matmul` per block, adj = one GEMM's `tape.backward()`), three runs on the shipped head and three on the switch-on worktree, each with a fresh cache, under `utils/timeit.sh warp-1.14 bench` (457 s for all six). `bench_both.sh` was adapted for this host (`agent_space/bench/bench_both.sh`). The scalar side is the shipped tree, not the `974cd4bf` `tile_matmul.h` worktree the gfx950 recipe uses, because on gfx1201 the shipped head already contains no matrix instruction (verified above), and so its three runs are also the Phase 4 scalar numbers Jeff asked for. `compare.py` was used with `mfma` renamed to `wmma` (`compare_wmma.py`; the diff is only those names). `device=AMD Radeon AI PRO R9700 arch=120 mathdx=off blocks=16384 reps=32` (512 blocks per WGP, 256 per CU).
+
+Rows that are not `ok`, identical in all six runs, all the 64 KiB per-block limit, none the port: fp32 64x64 adj at every block_dim (backward kernel 98304 bytes: `ADJ-FAILED`, the adj column times a kernel that did not launch); fp64 64x64 at every block_dim (forward kernel 98304 bytes, backward 196608: neither launches, so the forward check reads zeros, `MISMATCH`, and both its columns time nothing). gfx1100 has the same 64 KiB limit.
+
+**Phase 4 scalar `tile_matmul`, gfx1201, fork `930d0098` as shipped, no libmathdx, three runs** (`summarize.py`):
+
+| dtype | tile | block_dim | fwd ms (min-max) | fwd GFLOP/s (best) | adj ms (min-max) | adj GFLOP/s (best) | check |
+|---|---|---|---|---|---|---|---|
+| float16 | 16x16 | 32 | 0.930-0.944 | 4617 | 0.258-0.262 | 1041 | ok |
+| float16 | 16x16 | 64 | 1.020-1.041 | 4211 | 0.260-0.284 | 1034 | ok |
+| float16 | 16x16 | 128 | 0.858-0.865 | 5005 | 0.236-0.255 | 1139 | ok |
+| float16 | 16x16 | 256 | 1.221-1.241 | 3518 | 0.289-0.309 | 928 | ok |
+| float16 | 32x32 | 32 | 2.928-3.033 | 11735 | 3.769-3.808 | 570 | ok |
+| float16 | 32x32 | 64 | 3.192-3.257 | 10765 | 1.917-1.939 | 1120 | ok |
+| float16 | 32x32 | 128 | 3.624-3.734 | 9482 | 1.533-1.583 | 1401 | ok |
+| float16 | 32x32 | 256 | 5.191-5.367 | 6619 | 1.668-1.708 | 1287 | ok |
+| float16 | 64x64 | 32 | 27.452-28.115 | 10013 | 56.168-57.424 | 306 | ok |
+| float16 | 64x64 | 64 | 22.767-24.032 | 12074 | 29.783-31.442 | 577 | ok |
+| float16 | 64x64 | 128 | 23.149-24.410 | 11874 | 17.383-17.704 | 988 | ok |
+| float16 | 64x64 | 256 | 13.917-14.701 | 19752 | 18.494-18.710 | 929 | ok |
+| float32 | 16x16 | 32 | 1.683-1.711 | 2552 | 1.265-1.290 | 212 | ok |
+| float32 | 16x16 | 64 | 1.856-1.891 | 2315 | 1.210-1.222 | 222 | ok |
+| float32 | 16x16 | 128 | 1.139-1.157 | 3771 | 1.190-1.204 | 226 | ok |
+| float32 | 16x16 | 256 | 1.468-1.491 | 2926 | 1.191-1.201 | 225 | ok |
+| float32 | 32x32 | 32 | 6.801-6.985 | 5052 | 5.160-5.170 | 416 | ok |
+| float32 | 32x32 | 64 | 7.233-7.463 | 4750 | 4.827-4.830 | 445 | ok |
+| float32 | 32x32 | 128 | 6.841-7.082 | 5023 | 5.911-5.970 | 363 | ok |
+| float32 | 32x32 | 256 | 8.217-8.535 | 4182 | 5.590-5.621 | 384 | ok |
+| float32 | 64x64 | 32 | 56.598-56.866 | 4857 | 1.300-1.301 | 13212 | ADJ-FAILED |
+| float32 | 64x64 | 64 | 35.720-36.303 | 7695 | 1.289-1.292 | 13333 | ADJ-FAILED |
+| float32 | 64x64 | 128 | 38.803-39.500 | 7084 | 1.288-1.295 | 13339 | ADJ-FAILED |
+| float32 | 64x64 | 256 | 43.520-44.221 | 6316 | 1.292-1.295 | 13298 | ADJ-FAILED |
+| float64 | 16x16 | 32 | 6.091-6.162 | 705 | 1.339-1.344 | 200 | ok |
+| float64 | 16x16 | 64 | 5.915-5.965 | 726 | 0.967-0.975 | 278 | ok |
+| float64 | 16x16 | 128 | 5.978-6.065 | 718 | 1.227-1.234 | 219 | ok |
+| float64 | 16x16 | 256 | 5.910-6.065 | 727 | 1.193-1.201 | 225 | ok |
+| float64 | 32x32 | 32 | 55.598-55.684 | 618 | 22.513-23.147 | 95 | ok |
+| float64 | 32x32 | 64 | 47.305-48.168 | 726 | 12.720-13.094 | 169 | ok |
+| float64 | 32x32 | 128 | 42.556-43.264 | 807 | 8.013-8.184 | 268 | ok |
+| float64 | 32x32 | 256 | 43.013-43.704 | 799 | 7.181-7.305 | 299 | ok |
+| float64 | 64x64 | 32 | 0.011-0.012 | 25271714 | 2.633-2.634 | 6526 | MISMATCH |
+| float64 | 64x64 | 64 | 0.011-0.013 | 25949258 | 2.612-2.614 | 6578 | MISMATCH |
+| float64 | 64x64 | 128 | 0.011-0.012 | 26151202 | 2.609-2.623 | 6585 | MISMATCH |
+| float64 | 64x64 | 256 | 0.011-0.014 | 25357038 | 2.609-2.614 | 6584 | MISMATCH |
+
+Run-to-run spread over the 56 `ok` cells (fwd and adj, (max-min)/median): median 1.8%, max 9.3% (the fp16 16x16 adjoints, which take about 0.25 ms). Compared with gfx1100 (Evidence session B.3, same script and block count, 70 CUs), gfx1201's scalar numbers are of the same order. For example fp16 16x16 fwd at bd 128 is 0.858 ms here against 0.911 ms there.
+
+**fp16 scalar against WMMA (the switch-on experiment), median of three runs per tree** (`compare_wmma.py`; fp32 and fp64 rows included for completeness, see the note below the table):
+
+| dtype | tile | block_dim | scalar fwd ms | WMMA fwd ms | fwd speedup | scalar adj ms | WMMA adj ms | adj speedup | checks |
+|---|---|---|---|---|---|---|---|---|---|
+| float16 | 16x16 | 32 | 0.935 | 0.367 | 2.55x | 0.259 | 0.219 | 1.18x | ok |
+| float16 | 16x16 | 64 | 1.027 | 0.353 | 2.91x | 0.260 | 0.185 | 1.41x | ok |
+| float16 | 16x16 | 128 | 0.859 | 0.393 | 2.19x | 0.237 | 0.188 | 1.26x | ok |
+| float16 | 16x16 | 256 | 1.233 | 0.418 | 2.95x | 0.290 | 0.246 | 1.18x | ok |
+| float16 | 32x32 | 32 | 3.011 | 1.785 | 1.69x | 3.800 | 2.380 | 1.60x | ok |
+| float16 | 32x32 | 64 | 3.226 | 1.785 | 1.81x | 1.931 | 1.361 | 1.42x | ok |
+| float16 | 32x32 | 128 | 3.694 | 2.063 | 1.79x | 1.564 | 0.989 | 1.58x | ok |
+| float16 | 32x32 | 256 | 5.319 | 2.098 | 2.53x | 1.697 | 0.969 | 1.75x | ok |
+| float16 | 64x64 | 32 | 27.914 | 9.754 | 2.86x | 56.369 | 47.858 | 1.18x | ok |
+| float16 | 64x64 | 64 | 23.460 | 10.939 | 2.14x | 30.056 | 24.851 | 1.21x | ok |
+| float16 | 64x64 | 128 | 23.667 | 10.186 | 2.32x | 17.397 | 13.773 | 1.26x | ok |
+| float16 | 64x64 | 256 | 14.005 | 12.843 | 1.09x | 18.666 | 7.651 | 2.44x | ok |
+| float32 | 16x16 | 32 | 1.687 | 1.716 | 0.98x | 1.268 | 1.268 | 1.00x | ok |
+| float32 | 16x16 | 64 | 1.861 | 1.897 | 0.98x | 1.211 | 1.213 | 1.00x | ok |
+| float32 | 16x16 | 128 | 1.154 | 1.162 | 0.99x | 1.192 | 1.193 | 1.00x | ok |
+| float32 | 16x16 | 256 | 1.469 | 1.497 | 0.98x | 1.191 | 1.191 | 1.00x | ok |
+| float32 | 32x32 | 32 | 6.822 | 6.997 | 0.98x | 5.166 | 5.177 | 1.00x | ok |
+| float32 | 32x32 | 64 | 7.234 | 7.464 | 0.97x | 4.827 | 4.828 | 1.00x | ok |
+| float32 | 32x32 | 128 | 6.874 | 7.092 | 0.97x | 5.913 | 5.893 | 1.00x | ok |
+| float32 | 32x32 | 256 | 8.246 | 8.505 | 0.97x | 5.615 | 5.601 | 1.00x | ok |
+| float32 | 64x64 | 32 | 56.759 | 56.905 | 1.00x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 64 | 35.840 | 36.300 | 0.99x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 128 | 38.979 | 39.468 | 0.99x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 256 | 43.801 | 44.463 | 0.99x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float64 | 16x16 | 32 | 6.132 | 6.239 | 0.98x | 1.342 | 1.347 | 1.00x | ok |
+| float64 | 16x16 | 64 | 5.957 | 6.058 | 0.98x | 0.971 | 0.979 | 0.99x | ok |
+| float64 | 16x16 | 128 | 6.050 | 6.186 | 0.98x | 1.231 | 1.242 | 0.99x | ok |
+| float64 | 16x16 | 256 | 6.063 | 6.149 | 0.99x | 1.198 | 1.211 | 0.99x | ok |
+| float64 | 32x32 | 32 | 55.617 | 55.724 | 1.00x | 22.514 | 22.541 | 1.00x | ok |
+| float64 | 32x32 | 64 | 47.420 | 47.592 | 1.00x | 12.757 | 12.714 | 1.00x | ok |
+| float64 | 32x32 | 128 | 42.640 | 42.829 | 1.00x | 8.023 | 8.065 | 0.99x | ok |
+| float64 | 32x32 | 256 | 43.179 | 43.424 | 0.99x | 7.183 | 7.239 | 0.99x | ok |
+| float64 | 64x64 | 32 | 0.011 | 0.011 | 0.97x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 64 | 0.011 | 0.011 | 0.95x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 128 | 0.011 | 0.012 | 0.95x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 256 | 0.012 | 0.011 | 1.07x | (no launch) | (no launch) | - | MISMATCH |
+run-to-run spread (max-min)/median over 144 cells: median 1.8%, max 47.6%
+
+Reading the table:
+- **fp16: WMMA is faster than scalar in every cell**, forward 1.09x to 2.95x and adjoint 1.18x to 2.44x, block_dim 32 included (one whole wavefront on gfx12). No cell is slower, so the ruling's "slower than scalar must fall back or be explained" condition is not triggered on gfx1201. The smallest forward gain is fp16 64x64 at bd 256 (14.005 to 12.843 ms, 1.09x), where the scalar path is already at its best (bd 256 is the scalar optimum for that tile). The smallest adjoint gains (1.18x at 16x16 and at 64x64 bd 32) fit gfx950's explanation that the fp16 backward is dominated by the CAS-loop `atomic_add` gradient accumulation (safe-atomics ruling), not by the GEMMs; not measured further here.
+- **fp32 and fp64 show 0.97x-1.00x, which is not a cost of the switch.** Their code objects are byte-identical between the two trees (48 of 48), because gfx12 has no fp32/fp64 WMMA and the hook falls back at compile time. The consistent 1-3% is run order: all three scalar runs went first, then the three WMMA runs, on a warm GPU. The same drift therefore probably sits on the fp16 ratios too, against WMMA, so the fp16 speedups are if anything slightly understated.
+- The fp32 64x64 adj and fp64 64x64 cells are the 64 KiB limit (above). The fp64 64x64 "fwd" times (0.011 ms) are a launch that did nothing.
+- WMMA-run spread over the 56 `ok` cells: median 2.0%, max 16.1% (the fp16 16x16 adjoints, about 0.19 ms; the other fp16 cells are within a few percent).
+
+### Summary for the lock holder and Jeff
+- First gfx12 run at `930d0098`: textures (hardware path, test_texture 120 OK, SDF probe and tex_alias PASS with the gfx1100 values), the full 82-pattern set (81 OK plus the 2 known fem isolation failures, the 5 expected 64 KiB tile skips) and the CPU-only suite (2294 OK, 15 skipped) all match gfx1100. Nothing needs a fork change.
+- WMMA layout probe: all three gfx12 lines 0 of 256 wrong, and the probe's layout is the one the header implements.
+- Switch-on experiment on gfx1201: mma_check has no WMMA-caused failure (its 15 FAILs are fp32/fp64 forward kernels over 64 KiB, identical in the shipped tree); tile set 639 run, 0 failures; `test_tile_matmul` 25 OK with WMMA engaged; fp16 results 4-6x closer to float64 than scalar; fp16 benchmark faster in all 12 cells. **gfx12 passes the conditions the Porting session 9 handoff set for enabling WMMA.**
+- Proposed change for the lock holder to judge (not committed: the experiment diff above, expressed for the targets that passed). gfx11 has not run its probe yet. So the switch should be on for the gfx12 family only, until a gfx1100 host runs `wmma_layout.hip` and the same checks. The header can use the gfx12 builtin itself as the condition, without an arch name, the same feature-macro rule as the rest of the selection:
+```diff
+--- a/warp/native/tile_matmul_mma.h
++++ b/warp/native/tile_matmul_mma.h
+@@
+-#elif defined(WP_TILE_WMMA) && WP_TILE_WMMA
+-// 32-lane WMMA. The operand and accumulator layouts below come from the ISA documentation and
+-// have not been measured yet, so this path is off unless WP_TILE_WMMA is defined to 1.
++#elif (defined(WP_TILE_WMMA) && WP_TILE_WMMA) || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12)
++// 32-lane WMMA. The gfx12 fp16 layout is measured on gfx1201; the gfx11 and gfx1250 layouts
++// come from the ISA documentation and stay off unless WP_TILE_WMMA is defined to 1.
+```
+  That one condition is enough by itself. Checked with the ROCm 10.2 compiler (`clang++ -x hip --cuda-device-only -nogpulib -E` on `__has_builtin`), each WMMA builtin exists on exactly one family: gfx1100 has only `wmma_f32_16x16x16_f16_w32`, gfx1201 only `..._w32_gfx12`, gfx1250 only `wmma_f32_16x16x4_f32`, and gfx950 none. So the branch turns on for gfx12 targets only. Inside it, the gfx11 and gfx1250 blocks stay empty there, and gfx11 and gfx1250 still need `WP_TILE_WMMA=1`, as now. On gfx1201 this is exactly the code tested here. The MFMA branch comes first and is unaffected. gfx1200 also has only the gfx12 builtin (checked the same way), so it would be enabled too; it was not run on hardware.
+- Release notes, if gfx12 is enabled: the session 9 wording ("On Radeon GPUs `tile_matmul` uses the scalar path") changes for gfx12 to: fp16 `tile_matmul` uses WMMA when tiles are multiples of 16 and the block is a whole number of 32-thread wavefronts, accumulating in fp32 (results can differ from the scalar path in the last bits, and are closer to the exact product); fp32 and fp64 stay scalar because RDNA4 has no WMMA instruction for them.
+- Not done here: the gfx11 probe and the bf16 path (dropped from WMMA by the porter); multi-GPU (one GPU pinned).
