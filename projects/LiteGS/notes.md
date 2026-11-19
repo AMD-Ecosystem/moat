@@ -959,3 +959,44 @@ Checks:
 ## Review 2026-11-19 (4) (reviewer, linux-gfx1201) -- PASS
 
 Scope: `git diff 1664e6d..a995109` in the LiteGS fork (reviewed_sha was 1664e6d). One deleted line, `.gitmodules` `branch = moat-port`; the gitlink is unchanged (d3213b4). No problems found. Checked: `moatlib.py classify LiteGS 1664e6d a995109` -> `doc-only`, inert; the README never documents `git submodule update --remote` or any clone recipe that would read the `branch` key (README.MD only runs `pip install litegs/submodules/<ext>`), and nothing else in the tree (no `.github`, no scripts) reads it, so dropping it changes no documented workflow; a fresh clone plus `git submodule update --init --recursive` checks out d3213b4 (the porter's check, and `git submodule status` here). The commit message's claims (`--init` checks out the recorded commit whatever `branch` says; only `.gitmodules` changes) are accurate; `utils/prose.py` on the body: clean; `jargon.py --port LiteGS`: clean over the whole branch; `audit-commits`: OK. The open items for jeff in Review (3) (fused-loss clamp ruling, the d3213b4 message without an AI line or Test Plan, nvcc compile of the current pin, the Windows fused-ssim build) are unchanged by this delta and still stand.
+
+## Validation 2026-11-19 (4) (validator, linux-gfx1201) -- PASS at a995109 -> completed
+
+Device: AMD Radeon AI PRO R9700, gfx1201 (RDNA4, `warp_size` 32), one GPU pinned by `HIP_VISIBLE_DEVICES`. PyTorch `2.16.0a0+git6c3af02` (image source build), `torch.version.hip` 7.16.26385, ROCm 10.1 pip SDK, Python 3.11.17. head_sha `a995109ec81235aeb9dab69bfc6209ceeae3e053`, fused_ssim submodule AMD-Ecosystem/fused-ssim d3213b4 (checked out by `git submodule update --init --recursive` from the new `.gitmodules`, no `branch` line). All GPU work under `ulimit -c 0`.
+
+Environment: `$FLEET_VENV` is isolated from the image torch; a `.pth` in it adds the image site-packages (read-only). Deps installed into the job venv: `plyfile<1.1 opencv-python-headless<4.11 torchmetrics numpy==1.26.4 tqdm pytorch_msssim tifffile matplotlib pytest`. Scene: `tandt/truck` and `tandt/train` extracted from `tandt_db.zip` (sha256 `816e62f2...26d7e1` verified, the same file as the earlier gfx1201 round). Probe scripts (`train_probe.py`, `metrics_nolpips.py`, `selfcheck.py`) are the ones the 38aa67c gfx1201 validation used, unchanged.
+
+Build: clean (`git clean -fdx` in the fork and the submodule, the three packages uninstalled first). From `/tmp`, `PYTORCH_ROCM_ARCH=gfx1201`, each under `utils/timeit.sh LiteGS compile --`, the README commands: `python -m pip install -v --no-build-isolation --no-deps <src>/litegs/submodules/{simple-knn,fused_ssim,gaussian_raster}`. All three built, no source change. Code objects (all `amdgcn-amd-amdhsa--gfx1201`): simple_knn._C 1, fused_ssim_cuda 2, litegs_fused 4. `transform.hip:453` has `torch::zeros` for `view_position`. `fused_ssim` exposes `fused_ssim`, `fused_ssim3d`, `fused_l1_ssim_loss`.
+
+Self-check (`selfcheck.py`, `validate()` per class): CreateTransformMatrix PASS, CreateCov2dDirectly PASS, **SphericalHarmonicToRGB PASS** (it printed a dir_grad mismatch at 38aa67c; that tensor is never written by the kernel, so the comparison reads uninitialized memory and can go either way), CreateRaySpaceTransformMatrix and Binning TypeError (harness signature mismatch), EighAndInverse2x2Matrix `hipErrorInvalidConfiguration` from the torch `linalg.eigh` reference at the default 524,288 batch (the known torch/rocSOLVER limit on this arch recorded at 38aa67c). Same known harness artifacts; nothing new from the port.
+
+Real trainer (`example_train.py` unchanged, through `train_probe.py`, absolute scene paths, each under `utils/timeit.sh LiteGS test --`; commands as in the 38aa67c gfx1201 section):
+| run | iterations | first iter loss / PSNR | last iter loss / PSNR | first-50 -> last-50 mean loss / PSNR | finite | wall |
+|---|---|---|---|---|---|---|
+| truck 1 | 2761 | 0.28946 / 11.51 dB | 0.06917 / 23.03 dB | 0.22039 / 14.11 -> 0.08013 / 22.48 | yes | 26.2 s |
+| truck 2 | 2761 | 0.25804 / 13.64 dB | 0.09393 / 21.11 dB | 0.23098 / 13.68 -> 0.07789 / 22.77 | yes | 26.0 s |
+| truck 3 | 2761 | 0.28833 / 11.60 dB | 0.07598 / 22.92 dB | 0.22463 / 14.03 -> 0.07869 / 22.68 | yes | 25.6 s |
+| truck --eval | 2847 | 0.26994 / 11.90 dB | 0.08325 / 21.82 dB | 0.23055 / 13.73 -> 0.09232 / 21.24 | yes | 30.4 s |
+| train (301 img) | 6923 | 0.35985 / 9.76 dB | 0.07131 / 24.67 dB | 0.27748 / 12.09 -> 0.09387 / 22.01 | yes | 75.6 s |
+
+`example_metrics.py --eval` (LPIPS stubbed): Trainingset SSIM 0.7614 / PSNR 22.35 dB; **Testset SSIM 0.7557 / PSNR 21.96 dB**.
+
+Against the 38aa67c gfx1201 run (kemchenj 409da0b pin): truck last-50 loss 0.0779-0.0801 vs 0.0774-0.0792, last-50 PSNR 22.48-22.77 vs 22.57-22.92 dB; --eval last-50 0.0923 / 21.24 vs 0.0923 / 21.30; testset 0.7557 / 21.96 vs 0.7514 / 21.86 (trainset 0.7614 / 22.35 vs 0.7574 / 22.24); train last-50 0.0939 / 22.01 vs 0.0967 / 21.71. All within run-to-run spread (random frame order); the held-out and train figures are slightly better, truck plain slightly lower, overlapping ranges. Same speed (truck 25.6-26.2 s vs 25.7 s). No 0x1016, `hipError` or `HSA_STATUS` in any trainer log: 5 runs, about 18,900 iterations.
+
+fused-ssim repository tests at d3213b4 on this GPU (scratch copy of `tests/` + `images/`, `genplot_3D.py` with the upstream import fix in the copy only, as on gfx90a; the device name has no slash, so no save-path workaround was needed), each under `utils/timeit.sh LiteGS test --`:
+| script | result |
+|---|---|
+| `test.py` (2D vs reference and pytorch_msssim, asserts) | PASS |
+| `test_3D.py` (3D, asserts) | PASS |
+| `test_fused_l1_ssim_loss.py` as a script | PASS; fused 1.12 ms vs l1 + fused_ssim 1.55 ms fwd+bwd at 3x1080x1920 (27.9% faster) |
+| `pytest test_fused_l1_ssim_loss.py` | 1 passed |
+| `train_image.py` | PASS (final SSIM 0.9999) |
+| `train_image_3D.py` | PASS (final SSIM 0.99990) |
+| `genplot.py`, `genplot_3D.py` | PASS |
+7 of 7 scripts pass, pytest 1 of 1.
+
+CUDA no-regression compile: `cuda-not-validated: no nvcc on this host` (no `/usr/local/cuda`, no `nvcc` on PATH). The owed nvcc compile of the current pin (d3213b4) recorded in Review (3) still stands; this round's delta is `.gitmodules` only.
+
+Gates: documentation present (README.MD:89, Linux scope); `python3 utils/jargon.py --port LiteGS`: **clean**. Integrity: `git status --porcelain` empty in the fork clone and the submodule, clone at a995109.
+
+linux-gfx90a: its kept GPU pass is at 1664e6d (`--gate jargon`), and a995109 is `doc-only` over it, so a gfx90a validator can close it with `carry-forward LiteGS linux-gfx90a a995109... source-class` after checking jargon; not done from this host, since each host writes its own platform's record.

@@ -7,7 +7,7 @@
   "priority": 4.566,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-11-19T23:00:36Z",
+  "updated_at": "2026-11-19T23:12:12Z",
   "head_sha": "a995109ec81235aeb9dab69bfc6209ceeae3e053",
   "porting": null,
   "waivers": {},
@@ -142,11 +142,11 @@
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "e24abb264834ee89f2d5f61e83c34aa17950d01a",
+      "validated_sha": "a995109ec81235aeb9dab69bfc6209ceeae3e053",
       "failed_sha": "e24abb264834ee89f2d5f61e83c34aa17950d01a",
       "started_at": "2026-11-19T22:56:10Z",
-      "completed_at": "2026-11-19T20:43:42Z",
-      "updated_at": "2026-11-19T23:00:36Z",
+      "completed_at": "2026-11-19T23:12:12Z",
+      "updated_at": "2026-11-19T23:12:12Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -161,16 +161,10 @@
         "last_session_at": null
       },
       "state": "completed",
-      "last_agent": "reviewer",
-      "carry_forward": {
-        "from": "38aa67ca155b8d2db59a3b2895d4348045377203",
-        "to": "e24abb264834ee89f2d5f61e83c34aa17950d01a",
-        "method": "source-class",
-        "class": "doc-only",
-        "detail": "History rewritten for the pull request with an identical tree (38aa67c -> e24abb2): only commit messages changed, and the vocabulary check that failed at 38aa67c is clean at e24abb2. The GPU pass reco",
-        "at": "2026-11-19T20:43:42Z",
-        "after_gate": "jargon"
-      }
+      "last_agent": "validator",
+      "validated_prior": [
+        "e24abb264834ee89f2d5f61e83c34aa17950d01a"
+      ]
     }
   },
   "porting_released": {
