@@ -79,7 +79,8 @@
       "component": "HIP",
       "summary": "HIP 7.17 (ROCm 10.2 wheels), gfx950: hipMallocAsync on the null stream (0) while another stream of the device is being captured in global mode segfaults inside libamdhip64 instead of returning an error (CUDA returns cudaErrorStreamCaptureImplicit). Seen through cuBQL's refit, which ran on stream 0 during a Warp graph capture (mesh with bvh_constructor=cubql, refit inside wp.ScopedCapture). The port now passes Warp's current stream to cuBQL's refit, which avoids the null stream; the HIP crash itself is unfixed",
       "refs": [
-        "projects/warp-1.14/notes.md (Phase 3)"
+        "projects/warp-1.14/notes.md (Phase 3)",
+        "https://github.com/ROCm/rocm-systems/issues/13636#issuecomment-6998834578"
       ],
       "status": "filed",
       "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/16184",
