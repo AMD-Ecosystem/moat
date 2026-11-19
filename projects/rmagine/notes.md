@@ -3317,3 +3317,74 @@ reply` instead. The same wording in the porter notes is corrected above.
 - Merge message: 52-char `[ROCm]` title (fits, since it adds HIP-only lines), prose AI disclosure,
   no Co-Authored-By trailer, literal Test Plan, no in-house vocabulary. Author matches the earlier port commits.
 - Still owed (not a review finding): CUDA no-regression nvcc compile on the mi355 host.
+
+## Validation 2026-11-19 (linux-gfx942, MI300X, fix round moat-fix-25 at e1b7ac5) -- PASS
+
+Fork AMD-Ecosystem/rmagine `moat-fix-25` at `e1b7ac57c740121150a87ba5e4279f718a80f331`
+(`head_sha`), checked out in `projects/rmagine/src`. This is a full revalidation, not a
+carry-forward: the delta merges upstream code into `rmagine_cuda` (the CudaContext rework).
+GPU: AMD Instinct MI300X, `amdgcn-amd-amdhsa--gfx942:sramecc+:xnack-` (wave64), one GPU pinned with
+`HIP_VISIBLE_DEVICES`. ROCm 10.1 pip SDK (`_rocm_sdk_devel`, HIP clang 24.0.0), CMake 3.31.6,
+assimp 5.3.1 built from source into the job directory (see the fix-round section). No HIPRT
+SDK on this host, so `rmagine_hiprt` is skipped by CMake (same as every non-gfx90a platform).
+
+### Configure + build (fresh build directory)
+
+```
+ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+B=agent_space/rmagine_gfx942_val
+utils/timeit.sh rmagine compile -- cmake -S projects/rmagine/src -B $B -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ "-DCMAKE_PREFIX_PATH=$ROCM;<job>/deps/prefix" \
+  -DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON -DRMAGINE_VULKAN_DISABLE=ON \
+  -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON -DRMAGINE_OUSTER_DISABLE=ON \
+  -DRMAGINE_BUILD_TESTS=ON -DRMAGINE_BUILD_TOOLS=OFF
+utils/timeit.sh rmagine compile -- cmake --build $B -j 56
+```
+
+76/76 targets, 0 errors. Library is now `librmagine-cuda.so.2.4.3` (upstream version bump);
+`strings` shows the `gfx942` code object.
+
+### Test results
+
+```
+utils/timeit.sh rmagine test -- ctest --test-dir $B --output-on-failure -R '^cuda_'
+# Run 1: 8/8 PASS (2.81 s); Run 2 (determinism): 8/8 PASS (2.81 s)
+utils/timeit.sh rmagine test -- ctest --test-dir $B --output-on-failure -R '^core_'
+# 12/12 PASS (3.28 s) -- non-GPU set, no regression
+```
+
+20 tests registered (`ctest -N`), all run. cuda_: math, memory, memory_slicing, math_svd,
+math_statistics, math_reduction, math_reduction_correctness, public_headers. core_: the same 12
+as the 2026-08-13 gfx942 run.
+
+### GPU dispatch and the new primary-context path
+
+`AMD_LOG_LEVEL=3 ./bin/rmagine_tests_cuda_math_reduction_correctness` dispatches
+`rmagine::cuda::sum_kernel<1024u, Vector3_<float>>`, `cov_kernel<1024u>` and
+`divNx1Inplace_kernel<Vector3_<float>>`, then prints
+`PASS: rm::sum/mean/cov match CPU reference and are deterministic` and exits 0.
+`AMD_LOG_LEVEL=3 ./bin/rmagine_tests_cuda_math` logs `hipDevicePrimaryCtxRetain ( ..., 0 )` at
+startup and `hipDevicePrimaryCtxRelease ( 0 )` at exit, with no teardown fault: this is
+upstream's new `createPrimary(0)` default context running through the two new mappings.
+
+### CUDA no-regression gate
+
+cuda-not-validated (this host): no CUDA toolkit, no conda, and the fleet guard refuses a
+job-local pip install of the toolkit. Owed: a compile-only nvcc build of `e1b7ac5` on the mi355
+host (`-DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80`, recipe in "Validation 2026-08-13
+(linux-gfx942)"), before the round goes to jeff. The round adds no line to the CUDA branch of any
+file; everything new on the CUDA path is upstream's own code.
+
+### Integrity, jargon, documentation
+
+`git -C projects/rmagine/src status --porcelain` empty; HEAD equals `head_sha`.
+`python3 utils/jargon.py --port rmagine`: clean. Documentation: unchanged by this round. The
+README still defers build options to the wiki, so the earlier ruling stands ("Open item ruled
+on: README does not mention USE_HIP"): the review PR body states the option.
+
+### Verdict
+
+linux-gfx942 VALIDATED at `e1b7ac5`: 8/8 cuda_ (2 runs) + 12/12 core_ PASS on MI300X. The wave64
+gate is satisfied at the staging tip. Still to revalidate at this head: wave32 (linux-gfx1100) and
+windows (gfx1151 last, per the Linux-before-Windows rule), plus the nvcc gate above.

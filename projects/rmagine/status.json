@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-11-19T04:19:52Z",
+  "updated_at": "2026-11-19T04:21:38Z",
   "head_sha": "e1b7ac57c740121150a87ba5e4279f718a80f331",
   "depends_on": [],
   "waivers": {},
@@ -18,11 +18,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93",
+      "validated_sha": "e1b7ac57c740121150a87ba5e4279f718a80f331",
       "failed_sha": null,
       "started_at": "2026-08-13T01:31:39Z",
-      "completed_at": "2026-08-13T01:41:53Z",
-      "updated_at": "2026-11-19T04:19:52Z",
+      "completed_at": "2026-11-19T04:21:38Z",
+      "updated_at": "2026-11-19T04:21:38Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -36,16 +36,11 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
+      "last_agent": "validator",
       "state": "completed",
-      "carry_forward": {
-        "from": "e7a7b279f8f21cd5fb339282d7fb1b15beda64ae",
-        "to": "1213551f14f64c92c08048f377034b1ee362659d",
-        "method": "source-class",
-        "class": "comment-only",
-        "detail": "tests/cuda/public_headers.cpp: comment-only (comments/format only)",
-        "at": "2026-08-13T01:47:16Z"
-      }
+      "validated_prior": [
+        "cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93"
+      ]
     },
     "windows-gfx1101": {
       "state": "completed",
