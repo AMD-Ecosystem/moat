@@ -4258,3 +4258,36 @@ for M, N, K in SHAPES:
 print("FAILURES", fails)
 sys.exit(1 if fails else 0)
 ```
+
+## Evidence session 2 (2026-11-19, linux-gfx1201, Radeon AI PRO R9700, evidence only): gfx12 items at `c9595bce`
+
+Requested by Jeff Daily. The work lock stays with linux-gfx950. Nothing was committed or pushed to the fork, and no stage, lock, head, platform or deferral record changed. The read-only clone was moved from `930d0098` to the recorded `head_sha` `c9595bcedee56cffa5b8181372e9f46643a087e8` (detached; `git status --porcelain` empty before and after; `git lfs pull` again). Rebuilt against the venv's ROCm 10.2 wheels: `export PATH=$FLEET_VENV/bin:$PATH; python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1201 -j 12` -> "Warp build succeeded" (.cu build 30.4 s); RUNPATH the venv's `_rocm_sdk_devel/lib`. Same device and venv as the first gfx1201 session, `HIP_VISIBLE_DEVICES=2`, `ulimit -c 0`, a fresh private `WARP_CACHE_PATH` for every run. The items are the "gfx1201 (gfx12)" list of Porting session 10's Next step, run in its order. No switch or local edit was used: everything below is the committed code.
+
+### 1. Tile set (24 files): 639 run, 15 skipped, 0 failures
+Per-file counts are identical to the first gfx1201 session's tile table at `930d0098` (test_tile 126, ..., test_tile_matmul 25, test_template_launch_bounds 36). The skips are the 10 upstream no-libmathdx skips (fft 8, mlp 1, solve 1) and the five 64 KiB capability skips ("Needs 67584 ..." 2, "Needs 66816 ..." 1, "Needs 66688 ..." 2). There is no `Warp CUDA error`, and the only shared-memory warning is the known `test_tile_load_scoped` backward one.
+
+### 2. test_tile_matmul alone: Ran 25, OK; WMMA in the fp16 objects as shipped
+Fresh cache, then `llvm-objdump -d --mcpu=gfx1201` on every cached `.hsaco`. Each fp16 module's tile shapes and block_dim were read from its generated `.cu`:
+
+| fp16 module (A, B tile; block_dim) | `v_wmma_f32_16x16x16_f16` |
+|---|---|
+| 16x16, 16x16; 64 | 4 |
+| 16x16, 16x16; 96 | 4 |
+| 48x32, 32x16; 64 | 15 |
+| 48x32, 32x16; 96 | 9 |
+| 24x16, 16x16; 64 and 96 | 0 (M not a multiple of 16: scalar, as designed) |
+| 17x15, 15x33; 64 and 96 | 0 (does not fit: scalar) |
+| 8x8, 8x4; 64 | 0 (does not fit: scalar) |
+
+Every fp32 and fp64 module (and the bf16 test's float32-output module) has 0 WMMA: gfx12 has no WMMA instruction for them. block_dim 96 is three 32-lane wavefronts, so on gfx12 it takes WMMA; on gfx950 it is not a whole number of 64-lane wavefronts and stays scalar. So the committed condition behaves as the experiment did, with no switch.
+
+### 3. `mma_check.py` (fixed version from Porting session 10): FAILURES 0
+165 cases: 25 printed `ok`, 25 "SMEM-LIMIT (backward not launched)", 15 "SMEM-LIMIT (forward not launched)", 0 FAIL, exit 0. The 15 forward limits are exactly the 15 cases the old script called FAIL in the first session: fp32 64x64x64, fp64 (64,32,48) and fp64 64x64x64, at all 5 block_dims. The 25 backward limits are fp16 64x64x64, fp32 (64,32,48), fp64 32x32x32, (32,64,16) and (48,16,64), at all 5 block_dims. The fixed forward rule (c all zero, d unchanged, no gradients) therefore classifies the 64 KiB forward kernels correctly on a real 64 KiB part. Its code objects hold 1336 `v_wmma_f32_16x16x16_f16` across 165 `.hsaco`, the same total as the switch-on experiment at `930d0098`. Every printed fp16 error line (c, d, gA, gB per case) is identical to that experiment's log (`diff` empty), and so are the fp32/fp64 lines outside the old FAIL cases. The committed gfx12 path is therefore numerically the code that was validated.
+
+### 4. Full 82-pattern set: 81 OK, 1 with the 2 known fem isolation failures
+Same 82-pattern list, `-p "<pattern>" -m 32`, 1840 s under `utils/timeit.sh warp-1.14 test`. The `test_fem*` failures are `test_gimp_quadrature` and `test_cube_shape_functions` ("Unexpected output" with the init greeting, upstream isolation behaviour). The per-pattern summary lines (Ran count and result, timings stripped) are **identical** to the `930d0098` run of the first gfx1201 session (`diff` empty), and so is the skip-reason histogram over all 82 logs. test_texture is Ran 120, OK (skipped=1), so the gfx90a-only 3D software sampling and the per-handle bookkeeping (`c9595bce`) leave the gfx12 hardware texture path unchanged. There is no `Warp CUDA error` in any log, and the only shared-memory warning is the known `test_tile_load_scoped` one. The untracked `example_apic_fluid.usd` an example writes was deleted after the run.
+
+Telemetry note: one `test` phase line of 0.004 s with exit 1 at 08:40:04Z in `stats.jsonl` is a launcher typo of mine (the pattern-list path), relaunched at once. It ran no test.
+
+### Summary
+At `c9595bce`, every gfx1201 item gives the expected result. The committed WMMA condition engages WMMA for fp16 tiles that fit, with no switch, and falls back to scalar for the rest. The tile set and test_tile_matmul pass, the fixed `mma_check.py` reports FAILURES 0 with results identical to the validated experiment, and the full 82-pattern set is unchanged from `930d0098`. Nothing needs a fork change. (The CPU-only suite and the benchmark were not in this host's list for this head and were not run.)
