@@ -1,0 +1,146 @@
+{
+  "schema_version": 3,
+  "name": "cupy",
+  "upstream_url": "https://github.com/cupy/cupy",
+  "fork_url": "https://github.com/ROCm/cupy",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "setuptools-cuda",
+  "stage": "review-passed",
+  "adopted_at": "2026-11-04T22:34:29Z",
+  "updated_at": "2026-11-10T23:05:43Z",
+  "head_sha": "a6e01258f5bd5a90b1e1804f36dc1d22d73aa57f",
+  "depends_on": [],
+  "waivers": {},
+  "platforms": {
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a6e01258f5bd5a90b1e1804f36dc1d22d73aa57f",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-10T20:28:37Z",
+      "updated_at": "2026-11-10T20:28:37Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a6e01258f5bd5a90b1e1804f36dc1d22d73aa57f",
+      "failed_sha": null,
+      "started_at": "2026-11-05T17:27:29Z",
+      "completed_at": "2026-11-10T22:40:36Z",
+      "updated_at": "2026-11-10T22:40:36Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "state": "completed"
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a6e01258f5bd5a90b1e1804f36dc1d22d73aa57f",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-10T20:25:12Z",
+      "updated_at": "2026-11-10T20:25:12Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
+    },
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-09T18:52:23Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    }
+  },
+  "fork_url_ruling": {
+    "url": "https://github.com/ROCm/cupy",
+    "previous": null,
+    "by": "jeffdaily",
+    "at": "2026-11-04T22:35:00Z",
+    "reason": "ROCm/cupy is AMD's staging fork for upstream CuPy PRs; a second fork would duplicate it"
+  },
+  "license_spdx": "MIT",
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none for Windows; ROCm/cupy (fork_url) holds AMD's Linux HIP work, upstream #8374 closed",
+    "viable": true,
+    "summary": "CuPy (MIT) Windows ROCm build only: Linux HIP is upstream; Windows device compiler raises for HIP, needs hipcc/clang-cl path, hiprtc DLL name, no roctracer/rccl, DLL dirs; unblocks gpu4pyscf windows",
+    "at": "2026-11-04T22:41:45Z"
+  },
+  "porting_released": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-10T19:56:02Z",
+    "at": "2026-11-10T20:00:36Z"
+  },
+  "review_pr": "https://github.com/ROCm/cupy/pull/76",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-10T22:56:22Z",
+    "head_sha": "a6e01258f5bd5a90b1e1804f36dc1d22d73aa57f",
+    "content_sha256": "c09c84c96e6d9e8fc8a2d579b41272b555a76179cbe0c29149f44ade1f057202",
+    "review_pr": "https://github.com/ROCm/cupy/pull/76"
+  },
+  "pr_url": "https://github.com/cupy/cupy/pull/10467",
+  "pr_number": 10467,
+  "pr_opened_at": "2026-11-10T23:05:43Z",
+  "pr_state": "open",
+  "published_sha": "a6e01258f5bd5a90b1e1804f36dc1d22d73aa57f"
+}

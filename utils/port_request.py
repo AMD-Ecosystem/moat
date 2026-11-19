@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """File and check port-request issues -- the one intake queue.
 
 Two things feed it and they are the same thing. A community member suggests a CUDA
@@ -73,13 +75,20 @@ def known(full_name):
 
     # Across refs, not just the working tree: an in-flight project lives on its own
     # port branch, and asking the local tree alone reports it as never adopted.
+    # By owner/repo and by repo id, never by the folder's name. A folder is named
+    # after the repo's basename (or whatever `scaffold --name` was given), so
+    # matching on that called foo/bar adopted because baz/bar was, and missed a
+    # project whose folder is not its repo's name.
     known_projects = moatlib.all_projects()
-    for n in names:
-        short = n.split("/")[-1]
-        where = known_projects.get(short)
-        if where:
+    lowered = {n.lower() for n in names}
+    by_id = moatlib.adopted_repo_ids()
+    for short in sorted(known_projects):
+        full = moatlib.upstream_full_name(short)
+        if (full and full.lower() in lowered) or \
+                (repo_id is not None and by_id.get(repo_id) == short):
+            where = known_projects[short]
             adj = {"branch": "in flight on port/" + short,
-                   "trunk": "on the trunk", "local": "in this checkout"}[where]
+                   "trunk": "on the trunk", "local": "in this checkout"}.get(where, where)
             return f"already adopted as projects/{short} ({adj})"
     # By id as well as by name: a rename changes the name and not the id, and GitHub
     # resolves old->new but never new->old.
@@ -164,4 +173,6 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())

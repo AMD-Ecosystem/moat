@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Source-class classifier for the MOAT regression guard.
 
 Given two commits on a fork, decide whether the source delta is behavior-
@@ -112,7 +114,11 @@ def _is_doc(path: str) -> bool:
     base = path.rsplit("/", 1)[-1]
     if low.endswith(DOC_SUFFIXES):
         return True
-    if path.startswith("docs/") or path.startswith("doc/") or "/docs/" in path:
+    # Only the repository's own top-level documentation tree. A nested `docs/` is
+    # just a directory name: `src/docs/render.cu` is source, and reading every
+    # path containing `/docs/` as documentation carried validations forward over
+    # code nobody rebuilt. Real documents below a nested one still match by suffix.
+    if path.startswith("docs/") or path.startswith("doc/"):
         return True
     if base in REPO_META_NAMES:
         return True
@@ -141,15 +147,42 @@ def _lang(path: str):
 # input cannot be confidently tokenized (-> caller treats the file as mixed).
 # kinds: "id", "kw", "num", "str", "punct", "comment".
 
+# Longest first. A multi-character operator is one token: `a+ +b` and `a++b` hold
+# the same characters and mean different things, and read one character at a time
+# they were the same stream. `>>` closing two template lists then differs from
+# `> >`, which costs a carry-forward on a reformat and never grants a wrong one.
+_C_OPERATORS = ("<<=", ">>=", "...", "->*", "<=>",
+                "++", "--", "->", "<<", ">>", "<=", ">=", "==", "!=", "&&", "||",
+                "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "::", "##", ".*")
+
+
 def _tok_c(src: str):
     toks = []
     i, n = 0, len(src)
+    # A preprocessor directive ends at its line's end, so where that end falls is
+    # part of the program: `#define A` / `B` and `#define A B` hold the same
+    # tokens and mean different things. Each directive gets an end marker.
+    line_start, in_pp = True, False
     while i < n:
         ch = src[i]
-        if ch in " \t\r\n":
+        if ch == "\\" and src[i + 1:i + 2] == "\n" or src[i:i + 3] == "\\\r\n":
+            i += 2 if src[i + 1] == "\n" else 3     # a continued line is one line
+            continue
+        if ch == "\n":
+            if in_pp:
+                toks.append(("pp-end", ""))
+                in_pp = False
+            line_start = True
             i += 1
             continue
+        if ch in " \t\r":
+            i += 1
+            continue
+        if ch == "#" and line_start:
+            in_pp = True
         two = src[i:i + 2]
+        if two != "//" and two != "/*":
+            line_start = False
         if two == "//":
             j = src.find("\n", i)
             j = n if j < 0 else j
@@ -187,6 +220,12 @@ def _tok_c(src: str):
                 j += 1
             word = src[i:j]
             toks.append(("kw" if word in C_KEYWORDS else "id", word))
+            # `#define A(x)` is a function-like macro and `#define A (x)` an
+            # object-like one whose body is `(x)`: the only difference is the
+            # space the tokenizer drops, so the adjacency is recorded.
+            if (in_pp and src[j:j + 1] == "(" and len(toks) >= 3
+                    and toks[-2] == ("id", "define") and toks[-3] == ("punct", "#")):
+                toks.append(("pp-fnlike", ""))
             i = j
             continue
         if ch.isdigit() or (ch == "." and i + 1 < n and src[i + 1].isdigit()):
@@ -199,32 +238,107 @@ def _tok_c(src: str):
             toks.append(("num", src[i:j]))
             i = j
             continue
-        toks.append(("punct", ch))
-        i += 1
+        op = next((o for o in _C_OPERATORS if src.startswith(o, i)), ch)
+        toks.append(("punct", op))
+        i += len(op)
+    if in_pp:
+        toks.append(("pp-end", ""))
     return toks
 
 
-def _tok_line_hash(src: str, kws, multiline_str: bool = False):
+# Comments the build reads: Cython compiler directives and distutils build settings
+# are written as comments and change the generated extension.
+_DIRECTIVE_COMMENT = ("cython:", "distutils:")
+
+
+def _cmake_bracket(src: str, i: int):
+    """End index (exclusive) of the CMake bracket argument opening at src[i] ==
+    "[" (`[[...]]`, `[=[...]=]`), -1 when it opens and never closes, or None when
+    src[i] does not open one."""
+    j = i + 1
+    while src[j:j + 1] == "=":
+        j += 1
+    if src[j:j + 1] != "[":
+        return None
+    close = "]" + "=" * (j - i - 1) + "]"
+    k = src.find(close, j + 1)
+    return -1 if k < 0 else k + len(close)
+
+
+def _tok_line_hash(src: str, kws, multiline_str: bool = False, layout: bool = False,
+                   cmake: bool = False):
     """Shared tokenizer for # line-comment languages (CMake, Python).
 
     Strings are treated atomically. multiline_str=True lets a double-quoted
     string span newlines (CMake quoted arguments do; Python single/double
     quotes do not -- only its triple-quotes, handled separately). Python
     triple-quotes and CMake bracket args/comments are not fully modeled; their
-    delimiters are handled, and anything ambiguous returns None (-> mixed)."""
+    delimiters are handled, and anything ambiguous returns None (-> mixed).
+
+    layout=True is for Python, where line breaks and indentation are syntax: the
+    first code token of each line is preceded by an ("indent", <leading
+    whitespace>) token, so moving a statement out of an `if` or joining two lines
+    changes the stream. Comment-only and blank lines add nothing.
+
+    cmake=True is for CMake, where whitespace separates arguments: `-Wall-Wextra`
+    and `-Wall -Wextra`, or `-DA=1 -DB` and `-DA=1-DB`, are the same characters
+    minus a space and a different command line. An ("arg-sep", "") token marks
+    whitespace between two arguments; whitespace next to a parenthesis separates
+    nothing and adds nothing, so re-indenting or re-wrapping an argument list still
+    compares equal. Bracket arguments and bracket comments are read whole, so a
+    `#` inside `[[...]]` is text rather than the start of a comment."""
     toks = []
     i, n = 0, len(src)
+    line_at = 0             # index where the current line begins
+    fresh = True            # no code token emitted on this line yet
+    gap = False             # whitespace or a comment since the last code token
     while i < n:
         ch = src[i]
-        if ch in " \t\r\n":
+        if ch == "\n":
+            line_at, fresh = i + 1, True
+            gap = True
+            i += 1
+            continue
+        if ch in " \t\r":
+            gap = True
             i += 1
             continue
         if ch == "#":
+            gap = True
+            if cmake and src[i + 1:i + 2] == "[":
+                end = _cmake_bracket(src, i + 1)
+                if end == -1:
+                    return None
+                if end is not None:
+                    toks.append(("comment", src[i:end]))
+                    i = end
+                    continue
             j = src.find("\n", i)
             j = n if j < 0 else j
-            toks.append(("comment", src[i:j]))
+            text = src[i:j]
+            if layout and text[1:].lstrip().startswith(_DIRECTIVE_COMMENT):
+                toks.append(("str", " ".join(text.split())))
+            else:
+                toks.append(("comment", text))
             i = j
             continue
+        if layout and fresh:
+            toks.append(("indent", src[line_at:i].expandtabs(8)))
+        fresh = False
+        if cmake:
+            prev = next((t for t in reversed(toks) if t[0] != "comment"), None)
+            if (gap and prev is not None and prev != ("punct", "(")
+                    and ch not in "()"):
+                toks.append(("arg-sep", ""))
+            gap = False
+            if ch == "[":
+                end = _cmake_bracket(src, i)
+                if end == -1:
+                    return None
+                if end is not None:
+                    toks.append(("str", src[i:end]))
+                    i = end
+                    continue
         if ch in "\"'":
             triple = src[i:i + 3]
             if triple in ('"""', "'''"):
@@ -275,9 +389,9 @@ def _tokenize(lang: str, src: str):
         return _tok_c(src)
     if lang == "cmake":
         # CMake commands are not reserved; quoted "..." args may span newlines.
-        return _tok_line_hash(src, frozenset(), multiline_str=True)
+        return _tok_line_hash(src, frozenset(), multiline_str=True, cmake=True)
     if lang == "py":
-        return _tok_line_hash(src, PY_KEYWORDS)
+        return _tok_line_hash(src, PY_KEYWORDS, layout=True)
     return None
 
 
@@ -365,9 +479,14 @@ def classify(repo: str, old_sha: str, new_sha: str) -> Verdict:
                     fcls, ai, d = "mixed", False, "unknown file type"
                     details.append(f"{path}: {d}")
                 else:
-                    old_src = _blob(repo, old_sha, path) or ""
-                    new_src = _blob(repo, new_sha, path) or ""
-                    fcls, ai, d = _classify_file(lang, old_src, new_src)
+                    old_src = _blob(repo, old_sha, path)
+                    new_src = _blob(repo, new_sha, path)
+                    if old_src is None or new_src is None:
+                        # Two blobs that could not be read are not two empty
+                        # files that happen to match.
+                        fcls, ai, d = "mixed", False, "unreadable blob"
+                    else:
+                        fcls, ai, d = _classify_file(lang, old_src, new_src)
                     details.append(f"{path}: {fcls} ({d})")
                     if fcls in ("comment-only", "rename-only") and not ai:
                         arch_indep = False
@@ -394,4 +513,6 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     raise SystemExit(main(sys.argv))
