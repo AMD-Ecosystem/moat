@@ -2737,3 +2737,25 @@ Observation, not a defect: `test_synchronize_during_capture_cuda_1` prints `Warp
 ### Next step for the lock holder
 - Items 1 and 2 and the two-GPU session at `974cd4bf` on gfx942 match every expectation of the handoff.
 - Item 3 matches too, except the mesh/volume/coloring files and the CPU-only suite, which need the LFS assets: 15 GPU-run errors and 12 CPU-only errors, all traced to pointer files. Nothing points at the port. To close item 3 on gfx942, a person approves installing `git-lfs` on this host, and those four patterns plus the CPU-only suite are re-run.
+
+## Evidence session 4 (2026-11-19, linux-gfx942, MI300X, evidence only): LFS-asset re-run at `974cd4bf`
+
+Requested by Jeff Daily, to close item 3 of evidence session 3. The lock stays with linux-gfx950. No fork commit and no stage, lock, head, platform or deferred record changed. Head unchanged at `974cd4bf`, so the session 3 build was reused.
+
+Setup: `sudo apt-get install -y git-lfs` (3.4.1-1ubuntu0.4), the system package manager, per Jeff's standing rule for missing system utilities. Then, in the read-only clone, `git lfs install --local --skip-repo && git lfs pull`. The fork's `moat-fork-hook v5` pre-push hook is still the only hook. All 14 tracked `.usd`/`.nvdb` files are now real assets, not pointers, and `git status --porcelain` is empty. Re-run with a fresh private `WARP_CACHE_PATH`, `ulimit -c 0`, 475 s under `utils/timeit.sh warp-1.14 test`:
+
+| pattern | GPU (`HIP_VISIBLE_DEVICES=0`) | session 3 (pointers) |
+|---|---|---|
+| test_coloring.py | 3 run, OK (`test_coloring_trimesh` on `bunny.usd` passes) | errors=1 |
+| test_mesh*.py | 49 run, OK (22 `cuda_0`, 20 `cpu`, 7 deviceless) | errors=12 |
+| test_volume.py | 59 run, OK (34 `cuda_0`, 24 `cpu`) | import error, 1 run |
+| test_fem*.py | 107 run, failures=2: only the known isolation failures `test_gimp_quadrature` and `test_cube_shape_functions` ("Unexpected output" holding the init greeting); `test_fem.example_adaptive_grid_cuda_0` passes | failures=3 |
+
+CPU-only suite (`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32`): **Ran 2294, OK (skipped=15)**, the expected result (gfx950 session 8 item 3).
+
+No `Warp CUDA error` in any log. These mesh, volume and coloring tests ran on gfx942 with real assets for the first time, and all pass. With session 3, the full 82-pattern set on gfx942 at `974cd4bf` therefore has only the two known fem isolation failures, the same result as gfx950 at this head (plus the five 64 KiB tile capability skips). The CPU-only suite matches too.
+
+(An example test writes `example_apic_fluid.usd` into the clone's working directory during the CPU-only suite; the untracked file was deleted after the run, in sessions 3 and 4.)
+
+### Next step for the lock holder
+gfx942 has now run every item of the `974cd4bf` handoff (one-GPU items 1-3, two-GPU session) with no unexplained result. Nothing here needs a fork change.

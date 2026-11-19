@@ -98,3 +98,4 @@
 {"kind":"phase","ts":"2026-11-19T04:49:36Z","phase":"test","seconds":110.04,"exit":12,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261118-160631-warp114-evidence-mi300-prompt/moat/projects/warp-1.14/src && export PATH=/var/lib/jenkins/fleet/jobs/mi300-20261118-160631-warp114-evidence-mi300-prompt/venv/bin:$PATH WARP_CACHE_PATH=/var/lib/jenkins/fleet/jobs/mi300-20261118-160631-warp114-evidence-mi300-prompt/moat/agent_space/wpcache_cpu HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 && ulimit -c 0 && python -m warp.tests -s autodetect -k cpu -m 32"}
 {"kind":"phase","ts":"2026-11-19T05:26:54Z","phase":"test","seconds":2355.626,"exit":0,"cmd":"agent_space/r3/full_set.sh"}
 {"kind":"phase","ts":"2026-11-19T05:33:10Z","phase":"test","seconds":360.037,"exit":0,"cmd":"agent_space/multigpu.sh"}
+{"kind":"phase","ts":"2026-11-19T05:45:19Z","phase":"test","seconds":474.732,"exit":0,"cmd":"agent_space/r3/lfs_rerun.sh"}
