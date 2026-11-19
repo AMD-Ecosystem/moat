@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-11-19T19:17:45Z",
+  "updated_at": "2026-11-19T19:24:13Z",
   "head_sha": "2571dcde419e5fcbac2844d5c2967fff44ce6ec9",
   "depends_on": [],
   "porting": null,
@@ -193,5 +193,12 @@
     "at": "2026-11-19T06:27:38Z"
   },
   "reviewed_sha": "2571dcde419e5fcbac2844d5c2967fff44ce6ec9",
-  "review_pr": "https://github.com/AMD-Ecosystem/plumed2/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/plumed2/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-19T19:22:54Z",
+    "head_sha": "2571dcde419e5fcbac2844d5c2967fff44ce6ec9",
+    "content_sha256": "450a7a6abd3a1ea0ffcbcfa68d489dac693b683ba933badbe04ea87ec8621e08",
+    "review_pr": "https://github.com/AMD-Ecosystem/plumed2/pull/1"
+  }
 }
