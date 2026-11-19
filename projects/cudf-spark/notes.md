@@ -1,0 +1,11 @@
+# cudf-spark notes
+
+## Intake screen (2026-11-05, gap-matrix seed; matrix: not-yet, no AMD path)
+
+Recommendation: **decline**, SKIP_REASON `ported-elsewhere` (the RAPIDS domain belongs to AMD's ROCm-DS team, as for every rapidsai/* disposition already recorded).
+
+- Licence: GitHub reports NOASSERTION. The LICENSE file reads: "This code is dual-licensed with documentation/skills under the CC-BY-4.0 AND source code under Apache-2.0 license terms", so source is Apache-2.0 (tier 1); recorded as `Apache-2.0 AND CC-BY-4.0`. One known per-file exception: `python/rapids/daemon_databricks.py` is an Apache-licensed Spark file carrying NVIDIA changes under `SPDX-License-Identifier: LicenseRef-NvidiaProprietary` ("Not a contribution ... without an express license agreement from NVIDIA ... strictly prohibited"). A fork would have to drop or replace that file. Full per-file scan not run, because the recommendation is a decline.
+- What it is: the NVIDIA cuDF plugin for Apache Spark (formerly the RAPIDS Accelerator for Apache Spark): about 2000 Scala files that rewrite Spark SQL plans onto cuDF through cuDF's Java bindings and NVIDIA/spark-rapids-jni. This repo has no real CUDA of its own (3 `.cu` files, all under `skills/` as UDF examples/templates). The GPU code it needs lives in cuDF and in spark-rapids-jni, neither of which is a MOAT project.
+- AMD situation: no AMD Spark GPU plugin exists (searched ROCm, ROCm-DS, AMD-Ecosystem for spark; none). The base such a plugin would sit on is AMD's hipDF (ROCm-DS team; `AMD-Ecosystem/hipDF`, default branch `release/rocmds-26.03`, which carries cuDF's `java/` bindings; `ROCm/hipDF` deprecated, pointing at `ROCm-DS/hipDF`). A Spark plugin on AMD would need hipDF's Java bindings plus a HIP port of spark-rapids-jni first, then a re-target of this Scala plugin -- RAPIDS-ecosystem work the ROCm-DS team owns, not a MOAT CUDA port. MOAT's dispositions already record rapidsai/cudf, cuml, cugraph, raft, rmm, cuvs, cucim as `ported-elsewhere` ("RAPIDS: the ROCm-DS team owns this domain").
+- Remaining gap: real (no Spark acceleration on AMD), but it is a coordination question for ROCm-DS, and it is dependency-blocked on spark-rapids-jni and hipDF's Java path regardless.
+- Duplicate check: upstream is NVIDIA-owned; no AMD branches or PRs expected; none found.
