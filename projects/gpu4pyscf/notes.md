@@ -3981,3 +3981,355 @@ Once (1) is decided, the next porter merges `upstream/master` (4c56c9f, or the t
 
 ### State left
 `head_sha` 5a87452 (unchanged). Lock released with `port-lock --release` (an agent stopped mid-port). The stage stays `porting`, because the transition table has no exit from it other than `ported`/`delta-ported`, and claiming either would be false. The selector may hand `porting` to the next porter host; that porter must read this section and stop until jeff rules. If jeff wants it parked meanwhile: `python3 utils/moatlib.py set-hold gpu4pyscf on --reason "<...>"`. Reviewer and validator were not run: there is no new head to review or validate.
+
+## Ruling 2026-11-18 (jeff): rescope onto upstream's AMD port
+
+jeffdaily ruled on 2026-11-18, answering question 1 of the "Upstream sync 2026-11-19 ... STOPPED" section: our port is rescoped onto upstream's design. We drop our HIP infrastructure (`cuda_to_hip.h`, our CMake HIP block, our README block, our hip_compat shims), adopt upstream's (`gpu_runtime.h`, `warp_size.h`, setup.py `USE_HIP`/`GPU_TARGET`, its README section), and offer what only our port has as separate small pull requests. Before any porting work, each proposed pull request must rest on a failure observed with upstream's own port on our hardware, not on an assumption. The evidence round below is that observation for gfx942. Questions 2 and 3 of that section (which designs survive where they disagree; attribution and coordination with the #1042 author) stay with jeff. Nothing was said upstream.
+
+## Upstream-port evaluation 2026-11-19 (linux-gfx942 MI300X, upstream master 4c56c9f AS IS, no code of ours) -- evidence for the rescoped pull requests
+
+Requested by jeff. Evidence about upstream's code, not a round of our port: no stage, lock, head or platform record was changed, nothing was pushed to the fork, and no GitHub write was made. The project stays in `porting` with its lock released. All GPU work ran under `ulimit -c 0` on the dispatcher's `HIP_VISIBLE_DEVICES=7` (idle at the start, 0.3 GB VRAM). Scratch was under the fleet job directory (`up/`), outside the MOAT checkout. Build and test commands were not wrapped in `utils/timeit.sh`, because they ran against an upstream clone that is not this project's fork. Wall times are given below instead.
+
+### Environment
+- Host: AMD Instinct MI300X HF, `gcnArchName` b'gfx942:sramecc+:xnack-', Linux 6.8.0-110-generic, amdgpu 6.16.13.
+- ROCm: TheRock ROCm SDK **10.1.0**, pip-installed (`R=$(/opt/python-3.11-venv/bin/rocm-sdk path --root)`), AMD clang 24.0.0git d6f6cb69, HIP 7.16.26385, rocBLAS 5.7, hipSOLVER 1.4, rocSOLVER 0.12. There is no /opt/rocm on this host.
+- Upstream: `git clone https://github.com/pyscf/gpu4pyscf.git` at **4c56c9fda07a98dea72460f1ac3b1bc614137079** (2026-11-18, includes d9a78f71 #1042 and 67c7a170).
+- Job venv: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0 (the newest cupy-rocm wheel), pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1, basis-set-exchange 0.11, MCFun 0.2.6 (the CI's pin), pytest 9.2.0, pytest-xdist 3.8.0, pytest-timeout 2.4.0. Upstream's `pytest.toml` (`consider_namespace_packages`) needs pytest 9; its CI image installs the newest pytest. Our earlier gfx942 runs used pytest 7.3.2.
+- Upstream's own reported testing (#1042 body, read with `gh pr view`): a 55-case CPU-vs-GPU script, 55/55 pass, on a Radeon 8060S (gfx1151) with **ROCm 10.3.0a20261102 / HIP 7.18**. The pytest suite was not reported, and no CDNA run was made.
+
+### Build: README "Building for AMD GPUs (ROCm)" as written
+```
+git clone https://github.com/pyscf/gpu4pyscf.git && cd gpu4pyscf
+USE_HIP=1 pip install .
+```
+Prerequisites as the README states them: `hipconfig`/`amdclang++` on PATH (`PATH=$R/bin:$PATH`) and a ROCm build of CuPy (README links CuPy's install page; installed `cupy-rocm-7-0==14.2.0`).
+
+Where it did not work as written, and what was needed:
+1. **First attempt failed in 3 s:** `ModuleNotFoundError: No module named 'cmake'` from `venv/bin/cmake`. The repository has no pyproject.toml, so pip builds in an isolated environment. setup.py runs `cmake` from PATH without declaring it as a build requirement. In a venv where cmake was pip-installed, that `cmake` is a Python shim, and it cannot import its own module inside the isolated build. Fix: put a real cmake binary first on PATH (`PATH=/usr/bin:$R/bin:$PATH`, system cmake 3.28.3; CMakeLists needs >= 3.21). The command itself was unchanged. This is a packaging gap upstream could close by declaring cmake as a build requirement, but it only bites in environments like this one.
+2. Second attempt: **exit 0 in 3 min 37 s** (setup.py hard-codes `cmake --build -j 8`), 12 libraries, package `gpu4pyscf-rocm7x 1.9.1`. Arch autodetection worked: `rocm_agent_enumerator` listed every GPU in the host, giving `HIP_ARCHITECTURES: gfx942` repeated 8 times (harmless), and 24 `--offload-arch=gfx942` lines, no other arch. `-DBUILD_LIBXC=OFF`, no `-disable-machine-licm`. The libraries are built into the source tree (gpu4pyscf/lib/*.so) and installed into the venv.
+3. Runtime: `import cupy` fails with this pip-installed ROCm unless `LD_LIBRARY_PATH=$R/lib` is set. This is an environment fact (no system ROCm on this host), not upstream's. Import prints `UserWarning: GPU libXC is not available on ROCm/HIP; XC functionals are evaluated on CPU via PySCF's libXC.`
+4. **The build that the README produces cannot run a d-shell Hartree-Fock on this compiler** (item 4 below): RHF water/def2-svp faults in `rys_k_kernel` and the process then hangs. Every test that builds J/K with d shells hangs, so the as-is suite cannot complete.
+
+To run the suite at all, a second build of the same commit added only the compiler flag, through the setup.py environment hooks, with no source change:
+```
+USE_HIP=1 CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm -DCMAKE_SHARED_LINKER_FLAGS=-mllvm=-disable-machine-licm" python setup.py build_py
+```
+(`-mllvm=` is clang's joined spelling, needed because setup.py splits `CMAKE_CONFIGURE_ARGS` on spaces. Setting `LDFLAGS`/`HIPFLAGS` instead broke CMake's C-compiler check, because gcc rejects `-mllvm`.) Exit 0 in 2 min 40 s. The flag is on 100/100 HIP compile lines and 12/12 `--hip-link` lines. This is called the **flag build** below.
+
+### Test suite (upstream CI selection)
+CI command (`.github/workflows/unittest.yml`): `pytest -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -k 'not _high_cost'`, with `OMP_NUM_THREADS=2`. It was run per test directory (41 directories), with `-p no:cpp -p no:cacheprovider -q -rfEs --tb=line --timeout 1800 --junitxml`, from the source tree (`PYTHONPATH=<src>`), with `LD_LIBRARY_PATH=$R/lib`. Counts are taken from the junit files.
+
+**As-is build (no flag):** cc/tests 0/3/0/0 (`fill_int4c2e`, cause D below), df/hessian/tests 24/0/0/0. Then df/tests reached 87% (155 passed, 44 failed, 1 error, 2 skipped) and hung, with three workers spinning at 100% CPU and 0% GPU for 12 minutes. A separate as-is run of scf/tests with `--timeout 120` returned 57 passed, 1 skipped, then all four workers hung for 11 minutes; pytest-timeout never fired, because the main thread waits in `multi_gpu.run` after the HSA queue aborts. The as-is suite was stopped there. The rest of the tree was run only on the flag build.
+
+**Flag build, full tree: 1747 passed / 460 failed / 104 skipped / 52 errors** (wall 24 min 43 s). passed/failed/skipped/errors:
+
+| directory | flag build |
+|---|---|
+| cc | 0/3/0/0 |
+| df/hessian | 24/0/0/0 |
+| df | 170/50/2/1 |
+| dft | 133/3/9/0 |
+| dispersion | 17/0/0/0 |
+| fci | 5/0/0/0 |
+| geomopt | 0/0/5/0 |
+| grad | 107/0/0/0 |
+| gto | 74/4/0/0 |
+| gw | 12/0/0/0 |
+| hessian | 93/0/1/0 |
+| lib | 71/0/5/0 |
+| mcscf | 8/0/0/0 |
+| md | 46/4/0/0 |
+| mp | 16/8/0/0 |
+| nac | 41/0/1/0 |
+| pbc/df | 25/113/6/4 |
+| pbc/dft | 134/48/38/0 |
+| pbc/grad | 116/78/2/0 |
+| pbc/gto/pseudo | 8/0/3/0 |
+| pbc/gto | 16/0/0/0 |
+| pbc/gw | 0/0/0/21 |
+| pbc/hessian | 0/0/6/0 |
+| pbc/lib | 6/0/0/0 |
+| pbc/properties/berry | 7/3/2/0 |
+| pbc/scf | 74/83/2/13 |
+| pbc/tools | 25/0/0/0 |
+| pbc/x2c | 5/2/0/0 |
+| pop | 2/0/0/0 |
+| properties | 14/6/5/0 |
+| qmmm/pbc | 3/0/0/0 |
+| qmmm | 25/0/0/0 |
+| scf | 155/44/14/13 |
+| sem/dmp, sem/grad, sem/gto, sem/integral | 1/0/0/0, 3/0/0/0, 15/0/0/0, 26/0/0/0 |
+| solvent | 130/0/2/0 |
+| tdscf | 122/10/0/0 |
+| tests | 0/0/0/0 (nothing collected) |
+| x2c | 18/1/1/0 |
+| **total** | **1747/460/104/52** |
+
+`--tb=line` does not record the location of a failure in the junit file. So all 512 failed or errored tests were rerun per directory with `--tb=short` (`-n 4 --dist loadfile`) and classified from the tracebacks (6 min 55 s). 72 of them passed when rerun: these were follow-on failures in the full run (a worker whose HIP queue or rocBLAS handle was already broken by an earlier test). Root causes, with each confirmed by running a representative test on its own:
+
+| cause | tests | evidence |
+|---|---|---|
+| A. `ft_ao_scheme` asserts on wave64 | 288 | `assert np.all(nsp_max > 0)`, pbc/df/ft_ao.py:746. Upstream sets `nGv_per_block = WARP_SIZE` (64 on CDNA). With `THREADS = 256` that leaves `rem_threads = 4`, and for GOUT_WIDTH 30 the (li,lj) = (3,4), (4,3), (4,4) entries have `gout_stride = 8`, so `nsp_max = 0`. The assert covers the whole table, so every periodic FT call fails on wave64, for any basis. On wave32 (gfx1151) `rem_threads = 8` and no entry is 0, which is why upstream's testing did not see it. Our port keeps `nGv_per_block = 32` on every arch. |
+| B. `eigh_std` routes all HIP eigh to a 2-D float64/complex128-only `syevd` | 59 | `assert a.ndim == 2` (lib/cusolver.py:270) for batched density matrices (`df_jk.decompose_rdm1_svd`, every DF NAC/TDDFT-gradient path and FSSH), and `assert a.dtype in (float64, complex128)` (line 271) for float32 RIS Krylov (`_krylov_tools.krylov_solver`). This is in upstream's HIP Python path and does not depend on the arch. Our port has no `eigh_std`. |
+| C. hipSOLVER calls on CuPy's own handle break CuPy's later solver calls | 40 | Upstream passes `device.get_cusolver_handle()` (CuPy's rocBLAS/rocSOLVER handle) to `hipsolverDnDsygvd`/`syevd`. Afterwards `cupy.linalg.solve`/`inv` (CuPy `gesv`) raise `CUSOLVERError: rocblas_status_memory_error` whenever they need more workspace than the hipSOLVER call sized. Standalone (`up/scripts/solve_after_eigh.py`): solve n=200 OK before; after a hipSOLVER eigh of n=10, solve fails for n=10, 50, 200 and 1000; after an eigh of n=300, n<=200 work and n=1000 fails. Hits DFT+U (`rkspu._make_minao_lo`), CDFT, TDDFT subspace inverse, k-point HF. Our port creates its own hipSOLVER handle (`hipsolverCreate`, lib/cusolver.py) and does not have this. Not arch-dependent. |
+| D. `shm_size` on HIP leaves no room for static LDS | 13 | `Failed to set CUDA shm size 65496: invalid argument` then `RuntimeError: fill_int4c2e kernel for (pp\|ps) failed` (cc, mp2, CCSD ERIs). Upstream's `__config__` sets `shm_size = sharedMemPerBlock` (65536) on HIP. The kernel's static `__shared__` usage counts against the same 64 KB. Our port subtracts 1024 on HIP (in 45d80530). |
+| E. ECP derivative kernels need more than 64 KB LDS | 4 | `cudaFuncSetAttribute ECP_ip_cart (li,lj,lc = 4,4,4): invalid argument` and `ECP_ipipv_cart (4,2,4)`; the other two fail in `block_diag` on the leftover error. These are exactly the four failures our port had before c8c9acc. Upstream's test skip `shm_size < 64*1024` does not apply on HIP (shm_size = 65536). |
+| F. follow-on `hipErrorIllegalAddress` in the rerun | 9 | All df tests. Three run alone: test_df_gks test_to_cpu and test_df_tduhf_grad test_grad_tda_spinconserve_numerical fail at cause B; test_df_tdrhf_grad test_jk_energy_per_atom fails 3.17e-10 against 3e-10 (a margin, see below). |
+| G. XC CPU fallback hands collinear rho to PySCF `NumInt2C` | 7 | `IndexError: index 3 is out of bounds for axis 0 with size 2` (pyscf/dft/numint2c.py:263). Upstream's `eval_xc_eff` fallback calls `ni.to_cpu().eval_xc_eff`; for a GKS numint that is `NumInt2C`, which expects 4-component rho, while the GPU `nr_uks` path passes 2-component rho. All PBC GKS/KGKS tests and GHF<->GKS conversion. Our port evaluates XC on the GPU and never takes this path. |
+| H. Cholesky failure not detected on ROCm | 2 | mp test_get_j2c_decomp_linear_dependency `assert 'cd' == 'eig'`; pbc/df test_decompose_j2c_linear_dependency `assert 'CD' == 'ED'`. `cupy.linalg.cholesky(diag(4, -1e-5, 1))` on ROCm returns `diag(2, -1e-5, 1)` with no NaN, because rocSOLVER `potrf` stops at the pivot without writing NaN. The code's NaN test (cuSOLVER behaviour) therefore keeps a wrong factor. **Our port has the same NaN test** (mp/dfmp2_addons.py:408), and the tests arrived upstream later (#1015). Neither port fixes this. |
+| I. d-aug-cc-pvdz basis missing | 2 | `BasisNotFoundError`: test_rhf_df_against_qchem, test_rtda_ris_diffuse. Environment; also in our reference set. |
+| individual | 16 | listed below |
+
+The 16 individual failures:
+- Margins and noise floor, also seen on our port: df test_j_energy_per_atom 3.78e-12 against 1e-12 (rocBLAS trsm, our reference set); pbc/df test_ft_ao_strain_deriv 3.77e-8 against 3e-8 (our reference set); x2c test_sfx2c1e_cart 6.0e-11 against 10 places (fails on our gfx1100, passes on our gfx942); pbc/scf test_pbc_gdm_krks_uniform_grid 2.7e-9 against 1e-9 (new test); scf test_stability_rhf_unstable (passes when run alone).
+- **dft test_mcol_gks_mgga is noise-floor, not a defect:** mo_energy fingerprint -28.18822722 against -28.18821530. Run alone it fails the same way, and our port passes (-28.18821547). CPU PySCF reproduces the reference exactly (-28.18821529668). Every one of the five `cupy.einsum` calls in mcfun_gpu agrees with numpy.einsum to <= 9e-16 relative in the real SCF (`up/scripts/mcol_m06l_diff.py`). Replacing them with host numpy.einsum gives -28.18821544. Adding 1e-15 relative noise to each einsum result moves the fingerprint by up to 4e-6 and the energy by 1e-7 across seeds (`mcol_m06l_noise.py`). The test's 5-place check on this case passes or fails depending on summation order.
+- Upstream's own HIP design choices fail its own tests: pbc/scf test_get_rho_rhf_built and test_get_rho_krhf_built (`None is not an instance of MultiGridNumInt`: hf.py skips multigrid on HIP because of the MgO pseudopotential hang); pbc/x2c test_to_cpu (`TypeError not raised`: `to_cpu` returns a CPU numint on HIP so the XC fallback can work).
+- Not isolated (new PBC code; none of these tests is in our tree except the stress test): pbc/grad test_multigrid_image_boundary_strain_deriv **0.0717 against 1e-3** (r2scan through multigrid_v2 with XC on the CPU; **passes on our port** on this GPU); pbc/dft test_multigrid_v3 test_scf_2d_against_fft 5.4e-7 against 2e-8; pbc/grad test_pbc_grad_slabdipole test_automatic_cut_and_scanner 1.36e-5 against 1e-5 and test_scf_finite_difference; test_pbc_grad_slabgate test_fractional_scf_finite_difference; pbc/scf test_pbc_scf_ghf test_gamma_scf_properties[gdf] and test_kpoint_scf_properties[gdf] (O(0.1) matrix mismatch). Whether these pass on upstream's own CUDA CI or gfx1151 was not checked.
+
+### The five questions
+**1. XC on the GPU (cost).** DF-B3LYP/def2-TZVPP, vitamin C (benchmarks/molecules/organic/020_Vitamin_C.xyz, 20 atoms, nao 484, 247808 grid points, 13 cycles), after a warm-up, `OMP_NUM_THREADS=32`, idle GPU, flag build (the as-is build cannot run a d-shell basis). Script `up/scripts/xc_time.py` wraps `NumInt.nr_rks` (density on the grid + XC + Vxc matrix) and `NumInt.eval_xc_eff` (the functional; on upstream ROCm this is PySCF libxc on the CPU including the device<->host copies), each synchronized:
+
+| tree | SCF kernel | nr_rks | eval_xc_eff | E |
+|---|---|---|---|---|
+| upstream, run 1 | 2.34 s | 1.36 s (58%) | 0.31 s (13.5%) | -684.9998788268 |
+| upstream, run 2 | 1.86 s | 0.86 s (46%) | 0.34 s (18.1%) | -684.9998788268 |
+| our port 5a87452, run 1 | 8.74 s | 0.66 s | 0.02 s | -684.9998788269 |
+| our port 5a87452, run 2 | 8.66 s | 0.52 s | 0.02 s | -684.9998788269 |
+
+So on upstream's port the CPU XC is **0.31-0.34 s, 13-18% of this SCF**. GPU libxc does the same work in 0.02 s, which would make this SCF roughly 0.3 s (15-18%) faster. The share grows with grid size and functional cost and shrinks with more CPU threads. Correctness is not at issue for this case (both energies agree to 1e-10). Separately, the CPU fallback causes the 7 cause-G failures and is the most likely cause of the multigrid stress failure.
+
+**Our port is 4.6x slower overall here, and the reason is eigh, not XC.** cProfile puts 6.6 s in `get_occ`, which is the host waiting for the queued generalized eigensolve: our port reaches `cupy.linalg.eigh`, which on ROCm is Jacobi `syevj`. Measured on this GPU: `cupy.linalg.eigh` 547 ms at n=484 and 5188 ms at n=1000; upstream's hipSOLVER `syevd` 11.8 ms and 23.3 ms. Upstream's `eigh_std` is a real gain to keep, after cause B and cause C are fixed.
+
+**2. rocBLAS gemv/einsum workaround and gfx12 complex-GEMM split: no wrong result found on gfx942.** What was tried with upstream's `contract` (which on ROCm falls back to `cupy.einsum`) and with `cupy.einsum` itself, against numpy, 20 calls each, while the full test suite loaded the same GPU (`up/scripts/einsum_check.py`): the issue-14819 regime shapes 'gp,pg->p' c128 (3,347395); 'bk,bk->b' c128 k=3 B=347395 and f64 k=64 B=262144; 'bk,bkr->br' c128/f64 (200000,16,16); 'bkr,bk->br' c128 (200000,16,6) and f64 (131072,64,32); the gfx942 gemvn_kernel<32,16> shapes 'bk,bkr->br'/'bkr,bk->br' with m=1, k=64, B=262144 (c128 and f64); 'xgo,xgo->go' f64 (5,10240,160); 'xg,xgi->gi' f64 (4,409600,4); and the gfx12 shape 'Lk,pLqG->kpqG' c128 n = 3.5M > 2^21. All 26 combinations: 0/20 wrong, worst relative error 1.2e-15. The full suite shows no einsum-shaped wrong results either. This matches the earlier gfx942 root-cause work (claude-shared plan rocblas-gemv-strided-batched-small-m-gfx942.md): on gfx942 CuPy's `gemm_strided_batched_ex` with n = 1 goes to Tensile MFMA kernels that split the batch on the host, and only direct `gemv_strided_batched` under heavy multi-process contention showed the race. The gfx12 grid-y limit cannot occur on gfx942 (32-bit work-group IDs). So on gfx942 neither workaround has a failure to point to; their evidence stays on gfx1100 (gemv) and gfx1201 (complex GEMM), which this round did not run.
+
+**3. ECP derivative kernels and the 64 KB LDS limit: they build, but 4 of 7 ECP tests fail.** gto/tests/test_ecp.py on the flag build: test_ecp_cart_ipipv, test_ecp_cart_ipvip_cart, test_ecp_sph_ipnuc, test_ecp_sph_iprinv fail (cause E); test_ecp_cart, test_ecp_sph, test_ecp_cart_ip1 pass. Upstream's README claims g-shell support and #1042's ECP integral case passed, but the g-shell derivative drivers do not fit in 64 KB on gfx942. That is the same defect c8c9acc fixes. (gfx1151's LDS limit is also 64 KB, but upstream's 55-case script ran no g-shell ECP derivative.)
+
+**4. `-disable-machine-licm`: the fault occurs with upstream's build here.** As-is build, RHF water vs CPU PySCF (`up/scripts/rhf_water.py`): sto-3g 1.3e-12; **def2-svp: `HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION`, faulting kernel `rys_k_kernel`**, raised from `scf/jk.py:907 get_k`, after which the process hangs in `multi_gpu.run` (faulthandler stack after 90 s) instead of aborting; cc-pvtz the same. Flag build: def2-svp 1.7e-11, cc-pvtz 6.1e-12, which are our port's 28f2418 numbers exactly. This is the fault the notes describe (machine LICM clobbering the atomicAdd offset register in the persistent Rys J/K loop, a register-coalescer bug in the ROCm 10.1 compiler fixed in LLVM 8c6e07731faf and in ROCm 10.2). Upstream's author tested with ROCm 10.3.0a, which has the fix, so the bug could not appear there. With upstream's build on ROCm 10.1, every d-shell J/K hangs.
+
+**5. Other failures on this GPU that upstream's own testing did not hit:** causes A (wave64 FT, 288 tests), B (eigh_std inputs, 59), C (shared solver handle, 40), D (static-LDS reserve, 13), G (XC fallback for GKS, 7), the hang itself (item 4), plus H, which neither port fixes. A is wave64-only. B, C and G are arch-independent Python bugs that upstream's script did not exercise (no batched or float32 eigh, no `cupy.linalg.solve` after an eigh, no PBC GKS). D shows on gfx942 with the CI's CCSD/MP2 tests, which upstream's script does not run.
+
+### Against our port at 5a87452 on this GPU
+Our 2026-11-04 gfx942 run of 5a87452 (pytest 7.3.2, same selection apart from `-k 'not _high_cost'`) recorded **1842/16/68/0**, the 16 reference failures only. On the directories both trees share, upstream's port fails where ours passed: cc 0/3 (ours 4/0), df 50 failed + 1 error (ours 5 failed), gto 4 failed (ours 0), mp 8 (ours 1), md 4 (ours 0), pbc/df 113 + 4 errors (ours 1), pbc/dft 48 (ours 0), pbc/grad 78 (ours 0), pbc/scf 83 + 13 errors (ours 2), scf 44 + 13 errors in the full run (ours 2; most pass when rerun), properties 6 (ours 0), tdscf 10 (ours 2). Upstream's tree also has more tests (40 commits newer). Failures in both: d-aug-cc-pvdz (environment), df test_j_energy_per_atom / test_jk_energy_per_atom margins, pbc/df test_ft_ao_strain_deriv, the Cholesky NaN test (our code has it; our tree lacks the test). What upstream's port has that measured better here: hipSOLVER syevd (46x to 220x faster than our `cupy.linalg.eigh`), which our port lacks.
+
+### Not run
+- The rest of the as-is tree after the df hang (everything was run on the flag build instead; the as-is results are cc, df/hessian, partial df, partial scf).
+- gfx90a, gfx1100, gfx1201: the gemv workaround (gfx1100) and the gfx12 complex-GEMM split (gfx1201) need those hosts for their evidence.
+- The CUDA build of upstream (no NVIDIA GPU here), so the "individual" PBC failures were not checked against CUDA.
+- The individual PBC failures (slab dipole/gate, multigrid 2D, GHF GDF properties) were not root-caused.
+
+### Files (fleet job directory, not durable)
+`up/build1.log`, `build2.log` (README build), `build-licm.log` (flag build), `res-licm/` (full run, junit + logs), `res-licm-tb/` (`--tb=short` reruns), `res-asis/`, `res-up/`, `res-up-partial-df.log` (as-is), `xc-time.txt`, `einsum-up-underload.txt`, `rhf-water-*.txt`, scripts in `up/scripts/` (runtree.sh, rerun_fails.sh, junit_sum.py, classify.py, report.py, xc_time.py, prof_scf.py, einsum_check.py, rhf_water.py, solve_after_eigh.py, mcol_m06l*.py, mcfun_shapes.py).
+
+### Full failure list (flag build, 512 failed or errored tests; cause from the --tb=short rerun, first error line per group unless shown)
+
+**A wave64 ft_ao_scheme nsp_max assert** (288; first error line `AssertionError` unless shown)
+
+- pbc.df.tests.test_pbc_aft.FactorizedExchange: test_exchange_linearity, test_occupied_density_time_reversal_disabled, test_occupied_density_time_reversal_enabled, test_transition_density_time_reversal_disabled, test_transition_density_time_reversal_enabled
+- pbc.df.tests.test_pbc_aft.KnownValues: test_aft_derivative_with_kpts, test_aft_get_nuc, test_aft_get_pp, test_aft_j, test_aft_k, test_aft_k1, test_aft_k2, test_aft_k3, test_ej_ip1_gamma_point, test_ej_ip1_kpts, test_ej_strain_deriv_gamma_point, test_ej_strain_deriv_kpts, test_ek_derivatives_off_gamma, test_ek_ip1_gamma_point, test_ek_ip1_kpts, test_ek_strain_deriv_gamma_point, test_ek_strain_deriv_kpts, test_gamma_matrices_and_cpu_conversion, test_get_jk_preserves_density_shape, test_jk, test_jk_complex_dm, test_jk_off_gamma, test_vk_kpts_vs_fft
+- pbc.df.tests.test_pbc_df.HcoreWithDFBackend: test_scf_hcore_df_backend
+- pbc.df.tests.test_pbc_df.KnownValues: test_get_k2, test_get_k3, test_jk, test_jk1, test_jk_gamma_point, test_jk_off_gamma, test_jk_preserves_density_shape, test_range_separated_j_only_then_k
+- pbc.df.tests.test_pbc_df_derivatives: test_ej_derivatives_gamma_point_with_long_range, test_ej_derivatives_gamma_point_without_long_range, test_ej_derivatives_kpts_with_long_range, test_ej_derivatives_kpts_without_long_range, test_ejk_derivatives_gamma_point_with_long_range, test_ejk_derivatives_gamma_point_without_long_range, test_ejk_derivatives_kpts_with_long_range, test_ejk_derivatives_kpts_with_long_range1, test_gamma_diffuse_only[-0.4-0], test_gamma_diffuse_only[-0.4-1], test_gamma_diffuse_only[0-0], test_gamma_diffuse_only[0-1], test_kpts_diffuse_only_coulomb[-0.4], test_kpts_diffuse_only_coulomb[0], test_mixed_dd_unrestricted_derivatives[gamma-full-range] (`failed on setup with "AssertionError"`) [error], test_mixed_dd_unrestricted_derivatives[gamma-short-range] (`failed on setup with "AssertionError"`) [error], test_mixed_dd_unrestricted_derivatives[two-kpoints-full-range] (`failed on setup with "AssertionError"`) [error], test_mixed_dd_unrestricted_derivatives[two-kpoints-short-range] (`failed on setup with "AssertionError"`) [error], test_rhf_ejk_derivatives, test_uhf_ejk_derivatives_kpts_with_long_range, test_uhf_ejk_derivatives_kpts_with_long_range1
+- pbc.df.tests.test_pbc_ft_ao.KnownValues: test_contract_dm, test_fourier_cached_gamma_shape, test_fourier_gamma_and_cached_sampling, test_fourier_nonzero_single_and_batch, test_ft_ao_batch_evaluation, test_ft_aopair_gamma_point, test_ft_aopair_kpt, test_ft_aopair_kpt_no_aosym, test_ft_aopair_kpts, test_ft_aopair_kpts_nosym, test_ft_aopair_kpts_with_KPoints, test_gen_ft_kernel, test_gen_ft_kernel_off_gamma, test_j
+- pbc.df.tests.test_pbc_hcore_derivatives.KnownValues: test_gdf_hcore_derivatives_krhf, test_gdf_hcore_derivatives_rhf, test_gdf_hcore_derivatives_rks, test_gdf_hcore_derivatives_uhf
+- pbc.df.tests.test_pbc_int3c2e: test_int3c2e_batch_evaluation
+- pbc.df.tests.test_rsdf_builder: test_build_cderi_off_gamma, test_diffuse_only, test_gamma_point, test_general_contraction[-0.4-gamma-False], test_general_contraction[-0.4-gamma-True], test_general_contraction[-0.4-j_only-False], test_general_contraction[-0.4-j_only-True], test_general_contraction[-0.4-kk-False], test_general_contraction[-0.4-kk-True], test_general_contraction[None-gamma-False], test_general_contraction[None-gamma-True], test_general_contraction[None-j_only-False], test_general_contraction[None-j_only-True], test_general_contraction[None-kk-False], test_general_contraction[None-kk-True], test_general_contraction_gdf_jk[False], test_general_contraction_gdf_jk[True], test_j_only_compressed, test_kpts, test_kpts_compressed, test_kpts_compressed1, test_kpts_compressed_general_contraction, test_kpts_compressed_linear_dep, test_kpts_compressed_off_gamma, test_kpts_j_only, test_separate_dd_for_small_overlap, test_sr_gamma_point_compressed, test_sr_j_only, test_sr_kpts, test_unpack_cderi[1-False], test_unpack_cderi[2-False], test_unpack_cderi[2-True], test_unpack_cderi[3-False], test_unpack_cderi[3-True]
+- pbc.dft.tests.test_multigrid_v3.AdditionalModes: test_pp_gamma_batch_shapes, test_pp_gamma_shapes
+- pbc.dft.tests.test_pbc_grids.KnownValues: test_becke_grid_atom_grid, test_becke_grid_level, test_xc_gradient_gga_with_response, test_xc_gradient_lda_with_response, test_xc_gradient_mgga_with_response
+- pbc.dft.tests.test_pbc_rks.KnownValues: test_camb3lyp_rsjk, test_cambl3yp_krks_density_fit, test_cambl3yp_krks_rsjk, test_gga_gdf, test_gga_gdf1, test_hse06_krks_density_fit, test_hse06_krks_rsjk, test_hse06_rsjk, test_hse06_rsjk_density_fit, test_kpts_gga_gdf, test_lda_gdf, test_lda_krks_rsjk, test_lda_rsjk, test_pbe0_krks_density_fit, test_pbe0_krks_rsjk, test_pbe0_rsjk, test_rsh_gdf, test_rsh_gdf1, test_rsh_short_range_only, test_wb97_krks_rsjk, test_wb97_rsjk
+- pbc.dft.tests.test_pbc_uks.KnownValues: test_kpts_gga_gdf, test_rsh_gdf, test_rsjk, test_rsjk_kuks
+- pbc.grad.tests.test_pbc_grad_krhf.KnownValues: test_df_krhf_grad, test_df_krhf_grad_with_pseudo, test_df_rhf_grad, test_df_rhf_grad_with_pseudo, test_krhf_grad1, test_krhf_grad_with_pseudo, test_rhf_grad, test_rhf_with_pseudo_grad, test_rsjk_df_mixed_krhf_grad
+- pbc.grad.tests.test_pbc_grad_krks.KnownValues: test_camb3lyp_grad, test_df_pbe0_grad, test_df_rsh_grad, test_df_sr_rsh_grad, test_df_wb97_grad, test_hybrid_grad, test_pbe0_grad, test_rsh_grad, test_sr_rsh_grad, test_wb97_grad, test_wb97_grad_without_pseudo
+- pbc.grad.tests.test_pbc_grad_kuhf.KnownValues: test_df_kuhf_grad, test_df_kuhf_grad_with_pseudo, test_df_uhf_grad, test_df_uhf_grad_with_pseudo, test_kuhf_grad_with_pseudo, test_rsjk_df_mixed_kuhf_grad, test_uhf_grad, test_uhf_with_pseudo_grad
+- pbc.grad.tests.test_pbc_grad_kuks.KnownValues: test_camb3lyp_grad, test_camb3lyp_grad_without_pseudo, test_df_pbe0_grad, test_df_rsh_grad, test_df_wb97_grad, test_hybrid_grad, test_pbe0_grad, test_rsh_grad, test_sr_rsh_grad, test_wb97_grad
+- pbc.grad.tests.test_pbc_grad_rks.KnownValues: test_camb3lyp_grad, test_df_pbe0_grad, test_df_rsh_grad, test_df_sr_rsh_grad, test_df_wb97_grad, test_hybrid_grad, test_pbe0_grad, test_sr_rsh_grad, test_wb97_grad
+- pbc.grad.tests.test_pbc_grad_uks.KnownValues: test_camb3lyp_grad, test_hybrid_grad, test_wb97_grad, test_wb97_grad_without_pseudo
+- pbc.grad.tests.test_pbc_krhf_stress.KnownValues: test_gdf_krhf_vs_finite_difference, test_gdf_rhf_vs_finite_difference, test_krhf_vs_finite_difference, test_rhf_vs_finite_difference
+- pbc.grad.tests.test_pbc_krks_stress.KnownValues: test_gdf_hse_vs_finite_difference, test_gdf_pbe0_vs_finite_difference, test_gdf_pbe_vs_finite_difference, test_pbe0_vs_finite_difference
+- pbc.grad.tests.test_pbc_kuhf_stress.KnownValues: test_gdf_kuhf_vs_finite_difference, test_gdf_uhf_vs_finite_difference, test_kuhf_vs_finite_difference, test_uhf_vs_finite_difference
+- pbc.grad.tests.test_pbc_kuks_stress.KnownValues: test_gdf_hse_vs_finite_difference, test_gdf_pbe0_vs_finite_difference, test_gdf_pbe_vs_finite_difference, test_pbe0_vs_finite_difference
+- pbc.grad.tests.test_pbc_rks_stress.KnownValues: test_gdf_pbe0_vs_finite_difference, test_gdf_pbe_vs_finite_difference, test_pbe0_vs_finite_difference
+- pbc.grad.tests.test_pbc_uks_stress.KnownValues: test_gdf_pbe0_vs_finite_difference, test_gdf_pbe_vs_finite_difference, test_pbe0_vs_finite_difference
+- pbc.gw.tests.test_krgw_ac.KnownValues: test_krgwac (`failed on setup with "AssertionError"`) [error], test_krgwac_fc (`failed on setup with "AssertionError"`) [error], test_krgwac_fc_frozen_core (`failed on setup with "AssertionError"`) [error], test_krgwac_fc_full_rdm_gf (`failed on setup with "AssertionError"`) [error], test_krgwac_metal (`failed on setup with "AssertionError"`) [error], test_krgwac_metal_frozen_core (`failed on setup with "AssertionError"`) [error], test_krgwac_metal_full_gf (`failed on setup with "AssertionError"`) [error], test_krgwac_metal_outcore (`failed on setup with "AssertionError"`) [error], test_krgwac_outcore (`failed on setup with "AssertionError"`) [error]
+- pbc.gw.tests.test_krpa.KnownValues: test_krpa (`failed on setup with "AssertionError"`) [error], test_krpa_fc (`failed on setup with "AssertionError"`) [error], test_krpa_fc_outcore (`failed on setup with "AssertionError"`) [error], test_krpa_frozen_core (`failed on setup with "AssertionError"`) [error], test_krpa_frozen_core_outcore (`failed on setup with "AssertionError"`) [error], test_krpa_metal (`failed on setup with "AssertionError"`) [error], test_krpa_metal_acfd_exx (`failed on setup with "AssertionError"`) [error], test_krpa_metal_frozen_core (`failed on setup with "AssertionError"`) [error], test_krpa_metal_frozen_core_acfd_exx (`failed on setup with "AssertionError"`) [error], test_krpa_metal_frozen_core_outcore (`failed on setup with "AssertionError"`) [error], test_krpa_metal_outcore (`failed on setup with "AssertionError"`) [error], test_krpa_outcore (`failed on setup with "AssertionError"`) [error]
+- pbc.properties.berry.tests.test_wannier_polarization.KnownValues: test_atomic_limit_centers_and_total_polarization, test_gpu_mmn_matches_pyscf_ft_aopair, test_shifted_gpu_mmn_matches_cpu
+- pbc.scf.tests.test_pbc_gdm.KnownValues: test_pbc_gdm_krhf_gamma, test_pbc_gdm_kuhf, test_pbc_gdm_kuks_beckegrid
+- pbc.scf.tests.test_pbc_scf_diffuse_orbital.KnownValues: test_krks_aftdf
+- pbc.scf.tests.test_pbc_scf_ghf: test_gamma_jk_matches[gdf], test_gamma_jk_seperate_calls[gdf], test_gamma_nonhermitian_spin_transition_density[gdf], test_kpoint_gdf_j, test_kpoint_jk_matches[gdf], test_kpoint_jk_seperate_calls[gdf], test_kpoint_nonhermitian_spin_transition_density[gdf]
+- pbc.scf.tests.test_pbc_scf_hf.KnownValues: test_density_fit, test_j_engine, test_krhf_gdf_off_gamma
+- pbc.scf.tests.test_pbc_scf_j_engine: test_j_engine_lr_contracted_basis, test_vj_hermi0_gamma_point_vs_fft, test_vj_hermi0_kpts_vs_fft, test_vj_hermi1_gamma_point_vs_fft, test_vj_hermi1_kpts_vs_fft
+- pbc.scf.tests.test_pbc_scf_jk: test_ejk_ip1_per_atom_gamma_point, test_ejk_sr_derivatives_gamma_point, test_ejk_strain_deriv_gamma_point, test_ejk_strain_deriv_kpts, test_get_ejk_lr_derivatives_off_gamma, test_get_ek_lr_off_gamma, test_j_sr_kpts_single_and_batch, test_k_sr_kpts_single_and_batch, test_lr_jk_contracted_basis, test_q_cond, test_rsh_exxdiv, test_sr_vk_hermi0_kpts_vs_fft, test_sr_vk_hermi1_gamma_point_vs_fft, test_supmol_double_lattice_sum_kpts, test_vj_hermi1_gamma_point_vs_fft, test_vj_hermi1_kpts_vs_fft, test_vk_hermi0_gamma_point_vs_fft, test_vk_hermi0_kpts_vs_fft, test_vk_hermi1_gamma_point_vs_fft, test_vk_hermi1_kpts_vs_aft, test_vk_hermi1_kpts_vs_fft
+- pbc.scf.tests.test_pbc_scf_uhf.KnownValues: test_density_fit, test_rsjk, test_rsjk_with_df
+- pbc.scf.tests.test_pbc_soscf.KnowValues: test_complex_hessian_reconstruction, test_nr_kuhf, test_nr_kuks_hybrid, test_nr_uhf, test_nr_uks_rsh
+
+**B eigh_std->syevd rejects batched/float32 input** (59; first error line `AssertionError` unless shown)
+
+- df.tests.test_df_ghf.KnownValues: test_ghf, test_to_cpu
+- df.tests.test_df_ghf.SmallBatchedSpinDensity: test_df_jk_batch
+- df.tests.test_df_jk.KnownValues: test_ghf_get_jk_real
+- df.tests.test_df_rhf_grad.KnownValues: test_quasi_lindep_auxbasis, test_uhf_jk_energy_per_atom
+- df.tests.test_df_tdrhf_nac_batch.KnownValues: test_df_nac_grad_tda_singlet, test_df_nac_grad_tda_target_state_singlet, test_df_nac_grad_tdhf_singlet, test_df_nac_tda_singlet, test_df_nac_tdhf_singlet
+- df.tests.test_df_tdrks_nac_batch.KnownValues: test_df_nac_grad_tda_singlet_b3lyp, test_df_nac_grad_tda_singlet_b3lyp_target_state, test_df_nac_grad_tda_singlet_b3lyp_target_state_ris_zvector_solver, test_df_nac_grad_tda_singlet_camb3lyp, test_df_nac_grad_tda_singlet_svwn, test_df_nac_grad_tda_singlet_tpss, test_df_nac_grad_tddft_singlet_b3lyp, test_df_nac_tda_singlet_b3lyp, test_df_nac_tda_singlet_camb3lyp, test_df_nac_tda_singlet_svwn, test_df_nac_tda_singlet_tpss, test_df_nac_tddft_singlet_b3lyp
+- df.tests.test_df_tdrks_ris_nac_batch.KnownValues: test_df_nac_grad_tda_singlet_b3lyp, test_df_nac_grad_tda_singlet_b3lyp_rissolver, test_df_nac_grad_tda_singlet_camb3lyp, test_df_nac_grad_tda_singlet_svwn, test_df_nac_grad_tda_singlet_tpss, test_df_nac_grad_tddft_singlet_b3lyp, test_df_nac_grad_tddft_singlet_b3lyp_target_state, test_df_nac_tda_singlet_b3lyp, test_df_nac_tda_singlet_b3lyp_rissolver, test_df_nac_tda_singlet_camb3lyp, test_df_nac_tda_singlet_svwn, test_df_nac_tda_singlet_tpss, test_df_nac_tddft_singlet_b3lyp
+- md.tests.test_fssh.KnownValues: test_fssh_kTDC, test_fssh_restart, test_fssh_td_ris, test_fssh_tdrhf
+- pbc.df.tests.test_pbc_df_derivatives: test_ejk_derivatives_kpts_without_long_range, test_uhf_ejk_derivatives_gamma_point_with_long_range, test_uhf_ejk_derivatives_gamma_point_without_long_range, test_uhf_ejk_derivatives_kpts_without_long_range
+- properties.tests.test_eda.KnownValues: test_almo_eda_2_hf_svp_df
+- properties.tests.test_polarizability.KnownValues: test_rks_wb97xv_df_response_without_nlc
+- scf.tests.test_gdm.KnownValues: test_gdm_uks_spin_neq_0
+- scf.tests.test_init_guess.KnownValues: test_sad_guess_uhf, test_sad_guess_uks, test_sad_hf_guess_uks
+- tdscf.tests.test_diffuse_orbital_tdscf.KnownValues: test_rtddft_ris_diffuse
+- tdscf.tests.test_krylov.KnownValues: test_krylov_eigenvalue, test_krylov_shifted_linear
+- tdscf.tests.test_ris.KnownValues: test_tda_pbe, test_tda_pbe0, test_tda_wb97x, test_tddft_pbe, test_tddft_pbe0, test_tddft_wb97x
+
+**C hipSOLVER call on CuPy handle -> rocblas_status_memory_error** (40; first error line `cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error` unless shown)
+
+- df.tests.test_df_jk.KnownValues: test_jk_hermi0
+- dft.tests.test_dftu.KnownValues: test_RKSpU_linear_response, test_UKSpU_linear_response
+- pbc.dft.tests.test_pbc_krkspu.KnownValues: test_KRKSpU_linear_response, test_get_veff
+- pbc.dft.tests.test_pbc_kucdft.KnownValues: test_atom_cons
+- pbc.dft.tests.test_pbc_kukspu.KnownValues: test_get_veff
+- pbc.grad.tests.test_pbc_grad_kucdft.KnownValues: test_ref_cdft_grad
+- pbc.scf.tests.test_pbc_scf_ghf: test_kpoint_scf_properties[fft]
+- pbc.scf.tests.test_pbc_scf_smearing.KSCFSmearing: test_kuhf_smearing_energy_and_gradient
+- pbc.scf.tests.test_pbc_scf_smearing.KnownValues: test_krhf_fermi_and_occupations, test_krhf_smearing, test_kuhf_fermi_and_occupations
+- pbc.scf.tests.test_pbc_scf_uhf.KnownValues: test_kuhf_bands, test_uhf_bands
+- pbc.scf.tests.test_pbc_scf_uhf.UnrestrictedSCFProperties: test_get_rho_kuhf_built (`failed on setup with "cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error"`) [error], test_get_rho_uhf_built (`failed on setup with "cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error"`) [error], test_kpts_without_gamma (`failed on setup with "cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error"`) [error], test_kuhf_default_fock (`failed on setup with "cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error"`) [error], test_single_band_shape_and_normalization (`failed on setup with "cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error"`) [error]
+- pbc.scf.tests.test_pbc_soscf.KnowValues: test_exxdiv_treatment_newton, test_nr_krhf, test_nr_krks_gga, test_nr_krks_lda, test_nr_krks_rsh, test_nr_kuks_gga, test_nr_kuks_lda, test_nr_rhf, test_nr_rks_gga, test_nr_rks_lda, test_nr_uks_gga, test_nr_uks_lda, test_rks_gen_g_hop, test_uks_gen_g_hop
+- pbc.x2c.tests.test_pbc_x2c.SmallScalarX2C: test_xmat_decoupling_and_hcore_reconstruction
+- properties.tests.test_eda.KnownValues: test_almo_eda_2_hf_svp, test_almo_eda_2_three_Li_edgecase, test_almo_eda_2_two_Li_edgecase
+- scf.tests.test_diffuse_orbital.KnownValues: test_uhf_solvent
+- scf.tests.test_init_guess.KnownValues: test_sad_guess_rhf_pcm
+
+**D shm_size: no static-LDS reserve (int4c2e)** (13; first error line `RuntimeError: fill_int4c2e kernel for (pp|ps) failed` unless shown)
+
+- cc.tests.test_ccsd.KnownValues: test_ccsd_incore_kernel, test_ccsd_incore_update_amps, test_eris
+- mp.tests.test_mp2.KnownValues: test_mp2, test_mp2_frozen, test_to_cpu, test_to_gpu
+- mp.tests.test_mp2.MP2Amplitudes: test_mp2_energy_and_gamma_utilities
+- mp.tests.test_mp2.OrbitalInitialization: test_default_eris_with_frozen_orbitals, test_explicit_numpy_orbitals_rebuild_fock
+- scf.tests.test_int4c2e.KnownValues: test_int4c2e (`RuntimeError: fill_int4c2e kernel for (ps|pp) failed`), test_int4c2e_ovov (`RuntimeError: fill_int4c2e kernel for (ps|pp) failed`), test_range_separated_int4c2e (`RuntimeError: fill_int4c2e kernel for (ps|pp) failed`)
+
+**E ECP derivative kernels > 64 KB LDS** (4; first error line `RuntimeError: ECP CUDA kernel failed.` unless shown)
+
+- gto.tests.test_ecp.KnownValues: test_ecp_cart_ipipv, test_ecp_cart_ipvip_cart (`RuntimeError: failed in block_diag kernel`), test_ecp_sph_ipnuc, test_ecp_sph_iprinv (`RuntimeError: failed in block_diag kernel`)
+
+**F follow-on sticky HIP error** (9; first error line `cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered` unless shown)
+
+- df.tests.test_df_gks.KnownValues: test_to_cpu
+- df.tests.test_df_int3c2e: test_general_contraction
+- df.tests.test_df_tdrhf_grad.KnownValues: test_jk_energy_per_atom
+- df.tests.test_df_tduhf_grad.KnownValues: test_grad_tda_spinconserve_numerical, test_grad_tdhf_spinconserve_numerical
+- df.tests.test_df_tduks_grad.KnownValues: test_grad_camb3lyp_tdhf_spinconserve_numerical
+- df.tests.test_df_ucdft.KnownValues: test_vs_direct (`failed on setup with "cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered"`) [error]
+- df.tests.test_df_ucdft_grad.KnownValues: test_grad_cons_atom, test_grad_cons_orbital
+
+**G XC CPU fallback: NumInt2C for collinear rho** (7; first error line `IndexError: index 3 is out of bounds for axis 0 with size 2` unless shown)
+
+- pbc.dft.tests.test_pbc_gks.KnownValues: test_KGKS, test_collinear_gks_gga, test_collinear_kgks_gga, test_collinear_kgks_lda, test_veff_vs_cpu
+- pbc.scf.tests.test_pbc_scf_ghf: test_gamma_hf_conversion, test_kpoint_hf_conversion
+
+**H Cholesky failure not detected on ROCm** (2; first error line `AssertionError: assert 'cd' == 'eig'` unless shown)
+
+- mp.tests.test_dfmp2_utilities.DFMP2Utilities: test_get_j2c_decomp_linear_dependency
+- pbc.df.tests.test_rsdf_builder: test_decompose_j2c_linear_dependency[False] (`AssertionError: assert 'CD' == 'ED'`)
+
+**I d-aug-cc-pvdz basis missing (env)** (2; first error line `pyscf.lib.exceptions.BasisNotFoundError: Unknown basis format or basis name` unless shown)
+
+- scf.tests.test_diffuse_orbital.KnownValues: test_rhf_df_against_qchem
+- tdscf.tests.test_diffuse_orbital_tdscf.KnownValues: test_rtda_ris_diffuse
+
+**Y passed when rerun (follow-on in the full run)** (72; first error line `cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered` unless shown)
+
+- df.tests.test_df_tdrks_nac.KnownValues: test_nac_b3lyp_tddft_singlet_ee_vs_direct (`RuntimeError: decompress_and_fill failed`), test_nac_b3lyp_tddft_singlet_ge_vs_direct (`RuntimeError: decompress_and_fill failed`), test_nac_b3lyp_tddft_singlet_ris_zvector_solver (`RuntimeError: decompress_and_fill failed`), test_nac_camb3lyp_tddft_singlet_ee_vs_direct (`RuntimeError: decompress_and_fill failed`)
+- pbc.dft.tests.test_pbc_dftu.KnownValues: test_KRKSpU (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`), test_KUKSpU (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`), test_get_veff (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`)
+- pbc.dft.tests.test_pbc_uks.KnownValues: test_kpts_gga_fft (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`), test_kpts_rsh_fft (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`), test_rsh_fft (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`)
+- pbc.scf.tests.test_pbc_gdm.KnownValues: test_pbc_gdm_kuks_multigrid (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`), test_pbc_gdm_linear_dependent_basis (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`)
+- pbc.scf.tests.test_pbc_scf_ghf: test_checkpoint_basis_projection (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`), test_kpoint_jk_matches[fft] (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`), test_kpoint_jk_seperate_calls[fft] (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`), test_kpoint_nonhermitian_spin_transition_density[fft] (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`)
+- pbc.scf.tests.test_pbc_scf_hf.KnownValues: test_kpts_without_gamma (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`), test_krhf_bands (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`), test_rhf_exx_ewald (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`)
+- pbc.scf.tests.test_pbc_scf_hf.RestrictedSCFProperties: test_get_rho_krks (`failed on setup with "cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error"`) [error], test_get_rho_rks (`failed on setup with "cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error"`) [error], test_krhf_default_fock (`failed on setup with "cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error"`) [error], test_single_band_krhf (`failed on setup with "cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error"`) [error], test_single_band_rhf (`failed on setup with "cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error"`) [error], test_uneven_unoccupied_orbitals (`failed on setup with "cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error"`) [error]
+- properties.tests.test_eda.EDAResponse: test_uncoupled_ferf_subspace (`assert (4, 1) == (4, 3)`)
+- scf.tests.test_cphf.KnownValues: test_cphf, test_cphf_with_guess, test_ucphf
+- scf.tests.test_diffuse_orbital.KnownValues: test_uhf
+- scf.tests.test_fermi_smearing.KnownValues: test_df_uhf_gradient (`failed on setup with "cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered"`) [error], test_gradient (`failed on setup with "cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered"`) [error], test_to_gpu (`failed on setup with "cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered"`) [error]
+- scf.tests.test_fermi_smearing.UHFSmearing: test_uhf_fermi_occupations_and_entropy (`failed on setup with "cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered"`) [error], test_uhf_gaussian_occupations_and_entropy (`failed on setup with "cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered"`) [error], test_uhf_reconfigure_and_inplace_smearing (`failed on setup with "cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered"`) [error], test_uhf_smearing_energy_and_gradient (`failed on setup with "cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered"`) [error]
+- scf.tests.test_gdm.KnownValues: test_gdm_linear_dependent_basis (`AssertionError: assert np.float64(0.7808934119248931) < 1e-10`), test_gdm_rhf (`RuntimeError: decompress_and_fill failed`), test_gdm_rks (`RuntimeError: failed in transpose_sum kernel`), test_gdm_rks_pcm (`cupy_backends.cuda.libs.cusolver.CUSOLVERError: rocblas_status_memory_error`)
+- scf.tests.test_ghf.KnownValues: test_get_jk_complex (`failed on setup with "cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered"`) [error], test_get_jk_real (`failed on setup with "cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered"`) [error], test_ghf_scf (`failed on setup with "cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered"`) [error], test_ghf_scf_complex_dm (`failed on setup with "cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered"`) [error], test_multipoles (`failed on setup with "cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered"`) [error], test_to_cpu (`failed on setup with "cupy_backends.cuda.api.runtime.CUDARuntimeError: hipErrorIllegalAddress: an illegal memory access was encountered"`) [error]
+- scf.tests.test_hf_lowmem.KnownValues: test_diis_on_cpu, test_rhf_scf
+- scf.tests.test_hf_lowmem.SmallLowMemoryContracts: test_default_fock, test_incremental_potential_densities, test_incremental_potential_density_to_wavefunction, test_incremental_potential_wavefunction_to_density, test_incremental_potential_wavefunctions, test_kernel_zero_cycles, test_level_shift_with_packed_overlap
+- scf.tests.test_scf.KnownValues: test_rhf, test_rhf_cart, test_screening, test_to_cpu, test_to_gpu, test_uhf, test_uhf_cart
+- scf.tests.test_scf_ecp.KnownValues: test_rhf
+- scf.tests.test_scf_j_engine: test_general_contraction, test_irregular_angular_momemtum, test_j_engine, test_j_engine_8fold_symmetry, test_j_engine_integral_screen, test_j_engine_multiple_dms, test_j_engine_one_density_tail, test_sparse_dm
+
+**Z individual: gpu4pyscf/df/tests/test_df_tdrhf_grad.py:252** (1; first error line `assert np.float64(3.7765346405649325e-12) < 1e-12` unless shown)
+
+- df.tests.test_df_tdrhf_grad.KnownValues: test_j_energy_per_atom
+
+**Z individual: gpu4pyscf/dft/tests/test_gks.py:132** (1; first error line `AssertionError: np.float64(-28.188227223930294) != -28.188215296679516 within 5 places (np.float64(1.1927250778143161e-05) difference)` unless shown)
+
+- dft.tests.test_gks.KnownValues: test_mcol_gks_mgga
+
+**Z individual: gpu4pyscf/pbc/df/tests/test_pbc_ft_ao.py:328** (1; first error line `assert np.float64(3.774897816555267e-08) < 3e-08` unless shown)
+
+- pbc.df.tests.test_pbc_ft_ao.KnownValues: test_ft_ao_strain_deriv
+
+**Z individual: gpu4pyscf/pbc/dft/tests/test_multigrid_v3.py:269** (1; first error line `AssertionError: np.float64(-0.9666031517428196) != np.float64(-0.9666036936695668) within 2e-08 delta (np.float64(5.419267471440392e-07) dif` unless shown)
+
+- pbc.dft.tests.test_multigrid_v3.KnownValues: test_scf_2d_against_fft
+
+**Z individual: gpu4pyscf/pbc/grad/tests/test_pbc_grad_slabdipole.py:125** (1; first error line `AssertionError: False is not true` unless shown)
+
+- pbc.grad.tests.test_pbc_grad_slabdipole.KnownValues: test_scf_finite_difference
+
+**Z individual: gpu4pyscf/pbc/grad/tests/test_pbc_grad_slabdipole.py:176** (1; first error line `AssertionError: np.float64(-0.05146650639485384) != np.float64(-0.05145288579200269) within 1e-05 delta (np.float64(1.3620602851149854e-05) ` unless shown)
+
+- pbc.grad.tests.test_pbc_grad_slabdipole.KnownValues: test_automatic_cut_and_scanner
+
+**Z individual: gpu4pyscf/pbc/grad/tests/test_pbc_grad_slabgate.py:182** (1; first error line `AssertionError: False is not true` unless shown)
+
+- pbc.grad.tests.test_pbc_grad_slabgate.KnownValues: test_fractional_scf_finite_difference
+
+**Z individual: gpu4pyscf/pbc/grad/tests/test_pbc_krks_stress.py:300** (1; first error line `assert np.float64(0.07168639747212711) < 0.001` unless shown)
+
+- pbc.grad.tests.test_pbc_krks_stress.KnownValues: test_multigrid_image_boundary_strain_deriv
+
+**Z individual: gpu4pyscf/pbc/scf/tests/test_pbc_gdm.py:214** (1; first error line `AssertionError: assert np.float64(2.749317218331271e-09) < 1e-09` unless shown)
+
+- pbc.scf.tests.test_pbc_gdm.KnownValues: test_pbc_gdm_krks_uniform_grid
+
+**Z individual: gpu4pyscf/pbc/scf/tests/test_pbc_scf_ghf.py:225** (1; first error line `AssertionError: ` unless shown)
+
+- pbc.scf.tests.test_pbc_scf_ghf: test_gamma_scf_properties[gdf]
+
+**Z individual: gpu4pyscf/pbc/scf/tests/test_pbc_scf_ghf.py:293** (1; first error line `AssertionError: ` unless shown)
+
+- pbc.scf.tests.test_pbc_scf_ghf: test_kpoint_scf_properties[gdf]
+
+**Z individual: gpu4pyscf/pbc/scf/tests/test_pbc_scf_hf.py:473** (2; first error line `AssertionError: None is not an instance of <class 'gpu4pyscf.pbc.dft.multigrid_v3.MultiGridNumInt'>` unless shown)
+
+- pbc.scf.tests.test_pbc_scf_hf.RestrictedSCFProperties: test_get_rho_krhf_built [error], test_get_rho_rhf_built [error]
+
+**Z individual: gpu4pyscf/pbc/x2c/tests/test_pbc_x2c.py:113** (1; first error line `AssertionError: TypeError not raised` unless shown)
+
+- pbc.x2c.tests.test_pbc_x2c.KnownValues: test_to_cpu
+
+**Z individual: gpu4pyscf/scf/tests/test_stability.py:255** (1; first error line `AssertionError: assert np.float64(0.00019900999999999947) < 2e-06` unless shown)
+
+- scf.tests.test_stability.KnownValues: test_stability_rhf_unstable
+
+**Z individual: gpu4pyscf/x2c/tests/test_x2c.py:81** (1; first error line `AssertionError: np.float64(5.982414563732164e-11) != 0 within 10 places (np.float64(5.982414563732164e-11) difference)` unless shown)
+
+- x2c.tests.test_x2c.KnownValues: test_sfx2c1e_cart
+
+### Candidate pull requests onto upstream's port
+
+| candidate pull request | observed failure it fixes on gfx942 (upstream 4c56c9f) | size in our port | stands alone |
+|---|---|---|---|
+| Machine-LICM workaround for the ROCm 10.1 compiler (`-mllvm -disable-machine-licm` on HIP compile and link) | Yes: RHF/DFT with any d-shell basis faults in `rys_k_kernel` (APERTURE_VIOLATION) and hangs; the as-is suite cannot finish | 28f2418 + 1e6d12c: 2 files, about +12 lines (CMake + README). On upstream it goes in its CMake HIP block. ROCm 10.2+ does not need it, and CMake cannot tell 10.1 from 10.2 by version. | Yes |
+| Keep `nGv_per_block = 32` in `ft_ao_scheme` on wave64 (or size `nsp_max` for 64-wide) | Yes: 288 PBC tests, `assert np.all(nsp_max > 0)`, every periodic FT call on wave64 | Not a commit in our port (we keep upstream's original 32); a few lines in pbc/df/ft_ao.py, checked against the device kernel's NG_PER_BLOCK | Yes |
+| `eigh_std`: fall back to `cupy.linalg.eigh` for batched (ndim > 2) and float32 input on HIP | Yes: 59 tests (DF NAC, TDDFT gradients, FSSH, RIS Krylov) | Not in our port (we have no `eigh_std`); about 5 lines | Yes |
+| Own hipSOLVER handle for `sygvd`/`syevd` instead of CuPy's | Yes: 40 tests, `rocblas_status_memory_error` from CuPy `gesv` after any hipSOLVER eigh (DFT+U, CDFT, TDDFT, k-point HF) | Part of 8cb88067: `hipsolverCreate` + `hipsolverSetStream`, about 15 of the 50 lines it adds to lib/cusolver.py | Yes |
+| Reserve static LDS in `shm_size` on HIP (`-= 1024`) | Yes: 13 tests (CCSD, MP2 `fill_int4c2e`: `Failed to set CUDA shm size 65496`) | Part of 45d80530: 4 lines in `__config__.py` | Yes |
+| ECP derivative kernels for g shells in 64 KB LDS | Yes: 4 of 7 test_ecp.py tests (ECP_ip_cart (4,4,4), ECP_ipipv_cart (4,2,4) invalid argument) | c8c9acc: 3 files, +478/-5 (new ecp_type2_lowmem.cu, driver selection, test skips) | Yes (needs upstream's ECP test skip relaxed on HIP) |
+| GPU libxc on HIP (XC on the GPU) | Cost: CPU XC is 0.31-0.34 s = 13-18% of a DF-B3LYP/def2-TZVPP SCF on vitamin C (GPU libxc 0.02 s). Failures: 7 GKS tests (NumInt2C fallback), likely the multigrid r2scan stress test (0.0717). Upstream says this is its "later phase". | 4a903095 (+22/-36, 4 files) plus the stack limit through HIP (c073679, +15) | Mostly: it replaces upstream's fallback design. A small fix to the fallback (give `to_cpu` a collinear CPU NumInt for 2-component rho; not tried) would likely fix cause G without it. |
+| rocBLAS batched-gemv einsum workaround (ROCm/rocm-libraries#14819) | No failure observed on gfx942 (26 shapes x 20 calls under load; full suite). Evidence exists only on gfx1100/gfx1201, not rerun this round. | 3e00881 + 5c1f918 + fae6a22 + b7c39b6 + fb95c20: 137 files, about +929/-719 (helper about 200 lines; the rest rewrites 621 call sites) | Helper yes; the call-site rewrite touches most of the tree |
+| gfx12 complex-GEMM split | No failure observed (cannot occur on gfx942; gfx1201-only) | e1b8041 + 5a87452: about +148/-9, cutensor.py + test | Needs the einsum helper |
+| `hipDeviceSetLimit` through ctypes, gradient-kernel block size | No failure observed (grad 107/0, hessian 93/0; upstream skips the stack limit on HIP) | c073679 +15; e469394 +24 | Yes; no evidence to offer them alone |
+| Detect a failed Cholesky on ROCm (check potrf info, not NaN) | Yes: 2 tests; a silent wrong j2c factor for linearly dependent auxiliary bases | Neither port; about 5 lines in mp/dfmp2_addons.py and pbc/df | Yes |
