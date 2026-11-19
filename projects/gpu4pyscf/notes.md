@@ -4897,3 +4897,7 @@ Result: **2171 passed / 83 failed / 109 skipped / 0 errors** (upstream as-is wit
 Gates at this head: CUDA no-regression compile passed (nvcc 12.8.93, `pbc` target with the changed ft_ao.cu; porter section). `python3 utils/jargon.py --port gpu4pyscf`: clean. Documentation: the ROCm build is upstream's own README section "Building for AMD GPUs (ROCm)", unchanged and still accurate (the LICM flag is on by default, so the documented command needs nothing new). Integrity: `git -C projects/gpu4pyscf/src status --porcelain` empty (build output is gitignored; the test-generated from_h5.xyz was removed).
 
 Not covered by this record: wave32 (gfx1100, gfx1201) and gfx90a have not run 7cbd3d2.
+
+## Ruling 2026-11-19 (jeff): the seventh candidate becomes a seventh pull request
+
+jeffdaily ruled on 2026-11-19, in the request that dispatched the round below: the hiprtc `cuComplex.h` failure of the `indexed_scale` RawKernel (pbc/df/grad/rhf.py, 47 tests on gfx942 at 7cbd3d2; the "seventh candidate" above) becomes a seventh pull request for issue 1054, fixed by one new commit on `moat-port` and cut onto upstream master by itself like the six. In the same request he ruled, for all seven pull-request drafts: the pull-request title carries no `[ROCm]` bracket prefix (upstream's titles have none; a commit keeps its prefix), and the closing disclosure sentence is exactly "This pull request was prepared with Claude Code (Anthropic), which wrote the change and ran the tests on our hardware; I read and approved it before opening." "Part of #1054." stays.
