@@ -6765,3 +6765,126 @@ echo "patterns: $n"
 ```
 
 The tile-set loop (item 3) is the session 4 loop, with a fresh `WARP_CACHE_PATH=$(mktemp -d ...)` for each file.
+
+## Porting session 15 (2026-11-19, windows-gfx1151 laptop, porter): the remaining graph failures after de4e07a3
+
+Bounded follow-up inside the windows-gfx1151 `porting` lock (lock and stage untouched). Fork `release/1.14.0.amd0` advanced `de4e07a3..6b639456` (pushed, `advance-head` recorded). Environment as session 14 (`agent_space/warp-win/p6env.sh`, ROCm 10.2 wheels, HIP 7.17.26434). Scripts in `agent_space/warp-win/p15/`, logs in `agent_space/warp-win/logs/p15/` (single-test runs and AMD_LOG_LEVEL logs) and `logs/p15v/` (verification). No driver reset, device-lost line or display glitch at any point.
+
+Input: the 82-pattern rerun at `de4e07a3` (`logs/p15pat/summary.txt`): 79 OK; not OK were test_streams (`test_event_external`, the known upstream test race), test_graph (`test_cuda_graph_alloc_transient_stream_cuda_0`: launch error, invalid argument in `wp_cuda_graph_launch`, warp.cu:4411) and test_map (`test_graph_capture_cuda_0`: invalid argument in `wp_memcpy_d2h`, warp.cu:1086; `test_indexedarrays_cuda_0`: invalid argument in `wp_array_copy_device`, warp.cu:1901).
+
+### Verdicts
+- **Cross-stream relaunch hypothesis: does not hold.** `test_cuda_graph_alloc_transient_stream` (test_graph.py:443) captures `foo` (zeros `a`, ones `b`, 100 `accum_kernel` launches on a temporary `wp.Stream()`) and `bar` (empty `c`, copy from a pinned host array, on another temporary stream; both temporaries get the same handle in the HIP log because the first is destroyed before the second is created) and launches the graph **once**. No exec is ever relaunched, so no relaunch race can apply, on one stream or several.
+- **New runtime defect (Windows, no direct dispatch): a graph allocation is invisible to pointer validation while its alloc node executes on the worker thread.** `GraphMemAllocNode::CreateCommand` (launching thread) adds the reserved VA to `amd::MemObjMap`; `VirtualMemAllocNode::submit` (worker thread, clr `hip_graph_internal.hpp`, rocm-systems `develop` today) on the first launch calls `RemoveMemObj(va)`, then `graph_->AllocateMemory` (milliseconds for 256 MiB) and only then maps and registers the sub-object. Any call on another thread that validates a pointer into that allocation inside the window returns `hipErrorInvalidValue`. On Linux the node runs on the calling thread inside `hipGraphLaunch`, so the window never overlaps application calls.
+  - test_graph transient `.numpy()` failure and test_map `test_graph_capture`: the `.numpy()` right after `wp.capture_launch` issues `hipMemcpyAsync` D2H of a graph-allocated array. `logs/p15/ts_log3_3.log` (de4e07a3, AMD_LOG_LEVEL=3): `hipGraphLaunch` returns at 720941 us, the worker's `Pool AllocMem` for the first alloc node logs at 737987 us, `hipMemcpyAsync(..., 000001CA14000000 (= a), 268435456, D2H)` returns `hipErrorInvalidValue` at 738372 us, and the fill of `a` runs on the worker only at 766107 us. Standalone, with thread ids (`logs/p15/repro_d2h_log4.txt`): main tid 0x6429c `hipMemcpyAsync` at +24 us after the launch, worker tid 0x018d5 `Pool AllocMem` at +33 us, the copy returns `hipErrorInvalidValue` at +39 us.
+  - test_map `test_indexedarrays`: collateral. It runs right after `test_graph_capture` in the same worker process; the failed `hipMemcpyAsync` leaves the thread's last error set (Warp's `check_cuda(result)` does not clear it), and the next `cudaGetLastError()` (in `wp_array_copy_device` after the copy kernel) returns it. Same semantics as CUDA. With the fix, all 45 test_map tests pass.
+  - Not caused by `de4e07a3`: at `fda2f89a` (no workaround; built in `agent_space/warp-win/fixwt` with the uncommitted fix reverted, `python build_lib.py --hip-arch gfx1151 -j 8`, 1 min 39 s), the transient test alone failed in run 4 of 4 with the same `wp_memcpy_d2h` invalid argument (`logs/p15/ts_fda_4.log`). At `de4e07a3` alone: 1 of 3 plain runs failed (`ts_alone_2`), 1 of 3 AMD_LOG_LEVEL=3 runs (`ts_log3_3`). Session 13's and 14's passes were timing.
+- **Still open, not fixed: a rarer first-launch failure inside `hipGraphLaunch` itself** (the p15pat test_graph traceback). `logs/p15/fix_log3_3.log` (fixed build): 44 us into the launch `:1:hip_graph_internal.cpp:3158: Command creation for node id(3) failed!`, `Failed to launch nodes!`, `hipGraphLaunch: Returned hipErrorInvalidValue`, before either worker logged its first `Pool AllocMem`. The graph runs on 2 parallel streams (`max_streams: 2`); in a passing AMD_LOG_LEVEL=4 run (`fix_log4_4.log`) worker 0x46e75 allocates `c` (bar's branch, a root of the graph) concurrently with worker 0x7225c allocating `a`, so the leaning is the same window hit from inside the launch: the launching thread creating the command for the memcpy node into `c` (validates `c`) while the other worker is inside `c`'s alloc node. Not proven: the standalone reproducer's `node` mode (a second allocation plus an H2D memcpy node on a forked root branch) and `memset` mode (memset node right after the alloc) passed 5 of 5 each, and 4 AMD_LOG_LEVEL=4 runs of the Warp test did not fail. A wait outside `hipGraphLaunch` cannot close a window inside it, so no Warp-side workaround is proposed for it. Frequency with the fix: 1 of 5 runs of the three tests together (`fix3_5`, which also failed the following `test_graph_capture` with error 901 "operation failed due to a previous error during capture" in `wp_alloc_device_async`, collateral of the failed launch), 1 of 3 AMD_LOG_LEVEL=3 runs of the transient test alone; 0 in the verification run below.
+
+Failing-run budget: transient test 6 failing runs (ts_alone_2, ts_log3_3, ts_fda_4, fix3_5, fix_log3_3, plus the p15pat input), test_map 1 (fix3_5).
+
+### Port fix 6b639456 [ROCm] Wait for each graph launch to finish on Windows
+`warp/native/hip_compat.h`, Windows branch only: `wp_hip_graph_launch` now calls `hipGraphLaunch` first and then `hipStreamSynchronize(stream)` when the stream is not capturing (if `hipStreamIsCapturing` fails, it launches without waiting, as upstream would). Replaces `de4e07a3`'s wait-before-launch. Why after rather than per-exec bookkeeping or `hipDeviceSynchronize`: a finished launch cannot race the next launch of the same exec on any stream (so the relaunch race stays closed, including the cross-stream case the session asked about), and it is the only point outside the runtime where the alloc nodes are known to have executed; a per-exec "first launch" set would need the exec's destroy hooked and would still miss the remap path on relaunch (`remap_needed`, same RemoveMemObj-free window when another graph took the physical memory); `hipDeviceSynchronize` waits on unrelated streams and is the call most likely to invalidate a global-mode capture running on another stream. Cost: the host no longer overlaps work with a running graph on Windows; consecutive launches were already serialized by the runtime's own `launch_stream->finish()`. Linux HIP and CUDA builds unchanged. clang-format 22.1.2 clean, jargon clean.
+
+Standalone reproducer `p15/graph_alloc_first_launch.hip` (built like session 14's, `R=$(python -m rocm_sdk path --root)`, `clang++ -x hip --rocm-path=$R --rocm-device-lib-path=$R/lib/llvm/amdgcn/bitcode --offload-arch=gfx1151 -O2 -w graph_alloc_first_launch.hip -o graph_alloc_first_launch.exe -L$R/lib -lamdhip64`, TheRock DLLs next to the exe):
+- `graph_alloc_first_launch 5 256 d2h`: **FAIL 5 of 5** (`copy invalid argument` every iteration); `5 1 d2h`: FAIL 5 of 5.
+- `5 256 sync` (hipStreamSynchronize after the launch, the fix): PASS 0 of 5.
+- `5 256 node`, `5 256 memset`: PASS 0 of 5 (the in-launch variant did not reproduce).
+
+Verification at 6b639456's code (`p15/run_verify.sh`: one pattern at a time, `python -m warp.tests -s autodetect -p "<pat>.py" -m 2`, fresh kernel cache per pattern, 900 s timeout; `logs/p15v/summary.txt`; this run used the build before the last edit, which only changed what happens when `hipStreamIsCapturing` itself fails): test_graph 35 OK (3 skipped); test_map 45 OK; test_mesh* 49 OK (18 skipped); test_grouped_bvh 11 OK; test_capture_mode 2 OK; test_array_fill_capture 3 OK; test_conditional_captures 32 OK (16 skipped); test_conditional 50 OK; test_streams 24 run, 1 failure = the known `test_event_external` upstream race (3 skipped); test_mempool 7 OK (2 skipped); test_apic 52 OK; test_apic_mesh 12 OK; test_fem* 108 OK (2 skipped), 579 s (p15pat: 344 s; fresh cache both times, so part of the gap may be the lost host/GPU overlap; not measured further, no benchmarks on this host). After the last edit, rebuilt (`python build_lib.py --hip-arch gfx1151 -j 8`, succeeded) and `p15/run_final.sh` (`logs/p15final/summary.txt`, same runner settings): test_graph 35 OK, test_map 45 OK, test_capture_mode 2 OK, test_conditional_captures 32 OK, test_mesh* 49 OK, test_grouped_bvh 11 OK. Also before the last edit: the three failing tests together (`python -m unittest warp.tests.test_graph.TestGraph.test_cuda_graph_alloc_transient_stream_cuda_0 warp.tests.test_map.TestMap.test_graph_capture_cuda_0 warp.tests.test_map.TestMap.test_indexedarrays_cuda_0`) 4 of 5 runs OK, run 5 the in-launch failure above. Session 14's `graph_autofree_race 10 2000 sync` mode (wait before each launch) is equivalent to the new wait after each launch, as nothing runs between launches; not rerun.
+
+Registered `hip-graph-alloc-node-va-unregistered-on-worker` (rocm-bug-report, HIP, unruled) for the new defect. `hip-graph-autofree-relaunch-races-worker-memfree` was not amended (an amend clears Jeff's ruling); its last sentence ("Warp now synchronizes before hipGraphLaunch") is now stale: Warp synchronizes after it.
+
+```cpp
+// First launch of a graph holding a stream-ordered allocation that outlives the graph (alloc node,
+// no free node), instantiated with hipGraphInstantiateFlagAutoFreeOnLaunch. Without direct
+// dispatch the alloc node runs on the runtime's worker thread, which removes the allocation's
+// virtual address from the runtime's pointer table, allocates and maps physical memory, and only
+// then registers it again. A pointer-validating call made on another thread inside that window
+// fails with hipErrorInvalidValue.
+// Usage: graph_alloc_first_launch [iters] [MiB] [mode]
+//   mode d2h  : hipMemcpyAsync D2H from the allocation right after hipGraphLaunch returns (default)
+//   mode node : the graph also allocates a second buffer on a forked capture stream, in parallel
+//               with the first allocation, and copies host data into it, so the launching thread
+//               validates that pointer inside hipGraphLaunch while another worker thread allocates
+//   mode sync : as d2h, with hipStreamSynchronize after hipGraphLaunch (the workaround)
+//   mode memset : the graph memsets the allocation right after allocating it, so the launching
+//               thread validates the pointer inside hipGraphLaunch while the worker allocates
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#define CK(x) do { hipError_t e = (x); if (e != hipSuccess) { printf("%s:%d %s -> %s\n", __FILE__, __LINE__, #x, hipGetErrorString(e)); return 1; } } while (0)
+
+__global__ void fill(float* buf, size_t n, float v)
+{
+    size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) buf[i] = v;
+}
+
+int main(int argc, char** argv)
+{
+    int iters = argc > 1 ? atoi(argv[1]) : 5;
+    size_t mib = argc > 2 ? (size_t)atoi(argv[2]) : 256;
+    const char* mode = argc > 3 ? argv[3] : "d2h";
+    bool node = !strcmp(mode, "node"), sync = !strcmp(mode, "sync"), mset = !strcmp(mode, "memset");
+    size_t bytes = mib << 20, n = bytes / 4;
+    CK(hipSetDevice(0));
+    hipStream_t s, s2;
+    CK(hipStreamCreate(&s));
+    CK(hipStreamCreate(&s2));
+    hipEvent_t fork, join;
+    CK(hipEventCreateWithFlags(&fork, hipEventDisableTiming));
+    CK(hipEventCreateWithFlags(&join, hipEventDisableTiming));
+    float* host;
+    CK(hipHostMalloc((void**)&host, bytes, 0));
+    for (size_t i = 0; i < n; ++i) host[i] = 3.f;
+
+    int bad = 0;
+    for (int it = 0; it < iters; ++it) {
+        hipGraph_t g;
+        hipGraphExec_t ge;
+        float *a, *c = nullptr;
+        CK(hipStreamBeginCapture(s, hipStreamCaptureModeGlobal));
+        if (node) {
+            CK(hipEventRecord(fork, s));
+            CK(hipStreamWaitEvent(s2, fork, 0));
+        }
+        CK(hipMallocAsync((void**)&a, bytes, s));
+        if (mset) CK(hipMemsetAsync(a, 0, bytes, s));
+        fill<<<(unsigned)((n + 255) / 256), 256, 0, s>>>(a, n, 1.f);
+        if (node) {
+            CK(hipMallocAsync((void**)&c, bytes, s2));
+            CK(hipMemcpyAsync(c, host, bytes, hipMemcpyHostToDevice, s2));
+            CK(hipEventRecord(join, s2));
+            CK(hipStreamWaitEvent(s, join, 0));
+        }
+        CK(hipStreamEndCapture(s, &g));
+        CK(hipGraphInstantiateWithFlags(&ge, g, hipGraphInstantiateFlagAutoFreeOnLaunch));
+
+        hipError_t el = hipGraphLaunch(ge, s), ec = hipSuccess;
+        if (el == hipSuccess && sync) el = hipStreamSynchronize(s);
+        if (el == hipSuccess && !node && !mset) ec = hipMemcpyAsync(host, a, 4096, hipMemcpyDeviceToHost, s);
+        printf("iter %d: launch %s, copy %s\n", it, hipGetErrorString(el), hipGetErrorString(ec));
+        fflush(stdout);
+        if (el != hipSuccess || ec != hipSuccess) { ++bad; (void)hipGetLastError(); }
+        CK(hipStreamSynchronize(s));
+        if (!node && !mset && ec == hipSuccess && host[0] != 1.f) { printf("iter %d: wrong value %f\n", it, host[0]); ++bad; }
+        for (size_t i = 0; i < 1024; ++i) host[i] = 3.f;
+        CK(hipFreeAsync(a, s));
+        if (c) CK(hipFreeAsync(c, s));
+        CK(hipStreamSynchronize(s));
+        CK(hipGraphExecDestroy(ge));
+        CK(hipGraphDestroy(g));
+    }
+    printf("%s: %d of %d iterations failed (%zu MiB, mode %s)\n", bad ? "FAIL" : "PASS", bad, iters, mib, mode);
+    return bad ? 1 : 0;
+}
+```
+
+### Proposed skip (not added; Jeff's decision)
+If the in-launch failure is to be kept out of release runs before the runtime is fixed: a capability-named skip on `test_cuda_graph_alloc_transient_stream`, "first launch of a multi-stream graph with memory nodes can fail in hipGraphLaunch on HIP without direct dispatch", Windows HIP only.
+
+### Next step
+- Jeff: the runtime bug report gains a second defect (the alloc-node window, deterministic in the standalone reproducer, `graph_alloc_first_launch 5 1 d2h`), either as a second report or a second section of the same one.
+- The in-launch variant stays open as a known intermittent Windows failure of one test (about 1 in 3 to 5 runs alone); decide skip versus ship-as-known.
+- Then continue session 13's Next step (review, then the Windows validation record) at the new head.

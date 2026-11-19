@@ -191,3 +191,7 @@
 {"kind":"phase","ts":"2026-11-19T18:21:25Z","phase":"build","seconds":52.269,"exit":0,"cmd":"bash -c cd projects/warp-1.14/src && python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/gfx1201-20261119-101222-warp114-bf16-evidence-gfx1201-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx1201 -j 6"}
 {"kind":"phase","ts":"2026-11-19T18:33:28Z","phase":"bench","seconds":306.867,"exit":0,"cmd":"bash ../bf16/bench_both.sh"}
 {"kind":"phase","ts":"2026-11-19T19:16:32Z","phase":"test","seconds":1942.292,"exit":0,"cmd":"bash ../bf16/run_full.sh"}
+{"kind":"phase","ts":"2026-11-19T19:36:17Z","phase":"compile","seconds":0.255,"exit":2,"cmd":"/d/Develop/moat/agent_space/warp-win/venv/Scripts/python.exe build_lib.py --hip-arch gfx1151 -j 8"}
+{"kind":"phase","ts":"2026-11-19T19:37:58Z","phase":"compile","seconds":95.218,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/wt-warp-1.14/projects/warp-1.14/src && /d/Develop/moat/agent_space/warp-win/venv/Scripts/python.exe build_lib.py --hip-arch gfx1151 -j 8"}
+{"kind":"phase","ts":"2026-11-19T19:54:14Z","phase":"test","seconds":741.145,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/warp-win/p15/run_verify.sh"}
+{"kind":"phase","ts":"2026-11-19T19:56:09Z","phase":"compile","seconds":98.783,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/wt-warp-1.14/projects/warp-1.14/src && /d/Develop/moat/agent_space/warp-win/venv/Scripts/python.exe build_lib.py --hip-arch gfx1151 -j 8"}
