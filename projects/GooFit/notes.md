@@ -2633,3 +2633,41 @@ A suggested waiver blocks `pr-ready` the same as an unsatisfied gate until a
 maintainer approves it (by design -- an agent cannot let a port out early by
 suggesting one). So `PR-ready=False` until either a maintainer approves the
 windows waiver or a different Windows host validates this project.
+
+## CUDA compile evidence 2026-11-19 (fleet job, linux-gfx950 host with the CUDA toolkit; no NVIDIA GPU) -- port e8dca9151 builds with nvcc exactly as its base does
+
+Evidence only: no stage or platform record changed, nothing pushed to the fork.
+
+Question: the CUDA no-regression gate was recorded above (Validation 2026-08-14, linux-gfx90a) as "pre-existing upstream breakage" (`GlobalCudaDefines.h:133: fatal error: driver_types.h`). That run used a conda nvcc and the bundled Thrust (`GOOFIT_FORCE_LOCAL_THRUST` default ON). Upstream CI is green with a different recipe, so that conclusion had not been proven.
+
+Toolkit: `/usr/local/cuda` -> CUDA 12.8, `nvcc V12.8.93` (`cuda_12.8.r12.8/compiler.35583870_0`), Thrust 2.7.0 (`THRUST_VERSION 200700`) from the toolkit, host g++ 13.3.0, CMake 3.31.6, Ninja. Upstream CI uses the `nvidia/cuda:12.9.1-devel-ubuntu24.04` and `13.0.1` images; 12.8 is the closest toolkit on this host. Environment fix needed: none beyond `PATH=/usr/local/cuda/bin:$PATH` (nvcc is not on the default PATH). The standard toolkit layout has `driver_types.h` in `targets/x86_64-linux/include`, and with the toolkit Thrust that directory reaches every host TU.
+
+Trees (job directory, submodules initialized):
+- port: `AMD-Ecosystem/GooFit` at `e8dca915125a1c9fe193bc056fd9892095230eb4` (merge-base with upstream = `5fe1221a87feb7afa3cb22fc8200f7371240c753`)
+- base: `GooFit/GooFit` at `5fe1221a8`
+
+The recipe comes from upstream `.github/workflows/ci.yml` job `cuda-build`. It is unchanged on upstream master `7af21b66a`, and the port's `ci.yml` is byte-identical to the base's. Ninja is used instead of the default generator so step counts are exact.
+```
+export PATH=/usr/local/cuda/bin:$PATH
+cmake -S . -B build -GNinja -DGOOFIT_DEVICE=CUDA -DCMAKE_CUDA_ARCHITECTURES=75 \
+  -DGOOFIT_FORCE_LOCAL_THRUST=OFF -DCMAKE_CXX_STANDARD=17 -DCMAKE_CUDA_STANDARD=17 \
+  -DGOOFIT_SPLASH=OFF
+ninja -C build -k 0 -j32
+PYTHONPATH=./build python3 -m goofit     # CI "Verify Python built" step
+```
+
+| Run | Tree | Configure | Build steps | First error |
+|---|---|---|---|---|
+| CI recipe | base 5fe1221a8 | OK | 524/524, exit 0 | none |
+| CI recipe | port e8dca9151 | OK | 524/524, exit 0 | none |
+| CI recipe + `-DGOOFIT_KMATRIX=ON` | base | OK | 527/527, exit 0 | none |
+| CI recipe + `-DGOOFIT_KMATRIX=ON` | port | OK | 527/527, exit 0 | none |
+| bundled Thrust (drop `-DGOOFIT_FORCE_LOCAL_THRUST=OFF`) | base | OK | stopped at 362/524, 49 FAILED, exit 1 | `GlobalCudaDefines.h:124:10: fatal error: driver_types.h: No such file or directory` |
+| bundled Thrust | port | OK | stopped at 362/524, 49 FAILED, exit 1 | `GlobalCudaDefines.h:133:10: fatal error: driver_types.h: No such file or directory` |
+
+- `python3 -m goofit` exits 0 on both CI-recipe builds and prints `CUDA 12.8` / `CUDA: Number of devices: 0`. No GPU here, so nothing ran on a device; this is compile, link and import evidence only.
+- Port sources CUDA compiles were confirmed built in the port log: `MetricTaker.cu.o` [101/524], `StepPdf.cu.o` [129/524], and the moved `utilities/DebugTools.cu.o` in PDFPhysics [141/524]. `GOOFIT_KMATRIX` defaults to OFF on CUDA (`CMakeLists.txt:260`), so the CI recipe never compiles the port's two `kMatrix.cu` edits; the KMATRIX=ON run covers both (`lineshapes/kMatrix.cu.o` [326/527], `resonances/kMatrix.cu.o` [329/527]).
+- Warning count is identical: 286 `warning:` lines in each CI-recipe log (mostly the Thrust `unary_function` deprecation).
+- Both trees have a clean `git status --porcelain --untracked-files=no` after the builds.
+
+Conclusion: the port introduces no CUDA compile or link regression under upstream's CI recipe, with or without KMatrix. The earlier `driver_types.h` failure belongs to the bundled-Thrust recipe and occurs identically on pristine upstream. With the bundled Thrust, `THRUST_INCLUDE_DIR` points at `extern/thrust`. The toolkit include directory is then added to host (`.cpp`) TUs only in the CUDA-13 relocated-CCCL branch (`CMakeLists.txt` near 401-407), so host TUs that include `GlobalCudaDefines.h` cannot find `driver_types.h`. Upstream does not test that configuration on CUDA 12. Therefore the record above was right that the failure is not the port's fault. It was wrong to say the CUDA path could not be checked: the CUDA gate passes at `e8dca9151` with upstream's recipe. Gaps: CUDA 12.9.1/13.0.1 (the CI images) were not tried, only 12.8, and nothing ran on a device.
