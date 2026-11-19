@@ -1,0 +1,1415 @@
+{
+ "source": "amd-gap-matrix",
+ "url": "https://amd-gap-matrix.vercel.app",
+ "version": "2026.10.2",
+ "reviewed": "2026-10-06",
+ "repos": [
+  {
+   "full_name": "apache/tvm",
+   "label": "Apache TVM",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "areal-project/AReaL",
+   "label": "AReaL",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "axolotl-ai-cloud/axolotl",
+   "label": "Axolotl",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "bentoml/BentoML",
+   "label": "BentoML",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "hpcaitech/ColossalAI",
+   "label": "ColossalAI",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "mosaicml/composer",
+   "label": "Composer (MosaicML / Databricks)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "OpenNMT/CTranslate2",
+   "label": "CTranslate2 / faster-whisper",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "NVIDIA/cudnn-frontend",
+   "label": "cuDNN frontend (cuDNN graph API)",
+   "readiness": "partial",
+   "path": "amd-alternative",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA/cutlass",
+   "label": "CUTLASS / CuTe DSL",
+   "readiness": "partial",
+   "path": "amd-alternative",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "deepseek-ai/DeepEP",
+   "label": "DeepEP",
+   "readiness": "ready",
+   "path": "amd-alternative",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "deepseek-ai/DeepGEMM",
+   "label": "DeepGEMM",
+   "readiness": "partial",
+   "path": "amd-alternative",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "deepspeedai/DeepSpeed",
+   "label": "DeepSpeed",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "pytorch/FBGEMM",
+   "label": "FBGEMM_GPU / MSLK (FBGEMM GenAI)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "fla-org/flash-linear-attention",
+   "label": "Flash Linear Attention",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "Dao-AILab/flash-attention",
+   "label": "FlashAttention-3 / FlashAttention-4",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "flashinfer-ai/flashinfer",
+   "label": "FlashInfer",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "deepseek-ai/FlashMLA",
+   "label": "FlashMLA",
+   "readiness": "partial",
+   "path": "amd-alternative",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "gpustack/gpustack",
+   "label": "GPUStack",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "huggingface/accelerate",
+   "label": "Hugging Face Accelerate",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "huggingface/diffusers",
+   "label": "Hugging Face Diffusers",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "huggingface/peft",
+   "label": "Hugging Face PEFT",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "huggingface/transformers",
+   "label": "Hugging Face Transformers",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "huggingface/trl",
+   "label": "Hugging Face TRL",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "iree-org/iree",
+   "label": "IREE",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "jax-ml/jax",
+   "label": "JAX (ROCm plugin)",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "jax-ml/jax",
+   "label": "JAX Pallas (Mosaic GPU)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "keras-team/keras",
+   "label": "Keras 3",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "kserve/kserve",
+   "label": "KServe",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "kubeflow/trainer",
+   "label": "Kubeflow Trainer",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "linkedin/Liger-Kernel",
+   "label": "Liger Kernel",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "Lightning-AI/litgpt",
+   "label": "LitGPT",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "hiyouga/LlamaFactory",
+   "label": "LLaMA-Factory",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "llm-d/llm-d",
+   "label": "llm-d",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "LMCache/LMCache",
+   "label": "LMCache",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "InternLM/lmdeploy",
+   "label": "LMDeploy (TurboMind)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "NVIDIA/Megatron-LM",
+   "label": "Megatron-Core / Megatron-LM",
+   "readiness": "ready",
+   "path": "amd-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "modular/modular",
+   "label": "Modular MAX / Mojo",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-closed"
+  },
+  {
+   "full_name": "kvcache-ai/Mooncake",
+   "label": "Mooncake",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "NVIDIA/nccl",
+   "label": "NCCL advanced features (NVLink SHARP, symmetric memory, Device API)",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA-AI-Blueprints/video-search-and-summarization",
+   "label": "NVIDIA AI Blueprint: Video Search and Summarization (Metropolis VSS)",
+   "readiness": "ready",
+   "path": "amd-alternative",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA/Model-Optimizer",
+   "label": "NVIDIA Model Optimizer (formerly TensorRT Model Optimizer)",
+   "readiness": "partial",
+   "path": "amd-alternative",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "openai/whisper",
+   "label": "OpenAI Whisper",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "OpenRLHF/OpenRLHF",
+   "label": "OpenRLHF",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "pytorch/pytorch",
+   "label": "PyTorch (ROCm, Linux)",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "Lightning-AI/pytorch-lightning",
+   "label": "PyTorch Lightning / Lightning Fabric",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "sgl-project/sglang",
+   "label": "SGLang",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "THUDM/slime",
+   "label": "slime",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "tensorflow/tensorflow",
+   "label": "TensorFlow (ROCm)",
+   "readiness": "ready",
+   "path": "amd-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "HazyResearch/ThunderKittens",
+   "label": "ThunderKittens",
+   "readiness": "partial",
+   "path": "amd-alternative",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "tile-ai/tilelang",
+   "label": "TileLang",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "pytorch/ao",
+   "label": "torchao",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "meta-pytorch/torchrec",
+   "label": "TorchRec",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "pytorch/torchtitan",
+   "label": "torchtitan",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "NVIDIA/TransformerEngine",
+   "label": "Transformer Engine",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "triton-lang/triton",
+   "label": "Triton (OpenAI Triton compiler)",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "triton-inference-server/server",
+   "label": "Triton Inference Server",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "microsoft/Tutel",
+   "label": "Tutel",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "unslothai/unsloth",
+   "label": "Unsloth",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "ByteDance-Seed/VeOmni",
+   "label": "VeOmni",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "verl-project/verl",
+   "label": "verl",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "vllm-project/vllm",
+   "label": "vLLM",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "xdit-project/xDiT",
+   "label": "xDiT / xfuser (parallel diffusion inference)",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "facebookresearch/xformers",
+   "label": "xFormers",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "autowarefoundation/autoware_universe",
+   "label": "Autoware perception (TensorRT-based nodes)",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "ApolloAuto/apollo",
+   "label": "Baidu Apollo (autonomous driving stack)",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "NVlabs/curobo",
+   "label": "cuRobo",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "Genesis-Embodied-AI/genesis-world",
+   "label": "Genesis",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "facebookresearch/habitat-sim",
+   "label": "Habitat-sim",
+   "readiness": "unknown",
+   "path": "none",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "huggingface/lerobot",
+   "label": "Hugging Face LeRobot",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "mani-skill/ManiSkill",
+   "label": "ManiSkill 3 / SAPIEN",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "google-deepmind/mujoco",
+   "label": "MuJoCo MJX / Brax (JAX)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "google-deepmind/mujoco_warp",
+   "label": "MuJoCo Warp (and mjlab)",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "newton-physics/newton",
+   "label": "Newton",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "nvidia-isaac/nvblox",
+   "label": "nvblox",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "nvidia-cosmos/cosmos-predict2.5",
+   "label": "NVIDIA Cosmos (world foundation models and tokenizers)",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA/Isaac-GR00T",
+   "label": "NVIDIA Isaac GR00T (N1.x robot foundation model)",
+   "readiness": "unknown",
+   "path": "none",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "isaac-sim/IsaacLab",
+   "label": "NVIDIA Isaac Lab",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA/warp",
+   "label": "NVIDIA Warp",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "StanfordVL/BEHAVIOR-1K",
+   "label": "OmniGibson / BEHAVIOR-1K",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "Physical-Intelligence/openpi",
+   "label": "OpenPI",
+   "readiness": "partial",
+   "path": "community-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "NVIDIA-Omniverse/PhysX",
+   "label": "PhysX 5 GPU simulation",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "Denys88/rl_games",
+   "label": "RL Games",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "ARISE-Initiative/robosuite",
+   "label": "robosuite",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "leggedrobotics/rsl_rl",
+   "label": "RSL-RL",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "alex-petrenko/sample-factory",
+   "label": "Sample Factory",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "Toni-SM/skrl",
+   "label": "skrl",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "pytorch/rl",
+   "label": "TorchRL",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "bitsandbytes-foundation/bitsandbytes",
+   "label": "bitsandbytes",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "tracel-ai/burn",
+   "label": "Burn",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "huggingface/candle",
+   "label": "Candle",
+   "readiness": "partial",
+   "path": "community-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "comfyanonymous/ComfyUI",
+   "label": "ComfyUI (core)",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "MrForExample/ComfyUI-3D-Pack",
+   "label": "ComfyUI-3D-Pack",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "turboderp-org/exllamav2",
+   "label": "ExLlamaV2",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "turboderp-org/exllamav3",
+   "label": "ExLlamaV3",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "invoke-ai/InvokeAI",
+   "label": "InvokeAI",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "janhq/jan",
+   "label": "Jan",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "LostRuins/koboldcpp",
+   "label": "KoboldCpp",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "kohya-ss/sd-scripts",
+   "label": "Kohya sd-scripts / kohya_ss GUI",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "Acly/krita-ai-diffusion",
+   "label": "Krita AI Diffusion",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "kvcache-ai/ktransformers",
+   "label": "KTransformers",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "ggml-org/llama.cpp",
+   "label": "llama.cpp",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "mozilla-ai/llamafile",
+   "label": "llamafile",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "lemonade-sdk/lemonade",
+   "label": "Local LLM desktop apps: LM Studio and Lemonade",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "mudler/LocalAI",
+   "label": "LocalAI",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "EricLBuehler/mistral.rs",
+   "label": "mistral.rs",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "mlc-ai/mlc-llm",
+   "label": "MLC-LLM",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "nunchux-ai/nunchaku",
+   "label": "nunchaku (SVDQuant 4-bit diffusion engine)",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "ollama/ollama",
+   "label": "Ollama",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "Nerogar/OneTrainer",
+   "label": "OneTrainer",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "microsoft/onnxruntime",
+   "label": "ONNX Runtime GPU execution providers",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "pytorch/pytorch",
+   "label": "PyTorch on native Windows (ROCm)",
+   "readiness": "ready",
+   "path": "amd-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "thu-ml/SageAttention",
+   "label": "SageAttention",
+   "readiness": "partial",
+   "path": "community-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "vladmandic/sdnext",
+   "label": "SD.Next",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "leejet/stable-diffusion.cpp",
+   "label": "stable-diffusion.cpp",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "oobabooga/textgen",
+   "label": "TextGen (text-generation-webui)",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "tinygrad/tinygrad",
+   "label": "tinygrad",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "triton-lang/triton-windows",
+   "label": "Triton on Windows (triton-windows)",
+   "readiness": "ready",
+   "path": "amd-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "NVIDIAGameWorks/Falcor",
+   "label": "Falcor",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "Tencent-Hunyuan/HY-WorldPlay",
+   "label": "HY-World 1.5 (WorldPlay)",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "undreamai/LLMUnity",
+   "label": "LLM for Unity (LLMUnity) and LlamaLib",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "SkyworkAI/Matrix-Game",
+   "label": "Matrix-Game (Skywork AI interactive world models)",
+   "readiness": "unknown",
+   "path": "community-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "optiscaler/OptiScaler",
+   "label": "OptiScaler",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "Overworldai/world_engine",
+   "label": "Overworld World Engine and Biome (Waypoint world models)",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "NVlabs/ProtoMotions",
+   "label": "ProtoMotions",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA-RTX/RTXNS",
+   "label": "RTX Neural Shaders SDK (RTXNS) and RTX Neural Materials",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA-RTX/RTXNTC",
+   "label": "RTX Neural Texture Compression (RTXNTC)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIAGameWorks/rtx-remix",
+   "label": "RTX Remix (Toolkit and AI Tools)",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "shader-slang/slang",
+   "label": "Slang",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "Unity-Technologies/ml-agents",
+   "label": "Unity ML-Agents Toolkit",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "nomadkaraoke/python-audio-separator",
+   "label": "Audio Separator",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "chaiNNer-org/chaiNNer",
+   "label": "chaiNNer",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "resemble-ai/chatterbox",
+   "label": "Chatterbox TTS",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "Fannovel16/ComfyUI-Frame-Interpolation",
+   "label": "ComfyUI video enhancement nodes (Frame-Interpolation CuPy ops, TensorRT upscaler/RIFE)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "idiap/coqui-ai-TTS",
+   "label": "Coqui TTS (maintained Idiap fork)",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "QwenAudio/CosyVoice",
+   "label": "CosyVoice",
+   "readiness": "unknown",
+   "path": "community-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "espnet/espnet",
+   "label": "ESPnet",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "SWivid/F5-TTS",
+   "label": "F5-TTS",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "hao-ai-lab/FastVideo",
+   "label": "FastVideo (sliding-tile and video sparse attention kernels)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "fishaudio/fish-speech",
+   "label": "Fish Speech",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "modelscope/FunASR",
+   "label": "FunASR",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "RVC-Boss/GPT-SoVITS",
+   "label": "GPT-SoVITS",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "k2-fsa/k2",
+   "label": "k2",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "KlingAIResearch/LivePortrait",
+   "label": "LivePortrait and talking-head / lip-sync stacks (FasterLivePortrait, MuseTalk, Wav2Lip)",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "Wan-Video/Wan2.2",
+   "label": "Open video-generation stacks (Wan 2.x, HunyuanVideo, LTX-Video; Wan2GP)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "pyannote/pyannote-audio",
+   "label": "pyannote.audio",
+   "readiness": "unknown",
+   "path": "community-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "hacksider/Deep-Live-Cam",
+   "label": "Real-time face-swap tools (Deep-Live-Cam, FaceFusion)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "RVC-Project/Retrieval-based-Voice-Conversion-WebUI",
+   "label": "RVC voice conversion (RVC WebUI, Applio)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "k2-fsa/sherpa-onnx",
+   "label": "sherpa-onnx",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "chaiNNer-org/spandrel",
+   "label": "Spandrel",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "speechbrain/speechbrain",
+   "label": "SpeechBrain",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "meta-pytorch/torchcodec",
+   "label": "TorchCodec GPU decoding (PyTorch's media I/O, NVDEC-only)",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "k4yt3x/video2x",
+   "label": "Video2X",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "AmusementClub/vs-mlrt",
+   "label": "vs-mlrt (VapourSynth ML runtimes: TensorRT vs MIGraphX)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "wenet-e2e/wenet",
+   "label": "WeNet",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "ggml-org/whisper.cpp",
+   "label": "whisper.cpp",
+   "readiness": "ready",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "collabora/WhisperLive",
+   "label": "WhisperLive (real-time transcription / live captioning server)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "m-bain/whisperX",
+   "label": "WhisperX (batched Whisper + alignment + diarization)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "microsoft/TRELLIS.2",
+   "label": "3D generation stacks (TRELLIS, TRELLIS.2, Hunyuan3D-2, InstantMesh)",
+   "readiness": "partial",
+   "path": "community-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "colmap/colmap",
+   "label": "COLMAP",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "nerfstudio-project/gsplat",
+   "label": "gsplat",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "RenderKit/oidn",
+   "label": "Intel Open Image Denoise",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "mitsuba-renderer/mitsuba3",
+   "label": "Mitsuba 3 / Dr.Jit",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "NVlabs/nvdiffrast",
+   "label": "nvdiffrast",
+   "readiness": "partial",
+   "path": "community-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIAGameWorks/kaolin",
+   "label": "NVIDIA Kaolin",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "isl-org/Open3D",
+   "label": "Open3D (GPU tensor stack)",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "cdcseacave/openMVS",
+   "label": "OpenMVS",
+   "readiness": "unknown",
+   "path": "none",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "facebookresearch/pytorch3d",
+   "label": "PyTorch3D",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "NVlabs/tiny-cuda-nn",
+   "label": "tiny-cuda-nn / Instant-NGP",
+   "readiness": "partial",
+   "path": "community-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "catboost/catboost",
+   "label": "CatBoost GPU",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "rapidsai/cucim",
+   "label": "cuCIM / hipCIM",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA/cuopt",
+   "label": "cuOpt",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "cupy/cupy",
+   "label": "CuPy",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "CVCUDA/CV-CUDA",
+   "label": "CV-CUDA",
+   "readiness": "unknown",
+   "path": "amd-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "rapidsai/dask-cuda",
+   "label": "Dask-CUDA",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA/DCGM",
+   "label": "DCGM + NVIDIA GPU Operator (GPU fleet management for AI clusters)",
+   "readiness": "ready",
+   "path": "amd-alternative",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "facebookresearch/faiss",
+   "label": "FAISS GPU (Meta)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "lightgbm-org/LightGBM",
+   "label": "LightGBM GPU",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "milvus-io/milvus",
+   "label": "Milvus GPU indexes (Knowhere)",
+   "readiness": "partial",
+   "path": "none",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "NVIDIA/numba-cuda",
+   "label": "Numba CUDA (vs Numba HIP)",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA-BioNeMo/bionemo-recipes",
+   "label": "NVIDIA BioNeMo (framework / recipes)",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "Project-MONAI/MONAI",
+   "label": "NVIDIA Clara / MONAI (vs MONAI on ROCm)",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "NVIDIA/cuvs",
+   "label": "NVIDIA cuVS (CAGRA, IVF-PQ)",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA/DALI",
+   "label": "NVIDIA DALI (vs AMD rocAL)",
+   "readiness": "ready",
+   "path": "amd-alternative",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA/earth2studio",
+   "label": "NVIDIA Earth-2 (earth2studio: CorrDiff, StormCast, cBottle)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA-Merlin/HugeCTR",
+   "label": "NVIDIA Merlin (NVTabular, HugeCTR)",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA-NeMo/Curator",
+   "label": "NVIDIA NeMo Curator",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA/physicsnemo",
+   "label": "NVIDIA PhysicsNeMo (formerly Modulus)",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA/nvImageCodec",
+   "label": "nvImageCodec / nvJPEG (vs rocJPEG)",
+   "readiness": "partial",
+   "path": "amd-alternative",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "pola-rs/polars",
+   "label": "Polars GPU engine (cudf-polars)",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "rusty1s/pytorch_scatter",
+   "label": "PyG extension libraries (torch-scatter, torch-sparse, torch-cluster, pyg-lib)",
+   "readiness": "unknown",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "getkeops/keops",
+   "label": "PyKeOps / KeOps",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "qdrant/qdrant",
+   "label": "Qdrant GPU indexing",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "NVIDIA/cudf-spark",
+   "label": "RAPIDS Accelerator for Apache Spark (cudf-spark)",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA/cudf",
+   "label": "RAPIDS cuDF",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "rapidsai/cugraph",
+   "label": "RAPIDS cuGraph (incl. nx-cugraph)",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "NVIDIA/cuml",
+   "label": "RAPIDS cuML",
+   "readiness": "not-yet",
+   "path": "none",
+   "owner_type": "nvidia-oss"
+  },
+  {
+   "full_name": "ray-project/ray",
+   "label": "Ray",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "scverse/scvi-tools",
+   "label": "scvi-tools",
+   "readiness": "unknown",
+   "path": "unknown",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "skypilot-org/skypilot",
+   "label": "SkyPilot",
+   "readiness": "partial",
+   "path": "upstream",
+   "owner_type": "third-party-oss"
+  },
+  {
+   "full_name": "dmlc/xgboost",
+   "label": "XGBoost GPU",
+   "readiness": "partial",
+   "path": "amd-fork",
+   "owner_type": "third-party-oss"
+  }
+ ],
+ "no_repo": [
+  "AMD Adrenalin AI Bundle (PyTorch, ComfyUI, Ollama, LM Studio, Amuse)",
+  "Windows ML execution providers (vs DirectML)",
+  "Neural shaders in games: Cooperative Vectors / DirectX LinAlg",
+  "Unity Sentis (Inference Engine, com.unity.ai.inference)",
+  "Topaz Video (formerly Topaz Video AI)"
+ ]
+}
