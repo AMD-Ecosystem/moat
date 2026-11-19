@@ -5139,3 +5139,168 @@ for key, got in res.items():
     vs_cpu = [np.abs(g - r).max() / np.abs(r).max() for g, r in zip(got, res[("cpu", 256)])]
     print(f"{key[0]:6s} bd{key[1]:3d}: rel err vs float64  C {rel[0]:.1e} adjA {rel[1]:.1e} adjB {rel[2]:.1e} | vs CPU kernel  C {vs_cpu[0]:.1e} adjA {vs_cpu[1]:.1e} adjB {vs_cpu[2]:.1e} | grads nonzero {bool(got[1].any() and got[2].any())}")
 ```
+
+## Windows HIP build experiment (2026-11-19, windows-gfx1151 laptop, not under the lock, nothing pushed)
+
+A private experiment in a local clone at `a8e95dcb` (no fork commit, no state change), to give the Phase 6 porter a tested starting diff. ROCm 10.2.0 TheRock wheels (`rocm[devel]` only, no device extra needed), HIP 7.17.26434, AMD clang 24.0.0git (x86_64-pc-windows-msvc), MSVC 14.44, `link.exe`.
+
+Build: `python build_lib.py --hip-arch gfx1151 -j 8` succeeds in 66 s, `warp.dll` 17.9 MB. `python build_lib.py -j 8` with the default list (22 Windows targets from `share/therock/dist_info.json`: gfx1010-1012, gfx1030-1036, gfx1100-1103, gfx1150-1153, gfx1200, gfx1201, gfx908, gfx90a) succeeds in about 12.5 min, `warp.dll` **290.5 MB**. That size is a Phase 7 number for Jeff (his ruling: bring him wheel size and build time if unreasonable; do not shorten the list yourself). ROCm auto-detection through `rocm-sdk path --root` works.
+
+What the diff does (54 insertions, 8 deletions in `build_dll.py`, `context.py`, `builtin.h`; full diff below): all host `.cpp` of `warp.dll` compile with ROCm's clang-cl (warp.h includes HIP headers); `--rocm-device-lib-path` for the wheels' layout; `.cu` through clang++ with the static MS runtime; link `amdhip64.lib`, `hiprtc.lib` and `clang_rt.builtins-x86_64.lib` (for `__extendhfsf2`/`__truncsfhf2`); the loader preloads `amdhip64` and `hiprtc` through `rocm_sdk.initialize_process` before `ctypes.CDLL(warp.dll, winmode=0)`, because that search order puts System32 first; `builtin.h:64` gains `&& !defined(_MSC_VER)` (`__debugbreak` is a builtin under MS compatibility). No `-fgpu-rdc` workaround was needed. Delay-loading `amdhip64` does not work: the `.cu` objects register fat binaries in static initialisers.
+
+For the porter to improve, not accept as is: the loader decides whether the DLL is a HIP build by scanning its bytes for `amdhip64_` (an mmap search of a DLL that can be 290 MB); a build-time marker would be cleaner. There is no fallback when `rocm_sdk` is not installed (a source build against a non-wheel ROCm then gets the default DLL search). Not linted. The CUDA Windows path was not compiled (nvcc compile on mi355 owed; Windows CUDA compile possible with the laptop's toolkit).
+
+Light validation on the gfx1151-only DLL, each once: device reports gfx1151 with hardware textures (1D/2D/3D); hipRTC kernel OK; WMMA layout probe for gfx11 0 of 256 wrong on all 6 lines and accumulation within bound; test_tile_matmul 25 OK; test_tile_shared_memory 30 OK (2 capability skips); test_texture 120 OK (1 skip); test_arithmetic 126, test_array 138, test_atomic 164, test_fp16 6, test_launch 32, test_utils 62, test_tile_sort 2, test_graph 35 (3 skips): all OK. The loaded runtime was the venv's `_rocm_sdk_core\bin\amdhip64_7.dll`, not System32 (psutil module list). With the abandoned delay-load attempt System32's copy was loaded and init still appeared to work, so a passing init is not evidence of the right runtime.
+
+**Open defect: `test_mesh.py` crashes the process on Windows.** At `test_mesh_refit_graph_cuda_0`, access violation 0xC0000005 with every frame in the venv's `amdhip64_7.dll` on a runtime thread, main thread in `wp.capture_launch`. Order-dependent: the test alone passes, `-k refit` passes, `-k refit -k raises -k new_del -k exceptions` crashes, so one of `test_mesh_create_raises_on_native_failure`, `test_mesh_exceptions_cuda_0`, `test_mesh_new_del`, `test_mesh_points_setter_raises_on_native_device_failure` must run first. Linux passes this file at the same head. Not narrowed further (stopped at three crashes). Either a Windows HIP runtime defect in graph replay or state left by those tests on the Windows path.
+
+Not run: the 82-pattern set, CPU-only suite, sdf/tex_alias probes, mma_check, tests against the 22-target DLL (init plus one kernel only). Environment notes for this laptop: packman's LLVM download needs the Windows root store exported to a PEM and `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE` (TLS interception); Git Bash needs the venv on PATH as `/d/...`.
+
+```diff
+diff --git a/warp/_src/build_dll.py b/warp/_src/build_dll.py
+index 93f99ac9..734a67e2 100644
+--- a/warp/_src/build_dll.py
++++ b/warp/_src/build_dll.py
+@@ -5,6 +5,7 @@ from __future__ import annotations
+ 
+ import concurrent.futures
+ import functools
++import glob
+ import json
+ import os
+ import pathlib
+@@ -591,6 +592,11 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, arch, libs: list[str
+         ]
+         if args.fast_math:
+             hip_opts.append("-ffast-math")
++        if os.name == "nt":
++            # ROCm Python packages keep the device libraries where the Windows driver does not look
++            hip_device_lib = os.path.join(os.path.dirname(os.path.dirname(hip_clang)), "amdgcn", "bitcode")
++            if os.path.isdir(hip_device_lib):
++                hip_opts.append(f'--rocm-device-lib-path="{hip_device_lib}"')
+     elif cu_paths:
+         # check CUDA Toolkit version
+         ctk_version = get_cuda_toolkit_version(cuda_home)
+@@ -650,19 +656,29 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, arch, libs: list[str
+         libmathdx_includes = ""
+         mathdx_enabled = "WP_ENABLE_MATHDX=0"
+ 
+-    if os.name == "nt" and rocm_path:
+-        raise RuntimeError("Warp build error: ROCm builds on Windows are not supported yet")
+-
+     if os.name == "nt":
+         if args.host_compiler:
+             host_linker = os.path.join(os.path.dirname(args.host_compiler), "link.exe")
+         else:
+             raise RuntimeError("Warp build error: No host compiler was found")
+ 
++        host_compiler = args.host_compiler
++        if rocm_path:
++            # MSVC cannot parse the HIP headers: host sources are compiled by ROCm's clang-cl,
++            # which takes the same options, and linked by the MSVC linker
++            host_compiler = os.path.join(os.path.dirname(hip_clang), "clang-cl.exe")
++
+         # Build include paths for LLVM and CUDA
+         llvm_include_paths = get_llvm_include_paths(args, warp_home_path, mode, arch)
+         cpp_includes = format_include_paths(llvm_include_paths, "/I")
+-        cuda_includes = f' /I"{cuda_home}/include"' if cu_paths else ""
++        if rocm_path:
++            # host sources see the CUDA headers they include through the HIP shims
++            cuda_includes = (
++                f' /D "WP_ENABLE_HIP=1" /D "__HIP_PLATFORM_AMD__" /I"{os.path.join(native_dir, "hip")}"'
++                f' /I"{rocm_path}/include"'
++            )
++        else:
++            cuda_includes = f' /I"{cuda_home}/include"' if cu_paths else ""
+         includes = cpp_includes + cuda_includes
+ 
+         # nvrtc_static.lib is built with /MT and _ITERATOR_DEBUG_LEVEL=0 so if we link it in we must match these options
+@@ -715,7 +731,7 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, arch, libs: list[str
+                     extra_flags = " /wd4624"  # suppress C4624: destructor was implicitly defined as deleted
+                 if "fastcall.cpp" in cpp_path:
+                     extra_flags += f' /I"{python_include_dir}" /DPy_LIMITED_API=0x030a0000'  # Python 3.10
+-                cpp_cmd = f'"{args.host_compiler}" {cpp_flags}{extra_flags} -c "{cpp_path}" /Fo"{cpp_out}"'
++                cpp_cmd = f'"{host_compiler}" {cpp_flags}{extra_flags} -c "{cpp_path}" /Fo"{cpp_out}"'
+                 cpp_cmds.append(cpp_cmd)
+ 
+             if args.jobs <= 1:
+@@ -734,7 +750,14 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, arch, libs: list[str
+                         opt.replace("@filename@", os.path.basename(cu_path).replace(".", "_")) for opt in nvcc_opts
+                     ]
+ 
+-                    if mode == "debug":
++                    if rocm_path:
++                        # match the host objects: static CRT, release iterators
++                        hip_win_opts = f'{" ".join(hip_opts)} -fms-runtime-lib=static -DNDEBUG -D_ITERATOR_DEBUG_LEVEL=0 -DWP_ENABLE_CUDA=1 -I"{native_dir}" -D{mathdx_enabled}'
++                        if mode == "debug":
++                            cuda_cmd = f'"{hip_clang}" {hip_win_opts} -g -O0 -o "{cu_out}" -c "{cu_path}"'
++                        elif mode == "release":
++                            cuda_cmd = f'"{hip_clang}" {hip_win_opts} -O3 -o "{cu_out}" -c "{cu_path}"'
++                    elif mode == "debug":
+                         cuda_cmd = f'{nvcc_cmd} --std=c++17 --compiler-options=/MT,/Zi,/Od -g -G -O0 -DNDEBUG -D_ITERATOR_DEBUG_LEVEL=0 -I"{native_dir}" -line-info {" ".join(_nvcc_opts)} -DWP_ENABLE_CUDA=1 -D{mathdx_enabled} {libmathdx_includes} -o "{cu_out}" -c "{cu_path}"'
+                     elif mode == "release":
+                         cuda_cmd = f'{nvcc_cmd} --std=c++17 -O3 {" ".join(_nvcc_opts)} -I"{native_dir}" -DNDEBUG -DWP_ENABLE_CUDA=1 -D{mathdx_enabled} {libmathdx_includes} -o "{cu_out}" -c "{cu_path}"'
+@@ -743,7 +766,18 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, arch, libs: list[str
+ 
+                     linkopts.append(quote(cu_out))
+ 
+-                if args.use_dynamic_cuda:
++                if rocm_path:
++                    linkopts.append(f'amdhip64.lib hiprtc.lib /LIBPATH:"{rocm_path}/lib"')
++                    # Clang calls its runtime for float16 conversions on x86-64, and the MSVC linker
++                    # does not add that library by itself
++                    llvm_lib = os.path.join(os.path.dirname(os.path.dirname(hip_clang)), "lib")
++                    linkopts.extend(
++                        quote(path)
++                        for path in glob.glob(
++                            os.path.join(llvm_lib, "clang", "*", "lib", "windows", "clang_rt.builtins-x86_64.lib")
++                        )
++                    )
++                elif args.use_dynamic_cuda:
+                     linkopts.append(
+                         f'cudart.lib nvrtc.lib nvptxcompiler_static.lib ws2_32.lib user32.lib /LIBPATH:"{cuda_home}/lib/x64"'
+                     )
+diff --git a/warp/_src/context.py b/warp/_src/context.py
+index 041525a8..8ea633ac 100644
+--- a/warp/_src/context.py
++++ b/warp/_src/context.py
+@@ -17,6 +17,7 @@ import inspect
+ import io
+ import itertools
+ import json
++import mmap
+ import operator
+ import os
+ import platform
+@@ -4645,6 +4646,17 @@ class Runtime:
+             warp_lib = os.path.join(bin_path, "warp.so")
+             llvm_lib = os.path.join(bin_path, "warp-clang.so")
+ 
++        if os.name == "nt" and importlib.util.find_spec("rocm_sdk"):
++            # A library built for AMD GPUs imports the HIP runtime. Load that by full path from
++            # the ROCm Python packages first, so that another copy on the DLL search path (the
++            # display driver installs one in System32) is not picked up instead.
++            with open(warp_lib, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as image:
++                is_hip_lib = image.find(b"amdhip64_") >= 0
++            if is_hip_lib:
++                import rocm_sdk  # noqa: PLC0415
++
++                rocm_sdk.initialize_process(preload_shortnames=["amdhip64", "hiprtc"])
++
+         self.core = self.load_dll(warp_lib)
+ 
+         if os.path.exists(llvm_lib):
+diff --git a/warp/native/builtin.h b/warp/native/builtin.h
+index b5aa12d4..8b82aead 100644
+--- a/warp/native/builtin.h
++++ b/warp/native/builtin.h
+@@ -61,7 +61,7 @@
+ 
+ #if defined(__CUDACC__) && !defined(_MSC_VER)
+ __device__ inline void __debugbreak() { __brkpt(); }
+-#elif defined(__HIP_DEVICE_COMPILE__)
++#elif defined(__HIP_DEVICE_COMPILE__) && !defined(_MSC_VER)
+ __device__ inline void __debugbreak() { __builtin_debugtrap(); }
+ #endif
+ 
+```
