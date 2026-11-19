@@ -590,6 +590,8 @@ NVIDIA GPU; this host has none.)
 
 ## Lesson for cuda-to-rocm: an nvcc Makefile's link line does not carry over to hipcc verbatim
 
+Promoted to cuda-to-rocm/references/build-cmake-link.md in bb61ae96.
+
 Belongs in `build-cmake-link.md` (plain-Makefile builds).
 
 Porting a hand-written Makefile from nvcc to hipcc, two link-line idioms change
