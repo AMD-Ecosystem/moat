@@ -42,3 +42,4 @@
 {"kind":"phase","ts":"2026-11-19T00:00:16Z","phase":"bench","seconds":25.527,"exit":1,"cmd":"bash agent_space/wppy.sh agent_space/bench/bench_tile_matmul.py --blocks 16384 --iters 50 --csv agent_space/bench/gfx950_run1.csv"}
 {"kind":"phase","ts":"2026-11-19T00:00:42Z","phase":"bench","seconds":25.486,"exit":1,"cmd":"bash agent_space/wppy.sh agent_space/bench/bench_tile_matmul.py --blocks 16384 --iters 50 --csv agent_space/bench/gfx950_run2.csv"}
 {"kind":"phase","ts":"2026-11-19T00:01:07Z","phase":"bench","seconds":25.503,"exit":1,"cmd":"bash agent_space/wppy.sh agent_space/bench/bench_tile_matmul.py --blocks 16384 --iters 50 --csv agent_space/bench/gfx950_run3.csv"}
+{"kind":"session","ts":"2026-11-19T00:04:23Z","epoch":1795046663.097431142,"event":"end","platform":"linux-gfx950"}
