@@ -1,0 +1,189 @@
+{
+  "schema_version": 3,
+  "name": "HEonGPU",
+  "upstream_url": "https://github.com/enCRYPTON-labs/HEonGPU",
+  "fork_url": "https://github.com/AMD-Ecosystem/HEonGPU",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-05T01:19:23Z",
+  "updated_at": "2026-11-18T03:53:36Z",
+  "head_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+  "depends_on": [],
+  "waivers": {
+    "windows": {
+      "reason": "A dependency has no Windows build. At fork head 537cdca the port requires hipMM 5.0.0 (commit dccfd94), which does not compile on Windows: rmm/detail/runtime_capabilities.hpp includes dlfcn.h, and rmm/mr/detail/arena.hpp assumes a 64-bit unsigned long (1UL << 40) and pointer-like std::array iterators. Its dependency libhipcxx (90b6a2b) calls the device-only _wassert from host code in the AMD Windows branch of cuda/std/__cccl/assert.h (154 translation units). hipMM 5.0.0 also calls hipMemGetDefaultMemPool, which the TheRock 7.14.0a20260612 Windows wheels on the gfx1151 host do not declare. Evidence: notes.md, Validation 2026-11-17 windows-gfx1151 at 537cdca (171 failed build steps with the documented command). With throwaway local patches to hipMM, libhipcxx and fmt the port's own code passed 309 of 310 tests on Windows, so the obstacle is the dependency, not the port. Linux gfx942, gfx1100 and gfx90a completed at this head. Revisit when hipMM and libhipcxx build on Windows.",
+      "suggested_at": "2026-11-17T16:31:21Z",
+      "approved_by": "jeffdaily",
+      "at": "2026-11-17T16:31:25Z"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 866783897,
+  "stage": "review-passed",
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": true,
+      "blocked_reason": "Blocked by jeffdaily's ruling of 2026-11-17: hipMM 5.0.0, which the port requires, does not build on Windows (https://github.com/AMD-Ecosystem/hipMM/issues/11); the windows gate is waived on the same ground. Clear the block when hipMM builds on Windows.",
+      "validated_sha": "542ea1a127e7b963f92ca7a6c88d96cbbfbef439",
+      "failed_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+      "started_at": "2026-08-13T02:40:37Z",
+      "completed_at": "2026-08-19T04:22:31Z",
+      "updated_at": "2026-11-17T20:28:01Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "validation-failed",
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "3c88f16bc09d23f87cb94bf8245ae3f556f2c1b6",
+        "to": "542ea1a127e7b963f92ca7a6c88d96cbbfbef439",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "src/include/heongpu/kernel/defines.h: comment-only (comments/format only)",
+        "at": "2026-08-19T23:01:00Z"
+      }
+    },
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+      "started_at": "2026-08-08T17:50:20Z",
+      "completed_at": "2026-11-17T09:31:18Z",
+      "updated_at": "2026-11-17T16:45:59Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed",
+      "carry_forward": {
+        "from": "537cdcaf806f7bc17a8c93f93642fa4eef3c3416",
+        "to": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-11-17T16:45:59Z"
+      }
+    },
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+      "started_at": "2026-06-05T05:28:40Z",
+      "completed_at": "2026-11-17T10:17:03Z",
+      "updated_at": "2026-11-17T16:45:59Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed",
+      "carry_forward": {
+        "from": "537cdcaf806f7bc17a8c93f93642fa4eef3c3416",
+        "to": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-11-17T16:45:59Z"
+      }
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+      "failed_sha": null,
+      "started_at": "2026-11-17T06:15:44Z",
+      "completed_at": "2026-11-17T09:54:24Z",
+      "updated_at": "2026-11-17T20:47:32Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "state": "completed",
+      "carry_forward": {
+        "from": "537cdcaf806f7bc17a8c93f93642fa4eef3c3416",
+        "to": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-11-17T16:45:59Z"
+      }
+    }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/HEonGPU/pull/1",
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-17T20:45:46Z",
+    "at": "2026-11-17T20:47:32Z"
+  },
+  "porting": null,
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-17T17:48:09Z",
+    "head_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+    "content_sha256": "ae9ce471ca3881ae6a6223c13b4f54ec87784a5009c0416d178fdfd295163b91",
+    "review_pr": "https://github.com/AMD-Ecosystem/HEonGPU/pull/1"
+  },
+  "pr_url": "https://github.com/enCRYPTON-labs/HEonGPU/pull/41",
+  "pr_number": 41,
+  "pr_opened_at": "2026-11-17T18:45:29Z",
+  "pr_state": "open",
+  "published_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+  "fix": null,
+  "fix_abandoned": [
+    {
+      "branch": "moat-fix-41",
+      "base_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+      "tip_sha": "1b4e781d83cf16e9090075f69db4e06688ab9d61",
+      "by": "jeffdaily",
+      "reason": "Defect already fixed upstream in 2c9a555 and 7c93d4d, both in the published head 1b4e781; no change needed. moat-fix-41 was never pushed.",
+      "at": "2026-11-17T20:42:57Z"
+    }
+  ],
+  "upstream_url_ruling": {
+    "url": "https://github.com/enCRYPTON-labs/HEonGPU",
+    "previous": "https://github.com/Alisah-Ozcan/HEonGPU",
+    "by": "jeffdaily",
+    "at": "2026-11-18T03:53:36Z",
+    "reason": "Repository transferred from Alisah-Ozcan to the enCRYPTON-labs organization; upstream PR 41 lives there."
+  }
+}
