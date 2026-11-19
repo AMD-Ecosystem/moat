@@ -63,3 +63,4 @@
 {"kind":"phase","ts":"2026-11-19T01:40:01Z","phase":"build","seconds":25.452,"exit":0,"cmd":"bash agent_space/build_cuda.sh agent_space/cuda_wt --no-use-libmathdx"}
 {"kind":"phase","ts":"2026-11-19T01:41:18Z","phase":"test","seconds":0.002,"exit":1,"cmd":"bash agent_space/wptest_nogpu.sh -s autodetect -k cpu -m 32"}
 {"kind":"phase","ts":"2026-11-19T01:42:42Z","phase":"test","seconds":79.026,"exit":0,"cmd":"bash agent_space/wptest_nogpu.sh projects/warp-1.14/src -s autodetect -k cpu -m 32"}
+{"kind":"session","ts":"2026-11-19T01:44:11Z","epoch":1795052651.064684,"event":"end","platform":"linux-gfx950"}
