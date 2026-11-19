@@ -775,3 +775,52 @@ ctest --test-dir agent_space/bval/tests -R PqcTest -V --output-on-failure
 - Jargon: `python3 utils/jargon.py --port icicle` NOT clean, the same 1 hit as on gfx90a: commit 98d8bca line 18, Test Plan `git -C projects/icicle/src grep ...`. `audit-commits` also flags 2609ca4 ("Test Plan has no fenced command block"). No hit in tree content. Recorded `validation-failed --gate jargon` the same way as gfx90a; the GPU pass at 7d1cb07 is kept (`gpu_passed_sha`). jeff's planned identical-content history rewrite removes the hit; afterwards `squash-carry-forward` (or `carry-forward`) completes this platform from the kept pass with no GPU re-run.
 
 Verdict: GPU PASS on gfx1100 (58/58 backend, 6/6 frontend, 0 skipped) at 7d1cb07; platform recorded validation-failed --gate jargon for the old commit-message hit only.
+## CUDA-path compile check at 7d1cb07 and first combined CUDA-PQC + HIP-PQC build, 2026-11-19 (linux-gfx950 host, real nvcc, no NVIDIA GPU) -- both PASS
+
+Evidence only: no stage or platform record changed, nothing pushed to the fork, no fork source edits. Compile and link only; no test binary was run on purpose and the AMD GPU was not used (note: `gtest_discover_tests` runs each test binary with `--gtest_list_tests` as a post-build step, as in any upstream build; that lists tests and launches no kernel).
+
+Trees: fork `moat-port` at 7d1cb0708462b3dfa712e49c524622930f42fe3f ("port", the record head_sha) and the merge base with upstream main 625532a624e5aaa6e9d31a1c92587f1fcc30dc76 ("base", `git merge-base 7d1cb07 origin/main`), cloned from AMD-Ecosystem/icicle into the job directory (`$W`). Toolchain: CUDA 12.8 (`/usr/local/cuda-12.8/bin/nvcc`, V12.8.93), GCC 13.3.0, CMake 3.31.6, Ninja (venv); HIP side pip ROCm SDK 10.1.0 (`R=$(rocm-sdk path --root)`, AMD clang 24.0.0git).
+
+### 1. CUDA PQC, upstream `test-pqc-ml-kem` CI flags -- PASS, identical to base
+
+Same flags as the earlier check (the CI job line is unchanged at 7d1cb07: `.github/workflows/ci.yml:906`), plus `-DCUDA_ARCH="80;86;89"` because the host has no GPU for `native`:
+```
+# T=base and T=port
+cmake --fresh -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DDISABLE_ALL_FEATURES=ON \
+  -DCUDA_PQC_BACKEND=ON -DCUDA_ARCH="80;86;89" \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
+  -S $W/$T/icicle -B $W/$T/icicle/build
+cmake --build $W/$T/icicle/build -j 64
+```
+| tree | configure | build |
+|---|---|---|
+| base 625532a | exit 0 (9 s) | exit 0 (34 s); 35 compile+link steps, 17 targets, `[100%] Built target test_ml_kem` |
+| port 7d1cb07 | exit 0 (9 s) | exit 0 (34 s); 35 compile+link steps, 17 targets, `[100%] Built target test_ml_kem` |
+
+Same 17 targets as recorded for 2609ca4 (icicle_device, icicle_pqc, icicle_backend_cuda_pqc, copy_pqc_libs, copy_test_data, gtest, gtest_main, test_device_api, test_pqc_api, test_kyber, test_ml_kem, test_kyber_hashes, test_ml_kem_keygen, test_ml_kem_encaps, test_ml_kem_decaps, test_pke_encrypt, test_pke_decrypt). Configure and build logs, sorted with paths and percentages stripped, are byte-identical between base and port; both have the same 53 warning lines (36 x nvcc #20054-D in cuda_pke_decrypt.cuh:15, 4 x #549-D `d_z` in cuda_pqc/tests/ml_kem/test_ml_kem.cu:112, 13 "Remark" lines), all upstream. `cuobjdump --list-elf` on the port's `libicicle_backend_cuda_pqc.so` shows sm_80/86/89 cubins. Verdict: no CUDA-path compile or link regression at head_sha.
+
+### 2. Combined `CUDA_PQC_BACKEND=ON HIP_PQC_BACKEND=ON BUILD_TESTS=ON` -- now configures and builds
+
+The exact command that failed at 2609ca4 (nine CMP0002 duplicate targets):
+```
+cmake --fresh -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DDISABLE_ALL_FEATURES=ON \
+  -DCUDA_PQC_BACKEND=ON -DHIP_PQC_BACKEND=ON -DCUDA_ARCH="80;86;89" \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
+  -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++ -DCMAKE_HIP_ARCHITECTURES=gfx950 -DCMAKE_PREFIX_PATH=$R \
+  -S $W/port/icicle -B $W/port/icicle/build-combo
+cmake --build $W/port/icicle/build-combo -j 64
+```
+- Configure: exit 0 (11.6 s), no CMake error. "Building CUDA-PQC backend" then "Building HIP-PQC backend (ROCm)". Warnings are the ones a CUDA-only configure prints (setup.cmake clang hint, Taskflow cache, googletest deprecation) plus one more FetchContent CMP0135 dev warning for the HIP test directory's own googletest declaration.
+- Build: exit 0 (23 s), 28 targets: the 17 CUDA-only targets plus icicle_backend_hip_pqc, copy_hip_pqc_libs, copy_hip_test_data, hip_test_kyber, hip_test_kyber_hashes, hip_test_ml_kem, hip_test_ml_kem_keygen, hip_test_ml_kem_encaps, hip_test_ml_kem_decaps, hip_test_pke_encrypt, hip_test_pke_decrypt. The nine former collisions are gone (7d1cb07's rename). Repeated with `-G Ninja` into `build-combo-ninja` for an uninterleaved log: exit 0, `[58/58]`.
+- Device code: `libicicle_backend_cuda_pqc.so` has the sm_80/86/89 cubins; `libicicle_backend_hip_pqc.so` has a `.hip_fatbin` section (gfx950). Both libraries land side by side in `build-combo/lib/`; the test-data copies go to separate per-backend test dirs.
+- Warnings (Ninja log): the nvcc warning lines are identical to base's 40 (#20054-D x36, #549-D x4). The HIP-side warning lines (1484, all `-Wunused-value` nodiscard `hipError_t`: the hip_pqc test sources' unchecked cudaMalloc/cudaMemcpy/cudaFree through the shim, plus gpu-utils utils.h/error_handler.h) are line-for-line identical to a HIP-only Ninja build at the same head (`-DCPU_BACKEND=ON -DHIP_PQC_BACKEND=ON -DCUDA_PQC_BACKEND=OFF -DPQC=ON -DBUILD_TESTS=ON`, gfx950, exit 0). So the combination adds no new warning on either side.
+
+What differs in a combined build, besides the extra targets -- the last-wins `BACKEND_BUILD_DIR`, now confirmed from the generated flags:
+
+| target dir | CUDA-only (upstream, and port) | combined |
+|---|---|---|
+| backend/cuda_pqc/tests (8 targets) | `build/backend/cuda_pqc` (per-target) | `build-combo/backend/cuda_pqc` |
+| backend/hip_pqc/tests (8 targets) | n/a | `build-combo/backend/hip_pqc` |
+| tests/ (test_pqc_api, test_device_api) | none (no define) | `build-combo/backend/hip_pqc` |
+
+Upstream's CUDA-PQC block in `cmake/backend_include.cmake` defines no directory-scope `BACKEND_BUILD_DIR`, so a CUDA-only frontend test finds its backend only through `ICICLE_BACKEND_INSTALL_DIR` or the `/opt/icicle/lib/backend` default (`src/runtime.cpp:355-380`). In a combined build the HIP-PQC block's `add_compile_definitions` gives the frontend tests the hip_pqc directory, and `test_base.h:32` `setenv(..., 0)` uses it unless the env var is set. Consequences, inferred from source and not observed (nothing was run): (a) on an NVIDIA machine, a combined build's `test_pqc_api` with no env var loads only the HIP-PQC backend and does not exercise CUDA-PQC; (b) pointing `ICICLE_BACKEND_INSTALL_DIR` at a directory holding both DSOs (`build-combo/lib`, the loader recurses) would register CPU + CUDA-PQC + HIP-PQC, and `IcicleTestBase::SetUpTestSuite` asserts `ASSERT_LE(s_registered_devices.size(), 2)` (`test_base.h:37`). Neither touches the CUDA-only or HIP-only configurations. Whether the combined configuration should be supported beyond building (for example, defining `BACKEND_BUILD_DIR` only when HIP-PQC is the sole GPU PQC backend) is the porter's or jeff's call; no change made here.
