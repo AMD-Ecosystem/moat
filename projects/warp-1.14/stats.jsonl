@@ -183,3 +183,8 @@
 {"kind":"phase","ts":"2026-11-19T17:32:52Z","phase":"test","seconds":1524.665,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/warp-win/p6/run82.sh"}
 {"kind":"phase","ts":"2026-11-19T17:44:27Z","phase":"test","seconds":484.38,"exit":0,"cmd":"bash -c source /d/Develop/moat/agent_space/warp-win/p6env.sh; export WARP_CACHE_PATH=\"D:\\Develop\\moat\\agent_space\\warp-win\\wpcache-cpuonly\" HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99; cd /d/Develop/moat/agent_space/warp-win/p6 && timeout 5400 $VPY -m warp.tests -s autodetect -k cpu -m 4 > $LOGS/p6_cpuonly.log 2>&1; echo rc=$? >> $LOGS/p6_cpuonly.log"}
 {"kind":"phase","ts":"2026-11-19T18:01:11Z","phase":"test","seconds":1497.752,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/warp-win/p6/run82.sh"}
+{"kind":"phase","ts":"2026-11-19T18:18:48Z","phase":"compile","seconds":72.079,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/warp-win/fixwt && /d/Develop/moat/agent_space/warp-win/venv/Scripts/python.exe build_lib.py --hip-arch gfx1151 -j 8"}
+{"kind":"phase","ts":"2026-11-19T18:19:32Z","phase":"test","seconds":354.265,"exit":143,"cmd":"bash /d/Develop/moat/agent_space/warp-win/p14/fem_files.sh"}
+{"kind":"phase","ts":"2026-11-19T18:25:20Z","phase":"test","seconds":146.828,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/warp-win/p14/fix_pats.sh"}
+{"kind":"phase","ts":"2026-11-19T18:34:17Z","phase":"test","seconds":514.219,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/warp-win/p14/fem_files.sh"}
+{"kind":"phase","ts":"2026-11-19T18:36:41Z","phase":"test","seconds":67.659,"exit":0,"cmd":"timeout 900 /d/Develop/moat/agent_space/warp-win/venv/Scripts/python.exe -X faulthandler -m unittest warp.tests.fem.test_fem_examples warp.tests.fem.test_fem_integrate warp.tests.fem.test_fem_multi_env"}

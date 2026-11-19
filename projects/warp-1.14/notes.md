@@ -5951,3 +5951,216 @@ The project stays in `porting`, lock held by windows-gfx1151, as directed: Phase
 **Phase 7 (wheels):** `setup.py` must ship `warp/bin/warp.dll.rocm` in a Windows ROCm wheel, or the installed wheel's loader cannot tell it is a HIP build and binds the System32 runtime. A wheel built on CI records the build machine's ROCm root; harmless, because the loader prefers `rocm_sdk`, which the wheel depends on.
 
 **For Jeff (no decision taken):** the default Windows target list costs about 13 MB uncompressed and 1.07 MB zipped per target (22 targets: 290.5 MB DLL, 24.4 MB zipped); `--offload-compress` is the untried alternative to a shorter list.
+
+## Porting session 14 (2026-11-19, windows-gfx1151 laptop, porter): Windows graph-replay findings
+
+Bounded diagnosis round inside the windows-gfx1151 `porting` lock (lock and stage untouched). Fork `release/1.14.0.amd0` advanced `fda2f89a..de4e07a3` (pushed, `advance-head` recorded). Environment as session 13 (`agent_space/warp-win/p6env.sh`, ROCm 10.2 wheels, HIP 7.17.26434). Scripts in `agent_space/warp-win/p14/`, logs in `agent_space/warp-win/logs/` (`p14_*`, `p14fem/`, `p14fix/`). No driver reset, device-lost line or display glitch at any point.
+
+### Items 2 and 3: one HIP runtime race, Windows only (verdict: runtime defect; port workaround committed)
+**Cause (read from the HIP source, confirmed by logs and a standalone reproducer).** `GraphExec::Run` (clr `hipamd/src/hip_graph_internal.cpp`; TheRock's April checkout and rocm-systems `develop` today, `GraphExecClassic::Run`, have the same code) does, for a graph instantiated with `hipGraphInstantiateFlagAutoFreeOnLaunch` (Warp instantiates every graph so):
+```cpp
+parentGraph->FreeAllMemory(launch_stream);   // on the launching thread
+parentGraph->memalloc_nodes_ = 0;
+if (!AMD_DIRECT_DISPATCH) launch_stream->finish();
+...
+if (repeatLaunch_ && GetMemAllocNodeCount() > 0) return hipErrorInvalidValue;
+```
+`AMD_DIRECT_DISPATCH` defaults to `IS_LINUX` (`rocclr/utils/flags.hpp`), so on Windows it is off (the AMD_LOG_LEVEL=3 log prints `Direct Dispatch: 0`) and the graph's commands, including the mem-alloc node (`VirtualMemAllocNode::submit`, increments `memalloc_nodes_`) and mem-free node (`VirtualMemFreeNode::submit`, returns the allocation to the pool and decrements it), run on the runtime's worker thread. When the next `hipGraphLaunch` of the same exec arrives while the previous launch has executed its alloc but its free node still waits behind a running kernel, `FreeAllMemory` on the launching thread frees that allocation first; the worker then frees memory the pool no longer owns (`:1:hip_graph_internal.hpp:3823: Memory didn't belong to any pool!`) and `memalloc_nodes_` (a plain `uint32_t` written from two threads) underflows. Outcomes: an access violation in the worker thread at `amdhip64_7.dll + 0x160C6C` (item 3), or `hipErrorInvalidValue` from the repeat-launch check (item 2). The comment in that block already names the race for the unmap, but the wait comes after the free. On Linux the runtime dispatches directly on the calling thread, which is why every Linux GPU passes.
+
+**Standalone reproducer** `p14/graph_autofree_race.hip` (below; `clang++ -x hip --rocm-path=$R --rocm-device-lib-path=$R/lib/llvm/amdgcn/bitcode --offload-arch=gfx1151 -O2 -w graph_autofree_race.hip -o graph_autofree_race.exe -L$R/lib -lamdhip64`, `R=$(python -m rocm_sdk path --root)`, TheRock `amdhip64_7.dll` next to the exe, md5 identical to the venv's): capture `hipMallocAsync` -> 2 ms spin kernel -> small kernel -> `hipFreeAsync`, instantiate with AutoFreeOnLaunch, launch 10 times back to back.
+- `graph_autofree_race 10 2000`: **access violation at `amdhip64_7.dll + 0x160C6C`** after launch 1 (same address as the Warp crash), twice in two runs (once plain, once under `AMD_LOG_LEVEL=3`, log `logs/p14_repro_log3.txt`: launch 1's `hipGraphLaunch` logs `Pool FreeMem` while launch 0's `spin` kernel runs, then `Memory didn't belong to any pool!`, launch 1 takes 17240 us (the `finish()`), crash during launch 2).
+- `graph_autofree_race 10 2000 sync` (hipStreamSynchronize before each launch): PASS, 0 of 10.
+- `graph_autofree_race 10 200` (short kernel, free node done before the next launch): PASS. The session 13 reproducer `graph_memnode.hip` used tiny kernels, hence no failure.
+
+**Warp-level evidence.**
+- Item 3, crashing run 4 of 6 (1 of this session's 3): `AMD_LOG_LEVEL=3 PYTHONFAULTHANDLER=1 python p6/mesh_seq.py graph` on `fda2f89a` -> access violation at `amdhip64_7.dll + 0x160C6C` during sah replay 8 (main thread in `capture_launch`, context.py:10603); one launch earlier the log has `Pool FreeMem` from the launching thread while the rocPRIM scan of the previous replay runs, then `Memory didn't belong to any pool!` (`logs/p14_meshbase_log3_1.log`). It crashed on the first constructor (sah) with no earlier graph destroyed: session 13's "needs a destroyed previous graph" was timing. The other two crashing runs were not needed.
+- Item 2: the grouped BVH capture holds 9 mem-alloc and 9 mem-free nodes, 20 kernels, 5 memcpy, 1 memset (`p14/gb_burst.py 1 dot`, `capture_debug_dot_print`), so it is in the same family. Failing runs used: **0 of 6**; it did not fail in four tries on `fda2f89a` (`python -m unittest -v warp.tests.geometry.test_grouped_bvh` with `AMD_LOG_LEVEL=1` twice, the runner `-p test_grouped_bvh.py -m 2` once, `gb_burst.py 5` back-to-back replays once), because the test's host-side `assign` between launches usually lets the previous launch finish. So the smallest failing prefix and an AMD_LOG_LEVEL=3 log of item 2 itself were not obtained; the attribution rests on the mechanism (the only path in `hipGraphLaunch` that returns `hipErrorInvalidValue` for a valid exec and stream is the repeat-launch `memalloc_nodes_` check, which the race corrupts) and on the fix below removing the window.
+- No known report covers it: deferred.json's HIP graph entries (rocm-systems 16184 null-stream hipMallocAsync during capture, 16188 graph memcpy on device != 0, and the others) are different defects; `gh search issues --repo ROCm/rocm-systems AutoFreeOnLaunch` and "hipGraphLaunch invalid" found nothing.
+
+**Port fix `de4e07a3` [ROCm] Wait for the previous graph launch on Windows**: `warp/native/hip_compat.h` +18. Under `#if defined(_WIN32)`, `cudaGraphLaunch` maps to an inline `wp_hip_graph_launch` that calls `hipStreamSynchronize(stream)` before `hipGraphLaunch` when `hipStreamIsCapturing` reports the stream is not capturing; elsewhere it stays `hipGraphLaunch`. Covers both call sites (`warp.cu` `wp_cuda_graph_launch`, `apic.cu` `wp_apic_launch`) without touching them. Cost: on Windows the runtime already blocks in `launch_stream->finish()` inside every AutoFreeOnLaunch launch of a non-empty graph, so moving the wait ahead of the free adds about one extra synchronize call per launch; Linux HIP and CUDA builds unchanged (the file is HIP-only, the branch Windows-only). clang-format 22.1.2 clean, jargon clean, commit CR-free.
+- Built in a separate worktree (`agent_space/warp-win/fixwt`, `python build_lib.py --hip-arch gfx1151 -j 8`, "Warp build succeeded"), tested with `PYTHONPATH` pointing at it:
+  - `mesh_seq.py graph` 3 runs: **3 of 3 pass** (30 replays each); the same command on `fda2f89a` crashed in session 13 runs 1, 3 and 9 and in this session's one run.
+  - `p14/fix_pats.sh` (one pattern at a time, `-m 2`): test_grouped_bvh 11 OK; test_mesh* 49 OK (18 skipped, usd-core); test_bvh 13 OK; test_graph 35 OK (3 skipped); test_array_fill_capture 3 OK; test_capture_mode 2 OK; test_conditional_captures 32 OK (16 skipped); test_mempool 7 OK (2 skipped); test_allocator 16 OK (3 skipped); test_allocation_tracker 34 OK; test_sparse 47 OK; test_apic 52 OK; test_streams 24 run, 1 failure = the known `test_event_external` upstream race (session 13 item b), 3 skipped. Same counts as session 13's table.
+- The fork clone's own `warp/bin/warp.dll` is still the `fda2f89a` build (the unfixed runs above and the fem run below used it); rebuild before further testing in that tree.
+- **Proposed if Jeff prefers no workaround:** a skip would be capability-named, e.g. "graph memory nodes replayed back to back race in the HIP runtime without direct dispatch" on `test_mesh_refit_graph` and `test_grouped_capture_bvh_rebuild`; not added. Registered `hip-graph-autofree-relaunch-races-worker-memfree` (rocm-bug-report, HIP, unruled).
+
+### Item 1: test_fem* (verdict: the same runtime race; fixed by `de4e07a3`; the exact test that killed session 13's pool worker is not named)
+`p14/fem_files.sh` (below): each fem file in its own single process, `python -X faulthandler -m unittest -v warp.tests.fem.<file>`, `PYTHONFAULTHANDLER=1`, 900 s timeout each, on `fda2f89a`, fresh kernel cache:
+
+| file | ran | result |
+|---|---|---|
+| test_fem_shape | 4 | 1 failure: `test_cube_shape_functions`, "Unexpected output" holding the init greeting (known upstream isolation failure) |
+| test_fem_quadrature | 5 | 1 failure: `test_gimp_quadrature`, same (known) |
+| test_fem_geometry | 22 | OK (1 skipped) |
+| test_fem_field | 6 | OK |
+| test_fem_linalg | 5 | OK |
+| test_fem_integrate | 17 | OK |
+| test_fem_fp64 | 16 | OK |
+| test_fem_multi_env | 10 | OK (1 skipped) |
+| test_fem_examples | 23 | **1 failure: `test_fem.example_diffusion_mgpu_cuda_0`**, the example subprocess died with 3221225477 (0xC0000005): access violation at `amdhip64_7.dll + 0x160C6C` on the runtime worker thread, main thread in `capture_launch` (context.py:10603) from the capturable CG loop (`optim/linear.py:1796 _run_solver_loop`, called from `examples/fem/utils.py:349 bsr_cg`) |
+
+108 tests, the session 13 total. No in-process crash in single-process mode. `python -m warp.examples.fem.example_diffusion_mgpu --device cuda:0 --headless`: on `fda2f89a` 1 more run, crashed again at the same address (2 of 2); with `de4e07a3` (fixwt) **2 of 2 pass**. With `de4e07a3`: `python -X faulthandler -m unittest warp.tests.fem.test_fem_examples warp.tests.fem.test_fem_integrate warp.tests.fem.test_fem_multi_env` -> **Ran 50, OK (skipped=1)**.
+- Session 13's pool break: the example tests run their example as a subprocess, so the example crash alone fails one test rather than killing a worker. The pool worker that died was then in `test_mesh_multi_env_cpu` or `test_cube_shape_functions`, neither of which launches a graph; since the race crashes the runtime's worker thread asynchronously, after the Python call returned, a crash from an earlier in-process GPU graph test (the capturable CG solvers in test_fem_integrate / test_fem_multi_env and others replay graphs with memory nodes) landing during the next test fits, but this was not reproduced. The leaning: the same race, removed by the fix. Not re-run as the 2-worker pattern this round (budget).
+
+### Scripts from this session
+
+`graph_autofree_race.hip`:
+```cpp
+// A graph holding a stream-ordered allocation (mem alloc node -> long kernel using it -> mem free
+// node), instantiated with hipGraphInstantiateFlagAutoFreeOnLaunch and launched back to back.
+// With the alloc executed and the free node still waiting for the kernel, the next hipGraphLaunch
+// frees the graph's memory and resets the graph's outstanding-allocation count on the calling
+// thread while the runtime's worker thread still runs the previous launch's free node.
+// Usage: graph_autofree_race [launches] [spin_us] [sync]
+//   sync: hipStreamSynchronize before every launch (the workaround)
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#define CK(x) do { hipError_t e = (x); if (e != hipSuccess) { printf("%s:%d %s -> %s\n", __FILE__, __LINE__, #x, hipGetErrorString(e)); return 1; } } while (0)
+
+__global__ void spin(float* buf, int n, long long cycles)
+{
+    long long t0 = wall_clock64();
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    float v = 0.f;
+    while (wall_clock64() - t0 < cycles) v += 1.f;
+    if (i < n) buf[i] = v;
+}
+__global__ void reduce(const float* buf, float* out, int n)
+{
+    if (blockIdx.x == 0 && threadIdx.x == 0) out[0] = buf[n - 1] > 0.f ? 1.f : 0.f;
+}
+
+int main(int argc, char** argv)
+{
+    int launches = argc > 1 ? atoi(argv[1]) : 10;
+    int spin_us = argc > 2 ? atoi(argv[2]) : 2000;
+    bool sync = argc > 3 && !strcmp(argv[3], "sync");
+    const int n = 1 << 16;
+    int rate_khz = 0;
+    CK(hipSetDevice(0));
+    CK(hipDeviceGetAttribute(&rate_khz, hipDeviceAttributeWallClockRate, 0));
+    long long cycles = (long long)rate_khz * spin_us / 1000;
+    hipStream_t s;
+    CK(hipStreamCreate(&s));
+    float* out;
+    CK(hipMalloc(&out, 4));
+
+    hipGraph_t g;
+    hipGraphExec_t ge;
+    CK(hipStreamBeginCapture(s, hipStreamCaptureModeGlobal));
+    float* tmp;
+    CK(hipMallocAsync((void**)&tmp, n * 4, s));
+    spin<<<n / 256, 256, 0, s>>>(tmp, n, cycles);
+    reduce<<<1, 64, 0, s>>>(tmp, out, n);
+    CK(hipFreeAsync(tmp, s));
+    CK(hipStreamEndCapture(s, &g));
+    CK(hipGraphInstantiateWithFlags(&ge, g, hipGraphInstantiateFlagAutoFreeOnLaunch));
+    CK(hipGraphUpload(ge, s));
+
+    int bad = 0;
+    for (int i = 0; i < launches; ++i) {
+        if (sync) CK(hipStreamSynchronize(s));
+        hipError_t e = hipGraphLaunch(ge, s);
+        printf("launch %d: %s\n", i, hipGetErrorString(e));
+        fflush(stdout);
+        if (e != hipSuccess) { ++bad; (void)hipGetLastError(); }
+    }
+    CK(hipStreamSynchronize(s));
+    CK(hipGraphExecDestroy(ge));
+    CK(hipGraphDestroy(g));
+    printf("%s: %d of %d launches failed (spin %d us, %s)\n", bad ? "FAIL" : "PASS", bad, launches, spin_us,
+           sync ? "sync before launch" : "back to back");
+    return bad ? 1 : 0;
+}
+```
+
+`fem_files.sh`:
+```bash
+#!/bin/bash
+# fem test files one at a time, each in a single process (unittest -v, faulthandler), 900 s timeout each.
+source /d/Develop/moat/agent_space/warp-win/p6env.sh
+L=$LOGS/p14fem; mkdir -p $L
+export PYTHONFAULTHANDLER=1
+export WARP_CACHE_PATH='D:\Develop\moat\agent_space\warp-win\wpc14fem'
+cd /d/Develop/moat/agent_space/warp-win/p14
+for f in ${FILES:-test_fem_shape test_fem_quadrature test_fem_geometry test_fem_field test_fem_linalg test_fem_integrate test_fem_fp64 test_fem_multi_env test_fem_examples}; do
+  s=$(date +%s)
+  timeout 900 $VPY -X faulthandler -m unittest -v warp.tests.fem.$f > "$L/$f.log" 2>&1
+  rc=$?
+  echo "$f rc=$rc $(( $(date +%s) - s ))s $(grep -E '^Ran [0-9]+ tests|^OK|^FAILED' $L/$f.log | tr '\n' ' ')" >> $L/summary.txt
+  if grep -qE "hipErrorDeviceLost|[Dd]evice lost|HSA_STATUS_ERROR" "$L/$f.log"; then echo "DRIVER-ERROR at $f" >> $L/summary.txt; break; fi
+done
+echo FINISHED >> $L/summary.txt
+```
+
+`gb_burst.py`:
+```python
+# test_grouped_bvh's capture (copies + grouped Bvh.rebuild() + query kernel), then the graph replayed
+# back to back without host work between launches, to widen the window between one launch's graph
+# memory-free node and the next launch. Usage: python gb_burst.py [launches]
+import faulthandler
+import sys
+
+import numpy as np
+
+faulthandler.enable()
+import warp as wp
+from warp.tests.geometry import test_grouped_bvh as tg
+
+wp.init()
+launches = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 5
+with wp.ScopedDevice("cuda:0"):
+    rng = np.random.default_rng(123)
+    n, groups = 100000, 100
+    lo_np, hi_np = tg.get_random_aabbs(n, np.zeros(3), 2, 0.01, rng)
+    lo = wp.array(lo_np, dtype=wp.vec3)
+    hi = wp.array(hi_np, dtype=wp.vec3)
+    g = wp.array(np.arange(n, dtype=np.int32) % groups, dtype=int)
+    bvh = wp.Bvh(lo, hi, groups=g)
+    lo2, hi2 = wp.zeros_like(lo), wp.zeros_like(lo)
+    lo2_np, hi2_np = tg.get_random_aabbs(n, np.zeros(3), 2, 0.01, rng)
+    lo2.assign(lo2_np)
+    hi2.assign(hi2_np)
+    tlo_np, thi_np = tg.get_random_aabbs(10000, np.zeros(3), 2, 0.05, rng)
+    tlo, thi = wp.array(tlo_np, dtype=wp.vec3), wp.array(thi_np, dtype=wp.vec3)
+    tg_ = wp.array(np.arange(n, dtype=np.int32) % groups, dtype=int)
+    counts, sums = wp.empty(10000, dtype=int), wp.empty(10000, dtype=int)
+    wp.load_module(tg, device="cuda:0")
+    with wp.ScopedCapture(force_module_load=False) as cap:
+        wp.copy(lo, lo2)
+        wp.copy(hi, hi2)
+        bvh.rebuild()
+        wp.launch(tg.compute_num_contact_with_checksums, dim=10000, inputs=[tlo, thi, tg_, bvh.id], outputs=[counts, sums])
+    bad = 0
+    for i in range(launches):
+        try:
+            wp.capture_launch(cap.graph)
+            print("launch", i, "ok", flush=True)
+        except RuntimeError as e:
+            bad += 1
+            print("launch", i, "FAILED:", e, flush=True)
+    wp.synchronize_device()
+    print("FAIL" if bad else "PASS", bad, "of", launches, flush=True)
+if "dot" in sys.argv:
+    wp.capture_debug_dot_print(cap.graph, "gb_graph.dot")
+    txt = open("gb_graph.dot").read()
+    import re
+    print("node types:", {t: txt.count(t) for t in ("MEM_ALLOC", "MEM_FREE", "KERNEL", "MEMCPY", "MEMSET")})
+```
+
+`fix_pats.sh` is `run82.sh` with `PYTHONPATH` pointed at the fixwt worktree, its own kernel cache per pattern and the 13 patterns listed above. `gb_seq.py` (runs test_grouped_bvh functions in a chosen order with a print per graph launch) was written for the prefix search but not needed once the mechanism was known.
+
+## Lesson for cuda-to-rocm: Windows HIP graph relaunch races its own memory-free nodes
+Reference file: `references/windows.md` (or `references/diagnosis.md`). On Windows the HIP runtime does not dispatch directly: graph commands, including the mem-alloc and mem-free nodes a stream capture creates for `hipMallocAsync`/`hipFreeAsync`, run on a runtime worker thread. Relaunching a graph instantiated with `hipGraphInstantiateFlagAutoFreeOnLaunch` frees the graph's memory on the calling thread before it waits for the previous launch, so when the previous launch's free node is still queued behind a running kernel the worker frees memory twice. Symptoms, only on Windows and only for back-to-back replays: `hipGraphLaunch` returning `hipErrorInvalidValue` for a valid graph, or an access violation inside `amdhip64_7.dll` on a thread that is not yours (the same offset every time), with `Memory didn't belong to any pool!` at `AMD_LOG_LEVEL=1`. Workaround: `hipStreamSynchronize` the stream (when it is not capturing) before each `hipGraphLaunch` on Windows; the runtime already blocks inside such a launch, so it costs little. A reproducer needs a kernel long enough (milliseconds) to keep the free node pending; tiny kernels hide it. (warp-1.14)
+
+### Next step (head `de4e07a3`; written by the windows-gfx1151 porter, session 14)
+Supersedes session 13's "Open on this platform" items 1 and 2; everything else in session 13's Next step stands, with `de4e07a3` added: it changes only Windows code (`hip_compat.h` under `_WIN32`), so Linux evidence and device code are unaffected; the nvcc check is unaffected (HIP-only header).
+
+**Open on this platform (windows-gfx1151):**
+1. Rebuild the fork clone's `warp.dll` at `de4e07a3` (`python build_lib.py --hip-arch gfx1151`) and re-run the 82-pattern set (`p6/run82.sh`, `-m 2`): expect test_grouped_bvh 11 OK, test_mesh* 49 OK, test_fem* 108 with only the two known isolation failures, test_map 45 OK, test_streams with the known `test_event_external` race; any pool break or `0x160C6C` crash is a finding.
+2. `mma_check.py` (165 kernels), still not run here.
+3. `test_event_external`: upstream test race (session 13), no action unless Jeff wants a test-only change carried.
+
+**For Jeff:** the workaround is in every later Warp release line's diff (18 lines, Windows-only) unless the runtime is fixed; the runtime defect is registered as `hip-graph-autofree-relaunch-races-worker-memfree` (unruled; reproducer above, also present in rocm-systems `develop`).
