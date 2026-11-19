@@ -25,7 +25,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-19T06:27:14Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-19T06:31:39Z",
+        "note": "File after confirming on the newest ROCm and against a CUDA baseline. CUDA 12.9 cub on a V100 sorts every mix tried correctly (20/20 repeats), checked 2026-11-18."
+      }
     }
   ]
 }
