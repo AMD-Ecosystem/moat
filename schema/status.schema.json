@@ -103,6 +103,9 @@
         },
         "since": {
           "type": "string"
+        },
+        "holder": {
+          "type": "string"
         }
       }
     },
@@ -298,11 +301,88 @@
     "pr_closed_note": {
       "type": "string"
     },
+    "landed_via": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "url",
+        "merged_at",
+        "carried",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "number": {
+          "type": "integer"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "merged_at": {
+          "type": "string"
+        },
+        "merge_commit": {
+          "type": "string"
+        },
+        "carried": {
+          "enum": [
+            "commits",
+            "content-differs"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
     "published_sha": {
       "type": [
         "string",
         "null"
       ]
+    },
+    "pr_head_accepted": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "from",
+        "to",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
     },
     "pr_round": {
       "type": "integer",
@@ -484,6 +564,39 @@
           "at": {
             "type": "string"
           }
+        }
+      }
+    },
+    "upstream_url_ruling": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "url",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "previous": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
         }
       }
     },
@@ -717,6 +830,13 @@
         "unclaimed"
       ]
     },
+    "reviewed_sha": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "head the review last passed"
+    },
     "not_portable": {
       "type": [
         "object",
@@ -838,17 +958,25 @@
           ],
           "description": "head this arch last failed to validate"
         },
-        "pr_url": {
+        "failed_gate": {
+          "enum": [
+            "docs",
+            "jargon",
+            null
+          ]
+        },
+        "gpu_passed_sha": {
           "type": [
             "string",
             "null"
           ]
         },
-        "pr_number": {
-          "type": [
-            "number",
-            "null"
-          ]
+        "validated_prior": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4
         },
         "started_at": {
           "type": [

@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "heongpu-negative-gaussian-cast",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream RNGonGPU bug that affects CUDA as well as ROCm, found porting HEonGPU on 2026-08-11. The Box-Muller Gaussian sampler writes static_cast<T>(z0) + (flag0 & modulus.value) where z0 is a negative double and T is the unsigned residue type; the flag trick is only correct if the conversion wraps in two's complement, but converting an out-of-range double to an unsigned integer is undefined and no back end does what the code assumes. gfx90a keeps the low 32 bits (measured: (uint64_t)-2.28 == 4294967294), and per PTX cvt.rzi.u64.f64 semantics NVIDIA saturates a negative source to zero, which would make every negative error sample come out as q rather than q-2 -- i.e. congruent to zero, thinning the RLWE noise distribution by roughly half. Not measured on NVIDIA hardware (none on this fleet; nvcc here compiles only). Our port fixes it with truncate_signed<T>() casting through the signed type first, which is deliberately NOT behaviour-neutral on CUDA. Deferred decision: whether to raise the CUDA-side defect with the HEonGPU/RNGonGPU maintainer separately from the ROCm port PR, and how to describe the security impact.",
+      "refs": [
+        "projects/HEonGPU/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-11T15:34:44Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T19:29:57Z"
+      }
+    },
+    {
+      "id": "heongpu-tfhe-torus32-saturates",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream HEonGPU defect that affects CUDA and ROCm alike, found reviewing the AMD GPU port on 2026-08-11. The device sites that quantize TFHE noise to a 32-bit torus, tfhe_generate_switchkey_kernel (src/lib/kernel/keygeneration.cu:1142) and tfhe_generate_bootkey_random_numbers_kernel (:1202-1203), compute static_cast<uint32_t>(floor(x + 0.5)) where x = frac * 2^32 and frac lies in (-1, 1), so the argument reaches -2^32. Converting an out-of-range double to an unsigned integer is undefined; both back ends saturate a negative source to zero here (measured on gfx90a, and PTX cvt.rzi.u32.f64 saturates), so the port introduces no divergence and the code was deliberately left alone. The evidence that both platforms are nevertheless wrong is the host implementation of exactly the same quantity: HEEncryptor<Scheme::TFHE>::double_to_torus32 (src/lib/host/tfhe/encryptor.cu:102-108) routes through std::llround and therefore WRAPS. Same computation, two different answers for a negative noise sample -- host wraps to the correct two's complement representative, device flattens every negative sample to exactly zero, so the key-switching and bootstrapping-key noise distributions lose their entire negative half. No test in the repository can catch this: TFHE_Gate_Boots passes BECAUSE zeroed noise decodes more reliably. In an FHE library a noise distribution missing half its support is a security fault, not a numerical curiosity. The fix would mirror the truncate_signed<T>() approach used for the Gaussian sampler (cast through the signed type first), matching the host. Deferred decision: whether to raise this with the HEonGPU maintainer separately from the AMD GPU port, together with the negative-Gaussian-cast item, and how to describe the security impact.",
+      "refs": [
+        "projects/HEonGPU/notes.md",
+        "src/lib/kernel/keygeneration.cu:1142,1202-1203",
+        "src/lib/host/tfhe/encryptor.cu:102-108",
+        "projects/HEonGPU/notes.md#tfhe-torus32-fix-round-2026-11-17-linux-gfx942"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-11T16:34:45Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T20:03:51Z"
+      }
+    },
+    {
+      "id": "heongpu-barrett-shift-cuda-side",
+      "kind": "other",
+      "component": null,
+      "summary": "CUDA-side half of the 128-bit Barrett shift fix made for the AMD GPU port of HEonGPU (GPU-NTT modular_arith.cuh, carried in thirdparty/patches/GPU-NTT.patch), found reviewing the port on 2026-08-11. The hand-rolled uint128_t shift operators expanded to unguarded 64-bit limb shifts, and Barrett reduction shifts by modulus.bit + 3. AMDGPU keeps only the low 6 bits of the count, so a 61-bit modulus (count 64) already returned garbage there -- that is the port bug and it is fixed. What the fix ALSO changes is NVIDIA: PTX clamps a shift count to the register width, which happens to give the right 128-bit result at a count of exactly 64 but returns zero for the whole value at 65 and above, i.e. at a 62-bit modulus, which BarrettOperations documents as the widest supported for Data64. So a CUDA build miscomputes every modular multiplication at a 62-bit modulus today and the guarded shifts correct it. Measured on gfx90a only (no NVIDIA hardware on this fleet); the PTX side is from the ISA clamp semantics, not from a run. Deferred decision: whether to raise the CUDA-side defect with the HEonGPU/GPU-NTT maintainer separately from the AMD GPU port PR, alongside heongpu-negative-gaussian-cast, and whether to ask him to confirm the 62-bit result on an NVIDIA card.",
+      "refs": [
+        "projects/HEonGPU/notes.md",
+        "thirdparty/patches/GPU-NTT.patch"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-11T16:35:01Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T19:29:53Z"
+      }
+    },
+    {
+      "id": "heongpu-cuda-no-regression-unrun",
+      "kind": "other",
+      "component": null,
+      "summary": "RESOLVED 2026-08-12: the CUDA no-regression compile check now runs on this host and the port builds clean for NVIDIA. The dependency wall that stopped the 2026-08-11 attempt was RMM's transitive FetchContent clone of NVIDIA/cccl with full history. Technique that made it cheap and repeatable: read the pinned CCCL commit out of the already-cloned rapids-cmake-src/rapids-cmake/cpm/versions.json (3.0.3, sha 8c04b6539859932f5602e86d38314e4d87f96420), fetch that one commit with `git fetch --depth 1`, and pass both -DCPM_CCCL_SOURCE=<dir> and -DFETCHCONTENT_SOURCE_DIR_CCCL=<dir> (rapids-cmake uses CPM, so the FETCHCONTENT_ variable alone is not enough). Same commit as the pin, no version drift, ~60MB instead of a full-history clone. Configure and build of tests+examples+benchmarks then take about a minute with the deps cached. The runnable script is agent_space/heongpu-cuda-check.sh. The check earned its keep immediately: it found two CUDA-path build regressions the AMD build, two review rounds and a full GPU validation had all missed (curand pulled into host translation units by the compatibility header; device function bodies inlined into a header that host translation units include). Both are fixed in d7d609e and 4ceabb2. The port's three deliberate CUDA behaviour changes remain covered by heongpu-negative-gaussian-cast and heongpu-barrett-shift-cuda-side; this item covered only whether the NVIDIA build still compiles, and it does.",
+      "refs": [
+        "projects/HEonGPU/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-11T17:53:41Z",
+      "decided": null
+    },
+    {
+      "id": "heongpu-hip-link-interface-option",
+      "kind": "other",
+      "component": null,
+      "summary": "Rule on the heongpu target's INTERFACE link options as a whole, not only on whether --hip-link joins them. Measured at round 8 against the installed export (ROCm 7.2.1, gfx90a, CMake 4.0.3): target_link_options(heongpu INTERFACE -fgpu-rdc) in src/CMakeLists.txt carries no generator expression, while the matching compile option is guarded by $<COMPILE_LANGUAGE:HIP>, so the link flag reaches every consumer link line including one driven by the C++ compiler, which rejects it. Two consumers therefore fail today, before any --hip-link question arises: a consumer project that never enables the HIP language (unrecognized command-line option '-fgpu-rdc'), and a target that pins LINKER_LANGUAGE CXX inside a project that does. Adding --hip-link to the interface would let every HIP-enabled CMake consumer link unaided and would cost those two only a second message on an already-failing link, so the earlier cost estimate was wrong. The questions for a person: should the interface options be conditioned on the link driver at all -- noting that a $<LINK_LANGUAGE:HIP> guard is not the answer by itself, since it trades the rejected option for undefined __hip_fatbin_* -- and what should a consumer that cannot enable the HIP language do, given that nothing set on its own target rescues the link (LINKER_LANGUAGE HIP fails at generate time with CMAKE_HIP_LINK_EXECUTABLE unset)? The consumer is not the only side with an option: a package config file is included at the caller's file scope, so enable_language(HIP) as the first line of cmake/Config.cmake.in enables the language in the consumer's scope. Measured at round 9 against the same installed export with the config file as the only difference, a project(app LANGUAGES CXX) consumer with a plain C++ executable and only --hip-link on its target goes from unrecognized command-line option '-fgpu-rdc' to configure rc=0 and link rc=0 under /opt/rocm/lib/llvm/bin/clang++, and the same holds when find_package is called from an add_subdirectory. The costs, which are why it is an option rather than an obvious yes: enable_language must be called in file scope and in the highest directory common to all targets using the language (CMake 4.0 enable_language.rst:18,21), so a consumer that wraps find_package in a function silently gets no language and the same failing C++ link (measured: configure still rc=0), and every consumer pays HIP compiler detection at configure time (0.9s to 2.9s on this tree). A code change that alters every consumer's link line and wants its own consumer rebuild, so it was not made in a prose round.",
+      "refs": [
+        "projects/HEonGPU/notes.md#round-7-fix-2026-08-12",
+        "projects/HEonGPU/notes.md#round-8-fix-2026-08-12",
+        "projects/HEonGPU/notes.md#round-9-fix-2026-08-12",
+        "projects/HEonGPU/notes.md#tfhe-torus32-fix-round-2026-11-17-linux-gfx942"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-12T23:07:40Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-12T23:46:52Z",
+        "note": "Ruled by Jeff Daily 2026-08-12: resolved by reverting the -fgpu-rdc design entirely rather than by conditioning the interface options. The guard approach that preceded it puts nothing on the link interface, so downstream consumers are unaffected and neither remedy in this item is needed. Cost accepted: two upstream files carry a compiler guard instead of being byte-identical."
+      }
+    },
+    {
+      "id": "heongpu-windows-rocm-sdk-cmake-packages-missing",
+      "kind": "rocm-bug-report",
+      "component": "rocm-sdk-core",
+      "summary": "TheRock's Windows rocm-sdk-core/rocm-sdk-devel wheels for gfx1151 (7.13.0a20260511) ship no lib/cmake/hip/hip-config.cmake at all (directory exists but is empty, so find_package(hip) fails out of the box even though amdhip64.dll/.lib and headers ARE present), and ship hiprand_kernel.h etc under include/hiprand but no hiprand-config.cmake, and ship no rocThrust package (headers or config) whatsoever, even though hip-lang works (a stub hip-lang-config.cmake was already hand-authored on this host by an earlier session). A HIP CMake project that calls find_package(hip REQUIRED)/find_package(hiprand REQUIRED)/find_package(rocthrust REQUIRED) -- the normal, portable way to consume ROCm from CMake, and what HEonGPU (and any other math-library-style HIP CMake port) does -- cannot configure on Windows without hand-written local package shims. Workaround used for HEonGPU: local CMake package shims (INTERFACE imported targets for hip::host/hip::amdhip64/hip::device pointing at the real amdhip64.lib, hip::hiprand as an include-only INTERFACE target since HEonGPU only uses the header-only device RNG API, and roc::rocthrust pointing at the TheRock source checkout's rocm-libraries/projects/{rocthrust,rocprim} headers since rocThrust is itself header-only). See projects/HEonGPU/notes.md Validation entry for the shim files and the full recipe.",
+      "refs": [],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T02:31:32Z",
+      "decided": null
+    },
+    {
+      "id": "heongpu-rmm-stub-vs-hipmm",
+      "kind": "other",
+      "component": null,
+      "summary": "Reviewer question on the fork review PR: should the bundled rmm_hip_stub be replaced by ROCm-DS hipMM (AMD-Ecosystem/hipMM, an RMM 25.10 port that mirrors RMM structure and API)? Doing so shrinks the port and uses a maintained implementation, but adds an external dependency to the upstream proposal (fetch/pin story needed), and costs a full build+revalidation round on every platform. Stub ships meanwhile; a person rules defer versus now.",
+      "refs": [
+        "projects/HEonGPU/notes.md#tfhe-torus32-fix-round-2026-11-17-linux-gfx942"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-18T15:39:14Z",
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-18T15:53:10Z"
+      }
+    },
+    {
+      "id": "hipmm-rapids-logger-windows-exclude-libs",
+      "kind": "rocm-bug-report",
+      "component": "rapids-logger",
+      "summary": "rapids_logger (fetched transitively by hipMM/rapids-cmake for RMM logging) unconditionally applies target_link_options(rapids_logger PRIVATE LINKER:--exclude-libs,libspdlog) whenever RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS is ON (the default with BUILD_SHARED_LIBS ON, i.e. the default hipMM build). This is a GNU/ELF-linker-only idiom with no MSVC-driver guard; CMake's LINKER: genex has no translation for the MSVC-style link driver (lld-link in clang-cl mode), so the tokens pass through literally as '--exclude-libs libspdlog', lld-link warns 'ignoring unknown argument --exclude-libs' and then tries to open the literal file 'libspdlog' as a link input, failing with 'could not open libspdlog: no such file or directory'. Blocks rapids_logger.dll from linking on Windows/clang-cl before HEonGPU's own sources are even reached. ROCm-DS/ROCmDS-Logger repo, observed at commit 22b252ceb6d8f2a83f44b0e5e6d8ee7d9ae0f708 (CMakeLists.txt:103), fetched at hipMM commit 22732e49aa00 (release/rocmds-26.03 line) via rapids-cmake. A fix would guard the target_link_options call with a non-MSVC/WIN32 condition, or use CMake's portable LINKER: mapping for the MSVC-style driver.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-18T18:51:02Z",
+      "decided": {
+        "choice": "defer",
+        "by": "Jeff Daily",
+        "at": "2026-08-18T22:59:10Z"
+      }
+    },
+    {
+      "id": "heongpu-hipmm-pool-slowdown-gfx1151",
+      "kind": "rocm-bug-report",
+      "component": "hipMM",
+      "summary": "HEonGPU's GPU tests got substantially slower on the gfx1151 APU (Radeon 8060S, 20 CU, unified memory) when the bundled RMM stub was replaced by hipMM at 2874454, with results unchanged. Independently measured by the reviewer on 2026-08-18: roughly 2x on the light tests and 3-4x on the heavy ones. At 26d636f the 19 non-TFHE tests totalled about 240 s (~12.6 s each); at 1c688ee 11 of 19 exceed the project's hardcoded TIMEOUT 30 (44-56 s measured by hand) and the 8 survivors average about 21 s. Invisible on the three Linux platforms, whose whole suite runs in 13-15 s, so it is specific to a small unified-memory part. Two facts already established and worth not re-deriving. First, hipMM's pool_memory_resource.hpp is a straight port of rapidsai/rmm@branch-25.08 -- only the AMD licence header, a <rmm/cuda_runtime_api.h> include shim, and one dropped SFINAE constraint differ -- so any pool behaviour is inherited from RAPIDS rather than introduced by the port. Second, the deleted stub's pool_memory_resource did no pooling at all: its do_allocate forwarded straight to the upstream resource, while HEonGPU asks for initial_device_memorypool_size = 0.9f of total device memory, which on this host is a roughly 65 GB up-front reservation the stub silently never performed. That also means the round-12 review's clearance of the HUMA over-allocation hazard was premised on the stub pre-allocating nothing, and that premise no longer holds. A benchmarking study to separate pool pre-reservation from per-allocation cost is planned; this entry is awaiting that measurement rather than ready for a ruling. It bears directly on the still-open heongpu-rmm-stub-vs-hipmm deferral, and does not block the current commit.",
+      "refs": [
+        "projects/HEonGPU/notes.md",
+        "agent_space/heongpu-win-r26/ctest.log"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-18T20:49:19Z",
+      "decided": {
+        "choice": "defer",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T16:08:19Z"
+      }
+    }
+  ]
+}

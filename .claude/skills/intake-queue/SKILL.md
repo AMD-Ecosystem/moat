@@ -34,7 +34,7 @@ That is the point of the recommendation column; their effort scales with disagre
 rather than with the size of the batch.
 
 **Accepts need no PR.** The fork appearing IS the decision. `apply --accept
-<owner/repo>` writes the intake decision to the project's branch so the queue stops
+<owner/repo> --by "<who decided>"` writes the intake decision to the project's branch so the queue stops
 re-proposing it while the fork lags the decision, prints the prefilled
 `gh repo fork` block that carries it out (the commands ride with the decision, not
 on the queue issue), and closes the answered issue so the remainder comes back
@@ -49,7 +49,12 @@ that:
     python3 utils/intake_queue.py apply \
       --decline uos/rmagine:cant-port --note "<their words on rmagine, quoted>" \
       --decline foo/bar:already-supported --note "<their words on foo/bar, quoted>" \
-      --apply
+      --by "<who decided>" --apply
+
+`--by` is required and has no default: it names the person whose reply this carries,
+for accepts as well as declines. The record also stores `recorded_as`, the GitHub
+account that was authenticated when it was written, so the trail shows both. `apply`
+refuses a checkout with uncommitted changes and returns to the branch it started on.
 
 Notes pair with declines positionally -- one `--note` per `--decline`, each carrying
 what the person said about THAT project. A single shared note puts every project's

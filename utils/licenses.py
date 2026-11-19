@@ -23,8 +23,11 @@ import subprocess
 import sys
 import tomllib
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-CONFIG = REPO_ROOT / "config" / "licenses.toml"
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = pathlib.Path(__file__).resolve().parents[1]
+REPO_ROOT = pathlib.Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
+CONFIG = TOOLS_ROOT / "config" / "licenses.toml"
 SPDX_RE = re.compile(r"^[A-Za-z0-9.+-]+$")
 
 
@@ -270,4 +273,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())
