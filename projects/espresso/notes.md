@@ -782,3 +782,35 @@ Counts are passed / skipped / failed (ctest's "Skipped" is the exit-5 mapping; e
 - CUDA no-regression at this head: PASS, nvcc 12.8.93, 542/542 steps, 0 FAILED, 0 warnings (porter section above).
 - Jargon: `python3 utils/jargon.py --port espresso` clean. Docs: "AMD GPU acceleration" in `doc/sphinx/installation.rst`; the `sphinx` target (`-W`) builds.
 - Gates: wave64 satisfied at 4861f4839 by this run. wave32 (gfx1201) validated 01090739c; the delta is CMake option rename + a configure-time error + a comment + docs + cmake-format, so compiled output with the option on should be unchanged, but it is `mixed` to the classifier: wave32 owes a revalidation or a binary-equivalence carry-forward on an RDNA host. windows is waived.
+
+## Validation 2026-11-19 (linux-gfx1201, RDNA4 wave32, polish round 4861f4839)
+
+State: revalidate -> completed. GPU: AMD Radeon AI PRO R9700 (gfx1201, wave32): `amd-smi static -g 1 --asic` MARKET_NAME "AMD Radeon AI PRO R9700", DEVICE_ID 0x7551, 64 CUs, TARGET_GRAPHICS_VERSION gfx1201; `rocminfo` Marketing Name the same; ESPResSo's own `CudaInitHandle().list_devices()` reports `{0: 'AMD Radeon AI PRO R9700'}`, 34208743424 bytes. `HIP_VISIBLE_DEVICES=1`, `ulimit -c 0`. ROCm: pip ROCm SDK 10.1.0 (HIP 7.16.26385, AMD clang 24.0.0 from `rocm-sdk path --root`, no /opt/rocm). Validated sha: 4861f483930b774eccb14a26125de323d1a33851, fresh fork clone at `projects/espresso/src`, clean at head throughout. Full GPU run, no carry-forward, at jeff's request (`classify 01090739c 4861f4839` -> `mixed`: `CMakeLists.txt` token count differs from the new waLBerla check, the rest rename-only or comment-only).
+
+Build: deps rebuilt from source into this job's prefix with the recipe of "Validation 2026-11-19 (linux-gfx1201, RDNA4 wave32)" (hwloc 2.11.2, OpenMPI 5.0.8, FFTW 3.3.10 double+float, Boost 1.87.0 mpi/serialization/test/filesystem/system `--without-python`). Python 3.12.3 venv by `uv` inside the job venv: numpy 2.5.5, scipy 1.18.1, Cython 3.3.1, tqdm, matplotlib, pint. Configure line: the gfx942 one in "Upstream sync 2026-11-19" with `-DESPRESSO_BUILD_WITH_HIP=ON` in place of `-DUSE_HIP=ON`, `-DCMAKE_HIP_ARCHITECTURES=gfx1201`, `-DCMAKE_C_COMPILER=/usr/bin/gcc -DCMAKE_CXX_COMPILER=/usr/bin/g++`; `build-max` adds `-DESPRESSO_MYCONFIG_FILE=<src>/maintainer/configs/maxset.hpp` (checked: `build-max/src/config/include/config/myconfig-final.hpp.in` is byte-identical to `maxset.hpp`, `build-hip`'s to `src/config/myconfig-default.hpp`).
+
+```
+cmake --build build-hip -j 12
+cmake --build build-hip -j 12 --target python_test_data cuda_test local_samples local_benchmarks
+ctest --test-dir build-hip -L gpu --timeout 900 -j 8 --output-on-failure
+cmake --build build-hip -j 12 --target check_unit_tests
+cmake --build build-max -j 12
+cmake --build build-max -j 12 --target python_test_data cuda_test local_samples local_benchmarks
+ctest --test-dir build-max -L gpu --timeout 900 -j 8 --output-on-failure
+ctest --test-dir build-max -L gpu -E 'sample_|benchmark_' -V --timeout 900 -j 8
+cmake --build build-max -j 12 --target check_unit_tests
+cmake --build build-hip -j 12 --target local_samples local_benchmarks
+ctest --test-dir build-hip -LE gpu --timeout 900 -j 16
+```
+
+- Builds: default 236/236 plus test-data targets, 20 warnings; maxset PASS, 30 warnings; every warning is the known ROCm 10.1 `nodiscard` `hipError_t` `-Wunused-value`. Cache: `ESPRESSO_BUILD_WITH_HIP=ON`, `Kokkos_ENABLE_CUDA=OFF`, `Kokkos_ENABLE_HIP=OFF`, `Heffte_ENABLE_CUDA=OFF`. `llvm-objdump --offloading espresso_core.so`: 4 bundles, all `hip-amdgcn-amd-amdhsa--gfx1201`, in both builds.
+
+Counts are passed / skipped / failed (skipped = ctest exit-5 mapping).
+
+- GPU suite, default myconfig (`-L gpu`, 74 tests, 94 s): **71 passed / 3 skipped / 0 failed**. Skipped: `sample_p3m_with_gpu`, `benchmark_p3m_with_gpu` (script runs on import, no test methods), `benchmark_lb_with_gpu` (WALBERLA not built); the same three as every earlier run.
+- GPU suite, maxset myconfig (`-L gpu`, 74 tests, 93 s): **71 passed / 3 skipped / 0 failed**, the same three skipped. Verbose rerun without samples/benchmarks: 68/68 passed, no unittest `FAILED` line (the `ERROR:` lines in the log are ESPResSo runtime messages raised on purpose by the exception tests). Cases the default config compiles out ran and passed: dipole_field_tracking test_dds, test_dds_gpu, test_dp3m; dipolar_direct_summation test_dds_gpu, test_inner_loop_consistency_gpu, test_min_image_convention_gpu; dawaanr-and-dds-gpu test_dds_mixed_particles, test_dds_replica_cpu, test_dp3m_dlc/metallic/non_metallic. Unittest-level skips name only features not built or out of scope (WALBERLA, WALBERLA_FFT, MMM1D, STOKESIAN_DYNAMICS, SCAFACOS, SCAFACOS_DIPOLES, THERMAL_STONER_WOHLFARTH, H5MD) or are mode/combination filters inside the test.
+- Unit tests (`check_unit_tests`): default **136 passed / 0 skipped / 0 failed**; maxset **136 passed / 0 skipped / 0 failed**.
+- Non-GPU suite, default (`-LE gpu`, 403 tests): 346 passed / 29 skipped / 28 failed, all environmental and the same set as every earlier run: 26 `tutorial_*` Not Run, `test_convert` (no `nbformat`), `test_install` (`diff: /usr/local/lib/python3.12/site-packages/espressomd/...: No such file or directory`; never installed). No regression.
+- CUDA no-regression at this head: not rerun; already PASS at 4861f4839 (nvcc 12.8.93, 542/542, "Porter 2026-11-19 (polish round)"). This host has no CUDA toolkit.
+- Jargon: `python3 utils/jargon.py --port espresso` clean. Docs: "AMD GPU acceleration" at doc/sphinx/installation.rst:300, configure example with `ESPRESSO_BUILD_WITH_HIP=ON` at :312, option listed at :919.
+- Gates: with gfx950 (wave64) and this run (wave32) at 4861f4839, both required Linux gates are met at head; windows is waived. Nothing was edited in the fork and nothing was pushed to it.
