@@ -431,3 +431,67 @@ Either a maintainer answer on #7596 or an `ifx` attempt should settle it first.
 
 Independently of Windows, `wave64` is also unsatisfied at head, so QUICK needs a gfx90a or
 gfx942 run regardless of how the Fortran question lands.
+
+## Upstream sync 2026-11-19 (linux-gfx90a, porter)
+
+jeff ruled the port is brought up to date with upstream before the PR is prepared. Fork `moat-port` d369e07 -> 2146b22a. Upstream merzlab/QUICK master 7e8aeb2c, 150 commits past the port's old base bc80f985 (103 past the fork mirror's 2cb6a3b2).
+
+### Fork mirror NOT fast-forwarded (needs jeff)
+
+The fleet guard on this host refused `git push origin upstream/master:refs/heads/master` in the fork clone ("git push to the moat branch 'master'"; it reads any `master` push as the MOAT trunk). Not routed around. The fork's `master` is still 2cb6a3b2. jeff, from a fork clone with an `upstream` remote:
+
+```
+git fetch upstream master
+git push origin upstream/master:refs/heads/master    # fast-forward 2cb6a3b2 -> 7e8aeb2c
+```
+
+Until then `moatlib.py audit-commits QUICK` refuses to judge (it reads the stale mirror); `jargon.py --port QUICK` reads the clone's local `master`, which was set to upstream 7e8aeb2c here, and is clean.
+
+### Commits on moat-port this round
+
+- c548e334 `Merge branch 'master' of merzlab/QUICK into the ROCm port` (merge commit, no rebase)
+- a0122945 `Drop C header includes now provided by upstream`
+- f89c1afa `[ROCm] Fall back to hipcc's HIP version when the path has none`
+- 2146b22a `Restore upstream's configure script`
+
+Port diff against upstream master is now one file, `quick-cmake/QUICKCudaConfig.cmake`, +13/-3: `-munsafe-fp-atomics` for gfx90a/gfx942, the gfx1100 branch, the error-message list, and the version-detection fallback.
+
+### What upstream changed that mattered
+
+- No textual conflicts. Upstream touched `QUICKCudaConfig.cmake` only in the CUDA section (PR 487, multiple CUDA arches in `QUICK_USER_ARCH`); the HIP arch block is unchanged, so the port's hunks carried over as is. `configure` unchanged upstream.
+- Upstream keeps `src/gpu/hip` in lockstep with `src/gpu/cuda` itself. Every change in the CUDA tree (PR 473 MPI communicator refactor in `mgpu.h`/`gpu.cu`/`gpu_type.h`, error-handling cleanup in `gpu_utils.cu`) already has its HIP twin upstream, so there was no new CUDA surface to port. Shared files changed (`xc_redistribute.cpp/.h`, `libxc_dev_funcs.h`, `gpu_get2e_*`) are compiled for both. Checked by diffing the per-file upstream deltas of `cuda/` and `hip/`: they differ only in cuda->hip spelling, upstream's `string.h` adds, and `hipHostMalloc`->`hipHostAlloc`.
+- PR 511 (ROCm 7 include fix) added `<string.h>` to `hip/gpu_type.h` and `hip/gpu_utils.cu`. The port's `<cstring>/<cstdlib>/<cctype>` in `hip/gpu.cu` and `<cstring>/<cstdlib>` in `hip/gpu_utils.h` were then removed (a0122945); the HIP library compiles without them (HIP 7.16, AMD clang 24). Both files are now byte-identical to upstream.
+- **Upstream regression in the HIP Libxc path.** PR 473 (commit 87cdf67a, 2026-06-18) changed `_gpuHostAlloc` in `hip/gpu_utils.cu` from `hipHostMalloc` to `hipHostAlloc` but left the caller in `hip/gpu_libxc.h:84` passing `hipHostMallocNumaUser | hipHostMallocPortable`. `hipHostAlloc` rejects that: every Libxc run on HIP aborts with `[ERROR] GPU error: hipHostAlloc failure ... gpu_libxc.h line 85 ... Error code: 1 invalid argument` (reproduced here with `ene_psb3_libxc_gga_631g`; the same test passed in June at bc80f985). Open upstream PR 512 fixes exactly this (`gpu_libxc.h` flags -> `hipHostMallocMapped`). Per jeff's instruction PR 512 is NOT included, and carrying an identical one-line hunk would be including it, so it is left alone -- see the question below.
+
+### configure --hip: restored upstream's lines (2146b22a)
+
+Built `./configure --hip --arch gfx90a --prefix <dir> gnu` with the port's version (early exit removed): configure succeeds (with a pre-existing upstream shell error `./configure: 1203: [: [: unexpected operator` in the f-function check, harmless without `--enablef`), then `make` stops: `No rule to make target 'xc_redistribute.cpp', needed by '.../build/obj/hip/xc_redistribute.o'`. Upstream moved `xc_redistribute.cpp` (and `gpu_oeprop.cu`) to `src/gpu/` but `src/gpu/hip/Makefile` and `src/gpu/cuda/Makefile` still expect them in the backend directory, so upstream's makefile GPU build is stale for CUDA as well (CUDA not built here; read from the Makefile). Fixing upstream's legacy makefiles is out of scope, so `configure` is back to upstream's text and still prints "HIP support is currently unavailable". The HIP build is CMake.
+
+### Version-detection fix (f89c1afa)
+
+`QUICKCudaConfig.cmake` takes the ROCm version from `rocm-X.Y.Z` in `hipcc --version` output, which only exists via an `/opt/rocm-X.Y.Z` install path. This host's ROCm is the pip SDK (HIP 7.16.26385, `rocm-sdk path --root`); nothing matched, `HIP_VERSION` became `..`, `src/gpu/hip/CMakeLists.txt` chose the pre-6.0 `rocblas/include/rocblas_module.f90` path and configuration failed. Fallback reads `HIP version: X.Y.Z` (what `configure` already uses). Placed away from PR 512's hunk.
+
+### PR 512 merge check
+
+`git fetch upstream pull/512/head:pr512` (read-only), then a trial merge of pr512 into 2146b22a in a throwaway worktree: one conflict, the single `FATAL_ERROR "Invalid value for QUICK_USER_ARCH ..."` line, which both sides extend. Resolution: `Possible values are gfx908, gfx90a, gfx942, gfx1100, gfx1201.` The gfx1100 and gfx1201 blocks merge cleanly next to each other; the rest of PR 512 (`hip/gpu.cu`, `mgpu.h`, `gpu_info.cu`, `gpu_libxc.h`, `tools/runtest`) does not touch port lines. Avoiding even that line would mean not listing gfx1100 in the error, which seemed the worse trade.
+
+**Bearing of PR 512's Libxc fix on the June gfx90a findings: none.** The June core dump (`ene_psb5_rhf_631gss`) and the slow d-function tests were RHF/HF runs at bc80f985, where `gpuHostAlloc` still called `hipHostMalloc` with valid flags; the Libxc allocation was not broken then and RHF does not call Libxc. The PR 512 fix addresses the regression PR 473 introduced afterwards.
+
+### Build at 2146b22a (gfx90a, MI250X, pip ROCm SDK HIP 7.16)
+
+```
+export ROCM_PATH=$(rocm-sdk path --root)
+GFL=$(dirname $(gfortran -print-file-name=libgfortran.so))     # /usr/lib/gcc/x86_64-linux-gnu/13
+cmake .. -DHIP=ON -DCOMPILER=GNU -DQUICK_USER_ARCH=gfx90a -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=$ROCM_PATH -DHIP_TOOLKIT_ROOT_DIR=$ROCM_PATH \
+  -DCMAKE_SHARED_LINKER_FLAGS="-L$GFL" -DCMAKE_EXE_LINKER_FLAGS="-L$GFL"
+make -j128 && make install DESTDIR=$PWD/../install
+```
+
+`-L$GFL` is a host quirk, not a project bug: the SDK's clang selects GCC 14's install dir (`hipcc -v`: "Selected GCC installation: /usr/lib/gcc/x86_64-linux-gnu/14") while gfortran is 13, and `libgfortran.so` exists only under `gcc/13`, so hipcc's link of `libquick.so` fails with `unable to find library -lgfortran`. Same symptom the gfx1100 host hit in June. `CMAKE_PREFIX_PATH`/`HIP_TOOLKIT_ROOT_DIR` are the normal knobs for ROCm outside `/opt/rocm`.
+
+Smoke: `ene_acetone_rhf_321g` TOTAL ENERGY -190.882196695 vs saved -190.882196697, 7 s.
+
+### Question for jeff
+
+Upstream master's HIP Libxc path is broken by upstream PR 473 and fixed by open PR 512 (`src/gpu/hip/gpu_libxc.h`: `hipHostMallocNumaUser | hipHostMallocPortable` -> `hipHostMallocMapped`). The port currently ships upstream's broken state, so every Libxc test fails on HIP at 2146b22a. Options: (a) carry PR 512's exact `gpu_libxc.h` hunk on `moat-port` (identical text, so it merges cleanly with PR 512 whichever lands first; the upstream PR body would say so), or (b) wait for PR 512 to merge and sync again. This round did neither, as instructed.

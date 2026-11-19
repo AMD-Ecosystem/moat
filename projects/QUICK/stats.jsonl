@@ -43,3 +43,7 @@
 {"kind":"phase","ts":"2026-08-09T00:07:51Z","phase":"compile","seconds":143.391,"exit":0,"cmd":"bash -c cd projects/QUICK/src/build_old && make -j32 2>&1 | tail -80"}
 {"kind":"phase","ts":"2026-08-09T00:11:40Z","phase":"cuda-compile","seconds":112.238,"exit":0,"cmd":"bash -c cd projects/QUICK/src_cuda/build_cuda && make -j32 2>&1 | tail -150"}
 {"kind": "tokens", "ts": "2026-08-09T00:15:47Z", "tokens": 129012, "source": "validator"}
+{"kind":"session","ts":"2026-11-19T03:57:50Z","epoch":1795060670.662686,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-19T04:03:21Z","phase":"compile","seconds":98.37,"exit":2,"cmd":"make -C projects/QUICK/src/build -j128"}
+{"kind":"phase","ts":"2026-11-19T04:04:35Z","phase":"compile","seconds":36.218,"exit":0,"cmd":"make -C projects/QUICK/src/build -j128"}
+{"kind":"phase","ts":"2026-11-19T04:06:43Z","phase":"compile","seconds":36.497,"exit":2,"cmd":"make -C projects/QUICK/src-configure -j128"}
