@@ -226,6 +226,198 @@
         "at": "2026-08-20T04:30:19Z"
       },
       "project": null
+    },
+    {
+      "id": "nvidia-notice-cd-class-tidy",
+      "kind": "other",
+      "component": null,
+      "summary": "POLICY (2026-08-24): the C/D-class NVIDIA-notice items (dead-in-tree or text-only) are not an immediate issue but should be tidied over time so it is clear AMD is not using them -- BSD swaps or bypass where possible, never deleting licence/notice files. LOW PRIORITY behind the A-class swaps (Velvet, TurboFNO) and pre-fork swaps (cuda_voxelizer, PhoenixOS header drop). Items as of 2026-11-18: EnvGS orphan script scripts/instant-ngp/colmap_to_nerf.py (review-passed, no upstream PR yet: the one item that can still ride along before publication); OCTproZ about-dialog EULA copy shown even in AMD builds, MASt3R-SLAM checkpoints notice, plvs vendored CUDA-path helpers (upstream PRs open, so a tidy is a fix round); alien and cupoch vendored CUDA-path helpers (upstream PRs merged, so a tidy is a follow-up PR); LichtFeld-Studio nvImageCodec cmake pair (project on hold). Done: h2o4gpu's dead vendored set (12 EULA-notice files deleted in the first port commit).",
+      "refs": [
+        "licensing review 2026-08-24"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-24T19:49:43Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-18T17:25:17Z"
+      },
+      "project": null,
+      "summary_history": [
+        {
+          "summary": "POLICY (2026-08-24): the C/D-class NVIDIA-notice items (dead-in-tree or text-only: EnvGS orphan script scripts/instant-ngp/colmap_to_nerf.py, OCTproZ about-dialog EULA copy shown even in AMD builds, LichtFeld-Studio nvImageCodec cmake pair, MASt3R-SLAM checkpoints notice, alien/plvs/cupoch vendored CUDA-path helpers, h2o4gpu dead vendored set) are not an immediate issue but should be tidied over time so it is clear AMD is not using them -- BSD swaps or bypass where possible, never deleting licence/notice files. LOW PRIORITY behind the A-class swaps (Velvet, TurboFNO) and pre-fork swaps (h2o4gpu, cuda_voxelizer, PhoenixOS header drop).",
+          "by": "jeffdaily",
+          "at": "2026-11-18T17:25:17Z",
+          "reason": "h2o4gpu's vendored set was since deleted, and most named ports are now behind an open or merged upstream PR"
+        }
+      ]
+    },
+    {
+      "id": "upstream-followup-pr-flow",
+      "kind": "other",
+      "component": null,
+      "summary": "The upstream tooling has no path for a SECOND PR on a project whose first PR merged: pr-candidates and upstream.py --review exclude merged projects by design, and pr-ready reports 'pr-exists=the upstream PR is already merged' even when the moat-port branch carries new reviewed+revalidated commits. First hit: TurboFNO 2026-08-24 (three post-merge commits replacing vendor-sample-derived macro text, fully reviewed, platforms carrying forward). Interim: the person opens the follow-up PR manually from the fork and records it with set-pr-open once the tooling permits, or the record is kept in notes. Proper fix: a follow-up-PR flow (review PR on the fork, approval gate, publish) that treats the merged first PR as history rather than a terminal state.",
+      "refs": [
+        "projects/TurboFNO/notes.md 2026-08-24 rounds"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-24T22:25:33Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-25T18:06:14Z"
+      },
+      "project": null
+    },
+    {
+      "id": "mitsuba3-drjit-amd-backend",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): mitsuba-renderer/mitsuba3 GPU variants need a Dr.Jit AMD GPU backend, which does not exist (drjit-core has CUDA and LLVM backends only). The two pull requests that proposed one, drjit-core 203 and drjit 520, both closed unmerged (2026-06 and 2026-07), so nothing is in flight upstream as of 2026-11-18. Revisit when a Dr.Jit HIP backend lands upstream.",
+      "refs": [
+        "https://github.com/mitsuba-renderer/mitsuba3",
+        "https://github.com/mitsuba-renderer/drjit-core/pull/203",
+        "https://github.com/mitsuba-renderer/drjit/pull/520"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-12T16:46:37Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-18T17:16:31Z"
+      },
+      "project": null,
+      "summary_history": [
+        {
+          "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): mitsuba-renderer/mitsuba3 GPU variants need a Dr.Jit AMD GPU backend, which does not exist (drjit-core has CUDA and LLVM backends only). Revisit when a Dr.Jit HIP backend lands upstream.",
+          "by": "jeffdaily",
+          "at": "2026-11-18T17:16:31Z",
+          "reason": "both cited Dr.Jit AMD backend PRs closed unmerged; the summary read as if upstream work was pending"
+        }
+      ]
+    },
+    {
+      "id": "nemo-curator-rocm-ds",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): NVIDIA-NeMo/Curator needs a complete ROCm-DS stack, not just one RAPIDS library: GPU curation runs on cuDF, cuML, RAFT/cuVS and Dask-CUDA together (cuML is already declined for MOAT). Revisit when ROCm-DS covers that full set.",
+      "refs": [
+        "https://github.com/NVIDIA-NeMo/Curator"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-12T16:52:33Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-18T17:21:01Z"
+      },
+      "project": null
+    },
+    {
+      "id": "maniskill-sapien-physx-warp",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Parked by Jeff Daily 2026-11-12 (gap-matrix missed-project triage): haosulab/ManiSkill GPU simulation needs SAPIEN's PhysX GPU backend and a vendored NVIDIA Warp. Revisit once the MOAT PhysX and Warp ports are delivered, starting with a screen of haosulab/SAPIEN.",
+      "refs": [
+        "https://github.com/haosulab/ManiSkill",
+        "https://github.com/haosulab/SAPIEN"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-12T16:59:21Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-18T17:22:18Z"
+      },
+      "project": null
+    },
+    {
+      "id": "moat-doc-gate-failure-carry-forward",
+      "kind": "other",
+      "component": null,
+      "summary": "advance_head carries a validation-failed record forward across an arch-independent (doc-only) delta, but a failure caused by the documentation gate is fixed precisely by a doc-only delta. The arch then reads validation-failed at head and arch_task routes it back to a porter forever; only a validator recording completed clears it. Seen on LC-framework windows-gfx1151 (ea0df9b -> f0ce8ce). Consider recording why a validation failed, or letting a doc-gate failure retire on a doc-only advance.",
+      "refs": [
+        "projects/LC-framework/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-12T21:55:17Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-18T15:37:27Z"
+      },
+      "project": null
+    },
+    {
+      "id": "deferred-py-no-edit-or-supersede-path",
+      "kind": "other",
+      "component": null,
+      "summary": "utils/deferred.py can register a deferral and rule on it, but it cannot correct one. There is no edit or supersede subcommand, add refuses a duplicate id, and status is limited to open/filed/done, so an open item whose framing turns out to be wrong has no supported path forward: reframing it means rewriting summary and refs in place through deferred._load_project/_save_project (done twice on the HEonGPU port, rounds 8 and 9, where measurement changed both the cost estimate and the option set in front of the person ruling), and the alternative of adding a second entry puts two overlapping questions in front of that person. Wanted, smallest form: an edit subcommand for summary and refs on an item that is still open and unruled, so correcting an open deferral is a recorded operation rather than a library call; a supersede path that links a replacement id to the item it retires would cover the case where a ruled item needs revisiting. Registered globally because it is control-plane tooling, found while porting HEonGPU.",
+      "refs": [
+        "projects/HEonGPU/notes.md#round-9-fix-2026-08-12",
+        "utils/deferred.py",
+        "82ed5f4a deferred.py close and amend"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-12T23:40:21Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-17T22:08:58Z",
+        "note": "Ruled 2026-11-17 after two items (gh-guard gate, TFHE torus32) had to be closed as done when they were superseded or not applicable."
+      },
+      "project": null
+    },
+    {
+      "id": "moat-gh-guard-gate-path-sensitive",
+      "kind": "other",
+      "component": "moat-control-plane",
+      "summary": "The pre-push gh-guard gate compares the installed shim at ~/.local/bin/gh.cmd against text generated from the CURRENT checkout, and that text hardcodes an absolute path (python \"D:\\Develop\\moat\\utils\\gh_guard.py\" --shim). From any worktree the generated text differs, so the gate reports the guard stale and rejects the push. Consequences: (1) branch-sync --all cannot push at all, because the sweep runs in a worktree by construction -- on 2026-08-18 all 76 of its merges were rejected and discarded, leaving 77 of 89 port branches still running tooling from before the work-lock publish fix f627a7f, so two hosts can still take the same round; (2) pushing from any worktree requires reinstalling the guard, which repoints it and breaks the main checkout until reinstalled again. Preferred fix: compare the resolved gh_guard.py content rather than the literal shim text, so the gate judges whether the guard functions rather than which directory it names. Alternative considered and NOT taken without a person's decision: --no-verify on the trunk-merge sync push, which AGENTS.md's do-not-bypass rule covers. Blocks the fleet sync.",
+      "refs": [
+        "agent_space/MORNING-PLAN.md",
+        "utils/check.py:377",
+        "utils/install_hooks.py"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-19T06:32:33Z",
+      "decided": null,
+      "project": null
+    },
+    {
+      "id": "codeobj-diff-windows-pe-support",
+      "kind": "other",
+      "component": "moat-tooling",
+      "summary": "utils/codeobj_diff.py compares ELF binaries only, so on a Windows host it answers indeterminate and a binary-equiv carry-forward is never available there: every non-inert change to a port costs the only Windows host a full revalidation, even when the change is Linux-only. Add PE/COFF support: extract the device code objects (the HIP fat-binary section) and the export table from .dll/.exe/.pyd and compare them as for ELF. Validate against real Windows builds of a few ports with a known-identical pair and a known-different pair before its verdicts are trusted; a wrong identical is worse than indeterminate. Own piece of work with its own review, not part of the 2026-11 health-fix branch (jeff, 2026-11-18).",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T20:57:46Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-18T20:57:47Z"
+      },
+      "project": null
+    },
+    {
+      "id": "hip-link-win-msys-path-and-response-file",
+      "kind": "other",
+      "component": "cuda-to-rocm-skill",
+      "summary": "The skill asset .claude/skills/cuda-to-rocm/assets/hip_link_win.py (the Windows CMake HIP link wrapper that ports vendor as cmake/hip_link_win.py) has two open questions that need one real Windows CMake HIP link to settle, on a port that uses it (alien is its origin). (1) Its bare-flag test wraps any dot-free argument starting with / as -Wl,<arg>, so an MSYS-style path such as /d/build/foo would be wrapped; a fix was written during the 2026-11 skill restructure (also require no further slash in the flag name) and deliberately left out because it was tested only by calling transform() directly. (2) The skill's Windows reference says the wrapper exists because the linker response file loses its backslashes, but the script never reads or rewrites response files; that mismatch is marked Unresolved in references/windows.md. Settle both on a real link, then fix the asset and the prose together and re-copy into the forks that vendor it.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T22:00:18Z",
+      "decided": null,
+      "project": null
     }
   ]
 }

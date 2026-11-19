@@ -883,3 +883,16 @@ observed compiling successfully (zero errors) to real gfx1100 AMDGCN across two
 independent real-GPU attempts, but neither reached a completed step within the
 validation window, so this specific new surface carries confirmed-compiling-but-not-
 numerically-confirmed status on gfx1100, recorded here rather than blocking on it.
+
+## Lesson for cuda-to-rocm: any pip install with torch in its graph can replace a source-built ROCm torch
+
+Moved here on 2026-11-19 from a direct edit this branch had made to `references/strategy-b-torch.md` in August (port branches now change only the project folder; the edit was never on main). Proposed text for the skill's dependency-environment list:
+
+- The same trap fires on ANY pip install that has torch in its dependency graph, not just a requirements file, and a source-built ROCm torch is the worst case. `pip install timm torch_geometric` on a host whose torch is a locally built dev wheel (`2.14.0a0+git<sha>`) replaced torch with the PyPI CUDA build, pulled the whole `nvidia-*` stack, and swapped `triton` 3.8.0 for the CUDA `triton` 3.7.1 -- the dev version is on no index, so pip cannot put it back and nothing warns you. Default to `pip install --no-deps <pkg>` for every dependency on such a host, add the handful of pure-Python transitive deps by hand, and before you start, find the wheel that produced the current torch so a restore is `pip install --no-deps --force-reinstall <wheel>`. Verify with `python -c "import torch; print(torch.__version__, torch.version.hip)"` after any install that touched a torch-dependent package.
+- In the "a common dep usually already has a ROCm port" item: `spconv` -> `spconv-triton` (Apache-2.0 on PyPI, a drop-in for the spconv 2.x API in Triton; `spconv_rocm` is a name that looks like a port and is an empty repo -- checked 2026); `torch_scatter`/`torch_cluster` build from sdist on ROCm 7.14 with `PYTORCH_ROCM_ARCH=<arch> FORCE_ONLY_CUDA=1 pip install . --no-build-isolation --no-deps`, torch_scatter 2.1.2 needing its `at::Half` shuffle wrappers widened to a 64-bit mask first.
+
+## Lesson for cuda-to-rocm: a Triton-based ROCm dependency can cold-compile an order of magnitude slower on RDNA than on CDNA
+
+Moved here on 2026-11-19 from a direct edit this branch had made to `references/validation.md` in August. Proposed text:
+
+A pip-installed, pure-Python-plus-Triton ROCm drop-in library (e.g. a spconv reimplementation) can spend tens of minutes inside `triton/backends/amd/compiler.py:make_amdgcn` autotuning a single model's first forward+backward pass on an RDNA (gfx11xx, wave32) host, when the identical recipe completes quickly on a CDNA (gfx90a, wave64) host. Before concluding a hang, distinguish real (if slow) compilation from a stuck process: `py-spy dump --pid <pid>` repeatedly and confirm every sample lands inside `make_amdgcn` or `torch.cuda.synchronize` (benchmarking an autotune candidate), and watch the Triton cache directory grow. If a bounded validation window elapses without a completed step, record the wall-clock magnitude, confirm the backend selection independently, and stop. A persistent Triton cache (`TRITON_CACHE_DIR`) makes the cost one-time per kernel shape and arch.
