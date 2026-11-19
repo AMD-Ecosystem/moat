@@ -2417,16 +2417,26 @@ def report_drift(apply=False):
             if apply:
                 # On a release line the hook guards the mirror too; this push is
                 # upstream's own commit, fast-forward only, so it is named to it.
+                token = None
                 try:
-                    moatlib.write_publish_token(
+                    token = moatlib.write_publish_token(
                         DRIFT_CACHE / name,
                         [(info["base_tip"], f"refs/heads/{info['base']}")])
                 except (RuntimeError, ValueError, OSError):
                     pass
-                p = _run(["git", "-C",
-                                    str(DRIFT_CACHE / name), "push", "fork",
-                                    f"{info['base_tip']}:refs/heads/{info['base']}"],
-                                   capture_output=True, text=True, timeout=120)
+                try:
+                    p = _run(["git", "-C",
+                              str(DRIFT_CACHE / name), "push", "fork",
+                              f"{info['base_tip']}:refs/heads/{info['base']}"],
+                             capture_output=True, text=True, timeout=120)
+                finally:
+                    # A push that never reached the hook must not leave the token
+                    # behind for the next push from this cache to find.
+                    try:
+                        if token:
+                            token.unlink()
+                    except OSError:
+                        pass
                 print(f"  MIRROR     {name:26} "
                       + (f"fast-forwarded the fork's {info['base']} to "
                          f"{info['base_tip'][:12]}" if p.returncode == 0 else
