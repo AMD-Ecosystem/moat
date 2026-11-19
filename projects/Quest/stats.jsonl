@@ -135,3 +135,4 @@
 {"kind":"phase","ts":"2026-11-19T20:14:00Z","phase":"compile","seconds":0.003,"exit":1,"cmd":"ninja"}
 {"kind":"phase","ts":"2026-11-19T20:33:03Z","phase":"compile","seconds":1130.168,"exit":0,"cmd":"ninja -C /var/lib/jenkins/fleet/jobs/mi300c-20261119-120702-quest-roles2-prompt/moat/projects/Quest/src/quest/ops/build"}
 {"kind":"phase","ts":"2026-11-19T20:34:30Z","phase":"test","seconds":22.868,"exit":0,"cmd":"python -m pytest /var/lib/jenkins/fleet/jobs/mi300c-20261119-120702-quest-roles2-prompt/moat/projects/Quest/src/quest/tests --rootdir /var/lib/jenkins/fleet/jobs/mi300c-20261119-120702-quest-roles2-prompt/moat/projects/Quest/src -p no:cacheprovider -q -rs"}
+{"kind":"session","ts":"2026-11-19T20:34:57Z","epoch":1795120497.47589,"event":"end","platform":"linux-gfx942"}
