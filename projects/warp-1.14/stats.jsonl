@@ -141,3 +141,8 @@
 {"kind":"phase","ts":"2026-11-19T08:26:30Z","phase":"compile","seconds":33.496,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261118-160631-warp114-evidence-mi300-prompt/moat/projects/warp-1.14/src && python build_lib.py --rocm-path \"$(rocm-sdk path --root)\" --hip-arch gfx942 -j 112"}
 {"kind":"phase","ts":"2026-11-19T09:12:25Z","phase":"test","seconds":2444.767,"exit":0,"cmd":"agent_space/p10/full_set.sh"}
 {"kind":"phase","ts":"2026-11-19T09:18:59Z","phase":"test","seconds":360.925,"exit":0,"cmd":"agent_space/p10/twogpu.sh"}
+{"kind":"phase","ts":"2026-11-19T08:26:34Z","phase":"compile","seconds":48.188,"exit":0,"cmd":"python /var/lib/jenkins/fleet/jobs/mi200-20261118-222725-warp114-evidence-mi200-prompt/moat/projects/warp-1.14/src/build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/mi200-20261118-222725-warp114-evidence-mi200-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx90a -j 64"}
+{"kind":"phase","ts":"2026-11-19T08:36:57Z","phase":"test","seconds":487.902,"exit":0,"cmd":"python /var/lib/jenkins/fleet/jobs/mi200-20261118-222725-warp114-evidence-mi200-prompt/moat/agent_space/s10/mma_check.py"}
+{"kind":"phase","ts":"2026-11-19T08:39:20Z","phase":"test","seconds":143.716,"exit":0,"cmd":"python /var/lib/jenkins/fleet/jobs/mi200-20261118-222725-warp114-evidence-mi200-prompt/moat/agent_space/s10/mma_check_bf16.py"}
+{"kind":"phase","ts":"2026-11-19T08:42:55Z","phase":"test","seconds":192.817,"exit":0,"cmd":"bash agent_space/run_cpu10.sh"}
+{"kind":"phase","ts":"2026-11-19T09:44:59Z","phase":"test","seconds":3916.608,"exit":0,"cmd":"bash agent_space/run_full10.sh"}

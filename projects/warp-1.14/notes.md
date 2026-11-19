@@ -4545,3 +4545,90 @@ The untracked `example_apic_fluid.usd` an example writes into the clone during t
 
 ### Next step for the lock holder
 gfx942 and two-GPU items at `c9595bce` are complete and match every expectation; nothing needs a fork change.
+
+## Evidence session 2 (2026-11-19, linux-gfx90a, MI250X, evidence only): gfx90a items 1-5 at `c9595bce`
+
+Requested by Jeff Daily. The lock stays with linux-gfx950. No fork commit, and no stage, lock, head, platform or deferred record changed. The read-only clone moved from `930d0098` to the recorded `head_sha` `c9595bcedee56cffa5b8181372e9f46643a087e8` (`git status --porcelain` empty before and after). Same host, venv and ROCm 10.2.0 wheels as the first gfx90a session (one MI250X GCD, `HIP_VISIBLE_DEVICES=3` as pinned, HIP 7.17.26434). Rebuilt: `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx90a -j 64` -> "Warp build succeeded", 48.2 s. Every run used `ulimit -c 0` and its own fresh `WARP_CACHE_PATH`. `mma_check.py` (fixed) and `mma_check_bf16.py` were extracted verbatim from Porting session 10; `sdf_probe.py`, `tex_capture.py`, `tex_alias.py` and `tex3d.cpp` are as before. Items run in the handoff's order.
+
+**Result: every item as the handoff expected.** One cosmetic finding: the 3D interop refusal message is wrong for gfx90a. A proposed diff is below, confirmed as an uncommitted experiment.
+
+### 1. Capabilities
+`python -c "import warp as wp; wp.init(); d = wp.get_device('cuda:0'); print(d.is_texture_hardware_supported, d.is_texture3d_hardware_supported)"` -> **`True False`**.
+
+### 2. test_texture
+`python -m warp.tests -s autodetect -p test_texture.py -m 32`: **Ran 119, OK (skipped=4)**, no `Warp CUDA error` line (the first session at `930d0098`: 120 run, 14 errors). 119 = 50 CPU + 63 `cuda_0` + 2 deviceless + 4 placeholders ("No suitable devices to run the test."). The placeholders are the three CUDA-only 3D interop registrations (`test_texture3d_cuda_interop_handles`, `test_texture3d_cuda_surface_property_api`, `test_texture3d_cuda_surface_property_requires_surface_access`) and `test_texture_interop_requires_hardware`, which has no device here because gfx90a has texture hardware. The fourth 3D interop test, `test_texture_handle_properties_host_vs_cuda`, keeps its CPU case and loses its `cuda_0` case, so `cuda_0` went from 67 to 63. All 14 earlier errors now pass, among them the 3D linear-filter, `uint8`/`uint16` linear interpolation, resolution query, the four `cuda_array_copy_api` variants (plain, both graph captures, indexed-array rejection) and `test_texture_dtype_prefers_warp_types`. The 1D/2D hardware cases pass as before.
+
+### 3. Probes
+| probe | result |
+|---|---|
+| `python sdf_probe.py cpu` | PASS: 0.00e+00 / 1.28e-03 / 0.00e+00 |
+| `python sdf_probe.py cuda:0` | **PASS**: SDF vs CPU sampler 5.96e-08 (3D linear in software; gfx942/gfx950 give the same 5.96e-08), SDF vs analytic 1.28e-03, RGBA8 vs CPU sampler 2.52e-03 (2D on hardware, the gfx1100 figure) |
+| `python tex_capture.py cuda:0` | **PASS**: replays 0, 1, 2 each max abs diff vs CPU 1.19e-07 (3D software texture uploaded and sampled inside a graph) |
+| `python tex_alias.py cuda:0` | **PASS**: plain 0 of 2048 wrong, graph capture 0 of 2048 wrong (2D hardware, external array) |
+| `./tex3d` (unchanged binary) | unchanged: 3D `hipTexObjectCreate`/`hipCreateTextureObject` 801 with the linear filter, 0 with `POINT=1`; HIP still refuses by design |
+
+The hardware/software split shows in the code objects these runs left in their caches (`llvm-objdump -d --mcpu=gfx90a`, counting `image_sample`): `tex_capture.py`'s module (3D only) 0; `sdf_probe.py`'s module (one 3D, one 2D texture) 1, the 2D sample; test_texture's module 12.
+
+Extra check, not in the handoff (`interop3d.py`, below): on `cuda:0`, a `Texture2D`'s `cuda_array` and `cuda_texture` are valid handles, while a `Texture3D`'s `cuda_array`, `cuda_texture`, `cuda_surface` and `Texture3D(cuda_array=...)` all raise `RuntimeError`, and `id` works. So the per-dimension refusal behaves as designed. No registered test covers it on gfx90a, because `test_texture_interop_requires_hardware` registers only on devices with no texture hardware at all. **Finding (cosmetic):** the message reads "cuda_array is not available on cuda:0: it has no texture hardware and samples textures in software", which is false on gfx90a (its 1D/2D textures are hardware in the same process). Proposed diff for the lock holder (the 2D/no-hardware message is unchanged, so `test_texture_interop_requires_hardware`'s regex still matches where it runs):
+```diff
+--- a/warp/_src/texture.py
++++ b/warp/_src/texture.py
+@@ -426,10 +426,15 @@ class Texture:
+ 
+     @staticmethod
+     def _require_texture_hardware(device, name, ndim):
+-        if not (device.is_texture3d_hardware_supported if ndim == 3 else device.is_texture_hardware_supported):
++        if not device.is_texture_hardware_supported:
+             raise RuntimeError(
+                 f"{name} is not available on {device}: it has no texture hardware and samples textures in software"
+             )
++        if ndim == 3 and not device.is_texture3d_hardware_supported:
++            raise RuntimeError(
++                f"{name} is not available for 3D textures on {device}: its texture hardware cannot filter 3D "
++                "textures, so they are sampled in software"
++            )
+ 
+     @staticmethod
+     def _validate_texture_dtype(dtype):
+```
+With it applied locally (Python only, no rebuild, fresh cache): `interop3d.py` prints "cuda_array is not available for 3D textures on cuda:0: its texture hardware cannot filter 3D textures, so they are sampled in software" for all four cases; test_texture 119, OK (skipped=4). Reverted afterwards (`git checkout warp/_src/texture.py`, clone clean). Not linted: `ruff` is not installed in this venv. Lines are under 120 columns.
+
+`interop3d.py`:
+```python
+# On a device whose 3D textures are sampled in software, the 3D interop handles must raise, the 2D ones work.
+import numpy as np
+
+import warp as wp
+
+wp.init()
+dev = wp.get_device("cuda:0")
+t2 = wp.Texture2D(np.zeros((8, 8), dtype=np.float32), device=dev)
+t3 = wp.Texture3D(np.zeros((4, 4, 4), dtype=np.float32), device=dev)
+print("2D cuda_array/cuda_texture nonzero:", bool(t2.cuda_array), bool(t2.cuda_texture))
+for prop in ("cuda_array", "cuda_texture", "cuda_surface"):
+    try:
+        getattr(t3, prop)
+        print(f"3D {prop}: no exception")
+    except Exception as e:
+        print(f"3D {prop}: {type(e).__name__}: {e}")
+try:
+    wp.Texture3D(cuda_array=t2.cuda_array, device=dev)
+    print("Texture3D(cuda_array=...): no exception")
+except Exception as e:
+    print(f"Texture3D(cuda_array=...): {type(e).__name__}: {e}")
+print("3D id nonzero:", bool(t3.id))
+```
+
+### 4. `mma_check.py` (fixed) and `mma_check_bf16.py`
+- `python mma_check.py`: **FAILURES 0**, exit 0, 488 s. 165 cases: 125 ok, **15 SMEM-LIMIT (forward not launched)** (fp32 64x64x64, fp64 64x64x64, fp64 64x32x48, each at all five block_dims: exactly the 15 the first session counted as FAIL), and 25 SMEM-LIMIT (backward not launched) (fp32 64x32x48, fp64 32x32x32, fp64 48x16x64, fp64 32x64x16, fp16 64x64x64; unchanged). Its code objects: 3864 `v_mfma_f32_16x16x4f32`, 3864 `v_mfma_f64_16x16x4f64`, 948 `v_mfma_f32_16x16x16f16`.
+- `python mma_check_bf16.py`: **FAILURES 0**, exit 0, 55 cases, max abs diff to the CPU 9.5e-07 (64x64x64, 64x32x48), 0 on the four fallback shapes; 242 `v_mfma_f32_16x16x16bf16_1k` (this version has two matmuls per kernel).
+
+### 5. Tile set, full 82-pattern set, CPU-only suite
+- Full set (the same 82-pattern list and loop as the first gfx90a session, 3917 s): **81 patterns OK, 1 with the 2 known failures** (`test_fem*` 108: `test_gimp_quadrature`, `test_cube_shape_functions`, upstream isolation; 108 because `example_diffusion_mgpu` registers on this host, as before). Line by line against the first session at `930d0098`, timings stripped, **the only change is test_texture** (120 with 14 errors -> 119 OK, 4 skipped). Skip reasons are the same as then, plus the 3 new "No suitable devices" texture placeholders (21 instead of 18). No `Warp CUDA error` line in any of the 82 logs. The only "Failed to configure kernel dynamic shared memory" line is the known `test_tile_load_scoped` backward (65536).
+- Tile set (24 files, inside the full set): **639 run, 15 skipped, 0 failures**. The skips are the 10 upstream no-libmathdx skips and the five 64 KiB capability skips (67584 x2, 66816, 66688 x2). test_tile_matmul 25 OK, with the three `fragment_shapes` cases.
+- CPU-only suite (`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99`, from a scratch directory, 193 s): **Ran 2294, OK (skipped=15)**.
+- `example_apic_fluid.usd`, written into the clone by an example during the full set, was deleted afterwards.
+
+### Next step for the lock holder
+- `c9595bce` (option A) works on real gfx90a hardware: the 14 texture errors are gone, 3D sampling matches the CPU sampler (5.96e-08, as on gfx942/gfx950), 1D/2D stay on hardware, and the full set has only the known fem pair. If Jeff keeps option A, the message diff above is the one change suggested (cosmetic; `texture.py` +6/-1). Optionally add an interop-refusal test registered on devices with 1D/2D hardware but no 3D hardware, so this path has coverage on gfx90a; not drafted, since it adds carried test lines Jeff may not want.
+- Procedure note for other hosts: `utils/timeit.sh` needs the job's `pylib` on `PYTHONPATH` for jsonschema. Exporting `PYTHONPATH=<src>` alone makes it fail with "no Python that can run MOAT's tools" before the wrapped command runs; prepend instead (`PYTHONPATH=<src>:$PYTHONPATH`). It cost one aborted attempt of item 4 here; nothing ran in it.
