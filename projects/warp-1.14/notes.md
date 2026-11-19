@@ -1291,3 +1291,109 @@ int main()
 **32-bit lane masks.** HIP's warp-sync intrinsics (`__ballot_sync`, `__shfl*_sync`, `__any_sync`, `__all_sync`, `__match_*_sync`, `__syncwarp`, `__reduce_*_sync`) are templates with `static_assert(sizeof(MaskT) == 8, "The mask must be a 64-bit integer")` (`include/hip/amd_detail/amd_warp_sync_functions.h`; the same text is built into hipRTC). A CUDA snippet with `0xffffffff` therefore fails to compile on every AMD target, wave32 included. The only switch is `HIP_DISABLE_WARP_SYNC_BUILTINS`, which removes the `*_sync` builtins (and `__activemask`) altogether. Warp's own device code already uses 64-bit masks (`tile_mask_t`), so only user snippets meet this.
 
 Proposal: leave HIP's behaviour (a compile error is the safe failure: on wave64 a 32-bit mask would silently exclude lanes 32-63, which is exactly the class of bug the check exists to stop) and document it in the release notes with the fix: spell masks `~0ull` or `__activemask()` (both correct on wave32 and wave64), and note that `tid & 31` lane arithmetic is only right on wave32. Rejected alternative: a Warp prelude that disables HIP's builtins and supplies overloads widening a 32-bit mask on wave32 targets (and refusing it on wave64): it fixes copied CUDA snippets on Radeon only, duplicates about a dozen HIP intrinsics (with HIP's mask checks) inside Warp, and has to track HIP's interface as it changes. Not worth it for snippets that need a one-token edit.
+
+### Phase 5: device textures (code complete; hardware proof needs an image-capable AMD GPU)
+Fork head `2505f4a3` (pushed, `advance-head` recorded). nvcc 12.8 build at `2505f4a3` succeeded; offline NVRTC compile of a texture-sampling module (`agent_space/nvrtc_check/nvrtc_tex.py`, 1D/2D/3D float and vec4f samples) gave `sm86.cubin` and `sm90.ptx` with 8 `tex.{1d,2d,3d}.v4.f32.f32` instructions, so the CUDA sampling path is unchanged; the tile/atomic NVRTC check also still passes. `audit-commits` OK, `jargon.py --port` clean.
+
+**Finding that reshapes the plan's Phase 5: gfx942 and gfx950 have no image hardware.** On the MI355X `hipDeviceAttributeImageSupport` is 0 and `hipArray3DCreate` returns `hipErrorNotSupported` for every shape (1D/2D/3D), format (float, uint8, half) and channel count, with or without `hipArraySurfaceLoadStore` (`agent_space/p5/tex/arr.hip`). At compile time ROCm clang defines `__HIP_NO_IMAGE_SUPPORT` for gfx942 and gfx950 (not for gfx90a, gfx1100) and HIP's headers mark `tex1D/2D/3D` and the surface functions unavailable there ("The image/texture API not supported on the device"; `amd_detail/host_defines.h:389`, `amd_device_functions.h:805`). So device textures cannot exist on the two current Instinct targets: the plan's proof "on gfx942 and wave32" can only be met on wave32 (and gfx90a, gfx1151). gfx942's runtime attribute was not measured here (compile-time evidence only); the next gfx942 session confirms it (handoff A below). Before this phase every GPU texture test on gfx950 failed with "Warp CUDA error 801: operation not supported (in function wp_texture_create_device, texture.cpp:171)" (66 errors of 119 run).
+
+Commits:
+- `2208ef30` [ROCm] Sample textures with HIP on AMD GPUs with image support. `texture.h`: one macro block decides hardware sampling: CUDA as upstream; HIP device compiles without `__HIP_NO_IMAGE_SUPPORT` call HIP's `tex1D/tex2D/tex3D<T>` with the handle converted back to `hipTextureObject_t` (a pointer on HIP, stored in Warp's 64-bit handle); HIP device compiles with `__HIP_NO_IMAGE_SUPPORT` return `zero()` (unreachable, creation is refused); host/CPU keeps the software sampler. All 9 sites (float, vec2f, vec4f x 1D/2D/3D; the 1D samplers included). Before, the HIP device branch compiled the CPU sampler and dereferenced the texture object as a host `Texture*`. Proof without the hardware (`agent_space/p5/tex/xcompile.py`): a module sampling all 9 combinations, built on gfx950, then its generated source recompiled through Warp's own hipRTC path (`warp._src.build.build_cuda(..., hip_target=<gfx>)`) for gfx1100, gfx1201, gfx1151, gfx90a, gfx942, gfx950: all compile; `llvm-objdump -d --mcpu=<gfx>` counts 9 `image_sample` instructions on gfx1100/gfx1201/gfx1151/gfx90a and 0 on gfx942/gfx950.
+- `2505f4a3` [ROCm] Refuse textures on AMD GPUs without image support. `DeviceInfo.is_texture_supported` (HIP: `hipDeviceAttributeImageSupport`; CUDA: 1), export `wp_cuda_device_is_texture_supported`, `Device.is_texture_supported` (CPU True, it samples in software; documented in the Device docstring); `Texture.__init__` raises "Textures are not supported on device cuda:0 (AMD Instinct MI355X): it has no image support" before touching HIP. test_texture registers its device tests only on devices with `is_texture_supported` (the `devices_with_mempools` idiom) and adds `test_texture_unsupported_device_raises` on devices without it, so the gap is reported, not silent. A refused texture is collected without an "Exception ignored" warning (`__new__` zeroes the handles).
+
+Host side on image-capable AMD GPUs needs no change by reading: `cuArray3DCreate`/`cuArrayDestroy`/`cuArray3DGetDescriptor`/`cuMemcpy3DAsync`/`cuTexObjectCreate`/`cuTexObjectDestroy` already map to `hipArray3DCreate`/`hipArrayDestroy`/`hipArray3DGetDescriptor`/`hipDrvMemcpy3DAsync`/`hipTexObjectCreate`/`hipTexObjectDestroy` (Phase 0 wrappers), and `cudaCreateSurfaceObject` to `hipCreateSurfaceObject` (compat header). Without `HIP_TRSF_READ_AS_INTEGER` HIP reads 8/16-bit formats as normalized floats, as CUDA does. Plan items checked: no mipmapped arrays are used by Warp 1.14 (only the descriptor's mipmap fields are zeroed), so no `hipMipmappedArray` work; no pitched-memory texture binds (arrays only; copies pass the linear source's row pitch to `hipDrvMemcpy3DAsync`), so the 256-byte pitch rule does not arise; no layered arrays; `Texture.__del__` destroys the texture object, surface and owned array once each, in that order (plan risk 4). These are readings; the runtime proof is handoff B.
+
+Results on gfx950 (`-s autodetect -p <file> -m 32`): test_texture 70 run, OK, 17 skipped ("No suitable devices to run the test.": the CUDA-only registrations with an empty device list); 50 CPU cases and `test_texture_unsupported_device_raises_cuda_0` pass. test_devices 13 OK, test_diagnostics 14 OK, test_codegen 117 OK. Newton-style probe (`sdf_probe.py`, below): `cpu` PASS (SDF vs CPU sampler 0, vs analytic 1.28e-3 with grid spacing 1.56e-2, RGBA8 0); `cuda:0` raises the refusal, as designed. CPU-only suite with GPUs hidden (`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32`): Ran 2294, OK (skipped=15) = session 3's 2282 plus the 12 new CPU atomic_cas/atomic_exch cases.
+
+**For Jeff (decision, nothing implemented): device textures on gfx942/gfx950.** Upstream Warp has only hardware textures on GPUs and a software sampler on the CPU. The two current Instinct targets cannot have hardware textures, so this line refuses them there, which is the honest minimum. Option: a GPU software-sampling path for AMD devices without image support: keep the texel data in a linear device allocation, store a device-side `Texture` (the CPU struct) as the handle, and run the existing software sampler (`cpu_sample_*_channel`, already compiled into device code on HIP) on the GPU. That is a GPU implementation, not a CPU fallback; it reuses upstream's sampler (so results match Warp's CPU textures exactly, not the hardware's 8-bit-weight filtering), costs roughly: allocation and copy paths in texture.cpp/texture.py for a second device storage kind, the `cuda_array`/`cuda_surface`/`cuda_texture` interop properties raising on those devices, and test registration by capability instead of by device. Performance would be well below hardware sampling (8 global loads and the filter arithmetic per trilinear sample). Newton's SDF sampling and similar users would then run on MI300/MI355. Recommendation: refuse in 1.14.0+rocm.0 (as now) and register the software path as a deferred feature candidate if Jeff wants it later; not registered by the porter, because whether to defer is Jeff's call.
+
+`sdf_probe.py` (Newton-style probe; copy into a file to run):
+```python
+# Newton-style textured sampling probe: a sphere signed distance field in a 3D float texture
+# (linear filter, normalized coordinates, clamp), sampled at random points in a kernel, plus a
+# 2D RGBA8 texture read as normalized floats. The GPU result must match Warp's CPU texture
+# sampler for the same data; the SDF must also be close to the analytic distance.
+# Usage: python sdf_probe.py [device]   (default cuda:0; "cpu" checks the probe itself)
+import sys
+
+import numpy as np
+
+import warp as wp
+
+wp.init()
+device = wp.get_device(sys.argv[1] if len(sys.argv) > 1 else "cuda:0")
+print(f"device {device} ({device.name}) is_texture_supported={device.is_texture_supported}")
+
+N = 64  # grid resolution per axis
+R = 0.3  # sphere radius in normalized [0, 1] coordinates, centred at 0.5
+c = (np.arange(N, dtype=np.float32) + 0.5) / N  # texel centres
+z, y, x = np.meshgrid(c, c, c, indexing="ij")
+sdf = (np.sqrt((x - 0.5) ** 2 + (y - 0.5) ** 2 + (z - 0.5) ** 2) - R).astype(np.float32)  # [depth, height, width]
+
+rgba = np.random.default_rng(1).integers(0, 256, size=(32, 48, 4), dtype=np.uint8)  # [height, width, 4]
+
+
+@wp.kernel
+def query(
+    sdf_tex: wp.Texture3D,
+    img_tex: wp.Texture2D,
+    pts: wp.array(dtype=wp.vec3f),
+    d: wp.array(dtype=float),
+    col: wp.array(dtype=wp.vec4f),
+):
+    i = wp.tid()
+    p = pts[i]
+    d[i] = wp.texture_sample(sdf_tex, p, dtype=float)
+    col[i] = wp.texture_sample(img_tex, wp.vec2f(p[0], p[1]), dtype=wp.vec4f)
+
+
+def run(dev):
+    sdf_tex = wp.Texture3D(
+        sdf, filter_mode=wp.TextureFilterMode.LINEAR, address_mode=wp.TextureAddressMode.CLAMP,
+        normalized_coords=True, device=dev,
+    )  # fmt: skip
+    img_tex = wp.Texture2D(
+        rgba, filter_mode=wp.TextureFilterMode.LINEAR, address_mode=wp.TextureAddressMode.WRAP,
+        normalized_coords=True, device=dev,
+    )  # fmt: skip
+    pts = wp.array(np.random.default_rng(0).uniform(0.1, 0.9, size=(4096, 3)).astype(np.float32), dtype=wp.vec3f, device=dev)
+    d = wp.zeros(4096, dtype=float, device=dev)
+    col = wp.zeros(4096, dtype=wp.vec4f, device=dev)
+    wp.launch(query, dim=4096, inputs=[sdf_tex, img_tex, pts, d, col], device=dev)
+    return pts.numpy(), d.numpy(), col.numpy()
+
+
+pts, d, col = run(device)
+_, d_ref, col_ref = run("cpu")
+analytic = np.linalg.norm(pts - 0.5, axis=1) - R
+# hardware filtering uses 8-bit fixed-point weights (CUDA and AMD alike), so allow a small difference
+print(f"SDF vs CPU sampler: max abs diff {np.abs(d - d_ref).max():.2e}")
+print(f"SDF vs analytic:    max abs diff {np.abs(d - analytic).max():.2e} (grid spacing {1.0 / N:.2e})")
+print(f"RGBA8 vs CPU sampler: max abs diff {np.abs(col - col_ref).max():.2e} (values in [0, 1])")
+ok = np.abs(d - d_ref).max() < 2e-3 and np.abs(d - analytic).max() < 1.0 / N and np.abs(col - col_ref).max() < 1e-2
+print("PASS" if ok else "FAIL")
+sys.exit(0 if ok else 1)
+```
+The tolerances (2e-3 on the SDF against the CPU sampler, 1e-2 on RGBA8) are a first guess at hardware filtering error, not measured on AMD; if the wave32 run fails only on them, record the measured differences and compare with what CUDA's 8-bit filter weights allow before changing anything.
+
+### Next step (Phase 5 boundary; what each host still has to run)
+The project stays in `porting`, lock held by linux-gfx950, head `2505f4a3`. Common setup as in the session 4 handoff (TheRock 10.2 wheels with the host's `device-<gfx>` extra, `export PATH=$FLEET_VENV/bin:$PATH` before `$(rocm-sdk path --root)` (the gfx1100 trap), `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch <gfx> -j <physical cores>`, `git lfs pull`, private `WARP_CACHE_PATH`, `ulimit -c 0`), at `git rev-parse HEAD` = `2505f4a3d7dd8a6bb4fd52f535ff846bd2d48800` or the later recorded `head_sha`. Copy `sdf_probe.py` from the block above. All `python -m warp.tests` commands run from `projects/warp-1.14/src`.
+
+**B. wave32 Radeon host (gfx1100 or gfx1201; image-capable), the Phase 5 proof:**
+1. `python -c "import warp as wp; wp.init(); d = wp.get_device('cuda:0'); print(d.arch_name, d.is_texture_supported)"`: expect True.
+2. `python -m warp.tests -s autodetect -p test_texture.py -m 32`: every GPU registration must now run on `cuda:0`: expect 119 run (the count gfx950 registered before the capability filter), 0 skipped, and `test_texture_unsupported_device_raises` not registered. Any failure is a Phase 5 finding: fix on `release/1.14.0.amd0` if it is the port (sampling coordinates, normalized reads, address modes, surface objects, 3D copies), register it if it is HIP.
+3. `python sdf_probe.py cuda:0`: PASS expected; record the three printed differences either way.
+4. The 64 KiB tile sizing on a real 64 KiB part (`59d873af`): `for f in test_tile_shared_memory.py test_tile_reduce.py test_tile_view.py; do python -m warp.tests -s autodetect -p "$f" -m 32; done`: expect 30, 62, 16 OK (the four tests that failed in B.2 now pass with smaller tiles).
+5. The `__frsqrt_rn` cost on wave32 for Jeff: build and run `rsq.hip` + `judge.py` (session 5 item 5; they live in `agent_space/p5/rsq/` on the gfx950 host only, so reproduce from the description: `(float)(1.0 / sqrt((double)x))` vs `__frsqrt_rn` throughput, 256-thread blocks, 64 blocks per CU, 4096 iterations per thread); optional, only if Jeff asks.
+
+**A. gfx942 host:**
+1. Confirm no image support at run time: the same one-liner as B.1 (expect False) and `python -m warp.tests -s autodetect -p test_texture.py -m 32` (expect the CPU cases plus `test_texture_unsupported_device_raises_cuda_0` OK).
+2. The 64 KiB tile sizing: the three files of B.4 (expect 30, 62, 16 OK; they failed 4 tests in A.2).
+
+**C. two-GPU session (gfx942 or gfx950, `HIP_VISIBLE_DEVICES=0,1`):** the C.2 loop of the session 4 handoff (13 files). Expect the C1/C2/C3 failures of the gfx942 run to appear as skips naming the HIP defect ("HIP cannot instantiate a graph captured on a device other than 0 ...", "HIP cannot revoke memory pool peer access ...", "HIP cannot instantiate a graph with kernel nodes on more than one device"), no errors, and C5 (`test_fem_integrate.test_integrate_gradient_cuda_0`) passing in the full-file run. `test_stream_priority_timings` still fails on gfx942 (C4, proposal above, not changed).
+
+**gfx90a, if a host exists:** B.1-B.3 (image-capable wave64).
+
+**Then Phase 6 (Windows gfx1151), only after B passes at the same head on both Linux wave families** (rule: Linux wave64 and wave32 first): the plan's Phase 6 section.
+
+**Open for Jeff:** the 64 KiB tile sizing vs a capability skip (item 3 above); C4's direction; `__frsqrt_rn`/`OCML_BASIC_ROUNDED_OPERATIONS` and the lane-mask note (item 5); device textures on gfx942/gfx950 (software sampling or refuse); defer/now rulings on the four `rocm-bug-report` entries registered this session (`hip-graph-memcpy-host-graph-alloc-device-mismatch`, `hip-mempool-set-access-cannot-revoke`, `hip-graph-multi-device-kernel-nodes`, `amdgpu-earlycse-sqrt-keeps-fpmath`; `python3 utils/deferred.py pending`); the Q3 matrix-core ruling (gfx950, gfx942 and gfx1100 numbers are all in these notes).
