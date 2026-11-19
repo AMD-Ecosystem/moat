@@ -218,7 +218,7 @@ The project name links upstream.
 | [FastGeodis](https://github.com/masadcv/FastGeodis) ([fork](https://github.com/AMD-Ecosystem/FastGeodis/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#68](https://github.com/masadcv/FastGeodis/pull/68) |
 | [FastVideo](https://github.com/hao-ai-lab/FastVideo) ([fork](https://github.com/AMD-Ecosystem/FastVideo/tree/moat-port)) | 🔧 | ⬜ | ⬜ | — |
 | [fdtd3d](https://github.com/zer011b/fdtd3d) ([fork](https://github.com/AMD-Ecosystem/fdtd3d/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#205](https://github.com/zer011b/fdtd3d/pull/205) |
-| [ffpa-attn](https://github.com/xlite-dev/ffpa-attn) ([fork](https://github.com/AMD-Ecosystem/ffpa-attn/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#268](https://github.com/xlite-dev/ffpa-attn/pull/268) |
+| [ffpa-attn](https://github.com/vipshop/ffpa-attn) ([fork](https://github.com/AMD-Ecosystem/ffpa-attn/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#268](https://github.com/vipshop/ffpa-attn/pull/268) |
 | [FLAMEGPU2](https://github.com/FLAMEGPU/FLAMEGPU2) ([fork](https://github.com/AMD-Ecosystem/FLAMEGPU2/tree/moat-port)) | ✅ | ✅ | ✅ | ⏸ on hold |
 | [FlashMoE](https://github.com/osayamenja/FlashMoE) | 🚫 | — | — | ⚪ not-portable |
 | [FlashRT](https://github.com/flashrt-project/FlashRT) | 🚫 | — | — | ⚪ not-portable |
