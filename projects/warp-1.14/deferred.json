@@ -154,7 +154,7 @@
       "refs": [
         "projects/warp-1.14/notes.md (Evidence session linux-gfx942, finding C3)"
       ],
-      "status": "open",
+      "status": "superseded",
       "upstream_issue": null,
       "created_at": "2026-11-19T01:19:49Z",
       "decided": {
@@ -162,6 +162,13 @@
         "by": "jeffdaily",
         "at": "2026-11-19T05:10:20Z",
         "note": "2026-11-18: report it; reproducer confirmed on current ROCm and draft first, Jeff files"
+      },
+      "closed": {
+        "as": "superseded",
+        "reason": "2026-11-18: not filed; AMD already declined multi-device graphs in ROCm/clr#113 (not supported, not on the roadmap). The port keeps skipping the affected tests with a message naming the HIP limitation, and the release notes state it.",
+        "by": "jeffdaily",
+        "at": "2026-11-19T06:20:26Z",
+        "superseded_by": "https://github.com/ROCm/clr/issues/113"
       }
     },
     {
