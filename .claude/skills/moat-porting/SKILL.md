@@ -70,8 +70,10 @@ what passes and what does not).
 - `cant-port` means "no AMD-native target exists", not "hipify will not do it". When the
   blocker is CUTLASS or CuTe, the intake recommendation names the reimplementation target
   and a rough cost, and a person decides.
-- FlashKDA, NATTEN, mirage and spconv are recorded `cant-port` on CUTLASS/CuTe grounds from
-  before FlyDSL was available. Revisiting them is a person's call, not an agent's.
+- NATTEN and mirage are recorded `cant-port` on CUTLASS/CuTe grounds from before FlyDSL was
+  available. Revisiting them is a person's call, not an agent's. (This line used to name
+  FlashKDA and spconv too; their recorded dispositions are `ported-elsewhere` and
+  `already-supported`. Read `data/dispositions.json`, not a list in prose.)
 - MOAT ported OpenCV's CUDA modules (opencv/opencv_contrib#4147). A project blocked on
   "OpenCV CUDA has no ROCm build" records `depends_on: [opencv_contrib]` rather than a
   decline.
