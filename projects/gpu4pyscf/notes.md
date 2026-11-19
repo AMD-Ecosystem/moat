@@ -4436,3 +4436,7 @@ Sizes are in our fork (10dcea3..5a87452). "Stands alone" means it applies to ups
 
 ### State left
 `head_sha` 5a87452, stage `porting`, lock released, every platform record unchanged; nothing pushed to the fork; no GitHub write. The W7800 at BDF 26:00.0 (HIP device 3 in this container) is wedged and needs a reset by someone with host access before any GPU work runs on it.
+
+## Upstream conversation opened 2026-11-19
+
+jeff filed https://github.com/pyscf/gpu4pyscf/issues/1054 ("ROCm port (#1042): test results on MI300X and Radeon PRO W7800, and fixes we can send"). It reports the two evaluation runs above, offers the six small fixes and the ECP kernels as pull requests, and asks whether upstream would take GPU libxc on HIP. Watch it for the answer before any GPU libxc work; pull requests wait for jeff.
