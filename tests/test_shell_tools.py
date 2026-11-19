@@ -79,12 +79,17 @@ class Lib(unittest.TestCase):
     def guard_check(self, gh_text=None):
         if gh_text is not None:
             support.write_script(self.bin / "gh", gh_text)
-        # PATH is only this directory plus wherever grep lives, so a real gh
-        # installed on the test host is not what `command -v gh` finds.
+        # PATH is only this directory plus one holding nothing but a grep wrapper,
+        # so a real gh installed on the test host is not what `command -v gh`
+        # finds -- not even one that sits beside grep in /usr/bin, as on a CI runner.
         script = support.write_script(self.dir / "g.sh", (
             f'. "{support.posix(UTILS / "lib.sh")}"\n'
             'here=$(cd "$(dirname "$0")" && pwd)\n'
-            'PATH="$here/bin:$(dirname "$(command -v grep)")"\n'
+            'mkdir -p "$here/bin" "$here/tools"\n'
+            '{ echo "#!/bin/sh"; echo "exec \\"$(command -v grep)\\" \\"\\$@\\""; } '
+            '> "$here/tools/grep"\n'
+            'chmod +x "$here/tools/grep"\n'
+            'PATH="$here/bin:$here/tools"\n'
             'PY=python\nmoat_gh_guard_problem; echo "rc=$?"\n'))
         return support.run_bash(script)
 
