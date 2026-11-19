@@ -3069,3 +3069,24 @@ Each of the 7 `_kernels` compile lines from `ninja -t commands _kernels` was rer
 These are all the `.cu` files in the module, so every `.cu` the port touches and every `.cu` that includes a header it touches was compiled through the real CMake build. No file needed a hand-assembled nvcc line, and none failed. The `hip_compat/` shims are not on the CUDA include path. Both modules export the same 651 text symbols, and their undefined dynamic symbol lists are identical (`nm -D`, diffed). This time an import smoke test ran: each `.so`, copied to its own directory, imports under `<venv>/bin/python -I` from `/tmp` after `import torch`, with the same 8 public names in both (`BatchDecodeWithPagedKVCachePyTorchWrapper`, `append_kv_cache_decode`, `append_kv_cache_prefill`, `apply_rope_in_place`, `estimate_attn_score`, `prefill_with_paged_kv_cache`, `rms_norm_forward`, `topk_filtering`). No kernel ran, because there is no GPU.
 
 **Verdict: the CUDA path compiles and links with real nvcc 12.8 at `a70f4d9`, with the same result as upstream `01c1623`. There is no port regression.** The only failures are RAFT's optional compiled library, and they are identical on unmodified upstream. The RAFT/torch `CUDA::nvToolsExt` configure wall reproduces on unmodified upstream with a toolkit that has no legacy nvToolsExt, and a one-target `CMAKE_PROJECT__kernels_INCLUDE` shim clears it for both trees. Setup note: the fleet guard refused `pip install` into a second venv; the CUDA torch wheel went into the job's own `$FLEET_VENV`, which it allows.
+
+### Linux build and tests at `a70f4d9` (linux-gfx942, after the review; evidence only, NOT a validation record)
+
+The validation gate is closed (stage `changes-requested`), so no platform state was written. Recorded so the next round can judge whether a Windows-only fix needs a Linux rebuild. MI300X (`gfx942:sramecc+:xnack-`), `HIP_VISIBLE_DEVICES=2` (pinned by the job), torch 2.16.0a0+git6c3af02 / HIP 7.16 on the pip ROCm SDK 10.1, Python 3.11.17, transformers 4.37.2, tokenizers 0.15.2. Fork at `a70f4d9` == `origin/moat-port`, fresh clone, tree clean afterwards.
+
+README Linux command, fresh build directory, `PYTORCH_ROCM_ARCH` unset, no build type passed:
+
+```
+cd quest/ops && mkdir build && cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=$(python -c 'import torch;print(torch.utils.cmake_prefix_path)') ..
+ninja      # timeit.sh Quest compile (with ninja -C <build>, since timeit.sh runs from the repository root)
+ln -sf $PWD/_kernels*.so ../../
+```
+
+`CMAKE_BUILD_TYPE=Release` from the default; 8 compile lines with `-O3`; 8/8, exit 0, 0 errors, 1130 s. Tests, `ulimit -c 0`, wrapped in `timeit.sh Quest test` (`MOAT_PYTHON` set because the test venv on PATH lacks jsonschema):
+
+```
+PYTHONPATH=<fork> python -m pytest quest/tests -p no:cacheprovider -q -rs
+```
+
+**202 passed, 28 skipped, 0 failed** (21.7 s); skips are the tests' own (`test_prefill_attention.py:51` qo_len > kv_len, 13; `test_topk.py:27` k >= kv_len, 15). Per suite (separate runs): test_approx_attention 42; test_decode_attention 6; test_decode_launch_shape 3; test_estimate 9; test_prefill_attention 29 passed, 13 skipped; test_rope 64; test_topk 49 passed, 15 skipped. Identical to `6e7d8db` on this GPU. End-to-end Llama-2 run not repeated: the delta touches no kernel and no compiled code (the generated `build.ninja` is identical to `6e7d8db`'s, per the review above).
