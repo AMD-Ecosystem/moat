@@ -69,5 +69,23 @@ class AcceptPrHead(unittest.TestCase):
         self.refused("no published_sha", obj=obj)
 
 
+class ArchivePrDerivesTheNumber(unittest.TestCase):
+    """A record from before pr_number existed carries only the URL."""
+
+    def test_the_number_comes_from_the_url(self):
+        obj = record(pr_state="merged", head_sha=NEW, published_sha=OLD)
+        del obj["pr_number"]
+        saved = []
+        with mock.patch.object(moatlib, "project_record", lambda n: (obj, "branch")), \
+                mock.patch.object(moatlib, "ensure_port_branch",
+                                  lambda n: (False, "already")), \
+                mock.patch.object(moatlib, "record_writable_here",
+                                  lambda n: (True, "here")), \
+                mock.patch.object(moatlib, "save_record",
+                                  lambda n, ob, msg: saved.append(copy.deepcopy(ob))):
+            moatlib.archive_pr("proj")
+        self.assertEqual(saved[-1]["pr_history"][-1]["pr_number"], 7)
+
+
 if __name__ == "__main__":
     unittest.main()
