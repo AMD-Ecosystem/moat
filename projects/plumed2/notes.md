@@ -865,3 +865,19 @@ on this host). cuda_to_hip.h's change is inside `#ifdef __HIP__` apart from a
 comment, so the plugin's CUDA objects are unaffected.
 
 `jargon.py --port plumed2` clean; `prose.py` clean on the commit message.
+
+## Review 2026-11-19 (check-gpu delta)
+
+Reviewer (linux-gfx942), delta `388fcc10f...b0e0fb6d1` (one commit, 4 files) plus its commit message. Verdict: **review-passed**. No blocking findings.
+
+Checked, and holding:
+- USE_HIP reaches the sub-make. `make -n USE_HIP=1 HIP_ARCHITECTURES=gfx942 check-gpu` in `plugins/cudaCoord` runs the recursive `$(MAKE) -C ../openaccPTM/gpucheck` and prints `hipcc -x hip --offload-host-only -I.../cudaCoord/src -std=c++17 ...device_check.cpp -o device_check -ldl` (the command-line variable travels in MAKEFLAGS). `configure.sh` writes no USE_HIP into Makefile.conf, so USE_HIP is always given to make, as the README says.
+- CUDA path unchanged. Without USE_HIP, `make -B -n device_check` in gpucheck prints the same nvcc line as the base recipe; the `#ifdef __HIP__` in `device_check.cpp:47` is false under nvcc; the header change is inside `#ifdef __HIP__` apart from a comment. Scratch compile of the head `device_check.cpp` with nvcc 12.8.93 links.
+- Header inclusion: a scratch host-only HIP compile of the head `device_check.cpp` with the head `cuda_to_hip.h` builds and links libamdhip64. All ten CUDA names the program uses are mapped; `cudaMemset` and `cudaDeviceSynchronize` appear nowhere else in `plugins/cudaCoord/src`, as the commit message says.
+- `gpucheck/Makefile:9-14`: `CUDACXX =` (not `?=`) under USE_HIP correctly overrides an environment CUDACXX; `HIPCC ?= hipcc` matches cudaCoord's Makefile. Scope as ruled: openaccPTM changed only in the gpucheck Makefile and one include.
+- README lines 27 and 52 are accurate.
+- Commit message: title 57 chars with `[ROCm]` (adds HIP-naming lines), AI disclosure in prose, Test Plan with fenced commands, no trailer, no AMD-internal account reference. `utils/jargon.py --port plumed2`: clean.
+- No wave-size, texture, OOB or library fault class applies (host-only program, no kernels).
+
+Non-blocking (a correction to the record, no code change asked):
+- The porter section says the header compiles "cleanly ... (no warnings from it)". The HIP compile of `device_check.cpp` prints two warnings even without `-Wall`: `device_check.cpp:103` (`cudaSetDevice(callerGpu);`) and `device_check.cpp:182` (`cudaFree(buffer);`), "ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]". The cause is HIP's `[[nodiscard]]` hipError_t at the two unchecked calls once the macros map them, not the header itself, and they are harmless. Silencing them would mean a `(void)` cast in shared openaccPTM code, outside jeff's scope ruling, so leave them; the validator should expect them in the build output.
