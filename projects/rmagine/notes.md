@@ -3213,7 +3213,9 @@ a merge commit, no rebase. Staging tip: `e1b7ac57c740121150a87ba5e4279f718a80f33
   HIPRT backend (feature parity for an experimental backend, not CUDA surface the HIP build
   compiles). Recorded as a suggestion only; whether to add them is jeff's call.
 - The new upstream test directory (`tests/vulkan`) and OptiX tests are gated on their own
-  targets, which a HIP build does not create; no predicate the port introduced hides them.
+  targets. A HIP build creates the Vulkan target whenever Vulkan is enabled (the default; the
+  recipe here passes `-DRMAGINE_VULKAN_DISABLE=ON`), and the port adds no predicate that hides
+  either. (Corrected after review 2026-11-19; the first wording said a HIP build never creates them.)
 
 ### Delta check (merged tree vs published tip)
 
@@ -3270,3 +3272,48 @@ under this host's Python 3.11 (argparse rejects the empty `nargs="*"` default ag
 `choices`) and every record push was refused. Merged `origin/main` into `port/rmagine`
 taking the trunk side for every conflict outside `projects/rmagine/` (`branch-sync --apply`
 refuses those by design); the gates then pass.
+
+## Review 2026-11-19 (reviewer, linux-gfx942, fix round moat-fix-25 delta) -- REVIEW PASSED
+
+Scope: `git diff cc6f8d2...moat-fix-25` (merge `e1b7ac5`), checked against upstream's own
+delta `git diff 6b93e86 upstream/main`. Every claim in the porter's section above was checked
+independently (the delta equivalence, the memory_math.cu hunks, the cu* mapping coverage, how
+HIPRT is decoupled from the change, and the merge message), with a fact-check pass on the one finding.
+
+### 1. (minor, non-blocking) Merge message overstates what the HIP build compiles
+
+The body of `e1b7ac5` says the OptiX, barycentrics, culling and Vulkan changes are "in backends
+the HIP build does not compile". That is true for OptiX. It is not true for Vulkan:
+`CMakeLists.txt:137-141` builds `rmagine_vulkan` unless `RMAGINE_VULKAN_DISABLE` is set, and it
+defaults to OFF, so a HIP configure with a Vulkan SDK compiles it. The new `Barycentrics`/`Culling`
+types also live in rmagine_core (header-only, consumed only by OptiX). The conclusion, that no HIP
+change is needed, still holds, because Vulkan is vendor-neutral. The commit is already pushed and
+must not be rewritten, so correct the sentence in the fix-review PR body or the `## Upstream
+reply` instead. The same wording in the porter notes is corrected above.
+
+### Verified, no action
+
+- Ancestry: upstream/main and cc6f8d2 are both ancestors of `e1b7ac5`; the round has no non-merge commits.
+- Delta: the per-file +/- lines of `git diff upstream/main e1b7ac5` equal those of
+  `git diff 6b93e86 cc6f8d2` (same 43 files), except for the two new defines, the dropped
+  multNx1 hunk, and the CudaContext.cpp whitespace upstream made itself.
+- memory_math.cu: the cov_kernel/sum_kernel HIP-guarded full-tree tails and the typed-zero
+  seed are intact. Upstream's only change in rmagine_cuda/src/math is the multNx1 line, so no new
+  caller of a helper the port widened, and no new warp/32-lane/shuffle code.
+- Mapping: every cu*/cuda*/CU* identifier under src/rmagine_cuda and tests/cuda is mapped
+  (cuda_to_hip.h, curand_to_hiprand.h), is project-owned (`cudaAssert`), is `CUDA_VERSION`
+  (undefined under HIP, so `createStandalone` takes the `hipCtxCreate(&ctx, 0, dev)` branch,
+  which matches HIP's signature), or is HIP-guarded (shared-mem config). The built
+  librmagine-cuda.so.2.4.3 imports `hipDevicePrimaryCtxRetain`/`Release@hip_4.2`.
+- CudaContext under HIP: the private ctor is called only by the factories. Primary
+  retain/set/release maps one to one. The static global default context is unchanged in kind
+  (the lazy-context deferral still applies). Releasing at exit replaces hipCtxDestroy at exit;
+  rmagine_tests_cuda_math, _memory and _math_reduction_correctness exit rc=0 with no teardown
+  fault on gfx942.
+- rmagine_hiprt does not reference CudaContext, cuda_current_context, SimulatorSettings,
+  SimulationResults, Bundle or IntAttrAll.
+- No hidden tests: the port's root CMake changes are only the `USE_HIP` option and the
+  `rmagine_hiprt` subdirectory; optix/vulkan tests stay behind their own `TARGET` checks.
+- Merge message: 52-char `[ROCm]` title (fits, since it adds HIP-only lines), prose AI disclosure,
+  no Co-Authored-By trailer, literal Test Plan, no in-house vocabulary. Author matches the earlier port commits.
+- Still owed (not a review finding): CUDA no-regression nvcc compile on the mi355 host.
