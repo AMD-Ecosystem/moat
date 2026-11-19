@@ -1,0 +1,72 @@
+{
+  "schema_version": 3,
+  "name": "cucim",
+  "upstream_url": "https://github.com/rapidsai/cucim",
+  "fork_url": "https://github.com/AMD-Ecosystem/hipCIM",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "screened",
+  "adopted_at": "2026-11-11T20:55:23Z",
+  "updated_at": "2026-11-12T22:42:38Z",
+  "head_sha": null,
+  "depends_on": [
+    "cupy"
+  ],
+  "porting": null,
+  "waivers": {
+    "windows": {
+      "reason": "No Windows path for the GPU I/O stack: rocJPEG and hipFile (the nvJPEG/GDS replacements) do not exist on Windows, the C++ core is POSIX-heavy, and upstream cuCIM has never supported Windows. Approved 2026-11-11.",
+      "approved_by": "Jeff Daily",
+      "at": "2026-11-11T22:41:54Z"
+    }
+  },
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-12T22:23:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/rapidsai/cucim/blob/main/LICENSE",
+      "at": "2026-11-11T21:15:33Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "AMD-Ecosystem/hipCIM amd-develop (AMD product, gfx942/gfx950 Linux only, never offered upstream); ROCm-LS/hipCIM archived",
+    "viable": true,
+    "summary": "cuCIM (biomedical image I/O + CuPy skimage); AMD port AMD-Ecosystem/hipCIM is Instinct/Linux-only, 84 behind upstream; value is Radeon wave32; Windows via MOAT cupy for skimage, C++ reader hard",
+    "at": "2026-11-11T21:16:31Z"
+  },
+  "fork_url_ruling": {
+    "url": "https://github.com/AMD-Ecosystem/hipCIM",
+    "previous": "https://github.com/AMD-Ecosystem/cucim",
+    "by": "Jeff Daily",
+    "at": "2026-11-12T22:42:37Z",
+    "reason": "the fork is AMD-Ecosystem/hipCIM (renamed from cucim; ruling 2026-11-11); its main is the upstream mirror"
+  }
+}

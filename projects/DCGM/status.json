@@ -1,0 +1,34 @@
+{
+  "schema_version": 3,
+  "name": "DCGM",
+  "upstream_url": "https://github.com/NVIDIA/DCGM",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T03:47:56Z",
+  "updated_at": "2026-11-06T03:52:52Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVIDIA/DCGM/blob/master/LICENSE",
+      "at": "2026-11-06T03:52:50Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "ported-elsewhere",
+    "duplicate_effort": "RDC (ROCm/rocm-systems projects/rdc), AMD SMI, ROCm Validation Suite, ROCm Device Metrics Exporter, AMD GPU Operator",
+    "viable": false,
+    "summary": "NVML-based GPU telemetry/diagnostics manager, not CUDA compute; AMD's RDC + AMD SMI + RVS + Metrics Exporter cover every role",
+    "at": "2026-11-06T03:52:51Z"
+  }
+}
