@@ -481,3 +481,23 @@ Samples (all exit 0), with the 4968-triangle Stanford bunny (`https://graphics.s
 CUDA gate: not rerun; it is already recorded at `1a2b9bb` (nvcc 12.8.93, sm_80, `cuBQL_cuda_float3 cubql_builder_leaves cubql_morton_sort_range` clean, preprocessed `instantiate_builders.cu` and `morton_sort_range.cu` identical to upstream `6bd4a51`; changes-requested round and its review above).
 
 Content checks: `python3 utils/jargon.py --port cuBQL` clean (the fresh fork clone needs local `main` and `moat-port` branches for it to resolve the range). README documents the ROCm build next to the CUDA build (`README.md:319`). Fork tree clean apart from untracked `build-hip/`.
+## Validation 2026-11-19 (linux-gfx1100): follow-up round, head 1a2b9bb
+
+Revalidated `1a2b9bb` (from `b0ea6a1`) on linux-gfx1100, AMD Radeon Pro W7800 48GB (gfx1100, wave32), ROCm 10.2.0 TheRock wheels installed into the job directory (not a system ROCm; `libamdhip64.so.7` resolves to the wheel tree, HIP 7.17.26434, clang 24.0.0), HIP_VISIBLE_DEVICES=3, `ulimit -c 0`. `classify b0ea6a1 1a2b9bb` = mixed, not inert (builder sort change, new tests, upstream's 19 commits), so a full GPU run, no carry-forward.
+
+    pip install --target <job>/rocm-10.2 --index-url https://stable.repo.amd.com/rocm/whl-next/ 'rocm[libraries,devel]==10.2.0' rocm-sdk-device-gfx1100==10.2.0
+    PYTHONPATH=<job>/rocm-10.2 python -m rocm_sdk init
+    R=<job>/rocm-10.2/_rocm_sdk_devel
+    cmake -S projects/cuBQL/src -B projects/cuBQL/src/build-hip -G Ninja -DCUBQL_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+      -DCMAKE_BUILD_TYPE=Release -DCUBQL_BUILD_TESTS=ON -DCMAKE_PREFIX_PATH=$R \
+      -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_HIP_COMPILER_ROCM_ROOT=$R -DCMAKE_BUILD_RPATH=$R/lib
+    cmake --build projects/cuBQL/src/build-hip -j 32 --target cuBQL_cuda_float3 cubql_builder_leaves cubql_morton_sort_range <the 8 GPU samples> cuBQL_cpu_float3 cuBQL_sample01_points_closestPoint_cpu
+    ctest --test-dir projects/cuBQL/src/build-hip --output-on-failure
+
+- Build: 30/30 steps, 0 errors (warnings only).
+- ctest: 2/2 passed -- `cubql_morton_sort_range` 0.45 s, `cubql_builder_leaves` 1.58 s.
+- `cubql_builder_leaves` run directly: 135/135 ok, 0 FAILED, `PASSED` (includes the `with-empty` sentinel scenes and the 20000/200000 sizes that failed unpatched on gfx950).
+- `cubql_morton_sort_range`: exit 0, 27 status=PASS, 0 FAIL, 2 query_oracle=PASS; `--benchmark` exit 0, validation=PASS, benchmark_device=AMD Radeon Pro W7800 48GB.
+- Samples: s01 binary BVH, s01 wide BVH and the CPU s01 exit 0 with identical 20 answers (md5 of the result lines equal); s07 aggregateNBody exit 0. No `bunny.obj` on this host, so s02-s06 ran on a generated UV sphere (radius 1, 5184 triangles, `agent_space/sphere.py`, not committed): all exit 0; s03 inside fraction 0.5247 vs pi/6 = 0.5236; s02 distance from (0.84,0.84,0.84) 0.454957 vs 0.84*sqrt(3)-1 = 0.4549.
+- CUDA gate: not rerun; recorded at `1a2b9bb` by the porter (nvcc 12.8.93) and the reviewer.
+- `jargon.py --port cuBQL` clean; README documents the HIP build (`README.md:319`); fork tree clean apart from untracked `build-hip/`.
