@@ -702,3 +702,74 @@ CUDA gate: not rerun; already recorded at this head_sha in the linux-gfx942 vali
 Content checks: `python3 utils/jargon.py --port plumed2` clean (needed local `master`/`moat-port` refs in the fresh clone: `git branch master origin/master`); the HIP build is documented in plugins/cudaCoord/README.md next to the nvcc build.
 
 With this run wave32 is satisfied at head (wave64 by linux-gfx942; windows waived). Still open for pr-ready: jeff's answers to the four questions in the upstream-sync section.
+## CUDA compile check 2026-11-19 (real nvcc, mi355 host)
+
+Evidence only: no stage or platform record changed, nothing pushed. Compile and
+link only; the host has no NVIDIA GPU.
+
+Trees (fresh clones in the job directory; plumed2 has no submodules):
+- port: AMD-Ecosystem/plumed2 at head_sha `388fcc10fd9a7d0c8e01362ec1d43ee830313368`
+- base: plumed/plumed2 at the port's merge base `422109dc3e9aa3aa72a55f326dee473231a1039f`
+  (also upstream master's tip at the time of the check)
+
+Toolkit: CUDA 12.8 from the system install, `/usr/local/cuda/bin/nvcc`
+("Cuda compilation tools, release 12.8, V12.8.93", Build cuda_12.8.r12.8/compiler.35583870_0),
+host compiler g++ 13.3.0 (Ubuntu 24.04). The earlier CUDA checks in this file
+used a conda-forge nvcc 12.8.93; this one is the system toolkit.
+
+Recipe: upstream's CI does not build cudaCoord (linuxWF.yml builds only the
+nvhpc/openacc plugin, on the host), so the plugin README's recipe was used:
+PLUMED kernel with its autotools build, then the plugin's `configure.sh` and
+`make`. Neither build is CMake, so Ninja does not apply; steps are counted as
+make reports them. Same commands for both trees (`<t>` = base or port):
+
+```bash
+cd <t>
+./configure --prefix=$PWD/../install-<t>      # serial: no MPI on this host
+make -j42 && make install
+export PATH=$PWD/../install-<t>/bin:/usr/local/cuda/bin:$PATH
+export PLUMED_KERNEL=$PWD/../install-<t>/lib/libplumedKernel.so
+cd plugins/cudaCoord
+./configure.sh
+make                                                   # documented default (nvcc default arch, sm_52, LTO)
+make -B NVCCCFLAGS="-dc -dlto --gpu-architecture=sm_80" NVCCLDFLAGS="-shared -dlto --gpu-architecture=sm_80"   # README's explicit-SM form
+```
+
+| | base 422109dc3 | port 388fcc10f |
+|---|---|---|
+| kernel configure | rc 0 | rc 0 |
+| kernel make / install | rc 0 / rc 0 | rc 0 / rc 0 |
+| plugin configure.sh | rc 0 | rc 0 |
+| plugin make, default arch | 3/3 (Coordination.o, cudaHelpers.o, link) | 3/3 |
+| plugin make, sm_80 | 3/3 | 3/3 |
+| first error | none | none |
+
+Warnings: only nvcc's "Support for offline compilation for architectures prior
+to '<compute/sm/lto>_75' will be removed" (once per nvcc call, default-arch build
+only), in both trees equally. The sm_80 build has no warnings.
+
+Equivalence with upstream:
+- `make -B -n` nvcc command lines are identical between the trees once the tree
+  paths are masked: the port's `HOST_COMPILER` expands to the same
+  `-ccbin g++`, and the link keeps `-Xlinker -soname,"CudaCoordination.so"`
+  and `-Xlinker -z -Xlinker nodelete`.
+- `Makefile.conf` written by `configure.sh` is identical (the HIP branch is
+  skipped without USE_HIP).
+- sm_80 plugin: `cuobjdump -xelf all` gives one `lto.sm_80.cubin` per tree,
+  both 382816 bytes. They are not byte-identical (function order differs), but
+  `nvdisasm -c` of both gives the same 23 kernels, and each kernel's SASS is
+  identical once local label numbers (`.L_x_N`) are normalized (raw diff: 5
+  kernels differing only in label numbering). The CUDA toolkit here ships no
+  nvdisasm; nvdisasm 13.1.80 from a Triton install on the host was used, and it
+  refuses sm_52, so the default-arch cubin was not disassembled.
+- Both .so: SONAME CudaCoordination.so, FLAGS_1 NODELETE, NEEDED
+  libplumedKernel.so plus libstdc++/libm/libgcc_s/libc (cudart static).
+- `plumed --load <t>/plugins/cudaCoord/CudaCoordination.so manual --action CUDACOORDINATION`
+  rc 0 in both trees, registering CUDACOORDINATION and CUDACOORDINATIONFLOAT
+  (dlopen and registration only, no GPU work).
+
+Not covered: an MPI build of the kernel (no MPI on this host; the porter's check
+used the MPICH wrapper as `-ccbin`), and running on an NVIDIA GPU.
+
+Verdict: the CUDA path compiles and links with real nvcc 12.8 at head
+388fcc10f, identically to upstream's merge base. No port regression.
