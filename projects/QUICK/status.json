@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-11-19T21:27:09Z",
+  "updated_at": "2026-11-19T21:40:50Z",
   "head_sha": "a49289d5269210de98e5a97387c0d69d0c321a51",
   "depends_on": [],
   "waivers": {
@@ -20,16 +20,16 @@
   },
   "license_spdx": "MPL-2.0",
   "upstream_repo_id": 172423631,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx1100": {
       "state": "validation-failed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "d369e07",
-      "started_at": null,
+      "started_at": "2026-11-19T21:40:50Z",
       "completed_at": "2026-06-05T14:30:35Z",
-      "updated_at": "2026-11-19T21:27:09Z",
+      "updated_at": "2026-11-19T21:40:50Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -146,5 +146,9 @@
     "at": "2026-11-19T19:35:42Z"
   },
   "reviewed_sha": "a49289d5269210de98e5a97387c0d69d0c321a51",
-  "porting": null
+  "porting": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-19T21:40:50Z",
+    "holder": "e1726326c5ee"
+  }
 }
