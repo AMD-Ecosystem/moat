@@ -4807,3 +4807,82 @@ The untracked `example_apic_fluid.usd` an example writes into the clone during t
 
 ### Next step for the lock holder
 gfx942 has passed its complete same-head list at `e78ee32f` with no difference from the expected results.
+## Evidence session 7 (2026-11-19, linux-gfx1100, Radeon Pro W7800, evidence only): same-head pass at the Phase 6 candidate `e78ee32f`
+
+**Verdict: not every item matched.** Items 1, 2 and 4 matched their expected results exactly. Item 3 (the fp16 benchmark) met its pass criterion: every fp16 cell is at least 1.0x, and 64x64 block_dim 256 forward now equals scalar. But one cell differs from the stated expectation that "the other 23 fp16 cells [are] as in that session's set 2": **64x64 block_dim 256 adjoint is 1.03x (13.27 ms, scalar) where set 2 measured 1.59x (8.58 ms, WMMA)**. The compile-time rule of `bb5d01d7` moves the whole 64x64 bd256 configuration, forward *and* backward kernels, to the scalar path (0 `v_wmma` in both, checked below), so the adjoint loses the WMMA gain it had. Per the Next step, the lock holder decides whether this is acceptable or the head changes.
+
+Requested by Jeff Daily. The work lock stays with linux-gfx950. Nothing was committed to the fork, and no stage, lock, head, platform or deferral record changed. The clone was updated read-only to the recorded `head_sha` `e78ee32fa166bb0bbb58c870fa7b13845553df99` and rebuilt (`export PATH=$FLEET_VENV/bin:$PATH; python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1100 -j 32` -> "Warp build succeeded"; RUNPATH is the venv's ROCm 10.2). `git status --porcelain` is clean at the end. Same venv (HIP 7.17.26434), `ulimit -c 0`, `HIP_VISIBLE_DEVICES=0`.
+
+A fresh `WARP_CACHE_PATH` was used for every run of every tree and every script: each test pattern, each `mma_check` script, each ISA check, each benchmark run, the CPU-only suite and each probe. The scalar baseline was a separate worktree (`git worktree add --detach <dir> e78ee32f`, `git -C <dir> checkout 974cd4bf -- warp/native/tile_matmul.h`, this build's `warp/bin/*.so` copied in), removed afterwards. Items are the "gfx1100" list of the `e78ee32f` Next step, in its order.
+
+### Item 1: WMMA on as shipped: matches
+- `python -m warp.tests -s autodetect -p test_tile_matmul.py -m 32`: **Ran 25, OK**.
+- ISA check (`agent_space/p10/isa_check.py`: 32x32x32 fp16 and fp32 tile_matmul, block_dim 64, forward and backward; `llvm-objdump -d --mcpu=gfx1100` on the fresh cache): the fp16 module has **16 `v_wmma_f32_16x16x16_f16`**; the fp32 module 0 (scalar FMAs). fp16 forward max err 1.9e-03, adj_A 2.6e-03 against float64, the same as the `c9595bce` switch-on experiment.
+- `python wmma_cells.py <outdir> gfx1100` (verbatim from Porting session 11), identical to the porter's gfx1100 column:
+```
+64x64 block_dim 256 gfx1100 : no matrix instructions (scalar)
+64x64 block_dim 128 gfx1100 : {'v_wmma_f32_16x16x16_f16': 16}
+32x32 block_dim 256 gfx1100 : {'v_wmma_f32_16x16x16_f16': 2}
+```
+
+### Item 2: `mma_check.py` and `mma_check_bf16.py` (Porting session 10 versions): match
+- `mma_check.py`: **FAILURES 0**; 15 "SMEM-LIMIT (forward not launched)" and 25 "SMEM-LIMIT (backward not launched)". These are case for case the same 40 as the `c9595bce` switch-on experiment (`diff` of the SMEM lines with the error columns stripped: empty).
+- `mma_check_bf16.py`: **FAILURES 0** (55 cases, no limit).
+
+### Item 3: fp16 benchmark, shipped tree against the scalar tree: pass criterion met, one cell differs from expectation
+Porting session 9 `bench_both.sh` with this host's paths (shipped tree = the main clone, scalar tree = the worktree above), `bench_tile_matmul.py --blocks 16384 --iters 50`, three runs per tree, fresh cache per run, merged with `compare.py` (labels adjusted). A 5-second load/GPU-busy monitor ran alongside. **The set is clean:** no cell exceeds 1.5x its median, and the run-to-run spread over the 112 launched cells is median 1.6%, max 11.5%. fp16 rows:
+
+| dtype | tile | block_dim | scalar fwd ms | shipped fwd ms | fwd speedup | scalar adj ms | shipped adj ms | adj speedup | checks |
+|---|---|---|---|---|---|---|---|---|---|
+| float16 | 16x16 | 32 | 1.125 | 0.268 | 4.20x | 0.292 | 0.239 | 1.22x | ok |
+| float16 | 16x16 | 64 | 1.132 | 0.274 | 4.14x | 0.281 | 0.202 | 1.39x | ok |
+| float16 | 16x16 | 128 | 0.974 | 0.416 | 2.34x | 0.257 | 0.201 | 1.28x | ok |
+| float16 | 16x16 | 256 | 1.392 | 0.465 | 2.99x | 0.307 | 0.248 | 1.24x | ok |
+| float16 | 32x32 | 32 | 3.720 | 1.769 | 2.10x | 4.399 | 2.664 | 1.65x | ok |
+| float16 | 32x32 | 64 | 4.261 | 1.806 | 2.36x | 2.487 | 1.661 | 1.50x | ok |
+| float16 | 32x32 | 128 | 5.312 | 2.569 | 2.07x | 1.939 | 1.178 | 1.65x | ok |
+| float16 | 32x32 | 256 | 6.835 | 2.627 | 2.60x | 1.957 | 1.168 | 1.68x | ok |
+| float16 | 64x64 | 32 | 33.189 | 13.304 | 2.49x | 60.652 | 54.083 | 1.12x | ok |
+| float16 | 64x64 | 64 | 27.456 | 18.334 | 1.50x | 33.671 | 30.212 | 1.11x | ok |
+| float16 | 64x64 | 128 | 27.607 | 13.538 | 2.04x | 17.235 | 14.716 | 1.17x | ok |
+| float16 | 64x64 | 256 | 17.605 | 16.828 | 1.05x | 13.603 | 13.266 | 1.03x | ok |
+
+- **Every fp16 cell is at least 1.0x: no finding of a slower cell.**
+- **64x64 bd256 forward:** shipped 16.19/16.83/17.29 ms against scalar 17.55/17.61/17.62 ms (1.05x on medians). Both trees are scalar here: `wmma_cells.py` shows no matrix instructions, and the forward kernel below has 0 `v_wmma`. The 5% gap is within this cell's shipped-tree spread (6.5%) plus a systematic 1-3% in favour of the shipped tree that the fp32/fp64 control cells show too: their code is identical in both trees, and all 16 launched fp32/fp64 16x16 and 32x32 cells read 1.00x-1.03x. The shipped tree ran first each time. So this matches the expectation "equal to scalar (about 17.6 ms each)".
+- **64x64 bd256 adjoint: differs from the expectation.** Shipped 12.96/13.27/13.48 ms against scalar 13.60/13.60/13.61 ms (1.03x). In `c9595bce` set 2 the same cell on WMMA was 8.40/8.60/8.58 ms (1.59x). Checked in the ISA (`agent_space/p11/isa_bwd.py`: the benchmark's one-GEMM 64x64x64 fp16 kernel at block_dim 256 with a backward pass, fresh cache per tree): **0 `v_wmma` in `..._cuda_kernel_forward` and 0 in `..._cuda_kernel_backward`**, in the shipped tree as in the scalar tree. The rule tests the output tile's fragment count against the wavefront count, and the adjoint GEMMs of a 64x64 tile have the same shape (16 fragments, 8 wavefronts), so they go scalar too. The forward cell gained nothing from WMMA (0.91x), but the adjoint gained 1.59x. A rule that kept WMMA for the backward kernel, or for adjoint GEMMs, would keep that gain. Whether to change it is the lock holder's call. Nothing is proposed here beyond the measurement.
+- The other 22 fp16 cells are as in set 2, within run-to-run noise (forward 1.50x-4.20x, adjoint 1.11x-1.68x).
+- fp32/fp64 (scalar in both trees): 1.00x-1.03x; the 64x64 fp32 adjoint and all fp64 64x64 rows are LDS-limited (no launch), as before.
+
+Raw fp16 timings per run, ms (`agent_space/p11/bench/bench_<tree>_run<n>.csv`):
+```
+tree,dtype,M,block_dim,fwd_r1,fwd_r2,fwd_r3,adj_r1,adj_r2,adj_r3
+scalar,float16,16,32,1.1201,1.1295,1.1253,0.2920,0.2863,0.2977
+scalar,float16,16,64,1.1262,1.1463,1.1316,0.2897,0.2813,0.2788
+scalar,float16,16,128,0.9764,0.9737,0.9724,0.2595,0.2571,0.2561
+scalar,float16,16,256,1.3912,1.3923,1.3972,0.3001,0.3071,0.3115
+scalar,float16,32,32,3.7164,3.7380,3.7196,4.3853,4.4076,4.3992
+scalar,float16,32,64,4.2486,4.2607,4.2712,2.4584,2.4874,2.5434
+scalar,float16,32,128,5.2984,5.3115,5.3183,1.9231,1.9393,1.9449
+scalar,float16,32,256,6.8278,6.8352,6.8566,1.9472,1.9588,1.9567
+scalar,float16,64,32,33.1798,33.1891,33.2477,60.6744,60.6521,60.6358
+scalar,float16,64,64,27.3660,27.4686,27.4555,33.6711,33.6698,33.6716
+scalar,float16,64,128,27.5248,27.6074,27.6181,17.2214,17.2361,17.2353
+scalar,float16,64,256,17.5456,17.6052,17.6193,13.5998,13.6026,13.6098
+shipped,float16,16,32,0.2595,0.2682,0.2710,0.2411,0.2309,0.2390
+shipped,float16,16,64,0.2725,0.2736,0.2793,0.2025,0.2014,0.2048
+shipped,float16,16,128,0.3958,0.4158,0.4227,0.1954,0.2015,0.2093
+shipped,float16,16,256,0.4419,0.4652,0.4719,0.2457,0.2480,0.2572
+shipped,float16,32,32,1.7127,1.7694,1.8231,2.6161,2.6640,2.6753
+shipped,float16,32,64,1.7071,1.8059,1.8676,1.6040,1.6614,1.6870
+shipped,float16,32,128,2.4570,2.5686,2.6600,1.1115,1.1781,1.1880
+shipped,float16,32,256,2.4892,2.6267,2.7021,1.1137,1.1675,1.1741
+shipped,float16,64,32,12.8944,13.3035,13.7413,53.8120,54.0831,54.1629
+shipped,float16,64,64,18.0622,18.3343,18.8437,30.2286,30.1890,30.2116
+shipped,float16,64,128,12.8700,13.5382,13.9810,14.7161,14.7101,14.7488
+shipped,float16,64,256,16.1877,16.8283,17.2917,12.9604,13.2655,13.4803
+```
+
+### Item 4: 82-pattern set, CPU-only suite, textures: match
+- 82-pattern set (the same list as Evidence sessions 3-5, one pattern per `python -m warp.tests -s autodetect -p "<pattern>" -m 32`, fresh cache per pattern, timeit-wrapped): **82 patterns, 81 OK, 1 with the 2 known fem isolation failures** (`test_gimp_quadrature`, `test_cube_shape_functions`). The per-pattern summary lines (timings stripped) are **identical** to the `930d0098` run (Evidence session 5). So the tile set is 639 run, 15 skipped, 0 failures; test_tile_matmul 25; test_texture 120 (1 skipped); test_streams 24 (3 skipped). No `Warp CUDA error` line in any log; the only shared-memory warning is the known `test_tile_load_scoped` one.
+- CPU-only suite (`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32`, greeting lists only `cpu`): **Ran 2294, OK (skipped=15)**. (The first attempt did not start, because `timeit.sh` found no usable Python when `PYTHONPATH` pointed at the source tree for the wrapper itself. It was rerun with `PYTHONPATH` set only inside the wrapped command. No test ran in the failed attempt.)
+- `sdf_probe.py cpu` PASS (0 / 1.28e-03 / 0); `sdf_probe.py cuda:0` **PASS** (4.78e-05 / 1.31e-03 / 2.52e-03, the same values as every earlier gfx1100 session); `tex_alias.py cuda:0` **PASS** (plain 0 of 2048 wrong, graph capture 0 of 2048 wrong).
