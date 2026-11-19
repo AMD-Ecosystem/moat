@@ -3929,7 +3929,7 @@ a launch-geometry mismatch (see the register-count heuristic in the fault classe
 it to the smallest input that still fails (H2/STO-3G reached a single kernel) before
 calling it numerical.
 
-## Seeded `cupy.random` inputs differ between CUDA and ROCm
+#### Seeded `cupy.random` inputs differ between CUDA and ROCm
 
 CuPy-ROCm draws from hipRAND/rocRAND, so `cp.random.seed(n)` gives different numbers than
 CUDA's cuRAND. A test that hard-codes a fingerprint of results computed from such inputs
@@ -3939,3 +3939,45 @@ with only the fingerprint assertion disabled, in a scratch copy) and record that
 `np.random`-seeded tests are unaffected. (gpu4pyscf)
 
 - **Proving a real miscompile: catch the faulting instruction, then flip one backend pass.** An `HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION` is reported imprecisely. Run the process under `rocgdb -batch -ex 'set amdgpu precise-memory on' -ex run -ex 'x/12i $pc-40' -ex 'p/x $v20'` (rocgdb ships in TheRock's `bin/`) to stop on the exact instruction and read its registers per lane. In gpu4pyscf the faulting op was `global_atomic_add v1, v20, v1, s[20:21]` (the persistent-kernel `atomicAdd(head, 1)`). Its zero offset register v20 held garbage in lane 0 only, and `llvm-objdump -d` of the extracted code object showed v20 set to 0 once and then reused as the destination of a predicated `global_load_dwordx2 v[20:21]` inside the loop. Rebuilding with `-mllvm -disable-machine-licm` in `CMAKE_HIP_FLAGS` made results match the CPU reference to 1e-13. `-O1` did not help. The defect was TheRock ROCm 10.1 (AMD clang 24.0.0git) MachineLICM, and the same pattern appears in gfx90a code from that compiler, so it is a toolchain fault, not an architecture fault. It does not reproduce on every target, though: the same compiler and committed flags ran correctly on gfx1100, so before adding the flag, test whether each arch shows the fault with one d-shell run. Under `-fgpu-rdc` device codegen runs at link time, and CMake's HIP link rule reuses `CMAKE_HIP_FLAGS`, so that one setting reaches both; a copy in `CMAKE_SHARED_LINKER_FLAGS` can be silently overwritten by the project (gpu4pyscf's own `set(CMAKE_SHARED_LINKER_FLAGS ...)` did) and protects nothing, so confirm with a verbose build that every compile and link line carries the flag. Carrying a compiler workaround in the port is a person's decision; once made, put it under the HIP build only with a comment naming the compiler version and the arches affected, and the condition for removing it. (gpu4pyscf)
+
+## Upstream sync 2026-11-19 (porter, linux-gfx942 MI300X, fork moat-port @ 5a87452, NOTHING merged) -- STOPPED: upstream merged its own AMD port; a decision for jeff
+
+Requested by jeff: bring moat-port up to upstream master before the upstream PR is prepared. Entered `porting` (lock linux-gfx942), fast-forwarded the fork mirror, ran a trial merge, then stopped, released the lock and left `head_sha` at 5a87452. Nothing was pushed to moat-port.
+
+### What was done
+- Fork default branch `master` fast-forwarded 10dcea3 -> 4c56c9f (upstream tip, 40 commits), as a plain push of upstream's own commits.
+- Trial `git merge --no-ff upstream/master` into a local throwaway copy of moat-port: **38 conflicted files**. It was aborted and deleted, so moat-port is untouched at 5a87452. Conflicted files: README.md, `__config__.py`, df/df_jk.py, df/grad/rhf.py, dft/libxc.py, dft/mcfun_gpu.py, lib/CMakeLists.txt plus 10 per-library CMakeLists (cupy_helper ecp gdft gint gvhf gvhf-md gvhf-rys pbc sem solvent), lib/cupy_helper.py, lib/cusolver.py, all four lib/hip_compat shims (cuComplex.h, cub/cub.cuh, cuda.h, cuda_runtime.h, as add/add), gdft/gen_grids.cu, gvhf-md/contract_int3c2e.cu, multigrid_v2/evaluation.cuh, pbc/int3c2e_create_tasks.cuh, pbc/x2c/sfx2c1e.py, x2c/x2c.py, and 11 test files.
+- The moat-repo port branch was merged with trunk first (cf634a6c). Its stale copies of the skill files gave way to the trunk's, and the entries they carried are preserved above under "Lesson for cuda-to-rocm: entries stranded ...".
+
+### Why it stopped: upstream now ships its own HIP port
+`d9a78f71 Adding support for running PySCF on AMD GPUs (#1042)` was committed 2026-11-17 by Deniz Gunceler, co-authored by maintainer Qiming Sun. It is an independent ROCm/HIP port of the whole library, with:
+- CMake `USE_HIP` and `enable_language(HIP)`, arch autodetection via rocm_agent_enumerator, and `-fgpu-rdc`; CUTLASS and the CUDA libxc default OFF on HIP ("a HIP-enabled libxc is wired up in a later phase").
+- Force-included `hip_compat/gpu_runtime.h` plus a per-arch `lib/warp_size.h` (compile-time WARP_SIZE from `__gfxNNN__`, runtime host sizing via `gpu4pyscf_effective_warp_size()`).
+- setup.py backend selection (`USE_HIP=1`, `GPU_TARGET` presets, package name `gpu4pyscf-rocmNx`), a README section "Building for AMD GPUs (ROCm)", and a GPU-free HIP build in their GitHub CI (`.github/workflows/hip_build.yml`).
+- Python: a hipSOLVER `syevd` `eigh_std` routed through about 49 call sites, a CuPy grouped-GEMM fallback, XC on the CPU (PySCF libxc) on HIP, a multigrid `to_cpu`, an FFTDF `get_hcore` fallback on HIP (the multigrid PP hang), and an import-order guard against torch.
+- Validated by its author on gfx1151 only ("Real CDNA execution is unverified (no hardware)"), with a gfx942 cross-compile.
+
+Its `hip_compat/` directory has the same layout as ours: the same four shim file names, the same `namespace cub = hipcub` with the `#undef I` for `<complex.h>`, and the same `cuDoubleComplex` typedef. Our fork has been public since June.
+
+Other upstream commits in the 40 that touch the port: `93a6a434` (jeff's own upstream PR #1009, the multigrid_v2 `put_pairs_on_blocks_kernel` BlockScan sync, i.e. our 51f6cf0); `ed7e4b99` (#1015, backend-independent RNG test inputs, by Abhishek Bagusetty); `e3b4900b` (#1018, CuPy streams through every kernel interface, hence `cudaMemcpyToSymbolAsync` in many drivers); `67c7a170` (`compute_capability_target`); and new GPU code in multigrid (2D slabs), pbc (gate_charge, dipole correction, PP-SOC) and k-point RPA/GW.
+
+### What our port has that upstream's lacks (grep of upstream/master)
+- GPU libxc built with its HIP backend (4a903095); upstream evaluates XC on the CPU.
+- The rocBLAS batched-gemv workaround (local einsum, ROCm/rocm-libraries#14819) and the gfx12 complex-GEMM split (e1b8041, 5a87452): absent upstream, so upstream's port can return wrong einsum results on ROCm.
+- The g-shell ECP derivative kernels in 64 KB LDS (c8c9acc), the `-mllvm -disable-machine-licm` workaround for the gfx942/gfx90a miscompile (28f2418), `hipDeviceSetLimit` through ctypes (c073679; upstream skips the limit on HIP), the gradient-energy kernel block size (e469394), and wave64 validation on real CDNA (gfx90a, gfx942).
+
+What upstream's port has that ours lacks: hipSOLVER `syevd` `eigh_std`, setup.py/pip integration with arch presets, per-arch WARP_SIZE in one fat binary, and the HIP CI build.
+
+### The question for jeff (not decided here)
+A merge "keeping both sides" cannot be mechanical. Every infrastructure file holds two competing designs (`cuda_to_hip.h` vs `gpu_runtime.h` + `warp_size.h`, our CMake vs theirs, our README block vs theirs, our cusolver/libxc/grouped-GEMM handling vs theirs). Resolving them means re-cutting this port as a delta on top of upstream's AMD support. The deliverable stops being "add ROCm support" (one PR) and becomes improvements to existing upstream ROCm support (probably several smaller PRs: GPU libxc on HIP, the rocBLAS einsum workarounds, ECP LDS, the LICM workaround, CDNA fixes). The moat-porting rule for an authoritative but incomplete upstream AMD port is "validate and improve, do not re-port", and the disposition change is a person's call. Decisions needed:
+1. Re-scope: rebuild moat-port as a delta on upstream master, adopting upstream's HIP infrastructure (gpu_runtime.h, warp_size.h, setup.py, its README section) and dropping ours. Or record another disposition (for example already-supported upstream, with the unique fixes offered as separate PRs).
+2. Feature overlap where the designs disagree: keep our GPU libxc on HIP (upstream's README and CMake say XC runs on the CPU on ROCm, "later phase"), or offer it later as its own PR; and which grouped-GEMM fallback and which eigh path survive.
+3. Attribution and coordination: upstream's hip_compat matches our public fork's layout and idioms. Whether to raise this, and whether to coordinate with the #1042 author (and Abhishek Bagusetty, who sent #1015), is jeff's call. No GitHub action was taken.
+
+Once (1) is decided, the next porter merges `upstream/master` (4c56c9f, or the tip of the day) into moat-port as a merge commit and resolves the 38 conflicts toward the chosen design. Re-run the trial first: `git merge --no-ff --no-commit upstream/master` in a clone of moat-port.
+
+### Owed at pull-request preparation (unchanged by this round)
+- dc45713's commit body describes a rocBLAS trsm accuracy problem imprecisely. Do not rewrite the commit (validated commits are not rewritten). The pull-request text must describe the trsm workaround using the measured facts in ROCm/rocm-libraries issue 16268.
+
+### State left
+`head_sha` 5a87452 (unchanged). Lock released with `port-lock --release` (an agent stopped mid-port). The stage stays `porting`, because the transition table has no exit from it other than `ported`/`delta-ported`, and claiming either would be false. The selector may hand `porting` to the next porter host; that porter must read this section and stop until jeff rules. If jeff wants it parked meanwhile: `python3 utils/moatlib.py set-hold gpu4pyscf on --reason "<...>"`. Reviewer and validator were not run: there is no new head to review or validate.
