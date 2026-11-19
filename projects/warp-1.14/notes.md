@@ -2303,3 +2303,14 @@ Design constraint from Jeff: minimise the diff carried forward into every later 
 - Python side: smallest change that works; `cuda_array`, `cuda_surface` and `cuda_texture` interop properties raise a clear error on these devices; `Device.is_texture_supported` becomes True where the software path serves it, and a separate capability says whether sampling is hardware.
 - Tests: `test_texture` runs on these devices, registered by capability, never by arch; results must match Warp's CPU textures (expected bit-identical, since it is the same sampler), with hardware-filtering tolerances only where a test compares against the hardware path.
 - Release notes: textures on MI300/MI355 are sampled in software on the GPU; say how that differs from hardware sampling in precision and speed.
+
+## Ruling on the tile tests that need more than 64 KiB of shared memory (2026-11-18, Jeff Daily)
+
+RULED: capability skip, for the minimal carried diff. The five tests (`test_tile_shared_mem_large`, `test_tile_shared_mem_func`, the tier-2 axis-2 reduction test in `test_tile_reduce.py`, and the two slice-copy tests in `test_tile_view.py`; take the exact list from commits `59d873af` and `2f5b9d65`) stay byte-for-byte upstream and skip on any device whose shared memory per block cannot hold what the test needs. The reason he gave when asked: about 96 changed lines in three upstream test files plus a helper is too much to carry into every later Warp release for the small coverage unique to these five tests; the other tile tests already cover smaller shared tiles on those GPUs.
+
+Porter, next session:
+- Undo the sizing with new commits on top (`git revert` of `2f5b9d65` and `59d873af`, no history rewrite), including the `select_shared_memory_fit` helper if nothing else uses it.
+- Add the skip with the fewest lines possible: decided from `device.max_shared_memory_per_block` against the bytes the test needs (dynamic plus Warp's static allocation), never from an arch or vendor name, with a skip message that states the two numbers. It must not skip on gfx950 or on any device where the upstream size fits.
+- Leave `test_tile_load_scoped` alone; its shared-memory warning for a backward kernel it never launches is a correct diagnostic.
+- No spill-to-global-memory fallback for oversized shared tiles: upstream has none on any GPU.
+- Release notes: shared-memory tiles are limited to 64 KiB per block (tiles plus Warp's small static allocation) on gfx90a, gfx942 and Radeon GPUs, 160 KiB on gfx950; Warp warns when a kernel's request does not fit.
