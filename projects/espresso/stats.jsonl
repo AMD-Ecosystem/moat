@@ -63,3 +63,8 @@
 {"kind":"session","ts":"2026-11-19T06:43:32Z","epoch":1795070612.608268,"event":"end","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-19T06:43:55Z","epoch":1795070635.871848,"event":"start","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-19T06:46:56Z","epoch":1795070816.84705,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-19T06:47:40Z","epoch":1795070860.032108,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-19T06:51:26Z","phase":"test","seconds":226.613,"exit":0,"cmd":"ctest --test-dir ../work/build-hip -L gpu --timeout 900 -j 8"}
+{"kind":"phase","ts":"2026-11-19T06:53:23Z","phase":"test","seconds":109.679,"exit":0,"cmd":"cmake --build ../work/build-hip -j 42 --target check_unit_tests"}
+{"kind":"phase","ts":"2026-11-19T06:56:09Z","phase":"test","seconds":165.834,"exit":8,"cmd":"ctest --test-dir ../work/build-hip -LE gpu --timeout 900 -j 16"}
+{"kind":"session","ts":"2026-11-19T06:56:47Z","epoch":1795071407.026195,"event":"end","platform":"linux-gfx950"}
