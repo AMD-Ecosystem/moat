@@ -297,8 +297,10 @@ lawyerly. Answer the question asked.
 `--dry-run` reporting HEAD-MOVED for an open PR means its branch moved outside this
 flow -- usually a maintainer editing our branch, which they did on purpose. Read what
 landed, review the commit(s), and put a recommendation in front of a person; never
-auto-absorb or revert it. If the content is accepted, a fresh fix round from the new
-tip re-enters the flow.
+auto-absorb or revert it. If the person accepts the content, record it with
+`moatlib.py accept-pr-head <name> --by <who>` (it checks the new head descends from the
+published tip and moves `published_sha` to it); `fix-branch` then stages a fresh round
+from the new tip, and that round revalidates.
 
 A staged round can also become pointless before it merges: upstream lands the same fix
 itself (lc0 #2454 did, while moat-fix-2420 sat staged), the maintainer withdraws the

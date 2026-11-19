@@ -107,7 +107,8 @@ RESET = ("on_hold", "on_hold_reason")
 # module docstring); within a round the usual per-field rules stand.
 PR_ROUND_FIELDS = ("pr_state", "pr_url", "pr_number", "pr_opened_at",
                    "pr_merged_at", "pr_closed_at", "pr_closed_note",
-                   "published_sha", "review_pr", "pr_approval", "fix",
+                   "published_sha", "pr_head_accepted", "review_pr", "pr_approval",
+                   "fix",
                    "fix_merged_at", "fix_abandoned", "landed_via", "pr_history",
                    "pr_round")
 

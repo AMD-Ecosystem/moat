@@ -3554,6 +3554,73 @@ def _verified_published_sha(obj, name):
     return head
 
 
+def accept_pr_head(name, by, note=None):
+    """Record a person's ruling that a push to the open PR's branch made outside
+    this flow is accepted: `published_sha` becomes what the PR shows now.
+
+    The HEAD-MOVED case (`upstream.py --dry-run`): a maintainer edited our branch,
+    usually by merging their default branch into it. The sweep reports it and
+    nothing absorbs it, and until now nothing could: fix_branch bases a round on
+    `published_sha`, and a round based on the old tip can never fast-forward a
+    branch that has moved past it. A person reads what landed and rules; this
+    records that, so the next fix round is cut from the tip the maintainer left.
+
+    Verified live: the PR is open, its head differs from `published_sha`, and it
+    descends from it (a rewritten branch is not an edit to accept; that one stays
+    with a person). `head_sha` is left alone: validation was gathered at the old
+    tip, and the round that follows advances it and revalidates."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if not by:
+        raise ValueError(f"{name}: --by is required -- this records a person's ruling")
+    if obj.get("pr_state") != "open":
+        raise ValueError(f"{name}: no open upstream PR, so no PR head to accept")
+    if obj.get("fix"):
+        raise ValueError(f"{name}: a round is in flight on "
+                         f"{obj['fix'].get('branch')!r}; merge or abandon it first")
+    old = obj.get("published_sha")
+    if not old:
+        raise ValueError(f"{name}: no published_sha recorded -- there is no "
+                         f"baseline to say the head moved from")
+    repo, num = _pr_ref(obj.get("pr_url"))
+    live = _gh_json("pr", "view", num, "--repo", repo, "--json",
+                    "headRefOid,state") if repo else None
+    if not live or not live.get("headRefOid"):
+        raise ValueError(f"{name}: cannot read the open PR from GitHub -- not "
+                         f"verified, nothing written")
+    if live.get("state") != "OPEN":
+        raise ValueError(f"{name}: {repo}#{num} is {live.get('state')} on GitHub, "
+                         f"not open")
+    new = live["headRefOid"]
+    if same_commit(new, old):
+        raise ValueError(f"{name}: the PR head is the published tip "
+                         f"{old[:12]}; nothing moved")
+    # Both commits are on the fork's branch; the upstream repository only reaches
+    # them through the pull request.
+    fork = (obj.get("fork_url") or "").split("github.com/", 1)[-1].strip("/")
+    fork = fork[:-4] if fork.endswith(".git") else fork
+    cmp = _gh_json("api", f"repos/{fork or repo}/compare/{old}...{new}")
+    if not cmp or cmp.get("status") != "ahead":
+        raise ValueError(f"{name}: {new[:12]} does not descend from the published "
+                         f"tip {old[:12]} -- the branch was rewritten, not added "
+                         f"to; a person sorts that out by hand")
+    moved, why = ensure_port_branch(name)
+    if moved:
+        print(why, file=sys.stderr)
+        obj, _where = project_record(name)
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    obj["published_sha"] = new
+    obj["pr_head_accepted"] = {"from": old, "to": new, "by": by, "at": now_iso()}
+    if note:
+        obj["pr_head_accepted"]["note"] = note
+    save_record(name, obj, f"{name}: PR head {new[:12]} accepted by {by} "
+                           f"(was {old[:12]})")
+    return obj
+
+
 def fix_branch(name):
     """Establish (or report) the staging branch for a fix round.
 
@@ -7260,6 +7327,14 @@ def _main(argv=None):
                             "on an open upstream PR")
     s.add_argument("name")
 
+    s = sub.add_parser("accept-pr-head",
+                       help="record a person's ruling that a push to the open PR's "
+                            "branch from outside this flow (a maintainer's merge) is "
+                            "accepted; the next fix round starts from it")
+    s.add_argument("name")
+    s.add_argument("--by", help="who ruled it; required, never defaulted")
+    s.add_argument("--note")
+
     s = sub.add_parser("set-fix-review-pr",
                        help="record the fork review PR where the staged fix delta is approved")
     s.add_argument("name")
@@ -7801,6 +7876,11 @@ def _main(argv=None):
     elif args.cmd == "set-pr-open":
         set_pr_open(args.name, args.pr_url, args.pr_number)
         print(f"{args.name}: PR opened -> {args.pr_url}")
+    elif args.cmd == "accept-pr-head":
+        obj = accept_pr_head(args.name, args.by, note=args.note)
+        acc = obj["pr_head_accepted"]
+        print(f"{args.name}: PR head {acc['to'][:12]} accepted (was "
+              f"{acc['from'][:12]}); `fix-branch {args.name}` stages a round from it")
     elif args.cmd == "fix-branch":
         fix = fix_branch(args.name)
         print(f"{args.name}: fix round on {fix['branch']} "
