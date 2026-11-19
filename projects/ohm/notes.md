@@ -1367,6 +1367,8 @@ Body: `CMakeDetermineHIPCompiler.cmake` (3.31 and 4.3) chooses the default `CMAK
 
 ## Lesson for cuda-to-rocm: -fuse-ld=lld-link on a Windows CMake HIP link is not a failure by itself
 
+Promoted to cuda-to-rocm/references/windows.md in bb61ae96.
+
 Belongs in references/windows.md, "CMake's HIP link rule mangles MSVC-style flags and paths" (which says the injected flag "conflicts with --hip-link"). CMake 3.29+ adds `-fuse-ld=lld-link` to every clang link line on Windows (`Platform/Windows-Clang.cmake`, `CMAKE_<LANG>_USING_LINKER_DEFAULT`), HIP included. When the HIP link goes straight to ROCm's GNU-style `clang++` (CMake's own rule, not through hipcc), `clang++ --hip-link --rtlib=compiler-rt -fuse-ld=lld-link ...` links fine with CMake 3.31.0 and 4.3.2 and ROCm 7.14 clang 23. Do not strip it from `build.ninja` out of habit: build once without touching it and read the actual link error first. A recipe that carried the strip for months turned out to need none of it. (ohm)
 
 ## Review 2026-11-19 (linux-gfx90a reviewer, delta 7c09435..e9149bb on moat-port)
