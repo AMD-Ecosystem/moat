@@ -5304,3 +5304,8 @@ index b5aa12d4..8b82aead 100644
  #endif
  
 ```
+
+## Rulings (2026-11-19, Jeff Daily)
+
+- **3D textures with linear filtering on gfx90a: option A.** 3D textures on gfx90a use the GPU software sampler; 1D and 2D stay on hardware. Commits `c9595bce` and `e78ee32f` (the message fix) stand.
+- **Porting lock for Phase 6: moved to the windows-gfx1151 laptop by Jeff's decision** (`port-lock --take windows-gfx1151`), from linux-gfx950, after all five Linux GPUs passed (gfx950, gfx942 one and two GPUs, gfx90a, gfx1201 at `e78ee32f`; gfx1100 at `a8e95dcb`, whose only difference is one gfx11 kernel). The Windows porter session starts from the "Windows HIP build experiment" section above. When Phase 6 is done the lock goes back to linux-gfx950 for the nvcc CUDA compile check.
