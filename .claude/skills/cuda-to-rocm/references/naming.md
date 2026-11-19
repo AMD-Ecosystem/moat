@@ -8,7 +8,7 @@ These name two different facets and are not interchangeable. The confusion is st
 
 Mapping: CUDA C++ and the CUDA runtime -> **HIP**; nvcc, the CUDA Toolkit, and cuBLAS/cuFFT/cuDNN/CUB -> **ROCm** (hipBLAS+rocBLAS, hipFFT+rocFFT, MIOpen, hipCUB+rocPRIM).
 
-How to say it in MOAT prose, commits, and PRs:
+How to say it in prose, commits, and PRs:
 - The **code transformation** is a port **to HIP** (hipify, the `cuda_to_hip.h` shim, the `cudaXxx -> hipXxx` runtime layer).
 - The **target/platform/build flag/libraries** are **ROCm** ("validated on gfx90a, ROCm 7.2.1", the `USE_HIP`/`USE_ROCM` option, "swap cuFFT for hipFFT").
 - A pure language+runtime port is most precisely "a HIP port targeting ROCm." Do not call the platform "HIP" or the kernel dialect "ROCm".
@@ -16,4 +16,6 @@ How to say it in MOAT prose, commits, and PRs:
 
 PyTorch is the canonical conflation to NOT imitate: its build macro is `USE_ROCM`, `torch.version.hip` exists, yet the runtime device is still literally `"cuda"` -- it brands the platform ROCm while keeping CUDA's names and uses "HIP"/"ROCm" interchangeably in build code. Be precise instead.
 
-Upstream-visible text (commit messages, code comments, PR bodies) carries no MOAT-internal vocabulary -- no "lead"/"follower", "Strategy A/B", "head_sha", "curated commit", "validated_sha", "revalidate". Keep the technical rationale, drop the in-house labels; this text is read by external maintainers.
+Upstream-visible text (commit messages, code comments, PR bodies) carries no in-house vocabulary -- no internal stage, state or tool names, and none of this skill's own labels such as "Strategy A/B" or "fault class". Keep the technical rationale, drop the in-house labels; this text is read by external maintainers.
+
+A term list does not catch a comment that explains a hazard by naming ANOTHER ported project as shorthand for it. arrayfire carried eleven such comments; the six saying "fault class" were caught by a term check and five saying "the amgcl void*-aliasing fix" or "the gsplat target-attribute rule" were not. To an upstream reader both are dangling references to a codebase they have never seen. State the hazard itself -- "hipSPARSE typedefs several descriptor types to the same void*, so a wrapper keyed on the handle type cannot separate them" -- and before pushing, grep new comments for the names of other projects you have ported.

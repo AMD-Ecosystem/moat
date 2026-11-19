@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 # Validate the full EGGROLL HIP port (the transformer / multi-GPU Muon / d-eggs
 # distributed trainers, now folded into the moat-port branch) on a real AMD GPU.
 # egg.c is pipeline-tracked, so a gfx90a host can also pick this up via

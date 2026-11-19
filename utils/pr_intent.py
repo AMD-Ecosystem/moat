@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Say what a pull request is FOR, from what it changes.
 
 Two kinds of change arrive here and they want different review. A PROJECT pull
@@ -34,13 +36,17 @@ legitimate exception -- it costs one click to fix -- so this part fails.
     python3 utils/pr_intent.py --base <ref> --title "colmap: ..." --branch port/colmap
 """
 
+import os
 import argparse
 import pathlib
 import re
 import subprocess
 import sys
 
-REPO = pathlib.Path(__file__).resolve().parents[1]
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = pathlib.Path(__file__).resolve().parents[1]
+REPO = pathlib.Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
 
 PROJECT = re.compile(r"^projects/([^/]+)/(.*)$")
 # Written by a person about one port. Everything else under a project folder is
@@ -48,7 +54,7 @@ PROJECT = re.compile(r"^projects/([^/]+)/(.*)$")
 AUTHORED = ("notes.md", "plan.md", "surface.json")
 # Files that follow from a project change and belong with it.
 RECORD = ("README.md", "data/dispositions.json", "data/deferred.json")
-KNOWLEDGE = ".claude/skills/cuda-to-rocm/"
+KNOWLEDGE = (".claude/skills/cuda-to-rocm/", ".claude/skills/moat-porting/")
 
 
 def changed(base):
@@ -91,7 +97,7 @@ def _known_projects():
     the tree if moatlib cannot be imported, since this also runs in CI."""
     try:
         import sys
-        sys.path.insert(0, str(REPO / "utils"))
+        sys.path.insert(0, str(TOOLS_ROOT / "utils"))
         import moatlib
         return set(moatlib.all_projects())
     except Exception:
@@ -197,7 +203,7 @@ def main():
                   f"{', '.join(stray[:6])}")
             print("  A reviewer reading this against one port will not look at those.")
         if knowledge:
-            print("  + a lesson promoted to the cuda-to-rocm skill, which belongs with "
+            print("  + a lesson promoted to the cuda-to-rocm or moat-porting skill, which belongs with "
                   "the port that taught it")
         if infra:
             print(f"  + {len(infra)} file(s) changing MOAT itself:")
@@ -222,4 +228,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())
