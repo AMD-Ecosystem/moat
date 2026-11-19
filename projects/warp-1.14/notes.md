@@ -7092,3 +7092,10 @@ Session 16's program with a fourth mode, same graph otherwise (built with the sa
 - CUDA nvcc compile check on the mi355 host before presenting (the CUDA translation unit is unchanged by construction, but the rule is to compile it).
 - Jeff: the session 16 bug report draft for `hip-graph-alloc-node-va-unregistered-on-worker` still stands; add the kernel-node finding above (unlocked `FindMemObj` in `captureHIPArgs`, a miss silently drops residency and dependency tracking on PAL) as a second, lower-severity point.
 - Jeff: the upstream `test_event_external` race (still open).
+
+## Porting session 18 (2026-11-19, windows-gfx1151 laptop): test_event_external ordering fix and the full Windows pass
+
+- Ruling (Jeff Daily, 2026-11-19): carry a one-line test fix for the upstream `test_event_external` race. Fork commit `ea013807` "Order the zero fills before the graphs in test_event_external": `wp.synchronize_device()` after the three `wp.zeros` calls, with a comment. Test file only; no native or library change. ruff 0.15.9 clean.
+- Ruling (Jeff Daily, 2026-11-19): the capture-time fill workaround (`19b6a5ad`) stays and the alloc-node pointer window is reported; filed as https://github.com/ROCm/rocm-systems/issues/16277.
+- Full 82-pattern set on gfx1151 (`agent_space/warp-win/p6/run82c.sh`, one pattern at a time, `-m 2`, fresh cache per pattern, DLL built at `3d74932e`, working tree = `3d74932e` plus the `ea013807` test edit): **82 of 82 patterns OK** (`logs/p18pat/summary.txt`), including test_streams 24 OK (3 skipped), test_graph 35 OK (3 skipped), test_map 45 OK, test_fem* 108 OK (2 skipped, 199 s), test_mesh* 49 OK. No driver reset or hang.
+- Next: lock back to linux-gfx950 for the nvcc check and Phase 7 (wheels); the Linux hosts' passes are at `fda2f89a`, and the commits since are Windows-guarded (`de4e07a3`, `6b639456`, `19b6a5ad`), test-only (`9d9a6161` and its reversal `3d74932e`, `ea013807`).
