@@ -379,9 +379,13 @@ This change was prepared with the help of an AI coding agent.
 
 ## Lesson for cuda-to-rocm: picking a workaround for rocPRIM's bit-range radix sort defect
 
+Promoted to cuda-to-rocm/references/libraries.md in bb61ae96.
+
 Belongs in `libraries.md`, beside the warp-1.14 lesson on the defect itself (64-bit keys, end_bit 64, begin_bit > 0, 1025 to 2^20 keys). Two workarounds avoid the broken comparator: sort the full width (`begin_bit = 0`), or stop one bit short (`end_bit = width - 1`). The second is exact and stable but only when the top key bit is 0 for every element, and packed keys often break that: a sentinel such as `(uint32_t)-1` in the upper half ("invalid, sort last") sets it, and under the narrowed range the sentinel then ties with the largest valid value. A unit test at ordinary sizes passes either way, because the colliding valid value is near 2^31. Read where every packed field is written, sentinels included, before narrowing; otherwise sort the full width, which is correct whenever no caller depends on the order of keys equal in the selected bits (a 5-12% cost at up to 2^20 64-bit keys on MI355X). (cuBQL)
 
 ## Lesson for moat-porting: a follow-up round on a merged, trunk-resident project has no CLI re-home before the lock
+
+Promoted to moat-porting/SKILL.md in bb61ae96.
 
 When a port's upstream PR merged and its folder is on `main` with no `port/<name>`, the porter cannot take the lock: `set-state <name> <platform> porting` on `main` commits the lock to the trunk, `fix-branch` refuses without an open PR, `sync-branch` without a maintained ruling, and `advance-head` (which does re-home) belongs inside `porting`. This round called `moatlib.ensure_port_branch(<name>)` from Python, then checked out the branch and took the lock. A `moatlib.py` subcommand for it (or `set-state` re-homing on entering `porting` from `review-passed` with a finished PR) would close the gap. (cuBQL)
 
