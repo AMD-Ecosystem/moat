@@ -1000,3 +1000,47 @@ CUDA no-regression compile: `cuda-not-validated: no nvcc on this host` (no `/usr
 Gates: documentation present (README.MD:89, Linux scope); `python3 utils/jargon.py --port LiteGS`: **clean**. Integrity: `git status --porcelain` empty in the fork clone and the submodule, clone at a995109.
 
 linux-gfx90a: its kept GPU pass is at 1664e6d (`--gate jargon`), and a995109 is `doc-only` over it, so a gfx90a validator can close it with `carry-forward LiteGS linux-gfx90a a995109... source-class` after checking jargon; not done from this host, since each host writes its own platform's record.
+
+## Validation 2026-11-19 (5) (validator, windows-gfx1151) -- PASS at a995109 -> completed
+
+First Windows build of fused-ssim d3213b4 (the fused L1+SSIM cherry-pick) anywhere, and the first LiteGS validation on this platform. Device: AMD Radeon 8060S (gfx1151, RDNA3.5, wave32, APU), Windows 11, `HIP_VISIBLE_DEVICES=0`. Python 3.13.13 venv with torch `2.12.0+rocm7.14.0a20260519` (`torch.version.hip` 7.13.26190) and `rocm-sdk-core/devel/libraries/device-gfx1151 7.14.0a20260519` wheels; hipcc `HIP version: 7.13.26190`, AMD clang 23.0.0git; MSVC 14.44.35207 `link.exe`. head_sha `a995109ec81235aeb9dab69bfc6209ceeae3e053`; clone reset to `origin/moat-port`, `git submodule sync && git submodule update --init --recursive` checked out fused_ssim d3213b4 from `https://github.com/AMD-Ecosystem/fused-ssim`. No source change in either repository.
+
+Build environment (the same variables as the 2026-06-05 Windows validation, plus clang-cl as the host compiler, which torch-extension builds on this host use): `ROCM_PATH`/`HIP_PATH` = `<venv>/Lib/site-packages/_rocm_sdk_devel`, `HIP_DEVICE_LIB_PATH=<ROCM_PATH>/lib/llvm/amdgcn/bitcode`, `DISTUTILS_USE_SDK=1`, `PYTORCH_ROCM_ARCH=gfx1151`, `CC=CXX=<ROCM_PATH>/lib/llvm/bin/clang-cl.exe`, the MSVC `HostX64/x64` directory first on `PATH`, `MAX_JOBS=4`. The three README commands, one at a time, each under `utils/timeit.sh LiteGS compile --`, with `--target <scratch site dir>` added so the shared venv is not modified (the scratch dir is then on `PYTHONPATH`):
+```
+python -m pip install -v --no-build-isolation --no-deps --target <site> <src>/litegs/submodules/simple-knn
+python -m pip install -v --no-build-isolation --no-deps --target <site> <src>/litegs/submodules/fused_ssim
+python -m pip install -v --no-build-isolation --no-deps --target <site> <src>/litegs/submodules/gaussian_raster
+```
+All three built on the first attempt. fused_ssim: three hipcc translation units (`ssim.hip`, `ssim3d.hip`, `ext_winhip.cu`); the `ext_winhip.cu` command line carries `-DFUSED_SSIM_HIP -O3 -ffast-math --offload-arch=gfx1151`, as the porter round reasoned. No DLL staging was needed: every module is a `.pyd` loaded after `import torch`, which loads the HIP runtime from the wheel first.
+
+Imports (`import torch` first): `simple_knn._C` exports `distCUDA2`. `fused_ssim_cuda` exports exactly `fusedssim`, `fusedssim_backward`, `fusedssim3d`, `fusedssim_backward3d`, `fusedl1ssim_loss`, `fusedl1ssim_loss_backward` (2D, 3D and fused L1+SSIM all registered). The `fused_ssim` package exposes `fused_ssim`, `fused_ssim3d`, `fused_l1_ssim_loss`, `FusedSSIMMap`, `FusedL1SSIMLossMap`, `is_3D_supported = True`. `litegs_fused` exports 26 functions (`rasterize_forward`, `rasterize_backward`, `mvp_transform_forward`, `cull_compact_activate`, `adamUpdate`, ...).
+
+fused-ssim repository tests at d3213b4, run from a scratch copy of `tests/` + `images/`, each under `utils/timeit.sh LiteGS test --`. This APU laptop shares system RAM and must not run large or long loops, so the copies have SMALLER sizes and fewer repeats than upstream; the assertions and tolerances are unchanged:
+| script | change in the scratch copy | result |
+|---|---|---|
+| `test.py` (2D vs reference and pytorch_msssim, value and gradient asserts) | `B,CH,H,W` 5,5,1080,1920 -> 2,3,256,256; 100 -> 10 iterations | PASS |
+| `test_3D.py` (3D, value and gradient asserts, 10 iterations) | `B,CH,D,H,W` 2,1,96,96,96 -> 1,1,48,48,48 | PASS |
+| `test_fused_l1_ssim_loss.py` as a script | image 3x1080x1920 -> 3x270x480; 100 -> 10 repeats of `test_fused_l1_ssim_loss`, benchmark 100 -> 10 | PASS (at this size fused 0.40 ms vs l1 + fused_ssim 0.39 ms; too small to show the speedup) |
+| `pytest test_fused_l1_ssim_loss.py` | same small image | 1 passed |
+| `train_image.py` | `albert.jpg` downscaled 3250x4333 -> 406x541 | PASS (reaches SSIM 0.9999, 1518 steps) |
+| `train_image_3D.py` | none (98x120x96 volume) | PASS (reaches SSIM 0.9999, 1209 steps) |
+
+Not run here: `genplot.py`, `genplot_3D.py` (multi-size benchmark plots), and the upstream full-size versions of the tests above.
+
+Self-check (`litegs.utils.wrapper`, `validate()` per class): CreateTransformMatrix PASS, CreateCov2dDirectly PASS, SphericalHarmonicToRGB backward tensor #3 mismatch (dir_grad, never written by the kernel), EighAndInverse2x2Matrix forward tensor #1 mismatch (eigenvector sign), CreateRaySpaceTransformMatrix and Binning TypeError (harness signature mismatch). 2 PASS / 2 mismatch / 2 TypeError, identical to the gfx90a baseline at 38aa67c and 1664e6d: known upstream harness artifacts, nothing new.
+
+Real trainer (`example_train.py` unchanged, run through a `train_probe.py` that wraps `fused_ssim.fused_l1_ssim_loss` to log per-step loss and training-view PSNR). No public scene is on this machine and the 683 MB `tandt_db.zip` was not downloaded (laptop limits), so the scene is a small synthetic COLMAP text model made by a scratch script: a textured unit sphere over a textured square, 24 ring cameras, 320x240 PINHOLE images, 8192 noisy initial points. It goes through the real loader, clustering, densification, the sparse-gradient optimizer, the rasterizer and the fused loss:
+```
+utils/timeit.sh LiteGS test -- python train_probe.py <src> <log> -s <scene> -i images -m <out> --iterations 1000
+```
+| run | iterations | first iter loss / PSNR | last iter loss / PSNR | first-50 -> last-50 mean loss / PSNR | finite | peak GPU memory | wall |
+|---|---|---|---|---|---|---|---|
+| synthetic, 24 views | 984 (41 epochs) | 0.11543 / 15.83 dB | 0.00599 / 32.51 dB | 0.04309 / 23.36 -> 0.00616 / 31.89 | yes | 651 MiB | 20.2 s (15.9 s training) |
+
+Loss at every 100th step: 0.1154, 0.0124, 0.0100, 0.0307, 0.0253, 0.0071, 0.0074, 0.0075, 0.0097, 0.0064 (the rise at steps 300-400 was not investigated; it recovers, and I take it for the densification phase). One run; no 0x1016, `hipError` or `HSA_STATUS` in the log. Not measured on Windows: a public scene (truck), `--eval`, and `example_metrics.py`; the Linux figures for those are in the sections above.
+
+Environment notes (host, not port): the `torchmetrics` import chain in this venv reaches a `transformers`/`tokenizers` pair that refuses to import (`tokenizers>=0.14,<0.19 is required ... found 0.20.3`), so the probe and the self-check stub `torchmetrics.image.psnr`; the trainer uses it only in the `--test_epochs` branch, which was not run. Pure-Python test dependencies (`pytorch_msssim tifffile matplotlib` and their pure deps) were installed into the scratch site dir with `--no-deps`.
+
+CUDA no-regression compile: `cuda-not-validated: Windows host, ROCm-only PyTorch` (the nvcc compile of the d3213b4 pin recorded as owed in Review (3) still stands).
+
+Gates: `python utils/jargon.py --port LiteGS`: **clean**. Documentation: README.MD:89 is still scoped "On Linux with AMD GPUs". That is true as written, and the same three commands with `--no-build-isolation` did build here, but only with the Windows host setup listed above (ROCm SDK variables, `HIP_DEVICE_LIB_PATH`, `DISTUTILS_USE_SDK=1`, clang-cl as `CC`/`CXX`, MSVC `link.exe` first on `PATH`). **For jeff:** whether the README (and the pull request text) should now say Windows works, and how much of that setup to name, is a porter documentation commit; it changes no compiled output. Integrity: `git status --porcelain` empty in the fork clone and the submodule at a995109 (only ignored build output: `*.hip`, `*_winhip.cu`, `build/`, `*.egg-info`).
