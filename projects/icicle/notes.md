@@ -716,3 +716,17 @@ CMake set `CMAKE_HIP_ARCHITECTURES:STRING=gfx90a;gfx90a;gfx90a;gfx90a`: one entr
 
 ### Pre-existing jargon/commit-gate hits on earlier commits (not this round's)
 `jargon.py --port icicle` flags commit 98d8bca's Test Plan (`git -C projects/icicle/src grep ...`), and `audit-commits` flags 2609ca4 ("Test Plan has no fenced command block"). Commit 7d1cb07 is clean. These are in already-validated commits and can only change at PR-prep squash time, which is a person's push.
+
+## Review 2026-11-19 (reviewer, linux-gfx90a, fork moat-port 2609ca4 -> 7d1cb07)
+
+Scope: the one-commit delta `git diff 2609ca44...7d1cb070` (jeff's four polish items). Verdict: review-passed. No findings against the delta.
+
+Checked (independently, not from the porter's notes):
+- Delta holds exactly the four files (README, cuda_to_hip.h, hip_pqc/tests/CMakeLists.txt, cmake/backend_include.cmake); `git status --porcelain` in the fork is clean at 7d1cb07.
+- cuda_to_hip.h: the removed and added lines are identical once all whitespace is stripped (same md5); the only `git diff -w` residue is the `sub32_group_in_wave()` line join; no string literal or function-like macro name/paren spacing changed. `format_all.sh . --check --exclude "build|wrappers"` with the venv clang-format 19.1.7 re-run here: "All files processed successfully."
+- tests/CMakeLists.txt: `add_hip_test(test)` yields `hip_${test}` executables from `ml_kem/${test}.cu`; `name` leaks only into the hip_pqc/tests directory scope and nothing there reads it after the macro; `gtest_discover_tests(${name})` keeps the gtest names and default working directory (the tests' binary dir, where `copy_hip_test_data` puts test_data). Static scan of add_executable/add_library/add_custom_target over backend/{cuda_pqc,hip_pqc}, tests/ and cmake/ finds no remaining duplicate. The combined CUDA_PQC+HIP_PQC configure itself is still unrun (no nvcc here); it belongs with the nvcc CUDA-path check before the port goes to jeff.
+- backend_include.cmake: `git diff main -- icicle/cmake/backend_include.cmake` is only the HIP-PQC block (main = merge-base 625532a).
+- README: `icicle/` is the CMake source dir under the repo root; CUDA_PQC_BACKEND defaults OFF so the explicit OFF is redundant but harmless; KAT data exists at icicle/backend/cuda_pqc/tests/ml_kem/test_data (512/768/1024); the CUDA/Metal/Vulkan backends are fetched from separate ingonyama-zk repositories (or `local`), so the neutral wording is true; the build block and ctest path match the commit's Test Plan.
+- Commit 7d1cb07: title 62 chars, `[ROCm]` prefix fits (hip_pqc-only content plus a byte restore), rationale per item, prose AI disclosure, no trailer, fenced Test Plan. `jargon.py --port icicle` and `audit-commits` report only the pre-existing hits on 98d8bca and 2609ca4.
+
+Outside this delta (not gating, for jeff at PR prep): `icicle/backend/hip_pqc/tests/CMakeLists.txt:43-44` (unchanged since 98d8bca) says the KAT vectors are "copied into the build dir at configure time"; `copy_hip_test_data` is an `ALL` custom target, so the copy happens at build time, as the new README correctly says.
