@@ -2665,3 +2665,75 @@ Constraints (the diff-minimisation rule he set for textures applies here too):
 - **What falls back to scalar** (decided at compile time, per call): any dtype other than float32, float64, float16 and bfloat16; mixed element types between A, B and C; `M` or `N` not a multiple of 16, or `K` not a multiple of the instruction's K step (4 for f32/f64, 16 for f16/bf16), so no fragment ever reads outside the tile; `block_dim` not a multiple of the wavefront width (a block that is not a whole number of wavefronts, or smaller than one); targets without the instruction (gfx1030, and on Radeon every dtype the WMMA instructions lack); CPU and CUDA builds (the hook is compiled only under `__HIP_DEVICE_COMPILE__`, so the CUDA source and its expansion are unchanged). Whole calls fall back, never parts of a tile.
 - **Accumulation and results.** f32 and f64 accumulate in their own precision, like the scalar path but in a different summation order, so results agree to rounding. f16 and bf16 instructions accumulate in fp32 and the result is rounded once to the tile type, where the scalar path accumulates in the tile type: the matrix-core result is the more accurate one and can differ in the last bits.
 - **WMMA (32-lane wavefronts).** Same structure, one fragment per wavefront, `W = block_dim / 32`; operand and accumulator layouts per instruction family (gfx11 duplicates A and B across the two half-waves; gfx12 and gfx1250 split K between them). These layouts are taken from the ISA documentation and cannot be measured on this host, so the WMMA path is compiled but off by default behind one switch; the wave32 host measures the layouts with the same probe method and runs the tests, and only then is it enabled. Shipping it on would be a guess.
+## Evidence session 3 (2026-11-19, linux-gfx942, 2x MI300X, evidence only): re-run at `974cd4bf` (gfx942 items 1-3, two-GPU session)
+
+Requested by Jeff Daily. The lock stays with linux-gfx950. As before, no fork commit and no stage, lock, head, platform or deferred record changed. The read-only clone was moved from `2505f4a3` to the recorded `head_sha` `974cd4bf864080331cc3090a5ca0ed8d17da1ce5` (`git status --porcelain` empty before and after). Same venv and setup as evidence sessions 1-2 (TheRock 10.2.0 wheels with `device-gfx942`, torch 2.15.0+rocm10.2.0, private `WARP_CACHE_PATH` per run, `ulimit -c 0`). Build: `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx942 -j 112` -> "Warp build succeeded", 31.0 s at 56 workers. One-GPU items used `HIP_VISIBLE_DEVICES=0`; the two-GPU session used `0,1`.
+
+**Environment gap: Git LFS assets are missing on this host.** `git-lfs` is not installed, so all 14 tracked `.usd`/`.nvdb` files in the clone are LFS pointer files (`version https://git-lfs.github.com/spec/v1`). Earlier sessions here did not run any test that reads them; this session's full set and CPU-only suite do. I tried to fetch a job-local `git-lfs` release binary into `agent_space/`, and the session's permission policy refused it. Installing `git-lfs` on this host needs a person's go-ahead, so the affected tests are reported below as environment failures, each traced to its asset. Every one of them reads `bunny.usd`, `cube.usd`, `spiky.usd` or a `.nvdb` grid.
+
+### Item 1: textures through the GPU software sampler (first run off gfx950)
+- `python -c "import warp as wp; wp.init(); d = wp.get_device('cuda:0'); print(d.is_texture_supported, d.is_texture_hardware_supported)"` -> `True False`.
+- `python -m warp.tests -s autodetect -p test_texture.py -m 32`: Ran 118, OK (skipped=7, all "No suitable devices to run the test."). 59 `cuda_0` cases pass. This is the gfx950 result exactly.
+- `python sdf_probe.py cpu`: SDF vs CPU sampler 0.00e+00, vs analytic 1.28e-03 (grid spacing 1.56e-02), RGBA8 0.00e+00: PASS.
+- `python sdf_probe.py cuda:0` (MI300X, `is_texture_supported=True`): SDF vs CPU sampler 5.96e-08, vs analytic 1.28e-03, RGBA8 vs CPU sampler 1.55e-06: PASS.
+- `python tex_capture.py cuda:0`: replays 0, 1 and 2 each max abs diff vs CPU 1.19e-07: PASS.
+- Both scripts were taken verbatim from Porting session 5 (`sdf_probe.py`) and Porting session 7 (`tex_capture.py`).
+
+### Item 2: tile capability skips on a real 64 KiB part
+`for f in test_tile_shared_memory.py test_tile_reduce.py test_tile_view.py; do python -m warp.tests -s autodetect -p "$f" -m 32; done` (`max_shared_memory_per_block` 65536):
+
+| file | ran | result | skips |
+|---|---|---|---|
+| test_tile_shared_memory | 30 | OK | 2: `test_tile_shared_mem_large_cuda_0`, `test_tile_shared_mem_func_cuda_0`, both "Needs 67584 bytes of shared memory per block, device has 65536" |
+| test_tile_reduce | 62 | OK | 2: `test_tile_reduce_axis_tier2_cuda_0` "Needs 66816 ...", `test_tile_reduce_axis_tier2_single_warp_cuda_0` "Needs 66688 ..." |
+| test_tile_view | 16 | OK | 1: `test_tile_assign_2d_cuda_0` "Needs 66688 ..." |
+
+Exactly the five skips and byte counts the handoff predicted. `test_tile_shared_mem_func` no longer prints its "Failed to configure" warning, because it now skips before building. `test_tile_load` (64 run, OK) still prints its one harmless warning, for `test_tile_load_scoped_kernel_..._cuda_kernel_backward` at 65536 bytes, as ruled.
+
+### Item 3: full 82-pattern set and CPU-only suite
+Full set: the 82-pattern loop of the Porting session 6 handoff, extracted verbatim from notes (82 patterns), `-p "<pattern>" -m 32`, one GPU, 2356 s under `utils/timeit.sh warp-1.14 test`. **78 patterns OK, 4 not OK.** The 4 are the 2 known fem isolation failures plus 15 errors that all read LFS assets:
+- Phase 1: test_codegen 117, test_snippet 12, test_arithmetic 126, test_math 16, test_fp16 6, test_bf16 48, test_atomic 164, test_atomic_bitwise 6, test_atomic_cas 48, test_array 139, test_copy 14, test_launch 32, test_fast_math 12 (1 skipped), test_grad 41, test_kernel_cache 5, test_module_hashing 8, test_print 10, test_mat* 601, test_vec* 531, test_quat* 173, test_spatial* 207, test_rand 10, test_noise 14, test_clang_cuda 7 (6 skipped): all OK.
+- Phase 2: test_runlength_encode 16, test_array_reduce 16, test_sparse 47, test_linear_solvers 34, test_bvh 13, test_grouped_bvh 11, test_hash_grid 23, test_marching_cubes 17, test_volume_write 5, test_apic 52, test_apic_mesh 12: OK.
+  - **test_coloring 3, errors=1**: `test_coloring_trimesh` opens `bunny.usd` (LFS pointer; `pxr.Tf.ErrorException` "Failed to open layer").
+  - **test_mesh* 49, errors=12**: 8 open `bunny.usd`, 4 open `spiky.usd`, all `pxr.Tf.ErrorException`.
+  - **test_volume 1, errors=1**: the module fails at import, "NanoVDB signature not found" on `warp/tests/assets/test_grid.nvdb`. None of its cases registered.
+  - **test_fem* 107, failures=3**: the two known isolation failures (`test_gimp_quadrature`, `test_cube_shape_functions`, "Unexpected output" holding the init greeting), plus `test_fem.example_adaptive_grid_cuda_0`, whose example loads an `.nvdb` collider ("NanoVDB signature not found").
+- Phase 3: test_graph 35 (3 skipped), test_array_fill_capture 3, test_capture_mode 2, test_conditional_captures 32 (16 skipped), test_conditional 50, test_async 2373, test_streams 24 (3 skipped: the priority timing assertion "HIP maps stream priorities to normal priority, so priority has no scheduling effect." plus the 2 multi-GPU skips), test_mempool 7 (2 skipped), test_pinned 1, test_unified_memory 27 (8 skipped), test_occupancy 6, test_allocator 16 (3 skipped), test_allocation_tracker 34, test_dlpack 16, test_torch 34, test_map 45, test_reload 14, test_cuda_arch_suffix 10 (10 skipped): all OK.
+- Phase 4: all 22 tile files plus test_block_dim_dispatch 2 and test_template_launch_bounds 36 OK. Skips: the 10 upstream no-libmathdx skips (fft 8, mlp 1, solve 1) plus the five capability skips of item 2.
+- Phase 5: test_texture 118 (7 skipped) OK.
+
+Compared with gfx950's item 3 at this head, the counts are identical except for the five tile skips (expected on a 64 KiB part) and the LFS-asset errors. gfx950 has the assets, so its test_coloring, test_mesh* and test_volume pass there. The mesh, volume and coloring tests that need real assets have never run on gfx942 (sessions 1-2 did not include those files), so they remain unproven here until the assets are present.
+
+CPU-only suite (`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32`, run concurrently with the start of the full set): Ran 2271, failures=5, errors=7, skipped=15. All 12 are LFS assets: `test_volume` import (1 error; its CPU cases do not register, which is why 2271 and not 2294), 6 `test_mesh_query_*` CPU cases (bunny/spiky), and 5 examples (`example_mesh`, `example_mesh_intersect`, `example_raycast`, `example_diffray` read `.usd`; `example_nvdb` reads `.nvdb`).
+
+To finish item 3 properly, the host needs `git-lfs` (the porter's recipe: `sudo apt-get install git-lfs`, then in the clone `git lfs install --local --skip-repo && git lfs pull`). Then re-run `test_coloring.py`, `test_mesh*.py`, `test_volume.py`, `test_fem*.py` and the CPU-only suite.
+
+### Two-GPU session (`HIP_VISIBLE_DEVICES=0,1`): the 13-file C.2 loop plus test_texture
+Same loop as evidence sessions 1-2, with `test_texture.py` appended, under `utils/timeit.sh warp-1.14 test`.
+
+| file | ran | result | evidence session 2 (`2505f4a3`) |
+|---|---|---|---|
+| test_multigpu | 5 | OK, 2 skipped | same |
+| test_peer | 5 | OK, 1 skipped | same |
+| test_mempool | 10 | OK, 2 skipped | same |
+| test_streams | 42 | OK, 4 skipped | failures=2 (C4), 2 skipped |
+| test_graph | 61 | OK, 5 skipped | same |
+| test_ipc | 8 | OK | same |
+| test_unified_memory | 40 | OK, 9 skipped | same |
+| test_allocator | 16 | OK, 1 skipped | same |
+| test_async | 3533 | OK | same |
+| test_sparse | 71 | OK, 1 skipped | same |
+| test_fem_integrate | 25 | OK, 1 skipped | same |
+| test_array | 207 | OK | same |
+| test_copy | 30 | OK | same |
+| test_texture | 177 | OK, 7 skipped | (not run) |
+
+**No errors and no failures.** Skips, all files: 3 C1, 2 C2 (each naming the HIP defect), 2 "HIP maps stream priorities to normal priority ..." (C4, `_cuda_0` and `_cuda_1`), 10 IOMMU heuristic "Peer-to-Peer transfers not supported", 4 "cuda:N cannot access CPU memory", 2 upstream memory-usage flakiness, 7 "No suitable devices to run the test." (test_texture's CUDA-only registrations), and 1 each of "Requires devices without mempool access support", "Requires devices without peer access support" and "rmm not installed".
+
+test_texture with two devices: 59 `cuda_0` and 59 `cuda_1` cases pass (118 GPU + 50 CPU + 2 deviceless + 7 skipped = 177). So the software sampler's device-memory allocation, copies and sampling work on a non-primary ordinal.
+
+Observation, not a defect: `test_synchronize_during_capture_cuda_1` prints `Warp CUDA error 900: operation not permitted when stream is capturing (in function wp_cuda_context_synchronize, ...)` and passes. The test calls `wp.synchronize()` inside a capture and expects `RuntimeError "Cannot synchronize device"`. On `cuda:0` (one-GPU run) nothing is printed. On `cuda:1` the native synchronize runs and HIP refuses it before Warp raises the expected error. The same line is in both earlier two-GPU logs at `8d13d596` and `2505f4a3`. **Correction to evidence session 1:** finding C3 attributed that 900 to the failed multi-device capture; it comes from this test instead.
+
+### Next step for the lock holder
+- Items 1 and 2 and the two-GPU session at `974cd4bf` on gfx942 match every expectation of the handoff.
+- Item 3 matches too, except the mesh/volume/coloring files and the CPU-only suite, which need the LFS assets: 15 GPU-run errors and 12 CPU-only errors, all traced to pointer files. Nothing points at the port. To close item 3 on gfx942, a person approves installing `git-lfs` on this host, and those four patterns plus the CPU-only suite are re-run.
