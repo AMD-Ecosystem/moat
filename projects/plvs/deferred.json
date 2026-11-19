@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "plvs-blocked-on-opencv-rocm",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "plvs GPU port (ORB/FAST feature kernels + libelas-gpu + libsgm stereo) compiles for gfx90a against the MOAT OpenCV-with-HIP fork but is blocked on: (1) OpenCV core PR #29285 + opencv_contrib PR #4147 landing upstream so cv::cuda-on-ROCm is a consumable released dep; (2) building the full non-GPU SLAM stack (PCL/Pangolin/DBoW2/g2o/voxblox/chisel) + stereo datasets to validate on GPU, including verifying libsgm wave64 disparity correctness (WARP_SIZE=64 reductions, may need logical-32 rework per the OpenCV cudastereo conclusion). Resume when OpenCV PRs land. Fork moat-port HEAD f932ab5.",
+      "refs": [
+        "projects/plvs/notes.md",
+        "AMD-Ecosystem/plvs@f932ab5"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-11T23:24:39Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T20:41:16Z"
+      }
+    },
+    {
+      "id": "plvs-windows-slam-bundled-deps",
+      "kind": "other",
+      "component": null,
+      "summary": "plvs gfx1201 HIP device code is PROVEN on Windows (libsgm stereo PASS: coverage 0.841, agreement 0.972, matches Linux), but the full mono-TUM SLAM cannot run on Windows: bundled ROS-adjacent CPU libs (DBoW2, g2o, line_descriptor, voxblox, open_chisel, chisel_server, voxblox_server) hardcode Unix .so/.a outputs in their CMakeLists; PCL unavailable (not in vcpkg, github TLS-blocked); Pangolin version mismatch (vcpkg 0.9.5 vs required fe57db5/v0.6+patch); main CMakeLists uses -fPIC/-pthread/pkg_check_modules(GLFW) without WIN32 guards. Upstream Windows-portability gap, not an AMD/HIP defect. gfx1201 is redundant/optional Windows tier and NOT PR-required (Linux completed). To complete: Windows-guard the bundled-lib CMakeLists + supply PCL/Pangolin, or validate the SLAM path on gfx1101 instead.",
+      "refs": [
+        "projects/plvs/notes.md",
+        "fork AMD-Ecosystem/plvs @ b9210a8"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-12T15:00:56Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T20:41:20Z"
+      }
+    },
+    {
+      "id": "plvs-nvidia-proprietary-rescan",
+      "kind": "other",
+      "component": null,
+      "summary": "Rescan with the fixed scan_nvidia: include/cuda/ vendors pre-2017 CUDA samples EULA-pointer headers (helper_cuda.h, helper_string.h). No licence ruling on the vendored copies is recorded; needs a person's confirmation.",
+      "refs": [
+        "moat main b336246 (case/wording-proof scan_nvidia)"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T17:09:33Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T18:58:57Z"
+      }
+    },
+    {
+      "id": "plvs-libelas-gpu-dvalids-leak-double-free",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream libelas-gpu bug now active in HIP builds (identical under CUDA): ElasGPU::computeDisparity (GPU/elas_gpu.cu:581-595) never frees d_valids and calls cudaFree on d_u_vals/d_v_vals twice. Measured on gfx942: ~4 MB device memory leaked per ElasInterface::process on aloe (80 MB over 20 calls), and hipGetLastError() reads hipErrorInvalidValue after every call. plvs calls it once per keyframe (PointCloudKeyFrame.cc:415 static pElas), so long stereo runs leak steadily. Fix is 3 lines (free d_valids, drop the duplicate frees), but it is an upstream bug fix outside the smallest port; needs a person's defer/now ruling.",
+      "refs": [
+        "projects/plvs/notes.md#review-2026-11-04b",
+        "AMD-Ecosystem/plvs@b9c257a"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-11-04T09:42:18Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-04T23:35:26Z",
+        "note": "ruled now in the linux-gfx1100 porter dispatch 2026-11-04: fix as one new [ROCm] commit on the current head"
+      }
+    },
+    {
+      "id": "plvs-upstream-stereo-mapping-crashes",
+      "kind": "other",
+      "component": null,
+      "summary": "Two upstream CPU-code crashes in long stereo runs (TUM-VI room1, Examples/Stereo/TUM-VI.yaml with PointCloudMapping.on 1), neither a port defect and neither gating: (1) SEGV addr 0x1378 in LocalMapping::ProcessNewKeyFrame -> MapLine::UpdateNormalAndDepth -> KeyFrame::GetCameraCenter on a null mpRefKF (src/MapLine.cc:660, no null check); seen in CPU-only builds too; 3/16 runs at fde33e5 on gfx1100, 4/15 on gfx90a. (2) SEGV in PointCloudMapping thread, PointCloudMapOctreePointCloud<PointSurfelSegment>::UpdateMapNoSegm (src/PointCloudMapOctreePointCloud.cc:935, byte-identical to upstream): it calls octree_.deleteVoxelAtPoint(mapPoint) inside a leaf_depth iterator loop, with mapPoint a reference into the leaf being deleted (iterator invalidation / use-after-free); 1/16 runs at fde33e5. Fixing either is an upstream bug fix outside the smallest port; needs a person's defer/now ruling.",
+      "refs": [
+        "projects/plvs/notes.md#port-round-2026-11-05",
+        "AMD-Ecosystem/plvs@fde33e5"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-11-05T00:26:19Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-05T07:41:56Z",
+        "note": "MapLine half done in 970cb1f + luigifreda/plvs#57; fix the octree use-after-free in UpdateMapNoSegm as its own commit and draft an upstream issue"
+      }
+    },
+    {
+      "id": "plvs-windows-stereo-slam-crash",
+      "kind": "other",
+      "component": null,
+      "summary": "On Windows (gfx1151, clang 23) the TUM-VI room1 stereo SLAM (stereo_tum_vi) crashes with an access violation in a CPU keyframe/map thread (LocalMapping::CreateNewMapFeatures, KeyFrameCulling, LoopClosing::DetectCommonRegionsFromBoW) within 30-131 keyframes, 5/5 runs with libelas and PointCloudMapping, and identically with PointCloudMapping off and in a CPU-only (USE_HIP=OFF, no libelas/libsgm) Windows build; Linux runs the same sequence 14-18 clean of 17-21. Not caused by the HIP port. Root cause not found (no line info). Also Examples/Stereo/stereo_tum_vi.cc includes <unistd.h>/usleep so the target does not build on Windows; fix: std::this_thread::sleep_for. Neither gates the port.",
+      "refs": [
+        "projects/plvs/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-11-05T03:42:59Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-05T07:01:48Z",
+        "note": "ruled now in the windows-gfx1151 porter dispatch 2026-11-05: fix the stereo_tum_vi build and root-cause the crash"
+      }
+    }
+  ]
+}

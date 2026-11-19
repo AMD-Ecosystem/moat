@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Scan upstream-visible text for MOAT in-house vocabulary.
 
 Everything MOAT publishes to an upstream project -- commit messages, PR titles and
@@ -25,6 +27,7 @@ round wrote it, so the range is the fork's default branch to `moat-port` -- whic
 Exit 1 if anything is found.
 """
 
+import os
 import argparse
 import re
 import pathlib
@@ -32,8 +35,17 @@ import subprocess
 import sys
 import tomllib
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-CONFIG = REPO_ROOT / "config" / "jargon.toml"
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = pathlib.Path(__file__).resolve().parents[1]
+REPO_ROOT = pathlib.Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
+CONFIG = TOOLS_ROOT / "config" / "jargon.toml"
+
+
+class Terms(dict):
+    """The prose terms, as the mapping callers have always been handed, carrying the
+    smaller table that is also searched inside code blocks and command lines."""
+    fenced = {}
 
 
 def load():
@@ -43,7 +55,9 @@ def load():
     with open(CONFIG, "rb") as f:
         cfg = tomllib.load(f)
     allow = [re.compile(p, re.I) for p in cfg.get("allow", {}).get("patterns", [])]
-    return cfg["terms"], allow
+    terms = Terms(cfg["terms"])
+    terms.fenced = dict(cfg.get("fenced", {}))
+    return terms, allow
 
 
 # git writes UTF-8 regardless of the platform's locale. `text=True` alone decodes
@@ -55,32 +69,99 @@ def load():
 _GIT_TEXT = {"encoding": "utf-8", "errors": "replace"}
 
 
+_COMMAND_LINE = re.compile(r"^\s*(git|grep|rg|python3?|bash|sh|gh|cmake|make|\./)\b")
+# The checker's own invocation, quoted in a Test Plan: `grep -niE '\bmoat\b'` and
+# `jargon.py --port x` name the vocabulary because looking for it is their job.
+_OWN_CHECK = re.compile(r"^\s*(?:\$\s*)?(?:grep|rg)\b|jargon", re.I)
+
+
+# An embedded image or key is not prose. A long enough run of base64 spells every
+# short word eventually, and a logo checked into a port flagged two terms that way.
+_DATA_RUN = re.compile(r"[A-Za-z0-9+/=_-]{120,}")
+
+
+def _fence_states(lines):
+    """Per line: "fence" for a delimiter, "code" inside a block, else "prose".
+
+    A fence that is never closed does not swallow the rest of the text. One stray
+    backtick line in a commit message used to turn everything after it -- in that
+    message and, in a concatenated scan, in every later one -- into "code" that was
+    never read; the unpaired opener is treated as an ordinary line instead."""
+    marks = [i for i, line in enumerate(lines) if line.lstrip().startswith("```")]
+    if len(marks) % 2:
+        marks.pop()
+    states, inside, marks = [], False, set(marks)
+    for i in range(len(lines)):
+        if i in marks:
+            inside = not inside
+            states.append("fence")
+        else:
+            states.append("code" if inside else "prose")
+    return states
+
+
 def scan_text(text, label, terms, allow):
-    """Scan prose. Fenced code blocks and shell commands are skipped: a Test Plan
-    that documents `grep -niE '\bmoat\b'` as its own jargon check is not itself
-    jargon, and flagging it trains people to ignore the tool."""
+    """Scan one piece of text: a title, a body, one commit message, one file's
+    added lines. Pass each separately (scan_units) rather than joined, so code
+    blocks pair up within the piece they belong to.
+
+    Prose is searched for every term. A match of an `allow` pattern -- a URL -- is
+    masked and the rest of its line still read: skipping the whole line hid
+    everything beside a link, and a GitHub body is one line per paragraph.
+
+    Code blocks and command lines are searched for the `fenced` table only: the
+    names that are wrong wherever they appear (our tools, our records, a path on
+    one of our machines), not the prose terms a command may legitimately spell. A
+    Test Plan that quotes the jargon check itself is left alone; flagging it
+    trains people to ignore the tool."""
     hits = []
-    in_fence = False
-    for i, line in enumerate(text.splitlines(), 1):
-        if line.lstrip().startswith("```"):
-            in_fence = not in_fence
-            continue
-        if in_fence:
+    fenced = getattr(terms, "fenced", {})
+    lines = text.splitlines()
+    for i, (line, state) in enumerate(zip(lines, _fence_states(lines)), 1):
+        if state == "fence":
             continue
         stripped = line.strip()
-        # an indented command block, or a line that is plainly a shell invocation
-        if line.startswith(("    ", "\t")) and re.match(r"^\s*[\w./-]+\s", line):
-            if re.match(r"^\s*(git|grep|python3?|bash|sh|gh|cmake|make|\./)\b", line):
+        command = state == "code" or (line.startswith(("    ", "\t"))
+                                      and bool(_COMMAND_LINE.match(line)))
+        if command:
+            if _OWN_CHECK.search(line):
                 continue
-        if any(a.search(line) for a in allow):
-            continue
-        if stripped.startswith(("#", "//")) and "jargon" in stripped.lower():
-            continue
-        for pat, fix in terms.items():
-            m = re.search(pat, line, re.I)
+            table = fenced
+        else:
+            if stripped.startswith(("#", "//")) and "jargon" in stripped.lower():
+                continue
+            table = {**terms, **fenced}
+        masked = _DATA_RUN.sub(lambda m: " " * len(m.group(0)), line)
+        for a in allow:
+            masked = a.sub(lambda m: " " * len(m.group(0)), masked)
+        for pat, fix in table.items():
+            m = re.search(pat, masked, re.I)
             if m:
-                hits.append((label, i, m.group(0), fix, line.strip()[:90]))
+                hits.append((label, i, m.group(0), fix, stripped[:90]))
     return hits
+
+
+def scan_units(units, label, terms, allow):
+    """scan_text over [(name, text)], each on its own."""
+    hits = []
+    for name, text in units:
+        hits += scan_text(text, f"{label} {name}".strip(), terms, allow)
+    return hits
+
+
+def added_by_file(diff):
+    """[(path, added lines)] from a unified diff, one entry per file."""
+    units, path, lines = [], None, []
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            if path is not None:
+                units.append((path, "\n".join(lines)))
+            path, lines = line[4:].removeprefix("b/"), []
+        elif line.startswith("+") and path is not None:
+            lines.append(line[1:])
+    if path is not None:
+        units.append((path, "\n".join(lines)))
+    return units
 
 
 def port_range(name):
@@ -89,7 +170,7 @@ def port_range(name):
     Read from the project's own record so nobody types a range: the base is
     `fork_default_branch`, never the previous head. Raises if the project or its fork
     clone is not here, because a check that silently scans nothing passes."""
-    sys.path.insert(0, str(REPO_ROOT / "utils"))
+    sys.path.insert(0, str(TOOLS_ROOT / "utils"))
     import moatlib
     obj, _where = moatlib.project_record(name)
     if obj is None:
@@ -98,7 +179,7 @@ def port_range(name):
     if not (repo / ".git").exists():
         raise ValueError(f"{name}: no fork clone at {repo} -- nothing to scan")
     base = obj.get("fork_default_branch") or "main"
-    branch = obj.get("fork_branch") or moatlib.PORT_BRANCH
+    branch = moatlib.upstream_visible_branch(obj)
     rng = f"{base}..{branch}"
     n = subprocess.run(["git", "-C", str(repo), "rev-list", "--count", rng],
                        capture_output=True, text=True, **_GIT_TEXT)
@@ -127,9 +208,7 @@ def scan_diff(repo, rng, terms, allow):
     """Lines ADDED in a range -- code comments and docs the port introduces."""
     r = subprocess.run(["git", "-C", repo, "diff", "--unified=0", rng],
                        capture_output=True, text=True, **_GIT_TEXT)
-    added = "\n".join(l[1:] for l in r.stdout.splitlines()
-                      if l.startswith("+") and not l.startswith("+++"))
-    return scan_text(added, "added lines", terms, allow)
+    return scan_units(added_by_file(r.stdout), "added lines", terms, allow)
 
 
 def main():
@@ -179,4 +258,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())

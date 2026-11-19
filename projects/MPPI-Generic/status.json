@@ -1,0 +1,158 @@
+{
+  "schema_version": 3,
+  "name": "MPPI-Generic",
+  "upstream_url": "https://github.com/ACDSLab/MPPI-Generic",
+  "fork_url": "https://github.com/AMD-Ecosystem/MPPI-Generic",
+  "fork_default_branch": "main",
+  "priority": 4.766,
+  "ext_type": "unknown",
+  "adopted_at": "2026-05-30T00:36:14Z",
+  "updated_at": "2026-11-13T01:12:22Z",
+  "head_sha": "70d2b686a037a6643d2636d8f8375919fb0325f6",
+  "waivers": {},
+  "license_spdx": "BSD-2-Clause",
+  "upstream_repo_id": 833210393,
+  "stage": "review-passed",
+  "platforms": {
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "cef61e57f70cf56e475c6d182a9098d5dcd8b827",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:44:48Z",
+      "updated_at": "2026-08-20T00:08:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "00567cbc5c02d809967c96fef8935e4f1ed60773",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:44:48Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "70d2b686a037a6643d2636d8f8375919fb0325f6",
+      "started_at": "2026-05-30T10:35:00Z",
+      "completed_at": "2026-11-05T06:22:39Z",
+      "updated_at": "2026-11-05T06:22:39Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "failed_sha": "939db796f3f0b90fc2d7a2bacddabaf4611fb17a"
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "cef61e57f70cf56e475c6d182a9098d5dcd8b827",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:44:48Z",
+      "updated_at": "2026-08-20T00:08:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "00567cbc5c02d809967c96fef8935e4f1ed60773",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:44:48Z"
+      }
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "70d2b686a037a6643d2636d8f8375919fb0325f6",
+      "started_at": "2026-05-30T07:04:54Z",
+      "completed_at": "2026-11-05T06:39:40Z",
+      "updated_at": "2026-11-05T06:39:40Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "failed_sha": "939db796f3f0b90fc2d7a2bacddabaf4611fb17a"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "70d2b686a037a6643d2636d8f8375919fb0325f6",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-05T08:17:50Z",
+      "updated_at": "2026-11-05T08:17:50Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/MPPI-Generic/pull/1",
+  "porting": null,
+  "porting_released": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-05T06:05:21Z",
+    "at": "2026-11-05T06:09:33Z"
+  },
+  "pr_url": "https://github.com/ACDSLab/MPPI-Generic/pull/37",
+  "pr_number": 37,
+  "pr_opened_at": "2026-11-13T01:12:22Z",
+  "pr_state": "open",
+  "published_sha": "70d2b686a037a6643d2636d8f8375919fb0325f6"
+}
