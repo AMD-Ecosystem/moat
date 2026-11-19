@@ -4440,3 +4440,74 @@ Sizes are in our fork (10dcea3..5a87452). "Stands alone" means it applies to ups
 ## Upstream conversation opened 2026-11-19
 
 jeff filed https://github.com/pyscf/gpu4pyscf/issues/1054 ("ROCm port (#1042): test results on MI300X and Radeon PRO W7800, and fixes we can send"). It reports the two evaluation runs above, offers the six small fixes and the ECP kernels as pull requests, and asks whether upstream would take GPU libxc on HIP. Watch it for the answer before any GPU libxc work; pull requests wait for jeff.
+## Rulings 2026-11-19 (jeff): rescope round scope
+
+jeffdaily ruled on 2026-11-19, in the request that dispatched the porter round below:
+1. The port is rescoped onto upstream's own AMD port (upstream PR 1042, on master): we drop our HIP infrastructure and adopt theirs.
+2. The first work is six small, independent fixes, each to become its own upstream pull request: (a) `ft_ao_scheme` on 64-wide wavefronts (cause A), (b) `eigh_std` batched/float32 inputs (cause B), (c) a separate hipSOLVER handle (cause C), (d) a static shared-memory reserve in the HIP `shm_size` (cause D), (e) Cholesky failure detection from potrf's info (cause H), (f) the ROCm 10.1 `-mllvm -disable-machine-licm` workaround as its own easily declined commit (jeff is asking upstream whether they want it in the build).
+3. After those: the low-shared-memory g-shell ECP derivative kernels.
+4. HELD, not to be ported this round: GPU libxc on HIP (until upstream answers a question jeff is asking them), and the rocBLAS einsum call-site rewrite (in favour of a rocBLAS fix).
+
+No upstream pull request of ours is open, so `moat-port` is private and the porter pushes it directly. jeff opens the conversation with upstream himself and approves every upstream-visible word; no GitHub write other than pushing the fork's branches.
+
+## Porter 2026-11-19 (porter, linux-gfx942 MI300X, fork moat-port 5a87452 -> 7cbd3d2, pushed) -- rescope onto upstream's AMD port, six fixes
+
+Took the lock (`set-state gpu4pyscf linux-gfx942 porting`). `HIP_VISIBLE_DEVICES=6` from the dispatcher (idle at start). TheRock ROCm SDK 10.1.0 (pip, no /opt/rocm), AMD clang 24.0.0, cmake 3.28.3 (/usr/bin, first on PATH, because pip's build isolation breaks the venv's cmake shim). Job venv: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, basis-set-exchange 0.12, MCFun 0.2.6, pytest 9.2.0, pytest-xdist 3.8.0, pytest-timeout 2.4.0 (the evaluation's set).
+
+### Step 1: fork brought to upstream
+- Fork mirror `master` fast-forwarded 4c56c9f -> 61c2a1e (upstream tip; one new commit, #1051 MANIFEST.in), plain push of upstream's commit.
+- `git merge --no-ff --no-commit upstream/master` into moat-port: 38 conflicted files (the same set as the trial). Resolved by taking upstream's tree entirely (`git read-tree --reset -u upstream/master`), which also removed everything of our old port that upstream's design replaces: `lib/cuda_to_hip.h`, `lib/cuda_to_hip_shfl.h`, our four `lib/hip_compat` shims (upstream ships its own files under the same names), our CMake HIP logic in lib/CMakeLists.txt and the 10 per-library CMakeLists, our README block, our cusolver/libxc/grouped-GEMM handling, the local einsum and its call-site rewrites, the gfx12 complex-GEMM split, and `lib/ecp/ecp_type2_lowmem.cu`. Merge commit **a8b4c30e** ("Merge upstream master; adopt upstream's AMD GPU support"), parents 5a87452 and 61c2a1e.
+- Result: `git diff 61c2a1e a8b4c30e --stat` is **empty**. The merged tree is upstream master's tree exactly; no file differs.
+
+### What was dropped, and where each piece went (inventory of 10dcea3..5a87452, 156 files, checked with git show/grep against upstream 61c2a1e)
+
+Categories: REPLACED by upstream's design; FIX in this round; HELD by jeff; NEXT round; DROPPED (not in upstream, not held), for jeff to decide later.
+
+| what | our commits | where it went |
+|---|---|---|
+| Compat header, hip_compat shims, popcount-width shuffle shim | 8cb88067, 899ec268, dc45713 | REPLACED: hip_compat/gpu_runtime.h (force-included, lib/CMakeLists.txt:161) and warp_size.h; same four shim files |
+| CMake HIP block (HIP language, .cu retag, -fgpu-rdc, -Wno-register, arch, CUTLASS off) and the per-library CMakeLists | 8cb88067, cdd8b8b0, 45d80530, 13e3500f, dc45713 | REPLACED: lib/CMakeLists.txt:26-69, 152-217, 229-233 (`gpu4pyscf_configure_gpu_target`) |
+| README ROCm block | 066e91ee and later | REPLACED: README "Building for AMD GPUs (ROCm)" |
+| `sharedMemPerBlockOptin` fallback, hipSOLVER library and enums, CUTLASS grouped GEMM fallback, vec_dot, multigrid_v3 RawKernels, get_smid, double9 initializers, the wave64 shuffle/reduction fixes in ecp, gvhf-rys, gvhf-md contract_int3c2e, pbc, solvent, multigrid_v2 | 8cb88067, cdd8b8b0, 45d80530, dc45713 | REPLACED: upstream has an equivalent in each file (checked line by line) |
+| multigrid_v2 BlockScan sync | 51f6cf0c | REPLACED: upstream 93a6a434 (#1009, jeff's), identical |
+| Gradient-energy kernel block size | e469394 | REPLACED: upstream 5fde9813 (#1024) reads `blockDim.x` in every kernel `adjust_threads` doubles (gvhf-rys/unrolled_kernels.cuh:51). Upstream gfx942: grad 107/0, hessian 93/0 |
+| Building solvent, sem, multigrid | dc45713 | REPLACED: upstream builds all 12 libraries |
+| ft_ao nGv_per_block | (none: our ft_ao.cuh kept WARP_SIZE 32) | FIX (a) |
+| Own hipSOLVER handle | 8cb88067 | FIX (c) |
+| shm_size static-LDS reserve | 45d80530 | FIX (d) |
+| -mllvm -disable-machine-licm | 28f24186, 13e3500f, 5c603116, 1e6d12cb | FIX (f) |
+| GPU libxc with its HIP backend | 4a903095 | HELD (jeff) |
+| Local einsum for rocBLAS batched gemv, call-site rewrites | 3982189a, 3e008817, 5c1f9180, fae6a227, b7c39b6e, fb95c20e | HELD (jeff): rocBLAS fix preferred |
+| gfx12 complex-GEMM split | e1b8041b, 5a87452f | HELD with the einsum helper it needs |
+| Low-LDS g-shell ECP derivative kernels | c8c9acc3 | NEXT round (ruling 3) |
+
+DROPPED, not in upstream and not held (jeff to decide later):
+
+| what | our commit | upstream state | evidence status |
+|---|---|---|---|
+| `hipDeviceSetLimit(hipLimitStackSize, 128)` through ctypes in `release_gpu_stack` | c073679 | lib/cupy_helper.py:60-66 returns early on HIP, so the stack trim is skipped (called from dft/numint.py 567/727/1012; not libxc-specific) | No failure observed with upstream's skip (gfx942 eval: dft 133/3 with other causes, grad 107/0, hessian 93/0). Ours fixed CuPy-ROCm's `deviceSetLimit` stub raising hipErrorUnknown, which upstream avoids by skipping. The memory benefit of the trim on HIP was never measured. |
+| 64-bit wave64 lane mask in the J-engine | 45d80530 (gvhf-md/md_contract_j.cu) | md_contract_j.cu:101 and :431 keep `unsigned int` shifted by `group_id*threadsx` (shift reaches 32..63 on wave64, undefined behaviour) | No failure observed. Inert upstream as far as read: the mask feeds only asserts compiled out under NDEBUG (Release), the shuffle width is warpSize and the consumer is `tx == 0`. Ours needed it because our shim took the width from popcount(mask). Found in LLVM IR (poison shl) by the 2026-10-29 review. |
+| `-ffp-contract=on` | 8cb88067 | absent (clang HIP default) | Rationale only; no failing run recorded. RHF water matches CPU to 1e-11 without it. |
+| hiprtc preamble for the `indexed_scale` RawKernel (hip_complex aliases) | dc45713 (pbc/df/grad/rhf.py, `kernel_source` in cupy_helper.py) | pbc/df/grad/rhf.py:922-923 still `#include <cuComplex.h>` with no HIP handling | Not exercised by the 2026-11-19 evaluations (PBC DF gradients failed earlier at cause A). Whether it compiles under hiprtc on upstream is measured by this round's full run (pbc/grad). |
+| "rocBLAS trsm workaround" | none in code | n/a | There never was a code change: dc45713 only classified three tolerance misses in its body (rocm-libraries#16268). Nothing to port. The owed PR-text correction about it lapses with the old commit. |
+
+### Step 2: six commits on top of the merge, each cherry-picks cleanly onto upstream master alone
+Checked by `git cherry-pick --no-commit <sha>` of each onto a detached 61c2a1e worktree: all six clean. `python3 utils/jargon.py --port gpu4pyscf`: clean. `git diff 61c2a1e 7cbd3d2 --stat`: 7 files, +51/-44.
+
+| fix | commit | files | targeted test result on this GPU |
+|---|---|---|---|
+| (a) ft_aopair_kernel Gv tile 32 on wave64 | 6a0f3f24 | lib/pbc/ft_ao.cu, pbc/df/ft_ao.py | test_pbc_ft_ao + test_pbc_aft: 48 passed / 1 skipped / 1 failed (test_ft_ao_strain_deriv 3.77e-8 vs 3e-8, does not use ft_aopair; known margin) |
+| (b) eigh_std falls back for ndim > 2 and non-f64/c128 | 7998a680 | lib/cusolver.py | 57 passed / 1 skipped / 2 failed over the cause-B files (test_sad_guess_rhf_pcm: cause C, fixed by (c); test_krylov_eigenvalue: see below) |
+| (c) eigh (sygvd/hegvd) on a dedicated hipSOLVER handle on HIP | eac332be | lib/cusolver.py | standalone: `cupy.linalg.solve` n=10..1000 after a 10x10 `cusolver.eigh` all fail before (rocblas_status_memory_error), all pass after. Cause-C files: 71 passed / 1 skipped / 2 failed (test_get_rho_{uhf,kuhf}_built: upstream's deliberate multigrid skip on HIP) |
+| (d) `shm_size -= 1024` on HIP | 3bb435b2 | __config__.py | cc + mp + test_ecp before: 15 failed / 20 passed (cc 3, test_mp2.py 8 with fill_int4c2e, ECP 4); after (with test_scf_jk): 58 passed / 8 skipped / 1 failed (cause H) |
+| (e) j2c Cholesky failure from potrf info | fa3c484b | mp/dfmp2_addons.py, pbc/df/rsdf_builder.py | mp + test_rsdf_builder + test_pbc_df: 73 passed / 5 skipped |
+| (f) -mllvm -disable-machine-licm (option HIP_DISABLE_MACHINE_LICM, default ON) | 7cbd3d2f | lib/CMakeLists.txt | verbose build: flag once on 100/100 HIP compile lines and 12/12 --hip-link lines (CMAKE_HIP_FLAGS only; link rule reuses it). RHF water vs CPU: sto-3g 3.6e-12, def2-svp 9.7e-12, cc-pvtz 2.8e-11 |
+
+Details worth keeping:
+- **(a) is a device-side fix too.** Upstream's ft_aopair_kernel had `nGv_per_block = WARP_SIZE` (64 on CDNA via warp_size.h) with `WARPS` fixed at 8 and THREADS 256, so on wave64 only 4 groups exist while `nsp_per_block = WARPS / gout_stride` assumes 8, and `img_counts[4..7]` are read unwritten. A host-only change (nsp_max) would have exposed that. The kernel now uses `THREADS / WARPS` (32) on every GPU, ft_ao_scheme defaults to 32, and `PBC_warp_size()` (no other user) is removed. NVIDIA unchanged (WARP_SIZE was 32).
+- **(b) test_krylov_eigenvalue is a margin, not the eigensolver.** Hidden behind cause B before. Double-precision Krylov eigenvectors miss the reference by 1.336e-5 against places=5. The same 1.3359e-5 results when the subspace solver is numpy.linalg.eigh, cupy.linalg.eigh or syevd (`agent_space/gpu4pyscf/krylov_sub.py`), and the syevj reference agrees with numpy to 4.6e-12. So it is the solver's conv_tol=1e-8 on this random matrix (CuPy-ROCm's RNG gives a different matrix from CUDA's).
+- **(c)** Upstream's syevd already had its own handle (`_syevd_handle`, with a comment describing exactly this problem); its sygvd `eigh` did not. Renamed to `_dn_handle`. CUDA keeps CuPy's handle.
+- **(d)** Static LDS of the kernels sized from shm_size on gfx942 (from the code objects' `.group_segment_fixed_size`): int4c2e_kernel 96 B, rys_jk/rys_k 104 B; the request that failed was 65496 dynamic. Side effect: shm_size 64512 < 65536 makes the five test_ecp.py derivative tests skip on HIP ("Not enough shared memory") instead of 4 failing. The ECP round (ruling 3) will need to relax that skip as c8c9acc did.
+- **(d) commit-message correction owed at PR preparation:** the 3bb435b2 body says "8 DF-MP2 failures"; the measured 8 are in mp/tests/test_mp2.py (conventional MP2 ERIs through fill_int4c2e), not DF-MP2. The commit was not amended (no amend rule); fix the wording when it is cherry-picked onto its PR branch.
+- **(e)** `cupy.linalg.cholesky(diag(4,-1e-5,1))` on this GPU returns diag(2,-1e-5,1), no NaN; `lib.cusolver.cholesky` raises LinAlgError. Complex 50x50 Hermitian: the two factors agree exactly. The mp test passed in one run before (e) and failed in another; it was not investigated further, since (e) makes it pass deterministically.
+- **(f) versions:** needed with ROCm 10.1 only (ROCm/llvm-project release/therock-10.1 = d6f6cb69). Fixed by LLVM 8c6e07731faf, which release/therock-10.2, the 10.3 branch and amd-staging contain (branch ancestry plus a static check with d6f6cb69 + that cherry-pick; no ROCm 10.2 runtime run; claude-shared plan therock-10-1-machinelicm-vgpr-clobber-reduce.md). Not seen on gfx1100. CMake cannot tell 10.1 from 10.2 (both clang 24.0.0), hence the unconditional default with an option to turn it off.
