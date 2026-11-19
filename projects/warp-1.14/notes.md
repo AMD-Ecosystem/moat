@@ -4909,3 +4909,112 @@ Full-set detail: the per-pattern summary lines (timings stripped) are **identica
 
 ### Next step for the lock holder
 Nothing from gfx90a: the same-head pass at `e78ee32f` is complete and clean.
+
+## Porting session 12 (2026-11-19, linux-gfx950 MI355X, porter): gfx11 rule narrowed to the forward
+
+Fork `release/1.14.0.amd0` advanced `e78ee32f..a8e95dcb` (pushed, `advance-head` recorded): `a8e95dcb` [ROCm] Keep WMMA for the gfx11 tile_matmul adjoint of large tiles (`tile_matmul_mma.h` +11/-6, only the gfx11 helper and its one call). Nothing else changed.
+
+**Why it can be done at compile time without restructuring.** The forward and the adjoint both reach `partitioned_gemm::scalar_matmul`, and `Accumulate` does not tell them apart (the accumulating forward, `wp.tile_matmul(a, b, out)`, passes `true` like the adjoint). The operand layouts do: the forward of plain tiles passes A and B row-major (unit stride along the second dimension), while the adjoint's two products each read one transposed, stride-swapped operand (`adj_A += adj_C @ B^T`: B operand `B^T`; `adj_B += A^T @ adj_C`: A operand `A^T`). The gfx11 rule `amortizes_operand_loads` now also takes the two layouts and sends a call to the scalar path only when, in addition to the earlier condition (16 or more fragments, fewer than 4 per wavefront), both operands are row-major. Limitation, recorded: a user's forward product on a transposed tile (`tile_transpose` as an operand) would keep WMMA in that configuration; that case is unmeasured.
+
+**Verification through Warp's hipRTC path** (`cells_fb.py`, below: fp16 tile_matmul modules with their backward kernels, compiled for each target with this head's headers ("new") and with `e78ee32f`'s ("old", a worktree at `e78ee32f`, same `warp.so`); matrix instructions counted per kernel function; `insn-md5` over the disassembly):
+```
+new 64x64 bd256 gfx1100 forward   0 backward  16 insn-md5 fe55400c0d71
+new 64x64 bd256 gfx1201 forward   8 backward  24 insn-md5 6ee7f04a0d1d
+new 64x64 bd256 gfx950  forward  16 backward  48 insn-md5 d0ae36998d2c
+new 64x64 bd256 gfx942  forward  16 backward  48 insn-md5 85006bb0d9e6
+new 64x64 bd256 gfx90a  forward  16 backward  48 insn-md5 516c37da1e79
+new 64x64 bd128 gfx1100 forward  16 backward  48 insn-md5 0ff181fe0323
+new 64x64 bd128 gfx1201 forward  16 backward  36 insn-md5 d641ed889451
+new 64x64 bd128 gfx950  forward  16 backward  48 insn-md5 a0803ff918ae
+new 64x64 bd128 gfx942  forward  16 backward  48 insn-md5 d004205413d3
+new 64x64 bd128 gfx90a  forward  16 backward  48 insn-md5 8c9326bedfc2
+new 32x32 bd256 gfx1100 forward   2 backward   6 insn-md5 03335d85c25e
+new 32x32 bd256 gfx1201 forward   2 backward   6 insn-md5 5b5f5e20320b
+new 32x32 bd256 gfx950  forward   2 backward   6 insn-md5 1ea87b1bed27
+new 32x32 bd256 gfx942  forward   2 backward   6 insn-md5 e6f7e4c73ed7
+new 32x32 bd256 gfx90a  forward   2 backward   6 insn-md5 69d2b0be74fe
+old 64x64 bd256 gfx1100 forward   0 backward   0 insn-md5 3764a8de29a7
+old 64x64 bd256 gfx1201 forward   8 backward  24 insn-md5 6ee7f04a0d1d
+old 64x64 bd256 gfx950  forward  16 backward  48 insn-md5 d0ae36998d2c
+old 64x64 bd256 gfx942  forward  16 backward  48 insn-md5 85006bb0d9e6
+old 64x64 bd256 gfx90a  forward  16 backward  48 insn-md5 516c37da1e79
+old 64x64 bd128 gfx1100 forward  16 backward  48 insn-md5 0ff181fe0323
+old 64x64 bd128 gfx1201 forward  16 backward  36 insn-md5 d641ed889451
+old 64x64 bd128 gfx950  forward  16 backward  48 insn-md5 a0803ff918ae
+old 64x64 bd128 gfx942  forward  16 backward  48 insn-md5 d004205413d3
+old 64x64 bd128 gfx90a  forward  16 backward  48 insn-md5 8c9326bedfc2
+old 32x32 bd256 gfx1100 forward   2 backward   6 insn-md5 03335d85c25e
+old 32x32 bd256 gfx1201 forward   2 backward   6 insn-md5 5b5f5e20320b
+old 32x32 bd256 gfx950  forward   2 backward   6 insn-md5 1ea87b1bed27
+old 32x32 bd256 gfx942  forward   2 backward   6 insn-md5 e6f7e4c73ed7
+old 32x32 bd256 gfx90a  forward   2 backward   6 insn-md5 69d2b0be74fe
+```
+- gfx1100, 64x64 at block_dim 256: forward kernel 0 matrix instructions (scalar, as before), backward kernel 16 `v_wmma_f32_16x16x16_f16` (was 0). The backward kernel also replays the forward product, which stays scalar.
+- Every other (cell, target) is unchanged: the code objects are **byte-identical** (`cmp`) between the two heads for gfx1201, gfx950, gfx942 and gfx90a in all three cells and for gfx1100 in the other two cells; only `mm64_bd256_gfx1100.hsaco` differs.
+- CUDA: nvcc 12.8 build at `a8e95dcb` succeeded; NVRTC compiles of the tile_matmul and texture modules with the headers of `e78ee32f` and `a8e95dcb`: identical PTX and cubin (`0805dcc9fb1a`/`6f630854bc9f`, `98d84c023888`/`7b52ca293caf`).
+- gfx950 tile set (24 files): 639 run, 10 skipped, 0 failures. `audit-commits` OK, `jargon.py --port` clean.
+
+Release-notes wording, updated: on gfx11 the scalar fallback applies to forward products of row-major tiles of 16 or more fragments when the block has more than one 32-thread wavefront per four fragments; the backward pass of the same tiles uses WMMA.
+
+### Next step (head `a8e95dcb`)
+The project stays in `porting`, lock held by linux-gfx950. Only gfx11 code changed, and only for that configuration: gfx942, gfx90a, gfx1201 and gfx950 compile byte-identical code objects to `e78ee32f` (above), so their passes at `e78ee32f` are unaffected by this commit (whether they are carried forward or re-run at `a8e95dcb` is a validation decision, not the porter's).
+
+**gfx1100 must re-run at `a8e95dcb`** (rebuild; fresh `WARP_CACHE_PATH` per run):
+1. `python -m warp.tests -s autodetect -p test_tile_matmul.py -m 32` (expect 25 OK) and the 24-file tile set (expect 639 run, 15 skipped, 0 failures).
+2. `python mma_check.py` and `python mma_check_bf16.py` (Porting session 10 versions): FAILURES 0.
+3. `cells_fb.py` built for `gfx1100` (`python cells_fb.py <dir> new gfx1100`): expect the table above (64x64 bd256 forward 0, backward 16).
+4. The fp16 benchmark against the scalar tree (scalar worktree at `a8e95dcb` with `warp/native/tile_matmul.h` checked out from `974cd4bf`, `warp/bin/*.so` copied), three runs per tree, with the load monitor: expect the 64x64 block_dim 256 **forward** about equal in both trees (both scalar, about 17.6 ms) and its **adjoint** back to the WMMA figure (about 8.6 ms against 13.6 ms scalar, 1.59x); every other fp16 cell as in the earlier set 2; any fp16 cell below 1.0x is a finding.
+5. The full 82-pattern set and the CPU-only suite at this head, for the same-head record (expect 81 OK + the fem pair; 2294 OK).
+Then Phase 6 on the Windows gfx1151 laptop as planned in Porting session 11 (gfx1151 takes this same gfx11 code).
+
+`cells_fb.py`:
+```python
+# fp16 tile_matmul modules (forward and backward kernels) per (tile, block_dim), compiled through Warp's hipRTC
+# path for other targets; prints matrix instructions per kernel function and an md5 of each code object.
+# Usage: python cells_fb.py <outdir> <tag> <gfx>...
+import glob
+import hashlib
+import os
+import re
+import subprocess
+import sys
+
+import warp as wp
+import warp._src.build as build
+
+wp.init()
+CELLS = [(64, 256), (64, 128), (32, 256)]
+R = subprocess.check_output([sys.executable, "-m", "rocm_sdk", "path", "--root"]).decode().strip()
+
+
+def make(M):
+    @wp.kernel(module="unique")
+    def mm(A: wp.array2d(dtype=wp.float16), B: wp.array2d(dtype=wp.float16), C: wp.array2d(dtype=wp.float16)):
+        wp.tile_store(C, wp.tile_matmul(wp.tile_load(A, shape=(M, M)), wp.tile_load(B, shape=(M, M))))
+
+    return mm
+
+
+out_dir, tag = sys.argv[1], sys.argv[2]
+for M, bd in CELLS:
+    k = make(M)
+    before = set(glob.glob(os.path.join(wp.config.kernel_cache_dir, "**", "*.cu"), recursive=True))
+    wp.load_module(k.module, device="cuda:0", block_dim=bd)
+    src = sorted(set(glob.glob(os.path.join(wp.config.kernel_cache_dir, "**", "*.cu"), recursive=True)) - before)[-1]
+    for target in sys.argv[3:]:
+        out = os.path.join(out_dir, f"{tag}_mm{M}_bd{bd}_{target}.hsaco")
+        build.build_cuda(src, 0, out, pch_dir=None, hip_target=target)
+        dis = subprocess.run([R + "/lib/llvm/bin/llvm-objdump", "-d", "--no-show-raw-insn", "--no-leading-addr", f"--mcpu={target}", out], capture_output=True, text=True).stdout
+        counts, fn = {}, None
+        for line in dis.splitlines():
+            m = re.match(r"^<(.*)>:$", line.strip())
+            if m:
+                fn = "forward" if "forward" in m.group(1) else ("backward" if "backward" in m.group(1) else m.group(1))
+                counts.setdefault(fn, 0)
+                continue
+            w = line.split()
+            if fn and w and (w[0].startswith("v_wmma") or w[0].startswith("v_mfma")):
+                counts[fn] += 1
+        insn = hashlib.md5("\n".join(l for l in dis.splitlines() if "file format" not in l).encode()).hexdigest()[:12]
+        print(f"{tag} {M}x{M} bd{bd:3d} {target:7s} forward {counts.get('forward', 0):3d} backward {counts.get('backward', 0):3d} insn-md5 {insn}")
+```
