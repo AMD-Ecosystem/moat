@@ -684,6 +684,8 @@ The three earlier fork commits carry in-house terms that `jargon.py --port LiteG
 
 ## Lesson for cuda-to-rocm: rocPRIM radix sort corrupts float keys that mix signaling and quiet NaNs (libraries.md)
 
+Promoted to cuda-to-rocm/references/libraries.md in bb61ae96.
+
 hipCUB/rocPRIM `DeviceRadixSort::SortPairs` on float keys that contain both signaling and quiet NaNs returns a broken permutation: values duplicated and missing, and output slots never written. CUDA's cub sorts the bit patterns and is unaffected. Either NaN kind alone sorts correctly. Uninitialized device memory (a `torch::empty` buffer only partly written by a kernel) is where such keys come from, and `torch.sort` on ROCm inherits the defect. The symptom is usually far from the sort: a later gather on the sorted indices trips torch's device-side index assert (`HSA_STATUS_ERROR_EXCEPTION 0x1016` naming `index_elementwise_kernel`) only when the stale slot happens to hold an out-of-range value, so the failure looks intermittent. Diagnose by checking the sort output right after the sort for duplicates (`bincount(idx).max() > 1`), not only for range. Fix on the caller's side: never sort uninitialized data (zero-fill the buffer or sort only the valid prefix). Observed on ROCm 10.1 pip SDK (rocPRIM 4.6.0, hipCUB 4.7.0) on gfx90a (wave64) and gfx1201 (wave32); other ROCm versions not checked. Exact duplicate/missing counts vary run to run. (LiteGS)
 
 ## Review 2026-11-19 (reviewer, linux-gfx90a) -- changes requested
