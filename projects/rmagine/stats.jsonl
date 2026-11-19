@@ -180,3 +180,5 @@
 {"kind":"phase","ts":"2026-11-19T21:39:33Z","phase":"test","seconds":2.605,"exit":0,"cmd":"ctest --test-dir D:/Develop/moat/agent_space/rmagine_gfx1151_build_e1b7ac5 --output-on-failure -R ^cuda_"}
 {"kind":"phase","ts":"2026-11-19T21:39:36Z","phase":"test","seconds":2.275,"exit":0,"cmd":"ctest --test-dir D:/Develop/moat/agent_space/rmagine_gfx1151_build_e1b7ac5 --output-on-failure -R ^core_"}
 {"kind":"session","ts":"2026-11-19T21:40:21Z","epoch":1795124421.348822,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-19T21:44:10Z","phase":"cuda-compile","seconds":0.235,"exit":1,"cmd":"agent_space/nvcc/scripts/build.sh /var/lib/jenkins/fleet/jobs/mi355-20261119-134108-rmagine-nvcc-prompt/moat/agent_space/nvcc/t-e1b7ac5"}
+{"kind":"phase","ts":"2026-11-19T21:45:05Z","phase":"cuda-compile","seconds":36.343,"exit":0,"cmd":"agent_space/nvcc/scripts/build.sh /var/lib/jenkins/fleet/jobs/mi355-20261119-134108-rmagine-nvcc-prompt/moat/agent_space/nvcc/t-e1b7ac5"}

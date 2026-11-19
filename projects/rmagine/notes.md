@@ -3602,3 +3602,93 @@ earlier README ruling stands.
 windows-gfx1151 VALIDATED at `e1b7ac5`: 8/8 cuda_ (2 runs) + 12/12 core_ PASS on Radeon 8060S.
 The windows gate is satisfied at the staging tip, beside wave64 (linux-gfx942) and wave32
 (linux-gfx1201). Still owed for the round: the nvcc compile gate.
+
+## CUDA no-regression compile 2026-11-19 (mi355 fleet host, nvcc, fix round moat-fix-25 at e1b7ac5) -- PASS
+
+Compile and link only (the host has no NVIDIA GPU). Four trees, each built from a clean build
+directory with one identical recipe:
+
+| tree | what | merge base with upstream |
+|---|---|---|
+| `e1b7ac5` | head_sha, `moat-fix-25` staging tip | `cc603ab` (upstream `main`, 2.4.3) |
+| `cc603ab` | unmodified upstream at the head's merge base | -- |
+| `cc6f8d2` | published_sha (what PR #25 shows) | `6b93e86` |
+| `6b93e86` | unmodified upstream at the published tip's merge base | -- |
+
+Toolchain: NVIDIA nvcc 12.8.93 (`/usr/local/cuda-12.8`), host compiler g++ 13.3.0 (the system
+default), CMake 3.31.6, GNU make. The host has no CUDA driver, so `libcuda.so.1` is "not found" in
+`ldd` of `librmagine-cuda.so` in both head and upstream; linking used the toolkit's stub.
+
+### Recipe
+
+Upstream CI (`.github/workflows/cmake_ubuntu_template.yml`) runs with `-DRMAGINE_CUDA_DISABLE=ON`
+(README: "CUDA, OptiX, and Vulkan are excluded as no suitable runners are currently available"), so
+the CUDA build follows the README "Standard CMake Build" (`mkdir build; cd build; cmake ..; make`)
+with no cache options at all, plus CI's dependency set (`libtbb-dev libboost-dev libeigen3-dev
+libassimp-dev libjsoncpp-dev`).
+
+```
+export PATH=/usr/local/cuda-12.8/bin:$PATH
+export CMAKE_PREFIX_PATH=<job>/deps/prefix
+cd <tree> && mkdir build && cd build && cmake .. && make -j32
+```
+
+Host-forced deviations, applied identically to all four trees:
+
+- nvcc is not on the default PATH; put on PATH (the only way CMake finds it without a cache option).
+- `libassimp-dev` and `libjsoncpp-dev` are not installed in the shared image. Built from source into
+  `<job>/deps/prefix` instead of apt into the image, at the versions Ubuntu 24.04 apt would install:
+  assimp v5.3.1 (`-DASSIMP_BUILD_TESTS=OFF -DASSIMP_BUILD_ASSIMP_TOOLS=OFF
+  -DASSIMP_WARNINGS_AS_ERRORS=OFF`), jsoncpp 1.9.5 (`-DJSONCPP_WITH_TESTS=OFF
+  -DJSONCPP_WITH_POST_BUILD_UNITTEST=OFF -DBUILD_STATIC_LIBS=OFF`). The first attempt without
+  jsoncpp failed at configure in all four trees (`src/rmagine_ouster/CMakeLists.txt:13`
+  `find_package(jsoncpp)`), the same in each.
+- `make -j32` instead of `-j$(nproc)` (shared host).
+
+No CUDA architecture was pinned: `CMAKE_CUDA_ARCHITECTURES` stays empty, so upstream's own fallback
+(`rmagine_cuda/CMakeLists.txt`, `CUDA_ARCHITECTURES all`) applies and every `.cu` compiles with
+`-arch=all` in every tree (`CUDA_FLAGS = -O3 -DNDEBUG -std=c++17 -arch=all -Xcompiler=-fPIC
+-std=c++17`, identical in head and upstream). This differs from the 2026-08-13 gate (`sm_80` pinned,
+OUSTER/EMBREE/OPTIX disabled) and covers more.
+
+Components that configured, the same in head and its upstream: core, embree (fetched by upstream's
+CMake), cuda (CUDA 12.8.93), optix (OptiX 9.0.0 headers fetched by upstream's reworked FindOptiX;
+new with upstream #26, so not in the `6b93e86`/`cc6f8d2` pair), ouster, and tests for
+core/embree/cuda/optix. Vulkan and vulkan-cuda-interop skipped in all trees (no Vulkan/glslang).
+Port-only `USE_HIP` defaults to OFF, so the head built its NVIDIA path.
+
+### Results (all four: configure OK, `make` exit 0, 0 errors)
+
+| tree | targets | CUDA objects | C++ objects | links | `.so` | `bin/` | arch-deprecation nvcc warnings | `cuCtx*SharedMemConfig` deprecated | other warnings |
+|---|---|---|---|---|---|---|---|---|---|
+| `e1b7ac5` head | 47 | 20 | 97 | 46 | 5 | 40 | 20 | 3 | 0 |
+| `cc603ab` upstream | 45 | 20 | 95 | 44 | 5 | 38 | 20 | 3 | 0 |
+| `cc6f8d2` published | 37 | 11 | 68 | 38 | 4 | 33 | 11 | 3 | 0 |
+| `6b93e86` upstream | 35 | 11 | 66 | 36 | 4 | 31 | 11 | 3 | 0 |
+
+- Head vs upstream `cc603ab`: the only target difference is the port's two added tests,
+  `rmagine_tests_cuda_math_reduction_correctness` and `rmagine_tests_cuda_public_headers` (2 C++
+  objects, 2 links). The CUDA objects are the same 20. Warning difference: none in kind or count.
+  The three `cuCtxSetSharedMemConfig`/`cuCtxGetSharedMemConfig` deprecation warnings in
+  `CudaContext.cpp` move from lines 146/150/168 to 151/155/177 (the port's HIP-guarded block
+  above them); the nvcc warning is the `-arch=all` "architectures prior to sm_75" notice, one per
+  `.cu`, in both.
+- Published tip vs upstream `6b93e86`: the same two added tests and nothing else; warnings
+  identical in kind and count (line shift 119/123/141 -> 124/128/150).
+- Exported dynamic symbols (`nm -D --defined-only -C`), head vs `cc603ab`: `librmagine-core`,
+  `-embree`, `-optix` and `-ouster` identical. `librmagine-cuda` (450 symbols) differs only in
+  nvcc's per-translation-unit `__fatbinwrap_<hash>` / `__cudaRegisterLinkedBinary_<hash>` names, the
+  same 11 translation units on both sides; with those filtered out the sets are identical. Published
+  tip vs `6b93e86`: one extra symbol, the `multNx1_kernel<Quaternion>` instantiation from the port's
+  out-of-bounds fix, which upstream #28 now carries itself (so head and upstream agree).
+- Wall time of the head build (configure + make): 36.3 s (`utils/timeit.sh rmagine cuda-compile`).
+
+### Verdict
+
+The CUDA configuration of `e1b7ac5` configures, compiles and links with real nvcc 12.8.93 under
+upstream's documented recipe, over a wider surface (cuda + optix + embree + ouster, all
+architectures) than the 2026-08-13 gate, and gives the same result as unmodified upstream at the
+merge base `cc603ab`: same components, same CUDA objects, same warnings, same exported API, plus
+only the port's two test executables. The published tip `cc6f8d2` compares the same way against
+`6b93e86`. This discharges the "CUDA no-regression compile with real nvcc" item owed for the fix
+round. No source edits, fork pushes or GitHub writes were made.
