@@ -8236,6 +8236,8 @@ Verified: every command, count and error quoted above. Inferred: the 2 GiB strin
 
 ## Lesson for cuda-to-rocm: a Windows ROCm SDK can trail the Linux one by a HIP release
 
+Promoted to no skill file (checked against the trunk at bb61ae96): its own premise was later withdrawn in these notes; the skill already has the corrected advice (windows.md).
+
 Not promoted, superseded (jeffdaily, 2026-11-17): the Windows host was on a stale per-arch TheRock pin (7.14) while TheRock's multi-arch index carries 10.1.0 Windows wheels, so the premise was wrong. The accurate advice (check both indexes) is in references/validation.md in c27b34e9; the LLP64 and host-called device function points are in c27b34e9 and fb5cb3ab.
 
 Belongs in the Windows reference. A dependency written against the newest HIP runtime (here `hipMemGetDefaultMemPool`, HIP 7.16) fails on the Windows SDK of the same period (7.14) with an undeclared identifier. Check the HIP version of the Windows SDK against the dependency's minimum before attributing the error to the port. Separately: a library `(__HIP_PLATFORM_AMD__ && _WIN32)` branch copied from its `_MSC_VER` branch (libhipcxx `_wassert`) calls device-only functions from host code, and `1UL << 40` constants are 32-bit under LLP64.
