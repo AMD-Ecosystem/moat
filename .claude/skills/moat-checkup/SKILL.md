@@ -206,6 +206,20 @@ That is an upstream-visible post like any other and needs its own approval.
 
 ## 1. Opening the PR
 
+Gate-ready is not sendable. `pr-ready` says the evidence is complete at `head_sha`; it
+cannot see what happened outside the record afterwards, and a port can sit ready for
+months. Before preparing any pull request run `python3 utils/moatlib.py pr-candidates
+--freshness`, which asks GitHub whether upstream has since changed the port's files,
+whether a port this one depends on is still unmerged, whether upstream is archived, and
+whether the branch still has anything upstream lacks. A port it flags goes back through
+a porter round that merges upstream (review and validation follow as usual) before
+anyone drafts its title and body. Then read the diff itself against upstream's base, as
+a maintainer will: of the first nine ports prepared after this check existed, the read
+found a submodule repointed at a deleted fork (training broken for CUDA users too), a
+port that changed no source of its own, a product whose entry points could not run,
+validations that never ran the real program, and upstreams that had never merged an
+outside pull request. None of that is in the record.
+
 Preconditions, all of them:
 - A standing approval: `moatlib.py pr-approval <name>` must pass.
 - Every required gate satisfied (`moatlib.py pr-ready <name>`), or a maintainer-approved

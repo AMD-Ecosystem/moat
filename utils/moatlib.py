@@ -1338,8 +1338,12 @@ def _clean_pr_url(raw):
 def _gh_json(*args):
     """`gh` returning parsed JSON, or None if the call fails. Callers decide what a
     failure means; a network problem must never read as 'not approved'."""
-    r = subprocess.run(["gh", *args], capture_output=True, text=True)
-    if r.returncode != 0:
+    # utf-8, said out loud: gh prints UTF-8, and the platform default on Windows is
+    # cp1252, where a single curly quote in a commit message made the reader thread
+    # raise and left stdout as None.
+    r = subprocess.run(["gh", *args], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    if r.returncode != 0 or r.stdout is None:
         return None
     try:
         return json.loads(r.stdout)
@@ -5163,6 +5167,62 @@ def belongs_on_branch(obj):
     return bool(now_deferrals(obj.get("name") or ""))
 
 
+def upstream_freshness(obj):
+    """Reasons a gate-ready port is not ready to SEND, read live. A list of strings;
+    empty means nothing found; None means GitHub could not be read.
+
+    pr_ready answers "is our evidence complete at head_sha". It cannot see what
+    happened outside the record after that evidence was gathered, and a port can
+    sit ready for months. Six ports were prepared for their pull request in one
+    day and none could be sent: upstream had moved under two (one had rewritten
+    the ported plugin), one needed another port that upstream had not merged, and
+    one upstream had been archived-in-all-but-name. These are the checks that
+    would have said so. Advisory: they describe upstream today, not a gate."""
+    up = (obj.get("upstream_url") or "").split("github.com/", 1)[-1].strip("/")
+    fork = (obj.get("fork_url") or "").split("github.com/", 1)[-1].strip("/")
+    if not up or not fork:
+        return None
+    base = obj.get("fork_default_branch") or "main"
+    branch = obj.get("fork_branch") or PORT_BRANCH
+    info = _gh_json("api", f"repos/{up}")
+    cmp = _gh_json("api", f"repos/{up}/compare/{base}...{fork.split('/')[0]}:{branch}")
+    if not info or not cmp:
+        return None
+    why = []
+    if info.get("archived"):
+        why.append("upstream is archived (set-no-upstream is the ruling for that)")
+    behind = cmp.get("behind_by") or 0
+    if behind:
+        ours = {f.get("filename") for f in cmp.get("files") or []}
+        mb = (cmp.get("merge_base_commit") or {}).get("sha")
+        theirs = _gh_json("api", f"repos/{up}/compare/{mb}...{base}") if mb else None
+        files = (theirs or {}).get("files") or []
+        both = sorted(ours & {f.get("filename") for f in files})
+        more = " or more" if len(files) >= 300 else ""
+        # Upstream moving in files the port does not touch is not a reason to
+        # hold: the pull request still merges and was tested on that code.
+        if both:
+            why.append(f"upstream {base} is {behind} commit(s) past the port's base "
+                       f"and changed {len(both)}{more} of the port's {len(ours)} "
+                       f"file(s) ({', '.join(both[:3])})")
+        elif more:
+            why.append(f"upstream {base} is {behind} commit(s) past the port's base, "
+                       f"too many to compare file by file")
+    if not cmp.get("ahead_by"):
+        why.append("the port branch has nothing upstream lacks")
+    for dep in obj.get("depends_on") or []:
+        d, _w = project_record(dep)
+        if d is None:
+            continue
+        disp = disposition_for_project(dep)
+        if (d.get("pr_state") != "merged" and not d.get("no_upstream")
+                and not (disp and disp.get("disposition") == "skip")):
+            why.append(f"depends on {dep}, whose port is not merged upstream "
+                       f"(pr_state={d.get('pr_state') or 'none'}): a maintainer "
+                       f"cannot build this from merged sources")
+    return why
+
+
 def misplaced_folders():
     """Projects whose folder is not where their state says it should be.
 
@@ -7341,9 +7401,13 @@ def _main(argv=None):
                        help="audit every /moat command on the review PR; nonzero if any blocks publishing")
     s.add_argument("name")
 
-    sub.add_parser("pr-candidates",
-                   help="list projects whose upstream PR is ready to open (honors recorded dispositions; "
-                        "use this instead of scanning raw state==completed)")
+    s = sub.add_parser("pr-candidates",
+                       help="list projects whose upstream PR is ready to open (honors recorded dispositions; "
+                            "use this instead of scanning raw state==completed)")
+    s.add_argument("--freshness", action="store_true",
+                   help="also ask GitHub whether each can be sent as it stands: "
+                        "upstream moved past the port's base, an unmerged "
+                        "dependency port, an archived upstream (read-only, slower)")
 
     s = sub.add_parser("audit-commits", help="report fork commits that break the commit-message rules")
     s.add_argument("name", nargs="?")
@@ -7832,9 +7896,21 @@ def _main(argv=None):
         lines = [(n, nv) for n, nv in ready_names
                  if release_line(project_record(n)[0])]
         ready_names = [r for r in ready_names if r not in lines]
+        stale = 0
         for n, nonviable in ready_names:
             scope = f"  (scope PR to exclude non-viable: {', '.join(nonviable)})" if nonviable else ""
             print(f"{n}{scope}")
+            if args.freshness:
+                why = upstream_freshness(project_record(n)[0])
+                if why is None:
+                    print("    freshness: could not read GitHub")
+                for w in why or []:
+                    print(f"    NOT SENDABLE AS IS: {w}")
+                stale += bool(why)
+        if args.freshness and stale:
+            print(f"-- {stale} of them cannot be sent as they stand; bring each up "
+                  f"to date (a porter round that merges upstream) before preparing "
+                  f"its pull request", file=sys.stderr)
         for n, nonviable in lines:
             scope = f"  (non-viable: {', '.join(nonviable)})" if nonviable else ""
             print(f"RELEASE-READY {n}{scope}")
