@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-11-19T21:56:41Z",
+  "updated_at": "2026-11-19T22:18:31Z",
   "head_sha": "e1b7ac57c740121150a87ba5e4279f718a80f331",
   "depends_on": [],
   "waivers": {},
@@ -209,7 +209,7 @@
   "fix": {
     "branch": "moat-fix-25",
     "base_sha": "cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93",
-    "review_pr": null,
+    "review_pr": "https://github.com/AMD-Ecosystem/rmagine/pull/2",
     "opened_at": "2026-11-19T04:10:18Z"
   },
   "porting_released": {
