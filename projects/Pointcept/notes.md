@@ -896,3 +896,31 @@ Moved here on 2026-11-19 from a direct edit this branch had made to `references/
 Moved here on 2026-11-19 from a direct edit this branch had made to `references/validation.md` in August. Proposed text:
 
 A pip-installed, pure-Python-plus-Triton ROCm drop-in library (e.g. a spconv reimplementation) can spend tens of minutes inside `triton/backends/amd/compiler.py:make_amdgcn` autotuning a single model's first forward+backward pass on an RDNA (gfx11xx, wave32) host, when the identical recipe completes quickly on a CDNA (gfx90a, wave64) host. Before concluding a hang, distinguish real (if slow) compilation from a stuck process: `py-spy dump --pid <pid>` repeatedly and confirm every sample lands inside `make_amdgcn` or `torch.cuda.synchronize` (benchmarking an autotune candidate), and watch the Triton cache directory grow. If a bounded validation window elapses without a completed step, record the wall-clock magnitude, confirm the backend selection independently, and stop. A persistent Triton cache (`TRITON_CACHE_DIR`) makes the cost one-time per kernel shape and arch.
+
+## 2026-11-19 upstream sync (porter, linux-gfx942): merge of upstream main 77f87ab
+
+Why: the port (head 87bc3e2, merged on 2abd848 = upstream 9f37497) passed review and validation in August, but upstream main has moved 4 commits since. jeff ruled the port is brought up to date before the follow-up pull request is prepared. No upstream PR is open for this content (#604 merged 2026-07-06), so `moat-port` is private and was pushed directly.
+
+Fork default branch mirror: `main` was at d727225, behind even the first merge. Fast-forwarded to upstream 77f87ab with a plain push of upstream's own commit (`git push origin 77f87ab:refs/heads/main`, d727225..77f87ab, ancestry checked first). Nothing merged or forced.
+
+Port branch: `git merge --no-ff upstream/main` on `moat-port` -> merge commit f33fdb6 ("Merge upstream main", same title as the August merge 2abd848). No rebase; 87bc3e2 and every validated commit stay reachable. Pushed 87bc3e2..f33fdb6.
+
+What upstream changed (9f37497..77f87ab, 4 commits) and whether it mattered:
+- 1342eda "Fix GridSample when sampled_index is provided (#619)", `pointcept/datasets/transform.py`: CPU numpy data-pipeline fix to the `inverse` mapping. No GPU code, not touched by the port. No action.
+- a9625fa "README: Utonia is accepted to ICML 2026": one line in the paper list at the top of README.md. The port's README change is the `spconv-triton` line in the Installation section, a different hunk; git auto-merged it. No conflict.
+- c821464 "Fix code copy race in train.sh on multi-machine runs (#618)", `scripts/train.sh`: launcher shell logic. Not port-relevant.
+- 77f87ab "Write config.py atomically on multi-machine runs", `pointcept/utils/config.py`: atomic dump. Not port-relevant.
+
+Conflicts: none. Upstream added no CUDA surface (no change under `libs/`, no `.cu`/`.cuh`/`setup.py`), no new `import spconv` site (all ten model files plus `structure.py` and `modules.py` still import through `pointcept/models/utils/spconv.py`), and nothing that duplicates what the port does, so nothing to drop. `git diff upstream/main moat-port` is still exactly round 2's 12 files, +30/-10, so the diff against upstream is as small as before.
+
+Build (gfx942, MI300X, torch 2.16.0a0+git6c3af02 / HIP 7.16.26385 from the host's TheRock ROCm 10.1 wheels, installed `--no-deps` into the job venv; sparsehash headers built into a job-local prefix instead of apt):
+```
+export PYTORCH_ROCM_ARCH=gfx942
+cd libs/pointops && python setup.py install
+cd libs/pointops2 && python setup.py install
+cd libs/pointgroup_ops && python setup.py install --include_dirs=<sparsehash prefix>/include
+cd libs/pointrope && python setup.py install
+```
+All four built (timeit compile 118.1s, exit 0) and import. `moatlib.py classify Pointcept 87bc3e2 f33fdb6` -> `mixed` (upstream's Python and shell changes), so this goes back through review and every platform revalidates. `jargon.py --port Pointcept` clean; fork working tree has no modified tracked files.
+
+Trunk sync of this records branch: `port/Pointcept` had August edits to `.claude/skills/cuda-to-rocm/references/{strategy-b-torch,validation}.md` that never reached main and now conflict with the reorganized skill. Took main's files and moved both texts above as `## Lesson for cuda-to-rocm` sections so they get promoted the normal way.
