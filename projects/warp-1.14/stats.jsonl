@@ -64,3 +64,5 @@
 {"kind":"phase","ts":"2026-11-19T01:41:18Z","phase":"test","seconds":0.002,"exit":1,"cmd":"bash agent_space/wptest_nogpu.sh -s autodetect -k cpu -m 32"}
 {"kind":"phase","ts":"2026-11-19T01:42:42Z","phase":"test","seconds":79.026,"exit":0,"cmd":"bash agent_space/wptest_nogpu.sh projects/warp-1.14/src -s autodetect -k cpu -m 32"}
 {"kind":"session","ts":"2026-11-19T01:44:11Z","epoch":1795052651.064684,"event":"end","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-19T01:47:47Z","phase":"compile","seconds":33.597,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261118-160631-warp114-evidence-mi300-prompt/moat/projects/warp-1.14/src && python build_lib.py --rocm-path \"$(rocm-sdk path --root)\" --hip-arch gfx942 -j 112"}
+{"kind":"phase","ts":"2026-11-19T01:55:42Z","phase":"test","seconds":362.446,"exit":0,"cmd":"agent_space/multigpu.sh"}

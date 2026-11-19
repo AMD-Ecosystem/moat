@@ -1397,3 +1397,64 @@ The project stays in `porting`, lock held by linux-gfx950, head `2505f4a3`. Comm
 **Then Phase 6 (Windows gfx1151), only after B passes at the same head on both Linux wave families** (rule: Linux wave64 and wave32 first): the plan's Phase 6 section.
 
 **Open for Jeff:** the 64 KiB tile sizing vs a capability skip (item 3 above); C4's direction; `__frsqrt_rn`/`OCML_BASIC_ROUNDED_OPERATIONS` and the lane-mask note (item 5); device textures on gfx942/gfx950 (software sampling or refuse); defer/now rulings on the four `rocm-bug-report` entries registered this session (`hip-graph-memcpy-host-graph-alloc-device-mismatch`, `hip-mempool-set-access-cannot-revoke`, `hip-graph-multi-device-kernel-nodes`, `amdgpu-earlycse-sqrt-keeps-fpmath`; `python3 utils/deferred.py pending`); the Q3 matrix-core ruling (gfx950, gfx942 and gfx1100 numbers are all in these notes).
+
+## Evidence session 2 (2026-11-19, linux-gfx942, 2x MI300X, evidence only): Phase 5 boundary items A and C at `2505f4a3`
+
+Requested by Jeff Daily. The lock stays with linux-gfx950. As before, nothing in the fork, stage, lock, head, platform or deferred records was changed. The read-only clone was moved from `8d13d596` to the recorded `head_sha` `2505f4a3d7dd8a6bb4fd52f535ff846bd2d48800` (`git status --porcelain` empty before and after; the one local experiment below was reverted). Same venv and setup as evidence session 1 (TheRock 10.2.0 wheels with `device-gfx942`, torch 2.15.0+rocm10.2.0, private `WARP_CACHE_PATH` per run, `ulimit -c 0`, no git-lfs on the host). Build: `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx942 -j 112` -> "Warp build succeeded", 30.4 s at 56 workers.
+
+### A.1: no image support at run time (one GPU, `HIP_VISIBLE_DEVICES=0`)
+- `python -c "import warp as wp; wp.init(); d = wp.get_device('cuda:0'); print(d.arch_name, d.is_texture_supported)"` -> `gfx942:sramecc+:xnack- False`. This confirms at run time what session 5 inferred for gfx942 from compile-time evidence.
+- Standalone HIP check (`hipDeviceGetAttribute(hipDeviceAttributeImageSupport, 0)`, then `hipArray3DCreate` of a 64x64 float array, built with ROCm clang `--offload-arch=gfx942`): attribute 0, `hipArray3DCreate` -> 801 `hipErrorNotSupported`. Same as gfx950.
+- `python -m warp.tests -s autodetect -p test_texture.py -m 32`: Ran 70, OK (skipped=17, all "No suitable devices to run the test.", the CUDA-only registrations with an empty device list). `test_texture_unsupported_device_raises_cuda_0` ok; the CPU cases pass; no other `cuda_0` case registered. Same counts as gfx950 in session 5.
+
+### A.2: the 64 KiB tile sizing (`59d873af`) on a real 64 KiB part
+`device.max_shared_memory_per_block` = 65536. `for f in test_tile_shared_memory.py test_tile_reduce.py test_tile_view.py; do python -m warp.tests -s autodetect -p "$f" -m 32; done`:
+
+| file | ran | result |
+|---|---|---|
+| test_tile_shared_memory | 30 | OK |
+| test_tile_reduce | 62 | OK |
+| test_tile_view | 16 | OK |
+
+The four tests that failed in session 1 A.2 now run on `cuda:0` and pass: `test_tile_reduce_axis_tier2_cuda_0`, `test_tile_reduce_axis_tier2_single_warp_cuda_0`, `test_tile_shared_mem_large_cuda_0`, `test_tile_assign_2d_cuda_0`. No `Warp CUDA error` in any log. One new message, from the static-shared-memory fix `8f40a8b1` working as intended: `test_tile_shared_mem_func_cuda_0` prints "Warp UserWarning: Failed to configure kernel dynamic shared memory ... compute_..._cuda_kernel_backward kernel for 65536 bytes, but maximum available is 65536" and passes. That test never launches its backward kernel, so the warning is correct and harmless. Before `8f40a8b1` it was silent. If the tile-sizing approach is kept, this test could be sized the same way so the warning goes away on 64 KiB parts; left for the lock holder.
+
+### C: two-GPU session (`HIP_VISIBLE_DEVICES=0,1`, `unique_or_2x` mode)
+The same 13-file loop as session 1 C (`-p <file> -m 32`), wrapped in `utils/timeit.sh warp-1.14 test`.
+
+| file | ran | result | session 1 (`8d13d596`) |
+|---|---|---|---|
+| test_multigpu | 5 | OK, 2 skipped | same |
+| test_peer | 5 | OK, 1 skipped | same |
+| test_mempool | 10 | OK, 2 skipped | errors=1, 1 skipped |
+| test_streams | 42 | **failures=2**, 2 skipped | same (C4) |
+| test_graph | 61 | OK, 5 skipped | errors=1, 4 skipped |
+| test_ipc | 8 | OK | same |
+| test_unified_memory | 40 | OK, 9 skipped | errors=1, 8 skipped |
+| test_allocator | 16 | OK, 1 skipped | same |
+| test_async | 3533 | OK | same |
+| test_sparse | 71 | OK, 1 skipped | errors=1 |
+| test_fem_integrate | 25 | OK, 1 skipped | failures=1, errors=1 |
+| test_array | 207 | OK | same |
+| test_copy | 30 | OK | same |
+
+Skips, all files together: 3 "HIP cannot instantiate a graph captured on a device other than 0 that copies between pinned host memory and memory allocated during the capture" (C1: the `_cuda_1` cases of test_sparse/test_fem_integrate `test_capturability` and test_graph `test_cuda_graph_alloc_transient_stream`); 2 "HIP cannot revoke memory pool peer access (hipMemPoolSetAccess with hipMemAccessFlagsProtNone fails)" (C2: test_mempool_access, one unified_memory test); 10 "Peer-to-Peer transfers not supported" (upstream's IOMMU heuristic: multigpu 2, streams 2, graph 2, unified_memory 4; session 1 said 8, which was a miscount, it was 10 there too); 4 "cuda:N cannot access CPU memory"; 2 upstream "flakiness in memory usage measurement"; 1 each "Requires devices without mempool access support", "Requires devices without peer access support", "rmm not installed".
+
+- No errors. C1 and C2 now appear as skips naming the HIP defect, as the handoff expected.
+- C5: `test_fem_integrate.test_integrate_gradient_cuda_0` passes in the full-file two-GPU run (session 1: failed 3/3). It was collateral of the failed `cuda:1` capture, as diagnosed.
+- C4: `test_stream_priority_timings_cuda_0/_1` still fail (not changed by the porter, as stated in session 5). Session 5's proposal step (1), timing compute kernels instead of copies on gfx942, was not part of this host's items and was not run.
+
+Most of the C2 gates and all of the C3 gates sit behind the IOMMU heuristic, so the run above does not reach them on this host. To exercise them, `check_p2p()` (`warp/_src/utils.py:1747`) was forced to return True as a local edit, then reverted. Same environment, 5 files:
+
+| file | ran | result |
+|---|---|---|
+| test_multigpu | 5 | OK (both pingpong tests pass) |
+| test_graph | 61 | OK, 4 skipped |
+| test_unified_memory | 40 | OK, 9 skipped |
+| test_streams | 42 | failures=2 (C4 only), 2 skipped |
+| test_mempool | 10 | OK, 2 skipped |
+
+Skips there: 7 C2 (`test_graph_launch_array_access_mode_checked_mempool_access_cuda_capture`, `test_mempool_access`, and the five unified_memory tests session 5 gated); 2 C3 "HIP cannot instantiate a graph with kernel nodes on more than one device" (`test_stream_arg_graph_mgpu`, `test_stream_scope_graph_mgpu`); 1 C1; plus the device-property and upstream skips listed above. `test_graph_launch_array_access_mode_checked_peer_access_cuda_capture` and `test_unified_memory_can_access_cuda_0/_1` pass. So every gate added in `f4f27aa8` fires where intended on two gfx942 devices, and nothing they cover errors any more.
+
+### Next step for the lock holder
+- A.1, A.2 and C at `2505f4a3` on gfx942 are done; results above. Nothing new needs a fork change. Optional: size `test_tile_shared_mem_func` like the other four, to silence its harmless backward-kernel warning on 64 KiB parts.
+- Still open for Jeff, as listed in session 5: the 64 KiB sizing vs a capability skip (the sizing is now proven on real 64 KiB hardware), C4's direction, textures on gfx942/gfx950, and the defer/now rulings on the registered ROCm defects.
