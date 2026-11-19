@@ -2854,3 +2854,60 @@ All exit 0 (15.3 / 14.6 / 14.7 s wall including model load), prompt 103 tokens, 
 `jargon.py --port Quest` clean. `audit-commits` reports only the known `6e7d8db` fenced-Test-Plan gap carried to PR preparation. ROCm build documented in `README.md` beside the CUDA build (followed as written, with the arch changed). `git -C projects/Quest/src status --porcelain` empty. No fork edit, no push to the fork.
 
 State: linux-gfx1201 `completed` at `6e7d8db` (wave32 gate).
+
+## Validation 2026-11-19 (windows-gfx1151, at `6e7d8db`)
+
+AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32, 20 CUs, shared system memory), Windows 11. `torch312_venv`: torch 2.12.0+rocm7.14.0a20260519, ROCm SDK 7.14 devel (`_rocm_sdk_devel`, HIP 7.13.26190, AMD clang 23.0.0), Python 3.12, `transformers==4.37.2`, `tokenizers==0.15.2`, `accelerate==1.0.1` (added for the end-to-end run). CMake 3.31.0, Ninja, VS 2022 BuildTools 14.44 (LIB/INCLUDE already in the environment). Fork cloned fresh into `projects/Quest/src` at `6e7d8db` == `head_sha`; submodules `flashinfer` and `pybind` only (`--depth 1`). `git status --porcelain` shows no modified tracked file (untracked: the five ROCm runtime DLLs staged in `quest/`, per the System32 `amdhip64_7.dll` workaround). No fork edit, no push. First Windows run of the HIP prefill and top-k code.
+
+### Build: the README's ROCm command does not work as written on Windows -- FINDING for the porter
+
+README command (`cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=... ..`, then `ninja`), venv Python first on PATH, ROCm SDK `bin` on PATH. Each attempt below changes one thing, run wrapped in `utils/timeit.sh Quest compile`:
+
+1. README command as written (the host env set `CC`/`CXX` = clang-cl): configure fails at the HIP compiler check, `clang++: error: no such file or directory: '/machine:x64'` (CMake 3.31 gives the GNU-style clang++ MSVC-style link flags when C++ is clang-cl).
+2. With `CC`/`CXX` unset and `-DCMAKE_HIP_COMPILER=<sdk>/lib/llvm/bin/amdclang++.exe`: CMake takes MSVC `cl.exe` for CXX and refuses: "The current configuration mixes Clang and MSVC ... not supported".
+3. Both `-DCMAKE_CXX_COMPILER` and `-DCMAKE_HIP_COMPILER` = `amdclang++.exe`: configures, but (a) `find_package(Python)` selects the system Python 3.13 (registry) although the venv Python is first on PATH, and (b) `CMAKE_BUILD_TYPE` is `Debug`, not the `Release` the new `USE_HIP` default in `quest/ops/CMakeLists.txt` intends: `if(NOT CMAKE_BUILD_TYPE ...)` runs after `enable_language(HIP)`, and on Windows the HIP platform module has already seeded the cache with `Debug`, so the default never fires. (A Debug build links `python312_d.lib`, which a normal CPython does not ship, and compiles every HIP kernel at -O0.)
+4. Working configure, no hand edit of any generated file:
+
+```
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_BUILD_TYPE=Release \
+  -DPython_EXECUTABLE=<venv>/Scripts/python.exe \
+  -DCMAKE_CXX_COMPILER=<sdk>/lib/llvm/bin/amdclang++.exe -DCMAKE_HIP_COMPILER=<sdk>/lib/llvm/bin/amdclang++.exe \
+  -DCMAKE_PREFIX_PATH=<venv>/Lib/site-packages/torch/share/cmake ..      # CC/CXX unset
+ninja -j 8       # 8/8 targets, 991 s (16m32s) wall, exit 0, no errors
+```
+
+The `-fuse-ld=lld-link` from CMake is still in `build.ninja` (1 occurrence) and was NOT stripped: it is harmless here (no `-fgpu-rdc`); the link prints only `clang: warning: argument unused during compilation: '--ld-path=...lld-link.exe'`. So the August hand edit is no longer needed. About 1900 warning lines (the known nodiscard-`hipError_t` ones plus the prefill unroll diagnostics), 0 errors.
+
+What a Windows user must pass that the README does not say: both compilers as `amdclang++.exe`, `-DPython_EXECUTABLE`, `-DCMAKE_BUILD_TYPE=Release`. For the porter, in the project's build files (guarded to Windows/HIP, per the standing rule that the documented command must work): (i) on WIN32 with `USE_HIP`, choose amdclang++ for C++ and HIP, or document the Windows command; (ii) the unset-build-type default must beat the platform's seeded `Debug` (a seeded `Debug` is indistinguishable from a user choice after `enable_language`, so seed `CMAKE_BUILD_TYPE` before `project()`, or set `CMAKE_BUILD_TYPE_INIT`); (iii) `Python_EXECUTABLE`, if the project wants to stop picking an unrelated interpreter. Not fixed here.
+
+### GPU tests (transformers 4.37.2), `utils/timeit.sh Quest test`, `ulimit -c 0`
+
+```
+PYTHONPATH=<fork> python -m pytest quest/tests -p no:cacheprovider -q -rs     # _kernels.cp312-win_amd64.pyd and runtime DLLs staged in quest/
+```
+
+**202 passed, 28 skipped, 0 failed** (18.7 s), identical to linux-gfx942 and linux-gfx1201. Skips are the tests' own: `test_topk.py:27` k >= kv_len (15) and `test_prefill_attention.py:51` qo_len > kv_len (13). Per suite (separate runs): test_rope 64 passed; test_estimate 9; test_decode_attention 6; test_approx_attention 42; test_decode_launch_shape 3 (both launch shapes forced); test_topk 49 passed, 15 skipped; test_prefill_attention 29 passed, 13 skipped. The five suites validated here in August (124) pass again; the two new suites pass. No CPU-only path exists.
+
+### LDS attribute
+
+Small HIP program (`hipDeviceGetAttribute`, built with amdclang++ `-x hip --offload-arch=gfx1151`): `hipDeviceAttributeMaxSharedMemoryPerMultiprocessor` = **65536**, `MaxSharedMemoryPerBlock` = 65536, `SharedMemPerBlockOptin` = 65536, multiprocessor count 20. torch reports the same (`shared_memory_per_multiprocessor` 65536). So on gfx1151 the per-CU value equals the per-block limit (gfx1201: 131072 per multiprocessor, 65536 per block); the HIP dispatcher's full per-CU value is 64 KB here, as on MI300X, and the z <= 4 cap keeps the largest tile at 64 KB = the block limit. The prefill tests (head_dim 64 and 128) pass.
+
+### End-to-end (no 7B model on this host)
+
+The Linux runs used Llama-2-7b-chat (13 GB fp16), too large for this shared-memory APU. The Quest path is instantiated for exactly 32 heads and head_dim 64/128, so the smallest model through it has hidden size 4096 and 32 heads; depth and vocabulary are what can shrink. Used instead a RANDOM-WEIGHT Llama-architecture checkpoint built for this check (`agent_space/quest_e2e/mk.py`): hidden 4096, 32 heads, 32 KV heads, 3 layers (Quest skips layers 0-1, so layer 2 is the one sparse layer), intermediate 512, vocab 32000, fp16, 0.96 GB, seed 0, with the tokenizer files of `NousResearch/Llama-2-7b-chat-hf@351844e7` (the same 103-token prompt). It is not a language model, so the output is noise and the Linux "byte-identical text" comparison does not transfer: greedy decoding on random weights has near-tied logits, and 1-ulp fp16 differences between the HF attention and Quest's kernels flip the argmax.
+
+Script: stock `scripts/example_textgen.py` with only `MODEL_PATH` and `max_length` (2048 to 400, since a random model never emits EOS) changed, and `PYTHONIOENCODING=utf-8` (noise tokens do not print under cp1252). `--method hg`, `quest --token_budget 1024`, `quest --token_budget 128`: all three exit 0, 103-token prompt, generated texts NOT byte-identical (they share the prompt plus about 18 characters, then diverge).
+
+Because text equality is the wrong test on this model, measured instead (`agent_space/quest_e2e/cmp.py`: HF model vs Quest model, same weights and prompt, 30 greedy new tokens, scores kept, budget 1024 so the dense path): step-0 (prefill) logits max|diff| 0.0098 at logit magnitude up to 5.95 (1 fp16 ulp); first token divergence at step 5, where the HF top1-top2 logit margin is 0.0039 (1 ulp, a true tie); the five steps before it match with max logit |diff| 0.0107. So prefill and dense decode agree to fp16 rounding. This is weaker evidence than the Linux runs' identical text from a real model, and is recorded as such.
+
+The Quest path really ran (`AMD_LOG_LEVEL=3`, budget 128, 120 new tokens, `agent_space/quest_e2e/prof.py`): `BatchPrefillWithPagedKVCacheKernel` 3 launches (3 layers), `AppendPagedKVCachePrefillKernel` 3, `quest_radix_topk_one_block_kernel` 94 and `MaxPossibleSampleWithPagedKVCacheKernel` 94 (one sparse layer x 94 steps past the budget), `BatchDecodeWithPagedKVCacheKernel` 357, `VariableLengthMergeStates` 0 (single-block decode shape, as the 20-CU table predicts, same as August).
+
+### Differences from the Linux runs
+
+Build: three flags the README lacks (above); 16m32s vs 18m51s (gfx942) and 10m04s (gfx1201). End-to-end: random-weight 1 GB model, text not byte-identical (explained above). LDS: 64 KB per multiprocessor as gfx942, half of gfx1201. Test counts identical. Environmental: HuggingFace downloads needed `curl.exe` (schannel) because Python's TLS fails certificate verification on this network; `accelerate` was missing from the venv.
+
+### CUDA gate, content checks
+
+CUDA gate: not run (no CUDA toolkit on this host; recorded at this head by the linux-gfx950 host). `python utils/jargon.py --port Quest` clean (needs local `main` and `moat-port` branches in the clone). The README documents the ROCm build beside the CUDA build, but only the Linux command (see the finding above).
+
+State: windows-gfx1151 `completed` at `6e7d8db` (windows gate), with the build finding above carried to the porter.
