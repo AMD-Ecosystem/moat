@@ -72,5 +72,37 @@ class Freshness(unittest.TestCase):
         self.assertIsNone(moatlib.upstream_freshness({"name": "x"}))
 
 
+class AddsNothingWithoutAClone(unittest.TestCase):
+    """A host with no fork clone asks GitHub whether a finished port has anything left."""
+    OBJ = dict(record(), head_sha="h" * 40, published_sha="p" * 40)
+
+    def ask(self, ahead, ours="t1", theirs="t2", obj=None):
+        def gh(*a):
+            path = a[1]
+            if "/compare/" in path:
+                return None if ahead is None else {"ahead_by": ahead}
+            if path.endswith("/git/commits/" + "h" * 40):
+                return {"tree": {"sha": ours}} if ours else None
+            if path.endswith("/git/commits/" + "p" * 40):
+                return {"tree": {"sha": theirs}} if theirs else None
+            return None
+        with mock.patch.object(moatlib, "_gh_json", gh):
+            return moatlib._adds_nothing_by_api(obj or self.OBJ)
+
+    def test_a_branch_with_no_commit_upstream_lacks_adds_nothing(self):
+        self.assertTrue(self.ask(0))
+
+    def test_a_squash_merged_head_with_the_shipped_tree_adds_nothing(self):
+        self.assertTrue(self.ask(3, ours="same", theirs="same"))
+
+    def test_a_different_tree_is_a_follow_up(self):
+        self.assertFalse(self.ask(3))
+
+    def test_a_failed_read_keeps_it_listed(self):
+        self.assertFalse(self.ask(None, ours=None))
+        self.assertFalse(self.ask(3, ours="t", theirs=None))
+        self.assertFalse(self.ask(3, obj=dict(self.OBJ, published_sha=None)))
+
+
 if __name__ == "__main__":
     unittest.main()
