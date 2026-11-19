@@ -2584,17 +2584,25 @@ The commit series contains a self-reverting pair: `9be60fc` ("Always split the d
 
 ## Lesson for cuda-to-rocm: an unset CMake build type runs every HIP kernel unoptimized
 
+Promoted to cuda-to-rocm/references/build-cmake-link.md in bb61ae96.
+
 For `references/build-cmake-link.md` (cross-reference from `faults-memory-streams.md`, which already notes device `-O0` as a fault trigger). Symptom: a HIP port passes its tests but its kernels are tens to hundreds of times slower than expected; `-Rpass-analysis=kernel-resource-usage` shows kilobytes of scratch per lane. Cause: nvcc optimizes device code whatever `CMAKE_BUILD_TYPE` says, but with no build type CMake passes no `-O` flag and clang compiles HIP device code at `-O0`; a README configure command without `-DCMAKE_BUILD_TYPE` is the usual trigger, and a Windows generator defaulting to Debug is the same thing. Fix: in the project's CMake, when the HIP backend is selected and `NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES`, set the cache entry to `Release`; check `ninja -t commands` for `-O3`. Seen: Quest (MI300X, ROCm SDK 10.1): paged KV append 11 ms -> 26 us, FA2 prefill at qo=1 went from 957 ms for kv=1024 (unoptimized) to 13.8 ms for kv=4096 once combined with the next lesson.
 
 ## Lesson for cuda-to-rocm: a kernel launched with fewer than 1024 threads needs __launch_bounds__ on HIP to get its registers
+
+Promoted to cuda-to-rocm/references/platform-limits.md in bb61ae96.
 
 For `references/platform-limits.md`, next to the existing `__launch_bounds__(1024)` entry (that one says 1024 changes nothing on HIP; the converse matters). HIP-clang assumes a 1024-thread block when a kernel has no launch bounds and caps registers to fit it (64 VGPR + 64 AGPR on gfx942), where nvcc gives a kernel up to 255 registers regardless. A register-heavy kernel (FlashAttention-2 tiles, 128 fp32 accumulators per lane) launched with 128 threads then spills to scratch. Fix: `__launch_bounds__(<actual block size>)` under the HIP guard; verify with `-Rpass-analysis=kernel-resource-usage`. A second spill source showed up in the same kernel: emulating a matrix instruction with shuffles inside fully unrolled fragment loops let the scheduler keep every shuffle result live (4.4 KB/lane scratch at 256 VGPR + 256 AGPR); `#pragma unroll 1` on the emulation's inner loop took it to 0 in a one-instantiation probe with the helper inlined; the shipped module keeps the helper out of line (compile time) and its prefill kernels report 240-848 B/lane of private segment (848 B for the instantiation the end-to-end run uses; reviewer, `llvm-readelf --notes` on the gfx942 code object). (Quest)
 
 ## Lesson for cuda-to-rocm: AMD's 64 KB LDS breaks "half the per-SM shared memory" tile heuristics
 
+Promoted to cuda-to-rocm/references/platform-limits.md in bb61ae96.
+
 For `references/platform-limits.md`. FlashInfer-derived dispatchers size tiles from `cudaDevAttrMaxSharedMemoryPerMultiprocessor / 2` (two blocks per SM). MI300X reports 64 KB per CU (verified; RDNA values not yet recorded, check `hipDeviceAttributeMaxSharedMemoryPerMultiprocessor` on gfx1100/gfx1151), so half leaves room for no tile at head_dim 128, and FlashInfer's `SWITCH_NUM_FRAGS_Z` then prints `Unsupported max_frags_z` to stderr and returns success without launching: the output tensor is whatever `torch::empty` held. Size for one block per CU under the HIP guard (the largest tile is exactly 64 KB). Check every such `SWITCH_*` default branch in a port: an unlaunched kernel looks like a numerics bug. (Quest)
 
 ## Lesson for cuda-to-rocm: HIP has no half2 overload of __hmax2
+
+Promoted to cuda-to-rocm/references/build-headers-macros.md in bb61ae96.
 
 For `references/build-headers-macros.md` (or the half-precision operator traps). `amd_hip_fp16.h` provides `__hmax`/`__hmin` for `__half` and `__hmax2` only for `__hip_bfloat162`, so `__hmax2(half2, half2)` fails with "no matching function" and a conversion error from `__hip_bfloat162`. Define it from `__hmax` on `__low2half`/`__high2half`, which keeps CUDA's NaN rule (a NaN yields the other input). Putting it in the project's namespace does not protect against a future HIP overload: `__half2` is a global type, so argument-dependent lookup adds a global `__hmax2(__half2, __half2)` and the call becomes ambiguous (reviewer verified with a simulated overload and `-fsyntax-only`). The failure is a loud compile error at the call; the fix then is to delete the local definition. (Quest, ROCm SDK 10.1)
 
