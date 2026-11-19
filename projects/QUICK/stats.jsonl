@@ -56,3 +56,8 @@
 {"kind":"phase","ts":"2026-11-19T04:53:48Z","phase":"test","seconds":608.015,"exit":0,"cmd":"bash agent_space/run_val2.sh"}
 {"kind":"phase","ts":"2026-11-19T05:57:02Z","phase":"test","seconds":3766.981,"exit":0,"cmd":"bash agent_space/run_each.sh"}
 {"kind":"session","ts":"2026-11-19T06:11:14Z","epoch":1795068674.938755,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-19T18:27:34Z","epoch":1795112854.82949,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-19T18:29:08Z","phase":"compile","seconds":0.005,"exit":2,"cmd":"make -j64 VERBOSE=1"}
+{"kind":"phase","ts":"2026-11-19T18:32:34Z","phase":"compile","seconds":136.174,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi200-20261119-102521-quick-roles-prompt/moat/projects/QUICK/testtree/build -j64 VERBOSE=1"}
+{"kind":"phase","ts":"2026-11-19T18:41:34Z","phase":"test","seconds":336.13,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi200-20261119-102521-quick-roles-prompt/moat/agent_space/runlist.sh /var/lib/jenkins/fleet/jobs/mi200-20261119-102521-quick-roles-prompt/moat/projects/QUICK/testtree/install/usr/local /var/lib/jenkins/fleet/jobs/mi200-20261119-102521-quick-roles-prompt/moat/agent_space/results"}
+{"kind":"session","ts":"2026-11-19T18:43:00Z","epoch":1795113780.259294,"event":"end","platform":"linux-gfx90a"}

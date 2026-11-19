@@ -768,3 +768,83 @@ The state goes back to the reviewer for 7a3149ff (`advance-head` from `porting`,
 Promoted to cuda-to-rocm/references/diagnosis.md in bb61ae96.
 
 The current entry offers only limiting inlining (`-finline-hint-functions`, `/Ob1`). That does not help when the out-of-line device function is large by itself: QUICK's `ERint_vertical_spd` (189 KB of VRR code) kept all 6 long branches through `s[30:31]` with `-finline-hint-functions`, at -O1, -O2, -O3 and -Os. `-mllvm -amdgpu-long-branch-factor=0` (defined in `GCNPreRALongBranchReg.cpp` since ROCm 6.0's LLVM) turns off the pre-RA reservation, so branch relaxation takes a dead pair from the scavenger; recount to confirm zero. Two more points for the entry. First, CDNA is affected in real code, not only RDNA: gfx90a, gfx908 and gfx942 all emitted the pattern, and on gfx90a it hung the kernel. Second, the same defect can show as an aperture violation instead of a hang, depending on which block the clobbered return lands in; under rocgdb with precise memory, compare `s[30:31]` against the long-branch targets. Also, a "100x slower" report for a kernel that never returns from one launch is a hang: check with `AMD_SERIALIZE_KERNEL=3 AMD_LOG_LEVEL=3` whether a single launch finishes before measuring anything.
+
+## Review 2026-11-19 (delta 4b17590a..7a3149ff and the whole one-file port)
+
+Reviewer, linux-gfx90a (MI250X). Scope: commit 7a3149ff and `git diff master...moat-port` (master = upstream 7e8aeb2c, unchanged since the sync; one file, `quick-cmake/QUICKCudaConfig.cmake` +32/-3). Head 7a3149ff.
+
+**Verdict: changes requested** (finding 1).
+
+### Build System
+
+1. `quick-cmake/QUICKCudaConfig.cmake:480-482`: the workaround does not reach the HIP device code that is compiled in the `-fgpu-rdc` link. It is appended to `AMD_HIP_FLAGS` -> `CUDA_NVCC_FLAGS`, which only `cuda_add_library` compiles see. The 123 `src/libxc/maple2c_device` objects (libxc kernels plus `gpu_getxc.cu`) are compiled with `-fgpu-rdc -c`, and for those the device side of the compile only emits bitcode (`hipcc -### -fgpu-rdc -c`: device cc1 runs `-emit-llvm-bc`). The AMDGPU backend, where `-amdgpu-long-branch-factor` takes effect, runs later in `clang-linker-wrapper` during the `libquick_hip.so` link (`hipcc -fPIC -fgpu-rdc --hip-link ... -o libquick_hip.so`, `src/CMakeLists.txt:198` `target_link_options(... ${GPU_LD_FLAGS})`). That link line has no `-mllvm` (checked in the `make VERBOSE=1` log of this build). A `cl::opt` is not stored in bitcode, so that device code is built with the default factor. Today this has no effect: the rdc output (code object 0 of `libquick_hip.so`: `cshell_getxcgrad_kernel`, `oshell_getxc_kernel`, ...; 148 functions) has 0 `s_getpc_b64 s[30:31]` sequences in non-kernel functions, and relinking with `-mllvm -amdgpu-long-branch-factor=0` added gives byte-identical code objects (all four). But the comment and commit say the flag goes to the HIP device compile, and the defect hits any large non-kernel function, so a future compiler or a larger libxc functional would silently fall outside the workaround. jeff asked for the flag to reach every HIP device compile, and right now it does not. Fix: in the same `if (${HIP_VERSION} VERSION_GREATER_EQUAL 6.2.1)` block, also `list(APPEND GPU_LD_FLAGS -mllvm -amdgpu-long-branch-factor=0)` (`GPU_LD_FLAGS` is set at `:363`; it feeds both `libquick_hip` and `libquick_mpi_hip`). `hipcc -### ... --hip-link -mllvm -amdgpu-long-branch-factor=0` forwards it only as `--device-linker=amdgcn-amd-amdhsa=-mllvm` / `=-amdgpu-long-branch-factor=0`, so the host link does not see it. Also reword the Diagnosis claim "All four gfx90a code objects ... (including the `-fgpu-rdc` libxc objects linked at the end) have 0 such sequences". It is true, but the flag was not what produced the result for the libxc objects. Expect the follow-up to be binary-identical on this toolchain (shown above), so the gfx90a evidence below should carry forward.
+
+### Checked and holding (recorded so they are not re-derived)
+
+- Version condition: `GCNPreRALongBranchReg.cpp` defines `amdgpu-long-branch-factor` at ROCm/llvm-project `rocm-6.0.0` and `rocm-6.2.1`, and the file does not exist at `rocm-5.7.1` (404). Without the pass there is no pre-RA reservation and none of this bug. So `>= 6.2.1` covers every accepted ROCm that has the pass, and leaving out `<= 5.4.2` is right (an unknown `-mllvm` option would be a hard error there). The detected version here is 10.1.0 (pip SDK, from `rocm_version.h`).
+- Every `cuda_add_library` HIP compile carries the flag (8 `quick_hip_kernels` `.cu` compiles and 123 rdc compiles, all with `-mllvm -amdgpu-long-branch-factor=0`). No gcc (304 `.c`), gfortran (328 `.f90`) or hipcc host-`.cpp` (5) compile has it, and neither link does (finding 1). On a hipcc `.cu` compile, clang also hands `-mllvm` to the host cc1, where the AMDGPU option is registered and unused. The build succeeds, so it is harmless. CUDA is not affected: `AMD_HIP_FLAGS` is only used inside `if(HIP)` (`:360-522`), and the CUDA block is `if(CUDA AND NOT HIP)` (`:9-355`).
+- Mechanism matches llvm/llvm-project#224205 (open, `miscompilation`, no fix PR linked as of today; the issue itself names this flag as a workaround). The comment says when to remove it ("drop once fixed in supported ROCm"), names the issue, and matches upstream's comment style. Commit 7a3149ff: title 64 characters with `[ROCm]`, AI disclosure, fenced Test Plan, no trailer. `jargon.py --port QUICK` clean. `audit-commits` flags only 2146b22 (no `[ROCm]`) and the June d369e07/1bedbbb Test Plans, all already slated for the PR-preparation squash.
+- In the HIP kernels code object (`get2e_kernel_spd` and friends) there are 0 non-kernel `s[30:31]` long branches, and 60 inside kernels (harmless; kernels never return through s[30:31]).
+- `## Lesson for cuda-to-rocm` (llvm#224205 workaround): the claims hold (option location and ROCm range verified above; the CDNA and aperture-violation points match the Diagnosis evidence).
+
+### GPU evidence in the TEST TREE (reviewer-side, not a validator record)
+
+Built so the review could inspect the real compile and link lines. Recorded here so the validator round after the fix can carry it forward. Test tree: fork `moat-port` 7a3149ff with upstream PR merzlab/QUICK#512 (head 0b8a13c5, still open) merged locally (`git merge --no-ff pr512`, local merge 37235f36, never pushed). One conflict, the gfx `FATAL_ERROR` line, resolved as before: `Possible values are gfx908, gfx90a, gfx942, gfx1100, gfx1201.` `git diff pr512 HEAD` is only the port's `QUICKCudaConfig.cmake` diff. The port is validated in the test tree, per jeff's ruling of 2026-11-18, because upstream master's HIP Libxc path is broken without PR 512.
+
+Toolchain: ROCm 10.1.0 pip SDK (HIP 7.16.26385, AMD clang 24.0.0git d6f6cb69), gfortran 13, one GCD (`HIP_VISIBLE_DEVICES=1`), `ulimit -c 0`. Build:
+
+```
+export ROCM_PATH=$(rocm-sdk path --root)
+GFL=$(dirname $(gfortran -print-file-name=libgfortran.so))
+cmake .. -DHIP=ON -DCOMPILER=GNU -DQUICK_USER_ARCH=gfx90a -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=$ROCM_PATH -DHIP_TOOLKIT_ROOT_DIR=$ROCM_PATH \
+  -DCMAKE_SHARED_LINKER_FLAGS="-L$GFL" -DCMAKE_EXE_LINKER_FLAGS="-L$GFL"
+make -j64 VERBOSE=1 && make install DESTDIR=$PWD/../install
+```
+
+The run used the same method as the earlier rounds. Each test ran on its own through the real harness, with a one-line `test/testlist_short_gpu.txt` per `./runtest --hip` call. `bin/quick.hip` was wrapped in `exec timeout --signal=KILL 300 quick.hip.real "$@"`, and the environment was `QUICK_HOME=<install>/usr/local QUICK_BASIS=$QUICK_HOME/basis LD_LIBRARY_PATH=$QUICK_HOME/lib:$(rocm-sdk path --root)/lib`. A test counts as a pass when every diff check printed `PASSED`, its runtest summary reads `Total tests: 0/1 (failed/total)`, and nothing printed `possible FAILURE` or `execution failed`.
+
+**Result: 37 PASS, 3 SKIPPED, 0 FAIL, 0 TIMEOUT** (all 40 tests of `testlist_short_gpu.txt`; 334 s wall in total). The 3 skips are not passes. runtest skips them because upstream's default build has no f functions (`-DENABLEF` off). This matches the porter's diagnostic run on the same tree.
+
+| test | result | wall |
+|---|---|---|
+| ene_psb5_rhf_631g | PASS | 6s |
+| ene_psb5_rhf_631gss | PASS | 9s |
+| ene_acetone_rhf_321g | PASS | 5s |
+| ene_psb3_blyp_631g | PASS | 7s |
+| ene_psb3_blyp_631gss | PASS | 7s |
+| ene_psb3_b3lyp_631g | PASS | 6s |
+| ene_psb3_b3lyp_631gss | PASS | 8s |
+| ene_C2H6_b3lyp_def2tzvp | SKIPPED by runtest: "code not compiled with f function support" (upstream default build has no `-DENABLEF`) | 0s |
+| ene_psb3_libxc_lda_631g | PASS | 6s |
+| ene_psb3_libxc_gga_631g | PASS | 7s |
+| ene_psb3_libxc_hgga_631g | PASS | 6s |
+| ene_wat2_mp2_631g | PASS | 5s |
+| ene_wat2_mp2_631gss | PASS | 7s |
+| grad_psb3_b3lyp_631g | PASS | 8s |
+| grad_psb3_b3lyp_631gss | PASS | 9s |
+| grad_ch3conhch3_b3lyp_ccpvdz | PASS | 10s |
+| grad_NaCl_b3lyp_def2svp | PASS | 8s |
+| grad_CH4_pbe0_6311g2df2pd | SKIPPED by runtest: "code not compiled with f function support" (upstream default build has no `-DENABLEF`) | 1s |
+| grad_nma_rhf_def2tzvp | SKIPPED by runtest: "code not compiled with f function support" (upstream default build has no `-DENABLEF`) | 0s |
+| grad_wat_b3lyp_ccpvdz | PASS | 8s |
+| grad_c10h9o2s_b3lyp_def2svp | PASS | 16s |
+| grad_daspi_meoh_b3lyp_6-31g | PASS | 12s |
+| grad_rpsb_meoh_rhf_321g | PASS | 10s |
+| grad_ohrad_b3lyp_631gss | PASS | 8s |
+| opt_wat_rhf_631g | PASS | 7s |
+| opt_wat_rhf_ccpvdz | PASS | 8s |
+| opt_nh4_pbe0_def2svp | PASS | 9s |
+| opt_hsoh_pbe0_def2svp | PASS | 10s |
+| opt_c3h4_rhf_631g | PASS | 8s |
+| opt_caffeine_b3lyp_3-21g | PASS | 22s |
+| opt_c2h5rad_uhf_631gss | PASS | 10s |
+| opt_methoxyrad_ub3lyp_ccpvdz | PASS | 11s |
+| opt_const_dist_h2o_hf_3-21g | PASS | 8s |
+| opt_const_ang_h2o_hf_3-21g | PASS | 7s |
+| opt_const_dh_c2h4f2_hf_3-21g | PASS | 8s |
+| opt_const_freeze_c2h4f2_hf_3-21g | PASS | 9s |
+| api_water_rhf_631g | PASS | 7s |
+| esp_charge_acetone_b3lyp_def2svp | PASS | 8s |
+| chk_acetate_xyz_density | PASS | 22s |
+| ene_benzene_b3lyp_aug-cc-pvdz | PASS | 11s |
