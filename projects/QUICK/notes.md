@@ -848,3 +848,89 @@ The run used the same method as the earlier rounds. Each test ran on its own thr
 | esp_charge_acetone_b3lyp_def2svp | PASS | 8s |
 | chk_acetate_xyz_density | PASS | 22s |
 | ene_benzene_b3lyp_aug-cc-pvdz | PASS | 11s |
+
+## Reviewer-side evidence 2026-11-19 (linux-gfx1100, Radeon Pro W7800, test tree at 7a3149ff + PR 512): not a validator record
+
+Dispatched as reviewer for 7a3149ff. The linux-gfx90a reviewer took the work lock 17 s before this host's acquisition (both pushed; the merge kept gfx90a's), so this host did not review under the lock and wrote no verdict; takeover is a person's call. That review ("Review 2026-11-19 (delta 4b17590a..7a3149ff ...)") then set changes-requested. Validation needs `review-passed`, so nothing below is a validator record: it is wave32 evidence at 7a3149ff, kept so the round after the porter's fix can carry it forward if the fix proves binary-identical on gfx1100 too.
+
+### Independent confirmation of the review's finding 1 (gfx1100 build)
+
+- `build/src/CMakeFiles/libquick_hip.dir/link.txt`: `-fgpu-rdc --hip-link ... libxc/maple2c_device/libxc_hip.a ...`, no `-mllvm`.
+- `llvm-objdump --offloading` on `xc_hip_generated_gga_c_cs1.cu.o`: `kind llvm ir, arch gfx1100`, so the rdc device code is generated in that link without the flag.
+- `hipcc -fgpu-rdc --hip-link a.o -mllvm -amdgpu-long-branch-factor=0 -###` on a toy file: `clang-linker-wrapper ... "--device-linker=amdgcn-amd-amdhsa=-amdgpu-long-branch-factor=0"`, consistent with the review's proposed `GPU_LD_FLAGS` fix.
+- No effect today on gfx1100 either: the four gfx1100 code objects of `libquick_hip.so` have 0 `s_getpc_b64 s[30:31]` (any function) and 173 / 1575 / 14 / 4 `s_getpc_b64` in total.
+- The `-mllvm` flag is on the configure-time `nvcc flags` line (`-O2 -ffast-math -fPIC -std=c++14 -DUSE_LEGACY_ATOMICS -mllvm -amdgpu-long-branch-factor=0`), and the version detected from `rocm_version.h` is 10.1.0.
+
+### One more point for the porter's round (not in the review)
+
+- `CMake-Options.md:33` lists the `QUICK_USER_ARCH` values as `...|gfx906|gfx908|gfx90a|gfx942>`, but the port adds a `gfx1100` value (`QUICKCudaConfig.cmake:410-414`, also named in the FATAL_ERROR list). Upstream documents the HIP arch choices there, so whoever ships the gfx1100 branch should add `gfx1100` to that list. The gap predates this delta (the gfx1100 branch is from June); PR 512 does not edit that line, so no new conflict.
+
+### Test tree and build
+
+Fork clone `projects/QUICK/src` (moat-port 7a3149ff), `git fetch upstream master pull/512/head:pr512` (PR 512 head 0b8a13c5, still open), worktree `agent_space/quick-testtree` on local branch `testtree` = 7a3149ff + `git merge --no-ff pr512` (local merge 87cee79b, never pushed). One conflict, the `FATAL_ERROR` line, resolved as in earlier rounds: `Possible values are gfx908, gfx90a, gfx942, gfx1100, gfx1201.` `git diff pr512 HEAD` is only the port's `quick-cmake/QUICKCudaConfig.cmake`. This tree is the port head with PR 512 merged locally, per jeff's ruling of 2026-11-18.
+
+Toolchain: ROCm 10.1.0 pip SDK (HIP 7.16.26385, AMD clang 24.0.0git d6f6cb69), gfortran 13 (`-L$GFL` quirk as recorded in the sync section; hipcc selects GCC 14), one GPU (`HIP_VISIBLE_DEVICES=2`), `ulimit -c 0`. hipcc picked gfx1100 by probing (all four GPUs on this host are gfx1100).
+
+```
+export ROCM_PATH=$(rocm-sdk path --root)
+GFL=$(dirname $(gfortran -print-file-name=libgfortran.so))
+cmake .. -DHIP=ON -DCOMPILER=GNU -DQUICK_USER_ARCH=gfx1100 -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=$ROCM_PATH -DHIP_TOOLKIT_ROOT_DIR=$ROCM_PATH \
+  -DCMAKE_SHARED_LINKER_FLAGS="-L$GFL" -DCMAKE_EXE_LINKER_FLAGS="-L$GFL"
+make install DESTDIR=$PWD/../install
+```
+
+(The `compile` telemetry line of 0.002 s, exit 2, is a mis-wrapped `make` that `timeit.sh` ran from the repository root; the build itself is the `make install` above, exit 0.)
+
+### Result: 37 PASS, 3 SKIPPED, 0 FAIL, 0 TIMEOUT (all 40 tests of `test/testlist_short_gpu.txt`, 215 s wall)
+
+Method as in the earlier rounds: one `./runtest --hip` per test with a one-line `test/testlist_short_gpu.txt`, `bin/quick.hip` wrapped in `exec timeout --signal=KILL 300 quick.hip.real "$@"`, `QUICK_HOME=<install>/usr/local QUICK_BASIS=$QUICK_HOME/basis LD_LIBRARY_PATH=$QUICK_HOME/lib:$(rocm-sdk path --root)/lib`. Pass = diff checks printed `PASSED`, nothing printed `possible FAILURE` or `execution failed`. The 3 skips are not passes: runtest skips them because upstream's default build has no f functions (`-DENABLEF` off).
+
+| test | result | wall |
+|---|---|---|
+| ene_psb5_rhf_631g | PASS | 2s |
+| ene_psb5_rhf_631gss | PASS | 4s |
+| ene_acetone_rhf_321g | PASS | 2s |
+| ene_psb3_blyp_631g | PASS | 2s |
+| ene_psb3_blyp_631gss | PASS | 6s |
+| ene_psb3_b3lyp_631g | PASS | 3s |
+| ene_psb3_b3lyp_631gss | PASS | 5s |
+| ene_C2H6_b3lyp_def2tzvp | SKIPPED by runtest: "code not compiled with f function support" (no `-DENABLEF` in upstream's default build) | 0s |
+| ene_psb3_libxc_lda_631g | PASS | 3s |
+| ene_psb3_libxc_gga_631g | PASS | 3s |
+| ene_psb3_libxc_hgga_631g | PASS | 3s |
+| ene_wat2_mp2_631g | PASS | 1s |
+| ene_wat2_mp2_631gss | PASS | 2s |
+| grad_psb3_b3lyp_631g | PASS | 4s |
+| grad_psb3_b3lyp_631gss | PASS | 7s |
+| grad_ch3conhch3_b3lyp_ccpvdz | PASS | 6s |
+| grad_NaCl_b3lyp_def2svp | PASS | 3s |
+| grad_CH4_pbe0_6311g2df2pd | SKIPPED by runtest: "code not compiled with f function support" (no `-DENABLEF` in upstream's default build) | 0s |
+| grad_nma_rhf_def2tzvp | SKIPPED by runtest: "code not compiled with f function support" (no `-DENABLEF` in upstream's default build) | 1s |
+| grad_wat_b3lyp_ccpvdz | PASS | 2s |
+| grad_c10h9o2s_b3lyp_def2svp | PASS | 19s |
+| grad_daspi_meoh_b3lyp_6-31g | PASS | 12s |
+| grad_rpsb_meoh_rhf_321g | PASS | 5s |
+| grad_ohrad_b3lyp_631gss | PASS | 3s |
+| opt_wat_rhf_631g | PASS | 2s |
+| opt_wat_rhf_ccpvdz | PASS | 3s |
+| opt_nh4_pbe0_def2svp | PASS | 3s |
+| opt_hsoh_pbe0_def2svp | PASS | 5s |
+| opt_c3h4_rhf_631g | PASS | 2s |
+| opt_caffeine_b3lyp_3-21g | PASS | 40s |
+| opt_c2h5rad_uhf_631gss | PASS | 4s |
+| opt_methoxyrad_ub3lyp_ccpvdz | PASS | 6s |
+| opt_const_dist_h2o_hf_3-21g | PASS | 3s |
+| opt_const_ang_h2o_hf_3-21g | PASS | 2s |
+| opt_const_dh_c2h4f2_hf_3-21g | PASS | 3s |
+| opt_const_freeze_c2h4f2_hf_3-21g | PASS | 3s |
+| api_water_rhf_631g | PASS | 3s |
+| esp_charge_acetone_b3lyp_def2svp | PASS | 5s |
+| chk_acetate_xyz_density | PASS | 15s |
+| ene_benzene_b3lyp_aug-cc-pvdz | PASS | 16s |
+
+### Not done here
+
+- CUDA compile gate: no CUDA toolkit on this host (`/opt/conda/envs` absent, no `nvcc`). Still owed at the new head on the mi355 host.
+- `jargon.py --port QUICK`: clean at 7a3149ff (with the clone's local `master` set to upstream 7e8aeb2c, because the fork mirror is still stale).
+- No source edit and no fork push (jeff's limit for this job): the porter's `GPU_LD_FLAGS` follow-up is for another host.

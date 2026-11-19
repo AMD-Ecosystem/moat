@@ -61,3 +61,7 @@
 {"kind":"phase","ts":"2026-11-19T18:32:34Z","phase":"compile","seconds":136.174,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi200-20261119-102521-quick-roles-prompt/moat/projects/QUICK/testtree/build -j64 VERBOSE=1"}
 {"kind":"phase","ts":"2026-11-19T18:41:34Z","phase":"test","seconds":336.13,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi200-20261119-102521-quick-roles-prompt/moat/agent_space/runlist.sh /var/lib/jenkins/fleet/jobs/mi200-20261119-102521-quick-roles-prompt/moat/projects/QUICK/testtree/install/usr/local /var/lib/jenkins/fleet/jobs/mi200-20261119-102521-quick-roles-prompt/moat/agent_space/results"}
 {"kind":"session","ts":"2026-11-19T18:43:00Z","epoch":1795113780.259294,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-19T18:27:51Z","epoch":1795112871.330486,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-19T18:29:07Z","phase":"compile","seconds":0.002,"exit":2,"cmd":"make -j16"}
+{"kind":"phase","ts":"2026-11-19T18:44:26Z","phase":"test","seconds":214.831,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261119-102525-quick-roles-prompt/moat/agent_space/quick-run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261119-102525-quick-roles-prompt/moat/agent_space/quick-testtree/install/usr/local /var/lib/jenkins/fleet/jobs/rx7900-20261119-102525-quick-roles-prompt/moat/agent_space/quick-results2"}
+{"kind":"session","ts":"2026-11-19T18:45:52Z","epoch":1795113952.077444,"event":"end","platform":"linux-gfx1100"}
