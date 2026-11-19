@@ -3649,3 +3649,267 @@ sys.exit(1 if fails else 0)
 ### Next step for the lock holder
 - gfx942 items 1-5 at `930d0098` are done. The MFMA layouts hold on gfx942, and correctness, the tile set, the full set and the CPU-only suite are unchanged apart from the new tests. No MFMA cell is slower than scalar. Nothing needs a fork change.
 - Optional: teach `mma_check.py` that a forward kernel over the shared-memory limit is SMEM-LIMIT, not FAIL (item 2), and record `mma_check_bf16.py` in the notes (source above) so other hosts run the same script.
+
+## Evidence session (2026-11-19, linux-gfx90a, MI250X, evidence only): first gfx90a run, Phase 1-5 set and MFMA tile_matmul at `930d0098`
+
+Requested by Jeff Daily. This is the port's first run on gfx90a. The lock stays with linux-gfx950. No fork commit, and no stage, lock, head, platform or deferred record changed. The clone was made read-only at the recorded `head_sha` `930d0098dafa5ef08945a4382b87c07d89c9a7f0` on `release/1.14.0.amd0`; `git status --porcelain` was empty at the end.
+
+### Setup (the common setup block, with these details)
+- Host: "AMD Instinct MI250X / MI250", one GCD visible (dispatcher pin `HIP_VISIBLE_DEVICES=3`, kept): `gfx90a:sramecc+:xnack-`, 64 GiB, 104 CUs, `max_shared_memory_per_block` 65536, `arch` 90. No system ROCm (`/opt/rocm` absent). Kernel boot options `amd_iommu=on iommu=pt`.
+- Fresh clone of `https://github.com/AMD-Ecosystem/warp`. LFS: `sudo apt-get install -y git-lfs` (system package, Jeff's standing rule for missing system utilities). The clone then carried LFS's own `pre-push`, so per the Intake note: `mv .git/hooks/pre-push .git/hooks/pre-push.lfs-original`, `python3 utils/moatlib.py protect-fork warp-1.14`, then `git lfs install --local --skip-repo && git lfs pull`. All `.usd`/`.nvdb` assets are real files.
+- Job venv: it came with TheRock 10.1.0 wheels. Installed `rocm[devel,device-gfx90a]==10.2.0`, `torch[device-gfx90a]==2.15.0+rocm10.2.0`, `numpy==1.26.4` and `usd-core` (index `https://stable.repo.amd.com/rocm/whl-next/`, extra index PyPI), then `rocm-sdk init`. As on gfx942, the stale `rocm-sdk-device-gfx*==10.1.0` packages stay (pip warns; Warp uses no ROCm math library). HIP 7.17.26434, AMD clang 24.0.0git, Python 3.11.17.
+- Build: `export PATH=$FLEET_VENV/bin:$PATH; python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx90a -j 64` (`MAX_JOBS`) -> "Warp build succeeded", 48.7 s. RUNPATH is the venv's `_rocm_sdk_devel/lib`. The greeting shows `HIP 7.17` and `"cuda:0" : "AMD Instinct MI250X / MI250" (64 GiB, gfx90a:sramecc+:xnack-, mempool enabled)`. `is_texture_supported, is_texture_hardware_supported` = `True True`.
+- Every GPU run used `ulimit -c 0` and its own private `WARP_CACHE_PATH`. The benchmark ran alone on the GPU; the correctness checks ran next to the full set. Scripts were extracted verbatim from these notes (`bench_tile_matmul.py`, `summarize.py`, `mma_check.py`, `compare.py`, `mfma_layout.hip`, `sdf_probe.py`, `tex_alias.py`, `tex_capture.py`). `bench_both.sh` differs only in its paths. `mma_check_bf16.py` is my own version (source below), written from the Porting session 9 description before the gfx942 session's version reached the notes.
+
+### Summary
+- **Phase 1-5 set (82 patterns): 80 OK, plus 2 not OK.** `test_fem*` has the 2 known isolation failures. `test_texture` has **14 errors, a new gfx90a finding**: HIP refuses 3D textures with linear filtering on gfx90a (below; it needs a decision).
+- CPU-only suite: **Ran 2294, OK (skipped=15)**.
+- MFMA: the layouts match gfx950 on all twelve lines. `mma_check.py` gives the same 40 non-ok cases as gfx942, all shared-memory limits; the scalar control is identical. bf16: 0 failures. Tile set: 639 run, 15 skipped, 0 failures. Benchmark: no launched MFMA cell is slower than scalar.
+
+### 1. Phase 1-5 set (82 patterns, `-p "<pattern>" -m 32`, 3945 s under `utils/timeit.sh warp-1.14 test`)
+Per-pattern result (`Ran N`, status):
+- Phase 1: test_codegen 117, test_snippet 12, test_arithmetic 126, test_math 16, test_fp16 6, test_bf16 48, test_atomic 164, test_atomic_bitwise 6, test_atomic_cas 48, test_array 139, test_copy 14, test_launch 32, test_fast_math 12 (1 skipped), test_grad 41, test_kernel_cache 5, test_module_hashing 8, test_print 10, test_mat* 601, test_vec* 531, test_quat* 173, test_spatial* 207, test_rand 10, test_noise 14, test_clang_cuda 7 (6 skipped): all OK.
+- Phase 2: test_runlength_encode 16, test_array_reduce 16, test_sparse 47, test_linear_solvers 34, test_coloring 3, test_bvh 13, test_grouped_bvh 11, test_hash_grid 23, test_marching_cubes 17, test_mesh* 49, test_volume 59, test_volume_write 5, test_apic 52, test_apic_mesh 12: OK. **test_fem* 108, failures=2**: `test_gimp_quadrature` and `test_cube_shape_functions` ("Unexpected output", the known upstream isolation behaviour). 108 instead of gfx942's 107 because `test_fem.example_diffusion_mgpu_cuda_0` registers here and passes. Upstream's `check_p2p()` gates it; it passes on this host (`iommu=pt`), while the gfx942 host's IOMMU heuristic skips it.
+- Phase 3: test_graph 35 (3 skipped), test_array_fill_capture 3, test_capture_mode 2, test_conditional_captures 32 (16 skipped), test_conditional 50, test_async 2373, test_streams 24 (3 skipped, incl. the HIP priority-timing skip), test_mempool 7 (2 skipped), test_pinned 1, test_unified_memory 27 (8 skipped), test_occupancy 6, test_allocator 16 (3 skipped), test_allocation_tracker 34, test_dlpack 16, test_torch 34, test_map 45, test_reload 14, test_cuda_arch_suffix 10 (10 skipped): all OK. These are the gfx942 counts at this head.
+- Phase 4: every tile file OK; see item 4.
+- Phase 5: **test_texture 120, FAILED (errors=14, skipped=1)**; see the finding below.
+- Skip reasons across the 82 logs: "No suitable devices to run the test." 18, "Conditional graph nodes not supported" 16, "Warp was not built with MathDx support" 8, "Requires devices with mempool access support" 5, the five "Needs <N> bytes of shared memory per block, device has 65536" (67584 x2, 66688 x2, 66816 x1), "cuda:0 cannot access CPU memory" 2, "Requires devices with peer access support" 2, "Requires at least two CUDA devices" 2, "Multi-GPU not available" 2, and one each of "rmm not installed", "Skipping test on CUDA device without MathDx (tolerance)", "Skipped due to flakiness in memory usage measurement", "Requires devices without mempool access support", "Requires devices with peer access and CUDA graph module-load support", "Requires devices with mempool access and CUDA graph module-load support", "MathDx is not enabled", "HIP maps stream priorities to normal priority, so priority has no scheduling effect."
+- The only "Failed to configure kernel dynamic shared memory" line in the 82 logs is the known `test_tile_load_scoped` backward (65536 bytes; test passes). `Warp CUDA error` lines appear only in test_texture's log (the 14 errors).
+- An example writes the untracked `example_apic_fluid.usd` into the clone; it was deleted after the run.
+
+### 2. CPU-only suite
+`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 PYTHONPATH=<src> python -m warp.tests -s autodetect -k cpu -m 32`, run from a scratch directory so no example output lands in the clone, 195 s: **Ran 2294 tests, OK (skipped=15)**, no `cuda_0` in the log.
+
+### Finding (gfx90a): HIP refuses 3D textures with linear filtering, so every default `Texture3D` fails
+`python -m warp.tests -s autodetect -p test_texture.py -m 32`: **Ran 120, FAILED (errors=14, skipped=1)**. The count matches gfx1100 (120 = 50 CPU + 67 `cuda_0` + 2 deviceless + the `test_texture_interop_requires_hardware` placeholder skip), and `is_texture_supported, is_texture_hardware_supported` = `True True`, so the hardware path is selected, as expected for gfx90a. All 1D and 2D GPU cases pass, and so do 12 3D cases (`test_texture3d_{1,2,4}channel`, `address_mode_tuple`, `array`, `backward_compat_address_mode`, `nearest_interpolation`, `non_normalized_coords`, `per_axis_address_modes`, `struct_member`, `uint16`, `uint8`). The 14 errors all say `RuntimeError: Failed to create CUDA texture object: Warp CUDA error 801: operation not supported (in function wp_texture_object_create_device, texture.cpp:393)`:
+`test_texture3d_cuda_array_copy_api`, `..._graph_capture`, `..._graph_capture_explicit_stream`, `..._rejects_indexedarray`, `test_texture3d_cuda_interop_handles`, `test_texture3d_cuda_surface_property_api`, `..._requires_surface_access`, `test_texture3d_linear_filter`, `test_texture3d_linear_interpolation`, `test_texture3d_resolution_query`, `test_texture3d_uint16_linear_interpolation`, `test_texture3d_uint8_linear_interpolation`, `test_texture_dtype_prefers_warp_types`, `test_texture_handle_properties_host_vs_cuda`. Each one creates a `Texture3D` with `filter_mode=LINEAR`, either explicitly or through the default (`texture.py:206`, `TextureFilterMode.LINEAR`).
+
+Cause, from a standalone reproducer without Warp (`tex3d.cpp` below) and HIP's own source:
+- `hipArray3DCreate` succeeds for every shape. `hipTexObjectCreate` (driver API) and `hipCreateTextureObject` (runtime API) succeed for 1D and 2D arrays. For every 3D array (8x8x8, 4x4x2, 64x64x64; 1 and 4 float channels) they return `hipErrorNotSupported` (801) with the linear filter, and succeed with the point filter. The device reports `hipDeviceAttributeImageSupport` 1 and `MaxTexture3D` 16384x16384x8192, so no attribute warns of this.
+- `AMD_LOG_LEVEL=3` prints `hip_texture.cpp:88: gfx90a:sramecc+:xnack- doesn't support 3D linear filter!`. The check is in HIP itself, keyed on the device name (ROCm/rocm-systems `projects/clr/hipamd/src/hip_texture.cpp:85-89`, read with `gh api`): `else if (pResDesc->res.array.array->depth > 0 && pTexDesc->filterMode == hipFilterModeLinear && !strncmp(info.name_, "gfx90a", strlen("gfx90a"))) { LogPrintfInfo("%s doesn't support 3D linear filter!", ...); return hipErrorNotSupported; }`. HIP's own tests skip the case on gfx90a too (`hip-tests catch/unit/texture/hipTextureObj3DCheckModes.cc`: "gfx90a doesn't support 3D linear filter! Skipped!"). So this is a deliberate hardware limitation of MI200 that HIP enforces. It is not a port defect, and not a HIP bug to register.
+- The port has no answer for it. On gfx90a, `wp.Texture3D(data)` with default arguments raises. So does Newton-style SDF sampling: `sdf_probe.py cuda:0` fails with the same error at `Texture3D(...)`, and so does `tex_capture.py cuda:0`, whose texture is 3D linear. What the hardware does serve is correct. `tex_alias.py cuda:0` (2D, external array, plain and captured) passes with 0 of 2048 wrong both ways. `sdf_probe_closest.py` (the SDF probe with the 3D texture switched to `CLOSEST`; the one-line `sed` is in the commands below) gives SDF vs CPU sampler 0.00e+00, SDF vs analytic 1.17e-02 (point sampling; grid spacing 1.56e-02), and RGBA8 2D linear vs CPU sampler 2.52e-03, the gfx1100 figure. PASS.
+
+Options for the lock holder and Jeff. This is a behaviour decision like the earlier texture ruling, so no patch was written:
+- **A. 3D textures on gfx90a are sampled in software on the GPU, as on gfx942/gfx950; 1D and 2D stay on hardware.** This extends the textures ruling ("AMD GPUs without image support get the GPU software sampler") to "without 3D linear filtering, for 3D". Device side: the selection must stay at compile time, so the three `sample_3d` sites in `texture.h` test a 3D-specific macro, for example `WP_TEXTURE_HW_SAMPLING_3D` = `WP_TEXTURE_HW_SAMPLING && !defined(__gfx90a__)`. No compiler feature macro exists for this, and HIP itself keys on the name. Measured: hipRTC defines `__gfx90a__` (and `__GFX9__`) for `--offload-arch=gfx90a`, and does not define `__HIP_NO_IMAGE_SUPPORT` there (`agent_space/rtcmac/m.py`). Native side: `texture_software.cpp`'s per-context `wp_texture_software_enabled(context)` is not enough once hardware and software arrays coexist on one device. `wp_texture_create_device` and `wp_texture_object_create_device` know `ndim`, but `wp_texture_destroy_device`, `wp_texture_copy_device` and `wp_texture_object_destroy_device` see only a handle. So those three hooks need to recognize software handles, for example through a set of the software array and object handles kept in `texture_software.cpp`. The device capability should be probed once at device init (create a 2x2x2 linear texture object; 801 means no 3D linear filtering) rather than read from the arch name, and it must agree with the compile-time macro. Python: the `cuda_array`/`cuda_texture`/`cuda_surface` properties of a 3D texture on such a device raise, as on gfx942. In `test_texture.py`, the three 3D interop tests (`cuda_array_copy_api*`, `cuda_interop_handles`, `cuda_surface_property*`) need a 3D capability for registration. All 3D textures on gfx90a, point-filtered ones included, then match Warp's CPU textures and are slower than hardware.
+- **B. Keep hardware storage and do the trilinear filter in `texture.h` from 8 point fetches on gfx90a.** This keeps 3D interop on MI200, but the kernel must know each texture's filter mode, which `texture3d_t` (an upstream struct, also built from Python) does not carry. That costs more upstream lines than A.
+- **C. Refuse clearly.** `Texture3D` with a linear filter on a device without 3D linear filtering raises "3D textures with linear filtering are not supported on cuda:0 (gfx90a)", and the 14 tests skip by capability. This is the smallest diff, but MI200 users lose default `Texture3D` and SDF sampling, which gfx942/gfx950 now have through the software sampler.
+Recommendation: A. It reuses the software sampler that was already ruled and reviewed, it is the only option that keeps default `Texture3D` working on MI200, and its device-side diff is three `#if` lines. Release notes in any case: gfx90a has no 3D linear texture filtering in hardware.
+
+`tex3d.cpp` (standalone; `clang++ -x hip --rocm-path=$R --offload-arch=gfx90a -O2 -w tex3d.cpp -o tex3d -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib`, then `./tex3d` and `POINT=1 ./tex3d`):
+```cpp
+// hipTexObjectCreate on 1D/2D/3D hipArrays (driver and runtime array APIs), then a sample.
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#include <cstdlib>
+
+__global__ void s3(hipTextureObject_t t, float* out) { out[0] = tex3D<float>(t, 1.5f, 1.5f, 1.5f); }
+__global__ void s2(hipTextureObject_t t, float* out) { out[0] = tex2D<float>(t, 1.5f, 1.5f); }
+
+static int attr(hipDeviceAttribute_t a) { int v = -1; (void)hipDeviceGetAttribute(&v, a, 0); return v; }
+
+int main()
+{
+    printf("ImageSupport %d MaxTexture1DWidth %d MaxTexture2D %dx%d MaxTexture3D %dx%dx%d\n",
+           attr(hipDeviceAttributeImageSupport), attr(hipDeviceAttributeMaxTexture1DWidth),
+           attr(hipDeviceAttributeMaxTexture2DWidth), attr(hipDeviceAttributeMaxTexture2DHeight),
+           attr(hipDeviceAttributeMaxTexture3DWidth), attr(hipDeviceAttributeMaxTexture3DHeight),
+           attr(hipDeviceAttributeMaxTexture3DDepth));
+    int dims[][3] = {{8, 0, 0}, {8, 8, 0}, {8, 8, 8}, {4, 4, 2}, {64, 64, 64}};
+    for (auto& d : dims) {
+        for (unsigned ch : {1u, 4u}) {
+            HIP_ARRAY3D_DESCRIPTOR ad = {};
+            ad.Width = d[0]; ad.Height = d[1]; ad.Depth = d[2];
+            ad.Format = HIP_AD_FORMAT_FLOAT; ad.NumChannels = ch;
+            hipArray_t arr = nullptr;
+            hipError_t e1 = hipArray3DCreate(&arr, &ad);
+            HIP_RESOURCE_DESC rd = {};
+            rd.resType = HIP_RESOURCE_TYPE_ARRAY;
+            rd.res.array.hArray = arr;
+            HIP_TEXTURE_DESC td = {};
+            td.filterMode = getenv("POINT") ? HIP_TR_FILTER_MODE_POINT : HIP_TR_FILTER_MODE_LINEAR;
+            td.flags = 0;
+            hipTextureObject_t t = nullptr;
+            hipError_t e2 = e1 ? e1 : hipTexObjectCreate(&t, &rd, &td, nullptr);
+            // runtime API path
+            hipChannelFormatDesc cd = hipCreateChannelDesc(32, ch > 1 ? 32 : 0, ch > 2 ? 32 : 0, ch > 3 ? 32 : 0, hipChannelFormatKindFloat);
+            hipArray_t arr2 = nullptr;
+            hipError_t e3 = hipMalloc3DArray(&arr2, &cd, make_hipExtent(d[0], d[1], d[2]), 0);
+            hipResourceDesc rd2 = {};
+            rd2.resType = hipResourceTypeArray; rd2.res.array.array = arr2;
+            hipTextureDesc td2 = {};
+            td2.filterMode = getenv("POINT") ? hipFilterModePoint : hipFilterModeLinear; td2.readMode = hipReadModeElementType;
+            hipTextureObject_t t2 = nullptr;
+            hipError_t e4 = e3 ? e3 : hipCreateTextureObject(&t2, &rd2, &td2, nullptr);
+            printf("%2dx%2dx%2d ch%u: hipArray3DCreate %d hipTexObjectCreate %d | hipMalloc3DArray %d hipCreateTextureObject %d\n",
+                   d[0], d[1], d[2], ch, e1, e2, e3, e4);
+            if (t) (void)hipTexObjectDestroy(t);
+            if (t2) (void)hipDestroyTextureObject(t2);
+            if (arr) (void)hipArrayDestroy(arr);
+            if (arr2) (void)hipFreeArray(arr2);
+        }
+    }
+    return 0;
+}
+```
+Output on this host: `ImageSupport 1 MaxTexture1DWidth 16384 MaxTexture2D 16384x16384 MaxTexture3D 16384x16384x8192`. Without `POINT`, every 3D line reads `hipArray3DCreate 0 hipTexObjectCreate 801 | hipMalloc3DArray 0 hipCreateTextureObject 801`, and the 1D/2D lines read all 0. With `POINT=1`, every line reads all 0.
+`sdf_probe_closest.py` is `sed 's/sdf, filter_mode=wp.TextureFilterMode.LINEAR/sdf, filter_mode=wp.TextureFilterMode.CLOSEST/' sdf_probe.py > sdf_probe_closest.py`.
+
+### 3. MFMA layouts and correctness on gfx90a
+- `clang++ -x hip --rocm-path=$R --offload-arch=gfx90a -O2 -w mfma_layout.hip -o mfma_layout -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib && ./mfma_layout`: **0 of 256 wrong on all twelve lines** (f32 16x16x4, f64 16x16x4, f16 16x16x16, bf16 16x16x16 at K = 16, 32, 64); exit 0. The gfx950 layouts, including the f64 output layout, hold on gfx90a.
+- `python mma_check.py` (165 cases): **"FAILURES 15"**, and none of them is a matrix-core problem. They are exactly gfx942's 15: fp32 64x64x64, fp64 64x64x64 and fp64 64x32x48 at all five block_dims. In each, the *forward* kernel cannot launch on a 64 KiB part: "tried to configure ... forward kernel for 65536 / 69632 / 131072 bytes, but maximum available is 65536", then `Warp CUDA error 1: invalid argument (wp_cuda_launch_kernel)`. The outputs are left untouched (c error exactly 1.0), and the script only knows the backward form of this limit. A further 25 cases report SMEM-LIMIT (backward not launched): fp32 64x32x48, fp64 32x32x32, fp64 48x16x64, fp64 32x64x16 and fp16 64x64x64 at all five block_dims. Control: the same script against the scalar worktree (item 5) gives **the identical status for every case** (`diff` of the status lines empty), and its code objects contain 0 `v_mfma`. Accuracy where the kernels launch, against the CPU device: fp32 and fp64 **0.0 (bit-identical) in every case**; fp16 up to 3.5e-03 on MFMA shapes, and 0 in the scalar control. The MFMA run's 222 code objects contain 3864 `v_mfma_f32_16x16x4f32`, 3864 `v_mfma_f64_16x16x4f64`, 948 `v_mfma_f32_16x16x16f16` and, from the bf16 check, 121 `v_mfma_f32_16x16x16bf16_1k` (`llvm-objdump -d --mcpu=gfx90a`). I second gfx942's suggestion that the porter's script also classify forward launch failures as SMEM-LIMIT.
+- `python mma_check_bf16.py` (my version, below: all 11 `mma_check.py` shapes, including (8,8,8) and (16,16,12), x 5 block_dims = 55 cases): **FAILURES 0**; the largest difference to the CPU is 9.5e-07 (64x64x64 and 64x32x48), and to float64 on the bf16-rounded inputs 8.3e-07.
+
+### 4. Tile set (22 files + test_block_dim_dispatch + test_template_launch_bounds; part of the full-set loop)
+**639 run, 15 skipped, 0 failures.** test_tile 126, test_tile_atomic_bitwise 3, test_tile_cholesky 33, test_tile_cholesky_no_mathdx 16, test_tile_empty 20, test_tile_fft 20 (8 skipped), test_tile_fft_no_mathdx 16, test_tile_func_arg 27, test_tile_fused_ops 36, test_tile_large_offsets 1, test_tile_load 64, test_tile_mathdx 6, **test_tile_matmul 25** (`test_tile_matmul_fragment_shapes_{float16,float32,float64}_cuda_0` OK), test_tile_matmul_no_mathdx 22, test_tile_mlp 3 (1 skipped), test_tile_reduce 62 (2 skipped), test_tile_shared_memory 30 (2 skipped), test_tile_solve 5 (1 skipped), test_tile_solve_no_mathdx 28, test_tile_sort 2, test_tile_stack 40, test_tile_view 16 (1 skipped), test_block_dim_dispatch 2, test_template_launch_bounds 36. The skips are the 10 upstream no-libmathdx skips plus the five expected capability skips, with exactly the predicted byte counts: `test_tile_shared_mem_large` and `test_tile_shared_mem_func` 67584, `test_tile_reduce_axis_tier2` 66816, `..._single_warp` and `test_tile_assign_2d` 66688.
+
+### 5. Benchmark, scalar against MFMA (gfx90a, MI250X one GCD, 104 CUs)
+Scalar worktree as the handoff says (`git worktree add --detach agent_space/scalar_wt 930d0098`, `checkout 974cd4bf -- warp/native/tile_matmul.h`, `warp/bin/*.so` copied), then `bench_both.sh` (three runs per tree of `bench_tile_matmul.py --blocks 16384 --iters 50`, alone on the GPU, under `utils/timeit.sh warp-1.14 bench`) and `compare.py`. Every run exits 1, as expected on a 64 KiB part. Each run's CSV: 28 ok, 4 ADJ-FAILED, 4 MISMATCH. The three MFMA-tree caches contain 3036 `v_mfma` each, the scalar-tree caches 0. The worktree was removed afterwards.
+
+| dtype | tile | block_dim | scalar fwd ms | MFMA fwd ms | fwd speedup | scalar adj ms | MFMA adj ms | adj speedup | checks |
+|---|---|---|---|---|---|---|---|---|---|
+| float16 | 16x16 | 32 | 1.011 | 1.011 | 1.00x | 0.748 | 0.748 | 1.00x | ok |
+| float16 | 16x16 | 64 | 0.663 | 0.250 | 2.65x | 0.326 | 0.234 | 1.39x | ok |
+| float16 | 16x16 | 128 | 0.636 | 0.263 | 2.42x | 0.254 | 0.217 | 1.17x | ok |
+| float16 | 16x16 | 256 | 0.810 | 0.276 | 2.94x | 0.240 | 0.219 | 1.10x | ok |
+| float16 | 32x32 | 32 | 14.366 | 14.363 | 1.00x | 9.132 | 9.133 | 1.00x | ok |
+| float16 | 32x32 | 64 | 2.771 | 1.208 | 2.29x | 3.801 | 1.932 | 1.97x | ok |
+| float16 | 32x32 | 128 | 3.040 | 1.378 | 2.21x | 2.657 | 1.206 | 2.20x | ok |
+| float16 | 32x32 | 256 | 3.951 | 1.668 | 2.37x | 2.498 | 0.935 | 2.67x | ok |
+| float16 | 64x64 | 32 | 86.609 | 86.609 | 1.00x | 107.461 | 107.591 | 1.00x | ok |
+| float16 | 64x64 | 64 | 50.726 | 19.858 | 2.55x | 54.495 | 49.377 | 1.10x | ok |
+| float16 | 64x64 | 128 | 33.941 | 11.785 | 2.88x | 23.170 | 19.711 | 1.18x | ok |
+| float16 | 64x64 | 256 | 20.828 | 8.843 | 2.36x | 14.171 | 10.041 | 1.41x | ok |
+| float32 | 16x16 | 32 | 1.503 | 1.504 | 1.00x | 0.810 | 0.817 | 0.99x | ok |
+| float32 | 16x16 | 64 | 1.249 | 0.361 | 3.46x | 0.362 | 0.284 | 1.28x | ok |
+| float32 | 16x16 | 128 | 0.767 | 0.366 | 2.10x | 0.311 | 0.226 | 1.38x | ok |
+| float32 | 16x16 | 256 | 0.953 | 0.370 | 2.57x | 0.305 | 0.202 | 1.52x | ok |
+| float32 | 32x32 | 32 | 9.652 | 9.656 | 1.00x | 14.489 | 14.427 | 1.00x | ok |
+| float32 | 32x32 | 64 | 5.289 | 2.607 | 2.03x | 6.026 | 3.907 | 1.54x | ok |
+| float32 | 32x32 | 128 | 4.822 | 2.535 | 1.90x | 4.135 | 2.295 | 1.80x | ok |
+| float32 | 32x32 | 256 | 5.537 | 4.117 | 1.34x | 2.662 | 1.441 | 1.85x | ok |
+| float32 | 64x64 | 32 | 134.021 | 134.034 | 1.00x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 64 | 69.050 | 50.666 | 1.36x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 128 | 51.917 | 27.780 | 1.87x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float32 | 64x64 | 256 | 34.130 | 16.570 | 2.06x | (no launch) | (no launch) | - | ADJ-FAILED |
+| float64 | 16x16 | 32 | 2.060 | 2.060 | 1.00x | 1.511 | 1.509 | 1.00x | ok |
+| float64 | 16x16 | 64 | 1.511 | 1.019 | 1.48x | 0.704 | 0.532 | 1.32x | ok |
+| float64 | 16x16 | 128 | 1.463 | 1.045 | 1.40x | 0.764 | 0.410 | 1.87x | ok |
+| float64 | 16x16 | 256 | 1.840 | 1.024 | 1.80x | 0.759 | 0.389 | 1.95x | ok |
+| float64 | 32x32 | 32 | 24.099 | 24.103 | 1.00x | 24.399 | 24.003 | 1.02x | ok |
+| float64 | 32x32 | 64 | 11.869 | 5.960 | 1.99x | 11.431 | 8.928 | 1.28x | ok |
+| float64 | 32x32 | 128 | 9.648 | 4.959 | 1.95x | 7.670 | 5.231 | 1.47x | ok |
+| float64 | 32x32 | 256 | 10.985 | 7.629 | 1.44x | 5.884 | 3.058 | 1.92x | ok |
+| float64 | 64x64 | 32 | 0.024 | 0.024 | 0.99x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 64 | 0.023 | 0.023 | 0.99x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 128 | 0.023 | 0.024 | 0.99x | (no launch) | (no launch) | - | MISMATCH |
+| float64 | 64x64 | 256 | 0.023 | 0.024 | 0.97x | (no launch) | (no launch) | - | MISMATCH |
+run-to-run spread (max-min)/median over 144 cells: median 0.1%, max 8.7%
+
+- **No launched cell is slower on MFMA than scalar.** The only cell below 1.00x that launches is fp32 16x16 block_dim 32 adjoint (0.99x). block_dim 32 is not a whole 64-lane wavefront, so it runs the scalar path in both trees, and the per-run values overlap (scalar 0.810-0.815 ms, MFMA 0.810-0.817 ms): noise. The fp64 64x64 rows (0.97-0.99x, MISMATCH) are launch failures on both trees: the forward needs 98304 bytes, and their 0.023 ms is not a GEMM. Their "(no launch)" adjoints are the same, as are the fp32 64x64 adjoints (98304 / 196608 bytes; Warp's warnings name them).
+- Smallest gains on launched cells: the fp16 adjoints at 16x16 bd 128/256 (1.10-1.17x) and 64x64 (1.10-1.41x), the same pattern as gfx950 and gfx942. Forward at block_dim 64-256: fp16 2.2-2.9x at every size, fp32 1.3-3.5x (smallest at 32x32 bd256 and 64x64 bd64), fp64 1.4-2.0x.
+- Against gfx942 at this head, the same cells are about 3-4x slower on one MI250X GCD on both trees (for example fp32 64x64 bd64 scalar 69.1 ms vs 18.7 ms), while the MFMA-over-scalar ratios are similar.
+- Run-to-run spread over the 144 cells: median 0.1%, max 8.7%.
+
+`bench_both.sh` (as run here):
+```bash
+#!/bin/bash
+# Phase 4 tile_matmul benchmark, three runs each against the MFMA tree and the scalar tree (gfx90a host).
+ulimit -c 0
+A=<moat>/agent_space
+for tree in ${TREES:-mfma scalar}; do
+  if [ $tree = mfma ]; then src=$A/../projects/warp-1.14/src; else src=$A/scalar_wt; fi
+  for n in 1 2 3; do
+    PYTHONPATH=$src WARP_CACHE_PATH=$(mktemp -d $A/kcache.XXXXXX) "$FLEET_VENV/bin/python" $A/s/bench_tile_matmul.py \
+      --blocks 16384 --iters 50 --csv $A/p9/bench_${tree}_run$n.csv > $A/p9/bench_${tree}_run$n.log 2>&1
+    echo "$tree run$n rc=$?"
+  done
+done
+```
+
+`mma_check_bf16.py` (my version, as run):
+```python
+# tile_matmul with bfloat16 A/B and a float32 output, accumulating form (D += A @ B), forward only
+# (module enable_backward=False, as upstream's test_tile_gemm_bf16), GPU against the CPU device and
+# against float64 NumPy on the bf16-quantized inputs. Written from the description in Porting session 9
+# (its source is not in the notes); uses all 11 mma_check.py shapes.
+import sys
+
+import numpy as np
+
+import warp as wp
+
+wp.init()
+gpu = wp.get_device("cuda:0")
+SHAPES = [(16, 16, 16), (32, 32, 32), (64, 64, 64), (16, 48, 32), (48, 16, 64), (32, 64, 16), (64, 32, 48),
+          (8, 8, 8), (24, 16, 16), (16, 16, 12), (17, 33, 15)]  # fmt: skip
+BLOCK_DIMS = (32, 64, 96, 128, 256)
+
+
+@wp.kernel(module="unique")
+def to_bf16(x: wp.array2d(dtype=wp.float32), y: wp.array2d(dtype=wp.bfloat16)):
+    i, j = wp.tid()
+    y[i, j] = wp.bfloat16(x[i, j])
+
+
+@wp.kernel(module="unique")
+def to_f32(x: wp.array2d(dtype=wp.bfloat16), y: wp.array2d(dtype=wp.float32)):
+    i, j = wp.tid()
+    y[i, j] = wp.float32(x[i, j])
+
+
+def make(M, N, K):
+    @wp.kernel(module="unique", module_options={"enable_backward": False})
+    def gemm(A: wp.array2d(dtype=wp.bfloat16), B: wp.array2d(dtype=wp.bfloat16), D: wp.array2d(dtype=wp.float32)):
+        a = wp.tile_load(A, shape=(M, K))
+        b = wp.tile_load(B, shape=(K, N))
+        d = wp.tile_load(D, shape=(M, N))
+        wp.tile_matmul(a, b, d)
+        wp.tile_store(D, d)
+
+    return gemm
+
+
+def bf16(dev, x):
+    src = wp.array(x.astype(np.float32), dtype=wp.float32, device=dev)
+    dst = wp.zeros(x.shape, dtype=wp.bfloat16, device=dev)
+    wp.launch(to_bf16, dim=x.shape, inputs=[src, dst], device=dev)
+    return dst
+
+
+def back(dev, x):
+    out = wp.zeros(x.shape, dtype=wp.float32, device=dev)
+    wp.launch(to_f32, dim=x.shape, inputs=[x, out], device=dev)
+    return out.numpy().astype(np.float64)
+
+
+rng = np.random.default_rng(0)
+fails = 0
+for M, N, K in SHAPES:
+    kern = make(M, N, K)
+    A = rng.uniform(-1, 1, (M, K))
+    B = rng.uniform(-1, 1, (K, N))
+    D0 = rng.uniform(-1, 1, (M, N)).astype(np.float32)
+    for bd in BLOCK_DIMS:
+        res = {}
+        for dev in ("cpu", gpu):
+            a, b = bf16(dev, A), bf16(dev, B)
+            d = wp.array(D0, dtype=wp.float32, device=dev)
+            wp.launch_tiled(kern, dim=[1], inputs=[a, b, d], block_dim=bd, device=dev)
+            res[str(dev)] = (d.numpy().astype(np.float64), back(dev, a), back(dev, b))
+        got, qa, qb = res[str(gpu)]
+        ref = res["cpu"][0]
+        exact = D0.astype(np.float64) + qa @ qb
+        e_cpu = np.abs(got - ref).max()
+        e_np = np.abs(got - exact).max()
+        ok = e_cpu <= 1e-5 * max(1, K / 16) and e_np <= 1e-5 * max(1, K / 16)
+        fails += not ok
+        if not ok or bd == 64:
+            print(f"bf16->f32 M{M:3d} N{N:3d} K{K:3d} bd{bd:4d}: vs cpu {e_cpu:.1e} vs float64 {e_np:.1e} {'ok' if ok else 'FAIL'}", flush=True)
+print("FAILURES", fails)
+sys.exit(1 if fails else 0)
+```
+
+### Next step for the lock holder
+- gfx90a passes everything at `930d0098` except textures. The 82-pattern set matches gfx942's at this head, plus `example_diffusion_mgpu` (P2P registration, passes). The CPU-only suite is green, and the MFMA path is correct (layouts, checks, tile set) and never slower than scalar where it runs.
+- **Decision needed (Jeff): 3D textures with linear filtering on gfx90a.** HIP refuses them by design (`hip_texture.cpp:85-89`). Options A/B/C are in the finding above; A is recommended. Until then, `Texture3D` with default arguments raises on MI200, and `test_texture` has 14 errors there. Nothing to register as a ROCm defect: it is a documented gfx90a limitation that HIP enforces deliberately.
+- Release-notes items from this run: gfx90a has no 3D linear texture filtering in hardware; shared-memory tiles are limited to 64 KiB on gfx90a (already in the notes text).
