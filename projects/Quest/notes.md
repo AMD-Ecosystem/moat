@@ -3206,3 +3206,54 @@ linux-gfx942 (MI300X), CMake 3.31.6, torch 2.16.0a0+git6c3af02 / HIP 7.16 (`/opt
 ### Recommendation
 
 **Pass.** The Windows behaviour was validated by the windows-gfx1151 porter rounds (activated and `-DPython_EXECUTABLE` cases, build.ninja path-only equal to the `a70f4d9` build, which passed 202 / skipped 28). For Linux the delta is configure-only, with an identical generated build.
+
+## Validation 2026-11-19 (linux-gfx942, at `2b938d8`)
+
+AMD Instinct MI300X, `gfx942:sramecc+:xnack-`, wave64, `HIP_VISIBLE_DEVICES=2` (pinned by the job). PyTorch 2.16.0a0+git6c3af02 (`torch.version.hip` 7.16.26385) on the pip ROCm SDK (no `/opt/rocm`), Python 3.11.17 (`/opt/python-3.11-venv`), CMake 3.31.6. Fork at `2b938d8` == `origin/moat-port` == `head_sha`. Review passed at this sha (pass 5). This is a full revalidation, not a carry-forward (`classify 6e7d8db 2b938d8`: `mixed`, `quest/ops/CMakeLists.txt`).
+
+### Build
+
+The README Linux command, with no build directory before it (`rm -rf build` first), `CMAKE_BUILD_TYPE` and `PYTORCH_ROCM_ARCH` unset, no `-DPython_EXECUTABLE`, wrapped `utils/timeit.sh Quest compile -- bash agent_space/porter/build.sh`:
+
+```
+cd quest/ops
+mkdir -p build && cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'` ..
+ninja
+ln -sf $PWD/_kernels*.so ../../
+```
+
+The script exited 0 and ninja built 8 of 8 in 1142 s. `CMAKE_BUILD_TYPE:STRING=Release` came from the default, and all 8 compile lines carry `-O3` and `--offload-arch=gfx942`. There were 0 errors. The warnings were 18 nodiscard-`hipError_t` warnings (`-Wunused-value`) and 1536 `-Wpass-failed=transform-warning` "loop not unrolled" remarks. Both come from the compile commands, which are unchanged from `6e7d8db`: the porter round and review pass 5 showed `build.ninja` is identical after path normalization. Earlier records counted only the source-level warnings.
+
+### GPU tests (transformers 4.37.2, tokenizers 0.15.2, pytest 7.3.2)
+
+transformers, tokenizers, huggingface-hub 0.24.7, safetensors and regex were installed with `--no-deps --target` into the job directory (`<job>/pylib-test`) through `$FLEET_VENV`'s pip. The fleet guard refuses pip for the shared `/opt` environment, including with `--target`. Wrapped `utils/timeit.sh Quest test`, `ulimit -c 0`:
+
+```
+PYTHONPATH=<fork>:<job>/pylib-test python -m pytest quest/tests -p no:cacheprovider -q -rs
+```
+
+**202 passed, 28 skipped, 0 failed** (24.5 s). Each suite was then run on its own:
+
+| suite | result |
+|---|---|
+| test_approx_attention | 42 passed |
+| test_decode_attention | 6 passed |
+| test_decode_launch_shape | 3 passed |
+| test_estimate | 9 passed |
+| test_prefill_attention | 29 passed, 13 skipped |
+| test_rope | 64 passed |
+| test_topk | 49 passed, 15 skipped |
+
+The skips are the tests' own (`test_prefill_attention.py:51` qo_len > kv_len, `test_topk.py:27` k >= kv_len). The results are identical to `6e7d8db` and `a70f4d9` on this GPU.
+
+The end-to-end Llama-2 run was not repeated. No kernel or compiled source changed since `6e7d8db`, where it ran (byte-identical text across hg and quest at budgets 1024 and 128). The only change since then is configure logic, and the default configure generates the same `build.ninja`.
+
+### CUDA no-regression gate
+
+`cuda-not-validated: no CUDA toolkit on this host` (no nvcc, `/usr/local/cuda` or `/opt/conda`). Real nvcc compiled `a70f4d9` on the gfx950 host and found no port regression (above). `3c7754f` and `2b938d8` add lines only inside `if(USE_HIP)` and its pre-`project()` `else()` branch, so the CUDA configure sees no new line. This was checked by reading; this host did not recompile.
+
+### Content checks and integrity
+
+`jargon.py --port Quest` is clean. The ROCm build is documented in `README.md` beside the CUDA build, and the command above is that documentation verbatim apart from the architecture. `git -C projects/Quest/src status --porcelain` was empty at completion (the `_kernels` symlink and `build/` are ignored).
