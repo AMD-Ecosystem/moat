@@ -4886,3 +4886,26 @@ shipped,float16,64,256,16.1877,16.8283,17.2917,12.9604,13.2655,13.4803
 - 82-pattern set (the same list as Evidence sessions 3-5, one pattern per `python -m warp.tests -s autodetect -p "<pattern>" -m 32`, fresh cache per pattern, timeit-wrapped): **82 patterns, 81 OK, 1 with the 2 known fem isolation failures** (`test_gimp_quadrature`, `test_cube_shape_functions`). The per-pattern summary lines (timings stripped) are **identical** to the `930d0098` run (Evidence session 5). So the tile set is 639 run, 15 skipped, 0 failures; test_tile_matmul 25; test_texture 120 (1 skipped); test_streams 24 (3 skipped). No `Warp CUDA error` line in any log; the only shared-memory warning is the known `test_tile_load_scoped` one.
 - CPU-only suite (`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32`, greeting lists only `cpu`): **Ran 2294, OK (skipped=15)**. (The first attempt did not start, because `timeit.sh` found no usable Python when `PYTHONPATH` pointed at the source tree for the wrapper itself. It was rerun with `PYTHONPATH` set only inside the wrapped command. No test ran in the failed attempt.)
 - `sdf_probe.py cpu` PASS (0 / 1.28e-03 / 0); `sdf_probe.py cuda:0` **PASS** (4.78e-05 / 1.31e-03 / 2.52e-03, the same values as every earlier gfx1100 session); `tex_alias.py cuda:0` **PASS** (plain 0 of 2048 wrong, graph capture 0 of 2048 wrong).
+
+## Evidence session 3 (2026-11-19, linux-gfx90a, MI250X, evidence only): same-head pass at the Phase 6 candidate `e78ee32f`
+
+**Every item of the gfx90a list in the Porting session 11 Next step matched its expected result.** No difference to record, so from this host's side `e78ee32f` can be the Phase 6 head.
+
+Requested by Jeff Daily. The lock stays with linux-gfx950. No fork commit, and no stage, lock, head, platform or deferred record changed. The read-only clone moved from `c9595bce` to the recorded `head_sha` `e78ee32fa166bb0bbb58c870fa7b13845553df99` (`git status --porcelain` empty before and after; delta `bb5d01d7` `tile_matmul_mma.h` +19/-3, `e78ee32f` `texture.py` +6/-1). Same host, venv and ROCm 10.2.0 wheels as the earlier gfx90a sessions (one MI250X GCD, `HIP_VISIBLE_DEVICES=3` as pinned, HIP 7.17.26434). Rebuilt: `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx90a -j 64` -> "Warp build succeeded", 49.2 s. `ulimit -c 0`, a fresh `WARP_CACHE_PATH` for every run, and `PYTHONPATH=<src>:$PYTHONPATH` under `utils/timeit.sh`. Scripts: `mma_check.py`, `mma_check_bf16.py` and `interop3d.py` were checked to be byte-identical to the blocks in these notes (`diff` against the extracted blocks); the others are as in the earlier sessions. The 82-pattern set ran alone on its process, and the other items ran beside it with their own caches (correctness checks only, no timings).
+
+| item | expected (Porting session 11) | result |
+|---|---|---|
+| 82-pattern set | 81 OK + the fem pair; `test_fem*` 108 with `example_diffusion_mgpu`; test_texture 119 OK, 4 skipped | **81 OK + the fem pair** (`test_gimp_quadrature`, `test_cube_shape_functions`, upstream isolation); `test_fem*` 108, `test_fem.example_diffusion_mgpu_cuda_0` ok; test_texture **119 OK (skipped=4)**; 3910 s |
+| CPU-only suite | 2294 OK | **Ran 2294, OK (skipped=15)**, no `cuda_0` in the log; 194 s |
+| `mma_check.py` | FAILURES 0 | **FAILURES 0**, exit 0: 125 ok, 15 SMEM-LIMIT (forward not launched), 25 SMEM-LIMIT (backward not launched); every case's status identical to the `c9595bce` run (`diff` empty) |
+| `mma_check_bf16.py` | FAILURES 0 | **FAILURES 0**, exit 0, 55 cases, max abs diff to the CPU 9.5e-07 |
+| capability line | `True False` | **`True False`** |
+| `sdf_probe.py cuda:0` | PASS | **PASS**: SDF vs CPU sampler 5.96e-08, vs analytic 1.28e-03, RGBA8 vs CPU sampler 2.52e-03 |
+| `tex_capture.py cuda:0` | PASS | **PASS**: replays 0, 1, 2 each 1.19e-07 |
+| `tex_alias.py cuda:0` | PASS | **PASS**: plain 0 of 2048 wrong, graph capture 0 of 2048 wrong |
+| `interop3d.py` | the four 3D cases print the new message; 2D handles valid | **as expected**: "2D cuda_array/cuda_texture nonzero: True True"; `cuda_array`, `cuda_texture`, `cuda_surface` and `Texture3D(cuda_array=...)` each raise "<name> is not available for 3D textures on cuda:0: its texture hardware cannot filter 3D textures, so they are sampled in software"; "3D id nonzero: True" |
+
+Full-set detail: the per-pattern summary lines (timings stripped) are **identical** to the gfx90a run at `c9595bce`, and so are the skip-reason counts across the 82 logs. Tile set inside it: 639 run, 15 skipped (10 upstream no-libmathdx, five 64 KiB capability skips), 0 failures; test_tile_matmul 25 OK. test_streams 24 OK (3 skipped, incl. the HIP priority-timing skip). No `Warp CUDA error` line in any log. The only "Failed to configure kernel dynamic shared memory" line is the known `test_tile_load_scoped` backward (65536). The gfx11 WMMA commit does not reach gfx90a code (MFMA target), and the counts confirm nothing moved. `example_apic_fluid.usd`, written into the clone by an example, was deleted afterwards.
+
+### Next step for the lock holder
+Nothing from gfx90a: the same-head pass at `e78ee32f` is complete and clean.
