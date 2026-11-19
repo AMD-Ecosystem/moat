@@ -2503,3 +2503,81 @@ The project stays in `porting`, lock held by linux-gfx950. Common setup as befor
 Stated by Jeff: stream priorities are essentially ignored in the current HIP runtime; high-priority streams exist as an API feature but map to normal priority. He does not expect a test that measures a timing difference to achieve anything on HIP. This settles C4 without the proposed kernel-workload measurement (step 1 of the C4 proposal is dropped): it is known HIP behaviour, not a defect to register.
 
 Porter, next session: in `test_stream_priority_timings`, keep everything that does not depend on scheduling (creating streams with a priority, reading the priority back) and skip only the timing assertion on HIP devices, with the fewest lines possible, through a device capability (not an arch or vendor name in the test) and a skip message saying HIP maps stream priorities to normal priority. Release notes: stream priority is accepted but has no scheduling effect on AMD GPUs.
+
+## Porting session 8 (2026-11-19, linux-gfx950 MI355X, porter): tile-test skip and stream-priority rulings
+
+Fork `release/1.14.0.amd0` advanced `495d7c5a..974cd4bf` (pushed, `advance-head` recorded). Four commits, no native change (`git diff --stat 495d7c5a 974cd4bf -- warp/native build_lib.py` empty, so the gfx950 `warp.so` from session 7 is the head's build):
+- `10fbbedf` Revert the test_tile_shared_mem_func sizing commit (reverts `2f5b9d65`)
+- `c98ba981` Revert the sizing of four shared-memory tile tests (reverts `59d873af`, including the `select_shared_memory_fit` helper, which nothing else used)
+- `250b7c2d` Skip tile tests whose shared memory exceeds the device's per-block limit
+- `974cd4bf` [ROCm] Skip the stream-priority timing assertion on HIP
+New commits on top, no history rewrite of anything pushed. (The two reverts were first made with git's default messages, which lack the sign-off and test plan, and the first title was 81 characters; both were recreated with full messages before anything was pushed, and the two later commits replayed unchanged; the tree is identical.) nvcc 12.8 build at `974cd4bf`: "Warp build succeeded"; offline NVRTC texture and tile/atomic compiles OK. `audit-commits` OK, `jargon.py --port` clean.
+
+### 1. Tile tests: capability skip (Jeff's ruling)
+After the reverts, `test_tile_shared_memory.py`, `test_tile_reduce.py` and `test_tile_view.py` were byte-identical to `release-1.14`. The skip then adds one line per test function, calling a new helper in `unittest_utils.py`:
+```python
+def skip_if_shared_memory_exceeded(test, device, dynamic_bytes: int, block_dim: int):
+    needed = dynamic_bytes + 4 * block_dim + 1024
+    if device.is_cuda and needed > device.max_shared_memory_per_block:
+        test.skipTest(f"Needs {needed} bytes of shared memory per block, device has {device.max_shared_memory_per_block}")
+```
+(plus its docstring: Warp's tile allocator keeps 4 bytes per thread, plus a few scalars, in static shared memory, so `4 * block_dim + 1024` bytes are added). Calls, with each test's own dimensions: `test_tile_shared_mem_large` (`DIM_M * DIM_N * 4 * 2`, forward, 256 threads), `test_tile_shared_mem_func` (`DIM_M * DIM_N * 4 * 2 * 2`, backward), `test_tile_reduce_axis_tier2` (`2 * 8 * 8 * 128 * 4`, backward, `block_dim`; covers both registrations, so five tests), `test_tile_assign_2d` (`4 * TILE_M * TILE_N * TILE_O * 4`, backward, 32 threads). Decided from `max_shared_memory_per_block` only, never an arch or vendor name. `test_tile_load_scoped` left alone, as ruled.
+
+Checked on gfx950 (`agent_space/p8/skip64.py`, the five tests by name): at the real limit (163840) all five run and pass, none skips; with `max_shared_memory_per_block` set to 65536 in-process all five skip: "Needs 67584 bytes of shared memory per block, device has 65536" (shared_mem_large, shared_mem_func), 66816 (tier2, 64 threads), 66688 (tier2 single warp and assign_2d, 32 threads). Full files: test_tile_shared_memory 30, test_tile_reduce 62, test_tile_view 16, OK. Real 64 KiB parts (gfx942, gfx1100) must confirm the skips (handoff below).
+
+Carried diff in the three tile files: +4/-0 against `release-1.14` (was +64/-32 with the sizing commits at `2f5b9d65`), plus the 13-line helper in `unittest_utils.py`.
+
+Release-notes text (from the ruling): "Shared-memory tiles are limited to 64 KiB per block, tiles plus Warp's small static allocation, on gfx90a, gfx942 and Radeon GPUs, and to 160 KiB on gfx950. Warp warns when a kernel's request does not fit; there is no spill to global memory, as on any GPU."
+
+### 2. Stream priority: timing assertion skipped on HIP
+`test_stream_priority_timings` still creates the priority-0 and priority -1 streams and keeps upstream's check that their priorities differ (HIP reports 0 and -1); then, through a new capability `is_stream_priority_scheduling_supported(device)` in `unittest_utils.py` (false on HIP devices, so the test itself names no vendor), it skips with "HIP maps stream priorities to normal priority, so priority has no scheduling effect." before the timing part. 2 lines in the test, 4 in `unittest_utils.py`. No kernel-workload measurement, as ruled; nothing registered (known HIP behaviour). gfx950: test_streams 24 run, OK, 3 skipped (the priority test plus the 2 multi-GPU skips). Release notes: "Stream priority is accepted and reported but has no scheduling effect on AMD GPUs."
+
+Texture sampler floating-point behaviour left as it is, as instructed; release-notes wording for it: "results can differ from Warp's CPU textures in the last bits unless the module is built with `fuse_fp=False`."
+
+### 3. gfx950 at `974cd4bf`: full Phase 1-5 set and CPU-only suite
+82 patterns (`agent_space/p6/full_set.txt`, the session 6 list), `-p "<pattern>" -m 32`, 1609 s: **81 OK, 1 with the 2 known failures** (`test_fem*`: `test_gimp_quadrature` and `test_cube_shape_functions`, the upstream isolation behaviour). Counts identical to session 6 item 5 except: test_streams 24 run with 3 skipped (priority timing now skips instead of failing 1 in 3); test_texture 118 run, 7 skipped (session 7's software path, 59 GPU cases); test_atomic_cas 48; tile files 30/62/16 OK with no skip on gfx950. CPU-only suite with GPUs hidden: **Ran 2294, OK (skipped=15)** (79 s).
+
+### 4. Carried test diff against `release-1.14` (for Jeff)
+`git diff --stat origin/release-1.14 -- warp/tests` at `974cd4bf`: 21 files, +341/-25:
+```
+ warp/tests/cuda/test_capture_mode.py       | 35 ++++++++++--
+ warp/tests/cuda/test_clang_cuda.py         | 31 +++++++++-
+ warp/tests/cuda/test_cuda_arch_suffix.py   |  3 +-
+ warp/tests/cuda/test_mempool.py            |  3 +
+ warp/tests/cuda/test_streams.py            |  4 ++
+ warp/tests/cuda/test_texture.py            | 45 ++++++++++++---
+ warp/tests/cuda/test_unified_memory.py     | 15 +++++
+ warp/tests/fem/test_fem_integrate.py       |  3 +
+ warp/tests/test_atomic_cas.py              | 66 +++++++++++++++++++++-
+ warp/tests/test_devices.py                 |  5 +-
+ warp/tests/test_diagnostics.py             |  6 +-
+ warp/tests/test_fast_math.py               |  6 +-
+ warp/tests/test_grad.py                    |  5 +-
+ warp/tests/test_graph.py                   | 10 ++++
+ warp/tests/test_map.py                     |  4 +-
+ warp/tests/test_snippet.py                 | 27 +++++++++
+ warp/tests/test_sparse.py                  |  3 +
+ warp/tests/tile/test_tile_reduce.py        |  1 +
+ warp/tests/tile/test_tile_shared_memory.py |  2 +
+ warp/tests/tile/test_tile_view.py          |  1 +
+ warp/tests/unittest_utils.py               | 91 +++++++++++++++++++++++++++++-
+ 21 files changed, 341 insertions(+), 25 deletions(-)
+```
+Where the larger entries come from: `unittest_utils.py` 91 lines = the capability helpers (independent thread scheduling, graph module load, the three multi-GPU HIP defects with their messages, stream-priority scheduling, the shared-memory skip) and their docstrings; `test_atomic_cas.py` 66 = the two AMD-capable tests Jeff ruled for; `test_texture.py` 45 = capability registration and the interop test; `test_capture_mode.py` 35 = calling HIP's free function on AMD GPUs; `test_clang_cuda.py` 31 and `test_snippet.py` 27 = Phase 1, `fda7eb27` (the clang JIT tests registered on NVIDIA GPUs only plus a test of the error AMD GPUs raise; the snippet device-branch test the plan asked for).
+
+### Next step (head `974cd4bf`; what each host must re-run)
+The project stays in `porting`, lock held by linux-gfx950. Common setup as before, at `git rev-parse HEAD` = `974cd4bf864080331cc3090a5ca0ed8d17da1ce5`. The native code is the same as `495d7c5a`, so a host that built `495d7c5a` may reuse that build (check `git diff --stat 495d7c5a HEAD -- warp/native build_lib.py` is empty); otherwise build as usual. gfx950 has passed the full set at this head (item 3).
+
+**gfx942 (one GPU):**
+1. `python -m warp.tests -s autodetect -p test_texture.py -m 32`: expect Ran 118, OK (skipped=7), 59 `cuda_0` cases (the software sampler, first run off gfx950); `python sdf_probe.py cuda:0` and `python tex_capture.py cuda:0`: PASS.
+2. The tile skips on a real 64 KiB part: `for f in test_tile_shared_memory.py test_tile_reduce.py test_tile_view.py; do python -m warp.tests -s autodetect -p "$f" -m 32; done`: expect OK with exactly five skips "Needs <N> bytes of shared memory per block, device has 65536" (shared_mem_large and shared_mem_func 67584, tier2 66816, tier2_single_warp and assign_2d 66688); `test_tile_load` still prints its harmless warning for `test_tile_load_scoped`.
+3. The full 82-pattern set (Porting session 6 handoff B.5) and the CPU-only suite (expect 2294 OK). Expected: the gfx950 result of item 3, plus the five tile skips; test_streams OK with the priority test skipped.
+
+**Two-GPU session (gfx942 or gfx950, `HIP_VISIBLE_DEVICES=0,1`):** the 13-file C.2 loop: expect no errors and no failures any more (C4 now skips; C1/C2 skips naming the HIP defects; IOMMU-heuristic skips as before); plus test_texture, whose `cuda_1` cases run the software sampler on a non-primary device: expect every `cuda_0` and `cuda_1` case to pass.
+
+**Wave32 host (gfx1100 or gfx1201):**
+1. `python -m warp.tests -s autodetect -p test_texture.py -m 32`: expect Ran 120, OK (skipped=1); `sdf_probe.py cuda:0` and `tex_alias.py cuda:0`: PASS with the Evidence session 3 values (hardware path unchanged since `2f5b9d65`, code objects byte-identical).
+2. The tile skips: the same three files as gfx942 item 2 (gfx1100 has 64 KiB per workgroup): expect the same five skips and no "Failed to configure" warning from `test_tile_shared_mem_func` (it now skips before building).
+3. The full 82-pattern set and the CPU-only suite (expect 2294 OK). Expected: Evidence session 3's B.5 counts, with test_texture 120 (1 skipped), the five tile skips, test_streams with the priority test skipped.
+
+**Before Phase 6 (not started):** gfx942/wave32 pass the full set at this head (or a later one gfx950 also re-runs); then windows-gfx1151 per the plan's Phase 6. Still open for Jeff: defer/now on the six undecided `rocm-bug-report` entries; the Q3 matrix-core ruling.
