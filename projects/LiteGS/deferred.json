@@ -13,6 +13,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-19T04:25:06Z",
       "decided": null
+    },
+    {
+      "id": "rocprim-radix-sort-mixed-nan-keys",
+      "kind": "rocm-bug-report",
+      "component": "rocPRIM",
+      "summary": "hipCUB/rocPRIM DeviceRadixSort::SortPairs on float keys that contain BOTH signaling and quiet NaNs returns a broken permutation (values duplicated and missing, output slots never written). Either NaN kind alone sorts correctly; CUDA's cub sorts the same keys correctly. Seen on ROCm 10.1 (rocPRIM 4.6.0, hipCUB 4.7.0) on gfx90a and gfx1201; reached through torch.sort in LiteGS's trainer, where it ends in an out-of-range index and HSA_STATUS_ERROR_EXCEPTION 0x1016. Standalone reproducer (no torch, synthetic keys) is in projects/LiteGS/notes.md, porter round 2026-11-19: 136064 keys + 2000 quiet + 50 signaling NaNs gives 33368 duplicated and 41509 missing indices on gfx90a. No existing upstream issue found (searched rocm-libraries, rocPRIM, hipCUB, rocThrust, pytorch on 2026-11-18).",
+      "refs": [
+        "projects/LiteGS/notes.md#porter-round-2026-11-19"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-19T06:27:14Z",
+      "decided": null
     }
   ]
 }
