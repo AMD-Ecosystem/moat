@@ -188,3 +188,6 @@
 {"kind":"phase","ts":"2026-11-19T18:25:20Z","phase":"test","seconds":146.828,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/warp-win/p14/fix_pats.sh"}
 {"kind":"phase","ts":"2026-11-19T18:34:17Z","phase":"test","seconds":514.219,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/warp-win/p14/fem_files.sh"}
 {"kind":"phase","ts":"2026-11-19T18:36:41Z","phase":"test","seconds":67.659,"exit":0,"cmd":"timeout 900 /d/Develop/moat/agent_space/warp-win/venv/Scripts/python.exe -X faulthandler -m unittest warp.tests.fem.test_fem_examples warp.tests.fem.test_fem_integrate warp.tests.fem.test_fem_multi_env"}
+{"kind":"phase","ts":"2026-11-19T18:21:25Z","phase":"build","seconds":52.269,"exit":0,"cmd":"bash -c cd projects/warp-1.14/src && python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/gfx1201-20261119-101222-warp114-bf16-evidence-gfx1201-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx1201 -j 6"}
+{"kind":"phase","ts":"2026-11-19T18:33:28Z","phase":"bench","seconds":306.867,"exit":0,"cmd":"bash ../bf16/bench_both.sh"}
+{"kind":"phase","ts":"2026-11-19T19:16:32Z","phase":"test","seconds":1942.292,"exit":0,"cmd":"bash ../bf16/run_full.sh"}
