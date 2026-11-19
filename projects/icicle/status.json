@@ -7,9 +7,13 @@
   "priority": 4.507,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-11-19T21:41:12Z",
+  "updated_at": "2026-11-19T21:41:45Z",
   "head_sha": "7d1cb0708462b3dfa712e49c524622930f42fe3f",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-19T21:41:45Z",
+    "holder": "e78b03bede2d"
+  },
   "waivers": {
     "windows": {
       "reason": "Upstream icicle's host framework has no Windows support, and the obstacle is the operating system rather than the GPU. src/runtime.cpp uses POSIX dlopen/dlfcn.h and dirent.h for backend discovery and emits an explicit '#error Unsupported operating system' for anything that is not Linux or macOS; utils.h uses cxxabi.h for demangling, which has no Windows equivalent; test_base.h uses POSIX setenv. Confirmed independently on windows-gfx1151 (at d8e04fd) and on windows-gfx1201/gfx1101. The HIP GPU kernels themselves are correct and validated at head 2609ca44 on linux-gfx90a (wave64) and linux-gfx1100 (wave32); only the POSIX-only backend loader blocks Windows. Porting that loader to LoadLibrary/FindFirstFile is upstream-scope work well beyond this port's minimal footprint. Windows is the only gate not satisfied at head.",
@@ -20,7 +24,7 @@
   },
   "license_spdx": "MIT",
   "upstream_repo_id": 611226044,
-  "stage": "delta-ported",
+  "stage": "reviewing",
   "platforms": {
     "windows-gfx1201": {
       "blocked": true,
@@ -79,7 +83,7 @@
       "validated_sha": "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f",
       "started_at": "2026-06-02T02:42:47Z",
       "completed_at": "2026-06-23T22:43:50Z",
-      "updated_at": "2026-11-19T21:41:12Z",
+      "updated_at": "2026-11-19T21:41:45Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -93,7 +97,7 @@
         "first_session_at": "2026-06-02T02:50:00Z",
         "last_session_at": "2026-06-02T03:15:00Z"
       },
-      "last_agent": "porter",
+      "last_agent": "reviewer",
       "carry_forward": {
         "to": "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f",
         "method": "source-class",
