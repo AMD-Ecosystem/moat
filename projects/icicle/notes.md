@@ -752,3 +752,26 @@ ctest --test-dir agent_space/bval/tests -R PqcTest -V --output-on-failure
 - Jargon: `python3 utils/jargon.py --port icicle` NOT clean, 1 hit, in a commit message from an earlier round: commit 98d8bca line 18, Test Plan `git -C projects/icicle/src grep ...` ("use a path relative to the project's own checkout"). `audit-commits` also flags 2609ca4 ("Test Plan has no fenced command block"). Recorded `validation-failed --gate jargon` as validator.md step 4 requires; the GPU pass at 7d1cb07 is kept (`gpu_passed_sha`). A new commit cannot fix a commit message, so the fix is a history rewrite: a PR-prep squash to an identical tree. Pushing that is a person's call (porter.md step 6); afterwards `squash-carry-forward`/`carry-forward` completes the platforms from the kept pass without another GPU run. Decision for jeff: squash now (and in which form), or another ruling.
 
 Verdict: GPU PASS (58/58 backend, 6/6 frontend, 0 skipped) at 7d1cb07; platform recorded validation-failed --gate jargon for the commit-message hit only.
+
+## Validation 2026-11-19 (revalidate, linux-gfx1100, fork moat-port 7d1cb0708462b3dfa712e49c524622930f42fe3f)
+
+GPU as the system reports it: `amd-smi static -g 0` -> MARKET_NAME: AMD Radeon Pro W7800 48GB, TARGET_GRAPHICS_VERSION: gfx1100; rocminfo agent `amdgcn-amd-amdhsa--gfx1100` (wave32, RDNA3). HIP_VISIBLE_DEVICES=0 (pinned by the dispatcher, idle). Pip ROCm SDK 10.1.0 (`R=$(rocm-sdk path --root)`, no /opt/rocm on this host), CMake 3.31.6. Fresh clone of AMD-Ecosystem/icicle checked out at head 7d1cb07 (= `origin/moat-port`); clean tree. Repeats the gfx90a commands of the section above with only the arch changed. First real wave32 GPU run since 98d8bca (2609ca4 reached gfx1100 by carry-forward only).
+
+Fresh build dir, under `ulimit -c 0`:
+```
+cmake -S projects/icicle/src/icicle -B agent_space/bval -DCMAKE_BUILD_TYPE=Release \
+  -DCPU_BACKEND=ON -DHIP_PQC_BACKEND=ON -DCUDA_PQC_BACKEND=OFF -DPQC=ON -DBUILD_TESTS=ON \
+  -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++ -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=$R
+cmake --build agent_space/bval -j 16     # [100%] Built target hip_test_ml_kem, exit 0
+ctest --test-dir agent_space/bval/backend/hip_pqc/tests -V --output-on-failure
+ctest --test-dir agent_space/bval/tests -R PqcTest -V --output-on-failure
+```
+- Build: exit 0. Warnings are the pre-existing `-Wunused-value` nodiscard `hipError_t` ones (`CHK_ERR`/`CHK_LAST`) plus 2 `-Wattributes`; no errors. `libicicle_backend_hip_pqc.so` carries only the `amdgcn-amd-amdhsa--gfx1100` code object. `copy_hip_test_data` placed ml_kem_{512,768,1024}_data in `agent_space/bval/backend/hip_pqc/tests/test_data`.
+- Backend gtests: 58 passed, 0 failed, 0 skipped (19.62 s). By suite: KyberTest 29, MLKemKeygenTest 7, MLKemDecapsTest 6, HashTest 4, MLKemTest 3, MLKemEncapsTest 3, PkeEncryptTest 3, PkeDecryptTest 3. Includes the exact-match NIST KAT vectors for ML-KEM-512/768/1024 keygen, encaps, decaps and PKE encrypt/decrypt. All 58 print Main-device=HIP-PQC.
+- Frontend `PqcTest`: 6 passed, 0 failed, 0 skipped (0.88 s), Main-device=HIP-PQC.
+- Dispatch: `AMD_LOG_LEVEL=3 ./hip_test_ml_kem_decaps --gtest_filter=MLKemDecapsTest.MlKemDecaps512Batch` shows `ml_kem_decaps_kernel` launching; test PASSED.
+- CUDA gate: not re-run. No nvcc in this container; same coverage as the gfx90a section (gfx950 nvcc check at 2609ca4; the combined CUDA+HIP configure is still owed on an nvcc host).
+- Docs: `backend/hip_pqc/README.md` documents the ROCm build and the ctest command (from the repository root).
+- Jargon: `python3 utils/jargon.py --port icicle` NOT clean, the same 1 hit as on gfx90a: commit 98d8bca line 18, Test Plan `git -C projects/icicle/src grep ...`. `audit-commits` also flags 2609ca4 ("Test Plan has no fenced command block"). No hit in tree content. Recorded `validation-failed --gate jargon` the same way as gfx90a; the GPU pass at 7d1cb07 is kept (`gpu_passed_sha`). jeff's planned identical-content history rewrite removes the hit; afterwards `squash-carry-forward` (or `carry-forward`) completes this platform from the kept pass with no GPU re-run.
+
+Verdict: GPU PASS on gfx1100 (58/58 backend, 6/6 frontend, 0 skipped) at 7d1cb07; platform recorded validation-failed --gate jargon for the old commit-message hit only.
