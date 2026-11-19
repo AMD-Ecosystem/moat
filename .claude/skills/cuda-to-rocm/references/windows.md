@@ -403,50 +403,74 @@ one source file keeps the optimization level and compiles it in a second.
 
 ## Linking
 
-### CMake's HIP link rule mangles MSVC-style flags and paths
+### Linking HIP through CMake: what each compiler arrangement needs
 
-On Windows, CMake's HIP link path routes through `hipcc.exe`, which invokes `clang.exe
---driver-mode=g++` for `--hip-link`. That GCC driver then receives CMake's MSVC-style
-response file and flags, and misreads them two ways: it treats bare MSVC linker flags
-(`/machine:x64`, `/subsystem:console`) as file paths, and it applies GNU backslash-escaping
-to the response file, eating every backslash so `D:\path\torch.lib` arrives as
-`D:pathtorch.lib`. CMake also injects `-fuse-ld=lld-link`. When this section was first
-written that flag was recorded as conflicting with `--hip-link`; that is not a general fact,
-and it did not reproduce in ohm's build (next paragraph).
+Whether a Windows CMake HIP link needs help depends on two things: which driver compiles the
+host code, and whether the target uses relocatable device code (`-fgpu-rdc`). CMake calls the
+linker driver directly (`clang++.exe`, or `lld-link` through `cmake -E vs_link_exe`); `hipcc`
+is not involved. Measured with one test project (an executable and a shared library, import
+libraries in every spelling, MSVC-style linker options, a library path with a space, and a
+link line long enough for Ninja to use a response file) on ROCm 7.14 (clang 23) with CMake
+3.31.0 and 4.3.2, gfx1151:
 
-`-fuse-ld=lld-link` on a Windows CMake HIP link is not a failure by itself. CMake 3.29+ adds
-it to every clang link line on Windows (`Platform/Windows-Clang.cmake`,
-`CMAKE_<LANG>_USING_LINKER_DEFAULT`), HIP included. When the HIP link goes straight to ROCm's
-GNU-style `clang++` (CMake's own rule, not through hipcc),
-`clang++ --hip-link --rtlib=compiler-rt -fuse-ld=lld-link ...` links fine with CMake 3.31.0
-and 4.3.2 and ROCm 7.14 clang 23. Do not strip the flag from `build.ninja` out of habit: build
-once without touching it and read the actual link error first. A recipe that carried the
-strip for months turned out to need none of it. (ohm)
+| host compiler / HIP compiler | without `-fgpu-rdc` | with `-fgpu-rdc` |
+|---|---|---|
+| GNU-style `clang++` for C, C++ and HIP (recommended, see "Keep one clang driver") | links with CMake's own rule | fails: `clang++: error: invalid linker name in argument '-fuse-ld=lld-link'`; one CMake line fixes it (below) |
+| `clang-cl` for C and C++, GNU-style `clang++` for HIP | links if the target's `LINKER_LANGUAGE` is `CXX`; with the HIP link rule the GNU driver gets an MSVC-style line and fails | needs a link wrapper (below) |
+| `clang-cl` for all three (CMake 4.x only; 3.31 does not configure) | links with CMake's own rule | needs the `/Fo` compile-rule fix (below) and a link wrapper or a rewritten link rule |
 
-**This has nothing to do with `-fgpu-rdc`.** A project with no relocatable device code at all
-still hits it if it links HIP through CMake on Windows. Do not conclude you are safe because
-you are not using RDC -- that mistake was made once already and cost a round.
+**`-fuse-ld=lld-link` is harmless without `-fgpu-rdc` and fatal with it.** CMake 3.29 and
+later adds it to every clang link line on Windows (`Platform/Windows-Clang.cmake`,
+`CMAKE_<LANG>_USING_LINKER_DEFAULT`), HIP included. `clang++ --hip-link -fuse-ld=lld-link`
+runs one `lld-link` job and links. With `-fgpu-rdc` the device-link step rejects the name.
+For the all-GNU-driver arrangement the whole fix is, after the languages are enabled and on
+Windows only:
 
-Fix: interpose a wrapper on the link step, set as `CMAKE_HIP_LINK_EXECUTABLE`.
-`assets/hip_link_win.py` is one. It strips `-fuse-ld=*`, converts `-Xlinker` pairs and bare
-MSVC `/flags` to `-Wl,` form, and rewrites `-lXXX.lib` and bare `XXX.lib` to
-`-Xlinker XXX.lib` so lld-link resolves them via `LIB`. It is under 100 lines of standard
-library Python and carries no project-specific state. **Copy it into the project**
-(conventionally `cmake/hip_link_win.py`): the project's CMake calls it, so a pull request
-cannot depend on a file outside the project.
+```cmake
+set(CMAKE_HIP_USING_LINKER_DEFAULT "-fuse-ld=lld")
+```
 
-Unresolved: the wrapper rewrites the argument list only. It does not read the response file
-and does nothing about the backslash loss described above. What is known is when the loss
-appears: only once a target's object list is long enough for CMake and Ninja to switch from
-an inline command line to an `@file.rsp`. In alien the GUI executable (`alien.exe`) failed
-with a wall of "no such file or directory" for names like `CMakeFilesFoo.dirbar.cpp.obj`,
-while the smaller executables (the engine and persister tests, the CLI) stayed under the
-threshold and linked cleanly. So "some targets link, one does not" says nothing about the
-smaller ones being more correct: check whether the failing one is the one using a response
-file. The fix, not yet implemented in the wrapper, is to expand `@file` itself with Windows
-quoting rules and hand the GNU driver individual arguments. (alien)
+(set the `CXX` variable too if a target is forced to link as CXX). It covers executables and
+shared libraries and needs no wrapper. `-DCMAKE_LINKER_TYPE=LLD` does not help: CMake still
+emits `-fuse-ld=lld-link`. Without `-fgpu-rdc`, do not strip the flag out of habit: build
+once without touching it and read the actual error first. A recipe that carried a `sed` over
+`build.ninja` for months turned out to need none of it. (ohm)
 
-Guard the override to Windows. Related and separate: the clang-cl `/Fo` bundler bug, where the
+**MSVC linker options belong behind `LINKER:` or `-Xlinker`.** With the GNU-style driver a
+raw `/subsystem:console` in `target_link_options` is read as a file name
+(`no such file or directory: '/subsystem:console'`) in every arrangement; `LINKER:/subsystem:console`
+works. CMake's own flags are already spelled correctly in the all-GNU arrangement, and import
+libraries arrive as `-lws2_32.lib`, which links unmodified.
+
+**The MSVC-style link line is the real problem, and it only arises with a `clang-cl` host.**
+There CMake composes the line for an MSVC linker (bare `/machine:x64`, `/INCREMENTAL:NO`,
+`/subsystem:console`, bare `ws2_32.lib`), and `-fgpu-rdc` needs the GNU-style driver to do
+the device link, so the GNU driver is handed arguments it reads as files. Prefer moving the
+project to the all-GNU-driver arrangement, which removes the problem. Where that is not
+possible, interpose a wrapper as `CMAKE_HIP_LINK_EXECUTABLE`; `assets/hip_link_win.py` is
+one. Of its rewrites, the ones that matter are turning bare `/flags` into `-Wl,` form and
+bare `foo.lib` into `-Xlinker foo.lib`; dropping `-fuse-ld=*` matters only where CMake emits
+it. Copy it into the project (conventionally `cmake/hip_link_win.py`), since the project's
+CMake calls it and a pull request cannot depend on a file outside the project. Know its two
+limits before relying on it:
+
+- It does not read response files. Once a target's object list is long enough for CMake and
+  Ninja to switch to `@file.rsp`, the bare libraries sit in that file where the wrapper never
+  sees them, and with `clang-cl` for all three languages the GNU driver also applies GNU
+  quoting to the file and eats every backslash (`no such file or directory:
+  'CMakeFilesapp.dirmain.hip.obj'`). In alien the large GUI executable failed this way while
+  the smaller executables stayed under the threshold and linked, so "some targets link, one
+  does not" says to check whether the failing one uses a response file. `--rsp-quoting=windows`
+  on the driver cures the backslash loss; a wrapper has to expand `@file` itself to fix the
+  rest.
+- `CMAKE_HIP_LINK_EXECUTABLE` covers executables only. A shared library goes through
+  `CMAKE_HIP_CREATE_SHARED_LIBRARY` (and `CMAKE_HIP_CREATE_SHARED_MODULE`), which needs the
+  same treatment plus `-shared` and `-Xlinker /implib:<TARGET_IMPLIB>`.
+
+(alien, origin of the wrapper and the only project known to need it; of the projects linked
+on Windows since, the rest used the all-GNU-driver arrangement or linked as CXX.)
+
+Guard any link-rule override to Windows. Related and separate: the clang-cl `/Fo` bundler bug, where the
 CMake HIP compile rule must emit `-o <OBJECT>` instead of `/Fo<OBJECT>` because the driver
 hands the same path to `clang-offload-bundler` as both input and output and Windows refuses to
 rewrite a memory-mapped file (ROCm/TheRock#5615). The fix is a compile-rule override after
@@ -460,8 +484,7 @@ matters, not object size or build parallelism. Passing `--offload-new-driver` on
 compile and the link step avoids the same bundler path and is the alternative where the
 compile rule cannot be overridden. A newer SDK may no longer hit the bug at all, so re-run
 the build before trusting an older note that a project is blocked on it. A project can need the compile-rule fix, the
-link wrapper, or both -- they are independent. (alien, origin of the wrapper; LichtFeld-Studio,
-which needs the link half.)
+link wrapper, or both -- they are independent. (alien.)
 
 ### A ROCm library linked by name may have no `.lib`
 

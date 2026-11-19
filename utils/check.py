@@ -754,7 +754,10 @@ def gate_skills():
                 for rel in gen_skill_index.stale(REPO)]
     paths = [STANDALONE_SKILL / "SKILL.md"]
     for sub in ("references", "assets"):
-        paths += sorted(p for p in (STANDALONE_SKILL / sub).rglob("*") if p.is_file())
+        # Not an interpreter's cache: running or compiling an asset script leaves a
+        # binary __pycache__ beside it, and reading that as text made the gate raise.
+        paths += sorted(p for p in (STANDALONE_SKILL / sub).rglob("*")
+                        if p.is_file() and "__pycache__" not in p.parts)
     for path in paths:
         rel = path.relative_to(REPO).as_posix()
         for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
