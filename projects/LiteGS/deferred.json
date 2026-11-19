@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "rocprim-radix-sort-float-snan-corrupt",
+      "kind": "rocm-bug-report",
+      "component": "rocPRIM",
+      "summary": "hipcub::DeviceRadixSort::SortPairs (rocPRIM 4.6.0 / hipCUB 4.7.0, ROCm 10.1 pip SDK; gfx90a) returns a corrupted permutation for float keys that mix quiet and signaling NaNs: values duplicated and missing, unwritten output slots keep stale data (n=136064 randn + 2000 qNaN + 50 sNaN -> 33368 duplicated / 41509 missing; either NaN kind alone sorts correctly; quieting the sNaNs fixes it). torch.sort on ROCm inherits it; LiteGS hit it by sorting uninitialized depth values and then failed a device-side index assert. Standalone reproducer in projects/LiteGS/notes.md (2026-11-19 section). Not yet filed upstream (ROCm/rocm-libraries, project: rocprim); filing is a person's call.",
+      "refs": [
+        "projects/LiteGS/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-19T04:25:06Z",
+      "decided": null
+    }
+  ]
+}

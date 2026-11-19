@@ -574,3 +574,114 @@ Run 2 (identical):
 No HSA_STATUS_ERROR_EXCEPTION, no GPU wedge. Results match gfx1201 exactly.
 
 Decision: PASS -> completed. validated_sha=d65b6ab9ec19bbff45641c989002c8dc746119bc.
+
+## Correction 2026-11-19: the Linux validations carried to d65b6ab did not hold
+
+The `completed` records for linux-gfx90a and linux-gfx1100 at d65b6ab were carry-forwards (`source-class`) from runs at 602ce5a, and none of them ever ran the real trainer. They were wrong for two independent reasons:
+
+1. **Broken submodule.** d7990e3 (not only d65b6ab) repointed `.gitmodules` from upstream's `kemchenj/fused-ssim` (branch `fused-l1-ssim-loss`, 409da0b) to `https://github.com/jeffdaily/fused-ssim.git` branch `moat-port`. That URL now answers "Repository not found", so a fresh `git submodule update --init` fails. The commits it named (767e3f6, then 6f9a620 in d65b6ab; both still reachable on AMD-Ecosystem/fused-ssim `moat-port`) are rahul-goel/fused-ssim plus the 3D SSIM and Windows changes, and neither one defines `fused_l1_ssim_loss`, which `litegs/training/trainer.py:145` calls on every step. So training fails for every user at the first iteration. Both carry-forward details said the submodule change was "dead code on Linux". That covered only the `ext.cpp` guard, not the Python API the trainer imports. (The older note above that 767e3f6 "did not yet include ssim3d.cu" is also wrong: 767e3f6's `__init__.py` already imports `fusedssim3d`.)
+2. **A real-trainer fault that the synthetic tiers could not reach** (the next section). Even with the right submodule, `example_train.py` aborted on gfx90a after a few epochs.
+
+The Tier 1/2/3 scripts tested kernels and a synthetic fit. They never imported `fused_ssim` through `trainer.py`, so neither failure was visible to them. The real entry point is now part of validation (below).
+
+## Porter round 2026-11-19 (linux-gfx90a): upstream submodule restored, depth-sort fault fixed
+
+Fork commits on `moat-port` (pushed d65b6ab..dcf5784, new commits only, nothing rewritten):
+- `a8d1e6f` Restore the upstream fused_ssim submodule: `.gitmodules` and the gitlink are byte-identical to `master` again (`git diff master -- .gitmodules litegs/submodules/fused_ssim` is empty).
+- `633f0b7` Zero-initialize view positions before the depth sort: in `transform.cu` `mvp_transform_forward`, `torch::empty` becomes `torch::zeros` for `view_position`. A one-line change, unguarded and arch-independent.
+- `dcf5784` [ROCm] Document building the extensions on AMD GPUs: a short paragraph in README "Getting Started". This documentation was missing from the port until now.
+
+### Upstream fused_ssim needs no change on Linux
+
+kemchenj/fused-ssim 409da0b already carries rahul-goel's "amd gpu installation fix (#29)": `setup.py` has a `torch.version.hip` branch that uses `-ffast-math` in place of the nvcc-only flags, and `fused_l1_ssim_loss` / `fusedl1ssim_loss[_backward]` are present. It built and ran unchanged here. The submodule now points only at public, merged upstream sources.
+
+### Windows: open question for jeff
+
+The Windows ROCm build needs, in fused_ssim's `setup.py`, the `_winhip.cu` copy that routes `ext.cpp` through hipcc (MSVC cannot link the inherited `c10::ValueError` constructor from the clang-built `c10.dll`). That change exists only on AMD-Ecosystem/fused-ssim `moat-port` (checked 2026-11-19: rahul-goel/fused-ssim `main` `setup.py` has no `os.name == 'nt'` branch), and that branch is based on rahul-goel `main`, not on kemchenj's `fused-l1-ssim-loss`. With upstream's submodule restored, the Windows build of fused_ssim is expected to fail at link time again. LiteGS's own two setup.py Windows shims (d7990e3) are still in place. The 3D-export guard fix (6f9a620) does not apply, because 409da0b has no ssim3d. Options for jeff: (a) offer the `_winhip.cu` change to rahul-goel/fused-ssim and ask kemchenj to merge it into `fused-l1-ssim-loss`; (b) document Windows as needing a locally patched fused_ssim; (c) ship this port as Linux-only for now. Windows was out of scope for this round, and nothing was changed for it.
+
+### The fault: torch.sort on ROCm corrupts keys with signaling NaNs
+
+Symptom (before 633f0b7, Tanks and Temples `truck`, 3000 iterations): `HSA_STATUS_ERROR_EXCEPTION ... code: 0x1016`, kernel `at::native::index_elementwise_kernel<128,4,...OpaqueType<4>...>`, then `hipErrorLaunchFailure`. It failed in 4 of 4 plain runs, at epochs 2 to 6 (random frame order). Under `AMD_SERIALIZE_KERNEL=3 HIP_LAUNCH_BLOCKING=1` the Python stack lands on `litegs/utils/wrapper.py:741` `allocate_size[i]=allocate_size[i,depth_sorted_index[i]]`. The 0x1016 is torch's device-side index bounds assert (a deliberate OOB index reproduces the same message), not a memory-aperture fault.
+
+Root cause, isolated step by step:
+- `view_depth.sort()` occasionally returned indices >= N (stale float bits as int64). Checking right after every sort and dumping on the first bad one showed about 350 indices duplicated and as many missing, sorted values out of order, and unwritten output slots.
+- The input is `view_pos[:, 2, :]`. `mvp_transform_forward` allocates `view_position` with `torch::empty`, and the kernel writes only indices below `valid_length`. So the tail of the depth row (the culled-buffer capacity, `1.2 x` the previous epoch's visible chunk count, minus the valid points) is uninitialized memory. In the dump it held 210 NaNs, 6 of them signaling (`0x7f9d652f`, `0x7f82858f`, `0xffb891ea`, ...).
+- Replaying the dumped keys corrupts the sort every time (the out-of-range index is the intermittent part, depending on what stale memory sits in the unwritten slots). Quieting the sNaNs, canonicalizing all NaNs, or replacing NaN with 0 gives a correct permutation. torch takes `at::cuda::cub::radix_sort_pairs` -> `hipcub::DeviceRadixSort::SortPairs` for a single segment > 4096.
+- A standalone hipCUB program reproduces it with no torch and no data file (rocPRIM 4.6.0, hipCUB 4.7.0 from the ROCm 10.1 pip SDK, gfx90a): n=136064 randn keys + 2000 random-payload quiet NaNs + 50 signaling NaNs -> 33368 duplicated / 41509 missing; 200 qNaN + 6 sNaN -> 403/404; 2000 qNaN alone or 50 sNaN alone -> correct. Registered as `rocprim-radix-sort-float-snan-corrupt` (deferred, rocm-bug-report, not filed; filing on ROCm/rocm-libraries with `bug` + `project: rocprim` is a person's call). CUDA's cub radix sort treats float keys as bit patterns, so upstream never sees this.
+
+```
+// hipcc --offload-arch=<gfx> -O2 radix_snan_synth.hip; ./a.out [nqnan=2000] [nsnan=50]
+#include <hip/hip_runtime.h>
+#include <hipcub/hipcub.hpp>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <random>
+#include <vector>
+#define CK(x) do { hipError_t e = (x); if (e != hipSuccess) { printf("%s\n", hipGetErrorString(e)); return 2; } } while (0)
+int main(int argc, char** argv) {
+  const int n = 136064, nq = argc > 1 ? atoi(argv[1]) : 2000, ns = argc > 2 ? atoi(argv[2]) : 50;
+  std::mt19937 g(0); std::normal_distribution<float> nd; std::uniform_int_distribution<uint32_t> u;
+  std::vector<float> k(n); for (auto& x : k) x = nd(g);
+  for (int i = 0; i < nq + ns; i++) {
+    uint32_t b = (u(g) & 0x80000000u) | 0x7f800000u | (u(g) % 0x3fffffu + 1) | (i < nq ? 0x400000u : 0u);
+    memcpy(&k[u(g) % n], &b, 4);
+  }
+  std::vector<int64_t> v(n); for (int i = 0; i < n; i++) v[i] = i;
+  float *dk, *dko; int64_t *dv, *dvo; void* tmp = nullptr; size_t tb = 0;
+  CK(hipMalloc(&dk, n * 4)); CK(hipMalloc(&dko, n * 4)); CK(hipMalloc(&dv, n * 8)); CK(hipMalloc(&dvo, n * 8));
+  CK(hipMemcpy(dk, k.data(), n * 4, hipMemcpyHostToDevice)); CK(hipMemcpy(dv, v.data(), n * 8, hipMemcpyHostToDevice));
+  CK(hipcub::DeviceRadixSort::SortPairs(tmp, tb, dk, dko, dv, dvo, n));
+  CK(hipMalloc(&tmp, tb));
+  CK(hipcub::DeviceRadixSort::SortPairs(tmp, tb, dk, dko, dv, dvo, n));
+  CK(hipMemcpy(v.data(), dvo, n * 8, hipMemcpyDeviceToHost));
+  std::vector<int> cnt(n, 0); long oob = 0, dup = 0, miss = 0;
+  for (int i = 0; i < n; i++) { if (v[i] < 0 || v[i] >= n) oob++; else cnt[v[i]]++; }
+  for (int i = 0; i < n; i++) { dup += cnt[i] > 1; miss += cnt[i] == 0; }
+  printf("n=%d qNaN=%d sNaN=%d: duplicated=%ld missing=%ld out_of_range=%ld -> %s\n", n, nq, ns, dup, miss, oob, (dup || miss || oob) ? "CORRUPT" : "ok");
+  return (dup || miss || oob) ? 1 : 0;
+}
+```
+
+Why the fix belongs in LiteGS and is safe for upstream to take: sorting uninitialized memory is a latent defect on any backend. With `torch::zeros`, the unused tail has depth 0, `get_allocate_size` already skips those points (it bounds by `valid_length`, and z <= 0.2 is invisible anyway), so their allocate size stays 0 and the prefix sum and binning are unchanged. The cost is one memset of `[B,4,N]` floats. `ndc_position` stays `torch::empty` (it is never sorted). No other sort in the trainer reads uninitialized data (`.sort(` sites: depth here, morton codes in `scene/point.py` over real points, tile blend counts that are fully written; `wrapper.py:692` is the pure-Python binning path, not used by the trainer).
+
+Also seen and left alone (upstream, benign, not ROCm-specific): `frustum_culling_aabb_kernel` writes `visibility[m]` with no `m < M` check, up to 255 bools past the end of an `M`-byte tensor. The caching allocator's 512-byte rounding absorbs it on both backends. The eval branch in `trainer.py` (`--test_epochs`) calls `render_preprocess`/`render` with the old signatures and would raise a TypeError. Use `example_metrics.py` for evaluation instead.
+
+### Environment (this host, this round)
+
+Image Python `/opt/python-3.11-venv` (read-only): torch `2.16.0a0+git6c3af02`, `torch.version.hip` `7.16.26385`, ROCm SDK from pip wheels `rocm-sdk-* 10.1.0` (`ROCM_HOME=.../site-packages/_rocm_sdk_devel`, no `/opt/rocm`), gfx90a MI250X, `HIP_VISIBLE_DEVICES=2`. This torch is a source build (`/var/lib/jenkins/pytorch` @ 6c3af02), not a released wheel. Extensions and Python deps go into the job venv, which sees the image site-packages through a `.pth` file. Deps: `plyfile<1.1 opencv-python-headless<4.11 matplotlib torchmetrics numpy==1.26.4` (plyfile 1.1.5 and opencv 4.11+ pull numpy 2, which this torch was not built against). torchvision is absent, so `example_metrics.py`'s LPIPS (VGG) cannot run and is stubbed to nan. SSIM and PSNR come from the script itself.
+
+Scene: the public 3DGS evaluation bundle `tandt_db.zip` (Tanks and Temples truck/train + Deep Blending playroom/drjohnson, COLMAP `sparse/0` + `images`), 682,628,995 bytes, sha256 `816e62f22a161abbfe841d2a6b10cdf036e297c9fa289b3bfeee9c6ec526d7e1`, from `https://huggingface.co/camenduru/gaussian-splatting/resolve/main/tandt_db.zip` (a mirror of repo-sam.inria.fr `.../datasets/input/tandt_db.zip`, same size). Used `tandt/truck` (251 images, 979x546), kept under the job directory.
+
+Build (from `/tmp`, non-editable as before):
+```
+export PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32
+git -C <src> submodule update --init --recursive
+for d in simple-knn fused_ssim gaussian_raster; do
+  python -m pip install --no-build-isolation --no-deps <src>/litegs/submodules/$d
+done
+```
+All three built cleanly. fused_ssim built with zero edits.
+
+Real-trainer runs. `example_train.py` itself is unchanged. A wrapper (`train_probe.py`, job scratch) runs it with `runpy` and wraps `fused_ssim.fused_l1_ssim_loss` to log per-step loss and the rendered-vs-GT PSNR of the training view:
+```
+python train_probe.py <src> -s tandt/truck -i images -m <out> --iterations 3000
+python train_probe.py <src> -s tandt/truck -i images -m <out_eval> --eval --iterations 3000
+python metrics_nolpips.py <src> -s tandt/truck -i images -m <out_eval> --eval   # example_metrics.py, LPIPS stubbed
+```
+- Before 633f0b7: 4/4 plain runs aborted (0x1016, epochs 2-6).
+- After 633f0b7: 3/3 runs complete 2761 iterations (11 epochs), all finite, about 29.5 s of training (37 s wall):
+  - run 1: iter 1 loss 0.28337 / PSNR 12.09 dB -> iter 2761 loss 0.07198 / 23.97 dB (first-50 mean 0.23253 / 13.52, last-50 mean 0.07702 / 22.80)
+  - run 2: 0.31778 / 10.54 -> 0.07016 / 22.43 (0.23046 / 13.75 -> 0.07950 / 22.53)
+  - run 3: 0.29844 / 11.25 -> 0.06918 / 22.75 (0.22543 / 13.88 -> 0.07631 / 22.89)
+- `--eval` run (220 train / 31 test frames): 2847 iterations, then `example_metrics.py`: Trainingset SSIM 0.7551 / PSNR 22.20 dB; **Testset SSIM 0.7488 / PSNR 21.80 dB** (LPIPS not measured). For scale, upstream's README reports truck at 25.78 dB after the full 30k iterations with 1M primitives.
+
+CUDA no-regression compile: not run (cuda-not-validated: no nvcc on this host, and a headless worker cannot dispatch to the nvcc fleet host). The CUDA-side delta of this round is `torch::empty` -> `torch::zeros` on one host-side tensor allocation plus README text, so the CUDA path changes no device code. It still owes an nvcc compile before the PR is presented.
+
+### PR preparation: commit messages need a squash or rewrite
+
+The three earlier fork commits carry in-house terms that `jargon.py --port LiteGS` reports (602ce5a: 3 hits, "MOAT" and `agent_space` paths; d7990e3: 7 hits, "moat-port" and the personal fork URL, `agent_space` test-plan lines; d65b6ab: 2 hits, plus `audit-commits` "body has no Test Plan"). They were not rewritten, because validated commits are not amended. The three new commits scan clean. Before any upstream PR, the history needs a person-made squash into clean messages (a PR-prep squash to an identical tree; `squash-carry-forward` exists for that).
+
+## Lesson for cuda-to-rocm: rocPRIM radix sort corrupts float keys that mix signaling and quiet NaNs (libraries.md)
+
+hipCUB/rocPRIM `DeviceRadixSort::SortPairs` on float keys that contain both signaling and quiet NaNs returns a broken permutation: values duplicated and missing, and output slots never written. CUDA's cub sorts the bit patterns and is unaffected. Either NaN kind alone sorts correctly. Uninitialized device memory (a `torch::empty` buffer only partly written by a kernel) is where such keys come from, and `torch.sort` on ROCm inherits the defect. The symptom is usually far from the sort: a later gather on the sorted indices trips torch's device-side index assert (`HSA_STATUS_ERROR_EXCEPTION 0x1016` naming `index_elementwise_kernel`) only when the stale slot happens to hold an out-of-range value, so the failure looks intermittent. Diagnose by checking the sort output right after the sort for duplicates (`bincount(idx).max() > 1`), not only for range. Fix on the caller's side: never sort uninitialized data (zero-fill the buffer or sort only the valid prefix). (LiteGS)
