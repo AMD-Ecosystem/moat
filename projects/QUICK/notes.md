@@ -1062,3 +1062,62 @@ Method as in the earlier rounds: each test of `test/testlist_short_gpu.txt` thro
 - `jargon.py --port QUICK`: clean (clone's local `master` = upstream 7e8aeb2c).
 - Integrity: `git -C projects/QUICK/src status --porcelain` shows no modified tracked files; the fork clone is at a49289d5.
 - Documentation: the HIP build is documented upstream (`CMake-Options.md`: `-DHIP=TRUE`, `-DHIP_TOOLKIT_ROOT_DIR`, and `QUICK_USER_ARCH` listing gfx90a), so the gfx90a build is reproducible from the docs. Correction to the 2026-08-09 "Jargon and documentation gates" note: `CMake-Options.md` does document HIP options and the HIP arch values, and it does not list the port's `gfx1100` value (`CMake-Options.md:33`). Not a gfx90a gate; flagged by both 2026-11-19 reviews for the PR-preparation round, and jeff may want it treated as a docs gate before the wave32 record.
+
+## CUDA no-regression compile 2026-11-19 (mi355 host, real nvcc, head a49289d5 vs merge base 7e8aeb2c): PASSED, same result as upstream
+
+Compile and link only; no NVIDIA GPU on this host, so upstream's `runtest --cuda --full` step was not run. No GPU of any kind was used. Fork clone at a49289d5 (`git status --porcelain`: no modified tracked files); merge base `git merge-base a49289d5 upstream/master` = 7e8aeb2c (= current merzlab/QUICK master), built from a `git worktree` of the same clone. The port diff over the base is `quick-cmake/QUICKCudaConfig.cmake` +34/-3, every hunk inside `if(HIP)` (lines 360-524; the CUDA block is `if(CUDA AND NOT HIP)` at 9-355).
+
+### Toolchain
+
+- nvcc: `/usr/local/cuda-12.8/bin/nvcc`, "Cuda compilation tools, release 12.8, V12.8.93" (standard `/usr/local/cuda` layout; this host has no `/opt/conda/envs`, so the conda env in the moat-porting skill does not exist here and is not needed)
+- gcc/g++/gfortran 13.3.0 (Ubuntu 24.04), CMake 3.31.6 (first `cmake` on PATH)
+
+### Recipe: upstream CI `.github/workflows/build_test_cuda.yml` (job build-and-test-cuda-cmake), as closely as the host allows
+
+Script applied identically to both trees (`$src` = the fork clone or the base worktree):
+
+```bash
+cd $src
+export CUDA_PATH=/usr/local/cuda-12.8
+export PATH=$PWD/install/bin:$CUDA_PATH/bin:$PATH
+export LIBRARY_PATH=$PWD/install/lib:$CUDA_PATH/lib64:$LIBRARY_PATH
+export LD_LIBRARY_PATH=$PWD/install/lib:$CUDA_PATH/lib64:$LD_LIBRARY_PATH
+export CC=gcc CXX=g++ FC=gfortran
+rm -rf build install && mkdir build && cd build
+cmake .. -DCOMPILER=GNU -DCUDA=TRUE -DQUICK_USER_ARCH=ampere -DCMAKE_INSTALL_PREFIX=$PWD/../install -DENABLEF=FALSE
+cmake --build . --parallel 32 --verbose
+cmake --install .
+```
+
+Host-forced deviations from CI, identical for both trees:
+
+- CUDA 12.8 instead of CI's 12.4; GCC 13.3 instead of 11 (what the host has). QUICK's own check printed "Checking CUDA and GNU versions -- compatible" in both.
+- `QUICK_USER_ARCH=ampere` fixed: CI derives it from `nvidia-smi`, and its fallback for an unknown GPU is also `ampere`. nvcc flags in both: `-gencode arch=compute_80,code=sm_80 -O2 --use_fast_math --compiler-options -fPIC`.
+- `--parallel 32` instead of 3 (both trees built concurrently, 64 jobs total = exported `MAX_JOBS`). Affects only wall time.
+- No `nvidia-smi`, no `runtest`.
+- No FindCUDA workaround was needed: unlike the 2026-08-09 conda split layout, `find_package(CUDA)` found `/usr/local/cuda-12.8` (version 12.8) directly under CMake 3.31.6, with only the CMP0146 dev warning (identical in both).
+
+### Result
+
+| | base 7e8aeb2c | port a49289d5 |
+|---|---|---|
+| configure / build / install exit | 0 / 0 / 0 | 0 / 0 / 0 |
+| wall (timeit, concurrent) | 53.7 s | 53.7 s |
+| `[ NN%]` build steps | 917 | 917 |
+| compiler/linker command lines (nvcc, gcc, g++, gfortran; paths normalized) | 1028 (263 nvcc) | identical set |
+| object files | 927 | identical names |
+| warning lines in build log | 23 | identical (diff empty) |
+| configure log | | identical except the "Configuring done (1.9s/2.0s)" time |
+| installed | `bin/quick quick.cuda test-api test-api.cuda`, `lib/libquick.so libquick_cuda.so` | same |
+
+A naive `grep '^\[ *[0-9]+%\]'` count shows 917 vs 916: in the port log, "Linking Fortran static library libxc.a" landed mid-line after an `ar` command (parallel output interleaving); `libxc.a` is built in both trees (10005334 bytes each).
+
+The 23 warnings are upstream's own (nvcc `#177-D`/`#550-D`/`#940-D` in `gpu_getxc.cu` and libxc `maple2c` sources, gcc `-Wstringop-overread` in `src/libxc/xc_f.c:97`), identical in both trees, so the port adds none.
+
+### Binary comparison (base vs port install trees)
+
+- `bin/quick`, `bin/quick.cuda`, `bin/test-api`, `bin/test-api.cuda`, `lib/libquick.so`: after `strip` and masking the build-directory path, they differ by 19-20 bytes, the GNU build-id note (20-byte SHA1). Exported dynamic symbols identical.
+- `lib/libquick_cuda.so`: the 3280 exported symbols are the same apart from the 8-hex prefix of `__cudaRegisterLinkedBinary_<id>_<n>_<file>_cu_<hash>` and `__fatbinwrap_...` on the 123 `-rdc` libxc/`gpu_getxc` units. That prefix is nvcc's module ID, derived from the source path (`.../quick-base/...` vs `.../quick-port/...`); the trailing hash is identical. Host `.text` disassembly (1259893 lines, `objdump -d -j .text`) is identical once addresses and that prefix are masked.
+- Device code: `cuobjdump -xelf all` gives 6 sm_80 cubins per tree. 4 are byte-identical. Cubin 2 (gpu_get2e etc.) is identical after masking the `_INTERNAL_<id>_` module-ID prefix. Cubin 6 (libxc) is identical after masking the module ID except 4 bytes, which are "base"/"port" in an embedded source path string (`.../agent_space/quick-base/src/libxc/...`).
+
+Conclusion: the CUDA configuration at a49289d5 compiles and links with real nvcc 12.8 and produces the same build as unmodified upstream at the merge base: same steps, same commands, same warnings, and binaries identical apart from path-derived IDs and build-ids. The CUDA no-regression gate owed at a49289d5 (Validation 2026-11-19 "Gates") is satisfied.

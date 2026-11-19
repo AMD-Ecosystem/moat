@@ -74,3 +74,5 @@
 {"kind":"session","ts":"2026-11-19T19:36:23Z","epoch":1795116983.00202,"event":"start","platform":"linux-gfx90a"}
 {"kind":"phase","ts":"2026-11-19T19:42:02Z","phase":"test","seconds":334.49,"exit":0,"cmd":"agent_space/lb/runall.sh /var/lib/jenkins/fleet/jobs/mi200-20261119-110120-quick-linkflag-prompt/moat/agent_space/quick-testtree/install/usr/local /var/lib/jenkins/fleet/jobs/mi200-20261119-110120-quick-linkflag-prompt/moat/agent_space/lb/val"}
 {"kind":"session","ts":"2026-11-19T19:42:34Z","epoch":1795117354.37619,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-19T21:14:23Z","phase":"compile","seconds":53.703,"exit":0,"cmd":"agent_space/scripts/cuda_build.sh agent_space/quick-port cmake"}
+{"kind":"phase","ts":"2026-11-19T21:14:23Z","phase":"compile","seconds":53.705,"exit":0,"cmd":"agent_space/scripts/cuda_build.sh agent_space/quick-base cmake"}
