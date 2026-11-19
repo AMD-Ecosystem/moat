@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-11-19T21:43:50Z",
-  "head_sha": "349fb05f985c7c12262b26336dd473ae76ad6b03",
+  "updated_at": "2026-11-19T22:34:44Z",
+  "head_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009",
   "depends_on": [],
   "waivers": {
     "windows": {
@@ -26,10 +26,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "349fb05f985c7c12262b26336dd473ae76ad6b03",
+      "validated_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009",
       "started_at": "2026-11-19T21:40:50Z",
       "completed_at": "2026-11-19T21:43:50Z",
-      "updated_at": "2026-11-19T21:43:50Z",
+      "updated_at": "2026-11-19T22:34:44Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -46,26 +46,25 @@
       "last_agent": "reviewer",
       "failed_sha": "a49289d5269210de98e5a97387c0d69d0c321a51",
       "validated_prior": [
-        "d369e07"
+        "d369e07",
+        "349fb05f985c7c12262b26336dd473ae76ad6b03"
       ],
       "carry_forward": {
-        "from": "a49289d5269210de98e5a97387c0d69d0c321a51",
-        "to": "349fb05f985c7c12262b26336dd473ae76ad6b03",
-        "method": "source-class",
-        "class": "doc-only",
-        "detail": "Docs gate closed: 349fb05f adds gfx1100 to the QUICK_USER_ARCH list in CMake-Options.md (doc-only delta over a49289d5); GPU pass at a49289d5 (37 PASS/3 SKIP/0 FAIL, W7800) stands; jargon clean",
-        "at": "2026-11-19T21:43:50Z",
-        "after_gate": "docs"
+        "from": "349fb05f985c7c12262b26336dd473ae76ad6b03",
+        "to": "378bd83a8ef13d97c4a2e2207c59774329f34009",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-19T22:34:44Z"
       }
     },
     "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "349fb05f985c7c12262b26336dd473ae76ad6b03",
+      "validated_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009",
       "started_at": "2026-06-05T00:11:32Z",
       "completed_at": "2026-11-19T19:42:29Z",
-      "updated_at": "2026-11-19T21:42:42Z",
+      "updated_at": "2026-11-19T22:34:44Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -83,15 +82,15 @@
       "failed_sha": "4b17590a1e7e9b7bb047fa9fbac6aec158f26a5b",
       "validated_prior": [
         "d369e071b2fbf5641fe239dcb4aab54334719aa5",
-        "a49289d5269210de98e5a97387c0d69d0c321a51"
+        "a49289d5269210de98e5a97387c0d69d0c321a51",
+        "349fb05f985c7c12262b26336dd473ae76ad6b03"
       ],
       "carry_forward": {
-        "from": "a49289d5269210de98e5a97387c0d69d0c321a51",
-        "to": "349fb05f985c7c12262b26336dd473ae76ad6b03",
-        "method": "source-class",
-        "class": "doc-only",
-        "detail": "no changes",
-        "at": "2026-11-19T21:42:42Z"
+        "from": "349fb05f985c7c12262b26336dd473ae76ad6b03",
+        "to": "378bd83a8ef13d97c4a2e2207c59774329f34009",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-19T22:34:44Z"
       }
     },
     "windows-gfx1101": {
@@ -164,6 +163,6 @@
     "since": "2026-11-19T21:43:07Z",
     "at": "2026-11-19T21:43:31Z"
   },
-  "reviewed_sha": "349fb05f985c7c12262b26336dd473ae76ad6b03",
+  "reviewed_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009",
   "porting": null
 }
