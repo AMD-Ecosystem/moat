@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "arrayfire-sparse-hipsparse",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Sparse (hipSPARSE generic-API) port deferred/stubbed off.",
+      "refs": [
+        "projects/arrayfire/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T18:21:59Z",
+      "decided": null
+    },
+    {
+      "id": "hipblaslt-du192-f16-batched-matmul-rocm101",
+      "kind": "other",
+      "component": null,
+      "summary": "On ROCm 10.1.x, af::matmul on f16 arrays with 3+ dims (hipblasHgemmBatched, src/backend/hip/blas.cu:300) with the lhs transposed, K >= 163840 and a small output (about M <= 8, or M x N up to 32x8) returns wrong or inf results with no error on gfx1201: rocBLAS hands pointer-array batched calls to hipBLASLt, whose DepthU-192 kernels overflow a 32-bit division of k (fixed in hipBLASLt 1.5.0 / ROCm 10.2 by ROCm/rocm-libraries#11961, no 10.1 backport). The identical library call measured 85.85 fp16 ulp at K = 200000; arrayfire itself was not built or run. Remedy if needed: on HIP, call hipblasGemmBatchedEx with an f32 output (COMPUTE_32F) and cast to f16; HSS is never offered a DepthU-192 kernel. The 2-D path and af::dot are clean.",
+      "refs": [
+        "https://github.com/ROCm/rocm-libraries/pull/11961",
+        "claude-shared plans/hipblaslt-du192-gfx12-port-exposure-audit.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-03T16:33:12Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-11-03T16:33:28Z",
+        "note": "Rare in practice (f16, long K, tiny output, 10.1 only); a fix round on the open upstream PR is not worth it for a case 10.2 removes."
+      }
+    },
+    {
+      "id": "arrayfire-reduce-by-key-rocm716",
+      "kind": "other",
+      "component": null,
+      "summary": "reduce_by_key (test_reduce_cuda, 479/1062 cases) fails on gfx1100 with the ROCm 7.16 SDK at both 950dcdd02 and the sync merge 5d09b5c0f: the block reduction returns a wrong reduced-key count (9-element snippet goes 9->2->2->-2) and createSubArray throws. Passed on ROCm 7.2/7.14. Not caused by the sync; root cause (port kernel exposed by a newer compiler vs ROCm regression) not yet found. hipcub in-place InclusiveSum and __shfl_down_sync/__any_sync with the 64-bit mask verified correct on this toolchain.",
+      "refs": [
+        "projects/arrayfire/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-11-04T19:52:55Z",
+      "decided": null
+    }
+  ]
+}
