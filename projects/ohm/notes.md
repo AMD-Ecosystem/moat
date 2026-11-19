@@ -1273,3 +1273,28 @@ Windows-specific build facts (environment, not port defects):
 - No `-fgpu-rdc` bundler fault, no 719, no DLL faults after staging.
 
 Checks: `python3 utils/jargon.py --port ohm` could not run here (no fork clone under the worktree); the 7c09435 tree and commit messages were scanned clean by the gfx90a and gfx1100 validators and nothing has changed since. readme.md has the "Building for AMD GPUs" section. CUDA gate: cuda-not-validated on this host (no CUDA toolkit; Windows).
+
+## Lesson for cuda-to-rocm: a per-backend directory is not a reason to add a HIP directory
+
+Written on this branch as an edit to the skill's strategy-a-cmake.md (and one pointer sentence in SKILL.md) before port branches were limited to their own folder; moved here unchanged on 2026-11-18 so the branch can merge the trunk.
+
+Projects with a GPU abstraction often keep one directory per backend (`gpu/cl/`, `gpu/cuda/`)
+and a target per backend. Do not add a third, copied `hip/` directory and `.hip` copies of the
+`.cu` files: that is thousands of lines of hipify output that must track every CUDA change.
+Masquerade the CUDA backend instead. A HIP option configures the existing CUDA targets, marks
+their `.cu` files `LANGUAGE HIP`, links `hip::host` where the CUDA build links cudart, and puts
+a shim directory on the HIP include path. Keep the CUDA target and type names; renaming them
+for HIP adds a diff and no behaviour. Three things nvcc did silently need stating:
+
+- nvcc implicitly includes `cuda_runtime.h` in every `.cu` file, so device code may use
+  `threadIdx` before any include. Add `$<$<COMPILE_LANGUAGE:HIP>:SHELL:-include cuda_runtime.h>`
+  so the HIP build does the same, through the shim.
+- The backend's `.cpp` files are host C++ under CUDA. Leave them `CXX`; marking them HIP adds a
+  device pass where `__HIP_DEVICE_COMPILE__` guards hide host-only declarations they use.
+- Every `__CUDACC__` check gains `|| defined(__HIPCC__)`, and every `__CUDA_ARCH__` device-pass
+  check gains `__HIP_DEVICE_COMPILE__`. Preprocess the `.cu` files before and after with
+  `-D__CUDACC__` (and `-D__CUDA_ARCH__=700`) to show the CUDA build sees identical code.
+
+ohm's first port added such a directory (~3,800 lines). The masquerade was +157/-16 over
+24 files and passed the same GPU tests (8/8 and 58/58 on gfx90a). (ohm)
+
