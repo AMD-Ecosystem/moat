@@ -2911,3 +2911,51 @@ Build: three flags the README lacks (above); 16m32s vs 18m51s (gfx942) and 10m04
 CUDA gate: not run (no CUDA toolkit on this host; recorded at this head by the linux-gfx950 host). `python utils/jargon.py --port Quest` clean (needs local `main` and `moat-port` branches in the clone). The README documents the ROCm build beside the CUDA build, but only the Linux command (see the finding above).
 
 State: windows-gfx1151 `completed` at `6e7d8db` (windows gate), with the build finding above carried to the porter.
+
+## Porter round 2026-11-19 (windows-gfx1151): the README's ROCm command works on Windows -- fork `a70f4d9`
+
+Answers the build finding of the windows-gfx1151 validation at `6e7d8db`. One commit on top, nothing rewritten: `a70f4d9` `[ROCm] Make the documented ROCm build command work on Windows` (`quest/ops/CMakeLists.txt` +47/-5, `README.md` +10). CUDA path, kernels and tests untouched (every CMake change is in the `USE_HIP` branch; the Windows parts are under `CMAKE_HOST_WIN32`/`WIN32`).
+
+Environment: the validation's (`torch312_venv`, torch 2.12.0+rocm7.14, ROCm SDK 7.14 devel, CMake 3.31.0, Ninja, VS 2022 BuildTools 14.44 with LIB/INCLUDE in the environment), `agent_space/quest_win_env.sh`.
+
+### Reproduction at `6e7d8db` (README command as written, fresh build dir each, configure only)
+
+1. Env `CC`/`CXX` = clang-cl: CXX identified "Clang 23.0.0 with MSVC-like command-line", HIP found on its own as GNU-like `clang++`, HIP compiler check broken: `clang++: error: no such file or directory: '/machine:x64'`. Root cause: `Platform/Windows-Clang.cmake` is include-guarded and takes MSVC-style rules for all languages from the first language (CXX via `project()`), so the GNU-style HIP link gets MSVC link flags.
+2. `CC`/`CXX` unset: CMake takes MSVC `cl.exe` for CXX, then `enable_language(HIP)` dies "The current configuration mixes Clang and MSVC". Root cause: nothing tells CMake to use clang for C++; CMake's default Windows C++ compiler is cl.
+3. Both compilers = ROCm `clang++.exe`: configures, `CMAKE_BUILD_TYPE=Debug`, Python = system 3.13 from the registry. Root cause (build type): `Platform/Windows-Clang.cmake:238` sets `CMAKE_BUILD_TYPE_INIT Debug`, which `project()` writes into the cache, so the port's `if(NOT CMAKE_BUILD_TYPE ...)` after `enable_language(HIP)` saw `Debug` and never fired (on Linux the INIT value is empty, which is why it worked there). Root cause (Python): FindPython on Windows searches the registry first and honours a virtual environment only through `VIRTUAL_ENV`/`CONDA_PREFIX` (an activated environment), not through PATH order; the validator's venv was on PATH but not activated. With the venv activated (`Scripts/activate`) FindPython picks `torch312_venv/Scripts/python.exe` with no project change.
+4. Found while proving the fix (masked in the validation by `PYTORCH_ROCM_ARCH=gfx1151` in the env script): with `PYTORCH_ROCM_ARCH` unset, `-DCMAKE_HIP_ARCHITECTURES=gfx1151` alone fails in `find_package(Torch)`: `LoadHIP.cmake:70 No GPU arch specified for ROCm build`. torch's `torch_hip_get_arch_list` reads only `ENV{PYTORCH_ROCM_ARCH}` or `rocm_agent_enumerator`, which ROCm does not ship on Windows. With no architecture at all, CMake also silently caches `gfx906`.
+
+### The change
+
+- Build type: the Release default moves before `project()` (HIP branch of the existing `if(NOT USE_HIP)` block), condition `NOT CMAKE_BUILD_TYPE AND NOT GENERATOR_IS_MULTI_CONFIG` (the global property is set before `project()`; checked with Ninja = 0, Ninja Multi-Config = 1). Linux: same effect as before (cache entry Release when unset; `project()` does not overwrite an existing cache entry).
+- C++ compiler on Windows, before `project()`, only when neither `CMAKE_CXX_COMPILER` nor `ENV{CXX}` is given: `CMAKE_HIP_COMPILER` if given, else `ENV{HIPCXX}`, else `<hipconfig --hipclangpath>/clang++.exe` (`find_program(hipconfig)` on PATH with `HIP_PATH`/`ROCM_PATH` hints; the pip SDK puts `hipconfig.exe` in the venv `Scripts`), and in that last case `CMAKE_HIP_COMPILER` too, so both are one driver. If nothing is found CMake falls back to cl and the check below fires.
+- After `project()`, `WIN32` + `CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"`: FATAL_ERROR naming the fix (unset CXX or `-DCMAKE_CXX_COMPILER=<ROCm>/lib/llvm/bin/clang++.exe`, fresh build dir). Verified for env `CXX=clang-cl.exe` and `CXX=cl.exe` (MSVC sets the variant to MSVC too).
+- `WIN32` and no architecture before `enable_language(HIP)`: FATAL_ERROR asking for `-DCMAKE_HIP_ARCHITECTURES` or `PYTORCH_ROCM_ARCH` (verified). After it, `WIN32` and `ENV{PYTORCH_ROCM_ARCH}` undefined: set it (configure-process environment only) to the resolved architecture list for `find_package(Torch)`.
+- README: a Windows paragraph and PowerShell block under "Building on AMD GPUs (ROCm)": x64 build tools environment, activated Python environment (else `-DPython_EXECUTABLE=<path to python.exe>`), always name the architecture, leave `CXX` unset.
+
+### Documented Windows command (as run, PowerShell, venv activated via `Activate.ps1`; CC, CXX, PYTORCH_ROCM_ARCH unset)
+
+```
+cd quest\ops
+mkdir build; cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 `
+  "-DCMAKE_PREFIX_PATH=$(python -c 'import torch;print(torch.utils.cmake_prefix_path)')" ..
+ninja
+copy _kernels*.pyd ..\..\
+```
+
+Run as `agent_space/quest_porter/readme_build.ps1` through `utils/timeit.sh Quest compile` (the script adds only `$LASTEXITCODE` checks). Configure: CXX and HIP both `clang++.exe` (GNU-like), `CMAKE_BUILD_TYPE=Release`, Python `torch312_venv/Scripts/python.exe` 3.12.10, "Building PyTorch for GPU arch: gfx1151", `-O3` on all 8 compile lines, `--offload-arch=gfx1151`. Build 8/8, exit 0, 0 errors, 1520 s wall (a concurrent configure check ran during it; the validation's 991 s is the clean figure). No generated file edited; the `-fuse-ld=lld-link` link warning only, as before.
+
+### Tests (`utils/timeit.sh Quest test`, `ulimit -c 0`, transformers 4.37.2)
+
+```
+PYTHONPATH=<fork> python -m pytest <fork>/quest/tests --rootdir <fork> -p no:cacheprovider -q
+```
+
+**202 passed, 28 skipped, 0 failed** (17.3 s), identical to the validation. Fresh `.pyd` from this build (the old one was moved aside first); the ROCm runtime DLLs staged in `quest/` per this host's System32 `amdhip64_7.dll` problem (environment, not documented in the README). End-to-end not repeated (unaffected).
+
+`python utils/jargon.py --port Quest` clean; commit ASCII-only, LF. Linux hosts revalidate at `a70f4d9`: on Linux the only behavioural difference is where the Release default is set (same result). The old validation build was moved to `agent_space/tmp/quest_build_6e7d8db`.
+
+## Lesson for cuda-to-rocm: a pip ROCm torch on Windows needs PYTORCH_ROCM_ARCH for find_package(Torch)
+
+For `references/windows.md`, "CMake and compiler drivers" (beside the `rocm_agent_enumerator`/gfx906 fallback note). A CMake torch extension on Windows that names its target with `-DCMAKE_HIP_ARCHITECTURES` still fails in `find_package(Torch)` with `LoadHIP.cmake: No GPU arch specified for ROCm build`: torch's `torch_hip_get_arch_list` reads only the `PYTORCH_ROCM_ARCH` environment variable or `rocm_agent_enumerator`, which ROCm does not ship on Windows. A build environment that exports `PYTORCH_ROCM_ARCH` hides this from whoever writes the README. Fix in the project: on `WIN32`, when `ENV{PYTORCH_ROCM_ARCH}` is undefined, `set(ENV{PYTORCH_ROCM_ARCH} ...)` from the resolved `CMAKE_HIP_ARCHITECTURES` before `find_package(Torch)`, and stop with a message when no architecture is given at all. Also: the Release-default idiom (`if(NOT CMAKE_BUILD_TYPE) set(... Release ...)`) must run before `project()` on Windows, because `Windows-Clang.cmake` sets `CMAKE_BUILD_TYPE_INIT Debug` and `project()` caches it; and FindPython on Windows follows an activated environment (`VIRTUAL_ENV`/`CONDA_PREFIX`), not PATH order. (Quest)
