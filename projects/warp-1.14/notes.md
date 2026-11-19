@@ -1990,3 +1990,50 @@ int main()
 
 ### 4. notes.md merge untangled
 The first gfx942 evidence section (commit `42c8596b`) had been interleaved with the first gfx1100 section (`e12a96ff`, committed on top through a union merge): the gfx1100 heading appeared right after "Same loop as step 1 of session 4", and the gfx942 A.2 table, A.3, C and Next step followed inside the gfx1100 text. Rebuilt in this session (script `agent_space/p6/rebuild.py`): the gfx942 section is now its own commit's text, verbatim and contiguous (272 lines from `git show 42c8596b:projects/warp-1.14/notes.md`), followed by the gfx1100 section, which is the 401 lines only it wrote, in their original order (`difflib` alignment against the gfx942 text: all 272 gfx942 lines matched in order, the rest unmatched), plus copies of the 23 lines the union merge had kept only once because both sessions wrote them identically: the 15-line tile-set table after the B.2 heading (gfx942's A.2 table had the same rows and failures), the four fp64 64x64 "(no launch)" rows ending the B.3 table, and four blank lines around them. A line-multiset check showed no line of the old region missing from the new one. A blank line was also added between the second gfx942 section and the second gfx1100 heading, which had been joined without one (that pair was not interleaved). Nothing else changed.
+
+### 5. Full Phase 1-5 set on gfx950 at `2f5b9d65` (wave64 half of the same-head requirement)
+82 patterns, one per line, `python -m warp.tests -s autodetect -p "<pattern>" -m 32`, one GPU (list in the Next step below; 1695 s under `utils/timeit.sh warp-1.14 test`). 80 OK, 2 not OK:
+- Phase 1: test_codegen 117, test_snippet 12, test_arithmetic 126, test_math 16, test_fp16 6, test_bf16 48, test_atomic 164, test_atomic_bitwise 6, test_atomic_cas 48, test_array 139, test_copy 14, test_launch 32, test_fast_math 12 (1 skipped, PTX check), test_grad 41, test_kernel_cache 5, test_module_hashing 8, test_print 10, test_mat* 601, test_vec* 531, test_quat* 173, test_spatial* 207, test_rand 10, test_noise 14, test_clang_cuda 7 (6 skipped, NVIDIA-only): all OK.
+- Phase 2: test_runlength_encode 16, test_array_reduce 16, test_sparse 47, test_linear_solvers 34, test_coloring 3, test_bvh 13, test_grouped_bvh 11, test_hash_grid 23, test_marching_cubes 17, test_mesh* 49, test_volume 59, test_volume_write 5, test_apic 52, test_apic_mesh 12: OK. **test_fem* 107, failures=2**: `test_gimp_quadrature` and `test_cube_shape_functions`, "Unexpected output" holding Warp's init greeting, the upstream test-isolation behaviour recorded in session 2 and on gfx1100 (B.4); not a port defect.
+- Phase 3: test_graph 35 (3 skipped), test_array_fill_capture 3, test_capture_mode 2, test_conditional_captures 32 (16 skipped, Q4), test_conditional 50, test_async 2373, test_mempool 7 (2 skipped), test_pinned 1, test_unified_memory 27 (8 skipped), test_occupancy 6, test_allocator 16 (3 skipped), test_allocation_tracker 34, test_dlpack 16, test_torch 34, test_map 45, test_reload 14, test_cuda_arch_suffix 10 (all skipped, NVIDIA-only): OK. **test_streams 24, failures=1 (2 skipped)**: `test_stream_priority_timings_cuda_0`, "0.8098440170288086 not less than 0.80976402759552". Rerun of `-k priority` three times: OK, OK, FAILED (0.8380 vs 0.8362). So C4 is not gfx942-only: on gfx950 too the two streams finish within 0.3% of each other and the order is a coin toss; its session 3 pass was luck. C4's proposal (above) now covers both wave64 targets.
+- Phase 4: all 22 tile files plus test_block_dim_dispatch 2 and test_template_launch_bounds 36: the session 4 counts (636 run, 10 upstream no-libmathdx skips), all OK.
+- Phase 5: test_texture 70 (17 skipped: the CUDA-only registrations with an empty device list on this GPU without image support), OK.
+
+### Next step (Phase 5 boundary, head `2f5b9d65`)
+The project stays in `porting`, lock held by linux-gfx950. Use the common setup of the session 4 handoff (TheRock 10.2 wheels with `device-<gfx>`, `export PATH=$FLEET_VENV/bin:$PATH` before `$(rocm-sdk path --root)`, `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch <gfx> -j <physical cores>`, `git lfs pull`, private `WARP_CACHE_PATH`, `ulimit -c 0`), with `git rev-parse HEAD` = `2f5b9d657295a2d5ba5371ae1f7ff4582ade7acf` (or the later recorded `head_sha`), from `projects/warp-1.14/src`.
+
+**B. wave32 Radeon host (gfx1100 or gfx1201), re-run at the new head (the Phase 5 proof and the wave32 half of the same-head requirement):**
+1. `python -m warp.tests -s autodetect -p test_texture.py -m 32`: expect Ran 120, OK (skipped=1, the `test_texture_unsupported_device_raises` placeholder).
+2. `python sdf_probe.py cpu` then `python sdf_probe.py cuda:0` (script in Porting session 5, Phase 5): PASS; record the three differences.
+3. `python tex_alias.py cuda:0` (script in Porting session 6, item 1): PASS, 0 wrong plain and under capture. It exercises the external-array path added in review, which no test covers.
+4. The two HIP reproducers (sources in Porting session 6, item 2), built with `clang++ -x hip --rocm-path=$R --offload-arch=<gfx> -O2 <file>.cpp -o <name> -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib`: `./m3d_pageable 64 64` and `./m3d_capture`; record whether each reproduces as the gfx1100 session described (pageable: all elements wrong for both APIs; capture: the driver call with 0 graph nodes and all wrong after replay, the runtime call 2 nodes and 0 wrong). If one does not reproduce, say so: the registration text then needs `deferred.py amend`.
+5. The full Phase 1-5 set, one pattern per line:
+```
+for p in test_codegen.py test_snippet.py test_arithmetic.py test_math.py test_fp16.py test_bf16.py test_atomic.py \
+    test_atomic_bitwise.py test_atomic_cas.py test_array.py test_copy.py test_launch.py test_fast_math.py test_grad.py \
+    test_kernel_cache.py test_module_hashing.py test_print.py 'test_mat*.py' 'test_vec*.py' 'test_quat*.py' \
+    'test_spatial*.py' test_rand.py test_noise.py test_clang_cuda.py \
+    test_runlength_encode.py test_array_reduce.py test_sparse.py test_linear_solvers.py test_coloring.py \
+    test_bvh.py test_grouped_bvh.py test_hash_grid.py test_marching_cubes.py 'test_mesh*.py' test_volume.py \
+    test_volume_write.py test_apic.py test_apic_mesh.py 'test_fem*.py' \
+    test_graph.py test_array_fill_capture.py test_capture_mode.py test_conditional_captures.py test_conditional.py \
+    test_async.py test_streams.py test_mempool.py test_pinned.py test_unified_memory.py test_occupancy.py \
+    test_allocator.py test_allocation_tracker.py test_dlpack.py test_torch.py test_map.py test_reload.py \
+    test_cuda_arch_suffix.py \
+    test_tile.py test_tile_atomic_bitwise.py test_tile_cholesky.py test_tile_cholesky_no_mathdx.py test_tile_empty.py \
+    test_tile_fft.py test_tile_fft_no_mathdx.py test_tile_func_arg.py test_tile_fused_ops.py test_tile_large_offsets.py \
+    test_tile_load.py test_tile_mathdx.py test_tile_matmul.py test_tile_matmul_no_mathdx.py test_tile_mlp.py \
+    test_tile_reduce.py test_tile_shared_memory.py test_tile_solve.py test_tile_solve_no_mathdx.py test_tile_sort.py \
+    test_tile_stack.py test_tile_view.py test_block_dim_dispatch.py test_template_launch_bounds.py \
+    test_texture.py; do
+  python -m warp.tests -s autodetect -p "$p" -m 32
+done
+```
+   Expected: gfx1100 B.4 counts for Phase 1-3, with test_atomic_cas now 48 (24 new cases) and test_array 139; the tile set 636 run, 10 skipped, 0 failures (the sizing commits), with no "Failed to configure kernel dynamic shared memory" warning from `test_tile_shared_mem_func`; test_texture 120 OK. Known non-port failures: the two fem isolation tests (`test_gimp_quadrature`, `test_cube_shape_functions`). Anything else is a finding.
+6. The CPU-only suite with GPUs hidden: `HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32`: expect Ran 2294, OK (skipped=15) (session 5 on gfx950).
+
+**What remains before Phase 6 (Windows gfx1151):**
+1. B above passes at the head gfx950 passed (`2f5b9d65`, or a later head both re-run). Then both Linux wave families have passed the Phase 1-5 set at the same head, which the rule asks before Windows.
+2. A new head means the wave64 set runs again on gfx950 (this section's item 5 is the reference). If B needs a fix, the gfx950 re-run follows that fix.
+3. Decisions for Jeff that change code or tests before the line can close (none blocks starting Phase 6, but each may move the head): the 64 KiB tile sizing (`59d873af` + `2f5b9d65`) vs capability skips; C4 (`test_stream_priority_timings`, now seen on gfx942 and gfx950); device textures on gfx942/gfx950 (refuse, as now, or GPU software sampling); `__frsqrt_rn`/`OCML_BASIC_ROUNDED_OPERATIONS` and the lane-mask documentation; defer/now on the six undecided `rocm-bug-report` entries (`python3 utils/deferred.py pending`: `hip-graph-memcpy-host-graph-alloc-device-mismatch`, `hip-mempool-set-access-cannot-revoke`, `hip-graph-multi-device-kernel-nodes`, `amdgpu-earlycse-sqrt-keeps-fpmath`, `hip-memcpy3d-async-pageable-host-read-after-return`, `hip-drv-memcpy3d-async-not-captured`); the Q3 matrix-core ruling (numbers for gfx950, gfx942 and gfx1100 are in these notes).
+4. Phase 6 itself (not started, as instructed): the plan's Phase 6 section (clang-cl/ROCm clang branch of `build_dll.py`, DLL loading by path, the Phase 1-5 set within the APU's limits) on windows-gfx1151, after item 1.
