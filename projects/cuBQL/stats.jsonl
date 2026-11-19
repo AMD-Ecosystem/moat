@@ -40,3 +40,11 @@
 {"kind":"phase","ts":"2026-06-19T21:43:04Z","phase":"test","seconds":0.071,"exit":0,"cmd":"bash -c \n  cd 'projects/cuBQL/src/build-hip-gfx1101' &&   ./cuBQL_sample01_points_closestPoint_cpu.exe\n"}
 {"kind":"session","ts":"2026-06-19T21:44:10Z","epoch":1781905450.589959800,"event":"end","platform":"windows-gfx1101"}
 {"kind": "tokens", "ts": "2026-06-19T21:44:49Z", "tokens": 55839, "source": "validator (gfx1101)"}
+{"kind":"session","ts":"2026-11-19T03:25:39Z","epoch":1795058739.993682,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-19T03:29:45Z","phase":"compile","seconds":10.752,"exit":0,"cmd":"cmake --build projects/cuBQL/src/build-base -j 64 --target cubql_builder_leaves"}
+{"kind":"phase","ts":"2026-11-19T03:30:20Z","phase":"compile","seconds":10.341,"exit":0,"cmd":"cmake --build projects/cuBQL/src/build-hip -j 64 --target cubql_builder_leaves"}
+{"kind":"phase","ts":"2026-11-19T03:31:55Z","phase":"test","seconds":0.044,"exit":0,"cmd":"ctest --output-on-failure -R builder_leaves"}
+{"kind":"phase","ts":"2026-11-19T03:32:02Z","phase":"test","seconds":2.043,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi355-20261118-191949-cubql-followup-porter-prompt/moat/projects/cuBQL/src/build-hip --output-on-failure -R builder_leaves"}
+{"kind":"phase","ts":"2026-11-19T03:32:47Z","phase":"compile","seconds":15.087,"exit":0,"cmd":"cmake --build projects/cuBQL/src/build-cuda -j 64 --target cuBQL_cuda_float3 cubql_builder_leaves cubql_morton_sort_range"}
+{"kind":"phase","ts":"2026-11-19T03:33:00Z","phase":"compile","seconds":5.109,"exit":0,"cmd":"cmake --build projects/cuBQL/src/build-hip -j 64 --target cuBQL_cuda_float3 cuBQL_sample01_points_closestPoint_cuda cuBQL_sample01_points_closestPoint_wideBVH_cuda sample02_distanceToTriangleMesh sample03_insideOutside sample04_boxOverlapsOrInsideSurfaceMesh sample05_lineOfSight sample06_anyTriangleWithinRadius sample07_aggregateNBody cuBQL_cpu_float3 cuBQL_sample01_points_closestPoint_cpu cubql_builder_leaves"}
+{"kind":"session","ts":"2026-11-19T03:35:45Z","epoch":1795059345.774719,"event":"end","platform":"linux-gfx950"}

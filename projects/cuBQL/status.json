@@ -7,23 +7,19 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-15T22:09:37Z",
-  "updated_at": "2026-11-19T03:25:37Z",
-  "head_sha": "b0ea6a1712b40809df28950c9bb3746bc6e99083",
+  "updated_at": "2026-11-19T03:35:45Z",
+  "head_sha": "e26657f9f72a6febac3deb0027a10661fb3905a0",
   "depends_on": [],
   "pr_url": "https://github.com/NVIDIA/cuBQL/pull/35",
   "pr_number": 35,
   "pr_opened_at": "2026-06-17T00:33:21Z",
   "pr_merged_at": "2026-06-18T18:53:23Z",
-  "porting": {
-    "arch": "linux-gfx950",
-    "since": "2026-11-19T03:25:37Z",
-    "holder": "d11d62a29ec8"
-  },
+  "porting": null,
   "waivers": {},
   "pr_state": "merged",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 1072553476,
-  "stage": "porting",
+  "stage": "delta-ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -139,7 +135,7 @@
       "failed_sha": null,
       "started_at": "2026-11-19T03:25:37Z",
       "completed_at": null,
-      "updated_at": "2026-11-19T03:25:37Z",
+      "updated_at": "2026-11-19T03:35:45Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -155,5 +151,10 @@
       }
     }
   },
-  "published_sha": "b0ea6a1712b40809df28950c9bb3746bc6e99083"
+  "published_sha": "b0ea6a1712b40809df28950c9bb3746bc6e99083",
+  "porting_released": {
+    "arch": "linux-gfx950",
+    "since": "2026-11-19T03:25:37Z",
+    "at": "2026-11-19T03:35:45Z"
+  }
 }

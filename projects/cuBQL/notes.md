@@ -297,3 +297,90 @@ HIP_VISIBLE_DEVICES=1 ./build-hip-gfx1101/sample06_anyTriangleWithinRadius.exe $
 HIP_VISIBLE_DEVICES=1 ./build-hip-gfx1101/sample07_aggregateNBody.exe
 ./build-hip-gfx1101/cuBQL_sample01_points_closestPoint_cpu.exe
 ```
+
+## Follow-up round 2026-11-19 (porter, linux-gfx950): rocPRIM bit-range sort workaround
+
+Requested by jeff: prepare and validate the cuBQL side of the rocPRIM radix sort defect (ROCm/rocm-libraries#16299) on the fork. He has NOT approved opening an upstream PR; the draft below waits for his decision. Background, root cause and the original patch: the claude-shared plan `rocm-defects-from-warp-port-reproducers-mi355.md` ("Defect A", "cuBQL impact").
+
+### Record path taken
+
+- PR #35 was merged by a real merge commit (`d1bfc3c`, parents `e82f1dc` + `b0ea6a1`), not squashed: `published_sha` `b0ea6a1` is an ancestor of upstream main, so the mirror could be synced past it.
+- The folder was trunk-resident at `review-passed` with no `port/cuBQL`. No CLI command re-homes a merged (not maintained, not open-PR) project before the lock is taken: `fix-branch` needs an open PR, `sync-branch` a maintained fork, and `advance-head` re-homes but porter.md says to run it from inside `porting`, while `set-state ... porting` on `main` would commit the lock to the trunk. Ran the tooling's own `moatlib.ensure_port_branch('cuBQL')` (the step `advance-head`/`fix-branch` run first; it only pushes `port/cuBQL` cut from origin/main, no state change), checked out `port/cuBQL`, ran orient (it offered nothing for cuBQL, as expected), then `set-state cuBQL linux-gfx950 porting` (legal `review-passed -> porting` edge).
+- `moatlib.py mirror-branch cuBQL`: fork `main` fast-forwarded `e82f1dc -> 6bd4a51` (upstream main, 2026-11-14).
+- `moat-port`: `git merge --ff-only upstream/main` (b0ea6a1 is an ancestor, so the merge is a fast-forward; no rewrite), then one commit `e26657f` "[ROCm] Sort all 64 bits where builders key on the upper half" (builder fix + new test). Pushed plainly `b0ea6a1..e26657f`; `advance-head cuBQL e26657f...` from inside `porting`. `jargon.py --port cuBQL`, `audit-commits cuBQL`, `prose.py` on the commit body: clean.
+
+### The change
+
+`builder_common.h` defines `CUBQL_UPPER_HALF_SORT_BEGIN_BIT` (0 under `__HIPCC__`, 32 otherwise); the four `[32,64)` sorts (`sm_builder.h`, `sah_builder.h`, `elh_builder.h` SortKeys of PrimState words; `rebinMortonBuilder.h` `keyValueSort` of RebinRange words) use it as begin bit with end bit 64. Same as the plan's patch, plus two comment sentences (the exact key range, and why not [32,63)).
+
+### Open question settled: [32,63) is NOT valid; kept [0,64)
+
+[32,63) is exact and stable only if bit 63 of every sorted word is 0. Value ranges from the code (upstream main `6bd4a51`):
+
+- PrimState (`sm_builder.h:12-24`, used by SAH and ELH too): `{primID:31, done:1, nodeID:32}`, sorted word bits 32..63 = nodeID. `initPrims` sets `nodeID = (uint32_t)-1` for every invalid prim (box lower > upper) (`sm_builder.h:87`, `sah_builder.h:143`, `elh_builder.h:163`); `updatePrims` skips `done` prims, so the sentinel reaches the sort, and the struct comment says the layout is chosen so nodeID -1 sorts last. `writePrimsAndLeafOffsets` relies on that (`(int)ps.nodeID < 0` skip). So bit 63 is 1 for every invalid prim. Also, nodes are allocated `2*numPrims` and primID has 31 bits, so for more than 2^30 prims real node IDs reach 2^31 and have bit 63 set.
+- RebinRange (`rebinMortonBuilder.h:890-898`): upper half = `beginOfRebinPrimRange`, from `atomicAdd` on the `int` counter `numBroadPhaseRebinPrims` (`:1143`), bounded by numPrims, distinct per range, no sentinel. Bit 63 is always 0 here, so [32,63) would be valid for this one sort only.
+
+Since the prim builders fail the criterion, [32,63) is not valid for every affected sort; one macro with [0,64) everywhere.
+
+Evidence (agent_space/sortbench.hip, hipcub SortKeys on PrimState-shaped words, ~1% sentinel prims, median of 50, MI355X gfx950, ROCm 10.2.0, rocPRIM 4.8.0):
+
+    collision [0,64):  out = node 7fffffff, node ffffffff -> invalid prim last
+    collision [32,63): out = node ffffffff, node 7fffffff -> invalid prim NOT last
+    n=20000    [0,64) 0.0419 ms   [32,63) 0.0374 ms   [32,64) 0.0387 ms NOT GROUPED
+    n=200000   [0,64) 0.0696 ms   [32,63) 0.0655 ms   [32,64) 0.0633 ms NOT GROUPED
+    n=1048576  [0,64) 0.1772 ms   [32,63) 0.1686 ms   [32,64) 0.1564 ms NOT GROUPED
+    n=4194304  [0,64) 0.3641 ms   [32,63) 0.2024 ms   [32,64) 0.1920 ms (onesweep, correct)
+
+So [0,64) costs 5-12% over [32,63) up to 2^20 keys and 0.16 ms more at 4M keys (8 digit passes instead of 4); small next to a build. The tree checker passes with both forms at the tested sizes (135/135 each; agent_space/cubql-63 is the [32,63) variant), because a node ID of 0x7FFFFFFF needs about 2^30 prims: the checker cannot tell the forms apart, the code reading and the collision check do.
+
+### Test added to cuBQL (step 3)
+
+`tests/builder_leaves.cu` + 9 lines in `tests/CMakeLists.txt`, beside upstream's `morton_sort_range.cu` and in its style (CUDA spelling, `CUBQL_BUILD_TESTS=ON`, `add_test`). It links `cuBQL_cuda_float3` (the precompiled builders), is built under `CUBQL_HAVE_CUDA OR CUBQL_HAVE_HIP` and marked `LANGUAGE HIP` under `CUBQL_USE_HIP` (as the samples are). It is `cubql_check.hip` from the plan, minus the useless tree hash, plus a third scene: uniform with every 97th box inverted, run through the three prim builders only (the radix builders require nonempty boxes), so the `(uint32_t)-1` sentinel goes through the sort and the check asserts no invalid prim is referenced. 3 scenes x 3 sizes (1000, 20000, 200000) x leaf 1/4/8 x builders = 135 checks, 2.0 s on gfx950.
+
+### Build and results (linux-gfx950, MI355X, ROCm 10.2.0 TheRock wheels, HIP_VISIBLE_DEVICES=2, ulimit -c 0)
+
+ROCm 10.2 installed into the job directory (the job venv links the image's 10.1; installing over it would touch the shared env):
+
+    $FLEET_VENV/bin/python -m pip install --target <job>/rocm-10.2 --index-url https://stable.repo.amd.com/rocm/whl-next/ 'rocm[libraries,devel]==10.2.0' rocm-sdk-device-gfx950==10.2.0
+    PYTHONPATH=<job>/rocm-10.2 $FLEET_VENV/bin/python -m rocm_sdk init
+    R=<job>/rocm-10.2/_rocm_sdk_devel
+    cmake -S projects/cuBQL/src -B projects/cuBQL/src/build-hip -G Ninja -DCUBQL_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx950 \
+      -DCMAKE_BUILD_TYPE=Release -DCUBQL_BUILD_TESTS=ON -DCMAKE_PREFIX_PATH=$R \
+      -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_HIP_COMPILER_ROCM_ROOT=$R -DCMAKE_BUILD_RPATH=$R/lib
+    cmake --build projects/cuBQL/src/build-hip -j 64 --target cuBQL_cuda_float3 cubql_builder_leaves <the 8 GPU samples> cuBQL_cpu_float3 cuBQL_sample01_points_closestPoint_cpu
+    ctest --test-dir projects/cuBQL/src/build-hip -R builder_leaves --output-on-failure
+
+- Unpatched builders (upstream main + the new test, build-base): 65 ok, 17 FAILED (uniform 20000/200000 leaf 4/8 and clustered 20000 for spatial median/SAH/ELH, e.g. `uniform n=20000 leaf=4 spatial median FAILED (missing 9111, duplicated 5896)`), then clustered 200000 rebinRadix: illegal memory access in `rebinRadixBuilder_impl::broadPhaseCreateNodes`, `cudaEventSynchronize` code 700. Matches the plan's table.
+- Patched (`e26657f`): `cubql_builder_leaves` 135/135 ok, ctest 1/1 passed.
+- Samples on the patched build: s01 closest point (binary and wide BVH) exit 0, both identical to the CPU sample's 20 answers; s07 aggregateNBody exit 0; CPU sample exit 0. s02-s06 not run: they need `bunny.obj`, absent on this host (not in the repo; earlier validations brought their own).
+- CUDA (nvcc 12.8.93, /usr/local/cuda): `cmake -S projects/cuBQL/src -B .../build-cuda -G Ninja -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release -DCUBQL_BUILD_TESTS=ON`, then `cuBQL_cuda_float3 cubql_builder_leaves cubql_morton_sort_range` build clean. Token stream: `nvcc -std=c++17 -x cu -E -Xcompiler -P -DCUBQL_HAVE_CUDA=1 -DCUBQL_INSTANTIATE_T=float -DCUBQL_INSTANTIATE_D=3 -arch=sm_80 -I. cuBQL/builder/cuda/instantiate_builders.cu` (blank lines dropped) on `6bd4a51` and on `e26657f`: 135484 lines each, identical (the `numPrims,32,64,s` sorts appear 6 times in both).
+
+### State left
+
+Stage `delta-ported` at head `e26657f` (reviewer reviews the delta `b0ea6a1..e26657f`, which is upstream's 19 commits since the merge plus the one fix commit; the port's own delta past upstream main is `6bd4a51..e26657f`). linux-gfx90a, linux-gfx1100, windows-gfx1201 and windows-gfx1101 stay `completed` at `b0ea6a1` and read as revalidate once the review passes. Not done here and needed before a follow-up PR can be offered: review, revalidation on wave64/wave32/windows, and jeff's decision to open it (the checkup's `--review` flow; `published_sha` is recorded, the mirror is synced).
+
+### Draft follow-up PR for NVIDIA/cuBQL (needs jeff's decision; nothing opened)
+
+====
+**Title:** HIP: sort all 64 bits where builders key on the upper half
+
+On ROCm, the spatial-median, SAH and ELH GPU builders return trees whose leaves reference the wrong primitives (some primitives in no leaf, others in two) once a leaf holds more than one primitive and there are more than 1024 primitives, and `rebinRadixBuilder` can fault with an illegal memory access on clustered input. The radix builders are not affected.
+
+Cause: these builders sort packed 64-bit words by bits [32,64), the node ID of a `PrimState` or the range begin of a `RebinRange`. rocPRIM's radix sort mis-orders 64-bit keys when `end_bit` is 64 and `begin_bit` is not 0, for 1025 to 2^20 keys (ROCm/rocm-libraries#16299), so the node IDs are not grouped and the leaf offsets point into other leaves.
+
+Change: on HIP only, the four affected sorts use bits [0,64). That keeps the order of the upper halves and only orders equal upper halves by their lower half, which none of the callers depend on. Bits [32,63) would also avoid the defect and sort slightly faster, but they are not correct: invalid prims carry node ID `(uint32_t)-1`, which under [32,63) shares a key with node `0x7FFFFFFF`. The CUDA build is unchanged: the new macro expands to 32 there.
+
+Test: the new `tests/builder_leaves.cu` (built with `-DCUBQL_BUILD_TESTS=ON`, for CUDA or HIP) builds trees with all six binary builders over 1000 to 200000 uniform, clustered and partly empty boxes with leaf sizes 1, 4 and 8, and checks that every valid primitive is in exactly one reachable leaf, no empty box is referenced, and every box and child lies inside its node. On MI355X (gfx950) with ROCm 10.2.0 it passes 135/135 with the change; without it, 17 trees are wrong before `rebinRadixBuilder` faults. With nvcc 12.8 the library and both tests compile, and the preprocessed `instantiate_builders.cu` is identical before and after.
+
+This change was prepared with the help of an AI coding agent.
+====
+
+`jargon.py -` and `prose.py -` on the body: clean.
+
+## Lesson for cuda-to-rocm: picking a workaround for rocPRIM's bit-range radix sort defect
+
+Belongs in `libraries.md`, beside the warp-1.14 lesson on the defect itself (64-bit keys, end_bit 64, begin_bit > 0, 1025 to 2^20 keys). Two workarounds avoid the broken comparator: sort the full width (`begin_bit = 0`), or stop one bit short (`end_bit = width - 1`). The second is exact and stable but only when the top key bit is 0 for every element, and packed keys often break that: a sentinel such as `(uint32_t)-1` in the upper half ("invalid, sort last") sets it, and under the narrowed range the sentinel then ties with the largest valid value. A unit test at ordinary sizes passes either way, because the colliding valid value is near 2^31. Read where every packed field is written, sentinels included, before narrowing; otherwise sort the full width, which is correct whenever no caller depends on the order of keys equal in the selected bits (a 5-12% cost at up to 2^20 64-bit keys on MI355X). (cuBQL)
+
+## Lesson for moat-porting: a follow-up round on a merged, trunk-resident project has no CLI re-home before the lock
+
+When a port's upstream PR merged and its folder is on `main` with no `port/<name>`, the porter cannot take the lock: `set-state <name> <platform> porting` on `main` commits the lock to the trunk, `fix-branch` refuses without an open PR, `sync-branch` without a maintained ruling, and `advance-head` (which does re-home) belongs inside `porting`. This round called `moatlib.ensure_port_branch(<name>)` from Python, then checked out the branch and took the lock. A `moatlib.py` subcommand for it (or `set-state` re-homing on entering `porting` from `review-passed` with a finished PR) would close the gap. (cuBQL)
