@@ -48,3 +48,4 @@
 {"kind":"phase","ts":"2026-11-19T03:32:47Z","phase":"compile","seconds":15.087,"exit":0,"cmd":"cmake --build projects/cuBQL/src/build-cuda -j 64 --target cuBQL_cuda_float3 cubql_builder_leaves cubql_morton_sort_range"}
 {"kind":"phase","ts":"2026-11-19T03:33:00Z","phase":"compile","seconds":5.109,"exit":0,"cmd":"cmake --build projects/cuBQL/src/build-hip -j 64 --target cuBQL_cuda_float3 cuBQL_sample01_points_closestPoint_cuda cuBQL_sample01_points_closestPoint_wideBVH_cuda sample02_distanceToTriangleMesh sample03_insideOutside sample04_boxOverlapsOrInsideSurfaceMesh sample05_lineOfSight sample06_anyTriangleWithinRadius sample07_aggregateNBody cuBQL_cpu_float3 cuBQL_sample01_points_closestPoint_cpu cubql_builder_leaves"}
 {"kind":"session","ts":"2026-11-19T03:35:45Z","epoch":1795059345.774719,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-19T03:38:56Z","epoch":1795059536.086219,"event":"start","platform":"linux-gfx950"}

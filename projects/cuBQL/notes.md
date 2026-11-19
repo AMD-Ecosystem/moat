@@ -384,3 +384,19 @@ Belongs in `libraries.md`, beside the warp-1.14 lesson on the defect itself (64-
 ## Lesson for moat-porting: a follow-up round on a merged, trunk-resident project has no CLI re-home before the lock
 
 When a port's upstream PR merged and its folder is on `main` with no `port/<name>`, the porter cannot take the lock: `set-state <name> <platform> porting` on `main` commits the lock to the trunk, `fix-branch` refuses without an open PR, `sync-branch` without a maintained ruling, and `advance-head` (which does re-home) belongs inside `porting`. This round called `moatlib.ensure_port_branch(<name>)` from Python, then checked out the branch and took the lock. A `moatlib.py` subcommand for it (or `set-state` re-homing on entering `porting` from `review-passed` with a finished PR) would close the gap. (cuBQL)
+
+## Review 2026-11-19 (reviewer, linux-gfx950): follow-up round, delta b0ea6a1..e26657f
+
+Scope: the port's own commit `e26657f` (`6bd4a51..e26657f`), plus the HIP impact of upstream's 19 commits `b0ea6a1..6bd4a51` that this round brought into `moat-port` by fast-forward. Fact-checked: no other `DeviceRadixSort` call in the tree has a nonzero begin bit (`radix.h:691/707` and `rebinMortonBuilder.h:1100/1113/1229/1244` all begin at 0, so the rocPRIM defect cannot reach them). The `(uint32_t)-1` nodeID sentinel (`sm_builder.h:87`, `sah_builder.h:143`, `elh_builder.h:163`) and its `(int)ps.nodeID < 0` readers are as the porter says, so [0,64) over [32,63) is correct. Reran independently on gfx950 (ROCm 10.2.0, HIP_VISIBLE_DEVICES=2, `ulimit -c 0`): `cubql_builder_leaves` 135/135, PASSED.
+
+### Testing
+
+1. `tests/CMakeLists.txt:4` -- upstream's new `cubql_morton_sort_range` test (it covers upstream's `radix.h` rework and the new `radixBuilder<uint32_t|uint64_t>` entry points that this round merged into the HIP port) is still built only `if (CUBQL_HAVE_CUDA)`, so no HIP build or validator ever runs it. It builds and passes on HIP once four aliases are added to the `__HIPCC__` block of `cuBQL/math/common.h` (next to `using cudaMemPool_t = hipMemPool_t;`, line 39): `using cudaDeviceProp = hipDeviceProp_t;`, `#define cudaGetDeviceProperties hipGetDeviceProperties`, `#define cudaRuntimeGetVersion hipRuntimeGetVersion`, `#define cudaDriverGetVersion hipDriverGetVersion` (without them: `morton_sort_range.cu:514/518` errors on `cudaDeviceProp`, `cudaRuntimeGetVersion`, `cudaDriverGetVersion`). Then gate it `if (CUBQL_HAVE_CUDA OR CUBQL_HAVE_HIP)` with `set_source_files_properties(morton_sort_range.cu PROPERTIES LANGUAGE HIP)` under `CUBQL_USE_HIP`, as `cubql_builder_leaves` is. Checked in a scratch copy (`agent_space/cubql-copy`, those two edits only): default run exit 0, every case `status=PASS`, `query_oracle=PASS`, 0.25 s; `--benchmark` exit 0, `validation=PASS`. Put it in its own `[ROCm]` commit (the added lines name HIP), and add `cubql_morton_sort_range` to the HIP Test Plan and the draft PR body.
+
+### Draft follow-up PR body
+
+2. The Test paragraph says the test "builds trees with all six binary builders over 1000 to 200000 uniform, clustered and partly empty boxes". The partly-empty scene runs only the spatial-median, SAH and ELH builders (`builder_leaves.cu:118`, the radix builders require nonempty boxes). Say so, e.g. "...uniform and clustered boxes, and the spatial-median, SAH and ELH builders also over partly empty boxes...". The commit body of `e26657f` has the same wording; leave the commit as it is (no amend) and fix it in the PR body.
+
+### Recommendation
+
+**Request Changes** (item 1; item 2 is a wording fix to the draft). The builder change itself, the macro, the new test and the commit hygiene need nothing.
