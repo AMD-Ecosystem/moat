@@ -4728,3 +4728,28 @@ for M, bd in CELLS:
                 ops[w[0]] = ops.get(w[0], 0) + 1
         print(f"{M}x{M} block_dim {bd:3d} {target:8s}: {ops or 'no matrix instructions (scalar)'}")
 ```
+
+## Evidence session 3 (2026-11-19, linux-gfx1201, Radeon AI PRO R9700, evidence only): same-head pass at the Phase 6 candidate `e78ee32f`
+
+**Every item on the gfx1201 list of Porting session 11's Next step matched its expected result.** gfx1201 has no difference to record at `e78ee32f`.
+
+Requested by Jeff Daily. The work lock stays with linux-gfx950. Nothing was committed or pushed to the fork, and no stage, lock, head, platform or deferral record changed. The read-only clone was moved from `c9595bce` to the recorded `head_sha` `e78ee32fa166bb0bbb58c870fa7b13845553df99` (detached, `git lfs pull`, `git status --porcelain` empty before and after). `git diff --stat c9595bce e78ee32f`: `warp/_src/texture.py` +6/-1, `warp/native/tile_matmul_mma.h` +19/-3. Rebuilt against the venv's ROCm 10.2 wheels: `export PATH=$FLEET_VENV/bin:$PATH; python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1201 -j 12` -> "Warp build succeeded" (32.6 s); RUNPATH the venv's `_rocm_sdk_devel/lib`. Same device and venv as before, `HIP_VISIBLE_DEVICES=2`, `ulimit -c 0`, a fresh private `WARP_CACHE_PATH` for every run. Scripts: `mma_check.py` and `mma_check_bf16.py` from Porting session 10, `sdf_probe.py` (session 5), `tex_alias.py` (session 6), extracted verbatim.
+
+| item | expected | result |
+|---|---|---|
+| 82-pattern set (`-p "<pattern>" -m 32`, 1949 s) | 81 OK + the fem pair | **81 OK; `test_fem*` 107 run, failures=2: `test_gimp_quadrature`, `test_cube_shape_functions`** ("Unexpected output" with the init greeting, upstream isolation). Tile set inside it 639 run, 15 skipped, 0 failures; test_tile_matmul 25 OK; test_texture 120 OK (1 skipped); test_streams 24 OK (3 skipped) |
+| CPU-only suite (`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 python -m warp.tests -s autodetect -k cpu -m 32`) | 2294 OK | **Ran 2294, OK (skipped=15)**, no `cuda:0` in the log |
+| `python mma_check.py` | FAILURES 0 | **FAILURES 0**: 25 ok, 25 SMEM-LIMIT (backward), 15 SMEM-LIMIT (forward) (all the 64 KiB limits); 165 code objects, 1336 `v_wmma_f32_16x16x16_f16` |
+| `python mma_check_bf16.py` | FAILURES 0 | **FAILURES 0**: 55 cases (11 shapes x 5 block_dims), all ok, no shared-memory limit; 56 code objects, no WMMA (bf16 has no WMMA path, by design) |
+| `test_tile_matmul.py`, WMMA as shipped | 25 OK, WMMA present | **Ran 25, OK**; fp16 modules: 16x16x16 at bd 64 and 96 have 4 `v_wmma_f32_16x16x16_f16` each, 48x16 (K 32) 15 at bd 64 and 9 at bd 96; 24x16, 17x33x15 and 8x8x4 have 0 (do not fit, scalar); fp32, fp64 and bf16 modules 0 |
+| `sdf_probe.py cpu` / `cuda:0` | PASS | **PASS / PASS**: cpu 0.00e+00, 1.28e-03, 0.00e+00; cuda:0 SDF vs CPU sampler 4.78e-05, SDF vs analytic 1.31e-03, RGBA8 2.52e-03 (the same values as every earlier gfx1201/gfx1100 run) |
+| `tex_alias.py cuda:0` | PASS | **PASS**: "plain: 0 of 2048 wrong", "graph capture: 0 of 2048 wrong" |
+
+Checks beyond the list, all consistent with "gfx12 code unchanged since `43331f4a`":
+- The 82-pattern per-pattern summary lines (Ran count and result, timings stripped) are **identical** to the `c9595bce` run (Evidence session 2), and so is the skip-reason histogram over all 82 logs. There is no `Warp CUDA error`, and the only shared-memory warning is the known `test_tile_load_scoped` backward one.
+- `mma_check.py`'s per-case error lines (c, d, gA, gB for every printed case) are identical to the `c9595bce` run (`diff` empty), with the same 1336 WMMA instructions. The test_tile_matmul WMMA pattern is identical to that session's table. So the gfx11 load-amortization rule (`bb5d01d7`) changes nothing on gfx12.
+
+Notes on the run:
+- The CPU-only suite ran while the 82-pattern set was on its first patterns (CPU-only touches no GPU). Its log, and 10 of the earlier GPU-run logs, end with multiprocessing `resource_tracker` "leaked semaphore" UserWarnings printed at interpreter shutdown, after the `OK` line: Python process-pool noise, not a test result.
+- `mma_check.py`, `mma_check_bf16.py`, test_tile_matmul and the texture probes ran while the 82-pattern set was running (correctness only, each with its own cache). No benchmark was in this host's list, and none was run.
+- The untracked `example_apic_fluid.usd` an example writes was deleted after the run.
