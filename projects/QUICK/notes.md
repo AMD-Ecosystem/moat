@@ -8,6 +8,7 @@ The port was a validate-and-improve effort, not from-scratch. As of the 2026-11-
 1. `-munsafe-fp-atomics` for gfx90a and gfx942 (hardware FP atomics; without it SP-basis runs were 100x slower)
 2. a gfx1100 branch (`-DUSE_LEGACY_ATOMICS`) and gfx1100 in the invalid-arch message
 3. ROCm version detection for installs outside a versioned `rocm-X.Y.Z` directory: read `include/rocm-core/rocm_version.h`, else hipcc's HIP major.minor
+4. (7a3149ff, 2026-11-19) `-mllvm -amdgpu-long-branch-factor=0` for ROCm >= 6.2.1: works around llvm/llvm-project#224205, which hung or crashed every d-function test on gfx90a (see "Diagnosis 2026-11-19")
 
 Earlier rounds also removed the `configure` HIP exit, fixed its hipcc path and added C++ includes to two HIP sources. None of that remains: upstream's own include fix (PR 511) made the includes redundant, and `configure` was restored to upstream because upstream's makefile GPU build is stale (see the 2026-11-19 section).
 
@@ -623,3 +624,145 @@ Kernel metadata from the gfx90a code object (`llvm-objdump --offloading` on `lib
 ### Verdict and what it means for the PR
 
 `validation-failed` on linux-gfx90a at 4b17590a. Not a regression of the port: the s/p results match June, the d-function behaviour matches June, and the Libxc failures are upstream's. But on gfx90a the full short GPU list does not pass, so jeff has two decisions (beyond the PR 512 question already recorded): whether the d-function fault on gfx90a must be fixed before the PR (porter/compiler work), or the PR goes ahead stating that CDNA2 d-function runs are broken, as June's completion implicitly accepted. The gfx1100 record (completed at d369e07) is stale at the new head and needs a revalidation run on a wave32 host.
+
+## jeff's rulings of 2026-11-18 (recorded 2026-11-19)
+
+Ruled by jeff (jeffdaily), 2026-11-18:
+
+1. The port stays independent of upstream's open pull request merzlab/QUICK#512 (their fix for the HIP Libxc path, broken on upstream master since PR 473). Its hunk is NOT carried on `moat-port`. Validation is gathered in a TEST TREE: the port head with PR 512 merged locally (never pushed), so the upstream PR text can say the port was validated on top of PR 512. This answers the "Question for jeff" in the 2026-11-19 upstream-sync section: option (b), wait for PR 512.
+2. The d-function fault on gfx90a is to be diagnosed before the upstream PR is sent.
+
+## Diagnosis 2026-11-19 (linux-gfx90a, MI250X): the d-function fault is llvm/llvm-project#224205 (porter)
+
+Diagnostic round requested by jeff. **Conclusion (a) with a compiler root cause:** the slow tests and the crash are one ROCm compiler defect, the open AMDGPU backend bug llvm/llvm-project#224205. `-munsafe-fp-atomics` is unrelated: it neither causes nor cures the fault. The port fix is one CMake flag, `-mllvm -amdgpu-long-branch-factor=0`, committed as 7a3149ff on `moat-port`. With it the full short GPU list passes in the test tree (counts below).
+
+### Test tree
+
+Fork clone `projects/QUICK/src`, `git fetch upstream pull/512/head:pr512` (read-only), worktree `projects/QUICK/testtree` on local branch `testtree2` = 7a3149ff + `git merge --no-ff pr512` (local merge commit c525dc09). One conflict, the gfx `FATAL_ERROR` line, resolved as in the sync round: `Possible values are gfx908, gfx90a, gfx942, gfx1100, gfx1201.` `git diff pr512 testtree2` is only `quick-cmake/QUICKCudaConfig.cmake`, the port's own diff. For the earlier diagnostic runs the test tree was 4b17590a + pr512 (local merge f91ab543). Toolchain: ROCm 10.1.0 pip SDK (HIP 7.16.26385, AMD clang 24.0.0git d6f6cb69), one GCD (`HIP_VISIBLE_DEVICES=1`), every GPU run under `ulimit -c 0`. Build recipe as in the upstream-sync section (pip SDK flags plus `-L$GFL`).
+
+Note: QUICK's CMake passes no `--offload-arch`. `QUICK_USER_ARCH` only selects defines and flags, and hipcc picks the device target by probing the host's GPUs. `llvm-objdump --offloading` confirms gfx90a code objects here. On a build host without the target GPU this would compile for the wrong target. That is upstream behaviour, unchanged by the port, and recorded only as an observation.
+
+### Reproducer and the two symptoms
+
+Smallest d-function case: water RHF/cc-pVDZ single point (25 basis functions, 12 shells), the geometry of `opt_wat_rhf_ccpvdz` with `ENERGY` instead of `OPTIMIZE`:
+
+```
+HF BASIS=cc-pVDZ cutoff=1.0e-9 denserms=1.0e-6  zmake ENERGY DIPOLE
+  O         -0.741530        1.752130        2.896280
+  H         -1.111151        0.979769        3.352290
+  H         -0.920500        2.036450        1.984040
+```
+
+CPU build (`bin/quick`, same tree): 0.5 s, TOTAL ENERGY -76.013294759, 10 SCF cycles. HIP build at the test tree head without the fix: no result after 600 s, never leaving SCF cycle 1. "100 times slower" was a wrong reading of the June runs: the SPD kernel does not run slowly, it never finishes.
+
+- **Hang.** `AMD_LOG_LEVEL=3 AMD_SERIALIZE_KERNEL=3` (60 s cap): the last launch is `get2e_kernel_spd` (grid 104x256) and it never returns. The `get2e_kernel_sp` launch just before it returned in 9.2 ms. One launch, so this is not launch count, atomics contention or host waiting. Attaching `rocgdb -p <pid>` 25 s in shows 65 waves still resident, every one inside `ERint_vertical_spd` (a 189 KB out-of-line device function the SPD kernel calls). 39 of them sit at the same PC. For a stuck wave, `s[30:31]` (the return address) = `0x..505e4`, which is **inside `ERint_vertical_spd` itself** (offset 0x2d9e4 from its start), not in the kernel.
+- **ISA.** In the extracted gfx90a code object (`llvm-objdump --offloading` then `-d`), `ERint_vertical_spd` has 6 long-branch sequences `s_getpc_b64 s[30:31]; s_add_u32 s30, s30, <off>; s_addc_u32 s31, s31, 0; s_setpc_b64 s[30:31]`, and no save or restore of s30/s31 anywhere in the function. Two of them target 0x505e4 (`s_or_b64 exec, exec, s[16:17]`, the join block just before the epilogue). A wave that took such a branch reaches the epilogue's `s_setpc_b64 s[30:31]`, jumps back to 0x505e4 and repeats the epilogue forever. `ERint_grad_vertical_spd` has 5 of the same, which is why the d-function gradient tests hang too. Kernels (`getGrad_kernel_spdf*`) also use s[30:31] for long branches, which is harmless in a kernel because a kernel never returns through it.
+- **Crash.** The `-DUSE_LEGACY_ATOMICS` and `-O1` builds, and upstream master, die in about 5 s with `HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION` in `get2e_kernel_spd`, then `hipMemcpy ... 700 illegal memory access`. This is the June core dump and the validator's `opt_wat_rhf_ccpvdz` fault. Under `rocgdb -batch -ex 'set amdgpu precise-memory on' -ex run` (legacy build) it stops on `flat_load_dwordx2 v[0:1], v[36:37]` at `ERint_vertical_spd+183364`, with `s[30:31]` = file address 0x4dfe0, the exact target of that build's 6th long branch (`0x2d408 + 0x20bd8`). The wave "returned" into the middle of the function and re-ran a load through a stale pointer. Whether a build hangs or faults depends only on which join block the clobbered return address lands in.
+- **Why gfx1100 passed in June:** the same compiler emits no such sequence for gfx1100 (count 0 below). The LLVM issue reports the pattern on other gfx11/gfx12 kernels, so a passing arch is not proof of immunity.
+- **Upstream issue merzlab/QUICK#433** (about 5x slower SCF on MI250 through AmberTools) is a slowdown, not a hang, and probably comes from a different toolchain or code path. It was not reproduced here, and nothing here shows it to be the same defect.
+
+### One-variable table (water/cc-pVDZ energy; ISA = non-kernel `s_getpc_b64 s[30:31]` long branches in `gpu_get2e.cu`'s device code)
+
+The ISA column comes from `hipcc gpu_get2e.cu --cuda-device-only -S --offload-arch=<arch>` with the build's real flags (`-O2 -ffast-math -fPIC -std=c++14 -DAMD_ARCH_GFX90a -munsafe-fp-atomics -DGPU -DHIP` plus includes) and the variant flag appended. Runtime builds used a local, uncommitted copy of the test tree (`projects/QUICK/vartree`) whose CMake appends `${QUICK_EXTRA_HIP_FLAGS}` after `AMD_HIP_FLAGS`, so the variant flag comes last and wins. Atomics codegen was checked in the asm: base has 144 `global_atomic_add_f64`; `-mno-unsafe-fp-atomics` has 0 of those and 144 `global_atomic_cmpswap_x2` (CAS loops); `-DUSE_LEGACY_ATOMICS` has 126 `global_atomic_add_x2` (integer).
+
+| variant (one change from base) | ISA count | water/cc-pVDZ on gfx90a |
+|---|---|---|
+| base: test tree 4b17590a+PR512, `-O2 -munsafe-fp-atomics` | 11 (6 + 5) | hang, no result at 600 s (3 of 3 runs); `opt_wat_rhf_ccpvdz` and `ene_psb5_rhf_631gss` hang at 90 s, 2 of 2 each |
+| without `-munsafe-fp-atomics` (`-mno-unsafe-fp-atomics`) | 11 | hang, no result at 120 s |
+| `-DUSE_LEGACY_ATOMICS` (as gfx908/gfx1100 get) | 11 | aperture-violation crash at 5.3 s |
+| legacy atomics and no unsafe-fp-atomics | 11 | (asm only) |
+| device `-O0` | 0 | PASS, 7.5 s, -76.013294759 |
+| device `-O1` | 11 | aperture-violation crash at 5.6 s |
+| device `-O3` | 15 | (asm only) |
+| device `-Os` | 11 | (asm only) |
+| `-finline-hint-functions` (the skill's earlier workaround for this bug) | 11 | (asm only); no help here because the function is large by itself, not because of inlining |
+| upstream master without the port (PR 512 head 0b8a13c5, `-DHIP_VERSION=10.1.0`, no `-munsafe-fp-atomics`) | 11 | aperture-violation crash at 5.2 s |
+| upstream master + `-mllvm -amdgpu-long-branch-factor=0` | 0 | PASS, 5.3 s, -76.013294759 |
+| **base + `-mllvm -amdgpu-long-branch-factor=0`** | **0** | **PASS, 5.4 s, -76.013294759** (equal to CPU) |
+| `--offload-arch=gfx942` (base flags) | 5 | not run (no gfx942 here); predicts the same fault on MI300 |
+| `--offload-arch=gfx908` (legacy atomics) | 14 | not run |
+| `--offload-arch=gfx1100` (legacy atomics) | 0 | June: 38/38 passed |
+| second ROCm version (7.11.0 wheels on repo.amd.com) | -- | **not run**: the fleet guard refused `pip install` even into a fresh job-local venv. Not routed around. jeff: allow a job-local SDK install if you want this row. |
+
+With the flag, the long branches in `ERint_vertical_spd` use `s[4:5]`/`s[6:7]` from the register scavenger. All four gfx90a code objects of the final `libquick_hip.so` (including the `-fgpu-rdc` libxc objects linked at the end) have 0 such sequences in non-kernel functions. Before the fix, only `gpu_get2e.cu`'s object had any. Kernel time with the fix (`AMD_LOG_LEVEL=3` trace of the water run): `get2e_kernel_spd` 10 launches, mean 6.6 ms; `get2e_kernel_sp` 10 launches, mean 8.9 ms. `ene_psb5_rhf_631gss`, the June core dump, now takes 7.9 s in total (upstream's saved TITAN V output: 9.4 s), energy -402.013889799 vs saved -402.013889796. So there is no residual d-function slowness on gfx90a.
+
+### The fix: 7a3149ff `[ROCm] Route AMDGPU long branches through the register scavenger`
+
+`quick-cmake/QUICKCudaConfig.cmake`, after the ROCm version check: `if (${HIP_VERSION} VERSION_GREATER_EQUAL 6.2.1) list(APPEND AMD_HIP_FLAGS -mllvm -amdgpu-long-branch-factor=0)`, with a comment naming the LLVM issue and the removal condition. It applies to every HIP arch because the backend defect is arch-independent (the sequence appears on gfx908/gfx90a/gfx942 here and on gfx11/gfx12 in the issue). The option is defined in `llvm/lib/Target/AMDGPU/GCNPreRALongBranchReg.cpp` at ROCm/llvm-project tags `rocm-6.0.0` and `rocm-6.2.1` (checked by fetching the file). Every ROCm >= 6.x that the existing version check accepts (>= 6.2.1) therefore knows it. Below 5.4.3 the flag is not added. Not built with a 6.2.1 toolchain (none here). It is a toolchain workaround, which per the skill is a person's decision. jeff's instruction for this round authorized (a) as "a change to the port's flags", so it is committed. **Question for jeff:** keep it in the upstream PR as is (my recommendation: without it the HIP build is unusable for any d basis on CDNA), or hold it out?
+
+Effect on the record: gfx1100 now compiles with a new flag (different codegen for the long branches), so the wave32 revalidation already owed at the new head also covers this.
+
+### Standalone reproducer (for (c); nothing filed)
+
+`agent_space/repro-llvm224205/` in this job's MOAT clone: `quick_get2e_gfx90a.hip` (QUICK's `src/gpu/hip/gpu_get2e.cu` preprocessed for the gfx90a device side, 11 MB, self-contained), `count.py` and `repro.sh`. `./repro.sh` (clang++ `-x hip -nogpuinc --cuda-device-only -S --offload-arch=gfx90a -O2 -ffast-math -std=c++14 -munsafe-fp-atomics`) prints 11 non-kernel `s_getpc_b64 s[30:31]` long branches; `./repro.sh -mllvm -amdgpu-long-branch-factor=0` prints 0. `agent_space` is container-local: if jeff wants it kept, regenerate it with the `hipcc ... --cuda-device-only -E` line in `repro.sh`'s history (the command is the ISA-column command above with `-E`).
+
+### Draft comment for llvm/llvm-project#224205 (for jeff; NOT posted)
+
+====
+My agent came up with this analysis, but I've read and approved it.
+
+> A real-world gfx90a hit, for the "gfx90a and gfx942 emit the same pattern in a minimal repro, though not in the original kernel" point. QUICK (https://github.com/merzlab/QUICK), built for gfx90a with AMD clang 24.0.0git (ROCm 10.1, d6f6cb69) at -O2, has two large out-of-line device functions, `ERint_vertical_spd` (189 KB) and `ERint_grad_vertical_spd`. They carry 6 and 5 long-branch sequences through `s[30:31]` with no save of s30/s31. On an MI250X the SCF kernel that calls them never completes. rocgdb shows every resident wave inside `ERint_vertical_spd` with `s[30:31]` pointing at a join block in the same function, the target of one of those long branches, so the return re-runs the epilogue forever. Small changes to codegen (`-O1`, integer instead of FP64 atomics) turn the hang into `HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION`: with precise memory on, the faulting load sits in the same function and `s[30:31]` again equals a long-branch target. The same source for gfx942 has 5 such sequences and gfx908 has 14; gfx1100 has none. `-mllvm -amdgpu-long-branch-factor=0` removes all of them, and the application then matches its CPU results. -O0 also avoids it, -finline-hint-functions does not (the function is large by itself).
+====
+
+### Owed before the PR (not done here)
+
+- CUDA compile gate at 7a3149ff with real nvcc on the mi355 host. No nvcc on this host. The change is inside `if(HIP)` only.
+- Reviewer pass on 7a3149ff, then validation at the new head on wave64 (this host) and wave32 (gfx1100).
+- Fork mirror fast-forward and the `[ROCm]` prefix on a0122945/2146b22a, both still open from the sync round.
+
+## Lesson for cuda-to-rocm: llvm#224205 workaround that does not depend on inlining (diagnosis.md, "A hang that depends on inlining")
+
+The current entry offers only limiting inlining (`-finline-hint-functions`, `/Ob1`). That does not help when the out-of-line device function is large by itself: QUICK's `ERint_vertical_spd` (189 KB of VRR code) kept all 6 long branches through `s[30:31]` with `-finline-hint-functions`, at -O1, -O2, -O3 and -Os. `-mllvm -amdgpu-long-branch-factor=0` (defined in `GCNPreRALongBranchReg.cpp` since ROCm 6.0's LLVM) turns off the pre-RA reservation, so branch relaxation takes a dead pair from the scavenger; recount to confirm zero. Two more points for the entry. First, CDNA is affected in real code, not only RDNA: gfx90a, gfx908 and gfx942 all emitted the pattern, and on gfx90a it hung the kernel. Second, the same defect can show as an aperture violation instead of a hang, depending on which block the clobbered return lands in; under rocgdb with precise memory, compare `s[30:31]` against the long-branch targets. Also, a "100x slower" report for a kernel that never returns from one launch is a hang: check with `AMD_SERIALIZE_KERNEL=3 AMD_LOG_LEVEL=3` whether a single launch finishes before measuring anything.
+
+### Full short GPU list in the test tree (7a3149ff + PR 512, local merge c525dc09), MI250X gfx90a
+
+Same method as the 2026-11-19 validation, for comparability: one `./runtest --hip` per test (a one-line `test/testlist_short_gpu.txt`), with `bin/quick.hip` wrapped in `exec timeout --signal=KILL 300 quick.hip.real "$@"`, environment `QUICK_HOME=<install>/usr/local QUICK_BASIS=$QUICK_HOME/basis LD_LIBRARY_PATH=$QUICK_HOME/lib:$(rocm-sdk path --root)/lib`. Build: the upstream-sync recipe, no extra flags (the fix comes from the committed CMake; the get2e compile flags read `-O2;-ffast-math;-fPIC;-std=c++14;-DAMD_ARCH_GFX90a;-munsafe-fp-atomics;-mllvm;-amdgpu-long-branch-factor=0`).
+
+**Result: 37 PASS, 3 SKIPPED, 0 FAIL, 0 TIMEOUT** (validation at 4b17590a without PR 512 and without the flag: 15 PASS, 12 TIMEOUT, 10 FAIL, 3 SKIPPED). Every per-test runtest summary reads `Total tests: 0/1 (failed/total)`. Total wall time 333 s for the 40 tests (about 63 min before).
+
+| test | result | wall |
+|---|---|---|
+| ene_psb5_rhf_631g | PASS | 6s |
+| ene_psb5_rhf_631gss | PASS | 8s |
+| ene_acetone_rhf_321g | PASS | 6s |
+| ene_psb3_blyp_631g | PASS | 6s |
+| ene_psb3_blyp_631gss | PASS | 8s |
+| ene_psb3_b3lyp_631g | PASS | 6s |
+| ene_psb3_b3lyp_631gss | PASS | 7s |
+| ene_C2H6_b3lyp_def2tzvp | SKIPPED by runtest (code not compiled with f function support) | 1s |
+| ene_psb3_libxc_lda_631g | PASS | 6s |
+| ene_psb3_libxc_gga_631g | PASS | 6s |
+| ene_psb3_libxc_hgga_631g | PASS | 6s |
+| ene_wat2_mp2_631g | PASS | 6s |
+| ene_wat2_mp2_631gss | PASS | 6s |
+| grad_psb3_b3lyp_631g | PASS | 8s |
+| grad_psb3_b3lyp_631gss | PASS | 10s |
+| grad_ch3conhch3_b3lyp_ccpvdz | PASS | 10s |
+| grad_NaCl_b3lyp_def2svp | PASS | 8s |
+| grad_CH4_pbe0_6311g2df2pd | SKIPPED by runtest (code not compiled with f function support) | 0s |
+| grad_nma_rhf_def2tzvp | SKIPPED by runtest (code not compiled with f function support) | 1s |
+| grad_wat_b3lyp_ccpvdz | PASS | 7s |
+| grad_c10h9o2s_b3lyp_def2svp | PASS | 16s |
+| grad_daspi_meoh_b3lyp_6-31g | PASS | 12s |
+| grad_rpsb_meoh_rhf_321g | PASS | 10s |
+| grad_ohrad_b3lyp_631gss | PASS | 8s |
+| opt_wat_rhf_631g | PASS | 7s |
+| opt_wat_rhf_ccpvdz | PASS | 8s |
+| opt_nh4_pbe0_def2svp | PASS | 9s |
+| opt_hsoh_pbe0_def2svp | PASS | 10s |
+| opt_c3h4_rhf_631g | PASS | 8s |
+| opt_caffeine_b3lyp_3-21g | PASS | 22s |
+| opt_c2h5rad_uhf_631gss | PASS | 9s |
+| opt_methoxyrad_ub3lyp_ccpvdz | PASS | 12s |
+| opt_const_dist_h2o_hf_3-21g | PASS | 7s |
+| opt_const_ang_h2o_hf_3-21g | PASS | 7s |
+| opt_const_dh_c2h4f2_hf_3-21g | PASS | 9s |
+| opt_const_freeze_c2h4f2_hf_3-21g | PASS | 8s |
+| api_water_rhf_631g | PASS | 8s |
+| esp_charge_acetone_b3lyp_def2svp | PASS | 7s |
+| chk_acetate_xyz_density | PASS | 22s |
+| ene_benzene_b3lyp_aug-cc-pvdz | PASS | 12s |
+
+The 3 skipped tests need f functions (`-DENABLEF`, off by default in upstream's build) and are skipped the same way on every platform. Which fix removed which failure: the 12 TIMEOUTs and the `opt_wat_rhf_ccpvdz` fault are fixed by 7a3149ff; the 9 Libxc failures are fixed by PR 512 in the test tree (on `moat-port` without PR 512 they still fail exactly as upstream master does, per ruling 1).
+
+The state goes back to the reviewer for 7a3149ff (`advance-head` from `porting`, then `delta-ported`). This diagnostic run is not a validator record; gfx90a needs a validator run at the new head, and gfx1100 needs one at the new head as well.
