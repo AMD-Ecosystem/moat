@@ -410,7 +410,18 @@ On Windows, CMake's HIP link path routes through `hipcc.exe`, which invokes `cla
 response file and flags, and misreads them two ways: it treats bare MSVC linker flags
 (`/machine:x64`, `/subsystem:console`) as file paths, and it applies GNU backslash-escaping
 to the response file, eating every backslash so `D:\path\torch.lib` arrives as
-`D:pathtorch.lib`. CMake also injects `-fuse-ld=lld-link`, which conflicts with `--hip-link`.
+`D:pathtorch.lib`. CMake also injects `-fuse-ld=lld-link`. When this section was first
+written that flag was recorded as conflicting with `--hip-link`; that is not a general fact,
+and it did not reproduce in ohm's build (next paragraph).
+
+`-fuse-ld=lld-link` on a Windows CMake HIP link is not a failure by itself. CMake 3.29+ adds
+it to every clang link line on Windows (`Platform/Windows-Clang.cmake`,
+`CMAKE_<LANG>_USING_LINKER_DEFAULT`), HIP included. When the HIP link goes straight to ROCm's
+GNU-style `clang++` (CMake's own rule, not through hipcc),
+`clang++ --hip-link --rtlib=compiler-rt -fuse-ld=lld-link ...` links fine with CMake 3.31.0
+and 4.3.2 and ROCm 7.14 clang 23. Do not strip the flag from `build.ninja` out of habit: build
+once without touching it and read the actual link error first. A recipe that carried the
+strip for months turned out to need none of it. (ohm)
 
 **This has nothing to do with `-fgpu-rdc`.** A project with no relocatable device code at all
 still hits it if it links HIP through CMake on Windows. Do not conclude you are safe because

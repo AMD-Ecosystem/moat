@@ -315,6 +315,16 @@ or `BlockRadixSort` lowers to a single-wavefront op with no syncing epilogue; re
 first's reads. CUDA's 32-wide warp split the block in two and masked it. (CV-CUDA:
 OpPairwiseMatcher crossCheck.)
 
+**A block collective called in a loop without a barrier races only under concurrent GPU load.** The
+same missing barrier on a multi-wave block is timing-dependent, so it can pass every serial run. A
+`BlockScan` called once per loop iteration on the same storage, with no `__syncthreads()` between
+iterations, gave some threads wrong offsets only when other processes shared the GPU (pytest-xdist
+workers), on wave32 gfx1100. The symptom was `hipErrorIllegalAddress` in a LATER kernel that read
+the unwritten `-1` slots as indices. Before blaming the kernel that faults, check the index arrays
+it was given for unfilled entries, and run the producer under concurrent load. Fix it
+unconditionally: the barrier is CUB's documented requirement on CUDA too. (gpu4pyscf:
+`put_pairs_on_blocks_kernel`.)
+
 ## Other per-wavefront assumptions
 
 **`__smid()` can EXCEED `multiProcessorCount` on AMD.** NVIDIA's `%smid` is dense in
@@ -350,6 +360,18 @@ construct left in a CUDA `#else` branch is the same undefined behaviour waiting 
 compiler, so grep the port for the idiom and initialise it on both paths. The padding-lane
 form of this compiler behaviour is in faults-memory-streams.md ("An uninitialised local
 passed by value"). (popsift, upstream issue 193)
+
+**An uninitialized value RETURNED from a device function lets clang assume the thread index.** The
+return-value form of the previous entry. Block-reduction helpers often assign the result only on
+thread 0 (`T sum; if (threadIdx.x == 0) sum = ...; return sum;`) and every thread returns it. nvcc
+tolerates this. clang marks return values `noundef` as well, so returning an uninitialized value on
+any path is immediate undefined behaviour, and the optimizer may conclude the other paths never run:
+on AMD GPUs it emitted `llvm.assume(threadIdx.x == 0)`, then folded `partials[threadIdx.x /
+warpSize]` to `partials[0]`, so a two-wavefront block sum returned one wavefront's partial.
+Symptoms: correct at -O0, wrong at -O1 and above, and the bug disappears when a printf is added.
+Find it by compiling to LLVM IR (hipRTC `-fgpu-rdc` plus `llvm-dis`, or `-emit-llvm`) and grepping
+for `llvm.assume` on `workitem.id`. Fix: value-initialize (`T sum {};`) every local that is returned
+or copied while unassigned on some threads. (warp-1.14)
 
 **Validate wave-size work on BOTH widths, and where there is no host reference use a
 CROSS-ARCH CONSISTENCY gate.** "Deterministic, non-zero and plausible" passes a wrong
