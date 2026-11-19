@@ -1219,3 +1219,11 @@ Every place upstream documents `QUICK_USER_ARCH` values, checked at upstream mas
 Other AMD values the port introduced: none. `git diff master...moat-port` adds only `gfx1100`; gfx908/gfx90a/gfx942 were upstream's already. (Pre-existing upstream mismatch, not ours: `CMake-Options.md` lists `gfx906`, which the CMake HIP branch rejects with FATAL_ERROR. Out of scope; not changed.)
 
 Check: `cmake .. -DHIP=ON -DCOMPILER=GNU -DQUICK_USER_ARCH=gfx1100 -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$ROCM_PATH -DHIP_TOOLKIT_ROOT_DIR=$ROCM_PATH -DCMAKE_SHARED_LINKER_FLAGS=-L$GFL` (pip ROCm 10.1 SDK) exits 0 and prints `Configuring QUICK for gfx1100`; the scratch build dir was deleted. No compile: the delta is a Markdown file. `prose.py` on the commit body clean, `jargon.py --port QUICK` clean, title 52 characters, AI disclosure in prose, fenced Test Plan, no trailer. `git status --porcelain` empty.
+
+## Review 2026-11-19 (delta a49289d5..349fb05f)
+
+Reviewer, linux-gfx1100, under the work lock, pr-review skill in local-branch mode, checks done inline. Scope: `git diff a49289d5...349fb05f`, one line in `CMake-Options.md`.
+
+**Verdict: review passed.** No findings.
+
+Checked independently: the word diff adds only `|gfx1100` to the `QUICK_USER_ARCH` value list at `CMake-Options.md:33`. The value matches the HIP branch at `quick-cmake/QUICKCudaConfig.cmake:411-418` (its `STREQUAL "gfx1100"` case and the FATAL_ERROR list `gfx908, gfx90a, gfx942, gfx1100`). `git grep` over `*.md`/`*.rst`/`*.txt` at 349fb05f finds no other file listing HIP arch values. The porter's account of AGENTS.md (CUDA values only), the cache help string and `configure` holds. `CMake-Options.md` lists `gfx906`, which the CMake HIP branch rejects; that is upstream text, not part of the port, so it is not a finding. No compiled file changed, so no CUDA or CPU behaviour changed. Commit 349fb05f: `[ROCm]` is right (it names an AMD target), title 52 characters, AI disclosure in prose, fenced Test Plan, no `Co-Authored-By` trailer. `jargon.py --port QUICK` clean.
