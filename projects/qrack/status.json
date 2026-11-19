@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T05:14:47Z",
-  "updated_at": "2026-11-13T01:22:41Z",
+  "updated_at": "2026-11-19T00:46:34Z",
   "head_sha": "b06652a8fdc198ce80147efa4b05b0777b874144",
   "depends_on": [],
   "waivers": {},
@@ -183,6 +183,7 @@
   "pr_url": "https://github.com/unitaryfoundation/qrack/pull/1045",
   "pr_number": 1045,
   "pr_opened_at": "2026-11-13T01:22:41Z",
-  "pr_state": "open",
-  "published_sha": "b06652a8fdc198ce80147efa4b05b0777b874144"
+  "pr_state": "merged",
+  "published_sha": "b06652a8fdc198ce80147efa4b05b0777b874144",
+  "pr_merged_at": "2026-11-19T00:46:34Z"
 }
