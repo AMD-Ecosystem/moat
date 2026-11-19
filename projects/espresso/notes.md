@@ -7,7 +7,12 @@ waLBerla LB/EK GPU is explicitly OUT OF SCOPE.
 - Fork: https://github.com/AMD-Ecosystem/espresso  (branch `moat-port`)
 - head_sha: 6d36cb6aaf5425c1710b756d79f67ec7fcb9a0ca
 - Based on upstream eafab258df3b (5.0.1 release notes)
-- Strategy A (compat header + LANGUAGE HIP), NVIDIA path byte-identical.
+- Strategy A (compat header + LANGUAGE HIP). CORRECTION 2026-11-19: the NVIDIA path was
+  NOT byte-identical and was never nvcc-checked until 2026-11-19; from 6d36cb6aa to 87cbc046d
+  the nvcc build failed (missing `<cufft.h>`, see "CUDA no-regression compile" below). Fixed
+  in 01090739c. The CUDA build graph (flags, defines, includes, link libs, objects) is now
+  identical to upstream's; the source still differs on the CUDA path (extra headers via the
+  compat header, the cuFFT plan-destroy guard), see "Porter 2026-11-19 (CUDA path fix)".
 
 ## Build recipe (gfx90a, ROCm 7.2.1)
 
@@ -568,3 +573,35 @@ Port failure, the only failing edge (`FAILED: src/core/CMakeFiles/espresso_core.
 Cause: the port deleted `#include <cuda.h>` and `#include <cufft.h>` from `src/core/electrostatics/p3m_gpu_cuda.cu` (upstream has `#include <cufft.h>` at line 66) and routed the TU through `src/core/cuda/cuda_to_hip.h` via `cuda/utils.cuh`. That header's NVIDIA branch includes only `<cuda.h>` and `<cuda_runtime.h>`, not `<cufft.h>`, although its comment says it "includes the CUDA runtime and cuFFT" on NVIDIA. Introduced in 6d36cb6aa ("[ROCm] Add HIP support for core electrostatics and magnetostatics", 2026-06-04; `git log -S'#include <cufft.h>'`), so the June port was already broken for nvcc and today's sync did not cause it; the earlier "NVIDIA path byte-identical" claim was never checked with nvcc. Fix belongs to the porter (restore `#include <cufft.h>` on the CUDA path, in the TU or in the header's NVIDIA branch), followed by re-review, an nvcc re-run of this recipe, and whatever HIP revalidation the head move needs.
 
 Job-local artifacts (container-local, not durable): builds and logs under the job directory `espresso/` (`build-{base,port}-wal`, `build-{base,port}.log`, `build-{base,port}2.log`).
+
+## Porter 2026-11-19 (CUDA path fix, linux-gfx950)
+
+Directed by jeff after the nvcc regression above. Host: MI355X (gfx950) with CUDA 12.8 nvcc and pip ROCm SDK (HIP 7.16.26385, clang from `rocm-sdk path --root`), no /opt/rocm. `moat-port` 87cbc046d -> **01090739c** (new commit on top, nothing rewritten; pushed directly, no upstream PR open).
+
+### Fix
+
+01090739c "[ROCm] Restore the cuFFT include for the CUDA build": one line, `#include <cufft.h>` in the NVIDIA (`#else`) branch of `src/core/cuda/cuda_to_hip.h`. Chosen over restoring it in `p3m_gpu_cuda.cu` because the header is new in the port (so this adds no upstream-file diff), the in-file version needs a `!__HIP__` guard (3 lines), and the header's comment already promised cuFFT on NVIDIA. Side effect: on NVIDIA every TU that includes `cuda/utils.cuh` or the header now also sees `<cufft.h>` (header only; linking unchanged, `CUDA::cufft` is still linked only to `espresso_core` as upstream does).
+
+### Audit of the whole port diff (`git diff python...moat-port`) for anything removed or moved off the CUDA build
+
+- Includes removed from CUDA TUs: `<cuda.h>`/`<cuda_runtime.h>` from `common_cuda.cu`, `init_cuda.cu`, `utils.cuh`; `<cuda.h>` from `p3m_gpu_error_cuda.cu`, `dipolar_direct_sum_gpu_cuda.cu`, `GpuParticleData_cuda.cu`, `cuda_test.cu`; `<cuda.h>`+`<cufft.h>` from `p3m_gpu_cuda.cu`. Every one of these TUs includes `cuda/utils.cuh`, which includes `cuda/cuda_to_hip.h`, whose NVIDIA branch now has `<cuda.h>`, `<cuda_runtime.h>`, `<cufft.h>`. `<cufft.h>` was the only header that did not reach the CUDA build. No other definition is removed: the header's NVIDIA branch defines nothing.
+- Added on the CUDA path (harmless, recorded so nobody calls it byte-identical again): `CudaHostAllocator.cu` now includes the header (upstream relied on nvcc's implicit `cuda_runtime.h`), so it gains `<cuda.h>`/`<cufft.h>`; `utils.cuh` and `device_qualifier.hpp` test `|| defined(__HIPCC__)` (false under nvcc); `cuda_test.cu` keeps upstream's expected string in the `#else` branch.
+- CMake: every hunk is `USE_HIP`-guarded and `USE_HIP` defaults OFF. The one moved item, `OpenMP::OpenMP_CUDA` for `espresso_p3m` (upstream: generator expression in `src/core/p3m/CMakeLists.txt`; port: `${ESPRESSO_OPENMP_CUDA}` set at `src/core/CMakeLists.txt:94`), is set before `add_subdirectory(p3m)` (line 110), so it still reaches the CUDA link. Proof by generated files: normalising source/build paths, the port's CUDA `build.ninja` + `CMakeFiles/*.ninja` against the base tree's (previous job's `build-base-wal`, same recipe) give the same 524 object outputs and an identical set of all 1816 `FLAGS`/`DEFINES`/`INCLUDES`/`LINK_FLAGS`/`LINK_LIBRARIES`/`LINK_PATH` lines. The only differences are the CMake-module path lists of the regeneration rule.
+- **Deliberate CUDA-path behaviour change, kept, question for jeff:** 6d36cb6aa default-initialises `P3MGpuFftPlan::forw_plan/back_plan` to 0 and destroys a plan only when non-zero, resetting it to 0 (rule-of-five fault class, "Fault classes hit" item 2). On CUDA this also changes upstream behaviour: upstream calls `cufftDestroy` on an uninitialised handle when no plan was made, and destroys the same handles twice when `free_device_memory()` runs at a mesh change and again in the destructor. The guard assumes cuFFT never hands out handle 0 for a live plan; if it ever did, that plan would leak on CUDA. It compiles under nvcc with `-Werror` and is arch-unified, as the skill requires for shared-code fault fixes. It could be made HIP-only with a `#if defined(__HIP__)`, but that would reintroduce the double-destroy on CUDA. Question: keep it shared (and say so in the PR body as a fix to upstream behaviour), or restrict it to HIP so the CUDA path stays upstream's? Not changed in this round.
+
+### Builds at 01090739c on this host
+
+CUDA (nvcc 12.8.93, GCC 13.3.0, CMake 3.31.6): the recipe of "CUDA no-regression compile 2026-11-19" verbatim (upstream `cuda12-maxset`, maxset myconfig, `ESPRESSO_WARNINGS_ARE_ERRORS=ON`, waLBerla ON, Python OFF), MPI/Boost from that job's prefix, build dir `work/build-cuda`:
+
+```
+bash agent_space/cfg-cuda.sh <src> <build>            # = the configure block in that section
+ninja -C <build> -k 0 -j42 all <the same 53 unit-test executables>
+```
+
+**542/542 steps, 0 FAILED, 0 warnings** (same step count as base c0e34ecc0). `espresso_core.so`: 7 cubins each for sm_75/86/89; links `libcufft.so.11` and `libcudart.so.12`; `cuda_test` links. `Kokkos_ENABLE_CUDA=OFF`, `Heffte_ENABLE_CUDA=ON`, `USE_HIP=OFF`.
+
+HIP (gfx950), default myconfig, the gfx942 recipe with `-DCMAKE_HIP_ARCHITECTURES=gfx950`, `CMAKE_C/CXX_COMPILER=/usr/bin/gcc,g++`, Boost 1.83 from the nvcc job's prefix, Python 3.12 venv by `uv` inside `$FLEET_VENV` (numpy 2.5.5, scipy 1.18.1, Cython 3.3.1, tqdm, matplotlib, pint): build 236/236 plus `python_test_data cuda_test local_samples local_benchmarks`. 28 warnings, all the known `nodiscard` `hipError_t` `-Wunused-value`. `espresso_core.so`: 4 offload bundles, all `hip-amdgcn-amd-amdhsa--gfx950`. Porter smoke `ctest -R 'cuda_test|code_info|p3m_madelung|gpu_availability'`: 4/4 pass.
+
+Host gotcha: the nvcc job's OpenMPI prefix was configured with `--enable-mca-no-build=accelerator`, which drops even the `null` accelerator component. It compiles and links fine, but every `MPI_Init` aborts with "User specified an accelerator component via --mca accelerator ... failed to initialize". For running tests, OpenMPI 5.0.8 was rebuilt job-locally without that flag (`--disable-mpi-fortran --disable-sphinx --disable-opencl --disable-cuda --disable-nvml --disable-gl --disable-rsmi --disable-levelzero`); `ompi_info` then lists `MCA accelerator: null`. Boost.MPI 1.83 built against the other 5.0.8 prefix works with it (same `libmpi.so.40` ABI; `LD_LIBRARY_PATH` puts the new prefix first).
+
+Jargon: `python3 utils/jargon.py --port espresso` clean; `utils/prose.py` on the commit body clean.
