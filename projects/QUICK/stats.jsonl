@@ -84,3 +84,7 @@
 {"kind":"session","ts":"2026-11-19T21:27:09Z","epoch":1795123629.646801,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-11-19T21:40:50Z","epoch":1795124450.543558,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-11-19T21:44:02Z","epoch":1795124642.62482,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-19T22:07:56Z","phase":"compile","seconds":0.082,"exit":1,"cmd":"bash -c cmake .. -DHIP=ON -DCOMPILER=GNU -DQUICK_USER_ARCH=gfx90a -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DHIP_TOOLKIT_ROOT_DIR=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DCMAKE_SHARED_LINKER_FLAGS=-L/usr/lib/gcc/x86_64-linux-gnu/13 -DCMAKE_EXE_LINKER_FLAGS=-L/usr/lib/gcc/x86_64-linux-gnu/13 > cmake.log 2>&1 && make -j42 VERBOSE=1 > make.log 2>&1 && make install DESTDIR=$PWD/../install > install.log 2>&1"}
+{"kind":"phase","ts":"2026-11-19T22:11:04Z","phase":"compile","seconds":175.106,"exit":0,"cmd":"agent_space/build.sh"}
+{"kind":"phase","ts":"2026-11-19T22:11:25Z","phase":"test","seconds":2.134,"exit":0,"cmd":"agent_space/runtests.sh"}
+{"kind":"phase","ts":"2026-11-19T22:16:37Z","phase":"test","seconds":286.193,"exit":0,"cmd":"agent_space/runtests.sh"}

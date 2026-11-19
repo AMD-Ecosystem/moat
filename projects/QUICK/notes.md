@@ -1235,3 +1235,77 @@ Validator, after `review-passed` at 349fb05f. The platform came back `port-ready
 linux-gfx90a was not touched here: `advance-head` carried its a49289d5 validation forward to 349fb05f by itself (doc-only, inert), so it already reads `completed` at 349fb05f.
 
 CUDA nvcc compile gate: passed at a49289d5 (mi355 section above); the delta since then is Markdown only, so it holds. Still open from earlier rounds, for PR preparation: the `[ROCm]` prefix on a0122945/2146b22a and the fork mirror fast-forward (sync round).
+
+## Measurement 2026-11-19 (linux-gfx90a, MI250X): the port branch ALONE at head 349fb05f, WITHOUT PR 512 (not a validator record)
+
+Requested by jeff: one measurement, no role work, no platform state touched. Every earlier GPU validation ran on a TEST TREE with upstream's open merzlab/QUICK#512 merged locally; this measures what `moat-port` gives on its own, for the PR text.
+
+**Result: 28 PASS, 9 FAIL, 3 SKIPPED, 0 TIMEOUT** (all 40 tests of `test/testlist_short_gpu.txt`). The expectation holds exactly: the 9 failures are precisely the 9 tests that reach Libxc, and every one aborts with `[ERROR] GPU error: hipHostAlloc failure` at `src/gpu/hip/gpu_libxc.h` line 85, `Error code: 1`, `invalid argument` (upstream master's state since PR 473; PR 512 fixes it). Everything else passes, including every d-function test (the llvm#224205 workaround is on the branch). The 3 skips are runtest's own "code not compiled with f function support" skips, the same 3 as in every earlier run.
+
+### Tree and build
+
+Fresh clone of `AMD-Ecosystem/QUICK`, detached at 349fb05f985c7c12262b26336dd473ae76ad6b03 (= `origin/moat-port` tip and the record `head_sha`). No merge of PR 512: its head 0b8a13c5 is not even an object in the clone. No source edits; `git status --porcelain` shows only the untracked `install/`. Toolchain identical to the 2026-11-19 gfx90a validation: ROCm 10.1.0 pip SDK (HIP 7.16.26385, AMD clang 24.0.0git d6f6cb69), gfortran 13.3.0, one GCD (`HIP_VISIBLE_DEVICES=3`), every GPU run under `ulimit -c 0`. Build exactly as that validation (exit 0, 175 s; the `libquick_hip` link line carries `-mllvm -amdgpu-long-branch-factor=0`):
+
+```
+export ROCM_PATH=$(rocm-sdk path --root)
+GFL=$(dirname $(gfortran -print-file-name=libgfortran.so))
+cmake .. -DHIP=ON -DCOMPILER=GNU -DQUICK_USER_ARCH=gfx90a -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=$ROCM_PATH -DHIP_TOOLKIT_ROOT_DIR=$ROCM_PATH \
+  -DCMAKE_SHARED_LINKER_FLAGS="-L$GFL" -DCMAKE_EXE_LINKER_FLAGS="-L$GFL"
+make -j42 VERBOSE=1 && make install DESTDIR=$PWD/../install
+```
+
+### Method
+
+As before: each test through the real harness on its own (a one-line `test/testlist_short_gpu.txt` holding the original list line, `./runtest --hip`, full list restored afterwards), `bin/quick.hip` replaced by `exec timeout --signal=KILL 300 quick.hip.real "$@"`, `QUICK_HOME=<install>/usr/local QUICK_BASIS=$QUICK_HOME/basis LD_LIBRARY_PATH=$QUICK_HOME/lib:$(rocm-sdk path --root)/lib`. Pass = every diff check printed `PASSED` and nothing said `possible FAILURE` or `execution failed`. The first error line of each failure comes from `runtest-verbose.log`, which accumulates quick.hip's stdout/stderr across invocations. Test time 286 s. (A first attempt recorded in `stats.jsonl` as a 2 s test phase ran nothing: a script bug, an unquoted redirect on the list line, made every invocation fail before runtest started.)
+
+Runtest summary trap, worth knowing for anyone repeating this: after a test that aborts, the NEXT per-test invocation's "Test Summary" reports `Total tests: 1/1 (failed/total)` and runtest exits 1 even though all its diffs printed `PASSED`. The summary re-parses `$QUICK_HOME/.quick.hip.runtest.log` from `hip version started` to `All hip tests are done`; an aborted run never writes the closing line, so the range starts at the aborted run and picks up its `execution failed`. In this run that hit the 5 tests that directly follow a Libxc abort (ene_psb3_b3lyp_631g, ene_wat2_mp2_631g, opt_wat_rhf_631g, opt_c3h4_rhf_631g, opt_const_dist_h2o_hf_3-21g). All 5 were re-run by the same harness after a passing test: each 2/2 `PASSED`, `Total tests: 0/1`, exit 0. They are counted as PASS below on that evidence.
+
+| test | result | wall | first error line (failures) |
+|---|---|---|---|
+| ene_psb5_rhf_631g | PASS | 6s | |
+| ene_psb5_rhf_631gss | PASS | 8s | |
+| ene_acetone_rhf_321g | PASS | 6s | |
+| ene_psb3_blyp_631g | FAIL | 2s | `[ERROR] GPU error: hipHostAlloc failure` (gpu_libxc.h line 85, invalid argument) |
+| ene_psb3_blyp_631gss | FAIL | 1s | `[ERROR] GPU error: hipHostAlloc failure` (gpu_libxc.h line 85, invalid argument) |
+| ene_psb3_b3lyp_631g | PASS (summary trap; rerun clean) | 7s / 6s | |
+| ene_psb3_b3lyp_631gss | PASS | 7s | |
+| ene_C2H6_b3lyp_def2tzvp | SKIPPED by runtest (no f functions) | 0s | |
+| ene_psb3_libxc_lda_631g | FAIL | 2s | `[ERROR] GPU error: hipHostAlloc failure` (gpu_libxc.h line 85, invalid argument) |
+| ene_psb3_libxc_gga_631g | FAIL | 2s | `[ERROR] GPU error: hipHostAlloc failure` (gpu_libxc.h line 85, invalid argument) |
+| ene_psb3_libxc_hgga_631g | FAIL | 2s | `[ERROR] GPU error: hipHostAlloc failure` (gpu_libxc.h line 85, invalid argument) |
+| ene_wat2_mp2_631g | PASS (summary trap; rerun clean) | 6s / 5s | |
+| ene_wat2_mp2_631gss | PASS | 5s | |
+| grad_psb3_b3lyp_631g | PASS | 8s | |
+| grad_psb3_b3lyp_631gss | PASS | 10s | |
+| grad_ch3conhch3_b3lyp_ccpvdz | PASS | 10s | |
+| grad_NaCl_b3lyp_def2svp | PASS | 8s | |
+| grad_CH4_pbe0_6311g2df2pd | SKIPPED by runtest (no f functions) | 1s | |
+| grad_nma_rhf_def2tzvp | SKIPPED by runtest (no f functions) | 0s | |
+| grad_wat_b3lyp_ccpvdz | PASS | 8s | |
+| grad_c10h9o2s_b3lyp_def2svp | PASS | 16s | |
+| grad_daspi_meoh_b3lyp_6-31g | PASS | 12s | |
+| grad_rpsb_meoh_rhf_321g | PASS | 10s | |
+| grad_ohrad_b3lyp_631gss | FAIL | 3s | `[ERROR] GPU error: hipHostAlloc failure` (gpu_libxc.h line 85, invalid argument) |
+| opt_wat_rhf_631g | PASS (summary trap; rerun clean) | 7s / 8s | |
+| opt_wat_rhf_ccpvdz | PASS | 8s | |
+| opt_nh4_pbe0_def2svp | FAIL | 4s | `[ERROR] GPU error: hipHostAlloc failure` (gpu_libxc.h line 85, invalid argument) |
+| opt_hsoh_pbe0_def2svp | FAIL | 3s | `[ERROR] GPU error: hipHostAlloc failure` (gpu_libxc.h line 85, invalid argument) |
+| opt_c3h4_rhf_631g | PASS (summary trap; rerun clean) | 8s / 7s | |
+| opt_caffeine_b3lyp_3-21g | PASS | 22s | |
+| opt_c2h5rad_uhf_631gss | PASS | 9s | |
+| opt_methoxyrad_ub3lyp_ccpvdz | FAIL | 4s | `[ERROR] GPU error: hipHostAlloc failure` (gpu_libxc.h line 85, invalid argument) |
+| opt_const_dist_h2o_hf_3-21g | PASS (summary trap; rerun clean) | 7s / 9s | |
+| opt_const_ang_h2o_hf_3-21g | PASS | 7s | |
+| opt_const_dh_c2h4f2_hf_3-21g | PASS | 8s | |
+| opt_const_freeze_c2h4f2_hf_3-21g | PASS | 9s | |
+| api_water_rhf_631g | PASS | 7s | |
+| esp_charge_acetone_b3lyp_def2svp | PASS | 7s | |
+| chk_acetate_xyz_density | PASS | 23s | |
+| ene_benzene_b3lyp_aug-cc-pvdz | PASS | 11s | |
+
+The 9 failures are the same 9 tests as the Libxc class of the 2026-11-19 sync-head run (BLYP routes through Libxc, the three explicit Libxc tests, PBE0, and the unrestricted B3LYP tests); `hipHostAlloc failure` appears exactly 9 times in the 45 quick.hip outputs of the accumulated verbose log (40 tests plus 5 reruns), once per failing test and nowhere else.
+
+### What the PR text can say
+
+Measured, not expected: on gfx90a (MI250X) the port branch alone passes every test in the short GPU list that does not use Libxc (28 of 28 run, 3 skipped for no f-function build), and the 9 Libxc tests abort in `hipHostAlloc` (`gpu_libxc.h:85`, invalid argument), upstream master's existing HIP Libxc failure; with PR 512 merged all 37 pass (the TEST TREE validation above). Measured on gfx90a only; the wave32 statement still rests on the gfx1100 test-tree run.
