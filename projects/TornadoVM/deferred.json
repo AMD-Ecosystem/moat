@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "tornadovm-3f4de8143-body-wording",
+      "kind": "other",
+      "component": null,
+      "summary": "At the PR-prep squash, correct the 3f4de8143 ([ROCm] Launch HIP kernels with the block size the scheduler computed) commit body: its Test Plan result says the 512 x 512 MatrixMultiplication2D kernel runs in 16 x 16 blocks; the rocprofv3 kernel trace on gfx950 shows 32 x 32 (before the change 256 x 1). Wording only.",
+      "refs": [
+        "projects/TornadoVM/notes.md Fix round 1 (2026-11-04)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-04T23:45:36Z",
+      "decided": null
+    },
+    {
+      "id": "tornadovm-sdpa-hipdnn",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Re-evaluate moving cuDNN SDPA from the CK FMHA ck-hip module to hipDNN once hipDNN is released and its attention covers gfx950 FP16, RDNA and Windows (jeff 2026-11-04: stay on CK for now).",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-05T06:44:42Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-05T06:44:59Z",
+        "note": "stay on CK now"
+      }
+    },
+    {
+      "id": "tornadovm-ck-release-tag",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Move the ck-hip module's Composable Kernel pin from a development commit to the first CK release tag that ships the gfx11 (RDNA3) FMHA kernels (jeff 2026-11-04: keep the dev pin, documented).",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-05T06:49:14Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-05T06:49:42Z",
+        "note": "keep dev pin until a release has gfx11 FMHA"
+      }
+    }
+  ]
+}

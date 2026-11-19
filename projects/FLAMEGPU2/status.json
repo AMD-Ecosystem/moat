@@ -1,0 +1,155 @@
+{
+  "schema_version": 3,
+  "name": "FLAMEGPU2",
+  "upstream_url": "https://github.com/FLAMEGPU/FLAMEGPU2",
+  "fork_url": "https://github.com/AMD-Ecosystem/FLAMEGPU2",
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-05T01:16:31Z",
+  "updated_at": "2026-10-21T22:05:39Z",
+  "head_sha": "7977ab2b6ad33015333424c5ea0f656241736ca5",
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  },
+  "license_spdx": "AGPL-3.0",
+  "upstream_repo_id": 34064755,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "7977ab2b6ad33015333424c5ea0f656241736ca5",
+      "started_at": "2026-06-05T05:06:43Z",
+      "completed_at": "2026-10-21T22:03:53Z",
+      "updated_at": "2026-10-21T22:03:53Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a290861",
+      "started_at": null,
+      "completed_at": "2026-06-08T00:39:02Z",
+      "updated_at": "2026-06-08T00:39:02Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "a290861",
+        "method": "binary-equiv",
+        "detail": "#include <windows.h> inside #ifdef _MSC_VER; linux clang does not define _MSC_VER, no compiled diff",
+        "at": "2026-06-08T00:39:02Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a290861",
+      "started_at": null,
+      "completed_at": "2026-06-20T00:21:53Z",
+      "updated_at": "2026-06-20T00:21:53Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a290861",
+      "started_at": null,
+      "completed_at": "2026-06-08T00:58:21Z",
+      "updated_at": "2026-06-08T00:58:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "7977ab2b6ad33015333424c5ea0f656241736ca5",
+      "failed_sha": null,
+      "started_at": "2026-10-21T06:36:04Z",
+      "completed_at": "2026-10-21T06:50:47Z",
+      "updated_at": "2026-10-21T06:50:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "state": "completed"
+    }
+  },
+  "porting_released": {
+    "arch": "windows-gfx1151",
+    "since": "2026-10-21T06:47:49Z",
+    "at": "2026-10-21T06:49:50Z"
+  },
+  "on_hold": true,
+  "on_hold_reason": "jeffdaily 2026-10-20: upstream owns the HIP PR (FLAMEGPU/FLAMEGPU2#1379, branch amdgpu). moat-port is kept as a validated build of his bfda5dec plus three fixes, synced once at 7977ab2b; do not follow his rebases and do not open an upstream PR. Fixes reach upstream as a described reply he commits himself (CLA needs employer sign-off). Retire when #1379 merges."
+}
