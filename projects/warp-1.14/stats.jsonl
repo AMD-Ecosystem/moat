@@ -84,3 +84,4 @@
 {"kind":"phase","ts":"2026-11-19T03:49:33Z","phase":"bench","seconds":6.159,"exit":0,"cmd":"bash agent_space/wppy.sh agent_space/p7/tex_sw_vs_manual_run.py"}
 {"kind":"phase","ts":"2026-11-19T03:49:39Z","phase":"bench","seconds":6.141,"exit":0,"cmd":"bash agent_space/wppy.sh agent_space/p7/tex_sw_vs_manual_run.py"}
 {"kind":"phase","ts":"2026-11-19T03:53:24Z","phase":"test","seconds":75.321,"exit":0,"cmd":"bash agent_space/wptest_nogpu.sh projects/warp-1.14/src -s autodetect -k cpu -m 32"}
+{"kind":"session","ts":"2026-11-19T03:55:36Z","epoch":1795060536.705711,"event":"end","platform":"linux-gfx950"}
