@@ -2642,3 +2642,16 @@ At `974cd4bf`, every wave32 item gives the expected result:
 - The CPU-only suite is green.
 
 With gfx950's result at this head (Porting session 8), both Linux wave families have passed the Phase 1-5 set at `974cd4bf`. Nothing here needs a fork change.
+
+## Ruling on matrix cores for tile_matmul, plan Q3 (2026-11-18, Jeff Daily)
+
+RULED: option B. `tile_matmul` gets matrix-core kernels in this line: MFMA on Instinct (gfx90a, gfx942, gfx950; fp16, bf16, fp32, fp64) and WMMA on Radeon (fp16 and bf16 on gfx11/gfx12; fp32 also where the target has it, gfx1250). He had the scalar benchmark numbers from gfx950, gfx942 and gfx1100 in front of him, and was told the gain is unmeasured. He is disappointed that WMMA on gfx11/gfx12 has no fp32 or fp64 input form; those dtypes stay on the scalar path there because the hardware has no instruction for them (verified with the ROCm 10.2 compiler, Phase 4 notes), not by choice.
+
+Constraints (the diff-minimisation rule he set for textures applies here too):
+- The matrix-core code lives in new files of the port's own. `tile_matmul.h` gets the smallest possible dispatch: one compile-time selection per target feature, with upstream's scalar `partitioned_gemm::scalar_matmul` kept untouched as the path for everything the matrix cores do not cover (unsupported dtype on the target, tile shapes that do not fit the 16x16 fragments, remainders). No arch names in the selection where a target feature macro exists.
+- Forward and adjoint, for 64-lane and 32-lane wavefronts, at every `block_dim` Warp allows; a block whose size is not a whole number of wavefronts, or that has fewer threads than a fragment needs, must still be correct.
+- Results: same as the scalar path within the tolerances the existing tests use. fp16 and bf16 matrix instructions accumulate in fp32, so they can differ from scalar fp16 accumulation in the last bits; say so in the notes and release notes, and do not loosen any CUDA tolerance.
+- Evidence the ruling needs back: the same benchmark as Phase 4 (script in the notes), scalar against matrix-core, per dtype, tile size and block_dim, on gfx950, gfx942 and a wave32 Radeon; any configuration where the matrix-core path is slower than scalar must fall back to scalar or be explained. Also the carried diff per upstream file.
+- Tests: the existing tile matmul tests on every host, plus cases that hit the fragment boundaries (tile sizes that are and are not multiples of 16, non-square tiles, each dtype), compared against the CPU result.
+- The 64 KiB shared-memory limit and the safe-atomics ruling stand: no change to tile storage or to atomics as part of this.
+- The CUDA path is unchanged in source and is compiled with nvcc after the change.
