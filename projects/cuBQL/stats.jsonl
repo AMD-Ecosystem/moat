@@ -50,3 +50,8 @@
 {"kind":"session","ts":"2026-11-19T03:35:45Z","epoch":1795059345.774719,"event":"end","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-19T03:38:56Z","epoch":1795059536.086219,"event":"start","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-19T03:41:50Z","epoch":1795059710.132736,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-19T03:43:49Z","epoch":1795059829.587029,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-19T03:44:24Z","phase":"compile","seconds":12.192,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi355-20261118-191949-cubql-followup-porter-prompt/moat/projects/cuBQL/src/build-hip -j 64 --target cubql_morton_sort_range cubql_builder_leaves cuBQL_cuda_float3"}
+{"kind":"phase","ts":"2026-11-19T03:44:26Z","phase":"test","seconds":2.389,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi355-20261118-191949-cubql-followup-porter-prompt/moat/projects/cuBQL/src/build-hip --output-on-failure"}
+{"kind":"phase","ts":"2026-11-19T03:44:50Z","phase":"compile","seconds":14.888,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi355-20261118-191949-cubql-followup-porter-prompt/moat/projects/cuBQL/src/build-cuda -j 64 --target cuBQL_cuda_float3 cubql_builder_leaves cubql_morton_sort_range"}
+{"kind":"session","ts":"2026-11-19T03:45:39Z","epoch":1795059939.508123,"event":"end","platform":"linux-gfx950"}

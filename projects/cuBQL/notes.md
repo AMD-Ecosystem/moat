@@ -370,7 +370,7 @@ Cause: these builders sort packed 64-bit words by bits [32,64), the node ID of a
 
 Change: on HIP only, the four affected sorts use bits [0,64). That keeps the order of the upper halves and only orders equal upper halves by their lower half, which none of the callers depend on. Bits [32,63) would also avoid the defect and sort slightly faster, but they are not correct: invalid prims carry node ID `(uint32_t)-1`, which under [32,63) shares a key with node `0x7FFFFFFF`. The CUDA build is unchanged: the new macro expands to 32 there.
 
-Test: the new `tests/builder_leaves.cu` (built with `-DCUBQL_BUILD_TESTS=ON`, for CUDA or HIP) builds trees with all six binary builders over 1000 to 200000 uniform, clustered and partly empty boxes with leaf sizes 1, 4 and 8, and checks that every valid primitive is in exactly one reachable leaf, no empty box is referenced, and every box and child lies inside its node. On MI355X (gfx950) with ROCm 10.2.0 it passes 135/135 with the change; without it, 17 trees are wrong before `rebinRadixBuilder` faults. With nvcc 12.8 the library and both tests compile, and the preprocessed `instantiate_builders.cu` is identical before and after.
+Test: the new `tests/builder_leaves.cu` (built with `-DCUBQL_BUILD_TESTS=ON`, for CUDA or HIP) builds trees with all six binary builders over 1000 to 200000 uniform and clustered boxes with leaf sizes 1, 4 and 8, and with the spatial-median, SAH and ELH builders also over partly empty boxes (the radix builders require nonempty boxes). It checks that every valid primitive is in exactly one reachable leaf, no empty box is referenced, and every box and child lies inside its node. On MI355X (gfx950) with ROCm 10.2.0 it passes 135/135 with the change; without it, 17 trees are wrong before `rebinRadixBuilder` faults. The existing `cubql_morton_sort_range` test now also builds and runs on HIP (four more CUDA runtime names are mapped in `cuBQL/math/common.h`) and passes there, including its `--benchmark` validation. With nvcc 12.8 the library and both tests compile, and the preprocessed `instantiate_builders.cu` and `morton_sort_range.cu` are identical before and after.
 
 This change was prepared with the help of an AI coding agent.
 ====
@@ -400,3 +400,21 @@ Scope: the port's own commit `e26657f` (`6bd4a51..e26657f`), plus the HIP impact
 ### Recommendation
 
 **Request Changes** (item 1; item 2 is a wording fix to the draft). The builder change itself, the macro, the new test and the commit hygiene need nothing.
+
+## Changes-requested round 2026-11-19 (porter, linux-gfx950): head 1a2b9bb
+
+Both findings of the 2026-11-19 review addressed; `e26657f` left as it is.
+
+1. New commit `1a2b9bb` "[ROCm] Build and run the Morton sort range test on HIP": `cuBQL/math/common.h` HIP block gains `using cudaDeviceProp = hipDeviceProp_t;` and `cudaGetDeviceProperties`/`cudaRuntimeGetVersion`/`cudaDriverGetVersion` -> `hip*` defines (exactly the reviewer's four); `tests/CMakeLists.txt` now builds `cubql_morton_sort_range` under `CUBQL_HAVE_CUDA OR CUBQL_HAVE_HIP` with `LANGUAGE HIP` under `CUBQL_USE_HIP`, and both tests share that one block (the separate `builder_leaves` block from `e26657f` was folded into it).
+2. Draft PR body (the `====` block in the follow-up round section above) corrected in place: the partly empty scene is named as running the spatial-median, SAH and ELH builders only, and the Test paragraph now also names `cubql_morton_sort_range` on HIP and the identical preprocessed `morton_sort_range.cu`. `jargon.py -` and `prose.py -` on the body: clean. The commit body of `e26657f` keeps the old wording (no amend).
+
+Results, gfx950 MI355X, ROCm 10.2.0 wheels, HIP_VISIBLE_DEVICES=2, `ulimit -c 0`, build recipe as in the follow-up round section:
+
+    cmake --build projects/cuBQL/src/build-hip -j 64 --target cubql_morton_sort_range cubql_builder_leaves cuBQL_cuda_float3
+    ctest --test-dir projects/cuBQL/src/build-hip --output-on-failure      -> 2/2 passed (builder_leaves 2.07 s)
+    ./cubql_morton_sort_range              -> exit 0, 27 x status=PASS, 0 FAIL, 2 x query_oracle=PASS
+    ./cubql_morton_sort_range --benchmark  -> exit 0, validation=PASS (benchmark_device=AMD Instinct MI355X)
+
+CUDA, nvcc 12.8.93: `cuBQL_cuda_float3 cubql_builder_leaves cubql_morton_sort_range` build clean in build-cuda (sm_80). Preprocessed with `nvcc -std=c++17 -x cu -E -Xcompiler -P -DCUBQL_HAVE_CUDA=1 -DCUBQL_INSTANTIATE_T=float -DCUBQL_INSTANTIATE_D=3 -arch=sm_80 -I. -Itests`, blank lines dropped, upstream `6bd4a51` vs `1a2b9bb`: `instantiate_builders.cu` 135484 lines identical, `tests/morton_sort_range.cu` 139239 lines identical.
+
+`jargon.py --port cuBQL`, `audit-commits cuBQL`, `prose.py` on the commit body: clean. Pushed `e26657f..1a2b9bb`, `advance-head cuBQL 1a2b9bb...`, handed back as `delta-ported` (review scope for this round: `e26657f..1a2b9bb` plus the notes draft).
