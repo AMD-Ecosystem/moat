@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-15T22:09:37Z",
-  "updated_at": "2026-11-19T03:57:35Z",
+  "updated_at": "2026-11-19T04:02:37Z",
   "head_sha": "1a2b9bb3d90ae5e6d0513ed217a2437550656158",
   "depends_on": [],
   "pr_url": "https://github.com/NVIDIA/cuBQL/pull/35",
@@ -147,6 +147,29 @@
       "validated_prior": [
         "b0ea6a1712b40809df28950c9bb3746bc6e99083"
       ]
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1a2b9bb3d90ae5e6d0513ed217a2437550656158",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-19T04:02:37Z",
+      "updated_at": "2026-11-19T04:02:37Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed"
     }
   },
   "published_sha": "b0ea6a1712b40809df28950c9bb3746bc6e99083",

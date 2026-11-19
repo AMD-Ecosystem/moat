@@ -501,3 +501,26 @@ Revalidated `1a2b9bb` (from `b0ea6a1`) on linux-gfx1100, AMD Radeon Pro W7800 48
 - Samples: s01 binary BVH, s01 wide BVH and the CPU s01 exit 0 with identical 20 answers (md5 of the result lines equal); s07 aggregateNBody exit 0. No `bunny.obj` on this host, so s02-s06 ran on a generated UV sphere (radius 1, 5184 triangles, `agent_space/sphere.py`, not committed): all exit 0; s03 inside fraction 0.5247 vs pi/6 = 0.5236; s02 distance from (0.84,0.84,0.84) 0.454957 vs 0.84*sqrt(3)-1 = 0.4549.
 - CUDA gate: not rerun; recorded at `1a2b9bb` by the porter (nvcc 12.8.93) and the reviewer.
 - `jargon.py --port cuBQL` clean; README documents the HIP build (`README.md:319`); fork tree clean apart from untracked `build-hip/`.
+
+## Validation 2026-11-18 (windows-gfx1151)
+
+Validated `1a2b9bb` (moat-port) on windows-gfx1151, AMD Radeon 8060S (gfx1151 APU, wave32), TheRock ROCm 7.14.0a20260612 pip SDK (`_rocm_sdk_devel`), AMD clang 23.0.0git, Windows 11, MSVC 14.44 link.exe first on PATH. `classify b0ea6a1 1a2b9bb` is mixed, so a full GPU run. No deviation from the earlier Windows recipe: no `--offload-new-driver` needed, build files unchanged. Parallelism capped at 8, each test run once.
+
+    source agent_space/win_rocm_env.sh   # ROCM_ROOT, HIP_DEVICE_LIB_PATH, MSVC link first
+    B=$ROCM_ROOT/lib/llvm/bin
+    cmake -S projects/cuBQL/src -B projects/cuBQL/src/build-hip-gfx1151 -G Ninja -DCUBQL_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+      -DCMAKE_BUILD_TYPE=Release -DCUBQL_BUILD_TESTS=ON -DCMAKE_C_COMPILER=$B/clang.exe -DCMAKE_CXX_COMPILER=$B/clang++.exe \
+      -DCMAKE_HIP_COMPILER=$B/clang++.exe -DCMAKE_PREFIX_PATH=$ROCM_ROOT
+    cmake --build projects/cuBQL/src/build-hip-gfx1151 -j8 --target cuBQL_cuda_float3 cubql_builder_leaves cubql_morton_sort_range \
+      cuBQL_sample01_points_closestPoint_cuda cuBQL_sample01_points_closestPoint_wideBVH_cuda sample07_aggregateNBody \
+      cuBQL_cpu_float3 cuBQL_sample01_points_closestPoint_cpu
+    rocm_stage_runtime projects/cuBQL/src/build-hip-gfx1151   # TheRock amdhip64_7/amd_comgr/hiprtc/rocm_kpack DLLs next to the exes
+    ctest --test-dir projects/cuBQL/src/build-hip-gfx1151 --output-on-failure
+
+- Build: 20/20 steps, 0 errors (host warnings only).
+- ctest: 2/2 passed (`cubql_morton_sort_range` 0.43 s, `cubql_builder_leaves` 1.89 s).
+- `cubql_builder_leaves.exe`: 135 ok, 0 FAILED, `PASSED` (includes with-empty sentinel scenes, 200000 size).
+- `cubql_morton_sort_range.exe`: exit 0, 27 status=PASS, 0 FAIL, 2 query_oracle=PASS; `--benchmark`: exit 0, validation=PASS, benchmark_device=AMD Radeon(TM) 8060S Graphics.
+- Samples (exit 0): s01 binary and wide BVH and the CPU sample produce byte-identical output (same md5, 20 queries); s07 aggregateNBody 100000 data points. s02-s06 not run (no bunny.obj on this host, light-run rule); covered on the other platforms.
+- CUDA gate: not rerun (no CUDA toolkit on this host); recorded at `1a2b9bb` by the porter and reviewer.
+- `jargon.py --port cuBQL` clean; README documents the HIP build (`README.md:319`); fork tree clean apart from untracked `build-hip-gfx1151/`.
