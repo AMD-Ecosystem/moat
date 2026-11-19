@@ -85,3 +85,4 @@
 {"kind":"phase","ts":"2026-11-19T18:42:03Z","phase":"test","seconds":151.512,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300c-20261119-094402-espresso-val64-prompt/build-hip -j 96 --target check_unit_tests"}
 {"kind":"phase","ts":"2026-11-19T18:46:35Z","phase":"test","seconds":271.386,"exit":8,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300c-20261119-094402-espresso-val64-prompt/build-hip -LE gpu --timeout 900 -j 16"}
 {"kind":"session","ts":"2026-11-19T18:48:08Z","epoch":1795114088.006517,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-19T21:11:40Z","epoch":1795122700.326002,"event":"start","platform":"linux-gfx950"}
