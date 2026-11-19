@@ -4488,7 +4488,7 @@ DROPPED, not in upstream and not held (jeff to decide later):
 | `hipDeviceSetLimit(hipLimitStackSize, 128)` through ctypes in `release_gpu_stack` | c073679 | lib/cupy_helper.py:60-66 returns early on HIP, so the stack trim is skipped (called from dft/numint.py 567/727/1012; not libxc-specific) | No failure observed with upstream's skip (gfx942 eval: dft 133/3 with other causes, grad 107/0, hessian 93/0). Ours fixed CuPy-ROCm's `deviceSetLimit` stub raising hipErrorUnknown, which upstream avoids by skipping. The memory benefit of the trim on HIP was never measured. |
 | 64-bit wave64 lane mask in the J-engine | 45d80530 (gvhf-md/md_contract_j.cu) | md_contract_j.cu:101 and :431 keep `unsigned int` shifted by `group_id*threadsx` (shift reaches 32..63 on wave64, undefined behaviour) | No failure observed. Inert upstream as far as read: the mask feeds only asserts compiled out under NDEBUG (Release), the shuffle width is warpSize and the consumer is `tx == 0`. Ours needed it because our shim took the width from popcount(mask). Found in LLVM IR (poison shl) by the 2026-10-29 review. |
 | `-ffp-contract=on` | 8cb88067 | absent (clang HIP default) | Rationale only; no failing run recorded. RHF water matches CPU to 1e-11 without it. |
-| hiprtc preamble for the `indexed_scale` RawKernel (hip_complex aliases) | dc45713 (pbc/df/grad/rhf.py, `kernel_source` in cupy_helper.py) | pbc/df/grad/rhf.py:922-923 still `#include <cuComplex.h>` with no HIP handling | Not exercised by the 2026-11-19 evaluations (PBC DF gradients failed earlier at cause A). Whether it compiles under hiprtc on upstream is measured by this round's full run (pbc/grad). |
+| hiprtc preamble for the `indexed_scale` RawKernel (hip_complex aliases) | dc45713 (pbc/df/grad/rhf.py, `kernel_source` in cupy_helper.py) | pbc/df/grad/rhf.py:922-923 still `#include <cuComplex.h>` with no HIP handling | Not exercised by the 2026-11-19 evaluations (PBC DF gradients failed earlier at cause A). **Measured in this round's full run: it does not compile (`'cuComplex.h' file not found`), 47 tests fail** (Step 3). Now an observed failure; a candidate seventh pull request for jeff. |
 | "rocBLAS trsm workaround" | none in code | n/a | There never was a code change: dc45713 only classified three tolerance misses in its body (rocm-libraries#16268). Nothing to port. The owed PR-text correction about it lapses with the old commit. |
 
 ### Step 2: six commits on top of the merge, each cherry-picks cleanly onto upstream master alone
@@ -4511,3 +4511,64 @@ Details worth keeping:
 - **(d) commit-message correction owed at PR preparation:** the 3bb435b2 body says "8 DF-MP2 failures"; the measured 8 are in mp/tests/test_mp2.py (conventional MP2 ERIs through fill_int4c2e), not DF-MP2. The commit was not amended (no amend rule); fix the wording when it is cherry-picked onto its PR branch.
 - **(e)** `cupy.linalg.cholesky(diag(4,-1e-5,1))` on this GPU returns diag(2,-1e-5,1), no NaN; `lib.cusolver.cholesky` raises LinAlgError. Complex 50x50 Hermitian: the two factors agree exactly. The mp test passed in one run before (e) and failed in another; it was not investigated further, since (e) makes it pass deterministically.
 - **(f) versions:** needed with ROCm 10.1 only (ROCm/llvm-project release/therock-10.1 = d6f6cb69). Fixed by LLVM 8c6e07731faf, which release/therock-10.2, the 10.3 branch and amd-staging contain (branch ancestry plus a static check with d6f6cb69 + that cherry-pick; no ROCm 10.2 runtime run; claude-shared plan therock-10-1-machinelicm-vgpr-clobber-reduce.md). Not seen on gfx1100. CMake cannot tell 10.1 from 10.2 (both clang 24.0.0), hence the unconditional default with an option to turn it off.
+
+### Step 3: upstream's CI test selection at the new head (7cbd3d2) on this GPU
+Build: upstream's procedure, `USE_HIP=1 GPU_ARCHITECTURES=gfx942 CMAKE_BUILD_ARGS="--parallel 56" python setup.py build_py` from a clean `build/` (no extra configure args; the flag now comes from fix (f)), wrapped in `utils/timeit.sh gpu4pyscf compile`: exit 0, 12 libraries, `--offload-arch=gfx942` only. Run: the evaluation's runner (per test directory, 41 directories, `python -m pytest <dir> -p no:cpp -p no:cacheprovider -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -k 'not _high_cost' -q -rfEs --tb=short --timeout 1800 --junitxml`, `OMP_NUM_THREADS=2`, `PYTHONPATH=<src>`, `LD_LIBRARY_PATH=$R/lib`), wrapped in `utils/timeit.sh gpu4pyscf test`. Wall 1610 s. Counts from the junit files. Same 2363 tests as the evaluation's run (upstream's tree differs only by MANIFEST.in).
+
+**7cbd3d2: 2171 passed / 83 failed / 109 skipped / 0 errors**, against the evaluation's **1747 / 460 / 104 / 52** (upstream 4c56c9f, flag build). No hang, no follow-on HIP error.
+
+| directory | eval 4c56c9f (flag build) | head 7cbd3d2 |
+|---|---|---|
+| cc | 0/3/0/0 | 3/0/0/0 |
+| df/hessian | 24/0/0/0 | 24/0/0/0 |
+| df | 170/50/2/1 | 218/3/2/0 |
+| dft | 133/3/9/0 | 135/1/9/0 |
+| dispersion, fci, geomopt, grad, gw, hessian, lib, mcscf, nac | unchanged | unchanged (17, 5, 0/0/5, 107, 12, 93/0/1, 71/0/5, 8, 41/0/1) |
+| gto | 74/4/0/0 | 73/0/5/0 (the 5 ECP derivative tests skip, fix (d)) |
+| md | 46/4/0/0 | 50/0/0/0 |
+| mp | 16/8/0/0 | 24/0/0/0 |
+| pbc/df | 25/113/6/4 | 121/21/6/0 |
+| pbc/dft | 134/48/38/0 | 176/6/38/0 |
+| pbc/grad | 116/78/2/0 | 163/31/2/0 |
+| pbc/gw | 0/0/0/21 | 21/0/0/0 |
+| pbc/properties/berry | 7/3/2/0 | 10/0/2/0 |
+| pbc/scf | 74/83/2/13 | 154/16/2/0 |
+| pbc/x2c | 5/2/0/0 | 6/1/0/0 |
+| properties | 14/6/5/0 | 20/0/5/0 |
+| scf | 155/44/14/13 | 211/1/14/0 |
+| tdscf | 122/10/0/0 | 130/2/0/0 |
+| x2c | 18/1/1/0 | 18/1/1/0 |
+| pbc/gto, pbc/gto/pseudo, pbc/hessian, pbc/lib, pbc/tools, pop, qmmm, qmmm/pbc, sem/*, solvent, tests | unchanged | unchanged |
+| **total** | **1747/460/104/52** | **2171/83/109/0** |
+
+All 83 failing tests also failed in the evaluation's run (no newly failing test name). Classified from the `--tb=short` tracebacks:
+
+| class | tests | what |
+|---|---|---|
+| **New cause, from dropped work: hiprtc cannot compile the `indexed_scale` RawKernel** | 47 | `HIPRTC_ERROR_COMPILATION: 'cuComplex.h' file not found`, from pbc/df/grad/rhf.py:922-923 (`#include <cuComplex.h>` in a CuPy RawKernel; hiprtc has no such header). All PBC GDF gradient, stress and hcore-derivative tests (pbc/df test_pbc_df_derivatives 15, test_pbc_hcore_derivatives 3; pbc/grad test_pbc_grad_{krhf,kuhf,krks,kuks,rks}, the GDF stress tests; pbc/scf test_pbc_gdm_krhf_gamma). Hidden behind cause A before. Our old port fixed this (dc45713, a hiprtc preamble through `cupy_helper.kernel_source`); it is in the DROPPED list above and was **not carried**, per the request. It is now an observed failure, so it is a candidate for a seventh small pull request, for jeff to decide. |
+| Held work: GPU libxc (the CPU XC fallback hands collinear rho to PySCF NumInt2C) | 7 | cause G, unchanged: pbc/dft test_pbc_gks/kgks (5), pbc/scf test_pbc_scf_ghf gamma/kpoint_hf_conversion (2). A small fix to upstream's fallback (not GPU libxc) would likely also fix them; not tried. |
+| Environment: d-aug-cc-pvdz missing from PySCF 2.14 | 3 | cause I (df test_general_contraction, scf test_rhf_df_against_qchem, tdscf test_rtda_ris_diffuse) |
+| Upstream's own HIP design choices fail its tests | 5 | pbc/scf test_get_rho_{rhf,krhf,uhf,kuhf}_built (multigrid not selected on HIP), pbc/x2c test_to_cpu |
+| Individual failures already listed by the evaluation (margins, noise floor, unresolved PBC) | 13 | df test_j_energy_per_atom 3.86e-12 vs 1e-12 and test_jk_energy_per_atom 3.17e-10 vs 3e-10; dft test_mcol_gks_mgga (noise floor); pbc/df test_ft_ao_strain_deriv 3.77e-8; x2c test_sfx2c1e_cart 6.0e-11; pbc/scf test_pbc_gdm_krks_uniform_grid 2.7e-9; pbc/dft test_multigrid_v3 test_scf_2d_against_fft 5.4e-7; pbc/grad test_multigrid_image_boundary_strain_deriv 0.0717; slabdipole test_automatic_cut_and_scanner and test_scf_finite_difference; slabgate test_fractional_scf_finite_difference; pbc/scf ghf test_gamma/kpoint_scf_properties[gdf] |
+| Newly reached, previously hidden behind A/B/C; not caused by this round | 8 | **pbc/scf test_pbc_soscf** test_nr_krhf, nr_kuhf, nr_krks_lda, nr_krks_rsh, nr_kuks_lda: the GPU energy equals the GPU reference SCF (first assert passes) but misses the hard-coded value by about 1.0e-8 at 8 places. CPU PySCF 2.14 gives the same energy as the GPU for test_nr_krhf's KRHF (GPU-CPU 6.8e-11; both 1.05e-8 from the hard-coded -10.293741125853439, `agent_space/gpu4pyscf/soscf_cpu.py`), so the reference value does not match this PySCF, not a GPU defect. **pbc/scf test_pbc_gdm_kuhf** 2.5e-8 vs 1e-10 and **pbc/grad test_pbc_grad_krks test_sr_rsh_grad** 2.5e-6 vs 2e-6: not root-caused. **tdscf test_krylov_eigenvalue** 1.34e-5 vs places=5: solver convergence, independent of the eigensolver (fix (b) notes). |
+| **total** | **83** | |
+
+The 47 in the hiprtc row are exactly the tests whose traceback ends in `CompileException`/`HIPRTC_ERROR_COMPILATION`.
+
+Relative to the evaluation's causes: A (288), B (59), C (40), D (13), H (2), the follow-on errors F (9) and the 72 rerun-passes Y are all gone. E (4 ECP derivative failures) became 5 skips. G (7) and I (2, now 3 counted in this run) remain.
+
+**Tests that pass only because of fix (f).** A second build of the same head with `-DHIP_DISABLE_MACHINE_LICM=OFF` (git worktree in agent_space, no flag on any compile or link line) was used to check:
+- RHF water (`agent_space/gpu4pyscf/rhf_water.py`): sto-3g 3.7e-12 from CPU; **def2-svp: `HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION` in `rys_k_kernel`, then the process hung** (killed at 150 s). With the flag: def2-svp 9.7e-12, cc-pvtz 2.8e-11.
+- grad/tests without the flag (`--timeout 90 --timeout-method=thread`, otherwise the CI selection): 3 passed, 4 failed, then pytest-xdist stopped with an INTERNALERROR after replacing crashed workers. With the flag: 107/0.
+- hessian/tests without the flag: 12 workers went down ("node down: Not properly terminated") within about 20 minutes and the run was stopped by hand. With the flag: 93/0/1.
+- The GPU was healthy afterwards (`cupy.ones(1000).sum()` returns).
+So, on gfx942 with ROCm 10.1, **every test that builds J/K with d shells through the Rys kernels passes only because of fix (f)**. That is most of the 2171 (all molecular SCF/DFT/gradient/Hessian/TDDFT tests with a polarized basis); the as-is evaluation could not finish df or scf for the same reason. The whole-tree no-flag count was not attempted: it hangs.
+
+### CUDA no-regression compile
+nvcc 12.8.93 (`/usr/local/cuda-12.8` on this host): `cmake -S gpu4pyscf/lib -B <b> -DCMAKE_CUDA_ARCHITECTURES=80 -DCUDAToolkit_ROOT=/usr/local/cuda-12.8 -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc -DCMAKE_BUILD_TYPE=Release -DBUILD_LIBXC=OFF -DBUILD_CUTLASS=OFF` on the head tree: configure exit 0 (`USE_HIP:BOOL=OFF`); `cmake --build <b> --target pbc`: exit 0, ft_ao.cu (the only changed CUDA source) compiled and the library linked. The other changes are Python behind `cupy.cuda.runtime.is_hip`, CMake inside `if(USE_HIP)`, or backend-neutral Python (fix (e)).
+
+### Owed / next
+- Seventh candidate for jeff (not carried, per the request): the hiprtc `cuComplex.h` include in pbc/df/grad/rhf.py `indexed_scale` (47 tests on gfx942).
+- Next round per ruling 3: the low-LDS g-shell ECP derivative kernels (c8c9acc on our old branch: ecp_type2_lowmem.cu, nr_ecp_driver.cu selection, and relaxing test_ecp.py's `shm_size < 64*1024` skip on HIP, which fix (d) now trips).
+- 3bb435b2 message wording ("8 DF-MP2 failures" should read "8 failures in mp/tests/test_mp2.py") to fix at cherry-pick time.
+- Wave32 (gfx1100/gfx1201) and gfx90a have not run this head; the reviewer and validators will.

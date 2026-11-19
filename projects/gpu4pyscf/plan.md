@@ -1,5 +1,9 @@
 # gpu4pyscf -- ROCm/HIP port plan (lead platform: linux-gfx90a, MI250X, ROCm 7.2.1)
 
+## Rescope (2026-11-19, jeff): supersedes the strategy below
+
+Upstream merged its own ROCm/HIP port (#1042). The port is now a small delta on upstream master: `moat-port` = upstream master (merge a8b4c30e, identical tree) plus independent fixes, each meant to become its own upstream pull request. Round 1: six fixes (ft_ao wave64 tile, eigh_std inputs, own hipSOLVER handle for eigh, HIP shm_size reserve, Cholesky failure detection, the ROCm 10.1 machine-LICM flag). Round 2: the low-LDS g-shell ECP derivative kernels. HELD: GPU libxc on HIP, the rocBLAS einsum call-site rewrite. Build and test with upstream's procedure (its README "Building for AMD GPUs (ROCm)", or `USE_HIP=1 python setup.py build_py`; CI selection from `.github/workflows/unittest.yml`). The sections below describe the original independent port and are history; notes.md "Rulings 2026-11-19 (jeff)" and the porter section after it are current.
+
 ## Scope ruling (2026-10-31, jeff)
 
 The port is the whole project. The HF-first staging below ("Milestone 1", with DFT, solvent, semi-empirical, multigrid, gradients and Hessians deferred) was never approved and is superseded: every library is built for ROCm and every test directory is run (notes.md, "Porter 2026-10-31" sections). libxc needs no separate port: upstream libxc 7.1.2 builds with its own HIP backend through the existing ExternalProject. The sections below are kept as the original analysis.
