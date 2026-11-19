@@ -7,8 +7,8 @@
   "priority": 4.507,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-11-19T22:02:41Z",
-  "head_sha": "7d1cb0708462b3dfa712e49c524622930f42fe3f",
+  "updated_at": "2026-11-19T23:36:44Z",
+  "head_sha": "1baeec230ebc9e169c822e408333d347140786ad",
   "porting": null,
   "waivers": {
     "windows": {
@@ -44,13 +44,13 @@
       }
     },
     "linux-gfx1100": {
-      "state": "validation-failed",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f",
+      "validated_sha": "1baeec230ebc9e169c822e408333d347140786ad",
       "started_at": "2026-06-02T03:20:00Z",
-      "completed_at": "2026-06-23T22:43:50Z",
-      "updated_at": "2026-11-19T22:02:41Z",
+      "completed_at": "2026-11-19T23:36:44Z",
+      "updated_at": "2026-11-19T23:36:44Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -66,23 +66,27 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f",
+        "from": "7d1cb0708462b3dfa712e49c524622930f42fe3f",
+        "to": "1baeec230ebc9e169c822e408333d347140786ad",
         "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:43:50Z"
+        "class": "doc-only",
+        "detail": "History rewritten for the pull request with an identical tree (7d1cb07 -> 1baeec2): only commit messages changed, and the vocabulary check that failed on an old commit message is clean at 1baeec2. The",
+        "at": "2026-11-19T23:36:44Z",
+        "after_gate": "jargon"
       },
-      "failed_sha": "7d1cb0708462b3dfa712e49c524622930f42fe3f",
-      "failed_gate": "jargon",
-      "gpu_passed_sha": "7d1cb0708462b3dfa712e49c524622930f42fe3f"
+      "failed_sha": "1baeec230ebc9e169c822e408333d347140786ad",
+      "validated_prior": [
+        "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f"
+      ]
     },
     "linux-gfx90a": {
-      "state": "validation-failed",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f",
+      "validated_sha": "1baeec230ebc9e169c822e408333d347140786ad",
       "started_at": "2026-06-02T02:42:47Z",
-      "completed_at": "2026-06-23T22:43:50Z",
-      "updated_at": "2026-11-19T21:46:28Z",
+      "completed_at": "2026-11-19T23:36:43Z",
+      "updated_at": "2026-11-19T23:36:43Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -98,14 +102,18 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f",
+        "from": "7d1cb0708462b3dfa712e49c524622930f42fe3f",
+        "to": "1baeec230ebc9e169c822e408333d347140786ad",
         "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:43:50Z"
+        "class": "doc-only",
+        "detail": "History rewritten for the pull request with an identical tree (7d1cb07 -> 1baeec2): only commit messages changed, and the vocabulary check that failed on an old commit message is clean at 1baeec2. The",
+        "at": "2026-11-19T23:36:43Z",
+        "after_gate": "jargon"
       },
-      "failed_sha": "7d1cb0708462b3dfa712e49c524622930f42fe3f",
-      "failed_gate": "jargon",
-      "gpu_passed_sha": "7d1cb0708462b3dfa712e49c524622930f42fe3f"
+      "failed_sha": "1baeec230ebc9e169c822e408333d347140786ad",
+      "validated_prior": [
+        "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f"
+      ]
     },
     "windows-gfx1101": {
       "blocked": true,
@@ -134,5 +142,5 @@
     "since": "2026-11-19T21:41:45Z",
     "at": "2026-11-19T21:43:55Z"
   },
-  "reviewed_sha": "7d1cb0708462b3dfa712e49c524622930f42fe3f"
+  "reviewed_sha": "1baeec230ebc9e169c822e408333d347140786ad"
 }
