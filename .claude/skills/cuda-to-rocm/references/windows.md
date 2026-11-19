@@ -250,7 +250,14 @@ Which driver to pick depends on the CMake version, so check it first:
   populates `CMAKE_HIP_SIMULATE_VERSION`, so configure dies inside `Windows-MSVC.cmake`
   with "MSVC compiler version not detected properly". Use the GNU-driver
   `clang`/`clang++` for all three instead -- it still targets the MSVC ABI, so MSVC-built
-  dependencies and vendored submodules link normally. (Proven on dietgpu.)
+  dependencies and vendored submodules link normally. (Proven on dietgpu.) The failure is
+  in the nested "Detecting HIP compiler ABI info" `try_compile`, which exits 1 with empty
+  output while the compiler-id step and the C and C++ ABI detection succeed with the same
+  compiler; `<build>/CMakeFiles/CMakeConfigureLog.yaml` shows it, and `vcvars`, `INCLUDE`
+  and `LIB` are irrelevant. Where neither a newer CMake nor the GNU driver is an option,
+  Open3D got past it with no source change by pre-caching the two variables
+  `CMakeDetermineCompilerABI.cmake` checks with `if(NOT DEFINED ...)`:
+  `-DCMAKE_HIP_COMPILER_WORKS=1 -DCMAKE_HIP_ABI_COMPILED=1`. (Open3D, alien)
 
 Read that failure as "this CMake is too old", not "clang-cl cannot host HIP". A newer
 CMake is one `pip install cmake` away and TheRock's own venv already carries 4.3.2, so
@@ -295,6 +302,22 @@ keep going until they agree. `-Dgtest_force_shared_crt=ON` does NOT solve this f
 FetchContent googletest: googletest only rewrites an existing `/MD` into `/MT`, so where no
 CRT flag exists there is nothing for the option to rewrite. (HEonGPU)
 
+A second workaround keeps the property mechanism. The cause is in CMake's own
+`Platform/Windows-MSVC.cmake`: the block that fills
+`CMAKE_<lang>_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreaded{,DLL,Debug,DebugDLL}` is
+hardcoded `if("x${lang}" STREQUAL "xC" OR "x${lang}" STREQUAL "xCXX")`, so HIP is never
+filled although the same macro runs for it. Supply the four missing variables on the
+configure command line: `-DCMAKE_HIP_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreaded=-MT`,
+`..._MultiThreadedDLL=-MD`, `..._MultiThreadedDebug=-MTd`, `..._MultiThreadedDebugDLL=-MDd`.
+That reaches only the top-level project. A bundled dependency the project builds with
+`enable_language(HIP)` through `ExternalProject_Add` is a separate nested `cmake` run, and
+`ExternalProject_Add` forwards only the variables its `CMAKE_ARGS`/`CMAKE_CACHE_ARGS` name.
+A project that forwards `CMAKE_MSVC_RUNTIME_LIBRARY` into those calls (a common way to keep
+third-party code consistent with the top build) reproduces the error inside the nested
+build, out of reach of the outer command line. That needs a change in the project: forward
+the same four variables in its shared ExternalProject argument list, guarded to Windows and
+clang. (Open3D, whose stdgpu HIP back end is built through `ExternalProject_Add`.)
+
 **clang-cl does not link the compiler-rt builtins.** Host code using 128-bit integer
 arithmetic -- ordinary in crypto and modular-arithmetic libraries -- links fine on Linux
 (libgcc/compiler-rt is implicit) and fails on Windows with `lld-link: error: undefined
@@ -311,6 +334,23 @@ directory: 'C:/Program'`. Use the dash spellings, which clang-cl accepts identic
 blanket escape -- it is inherited by every child process, so a project script that runs
 `git -C /d/path/...` inside the configure step stops resolving its own paths and fails with
 a much more confusing error. (HEonGPU)
+
+**`cmd.exe /c "<script>.bat"` from Git Bash silently does nothing.** The same argument
+conversion rewrites `/c` (cmd's own switch, not a path) into a drive letter, so cmd opens an
+interactive shell and returns at once: exit 0, a log holding only the
+`Microsoft Windows [Version ...]` banner, no compiler output, in well under a second. That is
+a no-op, not a build result; a suspiciously fast "pass" from a `cmd.exe /c` wrapper is the
+tell. Prefix that one command with `MSYS2_ARG_CONV_EXCL="*"` (or `MSYS2_ARG_CONV_EXCL=/c`):
+`MSYS2_ARG_CONV_EXCL="*" cmd.exe /c "build.bat"` runs the script. (CuMesh)
+
+**`LIB` and `INCLUDE` set from Git Bash need Windows-style paths.** `PATH` gets the
+automatic POSIX-to-Windows translation when a Windows `.exe` is spawned; other environment
+variables do not. `export LIB="/c/Program Files (x86)/.../lib/x64;..."` reaches
+`lld-link.exe` as that literal string, and the link fails with `lld-link: error: could not
+open 'kernel32.lib': no such file or directory` although the file is right there, because
+the whole list failed to resolve. Quoting is not the fix. Use drive-letter paths
+(`C:/Program Files (x86)/...`; forward slashes are fine) for `LIB`, `INCLUDE`, `LIBPATH` and
+any other path list the MSVC toolchain reads, for instance through `cygpath -w`. (alien)
 
 **CMake gives clang-cl `/EHsc` for C++ sources but not for HIP sources.** With CMake and an
 MSVC-style clang (`clang-cl`) as `CMAKE_HIP_COMPILER`, `CMAKE_HIP_FLAGS_INIT` gets no
@@ -332,6 +372,26 @@ requirement; otherwise a consumer's catch around a library call is dropped the s
 (HEonGPU: a two-file reproducer isolated it, and the fix took the Windows suite from 190 of
 295 passing to 289 of 293.)
 
+### Bundled third-party libraries that break under the clang toolchain: take them from vcpkg
+
+`enable_language(HIP)` puts the whole build on a clang toolchain, and a project's bundled
+third-party libraries were written for cl.exe. Some gate their Windows build path on a CMake
+test that no longer answers as it did under MSVC (Open3D recorded `if(MSVC)` taking the
+wrong branch) and silently take the other branch; others inject literal `/MD`-style flags
+into a GNU-driver clang command and fail outright (`no such file or directory: '/MD'`).
+Before calling that a wall, check whether the project exposes `USE_SYSTEM_<LIB>` options:
+supplying the failing libraries (TBB, libjpeg-turbo, curl, openssl, embree, zeromq, ...)
+from vcpkg instead of building the bundled copies routes around the problem with no source
+change. Recipe: a full vcpkg checkout with the `x64-windows` triplet,
+`-DUSE_SYSTEM_<LIB>=ON` for each affected library, the project's static-CRT option off
+(Open3D: `-DSTATIC_WINDOWS_RUNTIME=OFF`) so the vcpkg libraries' dynamic CRT matches the HIP
+runtime's, and, for a library found through `pkg_search_module` instead of `find_package`
+(curl and zeromq commonly are), CMake's FindPkgConfig pointed at vcpkg's own `pkgconf.exe`
+(`PKG_CONFIG`, `PKG_CONFIG_PATH`), since Windows has no system pkg-config. A handful of real
+fixes are typically still needed in the project's own CMake (`if(MSVC)` against `if(WIN32)`,
+clang-only warning suppressions): small, guarded to Windows and clang, and safe to commit;
+Open3D needed five. (Open3D)
+
 ### TheRock clang 23 can hang in x86 register allocation
 
 A host C++ TU that compiles in about a second at `-O1` but never finishes at `-O2`/`-O3`
@@ -343,42 +403,103 @@ one source file keeps the optimization level and compiles it in a second.
 
 ## Linking
 
-### CMake's HIP link rule mangles MSVC-style flags and paths
+### Linking HIP through CMake: what each compiler arrangement needs
 
-On Windows, CMake's HIP link path routes through `hipcc.exe`, which invokes `clang.exe
---driver-mode=g++` for `--hip-link`. That GCC driver then receives CMake's MSVC-style
-response file and flags, and misreads them two ways: it treats bare MSVC linker flags
-(`/machine:x64`, `/subsystem:console`) as file paths, and it applies GNU backslash-escaping
-to the response file, eating every backslash so `D:\path\torch.lib` arrives as
-`D:pathtorch.lib`. CMake also injects `-fuse-ld=lld-link`, which conflicts with `--hip-link`.
+Whether a Windows CMake HIP link needs help depends on two things: which driver compiles the
+host code, and whether the target uses relocatable device code (`-fgpu-rdc`). CMake calls the
+linker driver directly (`clang++.exe`, or `lld-link` through `cmake -E vs_link_exe`); `hipcc`
+is not involved. Measured with one test project (an executable and a shared library, import
+libraries in every spelling, MSVC-style linker options, a library path with a space, and a
+link line long enough for Ninja to use a response file) on ROCm 7.14 (clang 23) with CMake
+3.31.0 and 4.3.2, gfx1151:
 
-**This has nothing to do with `-fgpu-rdc`.** A project with no relocatable device code at all
-still hits it if it links HIP through CMake on Windows. Do not conclude you are safe because
-you are not using RDC -- that mistake was made once already and cost a round.
+| host compiler / HIP compiler | without `-fgpu-rdc` | with `-fgpu-rdc` |
+|---|---|---|
+| GNU-style `clang++` for C, C++ and HIP (recommended, see "Keep one clang driver") | links with CMake's own rule | fails: `clang++: error: invalid linker name in argument '-fuse-ld=lld-link'`; one CMake line fixes it (below) |
+| `clang-cl` for C and C++, GNU-style `clang++` for HIP | links if the target's `LINKER_LANGUAGE` is `CXX`; with the HIP link rule the GNU driver gets an MSVC-style line and fails | needs a link wrapper (below) |
+| `clang-cl` for all three (CMake 4.x only; 3.31 does not configure) | links with CMake's own rule | needs the `/Fo` compile-rule fix (below) and a link wrapper or a rewritten link rule |
 
-Fix: interpose a wrapper on the link step, set as `CMAKE_HIP_LINK_EXECUTABLE`.
-`assets/hip_link_win.py` is one. It strips `-fuse-ld=*`, converts `-Xlinker` pairs and bare
-MSVC `/flags` to `-Wl,` form, and rewrites `-lXXX.lib` and bare `XXX.lib` to
-`-Xlinker XXX.lib` so lld-link resolves them via `LIB`. It is under 100 lines of standard
-library Python and carries no project-specific state. **Copy it into the project**
-(conventionally `cmake/hip_link_win.py`): the project's CMake calls it, so a pull request
-cannot depend on a file outside the project.
+**`-fuse-ld=lld-link` is harmless without `-fgpu-rdc` and fatal with it.** CMake 3.29 and
+later adds it to every clang link line on Windows (`Platform/Windows-Clang.cmake`,
+`CMAKE_<LANG>_USING_LINKER_DEFAULT`), HIP included. `clang++ --hip-link -fuse-ld=lld-link`
+runs one `lld-link` job and links. With `-fgpu-rdc` the device-link step rejects the name.
+For the all-GNU-driver arrangement the whole fix is, after the languages are enabled and on
+Windows only:
 
-Unresolved: the wrapper rewrites the argument list only. It does not read the response file
-and does nothing about the backslash loss described above, so either the projects that use
-it avoid that symptom another way or the symptom is no longer current. Verify on the next
-Windows CMake HIP build before relying on either statement.
+```cmake
+set(CMAKE_HIP_USING_LINKER_DEFAULT "-fuse-ld=lld")
+```
 
-Guard the override to Windows. Related and separate: the clang-cl `/Fo` bundler bug, where the
+(set the `CXX` variable too if a target is forced to link as CXX). It covers executables and
+shared libraries and needs no wrapper. `-DCMAKE_LINKER_TYPE=LLD` does not help: CMake still
+emits `-fuse-ld=lld-link`. Without `-fgpu-rdc`, do not strip the flag out of habit: build
+once without touching it and read the actual error first. A recipe that carried a `sed` over
+`build.ninja` for months turned out to need none of it. (ohm)
+
+**MSVC linker options belong behind `LINKER:` or `-Xlinker`.** With the GNU-style driver a
+raw `/subsystem:console` in `target_link_options` is read as a file name
+(`no such file or directory: '/subsystem:console'`) in every arrangement; `LINKER:/subsystem:console`
+works. CMake's own flags are already spelled correctly in the all-GNU arrangement, and import
+libraries arrive as `-lws2_32.lib`, which links unmodified.
+
+**The MSVC-style link line is the real problem, and it only arises with a `clang-cl` host.**
+There CMake composes the line for an MSVC linker (bare `/machine:x64`, `/INCREMENTAL:NO`,
+`/subsystem:console`, bare `ws2_32.lib`), and `-fgpu-rdc` needs the GNU-style driver to do
+the device link, so the GNU driver is handed arguments it reads as files. Prefer moving the
+project to the all-GNU-driver arrangement, which removes the problem. Where that is not
+possible, interpose a wrapper as `CMAKE_HIP_LINK_EXECUTABLE`; `assets/hip_link_win.py` is
+one. Of its rewrites, the ones that matter are turning bare `/flags` into `-Wl,` form and
+bare `foo.lib` into `-Xlinker foo.lib`; dropping `-fuse-ld=*` matters only where CMake emits
+it. Copy it into the project (conventionally `cmake/hip_link_win.py`), since the project's
+CMake calls it and a pull request cannot depend on a file outside the project. Know its two
+limits before relying on it:
+
+- It does not read response files. Once a target's object list is long enough for CMake and
+  Ninja to switch to `@file.rsp`, the bare libraries sit in that file where the wrapper never
+  sees them, and with `clang-cl` for all three languages the GNU driver also applies GNU
+  quoting to the file and eats every backslash (`no such file or directory:
+  'CMakeFilesapp.dirmain.hip.obj'`). In alien the large GUI executable failed this way while
+  the smaller executables stayed under the threshold and linked, so "some targets link, one
+  does not" says to check whether the failing one uses a response file. `--rsp-quoting=windows`
+  on the driver cures the backslash loss; a wrapper has to expand `@file` itself to fix the
+  rest.
+- `CMAKE_HIP_LINK_EXECUTABLE` covers executables only. A shared library goes through
+  `CMAKE_HIP_CREATE_SHARED_LIBRARY` (and `CMAKE_HIP_CREATE_SHARED_MODULE`), which needs the
+  same treatment plus `-shared` and `-Xlinker /implib:<TARGET_IMPLIB>`.
+
+(alien, origin of the wrapper and the only project known to need it; of the projects linked
+on Windows since, the rest used the all-GNU-driver arrangement or linked as CXX.)
+
+Guard any link-rule override to Windows. Related and separate: the clang-cl `/Fo` bundler bug, where the
 CMake HIP compile rule must emit `-o <OBJECT>` instead of `/Fo<OBJECT>` because the driver
 hands the same path to `clang-offload-bundler` as both input and output and Windows refuses to
 rewrite a memory-mapped file (ROCm/TheRock#5615). The fix is a compile-rule override after
 `enable_language(HIP)`, under the MSVC frontend variant only, of the shape
 `set(CMAKE_HIP_COMPILE_OBJECT "<CMAKE_HIP_COMPILER> <DEFINES> <INCLUDES> <FLAGS> -o <OBJECT> -c <SOURCE>")`;
 start from the rule your CMake version defines (`CMakeHIPInformation.cmake`) and change only
-the output spelling, since the rule's other placeholders vary by version. A project can need the compile-rule fix, the
-link wrapper, or both -- they are independent. (alien, origin of the wrapper; LichtFeld-Studio,
-which needs the link half.)
+the output spelling, since the rule's other placeholders vary by version. The error it cures
+reads `clang-offload-bundler: error: '...': The requested operation cannot be performed on a
+file with a user-mapped section open`, and it is the `/Fo` against `-o` spelling that
+matters, not object size or build parallelism. Passing `--offload-new-driver` on both the
+compile and the link step avoids the same bundler path and is the alternative where the
+compile rule cannot be overridden. A newer SDK may no longer hit the bug at all, so re-run
+the build before trusting an older note that a project is blocked on it. A project can need the compile-rule fix, the
+link wrapper, or both -- they are independent. (alien.)
+
+### A ROCm library linked by name may have no `.lib`
+
+A torch extension that adds a ROCm library beyond the HIP runtime torch already links
+(`libraries=["hipblaslt"]`, `extra_ldflags=["-lhipblaslt"]`) can fail only on Windows, at
+the final link: `link.exe` looks for `hipblaslt.lib` (LNK1181), and ignores `-l` flags
+entirely (LNK2019 on the first symbol). TheRock's Windows SDK ships most import libraries as
+`lib/<name>.lib`, but hipBLASLt only as `lib/libhipblaslt.dll.a`. Check `<ROCM_HOME>/lib`
+for each library the port links. The fix that leaves Linux untouched: under
+`os.name == "nt"`, when `<name>.lib` is absent and `lib<name>.dll.a` is present, drop the
+name from `libraries` and pass the `.dll.a` by full path in `extra_link_args` (link.exe
+reads an archive by content, not by extension); take the directory from
+`torch.utils.cpp_extension.ROCM_HOME`, never from a path on your machine. Copying the file
+to `<name>.lib` on `LIB` to get a test run going hides the gap: the committed build must
+link as is. (llm-awq)
 
 ### A fetched ROCm-DS dependency has to be built static
 

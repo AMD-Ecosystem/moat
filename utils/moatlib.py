@@ -3283,6 +3283,14 @@ def archive_pr(name):
         raise ValueError(f"{name}: a fix round is still recorded on "
                          f"{obj['fix'].get('branch')!r} -- a finished PR should "
                          f"carry none; a person sorts that record out first")
+    if obj.get("pr_url") and not obj.get("pr_number"):
+        # Records from before pr_number existed carry only the URL. The number is
+        # IN the URL, so derive it rather than refusing: without this, the
+        # follow-up review flow opened a review PR while skipping this archive
+        # (cubvh, 2026-08-26).
+        _, num = _pr_ref(obj["pr_url"])
+        if num:
+            obj["pr_number"] = int(num)
     if not obj.get("pr_url") or not obj.get("pr_number"):
         raise ValueError(f"{name}: the finished PR has no pr_url/pr_number recorded")
     shipped = obj.get("published_sha")
@@ -4718,6 +4726,19 @@ def project_record(name):
                 return (json.loads(raw), "branch")
             except json.JSONDecodeError as e:
                 _unreadable(name, ref, e)
+        # Standing on ANOTHER project's port branch, this checkout's copy of the
+        # folder is only a snapshot of the trunk from the last time that branch
+        # merged it: a port branch changes its own folder and nothing else. The
+        # trunk is the record. Reading the snapshot made the optout gate refuse
+        # every push from a branch that had not merged the trunk since GPUMD was
+        # ruled a maintained fork (2026-11-19): the stale copy still said otherwise.
+        if current_branch().startswith("port/"):
+            raw = _ref_read("origin/main", path)
+            if raw:
+                try:
+                    return (json.loads(raw), "trunk")
+                except json.JSONDecodeError as e:
+                    _unreadable(name, "origin/main", e)
     if status_path(name).exists():
         try:
             return (load_status(name), "local")
