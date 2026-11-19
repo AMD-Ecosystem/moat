@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-05-31T16:36:35Z",
-  "updated_at": "2026-11-10T19:44:34Z",
+  "updated_at": "2026-11-19T01:42:33Z",
   "head_sha": "708a879bc438e4683689839daedcadd76496e9ca",
   "depends_on": [],
   "waivers": {},
@@ -170,6 +170,7 @@
   "pr_url": "https://github.com/facebookresearch/faiss/pull/5881",
   "pr_number": 5881,
   "pr_opened_at": "2026-11-10T19:44:34Z",
-  "pr_state": "open",
-  "published_sha": "708a879bc438e4683689839daedcadd76496e9ca"
+  "pr_state": "merged",
+  "published_sha": "708a879bc438e4683689839daedcadd76496e9ca",
+  "pr_merged_at": "2026-11-19T01:42:33Z"
 }
