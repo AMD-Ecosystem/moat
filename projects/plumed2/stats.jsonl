@@ -25,3 +25,6 @@
 {"kind":"phase","ts":"2026-06-05T17:03:40Z","phase":"test","seconds":49.509,"exit":0,"cmd":"bash -c export PATH=\"/var/lib/jenkins/moat/_deps/plumed2/install/bin:$PATH\" && export PLUMED_KERNEL=\"/var/lib/jenkins/moat/_deps/plumed2/install/lib/libplumedKernel.so\" && export LD_LIBRARY_PATH=\"/var/lib/jenkins/moat/_deps/plumed2/install/lib:$LD_LIBRARY_PATH\" && export USE_HIP=1 && export HIP_VISIBLE_DEVICES=2 && cd /var/lib/jenkins/moat/projects/plumed2/src/plugins/cudaCoord && make USE_HIP=1 HIP_ARCHITECTURES=gfx1100 check"}
 {"kind": "tokens", "ts": "2026-06-08T18:08:12Z", "tokens": 50762, "source": "validator"}
 {"kind": "tokens", "ts": "2026-06-15T12:15:43Z", "tokens": 45603, "source": "pr-prep"}
+{"kind":"session","ts":"2026-11-19T04:03:01Z","epoch":1795060981.400419,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-19T04:16:42Z","phase":"compile","seconds":7.747,"exit":0,"cmd":"make -C projects/plumed2/src/plugins/cudaCoord USE_HIP=1 HIP_ARCHITECTURES=gfx942 -j2"}
+{"kind":"phase","ts":"2026-11-19T04:17:36Z","phase":"test","seconds":32.576,"exit":0,"cmd":"make -C projects/plumed2/src/plugins/cudaCoord USE_HIP=1 HIP_ARCHITECTURES=gfx942 check"}
