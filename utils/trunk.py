@@ -18,7 +18,11 @@ means. Everything else is read from the checkout.
 
 Local tooling still runs when it is at least as new as the trunk: a checkout whose HEAD
 contains `origin/main` (tooling work on the trunk or ahead of it) is left alone, and so
-is one whose `utils/` matches. Nothing here fetches; orient and the publishing tools do.
+is one whose exported paths all match. All of them, not only `utils/`: the config is
+read from wherever the code runs, so a trunk commit that changes only
+`config/arches.toml` (an offline platform, a wave family, the waivable gates) has to
+reach a port branch the same way a code change does. Nothing here fetches; orient and
+the publishing tools do.
 
     python3 utils/trunk.py run check.py --fast   # run a trunk script against this checkout
     python3 utils/trunk.py path                  # print the export directory
@@ -37,10 +41,15 @@ import sys
 import tarfile
 import tempfile
 
-TRUNK_REF = os.environ.get("MOAT_TRUNK_REF", "origin/main")   # override for tests only
+# Three switches for testing a tooling change on a branch (CONTRIBUTING.md, "Testing a
+# tooling change"): MOAT_TRUNK_REF names another ref as the trunk, and MOAT_LOCAL_TOOLS
+# (or MOAT_TRUNK_TOOLS set by hand) keeps the checkout's own copy running.
+TRUNK_REF = os.environ.get("MOAT_TRUNK_REF", "origin/main")
 EXPORT_PATHS = ("utils", "config", "schema")
 ENV_REPO = "MOAT_REPO"
 ENV_ACTIVE = "MOAT_TRUNK_TOOLS"
+ENV_LOCAL = "MOAT_LOCAL_TOOLS"
+ENV_NOTED = "MOAT_TOOLS_NOTED"
 KEEP = 3
 
 
@@ -66,19 +75,26 @@ def _toplevel(start):
     return pathlib.Path(out) if rc == 0 and out else None
 
 
+def _export_trees(repo, ref):
+    """The tree id of each of EXPORT_PATHS at `ref`, or None when one is missing."""
+    rc, out = _git(repo, "rev-parse", *(f"{ref}:{p}" for p in EXPORT_PATHS))
+    lines = out.splitlines()
+    return lines if rc == 0 and len(lines) == len(EXPORT_PATHS) else None
+
+
 def trunk_state(repo):
     """(trunk sha, export base dir, local tooling is current) for a checkout, or None
     when there is no trunk ref to run from (offline fresh clone, not a git checkout)."""
-    rc, out = _git(repo, "rev-parse", "--git-common-dir", TRUNK_REF, f"{TRUNK_REF}:utils")
+    rc, out = _git(repo, "rev-parse", "--git-common-dir", TRUNK_REF)
     lines = out.splitlines()
-    if rc or len(lines) != 3:
+    trunk_trees = _export_trees(repo, TRUNK_REF)
+    if rc or len(lines) != 2 or trunk_trees is None:
         return None
-    common, sha, trunk_utils = lines
+    common, sha = lines
     common = pathlib.Path(common)
     if not common.is_absolute():
         common = (pathlib.Path(repo) / common).resolve()
-    rc, head_utils = _git(repo, "rev-parse", "HEAD:utils")
-    current = rc == 0 and head_utils == trunk_utils
+    current = _export_trees(repo, "HEAD") == trunk_trees
     if not current:
         # HEAD already contains the trunk: tooling work on or ahead of it runs as is.
         current = subprocess.run(
@@ -129,10 +145,30 @@ def _run_from(dest, repo, script, args):
     return subprocess.run([sys.executable, str(target), *args], env=env).returncode
 
 
+def _note_override(file):
+    """Say so, once, when an environment switch is why this checkout's own tooling is
+    deciding. The launcher sets MOAT_TRUNK_TOOLS itself, to the export it runs from or
+    to `local` when the checkout's tooling is the trunk's, and neither is news. Set by
+    hand, either switch makes a stale port branch's tools decide in silence."""
+    active = os.environ.get(ENV_ACTIVE)
+    if os.environ.get(ENV_LOCAL):
+        why = ENV_LOCAL
+    elif active != "local" and active != tools_root(file).name:
+        why = ENV_ACTIVE
+    else:
+        return
+    if os.environ.get(ENV_NOTED):
+        return
+    os.environ[ENV_NOTED] = "1"                  # tools this one starts stay quiet
+    sys.stderr.write(f"moat: {why} is set, so this checkout's own tooling is deciding, "
+                     f"not the trunk's ({TRUNK_REF})\n")
+
+
 def reexec(file):
     """Re-run the calling script from the trunk export when the checkout's tooling is
     not the trunk's. Returns only when the caller should run itself."""
-    if os.environ.get(ENV_ACTIVE) or os.environ.get("MOAT_LOCAL_TOOLS"):
+    if os.environ.get(ENV_ACTIVE) or os.environ.get(ENV_LOCAL):
+        _note_override(file)
         return
     repo = pathlib.Path(file).resolve().parents[1]
     try:

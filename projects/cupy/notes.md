@@ -994,3 +994,46 @@ Counts: **98067 passed, 254 failed, 0 error, 11521 skipped** (109842 junit recor
 Other gates: CUDA compile gate not run on this host (the delta is Python annotations only). `jargon.py --port cupy` clean. Docs unchanged.
 
 **Verdict: windows-gfx1151 completed at a6e01258f.** No new port defects.
+
+## Install as a dependency
+
+Written 2026-11-18 from this project's validated builds (Porter round 2026-11-05 "Build recipe", and the windows-gfx1151 validations at 24a62ef95, 225236c47 and a6e01258f). First dependent: MONAI on Windows (jeff's ruling of 2026-11-18: its CuPy-backed transform paths run on Windows against this port, they do not skip).
+
+**Linux: nothing from this port is needed.** Upstream cupy/cupy already supports ROCm on Linux; a dependent installs the upstream ROCm wheel or builds upstream from source. This project covers only the Windows ROCm build.
+
+**Windows (TheRock ROCm SDK, clang-cl/MSVC host): build from the port branch.** No Windows ROCm wheel exists until cupy/cupy#10467 merges and upstream publishes one.
+
+Source: `ROCm/cupy`, branch `moat-port`, validated at `a6e01258f` (clone with `--recurse-submodules`; the build needs the cccl, dlpack and jitify submodules).
+
+Prerequisites, in the dependent's own Python venv (the one the dependent will run in; CuPy installs into it):
+
+```bash
+<venv>/Scripts/python.exe -m pip install --index-url https://rocm.nightlies.amd.com/v2/<gfx>/ "rocm[libraries,devel]==<version>"
+<venv>/Scripts/rocm-sdk.exe init
+<venv>/Scripts/python.exe -m pip install "setuptools>=77" wheel "Cython>=3.2,<3.3,!=3.2.6" "numpy>=2.0,<2.7"
+```
+
+Build and install, from Git Bash inside the x64 Native Tools prompt (MSVC 14.44 was used), with the venv's `Scripts` directory and the MSVC `HostX64/x64` bin directory first on `PATH`:
+
+```bash
+export ROCM_HOME="$(cygpath -w "<venv>/Lib/site-packages/_rocm_sdk_devel")"
+export CUPY_INSTALL_USE_HIP=1
+export HCC_AMDGPU_TARGET=<gfx>          # e.g. gfx1151
+export CUPY_NUM_BUILD_JOBS=<physical cores>
+unset CUDA_PATH
+python -m pip install -v --no-build-isolation <cupy clone>
+```
+
+A clean build took about 9 minutes on the gfx1151 host with 12 jobs. Use `pip install` (plain or `-e`), which is what `install.rst` documents; both leave `cupy/.data/_depends.json` in place, and that file is what makes CuPy load the SDK's `amdhip64`, `hiprtc` and `amd_comgr` DLLs instead of the copies in System32.
+
+What a dependent sets to consume it: nothing beyond importing `cupy` from the same venv. There is no `find_package` and no include or link flag; CuPy is a Python dependency. At run time on an integrated GPU keep `CUPY_GPU_MEMORY_LIMIT` modest (the validations here used `25%`).
+
+Check that the install works before running the dependent's tests:
+
+```bash
+python -c "import cupy; x = cupy.arange(10, dtype='f4'); print(float((x * 2).sum())); print(cupy.cuda.runtime.runtimeGetVersion())"
+```
+
+Expected: `90.0` and the HIP runtime version of the SDK in the venv (71460850 for ROCm 7.14.0a20260612), not System32's.
+
+Known limits a dependent should not mistake for its own failures (see the windows-gfx1151 validation sections): 254 of about 98 thousand tests fail on Windows, 243 of them identically on the Linux upstream base; `rccl` is absent, so `cupy.cuda.nccl` is unavailable; one test file hangs in teardown after printing its summary.
