@@ -66,7 +66,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-18T22:37:15Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-19T00:44:56Z",
+        "note": "2026-11-18: report it; standalone reproducer and draft first, Jeff files"
+      }
     },
     {
       "id": "hip-mallocasync-null-stream-during-capture-segfault",
@@ -79,7 +84,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-18T23:07:23Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-19T00:44:58Z",
+        "note": "2026-11-18: report it; standalone reproducer and draft first, Jeff files"
+      }
     },
     {
       "id": "hip-module-occupancy-ignores-launch-bounds",
@@ -92,7 +102,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-18T23:07:23Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-19T00:44:57Z",
+        "note": "2026-11-18: report it; standalone reproducer and draft first, Jeff files"
+      }
     }
   ]
 }
