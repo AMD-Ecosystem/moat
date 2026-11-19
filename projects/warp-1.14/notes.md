@@ -4753,3 +4753,57 @@ Notes on the run:
 - The CPU-only suite ran while the 82-pattern set was on its first patterns (CPU-only touches no GPU). Its log, and 10 of the earlier GPU-run logs, end with multiprocessing `resource_tracker` "leaked semaphore" UserWarnings printed at interpreter shutdown, after the `OK` line: Python process-pool noise, not a test result.
 - `mma_check.py`, `mma_check_bf16.py`, test_tile_matmul and the texture probes ran while the 82-pattern set was running (correctness only, each with its own cache). No benchmark was in this host's list, and none was run.
 - The untracked `example_apic_fluid.usd` an example writes was deleted after the run.
+## Evidence session 7 (2026-11-19, linux-gfx942, 2x MI300X, evidence only): same-head pass at the Phase 6 candidate `e78ee32f`
+
+**Verdict: every item of the gfx942 list (one GPU and two GPUs) matched the expected result at `e78ee32f`.** One clarification: the handoff's two-GPU expectation names C1/C2/C3 skips. On this host the two C3 tests (`test_stream_arg_graph_mgpu`, `test_stream_scope_graph_mgpu`) are skipped first by upstream's IOMMU heuristic ("Peer-to-Peer transfers not supported"), as in every earlier two-GPU run here. Evidence session 2 showed their C3 gate firing with that heuristic forced off. No difference from the expectation needs resolving.
+
+Requested by Jeff Daily. The lock stays with linux-gfx950. No fork commit and no stage, lock, head, platform or deferred record changed. The read-only clone was moved from `c9595bce` to the recorded `head_sha` `e78ee32fa166bb0bbb58c870fa7b13845553df99` (new commits `bb5d01d7`, `e78ee32f`; `git status --porcelain` empty before and after; LFS assets present; fork pre-push hook unchanged). Build: `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx942 -j 112` -> "Warp build succeeded", 31.5 s. Every run used its own fresh kernel cache (`WARP_CACHE_PATH=$(mktemp -d ...)`), `ulimit -c 0`, `PYTHONPATH=<src>`. The scripts were extracted from the notes at their latest versions: `mma_check.py` and `mma_check_bf16.py` from Porting session 10, `sdf_probe.py` from session 5, `tex_capture.py` from session 7. The probes and `mma_check.py` are byte-identical to the copies run in evidence sessions 3-6.
+
+### 1. One GPU (`HIP_VISIBLE_DEVICES=0`)
+
+| item | expected | result |
+|---|---|---|
+| 82-pattern set (Porting session 6 B.5 list; 2538 s with the CPU suite) | 81 OK + the fem pair | **81 OK, 1 with the 2 known failures** (`test_fem*` 107: `test_gimp_quadrature`, `test_cube_shape_functions`) |
+| tile set inside it (24 files) | 639 run, 15 skipped, 0 failures | **639 run, 15 skipped, 0 failures** (10 upstream no-libmathdx + the five 64 KiB skips; `test_tile_matmul` 25 OK) |
+| test_texture | 118 OK, 7 skipped | **118 OK, 7 skipped** |
+| test_streams | 3 skipped | **24 OK, 3 skipped** (priority timing + 2 multi-GPU) |
+| CPU-only suite (`HIP_VISIBLE_DEVICES=99 CUDA_VISIBLE_DEVICES=99 ... -k cpu -m 32`) | 2294 OK | **Ran 2294, OK (skipped=15)** |
+| `mma_check.py` | FAILURES 0 | **FAILURES 0** (25 ok lines at bd 64; 15 "SMEM-LIMIT (forward not launched)": fp32 64x64x64, fp64 64x32x48, fp64 64x64x64; 25 "SMEM-LIMIT (backward not launched)") |
+| `mma_check_bf16.py` | FAILURES 0 | **FAILURES 0** (11 shapes x 5 block_dims = 55 cases; worst printed difference 9.5e-07) |
+| `sdf_probe.py cuda:0` | PASS | **PASS** (SDF vs CPU sampler 5.96e-08, vs analytic 1.28e-03, RGBA8 1.55e-06) |
+| `tex_capture.py cuda:0` | PASS | **PASS** (replays 0-2: 1.19e-07 each) |
+
+The 82-pattern per-file counts are identical line by line to evidence session 6 at `c9595bce`. The two new commits (gfx11 WMMA selection, gfx90a texture message) do not reach gfx942's code, as expected.
+
+### 2. Two GPUs (`HIP_VISIBLE_DEVICES=0,1`): the 13-file loop, then test_texture
+
+| file | ran | result |
+|---|---|---|
+| test_multigpu | 5 | OK, 2 skipped |
+| test_peer | 5 | OK, 1 skipped |
+| test_mempool | 10 | OK, 2 skipped |
+| test_streams | 42 | OK, 4 skipped |
+| test_graph | 61 | OK, 5 skipped |
+| test_ipc | 8 | OK |
+| test_unified_memory | 40 | OK, 9 skipped |
+| test_allocator | 16 | OK, 1 skipped |
+| test_async | 3533 | OK |
+| test_sparse | 71 | OK, 1 skipped |
+| test_fem_integrate | 25 | OK, 1 skipped |
+| test_array | 207 | OK |
+| test_copy | 30 | OK |
+| test_texture | 177 | OK, 7 skipped: all 59 `cuda_0` and 59 `cuda_1` cases pass |
+
+**No errors and no failures.** Skips:
+- 3 C1 and 2 C2, each naming the HIP defect.
+- 2 C4 ("HIP maps stream priorities to normal priority ...").
+- 10 IOMMU heuristic (C3's two tests among them, see the verdict) and 4 "cuda:N cannot access CPU memory".
+- 2 upstream memory-usage flakiness and 7 test_texture "No suitable devices".
+- 1 each of "Requires devices without mempool access support", "Requires devices without peer access support" and "rmm not installed".
+
+All identical to evidence session 6. The only `Warp CUDA error` line is the known harmless 900 in `test_synchronize_during_capture` (evidence session 3).
+
+The untracked `example_apic_fluid.usd` an example writes into the clone during the full set was deleted afterwards.
+
+### Next step for the lock holder
+gfx942 has passed its complete same-head list at `e78ee32f` with no difference from the expected results.
