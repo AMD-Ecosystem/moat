@@ -83,3 +83,4 @@
 {"kind":"phase","ts":"2026-11-19T21:26:10Z","phase":"test","seconds":333.261,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261119-131039-quick-val-rx7900-prompt/moat/agent_space/quick-testtree/install/usr/local && timeout 2400 ./runtest --serial > /var/lib/jenkins/fleet/jobs/rx7900-20261119-131039-quick-val-rx7900-prompt/moat/agent_space/cpu_serial.log 2>&1"}
 {"kind":"session","ts":"2026-11-19T21:27:09Z","epoch":1795123629.646801,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-11-19T21:40:50Z","epoch":1795124450.543558,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-19T21:44:02Z","epoch":1795124642.62482,"event":"end","platform":"linux-gfx1100"}

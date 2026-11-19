@@ -1234,4 +1234,4 @@ Validator, after `review-passed` at 349fb05f. The platform came back `port-ready
 
 linux-gfx90a was not touched here: `advance-head` carried its a49289d5 validation forward to 349fb05f by itself (doc-only, inert), so it already reads `completed` at 349fb05f.
 
-Still owed, unchanged by this round: the CUDA nvcc compile gate passed at a49289d5 (mi355 section above), and the delta since then is Markdown only. The PR-preparation items stay open: the `[ROCm]` prefix on a0122945/2146b22a and the fork mirror fast-forward (sync round).
+CUDA nvcc compile gate: passed at a49289d5 (mi355 section above); the delta since then is Markdown only, so it holds. Still open from earlier rounds, for PR preparation: the `[ROCm]` prefix on a0122945/2146b22a and the fork mirror fast-forward (sync round).
