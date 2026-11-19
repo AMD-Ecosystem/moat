@@ -881,3 +881,63 @@ Checked, and holding:
 
 Non-blocking (a correction to the record, no code change asked):
 - The porter section says the header compiles "cleanly ... (no warnings from it)". The HIP compile of `device_check.cpp` prints two warnings even without `-Wall`: `device_check.cpp:103` (`cudaSetDevice(callerGpu);`) and `device_check.cpp:182` (`cudaFree(buffer);`), "ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]". The cause is HIP's `[[nodiscard]]` hipError_t at the two unchecked calls once the macros map them, not the header itself, and they are harmless. Silencing them would mean a `(void)` cast in shared openaccPTM code, outside jeff's scope ruling, so leave them; the validator should expect them in the build output.
+
+## Validation 2026-11-19 (linux-gfx942, check-gpu head)
+
+Validated sha: b0e0fb6d12474c1e1bd8925a87e6332ce781bd88 (fork clone checked out at
+head, no modified tracked files). GPUs: two AMD Instinct MI300X (gfx942, wave64),
+HIP_VISIBLE_DEVICES=2,3 (GPU 0 and 1 to the programs). ROCm 10.1 Python wheels
+(HIP 7.16.26385, AMD clang 24.0.0git), g++ 13.3, MPICH 4.2.3 built from source in
+the job directory, PLUMED upstream 422109dc3 built with `./configure CXX=mpicxx
+CC=mpicc` and installed. All GPU runs under `ulimit -c 0`.
+
+Build (after `make clean` in cudaCoord and gpucheck):
+```bash
+cd plugins/cudaCoord
+USE_HIP=1 ./configure.sh
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942
+```
+rc 0; 88 warnings, the known harmless set (nodiscard `hipError_t` in upstream
+code, -Wreorder-ctor). Plugin NEEDED libamdhip64.so.7 and libplumedKernel.so, no
+libomp; SONAME CudaCoordination.so; FLAGS_1 NODELETE.
+
+Regtests:
+```bash
+cd regtest && ln -s ../../../regtest/scripts . && cd ..
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942 check
+```
+PASS: "34 tests performed, 0 tests not applicable, 0 errors found" (cudatest 14,
+cudatestPair 8, cudatestWB 12 including rt-double-orthopbc-mpi on 2 ranks);
+checkfail also clean.
+
+GPU check:
+```bash
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942 check-gpu
+```
+PASS, rc 0. gpucheck compiled with `hipcc -x hip --offload-host-only
+-I.../cudaCoord/src -std=c++17 ...`; 2 warnings, the nodiscard ones the review
+predicted (device_check.cpp:103 `cudaSetDevice(callerGpu)`, :182 `cudaFree`).
+- `follow`: 17/17 OK, "log says \"c runs on GPU 1\"", "follow: 0 failure(s)".
+- `md`: 17/17 OK (caller GPU 1 current and its buffer usable after init, the
+  input, steps 0-2 and after PLUMED is destroyed; forces finite and non-zero),
+  "log says \"c runs on GPU 0\"", "md: 0 failure(s)". Not skipped: two GPUs
+  visible.
+
+CUDA gate at this head: PASS (compile and link only, no NVIDIA GPU). nvcc
+12.8.93 on `git archive b0e0fb6d1 plugins/cudaCoord plugins/openaccPTM/gpucheck`:
+```bash
+./configure.sh
+make NVCCCFLAGS="-dc -dlto --gpu-architecture=sm_80" NVCCLDFLAGS="-shared -dlto --gpu-architecture=sm_80"
+make -C ../openaccPTM/gpucheck device_check
+```
+Plugin: rc 0, no warnings. device_check: rc 0, only nvcc's default-arch
+deprecation notice.
+
+Content checks: `python3 utils/jargon.py --port plumed2` clean; README documents
+`make USE_HIP=1 check-gpu`.
+
+Gates at head after this run: wave64 by this platform; wave32 (linux-gfx1201 and
+linux-gfx1100) reads revalidate at b0e0fb6d1; windows waived. The delta is a
+host-only test program plus two `#define`s inside `#ifdef __HIP__`, so a wave32
+host can probably carry forward with `binary-equiv` (plugin code objects should
+be identical), but that is for the wave32 validator to establish.
