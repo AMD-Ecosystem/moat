@@ -4632,3 +4632,99 @@ print("3D id nonzero:", bool(t3.id))
 ### Next step for the lock holder
 - `c9595bce` (option A) works on real gfx90a hardware: the 14 texture errors are gone, 3D sampling matches the CPU sampler (5.96e-08, as on gfx942/gfx950), 1D/2D stay on hardware, and the full set has only the known fem pair. If Jeff keeps option A, the message diff above is the one change suggested (cosmetic; `texture.py` +6/-1). Optionally add an interop-refusal test registered on devices with 1D/2D hardware but no 3D hardware, so this path has coverage on gfx90a; not drafted, since it adds carried test lines Jeff may not want.
 - Procedure note for other hosts: `utils/timeit.sh` needs the job's `pylib` on `PYTHONPATH` for jsonschema. Exporting `PYTHONPATH=<src>` alone makes it fail with "no Python that can run MOAT's tools" before the wrapped command runs; prepend instead (`PYTHONPATH=<src>:$PYTHONPATH`). It cost one aborted attempt of item 4 here; nothing ran in it.
+
+## Porting session 11 (2026-11-19, linux-gfx950 MI355X, porter): gfx11 WMMA, gfx90a message; Phase 6 candidate head
+
+Fork `release/1.14.0.amd0` advanced `c9595bce..e78ee32f` (pushed, `advance-head` recorded): `bb5d01d7` [ROCm] Use WMMA for float16 tile_matmul on gfx11 GPUs (`tile_matmul_mma.h` +19/-3); `e78ee32f` [ROCm] Say why 3D texture interop handles are missing on gfx90a (`texture.py` +6/-1, the gfx90a host's diff verbatim, `ruff format`/`ruff check` clean; it belongs with `c9595bce`: dropping option A means dropping both). Nothing else changed. nvcc 12.8 build at `e78ee32f`: "Warp build succeeded"; NVRTC compiles of the tile_matmul and texture modules with the native headers of `c9595bce` and `e78ee32f`: identical PTX and cubin (`0805dcc9fb1a`/`6f630854bc9f`, `98d84c023888`/`7b52ca293caf`). `audit-commits` OK, `jargon.py --port` clean.
+
+### 1. gfx11 WMMA: why 64x64 at block_dim 256 was slower, and what changed
+From the code (`tile_matmul_mma.h`), for a 64x64 fp16 tile (16 fragments of 16x16, 4 per row):
+- The wavefront count is `block_dim / 32`; at 256 that is 8. The fragment grouping picks the widest row group that still leaves a group for every wavefront: 4 would give 16/4 = 4 groups for 8 wavefronts, so it picks 2, one group of 2 fragments per wavefront. At block_dim 128 (4 wavefronts) it picks 4.
+- gfx11's WMMA operand layout duplicates A and B across the two half-waves (`k_split = false`, `kpl = 16`): every lane loads all 16 K values of its A row and of each B column from shared memory. Per K step a wavefront with 2 fragments issues 16 (A) + 2 x 16 (B) = 48 shared-memory loads per lane for 2 WMMA instructions, 24 per instruction; with 4 fragments, 16 + 64 = 80 for 4, 20 per instruction.
+- gfx12's layout splits K between the half-waves (`k_split = true`, `kpl = 8`): the same cell is 8 + 2 x 8 = 24 loads per lane for 2 instructions, 12 per instruction, half of gfx11's. That is why the same configuration was faster than scalar on gfx1201 and not on gfx1100.
+- The scalar path is at its best exactly there: at block_dim 256 a 64x64 tile gives it 4x4 register blocks for all 256 threads (its 17.6 ms is its fastest 64x64 forward on gfx1100, against 27.5-33.3 ms at the other block sizes), while gfx11 WMMA at 2 fragments per wavefront is bound by the duplicated operand loads.
+A change to the load pattern cannot be measured on this host, so the configuration class was moved to the scalar path at compile time, by its cause rather than by one cell: on targets whose WMMA duplicates operands (gfx11 family, `k_split = false`), a tile of 16 or more fragments uses WMMA only when every wavefront can take a full row of 4 fragments (`fragments / wavefronts >= 4`); tiles under 16 fragments keep WMMA (16x16 and 32x32 forward measured 2.00x-4.13x faster, groups of 1 or 2 included), and 64x64 keeps WMMA at block_dim 32, 64 and 128 (groups of 4; 2.40x, 1.45x, 1.96x). Among the measured cells this moves only 64x64 at block_dim 256; larger tiles get the same rule untested. MFMA and gfx12 are unaffected (`amortizes_operand_loads` returns true for them). The enabling condition gained the gfx11 builtin: `... || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32)`.
+
+Checked through Warp's hipRTC path (`wmma_cells.py`, below: fp16 tile_matmul modules per (tile, block_dim), disassembled per target):
+
+| cell | gfx1100 | gfx1201 | gfx950 |
+|---|---|---|---|
+| 64x64, block_dim 256 | no matrix instructions (scalar) | 8 `v_wmma_f32_16x16x16_f16` | 16 `v_mfma_f32_16x16x16_f16` |
+| 64x64, block_dim 128 | 16 `v_wmma_f32_16x16x16_f16` | 16 `v_wmma_f32_16x16x16_f16` | 16 `v_mfma_f32_16x16x16_f16` |
+| 32x32, block_dim 256 | 2 `v_wmma_f32_16x16x16_f16` | 2 `v_wmma_f32_16x16x16_f16` | 2 `v_mfma_f32_16x16x16_f16` |
+
+**gfx1101, gfx1102, gfx1150 and gfx1151 have the same gfx11 builtin** (checked with `__has_builtin` for each), so they now take the gfx11 WMMA path too; gfx1151 compiles exactly as gfx1100 in the table above (64x64 bd256 scalar, the other two cells WMMA). Same instruction and layout family as gfx1100, measured only on gfx1100: the Windows gfx1151 run below starts with the layout probe.
+
+Release-notes update: "On Radeon gfx11 GPUs (RX 7000 / Radeon PRO W7000 and Ryzen AI APUs: gfx1100-gfx1102, gfx1150, gfx1151) float16 `tile_matmul` also uses WMMA, under the same conditions as gfx12, except that tiles of 16 or more 16x16 fragments keep the scalar path unless the block has at most one 32-thread wavefront per four fragments."
+
+### 2. gfx90a message
+`Texture._require_texture_hardware`: a device without texture hardware keeps the original message (so `test_texture_interop_requires_hardware`'s regex still matches where it runs); a 3D texture on a device whose hardware cannot filter 3D textures now raises "<name> is not available for 3D textures on <device>: its texture hardware cannot filter 3D textures, so they are sampled in software".
+
+### 3. gfx950 at `e78ee32f` (the Phase 6 candidate)
+Full Phase 1-5 set, 82 patterns, 1733 s: **81 OK, 1 with the 2 known failures** (`test_fem*` 107: `test_gimp_quadrature`, `test_cube_shape_functions`, upstream isolation). Tile set inside it: 639 run, 10 skipped, 0 failures (`test_tile_matmul` 25 OK); test_texture 118 OK (7 skipped); test_streams 24 OK (3 skipped). CPU-only suite with GPUs hidden: **Ran 2294, OK (skipped=15)**. `mma_check.py` (fixed version, Porting session 10): FAILURES 0.
+
+### Next step (Phase 6 candidate head `e78ee32f`)
+The project stays in `porting`, lock held by linux-gfx950. gfx950 has passed the same-head set (item 3). Every Linux host below owes the complete same-head pass at `git rev-parse HEAD` = `e78ee32fa166bb0bbb58c870fa7b13845553df99`, common setup as before (TheRock 10.2 wheels with `device-<gfx>`, `export PATH=$FLEET_VENV/bin:$PATH` first, `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch <gfx> -j <physical cores>`, `git lfs pull`, `ulimit -c 0`, a fresh `WARP_CACHE_PATH` per run, `PYTHONPATH=<src>:$PYTHONPATH` when wrapping in `utils/timeit.sh`). Scripts: the 82-pattern loop (Porting session 6 handoff B.5); `mma_check.py`, `mma_check_bf16.py`, `wmma_layout.hip` (Porting session 10); `sdf_probe.py` (session 5); `tex_alias.py` (session 6); `tex_capture.py` (session 7); `interop3d.py` (gfx90a evidence at `c9595bce`); `bench_both.sh`/`compare.py` (session 9). If any host's result differs from the expectation below, it records the difference and the head is not the Phase 6 head until the lock holder resolves it.
+
+**gfx942, two GPUs (`HIP_VISIBLE_DEVICES=0,1`; one-GPU items with `HIP_VISIBLE_DEVICES=0`):**
+1. One GPU: the 82-pattern set (expect 81 OK + the fem pair; tile set 639 run, 15 skipped, 0 failures; test_texture 118 OK, 7 skipped; test_streams 3 skipped), the CPU-only suite (2294 OK), `mma_check.py` and `mma_check_bf16.py` (FAILURES 0 each), `sdf_probe.py cuda:0` and `tex_capture.py cuda:0` (PASS).
+2. Two GPUs: the 13-file C.2 loop (expect no errors or failures; the C1/C2/C3 skips naming the HIP defects; IOMMU-heuristic skips) and `test_texture.py` (all `cuda_0` and `cuda_1` cases pass).
+
+**gfx90a (MI200):** the 82-pattern set (expect 81 OK + the fem pair, `test_fem*` 108 with `example_diffusion_mgpu`; test_texture 119 OK, 4 skipped), the CPU-only suite, `mma_check.py` and `mma_check_bf16.py` (FAILURES 0), the capability line (`True False`), `sdf_probe.py`, `tex_capture.py`, `tex_alias.py` (PASS), and `interop3d.py` (the four 3D cases now print the new "not available for 3D textures ... cannot filter 3D textures" message; the 2D handles are valid).
+
+**gfx1100:** WMMA is now on as shipped.
+1. `test_tile_matmul.py` (25 OK) and, with a fresh cache, the ISA check: the 32x32 fp16 module at block_dim 64 contains `v_wmma_f32_16x16x16_f16`; `wmma_cells.py` built for the device itself (or run as below with `gfx1100`) shows the 64x64 bd256 module without matrix instructions.
+2. `mma_check.py` and `mma_check_bf16.py` (FAILURES 0).
+3. The fp16 benchmark, as shipped against the scalar tree (scalar worktree: `git worktree add --detach <dir> e78ee32f`, `git -C <dir> checkout 974cd4bf -- warp/native/tile_matmul.h`, copy `warp/bin/*.so`), three runs per tree, with the load monitor used in evidence session at `c9595bce`: expect every fp16 cell at least 1.0x, with **64x64 block_dim 256 forward now equal to scalar** (both trees scalar there: about 17.6 ms each), and the other 23 fp16 cells as in that session's set 2. Any fp16 cell below 1.0x is a finding.
+4. The 82-pattern set (expect 81 OK + the fem pair; tile set 639/15/0) and the CPU-only suite; textures: `sdf_probe.py`, `tex_alias.py` (PASS).
+
+**gfx1201:** the 82-pattern set, the CPU-only suite, `mma_check.py` and `mma_check_bf16.py` (FAILURES 0), `test_tile_matmul.py` (25 OK, WMMA present as shipped; gfx12 code unchanged since `43331f4a`), `sdf_probe.py` and `tex_alias.py` (PASS).
+
+**Then Phase 6, Windows gfx1151 laptop** (after all four Linux hosts pass at this head; Linux before Windows). The Windows HIP build is not written yet: `build_dll.py:654` raises "ROCm builds on Windows are not supported yet". So Phase 6 is a porter session on the laptop, with the work lock moved there by Jeff, in two parts:
+1. **Build (porter):** in `warp/_src/build_dll.py`, replace the Windows refusal with the HIP branch the plan describes (risk 12): ROCm clang (`<rocm>/lib/llvm/bin/clang++ -x hip`, `--offload-arch` from the Windows targets of `share/therock/dist_info.json`, `-fno-gpu-rdc`) for the `.cu` files; clang-cl for the host `.cpp` files that include HIP headers, MSVC for the rest and for warp-clang; link `amdhip64.lib` and `hiprtc.lib`; Warp's loader finds `amdhip64_7.dll` and `hiprtc*.dll` by full path from the ROCm the build used (not a stale copy in System32). The documented command, `python build_lib.py --rocm-path "%ROCM_PATH%" --hip-arch gfx1151` (and auto-detection without `--rocm-path`), must work in a plain Developer shell; any toolchain workaround goes into the build files, guarded to Windows. CUDA and Linux branches unchanged; afterwards the CUDA path is compiled with nvcc on the mi355 host as every round. Laptop rules: worktrees, venvs, build trees and scratch only under `D:/Develop` (`TMPDIR`/`TEMP` pointed there); TheRock 10.2 Windows wheels with `device-gfx1151`; DLL-load failures, exit 127 and a first-launch `hipErrorLaunchFailure (719)` are environment first.
+2. **Validation, light runs only** (20-CU APU sharing system memory; no stress loops, no large-memory cases, no benchmarks, no 64 KiB-plus probes): `python -c "import warp as wp; wp.init(); d = wp.get_device('cuda:0'); print(d.arch_name, d.is_texture_supported, d.is_texture_hardware_supported, d.is_texture3d_hardware_supported)"`; then `wmma_layout.hip` built for gfx1151 (expect "WMMA family 11", layout lines 0 wrong, accumulation within bound; if it fails, stop: gfx1151 must then be excluded from the WMMA path before anything else); `test_tile_matmul.py` and `test_tile_shared_memory.py`; `test_texture.py`, `sdf_probe.py cuda:0`, `tex_alias.py cuda:0`; then the 82-pattern list one pattern at a time with `-m 2` and a per-pattern timeout (900 s), skipping nothing but stopping at the first driver reset or hang and recording it (plan risk 9: `test_atomic_cas`'s spin-lock cases are already narrowed to devices with independent thread scheduling; risk 13: GPU-scheduler bugchecks under texture and stress workloads were seen on that laptop in other ports); finally the CPU-only suite with GPUs hidden. `mma_check.py` only if the above is clean (165 small kernels, not a stress loop). Phase 7 (wheels on every platform) follows Phase 6.
+
+**Still open for Jeff:** gfx90a 3D textures, option A as committed (`c9595bce` + `e78ee32f`) or C (drop both); defer/now on the six undecided `rocm-bug-report` entries. Phase 6 not started.
+
+`wmma_cells.py`:
+```python
+# fp16 tile_matmul modules for chosen (tile, block_dim) cells, compiled through Warp's hipRTC path for
+# other targets; prints the matrix instructions per module. Usage: python wmma_cells.py <outdir> <gfx>...
+import glob
+import os
+import subprocess
+import sys
+
+import warp as wp
+import warp._src.build as build
+
+wp.init()
+CELLS = [(64, 256), (64, 128), (32, 256)]
+R = subprocess.check_output([sys.executable, "-m", "rocm_sdk", "path", "--root"]).decode().strip()
+
+
+def make(M):
+    @wp.kernel(module="unique", module_options={"enable_backward": False})
+    def mm(A: wp.array2d(dtype=wp.float16), B: wp.array2d(dtype=wp.float16), C: wp.array2d(dtype=wp.float16)):
+        wp.tile_store(C, wp.tile_matmul(wp.tile_load(A, shape=(M, M)), wp.tile_load(B, shape=(M, M))))
+
+    return mm
+
+
+out_dir = sys.argv[1]
+for M, bd in CELLS:
+    k = make(M)
+    before = set(glob.glob(os.path.join(wp.config.kernel_cache_dir, "**", "*.cu"), recursive=True))
+    wp.load_module(k.module, device="cuda:0", block_dim=bd)
+    src = sorted(set(glob.glob(os.path.join(wp.config.kernel_cache_dir, "**", "*.cu"), recursive=True)) - before)[-1]
+    for target in sys.argv[2:]:
+        out = os.path.join(out_dir, f"mm{M}_bd{bd}_{target}.hsaco")
+        build.build_cuda(src, 0, out, pch_dir=None, hip_target=target)
+        dis = subprocess.run([R + "/lib/llvm/bin/llvm-objdump", "-d", f"--mcpu={target}", out], capture_output=True, text=True).stdout
+        ops = {}
+        for line in dis.splitlines():
+            w = line.split()
+            if w and (w[0].startswith("v_wmma") or w[0].startswith("v_mfma")):
+                ops[w[0]] = ops.get(w[0], 0) + 1
+        print(f"{M}x{M} block_dim {bd:3d} {target:8s}: {ops or 'no matrix instructions (scalar)'}")
+```
