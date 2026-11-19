@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-11-19T23:10:13Z",
+  "updated_at": "2026-11-19T23:10:30Z",
   "head_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009",
   "depends_on": [],
   "waivers": {
@@ -172,5 +172,10 @@
     "head_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009",
     "content_sha256": "7934332cf74d3d612b04b41c5c820153a1682cf444cfad7004aa4b2ed6099d53",
     "review_pr": "https://github.com/AMD-Ecosystem/QUICK/pull/1"
-  }
+  },
+  "pr_url": "https://github.com/merzlab/QUICK/pull/521",
+  "pr_number": 521,
+  "pr_opened_at": "2026-11-19T23:10:30Z",
+  "pr_state": "open",
+  "published_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009"
 }
