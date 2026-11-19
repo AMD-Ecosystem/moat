@@ -814,3 +814,49 @@ Counts are passed / skipped / failed (skipped = ctest exit-5 mapping).
 - CUDA no-regression at this head: not rerun; already PASS at 4861f4839 (nvcc 12.8.93, 542/542, "Porter 2026-11-19 (polish round)"). This host has no CUDA toolkit.
 - Jargon: `python3 utils/jargon.py --port espresso` clean. Docs: "AMD GPU acceleration" at doc/sphinx/installation.rst:300, configure example with `ESPRESSO_BUILD_WITH_HIP=ON` at :312, option listed at :919.
 - Gates: with gfx950 (wave64) and this run (wave32) at 4861f4839, both required Linux gates are met at head; windows is waived. Nothing was edited in the fork and nothing was pushed to it.
+## Validation 2026-11-19 (linux-gfx942, MI300X wave64, polish round 4861f4839)
+
+State: revalidate -> completed. GPU: `AMD Instinct MI300X HF` (`rocminfo` Marketing Name and `amd-smi static --asic` MARKET_NAME; gfx942, device id 0x74a9, 304 CUs, Wavefront Size 64), `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`. ROCm: pip ROCm SDK 10.1.0 (`rocm-sdk version`; clang from `rocm-sdk path --root`, no /opt/rocm). Validated sha: 4861f483930b774eccb14a26125de323d1a33851, a fresh fork clone at `projects/espresso/src`, clean at head throughout. Full run, no carry-forward.
+
+Host deps differ from the earlier gfx942 runs: this host image now has the system packages, so nothing was built from source. OpenMPI 4.1.6 (`libopenmpi-dev`), Boost 1.83 (`libboost-mpi1.83-dev`, whose `boost_mpi` is separate from `boost_mpi_python`, so `cuda_test` links without libboost_python), FFTW 3.3.10 with omp/threads, GCC 13.3.0, CMake 3.31.6. Python 3.12.3 venv by `uv` inside the job venv: numpy 2.5.5, scipy 1.18.1, Cython 3.3.1, tqdm, matplotlib, pint.
+
+Configure (both builds; `build-max` adds `-DESPRESSO_MYCONFIG_FILE=<src>/maintainer/configs/maxset.hpp`):
+
+```
+cmake -S <src> -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=/usr/bin/gcc -DCMAKE_CXX_COMPILER=/usr/bin/g++ \
+  -DESPRESSO_BUILD_WITH_CUDA=ON -DESPRESSO_BUILD_WITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$ROCM_SDK/llvm/bin/clang++ -DCMAKE_PREFIX_PATH="$ROCM_SDK" \
+  -DPython_EXECUTABLE=<py312> \
+  -DESPRESSO_BUILD_WITH_WALBERLA=OFF -DESPRESSO_BUILD_WITH_HDF5=OFF \
+  -DESPRESSO_BUILD_WITH_SCAFACOS=OFF -DESPRESSO_BUILD_WITH_STOKESIAN_DYNAMICS=OFF \
+  -DESPRESSO_BUILD_WITH_GSL=OFF -DESPRESSO_BUILD_WITH_NLOPT=OFF \
+  -DESPRESSO_BUILD_WITH_CALIPER=OFF -DESPRESSO_BUILD_WITH_FFTW=ON \
+  -DESPRESSO_BUILD_WITH_PYTHON=ON -DESPRESSO_BUILD_TESTS=ON
+cmake --build <build> -j 56
+cmake --build <build> -j 56 --target python_test_data cuda_test
+```
+
+Tests, the commands of the gfx950 run at this head:
+
+```
+cmake --build <build> -j 32 --target local_samples local_benchmarks   # before each ctest run
+ctest --test-dir build-hip -L gpu --timeout 900 -j 8
+cmake --build build-hip -j 48 --target check_unit_tests
+ctest --test-dir build-max -L gpu --timeout 900 -j 8 --output-on-failure
+ctest --test-dir build-max -L gpu -E 'sample_|benchmark_' -V --timeout 900 -j 8
+cmake --build build-max -j 48 --target check_unit_tests
+ctest --test-dir build-hip -LE gpu --timeout 900 -j 16
+```
+
+Counts are passed / skipped / failed (skipped is ctest's exit-5 mapping).
+
+- Build: PASS both. `build-hip` 236/236 plus `python_test_data cuda_test`, 28 warnings; `build-max` 236/236 plus the same targets, 30 warnings; all warnings the known ROCm 10.1 `nodiscard` `hipError_t` `-Wunused-value`. `llvm-objdump --offloading build-hip/src/core/espresso_core.so`: 4 bundles, all `hip-amdgcn-amd-amdhsa--gfx942`. Cache: `ESPRESSO_BUILD_WITH_HIP=ON`, `Kokkos_ENABLE_CUDA=OFF`, `Kokkos_ENABLE_HIP=OFF`, `Heffte_ENABLE_CUDA=OFF`.
+- GPU suite, default myconfig (`-L gpu`, 74 tests): **71 passed / 3 skipped / 0 failed** (576.7 s). Skipped: `sample_p3m_with_gpu`, `benchmark_p3m_with_gpu` (script runs on import, no test methods, exit 5), `benchmark_lb_with_gpu` (WALBERLA not built). The same three as every earlier run.
+- GPU suite, maxset myconfig (`-L gpu`, 74 tests): **71 passed / 3 skipped / 0 failed**, the same three skipped. Verbose rerun without samples/benchmarks: 68/68 passed, 904 unittest cases run. Cases the default config compiles out ran and passed: dipole_field_tracking test_dds, test_dds_gpu, test_dp3m; dipolar_direct_summation test_dds_gpu, test_inner_loop_consistency_gpu, test_min_image_convention_gpu; dawaanr-and-dds-gpu test_dds_gpu, test_dds_mixed_particles, test_dds_replica_cpu, test_dp3m_dlc/metallic/non_metallic. Every unittest-level skip names a feature not built or out of scope (WALBERLA, WALBERLA_FFT, MMM1D, STOKESIAN_DYNAMICS, SCAFACOS, SCAFACOS_DIPOLES, THERMAL_STONER_WOHLFARTH, H5MD) or is a mode or combination filter inside the test. The `ERROR: DipolarP3M: requires periodicity ...` lines in the log are expected-exception output of `p3m_tuning_exceptions` (Passed).
+- Unit tests (`check_unit_tests`): default **136 passed / 0 skipped / 0 failed**; maxset **136 passed / 0 skipped / 0 failed**. Multi-rank MPI unit tests pass under the system OpenMPI 4.1.6.
+- Non-GPU suite, default (`-LE gpu`, 403 tests): 346 passed / 29 skipped / 28 failed, all environmental and the same set as every earlier run: 26 `tutorial_*` Not Run (no Jupyter/tutorials target), `test_convert` (`ModuleNotFoundError: No module named 'nbformat'`), `test_install` (never installed). No regression.
+- CUDA no-regression gate: already recorded at this head (nvcc 12.8.93, 542/542, "Porter 2026-11-19 (polish round)"); not repeated, and this host has no CUDA toolkit.
+- Jargon: `python3 utils/jargon.py --port espresso` clean. Docs: "AMD GPU acceleration" at doc/sphinx/installation.rst:300, `ESPRESSO_BUILD_WITH_HIP` in its configure example (:312) and the options list (:919).
+- Nothing was edited in the fork and nothing was pushed to it.
+- Gates: wave64 was already satisfied at 4861f4839 by gfx950; this is additional wave64 evidence. wave32 (gfx1201) is still at 01090739c and owes a revalidation or binary-equivalence carry-forward at this head; windows is waived.

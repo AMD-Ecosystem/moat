@@ -7,10 +7,9 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:43:45Z",
-  "updated_at": "2026-11-19T22:01:58Z",
+  "updated_at": "2026-11-19T22:13:35Z",
   "head_sha": "4861f483930b774eccb14a26125de323d1a33851",
   "depends_on": [],
-  "porting": null,
   "waivers": {
     "windows": {
       "reason": "Upstream ESPResSo has no native Windows build: its installation guide covers Windows only as \"Installing requirements on Windows via WSL\" (\"To run ESPResSo on Windows, use the Linux subsystem (WSL)\"), including for CUDA, so there is no Windows CUDA build for a HIP port to stand beside. Secondary obstacle: ESPResSo hard-requires MPI 3.0, which natively on Windows means MS-MPI; it is absent on every Windows host and its installer needs administrator rights. The HIP work is validated at head 8e228b5d on linux-gfx90a (wave64) and linux-gfx1100 (wave32).",
@@ -29,155 +28,6 @@
   "upstream_repo_id": 1524644,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
-      "started_at": "2026-06-04T04:51:40Z",
-      "completed_at": "2026-06-23T22:45:22Z",
-      "updated_at": "2026-06-23T22:45:22Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:45:22Z"
-      }
-    },
-    "linux-gfx1100": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
-      "started_at": null,
-      "completed_at": "2026-06-23T22:45:22Z",
-      "updated_at": "2026-06-23T22:45:22Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:45:22Z"
-      }
-    },
-    "windows-gfx1101": {
-      "blocked": true,
-      "blocked_reason": "ESPResSo requires MPI 3.0 (msmpi.dll on Windows); MS-MPI installer requires admin elevation unavailable in automated validation. Same host-wide infrastructure blocker as windows-gfx1201 (this is the same physical machine), not a port defect or GPU-specific issue.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-19T23:24:29Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1201": {
-      "blocked": true,
-      "blocked_reason": "ESPResSo requires MPI 3.0 (msmpi.dll on Windows); MS-MPI installer requires admin elevation which is not available in automated validation. Host infrastructure blocker, not a port defect.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-08T15:24:19Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1151": {
-      "blocked": true,
-      "blocked_reason": "MPI runtime absent and not installable without a person. ESPResSo hard-requires MPI 3.0; on Windows that means MS-MPI. Verified absent on this host 2026-08-20: no 'C:\\Program Files\\Microsoft MPI' directory, no mpiexec on PATH, no C:\\Windows\\System32\\msmpi.dll. The MS-MPI redistributable installs only via msmpisetup.exe, which requires administrator elevation that automated validation does not have, and there is no user-mode/portable MS-MPI. Scope note, stated plainly: NO build was attempted on this host -- the MPI prerequisite was checked first and is absent, so a build could not have linked. This matches the already-recorded determination on windows-gfx1101 and windows-gfx1201 (a different physical machine), so the obstacle is the Windows platform's MPI packaging rather than anything about this GPU or the port. UNBLOCKING IS CHEAP AND IS A PERSON'S CALL: installing MS-MPI on this host with admin rights would very likely make espresso validatable here, which is a better outcome than a waiver. See the suggested waiver for the alternative.",
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-08-20T18:57:24Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "01090739cf852d70549a5699c5984b0f17414214",
-      "failed_sha": null,
-      "started_at": "2026-11-19T04:05:53Z",
-      "completed_at": "2026-11-19T18:47:44Z",
-      "updated_at": "2026-11-19T18:47:44Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "state": "completed",
-      "validated_prior": [
-        "87cbc046d27c1eabd33eec8c208014bface17b07"
-      ]
-    },
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
@@ -231,6 +81,156 @@
       "validated_prior": [
         "01090739cf852d70549a5699c5984b0f17414214"
       ]
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
+      "started_at": "2026-06-04T04:51:40Z",
+      "completed_at": "2026-06-23T22:45:22Z",
+      "updated_at": "2026-06-23T22:45:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:45:22Z"
+      }
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "4861f483930b774eccb14a26125de323d1a33851",
+      "failed_sha": null,
+      "started_at": "2026-11-19T04:05:53Z",
+      "completed_at": "2026-11-19T22:13:35Z",
+      "updated_at": "2026-11-19T22:13:35Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed",
+      "validated_prior": [
+        "87cbc046d27c1eabd33eec8c208014bface17b07",
+        "01090739cf852d70549a5699c5984b0f17414214"
+      ]
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:45:22Z",
+      "updated_at": "2026-06-23T22:45:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:45:22Z"
+      }
+    },
+    "windows-gfx1201": {
+      "blocked": true,
+      "blocked_reason": "ESPResSo requires MPI 3.0 (msmpi.dll on Windows); MS-MPI installer requires admin elevation which is not available in automated validation. Host infrastructure blocker, not a port defect.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-08T15:24:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1151": {
+      "blocked": true,
+      "blocked_reason": "MPI runtime absent and not installable without a person. ESPResSo hard-requires MPI 3.0; on Windows that means MS-MPI. Verified absent on this host 2026-08-20: no 'C:\\Program Files\\Microsoft MPI' directory, no mpiexec on PATH, no C:\\Windows\\System32\\msmpi.dll. The MS-MPI redistributable installs only via msmpisetup.exe, which requires administrator elevation that automated validation does not have, and there is no user-mode/portable MS-MPI. Scope note, stated plainly: NO build was attempted on this host -- the MPI prerequisite was checked first and is absent, so a build could not have linked. This matches the already-recorded determination on windows-gfx1101 and windows-gfx1201 (a different physical machine), so the obstacle is the Windows platform's MPI packaging rather than anything about this GPU or the port. UNBLOCKING IS CHEAP AND IS A PERSON'S CALL: installing MS-MPI on this host with admin rights would very likely make espresso validatable here, which is a better outcome than a waiver. See the suggested waiver for the alternative.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-20T18:57:24Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "ESPResSo requires MPI 3.0 (msmpi.dll on Windows); MS-MPI installer requires admin elevation unavailable in automated validation. Same host-wide infrastructure blocker as windows-gfx1201 (this is the same physical machine), not a port defect or GPU-specific issue.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-19T23:24:29Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   },
   "porting_released": {
