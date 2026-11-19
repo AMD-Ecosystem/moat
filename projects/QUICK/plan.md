@@ -65,6 +65,8 @@ Evidence:
 
 ## Port Strategy
 
+**Current scope (2026-11-19, after the upstream sync):** the port is `quick-cmake/QUICKCudaConfig.cmake` only (gfx90a/gfx942 `-munsafe-fp-atomics`, gfx1100 branch, ROCm version detection for unversioned install paths, which is risk 1 below). The `configure` change and the include additions planned or made earlier are gone: `configure` is upstream's again (its makefile GPU build is stale upstream, so `--hip` stays disabled there) and upstream PR 511 supplied the includes. The items below are the original plan, kept as written.
+
 **VALIDATE-AND-FIX existing upstream HIP support** (not Strategy A from-scratch)
 
 The MOAT value is:

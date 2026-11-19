@@ -4,12 +4,16 @@
 
 QUICK is a quantum chemistry package with existing authoritative HIP support from the original developers (Merz/Goetz labs at UCSD/MSU, published in J. Chem. Inf. Model. 2023). The HIP code was disabled due to ROCm 5.4.3-6.2.0 compiler bugs; ROCm 6.2.1+ fixes those bugs.
 
-The port was a validate-and-improve effort, not from-scratch:
-1. Removed the configure script HIP exit block
-2. Fixed hipcc path detection for ROCm 7.x ($ROCM_PATH/bin vs $ROCM_PATH/hip/bin)
-3. Added missing C++ standard library includes for HIP compilation
+The port was a validate-and-improve effort, not from-scratch. As of the 2026-11-19 upstream sync (fork head 4b17590a, base merzlab/QUICK master 7e8aeb2c) the whole port is one file, `quick-cmake/QUICKCudaConfig.cmake`:
+1. `-munsafe-fp-atomics` for gfx90a and gfx942 (hardware FP atomics; without it SP-basis runs were 100x slower)
+2. a gfx1100 branch (`-DUSE_LEGACY_ATOMICS`) and gfx1100 in the invalid-arch message
+3. ROCm version detection for installs outside a versioned `rocm-X.Y.Z` directory: read `include/rocm-core/rocm_version.h`, else hipcc's HIP major.minor
+
+Earlier rounds also removed the `configure` HIP exit, fixed its hipcc path and added C++ includes to two HIP sources. None of that remains: upstream's own include fix (PR 511) made the includes redundant, and `configure` was restored to upstream because upstream's makefile GPU build is stale (see the 2026-11-19 section).
 
 ## Build Instructions
+
+(For the pip ROCm SDK see the 2026-11-19 section: add `-DCMAKE_PREFIX_PATH=$ROCM_PATH -DHIP_TOOLKIT_ROOT_DIR=$ROCM_PATH`.)
 
 ```bash
 export ROCM_PATH=/opt/rocm
@@ -526,3 +530,9 @@ Reviewer, linux-gfx90a. Scope: `git diff master...moat-port` (master = upstream 
 
 - Removed includes (a0122945) were checked only by the porter's HIP 7.16 (pip SDK) build; no /opt/rocm 7.0-7.2 toolchain on this host. Note upstream PR 512 also adds `<string.h>` to `src/gpu/hip/gpu_info.cu` (uses `strncpy`/`strnlen` with only `<stdio.h>`), suggesting some ROCm 7 toolchain fails there on master; the port's June includes never covered that file, so it is upstream's state, but the validators on other ROCm installs should watch for it.
 - MPI (`HIP_MPIV`) variant not built this round.
+
+## Porter response to Review 2026-11-19 (upstream sync), linux-gfx90a
+
+- Finding 1 (HIP version used against a ROCm-version guard): fixed in 4b17590a `[ROCm] Read the ROCm version from rocm_version.h in the fallback`, a new commit on top (f89c1afa not amended). Fallback now reads `ROCM_VERSION_MAJOR/MINOR/PATCH` from `${HIP_TOOLKIT_ROOT_DIR}/include/rocm-core/rocm_version.h`; only without that header does it use hipcc's HIP major.minor with patch 0. Checked: configure on this host prints `Detected ROCm/HIP version: 10.1.0` (pip SDK); `cmake -P` of the same logic with no header and `HIP version: 6.2.41133` gives 6.2.0 -> rejected by the guard, and a `/opt/rocm-6.2.0` path still gives 6.2.0 -> rejected. Both 7.16.26385 (old) and 10.1.0 (new) take the same `>= 6.0.0` / `>= 5.3.0` branches, so on this host the compiled output is unchanged.
+- Finding 2 (stale records): Port Summary in this file and a "Current scope" paragraph at the top of plan.md's Port Strategy now describe the one-file diff.
+- Finding 3 (`[ROCm]` prefix missing on a0122945 and 2146b22a): agreed; both are reverts of earlier port commits and cannot be retitled without rewriting history. To handle at PR preparation (squash to the net diff, which is one CMake file, or retitle there). Recorded for jeff.
