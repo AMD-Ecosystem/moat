@@ -108,6 +108,58 @@
         "at": "2026-11-19T00:44:57Z",
         "note": "2026-11-18: report it; standalone reproducer and draft first, Jeff files"
       }
+    },
+    {
+      "id": "hip-graph-memcpy-host-graph-alloc-device-mismatch",
+      "kind": "rocm-bug-report",
+      "component": "HIP",
+      "summary": "HIP 7.17 (ROCm 10.2 wheels), 2x gfx942: a captured hipMemcpyAsync between pinned host memory and memory allocated in the same capture (hipMallocAsync) makes hipGraphInstantiateWithFlags return hipErrorNotSupported (801) unless the capture device is 0 and the pinned buffer was allocated with device 0 current (D2H also works when both are device 1); on capture device 0 with the pinned buffer allocated on device 1, H2D segfaults the process. Copies to plain hipMalloc memory are unaffected. Warp's in-capture tests on a non-primary ordinal (test_sparse and test_fem_integrate test_capturability_cuda_1, test_graph test_cuda_graph_alloc_transient_stream_cuda_1) fail with error 801 in wp_cuda_graph_create_exec; the earlier AMD port hid this by limiting those tests to ordinal 0. Standalone reproducer h2d2.hip and the full matrix in the notes",
+      "refs": [
+        "projects/warp-1.14/notes.md (Evidence session linux-gfx942, finding C1)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-19T01:19:49Z",
+      "decided": null
+    },
+    {
+      "id": "hip-mempool-set-access-cannot-revoke",
+      "kind": "rocm-bug-report",
+      "component": "HIP",
+      "summary": "HIP 7.17 (ROCm 10.2 wheels), 2x gfx942: hipMemPoolSetAccess on device 0's default pool grants peer access to device 1 (hipMemAccessFlagsProtReadWrite, hipMemPoolGetAccess then reports 3) but revoking it with hipMemAccessFlagsProtNone returns hipErrorInvalidDevice (101), with or without outstanding allocations, and access stays granted. CUDA documents ProtNone as revoking access. Warp's wp_cuda_set_mempool_access_enabled is correct; test_mempool_access and test_unified_memory's mempool-state peer test fail on it (error 101, Failed to disable memory pool access). Standalone reproducer poolacc.hip in the notes",
+      "refs": [
+        "projects/warp-1.14/notes.md (Evidence session linux-gfx942, finding C2)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-19T01:19:49Z",
+      "decided": null
+    },
+    {
+      "id": "hip-graph-multi-device-kernel-nodes",
+      "kind": "rocm-bug-report",
+      "component": "HIP",
+      "summary": "HIP 7.17 (ROCm 10.2 wheels), 2x gfx942: a stream capture that forks from a device-0 stream to a device-1 stream and launches a kernel on each device makes hipGraphInstantiate return hipErrorNotSupported (801); the same capture with kernels on device 0 only (with or without a peer copy from device 1) instantiates. CUDA supports kernel nodes for several devices in one graph. Warp's test_streams test_stream_arg_graph_mgpu and test_stream_scope_graph_mgpu fail on it once peer access is detected (they skip on hosts where Warp's IOMMU heuristic reports no peer-to-peer). Report as a defect, or record as a documented limitation if HIP declares it one. Standalone reproducer mdev.hip described in the notes",
+      "refs": [
+        "projects/warp-1.14/notes.md (Evidence session linux-gfx942, finding C3)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-19T01:19:49Z",
+      "decided": null
+    },
+    {
+      "id": "amdgpu-earlycse-sqrt-keeps-fpmath",
+      "kind": "rocm-bug-report",
+      "component": "LLVM (AMD clang)",
+      "summary": "AMD clang 24 (ROCm 10.2 wheels, hipRTC and offline -O3), gfx950: when one function computes __fsqrt_rn(x) (llvm.sqrt.f32 with !fpmath 3.0, the approximate native sqrt) and sqrtf(x) (llvm.sqrt.f32 without !fpmath, correctly rounded) of the same value, EarlyCSE merges the two calls and keeps the !fpmath tag, so sqrtf becomes the approximation: 2535452 of the 16777216 floats in [1,4) off by 1 ulp, against 0 when sqrtf is alone or at -O0. The merged call should drop !fpmath (the most generic of the two). Seen through a Warp user snippet that used both; Warp's own wp.sqrt is unaffected unless a snippet in the same function uses __fsqrt_rn. Standalone reproducer sq3.hip in the notes; not checked against upstream LLVM main",
+      "refs": [
+        "projects/warp-1.14/notes.md (Porting session 5, __frsqrt_rn)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-19T01:28:49Z",
+      "decided": null
     }
   ]
 }

@@ -1200,3 +1200,94 @@ for r in results:
 - Q2: the eight listed intrinsics work at wave32. `__frsqrt_rn` is 1-ulp approximate on HIP (all AMD targets). CUDA-spelled 32-bit `*_sync` masks do not compile under HIP.
 - Q3: gfx1100 numbers above, for Jeff's matrix-core ruling. No decision taken.
 - Nothing was committed to the fork; no record other than this notes section and the telemetry lines changed.
+
+## Porting session 5 (2026-11-19, linux-gfx950 MI355X, porter): rulings, evidence follow-ups, then Phase 5
+
+Fork `release/1.14.0.amd0` advanced `8d13d596..f4f27aa8` (pushed, `advance-head` recorded). nvcc 12.8 CUDA build at `f4f27aa8` (`build_lib.py --cuda-path /usr/local/cuda --no-use-libmathdx`, worktree `agent_space/cuda_wt`): "Warp build succeeded". `audit-commits` OK, `jargon.py --port` clean. One GPU visible (`HIP_VISIBLE_DEVICES=0`, kept).
+
+### 1. Work from Jeff's rulings (atomics, test_atomic_cas)
+- Unsafe atomics: nothing done, as ruled (safe forms stay).
+- `b04cfbef` Test atomic_cas and atomic_exch on every device: `test_cas_single_winner_<dtype>` (1024 threads each try once to claim a zeroed cell; exactly one sees 0, the cell holds winner+1, every loser read winner+1) and `test_exch_permutation_<dtype>` (1024 threads exchange tid+1 into one cell; the values read plus the final cell value are exactly 0..1024). int32/uint32/int64/uint64/float32/float64, registered with `get_test_devices()`, so they run on AMD GPUs. The spin-lock tests keep their narrowing. `python -m warp.tests -s autodetect -p test_atomic_cas.py -m 32`: 48 run, OK (24 new: 12 cpu, 12 cuda:0).
+- `example_work_queue.py` on gfx950 under `timeout 120`: completes in about 1.2 s, rc 0, three GPU runs. It is a lock-free queue, so it makes progress, as expected. It prints 7424, 7359, 7552 "Processed item" lines on the GPU and 8068 on the CPU, with no duplicates and no "Failed to enqueue". The count below 8192 is the example's own behaviour on any device: a dequeuer can read a slot before the enqueuer that won the tail CAS has written it and then exit on an apparently empty queue, and its 4096-entry buffer is indexed modulo `capacity` 8192, so re-enqueued items are written past the end of the buffer. Both are upstream example defects, not AMD ones; left as is (the example has no assertion).
+- `20af89a0` Explain instead of hanging in the spin-lock example: `__main__` checks `is_independent_thread_scheduling_supported(device)` (the capability test_atomic_cas uses) and prints "Not running on cuda:0 (AMD Instinct MI355X): threads of one warp do not make independent forward progress on this GPU, so a spin lock contended inside a warp would never be released." Measured before the change: the original example's launch on gfx950 was killed by `timeout 60` (rc 124); on the CPU it prints counter 1024 and passes.
+- Release notes (for the Phase 7 notes): spin locks contended inside one wavefront hang on AMD GPUs; `warp/examples/core/example_spin_lock.py` is the in-tree case and now says so instead of hanging.
+
+### 2. Shared-memory attribute fix (gfx942 A.2 proposal)
+`8f40a8b1` [ROCm] Count static shared memory in the dynamic shared-memory check: exactly the diff proposed in the gfx942 section (`hipFuncGetAttribute(HIP_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES)` subtracted from `hipDeviceAttributeMaxSharedMemoryPerBlock`). Proof on gfx950 (`agent_space/p5/smem_probe.py`: a 256-thread tile kernel with one shared float64 tile of 159 KiB and of 160 KiB = the 163840-byte limit): without the fix (same tree, rebuilt) the 160 KiB kernel failed at launch with only "Warp CUDA error 1: invalid argument"; with it Warp first prints "Failed to configure kernel dynamic shared memory ... for 163840 bytes, but maximum available is 163840". The 159 KiB kernel runs and sums correctly either way. test_tile_shared_memory 30, test_tile_reduce 62, test_tile_view 16, test_launch 32, test_occupancy 6, test_tile_matmul 22: all OK.
+
+### 3. The four 64 KiB tile tests (for Jeff's ruling; its own commit, droppable)
+`59d873af` Size four tile tests from the device's shared memory per block. New helper `unittest_utils.select_shared_memory_fit(device, candidates, shared_bytes, block_dim)`: the first candidate (upstream's size first) whose dynamic shared memory fits `device.max_shared_memory_per_block` minus `4 * block_dim + 1024` bytes kept for static shared memory (Warp's allocator offsets are 4 bytes per thread; the measured static sizes of these kernels were 128-1024 bytes); CPU gets the first candidate. Per test:
+- `test_tile_shared_mem_large`: rows (64, 56): 64 KiB forward upstream, 56 KiB on 64 KiB parts. It still asks for more than the 48 KiB default (its stated purpose); the `== 2**16` assertion became `> 48 * 1024`, and the smem-hook assertion compares with the computed size.
+- `test_tile_reduce_axis_tier2` and `_single_warp`: the 3-D sum keeps its 128-long reduced axis (tier 2); the leading dimension is (8, 4, 2), so the backward kernel needs 64 KiB upstream, 32 KiB on 64 KiB parts. The kernel became a cached factory.
+- `test_tile_assign_2d`: slices (16, 8, 4): backward 64 KiB upstream, 32 KiB on 64 KiB parts; also a cached factory.
+Evidence on gfx950 (`agent_space/p5/smem64.py`, runs the six cases and logs each selection): with the real 163840-byte limit every test selects the upstream size (unchanged behaviour), 6/6 OK; with `max_shared_memory_per_block` set to 65536 in-process, the GPU cases select outer 4, 56 rows and 8 slices, launch, check their results and pass, 6/6 OK (the CPU cases keep upstream sizes). Full files on gfx950: test_tile_shared_memory 30, test_tile_reduce 62, test_tile_view 16, OK. Not yet run on a real 64 KiB part: the next gfx942 or gfx1100 session must run these three files (handoff below).
+
+The alternative for Jeff, a capability skip: keep upstream's sizes and skip each test when its kernel's shared memory (dynamic plus an allowance for static) exceeds `device.max_shared_memory_per_block`, with a message such as "kernel needs 64 KiB of shared memory per block plus static; device allows 64 KiB". Smaller diff (a decorator or a two-line check per test, no kernel factories) and the tests stay byte-for-byte upstream where they run; but on every 64 KiB part (gfx90a, gfx942, all Radeon, and NVIDIA Turing, whose opt-in limit is also 64 KiB) the tier-2 axis reduction backward, the 2-D tile assign backward and the >48 KiB opt-in path go untested. The sizing commit keeps all three exercised there. Either way no arch name appears. If Jeff picks the skip, drop `59d873af`; nothing later depends on it (the multi-GPU capability helpers were deliberately put elsewhere in unittest_utils.py so the two hunks do not touch).
+
+### 4. gfx942 findings C1-C5
+Registered (`deferred.py add rocm-bug-report --project warp-1.14`, ids and wording as the gfx942 session proposed; each `--ref` points at that section): `hip-graph-memcpy-host-graph-alloc-device-mismatch` (C1), `hip-mempool-set-access-cannot-revoke` (C2), `hip-graph-multi-device-kernel-nodes` (C3). They wait for Jeff's defer/now ruling like the others.
+
+`f4f27aa8` [ROCm] Skip multi-GPU tests that hit three HIP graph and mempool defects. Three capability helpers in `unittest_utils.py`, each answering from the device (never the arch) and true on CUDA and CPU, with a skip message that names the defect:
+- `is_graph_host_copy_of_capture_allocation_supported(device)`: false for an AMD device with ordinal != 0 (C1). Gates `test_sparse.test_capturability`, `test_fem_integrate.test_capturability`, `test_graph.test_cuda_graph_alloc_transient_stream`; their `cuda:0` cases still run. C5 (`test_integrate_gradient_cuda_0` corrupted after the failed `cuda:1` capture in the same process) should disappear with it; recheck on two GPUs.
+- `is_mempool_access_revocable(devices)`: false when any device is AMD (C2). Gates the tests that turn memory pool peer access off or restore it to a saved off state: `test_mempool_access`, `test_graph_launch_array_access_mode_checked_mempool_access_cuda_capture`, and five `test_unified_memory` tests (`verify_uses_peer_access_for_default_cuda_allocations`, `verify_uses_parent_allocator_for_default_cuda_slices`, `device_can_access_uses_mempool_state_when_target_mempools_enabled`, `verify_uses_mempool_access_for_cuda_mempool_allocations`, `verify_uses_parent_allocator_for_cuda_mempool_slices`). The last two only restore the saved state, but once an earlier test has granted access that restore is a revoke too (the gfx942 run saw them pass or fail by order), so they are gated as well. `verify_rejects_mempool_allocation_without_mempool_access` mocks the state and is not gated.
+- `is_multi_device_graph_supported(devices)`: false when any device is AMD (C3). Gates `test_stream_arg_graph_mgpu` and `test_stream_scope_graph_mgpu` (they skip by the IOMMU heuristic on IOMMU hosts anyway).
+On gfx950 with one GPU the affected files give the Phase 3 counts unchanged: test_sparse 47 OK, test_fem_integrate 17 OK, test_graph 35 (3 skipped), test_mempool 7 (2 skipped), test_unified_memory 27 (8 skipped), test_streams 24 (2 skipped). The helpers answer `cuda:0` -> host-copy True, revocable False, multi-device False; `cpu`/None -> all True. The `cuda:1` and device-pair gates are not exercised on one GPU: the next two-GPU session must run the C.2 loop (handoff below).
+
+C4 proposal (no change made): `test_stream_priority_timings` issues two 128 Mi-float device-to-device copies on a priority-0 and a priority -1 stream and asserts the high-priority stream finishes first. On gfx942 issue order decides and priority has no measurable effect (gfx942 session); on gfx950 it passed in session 3. Proposal, in order: (1) measure on gfx942 whether priority reorders kernels rather than copies: same test shape with a long-running compute kernel per stream instead of `wp.copy` (on AMD, device-to-device copies may run on copy engines or blit kernels whose scheduling ignores the stream priority, while kernel dispatch honours queue priority); (2) if kernels honour it, give the HIP device a kernel workload in the test (the property tested, "higher-priority work completes first", is unchanged) and keep copies on CUDA; (3) if not, keep the priority readback part and skip only the timing assertion through a capability such as `is_stream_priority_scheduling_observable(device)` with a message saying HIP treats stream priority as a scheduling hint that does not reorder same-device copies, false on AMD devices. Not a ROCm defect registration unless (1) shows kernels ignore priority too, since HIP documents priorities as hints. Either way it is also a timing assertion, which Warp's own test guidelines discourage; that argues for (3) if (2) is flaky.
+
+### 5. For Jeff: `__frsqrt_rn` and 32-bit lane masks (proposals only, no code change)
+
+**`__frsqrt_rn`.** Exhaustive over every float in [1, 4) (2^24 inputs; covers all normal floats because rsqrt(4x) = rsqrt(x)/2 exactly), judged exactly (r is correct iff x*m_lo^2 < 1 < x*m_hi^2 for the midpoints to its neighbours), gfx950, `agent_space/p5/rsq/rsq.hip` + `judge.py`:
+
+| form | not correctly rounded | throughput (G evals/s, 256 CUs x 64 blocks x 256 threads x 4096) |
+|---|---|---|
+| `__frsqrt_rn(x)` (HIP: `__builtin_amdgcn_rsqf`, `v_rsq_f32`) | 1851555 (11.04%), max 1 ulp | 11403 |
+| `rsqrtf(x)` | identical to `__frsqrt_rn` | |
+| `(float)(1.0 / sqrt((double)x))` | 0 | 2405 (4.7x slower) |
+| `v_rsq_f32` then pick r or a neighbour by the sign of `fma(-x, m*m, 1.0)` in double for the two midpoints | 0 | 1847 (6.2x slower) |
+| `1.0f / sqrtf(x)` | 26.00%, max 1 ulp | 1752 |
+
+The same table through a Warp `wp.func_native` snippet under hipRTC (`agent_space/p5/rsq/snipsq2.py`, one intrinsic per module) gives the same counts. So a correctly rounded form exists and is exact on every normal float, but it is not cheap: about 4.7x the hardware instruction on gfx950. Radeon parts have far lower fp64 throughput relative to fp32, so it should cost more there (not measured; the next wave32 session can run rsq.hip, command in the handoff). Also related: `__fsqrt_rn` in clang's HIP header is `__ocml_native_sqrt_f32` unless `OCML_BASIC_ROUNDED_OPERATIONS` is defined, and is 1 ulp off on 15.11% of inputs (plain `sqrtf` is correctly rounded, as is Warp's own `wp.sqrt`, 0 wrong); the macro gives correctly rounded `__fsqrt_rn`/`__frcp_rn`/`__fadd_rn` and friends but has no `__frsqrt_rn` variant at all.
+
+Proposal: keep the native mapping (the Q2 ruling asked for native AMD operations, and the error is at most 1 ulp), and state in the release notes that `__frsqrt_rn`, `rsqrtf` and `__fsqrt_rn` in user snippets are 1-ulp approximations on AMD GPUs and that `(float)(1.0 / sqrt((double)x))` / `sqrtf` give the correctly rounded value. Do not redefine `__frsqrt_rn` in Warp's hipRTC prelude: clang's header defines it as an inline function, so overriding it needs a header-order trick or a different spelling, it would make every snippet pay 4.7x or more for a function whose CUDA users chose it for speed, and Warp's own kernels never call it. Optionally, define `OCML_BASIC_ROUNDED_OPERATIONS` in the hipRTC options so `__fsqrt_rn` and the other `_rn` intrinsics match CUDA's correctly rounded meaning; that one is cheap to try (one define) but changes generated code for any snippet that uses them, so it wants Jeff's call and a test run.
+
+Found on the way and registered (`amdgpu-earlycse-sqrt-keeps-fpmath`, rocm-bug-report, LLVM): at -O3, a function that computes both `__fsqrt_rn(x)` and `sqrtf(x)` gets one merged `llvm.sqrt.f32` call that keeps the approximation's `!fpmath !{float 3.0}`, so `sqrtf` silently becomes the 1-ulp approximation (2535452 of 2^24 wrong; 0 when alone or at -O0). `opt -O3 -print-after-all` on the unoptimized IR shows two calls after inlining and one after `EarlyCSEPass`. Standalone reproducer (`clang++ -x hip --rocm-path=$R --offload-arch=gfx950 -O3 sq3.hip -o sq3 -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib`; prints "sqrtf alone wrong 0; sqrtf beside __fsqrt_rn wrong 2535452"):
+```cpp
+// sqrtf alone vs sqrtf next to __fsqrt_rn of the same value, over every float in [1, 4).
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#include <cstdint>
+__global__ void alone(uint32_t base, uint32_t n, unsigned long long* bad)
+{
+    uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    float x = __uint_as_float(base + i);
+    if (sqrtf(x) != (float)sqrt((double)x)) atomicAdd(&bad[0], 1ull);
+}
+__global__ void together(uint32_t base, uint32_t n, float* sink, unsigned long long* bad)
+{
+    uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    float x = __uint_as_float(base + i);
+    sink[i] = __fsqrt_rn(x);
+    if (sqrtf(x) != (float)sqrt((double)x)) atomicAdd(&bad[1], 1ull);
+}
+int main()
+{
+    uint32_t lo = 0x3f800000u, n = 0x40800000u - lo;
+    unsigned long long* bad;
+    float* sink;
+    (void)hipMallocManaged(&bad, 16);
+    (void)hipMalloc(&sink, n * 4);
+    bad[0] = bad[1] = 0;
+    alone<<<(n + 255) / 256, 256>>>(lo, n, bad);
+    together<<<(n + 255) / 256, 256>>>(lo, n, sink, bad);
+    (void)hipDeviceSynchronize();
+    printf("sqrtf alone wrong %llu; sqrtf beside __fsqrt_rn wrong %llu (of %u)\n", bad[0], bad[1], n);
+}
+```
+(`(float)sqrt((double)x)` is a correctly rounded float sqrt, since 53 >= 2*24 + 2; confirmed against the host's numpy result, 0 differences.)
+
+**32-bit lane masks.** HIP's warp-sync intrinsics (`__ballot_sync`, `__shfl*_sync`, `__any_sync`, `__all_sync`, `__match_*_sync`, `__syncwarp`, `__reduce_*_sync`) are templates with `static_assert(sizeof(MaskT) == 8, "The mask must be a 64-bit integer")` (`include/hip/amd_detail/amd_warp_sync_functions.h`; the same text is built into hipRTC). A CUDA snippet with `0xffffffff` therefore fails to compile on every AMD target, wave32 included. The only switch is `HIP_DISABLE_WARP_SYNC_BUILTINS`, which removes the `*_sync` builtins (and `__activemask`) altogether. Warp's own device code already uses 64-bit masks (`tile_mask_t`), so only user snippets meet this.
+
+Proposal: leave HIP's behaviour (a compile error is the safe failure: on wave64 a 32-bit mask would silently exclude lanes 32-63, which is exactly the class of bug the check exists to stop) and document it in the release notes with the fix: spell masks `~0ull` or `__activemask()` (both correct on wave32 and wave64), and note that `tid & 31` lane arithmetic is only right on wave32. Rejected alternative: a Warp prelude that disables HIP's builtins and supplies overloads widening a 32-bit mask on wave32 targets (and refusing it on wave64): it fixes copied CUDA snippets on Radeon only, duplicates about a dozen HIP intrinsics (with HIP's mask checks) inside Warp, and has to track HIP's interface as it changes. Not worth it for snippets that need a one-token edit.
