@@ -716,3 +716,38 @@ Reviewed the delta dcf5784...38aa67c (867da59, 38aa67c) and re-judged the whole 
 - The lesson now carries its provenance line.
 
 Nothing else in the port changed. The submodule still matches master exactly, and `jargon.py --port LiteGS` hits only the three old commits already listed for the PR squash. No new problems. Still owed outside review: the gfx90a validation at this head, and an nvcc compile of the CUDA path before the port is presented.
+
+## Validation 2026-11-19 (validator, linux-gfx90a) -- GPU PASS at 38aa67c; recorded validation-failed --gate jargon
+
+Device: AMD Instinct MI250X GCD (gfx90a:sramecc+:xnack-), `HIP_VISIBLE_DEVICES=2`. PyTorch `2.16.0a0+git6c3af02` (source build), `torch.version.hip` `7.16.26385`, ROCm 10.1.0 pip SDK (`rocm-sdk-*` wheels; rocPRIM 4.6.0, hipCUB 4.7.0). Python 3.11.17. head_sha `38aa67ca155b8d2db59a3b2895d4348045377203`, fused_ssim submodule at 409da0b (kemchenj, upstream's pin).
+
+Build: clean (`git clean -fdx` in the fork and in the submodule, every `*.hip` mirror and `build/` removed, the three packages uninstalled first). Then from `/tmp` with `PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32`, `python -m pip install --no-build-isolation --no-deps <src>/litegs/submodules/{simple-knn,fused_ssim,gaussian_raster}`. All three built. Each installed `.so` carries only `amdgcn-amd-amdhsa--gfx90a` code objects, and the hipified `transform.hip` contains the 633f0b7 change.
+
+Self-check (the project's own `litegs.utils.wrapper.check()`, which compares each fused op with its PyTorch reference on forward and backward). The wrapper calls `validate()` per class, because `check()` stops at the first exception: 2 PASS / 2 mismatch / 2 harness errors of 6, identical to the 2026-06-01 gfx90a baseline. CreateTransformMatrix PASS, CreateCov2dDirectly PASS. SphericalHarmonicToRGB backward tensor #3 (dir_grad, deliberately never written by the kernel). EighAndInverse2x2Matrix forward tensor #1 (eigenvector sign). CreateRaySpaceTransformMatrix and Binning raise TypeError (the `test_inputs` lists do not match the fused signatures). All four are upstream harness artifacts, the same on CUDA, as recorded earlier. No new failures.
+
+Real trainer (`example_train.py` unchanged, run through `train_probe.py`, which logs per-step loss and training-view PSNR; scene `tandt_db.zip` as in the porter section):
+```
+python train_probe.py <src> -s tandt/truck -i images -m <out> --iterations 3000          # x3
+python train_probe.py <src> -s tandt/truck -i images -m <out_eval> --eval --iterations 3000
+python metrics_nolpips.py <src> -s tandt/truck -i images -m <out_eval> --eval              # example_metrics.py, LPIPS stubbed (no torchvision)
+python train_probe.py <src> -s tandt/train -i images -m <out_train> --iterations 7000
+```
+| run | iterations | first iter loss / PSNR | last iter loss / PSNR | first-50 -> last-50 mean loss / PSNR | finite |
+|---|---|---|---|---|---|
+| truck 1 | 2761 | 0.33724 / 9.58 dB | 0.08266 / 22.14 dB | 0.21858 / 14.13 -> 0.07860 / 22.62 | yes |
+| truck 2 | 2761 | 0.30036 / 11.34 dB | 0.08163 / 22.33 dB | 0.22443 / 14.09 -> 0.07663 / 22.87 | yes |
+| truck 3 | 2761 | 0.24175 / 13.24 dB | 0.07747 / 22.98 dB | 0.23031 / 13.78 -> 0.07601 / 22.94 | yes |
+| truck --eval | 2847 | 0.26546 / 12.48 dB | 0.08630 / 22.45 dB | 0.22824 / 13.81 -> 0.09202 / 21.38 | yes |
+| train (301 img) | 6923 | 0.32278 / 10.93 dB | 0.09414 / 21.15 dB | 0.28191 / 11.98 -> 0.09248 / 22.09 | yes |
+
+`example_metrics.py --eval` on the truck --eval model: Trainingset SSIM 0.7547 / PSNR 22.14 dB; Testset (31 held-out views) SSIM 0.7501 / PSNR 21.77 dB. Training times: truck about 29.8 s per 3000-iteration run, train 124 s for 7000 iterations. No 0x1016, no hipErrorLaunchFailure, in 5 runs and about 18,900 iterations in total (before 633f0b7, every plain run aborted within 6 epochs).
+
+Released ROCm PyTorch wheel: not tested here; this host has only a source-built torch. Nothing in the build needs one, though: the extensions use the stock `torch.utils.cpp_extension.CUDAExtension` and `BuildExtension`, no private ATen API, and only the ROCm headers and hipcc that a released ROCm wheel plus a ROCm install (or the pip ROCm SDK) provide. So a released wheel should suffice. That is an inference, not a measurement. Separately, whether a released ROCm's rocPRIM has the NaN sort defect is unknown; 633f0b7 removes LiteGS's exposure to it either way.
+
+CUDA no-regression compile: `cuda-not-validated: no nvcc on this host (headless fleet worker, cannot dispatch to the nvcc host)`. The port's CUDA-side delta since the last review is `torch::empty` -> `torch::zeros` in host code plus README/comment text. An nvcc compile is still owed before the port is presented.
+
+Gates before completion: documentation is present (README "Getting Started", Linux scope). **Jargon is not clean**: `python3 utils/jargon.py --port LiteGS` exits 1 with 12 hits, all in commit messages of the three earlier commits (602ce5a: 3, d7990e3: 7, d65b6ab: 2). The six newer commits are clean. jeff's instruction for this round was not to rewrite those commits, so the porter cannot fix this in a new commit. The only fix is a person-made PR-prep squash to an identical tree with clean messages (fold in the corrected 633f0b7 reason from "Porter round 2026-11-19 (2)"). So this platform is recorded `validation-failed --gate jargon`, which keeps the GPU pass (`gpu_passed_sha` = 38aa67c). After the squash, a validator checks that jargon is clean and completes the platform with `carry-forward` (`squash-carry-forward` does not apply, because this platform is not `completed`).
+
+Integrity: `git status --porcelain` is empty in the fork and in the submodule at 38aa67c.
+
+Other platforms: linux-gfx1100 reads `revalidate` at this head (its d65b6ab record carried the broken submodule). windows-gfx1101 and windows-gfx1201 must not be carried forward across a8d1e6f, and the Windows fused_ssim build is the open question above.
