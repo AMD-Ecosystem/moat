@@ -344,3 +344,35 @@ Skipped: already recorded at this head (`### CUDA compile check (2026-11-20, ...
 ### Content checks
 
 `python3 utils/jargon.py --port keops`: clean (needed local `main` and `moat-port` branches in the fresh clone). Docs present: `doc/python/installation.rst` "ROCm detection (AMD GPUs)", `doc/python/api/common/Config.rst` lists `HipConfig`. The "Correction for the final history" condition for the `38c65e2b` Test Plan still stands for the PR-preparation step.
+## Validation 2026-11-20 (linux-gfx1100, head 2980874a): blocked, GPU wedged
+
+Verdict: **no verdict on the port; platform `blocked`**. The one GPU this job was pinned to (`HIP_VISIBLE_DEVICES=3`, AMD Radeon Pro W7800 48GB, gfx1100, warp size 32, PCI bus 0x26) never finishes any GPU work: a host-to-device copy hangs before any KeOps kernel runs, under two ROCm runtimes, with SDMA disabled, and from torch alone. That is the "wedged W7800" host state already described in `cuda-to-rocm` references/libraries.md (first H2D copy never completes, GFX activity high with no process), not evidence about the port. The wave32 gate is still open. `test_lazytensor_clamp_bw` could not be run on this GPU, so nothing is known yet about how a 32-wide wavefront GPU draws that test's data. Fork clone `projects/keops/src` at `2980874acefdc7e905b3733141c8765d770180ed`, `git status --porcelain` empty.
+
+### Environment
+
+Job venv `$FLEET_VENV` (Python 3.11.17), TheRock 10.2 wheels with the porter recipe, device package for this arch: `rocm[libraries,devel]==10.2.0a20261022`, `rocm-sdk-device-gfx1100==10.2.0a20261022`, `torch==2.16.0a0+rocm10.2.0a20261022`, `amd-torch-device-gfx1100==2.16.0a0+rocm10.2.0a20261022`; `rocm-sdk init`; `pip install --no-deps --no-build-isolation -e keopscore -e pykeops`; `PYTHONPATH=$SP/_rocm_sdk_devel/share/amd_smi`. Same pip conflict warnings for the image's 10.1 device packages as on gfx950. torch reports 2.16.0a0+rocm10.2.0a20261022, HIP 7.17.26422, 1 device, gcnArchName gfx1100, warp_size 32. amdgpu driver 7.1.9 (`/sys/module/amdgpu/version`), kernel 6.8. `ulimit -c 0`. Scripts and logs: `agent_space/val/` (container-local).
+
+### What ran on the GPU side
+
+- `check_health` (from /tmp, fresh `KEOPS_CACHE_FOLDER`): "HIP Support: Enabled", 1 GPU, HIP 7.17, `-DMAXTHREADSPERBLOCK0=1024 -DSHAREDMEMPERBLOCK0=65536` (gfx1100 reports 64 KiB LDS), build folder `..._HIP71726422_VISIBLE_DEVICES3`, libamdhip64/libhiprtc from the venv's `_rocm_sdk_core` (confirmed in `/proc/self/maps`). Both binders (`nvrtc_jit.so`, `pykeops_nvrtc`) built. This needs no GPU execution.
+- `pytest -v -rfs keopscore/keopscore/test/` (wrapped in timeit): collected 68, hung on the first test (`test_formula_maths[Abs]`) for over 10 minutes at 100% CPU with no formula source generated yet, i.e. in torch's input tensor setup before KeOps. Killed. pykeops GPU suite not started.
+- Minimal repro (`repro1.py`: two `torch.randn(device="cuda")` tensors and `Genred("Abs(x-y)", ...)`): hipRTC compiled the formula; the code object is valid for this GPU (`llvm-readelf`: e_flags gfx1100, `amdhsa.target amdgcn-amd-amdhsa--gfx1100`, `.wavefront_size: 32`, kernel `GpuConv1DOnDevice`). faulthandler shows the process then stuck inside the binder's `call_keops` (the C++ launch/synchronize) indefinitely.
+
+### Isolation: the device, not KeOps
+
+- Standalone C++ launcher (`hs/launch.cpp`, g++ against HIP headers, no KeOps code): `hipInit`, `hipSetDevice`, `hipModuleLoadData` of the KeOps code object, `hipModuleGetFunction`, four `hipMalloc` all succeed; the first `hipMemcpyHtoD` (12 bytes x 300) never returns (killed at 60 s). Same with the same source linked to the base image's ROCm 10.1 `libamdhip64` (so not the 10.2 nightly), and with `HSA_ENABLE_SDMA=0` (blit-kernel copy, so the compute queue itself does not complete, not only the DMA engine).
+- torch alone: `torch.arange(10.).cuda()` never returns (killed at 60 s).
+- `amd-smi` for this card (amd-smi index 1, BDF 26:00.0): GFX_ACTIVITY 100%, 28 MB VRAM used, no process listed, ECC counts 0, 43 C. Rechecked at 22:58Z: the copy still hangs, activity still 100%.
+- The first operation that waits on this GPU in this job already hung (the pytest above, before any KeOps kernel was launched), so this job did not cause the state. Not checked: whether a previous job on the host did, and whether other cards on the host are healthy (this job may use only its own pin). No root, so no `dmesg` and no `amd-smi reset`.
+
+### Non-GPU regression (`HIP_VISIBLE_DEVICES=` empty, fresh cache, wrapped in timeit)
+
+- keopscore **68 passed**; pykeops **87 passed, 6 skipped, 0 failed** (skips: test_conv2d x3, test_float16 x2, test_gpu_cpu x1). Identical to the porter and gfx950 counts. No regression.
+
+### What is needed
+
+Reset or reboot the host so this W7800 completes work again (or pin a different, healthy gfx1100 or other wave32 GPU), then `set-blocked keops linux-gfx1100 --clear` and rerun this recipe in full, judging `test_lazytensor_clamp_bw` on that GPU's own evidence. No porter work follows from this run.
+
+### Content checks
+
+`python3 utils/jargon.py --port keops`: clean.

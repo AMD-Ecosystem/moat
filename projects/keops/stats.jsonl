@@ -34,3 +34,9 @@
 {"kind":"phase","ts":"2026-11-20T22:36:41Z","phase":"test","seconds":75.873,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261120-142417-val-keops-gfx90a-prompt/moat/projects/keops/src && HIP_VISIBLE_DEVICES= pytest -v -rfs keopscore/keopscore/test/"}
 {"kind":"phase","ts":"2026-11-20T22:41:47Z","phase":"test","seconds":305.802,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261120-142417-val-keops-gfx90a-prompt/moat/projects/keops/src && HIP_VISIBLE_DEVICES= pytest -v -rfs pykeops/pykeops/test/"}
 {"kind":"session","ts":"2026-11-20T22:42:42Z","epoch":1795214562.654958,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-20T22:27:59Z","epoch":1795213679.615471,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-20T22:28:28Z","phase":"test","seconds":18.371,"exit":0,"cmd":"python -c import pykeops; pykeops.clean_pykeops(); pykeops.check_health(); import re; print(sorted({l.split()[-1] for l in open('/proc/self/maps') if re.search('amdhip64|hiprtc',l)}))"}
+{"kind":"phase","ts":"2026-11-20T22:28:34Z","phase":"test","seconds":0.481,"exit":4,"cmd":"pytest -v -rfs keopscore/keopscore/test/"}
+{"kind":"phase","ts":"2026-11-20T22:57:21Z","phase":"test","seconds":88.132,"exit":0,"cmd":"agent_space/val/suite.sh keopscore/keopscore/test/"}
+{"kind":"phase","ts":"2026-11-20T22:58:50Z","phase":"test","seconds":89.718,"exit":0,"cmd":"agent_space/val/suite.sh pykeops/pykeops/test/"}
+{"kind":"session","ts":"2026-11-20T23:00:18Z","epoch":1795215618.303792,"event":"end","platform":"linux-gfx1100"}
