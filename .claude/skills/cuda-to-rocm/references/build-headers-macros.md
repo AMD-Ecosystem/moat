@@ -503,6 +503,17 @@ under HIP a host call with float arguments lands on `(int, int)` whatever this h
 (faults-numerics.md, "Host `min`/`max` on floating-point values truncate to int under
 hipcc"). Run that entry's detection pass on any project that uses helper_math.
 
+**HIP's `blockIdx`/`threadIdx` do not convert to `uint3`, and a `uint3` does not convert to
+`dim3`.** In CUDA the built-in index variables are `uint3`, and a `uint3` (from
+`make_uint3()`) converts to `dim3`. In HIP the built-ins are distinct types, so three things
+CUDA accepts fail to compile: passing them to a function that takes `uint3` (waLBerla's
+`gpu::FieldAccessor::set(uint3, uint3)`), `uint3(blockIdx)`, and returning a `uint3` from a
+function declared to return `dim3`. Construct from the members,
+`make_uint3(blockIdx.x, blockIdx.y, blockIdx.z)` or `uint3{threadIdx.x, ...}`, and return
+`dim3(...)`. The built-ins do convert to `dim3`: `dim3(blockIdx)` compiles. Do not write a
+helper that takes a built-in by value, because their copy constructor is deleted. (ESPResSo
+with waLBerla, HIP 7.16)
+
 **A helper whose name the standard library also declares must NOT be guarded on
 `__CUDA_ARCH__`/`__HIP_DEVICE_COMPILE__`.** Those macros answer "am I in the device pass",
 not "is this name already taken", and two standard libraries answer the second question
