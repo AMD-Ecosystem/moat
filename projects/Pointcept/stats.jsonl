@@ -130,3 +130,17 @@
 {"kind":"phase","ts":"2026-11-20T01:45:42Z","phase":"test","seconds":31.2,"exit":0,"cmd":"agent_space/p2tests.sh"}
 {"kind":"phase","ts":"2026-11-20T01:46:13Z","phase":"test","seconds":23.815,"exit":0,"cmd":"agent_space/e2e.sh --steps 20"}
 {"kind":"session","ts":"2026-11-20T01:46:41Z","epoch":1795139201.545527,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-19T21:40:54Z","epoch":1795124454.236471,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-19T21:45:47Z","phase":"compile","seconds":111.015,"exit":0,"cmd":"agent_space/build_libs.sh"}
+{"kind":"phase","ts":"2026-11-19T21:46:09Z","phase":"test","seconds":14.673,"exit":0,"cmd":"agent_space/p2tests.sh"}
+{"kind":"phase","ts":"2026-11-19T21:56:09Z","phase":"test","seconds":23.414,"exit":0,"cmd":"agent_space/p2tests.sh"}
+{"kind":"phase","ts":"2026-11-20T00:41:46Z","phase":"test","seconds":1800.25,"exit":124,"cmd":"agent_space/e2e.sh resume-spunet 1800 --steps 20 --only spunet"}
+{"kind":"phase","ts":"2026-11-20T01:42:23Z","phase":"test","seconds":3615.359,"exit":0,"cmd":"agent_space/e2e.sh pg 9000 --steps 20 --only pointgroup"}
+{"kind":"phase","ts":"2026-11-20T01:42:49Z","phase":"test","seconds":11.19,"exit":0,"cmd":"agent_space/e2e.sh spunet-filled 9000 --steps 20 --only spunet"}
+{"kind":"phase","ts":"2026-11-20T03:20:37Z","phase":"test","seconds":5859.496,"exit":0,"cmd":"agent_space/e2e.sh cold-oacnns 9000 --steps 20 --only oacnns"}
+{"kind":"phase","ts":"2026-11-20T03:21:19Z","phase":"test","seconds":24.176,"exit":0,"cmd":"agent_space/e2e.sh warm 9000 --steps 20"}
+{"kind":"phase","ts":"2026-11-20T03:24:16Z","phase":"compile","seconds":110.426,"exit":0,"cmd":"agent_space/build_libs.sh"}
+{"kind":"phase","ts":"2026-11-20T03:24:40Z","phase":"test","seconds":23.521,"exit":0,"cmd":"agent_space/p2tests.sh"}
+{"kind":"phase","ts":"2026-11-20T03:25:10Z","phase":"test","seconds":24.042,"exit":0,"cmd":"agent_space/e2e.sh head-warm1 3600 --steps 20"}
+{"kind":"phase","ts":"2026-11-20T03:25:35Z","phase":"test","seconds":24.077,"exit":0,"cmd":"agent_space/e2e.sh head-warm2 3600 --steps 20"}
+{"kind":"session","ts":"2026-11-20T03:26:47Z","epoch":1795145207.949812,"event":"end","platform":"linux-gfx1100"}

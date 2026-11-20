@@ -1205,3 +1205,71 @@ CUDA no-regression gate: `cuda-not-validated: no CUDA toolkit on this host` (no 
 Integrity and content gates: `git -C projects/Pointcept/src status --porcelain` 62 entries, all untracked hipify artifacts, 0 modified tracked files. `jargon.py --port Pointcept` clean. README documents the ROCm build (requirements line, `PYTORCH_ROCM_ARCH` block, `pip install spconv-triton`, and now the triton-windows line). `git diff upstream/main...moat-port`: 12 files, +52/-10.
 
 Result: linux-gfx942 -> completed at 35af626.
+
+## Ruling 2026-11-19 (jeff): sparse-conv backend selection stays automatic
+
+jeff ruled on 2026-11-19 that backend selection stays automatic, with no explicit switch: on a ROCm PyTorch `pointcept/models/utils/spconv.py` imports spconv-triton, otherwise spconv as before. (Recorded by the linux-gfx1100 validator at his request. The 2026-11-20 ImportError fallback to spconv on ROCm, in 180f803/35af626, is still automatic and is the round he asked for under this ruling.)
+
+## Validation 2026-11-20 (validator, linux-gfx1100, at 35af626)
+
+Platform: linux-gfx1100, AMD Radeon Pro W7800 48GB (gfx1100, wave32), HIP_VISIBLE_DEVICES=1 (pinned by the dispatcher; HIP device 1 is PCI 0000:46:00.0, idle throughout; the card amd-smi calls GPU 1 is a different one and read 100% busy from outside this container). All GPU work under `ulimit -c 0`.
+Fork `moat-port` @ 35af626 (= head_sha = reviewed_sha), clone `projects/Pointcept/src`. The job started at f33fdb6, the head when it was dispatched; the porter and reviewer moved the head to 35af626 (Python selector + README only) during the cold runs below, so the build, pointops2 tests and end-to-end run were repeated at 35af626 on the warm cache, and the verdict is for 35af626.
+Environment (job venv, every install `--no-deps`, `torch.version.hip` checked after each): torch 2.16.0a0+git6c3af02 / HIP 7.16.26385 (host wheel), ROCm SDK from the TheRock 10.1.0 wheels, triton 3.9.0+gitfc8d31a5, spconv-triton 1.0.0, timm 0.9.7, torch_geometric 2.6.1, torchvision 0.30.0a0+4260301 (CPU-only source build), torch_scatter 2.1.2 (64-bit mask patch, `SHFL_*_SYNC` routed through the `__shfl_*_sync` Half wrappers, `FULL_MASK` widened; built cleanly for gfx1100, no extra `__shfl_up` overload needed this way) and torch_cluster 1.6.3 from sdist (`PYTORCH_ROCM_ARCH=gfx1100 FORCE_ONLY_CUDA=1 pip install . --no-build-isolation --no-deps`), peft 0.15.2, transformers 4.50.3, tokenizers 0.21.1, huggingface-hub 0.30.2 (newer imports `httpcore2`), accelerate 1.6.0, wandb 0.19.11, pydantic 2.11.7 + pydantic-core 2.33.2, and the small pure-Python deps of the gfx942 section. sparsehash headers built from github.com/sparsehash/sparsehash into a job-local prefix.
+
+### Build (timeit compile 110.4 s at 35af626, 111.0 s at f33fdb6; exit 0)
+From `git clean -xfd libs`:
+```
+export PYTORCH_ROCM_ARCH=gfx1100
+cd libs/pointops && python setup.py install
+cd libs/pointops2 && python setup.py install
+cd libs/pointgroup_ops && python setup.py install --include_dirs=<sparsehash prefix>/include
+cd libs/pointrope && python setup.py install
+```
+All four build and import (`--offload-arch=gfx1100` on every hipcc line).
+
+### pointops2 in-tree tests (`yes "" | python test_<...>.py` from `libs/pointops2/functions/`), at 35af626
+- test_attention_op_step1.py, _step1_v2.py: EXIT 0, `((attn_flat-attn_flat_v2)**2 < 1e-8).all()` True (max 3.64e-12 at f33fdb6).
+- test_attention_op_step2.py: EXIT 1, the known upstream `NameError: name 'x' is not defined` after forward and backward ran.
+- test_relative_pos_encoding_op_step1.py, _step2.py: EXIT 0.
+- test_relative_pos_encoding_op_step1_v2.py, _v3.py: EXIT 0, max sq err 2.33e-10.
+- test_relative_pos_encoding_op_step2_v2.py: EXIT 0, forward 9.31e-10 (7.13e-10 at f33fdb6), attn_grad 2.594e-21, v_grad 1.906e-21, table_grad 6.64e-17.
+7/8 EXIT 0; identical at f33fdb6.
+
+### Sparse-conv end-to-end through spconv-triton
+Driver `agent_space/pointcept_sparse_conv_e2e.py` (host-local, recreated again from the gfx942 description, so its synthetic data differs from both gfx942 drivers and only within-host losses are comparable): `Config.fromfile` + `build_model`, 2 scenes x 20000 unique voxels on a 64^3 grid, segment and instance labels from 16^3 blocks, colour features correlated with the label plus noise, seeded, AdamW lr 1e-3, 20 steps, `torch.cuda.synchronize()` around each step; after PointGroup's 20 steps one eval forward runs its clustering (`ballquery_batch_p` on the GPU, `bfs_cluster`). Run from `src` with `PYTHONPATH=.` and `TRITON_CACHE_DIR=<job dir>/triton-cache`, wrapped in `utils/timeit.sh Pointcept test`. A watcher logged cache size and `gpu_busy_percent` every minute and took a `sudo py-spy dump` every 15 minutes; the cache never stopped growing for 20 minutes during any cold run (no stall). Backend reported `spconv_triton.pytorch` in every run.
+
+Cold (first-step times):
+| config | cache at start | first step | steady step (5-19) | loss 0 -> 19 | result |
+|---|---|---|---|---|---|
+| semseg-spunet-v1m1-0-base | empty | did not finish in 150 min (120 min, killed by the harness's 2 h background limit, plus 30 min resumed on the same cache) | -- | -- | no step completed in the allowance |
+| insseg-pointgroup-v1m1-0-spunet-base | SpUNet's 150 min | 3604 s | 0.126 s | 4.2373 -> 1.4480 | PASS, eval clustering ran |
+| semseg-spunet-v1m1-0-base | after PointGroup | 2.14 s (nothing left to compile) | 0.122 s | 3.0338 -> 0.8903 | PASS |
+| semseg-oacnns-v1m1-0-base | separate empty cache | 5843 s | 0.443 s | 3.0757 -> 0.6257 | PASS |
+
+So SpUNet's own cold first step on this card is about 150 + 60 = 210 min (PointGroup uses the identical SpUNet backbone and only finished the tuning SpUNet had started); OACNNs alone is 97 min. MI300X for comparison (2026-11-19): 1123 s and 119 s, so gfx1100 is about 11x (SpUNet) and 49x (OACNNs) slower cold. 466 of the 804 entries of the OACNNs cache already existed in the SpUNet cache, so the combined cold cost of all three models in one cache is less than the sum. Every py-spy sample (21) was inside `triton/backends/amd/compiler.py` (`make_llir`, `make_amdgcn` -> `compile_amdgpu`) under `Autotuner._bench` for spconv-triton's `conv_forward`, `conv_backward_input` or `conv_backward_weight`, or in `torch.cuda.synchronize` benchmarking a candidate; never blocked.
+
+Where the cold time goes, from the clean single-process OACNNs cache (gaps between successive `.hsaco` mtimes attributed to the kernel written): `_dweight_masked_kernel` (weight gradient, 21 autotune candidates per key, including num_stages 6-7 and 128-wide tiles) 169 compiles, 4220 s, mean 25 s, max 114 s, 72% of the first step; `_gather_gemm_kernel` (37 candidates per key) 525 compiles, 1603 s, mean 3.1 s; everything else under 30 s total. The SpUNet run showed the same shape: each backward layer was about 3 minutes of gather-gemm compiles and about 8 minutes of weight-gradient compiles. A spconv-triton point for whoever takes this upstream: pruning the weight-gradient candidates on RDNA would cut most of the cold cost; this port needs no change for it.
+
+Warm, at 35af626, two new processes on the full cache (15045 files, 3.2 GB; it did not grow), timeit 24.0 s and 24.1 s:
+| config | first step | steady | loss 0 -> 19 run 1 / run 2 | result |
+|---|---|---|---|---|
+| semseg-spunet-v1m1-0-base | 2.13 s | 0.122 s | 3.0338 -> 0.8903 / 0.8903 | PASS |
+| semseg-oacnns-v1m1-0-base | 0.97 s | 0.430 s | 3.0757 -> 0.6251 / 0.6435 | PASS |
+| insseg-pointgroup-v1m1-0-spunet-base | 0.35 s | 0.126 s | 4.2373 -> 1.4480 / 1.4480 | PASS, eval clustering 0.07 s |
+A third warm run at f33fdb6 gave the same SpUNet and PointGroup losses and OACNNs 0.6427. Losses reproduce: SpUNet and PointGroup are bit-identical across all runs at both commits, cold or warm. OACNNs agrees at step 0 (3.0757) in every run and drifts from step 1 at the 4th decimal (step 19 over four runs: 0.6257, 0.6427, 0.6251, 0.6435), the same OACNNs-only wobble the MI300X record has. Likely, but not checked, the cause is nondeterministic float atomics in the `torch_geometric.utils.scatter` sums OACNNs uses (`oacnns_v1m1_base.py:92-97`), not spconv-triton, since the two spconv-only models are bit-stable.
+
+### CUDA no-regression gate
+`cuda-not-validated: no CUDA toolkit on this host` (no `/opt/conda/envs`, no nvcc, no `/usr/local/cuda`). Unchanged in scope from the gfx942 record: the real-nvcc compile is still owed before the pull request.
+
+### Integrity and content gates
+`git -C projects/Pointcept/src status --porcelain`: 62 entries, all untracked hipify artifacts, 0 modified tracked files. `jargon.py --port Pointcept` clean. README documents the ROCm build (requirements line, `PYTORCH_ROCM_ARCH` block with `gfx1100` in its example, `pip install spconv-triton`, triton-windows line). `git diff main...35af626`: 12 files, +52/-10.
+
+Result: linux-gfx1100 -> completed at 35af626.
+
+## Lesson for cuda-to-rocm: attribute a Triton cold-compile stall to a kernel from the cache's file times
+
+When a Triton-based library's first step takes hours, the Triton cache directory tells you which kernel to blame without a profiler: each compiled candidate writes `<kernel>.hsaco` into its own hash directory, so sorting all `.hsaco` files by modification time and charging each gap to the kernel written at its end gives compile seconds per kernel name, and the `*.autotune.json` files (one per finished autotune key, with the timing of every candidate) show how many keys are done. Use a fresh cache for a single process, or gaps between runs are charged to whichever kernel was compiled next. In this port a weight-gradient kernel with 21 candidates, including deep pipelining and 128-wide tiles, took 25 s per candidate on gfx1100 (RDNA3), against 3 s for the forward gather-GEMM, and accounted for 72% of a 97-minute first step. That points the fix at the library's candidate list, not at the port. Related data point for the existing "Triton cold compile" text: on this model set gfx1100 was 11x to 49x slower cold than MI300X with the same Triton, so "much slower on RDNA" holds, and a persistent cache brought the first step down to 1-2 s.
+
+## Lesson for moat-porting: a fleet worker's background command is capped at 2 hours
+
+The harness stops a `run_in_background` shell command at 2 h whatever `timeout` is requested, killing a cold Triton run with it (here at 120 of 150 allowed minutes). For a GPU run that may go longer, start it with `setsid nohup <wrapper> &` from the worker, have the wrapper write an exit marker, and wait on that marker in foreground polls of under 10 minutes; the persistent Triton cache meant the killed run's work was not lost.
