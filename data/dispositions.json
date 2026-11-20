@@ -1247,6 +1247,19 @@
     "reason": "cant-port",
     "repo_id": 1137545832
   },
+  "lssfau/walberla": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-20T20:14:30Z",
+    "disposition": "skip",
+    "full_name": "lssfau/walberla",
+    "note": "Ruled 2026-11-20: decline as already supported, no fork and no port. waLBerla has had an upstream HIP backend since 2023; on ROCm 10.1 it builds and its GPU lattice-Boltzmann kernels agree with the CPU to round-off on gfx942 and gfx1201 (intake and wave32 check, notes on port/walberla). ESPResSo's pinned waLBerla needs no change. Seven small arch-independent upstream fixes are drafted in those notes and go to waLBerla's GitLab (gitos.rrze.fau.de) as merge requests jeff approves, after account onboarding; keep port/walberla until they are sent.",
+    "reason": "already-supported",
+    "recorded_as": {
+      "gh_host": "github.com",
+      "login": "jeffdaily"
+    },
+    "repo_id": 86795775
+  },
   "lucasdelimanogueira/pynorch": {
     "decided": "2026-06-05T01:24:38Z",
     "disposition": "skip",
@@ -2505,15 +2518,6 @@
     "note": "real/current HIP backend (research-confirmed; cubecl-hip crate, ROCm 7.1.1 bindings)",
     "reason": "already-supported",
     "repo_id": 815155760
-  },
-  "traveller59/spconv": {
-    "by": "Jeff Daily",
-    "decided": "2026-08-20T19:23:39Z",
-    "disposition": "skip",
-    "full_name": "traveller59/spconv",
-    "note": "Decided in-session 2026-08-20: decline as already supported. spconv-triton (Apache-2.0, PyPI, MI300X-verified) is a drop-in replacement for spconv 2.x on ROCm, and upstream is not a viable PR destination (no merged PR since 2022-12-27; the one AMD request, #780, was answered by pointing at spconv-triton). A port would mean an unbounded AMD backend for the cumm codegen rather than work on spconv itself. Screened seven times on four platforms, all agreeing. Analysis retained in history: `git show 2cc3927f97db:projects/spconv/notes.md` (notes.md).",
-    "reason": "already-supported",
-    "repo_id": 166499614
   },
   "triton-lang/triton": {
     "by": "Jeff Daily",
