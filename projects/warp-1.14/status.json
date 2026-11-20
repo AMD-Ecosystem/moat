@@ -8,8 +8,8 @@
   "ext_type": "python-build-nvrtc",
   "stage": "porting",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-20T01:59:28Z",
-  "head_sha": "fb4803bb8986eb1b3d12365948f0f2545da86f15",
+  "updated_at": "2026-11-20T02:50:04Z",
+  "head_sha": "113e1e703653513e3fc4611a53141a76c939a698",
   "depends_on": [],
   "porting": {
     "arch": "linux-gfx950",
