@@ -17,7 +17,8 @@
     "schema_version": {
       "enum": [
         2,
-        3
+        3,
+        4
       ]
     },
     "name": {
@@ -101,6 +102,9 @@
           "pattern": "^(linux|windows)-(gfx[0-9a-f]+)$"
         },
         "since": {
+          "type": "string"
+        },
+        "holder": {
           "type": "string"
         }
       }
@@ -297,11 +301,88 @@
     "pr_closed_note": {
       "type": "string"
     },
+    "landed_via": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "url",
+        "merged_at",
+        "carried",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "number": {
+          "type": "integer"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "merged_at": {
+          "type": "string"
+        },
+        "merge_commit": {
+          "type": "string"
+        },
+        "carried": {
+          "enum": [
+            "commits",
+            "content-differs"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
     "published_sha": {
       "type": [
         "string",
         "null"
       ]
+    },
+    "pr_head_accepted": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "from",
+        "to",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
     },
     "pr_round": {
       "type": "integer",
@@ -486,6 +567,39 @@
         }
       }
     },
+    "upstream_url_ruling": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "url",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "previous": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
     "fork_url_ruling": {
       "type": [
         "object",
@@ -552,6 +666,119 @@
         }
       }
     },
+    "fork_branch_ruling": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "branch",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "previous": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "delivery": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "mode",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "fork-release"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "tag_format": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "release": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "tag",
+        "sha",
+        "at"
+      ],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha": {
+          "type": "string",
+          "minLength": 1
+        },
+        "review_pr": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "approved_by": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "rev": {
+          "type": "integer"
+        },
+        "review_closed_at": {
+          "type": "string"
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
     "review_pr": {
       "type": "string"
     },
@@ -602,6 +829,13 @@
         "screened",
         "unclaimed"
       ]
+    },
+    "reviewed_sha": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "head the review last passed"
     },
     "not_portable": {
       "type": [
@@ -724,17 +958,25 @@
           ],
           "description": "head this arch last failed to validate"
         },
-        "pr_url": {
+        "failed_gate": {
+          "enum": [
+            "docs",
+            "jargon",
+            null
+          ]
+        },
+        "gpu_passed_sha": {
           "type": [
             "string",
             "null"
           ]
         },
-        "pr_number": {
-          "type": [
-            "number",
-            "null"
-          ]
+        "validated_prior": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4
         },
         "started_at": {
           "type": [
