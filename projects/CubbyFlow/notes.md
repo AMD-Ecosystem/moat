@@ -1178,3 +1178,82 @@ next to the exes in build_gfx1151_b/bin.
 
 Docs: Documents/Install.md already carries the USE_HIP block; this
 build-file fix needs no doc change. jargon.py --port CubbyFlow: clean.
+
+## Review 2026-11-20 (windows-gfx1151, reviewer): fix round tip cc41a805
+
+changes-requested at `cc41a8056aae1f334bf68628b137e1a3c7dd7297` (moat-fix-145).
+
+Scope. `reviewed_sha` was unset when the lock was taken (the 2026-08-20 pass was
+recorded while `head_sha` still named 62f4604c, and the later `advance-head`
+cleared it), so a pass here stamps the whole staged delta 62f4604c..cc41a805.
+The history is linear: `git log 62f4604c..HEAD` ends 40927ee55b (merge),
+29bac0b9b1 (docs/comment), cc41a8056a, and 29bac0b9b1 is the exact commit the
+2026-08-20 re-review passed, so that review's verification of the merge, docs and
+fault-class sweep carries; this review read the new commit
+(`git diff 29bac0b9..cc41a805`, one file, `Builds/CMake/CompileOptions.cmake:36-45`)
+in full and re-read the delta's readability as a whole.
+
+What checks out (not findings):
+- Guard: `USE_HIP` is an option set at `CMakeLists.txt:74`, before
+  `include(Builds/CMake/CompileOptions.cmake)` at `CMakeLists.txt:163`. A CUDA
+  build has `USE_HIP` OFF and a Linux HIP build has `WIN32` false, so both see the
+  identical property list; even if the block were entered, `HIP_STANDARD` only
+  affects HIP-language sources and cannot reach nvcc (CUDA keeps
+  `CMAKE_CUDA_STANDARD 17`, `CMakeLists.txt:102`). The Windows CUDA configure the
+  porter skipped therefore does not matter for this change, and the nvcc gate at
+  29bac0b9 is untouched by it.
+- Coverage: only `Sources/Core/CMakeLists.txt:29`, `Tests/CUDATests/CMakeLists.txt:12`
+  and `Examples/CUDASPHSim/CMakeLists.txt:24` mark sources `LANGUAGE HIP`, and all
+  three targets apply `${DEFAULT_PROJECT_OPTIONS}` (`:48`, `:23`, `:33`).
+  `build_gfx1151_b/build.ninja`: 35 HIP objects (26 CubbyFlow, 8 CUDATests,
+  1 CUDASPHSim) all at `-std=c++20`, 734 at `-std=c++23`, no other value; C++20
+  keeps `__cpp_concepts >= 201907L`, so `CUBBYFLOW_REQUIRES` stays live on the HIP
+  path as on Linux.
+- Commit: title 46 chars with `[ROCm]`, ASCII, prose AI disclosure, fenced Test
+  Plan, no `Co-Authored-By`; `python utils/jargon.py --port CubbyFlow`: clean.
+
+### Finding 1: the comment names the wrong cause, so nobody will know when to drop the pin
+
+`Builds/CMake/CompileOptions.cmake:36-39` says the MSVC STL's C++23 `<cmath>`
+"declares isfinite/isinf/isnan/isnormal `__host__ __device__`". It does not. In
+14.50 `cmath:602-604` the `_CLANG_BUILTIN1_ARG` overloads are `_CONSTEXPR23`,
+which `yvals_core.h:963` makes `constexpr` under C++23 (P0533R9) and `inline`
+otherwise; clang in HIP mode treats a `constexpr` function as implicitly
+`__host__ __device__`, and `__clang_hip_runtime_wrapper.h` includes
+`<__clang_cuda_math_forward_declares.h>` AFTER `<cmath>` (lines 147 vs 114 in
+the TheRock 7.14 clang 23 used for this build), so its `__device__`-only
+declarations collide. That is a clang/ROCm wrapper ordering bug, fixed in
+llvm/llvm-project#201563 and present from ROCm 10.1 nightlies
+(`cuda-to-rocm` `references/build-headers-macros.md`, "HIP + C++23 on an older
+toolchain"); the MSVC STL is conforming. As written, an upstream maintainer
+reading the comment would blame their STL and keep a C++20 pin forever. Reword
+the comment (a new commit; cc41a805's body cannot be amended and carries the same
+misstatement, so the follow-up commit body should state the correction) to say:
+C++23 makes these `constexpr`, which HIP treats as host+device, and older ROCm
+clang declares device-only overloads after `<cmath>`; drop this once the
+minimum supported ROCm includes the wrapper fix.
+
+### Finding 2: the fix deviates from the documented remedy without the analysis that would justify it
+
+The same skill section measures the alternatives on this exact host/toolchain and
+prefers `assets/HipCxx23Shim.cmake` (generated wrapper with the includes
+reordered, language standard untouched), ranking the `-std=c++20` pin last
+because HIP TUs and host TUs then build against different standard-library
+configurations -- an ODR hazard MSVC cannot detect (no `detect_mismatch` for
+`_HAS_CXX*`). It also says not to guard on `WIN32` (libstdc++ adopting P0533R9
+breaks Linux identically) and to probe instead. CubbyFlow is exactly the mixed
+case: the `CubbyFlow` static library links 26 C++20 HIP objects with C++23 CXX
+objects that include the same `Includes/Core` headers. The porter notes
+(2026-11-20 round, "Hypothesis check") checked only that HIP code uses no C++23
+language features; they do not address the STL-configuration split. Either
+switch to the shim, or record in notes.md why the pin is safe here (which STL
+types cross between the HIP and CXX objects of the `CubbyFlow` library and that
+none of them changes layout or inline definition under `_HAS_CXX23`), and why a
+`WIN32` guard is acceptable over the probe. The pin's smaller footprint is a
+legitimate reason to prefer it for an upstream PR, but that choice has to be
+argued, not defaulted to from the CuRast precedent the validator cited, which
+predates the skill's measurement.
+
+Readability of the staged delta as a whole: an upstream maintainer sees their own
+merged history plus three of our commits (merge resolution, docs, this one); with
+Finding 1 fixed the new commit is self-explanatory. No other problems.

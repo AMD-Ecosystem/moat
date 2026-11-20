@@ -95,3 +95,5 @@
 {"kind":"phase","ts":"2026-11-20T21:24:26Z","phase":"test","seconds":0.777,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/wt-CubbyFlow/projects/CubbyFlow/src/build_gfx1151_b/bin && ./CUDATests.exe"}
 {"kind":"phase","ts":"2026-11-20T21:24:36Z","phase":"test","seconds":4.228,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/wt-CubbyFlow/projects/CubbyFlow/src/build_gfx1151_b/bin && ./CUDASPHSim.exe -f 5"}
 {"kind":"phase","ts":"2026-11-20T21:25:02Z","phase":"test","seconds":6.707,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/wt-CubbyFlow/projects/CubbyFlow/src/build_gfx1151_b/bin && ./UnitTests.exe"}
+{"kind":"session","ts":"2026-11-20T21:32:17Z","epoch":1795210337.55013,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-20T21:35:33Z","epoch":1795210533.48677,"event":"end","platform":"windows-gfx1151"}
