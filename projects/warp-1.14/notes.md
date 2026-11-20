@@ -8675,3 +8675,8 @@ So AMD's shipped 1.13 code does show late writes, in the alloc_on_s2 case, every
 - Free-ordering test: "I'm fine with (a) since it's a publicly visible record of this hazard." Implemented as `e88cf857` (session 23). CUDA reference (coordinator, V100, upstream `warp-lang==1.14.0`, `free_race.py 20000`, two runs): every case reused 10/10, late writes 0/10.
 - Depth-level refit on HIP: "let's do (b) this time." Dispatched to the porter as session 24 (prompt `agent_space/p6ev/refit-porter.txt`).
 - Open with jeff: AMD 1.13 (`5035c8ed`) shows late writes in the alloc_on_s2 case 10/10 (session 23); whether to tell its authors is his decision.
+
+## Rulings on the ray traversal and Cholesky (jeff, 2026-11-20)
+
+- `mesh_query_ray`: "(a) Leave it reverted". The fork keeps upstream's traversal.
+- Tile Cholesky n=16: "(a) Leave upstream's code". No pivot change, no cooperative port.
