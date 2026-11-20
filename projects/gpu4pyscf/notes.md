@@ -5122,3 +5122,240 @@ Directories that differ between the two heads: pbc/df 119/23/6/0 -> 137/5/6/0, p
 1. Bring back a gfx12 complex GEMM workaround as an eighth small pull request. Our old e1b8041 + 5a87452 split depends on the held local einsum helper, so it would need rewriting over plain `cupy.matmul`/`einsum` chunking of the n dimension below 2^21 (only complex dtypes, only gfx12). It would be the first pull request that works around a ROCm library defect rather than a gpu4pyscf one.
 2. Ship without it: record `set-blocked gpu4pyscf linux-gfx1201 '<reason>'` with the reason (rocBLAS complex GEMM on gfx12, filed upstream), which lets pr-ready pass for this platform once wave32 is satisfied elsewhere.
 3. Wait for the rocBLAS fix. Then revalidate gfx1201 on a ROCm that has it.
+
+## Ruling 2026-11-20 (jeff): the gfx12 complex GEMM workaround becomes an eighth pull request
+
+jeffdaily ruled on 2026-11-20, answering the three choices of the gfx1201 validation above: "send the seven as they are and bring the workaround back as an eighth pull request, rewritten without the held helper". So the seven `pr-1054-*` fixes go upstream unchanged; the gfx12 complex GEMM workaround returns as an eighth fix written over plain CuPy calls; the local einsum helper and its call-site rewrites stay held (he prefers a rocBLAS fix for those), and no part of them comes back. For the eighth draft: no `[ROCm]` prefix in the pull-request title (the commit keeps it), closing lines "Part of #1054." and the Claude Code sentence of the 2026-11-19 ruling, and the body says plainly that this works around a rocBLAS defect and when it can be removed.
+
+## Porter 2026-11-20 (porter, linux-gfx1201 R9700, fork moat-port @ 0647712, NOTHING committed or pushed) -- eighth fix: gfx12 complex GEMM split over plain CuPy calls; STOPPED: the pinned GPU wedged
+
+Dispatched by jeff with the ruling above. Took the lock (`set-state gpu4pyscf linux-gfx1201 porting`, from validation-failed). Fleet job on the R9700 host, `HIP_VISIBLE_DEVICES=0` from the dispatcher, all GPU work under `ulimit -c 0`. TheRock ROCm SDK 10.1.0 pip (HIP 7.16.26385, rocBLAS 5.7.0.39d8d603, AMD clang 24.0.0), no /opt/rocm, `LD_LIBRARY_PATH=$R/lib`. Job venv: the 2026-11-19 set (numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, basis-set-exchange 0.12, MCFun 0.2.6, h5py 3.16.0, pytest 9.2.0, pytest-xdist 3.8.0, pytest-timeout 2.4.0), cmake 3.31.6 from the venv. Fresh fork clone, `protect-fork` run. Head build: `USE_HIP=1 GPU_ARCHITECTURES=gfx1201 CMAKE_BUILD_ARGS=--verbose python setup.py build_py` (`utils/timeit.sh gpu4pyscf compile`), exit 0 in 176 s, 12 libraries, `--offload-arch=gfx1201` only, `-disable-machine-licm` (committed option) on 100/100 compile and 12/12 link lines. Scratch under the fleet job directory (`agent/`, `res/`, `w/`, `logs/`), not durable.
+
+### Reproduced at 0647712, and the installed ROCm is not fixed
+- Smallest case (`agent/repro.py`): `cupy` `(n, k) @ (k, m)` on this GPU. complex128: n = 2097152 exact; n = 2097153 one wrong row, first wrong row 2097152; n = 2097216 64 wrong rows; n = 4194404 2097252 wrong rows. complex64 the same (first wrong row 2097152). float64 and float32 exact at every n up to 4194404. Independent of k and m (k = m = 1, 2; k = 64, m = 128: still exactly one wrong row at n = 2097153). The large dimension as the result's column count instead, `(6, 6) @ (6, 2097216)`, is exact (5.6e-16): only rocBLAS's n (the row count of the row-major result) is affected.
+- So the trigger is: complex dtype (zgemm/cgemm, through `gemm_strided_batched_ex` with `f64_c`/`f32_c` here), rocBLAS n > 2^21, on gfx12. The rows from index 2^21 on are never written. rocBLAS 5.7.0.39d8d603 in this host's ROCm 10.1.0 is the build of the 2026-11-02 root cause; the defect is unchanged. ROCm/rocm-libraries#14983 is open, and none of its 10 comments reports a rocBLAS fix (rocSOLVER and rocSPARSE fixes are discussed there). So the work went ahead.
+- The six tests at 0647712, one pytest process per file (`agent/six.sh`): all six fail with the validation's values (test_ej_ip1_kpts 11.0211, test_vk_kpts_vs_fft 1.43503, test_ejk_derivatives_kpts_with_long_range 7.047e-5, test_uhf_ejk_derivatives_kpts_with_long_range 4.790e-4, test_vk_hermi1_kpts_vs_aft 0.0462, test_krhf_grad_with_pseudo 0.0155 vs 0.0201 in that run).
+
+### Where gpu4pyscf makes the affected products
+Found with two independent logs on the six tests: rocBLAS's own call log (`ROCBLAS_LAYER=2`, `ROCBLAS_LOG_BENCH_PATH` per file, `agent/scanrb.py` lists complex calls with n > 2^21) and a pytest plugin wrapping `cupy.einsum`/`matmul`/`dot` that records the calling gpu4pyscf line and operand shapes (`agent/plug/cgemmlog.py`). They agree call for call:
+
+| test file | complex calls with rocBLAS n > 2^21 (m, n, k) | gpu4pyscf line |
+|---|---|---|
+| test_pbc_aft.py | 4 x (6, 3515625, 6), 1 x (6, 5334336, 6) | pbc/df/ft_ao.py:601 `contract('Lk,pLqG->kpqG', expLk, out, out=tmp)` |
+| test_pbc_df_derivatives.py | 16 x (6, 3272481, 6) | pbc/df/grad/krhf.py:443, :445 and pbc/df/grad/kuhf.py:447, :449 (`'Lk,kpqG->LqpG'`, `'Lk,kpqG->LpqG'`), 4 each |
+| test_pbc_grad_krhf.py | 52 x (2, 6892100, 2) | pbc/df/ft_ao.py:601 |
+| test_pbc_scf_jk.py | 6 x (3, 4194304, 3) | pbc/df/ft_ao.py:601 |
+
+79 calls, two code sites (the krhf/kuhf pair is one site in two files). n = nao*nao*nGv in every case (the free size of the large operand). A trap worth keeping: pbc/df/rsdf_builder.py:1029 `contract('iLjk,LK->Kijk', cderi, expLk_j)` also has a free size of 3272481 in the derivative tests, but CuPy maps it to rocBLAS **m** = 3272481, n = 6 (logged), which is not affected, and it is correct on this GPU (8.9e-16 against NumPy). My first cut patched it by mistake; the rocBLAS log corrected that before anything was committed.
+
+Wider audit (`agent/plug/cgemmaudit.py`, every pbc test directory, CI selection, per directory `-n 4 --dist loadfile`): every complex two-operand product whose larger free size exceeds 2^19, per site, largest seen: ft_ao.py:601 6892100; grad/krhf.py:443/445 and kuhf.py:447/449 3272481; rsdf_builder.py:1029 3272481 (m side); aft_jk.py:642 and :651 (`'Lk,kjig->Ljig'`, `'Lk,kjig->Lijg'` in the AFT exchange strain derivative) 1638400. Nothing else passes 2^19 in the tests. But aft_jk.py:642/651 have n = nao^2 * nGv with nGv capped at 16384, so they pass 2^21 from nao = 12, and other G-blocked products (aft_jk.py:267/277/300 `'ngij,snjk->sngik'` and friends, n = nGv*nao) can pass it for large bases. **The eighth fix covers what the test suite drives past the limit, not every product that can pass it**; covering all of them would need a guard in the one function every contraction goes through, which is the held design. For jeff to weigh.
+
+### Change (not yet committed): pbc/df/ft_ao.py, pbc/df/grad/krhf.py, pbc/df/grad/kuhf.py, +55/-7
+- ft_ao.py, beside the other module constants: `COMPLEX_GEMM_MAX_N` (None, or `1 << 21` when `cp.cuda.runtime.is_hip` and `gpu_specs.get('gcnArchName', b'').startswith(b'gfx12')`), with a comment naming the defect in plain words and the public issue, and `complex_gemm_blocks(n0, n1, n2)`, which yields (i0, i1, k0, k1) blocks of axes 0 and 2 of an (n0, n1, n2) array with at most `COMPLEX_GEMM_MAX_N` elements each (axis 0 first; axis 2 too only when one row is wider than the limit).
+- The three call sites keep their line verbatim in an `else:` branch and, when `COMPLEX_GEMM_MAX_N` is set and nao*nao*nGv exceeds it, run the same `contract` on slices of the large operand and of the output. krhf/kuhf do the `'->LqpG'` loop to completion before the `beta=1` `'->LpqG'` loop: interleaving them per block would accumulate into entries the first product has not written yet.
+- **GPU check: cheap and robust.** `gpu_specs` is `__config__.props`, device 0's properties, already read at import and already imported by ft_ao.py (upstream sizes several things from it), so the check costs nothing. CuPy-ROCm returns `gcnArchName` as bytes (`b'gfx1201'` here). Every gfx12 target reads work-group IDs y/z as 16 bits: device ISA of a kernel indexing `blockIdx.y`/`z`, built with this SDK's clang (`agent/isa/`): gfx1200 and gfx1201 `s_and_b32 s2, ttmp7, 0xffff` / `s_lshr_b32 s3, ttmp7, 16`, gfx1250 the same plus cluster arithmetic; gfx1100, gfx942, gfx950 take them as full SGPRs. So the prefix `gfx12` is right, not just gfx1201. Limitation: a host mixing gfx12 with other GPUs is judged by device 0, like upstream's other `__config__` settings.
+- **Nothing on CUDA, and how that is known:** on CUDA `cp.cuda.runtime.is_hip` is False, so `COMPLEX_GEMM_MAX_N` is None and each site runs its original line in the `else:` branch; `complex_gemm_blocks` is never called. No compiled source changes. Not run on an NVIDIA GPU.
+- Cost if it were applied on every HIP device instead: the split itself costs what the timing below shows, about nothing; the gate is there because the defect is gfx12-only, not for speed.
+- Lint: ruff 0.15 (the version upstream's lint workflow pins) with both workflow invocations, and flake8 with the repository config: clean, as on the base.
+
+### Timing of one affected call (`agent/bench.py`, R9700, the product alone, median of 10, one call vs split; error against NumPy)
+| product | n | one call | split |
+|---|---|---|---|
+| `'Lk,pLqG->kpqG'` nk 6, nao 15, nG 15625 | 3515625 | 15.21 ms, err 1.5 | 15.65 ms (2 blocks), 6.7e-16 |
+| nk 6, nao 24, nG 9261 | 5334336 | 25.20 ms, err 1.4 | 23.52 ms (3), 5.6e-16 |
+| nk 3, nao 16, nG 16384 | 4194304 | 17.53 ms, err 0.82 | 10.82 ms (2), 3.3e-16 |
+| nk 2, nao 10, nG 68921 | 6892100 | 11.16 ms, err 0.64 | 9.98 ms (4), 1.2e-16 |
+| nk 2, nao 10, nG 16384 (below the limit, not split) | 1638400 | 2.51 ms | 2.36 ms (1) |
+| nk 8, nao 40, nG 16384 | 26214400 | 1006.5 ms, err 2.0 | 239.6 ms (14), 1.1e-15 |
+`complex_gemm_blocks(3, 5, 2**20)` (one row wider than the limit): 9 blocks, largest 2097150 elements.
+
+### Results with the change (worktree at 0647712 plus the diff, the head's built libraries)
+- The six tests: **6 passed** (plus the two `..._long_range1` siblings the `-k` also selects), wall 24 s. rocBLAS log: **0** complex calls with n > 2^21 in the four files (79 before).
+- Affected directories, one pytest process per file (`agent/runfiles.sh`, CI marker selection, three files at a time per tree, the two trees side by side):
+
+| directory | 0647712 | with the change |
+|---|---|---|
+| pbc/df (7 files) | 137/5/6/0 | **141/1/6/0** |
+| pbc/grad (18 files) | 185/9/2/0 | **186/8/2/0** |
+| pbc/scf (11 files) | incomplete (GPU wedged, below) | incomplete |
+
+Both "before" rows equal the gfx1201 validation's per-directory counts at 0647712. The failures removed are exactly the five targets in these directories; the 1 + 8 left are identical by name and value on both sides (test_ft_ao_strain_deriv 4.52e-7; krks/kuks test_df_rsh_grad, rks test_df_sr_rsh_grad, krks test_sr_rsh_grad; slabdipole x2, slabgate; test_multigrid_image_boundary_strain_deriv 0.0717). pbc/scf before the wedge: test_pbc_scf_ghf 18/4 both sides, test_pbc_scf_hf 18/2/1 with the change; the sixth target (test_vk_hermi1_kpts_vs_aft) passed in the six-test run.
+
+### The wall: the pinned GPU wedged at about 19:35 UTC and did not recover
+Six pytest processes (three per tree) in pbc/scf stopped making progress at about 19:35 UTC (test_pbc_gdm, test_pbc_scf_diffuse_orbital and test_pbc_scf_hf on 0647712; test_pbc_gdm, test_pbc_scf_diffuse_orbital and test_pbc_scf_j_engine with the change), each at 100% CPU. The unmodified tree hung the same way as the changed one, so the change is not the cause. amd-smi showed the card at 100% GFX activity with little memory in use. SIGABRT faulthandler stacks: pbc/dft/krks.py:73 `get_veff` inside the GDM solver; cupy/fft `_get_cufft_plan_nd` from pbc/df/fft_jk.py:192; cupy `_compile_with_cache_hip` -> `mod.load` (`hipModuleLoadData`). After killing all six, with no process on the card and 57 MB of VRAM in use, `hipMalloc` still returns at once, but `hipMemcpy` of 1 MB host to device and `hipModuleLoadData` never return (also with a fresh `CUPY_CACHE_DIR`). A poller retrying that memcpy every 150 s (`agent/gpupoll.sh`) saw it hang from 19:58 to at least 20:51 UTC. GFX activity drifted from 100% down to 0-2%. No reset was attempted: passwordless sudo exists on the host, but resetting a consumer card can take the driver down for every job on the host, so it is jeff's call. One diagnostic touched another card: a single 1 MB memcpy with `HIP_VISIBLE_DEVICES=1` returned at once, which shows the wedge is confined to the pinned card; that card belongs to the running espresso job (found out afterwards), and nothing else was run on it. This is the second wedge of this kind on these cards (the gfx1100 evaluation of 2026-11-19 wedged during hessian/tests, and the 2026-11-19 gfx1201 job recorded an intermittent `hipModuleLoadData` hang under load). Six concurrent test processes on one card may be what triggers it; a rerun should use two or three.
+
+**Needed from a person: reset or reboot this host's R9700 behind HIP device 0 of this job (amd-smi GPU 3, BDF not recorded) before the next gfx1201 job.**
+
+### Not done (everything below needs a working GPU)
+1. pbc/scf before/after, then commit on `moat-port` (message below, `@@COUNTS@@` filled) and push, `advance-head`, `delta-ported`.
+2. Whole upstream CI selection at the new head, one pytest process per file, against 0647712 (2211/46/109/0 per directory): not run.
+3. `pr-1054-gfx12-complex-gemm`: worktree cut from upstream master **61c2a1e4** (still upstream's tip at 20:00 UTC, `git ls-remote`; it has not moved), the diff applies cleanly, flag build done (exit 0 in 176 s, 12 libraries, flag on 100/100 and 12/12; master flag build likewise, 190 s). Not committed, not tested alone, not pushed.
+4. Reviewer for the one-commit delta, validator on gfx1201 at the new head. Owed afterwards: an MI300X (gfx942) run of the new head (the change is inert there: `COMPLEX_GEMM_MAX_N` is None), and wave32 by gfx1100.
+
+State left: stage `porting`, lock held by linux-gfx1201 (the next gfx1201 job resumes it with `set-state gpu4pyscf linux-gfx1201 porting`). head_sha 0647712; nothing pushed to the fork; `projects/gpu4pyscf/src` clean at 0647712. No GitHub write.
+
+### The change, exactly (`git diff 06477124`, also applies to upstream master 61c2a1e4 unchanged)
+```diff
+diff --git a/gpu4pyscf/pbc/df/ft_ao.py b/gpu4pyscf/pbc/df/ft_ao.py
+index b6815195..f9324403 100644
+--- a/gpu4pyscf/pbc/df/ft_ao.py
++++ b/gpu4pyscf/pbc/df/ft_ao.py
+@@ -56,6 +56,24 @@ GOUT_WIDTH = 30
+ THREADS = 256
+ POOL_SIZE = 65536
+ 
++# On gfx12 GPUs, rocBLAS complex GEMM leaves the columns from n = 2**21 on of the
++# result unwritten and still reports success: the kernel indexes its n tiles
++# with a 16-bit work-group ID (ROCm/rocm-libraries#14983). Complex products
++# that can be wider than that are split below it. Remove this and its uses
++# once rocBLAS is fixed.
++COMPLEX_GEMM_MAX_N = None
++if cp.cuda.runtime.is_hip and gpu_specs.get('gcnArchName', b'').startswith(b'gfx12'):
++    COMPLEX_GEMM_MAX_N = 1 << 21
++
++def complex_gemm_blocks(n0, n1, n2):
++    '''Blocks (i0, i1, k0, k1) of axes 0 and 2 of an (n0, n1, n2) array, each
++    with at most COMPLEX_GEMM_MAX_N elements'''
++    blk0 = max(1, COMPLEX_GEMM_MAX_N // (n1 * n2))
++    blk2 = min(n2, COMPLEX_GEMM_MAX_N // n1)
++    for i0, i1 in lib.prange(0, n0, blk0):
++        for k0, k1 in lib.prange(0, n2, blk2):
++            yield i0, i1, k0, k1
++
+ def ft_aopair(cell, Gv, kpti_kptj=None, q=None):
+     if kpti_kptj is None:
+         kptj = np.zeros((1, 3))
+@@ -598,7 +616,13 @@ class FTOpt:
+                     expLk = cp.exp(1j*asarray(self.bvkmesh_Ls).dot(kpts.T))
+                 nkpts = expLk.shape[1]
+                 tmp = ndarray((nkpts,nao,nao,nGv), dtype=out.dtype, buffer=out_buf[1])
+-                out = contract('Lk,pLqG->kpqG', expLk, out, out=tmp)
++                if COMPLEX_GEMM_MAX_N is not None and nao*nao*nGv > COMPLEX_GEMM_MAX_N:
++                    for p0, p1, g0, g1 in complex_gemm_blocks(nao, nao, nGv):
++                        contract('Lk,pLqG->kpqG', expLk, out[p0:p1,:,:,g0:g1],
++                                 out=tmp[:,p0:p1,:,g0:g1])
++                    out = tmp
++                else:
++                    out = contract('Lk,pLqG->kpqG', expLk, out, out=tmp)
+                 if (kj_idx is not None and
+                     self.permutation_symmetry and not ki_kj_identical):
+                     # Using the identity FW(i[ki], j[kj], G+q) == FW(j[-kj], i[-ki], G+q),
+diff --git a/gpu4pyscf/pbc/df/grad/krhf.py b/gpu4pyscf/pbc/df/grad/krhf.py
+index 7879e3ac..865ecb6c 100644
+--- a/gpu4pyscf/pbc/df/grad/krhf.py
++++ b/gpu4pyscf/pbc/df/grad/krhf.py
+@@ -440,9 +440,21 @@ def _get_ejk_derivatives(int3c2e_opt, dm, kpts=None, hermi=0, j_factor=1., k_fac
+                 contract('kijG,kpi->kpjG', dm_ooG, dm_factor_r, out=tmp)
+                 contract('kpjG,kqj->kpqG', tmp, dm_factor_l[kj_idx], -.5*k_factor, out=dm_vG)
+                 LpqG = ndarray((bvk_ncells,nao,nao,nGv), dtype=np.complex128, buffer=scratch2)
+-                contract('Lk,kpqG->LqpG', expLk[:,kj_idx], dm_vG, out=LpqG)
+-                if ft_opt.permutation_symmetry:
+-                    contract('Lk,kpqG->LpqG', expLk_conj, dm_vG, beta=1, out=LpqG)
++                if (ft_ao.COMPLEX_GEMM_MAX_N is not None and
++                    nao*nao*nGv > ft_ao.COMPLEX_GEMM_MAX_N):
++                    blocks = list(ft_ao.complex_gemm_blocks(nao, nao, nGv))
++                    expLk_j = expLk[:,kj_idx]
++                    for i0, i1, g0, g1 in blocks:
++                        contract('Lk,kpqG->LqpG', expLk_j, dm_vG[:,i0:i1,:,g0:g1],
++                                 out=LpqG[:,:,i0:i1,g0:g1])
++                    if ft_opt.permutation_symmetry:
++                        for i0, i1, g0, g1 in blocks:
++                            contract('Lk,kpqG->LpqG', expLk_conj, dm_vG[:,i0:i1,:,g0:g1],
++                                     beta=1, out=LpqG[:,i0:i1,:,g0:g1])
++                else:
++                    contract('Lk,kpqG->LqpG', expLk[:,kj_idx], dm_vG, out=LpqG)
++                    if ft_opt.permutation_symmetry:
++                        contract('Lk,kpqG->LpqG', expLk_conj, dm_vG, beta=1, out=LpqG)
+                 if j_factor != 0 and kp == 0:
+                     vG = auxvec.dot(auxG_conj) * j_factor
+                     if ft_opt.permutation_symmetry:
+diff --git a/gpu4pyscf/pbc/df/grad/kuhf.py b/gpu4pyscf/pbc/df/grad/kuhf.py
+index c3a5de4e..9135600b 100644
+--- a/gpu4pyscf/pbc/df/grad/kuhf.py
++++ b/gpu4pyscf/pbc/df/grad/kuhf.py
+@@ -444,9 +444,21 @@ def _get_ejk_derivatives(int3c2e_opt, dm, kpts=None, hermi=0, j_factor=1., k_fac
+                 contract('skijG,skpi->skpjG', dm_ooG, dm_factor_r, out=tmp)
+                 contract('skpjG,skqj->kpqG', tmp, dm_factor_l[:,kj_idx], -k_factor, out=dm_vG)
+                 LpqG = ndarray((bvk_ncells,nao,nao,nGv), dtype=np.complex128, buffer=scratch2)
+-                contract('Lk,kpqG->LqpG', expLk[:,kj_idx], dm_vG, out=LpqG)
+-                if ft_opt.permutation_symmetry:
+-                    contract('Lk,kpqG->LpqG', expLk_conj, dm_vG, beta=1, out=LpqG)
++                if (ft_ao.COMPLEX_GEMM_MAX_N is not None and
++                    nao*nao*nGv > ft_ao.COMPLEX_GEMM_MAX_N):
++                    blocks = list(ft_ao.complex_gemm_blocks(nao, nao, nGv))
++                    expLk_j = expLk[:,kj_idx]
++                    for i0, i1, g0, g1 in blocks:
++                        contract('Lk,kpqG->LqpG', expLk_j, dm_vG[:,i0:i1,:,g0:g1],
++                                 out=LpqG[:,:,i0:i1,g0:g1])
++                    if ft_opt.permutation_symmetry:
++                        for i0, i1, g0, g1 in blocks:
++                            contract('Lk,kpqG->LpqG', expLk_conj, dm_vG[:,i0:i1,:,g0:g1],
++                                     beta=1, out=LpqG[:,i0:i1,:,g0:g1])
++                else:
++                    contract('Lk,kpqG->LqpG', expLk[:,kj_idx], dm_vG, out=LpqG)
++                    if ft_opt.permutation_symmetry:
++                        contract('Lk,kpqG->LpqG', expLk_conj, dm_vG, beta=1, out=LpqG)
+                 if j_factor != 0 and kp == 0:
+                     vG = auxvec.dot(auxG_conj) * j_factor
+                     if ft_opt.permutation_symmetry:
+```
+
+### Commit message for `moat-port` and the pull-request branch (draft; `@@COUNTS@@` to be filled with the pbc/df, pbc/grad, pbc/scf before/after counts)
+````text
+[ROCm] Split wide complex k-point products on gfx12 GPUs
+
+On gfx12 GPUs (Radeon RX 9000 series, Radeon AI PRO R9700), several k-point AFT and GDF results are wrong without any error. On an R9700, test_ej_ip1_kpts in test_pbc_aft.py misses by 11.0 and test_vk_kpts_vs_fft by 1.4, test_ejk_derivatives_kpts_with_long_range in test_pbc_df_derivatives.py and its UHF version by 7.0e-5 and 4.8e-4, test_vk_hermi1_kpts_vs_aft in test_pbc_scf_jk.py by 0.046, and test_krhf_grad_with_pseudo in test_pbc_grad_krhf.py by about 0.005.
+
+Cause: a rocBLAS defect, not a gpu4pyscf one. On these GPUs, rocBLAS complex GEMM (zgemm and cgemm, also through gemm_ex) with n > 2**21 leaves every column from 2**21 on unwritten and returns success. Its complex GEMM kernel places the n tiles of 32 columns in grid y, and gfx12 passes the work-group IDs y and z to the kernel as 16-bit values, so the tiles past 65536 * 32 = 2**21 never run. Real-valued GEMMs are not affected. It is reported as ROCm/rocm-libraries#14983. The k-point transforms `contract('Lk,pLqG->kpqG', ...)` in FTOpt (pbc/df/ft_ao.py) and `contract('Lk,kpqG->LqpG', ...)` / `'Lk,kpqG->LpqG'` in the k-point GDF ejk derivatives (pbc/df/grad/krhf.py, kuhf.py) reach rocBLAS with n = nao*nao*nGv, between 3.3 and 6.9 million in these tests.
+
+Change: on HIP devices whose gcnArchName starts with gfx12 (from the device properties `__config__` already reads), these products are split along the first AO axis, and also along G when a single AO row is wider than 2**21, so that no call exceeds 2**21. Each piece is the same `contract` call on slices of the operands and of the output. Other GPUs and CUDA run the existing line unchanged, because COMPLEX_GEMM_MAX_N stays None there. When rocBLAS is fixed, COMPLEX_GEMM_MAX_N, complex_gemm_blocks and the three branches that use them can be deleted.
+
+Cost on the R9700, the product alone (median of 10): n = 3.5 million 15.2 -> 15.7 ms, 5.3 million 25.2 -> 23.5 ms, 6.9 million 11.2 -> 10.0 ms, 26 million 1007 -> 240 ms (the single call is slow at that size).
+
+Authored with Claude.
+
+Test Plan:
+
+On a Radeon AI PRO R9700 (gfx1201), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, CI marker selection, one pytest process per test file:
+
+```
+pytest gpu4pyscf/pbc/df/tests/test_pbc_aft.py -p no:xdist -m 'not slow and not benchmark and not special' -k 'not _high_cost'
+```
+
+and likewise for every test file in gpu4pyscf/pbc/df, gpu4pyscf/pbc/grad and gpu4pyscf/pbc/scf.
+
+@@COUNTS@@
+
+With `ROCBLAS_LAYER=2`, rocBLAS logs no complex GEMM with n > 2**21 from the six tests after the change (79 before).
+````
+`jargon.py` and `prose.py`: clean on this text.
+
+### (h) gfx12 rocBLAS complex GEMM: split wide complex k-point products (draft, added 2026-11-20 per jeff's ruling)
+- Branch `pr-1054-gfx12-complex-gemm`, to be cut from upstream master 61c2a1e4 (unmoved as of 20:00 UTC), one commit. Not yet pushed; standalone counts pending (see "Not done").
+- Title has no prefix, per the 2026-11-19 ruling; the commit title keeps `[ROCm]` (its added lines name HIP and gfx12).
+- `@@TABLE@@`: master vs this branch, flag build, one process per file, for pbc/df, pbc/grad and pbc/scf, plus the six tests by name. `@@OTHERGPU@@`: an MI300X (gfx942) run showing no change there, if jeff wants the same two-GPU evidence as the other seven.
+- `prose.py` and `jargon.py`: clean on this draft.
+
+````markdown
+Title: Split wide complex k-point products on gfx12 GPUs
+
+On gfx12 GPUs (Radeon RX 9000 series, Radeon AI PRO R9700), several k-point AFT and GDF results are silently wrong. On an R9700, test_ej_ip1_kpts in test_pbc_aft.py misses by 11.0 and test_vk_kpts_vs_fft by 1.4, test_ejk_derivatives_kpts_with_long_range in test_pbc_df_derivatives.py and its UHF version by 7.0e-5 and 4.8e-4, test_vk_hermi1_kpts_vs_aft in test_pbc_scf_jk.py by 0.046, and test_krhf_grad_with_pseudo in test_pbc_grad_krhf.py by about 0.005. No error is raised.
+
+This works around a rocBLAS defect, not a problem in gpu4pyscf. On these GPUs, rocBLAS complex GEMM (zgemm and cgemm, also through gemm_ex) with n > 2**21 leaves every column from 2**21 on unwritten and returns success; real-valued GEMMs are not affected. Its complex GEMM kernel places the n tiles of 32 columns in grid y, and gfx12 passes the work-group IDs y and z to the kernel as 16-bit values, so the tiles past 65536 * 32 = 2**21 never run. It is reported as ROCm/rocm-libraries#14983. The k-point transforms `contract('Lk,pLqG->kpqG', ...)` in FTOpt (pbc/df/ft_ao.py) and `contract('Lk,kpqG->LqpG', ...)` / `'Lk,kpqG->LpqG'` in the k-point GDF ejk derivatives (pbc/df/grad/krhf.py, kuhf.py) reach rocBLAS with n = nao*nao*nGv, between 3.3 and 6.9 million in these tests.
+
+Change: on HIP devices whose gcnArchName starts with gfx12 (from the device properties `__config__` already reads), these products are split along the first AO axis, and also along G when a single AO row is wider than 2**21, so no call exceeds 2**21. Each piece is the same `contract` call on slices of the operands and the output. Other GPUs and CUDA run the existing line unchanged, because COMPLEX_GEMM_MAX_N stays None there. The split costs at most 3% on the R9700 at the sizes the tests reach (the product alone, median of 10: n = 3.5 million 15.2 -> 15.7 ms, 5.3 million 25.2 -> 23.5 ms, 6.9 million 11.2 -> 10.0 ms; at 26 million the single call takes 1007 ms and the split 240 ms).
+
+This can be removed once a ROCm release ships a rocBLAS that writes all columns on gfx12: delete COMPLEX_GEMM_MAX_N, complex_gemm_blocks and the three branches that use them. Until then it covers the products the test suite drives past 2**21; other complex products in the k-point AFT code can pass that width for larger systems than the tests use.
+
+Test plan, Radeon AI PRO R9700 (gfx1201), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, CI marker selection, one pytest process per test file:
+
+@@TABLE@@
+
+With `ROCBLAS_LAYER=2`, rocBLAS logs 79 complex GEMM calls with n > 2**21 from these six tests on master and none on this branch.
+
+@@OTHERGPU@@
+
+Part of #1054.
+
+This pull request was prepared with Claude Code (Anthropic), which wrote the change and ran the tests on our hardware; I read and approved it before opening.
+````

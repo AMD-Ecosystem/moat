@@ -251,3 +251,6 @@
 {"kind":"phase","ts":"2026-11-19T23:46:53Z","phase":"compile","seconds":183.397,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/gfx1201-20261119-131047-gpu4pyscf-radeon-prompt/moat/projects/gpu4pyscf/src && python setup.py build_py"}
 {"kind":"phase","ts":"2026-11-20T00:57:06Z","phase":"test","seconds":4204.724,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/gfx1201-20261119-131047-gpu4pyscf-radeon-prompt/agent/runtree2.sh"}
 {"kind":"session","ts":"2026-11-20T01:00:23Z","epoch":1795136423.60102,"event":"end","platform":"linux-gfx1201"}
+{"kind":"session","ts":"2026-11-20T18:43:37Z","epoch":1795200217.61706,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-20T18:46:35Z","phase":"compile","seconds":177.827,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/gfx1201-20261120-103927-gpu4pyscf-eighth-prompt/agent/build.sh /var/lib/jenkins/fleet/jobs/gfx1201-20261120-103927-gpu4pyscf-eighth-prompt/moat/projects/gpu4pyscf/src none gfx1201"}
+{"kind":"session","ts":"2026-11-20T20:55:02Z","epoch":1795208102.179846,"event":"end","platform":"linux-gfx1201"}
