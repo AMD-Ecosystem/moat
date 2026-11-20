@@ -1079,3 +1079,102 @@ unchanged. After that fix, this platform needs a full re-run; vcpkg deps
 are already warm in this host's binary cache from this session, so the
 next attempt should reconfigure/build in well under 5 minutes before
 reaching GPU tests.
+
+## Porter round 2026-11-20 (windows-gfx1151): HIP sources at C++20 on Windows
+
+Answers the 2026-08-20 windows-gfx1151 build failure. Fresh clone of
+moat-fix-145 at 29bac0b9b1 into projects/CubbyFlow/src (protect-fork run;
+PR #145 open, moat-port untouched at 62f4604c). New commit on the staging
+branch: `cc41a8056aae1f334bf68628b137e1a3c7dd7297`
+`[ROCm] Compile HIP sources as C++20 on Windows` (pushed; moat-fix-145
+is a strict descendant of moat-port).
+
+### The fix
+
+`Builds/CMake/CompileOptions.cmake`, after `DEFAULT_PROJECT_OPTIONS`:
+
+```
+if (USE_HIP AND WIN32)
+    list(APPEND DEFAULT_PROJECT_OPTIONS
+        HIP_STANDARD              20
+        HIP_STANDARD_REQUIRED     ON
+    )
+endif ()
+```
+
+The target property `HIP_STANDARD` is the clean override: CMake falls back to
+`CXX_STANDARD` for HIP only when `HIP_STANDARD` is unset, which is how HIP TUs
+got `-std=c++23`. A `$<$<COMPILE_LANGUAGE:HIP>:-std=c++20>` compile option would
+instead leave two `-std=` flags on the line. Every HIP-bearing target
+(CubbyFlow, CUDATests, CUDASPHSim) already applies `DEFAULT_PROJECT_OPTIONS`.
+Verified in build.ninja: 35 HIP objects at `-std=c++20`, 734 CXX objects at
+`-std=c++23` (no other `-std=` value).
+
+Hypothesis check (C++23-only constructs in HIP code): grep over Includes/,
+Sources/, Tests/CUDATests, Examples/CUDASPHSim for std::expected/print/mdspan/
+ranges::to/to_underlying/unreachable/byteswap, `if consteval`, deducing this,
+`uz` literals, multi-arg operator[], [[assume]] -- none (the only hits were
+pybind11 `kwargs.contains` in the Python API, which is not built under HIP).
+`CUBBYFLOW_REQUIRES` concepts are C++20, so they still apply under HIP. The
+build compiling every HIP TU confirms it.
+
+CUDA path: the block is inside `USE_HIP AND WIN32`; a CUDA build has USE_HIP
+OFF, so the CUDA (and Linux HIP) build sees an identical property list. No
+Windows CUDA configure was run (it would need a fresh MSVC/nvcc vcpkg
+configure; not cheap). The change cannot reach nvcc.
+
+### Build (windows-gfx1151, TheRock ROCm SDK 7.14 clang 23, CMake 3.31.10)
+
+Script `agent_space/build_cf.sh` (worktree), the GNU-driver recipe:
+
+```
+unset INCLUDE LIB LIBPATH EXTERNAL_INCLUDE VCINSTALLDIR VSINSTALLDIR
+export PATH=$(echo "$PATH" | tr ':' '\n' | grep -vi 'visual studio' | paste -sd:)
+export VCToolsInstallDir='C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\'
+export ROCM_ROOT=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel
+export HIP_DEVICE_LIB_PATH=$ROCM_ROOT/lib/llvm/amdgcn/bitcode
+export VCPKG_ROOT=D:/Develop/vcpkg
+cmake-3.31.10 -B build_gfx1151_b -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_HIP_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang++.exe \
+  -DCMAKE_CXX_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang++.exe \
+  -DCMAKE_C_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang.exe \
+  -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DBUILD_TESTS=ON -DBUILD_EXAMPLES=ON
+cmake-3.31.10 --build build_gfx1151_b --target CubbyFlow CUDATests UnitTests CUDASPHSim -j 12
+```
+
+Result: PASS, 633/633 steps, no errors or warnings under -Werror.
+
+Host-environment trap (not a port issue): the first attempt ran in a shell
+with the VS 2022 BuildTools developer environment loaded (INCLUDE/LIB/
+EXTERNAL_INCLUDE at MSVC 14.44). With that, every HIP TU compiled (the fix
+works against the 14.44 STL, the exact headers the validator failed on), but
+linking UnitTests.exe failed: `lld-link: error: undefined symbol:
+__std_find_last_not_of_trivial_pos_1`, referenced from vcpkg's
+tinyobjloader_double.lib, which the binary cache had built with MSVC 14.50
+(VS 18). Clang's MSVC detection follows INCLUDE/LIB/EXTERNAL_INCLUDE and
+VCToolsInstallDir, so scrubbing the VS 2022 environment and pointing
+VCToolsInstallDir at 14.50 matched the toolchain to the cached libs. A
+validator on this host must do the same (or build vcpkg deps with 14.44).
+The final build is entirely 14.50 headers + libs, so the fix is proven
+against both the 14.44 and 14.50 C++23 <cmath>.
+
+clang-cl (validator attempt 1): not retried. Its failure is inside CMake's own
+Windows-Clang-HIP / Windows-MSVC modules ("MSVC compiler version not detected
+properly" during enable_language(HIP)), before any project code runs, so no
+project-side build-file workaround belongs here; the GNU-driver clang++ path
+the Install.md command uses works.
+
+### Smoke tests (porter evidence, single runs, ulimit -c 0)
+
+TheRock amdhip64_7.dll, amd_comgr.dll, hiprtc*.dll, rocm_kpack.dll copied
+next to the exes in build_gfx1151_b/bin.
+
+- `CUDATests.exe`: 35/35 test cases, 3170/3170 assertions PASS.
+- `CUDASPHSim.exe -f 5`: 5 frames, 13824 particles, exit 0, no NaN; x,y =
+  FLT_MAX (the known empty-container non-issue above), mean z 0.205.
+- `UnitTests.exe` (CPU): 814/814 PASS (count grew from 722 with upstream's
+  merge).
+
+Docs: Documents/Install.md already carries the USE_HIP block; this
+build-file fix needs no doc change. jargon.py --port CubbyFlow: clean.
