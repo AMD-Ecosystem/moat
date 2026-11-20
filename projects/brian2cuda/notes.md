@@ -1256,7 +1256,7 @@ Not covered: the Windows and wave32 platforms still have to be re-tested at this
 
 ## Upstream reply
 
-I merged current master into the branch to resolve the conflicts. All of #333 and #338 is taken as is. The HIP side needed three small follow-ups: hipcc now finds the cuRAND headers that upstream code includes directly, the new logging header recognizes hipcc's device pass, and the nvcc-only `-Xlinker` rewrite no longer applies to hipcc's link line, where it broke linking with newer ROCm. The merge also left the HIP backend's Windows `run()` override shadowing the new `run()` that re-emits cuda_log.txt; there is now a single `run()`, so the re-emit works again on every backend. Re-tested on an MI250X: the LIF, delayed-synapse and recurrent-network runs pass, and so do the new test_logging.py tests and the compilation-only smoke test with the HIP backend.
+I merged current master into the branch to resolve the conflicts. All of #333 and #338 is taken as is. The HIP side needed three small follow-ups: hipcc now finds the cuRAND headers that upstream code includes directly, the new logging header recognizes hipcc's device pass, and the nvcc-only `-Xlinker` rewrite no longer applies to hipcc's link line, where it broke linking with newer ROCm. The merge also left the HIP backend's Windows `run()` override shadowing the new `run()` that re-emits cuda_log.txt; there is now a single `run()`, so the re-emit works again on every backend. Re-tested on an MI250X (gfx90a) and a Radeon AI PRO R9700 (gfx1201): the LIF, delayed-synapse and recurrent-network runs pass, and so do the new test_logging.py tests and the compilation-only smoke test with the HIP backend.
 
 ## Notes for our eyes (fix round 2026-11-20)
 
@@ -1297,5 +1297,24 @@ Same child reviewer, fact-checked. Exactly one `run()` remains (device.py:1222).
 - cuda_log re-emit: `t_reemit.py` reports 1 call.
 - CUDA no-regression gate: `cuda-not-validated: no nvcc on this host (no /opt/conda), and the CUDA codegen also needs nvidia-smi (2026-08-14 note)`. Owed by the nvcc host before the round goes to jeff.
 - Jargon: `jargon.py --port brian2cuda` clean. Docs: README already documents the ROCm/HIP build; this round adds no user-facing build step.
+
+Verdict: completed at 1c9536f.
+
+## Validation 2026-11-20 (linux-gfx1201) -- PASS at 1c9536f
+
+- GPU: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32), HIP_VISIBLE_DEVICES=2 (dispatcher pin). ROCm 10.1.0 pip SDK (HIP 7.16.26385), the same toolchain as the linux-gfx90a entry above. brian2 2.10.1, numpy 2.5.5, Python 3.12 venv `$FLEET_VENV/py312`.
+- `projects/brian2cuda/src`: fresh clone, `moat-fix-327` at head_sha 1c9536f. `git status --porcelain` clean. Generated makefiles use `--offload-arch=gfx1201` (rocminfo detection, not the gfx90a fallback).
+- Build: `utils/timeit.sh brian2cuda compile -- $FLEET_VENV/py312/bin/pip install -q -e projects/brian2cuda/src`.
+- The gfx90a host's `test_gfx90a.py` was in its agent_space and is gone, so the 4 cases were rebuilt as `agent_space/b2c/test_b2c.py` (one process per case) from the descriptions above:
+  `ulimit -c 0; USE_HIP=1 utils/timeit.sh brian2cuda test -- $FLEET_VENV/py312/bin/python agent_space/b2c/test_b2c.py /tmp/b2c_val_gfx1201`
+  - t1 LIF 100 neurons, 20 ms: PASS, 151 spikes, the 20 never-spiking neurons match the closed form to 2.3e-15, `reemit_cuda_log` called once.
+  - t2 Poisson -> 50 targets, 1 ms delay (spike-queue lock, wave32): PASS, 1047 synapses, 507 source spikes, 50/50 targets driven, no target input before 1 ms.
+  - t3 200-neuron recurrent, random delays: no deadlock, 11905 synapses, 627 spikes. The script reported FAIL only because of my guessed `spikes > 1000` assert; the rebuilt network has weaker drive than the lost gfx90a one. Checked instead against Brian2's CPU runtime with the same network, 3 seeds each (`agent_space/b2c/t3_ref.py`): GPU 631/619/623 spikes vs CPU 639/615/633, mean 624.3 vs 629.0 (0.7%). PASS.
+  - t4 poisson(lambda_i): FAIL to compile, same pre-existing `__CUDA_ARCH__` guard gap as gfx90a: `error: reference to __host__ function '_host_poisson' in __host__ __device__ function`.
+  - So 3/3 on the recorded cases plus the same t4 failure, matching gfx90a. The absolute counts differ from gfx90a (t1 151 vs 63 spikes, t3 627 vs 3504) because the scripts are reconstructions with different parameters, not because of the GPU; t2/t3 counts also vary run to run with random connectivity.
+- Upstream tests with HIP (from /tmp): test_logging.py::{test_codegen_log_level_flags,test_file_log_level,test_log_level_gating} + test_cuda_standalone.py::test_codegen_and_compile: 4 passed in 14.08s, same as gfx90a.
+- CUDA no-regression gate: already recorded at this head_sha (`cuda-not-validated`, linux-gfx90a entry); no nvcc here either. Still owed by the nvcc host.
+- Jargon: `jargon.py --port brian2cuda` clean (after adding the upstream remote and pointing local `master` at upstream/master 1d7c251; without it, jargon cannot resolve `master..moat-fix-327` in a fresh clone).
+- Note: `test_codegen_and_compile` leaves an `output/` build directory in the moat checkout root; it was deleted after the run.
 
 Verdict: completed at 1c9536f.
