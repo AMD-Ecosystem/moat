@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/candle",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "cargo",
+  "stage": "planned",
   "adopted_at": "2026-11-06T00:10:24Z",
-  "updated_at": "2026-11-20T21:12:28Z",
+  "updated_at": "2026-11-20T21:20:44Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-20T21:12:28Z",
-    "holder": "343408cd0f07"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -48,7 +44,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:12:28Z",
+      "updated_at": "2026-11-20T21:20:44Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,5 +77,10 @@
       "evidence": "https://github.com/huggingface/candle/blob/cfcbd7186d13271843ce7eb41d25659bd0835850/LICENSE-APACHE",
       "at": "2026-11-06T00:42:06Z"
     }
-  ]
+  ],
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-20T21:12:28Z",
+    "at": "2026-11-20T21:20:44Z"
+  }
 }

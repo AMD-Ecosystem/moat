@@ -1,0 +1,374 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "1a49dc27c1da",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "candle-examples/examples/custom-ops/kernels/layernorm_kernels.cu",
+      "candle-examples/examples/custom-ops/kernels/reduction_utils.cuh",
+      "candle-flash-attn-v3/hkernel/combine.h",
+      "candle-flash-attn-v3/hkernel/epilogue_fwd_sm90_tma.hpp",
+      "candle-flash-attn-v3/hkernel/flash.h",
+      "candle-flash-attn-v3/hkernel/flash_api.cpp",
+      "candle-flash-attn-v3/hkernel/flash_api.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_bf16_gqa16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_bf16_gqa2_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_bf16_gqa32_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_bf16_gqa4_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_bf16_gqa8_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_bf16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_e4m3_gqa16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_e4m3_gqa2_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_e4m3_gqa32_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_e4m3_gqa4_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_e4m3_gqa8_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_e4m3_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_fp16_gqa16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_fp16_gqa2_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_fp16_gqa32_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_fp16_gqa4_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_fp16_gqa8_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim128_fp16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_bf16_gqa16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_bf16_gqa2_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_bf16_gqa32_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_bf16_gqa4_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_bf16_gqa8_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_bf16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_e4m3_gqa16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_e4m3_gqa2_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_e4m3_gqa32_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_e4m3_gqa4_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_e4m3_gqa8_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_e4m3_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_fp16_gqa16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_fp16_gqa2_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_fp16_gqa32_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_fp16_gqa4_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_fp16_gqa8_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim256_fp16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim512_bf16_gqa16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim512_bf16_gqa2_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim512_bf16_gqa32_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim512_bf16_gqa4_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim512_bf16_gqa8_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim512_bf16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim512_fp16_gqa16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim512_fp16_gqa2_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim512_fp16_gqa32_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim512_fp16_gqa4_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim512_fp16_gqa8_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim512_fp16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_bf16_gqa16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_bf16_gqa2_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_bf16_gqa32_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_bf16_gqa4_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_bf16_gqa8_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_bf16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_e4m3_gqa16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_e4m3_gqa2_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_e4m3_gqa32_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_e4m3_gqa4_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_e4m3_gqa8_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_e4m3_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_fp16_gqa16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_fp16_gqa2_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_fp16_gqa32_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_fp16_gqa4_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_fp16_gqa8_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_hdim64_fp16_sm90.cu",
+      "candle-flash-attn-v3/hkernel/flash_fwd_kernel.h",
+      "candle-flash-attn-v3/hkernel/flash_fwd_launch_template.h",
+      "candle-flash-attn-v3/hkernel/kernel_traits.h",
+      "candle-flash-attn-v3/hkernel/mainloop_fwd_sm90_tma_gmma_ws.hpp",
+      "candle-flash-attn-v3/hkernel/softmax.h",
+      "candle-flash-attn-v3/hkernel/static_switch.h",
+      "candle-flash-attn-v3/hkernel/tile_scheduler.hpp",
+      "candle-flash-attn-v3/hkernel/utils.h",
+      "candle-flash-attn/kernels/alibi.h",
+      "candle-flash-attn/kernels/block_info.h",
+      "candle-flash-attn/kernels/dropout.h",
+      "candle-flash-attn/kernels/flash_api.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim128_bf16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim128_bf16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim128_fp16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim128_fp16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim160_bf16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim160_bf16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim160_fp16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim160_fp16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim192_bf16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim192_bf16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim192_fp16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim192_fp16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim224_bf16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim224_bf16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim224_fp16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim224_fp16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim256_bf16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim256_bf16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim256_fp16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim256_fp16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim32_bf16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim32_bf16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim32_fp16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim32_fp16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim512_bf16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim512_bf16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim512_fp16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim512_fp16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim64_bf16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim64_bf16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim64_fp16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim64_fp16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim96_bf16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim96_bf16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim96_fp16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_hdim96_fp16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_kernel.h",
+      "candle-flash-attn/kernels/flash_fwd_launch_template.h",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim128_bf16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim128_bf16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim128_fp16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim128_fp16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim256_bf16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim256_bf16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim256_fp16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim256_fp16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim512_bf16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim512_bf16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim512_fp16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim512_fp16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim64_bf16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim64_bf16_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim64_fp16_causal_sm80.cu",
+      "candle-flash-attn/kernels/flash_fwd_splitkv_hdim64_fp16_sm80.cu",
+      "candle-flash-attn/kernels/kernel_traits.h",
+      "candle-flash-attn/kernels/kernel_traits_sm90.h",
+      "candle-flash-attn/kernels/mask.h",
+      "candle-flash-attn/kernels/philox.cuh",
+      "candle-flash-attn/kernels/rotary.h",
+      "candle-flash-attn/kernels/softmax.h",
+      "candle-flash-attn/kernels/static_switch.h",
+      "candle-flash-attn/kernels/utils.h",
+      "candle-kernels/src/affine.cu",
+      "candle-kernels/src/binary.cu",
+      "candle-kernels/src/binary_op_macros.cuh",
+      "candle-kernels/src/cast.cu",
+      "candle-kernels/src/compatibility.cuh",
+      "candle-kernels/src/conv.cu",
+      "candle-kernels/src/cuda_utils.cuh",
+      "candle-kernels/src/fill.cu",
+      "candle-kernels/src/indexing.cu",
+      "candle-kernels/src/mmq_gguf/mmq_common.cuh",
+      "candle-kernels/src/mmq_gguf/mmq_gguf.cuh",
+      "candle-kernels/src/mmq_gguf/mmq_instance_q2_k.cu",
+      "candle-kernels/src/mmq_gguf/mmq_instance_q3_k.cu",
+      "candle-kernels/src/mmq_gguf/mmq_instance_q4_0.cu",
+      "candle-kernels/src/mmq_gguf/mmq_instance_q4_1.cu",
+      "candle-kernels/src/mmq_gguf/mmq_instance_q4_k.cu",
+      "candle-kernels/src/mmq_gguf/mmq_instance_q5_0.cu",
+      "candle-kernels/src/mmq_gguf/mmq_instance_q5_1.cu",
+      "candle-kernels/src/mmq_gguf/mmq_instance_q5_k.cu",
+      "candle-kernels/src/mmq_gguf/mmq_instance_q6_k.cu",
+      "candle-kernels/src/mmq_gguf/mmq_instance_q8_0.cu",
+      "candle-kernels/src/mmq_gguf/mmq_mma.cuh",
+      "candle-kernels/src/mmq_gguf/mmq_quantize.cu",
+      "candle-kernels/src/mmq_gguf/mmq_vecdotq.cuh",
+      "candle-kernels/src/mmvq_gguf.cu",
+      "candle-kernels/src/moe/gguf.cuh",
+      "candle-kernels/src/moe/moe_align.cu",
+      "candle-kernels/src/moe/moe_gguf.cu",
+      "candle-kernels/src/moe/moe_utils.cuh",
+      "candle-kernels/src/moe/moe_wmma.cu",
+      "candle-kernels/src/moe/moe_wmma_gguf.cu",
+      "candle-kernels/src/quantized.cu",
+      "candle-kernels/src/reduce.cu",
+      "candle-kernels/src/sort.cu",
+      "candle-kernels/src/ternary.cu",
+      "candle-kernels/src/unary.cu"
+    ],
+    "markers": {
+      "kernel": 215,
+      "device_code": 699,
+      "warp_intrinsic": 40,
+      "launch": 99
+    },
+    "libraries": {
+      "cutlass": 519,
+      "cub": 1,
+      "thrust": 4
+    }
+  },
+  "components": [
+    {
+      "id": "lib:candle-core rocm backend",
+      "kind": "library",
+      "where": "candle-core/src/rocm_backend/* (#3801): Device::Rocm/Storage::Rocm, allocator, rocBLAS GEMM, rocRAND, launch, all BackendStorage ops"
+    },
+    {
+      "id": "lib:candle-rocm-kernels",
+      "kind": "library",
+      "where": "new crate (#3801): runtime hipcc compile + disk cache of the 11 shared candle-kernels modules, hip_shim headers"
+    },
+    {
+      "id": "kernels:candle-kernels shared modules under HIP",
+      "kind": "kernels",
+      "where": "affine binary cast conv fill indexing quantized reduce sort ternary unary .cu compiled by hipcc through hip_shim; includes upstream #3600 reduce/unary/cast/binary additions after the PR base"
+    },
+    {
+      "id": "kernels:mmq_gguf WMMA (RDNA3/4)",
+      "kind": "kernels",
+      "where": "candle-kernels/src/mmq_gguf/* compiled to a shared library for gfx11/gfx12 (cryptomilk follow-up commits); CDNA falls back to quantized.cu MMQ"
+    },
+    {
+      "id": "kernels:mmvq_gguf.cu and moe/*.cu",
+      "kind": "kernels",
+      "where": "CUDA statically compiled MMVQ/MoE/moe_wmma kernels; ROCm path uses quantized.cu MMVQ and indexed_moe_forward instead -- planner to confirm parity, not a separate port"
+    },
+    {
+      "id": "lib:candle-core quantized rocm",
+      "kind": "library",
+      "where": "candle-core/src/quantized/rocm/* (dmmv, mmvq, mmq, moe, imatrix, q8_1), QStorage::Rocm dispatch"
+    },
+    {
+      "id": "lib:candle-core custom_op rocm_fwd",
+      "kind": "library",
+      "where": "custom_op.rs rocm_fwd + get_or_load_custom_func"
+    },
+    {
+      "id": "lib:candle-core sort/safetensors/device/tensor rocm arms",
+      "kind": "library",
+      "where": "sort.rs arg_sort, safetensors load to device, device.rs, display.rs, dtype.rs"
+    },
+    {
+      "id": "feature:miopen (cudnn analogue)",
+      "kind": "feature",
+      "where": "candle-core feature miopen = rocm + rocm-rs/miopen; conv forward via MIOpen"
+    },
+    {
+      "id": "lib:candle-nn rocm ops",
+      "kind": "library",
+      "where": "candle-nn ops.rs (softmax, sigmoid, rms_norm, layer_norm), rotary_emb.rs, moe/rocm.rs"
+    },
+    {
+      "id": "lib:candle-transformers rocm feature",
+      "kind": "library",
+      "where": "candle-transformers rocm feature; qwen3_moe fused-MoE dispatch gated cfg!(feature=\"cuda\") (models/qwen3_moe.rs:225) has no ROCm arm"
+    },
+    {
+      "id": "lib:candle-pyo3 rocm feature",
+      "kind": "library",
+      "where": "candle-pyo3/src/lib.rs rocm device"
+    },
+    {
+      "id": "examples:candle-examples rocm feature + device selection",
+      "kind": "examples",
+      "where": "candle-examples rocm feature, src/lib.rs device(); per-example cuda-only arms: quantized/mistral/gemma4/flux set_force_dmmv, voxtral, custom-ops"
+    },
+    {
+      "id": "example:custom-ops",
+      "kind": "example",
+      "where": "candle-examples/examples/custom-ops: CUDA kernel built by build.rs + cuda_fwd; no ROCm arm"
+    },
+    {
+      "id": "example:llama_multiprocess (nccl)",
+      "kind": "example",
+      "where": "NCCL multi-GPU example; needs RCCL bindings rocm-rs lacks"
+    },
+    {
+      "id": "feature:nccl -> RCCL",
+      "kind": "feature",
+      "where": "candle-core nccl feature (cudarc nccl); no ROCm equivalent wired, rocm-rs has no RCCL module"
+    },
+    {
+      "id": "feature:cutile",
+      "kind": "feature",
+      "where": "candle-core/candle-nn/candle-kernels cutile feature (NVIDIA cuTile); no AMD-native target"
+    },
+    {
+      "id": "lib:candle-flash-attn (FA2, CUTLASS sm80)",
+      "kind": "library",
+      "where": "excluded workspace crate; CUTLASS/CuTe, no hipify path; ROCm answer is CK FMHA / aotriton"
+    },
+    {
+      "id": "lib:candle-flash-attn-v3 (FA3, Hopper sm90)",
+      "kind": "library",
+      "where": "excluded workspace crate; Hopper TMA/wgmma, no hipify path"
+    },
+    {
+      "id": "feature:candle-transformers/examples flash-attn",
+      "kind": "feature",
+      "where": "flash-attn feature consumers (depends on candle-flash-attn)"
+    },
+    {
+      "id": "test:candle-core test_device! suites on rocm",
+      "kind": "test",
+      "where": "candle-core/tests/{tensor,conv,grad,matmul,pool,quantized,layout,bilinear,indexing,custom_op,gguf}_tests.rs with _rocm variants"
+    },
+    {
+      "id": "test:candle-core rocm_backend + quantized/rocm unit tests",
+      "kind": "test",
+      "where": "in-crate tests (rocm_backend/tests_*.rs, quantized/rocm/tests*.rs)"
+    },
+    {
+      "id": "test:candle-nn tests on rocm",
+      "kind": "test",
+      "where": "candle-nn/tests/*.rs + src/tests_ops_rocm.rs, moe/rocm/tests.rs"
+    },
+    {
+      "id": "test:candle-rocm-kernels compile + shim tests",
+      "kind": "test",
+      "where": "candle-rocm-kernels unit tests; make rocm-shim-test (every shared module through hipcc + shim_test.hip)"
+    },
+    {
+      "id": "test:candle-transformers tests",
+      "kind": "test",
+      "where": "candle-transformers/tests (generation, nms)"
+    },
+    {
+      "id": "test:candle-flash-attn tests",
+      "kind": "test",
+      "where": "candle-flash-attn{,-v3}/tests/flash_attn_tests.rs"
+    },
+    {
+      "id": "bench:candle-core/candle-nn benches rocm",
+      "kind": "bench",
+      "where": "benches/benchmarks/mod.rs rocm device arms"
+    },
+    {
+      "id": "test:non-GPU regression (CPU) suite",
+      "kind": "test",
+      "where": "cargo test -p candle-core -p candle-nn -p candle-transformers (default features) must not regress"
+    },
+    {
+      "id": "build:CUDA path unchanged (nvcc)",
+      "kind": "build",
+      "where": "shared .cu edits (quantized.cu, unary.cu, conv.cu, mmq_gguf launchers) and Rust moves (candle-nn moe/cuda.rs, quantized/cuda.rs) compiled with nvcc and cargo --features cuda"
+    },
+    {
+      "id": "platform:wave64 (CDNA)",
+      "kind": "platform",
+      "where": "linux gfx90a/gfx942/gfx950: never tested by #3801"
+    },
+    {
+      "id": "platform:wave32 (RDNA)",
+      "kind": "platform",
+      "where": "linux gfx11/gfx12: #3801's own platform, re-validate at our head"
+    },
+    {
+      "id": "platform:windows",
+      "kind": "platform",
+      "where": "windows gfx1151: rocm-rs bindgen/link on TheRock SDK, runtime hipcc.exe + clang-offload-bundler, cache path"
+    },
+    {
+      "id": "build:pip-SDK ROCm root (no /opt/rocm)",
+      "kind": "build",
+      "where": "rocm-rs build.rs and the runtime compiler default ROCM_PATH=/opt/rocm; Linux pip-SDK hosts and TheRock have no /opt/rocm"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}
