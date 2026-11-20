@@ -8518,3 +8518,27 @@ Environment: HIP device under the pin = PCI `0000:05:00.0` (`hipDeviceGetPCIBusI
 | `./lost_writes 40000 0` | **0 / 40,000** | |
 
 Every failure was still wrong after a synchronize (wrong count after sync equal to the first read). Times: 125, 124, 129 and 49 s. So gfx950 reproduces the final reproducer (7 / 80,000 under its own 8-process load), and both controls are clean, as on gfx942.
+
+## Evidence session (2026-11-20, linux-gfx90a): lost_writes
+
+Requested by Jeff Daily, same evidence-only job (no lock, no state change, no fork push, no GitHub writes; `HIP_VISIBLE_DEVICES=0` kept, `ulimit -c 0`; no `alloc` load; only processes this job started were stopped, and `lost_writes` stops its own load children itself). The issue draft in "Evidence session 3 (2026-11-20, linux-gfx942)" was not edited.
+
+**Result: `lost_writes` does not fail on gfx90a. 0 wrong iterations in every run (no lost class to report)**, including 80,000 iterations under its own 8 load processes, where gfx942 loses one class 5 to 19 times per 40,000.
+
+- GPU, exactly as amd-smi names it: market name `AMD Instinct MI250X / MI250`, product name `AMD INSTINCT MI250 (MCM) OAM AC MBA` (device id 0x740c, 104 CUs per device, gfx90a:sramecc+:xnack-; one GCD per HIP device).
+- Kernel `6.8.0-101-generic`; amdgpu driver `6.16.6` (`/sys/module/amdgpu/version`, the same in `amd-smi static`).
+- ROCm 10.2.0 (`python -m rocm_sdk version` in the job venv), `hipconfig --version` `7.17.26434-0000000`.
+- Device mapping: under `HIP_VISIBLE_DEVICES=0`, `hipDeviceGetPCIBusId` gives HIP device 0 = `0000:29:00.0`, which `amd-smi list` shows as GPU 0 (all four devices map 1:1 in order with no mask set). So `amd-smi process -g 0` is the pinned device, here and in this job's earlier gfx90a sections.
+- Source: `lost_writes.hip` copied verbatim from the draft's `<details>` block (114 lines). Build: `$(python -m rocm_sdk path --root)/bin/hipcc --offload-arch=gfx90a -O2 -o lost_writes lost_writes.hip`.
+- Driver `lw_run.sh <label> <args>`: `amd-smi process -g 0` before; `./lost_writes <args>` in the background; 60 s in, `amd-smi process -g 0` and the program's child list (`ps --ppid`); wait; count children left afterwards (0 in every run).
+
+| run | command | wrong iterations | lost classes | wall time | GPU 0 during (amd-smi, 60 s in) |
+|---|---|---|---|---|---|
+| 1 | `./lost_writes 40000` | **0 / 40,000** | none | 351 s | 8 x 1.1 GB (the program's 8 `load` children) + 1 x 395 MB |
+| 2 | `./lost_writes 40000` | **0 / 40,000** | none | 360 s | 8 x 1.1 GB + 1 x 383 MB |
+| control | `./lost_writes 40000 8 noreuse` | **0 / 40,000** | none | 361 s | 8 x 1.1 GB + 1 x 395 MB (see note) |
+| control | `./lost_writes 40000 0` | **0 / 40,000** | none | 113 s | 1 x 456 MB only |
+
+Before every run `amd-smi process -g 0` showed no process. Note on the controls: my first `./lost_writes 40000 0` was started while the `noreuse` run was still going (an earlier command had moved to the background; my mistake). It also gave 0 / 40,000, but its GPU shared the `noreuse` run's 9 processes, so it is not a no-load control and is not in the table. It was repeated alone (the row above, nothing else on GPU 0 before or during). The `noreuse` run had that extra `lost_writes` process beside it for its last ~2 minutes (11:30-11:32); for a control that came out 0 that only adds load. Runs 1 and 2 did not overlap anything.
+
+The load was real: with 8 load processes a run took 3.1-3.2x as long as alone (351-361 s against 113 s). For the draft's results table, the gfx90a row reads: MI250X / MI250 (gfx90a), 10.2.0 (7.17.26434), 0, 0 per 40,000 (controls `noreuse` 0, no load 0). With the 250 Warp subset runs and 160,000 `copy_flake2` iterations above, this single-die device is clean at every level tested.
