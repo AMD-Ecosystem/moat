@@ -1126,6 +1126,8 @@ Commit message: jargon clean (`jargon.py --port Pointcept`), no in-house vocabul
 
 ## Lesson for cuda-to-rocm: on Windows, Triton comes from the `triton-windows` package
 
+Promoted to cuda-to-rocm/references/windows.md, cuda-to-rocm/references/strategy-b-torch.md in 37d13004.
+
 Belongs in `references/windows.md` (Toolchain install, beside "A torch wheel needs the matching `[device-<gfx>]` extra"), with a pointer from the Triton-dependency items in `references/strategy-b-torch.md`. The skill does not currently say Triton is unavailable on Windows (checked on the trunk 2026-11-20: no Windows statement about Triton anywhere under `.claude/skills/`), so this is an addition; the wrong "no Windows Triton" statements were only in this project's August notes and are corrected there (dated 2026-11-20). Proposed text:
 
 - `pip install triton` finds nothing on Windows (`from versions: none`), and a Windows ROCm PyTorch wheel does not bring a Triton with it, but that does not mean there is no Triton for Windows. The third-party `triton-windows` package on PyPI (github.com/triton-lang/triton-windows; 3.9.0.post30 seen 2026-11, `cp312-abi3-win_amd64`) installs the `triton` module with an AMD backend that handles Windows: it finds `amdhip64*.dll` and resolves the SDK through `rocm-sdk path --root` or `ROCM_HOME`/`HIP_PATH`/`ROCM_PATH`. A Triton-based dependency that declares no `triton` requirement of its own (it expects the one that comes with PyTorch, as spconv-triton does) fails on Windows with `ModuleNotFoundError: No module named 'triton'` from inside the dependency until `triton-windows` is installed. Seen on gfx1151 with a TheRock torch 2.12 wheel: a non-sparse model (Point Transformer V1) then built and ran one forward+backward pass, and one spconv-triton sparse convolution layer compiled and ran forward on the GPU, but its backward pass did not finish in 10 minutes (whether slow cold autotuning or stuck was not determined). So treat `triton-windows` as the way to get Triton on Windows, and validate the Triton kernels you depend on there rather than assuming either that they work or that they cannot run. (Pointcept)
@@ -1268,9 +1270,13 @@ Result: linux-gfx1100 -> completed at 35af626.
 
 ## Lesson for cuda-to-rocm: attribute a Triton cold-compile stall to a kernel from the cache's file times
 
+Promoted to cuda-to-rocm/references/strategy-b-torch.md in 37d13004.
+
 When a Triton-based library's first step takes hours, the Triton cache directory tells you which kernel to blame without a profiler: each compiled candidate writes `<kernel>.hsaco` into its own hash directory, so sorting all `.hsaco` files by modification time and charging each gap to the kernel written at its end gives compile seconds per kernel name, and the `*.autotune.json` files (one per finished autotune key, with the timing of every candidate) show how many keys are done. Use a fresh cache for a single process, or gaps between runs are charged to whichever kernel was compiled next. In this port a weight-gradient kernel with 21 candidates, including deep pipelining and 128-wide tiles, took 25 s per candidate on gfx1100 (RDNA3), against 3 s for the forward gather-GEMM, and accounted for 72% of a 97-minute first step. That points the fix at the library's candidate list, not at the port. Related data point for the existing "Triton cold compile" text: on this model set gfx1100 was 11x to 49x slower cold than MI300X with the same Triton, so "much slower on RDNA" holds, and a persistent cache brought the first step down to 1-2 s.
 
 ## Lesson for moat-porting: a fleet worker's background command is capped at 2 hours
+
+Promoted to moat-porting/SKILL.md in 2069b27c.
 
 The harness stops a `run_in_background` shell command at 2 h whatever `timeout` is requested, killing a cold Triton run with it (here at 120 of 150 allowed minutes). For a GPU run that may go longer, start it with `setsid nohup <wrapper> &` from the worker, have the wrapper write an exit marker, and wait on that marker in foreground polls of under 10 minutes; the persistent Triton cache meant the killed run's work was not lost.
 
