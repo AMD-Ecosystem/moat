@@ -8175,3 +8175,42 @@ What the port can do (no decision taken, Jeff's call): Warp's default (mempool e
 
 - Deferred item `hip-mi300-xcd-lost-writes-after-free-realloc` (rocm-bug-report) is registered with the reproducer as its reference; nothing drafted or filed.
 - Open: whether gfx950 fails `copy_flake2` the same way (expected, not run); whether a single-XCD part (gfx90a, clean in 250 subset runs) is clean under `copy_flake2` and the 8-process load; whether the effect is L2 write-back or translation (a test would be to make the freed range's last reader one XCD only).
+
+## Evidence session (2026-11-20, linux-gfx950): copy_flake2
+
+Requested by Jeff Daily; evidence only (same fleet job as porting sessions 20-21; no state change, nothing pushed to the fork). `copy_flake2.hip` taken verbatim from "Evidence session 2 (2026-11-20, linux-gfx942)" (md5 of the extracted file ab7bc9af7ddb1f35fede7eb8f9bb4a1f), built for this GPU: `clang++ -x hip --rocm-path=<ROCm 10.2 root> --offload-arch=gfx950 -O2 -std=c++17 copy_flake2.hip -o copy_flake2 -lamdhip64` (ROCm 10.2 from the job venv, HIP runtime 7.17). Load: `copy_flake load 7200 4` (session 21's `copy_flake.hip`, the binary built in session 21). Driver script `agent_space/cf2/run_cf2.sh <label> <loads> <iterations> [option]` starts the load processes, keeps their PIDs, runs `copy_flake2`, and kills only those PIDs. `HIP_VISIBLE_DEVICES=1` (dispatcher pin), `ulimit -c 0`. The `alloc` load kind was not run.
+
+| run | load on the same GPU | iterations | wrong | time |
+|---|---|---|---|---|
+| default, 1 | 8 x `copy_flake load` | 40,000 | **10** | 146 s |
+| default, 2 | 8 x `copy_flake load` | 40,000 | **9** | 142 s |
+| `noreuse` | 8 x `copy_flake load` | 40,000 | **0** | 151 s |
+| default | none | 40,000 | **0** | 191 s |
+
+So gfx950 (MI355X, 8 XCDs) reproduces it at about the gfx942 rate (19 / 80,000 here, 8 and 10 / 40,000 there), with the same two conditions: the destination at the just-freed source's address (0 with `noreuse`) and other processes on the GPU (0 without load). The failures have the gfx942 signature, one whole mod-8 block class zero and staying zero (first four of run 1):
+
+```
+iter 4566 D=0x7feecaa00000 A-reuse=1: read1 125184 [0 125184 0 0 0 0 0 0] | read2 125184 [0 125184 0 0 0 0 0 0] | after sync 125184 [0 125184 0 0 0 0 0 0] | after 1 s 125184 [0 125184 0 0 0 0 0 0]
+iter 12033 D=0x7feecaa00000 A-reuse=1: read1 125184 [0 125184 0 0 0 0 0 0] | read2 125184 [0 125184 0 0 0 0 0 0] | after sync 125184 [0 125184 0 0 0 0 0 0] | after 1 s 125184 [0 125184 0 0 0 0 0 0]
+iter 17278 D=0x7feecaa00000 A-reuse=1: read1 125184 [0 125184 0 0 0 0 0 0] | read2 125184 [0 125184 0 0 0 0 0 0] | after sync 125184 [0 125184 0 0 0 0 0 0] | after 1 s 125184 [0 125184 0 0 0 0 0 0]
+iter 19748 D=0x7feecaa00000 A-reuse=1: read1 118464 [0 118464 0 0 0 0 0 0] | read2 118464 [0 118464 0 0 0 0 0 0] | after sync 118464 [0 118464 0 0 0 0 0 0] | after 1 s 125184 [0 125184 0 0 0 0 0 0]
+iter 20631 D=0x7feecaa00000 A-reuse=1: read1 124928 [0 0 0 0 124928 0 0 0] | read2 124928 [0 0 0 0 124928 0 0 0] | after sync 124928 [0 0 0 0 124928 0 0 0] | after 1 s 124928 [0 0 0 0 124928 0 0 0]
+iter 22023 D=0x7feecaa00000 A-reuse=1: read1 124928 [0 0 0 0 0 0 0 124928] | read2 124928 [0 0 0 0 0 0 0 124928] | after sync 124928 [0 0 0 0 0 0 0 124928] | after 1 s 124928 [0 0 0 0 0 0 0 124928]
+iter 27111 D=0x7feecaa00000 A-reuse=1: read1 115712 [0 0 0 0 0 0 115712 0] | read2 115712 [0 0 0 0 0 0 115712 0] | after sync 115712 [0 0 0 0 0 0 115712 0] | after 1 s 124928 [0 0 0 0 0 0 124928 0]
+iter 31294 D=0x7feecaa00000 A-reuse=1: read1 125184 [0 125184 0 0 0 0 0 0] | read2 125184 [0 125184 0 0 0 0 0 0] | after sync 125184 [0 125184 0 0 0 0 0 0] | after 1 s 125184 [0 125184 0 0 0 0 0 0]
+iter 39476 D=0x7feecaa00000 A-reuse=1: read1 124928 [0 0 0 0 0 0 0 124928] | read2 124928 [0 0 0 0 0 0 0 124928] | after sync 124928 [0 0 0 0 0 0 0 124928] | after 1 s 124928 [0 0 0 0 0 0 0 124928]
+iter 244 D=0x7fbca3a00000 A-reuse=1: read1 125184 [0 125184 0 0 0 0 0 0] | read2 125184 [0 125184 0 0 0 0 0 0] | after sync 125184 [0 125184 0 0 0 0 0 0] | after 1 s 125184 [0 125184 0 0 0 0 0 0]
+iter 6446 D=0x7fbca3a00000 A-reuse=1: read1 124928 [0 0 0 0 124928 0 0 0] | read2 124928 [0 0 0 0 124928 0 0 0] | after sync 124928 [0 0 0 0 124928 0 0 0] | after 1 s 124928 [0 0 0 0 124928 0 0 0]
+iter 15410 D=0x7fbca3a00000 A-reuse=1: read1 118272 [0 0 0 0 0 0 118272 0] | read2 118272 [0 0 0 0 0 0 118272 0] | after sync 118272 [0 0 0 0 0 0 118272 0] | after 1 s 124928 [0 0 0 0 0 0 124928 0]
+iter 24430 D=0x7fbca3a00000 A-reuse=1: read1 125184 [0 125184 0 0 0 0 0 0] | read2 125184 [0 125184 0 0 0 0 0 0] | after sync 125184 [0 125184 0 0 0 0 0 0] | after 1 s 125184 [0 125184 0 0 0 0 0 0]
+iter 24873 D=0x7fbca3a00000 A-reuse=1: read1 118272 [0 0 0 0 0 0 118272 0] | read2 118272 [0 0 0 0 0 0 118272 0] | after sync 118272 [0 0 0 0 0 0 118272 0] | after 1 s 124928 [0 0 0 0 0 0 124928 0]
+iter 26111 D=0x7fbca3a00000 A-reuse=1: read1 124928 [0 0 0 0 124928 0 0 0] | read2 124928 [0 0 0 0 124928 0 0 0] | after sync 124928 [0 0 0 0 124928 0 0 0] | after 1 s 124928 [0 0 0 0 124928 0 0 0]
+iter 26820 D=0x7fbca3a00000 A-reuse=1: read1 124928 [0 0 0 0 124928 0 0 0] | read2 124928 [0 0 0 0 124928 0 0 0] | after sync 124928 [0 0 0 0 124928 0 0 0] | after 1 s 124928 [0 0 0 0 124928 0 0 0]
+iter 30993 D=0x7fbca3a00000 A-reuse=1: read1 124928 [0 0 0 0 0 0 0 124928] | read2 124928 [0 0 0 0 0 0 0 124928] | after sync 124928 [0 0 0 0 0 0 0 124928] | after 1 s 124928 [0 0 0 0 0 0 0 124928]
+iter 31478 D=0x7fbca3a00000 A-reuse=1: read1 124928 [0 0 0 0 124928 0 0 0] | read2 124928 [0 0 0 0 124928 0 0 0] | after sync 124928 [0 0 0 0 124928 0 0 0] | after 1 s 124928 [0 0 0 0 124928 0 0 0]
+iter 37592 D=0x7fbca3a00000 A-reuse=1: read1 125184 [0 125184 0 0 0 0 0 0] | read2 125184 [0 125184 0 0 0 0 0 0] | after sync 125184 [0 125184 0 0 0 0 0 0] | after 1 s 125184 [0 125184 0 0 0 0 0 0]
+```
+
+(the third shows the wrong count growing after the copy, 118,272 -> 124,928 a second later, as on gfx942).
+
+**What else was on the GPU, and a correction to sessions 20-22.** amd-smi does not number GPUs in HIP's order: under `HIP_VISIBLE_DEVICES=1` HIP's device is PCI `0000:05:00.0` (`hipDeviceGetPCIBusId`), which is **amd-smi GPU 0**; amd-smi GPU 1 is `0000:15:00.0`, a different GPU. Every `amd-smi ... -g 1` check in porting sessions 20-22 (the GPU monitor, the drive.sh idle checks, and the "outside process on GPU 1, 13-28 GB" of session 21) looked at that other GPU, not at this job's. The four runs above also recorded `amd-smi process -g 1` (before, 3 s in, 120 s in, after: "No running processes detected" every time), i.e. the wrong GPU. Checked on the right index right after the runs: `amd-smi process -g 0` idle = "No running processes detected", GFX_ACTIVITY 0 %; with 8 `copy_flake load` processes started (PIDs 3073110-3073117, killed after) it listed exactly 8 processes of 2.2 GB each and GFX_ACTIVITY 100 %; after killing them, again none. So nothing outside this job was on its GPU before or after these runs; during the runs it was not observed on the right index. Session 21's statement that "no run was truly alone on the device" is withdrawn: the outside process was on amd-smi GPU 1, another GPU. (Sessions 20-21's timing noise therefore cannot be blamed on a second process on this GPU; board-level load from other GPUs remains possible.)
