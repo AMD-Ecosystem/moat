@@ -426,3 +426,35 @@ Skipped: already recorded at this head (`### CUDA compile check (2026-11-20, ...
 ### Content checks
 
 `python3 utils/jargon.py --port keops`: clean (after fetching local `main` and `moat-port` in the fresh clone; `moat-port` = 2980874a). Docs present: `doc/python/installation.rst` "ROCm detection (AMD GPUs)" (line 482), `doc/python/api/common/Config.rst` lists `HipConfig`. The "Correction for the final history" condition for the `38c65e2b` Test Plan still stands for the PR-preparation step.
+
+## CUDA baseline for test_lazytensor_clamp_bw (2026-11-20, NVIDIA V100, run by the orchestrating session)
+
+Question: the test fails with identical numbers on gfx950, gfx90a and gfx1100. Does it fail on CUDA too?
+
+Setup: Tesla V100-SXM2-32GB (driver 575.57.08, CUDA 12.9 toolkit), Python 3.12.3, `torch==2.14.1+cu126`, upstream KeOps `ef72bc907df7` (the port's base, unmodified), `pip install --no-deps -e keopscore -e pykeops` in a fresh venv, pytest run from outside the source tree.
+
+Result 1: `pytest pykeops/pykeops/test/test_lazytensor_clamp.py` on CUDA: **2 passed**. The test does not fail on CUDA.
+
+Result 2: why. The test draws `x` and `y` with `torch.randn(..., device="cuda")` under `torch.manual_seed(0)`. At the element where the AMD runs hit the tie, `x[376,0,2]` and `y[0,664,2]`:
+
+```
+CUDA:  x = -0.7380291223526001 (bits bf3cef7a)  y = -2.086638927459717 (bits c0058b7e)
+       x*y = 1.540000319480896 (bits 3fc51ebb); bound 1.54f = 1.5399999618530273 (bits 3fc51eb8); tie = False
+       products exactly equal to either bound over the whole 1000x1000x3 problem on CUDA: 0
+```
+
+On CUDA the product is 3 ULP above the bound, so there is no tie and both libraries clamp it. The AMD validators measured the product equal to the bound exactly, so ROCm torch's `randn` gives a slightly different `x` at that element (the float32 x that ties with this y is -0.7380290627479553, one ULP from the CUDA value). The AMD-side bits of x and y were not dumped; that would complete the comparison.
+
+Result 3: the disagreement at an exact tie is not AMD-specific. On the V100, with a constructed tie (x = -0.7380290627479553, y = -2.0866389, float32 product == 1.54f), d/dx of `clamp(x*y, -1.23, 1.54)`:
+
+```
+torch float32 (CUDA):  -0.0          (gradient dropped at the bound)
+KeOps float32 (CUDA):  -2.0866384506225586   (gradient kept)
+torch float64:         -2.0866386890411377   (product just inside the bound)
+```
+
+So CUDA KeOps and CUDA torch disagree at a tie exactly as HIP KeOps and ROCm torch do. The test passes on CUDA only because its seeded CUDA data contains no tie; on ROCm the seeded data contains one. The port does not change this behaviour.
+
+For the pull request text: the one failing test is a property of the test's device-generated data, not of the HIP backend; a tie-free bound or CPU-generated data would make it pass on both. Whether to propose that test change upstream is a person's decision.
+
+Scripts (primary host, not in the repo): `agent_space/pn/v100-keops-clamp.sh`, `agent_space/pn/v100-keops-tie.py`.
