@@ -7706,3 +7706,60 @@ CUDA check on the final tree (`cuda_pp.sh` at `7059a340` vs `43c348ea` = `113e1e
 - Wheel: `python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/wheel` in the clone at `7059a340` (no modified tracked file). **Kept at `/var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/wheel/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`: 37,154,691 bytes, sha256 `2100e06cdf8a29c78c850f417ff8202ee535e5227e41b83fead5b59d54d5ea25`.** Contents: `warp/bin/warp.so` 10,881,864, `warp/bin/warp-clang.so` 67,136,896, `warp/bin/warp.so.rocm` 140; no nvrtc/libmathdx/cudart/nvJitLink file; 14 licence files (no CUDA/NVRTC/libmathdx licence). METADATA: `Version: 1.14.0+rocm10.2.0`, `Requires-Dist: numpy`, `Requires-Dist: rocm<10.3,>=10.2`, no `Environment :: GPU :: NVIDIA CUDA` classifier; WHEEL tag `py3-none-manylinux_2_28_x86_64`. (Session 19's uncompressed wheel: 58,613,145 bytes.)
 - Install: a clean venv was not possible: the fleet guard refuses `pip` for any environment other than the job venv ("pip changing the Python environment every job on this host shares"), and I did not work around it. Installed instead into the job venv (`$FLEET_VENV/bin/pip install <wheel> --extra-index-url https://stable.repo.amd.com/rocm/whl-next/`), which had no `warp` before and already had rocm/rocm-sdk-core/rocm-sdk-devel 10.2.0, numpy 1.26.4, usd-core, pillow: "Successfully installed warp-lang-1.14.0+rocm10.2.0". Installed size `du -sb site-packages/warp` = **106,300,189 bytes** (session 19 uncompressed: 425,949,591); installed warp.so sha256 equals the build's. From outside the tree (`<job>/wheelrun`): `warp.__file__` in site-packages; banner "ROCm 10.2, HIP runtime 7.17"; a hipRTC kernel runs; libamdhip64.so.7 and libhiprtc.so.7 mapped from the venv's `_rocm_sdk_core/lib`.
 - Full default suite from the installed wheel (`agent_space/suite_wheel.sh`, cwd `<job>/wheelrun`, `HIP_VISIBLE_DEVICES=1`, fresh kernel cache): **Ran 7557 tests in 500.0 s, OK (skipped=81)**. Same 81 skips as session 20's source-build run (no suitable devices 24, conditional graph nodes 16, MathDx 8+1, two CUDA devices 7, mempool access 5+1+1, peer access 3+1+1, CPU memory access 2, NVRTC two archs 2, multi-GPU 2, rmm 1, memory-usage flakiness 1, Requires CUDA 1, NVRTC 1, stream priority 1); the extra test is the new version test. This is the first full suite on a compressed build; it passed (the outside process was on GPU 1 during it).
+
+### Evidence 6 (not a commit): `-ffp-contract=fast-honor-pragmas` in place of `on`
+
+Scratch worktree `agent_space/wff` = `113e1e70` with only `wp_hip_compile_program`'s `stored_options.push_back(fuse_fp ? "-ffp-contract=on" : ...)` changed to `"-ffp-contract=fast-honor-pragmas"`; gfx950 build; `WARP_DEBUG=1` confirms hipRTC receives `-ffp-contract=fast-honor-pragmas` (the fork shows `on`). Full default suite from that tree (`agent_space/suite_ff.sh`, fresh cache): **Ran 7556 tests in 578.5 s, FAILED (failures=1, skipped=81)**, against 7556 OK (81 skipped) for `113e1e70` with `on` (session 20). Same skips. The one changed test: `test_mat.TestMat.test_inverse_float16_cuda_0`, line 702, the adjoint of `wp.inverse` for a 2x2 fp16 matrix: result -31.31 against the reference -31.378423, absolute difference 0.0659 with the test's fp16 tolerance `atol=0.05` (an fp16 ulp at 31 is 0.0156, so about 4 ulps). Deterministic: `-k test_inverse_float16` fails 3/3 with `fast-honor-pragmas` and passes 3/3 with `on`. Nothing else changes outcome. So option (b) of question 5 costs one fp16 tolerance failure in an upstream test (whether CUDA, which also fuses across statements, passes it with margin is not known here; the test's CUDA tolerance would need a `TEST_WITH_ROCM`-gated bump or the option stays `on`).
+
+## Release notes draft (1.14.0+rocm10.2.0)
+
+Draft for Jeff (written by the porter in session 21; nothing published). Wheel sizes for reference: Linux wheel 37.2 MB, 106.3 MB installed. Text between the fences is the proposed GitHub Release body; one line per paragraph as GitHub renders it.
+
+```
+# Warp 1.14.0 for AMD GPUs (ROCm 10.2)
+
+This release is NVIDIA Warp 1.14.0 ported to AMD GPUs with HIP. It is built from the release-1.14 branch of NVIDIA/warp with the changes needed to compile and run Warp's GPU code on AMD Instinct and Radeon GPUs; Warp's Python API, kernels and features are those of upstream 1.14.0, apart from the differences listed below. It is not an NVIDIA release; report problems with this build at https://github.com/AMD-Ecosystem/warp/issues.
+
+## Install
+
+Linux x86-64 (Python 3.10 or newer):
+
+    pip install https://github.com/AMD-Ecosystem/warp/releases/download/v1.14.0+rocm10.2.0/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl --extra-index-url https://stable.repo.amd.com/rocm/whl-next/
+
+Windows x86-64: the same command with the win_amd64 wheel from this release.
+
+The wheel depends on the ROCm 10.2 Python packages (`rocm>=10.2,<10.3`), which pip installs from AMD's package index given by `--extra-index-url`; no system ROCm installation is needed. Check the install with `python -c "import warp; warp.init()"`, which prints the ROCm and HIP runtime versions and the AMD GPUs found.
+
+## Version numbers
+
+`1.14.0` is the upstream Warp version. The local part `rocm10.2.0` names the ROCm release the wheel is built for and requires (10.2), followed by this build's number for that Warp version and ROCm release. The last number is not a ROCm patch version (AMD's PyTorch wheels use the same shape with that other meaning): a rebuild of 1.14.0 for ROCm 10.2 with fixes becomes 1.14.0+rocm10.2.1, an upstream patch release starts again at 1.14.1+rocm10.2.0, and a build for a later ROCm changes the middle, for example 1.14.0+rocm10.3.0.
+
+## Supported GPUs
+
+The library contains code for every GPU target ROCm 10.2 supports on the operating system: 25 targets on Linux (gfx908, gfx90a, gfx942, gfx950, gfx1010, gfx1011, gfx1012, gfx1030 to gfx1036, gfx1100 to gfx1103, gfx1150 to gfx1153, gfx1200, gfx1201, gfx1250) and 22 on Windows. Kernels written in Python are compiled at run time for the GPU present.
+
+Tested on hardware with Warp's test suite: AMD Instinct MI355X (gfx950), MI300X (gfx942) and MI250X (gfx90a), Radeon Pro W7800 (gfx1100) and Radeon AI PRO R9700 (gfx1201) on Linux, and a Ryzen AI Max (gfx1151) on Windows. The other targets are compiled but have not been run.
+
+## Differences from Warp's CUDA build
+
+- `wp.get_runtime().toolkit_version` and `driver_version` (the CUDA Toolkit and CUDA driver versions) are `None`, as in a CPU-only build. The new `rocm_version` is the ROCm release the library was built with, for example `(10, 2)`, and `hip_version` is the version of the HIP runtime loaded in the process, for example `(7, 17)`; both are `None` in CUDA and CPU builds. Code that compares `toolkit_version` with a tuple without checking for `None` fails on AMD GPUs; use the capability functions (for example `wp.is_conditional_graph_supported()`) instead.
+- Conditional graph nodes are not available in HIP: `wp.capture_if` and `wp.capture_while` cannot be captured into a graph on AMD GPUs (`wp.is_conditional_graph_supported()` returns False), as with CUDA before 12.4.
+- MathDx (cuBLASDx, cuFFTDx, cuSOLVERDx) is NVIDIA-only and not included. Tile operations use Warp's built-in implementations, as in a CUDA build without MathDx; 2D and 3D `tile_fft`/`tile_ifft` of `vec2f`/`vec2d` tiles, which have no built-in implementation, are not available.
+- `tile_matmul` uses AMD matrix instructions (MFMA on Instinct GPUs, WMMA on gfx11 and gfx12 for fp16 and bf16) where the tile shapes allow it. They accumulate fp16 and bf16 products in fp32, so results can differ from the scalar path in the last bits (they are closer to the exact product).
+- Shared-memory tiles are limited to 64 KiB per block (tiles plus Warp's small static allocation) on MI250X, MI300X and Radeon GPUs and to 160 KiB on MI355X, less than on recent NVIDIA GPUs; Warp warns when a kernel's request does not fit.
+- Textures: MI300X and MI355X (and MI250X for 3D textures) have no texture sampling hardware. Textures there are sampled in software on the GPU, with the same results as Warp's CPU textures and slower than hardware sampling; the CUDA interop handles of those textures (`cuda_array`, `cuda_texture`, `cuda_surface`) are not available on them.
+- Spin locks contended within one wavefront do not make progress on AMD GPUs (no independent thread scheduling within a wavefront); `warp/examples/core/example_spin_lock.py` reports this instead of hanging.
+- In native snippets, `__frsqrt_rn` and `__fsqrt_rn` are within 1 ulp but not correctly rounded on AMD GPUs (wrong in the last bit for about 11 and 15 percent of inputs), unlike CUDA. Warp's own kernels do not use them.
+- In native snippets, warp-level intrinsics need 64-bit lane masks: AMD Instinct GPUs have 64-lane wavefronts, so a 32-bit mask such as `0xffffffff` is a compile error. Use `~0ull` or `__activemask()`, which are correct on 32- and 64-lane GPUs, and do not assume `lane = tid & 31`.
+- Stream priorities are accepted and reported, but the HIP runtime schedules all streams at normal priority.
+- On Windows, a graph launch waits for the graph to finish before returning (it works around a HIP runtime race between successive launches of a graph).
+- Floating-point results of the same kernel can differ in the last bits from a CUDA build, as between any two compilers: multiply-adds are fused within an expression only.
+- The precompiled library stores its GPU code compressed; the first use of each part of it in a process costs a few tens of milliseconds while the HIP runtime's code-object cache is empty (later about 2 ms).
+- Not included: MathDx, NVRTC and the CUDA runtime. The wheel contains no NVIDIA software, and its licence files list only what it contains.
+```
+
+Notes for Jeff on the draft (not part of the body):
+- Hardware list: the GPUs in the evidence and porting sessions of these notes (gfx950, gfx942, gfx90a, gfx1100, gfx1201 on Linux; gfx1151 on Windows). The release's gate platforms must validate the uploaded wheels at the final commit before this is true of the release itself; at the time of writing only gfx950 has run the final wheel (session 21).
+- The fp-contract sentence describes the current `-ffp-contract=on`; it changes if question 5 is ruled (b) or (c).
+- Windows wheel name and the 22 Windows targets are from session 13; the Windows wheel has not been built yet.
+- Upstream's "requires NVIDIA driver" paragraphs in the docs are untouched; the installation guide's ROCm paragraph already points here.
