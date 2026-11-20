@@ -7910,3 +7910,44 @@ The full suite beside the subset (suite 1 of the suite condition, `HIP_VISIBLE_D
 
 - Option (a) of session 21's question 7 is answered for gfx942: same defect, so it is not an MI355X-only risk; the release-blocking wrong-result risk applies to MI300X as well. A run on gfx90a and gfx1100 would show whether single-XCD devices are immune.
 - Option (b) (API trace of a failing run for a Warp-free reproducer) is easier here than on gfx950: about one failing run in nine under 8 load processes, one in three beside the suite, ~10-17 s per run, and the device is otherwise idle.
+
+## Evidence session (2026-11-20, linux-gfx90a, evidence only): test_async copy flake at `7059a340`
+
+Requested by Jeff Daily as an evidence-only fleet job (the porting lock stays with linux-gfx950; no lock taken, no project state changed, nothing pushed to the fork). Question: does session 21's Evidence 5 (one XCD's share of the strided copy kernel's workgroups left unwritten while a second process uses the GPU) occur at all on a device with one die? **Answer: no, not observed.** 0 failing runs of 250 (0 of 48,000 subset tests) across alone, 8 `copy_flake load` processes and a full suite beside it, under the same conditions that fail readily on gfx942 (17/160 and 18/60, previous section) and on gfx950 (session 21).
+
+### Host and build
+
+- GPU: AMD INSTINCT MI250 (MCM) OAM (amd-smi market name "AMD Instinct MI250X / MI250", device id 0x740c, part 113-D65209-073), gfx90a:sramecc+:xnack-. Each device is one GCD: 104 CUs, 64 GiB, one L2 (so an MI250 rather than an MI250X, which has 110 CUs per GCD; the same die either way). 4 devices on the host (2 OAM packages). Dispatcher pin `HIP_VISIBLE_DEVICES=0` kept; every GPU run under `ulimit -c 0`.
+- Kernel 6.8.0-101-generic, amdgpu driver 6.16.6 (`/sys/module/amdgpu/version`; amd-smi 27.1.0, whose host ROCm reports 10.1.0, not used by the runs).
+- Job venv (`$FLEET_VENV`, Python 3.11.17, numpy 1.26.4) had ROCm 10.1 wheels; `$FLEET_VENV/bin/pip install "rocm[devel]==10.2.*" --extra-index-url https://stable.repo.amd.com/rocm/whl-next/` -> rocm, rocm-sdk-core, rocm-sdk-devel 10.2.0 (`python -m rocm_sdk version` 10.2.0; the venv's 10.1 `rocm-sdk-libraries` and `rocm-sdk-device-*` stayed, Warp loads neither). Warp banner: "Warp 1.14.0+rocm10.2.0 ... ROCm 10.2, HIP runtime 7.17", device "AMD Instinct MI250X / MI250" (64 GiB, gfx90a:sramecc+:xnack-, mempool enabled).
+- Fork clone: `git clone --branch release/1.14.0.amd0 https://github.com/AMD-Ecosystem/warp.git warp; git -C warp checkout 7059a340`. Build (in `utils/timeit.sh warp-1.14 build`): `python build_lib.py --rocm-path "$(python -m rocm_sdk path --root)" --hip-arch gfx90a -j 128` (128 = physical cores = `MAX_JOBS`): "Warp build succeeded" in 62 s; warp.so 6,409,032 bytes. Only tracked change in the clone: the scratch diagnostic, never committed (`git status --porcelain`: ` M warp/tests/cuda/test_async.py`).
+- `copy_flake.hip` unchanged from session 21, `hipcc -O2 --offload-arch=gfx90a` from the 10.2 SDK; `copy_flake check 50` alone: 0 wrong.
+- `amd-smi process`: before the runs "No running processes detected" on all 4 devices (10 MB VRAM used each), so "alone" is truly alone and no outside process shared GPU 0 at any point; during the load condition exactly this job's 8 `copy_flake load` processes (1.1 GB each, at start and at run 80) plus the subset, GFX activity 99%; during the suite condition 9-10 processes (the suite's workers and the subset). No process left on GPU 0 afterwards.
+
+### Diagnostic
+
+Session 21's scratch diagnostic applied to `warp/tests/cuda/test_async.py` (first read, second read, read after `wp.synchronize()`, wrong-index range), extended with a second line that reports, for the wrong 256-element blocks, whether they are whole blocks and which moduli (2-8, 16) give a constant block-index residue, so a single-die pattern other than mod 8 (e.g. per shader engine) would have been named. It never fired: no run had a mismatch. A mismatch in the reference read-back (`src.numpy()`, which runs the same strided copy kernel; the gfx942 session found 10 of 47 failures there) would also have failed the assertion and printed, so neither array was ever wrong. Scripts and the diff: `notes-evidence-gfx90a-flake-scripts.md`.
+
+### Results (subset = `python -m warp.tests -s autodetect -p test_async.py -k s2f_d2d -k s2c_d2d`, 192 tests per run, every run "Ran 192 tests")
+
+| condition | command | failing runs | failing tests | mean subset time |
+|---|---|---|---|---|
+| alone | `flake_b.sh <job>/warp <job>/flk/c1_alone 0 30` | **0 / 30** | 0 of 5,760 | 13.8 s |
+| 8 `copy_flake load` (4 streams each) on the same GPU | `flake_b.sh <job>/warp <job>/flk/c2_load8 8 160` (05:52-07:02 UTC; 8/8 load processes alive at the end) | **0 / 160** | 0 of 30,720 | 25.1 s |
+| beside the full default suite on the same GPU | `flake_a.sh <job>/warp <job>/flk/c3_suite 60` (07:02-07:25 UTC) | **0 / 60** | 0 of 11,520 | 20.0 s |
+| supplementary, no Warp: `copy_flake check` with 8 `copy_flake load` (4 streams) on the same GPU | `copy_flake check 2000`, `copy_flake check 2000 pool` | 0 wrong of 2,000 + 2,000 iterations | | |
+
+The suite beside the subset (suite 1, GPU 0): **Ran 7559 tests in 1091.5 s, OK (skipped=110)**, its own `test_async` included (on gfx942 the same suite run hit the defect twice). Suite 2 was started when suite 1 ended and killed when the 60 subset runs were done. The 7559 tests and 110 skips against gfx950's 7557 and 81 were not examined (not this session's question).
+
+The load was heavier relative to the device than on gfx942 (subset 25.1 s under load against 13.8 s alone, 1.8x; gfx942 11.6 s against 8.0 s, 1.45x), so the zero is not a lighter load. Against gfx942's rates, 0/160 has probability (1 - 17/160)^160 = 1.6e-8 and 0/60 has (1 - 18/60)^60 = 5e-10 if the rate were the same here.
+
+Step 4 of the request (`copy_flake check 2000` under load and the load on another GPU) applied only if it reproduced; it did not, so no other GPU was used. The `copy_flake check` row above is extra, on GPU 0 only.
+
+### Every failure
+
+None.
+
+### For Jeff (no decision taken here)
+
+- With gfx942 (8 XCDs) failing and gfx90a (one die, one L2) clean under the same subset, load and suite, the defect follows the multi-XCD devices: consistent with session 21's reading of one XCD's L2 lines for the buffer being lost or written back late. It does not rule out a gfx94x/gfx950 code-generation or runtime difference (gfx90a takes other code paths in both); a gfx942 run in CPX mode (one XCD per device) would separate the two on the same chip, if that host can be repartitioned (a host-wide change, not mine to make).
+- gfx1100 (one XCD, wave32) was not run here.

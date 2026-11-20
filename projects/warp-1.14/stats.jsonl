@@ -222,3 +222,5 @@
 {"kind":"phase","ts":"2026-11-20T04:29:49Z","phase":"compile","seconds":175.464,"exit":0,"cmd":"agent_space/relbuild.sh /var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/moat/projects/warp-1.14/src 64"}
 {"kind":"phase","ts":"2026-11-20T04:50:50Z","phase":"test","seconds":504.931,"exit":0,"cmd":"agent_space/suite_wheel.sh"}
 {"kind":"phase","ts":"2026-11-20T05:00:57Z","phase":"test","seconds":583.617,"exit":1,"cmd":"agent_space/suite_ff.sh"}
+{"kind":"phase","ts":"2026-11-20T05:43:08Z","phase":"build","seconds":0.022,"exit":2,"cmd":"python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/mi200-20261119-211611-warp114-flake-evidence-gfx90a-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx90a -j 128"}
+{"kind":"phase","ts":"2026-11-20T05:44:16Z","phase":"build","seconds":61.95,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261119-211611-warp114-flake-evidence-gfx90a-prompt/warp && python build_lib.py --rocm-path \"$(python -m rocm_sdk path --root)\" --hip-arch gfx90a -j 128"}
