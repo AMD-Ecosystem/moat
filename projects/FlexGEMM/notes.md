@@ -621,6 +621,34 @@ bcf7c6f's body is false where it says "The remaining configs (larger BM) cover t
 Add an early_config_prune that drops, on HIP only, the configs whose launch would reach that limit. This covers the RES=2048 test case but not larger inputs: from about M * C * V = 2^33 on 64-wide wavefronts every config reaches the limit and the list is empty; the next commit replaces the prune with a launch that splits the grid. CUDA keeps every config.
 ```
 
+### e7d36f1 and 8592d5f `[ROCm] grid_sample: decide the platform once for flat_grid` (round-2 review finding 1)
+
+e7d36f1's fourth paragraph is wrong about CUDA: it says the CUDA path is unchanged, but e7d36f1's `flat_grid()` ran `get_platform_name()` on every launch, so every launch on CUDA gained a `torch.cuda.is_available()` call (0.8 us measured on the AMD host). 8592d5f moves the platform check to import time.
+
+**If bcf7c6f, e7d36f1 and 8592d5f are squashed (recommended), use one commit** with e7d36f1's title and e7d36f1's body with the two edits listed in the subsection above (second paragraph dropped; third paragraph opening "This commit changes the launch shape:"), plus these two changes. Replace the fourth paragraph with:
+
+```
+On CUDA the grid, the program-to-tile mapping and the autotune configs are unchanged: flat_grid() returns (num_programs,), program_id(1) is 0, and the added store mask term is always true. flat_grid() decides the platform once at import, as the autotune config selection does, so a launch on CUDA costs one module-level truth test more than before.
+```
+
+Then add this sentence to the end of the Test Plan prose paragraph, before the fenced block:
+
+```
+Per-call time of the two kernels at M=1000, C=8, V=8 after autotuning is unchanged within noise (indice_weighed_sum_fwd 28.4-28.9 us before, 28.7-29.5 us after).
+```
+
+**If e7d36f1 and 8592d5f stay separate commits**, replace e7d36f1's fourth paragraph with:
+
+```
+On CUDA the grid, the program-to-tile mapping and the autotune configs are unchanged: flat_grid() returns (num_programs,), program_id(1) is 0, and the added store mask term is always true. The grid callable does call get_platform_name() on every launch; the next commit moves that check to import time.
+```
+
+and replace 8592d5f's second paragraph ("The previous commit's message says ...") with:
+
+```
+On CUDA the previous commit kept the launched grid, the program-to-tile mapping and the autotune configs, but every launch also paid for a torch.cuda.is_available() call (0.8 us per call measured on the AMD host), host cost a HIP-only change should not add.
+```
+
 ## Review 2026-11-20 round 2 (linux-gfx942 fleet job, AMD Instinct MI300X; reviewed head e7d36f10fcef3efc623656ca7592361db662f04b)
 
 Reviewed `git diff 6dd94a8...e7d36f1` (5 commits) with the pr-review skill, focusing on e7d36f1 and on the porter's answers to the round-1 review. Every finding was re-checked against the code and measured on the GPU. **Verdict: changes requested, one finding.** The launch change itself is correct on every input I could construct: round-1 findings 1 and 2 are resolved, and findings 3 to 5 are resolved by the "Correction for the final history" section (the corrected text is accurate; it has to be applied when the commits are prepared for the upstream PR).
@@ -689,3 +717,69 @@ Max abs errors: 1.9e-06 forward everywhere; backward 2.1e-05 to 6.9e-05 (C=1024 
 `tests/grid_sample.py`, unchanged, against the installed e7d36f1 build with the autotune cache off (`FLEX_GEMM_USE_AUTOTUNE_CACHE=0 FLEX_GEMM_AUTOSAVE_AUTOTUNE_CACHE=0 python grid_sample.py` in `src/tests`): rc 0, all four tables (Nearest/Trilinear Fwd/Bwd) through RES=2048, all 72 err_max/err_mean cells 0 per mille.
 
 Launch overhead (`agent_space/review2/launch_overhead.py <tree>`, finding 1): bcf7c6f 27.8-28.7 us/call, e7d36f1 33.3, e7d36f1 with the import-time platform check 29.2-29.8.
+
+## Porting round 3 (2026-11-20, linux-gfx942 fleet job, AMD Instinct MI300X)
+
+Answers the round-2 review (one finding, `flat_grid` per-launch host cost). New fork head **8592d5fcb68855864c8a82274d3033ae651f8027**, one commit on top of e7d36f1, pushed plainly to `moat-port` (no amend, rebase or force-push). Title `[ROCm] grid_sample: decide the platform once for flat_grid` (58 characters).
+
+**Questions for Jeff:** none new. Round 1's question 1 (`examples/spconv.py`, `surface.json` `example:spconv`) and round 2's question 3 (deferred `flexgemm-grid-sample-bwd-autotune-accumulates`) are unchanged.
+
+### The change
+
+`flex_gemm/kernels/triton/utils.py`: `_IS_HIP = get_platform_name() == 'hip'` at module level, right after `get_platform_name`; `flat_grid` tests `_IS_HIP` and computes `rows = max(1, -(-n // ((2**32 - 1) // 1024)))`, `(-(-n // rows), rows)` instead of two `triton.cdiv` calls. 1 file, +6 / -3. `triton` is still used in the module (`get_autotune_config`), so no import is orphaned. The callers' `triton.cdiv(C, META['BK']) * triton.cdiv(M, META['BM'])` inside the grid lambdas is upstream's own code and stays.
+
+The commit body states what e7d36f1's body got wrong: CUDA's grid, mapping and configs were unchanged, but every CUDA launch paid for a `torch.cuda.is_available()` call that the message did not mention. "Correction for the final history" now covers the squashed and the separate cases.
+
+### Import order (checked, not assumed)
+
+- `_IS_HIP` is assigned at module import, after `get_platform_name` is defined and before `flat_grid` is defined. `flat_grid` is referenced only inside the two grid lambdas (`indice_weighed_sum_fwd.py:81`, `indice_weighed_sum_bwd.py:80`), which Triton evaluates at launch, so no call can run before the module finishes importing. `utils.py` is imported by both `grid_sample/config.py` and `spconv/config.py` during `import flex_gemm`.
+- Upstream already evaluates the platform at import: `spconv/config.py` calls `get_autotune_config(platform=...)` at module level, which calls `get_platform_name()`. So the new flag adds no new import-time device query in a process that imports `flex_gemm`.
+- On this torch (2.16 ROCm), `torch.cuda.is_available()` is True before any CUDA initialization even though `torch.cuda.device_count()` reads 0 until then, so the import-time value is right: the installed package reports `_IS_HIP True`.
+- `flat_grid(n)` equals the e7d36f1 `triton.cdiv` form for n in {1, 4194303, 4194304, 4194305, 33554439, 2^30, 2^31-1} (asserted). `flat_grid(1000) = (1000, 1)`, `flat_grid(4194304) = (2097152, 2)`, `flat_grid(2^30) = (4177984, 257)`.
+
+### Per-call time (finding 1), MI300X GPU 2
+
+Driver `agent_space/fix3/launch_overhead.py <tree>` (job-local): imports the Triton kernels of a `git archive` tree (CUDA extension stubbed, autotune cache off), M=1000 C=8 V=8 N=1024 float32, autotunes, then 2000 calls of each wrapper, best of 5. Three interleaved runs per tree:
+
+```
+               fwd us/call       bwd us/call       flat_grid(1000)
+bcf7c6f        28.40-28.93       30.98-32.05       (none)
+e7d36f1        33.06-33.60       35.65-36.18       4.16-4.67 us
+8592d5f        28.70-29.46       31.69-32.97       0.19-0.20 us
+```
+
+The non-HIP branch of the new `flat_grid` (flag forced False) costs 0.077 us per call; `torch.cuda.is_available()` costs 0.817 us here, which is what e7d36f1 added per launch on CUDA.
+
+### Strict launch driver, every config, large shapes (round-2 reviewer's method)
+
+`agent_space/fix3/allcfg.py <tree> fwd|bwd M C V [cfgs|all]`, rewritten to the round-2 description: raw JIT kernel launched once per config with the `flat_grid` grid (no autotuner), float32, forward output prefilled with NaN, backward output zeros, float64 torch reference, tolerance 1e-5 x reference max, never-written outputs counted. N=65536, uint32 indices with every 7th row's first neighbour 0xffffffff.
+
+```
+SUMMARY bwd M=1048576   C=1024 V=8: 12/12 OK  grids (3728271, 9)..(4067204, 33), overrun <= 13, err 2.1e-05 (tol 4.0e-04)
+SUMMARY bwd M=4194304   C=8    V=8: 12/12 OK  grids (2796203, 3)..(3728271, 9), overrun <= 7, err 5.2e-05..6.0e-05
+SUMMARY bwd M=2097152   C=1024 V=8: 12/12 OK  up to (4129777, 65), overrun <= 49, err 4.2e-05..4.4e-05
+SUMMARY bwd M=270003    C=1000 V=8: 12/12 OK  err 5.9e-06..6.1e-06
+SUMMARY fwd M=2097152   C=1024 V=8: 12/12 OK  grids (2796203, 3)..(3728271, 9), err 2.0e-06
+SUMMARY fwd M=270003    C=1000 V=8: 12/12 OK  partial last M tile, err 1.6e-06
+SUMMARY fwd M=4194303   C=64   V=8: cfg2 OK   (4194303, 1), last unsplit size
+SUMMARY fwd M=4194304   C=64   V=8: cfg2 OK   (2097152, 2), first split size
+SUMMARY fwd M=4194305   C=64   V=8: cfg2 OK   (2097153, 2), overrun 1
+SUMMARY bwd M=134217728 C=8    V=8: cfg2, cfg11 OK  (4177984, 257), overrun 64, err 1.9e-03..2.0e-03 (tol 3.8e-03)
+SUMMARY fwd M=134217728 C=8    V=8: cfg2, cfg11 OK  (4067204, 33), err 1.8e-06
+```
+
+Negative control: a copy of the 8592d5f tree with the forward kernel's `block_id = tl.program_id(axis=0)` restored fails `fwd M=4194305 C=64 V=8 cfg2` with 134,217,728 NaN outputs (the real tree passes). Logs `agent_space/fix3/allcfg-bwd.log`, `allcfg-fwd.log` (job-local).
+
+### Build and project test
+
+```
+source agent_space/env.sh   # HOME, TRITON_CACHE_DIR job-local; ROCM_HOME from rocm_sdk; PYTORCH_ROCM_ARCH=gfx942; ulimit -c 0
+utils/timeit.sh FlexGEMM compile -- $FLEET_VENV/bin/python -m pip install ./projects/FlexGEMM/src --no-build-isolation --no-deps   # Successfully installed flex_gemm-1.0.0
+utils/timeit.sh FlexGEMM test -- bash -c "cd projects/FlexGEMM/src/tests && FLEX_GEMM_USE_AUTOTUNE_CACHE=0 FLEX_GEMM_AUTOSAVE_AUTOTUNE_CACHE=0 python grid_sample.py"   # rc 0
+```
+
+`tests/grid_sample.py`, unchanged: all four tables (Nearest/Trilinear Fwd/Bwd) through RES=2048, all 72 err_max/err_mean cells 0 per mille. `git -C projects/FlexGEMM/src status --porcelain` clean. `python3 utils/jargon.py --port FlexGEMM` clean; `utils/prose.py` on the commit body clean; no non-ASCII added.
+
+CUDA compile check: not rerun. The commit changes only Python (`utils.py`), which nvcc never compiles; the round-1 nvcc check covers every CUDA source at this head.
+
+Environment rebuilt in this fresh job as in round 2 (TheRock `torch==2.16.0a0+rocm10.2.0a20261022`, `triton==3.9.0+gitfc8d31a5.rocm10.2.0a20261022`, `rocm[libraries,devel]`, `rocm-sdk-device-gfx942` and `amd-torch-device-gfx942` pinned to the same nightly, base-env ROCm 10.1 and Triton links removed from `venv-base-links`); `python -m rocm_sdk test` OK. The fleet guard accepts pip only as `$FLEET_VENV/bin/python -m pip` spelled literally.

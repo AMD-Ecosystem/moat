@@ -21,3 +21,5 @@
 {"kind":"phase","ts":"2026-11-20T23:18:19Z","phase":"test","seconds":3.818,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300b-20261120-145910-fix-flexgemm-prompt/moat/projects/FlexGEMM/src/examples && /var/lib/jenkins/fleet/jobs/mi300b-20261120-145910-fix-flexgemm-prompt/venv/bin/python submconv.py"}
 {"kind":"session","ts":"2026-11-20T23:21:41Z","epoch":1795216901.566388,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-20T23:32:40Z","epoch":1795217560.752158,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-20T23:41:39Z","phase":"compile","seconds":32.567,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300b-20261120-153457-fix2-flexgemm-prompt/venv/bin/python -m pip install ./projects/FlexGEMM/src --no-build-isolation --no-deps"}
+{"kind":"phase","ts":"2026-11-20T23:43:57Z","phase":"test","seconds":72.935,"exit":0,"cmd":"bash -c cd projects/FlexGEMM/src/tests && FLEX_GEMM_USE_AUTOTUNE_CACHE=0 FLEX_GEMM_AUTOSAVE_AUTOTUNE_CACHE=0 python grid_sample.py"}
