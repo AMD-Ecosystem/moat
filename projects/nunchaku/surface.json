@@ -1,0 +1,240 @@
+{
+ "generated_by": "utils/surface.py",
+ "source_sha": "302e0e97024e",
+ "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+ "cuda": {
+  "files": [
+   "src/Linear.cpp",
+   "src/Linear.h",
+   "src/common.h",
+   "src/kernels/activation_kernels.cu",
+   "src/kernels/activation_kernels_impl.cuh",
+   "src/kernels/awq/dequantize.cuh",
+   "src/kernels/awq/gemm_awq.cu",
+   "src/kernels/awq/gemv_awq.cu",
+   "src/kernels/awq/semaphore.h",
+   "src/kernels/dispatch_cutlass.h",
+   "src/kernels/dwconv.cu",
+   "src/kernels/gemm_batched.cu",
+   "src/kernels/gemm_f16.cu",
+   "src/kernels/gemm_w8a8.cu",
+   "src/kernels/layernorm_kernels.cu",
+   "src/kernels/layernorm_kernels_impl.cuh",
+   "src/kernels/misc_kernels.cu",
+   "src/kernels/misc_kernels_impl.cuh",
+   "src/kernels/reduction_utils.cuh",
+   "src/kernels/utils.cuh",
+   "src/kernels/zgemm/attention.cu",
+   "src/kernels/zgemm/attention.cuh",
+   "src/kernels/zgemm/epilogues.cuh",
+   "src/kernels/zgemm/gemm_base.cuh",
+   "src/kernels/zgemm/gemm_utils.cuh",
+   "src/kernels/zgemm/gemm_w4a4.cu",
+   "src/kernels/zgemm/gemm_w4a4.cuh",
+   "src/kernels/zgemm/gemm_w4a4_launch.cuh",
+   "src/kernels/zgemm/gemm_w4a4_launch_bf16_fp4.cu",
+   "src/kernels/zgemm/gemm_w4a4_launch_bf16_int4.cu",
+   "src/kernels/zgemm/gemm_w4a4_launch_fp16_fp4.cu",
+   "src/kernels/zgemm/gemm_w4a4_launch_fp16_int4.cu",
+   "src/kernels/zgemm/gemm_w4a4_launch_fp16_int4_fasteri2f.cu",
+   "src/kernels/zgemm/gemm_w4a4_launch_impl.cuh",
+   "src/kernels/zgemm/gemm_w4a4_test.cu",
+   "src/kernels/zgemm/gemm_w8a8.cu",
+   "src/kernels/zgemm/gemm_w8a8.cuh",
+   "src/kernels/zgemm/lora.cuh",
+   "src/kernels/zgemm/mma.cuh",
+   "src/kernels/zgemm/mma_earlycuda.cuh"
+  ],
+  "markers": {
+   "device_code": 307,
+   "warp_intrinsic": 28,
+   "kernel": 22,
+   "launch": 45
+  },
+  "libraries": {
+   "cublas": 18,
+   "cutlass": 195
+  }
+ },
+ "components": [
+  {
+   "id": "build:setup-py-rocm",
+   "kind": "build",
+   "where": "setup.py (arch list from PYTORCH_ROCM_ARCH, hipcc flags, +rocm version tag, source list)"
+  },
+  {
+   "id": "build:windows-rocm",
+   "kind": "build",
+   "where": "setup.py MSVC/nvcc_msvc flag sets under a TheRock clang-cl host; scripts/build_windows_wheel.cmd"
+  },
+  {
+   "id": "python:arch-detection",
+   "kind": "python",
+   "where": "nunchaku/utils.py get_precision, is_turing, check_hardware_compatibility (device-capability collision on ROCm)"
+  },
+  {
+   "id": "kernel:primitive-layer-int4",
+   "kind": "kernel",
+   "where": "zgemm/mma.cuh mma_m16n8kx_s32common<s4|u4,s4>, gemm_w4a4.cuh GEMM_W4A4::mma"
+  },
+  {
+   "id": "kernel:primitive-layer-int8",
+   "kind": "kernel",
+   "where": "zgemm/gemm_w8a8.cuh GEMM_W8A8::mma (s8 m16n8k32)"
+  },
+  {
+   "id": "kernel:primitive-layer-f16",
+   "kind": "kernel",
+   "where": "zgemm/mma.cuh mma_m16n8k16_f16f16f16f16, mma_m16n8k16_f32f16f16f32<bf16>"
+  },
+  {
+   "id": "kernel:ptx-helpers",
+   "kind": "kernel",
+   "where": "zgemm/gemm_utils.cuh ldmatrix, movmatrix, ld/st.shared, load/store_pred, cvt.pack.sat, approx math, red.add, lop3/prmt i2f; utils.cuh cvt.rni.sat, __nanosleep"
+  },
+  {
+   "id": "kernel:arch-macro-gates",
+   "kind": "kernel",
+   "where": "gemm_base.cuh invoke_kernel, __CUDA_ARCH__ gates in utils.cuh, mma.cuh, attention.cuh, gemm_w4a4.cuh:724, gemv_awq.cu, gemm_awq.cu, semaphore.h; __CUDACC_VER_MAJOR__"
+  },
+  {
+   "id": "kernel:wavefront-width-sweep",
+   "kind": "kernel",
+   "where": "width-32/64-bit-mask shuffles in epilogues.cuh, reduction_utils.cuh, gemv_awq.cu, gemm_base.cuh, lora.cuh, attention.cuh, gemm_w4a4.cuh"
+  },
+  {
+   "id": "kernel:gemm_w4a4-int4",
+   "kind": "kernel",
+   "where": "zgemm/gemm_w4a4.cu, gemm_w4a4_launch_{fp16,bf16}_int4.cu, gemm_w4a4_launch_fp16_int4_fasteri2f.cu, epilogues.cuh, lora.cuh"
+  },
+  {
+   "id": "kernel:quantize_w4a4_act_fuse_lora-int4",
+   "kind": "kernel",
+   "where": "zgemm/gemm_w4a4.cuh quantize_w4a4_fuse_lora_kernel, quantize_w4a4_act/wgt kernels"
+  },
+  {
+   "id": "kernel:gemm_w4a4-nvfp4",
+   "kind": "kernel",
+   "where": "zgemm/gemm_w4a4_launch_{fp16,bf16}_fp4.cu, gemm_w4a4.cuh mma_fp4, gemm_utils.cuh quantize_float2_fp4/quantize_float4_fp8 (scope: ruling Q1)"
+  },
+  {
+   "id": "kernel:attention_fp16",
+   "kind": "kernel",
+   "where": "zgemm/attention.cu, attention.cuh (nunchaku-fp16 attention impl)"
+  },
+  {
+   "id": "kernel:zgemm-gemm_w8a8",
+   "kind": "kernel",
+   "where": "zgemm/gemm_w8a8.cu/.cuh (GEMM_W8A8 module, QuantizedGEMM88 binding)"
+  },
+  {
+   "id": "kernel:gemm_w4a4_test-entry-points",
+   "kind": "kernel",
+   "where": "zgemm/gemm_w4a4_test.cu (ops.test_rmsnorm_rope, ops.test_pack_qkv)"
+  },
+  {
+   "id": "kernel:awq-gemm",
+   "kind": "kernel",
+   "where": "awq/gemm_awq.cu, dequantize.cuh, semaphore.h (ldmatrix x4/trans, mma m16n8k16 f16/bf16, cp.async, acquire/release)"
+  },
+  {
+   "id": "kernel:awq-gemv",
+   "kind": "kernel",
+   "where": "awq/gemv_awq.cu"
+  },
+  {
+   "id": "kernel:elementwise-norm-misc",
+   "kind": "kernel",
+   "where": "activation_kernels.cu, layernorm_kernels.cu, misc_kernels.cu (+_impl.cuh), reduction_utils.cuh"
+  },
+  {
+   "id": "library:cutlass-gemm_f16",
+   "kind": "library",
+   "where": "kernels/gemm_f16.cu -> hipBLAS(Lt) on ROCm"
+  },
+  {
+   "id": "library:cutlass-dwconv",
+   "kind": "library",
+   "where": "kernels/dwconv.cu -> HIP depthwise kernel on ROCm"
+  },
+  {
+   "id": "library:cutlass-gemm_batched",
+   "kind": "library",
+   "where": "kernels/gemm_batched.cu, reached only with sparsityRatio>0 (ruling Q2)"
+  },
+  {
+   "id": "library:cutlass-gemm_w8a8_fp16",
+   "kind": "library",
+   "where": "kernels/gemm_w8a8.cu, no caller (ruling Q2)"
+  },
+  {
+   "id": "library:flash-attn2-dense-mha_fwd",
+   "kind": "library",
+   "where": "third_party/Block-Sparse-Attention flash_api mha_fwd from FluxModel.cpp:120,246 -> torch SDPA on ROCm"
+  },
+  {
+   "id": "library:block-sparse-mha_fwd_block",
+   "kind": "library",
+   "where": "third_party/Block-Sparse-Attention mha_fwd_block from FluxModel.cpp:203, reached only with sparsityRatio>0 (ruling Q2)"
+  },
+  {
+   "id": "library:cublas",
+   "kind": "library",
+   "where": "Linear.cpp cublasHgemm x4, common.h handle -> hipBLAS"
+  },
+  {
+   "id": "runtime:tensor-alloc-nvtx",
+   "kind": "runtime",
+   "where": "Tensor.h cudaHostAlloc/cudaMallocAsync; NVTX in Linear.cpp, SanaModel.cpp, FluxModel.cpp"
+  },
+  {
+   "id": "test:tests/ops (new op-level golden tests)",
+   "kind": "test",
+   "where": "tests/ops/ (to be authored with the port)"
+  },
+  {
+   "id": "test:tests/flux",
+   "kind": "test",
+   "where": "tests/flux (C++ QuantizedFluxModel path; speed/turing/device_id skip rules in plan)"
+  },
+  {
+   "id": "test:tests/sana",
+   "kind": "test",
+   "where": "tests/sana (C++ QuantizedSanaModel path)"
+  },
+  {
+   "id": "test:tests/v1/flux",
+   "kind": "test",
+   "where": "tests/v1/flux"
+  },
+  {
+   "id": "test:tests/v1/qwenimage",
+   "kind": "test",
+   "where": "tests/v1/qwenimage"
+  },
+  {
+   "id": "test:tests/v1/sdxl",
+   "kind": "test",
+   "where": "tests/v1/sdxl"
+  },
+  {
+   "id": "test:tests/v1/z_image",
+   "kind": "test",
+   "where": "tests/v1/z_image"
+  },
+  {
+   "id": "example:examples",
+   "kind": "example",
+   "where": "examples/*.py, examples/v1 (exercised through tests/*/test_examples.py)"
+  },
+  {
+   "id": "example:app",
+   "kind": "example",
+   "where": "app/flux.1, app/sana gradio demos (pure Python, no device code)"
+  }
+ ],
+ "covered": [],
+ "scoped_out": [],
+ "owed": [],
+ "removed_from_floor": []
+}
