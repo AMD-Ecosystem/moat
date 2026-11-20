@@ -1,0 +1,90 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "9b294b3d0536",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "src/utils/dependencies/XPose/models/UniPose/ops/src/cuda/ms_deform_attn_cuda.cu",
+      "src/utils/dependencies/XPose/models/UniPose/ops/src/cuda/ms_deform_im2col_cuda.cuh"
+    ],
+    "markers": {
+      "kernel": 7,
+      "device_code": 10,
+      "launch": 16
+    },
+    "libraries": {}
+  },
+  "components": [
+    {
+      "id": "mode:humans-inference",
+      "kind": "executable",
+      "where": "inference.py -> src/live_portrait_pipeline.py, src/live_portrait_wrapper.py (pure PyTorch on the GPU)"
+    },
+    {
+      "id": "onnx:face-detection-landmarks",
+      "kind": "library",
+      "where": "src/utils/cropper.py, src/utils/human_landmark_runner.py, src/utils/dependencies/insightface (ONNX Runtime, CUDAExecutionProvider hard-coded)"
+    },
+    {
+      "id": "app:gradio-humans",
+      "kind": "executable",
+      "where": "app.py, src/gradio_pipeline.py"
+    },
+    {
+      "id": "optional:torch-compile",
+      "kind": "optional",
+      "where": "--flag_do_torch_compile, src/live_portrait_wrapper.py:65,286 (Linux only upstream)"
+    },
+    {
+      "id": "build:requirements-and-docs",
+      "kind": "build_path",
+      "where": "requirements*.txt, readme.md Environment Setup"
+    },
+    {
+      "id": "benchmark:speed",
+      "kind": "benchmark",
+      "where": "speed.py"
+    },
+    {
+      "id": "extension:MultiScaleDeformableAttention",
+      "kind": "python_extension",
+      "where": "src/utils/dependencies/XPose/models/UniPose/ops/setup.py (CUDAExtension over vision.cpp, cpu/*.cpp, cuda/ms_deform_attn_cuda.cu)"
+    },
+    {
+      "id": "test:msdeformattn-op",
+      "kind": "test",
+      "where": "src/utils/dependencies/XPose/models/UniPose/ops/test.py (forward vs PyTorch reference, gradcheck)"
+    },
+    {
+      "id": "mode:animals-inference",
+      "kind": "executable",
+      "where": "inference_animals.py -> src/live_portrait_pipeline_animal.py, src/utils/animal_landmark_runner.py (X-Pose)"
+    },
+    {
+      "id": "app:gradio-animals",
+      "kind": "executable",
+      "where": "app_animals.py"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [
+    {
+      "id": "extension:MultiScaleDeformableAttention",
+      "reason": "Awaiting Jeff's scope ruling (LivePortrait notes, Planning 2026-11-20, Question 1): Animals mode depends on the vendored X-Pose subtree (Apache-2.0 file headers, IDEA non-commercial repository licence). Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:msdeformattn-op",
+      "reason": "Awaiting Jeff's scope ruling (LivePortrait notes, Planning 2026-11-20, Question 1): Animals mode depends on the vendored X-Pose subtree (Apache-2.0 file headers, IDEA non-commercial repository licence). Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "mode:animals-inference",
+      "reason": "Awaiting Jeff's scope ruling (LivePortrait notes, Planning 2026-11-20, Question 1): Animals mode depends on the vendored X-Pose subtree (Apache-2.0 file headers, IDEA non-commercial repository licence). Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "app:gradio-animals",
+      "reason": "Awaiting Jeff's scope ruling (LivePortrait notes, Planning 2026-11-20, Question 1): Animals mode depends on the vendored X-Pose subtree (Apache-2.0 file headers, IDEA non-commercial repository licence). Not cut by the planner; pr_ready stays refused until ruled."
+    }
+  ],
+  "removed_from_floor": []
+}

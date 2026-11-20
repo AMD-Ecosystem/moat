@@ -45,3 +45,28 @@ Validate-lane-style job with a small compiled tail. Work:
 ### Question for jeff
 
 Animals mode vendors X-Pose. The vendored files carry Apache-2.0 headers (the `.cu` is Deformable DETR's, SenseTime, Apache-2.0), but the X-Pose upstream repo is under IDEA's "License for Non-commercial Scientific Research Purposes" for its codes, datasets and models. Is it acceptable to recommend contributing the HIP build fix to the vendored MSDeformAttn op (Apache-2.0 origin) inside that directory, or should the port be scoped to humans mode only (MIT code, no compiled extension) and leave animals mode deferred?
+
+## Planning (2026-11-20, linux-gfx950 host, planner role; no GPU used, nothing built)
+
+### Question 1 for Jeff (must be ruled before a porter starts): is Animals mode in scope?
+
+This is the intake question, still open. Animals mode is the only part of LivePortrait with compiled CUDA: the vendored X-Pose `MultiScaleDeformableAttention` extension (`src/utils/dependencies/XPose/models/UniPose/ops/`). Its files carry Deformable DETR's Apache-2.0 headers (SenseTime 2020), but X-Pose's own repository (IDEA-Research/X-Pose) is under IDEA's "License for Non-commercial Scientific Research Purposes". LivePortrait already ships the subtree under its MIT top-level licence; a port would not add or redistribute anything new, only touch the vendored build.
+
+Options:
+
+- **A. Full port (planner's recommendation).** Humans mode + ONNX provider selection + ROCm requirements/README, AND Animals mode: a ROCm branch in the vendored `ops/setup.py` gate (the only source edit expected in X-Pose; the `.cu` hipifies as is), validated with the op's own `ops/test.py` (forward parity + gradcheck) and `inference_animals.py`. Reason: the edited file and the kernel are Deformable DETR code under Apache-2.0, the change is a build gate, and without it Animals mode cannot run on AMD at all; upstream documents Animals mode as a supported feature.
+- **B. Humans mode only; Animals mode deferred** (`deferred.py add` against LivePortrait, README says Animals mode is NVIDIA-only for now). Zero edits under `XPose/`. The surface.json `owed` entries for the four Animals components become `scoped_out` with Jeff's ruling as the reason.
+- **C. Humans mode, plus a pure-PyTorch fallback for Animals mode** (`ms_deform_attn_func.py` uses the existing `ms_deform_attn_core_pytorch` when the extension is missing) instead of building the extension. Still edits a vendored X-Pose file, changes behaviour for CUDA users without the extension (today a NameError), and is slower; listed for completeness, not recommended.
+
+Until ruled, `surface.json` lists the four Animals components (`extension:MultiScaleDeformableAttention`, `test:msdeformattn-op`, `mode:animals-inference`, `app:gradio-animals`) under `owed` with this question as the reason, so `pr_ready` refuses; nothing was cut.
+
+No other decision is needed: the ONNX Runtime route follows the standing rule (ROCm library over CPU fallback): MIGraphX EP on Linux, CPU EP on Windows named as a CPU fallback because no ROCm EP ships for Windows (`onnxruntime-migraphx` 1.27.1 on PyPI is manylinux x86_64 only; `pip download --platform win_amd64` finds nothing, 2026-11-20).
+
+### Findings
+
+- Upstream analysed at `9b294b3d0536` (main, 2026-06-02). `ext_type` set to `torch-extension`. Plan: `plan.md`; surface: `surface.json` (floor: 2 CUDA files, 7 kernels, 16 launches, no CUDA libraries; components added by hand since the scan finds none in a setup.py-less Python app).
+- Humans mode is pure PyTorch; device strings `'cuda:N'` work on ROCm torch. The only AMD gap is ONNX Runtime: `CUDAExecutionProvider` hard-coded in `src/utils/cropper.py:59,62` and `src/utils/human_landmark_runner.py:36-40` (ORT silently falls back to CPU with a warning), and `requirements.txt` pins `onnxruntime-gpu==1.18.0`.
+- MSDeformAttn kernels: no warp intrinsics, `warpSize`, lane masks or textures; backward reductions are `__syncthreads`-separated tree reductions (wavefront-width agnostic); blocks of `channels` threads; max static LDS 24 KB (double, 1024). `#include <THC/THCAtomics.cuh>` maps under torch hipify to `THH/THHAtomics.cuh`, which the ROCm torch install carries (checked in this host's torch 2.16 ROCm build, `include/THH/THHAtomics.cuh`); fallback is `<ATen/cuda/Atomic.cuh>`. `Tensor::data<T>()` / `type()` are deprecated but still present in torch 2.16 headers.
+- `ops/setup.py:38` builds only with `torch.cuda.is_available() and CUDA_HOME is not None`; ROCm torch has `CUDA_HOME=None`, so the extension cannot be built on AMD today without the gate change.
+- `ops/test.py` is the only real test in the repository: forward double/float vs `ms_deform_attn_core_pytorch`, and gradcheck for channels 30..3096 (covers all six backward kernels). Humans mode has no tests; validation is the inference scripts (plan.md, Test plan).
+- `deformable_transformer.py:1052` turns autocast off only around the FFN; the attention op (float/double dispatch only) runs inside the runner's fp16 autocast. Same on CUDA; flagged as risk 7 in plan.md, not a port change.

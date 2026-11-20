@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/LivePortrait",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "torch-extension",
+  "stage": "planned",
   "adopted_at": "2026-11-06T01:06:45Z",
-  "updated_at": "2026-11-20T21:52:26Z",
+  "updated_at": "2026-11-20T21:56:18Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx950",
-    "since": "2026-11-20T21:52:26Z",
-    "holder": "3c467e348656"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -48,7 +44,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:52:26Z",
+      "updated_at": "2026-11-20T21:56:18Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,5 +77,10 @@
     "viable": true,
     "summary": "Portrait animation (PyTorch, 19k stars, MIT): humans mode is pure PyTorch and runs on ROCm as-is; work is ORT provider (MIGraphX/CPU, ROCm EP gone), ROCm requirements + docs, and a hipify build gate for the animals-only Deformable-DETR MSDeformAttn .cu op",
     "at": "2026-11-06T01:31:59Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx950",
+    "since": "2026-11-20T21:52:26Z",
+    "at": "2026-11-20T21:56:18Z"
   }
 }
