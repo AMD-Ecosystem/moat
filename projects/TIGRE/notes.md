@@ -1688,3 +1688,92 @@ utils/timeit.sh TIGRE test -- bash agent_space/tigre_run_f77.sh   # 190 s
 CUDA compile gate: satisfied at f779703 (nvcc 12.8 entry above); not run on this Windows host. Docs unchanged by the delta (`Frontispiece/python_installation.md` keeps its AMD GPU section). `jargon.py --port TIGRE`: clean.
 
 Outcome: windows-gfx1151 -> completed at f779703298570f752da7c3994db3fc9903b9bf1c.
+
+## Sync round 2026-11-20 (linux-gfx90a porter, moat-fix-747) -- merge upstream master d21492f, stage -> ported
+
+jeff asked for this run (fleet job, MI250X host). GitHub reports PR #747 as `CONFLICTING` / `DIRTY`; no code change was requested, so the round's content is absorbing the base. This builds on the 2026-11-04 round (merge cfc014e of 69bdd9f, "Sync round 2026-11-04" above): the merge base is now 69bdd9f, and upstream master moved 175 commits to d21492f.
+
+### Upstream thread (read-only, `gh pr view 747 --repo CERN/TIGRE --json comments,reviews`, `gh api repos/CERN/TIGRE/pulls/747/comments`)
+No reviews, no line comments. Since our 2026-11-05 reply, AnderBiguri wrote three comments:
+- 2026-11-11: asks where the PR stands, ready for review and testing or more coming. Unanswered.
+- 2026-11-18: he is landing a series of GPU fixes and features (GPU arrays from cupy/torch as I/O) that conflict with our branch; he expects them within a week or two and asks us to update the AMD branch once they are in. He expects the changes to be "trivially transferable to HIP".
+- 2026-11-19: asks that the HIP build use one switch for every backend, `TIGRE_BACKEND=cuda|hip|sycl|metal`, with `TIGRE_BACKEND=hip` replacing `BUILD_WITH_HIP` and `HIP_ARCH` staying; "Does that work for you? No need to change anything until that PR is in." He plans TIGRE 3.3.0 with the GPU fixes and will ping when it is the time to rebase.
+
+The `TIGRE_BACKEND` PR is already on master (a99cb86, #897), with `hip` listed as pending on #747, so this round adopts it. **He also said he will ping when 3.3.0 is out; master may move again before then, and this round does not wait for that ping (jeff's call).** `upstream/release/3.3.0` exists as a branch; this round merges `master`, the PR's base.
+
+### State
+`fix-branch TIGRE` from the trunk checkout re-homed the record onto `port/TIGRE` (d6e5fe55) and staged `moat-fix-747`, base = published f779703 (= PR head per `gh pr view`, so no HEAD-MOVED). Lock: `set-state TIGRE linux-gfx90a porting` on `port/TIGRE`, no warning. Fresh fork clone at `projects/TIGRE/src`, `protect-fork TIGRE` installed, `upstream` remote added, local `master` = `upstream/master` (d21492f) for the jargon base.
+
+### Commits on moat-fix-747 (nothing amended, rebased or force-pushed; f779703 is the first parent)
+1. **2cb42aa** `Merge branch 'master' of https://github.com/CERN/TIGRE` (parents f779703, d21492f). Nine conflicted files, all resolved by taking master and re-applying the HIP pattern:
+   - `setup.py`: HIP selected through master's `select_backend()`: `BUILD_WITH_HIP = BACKEND == "hip"`, moved below the backend selection together with `GPU_RUNTIME_LIB` and the `USE_HIP` / `__HIP_PLATFORM_AMD__` macros; `"hip"` removed from `BACKEND_PENDING`; comment "CUDA and HIP are built"; the no-compiler error also names ROCm/`ROCM_PATH`. The `locate_cuda()` / `cuda_version` / CC block stays in the `else:` branch with master's new `TIGRE_CUDA_ARCH` handling indented into it. Master's `TIGRE_NO_PINNED_MEMORY` replaces the old argv parsing.
+   - `Siddon_projection.cu`, `Siddon_projection_parallel.cu`: master rewrote the Siddon loop as `for (step<maxsteps)` with `maxsteps = nVoxelX+nVoxelY+nVoxelZ+3` and a fetch-first body, which is the bound our `Np_max` cap enforced; the cap goes. Master also added `cudaStreamSynchronize(stream[dev*2+1])` after the parallel texture upload (multi-GPU), which supersedes our 34f31a6 race fix. Our remaining change in both: `"cuda_to_hip.h"` for `<cuda_runtime_api.h>`/`<cuda.h>`.
+   - `ray_interpolated_projection_parallel.cu`: master's multi-GPU `CreateTextureParallelInterp` (per-device loop, array reuse, sync, destroy-before-create) with our runtime filter mode and `tigre_sync_hw_linear()` after each `cudaCreateTextureObject` inside the per-device loop (it writes the current device's constant). Kernel read stays `tex3D_TIGRE`.
+   - `voxel_backprojection_parallel.cu`: include only; the rest auto-merged.
+   - `GD_TV.cu`, `GD_AwTV.cu`: master's double-precision `reduceSum` launch (#856), written `<<< >>>`.
+   - `PICCS.cu`: master rewrote it (120 lines) on the shared `tv_gradient_descent`; master's file plus `#include "cuda_to_hip.h"` first.
+   - `Frontispiece/python_installation.md`: master's stub pointing to the new docs site; the AMD section moves to `docs/install/python.md` (commit 3).
+   - `cuda_to_hip.h` header comment: "TIGRE_BACKEND=hip in setup.py" for "the BUILD_WITH_HIP branch".
+2. **98b6b53** `[ROCm] Map the CUDA names used by master's new GPU code`: master's new `tigre_release_on_error.hpp` and `tv_gradient_descent.hpp` include `<cuda_runtime_api.h>` (absent under HIP) -> `"cuda_to_hip.h"`, as GpuIds.cpp does. Eight new mappings in `cuda_to_hip.h`: `cudaMemcpyKind`, `cudaChannelFormatKindFloat`, `cudaErrorHostMemoryAlreadyRegistered`, `cudaMemcpyPeerAsync`, `cudaArrayGetInfo`, `cudaStreamWaitEvent`, `cudaEventCreateWithFlags`, `cudaEventDisableTiming` (same signatures). Found with a hipcc `-fsyntax-only` sweep of all 13 built `.cu` files with the build's defines; the sweep is clean afterwards (only master's pre-existing `-Wparentheses` warnings).
+3. **74cd65b** `[ROCm] Document the HIP build in the Python install guide`: `docs/install/python.md`, "Choosing the GPU backend": "`cuda` and `hip` can be built", plus an `### AMD GPUs (ROCm)` subsection (TIGRE_BACKEND=hip, ROCM_PATH, HIP_ARCH, Windows HIPCC note, tested GPUs). `docs/install/matlab.md` still says hip is being added: correct, the MATLAB build is not ported.
+4. **d9a9027** `[ROCm] Find ROCm from hipcc when ROCM_PATH is not set`: master's detection picks hip when only `hipcc` is on the PATH, but `locate_rocm()` assumed `/opt/rocm`. It now falls back to the realpath prefix of `hipcc`, and checks `include/hip` instead of any `include` (the pip SDK's `hipcc` is a wrapper script in a venv whose `include/` exists but has no HIP headers; that case now stops with "set ROCM_PATH"). Checked: ROCm `bin/` on PATH, no ROCM_PATH -> "hip backend (hipcc is on the PATH)" and configures; venv wrapper only -> the ROCM_PATH message. Host-only: clean rebuild vs the tested build, `codeobj_diff.py` verdict=identical on all 8 `.so`.
+
+### Checked and left alone
+- **Reduction guard.** Master 099dd94 fixed `__CUDART_VERSION` -> `CUDART_VERSION` in the TV warp reductions, so on CUDA the `__shfl_down_sync(..., offset, 32)` path with `offset = warpSize/2` is now live. That path is wrong on wave64 (offset 32 with width 32 returns the lane's own value). Under hipcc `CUDART_VERSION` is undefined (checked: `#ifdef CUDART_VERSION` / `#error` compiles clean with `<hip/hip_runtime.h>`), and `cuda_to_hip.h` does not define it, so HIP keeps the `warpReduce` path it always used. **Nobody may define `CUDART_VERSION` in the compat header**; it would make every wave64 TV norm wrong.
+- **`hostRegister` (tigre_release_on_error.hpp).** Its "already page-locked?" query is under `#if CUDART_VERSION >= 10000`, so HIP skips it and calls `hipHostRegister` directly. Upstream's `test_pinned_input.py` (pinned torch tensors as input) passes on this card, so no change.
+- `improvedForwardProjections*.cu` (MATLAB pCT only) still include `<cuda.h>`; not built by setup.py, unchanged as before.
+
+### Build (MI250X gfx90a, TheRock ROCm SDK 10.1 = `rocm-sdk path --root`, HIP_VISIBLE_DEVICES=2 pinned by the dispatcher, idle per `amd-smi metric`)
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH TIGRE_BACKEND=hip HIP_ARCH=gfx90a ROCM_PATH=$(rocm-sdk path --root)
+utils/timeit.sh TIGRE compile -- bash -c "cd projects/TIGRE/src && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16"
+```
+Job venv: python 3.11.17, numpy 1.26.4, scipy 1.10.1, Cython 3.3.1, pytest 7.3.2 (`$FLEET_VENV/bin/python -m pip install Cython matplotlib h5py tqdm pytest`). First build failed on the eight unmapped names (commit 2); then rc 0, 0 `error:`, 8/8 `.so` (now built in `Python/`, not `Python/tigre/utilities/cuda_interface/`). Prints `TIGRE: building the hip backend (set by TIGRE_BACKEND).`
+
+### Tests (all under `ulimit -c 0`, GPU 2)
+Upstream's test suite grew from the 7 files the earlier rounds ran (70 tests) to 37 files; `pyproject.toml` deselects `-m extended` by default.
+```
+cd projects/TIGRE/src/Python && PYTHONPATH=$PWD MPLBACKEND=Agg $FLEET_VENV/bin/python -m pytest -q -p no:cacheprovider -rfEs tests/
+cd projects/TIGRE/src/Python && PYTHONPATH=$PWD MPLBACKEND=Agg $FLEET_VENV/bin/python -m pytest -q -p no:cacheprovider -rfEs -m extended tests/
+cd projects/TIGRE/src/Python && PYTHONPATH=$PWD:$FLEET_VENV/lib/python3.11/site-packages MPLBACKEND=Agg PYTHONDONTWRITEBYTECODE=1 /opt/python-3.11-venv/bin/python -m pytest -q -p no:cacheprovider -rfEs -m 'extended or not extended' tests/test_ax_atb_low_memory.py tests/test_gpu_arrays.py tests/test_pinned_input.py tests/test_pytorch_bindings.py tests/test_tv_low_memory.py tests/test_tv_multigpu_halo.py tests/test_texture_object_leak.py tests/test_siddon_split.py tests/test_cuda_errors.py
+```
+(The third line runs the image's ROCm torch 2.16 read-only, with the job venv's packages after it on the path; same numpy 1.26.4.)
+- Core: **246 passed, 1 failed, 22 skipped**, 16 deselected (151 s). The 7 files of the last record: 70/70 again (compute_cor 6, demo_angles 1, denoise_2d_guard 3, filtering_workers 37, gpuids_default 5, krylov 9 + 9), plus test_interpolated_voxel_size 4/4. Skips: torch missing in the job venv (5 files, covered by the third run), 2-GPU tests (single-GPU pin), and 6 test_cuda_errors cases that load the CUDA runtime with ctypes to inject errors ("CUDA runtime not loadable via ctypes"; NVIDIA-only by design).
+- Extended: **12 passed, 13 skipped** (same skip reasons).
+- Torch-dependent and extended files with torch: **79 passed, 9 skipped** (2-GPU, ctypes CUDA runtime, and one "parallel beam has one backprojector" skip in test_pinned_input).
+- Multi-GPU tests not run here (pin kept at one GPU; the 2026-11-04 2x MI300X job is the last multi-GPU evidence).
+
+### The one failure: `test_projectors_gpu.py::test_forward_is_invariant_to_a_full_turn[parallel-interpolated]`
+`rel_diff(Ax(x, a + 2*pi), Ax(x, a)) = 2.404e-04`, bound `1e-4` (new upstream test, 1cca08a, 2026-11-11). Evidence that this is upstream's sampling, not the port and not the merge:
+- **Same failure at the published tip f779703** (built in a worktree with its own `BUILD_WITH_HIP=1` recipe, the head's test file run against it): 1 failed, 3 passed, same test.
+- Deterministic: repeating `Ax` at the same angles gives 0.0 difference; the full-turn difference sits in 11 pixels (> 1e-3 of max), max at projection 0, detector (31, 9).
+- **Rounding-level step:** 1 to 8 ulp increments of the float32 angle (bases 0.3, 1.1, 0.7, 2.0, 2.9, 4.0; 48 steps) move parallel interpolated by up to 6.58e-04 (16/48 above 1e-4, median 1.25e-05), while parallel Siddon stays below 3.1e-05, cone interpolated below 8.5e-05 and cone Siddon below 4.6e-06. The kernel sets its sample count with `ceilf(length/accuracy)` and its first sample with `floorf(maxdist/accuracy)`, so a one-ulp change in the ray geometry can add or drop a sample.
+- It scales with the sampling step, not the interpolation: full-turn rel diff 2.40e-04 at `accuracy` 0.5 (default), 8.16e-05 at 0.25, 2.28e-05 at 0.1. Trilinear interpolation, hardware or the software fallback this card uses (MI250X has no fp32 hardware linear filtering), is continuous in position.
+- Whether a given card passes is a matter of which side of the step its rounding lands on. Not checked: an NVIDIA run, and a gfx1100 run (hardware linear filtering), which would show whether other platforms pass at these two angles. The test was not changed.
+Scripts: `agent_space/scripts/turn_probe.py`, `ulp_probe.py` (host-local).
+
+### Recorded GPU gates (scripts recreated, now committed at `projects/TIGRE/probe/tigre_gates.py`)
+The 2026-11 scripts (`tigre_validate.py`, `tigre_solvers.py`, `tigre_parallel.py`, `repeat_par*.py`) were host-local and gone again. `probe/tigre_gates.py` reimplements them from their recorded descriptions (docstring) so the next round has them. A/B in the same session: head (this tree) and the published tip f779703 (worktree `agent_space/tigre-base`, `BUILD_WITH_HIP=1`).
+```
+cd <tree>/Python && MPLBACKEND=Agg $FLEET_VENV/bin/python <moat>/projects/TIGRE/probe/tigre_gates.py $PWD all
+```
+| gate | head d9a9027 (tested build) | published f779703 | last record (f779703, lost scripts) |
+|---|---|---|---|
+| cone Siddon mean / max | 27.46 / 111.2 | 27.46 / 111.2 | 27.46 / 111.2 |
+| cone interp vs Siddon / FDK / OS-SART-20 | 0.0040 / 0.2864 / 0.1929 | same | same |
+| cone adjointness random / phantom | 1.826e-05 / 6.588e-05 | same | 1.004e-05 / 6.076e-05 |
+| parallel axis / offset / Euler interp vs Siddon | 0.0043 / 0.0041 / 0.0056 | same | same |
+| parallel Siddon adjointness axis / offset / Euler | 1.471e-05 / 7.580e-05 / 5.278e-05 | 1.504e-05 / 7.578e-05 / 5.290e-05 | 2.030e-05 / 6.078e-05 / 1.323e-05 |
+| parallel FBP / SIRT-20 | 0.0833 / 0.1952 | same | same |
+| missed rays zero fraction Siddon / interp | 0.862 / 0.855 | same | 0.861 / 0.855 |
+| repeats (8 cases x 20) | 0/20 everywhere | 0/20 everywhere | 0/20 everywhere |
+| solvers (5 iter): sart ossart sirt cgls fista | 0.0406 0.2972 0.4828 0.1916 0.2855 | same | (different script) |
+| asd_pocs awasd_pocs os_asd_pocs ossart_tv | 0.0468 0.0387 0.3090 0.3184 | 0.0469 0.0387 0.3091 0.3153 | (different script) |
+RESULT PASS on both trees. Head and the published tip agree to the printed digit on every cone, parallel-interpolated and repeat gate. The differences that remain are master's changes: the parallel Siddon adjointness digits (master's fetch-first Siddon loop), and ossart_tv / asd_pocs / os_asd_pocs (master's TV code: double-precision norm, #856, and the z boundary, 81478a3). The adjointness and solver columns of the last record came from the lost scripts, whose random `y` and solver geometry differ from the recreation, so only the recreation's head-vs-base columns compare.
+
+### Other
+- `jargon.py --port TIGRE`: clean (base local `master` = d21492f). `prose.py`: clean on all four commit messages.
+- Integrity: `git -C projects/TIGRE/src status --porcelain`: untracked build output only.
+- **CUDA compile check owed at d9a9027.** No nvcc on this host, and fetching a toolkit into the job directory was refused by this session's permission policy. The mi355 host should run it (nvcc 12.8). Things to look at there: `setup.py` CUDA branch (`TIGRE_CUDA_ARCH` now inside `else:`), the two new headers now including `cuda_to_hip.h` (CUDA side: `<cuda_runtime_api.h>` + `<cuda.h>`), PICCS.cu's added include.
+- **Windows not run at d9a9027.** The Windows build was `BUILD_WITH_HIP=1` and now needs `TIGRE_BACKEND=hip` (documented). `locate_rocm()` takes `HIP_PATH` before the hipcc fallback, as before. Windows validators must use the new variable.
+- Pushed only `moat-fix-747` (d9a9027) with a plain push; `moat-port` still f779703 (`git ls-remote`). `advance-head TIGRE d9a9027...`, then `set-state TIGRE linux-gfx90a ported`.
