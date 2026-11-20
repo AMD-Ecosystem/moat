@@ -235,3 +235,18 @@ pykeops: 92 passed, 1 failed (test_lazytensor_clamp_bw: with this GPU's random d
 ```
 
 The rest of the commit message is unchanged. If that preparation squashes the two commits, the same replacement applies to the squashed body. Until then the published branch keeps the wrong sentence; nothing upstream-visible exists yet (no upstream PR, no review PR).
+
+## Review 2026-11-20 round 2 (linux-gfx950, head 2980874a)
+
+Re-review at the same head (`moat-port` local and remote both `2980874a`, fork tree clean). Verdict: **review passed**. No open findings.
+
+Finding 1 (clamp_bw mechanism reversed in the `38c65e2b` Test Plan): resolved by the recorded correction. Reasoning:
+
+- The wrong sentence exists only in the commit body of `38c65e2b`. `git grep` for "treats the bound", "clamp bound" and "as outside" over the tree at `2980874a` finds nothing; the `2980874a` body does not mention the tie. A commit message cannot be fixed by a new commit, so under the no-amend, no-force-push rule for fork branches the only correct places for the fix are the notes and the PR-preparation step, where history is rewritten anyway (the tree-identical squash that `squash-carry-forward` exists for) and where a person approves the exact title, body and commits on the review PR. Rewriting now would buy nothing: nothing upstream-visible exists (no upstream PR, no review PR).
+- The "wrong text" block under "Correction for the final history" matches the commit body verbatim, so the replacement is mechanical.
+- The corrected sentence matches the facts, re-measured independently this round on the MI355X (`HIP_VISIBLE_DEVICES=3`, `ulimit -c 0`, fresh `KEOPS_CACHE_FOLDER`; the fork's `keopscore`/`pykeops` on `PYTHONPATH`, no install into the tree; base-image torch 2.16.0a0, since the job venv has none): `x[376,0,2]*y[0,664,2] == 1.54f` in float32 (1.5399999618530273); the float64 product is 1.539999995966653, just inside the bound; torch float32 clamp gradient at the tie 0.0, torch float64 1.0; KeOps d/dx at the tie equals y (-2.086639, gradient kept) on both the GPU and CPU backends; float32 `(p-a)/(b-a)` is exactly 1.0; element (376,0,2) torch32 181667.062, torch64 182789.896, KeOps GPU 182789.875, KeOps CPU 182789.875; KeOps GPU vs float64 rel L2 1.51e-7; (376,0,2) is the only element outside the test tolerance.
+- The porter section's "Cause" text now states the measured mechanism and drops the "rounds just past 1" claim; the reviewer/validator bullet names no mechanism.
+
+Carried condition (not a finding): whoever prepares the commits for the review PR must apply the replacement under "Correction for the final history" before the review PR opens; no tool enforces it, so the approver should see the corrected Test Plan on the review PR.
+
+Sanity check of the rest: `git diff --stat ef72bc90...2980874a` unchanged (12 files, +537/-4); `jargon.py --port keops` clean; record changes since the first review touch only `notes.md`, `stats.jsonl` and `status.json`. The first review's code, CUDA compile check and lesson verification stand.
