@@ -40,3 +40,7 @@
 {"kind":"phase","ts":"2026-11-20T22:57:21Z","phase":"test","seconds":88.132,"exit":0,"cmd":"agent_space/val/suite.sh keopscore/keopscore/test/"}
 {"kind":"phase","ts":"2026-11-20T22:58:50Z","phase":"test","seconds":89.718,"exit":0,"cmd":"agent_space/val/suite.sh pykeops/pykeops/test/"}
 {"kind":"session","ts":"2026-11-20T23:00:18Z","epoch":1795215618.303792,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-20T23:04:24Z","epoch":1795215864.137134,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-20T23:07:35Z","phase":"test","seconds":40.589,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261120-150212-val-keops-w32b/moat/projects/keops/src && pytest -v -rfs keopscore/keopscore/test/"}
+{"kind":"phase","ts":"2026-11-20T23:08:38Z","phase":"test","seconds":57.811,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261120-150212-val-keops-w32b/moat/projects/keops/src && pytest -v -rfs pykeops/pykeops/test/"}
+{"kind":"session","ts":"2026-11-20T23:10:19Z","epoch":1795216219.443269,"event":"end","platform":"linux-gfx1100"}

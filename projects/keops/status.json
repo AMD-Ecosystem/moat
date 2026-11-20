@@ -8,7 +8,7 @@
   "ext_type": "nvrtc-driver-api",
   "stage": "review-passed",
   "adopted_at": "2026-11-12T18:32:39Z",
-  "updated_at": "2026-11-20T23:00:18Z",
+  "updated_at": "2026-11-20T23:10:19Z",
   "head_sha": "2980874acefdc7e905b3733141c8765d770180ed",
   "depends_on": [],
   "waivers": {
@@ -91,13 +91,13 @@
       "state": "completed"
     },
     "linux-gfx1100": {
-      "blocked": true,
-      "blocked_reason": "pinned W7800 (gfx1100) wedged: first host-to-device copy never completes (torch, HIP 10.1 and 10.2 runtimes, SDMA off), GFX 100% with no process; host reset needed, then clear and rerun. Not a port finding.",
-      "validated_sha": null,
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "2980874acefdc7e905b3733141c8765d770180ed",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-11-20T23:00:18Z",
+      "completed_at": "2026-11-20T23:10:19Z",
+      "updated_at": "2026-11-20T23:10:19Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -110,7 +110,8 @@
         "session_count": 0,
         "first_session_at": null,
         "last_session_at": null
-      }
+      },
+      "state": "completed"
     }
   },
   "license_spdx": "MIT",
