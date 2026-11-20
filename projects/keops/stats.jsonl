@@ -15,3 +15,12 @@
 {"kind":"session","ts":"2026-11-20T22:09:58Z","epoch":1795212598.182982,"event":"start","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-20T22:11:01Z","epoch":1795212661.549052,"event":"start","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-20T22:13:04Z","epoch":1795212784.437389,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-20T22:14:06Z","epoch":1795212846.617195,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-20T22:15:06Z","phase":"compile","seconds":40.141,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261120-140822-fix-keops-prompt/venv/bin/python -m pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple rocm[libraries,devel]==10.2.0a20261022 rocm-sdk-device-gfx950==10.2.0a20261022 torch==2.16.0a0+rocm10.2.0a20261022 amd-torch-device-gfx950==2.16.0a0+rocm10.2.0a20261022"}
+{"kind":"phase","ts":"2026-11-20T22:16:00Z","phase":"test","seconds":13.164,"exit":0,"cmd":"python -c import pykeops; pykeops.clean_pykeops(); pykeops.check_health()"}
+{"kind":"phase","ts":"2026-11-20T22:16:09Z","phase":"test","seconds":0.337,"exit":4,"cmd":"pytest -v -rfs keopscore/keopscore/test/"}
+{"kind":"phase","ts":"2026-11-20T22:16:42Z","phase":"test","seconds":21.19,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261120-140822-fix-keops-prompt/moat/agent_space/val/suite.sh keopscore/keopscore/test/"}
+{"kind":"phase","ts":"2026-11-20T22:17:20Z","phase":"test","seconds":33.607,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261120-140822-fix-keops-prompt/moat/agent_space/val/suite.sh pykeops/pykeops/test/"}
+{"kind":"phase","ts":"2026-11-20T22:19:28Z","phase":"test","seconds":47.77,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261120-140822-fix-keops-prompt/moat/agent_space/val/suite.sh keopscore/keopscore/test/"}
+{"kind":"phase","ts":"2026-11-20T22:20:28Z","phase":"test","seconds":60.159,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261120-140822-fix-keops-prompt/moat/agent_space/val/suite.sh pykeops/pykeops/test/"}
+{"kind":"session","ts":"2026-11-20T22:21:11Z","epoch":1795213271.086757,"event":"end","platform":"linux-gfx950"}
