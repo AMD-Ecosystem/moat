@@ -8696,3 +8696,295 @@ Defer: no issue on `AMD-Ecosystem/warp` for the 1.13 cross-stream free defect or
 ## Ruling on the two fem isolation failures (jeff, 2026-11-20)
 
 "(b)": fix the isolation in the fork so `test_gimp_quadrature` and `test_cube_shape_functions` pass when theirs is the first Warp initialization in a worker (smallest change; not ROCm-specific, so no `[ROCm]` prefix). Queued for the porter after session 24 (prompt `agent_space/p6ev/fem-porter.txt`).
+## Porting session 24 (2026-11-20, linux-gfx950 MI355X, porter): depth-level refit
+
+Ruling (Jeff Daily, 2026-11-20) on session 20's refit observation: (b), a HIP depth-level refit in this line. Fork `release/1.14.0.amd0` `e88cf857..f6ada527` (pushed, `advance-head` recorded); stage left at `porting`. `HIP_VISIBLE_DEVICES=1` (PCI 0000:05:00.0 = amd-smi GPU 0), `ulimit -c 0`; no process stopped by pattern.
+
+### The commit: `f6ada527` [ROCm] Refit large BVHs one depth level at a time on HIP (`bvh.cu` +71/-3, all HIP-only or inside the existing HIP builder)
+
+- New kernel `refit_tree_at_depth` (one thread per node, nodes of one depth): a node with `b` set (leaf or packed leaf) takes its primitives' bounds (`bounds3::add_bounds` in primitive order) unless its parent is packed (`b` set); an internal node takes `min/max` of its children in the walk's operand order; only `x, y, z` written, as the walk does. This reproduces `bvh_refit_kernel`'s rules exactly, including the muted nodes below packed leaves (which the walk also updates). It could not reuse the builder's `refit_nodes_at_depth`: after packing, packed nodes have lost their child indices (the walk climbs by parent pointers instead), and leaves need their primitives' bounds.
+- Depth storage: the BVH's existing `node_counts` array (`max_nodes` ints), which only the bottom-up walks use, as atomic counters. **Memory added per BVH: 0 bytes**; the LBVH builder's scratch pool shrinks by 4 x max_nodes bytes because it now writes its depths into `node_counts` (`int* depths = bvh.node_counts`). Host-built trees (sah, median, also grouped): at creation, `node_counts` zeroed and `compute_node_depths` run over `num_nodes` (nodes past `num_nodes` keep depth 0 and are never touched; their parent entries are uninitialized host memory). `compute_node_depths` now accepts a null max pointer (1 line).
+- Topology changes: LBVH build and in-place rebuild recompute the depths (the builder); host-built trees get theirs at creation; an in-place rebuild of a host-built GPU tree runs the LBVH builder, which rewrites the depths. Capture: the builder is capture-safe (session 20); the refit launches a fixed number of levels and reads nothing back, so it is legal inside a graph.
+- Level count: `max(bvh.max_depth, key_bits + index_bits) + 1` (key_bits 30, or 64 with groups). `max_depth` is the host builder's depth for host-built trees (0-based, so +1) and, newly, the Karras bound `key_bits + index_bits` for LBVH trees (set by the HIP builder; the descriptor field was left uninitialized for device LBVH trees before). The max covers a host-built tree that an in-place rebuild turned into an LBVH tree (`wp_bvh_rebuild_device` does not update the stored descriptor); +1 for the leaves. Levels below the deepest node do nothing (each thread reads its depth and returns).
+- Threshold: `num_leaf_nodes >= 32768` uses the levels, smaller trees keep the walk (below). A tree never switches path (num_leaf_nodes fixed per tree), so the walk's use of `node_counts` as counters never meets depths it needs. Meshes with winding-number support (`solid_angle_props`) keep their own walk (`bvh_refit_with_solid_angle_kernel` in mesh.cu, a separate kernel with solid-angle data); not converted (question below).
+
+### Correctness
+
+Scratch worktree `agent_space/wrf` with the same change and an environment switch (`WP_REFIT_DEPTH_MIN`) forcing either path; `agent_space/bench/refit_check.py` (inline below) reads the BVH descriptor at `bvh.id` from device memory, saves the node arrays as raw uint32 words after each step, and the two runs are compared bit for bit. Trees: random boxes, 10^3, 10^4, 10^5, 10^6, 10^7 items, lbvh (all sizes) and sah/median (to 10^6), without and with 7 groups, leaf_size 1 and 4 (packed leaves and muted nodes); steps: three refits with moved boxes, `rebuild()` then a refit, then a refit captured in a graph and relaunched three times with moved boxes. **520 arrays compared: 0 differ.** Every node changes between consecutive refits (so the comparison bites). The fork tree with the threshold vs the forced walk at 10^5 and 10^6: 240 arrays, 0 differ. Queries (`refit_query.py`, below): meshes (lbvh/sah/median, 10^5 and 10^6 triangles) with points moved and refit three times, 10^6 point and ray queries, plus Bvh AABB queries: 18 result arrays identical between the fork tree and the forced walk.
+
+### Performance (`refit_perf.py`, 3 interleaved rounds of `rfwalk` / `rfdepth` = the same build forced onto each path; per call, 10 warm-up then 7 x N back-to-back calls and a sync; noise floor = a mesh_query_point launch on the same mesh, unchanged code)
+
+| op | constructor | N | rfwalk us | rfdepth us | rfdepth/rfwalk | per-round ratios | noise floor rfdepth/rfwalk |
+|---|---|---|---|---|---|---|---|
+| bvh_refit | lbvh | 1000 | 31.9 | 72.2 | 2.26 | 4.84 / 1.97 / 2.26 | 1.00 |
+| bvh_refit | lbvh | 3000 | 39.0 | 152.1 | 3.90 | 3.90 / 2.36 / 4.12 | 0.99 |
+| bvh_refit | lbvh | 10000 | 58.8 | 123.8 | 2.11 | 2.77 / 1.52 / 2.00 | 1.00 |
+| bvh_refit | lbvh | 30000 | 153.8 | 106.6 | 0.69 | 0.86 / 0.59 / 0.74 | 1.00 |
+| bvh_refit | lbvh | 100000 | 430.9 | 107.2 | 0.25 | 0.35 / 0.24 / 0.25 | 1.00 |
+| bvh_refit | lbvh | 1000000 | 4250.4 | 307.4 | 0.07 | 0.07 / 0.07 / 0.07 | 1.00 |
+| bvh_refit | lbvh | 10000000 | 43622.9 | 3200.0 | 0.07 | 0.06 / 0.07 / 0.09 | 1.00 |
+| bvh_refit | median | 1000 | 22.0 | 68.9 | 3.12 | 7.27 / 3.12 / 2.78 | 1.00 |
+| bvh_refit | median | 3000 | 34.0 | 138.1 | 4.06 | 5.27 / 2.06 / 3.24 | 0.99 |
+| bvh_refit | median | 10000 | 45.8 | 97.4 | 2.13 | 3.49 / 1.65 / 1.69 | 1.00 |
+| bvh_refit | median | 30000 | 111.0 | 114.6 | 1.03 | 1.56 / 0.71 / 1.10 | 0.99 |
+| bvh_refit | median | 100000 | 328.2 | 117.0 | 0.36 | 0.42 / 0.26 / 0.36 | 0.99 |
+| bvh_refit | median | 1000000 | 3096.8 | 243.1 | 0.08 | 0.08 / 0.07 / 0.08 | 0.97 |
+| bvh_refit | sah | 1000 | 23.2 | 65.9 | 2.84 | 2.88 / 2.88 / 2.52 | 1.00 |
+| bvh_refit | sah | 3000 | 31.2 | 116.1 | 3.71 | 3.65 / 2.29 / 4.72 | 1.00 |
+| bvh_refit | sah | 10000 | 47.1 | 113.9 | 2.42 | 3.56 / 1.65 / 2.42 | 1.00 |
+| bvh_refit | sah | 30000 | 115.5 | 104.7 | 0.91 | 1.40 / 0.70 / 0.92 | 1.00 |
+| bvh_refit | sah | 100000 | 336.0 | 106.7 | 0.32 | 0.47 / 0.27 / 0.30 | 1.00 |
+| bvh_refit | sah | 1000000 | 3729.8 | 280.5 | 0.08 | 0.08 / 0.06 / 0.08 | 1.00 |
+| mesh_refit | lbvh | 1000 | 50.5 | 95.5 | 1.89 | 2.23 / 1.59 / 1.89 | 1.00 |
+| mesh_refit | lbvh | 3000 | 60.9 | 140.8 | 2.31 | 2.31 / 1.80 / 2.54 | 0.99 |
+| mesh_refit | lbvh | 10000 | 83.7 | 139.0 | 1.66 | 2.07 / 1.49 / 1.55 | 1.00 |
+| mesh_refit | lbvh | 30000 | 174.0 | 138.6 | 0.80 | 1.01 / 0.75 / 0.84 | 1.00 |
+| mesh_refit | lbvh | 100000 | 463.2 | 150.9 | 0.33 | 0.37 / 0.34 / 0.33 | 1.00 |
+| mesh_refit | lbvh | 1000000 | 4268.6 | 363.1 | 0.09 | 0.08 / 0.09 / 0.09 | 1.00 |
+| mesh_refit | lbvh | 10000000 | 44663.1 | 3049.7 | 0.07 | 0.06 / 0.07 / 0.07 | 1.00 |
+| mesh_refit | median | 1000 | 34.4 | 77.1 | 2.24 | 4.60 / 2.21 / 1.91 | 1.00 |
+| mesh_refit | median | 3000 | 43.8 | 158.5 | 3.62 | 4.61 / 1.85 / 2.27 | 0.99 |
+| mesh_refit | median | 10000 | 49.8 | 123.0 | 2.47 | 3.53 / 1.97 / 1.88 | 1.00 |
+| mesh_refit | median | 30000 | 58.0 | 124.3 | 2.15 | 2.90 / 1.63 / 2.22 | 0.99 |
+| mesh_refit | median | 100000 | 120.3 | 130.6 | 1.09 | 1.42 / 0.78 / 1.09 | 0.99 |
+| mesh_refit | median | 1000000 | 799.2 | 213.7 | 0.27 | 0.27 / 0.27 / 0.26 | 0.97 |
+| mesh_refit | sah | 1000 | 33.8 | 81.8 | 2.42 | 4.31 / 2.40 / 2.27 | 1.00 |
+| mesh_refit | sah | 3000 | 41.4 | 133.6 | 3.23 | 3.23 / 2.16 / 3.62 | 1.00 |
+| mesh_refit | sah | 10000 | 48.9 | 123.1 | 2.52 | 3.32 / 2.04 / 2.45 | 1.00 |
+| mesh_refit | sah | 30000 | 61.2 | 125.5 | 2.05 | 2.88 / 1.69 / 2.05 | 1.00 |
+| mesh_refit | sah | 100000 | 122.2 | 126.4 | 1.03 | 1.48 / 0.85 / 1.06 | 1.00 |
+| mesh_refit | sah | 1000000 | 1278.1 | 240.9 | 0.19 | 0.19 / 0.17 / 0.19 | 1.00 |
+
+Large trees: 13-15x faster at 10^6 and 10^7 (Bvh lbvh 10^7 43.6 -> 3.2 ms); the noise floor stayed at 0.97-1.00. Small trees: the levels cost about 0.1-0.15 ms (about 50 launches) and lose to the walk below about 20-30k leaves for leaf-size-1 trees; meshes built on the host break even near 10^5 triangles (their default leaf size gives about 25-30k leaves there). Threshold chosen on leaves, 32768: every measured cell is then the walk's time or better.
+
+### Tests
+
+test_bvh 13 OK, test_grouped_bvh 11 OK, test_mesh* 49 OK, test_graph 35 OK (3 skipped), test_capture_mode 2 OK, test_conditional_captures 32 OK (16 skipped), test_array_fill_capture 3 OK, test_apic_mesh 12 OK. Full default suite from a fresh kernel cache: **Ran 7558 tests in 509.9 s, OK (skipped=81)** (the fem banner isolation failures did not occur this run). CUDA: `cuda_pp.sh` with the change vs `e92f2611`: 22 identical, bvh.cu's two LINE-ONLY; nvcc 12.8 build of the change (worktree `agent_space/wcuda_s24`): "Warp build succeeded", warp.so 199,765,024 bytes. clang-format applied; `jargon.py --port` clean.
+
+### Question for Jeff
+
+10. Meshes created with winding-number support (`support_winding_number=True`) refit through `bvh_refit_with_solid_angle_kernel`, the same fence-bound walk with solid-angle data. Options: (a) leave them on the walk (smallest diff; only those meshes); (b) a depth-level version of that kernel too (about 40 more lines, HIP-only).
+
+### Next step (head `f6ada527`)
+
+- Not moved to `ported`; more rulings pending. The wheel validated at `7059a340` stays stale.
+- Validators revalidate at `f6ada527` (BVH refit on HIP changed for trees with 32768+ leaves).
+
+### Scripts
+
+`agent_space/bench/refit_check.py`, `refit_query.py`, `refit_perf.py`, `rf_table.py`:
+
+`refit_check.py`:
+```
+# usage: refit_check.py <out.npz> [sizes...]; deterministic Bvh trees (lbvh/sah/median, with and without groups, leaf_size 1 and 4) refit
+# three times with moved boxes, then rebuilt and refit, then refit inside a captured graph relaunched three times;
+# after each step the BVH node arrays (lowers, uppers as raw uint32 words) are saved for comparison across builds of
+# Warp. The BVH descriptor is read from device memory at bvh.id: node_lowers, node_uppers, node_parents, node_counts,
+# primitive_indices (pointers), then max_depth, max_nodes, num_nodes, num_leaf_nodes (int32).
+import sys
+import numpy as np
+import warp as wp
+wp.config.quiet = True
+wp.init()
+OUT = sys.argv[1]
+SIZES = [int(float(s)) for s in sys.argv[2:]] or [10**3, 10**4, 10**5, 10**6, 10**7]
+dev = wp.get_device("cuda:0")
+
+@wp.kernel
+def move(lo0: wp.array(dtype=wp.vec3), hi0: wp.array(dtype=wp.vec3), step: float, lo: wp.array(dtype=wp.vec3), hi: wp.array(dtype=wp.vec3)):
+    i = wp.tid()
+    d = wp.vec3(wp.sin(float(i) * 0.37 + step), wp.cos(float(i) * 0.11 + 2.0 * step), wp.sin(float(i) * 0.05 - step)) * 0.01
+    lo[i] = lo0[i] + d
+    hi[i] = hi0[i] + d
+
+def nodes(bvh):
+    desc = wp.array(ptr=bvh.id, dtype=wp.uint64, shape=(5,), device=dev, copy=False).numpy()
+    ints = wp.array(ptr=bvh.id + 40, dtype=wp.int32, shape=(4,), device=dev, copy=False).numpy()
+    max_depth, max_nodes, num_nodes, num_leaf = (int(v) for v in ints)
+    lo = wp.array(ptr=int(desc[0]), dtype=wp.uint32, shape=(max_nodes, 4), device=dev, copy=False).numpy().copy()
+    hi = wp.array(ptr=int(desc[1]), dtype=wp.uint32, shape=(max_nodes, 4), device=dev, copy=False).numpy().copy()
+    return lo, hi, num_nodes, max_nodes
+
+rng = np.random.default_rng(0)
+saved = {}
+for N in SIZES:
+    c = rng.uniform(0, 1, (N, 3)).astype(np.float32)
+    h = rng.uniform(0.0005, 0.002, (N, 3)).astype(np.float32)
+    lo0 = wp.array(c - h, dtype=wp.vec3); hi0 = wp.array(c + h, dtype=wp.vec3)
+    groups = wp.array((np.arange(N) * 7 // N).astype(np.int32), dtype=int)
+    for con in ("lbvh", "sah", "median"):
+        if con != "lbvh" and N > 10**6:
+            continue  # host builds of 10^7 boxes take minutes with groups
+        for g, leaf in ((None, 1), (groups, 1), (None, 4), (groups, 4)):
+            key = f"{N}_{con}_{'g' if g is not None else 'n'}_leaf{leaf}"
+            lo = wp.clone(lo0); hi = wp.clone(hi0)
+            if g is not None:
+                bvh = wp.Bvh(lo, hi, constructor=con, groups=g, leaf_size=leaf)
+            else:
+                bvh = wp.Bvh(lo, hi, constructor=con, leaf_size=leaf)
+            for step in range(3):
+                wp.launch(move, dim=N, inputs=[lo0, hi0, float(step + 1), lo, hi])
+                bvh.refit()
+                a, b, nn, mx = nodes(bvh)
+                k = nn if con != "lbvh" else mx
+                saved[f"{key}_refit{step}_lo"] = a[:k]; saved[f"{key}_refit{step}_hi"] = b[:k]
+            bvh.rebuild()
+            wp.launch(move, dim=N, inputs=[lo0, hi0, 7.0, lo, hi])
+            bvh.refit()
+            a, b, nn, mx = nodes(bvh)
+            saved[f"{key}_rebuild_refit_lo"] = a; saved[f"{key}_rebuild_refit_hi"] = b
+            with wp.ScopedCapture(device=dev, force_module_load=False) as cap:
+                bvh.refit()
+            for step in range(3):
+                wp.launch(move, dim=N, inputs=[lo0, hi0, 10.0 + step, lo, hi])
+                wp.capture_launch(cap.graph)
+            a, b, nn, mx = nodes(bvh)
+            saved[f"{key}_graph_lo"] = a; saved[f"{key}_graph_hi"] = b
+            del bvh
+    print("done", N, flush=True)
+np.savez_compressed(OUT, **saved)
+```
+
+`refit_query.py`:
+```
+# usage: refit_query.py <out.npz>; meshes (lbvh/sah/median, 10^5 and 10^6 triangles) and Bvhs whose points or boxes are
+# moved and refit three times, then 10^6 point, ray and AABB queries; results saved for comparison across builds
+import sys
+import numpy as np
+import warp as wp
+from bench_bvh_geom import grid_mesh
+wp.config.quiet = True
+wp.init()
+
+@wp.kernel
+def move_pts(p0: wp.array(dtype=wp.vec3), step: float, p: wp.array(dtype=wp.vec3)):
+    i = wp.tid()
+    p[i] = p0[i] + wp.vec3(0.0, 0.0, 0.01 * wp.sin(float(i) * 0.01 + step))
+
+@wp.kernel
+def q(mesh: wp.uint64, qp: wp.array(dtype=wp.vec3), ro: wp.array(dtype=wp.vec3), rd: wp.array(dtype=wp.vec3), d: wp.array(dtype=float), t: wp.array(dtype=float)):
+    i = wp.tid()
+    a = wp.mesh_query_point_no_sign(mesh, qp[i], 10.0)
+    d[i] = wp.where(a.result, a.u + 2.0 * a.v + float(a.face), -1.0)
+    b = wp.mesh_query_ray(mesh, ro[i], rd[i], 10.0)
+    t[i] = wp.where(b.result, b.t, -1.0)
+
+@wp.kernel
+def qa(bvh: wp.uint64, lo: wp.array(dtype=wp.vec3), hi: wp.array(dtype=wp.vec3), c: wp.array(dtype=int)):
+    i = wp.tid()
+    it = wp.bvh_query_aabb(bvh, lo[i], hi[i])
+    k = int(0)
+    n = int(0)
+    while wp.bvh_query_next(it, k):
+        n += 1 + k % 3
+    c[i] = n
+
+rng = np.random.default_rng(0)
+NQ = 10**6
+qp = wp.array(rng.uniform(0, 1, (NQ, 3)).astype(np.float32) * [1, 1, 0.2], dtype=wp.vec3)
+ro = wp.array(np.concatenate([rng.uniform(0, 1, (NQ, 2)), np.ones((NQ, 1))], 1).astype(np.float32), dtype=wp.vec3)
+rd = wp.array(np.tile(np.array([[0.05, 0.02, -1.0]], np.float32), (NQ, 1)), dtype=wp.vec3)
+d = wp.zeros(NQ, dtype=float); t = wp.zeros(NQ, dtype=float); cnt = wp.zeros(NQ, dtype=int)
+saved = {}
+for N in (10**5, 10**6):
+    pts_np, ind_np, r = grid_mesh(N, rng)
+    p0 = wp.array(pts_np, dtype=wp.vec3)
+    for con in ("lbvh", "sah", "median"):
+        p = wp.clone(p0)
+        mesh = wp.Mesh(points=p, indices=wp.array(ind_np, dtype=int), bvh_constructor=con)
+        for step in range(3):
+            wp.launch(move_pts, dim=len(pts_np), inputs=[p0, float(step), p])
+            mesh.refit()
+        wp.launch(q, dim=NQ, inputs=[mesh.id, qp, ro, rd, d, t])
+        saved[f"mesh_{N}_{con}_d"] = d.numpy().copy(); saved[f"mesh_{N}_{con}_t"] = t.numpy().copy()
+        tri = mesh.points.numpy()[ind_np.reshape(-1, 3)]
+        lo = wp.array(tri.min(axis=1), dtype=wp.vec3); hi = wp.array(tri.max(axis=1), dtype=wp.vec3)
+        bvh = wp.Bvh(lo, hi, constructor=con)
+        bvh.refit()
+        c = rng.uniform(0, 1, (NQ, 2)).astype(np.float32)
+        qlo = wp.array(np.concatenate([c - 2.0 / r, np.full((NQ, 1), -1.0, np.float32)], 1), dtype=wp.vec3)
+        qhi = wp.array(np.concatenate([c + 2.0 / r, np.full((NQ, 1), 1.0, np.float32)], 1), dtype=wp.vec3)
+        wp.launch(qa, dim=NQ, inputs=[bvh.id, qlo, qhi, cnt])
+        saved[f"bvh_{N}_{con}_aabb"] = cnt.numpy().copy()
+np.savez_compressed(sys.argv[1], **saved)
+print("saved", len(saved))
+```
+
+`refit_perf.py`:
+```
+# usage: refit_perf.py [sizes...]; per size and constructor, wall time per wp.Bvh.refit() and wp.Mesh.refit() (lbvh, sah,
+# median; 10 warm-up calls, then 7 x <reps> back-to-back calls and a sync, median), plus a noise-floor metric whose
+# code is the same in every variant: one 10^6-point mesh_query_point launch on the same mesh. Records via common.record.
+import statistics, sys, time
+import numpy as np
+import warp as wp
+from bench_bvh_geom import grid_mesh
+from common import record
+wp.config.quiet = True
+wp.init()
+
+@wp.kernel
+def qpoint(mesh: wp.uint64, qp: wp.array(dtype=wp.vec3), dist: wp.array(dtype=float)):
+    t = wp.tid()
+    q = wp.mesh_query_point_no_sign(mesh, qp[t], 10.0)
+    dist[t] = wp.where(q.result, q.u, -1.0)
+
+def per_call(fn, reps):
+    for _ in range(10):
+        fn()
+    wp.synchronize_device()
+    res = []
+    for _ in range(7):
+        t0 = time.perf_counter()
+        for _ in range(reps):
+            fn()
+        wp.synchronize_device()
+        res.append((time.perf_counter() - t0) / reps)
+    return statistics.median(res), min(res), max(res)
+
+rng = np.random.default_rng(0)
+NQ = 10**6
+qp = wp.array(rng.uniform(0, 1, (NQ, 3)).astype(np.float32), dtype=wp.vec3); dist = wp.zeros(NQ, dtype=float)
+for N in [int(float(s)) for s in sys.argv[1:]] or [10**3, 3000, 10**4, 30000, 10**5, 10**6, 10**7]:
+    pts_np, ind_np, r = grid_mesh(N, rng)
+    pts = wp.array(pts_np, dtype=wp.vec3); ind = wp.array(ind_np, dtype=int)
+    tri = pts_np[ind_np.reshape(-1, 3)]
+    lo = wp.array(tri.min(axis=1), dtype=wp.vec3); hi = wp.array(tri.max(axis=1), dtype=wp.vec3)
+    reps = 200 if N <= 10**5 else (30 if N <= 10**6 else 5)
+    for con in ("lbvh", "sah", "median"):
+        if con != "lbvh" and N > 10**6:
+            continue
+        bvh = wp.Bvh(lo, hi, constructor=con)
+        m, mn, mx = per_call(bvh.refit, reps)
+        record(area="refit", op="bvh_refit", N=N, constructor=con, med=m, min=mn, max=mx, reps=7)
+        del bvh
+        mesh = wp.Mesh(points=pts, indices=ind, bvh_constructor=con)
+        m, mn, mx = per_call(mesh.refit, reps)
+        record(area="refit", op="mesh_refit", N=N, constructor=con, med=m, min=mn, max=mx, reps=7)
+        m, mn, mx = per_call(lambda: wp.launch(qpoint, dim=NQ, inputs=[mesh.id, qp, dist]), 5)
+        record(area="refit", op="noise_query_point", N=N, constructor=con, med=m, min=mn, max=mx, reps=7)
+        del mesh
+```
+
+`rf_table.py`:
+```
+# usage: rf_table.py <jsonl> [treeA treeB]; per op/constructor/N: median over rounds of each run's median for A and B (us),
+# B/A, the spread of B/A over the paired rounds, and the noise-floor ratio (noise_query_point B/A) for the same cell
+import json, statistics, sys
+from collections import defaultdict
+rows = [json.loads(l) for l in open(sys.argv[1])]
+A, B = (sys.argv[2:4] + ["rfwalk", "rfdepth"])[:2] if len(sys.argv) > 3 else ("rfwalk", "rfdepth")
+d = defaultdict(list)
+for r in rows:
+    d[(r["op"], r["constructor"], r["N"], r["tree"])].append(r["med"])
+keys = sorted({(r["op"], r["constructor"], r["N"]) for r in rows if r["op"] != "noise_query_point"}, key=lambda k: (k[0], k[1], k[2]))
+print(f"| op | constructor | N | {A} us | {B} us | {B}/{A} | per-round ratios | noise floor {B}/{A} |")
+print("|---|---|---|---|---|---|---|---|")
+for op, con, N in keys:
+    a = d[(op, con, N, A)]; b = d[(op, con, N, B)]
+    na = d[("noise_query_point", con, N, A)]; nb = d[("noise_query_point", con, N, B)]
+    if not a or not b: continue
+    per = " / ".join(f"{y / x:.2f}" for x, y in zip(a, b))
+    nr = statistics.median(nb) / statistics.median(na) if na and nb else float("nan")
+    print(f"| {op} | {con} | {N} | {statistics.median(a)*1e6:.1f} | {statistics.median(b)*1e6:.1f} | {statistics.median(b)/statistics.median(a):.2f} | {per} | {nr:.2f} |")
+```
