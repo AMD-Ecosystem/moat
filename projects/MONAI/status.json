@@ -8,14 +8,15 @@
   "ext_type": "torch-extension",
   "stage": "planning",
   "adopted_at": "2026-11-06T03:59:55Z",
-  "updated_at": "2026-11-18T18:10:04Z",
+  "updated_at": "2026-11-20T21:12:04Z",
   "head_sha": null,
   "depends_on": [
     "cupy"
   ],
   "porting": {
     "arch": "linux-gfx942",
-    "since": "2026-11-10T07:15:56Z"
+    "since": "2026-11-20T21:12:04Z",
+    "holder": "cc5060465727"
   },
   "waivers": {},
   "platforms": {
@@ -26,7 +27,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-10T07:15:56Z",
+      "updated_at": "2026-11-20T21:12:04Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
