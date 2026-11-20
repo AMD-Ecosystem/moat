@@ -1148,3 +1148,17 @@ So required and documented: `DISTUTILS_USE_SDK=1` (in an activated VC environmen
 Only t3's three-variable set was built for `simple-knn`; `fused_ssim` and `gaussian_raster` were not rebuilt with the reduced set (their validation builds had the full set), the inference being that they use the same torch build path and compile only through hipcc. A plain (non-developer) prompt, where torch activates the VC environment itself, was not tried. `HIP_DEVICE_LIB_PATH` was shown necessary for the pip-package SDK layout only; a different SDK install was not tried.
 
 `advance-head` from inside `porting` classified the delta as inert and moved `validated_sha` of the two platforms completed at a995109 (linux-gfx1201, windows-gfx1151) to 1872600 by itself; this round recorded no validation. `python utils/jargon.py --port LiteGS`: clean. No change to code, build files or `.gitmodules`; the fused-ssim fork was not touched.
+
+## Review 2026-11-20 (5) (reviewer, linux-gfx90a) -- PASS
+
+Scope: `git diff a995109..1872600` in the LiteGS fork (reviewed_sha was a995109): one README.MD line (89), the Linux text kept verbatim plus one Windows sentence. No problems found. `moatlib.py classify LiteGS a995109 1872600` and `classify LiteGS 1664e6d 1872600` both -> `doc-only`, inert.
+
+Checked against the porter round (5) evidence (t1..t4 `simple-knn` builds):
+- Each named variable is backed by a failing build without it: `DISTUTILS_USE_SDK=1` (t1; torch raises that `UserWarning` before any compile, so t1 also lacking `HIP_DEVICE_LIB_PATH` does not weaken it), `HIP_DEVICE_LIB_PATH` (t2 = t3 minus it), `ROCM_PATH` (t4, even with `hipcc.exe` on PATH). t3, exactly the three, builds and imports.
+- Nothing required is missing: `CC`/`CXX` are not needed because every TU of the three extensions goes through hipcc on Windows ROCm (simple-knn `setup.py:29-31` and gaussian_raster `setup.py:44-48` copy the `.cpp` wrappers to `*_winhip.cu`; fused_ssim's `setup.py` does the same, 767e3f6). `PYTORCH_ROCM_ARCH` is already described as optional by the preceding sentence.
+- `rocm-sdk path --root` is real and prints the pip SDK root (`.../site-packages/_rocm_sdk_devel` on this host), and `lib/llvm/amdgcn/bitcode` exists under it, the same layout as the Windows `ROCM_PATH` the validation used.
+- Not tested and stated honestly in the commit body: fused_ssim and gaussian_raster with only the reduced set, and a non-developer prompt. The README tells the reader to use the developer prompt, which is what was built.
+
+Linux reader: not misled. The sentence opens with "On Windows," and names Windows-only things (x64 developer command prompt, MSVC build tools, `DISTUTILS_USE_SDK`). The Linux sentence before it is unchanged and still accurate: every Linux validation in this file (gfx90a, gfx1201, the same pip SDK layout) built with only `PYTORCH_ROCM_ARCH` set, no `ROCM_PATH` or `HIP_DEVICE_LIB_PATH`.
+
+Commit hygiene: title 60 chars, `[ROCm]` correct (ROCm-specific documentation), AI-assistance line and fenced Test Plan present, no trailer. `utils/prose.py` on the body: clean. `jargon.py --port LiteGS`: clean over `master..moat-port`. `audit-commits LiteGS`: OK. Integrity: `git status --porcelain` empty in the fork clone at 1872600.

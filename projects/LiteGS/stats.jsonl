@@ -162,3 +162,4 @@
 {"kind":"phase","ts":"2026-11-19T23:42:20Z","phase":"compile","seconds":5.858,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/litegs_val/chk/build.sh t2 D:/Develop/moat/agent_space/litegs_val/chk/knn1"}
 {"kind":"phase","ts":"2026-11-19T23:43:14Z","phase":"compile","seconds":43.513,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/litegs_val/chk/build.sh t3 D:/Develop/moat/agent_space/litegs_val/chk/knn1"}
 {"kind":"phase","ts":"2026-11-19T23:43:43Z","phase":"compile","seconds":5.385,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/litegs_val/chk/build.sh t4 D:/Develop/moat/agent_space/litegs_val/chk/knn1"}
+{"kind":"session","ts":"2026-11-19T23:52:17Z","epoch":1795132337.892158,"event":"start","platform":"linux-gfx90a"}
