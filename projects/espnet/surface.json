@@ -1,0 +1,133 @@
+{
+ "generated_by": "utils/surface.py",
+ "source_sha": "30a4a1e27f4d",
+ "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+ "cuda": {
+  "files": [
+   "espnet2/asr_transducer/decoder/modules/rwkv/cuda/wkv_cuda.cu"
+  ],
+  "markers": {
+   "kernel": 2,
+   "launch": 2
+  },
+  "libraries": {}
+ },
+ "components": [
+  {
+   "id": "extension:wkv (JIT)",
+   "kind": "python_extension",
+   "added_by": "planner",
+   "where": "espnet2/asr_transducer/decoder/modules/rwkv/attention.py load_wkv_kernel",
+   "note": "torch.utils.cpp_extension.load of cuda/wkv_op.cpp + cuda/wkv_cuda.cu at run time; the setup.py regex cannot see a JIT load. plan.md item 1, R1/R2/R6/R10/R11."
+  },
+  {
+   "id": "numba:rnnt_multi_blank",
+   "kind": "numba_jit",
+   "added_by": "planner",
+   "where": "espnet2/asr/transducer/rnnt_multi_blank/",
+   "note": "Numba CUDA kernels (20 @cuda.jit, shfl_down_sync, shared arrays) for RNNT and multi-blank RNNT loss; invisible to the .cu census. Target: Numba HIP pose_as_cuda. plan.md item 2, R3/R4/R5."
+  },
+  {
+   "id": "feature:flash-attn-gate",
+   "kind": "feature",
+   "added_by": "planner",
+   "where": "espnet2/torch_utils/get_flash_attn_compatability.py",
+   "note": "NVIDIA device-name allow list disables flash-attn on every AMD GPU. plan.md item 4."
+  },
+  {
+   "id": "installer:Makefile-rocm",
+   "kind": "build",
+   "added_by": "planner",
+   "where": "tools/Makefile",
+   "note": "CUDA version from nvcc; without nvcc a CPU torch. Add ROCm detection, numba-hip, warp-transducer CUDA_HOME gate. plan.md item 5."
+  },
+  {
+   "id": "installer:install_torch.sh",
+   "kind": "build",
+   "added_by": "planner",
+   "where": "tools/installers/install_torch.sh",
+   "note": "cuXXX or cpu index only; add rocmX.Y. plan.md item 5."
+  },
+  {
+   "id": "installer:install_k2.sh",
+   "kind": "build",
+   "added_by": "planner",
+   "where": "tools/installers/install_k2.sh",
+   "note": "Add the k2 rocm.html wheel index. plan.md item 5."
+  },
+  {
+   "id": "tool:check_install.py",
+   "kind": "build",
+   "added_by": "planner",
+   "where": "tools/check_install.py",
+   "note": "Report torch.version.hip on ROCm. plan.md item 5."
+  },
+  {
+   "id": "docs:installation-rocm",
+   "kind": "docs",
+   "added_by": "planner",
+   "where": "doc/installation.md",
+   "note": "ROCm install section. plan.md item 8."
+  },
+  {
+   "id": "test:test/espnet2",
+   "kind": "test",
+   "added_by": "planner",
+   "where": "test/espnet2 (ci/test_python_espnet2.sh)",
+   "note": "pytest suite; GPU-gated WKV, multi-blank, k2 cases must run on GPU. plan.md test plan."
+  },
+  {
+   "id": "test:test/espnet3",
+   "kind": "test",
+   "added_by": "planner",
+   "where": "test/espnet3 (ci/test_python_espnet3.sh)",
+   "note": "pytest suite on a ROCm torch."
+  },
+  {
+   "id": "test:integration-mini_an4-gpu",
+   "kind": "test",
+   "added_by": "planner",
+   "where": "ci/test_integration_espnet2.sh, egs2/mini_an4/asr1",
+   "note": "Upstream's --ngpu 1 multi-blank transducer recipe block plus one --ngpu 1 ASR training stage."
+  },
+  {
+   "id": "dep:warp-transducer-gpu",
+   "kind": "dependency",
+   "added_by": "planner",
+   "where": "tools/installers/install_warp-transducer.sh; RNNTLoss call sites in espnet2/asr, st, slu, asr_transducer",
+   "note": "PENDING JEFF (plan.md Q1). Recommended (c): RNNTLossNumba on ROCm in espnet (plan.md item 6), warp-transducer ROCm port as a deferral."
+  },
+  {
+   "id": "module:espnet2/speechlm",
+   "kind": "module",
+   "added_by": "planner",
+   "where": "espnet2/speechlm; pyproject speechlm extra",
+   "note": "PENDING JEFF (plan.md Q2). Recommended: out of scope as a deferral (torchtitan, liger-kernel, flash-linear-attention, tilelang)."
+  },
+  {
+   "id": "dep:cauchy_mult+pykeops",
+   "kind": "dependency",
+   "added_by": "planner",
+   "where": "tools/installers/install_cauchy_mult.sh; espnet2/asr/state_spaces/{cauchy,s4}.py",
+   "note": "PENDING JEFF confirmation (plan.md Q3). Proposed out: external optional S4 accelerators; plain-torch fallback in tree."
+  },
+  {
+   "id": "packaging:docker-ci-rocm-image",
+   "kind": "build",
+   "added_by": "planner",
+   "where": "docker/build.sh, ci/image_variants.json",
+   "note": "PENDING JEFF confirmation (plan.md Q3). Proposed out: a ROCm image or GPU CI variant is a maintainer's choice."
+  },
+  {
+   "id": "platform:windows-numba-k2",
+   "kind": "platform",
+   "added_by": "planner",
+   "where": "numba:rnnt_multi_blank and k2 paths on the windows gate",
+   "note": "PENDING JEFF confirmation (plan.md Q3). Numba HIP is Linux-only and k2 has no Windows wheels; proposed: those tests skip with a reason on Windows, everything else validates there."
+  }
+ ],
+ "covered": [],
+ "scoped_out": [],
+ "owed": [],
+ "removed_from_floor": []
+}
