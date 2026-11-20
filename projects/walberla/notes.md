@@ -156,3 +156,135 @@ These were not filed, and nobody was contacted. If jeff wants them, they go to h
 ## Telemetry and scratch
 
 The scratch clones, build trees and logs are under `agent_space/` (container-local): `walberla-screen` (GitHub mirror clone), `walberla-623a` (worktree at ESPResSo's pin), `espresso-ro` (read-only fork clone, branch `scratch-decouple`, push URL set to an invalid value), and `logs/`.
+
+## Wave32 check (linux-gfx1201)
+
+Measurement job requested by jeff on 2026-11-20 (not a pipeline role; no fork, no state change). Question: does waLBerla's HIP backend need anything from us for 32-wide Radeon GPUs?
+
+**Answer: no 32-wide-specific fault was found.** Every GPU result on gfx1201 either matches the MI300X intake, agrees with the CPU at round-off, or passes upstream's own analytic checks. What a HIP user does hit are HIP-build gaps that are not wave-size related. Most cause no warning: GPU tests and sources that CMake drops or never builds under HIP. Candidate upstream fixes are ranked at the end of this section. All of them are arch-independent, so the MI300X re-run listed below is for completeness, not suspicion.
+
+### Host and versions
+
+- GPU: AMD Radeon AI PRO R9700 (gfx1201, wave32), pinned with `HIP_VISIBLE_DEVICES=1`; every GPU run was under `ulimit -c 0`.
+- ROCm: pip ROCm SDK 10.1.0 (HIP 7.16.26385, AMD clang 24.0.0), the same SDK as the intake. GCC 13.3.0, CMake 3.31.6.
+- MPI: OpenMPI 5.0.11 from the `openmpi` pip wheel in the job venv (the intake used system OpenMPI 4.1.6; this host has no system MPI).
+- waLBerla: master **e2383d29** (2026-11-02), the intake's commit. **Master has not moved**: `git ls-remote` on gitos.rrze.fau.de and the GitHub mirror both return e2383d29.
+- Legacy codegen: `lbmpy==1.4.1` (pulls pystencils 1.4, sympy 1.12.1), `jinja2 lxml setuptools py-cpuinfo islpy`. These are the pins in upstream's CI (`utilities/workflows/ci-common.yaml`, `.testsuite-common`). They went into the job venv, which is Python 3.11. waLBerla requires 3.12 (`WALBERLA_PYTHON_MIN_VERSION`), and the fleet guard allows pip only into the job venv, so the codegen build carries a local one-line change of that minimum to 3.11 (environment only).
+- SweepGen/v8: waLBerla's own managed venv (`WALBERLA_SWEEPGEN_MANAGED_VENV`, created by CMake under the build tree from `/usr/bin/python3.12`): pystencils 2.1, pystencilssfg 0.3, lbmpy 2.1.1, sympy 1.14.0.
+
+Local changes, all on a scratch clone, never pushed:
+1. The intake's HIP version-check fix (`find_package(hip REQUIRED)` + `if(hip_VERSION VERSION_LESS ...) FATAL_ERROR`), in every tree.
+2. Legacy-codegen tree only: Python minimum 3.11 (above). The UniformGridCPU/GPU velocity VTK writers changed from float32 to float64, and UniformGridGPU's VTK writer moved from after the time step to before it, as UniformGridCPU does (output only; see 3c).
+3. Prototype tree only: the candidate fixes listed at the end.
+
+### 1. Probe A build (same options as the intake, `CMAKE_HIP_ARCHITECTURES=gfx1201`)
+
+```
+cmake -S walberla -B wb-hip -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=/usr/bin/gcc -DCMAKE_CXX_COMPILER=/usr/bin/g++ \
+  -DCMAKE_HIP_COMPILER=$ROCM_SDK/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM_SDK \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DWALBERLA_BUILD_WITH_HIP=ON -DWALBERLA_BUILD_WITH_MPI=ON \
+  -DWALBERLA_BUILD_WITH_OPENMP=OFF -DWALBERLA_BUILD_TESTS=ON -DWALBERLA_BUILD_WITH_CODEGEN=OFF \
+  -DWALBERLA_BUILD_WITH_PYTHON=OFF -DWALBERLA_BUILD_BENCHMARKS=OFF -DWALBERLA_BUILD_TUTORIALS=OFF \
+  -DWALBERLA_BUILD_SHOWCASES=OFF -DWALBERLA_BUILD_EXAMPLES=OFF
+ninja -C wb-hip -k 0 -j 12
+```
+
+- Unpatched e2383d29: configure fails exactly as on MI300X ("Could not find a configuration file for package "hip" that is compatible with requested version "6.1"").
+- Patched: **663/663, 0 FAILED, 0 warnings** (2 min, `-j 12`). Same as the intake.
+
+### 2. gpu-module tests: 7/8, same single failure
+
+`ctest --test-dir wb-hip/tests/gpu --timeout 300 -j 4`: 7/8 passed. GPUPackInfoTest, GPUPackInfoCommunicationTest, GPUBlockSelectorCommunicationTest, TestGenericGpuPackInfos_1/2/4 and FieldTransferTest pass. **TestGpuRAII fails at `tests/gpu/TestGpuRAII.hpp:62`**, the same line and expression as on MI300X (`hipStreamSynchronize(underlyingStream) != hipSuccess` on a destroyed stream; UB, HIP returns success). Line 79 has the same check and would fail next.
+
+Correction to the intake's list: `AlignmentTest` is built but **not registered** (`tests/gpu/CMakeLists.txt` has no `waLBerla_execute_test` for it), so it was not among the 8. The intake's 8 names include it and omit TestGpuRAII. Run by hand here, `./AlignmentTest` exits 0.
+
+### 3. Lattice-Boltzmann GPU paths beyond the unit tests
+
+Three more trees were built: legacy codegen (`-DWALBERLA_BUILD_WITH_CODEGEN=ON`, then `-DWALBERLA_BUILD_WITH_PYTHON=ON`, benchmarks, tutorials and showcases on), v8 + SweepGen (`-DWALBERLA_ENABLE_V8CORE=ON -DWALBERLA_ENABLE_SWEEPGEN=ON -DWALBERLA_BUILD_EXAMPLES=ON -DWALBERLA_BUILD_LEGACY_LBM=OFF`), and the prototype.
+
+**3a. Legacy-codegen build** (the generator generation ESPResSo uses): 1777 steps, **0 warnings**, 3 failures, all HIP-build gaps (items B, C and D below):
+- `apps/tutorials/gpu/01_GameOfLife_cuda`: link error, `undefined reference to walberla::GameOfLifeSweepCUDA::operator()`. Its `01_GameOfLife_kernels.cu` has no enabled language under HIP, so CMake drops it without a warning.
+- `tests/gpu/TestShiftedPeriodicityGPU.cpp.o`: `ShiftedPeriodicity.h:44: fatal error: device_launch_parameters.h: No such file or directory` (CUDA-only include). It builds only with Python on, which the intake's build did not have.
+- `apps/benchmarks/PhaseFieldAllenCahn` codegen: "Files only specified in CMake [...hip]" / "Unexpected generated files [...cpp]". `multiphase_codegen.py` branches on `ctx.cuda` (lines 152 and 180) instead of `ctx.gpu`, so under HIP it emits CPU kernels while CMake expects `.hip`. The other `ctx.cuda` hits in the tree are harmless: the `src/lbm_generated/*_generation_script.py` maintainer scripts hard-code `cuda=False`, and `tests/lbm_generated/*.py` have it commented out.
+
+GPU tests in that tree (`ctest -R 'gpu|Gpu|GPU'`): GeneratedFieldPackInfoTestGPU and GeneratedFieldNonUniformPackInfoTestGPU pass. They first failed to load: `libamdhip64.so.7: cannot open shared object file`. Executables that the HIP linker links get `libamdhip64` from the compiler's implicit link directories, which CMake leaves out of RUNPATH, and the pip SDK's `lib/` is not on the loader path. Classified **environment** (a system `/opt/rocm` with an `ld.so.conf` entry would not see it). Every run from then on used `LD_LIBRARY_PATH=$ROCM_SDK/lib`.
+
+**3b. More than 8 MPI ranks on one gfx1201 hang in SDMA copies: environment/ROCm, not waLBerla.** `LBM_MESAPD_COUPLING_PSM_ParticleAndVolumeFractionMapping_CPU_GPU` (27 ranks, 48^3 cells, 100 steps) timed out at 600 s with no output. TestGenericGpuPackInfos passes at 1, 4 and 8 ranks and hangs at 9, 10, 11, 12, 16 and 27. Stacks: 8 ranks spin in `rocr::core::BusyWaitSignal::WaitRelaxed` under `hipStreamSynchronize`, after `hipMemcpy3DAsync` and a small D2H `hipMemcpyAsync` on each of 4 streams (`AMD_LOG_LEVEL=3`); the other ranks wait in MPI for them. **`HSA_ENABLE_SDMA=0` fixes it**: 12 ranks pass in 5 s, 27 ranks of TestGenericGpuPackInfos in 12 s, and the 27-rank PSM mapping test in 2 s. Things that did not fix it: `GPU_MAX_HW_QUEUES=1`, `--bind-to none`, excluding UCX/OFI. Plain HIP programs did not reproduce it: 27 concurrent processes doing H2D/kernel/D2H, 12 processes with high-priority streams, and 4-stream `hipMemcpy3DAsync` D2D + D2H with and without `MPI_Init` all completed. It needs more than 8 GPU processes on one Radeon, which no real deployment of a single-GPU host does, and the trigger is in ROCm's SDMA path. A ROCm issue would need a standalone reproducer first (not attempted further: stop discipline). **To run on MI300X next:** the 27-rank PSM mapping test with SDMA enabled, to see whether the hang is Radeon-specific.
+
+**3c. CPU vs GPU, legacy generated kernels, lid-driven cavity.** Upstream's `apps/benchmarks/UniformGridCPU` and `UniformGridGPU` come from the same generator (`generate_lbm_package`), read the same `.prm`, and seed the same initial shear flow (`InitShearVelocity.h`, identical files, `seedRandomGenerator(0)`). Run here on one parameter file: 32^3 cells, one block, all six walls (`UBB` lid on N at 0.05, `NoSlip` elsewhere), omega 1.6, `timeStepStrategy noOverlap`, 2001 steps, `gpuBlockSize <64,1,1>`. Velocity written in float64 at steps 0, 1000 and 2000 and compared cell by cell over all 32^3 x 3 components (scratch script `cmpvtk.py`, reading the `.vti` binary arrays).
+
+A first comparison disagreed by 3.6x at step 0 and 6.7e-4 at step 1000. The cause was the benchmarks themselves: UniformGridCPU writes VTK *before* each time step (`addFuncBeforeTimeStep`), UniformGridGPU *after* (`addFuncAfterTimeStep`), so they were one step apart. With the GPU hook aligned:
+
+| config | max abs du at step 2000 | rel to max abs u (0.0452) | GPU / CPU MLUPS |
+|---|---|---|---|
+| d3q19_pull_srt | 5.6e-17 | 1.2e-15 | 426 / 49.5 |
+| d3q19_pull_trt | 2.8e-17 | 6.1e-16 | 398 / 43.0 |
+| d3q19_pull_mrt | 1.0e-16 | 2.2e-15 | 403 / 47.4 |
+| d3q19_aa_srt (in-place) | 5.6e-17 | 1.2e-15 | 437 / 45.9 |
+| d3q19_esotwist_trt (in-place) | 2.1e-17 | 4.6e-16 | 458 / 41.0 |
+| d3q27_pull_srt | 4.2e-17 | 9.2e-16 | 381 / 31.7 |
+| d3q27_pull_mrt | 9.0e-17 | 2.0e-15 | 402 / 30.7 |
+| d3q27_pull_cumulant | 3.3e-8 | 7.4e-7 | 341 / 19.9 |
+
+Step 1000 agrees to the same orders. Everything except cumulant agrees to double-precision round-off, including both in-place streaming patterns and the NoSlip/UBB GPU boundary kernels. Cumulant differs **by design**: `UniformGridGPU.py` applies `insert_fast_divisions`/`insert_fast_sqrts` (`optimize = True`), and the generated cumulant kernel has 4 single-precision `__fdividef`; the CPU script does not. MLUPS are from a 32^3 domain and are not a benchmark. Not run on MI300X by the intake: **to run there next** with the same `.prm`.
+
+**3d. v8 + SweepGen build.** The first build failed in nearly every host TU: `include/hipccl/cuda/std/__cccl/assert.h:99: error: '__host__' does not name a type`, via `src/core/Stdlib.hpp:56` `#include <hip/std/cstddef>`. `cmake/walberla_v8core.cmake` declares libhipcxx with `GIT_TAG release/2.7.x` but also `FIND_PACKAGE_ARGS CONFIG`, so it accepts any installed libhipcxx. ROCm 10.1's SDK ships one (`lib/cmake/libhipcxx`, `CCCL_VERSION 3000002`) whose headers do not compile under plain g++. This is a **HIP-build gap, not wave-size related**; the MI300X host has the same SDK and would fail the same way. With `-DCMAKE_DISABLE_FIND_PACKAGE_libhipcxx=ON` (forcing the pinned fetch, libhipcxx 9ac637b66): **555/555, 0 warnings**. `ctest --test-dir wb-v8 --timeout 600 -j 6`: **290/291 passed**, the only failure TestGpuRAII. These include:
+- `ParallelPlates - Couette` and `- Poiseuille` (`apps/examples/ParallelPlates`, compiled as HIP, generated with SweepGen, 32^3, 1000 steps, checked against the analytic profile): Lmax x-velocity error **1.68e-16** (threshold 1e-15) and **3.79e-8** (threshold 1e-6).
+- `TestLbmScenarios_CXX` and `_HIP` (FullyPeriodic, MirroredHalfChannel, FreeSlipPipe, each at 1, 2 and 4 ranks): all 18 pass, so the CPU and GPU builds of the same generated scenarios pass the same built-in checks.
+- `TestGPUSweeper` (3), `TestSweepGeneration` (7), and the v8 memory and halo-exchange tests.
+
+### 4. GPU tests that a HIP build skips or cannot build (gap list)
+
+| what | where | why under HIP | prototype result on gfx1201 |
+|---|---|---|---|
+| SimpleKernelTest, FieldIndexing3DTest | `tests/gpu/CMakeLists.txt` `if( WALBERLA_BUILD_WITH_CUDA)` ("won't compile with HIP") | `.cu` sources have no language; `FieldAccessor*::set(uint3, uint3)` rejects HIP's builtin `blockIdx`/`threadIdx`; `FieldAccessor3D.h` uses `dim3`/`uint3`/`__forceinline__` without including `gpu/GPUWrapper.h` (nvcc pre-includes `cuda_runtime.h`, clang-HIP does not) | both pass |
+| CodegenJacobiGPU, CodegenPoissonGPU | same block | `OUT_FILES` hard-code `.cu` instead of `${CODEGEN_FILE_SUFFIX}` | both pass |
+| CommTest, CudaMPI | same block | need GPU-aware MPI; not executed even for CUDA (commented out) | left CUDA-only |
+| TestShiftedPeriodicityGPU, and `src/gpu/ShiftedPeriodicity.cu` (open upstream #314) | `src/gpu/CMakeLists.txt`, `ShiftedPeriodicity.h` | `.cu` dropped from `walberla_gpu` without a warning; CUDA-only `<device_launch_parameters.h>`; `fa.set(blockIdx, threadIdx)` and `getLinearIndex(blockIdx, threadIdx, gridDim, blockDim)` | passes |
+| 28 PSM CPU_GPU tests (14 FuncTests: DragForceSphere, TorqueSphere x12, SettlingSphere; plus their 14 long runs), FluidizedBed and Percolation benchmarks, the PSM codegen library | `tests/lbm_mesapd_coupling/CMakeLists.txt:95`, `src/lbm_mesapd_coupling/partially_saturated_cells_method/codegen/CMakeLists.txt:4`, `apps/benchmarks/CMakeLists.txt:17` | gated on `WALBERLA_BUILD_WITH_DOUBLE_ACCURACY`, which nothing defines (the option is `WALBERLA_DOUBLE_ACCURACY`); introduced by 7a0c6023 (2026-06-10, "Reduce the workload on the CUDA Git Runner"). **Dead in every build, CUDA and CPU included**, not HIP-specific | with `-DWALBERLA_BUILD_WITH_DOUBLE_ACCURACY=ON`, all 14 FuncTests pass on gfx1201 |
+| 01_GameOfLife_cuda tutorial | `apps/tutorials/gpu/CMakeLists.txt` | `.cu` dropped, link fails | builds and runs |
+| PhaseFieldAllenCahn GPU benchmark | `apps/benchmarks/PhaseFieldAllenCahn/multiphase_codegen.py` | `ctx.cuda` instead of `ctx.gpu` | not fixed in prototype |
+| PhaseFieldAllenCahn GPU showcase | `apps/showcases/PhaseFieldAllenCahn/CMakeLists.txt:3` | `if ( WALBERLA_BUILD_WITH_CUDA)` | not tried |
+| AlignmentTest, MicroBenchmarkGpuLbm | `tests/gpu/CMakeLists.txt` | built, never registered (CUDA too) | AlignmentTest exits 0 by hand |
+
+Prototype tree (scratch branch on top of the intake fix; `-DWALBERLA_BUILD_WITH_CODEGEN=ON -DWALBERLA_BUILD_WITH_PYTHON=ON -DWALBERLA_BUILD_TUTORIALS=ON -DWALBERLA_BUILD_WITH_DOUBLE_ACCURACY=ON`): **1434/1434 build steps, 0 warnings**. `ctest -R 'gpu|Gpu|GPU' -LE 'longrun|verylongrun'` with `HSA_ENABLE_SDMA=0`: **26/27 passed** (TestGpuRAII the only failure). SimpleKernelTest, FieldIndexing3DTest and FieldTransferTest: 3/3 passed. The prototype diff (+50/-4, 8 files):
+- `src/gpu/FieldAccessor.h`, `FieldAccessorXYZ.h`, `FieldAccessor3D.h`: a template overload `set(const BlockIdx_T&, const ThreadIdx_T&)` forwarding to `set(make_uint3(...), make_uint3(...))`, and the same for `getLinearIndex`. With CUDA, `blockIdx` is a `uint3` and the existing non-template overload still wins, so CUDA is unchanged in principle; not compiled with nvcc here (owed before any upstream MR).
+- `FieldAccessor3D.h`: `#include "gpu/GPUWrapper.h"`.
+- `src/gpu/ShiftedPeriodicity.h`: `<device_launch_parameters.h>` under `#if defined(WALBERLA_BUILD_WITH_CUDA)`.
+- `src/gpu/CMakeLists.txt`, `apps/tutorials/gpu/CMakeLists.txt`, `tests/gpu/CMakeLists.txt`: `set_source_files_properties(<.cu> PROPERTIES LANGUAGE HIP)` under HIP; the HIP-able tests are moved out of the CUDA-only block; `${CODEGEN_FILE_SUFFIX}` in the two codegen `OUT_FILES`.
+
+The same `uint3` fault is cause 3 of ESPResSo's 14 kernel failures (Q3a above). A waLBerla-side overload would fix that cause for ESPResSo's templates too, if ESPResSo moved to a waLBerla that has it.
+
+### 5. Classification of every failure seen
+
+| failure | class | MI300X comparison |
+|---|---|---|
+| configure: `find_package(hip 6.1)` rejects HIP 7.16 | HIP-build gap (ours) | same on MI300X (intake) |
+| TestGpuRAII `.hpp:62` | test bug (UB) | same line on MI300X |
+| GameOfLife tutorial link, ShiftedPeriodicity / TestShiftedPeriodicityGPU, CUDA-only tests/gpu block | HIP-build gap (ours) | intake did not build these (Python and tutorials off); arch-independent build errors |
+| PhaseFieldAllenCahn benchmark `ctx.cuda` | HIP-build gap (ours) | not built by intake; arch-independent |
+| v8 core picks up ROCm 10.1's libhipcxx 3.x, g++ TUs fail | HIP-build gap (ours) | not built by intake; same SDK, so expected identical |
+| PSM tests dead via `WALBERLA_BUILD_WITH_DOUBLE_ACCURACY` | build bug, all backends (upstream's own) | n/a |
+| `libamdhip64.so.7` not found for HIP-linked executables | environment (pip SDK not on loader path) | n/a |
+| >8 ranks on one GPU hang in SDMA copies | environment/ROCm (not waLBerla; `HSA_ENABLE_SDMA=0` fixes) | not run by intake; run there next |
+| UniformGrid CPU/GPU 1-step offset | benchmark inconsistency (VTK hook before vs after the step), not a numerical fault | n/a |
+| cumulant 7e-7 | by design (`__fdividef` fast division in the GPU script) | n/a |
+
+No failure is 32-wide-specific. **To run on MI300X next** (tests the intake did not run, for completeness): the UniformGrid CPU/GPU cavity comparison (same `.prm`), the v8/SweepGen ctest (ParallelPlates, TestLbmScenarios_HIP), the prototype's GPU ctest, and the 27-rank PSM mapping test with SDMA on.
+
+### 6. Conclusion
+
+waLBerla needs nothing from us that is specific to 32-wide AMD GPUs. Its generated lattice-Boltzmann kernels (legacy and SweepGen) run on gfx1201 and agree with the CPU to round-off, or meet their analytic checks. What a HIP user meets are build-system and header gaps, the same on any AMD GPU. Candidate upstream fixes, most valuable first (1 and 2 are the intake's):
+
+1. **CMake: `find_package(hip ${WALBERLA_HIP_MIN_VERSION})` rejects every ROCm 7.x** (intake draft 1). Configure fails, so nothing builds. One-line fix.
+2. **Accept HIP's builtin index types in `gpu::FieldAccessor*` and compile `.cu` sources as HIP** (closes #314 and re-enables 5 GPU tests plus the GPU tutorial under HIP). Today ShiftedPeriodicity is dropped from the HIP build without a warning. Prototype above: +50/-4, all affected tests pass on gfx1201. Needs an nvcc compile before it goes upstream.
+3. **v8 core: pin the libhipcxx found by `find_package`** (a version in `FIND_PACKAGE_ARGS`, or include `<hip/std/...>` only in HIP TUs). With ROCm 10.1's bundled libhipcxx 3.x, the whole v8/SweepGen HIP build fails; workaround `-DCMAKE_DISABLE_FIND_PACKAGE_libhipcxx=ON`. This is the path upstream is moving to (SweepGen, !852).
+4. **`WALBERLA_BUILD_WITH_DOUBLE_ACCURACY` should be `WALBERLA_DOUBLE_ACCURACY`** in 3 CMake files. Since 2026-06-10 it disables the PSM GPU tests and two benchmarks on every backend. Not HIP-specific, and it may need a word with the author of 7a0c6023 in case the disabling was intended.
+5. **`multiphase_codegen.py`: `ctx.cuda` should be `ctx.gpu`** (2 lines); the PhaseFieldAllenCahn GPU benchmark fails to generate under HIP. The showcase is CUDA-gated in CMake as well.
+6. **TestGpuRAII: drop the two HIP-only destroyed-stream checks** (intake draft 2).
+7. Small: register `AlignmentTest`; make UniformGridGPU write VTK before the step, as UniformGridCPU does.
+
+All of this is upstream-hosted on gitos and arch-independent. A MOAT port is still not warranted. Whether any of 1 to 7 goes to gitos (account onboarding needed) is jeff's call; nothing was posted.
+
+Scratch (container-local, under the job directory `ws/`): clone `walberla` (branch `wave32-check`), worktrees `walberla-cg` (`wave32-codegen`), `walberla-proto` (`wave32-proto`) and `walberla-pristine`; build trees `wb-hip`, `wb-cg`, `wb-v8`, `wb-proto`; `scripts/ldc.prm`, `scripts/cmpvtk.py`, `scripts/run_ug.sh`, the plain-HIP reproducers `scripts/multi*.hip`; logs in `logs/` (`proto.diff`, `ug-compare.log`, `ctest-*.log`).
