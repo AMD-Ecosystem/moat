@@ -7567,3 +7567,24 @@ The port passes `-ffp-contract=on` to hipRTC (`warp.cu` `wp_hip_compile_program`
 - So the port's comment is inaccurate: matching NVRTC's default would be `fast` (or `fast-honor-pragmas`, Clang's HIP default). The gfx942 attribution showed the choice changes `example_dem`'s trajectory (not its speed).
 
 Question for Jeff (no decision taken): (a) keep `on` and correct the comment; (b) switch to `fast-honor-pragmas` (Clang's HIP default, cross-statement like NVRTC, and `#pragma clang fp contract` still applies); (c) switch to `fast` (AMD 1.13's choice). Any change alters floating-point results of every HIP kernel and needs a full-suite run.
+
+### Item 4: speculative `mesh_query_ray` (`fb4803bb`, pushed, `advance-head` recorded)
+
+`[ROCm] Traverse mesh_query_ray speculatively on HIP` (`mesh.h` +157, HIP-only under AMD's own guard `#if defined(__HIPCC__) && defined(__HIP_PLATFORM_AMD__)` with upstream's body in `#else`). Source: the two traversal hunks of `git diff v1.13.0 origin/release/1.13.0.amd0 -- warp/native/mesh.h` (the 527ba15c traversal as updated by f8f90f93 to dispatch cuBQL first); `git show 527ba15c` itself does not apply to 1.14. The third hunk of that diff (`WP_RESTRICT` on `Mesh::lowers/uppers/solid_angle_props`) is shared code and was left out. clang-format 22 reflowed it (whitespace only, checked).
+
+Is it active in JIT kernels? `#error` under `__HIPCC_RTC__` inside the guard fired in a hipRTC compile, so yes (the guard is also true in the library's own HIP compile of `mesh.cu`).
+
+Measurement method: `bench_bvh.py` wall times and the first two `rocprofv3` sweeps (`ray_sweep.sh`, `res/ray_s1`, `res/ray_s2`) were unusable for 10% statements: the same kernel's per-dispatch median varied 4-9x between sweeps minutes apart (e.g. upstream traversal, 10^5 sah: 1.66 vs 6.93 ms) while GPUs 0, 3 and 4 of this board ran other users' work at 100%; GPU 1's clock was not under my control. Several runs also had multi-second stalls (single dispatches up to 16 s, whole runs ~50 s); they occurred with the upstream traversal too (one 53 s run in 15, `res/` notes), so they are environmental. Final method (`ray_ab.sh`, `res/ray_ab1`): per cell three alternating pairs (upstream traversal tree `43c348ea`, then speculative tree), each `ray_one.py` = one Mesh + 20 launches of the bench ray kernel over 10^6 rays under `rocprofv3 --kernel-trace`, per-dispatch median, ratio within the pair:
+
+| N | sah | median | lbvh |
+|---|---|---|---|
+| 10^4 | 0.63 (0.13/0.63/0.77) | 0.57 (0.56/0.69/0.57) | 0.65 (0.65/0.59/0.83) |
+| 10^5 | **1.22** (1.23/1.16/1.22) | 0.54 (0.20/0.54/0.63) | 0.52 (0.52/0.82/0.51) |
+| 10^6 | 0.76 (0.91/0.76/0.70) | 0.53 (0.09/0.53/0.69) | 0.70 (0.65/0.70/0.74) |
+| 10^7 | 0.79 (0.13/0.79/1.41) | 0.85 (1.16/0.74/0.85) | 0.79 (0.79/0.79/0.79) |
+
+(speculative / upstream, median of the three pairs; per-pair ratios in parentheses.) So the gain reproduces in 11 of 12 cells (15-48% less GPU time); SAH trees at 10^5 triangles are consistently 1.16-1.23x slower (sweep 1 also 1.13x). Not investigated further. Agreement: `ray_one.py` saved all 10^6 hit distances per cell: speculative vs upstream traversal max|dt| 0 and 0 hit mismatches in all 12 cells; AMD 1.13 vs upstream 1.2e-7 to 2.4e-7, 0 mismatches.
+
+Tests (with `usd-core` installed in the job venv, which un-skips 18 mesh tests incl. ray grad/groups/count): test_mesh* 49 OK on both the speculative and the upstream-traversal tree, test_apic_mesh 12 OK, test_bvh 13 OK. CUDA: `cuda_pp.sh` `43c348ea` vs `fb4803bb`: all 24 identical.
+
+Question for Jeff: the 10^5 SAH cell is a reproducible 1.2x loss inside an otherwise 0.5-0.85x change. Options: (a) keep as committed (AMD 1.13's behaviour, net win); (b) investigate a tuning (e.g. skipping the speculative child tests for CPU-built SAH/median trees) at more diff; (c) revert the commit.
