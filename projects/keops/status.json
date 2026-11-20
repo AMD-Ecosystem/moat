@@ -8,7 +8,7 @@
   "ext_type": "nvrtc-driver-api",
   "stage": "review-passed",
   "adopted_at": "2026-11-12T18:32:39Z",
-  "updated_at": "2026-11-20T22:21:11Z",
+  "updated_at": "2026-11-20T22:42:37Z",
   "head_sha": "2980874acefdc7e905b3733141c8765d770180ed",
   "depends_on": [],
   "porting": null,
@@ -46,11 +46,11 @@
     "linux-gfx90a": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
+      "validated_sha": "2980874acefdc7e905b3733141c8765d770180ed",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-11-20T21:25:23Z",
+      "completed_at": "2026-11-20T22:42:37Z",
+      "updated_at": "2026-11-20T22:42:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -64,7 +64,8 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "planner"
+      "last_agent": "planner",
+      "state": "completed"
     },
     "linux-gfx950": {
       "blocked": false,

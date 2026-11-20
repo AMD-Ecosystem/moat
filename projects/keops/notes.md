@@ -298,3 +298,49 @@ Skipped: notes already record the CUDA compile check at this head (`### CUDA com
 - `python3 utils/jargon.py --port keops`: clean.
 - Docs: `doc/python/installation.rst` has "ROCm detection (AMD GPUs)" (`part.ROCmDetection`) beside the CUDA detection section and the requirements bullet; `doc/python/api/common/Config.rst` lists `HipConfig`. Present.
 - The corrected Test Plan sentence for `38c65e2b` stays recorded under "### Correction for the final history" for the PR-preparation step; not a docs or jargon gate failure (reviewer's settled finding).
+
+## Validation 2026-11-20 (linux-gfx90a, head 2980874a)
+
+Verdict: **completed** (real-GPU pass on AMD Instinct MI250X / MI250, gfx90a:sramecc+:xnack-, wave64). Additional evidence on a second CDNA generation; the wave64 gate was already satisfied by linux-gfx950. Fork clone `projects/keops/src` freshly cloned and checked out at `2980874acefdc7e905b3733141c8765d770180ed`; `git status --porcelain` empty before and after.
+
+### Environment
+
+Job venv `$FLEET_VENV` (Python 3.11.17), TheRock 10.2 wheels with the porter recipe for this arch (index `https://nightly.repo.amd.com/rocm/whl-next/`, PyPI extra): `rocm[libraries,devel]==10.2.0a20261022`, `rocm-sdk-device-gfx90a==10.2.0a20261022`, `torch==2.16.0a0+rocm10.2.0a20261022`, `amd-torch-device-gfx90a==2.16.0a0+rocm10.2.0a20261022`; `pip install --no-deps --no-build-isolation -e keopscore -e pykeops` from the fork root; `rocm-sdk init`; `PYTHONPATH=$SP/_rocm_sdk_devel/share/amd_smi` (amdsmi quirk as before; `torch.cuda.device_count()` = 1). pip printed the same dependency-conflict warnings for the image's 10.1 device packages reached through the base-links `.pth`; shadowed, not loaded. Confirmed: `torch.__version__` 2.16.0a0+rocm10.2.0a20261022, `torch.version.hip` 7.17.26422, `warp_size` 64; `/proc/self/maps` after a KeOps GPU reduction names only `$FLEET_VENV/.../_rocm_sdk_core/lib/libamdhip64.so.7` and `libhiprtc.so.7`. g++ 13.3.0. `HIP_VISIBLE_DEVICES=0` (the job's pin), `ulimit -c 0`, fresh `KEOPS_CACHE_FOLDER` in the job directory. Note for the timeit wrapper: with the venv first on PATH, `utils/timeit.sh` needs `MOAT_PYTHON` set to the MOAT interpreter, and it does not keep the caller's cwd, so the pytest commands are wrapped as `bash -c "cd <fork root> && pytest ..."`.
+
+### GPU run (wrapped in `utils/timeit.sh keops test -- ...`)
+
+```
+cd /tmp && python -c "import pykeops; pykeops.clean_pykeops(); pykeops.check_health()"
+bash -c "cd <fork root> && pytest -v -rfs keopscore/keopscore/test/"
+bash -c "cd <fork root> && pytest -v -rfs pykeops/pykeops/test/"
+```
+
+- `check_health`: "HIP Support: Enabled", 1 GPU, HIP 7.17, `-DMAXTHREADSPERBLOCK0=1024 -DSHAREDMEMPERBLOCK0=65536` (gfx90a reports 64 KiB LDS, against 160 KiB on gfx950, so the shared-memory-bounded block sizing differs from the gfx950 run), build folder `..._HIP71726422_VISIBLE_DEVICES0`.
+- keopscore: **68 passed**, 0 skipped, 0 failed.
+- pykeops: **92 passed, 1 failed (`test_lazytensor_clamp.py::TestCase::test_lazytensor_clamp_bw`), 0 skipped**. GPU-only tests all ran and passed: test_conv2d x3, test_float16 x2, test_gpu_cpu x2.
+- `*_nvrtc.hsaco` in the cache after both suites: **247**.
+
+### test_lazytensor_clamp_bw on this GPU, judged on its own evidence
+
+Raw result counted as is: 1 failed, `AssertionError: clamp_bw: ||ref-test||_2=1.122814e+03 and ||ref||_2=1.070351e+07` (test and tolerances unchanged). Diagnosis re-run here (`agent_space/val/diag/clamp_diag.py`, container-local; same seed and data as the test):
+
+- Data: `torch.manual_seed(0)` + `torch.randn(device="cuda")` on the MI250X gives x sha256 prefix `e545a9ac46dc0ff4`, y `6105642bdca5ec06`, and the same tie and the same norm as on gfx950, so this generator produces the same stream on both CDNA generations.
+- Only element failing the test criterion (`isclose(torch, keops, atol=0.01, rtol=0.001)`): **(376,0,2)**: torch float32 181667.0625, torch float64 182789.8963, KeOps GPU 182789.8750, KeOps CPU backend (CPU tensors) 182789.8750.
+- The single exact float32 tie in the whole x*y product: (i,j,k) = (376,664,2), x -0.7380291, y -2.0866387, product 1.5399999619 == 1.54f; float64 product 1.539999995967 (just inside); float32 `(p-a)/(b-a)` = 1.0.
+- d clamp(x*y)/dx at the tie: torch float32 **-0.0** (dropped); torch float64 -2.0866387 (kept); KeOps GPU -2.0866387; KeOps CPU -2.0866387.
+- Whole gradient, relative L2: KeOps GPU vs torch float64 **1.510e-7**; KeOps CPU vs float64 1.510e-7; torch float32 vs float64 1.049e-4; KeOps GPU vs KeOps CPU **0** (bitwise equal on this host, max abs diff 0.0).
+- Wavefront: gfx90a is wave64 like gfx950, so this run does not exercise a 32-wide wavefront; what differed from gfx950 was the LDS size (64 vs 160 KiB) and therefore the tile/block sizing, and the KeOps result is unchanged (182789.875 at the tie element on both GPUs, bitwise equal to this host's CPU backend). That is consistent with the code read at intake: reductions are per-thread serial loops over j tiles, with no warp intrinsics, so the result does not depend on wavefront width or block size. A wave32 host may draw different random data, so the test may pass or fail there for data reasons alone.
+
+Conclusion: not a port defect; torch float32 is the side that drops the gradient at an exact float32 tie with the bound. KeOps on the HIP backend matches float64 to 1.5e-7. It stays 1 failed in the raw count and does not block the verdict.
+
+### Non-GPU regression (`HIP_VISIBLE_DEVICES=` empty, wrapped in timeit)
+
+keopscore **68 passed**; pykeops **87 passed, 6 skipped, 0 failed** (test_conv2d x3, test_float16 x2, test_gpu_cpu x1: "CUDA not available"/"Requires KeOps CUDA support"). Identical to the porter's and the gfx950 counts.
+
+### CUDA gate
+
+Skipped: already recorded at this head (`### CUDA compile check (2026-11-20, ...)` under the first review); it runs once per head_sha.
+
+### Content checks
+
+`python3 utils/jargon.py --port keops`: clean (needed local `main` and `moat-port` branches in the fresh clone). Docs present: `doc/python/installation.rst` "ROCm detection (AMD GPUs)", `doc/python/api/common/Config.rst` lists `HipConfig`. The "Correction for the final history" condition for the `38c65e2b` Test Plan still stands for the PR-preparation step.
