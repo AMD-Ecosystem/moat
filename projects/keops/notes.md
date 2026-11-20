@@ -160,3 +160,55 @@ R 4.4.3 and the rkeops dependencies from conda-forge into `agent_space/r-env` (m
 ## Lesson for cuda-to-rocm: hipRTC rejects NVRTC's --include-path= spelling
 
 Belongs in `references/platform-limits.md`, in the "NVRTC (CUDA C++ generated at run time) ports to hipRTC" paragraph. NVRTC accepts `--include-path=<dir>` (and `-I<dir>`); hipRTC passes options to clang, which reads `--include-path=<dir>` as the prefix-matched `--include` (force-include a file) followed by `-path=<dir>`, so the compile fails with `fatal error: '-path=<dir>' file not found` from `<built-in>`. Pass `-I<dir>` on the ROCm side (NVRTC also accepts `-I`, so a single spelling works for both if the CUDA path may change). Seen in keops (runtime-generated kernels with a header directory on the hipRTC include path).
+
+## Review 2026-11-20 (linux-gfx950, head 2980874a)
+
+Reviewed `git diff ef72bc90...2980874a` on `moat-port` with the pr-review skill; findings fact-checked inline (re-read the code, reproduced on the GPU). Verdict: **changes requested**, one finding.
+
+### Finding 1: the clamp_bw explanation has the mechanism backwards (upstream-visible)
+
+The conclusion holds (a data tie, KeOps is the correct side, not a port defect); the stated mechanism is the reverse of what happens. Commit `38c65e2b` body, Test Plan: "KeOps' Clamp gradient treats the bound as outside, torch as inside". The porter section above says the same, and adds that `ClampInt((x-a)/(b-a),0,1)` "rounds just past 1 and treats it as outside".
+
+Measured on this host (`agent_space/diag/tie2.py`, container-local; same seed and data as the test, product `p = x[376,0,2]*y[0,664,2]`):
+
+```
+p == 1.54f: True 1.5399999618530273
+torch float32 d clamp/dp at tie: 0.0
+torch float64 d clamp/dp:        1.0
+keops cuda d clamp/dp at tie:    1.0
+keops cpu  d clamp/dp at tie:    1.0
+float32 (p-a)/(b-a): 1.0
+```
+
+So torch float32 drops the gradient at the bound (treats it as outside), and KeOps keeps it (inside), as float64 does (in float64 the product is 1.5399999960 < 1.54, strictly inside). `(p-a)/(b-a)` is exactly 1.0, not past 1. The rest of the diagnosis reproduces exactly: only element (376,0,2) violates the tolerance, torch32 181667.0625, KeOps GPU 182789.875, KeOps CPU 182789.875, torch float64 182789.896, KeOps GPU vs float64 rel L2 1.51e-7.
+
+Fix: reword the commit body's Test Plan (and the notes) to: "with this GPU's random data one product x*y equals the clamp bound 1.54f exactly in float32; torch's float32 clamp gradient treats the bound as outside, KeOps' as inside. The KeOps result matches a float64 reference (where the product is just inside the bound) to 1.5e-7, and the KeOps CPU backend gives the same value on the same data." `moat-port` has no upstream PR yet, so the message can still be corrected. No code change needed.
+
+### Fact-checked and confirmed (no finding)
+
+- rkeops skips and failures are upstream drift, independent of the port: `rkeops/R/rkeops_check.R:54` `check_pypkg()` treats the package as unavailable unless `tmp_pypkg$verbose` imports; `keopscore` has no `verbose` attribute at this head (removed with the module-level `verbose = True` in `6bfa32a6`; checked `hasattr(keopscore, "verbose") == False`), so `skip_if_no_keopscore()` (`tests/testthat/setup.R:17`) skips 07-10 everywhere. `test-03_rkeops_options.R:5` expects 6 options and `rkeops_options.R:76` now has `formula_only` (7); `test-04_keops_setup.R:24` expects `pykeops$verbose` to be `TRUE`, and it is the int `1`. None of these files are touched by the port.
+- GPU rerun at this head (`ulimit -c 0`, `HIP_VISIBLE_DEVICES=3`, fresh `KEOPS_CACHE_FOLDER`, TheRock 10.2.0a20261022 wheels and torch 2.16.0a0+rocm10.2.0a20261022 in the job venv): `check_health` "HIP Support: Enabled", 1 GPU, HIP 7.17; `pytest -q -rfs keopscore/keopscore/test/` 68 passed; `pytest -q -rfs pykeops/pykeops/test/` 92 passed, 1 failed (`test_lazytensor_clamp_bw`), 0 skipped; 247 `*_nvrtc.hsaco` built. Review evidence only; the validator owns the gate.
+- Lesson "hipRTC rejects NVRTC's --include-path= spelling": reproduced with hipRTC from the 10.2 wheels (`--include-path=<dir>` -> result 6, `<built-in>:2:10: fatal error: '-path=<dir>' file not found`; `-I<dir>` -> 0), and NVRTC 12.8 accepts both spellings (both 0). Accurate as written.
+- Shim mappings checked against the call sites in the unchanged `keops_nvrtc.cpp` (context retain/push/get, `cuModuleLoadDataEx(&module, target, 0, NULL, NULL)`, `cuMemAlloc` on a `CUdeviceptr`, launches on stream `NULL`, `cuCtxSynchronize` -> `hipDeviceSynchronize`); `jargon.py --port keops` clean; commit titles carry `[ROCm]`, no trailers.
+
+### CUDA compile check (2026-11-20, this host: CUDA 12.8 toolkit at /usr/local/cuda, no NVIDIA driver or GPU)
+
+Method: run KeOps' own configuration and `Gpu_link_compile.get_compile_command` from the fork at 2980874a, replacing only `CudaConfig._find_and_load_libcuda` (the libcuda driver probe, which needs a driver) through an import hook installed before `keopscore.config` runs `_gpu_config`. The stub reports CUDA 12.8 (12080), one device with 1024 threads and 49152 bytes shared memory per block, and points at `lib64/stubs/libcuda.so`. NVRTC, header discovery, option generation and backend selection are KeOps' own code. Script: `agent_space/cudacheck/cmds.py` (container-local); run from `/tmp`:
+
+```
+KEOPS_CACHE_FOLDER=$OUT/cache $FLEET_VENV/bin/python -I cmds.py <fork-root> $OUT
+```
+
+- Backend selection: `selected: CudaConfig CUDA CUBIN`, with a HIP runtime also present on the host (ROCm Python packages in the venv). So on a CUDA host `_gpu_config` still selects CUDA before HIP; `HipConfig` is never constructed when CUDA is usable (`config/__init__.py:24-43`). Build folder name keeps `CUDA<version>`.
+- KeOps itself built both binders through this config: "Compiling cuda jit compiler engine ... OK", "Compiling nvrtc binder for python ... OK".
+- The exact commands it emits, rerun by hand (paths shortened; `<k>` = `keopscore/keopscore`):
+
+```
+/usr/bin/c++ -DMAXIDGPU=0 -DMAXTHREADSPERBLOCK0=1024 -DSHAREDMEMPERBLOCK0=49152 -DnvrtcGetTARGET=nvrtcGetCUBIN -DnvrtcGetTARGETSize=nvrtcGetCUBINSize -DARCHTAG=\"sm\"  -std=c++11 -O3 -flto=auto -fpermissive -fPIC -I<k> -I/usr/local/cuda-12.8/targets/x86_64-linux/include -I/usr/local/cuda/include <k>/binders/nvrtc/nvrtc_jit.cpp -shared /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/libnvrtc.so.12 -Wl,-rpath,/usr/local/cuda/lib64/stubs -Wl,-rpath,/usr/local/cuda/lib64 -o nvrtc_jit.so
+/usr/bin/c++ <same flags> $(python -m pybind11 --includes) pykeops/pykeops/common/keops_io/nvrtc/pykeops_nvrtc.cpp -shared <same libs> -o pykeops_nvrtc.so
+c++ <same -D/-std/-O3/-fpermissive/-fPIC/-I flags> -c <k>/binders/nvrtc/keops_nvrtc.cpp -o keops_nvrtc.o
+```
+
+  All three rc=0 with 0 warnings (g++ 13.3.0). No `hip_shim` include or `__HIP_PLATFORM_AMD__` appears in the CUDA commands. `nm -D --undefined-only`: `nvrtc_jit.so` needs `cuDeviceGet cuDeviceGetAttribute cuGetErrorName nvrtc*` (CUBIN getters), NEEDED `libcuda.so.1 libnvrtc.so.12`; `pykeops_nvrtc.so` needs `cuCtxGetCurrent cuCtxPushCurrent_v2 cuCtxSynchronize cuDevicePrimaryCtxRetain cuDevicePrimaryCtxRelease_v2 cuMemAlloc_v2 ... cuLaunchKernel cuModuleLoadDataEx`, NEEDED `libcuda.so.1`; no `hip*` symbols anywhere.
+- Generated formula code through real NVRTC (`agent_space/cudacheck/nvrtc_gen.py`): the 247 `.cu` sources KeOps generated during the GPU run above (2 of them half2), compiled with libnvrtc 12.8 using the CUDA-side options `nvrtc_jit.cpp` builds (`--include-path=` the two CUDA include dirs, `-arch=sm_90`, `-use_fast_math`): 247 compiled, 0 failed. The formula generator emits the same source on both backends; the `math_functions.py` guard still selects the GPU spellings under `__CUDACC__`.
+- Not run: an NVIDIA GPU execution (no NVIDIA hardware on this host).

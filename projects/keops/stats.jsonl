@@ -10,3 +10,5 @@
 {"kind":"phase","ts":"2026-11-20T21:49:59Z","phase":"test","seconds":27.303,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261120-133155-port-keops-prompt/moat/agent_space/run_rkeops.sh"}
 {"kind":"session","ts":"2026-11-20T21:53:31Z","epoch":1795211611.38924,"event":"end","platform":"linux-gfx950"}
 {"kind":"phase","ts":"2026-11-20T21:54:25Z","phase":"test","seconds":7.725,"exit":0,"cmd":"python projects/keops/src/benchmarks/KeOps.py"}
+{"kind":"session","ts":"2026-11-20T21:59:00Z","epoch":1795211940.759532,"event":"start","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-20T22:06:54Z","epoch":1795212414.562857,"event":"end","platform":"linux-gfx950"}
