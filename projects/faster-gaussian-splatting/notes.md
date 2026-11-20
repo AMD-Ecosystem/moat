@@ -2672,3 +2672,83 @@ The upstream PR body still describes the old change (C++20 on every platform, `/
 ### Verdict
 
 **review-passed** at ff9ebec. The Windows build without `/ALTERNATENAME`, and with the HIP `__device__` scalar `lerp`, still needs a Windows validator run.
+
+## Validation 2026-11-20 (linux-gfx90a, revalidate at ff9ebec)
+
+Platform: AMD Instinct MI250X / MI250 (gfx90a, CDNA2, wave64), torch 2.16.0a0+git6c3af02, HIP 7.16.26385 (TheRock SDK wheels, hipRAND 3.4.0), `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`. Fork checkout `projects/faster-gaussian-splatting/src` on `moat-fix-14` at `ff9ebec006c585c7ffec18270b51a52bb200052e` (= `head_sha`, = the fork's remote tip). Full real-GPU run from a clean tree, no carry-forward (the delta includes upstream's 4f8e186 and changes the host code).
+
+### Build
+```bash
+export PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32
+git -C projects/faster-gaussian-splatting/src/FasterGSCudaBackend clean -xdfq
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $PWD/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"
+```
+PASS, rc=0, 318 `warning:` lines, 0 errors. `llvm-objdump --offloading` (SDK `_rocm_sdk_core/lib/llvm/bin`): 7 bundles, all `hip-amdgcn-amd-amdhsa--gfx90a`.
+
+### GPU tests (`gpu_tests/` + `agent_space/scripts/{noise_dump,bitcmp,run_all,stream_check}.py|sh`, baseline = 00e803d build)
+```bash
+utils/timeit.sh faster-gaussian-splatting test -- bash agent_space/scripts/run_all.sh <00e803d build> <ff9ebec build> agent_space/out_val
+python agent_space/scripts/stream_check.py <ff9ebec build> projects/faster-gaussian-splatting/gpu_tests
+```
+rc=0, every sub-step rc=0.
+- add_noise vs 00e803d: 27/27 bit-identical; 9/9 groups advance.
+- new_checks.py 31/31; train_check.py 3/3 (Adam 3.81e-6, L1 0.1204 -> 0.0080); det.py 3/3, 0 diff.
+- run_outputs 00e803d vs ff9ebec (84 tensors): inference/train_image/filter3d_vis 21/21 bit-identical, filter3d finite values and inf masks 7/7 equal, 29/84 bit-equal both old-vs-new and new-vs-new2, worst relL2 old-vs-new 3.57e-6 vs run-to-run 3.02e-6 (atomic order).
+- side stream vs default stream: images bit-equal, gradients 6.63e-7.
+
+Same counts as Validation 2026-11-01 (linux-gfx90a, 00e803d); the final L1 0.0080 vs 0.0081 is the known last-digit spread with MCMC noise.
+
+### CUDA no-regression gate
+
+nvcc 12.8, `-std=c++17`, sm_80: the five torch-free TUs compile at ff9ebec and at upstream main with identical PTX after normalizing per-TU hash names (porter round above). The torch-dependent TUs were not compiled: `cuda-not-validated: no CUDA build of PyTorch on this host` for adam.cu, filter3d.cu, rasterization_api.cu, densification_api.cu (their CUDA-visible text changes only through headers shown identical to upstream under `unifdef`).
+
+### Completion checks
+
+- `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean`.
+- README: ROCm build beside the CUDA one in Setup (`PYTORCH_ROCM_ARCH` pip command) and the ROCm bullet in Requirements; the hipRAND clause is gone, matching the code.
+- `git -C projects/faster-gaussian-splatting/src status --porcelain`: untracked build output only.
+
+### Verdict
+
+**completed**, `linux-gfx90a`, `validated_sha=ff9ebec006c585c7ffec18270b51a52bb200052e`. Still owed at this head: the `wave32` and `windows` gates (any RDNA platform, and a Windows run, which also settles whether the `/ALTERNATENAME` removal and the HIP `__device__` scalar `lerp` build there).
+
+## Fix review PR draft
+
+For `upstream.py --fix-review --apply --name faster-gaussian-splatting --title <title> --body-file <the body below, through the end of the Upstream reply section>` (moat-fix-14 -> moat-port). Not opened; jeff opens it once the remaining gates pass.
+
+Title: `Address review on #14: C++17 for CUDA, bundled Philox, no ALTERNATENAME`
+
+Body:
+
+Answers the maintainer's review of nerficg-project/faster-gaussian-splatting#14 (fhahlbohm, 2026-11-14, one top-level comment, no line comments). He asked for four changes: (1) keep C++17, because a lot of 3DGS code still builds with CUDA 11, and apply C++20 only to ROCm builds if they need it; (2) with C++17 kept, revert the `lerp` -> `lerp_scalar` rename in `helper_math.h` (the HIP guard on the vector operators is fine); (3) drop the Windows `/ALTERNATENAME` workaround as unrelated to AMD support; (4) remove the hipcc check and the hipRAND path, since no hipRAND release provides `hiprand_Philox4x32_10`, always use the bundled implementation, and do not duplicate the flag setup per platform. All four are done.
+
+Commits on top of the published tip 00e803d:
+
+- d895974 merges upstream main (090e8ad README, 4f8e186 "Remove two host syncs per training step and respect the current device/stream"). There were no conflicts, and the merge built unchanged on ROCm. It was merged because 4f8e186 rewrites the stream and cub call sites that the HIP translation handles, so this round tests the code the maintainer would actually merge.
+- e0d38de `[ROCm] Always use the bundled Philox4x32-10 block function`: removes the hipcc compile check from setup.py, the hipRAND branch from `kernels_mcmc.cuh` and the hipRAND clause from the README. The maintainer is right: every hipRAND checked is 3.4.0 without the function (the ROCm 7.16 SDK, a ROCm 10.2 SDK, hipRAND develop), and ROCm/rocm-libraries#14808, the PR that adds it, is still open. Device code does not change, because the bundled copy was the only one any real ROCm compiled.
+- 6ed3888 `Drop the Windows c10::ValueError link workaround`: removes the `/ALTERNATENAME` directive, `extra_link_args` and `import sys`.
+- a5d34e7 `[ROCm] Keep C++17 for CUDA builds and share the flag setup`: one flag block again. CUDA gets upstream's exact flags (`-std=c++17`, `-O3`, `-use_fast_math`); ROCm gets `-std=c++20` and `-ffast-math`. C++20 stays on ROCm because PyTorch 2.14 and later refuse anything older (`#error C++20 or later compatible compiler is required to use PyTorch`; 2.13 and earlier accept C++17). That is true on CUDA as well, which the reply mentions.
+- ff9ebec `[ROCm] Restore the scalar lerp name in helper_math.h`: `kernel_utils.cuh` is upstream's again, and so is the scalar `lerp` on CUDA. A plain revert would break the Linux ROCm build: under C++20, libstdc++'s `<math.h>` puts `std::lerp(float, float, float)` in the global namespace, and a `__host__ __device__` definition of the same signature fails with "declaration conflicts with target of using declaration already in scope" (reproduced). So on HIP the scalar `lerp` is declared `__device__` only. Its callers are all device code, and device code is identical to the `lerp_scalar` build.
+
+The port's whole diff against upstream main is now 7 files, +79/-7 (it was 8 files, +150/-17).
+
+Retested on an AMD Instinct MI250X (gfx90a) at ff9ebec, built from clean. Every count matches the last validation of 00e803d on this GPU: add_noise 27/27 bit-identical to 00e803d; 31/31 rasterizer and noise checks; 3/3 training checks (FusedAdam vs torch.optim.Adam 3.81e-6, a 300-iteration fit L1 0.1204 -> 0.0080); forward determinism 0 diff at 200k/100k/50k Gaussians; images bit-identical to 00e803d in all 7 scenes, with gradients at run-to-run level (3.6e-6 vs 3.0e-6). New this round, for upstream's stream change: a forward, backward and inference run on a side stream matches the default stream. CUDA: the five torch-free translation units compile with nvcc 12.8 at `-std=c++17`, with sm_80 PTX identical to upstream main's; the four torch-dependent ones were not compiled (no CUDA build of PyTorch on that host).
+
+Not yet tested: Windows and an RDNA GPU at this head. Removing `/ALTERNATENAME` (item 3) affects only the Windows build, and so does the `__device__` scalar `lerp` under MSVC's standard library. The Windows validation has to show whether the extension still links on the Windows ROCm PyTorch in use there. If the old `LNK2001` on `c10::ValueError(SourceLocation, std::string)` comes back, that is a missing export in that PyTorch build, and this round does not work around it, per the maintainer.
+
+## Upstream reply
+
+Thanks for the review. All four are done.
+
+1. CUDA builds are back on C++17; only ROCm builds use C++20. For what it's worth, the C++20 requirement comes from PyTorch itself: since 2.14 its headers stop with `#error C++20 or later compatible compiler is required to use PyTorch`, on CUDA too, so a CUDA build against 2.14 or newer will need C++20 as well.
+2. The `lerp_scalar` rename is reverted and `kernel_utils.cuh` is back to the original. Because ROCm builds still use C++20, libstdc++'s `<math.h>` puts `std::lerp(float, float, float)` in the global namespace there, which conflicts with a `__host__ __device__` scalar `lerp`. So on HIP only, that one overload is declared `__device__`; the CUDA side of `helper_math.h` keeps the original definition.
+3. The `/ALTERNATENAME` workaround is gone.
+4. You're right, no hipRAND release has `hiprand_Philox4x32_10` yet; it only exists in an open rocm-libraries PR. The compile check and the hipRAND path are removed and the bundled implementation is always used. `setup.py` is back to a single flag setup that differs only in the language standard and the fast-math flag.
+
+I also merged the current main (including your stream changes) and re-ran the tests on an AMD Instinct MI250X.
+
+## Notes for jeff (not part of the PR body)
+
+- Before opening the fork review PR, the `wave32` and `windows` gates need validations at ff9ebec (only linux-gfx90a is completed there). Once more GPUs pass, update the last sentence of the reply to name them; it must name only GPUs with a completed validation at the merged head.
+- The upstream PR body is out of date after this round: it still describes C++20 on every platform, the `/ALTERNATENAME` directive, `lerp_scalar` and the hipRAND path, and its validation lists counts from older heads. Editing it is an upstream write and your call; the reply above covers the changes.
+- The fork's `main` mirror is still d23bb78 (upstream is at 4f8e186); it was not pushed this round.
