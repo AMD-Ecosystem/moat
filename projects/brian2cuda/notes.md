@@ -1281,3 +1281,21 @@ Recommendation: Request Changes.
 ## Review 2026-11-20 (re-review at 1c9536f)
 
 Same child reviewer, fact-checked. Exactly one `run()` remains (device.py:1222). An AST scan of every Python file in 90d6d7c..HEAD and upstream/master..HEAD finds no other duplicated or shadowed function, class or preference registration. On CUDA and on non-Windows HIP, `run()` is upstream's: `_run_hip_windows` (device.py:1832) is the old Windows branch byte for byte after the dedent, with one caller. Commit message OK and covers the merge's test plan. No findings. Recommendation: Approve.
+
+## Validation 2026-11-20 (linux-gfx90a) -- PASS at 1c9536f
+
+- GPU: AMD Instinct MI250X / MI250 (gfx90a), HIP_VISIBLE_DEVICES=3. ROCm 10.1.0 pip SDK (HIP 7.16). brian2 2.10.1, Python 3.12 venv `$FLEET_VENV/py312`.
+- `projects/brian2cuda/src` checked out at head_sha 1c9536f (moat-fix-327). `git status --porcelain` clean.
+- Build: `utils/timeit.sh brian2cuda compile -- $FLEET_VENV/py312/bin/pip install -q --no-deps -e projects/brian2cuda/src`. Each simulation's generated project is compiled by hipcc during the test.
+- `ulimit -c 0; USE_HIP=1 utils/timeit.sh brian2cuda test -- $FLEET_VENV/py312/bin/python agent_space/b2c/test_gfx90a.py /tmp/b2c_val`:
+  - t1 LIF: PASS, 63 spikes, max |GPU - closed form| 2.6e-15
+  - t2 Poisson + 1 ms delay (spike-queue lock, wave64): PASS, 1059 synapses, 506 source / 2838 target spikes, 50/50 targets driven
+  - t3 recurrent stress: PASS, 12008 synapses, 3504 spikes, no deadlock
+  - t4 poisson(lambda_i): FAIL to compile. Pre-existing `__CUDA_ARCH__` guard gap, also at 90d6d7c, not in the recorded set (see "For jeff" above).
+  - So 3/3 on the recorded cases, matching the 2026-08-14 record.
+- Upstream tests with HIP: test_logging.py::{test_codegen_log_level_flags,test_file_log_level,test_log_level_gating} + test_cuda_standalone.py::test_codegen_and_compile: 4 passed.
+- cuda_log re-emit: `t_reemit.py` reports 1 call.
+- CUDA no-regression gate: `cuda-not-validated: no nvcc on this host (no /opt/conda), and the CUDA codegen also needs nvidia-smi (2026-08-14 note)`. Owed by the nvcc host before the round goes to jeff.
+- Jargon: `jargon.py --port brian2cuda` clean. Docs: README already documents the ROCm/HIP build; this round adds no user-facing build step.
+
+Verdict: completed at 1c9536f.
