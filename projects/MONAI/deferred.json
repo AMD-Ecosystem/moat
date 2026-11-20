@@ -17,6 +17,32 @@
         "by": "jeffdaily",
         "at": "2026-11-18T17:40:10Z"
       }
+    },
+    {
+      "id": "monai-nvimgcodec-dicom-to-rocjpeg",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "MONAI's GPU DICOM decoder (NvImgCodecPydicomReader, monai/data/nvimgcodec_pydicom_plugin.py, the monai[nvimgcodec] extra) delegates to NVIDIA's nvidia.nvimgcodec pydicom plugin plus CuPy and is inert on ROCm, falling back to pydicom/ITK CPU decoding. The ROCm counterpart covers only part: rocJPEG (Python via rocPyDecode's rocPyJpegDecode, a Linux system package) decodes baseline JPEG; there is no ROCm GPU decoder for JPEG Lossless, JPEG 2000 or HTJ2K. A ROCm reader would be a new rocJPEG-backed pydicom decoder plugin in MONAI. Planner recommends defer (consistent with the TensorRT ruling); Jeff rules defer vs now before MONAI is marked planned.",
+      "refs": [
+        "projects/MONAI/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-20T21:17:22Z",
+      "decided": null
+    },
+    {
+      "id": "monai-kvikio-gds-to-hipfile",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "MONAI's GPUDirect Storage paths (GDSDataset in monai/data/dataset.py, the to_gpu option of the image readers in monai/data/image_reader.py) use RAPIDS kvikio, which has no ROCm build, so they are inert on ROCm and their tests skip. The ROCm GDS library is hipFile, reachable from PyTorch through torch.cuda.gds (hipFile-backed on ROCm). Options: defer; port kvikio itself as a separate MOAT project (an intake request); or give MONAI a torch.cuda.gds backend. Planner recommends defer; Jeff rules before MONAI is marked planned.",
+      "refs": [
+        "projects/MONAI/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-20T21:17:22Z",
+      "decided": null
     }
   ]
 }

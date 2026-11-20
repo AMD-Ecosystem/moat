@@ -1,6 +1,6 @@
 {
   "generated_by": "utils/surface.py",
-  "source_sha": "f9f65c9437e1",
+  "source_sha": "a85d75e11cdd",
   "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
   "cuda": {
     "files": [
@@ -19,8 +19,8 @@
       "monai/csrc/utils/resample_utils.h"
     ],
     "markers": {
-      "kernel": 24,
       "device_code": 131,
+      "kernel": 24,
       "launch": 30,
       "warp_intrinsic": 4
     },
@@ -30,46 +30,81 @@
     {
       "id": "extension:monai._C",
       "kind": "python_extension",
-      "where": "setup.py (get_extensions, BUILD_MONAI=1 FORCE_CUDA=1; monai/csrc/**)"
+      "where": "setup.py get_extensions (BUILD_MONAI=1; CUDAExtension over monai/csrc/**/*.cpp + *.cu; ROCm via ROCM_HOME since #9153)"
     },
     {
       "id": "jit_extension:gmm",
       "kind": "python_extension",
-      "where": "monai/_extensions/loader.py + monai/_extensions/gmm (torch.utils.cpp_extension.load at runtime)"
+      "where": "monai/_extensions/loader.py load_module + monai/_extensions/gmm (torch.utils.cpp_extension.load at runtime, 300 s build timeout)"
+    },
+    {
+      "id": "python:compiled-path-gate",
+      "kind": "library",
+      "where": "monai/transforms/spatial/functional.py _compiled_unsupported (CUDA compute-capability rule disables _C on gfx12; used by Resample, SpatialResample, Warp)"
     },
     {
       "id": "tests:csrc-gpu",
       "kind": "tests",
-      "where": "tests/networks/layers/filtering/*, tests/networks/layers/test_grid_pull.py, test_lltm.py, test_gmm.py, tests/utils/test_enum_bound_interp.py, tests/transforms/test_spatial_gpu_support.py"
+      "where": "tests/networks/layers/filtering/*, test_gmm.py, test_grid_pull.py, test_lltm.py, tests/utils/test_enum_bound_interp.py, tests/transforms/test_spatial_gpu_support.py, tests/networks/blocks/warp"
     },
     {
       "id": "tests:unittests",
       "kind": "tests",
-      "where": "runtests.sh --unittests / tests/runner.py (796 test_*.py; GPU cases gated by skip_if_no_cuda)"
+      "where": "runtests.sh --unittests (834 test_*.py; GPU cases gated by skip_if_no_cuda / skip_if_no_cpp_extension, which needs BUILD_MONAI=1 at test time)"
     },
     {
       "id": "tests:integration",
       "kind": "tests",
-      "where": "runtests.sh --net (tests/integration/*)"
+      "where": "runtests.sh --net (tests/integration, 35 files)"
     },
     {
       "id": "optional:hipcim",
       "kind": "option",
-      "where": "setup.cfg extras cucim -> amd-hipcim (monai/data/wsi_reader.py, monai/transforms/*, monai/metrics/utils.py)"
+      "where": "cuCIM paths (monai/data/wsi_reader.py, transforms, metrics, auto3dseg) -> amd-hipcim on Linux; Windows uses CPU readers by Jeff's 2026-11-18 ruling"
     },
     {
-      "id": "examples:amd",
-      "kind": "examples",
-      "where": "examples/simple_monai_example.py, examples/monai_with_hipcim.py"
+      "id": "optional:cupy",
+      "kind": "option",
+      "where": "CuPy paths in 13 modules -> CuPy ROCm wheel (Linux), MOAT cupy port built from source (Windows)"
+    },
+    {
+      "id": "optional:hyena",
+      "kind": "option",
+      "where": "monai/networks/blocks/hyena.py via nvsubquadratic (pure-PyTorch base package)"
+    },
+    {
+      "id": "optional:nvimgcodec",
+      "kind": "option",
+      "where": "monai/data/nvimgcodec_pydicom_plugin.py, NvImgCodecPydicomReader; awaiting Jeff (deferral monai-nvimgcodec-dicom-to-rocjpeg)"
+    },
+    {
+      "id": "optional:kvikio",
+      "kind": "option",
+      "where": "GDSDataset (monai/data/dataset.py), image reader to_gpu (monai/data/image_reader.py); awaiting Jeff (deferral monai-kvikio-gds-to-hipfile)"
+    },
+    {
+      "id": "optional:tensorrt",
+      "kind": "option",
+      "where": "monai/networks/trt_compiler.py, convert_to_trt/trt_compile in monai/networks/utils.py"
+    },
+    {
+      "id": "docs:rocm-install",
+      "kind": "docs",
+      "where": "docs/source/installation.md (ROCm build, BUILD_MONAI runtime flag, ROCm equivalents, named CPU fallbacks and gaps)"
     },
     {
       "id": "platform:windows",
       "kind": "platform",
-      "where": "setup.py omp_flags/_rocm_install_requires on win32; extension + JIT build under ROCm Windows torch"
+      "where": "setup.py omp_flags on win32; _C and GMM JIT under ROCm Windows torch (clang-cl host)"
     }
   ],
   "covered": [],
-  "scoped_out": [],
+  "scoped_out": [
+    {
+      "id": "optional:tensorrt",
+      "reason": "NVIDIA-only TensorRT path; a MIGraphX backend is a feature port, deferred by Jeff Daily 2026-11-18 (monai-tensorrt-to-migraphx, ruled defer). Stays inert on ROCm, tests skip, documentation names the gap."
+    }
+  ],
   "owed": [],
   "removed_from_floor": []
 }

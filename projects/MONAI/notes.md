@@ -67,3 +67,38 @@ These answer the questions under "Planner (2026-11-10, linux-gfx942): questions 
 1. **TensorRT path: deferred.** `monai/networks/trt_compiler.py` and `convert_to_trt`/`trt_compile` stay as upstream ships them, inert on ROCm with their tests skipping on the missing module. A MIGraphX (`torch_migraphx`) backend is a feature port, not part of this HIP port; deferral `monai-tensorrt-to-migraphx` is ruled `defer`. The port's documentation names the gap.
 2. **Whole-slide image reading on Windows: the CPU readers stand as the Windows scope.** hipCIM is Linux-only and no ROCm GPU image-I/O option exists on Windows (the same fact behind the approved `windows` waiver on MOAT's cucim project), so Windows uses openslide/tifffile, named as a CPU fallback in the documentation. The `windows` gate does not wait on a hipCIM Windows build.
 3. **CuPy-backed transform paths on Windows: they run, they do not skip.** There is no Windows CuPy ROCm wheel, but MOAT's cupy project is the Windows ROCm build of CuPy, validated on windows-gfx1151 at a6e01258f (upstream PR cupy/cupy#10467 open). The Windows validator builds CuPy from that port following `projects/cupy/notes.md`, "Install as a dependency", into the venv MONAI runs in, and runs the CuPy-backed paths. `cupy` is recorded as a hard dependency of this project. On Linux the plan is unchanged (upstream CuPy ROCm wheels). If the CuPy source build proves too heavy for the gfx1151 host, record the measured reason and bring it back to jeff; do not skip silently.
+
+## Planner (2026-11-20, linux-gfx942): questions for Jeff before `planned`
+
+**Three questions block the porter.** The project stays in `planning` (lock re-stamped to linux-gfx942 by this job, which has now ended), and nobody may mark it `planned` until Jeff rules on 1-3. Once he has, a planner on linux-gfx942 writes the answers into plan.md (Open questions, the surface table and the change list) and runs `set-state MONAI linux-gfx942 planned`. Questions 1 and 2 are scope cuts under the scope-cut rule; question 3 bears on the independent-port ruling. Everything else in plan.md is settled by the 2026-11-10 and 2026-11-18 rulings.
+
+1. **nvImageCodec GPU DICOM decoding (new upstream since the last plan).** `NvImgCodecPydicomReader` and `monai/data/nvimgcodec_pydicom_plugin.py` (`monai[nvimgcodec]`) decode compressed DICOM on the GPU via NVIDIA's `nvidia.nvimgcodec` pydicom plugin plus CuPy. On ROCm the reader reports itself unavailable and MONAI decodes on the CPU (pydicom/ITK). The ROCm counterpart covers part of it: rocJPEG decodes baseline JPEG only, and its Python binding is rocPyDecode's `rocPyJpegDecode`, a Linux system package. Nothing on ROCm decodes JPEG Lossless, JPEG 2000 or HTJ2K on the GPU.
+   - (a) Defer. The reader stays inert and the CPU decoding is named as a CPU fallback in the docs. This is consistent with the TensorRT ruling, because a ROCm reader is a new backend in MONAI that neither upstream nor any AMD branch has.
+   - (b) Now. Write a rocJPEG-backed pydicom decoder plugin in MONAI for the baseline-JPEG transfer syntax, keeping CPU for the rest, Linux only.
+   Registered as `monai-nvimgcodec-dicom-to-rocjpeg` (feature-port). **Recommendation: (a).** The standing "NVIDIA library -> ROCm equivalent" rule points toward (b). But here MONAI only delegates to NVIDIA's plugin, so (b) would be new feature code covering one transfer syntax of four.
+2. **kvikio GPUDirect Storage.** `GDSDataset` (`monai/data/dataset.py`) and the image readers' `to_gpu` option (`monai/data/image_reader.py`) use RAPIDS kvikio. kvikio has no ROCm build, so these paths are inert and their tests skip. ROCm's GDS library is hipFile, which PyTorch exposes on ROCm as `torch.cuda.gds`.
+   - (a) Defer.
+   - (b) Request an intake of rapidsai/kvikio as its own project, so MONAI picks it up later as an environment dependency.
+   - (c) Give MONAI a `torch.cuda.gds` backend (feature work).
+   Registered as `monai-kvikio-gds-to-hipfile` (feature-port). **Recommendation: (a)**, with (b) as a separate intake if GDS matters to you.
+3. **Overlap with the AMD team's open upstream work.** Two AMD engineers have open work upstream: issue #9285, PR #9161 ("Resolve accelerator-vendor dependency variants", which makes `monai[all]`/`monai[cucim]` resolve to `amd-hipcim`, a ROCm CuPy and so on), and PR #9290 ("Report the HIP version"). Both PRs were updated 2026-11-19. Today `pip install 'monai[cucim]'` on ROCm tries to install `cucim-cu13`, and `print_config` says `CUDA version: None`.
+   - (a) Stay clear of both. The port does not touch `pyproject.toml` extras, `print_dependencies.py`, `check_env`/`deviceconfig` reporting, or `Dockerfile.rocm`. The documented route installs the ROCm equivalents by name, as `Dockerfile.rocm` already does. This avoids a competing AMD PR, the gsplat lesson.
+   - (b) Cover the same ground independently in the port, as the "as if amd-develop did not exist" ruling could be read.
+   **Recommendation: (a).** plan.md is written that way and lists the extras and version reporting under "Not in scope unless Jeff rules otherwise".
+4. **(Not blocking.) Delivery.** Should the port go upstream to Project-MONAI as its own PR, given #9161/#9290, or only into your comparison with amd-develop? Your call after validation.
+
+What this round did (2026-11-20):
+- Cloned upstream `dev` read-only at a85d75e11cdd9c6d6d13500dc7f3960dd07dd7d3 into `projects/MONAI/src`. amd-develop was not read.
+- Rewrote plan.md for that base and regenerated surface.json: the floor is unchanged at 13 files, 24 kernels, 30 launches and 4 warp-intrinsic sites; 14 components; TensorRT scoped out under the 2026-11-18 ruling; `surface.py check MONAI` passes.
+- Registered the two deferrals above.
+
+Findings the porter needs (details in plan.md):
+- **Real ROCm defect (gfx12): `_compiled_unsupported()`** (`monai/transforms/spatial/functional.py:58`) applies the CUDA rule "compute capability major >= 12 means `_C` lacks this arch". On ROCm the device properties hold the gfx version, and `TORCH_CUDA_ARCH_LIST` is unset, so `max_compute_capability()` is 0. gfx1201 and gfx1250 are therefore declared unsupported, and `Resample`/`SpatialResample`/`Warp` fall back silently to `grid_sample`. Fix: return False on `torch.version.hip`, and adjust `tests/transforms/test_spatial_gpu_support.py` for ROCm. gfx1201 validation proves it.
+- Validation traps:
+  - `USE_COMPILED` needs `BUILD_MONAI=1` at test time. Without it every `_C` test skips.
+  - `test_gmm.py` turns a JIT build failure into `skipTest` and is skipped under `QUICKTEST`.
+  - The GMM JIT has a 300 s build timeout.
+- GMM shuffle code re-read at the new base: correct on wave64 and wave32. The xor/down offsets never cross a 32-lane half, and only lane 0 of each half is consumed.
+- The permutohedral `ranks`/`zeros` un-memset allocations from the old plan's risk 4 are under `LINEAR_D_MEMORY`, which is commented out. They are dead code, so that risk is retired.
+- `THC/THCAtomics.cuh` hipifies to `THH/THHAtomics.cuh`, which the ROCm torch wheel ships (checked on torch 2.16 dev, read-only).
+- nvsubquadratic (Hyena blocks) needs no port: the base wheel is pure PyTorch. Install it with `--no-deps`, because it pins `torch<2.15`.
