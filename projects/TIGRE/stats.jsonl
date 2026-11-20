@@ -247,3 +247,6 @@
 {"kind":"phase","ts":"2026-11-20T22:52:28Z","phase":"test","seconds":0.007,"exit":2,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261120-143632-val-tigre-w32-prompt/venv/bin/python ../../probe/tigre_gates.py /var/lib/jenkins/fleet/jobs/gfx1201-20261120-143632-val-tigre-w32-prompt/moat/projects/TIGRE/src/Python all"}
 {"kind":"phase","ts":"2026-11-20T22:53:20Z","phase":"test","seconds":46.575,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261120-143632-val-tigre-w32-prompt/venv/bin/python /var/lib/jenkins/fleet/jobs/gfx1201-20261120-143632-val-tigre-w32-prompt/moat/projects/TIGRE/probe/tigre_gates.py /var/lib/jenkins/fleet/jobs/gfx1201-20261120-143632-val-tigre-w32-prompt/moat/projects/TIGRE/src/Python all"}
 {"kind":"session","ts":"2026-11-20T22:55:53Z","epoch":1795215353.04683,"event":"end","platform":"linux-gfx1201"}
+{"kind":"session","ts":"2026-11-20T23:00:21Z","epoch":1795215621.990679,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-20T23:00:35Z","phase":"compile","seconds":6.046,"exit":1,"cmd":"bash -c cd projects/TIGRE/src && /var/lib/jenkins/fleet/jobs/mi300-20261120-145727-tigre-fullturn-gfx942-prompt/venv/bin/python setup.py build_ext --inplace -j 12"}
+{"kind":"session","ts":"2026-11-20T23:11:43Z","epoch":1795216303.19018,"event":"end","platform":"linux-gfx942"}

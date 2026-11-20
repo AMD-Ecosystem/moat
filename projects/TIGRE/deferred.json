@@ -59,6 +59,20 @@
         "at": "2026-11-18T03:51:13Z",
         "note": "Fold into the next moat-port sync round with CERN/TIGRE master."
       }
+    },
+    {
+      "id": "tigre-parallel-interp-sample-count-knife-edge",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream fragility, not a port defect: in kernelPixelDetector_parallel_interpolated (ray_interpolated_projection_parallel.cu, same on CUDA) the parallel-beam ray length |S-P| is exactly 2*DSO/dVoxel (128 for the 64^3 test geometry), an exact multiple of accuracy 0.5, so ceilf(length/accuracy) sits on a knife edge between 256 and 257 samples and a 1-ulp change in the float32 squared norm flips it. Which side a build lands on is decided by the compiler's FMA contraction of dx*dx+dy*dy+dz*dz: CDNA (gfx90a, gfx942) pairs the squares into v_pk_mul_f32 and rounds both, giving 257 samples on 768 of 4096 rays at angle 0.3 and 256 at 0.3+2pi, so test_forward_is_invariant_to_a_full_turn[parallel-interpolated] fails (2.40e-4 vs 1e-4) on MI250X; RDNA (gfx1100, gfx1201) forms an fma chain and gets 256 everywhere. A strict-IEEE CPU emulation agrees with gfx90a/gfx942. A maintainer running the suite on MI250X sees the failure. Options for a person: report upstream with a suggested fix (e.g. a small tolerance before the ceilf, or computing the parallel ray length analytically), or leave it. Whether nvcc lands on the failing side is unverified.",
+      "refs": [
+        "projects/TIGRE/notes.md, Validation 2026-11-20 (linux-gfx942)",
+        "projects/TIGRE/probe/fullturn_cpu_ref.py"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-20T23:10:49Z",
+      "decided": null
     }
   ]
 }

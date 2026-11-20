@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
   "adopted_at": "2026-06-04T01:07:42Z",
-  "updated_at": "2026-11-20T22:55:52Z",
+  "updated_at": "2026-11-20T23:10:49Z",
   "head_sha": "c0151501c2a97922e9afea20007f3d049d0a815a",
   "depends_on": [],
   "pr_url": "https://github.com/CERN/TIGRE/pull/747",
@@ -20,13 +20,13 @@
   "stage": "review-passed",
   "platforms": {
     "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
+      "blocked": true,
+      "blocked_reason": "gfx94x has no HIP image/texture API (__HIP_NO_IMAGE_SUPPORT; hipMalloc3DArray returns 'operation not supported' on MI300X): every TIGRE projector reads a 3D texture, so c015150 fails to compile for gfx942 (77 'tex3D unavailable' errors). Supporting MI300 needs a texture-free fetch path, new scope for a person to rule on.",
       "validated_sha": null,
       "failed_sha": null,
       "started_at": "2026-11-04T07:39:26Z",
       "completed_at": null,
-      "updated_at": "2026-11-04T07:39:26Z",
+      "updated_at": "2026-11-20T23:10:49Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
