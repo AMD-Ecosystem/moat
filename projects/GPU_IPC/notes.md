@@ -1897,3 +1897,14 @@ origin/main..moat-port` and `--diff origin/main..moat-port`, both clean.
 Delta 29e2494..c44ed01 touches only the WIN32+USE_HIP branch of CMakeLists.txt,
 so it cannot change a Linux build; carry-forward and review are left to the
 checkup session.
+
+## Review 2026-11-20 (delta 29e2494..c44ed01, Windows HIP link fix)
+
+Scope: the one commit "[ROCm] Link the Windows HIP build with clang's lld driver name" (CMakeLists.txt +4 lines). The rest of the branch was reviewed at 29e2494 (see the earlier Review 2026-11-20 section). No findings.
+
+Checked:
+- Variable and placement: CMake 3.31 `Modules/Platform/Windows-Clang.cmake:59` sets `CMAKE_${lang}_USING_LINKER_DEFAULT "-fuse-ld=lld-link"` (included by `Windows-Clang-HIP.cmake` via `__windows_compiler_clang(HIP)`) during `project()`; the linker-type machinery (CMAKE_LINKER_TYPE, added in 3.29 per `Help/release/3.29.rst`) reads `CMAKE_<LANG>_USING_LINKER_<TYPE>` at generate time, so a `set()` after `project()` in the top-level directory overrides it. Evidence: build/ (29e2494) `build.ninja` has `-fuse-ld=lld-link` and fails to link; build3/ (c44ed01, no extra flags) has `-fuse-ld=lld` once and links gipc.exe. The variable is internal (undocumented, set by the platform module), not a documented user knob; acceptable for a build-only override, noted for future CMake changes.
+- Older CMake: project minimum is 3.24. On 3.24-3.28 the platform module adds no `-fuse-ld` and nothing reads the variable; an unread `set()` is silently ignored (no error, no warning without `--warn-unused-vars`). No regression.
+- Isolation: inside `if(USE_HIP)` (CUDA configure takes the else branch) and `if(WIN32)` (Linux HIP unaffected). Only HIP link lines are changed; gipc links with the HIP language.
+- Commit: title 63 chars with `[ROCm]` (ROCm-specific), body states cause and fix, AI disclosure in prose, no Co-Authored-By/noreply, Test Plan with literal commands in a fenced block; diff and message ASCII only; `jargon.py -C <clone> --commits/--diff 29e2494..c44ed01` both clean. Code comment is accurate and ASCII.
+- Not run: gipc.exe (Windows GPU run waived; host rule). Build-only evidence is sufficient for a link-line change.
