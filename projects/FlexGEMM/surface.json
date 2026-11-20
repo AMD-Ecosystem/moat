@@ -146,8 +146,106 @@
       "where": "projects/FlexGEMM/notes.md ## Install as a dependency, per OS, written by validators (needed by TRELLIS.2)"
     }
   ],
-  "covered": [],
+  "covered": [
+    {
+      "id": "extension:flex_gemm.kernels.cuda",
+      "reason": "builds with ROCm 10.2 / torch 2.16 for gfx942 at bcf7c6f; hashmap, serialize, neighbour-cache tests pass"
+    },
+    {
+      "id": "triton:spconv",
+      "reason": "spconv/submconv fwd+bwd tables pass on MI300X (notes.md)"
+    },
+    {
+      "id": "triton:grid_sample",
+      "reason": "grid_sample.py passes after bcf7c6f (HIP launch-size prune)"
+    },
+    {
+      "id": "package:flex_gemm.ops",
+      "reason": "exercised by every test script and examples/submconv.py"
+    },
+    {
+      "id": "package:flex_gemm.utils.autotuner",
+      "reason": "autotuning and persisted cache exercised by all Triton runs; bcf7c6f adds an early_config_prune"
+    },
+    {
+      "id": "build:linux-rocm",
+      "reason": "06873dd C++ standard fix; Linux ROCm build verified on gfx942"
+    },
+    {
+      "id": "test:hashmap",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    },
+    {
+      "id": "test:serialize",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    },
+    {
+      "id": "test:grid_sample",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    },
+    {
+      "id": "test:spconv-out_coords",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    },
+    {
+      "id": "test:spconv-neighbor_cache",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    },
+    {
+      "id": "test:submconv-neighbor_cache",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    },
+    {
+      "id": "test:spconv-fwd",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    },
+    {
+      "id": "test:spconv-bwd",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    },
+    {
+      "id": "test:submconv-fwd",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    },
+    {
+      "id": "test:submconv-bwd",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    },
+    {
+      "id": "example:submconv",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    },
+    {
+      "id": "benchmark:submconv-inf_ablation",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    },
+    {
+      "id": "benchmark:submconv-train_ablation",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    },
+    {
+      "id": "benchmark:submconv-inf_benchmark",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    },
+    {
+      "id": "benchmark:submconv-train_benchmark",
+      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+    }
+  ],
   "scoped_out": [],
-  "owed": [],
+  "owed": [
+    {
+      "id": "build:windows-rocm",
+      "reason": "setup.py Windows+HIP branch changed in 078c4ab but not yet compiled; needs the windows gate host (gfx1151) build and validation"
+    },
+    {
+      "id": "example:spconv",
+      "reason": "upstream examples/spconv.py unpacks two values from sparse_conv3d, which returns three; fails on every platform before GPU work. Fix-or-leave is a question for Jeff (notes.md, Porting 2026-11-20, question 1). The op itself runs on MI300X with the unpack corrected."
+    },
+    {
+      "id": "doc:install-as-dependency",
+      "reason": "written by each validator from its validated build (plan E)"
+    }
+  ],
   "removed_from_floor": []
 }
