@@ -27,7 +27,7 @@ exists. A row marked "not verified" states what the library is, not what a port 
 |---|---|---|---|
 | cuBLAS | hipBLAS (rocBLAS underneath) | yes | handle types; the v2 enums change a few signatures; 16-bit GEMM accuracy (faults-numerics.md) |
 | cuBLASLt | hipBLASLt | mostly | epilogues, compute types, the ReLU aux format ("BLAS, hipBLASLt and Composable Kernel" below) |
-| cuFFT | hipFFT (rocFFT) | yes | plan creation during graph capture (faults-memory-streams.md) |
+| cuFFT | hipFFT (rocFFT) | yes | plan creation during graph capture (faults-memory-streams.md); hipFFT complex types under heFFTe (below) |
 | cuRAND | hipRAND (rocRAND) | yes | device generator state internals; C++14 from ROCm 10.1 |
 | cuSPARSE | hipSPARSE (rocSPARSE) | yes | half-precision SpMM, zero workspace sizes, graph capture ("hipSPARSE" below) |
 | cuSOLVER | hipSOLVER (rocSOLVER) | partly; not verified | hipSOLVER has a cuSOLVER-style dense API (`hipsolverDn*`). None of the ports behind this file exercised more than handle creation, so check every routine you call against hipSOLVER's function list, and its workspace-size and `info` conventions, before assuming a rename is enough. One gap is known: the low-level sparse factorization interface (`cusolverSpXcsrqr*` and `csrchol*`, with analysis, setup, factor and solve as separate calls), `csrlsvluHost` and `csrsymrcm` have no hipSOLVER counterpart (requested in ROCm/hipSOLVER issue 443), and cuDSS has none either; a sparse direct solve needs another library (RXMesh) |
@@ -64,6 +64,16 @@ For hipBLAS the equivalent verified trigger is a GEMM with negative extents:
 touches no device memory, so it is safe to fire from a probe. More generally, before
 concluding a port hangs, reproduce the hang in a few-line program that includes none of the
 project's headers: that separates a library bug from your change. (TurboFNO)
+
+**heFFTe's rocFFT backend does not accept hipFFT complex types.** heFFTe's cuFFT backend
+recognizes `cufftComplex`/`cufftDoubleComplex`, but its rocFFT backend registers no hipFFT
+type. A CUDA code that keeps its FFT buffers as `cufftComplex` and maps the name to
+`hipfftComplex` (which is `HIP_vector_type<float,2>`) fails to compile with `static assertion
+... check_types<rocfft, float, HIP_vector_type<float, 2>>: Using either an unknown complex
+type`. heFFTe documents `heffte::is_ccomplex<T>` and `is_zcomplex<T>` as the specialization
+point for custom complex types: specialize them for `hipfftComplex` and
+`hipfftDoubleComplex` in the HIP branch, with no patch to heFFTe. heFFTe then reinterprets
+the buffers as `std::complex`, whose layout they share. (ESPResSo)
 
 **Choosing the NVIDIA or AMD build of a library at run time.** A runtime with both a CUDA and a
 HIP backend must pick per device, from the device's own backend, and never by enumerating or

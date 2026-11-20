@@ -274,6 +274,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - An uninitialised header-only submodule fails as a HIP error, not as a missing file
 - clang checks kernel bodies in the HIP host pass; nvcc does not
 - The CUDA Samples `helper_math.h` makes vector arithmetic ambiguous under HIP
+- HIP's `blockIdx`/`threadIdx` do not convert to `uint3`, and a `uint3` does not convert to ...
 - A helper whose name the standard library also declares must NOT be guarded on ...
 - Extend a CUDA guard for HIP; never re-key it
 - A ROCm-only branch inside a shared template still COMPILES on the CUDA path
@@ -301,7 +302,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - One OpenMP runtime per binary; which one follows from who compiles the files that use ...
 - OpenMP in a mixed g++/HIP library: one runtime only
 - CMake `LANGUAGE HIP` on host `.cpp` files drops OpenMP
-- A HIP-linked shared library gets no RUNPATH to the ROCm lib dir
+- A HIP-linked shared library, or a host-linked executable, gets no RUNPATH to the ROCm lib ...
 - With the ROCm clang as the host compiler, a found system libunwind links but does not load
 - LibTorch's CMake package adds `-D__HIP_NO_HALF_OPERATORS__=1 ...
 - On a multi-GPU host a rapids-cmake HIP dependency fails configure with `mismatch between ...
@@ -350,6 +351,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Library swaps
 - Negative entries for that table
 - A swapped library may be less defensive about bad arguments than the CUDA one
+- heFFTe's rocFFT backend does not accept hipFFT complex types
 - Choosing the NVIDIA or AMD build of a library at run time
 - A scalar's WIDTH follows the compute/scale type, not the matrix type
 - hipBLASLt epilogues are not cuBLASLt's, per type and per format
