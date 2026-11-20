@@ -8692,3 +8692,7 @@ So AMD's shipped 1.13 code does show late writes, in the alloc_on_s2 case, every
 ## Ruling on the AMD 1.13 defects (jeff, 2026-11-20)
 
 Defer: no issue on `AMD-Ecosystem/warp` for the 1.13 cross-stream free defect or the 1.13 tile-solve failures until after the 1.14 release is out. Registered as deferred items `amd-warp-113-cross-stream-free-late-writes` and `amd-warp-113-tile-solve-race`. Until then nothing GitHub-visible on that repository beyond the port branch itself, and the release notes do not call out 1.13's defects unless jeff asks for it.
+
+## Ruling on the two fem isolation failures (jeff, 2026-11-20)
+
+"(b)": fix the isolation in the fork so `test_gimp_quadrature` and `test_cube_shape_functions` pass when theirs is the first Warp initialization in a worker (smallest change; not ROCm-specific, so no `[ROCm]` prefix). Queued for the porter after session 24 (prompt `agent_space/p6ev/fem-porter.txt`).
