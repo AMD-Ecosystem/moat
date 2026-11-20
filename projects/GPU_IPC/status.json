@@ -7,10 +7,14 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:54Z",
-  "updated_at": "2026-11-20T21:25:51Z",
+  "updated_at": "2026-11-20T21:29:57Z",
   "head_sha": "f9604bbd1e965106ee0752b46e48f8e7828c6401",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-20T21:29:57Z",
+    "holder": "52a57b1da8ff"
+  },
   "waivers": {
     "windows": {
       "reason": "The only Windows host available (gfx1151 laptop; the gfx1101 and gfx1201 Windows hosts are offline) bugchecks under this project's GPU work: HYPERVISOR_ERROR 0x00020001, traced by dump analysis to csagent.sys (CrowdStrike Falcon), six occurrences (four on 2026-06-03, two on 2026-08-14), with hardware GL at about 30 s and with the HIP solver within seconds. The port builds clean on Windows with cmake and ninja and renders under software GL (checked at 3798cb2). jeffdaily ruled on 2026-11-20 that the laptop would bugcheck again and that the port ships without a Windows GPU run.",
@@ -20,7 +24,7 @@
   },
   "license_spdx": "MPL-2.0",
   "upstream_repo_id": 782798953,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "blocked": false,
@@ -51,7 +55,7 @@
       "validated_sha": "f9604bbd1e965106ee0752b46e48f8e7828c6401",
       "started_at": "2026-08-08T18:04:03Z",
       "completed_at": "2026-08-20T04:42:12Z",
-      "updated_at": "2026-08-20T04:42:12Z",
+      "updated_at": "2026-11-20T21:29:57Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -65,7 +69,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "porter",
       "state": "completed",
       "carry_forward": {
         "to": "f9604bbd1e965106ee0752b46e48f8e7828c6401",
