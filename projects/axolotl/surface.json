@@ -1,0 +1,252 @@
+{
+ "generated_by": "utils/surface.py",
+ "source_sha": "de8549a44063",
+ "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+ "cuda": {
+  "files": [
+   "src/axolotl/integrations/kernels/libs/scattermoe_lora/marlin_w4a16/_csrc/launcher_body.inc",
+   "src/axolotl/integrations/kernels/libs/scattermoe_lora/marlin_w4a16/_csrc/libtorch_stable/moe/marlin_moe_wna16/kernel.h",
+   "src/axolotl/integrations/kernels/libs/scattermoe_lora/marlin_w4a16/_csrc/libtorch_stable/moe/marlin_moe_wna16/marlin_template.h",
+   "src/axolotl/integrations/kernels/libs/scattermoe_lora/marlin_w4a16/_csrc/libtorch_stable/moe/marlin_moe_wna16/ops_standalone.cu",
+   "src/axolotl/integrations/kernels/libs/scattermoe_lora/marlin_w4a16/_csrc/libtorch_stable/moe/marlin_moe_wna16/repack_standalone.cu",
+   "src/axolotl/integrations/kernels/libs/scattermoe_lora/marlin_w4a16/_csrc/libtorch_stable/moe/marlin_moe_wna16/sm80_kernel_bfloat16_fe2m1f_bfloat16.cu",
+   "src/axolotl/integrations/kernels/libs/scattermoe_lora/marlin_w4a16/_csrc/libtorch_stable/moe/marlin_moe_wna16/sm80_kernel_bfloat16_fe4m3fn_bfloat16.cu",
+   "src/axolotl/integrations/kernels/libs/scattermoe_lora/marlin_w4a16/_csrc/libtorch_stable/quantization/marlin/dequant.h",
+   "src/axolotl/integrations/kernels/libs/scattermoe_lora/marlin_w4a16/_csrc/libtorch_stable/quantization/marlin/marlin.cuh",
+   "src/axolotl/integrations/kernels/libs/scattermoe_lora/marlin_w4a16/_csrc/libtorch_stable/quantization/marlin/marlin_dtypes.cuh",
+   "src/axolotl/integrations/kernels/libs/scattermoe_lora/marlin_w4a16/_csrc/libtorch_stable/quantization/marlin/marlin_mma.h"
+  ],
+  "markers": {
+   "kernel": 36,
+   "launch": 3,
+   "device_code": 74,
+   "warp_intrinsic": 5
+  },
+  "libraries": {}
+ },
+ "components": [
+  {
+   "id": "library:axolotl",
+   "kind": "library",
+   "where": "src/axolotl (CLI train/preprocess/inference/merge-lora, trainers, loaders)",
+   "added_by": "planner"
+  },
+  {
+   "id": "triton:core-kernels",
+   "kind": "kernels",
+   "where": "src/axolotl/kernels/*.py (LoRA, SwiGLU, GeGLU, DoRA, relu2, quantize, rms_norm_gated, gemma4 rope, glm4_moe_lite)",
+   "added_by": "planner"
+  },
+  {
+   "id": "triton:scattermoe-lora-bf16",
+   "kind": "kernels",
+   "where": "src/axolotl/integrations/kernels/libs/scattermoe_lora (bf16/bnb expert path incl. swiglu_epilogue.py)",
+   "added_by": "planner"
+  },
+  {
+   "id": "triton:model-attention-kernels",
+   "kind": "kernels",
+   "where": "src/axolotl/integrations/kernels/libs/{dsv4,glm_dsa,mistral_large4} (unit tests only)",
+   "added_by": "planner"
+  },
+  {
+   "id": "integration:liger",
+   "kind": "plugin",
+   "where": "src/axolotl/integrations/liger",
+   "added_by": "planner"
+  },
+  {
+   "id": "integration:cut_cross_entropy",
+   "kind": "plugin",
+   "where": "src/axolotl/integrations/cut_cross_entropy",
+   "added_by": "planner"
+  },
+  {
+   "id": "gating:device-capability",
+   "kind": "python",
+   "where": "src/axolotl/cli/config.py:361-391 and consumers in src/axolotl/utils/schemas/config.py; capability gates listed in plan.md R2",
+   "added_by": "planner"
+  },
+  {
+   "id": "guard:marlin_w4a16_available",
+   "kind": "python",
+   "where": "src/axolotl/integrations/kernels/libs/scattermoe_lora/marlin_w4a16/__init__.py:43-55",
+   "added_by": "planner"
+  },
+  {
+   "id": "extension:marlin_w4a16",
+   "kind": "jit_cuda_extension",
+   "where": "src/axolotl/integrations/kernels/libs/scattermoe_lora/marlin_w4a16/_csrc (runtime cpp_extension.load)",
+   "added_by": "planner"
+  },
+  {
+   "id": "backend:cute-dsl",
+   "kind": "optional_backend",
+   "where": "flash_attn_4 monkeypatch, quack, sonicmoe, scattermoe_lora/cutlass_fp4",
+   "added_by": "planner"
+  },
+  {
+   "id": "backend:deepgemm",
+   "kind": "optional_backend",
+   "where": "scattermoe_lora/dequant_grouped.py (kernels-community/deep-gemm)",
+   "added_by": "planner"
+  },
+  {
+   "id": "backend:nvfp4-mxfp4",
+   "kind": "optional_backend",
+   "where": "scattermoe_lora nvfp4_* / mxfp8 Blackwell paths, tests marked nvfp4",
+   "added_by": "planner"
+  },
+  {
+   "id": "backend:hub-kernels-cuda-only",
+   "kind": "optional_backend",
+   "where": "kernels-community flash-attn3/flash-attn4/sage-attention (no ROCm builds)",
+   "added_by": "planner"
+  },
+  {
+   "id": "attention:flash-attn2-rocm",
+   "kind": "dependency_path",
+   "where": "flash_attention_2 via ROCm/flash-attention package (hub kernel has no ROCm build)",
+   "added_by": "planner"
+  },
+  {
+   "id": "attention:sdpa",
+   "kind": "dependency_path",
+   "where": "attn_implementation: sdpa",
+   "added_by": "planner"
+  },
+  {
+   "id": "quant:bitsandbytes-qlora",
+   "kind": "dependency_path",
+   "where": "QLoRA load_in_4bit/8bit, quantize_moe_experts",
+   "added_by": "planner"
+  },
+  {
+   "id": "distributed:fsdp2-deepspeed",
+   "kind": "dependency_path",
+   "where": "FSDP2, DeepSpeed ZeRO, TP, context parallel (RCCL)",
+   "added_by": "planner"
+  },
+  {
+   "id": "tests:cpu-suite",
+   "kind": "tests",
+   "where": "pytest -m 'not gpu and not slow ...' tests/",
+   "added_by": "planner"
+  },
+  {
+   "id": "tests:gpu-unit",
+   "kind": "tests",
+   "where": "cicd/cicd.sh unit lane (-m 'gpu and not gpu_blackwell')",
+   "added_by": "planner"
+  },
+  {
+   "id": "tests:gpu-kernels",
+   "kind": "tests",
+   "where": "tests/kernels, tests/integrations/kernels, tests/e2e/kernels",
+   "added_by": "planner"
+  },
+  {
+   "id": "tests:e2e-single-gpu",
+   "kind": "tests",
+   "where": "tests/e2e (patched, solo, integrations, rest)",
+   "added_by": "planner"
+  },
+  {
+   "id": "tests:e2e-multigpu",
+   "kind": "tests",
+   "where": "tests/e2e/multigpu (cicd/multigpu.sh)",
+   "added_by": "planner"
+  },
+  {
+   "id": "tests:gpu_blackwell-lane",
+   "kind": "tests",
+   "where": "tests marked gpu_blackwell (triage on ROCm)",
+   "added_by": "planner"
+  },
+  {
+   "id": "tests:nvfp4-lane",
+   "kind": "tests",
+   "where": "tests marked nvfp4 (cicd/nvfp4.sh, SM100+)",
+   "added_by": "planner"
+  },
+  {
+   "id": "packaging:rocm-install",
+   "kind": "packaging",
+   "where": "pyproject.toml dependency pins vs ROCm torch/triton/xformers; constraints recipe",
+   "added_by": "planner"
+  },
+  {
+   "id": "docker:rocm-image",
+   "kind": "docker",
+   "where": "docker/ (new ROCm uv Dockerfile beside the CUDA ones)",
+   "added_by": "planner"
+  },
+  {
+   "id": "docs:rocm",
+   "kind": "docs",
+   "where": "docs/amd_hpc.qmd, docs/installation.qmd, docs/attention.qmd, docs/support-matrix.qmd, docs/expert_quantization.qmd",
+   "added_by": "planner"
+  },
+  {
+   "id": "examples:representative-configs",
+   "kind": "examples",
+   "where": "examples/ (LoRA, QLoRA, full FT, DPO, MoE, FSDP2/DeepSpeed configs used for e2e runs)",
+   "added_by": "planner"
+  },
+  {
+   "id": "package:tree-recurrence",
+   "kind": "library",
+   "where": "packages/tree-recurrence (no GPU code of its own; exercised via axolotl tests)",
+   "added_by": "planner"
+  },
+  {
+   "id": "extra:blackwell",
+   "kind": "optional_extra",
+   "where": "pyproject [blackwell]: flash-attn-4[cu13], quack-kernels[cu13]",
+   "added_by": "planner"
+  },
+  {
+   "id": "extra:fla-tilelang",
+   "kind": "optional_extra",
+   "where": "pyproject [fla]: flash-linear-attention[tilelang], tilelang",
+   "added_by": "planner"
+  }
+ ],
+ "covered": [],
+ "scoped_out": [
+  {
+   "id": "extension:marlin_w4a16",
+   "reason": "Vendored vLLM Marlin W4A16 MoE GEMM in PTX mma.sync/ldmatrix; no HIP equivalent and vLLM has no ROCm Marlin MoE. Optional backend with Triton/torch fallback; the port adds only the HIP guard (guard:marlin_w4a16_available). Pending jeff's Q1 scope ruling (plan.md Open questions); recommended answer scopes it out."
+  },
+  {
+   "id": "backend:cute-dsl",
+   "reason": "CuTe DSL / CUTLASS Python (FlashAttention-4, quack, SonicMoE, cutlass_fp4) has no AMD target; optional, falls back to Triton/torch. Pending jeff's Q1 scope ruling (plan.md Open questions); recommended answer scopes it out."
+  },
+  {
+   "id": "backend:deepgemm",
+   "reason": "DeepGEMM is sm90/sm100-only CUDA; optional, falls back. Pending jeff's Q1 scope ruling (plan.md Open questions); recommended answer scopes it out."
+  },
+  {
+   "id": "backend:nvfp4-mxfp4",
+   "reason": "NVFP4 / hardware-MX paths target Blackwell tensor cores; no ROCm kernel in axolotl or its deps. Pending jeff's Q1 scope ruling (plan.md Open questions); recommended answer scopes it out."
+  },
+  {
+   "id": "backend:hub-kernels-cuda-only",
+   "reason": "kernels-community flash-attn3, flash-attn4, sage-attention publish no ROCm builds (checked 2026-11-20). Pending jeff's Q1 scope ruling (plan.md Open questions); recommended answer scopes it out."
+  },
+  {
+   "id": "tests:nvfp4-lane",
+   "reason": "Multi-GPU NVFP4 tests need SM100+ CUDA GPUs and the scoped-out NVFP4 backends. Pending jeff's Q1 scope ruling (plan.md Open questions); recommended answer scopes it out."
+  },
+  {
+   "id": "extra:blackwell",
+   "reason": "cu13-only CuTe-DSL wheels. Pending jeff's Q1 scope ruling (plan.md Open questions); recommended answer scopes it out."
+  },
+  {
+   "id": "extra:fla-tilelang",
+   "reason": "tilelang FLA backend; ROCm support of tilelang 0.1.14 unverified and the default fla-core Triton path is covered instead. Pending jeff's Q1 scope ruling (plan.md Open questions); recommended answer scopes it out."
+  }
+ ],
+ "owed": [],
+ "removed_from_floor": []
+}
