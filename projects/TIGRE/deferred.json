@@ -13,6 +13,52 @@
       "upstream_issue": null,
       "created_at": "2026-06-19T20:53:49Z",
       "decided": null
+    },
+    {
+      "id": "tigre-809-cuda-to-hip-defines",
+      "kind": "other",
+      "component": null,
+      "summary": "When moat-port syncs CERN/TIGRE#809 (multi-GPU TV halo exchange overlap), the fork's cuda_to_hip.h needs four new mappings the PR's commits use in GD_TV.cu, GD_AwTV.cu and tv_proximal.cu: cudaEventCreateWithFlags, cudaEventDisableTiming, cudaStreamWaitEvent and cudaMemcpyPeerAsync (to their hip* names). Since commit f7ef26a, cudaDeviceCanAccessPeer, cudaDeviceEnablePeerAccess and cudaErrorPeerAccessAlreadyEnabled appear only in gpuUtils.cu's CUDA-only branch and need no mapping. The MI355X/gfx942 validation of #809 added the mappings only in never-pushed scratch branches, so without them the HIP build of the synced fork fails to compile. Nothing to do until #809 merges upstream and a sync round starts.",
+      "refs": [
+        "https://github.com/CERN/TIGRE/pull/809",
+        "plan tigre-multigpu-tv-exchange-overlap.md, finding E"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-17T16:43:28Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-11-18T03:40:59Z",
+        "note": "Nothing to do until CERN/TIGRE#809 merges and a sync round starts."
+      },
+      "summary_history": [
+        {
+          "summary": "When moat-port syncs CERN/TIGRE#809 (multi-GPU TV halo exchange overlap), the fork's cuda_to_hip.h needs seven new mappings the PR's commits use: cudaEventCreateWithFlags, cudaEventDisableTiming, cudaStreamWaitEvent, cudaDeviceCanAccessPeer, cudaDeviceEnablePeerAccess, cudaErrorPeerAccessAlreadyEnabled, cudaMemcpyPeerAsync (to their hip* names). The MI355X/gfx942 validation of #809 added them only in never-pushed scratch branches, so without them the HIP build of the synced fork fails to compile. Nothing to do until #809 merges upstream and a sync round starts.",
+          "by": "jeff",
+          "at": "2026-11-18T03:41:11Z",
+          "reason": "#809 commit 5 (f7ef26a) moved the peer-access setup in gpuUtils.cu into the CUDA-only #else branch, so three of the seven mappings are no longer compiled on HIP."
+        }
+      ]
+    },
+    {
+      "id": "tigre-release-on-error-hip-include",
+      "kind": "other",
+      "component": null,
+      "summary": "At the next moat-port sync with CERN/TIGRE master: Common/CUDA/tigre_release_on_error.hpp (added upstream in #854) includes <cuda_runtime_api.h> directly, which does not exist in the HIP build, so the synced fork fails to compile until that include goes through cuda_to_hip.h like the other CUDA sources. Found by the #856 prototype on master cac83e7, fixed there only in a never-pushed scratch tree.",
+      "refs": [
+        "https://github.com/CERN/TIGRE/issues/856",
+        "plan tigre-norm-double-partials-prototype.md, Setup"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-18T03:41:22Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-11-18T03:51:13Z",
+        "note": "Fold into the next moat-port sync round with CERN/TIGRE master."
+      }
     }
   ]
 }
