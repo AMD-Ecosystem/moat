@@ -220,3 +220,4 @@
 {"kind":"phase","ts":"2026-11-20T04:25:53Z","phase":"compile","seconds":0.001,"exit":127,"cmd":"cudabuild.sh"}
 {"kind":"phase","ts":"2026-11-20T04:26:27Z","phase":"compile","seconds":25.979,"exit":0,"cmd":"agent_space/cudabuild.sh"}
 {"kind":"phase","ts":"2026-11-20T04:29:49Z","phase":"compile","seconds":175.464,"exit":0,"cmd":"agent_space/relbuild.sh /var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/moat/projects/warp-1.14/src 64"}
+{"kind":"phase","ts":"2026-11-20T04:50:50Z","phase":"test","seconds":504.931,"exit":0,"cmd":"agent_space/suite_wheel.sh"}
