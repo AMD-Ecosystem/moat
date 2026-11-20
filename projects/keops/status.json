@@ -6,12 +6,16 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "nvrtc-driver-api",
-  "stage": "planned",
+  "stage": "porting",
   "adopted_at": "2026-11-12T18:32:39Z",
-  "updated_at": "2026-11-20T21:25:23Z",
+  "updated_at": "2026-11-20T21:36:44Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx950",
+    "since": "2026-11-20T21:36:44Z",
+    "holder": "ffd1f7081e10"
+  },
   "waivers": {
     "windows": {
       "reason": "upstream supports Linux and macOS only; POSIX .so build and 32-bit long indices on Windows; Windows PRs unmerged since 2020. Approved 2026-11-12 with the gap-matrix intake follow-ups.",
@@ -65,6 +69,28 @@
         "last_session_at": null
       },
       "last_agent": "planner"
+    },
+    "linux-gfx950": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-20T21:36:44Z",
+      "completed_at": null,
+      "updated_at": "2026-11-20T21:36:44Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   },
   "license_spdx": "MIT",
