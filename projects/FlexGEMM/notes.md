@@ -297,3 +297,121 @@ Full analysis: `plan.md`. Machine-checked surface: `surface.json` (24 components
     g++ -std=c++17|c++20 -E (torch/extension.h)  # preprocessor only
     python3 utils/surface.py generate FlexGEMM && python3 utils/surface.py check FlexGEMM
     python3 utils/moatlib.py set-ext-type FlexGEMM torch-extension
+
+## Porting (2026-11-20, linux-gfx942 fleet job, AMD Instinct MI300X)
+
+**Questions for Jeff (none blocks the reviewer; the port proceeds without them):**
+
+1. **`examples/spconv.py` is broken upstream on every platform.** It unpacks `out_feats, neignbor_cache = sparse_conv3d(...)`, but `sparse_conv3d` returns three values `(feats, coords, neighbor_cache)` since the API change, so it raises `ValueError: too many values to unpack (expected 2)` before any GPU work. This is pure Python and not ROCm-specific, so the port leaves it alone (smallest port). With the unpack corrected (agent-side copy, no fork edit) it runs on MI300X with finite output and gradients. Options: (a) leave it (current); (b) add a separate unprefixed commit fixing the example in this port; (c) mention it to upstream separately. (b) or (c) is your call, since it widens the upstream-visible change.
+2. **The HIP launch-size fix is a config prune, not a kernel change.** Commit bcf7c6f drops, on HIP only, the grid_sample backward configs whose launch would reach 2^32 work-items (details below). The alternative is to change `indice_weighed_sum_bwd_input` to a 2D grid or a persistent loop, which also covers inputs where every config is too large (roughly M*V*C at or above 2^34, i.e. tens of GB of indices and gradients), but edits a shared Triton kernel that upstream tunes. I chose the prune as the smaller change. No ruling is needed unless you prefer the kernel change.
+
+### What was done
+
+Fork `AMD-Ecosystem/FlexGEMM`, branch `moat-port` cut from `main` 6dd94a8 (upstream head). Four commits, head **bcf7c6f5eee9f780a0ecdff4de7cecca8f73c728**, pushed:
+
+| Commit | Title | Change |
+|---|---|---|
+| 06873dd | setup.py: let torch choose the C++ standard | drop `-std=c++17`, `/std:c++17`, `-Xcompiler=/std:c++17` (shared fix, plan item 1) |
+| 078c4ab | [ROCm] setup.py: Windows HIP flags and default target | Windows+HIP: hipcc gets `["-O3"] + cc_flag` only; `GPU_ARCHS` default is empty on Windows so torch uses `PYTORCH_ROCM_ARCH`; `.gitignore` gains `flex_gemm/kernels/hip/` (hipify output written in-tree by every ROCm build; upstream left it untracked) |
+| d45c5e2 | [ROCm] README: describe the AMD GPU build | short "AMD GPUs (ROCm)" paragraph under Installation (GPU_ARCHS, Windows triton-windows + VS prompt). No device-selection env vars. |
+| bcf7c6f | [ROCm] grid_sample: skip bwd configs past the HIP launch size limit | `early_config_prune` on `indice_weighed_sum_bwd_input_kernel`, HIP only |
+
+`/openmp` in the Windows `cxx` list was kept (plan risk 4: drop only if the Windows link proves it must go). No `.cu`/`.cuh`, spconv Triton kernel, op, test or autotune-cache change. The deferred `flexgemm-wave-barrier-syncwarp` is untouched per your ruling; every neighbour-cache test (which runs `reduce_code_kernel`) passes bit-exact on wave64.
+
+Flag-list diff, upstream vs port, from `agent_space/flags.py` (monkeypatched `setuptools.setup`, `platform.system` patched), GPU_ARCHS unset:
+
+```
+BUILD_TARGET=cuda Linux:   cxx/nvcc lose only -std=c++17
+BUILD_TARGET=cuda Windows: cxx loses /std:c++17; nvcc loses -std=c++17 and -Xcompiler=/std:c++17 (all else identical)
+BUILD_TARGET=rocm Linux:   cxx/nvcc lose only -std=c++17 (--offload-arch=native kept)
+BUILD_TARGET=rocm Windows: nvcc ['-O3', '-std=c++17', '-Xcompiler=/std:c++17', '-Xcompiler=/EHsc', '-Xcompiler=/permissive-', '-Xcompiler=/Zc:__cplusplus', '--offload-arch=native'] -> ['-O3']
+```
+
+### Environment (job-local, nothing in the image's shared paths)
+
+- TheRock ROCm **10.2.0a20261022** wheels from `https://nightly.repo.amd.com/rocm/whl-next/` installed into `$FLEET_VENV` (Python 3.11): `torch==2.16.0a0+rocm10.2.0a20261022`, `amd-torch-device-gfx942`, `triton==3.9.0+gitfc8d31a5.rocm10.2.0a20261022`, `rocm`, `rocm-sdk-core`, `rocm-sdk-devel`, `rocm-sdk-libraries`, `rocm-sdk-device-gfx942` all at that version; `python -m rocm_sdk init`, `python -m rocm_sdk test` = 27 OK. 10.2.0a20261022 is the newest 10.2 build on that index (later nightlies are 10.3). The job venv's base-env symlinks to ROCm 10.1 / Triton were removed from the job's own `venv-base-links` so only 10.2 is importable.
+- Build env: `PATH=$FLEET_VENV/bin:$PATH`, `ROCM_HOME=ROCM_PATH=HIP_PATH=$(python -m rocm_sdk path --root)`, `GPU_ARCHS=gfx942`, `HOME` pointed at a job-local directory (setup.py and the autotuner write `~/.flex_gemm/autotune_cache.json`; an accidental write to the shared home during the first baseline build was removed), `TRITON_CACHE_DIR` job-local, `HIP_VISIBLE_DEVICES=2` (dispatcher pin), `ulimit -c 0`.
+- Extra test deps in the venv: `tqdm`, `matplotlib`.
+
+### Build
+
+```
+# baseline, upstream main 6dd94a8:
+pip install <src> --no-build-isolation --no-deps
+  -> torch/csrc/api/include/torch/all.h:9:2: error: C++20 or later compatible compiler is required to use PyTorch.
+# port:
+utils/timeit.sh FlexGEMM compile -- $FLEET_VENV/bin/python -m pip install <src> --no-build-isolation --no-deps
+  -> Successfully installed flex_gemm-1.0.0, 0 warnings; hipcc gets -std=c++20 --offload-arch=gfx942 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -O3
+```
+
+### CUDA no-regression compile (this host has no nvcc; job-local pip toolchain)
+
+`pip install --target <job>/cudapkgs --index-url https://download.pytorch.org/whl/cu130 torch==2.14.1+cu130 nvidia-cuda-nvcc==13.0.* nvidia-cuda-cccl==13.0.* nvidia-cuda-crt==13.0.* nvidia-nvvm==13.0.*`; `CUDA_HOME=<cudapkgs>/nvidia/cu13` (job-local `lib64 -> lib` and `libcudart.so -> libcudart.so.13` symlinks added for the link), `PYTHONPATH=<cudapkgs>`, `BUILD_TARGET=cuda TORCH_CUDA_ARCH_LIST="8.0;9.0" python setup.py build_ext` on `git archive` exports:
+
+- upstream `main`: **fails**, same `#error C++20 or later compatible compiler is required` (torch 2.14.1).
+- port bcf7c6f: **builds**, nvcc 13.0.88, 6 `.cu` with `-std=c++20`, `sm_80` + `sm_90`, `cuda.cpython-311-x86_64-linux-gnu.so` linked. Warnings only from torch headers (`#3189-D "module" is parsed as an identifier`, 126x) and 2x `#177-D variable "b" declared but never referenced` in upstream code.
+- Not covered: an older CUDA torch (< 2.14, where BuildExtension appends c++17) and Windows nvcc. The behaviour follows from torch's `append_std17_if_no_std_present`; the mi355 host can confirm with real nvcc before presenting.
+
+### GPU tests (MI300X gfx942, GPU 2, head bcf7c6f content)
+
+Asserting scripts, run unchanged from `tests/`:
+
+| Script | Result |
+|---|---|
+| `hashmap.py` | pass (RES 1..1024, 4 dtype pairs) |
+| `serialize.py` | pass (z_order + hilbert, cpu + cuda, RES up to 2048) |
+| `spconv/out_coords.py` | pass (HASHMAP + EXPAND_UNIQUE vs torch, RES up to 2048) |
+| `spconv/neighbor_cache.py` | pass (`torch.equal` for egemm/igemm/migemm caches incl. `reduce_code_kernel`, RES up to 512) |
+| `submconv/neighbor_cache.py` | pass (egemm/igemm/igemmk/migemm/migemmk, RES up to 512) |
+| `grid_sample.py` | **failed at 078c4ab** in "Trilinear Bwd" RES=2048,C=8 (`Triton Error [HIP]: Code: 1, Messsage: invalid argument`); **passes at bcf7c6f**: all four tables err_max 0 per mille, err_mean 0 |
+
+Conv correctness tables (fp16), run through the plan's B.2 driver (`agent_space/run_noext.py`, text below; it comments out the `import spconv...`/torchsparse/fvdb/warpconvnet lines and their `kernel_functions` entries, no fork edit). Pass criterion from the plan: each Triton algorithm's err_max <= 2x dense, err_mean <= 5 per mille.
+
+- `spconv/fwd.py` (14 rows, RES 8..512): igemm/igemmk/migemm/migemmk err_max 2 per mille on every row (dense column 2 per mille; one row 1), err_mean 0 everywhere. Dense is N/A from RES=256 by the script's design. **Pass.** 483 s cold.
+- `submconv/fwd.py` (7 rows, RES 8..512): all four algorithms err_max 2, err_mean 0. **Pass.** 68 s.
+- `spconv/bwd.py` (14 rows): igemm/igemmk/migemm/migemmk err_mean 0 on every row; err_max 1-4 per mille up to RES=64, then 10-16 (RES=128 K=3), 9-23 (RES=256 K=3), 8-44 (RES=512 K=3; igemm 44, migemm 26, the split-K variants 8). The largest values are on the biggest K=3 weight-gradient reductions and are smallest for split-K, which fits fp16 accumulation-order effects rather than a fault; there is no CUDA table to compare. The torch dense `Conv3d` column, against the same `EXPLICIT_GEMM` reference, reads 175-4164 per mille err_max (err_mean up to 11), far worse than every Triton algorithm. The plan's criterion (err_mean <= 5 everywhere; the 2x-dense err_max rule applies to fwd) is met. **Pass.** 1359 s cold (autotuning dominates).
+- `submconv/bwd.py` (7 rows, RES 8..512): egemm err_max 0; igemm/igemmk/migemm/migemmk err_max 1-13 (largest igemm 13, migemm 12 at RES=512; split-K 4), err_mean 0 everywhere. **Pass.** 382 s.
+- `examples/submconv.py`: runs to completion (rc 0, 99 s cold).
+
+`tests/utils.py get_device_max_flops` has no MI300X entry, so the Tflops tables read N/A (cosmetic, not a port issue).
+
+Driver `agent_space/run_noext.py`:
+
+```
+import os, re, sys
+path = os.path.abspath(sys.argv[1])
+third = ("spconv", "torchsparse", "fvdb", "warpconvnet")
+out = []
+for line in open(path).read().splitlines():
+    s = line.strip()
+    if re.match(r"(import|from)\s+(%s)\b" % "|".join(third), s) or re.match(r"'(%s)'\s*:\s*\(" % "|".join(third), s):
+        out.append("# [removed] " + line); continue
+    out.append(line)
+sys.argv = [path] + sys.argv[2:]
+sys.path.insert(0, os.path.dirname(path))
+exec(compile("\n".join(out) + "\n", path, "exec"), {"__name__": "__main__", "__file__": path})
+```
+
+### The HIP launch-size fault (commit bcf7c6f)
+
+`indice_weighed_sum_bwd_input_kernel` uses a 1D grid of `cdiv(C,BK) * cdiv(M,BM) * V` programs. At RES=2048 trilinear (M=4,194,304, C=8, V=8) the config `BM=1, BK=64, num_warps=2` gives 33,554,432 programs x 128 threads = exactly 2^32 work-items. Instrumented run (`agent_space/repro_gs.py`) listed every config's size; only that one reaches 2^32 and the autotuner's benchmark of it raised the error. Standalone HIP check on this GPU (`agent_space/lim/lim.hip`):
+
+```
+hipLaunchKernel       grid=33554431 block=128 total=4294967168 -> hipSuccess, last block ran
+hipLaunchKernel       grid=33554432 block=128 total=4294967296 -> hipErrorInvalidConfiguration, nothing ran
+hipModuleLaunchKernel grid=33554431 block=128                  -> hipSuccess
+hipModuleLaunchKernel grid=33554432 block=128                  -> hipErrorInvalidValue (code 1, Triton's message)
+(same at block=256: 16777215 ok, 16777216 rejected)
+```
+
+CUDA allows 2^31-1 blocks in x regardless of block size, so the config is legal there and the prune returns the full list off HIP. Warp size comes from `triton.runtime.driver.active.get_current_target().warp_size`, so wave32 parts keep twice the headroom. `examples/submconv.py` passes; `examples/spconv.py` is the upstream bug in question 1.
+
+### Not done in this round (validator / later work, per plan)
+
+- wave32 and Windows validation (other hosts); the Windows half of commits 078c4ab/d45c5e2 has not been compiled anywhere yet.
+- `## Install as a dependency` is written by each validator from its validated build (plan E).
+- RDNA autotune performance (not a gate).
+
+## Lesson for cuda-to-rocm: HIP rejects a launch of 2^32 or more work-items per grid dimension
+
+Belongs in `platform-limits.md`. Symptom: a kernel that runs on CUDA fails to launch on AMD only at large sizes; Triton reports `Triton Error [HIP]: Code: 1, Messsage: invalid argument` (often from inside autotuning, sometimes wrapped as `SystemError: ... returned a result with an exception set`); `hipLaunchKernel` returns `hipErrorInvalidConfiguration`, `hipModuleLaunchKernel` `hipErrorInvalidValue`, and nothing runs. Cause: HIP counts a launch in work-items, and gridDim.x * blockDim.x (likewise y, z) must stay below 2^32; CUDA limits only the block count (2^31-1 in x). Measured on MI300X, ROCm 10.2: grid 33,554,431 x 128 runs, 33,554,432 x 128 is rejected. Flat 1D grids with small tiles and an extra multiplier (a neighbour count, a batch) reach it first. Fix: in Triton, prune autotune configs whose grid * num_warps * warp_size reaches 2^32 on HIP (`early_config_prune`), or fold the grid into 2D / loop inside the program; in HIP C++, cap the grid and grid-stride. (FlexGEMM)

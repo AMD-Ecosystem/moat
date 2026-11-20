@@ -5,3 +5,7 @@
 {"kind":"session","ts":"2026-11-04T07:23:39Z","epoch":1793777019.987993800,"event":"end","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-20T21:11:58Z","epoch":1795209118.266804564,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-20T21:20:50Z","epoch":1795209650.615326,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-20T21:32:57Z","epoch":1795210377.802801,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-20T21:38:37Z","phase":"compile","seconds":0.32,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi300b-20261120-133108-port-flexgemm-prompt/venv/bin/python -m pip install . --no-build-isolation --no-deps -v"}
+{"kind":"phase","ts":"2026-11-20T21:39:15Z","phase":"compile","seconds":32.55,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300b-20261120-133108-port-flexgemm-prompt/venv/bin/python -m pip install /var/lib/jenkins/fleet/jobs/mi300b-20261120-133108-port-flexgemm-prompt/moat/projects/FlexGEMM/src --no-build-isolation --no-deps -v"}
+{"kind":"phase","ts":"2026-11-20T21:52:07Z","phase":"compile","seconds":9.344,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300b-20261120-133108-port-flexgemm-prompt/venv/bin/python -m pip install /var/lib/jenkins/fleet/jobs/mi300b-20261120-133108-port-flexgemm-prompt/moat/projects/FlexGEMM/src --no-build-isolation --no-deps"}

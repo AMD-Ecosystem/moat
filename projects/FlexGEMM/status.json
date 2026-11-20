@@ -8,8 +8,8 @@
   "ext_type": "torch-extension",
   "stage": "porting",
   "adopted_at": "2026-08-27T02:01:36Z",
-  "updated_at": "2026-11-20T21:32:54Z",
-  "head_sha": null,
+  "updated_at": "2026-11-20T21:56:24Z",
+  "head_sha": "bcf7c6f5eee9f780a0ecdff4de7cecca8f73c728",
   "depends_on": [],
   "porting": {
     "arch": "linux-gfx942",
