@@ -276,3 +276,49 @@ No problems found. Verified:
 - Cosmetic, not changed (upstream labels, minimal-change wish): Makefile `validate-gpu` prints `sm_90 | cuda None` on ROCm, test ids read `cuda-0-sm-90`, benchmark JSONL `versions.cuda` is null with no HIP version.
 
 Not a code finding, stated for the gates: there is no AMD architecture floor, so an AMD GPU whose target Triton cannot compile would raise instead of falling back to SciPy (the same contract upstream applies to NVIDIA >= 8.0). wave32 (RDNA) and Windows are unvalidated at this head; the `wave32` and `windows` gates cover that before fix-ready (see the porter section's open points on the Windows fallback).
+
+## Validation 2026-11-20 (linux-gfx90a, fix round moat-fix-31)
+
+Head: 94702259cb20b8644075d22fd47493dfbf38840c (staging tip; `git status --porcelain` clean). GPU: AMD Instinct MI250X / MI250 (gfx90a, wave64), HIP_VISIBLE_DEVICES=1. torch 2.16.0a0+git6c3af02 (HIP 7.16.26385), triton 3.9.0+gitfc8d31a5, scipy 1.10.1, numpy 1.26.4, Python 3.11.17.
+
+Build: none. 0.1.0 is pure source (setup.py builds no extension without `TLA_BUILD_LEGACY_CUDA=1`); run from the checkout via `PYTHONPATH`. Triton JIT-compiled the solver for gfx90a during the run into a freshly emptied `TRITON_CACHE_DIR` (11 `.hsaco` written).
+
+```bash
+export HIP_VISIBLE_DEVICES=1 TRITON_CACHE_DIR=<job>/triton-cache-val   # emptied first
+ulimit -c 0
+cd projects/torch-linear-assignment/src
+PYTHONPATH=$PWD python -m pytest tests/ -v -p no:cacheprovider -p no:rerunfailures -W error::RuntimeWarning
+```
+
+Result: 78 passed, 0 skipped, 0 failed (12.9 s), including all 26 `tests/test_triton.py` compiled-kernel cases; `-W error::RuntimeWarning` proves the public API never took the SciPy fallback. Non-GPU tests: the 52 that passed at the merge-only tree (upstream main) still pass. Benchmark at this head (porter section): exact SciPy parity in all 30 cases.
+
+CUDA gate: `cuda-not-validated: the delta is Python dispatch logic, README and a docstring; no CUDA/C++ source differs from upstream main, so there is nothing for nvcc to compile, and no NVIDIA GPU is available to run the Triton path`. The NVIDIA branch of `_cuda_uses_triton` was checked equivalent to upstream by review.
+
+Docs: README lists AMD GPUs in the backend policy, dispatch table and validation targets (house style: the project documents eligibility, not build steps, since there is nothing to build). Jargon: `jargon.py --port torch-linear-assignment` clean.
+
+Not exercised here: the `pip install -e . --no-build-isolation` route (fleet guard refuses pip outside FLEET_VENV, which has no torch).
+
+Validation result: PASS on gfx90a.
+
+## Fix review PR draft
+
+Title: [ROCm] Rework PR #31 onto the Triton solver
+
+The maintainer (ivan-chai) answered jeff's question on ivan-chai/torch-linear-assignment#31 on 2026-11-10: "I think, Triton is preferable to keep the code as simple as possible." Since 0.1.0 upstream solves GPU inputs with a Triton kernel by default and keeps the compiled CUDA extension as a legacy build behind `TLA_BUILD_LEGACY_CUDA=1`. The PR added a hipify build of that legacy extension and conflicted with `main` in README.md and setup.py. This round moves AMD support to the Triton path and drops the legacy-extension changes.
+
+Commits on top of the published tip c65c0b8:
+
+- c49c034 Merge upstream main (0.1.0 Triton solver). Conflicts resolved in upstream's favor, which drops the Windows `/ALTERNATENAME` link directive and the README hipify note. The merged tree is identical to upstream `main` 42202a6.
+- 9470225 [ROCm] Use the Triton solver on AMD GPUs. `_cuda_uses_triton` rejected every ROCm build because it required `torch.version.cuda`, so AMD GPU inputs fell back to SciPy on CPU. It now accepts a ROCm torch (`torch.version.hip` set). The CUDA check and the capability >= 8.0 floor still apply unchanged to NVIDIA. The same eligibility change goes into `tests/test_triton.py`, where all 26 compiled-kernel tests used to skip on ROCm. The README now lists AMD GPUs in the backend policy, the dispatch table and the validation targets. The kernel is unchanged, and so is the PR's net diff against `main`: 4 files, about 20 lines.
+
+Retested at 9470225 on an AMD Instinct MI250X (gfx90a, Linux, torch 2.16 ROCm, Triton 3.9): `pytest tests/` passes 78/78 with `-W error::RuntimeWarning` and a cold Triton cache. The merge-only tree gives 52 passed and 26 skipped. `tests/benchmark.py --backends scipy,public_cuda` exits 0 and matches SciPy exactly in all 30 cases, at 39.7x / 48.8x / 74.7x over SciPy for batch-208 float32 transpose / square / direct.
+
+Not yet validated at this head: wave32 (RDNA) and Windows. Upstream's Triton dispatch is Linux-only for every vendor, so on Windows GPU inputs take the SciPy fallback by design. The earlier gfx1100, gfx1201 and gfx1101 results were for the legacy extension and do not carry over.
+
+## Upstream reply
+
+Thanks. I reworked the PR onto the Triton path and dropped the legacy extension changes. Upstream main is merged in, and the only change left is the dispatch check: it now accepts a ROCm build of PyTorch (`torch.version.hip`), while the compute capability 8.0 floor still applies to NVIDIA as before. `test_triton.py` gets the same eligibility change, and the README lists AMD GPUs. The kernel itself needed no changes. On an MI250X (gfx90a), `pytest tests/` passes 78/78 and `tests/benchmark.py` matches SciPy exactly in all 30 cases.
+
+## Draft notes (internal)
+
+The reply names only GPUs with a completed validation at 9470225. If wave32 or another platform completes before the review PR opens, update the GPU list in both the body and the reply. Before opening, jeff should decide the Windows gate (see the porter section's open points).

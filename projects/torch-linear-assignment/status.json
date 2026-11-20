@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:25:53Z",
-  "updated_at": "2026-11-20T21:43:45Z",
+  "updated_at": "2026-11-20T21:44:23Z",
   "head_sha": "94702259cb20b8644075d22fd47493dfbf38840c",
   "depends_on": [],
   "pr_url": "https://github.com/ivan-chai/torch-linear-assignment/pull/31",
@@ -24,10 +24,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "c65c0b823fe81f022e060291a47374ac8483cfc8",
+      "validated_sha": "94702259cb20b8644075d22fd47493dfbf38840c",
       "started_at": "2026-06-05T09:50:01Z",
-      "completed_at": "2026-06-08T20:19:12Z",
-      "updated_at": "2026-11-20T21:43:45Z",
+      "completed_at": "2026-11-20T21:44:23Z",
+      "updated_at": "2026-11-20T21:44:23Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -41,15 +41,10 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
-      "carry_forward": {
-        "from": "13c2e6e",
-        "to": "5142d662c9398c6b57bb97ddd45ae94768b6f4db",
-        "method": "source-class",
-        "class": "comment-only",
-        "detail": "setup.py: comment-only (comments/format only)",
-        "at": "2026-06-17T01:20:56Z"
-      }
+      "last_agent": "validator",
+      "validated_prior": [
+        "c65c0b823fe81f022e060291a47374ac8483cfc8"
+      ]
     },
     "windows-gfx1201": {
       "state": "completed",
