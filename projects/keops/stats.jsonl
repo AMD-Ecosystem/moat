@@ -2,3 +2,10 @@
 {"kind":"session","ts":"2026-11-12T19:02:01Z","epoch":1794510123.098879600,"event":"end","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-20T21:18:33Z","epoch":1795209513.952637,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-11-20T21:25:32Z","epoch":1795209932.470553,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-20T21:36:47Z","epoch":1795210607.783322,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-20T21:43:30Z","phase":"test","seconds":54.431,"exit":0,"cmd":"agent_space/run_suites.sh gpu1"}
+{"kind":"phase","ts":"2026-11-20T21:45:30Z","phase":"compile","seconds":10.412,"exit":0,"cmd":"agent_space/cudacheck/build.sh /var/lib/jenkins/fleet/jobs/mi355-20261120-133155-port-keops-prompt/moat/agent_space/keops-cache/Linux_smci355-1b112-b12-23_6.8.0-101-generic_python3.11.17_HIP71726422_VISIBLE_DEVICES3"}
+{"kind":"phase","ts":"2026-11-20T21:49:00Z","phase":"test","seconds":61.323,"exit":0,"cmd":"agent_space/run_suites.sh gpu2"}
+{"kind":"phase","ts":"2026-11-20T21:49:24Z","phase":"test","seconds":3.047,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261120-133155-port-keops-prompt/moat/agent_space/run_rkeops.sh"}
+{"kind":"phase","ts":"2026-11-20T21:49:59Z","phase":"test","seconds":27.303,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261120-133155-port-keops-prompt/moat/agent_space/run_rkeops.sh"}
+{"kind":"session","ts":"2026-11-20T21:53:31Z","epoch":1795211611.38924,"event":"end","platform":"linux-gfx950"}

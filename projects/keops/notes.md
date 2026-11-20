@@ -83,3 +83,76 @@ Findings beyond the intake assessment:
 - Every GPU test gates on `pykeops.config.cuda.is_available()`, so failed HIP discovery gives a green CPU-only suite; the validator must prove the GPU ran.
 - `pytest.sh` builds fresh venvs and installs torch from PyPI (CUDA); on ROCm run its steps in a venv with a ROCm torch.
 - Header checks on this host (pip ROCm SDK 10.1, HIP 7.16.26385, no `/opt/rocm`): all fp16 intrinsics KeOps emits are declared in `amd_hip_fp16.h`; `g++ -std=c++11 -O3 -fpermissive -D__HIP_PLATFORM_AMD__` compiles `hip_runtime_api.h` + `hip_fp16.h` + `hiprtc.h`; `hipMemcpyHtoD` takes `const void*`.
+
+## Porter round (2026-11-20, linux-gfx950)
+
+**Decisions needed from Jeff: none.** The port follows `plan.md` with no scope change. Two test results the reviewer and validators should know about are explained below (one pykeops GPU failure that is a data tie, not a port defect; rkeops' compute tests skipping on upstream main for an upstream reason); neither needs a ruling.
+
+Fork `AMD-Ecosystem/keops`, branch `moat-port`, head `2980874a` on upstream `ef72bc90`:
+
+- `38c65e2b` [ROCm] Run the GPU backend on AMD GPUs through HIP and hipRTC
+- `2980874a` [ROCm] Document running KeOps on AMD GPUs
+
+### What changed (against the plan)
+
+- Shim headers in `keopscore/keopscore/binders/nvrtc/hip_shim/` (`cuda.h`, `nvrtc.h`, `cuda_fp16.h`), on the ROCm include path only; `keops_nvrtc.cpp`, `utils_pe.h`, `CudaSizes.h`, `pykeops_nvrtc.cpp` unchanged, as planned. Added to `keopscore/setup.py` package data (checked: the built wheel contains them).
+- R6 resolved the `hipSetDevice` way, not 1:1: the 1:1 mapping worked on HIP 7.17 but g++ printed ~100 lines of deprecation warnings, which KeOps echoes to the user on every binder compile. The shim makes `CUcontext` a `hipDevice_t`; `cuDevicePrimaryCtxRetain` stores the device, `cuCtxGetCurrent`/`cuCtxPushCurrent` are `hipGetDevice`/`hipSetDevice`, `cuDevicePrimaryCtxRelease` is a no-op. `cuCtxSynchronize` maps to `hipDeviceSynchronize` (hipCtxSynchronize returns NotSupported on some ROCm releases).
+- `nvrtc_jit.cpp`: two `__HIP_PLATFORM_AMD__` blocks: `--offload-arch=<gcnArchName>` via `hipGetDeviceProperties` (fast-math not translated, R3), and include directories passed as `-I<dir>`: **hipRTC does not accept NVRTC's `--include-path=<dir>`**; it parsed it as `--include` + `-path=<dir>` and failed with `'-path=...hip_shim' file not found` (first GPU attempt).
+- `config/Hip.py`: `HipConfig(CudaConfig)`. Discovery order: a `libamdhip64` already mapped in the process (`/proc/self/maps`), `ROCM_PATH`/`HIP_PATH`/`ROCM_HOME`, `CONDA_PREFIX`, site-packages `_rocm_sdk_core`, `_rocm_sdk_devel`, `torch`, then `/opt/rocm`. hipRTC is taken from the runtime's own install first. Attribute ids 56/74 (checked identical in HIP 7.16 and 7.17 headers). Version decoded as HIP's `major*10^7 + minor*10^5 + patch`. IR type `HSACO` (code objects are `<hash>_nvrtc.hsaco`). Empty `HIP_VISIBLE_DEVICES`/`CUDA_VISIBLE_DEVICES`/`ROCR_VISIBLE_DEVICES` means CPU only (R11). hipRTC include path is the shim dir only; host include options add the ROCm include root.
+- `config/__init__.py`: `_gpu_config()` builds `CudaConfig` first (stdout captured), falls back to `HipConfig` only when CUDA is unusable, and prints only the reported backend's warnings (so an AMD host does not print "libcuda not found"). `CudaConfig` gains only `gpu_backend = "CUDA"`; the build folder name uses it (`..._HIP71726422_...` vs `..._CUDA<ver>_...`), which also keeps CUDA and HIP caches apart.
+- `utils/math_functions.py`: `#if defined(__CUDACC__) || defined(__HIPCC__)` (R1).
+- No `KEOPS_GPU_BACKEND` override (not needed; kept the diff small). `Gpu_link_compile` messages still say "cuda jit compiler engine" (left as upstream wording).
+- Docs: `doc/python/installation.rst` gets "ROCm detection (AMD GPUs)" beside "CUDA toolkit detection" (requirements bullet too), and `doc/python/api/common/Config.rst` lists `HipConfig`. README defers install to the docs site, so it is unchanged.
+
+### Environment (this host)
+
+TheRock ROCm 10.2 nightly wheels into the job venv (`$FLEET_VENV`, Python 3.11.17), index `https://nightly.repo.amd.com/rocm/whl-next/`:
+
+```
+V=10.2.0a20261022
+$FLEET_VENV/bin/python -m pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple \
+  "rocm[libraries,devel]==$V" "rocm-sdk-device-gfx950==$V" "torch==2.16.0a0+rocm$V" "amd-torch-device-gfx950==2.16.0a0+rocm$V"
+$FLEET_VENV/bin/python -m pip install --no-deps --no-build-isolation -e keopscore -e pykeops
+```
+
+HIP 7.17.26422, torch 2.16.0a0+rocm10.2.0a20261022, g++ 13.3.0, AMD Instinct MI355X (gfx950), one GPU (`HIP_VISIBLE_DEVICES=3`), `ulimit -c 0`. `10.2.0a20261022` is the newest 10.2 build on that index (10.3 nightlies follow). Host quirk, not a port issue: the job venv inherits the base image's amdsmi 10.1 Python package through a `.pth`, and with it `torch.cuda.device_count()` returned 0 while tensors worked; `PYTHONPATH=$SP/_rocm_sdk_devel/share/amd_smi` (the 10.2 copy) fixed the count. KeOps does not use the torch device count.
+
+### Evidence (GPU, head 2980874a)
+
+From the fork root, `KEOPS_CACHE_FOLDER` in the job dir, cache cleaned first:
+
+```
+python -c "import pykeops; pykeops.clean_pykeops(); pykeops.check_health()"   # run from /tmp: from the repo root, ./keopscore and ./pykeops shadow the packages
+pytest -v -rs keopscore/keopscore/test/
+pytest -v -rs pykeops/pykeops/test/
+```
+
+- `check_health`: "HIP Support: Enabled", 1 GPU, HIP 7.17, `-DMAXTHREADSPERBLOCK0=1024 -DSHAREDMEMPERBLOCK0=163840` (gfx950 reports 160 KiB LDS).
+- keopscore: **68 passed** (test_op.py places tensors on `cuda` when the backend is available).
+- pykeops: **92 passed, 1 failed, 0 skipped** (CPU-only run skips 6 GPU-only tests; here all ran). 247 `*_nvrtc.hsaco` code objects built during the run (R2). `test_float16.py` 2 passed on GPU (half2 formulas only compile through the GPU branch of the R1 guard).
+- The failure, `test_lazytensor_clamp.py::test_lazytensor_clamp_bw`, is a tie in this GPU's random data, not a port defect: element (376,0,2) torch 181667.06 vs KeOps 182789.88. Float64 torch gives 182789.896, so KeOps is right (KeOps GPU vs float64: rel L2 1.5e-7; KeOps **CPU** backend on the same tensors gives the identical 182789.875; torch float32 on CPU gives the same wrong 181667.05). Cause: `x[376,0,2]*y[0,664,2]` is exactly `1.54f` in float32 (1.5399999959 in float64); torch's clamp backward counts the bound as inside, KeOps' `Clamp.DiffT` goes through `ClampInt((x-a)/(b-a),0,1)`, which rounds just past 1 and treats it as outside. The data come from `torch.manual_seed(0)` + `torch.randn(device="cuda")`; the generated values are expected to differ between GPU vendors (inferred, not checked on an NVIDIA GPU), which would explain why upstream's NVIDIA CI does not hit the tie. Tolerances left unchanged. Diagnosis scripts: `agent_space/diag/clamp.py`, `tie.py` (container-local).
+- No-torch smoke test (fresh venv without torch, `ROCM_PATH` set to the SDK): `check_health()` + `test_numpy_bindings()` pass, `torch_found False`.
+- Discovery: with `ROCM_PATH` unset the SDK is found through site-packages (`_rocm_sdk_core/lib/libamdhip64.so.7`, the doc example output is this run's); with torch imported first, KeOps reports the same library torch loaded, and a Gaussian kernel sum matched torch to 3.2e-7.
+
+### Non-GPU regression
+
+- Same suites with `HIP_VISIBLE_DEVICES=` (empty): keopscore 68 passed; pykeops 87 passed, 6 skipped (the GPU-only tests: test_conv2d x3, test_float16 x2, test_gpu_cpu x1), 0 failed. Warning shown: "HIP_VISIBLE_DEVICES is set to empty ... CPU only".
+- `black` (26.10.1, upstream uses `psf/black@stable`): `black --check keopscore pykeops` clean, 376 files.
+
+### CUDA path (this host has CUDA 12.8 headers and libraries, no NVIDIA GPU)
+
+`agent_space/cudacheck/build.sh` (container-local): `nvrtc_jit.cpp` and `pykeops_nvrtc.cpp` compile and link with g++ using exactly the flags `CudaConfig` emits (`-DMAXIDGPU=0 ... -DnvrtcGetTARGET=nvrtcGetCUBIN -DARCHTAG=\"sm\" -std=c++11 -O3 -flto=auto -fpermissive -fPIC -I/usr/local/cuda/include`, linked to `lib64/stubs/libcuda.so` and `libnvrtc.so`); 40 generated formula sources from the GPU run compile with `nvcc -arch=sm_90 -cubin`. `CudaConfig` is selected first by construction (`_gpu_config`), and its code is unchanged apart from the `gpu_backend` attribute. Not run: an NVIDIA GPU pass of `pytest.sh` (no NVIDIA host available to this job).
+
+### rkeops (evidence, not a gate)
+
+R 4.4.3 and the rkeops dependencies from conda-forge into `agent_space/r-env` (micromamba, job dir); `R CMD INSTALL rkeops` into a job-local library; `RETICULATE_PYTHON=$FLEET_VENV/bin/python`, `TEST_GPU=1`; `testthat::test_dir` excluding `test-01_install.R` (it runs `reticulate::py_install("pykeops")`, which would replace the editable install with the PyPI release). Result: 38 tests, 7 failed, 2 skipped (test files 07-10 skip). All of it is upstream drift, independent of the port: rkeops' `check_pypkg()` reads `keopscore.verbose`, which keopscore on main no longer has (removed in 6bfa32a6), so `skip_if_no_keopscore()` skips every compute test on any platform; the 7 failures are `test-03_rkeops_options.R` expecting 6 options (there are 7, `formula_only` was added) and `test-04_keops_setup.R` expecting `pykeops$verbose` to be logical (it is now an integer). Direct GPU check instead (`agent_space/diag/rkeops_gpu.R`): `rkeops_use_gpu()`, `keops_kernel("Sum_Reduction(Exp(-SqNorm2(x-y))*b, 1)")`, 2000 x 3000 points, float32: built `<hash>_nvrtc.hsaco`, max rel err 5.0e-7 vs a dense R reference, 5.3e-7 vs rkeops on CPU.
+
+### For the reviewer and validators
+
+- Prove the GPU ran (R2): "HIP Support: Enabled" in `check_health`, `*_nvrtc.hsaco` files in the build folder, 0 GPU tests skipped.
+- Expect `test_lazytensor_clamp_bw` to fail on any AMD GPU whose `torch.randn` stream produces the same tie (diagnosis above); confirm it with the KeOps CPU backend on the same tensors before treating it as a port failure. wave32 hosts may draw different data.
+- Run pytest from the fork root with the `pytest` executable (not `python -m pytest`, which puts the repo root on `sys.path` so `./keopscore` shadows the package), and run Python one-liners from another directory for the same reason.
+
+## Lesson for cuda-to-rocm: hipRTC rejects NVRTC's --include-path= spelling
+
+Belongs in `references/platform-limits.md`, in the "NVRTC (CUDA C++ generated at run time) ports to hipRTC" paragraph. NVRTC accepts `--include-path=<dir>` (and `-I<dir>`); hipRTC passes options to clang, which reads `--include-path=<dir>` as the prefix-matched `--include` (force-include a file) followed by `-path=<dir>`, so the compile fails with `fatal error: '-path=<dir>' file not found` from `<built-in>`. Pass `-I<dir>` on the ROCm side (NVRTC also accepts `-I`, so a single spelling works for both if the CUDA path may change). Seen in keops (runtime-generated kernels with a header directory on the hipRTC include path).
