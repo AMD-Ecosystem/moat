@@ -1,0 +1,34 @@
+{
+  "schema_version": 3,
+  "name": "nvblox",
+  "upstream_url": "https://github.com/nvidia-isaac/nvblox",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T03:50:52Z",
+  "updated_at": "2026-11-06T04:00:48Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/nvidia-isaac/nvblox/blob/public/LICENSE.md",
+      "at": "2026-11-06T04:00:47Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "license-blocked",
+    "duplicate_effort": "none found (amd/AMD-AGI orgs unchecked: SAML SSO); MOAT stdgpu dependency already ported, merged as stotko/stdgpu#484",
+    "viable": true,
+    "summary": "Isaac robotics TSDF/ESDF mapping library (91 .cu, GPU hash on stdgpu); Apache-2.0 core is clean, but nvblox_torch (30 C++/CUDA + 59 py), all Bazel files and CI tooling carry NVIDIA's proprietary header by design -- mixed licensing, jeff to rule core-only take-up vs decline (question in notes)",
+    "at": "2026-11-06T04:00:48Z"
+  }
+}
