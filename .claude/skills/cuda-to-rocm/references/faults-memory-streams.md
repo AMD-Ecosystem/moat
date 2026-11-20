@@ -341,6 +341,8 @@ arch-unified, correct on CUDA too, and needs no guard; upstream GooFit made the 
 change to its own `CompositePdf` (#384) on those grounds. Treat it as hygiene worth doing in
 passing, not as a bug to chase when your numbers are wrong. (GooFit)
 
+**A copy kind that disagrees with the pointers is `hipErrorInvalidValue`.** HIP checks the explicit kind: `hipMemcpyAsync(dst, src, n, hipMemcpyDeviceToHost, s)` with a pageable `malloc` source returns `invalid argument` (gfx942, ROCm 7.16). `hipMemcpyDefault` lets HIP pick the direction from the pointers and copies correctly. Tests that stand in host buffers for device addresses hit this first; check whether upstream ever runs them on a real GPU (a project whose CI uses a simulated host-memory backend may never have). CUDA documents a mismatched `cudaMemcpyKind` as undefined, so do not claim the HIP failure diverges from CUDA without a CUDA run; describe only what HIP did. Do not fix this by mapping `cudaMemcpy{HostToDevice,DeviceToHost,DeviceToDevice}` to `hipMemcpyDefault` in a compat header: the shim must honour the caller's kind, as CUDA's API contract says, and the tests stay as upstream wrote them. If upstream runs them only on a simulated backend, record them as simulated-backend tests and run them in that build (e.g. `-DRUNTIME_ENVIRONMENT=simu`), where they pass; on the GPU they are expected failures. (unified-cache-management: cache2 `DumpThenLoad*` integration tests; a remap tried there was dropped.)
+
 ## Host callbacks and fork
 
 **`cudaLaunchHostFunc`/`hipLaunchHostFunc` callback threads must not call ANY runtime API** -- an RAII deleter
@@ -440,7 +442,9 @@ drop that metadata when the atomic sits in a helper inlined into the kernel, and
 the backend emits a CAS retry loop that works. So one program can pass at `-O3` and come out
 entirely empty at device `-O0`, and a standalone probe can contradict the application.
 Device `-O0` is not exotic: a CMake HIP build configured with no `CMAKE_BUILD_TYPE` (what
-many READMEs give) has empty `CMAKE_HIP_FLAGS` and compiles device code at `-O0`, so
+many READMEs give) has empty `CMAKE_HIP_FLAGS` and compiles device code at `-O0`
+(build-cmake-link.md, "An unset CMake build type runs every HIP kernel unoptimized", has the
+performance side and the fix), so
 validate the README recipe as written, not with `-DCMAKE_BUILD_TYPE=Release` added.
 Disassemble the APPLICATION's code object (`llvm-objdump --offloading <exe>`, then
 `llvm-objdump -d` on the gfx bundle): a native `global_atomic_or` or `flat_atomic_or` means

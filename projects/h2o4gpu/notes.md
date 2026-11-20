@@ -1409,6 +1409,8 @@ verdict=identical
 `python3 utils/moatlib.py carry-forward h2o4gpu linux-gfx942 bcc7bcd649793be2b28690fc591760b8a48a8476 binary-equiv "<reason>"` -> `h2o4gpu/linux-gfx942 carried forward -> bcc7bcd6... (binary-equiv)`. Nothing was run on the GPU, and nothing was pushed to the fork.
 
 ## Lesson for moat-porting: codeobj_diff needs /opt/rocm
+
+Promoted to no skill file (checked against the trunk at bb61ae96): obsolete, codeobj_diff no longer needs /opt/rocm (fixed in 0836261a).
 `utils/codeobj_diff.py` finds its tools only under `/opt/rocm`. On a pip-SDK host (no `/opt/rocm`, no `roc-obj-ls`) it crashes, or with paths patched it returns `indeterminate` for every binary. Two possible fixes: resolve `llvm-nm`/`llvm-objdump` from `rocm_sdk path --root`/`lib/llvm/bin`, and read the code objects from the `.hip_fatbin` offload bundles directly (or with `clang-offload-bundler`) when `roc-obj-ls` is missing. This run used a stand-in for `roc-obj-ls`, recorded above.
 ## Validation 2026-11-14 (linux-gfx1100) at bcc7bcd6
 
@@ -1451,6 +1453,8 @@ Validator role, jeff's request: try the binary-equivalence carry-forward from `d
 - Verdict: linux-gfx1100 (wave32) **completed** at `bcc7bcd6` on a full GPU run.
 
 ## Lesson for moat-porting: codeobj_diff.py needs /opt/rocm
+
+Promoted to no skill file (checked against the trunk at bb61ae96): obsolete, codeobj_diff no longer needs /opt/rocm (fixed in 0836261a).
 `utils/codeobj_diff.py` hard-codes `ROCM = "/opt/rocm"` for `llvm-nm`, `llvm-objdump` and `roc-obj-ls`. On a host that has only the pip ROCm SDK (the Linux fleet containers), it raises `FileNotFoundError` and prints no verdict, so the binary-equivalence carry-forward is unavailable there. The SDK has `llvm-nm`/`llvm-objdump`/`llvm-objcopy` under `$(python -m rocm_sdk path --root)/lib/llvm/bin`, but no working `roc-obj-ls`. One fix: resolve the tools from `ROCM_PATH` or the SDK root, and extract code objects from `.hip_fatbin` by parsing the clang offload bundle headers, which needs no `roc-obj-ls`. `agent_space/codeobj_diff_sdk.py` from this round did that in about 40 lines, but it is gone with the container.
 ## Validation 2026-11-14 (linux-gfx90a, AMD Instinct MI250X / MI250, ROCm 10.1 pip SDK) at bcc7bcd6 -- binary-equivalence check, then full revalidation
 
@@ -1494,6 +1498,8 @@ The 2026-11-06 gfx90a recipe, run in the same clone (`agent_space/wheel.sh`): `g
 - Verdict: linux-gfx90a (wave64) **completed** at `bcc7bcd6` on the full real-GPU run.
 
 ## Lesson for moat-porting: codeobj_diff on pip-SDK hosts and host-only binaries
+
+Promoted to no skill file (checked against the trunk at bb61ae96): obsolete, codeobj_diff handles pip-SDK hosts and host-only binaries (fixed in 0836261a).
 `utils/codeobj_diff.py` hardcodes `/opt/rocm` for `llvm-nm`, `llvm-objdump` and `roc-obj-ls`, so on a host with only the pip ROCm SDK every binary comes back `indeterminate (nm failed)`. The SDK has `lib/llvm/bin/llvm-{nm,objdump}` but no working `roc-obj-ls`: the pip entry point fails with `ImportError: cannot import name 'roc_obj_ls' from 'rocm_sdk_core._cli'`. Separately, a whole-build-tree run is `indeterminate` whenever the tree holds any host-only ELF (CMake's `CMakeFiles/` probe binaries are always there, plus any CPU-only module), because `roc-obj-ls` exits nonzero on a binary with no offload bundle. The tool already treats "no device code" as `""`, so it could treat that exit the same way and skip `CMakeFiles/`. As it stands, a cmake project's build directory can never come back `identical`, and the shortcut costs a full revalidation even when every output is byte-identical (h2o4gpu, 2026-11-14).
 
 ## Validation 2026-11-14 (windows-gfx1151) at bcc7bcd6 -- object-list check, then full revalidation
@@ -1522,4 +1528,6 @@ Validator role. Radeon 8060S (gfx1151, wave32 APU, one GPU), TheRock ROCm 7.14.0
 - Verdict: windows-gfx1151 **completed** at `bcc7bcd6` by full revalidation.
 
 ## Lesson for moat-porting: codeobj_diff is ELF/Linux-only
+
+Promoted to moat-porting/SKILL.md in bb61ae96.
 On a Windows host the build outputs are PE (`.pyd`, `.dll`, `.exe`), which `utils/codeobj_diff.py` neither recognizes (suffix list `.so`/`.hsaco`, `\x7fELF` magic) nor can extract device code from (`/opt/rocm/bin/roc-obj-ls`), so it cannot give a binary-equivalence verdict for any windows platform; Windows `revalidate` after a mixed delta always needs a real run. A cheap, honest partial check that does run there: compare `ninja -t commands all` object outputs of both shas (relative `/Fo` paths) to prove the compiled source set is unchanged.

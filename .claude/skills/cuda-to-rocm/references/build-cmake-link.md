@@ -33,6 +33,27 @@ the subdirectories are added: walk `BUILDSYSTEM_TARGETS` and `SUBDIRECTORIES`, a
 `set_source_files_properties(... TARGET_DIRECTORY <tgt> PROPERTIES LANGUAGE HIP)` with paths
 made absolute against the target's `SOURCE_DIR`. (LichtFeld-Studio)
 
+**An unset CMake build type runs every HIP kernel unoptimized.** Symptom: a HIP port passes its
+tests but its kernels are tens to hundreds of times slower than expected;
+`-Rpass-analysis=kernel-resource-usage` shows kilobytes of scratch per lane. Cause: nvcc optimizes
+device code whatever `CMAKE_BUILD_TYPE` says, but with no build type CMake passes no `-O` flag and
+clang compiles HIP device code at `-O0`. A README configure command without `-DCMAKE_BUILD_TYPE` is
+the usual trigger, and a Windows generator defaulting to Debug is the same thing. Fix: in the
+project's CMake, when the HIP backend is selected and `NOT CMAKE_BUILD_TYPE AND NOT
+CMAKE_CONFIGURATION_TYPES`, set the cache entry to `Release`; check `ninja -t commands` for `-O3`.
+For Windows that default has to run before `project()`, because `Windows-Clang.cmake` sets
+`CMAKE_BUILD_TYPE_INIT Debug` and `project()` caches it. Placed there it must also test the
+`CMAKE_BUILD_TYPE` environment variable, which CMake (3.22+) applies only inside `project()`, or it
+forces Release over a build type the user gave that way (on Linux too): `get_property(_mc GLOBAL
+PROPERTY GENERATOR_IS_MULTI_CONFIG)`, then `if(NOT CMAKE_BUILD_TYPE AND "$ENV{CMAKE_BUILD_TYPE}"
+STREQUAL "" AND NOT _mc)`, then `set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)`.
+Device `-O0` also changes which faults appear (faults-memory-streams.md, "Bitwise and min/max
+atomics on `hipMallocManaged` memory"), so build the README recipe as written before and after the
+fix. Seen on MI300X with the ROCm SDK 10.1: paged KV append 11 ms -> 26 us, and FA2 prefill at qo=1
+went from 957 ms for kv=1024 (unoptimized) to 13.8 ms for kv=4096 once combined with launch bounds
+(platform-limits.md, "A kernel launched with fewer than 1024 threads needs `__launch_bounds__`").
+(Quest)
+
 ### Never mark the host `.cpp` files `LANGUAGE HIP` to dodge the flag leak
 
 The tempting shortcut when a mixed CXX/HIP target fails to compile is to mark *every* source
@@ -458,18 +479,26 @@ by thread id has every thread pick element 0 while still printing correct result
 any `LINKER_LANGUAGE CXX` left on the target: `$<LINK_LANGUAGE:HIP>` is false under a CXX
 link, so a HIP-conditioned OpenMP link flag silently never applies. (HEonGPU)
 
-**A HIP-linked shared library gets no RUNPATH to the ROCm lib dir.** The ROCm lib dir is
-one of the HIP compiler's implicit link directories, so CMake leaves it out of the build
-RUNPATH; clang adds it for executables (`h2o4gpu_test` had it) but not for a `SHARED` or
-`MODULE` target. Anything else that happened to inject it (h2o4gpu's was clang's
+**A HIP-linked shared library, or a host-linked executable, gets no RUNPATH to the ROCm lib
+dir.** The ROCm lib dir is one of the HIP compiler's implicit link directories
+(`CMAKE_HIP_IMPLICIT_LINK_DIRECTORIES`), so CMake leaves it out of the build RUNPATH; clang
+adds it for executables (`h2o4gpu_test` had it) but not for a `SHARED` or `MODULE` target.
+A plain C++ executable is not covered either when it links the HIP runtime or rocFFT only
+indirectly, through a static library built with HIP sources (ESPResSo's, through heFFTe
+with `Heffte_ENABLE_ROCM`); targets that link `hip::host` directly do get the directory.
+Such an executable gets `NEEDED librocfft.so.0`/`libamdhip64.so.7` and no RUNPATH entry,
+so it runs where the ROCm lib dir is on the loader path and fails with "cannot open shared
+object file" where it is not (the pip SDK). Anything else that happened to inject it (h2o4gpu's was clang's
 `-fopenmp` link) hides the gap until it is removed. Then, with the pip/TheRock SDK and no
 `LD_LIBRARY_PATH`, the module fails to load -- and a Python loader that swallows the
 `ImportError` (h2o4gpu's `GPUlib.get()`) silently runs every solver on the CPU while the
 tests pass. Set it explicitly on the target:
 `BUILD_RPATH $<TARGET_FILE_DIR:hip::amdhip64>` (and `INSTALL_RPATH`), then check
 `readelf -d <lib> | grep RUNPATH` and run the GPU path with `LD_LIBRARY_PATH` unset.
+CUDA projects usually already do the same for the CUDA library directories, so add the HIP
+line beside it.
 Whether a `/opt/rocm` package registers its lib dir with ld.so.conf was not verified; do
-not rely on it. (h2o4gpu)
+not rely on it. (h2o4gpu, ESPResSo)
 
 **With the ROCm clang as the host compiler, a found system libunwind links but does not load.**
 The ROCm clang searches the `include/` directory next to its LLVM install ahead of the system
@@ -660,3 +689,21 @@ Fix: `cargo clean -p <crate>` before rebuilding. More generally, check
 `env | grep -i <toolkit>_path` against what the build script expects before trusting a value
 copied from another machine: `/opt/rocm`, a pip-installed `_rocm_sdk_devel` tree and a conda
 env are different layouts. (mahout)
+
+### An nvcc Makefile's link line does not carry over to hipcc verbatim
+
+Porting a hand-written Makefile from nvcc to hipcc, two link-line idioms change meaning, one loudly
+and one silently. (1) nvcc splits the argument of `-Xlinker` at commas, clang does not: `-Xlinker
+-soname,libfoo.so` reaches ld.lld as one argument and fails with "unknown argument
+'-soname,libfoo.so'"; use `-Wl,-soname,libfoo.so` for the HIP branch (plain `-Xlinker -z -Xlinker
+nodelete` and `-Xlinker -rpath=dir` are fine). (2) `-fopenmp` on a hipcc link line links LLVM's
+`libomp.so`; if the host application or library was built by GCC (`libgomp.so.1`), the process ends
+up with two OpenMP runtimes ("One OpenMP runtime per binary" above). When the HIP objects make no
+OpenMP call (`nm -u | grep -i omp` is empty), keep `-fopenmp` on the compile line and drop it from
+the link line only.
+
+Also: a project that compiles device code with nvcc `-ccbin mpicxx` gets the MPI include path from
+the wrapper for free; hipcc does not use a host compiler, so ask the wrapper where `mpi.h` is (`echo
+'#include <mpi.h>' | mpicxx -x c++ -E -H -o /dev/null -`, which relies only on the compiler's `-H`
+header trace, not on a wrapper option; tested with MPICH) instead of `--showme:compile` (Open MPI
+only). Seen on plumed2's cudaCoord plugin, ROCm 10.1 (clang 24), 2026-11. (plumed2)

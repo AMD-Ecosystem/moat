@@ -118,6 +118,17 @@ map each to a distinct value: `HIPBLAS_STATUS_UNKNOWN`, and `static_cast<hipfftR
 (inside the enum's range, and the value cuFFT used). Do not define `CUDART_VERSION` to switch
 the cases off: rocThrust and hipCUB key on it. (tsne-cuda)
 
+**`hipError_t` is `[[nodiscard]]`, so a `-Werror` host build breaks on ignored results CUDA
+allows.** HIP declares `hipError_t` as `[[nodiscard]]` whenever the code is compiled as C++17 or
+later (`__HIP_NODISCARD` in `hip_runtime_api.h`, with no opt-out macro), while CUDA's `cudaError_t`
+and `CUresult` carry no such attribute. Code that deliberately drops an error code (clearing a
+sticky error with `cudaGetLastError();`, or calling an error-string getter for its out-parameter)
+compiles silently with nvcc or g++ against CUDA headers and warns under HIP; in a host build that
+uses `-Werror` (Warp's g++ flags) the warning becomes an error. Fix the few host-side sites (cast to
+`(void)` or route through a void-returning wrapper) instead of adding `-Wno-unused-result`, which
+would also hide real ignored errors; in device-side translation units without `-Werror` the warnings
+are harmless noise. (warp-1.14)
+
 **Never name the pointee struct of an opaque CUDA handle.** `CUstream_st`/`CUevent_st` do
 not exist under HIP. Spell it `std::remove_pointer_t<cudaStream_t>` so it survives the
 typedef swap. (cuSZ)
@@ -372,6 +383,17 @@ everywhere are absent from every ROCm release checked, through clr trunk. Define
 `__float22bfloat162_rn(make_float2(a, b))`), not in a force-included compat header, where a
 later ROCm definition would collide in every TU. (llm-awq)
 
+**HIP has no `half2` overload of `__hmax2`.** `amd_hip_fp16.h` provides `__hmax`/`__hmin` for
+`__half` and `__hmax2` only for `__hip_bfloat162`, so `__hmax2(half2, half2)` fails with "no
+matching function" and a conversion error from `__hip_bfloat162`. Defining it from `__hmax` on
+`__low2half`/`__high2half` keeps CUDA's NaN rule (a NaN yields the other input) and is correct, but
+in a max-heavy inner loop the packed builtin in performance.md ("Scalar emulation of a packed
+intrinsic") is many times faster, so prefer that form there. Putting the definition in the project's
+namespace does not protect against a future HIP overload: `__half2` is a global type, so
+argument-dependent lookup adds a global `__hmax2(__half2, __half2)` and the call becomes ambiguous
+(checked with a simulated overload and `-fsyntax-only`). That failure is a loud compile error at the
+call; the fix then is to delete the local definition. (Quest, ROCm SDK 10.1)
+
 **A `__shared__` array of a struct that has default member initializers is a hard error on
 HIP and silently accepted by nvcc.** Shared variables cannot be initialized; nvcc drops the
 initializers with no diagnostic at all (measured on CUDA 12.8.93, and equally silent under
@@ -480,6 +502,17 @@ helper_math never supplied a floating-point host `min`/`max`, CUDA's own headers
 under HIP a host call with float arguments lands on `(int, int)` whatever this header does
 (faults-numerics.md, "Host `min`/`max` on floating-point values truncate to int under
 hipcc"). Run that entry's detection pass on any project that uses helper_math.
+
+**HIP's `blockIdx`/`threadIdx` do not convert to `uint3`, and a `uint3` does not convert to
+`dim3`.** In CUDA the built-in index variables are `uint3`, and a `uint3` (from
+`make_uint3()`) converts to `dim3`. In HIP the built-ins are distinct types, so three things
+CUDA accepts fail to compile: passing them to a function that takes `uint3` (waLBerla's
+`gpu::FieldAccessor::set(uint3, uint3)`), `uint3(blockIdx)`, and returning a `uint3` from a
+function declared to return `dim3`. Construct from the members,
+`make_uint3(blockIdx.x, blockIdx.y, blockIdx.z)` or `uint3{threadIdx.x, ...}`, and return
+`dim3(...)`. The built-ins do convert to `dim3`: `dim3(blockIdx)` compiles. Do not write a
+helper that takes a built-in by value, because their copy constructor is deleted. (ESPResSo
+with waLBerla, HIP 7.16)
 
 **A helper whose name the standard library also declares must NOT be guarded on
 `__CUDA_ARCH__`/`__HIP_DEVICE_COMPILE__`.** Those macros answer "am I in the device pass",
