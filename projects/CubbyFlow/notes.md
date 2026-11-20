@@ -1257,3 +1257,114 @@ predates the skill's measurement.
 Readability of the staged delta as a whole: an upstream maintainer sees their own
 merged history plus three of our commits (merge resolution, docs, this one); with
 Finding 1 fixed the new commit is self-explanatory. No other problems.
+
+## Porter round 2026-11-20 (windows-gfx1151): answer to review of cc41a805
+
+New commit on `moat-fix-145` (strict descendant of moat-port 62f4604c, which
+is untouched): `aeb9540d6be87d4fcde76a00ded5f972b4615c35`
+`[ROCm] Build HIP sources at C++23 with a probed header workaround` (pushed).
+Remedy shipped: the skill's generated-wrapper shim, adapted; the C++20 pin is
+gone, so no ODR analysis is needed.
+
+### Cause, verified on this host's headers
+
+- MSVC 14.50 `include/cmath:602-605`: `_CLANG_BUILTIN1_ARG` defines
+  `_NODISCARD _Check_return_ _CONSTEXPR23 bool NAME(ARG) noexcept`;
+  `yvals_core.h:962-966` makes `_CONSTEXPR23` `constexpr` under `_HAS_CXX23`,
+  `inline` otherwise. Nothing is declared `__host__ __device__` by the STL.
+- TheRock 7.14 clang 23 (`AMD clang version 23.0.0git ... 52226beb24`):
+  `lib/clang/23/include/__clang_hip_runtime_wrapper.h` has `#include <cmath>`
+  at line 114 and `#include <__clang_cuda_math_forward_declares.h>` at 147,
+  i.e. the pre-llvm/llvm-project#201563 order.
+- Negative control (free, from the first rebuild of this round, when the shim
+  re-probe was still broken): with the pin removed and no shim, every HIP TU
+  fails `__clang_cuda_math_forward_declares.h:93:17: error: __device__ function
+  'isfinite' cannot overload __host__ __device__ function 'isfinite'`.
+
+### The change
+
+- `Builds/CMake/CompileOptions.cmake`: the `USE_HIP AND WIN32` HIP_STANDARD 20
+  block is removed (file back to its 29bac0b9 content, i.e. upstream's).
+- New `Builds/CMake/HipCxx23Shim.cmake` (59 lines, CubbyFlow CMake style),
+  `cubbyflow_hip_cxx23_shim(OUT_DIR)`: `try_compile` (SOURCE_FROM_CONTENT,
+  NO_CACHE, HIP_STANDARD 23, STATIC_LIBRARY) of
+  `#include <hip/hip_runtime.h> / #include <cmath> / __global__ ...`; returns
+  empty if it builds or fails with any other diagnostic. Only on
+  "cannot overload __host__ __device__" it reads the installed wrapper from
+  `-print-resource-dir`, refuses if already in fixed order or unexpected
+  shape, writes the reordered copy to `<build>/HipCxx23Shim/`, re-probes with
+  `-I` that dir, and discards it with a warning (log attached) if it does not
+  help.
+- `CMakeLists.txt`, inside `if (USE_HIP)` after the `-include cuda_to_hip.h`
+  flag: two-line comment (real cause, drop once ROCm carries #201563), then the
+  call, appending `-I"<dir>"` to `CMAKE_HIP_FLAGS` when non-empty. Using
+  CMAKE_HIP_FLAGS keeps the directory HIP-only (CXX TUs of the mixed CubbyFlow
+  target never see it) and ahead of the resource dir.
+- Deviation from the asset: try_compile instead of execute_process, so the
+  probe sees the project's own HIP toolchain settings; the first attempt
+  dropped `<hip/hip_runtime.h>` from the probe and the shim re-probe failed on
+  the host pass with `Can't find declaration for hipLaunchKernel` (a bare
+  `__global__` needs the runtime header), so the include was restored as in
+  the asset. Verified by hand with
+  `clang++ -std=c++23 --offload-arch=gfx1151 -x hip [-I shim] -c probe2.hip`:
+  rc=74 without, rc=0 with.
+
+CUDA and non-HIP builds: the whole change sits inside `if (USE_HIP)`; a CUDA
+build has USE_HIP OFF and `CompileOptions.cmake` is back to upstream's, so the
+CUDA/CPU configure is identical to 29bac0b9 (the commit whose nvcc gate passed).
+No nvcc run this round for that reason.
+
+Linux HIP: the 2026-08-20 fix round already built Linux HIP at `-std=c++23`
+with libstdc++ (ROCm 7.2.3 clang 22, gfx1100; ROCm 7.14 TheRock, gfx90a;
+see "C++23 and CUBBYFLOW_REQUIRES under HIP" above). So on Linux the first
+try_compile succeeds and the function returns empty: no generated header, no
+extra flag, HIP flags identical to 29bac0b9. The cost is one HIP probe compile
+per configure. If libstdc++ later adopts constexpr <cmath>, the probe catches
+it there too (that is why it is not guarded on WIN32). On a ROCm carrying
+#201563 the probe passes and nothing is added on Windows either.
+
+### Build and tests (windows-gfx1151, same recipe as "Porter round 2026-11-20")
+
+`agent_space/build_cf.sh` in the worktree (MSVC 14.50 VCToolsInstallDir, VS
+2022 env scrubbed, TheRock 7.14 clang++ GNU driver, CMake 3.31.10, Ninja),
+now `-j 6`. Reconfigure of the existing `build_gfx1151_b`:
+`-- Using reordered HIP runtime wrapper for C++23: .../build_gfx1151_b/HipCxx23Shim`.
+build.ninja: 35 HIP objects (all `--offload-arch` FLAGS lines) at
+`-std=c++23`, each with `-I".../HipCxx23Shim"`; 734 CXX objects at
+`-std=c++23`; no other `-std=`. Rebuild: 43/43 steps (35 HIP objects + links),
+0 errors, 0 warnings under -Werror. Generated header differs from the
+installed one only by the moved forward-declares line.
+
+Single runs, `ulimit -c 0`, TheRock amdhip64_7.dll / amd_comgr.dll next to
+the exes:
+- `CUDATests.exe`: 35/35 test cases, 3170/3170 assertions PASS.
+- `CUDASPHSim.exe -f 5`: 5 frames, 13824 particles, exit 0, 0 NaN/inf,
+  mean z 0.20536 (x,y FLT_MAX as before).
+- `UnitTests.exe`: 814/814 PASS.
+
+`python utils/jargon.py --port CubbyFlow`: clean.
+
+### Replies to the review
+
+- Finding 1 (wrong cause): fixed. The CMakeLists.txt comment and the module
+  header state the real cause (C++23 constexpr <cmath>, HIP implicit
+  host+device, wrapper declares device-only overloads after <cmath>) and the
+  drop condition (ROCm carrying llvm/llvm-project#201563). aeb9540d's body
+  opens with the explicit correction of cc41a805's explanation.
+- Finding 2 (deviation from the documented remedy): resolved by switching to
+  the shim with a configure-time probe, not a WIN32 guard; HIP and CXX objects
+  now share one standard-library configuration, so the ODR question is moot.
+  Decision (shim over pin) was made by the orchestrating session following the
+  skill's preference and is open for the maintainer to overrule; the pin's
+  advantage was only footprint (11 lines vs 67).
+
+## Lesson for cuda-to-rocm: HipCxx23Shim as try_compile, scoped through CMAKE_HIP_FLAGS
+
+For `references/build-headers-macros.md` ("HIP + C++23 on an older
+toolchain"). The asset's execute_process probe can also be written as two
+`try_compile(... SOURCE_FROM_CONTENT ... NO_CACHE HIP_STANDARD 23)` calls,
+which reuse the project's HIP compiler settings; keep `<hip/hip_runtime.h>` in
+the probe, since a bare `__global__` fails the host pass ("Can't find
+declaration for hipLaunchKernel") and makes the shim look ineffective. In a
+target mixing HIP and C++ sources, appending the shim's `-I` to
+`CMAKE_HIP_FLAGS` scopes it to HIP translation units only. (CubbyFlow)

@@ -97,3 +97,9 @@
 {"kind":"phase","ts":"2026-11-20T21:25:02Z","phase":"test","seconds":6.707,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/wt-CubbyFlow/projects/CubbyFlow/src/build_gfx1151_b/bin && ./UnitTests.exe"}
 {"kind":"session","ts":"2026-11-20T21:32:17Z","epoch":1795210337.55013,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-20T21:35:33Z","epoch":1795210533.48677,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-20T21:42:18Z","phase":"compile","seconds":16.801,"exit":1,"cmd":"bash agent_space/build_cf.sh"}
+{"kind":"phase","ts":"2026-11-20T21:45:05Z","phase":"compile","seconds":77.647,"exit":0,"cmd":"bash agent_space/build_cf.sh"}
+{"kind":"phase","ts":"2026-11-20T21:47:54Z","phase":"test","seconds":0.251,"exit":127,"cmd":"./CUDATests.exe"}
+{"kind":"phase","ts":"2026-11-20T21:48:04Z","phase":"test","seconds":1.292,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-CubbyFlow/projects/CubbyFlow/src/build_gfx1151_b/bin/CUDATests.exe"}
+{"kind":"phase","ts":"2026-11-20T21:48:20Z","phase":"test","seconds":8.974,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-CubbyFlow/projects/CubbyFlow/src/build_gfx1151_b/bin/CUDASPHSim.exe -f 5"}
+{"kind":"phase","ts":"2026-11-20T21:48:58Z","phase":"test","seconds":9.639,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-CubbyFlow/projects/CubbyFlow/src/build_gfx1151_b/bin/UnitTests.exe"}
