@@ -1,1 +1,13 @@
-{}
+{
+  "brucefan1983/gpumd": {
+    "note": "Not seeking standalone bug-fix pull requests; they handle ROCm fixes in their own release process. They do plan to keep supporting AMD/ROCm.",
+    "recorded_as": {
+      "gh_host": "github.com",
+      "login": "jeffdaily"
+    },
+    "requested_at": "2026-11-19T00:58:25Z",
+    "scope": "repo",
+    "source": "https://github.com/brucefan1983/GPUMD/pull/1888#issuecomment-6845807835",
+    "who": "brucefan1983/GPUMD"
+  }
+}

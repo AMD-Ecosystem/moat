@@ -1,0 +1,181 @@
+{
+  "schema_version": 3,
+  "name": "h2o4gpu",
+  "upstream_url": "https://github.com/h2oai/h2o4gpu",
+  "fork_url": "https://github.com/AMD-Ecosystem/h2o4gpu",
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-08-07T07:05:27Z",
+  "updated_at": "2026-11-16T18:22:43Z",
+  "head_sha": "bcc7bcd649793be2b28690fc591760b8a48a8476",
+  "depends_on": [],
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none",
+    "viable": true,
+    "summary": "GPU ML solver library (GLM/k-means/PCA/ALS/ARIMA) with real, self-contained CUDA (~30 own .cu/.cuh under src/gpu); Apache-2.0 tier-1, no existing AMD effort, but upstream is dormant (last real merge 2024, before that 2021) so budget for fork-only.",
+    "at": "2026-08-07T07:06:56Z",
+    "decided": {
+      "choice": "fork",
+      "by": "jeffdaily",
+      "at": "2026-08-07T15:27:16Z"
+    }
+  },
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "bcc7bcd649793be2b28690fc591760b8a48a8476",
+      "failed_sha": null,
+      "started_at": "2026-11-12T19:33:59Z",
+      "completed_at": "2026-11-14T02:38:09Z",
+      "updated_at": "2026-11-14T02:38:09Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "bcc7bcd649793be2b28690fc591760b8a48a8476",
+      "failed_sha": null,
+      "started_at": "2026-11-12T00:57:06Z",
+      "completed_at": "2026-11-14T02:24:35Z",
+      "updated_at": "2026-11-14T02:24:35Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed",
+      "carry_forward": {
+        "to": "bcc7bcd649793be2b28690fc591760b8a48a8476",
+        "method": "binary-equiv",
+        "detail": "gfx942 builds at d743f11e and bcc7bcd6: codeobj_diff identical (device ISA + exports of _ch2o4gpu_gpu.so, _ch2o4gpu_cpu.so, h2o4gpu_test); no bwcheck/p2pbwcheck object",
+        "at": "2026-11-14T02:24:35Z"
+      }
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-12T19:42:34Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "bcc7bcd649793be2b28690fc591760b8a48a8476",
+      "failed_sha": null,
+      "started_at": "2026-11-04T19:37:52Z",
+      "completed_at": "2026-11-14T03:10:08Z",
+      "updated_at": "2026-11-14T03:10:08Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "bcc7bcd649793be2b28690fc591760b8a48a8476",
+      "failed_sha": null,
+      "started_at": "2026-11-11T22:51:44Z",
+      "completed_at": "2026-11-14T03:24:30Z",
+      "updated_at": "2026-11-14T03:24:30Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
+    }
+  },
+  "porting_released": {
+    "arch": "linux-gfx1201",
+    "since": "2026-11-12T19:41:02Z",
+    "at": "2026-11-12T19:42:34Z"
+  },
+  "base_branch_ruling": {
+    "branch": "master",
+    "previous": "main",
+    "by": "jeffdaily",
+    "at": "2026-11-04T19:32:26Z",
+    "reason": "Upstream h2oai/h2o4gpu's branch is master; there is no main (jeff 2026-11-04)"
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/h2o4gpu/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-16T17:26:09Z",
+    "head_sha": "bcc7bcd649793be2b28690fc591760b8a48a8476",
+    "content_sha256": "996b961de30d85a28fbe208d40c39aea81d64ab7f3288cf3e289fd485b0e0039",
+    "review_pr": "https://github.com/AMD-Ecosystem/h2o4gpu/pull/1"
+  },
+  "pr_url": "https://github.com/h2oai/h2o4gpu/pull/902",
+  "pr_number": 902,
+  "pr_opened_at": "2026-11-16T18:22:43Z",
+  "pr_state": "open",
+  "published_sha": "bcc7bcd649793be2b28690fc591760b8a48a8476"
+}
