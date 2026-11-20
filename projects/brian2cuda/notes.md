@@ -1318,3 +1318,182 @@ Verdict: completed at 1c9536f.
 - Note: `test_codegen_and_compile` leaves an `output/` build directory in the moat checkout root; it was deleted after the run.
 
 Verdict: completed at 1c9536f.
+## CUDA compile check 2026-11-20 (mi355 nvcc host) -- PASS at 1c9536f
+
+Head checked: moat-fix-327 at `1c9536f` (= recorded head_sha), against the upstream commit it merged, `1d7c251` (brian-team/brian2cuda master, second parent of merge 739212c). Compile and link only: this host has nvcc but no NVIDIA GPU, so nothing ran.
+
+- Toolchain: `/usr/local/cuda/bin/nvcc` 12.8 (V12.8.93), host gcc, cuRAND 10.3.9 from the same toolkit. Python 3.12 venv at `$FLEET_VENV/py312` with `brian2==2.10.1` (the version upstream's pyproject pins). Each tree used from a detached worktree via `PYTHONPATH` (no install), `SETUPTOOLS_SCM_PRETEND_VERSION=1.0.0` (setuptools-scm reads a beta tag in a worktree and `__init__` cannot parse it).
+- Backend: `PATH=/usr/local/cuda/bin:$PATH CUDA_PATH=/usr/local/cuda`, so the port's `is_hip_backend()` is False (asserted in the script); generated makefiles use `NVCC = /usr/local/cuda/bin/nvcc`.
+- **Correction to the 2026-08-14 note:** CUDA codegen does not need `nvidia-smi`. The pre-existing preferences `devices.cuda_standalone.cuda_backend.detect_gpus = False`, `gpu_id = 0`, `compute_capability = 7.5` skip GPU detection; upstream's own `tests/test_cuda_standalone.py::test_codegen_and_compile` sets exactly these. Use them for any future CUDA check of this project.
+- Method: per case and tree, one process runs `device.build(directory=..., compile=False, run=False)`, then `make -j32` in the generated directory, output captured. Two flag modes: `shipped` (default prefs: nvcc `-w -use_fast_math -Xcudafe --diag_suppress=declared_but_not_referenced`, host `-w`) and `warn` (`extra_compile_args_nvcc=['-use_fast_math']`, `extra_compile_args_gcc=['-Wall','-O3','-ffast-math','-fno-finite-math-only','-march=native','-std=c++17']`), so warnings are visible. sm_75.
+- Cases (templates covered): `smoke` = upstream's compile-only test; `cuba` = 1000-neuron LIF with refractoriness, two Synapses pathways, heterogeneous `rand()*3*ms` delays, PoissonGroup input with generator-syntax connect, Spike/State/PopulationRate/Event monitors, conditional group-variable set; `stdp` = euler + `xi` noise, event-driven pre/post traces with `clip`, `randn()` init, condition connect, second pathway; `timed_poisson` = TimedArray in the ODE + `run_regularly('n = poisson(lam)')` with per-neuron lambda; `spatial` = SpatialNeuron soma + 50-compartment axon with point current; `binomial` = BinomialFunction.
+
+```
+utils/timeit.sh brian2cuda compile -- bash $JOB/b2c/scripts/run_all.sh
+```
+
+| case | upstream 1d7c251 shipped / warn | port 1c9536f shipped / warn |
+|---|---|---|
+| smoke | gen 0, make 0, binary linked / same | same |
+| cuba | gen 0, make 0 / same | same |
+| stdp | gen 0, make 0 / same | same |
+| timed_poisson | gen 0, make 0 / same | same |
+| spatial | gen 0, make 0 / same | same |
+| binomial | gen FAIL `brian2/input/binomial.py:208 ValueError: too many values to unpack (expected 2)` | same failure |
+
+Comparison, port vs upstream:
+
+- `shipped`: make output empty on both trees for all 5 cases (0 errors, 0 warnings).
+- `warn`: identical warning counts per case (smoke 136/136 lines containing "warning", cuba 528/528, stdp 417/417, timed_poisson 130/130, spatial 342/342) and identical log line counts. After normalizing line numbers, the sorted logs are identical for every case: no new or changed warning. The only raw differences are line numbers shifted by the 2 to 4 lines of the compat-header include. The warnings are upstream's (mostly nvcc #177-D unused `_host_rand`/`_brian_atomicMul`/`_numN` etc., and gcc notes in `*_push_spikes.cu`).
+- Generated makefiles identical except `H_SRCS` (the port's `cuda_to_hip.h` and `hip_shims/*.h` added to the dependency list). `NVCCFLAGS` and `LFLAGS` are byte-identical, including upstream's `-Xlinker --enable-new-dtags -Xlinker -rpath,...` rewrite, so commit 82a1097 left the CUDA link line as upstream has it.
+- Generated sources (cuba): the only differences are the `#include "brianlib/cuda_to_hip.h"` line (+ comment) at the top of 33 files, the HIP/CUDA `#if` in `rand.h` around the `curandState` forward declaration, the brianlib header changes from the diff stat, and two eventmonitor lines that appear on both sides in a different order (variable ordering in codegen, the same lines).
+- `binomial` fails identically on both trees at code generation: upstream's binomial.py returns a 3-tuple and the pinned brian2 2.10.1 unpacks 2 (already recorded in the fix-round "For jeff" list). Upstream bug; `PoissonInput` hits it too, which is why `cuba` uses a PoissonGroup.
+
+Verdict: CUDA compile check PASS at 1c9536f. The port compiles and links with nvcc 12.8 the same way as upstream 1d7c251 on all five generatable representative examples, with no new errors or warnings. No platform state changed; nothing pushed to the fork.
+
+<details><summary>Driver scripts (job directory is not kept)</summary>
+
+`run_all.sh`:
+
+```
+J=$JOB/b2c   # worktrees $J/base (1d7c251) and $J/port (1c9536f)
+export PATH=/usr/local/cuda/bin:$PATH CUDA_PATH=/usr/local/cuda SETUPTOOLS_SCM_PRETEND_VERSION=1.0.0
+PY=$FLEET_VENV/py312/bin/python
+cd /tmp
+for tree in base port; do for mode in shipped warn; do for c in smoke cuba stdp timed_poisson spatial binomial; do
+  d=$J/out/$tree-$mode-$c; rm -rf $d
+  PYTHONPATH=$J/$tree timeout 900 $PY -P $J/scripts/gen_case.py $c $d $mode > $d.gen.log 2>&1; g=$?
+  if [ $g -eq 0 ]; then (cd $d && make -j32 2>&1) > $d.make.log; m=$?; else m=NA; fi
+  echo "$tree $mode $c gen=$g make=$m"
+done; done; done
+```
+
+`gen_case.py`:
+
+```python
+"""Generate a cuda_standalone project for one case (no compile, no run).
+
+usage: gen_case.py <case> <outdir> <flags: shipped|warn>
+"""
+import sys
+
+case, outdir, flagmode = sys.argv[1:4]
+
+import brian2cuda  # noqa: F401
+from brian2 import *
+try:
+    from brian2cuda.utils.hip_backend import is_hip_backend
+except ImportError:  # upstream tree
+    def is_hip_backend():
+        return False
+
+set_device('cuda_standalone', build_on_run=False)
+prefs.devices.cuda_standalone.cuda_backend.detect_gpus = False
+prefs.devices.cuda_standalone.cuda_backend.gpu_id = 0
+prefs.devices.cuda_standalone.cuda_backend.compute_capability = 7.5
+if flagmode == 'warn':
+    prefs.devices.cuda_standalone.cuda_backend.extra_compile_args_nvcc = ['-use_fast_math']
+    prefs.codegen.cpp.extra_compile_args_gcc = ['-Wall', '-O3', '-ffast-math', '-fno-finite-math-only', '-march=native', '-std=c++17']
+
+assert not is_hip_backend(), 'HIP backend selected; expected CUDA'
+print('brian2cuda from', brian2cuda.__file__)
+
+if case == 'smoke':
+    # upstream's tests/test_cuda_standalone.py::test_codegen_and_compile
+    G = NeuronGroup(100, 'dv/dt = -v/(10*ms) : 1', threshold='v>1', reset='v=0')
+    S = Synapses(G, G, on_pre='v += 0.1')
+    S.connect(j='i')
+    run(10*ms)
+
+elif case == 'cuba':
+    # CUBA-like network: refractoriness, two pathways, heterogeneous delays,
+    # all monitor types, PoissonGroup input, generator-syntax connect
+    taum, taue, taui = 20*ms, 5*ms, 10*ms
+    eqs = '''dv/dt = (ge+gi-(v+49*mV))/taum : volt (unless refractory)
+             dge/dt = -ge/taue : volt
+             dgi/dt = -gi/taui : volt'''
+    P = NeuronGroup(1000, eqs, threshold='v>-50*mV', reset='v=-60*mV',
+                    refractory=5*ms, method='exact')
+    P.v = '-60*mV + rand()*10*mV'
+    Ce = Synapses(P, P, 'w : volt', on_pre='ge += w')
+    Ci = Synapses(P, P, on_pre='gi -= 9*mV')
+    Ce.connect('i<800', p=0.02)
+    Ci.connect('i>=800', p=0.02)
+    Ce.w = '1.62*mV*rand()'
+    Ce.delay = 'rand()*3*ms'
+    Ci.delay = 1*ms
+    Pin = PoissonGroup(100, rates=20*Hz)
+    Sin = Synapses(Pin, P, on_pre='v += 0.5*mV')
+    Sin.connect(j='k for k in range(i*10, (i+1)*10)')
+    M1 = SpikeMonitor(P)
+    M2 = StateMonitor(P, 'v', record=[0, 1, 2])
+    M3 = PopulationRateMonitor(P)
+    M4 = EventMonitor(P, 'spike', variables=['v'])
+    run(20*ms)
+
+elif case == 'stdp':
+    # STDP with event-driven variables, summed variable, randn noise
+    taupre = taupost = 20*ms
+    G = NeuronGroup(200, '''dv/dt = (I - v)/(10*ms) + 0.1*xi/sqrt(ms) : 1
+                            I : 1''',
+                    threshold='v>1', reset='v=0', method='euler')
+    H = NeuronGroup(50, '''dv/dt = -v/(10*ms) : 1
+                           Isyn : 1 (shared)''', threshold='v>1', reset='v=0')
+    S = Synapses(G, H, '''w : 1
+                          dapre/dt = -apre/taupre : 1 (event-driven)
+                          dapost/dt = -apost/taupost : 1 (event-driven)''',
+                 on_pre='''v_post += w
+                           apre += 0.01
+                           w = clip(w + apost, 0, 1)''',
+                 on_post='''apost -= 0.0105
+                            w = clip(w + apre, 0, 1)''')
+    S.connect(p=0.3)
+    S.w = 'rand()*0.5'
+    G.I = '1.1 + 0.1*randn()'
+    S2 = Synapses(G, H, 'x : 1', on_pre='v_post += 0.01*x')
+    S2.connect(condition='i % 4 == j % 4')
+    S2.x = 'i*0.001'
+    M1 = SpikeMonitor(H)
+    run(20*ms)
+
+elif case == 'timed_poisson':
+    # TimedArray and poisson() with a per-neuron lambda
+    ta = TimedArray(np.linspace(0, 2, 50), dt=1*ms)
+    G = NeuronGroup(100, '''dv/dt = (ta(t) - v)/(10*ms) : 1
+                            lam : 1
+                            n : integer''', threshold='v>1', reset='v=0')
+    G.lam = 'i*0.1'
+    G.run_regularly('n = poisson(lam)', dt=1*ms)
+    M1 = StateMonitor(G, 'n', record=[0, 50])
+    run(20*ms)
+
+elif case == 'spatial':
+    # multicompartment neuron (spatialstateupdate template)
+    morpho = Soma(30*um)
+    morpho.axon = Cylinder(diameter=1*um, length=300*um, n=50)
+    gL = 1e-4*siemens/cm**2
+    EL = -70*mV
+    eqs = '''Im = gL * (EL - v) : amp/meter**2
+             I : amp (point current)'''
+    neuron = SpatialNeuron(morphology=morpho, model=eqs, Cm=1*uF/cm**2,
+                           Ri=100*ohm*cm)
+    neuron.v = EL
+    neuron.I[0] = 0.2*nA
+    M1 = StateMonitor(neuron, 'v', record=True)
+    run(5*ms)
+
+elif case == 'binomial':
+    # known: pinned brian2 2.10.1 cannot unpack brian2cuda's 3-tuple
+    G = NeuronGroup(10, 'n : integer')
+    b = BinomialFunction(100, 0.1)
+    G.run_regularly('n = b()')
+    run(1*ms)
+
+else:
+    raise SystemExit('unknown case ' + case)
+
+device.build(directory=outdir, compile=False, run=False)
+print('GENERATED', outdir)
+```
+
+</details>
