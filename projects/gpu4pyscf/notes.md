@@ -5359,3 +5359,103 @@ Part of #1054.
 
 This pull request was prepared with Claude Code (Anthropic), which wrote the change and ran the tests on our hardware; I read and approved it before opening.
 ````
+
+## Ruling 2026-11-20 (jeffdaily): the three dropped differences
+
+jeffdaily ruled on 2026-11-20, in the request that dispatched the round below, on the three entries of the porter's "DROPPED, not in upstream and not held (jeff to decide later)" table (Porter 2026-11-19 section): the **64-bit wave64 lane mask in the J-engine** (old commit 45d80530) goes upstream as one more small pull request under issue 1054, cut from upstream master by itself like (a) to (h); the **HIP stack-size trim** (`hipDeviceSetLimit(hipLimitStackSize, 128)`, old commit c073679) and the **`-ffp-contract=on` flag** (old commit 8cb88067) are **dropped for good** (no failing case, no measurement). The same rulings as for (a) to (h) apply to the draft: no `[ROCm]` prefix in the pull-request title, #1055 named by number for the compiler flag, and the closing lines "Part of #1054." and the Claude Code disclosure sentence.
+
+## Pull request preparation (i), 2026-11-20 (fleet job, linux-gfx942 MI300X, upstream master 61c2a1e) -- J-engine lane mask
+
+A parallel fix branch, not a pipeline round: no stage, lock, head or platform record was changed, and the fork's `moat-port` was not touched (06477124 before and after; another job holds the porting lock for the eighth fix). The only GitHub write was pushing `pr-1054-md-j-lane-mask` to AMD-Ecosystem/gpu4pyscf. No pull request opened, nothing posted on issue 1054. GPU work ran under `ulimit -c 0` on the dispatcher's `HIP_VISIBLE_DEVICES=0`. Scratch under the fleet job's `agent_space/g/` (not durable): `build.sh`, `run.sh`, `junit_sum.py`, `ir.sh`, `assert_build.sh`, `jrepro.py`, `jtime.py`, `nv/nvrtc_ptx.py`.
+
+### Environment
+MI300X (gfx942:sramecc+:xnack-), TheRock ROCm SDK 10.1.0 pip (AMD clang 24.0.0), cmake 3.28.3 from /usr/bin. Job venv: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, basis-set-exchange 0.12, MCFun 0.2.6, pytest 9.2.0, pytest-xdist 3.8.0, pytest-timeout 2.4.0 (the set of (a) to (g)); for the CUDA comparison nvidia-cuda-nvrtc-cu12 12.9.86 (plus the 12.9 runtime, cccl and nvcc wheels, unused in the end).
+
+### The defect, checked against upstream master 61c2a1e (unchanged since the 2026-11-19 review; `git ls-remote` before the push)
+- `gpu4pyscf/lib/gvhf-md/md_contract_j.cu:101` (md_j_1dm_kernel) and `:431` (md_j_4dm_kernel): `int lane_id = t_id % warpSize; int group_id = lane_id / threadsx; unsigned int mask = ((1 << threadsx) - 1) << group_id * threadsx;`. The line numbers in the request were right. Consumers: `__shfl_down_sync(mask, ...)` at :335, :677, :717-718, :776-779, as the review said.
+- `threadsx` is `scheme[0]` = `ij` from `_md_j_engine_quartets_scheme` (scf/j_engine.py:320): at most 16 (nsq <= 256, kl = nearest power of 2 of sqrt(nsq)), so `1 << threadsx` itself is fine. The block is `dim3(threadsx*threadsy, gout_stride)` and `t_id = gout_id*nsq + sq_id`, so on a 64-wide wavefront lanes 32-63 have `group_id*threadsx` = 32..63: undefined behaviour for the 32-bit shift on every generic-kernel launch, for every `threadsx`. On 32-wide hardware the count stays <= 32 - threadsx: no UB on CUDA or RDNA.
+- HIP side (this SDK's `amd_warp_sync_functions.h`): `__shfl_down_sync` is a template that `static_assert`s a 64-bit mask type; upstream's force-included `hip_compat/gpu_runtime.h:62` widens every mask argument with `(unsigned long long)(mask)`, so the 32-bit value is zero-extended. The function then runs `__hip_adjust_mask_for_wave32` and `__hip_check_mask(mask)`, a waterfall loop over `__hip_readfirstlane(MASK)` whose only effect, `__hip_assert(MASK == __ballot(true))`, is compiled out under NDEBUG; then `__shfl_down(var, delta, width)`, which ignores the mask. CUDA side: `__shfl_down_sync(unsigned mask, T var, unsigned delta, int width)`; the mask is a real operand of `shfl.sync.down.b32` in the PTX (its fourth operand).
+
+### Fix and why this shape
+`lane_mask_t` is `unsigned long long` when `WARP_SIZE == 64` and `unsigned int` otherwise, and both kernels compute `(((lane_mask_t)1 << threadsx) - 1) << group_id * threadsx`; md_contract_j.cu now includes `../warp_size.h` like contract_int3c2e.cu (on HIP it is already force-included; the header guard makes the include a no-op there). Branch tip **b04593e09c332833d5579d29b0f0668d08434502**, parent 61c2a1e4, one file, +11/-2.
+- **Why not 64-bit everywhere:** CUDA's mask parameter is `unsigned`, so a 64-bit mask would be narrowed at every call, and the 64-bit shift can not be narrowed by the compiler (a 64-bit shift by >= 32 is defined, a 32-bit one is not), so the CUDA code would change for no benefit. On 32-wide AMD GPUs the HIP mask is widened to 64 bits by the shim anyway and `__hip_adjust_mask_for_wave32` masks it back to 32.
+- **Why WARP_SIZE and not `#ifdef USE_HIP`:** WARP_SIZE is the wavefront width the device code is compiled for (per `__gfxNNN__`, or -DWARP_SIZE=64 under the USE_WAVE64 option), which is exactly what decides whether the group can start at lane 32. It is also the selection upstream already uses for `WARP_FULL_MASK` in the same directory (contract_int3c2e.cu:34-38). Under it the CUDA and wave32 preprocessed kernels are token-identical to master.
+
+### Evidence: the defect in the compiled code (gfx942) and its absence after
+Per-TU device compile with the build's own flags (`ir.sh`: the CMake compile line, `--offload-device-only -fno-gpu-rdc`).
+- **Front-end IR (-Xclang -disable-llvm-passes):** master md_j_1dm_kernel `%385 = shl i32 1, %384; %386 = sub nsw i32 %385, 1; %389 = mul nsw i32 %387, %388; %390 = shl i32 %386, %389` with `%389 = group_id*threadsx`, 32..63 for lanes 32-63, so the shift result is poison; branch: `zext` to i64, `shl i64 1, ...`, `shl i64 %387, %391`.
+- **Release ISA (-O3 -DNDEBUG), as shipped:** identical before and after for gfx942, gfx90a, gfx1100 and gfx1201 apart from the `__hip_cuid` symbol; no `v_readfirstlane_b32` in either kernel (the check loop is deleted). Also at -O1 and -O2 with NDEBUG: no readfirstlane, nothing alive to misbehave. In the actually built `libgvhf_md.so` (flag build, -fgpu-rdc, link-time code generation), the gfx942 disassembly of both kernels (10858 lines) differs only in 4 `s_getpc_b64`-relative `s_add_u32` constants (data placement moved by 0x40 bytes); every instruction is otherwise the same.
+- **Assert build (-O3 without -DNDEBUG), the build setting under which the unfixed code misbehaves:** the check loop stays (master: 1 + 7 `v_readfirstlane_b32` in the two kernels, branch 2 + 14 because the mask now has a high half). Master computes the mask with `s_lshl_b32 s0, -1, s44; s_not_b32 s0, s0; v_lshlrev_b32_e64 v74, v0, s0` and `v_mov_b32 v75, 0`: a 32-bit shift, which the hardware does modulo 32, so a group starting at lane 32+k*threadsx gets the mask of the group at lane k*threadsx, and the high half is zero. The check then compares `v[74:75]` with `exec` (`v_cmp_ne_u64 vcc, exec, v[74:75]`) and traps. Branch: `v_lshlrev_b64 v[74:75], v0, s[4:5]`.
+- **At runtime with that setting:** `assert_build.sh` rebuilds libgvhf_md with the release flags and only md_contract_j.cu recompiled with `-UNDEBUG` (only that file, because the unrolled kernels have their own wave64 mask problem, listed below, and would trap in both trees). `jrepro.py`: J for two water molecules in def2-tzvp (f shells, so the generic kernels run) against CPU PySCF. Master: `HSA_STATUS_ERROR_EXCEPTION: An HSAIL operation resulted in a hardware exception. code: 0x1016 ... kernel: md_j_1dm_kernel` (one density matrix) and the same in `md_j_4dm_kernel` (four), then hipErrorLaunchFailure and a hang until the 300 s timeout. Branch: max |J - J(PySCF)| 1.508e-12 (one DM) and 1.163e-12 (four), so the check passes, which also confirms each group's new mask equals the lanes that execute the shuffle together. Release builds of both trees: 1.508e-12.
+- Not claimed: no wrong result in any release build was found or is expected with this compiler; the undefined behaviour is exploited by nothing today. -O0 was not built.
+
+### Tests (flag build per #1055, one pytest process per file, CI marker selection, four files at a time, master and branch side by side on the same GPU)
+Builds: `USE_HIP=1 CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm -DCMAKE_SHARED_LINKER_FLAGS=-mllvm=-disable-machine-licm" python setup.py build_py`, exit 0, 12 libraries, flag on every HIP compile and link line; master 3m00s, branch 2m52s.
+
+| tree | scf/tests + dft/tests + df/tests/test_df_int3c2e.py + pbc/scf/tests/test_pbc_scf_j_engine.py (passed/failed/skipped/errors, 34 files) | of which scf + dft |
+|---|---|---|
+| master 61c2a1e | 362/19/23/0 | 335/13/23/0 |
+| branch b04593e | 363/18/23/0 | 336/12/23/0 |
+
+The failing sets are identical apart from test_stability_rhf_unstable (failed on master only in this run). Reran test_stability.py three times on each tree: master 10/0, 9/1, 10/0; branch 10/0, 10/0, 9/1, the known intermittent failure. The other 18: dftu linear response x2, mcol_gks_mgga, diffuse_orbital qchem, gdm_uks_spin_neq_0, SAD guess x4, int4c2e x3 (the 12 of the earlier sections), test_df_int3c2e test_general_contraction (BasisNotFoundError, a basis file missing from this PySCF install), and all 5 failures of test_pbc_scf_j_engine.py at the `ft_ao_scheme` nsp_max assert (cause A, fixed by (a)). J-engine tests proper: test_scf_j_engine.py 8/0/0/0 on both.
+
+Timing (`jtime.py`, vitamin C from benchmarks/molecules, def2-tzvp, nao 420, prebuilt `_VHFOpt`, best of 10, two repeats, GPU otherwise idle): one DM 0.8690/0.8698 s master, 0.8704/0.8704 s branch; four DMs 0.9629/0.9622 s master, 0.9607/0.9621 s branch; J sums identical to 11 digits. No difference, as expected from the identical code.
+
+### CUDA impact, how it was checked
+No nvcc on this host. Assembling a private nvcc from NVIDIA's redist archives (as the porter did in earlier rounds) was refused by this session's permission layer, so the comparison used NVRTC 12.9.86 (pip, through ctypes; CUDA's own device front end and NVVM): the device part of md_contract_j.cu (everything before the host launchers, `int md_j_unrolled(`), with stub system headers and `-default-device`, compiled from master and from the branch to **byte-identical PTX** at compute_70, compute_80 and compute_90 (397812 bytes each; the mask is the `shfl.sync.down.b32` membermask operand, computed by `shl.b32`). Not checked: an nvcc build of the `gvhf_md` target (host code, `-fgpu-rdc`, SASS). Not run on an NVIDIA GPU: jeff's session runs the branch on a V100 afterwards.
+
+V100 run to do (CUDA build as upstream documents, branch b04593e and master 61c2a1e):
+- build: `pip install -e .` or `python setup.py build_py` with the CUDA toolchain; confirm `gvhf_md` compiles without new warnings (`CMAKE_BUILD_ARGS=--verbose`), and compare `cuobjdump -sass libgvhf_md.so` for `md_j_1dm_kernel` and `md_j_4dm_kernel` between the two trees (expected identical);
+- tests, one pytest process per file, CI selection: `gpu4pyscf/scf/tests/test_scf_j_engine.py`, `gpu4pyscf/scf/tests/test_rhf.py`, `gpu4pyscf/scf/tests/test_uhf.py`, `gpu4pyscf/scf/tests/test_scf_jk.py`, `gpu4pyscf/dft/tests/test_rks.py`, `gpu4pyscf/dft/tests/test_uks.py`, `gpu4pyscf/df/tests/test_df_int3c2e.py`, `gpu4pyscf/pbc/scf/tests/test_pbc_scf_j_engine.py`, with `-m 'not slow and not benchmark and not special' -k 'not _high_cost'`;
+- J against CPU PySCF for one and four density matrices (the scratch `jrepro.py` is not durable; this is its content): `python -c "import numpy as np, cupy as cp; from pyscf import gto, scf; from gpu4pyscf.scf import j_engine; mol = gto.M(atom='O 0 0 0; H 0 -0.757 0.587; H 0 0.757 0.587; O 3 0 0; H 3 -0.757 0.587; H 3 0.757 0.587', basis='def2-tzvp'); r = np.random.default_rng(1); d = r.random((4, mol.nao, mol.nao)) - .5; d = d + d.transpose(0, 2, 1); ref = np.array([scf.hf.get_jk(mol, x, with_k=False)[0] for x in d]); print(abs(j_engine.get_j(mol, cp.asarray(d[:1])).get() - ref[:1]).max(), abs(j_engine.get_j(mol, cp.asarray(d)).get() - ref).max())"` (MI300X: 1.5e-12 and 1.2e-12), and one J build timed before and after (vitamin C from benchmarks/molecules/organic, def2-tzvp, `j_engine.get_j` with a prebuilt `j_engine._VHFOpt(mol).build()`, best of 10).
+
+### Other lane-mask sites in `lib/` (grep for masks built by shifting, and every `mask =` and `__activemask()`), for jeff
+None has the same idiom (a 32-bit value shifted by a count that reaches 32 on 64-wide wavefronts), so none is in this commit.
+- **Wrong lanes, no UB: the unrolled J kernels.** `gvhf-md/unrolled_md_j.cu` lines 55, 253, 456, 714, 935, 1256, 1771, 2027, 2455, 3214, 3534, 4137 (12 kernels) and `gvhf-md/unrolled_md_j_4dm.cu` lines 50, 350, 721, 1486, 2013, 3039, 5209, 5853, 7742, 8321, 9955 (11 kernels): `unsigned int lane_id = thread_id % 32; unsigned int group_id = lane_id / 16; unsigned int mask = 0xffff << (group_id * 16);` with `dim3 threads(16,16)`. The shift is 0 or 16, so it is defined, but the lane index is taken modulo 32, so on a 64-wide wavefront lanes 32-63 pass masks naming lanes 0-31. Harmless in release builds for the same reason (the mask is unused after the check); an assert build would trap there too (inferred from the same check, not run separately). The fix would be `% warpSize` plus a 64-bit type: a different change to 23 generated-looking kernels (no generator script is in the repository), better as its own pull request if jeff wants it.
+- **A 64-bit `__activemask()` stored in 32 bits** (HIP returns 64 bits; CUDA 32): `gvhf-rys/int3c2e_recontract.cu:53` (`unsigned mask`, all lanes of the wavefront active, so lanes 32-63 drop out of the mask on 64-wide hardware) and `ecp/common.cu:139` (`tid < warpSize`, same). `solvent/pcm.cu:116` has the same truncation but `static_assert(THREADS <= 32)`, so lanes 32-63 are never active there: harmless. The masks feed `__shfl_down_sync` only, so again only an assert build would notice.
+- **Correct:** the low-bit `constexpr` masks `(1u << n) - 1` with n <= 16 (`pbc/contract_ft_ao.cu:40, 42, 328, 330`, `gvhf-md/contract_int3c2e.cu:536`, `pbc/int3c2e_create_tasks.cuh:375`, `pbc/ft_ao.cu:297`), `WARP_FULL_MASK` in contract_int3c2e.cu, and the multigrid_v3 `__shfl_down_sync(__activemask(), ...)` calls (passed directly, not stored).
+
+### (i) J-engine lane mask on 64-wide wavefronts (draft)
+- Branch `pr-1054-md-j-lane-mask`, tip **b04593e09c332833d5579d29b0f0668d08434502**, parent upstream master 61c2a1e4 (upstream's tip at the push). Stands alone: yes.
+- Commit title has no prefix: shared kernel source, the CUDA code is unchanged, and the added lines name no HIP, ROCm or AMD target (the same reasoning as (g)). Commit body: problem, cause, change, "Authored with Claude.", fenced Test Plan; no trailer. `jargon.py --commits` and `--diff 61c2a1e4..pr-1054-md-j-lane-mask`: clean.
+- The placeholder paragraph in the draft below must be replaced by the V100 result before the pull request is opened.
+
+````markdown
+Title: Use a 64-bit lane mask in the MD J kernels on 64-wide wavefronts
+
+On GPUs with 64-wide wavefronts (MI200, MI300), `md_j_1dm_kernel` and `md_j_4dm_kernel` in gvhf-md/md_contract_j.cu build their `__shfl_down_sync` lane mask by shifting a 32-bit value by up to 63 bits. No test fails today, for the reason below; this pull request removes undefined behaviour that the compiler currently happens to hide.
+
+Cause: the mask of each group of `threadsx` lanes is `((1 << threadsx) - 1) << group_id * threadsx` in an `unsigned int`, with `group_id = (t_id % warpSize) / threadsx`. On a 64-wide wavefront the shift count is 32 to 63 for lanes 32 to 63, which is undefined for a 32-bit type. The compiled gfx942 code shifts by the count modulo 32, so groups in the upper half of the wavefront get the mask of a group in the lower half, one that does not contain the calling lanes.
+
+Why nothing fails: the shuffle itself does not use the mask on ROCm. Its only reader is HIP's mask check in `__shfl_down_sync`, a loop whose only effect is an assert, and in a release build (NDEBUG) the optimizer removes the loop, so the wrong mask is never looked at. Built with device asserts enabled (md_contract_j.cu compiled without NDEBUG), both kernels stop with a hardware exception on an MI300X (`HSA_STATUS_ERROR_EXCEPTION ... kernel: md_j_1dm_kernel`, and the same for `md_j_4dm_kernel`); with this change the check passes and the J matrix matches PySCF to 1.5e-12. The code is correct today only because of how the current compiler handles the undefined shift and the dead loop.
+
+Change: the mask type is `unsigned long long` when `WARP_SIZE` is 64 and stays `unsigned int` otherwise, the same selection `WARP_FULL_MASK` uses in contract_int3c2e.cu, and md_contract_j.cu includes warp_size.h as that file does. CUDA's `__shfl_down_sync` takes an `unsigned` mask, so the CUDA type is left as it is rather than narrowing a 64-bit value at every call. On CUDA and on 32-wide AMD GPUs the kernels preprocess to the same code as before.
+
+Test plan, MI300X (gfx942), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, built with `-mllvm -disable-machine-licm` (see #1055) and the CI marker selection, one pytest process per test file:
+
+```
+USE_HIP=1 CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm -DCMAKE_SHARED_LINKER_FLAGS=-mllvm=-disable-machine-licm" python setup.py build_py
+python -m pytest gpu4pyscf/scf/tests/test_scf_j_engine.py -p no:xdist -m 'not slow and not benchmark and not special' -k 'not _high_cost'
+```
+
+| | master | this branch |
+|---|---|---|
+| scf/tests, dft/tests, df/tests/test_df_int3c2e.py, pbc/scf/tests/test_pbc_scf_j_engine.py (passed/failed/skipped/errors) | 362/19/23/0 | 363/18/23/0 |
+| scf/tests/test_scf_j_engine.py | 8/0/0/0 | 8/0/0/0 |
+| J, two water molecules, def2-tzvp, md_contract_j.cu built without NDEBUG | hardware exception in both kernels | 1.5e-12 (one density matrix), 1.2e-12 (four) from PySCF |
+| one J build, vitamin C, def2-tzvp (nao 420), best of 10 | 0.869 s (one DM), 0.962 s (four) | 0.870 s, 0.961 s |
+
+The failing tests are the same on both, apart from test_stability_rhf_unstable, which fails intermittently on unmodified master (1 run in 3 on each tree here). In a release build the gfx942 code of both kernels is the same instruction for instruction before and after (only 4 PC-relative data offsets move), which is why results and timing do not change.
+
+CUDA: NVRTC 12.9 gives byte-identical PTX for the device code of md_contract_j.cu before and after at compute_70, compute_80 and compute_90, and the gfx1100 and gfx1201 (32-wide) device code is also identical. [PLACEHOLDER, to be replaced before opening: the result of building this branch with nvcc and running the J-engine, scf and dft tests on a V100.]
+
+Part of #1054.
+
+This pull request was prepared with Claude Code (Anthropic), which wrote the change and ran the tests on our hardware; I read and approved it before opening.
+````
+
+Checklist line for the issue's Tracking section (draft; nothing posted):
+
+```
+- [ ] 32-bit lane mask shifted by up to 63 bits in the MD J kernels (gvhf-md/md_contract_j.cu) on 64-wide wavefronts
+```
