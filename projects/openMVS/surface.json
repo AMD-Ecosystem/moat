@@ -1,0 +1,185 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "14ad2571aac6",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "libs/Common/Config.h",
+      "libs/Common/UtilCUDA.h",
+      "libs/MVS/CUDA/Camera.h",
+      "libs/MVS/CUDA/Maths.h",
+      "libs/MVS/ConfidenceCUDA.cu",
+      "libs/MVS/ConfidenceCUDA.h",
+      "libs/MVS/PatchMatchCUDA.cpp",
+      "libs/MVS/PatchMatchCUDA.cu",
+      "libs/MVS/SceneDensify.cpp",
+      "libs/MVS/SceneRefineCUDA.cpp",
+      "libs/MVS/SceneRefineCUDA.cu",
+      "libs/SFM/ImportROMA2.cpp",
+      "ports/siftgpu/source/src/CuTexImage.cpp",
+      "ports/siftgpu/source/src/CuTexImage.h",
+      "ports/siftgpu/source/src/ProgramCU.cu"
+    ],
+    "markers": {
+      "kernel": 49,
+      "device_code": 157,
+      "launch": 55,
+      "warp_intrinsic": 22,
+      "texture": 104,
+      "driver_api": 2
+    },
+    "libraries": {
+      "curand": 15
+    }
+  },
+  "components": [
+    {
+      "id": "library:glad_gl",
+      "kind": "library",
+      "where": "apps/Viewer/CMakeLists.txt"
+    },
+    {
+      "id": "library:siftgpu",
+      "kind": "library",
+      "where": "ports/siftgpu/source/CMakeLists.txt"
+    },
+    {
+      "id": "option:BUILD_SHARED_LIBS",
+      "kind": "option",
+      "where": "ports/siftgpu/source/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build shared libraries"
+    },
+    {
+      "id": "option:CUDA_ENABLED",
+      "kind": "option",
+      "where": "ports/siftgpu/source/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build CUDA-accelerated parts"
+    },
+    {
+      "id": "option:DEVIL_ENABLED",
+      "kind": "option",
+      "where": "ports/siftgpu/source/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Enable DevIL image library support"
+    },
+    {
+      "id": "option:SIMD_ENABLED",
+      "kind": "option",
+      "where": "ports/siftgpu/source/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Enable SIMD optimizations (SSE) on x86"
+    },
+    {
+      "id": "test:CommonUnitTests",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:MVSPipelineTest",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:SFMPipelineTest",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "kernel:PatchMatchCUDA",
+      "kind": "kernel",
+      "where": "libs/MVS/PatchMatchCUDA.cu",
+      "doc": "4 kernels + host in PatchMatchCUDA.cpp; textures, curand, __constant__"
+    },
+    {
+      "id": "kernel:ConfidenceCUDA",
+      "kind": "kernel",
+      "where": "libs/MVS/ConfidenceCUDA.cu",
+      "doc": "2 kernels; optional resident depth texture"
+    },
+    {
+      "id": "kernel:SceneRefineCUDA",
+      "kind": "kernel",
+      "where": "libs/MVS/SceneRefineCUDA.cu",
+      "doc": "16 kernels + host in SceneRefineCUDA.cpp; ballot/shuffle (wave64), textures, surfaces, graph capture"
+    },
+    {
+      "id": "driver-api:UtilCUDA",
+      "kind": "driver-api",
+      "where": "libs/Common/UtilCUDA.cpp",
+      "doc": "driver-API memory/array layer and device selection by compute capability (scan sees 2 markers; the layer is ~475 lines)"
+    },
+    {
+      "id": "macro-guards:Config-Maths",
+      "kind": "header",
+      "where": "libs/Common/Config.h",
+      "doc": "__CUDACC__/__CUDA_ARCH__ guards in Config.h and libs/MVS/CUDA/Maths.h"
+    },
+    {
+      "id": "library:Common",
+      "kind": "library",
+      "where": "libs/Common/CMakeLists.txt"
+    },
+    {
+      "id": "library:MVS",
+      "kind": "library",
+      "where": "libs/MVS/CMakeLists.txt"
+    },
+    {
+      "id": "library:SFM",
+      "kind": "library",
+      "where": "libs/SFM/CMakeLists.txt",
+      "doc": "SiftGPU/Ceres CUDA selection keyed on _USE_CUDA (plan risk S1)"
+    },
+    {
+      "id": "library:pyOpenMVS",
+      "kind": "library",
+      "where": "libs/MVS/CMakeLists.txt",
+      "doc": "Python module; Windows DLL path in build/python/__init__.py"
+    },
+    {
+      "id": "option:OpenMVS_USE_CUDA",
+      "kind": "option",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "option:OpenMVS_USE_SIFTGPU",
+      "kind": "option",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "option:OpenMVS_USE_PYTHON",
+      "kind": "option",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "app:DensifyPointCloud",
+      "kind": "executable",
+      "where": "apps/DensifyPointCloud",
+      "doc": "GPU PatchMatch consumer"
+    },
+    {
+      "id": "app:RefineMesh",
+      "kind": "executable",
+      "where": "apps/RefineMesh",
+      "doc": "GPU mesh refinement consumer"
+    },
+    {
+      "id": "docs:Building",
+      "kind": "docs",
+      "where": "docs/wiki/Building.md",
+      "doc": "ROCm build section"
+    },
+    {
+      "id": "platform:gfx94x-image-less",
+      "kind": "platform",
+      "where": "libs/MVS",
+      "doc": "gfx942/gfx950 have no HIP texture/surface API; support vs block awaits Jeff's ruling (plan Open question 1)"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}

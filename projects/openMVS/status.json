@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/openMVS",
   "fork_default_branch": "develop",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "cmake",
+  "stage": "planned",
   "adopted_at": "2026-11-05T22:50:00Z",
-  "updated_at": "2026-11-20T21:32:47Z",
+  "updated_at": "2026-11-20T21:40:22Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-20T21:32:47Z",
-    "holder": "293949ced0bd"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -48,7 +44,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:32:47Z",
+      "updated_at": "2026-11-20T21:40:22Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,5 +77,10 @@
     "viable": true,
     "summary": "AGPL-3.0 (tier 3) multi-view stereo; optional CMake CUDA path (3 MVS kernels ~105 KB + driver-API memory layer, no NVRTC) with CPU-vs-GPU MVS tests; no AMD effort exists, maintainer says GPU is NVIDIA-only; COLMAP sibling",
     "at": "2026-11-05T23:07:40Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-20T21:32:47Z",
+    "at": "2026-11-20T21:40:22Z"
   }
 }

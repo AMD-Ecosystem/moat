@@ -1,2 +1,4 @@
 {"kind":"session","ts":"2026-11-05T22:52:05Z","epoch":1793919127.064099400,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-05T23:07:49Z","epoch":1793920070.567052900,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-20T21:32:47Z","epoch":1795210367.285627,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-20T21:40:22Z","epoch":1795210822.909391,"event":"end","platform":"linux-gfx942"}

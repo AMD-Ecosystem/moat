@@ -46,3 +46,36 @@ Source of the lead: third-party "AMD AI Software Gap Matrix" seed (verdict unkno
 ### Questions for jeff
 
 None blocking. Recorded for the decision: openMVS is AGPL-3.0 (tier 3), so a licence clearance is needed before any upstream PR, and its optional SiftGPU overlay carries the same non-commercial licence as COLMAP's.
+
+## Planning (2026-11-20, linux-gfx942 host, planner agent)
+
+### Decisions needed from Jeff before a porter starts
+
+Both are scope cuts or scope additions, so neither is assumed. `plan.md` "Open questions" has the detail, and its change list marks the work each answer adds.
+
+1. **gfx942/gfx950 (MI300/MI355): support or block?** Every openMVS kernel samples through hardware-filtered texture objects (LINEAR filtering, WRAP/CLAMP addressing), and mesh refinement writes surfaces. gfx94x+ has no HIP image API: `tex2D`/`surf2D*` are compile errors under `__HIP_NO_IMAGE_SUPPORT`, and `hipMallocArray`/`hipCreateTextureObject` return not-supported at runtime (colmap measured this on MI300X).
+   - (a) Block those archs. A configure-time refusal plus a runtime CPU fallback, the gfx942/gfx950 platforms recorded blocked, and wave64 validated on gfx90a. Smallest diff; same call as colmap.
+   - (b) Support them in this port: a dual-path buffer-backed texture/surface emulation under `__HIP_NO_IMAGE_SUPPORT`. That roughly doubles the port and the upstream diff.
+   - (c) Buffer-only for all AMD GPUs: one path, but slower where textures work and further from CUDA's numbers.
+   - Planner's lean: (a), with (b) as a separately ruled follow-up. A lean, not a ruling.
+2. **SiftGPU's CUDA backend (`ports/siftgpu`, used by the SFM library): port it or leave it on GLSL?**
+   - (a) Leave it. A ROCm build uses SiftGPU's GLSL/EGL path or CPU SIFT, and the SFM code stops selecting SiftGPU's CUDA backend under HIP. This is a partial port: the SFM layer's GPU SIFT backend stays NVIDIA-only.
+   - (b) Port it now, reusing the three SiftGPU faults diagnosed on colmap. It hits the gfx94x texture problem again and carries the UNC non-commercial licence.
+   - Planner's lean: (a). A lean, not a ruling.
+
+Ceres' CUDA solvers (`ceres[cuda]`) are an external dependency with no HIP backend; a ROCm build uses CPU Ceres. Recorded as a fact, not a question.
+
+### What the analysis found
+
+- Upstream head moved since intake: `efa0b619` -> `14ad2571` (2026-11-06). Intake's facts hold.
+- Build: CMake first-class CUDA, recorded `ext_type=cmake`. Strategy A: a new `OpenMVS_USE_HIP` option, `LANGUAGE HIP` on the three `.cu` files, one compat header, `_USE_CUDA` kept as "GPU path compiled" plus `_USE_HIP` for the few divergent sites. The vcpkg `cuda` feature is not requested in a HIP build.
+- **No `-fgpu-rdc` needed for HIP.** No cross-TU `__device__`/`__constant__` references (`grep 'extern __device__|extern __constant__'` is empty), so the Windows RDC link-wrapper class does not apply. CUDA keeps its RDC settings.
+- Wave64 faults, all in `SceneRefineCUDA.cu`: the owner-bit `__ballot_sync(0xffffffffu, ...)` at :199 stores a 32-bit word per 32 faces (fix: take the thread's 32-bit half of the 64-bit ballot; the launch is 1D, 256 threads). `blockScanExclusive` at :264-292 uses `__shfl_up_sync(0xffffffffu, ...)` with 32-lane logical groups (fix: 64-bit masks and an explicit width 32). No other lane-width literals in the kernels.
+- **A copy-lifetime bug found by reading, real on HIP:** `PatchMatchCUDA.cpp:369-372` uploads a loop-local `DepthMap` with `cudaMemcpy2DToArrayAsync` from pageable memory. After `ResizeUniform` it owns a fresh buffer, freed at the end of the iteration and long before the stream sync at :440. HIP reads pageable 2D sources after the call returns, so neighbour depth priors at a different scale and an area under 1.5 MP would upload freed memory. The fix (keep it alive until the sync) is in the plan's change list.
+- Device selection (`UtilCUDA.cpp`) compares compute capabilities against CUDA SASS/PTX lists. AMD values collide with NVIDIA's, so the HIP build checks `gcnArchName` against the compiled `CMAKE_HIP_ARCHITECTURES`.
+- HIP does not define `__CUDACC__`/`__CUDA_ARCH__`, which gate `Config.h` (`HOST_DEVICE`, Debug device `ASSERT`) and `CUDA/Maths.h` (host `min`/`max`, Eigen index type). Extend those guards.
+- curand XORWOW maps to hipRAND/rocRAND. Graph capture (kernels and memsets only), `cudaMallocAsync`, and the driver-API array/memset calls all have HIP equivalents. Device Eigen is arithmetic plus a closed-form 3x3 inverse; no decompositions.
+- Tests: CTest `CommonUnitTests` (`Tests 0`), `SFMPipelineTest` (`Tests 1`), `MVSPipelineTest` (`Tests 2`). The GPU evidence is `MVSPipelineTest`: PipelineTest densifies with GPU PatchMatch, and MeshRefineSyntheticTest requires GPU refine RMS within +-10% of CPU. The GPU path falls back to the CPU silently, so a validator must show the `initDevices` log line and the kernel dispatches (`rocprofv3 --kernel-trace`), not just a green CTest. `Tests 2 2 1` is the forced-CPU control.
+- surface.json: generated floor (15 files, 9 components) plus 16 added components (the three kernel families, the driver-API layer, macro guards, libraries, pyOpenMVS, CUDA/SiftGPU/Python options, the two GPU apps, the build docs, and a `platform:gfx94x-image-less` entry tied to question 1). Nothing removed from the floor. The SiftGPU components and the gfx94x entry get `covered` or `scoped_out` once Jeff rules.
+
+No build or GPU run in this role (planner; other jobs share this host's GPUs).
