@@ -1591,3 +1591,47 @@ Evidence:
 - CUDA no-regression gate: not rerun here; Windows host has no nvcc build of this and the nvcc gate already passed at this head on Linux.
 
 Differences from the porter's run: none in counts (35/35, 3170, 814, mean z 0.20536). Configure took 24 s, build was short (vcpkg cache warm, ~633 steps).
+## Validation 2026-11-20 (linux-gfx90a, validator): fix-round head aeb9540d
+
+PASS at `aeb9540d6be87d4fcde76a00ded5f972b4615c35` (`moat-fix-145`), AMD Instinct MI250X / MI250 (gfx90a), `HIP_VISIBLE_DEVICES=1` (the dispatcher's pin), `ulimit -c 0`. Full rebuild and real-GPU run: `classify 29bac0b9..aeb9540d` gives `class=mixed arch_independent=False inert=False`, so no carry-forward.
+
+Toolchain: TheRock ROCm 10.2.0 wheels installed into the job venv, not the image's 10.1.0 and not a system ROCm (the host has no `/opt/rocm`): `$FLEET_VENV/bin/pip install --index-url https://stable.repo.amd.com/rocm/core/whl-next/ 'rocm[libraries,devel,device-gfx90a]==10.2.0'`; `rocm-sdk version` = 10.2.0, `AMD clang version 24.0.0git (ROCm/llvm-project bdc35841c97f)`. CMake 3.31.6, Ninja, g++ 13.3. Fresh full vcpkg clone + `bootstrap-vcpkg.sh -disableMetrics` in the job's `agent_space/` (configure including vcpkg deps: 389 s). Fork clone fresh from `moat-fix-145` (`HEAD` = head_sha), protect-fork installed; `git status --porcelain` empty after build and tests (untracked `build/` only).
+
+### Build
+
+```
+ROCM=$($FLEET_VENV/bin/rocm-sdk path --root); export VCPKG_ROOT=<job>/agent_space/vcpkg
+cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$ROCM -DBUILD_TESTS=ON -DBUILD_EXAMPLES=ON
+cmake --build build -j$MAX_JOBS     # 42
+```
+
+PASS: 417/417 steps, 0 warnings, 0 errors under `-Werror`.
+
+### HipCxx23Shim on Linux: inert
+
+- Configure output: no `Using reordered HIP runtime wrapper` line, no shim warning.
+- `CMakeConfigureLog.yaml`: exactly one try_compile from `Builds/CMake/HipCxx23Shim.cmake:24` (variable `PROBE_OK`, `exitCode: 0`), compiled `-std=gnu++23 --offload-arch=gfx90a` with the inherited `-include cuda_to_hip.h`. No second (re-probe) try_compile.
+- `build/HipCxx23Shim/` does not exist: no reordered wrapper generated.
+- build.ninja: 35 HIP objects (`--offload-arch` FLAGS lines), all at `-std=c++23`; 367 other FLAGS lines at `-std=c++23`; 402 `-std=` flags in total, all `c++23`. No `-I...HipCxx23Shim` flag; the only two `HipCxx23Shim` mentions are the module in the RERUN_CMAKE dependency lists. `CMAKE_HIP_FLAGS` cache value empty. HIP FLAGS: `-include ".../cuda_to_hip.h" -O3 -DNDEBUG -std=c++23 --offload-arch=gfx90a -fPIC -Wall ... -Werror ...`, the 29bac0b9 flags.
+- As on gfx950, this SDK's `__clang_hip_runtime_wrapper.h` already has the fixed order (forward-declares at line 102, `<cmath>` at 103).
+
+### Tests (`bash utils/timeit.sh CubbyFlow test -- bash agent_space/run_tests.sh cuda|sph|unit`, each under `ulimit -c 0`, `HIP_VISIBLE_DEVICES=1`)
+
+- `build/bin/CUDATests`: 35/35 test cases, 3170/3170 assertions PASS.
+- `build/bin/CUDASPHSim -f 5` (run from a scratch dir): 13824 particles, 5 frames, exit 0; 0 non-finite values; mean z per frame 0.25000, 0.23641, 0.21858, 0.20843, 0.20536, identical to gfx950 and the windows-gfx1151 porter run.
+- `build/bin/UnitTests` (CPU): 814/814 PASS in 168 suites.
+
+All counts match the 29bac0b9 gfx90a evidence and the aeb9540d gfx1100/gfx950 runs.
+
+### CUDA no-regression gate
+
+Not re-run: no CUDA toolkit on this host, and the nvcc 12.8 compile gate already passed at this head_sha (linux-gfx950 validation above).
+
+### Jargon / documentation
+
+`python3 utils/jargon.py --port CubbyFlow`: clean. `Documents/Install.md:104-109` documents `USE_HIP=ON`; unchanged by this delta.
+
+### Verdict: PASS -> completed at `aeb9540d6be87d4fcde76a00ded5f972b4615c35`
