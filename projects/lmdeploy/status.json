@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/lmdeploy",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "cmake",
+  "stage": "planned",
   "adopted_at": "2026-11-06T00:20:34Z",
-  "updated_at": "2026-11-20T21:33:32Z",
+  "updated_at": "2026-11-20T21:45:52Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-20T21:33:32Z",
-    "holder": "86eb3dd4e109"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -48,7 +44,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:33:32Z",
+      "updated_at": "2026-11-20T21:45:52Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,5 +77,10 @@
       "evidence": "https://github.com/InternLM/lmdeploy/blob/bc2c8da35a4e70133f4b55acba04e2da69e5cedc/LICENSE",
       "at": "2026-11-06T00:49:46Z"
     }
-  ]
+  ],
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-20T21:33:32Z",
+    "at": "2026-11-20T21:45:52Z"
+  }
 }

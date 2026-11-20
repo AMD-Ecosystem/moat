@@ -1,0 +1,757 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "63549b282790",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "src/turbomind/comm/cuda_ipc/allgather.cu",
+      "src/turbomind/comm/cuda_ipc/allreduce.cu",
+      "src/turbomind/comm/cuda_ipc/broadcast.cu",
+      "src/turbomind/comm/cuda_ipc/cuda_ipc_comm.cu",
+      "src/turbomind/comm/cuda_ipc/cuda_ipc_comm.h",
+      "src/turbomind/comm/cuda_ipc/fused_allreduce.cu",
+      "src/turbomind/comm/cuda_ipc/fused_allreduce_ex.cu",
+      "src/turbomind/comm/cuda_ipc/group_sum.h",
+      "src/turbomind/comm/cuda_ipc/mscclpp.h",
+      "src/turbomind/comm/cuda_ipc/multimem.cuh",
+      "src/turbomind/comm/cuda_ipc/semaphore.cuh",
+      "src/turbomind/comm/device_comm.cc",
+      "src/turbomind/comm/nccl/deepep/moe_a2a_utils.cu",
+      "src/turbomind/comm/nccl/deepep/nccl_stub.cc",
+      "src/turbomind/comm/nccl/deepep/symm_ctx.h",
+      "src/turbomind/comm/nccl/deepep/token_dispatcher.cc",
+      "src/turbomind/comm/nccl/deepep/utils.h",
+      "src/turbomind/comm/nccl/nccl.cu",
+      "src/turbomind/comm/test_comm.cu",
+      "src/turbomind/core/cuda_data_type.h",
+      "src/turbomind/generation/generation.cc",
+      "src/turbomind/generation/sampling.cc",
+      "src/turbomind/kernels/activation.cu",
+      "src/turbomind/kernels/activation_kernels.cu",
+      "src/turbomind/kernels/activation_ops.h",
+      "src/turbomind/kernels/apply_token_bitmask_inplace_cuda.cu",
+      "src/turbomind/kernels/attention/attention.cu",
+      "src/turbomind/kernels/attention/attention_params.h",
+      "src/turbomind/kernels/attention/attention_template.h",
+      "src/turbomind/kernels/attention/attention_universal.h",
+      "src/turbomind/kernels/attention/block_iterator.h",
+      "src/turbomind/kernels/attention/cp_utils.cu",
+      "src/turbomind/kernels/attention/cta_map.h",
+      "src/turbomind/kernels/attention/decoding.cu",
+      "src/turbomind/kernels/attention/decoding_template.h",
+      "src/turbomind/kernels/attention/impl_16816.h",
+      "src/turbomind/kernels/attention/impl_1688.h",
+      "src/turbomind/kernels/attention/impl_81616.h",
+      "src/turbomind/kernels/attention/impl_884.h",
+      "src/turbomind/kernels/attention/impl_m16n8.h",
+      "src/turbomind/kernels/attention/impl_simt.h",
+      "src/turbomind/kernels/attention/iterator.h",
+      "src/turbomind/kernels/attention/iterator_sm70.h",
+      "src/turbomind/kernels/attention/iterator_sm80.h",
+      "src/turbomind/kernels/attention/kernel/attention_sm70_128.cu",
+      "src/turbomind/kernels/attention/kernel/attention_sm70_256.cu",
+      "src/turbomind/kernels/attention/kernel/attention_sm70_576.cu",
+      "src/turbomind/kernels/attention/kernel/attention_sm70_64.cu",
+      "src/turbomind/kernels/attention/kernel/attention_sm75_128.cu",
+      "src/turbomind/kernels/attention/kernel/attention_sm75_256.cu",
+      "src/turbomind/kernels/attention/kernel/attention_sm75_576.cu",
+      "src/turbomind/kernels/attention/kernel/attention_sm75_64.cu",
+      "src/turbomind/kernels/attention/kernel/attention_sm80_128.cu",
+      "src/turbomind/kernels/attention/kernel/attention_sm80_192.cu",
+      "src/turbomind/kernels/attention/kernel/attention_sm80_256.cu",
+      "src/turbomind/kernels/attention/kernel/attention_sm80_576.cu",
+      "src/turbomind/kernels/attention/kernel/attention_sm80_64.cu",
+      "src/turbomind/kernels/attention/kernel/decoding_sm70_128.cu",
+      "src/turbomind/kernels/attention/kernel/decoding_sm70_256.cu",
+      "src/turbomind/kernels/attention/kernel/decoding_sm70_576.cu",
+      "src/turbomind/kernels/attention/kernel/decoding_sm70_64.cu",
+      "src/turbomind/kernels/attention/kernel/decoding_sm75_128.cu",
+      "src/turbomind/kernels/attention/kernel/decoding_sm75_256.cu",
+      "src/turbomind/kernels/attention/kernel/decoding_sm75_576.cu",
+      "src/turbomind/kernels/attention/kernel/decoding_sm75_64.cu",
+      "src/turbomind/kernels/attention/kernel/decoding_sm80_128.cu",
+      "src/turbomind/kernels/attention/kernel/decoding_sm80_192.cu",
+      "src/turbomind/kernels/attention/kernel/decoding_sm80_256.cu",
+      "src/turbomind/kernels/attention/kernel/decoding_sm80_576.cu",
+      "src/turbomind/kernels/attention/kernel/decoding_sm80_64.cu",
+      "src/turbomind/kernels/attention/kv_cache_utils_v2.cu",
+      "src/turbomind/kernels/attention/kv_cache_utils_v2.h",
+      "src/turbomind/kernels/attention/linear_iterator.h",
+      "src/turbomind/kernels/attention/mainloop_sm70.h",
+      "src/turbomind/kernels/attention/mainloop_sm80.h",
+      "src/turbomind/kernels/attention/quantization.h",
+      "src/turbomind/kernels/attention/reduce.cu",
+      "src/turbomind/kernels/attention/reference.cu",
+      "src/turbomind/kernels/attention/reference.h",
+      "src/turbomind/kernels/attention/registry.cu",
+      "src/turbomind/kernels/attention/rotary_embedding.h",
+      "src/turbomind/kernels/attention/test_attention.cu",
+      "src/turbomind/kernels/attention/test_quant.cu",
+      "src/turbomind/kernels/attention/test_utils.cu",
+      "src/turbomind/kernels/ban_bad_words.cu",
+      "src/turbomind/kernels/copy/copy.cu",
+      "src/turbomind/kernels/copy/transpose.cu",
+      "src/turbomind/kernels/core/array_ops.h",
+      "src/turbomind/kernels/core/common.h",
+      "src/turbomind/kernels/core/floating_point.h",
+      "src/turbomind/kernels/core/layout.h",
+      "src/turbomind/kernels/core/mma.h",
+      "src/turbomind/kernels/core/pipe_iter.h",
+      "src/turbomind/kernels/core/smem.h",
+      "src/turbomind/kernels/core/sub_byte_ptr.h",
+      "src/turbomind/kernels/core/sync.h",
+      "src/turbomind/kernels/core/thread_map.h",
+      "src/turbomind/kernels/cross_entropy_kernels.cu",
+      "src/turbomind/kernels/decoding_kernels.cu",
+      "src/turbomind/kernels/gemm/arch/mma_simt.h",
+      "src/turbomind/kernels/gemm/arch/mma_sm70.h",
+      "src/turbomind/kernels/gemm/arch/mma_sm80.h",
+      "src/turbomind/kernels/gemm/arch/smem_copy_simt.h",
+      "src/turbomind/kernels/gemm/arch/smem_copy_sm70.h",
+      "src/turbomind/kernels/gemm/arch/smem_copy_sm80.h",
+      "src/turbomind/kernels/gemm/cast.cu",
+      "src/turbomind/kernels/gemm/context.cu",
+      "src/turbomind/kernels/gemm/convert.cuh",
+      "src/turbomind/kernels/gemm/convert_v3.cu",
+      "src/turbomind/kernels/gemm/cp_async.h",
+      "src/turbomind/kernels/gemm/cublas.cu",
+      "src/turbomind/kernels/gemm/dispatch_cache.cu",
+      "src/turbomind/kernels/gemm/epilogue.h",
+      "src/turbomind/kernels/gemm/format.h",
+      "src/turbomind/kernels/gemm/gemm.cu",
+      "src/turbomind/kernels/gemm/gemm_universal.h",
+      "src/turbomind/kernels/gemm/gemm_universal_sm90.h",
+      "src/turbomind/kernels/gemm/gemm_universal_sm90_bf16.h",
+      "src/turbomind/kernels/gemm/gemm_universal_sm90_fp8_wa.h",
+      "src/turbomind/kernels/gemm/gemm_universal_sm90_mixed.h",
+      "src/turbomind/kernels/gemm/gemm_universal_sm90_mxfp4_fp8_folded.h",
+      "src/turbomind/kernels/gemm/gemm_universal_sm90_mxfp4_fp8_unfolded.h",
+      "src/turbomind/kernels/gemm/gemm_universal_sm90_v3.h",
+      "src/turbomind/kernels/gemm/gemm_universal_sm90_v5.h",
+      "src/turbomind/kernels/gemm/gmma_bf16_sm90.h",
+      "src/turbomind/kernels/gemm/gmma_fp8_sm90.h",
+      "src/turbomind/kernels/gemm/gmma_issue.h",
+      "src/turbomind/kernels/gemm/gpu_metric.cu",
+      "src/turbomind/kernels/gemm/iterator.h",
+      "src/turbomind/kernels/gemm/iterator_sm70.h",
+      "src/turbomind/kernels/gemm/iterator_sm80.h",
+      "src/turbomind/kernels/gemm/iterator_sm90.h",
+      "src/turbomind/kernels/gemm/kernel.cu",
+      "src/turbomind/kernels/gemm/kernel/sm70_884_16.cu",
+      "src/turbomind/kernels/gemm/kernel/sm70_884_4.cu",
+      "src/turbomind/kernels/gemm/kernel/sm70_884_8.cu",
+      "src/turbomind/kernels/gemm/kernel/sm75_16816_16.cu",
+      "src/turbomind/kernels/gemm/kernel/sm75_16816_4.cu",
+      "src/turbomind/kernels/gemm/kernel/sm75_16816_8.cu",
+      "src/turbomind/kernels/gemm/kernel/sm80_16816_16.cu",
+      "src/turbomind/kernels/gemm/kernel/sm80_16816_4.cu",
+      "src/turbomind/kernels/gemm/kernel/sm80_16816_8.cu",
+      "src/turbomind/kernels/gemm/kernel/sm90_16816_4.cu",
+      "src/turbomind/kernels/gemm/kernel/sm90_16816_8.cu",
+      "src/turbomind/kernels/gemm/kernel/sm90_64n16_16.cu",
+      "src/turbomind/kernels/gemm/kernel/sm90_64n16_4.cu",
+      "src/turbomind/kernels/gemm/kernel/sm90_64n16_e4m3.cu",
+      "src/turbomind/kernels/gemm/kernel/sm90_64n16_mxfp4.cu",
+      "src/turbomind/kernels/gemm/kernel/sm90_64n16_nvfp4.cu",
+      "src/turbomind/kernels/gemm/kernel/sm90_64n32_8.cu",
+      "src/turbomind/kernels/gemm/kernel/sm90_64n32_mxfp4_fp8_folded.cu",
+      "src/turbomind/kernels/gemm/kernel/sm90_64n32_mxfp4_fp8_unfolded.cu",
+      "src/turbomind/kernels/gemm/kernel/sm90_nvfp4_dequant.h",
+      "src/turbomind/kernels/gemm/kernel_impl.h",
+      "src/turbomind/kernels/gemm/kernel_impl_sm90.h",
+      "src/turbomind/kernels/gemm/kernel_impl_sm90_bf16.h",
+      "src/turbomind/kernels/gemm/kernel_impl_sm90_mixed.h",
+      "src/turbomind/kernels/gemm/kernel_impl_sm90_mxfp4_fp8.h",
+      "src/turbomind/kernels/gemm/mainloop_sm70.h",
+      "src/turbomind/kernels/gemm/mainloop_sm80_v2.h",
+      "src/turbomind/kernels/gemm/matrix_ptr.h",
+      "src/turbomind/kernels/gemm/moe_utils_v2.cu",
+      "src/turbomind/kernels/gemm/predicate.h",
+      "src/turbomind/kernels/gemm/prepare_moe_tma_descs_sm90_fp8.h",
+      "src/turbomind/kernels/gemm/registry.cu",
+      "src/turbomind/kernels/gemm/scaled_gmma_fp8_sm90.h",
+      "src/turbomind/kernels/gemm/scheduler.cuh",
+      "src/turbomind/kernels/gemm/scheduler_sm70.cuh",
+      "src/turbomind/kernels/gemm/sm90_mixed_dequant.h",
+      "src/turbomind/kernels/gemm/sm90_mixed_pack.cu",
+      "src/turbomind/kernels/gemm/sm90_mixed_pack.h",
+      "src/turbomind/kernels/gemm/sm90_mixed_traits.h",
+      "src/turbomind/kernels/gemm/sm90_mxfp4_fp8_traits.h",
+      "src/turbomind/kernels/gemm/sm90_utils.h",
+      "src/turbomind/kernels/gemm/smem_copy.h",
+      "src/turbomind/kernels/gemm/test/quantization.cu",
+      "src/turbomind/kernels/gemm/test/quantization.h",
+      "src/turbomind/kernels/gemm/test/quantization_impl.h",
+      "src/turbomind/kernels/gemm/test/reference.cu",
+      "src/turbomind/kernels/gemm/test/reference.h",
+      "src/turbomind/kernels/gemm/test/test_moe_utils.cu",
+      "src/turbomind/kernels/gemm/test/test_utils.cu",
+      "src/turbomind/kernels/gemm/thread_group_map.h",
+      "src/turbomind/kernels/gemm/thread_map.h",
+      "src/turbomind/kernels/gemm/tiled_mma.h",
+      "src/turbomind/kernels/gemm/tma.cu",
+      "src/turbomind/kernels/gemm/transform.h",
+      "src/turbomind/kernels/gemm/tuner/cache_utils.cu",
+      "src/turbomind/kernels/gemm/tuner/measurer.cu",
+      "src/turbomind/kernels/gemm/tuner/sampler.cu",
+      "src/turbomind/kernels/gemm/unpack.cu",
+      "src/turbomind/kernels/gemm/utils.h",
+      "src/turbomind/kernels/gpt_kernels.cu",
+      "src/turbomind/kernels/linear_attn/delta_rule.cu",
+      "src/turbomind/kernels/linear_attn/kernel/pre_sm90/chunked.cu",
+      "src/turbomind/kernels/linear_attn/kernel/pre_sm90/entry.cu",
+      "src/turbomind/kernels/linear_attn/kernel/pre_sm90/recurrent.cu",
+      "src/turbomind/kernels/linear_attn/kernel/sm_120/cp_fwd.h",
+      "src/turbomind/kernels/linear_attn/kernel/sm_120/cumsum.cu",
+      "src/turbomind/kernels/linear_attn/kernel/sm_120/entry.cu",
+      "src/turbomind/kernels/linear_attn/kernel/sm_120/fused_fwd.h",
+      "src/turbomind/kernels/linear_attn/kernel/sm_120/kkt_solve.cu",
+      "src/turbomind/kernels/linear_attn/kernel/sm_120/prepare_h.h",
+      "src/turbomind/kernels/linear_attn/kernel/sm_120/recurrent.cu",
+      "src/turbomind/kernels/linear_attn/kernel/sm_120/tma_desc_prepare.cu",
+      "src/turbomind/kernels/linear_attn/kernel/sm_120/tma_desc_prepare.h",
+      "src/turbomind/kernels/linear_attn/kernel/sm_90/common.h",
+      "src/turbomind/kernels/linear_attn/kernel/sm_90/cp_fwd.h",
+      "src/turbomind/kernels/linear_attn/kernel/sm_90/entry.cu",
+      "src/turbomind/kernels/linear_attn/kernel/sm_90/fused_fwd.h",
+      "src/turbomind/kernels/linear_attn/kernel/sm_90/kkt_solve.cu",
+      "src/turbomind/kernels/linear_attn/kernel/sm_90/prepare_h.h",
+      "src/turbomind/kernels/linear_attn/kernel/sm_90/recurrent.cu",
+      "src/turbomind/kernels/linear_attn/kernel/sm_90/tma_desc_prepare.cu",
+      "src/turbomind/kernels/linear_attn/kernel/sm_90/tma_desc_prepare.h",
+      "src/turbomind/kernels/linear_attn/kernel/tma_desc.cu",
+      "src/turbomind/kernels/linear_attn/kernel/tma_desc.h",
+      "src/turbomind/kernels/linear_attn/registry.cu",
+      "src/turbomind/kernels/norm/layer_norm.cu",
+      "src/turbomind/kernels/norm/rms_norm.cu",
+      "src/turbomind/kernels/norm/rms_norm_utils.cuh",
+      "src/turbomind/kernels/quantization.cu",
+      "src/turbomind/kernels/quantization.cuh",
+      "src/turbomind/kernels/reduce_kernel_utils.cuh",
+      "src/turbomind/kernels/sampling_kernels.cu",
+      "src/turbomind/kernels/sampling_kernels.h",
+      "src/turbomind/kernels/sampling_penalty_kernels.cu",
+      "src/turbomind/kernels/sampling_topk_kernels.cu",
+      "src/turbomind/kernels/sampling_topk_kernels.h",
+      "src/turbomind/kernels/sampling_topp_kernels.cu",
+      "src/turbomind/kernels/sampling_topp_kernels.h",
+      "src/turbomind/kernels/stop_criteria_kernels.cu",
+      "src/turbomind/kernels/test_cross_entropy.cu",
+      "src/turbomind/kernels/unfused_attention_kernels.cu",
+      "src/turbomind/models/internvit/internvit_kernels.cu",
+      "src/turbomind/models/llama/LlamaLinear.cu",
+      "src/turbomind/models/llama/context.h",
+      "src/turbomind/models/llama/gated_delta_net_kernels.cu",
+      "src/turbomind/models/llama/llama_kernels.cu",
+      "src/turbomind/models/llama/llama_utils.cu",
+      "src/turbomind/models/llama/llama_utils.h",
+      "src/turbomind/models/llama/mla_utils.cu",
+      "src/turbomind/models/llama/moe_ffn_layer.cc",
+      "src/turbomind/models/llama/unified_attention_layer.cc",
+      "src/turbomind/models/qwenvit/qwenvit.cc",
+      "src/turbomind/models/qwenvit/qwenvit_kernels.cu",
+      "src/turbomind/models/qwenvit/test_mrope_position_ids.cu",
+      "src/turbomind/turbomind.cc",
+      "src/turbomind/utils/anomaly_handler.cu",
+      "src/turbomind/utils/cuda_bf16_fallbacks.cuh",
+      "src/turbomind/utils/cuda_type_utils.cuh",
+      "src/turbomind/utils/cuda_utils.h",
+      "src/turbomind/utils/memory_utils.cu"
+    ],
+    "markers": {
+      "kernel": 191,
+      "launch": 204,
+      "driver_api": 1,
+      "device_code": 1128,
+      "warp_intrinsic": 99
+    },
+    "libraries": {
+      "nccl": 268,
+      "cublas": 65,
+      "curand": 89,
+      "cub": 28,
+      "cutlass": 329,
+      "thrust": 111,
+      "cusparse": 1
+    }
+  },
+  "components": [
+    {
+      "id": "benchmark:bench_conv1d_silu",
+      "kind": "benchmark",
+      "where": "src/turbomind/models/CMakeLists.txt"
+    },
+    {
+      "id": "library:Llama",
+      "kind": "library",
+      "where": "src/turbomind/models/llama/CMakeLists.txt"
+    },
+    {
+      "id": "library:activation",
+      "kind": "library",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "library:activation_kernels",
+      "kind": "library",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "library:anomaly_handler",
+      "kind": "library",
+      "where": "src/turbomind/utils/CMakeLists.txt"
+    },
+    {
+      "id": "library:apply_token_bitmask_inplace_cuda",
+      "kind": "library",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "library:attention",
+      "kind": "library",
+      "where": "src/turbomind/kernels/attention/CMakeLists.txt"
+    },
+    {
+      "id": "library:attention_kernels",
+      "kind": "library",
+      "where": "src/turbomind/kernels/attention/kernel/CMakeLists.txt"
+    },
+    {
+      "id": "library:ban_bad_words",
+      "kind": "library",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "library:copy",
+      "kind": "library",
+      "where": "src/turbomind/kernels/copy/CMakeLists.txt"
+    },
+    {
+      "id": "library:core",
+      "kind": "library",
+      "where": "src/turbomind/core/CMakeLists.txt"
+    },
+    {
+      "id": "library:cross_entropy_kernels",
+      "kind": "library",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "library:cuda_ipc_comm",
+      "kind": "library",
+      "where": "src/turbomind/comm/cuda_ipc/CMakeLists.txt"
+    },
+    {
+      "id": "library:cuda_utils",
+      "kind": "library",
+      "where": "src/turbomind/utils/CMakeLists.txt"
+    },
+    {
+      "id": "library:decoding_kernels",
+      "kind": "library",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "library:device_comm",
+      "kind": "library",
+      "where": "src/turbomind/comm/CMakeLists.txt"
+    },
+    {
+      "id": "library:engine",
+      "kind": "library",
+      "where": "src/turbomind/engine/CMakeLists.txt"
+    },
+    {
+      "id": "library:gemm2_core",
+      "kind": "library",
+      "where": "src/turbomind/kernels/gemm/CMakeLists.txt"
+    },
+    {
+      "id": "library:gemm2_kernels",
+      "kind": "library",
+      "where": "src/turbomind/kernels/gemm/CMakeLists.txt"
+    },
+    {
+      "id": "library:gemm2_kernels_sm70",
+      "kind": "library",
+      "where": "src/turbomind/kernels/gemm/CMakeLists.txt"
+    },
+    {
+      "id": "library:gemm2_kernels_sm75",
+      "kind": "library",
+      "where": "src/turbomind/kernels/gemm/CMakeLists.txt"
+    },
+    {
+      "id": "library:gemm2_kernels_sm80",
+      "kind": "library",
+      "where": "src/turbomind/kernels/gemm/CMakeLists.txt"
+    },
+    {
+      "id": "library:gemm2_sm90",
+      "kind": "library",
+      "where": "src/turbomind/kernels/gemm/CMakeLists.txt"
+    },
+    {
+      "id": "library:generation",
+      "kind": "library",
+      "where": "src/turbomind/generation/CMakeLists.txt"
+    },
+    {
+      "id": "library:gloo_comm",
+      "kind": "library",
+      "where": "src/turbomind/comm/gloo/CMakeLists.txt"
+    },
+    {
+      "id": "library:gpt_kernels",
+      "kind": "library",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "library:guided_decoding",
+      "kind": "library",
+      "where": "src/turbomind/generation/CMakeLists.txt"
+    },
+    {
+      "id": "library:host_comm",
+      "kind": "library",
+      "where": "src/turbomind/comm/CMakeLists.txt"
+    },
+    {
+      "id": "library:layer_norm",
+      "kind": "library",
+      "where": "src/turbomind/kernels/norm/CMakeLists.txt"
+    },
+    {
+      "id": "library:linear_attn",
+      "kind": "library",
+      "where": "src/turbomind/kernels/linear_attn/CMakeLists.txt"
+    },
+    {
+      "id": "library:linear_attn_kernels",
+      "kind": "library",
+      "where": "src/turbomind/kernels/linear_attn/kernel/CMakeLists.txt"
+    },
+    {
+      "id": "library:linear_attn_kernels_pre_sm90",
+      "kind": "library",
+      "where": "src/turbomind/kernels/linear_attn/kernel/CMakeLists.txt"
+    },
+    {
+      "id": "library:linear_attn_kernels_sm120",
+      "kind": "library",
+      "where": "src/turbomind/kernels/linear_attn/kernel/CMakeLists.txt"
+    },
+    {
+      "id": "library:linear_attn_kernels_sm90",
+      "kind": "library",
+      "where": "src/turbomind/kernels/linear_attn/kernel/CMakeLists.txt"
+    },
+    {
+      "id": "library:memory",
+      "kind": "library",
+      "where": "src/turbomind/memory/CMakeLists.txt"
+    },
+    {
+      "id": "library:memory_utils",
+      "kind": "library",
+      "where": "src/turbomind/utils/CMakeLists.txt"
+    },
+    {
+      "id": "library:models",
+      "kind": "library",
+      "where": "src/turbomind/models/CMakeLists.txt"
+    },
+    {
+      "id": "library:nccl_comm",
+      "kind": "library",
+      "where": "src/turbomind/comm/nccl/CMakeLists.txt"
+    },
+    {
+      "id": "library:nvtx_utils",
+      "kind": "library",
+      "where": "src/turbomind/utils/CMakeLists.txt"
+    },
+    {
+      "id": "library:parser",
+      "kind": "library",
+      "where": "src/turbomind/utils/CMakeLists.txt"
+    },
+    {
+      "id": "library:quantization_kernels",
+      "kind": "library",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "library:rms_norm",
+      "kind": "library",
+      "where": "src/turbomind/kernels/norm/CMakeLists.txt"
+    },
+    {
+      "id": "library:sampling_kernels",
+      "kind": "library",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "library:sampling_penalty_kernels",
+      "kind": "library",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "library:sampling_topk_kernels",
+      "kind": "library",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "library:sampling_topp_kernels",
+      "kind": "library",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "library:stop_criteria",
+      "kind": "library",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "library:token_dispatcher",
+      "kind": "library",
+      "where": "src/turbomind/comm/nccl/deepep/CMakeLists.txt"
+    },
+    {
+      "id": "library:turbomind",
+      "kind": "library",
+      "where": "src/turbomind/CMakeLists.txt"
+    },
+    {
+      "id": "library:turbomind_nccl_stub",
+      "kind": "library",
+      "where": "src/turbomind/comm/nccl/deepep/CMakeLists.txt"
+    },
+    {
+      "id": "library:unfused_attention_kernels",
+      "kind": "library",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "option:BUILD_FAST_MATH",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build in fast math mode"
+    },
+    {
+      "id": "option:BUILD_MULTI_GPU",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build multi-gpu support"
+    },
+    {
+      "id": "option:BUILD_PY_FFI",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build python ffi"
+    },
+    {
+      "id": "option:BUILD_TEST",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build tests"
+    },
+    {
+      "id": "option:SPARSITY_SUPPORT",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build project with Ampere sparsity feature support"
+    },
+    {
+      "id": "option:USE_NVTX",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether or not to use nvtx"
+    },
+    {
+      "id": "test:test_attention",
+      "kind": "test",
+      "where": "src/turbomind/kernels/attention/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_comm",
+      "kind": "test",
+      "where": "src/turbomind/comm/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_core",
+      "kind": "test",
+      "where": "src/turbomind/core/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_cross_entropy",
+      "kind": "test",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_data_format",
+      "kind": "test",
+      "where": "src/turbomind/core/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_host_comm",
+      "kind": "test",
+      "where": "src/turbomind/comm/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_ipc_comm",
+      "kind": "test",
+      "where": "src/turbomind/comm/gloo/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_logger",
+      "kind": "test",
+      "where": "src/turbomind/core/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_memory",
+      "kind": "test",
+      "where": "src/turbomind/memory/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_mrope_position_ids",
+      "kind": "test",
+      "where": "src/turbomind/models/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_prefix_trie",
+      "kind": "test",
+      "where": "src/turbomind/engine/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_quant",
+      "kind": "test",
+      "where": "src/turbomind/kernels/attention/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_quantization",
+      "kind": "test",
+      "where": "src/turbomind/kernels/CMakeLists.txt"
+    },
+    {
+      "id": "test:test_scope",
+      "kind": "test",
+      "where": "src/turbomind/core/CMakeLists.txt"
+    },
+    {
+      "id": "python_package:pytorch_engine",
+      "kind": "python_package",
+      "where": "lmdeploy/pytorch/ (PyTorch engine: device/capability gates, bf16, fp8 dtype, optional accelerators)"
+    },
+    {
+      "id": "gpu_module:pytorch_triton_kernels",
+      "kind": "gpu_module",
+      "where": "lmdeploy/pytorch/kernels/cuda/ (41 Triton modules: libdevice, inline PTX, LDS-sized meta tables)"
+    },
+    {
+      "id": "test:tests_pytorch_kernel",
+      "kind": "test",
+      "where": "tests/pytorch/kernel (60 GPU test files)"
+    },
+    {
+      "id": "non_gpu_path:tests_cpu_regression",
+      "kind": "non_gpu_path",
+      "where": "tests/test_lmdeploy, tests/pytorch/{engine,paging,config,spec_decode,kv_connector,nn} (CPU/mocked parts must not regress)"
+    },
+    {
+      "id": "validation:pytorch_engine_e2e",
+      "kind": "validation",
+      "where": "pipeline() smokes with PytorchEngineConfig: dense bf16 eager+graph, Qwen3.5 (fla+tilelang), AWQ, W8A8, fp8"
+    },
+    {
+      "id": "build_path:setup_py_rocm_target",
+      "kind": "build_path",
+      "where": "setup.py (LMDEPLOY_TARGET_DEVICE=rocm builds TurboMind; requirements/runtime_rocm.txt parity)"
+    },
+    {
+      "id": "doc:installation_rocm",
+      "kind": "doc",
+      "where": "docs/en/get_started/installation.md, docs/zh_cn/get_started/installation.md"
+    },
+    {
+      "id": "binding:turbomind_pybind_dlpack",
+      "kind": "binding",
+      "where": "src/turbomind/python/ (_turbomind; DLPack kDLROCM) and lmdeploy/turbomind/*.py"
+    },
+    {
+      "id": "test:tests_turbomind_python",
+      "kind": "test",
+      "where": "tests/turbomind/{linear,moe_gate,linear_attn} (GEMM, MoE gate, gated delta rule via _tm)"
+    },
+    {
+      "id": "validation:turbomind_e2e",
+      "kind": "validation",
+      "where": "pipeline() with TurbomindEngineConfig: dense, AWQ, MoE, Qwen3.5, VL model, quantized KV, tp=2"
+    },
+    {
+      "id": "runtime_api:driver_vmm_nvls_tma",
+      "kind": "runtime_api",
+      "where": "driver API not seen by the census: VMM + cuMulticast (comm/cuda_ipc/cuda_ipc_comm.cu), cuMemcpyBatchAsync (core/copy.cc), cuTensorMapEncode (gemm/tma.cu, linear_attn/kernel/tma_desc.cu)"
+    },
+    {
+      "id": "runtime:deepep_nvcc_jit",
+      "kind": "runtime",
+      "where": "comm/nccl/deepep: DeepEP kernels JIT-compiled with nvcc at run time (token_dispatcher.cc:148-155) on the NCCL device API"
+    },
+    {
+      "id": "feature:gemm_fp8_w8a8_blockscaled",
+      "kind": "feature",
+      "where": "TurboMind fp8 w8a8 block-scaled dense+grouped GEMM, served today only by sm90 (kernel/sm90_64n32_8)"
+    },
+    {
+      "id": "feature:gemm_nvfp4",
+      "kind": "feature",
+      "where": "TurboMind nvfp4 GEMM, sm90-only today (kernel/sm90_64n16_nvfp4)"
+    },
+    {
+      "id": "feature:gemm_mxfp4_fp8",
+      "kind": "feature",
+      "where": "TurboMind mxfp4 weights x fp8 activations, sm90-only today (kernel/sm90_64n32_mxfp4_fp8_folded)"
+    },
+    {
+      "id": "feature:attention_prefill_amd",
+      "kind": "feature",
+      "where": "attention prefill has no SIMT path; needs MFMA/WMMA Impl"
+    },
+    {
+      "id": "feature:windows_turbomind_tp1",
+      "kind": "feature",
+      "where": "TurboMind on Windows tp=1 (BUILD_MULTI_GPU=OFF), the windows gate carrier"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "library:gemm2_sm90",
+      "reason": "NVIDIA sm90/sm120 instruction-stack specialization (wgmma/TMA/clusters/setmaxnreg/PDL via CuTe) with no AMD counterpart; AMD dispatch selects the arch-generic family instead, and the formats only this library serves are tracked as separate feature entries (plan.md, GEMM / linear attention). Planner 2026-11-20; Jeff may overrule (notes.md Q list)."
+    },
+    {
+      "id": "library:linear_attn_kernels_sm90",
+      "reason": "NVIDIA sm90/sm120 instruction-stack specialization (wgmma/TMA/clusters/setmaxnreg/PDL via CuTe) with no AMD counterpart; AMD dispatch selects the arch-generic family instead, and the formats only this library serves are tracked as separate feature entries (plan.md, GEMM / linear attention). Planner 2026-11-20; Jeff may overrule (notes.md Q list). AMD routes to linear_attn_kernels_pre_sm90."
+    },
+    {
+      "id": "library:linear_attn_kernels_sm120",
+      "reason": "NVIDIA sm90/sm120 instruction-stack specialization (wgmma/TMA/clusters/setmaxnreg/PDL via CuTe) with no AMD counterpart; AMD dispatch selects the arch-generic family instead, and the formats only this library serves are tracked as separate feature entries (plan.md, GEMM / linear attention). Planner 2026-11-20; Jeff may overrule (notes.md Q list). AMD routes to linear_attn_kernels_pre_sm90."
+    },
+    {
+      "id": "option:SPARSITY_SUPPORT",
+      "reason": "cuSPARSELt include only (utils/cuda_utils.h:30, default OFF, no call sites); nothing to port. Planner 2026-11-20."
+    },
+    {
+      "id": "library:Llama",
+      "reason": "Dead upstream: src/turbomind/models/llama/CMakeLists.txt is never add_subdirectory'd and names a nonexistent LlamaV2.cc; the llama .cu sources are built through library:models instead. Planner 2026-11-20."
+    }
+  ],
+  "owed": [],
+  "removed_from_floor": []
+}
