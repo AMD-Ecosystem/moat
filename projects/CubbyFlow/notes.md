@@ -1429,3 +1429,51 @@ and architectures, but not the build configuration (it compiled Debug, `-O0`,
 msvcrtd here) or `CXX_EXTENSIONS OFF` (probe at `gnu++23`). Say which settings
 carry, and note that the inherited `CMAKE_HIP_FLAGS` includes any project
 force-includes.
+
+## Validation 2026-11-20 (linux-gfx1100, validator): fix-round head aeb9540d
+
+PASS at `aeb9540d6be87d4fcde76a00ded5f972b4615c35` (`moat-fix-145`), Radeon Pro W7800 (gfx1100), `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`. Full rebuild and real-GPU run, not a carry-forward (`classify 29bac0b9..aeb9540d`: `class=mixed arch_independent=False`).
+
+Toolchain: TheRock ROCm SDK `10.2.0a20261022` (AMD clang 24.0.0git, ROCm/llvm-project 2792f8ceeb), installed into the job's own venv with `pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ 'rocm[libraries,devel,device-gfx1100]==10.2.0a20261022'`. No 10.2 release wheel is published (repo.amd.com stops at 7.14.1); this is the newest 10.2 nightly on whl-next (10.3 nightlies follow). The host image itself carries 10.1.0; no system `/opt/rocm`. CMake 3.31.6, Ninja, g++ 13.3 for CXX. Fresh full vcpkg clone + `bootstrap-vcpkg.sh -disableMetrics` in the job directory.
+
+Fork clone: `git clone --branch moat-fix-145 --single-branch https://github.com/AMD-Ecosystem/CubbyFlow.git projects/CubbyFlow/src`, `HEAD` = head_sha, protect-fork hook installed, `git status --porcelain` empty after build and tests.
+
+### Build
+
+```
+export ROCM=$(rocm-sdk path --root)        # job venv, 10.2.0a20261022
+export VCPKG_ROOT=<job>/agent_space/vcpkg
+cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=${ROCM}/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=${ROCM} -DBUILD_TESTS=ON -DBUILD_EXAMPLES=ON
+cmake --build build -j16
+```
+
+PASS, 417/417 steps, no errors under `-Werror`.
+
+### HipCxx23Shim is inert on Linux (the point of this delta)
+
+- Configure output: no `Using reordered HIP runtime wrapper` line, no shim warning.
+- `build/CMakeFiles/CMakeConfigureLog.yaml`: exactly one try_compile from `HipCxx23Shim.cmake:24` (the first probe), compiled at `-std=gnu++23 --offload-arch=gfx1100` with the project's `-include cuda_to_hip.h`, exit code 0. No try_compile from the second (re-probe) call.
+- `build/HipCxx23Shim/` does not exist: no reordered wrapper generated.
+- build.ninja: 35 HIP objects (FLAGS lines with `--offload-arch`), all `-std=c++23`, none with an `-I...HipCxx23Shim` flag (0 matches); 367 CXX FLAGS lines at `-std=c++23`, no other `-std=`. The only two mentions of `HipCxx23Shim` in build.ninja are the module listed as a CMake re-run dependency. `CMAKE_HIP_FLAGS` cache entry empty. HIP FLAGS line: `-include ".../cuda_to_hip.h" -O3 -DNDEBUG -std=c++23 --offload-arch=gfx1100 -fPIC -Wall ... -Werror ...`, i.e. the 29bac0b9 flags.
+- Two independent reasons the probe passes here: libstdc++ 13 `<cmath>` is not constexpr, and the 10.2 SDK's `__clang_hip_runtime_wrapper.h` already has the fixed order (`#include <__clang_cuda_math_forward_declares.h>` at line 102, `#include <cmath>` at 103), so this SDK carries llvm/llvm-project#201563.
+
+### Tests (`utils/timeit.sh CubbyFlow test -- bash agent_space/run_<name>.sh`, each `ulimit -c 0; HIP_VISIBLE_DEVICES=0`, from `build/`)
+
+- `./bin/CUDATests`: 35/35 test cases, 3170/3170 assertions PASS.
+- `./bin/CUDASPHSim -f 5`: 5 frames, 13824 particles, exit 0; frame 4 has 0 NaN/inf, mean z 0.20536 (x,y FLT_MAX as before), same as the windows-gfx1151 porter run.
+- `./bin/UnitTests` (CPU): 814/814 PASS in 168 suites.
+
+All counts match the 29bac0b9 evidence exactly.
+
+### CUDA no-regression gate
+
+`cuda-not-validated` on this host: no CUDA toolkit (no nvcc, no conda). Not needed for this delta: everything aeb9540d adds is inside `if (USE_HIP)` and `CompileOptions.cmake` is byte-identical to 29bac0b9, so a CUDA configure is identical to 29bac0b9, whose nvcc gate passed (linux-gfx1100 revalidation 2026-08-20).
+
+### Jargon / documentation
+
+`python3 utils/jargon.py --port CubbyFlow`: clean. `Documents/Install.md` HIP/ROCm build section unchanged by this delta and still matches the build command.
+
+### Verdict: PASS -> completed at `aeb9540d6be87d4fcde76a00ded5f972b4615c35`

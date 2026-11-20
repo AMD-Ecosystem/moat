@@ -105,3 +105,9 @@
 {"kind":"phase","ts":"2026-11-20T21:48:58Z","phase":"test","seconds":9.639,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-CubbyFlow/projects/CubbyFlow/src/build_gfx1151_b/bin/UnitTests.exe"}
 {"kind":"session","ts":"2026-11-20T21:55:39Z","epoch":1795211739.318727,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-20T21:58:46Z","epoch":1795211926.650593,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-20T22:03:38Z","epoch":1795212218.829726,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-20T22:09:04Z","phase":"compile","seconds":295.446,"exit":0,"cmd":"bash agent_space/build_hip.sh"}
+{"kind":"phase","ts":"2026-11-20T22:14:50Z","phase":"test","seconds":0.885,"exit":0,"cmd":"bash agent_space/run_cudatests.sh"}
+{"kind":"phase","ts":"2026-11-20T22:14:52Z","phase":"test","seconds":1.538,"exit":0,"cmd":"bash agent_space/run_sphsim.sh"}
+{"kind":"phase","ts":"2026-11-20T22:15:48Z","phase":"test","seconds":55.899,"exit":0,"cmd":"bash agent_space/run_unittests.sh"}
+{"kind":"session","ts":"2026-11-20T22:16:20Z","epoch":1795212980.495931,"event":"end","platform":"linux-gfx1100"}
