@@ -88,7 +88,7 @@ AMD-native target is not the same verdict as "no target exists"; say which.
 | numbers that differ from CUDA or the CPU: FMA contraction, rounding, `min`/`max`, half-precision GEMM, big-integer arithmetic | `references/faults-numerics.md` |
 | a compile error, or code silently skipped: macros HIP does not define, includes, `__CUDA_ARCH__`, `helper_math.h`, C++23 | `references/build-headers-macros.md` (C++23: `assets/HipCxx23Shim.cmake`) |
 | CMake, link or load errors: `LANGUAGE HIP`, `-fgpu-rdc`, OpenMP, RUNPATH, LibTorch, installed packages, submodules | `references/build-cmake-link.md` |
-| anything on Windows: SDK install, clang drivers, CRT and link errors, DLL loading, Windows-only wrong results, debugging | `references/windows.md` (link wrapper: `assets/hip_link_win.py`) |
+| anything on Windows: SDK install, clang drivers, CRT and link errors, DLL loading, Windows-only wrong results, debugging | `references/windows.md` (link wrapper for a clang-cl host with `-fgpu-rdc`: `assets/hip_link_win.py`) |
 | a CUDA library to replace, or a missing routine or mode: cuBLAS, cuSOLVER, cuDNN, cuSPARSE, Thrust/CUB, cuRAND, NCCL, RAPIDS, nvJPEG, NVDEC, NVML | `references/libraries.md` |
 | a device query that answers differently, `clock64`, occupancy, kernels compiled at run time (PTX, NVRTC), an integrated APU | `references/platform-limits.md` |
 | a failure you cannot place yet, or a suspected ROCm bug | `references/diagnosis.md` |
@@ -170,8 +170,10 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Do not hardcode wave64 GEOMETRY either
 - Intra-wave barrier divergence
 - `cub`/`hipCUB` block collectives race on a 64-thread block without an explicit ...
+- A block collective called in a loop without a barrier races only under concurrent GPU load
 - `__smid()` can EXCEED `multiProcessorCount` on AMD
 - A leader-only write broadcast by shuffle must be initialised on every lane
+- An uninitialized value RETURNED from a device function lets clang assume the thread index
 - Validate wave-size work on BOTH widths, and where there is no host reference use a ...
 
 **`references/faults-memory-streams.md`** -- Faults: memory, lifetime and streams
@@ -249,6 +251,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Before gating or moving a device-library include that a compat header already has, check ...
 - For plain C++ TUs the HIP headers `#define __noinline__ __attribute__((noinline))`
 - CUDA error codes HIP lacks still appear in switch labels
+- `hipError_t` is `[[nodiscard]]`, so a `-Werror` host build breaks on ignored results CUDA ...
 - Never name the pointee struct of an opaque CUDA handle
 - `char` vs `signed char` vector base types differ
 - A torch header the compat layer already aliases for can grow new symbols: alias the whole ...
@@ -263,6 +266,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Three CUDA spellings that do not resolve under HIP, all cheap to guard
 - Count cooperative-groups call sites per feature before calling them a blocker
 - HIP's bf16 header has no `make_bfloat162` and no `__floats2bfloat162_rn`
+- HIP has no `half2` overload of `__hmax2`
 - A `__shared__` array of a struct that has default member initializers is a hard error on ...
 - MSVC-only upstreams accept code that clang and gcc reject
 - Eigen DECOMPOSITIONS called from `__device__` code do not survive the move to hipcc, even ...
@@ -270,6 +274,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - An uninitialised header-only submodule fails as a HIP error, not as a missing file
 - clang checks kernel bodies in the HIP host pass; nvcc does not
 - The CUDA Samples `helper_math.h` makes vector arithmetic ambiguous under HIP
+- HIP's `blockIdx`/`threadIdx` do not convert to `uint3`, and a `uint3` does not convert to ...
 - A helper whose name the standard library also declares must NOT be guarded on ...
 - Extend a CUDA guard for HIP; never re-key it
 - A ROCm-only branch inside a shared template still COMPILES on the CUDA path
@@ -284,6 +289,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A force-included compat header creates no build dependency edge
 - Use the CUDA build's host compiler for host C++ in a large app
 - The vcpkg toolchain already overrides `add_library`/`add_executable`
+- An unset CMake build type runs every HIP kernel unoptimized
 - Never mark the host `.cpp` files `LANGUAGE HIP` to dodge the flag leak
 - A `__device__` body in its own `.cu` has two answers on AMD, and the choice is about ...
 - `-fgpu-rdc` changes the consumer contract, so the project's downstream docs owe a line ...
@@ -296,7 +302,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - One OpenMP runtime per binary; which one follows from who compiles the files that use ...
 - OpenMP in a mixed g++/HIP library: one runtime only
 - CMake `LANGUAGE HIP` on host `.cpp` files drops OpenMP
-- A HIP-linked shared library gets no RUNPATH to the ROCm lib dir
+- A HIP-linked shared library, or a host-linked executable, gets no RUNPATH to the ROCm lib ...
 - With the ROCm clang as the host compiler, a found system libunwind links but does not load
 - LibTorch's CMake package adds `-D__HIP_NO_HALF_OPERATORS__=1 ...
 - On a multi-GPU host a rapids-cmake HIP dependency fails configure with `mismatch between ...
@@ -307,20 +313,23 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Install and consume the port, not just build it
 - Every optional target the project can build, not just the one you build
 - A cached build-script decision from a wrong env var survives fixing the env var
+- An nvcc Makefile's link line does not carry over to hipcc verbatim
 
 **`references/windows.md`** -- Windows
 
 - Use TheRock ROCm, not the Windows HIP SDK
 - TheRock's devel wheel can ship with hipCUB/rocThrust headers missing
 - A torch wheel needs the matching `[device-<gfx>]` extra
+- On Windows, Triton comes from the `triton-windows` package
 - A dev package neither TheRock nor vcpkg ships
 - An all-clang Windows HIP build hides three CMake/export faults that MSVC builds never hit
 - CMake's HIP language on Windows needs ONE clang driver for every language, and ROCm's ...
 - Keep one clang driver across every CMake language, and check the CMake version
+- `find_package(Torch)` in a CMake HIP project needs the architecture and the ROCm root
 - CRT flags, compiler-rt builtins and Git Bash flag mangling in a CMake HIP build
 - Bundled third-party libraries that break under the clang toolchain: take them from vcpkg
 - TheRock clang 23 can hang in x86 register allocation
-- CMake's HIP link rule mangles MSVC-style flags and paths
+- Linking HIP through CMake: what each compiler arrangement needs
 - A ROCm library linked by name may have no `.lib`
 - A fetched ROCm-DS dependency has to be built static
 - A C++ LibTorch consumer must force the torch_hip.dll import
@@ -342,11 +351,14 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Library swaps
 - Negative entries for that table
 - A swapped library may be less defensive about bad arguments than the CUDA one
+- heFFTe's rocFFT backend does not accept hipFFT complex types
 - Choosing the NVIDIA or AMD build of a library at run time
 - A scalar's WIDTH follows the compute/scale type, not the matrix type
 - hipBLASLt epilogues are not cuBLASLt's, per type and per format
 - Generic GEMM on CK device operations
 - Fused FP16 attention (cuDNN SDPA, flash attention): MIOpen has no path, CK's FMHA does
+- rocBLAS `gemv` over more than 65535 batches returns wrong entries, and `cupy.einsum` ...
+- On gfx12, rocBLAS complex GEMM with n > 2^21 leaves columns unwritten
 - A "find the best algorithm" call WRITES to the tensor named as its output
 - MIOpen honours only a unit alpha and a zero beta for 2D convolution, pooling and bias
 - MIOpen runs a convolution only on a handle where Find ran for it
@@ -359,6 +371,12 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Prefer the specific hipCUB algorithm header over the `<hipcub/hipcub.hpp>` umbrella
 - rocPRIM never asks for less than 4 bytes of temp storage
 - hipCUB's segmented `ArgMax` returns an out-of-range key for a segment of NaNs
+- `<complex.h>` defines the macro `I`, which rocPRIM uses as a template parameter name
+- Three rocPRIM radix sort defects give a wrong order or a broken permutation where CUB is ...
+- rocPRIM radix sort corrupts float keys that mix signaling and quiet NaNs
+- rocPRIM radix sort of 64-bit keys is wrong when `end_bit` is 64 and `begin_bit` is not 0
+- Choosing the workaround for that bit-range defect: narrowing the range is only safe when ...
+- CuPy-ROCm gaps a CuPy-based port meets at run time
 - Code that reads cuRAND's device generator state internals needs a rocRAND translation ...
 - NVTX -> roctx
 - GPU power (the NVML replacement) is AMD SMI
@@ -380,6 +398,11 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - `clock64()` is a 20-bit wrapping counter on RDNA3, so a cycle-bounded spin, delay or ...
 - On RDNA, a nonzero occupancy does not mean the dynamic shared memory fits
 - `__launch_bounds__(1024)` changes nothing on HIP and something on CUDA
+- A kernel launched with fewer than 1024 threads needs `__launch_bounds__` on HIP to get ...
+- A host-side launch heuristic keyed on the register count can break a kernel whose block ...
+- Kernels that opt in to more than 64 KB of shared memory per block cannot launch on most ...
+- AMD's 64 KB LDS breaks "half the per-SM shared memory" tile heuristics, and the ...
+- gfx12 work-group IDs y and z are 16 bits: a grid y or z above 65536 is rejected or ...
 - Runtime PTX plus the CUDA Driver API is a THIRD build class
 - NVRTC (CUDA C++ generated at run time) ports to hipRTC
 - Runtime-compiled kernels inherit nothing from the host build
@@ -404,7 +427,9 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A probe that contradicts a passing test, or that newly fails on a second arch, is wrong ...
 - A cascading wall of SegFault/OOM/"no kernel image available" partway through a long ...
 - A "fixed seed" run that relies on C `rand()` is not reproducible on some ROCm builds: the ...
+- Seeded `cupy.random` inputs differ between CUDA and ROCm
 - A hang that depends on inlining: long branches clobber the return address
+- Proving a real miscompile: catch the faulting instruction, then flip one backend pass
 - A fault inside a vendored JIT entry point: rebuild-with-a-forced-throw beats a debugger
 - scikit-learn's KMeans can crash a Python test on a machine with very many cores
 - Failures that appear only when the whole suite runs in one process
