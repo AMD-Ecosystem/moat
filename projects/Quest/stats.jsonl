@@ -159,3 +159,7 @@
 {"kind":"phase","ts":"2026-11-20T02:04:35Z","phase":"test","seconds":0.283,"exit":4,"cmd":"python -m pytest quest/tests -p no:cacheprovider -q -rs"}
 {"kind":"phase","ts":"2026-11-20T02:05:16Z","phase":"test","seconds":34.349,"exit":0,"cmd":"python -m pytest /var/lib/jenkins/fleet/jobs/mi300b-20261119-164318-quest-prefill-prompt/moat/projects/Quest/src/quest/tests -p no:cacheprovider -q -rs --rootdir=/var/lib/jenkins/fleet/jobs/mi300b-20261119-164318-quest-prefill-prompt/moat/projects/Quest/src"}
 {"kind":"session","ts":"2026-11-20T18:41:36Z","epoch":1795200096.684915,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-20T19:18:05Z","phase":"compile","seconds":557.7,"exit":0,"cmd":"agent_space/quest/build_readme.sh"}
+{"kind":"phase","ts":"2026-11-20T19:19:10Z","phase":"test","seconds":33.816,"exit":0,"cmd":"env PYTHONPATH=/var/lib/jenkins/fleet/jobs/mi300b-20261120-103132-quest-roles5-prompt/moat/projects/Quest/src:/var/lib/jenkins/fleet/jobs/mi300b-20261120-103132-quest-roles5-prompt/pylib-test python -m pytest /var/lib/jenkins/fleet/jobs/mi300b-20261120-103132-quest-roles5-prompt/moat/projects/Quest/src/quest/tests -p no:cacheprovider -q -rs"}
+{"kind":"phase","ts":"2026-11-20T20:20:48Z","phase":"compile","seconds":0.003,"exit":127,"cmd":"agent_space/quest/build_gfx1250.sh"}
+{"kind":"phase","ts":"2026-11-20T20:36:50Z","phase":"compile","seconds":940.468,"exit":0,"cmd":"agent_space/quest/build_gfx1250.sh"}

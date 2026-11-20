@@ -3577,3 +3577,15 @@ No cheap fix for gfx11. Whether either is worth doing should follow the Radeon t
 ### Recommendation
 
 **Request Changes** (item 1).
+
+## Porter round 2026-11-20 (linux-gfx942), answering the 2026-11-20 review -- fork `9cb8bee`
+
+One commit on `6c06912`, plain push, nothing rewritten: `9cb8bee` `[ROCm] Keep gfx1250 on the emulated prefill path` (`prefill_matrix_core.cuh` selector, `hip_compat/README.md` wording).
+
+- Item 1: the RDNA4 WMMA path is now selected by `__gfx1200__ || __gfx1201__ || __gfx12_generic__` instead of `__GFX12__`, so gfx1250 keeps the emulation; `__gfx9_4_generic__` joined the MFMA list. README now names the targets left on the emulation (gfx908, RDNA2, gfx1250).
+- Device-only compile of the prefill harness per target (`agent_space/quest/harness/build.sh <fork> /tmp/f_<arch>.s <arch> --cuda-device-only -S`): rc 0 for all 13; `v_mfma` count 2688 on gfx90a, gfx942, gfx950, gfx9-4-generic; `v_wmma` 1344 on gfx1100, gfx1151, gfx11-generic, gfx1200, gfx1201, gfx12-generic; neither on gfx908, gfx1030, gfx1250.
+- Whole extension for gfx1250 only (`agent_space/quest/build_gfx1250.sh`, the README command with `-DCMAKE_HIP_ARCHITECTURES=gfx1250`): rc 0, 8/8, 940 s, 0 errors. A first attempt with five targets in one build (`gfx1250;gfx9-4-generic;gfx12-generic;gfx908;gfx1030`) compiled every other source file for all five, then hit the one-hour job limit inside `batch_prefill.cu`'s per-target link-time code generation and was stopped; no error before that.
+- README Linux build for gfx942 (`agent_space/quest/build_readme.sh`, fresh build directory, `utils/timeit.sh Quest compile`): rc 0, 8/8, 558 s, 0 errors.
+- Tests, `ulimit -c 0`, `HIP_VISIBLE_DEVICES=1`: `env PYTHONPATH=<fork>:<job>/pylib-test python -m pytest <fork>/quest/tests -p no:cacheprovider -q -rs` -> 202 passed, 28 skipped (32.2 s).
+- fp64 reference sweep (100 cases) at the fix: MFMA 100/100.
+- `jargon.py --port Quest` clean; commit title 48 chars, `[ROCm]`, AI sentence, literal fenced Test Plan, no trailer, ASCII; fork tree clean.
