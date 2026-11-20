@@ -1,0 +1,153 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "6dd94a859c26",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "flex_gemm/kernels/cuda/grid_sample/grid_sample.cu",
+      "flex_gemm/kernels/cuda/hash/hash.cu",
+      "flex_gemm/kernels/cuda/hash/hash.cuh",
+      "flex_gemm/kernels/cuda/serialize/api.cu",
+      "flex_gemm/kernels/cuda/serialize/hilbert.h",
+      "flex_gemm/kernels/cuda/serialize/utils.h",
+      "flex_gemm/kernels/cuda/serialize/z_order.h",
+      "flex_gemm/kernels/cuda/spconv/migemm_neighmap_pp.cu",
+      "flex_gemm/kernels/cuda/spconv/sparse_neighbor_map.cu",
+      "flex_gemm/kernels/cuda/spconv/subm_neighbor_map.cu",
+      "flex_gemm/kernels/cuda/spconv/utils.h"
+    ],
+    "markers": {
+      "kernel": 22,
+      "device_code": 26,
+      "launch": 31,
+      "warp_intrinsic": 3
+    },
+    "libraries": {}
+  },
+  "components": [
+    {
+      "id": "extension:flex_gemm.kernels.cuda",
+      "kind": "python_extension",
+      "where": "setup.py (hash, serialize, grid_sample, spconv neighbour maps; 6 .cu + ext.cpp)"
+    },
+    {
+      "id": "triton:spconv",
+      "kind": "library",
+      "where": "flex_gemm/kernels/triton/spconv (12 kernel modules + config.py)"
+    },
+    {
+      "id": "triton:grid_sample",
+      "kind": "library",
+      "where": "flex_gemm/kernels/triton/grid_sample"
+    },
+    {
+      "id": "package:flex_gemm.ops",
+      "kind": "library",
+      "where": "flex_gemm/ops (spconv, submanifold conv, grid_sample, serialize; EXPLICIT_GEMM torch path)"
+    },
+    {
+      "id": "package:flex_gemm.utils.autotuner",
+      "kind": "library",
+      "where": "flex_gemm/utils/autotuner.py + autotune_cache.json install in setup.py"
+    },
+    {
+      "id": "build:linux-rocm",
+      "kind": "build_path",
+      "where": "setup.py IS_HIP branch, Linux (C++ standard fix needed for torch >= 2.14)"
+    },
+    {
+      "id": "build:windows-rocm",
+      "kind": "build_path",
+      "where": "setup.py Windows branch under IS_HIP (nvcc-only -Xcompiler flags, GPU_ARCHS=native default)"
+    },
+    {
+      "id": "test:hashmap",
+      "kind": "test",
+      "where": "tests/hashmap.py"
+    },
+    {
+      "id": "test:serialize",
+      "kind": "test",
+      "where": "tests/serialize.py"
+    },
+    {
+      "id": "test:grid_sample",
+      "kind": "test",
+      "where": "tests/grid_sample.py"
+    },
+    {
+      "id": "test:spconv-out_coords",
+      "kind": "test",
+      "where": "tests/spconv/out_coords.py"
+    },
+    {
+      "id": "test:spconv-neighbor_cache",
+      "kind": "test",
+      "where": "tests/spconv/neighbor_cache.py"
+    },
+    {
+      "id": "test:submconv-neighbor_cache",
+      "kind": "test",
+      "where": "tests/submconv/neighbor_cache.py"
+    },
+    {
+      "id": "test:spconv-fwd",
+      "kind": "test",
+      "where": "tests/spconv/fwd.py"
+    },
+    {
+      "id": "test:spconv-bwd",
+      "kind": "test",
+      "where": "tests/spconv/bwd.py"
+    },
+    {
+      "id": "test:submconv-fwd",
+      "kind": "test",
+      "where": "tests/submconv/fwd.py"
+    },
+    {
+      "id": "test:submconv-bwd",
+      "kind": "test",
+      "where": "tests/submconv/bwd.py"
+    },
+    {
+      "id": "example:spconv",
+      "kind": "example",
+      "where": "examples/spconv.py"
+    },
+    {
+      "id": "example:submconv",
+      "kind": "example",
+      "where": "examples/submconv.py"
+    },
+    {
+      "id": "benchmark:submconv-inf_ablation",
+      "kind": "benchmark",
+      "where": "tests/submconv/inf_ablation.py"
+    },
+    {
+      "id": "benchmark:submconv-train_ablation",
+      "kind": "benchmark",
+      "where": "tests/submconv/train_ablation.py"
+    },
+    {
+      "id": "benchmark:submconv-inf_benchmark",
+      "kind": "benchmark",
+      "where": "tests/submconv/inf_benchmark.py (FlexGEMM columns; torchsparse/fvdb/warpconvnet/spconv columns are third-party CUDA libraries)"
+    },
+    {
+      "id": "benchmark:submconv-train_benchmark",
+      "kind": "benchmark",
+      "where": "tests/submconv/train_benchmark.py (FlexGEMM columns; third-party columns as above)"
+    },
+    {
+      "id": "doc:install-as-dependency",
+      "kind": "doc",
+      "where": "projects/FlexGEMM/notes.md ## Install as a dependency, per OS, written by validators (needed by TRELLIS.2)"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}

@@ -266,3 +266,34 @@ Not written: no validated build exists yet (DEPENDENCIES.md forbids a guessed re
     python3 utils/moatlib.py dep-doc-gaps
 
 Read-only; no fork created, no upstream write, no build or GPU work.
+
+## Planning (2026-11-20, linux-gfx942 fleet job)
+
+**Decisions for Jeff: none needed before the porter starts.** The plan ports the whole project: the CUDA extension, every Triton kernel family, the Python ops, every test script, both examples, and the FlexGEMM columns of the benchmark scripts. Nothing is deferred and no app, GUI or library layer is cut. Two points for your information, neither needing a ruling:
+
+- The deferred `flexgemm-wave-barrier-syncwarp` (you ruled defer on 2026-10-09: revisit if FlexGEMM becomes a TRELLIS.2 dependency AND a wave32 card shows a real fault) now meets only the first half of that condition. The plan keeps your ruling and makes no change. The validators exercise the kernel on wave32 and wave64, and a fault there brings the item back to you. New evidence for that discussion: torch builds extensions with `-DHIP_ENABLE_WARP_SYNC_BUILTINS=1`, so HIP's own `__syncwarp()` (wavefront release fence, `wave_barrier`, acquire fence) is available. Upstream's `#define __syncwarp(...) __builtin_amdgcn_wave_barrier()` replaces it with the weaker form.
+- The test scripts' third-party comparison columns (traveller59 spconv, torchsparse, fvdb, warpconvnet; all CUDA-only) are dropped by a validator-side driver, or spconv is satisfied by `spconv-triton`. Those columns are not FlexGEMM code, and the correctness reference is FlexGEMM's own torch-matmul `EXPLICIT_GEMM` plus a dense `torch.nn.Conv3d`. I do not count this as a scope cut. If you do, say so before the validator runs.
+
+### Findings
+
+- **Upstream `main` does not build against current torch on any platform.** `setup.py` forces `-std=c++17`, and torch >= 2.14 headers `#error` below C++20 (pytorch#178150, first in v2.14.0). I confirmed it here against the image's torch 2.16.0a0 (ROCm 7.16) with a preprocessor-only check, no GPU and no build: `echo '#include <torch/extension.h>' | g++ -std=c++17 -E -x c++ -I<torch>/include -I<torch>/include/torch/csrc/api/include -I<python include> -` gives `all.h:9:2: error: #error C++20 or later compatible compiler is required to use PyTorch.`, and `-std=c++20` is clean. `BuildExtension` appends the right standard itself when none is given, so the fix is to drop the explicit flags (a shared fix, no `[ROCm]` prefix). PR #18's MI300X evidence predates this (torch 2.6).
+- The Windows+HIP breakage the intake predicted holds after reading the torch source. `win_hip_flags` forwards `extra_compile_args['nvcc']` unfiltered to hipcc, so the `-Xcompiler=/...` flags reach clang. `GPU_ARCHS` defaults to `native`, which fails on Windows hipcc and also suppresses `PYTORCH_ROCM_ARCH`.
+- The CUDA extension needs no device-code change. Dynamic LDS is at most 32 KB (the 32-bit gray code caps V at 32), `atomicCAS` is 32/64-bit only, there are no libraries or intrinsics beyond `__ffs`/`__popc`/`warpSize`, and every `torch::empty` output is fully written.
+- The Triton risk on RDNA is the fp32 `'hip'` config `B1=256,B2=256,BK=16,num_stages=2` (64 KB of operand tiles, the RDNA LDS limit). FlexGEMM's autotuner does not catch `OutOfResources`. fp16 is 32 KB.
+- Upstream activity since the re-screen: PR #35 (2026-11-12, Triton 3.9 fixes on `dev/all_triton`, not `main`); issue #19 (Windows nvcc `data_ptr<T>` template disambiguator, also fixed by open PR #31; clang does not need it).
+
+Full analysis: `plan.md`. Machine-checked surface: `surface.json` (24 components; `surface.py check` passes). `ext_type` set to `torch-extension` via `moatlib.py set-ext-type`.
+
+### Commands run (planning)
+
+    bash utils/orient.sh                       # selected FlexGEMM planner, linux-gfx942
+    python3 utils/moatlib.py set-state FlexGEMM linux-gfx942 planning --agent planner
+    git merge origin/main                      # branch-sync refused on a data/deferred.json conflict;
+                                               # resolved by keeping main's file plus this branch's
+                                               # moatlib-set-license-subcommand entry
+    git clone https://github.com/AMD-Ecosystem/FlexGEMM projects/FlexGEMM/src   # + upstream remote, read-only
+    gh pr view 18|31|35 --repo JeffreyXiang/FlexGEMM; gh pr diff 31|35 ...; gh issue list/view 14,19 ...
+    git -C /var/lib/jenkins/pytorch log -S'C++20 or later compatible compiler' -- torch/csrc/api/include/torch/all.h
+    g++ -std=c++17|c++20 -E (torch/extension.h)  # preprocessor only
+    python3 utils/surface.py generate FlexGEMM && python3 utils/surface.py check FlexGEMM
+    python3 utils/moatlib.py set-ext-type FlexGEMM torch-extension
