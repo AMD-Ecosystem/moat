@@ -1050,6 +1050,15 @@ Validator on the MI355X host, reproducing the method of "Validation 2026-11-20 (
 Note on the dispatch prompt: it described this run as the first on a 32-wide Radeon. This host is the MI355X (wave64); orient dispatched `linux-gfx950` (`revalidate`, validated bc8d73dd9). The waLBerla HIP kernels had never run on gfx950 either, so this is a full run, not a carry-forward. It does not satisfy wave32; that gate still needs linux-gfx1201 at this head.
 
 Configure: the porter's command ("Porter 2026-11-20") with `-DCMAKE_HIP_ARCHITECTURES=gfx950`, plus this host's MPI pins, each build in a **new** directory (`agent_space/cfg.sh <build> [extra]`):
+## Validation 2026-11-20 (linux-gfx1201, RDNA4 wave32, waLBerla LB/EK GPU head 917d6f707)
+
+Validator on a Radeon gfx1201 host (`rocminfo`: Wavefront Size 32), `HIP_VISIBLE_DEVICES=1` (pinned by the dispatcher; another job used a different GPU on the host), `ulimit -c 0`, `MAX_JOBS=12`. Pip ROCm SDK 10.1.0 (`rocm-sdk version`; `rocm-sdk path --root`, no /opt/rocm), GCC 13.3.0. This is the first run of the waLBerla HIP kernels (generated LB/EK kernels, heFFTe rocFFT Poisson solver) on a 32-wide GPU. The method is the MI300X validation above, reproduced; a full run, not a carry-forward. Source: `projects/espresso/src`, a fresh `-b moat-port` clone checked out at 917d6f70715158d1b8be1a961595073dcc3c597c (with the fork's `python` branch fetched for `jargon.py`). `git status --porcelain` stayed empty throughout.
+
+### Host setup
+
+The host has no system MPI, Boost or FFTW and no CUDA toolkit. Deps were rebuilt from source into a job-local prefix with the recipe and versions of the earlier gfx1201 sections: hwloc 2.11.2, OpenMPI 5.0.8 (`--without-cuda --without-rocm --disable-mpi-fortran`), FFTW 3.3.10 double+float (`--enable-shared --enable-openmp --enable-threads`), Boost 1.87.0 (mpi, serialization, test, filesystem, system; `--without-python link=shared`). Test venv `$FLEET_VENV/py312` by `uv` (Python 3.12.3, numpy 2.5.5, scipy 1.18.1, Cython 3.3.1, tqdm, matplotlib, pint, vtk 9.7.2). `$DEPS_PREFIX/bin` and `$DEPS_PREFIX/lib` on `PATH`/`LD_LIBRARY_PATH`. With the test venv first on `PATH`, `utils/timeit.sh` needs `MOAT_PYTHON` set to the MOAT interpreter (it refuses the Python 3.12 venv, which lacks jsonschema).
+
+Configure: the porter's 2026-11-20 command with `-DCMAKE_HIP_ARCHITECTURES=gfx1201` and the job-local deps, each build in a **new** directory:
 
 ```
 cmake -S <src> -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -1057,6 +1066,10 @@ cmake -S <src> -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DESPRESSO_BUILD_WITH_CUDA=ON -DESPRESSO_BUILD_WITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx950 \
   -DCMAKE_HIP_COMPILER=$ROCM_SDK/llvm/bin/clang++ -DCMAKE_PREFIX_PATH="$ROCM_SDK;<deps>/boostpfx" \
   -DPython_EXECUTABLE=$FLEET_VENV/py312/bin/python \
+  -DESPRESSO_BUILD_WITH_CUDA=ON -DESPRESSO_BUILD_WITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 \
+  -DCMAKE_HIP_COMPILER=$ROCM_SDK/llvm/bin/clang++ -DCMAKE_PREFIX_PATH="$DEPS_PREFIX;$ROCM_SDK" \
+  -DMPI_C_COMPILER=$DEPS_PREFIX/bin/mpicc -DMPI_CXX_COMPILER=$DEPS_PREFIX/bin/mpicxx \
+  -DBoost_ROOT=$DEPS_PREFIX -DPython_EXECUTABLE=$FLEET_VENV/py312/bin/python \
   -DESPRESSO_BUILD_WITH_WALBERLA=ON -DESPRESSO_BUILD_WITH_HDF5=OFF \
   -DESPRESSO_BUILD_WITH_SCAFACOS=OFF -DESPRESSO_BUILD_WITH_STOKESIAN_DYNAMICS=OFF \
   -DESPRESSO_BUILD_WITH_GSL=OFF -DESPRESSO_BUILD_WITH_NLOPT=OFF \
@@ -1107,3 +1120,55 @@ ninja -C <build> -k 0 -j 64 all <the 154 unit-test executables: ninja -t targets
 - Docs: "AMD GPU acceleration" in `doc/sphinx/installation.rst` (:300), `ESPRESSO_BUILD_WITH_HIP` in the configure example (:311) and the options list (:917).
 - Integrity: `git -C projects/espresso/src status --porcelain` empty at 917d6f707. Nothing was edited in the fork and nothing was pushed to it.
 - Coverage: wave64 is satisfied at 917d6f707 by gfx942 and now gfx950. **wave32 is still owed**: linux-gfx1201 validated bc8d73dd9, and the waLBerla HIP kernels have not yet run on a 32-wide GPU. Windows is waived.
+  -DESPRESSO_BUILD_WITH_PYTHON=ON -DESPRESSO_BUILD_TESTS=ON [-DESPRESSO_MYCONFIG_FILE=<src>/maintainer/configs/maxset.hpp]
+cmake --build <build> -j 12 -- -k 0
+cmake --build <build> -j 12 --target python_test_data cuda_test local_samples local_benchmarks
+cmake --build <build> -j 12 --target check_unit_tests
+cmake --build <build> -j 12 --target local_samples local_benchmarks   # before every ctest run
+ctest --test-dir <build> -L gpu --timeout 1200 -V
+ctest --test-dir build-hip -LE gpu --timeout 1200 -j 12
+```
+
+GPU-class cases were counted from the `-V` logs with a parser that collects unittest cases whose class name contains GPU or CUDA, including statuses that a docstring or warning line pushes onto a later line (it resolves 907 cases per suite, 0 unresolved).
+
+### Default myconfig (`build-hip`)
+
+- Build: 507/507, **0 FAILED**; only warnings are 20 known `nodiscard hipError_t` `-Wunused-value`. Cache: `WALBERLA_BUILD_WITH_HIP=on`, `WALBERLA_BUILD_WITH_CUDA=OFF`, `Heffte_ENABLE_ROCM=ON`, `Heffte_ENABLE_CUDA=OFF`, `Kokkos_ENABLE_HIP/CUDA=OFF`. 69 HIP objects compiled (no ccache). `llvm-objdump --offloading build-hip/src/walberla_bridge/espresso_walberla.so`: **58 code objects, all `hip-amdgcn-amd-amdhsa--gfx1201`** (the MI300X build has 58 gfx942).
+- `check_unit_tests`: **152/152 passed**. Run directly with `--log_level=test_suite`: `PoissonSolver_test_cuda` `ek_poisson_solver_fft_cuda<float>` 1.53 s, `<double>` 1.37 s, `ek_poisson_solver_none_cuda` 0.56 s; `LBWalberlaImpl_field_accessors_tests_cuda` `macroscopic_accessors<float>` 1.04 s, `<double>` 0.79 s; "No errors detected" in both. The timings show the heFFTe rocFFT and accessor GPU cases ran.
+- `ctest -L gpu --timeout 1200 -V` (serial, ctest's default): **74/74 passed** (1617 s). 71 unittest `OK`, 0 `FAILED`. **243 GPU-class cases `ok`, 1 skipped, 0 FAIL/ERROR** (MI300X: 243 / 1 / 0). **236 `ok` in 37 LB/EK/lattice scripts** (the ek_*, lb*, lattice_vtk, observable_*LB and propagation_lb scripts), among them ek_interface 38, lb 56, lattice_vtk 17 (vtk installed), lb_pressure_tensor 2, lb_thermostat_1_core 12, ek_eof 2, ek_potential 2, ek_potential_periodic 2 (the FFT Poisson solver). The four `save_/test_checkpoint__*lb_walberla_gpu*` tests pass. The one GPU-class skip is the test's own filter (`TestLBMomentumConservationRegularSinglePrecisionWalberlaGPU`: "LB with regular decomposition already tested with 2 MPI ranks"). **0 occurrences of "compiled without CUDA support".** The other skips are features this config does not build (MMM1D, STOKESIAN_DYNAMICS, SCAFACOS(_DIPOLES), DIPOLE_FIELD_TRACKING, THERMAL_STONER_WOHLFARTH, H5MD, LB_ELECTROHYDRODYNAMICS) or upstream's own filters ("Momentum is not conserved on single precision", the checkpoint tests' "... not in modes", "Lees-Edwards not implemented for LB GPU", "LB not supported", "missing combination"). ctest Skipped (exit 5, no test methods, as every earlier run): `sample_p3m_with_gpu`, `benchmark_p3m_with_gpu`, `benchmark_lb_with_gpu` (which now runs LB on the GPU on import instead of raising `FeaturesError: WALBERLA`).
+- Non-GPU suite `ctest -LE gpu -j 12` (419 tests, 315 s): **391 passed (362 Passed + 29 exit-5 Skipped), 28 failed**: 26 `tutorial_*` Not Run, `test_convert` (`ModuleNotFoundError: No module named 'nbformat'`), `test_install` (`diff: /usr/local/lib/python3.12/site-packages/espressomd/...: No such file or directory`). This is the MI300X record's count (419 / 391 / 28) and failure set exactly. No regression.
+
+### Maxset myconfig (`build-max`)
+
+- Build: 507/507, **0 FAILED**; 22 known `nodiscard hipError_t` warnings. Same cache values.
+- `check_unit_tests`: **152/152 passed**.
+- `ctest -L gpu --timeout 1200 -V` (serial): **74/74 passed** (1540 s). 71 `OK`, 0 `FAILED`. **243 GPU-class `ok`, 1 skipped (the same 2-rank filter), 0 FAIL/ERROR, 236 `ok` in the 37 LB/EK/lattice scripts, 0 "compiled without CUDA support".** `lb_electrohydrodynamics` (`LBEHTest`, 4 ranks), skipped in the default config for the missing feature, ran and passed. dipole_field_tracking ran (no DIPOLE_FIELD_TRACKING skip). The remaining skips are features maxset does not build or the upstream filters listed above.
+
+No tolerance was changed.
+
+### Finding: `lb_pressure_tensor` times out under `ctest -L gpu -j 8` (environment: GPU shared by concurrent processes)
+
+The first default-build GPU run used the MI300X invocation `ctest -L gpu --timeout 1200 -j 8 -V`. It ended 73/74 with `lb_pressure_tensor` at ***Timeout 1200 s*** after its two CPU classes passed (the 241 other GPU-class cases passed, 0 "compiled without CUDA support"). It is not a wrong result and not a 32-wide fault:
+
+- The same build, the GPU class alone (`pypresso lb_pressure_tensor.py --verbose TestLBPressureTensorGPU`): both cases (`test_averages`, `test_gk_viscosity`) **ok in 77 s**. The whole script alone (`ctest -R '^lb_pressure_tensor$' -V`): 4/4 ok, **89 s**. In the serial suites: 147 s (default), 90 s (maxset).
+- Two copies of the GPU class at once on the pinned GPU: **578 s each** (7.5x slower for 2x the work). The test's sampling loop does 10000 steps of `integrator.run(2)` plus a device-to-host read of the pressure tensor, so it synchronizes constantly.
+- Smallest reproducer, plain HIP with no ESPResSo (`syncloop.hip`: four small kernels on a 12^3 x 19 double field, then a 72-byte `hipMemcpy` D2H, 20000 iterations; `clang++ -x hip --offload-arch=gfx1201 -O2`): one process 30.1 us per iteration; **two concurrent processes 138.5 us each**, four 135 us each. A process that only holds an idle context does not slow it (31.6 us). So each synchronizing step pays roughly 100 us once a second process submits work to the same GPU. Eight concurrent ctest jobs, several of them LB GPU scripts, push a sync-bound test past its timeout.
+
+Class: environment (a host or driver property of sharing one GPU between processes), not 32-wide-specific (no result differs; the kernels pass), not a HIP-build gap, and not a test bug. The documented `ctest -L gpu` is serial and passes. Not compared with a wave64 host: the MI300X ran `-j 8` without the timeout, but this host did not test whether the cost is specific to RDNA4 or to this driver. No fork change is warranted.
+
+### Gates
+
+- CUDA no-regression compile: not rerun. This host has no CUDA toolkit (no nvcc, no /usr/local/cuda, no /opt/conda). It is already PASS at 917d6f707 (review section above: nvcc 12.8, `cuda12-maxset`, 0 FAILED under -Werror).
+- `python3 utils/jargon.py --port espresso`: clean. Docs: "AMD GPU acceleration" in `doc/sphinx/installation.rst` covers the LB/EK solvers (unchanged since the gfx942 record).
+- Integrity: `git -C projects/espresso/src status --porcelain` empty at 917d6f707.
+- With gfx942 (wave64) and this run (wave32) at 917d6f707, both required Linux gates are met at head; windows is waived.
+
+## Lesson for cuda-to-rocm: a sync-bound GPU test that passes alone can time out under `ctest -jN` because the GPU is shared between processes
+
+Belongs in the validation or Linux host reference, beside "A GPU test that hangs only under `ctest -jN`". On a Radeon gfx1201 host (ROCm 10.1 SDK), a loop of small kernels plus a synchronous small device-to-host copy took 30 us per iteration in one process and 135-139 us per iteration in each of two or four concurrent processes on the same GPU. An idle second context cost nothing; only concurrent submission did. A test that synchronizes every step (ESPResSo's `lb_pressure_tensor`, 10000 sample steps) passed in 77-147 s alone and timed out at 1200 s under `ctest -L gpu -j 8`. Before treating such a timeout as a hang or a port fault, rerun the test alone and then two copies at once: a pass alone plus a superlinear slowdown with two copies points to GPU sharing, and the fix is a serial GPU ctest run (or a `RESOURCE_LOCK`), not a longer timeout or a code change.
+
+## Owed next (2026-11-20, after gfx1201 validation at 917d6f707)
+
+- wave64 (gfx942) and wave32 (gfx1201) are validated at 917d6f707; windows is waived. linux-gfx950 still reads `revalidate` (extra wave64 evidence, gates nothing).
+- For jeff (unchanged): refresh the fork review page (AMD-Ecosystem/espresso#1, still at bc8d73dd9, body describes the core only) for the five-commit series before approval. No upstream PR is open.
+- For a trunk session: promote the four `## Lesson for cuda-to-rocm` sections (the three from the porter round, and the `ctest -jN` GPU sharing one above).

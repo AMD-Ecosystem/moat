@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:43:45Z",
-  "updated_at": "2026-11-20T20:41:35Z",
+  "updated_at": "2026-11-20T22:27:29Z",
   "head_sha": "917d6f70715158d1b8be1a961595073dcc3c597c",
   "depends_on": [],
   "waivers": {
@@ -28,76 +28,12 @@
   "upstream_repo_id": 1524644,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx1201": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": "2026-11-19T22:01:58Z",
-      "updated_at": "2026-11-19T23:11:35Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "validated_prior": [
-        "87cbc046d27c1eabd33eec8c208014bface17b07",
-        "01090739cf852d70549a5699c5984b0f17414214",
-        "4861f483930b774eccb14a26125de323d1a33851"
-      ],
-      "carry_forward": {
-        "from": "4861f483930b774eccb14a26125de323d1a33851",
-        "to": "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
-        "method": "squash",
-        "detail": "tree-identical squash of the validated head",
-        "at": "2026-11-19T23:11:35Z"
-      }
-    },
-    "linux-gfx950": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "917d6f70715158d1b8be1a961595073dcc3c597c",
-      "failed_sha": null,
-      "started_at": "2026-11-19T06:32:15Z",
-      "completed_at": "2026-11-20T20:41:35Z",
-      "updated_at": "2026-11-20T20:41:35Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "state": "completed",
-      "validated_prior": [
-        "01090739cf852d70549a5699c5984b0f17414214",
-        "4861f483930b774eccb14a26125de323d1a33851",
-        "bc8d73dd948fc2e1f93756c648529d6d1510b41c"
-      ]
-    },
-    "linux-gfx90a": {
+    "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
-      "started_at": "2026-06-04T04:51:40Z",
+      "started_at": null,
       "completed_at": "2026-06-23T22:45:22Z",
       "updated_at": "2026-06-23T22:45:22Z",
       "stats": {
@@ -151,14 +87,35 @@
         "bc8d73dd948fc2e1f93756c648529d6d1510b41c"
       ]
     },
-    "linux-gfx1100": {
-      "state": "completed",
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "ESPResSo requires MPI 3.0 (msmpi.dll on Windows); MS-MPI installer requires admin elevation unavailable in automated validation. Same host-wide infrastructure blocker as windows-gfx1201 (this is the same physical machine), not a port defect or GPU-specific issue.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-19T23:24:29Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx950": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
-      "started_at": null,
-      "completed_at": "2026-06-23T22:45:22Z",
-      "updated_at": "2026-06-23T22:45:22Z",
+      "validated_sha": "917d6f70715158d1b8be1a961595073dcc3c597c",
+      "failed_sha": null,
+      "started_at": "2026-11-19T06:32:15Z",
+      "completed_at": "2026-11-20T20:41:35Z",
+      "updated_at": "2026-11-20T20:41:35Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -173,12 +130,12 @@
         "last_session_at": null
       },
       "last_agent": "validator",
-      "carry_forward": {
-        "to": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:45:22Z"
-      }
+      "state": "completed",
+      "validated_prior": [
+        "01090739cf852d70549a5699c5984b0f17414214",
+        "4861f483930b774eccb14a26125de323d1a33851",
+        "bc8d73dd948fc2e1f93756c648529d6d1510b41c"
+      ]
     },
     "windows-gfx1201": {
       "blocked": true,
@@ -223,13 +180,14 @@
         "last_session_at": null
       }
     },
-    "windows-gfx1101": {
-      "blocked": true,
-      "blocked_reason": "ESPResSo requires MPI 3.0 (msmpi.dll on Windows); MS-MPI installer requires admin elevation unavailable in automated validation. Same host-wide infrastructure blocker as windows-gfx1201 (this is the same physical machine), not a port defect or GPU-specific issue.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-19T23:24:29Z",
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
+      "started_at": "2026-06-04T04:51:40Z",
+      "completed_at": "2026-06-23T22:45:22Z",
+      "updated_at": "2026-06-23T22:45:22Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -242,7 +200,43 @@
         "session_count": 0,
         "first_session_at": null,
         "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:45:22Z"
       }
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "917d6f70715158d1b8be1a961595073dcc3c597c",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-20T22:27:29Z",
+      "updated_at": "2026-11-20T22:27:29Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "validated_prior": [
+        "87cbc046d27c1eabd33eec8c208014bface17b07",
+        "01090739cf852d70549a5699c5984b0f17414214",
+        "4861f483930b774eccb14a26125de323d1a33851",
+        "bc8d73dd948fc2e1f93756c648529d6d1510b41c"
+      ]
     }
   },
   "porting_released": {
@@ -251,6 +245,5 @@
     "at": "2026-11-20T18:59:22Z"
   },
   "reviewed_sha": "917d6f70715158d1b8be1a961595073dcc3c597c",
-  "review_pr": "https://github.com/AMD-Ecosystem/espresso/pull/1",
-  "porting": null
+  "review_pr": "https://github.com/AMD-Ecosystem/espresso/pull/1"
 }
