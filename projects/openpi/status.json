@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/openpi",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "python-jax-torch",
+  "stage": "planned",
   "adopted_at": "2026-11-12T16:37:48Z",
-  "updated_at": "2026-11-20T22:06:31Z",
+  "updated_at": "2026-11-20T22:13:20Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx950",
-    "since": "2026-11-20T22:06:31Z",
-    "holder": "0db648edf99f"
-  },
+  "porting": null,
   "waivers": {
     "windows": {
       "reason": "upstream supports Ubuntu only and ROCm JAX has no Windows build. Approved 2026-11-12 with the gap-matrix intake follow-ups.",
@@ -54,7 +50,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T22:06:31Z",
+      "updated_at": "2026-11-20T22:13:20Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -87,5 +83,10 @@
     "viable": true,
     "summary": "openpi (Apache-2.0, JAX+PyTorch, no kernels): validate and back AMD ROCm Docker PR #1035; jax[cuda12] pin needs jax-rocm plugin; gate pytest suite",
     "at": "2026-11-12T17:09:18Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx950",
+    "since": "2026-11-20T22:06:31Z",
+    "at": "2026-11-20T22:13:20Z"
   }
 }

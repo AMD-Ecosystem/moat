@@ -1,0 +1,182 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "215abfb217db",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [],
+    "markers": {},
+    "libraries": {}
+  },
+  "components": [
+    {
+      "id": "path:pytorch-training",
+      "kind": "path",
+      "where": "scripts/train_pytorch.py, src/openpi/models_pytorch/",
+      "added_by": "planner",
+      "note": "pi0/pi05 PyTorch training, single GPU and torchrun DDP (RCCL); cover"
+    },
+    {
+      "id": "path:pytorch-inference",
+      "kind": "path",
+      "where": "src/openpi/policies/policy_config.py, models_pytorch/pi0_pytorch.py",
+      "added_by": "planner",
+      "note": "PyTorch checkpoint inference incl. torch.compile(max-autotune) default; cover"
+    },
+    {
+      "id": "tool:convert-jax-to-pytorch",
+      "kind": "tool",
+      "where": "examples/convert_jax_model_to_pytorch.py",
+      "added_by": "planner",
+      "note": "needed to obtain PyTorch weights; cover"
+    },
+    {
+      "id": "tool:compute-norm-stats",
+      "kind": "tool",
+      "where": "scripts/compute_norm_stats.py",
+      "added_by": "planner",
+      "note": "CPU data pass, prerequisite for training runs; cover"
+    },
+    {
+      "id": "vendored:transformers-replace",
+      "kind": "vendored",
+      "where": "src/openpi/models_pytorch/transformers_replace/",
+      "added_by": "planner",
+      "note": "patch over transformers 4.53.2, part of the PyTorch path, no CUDA; cover"
+    },
+    {
+      "id": "path:jax-training",
+      "kind": "path",
+      "where": "scripts/train.py, src/openpi/models/, src/openpi/training/sharding.py",
+      "added_by": "planner",
+      "note": "pending Jeff D1: cover via jax 0.7.1 ROCm (A, recommended) / source build (B) or scoped out (C)"
+    },
+    {
+      "id": "path:jax-inference-serving",
+      "kind": "path",
+      "where": "scripts/serve_policy.py, src/openpi/serving/",
+      "added_by": "planner",
+      "note": "pending Jeff D1"
+    },
+    {
+      "id": "test:pytest-suite",
+      "kind": "test",
+      "where": "src, scripts, packages (*_test.py, -m 'not manual')",
+      "added_by": "planner",
+      "note": "all JAX except client tests; on GPU under D1A, CPU-only evidence under D1C"
+    },
+    {
+      "id": "test:openpi-client",
+      "kind": "test",
+      "where": "packages/openpi-client/src/openpi_client/*_test.py",
+      "added_by": "planner",
+      "note": "CPU, must not regress; cover"
+    },
+    {
+      "id": "fix:conftest-nvml-gpu-detect",
+      "kind": "fix",
+      "where": "src/openpi/conftest.py",
+      "added_by": "planner",
+      "note": "pynvml-only GPU detection forces JAX_PLATFORMS=cpu on AMD (plan R1); cover under every D1 option"
+    },
+    {
+      "id": "build:rocm-env-recipe",
+      "kind": "build",
+      "where": "docs/rocm.md (non-Docker venv recipe)",
+      "added_by": "planner",
+      "note": "ROCm torch wheel + constraints (+ ROCm JAX under D1A); pyproject/uv.lock unchanged; cover"
+    },
+    {
+      "id": "build:docker-train-rocm",
+      "kind": "build",
+      "where": "scripts/docker/train_rocm.Dockerfile, compose_rocm.yml (PR #1035)",
+      "added_by": "planner",
+      "note": "validate #1035's image on gfx950 (D2a); cover"
+    },
+    {
+      "id": "build:docker-serve-policy",
+      "kind": "build",
+      "where": "scripts/docker/serve_policy.Dockerfile, scripts/docker/compose.yml",
+      "added_by": "planner",
+      "note": "nvidia/cuda base + uv sync + NVIDIA device reservation; ROCm serve variant under D1A, scoped out under D1C"
+    },
+    {
+      "id": "doc:rocm",
+      "kind": "doc",
+      "where": "docs/rocm.md, README.md, docs/docker.md",
+      "added_by": "planner",
+      "note": "from #1035; extend with JAX, non-Docker, wave32; cover"
+    },
+    {
+      "id": "example:simple_client",
+      "kind": "example",
+      "where": "examples/simple_client",
+      "added_by": "planner",
+      "note": "policy-serving smoke test, no robot; cover (D3)"
+    },
+    {
+      "id": "example:aloha_sim",
+      "kind": "example",
+      "where": "examples/aloha_sim",
+      "added_by": "planner",
+      "note": "pending Jeff D3: recommended cover if D1A (CPU MuJoCo sim + GPU policy server)"
+    },
+    {
+      "id": "example:libero",
+      "kind": "example",
+      "where": "examples/libero",
+      "added_by": "planner",
+      "note": "pending Jeff D3: proposed out (NVIDIA EGL ICD rendering, not GPU compute)"
+    },
+    {
+      "id": "example:aloha_real",
+      "kind": "example",
+      "where": "examples/aloha_real",
+      "added_by": "planner",
+      "note": "pending Jeff D3: proposed out (physical robot)"
+    },
+    {
+      "id": "example:droid",
+      "kind": "example",
+      "where": "examples/droid",
+      "added_by": "planner",
+      "note": "pending Jeff D3: proposed out (physical robot; GPU use is the policy server only)"
+    },
+    {
+      "id": "example:ur5",
+      "kind": "example",
+      "where": "examples/ur5",
+      "added_by": "planner",
+      "note": "pending Jeff D3: proposed out (physical robot, README only)"
+    },
+    {
+      "id": "third_party:aloha",
+      "kind": "submodule",
+      "where": "third_party/aloha",
+      "added_by": "planner",
+      "note": "example-only submodule; follows D3"
+    },
+    {
+      "id": "third_party:libero",
+      "kind": "submodule",
+      "where": "third_party/libero",
+      "added_by": "planner",
+      "note": "example-only submodule; follows D3"
+    },
+    {
+      "id": "ci:github-actions",
+      "kind": "ci",
+      "where": ".github/workflows/test.yml, pre-commit.yml",
+      "added_by": "planner",
+      "note": "self-hosted openpi-verylarge runner"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "ci:github-actions",
+      "reason": "No fork CI: CPU-only CI cannot observe GPU correctness and inherited fork Actions stay disabled (AGENTS.md Testing); upstream's workflows are left untouched."
+    }
+  ],
+  "owed": [],
+  "removed_from_floor": []
+}
