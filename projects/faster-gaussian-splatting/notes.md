@@ -2712,6 +2712,45 @@ nvcc 12.8, `-std=c++17`, sm_80: the five torch-free TUs compile at ff9ebec and a
 
 **completed**, `linux-gfx90a`, `validated_sha=ff9ebec006c585c7ffec18270b51a52bb200052e`. Still owed at this head: the `wave32` and `windows` gates (any RDNA platform, and a Windows run, which also settles whether the `/ALTERNATENAME` removal and the HIP `__device__` scalar `lerp` build there).
 
+## Validation 2026-11-20 (linux-gfx1201, port-ready at ff9ebec)
+
+Requested by jeff (fleet job), wave32 gate for fix round moat-fix-14. Platform: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32; `warp_size` 32), torch 2.16.0a0+git6c3af02, HIP 7.16.26385 (TheRock SDK wheels in the image venv, hipRAND 3.4.0), `HIP_VISIBLE_DEVICES=2` (dispatcher pin, kept), every GPU run under `ulimit -c 0`, one run, no loops. Fork freshly cloned into `projects/faster-gaussian-splatting/src`, `protect-fork` installed, `moat-fix-14` checked out at `ff9ebec006c585c7ffec18270b51a52bb200052e` (= `head_sha`, = the fork's remote tip). Nothing pushed to the fork. Full real-GPU run from a clean tree.
+
+### Build
+Same recipe as Validation 2026-11-20 (linux-gfx90a), arch and job count changed. Baseline 00e803d from `git archive` into `agent_space/builds/old`.
+```bash
+export PYTORCH_ROCM_ARCH=gfx1201 MAX_JOBS=12
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $PWD/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $PWD/agent_space/builds/old/FasterGSCudaBackend && python setup.py build_ext --inplace"
+```
+ff9ebec: PASS, rc=0, 318 `warning:` lines, 0 errors; `build.ninja` has `-std=c++20` (cxx and hipcc), no `FGS_HAVE_HIPRAND`. 00e803d: rc=0, 360 warning lines. Same counts as gfx90a. `llvm-objdump --offloading` (SDK `_rocm_sdk_core/lib/llvm/bin`): 7 bundles, all `hip-amdgcn-amd-amdhsa--gfx1201`. `codeobj_diff.py` 00e803d vs ff9ebec -> `differ` (exported-symbol changes from upstream's 4f8e186 signatures, e.g. `add_noise`, `pruning_scores`); expected for a delta that includes upstream code, not used for any shortcut.
+
+### GPU tests (`gpu_tests/` + `agent_space/scripts/{noise_dump.py,bitcmp.py,stream_check.py,run_all.sh}`, rewritten from the recorded design, scratch)
+```bash
+utils/timeit.sh faster-gaussian-splatting test -- bash agent_space/scripts/run_all.sh <00e803d build> <ff9ebec build> agent_space/out_val
+python agent_space/scripts/stream_check.py <ff9ebec build> projects/faster-gaussian-splatting/gpu_tests
+```
+rc=0, every sub-step rc=0 (test phase 24.7 s).
+- add_noise vs 00e803d: 27/27 bit-identical; 27/27 calls changed their input; 9/9 groups advance.
+- new_checks.py 31/31 (Philox + Box-Muller 8.65e-7 over 228 primitives; std 0.9982..1.0030; max |corr| 4.30e-3; lane halves 0.9983/1.0021; coverage 0.96..1.00; abs-grad delta within run-to-run in all 4 scenes).
+- train_check.py 3/3 (FusedAdam vs torch.optim.Adam 3.73e-6; L1 0.1204 -> 0.0081).
+- det.py 3/3, 0 diff (0 px) at 200k/100k/50k, training forward and inference.
+- run_outputs 00e803d vs ff9ebec (84 tensors): inference/train_image/filter3d_vis 21/21 bit-identical, filter3d finite values and inf masks 7/7 equal, 29/84 bit-equal both old-vs-new and new-vs-new2. Worst relL2 old-vs-new / new-vs-new2: grad_means 2.48e-7 / 2.41e-7, grad_scales 2.44e-6 / 2.50e-6, grad_rotations 2.87e-6 / 2.97e-6, grad_opacities 2.56e-7 / 2.08e-7, grad_sh0 2.56e-7 / 2.59e-7, grad_shrest 2.58e-7 / 2.58e-7, dinfo 1.97e-7 / 2.00e-7, pruning 2.50e-7 / 2.94e-7. Old-vs-new at run-to-run level (float-atomic order).
+- side stream vs default stream (50k, 1280x720): images bit-equal, worst gradient relL2 1.14e-6.
+
+Against Validation 2026-11-20 (linux-gfx90a, ff9ebec): every count is the same (27/27, 9/9, 31/31, 3/3, 0 diff, 21/21, 7/7, 29/84 twice, stream images bit-equal). The only differences are magnitudes at run-to-run level: Adam 3.73e-6 vs 3.81e-6 (gfx1100 at 00e803d: 3.87e-6), final L1 0.0081 vs 0.0080 (the known last-digit spread with MCMC noise), worst gradient relL2 old-vs-new 2.87e-6 vs 3.57e-6 and side-stream gradients 1.14e-6 vs 6.63e-7, both from float-atomic ordering differing per GPU and run; images are bit-exact on both. Philox error and noise statistics are identical to the digit (the noise is computed per element, independent of wave width).
+
+### CUDA no-regression gate
+Not rerun: already recorded at this head_sha (Porter and Validation 2026-11-20, linux-gfx90a: nvcc 12.8, `-std=c++17`, sm_80, five torch-free TUs, PTX identical to upstream main; `cuda-not-validated` for the four torch-dependent TUs).
+
+### Completion checks
+- `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean` (local `main` set to `upstream/main`).
+- README: ROCm build beside the CUDA one in Setup (`PYTORCH_ROCM_ARCH`, gfx1201 named as an example) and the ROCm bullets in Requirements.
+- `git -C projects/faster-gaussian-splatting/src status --porcelain`: empty.
+
+### Verdict
+**completed**, `linux-gfx1201`, `validated_sha=ff9ebec006c585c7ffec18270b51a52bb200052e`; satisfies the `wave32` gate at this head. Still owed: the `windows` gate (the `/ALTERNATENAME` removal and the HIP `__device__` scalar `lerp` under MSVC's standard library).
+
 ## Fix review PR draft
 
 For `upstream.py --fix-review --apply --name faster-gaussian-splatting --title <title> --body-file <the body below, through the end of the Upstream reply section>` (moat-fix-14 -> moat-port). Not opened; jeff opens it once the remaining gates pass.
@@ -2734,7 +2773,9 @@ The port's whole diff against upstream main is now 7 files, +79/-7 (it was 8 fil
 
 Retested on an AMD Instinct MI250X (gfx90a) at ff9ebec, built from clean. Every count matches the last validation of 00e803d on this GPU: add_noise 27/27 bit-identical to 00e803d; 31/31 rasterizer and noise checks; 3/3 training checks (FusedAdam vs torch.optim.Adam 3.81e-6, a 300-iteration fit L1 0.1204 -> 0.0080); forward determinism 0 diff at 200k/100k/50k Gaussians; images bit-identical to 00e803d in all 7 scenes, with gradients at run-to-run level (3.6e-6 vs 3.0e-6). New this round, for upstream's stream change: a forward, backward and inference run on a side stream matches the default stream. CUDA: the five torch-free translation units compile with nvcc 12.8 at `-std=c++17`, with sm_80 PTX identical to upstream main's; the four torch-dependent ones were not compiled (no CUDA build of PyTorch on that host).
 
-Not yet tested: Windows and an RDNA GPU at this head. Removing `/ALTERNATENAME` (item 3) affects only the Windows build, and so does the `__device__` scalar `lerp` under MSVC's standard library. The Windows validation has to show whether the extension still links on the Windows ROCm PyTorch in use there. If the old `LNK2001` on `c10::ValueError(SourceLocation, std::string)` comes back, that is a missing export in that PyTorch build, and this round does not work around it, per the maintainer.
+Also retested on an AMD Radeon AI PRO R9700 (gfx1201, wave32) at ff9ebec, built from clean: every count above is the same, with images bit-identical to 00e803d and gradients at run-to-run level, and the side-stream run matches the default stream.
+
+Not yet tested: Windows at this head. Removing `/ALTERNATENAME` (item 3) affects only the Windows build, and so does the `__device__` scalar `lerp` under MSVC's standard library. The Windows validation has to show whether the extension still links on the Windows ROCm PyTorch in use there. If the old `LNK2001` on `c10::ValueError(SourceLocation, std::string)` comes back, that is a missing export in that PyTorch build, and this round does not work around it, per the maintainer.
 
 ## Upstream reply
 
@@ -2745,10 +2786,10 @@ Thanks for the review. All four are done.
 3. The `/ALTERNATENAME` workaround is gone.
 4. You're right, no hipRAND release has `hiprand_Philox4x32_10` yet; it only exists in an open rocm-libraries PR. The compile check and the hipRAND path are removed and the bundled implementation is always used. `setup.py` is back to a single flag setup that differs only in the language standard and the fast-math flag.
 
-I also merged the current main (including your stream changes) and re-ran the tests on an AMD Instinct MI250X.
+I also merged the current main (including your stream changes) and re-ran the tests on an AMD Instinct MI250X and an AMD Radeon AI PRO R9700.
 
 ## Notes for jeff (not part of the PR body)
 
-- Before opening the fork review PR, the `wave32` and `windows` gates need validations at ff9ebec (only linux-gfx90a is completed there). Once more GPUs pass, update the last sentence of the reply to name them; it must name only GPUs with a completed validation at the merged head.
+- Before opening the fork review PR, the `windows` gate needs a validation at ff9ebec (linux-gfx90a and linux-gfx1201 are completed there; gfx1201 satisfies `wave32`). Once more GPUs pass, update the last sentence of the reply to name them; it must name only GPUs with a completed validation at the merged head.
 - The upstream PR body is out of date after this round: it still describes C++20 on every platform, the `/ALTERNATENAME` directive, `lerp_scalar` and the hipRAND path, and its validation lists counts from older heads. Editing it is an upstream write and your call; the reply above covers the changes.
 - The fork's `main` mirror is still d23bb78 (upstream is at 4f8e186); it was not pushed this round.
