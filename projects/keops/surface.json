@@ -103,7 +103,56 @@
       "note": "windows gate waived 2026-11-12 (upstream has no Windows support)"
     }
   ],
-  "covered": [],
+  "covered": [
+    {
+      "id": "backend:hiprtc-binder",
+      "evidence": "shim headers binders/nvrtc/hip_shim (cuda.h, nvrtc.h, cuda_fp16.h) + two __HIP_PLATFORM_AMD__ blocks in nvrtc_jit.cpp (38c65e2b); keops_nvrtc.cpp/utils_pe.h/CudaSizes.h unchanged; linux-gfx950: 247 hsaco code objects built and run by the suites at 2980874a"
+    },
+    {
+      "id": "config:hip-discovery",
+      "evidence": "config/Hip.py HipConfig + config/__init__.py CUDA-first selection (38c65e2b); linux-gfx950 check_health 'HIP Support: Enabled'; SDK found with and without ROCM_PATH; torch-loaded runtime reused"
+    },
+    {
+      "id": "codegen:gpu-math-guard",
+      "evidence": "math_functions.py guard __CUDACC__ || __HIPCC__ (38c65e2b); half2 formulas compile only through the GPU branch and test_float16.py passes on linux-gfx950"
+    },
+    {
+      "id": "codegen:fp16-half2",
+      "evidence": "test_float16.py 2/2 on linux-gfx950 GPU (hipRTC builtin fp16; shim cuda_fp16.h skips the host header under __HIPCC_RTC__)"
+    },
+    {
+      "id": "frontend:pykeops",
+      "evidence": "pykeops_nvrtc.cpp unchanged, built against the shim; pykeops suite 92 passed / 1 failed (clamp_bw data tie, KeOps result matches float64; see notes) / 0 skipped on linux-gfx950"
+    },
+    {
+      "id": "frontend:rkeops",
+      "evidence": "no code change; rkeops 2.2.3 from the tree on R 4.4.3: keops_kernel on GPU built an hsaco, max rel err 5.0e-7 vs dense R reference; rkeops testthat compute tests skip on upstream main for any platform (keopscore.verbose removed upstream, see notes)"
+    },
+    {
+      "id": "tests:keopscore",
+      "evidence": "keopscore/keopscore/test 68 passed on linux-gfx950 GPU and 68 passed CPU-only"
+    },
+    {
+      "id": "tests:pykeops",
+      "evidence": "pykeops/pykeops/test 92 passed, 1 failed (test_lazytensor_clamp_bw: float32 tie at the clamp bound in this GPU's random data, not a port defect), 0 skipped on linux-gfx950; CPU-only 87 passed 6 skipped"
+    },
+    {
+      "id": "tests:no-torch-smoke",
+      "evidence": "fresh venv without torch: check_health + test_numpy_bindings pass on linux-gfx950 GPU"
+    },
+    {
+      "id": "tests:rkeops",
+      "evidence": "run on linux-gfx950: 38 tests, 7 failed + compute files skipped, all upstream drift independent of the port (options count, pykeops.verbose type, keopscore.verbose removed); direct GPU keops_kernel check passes (see notes)"
+    },
+    {
+      "id": "docs:install-rocm",
+      "evidence": "doc/python/installation.rst 'ROCm detection (AMD GPUs)' + Config.rst HipConfig (2980874a)"
+    },
+    {
+      "id": "benchmarks",
+      "evidence": "benchmarks/KeOps.py on linux-gfx950: 1e4/1e5/1e6 points 0.0019/0.0116/0.5226 s per Gaussian convolution; OpenMP CPU 0.51 s at 1e5"
+    }
+  ],
   "scoped_out": [
     {
       "id": "platform:windows",

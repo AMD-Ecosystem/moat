@@ -147,6 +147,10 @@ pytest -v -rs pykeops/pykeops/test/
 
 R 4.4.3 and the rkeops dependencies from conda-forge into `agent_space/r-env` (micromamba, job dir); `R CMD INSTALL rkeops` into a job-local library; `RETICULATE_PYTHON=$FLEET_VENV/bin/python`, `TEST_GPU=1`; `testthat::test_dir` excluding `test-01_install.R` (it runs `reticulate::py_install("pykeops")`, which would replace the editable install with the PyPI release). Result: 38 tests, 7 failed, 2 skipped (test files 07-10 skip). All of it is upstream drift, independent of the port: rkeops' `check_pypkg()` reads `keopscore.verbose`, which keopscore on main no longer has (removed in 6bfa32a6), so `skip_if_no_keopscore()` skips every compute test on any platform; the 7 failures are `test-03_rkeops_options.R` expecting 6 options (there are 7, `formula_only` was added) and `test-04_keops_setup.R` expecting `pykeops$verbose` to be logical (it is now an integer). Direct GPU check instead (`agent_space/diag/rkeops_gpu.R`): `rkeops_use_gpu()`, `keops_kernel("Sum_Reduction(Exp(-SqNorm2(x-y))*b, 1)")`, 2000 x 3000 points, float32: built `<hash>_nvrtc.hsaco`, max rel err 5.0e-7 vs a dense R reference, 5.3e-7 vs rkeops on CPU.
 
+### Benchmark (context, not a gate)
+
+`python benchmarks/KeOps.py` (Gaussian convolution, D=3, float32) on the MI355X: 1e4 / 1e5 / 1e6 points 0.0019 / 0.0116 / 0.5226 s per call. Same formula on the OpenMP CPU backend (`HIP_VISIBLE_DEVICES=`), 1e5 points: 0.51 s. `benchmarks/PyTorch_GPU.py` was not run (its 1e6 case materializes a 1e6 x 1e6 matrix).
+
 ### For the reviewer and validators
 
 - Prove the GPU ran (R2): "HIP Support: Enabled" in `check_health`, `*_nvrtc.hsaco` files in the build folder, 0 GPU tests skipped.
