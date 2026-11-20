@@ -1812,3 +1812,53 @@ Answers the review above; nothing amended or rebased. Three new commits:
 ## Re-review 2026-11-20 (reviewer, linux-gfx90a, delta d9a9027..c015150 -> review-passed)
 
 Read the full delta (5 files, +22/-14) and the three messages. Review findings 1, 2, 3 and 5 are fixed as asked; 4 is fixed apart from the heading level, kept at `###` for the anchor reason the porter gives (`myst_heading_anchors = 3`, verified in docs/conf.py), with the commit wording to be corrected in the review PR body. The setup.py print is on the HIP branch only (CUDA output unchanged), and its "default" condition matches `locate_rocm()`'s `HIP_ARCH or HCC_AMDGPU_TARGET or gfx90a`. Titles are 57/54/64 chars, `[ROCm]` only on the two ROCm-specific commits, AI disclosure in prose, no trailer, ASCII. Device code identical to the tested d9a9027 build (`codeobj_diff` verdict=identical). The whole round f779703..c015150 has no open finding. The pre-existing items listed under the first review stay with jeff.
+
+## Validation 2026-11-20 (linux-gfx90a, validator, moat-fix-747 @ c015150 -> completed)
+
+GPU: AMD Instinct MI250X / MI250 gfx90a, TheRock ROCm SDK 10.1, `HIP_VISIBLE_DEVICES=2` (dispatcher pin, idle per `amd-smi metric`), all GPU work under `ulimit -c 0`. Head c0151501c2a97922e9afea20007f3d049d0a815a checked out in `projects/TIGRE/src`, built from clean (build/ and all `.so` removed) with the porter's command, `TIGRE_BACKEND=hip HIP_ARCH=gfx90a ROCM_PATH=$(rocm-sdk path --root)`: rc 0, 0 `error:`, 8/8 `.so`, prints `building the hip backend (set by TIGRE_BACKEND)` and `compiling for the AMD GPU architectures gfx90a`. Full real-GPU run, no carry-forward (the delta from this platform's f779703 record is a merge with device-code changes).
+
+### Results (commands as in "Sync round 2026-11-20", Tests)
+- Upstream core suite: **246 passed, 1 failed, 22 skipped**, 16 deselected (145 s). Same as the porter at d9a9027. The last record's 7 files + test_interpolated_voxel_size: 74/74 again.
+- Extended (`-m extended`): **12 passed**, 13 skipped.
+- Torch-dependent files with the image's ROCm torch (read-only): **79 passed**, 9 skipped (552 s), including test_pinned_input, test_gpu_arrays (torch GPU tensors in and out), test_tv_low_memory, test_texture_object_leak.
+- Skips: 2-GPU tests (pin kept at one GPU), `test_cuda_errors` / `test_siddon_split` cases that load the CUDA runtime with ctypes (NVIDIA-only by design), one parallel-beam backprojector skip.
+- `probe/tigre_gates.py all`: RESULT PASS, every number equal to the porter's d9a9027 run (table in "Sync round 2026-11-20").
+- **The failure:** `test_projectors_gpu.py::test_forward_is_invariant_to_a_full_turn[parallel-interpolated]`, 2.404e-04 against 1e-4. It is a new upstream test, it fails the same way at the published tip f779703, and the porter's probes show it is upstream's sample-count step at float-rounding level (1-ulp angle steps reach 6.6e-4; the effect scales with `accuracy`), not the port or the merge. Recorded as completed on that evidence; **jeff should know a card-dependent upstream test fails here**. Open: whether NVIDIA and gfx1100 pass it.
+
+### Other gates
+- `jargon.py --port TIGRE`: clean. Docs: `docs/install/python.md` "AMD GPUs (ROCm)" section, changelog entry, install index; matches the build (`TIGRE_BACKEND=hip`).
+- Integrity: `git -C projects/TIGRE/src status --porcelain`: untracked build output only.
+- `cuda-not-validated: no CUDA toolkit on this host, and fetching one into the job directory was refused by this session's permission policy.` The nvcc 12.8 compile check is owed at c015150 by the mi355 host.
+
+## Fix review PR draft
+
+For `upstream.py --fix-review --apply --name TIGRE --title <t> --body-file <f>` (not opened; jeff opens it). The body is everything from the paragraph below through the `## Upstream reply` section; drafted 2026-11-20 after linux-gfx90a completed at c015150. Update the retest paragraph if more platforms validate at c015150 before it opens.
+
+Title: `[ROCm] Merge upstream master and select HIP with TIGRE_BACKEND=hip`
+
+Upstream PR CERN/TIGRE#747 no longer merges into master (175 commits since the last merge, 69bdd9f). No code change was requested; the maintainer asked (2026-11-19) that the HIP build use the new single switch TIGRE_BACKEND, with TIGRE_BACKEND=hip replacing BUILD_WITH_HIP and HIP_ARCH staying. That switch is already on master, so this round adopts it. This round merges master at d21492f into the port and adapts the port to it.
+
+Commits (on top of the published tip f779703; nothing rebased):
+- 2cb42aa merges master. Nine files conflicted; each keeps master's code and re-applies the HIP pattern. setup.py: HIP is chosen through master's select_backend (BUILD_WITH_HIP = BACKEND == "hip"), hip leaves the pending list, and the CUDA branch keeps master's TIGRE_CUDA_ARCH and TIGRE_NO_PINNED_MEMORY. Siddon cone and parallel: master's bounded loop and its stream sync after the parallel texture upload replace the port's own cap and sync. Parallel interpolated projector: master's multi-GPU texture creation with the run-time filter mode and per-device flag sync. GD_TV/GD_AwTV: master's double reduceSum launch. PICCS: master's rewrite plus the compatibility header. The Frontispiece install page becomes master's pointer to the new docs site. The merge commit's message has no runnable test plan; the retest is below.
+- 98b6b53: master's new tigre_release_on_error.hpp and tv_gradient_descent.hpp include cuda_to_hip.h instead of cuda_runtime_api.h, and the header maps eight more runtime names (cudaMemcpyKind, cudaChannelFormatKindFloat, cudaErrorHostMemoryAlreadyRegistered, cudaMemcpyPeerAsync, cudaArrayGetInfo, cudaStreamWaitEvent, cudaEventCreateWithFlags, cudaEventDisableTiming).
+- 74cd65b: the AMD install section moves to docs/install/python.md, next to "Choosing the GPU backend" (its message says "under"; it is a sibling heading so it keeps an anchor), using TIGRE_BACKEND=hip. Its test plan runs setup.py build_ext rather than the section's pip command; c015150 checks the pip form.
+- d9a9027: locate_rocm falls back to the prefix of the hipcc on the PATH (master's detection can pick hip from it) and checks for the HIP headers.
+- 4d0ded2: drops a stray carriage return the port had left at the end of voxel_backprojection_parallel.cu.
+- 880d691: the HIP build prints the target architectures and says when HIP_ARCH is the default (gfx90a).
+- c015150: changelog entry for TIGRE_BACKEND=hip, the install pages mention AMD GPUs for Python, and the AMD section uses plain pip install . (an isolated build works).
+
+Also checked: master fixed the TV reductions' guard to CUDART_VERSION, which makes the 32-wide shuffle path live on CUDA; CUDART_VERSION is undefined under hipcc, so the HIP build keeps the warpReduce path that is correct on wave64 and wave32.
+
+Retested on an AMD Instinct MI250X (gfx90a), ROCm 10.1, at c015150: all 8 extensions build; master's test suite gives 246 passed and 1 failed in the default set, 12 passed in the extended set, and 79 passed in the files that need PyTorch (GPU tensors, pinned input, low memory, texture leak); cone and parallel projection, FDK, OS-SART, SIRT and adjointness checks and the 20-fold repeat checks give the same numbers as the published tip. The failure is master's new test_forward_is_invariant_to_a_full_turn[parallel-interpolated] (2.4e-4 against 1e-4). It fails the same way at the published tip, and changing the angle by 1 to 8 float32 ulps moves that projector by up to 6.6e-4, because its sample count is a ceil of the ray length, so the result depends on rounding rather than on the port. Multi-GPU tests did not run (one GPU). Not yet run at this head: Windows, gfx1100, and the nvcc compile check.
+
+## Upstream reply
+
+From my side the branch is ready for review and testing. I merged current master into it and switched the HIP build to `TIGRE_BACKEND=hip` in place of `BUILD_WITH_HIP`; `HIP_ARCH` and `ROCM_PATH` work as before, and the AMD instructions are now in `docs/install/python.md` with a changelog entry. On an AMD Instinct MI250X the build and the new test suite pass, except `test_forward_is_invariant_to_a_full_turn[parallel-interpolated]` (2.4e-4 against 1e-4). That one also fails before the merge: changing the angle by a few float32 ulps moves the interpolated parallel projector by up to 6.6e-4, because the number of samples per ray is a ceil of the ray length, so whether it passes depends on rounding. I'll merge master again when 3.3.0 is out.
+
+## Notes for jeff on the 2026-11-20 round (not part of the review PR body)
+
+- **Timing.** AnderBiguri wrote on 2026-11-19 "No need to change anything until that PR is in" (the TIGRE_BACKEND PR, already merged as #897) and that he will ping when 3.3.0 is released, "the time to rebase your branch". He is still landing GPU changes, so master will likely move again and a further merge round will follow 3.3.0. Whether to publish this round now or hold it for his ping is your call; the reply's last sentence commits to merging again after 3.3.0. His 2026-11-11 question (is it ready for review?) is still unanswered upstream; the reply's first sentence answers it.
+- **The failing test** is upstream's (test_projectors_gpu.py, 1cca08a). The reply tells him about it. Drop those two sentences if you would rather report it separately, or after an NVIDIA or gfx1100 run shows whether other cards pass it.
+- **Owed before `fix-ready`:** the nvcc compile check at c015150 (mi355 host), the wave32 gate (gfx1100) and the windows gate at c015150. Windows needs `TIGRE_BACKEND=hip` now; `BUILD_WITH_HIP` is gone. Whether an isolated `pip install .` works on Windows is untested (the validated recipe pins `setuptools<72` and runs `setup.py build_ext`).
+- **Pre-existing items** from the first review: the upstream multi-GPU `accuracy>1` texture-mode bug in `CreateTextureInterp` (a candidate for a separate upstream issue), the HIP self-test clearing an earlier pending error on its first call, and host pinning being off on HIP. Details under "Review 2026-11-20".
+- The GPU gate scripts now live in `projects/TIGRE/probe/tigre_gates.py`, so the next round does not have to recreate them.
