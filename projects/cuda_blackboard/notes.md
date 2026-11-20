@@ -189,3 +189,64 @@ For `faults-memory-streams.md`. `cudaStreamLegacy` maps to `hipStreamLegacy` (`(
 ### Lesson for cuda-to-rocm: do not export the `hip` package to plain C++ consumers
 
 For `build-cmake-link.md`. hip-config sets `hip_LIBRARIES` to `hip::host;hip::device`. Any mechanism that forwards a dependency's `_LIBRARIES` to consumers (ament's `ament_export_dependencies(hip)`, or hand-written config files that do the same) hands them `hip::device`. Its `--offload-arch=<gfx>` compile and link flags make g++ fail with `unrecognized command-line option`. A host-only package whose installed headers call the HIP runtime should forward only `hip::host`, for example from a config-extras file that runs `find_package(hip CONFIG REQUIRED)` and appends `hip::host`. That target carries the include directory and `__HIP_PLATFORM_AMD__`.
+
+## Review 2026-11-20 (reviewer agent, linux-gfx950 fleet job; no GPU run needed or made)
+
+Scope: `moat-port` at 9e0fb865cd2e38dcc0db5e0e55497f40fb71f733 against upstream `a4f330e` (`git diff a4f330e...9e0fb86`, 16 files, +198/-18), reviewed with the pr-review skill. Every point below was checked again against the code (and, for the HIP defect, against the CLR source).
+
+### Summary
+
+The port maps the CUDA runtime calls of this host-only ROS 2 package to HIP through an installed `#ifndef`-guarded compat header, adds a `find_package(hip)` fallback to CMake that exports only `hip::host` to consumers, and works around a HIP event-record defect on the legacy stream. Verdict: **review-passed**. No code defect was found, and the CUDA path compiles with real nvcc and is unchanged from upstream (CUDA compile check below). One item has to be settled before an upstream PR, and only a person can settle it: DCO sign-off (first item under "Open for a person").
+
+### Second commit (9e0fb86, the hipStreamLegacy event workaround), judged on its own
+
+- **Root cause confirmed in CLR, not only by the porter's black-box repro.** In ROCm/rocm-systems `develop` (21a48eb, 2026-11-20), `projects/clr/hipamd/src/hip_event.cpp` `hipEventRecord_common` stores the raw handle with `e->SetCaptureStream(stream)`, and for `hipStreamLegacy` that is `(hipStream_t)1`. `hip_stream.cpp` `hipStreamWaitEvent_common` then reads that handle back. `hip::isValid()` returns true for `hipStreamLegacy`, so the handle is cast to `hip::Stream*`, and `eventStream->IsEventCaptured(event)` (the capture check after `hip::getStream`, and the earlier one when the waiting stream is null or legacy) dereferences address 1. That is the `mutex=0x1d1` the porter saw in gdb. `hipEventRecord_common` itself and `checkEventCaptureRestrictions` (used by query and synchronize) test for `hipStreamLegacy`; `hipStreamWaitEvent_common` does not. So only waiting on such an event is broken, which matches the repro. The defect is still present at the current develop tip. Add this to the deferred `hip-event-record-stream-legacy-wait-crash` report if it is filed.
+- **The workaround is semantically right.** `hip::getStream()` (`hip_context.cpp:110`) resolves `nullptr` and `hipStreamLegacy` to the same `getNullStream()`, so recording on `nullptr` records on exactly the stream the CUDA path names. The library TU is compiled by g++ without `HIP_API_PER_THREAD_DEFAULT_STREAM`, so `hipEventRecord` (not `_spt`) gets `nullptr` = the legacy null stream whatever the consumer's own build mode is. The change is HIP-guarded, touches one function (`src/cuda_blackboard_subscriber.cpp:137-145`), and leaves the CUDA path byte-identical (confirmed by the CUDA build below). The other uses of `user_stream_` == `hipStreamLegacy` (`cudaStreamWaitEvent(user_stream_, ...)` at :90 and :122, and whatever the consumer enqueues on it) pass the sentinel as the *waiting*/*working* stream, which CLR maps to the null stream correctly. Correct as a separate commit; no change requested.
+- Residual limitation (not a finding): a build of this library itself with per-thread default streams would make `nullptr` the per-thread stream, where CUDA's explicit `cudaStreamLegacy` stays legacy. Nothing in the package or its documented build does that.
+
+### `[[nodiscard]]` warning sites (porter left them alone): agree, leave them
+
+- Verified: HIP declares `typedef enum __HIP_NODISCARD hipError_t` with `[[nodiscard]]` under C++17 (`hip_runtime_api.h:277,289`); CUDA's `cudaError_t` is not nodiscard. The porter's count of 11 sites is right: `src/cuda_mem_pool_context.cpp:66,69,72,75,78` (destructor), `src/cuda_image.cpp:51-52` and `src/cuda_pointcloud2.cpp:98-99` (destructors), `src/cuda_blackboard_subscriber_node.cpp:39` (example node `cudaMemcpy`), `test/cuda_test_utils.hpp:28` (`cudaGetLastError()` used to clear the error).
+- None is in an installed header that consumers compile: a consumer TU that instantiates `make_unique`, `make_host_unique<T[]>` and `make_host_unique<T>` builds clean with `g++ -std=c++17/-std=c++20 -Wall -Wextra -Wpedantic -Werror` against the HIP 7.16 headers, with the HIP include both `-isystem` and `-I`. The package builds without `-Werror`. The destructor calls are deliberately unchecked (they must not throw) and the `cudaGetLastError()` call exists only to reset state. Silencing them with `(void)` would edit nine CUDA-path lines that are warning-free on CUDA, which is unrelated churn in an upstream PR. The only one that hides a real error is the example node's unchecked `cudaMemcpy`, which is an upstream error-handling choice, not a port issue. Keep the minimal port as it is.
+
+### Checks that found nothing to report
+
+Compat-header coverage (every `cuda*` identifier in `include/`, `src/`, `test/` is mapped; `cudaEventBlockingSync` only appears in comments); `cudaMallocHost` -> `hipHostMalloc` resolves through HIP's C++ template overload (default flags) with the 2-argument CUDA call, and `hipHostMalloc` is not deprecated in HIP 7.16; event lifetime (R2): every `ready_event_` and the pool's wait event are recorded on the singleton pool stream, and the subscriber's event is waited on immediately after it is recorded; the CMake fallback cannot fire when `CUDA_FOUND`; `include_directories(SYSTEM ${GPU_RUNTIME_INCLUDE_DIRS})` with an empty list on HIP is harmless; commit titles (56 and 58 chars, `[ROCm]` on ROCm-specific commits), AI-assistance disclosure, no `Co-Authored-By`, `utils/jargon.py --port cuda_blackboard` clean; both lessons above are accurate against the CLR source and the porter's consumer evidence.
+
+### CUDA compile check (CUDA 12.8, mi355 fleet host, at 9e0fb86)
+
+Toolchain: CUDA 12.8 (`/usr/local/cuda`, nvcc V12.8.93, not on PATH by default), gcc 13.3, CMake 3.31.6, Ubuntu 24.04, Python 3.11.17 (job venv). No GPU is used: this is a compile check.
+
+ROS 2 Jazzy, built from source in the job directory following the porter's recipe. This host has system Boost 1.83 and OpenCV 4.6 dev packages, so the job-local Boost/OpenCV prefix was not needed.
+
+```
+$FLEET_VENV/bin/pip install colcon-common-extensions vcstool 'empy==3.3.4' lark catkin_pkg pyyaml pytest flake8 pydocstyle numpy setuptools
+curl -sSfL https://raw.githubusercontent.com/ros2/ros2/jazzy/ros2.repos -o ros2.repos
+vcs import --shallow --retry 3 src < ros2.repos
+git clone -b rolling --depth 1 https://github.com/ros-perception/vision_opencv src/vision_opencv   # cv_bridge 4.1.0, a56ad9a
+git clone https://github.com/osrf/negotiated src/negotiated && git -C src/negotiated checkout eac198b55dcd052af5988f0f174902913c5f20e7
+touch src/eclipse-iceoryx/COLCON_IGNORE
+git -C src/eProsima/Fast-DDS submodule update --init --depth 1 thirdparty/asio thirdparty/tinyxml2
+MAKEFLAGS=-j7 colcon build --merge-install --parallel-workers 6 --packages-up-to rclcpp rclcpp_components sensor_msgs std_msgs cv_bridge negotiated negotiated_interfaces ament_cmake_auto ament_cmake_gtest ament_lint_auto ros_environment rmw_implementation --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCV_BRIDGE_DISABLE_PYTHON=ON -DPython3_EXECUTABLE=$FLEET_VENV/bin/python -DTHIRDPARTY_Asio=FORCE -DTHIRDPARTY_TinyXML2=FORCE -DENABLE_SHM=OFF -DTRACETOOLS_DISABLED=ON
+```
+Result: 138 packages, rc 0.
+
+cuda_blackboard, built twice in separate workspaces with the same command: the fork at 9e0fb86 and, as a baseline, upstream at a4f330e:
+
+```
+export PATH=/usr/local/cuda/bin:$FLEET_VENV/bin:$PATH MAKEFLAGS=-j$MAX_JOBS
+source <ros2_jazzy>/install/setup.bash
+colcon build --event-handlers console_direct+ --packages-select cuda_blackboard --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DPython3_EXECUTABLE=$FLEET_VENV/bin/python -DCMAKE_VERBOSE_MAKEFILE=ON
+```
+
+Result: **pass, and the CUDA path is unchanged.**
+- Configure: `-- Found CUDA: /usr/local/cuda (found version "12.8")`; the HIP status line and the "cuda was not found" warning do not appear. The ROCm 10.1 SDK in the job venv was present on the host and was not picked up, because `CUDA_FOUND` short-circuits the HIP lookup. The only CMake stderr is FindCUDA's CMP0146 dev warning and the gtest_vendor `cmake_minimum_required` deprecation, both identical on the upstream baseline.
+- Compile: all 17 translation units (8 library sources, 2 example components and their 2 generated `node_main` files, 3 tests, gtest, gtest_main) compiled with `-isystem /usr/local/cuda/include`, `-Wall -Wextra -Wpedantic`: **0 compiler warnings** (the baseline also has 0). Link: `libcuda_blackboard.so` and the examples and tests link against `/usr/local/cuda/lib64/libcudart_static.a`, rc 0, the same as the baseline.
+- Equivalence with upstream: the installed `share/cuda_blackboard/cmake/` directory is byte-identical to the baseline (no hip extras, nothing named hip), the exported dynamic symbol list of `libcuda_blackboard.so` is identical (1973 symbols), and the NEEDED list contains no HIP library. The installed headers differ only by the include swaps and the added `cuda_runtime_compat.hpp`.
+- Consumer TU on CUDA: a file that includes the installed `cuda_blackboard/cuda_unique_ptr.hpp` and instantiates `make_unique<std::uint8_t[]>`, `make_host_unique<float[]>` and `make_host_unique<double>` builds with `g++ -std=c++17` and `-std=c++20 -Wall -Wextra -Wpedantic -Werror -isystem /usr/local/cuda/include`, and as a `.cu` with `nvcc -std=c++17 -Xcompiler -Wall,-Wextra,-Werror`: rc 0 for each.
+
+### Open for a person (added by the reviewer; the porter's items 1, 2 and 4 above are unchanged, and item 3 is now answered by the CUDA compile check)
+
+1. **DCO sign-off is required upstream, and the port commits have none.** Upstream PRs run the DCO app as a required-looking check (`DCO` is among the check runs on PR #29's head commit, together with `semantic-pull-request` and `require-label`), and 59 `Signed-off-by` lines appear in the last 20 upstream commits. Neither f6ad66d nor 9e0fb86 carries `Signed-off-by`, so an upstream PR from this branch would fail DCO. A sign-off is the contributor's own certification, so an agent should not add one in Jeff's name. Jeff's call: sign off (re-create the two commits with `Signed-off-by: Jeff Daily <jeff.daily@amd.com>`; the trees stay identical, so recorded validation can be carried over on the same-tree path, but replacing `moat-port` history needs a forced push, which only a person may authorize), or choose another route. The repository has no `.github/dco.yml`, so DCO remediation commits are presumably not enabled (unverified). Not a code finding, so it does not hold up validation, but it blocks publication.
+2. **PR title format (for whoever drafts the upstream PR).** Upstream runs `semantic-pull-request`, and its PR titles are conventional commits (`fix(cuda_blackboard_publisher): ...`, `feat(cuda_blackboard): ...`). The upstream PR title needs that form (for example `feat: support AMD GPUs through HIP on ROCm`), not the `[ROCm]` commit title. `require-label` also expects a label, which is the maintainers' to apply.
+3. Agnocast variant ruling (porter item 1) and whether to file the HIP defect (porter item 2, now with the CLR root cause above) remain open. This review decides neither.

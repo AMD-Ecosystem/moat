@@ -10,3 +10,5 @@
 {"kind":"phase","ts":"2026-11-20T21:50:22Z","phase":"compile","seconds":12.974,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261120-133340-port-cuda-blackboard-prompt/ws/build.sh"}
 {"kind":"phase","ts":"2026-11-20T21:50:55Z","phase":"test","seconds":32.577,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261120-133340-port-cuda-blackboard-prompt/ws/test.sh --repeat until-fail:20"}
 {"kind":"session","ts":"2026-11-20T21:53:48Z","epoch":1795211628.752738,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-20T21:57:19Z","epoch":1795211839.955895,"event":"start","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-20T22:05:01Z","epoch":1795212301.460792,"event":"end","platform":"linux-gfx950"}
