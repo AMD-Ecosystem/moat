@@ -1429,3 +1429,22 @@ PLACEHOLDER: fill in only after validators record completed platforms at 5a45243
 
 Replace the placeholder above. Name only GPUs whose platform record shows a completed validation at this exact head.
 ====
+
+## Review 2026-11-20 (reviewer, linux-gfx942, delta eda03f1..5a45243) -- passed
+
+Scope: `git diff eda03f1...5a45243`, split into upstream's merged commits (fcb15e8, 40 upstream commits f366bfa..7bba620) and our own change (5a45243). Upstream `develop` is 7bba620, so `git diff develop moat-fix-1021` (29 files, +588/-14) is exactly the PR.
+
+Upstream merge (fcb15e8), checked with no findings:
+- `git show --remerge-diff fcb15e8` is empty: no conflict resolutions, so no hand-merged port intent.
+- Port intent carried exactly: `diff <(git diff f366bfa eda03f1) <(git diff 7bba620 5a45243 -- . ':!ucm/sandbox')` differs only in blob ids and hunk line offsets; the content of every port hunk is unchanged.
+- Auto-merge risks (cuda-to-rocm upstream-sync.md): no new `cuda`/`RUNTIME_ENVIRONMENT` predicate in any CMake file except the sandbox prefetch module; no change under `ucm/shared/trans/cuda`, `ucm/sparse/gsa_on_device` or `ucm/store/nfsstore`, so the ROCm arms' explicit source lists are still complete (the GPU build compiles); the only new `cuda*` runtime calls are inside an LMCache `.patch` file; `kv_semantics/agent` is a standalone Ceph-tree project not added by `kv_semantics/CMakeLists.txt`; upstream's new `"cuda"` strings in Python are platform names in the offline SGLang compatibility checker and its tests, a layer the port does not cover. `setup.py` and `.github/workflows/lint-and-test.yml` unchanged by upstream in this range.
+- Docs after #1724: the ROCm rows stay inside the compute-platform tables in `docs/source/user-guide/support-matrix/support_matrix.md:120` and both docs-site matrices; `check_bilingual_docs.py` passes.
+- Ancestry: 8545865 (published) and 7bba620 (upstream) are both ancestors of 5a45243.
+
+Our change (5a45243), checked with no findings: the `elseif(RUNTIME_ENVIRONMENT STREQUAL "rocm")` arm with `return()` leaves only that directory (its `tests` subdirectory included) and keeps the Ascend arm and the FATAL_ERROR for every other runtime, so CUDA, Ascend and MUSA behaviour are unchanged. The failure it fixes was reproduced at fcb15e8, and its effect at 5a45243 (configure message, Hamming built and passing). Title 63 chars with `[ROCm]` (the added lines name ROCm), no trailer, body states only what the ROCm arm does, `jargon.py -` clean. The merge subject is git's URL form, 87 chars, as 80be85e, which the earlier reviews accepted.
+
+Porter evidence, re-read: the 4 new posix-store failures are host storage (O_DIRECT alignment). The porter showed it on pristine upstream 7bba620 and cc99d52 builds and with a standalone probe. The tests and the posix store are unchanged by the port (`git diff develop 5a45243 -- ucm/store/posix ucm/store/test` is empty), so they are not a port regression. Validators on other hosts may see them pass.
+
+Fix review PR body (porter draft "true at 5a452433"): claims checked (40 commits f366bfa..7bba620; second merge clean; the 5a45243 description; GPU 340/354 and simu 1147/1151 counts against the porter's logs; upstream-without-PR failing the same four). `jargon.py -` and `prose.py` clean. The `## Upstream reply` placeholder is correct until a platform completes at 5a45243.
+
+Verdict: review-passed at 5a4524333f6c286dbf82f08e796d9946cac1a7e1.
