@@ -8503,3 +8503,18 @@ The program starts 8 copies of itself as load on the same GPU (kernels and copie
 ====
 
 Placeholders to fill before filing: the MI355X (gfx950) and MI250X (gfx90a) rows of the table, from the parallel sessions. Scripts: `notes-evidence3-gfx942-flake-scripts.md`.
+
+## Evidence session (2026-11-20, linux-gfx950): lost_writes
+
+Requested by Jeff Daily; evidence only (no state change, nothing pushed to the fork, the draft untouched). `lost_writes.hip` extracted verbatim from the issue draft in "Evidence session 3 (2026-11-20, linux-gfx942)" (md5 e7f987429d1e500ab2ca84594ef274b9), built with ROCm 10.2.0 from the job venv (`hipconfig --version` 7.17.26434-0000000): `hipcc --offload-arch=gfx950 -O2 -o lost_writes lost_writes.hip` (links the venv's `libamdhip64.so.7`). Run with `HIP_VISIBLE_DEVICES=1` (dispatcher pin) and `ulimit -c 0`; the program forks and stops its own load children; nothing else was started or killed.
+
+Environment: HIP device under the pin = PCI `0000:05:00.0` (`hipDeviceGetPCIBusId`) = amd-smi GPU 0, `MARKET_NAME: AMD Instinct MI355X` (device id 0x75a3, `TARGET_GRAPHICS_VERSION: gfx950`). Kernel `6.8.0-101-generic` (`uname -r`, the host's). amdgpu driver `6.19.14.31400100` (`/sys/module/amdgpu/version`; amd-smi 27.1.0 reports the same). `amd-smi process -g 0` before and after every run: "No running processes detected"; 30 s into each loaded run: the reproducer (~0.85 GB) and its 8 load children (2.2 GB each), nothing else; in the no-load run the reproducer alone.
+
+| run | wrong iterations | lost class (block % 8): whole blocks, per failure |
+|---|---|---|
+| `./lost_writes 40000` (1) | **2 / 40,000** | 1:489 (+1 partial block, 125,200 floats); 1:489 (125,184) |
+| `./lost_writes 40000` (2) | **5 / 40,000** | 1:489 (+1 partial) x3; 4:488 (124,928) x2 |
+| `./lost_writes 40000 8 noreuse` | **0 / 40,000** | |
+| `./lost_writes 40000 0` | **0 / 40,000** | |
+
+Every failure was still wrong after a synchronize (wrong count after sync equal to the first read). Times: 125, 124, 129 and 49 s. So gfx950 reproduces the final reproducer (7 / 80,000 under its own 8-process load), and both controls are clean, as on gfx942.
