@@ -1583,3 +1583,16 @@ The branch is merged with current `develop` (7bba620), and the ROCm build works 
 
 Name only GPUs whose platform record shows a completed validation at this exact head. If upstream `develop` has moved past 7bba620, check `git merge-tree --write-tree 5a45243 <develop>` before approving.
 ====
+
+## Validation 2026-11-20 (windows-gfx1151, AMD Radeon 8060S, TheRock 7.14.0a20260612 SDK, fix round) -- PASS at 5a45243
+
+Fresh fork clone checked out detached at `5a4524333f6c286dbf82f08e796d9946cac1a7e1` from `origin/moat-fix-1021` (not `moat-port`; nothing pushed). `git status --porcelain` empty. Same recipe, flags and DLL staging as the eda03f1 entry above, `-j8`, `ulimit -c 0`, ctest `-j1 --timeout 300`. Host-recipe traps hit this time (all environment, not port): the cmake must be TheRock's 4.3.2 (3.31 from Program Files fails HIP ABI detection with "MSVC compiler version not detected"); a `D:/...` entry in an MSYS PATH is split at the colon, so use `/d/...`; configure needs explicit `-DGIT_EXECUTABLE=<Git>/cmd/git.exe` (mingw64 git lacks git-submodule), `-DCMAKE_MAKE_PROGRAM`, and rc.exe/mt.exe from the Windows Kits (`-DCMAKE_RC_COMPILER`, `-DCMAKE_MT`). The post-build gtest discovery failed with 0xc0000135 until the runtime DLLs were staged, then a second build linked `ucmshared.test.exe`, as at eda03f1. Both builds `UCM trans: building HIP for arch(s): gfx1151`.
+
+- GPU build (`-DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_STORE=OFF`): 115 discovered, 1 disabled (UCMetricsStress.TenWritersOneCollector), **112/114 pass** (9.7 s). Failures are exactly the two known ones: UCLoggerTest.LogEventuallyReachesUcmFile and UCLoggerTest.FileOnlyLogEventuallyReachesVllmFile (`Failed to remove file: log_test`, Windows spdlog async file lock, TearDown). No new failure. UCTransUnitTest.{EmptyEventIsSafe, MemsetAndDeviceToDevice, CopyDataWithCE, CopyDataWithSM, CopyDataBatchWithSM} all pass; UCLoggerPerfTest and UCMetricsUT passed.
+- Simu build (`-DRUNTIME_ENVIRONMENT=simu`): **112/114 pass** (2.5 s), the same two UCLoggerTest TearDown failures; the UCLoggerPerfTest timing flake passed this run. `-k 0` again reports only the two `ucm/transport/p2p` compile failures (`tcp_transport.cpp`, `channel_manager.cpp`: `'arpa/inet.h' file not found`), upstream POSIX-socket code that does not feed `ucmshared.test.exe` and is outside the Windows `rocm` build; unchanged from eda03f1.
+- The 40 merged upstream commits (develop 7bba620) did not break the Windows build in any code the port does not own. The port commit skipping the GSA v2 prefetch module sits in the sparse build (`BUILD_UCM_SPARSE`), which is not built on Windows, so it is not exercised here.
+- The store tree (`DumpThenLoad*`, DataStrategyTest) is POSIX-only and is not built on Windows, as before; those are carried by the Linux platforms.
+
+CUDA gate: not run (Windows host, no CUDA toolkit); carried by linux-gfx942 at 5a45243. Jargon: `python utils/jargon.py --port unified-cache-management` clean (local `develop` and `moat-fix-1021` refs set in the scratch clone). Docs: `docs/source/developer-guide/build_from_source.md:56` carries the ROCm note.
+
+Result: windows-gfx1151 COMPLETED at 5a4524333f6c286dbf82f08e796d9946cac1a7e1.
