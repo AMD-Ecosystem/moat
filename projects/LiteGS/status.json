@@ -7,7 +7,7 @@
   "priority": 4.566,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-11-20T00:38:12Z",
+  "updated_at": "2026-11-20T00:42:12Z",
   "head_sha": "878e8a4926cb00db29bde510644df2591be21d43",
   "porting": null,
   "waivers": {},
@@ -214,5 +214,6 @@
     "since": "2026-11-19T23:52:18Z",
     "at": "2026-11-20T00:03:19Z"
   },
-  "reviewed_sha": "878e8a4926cb00db29bde510644df2591be21d43"
+  "reviewed_sha": "878e8a4926cb00db29bde510644df2591be21d43",
+  "review_pr": "https://github.com/AMD-Ecosystem/LiteGS/pull/1"
 }
