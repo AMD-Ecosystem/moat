@@ -7,7 +7,7 @@
   "priority": 4.871,
   "ext_type": "cmake-cupy-plugin",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-11-19T22:58:32Z",
+  "updated_at": "2026-11-20T00:59:47Z",
   "head_sha": "06477124c88075009ae5741ce7cbe4173062f1e7",
   "waivers": {
     "windows": {
@@ -143,10 +143,10 @@
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "5a87452f319573c586fdd9776d280a0a2e980dd9",
-      "failed_sha": null,
+      "failed_sha": "06477124c88075009ae5741ce7cbe4173062f1e7",
       "started_at": "2026-11-01T01:47:21Z",
       "completed_at": "2026-11-03T21:14:17Z",
-      "updated_at": "2026-11-03T21:14:17Z",
+      "updated_at": "2026-11-20T00:59:47Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -160,7 +160,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "state": "completed",
+      "state": "validation-failed",
       "last_agent": "validator"
     },
     "windows-gfx1151": {

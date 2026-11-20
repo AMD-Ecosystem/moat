@@ -249,3 +249,5 @@
 {"kind":"phase","ts":"2026-11-19T21:27:41Z","phase":"compile","seconds":189.762,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/gfx1201-20261119-131047-gpu4pyscf-radeon-prompt/moat/projects/gpu4pyscf/src && python setup.py build_py"}
 {"kind":"phase","ts":"2026-11-19T23:32:45Z","phase":"test","seconds":4652.351,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/gfx1201-20261119-131047-gpu4pyscf-radeon-prompt/agent/runtree.sh"}
 {"kind":"phase","ts":"2026-11-19T23:46:53Z","phase":"compile","seconds":183.397,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/gfx1201-20261119-131047-gpu4pyscf-radeon-prompt/moat/projects/gpu4pyscf/src && python setup.py build_py"}
+{"kind":"phase","ts":"2026-11-20T00:57:06Z","phase":"test","seconds":4204.724,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/gfx1201-20261119-131047-gpu4pyscf-radeon-prompt/agent/runtree2.sh"}
+{"kind":"session","ts":"2026-11-20T01:00:23Z","epoch":1795136423.60102,"event":"end","platform":"linux-gfx1201"}
