@@ -1164,3 +1164,18 @@ Fork commit 35af626 on 180f803, pushed (plain push, `moat-port` still private). 
 Finding 2: 180f803's Test Plan says the losses "matched the previous run"; only step 0 agrees (step 19: SpUNet 1.14 vs 2.08, OACNNs 1.09 vs 1.37, PointGroup 1.72 vs 2.78), because the recreated driver's synthetic data differs. 180f803 is pushed and is not amended; 35af626's message states the correction and says the probe is a local script. For jeff at PR prep: the follow-up PR body must not say "matching". Also, 35af626's title says "before the fallback" while the warning is issued after a successful fallback; the body is accurate, and a PR-prep squash can fix the title. Finding 3: the lesson now says "ran one forward+backward pass" (edited in place; it is an unpromoted proposal). Finding 4: in the first porter section's probe table the combined ImportError is raised at `utils/spconv.py:24`, not `:29` (the warning was moved below the raise and the line was not updated).
 
 Push note: the fleet guard refused `git push origin moat-port` when the command started in the MOAT checkout (it read `moat-port` as a MOAT-repository branch); the identical push from inside the fork clone `projects/Pointcept/src` is accepted, as it was for 180f803.
+
+## Re-review 2026-11-20 (reviewer, linux-gfx942)
+
+Scope: f33fdb6..35af626 (180f803 plus 35af626, which changes only `pointcept/models/utils/spconv.py:29-32`), and the notes and lesson edits in 7fb6a95d. Verdict: review-passed. All four findings from the review above are resolved.
+
+No new finding. One PR-prep item carried forward, agreed as not blocking: 35af626's title, "Warn on any broken spconv-triton import before the fallback", is wrong about when the warning fires. It is issued after a successful fallback; the body is accurate. Upstream squash-merged #604, so fix the wording in the follow-up PR's title and body, or in a squash. The PR body must not say "matching" about the losses (finding 2).
+
+Verified:
+- Finding 1. The quiet path at `spconv.py:29-32` is now `isinstance(triton_error, ModuleNotFoundError) and triton_error.name == "spconv_triton"`.
+  - Re-ran my own probes against the fork file at 35af626. `agent_space/review_silent_probe.py` (top-level name missing from spconv_triton, plain spconv stand-in) now gives a fallback with the UserWarning naming "cannot import name 'SPCONV_VERSION_NUMBERS' from 'spconv_triton'". `agent_space/review_absent_probe.py` (spconv_triton absent) gives a fallback with no warning.
+  - Re-ran all nine `agent_space/selector_probe.py` modes at 35af626 (MI300X, job venv): triton, neither, standin, notriton, notriton+standin, broken, cudasim, skew, skew-nospconv. Every result matches `agent_space/probe_head2.txt` and the porter round 2 section. The combined ImportError still names both packages and both errors, the RuntimeError still propagates, and on the CUDA path spconv_triton is never imported.
+- Finding 2. 35af626's body corrects the "matching" claim: only first-step losses agree, and all three runs have finite, falling losses over 20 steps, as recorded. It also calls the probe a local script that is not part of the repository.
+- Finding 3. The lesson now reads "ran one forward+backward pass on the GPU".
+- Finding 4. The `:24` correction is in the porter round 2 section.
+- Hygiene. Title is `[ROCm]` and 66 characters, with no Co-Authored-By or noreply trailer. `jargon.py --port Pointcept` is clean. No modified tracked files in the fork clone. The non-ROCm branch is unchanged from f33fdb6.
