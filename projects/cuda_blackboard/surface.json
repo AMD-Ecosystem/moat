@@ -1,0 +1,125 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "a4f330e5c228",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [],
+    "markers": {},
+    "libraries": {}
+  },
+  "components": [
+    {
+      "id": "library:cuda_blackboard",
+      "kind": "library",
+      "where": "CMakeLists.txt",
+      "note": "the package library; all CUDA surface lives here and in its installed headers"
+    },
+    {
+      "id": "library:cuda_blackboard_publisher_example",
+      "kind": "library",
+      "where": "CMakeLists.txt",
+      "note": "example component (rclcpp_components) used by launch/example.launch.py; built and run by the validator"
+    },
+    {
+      "id": "library:cuda_blackboard_subscriber_example",
+      "kind": "library",
+      "where": "CMakeLists.txt",
+      "note": "example component (rclcpp_components) used by launch/example.launch.py; built and run by the validator"
+    },
+    {
+      "id": "runtime:cuda-runtime-host-api",
+      "kind": "feature",
+      "where": "include/cuda_blackboard/*.hpp, src/*.cpp, src/cuda_message_impl_detail.hpp",
+      "added_by": "planner",
+      "note": "~45 CUDA runtime symbols called from host C++ (no .cu files), invisible to the .cu census; mapped by the installed compat header (plan.md, CUDA surface inventory)"
+    },
+    {
+      "id": "header:installed-compat",
+      "kind": "feature",
+      "where": "include/cuda_blackboard/cuda_runtime_compat.hpp (new)",
+      "added_by": "planner",
+      "note": "public headers spell CUDA types and call CUDA inline, so consumers need the mapping; namespaced header with #ifndef-guarded hipify-identical aliases, not shadow cuda_runtime.h (plan.md)"
+    },
+    {
+      "id": "build:cmake-hip-path",
+      "kind": "build",
+      "where": "CMakeLists.txt",
+      "added_by": "planner",
+      "note": "find_package(hip) fallback when FindCUDA fails; hip::host; ament_export_dependencies(hip) + ament_export_definitions(__HIP_PLATFORM_AMD__); CUDA path unchanged"
+    },
+    {
+      "id": "feature:stream-ordered-mem-pool",
+      "kind": "feature",
+      "where": "src/cuda_mem_pool_context.cpp, include/cuda_blackboard/cuda_unique_ptr.hpp",
+      "added_by": "planner",
+      "note": "hipMemPoolCreate (pinned, device), ReleaseThreshold attribute, hipMallocFromPoolAsync/hipFreeAsync on a dedicated free stream (risk R3)"
+    },
+    {
+      "id": "feature:legacy-default-stream",
+      "kind": "feature",
+      "where": "src/cuda_blackboard_subscriber.cpp, include/cuda_blackboard/cuda_blackboard_subscriber.hpp",
+      "added_by": "planner",
+      "note": "cudaStreamLegacy default and fallback -> hipStreamLegacy; not covered by upstream gtests, validator probe (risk R1)"
+    },
+    {
+      "id": "feature:event-cross-stream-sync",
+      "kind": "feature",
+      "where": "src/cuda_blackboard_subscriber.cpp, src/cuda_image.cpp, src/cuda_pointcloud2.cpp, src/cuda_message_impl_detail.cpp",
+      "added_by": "planner",
+      "note": "EventRecord -> StreamWaitEvent(free_stream) -> FreeAsync ordering carries zero-copy correctness (risk R2)"
+    },
+    {
+      "id": "test:test_publish_mailbox",
+      "kind": "test",
+      "where": "CMakeLists.txt:22, test/test_publish_mailbox.cpp",
+      "added_by": "planner",
+      "note": "CPU-only, 4 tests; non-GPU regression set"
+    },
+    {
+      "id": "test:test_cuda_blackboard_publisher",
+      "kind": "test",
+      "where": "CMakeLists.txt:59, test/test_cuda_blackboard_publisher.cpp",
+      "added_by": "planner",
+      "note": "GPU gate, 2 tests; skip without a device counts as failure"
+    },
+    {
+      "id": "test:test_cuda_blackboard_async_publisher",
+      "kind": "test",
+      "where": "CMakeLists.txt:62, test/test_cuda_blackboard_async_publisher.cpp",
+      "added_by": "planner",
+      "note": "GPU gate, 1 test"
+    },
+    {
+      "id": "test:ament_lint",
+      "kind": "test",
+      "where": "CMakeLists.txt:18 ament_lint_auto_find_test_dependencies",
+      "added_by": "planner",
+      "note": "lint tests; must not regress against upstream tip in the same environment"
+    },
+    {
+      "id": "example:example.launch.py",
+      "kind": "example",
+      "where": "launch/example.launch.py, src/cuda_blackboard_{publisher,subscriber}_node.cpp",
+      "added_by": "planner",
+      "note": "CudaImage end-to-end pipeline; validator runs it (covers image path and type adaptation the gtests miss)"
+    },
+    {
+      "id": "feature:agnocast",
+      "kind": "feature",
+      "where": "CMakeLists.txt:53-55,65-70, src/cuda_blackboard_publisher.cpp, src/cuda_blackboard_async_publisher.cpp",
+      "added_by": "planner",
+      "note": "optional ENABLE_AGNOCAST=1 variant; no CUDA of its own; validation of it pending Jeff's ruling (notes.md planner section, question 1)"
+    },
+    {
+      "id": "test:test_start_worker_thread",
+      "kind": "test",
+      "where": "CMakeLists.txt:65-70, test/test_start_worker_thread.cpp",
+      "added_by": "planner",
+      "note": "Agnocast-only, CPU-only; pending the same ruling"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}

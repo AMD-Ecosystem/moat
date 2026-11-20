@@ -56,3 +56,46 @@ Fork. Small (about 25 source and header files, runtime API only, no kernels), Ap
 ## Windows waiver (2026-11-11)
 
 Jeff Daily approved the suggested `windows` waiver (Linux-only ROS 2 package), with the same ruling as autoware_universe.
+
+## Planner (2026-11-20, planner agent, linux-gfx950 fleet job; no GPU used, nothing built)
+
+### Decision needed from Jeff before a porter starts
+
+**Question 1: is the optional Agnocast build variant in the validated scope?** Upstream has an off-by-default variant (`ENABLE_AGNOCAST=1`, needing the `agnocast_cie_thread_configurator` and `autoware_agnocast_wrapper` ROS packages) that routes the compatible ROS publisher and the async publisher's worker thread through Agnocast. It has no CUDA of its own, and the HIP port touches nothing in it. Its only test, `test_start_worker_thread`, is CPU-only and needs no Agnocast kernel module, only the two packages at build time. The porter's code changes are the same under either answer; only the validators' work differs.
+
+- **Option A (recommended): covered by construction.** Validate the default build only. Record the Agnocast variant and `test_start_worker_thread` as `scoped_out` with the reason "optional, CPU-only, no HIP-specific code; not built on ROCm validators". Cheapest. The risk is that a ROCm-specific break in that variant goes unseen (unlikely, since no code there changes).
+- **Option B: validate it too.** Each Linux validator also builds the Agnocast packages from source (Autoware/TIER IV repositories) and runs `test_start_worker_thread` with `ENABLE_AGNOCAST=1`. More ROS setup per host, for one CPU test.
+
+Until this is ruled, both entries are listed in `surface.json` components but neither `covered` nor `scoped_out`, so the surface gate keeps the question open.
+
+The project is recorded `planned`, so the selector may dispatch a porter before this is ruled. The porter's code is the same under A and B. If Jeff wants the porter to wait anyway, `moatlib.py set-hold cuda_blackboard` parks it.
+
+No other ruling is needed: the port covers the whole package (library, installed headers, both example components, all tests). The windows gate is already waived.
+
+### What was decided and why (details in plan.md)
+
+- Build: pure CMake (ament_cmake_auto) with legacy `find_package(CUDA)`, so Strategy A, host-only. No `.cu` files, no kernels, no CUDA libraries: about 45 runtime-API symbols called from host C++. `set-ext-type cmake` recorded. Upstream analysed at `a4f330e5c228`.
+- No `enable_language(HIP)` and no `LANGUAGE HIP`: sources stay CXX and link `hip::host`.
+- The installed public headers use CUDA types and inline CUDA calls, so consumers need the mapping. Use a namespaced installed compat header (`include/cuda_blackboard/cuda_runtime_compat.hpp`), not shadow `cuda_runtime.h` headers: a shadow header in an ament-exported include directory would hijack consumers' own `cuda_runtime.h` shims.
+- HIP is picked when FindCUDA fails and `find_package(hip CONFIG)` succeeds, so the documented `colcon build` works on ROCm with no flag and CUDA hosts are unchanged. Consumers get `hip` and `__HIP_PLATFORM_AMD__` through `ament_export_dependencies` / `ament_export_definitions`. A throwaway consumer package proves this.
+- The `surface.py` census is empty (it scans only `.cu`/`.cuh`). The real surface is added by hand under `added_by: planner` (13 entries).
+
+### Compat-header alias list (for this porter and the autoware_cuda / autoware_universe porters)
+
+Each line is `#ifndef X` / `#define X Y`, using hipify's expansion so another package's compat header defines the same token sequence:
+
+- Types: `cudaStream_t`->`hipStream_t`, `cudaEvent_t`->`hipEvent_t`, `cudaError_t`->`hipError_t`, `cudaMemPool_t`->`hipMemPool_t`, `cudaMemPoolProps`->`hipMemPoolProps`, `cudaMemcpyKind`->`hipMemcpyKind`.
+- Constants: `cudaSuccess`, `cudaStreamNonBlocking`, `cudaStreamLegacy`, `cudaEventDisableTiming`, `cudaEventWaitDefault`, `cudaMemPoolAttrReleaseThreshold`, `cudaMemAllocationTypePinned`, `cudaMemLocationTypeDevice`, `cudaMemcpyHostToDevice`, `cudaMemcpyDeviceToHost`, `cudaMemcpyDeviceToDevice` -> the `hip` spelling of each.
+- Streams/events: `cudaStreamCreate`, `cudaStreamCreateWithFlags`, `cudaStreamDestroy`, `cudaStreamSynchronize`, `cudaStreamGetDevice`, `cudaStreamWaitEvent`, `cudaEventCreateWithFlags`, `cudaEventRecord`, `cudaEventSynchronize`, `cudaEventDestroy` -> `hip` spelling.
+- Memory: `cudaMemPoolCreate`, `cudaMemPoolDestroy`, `cudaMemPoolSetAttribute`, `cudaMallocFromPoolAsync`, `cudaFreeAsync`, `cudaFree`, `cudaMemsetAsync`, `cudaMemcpy`, `cudaMemcpyAsync` -> `hip` spelling; `cudaMallocHost`->`hipHostMalloc` and `cudaFreeHost`->`hipHostFree` (not `hipMallocHost`/`hipFreeHost`; `hipMallocHost` is deprecated in HIP 7.16).
+- Errors/device: `cudaGetErrorName`, `cudaGetErrorString`, `cudaGetLastError`, `cudaGetDeviceCount` -> `hip` spelling.
+
+All present in the HIP 7.16 headers (ROCm SDK on the mi355 host), including `hipStreamLegacy` (`((hipStream_t)1)`), `hipEventWaitDefault`, `hipStreamGetDevice`, `hipMemPoolAttrReleaseThreshold`.
+
+### Validation notes for the validator
+
+- The gate is `test_cuda_blackboard_publisher` (2 tests) and `test_cuda_blackboard_async_publisher` (1). A skip means no device was seen, which is a failure here. Repeat 20 times. Non-GPU set: `test_publish_mailbox` (4) plus ament lint against an upstream-tip baseline.
+- Upstream gtests miss CudaImage, ROS<->CUDA adaptation, the legacy-stream subscriber and the pool threshold. plan.md (Test plan) gives the example launch, a probe in `agent_space/` and the consumer check that cover them.
+- ROS 2 Jazzy: prefer RoboStack under the job directory, since apt into the shared container is a person's call per host. `negotiated` comes from `build_depends.repos`. Pass `-DCMAKE_PREFIX_PATH=$(rocm-sdk path --root)` on pip ROCm SDK hosts (it holds `lib/cmake/hip/hip-config.cmake`).
+- Pool release threshold: `CudaMemPoolContext` sets `ReleaseThreshold` before the pool's first allocation, which is exactly the case of the known HIP defect `hip-vmheap-unmap-threshold-lost-or-overtrimmed` (recorded in projects/LichtFeld-Studio/deferred.json; ROCm 10.1 Linux). Expect the pool to retain nothing. It is performance, not correctness: measure it (plan.md probe b), record the numbers here, and do not work around it unless review decides to.
+- Confirm the configure log took the HIP branch. A build that only produced `test_publish_mailbox` fell back to CPU-only silently.
