@@ -88,3 +88,32 @@ index 196424ae..1651ee01 100644
              if params.with_grad:
                  assert_np_equal(dst.grad.numpy(), src.grad.numpy())
 ```
+
+## `cf2_run.sh` (copy_flake2 session; `copy_flake2.hip` is in notes.md, "Evidence session 2 (2026-11-20, linux-gfx942)")
+
+```
+#!/bin/bash
+# copy_flake2 on GPU 0 (dispatcher pin) with $2 copy_flake load processes (4 streams each) on the same GPU.
+# Usage: cf2_run.sh <label> <nload> <iterations> [copy_flake2 options]; log <job>/flk2/<label>.log.
+# Load processes are started here and stopped by their recorded PIDs only.
+L=$1; NL=$2; N=$3; shift 3
+J=<job>
+ulimit -c 0
+export HIP_VISIBLE_DEVICES=0 LD_LIBRARY_PATH=$($FLEET_VENV/bin/python -m rocm_sdk path --root)/lib
+pids=()
+for k in $(seq $NL); do $J/flk/copy_flake load 7200 4 > /dev/null 2>&1 & pids+=($!); done
+echo "load pids: ${pids[*]}" > $J/flk2/$L.log
+sleep 3
+amd-smi process -g 0 > $J/flk2/${L}_smi_start.txt 2>&1
+cd /tmp
+t0=$(date +%s)
+$J/flk2/copy_flake2 $N "$@" >> $J/flk2/$L.log 2>&1 &
+C=$!
+sleep 60; amd-smi process -g 0 > $J/flk2/${L}_smi_during.txt 2>&1
+wait $C; rc=$?
+alive=0; for p in "${pids[@]}"; do kill -0 $p 2>/dev/null && alive=$((alive+1)); done
+for p in "${pids[@]}"; do kill $p 2>/dev/null; done
+for p in "${pids[@]}"; do wait $p 2>/dev/null; done
+echo "rc=$rc seconds=$(( $(date +%s) - t0 )) load alive at end: $alive of $NL" >> $J/flk2/$L.log
+tail -2 $J/flk2/$L.log
+```

@@ -8214,3 +8214,31 @@ iter 37592 D=0x7fbca3a00000 A-reuse=1: read1 125184 [0 125184 0 0 0 0 0 0] | rea
 (the third shows the wrong count growing after the copy, 118,272 -> 124,928 a second later, as on gfx942).
 
 **What else was on the GPU, and a correction to sessions 20-22.** amd-smi does not number GPUs in HIP's order: under `HIP_VISIBLE_DEVICES=1` HIP's device is PCI `0000:05:00.0` (`hipDeviceGetPCIBusId`), which is **amd-smi GPU 0**; amd-smi GPU 1 is `0000:15:00.0`, a different GPU. Every `amd-smi ... -g 1` check in porting sessions 20-22 (the GPU monitor, the drive.sh idle checks, and the "outside process on GPU 1, 13-28 GB" of session 21) looked at that other GPU, not at this job's. The four runs above also recorded `amd-smi process -g 1` (before, 3 s in, 120 s in, after: "No running processes detected" every time), i.e. the wrong GPU. Checked on the right index right after the runs: `amd-smi process -g 0` idle = "No running processes detected", GFX_ACTIVITY 0 %; with 8 `copy_flake load` processes started (PIDs 3073110-3073117, killed after) it listed exactly 8 processes of 2.2 GB each and GFX_ACTIVITY 100 %; after killing them, again none. So nothing outside this job was on its GPU before or after these runs; during the runs it was not observed on the right index. Session 21's statement that "no run was truly alone on the device" is withdrawn: the outside process was on amd-smi GPU 1, another GPU. (Sessions 20-21's timing noise therefore cannot be blamed on a second process on this GPU; board-level load from other GPUs remains possible.)
+
+## Evidence session (2026-11-20, linux-gfx90a): copy_flake2
+
+Requested by Jeff Daily, same evidence-only job as the gfx90a section above (lock with linux-gfx950, no state change, nothing pushed to the fork, no GitHub writes; `HIP_VISIBLE_DEVICES=0` kept, `ulimit -c 0` on every GPU run; load processes started by the driver script and stopped by their recorded PIDs only; the `alloc` load kind was not run). Same host and stack: AMD INSTINCT MI250 (gfx90a:sramecc+:xnack-, one GCD per device, 104 CUs), kernel 6.8.0-101-generic, amdgpu 6.16.6, job venv ROCm 10.2 (`rocm-sdk-devel` 10.2.0, HIP runtime 7.17).
+
+**Result: `copy_flake2` does not fail on gfx90a. 0 wrong in 160,000 iterations**, including 0 in 80,000 under the 8-process load in which gfx942 fails 8-10 times in 40,000. The destination got the freed source's address in every iteration of the default runs, so the address-reuse condition was met throughout.
+
+- Source: `copy_flake2.hip` copied verbatim from "Evidence session 2 (2026-11-20, linux-gfx942)" above (123 lines). Build: `$(python -m rocm_sdk path --root)/bin/hipcc --offload-arch=gfx90a -O2 -o copy_flake2 copy_flake2.hip`; a 500-iteration smoke run alone: 0 wrong, D got A's address in 500.
+- Load: session 21's `copy_flake load 7200 4` (the gfx90a build from the section above), 8 processes on GPU 0.
+- Driver `cf2_run.sh <label> <nload> <iterations> [options]`: starts `<nload>` load processes on GPU 0 and records their PIDs, waits 3 s, runs `amd-smi process -g 0`, starts `copy_flake2 <iterations> [options]` (cwd `/tmp`), runs `amd-smi process -g 0` again 60 s in, waits for it, checks the load PIDs are still alive, then kills and reaps exactly those PIDs.
+
+```
+cf2_run.sh load8_a 8 40000
+cf2_run.sh load8_b 8 40000
+cf2_run.sh load8_noreuse 8 40000 noreuse
+cf2_run.sh alone 0 40000
+```
+
+| `copy_flake2` variant | load on GPU 0 | wrong iterations | D got A's address | wall time |
+|---|---|---|---|---|
+| default, run 1 | 8 x `copy_flake load` (4 streams each); 8/8 alive at the end | **0 / 40,000** | 40,000 | 350 s |
+| default, run 2 | 8 x `copy_flake load`; 8/8 alive at the end | **0 / 40,000** | 40,000 | 326 s |
+| `noreuse` | 8 x `copy_flake load`; 8/8 alive at the end | **0 / 40,000** | 0 | 319 s |
+| default | none | **0 / 40,000** | 39,999 | 214 s |
+
+`amd-smi process`: before the runs no process on GPU 0, 1 or 3 (10 MB VRAM, 0 % activity); GPU 2 had another job's process (329 MB, 99 % activity), not touched and not part of this measurement. In each load run, at start 8 processes at 1.1 GB each (the load), and 60 s in those 8 plus one at 397-401 MB (`copy_flake2`); in the run with no load, only `copy_flake2` (458 MB). amd-smi shows host-namespace PIDs. They differ from the container's PIDs by a constant offset (the 8 consecutive load PIDs map 1:1), so the counts and sizes identify the processes. Nothing was left on GPU 0 afterwards.
+
+At gfx942's rate (about 9 in 40,000 under this load) 0 in 80,000 would have probability about e^-18 = 1.5e-8. Under load the run took 1.5-1.6x as long as without load (gfx942's load factor is not recorded in its section), so the load was real. With the 250 clean subset runs above, both the Warp test and the Warp-free reproducer are clean on this single-die device and fail on the 8-XCD gfx942: consistent with a per-XCD effect, and evidence for the deferred item `hip-mi300-xcd-lost-writes-after-free-realloc` that gfx90a is not affected (still not a proof that the cause is the XCD split rather than a gfx94x-specific runtime or firmware path; a gfx942 run in CPX mode would separate the two).
