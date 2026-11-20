@@ -99,6 +99,42 @@
         "at": "2026-11-05T07:03:16Z",
         "note": "after cupy Windows lands"
       }
+    },
+    {
+      "id": "gpu4pyscf-tests-seeded-cupy-random",
+      "kind": "other",
+      "component": null,
+      "summary": "Seven upstream tests compare against hard-coded fingerprints of results on seeded cupy.random inputs (df test_jk_energy_per_atom, df test_get_nacv_ee, grad test_tdrhf_grad and test_tduhf_grad test_grad_elec, nac test_tdrhf_nac_ee test_get_nacv_ee, pbc/scf test_pbc_soscf test_rks_gen_g_hop and test_uks_gen_g_hop). CuPy on ROCm draws from rocRAND, so the inputs differ from CUDA and the stored numbers cannot match. Fix: draw the inputs from NumPy. Candidate small upstream pull request under pyscf/gpu4pyscf issue 1054.",
+      "refs": [
+        "projects/gpu4pyscf/notes.md (RNG fingerprints (7))"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-20T20:45:16Z",
+      "decided": {
+        "choice": "defer",
+        "by": "Jeff Daily",
+        "at": "2026-11-20T20:45:18Z",
+        "note": "Ruled 2026-11-20: defer until the maintainers have responded to the pull requests already open under issue 1054 (#1055 to #1061, plus two in preparation); then prepare as small test-only pull requests."
+      }
+    },
+    {
+      "id": "gpu4pyscf-tests-kpoint-soscf-references",
+      "kind": "other",
+      "component": null,
+      "summary": "Five k-point SOSCF tests (pbc/scf test_pbc_soscf test_nr_krhf, nr_kuhf, nr_krks_lda, nr_krks_rsh, nr_kuks_lda) miss hard-coded 8-place reference energies by about 1e-8 with all fixes applied; CPU PySCF 2.14 gives the GPU value, so the references do not match the current PySCF. Not AMD-specific. Candidate upstream issue or pull request updating the references.",
+      "refs": [
+        "projects/gpu4pyscf/notes.md (Pull request preparation for issue 1054, Found on the way)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-20T20:45:17Z",
+      "decided": {
+        "choice": "defer",
+        "by": "Jeff Daily",
+        "at": "2026-11-20T20:45:19Z",
+        "note": "Ruled 2026-11-20: defer until the maintainers have responded to the pull requests already open under issue 1054 (#1055 to #1061, plus two in preparation); then prepare as small test-only pull requests."
+      }
     }
   ]
 }
