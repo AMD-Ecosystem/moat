@@ -4712,6 +4712,8 @@ Test plan, MI300X (gfx942), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, CI marker se
 
 The remaining pbc failures have other causes (solver calls after a hipSOLVER call, batched `eigh_std` input, a RawKernel that includes cuComplex.h under hiprtc, the CPU XC fallback for GKS, tolerance misses).
 
+Also run on a Radeon AI PRO R9700 (gfx1201, 32-wide wavefronts) with the same ROCm, packages, build and selection. There `WARP_SIZE` is already 32, so this change should do nothing, and it does nothing: the same pbc files give 591/115/50/13 on master and on this branch, with the same failing tests and the same values, none of them at the nsp_max assert.
+
 Part of #1054.
 
 This pull request was prepared with the help of an AI coding agent and was read and approved by a person before it was opened.
@@ -4741,6 +4743,8 @@ Test plan, MI300X (gfx942), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, CI marker se
 | scf, dft | 336/12/23/0 | 338/10/23/0 |
 
 Most remaining failures are the separate `ft_ao_scheme` wave64 assert (25) and `rocblas_status_memory_error` after a hipSOLVER call on CuPy's handle (6). That second problem has its own pull request, and this one should go in after it: with this change alone, the SAD-guess UHF tests in test_init_guess.py get far enough to hit that error, and in one of three runs it then left test_sad_guess_rks and test_sad_guess_rks_vv10 failing. With both changes, test_init_guess.py passes in full. test_krylov_eigenvalue now runs and misses its eigenvector bound by 1.34e-5 against places=5; the miss is the same with numpy.linalg.eigh as the subspace solver.
+
+Also run on a Radeon AI PRO R9700 (gfx1201, 32-wide wavefronts) with the same ROCm, packages, build and selection: the 15 files give 50/89/3/0 on master (61 at the syevd assert) and 112/27/3/0 on this branch (none at it). Most of the remaining failures there are the RawKernel that includes cuComplex.h (17, separate pull request) and `rocblas_status_memory_error` after a hipSOLVER call (6). The ordering above matters more on that GPU: in two of four runs of test_init_guess.py with this change alone, the process aborted or hung after that error, while with every change from #1054 applied the file passes in full.
 
 Part of #1054.
 
@@ -4777,6 +4781,8 @@ master: `rocblas_status_memory_error`; this branch: `ok`.
 
 The remaining failures have other causes (the `ft_ao_scheme` wave64 assert, batched `eigh_std` input, the CPU XC fallback for GKS, the multigrid numint the HIP build does not select, k-point SOSCF energies 1e-8 from their 8-place references). The scf/dft difference is three fixed tests (DFT+U linear response x2, PCM SAD guess) and test_stability_rhf_unstable, which also fails intermittently on master (1 run in 3).
 
+Also run on a Radeon AI PRO R9700 (gfx1201, 32-wide wavefronts) with the same ROCm, packages, build and selection: the reproducer fails on master and prints ok on this branch, and the 14 files give 58/65/2/5 on master (49 at `rocblas_status_memory_error`, 10 more follow-on `hipErrorIllegalAddress`) and 110/18/2/0 on this branch (none). test_init_guess.py gives 21 passed and 3 failed in each of four runs on this branch (the three are the batched `eigh_std` input); on master it gives 19 or 20 passed in three runs and 10 in the fourth, which ended in an illegal-address cascade.
+
 Part of #1054.
 
 This pull request was prepared with the help of an AI coding agent and was read and approved by a person before it was opened.
@@ -4807,6 +4813,8 @@ Test plan, MI300X (gfx942), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, CI marker se
 
 The one failure left is test_get_j2c_decomp_linear_dependency (Cholesky failure detection, separate pull request). The scf/dft difference is the three test_int4c2e.py tests and test_stability_rhf_unstable, which also fails intermittently on master (1 run in 3).
 
+Also run on a Radeon AI PRO R9700 (gfx1201, 32-wide wavefronts) with the same ROCm, packages, build and selection: the same files give the same counts, 19/18/0/0 on master (13 at fill_int4c2e, 4 ECP derivative failures) and 31/1/5/0 on this branch, and the failure left is the same Cholesky test.
+
 Part of #1054.
 
 This pull request was prepared with the help of an AI coding agent and was read and approved by a person before it was opened.
@@ -4835,6 +4843,8 @@ Test plan, MI300X (gfx942), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, CI marker se
 | scf, dft | 336/12/23/0 | 335/13/23/0 |
 
 The two tests above fail on master and pass here. The other 41 failures are unrelated and the same on both (34 at the `ft_ao_scheme` wave64 assert, 7 at the `fill_int4c2e` shared-memory request; separate pull requests). The scf/dft difference is test_stability_rhf_unstable, which also fails intermittently on master (1 run in 3).
+
+Also run on a Radeon AI PRO R9700 (gfx1201, 32-wide wavefronts) with the same ROCm, packages, build and selection: 53/9/0/0 on master, 55/7/0/0 on this branch. The same two tests fail on master and pass here; the 7 left are the `fill_int4c2e` failures in test_mp2.py (the `ft_ao_scheme` assert does not occur on 32-wide GPUs). rocSOLVER behaves the same there: `cupy.linalg.cholesky(diag(4, -1e-5, 1))` returns `diag(2, -1e-5, 1)` with no NaN.
 
 Part of #1054.
 
@@ -4874,6 +4884,8 @@ Cost of the flag, measured on work that runs correctly without it (vitamin C fro
 
 The verbose build log shows the flag on 100/100 HIP compile lines and 12/12 `--hip-link` lines. The branch's scf/dft result matches master built with the flag passed from the environment (336/12/23/0), apart from test_stability_rhf_unstable, which also fails intermittently there (1 run in 3).
 
+Also run on a Radeon AI PRO R9700 (gfx1201, 32-wide wavefronts) with the same ROCm and packages, master built as the README describes and this branch as above. That GPU does not show the miscompile, so the flag should change nothing there, and the tests see no change: RHF water is 1.7e-11 (def2-svp) and 5.8e-12 (cc-pvtz) from CPU PySCF with and without the flag, and scf and dft outside test_init_guess.py and test_stability.py give 306/8/23/0 on both, the same 8 tests. Those two files fail intermittently on unmodified master on that GPU, so each was run four times on both trees: test_init_guess.py had 4 or 5 failures per run on both (plus, on master, one run that ended in an illegal-address cascade), and test_stability_rhf_unstable failed in 2 of 4 runs on master and 1 of 4 on this branch.
+
 Part of #1054.
 
 This pull request was prepared with the help of an AI coding agent and was read and approved by a person before it was opened.
@@ -4909,7 +4921,9 @@ master: `fatal error: 'cuComplex.h' file not found`; this branch: `0.0`.
 | of which at the hipRTC error | 39 | 0 |
 | scf, dft | 336/12/23/0 | 336/12/23/0 |
 
-On 64-wide GPUs these tests first stop at the separate `ft_ao_scheme` assert (232 of the master failures), which hides this error, so the first row does not move; the second row is measured on master plus that pull request, with and without this change. On 32-wide GPUs that assert does not occur and this error should be the first failure; I did not run one for this change. Three of the 39 now run to the end and miss a finite-difference bound (test_df_rsh_grad in test_pbc_grad_krks.py and test_pbc_grad_kuks.py, 1.08e-5; test_df_sr_rsh_grad in test_pbc_grad_rks.py, 3.5e-6), as test_sr_rsh_grad already does on master (2.5e-6); they miss by the same amount without multigrid numint, and `indexed_scale` itself matches NumPy exactly. No test that passes on master fails here.
+On 64-wide GPUs these tests first stop at the separate `ft_ao_scheme` assert (232 of the master failures), which hides this error, so the first row does not move; the second row is measured on master plus that pull request, with and without this change. On 32-wide GPUs that assert does not occur, and this change works alone (next paragraph). Three of the 39 now run to the end and miss a finite-difference bound (test_df_rsh_grad in test_pbc_grad_krks.py and test_pbc_grad_kuks.py, 1.08e-5; test_df_sr_rsh_grad in test_pbc_grad_rks.py, 3.5e-6), as test_sr_rsh_grad already does on master (2.5e-6); they miss by the same amount without multigrid numint, and `indexed_scale` itself matches NumPy exactly. No test that passes on master fails here.
+
+Also run on a Radeon AI PRO R9700 (gfx1201, 32-wide wavefronts) with the same ROCm, packages, build and selection, this branch alone: the reproducer fails on master and prints 0.0 here. pbc/df, pbc/grad and pbc/scf give 392/101/10/13 on master, 39 of them at the hipRTC error, and 426/67/10/13 on this branch, none at it and no newly failing test. scf and dft give 306/8/23/0 on both, the same tests (leaving out test_init_guess.py and test_stability.py, which vary between runs of unmodified master on that GPU). Of the 39, 34 pass; the three range-separated gradient tests above miss by the same amounts there, and two k-point derivative tests (test_ejk_derivatives_kpts_with_long_range and its UHF version) go on to a separate rocBLAS complex GEMM problem on that GPU.
 
 Part of #1054.
 
@@ -4924,8 +4938,64 @@ Checklist line to add to the issue's Tracking section (draft; nothing posted), p
 
 The six drafts above still carry the `[ROCm]` title prefix (on (a)-(d) and (f)) and the old closing sentence; jeff's ruling of 2026-11-19 (section "Ruling 2026-11-19 (jeff): the seventh candidate becomes a seventh pull request") replaces both when each is opened. The six pushed branches were not touched.
 
+### Radeon AI PRO R9700 (linux-gfx1201, wave32) evidence for the six branches, 2026-11-19 (fleet job)
+
+Requested by jeff: the same evidence as the MI300X figures above, on a 32-wide GPU, because upstream will be told each fix was tested on both. Evidence about the branches only: no stage, lock or platform record was changed by this part, nothing was pushed to the fork, and no GitHub write was made. The six `pr-1054-*` tips were the ones recorded above (756fca85, 2e2d8a5c, 3778b122, 5be4ebdc, 2c1fc334, e647eb2f), each one commit on upstream master 61c2a1e4, which was still upstream's tip (`git ls-remote`). All GPU work under `ulimit -c 0`. Scratch under the fleet job directory (`w/`, `res/`, `agent/`, `logs/`), not durable.
+
+**Environment.** AMD Radeon AI PRO R9700 (`gcnArchName` gfx1201, warpSize 32, sharedMemPerBlock 65536, 32 GB), `HIP_VISIBLE_DEVICES=0` from the dispatcher. Linux 6.11.0-26. TheRock ROCm SDK 10.1.0 pip (HIP 7.16.26385, AMD clang 24.0.0), no /opt/rocm, `LD_LIBRARY_PATH=$R/lib`. Job venv, the MI300X set exactly: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, basis-set-exchange 0.12, MCFun 0.2.6, pytest 9.2.0, pytest-xdist 3.8.0, pytest-timeout 2.4.0. The venv's pip cmake 3.31.6 works with `python setup.py build_py` (no build isolation), so no PATH change was needed.
+
+**Builds.** One worktree per tree, each Test Plan's command: `USE_HIP=1 CMAKE_BUILD_ARGS=--verbose python setup.py build_py`, plus the `CMAKE_CONFIGURE_ARGS` flag spelling for the flag builds. Trees: master as-is, master flag build (the "before" for (a)-(e)), (a)-(e) flag builds, (f) with no environment flag. Every build exit 0 in 179-192 s, 12 libraries, 100 HIP compile and 12 `--hip-link` lines, `--offload-arch=gfx1201` only (`rocm_agent_enumerator` lists the four gfx1201 cards of the host). `-disable-machine-licm` on 100/100 and 12/12 in master flag, (a)-(e) and (f); on 0 in master as-is.
+
+**Method.** The MI300X method: CI marker selection, one pytest process per test file (`-p no:xdist`), `OMP_NUM_THREADS=2`, `PYTHONPATH=<tree>`, `-v --tb=short --junitxml`; counts from the junit files (from the `-v` log where a killed process wrote none). Master flag build ran the union of every Test Plan's files (106); each branch ran its own Test Plan's files plus scf and dft; master as-is ran scf and dft. Three files at a time per stream, up to two streams (six processes) on the GPU, part of the time beside the validator's tree run. Per-file limit `timeout -k 30 1800`; a watchdog killed any process still alive 120 s after writing its junit (hung at exit); a CuPy liveness check followed every abnormal exit and never failed. Because scf/tests/test_init_guess.py and test_stability.py vary between runs of identical code on this GPU, both were run three more times on every tree (one file at a time per tree, `timeout 900`).
+
+| fix | files (passed/failed/skipped/errors) | MI300X master | MI300X branch | R9700 master | R9700 branch | of which at the fix's own signature, R9700 master -> branch |
+|---|---|---|---|---|---|---|
+| (a) ft-ao-wave64 | pbc/{df,dft,grad,gw,scf,properties}, 53 files | 366/315/50/38 | 595/111/50/13 | 591/115/50/13 | 591/115/50/13 | nsp_max assert 0 -> 0 |
+| (b) eigh-std-fallback | the 15 cause-B files | 52/83/3/4 | 105/30/3/4 | 50/89/3/0 | 112/27/3/0 | syevd assert 61 -> 0 |
+| (c) hipsolver-handle | the 14 cause-C files | 56/67/2/5 | 96/32/2/0 | 58/65/2/5 | 110/18/2/0 | rocblas_status_memory_error 49 (5 of them setup errors) + 10 follow-on hipErrorIllegalAddress -> 0 |
+| (d) hip-shm-size | cc/tests, mp/tests, test_int4c2e.py, test_ecp.py | 19/18/0/0 | 31/1/5/0 | 19/18/0/0 | 31/1/5/0 | fill_int4c2e 13 -> 0; 4 ECP derivative failures -> 5 skips |
+| (e) cholesky-info | mp/tests, test_rsdf_builder.py | 19/43/0/0 | 21/41/0/0 | 53/9/0/0 | 55/7/0/0 | Cholesky NaN check 2 -> 0 |
+| (f) hip-machine-licm | RHF water, def2-svp / cc-pvtz vs CPU PySCF | master as-is faults in rys_k_kernel, hangs | 1.7e-11 / 6.0e-12 | master as-is 1.73e-11 / 5.77e-12 (no fault) | 1.73e-11 / 5.61e-12 | not applicable on this GPU |
+| (f) | scf directory, 19 files | as-is: 7 files hang, 2 abort, rest 83/18/8/0 | 202/10/14/0 | as-is 192/20/14/0 (11 of the 20 an illegal-address cascade in test_init_guess.py) | 201/11/14/0 | |
+
+scf and dft, the sanity set every Test Plan names, over the 30 files other than test_init_guess.py and test_stability.py (those two are in the next table): master flag build and master as-is **306/8/23/0**, the same 8 (test_dftu linear response x2: cause C; test_rhf_df_against_qchem: d-aug basis; test_gdm_rhf: 5.9e-8 to 6.2e-8 against 5e-8, gfx1201-only and passing in some runs; test_gdm_uks_spin_neq_0: cause B; test_int4c2e.py x3: cause D). (a) 307/7 (test_gdm_rhf passed in that run), (b) 307/7 (+ gdm_uks), (c) 308/6 (+ the two DFT+U linear-response tests), (d) 310/4 (+ the three int4c2e tests, + gdm_rhf in that run), (e) 306/8, (f) 306/8. **No branch fails a test that passes on master.** test_mcol_gks_mgga, the MI300X noise-floor failure, passes on this GPU in every tree.
+
+The two files that vary, four runs each (the main run, then three repeats): passed/failed for test_init_guess.py (24 tests) and failures in test_stability.py (10 tests).
+
+| tree | test_init_guess.py, four runs | test_stability_rhf_unstable failed |
+|---|---|---|
+| master as-is | 11/13 (illegal-address cascade, then the process spun at exit after `HSA_STATUS_ERROR_MEMORY_FAULT`; junit complete; killed by hand after 8 min), 20/4, 20/4, 20/4 | 2 of 4 |
+| master flag | 10/14 (cascade, spun at exit, watchdog), 19/5, 20/4, 19/5 | 1 of 4 |
+| (a) | hang (below), 20/4, 11/13 (cascade), 19/5 | 3 of 4 |
+| (b) | 22/2, abort, hang, 23/1 | 2 of 4 |
+| (c) | 21/3, 21/3, 21/3, 21/3 | 1 of 4 |
+| (d) | 19/5, 10/14 (cascade, spun at exit, watchdog), 20/4, 20/4 | 1 of 4 |
+| (e) | 20/4 in all four | 1 of 4 |
+| (f) | 19/5, 20/4, 19/5, 19/5 | 1 of 4 |
+
+On master the 4 are test_sad_guess_rhf_pcm (cause C) and test_sad_guess_uhf, _uks, test_sad_hf_guess_uks (cause B); the fifth, when present, is test_sad_guess_rks or _rks_vv10 failing after the C error (NaN or a wrong value), the gfx942 pattern. (c) removes the C failure and with it the cascades and the variation; the three B tests remain until (b). (b) alone removes the B tests but lets the file run on into cause C, and on this GPU two of four runs then did not finish (below). The ordering advice in (b)'s draft holds more strongly here. With all six applied (validator run at 7cbd3d2, below) test_init_guess.py passes in full. test_stability_rhf_unstable fails about one run in three on every tree including master, as on gfx942.
+
+**Hangs and aborts, each killed and recorded; the GPU stayed healthy (liveness check passed after each, no reset needed):**
+- Exit spins (three times: master as-is and master flag main runs, (d) repeat 1): every test had reported and junit was written, then the process spun at 100% CPU in native teardown (`hipModuleUnload failed: an illegal memory access`, hipBLASLt `Hip error ... (700)` at unload) after an illegal-address cascade. SIGABRT gave no Python stack.
+- (a) main run, test_init_guess.py: hung in its second test, test_hcore_guess_rks, for 12.7 min at 100% CPU. SIGABRT's faulthandler stack: `cupy/cuda/compiler.py:1063 _compile_with_cache_hip` (`mod.load(binary)`, i.e. `hipModuleLoadData` of a cached einsum kernel), from `lib/cutensor.py:64 _contract_einsum` <- `df/df_jk.py:586` <- `get_jk`. (a) does not touch this path, and the three repeats of the file on (a) did not hang. It ran while six other test processes and the validator's tree run shared the GPU. Not root-caused; recorded as an intermittent module-load hang under load.
+- (b) repeat 1: native abort (rc 134, no junit) in test_sad_hf_guess_uks, after test_sad_guess_rhf_pcm's rocblas_status_memory_error. (b) repeat 2: hung in test_sad_guess_uhf after test_sad_guess_rks_vv10 failed, stopped by the 900 s limit. Both are cause C reached once (b) lets the file run on.
+- No hang in any hessian file. hessian/tests (93/0/1/0) and df/hessian/tests (24/0/0/0) passed in the validator runs below on this GPU, where the gfx1100 evaluation of upstream 4c56c9f hung and wedged the card.
+
+**Fixes expected to change nothing on a 32-wide GPU, and confirmed to do no harm:**
+- (a): gfx1201 has `WARP_SIZE` 32, so the tile was already 32. The 53 pbc files give 591/115/50/13 on master and on (a) with the identical failing-test set and identical failure values (e.g. test_ej_ip1_kpts 11.021139291181452 on both); scf+dft unchanged apart from the varying files.
+- (f): the LICM miscompile does not occur on gfx1201 with ROCm 10.1 (RHF water def2-svp and cc-pvtz correct without the flag, and d-shell J/K runs throughout the as-is scf/dft files). With the flag, the same energies to 1e-13 and the same scf+dft failures. The flag's cost was not measured on this GPU.
+- The other four fix real failures on this GPU as well: (b) 61 syevd asserts, (c) 49 solver-handle failures plus their cascades, (d) 13 int4c2e and the 4 ECP derivative failures (now skips), (e) the 2 Cholesky tests.
+
+**gfx1201 findings outside the six (for jeff):**
+- The **gfx12 rocBLAS complex-GEMM defect** (filed: deferred `rocblas-complex-gemm-gfx12-grid-y-16bit`) shows on master and every branch: test_pbc_aft test_ej_ip1_kpts 11.02, test_vk_kpts_vs_fft 1.435, test_pbc_scf_jk test_vk_hermi1_kpts_vs_aft 0.0462, test_pbc_grad_krhf test_krhf_grad_with_pseudo off by 0.0036 to 0.0053 (varies from run to run); the first three identical on master and (a). Rechecked at this ROCm: `cupy` (n,6)@(6,6) complex128 is exact for n = 2097152 and wrong in exactly 64 rows from row 2097152 for n = 2097216. test_ej_ip1_kpts issues one complex GEMM with n > 2^21 (`ROCBLAS_LAYER=2`). Our old port's gfx12 split (e1b8041, 5a87452) was dropped in the rescope with the einsum helper it depends on. None of the six touches it; it decides the validator verdict below.
+- test_ft_ao_strain_deriv misses by 4.52e-7 against 3e-8 on master and on (a) here (3.05e-8 on our old port on this card, 3.77e-8 on gfx942); it issues no big-n complex GEMM. Not root-caused.
+- test_gdm_rhf misses 5e-8 by up to 25% on this GPU in most runs (never seen on gfx942).
+- test_raman_hf_densityfitting (`assert mf.converged` in raman.py:100) and test_rtddft_ris_diffuse (`assert np.all(td.converged)`) fail on unmodified master on this GPU when run alone (two of two runs each); both passed on our old port here. Not root-caused.
+
+**(g) `pr-1054-hiprtc-cucomplex` (0e23c1e1), added after the request was written, same method, as extra evidence.** The seventh branch appeared while this round ran (section "(g)" above); its draft said no 32-wide GPU had run it. Flag build exit 0 in 182 s, 12 libraries, flag on 100/100 and 12/12. Reproducer: master `fatal error: 'cuComplex.h' file not found`, branch `0.0`. pbc/df, pbc/grad, pbc/scf (36 files): master 392/101/10/13 (39 at `cuComplex.h`), branch **426/67/10/13** (0 at it), no newly failing test. Of the 39: 34 pass; 3 reach the RSH GDF finite-difference misses recorded on gfx942 (krks/kuks test_df_rsh_grad 1.08e-5, rks test_df_sr_rsh_grad 3.46e-6, the same values); 2 reach the gfx12 complex GEMM defect (test_ejk_derivatives_kpts_with_long_range 7.05e-5, test_uhf_ejk_derivatives_kpts_with_long_range 4.79e-4, the 1e6d12c values). scf and dft (30 files) 306/8/23/0 as master, test_init_guess.py 19/5 and test_stability.py 10/0 in its one run. So on wave32 the fix alone takes effect, which the gfx942 measurement could only show with (a) underneath.
+
 ### Left undone
-- No run on wave32 (gfx1100/gfx1201) or gfx90a for these branches, and no NVIDIA run.
+- No run on gfx1100 or gfx90a for these branches, and no NVIDIA run. gfx1201 (wave32) was run on 2026-11-19, subsection above.
 - The LICM cost was not added to commit 7cbd3d2f's or e647eb2f's body (the branch was already pushed; no force-push). It is in the PR draft.
 
 ### Reconciliation with the porter's review answers (landed concurrently)
