@@ -8669,3 +8669,9 @@ So AMD's shipped 1.13 code does show late writes, in the alloc_on_s2 case, every
 
 - Not moved to `ported`; more rulings from Jeff are pending. The release wheel validated at `7059a340` stays stale (head now `e88cf857`); rebuild and revalidate after the remaining rulings.
 - Validators: the new test runs in test_streams on every platform with a mempool (data-only, about 0.6 s on MI355X).
+
+## Rulings on the free-ordering test and refit (jeff, 2026-11-20)
+
+- Free-ordering test: "I'm fine with (a) since it's a publicly visible record of this hazard." Implemented as `e88cf857` (session 23). CUDA reference (coordinator, V100, upstream `warp-lang==1.14.0`, `free_race.py 20000`, two runs): every case reused 10/10, late writes 0/10.
+- Depth-level refit on HIP: "let's do (b) this time." Dispatched to the porter as session 24 (prompt `agent_space/p6ev/refit-porter.txt`).
+- Open with jeff: AMD 1.13 (`5035c8ed`) shows late writes in the alloc_on_s2 case 10/10 (session 23); whether to tell its authors is his decision.
