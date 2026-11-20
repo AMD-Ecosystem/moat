@@ -1349,3 +1349,83 @@ Result: linux-gfx90a COMPLETED at eda03f156a96c7d5f8cf04bb47cf279e81eade53, buil
 ## Lesson for cuda-to-rocm: O_DIRECT tests fail with EINVAL on a container's overlay filesystem
 
 A storage test that opens its files with `O_DIRECT` and writes into a directory relative to the test's working directory can fail with `pwrite ... errno=22 (Invalid argument)` when that directory is on a container's overlay root, and pass on the same host from tmpfs or a real ext4/xfs mount. It looks like a GPU or pinned-buffer fault because the write source is a staged device buffer. Before blaming the port, rerun the failing cases from a tmpfs working directory (`cd /dev/shm/<dir> && <test binary> --gtest_filter=...`), and check whether the project's CPU-only (simulated-device) build fails the same cases on the same filesystem. If both point at the filesystem, record the cases as host-environment failures and move on.
+## Second sync on moat-fix-1021 (2026-11-20, porter, linux-gfx942)
+
+jeff ruled on 2026-11-20 that the round must take in upstream `develop` as it is now before he reviews it. Upstream had moved 40 commits since f366bfa (the last merged tip; cc99d52 was the 2026-11-04 trial target), to 7bba620 (#1710). Lock taken with `set-state ... porting`. Merged, not rebased; nothing at or below eda03f1 was changed. Pushed `moat-fix-1021` only (`moat-port` still 8545865f). head_sha eda03f15 -> 5a452433.
+
+Commits on `moat-fix-1021`:
+- `fcb15e8` merge of upstream `develop` @ 7bba620, subject in git's URL form ("Merge branch 'develop' of https://github.com/ModelEngine-Group/unified-cache-management"), set with `-m` so the staging branch name never appears. **No conflicts.**
+- `5a45243` [ROCm] Skip the GSA v2 prefetch module in the ROCm sparse build.
+
+### What upstream's delta did to the port's surfaces (`git diff eda03f1...7bba620`, 456 files)
+- **New `ucm/sandbox` under `BUILD_UCM_SPARSE` (cb4d811 #1629, kept in 89a5fc4 #1709).** `ucm/CMakeLists.txt` now runs `add_subdirectory(sandbox)` -> `sparse/gsav2/prefetch`, whose CMakeLists ends `else() message(FATAL_ERROR "RUNTIME_ENVIRONMENT must be 'ascend' (CUDA backend was removed)")`. The port's documented sparse build (`PLATFORM=rocm ENABLE_SPARSE=true`, i.e. `-DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_SPARSE=ON`) therefore stopped at configure, before the Hamming target: reproduced at fcb15e8 (`CMake Error at ucm/sandbox/sparse/gsav2/prefetch/CMakeLists.txt:96`). 5a45243 adds an `elseif(RUNTIME_ENVIRONMENT STREQUAL "rocm")` arm that prints `[INFO] Skipping gsa_prefetch_v2: no ROCm backend` and `return()`s, next to the Ascend arm, in the same style as the port's `rocm` arm in `ucm/sparse/gsa_on_device/CMakeLists.txt`. Upstream's CUDA sparse build hits the same FATAL_ERROR; it is left as upstream has it (the port does not change CUDA behaviour), and the commit body says only what the ROCm arm does.
+- No new CUDA runtime calls in anything the ROCm build compiles. The only added `cuda*` names (`cudaHostAlloc/Register/Unregister`, `cudaGetErrorString`) sit inside `kv_semantics/patch/lmcache/0.5.7rc2/lmcache-0.5.7rc2-nds-kv.patch`, a patch file for LMCache, not built here. No new `.cu`/`.cuh` reached by the build; `ucm/shared/trans/cuda/`, the compat header's callers and `paged_ham_dist_mla.cu` are untouched upstream.
+- `ucm/store/cache` dropped the `cc` core (always `v2` now), `trans/ascend` dropped HAL, `kv_semantics/agent` is new (built only with `BUILD_UCM_ASU`, i.e. in the simu run). None needs a ROCm arm.
+- Docs: the port's `PLATFORM=rocm` notes and the ROCm support-matrix rows (both doc trees, en and zh) are intact after #1724's support-matrix edit; `python3 -I docs/docs-site/tools/check_bilingual_docs.py` passes.
+
+### Build and test at 5a452433 (gfx942 / MI300X, ROCm 7.16 pip SDK, `HIP_VISIBLE_DEVICES=3` dispatcher pin kept, one GPU, `ulimit -c 0`)
+Same configure lines as the eda03f15 entry (`P=$PWD/projects/unified-cache-management; R=$(hipconfig --rocmpath)`), `-j64`/`-j32`, each wrapped in `utils/timeit.sh`. The GPU and simu builds were made at fcb15e8; 5a45243 changes only a CMake file those configurations never reach (`BUILD_UCM_SPARSE=OFF`), and the sparse build was made at 5a45243.
+```
+cmake -S $P/src -B $P/build_rocm -DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_STORE=ON -DBUILD_UNIT_TESTS=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Wno-error=unused-result
+cmake --build $P/build_rocm -j64
+ctest --test-dir $P/build_rocm -j1 --timeout 600 --output-on-failure
+cmake -S $P/src -B $P/build_simu -DCMAKE_BUILD_TYPE=Debug -DBUILD_UCM_SPARSE=OFF -DBUILD_UNIT_TESTS=ON \
+  -DRUNTIME_ENVIRONMENT=simu -DBUILD_UCM_ASU=ON
+cmake --build $P/build_simu -j64
+ctest --test-dir $P/build_simu -j1 --timeout 600 --output-on-failure
+cmake -S $P/src -B $P/build_sparse -DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_STORE=OFF -DBUILD_UCM_SPARSE=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=/opt/python-3.11-venv/bin/python3 -DCMAKE_CXX_FLAGS=-Wno-error=unused-result
+cmake --build $P/build_sparse -j32 --target hamming
+HAMMING_DIR=$P/build_sparse/ucm/sparse/gsa_on_device/csrc/rocm/ham_dist \
+  /opt/python-3.11-venv/bin/python3 $P/src/ucm/sparse/test/gsa/test_hamming_rocm_ref.py
+```
+- GPU build: builds. ctest 355 discovered, 1 disabled (UCMetricsStress.TenWritersOneCollector), **340/354 pass** (174 s; the suite grew from 338 to 355). Failures:
+  - the 4 expected UCCache2TransManagerIntegrationTest.{DumpThenLoad, DumpThenLoadWithLayerWise, DumpThenLoadWithLayerAndChunk, DumpThenLoadWithVariableLengthIo}, `Failed(1, invalid argument) to copy shard for dump task(1)` at dump_queue.h:215 (jeff's ruling, run in simu);
+  - DataStrategyTest x6, `invalid device ordinal` (one visible GPU), as at eda03f1;
+  - **NEW relative to the eda03f1 record: UCPosixStoreTest.DumpThenLoad, UCPosixTransManagerTest.{TransBlock, TransBlockLayerWise, PsyncLoadSubmitAfterCloseFailsCleanly}**, each `pwrite(...) failed: errno=22 (Invalid argument)` in `trans_queue.cc:198,H2S`. Cause, below: not the port and not upstream's new commits.
+  - UCLoggerPerfTest both siblings and UCMetricsUT.ConcurrentUpdateAndCollect passed this run.
+  - Copy-kernel and alias gates pass: UCTransUnitTest.{EmptyEventIsSafe, MemsetAndDeviceToDevice, CopyDataWithCE, CopyDataWithSM, CopyDataBatchWithSM}, UCPosixTransQueueTest.{TransBlock, TransBlockLayerWise, LateQueuedUnitsGiveUpWhenPicked, DumpWithoutDataDirFailsAsBackendError}, UCCache2TransManagerIntegrationTest.Backend{,Submit}NotFoundIsPreserved.
+- Simu build (upstream `cpp_gtest` configuration): 1152 discovered, 1 disabled, **1147/1151 pass** (151 s). All 4 cache2 `DumpThenLoad*` pass. The only failures are the same 4 posix tests.
+- Hamming at 5a45243: configure prints `[INFO] Skipping gsa_prefetch_v2: no ROCm backend`; `hamming.cpython-311-x86_64-linux-gnu.so` builds; mla PASS (max_abs_err=42.0, max_rel_err=1.25e-03), gqa PASS (0.0), determinism PASS bit-identical. Same numbers as every earlier run.
+
+### The 4 new posix failures are this host's storage, not the port or upstream's delta
+- They fail identically in the simu build, which compiles the same posix store with no HIP.
+- Pristine upstream, no port: a worktree of `upstream/develop` 7bba620 built simu (`--target ucmstore.test`) fails the same 4; so does upstream's previous tip **cc99d52**, which passed 1114/1114 simu on this host type on 2026-11-04 (`./ucmstore.test --gtest_filter='UCPosixStoreTest.DumpThenLoad:UCPosixTransManagerTest.*'`, run from the build tree).
+- Mechanism: the tests pass a `malloc(32768)` buffer (`ucm/store/test/case/detail/data_generator.h:49`) and the posix store defaults to `ioDirect=true` (`ucm/store/posix/cc/global_config.h:41`), so the shard is written with `O_DIRECT` from a buffer that is not page aligned (`malloc(32768) % 4096 = 704` here). A standalone probe (`agent_space/probe/odirect.c`) on the job directory's overlay filesystem: `O_DIRECT` `pwrite` of 32 KiB from a 4096-aligned buffer succeeds; from the same buffer +16 it returns EINVAL. The same tests run from `/tmp` (same overlay) and `/dev/shm` (tmpfs) fail too. The sibling UCPosixStoreTest.DumpThenLoadWithIoDirect and UCPosixTransQueueTest cases pass. So the host's storage now enforces `O_DIRECT` alignment where it did not on 2026-11-04, and the upstream tests depend on it not doing so. Another host may pass them. Not a port issue; nothing changed.
+
+`python3 utils/jargon.py --port unified-cache-management`: clean (local `develop` pointed at upstream 7bba620, local ref only). `git merge-base --is-ancestor`: `moat-port` 8545865 and upstream 7bba620 are both ancestors of 5a45243. `git diff --stat develop moat-fix-1021`: 29 files, +588/-14 (eda03f1 against f366bfa was 28 files, +587/-14; the one more file is 5a45243).
+
+### Fix review PR body (porter draft, true at 5a452433)
+Title: `[ROCm] Merge current upstream develop into the ROCm port`
+Head `moat-fix-1021` -> base `moat-port`. Not opened. The reviewer's and validator's entries below supersede this draft if they change it.
+
+====
+Upstream PR #1021 was reported as conflicting with `develop`. This round merges `develop` into the branch twice: first the tip f366bfa (190 upstream commits since the PR's base), and then the current tip 7bba620 (40 more commits). Both are merges, not rebases, so the published PR commits stay as they are.
+
+Conflicts in the first merge (5 files, both sides kept): platform lists in `setup.py` and `ucm/store/nfsstore/device/CMakeLists.txt` (upstream added `ascend-a5`, the PR added `rocm`); the WIN32 flag block in `CMakeLists.txt`; the test glob in `ucm/shared/test/CMakeLists.txt` (upstream's `CONFIGURE_DEPENDS` and `router_perf` exclude plus the PR's WIN32 exclude); and `quickstart_vllm.md`, where upstream moved the build-from-source section into the developer guide. The second merge had no conflicts.
+
+Follow-up commits:
+- 26b0b3e: upstream's CUDA transfer backend gained `cuda_event.cc` and a few more runtime calls; the ROCm target now builds `cuda_event.cc` and the compat header aliases the new names.
+- 91185a3, e3adb40, 98ba91b and eda03f1: a change that mapped the compat header's copy kinds to `hipMemcpyDefault` was added, reworded, and then reverted. The net effect on the compat header is only the aliases from 26b0b3e; the header still passes the caller's copy kind through, as at the published PR head.
+- af3eb74: the `PLATFORM=rocm` note moves to `build_from_source.md` (`docs/source` and the English docs site), plus the ROCm row in the English docs-site support matrix.
+- c767753: the same row and a Chinese version of the note on the Chinese docs site.
+- dff17ae: the note no longer suggests passing `-DCMAKE_HIP_ARCHITECTURES` to the setup.py build (it does not forward CMake arguments); it says the architecture is detected from the build host and points to the support matrix for the tested GPUs.
+- 5a45243: the sparse build now also configures `ucm/sandbox`, whose GSA v2 prefetch module has only an Ascend backend and stops with `FATAL_ERROR` on other runtimes. A `rocm` arm skips it, so `PLATFORM=rocm ENABLE_SPARSE=true` configures and builds the Hamming extension again. The Ascend path and the error for other runtimes are unchanged.
+
+Upstream's new cache2 `DumpThenLoad*` integration tests pass `malloc` buffers as device addresses (`ucm/store/test/case/detail/data_generator.h:49`). That matches the simulated backend, where device memory is host memory, and upstream CI builds the unit tests only that way (`.github/workflows/lint-and-test.yml:106` passes `-DRUNTIME_ENVIRONMENT=simu`; line 124 relies on the CMake default, `simu`). In the ROCm GPU build these four tests fail with "invalid argument" while copying a shard, so they are run in a simu build, where they pass. The tests are unchanged.
+
+Upstream #1566 stopped compiling nfsstore, so the nfsstore ROCm device arm is now dormant, the same as its CUDA counterpart.
+
+Tested on AMD Instinct MI300X (gfx942), ROCm 7.16, at 5a45243, one visible GPU: GPU build ctest 340/354. The copy-kernel, event and memset/D2D tests pass. The failures are the four cache2 `DumpThenLoad*` tests above; six DataStrategyTest cases that need two visible GPUs; and four posix store tests (UCPosixStoreTest.DumpThenLoad and three UCPosixTransManagerTest cases) that write a `malloc` buffer with `O_DIRECT`, which this host's filesystem rejects with EINVAL because the buffer is not page aligned. Upstream `develop` without this PR fails those four the same way here. Simu build (upstream CI's configuration): ctest 1147/1151, including all four `DumpThenLoad*` tests; the only failures are the same four posix store tests. The Hamming kernel reference test passes (mla, gqa, determinism).
+
+## Upstream reply
+
+PLACEHOLDER: fill in only after validators record completed platforms at 5a45243. Draft once they do: "The branch is merged with current `develop` (7bba620) and builds again with the sparse module enabled. The C++ unit tests and the Hamming kernel test were rerun on <GPUs whose platform record shows completed at 5a45243>."
+
+## Before approving
+
+Replace the placeholder above. Name only GPUs whose platform record shows a completed validation at this exact head.
+====

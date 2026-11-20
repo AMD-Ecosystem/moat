@@ -7,8 +7,8 @@
   "priority": 4.879,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-11-20T21:27:47Z",
-  "head_sha": "eda03f156a96c7d5f8cf04bb47cf279e81eade53",
+  "updated_at": "2026-11-20T21:33:46Z",
+  "head_sha": "5a4524333f6c286dbf82f08e796d9946cac1a7e1",
   "pr_url": "https://github.com/ModelEngine-Group/unified-cache-management/pull/1021",
   "pr_number": 1021,
   "pr_opened_at": "2026-06-11T22:34:50Z",
@@ -16,8 +16,32 @@
   "pr_state": "open",
   "license_spdx": "MIT",
   "upstream_repo_id": 1017089821,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "eda03f156a96c7d5f8cf04bb47cf279e81eade53",
+      "failed_sha": null,
+      "started_at": "2026-11-04T07:39:29Z",
+      "completed_at": "2026-11-04T19:13:17Z",
+      "updated_at": "2026-11-20T21:33:46Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter",
+      "state": "completed"
+    },
     "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
@@ -43,6 +67,53 @@
       "validated_prior": [
         "8545865f0939361bbbebb742369e25f95fd19b36"
       ]
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "eda03f156a96c7d5f8cf04bb47cf279e81eade53",
+      "started_at": null,
+      "completed_at": "2026-11-04T19:14:16Z",
+      "updated_at": "2026-11-04T19:14:16Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "eda03f156a96c7d5f8cf04bb47cf279e81eade53",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-04T19:21:41Z",
+      "updated_at": "2026-11-04T19:21:41Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
     },
     "windows-gfx1201": {
       "state": "completed",
@@ -73,54 +144,6 @@
         "at": "2026-06-23T21:15:41Z"
       }
     },
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "eda03f156a96c7d5f8cf04bb47cf279e81eade53",
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": "2026-11-04T19:21:41Z",
-      "updated_at": "2026-11-04T19:21:41Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "last_agent": "validator"
-    },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "eda03f156a96c7d5f8cf04bb47cf279e81eade53",
-      "failed_sha": null,
-      "started_at": "2026-11-04T07:39:29Z",
-      "completed_at": "2026-11-04T19:13:17Z",
-      "updated_at": "2026-11-20T21:20:44Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "porter",
-      "state": "completed"
-    },
     "windows-gfx1101": {
       "state": "completed",
       "blocked": false,
@@ -149,29 +172,6 @@
         "detail": "CMake default-path simplification (drop dead gfx90a fallback + dedup; rely on enable_language); explicit -D builds byte-identical",
         "at": "2026-06-23T21:15:41Z"
       }
-    },
-    "linux-gfx1100": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "eda03f156a96c7d5f8cf04bb47cf279e81eade53",
-      "started_at": null,
-      "completed_at": "2026-11-04T19:14:16Z",
-      "updated_at": "2026-11-04T19:14:16Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator"
     }
   },
   "published_sha": "8545865f0939361bbbebb742369e25f95fd19b36",
@@ -182,13 +182,8 @@
     "opened_at": "2026-11-04T07:39:33Z"
   },
   "porting_released": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-04T18:52:42Z",
-    "at": "2026-11-04T19:00:26Z"
-  },
-  "porting": {
     "arch": "linux-gfx942",
     "since": "2026-11-20T21:20:44Z",
-    "holder": "add06a0992c9"
+    "at": "2026-11-20T21:33:46Z"
   }
 }
