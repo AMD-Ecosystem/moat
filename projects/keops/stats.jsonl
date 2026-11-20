@@ -12,3 +12,4 @@
 {"kind":"phase","ts":"2026-11-20T21:54:25Z","phase":"test","seconds":7.725,"exit":0,"cmd":"python projects/keops/src/benchmarks/KeOps.py"}
 {"kind":"session","ts":"2026-11-20T21:59:00Z","epoch":1795211940.759532,"event":"start","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-20T22:06:54Z","epoch":1795212414.562857,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-20T22:09:58Z","epoch":1795212598.182982,"event":"start","platform":"linux-gfx950"}

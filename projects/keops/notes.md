@@ -130,7 +130,7 @@ pytest -v -rs pykeops/pykeops/test/
 - `check_health`: "HIP Support: Enabled", 1 GPU, HIP 7.17, `-DMAXTHREADSPERBLOCK0=1024 -DSHAREDMEMPERBLOCK0=163840` (gfx950 reports 160 KiB LDS).
 - keopscore: **68 passed** (test_op.py places tensors on `cuda` when the backend is available).
 - pykeops: **92 passed, 1 failed, 0 skipped** (CPU-only run skips 6 GPU-only tests; here all ran). 247 `*_nvrtc.hsaco` code objects built during the run (R2). `test_float16.py` 2 passed on GPU (half2 formulas only compile through the GPU branch of the R1 guard).
-- The failure, `test_lazytensor_clamp.py::test_lazytensor_clamp_bw`, is a tie in this GPU's random data, not a port defect: element (376,0,2) torch 181667.06 vs KeOps 182789.88. Float64 torch gives 182789.896, so KeOps is right (KeOps GPU vs float64: rel L2 1.5e-7; KeOps **CPU** backend on the same tensors gives the identical 182789.875; torch float32 on CPU gives the same wrong 181667.05). Cause: `x[376,0,2]*y[0,664,2]` is exactly `1.54f` in float32 (1.5399999959 in float64); torch's clamp backward counts the bound as inside, KeOps' `Clamp.DiffT` goes through `ClampInt((x-a)/(b-a),0,1)`, which rounds just past 1 and treats it as outside. The data come from `torch.manual_seed(0)` + `torch.randn(device="cuda")`; the generated values are expected to differ between GPU vendors (inferred, not checked on an NVIDIA GPU), which would explain why upstream's NVIDIA CI does not hit the tie. Tolerances left unchanged. Diagnosis scripts: `agent_space/diag/clamp.py`, `tie.py` (container-local).
+- The failure, `test_lazytensor_clamp.py::test_lazytensor_clamp_bw`, is a tie in this GPU's random data, not a port defect: element (376,0,2) torch 181667.06 vs KeOps 182789.88. Float64 torch gives 182789.896, so KeOps is right (KeOps GPU vs float64: rel L2 1.5e-7; KeOps **CPU** backend on the same tensors gives the identical 182789.875; torch float32 on CPU gives the same wrong 181667.05). Cause (corrected 2026-11-20 after the review below, which measured it): `x[376,0,2]*y[0,664,2]` is exactly `1.54f` in float32 (1.5399999960 in float64, strictly inside the bound); torch's float32 clamp backward treats the bound as outside (gradient 0 at the tie), while KeOps' `Clamp.DiffT` keeps it inside (gradient 1 on both the GPU and CPU backends), as float64 torch does. `(p-a)/(b-a)` is exactly 1.0 in float32, not past 1. So torch float32 is the side that drops the gradient. The data come from `torch.manual_seed(0)` + `torch.randn(device="cuda")`; the generated values are expected to differ between GPU vendors (inferred, not checked on an NVIDIA GPU), which would explain why upstream's NVIDIA CI does not hit the tie. Tolerances left unchanged. Diagnosis scripts: `agent_space/diag/clamp.py`, `tie.py` (container-local).
 - No-torch smoke test (fresh venv without torch, `ROCM_PATH` set to the SDK): `check_health()` + `test_numpy_bindings()` pass, `torch_found False`.
 - Discovery: with `ROCM_PATH` unset the SDK is found through site-packages (`_rocm_sdk_core/lib/libamdhip64.so.7`, the doc example output is this run's); with torch imported first, KeOps reports the same library torch loaded, and a Gaussian kernel sum matched torch to 3.2e-7.
 
@@ -212,3 +212,26 @@ c++ <same -D/-std/-O3/-fpermissive/-fPIC/-I flags> -c <k>/binders/nvrtc/keops_nv
   All three rc=0 with 0 warnings (g++ 13.3.0). No `hip_shim` include or `__HIP_PLATFORM_AMD__` appears in the CUDA commands. `nm -D --undefined-only`: `nvrtc_jit.so` needs `cuDeviceGet cuDeviceGetAttribute cuGetErrorName nvrtc*` (CUBIN getters), NEEDED `libcuda.so.1 libnvrtc.so.12`; `pykeops_nvrtc.so` needs `cuCtxGetCurrent cuCtxPushCurrent_v2 cuCtxSynchronize cuDevicePrimaryCtxRetain cuDevicePrimaryCtxRelease_v2 cuMemAlloc_v2 ... cuLaunchKernel cuModuleLoadDataEx`, NEEDED `libcuda.so.1`; no `hip*` symbols anywhere.
 - Generated formula code through real NVRTC (`agent_space/cudacheck/nvrtc_gen.py`): the 247 `.cu` sources KeOps generated during the GPU run above (2 of them half2), compiled with libnvrtc 12.8 using the CUDA-side options `nvrtc_jit.cpp` builds (`--include-path=` the two CUDA include dirs, `-arch=sm_90`, `-use_fast_math`): 247 compiled, 0 failed. The formula generator emits the same source on both backends; the `math_functions.py` guard still selects the GPU spellings under `__CUDACC__`.
 - Not run: an NVIDIA GPU execution (no NVIDIA hardware on this host).
+
+## Porter fix round (2026-11-20, linux-gfx950, head 2980874a)
+
+Answers Finding 1 of the review above. No code change and no new fork commit: the wrong mechanism appears only in the body of `38c65e2b` (checked: `git diff ef72bc90...2980874a` adds no line mentioning clamp, the bound or the tie, and the `2980874a` body does not mention it). Jeff's standing rule for fork branches is no amend, no rebase and no force-push, because rewritten history desynchronizes the recorded head, so `38c65e2b` is not rewritten here. Head stays `2980874a`.
+
+- Porter section above: the "Cause" sentence is corrected to the measured facts from the review (torch float32 drops the gradient at the tie, KeOps keeps it, as float64 does; `(p-a)/(b-a)` is exactly 1.0).
+- The `## For the reviewer and validators` bullet about the tie names no mechanism and stays as written.
+
+### Correction for the final history
+
+When the commits are prepared for the upstream pull request (a later step a person approves), the Test Plan of `38c65e2b` ("[ROCm] Run the GPU backend on AMD GPUs through HIP and hipRTC") must replace this wrong text:
+
+```
+pykeops: 92 passed, 1 failed (test_lazytensor_clamp_bw: with this GPU's random data one product x*y equals the clamp bound 1.54f exactly; KeOps' Clamp gradient treats the bound as outside, torch as inside. The KeOps result matches a float64 reference to 1.5e-7, and the KeOps CPU backend gives the same value on the same data).
+```
+
+with exactly this sentence:
+
+```
+pykeops: 92 passed, 1 failed (test_lazytensor_clamp_bw: with this GPU's random data one product x*y equals the clamp bound 1.54f exactly in float32; torch's float32 clamp gradient treats the bound as outside, KeOps' as inside. The KeOps result matches a float64 reference (where the product is just inside the bound) to 1.5e-7, and the KeOps CPU backend gives the same value on the same data).
+```
+
+The rest of the commit message is unchanged. If that preparation squashes the two commits, the same replacement applies to the squashed body. Until then the published branch keeps the wrong sentence; nothing upstream-visible exists yet (no upstream PR, no review PR).
