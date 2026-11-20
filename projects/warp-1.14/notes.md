@@ -8640,3 +8640,32 @@ rb = wp.zeros(n, dtype=wp.bfloat16)
 wp.launch(bf16_mad, dim=n, inputs=[wp.array(A.astype(np.float32), dtype=wp.bfloat16), wp.array(B.astype(np.float32), dtype=wp.bfloat16), wp.array(C.astype(np.float32), dtype=wp.bfloat16), rb])
 print(f"half: equal to unfused (product rounded to half, then add) {np.sum(x == unfused)} / {n}; equal to a fused fma {np.sum(x == fused)} / {n}; unfused != fused in {np.sum(unfused != fused)}")
 ```
+
+## Porting session 23 (2026-11-20, linux-gfx950 MI355X, porter): cross-stream free test
+
+Ruling (Jeff Daily, 2026-11-20): add session 20's `free_race.py` probe to `warp/tests/cuda/test_streams.py` as a test, a visible record of the hazard. Fork `release/1.14.0.amd0` `e92f2611..e88cf857` (pushed, `advance-head` recorded); stage left at `porting`. `HIP_VISIBLE_DEVICES=1` (PCI 0000:05:00.0 = amd-smi GPU 0), `ulimit -c 0`; no process was stopped by pattern.
+
+### The commit: `e88cf857` Test that a free waits for work on other streams (`test_streams.py` +35, Python only)
+
+- Module-level kernel `write_late(a, iters)` (spins `iters` times, then writes 1.0) and `test_stream_free_waits_for_other_streams`: under `wp.ScopedMempool(device, True)`, streams `writer` and `freer`; for each case (array allocated with `writer` current, or with `freer` current) 3 trials of: `wp.empty(1M floats)`, `write_late` launched on `writer` (20,000 iterations, ~10 ms on MI355X), then with `freer` current `del a` and `b = wp.zeros(1M)`, `wp.synchronize_device()`, assert `np.count_nonzero(b.numpy()) == 0`. Data-only assertion, no timing; registered on `get_selected_cuda_test_devices_with_mempool()` like the mempool tests elsewhere. No `[ROCm]` prefix: the test is shared and names no HIP.
+- Pooled allocations on purpose: the lost-writes runtime defect (rocm-systems 16355) needs a `hipMalloc` (pool-off) destination at a just-freed address under multi-process load; with the pool on it was 0/40,000 in the gfx942 narrowing.
+- Teeth: scratch worktree `agent_space/wnowait` = `e92f2611` plus one line in `free_async_after_device_streams` (`continue;` at the top of the stream loop: free on the current stream, no wait; nothing committed), gfx950 build: the new test FAILED 3/3 (`AssertionError: 1022464 != 0`, `1024000 != 0`, `1023680 != 0` of 1,048,576 elements: the late writes landed in the new array). Committed rule: OK 3/3, then **20/20 OK** in 20 separate runs (0.63 s per run).
+- test_streams.py on the pinned GPU: 25 OK (3 skipped). Full default suite from a fresh kernel cache (`agent_space/suite.sh`): **Ran 7558 tests in 2315.7 s, FAILED (failures=2, skipped=81)**. The two failures are the known upstream isolation failures recorded since session 2 (`test_fem_quadrature.test_gimp_quadrature`, `test_fem_shape.test_cube_shape_functions`: "Unexpected output" whose first line is Warp's init banner, captured by the first `check_output` test in its worker); this run's scheduling put a fem file first in a worker, and each file run alone fails the same way (1 failure each). Everything else passed, including the new test; the 7557 of session 22 plus the new test is 7558. The run took 2316 s instead of the usual ~530 s (scheduling or host load; not investigated).
+- Python-only change: no native file changes, so no nvcc check (the CUDA build compiles nothing new); `jargon.py --port` clean before the push.
+
+### Evidence (not a commit): `free_race.py` against AMD's shipped 1.13 build
+
+Tree `agent_space/w113` = AMD-Ecosystem/warp `release/1.13.0.amd0` at **`5035c8ed`** ("Merge pull request #27 from AMD-Ecosystem/docs/26.10"), no modified tracked file, built in session 20 with its documented command for gfx950 on the image's ROCm 10.1 (`ROCM_PATH=<10.1 root> python build_lib.py --hip-arch=gfx950 --hipcc-options="-Xarch_device -fno-inline"`), run with ROCm 10.1; mempool enabled on the device (`wp.is_mempool_enabled` True). Session 20's original `free_race.py`, unmodified, twice:
+
+| case | run 1 | run 2 |
+|---|---|---|
+| same_stream (control) | 0 / 10 late writes (pointer reused 10/10) | 0 / 10 (10/10) |
+| alloc_on_s1 (allocated on the writing stream, freed with s2 current) | 0 / 10 (10/10) | 0 / 10 (10/10) |
+| alloc_on_s2 (allocated with s2 current, written on s1, freed with s2 current) | **10 / 10** (10/10) | **10 / 10** (10/10) |
+
+So AMD's shipped 1.13 code does show late writes, in the alloc_on_s2 case, every time; the same result as session 20's reimplementation of `da56e495`'s rule. Nothing in 1.13 makes that case unreachable: its streams are created exactly like 1.14's (`cuStreamCreateWithPriority_f(&stream, CU_STREAM_DEFAULT, priority)`, blocking), pooled arrays are freed through the same `wp_free_device_async` from `Allocator.deallocate`, and its free waits only for the stream recorded at allocation (`g_alloc_streams`), which in this case is the freeing stream itself; the probe uses only public API (`wp.ScopedStream`, `wp.empty`, `wp.launch(..., stream=)`, `del`, `wp.zeros`).
+
+### Next step (head `e88cf857`)
+
+- Not moved to `ported`; more rulings from Jeff are pending. The release wheel validated at `7059a340` stays stale (head now `e88cf857`); rebuild and revalidate after the remaining rulings.
+- Validators: the new test runs in test_streams on every platform with a mempool (data-only, about 0.6 s on MI355X).
