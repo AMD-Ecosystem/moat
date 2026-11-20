@@ -88,7 +88,22 @@ on the device`), gated purely on `--offload-arch`, so the identical source compi
 gfx90a/gfx11xx/gfx12xx and fails ONLY on gfx942/gfx950 -- this surfaces as a validation
 failure on exactly one arch even though nothing about the build command differs (confirm the
 arch pin is correct before assuming a real regression; then check for `__gfx94plus_clr__` in
-the toolchain headers). A project doing a bare point-lookup through a texture object has a
+the toolchain headers). The compiler predefines the macro for those targets too, in two
+spellings, so one command decides it without any header:
+
+    clang++ -x hip --offload-arch=gfx942 -nogpulib -nogpuinc -dM -E - </dev/null \
+      | grep IMAGE_SUPPORT      # gfx942: __HIP_NO_IMAGE_SUPPORT 1 and __HIP_NO_IMAGE_SUPPORT__ 1
+                                # gfx90a, gfx1100: nothing
+
+It is not only a compile-time macro. On the hardware (MI300X, ROCm 7.14), `hipMallocArray`
+and `hipCreateTextureObject` both return `hipErrorNotSupported` ("operation not supported"),
+while `hipDeviceAttributeTexturePitchAlignment` still reports 256: a pitch-alignment query
+is NOT a capability probe, and a port that trusts it builds a pitch and then fails at
+creation (`hipDeviceAttributeImageSupport` is the query that answers). Check this BEFORE
+choosing where to test a port that uses texture objects: gfx90a covers wave64 and does
+support them, and supporting gfx94x means replacing texture objects with buffer reads, which
+is a feature-sized change to scope, not a port fix. (colmap: SiftGPU `ProgramCU.cu` and the
+`mvs/*.cu` kernels both fail to compile for gfx942.) A project doing a bare point-lookup through a texture object has a
 portable, unconditional fix, and the qualifying criterion is the ACCESS PATTERN, not the table
 size: point sampling only, no hardware filtering, no normalized coordinates, no address/border
 modes (arrayfire's FAST LUT is 64 KiB and still qualifies, so do not read "LUT" as "small").

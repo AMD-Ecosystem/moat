@@ -43,6 +43,68 @@ silently.
 A Windows machine with an RDNA card covers the wave32 and the Windows requirement in one
 run.
 
+### `-mwavefrontsize64` on an RDNA card checks lane logic, and cannot judge an application
+
+It is tempting to treat gfx1100 as a stand-in for a wave64 GPU, and half of that works. The
+mode is real: on gfx1100 the flag produces genuine wave64 kernels (measured `warpSize` 64,
+`__ballot` popcount 64, a width-64 `__shfl_down` reduction summing 64 lanes), so a shuffle
+mapping, a ballot shift or a width-32 group reduction can be compared against a naive
+version and the comparison MEANS something. Use it for that; it is much faster than waiting
+for CDNA hardware and it settled real lane-indexing questions on GPU_IPC.
+
+What it cannot do is judge a whole application, and the reason is a compile-time constant,
+not a prebuilt binary. rocPRIM and rocThrust are HEADER-ONLY (`/opt/rocm/lib` holds no
+library for either, and both compile with the application's own flags), so there is no
+rebuilt rocPRIM to go looking for. What breaks is that rocPRIM takes its wavefront constant
+from the target ARCHITECTURE macro and never from the effective wavefront mode.
+`rocprim/intrinsics/arch.hpp` (ROCm 7.2, lines 68-77) is literally
+
+```cpp
+constexpr unsigned int min_size()
+{
+#if __HIP_DEVICE_COMPILE__ && !__SPIRV__
+    #if ROCPRIM_NAVI
+    return 32u;
+    #endif
+    return 64u;
+```
+
+so on an RDNA target under `-mwavefrontsize64` the hardware and `warpSize` say 64 while
+`rocprim::arch::wavefront::min_size()` still says 32, and rocPRIM's algorithms size their
+shared memory and lay out their per-warp partials for the wrong wave. Measured on GPU_IPC
+(gfx1100, ROCm 7.2): `thrust::sequence` + `thrust::sort_by_key` over 38386 uint64 keys
+returns a valid permutation at the default width and a CORRUPT one with only
+`-mwavefrontsize64` added -- thousands of out-of-range slots and tens of thousands of
+duplicates, reproduced twice with different counts (10156/27913 and 4197/33760). Downstream
+that is a `hipErrorIllegalAddress` in whichever kernel next indexes with the result, which
+reads exactly like a port defect and is not one. The full application died in
+`thrust::exclusive_scan` before frame 1.
+
+So a crash in a forced-wave64 RDNA build is UNATTRIBUTED until you separate the two, and the
+separation is cheap. Give the rocThrust/rocPRIM translation units `-mno-wavefrontsize64`
+per source and leave the project's own kernels at wave64:
+
+```cmake
+set_source_files_properties(a.cu b.cu PROPERTIES COMPILE_OPTIONS "-mno-wavefrontsize64")
+```
+
+Mixing compiles and links, but it is only SOUND when nothing crossing a TU boundary depends
+on the width. The wavefront size is a per-kernel field in the code object rather than a
+per-binary one, so a wave32 TU can call a `__device__` function from a `-mwavefrontsize64`
+TU under `-fgpu-rdc` and it will run, with the callee's `warpSize` folded to 64 while the
+dispatch is 32. Before trusting such a build, confirm that no function reachable across the
+boundary uses `warpSize`, `__AMDGCN_WAVEFRONT_SIZE__` or a cross-lane op.
+
+Be equally precise about what the mixed build COVERS: exactly the wave64 TUs. On GPU_IPC
+that was five files, of which `PCG_SOLVER.cu` is the only one outside the three rocThrust
+TUs using both the compat shuffle and the compat ballot, so the run does prove both
+compat-header lane fixes execute on 64-lane hardware; the four remaining wave64 TUs contain
+no cross-lane ops at all, which is also why the boundary condition above holds there. It
+proves nothing about the files given `-mno-wavefrontsize64`: GPU_IPC's MASPreconditioner is
+one of them, so its bank reductions were NOT covered. Record the result as what it is,
+evidence that specific wave64 paths execute, not a wave64 validation; that still needs a
+gfx90a or gfx942 run. (GPU_IPC)
+
 **Proving a binary really carries device code for the target architecture: use
 `llvm-objdump --offloading`, since `roc-obj-ls` does not work from the pip-installed SDK.**
 `roc-obj-ls <binary>` lists the embedded code objects, but it is a packaged-ROCm script. On
@@ -225,6 +287,33 @@ Before settling for the diff-only fallback, check whether the project has a SECO
 **A Windows machine can syntax-check the Linux HIP host pass of a `.cu` without a Linux
 box.** No root is needed: in WSL, `apt-get download libstdc++-14-dev libgcc-14-dev libc6-dev linux-libc-dev libc6 libcrypt-dev` then `dpkg-deb -x` each into a directory and copy `usr/include` and `usr/lib/gcc` out (`tar -ch` to resolve symlinks). Then run the HIP clang with the TU's own `-D/-I/-include` flags plus `--target=x86_64-unknown-linux-gnu --sysroot=<dir> --gcc-install-dir=<dir>/usr/lib/gcc/x86_64-linux-gnu/14 -nogpulib -x hip --cuda-host-only -fsyntax-only`; `-E -dM` should show `__linux__`, `__GLIBCXX__` and no `_MSC_VER`. Use the same ROCm toolchain as the Linux build you are standing in for, both the clang major and the HIP headers: in the LichtFeld-Studio `std::pow(__half, __half)` case, clang 23 with the ROCm 7.14 headers accepted the call that clang 24 with the 10.x headers (the Linux build's toolchain) rejected as ambiguous, so a check on an older toolchain proves nothing. Reproduce the Linux error first (negative control) before trusting a clean result. It is syntax evidence only; the real Linux build stays the gate. (LichtFeld-Studio)
 
+**Proving two builds carry the same device code: build both in the SAME directory.** The
+claim "this host-side change leaves the device code unchanged" (and with it "no new GPU run
+is needed") is checked by dumping `.hip_fatbin` from each object with
+`llvm-objcopy --dump-section=.hip_fatbin=<out> <obj>` and comparing sha256, plus a sorted
+diff of `llvm-nm -D --defined-only <binary>` for the exported symbols. The raw comparison is
+sound ONLY when both builds happen in one directory. `__hip_cuid_<hash>` is a hash of the
+whole compile command line: the source path as spelled, plus `-o`, `-I` and `-D`, which in a
+CMake build all carry the build tree's absolute path. Two checkouts of the SAME commit built
+side by side in different directories therefore yield different fatbins, identical in size
+and differing in a few dozen bytes, and spelling the source relatively does not defeat it,
+because the other arguments still differ. Followed across two paths, the recipe reports
+every object changed with no source change whatever (TurboFNO: a 10/10 false alarm before
+the cause was found). The remedy is one directory: build commit A, capture the objects,
+`git checkout` commit B in place, and rebuild there. Excluding the cuid is sound only at
+SYMBOL level, and it must exclude BOTH cuid-derived symbols, since the object also carries
+`__hip_gpubin_handle_<same hash>`: `llvm-nm <obj> | grep -vE '__hip_(cuid|gpubin_handle)_'`
+(or a `sed` normalizing the hash in both names); filtering only `__hip_cuid_` still reports
+the handle line as a difference on an artifact-only pair. Never exclude the cuid as a
+byte-level normalization of the dumped fatbin: a length-preserving substitution of the name
+still left 8 of 40 differing bytes, name-derived table bytes it cannot reach. And a
+differing cuid says NOTHING about whether real device code also changed: the difference has
+the same shape for an artifact-only rebuild and for an edited kernel, so it shows the
+artifact is present, never that it is the whole difference. Only the same-directory rebuild
+(or a comparison of the disassembled device ISA) answers that. The pip/TheRock SDK has the
+LLVM tools under `<sdk>/lib/llvm/bin` and no `/opt/rocm`. (TurboFNO, gfx90a, a ROCm 7.14
+TheRock nightly, 2026-08)
+
 ## What a pass does not prove
 
 ### A passing assertion COUNT is not a list of what was tested
@@ -243,6 +332,47 @@ went untested, and "the failures are isolated to X" describes what ran, not the
 port. Compare the assertion count against the CUDA build's, or filter the failing
 section out and watch whether the total moves. A known failure that makes a test case
 abort quietly hides the rest of the file with it. (marian-dev)
+
+### A green result does not prove a GPU test ran: count kernel dispatches
+
+A GPU test that never touched the GPU reports PASS. This is common enough to plan for: a
+test-fixture helper compiled to an empty stub without a windowing toolkit, a
+`skipIf(not is_available())` that evaluates true because the runtime is not visible in that
+shell, an entire suite gated behind a `GPU_ENABLED` that a headless configure turned off.
+The suite says "100% tests passed" and the port is unvalidated. Wall time is the obvious
+heuristic and it is NOT reliable. Use kernel dispatches:
+
+    AMD_LOG_LEVEL=3 ./the_test --gtest_filter='TheGpuTest.*' 2>&1 \
+      | grep -oE 'YourKernelName|OtherKernelName' | sort | uniq -c
+
+The HIP runtime names every kernel it launches. Zero dispatches of your kernels means the
+body did not run, whatever the result line says. It is direct evidence, cheap, and works on
+any project without instrumenting the code (for kernels replayed from a captured graph,
+which log only once, see diagnosis.md on `AMD_LOG_MASK`).
+
+colmap is the source. Its GPU SIFT tests run through a `RunGpuTest` helper that calls
+`RunThreadWithOpenGLContext`, which is an empty inline when the GUI is disabled, so a
+headless build silently skipped every GPU test body and reported 145 tests passing. Worse
+for the timing heuristic: after the fix, the GPU matcher tests take 0-3 ms in the headless
+build and about 200 ms in the GUI build, and the difference is entirely Qt constructing an
+offscreen context. Timing would have labelled the real run a skipped one and the skipped run
+a real one; the dispatch count was right both times. Three follow-ons:
+
+- When a project's test infrastructure has such a stub, FIXING it is porting work, not scope
+  creep, and it is not platform-specific: the same trap was hiding the same thing from the
+  CUDA build. Add a test that asserts the body ran, so the no-op cannot return.
+- The dispatch log also tells you WHICH backend ran. A project with both a compute and a
+  GLSL/CPU fallback will pass its whole suite on the fallback; seeing your kernel names is
+  what distinguishes "the port works" from "the fallback works" (plvs ran a CPU fallback on
+  every AMD GPU for months: strategy-a-cmake.md, "Build hygiene").
+- When a second architecture runs the same fixed test inputs, DIFF the dispatch counts
+  against the first architecture's recorded numbers rather than just checking they are
+  nonzero. If the test data and algorithm are deterministic (colmap's `sift_test` runs fixed
+  images through fixed SIFT parameters), the per-kernel counts are architecture-independent
+  even though the wavefront width differs: gfx1100 (wave32) and gfx90a (wave64) produced the
+  identical kernel-for-kernel, count-for-count table. An exact match is stronger
+  corroboration than a second "it is nonzero"; a mismatch with no code difference between
+  the two runs is a signal worth chasing. (colmap)
 
 ### Read what the project's own cross-backend checker actually compares
 
