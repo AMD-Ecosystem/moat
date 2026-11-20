@@ -68,3 +68,18 @@ Upstream does not support Windows: install docs cover Linux (gcc) and macOS (cla
 ### Upstream activity and receptiveness
 
 Active but small core team: bcharlier (MEMBER), joanglaunes, jeanfeydy; last merged PR #446 (2026-06-24, config/cpp compilation rework, which added pip-CUDA discovery); last push 2026-07-17. External PRs do get merged (gdurif, Louis-Pujol, kpoeppel, DavidLapous, rubenalv) but older drafts linger (#421, #281). The June 2026 config rework is recent: rebase-sensitive area, so the port should follow the new `config/Cuda.py` structure. No public stance on AMD; the backend-agnostic generated code and the new `pykeops.config.cuda.is_available()` abstraction make a well-scoped hiprtc binder plausible. Keep the diff additive.
+
+## Planning (2026-11-20, linux-gfx90a)
+
+**Decisions needed from Jeff: none.** The plan ports the whole project (keopscore binder and config, pykeops, rkeops through pykeops). Nothing is deferred, delivery (upstream PR) and the windows waiver were already ruled, and the remaining choices are engineering defaults listed under Open questions in `plan.md`.
+
+Upstream analysed at `ef72bc907df7`. Build class: runtime-compiled NVRTC + driver API Python package (`ext_type = nvrtc-driver-api`); no hipcc anywhere, the port is a g++ build against HIP headers plus hipRTC at run time. Strategy: shim headers (`cuda.h`, `nvrtc.h`, `cuda_fp16.h`) on the HIP include path only, so `keops_nvrtc.cpp`, `utils_pe.h`, `CudaSizes.h` and `pykeops_nvrtc.cpp` stay unchanged; one guarded block in `nvrtc_jit.cpp` for `--offload-arch=<gcnArchName>`; a `HipConfig` behind the existing `keopscore.config.cuda` object, CUDA selected first.
+
+Findings beyond the intake assessment:
+
+- `keopscore/utils/math_functions.py:49` wraps every generated math call in `#ifdef __CUDACC__`; hipRTC does not define it, so GPU code would silently use the CPU spellings (float mostly passes, half2 fails to compile). Guard becomes `__CUDACC__ || __HIPCC__`.
+- pykeops turns `use_fast_math` on by default, and Min/Max/LogSumExp reductions start from `( 1.0f/0.0f )`, so `-ffast-math` (finite-math-only) would break them. On HIP the option maps to nothing.
+- `config/Cuda.py` hard-codes CUDA attribute ids 1 and 8; HIP 7.16 `hipDeviceAttributeMaxThreadsPerBlock` = 56, `hipDeviceAttributeMaxSharedMemoryPerBlock` = 74 (read from the headers with g++ on this host; no GPU used).
+- Every GPU test gates on `pykeops.config.cuda.is_available()`, so failed HIP discovery gives a green CPU-only suite; the validator must prove the GPU ran.
+- `pytest.sh` builds fresh venvs and installs torch from PyPI (CUDA); on ROCm run its steps in a venv with a ROCm torch.
+- Header checks on this host (pip ROCm SDK 10.1, HIP 7.16.26385, no `/opt/rocm`): all fp16 intrinsics KeOps emits are declared in `amd_hip_fp16.h`; `g++ -std=c++11 -O3 -fpermissive -D__HIP_PLATFORM_AMD__` compiles `hip_runtime_api.h` + `hip_fp16.h` + `hiprtc.h`; `hipMemcpyHtoD` takes `const void*`.

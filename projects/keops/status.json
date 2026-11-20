@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/keops",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "nvrtc-driver-api",
+  "stage": "planned",
   "adopted_at": "2026-11-12T18:32:39Z",
-  "updated_at": "2026-11-20T21:18:34Z",
+  "updated_at": "2026-11-20T21:25:23Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-20T21:18:34Z",
-    "holder": "1657d0830eae"
-  },
+  "porting": null,
   "waivers": {
     "windows": {
       "reason": "upstream supports Linux and macOS only; POSIX .so build and 32-bit long indices on Windows; Windows PRs unmerged since 2020. Approved 2026-11-12 with the gap-matrix intake follow-ups.",
@@ -54,7 +50,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:18:34Z",
+      "updated_at": "2026-11-20T21:25:23Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -87,5 +83,10 @@
     "viable": true,
     "summary": "KeOps: runtime NVRTC kernel generator (GPyTorch/GeomLoss backend); port = additive hiprtc binder, no warp intrinsics, Linux-only upstream",
     "at": "2026-11-12T19:01:10Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-20T21:18:34Z",
+    "at": "2026-11-20T21:25:23Z"
   }
 }

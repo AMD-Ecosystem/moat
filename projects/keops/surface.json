@@ -1,0 +1,115 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "ef72bc907df7",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "keopscore/keopscore/binders/nvrtc/keops_nvrtc.cpp",
+      "keopscore/keopscore/binders/nvrtc/nvrtc_jit.cpp",
+      "keopscore/keopscore/include/utils_pe.h"
+    ],
+    "markers": {
+      "driver_api": 21,
+      "runtime_ptx": 10
+    },
+    "libraries": {}
+  },
+  "components": [
+    {
+      "id": "backend:hiprtc-binder",
+      "kind": "library",
+      "where": "keopscore/keopscore/binders/nvrtc/ (nvrtc_jit.cpp, keops_nvrtc.cpp, include/utils_pe.h, include/CudaSizes.h)",
+      "added_by": "planner",
+      "note": "CUDA driver API + NVRTC -> HIP module API + hipRTC via shim headers; arch option from gcnArchName; invisible to a .cu census"
+    },
+    {
+      "id": "config:hip-discovery",
+      "kind": "library",
+      "where": "keopscore/keopscore/config/ (new Hip.py, __init__.py)",
+      "added_by": "planner",
+      "note": "libamdhip64/libhiprtc/headers discovery behind config.cuda; HIP device-attribute enums; one HIP runtime per process"
+    },
+    {
+      "id": "codegen:gpu-math-guard",
+      "kind": "codegen",
+      "where": "keopscore/keopscore/utils/math_functions.py:49",
+      "added_by": "planner",
+      "note": "generated #ifdef __CUDACC__ is false under hipRTC; float and half2 GPU spellings"
+    },
+    {
+      "id": "codegen:fp16-half2",
+      "kind": "feature",
+      "where": "keopscore/keopscore/mapreduce/, utils/math_functions.py (use_half path)",
+      "added_by": "planner",
+      "note": "half2 generated kernels and host half2 template; cuda_fp16.h -> HIP fp16"
+    },
+    {
+      "id": "frontend:pykeops",
+      "kind": "python_extension",
+      "where": "pykeops/pykeops/common/keops_io/nvrtc/pykeops_nvrtc.cpp",
+      "added_by": "planner",
+      "note": "pybind11 module including keops_nvrtc.cpp; numpy and torch front ends"
+    },
+    {
+      "id": "frontend:rkeops",
+      "kind": "library",
+      "where": "rkeops/",
+      "added_by": "planner",
+      "note": "R front end through reticulate -> pykeops; no own GPU code"
+    },
+    {
+      "id": "tests:keopscore",
+      "kind": "test",
+      "where": "keopscore/keopscore/test/ (test_op.py, test_openmp.py)",
+      "added_by": "planner"
+    },
+    {
+      "id": "tests:pykeops",
+      "kind": "test",
+      "where": "pykeops/pykeops/test/ (30 files)",
+      "added_by": "planner"
+    },
+    {
+      "id": "tests:no-torch-smoke",
+      "kind": "test",
+      "where": "pytest.sh run_pykeops_no_torch_smoke_test",
+      "added_by": "planner"
+    },
+    {
+      "id": "tests:rkeops",
+      "kind": "test",
+      "where": "rkeops/tests/testthat",
+      "added_by": "planner",
+      "note": "evidence on one Linux platform, not the gate"
+    },
+    {
+      "id": "docs:install-rocm",
+      "kind": "docs",
+      "where": "doc/python/installation.rst",
+      "added_by": "planner"
+    },
+    {
+      "id": "benchmarks",
+      "kind": "benchmark",
+      "where": "benchmarks/, pykeops/pykeops/benchmarks/",
+      "added_by": "planner",
+      "note": "performance context only"
+    },
+    {
+      "id": "platform:windows",
+      "kind": "platform",
+      "where": "(whole project)",
+      "added_by": "planner",
+      "note": "windows gate waived 2026-11-12 (upstream has no Windows support)"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "platform:windows",
+      "reason": "windows gate waived by Jeff Daily 2026-11-12: upstream supports Linux and macOS only (POSIX .so build, LLP64 long indices, Windows PRs unmerged since 2020)"
+    }
+  ],
+  "owed": [],
+  "removed_from_floor": []
+}
