@@ -42,3 +42,42 @@ NVIDIA-owned (NVlabs), so an upstream PR is unlikely to be accepted (CONTRIBUTIN
 ### Question for jeff
 
 The port base moved today: upstream v0.9.0 (2026-11-05) removed the torch-extension (pybind/setup.py) backend and now builds kernels only by NVRTC runtime compilation through `cuda.core`. Should the port add a hiprtc runtime-compilation backend that mirrors cuda.core (matches upstream's design, more new code), or reinstate a torch `CUDAExtension`-style compiled backend for ROCm only (closer to the v0.8.0 path the community wrapper used, but diverges from upstream)? And is `cpp_runtime/` (C++ deployment runtime and native mapper) in scope for the first port, or deferred?
+
+## Planner (2026-11-20, planner agent for jeff, linux-gfx942; analysis only, no GPU used)
+
+### Rulings needed from jeff before a porter starts
+
+**Q1. Runtime backend for ROCm.** Upstream v0.9.0 compiles every kernel at run time with NVRTC through `cuda.core`; the torch-extension backend is gone. Options:
+- (a) **Recommended:** a hipRTC + HIP-module launch path implementing only the slice of `cuda.core` curobo uses (compile/get_kernel, LaunchConfig, launch, stream from the torch handle, last error, shared-memory attribute), selected when `torch.version.hip` is set, bound with **ctypes to the HIP runtime and hipRTC that torch already loaded**. No new dependency, one HIP runtime per process, works with pip-SDK ROCm on Linux and Windows. Matches upstream's design; CUDA path unchanged.
+- (b) Same as (a) but bound through AMD's `rocm-bindings-hip` (`hip-python` 10.0) wheel. Official bindings; adds a dependency whose version must track the ROCm major torch was built with.
+- (c) Reinstate a torch `CUDAExtension` for ROCm only (v0.8.0 style). Not recommended: kernels are now template-specialised at run time on robot size, so an ahead-of-time build needs a fixed instantiation list or a dispatch rewrite, and it diverges from upstream.
+
+**Q2. Scope: is `cpp_runtime/` (C++ robot/calibration/mapper runtime, ~35k lines, 26 CTest targets, plus the Python exporters that write cubins and Warp AOT modules for it) in the first port?** Options:
+- (a) **Recommended:** phase 1 ports the Python package only (the library users install, with its full pytest suite and examples); `cpp_runtime/` and its exporters follow in a second round after phase 1 validates and AMD Warp's AOT support for code objects is known. `surface.json` lists the cpp_runtime components; under (a) they would be recorded `owed` (not `scoped_out`) so `pr_ready` refuses until they are done, or `scoped_out` if you rule the cut is permanent for this delivery.
+- (b) Port both now. Adds Strategy A CMake work, hipCUB for the mapper, HIP graph-node APIs, a code-object export path, and a hard dependency on Warp AOT code-object export, likely several porter rounds.
+
+**Q3. Warp dependency.** curobo needs NVIDIA Warp (tile API, Mesh BVH, graph capture). AMD Warp is 1.13.0+amd0 on `amd-integration` and 1.14.0 on `release/1.14.0.amd0`, which MOAT is porting as `warp-1.14` (stage `porting`, no platform validated). curobo's notices assess warp-lang 1.16.0; it pins nothing. Options:
+- (a) Record `depends_on: [warp-1.14]` now (`moatlib.py set-deps`): the selector holds the curobo porter until warp-1.14 completes on this OS. Cleanest evidence chain; delays the port.
+- (b) **Recommended:** no hard dependency yet; the porter builds AMD Warp from `amd-integration` (or the 1.14 line's current head) in the job venv as environment, records the exact Warp commit with each validation, and registers any Warp defect against warp-1.14. Revisit (a) at PR time.
+- (c) Wait for an AMD Warp at >= 1.16 before porting.
+
+Until these are ruled, the plan in `plan.md` is written for Q1(a), Q2(a), Q3(b).
+
+### Summary of the plan
+
+- Build class: runtime-compiled kernels from Python (`ext_type` = `python-nvrtc-runtime`); neither CMake Strategy A nor torch hipify applies to the package. `cpp_runtime/` is Strategy A if in scope.
+- Upstream analysed at `0f04ee18066822ec0c6751fa085d7b033734c4da` (2026-11-19).
+- Device strategy: keep curobo's logical 32-lane warp on every AMD target (host launch geometry, shared scratch and kernels all assume 32), via a new `kernels/common/warp_ops.cuh` of project-owned wrappers: native `*_sync` on CUDA, width-pinned `__shfl*(..., 32)` and half-wave 32-bit ballot/activemask/match_any masks on HIP. About 120 call sites in 24 headers switch to it.
+- Other device fixes: `helper_math.h` operator block guard, `<cuda_runtime.h>` guard in the pose refiner, an fp32 path for the test-only `nvcuda::wmma` tf32 compact L-BFGS kernel.
+- No textures, PTX, cooperative groups, CUB or Thrust on the Python path.
+- surface.json: generated floor (62 CUDA files, 29 cpp_runtime components) plus 24 planner-added components covering the runtime-compile backend, the kernel groups, Warp, the pytest suite, examples, benchmarks, packaging and docs. `utils/surface.py check curobo`: fully accounted for.
+
+### Facts checked during planning (for the porter)
+
+- `cuda.core` usage is confined to `curobo/_src/curobolib/backends/cuda_core_backend/*` plus `curobo/_src/trajectory/timeopt/timeopt_solver.py` (imports `LaunchConfig` and `launch_kernel` directly). Other modules import backend modules, not cuda.core.
+- `torch.cuda._compile_kernel` exists on ROCm torch 2.16 and uses hipRTC, but packs Python ints as C `int` (truncates `data_ptr()` pointers) and is private: not usable as the launch path.
+- `hip-python` 10.0.0.0.1.2 on PyPI is a compatibility shim over `rocm-bindings-hip`/`rocm-bindings-core` 10.0 (low-level `hip`, `hiprtc` only; no cuda.core equivalent). `hip-python-as-cuda` is not on PyPI (only test.pypi.org, latest 7.2.2.562.43); that wheel maps `cuda.bindings.{driver,runtime,nvrtc}` and the old `cuda.cuda`/`cudart`/`nvrtc` onto HIP but has no `cuda.core`, so it would cover only curobo's three `cuda.bindings.runtime` calls.
+- All 35 device `warpSize` uses are `curobo::common::warpSize` (= 32), not HIP's built-in.
+- `lbfgs_compact_step_kernel.cuh` (wmma tf32) is reachable only from `LBFGSCompactCu` in `curobo/tests/_src/optim/gradient/test_lbfgs.py`; `lbfgs.py:102` says tensor-core compact is no longer dispatched.
+- No `wp.Texture`/`wp.Volume` use, so AMD Warp's texture gap does not apply.
+- `.github/workflows` has only docs deploy and commit signing; no GPU CI to mirror.

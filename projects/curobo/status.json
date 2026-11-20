@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/curobo",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "python-nvrtc-runtime",
+  "stage": "planned",
   "adopted_at": "2026-11-05T23:22:07Z",
-  "updated_at": "2026-11-20T21:32:36Z",
+  "updated_at": "2026-11-20T21:41:37Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-20T21:32:36Z",
-    "holder": "41e33d9cc4e2"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -48,7 +44,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:32:36Z",
+      "updated_at": "2026-11-20T21:41:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,5 +77,10 @@
     "viable": true,
     "summary": "GPU motion planning/IK/collision for robot arms (52 .cu, ~650 KB); Apache-2.0 since v0.8.0 and clean file by file; no AMD path; needs a HIP runtime-compile backend (main now NVRTC-only via cuda.core) plus pervasive wave32 fixes; depends on AMD-Ecosystem/warp",
     "at": "2026-11-06T00:06:28Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-20T21:32:36Z",
+    "at": "2026-11-20T21:41:37Z"
   }
 }

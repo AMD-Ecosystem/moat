@@ -1,0 +1,400 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "0f04ee180668",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "cpp_runtime/mapper/src/cubin_kernel.cpp",
+      "cpp_runtime/mapper/src/device_scan.cu",
+      "cpp_runtime/robot/kernels/cost_reduction.cuh",
+      "cpp_runtime/robot/kernels/trajectory_gradient.cuh",
+      "cpp_runtime/robot/src/motion_planner_cuda.cu",
+      "cpp_runtime/robot/src/mpc_cuda.cu",
+      "cpp_runtime/robot/src/pose_calibration.cpp",
+      "cpp_runtime/robot/src/pose_calibration_cuda.cu",
+      "cpp_runtime/robot/src/robot_runtime.cpp",
+      "cpp_runtime/robot/src/scene_runtime.cpp",
+      "cpp_runtime/robot/src/spline_trajectory.cu",
+      "cpp_runtime/robot/src/trajectory_seed_fitter_cuda.cu",
+      "cpp_runtime/robot/src/trajectory_timeopt_cuda.cu",
+      "cpp_runtime/robot/src/trajectory_waypoints_cuda.cu",
+      "cpp_runtime/robot/tests/mpc_continuation_test.cu",
+      "curobo/_src/curobolib/kernels/common/augmented_lagrangian.cuh",
+      "curobo/_src/curobolib/kernels/common/block_warp_reductions.cuh",
+      "curobo/_src/curobolib/kernels/common/curobo_constants.h",
+      "curobo/_src/curobolib/kernels/common/math.cuh",
+      "curobo/_src/curobolib/kernels/common/pose_util.cuh",
+      "curobo/_src/curobolib/kernels/common/quaternion_util.cuh",
+      "curobo/_src/curobolib/kernels/dynamics/crba_backward_kernel.cuh",
+      "curobo/_src/curobolib/kernels/dynamics/crba_forward_kernel.cuh",
+      "curobo/_src/curobolib/kernels/dynamics/rnea_backward_kernel.cuh",
+      "curobo/_src/curobolib/kernels/dynamics/rnea_forward_kernel.cuh",
+      "curobo/_src/curobolib/kernels/dynamics/rnea_helpers.cuh",
+      "curobo/_src/curobolib/kernels/dynamics/spatial_algebra.cuh",
+      "curobo/_src/curobolib/kernels/geometry/self_collision/collision_pair.cuh",
+      "curobo/_src/curobolib/kernels/geometry/self_collision/self_collision_helper.cuh",
+      "curobo/_src/curobolib/kernels/geometry/self_collision/self_collision_kernel.cuh",
+      "curobo/_src/curobolib/kernels/kinematics/kinematics_backward_kernel.cuh",
+      "curobo/_src/curobolib/kernels/kinematics/kinematics_forward_helper.cuh",
+      "curobo/_src/curobolib/kernels/kinematics/kinematics_forward_kernel.cuh",
+      "curobo/_src/curobolib/kernels/kinematics/kinematics_jacobian_backward_helper.cuh",
+      "curobo/_src/curobolib/kernels/kinematics/kinematics_util.cuh",
+      "curobo/_src/curobolib/kernels/optimization/lbfgs/lbfgs_candidates.cuh",
+      "curobo/_src/curobolib/kernels/optimization/lbfgs/lbfgs_compact_step_kernel.cuh",
+      "curobo/_src/curobolib/kernels/optimization/lbfgs/lbfgs_step_kernel.cuh",
+      "curobo/_src/curobolib/kernels/optimization/lbfgs/lbfgs_vector_free_step_kernel.cuh",
+      "curobo/_src/curobolib/kernels/optimization/line_search/line_search_helpers.cuh",
+      "curobo/_src/curobolib/kernels/optimization/line_search/line_search_kernel.cuh",
+      "curobo/_src/curobolib/kernels/optimization/pose_refiner/pose_refiner_lm_kernel.cuh",
+      "curobo/_src/curobolib/kernels/parallel_banding/pba3d_kernel.cuh",
+      "curobo/_src/curobolib/kernels/parallel_banding/site_encoding.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/bspline/basis/bspline_basis_factored.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/bspline/basis/bspline_basis_matrix.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/bspline/basis/bspline_basis_polynomial.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/bspline/bspline_boundary_constraint.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/bspline/bspline_common.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/bspline/bspline_context.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/bspline/bspline_gradient_util.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/bspline/bspline_interpolation.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/bspline/bspline_kernel.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/legacy/differentiation_position_kernel.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/legacy/integration_acceleration_kernel.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/seed_fitter/seed_fitter_kernel.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/timeopt/timeopt_common.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/timeopt/timeopt_io_kernel.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/timeopt/timeopt_path_helpers.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/timeopt/timeopt_path_kernel.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/timeopt/timeopt_solver_kernel.cuh",
+      "curobo/_src/curobolib/kernels/trajectory/timeopt/trajectory_spline_kernel.cuh"
+    ],
+    "markers": {
+      "kernel": 98,
+      "device_code": 318,
+      "warp_intrinsic": 117,
+      "launch": 65,
+      "driver_api": 14
+    },
+    "libraries": {
+      "cub": 4
+    }
+  },
+  "components": [
+    {
+      "id": "benchmark:curobo_benchmark",
+      "kind": "benchmark",
+      "where": "cpp_runtime/benchmarks/CMakeLists.txt"
+    },
+    {
+      "id": "library:curobo_calibration_runtime",
+      "kind": "library",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "library:curobo_mapper_runtime",
+      "kind": "library",
+      "where": "cpp_runtime/mapper/CMakeLists.txt"
+    },
+    {
+      "id": "library:curobo_robot_runtime",
+      "kind": "library",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_pose_calibration_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_collision_layers_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_grasp_collision_policy_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_grasp_pose_preparation_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_ik_parallelism_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_ik_shared_model_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_ik_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_motion_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_mpc_capacity_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_mpc_continuation_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_mpc_shift_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_mpc_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_planner_ik_model_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_rollout_forward_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_rrt_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_scene_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_seed_fitter_kernel_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_seed_fitter_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_sphere_fit_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_spline_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_timeopt_output_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_timeopt_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_trajopt_parallelism_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_trajopt_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "test:curobo_robot_waypoints_test",
+      "kind": "test",
+      "where": "cpp_runtime/robot/CMakeLists.txt"
+    },
+    {
+      "id": "backend:cuda_core-runtime-compile",
+      "kind": "runtime_compile",
+      "where": "curobo/_src/curobolib/backends/cuda_core_backend/kernel_cache.py, launch_helper.py, *_config.py, curobo/_src/context.py, curobo/_src/curobolib/backends/__init__.py",
+      "added_by": "planner",
+      "note": "ALL kernels are compiled at run time by NVRTC through cuda.core (Program/ProgramOptions/LaunchConfig/launch) and cuda.bindings.runtime (cudaFuncSetAttribute, cudaGetLastError, cudaStreamSynchronize); the scanner sees none of it. Needs a hipRTC + HIP module-launch equivalent (plan.md, Port strategy)."
+    },
+    {
+      "id": "python:timeopt_solver-direct-launch",
+      "kind": "runtime_compile",
+      "where": "curobo/_src/trajectory/timeopt/timeopt_solver.py",
+      "added_by": "planner",
+      "note": "imports cuda.core LaunchConfig and launch_kernel outside the backend package; block=32 for factor/correct kernels"
+    },
+    {
+      "id": "kernels:kinematics",
+      "kind": "kernel_group",
+      "where": "curobo/_src/curobolib/kernels/kinematics",
+      "added_by": "planner",
+      "note": "FK/Jacobian fwd+bwd; warp reductions, 32-thread output groups (kinematics.py output_threads_per_batch=32)"
+    },
+    {
+      "id": "kernels:dynamics",
+      "kind": "kernel_group",
+      "where": "curobo/_src/curobolib/kernels/dynamics",
+      "added_by": "planner",
+      "note": "RNEA/CRBA fwd+bwd; __match_any_sync peer election + __popc/__ffs + __shfl_sync on 32-bit masks (rnea_helpers.cuh)"
+    },
+    {
+      "id": "kernels:self_collision",
+      "kind": "kernel_group",
+      "where": "curobo/_src/curobolib/kernels/geometry/self_collision",
+      "added_by": "planner",
+      "note": "__ballot_sync/__activemask/__match_any_sync, fullMask, threadIdx&31 warp math; packed 64-bit atomics"
+    },
+    {
+      "id": "kernels:optimization-lbfgs",
+      "kind": "kernel_group",
+      "where": "curobo/_src/curobolib/kernels/optimization/lbfgs",
+      "added_by": "planner",
+      "note": "step, vector-free step (production), compact step (wmma tf32, test-only per upstream: 'tensor-core compact is no longer dispatched')"
+    },
+    {
+      "id": "kernels:optimization-line_search",
+      "kind": "kernel_group",
+      "where": "curobo/_src/curobolib/kernels/optimization/line_search",
+      "added_by": "planner",
+      "note": "warp reductions; 1..32 probes"
+    },
+    {
+      "id": "kernels:optimization-pose_refiner",
+      "kind": "kernel_group",
+      "where": "curobo/_src/curobolib/kernels/optimization/pose_refiner",
+      "added_by": "planner",
+      "note": "LM pose refiner for the perception mapper; includes <cuda_runtime.h>"
+    },
+    {
+      "id": "kernels:trajectory-bspline",
+      "kind": "kernel_group",
+      "where": "curobo/_src/curobolib/kernels/trajectory/bspline",
+      "added_by": "planner",
+      "note": "constexpr warp_size=32, __shfl_down_sync(0xffffffffu); knots_per_warp layout from trajectory_config.py WARP_SIZE=32"
+    },
+    {
+      "id": "kernels:trajectory-timeopt",
+      "kind": "kernel_group",
+      "where": "curobo/_src/curobolib/kernels/trajectory/timeopt",
+      "added_by": "planner",
+      "note": "one-warp solver kernels (32 timing controls), heaviest warp-intrinsic user after self-collision"
+    },
+    {
+      "id": "kernels:trajectory-seed_fitter",
+      "kind": "kernel_group",
+      "where": "curobo/_src/curobolib/kernels/trajectory/seed_fitter",
+      "added_by": "planner",
+      "note": "dynamic shared memory opt-in via cudaFuncSetAttribute"
+    },
+    {
+      "id": "kernels:trajectory-legacy",
+      "kind": "kernel_group",
+      "where": "curobo/_src/curobolib/kernels/trajectory/legacy",
+      "added_by": "planner",
+      "note": "finite-difference and integration kernels still dispatched by trajectory.py"
+    },
+    {
+      "id": "kernels:parallel_banding",
+      "kind": "kernel_group",
+      "where": "curobo/_src/curobolib/kernels/parallel_banding",
+      "added_by": "planner",
+      "note": "PBA 3D distance transform for the ESDF mapper"
+    },
+    {
+      "id": "kernels:common",
+      "kind": "kernel_group",
+      "where": "curobo/_src/curobolib/kernels/common",
+      "added_by": "planner",
+      "note": "block_warp_reductions.cuh (__activemask/__ballot_sync/__shfl_down_sync), curobo_constants.h (warpSize=32, fullMask=0xffffffffu), cuda_precisions.h (torch/extension.h include, unused by the runtime path)"
+    },
+    {
+      "id": "vendored:helper_math",
+      "kind": "vendored",
+      "where": "curobo/_src/curobolib/kernels/third_party/helper_math.h",
+      "added_by": "planner",
+      "note": "CUDA Samples BSD-3; operator block ambiguous against HIP_vector_type operators"
+    },
+    {
+      "id": "dependency:warp-lang",
+      "kind": "dependency",
+      "where": "80+ files under curobo/_src import warp",
+      "added_by": "planner",
+      "note": "Warp kernels (tile_sum/tile_map/tile_atomic_add/tile_matmul/tile_cholesky, Mesh BVH queries, launch_tiled) run through the AMD Warp build; curobo pins nothing (warp-lang>=0.10) but THIRD_PARTY_NOTICES assesses 1.16.0, AMD Warp is 1.13 (amd-integration) / 1.14 (release line)"
+    },
+    {
+      "id": "test:python-pytest",
+      "kind": "test",
+      "where": "curobo/tests (237 test_*.py, pyproject [tool.pytest.ini_options])",
+      "added_by": "planner",
+      "note": "the real GPU suite; the validation gate"
+    },
+    {
+      "id": "test:examples",
+      "kind": "test",
+      "where": "curobo/tests/test_examples.py",
+      "added_by": "planner",
+      "note": "runs curobo/examples/getting_started/* with --test"
+    },
+    {
+      "id": "examples:python",
+      "kind": "example",
+      "where": "curobo/examples (getting_started, guides, reference)",
+      "added_by": "planner",
+      "note": "must run unchanged; reference/lidar_volumetric_mapping.py and getting_started/feature_mapping.py download RADIO (non-commercial) and are not validation inputs"
+    },
+    {
+      "id": "benchmark:python",
+      "kind": "benchmark",
+      "where": "benchmark/ik_benchmark.py, motion_plan_benchmark.py, inverse_dynamics_kernel_benchmark.py",
+      "added_by": "planner",
+      "note": "perf evidence only; motion_plan_benchmark needs the robometrics extra"
+    },
+    {
+      "id": "packaging:pyproject-extras",
+      "kind": "build_path",
+      "where": "pyproject.toml [project.optional-dependencies]",
+      "added_by": "planner",
+      "note": "cu12/cu13 extras pull cuda-core/cuda-bindings/nvidia-cuda-runtime; a ROCm install path (extra or documented command) is needed"
+    },
+    {
+      "id": "docs:installation",
+      "kind": "docs",
+      "where": "docs/getting-started/installation.rst",
+      "added_by": "planner",
+      "note": "ROCm install section"
+    },
+    {
+      "id": "tool:export-cpp-runtime",
+      "kind": "tool",
+      "where": "cpp_runtime/robot/tools/*.py, cpp_runtime/mapper/tools/export_mapper_aot.py",
+      "added_by": "planner",
+      "note": "AOT export of cubins (cuda.core Program.compile) and Warp AOT modules (wp.compile_aot_module) for the C++ runtime; goes with the cpp_runtime ruling"
+    },
+    {
+      "id": "tests:cpp_runtime-python",
+      "kind": "test",
+      "where": "cpp_runtime/robot/tests/test_*.py, cpp_runtime/mapper/tests/test_mapper_runtime.py",
+      "added_by": "planner",
+      "note": "Python-side tests of export/runtime; go with the cpp_runtime ruling"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}
