@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:43:45Z",
-  "updated_at": "2026-11-19T23:21:51Z",
+  "updated_at": "2026-11-20T00:34:13Z",
   "head_sha": "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
   "depends_on": [],
   "waivers": {
@@ -26,7 +26,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 1524644,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx1201": {
       "blocked": false,
@@ -134,7 +134,7 @@
       "failed_sha": null,
       "started_at": "2026-11-19T04:05:53Z",
       "completed_at": "2026-11-19T22:13:35Z",
-      "updated_at": "2026-11-19T23:11:35Z",
+      "updated_at": "2026-11-20T00:34:13Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -148,7 +148,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "porter",
       "state": "completed",
       "validated_prior": [
         "87cbc046d27c1eabd33eec8c208014bface17b07",
@@ -263,5 +263,10 @@
     "at": "2026-11-19T21:14:34Z"
   },
   "reviewed_sha": "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
-  "review_pr": "https://github.com/AMD-Ecosystem/espresso/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/espresso/pull/1",
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-20T00:34:13Z",
+    "holder": "e1246b1f46dc"
+  }
 }
