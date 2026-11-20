@@ -1,0 +1,279 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "6602ee2ca38a",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "common/platform.h",
+      "core/kernel.h",
+      "devices/cuda/cuda_conv.cu",
+      "devices/cuda/cuda_device.cpp",
+      "devices/cuda/cuda_engine.cu",
+      "devices/cuda/cuda_engine.h",
+      "devices/cuda/curtn.cpp",
+      "devices/cuda/cutlass_conv.h",
+      "devices/cuda/cutlass_conv_sm75.cu",
+      "devices/cuda/cutlass_conv_sm80.cu",
+      "devices/hip/hip_device.cpp",
+      "devices/hip/hip_engine.h"
+    ],
+    "markers": {
+      "kernel": 10,
+      "device_code": 6,
+      "launch": 6,
+      "warp_intrinsic": 8,
+      "driver_api": 26
+    },
+    "libraries": {
+      "cutlass": 48
+    }
+  },
+  "components": [
+    {
+      "id": "library:OpenImageDenoise",
+      "kind": "library",
+      "where": "api/CMakeLists.txt"
+    },
+    {
+      "id": "library:OpenImageDenoise_common",
+      "kind": "library",
+      "where": "common/CMakeLists.txt"
+    },
+    {
+      "id": "library:OpenImageDenoise_core",
+      "kind": "library",
+      "where": "core/CMakeLists.txt"
+    },
+    {
+      "id": "library:OpenImageDenoise_device_cpu",
+      "kind": "library",
+      "where": "devices/cpu/CMakeLists.txt"
+    },
+    {
+      "id": "library:OpenImageDenoise_device_cuda",
+      "kind": "library",
+      "where": "devices/cuda/CMakeLists.txt"
+    },
+    {
+      "id": "library:OpenImageDenoise_device_hip",
+      "kind": "library",
+      "where": "devices/hip/CMakeLists.txt"
+    },
+    {
+      "id": "library:OpenImageDenoise_device_metal",
+      "kind": "library",
+      "where": "devices/metal/CMakeLists.txt"
+    },
+    {
+      "id": "library:OpenImageDenoise_device_sycl",
+      "kind": "library",
+      "where": "devices/sycl/CMakeLists.txt"
+    },
+    {
+      "id": "library:OpenImageDenoise_utils",
+      "kind": "library",
+      "where": "apps/utils/CMakeLists.txt"
+    },
+    {
+      "id": "library:OpenImageDenoise_weights",
+      "kind": "library",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "library:curtn",
+      "kind": "library",
+      "where": "devices/cuda/CMakeLists.txt"
+    },
+    {
+      "id": "option:OIDN_APPS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Enable building example and test apps."
+    },
+    {
+      "id": "option:OIDN_APPS_OPENIMAGEIO",
+      "kind": "option",
+      "where": "apps/utils/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Enable OpenImageIO support in example and test apps."
+    },
+    {
+      "id": "option:OIDN_DEVICE_CPU",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Enable CPU device."
+    },
+    {
+      "id": "option:OIDN_DEVICE_CPU_BNNS",
+      "kind": "option",
+      "where": "devices/cpu/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Enable BNNS for CPU device."
+    },
+    {
+      "id": "option:OIDN_DEVICE_CUDA",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Enable CUDA device."
+    },
+    {
+      "id": "option:OIDN_DEVICE_HIP",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Enable HIP device."
+    },
+    {
+      "id": "option:OIDN_DEVICE_METAL",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Enable Metal device."
+    },
+    {
+      "id": "option:OIDN_DEVICE_SYCL",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Enable SYCL device."
+    },
+    {
+      "id": "option:OIDN_DEVICE_SYCL_AOT",
+      "kind": "option",
+      "where": "devices/sycl/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Enable AOT compilation for SYCL kernels."
+    },
+    {
+      "id": "option:OIDN_DEVICE_SYCL_JIT_CACHE",
+      "kind": "option",
+      "where": "devices/sycl/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Enable JIT cache for SYCL kernels (recommended)."
+    },
+    {
+      "id": "option:OIDN_FILTER_RT",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Include trained weights of the RT filter."
+    },
+    {
+      "id": "option:OIDN_FILTER_RTLIGHTMAP",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Include trained weights of the RTLightmap filter."
+    },
+    {
+      "id": "option:OIDN_INSTALL_DEPENDENCIES",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Install Open Image Denoise dependencies."
+    },
+    {
+      "id": "option:OIDN_LIBRARY_VERSIONED",
+      "kind": "option",
+      "where": "cmake/oidn_common.cmake",
+      "default": "ON",
+      "doc": "Build versioned Open Image Denoise library files."
+    },
+    {
+      "id": "option:OIDN_STATIC_LIB",
+      "kind": "option",
+      "where": "cmake/oidn_common.cmake",
+      "default": "unset",
+      "doc": "Build Open Image Denoise as a static or hybrid static/shared library."
+    },
+    {
+      "id": "option:OIDN_WARN_AS_ERRORS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Treat warnings as errors."
+    },
+    {
+      "id": "executable:oidnTest",
+      "kind": "test",
+      "where": "apps/CMakeLists.txt (oidn_add_app macro; the scan misses it)"
+    },
+    {
+      "id": "executable:oidnDenoise",
+      "kind": "executable",
+      "where": "apps/CMakeLists.txt (oidn_add_app macro); also the image-regression driver"
+    },
+    {
+      "id": "executable:oidnBenchmark",
+      "kind": "benchmark",
+      "where": "apps/CMakeLists.txt (oidn_add_app macro)"
+    },
+    {
+      "id": "python:training",
+      "kind": "python",
+      "where": "training/ (PyTorch training scripts; torch.cuda device strings, NCCL backend)"
+    },
+    {
+      "id": "feature:hip-cdna-conv",
+      "kind": "kernel",
+      "where": "devices/hip (CK XDL/MFMA convolution path for wave64 CDNA; upstream PR RenderKit/oidn#302 adds gfx950 only)"
+    },
+    {
+      "id": "platform:windows-hip",
+      "kind": "platform",
+      "where": "devices/CMakeLists.txt ROCm discovery on WIN32, hip_device.cpp LUID and D3D external memory"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "library:OpenImageDenoise_device_cuda",
+      "reason": "another vendor's backend; the port leaves it byte-identical and Jeff Daily's 2026-11-10 ruling scopes the work to the HIP device (its nvcc compile is still checked as a no-regression item)"
+    },
+    {
+      "id": "library:curtn",
+      "reason": "CUDA runtime shim of the CUDA device; another vendor's backend; the port leaves it byte-identical and Jeff Daily's 2026-11-10 ruling scopes the work to the HIP device"
+    },
+    {
+      "id": "library:OpenImageDenoise_device_sycl",
+      "reason": "Intel SYCL backend; another vendor's backend; the port leaves it byte-identical and Jeff Daily's 2026-11-10 ruling scopes the work to the HIP device"
+    },
+    {
+      "id": "library:OpenImageDenoise_device_metal",
+      "reason": "Apple Metal backend, macOS only; another vendor's backend; the port leaves it byte-identical and Jeff Daily's 2026-11-10 ruling scopes the work to the HIP device"
+    },
+    {
+      "id": "option:OIDN_DEVICE_CUDA",
+      "reason": "CUDA backend switch; covered only by the nvcc no-regression compile, not by the port"
+    },
+    {
+      "id": "option:OIDN_DEVICE_SYCL",
+      "reason": "Intel SYCL backend switch; another vendor's backend; the port leaves it byte-identical and Jeff Daily's 2026-11-10 ruling scopes the work to the HIP device"
+    },
+    {
+      "id": "option:OIDN_DEVICE_SYCL_AOT",
+      "reason": "Intel SYCL option; another vendor's backend; the port leaves it byte-identical and Jeff Daily's 2026-11-10 ruling scopes the work to the HIP device"
+    },
+    {
+      "id": "option:OIDN_DEVICE_SYCL_JIT_CACHE",
+      "reason": "Intel SYCL option; another vendor's backend; the port leaves it byte-identical and Jeff Daily's 2026-11-10 ruling scopes the work to the HIP device"
+    },
+    {
+      "id": "option:OIDN_DEVICE_METAL",
+      "reason": "Apple Metal backend switch; another vendor's backend; the port leaves it byte-identical and Jeff Daily's 2026-11-10 ruling scopes the work to the HIP device"
+    },
+    {
+      "id": "option:OIDN_DEVICE_CPU_BNNS",
+      "reason": "Apple BNNS CPU path, macOS only"
+    },
+    {
+      "id": "python:training",
+      "reason": "PyTorch training scripts, outside the HIP-device ruling; they use only torch device strings ('cuda') and torch.distributed NCCL, which a ROCm PyTorch maps to HIP/RCCL unchanged, so there is no source to port (see notes, planner section)"
+    }
+  ],
+  "owed": [],
+  "removed_from_floor": []
+}

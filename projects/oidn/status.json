@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/oidn",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "cmake",
+  "stage": "planned",
   "adopted_at": "2026-11-06T02:27:16Z",
-  "updated_at": "2026-11-20T21:18:44Z",
+  "updated_at": "2026-11-20T21:25:22Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-20T21:18:44Z",
-    "holder": "6bc1209ed893"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -47,7 +43,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:18:44Z",
+      "updated_at": "2026-11-20T21:25:22Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -80,5 +76,10 @@
     "viable": true,
     "summary": "Validation take-up ruled by Jeff Daily 2026-11-10: Validate upstream's HIP device (devices/hip) on all required gates (wave64, wave32, Windows); fixes go to a new AMD-Ecosystem fork (requested, created by a person)",
     "at": "2026-11-10T18:16:24Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-20T21:18:44Z",
+    "at": "2026-11-20T21:25:22Z"
   }
 }
