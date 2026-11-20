@@ -7,8 +7,8 @@
   "priority": 4.566,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-11-20T00:03:36Z",
-  "head_sha": "1872600b13894318a76d56b1e012990dad5970d7",
+  "updated_at": "2026-11-20T00:38:12Z",
+  "head_sha": "878e8a4926cb00db29bde510644df2591be21d43",
   "porting": null,
   "waivers": {},
   "license_clearance": {
@@ -25,10 +25,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "1872600b13894318a76d56b1e012990dad5970d7",
+      "validated_sha": "878e8a4926cb00db29bde510644df2591be21d43",
       "started_at": "2026-05-31T23:22:01Z",
       "completed_at": "2026-11-20T00:03:36Z",
-      "updated_at": "2026-11-20T00:03:36Z",
+      "updated_at": "2026-11-20T00:38:12Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -44,18 +44,17 @@
       },
       "last_agent": "reviewer",
       "carry_forward": {
-        "from": "1664e6da19e9fd89b437bcd6e38db1e654edb6b1",
-        "to": "1872600b13894318a76d56b1e012990dad5970d7",
-        "method": "source-class",
-        "class": "doc-only",
-        "detail": "The MI250X GPU run passed at 1664e6d and failed only the vocabulary check, on the .gitmodules branch line; a995109 drops that line and 1872600 adds one README sentence, so nothing that is built change",
-        "at": "2026-11-20T00:03:36Z",
-        "after_gate": "jargon"
+        "from": "1872600b13894318a76d56b1e012990dad5970d7",
+        "to": "878e8a4926cb00db29bde510644df2591be21d43",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-20T00:38:12Z"
       },
       "failed_sha": "1664e6da19e9fd89b437bcd6e38db1e654edb6b1",
       "validated_prior": [
         "d65b6ab9ec19bbff45641c989002c8dc746119bc",
-        "e24abb264834ee89f2d5f61e83c34aa17950d01a"
+        "e24abb264834ee89f2d5f61e83c34aa17950d01a",
+        "1872600b13894318a76d56b1e012990dad5970d7"
       ]
     },
     "linux-gfx1100": {
@@ -141,11 +140,11 @@
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "1872600b13894318a76d56b1e012990dad5970d7",
+      "validated_sha": "878e8a4926cb00db29bde510644df2591be21d43",
       "failed_sha": "e24abb264834ee89f2d5f61e83c34aa17950d01a",
       "started_at": "2026-11-19T22:56:10Z",
       "completed_at": "2026-11-19T23:12:12Z",
-      "updated_at": "2026-11-19T23:44:40Z",
+      "updated_at": "2026-11-20T00:38:12Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -163,25 +162,25 @@
       "last_agent": "validator",
       "validated_prior": [
         "e24abb264834ee89f2d5f61e83c34aa17950d01a",
-        "a995109ec81235aeb9dab69bfc6209ceeae3e053"
+        "a995109ec81235aeb9dab69bfc6209ceeae3e053",
+        "1872600b13894318a76d56b1e012990dad5970d7"
       ],
       "carry_forward": {
-        "from": "a995109ec81235aeb9dab69bfc6209ceeae3e053",
-        "to": "1872600b13894318a76d56b1e012990dad5970d7",
-        "method": "source-class",
-        "class": "doc-only",
-        "detail": "no changes",
-        "at": "2026-11-19T23:44:40Z"
+        "from": "1872600b13894318a76d56b1e012990dad5970d7",
+        "to": "878e8a4926cb00db29bde510644df2591be21d43",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-20T00:38:12Z"
       }
     },
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "1872600b13894318a76d56b1e012990dad5970d7",
+      "validated_sha": "878e8a4926cb00db29bde510644df2591be21d43",
       "failed_sha": null,
       "started_at": "2026-11-19T23:43:55Z",
       "completed_at": "2026-11-19T23:39:55Z",
-      "updated_at": "2026-11-19T23:45:11Z",
+      "updated_at": "2026-11-20T00:38:12Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -198,15 +197,15 @@
       "state": "completed",
       "last_agent": "validator",
       "validated_prior": [
-        "a995109ec81235aeb9dab69bfc6209ceeae3e053"
+        "a995109ec81235aeb9dab69bfc6209ceeae3e053",
+        "1872600b13894318a76d56b1e012990dad5970d7"
       ],
       "carry_forward": {
-        "from": "a995109ec81235aeb9dab69bfc6209ceeae3e053",
-        "to": "1872600b13894318a76d56b1e012990dad5970d7",
-        "method": "source-class",
-        "class": "doc-only",
-        "detail": "no changes",
-        "at": "2026-11-19T23:44:40Z"
+        "from": "1872600b13894318a76d56b1e012990dad5970d7",
+        "to": "878e8a4926cb00db29bde510644df2591be21d43",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-20T00:38:12Z"
       }
     }
   },
@@ -215,5 +214,5 @@
     "since": "2026-11-19T23:52:18Z",
     "at": "2026-11-20T00:03:19Z"
   },
-  "reviewed_sha": "1872600b13894318a76d56b1e012990dad5970d7"
+  "reviewed_sha": "878e8a4926cb00db29bde510644df2591be21d43"
 }
