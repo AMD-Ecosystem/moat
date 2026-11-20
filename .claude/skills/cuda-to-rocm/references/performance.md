@@ -15,7 +15,11 @@ Contents:
 
 A port that is byte-identical in output can still be an order of magnitude slower. The
 causes in this file were measured, not guessed: each was swapped in and out one at a time
-on the same binary and input. An hour is enough to find the cost:
+on the same binary and input. Before profiling, rule out an unoptimized build: a CMake HIP
+build with no build type compiles every kernel at `-O0` (build-cmake-link.md, "An unset CMake
+build type runs every HIP kernel unoptimized"), and a kernel launched with far fewer than
+1024 threads may need `__launch_bounds__` to get its registers (platform-limits.md). Then an
+hour is enough to find the cost:
 
 1. `rocprofv3 --kernel-trace --stats -d <dir> -o run --output-format csv -- <cmd>` gives
    per-kernel time and call counts (`run_kernel_stats.csv`). rocprofv3 aborts if
