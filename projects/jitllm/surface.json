@@ -1,0 +1,185 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "8ccbd7ecae3e",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [],
+    "markers": {},
+    "libraries": {}
+  },
+  "components": [
+    {
+      "id": "backend:hip-identity",
+      "kind": "backend",
+      "where": "src/main/java/org/beehive/jitllm/runtime/backend/BackendId.java, src/main/java/org/beehive/jitllm/backend/tornado/device/TornadoDevices.java"
+    },
+    {
+      "id": "capability:tensor-core-mma",
+      "kind": "capability",
+      "where": "src/main/java/org/beehive/jitllm/backend/tornado/device/TornadoDevices.java (TENSOR_CORE_MMA, INT8_TENSOR_CORE_MMA; 12 *MMA* kernel/layer files)"
+    },
+    {
+      "id": "capability:shuffle-reduced-fp16-gemv",
+      "kind": "capability",
+      "where": "src/main/java/org/beehive/jitllm/backend/tornado/device/TornadoDevices.java"
+    },
+    {
+      "id": "capability:packed-integer-dot",
+      "kind": "capability",
+      "where": "src/main/java/org/beehive/jitllm/backend/tornado/device/TornadoDevices.java (dp4a families)"
+    },
+    {
+      "id": "capability:single-pass-rms",
+      "kind": "capability",
+      "where": "src/main/java/org/beehive/jitllm/backend/tornado/device/TornadoDevices.java, scheduling/SchedulerDetectionService.java"
+    },
+    {
+      "id": "native:vendor-blas",
+      "kind": "native-library",
+      "where": "src/main/java/org/beehive/jitllm/backend/tornado/ops/nativelib/nvidia/NativePrefillSupport.java, NativeLibrarySupport.java, ops/Target.java, ops/nativelib/nvidia/Cublas*.java"
+    },
+    {
+      "id": "native:sdpa-attention",
+      "kind": "native-library",
+      "where": "src/main/java/org/beehive/jitllm/backend/tornado/ops/nativelib/nvidia/CudnnLayerAttention.java, kernels/CuDnnPrefillAttentionKernels.java"
+    },
+    {
+      "id": "native:per-family-weights",
+      "kind": "plan-provider",
+      "where": "src/main/java/org/beehive/jitllm/backend/tornado/plan/*PlanProvider.java nativeLibraryWeights (10 families)"
+    },
+    {
+      "id": "gate:fp16-kv-cache",
+      "kind": "backend-gate",
+      "where": "src/main/java/org/beehive/jitllm/backend/tornado/Fp16KeyValueSupport.java"
+    },
+    {
+      "id": "gate:int8-weight-prepacking",
+      "kind": "backend-gate",
+      "where": "src/main/java/org/beehive/jitllm/backend/tornado/plan/prepacking/WeightPrepacking.java"
+    },
+    {
+      "id": "gate:qwen35-split-kv",
+      "kind": "backend-gate",
+      "where": "src/main/java/org/beehive/jitllm/backend/tornado/layers/Qwen35FFNLayers.java"
+    },
+    {
+      "id": "family:deepseek2",
+      "kind": "model-family",
+      "where": "src/main/java/org/beehive/jitllm/backend/tornado/plan/DeepSeek2PlanProvider.java"
+    },
+    {
+      "id": "gate:graph-capture-default",
+      "kind": "backend-gate",
+      "where": "src/main/java/org/beehive/jitllm/backend/tornado/CudaGraphDefault.java"
+    },
+    {
+      "id": "option:nccl",
+      "kind": "option",
+      "where": "pom.xml profile nccl, src/nccl/java/.../NcclTransport.java (RCCL on HIP)"
+    },
+    {
+      "id": "executable:jitllm",
+      "kind": "launcher",
+      "where": "jitllm (Python launcher)"
+    },
+    {
+      "id": "executable:jitllm4j",
+      "kind": "launcher",
+      "where": "jitllm4j (Java single-file launcher)"
+    },
+    {
+      "id": "script:tornadovm-dev",
+      "kind": "script",
+      "where": "scripts/tornadovm-dev.sh"
+    },
+    {
+      "id": "tests:class-a",
+      "kind": "tests",
+      "where": "mvn test (src/test, non-*AccelTest) and make test-scripts (scripts/tests)"
+    },
+    {
+      "id": "tests:class-b",
+      "kind": "tests",
+      "where": "mvn verify -Paccel-tests (261 *AccelTest classes; pom.xml accel-tests argLine)"
+    },
+    {
+      "id": "tests:class-c-benchmark-gate",
+      "kind": "tests",
+      "where": "scripts/perf_gate.py, scripts/perf-gate-run.sh, docs/perf-history.jsonl"
+    },
+    {
+      "id": "docs:backends",
+      "kind": "docs",
+      "where": "README.md, docs/architecture/{models-and-backends,development,verification}.md"
+    },
+    {
+      "id": "platform:windows",
+      "kind": "platform",
+      "where": "set_paths.cmd, launchers on Windows (windows gate)"
+    },
+    {
+      "id": "packaging:native-image",
+      "kind": "option",
+      "where": "pom.xml profile native, docs/native-image.md (GraalVM native image, Leyden AOT)"
+    },
+    {
+      "id": "profile:release",
+      "kind": "option",
+      "where": "pom.xml profile release (TornadoVM 8.1.0 from Maven Central)"
+    },
+    {
+      "id": "ci:github-workflows",
+      "kind": "ci",
+      "where": ".github/workflows/*.yml, .github/actions/run-inference"
+    },
+    {
+      "id": "scripts:nvidia-profiling",
+      "kind": "script",
+      "where": "scripts/manual_cuda_half2_*.sh, scripts/profile_cuda_baseline_matrix.sh"
+    },
+    {
+      "id": "kernels:metal-families",
+      "kind": "kernels",
+      "where": "Metal simdgroupMatrix* kernels"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "profile:release",
+      "reason": "Pins TornadoVM 8.1.0 from Maven Central, which predates the HIP backend; moving it is upstream's release decision once a TornadoVM release carries HIP. The PR body states this. No change."
+    },
+    {
+      "id": "ci:github-workflows",
+      "reason": "Fork Actions stay disabled (AGENTS.md); upstream has no AMD runners, so a HIP CI job would gate nothing. Docs say how to run the gates on HIP."
+    },
+    {
+      "id": "scripts:nvidia-profiling",
+      "reason": "NVIDIA-specific benchmarking and nsys/ncu helpers that upstream does not ship as part of the engine; HIP numbers are produced with the backend-neutral perf scripts (plan Test plan 6)."
+    },
+    {
+      "id": "kernels:metal-families",
+      "reason": "Metal-only kernel families, selected only on the Metal backend; untouched and unaffected."
+    },
+    {
+      "id": "tests:class-c-benchmark-gate",
+      "reason": "Runs on upstream's own pinned self-hosted runners; a new HIP tuple is record-only by the gate's design. The same scripts produce the HIP benchmark numbers for notes.md (plan Test plan 6), which is coverage of the scripts, not of the CI gate."
+    }
+  ],
+  "owed": [
+    {
+      "id": "family:deepseek2",
+      "reason": "Awaiting jeff's ruling Q2 (notes.md planning section): enable on HIP with a one-off CPU-reference check, or keep CUDA-only."
+    },
+    {
+      "id": "packaging:native-image",
+      "reason": "Non-blocking item N1 (notes.md): attempt once on Linux HIP; if it fails for a TornadoVM reason, the porter records the error and brings jeff the scope question; never moved to scoped_out without his ruling."
+    },
+    {
+      "id": "option:nccl",
+      "reason": "Multi-GPU RCCL path needs a host that can give one job two GPUs; validator evidence where available. If no host can, the question goes to jeff; not scoped out by an agent."
+    }
+  ],
+  "removed_from_floor": []
+}
