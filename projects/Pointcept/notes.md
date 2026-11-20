@@ -1273,3 +1273,28 @@ When a Triton-based library's first step takes hours, the Triton cache directory
 ## Lesson for moat-porting: a fleet worker's background command is capped at 2 hours
 
 The harness stops a `run_in_background` shell command at 2 h whatever `timeout` is requested, killing a cold Triton run with it (here at 120 of 150 allowed minutes). For a GPU run that may go longer, start it with `setsid nohup <wrapper> &` from the worker, have the wrapper write an exit marker, and wait on that marker in foreground polls of under 10 minutes; the persistent Triton cache meant the killed run's work was not lost.
+
+## Validation 2026-11-20 (validator, windows-gfx1151, at 35af626)
+
+Platform: windows-gfx1151, AMD Radeon 8060S (wave32 APU), HIP_VISIBLE_DEVICES=0. Fork `moat-port` @ 35af626 (= head_sha), `git checkout -B moat-port origin/moat-port` in `projects/Pointcept/src`, nothing pushed, no fork edits. Same environment as the f33fdb6 record: `agent_space/torch_venv`, torch 2.12.0+rocm7.14.0a20260519 (HIP 7.13.26190), `agent_space/pointcept_f33/env.sh`, scratch deps/spconv-triton/triton-windows 3.9.0 under `pointcept_f33/{deps,sct,tw,stubs}` on PYTHONPATH, `TRITON_CACHE_DIR=pointcept_f33/tcache` (warm from the f33fdb6 run).
+
+`git diff --stat f33fdb6 35af626`: README.md (+1) and pointcept/models/utils/spconv.py (+24/-2) only. No compiled source changed, so no rebuild; the four extensions installed at f33fdb6 were reused.
+
+Commands (each under `utils/timeit.sh Pointcept test --`, venv python `$TORCH_PY`, env.sh sourced):
+```
+cd pointcept_f33 && $TORCH_PY test.py        # pointops2 in-tree tests
+cd pointcept_f33 && $TORCH_PY op_driver.py   # op driver
+timeout 600 $TORCH_PY probe.py <src> --config configs/s3dis/semseg-pt-v1-0-base.py --run --sparse-config configs/s3dis/semseg-spunet-v1m1-0-base.py
+timeout 600 $TORCH_PY sparse_smoke.py
+```
+(the first attempt of each used the wrong python/PYTHONPATH form and failed with ModuleNotFoundError for torch, torch_cluster and addict; that was the launch line, fixed by using the venv python and Windows-style PYTHONPATH.)
+
+Results, same as f33fdb6 unless stated:
+- pointops2 in-tree tests: 7/8 EXIT 0, 1/8 EXIT 1 (test_attention_op_step2.py, the upstream `NameError`), identical split.
+- Op driver: 4/4 ALL DRIVER CHECKS COMPLETE; knn set-match 1.000000; pointrope GPU vs CPU 4.709e-06, round trip 2.384e-07; ballquery_batch_p 16732 pairs, 0 radius violations; bfs_cluster 1 cluster of 1995. Identical numbers.
+- Changed code: `import pointcept.models` OK; selected backend `spconv_triton.pytorch` (spconv absent, spconv_triton and triton present; no warning). PT v1 (semseg-pt-v1-0-base) builds, 7,767,729 params, forward+backward on 2048 points on the 8060S: loss 2.6307 finite, gradsum 3.0645e+04 (f33fdb6: 2.6358, loss differs only through unseeded init). SpUNet (semseg-spunet-v1m1-0-base) builds, 39,157,165 params.
+- Sparse conv smoke (one SubMConv3d(4,8,3) over 500 voxels, 600 s cap, run once): forward 0.3 s, abs-sum 387.6918 (same as f33fdb6). DIFFERENT from f33fdb6: the backward FINISHED, in 472.1 s (grad finite, abs-sum 464.2153; Triton cache grew 130 -> 141 entries, so it was compiling the remaining backward kernels). Dense CPU reference: forward max abs diff 1.788e-07, input grad max abs diff 2.384e-07. So backward on gfx1151 is slow cold compilation, not stuck, and one sparse layer is now numerically checked on Windows. Not run: a multi-step SpUNet, as before.
+- Integrity: no modified tracked files in the fork clone (untracked hipify artifacts only), `jargon.py --port Pointcept` clean. No host fault seen. Single GPU process at a time, no repeat loops.
+- CUDA gate: not run (Windows host); the delta has no compiled code.
+
+Result: windows-gfx1151 completed at 35af626.
