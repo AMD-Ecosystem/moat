@@ -29,3 +29,19 @@ Context: TorchRL is part of the PyTorch org (pytorch/rl, ~3.6k stars, active: pu
 
 ### Recommendation: take up (fork)
 Validate-lane work, small: (1) teach `setup.py` to build the extension with `.cu` under ROCm torch (`torch.version.hip` + ROCM_HOME, no nvcc check); (2) build and run `test/rb/test_prioritized.py`, `test/rb/test_storages.py` and the GPU-marked test suite on ROCm torch across wave64/wave32/windows (Windows wheels are CPU-only upstream, so the windows gate is a CPU-extension plus GPU torch run); (3) upstream PR for the setup.py gate and docs, and propose turning on the ROCm wheel lane. Viable: yes.
+
+## Planning (2026-11-20, planner, linux-gfx942 host, no GPU used)
+
+**Decision needed from jeff before the porter starts: should the upstream PR also turn on TorchRL's ROCm wheel lane?** `build-wheels-linux.yml` `with-rocm` and `release.yml` `build_rocm` default to disabled (off since pytorch/rl#3603). Options:
+- (a) flip both defaults in the same PR;
+- (b) PR changes `setup.py`, docs and tests only, and its body proposes the lane flip (recommended);
+- (c) a separate CI PR after the source PR merges.
+
+The porter must not touch `.github/` until ruled. This is not a partial port: the whole CUDA surface (one `.cu`) is in scope under every option, Windows included.
+
+- Planned at upstream `1d94cfa5c35f` (2026-11-19). `ext_type` = torch-extension. Strategy: B, torch build-time hipify.
+- Core change: `setup.py::_should_build_cuda()` returns False on ROCm torch (it needs `torch.version.cuda` and a matching nvcc). Add a `torch.version.hip` + `ROCM_HOME` branch; add the hip version to the stale-build info; drop `-G` for the HIP device compiler in `DEBUG=1`. Add unit tests in `test/test_setup.py` and a docs line.
+- Kernel sweep: 4 kernels, 256-thread blocks, no warp intrinsics, shared memory, atomics, libraries or uninitialised allocations (`torch::full`). No source change expected in `torchrl/csrc`.
+- Validation trap: every GPU segment-tree test `pytest.skip`s when the binding is absent. Assert `hasattr(torchrl._torchrl, "CudaSumSegmentTreeFp32")` and record `-rs` skips.
+- `packaging/pkg_helpers.bash` already exports `FORCE_CUDA=1` for `rocm*`. So the FORCE_CUDA route on ROCm exists but is untested; the auto-detect makes it unnecessary.
+- surface.json: 11 components; `ci:rocm_wheel_lane` stays unaccounted pending the ruling.

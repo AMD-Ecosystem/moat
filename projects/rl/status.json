@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/rl",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "torch-extension",
+  "stage": "planned",
   "adopted_at": "2026-11-06T02:24:49Z",
-  "updated_at": "2026-11-20T22:06:40Z",
+  "updated_at": "2026-11-20T22:09:45Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-20T22:06:40Z",
-    "holder": "e6f6c53e65fc"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -48,7 +44,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T22:06:40Z",
+      "updated_at": "2026-11-20T22:09:45Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,5 +77,10 @@
     "viable": true,
     "summary": "TorchRL (PyTorch org, MIT): pure-Python RL lib with one optional 9 KB .cu (GPU segment tree for prioritized replay); setup.py only builds it when torch.version.cuda+nvcc, so ROCm torch gets CPU fallback -- enable ROCm build, run GPU tests, upstream setup.py/docs + ROCm wheel lane",
     "at": "2026-11-06T02:45:47Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-20T22:06:40Z",
+    "at": "2026-11-20T22:09:45Z"
   }
 }

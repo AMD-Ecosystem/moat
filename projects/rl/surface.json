@@ -1,0 +1,88 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "1d94cfa5c35f",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "torchrl/csrc/cuda_segment_tree.cu"
+    ],
+    "markers": {
+      "kernel": 4,
+      "device_code": 1,
+      "launch": 4
+    },
+    "libraries": {}
+  },
+  "components": [
+    {
+      "id": "extension:_torchrl_cuda_segment_tree",
+      "kind": "python_extension",
+      "where": "torchrl/csrc/cuda_segment_tree.cu",
+      "note": "GPU sum/min segment trees (CudaSum/MinSegmentTreeFp32/Fp64) bound from pybind.cpp under WITH_CUDA; built only when setup.py builds a CUDAExtension. Hipified by torch's CUDAExtension; no kernel change expected."
+    },
+    {
+      "id": "build:setup_rocm_gate",
+      "kind": "build",
+      "where": "setup.py",
+      "note": "_should_build_cuda() requires torch.version.cuda + matching nvcc, so ROCm torch builds CPU-only. Teach it torch.version.hip + ROCM_HOME; add hip version to stale-build info; no -G device flag under HIP in DEBUG=1."
+    },
+    {
+      "id": "test:rb_prioritized_gpu",
+      "kind": "test",
+      "where": "test/rb/test_prioritized.py",
+      "note": "5 GPU segment-tree tests; each silently skips when the binding is missing, so validation must assert hasattr(ext,'CudaSumSegmentTreeFp32') and record -rs skips."
+    },
+    {
+      "id": "test:rb_storages_cuda_sampler",
+      "kind": "test",
+      "where": "test/rb/test_storages.py",
+      "note": "test_prioritized_memmap_cuda_sampler_after_multiprocess_writes (same silent-skip pattern)."
+    },
+    {
+      "id": "test:smoke",
+      "kind": "test",
+      "where": "test/smoke_test.py",
+      "note": "TORCHRL_SMOKE_REQUIRE_CUDA_EXT=1 asserts the GPU tree is present."
+    },
+    {
+      "id": "test:setup_gate",
+      "kind": "test",
+      "where": "test/test_setup.py",
+      "note": "New monkeypatched unit tests for the ROCm branch of the build gate; CUDA behaviour unchanged."
+    },
+    {
+      "id": "test:rb_suite_regression",
+      "kind": "test",
+      "where": "test/rb/",
+      "note": "Whole replay-buffer suite, GPU-marked and CPU, as regression set."
+    },
+    {
+      "id": "benchmark:replaybuffer_cuda_tree",
+      "kind": "benchmark",
+      "where": "benchmarks/test_replaybuffer_benchmark.py",
+      "note": "GPU vs CPU segment tree benchmarks (skip when binding absent); evidence only."
+    },
+    {
+      "id": "docs:build_from_source",
+      "kind": "docs",
+      "where": "docs/source/index.rst, CONTRIBUTING.md",
+      "note": "One or two lines: ROCm PyTorch builds the GPU kernels automatically; FORCE_CUDA=1 still forces."
+    },
+    {
+      "id": "ci:rocm_wheel_lane",
+      "kind": "ci",
+      "where": ".github/workflows/build-wheels-linux.yml, .github/workflows/release.yml",
+      "note": "with-rocm / build_rocm default disabled since pytorch/rl#3603. Whether the PR flips it is jeff's ruling (plan.md top); leave unaccounted until ruled."
+    },
+    {
+      "id": "platform:windows",
+      "kind": "platform",
+      "where": "setup.py win32 branch",
+      "note": "Upstream Windows wheels are CPU-only; a Windows ROCm torch from-source build of the CUDAExtension is in scope for the windows gate (TheRock ROCM_HOME, hipcc.exe/setuptools traps)."
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}
