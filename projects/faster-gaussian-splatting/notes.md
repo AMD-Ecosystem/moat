@@ -2793,3 +2793,33 @@ I also merged the current main (including your stream changes) and re-ran the te
 - Before opening the fork review PR, the `windows` gate needs a validation at ff9ebec (linux-gfx90a and linux-gfx1201 are completed there; gfx1201 satisfies `wave32`). Once more GPUs pass, update the last sentence of the reply to name them; it must name only GPUs with a completed validation at the merged head.
 - The upstream PR body is out of date after this round: it still describes C++20 on every platform, the `/ALTERNATENAME` directive, `lerp_scalar` and the hipRAND path, and its validation lists counts from older heads. Editing it is an upstream write and your call; the reply above covers the changes.
 - The fork's `main` mirror is still d23bb78 (upstream is at 4f8e186); it was not pushed this round.
+
+## Validation 2026-11-20 (windows-gfx1151, revalidate at ff9ebec)
+
+Requested by jeff via the checkup session; windows gate for fix round moat-fix-14. Platform: AMD Radeon 8060S (gfx1151, RDNA3.5, wave32 APU), Windows 11, torch 2.12.0+rocm7.14.0a20260519 (`agent_space/torch_venv`, Python 3.13), env from `agent_space/win_torch_env.sh` (clang-cl host, ROCm 7.14 hipRAND), `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, one GPU process at a time, `MAX_JOBS=8`, no loops. Fork cloned fresh into `agent_space/fgs14/src` (AMD-Ecosystem/faster-gaussian-splatting), `moat-fix-14` detached at `ff9ebec006c585c7ffec18270b51a52bb200052e` (= `head_sha`). Nothing pushed to the fork. Same recipe as Validation 2026-11-01 (windows-gfx1151, 00e803d). Baseline outputs: the 00e803d run kept at `D:/Develop/fgsval/out/{head.pt,noise_head.pt}`.
+
+### Build (no `/ALTERNATENAME`, C++20 + `-ffast-math` single flag block, bundled Philox only, HIP `__device__` scalar `lerp`)
+```bash
+source agent_space/win_torch_env.sh; export MAX_JOBS=8
+utils/timeit.sh faster-gaussian-splatting compile -- "$TORCH_PY" -m pip install -e D:/Develop/moat/agent_space/fgs14/src/FasterGSCudaBackend --no-build-isolation
+```
+PASS, rc=0, 79 s (compile phase), `_C.cp313-win_amd64.pyd` (11.6 MB) built, 0 errors, no LNK2001, no "no matching function for call to 'lerp'" (the one caveat the porter flagged for MSVC's standard library). Import and every GPU entry point ran.
+
+**`/ALTERNATENAME` finding: the extension links, loads and runs without it on torch 2.12.0+rocm7.14.0a20260519.** setup.py at ff9ebec has no `extra_link_args`. The `c10::ValueError(SourceLocation, std::string)` dllimport the directive aliased resolves with this torch; the workaround was needed only on the torch 2.9.1+rocm7.14.0a20260604 of the gfx1201/gfx1101 runs. Not tested here: torch 2.9.x (not installed on this host), so the maintainer's drop is safe for torch >= 2.12 on Windows ROCm and unproven on 2.9.1.
+
+### GPU tests (`gpu_tests/` plus scratch `noise_dump.py`, `bitcmp.py` from `agent_space/fgs99`; script `agent_space/fgs14/out/run.sh`; test phase 37.7 s, rc=0, every sub-step rc=0)
+- add_noise vs 00e803d: **27/27 bit-identical**.
+- new_checks.py: **31/31 PASS** (Philox + Box-Muller 8.65e-7 over 228 primitives; std 0.9982..1.0030; max |corr| 4.30e-3; lanes 0.9983/1.0021; coverage 0.96..1.00).
+- train_check.py: **3/3 PASS** (FusedAdam vs torch.optim.Adam 3.73e-6; L1 0.1204 -> 0.0080).
+- det.py: **3/3, 0 px diff** (200k/100k 1920x1080, 50k 1280x720; training forward and inference).
+- run_outputs 00e803d vs ff9ebec (84 tensors): inference/train_image/filter3d_vis 21/21 bit-identical; 29/84 bit-equal old-vs-new and 29/84 new-vs-new2; worst relL2 old-vs-new 1.20e-6, new-vs-new2 1.26e-6 (200k scene, float-atomic order). filter3d rows show NaN in compare.py because both sides carry the same inf entries (same inf masks as Linux).
+- Not run: stream_check.py (a scratch script that lives on the Linux hosts and was not reproduced here; the porter and both Linux validators ran it).
+
+### Against the earlier Windows record (windows-gfx1151, 00e803d) and gfx90a (ff9ebec)
+Every count matches both: 27/27, 31/31, 3/3, 3/3 0 diff, 21/21 images bit-identical, 29/84 twice. Magnitudes differ only at run-to-run level: Adam 3.73e-6 (Windows 00e803d 3.73e-6; gfx90a 3.81e-6), L1 0.0080 (0.0081 earlier; gfx90a 0.0080), worst relL2 1.2e-6 here vs 4.7e-6 (Windows 00e803d, 200k) and 3.57e-6 (gfx90a), from float-atomic ordering per GPU. No new failure.
+
+### Not done
+CUDA gate: no toolkit use here (recorded at this head by linux-gfx90a). jargon/README: verified clean by linux-gfx90a and linux-gfx1201 at this same head; no local project clone in this worktree. `git status --porcelain` of the fresh clone: only the untracked `.pyd`. `codeobj_diff.py` does not apply to COFF.
+
+### Verdict
+**completed**, `windows-gfx1151`, `validated_sha=ff9ebec006c585c7ffec18270b51a52bb200052e`; satisfies the `windows` gate at this head.
