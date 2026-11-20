@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/koboldcpp",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "make",
+  "stage": "planned",
   "adopted_at": "2026-11-06T01:28:57Z",
-  "updated_at": "2026-11-20T21:33:29Z",
+  "updated_at": "2026-11-20T21:42:21Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx950",
-    "since": "2026-11-20T21:33:29Z",
-    "holder": "00ef461e9479"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -47,7 +43,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:33:29Z",
+      "updated_at": "2026-11-20T21:42:21Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -80,5 +76,10 @@
     "viable": true,
     "summary": "Validation take-up ruled by Jeff Daily 2026-11-10: validate upstream's HIP build on all platforms (wave64, wave32, Windows); fixes go to a requested AMD-Ecosystem fork. AGPL-3.0 (tier 3): any upstream contribution needs a recorded licence clearance",
     "at": "2026-11-10T18:08:41Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx950",
+    "since": "2026-11-20T21:33:29Z",
+    "at": "2026-11-20T21:42:21Z"
   }
 }
