@@ -1162,3 +1162,17 @@ Checked against the porter round (5) evidence (t1..t4 `simple-knn` builds):
 Linux reader: not misled. The sentence opens with "On Windows," and names Windows-only things (x64 developer command prompt, MSVC build tools, `DISTUTILS_USE_SDK`). The Linux sentence before it is unchanged and still accurate: every Linux validation in this file (gfx90a, gfx1201, the same pip SDK layout) built with only `PYTORCH_ROCM_ARCH` set, no `ROCM_PATH` or `HIP_DEVICE_LIB_PATH`.
 
 Commit hygiene: title 60 chars, `[ROCm]` correct (ROCm-specific documentation), AI-assistance line and fenced Test Plan present, no trailer. `utils/prose.py` on the body: clean. `jargon.py --port LiteGS`: clean over `master..moat-port`. `audit-commits LiteGS`: OK. Integrity: `git status --porcelain` empty in the fork clone at 1872600.
+
+## Validation 2026-11-20 (6) (validator, linux-gfx90a) -- carried forward 1664e6d -> 1872600, completed
+
+No build or GPU run this round. The MI250X GPU pass recorded in Validation (3) at 1664e6d (`gpu_passed_sha`) failed only `--gate jargon`, on the `.gitmodules` line `branch = moat-port`. Since then: a995109 drops that line (gitlink unchanged at d3213b4) and 1872600 adds one README sentence. `moatlib.py classify LiteGS 1664e6d 1872600` -> `doc-only`, arch-independent, inert: nothing that is built changed.
+
+Gap closed: `python3 utils/jargon.py --port LiteGS` is **clean** (exit 0) over `master..moat-port` at 1872600, in this host's fork clone. Fork clone checked out at `head_sha` 1872600, `git status --porcelain` empty.
+
+Recorded: `python3 utils/moatlib.py carry-forward LiteGS linux-gfx90a 1872600b13894318a76d56b1e012990dad5970d7 source-class "<detail>"` -> `completed` at 1872600, `after_gate: jargon`. The full detail line (the record keeps 200 characters, cutting the last clause): "The MI250X GPU run passed at 1664e6d and failed only the vocabulary check, on the .gitmodules branch line; a995109 drops that line and 1872600 adds one README sentence, so nothing that is built changed, and the vocabulary check is clean at 1872600."
+
+After this: `moatlib.py pr-ready LiteGS` -> `PR-ready=True` (wave64: linux-gfx90a, wave32: linux-gfx1201 and windows-gfx1151, windows: windows-gfx1151, all completed at 1872600).
+
+The three older records at d65b6ab (see "Correction 2026-11-19" for why the Linux one never held; the two Windows ones date from the same broken submodule era):
+- windows-gfx1101, windows-gfx1201: listed under `[offline]` in `config/arches.toml`, and both gates they carry are satisfied at 1872600, so they owe nothing (`next-task` for each: NONE). They stay on record as what they were.
+- linux-gfx1100: not offline, so the selector derives `revalidate` (`next-task linux-gfx1100` offers LiteGS to a validator; `fleet linux-gfx1100` lists it). It does not block `pr-ready`. It clears when a gfx1100 host runs a full validation at the head (no carry-forward is possible from d65b6ab), or when a person adds `linux-gfx1100` to `[offline]` on main if that hardware is gone. Neither was done here.
