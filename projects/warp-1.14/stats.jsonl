@@ -211,3 +211,7 @@
 {"kind":"phase","ts":"2026-11-19T23:21:40Z","phase":"compile","seconds":46.728,"exit":0,"cmd":"agent_space/comp_run.sh jobs16 --offload-jobs=16"}
 {"kind":"phase","ts":"2026-11-19T23:27:41Z","phase":"compile","seconds":351.033,"exit":0,"cmd":"agent_space/comp_run.sh none "}
 {"kind":"phase","ts":"2026-11-19T23:32:40Z","phase":"compile","seconds":30.122,"exit":0,"cmd":"agent_space/cuda_build_mathdx.sh /var/lib/jenkins/fleet/jobs/mi355-20261119-140431-warp114-phase7-porter-mi355-prompt/moat/agent_space/cuda_wt"}
+{"kind":"phase","ts":"2026-11-20T02:07:04Z","phase":"test","seconds":0.01,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/venv/bin/python -m warp.tests -s autodetect"}
+{"kind":"phase","ts":"2026-11-20T02:07:13Z","phase":"compile","seconds":0.008,"exit":2,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/venv/bin/python build_lib.py --cuda-path /usr/local/cuda --no-use-libmathdx -j 32"}
+{"kind":"phase","ts":"2026-11-20T02:08:04Z","phase":"compile","seconds":26.482,"exit":0,"cmd":"agent_space/cudabuild.sh"}
+{"kind":"phase","ts":"2026-11-20T02:16:13Z","phase":"test","seconds":515.85,"exit":2,"cmd":"agent_space/suite.sh"}
