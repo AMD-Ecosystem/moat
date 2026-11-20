@@ -963,13 +963,19 @@ ninja -C <build> -k 0 -j 40 all <every unit-test executable: ninja -t targets al
 
 ## Lesson for cuda-to-rocm: heFFTe's rocFFT backend does not accept hipFFT complex types
 
+Promoted to cuda-to-rocm/references/libraries.md in 35013557.
+
 Belongs in the library-substitution reference (FFT section). heFFTe recognizes `cufftComplex`/`cufftDoubleComplex` in its cuFFT backend, but its rocFFT backend registers no hipFFT type. A CUDA code that keeps its FFT buffers as `cufftComplex` and maps the name to `hipfftComplex` (= `HIP_vector_type<float,2>`) fails with `static assertion ... check_types<rocfft, float, HIP_vector_type<float, 2>>: Using either an unknown complex type`. heFFTe documents `heffte::is_ccomplex<T>` / `is_zcomplex<T>` as the specialization point for custom complex types. Specializing them for `hipfftComplex` / `hipfftDoubleComplex` in the HIP branch fixes it without patching heFFTe; heFFTe then reinterprets the buffers as `std::complex`, whose layout they share.
 
 ## Lesson for cuda-to-rocm: the ROCm library directory is an implicit HIP link directory, so CMake drops it from C++ executables' runtime path
 
+Promoted to cuda-to-rocm/references/build-cmake-link.md in 35013557.
+
 Belongs in the Linux build and link reference. `CMAKE_HIP_IMPLICIT_LINK_DIRECTORIES` contains the ROCm `lib` directory, and CMake leaves implicit link directories out of the build runtime path. A plain C++ executable that links the HIP runtime or rocFFT only indirectly (through a static library built with HIP sources, here heFFTe with `Heffte_ENABLE_ROCM`) gets `NEEDED librocfft.so.0` / `libamdhip64.so.7` with no RUNPATH entry. It runs on a system ROCm whose lib is in `ld.so.conf`, and fails with "cannot open shared object file" on a ROCm that is not on the loader path (the pip ROCm SDK). Targets that link `hip::host` directly do get the directory. Fix: add `$<TARGET_FILE_DIR:hip::amdhip64>` to `BUILD_RPATH`/`INSTALL_RPATH` of such targets, as projects already do for the CUDA library directories.
 
 ## Lesson for cuda-to-rocm: HIP's built-in index variables do not convert to uint3, and HIP's uint3 does not convert to dim3
+
+Promoted to cuda-to-rocm/references/build-headers-macros.md in 35013557.
 
 Belongs in the strict-AMD fault-class reference. CUDA's `blockIdx`/`threadIdx` are `uint3` and `make_uint3()` yields a `uint3` that converts to `dim3`. In HIP the built-ins are distinct types: passing them to a function that takes `uint3` (waLBerla's `gpu::FieldAccessor::set(uint3, uint3)`), `uint3(blockIdx)`, and returning a `uint3` as `dim3` all fail to compile. Construct explicitly from the members (`make_uint3(blockIdx.x, blockIdx.y, blockIdx.z)`), and return `dim3(...)`. Do not write a helper that takes the built-in by value: clang-CUDA deletes the built-ins' copy constructor. (Heading corrected by the 2026-11-20 review: the built-ins do convert to `dim3`; `dim3(blockIdx)` compiles with HIP 7.16. What fails is built-in to `uint3` and `uint3` to `dim3`.)
 
