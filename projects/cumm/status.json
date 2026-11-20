@@ -6,14 +6,55 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-20T20:55:39Z",
-  "updated_at": "2026-11-20T20:55:39Z",
+  "updated_at": "2026-11-20T21:03:37Z",
   "head_sha": null,
   "depends_on": [
     "ccimport"
   ],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-20T21:03:37Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0 AND BSD-3-Clause AND MIT AND BSL-1.0 AND Unlicense AND GPL-3.0-or-later WITH GCC-exception-3.1",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0 AND BSD-3-Clause AND MIT AND BSL-1.0 AND Unlicense AND GPL-3.0-or-later WITH GCC-exception-3.1",
+      "evidence": "https://github.com/FindDefinition/cumm/blob/d971d02a0/LICENSE",
+      "at": "2026-11-20T21:01:33Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "No upstream AMD PR/issue/branch. ZJLi2013/cumm-rocm (branch rocm, dormant since 2026-05-09) is a FlyDSL rewrite for spconv inference, not a port of the codegen; coordination question",
+    "viable": true,
+    "summary": "spconv's code generator and tensorview headers, where most of the adopted spconv HIP port lands; study shows SIMT kernels correct on gfx942 after a shim plus two small fixes; needs licence clearance for four GPL-3.0+GCC-exception libstdc++ headers it ships",
+    "at": "2026-11-20T21:03:37Z"
+  }
 }
