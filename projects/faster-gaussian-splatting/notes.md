@@ -2541,3 +2541,99 @@ orient reported that merging `origin/main` into `port/faster-gaussian-splatting`
 ### Verdict
 
 **completed**, `linux-gfx942`, `validated_sha=00e803dec721a28e4f9d6e060fd50dcdcf2925b9`.
+
+## Porter 2026-11-20 (linux-gfx90a) -- fix round moat-fix-14 for upstream PR #14, head ff9ebec
+
+Requested by jeff (fleet job). Upstream PR https://github.com/nerficg-project/faster-gaussian-splatting/pull/14 is open at 00e803d (`gh pr view` read-only: OPEN, CLEAN/MERGEABLE, head 00e803d = recorded `head_sha`); `moat-port` is frozen, so this round stages on `moat-fix-14`. The maintainer (fhahlbohm) left one top-level comment on 2026-11-14 and no reviews or line comments (`gh api repos/nerficg-project/faster-gaussian-splatting/pulls/14/comments` -> `[]`). He asked for four changes: (1) no switch to C++20, because 3DGS code still builds with CUDA 11; if ROCm PyTorch needs it, apply it only there; (2) with C++17 kept, revert `lerp` -> `lerp_scalar` (the vector-operator guard is fine); (3) drop the Windows `/ALTERNATENAME` workaround as unrelated to AMD; (4) no hipRAND release has `hiprand_Philox4x32_10`, so remove the hipcc check and the hipRAND path and always use the bundled copy, and do not duplicate the flag setup per platform.
+
+Host: AMD Instinct MI250X / MI250 (gfx90a, wave64), torch 2.16.0a0+git6c3af02, HIP 7.16.26385 (TheRock SDK wheels in `/opt/python-3.11-venv`, hipRAND 3.4.0), `HIP_VISIBLE_DEVICES=0` (dispatcher pin; `amd-smi monitor` showed GPUs 0-3 idle; `rocm-smi` is not installed in this image), every GPU run under `ulimit -c 0`.
+
+### Records
+
+The folder was trunk-resident. `moatlib.ensure_port_branch('faster-gaussian-splatting')` (from Python, before taking the lock, so the lock did not land on the trunk) cut `port/faster-gaussian-splatting` from origin/main 2069b27c; then `set-state ... linux-gfx90a porting` (lock taken, no other holder) and `fix-branch` (`moat-fix-14`, base 00e803d; no HEAD-MOVED refusal). Fork cloned fresh into `projects/faster-gaussian-splatting/src`, `protect-fork` installed, `upstream` remote added.
+
+### Fork moves
+
+Staging branch `moat-fix-14` cut from `origin/moat-port` (00e803d); pushed with a plain `git push origin moat-fix-14` (new branch); `moat-port` untouched (still 00e803d on the fork). Strict descendant of 00e803d, no rebase or amend. The fork's `main` mirror is still d23bb78 (not pushed this round: jeff limited pushes to the staging branch); the local `main` was set to `upstream/main` (4f8e186) so `jargon.py --port` scans only our commits.
+
+| commit | what |
+|---|---|
+| d895974 | `git merge --no-ff upstream/main`: upstream moved d23bb78 -> 4f8e186 since the PR opened (090e8ad README, 4f8e186 "Remove two host syncs per training step and respect the current device/stream", 20 files incl. `buffer_utils.h` and every cub call site). No conflicts; tree dd8bb528 equals `git merge-tree --write-tree 00e803d upstream/main`. Merged because 4f8e186 rewrites the stream/cub surfaces hipify handles, so the combination is what this round should validate; GitHub still reported the PR CLEAN, so this was a choice, not forced. The merge built unchanged on HIP (rc=0, 318 warning lines). |
+| e0d38de | item 4a: `[ROCm] Always use the bundled Philox4x32-10 block function` -- removes `hip_compiles`, the `shutil`/`subprocess` imports, `ROCM_HOME`/`include_paths`, the `FGS_HAVE_HIPRAND_PHILOX4X32_10` arm in `kernels_mcmc.cuh`, and the README hipRAND clause. |
+| 6ed3888 | item 3: `Drop the Windows c10::ValueError link workaround` -- removes the `/ALTERNATENAME` block, `extra_link_args` and `import sys`. No `[ROCm]` prefix: it removes OS-gated code that names no HIP or ROCm. |
+| a5d34e7 | items 1 and 4b: `[ROCm] Keep C++17 for CUDA builds and share the flag setup` -- one flag block again: `cxx_std = 'c++20' if IS_ROCM else 'c++17'`, `-ffast-math if IS_ROCM else -use_fast_math`, upstream's `ENABLE_NVCC_LINEINFO` line unchanged; `IS_ROCM = torch.version.hip is not None`. |
+| ff9ebec | item 2: `[ROCm] Restore the scalar lerp name in helper_math.h` -- `kernel_utils.cuh` back to upstream byte for byte; the scalar `lerp` keeps upstream's name and body, declared `__device__` only on HIP (see below). |
+
+Whole port vs upstream main is now 7 files, +79/-7 (`kernel_utils.cuh` dropped out of the diff). setup.py vs upstream: +8/-3.
+
+### Item 4 checked: no hipRAND release provides `hiprand_Philox4x32_10` (the maintainer is right)
+
+- Every hipRAND on this host is 3.4.0 (`HIPRAND_VERSION 300400`) with no `hiprand_Philox4x32_10` in `hiprand_kernel_rocm.h`: the image SDK (HIP 7.16), a ROCm 10.2 SDK in another job's directory, and two other TheRock SDK copies (`grep -c hiprand_Philox4x32_10` -> 0 in all five headers found).
+- ROCm/rocm-libraries `develop` (read-only `gh api .../contents`): `projects/hiprand` `VERSION_STRING "3.4.0"`, 0 matches in `hiprand_kernel_rocm.h`.
+- ROCm/rocm-libraries#14808 ("feat(rocrand, hiprand): add Philox4x32-10 block function"), the only source of the function: still OPEN, head 9b5027b2, `mergedAt` null.
+- So the hipRAND arm the probe guarded could only ever be reached with a scratch build of #14808 (the 2026-11-01 rounds did exactly that); no shipped ROCm takes it. Device code after the removal is identical to 00e803d's (the probe failed on every real ROCm, so the bundled copy was always compiled).
+
+### Item 1 checked: what needs C++20
+
+- This torch (2.16.0a0) refuses C++17 on any backend: `g++ -std=c++17 -fsyntax-only` of `#include <torch/extension.h>` -> `torch/all.h:9: #error C++20 or later compatible compiler is required to use PyTorch.` (and the same from `ATen/ATen.h`); `-std=c++20` rc=0.
+- pytorch history (`/var/lib/jenkins/pytorch`, read only): the guard is #178150 "[12/12] Enforce C++20 minimum in header guards" (landed 2026-04-19, reverted, relanded bab118ec759 2026-07-17). `aten/src/ATen/ATen.h` says "C++17 or later" at v2.9.0 through v2.13.0 and "C++20 or later" at v2.14.0 and v2.15.0-rc*. So the requirement is PyTorch >= 2.14 on CUDA and ROCm alike, not ROCm itself. As the maintainer asked, C++20 is applied only on ROCm; a CUDA build against PyTorch >= 2.14 will need it too, which is upstream's call. Said in the draft reply.
+
+### Item 2: why a plain revert would break the ROCm build, and what was done instead
+
+ROCm stays on C++20, and under C++20 libstdc++'s `<math.h>` (reached through `torch/extension.h`) does `using std::lerp;` at global scope -- the cause of the 2026-08-08 Linux regression (Validation 2026-08-08 above). Reproduced on this host with a standalone file (`agent_space/cxx/lerp_test3.hip`: `#include <math.h>`, the hipified `helper_math_hip.h`, a `__device__` caller and a kernel), hipcc `--offload-arch=gfx90a -c`:
+
+| scalar lerp declared as | -std=c++17 | -std=c++20 |
+|---|---|---|
+| upstream's `inline __device__ __host__` (plain revert) | rc=0 | `error: declaration conflicts with target of using declaration already in scope` |
+| `inline __device__` on HIP (ff9ebec) | rc=0 | rc=0 |
+
+ff9ebec therefore restores the name, the body and both call sites, and on HIP (`__HIP_PLATFORM_AMD__ || USE_ROCM`, the guard the header already uses for the vector operators) declares the scalar `lerp` `__device__` only. clang's CUDA/HIP mode lets a `__device__` function coexist with a host function of the same signature; the only callers (`will_primitive_contribute`) are `__device__`. The declaration is not keyed on the compiler pass, so it is visible in both passes; the C++17 column stands in for a standard library that does not inject `lerp` into the global namespace (MSVC's), and a second file calling host `std::lerp` and device `lerp` in one TU also compiled (rc=0). CUDA builds see upstream's exact `__device__ __host__` definition. Device code: `codeobj_diff.py` of the merge build (still `lerp_scalar`) vs ff9ebec -> `verdict=identical` (409 exports, device ISA identical), so device code binds to this `lerp`, never to `std::lerp`.
+
+Windows caveat (cannot test here): Windows ROCm uses clang-cl with MSVC's standard library, where `lerp` stays in namespace `std`. The `__device__` declaration is unconditional, so the Windows host pass sees it, unlike the 2026-06-08 `__HIP_DEVICE_COMPILE__`-gated form that left the host pass with no scalar overload. Expected to build; the Windows validator should confirm, and if it fails the symptom would be "no matching function for call to 'lerp'" in `kernel_utils_hip.cuh` during the host pass.
+
+### Item 3: what `/ALTERNATENAME` worked around (for the Windows validator)
+
+Added in b0d21d5 (2026-08-08 history rewrite; first written as the Windows delta be2217e, Validation 2026-06-08 windows-gfx1201 above). Symptom on Windows: the extension link fails with `LNK2001` on an unresolved `__imp_??0ValueError@c10@@QEAA@USourceLocation@1@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z`, i.e. the dllimport of the inherited constructor `c10::ValueError(c10::SourceLocation, std::string)`. Cause as recorded: `<torch/extension.h>` pulls in `ATen/TensorIndexing.h`, whose `TORCH_CHECK_VALUE` emits a dllimport reference to that constructor, and the `c10.dll` of the Windows ROCm torch used then (torch 2.9.1+rocm7.14.0a20260604, TheRock nightly, clang-cl) did not export it (MSVC-ABI DLLs do not export inherited constructors even for a `C10_API` class). The directive aliased the import to `__imp_??0Error@c10@@QEAA@USourceLocation@1@V?$basic_string...@Z`, which `c10.dll` does export (`ValueError` derives from `Error` and adds no data). It was needed on gfx1201/gfx1101 (torch 2.9.1, ROCm 7.14.0a20260604) and carried unchanged through the gfx1151 runs (torch 2.12.0+rocm7.14.0a20260519); no record shows whether torch 2.12 still needs it, because it was never removed there. What the Windows validator should look for: a link-time `LNK2001` / `lld-link: error: undefined symbol: __declspec(dllimport) public: __cdecl c10::ValueError::ValueError(struct c10::SourceLocation, class std::basic_string<...>)` when building the `.pyd`. If it appears, it is a torch packaging defect (missing export) to register with `deferred.py add rocm-bug-report` against this project and to take to jeff -- not something to put back in setup.py, since the maintainer refused it -- and the platform would need `set-blocked` with that reason until a torch exports the symbol. The moat-porting skill's `/ALTERNATENAME` line says a reproducer sits in the local `findings/` area; no file in this checkout's `findings/` matches, and this project has no `deferred.json`.
+
+### Builds (gfx90a, `PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32`, same recipe as Validation 2026-11-01)
+
+```bash
+git -C projects/faster-gaussian-splatting/src/FasterGSCudaBackend clean -xdfq
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $PWD/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"
+```
+- merge d895974: rc=0, 318 `warning:` lines (copy kept in `agent_space/builds/merge`).
+- ff9ebec: rc=0, 318 warning lines; `build.ninja` has `-std=c++20` (cxx and hipcc), no `FGS_HAVE_HIPRAND`.
+- baseline 00e803d (`git archive` into `agent_space/builds/old`): rc=0, 360 warning lines, as recorded on 2026-11-01. The 42-line drop comes with upstream's 4f8e186 (the merge alone gives 318).
+
+### GPU tests (`gpu_tests/` plus rewritten `agent_space/scripts/noise_dump.py`, `bitcmp.py`, `run_all.sh`, `stream_check.py`)
+
+```bash
+utils/timeit.sh faster-gaussian-splatting test -- bash agent_space/scripts/run_all.sh <00e803d build> <ff9ebec build> agent_space/out_porter
+python agent_space/scripts/stream_check.py <ff9ebec build> projects/faster-gaussian-splatting/gpu_tests
+```
+rc=0, every sub-step rc=0. Against Validation 2026-11-01 (linux-gfx90a, 00e803d):
+- add_noise vs 00e803d: **27/27 bit-identical**; 9/9 groups advance between calls (same as last record).
+- new_checks.py **31/31** (Philox + Box-Muller 8.65e-7 over 228 primitives; std 0.9982..1.0030; max |corr| 4.30e-3; wave64 halves 0.9983/1.0021; coverage 0.96..1.00). Same.
+- train_check.py **3/3** (Adam max abs 3.81e-6; L1 0.1204 -> 0.0081). Same.
+- det.py **3/3, 0 diff** at 200k/100k/50k. Same.
+- run_outputs 00e803d vs ff9ebec, 84 tensors: inference, train_image, filter3d_vis bit-identical in all 7 scenes, filter3d finite values and inf masks equal 7/7; 29/84 bit-equal old-vs-new and 29/84 new-vs-new2 (same as last record). Worst relL2 old-vs-new / new-vs-new2 (200k scene): grad_means 2.57e-7 / 2.59e-7, grad_scales 2.47e-6 / 2.36e-6, grad_rotations 3.09e-6 / 2.81e-6, grad_opacities 2.63e-7 / 2.45e-7, grad_sh0 2.51e-7 / 2.43e-7, grad_shrest 2.53e-7 / 2.45e-7, dinfo 2.09e-7 / 2.24e-7, pruning (1001 scene) 2.26e-6 / 2.63e-6. Old-vs-new at run-to-run level; upstream's 4f8e186 changed no arithmetic.
+- New this round, for 4f8e186 ("respect the current device/stream"): `stream_check.py` runs forward, backward and inference for a 50k scene on a side `torch.cuda.Stream` and on the default stream: images bit-equal, worst gradient relL2 1.46e-6, rc=0.
+- Differences from the last record: none in counts. Warning lines 360 -> 318 come from the upstream merge, as above.
+
+### CUDA no-regression (nvcc 12.8 at C++17)
+
+`unifdef -U__HIP_PLATFORM_AMD__ -UUSE_ROCM` on every changed header vs upstream main: `kernels_forward.cuh` identical; `helper_math.h` differs only by comments and the never-defined `#ifndef HELPER_MATH_SKIP_VECTOR_OPS` wrapper (the scalar `lerp` is upstream's text); `buffer_utils.h` only by a comment; `kernels_mcmc.cuh` only by `#include <cmath>` and the host-only `rsqrt` -> `1 / std::sqrt` from the published PR. setup.py's CUDA flags are upstream's again (`-std=c++17`, `-O3`, `-use_fast_math`; `/std:c++17` for MSVC).
+
+nvcc 12.8.93 from an existing toolkit at `/tmp/cuda-12.8` (read only; it ships cuRAND and CUB), gcc 13.3, script `agent_space/cudagate/run.sh`:
+```bash
+nvcc -std=c++17 -O3 -use_fast_math -I<utils,rasterization,densification,adam,filter3d include dirs> -arch=sm_80 -c <tu>.cu -Xcompiler -Wall
+nvcc -std=c++17 -O3 -use_fast_math <same> -arch=sm_80 -ptx <tu>.cu
+```
+forward.cu, backward.cu, inference.cu, pruning_scores.cu, mcmc.cu (the five TUs that need no torch headers) at upstream main 4f8e186 and at ff9ebec: all rc=0, 0 warnings. sm_80 PTX identical between the two for all five once nvcc's per-TU `_INTERNAL_<hash>_..._cu_<hash>` names (path and content hash) are normalized (58762 / 59357 / 58490 / 58639 / 454 lines). The four torch-dependent TUs (adam, filter3d, rasterization_api, densification_api) were not compiled (no CUDA build of torch here); their CUDA-visible text is unchanged by the port except through the headers above. CUDA 11 itself was not available to test; the CUDA path is upstream's C++17 build again.
+
+### Completion checks
+
+- `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean` (range main(4f8e186)..moat-fix-14).
+- `utils/prose.py` on all four commit messages -> clean; titles 59/49/59/53 chars; bodies unwrapped, AI disclosure, fenced Test Plan, no trailers.
+- `git -C projects/faster-gaussian-splatting/src status --porcelain`: untracked build output only.
+- `advance-head ff9ebec006c585c7ffec18270b51a52bb200052e`: every platform now reads `revalidate`.
