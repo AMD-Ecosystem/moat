@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "hip-event-record-stream-legacy-wait-crash",
+      "kind": "rocm-bug-report",
+      "component": "clr",
+      "summary": "HIP: hipEventRecord(ev, hipStreamLegacy) returns hipSuccess, then hipStreamWaitEvent(other_stream, ev, 0) segfaults dereferencing the (hipStream_t)1 sentinel (mutex at 0x1d1). ROCm 10.1 (HIP 7.16.26385) and 10.2 (HIP 7.17.26434), MI300X gfx942, Linux. nullptr and hipStreamPerThread work. Standalone repro in projects/cuda_blackboard/notes.md (Porter section). Worked around in cuda_blackboard 9e0fb86 by recording on the null stream.",
+      "refs": [
+        "projects/cuda_blackboard/notes.md#porter"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-20T21:52:42Z",
+      "decided": null
+    }
+  ]
+}

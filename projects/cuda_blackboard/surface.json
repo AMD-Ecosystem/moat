@@ -118,8 +118,74 @@
       "note": "Agnocast-only, CPU-only; pending the same ruling"
     }
   ],
-  "covered": [],
+  "covered": [
+    {
+      "id": "library:cuda_blackboard",
+      "evidence": "built with HIP (hip::host), gtests 20x pass; porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
+    },
+    {
+      "id": "library:cuda_blackboard_publisher_example",
+      "evidence": "built; example.launch.py run, output byte-identical; porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
+    },
+    {
+      "id": "library:cuda_blackboard_subscriber_example",
+      "evidence": "built; example.launch.py run, output byte-identical; porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
+    },
+    {
+      "id": "runtime:cuda-runtime-host-api",
+      "evidence": "every symbol mapped in cuda_runtime_compat.hpp; build has 0 errors; porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
+    },
+    {
+      "id": "header:installed-compat",
+      "evidence": "include/cuda_blackboard/cuda_runtime_compat.hpp; throwaway -Werror ament consumer builds and runs; porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
+    },
+    {
+      "id": "build:cmake-hip-path",
+      "evidence": "HIP fallback in CMakeLists.txt; consumers get hip::host through cmake/cuda_blackboard-hip-extras.cmake (not ament_export_dependencies(hip), which drags hip::device --offload-arch into g++ consumers); porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
+    },
+    {
+      "id": "feature:stream-ordered-mem-pool",
+      "evidence": "probe (b): threshold reads back (1024 / 64 MiB), pool retains 128 MiB at 1 GiB, 0 at 64 MiB; porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
+    },
+    {
+      "id": "feature:legacy-default-stream",
+      "evidence": "HIP runtime crash on hipEventRecord(hipStreamLegacy)+hipStreamWaitEvent fixed by HIP-guarded commit 9e0fb86; probe (a) 1000/1000, 0 mismatches; porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
+    },
+    {
+      "id": "feature:event-cross-stream-sync",
+      "evidence": "gtests 20x and probe (a) data checks, 0 mismatches; porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
+    },
+    {
+      "id": "test:test_publish_mailbox",
+      "evidence": "4/4 pass x20; porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
+    },
+    {
+      "id": "test:test_cuda_blackboard_publisher",
+      "evidence": "2/2 pass x20, 0 skipped; porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
+    },
+    {
+      "id": "test:test_cuda_blackboard_async_publisher",
+      "evidence": "1/1 pass x20, 0 skipped; porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
+    },
+    {
+      "id": "test:ament_lint",
+      "evidence": "package.xml declares no linter test_depend, so ament_lint_auto registers no lint test (ctest lists only the 3 gtests), same as upstream; porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
+    },
+    {
+      "id": "example:example.launch.py",
+      "evidence": "ros2 launch with a 64x48 PNG: 3/3 /output_image messages bgr8 and byte-identical to input; porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
+    }
+  ],
   "scoped_out": [],
-  "owed": [],
+  "owed": [
+    {
+      "id": "feature:agnocast",
+      "reason": "awaiting Jeff's ruling on the Agnocast build variant (planner Question 1 in notes.md); the HIP port changes no Agnocast code"
+    },
+    {
+      "id": "test:test_start_worker_thread",
+      "reason": "awaiting Jeff's ruling on the Agnocast build variant (planner Question 1 in notes.md); the HIP port changes no Agnocast code"
+    }
+  ],
   "removed_from_floor": []
 }
