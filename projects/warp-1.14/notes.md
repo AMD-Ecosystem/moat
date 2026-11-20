@@ -9015,3 +9015,700 @@ Evidence (HIP_VISIBLE_DEVICES=1, source build in the fork clone, `python -m warp
 - jargon: clean. nvcc check not needed (Python-only change).
 
 Next step: the release wheel is stale (built before f6ada527 and bc1ae44b). Question 10 has since been ruled (b), winding-number meshes get the depth-level refit; that porter round and then the final build are next.
+
+
+## Porting session 26 (2026-11-20, linux-gfx950 MI355X, porter): winding-number refit stopped before committing; release notes draft
+
+Ruling on question 10 (b): convert `bvh_refit_with_solid_angle_kernel` (mesh.cu) to the depth-level scheme, HIP-only, with the condition "if bit-identity is impossible because the walk's own result depends on thread order ..., stop and report with the evidence instead of committing". **Stopped: no fork commit, head stays `bc1ae44b`, stage stays `porting`.** Because the head is not final, the final step (nvcc check, release build, wheel, suite from the wheel, `ported`) was not run. The release notes draft was updated (below), since it does not depend on the head. `HIP_VISIBLE_DEVICES=1` (amd-smi GPU 0), `ulimit -c 0`; no process was stopped by pattern; the fork clone is clean at `bc1ae44b` (the change is kept as a patch below).
+
+### What was built
+
+New HIP-only kernel `refit_tree_with_solid_angle_at_depth` (mesh.cu), structured like f6ada527's `refit_tree_at_depth`: one thread per node of one depth; a node with `b` set computes its triangles' `SolidAngleProps` (the walk's loop, verbatim) unless its parent is packed, and writes the box to the node bounds; an internal node takes min/max of its children and `combine_precomputed_solid_angle_props(props[node], left, right-or-NULL)`. Depths come from `node_counts`, the same as for `bvh_refit_device`; the level count is factored out of bvh.cu into `bvh_refit_max_depth(const BVH&)` (declared in bvh.h, HIP-only), so both refits launch the same fixed number of levels and stay capturable. The patch is at the end of this section.
+
+### Correctness: node bounds and queries identical; solid angle data not bit-identical
+
+`sa_check.py` (below): closed noisy torus meshes with `support_winding_number=True`, about 10^3, 10^4, 10^5, 10^6, 10^7 triangles; lbvh at every size, sah/median to 10^6; without and with 7 groups; leaf sizes 1 and 4; steps: creation (which refits), three refits with moved points, `mesh.points = <new array>` (refits; a Mesh has no `rebuild()`), a new mesh on the moved points, and a refit captured in a graph and relaunched three times. After each step the node arrays and the solid angle array are read from device memory and hashed. Then 10^5 `mesh_query_point_sign_winding_number` (the only query that reads the solid angle data), `mesh_query_point_no_sign` and `mesh_query_ray` results are hashed. Every solid angle row changes between consecutive refits; 25-27% of the query points are inside. The same build (scratch worktree `agent_space/wrf2`, with a scratch environment switch `WP_SA_REFIT_MIN` forcing either path) is run on the walk and on the levels: 52 configurations, 1248 arrays.
+
+- Node lowers/uppers: **0 of 728 differ.** Query results (winding-number sign, no-sign, ray): **0 of 156 differ.**
+- Solid angle arrays: **196 of 364 differ**: every leaf-size-4 configuration at every size (leaves holding 2 to 4 triangles, combined inside the leaf), and at 10^7 also the leaf-size-1 lbvh trees (which have some packed leaves at that size). Single-triangle leaves are identical. The differences are in the last bits (relative 7e-8 to 3e-7) of the accumulated moment fields (`sum_permute_n_xyz`, `two_n_*`, `n_xy`, `n_yx`, `n_zy`, `n_xz`), and they propagate to the ancestors.
+- Excluded from every comparison, because it is indeterminate in every build: `max_p_dist_sq` of single-triangle leaves. `precompute_triangle_solid_angle_props` never sets it, so the walk stores whatever was in the register (walk against walk, two runs: it differs in 75 of 75 single-triangle leaves at 10^3; 308 of 364 snapshots differ in every pairing). Nothing reads it (`evaluate_node_solid_angle` is called only on internal nodes). This is an upstream quirk and harmless. Entries the refit never writes (leaves below packed leaves, nodes past `num_nodes` of host-built trees) are also excluded.
+
+### Cause: compiler contraction, not thread order
+
+- The library's device code is compiled with clang's HIP default, which contracts multiply-adds across statements (`-ffp-contract=fast-honor-pragmas`; session 22). Which products get fused depends on each kernel's code after inlining.
+- Test: the same scratch tree rebuilt with `-ffp-contract=off` for the library (scratch worktree `agent_space/wrf3`, build-option hack): walk and levels then match bit for bit (lbvh n 4, sah n 4, median g 4 at 10^3; create and refit steps). The device IR of the normal build carries `contract` on the fmul/fadd/fdiv in both kernels. A first attempt with a file-scope `#pragma clang fp contract(off)` in mesh.cu was ineffective: the builtin.h region from e92f2611 ends with `STDC FP_CONTRACT DEFAULT`, which restores the command-line mode.
+- **The walk is deterministic** (walk against walk: identical apart from the indeterminate field). It has no thread-order dependence. In an LBVH tree the leaf threads cover indices 0..n-1 and packed leaves are internal indices (992..1978 in the 10^3 tree), so no node is computed by both of the walk's code paths.
+- **But the walk is not self-consistent.** It holds two inlined copies of the leaf arithmetic: the leaf-thread branch, and the climb branch that recomputes packed leaves. The compiler fused the two copies differently. Evidence: a variant (`agent_space/wrf4`) that moves the leaf arithmetic and the internal combine into `__noinline__` device functions called by both kernels reproduces today's walk bit for bit on every sah and median tree (leaf-thread branch) and on lbvh leaf-size-1 trees to 10^6, but differs from it on lbvh packed leaves (climb branch): 84 of 1248 arrays, solid angle only, queries identical. Today's walk therefore gives a leaf in the leaf array and a packed leaf with the same triangles different last bits. A new kernel can match the walk only by reproducing the compiler's fusion choices for both copies, which nothing guarantees. Bit-identity with today's walk is impossible by construction.
+- With the shared helpers (wrf4), **walk and levels are bit-identical: 0 of 1248 arrays differ** (all 52 configurations, 10^3 to 10^7, every step, every query).
+
+### Performance (`sa_perf.py`, 3 interleaved rounds of `sawalk` / `salevels` (wrf2, the inlined kernel forced onto each path) and `sa4walk` / `sa4levels` (wrf4, the shared helpers); `wp.Mesh.refit()` of a winding-number torus mesh with the default leaf size (4), per call, 10 warm-up then 7 x N back-to-back calls and a sync; noise floor = a 10^6-point `mesh_query_point_no_sign` launch on the same mesh, unchanged code; GPU idle before each run)
+
+| constructor | N | leaves | walk us | levels us | levels/walk | per-round levels/walk | shared-helper walk us | shared-helper levels us | helper walk / walk | helper levels / levels | noise floor max/min |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| lbvh | 1000 | 990 | 158.4 | 292.1 | 1.84 | 1.84 / 1.86 / 1.87 | 171.9 | 306.4 | 1.09 | 1.05 | 1.01 |
+| lbvh | 3000 | 3002 | 173.0 | 306.5 | 1.77 | 1.77 / 1.77 / 1.80 | 187.5 | 316.8 | 1.08 | 1.03 | 1.01 |
+| lbvh | 10000 | 10010 | 203.3 | 384.2 | 1.89 | 1.90 / 1.87 / 1.91 | 220.1 | 398.0 | 1.08 | 1.04 | 1.02 |
+| lbvh | 30000 | 30012 | 300.5 | 462.8 | 1.54 | 1.56 / 1.54 / 1.54 | 324.4 | 481.6 | 1.08 | 1.04 | 1.01 |
+| lbvh | 45000 | 45000 | 378.6 | 481.5 | 1.27 | 1.26 / 1.27 / 1.27 | 408.5 | 506.0 | 1.08 | 1.05 | 1.01 |
+| lbvh | 65000 | 64980 | 498.9 | 496.3 | 0.99 | 0.99 / 0.99 / 1.00 | 538.5 | 535.8 | 1.08 | 1.08 | 1.01 |
+| lbvh | 100000 | 99904 | 763.8 | 570.0 | 0.75 | 0.74 / 0.75 / 0.75 | 805.2 | 598.9 | 1.05 | 1.05 | 1.01 |
+| lbvh | 150000 | 149878 | 1126.1 | 709.3 | 0.63 | 0.63 / 0.63 / 0.63 | 1186.2 | 699.2 | 1.05 | 0.99 | 1.00 |
+| lbvh | 200000 | 200028 | 1444.5 | 806.5 | 0.56 | 0.56 / 0.56 / 0.56 | 1519.7 | 768.0 | 1.05 | 0.95 | 1.01 |
+| lbvh | 300000 | 299924 | 2170.4 | 994.1 | 0.46 | 0.46 / 0.46 / 0.46 | 2297.8 | 902.7 | 1.06 | 0.91 | 1.01 |
+| lbvh | 1000000 | 999696 | 7332.1 | 2309.9 | 0.32 | 0.32 / 0.31 / 0.32 | 7922.2 | 1931.9 | 1.08 | 0.84 | 1.01 |
+| lbvh | 10000000 | 9999392 | 79379.1 | 23838.9 | 0.30 | 0.30 / 0.30 / 0.30 | 81855.6 | 18110.8 | 1.03 | 0.76 | 1.01 |
+| sah | 1000 | 308 | 94.7 | 192.7 | 2.03 | 2.05 / 2.03 / 1.94 | 99.8 | 206.8 | 1.05 | 1.07 | 1.01 |
+| sah | 3000 | 920 | 107.1 | 207.9 | 1.94 | 1.94 / 2.39 / 1.95 | 111.5 | 222.0 | 1.04 | 1.07 | 1.01 |
+| sah | 10000 | 3032 | 129.1 | 236.0 | 1.83 | 1.86 / 1.83 / 1.80 | 134.6 | 251.9 | 1.04 | 1.07 | 1.02 |
+| sah | 30000 | 9157 | 159.8 | 248.9 | 1.56 | 1.56 / 1.56 / 1.54 | 164.4 | 263.2 | 1.03 | 1.06 | 1.01 |
+| sah | 45000 | 13669 | 180.5 | 259.5 | 1.44 | 1.41 / 1.44 / 1.44 | 185.6 | 269.5 | 1.03 | 1.04 | 1.01 |
+| sah | 65000 | 19680 | 210.1 | 259.1 | 1.23 | 1.23 / 1.22 / 1.23 | 213.5 | 270.9 | 1.02 | 1.05 | 1.02 |
+| sah | 100000 | 30377 | 267.4 | 289.4 | 1.08 | 1.09 / 1.08 / 1.08 | 271.1 | 296.5 | 1.01 | 1.02 | 1.01 |
+| sah | 150000 | 45515 | 353.4 | 298.8 | 0.85 | 0.84 / 0.85 / 0.85 | 361.0 | 318.2 | 1.02 | 1.07 | 1.01 |
+| sah | 200000 | 60886 | 441.8 | 321.8 | 0.73 | 0.73 / 0.73 / 0.72 | 439.3 | 339.5 | 0.99 | 1.05 | 1.01 |
+| sah | 300000 | 90813 | 663.6 | 361.4 | 0.54 | 0.55 / 0.54 / 0.54 | 662.7 | 385.0 | 1.00 | 1.07 | 1.01 |
+| sah | 1000000 | 303618 | 2069.5 | 708.7 | 0.34 | 0.34 / 0.34 / 0.34 | 2065.2 | 667.3 | 1.00 | 0.94 | 1.00 |
+| median | 1000 | 256 | 83.3 | 143.2 | 1.72 | 1.73 / 1.72 / 1.68 | 87.3 | 148.4 | 1.05 | 1.04 | 1.01 |
+| median | 3000 | 1024 | 92.6 | 156.8 | 1.69 | 1.69 / 1.66 / 1.70 | 98.1 | 159.2 | 1.06 | 1.02 | 1.01 |
+| median | 10000 | 3866 | 125.9 | 194.3 | 1.54 | 1.57 / 1.54 / 1.52 | 130.8 | 200.6 | 1.04 | 1.03 | 1.02 |
+| median | 30000 | 8192 | 138.1 | 184.2 | 1.33 | 1.34 / 1.32 / 1.33 | 142.8 | 186.6 | 1.03 | 1.01 | 1.01 |
+| median | 45000 | 16384 | 169.2 | 189.5 | 1.12 | 1.12 / 1.12 / 1.12 | 172.8 | 190.8 | 1.02 | 1.01 | 1.01 |
+| median | 65000 | 16384 | 173.4 | 193.5 | 1.12 | 1.11 / 1.13 / 1.12 | 176.2 | 194.9 | 1.02 | 1.01 | 1.01 |
+| median | 100000 | 32768 | 251.4 | 215.9 | 0.86 | 0.86 / 0.86 / 0.86 | 255.8 | 208.2 | 1.02 | 0.96 | 1.01 |
+| median | 150000 | 51574 | 365.2 | 244.3 | 0.67 | 0.68 / 0.67 / 0.67 | 367.8 | 246.7 | 1.01 | 1.01 | 1.00 |
+| median | 200000 | 65536 | 418.7 | 245.5 | 0.59 | 0.59 / 0.59 / 0.59 | 421.4 | 237.5 | 1.01 | 0.97 | 1.00 |
+| median | 300000 | 103316 | 696.3 | 302.3 | 0.43 | 0.43 / 0.43 / 0.44 | 701.6 | 308.0 | 1.01 | 1.02 | 1.01 |
+| median | 1000000 | 262144 | 1570.1 | 588.7 | 0.37 | 0.37 / 0.38 / 0.37 | 1551.0 | 488.0 | 0.99 | 0.83 | 1.01 |
+
+- Large meshes: the levels take 0.30x the walk's time at 10^7 (79.4 -> 23.8 ms, lbvh) and 0.32-0.37x at 10^6. The gain is smaller than for plain refits (0.07x) because the solid angle arithmetic, not the fence, is a larger share here. Small meshes: the levels cost 0.1-0.15 ms more (about 50 launches plus heavier nodes).
+- Break-even, in leaves: lbvh about 65k (0.99 at 64,980), sah 30k-45k (1.08 at 30,377, 0.85 at 45,515), median 16k-33k (1.12 at 16,384, 0.86 at 32,768). An LBVH tree's `num_leaf_nodes` equals its item count, packed or not, so leaves measure lbvh trees differently from host-built ones. In items, break-even is about 65k for lbvh, 80k for median and 120k for sah.
+- Threshold choices against the measured cells: `num_leaf_nodes >= 32768` (f6ada527's rule) puts lbvh 45,000 on the levels at 1.27x; `num_leaf_nodes >= 65536` leaves sah 45-60k and median 33-52k leaves on the walk at up to 1.5x its levels time; **`num_items >= 65536` keeps every measured cell within 8% of the faster path** (worst: sah 99,904 items on the levels at 1.08x).
+- Shared helpers: the walk costs 3-9% more on lbvh and up to 6% on sah/median (non-inlined calls). Their levels are 1-8% slower than the inlined levels up to 300k triangles (except lbvh from 150k) and faster at 10^6 and above (0.76x at 10^7 lbvh).
+
+### Question for Jeff (no decision taken; not committed)
+
+11. The ruling's condition holds in substance. The walk's results are deterministic, but they depend on the compiler's per-kernel contraction choices, and the walk's two copies of the leaf arithmetic already disagree with each other. So no new kernel can be bit-identical to it by construction. Options:
+   (a) Shared `__noinline__` helpers for the leaf arithmetic and the internal combine, called by both the walk and the level kernel on HIP (CUDA keeps today's inlined code under `#else`, so that nvcc's fusion is unchanged). Walk and levels are then bit-identical in all 1248 arrays. Against today's HIP walk: sah/median trees and lbvh leaf-size-1 trees to 10^6 are unchanged; lbvh packed leaves change in the last bits; queries were unchanged in every test. Costs the walk 3-9%; threshold `num_items >= 65536`. The diff is larger than (b): the walk is restructured on HIP and keeps its original form for CUDA.
+   (b) Commit the inlined level kernel as built. Node bounds and all query results are identical to the walk's; solid angle moments of multi-triangle leaves differ in the last bits (relative 1e-7), so crossing the threshold changes those bits. Same threshold.
+   (c) Leave winding-number meshes on the walk (the session 24 state).
+   If (a) or (b): one commit as ruled (correctness rerun on the committed build, the tests listed in the ruling, nvcc check), then the final step.
+
+### Release notes draft (1.14.0+rocm10.2.0), updated
+
+Updated per the ruling: fp contraction now matches CUDA (fp16 unfused as on CUDA), replacing the sentence that described the old `on` setting. The note to Jeff that depended on `on` was removed, and the known issue was added verbatim. No mention of the 1.13 port's defects (`grep 1.13`: none). Body checked with `utils/prose.py`: clean. This supersedes the session 21 draft above; the copy is at `agent_space/release_notes_draft.md`.
+
+Draft for Jeff (written by the porter in session 21, updated in session 26 for the fp-contract ruling and the known issue; nothing published). Text between the fences is the proposed GitHub Release body; one line per paragraph as GitHub renders it.
+
+```
+# Warp 1.14.0 for AMD GPUs (ROCm 10.2)
+
+This release is NVIDIA Warp 1.14.0 ported to AMD GPUs with HIP. It is built from the release-1.14 branch of NVIDIA/warp with the changes needed to compile and run Warp's GPU code on AMD Instinct and Radeon GPUs; Warp's Python API, kernels and features are those of upstream 1.14.0, apart from the differences listed below. It is not an NVIDIA release; report problems with this build at https://github.com/AMD-Ecosystem/warp/issues.
+
+## Install
+
+Linux x86-64 (Python 3.10 or newer):
+
+    pip install https://github.com/AMD-Ecosystem/warp/releases/download/v1.14.0+rocm10.2.0/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl --extra-index-url https://stable.repo.amd.com/rocm/whl-next/
+
+Windows x86-64: the same command with the win_amd64 wheel from this release.
+
+The wheel depends on the ROCm 10.2 Python packages (`rocm>=10.2,<10.3`), which pip installs from AMD's package index given by `--extra-index-url`; no system ROCm installation is needed. Check the install with `python -c "import warp; warp.init()"`, which prints the ROCm and HIP runtime versions and the AMD GPUs found.
+
+## Version numbers
+
+`1.14.0` is the upstream Warp version. The local part `rocm10.2.0` names the ROCm release the wheel is built for and requires (10.2), followed by this build's number for that Warp version and ROCm release. The last number is not a ROCm patch version (AMD's PyTorch wheels use the same shape with that other meaning): a rebuild of 1.14.0 for ROCm 10.2 with fixes becomes 1.14.0+rocm10.2.1, an upstream patch release starts again at 1.14.1+rocm10.2.0, and a build for a later ROCm changes the middle, for example 1.14.0+rocm10.3.0.
+
+## Supported GPUs
+
+The library contains code for every GPU target ROCm 10.2 supports on the operating system: 25 targets on Linux (gfx908, gfx90a, gfx942, gfx950, gfx1010, gfx1011, gfx1012, gfx1030 to gfx1036, gfx1100 to gfx1103, gfx1150 to gfx1153, gfx1200, gfx1201, gfx1250) and 22 on Windows. Kernels written in Python are compiled at run time for the GPU present.
+
+Tested on hardware with Warp's test suite: AMD Instinct MI355X (gfx950), MI300X (gfx942) and MI250X (gfx90a), Radeon Pro W7800 (gfx1100) and Radeon AI PRO R9700 (gfx1201) on Linux, and a Ryzen AI Max (gfx1151) on Windows. The other targets are compiled but have not been run.
+
+## Differences from Warp's CUDA build
+
+- `wp.get_runtime().toolkit_version` and `driver_version` (the CUDA Toolkit and CUDA driver versions) are `None`, as in a CPU-only build. The new `rocm_version` is the ROCm release the library was built with, for example `(10, 2)`, and `hip_version` is the version of the HIP runtime loaded in the process, for example `(7, 17)`; both are `None` in CUDA and CPU builds. Code that compares `toolkit_version` with a tuple without checking for `None` fails on AMD GPUs; use the capability functions (for example `wp.is_conditional_graph_supported()`) instead.
+- Conditional graph nodes are not available in HIP: `wp.capture_if` and `wp.capture_while` cannot be captured into a graph on AMD GPUs (`wp.is_conditional_graph_supported()` returns False), as with CUDA before 12.4.
+- MathDx (cuBLASDx, cuFFTDx, cuSOLVERDx) is NVIDIA-only and not included. Tile operations use Warp's built-in implementations, as in a CUDA build without MathDx; 2D and 3D `tile_fft`/`tile_ifft` of `vec2f`/`vec2d` tiles, which have no built-in implementation, are not available.
+- `tile_matmul` uses AMD matrix instructions (MFMA on Instinct GPUs, WMMA on gfx11 and gfx12 for fp16 and bf16) where the tile shapes allow it. They accumulate fp16 and bf16 products in fp32, so results can differ from the scalar path in the last bits (they are closer to the exact product).
+- Shared-memory tiles are limited to 64 KiB per block (tiles plus Warp's small static allocation) on MI250X, MI300X and Radeon GPUs and to 160 KiB on MI355X, less than on recent NVIDIA GPUs; Warp warns when a kernel's request does not fit.
+- Textures: MI300X and MI355X (and MI250X for 3D textures) have no texture sampling hardware. Textures there are sampled in software on the GPU, with the same results as Warp's CPU textures and slower than hardware sampling; the CUDA interop handles of those textures (`cuda_array`, `cuda_texture`, `cuda_surface`) are not available on them.
+- Spin locks contended within one wavefront do not make progress on AMD GPUs (no independent thread scheduling within a wavefront); `warp/examples/core/example_spin_lock.py` reports this instead of hanging.
+- In native snippets, `__frsqrt_rn` and `__fsqrt_rn` are within 1 ulp but not correctly rounded on AMD GPUs (wrong in the last bit for about 11 and 15 percent of inputs), unlike CUDA. Warp's own kernels do not use them.
+- In native snippets, warp-level intrinsics need 64-bit lane masks: AMD Instinct GPUs have 64-lane wavefronts, so a 32-bit mask such as `0xffffffff` is a compile error. Use `~0ull` or `__activemask()`, which are correct on 32- and 64-lane GPUs, and do not assume `lane = tid & 31`.
+- Stream priorities are accepted and reported, but the HIP runtime schedules all streams at normal priority.
+- On Windows, a graph launch waits for the graph to finish before returning (it works around a HIP runtime race between successive launches of a graph).
+- Floating-point contraction matches CUDA: multiply-adds are fused across statements as with NVRTC's default, and half-precision (fp16) arithmetic is not fused, as on CUDA. Results of the same kernel can still differ from a CUDA build in the last bits, as between any two compilers.
+- The precompiled library stores its GPU code compressed; the first use of each part of it in a process costs a few tens of milliseconds while the HIP runtime's code-object cache is empty (later about 2 ms).
+- Not included: MathDx, NVRTC and the CUDA runtime. The wheel contains no NVIDIA software, and its licence files list only what it contains.
+
+## Known issues
+
+- On MI300X and MI355X, arrays allocated with the memory pool disabled can lose kernel writes when other processes share the GPU (ROCm/rocm-systems#16355). Keep the memory pool enabled, which is the default.
+```
+
+Notes for Jeff on the draft (not part of the body):
+- Hardware list: the GPUs in the evidence and porting sessions of these notes (gfx950, gfx942, gfx90a, gfx1100, gfx1201 on Linux; gfx1151 on Windows). The release's gate platforms must validate the uploaded wheels at the final commit before this is true of the release itself; at the time of writing only gfx950 has run the final wheel (session 21).
+- Windows wheel name and the 22 Windows targets are from session 13; the Windows wheel has not been built yet.
+- Upstream's "requires NVIDIA driver" paragraphs in the docs are untouched; the installation guide's ROCm paragraph already points here.
+
+### Next step (head `bc1ae44b`)
+
+- Jeff rules question 11. Then the porter makes the commit, or skips it under (c). After that comes the final step of the round: nvcc check if a native file changed, release build (25 targets, compressed, `-j 64`), wheel, install into the job venv, full default suite from outside the tree, wheel size/installed size/sha256, and `ported` if every suite result is clean.
+- The release wheel validated at `7059a340` is stale.
+
+### Patch (the inlined level kernel, against `bc1ae44b`; `SA_THRESHOLD` was the placeholder for the measured threshold)
+
+```diff
+diff --git a/warp/native/bvh.cu b/warp/native/bvh.cu
+index 05b91ef1..e4dddf62 100644
+--- a/warp/native/bvh.cu
++++ b/warp/native/bvh.cu
+@@ -1132,6 +1132,18 @@ void bvh_destroy_device(BVH& bvh)
+     bvh.root = NULL;
+ }
+ 
++#if defined(__HIP_PLATFORM_AMD__)
++int bvh_refit_max_depth(const BVH& bvh)
++{
++    int index_bits = 0;
++    while ((1ll << index_bits) < bvh.num_items)
++        index_bits++;
++    // the depth of a host-built tree, or the bound of the tree an in-place rebuild may have made of it; leaves are one
++    // level deeper than the internal nodes
++    return std::max(bvh.max_depth, (bvh.item_groups ? 64 : 30) + index_bits) + 1;
++}
++#endif
++
+ void bvh_refit_device(BVH& bvh)
+ {
+     ContextGuard guard(bvh.context);
+@@ -1141,13 +1153,7 @@ void bvh_refit_device(BVH& bvh)
+     // time there instead. Its launch count (fixed, so the refit stays capturable) costs more than the walk on small
+     // trees.
+     if (bvh.num_leaf_nodes >= 32768) {
+-        int index_bits = 0;
+-        while ((1ll << index_bits) < bvh.num_items)
+-            index_bits++;
+-        // the depth of a host-built tree, or the bound of the tree an in-place rebuild may have made of it; leaves are
+-        // one level deeper than the internal nodes
+-        const int max_depth = std::max(bvh.max_depth, (bvh.item_groups ? 64 : 30) + index_bits) + 1;
+-        for (int depth = max_depth; depth >= 1; depth--) {
++        for (int depth = bvh_refit_max_depth(bvh); depth >= 1; depth--) {
+             wp_launch_device(
+                 WP_CURRENT_CONTEXT, refit_tree_at_depth, bvh.max_nodes,
+                 (bvh.max_nodes, depth, bvh.node_counts, bvh.node_parents, bvh.primitive_indices, bvh.item_lowers,
+diff --git a/warp/native/bvh.h b/warp/native/bvh.h
+index 0e122f60..2871bb1b 100644
+--- a/warp/native/bvh.h
++++ b/warp/native/bvh.h
+@@ -619,6 +619,10 @@ void bvh_create_device(
+ );
+ void bvh_destroy_device(BVH& bvh);
+ void bvh_refit_device(BVH& bvh);
++#if defined(__HIP_PLATFORM_AMD__)
++// the deepest level a depth-level refit of the device tree launches (depths stored in node_counts)
++int bvh_refit_max_depth(const BVH& bvh);
++#endif
+ void cubql_bvh_create_device(
+     void* context, vec3* lowers, vec3* uppers, int num_items, int leaf_size, CuBQLBVH& bvh_device_on_host
+ );
+diff --git a/warp/native/mesh.cu b/warp/native/mesh.cu
+index edb1ce67..a731b8c9 100644
+--- a/warp/native/mesh.cu
++++ b/warp/native/mesh.cu
+@@ -219,11 +219,88 @@ __global__ void bvh_refit_with_solid_angle_kernel(
+     }
+ }
+ 
++#if defined(__HIP_PLATFORM_AMD__)
++// Refit of the nodes at one depth, deepest level first, giving bvh_refit_with_solid_angle_kernel's results: a leaf or
++// packed leaf takes its triangles' solid angle data unless its parent is a packed leaf; an internal node combines its
++// children's.
++__global__ void refit_tree_with_solid_angle_at_depth(
++    int num_nodes,
++    int depth,
++    const int* __restrict__ depths,
++    const int* __restrict__ parents,
++    BVHPackedNodeHalf* __restrict__ node_lowers,
++    BVHPackedNodeHalf* __restrict__ node_uppers,
++    const vec3* points,
++    const int* indices,
++    const int* primitive_indices,
++    SolidAngleProps* solid_angle_props
++)
++{
++    const int index = blockDim.x * blockIdx.x + threadIdx.x;
++    if (index >= num_nodes || depths[index] != depth)
++        return;
++
++    BVHPackedNodeHalf& lower = node_lowers[index];
++    BVHPackedNodeHalf& upper = node_uppers[index];
++    if (lower.b) {
++        const int parent = parents[index];
++        if (parent != -1 && node_lowers[parent].b)
++            return;
++
++        SolidAngleProps node_solid_angle_props;
++        const int start = lower.i;
++        const int end = upper.i;
++        for (int primitive_counter = start; primitive_counter < end; primitive_counter++) {
++            int primitive_index = primitive_indices[primitive_counter];
++            if (primitive_counter == start) {
++                precompute_triangle_solid_angle_props(
++                    points[indices[primitive_index * 3 + 0]], points[indices[primitive_index * 3 + 1]],
++                    points[indices[primitive_index * 3 + 2]], node_solid_angle_props
++                );
++            } else {
++                SolidAngleProps triangle_solid_angle_props;
++                precompute_triangle_solid_angle_props(
++                    points[indices[primitive_index * 3 + 0]], points[indices[primitive_index * 3 + 1]],
++                    points[indices[primitive_index * 3 + 2]], triangle_solid_angle_props
++                );
++                node_solid_angle_props
++                    = combine_precomputed_solid_angle_props(&node_solid_angle_props, &triangle_solid_angle_props);
++            }
++        }
++
++        (vec3&)lower = node_solid_angle_props.box.lower;
++        (vec3&)upper = node_solid_angle_props.box.upper;
++        solid_angle_props[index] = node_solid_angle_props;
++    } else {
++        const int left_child = lower.i;
++        const int right_child = upper.i;
++        (vec3&)lower = min((vec3&)node_lowers[left_child], (vec3&)node_lowers[right_child]);
++        (vec3&)upper = max((vec3&)node_uppers[left_child], (vec3&)node_uppers[right_child]);
++
++        SolidAngleProps* left_child_data = &solid_angle_props[left_child];
++        SolidAngleProps* right_child_data = (left_child != right_child) ? &solid_angle_props[right_child] : NULL;
++        combine_precomputed_solid_angle_props(solid_angle_props[index], left_child_data, right_child_data);
++    }
++}
++#endif
+ 
+ void bvh_refit_with_solid_angle_device(BVH& bvh, Mesh& mesh)
+ {
+     ContextGuard guard(bvh.context);
+ 
++#if defined(__HIP_PLATFORM_AMD__)
++    // as in bvh_refit_device: one depth level at a time on large trees, where the walk's __threadfence() dominates
++    if (bvh.num_leaf_nodes >= SA_THRESHOLD) {
++        for (int depth = bvh_refit_max_depth(bvh); depth >= 1; depth--) {
++            wp_launch_device(
++                WP_CURRENT_CONTEXT, refit_tree_with_solid_angle_at_depth, bvh.max_nodes,
++                (bvh.max_nodes, depth, bvh.node_counts, bvh.node_parents, bvh.node_lowers, bvh.node_uppers,
++                 mesh.points, mesh.indices, bvh.primitive_indices, mesh.solid_angle_props)
++            );
++        }
++        return;
++    }
++#endif
+     // clear child counters
+     wp_memset_device(WP_CURRENT_CONTEXT, bvh.node_counts, 0, sizeof(int) * bvh.max_nodes);
+     wp_launch_device(
+```
+
+### The shared-helper variant (option a), as a diff of mesh.cu against the patch above (scratch: no `#else` CUDA branch yet, and the environment switch)
+
+```diff
+--- wrf2/warp/native/mesh.cu	2026-11-20 22:11:00.126934287 +0000
++++ wrf4/warp/native/mesh.cu	2026-11-20 22:24:21.770463652 +0000
+@@ -59,6 +59,38 @@
+     m->average_edge_length = sum_edge_lengths[n - 1] / (3 * n);
+ }
+ 
++#define WP_SA_NOINLINE __noinline__  // SCRATCH variant: one copy of the arithmetic for every refit kernel
++
++__device__ WP_SA_NOINLINE void leaf_solid_angle_props(
++    int start, int end, const vec3* points, const int* indices, const int* primitive_indices, SolidAngleProps& out
++)
++{
++    SolidAngleProps node_solid_angle_props;
++    for (int primitive_counter = start; primitive_counter < end; primitive_counter++) {
++        int primitive_index = primitive_indices[primitive_counter];
++        if (primitive_counter == start) {
++            precompute_triangle_solid_angle_props(
++                points[indices[primitive_index * 3 + 0]], points[indices[primitive_index * 3 + 1]],
++                points[indices[primitive_index * 3 + 2]], node_solid_angle_props
++            );
++        } else {
++            SolidAngleProps triangle_solid_angle_props;
++            precompute_triangle_solid_angle_props(
++                points[indices[primitive_index * 3 + 0]], points[indices[primitive_index * 3 + 1]],
++                points[indices[primitive_index * 3 + 2]], triangle_solid_angle_props
++            );
++            node_solid_angle_props
++                = combine_precomputed_solid_angle_props(&node_solid_angle_props, &triangle_solid_angle_props);
++        }
++    }
++    out = node_solid_angle_props;
++}
++
++__device__ WP_SA_NOINLINE void internal_solid_angle_props(SolidAngleProps* props, int node, int left, int right)
++{
++    combine_precomputed_solid_angle_props(props[node], &props[left], (left != right) ? &props[right] : NULL);
++}
++
+ __global__ void bvh_refit_with_solid_angle_kernel(
+     int n,
+     const int* __restrict__ parents,
+@@ -90,29 +122,7 @@
+ 
+             if (true_leaf) {
+                 SolidAngleProps node_solid_angle_props;
+-
+-                const int start = lower.i;
+-                const int end = upper.i;
+-
+-                // loops through primitives in the leaf
+-                for (int primitive_counter = start; primitive_counter < end; primitive_counter++) {
+-                    int primitive_index = primitive_indices[primitive_counter];
+-                    if (primitive_counter == start) {
+-                        precompute_triangle_solid_angle_props(
+-                            points[indices[primitive_index * 3 + 0]], points[indices[primitive_index * 3 + 1]],
+-                            points[indices[primitive_index * 3 + 2]], node_solid_angle_props
+-                        );
+-                    } else {
+-                        SolidAngleProps triangle_solid_angle_props;
+-                        precompute_triangle_solid_angle_props(
+-                            points[indices[primitive_index * 3 + 0]], points[indices[primitive_index * 3 + 1]],
+-                            points[indices[primitive_index * 3 + 2]], triangle_solid_angle_props
+-                        );
+-                        node_solid_angle_props = combine_precomputed_solid_angle_props(
+-                            &node_solid_angle_props, &triangle_solid_angle_props
+-                        );
+-                    }
+-                }
++                leaf_solid_angle_props(lower.i, upper.i, points, indices, primitive_indices, node_solid_angle_props);
+ 
+                 (vec3&)lower = node_solid_angle_props.box.lower;
+                 (vec3&)upper = node_solid_angle_props.box.upper;
+@@ -158,27 +168,7 @@
+ 
+                     if (true_leaf) {
+                         SolidAngleProps node_solid_angle_props;
+-                        const int start = parent_lower.i;
+-                        const int end = parent_upper.i;
+-                        // loops through primitives in the leaf
+-                        for (int primitive_counter = start; primitive_counter < end; primitive_counter++) {
+-                            int primitive_index = primitive_indices[primitive_counter];
+-                            if (primitive_counter == start) {
+-                                precompute_triangle_solid_angle_props(
+-                                    points[indices[primitive_index * 3 + 0]], points[indices[primitive_index * 3 + 1]],
+-                                    points[indices[primitive_index * 3 + 2]], node_solid_angle_props
+-                                );
+-                            } else {
+-                                SolidAngleProps triangle_solid_angle_props;
+-                                precompute_triangle_solid_angle_props(
+-                                    points[indices[primitive_index * 3 + 0]], points[indices[primitive_index * 3 + 1]],
+-                                    points[indices[primitive_index * 3 + 2]], triangle_solid_angle_props
+-                                );
+-                                node_solid_angle_props = combine_precomputed_solid_angle_props(
+-                                    &node_solid_angle_props, &triangle_solid_angle_props
+-                                );
+-                            }
+-                        }
++                        leaf_solid_angle_props(parent_lower.i, parent_upper.i, points, indices, primitive_indices, node_solid_angle_props);
+ 
+                         (vec3&)parent_lower = node_solid_angle_props.box.lower;
+                         (vec3&)parent_upper = node_solid_angle_props.box.upper;
+@@ -203,11 +193,7 @@
+                     (vec3&)parent_upper = upper;
+ 
+                     // combine
+-                    SolidAngleProps* left_child_data = &solid_angle_props[left_child];
+-                    SolidAngleProps* right_child_data
+-                        = (left_child != right_child) ? &solid_angle_props[right_child] : NULL;
+-
+-                    combine_precomputed_solid_angle_props(solid_angle_props[parent], left_child_data, right_child_data);
++                    internal_solid_angle_props(solid_angle_props, parent, left_child, right_child);
+                 }
+                 // move onto processing the parent
+                 index = parent;
+@@ -248,25 +234,7 @@
+             return;
+ 
+         SolidAngleProps node_solid_angle_props;
+-        const int start = lower.i;
+-        const int end = upper.i;
+-        for (int primitive_counter = start; primitive_counter < end; primitive_counter++) {
+-            int primitive_index = primitive_indices[primitive_counter];
+-            if (primitive_counter == start) {
+-                precompute_triangle_solid_angle_props(
+-                    points[indices[primitive_index * 3 + 0]], points[indices[primitive_index * 3 + 1]],
+-                    points[indices[primitive_index * 3 + 2]], node_solid_angle_props
+-                );
+-            } else {
+-                SolidAngleProps triangle_solid_angle_props;
+-                precompute_triangle_solid_angle_props(
+-                    points[indices[primitive_index * 3 + 0]], points[indices[primitive_index * 3 + 1]],
+-                    points[indices[primitive_index * 3 + 2]], triangle_solid_angle_props
+-                );
+-                node_solid_angle_props
+-                    = combine_precomputed_solid_angle_props(&node_solid_angle_props, &triangle_solid_angle_props);
+-            }
+-        }
++        leaf_solid_angle_props(lower.i, upper.i, points, indices, primitive_indices, node_solid_angle_props);
+ 
+         (vec3&)lower = node_solid_angle_props.box.lower;
+         (vec3&)upper = node_solid_angle_props.box.upper;
+@@ -277,9 +245,7 @@
+         (vec3&)lower = min((vec3&)node_lowers[left_child], (vec3&)node_lowers[right_child]);
+         (vec3&)upper = max((vec3&)node_uppers[left_child], (vec3&)node_uppers[right_child]);
+ 
+-        SolidAngleProps* left_child_data = &solid_angle_props[left_child];
+-        SolidAngleProps* right_child_data = (left_child != right_child) ? &solid_angle_props[right_child] : NULL;
+-        combine_precomputed_solid_angle_props(solid_angle_props[index], left_child_data, right_child_data);
++        internal_solid_angle_props(solid_angle_props, index, left_child, right_child);
+     }
+ }
+ #endif
+```
+
+### Scripts (`agent_space/bench/`; `torus_mesh` is also appended to `bench_bvh_geom.py`; the trees `sawalk`, `salevels`, `sa4walk` and `sa4levels` are registered in `run.sh`; `drive.sh` now probes amd-smi GPU 0, which is HIP device 1 here)
+
+`sa_check.py`:
+```python
+# usage: sa_check.py <out.json> [sizes...]; winding-number meshes (support_winding_number=True; a closed noisy torus of
+# about N triangles) built with lbvh/sah/median, without and with 7 groups, leaf sizes 1 and 4, then: refit at creation,
+# three refits with moved points, a points replacement (mesh.points = new array, which refits), a new mesh built on the
+# moved points, and a refit captured in a graph relaunched three times with moved points. After each step the node
+# arrays and the solid angle array are read from device memory and hashed (sha256 of the raw words); the hashes are
+# compared across builds or path switches. Solid angle entries are hashed over the nodes the refit writes (nodes of the
+# tree that are not below a packed leaf); max_p_dist_sq of single-triangle leaves (left unset by the code that computes
+# them, and read by nothing) is hashed separately. Also recorded: the fraction of nodes whose words changed between
+# consecutive refits, and hashes of query results (sign_winding_number, no_sign, ray) after the final step.
+import hashlib, json, sys
+import numpy as np
+import warp as wp
+
+wp.config.quiet = True
+wp.init()
+OUT = sys.argv[1]
+SIZES = [int(float(s)) for s in sys.argv[2:]] or [10**3, 10**4, 10**5, 10**6, 10**7]
+dev = wp.get_device("cuda:0")
+SA_WORDS = 36  # sizeof(SolidAngleProps) / 4; max_p_dist_sq is the last word
+
+
+def torus_mesh(ntri, rng):
+    # (u, v) periodic grid: 2*nu*nv triangles, closed and watertight
+    nv = max(3, int(round((ntri / 8) ** 0.5)))
+    nu = max(3, int(round(ntri / (2 * nv))))
+    u, v = np.meshgrid(np.arange(nu) * 2 * np.pi / nu, np.arange(nv) * 2 * np.pi / nv, indexing="ij")
+    rr = 0.25 + 0.01 * np.sin(5 * u) * np.cos(3 * v)
+    x = (0.5 + rr * np.cos(v)) * np.cos(u)
+    y = (0.5 + rr * np.cos(v)) * np.sin(u)
+    z = rr * np.sin(v)
+    pts = np.stack([x, y, z], -1).reshape(-1, 3)
+    pts += 1e-4 * rng.standard_normal(pts.shape)
+    i = np.arange(nu)[:, None]
+    j = np.arange(nv)[None, :]
+    a = i * nv + j
+    b = ((i + 1) % nu) * nv + j
+    c = i * nv + (j + 1) % nv
+    d = ((i + 1) % nu) * nv + (j + 1) % nv
+    tris = np.concatenate([np.stack([a, b, c], -1).reshape(-1, 3), np.stack([b, d, c], -1).reshape(-1, 3)])
+    return pts.astype(np.float32), tris.astype(np.int32).reshape(-1)
+
+
+@wp.kernel
+def move(p0: wp.array(dtype=wp.vec3), step: float, p: wp.array(dtype=wp.vec3)):
+    i = wp.tid()
+    d = wp.vec3(wp.sin(float(i) * 0.37 + step), wp.cos(float(i) * 0.11 + 2.0 * step), wp.sin(float(i) * 0.05 - step))
+    p[i] = p0[i] + d * 0.002
+
+
+@wp.kernel
+def queries(
+    mesh: wp.uint64,
+    qp: wp.array(dtype=wp.vec3),
+    wn: wp.array(dtype=wp.vec4),
+    ns: wp.array(dtype=wp.vec4),
+    ry: wp.array(dtype=wp.vec4),
+):
+    t = wp.tid()
+    p = qp[t]
+    q = wp.mesh_query_point_sign_winding_number(mesh, p, 10.0)
+    wn[t] = wp.vec4(wp.where(q.result, 1.0, 0.0), q.sign, float(q.face), q.u + q.v * 3.0)
+    q2 = wp.mesh_query_point_no_sign(mesh, p, 10.0)
+    ns[t] = wp.vec4(wp.where(q2.result, 1.0, 0.0), float(q2.face), q2.u, q2.v)
+    d = wp.normalize(wp.vec3(wp.sin(float(t)), wp.cos(float(t) * 1.3), wp.sin(float(t) * 0.7 + 1.0)))
+    r = wp.mesh_query_ray(mesh, p, d, 10.0)
+    ry[t] = wp.vec4(wp.where(r.result, 1.0, 0.0), r.t, float(r.face), r.u)
+
+
+def sha(a):
+    return hashlib.sha256(np.ascontiguousarray(a).tobytes()).hexdigest()[:16]
+
+
+def view(ptr, shape, dtype=wp.uint32):
+    return wp.array(ptr=int(ptr), dtype=dtype, shape=shape, device=dev, copy=False).numpy().copy()
+
+
+def snapshot(mesh, host_built):
+    m = int(mesh.id)
+    sa_ptr = view(m + 184, (1,), wp.uint64)[0]
+    num_tris = int(view(m + 196, (1,), wp.int32)[0])
+    bvh_ptrs = view(m + 200, (5,), wp.uint64)
+    max_depth, max_nodes, num_nodes, num_leaf = (int(x) for x in view(m + 240, (4,), wp.int32))
+    k = num_nodes if host_built else max_nodes
+    lo = view(bvh_ptrs[0], (k, 4))
+    hi = view(bvh_ptrs[1], (k, 4))
+    parents = view(bvh_ptrs[2], (k,), wp.int32)
+    sa = view(sa_ptr, (k, SA_WORDS))
+    is_leaf = (lo[:, 3] >> 31) == 1
+    par_leaf = np.zeros(k, bool)
+    ok = parents >= 0
+    par_leaf[ok] = is_leaf[parents[ok]]
+    written = ~(is_leaf & par_leaf)
+    single = is_leaf & ~par_leaf & (((hi[:, 3] & 0x7FFFFFFF).astype(np.int64) - (lo[:, 3] & 0x7FFFFFFF)) == 1)
+    sa_masked = sa[written].copy()
+    sa_masked[single[written], SA_WORDS - 1] = 0
+    return (
+        {
+            "lo": sha(lo),
+            "hi": sha(hi),
+            "sa": sha(sa_masked),
+            "sa_leaf_maxp": sha(sa[single, SA_WORDS - 1]),
+            "num_tris": num_tris,
+            "num_nodes": num_nodes,
+            "num_leaf": num_leaf,
+            "written": int(written.sum()),
+            "single": int(single.sum()),
+        },
+        (lo, hi, sa_masked),
+    )
+
+
+rng = np.random.default_rng(0)
+res = {}
+for N in SIZES:
+    pts_np, ind_np = torus_mesh(N, rng)
+    p0 = wp.array(pts_np, dtype=wp.vec3)
+    ind = wp.array(ind_np, dtype=int)
+    ntri = len(ind_np) // 3
+    groups = wp.array((np.arange(ntri) * 7 // ntri).astype(np.int32), dtype=int)
+    NQ = 10**5
+    qp = wp.array(rng.uniform(-0.9, 0.9, (NQ, 3)).astype(np.float32) * np.array([1, 1, 0.4], np.float32), dtype=wp.vec3)
+    for con in ("lbvh", "sah", "median"):
+        if con != "lbvh" and N > 10**6:
+            continue
+        for g, leaf in ((None, 1), (groups, 1), (None, 4), (groups, 4)):
+            key = f"{N}_{con}_{'g' if g is not None else 'n'}_leaf{leaf}"
+            host = con != "lbvh"
+            p = wp.clone(p0)
+            mesh = wp.Mesh(points=p, indices=ind, support_winding_number=True, bvh_constructor=con, bvh_leaf_size=leaf, groups=g)
+            r = {}
+            r["create"], prev = snapshot(mesh, host)
+            changed = []
+            for step in range(3):
+                wp.launch(move, dim=len(pts_np), inputs=[p0, float(step + 1), p])
+                mesh.refit()
+                r[f"refit{step}"], cur = snapshot(mesh, host)
+                changed.append(float(np.mean(np.any(cur[2] != prev[2], axis=1))))
+                prev = cur
+            p2 = wp.empty_like(p)
+            wp.launch(move, dim=len(pts_np), inputs=[p0, 5.0, p2])
+            mesh.points = p2
+            r["set_points"], _ = snapshot(mesh, host)
+            del mesh
+            mesh = wp.Mesh(points=p2, indices=ind, support_winding_number=True, bvh_constructor=con, bvh_leaf_size=leaf, groups=g)
+            r["recreate"], _ = snapshot(mesh, host)
+            with wp.ScopedCapture(device=dev, force_module_load=False) as cap:
+                mesh.refit()
+            for step in range(3):
+                wp.launch(move, dim=len(pts_np), inputs=[p0, 10.0 + step, p2])
+                wp.capture_launch(cap.graph)
+            r["graph"], _ = snapshot(mesh, host)
+            wn = wp.zeros(NQ, dtype=wp.vec4)
+            ns = wp.zeros(NQ, dtype=wp.vec4)
+            ry = wp.zeros(NQ, dtype=wp.vec4)
+            wp.launch(queries, dim=NQ, inputs=[mesh.id, qp, wn, ns, ry])
+            wnn = wn.numpy()
+            r["q_wn"] = sha(wnn)
+            r["q_ns"] = sha(ns.numpy())
+            r["q_ray"] = sha(ry.numpy())
+            r["inside_frac"] = float(np.mean(wnn[:, 1] < 0))
+            r["changed_sa_rows"] = changed
+            res[key] = r
+            del mesh, cap
+    print("done", N, flush=True)
+json.dump(res, open(OUT, "w"), indent=1)
+```
+
+`sa_cmp.py`:
+```python
+# usage: sa_cmp.py <a.json> <b.json>; compares sa_check.py hashes field by field
+import json, sys
+a = json.load(open(sys.argv[1])); b = json.load(open(sys.argv[2]))
+n = diff = 0; maxp = [0, 0]; diffs = []
+for key in sorted(set(a) & set(b)):
+    for step, va in a[key].items():
+        vb = b[key][step]
+        if isinstance(va, dict):
+            for f in ("lo", "hi", "sa"):
+                n += 1
+                if va[f] != vb[f]:
+                    diff += 1; diffs.append(f"{key} {step} {f}")
+            maxp[0] += 1; maxp[1] += va["sa_leaf_maxp"] != vb["sa_leaf_maxp"]
+        elif step.startswith("q_"):
+            n += 1
+            if va != vb:
+                diff += 1; diffs.append(f"{key} {step}")
+print(f"configs {len(set(a) & set(b))} (only a: {len(set(a) - set(b))}, only b: {len(set(b) - set(a))}); arrays compared {n}, differ {diff}")
+print(f"single-triangle leaf max_p_dist_sq: {maxp[1]} of {maxp[0]} snapshots differ")
+for d in diffs[:20]:
+    print("  ", d)
+ch = [min(v["changed_sa_rows"]) for v in a.values()]
+print(f"min fraction of solid angle rows changed between consecutive refits: {min(ch):.4f}; inside fraction range {min(v['inside_frac'] for v in a.values()):.3f}..{max(v['inside_frac'] for v in a.values()):.3f}")
+```
+
+`sa_perf.py` (run with `./rounds.sh sa_perf.py <out> 3 sawalk salevels sa4walk sa4levels --`):
+```python
+# usage: sa_perf.py [sizes...]; wall time per wp.Mesh.refit() of a winding-number mesh (support_winding_number=True,
+# closed torus of about N triangles; lbvh, sah, median, default leaf size; 10 warm-up calls, then 7 x <reps>
+# back-to-back calls and a sync, median), plus a noise-floor metric whose code is the same in every variant: one
+# 10^6-point mesh_query_point launch on the same mesh. Records via common.record.
+import statistics, sys, time
+import numpy as np
+import warp as wp
+from bench_bvh_geom import torus_mesh
+from common import record
+wp.config.quiet = True
+wp.init()
+
+@wp.kernel
+def qpoint(mesh: wp.uint64, qp: wp.array(dtype=wp.vec3), dist: wp.array(dtype=float)):
+    t = wp.tid()
+    q = wp.mesh_query_point_no_sign(mesh, qp[t], 10.0)
+    dist[t] = wp.where(q.result, q.u, -1.0)
+
+def per_call(fn, reps):
+    for _ in range(10):
+        fn()
+    wp.synchronize_device()
+    res = []
+    for _ in range(7):
+        t0 = time.perf_counter()
+        for _ in range(reps):
+            fn()
+        wp.synchronize_device()
+        res.append((time.perf_counter() - t0) / reps)
+    return statistics.median(res), min(res), max(res)
+
+rng = np.random.default_rng(0)
+NQ = 10**6
+qp = wp.array(rng.uniform(-0.9, 0.9, (NQ, 3)).astype(np.float32), dtype=wp.vec3); dist = wp.zeros(NQ, dtype=float)
+for N in [int(float(s)) for s in sys.argv[1:]] or [10**3, 3000, 10**4, 30000, 10**5, 300000, 10**6, 10**7]:
+    pts_np, ind_np = torus_mesh(N, rng)
+    pts = wp.array(pts_np, dtype=wp.vec3); ind = wp.array(ind_np, dtype=int)
+    reps = 200 if N <= 10**5 else (30 if N <= 10**6 else 5)
+    for con in ("lbvh", "sah", "median"):
+        if con != "lbvh" and N > 10**6:
+            continue
+        mesh = wp.Mesh(points=pts, indices=ind, bvh_constructor=con, support_winding_number=True)
+        m, mn, mx = per_call(mesh.refit, reps)
+        record(area="refit", op="wn_mesh_refit", N=N, constructor=con, med=m, min=mn, max=mx, reps=7)
+        m, mn, mx = per_call(lambda: wp.launch(qpoint, dim=NQ, inputs=[mesh.id, qp, dist]), 5)
+        record(area="refit", op="noise_query_point", N=N, constructor=con, med=m, min=mn, max=mx, reps=7)
+        del mesh
+```

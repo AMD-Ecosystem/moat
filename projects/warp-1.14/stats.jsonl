@@ -228,3 +228,4 @@
 {"kind":"phase","ts":"2026-11-20T19:27:28Z","phase":"test","seconds":2320.422,"exit":2,"cmd":"agent_space/suite.sh"}
 {"kind":"phase","ts":"2026-11-20T20:45:19Z","phase":"test","seconds":514.863,"exit":0,"cmd":"agent_space/suite.sh"}
 {"kind":"phase","ts":"2026-11-20T22:06:04Z","phase":"test","seconds":2326.168,"exit":0,"cmd":"agent_space/suite.sh"}
+{"kind":"phase","ts":"2026-11-20T22:12:04Z","phase":"build","seconds":26.063,"exit":1,"cmd":"bash agent_space/hipbuild.sh /var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/moat/projects/warp-1.14/src"}
