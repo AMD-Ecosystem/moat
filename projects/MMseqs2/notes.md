@@ -1613,3 +1613,31 @@ Confirms: "a CPU-only build is unchanged".
 - `git -C projects/MMseqs2/src status --porcelain`: empty. No fork edits, no throwaway patches.
 
 Result: linux-gfx950 `completed` at a25e69fd.
+
+## Validation 2026-11-20 (linux-gfx1100, moat-gpu-coverage-v2 a25e69fd)
+
+jeff's request: revalidate linux-gfx1100 at `head_sha` a25e69fd. The platform's previous record was 75a9b029 (the old USE_HIP port on an older upstream base); `moatlib.py classify MMseqs2 75a9b029 a25e69fd` = `mixed`, arch_independent=False, hundreds of source files across mmseqs and libmarv, so carry-forward does not apply: full run. Host: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3 wave32), `HIP_VISIBLE_DEVICES=0` (dispatcher pin, idle at start), `CUDA_VISIBLE_DEVICES=0` for `--gpu`. ROCm: TheRock 10.2 wheels installed into the job venv (`pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ rocm==10.2.0a20261022 rocm-sdk-core rocm-sdk-devel rocm-sdk-libraries rocm-sdk-device-gfx1100` at that version), `R=$(python -m rocm_sdk path --root)`, HIP 7.17.26422; `ldd mmseqs` resolves `libamdhip64.so.7` into that tree. gcc 13.3, CMake 3.31.6, Ninja, `-j16`. All GPU runs under `ulimit -c 0`. Fresh clone of the fork, `git checkout -B moat-gpu-coverage-v2 origin/moat-gpu-coverage-v2` = a25e69fd (`ls-remote` checked), submodule `util/regression` 19b9867b.
+
+Build:
+```
+cmake -S src -B src/build-gfx1100 -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DHAVE_TESTS=1 -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+cmake --build src/build-gfx1100 -j16 --target mmseqs
+```
+Configure prints only `marv: HIP architectures gfx1100` (no generic AMD aligner line: gfx1100 has upstream's tuned table). 312/312, 76 warning lines (same count as the gfx90a runs), none in libmarv files. `mmseqs version` a25e69fd18da...
+
+Results:
+- Regression: `CUDA_VISIBLE_DEVICES=0 util/regression/run_regression.sh build-gfx1100/src/mmseqs <scratch>`: 43 reports, 43 GOOD, 0 BAD, 255 s. SEARCH_GPU 0.454819 = expected (18 s), SEARCH_GPU_SERVER 0.454819 = expected (17 s). The other 41 are the non-GPU tests, all GOOD.
+- Example GPU vs CPU (`createdb examples/DB.fasta`, `makepaddedseqdb`, `easy-search examples/QUERY.fasta` padded `--gpu 1` vs unpadded `--gpu 0`): GPU 14482, CPU 12901, common 12438, all 12438 rows identical. Sorted GPU m8 md5 `288ea7efe151f8bcd59a02508fb6ede1` and CPU md5 `36fb2d2fad9cda7bfd3d5a77b8f9c62e`, both the same as the gfx950 run at this head.
+- Table selection: `env -u HIP_VISIBLE_DEVICES ROCR_VISIBLE_DEVICES=0 CUDA_VISIBLE_DEVICES=0 rocprofv3 --kernel-trace --output-format csv -- mmseqs ungappedprefilter q dbp pref --gpu 1` (q = createdb of `examples/QUERY.fasta`, dbp = the padded DB): every libmarv launch, 1896 of them (permute_PSSM_for_gapless 1000, GaplessFilter single tile 484, GaplessAlignment scalar single/multi tile 61/59, plus libmarv's thrust/rocprim helpers), is in `libmarv::AMD_GFX1100_`; none in `DEFAULT_AMD_`.
+- libmarv standalone (`cmake -S lib/libmarv/src -B marv -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++`, `cmake --build marv -j16`): 30/30, 0 warnings. `test_gapless --gpu-compatible`: "all checks passed, digest 0xcba3a00c27ffe2df" (same digest as gfx90a and gfx1201). Plain `ctest` fails to start it (`libamdhip64.so.7: cannot open shared object file`, the known upstream RUNPATH gap); `LD_LIBRARY_PATH=$R/lib ctest --test-dir marv`: 1/1 passed (gapless_exactness, 17 s). `makedb lib/libmarv/allqueries.fasta mdb`, then `align --query lib/libmarv/allqueries.fasta --db mdb --scanType {Gapless|SW_Endpos|Gapless+SW_Endpos} --tsv --top 5`: all exit 0, 95/95/93 hit rows (same as gfx90a), self-hits on top.
+- Non-GPU: the 41 non-GPU regression tests pass in the HIP build; the CPU-only build at this head was shown unchanged against upstream in the gfx950 run and compiles no file this branch touches, so not repeated.
+- CUDA gate: `## CUDA compile check (nvcc 13.5.37) at af0688d8` covers this head (a25e69fd's tree is identical to af0688d8); not repeated.
+
+Gates:
+- `python3 utils/jargon.py --port MMseqs2` (master..moat-gpu-coverage-v2; a fresh clone needs `git branch master origin/master` first or it cannot resolve the range): clean.
+- Documentation: upstream's own `ENABLE_HIP` procedure; libmarv `Readme.md` lists gfx1100 among the tuned arches.
+- `git -C projects/MMseqs2/src status --porcelain`: no modified tracked files. No fork edits, nothing pushed to the fork.
+
+Note: the upstream PR is recorded `merged` (landed via upstream 21691c1f, content differs from ours); this run validates the fork head a25e69fd, not upstream's master.
+
+Result: linux-gfx1100 `completed` at a25e69fd.
