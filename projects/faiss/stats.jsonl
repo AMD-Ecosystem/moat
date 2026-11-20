@@ -144,3 +144,8 @@
 {"kind":"phase","ts":"2026-11-05T02:35:42Z","phase":"test","seconds":31.923,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/faiss_runall.sh"}
 {"kind":"phase","ts":"2026-11-05T02:46:30Z","phase":"test","seconds":600.739,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/faiss_runall.sh"}
 {"kind":"session","ts":"2026-11-05T02:47:45Z","epoch":1793846865.199449100,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-20T21:16:11Z","epoch":1795209371.149635,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-20T21:20:12Z","phase":"compile","seconds":230.502,"exit":0,"cmd":"bash agent_space/build.sh"}
+{"kind":"phase","ts":"2026-11-20T21:27:28Z","phase":"test","seconds":425.158,"exit":0,"cmd":"ctest --test-dir projects/faiss/src/build -j1 -R TestGpu|TestCodePacking --output-on-failure"}
+{"kind":"phase","ts":"2026-11-20T21:28:40Z","phase":"test","seconds":52.932,"exit":0,"cmd":"ctest --test-dir projects/faiss/src/build -j8 -E TestGpu|TestCodePacking"}
+{"kind":"session","ts":"2026-11-20T21:29:52Z","epoch":1795210192.996174,"event":"end","platform":"linux-gfx1100"}

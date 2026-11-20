@@ -1895,3 +1895,49 @@ Install-and-consume: `cmake --install build --prefix <dir>` -> `include/faiss/im
 
 CUDA gate: already recorded at `708a879bc` (mi355 real-nvcc check above); not run here (no CUDA toolkit on this host).
 Pre-completion: `jargon.py --port faiss` clean, `audit-clean` OK, `audit-commits` OK; hipify artifacts restored (`git checkout -- faiss c_api; git clean -fdx faiss c_api`), 0 modified tracked files, `HEAD == 708a879bc`. INSTALL.md already documents the ROCm build next to CUDA; this round changed no build procedure.
+
+## Validation 2026-11-20 (revalidate, linux-gfx1100) -> completed
+
+Device: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), `HIP_VISIBLE_DEVICES=2`, every GPU run under `ulimit -c 0`. SDK: TheRock ROCm **10.2.0** release wheels installed into the job venv (`$FLEET_VENV/bin/pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple 'rocm[devel,device-gfx1100]==10.2.0'`), `SDK=$($FLEET_VENV/bin/python -m rocm_sdk path --root)` (hipconfig 7.17.26434, AMD clang 24.0.0git). `ldd libfaiss.so` resolves amdhip64/hipblas/rocblas/hipblaslt/rocm-openblas from that 10.2 SDK, none from the image's 10.1. Platform was `revalidate`: `validated_sha=01a09e824`, `head_sha=708a879bc438e4683689839daedcadd76496e9ca`. This is the first validator run of faiss on ROCm 10.2.
+
+Route: full run, no carry-forward. `classify faiss 01a09e824 708a879bc` -> `class=mixed arch_independent=False` (Float16.cuh, faiss/CMakeLists.txt), so `source-class` does not apply. `binary-equiv` would need a 01a09e824 build on the same toolchain, and 01a09e824 does not build on ROCm 10.x (the Float16.cuh hipify include drop that 7bd3b4806 fixes).
+
+Fork state seen: `AMD-Ecosystem/faiss` `moat-port` is now at `437e79ad9` "Merge branch 'main' into moat-port" (an upstream maintainer's merge of upstream main, 2026-11-11, before the upstream PR merged); `708a879bc` is its ancestor. `pr-state faiss` -> `merged`. Validated the recorded `head_sha`, checked out detached; nothing pushed to the fork. `jargon.py --port faiss` and `audit-commits` read `main..moat-port`, which on a fresh clone now spans the 208 upstream commits pulled in by that merge (jargon flags upstream commit `d4a6548c9`'s CI-log paths). Pointing the local clone's `moat-port` ref at `708a879bc` (`git branch -f moat-port 708a879bc`, local only) scopes both checks back to the 5 port commits.
+
+Build (gflags from the system `libgflags-dev`; same recipe as the 2026-11-05 gfx1201 validation, gfx1100):
+```
+export ROCM_PATH=$SDK PATH=$SDK/bin:$SDK/libexec/hipify:$PATH
+cmake -S . -B build -G Ninja \
+  -DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_ROCM=ON -DFAISS_ENABLE_CUVS=OFF \
+  -DFAISS_ENABLE_PYTHON=OFF -DFAISS_ENABLE_C_API=ON -DFAISS_ENABLE_EXTRAS=OFF \
+  -DBUILD_TESTING=ON -DBUILD_SHARED_LIBS=ON \
+  -DFAISS_OPT_LEVEL=generic -DFAISS_ENABLE_MKL=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_C_COMPILER=$SDK/bin/amdclang -DCMAKE_CXX_COMPILER=$SDK/bin/amdclang++ \
+  -DCMAKE_HIP_COMPILER=$SDK/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$SDK \
+  -DBLAS_LIBRARIES=$SDK/lib/host-math/lib/librocm-openblas.so \
+  -DLAPACK_LIBRARIES=$SDK/lib/host-math/lib/librocm-openblas.so -DCMAKE_INSTALL_PREFIX=<job>/faiss-install
+ninja -C build -j10        # 446/446, 0 errors, 231 s
+```
+- Hipified Float16.cuh (10.2 hipify-perl) keeps `hip/hip_bf16.h` + `hip/hip_fp16.h` in the `#if defined(USE_AMD_ROCM)` branch with an empty `#else`, the same as 10.1/10.3 output per the 2026-11-05 review.
+- Warnings, pre-existing classes only: 572 `-Wignored-pragmas` (float_control), 56 `-Wunused-value`, 4 `-Wdeprecated-declarations`, 1 `-Wcharacter-conversion`, 1 `-Wreturn-type-c-linkage`.
+- `llvm-objdump --offloading build/faiss/libfaiss.so`: 168 `amdgcn-amd-amdhsa--gfx1100` code objects, no other arch.
+
+Tests:
+```
+OPENBLAS_NUM_THREADS=1 ctest --test-dir build -j1 -R "TestGpu|TestCodePacking" --output-on-failure
+  -> 100% tests passed, 0 tests failed out of 108 (425.08 s)
+build/faiss/gpu/test/TestGpuIcmEncoder
+  -> [  PASSED  ] 7 tests (8348 ms)
+OPENBLAS_NUM_THREADS=1 ctest --test-dir build -j8 -E "TestGpu|TestCodePacking"
+  -> 100% tests passed, 0 tests failed out of 266 (52.88 s); 3 self-skipped:
+     ScalarQuantizer.TQMSESimdDispatchSelection, ScalarQuantizer.TQMSESimdDistancePathParity,
+     SIMDConfig.modern_hardware_has_simd_support (same 3 as every run at this head)
+```
+115/115 GPU + 266/266 non-GPU. That matches the gfx90a and gfx1201 10.1 runs at this head, and this platform's 2026-08-20 7.2.3 run (108+7).
+
+Install-and-consume: `cmake --install build` rc 0, `include/faiss/impl/InvertedListScannerStats.h` present. Separate CMake consumer (`LANGUAGES CXX HIP`, `find_package(faiss)`, `USE_AMD_ROCM`, links `faiss`, gfx1100), one `.hip` TU including installed `gpu/GpuIndexFlat.h`, `gpu/StandardGpuResources.h`, `gpu/utils/Float16.cuh`, `impl/AuxIndexStructures.h`, `impl/InvertedListScannerStats.h`: builds clean; run with `LD_LIBRARY_PATH=$SDK/lib/llvm/lib:$SDK/lib/host-math/lib` prints `I=42 D=0 ntotal=1000 rt=(1.5,-2,0.25,3) scan_cnt=0 ok=1`, rc 0.
+
+CUDA gate: already recorded at `708a879bc` (mi355 real-nvcc check, "## CUDA compile check 2026-11-05"); not re-run.
+
+Pre-completion: hipify-modified tracked files 78 -> 0 (`git checkout -- faiss/ c_api/`), `HEAD == 708a879bc`; `audit-clean` OK; `jargon.py --port faiss` clean and `audit-commits` OK (local ref scoped as above). INSTALL.md documents the ROCm build next to the CUDA build; this round changed no build procedure.
