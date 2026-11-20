@@ -8992,3 +8992,26 @@ for op, con, N in keys:
 ## Ruling on session 24's question 10 (jeff, 2026-11-20)
 
 "(b) Convert that kernel too": winding-number meshes get the depth-level refit as well. Queued for the porter after the fem isolation fix, followed by the final build (prompt `agent_space/p6ev/winding-final-porter.txt`).
+
+## Porting session 25 (2026-11-20, linux-gfx950 MI355X, porter): fem test isolation
+
+Ruling "fix the fem test isolation in the fork" implemented as fork commit `bc1ae44b` "Initialize Warp before capturing a test's output" (warp/tests/unittest_utils.py +3; no [ROCm] prefix, shared test code). head_sha advanced to it; stage stays `porting`.
+
+Mechanism: test_fem_quadrature.py and test_fem_shape.py register every test with `add_function_test(...)` and no devices, so importing them never calls `wp.init()`. unittest orders tests alphabetically, so `test_gimp_quadrature` and `test_cube_shape_functions` run first in their classes, and their first Warp call initializes Warp inside `CheckOutput`'s `StdOutCapture`; the init greeting is then "Unexpected output". The failure appears whenever that file is the first Warp user in a process (alone, or first in a parallel worker), which is why it depended on scheduling. Fix: `CheckOutput.__enter__` calls `wp.init()` before `capture.begin()` (a no-op once initialized; the output check is unchanged).
+
+Same-hazard scan (modules that do not initialize Warp on import): interop/test_jax, test_assert, test_builtins_resolution, test_coloring, test_compilation, test_composite_component_adjoint, test_context, test_cpu_precompiled_headers, test_diagnostics, test_implicit_init, test_kernel_cache, test_logger, test_module_parallel_load, test_version. Most have no `add_function_test`; test_implicit_init uses `check_output=False` throughout (its subject is implicit init, untouched by the fix); test_builtins_resolution passes alone. Only the two fem files could fail this way; the fix in the shared utility covers any future case too.
+
+Evidence (HIP_VISIBLE_DEVICES=1, source build in the fork clone, `python -m warp.tests -s autodetect -p <file>`):
+
+| run | before | after |
+|---|---|---|
+| test_fem_quadrature.py, GPU | FAILED (1) | 5 OK |
+| test_fem_quadrature.py, CPU only (HIP_VISIBLE_DEVICES=-1) | FAILED (1) | 5 OK |
+| test_fem_shape.py, GPU | FAILED (1) | 4 OK |
+| test_fem_shape.py, CPU only | FAILED (1) | 4 OK |
+
+- `-p "test_fem*.py"`: Ran 107 tests in 952 s, 1 error: `test_fem.example_kelvin_helmholtz_cuda_0` subprocess TimeoutExpired at 600 s while the host load average was about 28 with other processes on the GPU. The same test passed in the full run below, so this was load, not the change.
+- Full default suite from a fresh kernel cache (`agent_space/suite.sh`, cache removed first): Ran 7558 tests in 2321.7 s (wall 2326 s), OK (skipped=81). test_gimp_quadrature, test_cube_shape_functions and kelvin_helmholtz all ok.
+- jargon: clean. nvcc check not needed (Python-only change).
+
+Next step: the release wheel is stale (built before f6ada527 and bc1ae44b). Question 10 has since been ruled (b), winding-number meshes get the depth-level refit; that porter round and then the final build are next.
