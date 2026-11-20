@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/HierarchicalKV",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "cmake",
+  "stage": "planned",
   "adopted_at": "2026-11-11T15:46:07Z",
-  "updated_at": "2026-11-20T21:12:20Z",
+  "updated_at": "2026-11-20T21:20:44Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-20T21:12:20Z",
-    "holder": "9c4f1655a7d0"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -48,7 +44,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:12:20Z",
+      "updated_at": "2026-11-20T21:20:44Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,5 +77,10 @@
     "viable": true,
     "summary": "Header-only GPU KV hash table (Apache-2.0), hard dep of HugeCTR take-up; no AMD port; risks: 32-bit warp masks/32-lane probing on wave64, __pipeline_memcpy_async + __vcmpeq4 shims, libhipcxx atomics",
     "at": "2026-11-11T15:57:03Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-20T21:12:20Z",
+    "at": "2026-11-20T21:20:44Z"
   }
 }

@@ -55,3 +55,45 @@ No MOAT project dependency (CUB/Thrust/libcu++ come from ROCm: hipCUB, rocThrust
 ### Recommendation
 
 Fork. Apache-2.0 throughout, no AMD port exists, it is actively maintained, header-only with no CUDA math libraries, and it unblocks HugeCTR, which Jeff has already ruled a take-up. Scope: library headers plus the CMake gtest suite on wave64 and wave32; the Bazel build and the research benchmarks/baselines stay out of the first port. Main risks: 32-bit warp masks and 32-lane digest probing on wave64, the `__pipeline_*` async-copy and `__vcmpeq4` shims across the hot kernels, and lock-free CAS correctness through libhipcxx scoped atomics.
+
+## Planner (2026-11-20, linux-gfx942 host, planner role)
+
+### Decisions Jeff must make before a porter starts
+
+Nobody could answer these during the planning job, so the plan assumes nothing beyond what is stated. Each needs Jeff's ruling.
+
+**1. Scope cut (this is a partial port).** Intake proposed a library-plus-CMake-tests first port. These parts of the repository would be left out:
+- the Bazel build (`WORKSPACE`, `include/BUILD`, `include/merlin/BUILD`, `build_deps/gpus` TF-style `cuda_configure`; header targets for TensorFlow Recommenders-Addons style consumers);
+- the opt-in research benchmarks (`-DHKV_BUILD_REPRO_BENCHMARKS=ON`, 21 targets in `benchmark/CMakeLists.txt`, OFF by default);
+- `benchmark/native_tbe` (a Python suite over FBGEMM-GPU TBE and a patched NVIDIA recsys-examples checkout on CUDA torch);
+- `baselines/` (FetchContent builds of warpcore, BGHT and cuCollections for comparison).
+
+Options:
+- **A (planner's recommendation):** port the header library and every target the default CMake build makes (20 gtest executables, 214 cases, plus the 3 default benchmarks), and defer the four items above. HugeCTR, the reason for this port, consumes the headers through its CMake include path only.
+- **B:** A plus the research benchmarks. The marginal cost is low: they include the same headers. Their own extra surface is `benchmark_util.cuh` (`__shfl*`, `__syncwarp`, `warpSize`) and `tbe_like_cache_baseline.cc.cu`.
+- **C:** B plus a ROCm Bazel path (a `rocm_configure` equivalent). This is a large, separate piece of work with no consumer in view.
+
+`native_tbe` and `baselines/` are outside every option: one is a third-party Python stack, the other benchmarks other hash-table libraries. Under A or B the porter records the deferred items as `scoped_out` in `surface.json` with your ruling as the reason. Deferred work goes in `deferred.json` via `utils/deferred.py add`.
+
+**2. Windows gate.** The required gates are wave64, wave32 and windows. Upstream documents Linux only (CUDA >= 11.2, sm80+). Its only known consumer, HugeCTR, is Linux-only. The code uses no Linux-only API (`<thread>`, `<mutex>`, `<shared_mutex>`, `std::getenv`), so a Windows build with TheRock is plausible. However, seven test files size tables at 64M keys and/or `max_hbm_for_vectors` of 16-100 GB (`accum_or_assign`, `uint32_score`, `find_or_insert_ptr`, `export_batch_if`, `find_or_insert`, `merlin_hashtable`, `find_or_insert_ptr_lock`). The standing rule forbids those on the gfx1151 laptop.
+
+Options:
+- **(a)** waive the windows gate for this project (an agent may only suggest it: `moatlib.py suggest-waiver HierarchicalKV windows --reason ...`);
+- **(b)** validate on Windows with a named gtest filter that excludes the large cases (the porter would derive the exact filter);
+- **(c)** validate on Windows on a discrete Radeon host, if one exists, with the full suite.
+
+**3. Base branch name.** `status.json` has `fork_default_branch: main`. Upstream's default branch is `master`, and the AMD-Ecosystem fork's GitHub default and only branch is also `master` (`gh api repos/AMD-Ecosystem/HierarchicalKV`, 2026-11-20). `moatlib.py set-base-branch HierarchicalKV master --by <you>` fixes it. The tool defines this as a person's ruling, so the planner did not run it. The porter cuts `moat-port` from this branch.
+
+### Planning summary
+
+- Upstream tip analysed: `451f240d185968d29ae022408e0bc3a8e987a4bb` (2026-11-15). Intake used `c79175830d51`; the counts moved slightly (208 -> 214 test cases).
+- Build type: `cmake`, Strategy A (compat header, `enable_language(HIP)` behind an option). The library is header-only, so the compat header has to be included from the library headers themselves, not force-included by CMake: consumers compile it.
+- Host toolchain facts (ROCm 10.1 pip SDK here):
+  - libhipcxx is CCCL 3.0.2-based. Its include root is `<sdk>/include/hipccl` and it is found with `find_package(libhipcxx)`.
+  - Its `<cuda/barrier>` and `<cuda/std/semaphore>` `#error` on AMD. HKV includes both but uses neither, so the includes get guards.
+  - rocThrust is `THRUST_VERSION 200805` and has `thrust::hip::par_nosync`; `thrust::cuda` exists there only for `memory_resource`.
+  - hipCUB 4.7.
+- HIP's `*_sync` functions run `__hip_check_mask`, which asserts the mask equals the arriving lanes. The upstream CMake ends up Debug (`set(CMAKE_BUILD_TYPE "Debug")` at line 121, after the Release default), so `NDEBUG` is undefined and that assertion traps. The early-return TLP kernels in `update_values.cuh`/`update_score.cuh` must build their masks from the lanes actually present, not from `0xffffffff` widened.
+- The CMake HIP Debug flags (`-O0`) would compile kernels unoptimised where nvcc's Debug (`-g`) does not, so the HIP branch sets `CMAKE_HIP_FLAGS_DEBUG` optimised.
+- Full inventory, risks, change list, build and test commands are in `plan.md`. `surface.json` was generated (76 CUDA files, 34 components), and 6 planner-added components cover what the scan cannot see: the 19 foreach-built repro benchmarks, `native_tbe`, Bazel, the inline-PTX timer, hybrid host-memory values and the libcu++ atomics.
+- No GPU was used and nothing was built in this run.

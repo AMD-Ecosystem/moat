@@ -1,0 +1,313 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "451f240d1859",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "baselines/bght_bench.cu",
+      "baselines/common.cuh",
+      "baselines/cuco_bench.cu",
+      "baselines/p2bht_bench.cu",
+      "baselines/warpcore_bench.cu",
+      "baselines/warpcore_lookup_modes_bench.cu",
+      "baselines/warpcore_warpspeed_value_size_bench.cu",
+      "benchmark/batch_size_benchmark.cc.cu",
+      "benchmark/benchmark_util.cuh",
+      "benchmark/bucket_size_benchmark.cc.cu",
+      "benchmark/concurrency_benchmark.cc.cu",
+      "benchmark/digest_ablation_benchmark.cc.cu",
+      "benchmark/dual_bucket_benchmark.cc.cu",
+      "benchmark/e10_dual_bucket_analysis.cc.cu",
+      "benchmark/e17_single_vs_dual.cc.cu",
+      "benchmark/e19_cache_quality_sweep.cc.cu",
+      "benchmark/e8_hkv_baseline.cc.cu",
+      "benchmark/e9_eviction_comparison.cc.cu",
+      "benchmark/error_bars_benchmark.cc.cu",
+      "benchmark/find_with_missed_keys_benchmark.cc.cu",
+      "benchmark/hash_sensitivity_benchmark.cc.cu",
+      "benchmark/hkv_adversarial_performance_benchmark.cc.cu",
+      "benchmark/hkv_correctness_stress_benchmark.cc.cu",
+      "benchmark/hkv_hash_sensitivity_benchmark.cc.cu",
+      "benchmark/hkv_lookup_modes_benchmark.cc.cu",
+      "benchmark/latency_benchmark.cc.cu",
+      "benchmark/merlin_hashtable_benchmark.cc.cu",
+      "benchmark/p25_admission_control.cc.cu",
+      "benchmark/score_strategy_benchmark.cc.cu",
+      "benchmark/tbe_like_cache_baseline.cc.cu",
+      "include/merlin/allocator.cuh",
+      "include/merlin/array_kernels.cuh",
+      "include/merlin/core_kernels.cuh",
+      "include/merlin/core_kernels/accum_or_assign.cuh",
+      "include/merlin/core_kernels/contains.cuh",
+      "include/merlin/core_kernels/dual_bucket_lookup.cuh",
+      "include/merlin/core_kernels/dual_bucket_upsert.cuh",
+      "include/merlin/core_kernels/dual_bucket_utils.cuh",
+      "include/merlin/core_kernels/find_or_insert.cuh",
+      "include/merlin/core_kernels/find_ptr_or_insert.cuh",
+      "include/merlin/core_kernels/group_lock_kernels.cuh",
+      "include/merlin/core_kernels/kernel_utils.cuh",
+      "include/merlin/core_kernels/lookup.cuh",
+      "include/merlin/core_kernels/lookup_ptr.cuh",
+      "include/merlin/core_kernels/update.cuh",
+      "include/merlin/core_kernels/update_score.cuh",
+      "include/merlin/core_kernels/update_values.cuh",
+      "include/merlin/core_kernels/upsert.cuh",
+      "include/merlin/core_kernels/upsert_and_evict.cuh",
+      "include/merlin/flexible_buffer.cuh",
+      "include/merlin/group_lock.cuh",
+      "include/merlin/memory_pool.cuh",
+      "include/merlin/optimizers.cuh",
+      "include/merlin/types.cuh",
+      "include/merlin/utils.cuh",
+      "include/merlin_hashtable.cuh",
+      "tests/accum_or_assign_test.cc.cu",
+      "tests/assign_score_test.cc.cu",
+      "tests/assign_values_test.cc.cu",
+      "tests/correctness_stress_test.cc.cu",
+      "tests/dual_bucket_test.cc.cu",
+      "tests/dynamic_max_capacity_test.cc.cu",
+      "tests/export_batch_if_test.cc.cu",
+      "tests/find_or_insert_ptr_lock_test.cc.cu",
+      "tests/find_or_insert_ptr_test.cc.cu",
+      "tests/find_or_insert_test.cc.cu",
+      "tests/find_with_missed_keys_test.cc.cu",
+      "tests/group_lock_test.cc.cu",
+      "tests/insert_and_evict_test.cc.cu",
+      "tests/lock_unlock_test.cc.cu",
+      "tests/memory_pool_test.cc.cu",
+      "tests/merlin_hashtable_test.cc.cu",
+      "tests/reserved_keys_test.cc.cu",
+      "tests/save_and_load_test.cc.cu",
+      "tests/test_util.cuh",
+      "tests/uint32_score_test.cc.cu"
+    ],
+    "markers": {
+      "kernel": 133,
+      "launch": 161,
+      "device_code": 311,
+      "warp_intrinsic": 17
+    },
+    "libraries": {
+      "thrust": 24,
+      "cub": 6
+    }
+  },
+  "components": [
+    {
+      "id": "benchmark:bght_bench",
+      "kind": "benchmark",
+      "where": "baselines/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:concurrency_rw_lock",
+      "kind": "benchmark",
+      "where": "benchmark/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:cuco_bench",
+      "kind": "benchmark",
+      "where": "baselines/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:digest_ablation_no_digest",
+      "kind": "benchmark",
+      "where": "benchmark/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:dual_bucket_benchmark",
+      "kind": "benchmark",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:find_with_missed_keys_benchmark",
+      "kind": "benchmark",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:merlin_hashtable_benchmark",
+      "kind": "benchmark",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:p2bht_bench",
+      "kind": "benchmark",
+      "where": "baselines/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:warpcore_bench",
+      "kind": "benchmark",
+      "where": "baselines/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:warpcore_lookup_modes_bench",
+      "kind": "benchmark",
+      "where": "baselines/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:warpcore_warpspeed_value_size_bench",
+      "kind": "benchmark",
+      "where": "baselines/CMakeLists.txt"
+    },
+    {
+      "id": "library:hierarchical_kv",
+      "kind": "library",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "option:CLANGFORMAT",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Clangformat code files before compiling"
+    },
+    {
+      "id": "option:ENABLE_CUCO_BENCH",
+      "kind": "option",
+      "where": "baselines/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build cuCollections benchmark target"
+    },
+    {
+      "id": "option:HKV_BUILD_REPRO_BENCHMARKS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build optional HKV research benchmarks"
+    },
+    {
+      "id": "test:accum_or_assign_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:assign_score_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:assign_values_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:correctness_stress_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:dual_bucket_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:dynamic_max_capacity_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:export_batch_if_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:find_or_insert_ptr_lock_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:find_or_insert_ptr_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:find_or_insert_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:find_with_missed_keys_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:group_lock_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:insert_and_evict_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:lock_unlock_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:merlin_hashtable_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:merlin_memory_pool_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:reserved_keys_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:save_and_load_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:uint32_score_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:hkv_repro_benchmarks",
+      "kind": "benchmark",
+      "where": "benchmark/CMakeLists.txt",
+      "doc": "Planner-added: the 19 HKV_REPRO_SOURCES targets built by a foreach (batch_size_benchmark ... tbe_like_cache_baseline), which the scan does not expand; behind HKV_BUILD_REPRO_BENCHMARKS (OFF)"
+    },
+    {
+      "id": "benchmark:native_tbe",
+      "kind": "benchmark",
+      "where": "benchmark/native_tbe/README.md",
+      "doc": "Planner-added: Python suite over FBGEMM-GPU TBE and a patched NVIDIA recsys-examples checkout (third_party/recsys-examples/legacy-250aaa.patch); not built by CMake"
+    },
+    {
+      "id": "build:bazel",
+      "kind": "build",
+      "where": "WORKSPACE, include/BUILD, include/merlin/BUILD, build_deps/gpus",
+      "doc": "Planner-added: second build path (cuda_cc_library, TF-style cuda_configure) for TensorFlow Recommenders-Addons style consumers; header targets only"
+    },
+    {
+      "id": "feature:inline-ptx-globaltimer",
+      "kind": "feature",
+      "where": "include/merlin/utils.cuh:78, tests/test_util.cuh:51, benchmark/benchmark_util.cuh:247",
+      "doc": "Planner-added: inline PTX the regex census counts only as device code; maps to wall_clock64() scaled to ns"
+    },
+    {
+      "id": "feature:hybrid-host-memory-values",
+      "kind": "feature",
+      "where": "include/merlin/core_kernels.cuh:214-228",
+      "doc": "Planner-added: values in mapped pinned host memory read and written by kernels (cudaHostAllocMapped + cudaHostGetDevicePointer)"
+    },
+    {
+      "id": "feature:libcudacxx-atomics",
+      "kind": "feature",
+      "where": "include/merlin/types.cuh, group_lock*.cuh, core_kernels/*",
+      "doc": "Planner-added: cuda::atomic<T, thread_scope_device> lock-free bucket locking via libhipcxx on ROCm; <cuda/barrier> and <cuda/std/semaphore> includes must be guarded out (they #error on AMD)"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}
