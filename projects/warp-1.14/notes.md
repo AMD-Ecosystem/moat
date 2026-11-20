@@ -7620,3 +7620,60 @@ After the revert: test_mesh* 49 OK, test_apic_mesh 12 OK (usd-core installed).
 
 ## Lesson for cuda-to-rocm: compare GPU kernel variants warmed up, interleaved, against a noise floor
 Reference file: `references/validation.md` (performance comparisons) or `diagnosis.md`. On a shared multi-GPU board (other jobs at 100% on sibling GPUs), absolute kernel times of the same code varied 4-18x between short processes, and per-process profiler runs that start from an idle GPU compared different clock states: a traversal change looked 15-48% faster in 11 of 12 cells that way and was 0-54% slower when timed after a warm-up launch with repeated launches in one process. What held up: (1) warm up inside the process and time many launches; (2) interleave the trees in rounds (A, B, A, B) and take the median of per-run medians; (3) include a metric whose code is identical in both trees as the noise floor in the same rounds; (4) for functional regressions that only show as speed, include a query/throughput check of the built structures, because correctness tests pass on degenerate-but-valid trees. (warp-1.14)
+
+### Item 5 addendum: warmed GPU-time triplets (verdict unchanged)
+
+`chol_one.py` with 200 launches under `rocprofv3`, median of the last 100 dispatches, AMD 1.13 / 1.14 (`113e1e70`) / 1.14 + pivot interleaved, 3 runs (`res/chol_warm2`): median pivot/1.14 = fp32 n16 bd128 0.99, n16 bd256 0.97, n32 bd256 0.84; fp64 n16 bd128 1.01, n16 bd256 1.04, n32 bd256 0.93. Per-run ratios still swing 0.3-3x (GPU clock under the board's outside load). A wall-clock `bench_cholesky.py`-style A/B in this period (`res/chol_warm`) sat on a ~125 us per-launch host floor in every tree and is unusable. No reproducible gain at the target cells; item 5 stays uncommitted.
+
+### Final benchmarks (plan's four scripts; 1.14 before = `9882f005`, after, AMD 1.13 = `release/1.13.0.amd0` `5035c8ed` built here for gfx950 with ROCm 10.1 and its documented flags; all on this MI355X, so the three columns are same-host)
+
+Two full runs, `drive.sh <script> <out> base src 113`: run 1 (`res/final_*`, after = `fb4803bb`, i.e. with the since-reverted ray traversal) and run 2 (`res/final2_*`, after = `113e1e70`, the final head). **Caveat: both runs were taken while other users loaded GPUs 0, 3 and 4 of this board; cells whose code is identical in two trees differ by up to 21x (run 1, tile matmul fp32 16x16 bd256 0.415 vs 0.043 ms) and `example_dem` gives bit-identical final states (absmean 8.212409503796131 before and after) at 10.3 vs 18.5 s. Single-run cells are not 10%-accurate; the interleaved measurements in items 2-5 are the evidence.** The plan's gfx942 numbers (different GPU, 38-CU partition) are not comparable in absolute terms.
+
+lbvh builds (run 1, the quieter one; ms; after/before; after/AMD):
+
+| op | N | before | after | AMD 1.13 | after/before | after/AMD |
+|---|---|---|---|---|---|---|
+| mesh_build | 10^4 | 0.670 | 0.457 | 0.456 | 0.68 | 1.00 |
+| bvh_build | 10^4 | 0.595 | 0.433 | 0.431 | 0.73 | 1.00 |
+| mesh_build | 10^5 | 1.390 | 0.616 | 0.627 | 0.44 | 0.98 |
+| bvh_build | 10^5 | 1.465 | 0.585 | 0.575 | 0.40 | 1.02 |
+| mesh_build | 10^6 | 7.014 | 1.727 | 1.744 | 0.25 | 0.99 |
+| bvh_build | 10^6 | 6.433 | 1.373 | 1.240 | 0.21 | 1.11 |
+| mesh_build | 10^7 | 58.63 | 7.979 | 7.976 | 0.14 | 1.00 |
+| bvh_build | 10^7 | 59.30 | 7.178 | 7.450 | 0.12 | 0.96 |
+
+(Run 2 lbvh builds after/before: 0.61, 0.22, 2.41 (noise outlier: 4.456 ms for bvh at 10^5), 0.29, 0.60, 0.11, 0.10.) `mesh.refit()` (run 1): sah/median 10^4 0.57x before (0.142 -> 0.081 ms, AMD 0.089), lbvh 10^4 0.66x, median 10^5 0.64x; 10^6-10^7 within noise. Queries: result agreement `cmp_bvh.py` after vs before 0 / 0 / 0 mismatches in both runs (AMD 1.13 1.3e-7 / 2.4e-7); `mesh_query_point` and `bvh_query_aabb` after/before 0.85-1.08 (run 1). `mesh_query_ray`: see item 4 and its revert; at the final head the traversal is upstream's, and AMD 1.13's speculative one was faster in run 2 (after/AMD 1.11-1.84) and slower in run 1 (before/AMD 0.81-0.83 at 10^4), consistent with the cold/warm dependence described in the revert.
+Full tables: `res/final_bvh.md`, `res/final2_bvh.md` (scratch; the key rows are above).
+
+Tile Cholesky (run 2, factorization rows at n=16/32, bd 128/256; ms): fp32 n16 bd128 0.059 / 0.109 / 0.058, n16 bd256 0.096 / 0.135 / 0.135, n32 bd128 0.243 / 0.248 / 0.235, n32 bd256 0.319 / 0.343 / 0.326; fp64 n16 bd128 0.114 / 0.112 / 0.075, n16 bd256 0.143 / 0.112 / 0.102, n32 bd128 0.293 / 0.292 / 0.293, n32 bd256 0.347 / 0.334 / 0.337 (before / after / AMD; the Cholesky code is identical before and after, so before/after differences are noise). Correctness vs NumPy: 1.14 before and after pass all 128 cells in both runs; AMD 1.13 fails 21 cells in each run (10 `cholesky_solve`, 11 `upper_solve`, block_dim 128/256), the inherited upstream 1.13 race the gfx942 comparison found, now reproduced on gfx950.
+
+Tile matmul (run 2; ms, before / after / AMD): fp32 16/64 0.015 / 0.071 / 0.069; 16/256 0.022 / 0.073 / ERR (AMD's rocWMMA static assert, as on gfx942); 32/64 0.084 / 0.077 / 0.098; 32/256 0.081 / 0.079 / 0.083; 64/64 0.284 / 0.282 / 0.207; 64/256 0.106 / 0.111 / 0.138; fp16 16/64 0.013 / 0.011 / 0.015; 16/256 0.077 / 0.019 / 0.020; 32/64 0.073 / 0.019 / 0.075; 32/256 0.029 / 0.029 / 0.077; 64/64 0.115 / 0.087 / 0.102; 64/256 0.097 / 0.086 / 0.071. The matmul code is identical before and after; differences are noise. All cells correct.
+
+Examples (run 2; s or ms, before / after / AMD): example_dem 9.38 / 16.05 / 15.92 s (graph capture on in all; final state identical before and after, AMD 8.36 vs 8.21 as on gfx942: different floating-point contraction); example_sph 784 / 696 / 696 ms; navier_stokes 136 / 170 / 73 ms. Noise dominates (run 1: dem 10.34 / 18.51 / 10.89 s).
+
+### Summary of session 20
+
+Fork `release/1.14.0.amd0` `9882f005..113e1e70` (all pushed, `advance-head` after each; stage left at `porting` as directed):
+1. `36612c9c` [ROCm] Version the AMD GPU build as 1.14.0+rocm10.2.0
+2. `dd41f3d2` [ROCm] Free temporary device memory without the null stream on HIP (+29, HIP-only): `mesh.refit()` 10^4 132 -> 48 us; alloc+launch+free 36.5 -> 10.9 us; correct where the plan's +6 change and AMD's stream tracking free too early.
+3. `43c348ea` [ROCm] Build the GPU LBVH top-down on HIP (+321, HIP-only; credit 6f0ae752/664cc4c5 rtmadduri): 10^7 build ~60 -> 7 ms, within ~10% of AMD 1.13 at every size (0.81-1.06x in the last interleaved rounds), capturable, query results bit-identical.
+4. `fb4803bb` speculative `mesh_query_ray` (credit 527ba15c deepsek) -> reverted by `113e1e70`: no gain on gfx950 when measured warmed.
+5. Cholesky pivot: measured, no reproducible gain on gfx950, not committed.
+Validation at `113e1e70`: full default suite from the gfx950 source build 7556 tests OK (skipped=81); nvcc 12.8 CUDA build of the same sources succeeded (warp.so 199,765,024 bytes), every preprocessed CUDA unit identical to `9882f005`'s apart from `__LINE__` values in bvh.cu and warp.cu; `jargon.py --port` clean before each push.
+
+### Questions for Jeff (session 20; no decision taken; session 19's four questions are still open)
+
+1. Item 2 probe: (a) keep `free_race.py` as a probe in the notes; (b) add it as a cross-stream free-ordering test to `test_streams.py` (~40 lines).
+2. `Bvh.refit()`/`Mesh.refit()` stay on the fence-bound bottom-up walk (44-46 ms at 10^7 in every tree, AMD's too): (a) leave; (b) a HIP depth-level refit in this line (more diff).
+3. `mesh_query_ray`: reverted on the warmed measurement. (a) leave reverted (current); (b) re-apply `fb4803bb` if Jeff weighs the cold/contended-GPU behaviour (15-48% less GPU time there) over the warmed result (0.92-1.54x).
+4. Cholesky n=16 (1.14 is 1.03-1.22x of AMD 1.13 here): (a) leave upstream's; (b) port the rest of `431e0533`'s cooperative factorization and measure on a quiet GPU; (c) commit the pivot change anyway.
+5. `-ffp-contract`: (a) keep `on` and correct the comment; (b) `fast-honor-pragmas`; (c) `fast` (details in the section above).
+6. The full-suite-only `test_async` copy flake with a 1/8-of-the-array signature (seen in sessions 19 and 20, never in isolation): (a) leave as a known flake for the validators; (b) register a deferred ROCm report and build a standalone reproducer first.
+
+### Next step (head `113e1e70`)
+
+- Jeff: the questions above and session 19's four (offload compression, `--offload-jobs`, `toolkit_version` on HIP, classifiers); they may add commits before `ported`.
+- Performance re-measurement belongs on a quiet GPU: this session's absolute numbers were taken with three sibling GPUs at 100%. Items 2 and 3 were decided on interleaved in-process measurements (robust to that); item 4's revert and item 5's non-commit should be re-checked on an idle board if Jeff wants either reconsidered.
+- Validators: every platform revalidates at `113e1e70`. Device-code changes since `9882f005`: `warp.cu` (HIP frees) and `bvh.cu` (HIP LBVH builder), both in the library; no JIT header changes (`mesh.h` is back to `43c348ea`'s). Windows: the HIP free path and the LBVH builder are not Windows-specific but have never run there; run test_streams, test_async, test_mempool, test_graph, test_bvh, test_grouped_bvh (incl. capture rebuild) and test_mesh* first. wave32 (gfx1100/gfx1201): the LBVH kernels use 256-thread blocks with `cub::BlockReduce` and a shared-memory reduction sized 256, wave-size independent by construction, but check test_bvh/test_grouped_bvh there.
+- Then the release items from session 19's next step (release notes text, Windows wheel, C++ examples on other platforms).
+- Scripts: `notes-session20-scripts.md`.

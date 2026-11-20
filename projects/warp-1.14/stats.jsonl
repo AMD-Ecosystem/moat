@@ -215,3 +215,4 @@
 {"kind":"phase","ts":"2026-11-20T02:07:13Z","phase":"compile","seconds":0.008,"exit":2,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/venv/bin/python build_lib.py --cuda-path /usr/local/cuda --no-use-libmathdx -j 32"}
 {"kind":"phase","ts":"2026-11-20T02:08:04Z","phase":"compile","seconds":26.482,"exit":0,"cmd":"agent_space/cudabuild.sh"}
 {"kind":"phase","ts":"2026-11-20T02:16:13Z","phase":"test","seconds":515.85,"exit":2,"cmd":"agent_space/suite.sh"}
+{"kind":"phase","ts":"2026-11-20T02:58:56Z","phase":"test","seconds":522.629,"exit":0,"cmd":"agent_space/suite.sh"}
