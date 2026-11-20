@@ -1,0 +1,429 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "d53aa3da47a0",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "modules/drivers/camera/format/yuv2rgb.cu",
+      "modules/map/pnc_map/cuda_util.cu",
+      "modules/map/pnc_map/cuda_util.h",
+      "modules/perception/camera_detection_multi_stage/detector/yolo/postprocess.cu",
+      "modules/perception/camera_detection_multi_stage/detector/yolo/postprocess.h",
+      "modules/perception/camera_tracking/common/similar.cu",
+      "modules/perception/common/base/common.h",
+      "modules/perception/common/camera/common/image_data_operations_rpp.h",
+      "modules/perception/common/inference/migraphx/plugins/dfmb_psroi_align_plugin.cu",
+      "modules/perception/common/inference/migraphx/plugins/kernels.cu",
+      "modules/perception/common/inference/migraphx/plugins/nms_cuda.cu",
+      "modules/perception/common/inference/migraphx/plugins/rcnn_proposal_plugin.cu",
+      "modules/perception/common/inference/migraphx/plugins/rpn_proposal_ssd_plugin.cu",
+      "modules/perception/common/inference/operators/roipooling_layer.cu",
+      "modules/perception/common/inference/tensorrt/plugins/argmax_plugin.cu",
+      "modules/perception/common/inference/tensorrt/plugins/dfmb_psroi_align_plugin.cu",
+      "modules/perception/common/inference/tensorrt/plugins/kernels.cu",
+      "modules/perception/common/inference/tensorrt/plugins/leakyReLU_plugin.cu",
+      "modules/perception/common/inference/tensorrt/plugins/mmdeploy_plugins/common_cuda_helper.hpp",
+      "modules/perception/common/inference/tensorrt/plugins/mmdeploy_plugins/trt_cuda_helper.cu",
+      "modules/perception/common/inference/tensorrt/plugins/mmdeploy_plugins/trt_grid_sampler.hpp",
+      "modules/perception/common/inference/tensorrt/plugins/mmdeploy_plugins/trt_grid_sampler_kernel.cu",
+      "modules/perception/common/inference/tensorrt/plugins/mmdeploy_plugins/trt_modulated_deform_conv.cpp",
+      "modules/perception/common/inference/tensorrt/plugins/mmdeploy_plugins/trt_modulated_deform_conv.hpp",
+      "modules/perception/common/inference/tensorrt/plugins/mmdeploy_plugins/trt_modulated_deform_conv_kernel.cu",
+      "modules/perception/common/inference/tensorrt/plugins/mmdeploy_plugins/trt_modulated_deform_conv_kernel.hpp",
+      "modules/perception/common/inference/tensorrt/plugins/mmdeploy_plugins/trt_plugin_base.hpp",
+      "modules/perception/common/inference/tensorrt/plugins/mmdeploy_plugins/trt_plugin_helper.hpp",
+      "modules/perception/common/inference/tensorrt/plugins/nms_cuda.cu",
+      "modules/perception/common/inference/tensorrt/plugins/rcnn_proposal_plugin.cu",
+      "modules/perception/common/inference/tensorrt/plugins/rpn_proposal_ssd_plugin.cu",
+      "modules/perception/common/inference/tensorrt/plugins/slice_plugin.cu",
+      "modules/perception/common/inference/tensorrt/plugins/softmax_plugin.cu",
+      "modules/perception/common/inference/tensorrt/plugins/softmax_plugin.h",
+      "modules/perception/common/inference/tensorrt/rt_common.h",
+      "modules/perception/common/inference/test/inference_util_test.cc",
+      "modules/perception/common/inference/utils/cuda_util.cu",
+      "modules/perception/common/inference/utils/cuda_util.h",
+      "modules/perception/common/inference/utils/gemm.cu",
+      "modules/perception/common/inference/utils/resize.cu",
+      "modules/perception/common/inference/utils/util.cu",
+      "modules/perception/lidar_cpdet_detection/detector/cpdet/cpdet.cu",
+      "modules/perception/lidar_detection/detector/cnn_segmentation/feature_generator.cu",
+      "modules/perception/lidar_detection/detector/point_pillars_detection/anchor_mask_cuda.cu",
+      "modules/perception/lidar_detection/detector/point_pillars_detection/nms_cuda.cu",
+      "modules/perception/lidar_detection/detector/point_pillars_detection/pfe_cuda.cu",
+      "modules/perception/lidar_detection/detector/point_pillars_detection/postprocess_cuda.cu",
+      "modules/perception/lidar_detection/detector/point_pillars_detection/preprocess_points_cuda.cu",
+      "modules/perception/lidar_detection/detector/point_pillars_detection/scatter_cuda.cu",
+      "modules/perception/perception_plugin/lidar_detection/gpu_down_sample/voxel_downsample.cu",
+      "modules/perception/perception_plugin/lidar_detection/gpu_down_sample/voxel_downsample.h",
+      "modules/perception/pointcloud_motion/parser/pointwise_unet/pointwise_unet.cu",
+      "modules/perception/pointcloud_semantics/parser/pointwise_unet/pointwise_unet.cu",
+      "modules/perception/radar4d_detection/lib/detector/point_pillars_detection/anchor_mask_cuda.cu",
+      "modules/perception/radar4d_detection/lib/detector/point_pillars_detection/nms_cuda.cu",
+      "modules/perception/radar4d_detection/lib/detector/point_pillars_detection/pfe_cuda.cu",
+      "modules/perception/radar4d_detection/lib/detector/point_pillars_detection/postprocess_cuda.cu",
+      "modules/perception/radar4d_detection/lib/detector/point_pillars_detection/preprocess_points_cuda.cu",
+      "modules/perception/radar4d_detection/lib/detector/point_pillars_detection/scatter_cuda.cu",
+      "modules/planning/planning_open_space/trajectory_smoother/planning_block.cu",
+      "modules/planning/planning_open_space/trajectory_smoother/planning_block.h"
+    ],
+    "markers": {
+      "kernel": 125,
+      "launch": 115,
+      "device_code": 63
+    },
+    "libraries": {
+      "thrust": 65,
+      "cublas": 97,
+      "cudnn": 66
+    }
+  },
+  "components": [
+    {
+      "id": "build:rocm-repository-rules",
+      "kind": "build_path",
+      "where": "third_party/gpus/{find_rocm_config.py,rocm_configure.bzl,rocm/BUILD.tpl}",
+      "added_by": "planner",
+      "note": "ROCm 6/7 layout discovery, hipcc/runtime/include paths, gfx targets; regenerate .gz.base64"
+    },
+    {
+      "id": "build:cuda-dummy-repo-on-amd",
+      "kind": "build_path",
+      "where": "third_party/gpus/cuda_configure.bzl:1170-1186",
+      "added_by": "planner",
+      "note": "@local_config_cuda must configure without a CUDA toolkit when ROCm is selected"
+    },
+    {
+      "id": "build:hip-crosstool-wrapper",
+      "kind": "build_path",
+      "where": "third_party/gpus/crosstool/clang/bin/crosstool_wrapper_driver_is_clang_for_hip.tpl",
+      "added_by": "planner",
+      "note": "python3, shlex, pass -std=c++17"
+    },
+    {
+      "id": "build:amd-config-selection",
+      "kind": "build_path",
+      "where": "tools/bazel.rc:67-79, scripts/apollo_base.sh:658-689, tools/bootstrap.py",
+      "added_by": "planner",
+      "note": "--config=amd must not also define NVIDIA (build:gpu -> nvidia leak); TF_ROCM_AMDGPU_TARGETS name; distutils; missing comma"
+    },
+    {
+      "id": "build:amd-detection",
+      "kind": "build_path",
+      "where": "scripts/apollo.bashrc:107-168, docker/build/installers/installer_base.sh:198-224, docker/scripts/docker_base.sh:47-106",
+      "added_by": "planner",
+      "note": "rocm-smi banner detection; amd-smi; /dev/kfd"
+    },
+    {
+      "id": "build:amd-dev-docker-image",
+      "kind": "build_path",
+      "where": "docker/build/build_docker.sh, docker/build/{cyber,dev}.x86_64.amd.dockerfile, docker/scripts/dev_start.sh:39-41",
+      "added_by": "planner",
+      "note": "ROCm 5.1.1 Ubuntu 18.04 base cannot target gfx942/gfx1100/gfx1201; OS/ROCm per Q2"
+    },
+    {
+      "id": "build:amd-installers",
+      "kind": "build_path",
+      "where": "docker/build/installers/{install_libtorch,install_migraphx,install_gpu_support,install_magma,install_rpp}.sh",
+      "added_by": "planner",
+      "note": "Google Drive tarballs, libamdhip64.so.4, CUDA-only magma on AMD, orphan rpp installer"
+    },
+    {
+      "id": "dep:libtorch-rocm",
+      "kind": "dependency",
+      "where": "third_party/libtorch/{libtorch_gpu.BUILD,3rd-libtorch-gpu.BUILD,libtorch_gpu_rocm.BUILD}",
+      "added_by": "planner",
+      "note": "ROCm libtorch source; 3rd-libtorch-gpu.BUILD unterminated strings, unconditional -lnvonnxparser/cudart; C++17 vs global -std=c++14"
+    },
+    {
+      "id": "dep:migraphx",
+      "kind": "dependency",
+      "where": "@local_config_rocm//rocm:migraphx",
+      "added_by": "planner",
+      "note": "packaged MIGraphX; internal headers used by mi_net.cc; libmigraphx_device presence"
+    },
+    {
+      "id": "dep:rpp",
+      "kind": "dependency",
+      "where": "@local_config_rocm//rocm:rpp, modules/perception/common/camera/common/image_data_operations*.{cc,h}",
+      "added_by": "planner",
+      "note": "-lamd_rpp link line; legacy <rppi.h> API"
+    },
+    {
+      "id": "dep:paddle-inference-cu111",
+      "kind": "dependency",
+      "where": "third_party/paddleinference/workspace.bzl, modules/perception/common/inference/BUILD:109-111, lidar_detection/BUILD:194-200",
+      "added_by": "planner",
+      "note": "CUDA 11.1 prebuilt linked unconditionally; must be if_cuda; AMD replacement per Q1"
+    },
+    {
+      "id": "dep:centerpoint-infer-op-cu111",
+      "kind": "dependency",
+      "where": "third_party/centerpoint_infer_op/workspace.bzl:15",
+      "added_by": "planner",
+      "note": "CUDA 11.1 custom-op prebuilt linked unconditionally; per Q1"
+    },
+    {
+      "id": "dep:npp",
+      "kind": "dependency",
+      "where": "modules/perception/common/camera/BUILD:71, modules/prediction/BUILD:207",
+      "added_by": "planner",
+      "note": "unconditional NPP link breaks AMD build"
+    },
+    {
+      "id": "dep:nvml-gpu-statistics",
+      "kind": "dependency",
+      "where": "modules/statistics/resource/BUILD:36-38, gpu_resource_statistic.h",
+      "added_by": "planner",
+      "note": "NVML only; if_cuda plus AMD equivalent or stub"
+    },
+    {
+      "id": "library:perception-common-base",
+      "kind": "library",
+      "where": "modules/perception/common/base",
+      "added_by": "planner",
+      "note": "syncedmem/blob/compat macros; <hipblas/hipblas.h>"
+    },
+    {
+      "id": "library:perception-common-inference",
+      "kind": "library",
+      "where": "modules/perception/common/inference/{BUILD,inference_factory.*,onnx/onnx_single_batch_infer.cc}",
+      "added_by": "planner",
+      "note": "blocks every perception target on AMD: TensorRT/Paddle deps, NvInferVersion.h, no mi_net dep, OnnxLogger syntax error"
+    },
+    {
+      "id": "library:inference-utils",
+      "kind": "library",
+      "where": "modules/perception/common/inference/utils",
+      "added_by": "planner",
+      "note": "resize/gemm/util kernels, hipBLAS"
+    },
+    {
+      "id": "library:inference-operators",
+      "kind": "library",
+      "where": "modules/perception/common/inference/operators",
+      "added_by": "planner",
+      "note": "ROI pooling kernel"
+    },
+    {
+      "id": "library:inference-migraphx",
+      "kind": "library",
+      "where": "modules/perception/common/inference/migraphx (+plugins)",
+      "added_by": "planner",
+      "note": "AMD inference backend; zero-grid guards missing vs TensorRT copies"
+    },
+    {
+      "id": "library:inference-tensorrt",
+      "kind": "library",
+      "where": "modules/perception/common/inference/tensorrt (+plugins, mmdeploy_plugins)",
+      "added_by": "planner",
+      "note": "NVIDIA-only by design; must not be pulled into AMD builds; MIGraphX covers its plugins except grid_sampler/modulated_deform_conv (Q1)"
+    },
+    {
+      "id": "library:onnx-multi-batch-plugin",
+      "kind": "library",
+      "where": "modules/perception/perception_plugin/inference/onnx_multi_batch",
+      "added_by": "planner",
+      "note": "TensorRT-only backend; Q1"
+    },
+    {
+      "id": "library:camera-detection-multi-stage-yolo",
+      "kind": "library",
+      "where": "modules/perception/camera_detection_multi_stage",
+      "added_by": "planner",
+      "note": "yolo postprocess: @local_config_cuda cuda_library -> gpu_library; YOLOX3D model path is TensorRT-ONNX (Q1)"
+    },
+    {
+      "id": "library:camera-detection-single-stage",
+      "kind": "library",
+      "where": "modules/perception/camera_detection_single_stage",
+      "added_by": "planner",
+      "note": "SMOKE via ROCm libtorch; CaDDN is Paddle (Q1)"
+    },
+    {
+      "id": "library:camera-detection-bev",
+      "kind": "library",
+      "where": "modules/perception/camera_detection_bev",
+      "added_by": "planner",
+      "note": "PETR is Paddle (Q1)"
+    },
+    {
+      "id": "library:camera-detection-occupancy",
+      "kind": "library",
+      "where": "modules/perception/camera_detection_occupancy",
+      "added_by": "planner",
+      "note": "unguarded <cuda_runtime.h> at bevformer_obstacle_detector.cc:24; BEVFormer TensorRT-ONNX (Q1)"
+    },
+    {
+      "id": "library:camera-tracking",
+      "kind": "library",
+      "where": "modules/perception/camera_tracking",
+      "added_by": "planner",
+      "note": "similar.cu HIP-ready; MINet backend"
+    },
+    {
+      "id": "library:lane-detection",
+      "kind": "library",
+      "where": "modules/perception/lane_detection",
+      "added_by": "planner",
+      "note": "typo 'comomn' and missing mi_net dep"
+    },
+    {
+      "id": "library:traffic-light-detection-recognition",
+      "kind": "library",
+      "where": "modules/perception/traffic_light_detection, traffic_light_recognition",
+      "added_by": "planner",
+      "note": "caffe models via MINet + MIGraphX plugins; YOLOX/EfficientNet TensorRT-ONNX (Q1)"
+    },
+    {
+      "id": "library:lidar-detection",
+      "kind": "library",
+      "where": "modules/perception/lidar_detection",
+      "added_by": "planner",
+      "note": "cnnseg (MINet), point_pillars/mask_pillars (libtorch), CenterPoint (Paddle, Q1)"
+    },
+    {
+      "id": "library:lidar-cpdet-detection",
+      "kind": "library",
+      "where": "modules/perception/lidar_cpdet_detection",
+      "added_by": "planner",
+      "note": "stray unconditional cudart (BUILD:42); TensorRT-ONNX runtime (Q1)"
+    },
+    {
+      "id": "library:gpu-down-sample-plugin",
+      "kind": "library",
+      "where": "modules/perception/perception_plugin/lidar_detection/gpu_down_sample",
+      "added_by": "planner",
+      "note": "not HIPified: cuda_runtime.h, cudaHostAlloc/GetDevicePointer/DeviceReset"
+    },
+    {
+      "id": "library:pointcloud-motion",
+      "kind": "library",
+      "where": "modules/perception/pointcloud_motion",
+      "added_by": "planner",
+      "note": "pointwise_unet: cuda_library -> gpu_library; TensorRT-ONNX runtime (Q1)"
+    },
+    {
+      "id": "library:pointcloud-semantics",
+      "kind": "library",
+      "where": "modules/perception/pointcloud_semantics",
+      "added_by": "planner",
+      "note": "pointwise_unet: cuda_library -> gpu_library; TensorRT-ONNX runtime (Q1)"
+    },
+    {
+      "id": "library:radar4d-detection",
+      "kind": "library",
+      "where": "modules/perception/radar4d_detection",
+      "added_by": "planner",
+      "note": "point_pillars copy without HIP shim; unconditional cudart/TensorRT"
+    },
+    {
+      "id": "library:perception-msg-adapter",
+      "kind": "library",
+      "where": "modules/perception/msg_adapter/BUILD:35-40",
+      "added_by": "planner",
+      "note": "stray unconditional cuda/TensorRT deps"
+    },
+    {
+      "id": "library:perception-common-camera",
+      "kind": "library",
+      "where": "modules/perception/common/camera",
+      "added_by": "planner",
+      "note": "NPP vs RPP"
+    },
+    {
+      "id": "library:prediction",
+      "kind": "library",
+      "where": "modules/prediction",
+      "added_by": "planner",
+      "note": "torch_gpu evaluators (ROCm libtorch); @npp; *_tensorrt plugins TensorRT-only (Q1)"
+    },
+    {
+      "id": "library:planning-open-space-planning-block",
+      "kind": "library",
+      "where": "modules/planning/planning_open_space/BUILD:84-96",
+      "added_by": "planner",
+      "note": "cuda_library -> gpu_library; source shim exists"
+    },
+    {
+      "id": "library:audio-siren-detection",
+      "kind": "library",
+      "where": "modules/audio",
+      "added_by": "planner",
+      "note": "@libtorch_gpu, kCUDA -> HIP via ROCm libtorch"
+    },
+    {
+      "id": "platform:drivers-camera-format-aarch64",
+      "kind": "non_gpu_path",
+      "where": "modules/drivers/camera/format",
+      "added_by": "planner",
+      "note": "Jetson/aarch64-only (if_aarch64); not compiled on x86_64; AMD path is x86_64-only. Candidate scoped_out (no AMD platform builds it)"
+    },
+    {
+      "id": "dead:map-pnc-map-cuda-util",
+      "kind": "dead_code",
+      "where": "modules/map/BUILD:110-137",
+      "added_by": "planner",
+      "note": "target commented out upstream; nothing builds it. Candidate scoped_out"
+    },
+    {
+      "id": "test:migraphx-tests",
+      "kind": "test",
+      "where": "modules/perception/common/inference/migraphx/BUILD:24,47,76",
+      "added_by": "planner",
+      "note": "mi_common_test, mi_utils_test, mi_net_test (5 of 19 instances have data)"
+    },
+    {
+      "id": "test:perception-common-base-gpu-tests",
+      "kind": "test",
+      "where": "modules/perception/common/base/BUILD:82,118,214",
+      "added_by": "planner",
+      "note": "blob_test, common_test, syncedmem_test (real device memcpy)"
+    },
+    {
+      "id": "test:inference-utils-tests",
+      "kind": "test",
+      "where": "modules/perception/common/inference/utils/BUILD:42,56; inference/BUILD:34,45",
+      "added_by": "planner",
+      "note": "inference_util_test, binary_data_test, layer_test, inference_test"
+    },
+    {
+      "id": "test:planning-open-space-tests",
+      "kind": "test",
+      "where": "modules/planning/planning_open_space/BUILD:105-178",
+      "added_by": "planner",
+      "note": "distance_approach_ipopt_cuda_interface_test and the trajectory_smoother tests (planning_block)"
+    },
+    {
+      "id": "test:lidar-cnn-segmentation-test",
+      "kind": "test",
+      "where": "modules/perception/lidar_detection/BUILD:223",
+      "added_by": "planner",
+      "note": "size=large, needs absent testdata and cnnseg models"
+    },
+    {
+      "id": "test:kernel-smoke-validator-added",
+      "kind": "test",
+      "where": "(validator-written, outside the fork)",
+      "added_by": "planner",
+      "note": "CPU-vs-GPU differential for gpu_down_sample and point_pillars preprocess/scatter; components without upstream tests"
+    },
+    {
+      "id": "test:non-gpu-regression",
+      "kind": "test",
+      "where": "//cyber/... //modules/{common,planning,map,control,prediction,routing,canbus_vehicle}/...",
+      "added_by": "planner",
+      "note": "must not regress under --config=amd"
+    },
+    {
+      "id": "docs:amd-install-docs",
+      "kind": "docs",
+      "where": "README.md:71, docs/01_Installation Instructions/prerequisite_software_installation_guide.md:89-153",
+      "added_by": "planner",
+      "note": "ROCm version and validated gfx targets"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}
