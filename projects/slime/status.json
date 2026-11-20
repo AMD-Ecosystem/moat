@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/slime",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "torch-extension",
+  "stage": "planned",
   "adopted_at": "2026-11-06T03:06:09Z",
-  "updated_at": "2026-11-20T22:06:40Z",
+  "updated_at": "2026-11-20T22:11:57Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-20T22:06:40Z",
-    "holder": "b74dc74dcb95"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -25,7 +21,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T22:06:40Z",
+      "updated_at": "2026-11-20T22:11:57Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -58,5 +54,10 @@
     "viable": null,
     "summary": "take-up ruled by Jeff Daily: request a new AMD-Ecosystem/slime fork rather than transferring jun-amd/slime",
     "at": "2026-11-11T15:48:07Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-20T22:06:40Z",
+    "at": "2026-11-20T22:11:57Z"
   }
 }

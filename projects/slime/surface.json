@@ -1,0 +1,79 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "79aa41a884ab",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "slime/backends/megatron_utils/kernels/int4_qat/fake_int4_quant_cuda.cu",
+      "slime/backends/sglang_utils/jit_kernels/csrc/gemm/glm5_router_gemm.cuh"
+    ],
+    "markers": {
+      "kernel": 4,
+      "device_code": 4,
+      "launch": 4,
+      "warp_intrinsic": 3
+    },
+    "libraries": {}
+  },
+  "components": [
+    {
+      "id": "extension:fake_int4_quant_cuda",
+      "kind": "python_extension",
+      "where": "slime/backends/megatron_utils/kernels/int4_qat/setup.py"
+    },
+    {
+      "id": "jit_kernel:glm5_router_gemm",
+      "kind": "jit_kernel",
+      "where": "slime/backends/sglang_utils/jit_kernels/csrc/gemm/glm5_router_gemm.cuh (compiled at run time by SGLang's load_jit via SGLANG_JIT_KERNEL_EXTRA_PATH; caller lives in docker/patch/*/sglang-deterministic.patch)"
+    },
+    {
+      "id": "python_path:glm5_alignment",
+      "kind": "python_path",
+      "where": "slime/backends/megatron_utils/alignment/ (DeepGEMM bf16/grouped GEMMs, DeepEP low-latency, SGLang batch-invariant ops; MEGATRON_USE_SGLANG_* switches)"
+    },
+    {
+      "id": "python_path:accelerator_abstraction",
+      "kind": "python_path",
+      "where": "slime/utils/accelerator/, slime/utils/rocm_checkpoint_writer.py, slime/utils/memory_utils.py, slime/ray/train_actor.py, slime/backends/megatron_utils/model.py"
+    },
+    {
+      "id": "recipe:rocm_image",
+      "kind": "build_recipe",
+      "where": "docker/Dockerfile.rocm, docker/Dockerfile.rocm_MI350-5, docker/amd_patch/"
+    },
+    {
+      "id": "recipe:qwen3_4b_amd",
+      "kind": "example",
+      "where": "scripts/run-qwen3-4B-amd.sh, docs/en/platform_support/amd_tutorial.md, docs/zh/platform_support/amd_tutorial.md"
+    },
+    {
+      "id": "tests:cpu_unit",
+      "kind": "tests",
+      "where": "tests/*.py and tests/utils/ run with num_gpus 0 (pytest, pyproject [tool.pytest.ini_options])"
+    },
+    {
+      "id": "tests:gpu_small",
+      "kind": "tests",
+      "where": "tests run with 1-2 GPUs in .github/workflows/pr-test.yml.j2 (test_ppo_logprob_entropy_gpu, test_sglang_top_p_copy, test_glm5_next_gpu)"
+    },
+    {
+      "id": "tests:gpu_e2e_8gpu",
+      "kind": "tests",
+      "where": "4-8 GPU e2e tests in .github/workflows/pr-test.yml.j2 (qwen2.5-0.5B, qwen3-4B, moonlight, qwen3-30B-A3B, GLM-5.2 6-layer, ...)"
+    },
+    {
+      "id": "tests:int4_qat_kernel",
+      "kind": "tests",
+      "where": "none upstream; kernel-level test vs torch reference to be authored with the port"
+    },
+    {
+      "id": "tests:glm5_router_gemm_kernel",
+      "kind": "tests",
+      "where": "none upstream; kernel-level test vs torch fp32 matmul to be authored with the port"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}
