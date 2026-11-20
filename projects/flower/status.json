@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/flower",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "python",
+  "stage": "planned",
   "adopted_at": "2026-11-11T20:55:05Z",
-  "updated_at": "2026-11-20T22:06:29Z",
+  "updated_at": "2026-11-20T22:12:03Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-20T22:06:29Z",
-    "holder": "9320b45d2587"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -47,7 +43,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T22:06:29Z",
+      "updated_at": "2026-11-20T22:12:03Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -80,5 +76,10 @@
     "viable": true,
     "summary": "Pure-Python FL framework, no CUDA (validate lane: Ray GPU discovery + ROCm torch); AMD PR #8383 adds Instinct/Linux-only Ray discovery diagnostics and docs, awaiting maintainers; MOAT value is Radeon/Windows evidence contributed to that PR, Windows Ray GPU discovery likely absent",
     "at": "2026-11-11T21:17:01Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-20T22:06:29Z",
+    "at": "2026-11-20T22:12:03Z"
   }
 }

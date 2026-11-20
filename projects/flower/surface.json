@@ -1,0 +1,134 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "b65f4343a7dc",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [],
+    "markers": {},
+    "libraries": {}
+  },
+  "components": [
+    {
+      "id": "library:flwr",
+      "kind": "library",
+      "where": "examples/quickstart-cpp/CMakeLists.txt"
+    },
+    {
+      "id": "library:flwr_grpc_proto",
+      "kind": "library",
+      "where": "framework/cc/flwr/CMakeLists.txt"
+    },
+    {
+      "id": "option:USE_LOCAL_FLWR",
+      "kind": "option",
+      "where": "examples/quickstart-cpp/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Use local Flower directory instead of fetching from GitHub"
+    },
+    {
+      "id": "runtime:ray-amd-gpu-discovery-linux",
+      "kind": "runtime",
+      "where": "ray==2.56.0 ray/_private/accelerators/amd_gpu.py via the amdsmi Python package (flwr[simulation] extra)"
+    },
+    {
+      "id": "runtime:ray-actor-gpu-pinning-fractional",
+      "kind": "runtime",
+      "where": "framework/py/flwr/simulation/ray_transport/ray_actor.py pool_size_from_resources; Ray HIP_VISIBLE_DEVICES per actor"
+    },
+    {
+      "id": "runtime:simulation-clientapp-rocm-torch",
+      "kind": "runtime",
+      "where": "framework/e2e/e2e-pytorch simulation.py, simulation_next.py"
+    },
+    {
+      "id": "runtime:deployment-clientapp-rocm-torch",
+      "kind": "runtime",
+      "where": "framework/e2e/test_superlink.sh e2e-pytorch (SuperLink + SuperNodes)"
+    },
+    {
+      "id": "runtime:windows-deployment-engine",
+      "kind": "runtime",
+      "where": "framework/e2e/test_windows.sh plus e2e-pytorch on ROCm torch"
+    },
+    {
+      "id": "runtime:windows-ray-simulation-manual-gpus",
+      "kind": "runtime",
+      "where": "Python 3.12, init-args-num-gpus; evidence only (Jeff to rule how to offer it)"
+    },
+    {
+      "id": "test:framework/py/flwr pytest suite",
+      "kind": "test",
+      "where": "framework/py/flwr/**/*_test.py (218 files)"
+    },
+    {
+      "id": "test:framework/e2e/e2e-pytorch",
+      "kind": "test",
+      "where": "framework/e2e/e2e-pytorch"
+    },
+    {
+      "id": "test:framework/e2e/e2e-pytorch-lightning",
+      "kind": "test",
+      "where": "framework/e2e/e2e-pytorch-lightning"
+    },
+    {
+      "id": "test:framework/e2e/e2e-opacus",
+      "kind": "test",
+      "where": "framework/e2e/e2e-opacus"
+    },
+    {
+      "id": "example:quickstart-pytorch",
+      "kind": "example",
+      "where": "examples/quickstart-pytorch"
+    },
+    {
+      "id": "example:other-examples",
+      "kind": "example",
+      "where": "examples/* except quickstart-pytorch, quickstart-cpp and the mobile examples (37)"
+    },
+    {
+      "id": "example:flowertune-llm",
+      "kind": "example",
+      "where": "examples/flowertune-llm*, benchmarks/flowertune-llm (bitsandbytes 0.49.1)"
+    },
+    {
+      "id": "example:baselines",
+      "kind": "example",
+      "where": "baselines/* (31)"
+    },
+    {
+      "id": "library:mobile-sdks",
+      "kind": "library",
+      "where": "framework/kotlin, framework/swift, examples/android*, examples/ios"
+    },
+    {
+      "id": "library:flwr-datasets",
+      "kind": "library",
+      "where": "datasets/flwr_datasets"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "library:flwr",
+      "reason": "C++ client SDK (examples/quickstart-cpp build of framework/cc): CPU-only gRPC client with no GPU code; nothing to port or validate on a GPU"
+    },
+    {
+      "id": "library:flwr_grpc_proto",
+      "reason": "generated gRPC/protobuf library of the CPU-only C++ SDK; no GPU code"
+    },
+    {
+      "id": "option:USE_LOCAL_FLWR",
+      "reason": "build option of the CPU-only C++ example; no GPU code"
+    },
+    {
+      "id": "library:mobile-sdks",
+      "reason": "Android/iOS SDKs and examples; no ROCm target exists on those platforms"
+    },
+    {
+      "id": "library:flwr-datasets",
+      "reason": "dataset partitioning library (Hugging Face datasets); no GPU code"
+    }
+  ],
+  "owed": [],
+  "removed_from_floor": []
+}
