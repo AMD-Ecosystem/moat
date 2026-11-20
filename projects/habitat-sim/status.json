@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/habitat-sim",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "cmake",
+  "stage": "planned",
   "adopted_at": "2026-11-06T01:53:13Z",
-  "updated_at": "2026-11-20T21:32:56Z",
+  "updated_at": "2026-11-20T21:39:05Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-20T21:32:56Z",
-    "holder": "e25e853f4177"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -48,7 +44,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:32:56Z",
+      "updated_at": "2026-11-20T21:39:05Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,5 +77,10 @@
     "viable": true,
     "summary": "Archived/sunset embodied-AI simulator (MIT); real AMD gap is EGL device selection via NVIDIA-only EGL_NV_device_cuda (issue #2402), plus one hipRAND noise kernel and optional HIP-GL interop; fork-only deliverable, no upstream PR possible",
     "at": "2026-11-06T02:15:39Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-20T21:32:56Z",
+    "at": "2026-11-20T21:39:05Z"
   }
 }

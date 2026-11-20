@@ -1,0 +1,415 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "57ee4941dc47",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "src/esp/gfx/RenderTarget.cpp",
+      "src/esp/gfx_batch/cuda_helpers/HelperCuda.h",
+      "src/esp/sensor/RedwoodNoiseModel.cpp",
+      "src/esp/sensor/RedwoodNoiseModel.cu",
+      "src/esp/sensor/RedwoodNoiseModel.cuh",
+      "src/esp/sensor/RedwoodNoiseModel.h"
+    ],
+    "markers": {
+      "warp_intrinsic": 9,
+      "kernel": 2,
+      "device_code": 1,
+      "launch": 2,
+      "texture": 3
+    },
+    "libraries": {
+      "cublas": 1,
+      "cufft": 1,
+      "curand": 34,
+      "cusparse": 1,
+      "cusolver": 1
+    }
+  },
+  "components": [
+    {
+      "id": "executable:replayer",
+      "kind": "executable",
+      "where": "src/utils/replayer/CMakeLists.txt"
+    },
+    {
+      "id": "executable:viewer",
+      "kind": "executable",
+      "where": "src/utils/viewer/CMakeLists.txt"
+    },
+    {
+      "id": "library:atomic_wait",
+      "kind": "library",
+      "where": "src/cmake/dependencies.cmake"
+    },
+    {
+      "id": "library:gfx_batch",
+      "kind": "library",
+      "where": "src/esp/gfx_batch/CMakeLists.txt"
+    },
+    {
+      "id": "library:habitat_sim",
+      "kind": "library",
+      "where": "src/esp/CMakeLists.txt"
+    },
+    {
+      "id": "library:noise_model_kernels",
+      "kind": "library",
+      "where": "src/esp/CMakeLists.txt"
+    },
+    {
+      "id": "option:BUILD_ASSIMP_SUPPORT",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to build assimp import library support"
+    },
+    {
+      "id": "option:BUILD_BASIS_COMPRESSOR",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Wether or not to build the basis compressor.  Loading basis compressed meshes do"
+    },
+    {
+      "id": "option:BUILD_GUI_VIEWERS",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to build GUI viewer utility binary"
+    },
+    {
+      "id": "option:BUILD_PYTHON_BINDINGS",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to build python bindings"
+    },
+    {
+      "id": "option:BUILD_TEST",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build test binaries"
+    },
+    {
+      "id": "option:BUILD_WARNINGS_AS_ERRORS",
+      "kind": "option",
+      "where": "src/esp/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with warnings as errors"
+    },
+    {
+      "id": "option:BUILD_WITH_AUDIO",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build Habitat-Sim with Audio sensor"
+    },
+    {
+      "id": "option:BUILD_WITH_BACKGROUND_RENDERER",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build Habitat-Sim with async rendering support."
+    },
+    {
+      "id": "option:BUILD_WITH_BULLET",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build Habitat-Sim with Bullet physics enabled -- Requires Bullet"
+    },
+    {
+      "id": "option:BUILD_WITH_CUDA",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build Habitat-Sim with CUDA features enabled -- Requires CUDA"
+    },
+    {
+      "id": "option:REL_BUILD_RPATH",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Use a relative build rpath"
+    },
+    {
+      "id": "option:USE_SYSTEM_ASSIMP",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Use system Assimp instead of a bundled submodule"
+    },
+    {
+      "id": "option:USE_SYSTEM_BULLET",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Use system Bullet instead of a bundled submodule"
+    },
+    {
+      "id": "option:USE_SYSTEM_GLFW",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Use system GLFW instead of a bundled submodule"
+    },
+    {
+      "id": "option:USE_SYSTEM_MAGNUM",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Use system Magnum instead of a bundled submodule"
+    },
+    {
+      "id": "option:USE_SYSTEM_OPENEXR",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Use system OpenEXR instead of a bundled submodule"
+    },
+    {
+      "id": "option:USE_SYSTEM_PYBIND11",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Use system Pybind11 instead of a bundled submodule"
+    },
+    {
+      "id": "option:USE_SYSTEM_RAPIDJSON",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Use system RapidJSON instead of a bundled submodule"
+    },
+    {
+      "id": "option:USE_SYSTEM_ZSTD",
+      "kind": "option",
+      "where": "src/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Use system zstd instead of a bundled submodule"
+    },
+    {
+      "id": "python_module:habitat_sim_bindings",
+      "kind": "python_module",
+      "where": "src/esp/bindings/CMakeLists.txt"
+    },
+    {
+      "id": "test:AttributesConfigsTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:AttributesManagersTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:BatchReplayRendererTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:ConfigurationTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:CullingTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:DepthUnprojectionTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:DrawableTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:GeoTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:GfxBatchHbaoTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:GfxBatchRendererTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:GfxReplayTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:GibsonSceneTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:HM3DSceneTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:IOTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:LoggingTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:MetadataMediatorTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:Mp3dTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:NavTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:PathFinderTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:PhysicsTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:ReplicaSceneTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:ResourceManagerTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:SceneGraphTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:SemanticTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:SensorTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:SimTest",
+      "kind": "test",
+      "where": "src/tests/CMakeLists.txt"
+    },
+    {
+      "id": "feature:egl-device-selection",
+      "kind": "feature",
+      "where": "src/esp/gfx/WindowlessContext.cpp:41-45, src/esp/gfx_batch/RendererStandalone.cpp:81-82",
+      "doc": "setCudaDevice -> EGL_NV_device_cuda only; fails on Mesa in every build (issue #2402)",
+      "added_by": "planner"
+    },
+    {
+      "id": "interop:gl-renderbuffer-readframe-gpu",
+      "kind": "interop",
+      "where": "src/esp/gfx/RenderTarget.cpp:277-365",
+      "doc": "cudaGraphicsGLRegisterImage on renderbuffers + cudaMemcpy2DFromArray (readFrameRgba/Depth/ObjectIdGPU)",
+      "added_by": "planner"
+    },
+    {
+      "id": "interop:gl-buffer-device-pointer",
+      "kind": "interop",
+      "where": "src/esp/gfx_batch/RendererStandalone.cpp:204-262, src/esp/sim/BatchReplayRenderer.cpp:182-210",
+      "doc": "cudaGraphicsGLRegisterBuffer + GetMappedPointer (color/depthCudaBufferDevicePointer)",
+      "added_by": "planner"
+    },
+    {
+      "id": "kernel:redwood-noise-model",
+      "kind": "kernel",
+      "where": "src/esp/sensor/RedwoodNoiseModel.cu",
+      "doc": "2 kernels, cuRAND XORWOW -> hipRAND",
+      "added_by": "planner"
+    },
+    {
+      "id": "vendored:nvidia-helper-headers",
+      "kind": "vendored",
+      "where": "src/esp/gfx_batch/cuda_helpers/HelperCuda.h, HelperString.h",
+      "doc": "NVIDIA CUDA-samples EULA; must not be compiled or derived from on the HIP path (plan Q1)",
+      "added_by": "planner"
+    },
+    {
+      "id": "build:pip-hip-option",
+      "kind": "build",
+      "where": "pyproject.toml, build.sh, setup.py",
+      "doc": "HABITAT_WITH_HIP / --with-hip plumbing",
+      "added_by": "planner"
+    },
+    {
+      "id": "python:gpu-paths",
+      "kind": "python",
+      "where": "src_python/habitat_sim/sensors/sensor_wrapper.py, sensors/noise_models/redwood_depth_noise_model.py, bindings cuda_enabled",
+      "doc": "gpu2gpu_transfer and GPU noise model through torch on ROCm",
+      "added_by": "planner"
+    },
+    {
+      "id": "test:pytest-suite",
+      "kind": "test",
+      "where": "tests/",
+      "doc": "includes test_noise_models.py, test_sensors.py gpu2gpu, test_gfx.py",
+      "added_by": "planner"
+    },
+    {
+      "id": "doc:rocm-build",
+      "kind": "doc",
+      "where": "BUILD_FROM_SOURCE.md",
+      "doc": "ROCm build and headless Mesa EGL instructions",
+      "added_by": "planner"
+    },
+    {
+      "id": "packaging:conda-build",
+      "kind": "packaging",
+      "where": "conda-build/",
+      "doc": "Meta-internal CUDA conda recipes; proposed out of scope, needs Jeff's ruling (plan Q4)",
+      "added_by": "planner"
+    },
+    {
+      "id": "ci:github-actions",
+      "kind": "ci",
+      "where": ".github/workflows/",
+      "doc": "NVIDIA CI workflows",
+      "added_by": "planner"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "ci:github-actions",
+      "reason": "No fork GitHub Actions are added (CPU-only CI cannot observe GPU correctness); upstream's NVIDIA workflows are left untouched and fork Actions stay disabled."
+    }
+  ],
+  "owed": [],
+  "removed_from_floor": []
+}
