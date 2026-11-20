@@ -1599,3 +1599,71 @@ zero-byte temp size, so `cub_workspace` never returns null for the second call;
 CUDA arms are upstream's text; per-file port patch equals f9604bb's except the
 intended edits; upstream main still 4fb6019 (`ls-remote`), both ancestry checks
 pass; jargon clean; title 61 chars, AI disclosure present, no Co-Authored-By.
+
+## Validation attempt 2026-11-20: linux-gfx1100 at 29e2494 (NOT RUN -- pinned card wedged)
+
+No verdict recorded; linux-gfx1100 stays `revalidate` (no `completed`, no
+`validation-failed`, no `set-blocked`: the fault is one card on a host with
+other healthy gfx1100 cards, not the platform). Build at 29e2494 passes (see
+"## Upstream sync 2026-11-20"). The pinned card (`HIP_VISIBLE_DEVICES=3` =
+PCI 26:00.0) was re-tested at 22:14: `gpu_busy_percent` 100, no owning process,
+a hipMemset plus one 64-thread kernel did not finish within 120 s. Carry-forward
+is not applicable (the delta is a 4600-line upstream merge with new kernels).
+CUDA no-regression compile at 29e2494 is already recorded (pass) in the sync
+section and need not be repeated by the next validator. Jargon clean; README
+documents the ROCm build in upstream's new layout.
+
+To resume: on a healthy gfx1100 card and on gfx90a, build with the recipe in
+"## Upstream sync 2026-11-20" (or the plain Build recipe on a host with a
+system ROCm), run the "Running it headless" harness, and compare against the
+f9604bb records (gfx1100: 37 frames then the line-search wedge; gfx90a: 31
+frames then the wedge). The default scene changed upstream: `initScene1` now
+loads two `bunny2.msh` tetrahedral meshes instead of the cloth scene, so the
+vertex/tet counts (38386/159870) WILL differ and are not a regression signal.
+
+## Upstream PR draft
+
+Status: the AMD GPU test sentence below is a placeholder. No AMD GPU has
+completed validation at 29e2494 yet. Fill it in, naming only GPUs with a
+completed run at the final head, before jeff reviews it.
+
+Title:
+
+```
+Add a HIP build for AMD GPUs (ROCm)
+```
+
+Body:
+
+~~~~
+This adds an opt-in build for AMD GPUs through ROCm/HIP. The CUDA build is unchanged and remains the default; `-DUSE_HIP=ON` selects the AMD build, which compiles the same `.cu` sources as HIP.
+
+How it works: a small header, `GPU_IPC/cuda_to_hip.h`, maps the CUDA runtime names the code uses onto HIP and, on CUDA, just includes `<cuda_runtime.h>` and `<device_launch_parameters.h>`. CMakeLists.txt gains a `USE_HIP` branch that enables the HIP language and marks the `.cu` files as HIP; the CUDA branch is your existing text. CUB calls go through hipCUB, which has the same interface, via a `cub` namespace alias under HIP.
+
+Warp operations: a CUDA warp is always 32 lanes, while an AMD wavefront is 32 lanes on RDNA GPUs and 64 on CDNA GPUs. The `gipc::WARP_*` helpers in `details/device_utils.inl` therefore pin shuffles to 32 lanes and shift ballots and `__match_any` results down to the calling lane's 32-lane half, so every 32-lane group behaves as on CUDA on either wavefront size. Two small helpers were added beside the existing ones, `gipc::SYNC_WARP` and `gipc::WARP_MATCH_ANY`, because HIP's `__syncwarp` and `__match_any_sync` require 64-bit masks; on CUDA they call `__syncwarp(mask)` and `__match_any_sync(mask, value)` exactly as before.
+
+Two changes touch shared code and are no-ops on CUDA. The block reductions in GIPC.cu and PCG_SOLVER.cu index 32-element groups with `threadIdx.x >> 5` but computed each group's start and live-lane count with `warpSize`; they now use 32, the size of the groups they index, which is what `warpSize` is on every NVIDIA GPU. And on a 64-lane wavefront `WARP_MASK_FROM_COUNT(32)` would evaluate `1U << 32` (undefined), so the HIP version tests `count >= 32`.
+
+The 12x12 Hessian projection in `PDSNK` now uses a cyclic Jacobi eigensolver over plain arrays instead of `Eigen::SelfAdjointEigenSolver`, whose general `compute()` path relies on host-only matrix product kernels and cannot be instantiated in a HIP kernel. It is one source for both back ends and matched the Eigen result to 1.5e-14 relative over 20000 random symmetric matrices. The AMD build uses `-ffp-contract=on` instead of a fast-math flag, because clang's `-ffast-math` also enables finite-math-only and reassociation in double precision, which the CCD and intersection predicates cannot tolerate.
+
+Build (Linux, ROCm 7.0 or later):
+
+```bash
+cmake -S . -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
+
+Use the architecture of your GPU (`rocminfo | grep gfx` lists it), for example gfx90a, gfx942 or gfx1100.
+
+Testing: [PLACEHOLDER: name each AMD GPU with a completed run at the final commit, e.g. "Radeon PRO W7800 (gfx1100) and Instinct MI250X (gfx90a)", and what it ran: the default scene headless, N frames, no HIP errors, no NaN.] The CUDA sources were compiled with nvcc 12.8 (sm_80) before and after this change; every `.cu` file compiles, and `load_mesh.cpp` fails identically on current main without this change (load_mesh.h uses `uint32_t` without including `<cstdint>`). On Windows the AMD build was compiled with CMake and Ninja but not run on a GPU.
+
+This work was done with the assistance of an AI coding agent and reviewed by me.
+~~~~
+
+Notes for whoever finalizes this draft: the merge commit message of 29e2494
+misnames the projection ("bending") and misstates the `WARP_MASK_FROM_COUNT`
+reason; the body above carries the corrected wording (see "## Review 2026-11-20").
+The Windows sentence rests on the 2026-08-19 compile at f9604bb (before the
+upstream merge); re-check that a Windows compile at the final head exists
+before sending, or drop the sentence. Run `python3 utils/prose.py` and
+after filling the placeholder.
