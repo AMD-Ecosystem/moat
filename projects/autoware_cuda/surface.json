@@ -1,0 +1,169 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "a5929dde0bac",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "autoware_cuda_utils/include/autoware/cuda_utils/thrust_utils.hpp",
+      "autoware_cuda_utils/test/test_cuda_check_error.cu",
+      "autoware_cuda_utils/test/test_cuda_unique_ptr.cu",
+      "autoware_cuda_utils/test/test_cuda_utils.cu",
+      "autoware_cuda_utils/test/test_stream_unique_ptr.cu",
+      "autoware_cuda_utils/test/test_thrust_utils.cu"
+    ],
+    "markers": {},
+    "libraries": {
+      "thrust": 22
+    }
+  },
+  "components": [
+    {
+      "id": "test:test_autoware_cuda_utils",
+      "kind": "test",
+      "where": "autoware_cuda_utils/CMakeLists.txt",
+      "note": "5 .cu gtest files (check_error, unique_ptr, utils, stream_unique_ptr, thrust_utils) + test_main.cpp; GPU gate, no skips"
+    },
+    {
+      "id": "library:autoware_cuda_dependency_meta",
+      "kind": "library",
+      "where": "autoware_cuda_dependency_meta/CMakeLists.txt",
+      "added_by": "planner",
+      "note": "CMake-only virtual package; config extras add -fno-lto. Expected no change; confirm by HIP build"
+    },
+    {
+      "id": "library:autoware_cuda_utils",
+      "kind": "library",
+      "where": "autoware_cuda_utils/CMakeLists.txt",
+      "added_by": "planner",
+      "note": "header-only INTERFACE library: cuda_check_error, cuda_unique_ptr (incl. stream-ordered pool), cuda_memory_pool, cuda_utils, stream_unique_ptr, thrust_utils, cuda_gtest_utils. CUDA runtime API in .hpp files is invisible to the .cu census"
+    },
+    {
+      "id": "build:autoware_cuda_utils-config-extras",
+      "kind": "build",
+      "where": "autoware_cuda_utils/cmake/find_cccl.cmake",
+      "added_by": "planner",
+      "note": "exported CONFIG_EXTRAS run in every consumer; does find_package(CUDAToolkit REQUIRED). HIP install must export a rocThrust extras instead; prove with a scratch consumer"
+    },
+    {
+      "id": "library:autoware_tensorrt_common",
+      "kind": "library",
+      "where": "autoware_tensorrt_common/CMakeLists.txt",
+      "added_by": "planner",
+      "note": "TrtCommon engine wrapper (src/tensorrt_common.cpp, 942 lines, host C++ over TensorRT 10). Reimplemented on MIGraphX (plan.md); census sees none of it"
+    },
+    {
+      "id": "feature:tensorrt_common-onnx-build",
+      "kind": "feature",
+      "where": "autoware_tensorrt_common/src/tensorrt_common.cpp",
+      "added_by": "planner",
+      "note": "ONNX parse + engine build -> parse_onnx + compile(gpu)"
+    },
+    {
+      "id": "feature:tensorrt_common-engine-cache",
+      "kind": "feature",
+      "where": "autoware_tensorrt_common/src/tensorrt_common.cpp",
+      "added_by": "planner",
+      "note": "serialized .engine keyed by TensorRT version -> .mxr keyed by MIGraphX version, gfx, precision"
+    },
+    {
+      "id": "feature:tensorrt_common-dynamic-shapes",
+      "kind": "feature",
+      "where": "autoware_tensorrt_common/src/tensorrt_common.cpp",
+      "added_by": "planner",
+      "note": "optimization profiles min/opt/max -> MIGraphX dyn dims or per-shape compile cache"
+    },
+    {
+      "id": "feature:tensorrt_common-precision-fp16",
+      "kind": "feature",
+      "where": "autoware_tensorrt_common/src/tensorrt_common.cpp",
+      "added_by": "planner",
+      "note": "BuilderFlag::kFP16 -> quantize_fp16; fp32 and strongly-typed map to no quantization"
+    },
+    {
+      "id": "feature:tensorrt_common-int8-calibration",
+      "kind": "feature",
+      "where": "autoware_tensorrt_common/include/autoware/tensorrt_common/tensorrt_conv_calib.hpp",
+      "added_by": "planner",
+      "note": "TrtConvCalib + IInt8Calibrator (used by tensorrt_yolox, tensorrt_classifier); behaviour per notes.md Q2"
+    },
+    {
+      "id": "feature:tensorrt_common-io-binding-execution",
+      "kind": "feature",
+      "where": "autoware_tensorrt_common/src/tensorrt_common.cpp",
+      "added_by": "planner",
+      "note": "setTensorAddress/setInputShape/setTensor*/enqueueV3(stream) -> program_parameters + run_async; positional IO order must match TensorRT"
+    },
+    {
+      "id": "feature:tensorrt_common-plugin-loading",
+      "kind": "feature",
+      "where": "autoware_tensorrt_common/src/tensorrt_common.cpp",
+      "added_by": "planner",
+      "note": "plugin_paths dlopen loop kept for MIGraphX custom-op libraries"
+    },
+    {
+      "id": "feature:tensorrt_common-profiling",
+      "kind": "feature",
+      "where": "autoware_tensorrt_common/src/profiler.cpp",
+      "added_by": "planner",
+      "note": "IProfiler per-layer timing, IEngineInspector layer JSON, ConvProfiler; host timing kept, per-layer approximated (no public MIGraphX per-layer callback)"
+    },
+    {
+      "id": "feature:tensorrt_common-public-types",
+      "kind": "feature",
+      "where": "autoware_tensorrt_common/include/autoware/tensorrt_common/tensorrt_common.hpp",
+      "added_by": "planner",
+      "note": "nvinfer1 value types and cudaStream_t in the public API consumed by autoware_universe; shape per notes.md Q1"
+    },
+    {
+      "id": "feature:tensorrt-dla",
+      "kind": "feature",
+      "where": "autoware_tensorrt_common/src/tensorrt_common.cpp",
+      "added_by": "planner",
+      "note": "DLA (setDLACore, kDLA, kGPU_FALLBACK): Jetson-only hardware, no AMD counterpart. Proposed out, pending Jeff (notes.md Q4)"
+    },
+    {
+      "id": "feature:tensorrt-builtin-plugins",
+      "kind": "feature",
+      "where": "autoware_tensorrt_common/src/tensorrt_common.cpp",
+      "added_by": "planner",
+      "note": "initLibNvInferPlugins: no MIGraphX counterpart; models needing it handled per model in autoware_universe. Proposed out, pending Jeff (notes.md Q4)"
+    },
+    {
+      "id": "test:autoware_tensorrt_common_test",
+      "kind": "test",
+      "where": "autoware_tensorrt_common/CMakeLists.txt",
+      "added_by": "planner",
+      "note": "ament_add_gtest: 3 TensorInfoTest CPU cases + 10 TrtCommonIOTest cases building from test/data/dummy_network.onnx; GPU gate on the MIGraphX backend, plus a new HIP-only MIGraphX test file"
+    },
+    {
+      "id": "test:ament_lint_auto",
+      "kind": "test",
+      "where": "autoware_cuda_utils/CMakeLists.txt, autoware_tensorrt_common/CMakeLists.txt",
+      "added_by": "planner",
+      "note": "ament lint tests of both packages; must not regress on the HIP build"
+    },
+    {
+      "id": "build:cuda-path-nvcc-tensorrt",
+      "kind": "build",
+      "where": "autoware_cuda_utils/CMakeLists.txt, autoware_tensorrt_common/CMakeLists.txt",
+      "added_by": "planner",
+      "note": "CUDA branch must still compile and link with real nvcc + TensorRT 10 headers (no-regression gate)"
+    },
+    {
+      "id": "ci:github-workflows",
+      "kind": "ci",
+      "where": ".github/workflows/",
+      "added_by": "planner",
+      "note": "upstream NVIDIA CI; MOAT adds no fork Actions and leaves these unchanged"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "ci:github-workflows",
+      "reason": "MOAT adds no fork GitHub Actions (CPU-only CI cannot observe GPU correctness); upstream's NVIDIA workflows stay unchanged. Not a scope cut of the port."
+    }
+  ],
+  "owed": [],
+  "removed_from_floor": []
+}
