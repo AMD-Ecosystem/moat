@@ -1,0 +1,407 @@
+{
+ "generated_by": "utils/surface.py",
+ "source_sha": "c49474879e7c",
+ "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+ "cuda": {
+  "files": [
+   "funasr/models/rwkv_bat/cuda_decoder/wkv_cuda.cu",
+   "funasr/models/rwkv_bat/cuda_encoder/wkv_cuda.cu"
+  ],
+  "markers": {
+   "kernel": 4,
+   "launch": 4
+  },
+  "libraries": {}
+ },
+ "components": [
+  {
+   "id": "executable:ff",
+   "kind": "executable",
+   "where": "runtime/onnxruntime/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-http-server",
+   "kind": "executable",
+   "where": "runtime/http/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-onnx-2pass",
+   "kind": "executable",
+   "where": "runtime/onnxruntime/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-onnx-2pass-rtf",
+   "kind": "executable",
+   "where": "runtime/onnxruntime/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-onnx-offline",
+   "kind": "executable",
+   "where": "runtime/onnxruntime/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-onnx-offline-punc",
+   "kind": "executable",
+   "where": "runtime/onnxruntime/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-onnx-offline-rtf",
+   "kind": "executable",
+   "where": "runtime/onnxruntime/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-onnx-offline-vad",
+   "kind": "executable",
+   "where": "runtime/onnxruntime/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-onnx-online-asr",
+   "kind": "executable",
+   "where": "runtime/onnxruntime/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-onnx-online-punc",
+   "kind": "executable",
+   "where": "runtime/onnxruntime/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-onnx-online-rtf",
+   "kind": "executable",
+   "where": "runtime/onnxruntime/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-onnx-online-vad",
+   "kind": "executable",
+   "where": "runtime/onnxruntime/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-wss-client",
+   "kind": "executable",
+   "where": "runtime/websocket/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-wss-client-2pass",
+   "kind": "executable",
+   "where": "runtime/websocket/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-wss-server",
+   "kind": "executable",
+   "where": "runtime/websocket/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:funasr-wss-server-2pass",
+   "kind": "executable",
+   "where": "runtime/websocket/bin/CMakeLists.txt"
+  },
+  {
+   "id": "executable:paraformer-server",
+   "kind": "executable",
+   "where": "runtime/grpc/CMakeLists.txt"
+  },
+  {
+   "id": "library:funasr",
+   "kind": "library",
+   "where": "runtime/onnxruntime/src/CMakeLists.txt"
+  },
+  {
+   "id": "library:funasr-result-json",
+   "kind": "library",
+   "where": "runtime/onnxruntime/bin/CMakeLists.txt"
+  },
+  {
+   "id": "library:rg_grpc_proto",
+   "kind": "library",
+   "where": "runtime/grpc/CMakeLists.txt"
+  },
+  {
+   "id": "option:BUILD_SHARED_LIBS",
+   "kind": "option",
+   "where": "runtime/websocket/CMakeLists.txt",
+   "default": "ON",
+   "doc": "Build shared libraries"
+  },
+  {
+   "id": "option:ENABLE_FFMPEG",
+   "kind": "option",
+   "where": "runtime/onnxruntime/CMakeLists.txt",
+   "default": "OFF",
+   "doc": "Whether to enable ffmpeg audio decoding"
+  },
+  {
+   "id": "option:ENABLE_FST",
+   "kind": "option",
+   "where": "runtime/websocket/CMakeLists.txt",
+   "default": "ON",
+   "doc": "Whether to build openfst"
+  },
+  {
+   "id": "option:ENABLE_GLOG",
+   "kind": "option",
+   "where": "runtime/websocket/CMakeLists.txt",
+   "default": "ON",
+   "doc": "Whether to build glog"
+  },
+  {
+   "id": "option:ENABLE_HTTP",
+   "kind": "option",
+   "where": "runtime/http/CMakeLists.txt",
+   "default": "ON",
+   "doc": "Whether to build http server"
+  },
+  {
+   "id": "option:ENABLE_PORTAUDIO",
+   "kind": "option",
+   "where": "runtime/websocket/CMakeLists.txt",
+   "default": "ON",
+   "doc": "Whether to build portaudio"
+  },
+  {
+   "id": "option:ENABLE_WEBSOCKET",
+   "kind": "option",
+   "where": "runtime/websocket/CMakeLists.txt",
+   "default": "ON",
+   "doc": "Whether to build websocket server"
+  },
+  {
+   "id": "option:FUNASR_BUILD_TESTS",
+   "kind": "option",
+   "where": "runtime/onnxruntime/CMakeLists.txt",
+   "default": "OFF",
+   "doc": "Build FunASR ONNX Runtime unit tests"
+  },
+  {
+   "id": "option:GPU",
+   "kind": "option",
+   "where": "runtime/websocket/CMakeLists.txt",
+   "default": "OFF",
+   "doc": "Whether to build with GPU"
+  },
+  {
+   "id": "test:funasr-cli-output-format-test",
+   "kind": "test",
+   "where": "runtime/onnxruntime/bin/CMakeLists.txt"
+  },
+  {
+   "id": "test:funasr-result-json-test",
+   "kind": "test",
+   "where": "runtime/onnxruntime/bin/CMakeLists.txt"
+  },
+  {
+   "id": "kernel:rwkv-wkv-encoder",
+   "kind": "kernel",
+   "where": "funasr/models/rwkv_bat/cuda_encoder/ + rwkv_attention.py:load_encoder_wkv_kernel",
+   "added_by": "planner",
+   "note": "JIT cpp_extension.load; nvcc-only flags need a torch.version.hip branch; GPU test tests/test_rwkv_wkv_kernel.py (new). Loader call commented out upstream [Q3]"
+  },
+  {
+   "id": "kernel:rwkv-wkv-decoder",
+   "kind": "kernel",
+   "where": "funasr/models/rwkv_bat/cuda_decoder/ + rwkv_attention.py:load_decoder_wkv_kernel",
+   "added_by": "planner",
+   "note": "same as encoder"
+  },
+  {
+   "id": "kernel:triton-whisper-timing",
+   "kind": "kernel",
+   "where": "funasr/models/sense_voice/whisper_lib/triton_ops.py",
+   "added_by": "planner",
+   "note": "Triton dtw_kernel + median_kernel; validate on ROCm Triton, prove no CPU fallback"
+  },
+  {
+   "id": "feature:python-toolkit-gpu-inference",
+   "kind": "feature",
+   "where": "funasr/ (AutoModel, device='cuda')",
+   "added_by": "planner",
+   "note": "plain torch: Paraformer(+VAD/punc/spk), streaming Paraformer, SenseVoice, Fun-ASR-Nano, emotion2vec, Qwen3-ASR, GLM-ASR, ERes2NetV2; CPU-vs-GPU differential"
+  },
+  {
+   "id": "feature:training-amp",
+   "kind": "feature",
+   "where": "funasr/bin/train.py, funasr/train_utils/trainer.py, funasr/utils/amp.py",
+   "added_by": "planner",
+   "note": "funasr-train fp16/bf16 smoke; autocast resolves to cuda on ROCm"
+  },
+  {
+   "id": "feature:training-deepspeed",
+   "kind": "feature",
+   "where": "funasr/bin/train_ds.py, funasr/train_utils/trainer_ds.py",
+   "added_by": "planner",
+   "note": "optional; only if ROCm DeepSpeed installs"
+  },
+  {
+   "id": "feature:vllm-inference",
+   "kind": "feature",
+   "where": "funasr/auto/auto_model_vllm.py, funasr/models/{fun_asr_nano,glm_asr}/inference_vllm*.py, funasr/bin/server.py",
+   "added_by": "planner",
+   "note": "ROCm vLLM, Linux only [Q2]"
+  },
+  {
+   "id": "package:funasr_torch",
+   "kind": "package",
+   "where": "runtime/python/libtorch/funasr_torch",
+   "added_by": "planner",
+   "note": "TorchScript Python runtime, device_id -> cuda:N; validate-only"
+  },
+  {
+   "id": "feature:onnx-gpu-ep",
+   "kind": "feature",
+   "where": "runtime/python/onnxruntime/funasr_onnx/utils/utils.py, runtime/python/utils/runtime_eval.py",
+   "added_by": "planner",
+   "note": "CUDAExecutionProvider -> MIGraphXExecutionProvider [Q1b]"
+  },
+  {
+   "id": "feature:gguf-ggml-gpu-backend",
+   "kind": "feature",
+   "where": "runtime/llama.cpp (sensevoice --backend, funasr-embd -ngl)",
+   "added_by": "planner",
+   "note": "ggml HIP backend registers as ROCm; add --backend rocm [Q1a]"
+  },
+  {
+   "id": "feature:libtorch-cpp-gpu-sdk",
+   "kind": "feature",
+   "where": "runtime/onnxruntime/src/paraformer-torch.cpp, option GPU",
+   "added_by": "planner",
+   "note": "LibTorch + BladeDISC torch_blade, hardcoded py3.8 paths [Q1c]"
+  },
+  {
+   "id": "feature:triton-server-tensorrt",
+   "kind": "feature",
+   "where": "runtime/triton_gpu/",
+   "added_by": "planner",
+   "note": "Triton Inference Server + TensorRT model repos; no ROCm TensorRT [Q1d]"
+  },
+  {
+   "id": "docs:rocm-guide",
+   "kind": "docs",
+   "where": "docs/rocm.md (new), README.md",
+   "added_by": "planner",
+   "note": "ROCm install/validation/NVIDIA-only paths page, modelled on docs/ascend_npu.md"
+  }
+ ],
+ "covered": [],
+ "scoped_out": [
+  {
+   "id": "executable:ff",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-http-server",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-onnx-2pass",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-onnx-2pass-rtf",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-onnx-offline",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-onnx-offline-punc",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-onnx-offline-rtf",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-onnx-offline-vad",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-onnx-online-asr",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-onnx-online-punc",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-onnx-online-rtf",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-onnx-online-vad",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-wss-client",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-wss-client-2pass",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-wss-server",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:funasr-wss-server-2pass",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "executable:paraformer-server",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "library:funasr",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "library:funasr-result-json",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "library:rg_grpc_proto",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "test:funasr-cli-output-format-test",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "test:funasr-result-json-test",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "option:BUILD_SHARED_LIBS",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "option:ENABLE_FFMPEG",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "option:ENABLE_FST",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "option:ENABLE_GLOG",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "option:ENABLE_HTTP",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "option:ENABLE_PORTAUDIO",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "option:ENABLE_WEBSOCKET",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  },
+  {
+   "id": "option:FUNASR_BUILD_TESTS",
+   "reason": "CPU-only C++ ONNX Runtime code with no GPU path (no CUDA EP, no CUDA source); built and tested by upstream's CPU builds, untouched by the port. The GPU variant of this runtime is option:GPU, left to Jeff's ruling Q1c."
+  }
+ ],
+ "owed": [],
+ "removed_from_floor": []
+}

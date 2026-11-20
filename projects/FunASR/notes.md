@@ -27,3 +27,33 @@ Source of lead: third-party "AMD AI Software Gap Matrix" seed (verdict: partial,
 
 ### Recommendation: fork (validate lane)
 Work: install on ROCm PyTorch, run the GPU tests and an AutoModel Paraformer/SenseVoice inference, make the RWKV WKV JIT loader pass hipcc-compatible flags under `torch.version.hip`, validate the vLLM Nano path on ROCm vLLM, and send upstream a docs change (ROCm install line; state the ONNX-GPU and Triton/TensorRT paths are NVIDIA-only). Upstream is very active (pushed 2026-11-05, 21k stars) and responsive to AMD reports.
+
+## Planning (2026-11-20, linux-gfx1100 host, planner; no GPU used, nothing built)
+
+### Decisions needed from Jeff (rule before a porter starts)
+
+The plan (`plan.md`) is written for the recommended answers below; every dependent item there is tagged [Q1]..[Q3]. Nothing has been assumed: until these are ruled, the porter should not start.
+
+**Q1. Which deployment runtimes are in the port?** The Python toolkit (`funasr/`, plain PyTorch plus the WKV JIT kernel and the Triton timestamp kernels) is in scope either way. Upstream also ships four runtimes that have an NVIDIA GPU path:
+
+- **Q1a. llama.cpp/GGUF runtime on ggml's HIP backend.** Upstream ships CUDA and Vulkan builds; AMD is served today by Vulkan. A HIP build needs only a `--backend rocm` value in `funasr-sensevoice.cpp` (ggml's HIP backend registers as `ROCm`, so `--backend cuda` cannot find it), the matching test string, and a README build line. Options: (i) in scope, (ii) out of scope, AMD stays on Vulkan. Recommend (i): small, and it is the HIP equivalent of a shipped CUDA backend.
+- **Q1b. ONNX Runtime GPU in `funasr_onnx`.** Only `CUDAExecutionProvider` is selected; ONNX Runtime's ROCm EP is gone and the AMD EP is MIGraphX (`onnxruntime-migraphx` on PyPI). Intake called this path "CPU-only on AMD"; that conflicts with the ROCm-library-over-CPU-fallback rule. Options: (i) add MIGraphX EP selection (two Python files) and validate it, (ii) document as CPU-only on AMD. Recommend (i), with the caveat that MIGraphX compiles per input shape, so it may lose to CPU on short streaming inputs; the validator measures before the docs claim a speedup.
+- **Q1c. LibTorch C++ GPU SDK** (`runtime/onnxruntime` / `runtime/websocket` with `-DGPU=ON`, `paraformer-torch.cpp`). Links `torch_cuda c10_cuda` plus Alibaba BladeDISC's `torch_blade` and `ral_base_context`, with `/usr/local/lib/python3.8/...` hardcoded, and loads Blade-optimized TorchScript. The torch part maps to ROCm LibTorch (`torch_hip`, `c10_hip`), but BladeDISC has no maintained ROCm build. Options: (i) scope out and document as NVIDIA-only, (ii) port the LibTorch part and make `torch_blade` optional on ROCm (plain TorchScript models), a larger CMake change to a 2024-vintage SDK. Recommend (i).
+- **Q1d. Triton Inference Server + TensorRT** (`runtime/triton_gpu/`). TensorRT has no ROCm counterpart; MIGraphX model repositories would be a rewrite, not a port. Recommend scope out, documented as NVIDIA-only.
+
+**Q2. vLLM validation bar.** The Fun-ASR-Nano / GLM-ASR vLLM paths need no code change but a ROCm vLLM install. ROCm vLLM is Linux-only, so the Windows gate cannot run it. Options: (i) required on both Linux gates (wave64 and wave32), recorded `owed` until run, not applicable on Windows; (ii) required on wave64 only, best-effort on wave32; (iii) best-effort everywhere, not gating. Recommend (i) if the RDNA host can install a ROCm vLLM, else (ii).
+
+**Q3. RWKV WKV loader is dead upstream.** The only CUDA source is the RWKV-BAT WKV kernel, but upstream commented out both calls that build it (`# load_encoder_wkv_kernel(context_size)` at `rwkv_attention.py:561`, decoder at `:488`), so the full-sequence path dereferences `None` on CUDA as well; only a caller that runs the loader itself reaches the kernel. Options: (i) fix only the hipcc flags under `torch.version.hip`, and prove the kernel with a new GPU test that calls the loader explicitly (CUDA behaviour unchanged); (ii) also restore the two loader calls, which fixes a shared-code bug on every platform and belongs in its own commit, or a separate upstream report. Recommend (i), noting the dead loader in the PR body so upstream can choose.
+
+(Delivery vehicle needs no ruling: a normal upstream PR with code, one new GPU test and `docs/rocm.md`. Upstream already merges accelerator docs and device handling for Ascend NPU.)
+
+### What was found (upstream c49474879e7c, funasr 1.4.27)
+
+- Build: pure Python; the WKV kernel is JIT-built by `torch.utils.cpp_extension.load` (`ext_type = torch-extension`, Strategy B). On ROCm torch, `load()` hipifies the sources itself (torch `cpp_extension.py:2484`, local torch 2.16.0a0 / HIP 7.16). The hipified `.hip` may be written next to the sources inside the installed package (plan R4).
+- WKV kernel: one thread per (batch, channel), serial over T, `blockDim = min(C, 32)`, no warp intrinsics, private `q[Tmax], r[Tmax]` arrays in backward. Correct on both wavefront widths; the break is only the nvcc flags. Do not map `--use_fast_math` to `-ffast-math`.
+- Triton: whisper's `dtw_kernel` / `median_kernel` in `funasr/models/sense_voice/whisper_lib/triton_ops.py`; callers silently fall back to CPU on `RuntimeError`, so validation must show the kernel ran.
+- Upstream moved since intake: new `tests_models/` (9 model smoke scripts, 3 on `cuda:0`), a large docs-contract test set in `tests/`, `docs/ascend_npu.md` (accelerator-doc precedent), and the llama.cpp runtime's `tests/test_backend_flags.py` pins the usage string `cpu|cuda|vulkan`.
+- In the GGUF runtime only `funasr-sensevoice` has a GPU backend switch; `funasr-encoder` and `funasr-cli`'s encoder are CPU-only, and `funasr-cli` sets `n_gpu_layers=0`.
+- Not ours, recorded for the reviewer: `funasr/models/conformer_rwkv/decoder.py:95-102` imports `funasr.models.sense_voice.rwkv_v4/v5/v6`, which no longer exist, so `TransformerRWKVDecoder` (example `conformer_rwkv.yaml`) cannot build on any platform.
+- No new AMD effort upstream (`gh search` issues/PRs for rocm/hip/amd, 2026-11-20): only #3479 (Vulkan, open) and #2972 (DCU, closed).
+- surface.json: generated floor (2 CUDA files, 31 CMake components) plus 13 planner entries. The 30 CPU-only ONNX Runtime C++ components (executables, libraries, tests and their non-GPU options) are `scoped_out` as having no GPU path; `option:GPU` and every Q-tagged entry are left unaccounted for the ruling and the porter. `surface.py check FunASR` passes (it does not judge a `planned` project's uncovered items).

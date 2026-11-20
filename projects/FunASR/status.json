@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/FunASR",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "torch-extension",
+  "stage": "planned",
   "adopted_at": "2026-11-06T02:15:09Z",
-  "updated_at": "2026-11-20T21:51:49Z",
+  "updated_at": "2026-11-20T21:58:48Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-20T21:51:49Z",
-    "holder": "4e3c3eacb702"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -48,7 +44,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:51:49Z",
+      "updated_at": "2026-11-20T21:58:48Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,5 +77,10 @@
     "viable": true,
     "summary": "PyTorch speech toolkit; plain-torch main path plus one optional JIT RWKV WKV kernel whose nvcc-only flags break hipcc; validate on ROCm torch, fix loader, docs PR",
     "at": "2026-11-06T02:40:23Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-20T21:51:49Z",
+    "at": "2026-11-20T21:58:48Z"
   }
 }
