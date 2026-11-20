@@ -79,7 +79,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-19T07:42:41Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-20T00:43:04Z",
+        "note": "Ruled in session 2026-11-20: do the matrix-core prefill before the upstream pull request is sent; Quest is held until then."
+      }
     }
   ]
 }
