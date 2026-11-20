@@ -1830,6 +1830,48 @@ GPU: AMD Instinct MI250X / MI250 gfx90a, TheRock ROCm SDK 10.1, `HIP_VISIBLE_DEV
 - Integrity: `git -C projects/TIGRE/src status --porcelain`: untracked build output only.
 - `cuda-not-validated: no CUDA toolkit on this host, and fetching one into the job directory was refused by this session's permission policy.` The nvcc 12.8 compile check is owed at c015150 by the mi355 host.
 
+## Validation 2026-11-20 (linux-gfx1201, validator, moat-fix-747 @ c015150 -> completed)
+
+GPU: AMD Radeon AI PRO R9700 / gfx1201 (wave32), TheRock ROCm SDK 10.1 (`rocm-sdk path --root`), `HIP_VISIBLE_DEVICES=3` (dispatcher pin, idle per `amd-smi metric`), all GPU work under `ulimit -c 0`, one run of each command. jeff asked for this run. Fresh fork clone at `projects/TIGRE/src`, detached at c0151501c2a97922e9afea20007f3d049d0a815a (= `origin/moat-fix-747`), `protect-fork` installed, nothing pushed. Job venv: python 3.11, numpy 1.26.4, scipy 1.10.1, Cython 3.3.1, pytest 7.3.2 (`pip install Cython matplotlib h5py tqdm pytest`). Full real-GPU run (this platform's first record).
+
+### Build
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH TIGRE_BACKEND=hip HIP_ARCH=gfx1201 ROCM_PATH=$(rocm-sdk path --root)
+utils/timeit.sh TIGRE compile -- bash -c "cd projects/TIGRE/src && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 12"
+```
+rc 0, 0 `error:`, 8/8 `.so`, `llvm-objdump --offloading` shows gfx1201 in each. Prints `building the hip backend (set by TIGRE_BACKEND)` and `compiling for the AMD GPU architectures gfx1201`. Self-test: `fp32 hardware linear texture filtering on AMD Radeon AI PRO R9700: supported (hardware trilinear)` (MI250X uses the software fallback).
+
+### Results (the three pytest commands of "Sync round 2026-11-20", Tests, unchanged)
+| set | gfx1201 @ c015150 | gfx90a @ c015150 |
+|---|---|---|
+| core (default markers) | **247 passed, 0 failed**, 22 skipped, 16 deselected (155 s) | 246 passed, 1 failed, 22 skipped, 16 deselected |
+| extended (`-m extended`) | **12 passed**, 13 skipped | 12 passed, 13 skipped |
+| torch files (image's ROCm torch 2.16, read-only) | **79 passed**, 9 skipped (459 s) | 79 passed, 9 skipped |
+
+Skips are the same as on gfx90a: torch absent in the job venv (covered by the third run), 2-GPU tests (one-GPU pin), `test_cuda_errors` / `test_siddon_split` / `test_texture_object_leak` cases that need the CUDA runtime via ctypes, one parallel-beam backprojector skip.
+
+**The one difference:** `test_projectors_gpu.py::test_forward_is_invariant_to_a_full_turn[parallel-interpolated]` passes here. gfx90a fails it (2.404e-4 against 1e-4) at both c015150 and the published f779703.
+
+### `probe/tigre_gates.py all`: RESULT PASS
+`cd projects/TIGRE/src/Python && MPLBACKEND=Agg $FLEET_VENV/bin/python <moat>/projects/TIGRE/probe/tigre_gates.py $PWD all`. Same as the gfx90a table to the printed digit for cone Siddon mean/max 27.46/111.2, cone interp vs Siddon 0.0040, FDK 0.2864, OS-SART-20 0.1929, parallel interp vs Siddon 0.0043/0.0041/0.0056, FBP 0.0833, SIRT-20 0.1952, missed-ray zero fraction 0.862/0.855, every solver (sart 0.0406, ossart 0.2972, sirt 0.4828, cgls 0.1916, fista 0.2855, asd_pocs 0.0468, awasd_pocs 0.0387, os_asd_pocs 0.3090, ossart_tv 0.3184), and repeats 0/20 in all 8 cases. Adjointness residuals differ only at the 1e-7 level: cone 1.835e-05 / 6.601e-05 (gfx90a 1.826e-05 / 6.588e-05), parallel Siddon 1.476e-05 / 7.569e-05 / 5.266e-05 (gfx90a 1.471e-05 / 7.580e-05 / 5.278e-05).
+
+### The full-turn test on this card (probe `agent_space/scripts/turn_probe.py`, host-local; same geometry, angles and phantom as the test)
+| measure | gfx1201 hardware filter (shipped build) | gfx1201 software fallback forced | gfx90a (porter, software fallback) |
+|---|---|---|---|
+| full turn, parallel interpolated, accuracy 0.5 / 0.25 / 0.1 | 2.37e-05 / 1.67e-05 / 1.22e-05 | 1.10e-05 / 1.10e-05 / 1.10e-05 | 2.40e-04 / 8.16e-05 / 2.28e-05 |
+| 1-8 ulp angle steps (same 6 bases, 48 steps), parallel interpolated: max / median / count > 1e-4 | 4.02e-05 / 2.77e-05 / 0 | 2.74e-05 / 1.02e-05 / 0 | 6.58e-04 / 1.25e-05 / 16 |
+| same, parallel Siddon max | 3.08e-05 | 3.08e-05 | < 3.1e-05 |
+| full turn: cone Siddon / cone interp / parallel Siddon | 9.6e-07 / 3.3e-05 / 1.3e-05 | 9.6e-07 / 1.8e-05 / 1.3e-05 | |
+
+The "software fallback forced" column comes from a throwaway build in `agent_space/tigre-sw` (a worktree at c015150 with `bool ok = (tigre_run_hw_linear_test(), false);` in `gpuUtils.cu`). It is removed and was never committed; the validated tree is untouched. **Cause of the difference:** not the texture filter path. With MI250X's software trilinear path, gfx1201 is still 20x below the bound and has no ulp step above 1e-4. The 2026-11-20 sync-round explanation was that the `ceilf(length/accuracy)` sample count makes the projector rounding-sensitive on every card. That does not hold on gfx1201: 0 of 48 ulp steps here against 16 of 48 on gfx90a, and here the result does not scale with `accuracy`. The large steps are specific to the gfx90a build (or wave64), and the cause is not identified. It is not this round's regression, because gfx90a fails identically at the published tip. Per stop discipline, recorded and not chased further. A next step for whoever picks it up: build gfx1201 with `-mwavefrontsize64`, or dump the per-ray sample count and first-sample index on gfx90a against gfx1201 at angle 0.3 / 0.3+2pi.
+
+### Other gates
+- `jargon.py --port TIGRE`: clean (local `master` = upstream master, `moat-fix-747` = origin).
+- Docs: `docs/install/python.md` "### AMD GPUs (ROCm)" with `TIGRE_BACKEND=hip`; matches the build.
+- Integrity: `git -C projects/TIGRE/src status --porcelain`: empty (build output ignored).
+- `cuda-not-validated: no CUDA toolkit on this host (no conda, no nvcc).` The nvcc 12.8 compile check at c015150 is still owed by the mi355 host.
+- Wave32 gate: satisfied by this record at c015150.
+
 ## Fix review PR draft
 
 For `upstream.py --fix-review --apply --name TIGRE --title <t> --body-file <f>` (not opened; jeff opens it). The body is everything from the paragraph below through the `## Upstream reply` section; drafted 2026-11-20 after linux-gfx90a completed at c015150. Update the retest paragraph if more platforms validate at c015150 before it opens.
@@ -1849,17 +1891,19 @@ Commits (on top of the published tip f779703; nothing rebased):
 
 Also checked: master fixed the TV reductions' guard to CUDART_VERSION, which makes the 32-wide shuffle path live on CUDA; CUDART_VERSION is undefined under hipcc, so the HIP build keeps the warpReduce path that is correct on wave64 and wave32.
 
-Retested on an AMD Instinct MI250X (gfx90a), ROCm 10.1, at c015150: all 8 extensions build; master's test suite gives 246 passed and 1 failed in the default set, 12 passed in the extended set, and 79 passed in the files that need PyTorch (GPU tensors, pinned input, low memory, texture leak); cone and parallel projection, FDK, OS-SART, SIRT and adjointness checks and the 20-fold repeat checks give the same numbers as the published tip. The failure is master's new test_forward_is_invariant_to_a_full_turn[parallel-interpolated] (2.4e-4 against 1e-4). It fails the same way at the published tip, and changing the angle by 1 to 8 float32 ulps moves that projector by up to 6.6e-4, because its sample count is a ceil of the ray length, so the result depends on rounding rather than on the port. Multi-GPU tests did not run (one GPU). Not yet run at this head: Windows, gfx1100, and the nvcc compile check.
+Retested on an AMD Instinct MI250X (gfx90a), ROCm 10.1, at c015150: all 8 extensions build; master's test suite gives 246 passed and 1 failed in the default set, 12 passed in the extended set, and 79 passed in the files that need PyTorch (GPU tensors, pinned input, low memory, texture leak); cone and parallel projection, FDK, OS-SART, SIRT and adjointness checks and the 20-fold repeat checks give the same numbers as the published tip. The failure is master's new test_forward_is_invariant_to_a_full_turn[parallel-interpolated] (2.4e-4 against 1e-4). It fails the same way at the published tip, so the merge did not cause it.
+
+Retested on an AMD Radeon AI PRO R9700 (gfx1201, wave32), ROCm 10.1, at c015150: all 8 extensions build; 247 passed with no failure in the default set, 12 passed in the extended set and 79 passed in the PyTorch files. The projection, reconstruction, solver and repeat checks give the same numbers as on the MI250X, and the adjointness residuals agree to within 1e-7. The full-turn test passes there (2.4e-5). On the MI250X, changing the angle by 1 to 8 float32 ulps moves the interpolated parallel projector by up to 6.6e-4. On the R9700 the same steps move it by at most 4.0e-5, with hardware texture filtering and also with the software filtering path the MI250X uses, so the MI250X's sensitivity is not yet explained. Multi-GPU tests did not run (one GPU per run). Not yet run at this head: Windows and the nvcc compile check.
 
 ## Upstream reply
 
-From my side the branch is ready for review and testing. I merged current master into it and switched the HIP build to `TIGRE_BACKEND=hip` in place of `BUILD_WITH_HIP`; `HIP_ARCH` and `ROCM_PATH` work as before, and the AMD instructions are now in `docs/install/python.md` with a changelog entry. On an AMD Instinct MI250X the build and the new test suite pass, except `test_forward_is_invariant_to_a_full_turn[parallel-interpolated]` (2.4e-4 against 1e-4). That one also fails before the merge: changing the angle by a few float32 ulps moves the interpolated parallel projector by up to 6.6e-4, because the number of samples per ray is a ceil of the ray length, so whether it passes depends on rounding. I'll merge master again when 3.3.0 is out.
+From my side the branch is ready for review and testing. I merged current master into it and switched the HIP build to `TIGRE_BACKEND=hip` in place of `BUILD_WITH_HIP`; `HIP_ARCH` and `ROCM_PATH` work as before, and the AMD instructions are now in `docs/install/python.md` with a changelog entry. The build and the whole new test suite pass on an AMD Radeon AI PRO R9700. On an AMD Instinct MI250X everything passes except `test_forward_is_invariant_to_a_full_turn[parallel-interpolated]` (2.4e-4 against 1e-4; 2.4e-5 on the R9700). It also fails on the MI250X before the merge, so this update did not cause it. I haven't found why that card's interpolated parallel projector is more sensitive to tiny angle changes (up to 6.6e-4 for a few float32 ulps, against 4e-5 on the R9700). I'll merge master again when 3.3.0 is out.
 
 ## Notes for jeff on the 2026-11-20 round (not part of the review PR body)
 
 - **Timing.** AnderBiguri wrote on 2026-11-19 "No need to change anything until that PR is in" (the TIGRE_BACKEND PR, already merged as #897) and that he will ping when 3.3.0 is released, "the time to rebase your branch". He is still landing GPU changes, so master will likely move again and a further merge round will follow 3.3.0. Whether to publish this round now or hold it for his ping is your call; the reply's last sentence commits to merging again after 3.3.0. His 2026-11-11 question (is it ready for review?) is still unanswered upstream; the reply's first sentence answers it.
-- **The failing test** is upstream's (test_projectors_gpu.py, 1cca08a). The reply tells him about it. Drop those two sentences if you would rather report it separately, or after an NVIDIA or gfx1100 run shows whether other cards pass it.
-- **Owed before `fix-ready`:** the nvcc compile check at c015150 (mi355 host), the wave32 gate (gfx1100) and the windows gate at c015150. Windows needs `TIGRE_BACKEND=hip` now; `BUILD_WITH_HIP` is gone. Whether an isolated `pip install .` works on Windows is untested (the validated recipe pins `setuptools<72` and runs `setup.py build_ext`).
+- **The failing test** is upstream's (test_projectors_gpu.py, 1cca08a). The reply tells him about it. Drop those sentences if you would rather report it separately. **Updated after linux-gfx1201 (2026-11-20):** the R9700 passes it, and the earlier "rounding on any card" explanation did not hold there, even with the MI250X's software filter path forced (see "Validation 2026-11-20 (linux-gfx1201...)"). The retest paragraph and the reply now say only what was measured and that the MI250X sensitivity is unexplained. Whether it is a gfx90a codegen/wave64 issue worth a deferral or a ROCm bug report is your ruling.
+- **Owed before `fix-ready`:** the nvcc compile check at c015150 (mi355 host) and the windows gate at c015150 (wave32 is now satisfied by linux-gfx1201). Windows needs `TIGRE_BACKEND=hip` now; `BUILD_WITH_HIP` is gone. Whether an isolated `pip install .` works on Windows is untested (the validated recipe pins `setuptools<72` and runs `setup.py build_ext`).
 - **Pre-existing items** from the first review: the upstream multi-GPU `accuracy>1` texture-mode bug in `CreateTextureInterp` (a candidate for a separate upstream issue), the HIP self-test clearing an earlier pending error on its first call, and host pinning being off on HIP. Details under "Review 2026-11-20".
 - The GPU gate scripts now live in `projects/TIGRE/probe/tigre_gates.py`, so the next round does not have to recreate them.
 
