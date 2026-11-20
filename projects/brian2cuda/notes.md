@@ -1229,6 +1229,12 @@ cd /tmp && USE_HIP=1 utils/timeit.sh brian2cuda test -- $FLEET_VENV/py312/bin/py
 
 Pushed: `git push origin moat-fix-327` (new branch, 82a1097). `moat-port` stays 90d6d7c (checked with ls-remote). `advance-head brian2cuda 82a1097`. `jargon.py --port brian2cuda`: clean (local `master` fast-forwarded to upstream/master 1d7c251 first, so the scan covers only our commits plus the merge). `git -C projects/brian2cuda/src status --porcelain`: clean.
 
+## Fix 2026-11-20 (porter) -- review finding: duplicate run()
+
+`1c9536f` [ROCm] Keep one run() so cuda_log.txt is re-emitted again. Upstream's `run()` (try/finally `reemit_cuda_log`) is now the only one. It calls `_run_hip_windows()` (the old override's Windows branch, dedented, fall-through removed) when `is_hip_backend() and os.name == 'nt'`. `git diff -w` is the dispatch plus the rename. AST check: no duplicate methods in `CUDAStandaloneDevice`. `t_reemit.py`: 1 call (was 0). Retest at 1c9536f: test_gfx90a.py 3/3 recorded cases PASS (t1 63 spikes err 2.6e-15; t2 1050 syn, 50/50 active; t3 12016 syn, 3542 spikes); t4 poisson still fails (known, pre-existing); pytest 4 passed. Windows: `_run_hip_windows` is the same code, now called from `run()` and followed by `reemit_cuda_log` (which returns early when there is no cuda_log.txt). Not run on Windows here.
+
+Pushed moat-fix-327 82a1097..1c9536f (moat-port still 90d6d7c); `advance-head brian2cuda 1c9536f`; jargon clean.
+
 ## Fix review PR draft
 
 Title: `Merge upstream master into the HIP backend (fix round for #327)`
@@ -1242,15 +1248,32 @@ Commits:
 1. `739212c` Merge upstream master. 9 files conflicted (device.py, brianlib/cuda_utils.h, brianlib/curand_buffer.h, templates common_group, main, objects, rand, synapses_classes, synapses_create_generator). Every conflict takes upstream's code and puts the HIP lines back: the compat header first in each generated file (in common_group, inside the new `co_std_includes` macro), the HIP makefile branch, and the HIP gpu_heap_size preference. In cuda_utils.h, curand_buffer.h and rand.h, upstream's new forward declarations / `cuda_runtime.h` are swapped for the compat header under HIP only. The CUDA path is upstream's in every hunk.
 2. `7aafb3d` HIP support for upstream's new code: `brianlib/hip_shims/curand.h` and `curand_kernel.h` (HIP include path only) so upstream's direct cuRAND includes resolve to hipRAND; logging.h recognizes hipcc's host/device passes; the HIP makefile gets the new `B2C_LOG_LEVEL` define and the rebuild-on-change stamp.
 3. `82a1097` Fix found while testing: the `-Wl,` to `-Xlinker` rewrite meant for nvcc was also applied to hipcc's link line, so Brian's default `-Wl,-rpath,<prefix>/lib` broke the link with ld.lld (HIP 7.16). This was already broken at the published tip on this toolchain.
+4. `1c9536f` Found in review: the merge kept two `run()` methods (upstream's new one that re-emits cuda_log.txt, and the HIP backend's Windows override), and the later one hid upstream's on every backend, CUDA included. Now one `run()`, upstream's, which calls the Windows HIP helper; it also carries the test plan the merge commit lacks.
 
-Retested at 82a1097 on MI250X (gfx90a), ROCm 10.1: LIF group (matches the closed form to 3e-15), Poisson input through 1 ms synaptic delays (spike-queue lock path, 50/50 targets driven), 200-neuron recurrent network with ~12k synapses and random delays (no deadlock): 3/3 pass, same as the last record. Upstream's new tests test_logging.py (3 tests) and test_cuda_standalone.py::test_codegen_and_compile: 4/4 pass with the HIP backend. The published tip fails to link on this toolchain without commit 3.
+Retested at 1c9536f on MI250X (gfx90a), ROCm 10.1: LIF group (matches the closed form to 3e-15), Poisson input through 1 ms synaptic delays (spike-queue lock path, 50/50 targets driven), 200-neuron recurrent network with ~12k synapses and random delays (no deadlock): 3/3 pass, same as the last record. Upstream's new tests test_logging.py (3 tests) and test_cuda_standalone.py::test_codegen_and_compile: 4/4 pass with the HIP backend. The published tip fails to link on this toolchain without commit 3. With commit 4, `reemit_cuda_log` runs once per run (zero times before).
 
 Not covered: the Windows and wave32 platforms still have to be re-tested at this head; the CUDA compile check runs on a host with nvcc. TimedArray and `poisson()` with a per-neuron lambda do not compile with HIP (already true at the published tip): generated code tests `__CUDA_ARCH__`, which hipcc does not define. This round leaves that alone; it needs a decision.
 
 ## Upstream reply
 
-I merged current master into the branch to resolve the conflicts. All of #333 and #338 is taken as is. The HIP side needed three small follow-ups: hipcc now finds the cuRAND headers that upstream code includes directly, the new logging header recognizes hipcc's device pass, and the nvcc-only `-Xlinker` rewrite no longer applies to hipcc's link line, where it broke linking with newer ROCm. Re-tested on an MI250X: the LIF, delayed-synapse and recurrent-network runs pass, and so do the new test_logging.py tests and the compilation-only smoke test with the HIP backend.
+I merged current master into the branch to resolve the conflicts. All of #333 and #338 is taken as is. The HIP side needed three small follow-ups: hipcc now finds the cuRAND headers that upstream code includes directly, the new logging header recognizes hipcc's device pass, and the nvcc-only `-Xlinker` rewrite no longer applies to hipcc's link line, where it broke linking with newer ROCm. The merge also left the HIP backend's Windows `run()` override shadowing the new `run()` that re-emits cuda_log.txt; there is now a single `run()`, so the re-emit works again on every backend. Re-tested on an MI250X: the LIF, delayed-synapse and recurrent-network runs pass, and so do the new test_logging.py tests and the compilation-only smoke test with the HIP backend.
 
 ## Notes for our eyes (fix round 2026-11-20)
 
 The upstream reply above names only the MI250X. Before the review PR opens, update it to list every platform that has completed validation at the round's final head, and drop anything that has not run.
+
+## Review 2026-11-20 (fix round, delta 90d6d7c..82a1097)
+
+Run by an independent child reviewer with the pr-review checklist; both findings fact-checked by re-reading the code.
+
+### Port Correctness
+
+- **Duplicate `CUDAStandaloneDevice.run` (device.py:1222 and :1828 at 82a1097).** Upstream 7260bbd added `run()` (try/finally `reemit_cuda_log`). The port's Windows-HIP `run()` override, far below it, auto-merged without a conflict, and Python keeps the later definition. So upstream's re-emit never ran on any backend, CUDA included. Confirmed with `agent_space/b2c/t_reemit.py` (wraps `reemit_cuda_log`): 0 calls at 82a1097. Fix: one `run()`.
+
+### Commit Hygiene
+
+- Merge commit 739212c has no Test Plan. It cannot be amended (published to the staging branch, and no history rewrite), so the next commit's body carries the test plan and says it also covers the merge.
+
+Everything else checked clean: port intent preserved line for line in the auto-merged files; every cuda*/curand* name is mapped; the CUDA makefile branch is byte-identical to upstream; hip_shims only on the HIP include path and shipped by setuptools-scm; the rand.h/curand_buffer.h HIP guards are correct; no new warp-width assumption (`props.warpSize` read at runtime). The reviewer agrees with the recorded out-of-scope items. One more observation, not a finding: hipcc may print a -Wswitch warning for curand_utils.h's switch with no `default:`.
+
+Recommendation: Request Changes.
