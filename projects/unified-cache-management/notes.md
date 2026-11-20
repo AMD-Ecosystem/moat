@@ -1448,3 +1448,51 @@ Porter evidence, re-read: the 4 new posix-store failures are host storage (O_DIR
 Fix review PR body (porter draft "true at 5a452433"): claims checked (40 commits f366bfa..7bba620; second merge clean; the 5a45243 description; GPU 340/354 and simu 1147/1151 counts against the porter's logs; upstream-without-PR failing the same four). `jargon.py -` and `prose.py` clean. The `## Upstream reply` placeholder is correct until a platform completes at 5a45243.
 
 Verdict: review-passed at 5a4524333f6c286dbf82f08e796d9946cac1a7e1.
+
+## Validation 2026-11-20 (linux-gfx942, AMD Instinct MI300X, ROCm 7.16 pip SDK, revalidate) -- PASS at 5a45243
+
+Fork clone at `5a4524333f6c286dbf82f08e796d9946cac1a7e1` (`moat-fix-1021`, pushed; `git status --porcelain` empty). One GPU: dispatcher pin `HIP_VISIBLE_DEVICES=3` kept (the host is shared); `ulimit -c 0`; hipconfig 7.16.26385. Fresh build directories, separate from the porter's: `vb_rocm`, `vb_simu`, `vb_sparse`, with the same configure lines as the porter's 5a452433 entry (`-j64`, sparse `-j32 --target hamming`). All three build. `llvm-objdump --offloading`: `cuda_sm_kernel.cu.o` and `hamming.cpython-311-x86_64-linux-gnu.so` both `amdgcn-amd-amdhsa--gfx942`. The sparse configure prints `[INFO] Skipping gsa_prefetch_v2: no ROCm backend`.
+
+- GPU build ctest: 355 discovered, 1 disabled, **340/354 pass** (177 s). Same 14 failures as the porter's run: the 4 expected cache2 `DumpThenLoad*` (`invalid argument` copying a shard, dump_queue.h:215); DataStrategyTest x6 (`invalid device ordinal`, one GPU); and UCPosixStoreTest.DumpThenLoad plus UCPosixTransManagerTest.{TransBlock, TransBlockLayerWise, PsyncLoadSubmitAfterCloseFailsCleanly}, all `pwrite ... errno=22` on an `O_DIRECT` write from a `malloc` buffer. This host's storage rejects that; pristine upstream 7bba620 and cc99d52 fail the same four here (porter entry). Copy-kernel and alias gates pass: UCTransUnitTest x5, UCPosixTransQueueTest x4, UCCache2TransManagerIntegrationTest.Backend{,Submit}NotFoundIsPreserved (11/11).
+- Simu build ctest: 1152 discovered, 1 disabled, **1147/1151 pass** (146 s), all 4 cache2 `DumpThenLoad*` pass; the only failures are the same 4 posix-store `O_DIRECT` cases.
+- Hamming: mla PASS (max_abs_err=42.0, max_rel_err=1.25e-03), gqa PASS (0.0), determinism PASS bit-identical.
+
+Relative to this platform's eda03f1 record (326/337 GPU, 1114/1114 simu): the GPU suite grew 338 -> 355 and the simu suite 1115 -> 1152. The cache2 and DataStrategy failures are the same. The only new failures are the 4 posix-store cases, which are environmental. No new failure is attributable to the port or to upstream's merged commits.
+
+CUDA gate: `cuda-not-validated: no CUDA toolkit on this host` (no `/usr/local/cuda*`, no conda cuda-12.8 env). Owed by a Linux host with nvcc at 5a45243. The delta since the last nvcc pass (eda03f1, compile-only) is upstream's own code plus 5a45243, which adds a branch taken only when `RUNTIME_ENVIRONMENT` is `rocm`. Note for that host: upstream's CUDA sparse build (`-DBUILD_UCM_SPARSE=ON`) stops at the gsa_prefetch_v2 FATAL_ERROR on upstream 7bba620 itself; the default CUDA build with unit tests does not configure the sparse tree.
+
+Pre-completion: `python3 utils/jargon.py --port unified-cache-management` clean (local `develop` at upstream 7bba620). ROCm build docs present: `docs/source/developer-guide/build_from_source.md:56`, both docs-site build guides and all three support matrices; bilingual check passes.
+
+Result: linux-gfx942 COMPLETED at 5a4524333f6c286dbf82f08e796d9946cac1a7e1. MI300X may be named in the reply.
+
+### Fix review PR body (true at 5a452433; supersedes the porter's 5a452433 draft)
+Title: `[ROCm] Merge current upstream develop into the ROCm port`
+Head `moat-fix-1021` -> base `moat-port`. Not opened. Only the reply section changed from the porter's draft. linux-gfx942 is the only platform completed at 5a45243 so far. Add other GPUs to the reply only as they complete at this head: linux-gfx1100, linux-gfx90a and windows-gfx1151 are at eda03f1, and windows-gfx1201 and windows-gfx1101 are at 57b2443.
+
+====
+Upstream PR #1021 was reported as conflicting with `develop`. This round merges `develop` into the branch twice: first the tip f366bfa (190 upstream commits since the PR's base), and then the current tip 7bba620 (40 more commits). Both are merges, not rebases, so the published PR commits stay as they are.
+
+Conflicts in the first merge (5 files, both sides kept): platform lists in `setup.py` and `ucm/store/nfsstore/device/CMakeLists.txt` (upstream added `ascend-a5`, the PR added `rocm`); the WIN32 flag block in `CMakeLists.txt`; the test glob in `ucm/shared/test/CMakeLists.txt` (upstream's `CONFIGURE_DEPENDS` and `router_perf` exclude plus the PR's WIN32 exclude); and `quickstart_vllm.md`, where upstream moved the build-from-source section into the developer guide. The second merge had no conflicts.
+
+Follow-up commits:
+- 26b0b3e: upstream's CUDA transfer backend gained `cuda_event.cc` and a few more runtime calls; the ROCm target now builds `cuda_event.cc` and the compat header aliases the new names.
+- 91185a3, e3adb40, 98ba91b and eda03f1: a change that mapped the compat header's copy kinds to `hipMemcpyDefault` was added, reworded, and then reverted. The net effect on the compat header is only the aliases from 26b0b3e; the header still passes the caller's copy kind through, as at the published PR head.
+- af3eb74: the `PLATFORM=rocm` note moves to `build_from_source.md` (`docs/source` and the English docs site), plus the ROCm row in the English docs-site support matrix.
+- c767753: the same row and a Chinese version of the note on the Chinese docs site.
+- dff17ae: the note no longer suggests passing `-DCMAKE_HIP_ARCHITECTURES` to the setup.py build (it does not forward CMake arguments); it says the architecture is detected from the build host and points to the support matrix for the tested GPUs.
+- 5a45243: the sparse build now also configures `ucm/sandbox`, whose GSA v2 prefetch module has only an Ascend backend and stops with `FATAL_ERROR` on other runtimes. A `rocm` arm skips it, so `PLATFORM=rocm ENABLE_SPARSE=true` configures and builds the Hamming extension again. The Ascend path and the error for other runtimes are unchanged.
+
+Upstream's new cache2 `DumpThenLoad*` integration tests pass `malloc` buffers as device addresses (`ucm/store/test/case/detail/data_generator.h:49`). That matches the simulated backend, where device memory is host memory, and upstream CI builds the unit tests only that way (`.github/workflows/lint-and-test.yml:106` passes `-DRUNTIME_ENVIRONMENT=simu`; line 124 relies on the CMake default, `simu`). In the ROCm GPU build these four tests fail with "invalid argument" while copying a shard, so they are run in a simu build, where they pass. The tests are unchanged.
+
+Upstream #1566 stopped compiling nfsstore, so the nfsstore ROCm device arm is now dormant, the same as its CUDA counterpart.
+
+Tested on AMD Instinct MI300X (gfx942), ROCm 7.16, at 5a45243, one visible GPU: GPU build ctest 340/354. The copy-kernel, event and memset/D2D tests pass. The failures are the four cache2 `DumpThenLoad*` tests above; six DataStrategyTest cases that need two visible GPUs; and four posix store tests (UCPosixStoreTest.DumpThenLoad and three UCPosixTransManagerTest cases) that write a `malloc` buffer with `O_DIRECT`, which this host's filesystem rejects with EINVAL because the buffer is not page aligned. Upstream `develop` without this PR fails those four the same way here. Simu build (upstream CI's configuration): ctest 1147/1151, including all four `DumpThenLoad*` tests; the only failures are the same four posix store tests. The Hamming kernel reference test passes (mla, gqa, determinism).
+
+## Upstream reply
+
+The branch is merged with current `develop` (7bba620), and the ROCm build works again with the sparse module enabled. The C++ unit tests and the Hamming kernel test were rerun on an AMD Instinct MI300X (gfx942).
+
+## Before approving
+
+Name only GPUs whose platform record shows a completed validation at this exact head. If upstream `develop` has moved past 7bba620, check `git merge-tree --write-tree 5a45243 <develop>` before approving.
+====
