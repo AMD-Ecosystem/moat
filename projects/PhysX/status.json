@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/PhysX",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "cmake",
+  "stage": "planned",
   "adopted_at": "2026-11-06T11:13:50Z",
-  "updated_at": "2026-11-20T21:32:55Z",
+  "updated_at": "2026-11-20T21:44:19Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-20T21:32:55Z",
-    "holder": "23b933aa55ad"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -47,7 +43,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:32:55Z",
+      "updated_at": "2026-11-20T21:44:19Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -80,5 +76,10 @@
     "viable": null,
     "summary": "take-up of AMD-Ecosystem/PhysX building on the AMD team's rocm-enablement branch (d09e2532), ruled by Jeff Daily",
     "at": "2026-11-10T19:58:41Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-20T21:32:55Z",
+    "at": "2026-11-20T21:44:19Z"
   }
 }

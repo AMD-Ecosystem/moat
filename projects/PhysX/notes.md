@@ -34,3 +34,33 @@ Jeff Daily ruled on 2026-11-10 that MOAT takes PhysX up, building on the AMD tea
 - Delivery vehicle (PR into the AMD fork's rocm-enablement, a handoff to the AMD team, or an upstream PR) is Jeff's call later.
 
 Recorded: `set-intake PhysX fork`, `set-state PhysX linux-gfx942 awaiting-fork`, `release-forks` (fork exists, stage `screened`, `fork_url` set). No `fork_url_ruling` block yet: `set-fork-url` needs `moat-port` to exist on the fork; re-run `set-fork-url PhysX https://github.com/AMD-Ecosystem/PhysX --by "Jeff Daily"` once the porter has pushed it.
+
+## Planning (2026-11-20, linux-gfx1100, planner)
+
+### Questions for Jeff (Question 1 must be answered before a porter starts)
+
+**Question 1 (blocking): is ovphysx part of this port?** The repository is no longer just the SDK. At upstream 5.13 it holds `physx/` (the SDK; all GPU simulation code), `ovphysx/` (NVIDIA's USD-native Python/C product built on the SDK), `blast/` and `flow/`. blast and flow have no CUDA (flow is D3D12/Vulkan shaders), so they need nothing. ovphysx does have CUDA of its own: 4 `.cu` files (`ovruntime/.../particles/TypeConversionUtility.cu`, `ovruntime/.../tensors/gpu/CudaKernels.cu`, `src/ovphysx/OvStageOutputCuda.cu`), about 30 host files calling the CUDA runtime, and Python output as Warp arrays. It builds against NVIDIA Carbonite and ovstage binaries that packman fetches, and `licenses.py scan-nvidia` finds two NVIDIA-proprietary licence texts in it (`ovphysx/licenses/LICENSE-binary.txt`, `ovphysx/tools/internal-licenses/Omniverse-Extensions-LICENSE.txt`). The AMD rocm-enablement branch does not touch it.
+- Option A (planner's recommendation): port the `physx/` SDK only (CPU SDK, the GPU library, snippets, pvddom), and record ovphysx as deferred (`deferred.py add` against PhysX) for a later round once the SDK port is validated. Reason: ovphysx is a separate product with closed binary dependencies and a Warp dependency; the SDK port is the prerequisite for it either way.
+- Option B: include ovphysx now. That adds `depends_on: [warp]` (MOAT's `warp` project), a check that the Carbonite/ovstage packman binaries can be used in a ROCm build at all, a ROCm path for its 4 `.cu` files and CUDA-runtime host code, and its C/Python test suites (c_unittests, c_samples, python tests, benchmarks) to the validation bar.
+- Option C: some other cut (for example ovphysx's GPU tensor path only).
+Until ruled, the 70 ovphysx components are `owed` in surface.json (in scope, not done), so nothing is cut silently and `pr_ready` refuses. The SDK work in plan.md is needed under every option, so a porter dispatched before the ruling would not waste work, but the plan does not assume the cut. A hold (`set-hold PhysX on`) is a person's action, so this run did not set one.
+
+**Question 2 (does not block): licence record.** Upstream relicensed between the AMD base and today: every `physx/` source file now says `SPDX-License-Identifier: Apache-2.0` and `physx/LICENSE.md` is Apache 2.0; the root `LICENSE.md` is still BSD-3-Clause, which is what `licenses.py check` (tier 1, cleared) and `license_spdx` say. Should the record move to Apache-2.0 (`set-license-spdx`)? Separately, the AMD-added files (`cuda_to_hip.h`, `hip_compat/*`, `cutil_math.h`) carry BSD-3 headers with an AMD "Modifications Copyright" line; whether they switch to Apache-2.0 SPDX headers before any delivery is a call for you and the AMD authors.
+
+**Question 3 (does not block): parity harness.** PhysX's unit tests are not in the open-source tree and the snippets assert nothing, so plan.md has the porter author a GPU-vs-CPU parity harness under `physx/snippets/`, as its own commit on `moat-port`. It ships with the port; whether it goes into an upstream PR or a handoff is your call at delivery.
+
+### What this run did
+- `orient.sh` on `port/PhysX`: next = PhysX, state screened, planner. Took the lock: `set-state PhysX linux-gfx1100 planning --agent planner`. `set-ext-type PhysX cmake`.
+- Clones: `projects/PhysX/src` = fork with `upstream` remote, detached at upstream `main` `7d6f6ac8` (PhysX 5.13.0), `GIT_LFS_SKIP_SMUDGE=1` (the repository uses LFS for ovphysx media; a merge without it fails in the smudge filter).
+- Trial merge, read only: `git merge-tree --write-tree --name-only d09e2532 7d6f6ac8` -> 24 conflicts; 21 are the licence header block only, 3 carry content (`physx/CMakeLists.txt`, `cmakegpu/linux/CMakeLists.txt`, `PxgGeometryManager.cpp`). With `-X ignore-all-space`: 23.
+- `python3 utils/surface.py generate PhysX` against `7d6f6ac8`: 162 CUDA files, 131 components; planner added 21 (driver-API seam, registration seam, SDK GPU loader, SDF sampler, Windows GPU CMake, top-level `PX_USE_HIP` build, parity harness, 14 GPU snippets), 70 ovphysx components owed, `cuda-library:thrust` removed from the floor (vehicle "thrust" variables). `surface.py check PhysX`: fully accounted for.
+- `licenses.py scan-nvidia projects/PhysX/src` (owed since intake): 2 hits, both licence texts inside `ovphysx/` (Question 1). Nothing under `physx/`.
+
+### Findings that change the port (details in plan.md)
+- Upstream moved from 5.10.0 to 5.13.0 since the AMD base (4 commits, 5240 files), not the 3 small ovphysx commits the ruling saw. No new kernel TUs (61 `.cu`, 495 kernels); one new driver call (`cuOccupancyMaxActiveBlocksPerMultiprocessor`) the shim lacks.
+- Two silent no-ops in the AMD branch: `atomicAddSpatialVector` (`PxgArticulationBlockData.h:188`, used by `rigidDeltaAccum.cu`) and the narrowphase overflow `atomicOr` (`cudaNpCommon.h:107`) sit under `__CUDA_ARCH__` gates that HIP leaves undefined.
+- The SDK's GPU module loader (`PxPhysXGpuModuleLoader.cpp`) requires `libcuda.so.1` before it opens `libPhysXGpu_64.so`, and the AMD branch did not change it, so no SDK-level GPU simulation can have run on that branch; snippets fall back to the CPU silently. Its evidence (fatbin/ldd/objdump checks plus a load-and-dispatch ladder) is consistent with that.
+- The AMD SDF change compiles the texture path out on every HIP target, RDNA included, not only CDNA. The ruled software sampler will be the single HIP path.
+- `__hipRegisterFatBinary` interposition can lose to the runtime's own symbol when the HIP runtime is already loaded globally; Windows needs its own forwarding.
+- `__syncwarp` maps to a bare `wave_barrier` with no memory fence.
+- The `bar.sync N` -> `__syncthreads()` mapping is exact (upstream's comments say each is a whole-block barrier).

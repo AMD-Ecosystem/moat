@@ -1,0 +1,1318 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "7d6f6ac8b83e",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "blast/include/shared/NvFoundation/NvPreprocessor.h",
+      "flow/include/nvflow/nanovdb/PNanoVDB.h",
+      "ovphysx/ovruntime/source/common/include/common/utilities/CudaHelpers.h",
+      "ovphysx/ovruntime/source/omni.physx.foundation/plugins/PhysXFoundation.cpp",
+      "ovphysx/ovruntime/source/omni.physx.foundation/plugins/cuda_shim/CudaShim.cpp",
+      "ovphysx/ovruntime/source/omni.physx.foundation/plugins/cuda_shim/CudaShim.h",
+      "ovphysx/ovruntime/source/omni.physx/plugins/particles/TypeConversionUtility.cu",
+      "ovphysx/ovruntime/source/omni.physx/plugins/particles/TypeConversionUtility.cuh",
+      "ovphysx/ovruntime/source/omni.physx/plugins/tensors/ArticulationDofOvStageRecord.h",
+      "ovphysx/ovruntime/source/omni.physx/plugins/tensors/ContactLayoutClamp.h",
+      "ovphysx/ovruntime/source/omni.physx/plugins/tensors/InstancerReframe.h",
+      "ovphysx/ovruntime/source/omni.physx/plugins/tensors/PointSetReframe.h",
+      "ovphysx/ovruntime/source/omni.physx/plugins/tensors/gpu/CudaKernels.cu",
+      "ovphysx/ovruntime/source/omni.physx/plugins/tensors/gpu/CudaKernels.h",
+      "ovphysx/ovruntime/source/omni.physx/plugins/tensors/gpu/GpuRigidBodyView.cpp",
+      "ovphysx/ovruntime/source/omni.physx/plugins/tensors/gpu/GpuSimulationData.h",
+      "ovphysx/ovruntime/source/omni.physx/plugins/tensors/gpu/ThrustUtils.h",
+      "ovphysx/src/ovphysx/OvStageOutputCuda.cu",
+      "ovphysx/src/ovphysx/OvStageOutputMath.h",
+      "ovphysx/src/ovphysx/ovphysx.cpp",
+      "ovphysx/tests/benchmarks/benchmarks/OutputWrite.cpp",
+      "ovphysx/tests/c_unittests/test_cpu_no_cuda_context.cpp",
+      "ovphysx/tests/c_unittests/test_worker_lifecycle.cpp",
+      "physx/include/foundation/PxPreprocessor.h",
+      "physx/source/cudamanager/src/CudaContextManager.cpp",
+      "physx/source/gpuarticulation/src/CUDA/articulationDirectGpuApi.cu",
+      "physx/source/gpuarticulation/src/CUDA/articulationDynamic.cuh",
+      "physx/source/gpuarticulation/src/CUDA/articulationImpulseResponse.cuh",
+      "physx/source/gpuarticulation/src/CUDA/forwardDynamic2.cu",
+      "physx/source/gpuarticulation/src/CUDA/internalConstraints2.cu",
+      "physx/source/gpuarticulation/src/CUDA/inverseDynamic.cu",
+      "physx/source/gpuarticulation/src/PxgArticulationCore.cpp",
+      "physx/source/gpubroadphase/src/CUDA/aggregate.cu",
+      "physx/source/gpubroadphase/src/CUDA/broadphase.cu",
+      "physx/source/gpubroadphase/src/PxgAABBManager.cpp",
+      "physx/source/gpubroadphase/src/PxgCudaBroadPhaseSap.cpp",
+      "physx/source/gpucommon/include/cutil_math.h",
+      "physx/source/gpucommon/src/CUDA/MemCopyBalanced.cu",
+      "physx/source/gpucommon/src/CUDA/MemoryAllocator.cuh",
+      "physx/source/gpucommon/src/CUDA/RadixSort.cuh",
+      "physx/source/gpucommon/src/CUDA/SparseRemove.cuh",
+      "physx/source/gpucommon/src/CUDA/atomic.cuh",
+      "physx/source/gpucommon/src/CUDA/contactReduction.cuh",
+      "physx/source/gpucommon/src/CUDA/copy.cuh",
+      "physx/source/gpucommon/src/CUDA/femMidphaseScratch.cuh",
+      "physx/source/gpucommon/src/CUDA/gridCal.cuh",
+      "physx/source/gpucommon/src/CUDA/radixSortImpl.cu",
+      "physx/source/gpucommon/src/CUDA/reduction.cuh",
+      "physx/source/gpucommon/src/CUDA/sbMidphaseScratch.cuh",
+      "physx/source/gpucommon/src/CUDA/shuffle.cuh",
+      "physx/source/gpucommon/src/CUDA/updateCacheAndBound.cuh",
+      "physx/source/gpucommon/src/CUDA/utility.cu",
+      "physx/source/gpucommon/src/CUDA/utils.cuh",
+      "physx/source/gpucommon/src/CUDA/vector.cuh",
+      "physx/source/gpunarrowphase/include/convexNpCommon.h",
+      "physx/source/gpunarrowphase/include/cudaNpCommon.h",
+      "physx/source/gpunarrowphase/include/schlockShared.h",
+      "physx/source/gpunarrowphase/src/CUDA/bv32Traversal.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/capsuleTriangle.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/compressOutputContacts.cu",
+      "physx/source/gpunarrowphase/src/CUDA/contactPatchUtils.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/convexCoreCollision.cu",
+      "physx/source/gpunarrowphase/src/CUDA/convexHFMidphase.cu",
+      "physx/source/gpunarrowphase/src/CUDA/convexHeightfield.cu",
+      "physx/source/gpunarrowphase/src/CUDA/convexMesh.cu",
+      "physx/source/gpunarrowphase/src/CUDA/convexMeshCorrelate.cu",
+      "physx/source/gpunarrowphase/src/CUDA/convexMeshMidphase.cu",
+      "physx/source/gpunarrowphase/src/CUDA/convexMeshOutput.cu",
+      "physx/source/gpunarrowphase/src/CUDA/convexMeshPostProcess.cu",
+      "physx/source/gpunarrowphase/src/CUDA/convexTriangle.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/cudaBox.cu",
+      "physx/source/gpunarrowphase/src/CUDA/cudaGJKEPA.cu",
+      "physx/source/gpunarrowphase/src/CUDA/cudaParticleSystem.cu",
+      "physx/source/gpunarrowphase/src/CUDA/cudaSphere.cu",
+      "physx/source/gpunarrowphase/src/CUDA/dataReadWriteHelper.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/deformableCollision.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/deformableElementFilter.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/distanceSegmentSegment.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/epa.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/femClothClothMidPhase.cu",
+      "physx/source/gpunarrowphase/src/CUDA/femClothHFMidPhase.cu",
+      "physx/source/gpunarrowphase/src/CUDA/femClothMidPhase.cu",
+      "physx/source/gpunarrowphase/src/CUDA/femClothPrimitives.cu",
+      "physx/source/gpunarrowphase/src/CUDA/gjk.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/heightfieldUtil.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/manifold.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/materialCombiner.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/midphaseAllocate.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/nputils.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/pairManagement.cu",
+      "physx/source/gpunarrowphase/src/CUDA/particleCollision.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/particleSystemHFMidPhaseCG.cu",
+      "physx/source/gpunarrowphase/src/CUDA/particleSystemMeshMidphase.cu",
+      "physx/source/gpunarrowphase/src/CUDA/sdfCollision.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/softbodyHFMidPhase.cu",
+      "physx/source/gpunarrowphase/src/CUDA/softbodyMidPhase.cu",
+      "physx/source/gpunarrowphase/src/CUDA/softbodyPrimitives.cu",
+      "physx/source/gpunarrowphase/src/CUDA/softbodySoftbodyMidPhase.cu",
+      "physx/source/gpunarrowphase/src/CUDA/sphereCollision.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/sphereTriangle.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/triangle.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/triangleMesh.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/triangletriangle.cuh",
+      "physx/source/gpunarrowphase/src/CUDA/trimeshCollision.cu",
+      "physx/source/gpunarrowphase/src/CUDA/warpHelpers.cuh",
+      "physx/source/gpunarrowphase/src/PxgNarrowphaseCore.cpp",
+      "physx/source/gpusimulationcontroller/include/PxgArticulation.h",
+      "physx/source/gpusimulationcontroller/include/PxgArticulationBlockData.h",
+      "physx/source/gpusimulationcontroller/include/PxgParticleSystem.h",
+      "physx/source/gpusimulationcontroller/src/CUDA/FEMCloth.cu",
+      "physx/source/gpusimulationcontroller/src/CUDA/FEMClothConstraintPrep.cu",
+      "physx/source/gpusimulationcontroller/src/CUDA/FEMClothExternalSolve.cu",
+      "physx/source/gpusimulationcontroller/src/CUDA/FEMClothUtil.cuh",
+      "physx/source/gpusimulationcontroller/src/CUDA/SDFConstruction.cu",
+      "physx/source/gpusimulationcontroller/src/CUDA/algorithms.cu",
+      "physx/source/gpusimulationcontroller/src/CUDA/anisotropy.cu",
+      "physx/source/gpusimulationcontroller/src/CUDA/bvh.cuh",
+      "physx/source/gpusimulationcontroller/src/CUDA/deformableAndParticleUtils.cuh",
+      "physx/source/gpusimulationcontroller/src/CUDA/deformableUtils.cuh",
+      "physx/source/gpusimulationcontroller/src/CUDA/denseGridStandalone.cuh",
+      "physx/source/gpusimulationcontroller/src/CUDA/diffuseParticles.cu",
+      "physx/source/gpusimulationcontroller/src/CUDA/isosurfaceExtraction.cu",
+      "physx/source/gpusimulationcontroller/src/CUDA/marchingCubesTables.cuh",
+      "physx/source/gpusimulationcontroller/src/CUDA/matrixDecomposition.cuh",
+      "physx/source/gpusimulationcontroller/src/CUDA/particleSystem.cuh",
+      "physx/source/gpusimulationcontroller/src/CUDA/particlesystem.cu",
+      "physx/source/gpusimulationcontroller/src/CUDA/rigidDeltaAccum.cu",
+      "physx/source/gpusimulationcontroller/src/CUDA/softBody.cu",
+      "physx/source/gpusimulationcontroller/src/CUDA/softBodyGM.cu",
+      "physx/source/gpusimulationcontroller/src/CUDA/sparseGridStandalone.cu",
+      "physx/source/gpusimulationcontroller/src/CUDA/sparseGridStandalone.cuh",
+      "physx/source/gpusimulationcontroller/src/CUDA/updateBodiesAndShapes.cu",
+      "physx/source/gpusimulationcontroller/src/CUDA/updateTransformAndBoundArray.cu",
+      "physx/source/gpusimulationcontroller/src/PxgFEMClothCore.cpp",
+      "physx/source/gpusimulationcontroller/src/PxgParticleSystemCore.cpp",
+      "physx/source/gpusimulationcontroller/src/PxgSimulationCore.cpp",
+      "physx/source/gpusimulationcontroller/src/PxgSoftBodyCore.cpp",
+      "physx/source/gpusolver/src/CUDA/accumulateThresholdStream.cu",
+      "physx/source/gpusolver/src/CUDA/artiConstraintPrep2.cu",
+      "physx/source/gpusolver/src/CUDA/constant.cuh",
+      "physx/source/gpusolver/src/CUDA/constraintBlockPrePrep.cu",
+      "physx/source/gpusolver/src/CUDA/constraintBlockPrep.cu",
+      "physx/source/gpusolver/src/CUDA/constraintBlockPrepTGS.cu",
+      "physx/source/gpusolver/src/CUDA/constraintPrepShared.cuh",
+      "physx/source/gpusolver/src/CUDA/contactConstraintBlockPrep.cuh",
+      "physx/source/gpusolver/src/CUDA/integration.cu",
+      "physx/source/gpusolver/src/CUDA/integration.cuh",
+      "physx/source/gpusolver/src/CUDA/integrationTGS.cu",
+      "physx/source/gpusolver/src/CUDA/jointConstraintBlockPrep.cuh",
+      "physx/source/gpusolver/src/CUDA/jointConstraintBlockPrepTGS.cuh",
+      "physx/source/gpusolver/src/CUDA/preIntegration.cu",
+      "physx/source/gpusolver/src/CUDA/preIntegration.cuh",
+      "physx/source/gpusolver/src/CUDA/preIntegrationTGS.cu",
+      "physx/source/gpusolver/src/CUDA/solver.cu",
+      "physx/source/gpusolver/src/CUDA/solver.cuh",
+      "physx/source/gpusolver/src/CUDA/solverBlock.cuh",
+      "physx/source/gpusolver/src/CUDA/solverBlockCommon.cuh",
+      "physx/source/gpusolver/src/CUDA/solverBlockTGS.cuh",
+      "physx/source/gpusolver/src/CUDA/solverMultiBlock.cu",
+      "physx/source/gpusolver/src/CUDA/solverMultiBlockTGS.cu",
+      "physx/source/lowlevel/software/src/PxsCCD.cpp",
+      "physx/source/lowleveldynamics/shared/DyCpuGpu1dConstraint.h"
+    ],
+    "markers": {
+      "device_code": 1879,
+      "kernel": 583,
+      "launch": 103,
+      "driver_api": 89,
+      "warp_intrinsic": 966
+    },
+    "libraries": {
+      "thrust": 76
+    }
+  },
+  "components": [
+    {
+      "id": "benchmark:benchmark_contact_affinity_tests",
+      "kind": "benchmark",
+      "where": "ovphysx/tests/benchmarks/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:benchmark_failure_tests",
+      "kind": "benchmark",
+      "where": "ovphysx/tests/benchmarks/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:benchmark_filter_tests",
+      "kind": "benchmark",
+      "where": "ovphysx/tests/benchmarks/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:benchmark_timing_diagnostics_tests",
+      "kind": "benchmark",
+      "where": "ovphysx/tests/benchmarks/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:ovphysx_benchmarks",
+      "kind": "benchmark",
+      "where": "ovphysx/tests/benchmarks/CMakeLists.txt"
+    },
+    {
+      "id": "example:companion_direct_contract",
+      "kind": "example",
+      "where": "ovphysx/companion/samples/native/CMakeLists.txt"
+    },
+    {
+      "id": "example:hello-physx-cmake",
+      "kind": "example",
+      "where": "physx/documentation/fetchcontent/examples/fetchcontent/CMakeLists.txt"
+    },
+    {
+      "id": "executable:Snippet${SNIPPET_NAME}",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/SnippetTemplate.cmake"
+    },
+    {
+      "id": "executable:ovd_inspect",
+      "kind": "executable",
+      "where": "physx/pvddom/CMakeLists.txt"
+    },
+    {
+      "id": "executable:ovd_record",
+      "kind": "executable",
+      "where": "physx/pvddom/workflow/CMakeLists.txt"
+    },
+    {
+      "id": "executable:ovd_record_errors",
+      "kind": "executable",
+      "where": "physx/pvddom/workflow/CMakeLists.txt"
+    },
+    {
+      "id": "library:LowLevel",
+      "kind": "library",
+      "where": "physx/source/compiler/cmake/LowLevel.cmake"
+    },
+    {
+      "id": "library:LowLevelAABB",
+      "kind": "library",
+      "where": "physx/source/compiler/cmake/LowLevelAABB.cmake"
+    },
+    {
+      "id": "library:LowLevelDynamics",
+      "kind": "library",
+      "where": "physx/source/compiler/cmake/LowLevelDynamics.cmake"
+    },
+    {
+      "id": "library:OvruntimeCommon",
+      "kind": "library",
+      "where": "ovphysx/ovruntime/source/common/CMakeLists.txt"
+    },
+    {
+      "id": "library:OvruntimeCompiledCache",
+      "kind": "library",
+      "where": "ovphysx/ovruntime/source/omni.physx/CMakeLists.txt"
+    },
+    {
+      "id": "library:OvruntimeConvexDecomposition",
+      "kind": "library",
+      "where": "ovphysx/ovruntime/source/omni.convexdecomposition/CMakeLists.txt"
+    },
+    {
+      "id": "library:OvruntimePhysX",
+      "kind": "library",
+      "where": "ovphysx/ovruntime/source/omni.physx/CMakeLists.txt"
+    },
+    {
+      "id": "library:OvruntimePhysXCooking",
+      "kind": "library",
+      "where": "ovphysx/ovruntime/source/omni.physx.cooking/CMakeLists.txt"
+    },
+    {
+      "id": "library:OvruntimePhysXCudaShim",
+      "kind": "library",
+      "where": "ovphysx/ovruntime/source/omni.physx.foundation/CMakeLists.txt"
+    },
+    {
+      "id": "library:OvruntimePhysXFoundation",
+      "kind": "library",
+      "where": "ovphysx/ovruntime/source/omni.physx.foundation/CMakeLists.txt"
+    },
+    {
+      "id": "library:OvruntimePhysXGpu",
+      "kind": "library",
+      "where": "ovphysx/ovruntime/source/omni.physx.gpu/CMakeLists.txt"
+    },
+    {
+      "id": "library:OvruntimePhysicsOvstage",
+      "kind": "library",
+      "where": "ovphysx/ovruntime/source/omni.physics.ovstage/CMakeLists.txt"
+    },
+    {
+      "id": "library:OvruntimePhysicsParse",
+      "kind": "library",
+      "where": "ovphysx/ovruntime/source/omni.physics.parse/CMakeLists.txt"
+    },
+    {
+      "id": "library:OvruntimePhysicsUsd",
+      "kind": "library",
+      "where": "ovphysx/ovruntime/source/omni.physics.usd/CMakeLists.txt"
+    },
+    {
+      "id": "library:PVDRuntime",
+      "kind": "library",
+      "where": "physx/pvdruntime/compiler/cmake/PVDRuntime.cmake"
+    },
+    {
+      "id": "library:PhysX",
+      "kind": "library",
+      "where": "physx/source/compiler/cmake/PhysX.cmake"
+    },
+    {
+      "id": "library:PhysXArticulationGpu",
+      "kind": "library",
+      "where": "physx/source/compiler/cmakegpu/PhysXArticulationGpu.cmake"
+    },
+    {
+      "id": "library:PhysXBroadphaseGpu",
+      "kind": "library",
+      "where": "physx/source/compiler/cmakegpu/PhysXBroadphaseGpu.cmake"
+    },
+    {
+      "id": "library:PhysXCharacterKinematic",
+      "kind": "library",
+      "where": "physx/source/compiler/cmake/PhysXCharacterKinematic.cmake"
+    },
+    {
+      "id": "library:PhysXCommon",
+      "kind": "library",
+      "where": "physx/source/compiler/cmake/PhysXCommon.cmake"
+    },
+    {
+      "id": "library:PhysXCommonGpu",
+      "kind": "library",
+      "where": "physx/source/compiler/cmakegpu/PhysXCommonGpu.cmake"
+    },
+    {
+      "id": "library:PhysXCudaContextManager",
+      "kind": "library",
+      "where": "physx/source/compiler/cmakegpu/PhysXCudaContextManager.cmake"
+    },
+    {
+      "id": "library:PhysXExtensions",
+      "kind": "library",
+      "where": "physx/source/compiler/cmake/PhysXExtensions.cmake"
+    },
+    {
+      "id": "library:PhysXFoundation",
+      "kind": "library",
+      "where": "physx/source/compiler/cmake/PhysXFoundation.cmake"
+    },
+    {
+      "id": "library:PhysXGpu",
+      "kind": "library",
+      "where": "physx/source/compiler/cmakegpu/PhysXGpu.cmake"
+    },
+    {
+      "id": "library:PhysXGpuDependencies",
+      "kind": "library",
+      "where": "physx/source/compiler/cmakegpu/PhysXGpuDependencies.cmake"
+    },
+    {
+      "id": "library:PhysXNarrowphaseGpu",
+      "kind": "library",
+      "where": "physx/source/compiler/cmakegpu/PhysXNarrowphaseGpu.cmake"
+    },
+    {
+      "id": "library:PhysXPvdSDK",
+      "kind": "library",
+      "where": "physx/source/compiler/cmake/PhysXPvdSDK.cmake"
+    },
+    {
+      "id": "library:PhysXSimulationControllerGpu",
+      "kind": "library",
+      "where": "physx/source/compiler/cmakegpu/PhysXSimulationControllerGpu.cmake"
+    },
+    {
+      "id": "library:PhysXSolverGpu",
+      "kind": "library",
+      "where": "physx/source/compiler/cmakegpu/PhysXSolverGpu.cmake"
+    },
+    {
+      "id": "library:PhysXTask",
+      "kind": "library",
+      "where": "physx/source/compiler/cmake/PhysXTask.cmake"
+    },
+    {
+      "id": "library:PhysXVehicle",
+      "kind": "library",
+      "where": "physx/source/compiler/cmake/PhysXVehicle.cmake"
+    },
+    {
+      "id": "library:PvdDom",
+      "kind": "library",
+      "where": "physx/pvddom/CMakeLists.txt"
+    },
+    {
+      "id": "library:SceneQuery",
+      "kind": "library",
+      "where": "physx/source/compiler/cmake/SceneQuery.cmake"
+    },
+    {
+      "id": "library:SimulationController",
+      "kind": "library",
+      "where": "physx/source/compiler/cmake/SimulationController.cmake"
+    },
+    {
+      "id": "library:SnippetRender",
+      "kind": "library",
+      "where": "physx/snippets/compiler/cmake/SnippetRender.cmake"
+    },
+    {
+      "id": "library:SnippetUtils",
+      "kind": "library",
+      "where": "physx/snippets/compiler/cmake/SnippetUtils.cmake"
+    },
+    {
+      "id": "library:installed_public_headers",
+      "kind": "library",
+      "where": "ovphysx/tests/installed_headers/CMakeLists.txt"
+    },
+    {
+      "id": "library:ovphysx",
+      "kind": "library",
+      "where": "ovphysx/CMakeLists.txt"
+    },
+    {
+      "id": "library:ovphysx_internal",
+      "kind": "library",
+      "where": "ovphysx/src/ovphysxInternal/CMakeLists.txt"
+    },
+    {
+      "id": "library:public_header_c_no_deprecated_test",
+      "kind": "library",
+      "where": "ovphysx/tests/c_unittests/CMakeLists.txt"
+    },
+    {
+      "id": "library:public_header_no_deprecated_test",
+      "kind": "library",
+      "where": "ovphysx/tests/c_unittests/CMakeLists.txt"
+    },
+    {
+      "id": "option:COMPANION_BUILD_NEGATIVE_FIXTURES",
+      "kind": "option",
+      "where": "ovphysx/companion/samples/native/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build rejected plugin descriptors"
+    },
+    {
+      "id": "option:NV_APPEND_CONFIG_NAME",
+      "kind": "option",
+      "where": "ovphysx/cmake/NvidiaBuildOptions.cmake",
+      "default": "OFF",
+      "doc": "Append config (DEBUG, CHECKED, PROFILE or '' for release) to outputted binaries."
+    },
+    {
+      "id": "option:NV_FORCE_32BIT_SUFFIX",
+      "kind": "option",
+      "where": "ovphysx/cmake/NvidiaBuildOptions.cmake",
+      "default": "OFF",
+      "doc": "Force a 32 bit suffix for platforms that don't register properly."
+    },
+    {
+      "id": "option:NV_FORCE_64BIT_SUFFIX",
+      "kind": "option",
+      "where": "ovphysx/cmake/NvidiaBuildOptions.cmake",
+      "default": "OFF",
+      "doc": "Force a 64 bit suffix for platforms that don't register properly."
+    },
+    {
+      "id": "option:NV_USE_DEBUG_WINCRT",
+      "kind": "option",
+      "where": "ovphysx/cmake/NvidiaBuildOptions.cmake",
+      "default": "OFF",
+      "doc": "Use the debug version of the CRT"
+    },
+    {
+      "id": "option:NV_USE_STATIC_WINCRT",
+      "kind": "option",
+      "where": "ovphysx/cmake/NvidiaBuildOptions.cmake",
+      "default": "OFF",
+      "doc": "Use the statically linked windows CRT"
+    },
+    {
+      "id": "option:OVPHYSX_BUILD_BENCHMARKS",
+      "kind": "option",
+      "where": "ovphysx/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build the ovphysx benchmark suite (opt-in)"
+    },
+    {
+      "id": "option:OVPHYSX_DEV_PHYSX",
+      "kind": "option",
+      "where": "ovphysx/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build PhysX SDK from source (passed to ovruntime)"
+    },
+    {
+      "id": "option:OVPHYSX_ENABLE_GPU_TESTS",
+      "kind": "option",
+      "where": "ovphysx/tests/c_unittests/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Enable GPU/CUDA tests (requires CUDA driver API)"
+    },
+    {
+      "id": "option:OVPHYSX_FETCH_DEPS",
+      "kind": "option",
+      "where": "ovphysx/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Automatically fetch dependencies via packman"
+    },
+    {
+      "id": "option:OVPHYSX_REQUIRE_BENCHMARK_CUDA",
+      "kind": "option",
+      "where": "ovphysx/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Fail configuration when the benchmark suite cannot use native CUDA tensors"
+    },
+    {
+      "id": "option:OVPHYSX_TEST_UNQUALIFIED_COMPANION",
+      "kind": "option",
+      "where": "ovphysx/scripts/test_python_runtime.cmake",
+      "default": "OFF",
+      "doc": "Run companion qualification on additional platforms"
+    },
+    {
+      "id": "option:OVPHYSX_USE_RELEASE_RUNTIME_DEPS",
+      "kind": "option",
+      "where": "ovphysx/CMakeLists.txt",
+      "default": "unset",
+      "doc": "Use release Packman runtime dependencies even when compiling a Debug build"
+    },
+    {
+      "id": "option:OVPHYSX_WARNINGS_AS_ERRORS",
+      "kind": "option",
+      "where": "ovphysx/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Treat warnings as errors"
+    },
+    {
+      "id": "option:OVRUNTIME_DEV_PHYSX",
+      "kind": "option",
+      "where": "ovphysx/ovruntime/cmake/Options.cmake",
+      "default": "OFF",
+      "doc": "Build PhysX SDK from source instead of using packman package"
+    },
+    {
+      "id": "option:OVRUNTIME_DEV_SCHEMA",
+      "kind": "option",
+      "where": "ovphysx/ovruntime/cmake/Options.cmake",
+      "default": "OFF",
+      "doc": "Use locally-built physics schema (../../schemas/physx/) instead of packman packa"
+    },
+    {
+      "id": "option:OVRUNTIME_ENABLE_BENCHMARK_CTEST",
+      "kind": "option",
+      "where": "ovphysx/ovruntime/cmake/Options.cmake",
+      "default": "OFF",
+      "doc": "Register benchmarks as ctests"
+    },
+    {
+      "id": "option:OVRUNTIME_ENABLE_COVERAGE",
+      "kind": "option",
+      "where": "ovphysx/ovruntime/cmake/Options.cmake",
+      "default": "OFF",
+      "doc": "Enable C++ code coverage instrumentation (gcov)"
+    },
+    {
+      "id": "option:OVRUNTIME_ENABLE_TESTS",
+      "kind": "option",
+      "where": "ovphysx/ovruntime/cmake/Options.cmake",
+      "default": "ON",
+      "doc": "Enable unit tests"
+    },
+    {
+      "id": "option:PVDDOM_BUILD_INSPECTION",
+      "kind": "option",
+      "where": "physx/pvddom/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build bounded OVD inspection APIs"
+    },
+    {
+      "id": "option:PVDDOM_BUILD_TESTS",
+      "kind": "option",
+      "where": "physx/pvddom/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build pvddom tests"
+    },
+    {
+      "id": "option:PVDDOM_BUILD_TOOLS",
+      "kind": "option",
+      "where": "physx/pvddom/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build the SDK OVD inspection CLI"
+    },
+    {
+      "id": "option:PX_BUILDPVDRUNTIME",
+      "kind": "option",
+      "where": "physx/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Generate the OmniPVD project"
+    },
+    {
+      "id": "option:PX_BUILDSNIPPETS",
+      "kind": "option",
+      "where": "physx/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Generate the snippets"
+    },
+    {
+      "id": "option:PX_BUILDUNITTESTS",
+      "kind": "option",
+      "where": "physx/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build the public SDK unit tests"
+    },
+    {
+      "id": "option:PX_CMAKE_SUPPRESS_REGENERATION",
+      "kind": "option",
+      "where": "physx/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Disable zero_check projects"
+    },
+    {
+      "id": "option:PX_GENERATE_GPU_PROJECTS",
+      "kind": "option",
+      "where": "physx/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Generate GPU projects"
+    },
+    {
+      "id": "option:PX_GENERATE_GPU_PROJECTS_ONLY",
+      "kind": "option",
+      "where": "physx/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Generate ONLY GPU projects"
+    },
+    {
+      "id": "option:PX_GENERATE_GPU_STATIC_LIBRARIES",
+      "kind": "option",
+      "where": "physx/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build static PhysXGpu"
+    },
+    {
+      "id": "option:PX_GENERATE_STATIC_LIBRARIES",
+      "kind": "option",
+      "where": "physx/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build static PhysX libs"
+    },
+    {
+      "id": "test:basic_workflow_c",
+      "kind": "test",
+      "where": "ovphysx/tests/c_samples/basic_workflow_c/CMakeLists.txt"
+    },
+    {
+      "id": "test:benchmark-contact-affinity-unit",
+      "kind": "test",
+      "where": "ovphysx/tests/benchmarks/CMakeLists.txt"
+    },
+    {
+      "id": "test:benchmark-contract",
+      "kind": "test",
+      "where": "ovphysx/CMakeLists.txt"
+    },
+    {
+      "id": "test:benchmark-failure-unit",
+      "kind": "test",
+      "where": "ovphysx/tests/benchmarks/CMakeLists.txt"
+    },
+    {
+      "id": "test:benchmark-filter-unit",
+      "kind": "test",
+      "where": "ovphysx/tests/benchmarks/CMakeLists.txt"
+    },
+    {
+      "id": "test:benchmark-timing-diagnostics-unit",
+      "kind": "test",
+      "where": "ovphysx/tests/benchmarks/CMakeLists.txt"
+    },
+    {
+      "id": "test:benchmarks-cpp",
+      "kind": "test",
+      "where": "ovphysx/CMakeLists.txt"
+    },
+    {
+      "id": "test:benchmarks-python",
+      "kind": "test",
+      "where": "ovphysx/CMakeLists.txt"
+    },
+    {
+      "id": "test:c_api_compatibility_test",
+      "kind": "test",
+      "where": "ovphysx/tests/c_unittests/CMakeLists.txt"
+    },
+    {
+      "id": "test:c_unittests",
+      "kind": "test",
+      "where": "ovphysx/tests/c_unittests/CMakeLists.txt"
+    },
+    {
+      "id": "test:clone_c",
+      "kind": "test",
+      "where": "ovphysx/tests/c_samples/clone_c/CMakeLists.txt"
+    },
+    {
+      "id": "test:consumer",
+      "kind": "test",
+      "where": "physx/pvddom/test/consumer/CMakeLists.txt"
+    },
+    {
+      "id": "test:contact_binding_c",
+      "kind": "test",
+      "where": "ovphysx/tests/c_samples/contact_binding_c/CMakeLists.txt"
+    },
+    {
+      "id": "test:cpp-samples",
+      "kind": "test",
+      "where": "ovphysx/CMakeLists.txt"
+    },
+    {
+      "id": "test:cpp-unit",
+      "kind": "test",
+      "where": "ovphysx/CMakeLists.txt"
+    },
+    {
+      "id": "test:dump_ovd",
+      "kind": "test",
+      "where": "physx/pvddom/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:generate_test_ovd",
+      "kind": "test",
+      "where": "physx/pvddom/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:hello_world_c",
+      "kind": "test",
+      "where": "ovphysx/tests/c_samples/hello_world_c/CMakeLists.txt"
+    },
+    {
+      "id": "test:hello_world_source_link",
+      "kind": "test",
+      "where": "ovphysx/tests/c_samples/hello_world_source_link/CMakeLists.txt"
+    },
+    {
+      "id": "test:installed_consumer",
+      "kind": "test",
+      "where": "physx/pvddom/test/consumer/CMakeLists.txt"
+    },
+    {
+      "id": "test:instance_executor_unittests",
+      "kind": "test",
+      "where": "ovphysx/tests/c_unittests/CMakeLists.txt"
+    },
+    {
+      "id": "test:kinematic_support_c",
+      "kind": "test",
+      "where": "ovphysx/tests/c_samples/kinematic_support_c/CMakeLists.txt"
+    },
+    {
+      "id": "test:omnipvd_recording_cpp",
+      "kind": "test",
+      "where": "ovphysx/tests/c_samples/omnipvd_recording_cpp/CMakeLists.txt"
+    },
+    {
+      "id": "test:ovd_annotation_file_failures",
+      "kind": "test",
+      "where": "physx/pvddom/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:ovd_annotation_file_tests",
+      "kind": "test",
+      "where": "physx/pvddom/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:ovd_cli_installed",
+      "kind": "test",
+      "where": "physx/pvddom/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:ovd_new_file_permissions",
+      "kind": "test",
+      "where": "physx/pvddom/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:ovd_new_file_tests",
+      "kind": "test",
+      "where": "physx/pvddom/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:ovd_new_file_windows",
+      "kind": "test",
+      "where": "physx/pvddom/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:ovd_new_file_windows_tests",
+      "kind": "test",
+      "where": "physx/pvddom/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:ovd_record_error_diagnostic",
+      "kind": "test",
+      "where": "physx/pvddom/workflow/CMakeLists.txt"
+    },
+    {
+      "id": "test:ovd_record_options",
+      "kind": "test",
+      "where": "physx/pvddom/workflow/CMakeLists.txt"
+    },
+    {
+      "id": "test:ovd_sdk_capture_inspect_compare",
+      "kind": "test",
+      "where": "physx/pvddom/workflow/CMakeLists.txt"
+    },
+    {
+      "id": "test:ovd_sdk_gpu_capture",
+      "kind": "test",
+      "where": "physx/pvddom/workflow/CMakeLists.txt"
+    },
+    {
+      "id": "test:ovd_sdk_package_coexistence",
+      "kind": "test",
+      "where": "physx/pvddom/workflow/CMakeLists.txt"
+    },
+    {
+      "id": "test:ovstage_output_cpp",
+      "kind": "test",
+      "where": "ovphysx/tests/c_samples/ovstage_output_cpp/CMakeLists.txt"
+    },
+    {
+      "id": "test:physx_interop_cpp",
+      "kind": "test",
+      "where": "ovphysx/tests/c_samples/physx_interop_cpp/CMakeLists.txt"
+    },
+    {
+      "id": "test:pvddom_allocation_failures",
+      "kind": "test",
+      "where": "physx/pvddom/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:pvddom_reader_allocation_failures",
+      "kind": "test",
+      "where": "physx/pvddom/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:pvddom_tests",
+      "kind": "test",
+      "where": "physx/pvddom/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:python-runtime",
+      "kind": "test",
+      "where": "ovphysx/CMakeLists.txt"
+    },
+    {
+      "id": "test:python-samples",
+      "kind": "test",
+      "where": "ovphysx/CMakeLists.txt"
+    },
+    {
+      "id": "test:python-wheel",
+      "kind": "test",
+      "where": "ovphysx/CMakeLists.txt"
+    },
+    {
+      "id": "test:sidecar_token_scope_unittests",
+      "kind": "test",
+      "where": "ovphysx/tests/c_unittests/CMakeLists.txt"
+    },
+    {
+      "id": "test:source-link",
+      "kind": "test",
+      "where": "ovphysx/CMakeLists.txt"
+    },
+    {
+      "id": "test:tensor_bindings_c",
+      "kind": "test",
+      "where": "ovphysx/tests/c_samples/tensor_bindings_c/CMakeLists.txt"
+    },
+    {
+      "id": "test:tensor_bindings_gpu_c",
+      "kind": "test",
+      "where": "ovphysx/tests/c_samples/tensor_bindings_gpu_c/CMakeLists.txt"
+    },
+    {
+      "id": "test:vehicle_read_write_cpp",
+      "kind": "test",
+      "where": "ovphysx/tests/c_samples/vehicle_read_write_cpp/CMakeLists.txt"
+    },
+    {
+      "id": "seam:driver-api-cuda_to_hip",
+      "kind": "seam",
+      "where": "physx/source/gpucommon/include/cuda_to_hip.h",
+      "planner_note": "CUDA driver API (cu*) to HIP mapping used by cudamanager and every Pxg*.cpp host file; 54 distinct cu* entry points at 5.13, incl. cuOccupancyMaxActiveBlocksPerMultiprocessor new since the AMD base"
+    },
+    {
+      "id": "seam:kernel-module-registration",
+      "kind": "seam",
+      "where": "physx/source/cudamanager/src/CudaKernelWrangler.cpp",
+      "planner_note": "fatbin/function registration feeding hipModuleLoadData/hipModuleGetFunction; the AMD branch interposes __hipRegisterFatBinary via ELF preemption + dlsym(RTLD_NEXT); must work when libamdhip64 is already in the global scope and on Windows"
+    },
+    {
+      "id": "seam:sdk-gpu-module-loader",
+      "kind": "seam",
+      "where": "physx/source/physx/src/gpu/PxPhysXGpuModuleLoader.cpp",
+      "planner_note": "the CPU SDK dlopens libcuda.so.1 (Linux) / delay-loads nvcuda.dll (Windows) before loading PhysXGpu; untouched by the AMD branch, so the SDK never reaches the HIP GPU library"
+    },
+    {
+      "id": "feature:sdf-software-trilinear-sampler",
+      "kind": "feature",
+      "where": "physx/source/gpunarrowphase/src/CUDA/sdfCollision.cuh + PxgGeometryManager.cpp",
+      "planner_note": "ruled in scope 2026-11-10: replace the tex3D trap with a software trilinear sampler over a linear device copy (float, unorm8, unorm16 subgrids)"
+    },
+    {
+      "id": "build:cmakegpu-windows-hip",
+      "kind": "build",
+      "where": "physx/source/compiler/cmakegpu/windows/",
+      "planner_note": "Windows GPU CMake path for HIP (clang, PhysXGpu_64.dll, amdhip64 in place of /DELAYLOAD:nvcuda.dll); untouched by the AMD branch"
+    },
+    {
+      "id": "build:top-level-PX_USE_HIP",
+      "kind": "build",
+      "where": "physx/CMakeLists.txt",
+      "planner_note": "PX_USE_HIP through the documented top-level CMake/preset build, with the HIP compile rule in the build files (no README-only CMAKE_HIP_COMPILE_OBJECT override)"
+    },
+    {
+      "id": "test:gpu-cpu-parity-harness",
+      "kind": "test",
+      "where": "(new, physx/snippets)",
+      "planner_note": "authored GPU-vs-CPU differential harness; PhysX's public unit tests are not in the open-source tree"
+    },
+    {
+      "id": "gpu-snippet:SnippetHelloGRB",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/CMakeLists.txt GPU_SNIPPET_LIST",
+      "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
+    },
+    {
+      "id": "gpu-snippet:SnippetDeformableSurface",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/CMakeLists.txt GPU_SNIPPET_LIST",
+      "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
+    },
+    {
+      "id": "gpu-snippet:SnippetDeformableVolume",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/CMakeLists.txt GPU_SNIPPET_LIST",
+      "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
+    },
+    {
+      "id": "gpu-snippet:SnippetDeformableVolumeAttachment",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/CMakeLists.txt GPU_SNIPPET_LIST",
+      "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
+    },
+    {
+      "id": "gpu-snippet:SnippetDeformableVolumeKinematic",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/CMakeLists.txt GPU_SNIPPET_LIST",
+      "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
+    },
+    {
+      "id": "gpu-snippet:SnippetDeformableSurfaceSkinning",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/CMakeLists.txt GPU_SNIPPET_LIST",
+      "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
+    },
+    {
+      "id": "gpu-snippet:SnippetDeformableVolumeSkinning",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/CMakeLists.txt GPU_SNIPPET_LIST",
+      "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
+    },
+    {
+      "id": "gpu-snippet:SnippetSDF",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/CMakeLists.txt GPU_SNIPPET_LIST",
+      "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
+    },
+    {
+      "id": "gpu-snippet:SnippetPBF",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/CMakeLists.txt GPU_SNIPPET_LIST",
+      "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
+    },
+    {
+      "id": "gpu-snippet:SnippetPBFMultiMat",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/CMakeLists.txt GPU_SNIPPET_LIST",
+      "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
+    },
+    {
+      "id": "gpu-snippet:SnippetIsosurface",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/CMakeLists.txt GPU_SNIPPET_LIST",
+      "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
+    },
+    {
+      "id": "gpu-snippet:SnippetOmniPvdMultiGeom",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/CMakeLists.txt GPU_SNIPPET_LIST",
+      "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
+    },
+    {
+      "id": "gpu-snippet:SnippetRBDirectGPUAPI",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/CMakeLists.txt GPU_SNIPPET_LIST",
+      "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
+    },
+    {
+      "id": "gpu-snippet:SnippetDirectGPUAPIArticulation",
+      "kind": "executable",
+      "where": "physx/snippets/compiler/cmake/CMakeLists.txt GPU_SNIPPET_LIST",
+      "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [
+    {
+      "id": "benchmark:benchmark_contact_affinity_tests",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "benchmark:benchmark_failure_tests",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "benchmark:benchmark_filter_tests",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "benchmark:benchmark_timing_diagnostics_tests",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "benchmark:ovphysx_benchmarks",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "example:companion_direct_contract",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:OvruntimeCommon",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:OvruntimeCompiledCache",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:OvruntimeConvexDecomposition",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:OvruntimePhysX",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:OvruntimePhysXCooking",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:OvruntimePhysXCudaShim",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:OvruntimePhysXFoundation",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:OvruntimePhysXGpu",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:OvruntimePhysicsOvstage",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:OvruntimePhysicsParse",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:OvruntimePhysicsUsd",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:installed_public_headers",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:ovphysx",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:ovphysx_internal",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:public_header_c_no_deprecated_test",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "library:public_header_no_deprecated_test",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:COMPANION_BUILD_NEGATIVE_FIXTURES",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:NV_APPEND_CONFIG_NAME",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:NV_FORCE_32BIT_SUFFIX",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:NV_FORCE_64BIT_SUFFIX",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:NV_USE_DEBUG_WINCRT",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:NV_USE_STATIC_WINCRT",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:OVPHYSX_BUILD_BENCHMARKS",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:OVPHYSX_DEV_PHYSX",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:OVPHYSX_ENABLE_GPU_TESTS",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:OVPHYSX_FETCH_DEPS",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:OVPHYSX_REQUIRE_BENCHMARK_CUDA",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:OVPHYSX_TEST_UNQUALIFIED_COMPANION",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:OVPHYSX_USE_RELEASE_RUNTIME_DEPS",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:OVPHYSX_WARNINGS_AS_ERRORS",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:OVRUNTIME_DEV_PHYSX",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:OVRUNTIME_DEV_SCHEMA",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:OVRUNTIME_ENABLE_BENCHMARK_CTEST",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:OVRUNTIME_ENABLE_COVERAGE",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "option:OVRUNTIME_ENABLE_TESTS",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:basic_workflow_c",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:benchmark-contact-affinity-unit",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:benchmark-contract",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:benchmark-failure-unit",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:benchmark-filter-unit",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:benchmark-timing-diagnostics-unit",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:benchmarks-cpp",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:benchmarks-python",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:c_api_compatibility_test",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:c_unittests",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:clone_c",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:contact_binding_c",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:cpp-samples",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:cpp-unit",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:hello_world_c",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:hello_world_source_link",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:instance_executor_unittests",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:kinematic_support_c",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:omnipvd_recording_cpp",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:ovstage_output_cpp",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:physx_interop_cpp",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:python-runtime",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:python-samples",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:python-wheel",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:sidecar_token_scope_unittests",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:source-link",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:tensor_bindings_c",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:tensor_bindings_gpu_c",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    },
+    {
+      "id": "test:vehicle_read_write_cpp",
+      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+    }
+  ],
+  "removed_from_floor": [
+    {
+      "id": "cuda-library:thrust",
+      "reason": "False positive: the 76 'thrust' hits are vehicle-physics engine thrust variables (physxvehicle, ovphysx vehicle schema), not the Thrust library; no Thrust/CUB use anywhere in the tree."
+    }
+  ],
+  "planner_notes": [
+    "blast/ and flow/ carry no CUDA (blast: one forward-declaration comment; flow: D3D12/Vulkan compute shaders), so nothing in them is ported; they are built by premake and produce no components here.",
+    "Generated against upstream main 7d6f6ac8 (PhysX 5.13.0), the tree moat-port merges; the AMD rocm-enablement base is 5.10.0 (4f2103c3)."
+  ]
+}
