@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/FastVideo",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "torch-extension",
+  "stage": "planned",
   "adopted_at": "2026-11-06T01:01:59Z",
-  "updated_at": "2026-11-20T21:51:42Z",
+  "updated_at": "2026-11-20T22:00:03Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-20T21:51:42Z",
-    "holder": "0e473fe1e22c"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -47,7 +43,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:51:42Z",
+      "updated_at": "2026-11-20T22:00:03Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -80,5 +76,10 @@
     "viable": true,
     "summary": "Validation take-up ruled by Jeff Daily 2026-11-10: Validate upstream's ROCm platform support (#669) and the Triton video sparse attention path (#1851) on all required gates (wave64, wave32, Windows); fixes go to a new AMD-Ecosystem fork (requested, created by a person)",
     "at": "2026-11-10T18:16:04Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-20T21:51:42Z",
+    "at": "2026-11-20T22:00:03Z"
   }
 }

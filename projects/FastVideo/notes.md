@@ -43,3 +43,21 @@ Question for jeff (only if a different call is wanted): should MOAT offer a ROCm
 
 Jeff Daily overrode the intake decline: FastVideo becomes a validation project. Validate upstream's ROCm platform support (#669) and the Triton video sparse attention path (#1851). Validate on every required gate (wave64, wave32, Windows) and fix what breaks; the fixes go on `moat-port` of a new AMD-Ecosystem fork. A person creates that fork, never an agent; the project waits in `awaiting-fork` until it exists, then `release-forks` moves it to `screened` for the planner.
 Jeff asked whether to transfer amd-wangfan/FastVideo instead. It holds one commit ("add vsa triton opt on gfx942", 2026-02-27) plus upstream merges, is 495 commits behind, and no upstream PR came from it; #1851 likely supersedes the commit. A new fork from current upstream is preferred; the commit can be compared against #1851 during validation.
+
+## Planning (2026-11-20, linux-gfx1100, planner)
+
+**Decisions needed from Jeff before a porter starts** (full text in plan.md, "Open questions"):
+
+- **Q1, Windows gate.** Native Windows on ROCm fails today at platform detection (no `/dev/kfd`, no amdsmi, so it becomes `CpuPlatform`) and at distributed init (NCCL is forced). The kernel package and Triton are declared linux-only. Upstream supports NVIDIA only on "Linux or Windows WSL". Third-party PR https://github.com/hao-ai-lab/FastVideo/pull/2117 (klin2024, opened 2026-11-19, open, tested on a Radeon 8060S) already fixes detection and the gloo fallback. Options: (a) wait for #2117, then validate native Windows on gfx1151 on top of it, with Windows `owed` meanwhile (recommended); (b) carry #2117's changes on `moat-port` now, duplicating an open PR; (c) validate under WSL instead; (d) ask for a windows waiver, since native Windows is unsupported for CUDA too.
+- **Q2, scope cut.** The plan validates and fixes only the ROCm paths upstream chose. It translates none of the CUDA-arch-only kernels: TK Hopper, Blackwell PTX VSA, CUTLASS/CuTe FP4 and the H3 SwiGLU GEMM (sm_120a/121a), NCCL-device Ulysses, CUTLASS turbodiffusion int8 (no caller), and the Wan2.2 JIT VAE decoder (sm_100a/103a). Each has a working ROCm fallback. Options: (a) confirm they are out and record them `scoped_out` (recommended; matches the 2026-11-10 ruling); (b) name any to bring in as an AMD-native rewrite, which would be a separate large project each. `surface.json` marks them "proposed out, pending jeff". Nothing is recorded as `scoped_out` yet.
+
+What was done:
+- Took the planning lock on linux-gfx1100. Cloned the fork's `main` (`4deb3a50fff8`) read-only into `projects/FastVideo/src`. Set `ext_type` to `torch-extension`. Generated and extended `surface.json` (52 CUDA files, 3 CMake libraries plus 11 added components) and wrote `plan.md`.
+- Upstream `main` was at `5af9897` (2026-11-19), 23 commits past the mirror. The only build delta is a new sm_121a CUTLASS library (`fastvideo_h3_swiglu_gemm`), off on ROCm. The porter cuts `moat-port` from the current upstream tip.
+
+Findings for the porter (detail and line numbers in plan.md):
+- R1: with hip-lang present, `build.sh --rocm` enables HIP but compiles only `common_extension.cpp`. The turbodiffusion `.cu` files are CUDA-language with CUDA not enabled, and `register_quant` and friends are called unconditionally, so the module probably fails to import and the Triton fallback hides it. Unverified; build it first.
+- R2: install path. PyPI `fastvideo-kernel==0.3.5` has only cp312 manylinux wheels, built for CUDA, and the sdist defaults to `GPU_BACKEND=CUDA`. The ROCm Dockerfile installs `pyproject_other.toml`, which pins `torch==2.11.0` over a ROCm 2.9.1 base image.
+- R3: capability tuples collide (gfx90a=9.0, gfx1201=12.0, gfx11xx>=10). The call sites to check are listed in plan.md, and none was shown wrong by a run. Upstream's own fix pattern is #1859.
+- R6: the SSIM harness raises `Unsupported device` for any non-NVIDIA device name. The validator compares against the A40/L40S reference through the same helpers and does not add AMD references upstream.
+- Active third-party AMD work not to duplicate: #1860 (gfx950 VSA autotune, open) and #2117 (Windows, open).

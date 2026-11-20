@@ -1,0 +1,162 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "4deb3a50fff8",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "fastvideo-kernel/attn_qat_infer/blackwell/api.cu",
+      "fastvideo-kernel/attn_qat_infer/blackwell/block_info.h",
+      "fastvideo-kernel/attn_qat_infer/blackwell/cute_extension.h",
+      "fastvideo-kernel/attn_qat_infer/blackwell/epilogue_tma_ws.h",
+      "fastvideo-kernel/attn_qat_infer/blackwell/kernel_traits.h",
+      "fastvideo-kernel/attn_qat_infer/blackwell/kernel_ws.h",
+      "fastvideo-kernel/attn_qat_infer/blackwell/launch.h",
+      "fastvideo-kernel/attn_qat_infer/blackwell/mainloop_tma_ws.h",
+      "fastvideo-kernel/attn_qat_infer/blackwell/named_barrier.h",
+      "fastvideo-kernel/attn_qat_infer/blackwell/params.h",
+      "fastvideo-kernel/attn_qat_infer/blackwell/softmax_fused.h",
+      "fastvideo-kernel/attn_qat_infer/blackwell/static_switch.h",
+      "fastvideo-kernel/attn_qat_infer/blackwell/tile_scheduler.h",
+      "fastvideo-kernel/attn_qat_infer/blackwell/utils.h",
+      "fastvideo-kernel/attn_qat_infer/quantization/cuda_utils.h",
+      "fastvideo-kernel/attn_qat_infer/quantization/fp4_quantization_4d.cu",
+      "fastvideo-kernel/csrc/attention/block_sparse_blackwell.cu",
+      "fastvideo-kernel/csrc/attention/block_sparse_blk128_blackwell.cu",
+      "fastvideo-kernel/csrc/attention/block_sparse_bwd_blackwell.cu",
+      "fastvideo-kernel/csrc/attention/block_sparse_bwd_blk128_blackwell.cu",
+      "fastvideo-kernel/csrc/attention/block_sparse_bwd_kernel_blackwell.cuh",
+      "fastvideo-kernel/csrc/attention/block_sparse_bwd_kernel_blk128_blackwell.cuh",
+      "fastvideo-kernel/csrc/attention/block_sparse_bwd_launch_blackwell.cuh",
+      "fastvideo-kernel/csrc/attention/block_sparse_bwd_launch_blk128_blackwell.cuh",
+      "fastvideo-kernel/csrc/attention/block_sparse_h100.cu",
+      "fastvideo-kernel/csrc/attention/block_sparse_kernel_blackwell.cuh",
+      "fastvideo-kernel/csrc/attention/block_sparse_launch_blackwell.cuh",
+      "fastvideo-kernel/csrc/attention/primitives.cuh",
+      "fastvideo-kernel/csrc/attention/st_attn_h100.cu",
+      "fastvideo-kernel/csrc/comm/ulysses_all_to_all.cu",
+      "fastvideo-kernel/csrc/turbodiffusion/common/launch.hpp",
+      "fastvideo-kernel/csrc/turbodiffusion/gemm/gemm.cu",
+      "fastvideo-kernel/csrc/turbodiffusion/gemm/launch.hpp",
+      "fastvideo-kernel/csrc/turbodiffusion/norm/layernorm.cu",
+      "fastvideo-kernel/csrc/turbodiffusion/norm/layernorm.hpp",
+      "fastvideo-kernel/csrc/turbodiffusion/norm/rmsnorm.cu",
+      "fastvideo-kernel/csrc/turbodiffusion/norm/rmsnorm.hpp",
+      "fastvideo-kernel/csrc/turbodiffusion/quant/quant.cu",
+      "fastvideo-kernel/csrc/turbodiffusion/quant/quant.hpp",
+      "fastvideo-kernel/include/comm/ulysses_all_to_all.cuh",
+      "fastvideo-kernel/wan22_vae_decode/solution/attn.cu",
+      "fastvideo-kernel/wan22_vae_decode/solution/binding.cpp",
+      "fastvideo-kernel/wan22_vae_decode/solution/comm.cu",
+      "fastvideo-kernel/wan22_vae_decode/solution/conv.cu",
+      "fastvideo-kernel/wan22_vae_decode/solution/head.cu",
+      "fastvideo-kernel/wan22_vae_decode/solution/kernels.cu",
+      "fastvideo-kernel/wan22_vae_decode/solution/norm.cu",
+      "fastvideo-kernel/wan22_vae_decode/solution/prefix.cu",
+      "fastvideo-kernel/wan22_vae_decode/solution/resample.cu",
+      "fastvideo-kernel/wan22_vae_decode/solution/timeconv.cu",
+      "fastvideo-kernel/wan22_vae_decode/solution/wino_epilogue.cu",
+      "fastvideo-kernel/wan22_vae_decode/solution/wino_in.cu"
+    ],
+    "markers": {
+      "kernel": 36,
+      "device_code": 172,
+      "launch": 43,
+      "warp_intrinsic": 27
+    },
+    "libraries": {
+      "cutlass": 163,
+      "cudnn": 2,
+      "nccl": 48
+    }
+  },
+  "components": [
+    {
+      "id": "library:fastvideo_kernel_ops",
+      "kind": "library",
+      "where": "fastvideo-kernel/CMakeLists.txt",
+      "note": "CMake torch extension. On ROCm it holds no HIP code: TK (sm_90a), Blackwell PTX VSA and NCCL-device Ulysses are CUDA-arch-gated off, and the CUTLASS turbodiffusion .cu files are CUDA-language sources a HIP-only configure does not compile. Porter verifies what `build.sh --rocm` produces with hip-lang present (plan.md R1) and makes the ROCm build either build nothing or build something that imports. Turbodiffusion int8 GEMM/norm/quant: no fastvideo caller, CUTLASS has no HIP target -- proposed out, pending jeff (plan.md Q2)"
+    },
+    {
+      "id": "library:fp4attn_cuda",
+      "kind": "library",
+      "where": "fastvideo-kernel/CMakeLists.txt",
+      "note": "attn_qat_infer Blackwell FP4 (sm_120a/121a, CUTLASS/CuTe); CMake already disables it on ROCm -- proposed out, pending jeff (plan.md Q2)"
+    },
+    {
+      "id": "library:fp4quant_cuda",
+      "kind": "library",
+      "where": "fastvideo-kernel/CMakeLists.txt",
+      "note": "attn_qat_infer FP4 quantization (sm_120a/121a, CUTLASS); CMake already disables it on ROCm -- proposed out, pending jeff (plan.md Q2)"
+    },
+    {
+      "id": "package:fastvideo_kernel-triton",
+      "kind": "library",
+      "where": "fastvideo-kernel/python/fastvideo_kernel (build.sh --rocm [--python-only])",
+      "note": "The ROCm deliverable of the kernel package: VSA (64-token) and VSA-256/H3 block-sparse attention fwd+bwd in Triton, vsa_utils, tile layout, fused_compress_topk, vmoba. Validated on every gate."
+    },
+    {
+      "id": "feature:rocm-platform",
+      "kind": "feature",
+      "where": "fastvideo/platforms/rocm.py, fastvideo/platforms/__init__.py",
+      "note": "Upstream PR #669 platform: detection (amdsmi, or HIP torch + /dev/kfd), SDPA / FlashAttention selection with SDPA fallback, device communicator. Validated on every gate."
+    },
+    {
+      "id": "feature:vsa-backends-rocm",
+      "kind": "feature",
+      "where": "fastvideo/attention/backends/video_sparse_attn.py, video_sparse_attn_h3.py",
+      "note": "Upstream PR #1851 routing of VIDEO_SPARSE_ATTN and VIDEO_SPARSE_ATTN_H3 to Triton on ROCm. Validated end to end (plan.md test plan T3)."
+    },
+    {
+      "id": "feature:capability-gates",
+      "kind": "feature",
+      "where": "fastvideo/** and fastvideo-kernel/python/** get_device_capability call sites",
+      "note": "AMD capability tuples collide with NVIDIA ones (gfx90a=9.0, gfx1201=12.0, gfx1030=10.3, gfx11xx>=10). Sweep every gate reached on a default ROCm path (plan.md R3 list) and fix any that selects a CUDA-only path."
+    },
+    {
+      "id": "feature:rocm-install-path",
+      "kind": "feature",
+      "where": "pyproject.toml, pyproject_other.toml, docker/rocm7_1.Dockerfile, fastvideo-kernel/build.sh, docs/getting_started/installation/amd.md",
+      "note": "A documented install that yields ROCm torch + the source-built Triton kernel package, not the PyPI CUDA wheel or a CUDA torch (plan.md R2). Fix or document what breaks."
+    },
+    {
+      "id": "feature:windows-native",
+      "kind": "feature",
+      "where": "fastvideo/platforms/__init__.py, fastvideo/distributed/parallel_state.py, pyproject.toml markers",
+      "note": "Native Windows on ROCm: detection and gloo fallback are in open upstream PR #2117 (third party); triton / fastvideo-kernel dependency markers are linux-only. How MOAT handles this is pending jeff (plan.md Q1)."
+    },
+    {
+      "id": "tests:fastvideo-kernel",
+      "kind": "test",
+      "where": "fastvideo-kernel/tests",
+      "note": "Kernel test suite; Triton VSA/VSA-256/varlen/combine/utils/topk/vmoba tests must pass on every gate; CUDA-arch-only tests (attn_qat*, blackwell*, turbodiffusion, wan22_vae_decode) must skip, not error, on ROCm (plan.md T1)."
+    },
+    {
+      "id": "tests:fastvideo-unit",
+      "kind": "test",
+      "where": "fastvideo/tests (platforms, attention, ops, distributed CPU-safe subset)",
+      "note": "Non-GPU and single-GPU unit tests incl. test_rocm_* platform tests; no regressions vs a CPU baseline (plan.md T2)."
+    },
+    {
+      "id": "tests:e2e-inference",
+      "kind": "test",
+      "where": "fastvideo/tests/ssim + examples/inference",
+      "note": "End-to-end text-to-video inference on SDPA, FLASH_ATTN (if a ROCm flash_attn is installed) and VIDEO_SPARSE_ATTN. SSIM harness rejects non-NVIDIA device names, so the validator compares against the nearest NVIDIA reference through the same SSIM helpers (plan.md T3)."
+    },
+    {
+      "id": "kernel:wan22_vae_decode",
+      "kind": "library",
+      "where": "fastvideo-kernel/wan22_vae_decode (JIT torch extension, sm_100a/sm_103a)",
+      "note": "Blackwell-only JIT CUDA decoder; FastVideo gates it on capability (10,0)/(10,3) and falls back to AutoencoderKLWan. Not a ROCm target -- proposed out, pending jeff (plan.md Q2); the fallback itself is covered by T3 on PAN2 if run."
+    },
+    {
+      "id": "benchmarks:fastvideo-kernel",
+      "kind": "benchmark",
+      "where": "fastvideo-kernel/benchmarks",
+      "note": "bench_vsa / bench_vsa_combine / bench_vsa_tile_layout / bench_fused_compress_topk run once per gate for numbers (no pass bar); benchmark_attn_qat_train is CUDA-arch-only."
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}
