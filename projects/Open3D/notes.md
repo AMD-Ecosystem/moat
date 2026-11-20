@@ -1322,3 +1322,59 @@ Recorded: `python3 utils/moatlib.py carry-forward Open3D linux-gfx1100 11c1d702e
 CUDA gate: not owed here; recorded at this head in "CUDA compile check (nvcc) at 11c1d702e" (PASS).
 
 Jargon (`python3 utils/jargon.py --port Open3D`, after fetching `main` and `moat-fix-7509` into the fork clone): 2 hits, both 'fault-class' in the already-published commit 73a209622 (body lines 25 and 29), none in this round; the same finding the 2026-11-20 review left for a person. Not sent back with `--gate jargon`: the fix needs a rewritten published commit message, which no porter round can make on the frozen branch. For jeff: decide whether to reword it at squash time.
+## Windows option trial 2026-11-20 (windows-gfx1151, data for a scope decision)
+
+Data only: no fork change, no state change. Fork clone stayed at 11c1d702e with `git status --porcelain` empty before and after. Answers the reviewer's "For a person" item: the documented Windows HIP command sets BUILD_GUI, BUILD_PYTHON_MODULE, BUILD_ISPC_MODULE and WITH_IPP to OFF, and none had been tried ON with the GNU-driver clang toolchain. Each option was turned ON alone on top of the porter recipe (agent_space/o3d_cfg.sh, same environment, CMake 3.31.0, TheRock ROCm 7.14 SDK clang 23, Python 3.12.10), in its own build tree, BUILD_UNIT_TESTS=OFF, -j 10. agent_space/b was not touched.
+
+| option | configure | build | smoke | failure | class | estimated fix |
+|---|---|---|---|---|---|---|
+| BUILD_PYTHON_MODULE=ON | pass | 686/687 compile; the final link of pybind.cp312-win_amd64.pyd FAILS as shipped; links with the one flag respelled | pass (after the link fix): `open3d.core.cuda.is_available()` True, 1 device, CUDA:0 tensor add/sum/matmul correct | `clang++: error: no such file or directory: '/force:multiple'` from cpp/pybind/CMakeLists.txt:48 `if (WIN32) target_link_options(pybind PUBLIC "/force:multiple")` | (iii) port: same "WIN32 means MSVC" gap as c8713e747; MSVC/CUDA builds are unaffected | one line: `LINKER:/force:multiple` (or gate on MSVC; no duplicate-symbol warning appeared without GUI). Plus a small `python/open3d/__init__.py` patch, see below |
+| WITH_IPP=ON | pass (IPP 2021.11.0 prebuilt static libs downloaded) | pass: Open3D.lib 614/614, and pybind links against the IPP `mt` libs with the DLL runtime, no runtime-library warning | pass: CPU `t.geometry.Image` rgb_to_gray, filter_gaussian, resize, dilate return correct values through the Python module | none | n/a | none: drop `-DWITH_IPP=OFF` from the documented command |
+| BUILD_ISPC_MODULE=ON | pass (ISPC 1.16.1 fetched; "Detecting ISPC compiler ABI info - failed" is CMake's ISPC try-compile calling `llvm-ar /nologo /out:`, non-fatal) | pass: Open3D.lib 609/609, 4 .ispc objects (ISAInfo, Indexer, UnaryEWCPU, BinaryEWCPU, avx512skx-i32x16) archived; pybind links | pass: CPU elementwise sqrt/add/mul/abs on 1024 floats equal to numpy, GPU sum correct | none | n/a | none: drop `-DBUILD_ISPC_MODULE=OFF` |
+| BUILD_GUI=ON | FAILS as documented; passes once glslangValidator is on PATH | FAILS as shipped (1 TU on a clean vcpkg tree, 10 TUs on this host); with two scratch command-line tweaks Open3D.lib builds and Open3DViewer.exe links | not run (no window or render launched on this host) | (a) configure: `Could not find OPEN3D_GLSLANG_VALIDATOR using the following names: glslangValidator` (cmake/Open3DAddComputeShaders.cmake:39). (b) `GaussianSplatRenderer.h:273:23: error: private field 'engine_' is not used [-Werror,-Wunused-private-field]`. (c) 9 GUI TUs: `no member named 'KeyMap' in 'ImGuiIO'`, `no member named 'FontSize' in 'ImFont'`, `BeginChildFrame`, `TextureId` and similar | (a) class (i): upstream prerequisite on every platform; upstream's Windows CI runs `vcpkg install glslang[tools]:x64-windows` and adds `tools\glslang` to PATH. (b) clang-only warning in upstream's own code under Open3D's unconditional -Werror; MSVC does not raise it. (c) host/recipe: this host's vcpkg tree also holds imgui 1.92.8, and `<vcpkg>/include` (an -isystem dir from the USE_SYSTEM_* packages) is searched before the bundled imgui 1.88; a vcpkg tree with only the documented packages has no imgui.h | (a) docs: add `glslang[tools]` to the vcpkg line and its tools dir to PATH. (b) small patch: use or drop `engine_`, or add -Wno-unused-private-field for non-MSVC Windows. (c) none for a clean vcpkg tree; a robust fix is small (put the bundled imgui include dir ahead of system include dirs). GUI runtime is unvalidated, so enabling it needs a validator pass on a host that can open a window |
+
+BUILD_WEBRTC was not tried: upstream's configure refuses it with STATIC_WINDOWS_RUNTIME=OFF, as recorded in the porter round.
+
+### Python module details
+
+- The link fix was tested without touching the clone: in the scratch build tree's build.ninja, ` /force:multiple` became ` -Wl,/force:multiple`, then `cmake --build ... --target pybind` and `--target python-package` both rc=0.
+- `python/open3d/__init__.py` finds GPU runtime DLLs on Windows by scanning PATH for an entry matching `cuda.*bin` and calling `os.add_dll_directory` on it. A ROCm SDK bin directory never matches, so with only PATH set (what the docs tell the user to do) the import fails: `ImportWarning: ... Reported error: Could not find module '...\open3d\cuda\pybind.cp312-win_amd64.pyd' (or one of its dependencies)`, then `ModuleNotFoundError: No module named 'open3d.cpu'` (a GPU-only build has no CPU fallback module; same as upstream CUDA). Measured once. The smoke therefore called `os.add_dll_directory` for the ROCm SDK bin and `<vcpkg>\bin` before `import open3d`. Fix size: small patch (extend the PATH heuristic to the ROCm SDK bin and the directories holding the system libraries), or a docs line.
+- Runtime Python requirements (python/requirements.txt: dash, flask, werkzeug, nbformat, configargparse; plotly comes with dash) are imported by `open3d.visualization` at import time even with BUILD_GUI=OFF; installed into a scratch venv (agent_space/venv_py, --system-site-packages for numpy 2.5.4).
+- Host observation, 3 of 3 freshly built modules: the first `import open3d` right after copying the module's DLLs fell back to the CPU module (for the ISPC tree, the one first run with warnings shown, the reported error was the same "Could not find module ... (or one of its dependencies)"), and the identical command passed on the next run. Cause not established (environment; a DLL-load failure, not a GPU fault). No GPU timeout or hang occurred.
+- TheRock amdhip64_7.dll, amd_comgr.dll, hiprtc*.dll and rocm_kpack.dll were copied next to pybind*.pyd (System32 copies are broken on this host).
+
+### Commands
+
+```
+# environment and configure: agent_space/o3d_env.sh, agent_space/o3d_cfg.sh (porter recipe; later -D wins)
+PY=C:/Users/jdaily/AppData/Local/Programs/Python/Python312
+B=<wt>/agent_space/b_py   bash agent_space/o3d_cfg.sh -DBUILD_PYTHON_MODULE=ON -DBUILD_UNIT_TESTS=OFF -DPython3_ROOT_DIR=$PY -DPython3_EXECUTABLE=$PY/python.exe
+cmake --build agent_space/b_py --target pybind -j 10            # 686/687, link fails on /force:multiple
+sed -i 's# /force:multiple# -Wl,/force:multiple#g' agent_space/b_py/build.ninja   # scratch tree only
+cmake --build agent_space/b_py --target pybind -j 10            # rc=0
+cmake --build agent_space/b_py --target python-package -j 10    # rc=0
+PYTHONPATH=<wt>/agent_space/b_py/lib/python_package agent_space/venv_py/Scripts/python.exe -W always agent_space/py_smoke.py   # under ulimit -c 0
+
+B=<wt>/agent_space/b_ipp  bash agent_space/o3d_cfg.sh -DWITH_IPP=ON -DBUILD_UNIT_TESTS=OFF
+cmake --build agent_space/b_ipp --target Open3D -j 10           # 614/614
+# then the same tree reconfigured with the Python options above, the same build.ninja respelling,
+# --target python-package, and agent_space/ipp_smoke.py
+
+B=<wt>/agent_space/b_ispc bash agent_space/o3d_cfg.sh -DBUILD_ISPC_MODULE=ON -DBUILD_UNIT_TESTS=OFF
+cmake --build agent_space/b_ispc --target Open3D -j 10          # 609/609
+# then as for IPP, with agent_space/ispc_smoke.py
+
+B=<wt>/agent_space/b_gui  bash agent_space/o3d_cfg.sh -DBUILD_GUI=ON -DBUILD_UNIT_TESTS=OFF   # rc=1, glslangValidator
+vcpkg install "glslang[tools]:x64-windows"                      # 38 s; added to D:/Develop/vcpkg (additive)
+PATH=D:/Develop/vcpkg/installed/x64-windows/tools/glslang:$PATH  # then the same configure: rc=0
+cmake --build agent_space/b_gui --target Open3D -j 10 -- -k 0   # 10 TUs fail (b and c above)
+python agent_space/gui_ninja_tweak.py agent_space/b_gui/build.ninja <b_gui>/_deps/ext_imgui-src
+#   scratch tree only: for GUI.dir and visualization_impl.dir objects, prepend -isystem <bundled imgui>
+#   and append -Wno-unused-private-field
+cmake --build agent_space/b_gui --target Open3D -j 10 -- -k 0   # rc=0
+cmake --build agent_space/b_gui --target Open3DViewer -j 10     # rc=0, links without /force:multiple
+```
+
+Smoke output (single passing runs): `version 0.19.0+11c1d702e api cuda / cuda.is_available True count 1 / device CUDA:0 sum(a+a) 20.0 matmul [[7.0, 10.0], [15.0, 22.0]]`; IPP `gray 124 gauss edge [98, 49, 25] resize SizeVector[16, 16, 3] dilate sum 40176`; ISPC `cpu ew max abs diff 0.0 sum 524800.0 / gpu sum 524800.0`.
+
+Not covered: no option combination beyond option+Python, no Python unit tests, no GUI run, no wheel (`pip-package`) build, no install tree. Logs and scripts are in the worktree's agent_space (cfg_*.log, build_py*.log, build_ipp*.log, build_ispc*.log, build_gui*.log, *_smoke.py, *_smoke*.log); the scratch build trees were deleted to return disk space (D: was at 98%). Downloads landed in the clone's ignored 3rdparty_downloads/ (filament, ipp, ispc, imgui, pybind11) and under D:; nothing was written to the C: profile.
