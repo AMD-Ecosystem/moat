@@ -7507,3 +7507,53 @@ Where HIP's null-stream free costs time (`free_loop2.py`, 500 x {allocate 4 KiB,
 Tests (fork clone built for gfx950 at the commit; `agent_space/runtests.sh`, one `python -m warp.tests -s autodetect -p <file>` per pattern): test_streams 24 OK (3 skipped), test_async 2373 OK, test_mempool 7 OK (2 skipped), test_graph 35 OK (3 skipped), test_copy 14 OK, test_bvh 13 OK, test_grouped_bvh 11 OK, test_mesh* 49 OK (18 skipped). CUDA: `cuda_pp.sh` (nvcc 12.8, sm_90) at `36612c9c` vs `dd41f3d2`: 24 preprocessed units, all identical except warp.cu's two, which differ only in `__LINE__` values (identical after `s/, [0-9]+\)/, L)/`). clang-format 22.1.2 applied.
 
 Question for Jeff (no decision taken): `free_race.py` is a probe in these notes, not a fork test. Options: (a) leave it as a probe (smallest diff); (b) add it to `warp/tests/cuda/test_streams.py` as a HIP-and-CUDA test of cross-stream free ordering (about 40 lines; it passes on CUDA by the null-stream semantics, untested here without an NVIDIA GPU).
+
+### Item 3: GPU LBVH build (`43c348ea`, pushed, `advance-head` recorded)
+
+`[ROCm] Build the GPU LBVH top-down on HIP` (`bvh.cu` +321/-0; everything HIP-only: new kernels under `#if defined(__HIP_PLATFORM_AMD__)`, a HIP `LinearBVHBuilderGPU::build` before upstream's in `#else`, the constructor/destructor allocations under `#if !HIP`, and a HIP-only `depths` parameter in `mark_packed_leaf_nodes`). Credit in the commit: AMD-Ecosystem/warp `release/1.13.0.amd0` `6f0ae752` and `664cc4c5` (rtmadduri).
+
+On this GPU the gap was much larger than on the gfx942 partition: same-host baseline (`res/bvh_s0`, `9882f005` vs AMD 1.13 built here with ROCm 10.1 and its documented `--hipcc-options="-Xarch_device -fno-inline"`): lbvh `bvh_build` 1.57x / 2.71x / 5.07x / 9.28x at 10^4 / 10^5 / 10^6 / 10^7 (10^7: 58.8 vs 6.3 ms). The 1.14 build is ~60 ms at 10^7 on both GPUs, i.e. it does not scale with CU count.
+
+Profile (`rocprofv3 --kernel-trace --stats`, 3 builds of 10^7, `prof.sh`): 1.14 `build_hierarchy` 50.2 ms/build, `compute_total_bounds` 4.6, radix sort 1.7 (24 kernels: 64-bit keys), `mark_packed_leaf_nodes` 0.70; AMD 1.13 `build_karras_topology` 0.67, `compute_node_depths_and_max` 0.93, `refit_nodes_at_depth` 3.56 (35 levels), block bounds 0.19, sort 0.63 (30-bit), mark_packed 0.22.
+
+Ablation (scratch tree `agent_space/wabl` = `dd41f3d2` + AMD's kernels added beside upstream's, builder pieces chosen at run time by a `WP_ABL` bitmask: 1 no `__threadfence` in build_hierarchy (timing only, not correct), 2 Karras topology + depths + depth-level refit with the max depth read to the host, 4 the same with a fixed launch count and device-side early exit, 8 block-bounds reduction, 16 one pooled allocation, 32 sort into `primitive_indices` with end_bit 30, 64 mark_packed walks parents anyway, 128 with 4: launch bound key_bits + index_bits instead of 97). `bvh_build`, ms, first sweep (`res/abl_s1`, `bench_bvh.py`, BVH_CONS=lbvh, median of 5 builds):
+
+| variant | 10^4 | 10^5 | 10^6 | 10^7 |
+|---|---|---|---|---|
+| AMD 1.13 | 0.257 | 0.331 | 0.809 | 6.48 |
+| upstream builder (abl0) | 0.436 | 1.340 | 6.26 | 60.6 |
+| no fence (abl1, incorrect) | 0.452 | 0.651 | 1.93 | 18.4 |
+| (a) Karras + depth-level refit, host max (abl2) | 0.516 | 0.511 | 1.72 | 11.6 |
+| (b) block bounds only (abl8) | 0.459 | 1.278 | 5.81 | 53.4 |
+| (c) pool only (abl16) | 0.450 | 1.290 | 6.74 | 58.1 |
+| (d) sort only (abl32) | 0.459 | 1.430 | 6.24 | 59.9 |
+| a+b (abl10) | 0.468 | 0.518 | 1.105 | 6.69 |
+| a+b+c (abl26) | 0.323 | 0.397 | 1.29 | 6.60 |
+| a+b+c+d (abl58) | 0.281 | 0.459 | 1.27 | 6.29 |
+
+Interleaved rounds (`rounds.sh`, `bench_build.py`: 3 warm-up then 30 builds per size (10 at 10^7), median of the 5 runs' medians, ratio to AMD 1.13 in the same rounds; `res/build_s3`, `res/build_s4`):
+
+| variant | 10^4 | 10^5 | 10^6 | 10^7 |
+|---|---|---|---|---|
+| a+b (abl10) | 1.31x | 1.19x | 1.04x | 1.09x |
+| a+b, mark_packed walks (abl74) | 1.25x | 1.15x | 1.11x | 1.16x |
+| a+b+c (abl26) | 0.99x | 0.96x | 1.00x | 1.11x |
+| a+b+d (abl42) | 1.28x | 1.17x | 1.06x | 1.06x |
+| a+b+c+d (abl58) | 0.92x | 0.89x | 0.95x | 1.01x |
+| a+b+c+d, mark_packed walks (abl122) | 0.98x | 0.91x | 0.95x | 1.11x |
+| a+b+c+d capture-safe, 97 launches (abl60) | 1.20x | 1.15x | 1.10x | 1.05x |
+| a+b+c+d capture-safe, bound key+index bits (abl188) | 0.97x | 1.00x | 1.02x | 1.04x |
+
+(mesh_build ratios within a few percent of these.) Answers to the hypotheses: the cost of the bottom-up pass is mostly the device-scope `__threadfence()` (60.6 -> 18.4 ms at 10^7 with only the fence removed); the remaining walk with its `atomicAdd` is about 8 ms more than the whole top-down topology + depth-level refit. So neither the integer atomic nor the walk alone: the fence dominates, which is why the cost does not shrink on a bigger GPU. The fused bounds kernels are the second piece at large sizes (4.6 ms at 10^7); the pool is what matters at 10^4-10^5 (about 0.1 ms of allocation calls); the 30-bit sort and the precomputed depths are each about 0.5 ms at 10^7. All four were needed to be within ~10% at every size, so the commit has all of them. (c) in 1.14 is only the pooled allocation: upstream 1.14's builder has no mid-build synchronize.
+
+Capture: AMD's builder reads the max depth with `wp_memcpy_d2h` and ends with `cuCtxSynchronize`; on 1.14 that fails the capture-rebuild tests (abl58 tree: test_bvh FAILED errors=4, test_grouped_bvh failures=1 errors=2, "Warp CUDA error 700: an illegal memory access" from `wp_memcpy_d2h`, `res/t3_abl58.log`). The commit instead launches key_bits + index_bits refit levels (30 + ceil(log2 n), or 64 + ... with groups): along any root-to-leaf path the Karras common-prefix length (64 + clz(i^j) for equal keys) strictly increases and takes at most that many distinct values, so the bound is exact by construction; levels deeper than the device-side max return at once. Cost vs the host read: abl188 vs abl58 within noise (0.97-1.04x of AMD vs 0.94-1.02x).
+
+A bug found and fixed before commit: the first version of the HIP build named its block count `num_blocks`, the name of a local inside the `wp_launch_device` macro, whose arguments are expanded in the macro's scope, so `reduce_block_bounds` received 1 instead of ceil(n/256) and the total bounds covered only the first 256 items. Trees stayed correct (every test passed, query results identical) but the Morton keys degenerated: `mesh_query_point` at 4x10^6 took 27 s and 10^7 ran past a 60 s timeout. Found by the benchmark's query step, not by tests; renamed `num_bounds_blocks` (device printf showed `nb 1` at 10^5). Every number above for the committed code was re-measured after the fix.
+
+Committed code vs AMD 1.13 and the tree before item 3 (`res/build_s7`, 5 interleaved rounds, ms, `wp.Bvh` / `wp.Mesh`): 10^4 0.41/0.45 (before) -> 0.41/0.43 (AMD 0.40/0.41); 10^5 1.16/1.18 -> 0.58/0.53 (0.55/0.58); 10^6 6.41/6.28 -> 1.70/1.50 (1.67/1.45); 10^7 62.6/62.0 -> 6.98/8.00 (8.64/9.11). Spreads in that set were +-15-35% (GPUs 0, 3 and 4 of this board were at 100% from other users during these runs).
+
+Tree quality: query outputs on the new trees are bit-identical to the upstream-built trees at every size (`cmp_bvh.py`: max|d dist| 0, max|d t| 0, 0 AABB count mismatches; AMD 1.13 differs by 1.3e-7 / 2.4e-7, as on gfx942). Query times, from the quiet first sweep where the same topology was built by abl58/abl60 (identical trees: same kernels and sort): `mesh_query_point` 0.88-1.00x, `bvh_query_aabb` 0.95-1.00x of the upstream-built tree; `mesh_query_ray` too noisy there (+-29%) and item 4's subject. Later query rounds on the committed tree (`res/q_s7`, `res/q_s8`) had spreads up to +-500% from the outside load and are not usable for 10% statements; they show nothing outside their noise. Refit: GPU time of `bvh_refit_kernel` per call at 10^5 (`rocprofv3`, 50 refits): 0.407 ms on the upstream-built tree, 0.408 ms on the new tree (AMD 1.13 0.502 ms); refit wall time at 10^4-10^5 is noisy (+-20-40%, `res/refit_s1`).
+
+Tests (fork clone at the commit, gfx950): test_bvh 13 OK, test_grouped_bvh 11 OK (both incl. capture rebuild), test_mesh* 49 OK (18 skipped), test_apic_mesh 12 OK; `small_n.py` (1, 2, 3, 5, 17 items, build and rebuild, AABB hits and closest points vs brute force) 0 mismatches. `n == 1` needed a fix that AMD's kernel lacks: with no internal node nothing wrote `*root`; the topology kernel writes 0 then. CUDA: `cuda_pp.sh` `dd41f3d2` vs `43c348ea`: 22 identical, bvh.cu's two LINE-ONLY.
+
+Observation (not a work item, question for Jeff): `Bvh.refit()`/`Mesh.refit()` use the same fence-bound bottom-up walk (`bvh_refit_kernel`) and take 44-46 ms at 10^7 in every tree, AMD's included; a depth-level refit (depths kept in the BVH) would likely be ~10x faster at large sizes. Options: (a) leave it (equal to AMD 1.13, no gap); (b) a follow-up HIP-only change in this line (more diff: depths stored per BVH, kept across rebuilds).
