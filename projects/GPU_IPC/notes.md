@@ -2,11 +2,12 @@
 
 ## Port status
 
-Builds, links and runs on gfx1100 (linux-gfx1100), fork `moat-port` @ 3798cb2,
-a single commit on top of 46594e0. The Eigen blocker recorded below is
-resolved. Not yet validated on any arch. Both rounds of review 2026-08-08 are
-addressed; see "## Response to review 2026-08-08" and "## Response to review
-2026-08-08 (round 2)".
+2026-11-20: fork `moat-port` @ 29e2494, a merge of upstream main (4fb6019,
+13 commits past the old base 46594e0) on top of f9604bb. Built on gfx1100 and
+CUDA-compiled; NOT yet run on a GPU at 29e2494 (the gfx1100 host's pinned card
+was wedged, see "## Upstream sync 2026-11-20"). Both Linux platforms read
+`revalidate`. Earlier history: 3798cb2 (port) and f9604bb (warp-intrinsic
+functions), both validated on gfx90a and gfx1100.
 
 ## Build recipe (Linux)
 
@@ -1407,3 +1408,159 @@ f9604bbd1e965106ee0752b46e48f8e7828c6401 via carry-forward. Both Linux arches
 (wave32 via gfx1100, wave64 via gfx90a) are validated at the current head;
 `windows` remains the only open gate, still `blocked` on the CrowdStrike host
 defect recorded above.
+
+## Upstream sync 2026-11-20 (porter, linux-gfx1100)
+
+Why: `pr-candidates --freshness` reported the port NOT SENDABLE AS IS; upstream
+main was 13 commits (2026-07-16 to 2026-09-01) past the port's base 46594e0 and
+touched 12 of the port's 19 files. Lock taken with `set-state GPU_IPC
+linux-gfx1100 porting`.
+
+### Merge
+
+```bash
+git -C projects/GPU_IPC/src remote add upstream https://github.com/KemengHuang/GPU_IPC
+git -C projects/GPU_IPC/src fetch upstream
+git -C projects/GPU_IPC/src merge --no-ff --no-commit upstream/main   # 8 conflicted files
+```
+
+Committed as 29e2494 `[ROCm] Merge upstream main and port its new warp and CUB
+code` (parents f9604bb, 4fb6019); plain push f9604bb..29e2494; `advance-head`.
+Ancestry checked before pushing: `merge-base --is-ancestor upstream/main HEAD`
+and `--is-ancestor f9604bbd HEAD` both true. Note the fork's `main` mirror is
+still at 95b5a26 (behind upstream 4fb6019); the local `main` in the clone was
+pointed at `upstream/main` for the jargon scan only, the fork mirror was not
+pushed.
+
+Conflicts (CMakeLists.txt, PCG_SOLVER.cu, cuda_tools.h, device_utils.inl,
+gpu_eigen_libs.cuh, mlbvh.cu, mlbvh.cuh, README.md) were resolved by taking
+upstream's text and re-applying the port's pattern. Upstream rewrote PCG_SOLVER.cu
+and mlbvh.cu substantially, so both were taken whole from upstream and the port's
+edits re-applied (drop `device_launch_parameters.h`, `<< <` -> `<<<` on code
+lines). README.md takes upstream's new layout with the AMD block under Linux.
+
+Port edits dropped because upstream fixed the same thing itself:
+- femEnergy.cu `return tempMat;` in `__project_StabbleNHK_H_3D_makePD`
+  (upstream made the function `void`; the auto-merge had kept our return and
+  the HIP build failed with -Wreturn-mismatch until it was removed).
+- mlbvh.cu `return false/true` in `_checkPTintersection*` (upstream made them `void`).
+- The HIP-branch `cmake_minimum_required(VERSION 3.21)` and its "CUDA users on
+  3.18" comment: upstream raised the global floor to 3.24.
+- CMake CUDA-branch comment edits ("unused but kept") and trailing-whitespace
+  edits were reverted to upstream's text to shrink the diff.
+
+### New upstream CUDA surface, and how each was ported
+
+Audited with `git diff 46594e0 upstream/main -- GPU_IPC` and a grep for every
+warp intrinsic, `warpSize`, `cub::`, `cuda*` identifier in the merged tree.
+
+1. **`warpSize` in logical 32-lane reductions (wave64 bug).** `__blockReduce`
+   and `__blockReduceMax2` (GIPC.cu:137-138, 206-207) and `__PCG_blockReducePartial`
+   (PCG_SOLVER.cu:54-55) index groups with `threadIdx.x >> 5` / `% 32` but
+   computed `warp_begin = idof + warpId * warpSize` and
+   `valid_lanes = min(warpSize, ...)`. On CDNA (warpSize 64) group 1's
+   `warp_begin` lands 64 elements on and `valid_lanes` can exceed 32, so lanes
+   would add their own value back (width-32 shuffle returns self) or skip live
+   lanes. Changed to `32`; on CUDA warpSize is 32, so identical. Upstream already
+   writes `min(32, ...)` in PCG_SOLVER.cu:247.
+2. **`WARP_MASK_FROM_COUNT`** (new upstream helper, `count >= warpSize`) is in the
+   HIP branch of details/device_utils.inl with `count >= 32`, avoiding
+   `1U << count` for 32..63 on wave64. CUDA branch is upstream's text.
+3. **`__syncwarp(mask)`** (14 calls in MASPreconditioner.cu). HIP's
+   `__syncwarp(MaskT)` static_asserts a 64-bit mask, so 32-bit masks do not
+   compile. New `gipc::SYNC_WARP(mask)`: CUDA -> `__syncwarp(mask)`, HIP ->
+   `__syncwarp()` (wavefront fence + wave_barrier). All call sites go through it.
+4. **`__match_any_sync(active_mask, v)`** (PCG_SOLVER.cu:250, 276, 302, fused
+   Hessian SpMV). New `gipc::WARP_MATCH_ANY(v, mask)`: CUDA -> `__match_any_sync`,
+   HIP -> `__match_any(v)` shifted down to the calling lane's 32-lane half, the
+   same treatment as `WARP_BALLOT`. A 12-lane row straddling lane 31/32 is
+   split exactly as two CUDA warps would split it.
+5. **CUB.** New cuda_cub_wrappers.cu (DeviceScan/DeviceRadixSort/DeviceReduce)
+   and `cub::BlockReduce<AABB, 256>` in mlbvh.cu: hipCUB headers plus
+   `namespace cub = hipcub;` under `USE_HIP`. No CMake target: linking
+   `hip::hipcub` pulls `hip::device`, whose `--offload-arch` then reaches the
+   gcc-compiled .cpp files ("c++: error: unrecognized command-line option
+   '--offload-arch=gfx1100'"). hipCUB/rocPRIM headers sit in the same include
+   root as HIP, the same way rocThrust was already used.
+6. `cudaGetLastError` added to cuda_to_hip.h; `<cuda_runtime.h>` in the new
+   device_buffer.h and cuda_cub_wrappers.h -> `"cuda_to_hip.h"`.
+7. README ROCm floor raised from 6.0 to 7.0: `__syncwarp()`/`__match_any` come
+   from HIP's warp-sync header (introduced 6.2 as an opt-in preview per the
+   header comment), and only ROCm 7.x has built and run this port.
+
+Pre-existing items checked and left alone: `__ffs`/`__popc` on 32-bit masks of
+32-lane banks (unchanged semantics), the `cooperative_groups` include guard
+(still unused), Eigen `qr_svd` in `SVD()` (compiled before).
+
+### Build (gfx1100, this host)
+
+Host: TheRock pip SDK (`/opt/python-3.11-venv/.../_rocm_sdk_devel`, hipcc
+reports 7.16.26385), cmake from the venv, Ninja. freeglut headers are not
+installed on this image; `libglut-dev` was extracted into the job directory
+(`apt-get download libglut-dev; dpkg -x`) and its `libglut.so` pointed at the
+system `libglut.so.3.12`. Command (host-specific paths in angle brackets):
+
+```bash
+cmake -S . -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<pip ROCm SDK root> \
+  -DGLUT_INCLUDE_DIR=<glut>/include -DGLUT_glut_LIBRARY=<glut>/lib/x86_64-linux-gnu/libglut.so
+cmake --build build -j 10
+```
+
+Exit 0; warnings only `-Wunused-result` (the pre-existing `[[nodiscard]]` pattern).
+
+### CUDA no-regression compile at 29e2494
+
+No conda or CUDA toolkit on this host. The pip `nvidia-cuda-nvcc-cu12` 12.8
+wheel ships only ptxas, so NVIDIA's redistributable archives
+(`cuda_nvcc-linux-x86_64-12.8.93`, `cuda_cudart-...-12.8.90`,
+`cuda_cccl-...-12.8.90` from developer.download.nvidia.com/compute/cuda/redist)
+were unpacked into the job directory. CMake's CUDA configure needs cuBLAS etc.,
+which those archives lack, so each translation unit was compiled directly with
+the project's CMake flags, compile only, host gcc 13:
+
+```bash
+nvcc -std=c++17 -arch=sm_80 -rdc=true --use_fast_math --extended-lambda \
+  --expt-relaxed-constexpr --default-stream=per-thread -O3 \
+  -DGIPC_ASSETS_DIR=... -DGIPC_OUTPUT_DIR=... -DUSE_SNK -DADAPTIVE_KAPPA \
+  -IGPU_IPC -I/usr/include/eigen3 -c GPU_IPC/<file>.cu
+g++ -std=c++17 ... -I<cuda>/include -c GPU_IPC/<file>.cpp
+```
+
+Port tip 29e2494 and upstream 4fb6019 (worktree, same toolchain, same flags):
+all 8 `.cu` files compile in both (ACCD, GIPC, MASPreconditioner, PCG_SOLVER,
+cuda_cub_wrappers, device_fem_data, femEnergy, mlbvh), and `gl_main.cpp`.
+`load_mesh.cpp` fails in BOTH with 16 byte-identical errors (`uint32_t` not
+declared at load_mesh.h:51, the pre-existing missing `<cstdint>` recorded at
+3798cb2 and f9604bb). nvcc warning counts equal per file except femEnergy.cu
+(port 18, upstream 29: the port no longer instantiates
+`SelfAdjointEigenSolver`). Gate: pass (no port-only error). Device link was not
+attempted (no cuBLAS/cuSOLVER/cuSPARSE/cuFFT in the archives).
+
+### GPU run: not possible this session (host condition, not the port)
+
+The dispatcher pinned `HIP_VISIBLE_DEVICES=3`, which this host maps to PCI
+26:00.0 (`amd-smi` GPU 1, sysfs card4). That card sat at `gpu_busy_percent`
+100 with no owning process visible. First another fleet job's 16-way
+parallel autotune was running, but the card stayed at 100% after that process
+exited. With it in that state:
+
+- `gipc` at 29e2494 printed scene setup up to `meanMass` and then waited forever
+  in `hipMemcpy` (gdb backtrace: `initScene1` -> `hipMemcpy` ->
+  `hsa_signal_wait_scacquire`); `AMD_LOG_LEVEL=3` shows the only kernel queued
+  before it was ROCm's own `__amd_rocclr_fillBufferUnAligned` (a `hipMemset`).
+- A 15-line HIP program (hipMemset 150 KB, one 64-thread kernel,
+  `hipDeviceSynchronize`) on the same pin also never returned: 18 attempts of
+  50 s each from 21:51 to 22:06, plus one of 180 s. So this is the card, not
+  GIPC.
+
+The pin was kept, per the job's rules (other jobs share this host); GPUs 0 and 2
+were idle but not this job's to take. No frame counts exist at 29e2494 to compare
+with the f9604bb record (gfx1100 2026-08-08: 37 frames then the documented
+line-search wedge; gfx90a 2026-08-19: 31 frames then the wedge). Both Linux
+platforms stay `revalidate`. Next session: run the "Running it headless" harness
+on a healthy gfx1100 and a gfx90a card. Upstream's 2026-08-29 "harden GPU
+solver" commits may change the wedge frame, or remove the wedge.
+
+`jargon.py --port GPU_IPC`: clean (after pointing the clone's local `main` at
+`upstream/main`).
