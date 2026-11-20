@@ -70,3 +70,29 @@ Upstream has no Windows build: README targets Linux (and macOS CPU), the GPU pat
 ### Recommendation
 
 Fork. Small knowhere-owned GPU surface (4 `.cu`, ~1.7 kLOC glue, no kernels), all four cuVS indexes plus the DiskANN GPU build covered by hipVS at the API level, with the ACE build mode and the 25.10 vs 26.02 version skew as the known gaps. Depends on hipVS/hipRaft (not MOAT projects; no `set-deps`). Hold porting until jeff's ROCm-DS conversation settles whether hipVS moves to a 26.x base.
+
+## Planning (2026-11-20, linux-gfx1100 fleet job, planner)
+
+### Decisions needed from Jeff before a porter starts
+
+**Question 1: may porting start now?** Intake recorded that "jeff will check with ROCm-DS before any porting starts, so MOAT builds on hipVS rather than competing with it", and recommended holding until ROCm-DS said whether hipVS would move to a 26.x base. The fork was created on 2026-11-18 (commit 333b2d7a, "the decision to take this project up"), but nothing in the records says the ROCm-DS conversation happened. Since intake, the version question has answered itself: hipVS 2.0.0 (`release/26.10`, now hipVS's default branch) is based on cuVS 26.06, ahead of knowhere's 26.02 pin, and includes the ACE build mode intake found missing. The plan builds entirely on hipVS 2.0 and reimplements nothing in it. Options:
+- (a) Start now. The porter builds on hipVS 2.0 as planned; the ROCm-DS conversation can still happen in parallel, before any upstream PR.
+- (b) Hold until ROCm-DS replies. Record it with `moatlib.py set-hold knowhere on --reason "<why>"` so the selector skips the project; the plan stays valid.
+
+**Question 2: does Milvus-level validation gate the upstream PR?** Intake named milvus-io/milvus as the downstream validation target (not claimed or scaffolded). MOAT's own gate is knowhere's GPU unit tests on wave64 and wave32. A Milvus GPU build against the ported knowhere plus its GPU index tests (`tests/python_client/testcases/test_index.py`, `test_query.py`, Go `client/index/gpu_test.go`, and a recall/QPS run on a standard ANN dataset) is a large extra build with its own dependency stack. Options:
+- (a) knowhere UT is the gate; one Milvus run on one platform as additional evidence before the PR is opened (the validator or a checkup session does it after the gates pass; does not block `completed`).
+- (b) Milvus validation is required on every gate platform, as part of validation.
+- (c) No Milvus validation; register it as deferred work (`deferred.py add --project knowhere`) for later.
+
+Neither question changes the plan's content. Nothing in the port cuts scope: the whole open GPU surface (all four cuVS indexes, the DiskANN GPU build, the GPU UT, GPU benchmark sections, the C API tests) is in scope. The only exclusions are code upstream itself never compiles (vendored Faiss GPU, `src/index/gpu/*`) and Cardinal, which is closed source and fetched from a private repository.
+
+### What planning found
+
+- **hipVS 2.0.0 supersedes intake's version gap.** `AMD-Ecosystem/hipVS` `release/26.10` head `82fe184a6ee88d1d1fa9596a30bea3e90a9b3abe` (2026-11-03), `VERSION` `02.00.00`, `RAPIDS_BRANCH` `release/26.06`, CHANGELOG 2.0.0 dated 2026-09-29: cuVS 26.06 base, ROCm 10.0.0, wave32 official, ACE build method, CAGRA filtered merge, many wave32 fixes. hipRaft 2.0.0 (RAFT 26.06, hipMM 5.0.0). No tags on either repository; pin by commit. `AMD-Ecosystem/ROCmDS-cmake` has `release/26.10`.
+- **Every cuVS/RAFT symbol knowhere and its DiskANN GPU file use is present** in hipVS/hipRaft 2.0 headers (list in plan.md). Signature drift 26.02->26.06 is unknown until a compile.
+- **hipRaft's CUDA-name compat headers cover every CUDA runtime name knowhere uses** (`raft/cuda_runtime.h`, `raft/library_types.h`; `raft/util/cuda_rt_essentials.hpp` dispatches by `__HIP_PLATFORM_AMD__`). Source edits in knowhere reduce to four include lines plus whatever drift guards the compile demands.
+- **Wheels:** `https://pypi.amd.com/rocm-10.0.0/simple` has `amd-libhipvs 2.0.0`, `amd-libraft 2.0.0`, `amd-libhipmm 5.0.0` (the `rocm-7.2.3` index has the 1.0.0 line). The `amd-libhipvs 2.0.0` `libcuvs.so` (608 MB) carries code objects for gfx90a, gfx942 and gfx950 only, so wave32 validation needs hipVS built from source for the host arch. Its CMake package reports version `02.0.0` and exports `cuvs`, `cuvs_cpp_headers`, `cuvs_c` targets with no static library, so knowhere's `rapids_cpm_find(cuvs 26.02.00 ... COMPONENTS cuvs_static)` must change in the HIP branch.
+- **Upstream build:** Conan 2.28.1 via `make`; Conan remote `https://milvus01.jfrog.io/artifactory/api/conan/default-conan-local2` (from `scripts/install_deps.sh`); upstream GPU CI runs `make WITH_GPU=True WITH_UT=True` then `make test` (`ci/UT_GPU.groovy`). Conan is not installed on this host image.
+- **Upstream conventions for the eventual PR:** DCO sign-off on every commit, `feat:`-style titles, `issue: #<n>` reference for `kind/feature` (`.agents/skills/git-workflow/SKILL.md`, `.github/mergify.yml`).
+- No ROCm/HIP/AMD PRs or issues on zilliztech/knowhere (rechecked 2026-11-20). The community `krainov/knowhere-hip` was last pushed 2026-08-12.
+- Wrote `plan.md` and `surface.json` (generated floor plus 15 added GPU, build, benchmark and excluded-code components; the scoped-out entries are only code upstream never compiles, Cardinal, and non-x86 SIMD libraries). `ext_type` set to `cmake`.

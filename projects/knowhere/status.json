@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/knowhere",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "cmake",
+  "stage": "planned",
   "adopted_at": "2026-11-12T18:29:57Z",
-  "updated_at": "2026-11-20T21:18:59Z",
+  "updated_at": "2026-11-20T21:28:38Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-20T21:18:59Z",
-    "holder": "5592a5cf7d17"
-  },
+  "porting": null,
   "waivers": {
     "windows": {
       "reason": "knowhere and Milvus are Linux-only, and hipVS is Linux-only. Approved 2026-11-12 with the gap-matrix intake follow-ups.",
@@ -54,7 +50,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:18:59Z",
+      "updated_at": "2026-11-20T21:28:38Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -87,5 +83,10 @@
     "viable": true,
     "summary": "Milvus vector-search engine; GPU path is cuVS only (4 .cu, no kernels, vendored Faiss GPU unbuilt); hipVS covers all 4 indexes but tracks cuVS 25.10 vs knowhere's 26.02 (ACE missing)",
     "at": "2026-11-12T18:45:19Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-20T21:18:59Z",
+    "at": "2026-11-20T21:28:38Z"
   }
 }

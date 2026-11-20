@@ -1,0 +1,416 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "ee6b2d37359c",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "src/common/cuvs/integration/brute_force_index.cu",
+      "src/common/cuvs/integration/cagra_index.cu",
+      "src/common/cuvs/integration/cuvs_knowhere_index.cuh",
+      "src/common/cuvs/integration/ivf_flat_index.cu",
+      "src/common/cuvs/integration/ivf_pq_index.cu"
+    ],
+    "markers": {
+      "device_code": 4
+    },
+    "libraries": {
+      "thrust": 23
+    }
+  },
+  "components": [
+    {
+      "id": "benchmark:benchmark_sparse",
+      "kind": "benchmark",
+      "where": "benchmark/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:benchmark_sparse_bm25_compact",
+      "kind": "benchmark",
+      "where": "benchmark/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:benchmark_sparse_simd",
+      "kind": "benchmark",
+      "where": "benchmark/CMakeLists.txt"
+    },
+    {
+      "id": "library:diskann",
+      "kind": "library",
+      "where": "cmake/libs/libdiskann.cmake"
+    },
+    {
+      "id": "library:faiss",
+      "kind": "library",
+      "where": "cmake/libs/libfaiss.cmake"
+    },
+    {
+      "id": "library:faiss_avx2",
+      "kind": "library",
+      "where": "cmake/libs/libfaiss.cmake"
+    },
+    {
+      "id": "library:faiss_avx512",
+      "kind": "library",
+      "where": "cmake/libs/libfaiss.cmake"
+    },
+    {
+      "id": "library:faiss_avx512_spr",
+      "kind": "library",
+      "where": "cmake/libs/libfaiss.cmake"
+    },
+    {
+      "id": "library:faiss_avx512_vpopcnt",
+      "kind": "library",
+      "where": "cmake/libs/libfaiss.cmake"
+    },
+    {
+      "id": "library:faiss_sve",
+      "kind": "library",
+      "where": "cmake/libs/libfaiss.cmake"
+    },
+    {
+      "id": "library:knowhere",
+      "kind": "library",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "library:knowhere_c",
+      "kind": "library",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "library:knowhere_jni",
+      "kind": "library",
+      "where": "java/CMakeLists.txt"
+    },
+    {
+      "id": "library:knowhere_utils",
+      "kind": "library",
+      "where": "cmake/libs/libfaiss.cmake"
+    },
+    {
+      "id": "library:sparse_simd_avx512",
+      "kind": "library",
+      "where": "cmake/libs/libfaiss.cmake"
+    },
+    {
+      "id": "library:utils_avx",
+      "kind": "library",
+      "where": "cmake/libs/libfaiss.cmake"
+    },
+    {
+      "id": "library:utils_avx512",
+      "kind": "library",
+      "where": "cmake/libs/libfaiss.cmake"
+    },
+    {
+      "id": "library:utils_avx512icx",
+      "kind": "library",
+      "where": "cmake/libs/libfaiss.cmake"
+    },
+    {
+      "id": "library:utils_lasx",
+      "kind": "library",
+      "where": "cmake/libs/libfaiss.cmake"
+    },
+    {
+      "id": "library:utils_lsx",
+      "kind": "library",
+      "where": "cmake/libs/libfaiss.cmake"
+    },
+    {
+      "id": "library:utils_sse",
+      "kind": "library",
+      "where": "cmake/libs/libfaiss.cmake"
+    },
+    {
+      "id": "option:CARDINAL_VERSION_FORCE_CHECKOUT",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Force checkout cardinal version"
+    },
+    {
+      "id": "option:WITH_ASAN",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with ASAN"
+    },
+    {
+      "id": "option:WITH_BENCHMARK",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with benchmark"
+    },
+    {
+      "id": "option:WITH_CARDINAL",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with cardinal"
+    },
+    {
+      "id": "option:WITH_CCACHE",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build with ccache"
+    },
+    {
+      "id": "option:WITH_COMPILE_PRUNE",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Enable compile prune"
+    },
+    {
+      "id": "option:WITH_COVERAGE",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with coverage"
+    },
+    {
+      "id": "option:WITH_CUVS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with CUVS indexes"
+    },
+    {
+      "id": "option:WITH_C_API",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build the public C API"
+    },
+    {
+      "id": "option:WITH_C_API_TESTS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build C API contract tests"
+    },
+    {
+      "id": "option:WITH_DISKANN",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with diskann index"
+    },
+    {
+      "id": "option:WITH_FAISS_TESTS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with Faiss unit tests"
+    },
+    {
+      "id": "option:WITH_GPU",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with GPU support (cuVS or Cardinal)"
+    },
+    {
+      "id": "option:WITH_JNI",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build Java JNI bindings"
+    },
+    {
+      "id": "option:WITH_LIGHT",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with light weight version"
+    },
+    {
+      "id": "option:WITH_PROFILER",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with profiler"
+    },
+    {
+      "id": "option:WITH_SVS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with SVS (Intel Scalable Vector Search) index"
+    },
+    {
+      "id": "option:WITH_UT",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with UT test"
+    },
+    {
+      "id": "test:faiss_tests",
+      "kind": "test",
+      "where": "tests/faiss/CMakeLists.txt"
+    },
+    {
+      "id": "test:knowhere_c_api",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:knowhere_c_api_concurrency",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:knowhere_c_api_concurrency_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:knowhere_c_api_diskann",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:knowhere_c_api_diskann_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:knowhere_c_api_test",
+      "kind": "test",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "test:knowhere_tests",
+      "kind": "test",
+      "where": "tests/ut/CMakeLists.txt"
+    },
+    {
+      "id": "gpu-index:GPU_CUVS_BRUTE_FORCE",
+      "kind": "gpu-index",
+      "where": "src/common/cuvs/integration/brute_force_index.cu + src/index/gpu_cuvs/gpu_cuvs_brute_force.cc (also registered as GPU_BRUTE_FORCE)",
+      "added_by": "planner"
+    },
+    {
+      "id": "gpu-index:GPU_CUVS_IVF_FLAT",
+      "kind": "gpu-index",
+      "where": "src/common/cuvs/integration/ivf_flat_index.cu + src/index/gpu_cuvs/gpu_cuvs_ivf_flat.cc (also GPU_IVF_FLAT)",
+      "added_by": "planner"
+    },
+    {
+      "id": "gpu-index:GPU_CUVS_IVF_PQ",
+      "kind": "gpu-index",
+      "where": "src/common/cuvs/integration/ivf_pq_index.cu + src/index/gpu_cuvs/gpu_cuvs_ivf_pq.cc (also GPU_IVF_PQ)",
+      "added_by": "planner"
+    },
+    {
+      "id": "gpu-index:GPU_CUVS_CAGRA",
+      "kind": "gpu-index",
+      "where": "src/common/cuvs/integration/cagra_index.cu + src/index/gpu_cuvs/gpu_cuvs_cagra.cc (also GPU_CAGRA; incl. bitset-filtered search, serialize_to_hnswlib, adapt-for-CPU)",
+      "added_by": "planner"
+    },
+    {
+      "id": "gpu:raft_initialization",
+      "kind": "gpu",
+      "where": "src/common/cuvs/integration/raft_initialization.cc, src/common/comp/knowhere_config.cc (SetRaftMemPool), src/index/index_factory.cc (checkGpuAvailable)",
+      "added_by": "planner"
+    },
+    {
+      "id": "gpu:diskann_gpu_build",
+      "kind": "gpu",
+      "where": "thirdparty/DiskANN/src/diskann_gpu.cpp + KNOWHERE_WITH_CUVS paths in partition_and_pq.cpp, aux_utils.cpp (cmake/libs/libdiskann.cmake)",
+      "added_by": "planner"
+    },
+    {
+      "id": "build:hip_cmake_branch",
+      "kind": "build",
+      "where": "CMakeLists.txt, cmake/libs/librapids.cmake, cmake/libs/libcuvs.cmake: WITH_ROCM selects HIP language, ROCmDS-cmake, hipVS package/fetch, ROCm math libraries",
+      "added_by": "planner"
+    },
+    {
+      "id": "build:conan_make_with_rocm",
+      "kind": "build",
+      "where": "conanfile.py option with_rocm, Makefile WITH_ROCM flag",
+      "added_by": "planner"
+    },
+    {
+      "id": "docs:rocm_build",
+      "kind": "docs",
+      "where": ".agents/skills/building/SKILL.md (upstream build guide) ROCm build row and subsection",
+      "added_by": "planner"
+    },
+    {
+      "id": "benchmark:benchmark_float",
+      "kind": "benchmark",
+      "where": "benchmark/CMakeLists.txt benchmark_test() (KNOWHERE_WITH_CUVS: CUVS brute force, IVF-Flat, IVF-PQ, CAGRA)",
+      "added_by": "planner"
+    },
+    {
+      "id": "benchmark:benchmark_float_bitset",
+      "kind": "benchmark",
+      "where": "benchmark/CMakeLists.txt benchmark_test() (KNOWHERE_WITH_CUVS: IVF-Flat, IVF-PQ)",
+      "added_by": "planner"
+    },
+    {
+      "id": "benchmark:benchmark_float_qps",
+      "kind": "benchmark",
+      "where": "benchmark/CMakeLists.txt benchmark_test() (GPU sections)",
+      "added_by": "planner"
+    },
+    {
+      "id": "benchmark:benchmark_float_range_bitset",
+      "kind": "benchmark",
+      "where": "benchmark/CMakeLists.txt benchmark_test() (GPU sections)",
+      "added_by": "planner"
+    },
+    {
+      "id": "vendored:faiss_gpu",
+      "kind": "vendored",
+      "where": "thirdparty/faiss/faiss/gpu (75 .cu), not compiled by knowhere",
+      "added_by": "planner"
+    },
+    {
+      "id": "library:index_gpu_faiss_wrappers",
+      "kind": "library",
+      "where": "src/index/gpu/{flat_gpu,ivf_gpu}, gpu_res_mgr.h (removed from KNOWHERE_SRCS unconditionally)",
+      "added_by": "planner"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "vendored:faiss_gpu",
+      "reason": "Vendored Faiss GPU tree is never compiled by knowhere (cmake/libs/libfaiss.cmake globs CPU sources only); knowhere's GPU path is cuVS only. It already carries upstream Faiss's own ROCm support. Nothing to port."
+    },
+    {
+      "id": "library:index_gpu_faiss_wrappers",
+      "reason": "Old Faiss-GPU index wrappers and the RMM resource manager are removed from the build unconditionally by upstream (CMakeLists.txt KNOWHERE_GPU_SRCS); dead code on CUDA too."
+    },
+    {
+      "id": "option:WITH_CARDINAL",
+      "reason": "Cardinal is Zilliz's closed-source engine fetched from the private github.com/zilliztech/cardinal (404 to us); unobtainable, so not portable by anyone outside Zilliz. WITH_ROCM with WITH_CARDINAL is a configure error."
+    },
+    {
+      "id": "option:CARDINAL_VERSION_FORCE_CHECKOUT",
+      "reason": "Cardinal-only option; see option:WITH_CARDINAL."
+    },
+    {
+      "id": "library:faiss_sve",
+      "reason": "aarch64-only SIMD variant (no GPU code); ROCm hosts are x86_64, so it is not built there."
+    },
+    {
+      "id": "library:utils_lsx",
+      "reason": "loongarch64-only SIMD variant (no GPU code); not built on x86_64 ROCm hosts."
+    },
+    {
+      "id": "library:utils_lasx",
+      "reason": "loongarch64-only SIMD variant (no GPU code); not built on x86_64 ROCm hosts."
+    }
+  ],
+  "owed": [],
+  "removed_from_floor": []
+}
