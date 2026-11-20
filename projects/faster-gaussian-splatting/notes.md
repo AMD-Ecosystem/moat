@@ -2823,3 +2823,31 @@ CUDA gate: no toolkit use here (recorded at this head by linux-gfx90a). jargon/R
 
 ### Verdict
 **completed**, `windows-gfx1151`, `validated_sha=ff9ebec006c585c7ffec18270b51a52bb200052e`; satisfies the `windows` gate at this head.
+## CUDA compile check 2026-11-20 (nvcc 12.8, whole extension) -- moat-fix-14 head ff9ebec
+
+Requested by jeff (fleet job, mi355 host: NVIDIA nvcc, no NVIDIA GPU, so compile, link and import only). This extends the CUDA no-regression record above, which compiled only the five torch-free TUs: this time the whole extension was built with the project's own setup.py under nvcc against a CUDA build of PyTorch, so the merged flag block (`cxx_std = 'c++20' if IS_ROCM else 'c++17'`) ran as a CUDA user would run it. No platform state changed, nothing pushed to the fork.
+
+Trees: upstream main 4f8e186 (`git rev-parse upstream/main` = 4f8e18690464250c2443bfed79d17a36f5c99faf, the commit d895974 merged) and `origin/moat-fix-14` = ff9ebec006c585c7ffec18270b51a52bb200052e (= recorded `head_sha`; `merge-base --is-ancestor upstream/main origin/moat-fix-14` true). Each exported with `git archive` into `agent_space/cudabuild/{upstream,port}`.
+
+Toolchain: nvcc 12.8.93 (`/usr/local/cuda-12.8`, image, read only), gcc 13.3, Python 3.11 job venv with torch 2.11.0+cu128 (newest cu128 wheel on download.pytorch.org; it still accepts C++17, the C++20 header guard arrives in torch 2.14). Installed into the job venv only: `$FLEET_VENV/bin/python -m pip install --index-url https://download.pytorch.org/whl/cu128 torch==2.11.0+cu128`.
+
+Build, the README's documented `pip install ... --no-build-isolation` path as a wheel so both trees build into the same venv:
+```bash
+export CUDA_HOME=/usr/local/cuda-12.8 PATH=/usr/local/cuda-12.8/bin:$PATH TORCH_CUDA_ARCH_LIST="8.0;12.0" MAX_JOBS=32
+utils/timeit.sh faster-gaussian-splatting compile -- "$FLEET_VENV/bin/python" -m pip wheel -v --no-build-isolation --no-deps -w agent_space/cudabuild/whl-<tree> agent_space/cudabuild/<tree>/FasterGSCudaBackend
+```
+
+| | upstream 4f8e186 | port ff9ebec |
+|---|---|---|
+| rc | 0 | 0 |
+| TUs compiled | 10 (bindings.cpp + 9 .cu, incl. adam, filter3d, rasterization_api, densification_api) | same 10 |
+| flags seen in log | `-std=c++17` x10, `-use_fast_math` x9, sm_80 + sm_120 gencode x9 | identical |
+| `warning` / `error` lines in log | 0 / 0 | 0 / 0 |
+| cubins in `_C.so` | 18 (9 TUs x 2 arches) | 18 |
+| SASS (`cuobjdump -sass`, nvdisasm from the venv's triton wheel) | sm_80 359296 lines, sm_120 367282 lines, 130 functions each | byte-identical to upstream, raw, no normalization needed |
+| dynamic exports (`nm -D --defined-only`) | 332 | 332 |
+| `import torch, FasterGSCudaBackend._C` (no GPU) | ok, 8 public functions | ok, 8 |
+
+So the port changes nothing on the CUDA path: same flags, no `-std=c++20` or `-ffast-math` reaches nvcc, no new diagnostics, identical device code for both arches. The `cuda-not-validated` caveat above for adam.cu, filter3d.cu, rasterization_api.cu and densification_api.cu is resolved: all four compile and link under nvcc at C++17 at ff9ebec as at upstream.
+
+Not covered: running anything on an NVIDIA GPU (none here); CUDA 11 (unavailable); a CUDA torch >= 2.14 (its C++20 header guard would reject upstream's and the port's `-std=c++17` alike, the point made in the maintainer reply, not a port difference; not built here).
