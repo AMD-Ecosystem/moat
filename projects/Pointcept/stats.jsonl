@@ -125,3 +125,8 @@
 {"kind":"session","ts":"2026-11-20T01:38:05Z","epoch":1795138685.197665,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-20T01:41:15Z","epoch":1795138875.248026,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-20T01:42:52Z","epoch":1795138972.35338,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-20T01:43:18Z","epoch":1795138998.448462,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-20T01:45:05Z","phase":"compile","seconds":106.534,"exit":0,"cmd":"bash agent_space/build_libs.sh"}
+{"kind":"phase","ts":"2026-11-20T01:45:42Z","phase":"test","seconds":31.2,"exit":0,"cmd":"agent_space/p2tests.sh"}
+{"kind":"phase","ts":"2026-11-20T01:46:13Z","phase":"test","seconds":23.815,"exit":0,"cmd":"agent_space/e2e.sh --steps 20"}
+{"kind":"session","ts":"2026-11-20T01:46:41Z","epoch":1795139201.545527,"event":"end","platform":"linux-gfx942"}

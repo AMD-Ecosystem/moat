@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-08T13:34:12Z",
-  "updated_at": "2026-11-20T01:42:52Z",
+  "updated_at": "2026-11-20T01:46:41Z",
   "head_sha": "35af6263d690e567cff004e2cac456757faa26ea",
   "depends_on": [],
   "pr_url": "https://github.com/Pointcept/Pointcept/pull/604",
@@ -158,11 +158,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "f33fdb60e68ad499c0e3b43c76b4f6c8f3d2b197",
+      "validated_sha": "35af6263d690e567cff004e2cac456757faa26ea",
       "failed_sha": null,
       "started_at": "2026-11-19T16:56:28Z",
-      "completed_at": "2026-11-19T18:24:18Z",
-      "updated_at": "2026-11-20T01:42:52Z",
+      "completed_at": "2026-11-20T01:46:41Z",
+      "updated_at": "2026-11-20T01:46:41Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -177,7 +177,10 @@
         "last_session_at": null
       },
       "last_agent": "reviewer",
-      "state": "completed"
+      "state": "completed",
+      "validated_prior": [
+        "f33fdb60e68ad499c0e3b43c76b4f6c8f3d2b197"
+      ]
     }
   },
   "porting_released": {

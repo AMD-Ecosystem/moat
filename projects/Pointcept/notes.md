@@ -1179,3 +1179,29 @@ Verified:
 - Finding 3. The lesson now reads "ran one forward+backward pass on the GPU".
 - Finding 4. The `:24` correction is in the porter round 2 section.
 - Hygiene. Title is `[ROCm]` and 66 characters, with no Co-Authored-By or noreply trailer. `jargon.py --port Pointcept` is clean. No modified tracked files in the fork clone. The non-ROCm branch is unchanged from f33fdb6.
+
+## Validation 2026-11-20 (validator, linux-gfx942, at 35af626)
+
+Platform: linux-gfx942, AMD Instinct MI300X (gfx942, wave64), HIP_VISIBLE_DEVICES=2 (pinned by the dispatcher). Fork `moat-port` @ 35af626 (= head_sha = reviewed_sha), clone `projects/Pointcept/src`. Environment: the job venv described in the 2026-11-20 porter section (torch 2.16.0a0+git6c3af02 / HIP 7.16.26385, triton 3.9.0+gitfc8d31a5, spconv-triton 1.0.0, ...). All GPU work under `ulimit -c 0`.
+
+Build (timeit compile 106.5 s, exit 0), from `git clean -xfd libs`: `PYTORCH_ROCM_ARCH=gfx942`, `python setup.py install` in pointops, pointops2, pointgroup_ops (`--include_dirs=<sparsehash prefix>/include`), pointrope; all four import.
+
+pointops2 in-tree tests (`yes "" | python test_<...>.py`, timeit test): 7/8 EXIT 0; test_attention_op_step2.py EXIT 1 with the known upstream `NameError: name 'x' is not defined` after forward and backward ran. step1/step1_v2 `<1e-8` True; rel-pos step1_v2/v3 max sq err 2.33e-10; step2_v2 forward 7.13e-10, attn_grad 2.594e-21, v_grad 1.906e-21, table_grad 3.66e-17 (2026-11-19: 7.13e-10 / 2.594e-21 / 2.237e-21 / 1.098e-16).
+
+Selector behaviour at 35af626: the nine probe modes (porter round 2 section) were run by the porter and re-run independently by the reviewer at this commit, same results; not repeated here.
+
+Sparse-conv end-to-end through spconv-triton (`TRITON_CACHE_DIR=<job dir>/triton_cache utils/timeit.sh Pointcept test -- agent_space/e2e.sh --steps 20`, timeit test 23.8 s, exit 0). The cache is the one the porter's cold run filled at 180f803 (13612 files, 532 MB; it did not grow, since the delta 180f803..35af626 touches no kernel). Backend reported `spconv_triton.pytorch`.
+
+| config | first step (warm) | steady | loss step 0 -> 19 | porter cold run (180f803) | 2026-11-19 (f33fdb6, older driver) |
+|---|---|---|---|---|---|
+| semseg-spunet-v1m1-0-base | 4.84 s | 0.084 s | 3.0302 -> 1.1376 PASS | 1115.7 s first step, 3.0302 -> 1.1376 | cold 1123.2 s / warm 10.05 s, 3.0259 -> 2.0823 |
+| semseg-oacnns-v1m1-0-base | 0.97 s | 0.305 s | 3.0581 -> 1.0918 PASS | 118.5 s, 3.0581 -> 1.0853 | cold 118.7 s / warm 0.79 s, 3.0608 -> 1.3663 (1.3694 warm) |
+| insseg-pointgroup-v1m1-0-spunet-base | 0.17 s | 0.085 s | 4.2489 -> 1.7244 PASS | 0.28 s, 4.2489 -> 1.7244 | 0.85 s / 0.11 s, 4.3857 -> 2.7814 |
+
+Comparison: against the same (recreated) driver, SpUNet and PointGroup are bit-identical between the cold and warm runs; OACNNs agrees at step 0 and differs in the third decimal at step 19, the same cold/warm wobble the 2026-11-19 section recorded for OACNNs. Against the 2026-11-19 section the step-0 losses agree to within the change in synthetic data (3.0302 vs 3.0259, 3.0581 vs 3.0608, 4.2489 vs 4.3857), and the cold compile cost agrees to within 1% (1115.7 vs 1123.2 s, 118.5 vs 118.7 s). Later-step losses are not comparable across the two drivers. The steady step times are a little slower than 2026-11-19's (0.084 vs 0.051-0.054 s for SpUNet); this run used a different MI300X/GPU index and a recreated driver, and the selector change runs only at import, so no conclusion is drawn.
+
+CUDA no-regression gate: `cuda-not-validated: no CUDA toolkit on this host` (no `/opt/conda/envs`, no nvcc). The delta f33fdb6..35af626 is Python and README only; no `.cu`/`.cuh`/`setup.py` changed and the non-ROCm selector branch is byte-identical, so the real-nvcc compile owed before the pull request is unchanged in scope.
+
+Integrity and content gates: `git -C projects/Pointcept/src status --porcelain` 62 entries, all untracked hipify artifacts, 0 modified tracked files. `jargon.py --port Pointcept` clean. README documents the ROCm build (requirements line, `PYTORCH_ROCM_ARCH` block, `pip install spconv-triton`, and now the triton-windows line). `git diff upstream/main...moat-port`: 12 files, +52/-10.
+
+Result: linux-gfx942 -> completed at 35af626.
