@@ -16,6 +16,19 @@
         "at": "2026-10-09T22:22:49Z",
         "note": "No observed failure and no validated FlexGEMM port to test against; revisit if FlexGEMM is adopted as a TRELLIS.2 dependency and a wave32 card shows a real fault."
       }
+    },
+    {
+      "id": "flexgemm-grid-sample-bwd-autotune-accumulates",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream bug on every platform, not ROCm-specific: indice_weighed_sum_bwd_input_kernel scatters with tl.atomic_add into grad_input allocated by the wrapper, but its autotuner has no reset_to_zero, so on an autotune cache miss every benchmarked config accumulates into the returned buffer and the first backward call for a new (LOGN, M, C, V) key returns wrong gradients (upstream 6dd94a8 on MI300X: first/second-call max ratio ~24000 at M=4096 C=8 V=8 N=1024; later calls are correct). Fix is reset_to_zero=['grad_input'] on the decorator. A person rules: separate unprefixed commit in this port, an upstream issue/PR, or leave.",
+      "refs": [
+        "projects/FlexGEMM/notes.md#porting-round-2"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-20T23:19:37Z",
+      "decided": null
     }
   ]
 }

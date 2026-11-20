@@ -157,7 +157,7 @@
     },
     {
       "id": "triton:grid_sample",
-      "reason": "grid_sample.py passes after bcf7c6f (HIP launch-size prune)"
+      "reason": "grid_sample.py passes at e7d36f1 (HIP launches split over grid axes 0 and 1 by flat_grid; fwd+bwd verified at 2-8 GiB shapes with every config forced, notes.md Porting round 2)"
     },
     {
       "id": "package:flex_gemm.ops",
@@ -165,7 +165,7 @@
     },
     {
       "id": "package:flex_gemm.utils.autotuner",
-      "reason": "autotuning and persisted cache exercised by all Triton runs; bcf7c6f adds an early_config_prune"
+      "reason": "autotuning and persisted cache exercised by all Triton runs; unchanged by the port (bcf7c6f's early_config_prune removed in e7d36f1)"
     },
     {
       "id": "build:linux-rocm",
@@ -181,7 +181,7 @@
     },
     {
       "id": "test:grid_sample",
-      "reason": "run on MI300X gfx942 at bcf7c6f, passes (notes.md, Porting 2026-11-20)"
+      "reason": "run on MI300X gfx942 at e7d36f1, passes (notes.md, Porting round 2 2026-11-20)"
     },
     {
       "id": "test:spconv-out_coords",

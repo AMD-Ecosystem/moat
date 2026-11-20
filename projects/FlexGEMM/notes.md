@@ -417,7 +417,19 @@ CUDA allows 2^31-1 blocks in x regardless of block size, so the config is legal 
 
 ## Lesson for cuda-to-rocm: HIP rejects a launch of 2^32 or more work-items per grid dimension
 
-Belongs in `platform-limits.md`. Symptom: a kernel that runs on CUDA fails to launch on AMD only at large sizes; Triton reports `Triton Error [HIP]: Code: 1, Messsage: invalid argument` (often from inside autotuning, sometimes wrapped as `SystemError: ... returned a result with an exception set`); `hipLaunchKernel` returns `hipErrorInvalidConfiguration`, `hipModuleLaunchKernel` `hipErrorInvalidValue`, and nothing runs. Cause: HIP counts a launch in work-items, and gridDim.x * blockDim.x (likewise y, z) must stay below 2^32; CUDA limits only the block count (2^31-1 in x). Measured on MI300X, ROCm 10.2: grid 33,554,431 x 128 runs, 33,554,432 x 128 is rejected. Flat 1D grids with small tiles and an extra multiplier (a neighbour count, a batch) reach it first. Fix: in Triton, prune autotune configs whose grid * num_warps * warp_size reaches 2^32 on HIP (`early_config_prune`), or fold the grid into 2D / loop inside the program; in HIP C++, cap the grid and grid-stride. (FlexGEMM)
+Belongs in `platform-limits.md`. (Rewritten in porting round 2 after review finding 4; the first version advised folding the grid into 2D without the CUDA caveat.)
+
+Symptom: a kernel that runs on CUDA fails to launch on AMD only at large sizes; Triton reports `Triton Error [HIP]: Code: 1, Messsage: invalid argument` (often from inside autotuning, sometimes wrapped as `SystemError: <built-in method __reversed__ of list object ...> returned a result with an exception set`); `hipLaunchKernel` returns `hipErrorInvalidConfiguration`, `hipModuleLaunchKernel` `hipErrorInvalidValue`, and nothing runs.
+
+Cause: HIP counts a launch in work-items per dimension: gridDim.x * blockDim.x must stay below 2^32, and likewise y and z. CUDA limits block counts instead: 2^31-1 blocks in x, but only 65,535 in y and z. Measurements, ROCm 10.2:
+
+- x, MI300X (gfx942): grid 33,554,431 x 128 runs, 33,554,432 x 128 is rejected (also 16,777,215 / 16,777,216 at block 256), with both launch APIs.
+- y and z, MI355X (gfx950): `grid=(1,4194303) x block=(1,1024)` runs, `(1,4194304) x (1,1024)` is rejected; `grid=(1,1,67108864) x (1,1,64)` is rejected. `hipDeviceProp.maxGridSize` reports `(2147483647, 65535, 65535)`, but y is not capped at 65,535 blocks: `grid=(1,65536) x (1,128)` and `grid=(1,33554432) x (128,1)` both run. The y and z limit is also a work-item count.
+- A launch whose total over all dimensions exceeds 2^32 is fine: MI300X ran `grid=(4129777, 65) x 128` (about 2^35 work-items) correctly.
+
+Flat 1D grids with small tiles and an extra multiplier (a neighbour count, a batch) reach the limit first.
+
+Fix: keep the large program count on axis 0 and give it no more than (2^32 - 1) / blockDim.x programs there; put the overflow on a second axis whose block dimension is 1 (HIP allows nearly 2^32 there), and compute the program index as `pid0 + pid1 * num_programs0`, masking the programs that overrun the last row. Do this only on HIP, or keep the axis-1 count at or below 65,535: moving the large count itself to axis 1 or 2 trades the HIP failure for a CUDA one. A capped grid with a grid-stride (persistent) loop is the other option. In Triton the grid callable receives only the kernel arguments, not `num_warps`, so size axis 0 for the largest work-group (1024 work-items) unless the launch knows its config. Pruning autotune configs is not a fix on its own: past a size every config is too large and the list goes empty. In HIP C++, cap the grid and grid-stride. (FlexGEMM)
 
 `surface.json` after this round: every component is covered (evidence per entry) except three owed items: `build:windows-rocm` (Windows compile/validation pending), `example:spconv` (question 1 above), and `doc:install-as-dependency` (validators). `pr_ready` refuses while anything is owed, so question 1 has to be answered before an upstream PR.
 
@@ -487,3 +499,124 @@ python setup.py build_ext --inplace
 | port bcf7c6f | 2.11.0+cu128 | **builds**: torch appends `-std=c++17`, all other flags identical to upstream; same 3 upstream warnings |
 
 Both port builds' `.so` load with their torch (`importlib` on the built `cuda.cpython-311-x86_64-linux-gnu.so`: 18 exported functions). There is no NVIDIA GPU here, so nothing ran on CUDA. **The port causes no CUDA compile failure.**
+
+## Porting round 2 (2026-11-20, linux-gfx942 fleet job, AMD Instinct MI300X)
+
+Answers the 2026-11-20 review (MI355X, head bcf7c6f). New fork head **e7d36f10fcef3efc623656ca7592361db662f04b**, one commit on top of bcf7c6f, pushed plainly to `moat-port`. No history was rewritten (no amend, rebase or force-push); the wording faults in older commit bodies are recorded under "Correction for the final history" below.
+
+**Questions for Jeff (none blocks the reviewer):**
+
+1. Question 1 of round 1 (`examples/spconv.py`, `surface.json` `example:spconv` owed) is still open; this round did not touch it.
+2. Question 2 of round 1 (prune vs kernel change) is answered by doing the kernel change the reviewer preferred, so it needs no ruling. Round 1's estimate of where the prune left gaps ("roughly M*V*C at or above 2^34, i.e. tens of GB") was wrong: the gap started at M*C*V ~ 2^33 on wave64 (2 to 4 GiB of trilinear `grad_output`) and 2^34 on wave32, as the reviewer measured.
+3. New, upstream and not ROCm-specific: the grid_sample backward kernel returns wrong gradients on the first call for each new shape key, on every platform. Registered as deferred `flexgemm-grid-sample-bwd-autotune-accumulates`; details below. Options: (a) leave it out of this port (current); (b) a separate unprefixed one-line commit in this port; (c) an upstream issue or PR. (b) or (c) widens what goes upstream, so it is your call.
+
+### Finding 1 and 2: the launch change (commit e7d36f1)
+
+Title `[ROCm] grid_sample: split large launches over two grid axes on HIP` (67 characters).
+
+- New helper `flat_grid(num_programs)` in `flex_gemm/kernels/triton/utils.py`, next to `get_platform_name`. Off HIP it returns `(num_programs,)`, exactly the grid both kernels launched before. On HIP it computes `rows = max(1, cdiv(num_programs, (2**32 - 1) // 1024))` and returns `(cdiv(num_programs, rows), rows)`. Axis 0 thus never holds more than 4,194,303 programs, which keeps it under 2^32 work-items for any work-group up to 1024 (HIP's maximum, so it holds for every `num_warps` on wave64 and wave32 alike). Axis 1 has a block dimension of 1 in Triton, and HIP's axis-1 limit is also a work-item count (reviewer's MI355X measurement), so `rows` (at most a few hundred for any input below the 32-bit indexing limit) is far inside it. `rows` stays far below CUDA's 65,535 as well, although the split never runs on CUDA.
+- Why the 1024 bound instead of the config's real block size: Triton 3.9 calls the grid lambda with the kernel's bound arguments only (`JITFunction.run`, `grid = grid(bound_args)`), which do not include `num_warps`, and the prune approach needed `get_current_target().warp_size` per launch. The cost is that HIP splits a launch somewhat earlier than strictly needed (at 4.19M programs instead of 33.5M for a 128-wide group), which changes only the grid shape, not the work.
+- Both kernels: `block_id = tl.program_id(axis=0) + tl.program_id(axis=1) * tl.num_programs(axis=0)`. The forward kernel's store mask gains `& (block_id_m < tl.cdiv(M, BM))`, because its `offset_m` wraps modulo M, so without it the up-to-`rows - 1` programs that overrun the last row would recompute and rewrite valid rows. The backward kernel needs no new mask: an overrunning program has `offset_m >= M`, so its loads and atomics are already masked off.
+- bcf7c6f's `early_config_prune` is removed, so no prune remains and no config list can go empty; the `get_platform_name` import moves to the helper.
+- **CUDA is unchanged in behaviour:** `flat_grid` returns the same 1-tuple as before, so the launched grid, `program_id(0)`, the program-to-tile mapping and the autotune configs (`config.py` untouched) are identical; `program_id(1)` is 0 and the new forward mask term is always true there, because the grid covers exactly `cdiv(M,BM)*cdiv(C,BK)` programs. The compiled kernel gains one `program_id(1)` read, a multiply-add and one compare.
+- Diff vs bcf7c6f: 3 files, +24 / -20. Diff vs upstream 6dd94a8 in `flex_gemm/`: 3 files, +23 / -5.
+
+Out of scope and shared with CUDA (recorded, not changed): both kernels compute offsets in 32-bit (`offset_m * C`, `neigh_idx * C`), so tensors of 2^31 or more elements overflow on every platform. The fix covers every input below that bound; the largest shapes tested sit at it (M*C = 2^31 in the forward run).
+
+### Reproduction before and after (MI300X gfx942, GPU 2, ROCm 10.2, torch 2.16, Triton 3.9.0)
+
+Driver `agent_space/repro_launch.py <tree> fwd|bwd M C V [dtype]`: imports the Triton kernels of an exported tree (`git archive <rev> flex_gemm`; CUDA extension stubbed, autotune cache off), uses uint32 indices with every 7th row's first neighbour missing (0xffffffff), float32 weights and N = 65,536 rows, autotunes all 12 configs, and compares against a chunked float32 torch reference (`index_add_` for backward), with tolerance 1% of the reference maximum. For backward it checks the second call, because the first call's result is corrupted by question 3. `FORCE_CFG=<i>` replaces the config list with config i alone and prints the launched grid.
+
+Before (launch outcome only):
+
+```
+bcf7c6f bwd M=4194304 C=8    V=8 -> launches (tests/grid_sample.py RES=2048 case)
+bcf7c6f bwd M=1040000 C=1024 V=8 -> launches
+bcf7c6f bwd M=1048576 C=1024 V=8 -> ValueError: min() arg is an empty sequence
+bcf7c6f fwd M=1048576 C=1024 V=8 -> OK
+bcf7c6f fwd M=2097152 C=1024 V=8 -> SystemError: <built-in method __reversed__ of list object ...> returned a result with an exception set
+6dd94a8 bwd: all three shapes -> SystemError (same); fwd: same as bcf7c6f
+```
+
+After, e7d36f1 (autotuned):
+
+```
+bwd M=4194304 C=8    V=8 float16 -> OK (best BM16 BK16; max_abs_err 0.538 tol 0.616)
+bwd M=1040000 C=1024 V=8 float16 -> OK (best BM4 BK64; 0.18 / 0.383)
+bwd M=1048576 C=1024 V=8 float16 -> OK (best BM4 BK64; 0.187 / 0.383)
+bwd M=2097152 C=1024 V=8 float16 -> OK (best BM4 BK64; 0.337 / 0.54)
+bwd M=1048576 C=1024 V=8 float32 -> OK (best BM4 BK64; 1.14e-05 / 0.381)
+fwd M=1048576 C=1024 V=8 float16 -> OK (best BM4 BK64; 0.00781 / 0.119)
+fwd M=2097152 C=1024 V=8 float16 -> OK (best BM4 BK64; 0.00781 / 0.123)
+fwd M=2097152 C=1024 V=8 float32 -> OK (best BM2 BK64; 1.91e-06 / 0.123)
+fwd M=4194304 C=8    V=8 float16 -> OK (best BM32 BK8; 0.00391 / 0.108)
+fwd/bwd M=1000 C=8 V=8 float16   -> OK (no split)
+```
+
+(The float16 backward errors are float16 atomic accumulation, about 512 contributions per row; float32 is exact to 1e-5.)
+
+Every config forced in turn, float32, all 36 runs OK: backward M=2097152 C=1024 V=8 (grids from `(3947581, 17)` for the 64-wide-tile configs to `(4129777, 65)` for BM=1 BK=64; 67M to 268M programs, max_abs_err 1.91e-05), forward M=2097152 C=1024 V=8 (grids `(2796203, 3)` to `(3728271, 9)`, 1.91e-06), backward M=4194304 C=8 V=8 (grids `(1048576, 1)` to `(3728271, 9)`, about 5e-05). Most split grids overrun their program count (by 1, 4, 7, 13 or 49 programs; e.g. `(3728271, 9)` launches 33,554,439 programs for 33,554,432), so the overrun masking is exercised in both kernels; `(2097152, 2)` divides exactly. The `(4129777, 65) x 128` launch is about 2^35 work-items in total, which HIP accepts: the limit is per dimension. Output in `agent_space/repro-forced.txt` (job-local).
+
+Wave32 is covered by the same 1024-work-item bound, which does not depend on wavefront size; it has not been run on a wave32 GPU in this round (the wave32 validator will).
+
+### Project tests at e7d36f1 (MI300X)
+
+```
+source agent_space/env.sh      # HOME, TRITON_CACHE_DIR job-local; ROCM_HOME from rocm_sdk; GPU_ARCHS=gfx942; ulimit -c 0
+utils/timeit.sh FlexGEMM compile -- $FLEET_VENV/bin/python -m pip install <src> --no-build-isolation --no-deps   # Successfully installed flex_gemm-1.0.0
+utils/timeit.sh FlexGEMM test -- bash -c "cd <src>/tests && python grid_sample.py"     # rc 0, 73 s, autotune cache cleared first
+utils/timeit.sh FlexGEMM test -- bash -c "cd <src>/examples && python submconv.py"     # rc 0, 97 s
+```
+
+- `tests/grid_sample.py`, unchanged: all four tables (Nearest Fwd, Trilinear Fwd, Nearest Bwd, Trilinear Bwd) complete through RES=2048, with flex_gemm err_max 0 per mille and err_mean 0 per mille on every row. Trilinear Bwd times: RES=2048,C=8 105.9 ms (torch 168.7 ms).
+- No example uses grid_sample (`grep -rl grid_sample examples/` is empty). `examples/submconv.py` was run as a sanity check and passes; `examples/spconv.py` is question 1 of round 1. The spconv and submconv kernels and tests are untouched by this round (the diff touches only the grid_sample kernels and a new helper), so round 1's results for them stand until the validator reruns them at this head.
+- `git -C projects/FlexGEMM/src status --porcelain`: clean.
+- `python3 utils/jargon.py --port FlexGEMM`: clean. `python3 utils/prose.py` on the commit message: clean.
+
+### Upstream bug: grid_sample backward is wrong on the first call for each shape (question 3)
+
+`indice_weighed_sum_bwd_input` allocates `grad_input = torch.zeros(...)` and the kernel `tl.atomic_add`s into it, but `@triton_autotune` on the kernel has no `reset_to_zero`. On an autotune cache miss, `TritonPersistentCacheAutotuner.run` benchmarks every config on the same arguments (many runs each), all accumulating into that buffer, and then launches the best config into it once more and returns it. Measured on upstream 6dd94a8 (`agent_space/firstcall.py`, M=4096 C=8 V=8 N=1024 float32): first-call vs second-call max ratio 24,058. Adding `reset_to_zero=['grad_input'],` to the decorator makes the two calls equal (ratio 0.9999999). Every platform is affected, including CUDA; a persisted autotune cache hides it. The forward kernel stores (no accumulation), so it is unaffected. Not changed in this port (not ROCm-specific; smallest port); see question 3.
+
+### Environment (this job)
+
+Fresh job directory, so the round-1 environment was rebuilt the same way: TheRock `torch==2.16.0a0+rocm10.2.0a20261022`, `triton==3.9.0+gitfc8d31a5.rocm10.2.0a20261022`, `rocm[libraries,devel]==10.2.0a20261022`, `rocm-sdk-device-gfx942==10.2.0a20261022` and `amd-torch-device-gfx942==2.16.0a0+rocm10.2.0a20261022` from `https://nightly.repo.amd.com/rocm/whl-next/` into `$FLEET_VENV`; the job's own `venv-base-links` symlinks to the base env's ROCm 10.1 and Triton removed. Two traps: an unpinned `amd-torch-device-gfx942` sends pip backtracking through every 2.15/rocm10.3 nightly (pin it to torch's exact version), and without that wheel every torch GPU kernel fails with `hipErrorInvalidKernelFile` (torch's `device-gfx942` extra names it, but a plain `torch==` install does not pull it). `python -m rocm_sdk test` OK. `HIP_VISIBLE_DEVICES=2` (dispatcher pin), `ulimit -c 0`, `HOME` and `TRITON_CACHE_DIR` job-local.
+
+## Correction for the final history
+
+Jeff's standing rule for fork branches is no amend, no rebase and no force-push, so these commit bodies stay as they are on `moat-port`. Apply the corrected text below when the commits are prepared for the upstream pull request (a later, person-approved step). Titles are unchanged.
+
+### 06873dd `setup.py: let torch choose the C++ standard` (review finding 5)
+
+Replace the Test Plan with the following (rest of the body unchanged):
+
+````
+Test Plan:
+Against torch 2.16 (ROCm build), the unmodified setup.py fails with the #error above. With this change:
+
+```
+pip install . --no-build-isolation --no-deps
+cd tests && python hashmap.py && python serialize.py
+```
+
+CUDA (nvcc 12.8, no GPU needed): against torch 2.14.1+cu126 the unmodified setup.py fails with the same #error; with this change it builds with -std=c++20 from torch. Against torch 2.11.0+cu128 it builds with -std=c++17 from torch, with every other flag as before.
+
+```
+BUILD_TARGET=cuda TORCH_CUDA_ARCH_LIST="8.0;9.0;12.0" python setup.py build_ext --inplace
+```
+````
+
+### 078c4ab `[ROCm] setup.py: Windows HIP flags and default target` (review finding 3)
+
+Replace the first paragraph with the following (rest of the body unchanged):
+
+```
+On Windows with a ROCm build of PyTorch, the "nvcc" flag list goes to hipcc unchanged. The -Xcompiler=/... options there are nvcc syntax that clang does not accept, so give hipcc only -O3 and the target list on Windows; the host flags still reach cl.exe through the "cxx" list. hipcc needs none of /EHsc, /permissive- or /Zc:__cplusplus: clang enables C++ exceptions by default and sets __cplusplus to the language standard in use.
+```
+
+### bcf7c6f `[ROCm] grid_sample: skip bwd configs past the HIP launch size limit` and e7d36f1
+
+bcf7c6f's body is false where it says "The remaining configs (larger BM) cover the same shapes" (review finding 1), and e7d36f1 removes everything bcf7c6f added. Recommended: squash the two into one commit with e7d36f1's title, and e7d36f1's body with its second paragraph ("The previous commit (bcf7c6f) ...") dropped and the first sentence of its third paragraph reading "This commit changes the launch shape:" instead of "This commit removes that prune and changes the launch shape instead.". If the two stay separate commits instead, replace bcf7c6f's second paragraph with:
+
+```
+Add an early_config_prune that drops, on HIP only, the configs whose launch would reach that limit. This covers the RES=2048 test case but not larger inputs: from about M * C * V = 2^33 on 64-wide wavefronts every config reaches the limit and the list is empty; the next commit replaces the prune with a launch that splits the grid. CUDA keeps every config.
+```
