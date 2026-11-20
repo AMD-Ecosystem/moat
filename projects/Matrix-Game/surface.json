@@ -1,0 +1,311 @@
+{
+ "generated_by": "utils/surface.py",
+ "source_sha": "51913b2bfa78",
+ "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+ "cuda": {
+  "files": [],
+  "markers": {},
+  "libraries": {}
+ },
+ "components": [
+  {
+   "id": "example:CitySampleBBoxGame",
+   "kind": "example",
+   "where": "Matrix-Game-4/game/racing/CMakeLists.txt"
+  },
+  {
+   "id": "example:CitySampleReferenceServer",
+   "kind": "example",
+   "where": "Matrix-Game-4/game/racing/CMakeLists.txt"
+  },
+  {
+   "id": "executable:CastleReferenceServer",
+   "kind": "executable",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "executable:ExportCombatAudio",
+   "kind": "executable",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "executable:MedievalCastleBBoxMap",
+   "kind": "executable",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "library:RacingCore",
+   "kind": "library",
+   "where": "Matrix-Game-4/game/racing/CMakeLists.txt"
+  },
+  {
+   "id": "test:CameraInputTests",
+   "kind": "test",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "test:CombatCueTests",
+   "kind": "test",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "test:DemoMediaTests",
+   "kind": "test",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "test:ReferencePacingTests",
+   "kind": "test",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "test:RoadSurfaceTests",
+   "kind": "test",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "test:SceneConfigTests",
+   "kind": "test",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "test:camera_input",
+   "kind": "test",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "test:combat_cues",
+   "kind": "test",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "test:demo_media",
+   "kind": "test",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "test:racing-${name}",
+   "kind": "test",
+   "where": "Matrix-Game-4/game/racing/CMakeLists.txt"
+  },
+  {
+   "id": "test:reference_pacing",
+   "kind": "test",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "test:road_surface",
+   "kind": "test",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "test:scene_config",
+   "kind": "test",
+   "where": "Matrix-Game-4/game/CMakeLists.txt"
+  },
+  {
+   "id": "test:test-${name}",
+   "kind": "test",
+   "where": "Matrix-Game-4/game/racing/CMakeLists.txt"
+  },
+  {
+   "id": "package:matrix_game.inference",
+   "kind": "python_package",
+   "where": "Matrix-Game-4/matrix_game/inference/",
+   "note": "MG-4 inference: Wan causal DiT, attention dispatch (FA3/FA2/SDPA), Triton kernels.py and rope_kernel.py, CUDA graphs (runtime.py, vae_graph.py, text.py), TAEHV and Wan VAE, T5. The core of the port."
+  },
+  {
+   "id": "preset:mg4-realtime",
+   "kind": "preset",
+   "where": "Matrix-Game-4/matrix_game/scenes.py (--preset realtime: TAEHV, 1 step, ring-fused runtime, graphs)",
+   "note": "Primary GPU gate on wave64 and wave32."
+  },
+  {
+   "id": "preset:mg4-quality",
+   "kind": "preset",
+   "where": "Matrix-Game-4/matrix_game/scenes.py (--preset quality: Wan VAE, 2 steps, native DiT, torch.compile flex_attention)",
+   "note": "GPU gate; SDPA fallback ignores text padding masks (plan risk 2)."
+  },
+  {
+   "id": "preset:mg4-baseline",
+   "kind": "preset",
+   "where": "Matrix-Game-4/matrix_game/scenes.py (--preset baseline)",
+   "note": "Generic preset; run once on wave64."
+  },
+  {
+   "id": "cli:matrix-game",
+   "kind": "executable",
+   "where": "Matrix-Game-4/matrix_game/cli.py (render, serve, download, verify)",
+   "note": "render is the GPU entry point; serve shares the same model path."
+  },
+  {
+   "id": "server:matrix_game.server",
+   "kind": "python_package",
+   "where": "Matrix-Game-4/matrix_game/server/, scripts/serve.sh",
+   "note": "Browser/WebRTC service around the same stream; GPU work is the model path. Smoke with --reference-only and one model session where a GL context exists."
+  },
+  {
+   "id": "test:mg4-python-unittest",
+   "kind": "test",
+   "where": "Matrix-Game-4/tests/test_*.py",
+   "note": "CPU-only suite; non-GPU regression set on every arch."
+  },
+  {
+   "id": "test:mg4-browser-js",
+   "kind": "test",
+   "where": "Matrix-Game-4/tests/browser/*.cjs",
+   "note": "Pure JS/Playwright; unaffected by the port. Optional."
+  },
+  {
+   "id": "doc:mg4-rocm-install",
+   "kind": "docs",
+   "where": "Matrix-Game-4/README.md, Matrix-Game-4/docs/installation.md",
+   "note": "ROCm install section the port must add."
+  },
+  {
+   "id": "preset:mg4-rtx5090",
+   "kind": "preset",
+   "where": "Matrix-Game-4/matrix_game/inference/rtx5090/",
+   "note": "FP8 _scaled_mm + Triton FP8 quantize. PENDING Jeff ruling Q2 (plan.md)."
+  },
+  {
+   "id": "preset:mg4-rtx5080",
+   "kind": "preset",
+   "where": "Matrix-Game-4/matrix_game/inference/rtx5080/",
+   "note": "FP8 GEMMs, Sage import path. PENDING Jeff ruling Q2."
+  },
+  {
+   "id": "preset:mg4-rtx5070ti",
+   "kind": "preset",
+   "where": "Matrix-Game-4/matrix_game/inference/rtx5070ti/",
+   "note": "Triton INT8 GEMM + MXFP8 scaled_mm with SWIZZLE_32_4_4 (rejected by PyTorch's ROCm MX path). PENDING Jeff ruling Q2."
+  },
+  {
+   "id": "preset:mg4-sage-variants",
+   "kind": "preset",
+   "where": "Matrix-Game-4/matrix_game/inference/rtx5090_sage/ (rtx5090-sage, rtx5080-sage, rtx5070ti-sage)",
+   "note": "Need SageAttention 2.2 CUDA kernels (no ROCm build). PENDING Jeff ruling Q2."
+  },
+  {
+   "id": "model:mg3-generate",
+   "kind": "executable",
+   "where": "Matrix-Game-3/generate.py, Matrix-Game-3/wan/",
+   "note": "MG-3 single-GPU inference (FA2 / AITER via PR #67 / SDPA), Triton INT8 GEMMs. In scope under Q1-A; GPU gate on wave64."
+  },
+  {
+   "id": "model:mg3-distributed",
+   "kind": "executable",
+   "where": "Matrix-Game-3/test.sh, Matrix-Game-3/wan/distributed/",
+   "note": "torchrun FSDP/Ulysses over NCCL->RCCL. Run only if the host can give several GPUs."
+  },
+  {
+   "id": "model:mg2-inference",
+   "kind": "executable",
+   "where": "Matrix-Game-2/inference.py, inference_streaming.py, wan/",
+   "note": "PENDING Jeff ruling Q1."
+  },
+  {
+   "id": "vendored:mg2-tensorrt-vae",
+   "kind": "optional",
+   "where": "Matrix-Game-2/demo_utils/vae.py, vae_torch2trt.py",
+   "note": "TensorRT/pycuda VAE acceleration. PENDING Jeff ruling Q1 (NVIDIA-only even if MG-2 is in scope)."
+  },
+  {
+   "id": "model:mg1-inference",
+   "kind": "executable",
+   "where": "Matrix-Game-1/inference_bench.py, matrixgame/, run_inference.sh",
+   "note": "PENDING Jeff ruling Q1."
+  },
+  {
+   "id": "vendored:mg1-gameworldscore-cuda",
+   "kind": "extension",
+   "where": "Matrix-Game-1/GameWorldScore/GameWorld/third_party/{DROID-SLAM,DROID-SLAM/thirdparty/lietorch,RAFT/alt_cuda_corr}",
+   "note": "12 .cu files of vendored third-party torch extensions (evaluation benchmark, not inference); excluded from the census. PENDING Jeff ruling Q1; planner recommends scoping out even under Q1-C."
+  }
+ ],
+ "covered": [],
+ "scoped_out": [
+  {
+   "id": "example:CitySampleBBoxGame",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "example:CitySampleReferenceServer",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "executable:CastleReferenceServer",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "executable:ExportCombatAudio",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "executable:MedievalCastleBBoxMap",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "library:RacingCore",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "test:CameraInputTests",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "test:CombatCueTests",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "test:DemoMediaTests",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "test:ReferencePacingTests",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "test:RoadSurfaceTests",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "test:SceneConfigTests",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "test:camera_input",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "test:combat_cues",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "test:demo_media",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "test:racing-${name}",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "test:reference_pacing",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "test:road_surface",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "test:scene_config",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "test:test-${name}",
+   "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  }
+ ],
+ "owed": [],
+ "removed_from_floor": []
+}
