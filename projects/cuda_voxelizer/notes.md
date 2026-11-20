@@ -755,3 +755,150 @@ Differential: `utils/timeit.sh cuda_voxelizer test -- python3 agent_space/cuvox_
 | solid | 512 | 26,763,628 | 1 (1/0) |
 
 512 rows are the accepted boundary FP class (same 9 / 1 as 3625a1e here and on gfx1201; also seen on CUDA); harness TOTAL_FAILS=6 is exactly those six rows. Smoke `cuda_voxelizer.exe -f bunny.OBJ -s 64 -cpu`: exit 0, writes `bunny.OBJ_64.vox`. Not rerun: `_DEBUG` device-counter build and `-o vox/obj` writers (covered on this host at 689b885 and on other arches at 5a9b7cf). CUDA gate not rerun (host has no nvcc; recorded at 5a9b7cf). `utils/jargon.py --port cuda_voxelizer` clean; README documents the Windows and Linux ROCm builds.
+
+## Porter round 2026-11-19 (linux-gfx90a, fix round moat-fix-84, base c8ff8cb, tip a4f07f0)
+
+The maintainer merged his main into the PR branch (`c8ff8cb`, accepted by jeff with `accept-pr-head`). The merge left a second, unconditional `FIND_PACKAGE(CUDAToolkit REQUIRED)` at `CMakeLists.txt:16`, directly after his `FIND_PACKAGE(OpenMP REQUIRED COMPONENTS CXX)`; the same call already sits in the `ELSE()` branch of `IF(USE_HIP)`. This round removes only that line (`a4f07f0`, `CMakeLists.txt` -1). The OpenMP line is kept as he wrote it.
+
+Host: AMD Instinct MI250X/MI250 (gfx90a), `HIP_VISIBLE_DEVICES=1`, TheRock ROCm 10.1.0 pip SDK (`rocm-sdk path --root`), AMD clang 24.0.0, CMake 3.31.6, Ninja, g++ 13.3.0. No CUDA toolkit on `PATH`, in `/usr/local/cuda`, or in `CUDA_PATH` (an nvcc 12.8 tree exists at `/tmp/cuda-12.8`, which FindCUDAToolkit does not search). Trimesh2 2022.03.04 (`0b3d9e2`) cloned and built in the job directory: `make -C trimesh2/libsrc -j64`, exit 0, `lib.Linux64/libtrimesh.a`.
+
+Reproduced at the base `c8ff8cb` (observed, quoted in the commit message):
+
+```
+cmake -S <src> -B base-c8ff8cb -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DTrimesh2_INCLUDE_DIR:PATH=<tm2>/include -DTrimesh2_LINK_DIR:PATH=<tm2>/lib.Linux64
+# exit 1:
+# -- Found OpenMP: TRUE (found version "4.5") found components: CXX
+# CMake Error at .../FindCUDAToolkit.cmake:896 (message):
+#   Could not find nvcc, please set CUDAToolkit_ROOT.
+# Call Stack (most recent call first):
+#   CMakeLists.txt:16 (FIND_PACKAGE)
+```
+
+At `a4f07f0` the same configure exits 0, `cmake --build fix --parallel 64` exits 0, and `./cuda_voxelizer -f bunny.OBJ -s 64` (under `ulimit -c 0`) takes the GPU path (`Best device: AMD Instinct MI250X / MI250`, `## GPU VOXELISATION`, 0.4 ms). CUDA path compile check with nvcc 12.8 V12.8.93 on this host, upstream CI recipe: `CUDAARCHS=60 cmake -S <src> -B cuda-fix -G Ninja -DCUDAToolkit_ROOT=/tmp/cuda-12.8 -DCMAKE_CUDA_COMPILER=/tmp/cuda-12.8/bin/nvcc <Trimesh2 flags>` configure 0, build 0 (links `CUDA::cudart` found through the `ELSE()` branch; only the sm_60 deprecation warning). No NVIDIA GPU here, so compile and link only.
+
+`utils/jargon.py -C <src> --commits c8ff8cb..moat-fix-84` and `--diff` clean; `prose.py` clean on the message. `jargon.py --port cuda_voxelizer` reports only the maintainer's own merge commit title (`Merge branch 'main' into moat-port`, `c8ff8cb`), which is his and already on the PR; nothing for us to change. Pushed `moat-fix-84` only; `moat-port` still `c8ff8cb` on the fork.
+
+Fleet note: the fleet guard judges `git push origin` by the remote of the shell's starting directory, so a `cd <src> && git push` in one command is refused as a push to the moat repo; run the push with the fork clone as the shell's working directory.
+
+## Review 2026-11-19 (fix round moat-fix-84, linux-gfx90a, reviewer; delta c8ff8cb..a4f07f0)
+
+Verdict: clean, no findings. Review ran in a fresh-context reviewer agent, not the session that ported the change.
+
+- Scope: `git diff --stat c8ff8cbf...moat-fix-84` is `CMakeLists.txt | 1 -`. The only change deletes `FIND_PACKAGE(CUDAToolkit REQUIRED)` (base line 16). The maintainer's `FIND_PACKAGE(OpenMP REQUIRED COMPONENTS CXX)` (`CMakeLists.txt:15`) is byte-identical to the base. merge-base(c8ff8cb, moat-fix-84) = c8ff8cb, so nothing was rebased.
+- Where the line came from: c8ff8cb^1 (our side) has no CUDAToolkit lookup after OpenMP. The maintainer's main (c8ff8cb^2) has `FIND_PACKAGE(OpenMP REQUIRED COMPONENTS CXX)` followed by `FIND_PACKAGE(CUDAToolkit REQUIRED)`. The merge kept both next to our `IF(USE_HIP)` block, so the removed line duplicated `CMakeLists.txt:12` inside `ELSE()`.
+- Nothing depended on it: `git grep -nE 'CUDA::|CUDAToolkit' moat-fix-84` finds only `CMakeLists.txt:12` (the `ELSE()` lookup) and `:80` (`CUDA::cudart` inside the `ELSE()` link branch). The HIP link line (`:78`) uses `hip::host` only.
+- Commit message: title is 52 chars. `[ROCm]` fits because the deleted line only does harm in HIP builds. AI disclosure is in prose, with no Co-Authored-By and no noreply line, ASCII only, and the Test Plan is in fenced blocks. `jargon.py --commits` and `prose.py` are clean. Below the finding bar: the Test Plan says the MI250X has "no CUDA toolkit installed". An nvcc 12.8 tree sits at `/tmp/cuda-12.8` on this host (the CUDA compile check used it). FindCUDAToolkit does not search there, so the failure and its description are accurate. If jeff wants the wording exact, it would take a new commit, since amend is not allowed.
+- Fault classes: none apply (no kernel or host source change). Strategy A is unchanged.
+- Reviewer reproduction from `git archive` of each commit in a scratch dir: base HIP configure exits 1 with `FindCUDAToolkit.cmake:896 "Could not find nvcc, please set CUDAToolkit_ROOT."` at `CMakeLists.txt:16`. Tip HIP configure 0, build 0, no CUDA entries in CMakeCache.txt, and `-s 64` takes the GPU path on the MI250X. Tip CUDA configure (`CUDAARCHS=60`, `-DCUDAToolkit_ROOT=/tmp/cuda-12.8`) 0, `Found CUDAToolkit ... 12.8.93`, build 0, links libcudart.so.
+
+## Validation 2026-11-19 (linux-gfx90a, validator, moat-fix-84 a4f07f0)
+
+Verdict: completed. Satisfies the wave64 gate at the staging tip `a4f07f0`. This is a full real-GPU run, with no carry-forward: `classify 5a9b7cf a4f07f0` is `mixed` (net source delta since the last validation is the maintainer's `.github/workflows/autobuild.yml` rewrite and `FIND_PACKAGE(OpenMP REQUIRED COMPONENTS CXX)`; this round's own change removes the stray CUDAToolkit lookup). Every count equals the 5a9b7cf gfx90a validation exactly.
+
+Host: AMD Instinct MI250X/MI250 (gfx90a), one GCD (`HIP_VISIBLE_DEVICES=1`), Linux, TheRock ROCm 10.1.0 pip SDK, AMD clang 24.0.0, CMake 3.31.6, g++ 13.3.0, no CUDA toolkit FindCUDAToolkit can see. Trimesh2 2022.03.04 (`0b3d9e2`) built in the job directory (`make -C trimesh2/libsrc -j64`). The fork clone is at `a4f07f0`, build dirs are outside it, and `git status --porcelain` was empty at the end. All GPU runs ran under `ulimit -c 0`.
+
+### Builds (configure and build exit 0 for all three; upstream warnings only: -Wwrite-strings, -Wformat `%llu`, `nodiscard` hipError_t (-Wunused-value), -Wimplicit-const-int-float-conversion in Trimesh2)
+
+```
+common="-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DTrimesh2_INCLUDE_DIR:PATH=<tm2>/include -DTrimesh2_LINK_DIR:PATH=<tm2>/lib.Linux64"
+mkdir v-readme && cd v-readme && cmake -DCMAKE_BUILD_TYPE=Release $common <src>    # README Linux recipe (Unix Makefiles), prefix swapped for the pip SDK
+cmake -S <src> -B v-o0    -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0" $common
+cmake -S <src> -B v-o0dbg -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0 -D_DEBUG" -DCMAKE_CXX_FLAGS=-D_DEBUG $common
+cmake --build <dir> --parallel 64
+```
+
+Emitted atomics (`.hip_fatbin` unbundled to the gfx90a code object, then `llvm-objdump -d`): README Release `global_atomic_cmpswap` in both kernels; device -O0 `flat_atomic_or` (voxelize.cu) and `flat_atomic_xor` (voxelize_solid.cu). Same as at 5a9b7cf.
+
+### GPU-vs-CPU differential, `test_models/bunny.OBJ`
+
+Harness `agent_space/cvdiff.py <exe> <model> <work> <tag> --repeat 3`, rewritten because agent_space does not survive containers; same method as the 5a9b7cf section. Each run gets its own dir. The GPU log must show `## GPU VOXELISATION`, `Voxelization GPU time` and `CUDA device memory for Voxel Grid`, and must not show `CPU VOXELISATION`; the `-cpu` log must show only the CPU section. binvox RLE and morton `.bin` are decoded to bitsets and obj_points compared as vertex-line sets; then 3 more GPU runs are sha256-compared to the first. Log checks pass in all 36 cases. **108 of 108 repeats byte-identical.** Differing counts are identical across the three formats in every case.
+
+| mode | size | filled CPU | Release (README) diff, GPU-only/CPU-only | Release GPU ms (binvox) | device -O0 diff | -O0 GPU ms |
+|---|---|---|---|---|---|---|
+| surface | 64 | 13,802 | 0 | 0.4 | 0 | 24.3 |
+| surface | 256 | 221,760 | 0 | 10.0 | 0 | 574 |
+| surface | 512 | 887,315 | 8 (3/5) | 61.7 | 4 (2/2) | 3,831 |
+| solid | 64 | 52,258 | 0 | 0.9 | 0 | 19.0 |
+| solid | 256 | 3,345,384 | 0 | 51.2 | 0 | 689 |
+| solid | 512 | 26,763,628 | 1 (1/0) | 402 | 0 | 5,404 |
+
+- The 512 residual is the accepted boundary FP class, with the same counts as at 3625a1e and 5a9b7cf on this card.
+- `_DEBUG` -O0 build at 64, surface and solid, binvox and morton: GPU output byte-identical to `-cpu`. The counters read surface `Processed 5110 triangles`, `Tested 117367 voxels`, `Marked 45229 voxels`; solid reads 0 (upstream's solid kernel never increments them).
+- `-o obj` at 64 (Release): 2 GPU + 2 CPU files byte-identical. `-o vox` at 64: all four files (56,473 bytes) are identical except bytes 56470-56471, inside the last 4 bytes. That is the known uninitialized `colors[255]` palette entry in upstream's `VoxWriter.cpp`, and two `-cpu` runs also differ there.
+- Upstream CI smoke test `./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu` (README build, upstream layout in a scratch dir): exit 0, `## CPU VOXELISATION`, writes `test_models/bunny.OBJ_64.vox`.
+- CUDA path at `a4f07f0`: nvcc 12.8 configure, build and link with the upstream CI recipe, recorded in the porter round above (no NVIDIA GPU here).
+- `jargon.py --commits/--diff c8ff8cb..moat-fix-84` clean. The ROCm build is documented in the README.
+- Harness note: a decoder that ORs each binvox RLE run into one Python int is quadratic at 512^3 and stalled for over 10 minutes; building a bytearray and calling `int.from_bytes` decodes a 512 grid in about 1.5 s.
+
+### For jeff (not done by this job)
+
+The round is ready for the fork review PR (`upstream.py --fix-review`, `moat-fix-84` -> `moat-port`) as far as this host goes. Whether the other required gates (wave32, windows) need their own revalidation at `a4f07f0` is what `fix-ready` reports. Not opened here, per the job's instructions.
+
+## Validation 2026-11-19 (linux-gfx1201, validator, moat-fix-84 a4f07f0)
+
+Verdict: completed. Satisfies the wave32 gate at the staging tip `a4f07f0`. Full real-GPU revalidation, no carry-forward: `classify 5a9b7cf a4f07f0` = `mixed` (`CMakeLists.txt: mixed (token count differs)`; the maintainer's OpenMP lookup from the `c8ff8cb` merge plus this round's removal of the stray CUDAToolkit lookup change the host configure). Every count equals the 5a9b7cf gfx1201 validation exactly.
+
+Host: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32), `HIP_VISIBLE_DEVICES=0`, Linux, TheRock ROCm 10.1.0 pip SDK (`rocm-sdk path --root`), CMake 3.31.6, Ninja, g++ 13.3.0, no CUDA toolkit. Trimesh2 2022.03.04 (`0b3d9e2`) cloned and built in the job directory (`make -C trimesh2/libsrc -j24`, exit 0). Fresh fork clone at `projects/cuda_voxelizer/src`, detached at `a4f07f0`; build dirs outside it; `git status --porcelain` empty at the end. All GPU runs under `ulimit -c 0`.
+
+### Builds (configure and build exit 0 for all three; upstream warnings only: -Wwrite-strings, -Wformat `%llu`, `nodiscard` hipError_t, Trimesh2 -Wimplicit-const-int-float-conversion)
+
+```
+common="-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DTrimesh2_INCLUDE_DIR:PATH=<tm2>/include -DTrimesh2_LINK_DIR:PATH=<tm2>/lib.Linux64"
+mkdir v-readme && cd v-readme && cmake -DCMAKE_BUILD_TYPE=Release $common <src> && cmake --build . --parallel 24   # README Linux recipe, prefix swapped for the pip SDK
+cmake -S <src> -B v-o0    -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0" $common
+cmake -S <src> -B v-o0dbg -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0 -D_DEBUG" -DCMAKE_CXX_FLAGS=-D_DEBUG $common
+```
+
+The README configure finds OpenMP (`-fopenmp`, 4.5) and no longer looks for CUDA: 0 `CUDA` entries in `CMakeCache.txt`. `CMAKE_BUILD_TYPE:STRING=Release`. Emitted atomics (`llvm-objdump --offloading` on the executable, then `-d` on the gfx1201 code object): Release `global_atomic_or_b32` / `global_atomic_xor_b32`; -O0 `flat_atomic_or_b32` / `flat_atomic_xor_b32`. Same as at 5a9b7cf.
+
+### GPU-vs-CPU differential, `test_models/bunny.OBJ`
+
+Harness `agent_space/cvdiff.py <exe> <model> <work> <tag> --repeat 3` (rewritten in this job, same method as the earlier sections): each run in its own directory with a copy of the model; the GPU log must show `## GPU VOXELISATION`, `Voxelization GPU time`, `CUDA device memory for Voxel Grid` and no CPU section; the `-cpu` log only the CPU section; binvox RLE and morton `.bin` decoded with numpy to bool arrays, obj_points compared as sets of `v` lines; each 512 case re-run 3 more times on the GPU and sha256-compared with the first. 36 cases, log checks pass in all 36. **36 of 36 repeats byte-identical.** Diff counts identical across binvox / morton / obj_points in every row.
+
+| mode | size | filled CPU | Release diff (GPU-only/CPU-only) | -O0 diff | GPU ms binvox Release / -O0 |
+|---|---|---|---|---|---|
+| surface | 64 | 13,802 | 0 | 0 | 0.3 / 12.7 |
+| surface | 256 | 221,760 | 0 | 0 | 4.0 / 254 |
+| surface | 512 | 887,315 | 9 (3/6) | 4 (2/2) | 25.4 / 1,635 |
+| solid | 64 | 52,258 | 0 | 0 | 0.3 / 10.5 |
+| solid | 256 | 3,345,384 | 0 | 0 | 4.9 / 296 |
+| solid | 512 | 26,763,628 | 1 (1/0) | 0 | 39.3 / 2,242 |
+
+- Row for row equal to this arch's 3625a1e and 5a9b7cf validations (Release 9 / 1, -O0 4 / 0): the accepted 512 boundary FP class.
+- `_DEBUG` -O0 build at 64, surface and solid, binvox and morton: diff 0. Counters: surface `Processed 5110 triangles`, `Tested 117367 voxels`, `Marked 45229 voxels`; solid 0 (upstream's solid kernel never counts).
+- Writers at 64 (Release): `-o obj` 2 GPU + 2 CPU files byte-identical (4,479,991 bytes). `-o vox` (56,473 bytes) differs only at bytes 56470-56471, and two `-cpu` runs differ at the same bytes (upstream `VoxWriter.cpp` uninitialized palette entry).
+- Upstream CI smoke `./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu` (README build, upstream layout in a scratch dir): exit 0, `## CPU VOXELISATION`, writes `test_models/bunny.OBJ_64.vox`.
+- CUDA gate not rerun: recorded at `a4f07f0` in the 2026-11-19 porter round (nvcc 12.8, upstream CI recipe, configure/build/link 0). No CUDA toolkit on this host.
+- `jargon.py -C <src> --commits c8ff8cb..moat-fix-84` and `--diff` clean. `jargon.py --port cuda_voxelizer` reports only the maintainer's merge commit title `Merge branch 'main' into moat-port` (`c8ff8cb`), as at gfx90a; his commit, already on the PR. README documents the Linux and Windows ROCm builds.
+- Nothing pushed to the fork; no GitHub writes.
+
+## Validation 2026-11-19 (windows-gfx1151, validator, moat-fix-84 a4f07f0)
+
+Verdict: completed. Satisfies the windows gate at the staging tip `a4f07f0`. Full real-GPU revalidation (`classify 5a9b7cf a4f07f0` = `mixed`: CMakeLists.txt OpenMP lookup plus removal of the stray CUDAToolkit lookup). Every count equals the 5a9b7cf Windows validation exactly.
+
+Host: AMD Radeon 8060S (gfx1151, wave32, APU), Windows 11, TheRock HIP 7.14 pip SDK, CMake 4.3.2, Ninja, clang-cl for C, CXX and HIP, Trimesh2 2022.03.04 `trimesh.lib` (prebuilt, reused). Fresh fork clone at `projects/cuda_voxelizer/src`, detached at `a4f07f0`, `git status --porcelain` empty. GPU runs under `ulimit -c 0`, one at a time.
+
+Build (`utils/timeit.sh cuda_voxelizer compile -- bash agent_space/cuvox_build.sh <dir> Release`; exit 0, upstream and Trimesh2 warnings only, BUILD_OK):
+
+```
+source win_rocm_env.sh
+cmake -S . -B <dir> -G Ninja -DUSE_HIP=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_C_COMPILER=$ROCM_LLVM_BIN/clang-cl.exe -DCMAKE_CXX_COMPILER=$ROCM_LLVM_BIN/clang-cl.exe -DCMAKE_HIP_COMPILER=$ROCM_LLVM_BIN/clang-cl.exe \
+  -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DTrimesh2_INCLUDE_DIR=<trimesh2>/include -DTrimesh2_LINK_DIR=<trimesh2>/lib.win64
+cmake --build <dir> -j16
+```
+
+OpenMP found (`-Xclang -fopenmp`); 0 `CUDA` entries in CMakeCache.txt (the CUDAToolkit lookup is gone). ROCm runtime DLLs staged by `rocm_stage_runtime`, `libomp140.x86_64.dll` copied next to the exe.
+
+Differential: `utils/timeit.sh cuda_voxelizer test -- python agent_space/cuvox_compare.py <exe> bunny.OBJ <work> --repeat 3`. 18 cases (binvox, morton, obj_points x surface/solid x 64/256/512), 18 of 18 repeats identical, TOTAL_FAILS=6 which are exactly the six accepted 512 boundary FP rows.
+
+| mode | size | filled CPU | diff (GPU-only/CPU-only) |
+|---|---|---|---|
+| surface | 64 | 13,802 | 0 |
+| surface | 256 | 221,760 | 0 |
+| surface | 512 | 887,315 | 9 (3/6) |
+| solid | 64 | 52,258 | 0 |
+| solid | 256 | 3,345,384 | 0 |
+| solid | 512 | 26,763,628 | 1 (1/0) |
+
+Smoke `cuda_voxelizer.exe -f bunny.OBJ -s 64 -cpu`: exit 0, writes `bunny.OBJ_64.vox`. Not rerun: `_DEBUG` device-counter build and `-o vox/obj` writers (covered on this host earlier and on linux-gfx90a/gfx1201 at this tip). CUDA gate not rerun (no nvcc here; recorded at a4f07f0 in the gfx90a porter round). `jargon.py --port cuda_voxelizer` reports only the maintainer's merge commit title `Merge branch 'main' into moat-port` (c8ff8cb), already on the PR. README documents the Windows and Linux ROCm builds. Nothing pushed to the fork; no GitHub writes. No DLL, 719 or other environment trouble this time.
