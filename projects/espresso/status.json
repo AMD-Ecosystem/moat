@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:43:45Z",
-  "updated_at": "2026-11-20T18:59:22Z",
+  "updated_at": "2026-11-20T19:56:33Z",
   "head_sha": "917d6f70715158d1b8be1a961595073dcc3c597c",
   "depends_on": [],
   "waivers": {
@@ -130,11 +130,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
+      "validated_sha": "917d6f70715158d1b8be1a961595073dcc3c597c",
       "failed_sha": null,
       "started_at": "2026-11-19T04:05:53Z",
-      "completed_at": "2026-11-19T22:13:35Z",
-      "updated_at": "2026-11-20T18:59:22Z",
+      "completed_at": "2026-11-20T19:56:33Z",
+      "updated_at": "2026-11-20T19:56:33Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -148,20 +148,14 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
+      "last_agent": "validator",
       "state": "completed",
       "validated_prior": [
         "87cbc046d27c1eabd33eec8c208014bface17b07",
         "01090739cf852d70549a5699c5984b0f17414214",
-        "4861f483930b774eccb14a26125de323d1a33851"
-      ],
-      "carry_forward": {
-        "from": "4861f483930b774eccb14a26125de323d1a33851",
-        "to": "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
-        "method": "squash",
-        "detail": "tree-identical squash of the validated head",
-        "at": "2026-11-19T23:11:35Z"
-      }
+        "4861f483930b774eccb14a26125de323d1a33851",
+        "bc8d73dd948fc2e1f93756c648529d6d1510b41c"
+      ]
     },
     "linux-gfx1100": {
       "state": "completed",

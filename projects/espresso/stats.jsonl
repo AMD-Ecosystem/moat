@@ -110,3 +110,16 @@
 {"kind":"phase","ts":"2026-11-19T22:13:00Z","phase":"test","seconds":314.67,"exit":8,"cmd":"bash -c ulimit -c 0; ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261119-133700-espresso-val2-prompt/work/build-hip -LE gpu --timeout 900 -j 16 > /var/lib/jenkins/fleet/jobs/mi300-20261119-133700-espresso-val2-prompt/work/nongpu-hip.log 2>&1"}
 {"kind":"session","ts":"2026-11-19T22:13:35Z","epoch":1795126415.509795,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-20T18:43:55Z","epoch":1795200235.689926,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-20T19:00:19Z","epoch":1795201219.652304,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-20T19:00:55Z","phase":"compile","seconds":35.74,"exit":0,"cmd":"agent_space/cfg.sh /var/lib/jenkins/fleet/jobs/mi300-20261120-103137-espresso-roles2-prompt/moat/agent_space/build-hip"}
+{"kind":"phase","ts":"2026-11-20T19:03:05Z","phase":"compile","seconds":129.711,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261120-103137-espresso-roles2-prompt/moat/agent_space/build-hip -j 56 -- -k 0"}
+{"kind":"phase","ts":"2026-11-20T19:03:09Z","phase":"compile","seconds":3.892,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261120-103137-espresso-roles2-prompt/moat/agent_space/build-hip -j 56 --target python_test_data cuda_test local_samples local_benchmarks"}
+{"kind":"phase","ts":"2026-11-20T19:08:09Z","phase":"test","seconds":264.021,"exit":0,"cmd":"cmake --build agent_space/build-hip -j 56 --target check_unit_tests"}
+{"kind":"phase","ts":"2026-11-20T19:16:47Z","phase":"test","seconds":497.8,"exit":0,"cmd":"ctest --test-dir agent_space/build-hip -L gpu --timeout 1200 -j 8 -V"}
+{"kind":"phase","ts":"2026-11-20T19:27:53Z","phase":"test","seconds":613.647,"exit":8,"cmd":"ctest --test-dir agent_space/build-hip -LE gpu --timeout 1200 -j 16"}
+{"kind":"phase","ts":"2026-11-20T19:28:42Z","phase":"compile","seconds":37.113,"exit":0,"cmd":"agent_space/cfg.sh /var/lib/jenkins/fleet/jobs/mi300-20261120-103137-espresso-roles2-prompt/moat/agent_space/build-hip-max -DESPRESSO_MYCONFIG_FILE=/var/lib/jenkins/fleet/jobs/mi300-20261120-103137-espresso-roles2-prompt/moat/projects/espresso/src/maintainer/configs/maxset.hpp"}
+{"kind":"phase","ts":"2026-11-20T19:30:49Z","phase":"compile","seconds":126.14,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261120-103137-espresso-roles2-prompt/moat/agent_space/build-hip-max -j 56 -- -k 0"}
+{"kind":"phase","ts":"2026-11-20T19:30:53Z","phase":"compile","seconds":4.319,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261120-103137-espresso-roles2-prompt/moat/agent_space/build-hip-max -j 56 --target python_test_data cuda_test local_samples local_benchmarks"}
+{"kind":"phase","ts":"2026-11-20T19:39:22Z","phase":"test","seconds":504.443,"exit":0,"cmd":"cmake --build agent_space/build-hip-max -j 56 --target check_unit_tests"}
+{"kind":"phase","ts":"2026-11-20T19:55:31Z","phase":"test","seconds":964.005,"exit":0,"cmd":"ctest --test-dir agent_space/build-hip-max -L gpu --timeout 1200 -j 8 -V"}
+{"kind":"session","ts":"2026-11-20T19:56:40Z","epoch":1795204600.324783,"event":"end","platform":"linux-gfx942"}
