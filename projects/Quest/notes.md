@@ -3454,3 +3454,7 @@ So on Windows an environment `CMAKE_BUILD_TYPE` is kept (review pass 5 could onl
 CUDA gate: not rerun, recorded at this head (real nvcc on the linux-gfx950 host, PASS). `python utils/jargon.py --port Quest` clean. The README documents the Windows ROCm build beside the Linux one, and the command above is that block verbatim. `git -C projects/Quest/src status --porcelain`: only the five untracked runtime DLLs in `quest/` (`quest/ops/build` and the `.pyd` are ignored); no modified tracked file.
 
 State: windows-gfx1151 `completed` at `2b938d8` (windows gate).
+
+## Ruling 2026-11-20 (jeffdaily): prefill on the matrix cores before the upstream pull request
+
+jeffdaily ruled on 2026-11-20 that the deferral `quest-prefill-matrix-cores` is "now": the port's prefill attention must use AMD's matrix cores before the upstream pull request is sent. The pull request is held. The validated port is fork head `2b938d8`; commits go on top of `moat-port` as it is, plain pushes, never rewriting (a clean two-commit history of the same content exists on jeff's machine and will be rebuilt later). No upstream pull request is open. The design is in plan.md, "Plan 2026-11-20".

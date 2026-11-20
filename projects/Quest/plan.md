@@ -111,3 +111,53 @@ Proceed with the port (fresh CUDA-to-HIP, Strategy B/A hybrid), staged. Set linu
 
 ## Delta plan: gfx1100 / gfx1151 (followers, on demand)
 RDNA is wave32. Stage 1 rms_norm with the `kWarpSize` abstraction is wave-agnostic and should need no change. The Stage-2 attention rewrite is the risk: if it is built on gfx90a MFMA (CDNA `__builtin_amdgcn_mfma_*` / wave64 fragment tiling), RDNA has no MFMA -- the follower needs a WMMA (`__builtin_amdgcn_wmma_*`, RDNA3 16x16x16) wave32 path or a scalar fallback. Plan the Stage-2 kernel with a wave-size-parameterized fragment layout from the start to minimize follower divergence. Validate followers on their own hardware; do not re-plan.
+
+## Plan 2026-11-20: prefill on the matrix cores (deferral `quest-prefill-matrix-cores`, ruled "now" by jeffdaily 2026-11-20)
+
+The project is at `review-passed`; the stage table has no edge back to `planning` (`review-passed -> porting|reviewing`), so this plan is recorded here and the work proceeds as a porter round from `review-passed -> porting`. Fork base: `moat-port` at `2b938d8`, commits added on top, plain pushes.
+
+### Baseline, re-measured (the 2026-11-19 figures were taken on a 38-CU compute partition)
+
+This job's GPU is a whole MI300X (304 CUs, `gfx942:sramecc+:xnack-`), PyTorch 2.16.0a0+git6c3af02, HIP 7.16 (pip ROCm SDK 10.1, aotriton 0.14.1). Causal, 32 heads x 128, fp16, mean of 10. HIP prefill from a standalone harness calling `BatchPrefillWithPagedKVCacheDispatched` at `2b938d8` (`agent_space/quest/harness`, page size 16, shuffled pages); SDPA from `agent_space/quest/sdpa_probe.py`. Quest's causal mask is bottom-right aligned (`kv <= kv_len - qo_len + q`), so for qo < kv the fair SDPA figure is `causal_lower_right` (memory-efficient backend); `is_causal=True` is top-left there and computes something else (and the flash backend refuses it: "No available kernel").
+
+| qo x kv | HIP prefill `2b938d8` | SDPA (lower-right where qo<kv) |
+|---|---|---|
+| 1 x 4096 | 13.3 ms | 0.19-0.31 ms |
+| 128 x 4096 | 26.5 ms | 0.20 ms |
+| 1024 x 1024 | 7.3 ms | 0.077 ms |
+| 1024 x 4096 | 28.9 ms | 0.27 ms |
+| 4096 x 4096 | 100.6 ms | 0.60 ms |
+| 8192 x 8192 | 276 ms | 1.95 ms |
+
+So on the whole GPU the emulated path is 100-170x slower than SDPA, not 30x.
+
+### Matrix instructions per target, and how HIP reaches them
+
+All are reachable as clang builtins from HIP device code; no inline assembly and no library is needed. Verified on this host: each builtin below compiles for its targets with the SDK's clang (`agent_space/quest/probe/wmma_compile.hip`, `v_wmma_f32_16x16x16_{f16,bf16}` in the gfx1100/gfx1151/gfx1201 assembly), and the MFMA operand layout was checked on the GPU against a host product (`probe/mfma_layout.hip`, 0 of 256 mismatches for f16 and bf16).
+
+- CDNA2/3/4 (gfx90a, gfx942, gfx950), wavefront 64: `__builtin_amdgcn_mfma_f32_16x16x16f16(half4 a, half4 b, float4 c, 0, 0, 0)` and `__builtin_amdgcn_mfma_f32_16x16x16bf16_1k(short4, short4, float4, 0, 0, 0)`, fp32 accumulate (MFMA has no fp16-accumulate form). Lane l: A holds row l%16, k = 4(l/16)..+3; B holds column l%16, k = 4(l/16)..+3; D holds rows 4(l/16)+i, column l%16, i = 0..3. gfx950 also has 16x16x32 forms; not used (one code path for all three; a possible later step). gfx908 is left on the emulated path (its bf16 MFMA is the older 16x16x8 form).
+- RDNA3/3.5 (gfx1100, gfx1151), wavefront 32: `__builtin_amdgcn_wmma_f32_16x16x16_{f16,bf16}_w32(v16 a, v16 b, v8f c)`. A holds row l%16 with all 16 k (lanes 16-31 repeat 0-15), B column l%16 with all 16 k, D rows 2i + l/16, column l%16, i = 0..7.
+- RDNA4 (gfx1200, gfx1201), wavefront 32: `__builtin_amdgcn_wmma_f32_16x16x16_{f16,bf16}_w32_gfx12(v8 a, v8 b, v8f c)`. A row l%16, k = 8(l/16)..+7; B the same for columns; D rows 8(l/16)+i, column l%16.
+- Sources relied on: llama.cpp `ggml/src/ggml-cuda/mma.cuh` (its HIP path issues exactly these builtins and its `get_i`/`get_j` give the same lane maps: MFMA C `4*(lane/16)+l`, RDNA3 C `2*l + lane/16`, RDNA4 `8*(lane/16)+l`); LLVM's `BuiltinsAMDGPU.def` signatures as accepted by the SDK clang; the AMD CDNA3 ISA guide / Matrix Instruction Calculator for MFMA (confirmed by the probe). composable_kernel's FMHA and Triton's AMD backend reach the same instructions (CK through its own `ck_tile` warp-GEMM wrappers, Triton through MLIR `amdgpu.mfma`/`wmma`); neither is a dependency here.
+
+### Candidate designs
+
+(a) Native matrix-core tile inside the existing FlashInfer prefill loop. Keep the kernel, its launch shape (32x4 threads), its tiling (`num_frags_x/y/z`), shared-memory layout and producers, page addressing, masking rule, online softmax and the dispatcher. On a target with matrix instructions, replace the per-tile fragment work (`compute_qk`, `mask_s`, `update_mdo_states`, `compute_sfm_v`, `normalize_d`, the output and LSE writes) with versions in the matrix instruction's own register layout. The key choice: compute S^T = K Q^T, so that the D layout (lane holds one query column q = l%16, a run of kv rows) is exactly the B-operand layout of O^T = V^T P^T: the probabilities feed the second product straight from registers, with no shuffles on MFMA and on RDNA4 (on RDNA3 one 16-lane exchange per tile, since B there wants all 16 k in each lane). Every lane then owns whole query columns, so the softmax row statistics stay per lane, reduced across the 4 (wave64) or 2 (wave32) lane groups only once per tile. On wave64 a wavefront holds two of the kernel's 32-lane warps, whose query rows are contiguous, so it works on 2*num_frags_x query tiles of 16. Q and K operands are 8- or 16-byte LDS reads from the existing permuted layout; V^T needs a transposed (strided 16-bit) LDS read. Selected per device pass by the arch macros (`__gfx90a__`, `__gfx94x__`, `__gfx950__` -> MFMA; `__GFX11__`, `__GFX12__` -> WMMA); every other target and the host pass keep the existing emulation, so the emulated shim stays as the fallback. Speed: the matrix work drops from ~48 shuffles + 128 FMAs per 16x8x16 step to one instruction per 16x16x16; the remaining limits are the synchronous global-to-LDS copies (no `cp.async` on AMD) and one 128-thread block per CU (64 KB LDS on gfx942). Expect 50-150x over the current path on this GPU; target below. Memory: none extra. 32-wide GPUs: WMMA paths, compiled here, validated on the Radeon hosts. Windows: same source, compiler builtins only, nothing OS-specific. New code: one HIP-only header of roughly 400-500 lines plus `#if` call-site switches in `prefill.cuh`; upstream's kernel structure is kept.
+
+(b) Two batched GEMMs per tile through hipBLASLt. A library GEMM cannot be called from inside the kernel, so this means leaving the fused kernel: materialize S = QK^T for the whole request (qo x kv x heads; 1 GB in fp16 at 4096^2 x 32 heads, 64 GB at 32k), a separate masked-softmax kernel, then PV. That is unfused attention: quadratic memory, three launches, and it does not reach the long-context prompts Quest exists for unless it is chunked, at which point it is a worse version of (c). Rejected.
+
+(c) Gather the paged KV into contiguous tensors and call `at::scaled_dot_product_attention` in the HIP build of `prefill_with_paged_kv_cache`. Least code (~60 lines in `batch_prefill.cu`), and on gfx942 Linux it meets the speed goal outright (SDPA table above plus a gather of 2*kv*heads*128*2 B, 64 MB at 4096, 512 MB per layer call at 32k). Three technical problems, each measured or read in this torch:
+1. Semantics. Quest masks bottom-right (the tests cover qo < kv). The public C++ `at::scaled_dot_product_attention` only has `is_causal` (top-left), and the flash backend refuses causal with qo != kv. Lower-right exists only through Python's `causal_lower_right` bias, which dispatches to the private `_efficient_attention_forward(custom_mask_type=2)`; from C++ that means calling a private ATen op (no stability promise across torch versions) or materializing a qo x kv mask.
+2. Coverage. ROCm SDPA's flash and memory-efficient backends need aotriton kernels for the GPU (`sdp_utils.cpp` `check_flash_attention_hardware_support` / `check_mem_efficient_hardware_support`), and archs aotriton marks experimental are refused unless `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`. This torch's `aotriton.images` ships gfx90a, gfx942, gfx950, gfx110x, gfx120x, and no gfx115x: on gfx1151, the Windows gate's GPU, SDPA falls back to the math backend, which materializes the scores (32 heads x 32k x 32k x 2 B = 64 GB for a 32k prompt). The speed and even the feasibility of long prompts would depend on the user's torch build and environment, exactly on the wave32 and Windows gates.
+3. Structure. The HIP build would stop using the vendored prefill kernel at all.
+
+### Recommendation: (a)
+
+The cheap route does meet the speed goal on this GPU under Linux; it does not meet it on the gate platforms, and it cannot express the operator's own causal rule through a public API. Those are technical grounds, so this is not a judgement call between equals: (a) is the design. It is also the literal reading of the ruling and keeps the claim that the port preserves upstream's kernel.
+
+### Gate and target
+
+- Correctness: the harness's fp64 reference sweep (fp16 and bf16, head_dim 64/128, GQA group 4, num_frags_x 1/2, causal and not, qo < kv and qo = kv, odd lengths); all seven suites (`test_prefill_attention.py` 29 passed / 13 skipped as before, 202 passed / 28 skipped in all); the Llama-2-7b-chat end-to-end text identical across `--method hg` and `quest` at budgets 1024 and 128.
+- Speed, this GPU: 4096 x 4096 causal (32 x 128, fp16) within 2x of SDPA, i.e. <= 1.2 ms; the other shapes in the table measured and recorded beside SDPA.
+- CUDA: the CUDA build must see no change. All new code sits in a HIP-only header included under `USE_HIP`, and the kernel's call sites switch on a macro that header defines only in AMD device passes; checked by preprocessing the CUDA view of `prefill.cuh` before and after (no nvcc here) and owed: the real-nvcc compile on the gfx950 host.
+- Owed after this round: review; validation on gfx1100 / gfx1201 (WMMA, wave32) and windows-gfx1151 (WMMA gfx11 layout); the nvcc compile.
