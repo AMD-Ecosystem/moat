@@ -1378,3 +1378,52 @@ cmake --build agent_space/b_gui --target Open3DViewer -j 10     # rc=0, links wi
 Smoke output (single passing runs): `version 0.19.0+11c1d702e api cuda / cuda.is_available True count 1 / device CUDA:0 sum(a+a) 20.0 matmul [[7.0, 10.0], [15.0, 22.0]]`; IPP `gray 124 gauss edge [98, 49, 25] resize SizeVector[16, 16, 3] dilate sum 40176`; ISPC `cpu ew max abs diff 0.0 sum 524800.0 / gpu sum 524800.0`.
 
 Not covered: no option combination beyond option+Python, no Python unit tests, no GUI run, no wheel (`pip-package`) build, no install tree. Logs and scripts are in the worktree's agent_space (cfg_*.log, build_py*.log, build_ipp*.log, build_ispc*.log, build_gui*.log, *_smoke.py, *_smoke*.log); the scratch build trees were deleted to return disk space (D: was at 98%). Downloads landed in the clone's ignored 3rdparty_downloads/ (filament, ipp, ispc, imgui, pybind11) and under D:; nothing was written to the C: profile.
+## Validation 2026-11-20 (linux-gfx90a revalidate at 11c1d702e, binary-equiv carry-forward)
+
+Validator job on linux-gfx90a (MI250X GCD, pinned HIP_VISIBLE_DEVICES=3), revalidating 50bb2505b -> 11c1d702e859245f4de56cae12ba1c7a403b63ea (`moat-fix-7509`). No GPU run: both commits were built and compared, and the result was carried forward as `binary-equiv --host-checked`. Nothing was pushed to the fork.
+
+Toolchain: TheRock ROCm 10.2.0 wheels installed into the job venv, not the image's 10.1.0 and not a system ROCm (the host has no `/opt/rocm`): `$FLEET_VENV/bin/pip install --index-url https://stable.repo.amd.com/rocm/core/whl-next/ 'rocm[libraries,devel,device-gfx90a]==10.2.0'`. `rocm-sdk version` = 10.2.0, `AMD clang version 24.0.0git (ROCm/llvm-project bdc35841c97f)`. CMake 3.31.6 and Ninja from the venv, host g++ (the 3rdparty externals use `/usr/bin/ccache` as their launcher). MAX_JOBS=64.
+
+The build script (agent_space/build.sh) is the recipe from "Build (gfx90a)" above with the SDK root swapped in for /opt/rocm and Ninja instead of Make:
+```
+R=$FLEET_VENV/lib/python3.11/site-packages/_rocm_sdk_devel
+export PATH=$FLEET_VENV/bin:$R/bin:$PATH
+cmake -S projects/Open3D/src -B projects/Open3D/src/build -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$R -DROCM_PATH=$R \
+  -DBUILD_PYTORCH_OPS=OFF -DBUILD_TENSORFLOW_OPS=OFF \
+  -DBUILD_GUI=OFF -DBUILD_WEBRTC=OFF -DBUILD_EXAMPLES=OFF \
+  -DBUILD_BENCHMARKS=OFF -DBUILD_PYTHON_MODULE=OFF \
+  -DBUILD_UNIT_TESTS=ON -DBUILD_ISPC_MODULE=OFF \
+  -DWITH_IPP=OFF \
+  -DCMAKE_BUILD_TYPE=Release -DDEVELOPER_BUILD=ON
+cmake --build projects/Open3D/src/build -j $MAX_JOBS --target tests
+```
+
+Procedure: fresh fork clone. Checked out 50bb2505b, did a full build into `src/build` (813 steps, rc=0, `[813/813] Linking HIP executable bin/tests`, 274 s), and moved that tree to agent_space/build-old. Checked out 11c1d702e (`git status --porcelain` empty) and did a fresh full build into the same `src/build` path (rc=0, 0 FAILED). The first head attempt was killed at step 337 by a harness time limit and resumed in the same tree at the same commit. Most of the head build's 1390 s went to a slow GitHub clone of tinyusdz (assimp's FetchContent).
+
+```
+python3 utils/codeobj_diff.py agent_space/build-old/bin/tests projects/Open3D/src/build/bin/tests
+verdict=identical
+  tests vs tests: identical (exported symbols + device ISA identical (29 exports))
+cmp agent_space/build-old/bin/tests projects/Open3D/src/build/bin/tests          # identical
+sha256 06c7bc5f439fbb0ab2a0fa3f8d43d15cf7a608ac7a9377a80e00e9d579751110 (both, 162678072 bytes)
+cmp .../lib/Release/libOpen3D.a  # identical
+cmp .../assimp/lib/libassimp.a   # identical
+```
+
+Host side: the whole test executable is byte-identical, host code included, so the claim does not rest only on reading the delta. Read the delta as well: c8713e747's assimp patch is added to PATCH_COMMAND only under `if(WIN32 AND NOT MSVC)`, and the `else()` defines in Open3DSetGlobalProperties.cmake sit inside `if(WIN32)` -> `if(MSVC)`/`else()`. 11c1d702e is docs/compilation.rst only. The `-D` set in build.ninja differs only by CMake module file names (`CMakeDetermineCompiler*`) in the regeneration dependency list, not by compile flags.
+
+```
+python3 utils/moatlib.py classify Open3D 50bb2505b 11c1d702e859245f4de56cae12ba1c7a403b63ea
+# class=mixed arch_independent=False inert=False
+python3 utils/moatlib.py carry-forward Open3D linux-gfx90a 11c1d702e859245f4de56cae12ba1c7a403b63ea binary-equiv --host-checked "<reason>"
+# Open3D/linux-gfx90a carried forward -> 11c1d702e859 (binary-equiv)
+```
+
+Other checks at this head:
+- Integrity: `git -C projects/Open3D/src status --porcelain` is empty (untracked `build/` only).
+- Docs: the ROCm build is documented in docs/compilation.rst.
+- CUDA gate: already recorded at this head ("CUDA compile check (nvcc) at 11c1d702e", PASS), so it was not repeated.
+- Jargon: `python3 utils/jargon.py --port Open3D` finds 2 hits, both 'fault-class' in the body of the already-published 73a209622 (lines 25 and 29) and none in this round. The 2026-11-20 review already left these for a person, because fixing them means rewriting a published commit message (for example at squash). This platform's 50bb2505b completion stood with the same two hits, so no `--gate jargon` failure was recorded.

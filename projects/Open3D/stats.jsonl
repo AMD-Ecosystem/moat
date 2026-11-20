@@ -53,3 +53,6 @@
 {"kind":"phase","ts":"2026-11-20T22:55:26Z","phase":"compile","seconds":250.894,"exit":0,"cmd":"bash agent_space/o3d_build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261120-144702-val-open3d-prompt/build-old"}
 {"kind":"phase","ts":"2026-11-20T22:59:41Z","phase":"compile","seconds":246.408,"exit":0,"cmd":"bash agent_space/o3d_build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261120-144702-val-open3d-prompt/build-new"}
 {"kind":"session","ts":"2026-11-20T23:05:11Z","epoch":1795215911.298663,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-20T22:51:25Z","epoch":1795215085.039952,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-20T22:56:25Z","phase":"compile","seconds":273.586,"exit":0,"cmd":"bash agent_space/build.sh"}
+{"kind":"phase","ts":"2026-11-20T23:40:03Z","phase":"compile","seconds":1390.395,"exit":0,"cmd":"bash agent_space/build.sh"}
