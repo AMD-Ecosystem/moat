@@ -420,3 +420,70 @@ CUDA allows 2^31-1 blocks in x regardless of block size, so the config is legal 
 Belongs in `platform-limits.md`. Symptom: a kernel that runs on CUDA fails to launch on AMD only at large sizes; Triton reports `Triton Error [HIP]: Code: 1, Messsage: invalid argument` (often from inside autotuning, sometimes wrapped as `SystemError: ... returned a result with an exception set`); `hipLaunchKernel` returns `hipErrorInvalidConfiguration`, `hipModuleLaunchKernel` `hipErrorInvalidValue`, and nothing runs. Cause: HIP counts a launch in work-items, and gridDim.x * blockDim.x (likewise y, z) must stay below 2^32; CUDA limits only the block count (2^31-1 in x). Measured on MI300X, ROCm 10.2: grid 33,554,431 x 128 runs, 33,554,432 x 128 is rejected. Flat 1D grids with small tiles and an extra multiplier (a neighbour count, a batch) reach it first. Fix: in Triton, prune autotune configs whose grid * num_warps * warp_size reaches 2^32 on HIP (`early_config_prune`), or fold the grid into 2D / loop inside the program; in HIP C++, cap the grid and grid-stride. (FlexGEMM)
 
 `surface.json` after this round: every component is covered (evidence per entry) except three owed items: `build:windows-rocm` (Windows compile/validation pending), `example:spconv` (question 1 above), and `doc:install-as-dependency` (validators). `pr_ready` refuses while anything is owed, so question 1 has to be answered before an upstream PR.
+
+## Review 2026-11-20 (linux-gfx950 fleet job, AMD Instinct MI355X; reviewed head bcf7c6f5eee9f780a0ecdff4de7cecca8f73c728)
+
+Reviewed `git diff 6dd94a8...bcf7c6f` (4 commits) with the pr-review skill. Every finding below was re-checked against the code, and the launch-size ones were reproduced on the GPU. **Verdict: changes requested.** Findings 1 and 2 are the launch-size fix. 3 to 5 are wording and record fixes.
+
+### Findings
+
+1. **The prune returns an empty config list for legal inputs of a few GiB, and the autotuner then crashes** (`flex_gemm/kernels/triton/grid_sample/indice_weighed_sum_bwd.py:11-20`, bcf7c6f). The configs that launch the fewest work-items are `BM=32,BK=8` / `BM=16,BK=16` (both `num_warps=2`), at about `M*C*V/2` work-items on wave64 and `M*C*V/4` on wave32. So the list is empty from `M*C*V ~ 2^33` (wave64) or `2^34` (wave32). For trilinear (V=8) that means `M*C >= 2^30`, which is 2 GiB of fp16 / 4 GiB of fp32 `grad_output` on wave64. With an empty list, `TritonPersistentCacheAutotuner.run` (`flex_gemm/utils/autotuner.py:63-66`) runs `builtins.min({})`. Reproduced on MI355X (Triton 3.9.0, warp_size 64), calling `indice_weighed_sum_bwd_input` directly (`cudacheck/repro_launch.py` in the job directory; extension stubbed, Triton kernels from the fork tree):
+   ```
+   bwd M=4194304 C=8    V=8 -> OK (best BM 32, BK 8)          # the tests/grid_sample.py RES=2048 case
+   bwd M=1040000 C=1024 V=8 -> OK
+   bwd M=1048576 C=1024 V=8 -> ValueError: min() arg is an empty sequence
+   upstream 6dd94a8, same M=1048576 C=1024 V=8 -> SystemError: <built-in method __reversed__ of list object ...> returned a result with an exception set
+   ```
+   This is not a regression: upstream on HIP fails the same input. But the fix is incomplete. The commit body says "The remaining configs (larger BM) cover the same shapes", which is false in this range. The notes' question 2 says the gap needs "roughly M*V*C at or above 2^34, i.e. tens of GB", which is wrong for wave64 (2^33, 2 to 4 GiB) and also understates wave32 (4 to 8 GiB). Fix: change the launch so that no legal input is left without a config (see the view on question 2 below). If a prune remains as well, it must never return `[]`.
+2. **The forward kernel of the same op has the same fault and no guard** (`flex_gemm/kernels/triton/grid_sample/indice_weighed_sum_fwd.py:80`). It uses the same `config.autotune_config` and the same 1D grid without the V factor: `cdiv(C,BK)*cdiv(M,BM)`. `BM=1,BK=64,num_warps=2` reaches exactly 2^32 work-items at `M*cdiv(C,64) = 2^25`. Reproduced on MI355X:
+   ```
+   fwd M=1048576 C=1024 V=8 -> OK (best BM 4, BK 64)
+   fwd M=2097152 C=1024 V=8 -> SystemError: <built-in method __reversed__ of list object ...> returned a result with an exception set   (port and upstream alike)
+   ```
+   That is 2M query points with 1024 channels, a 4 GiB fp16 output. Whatever fixes finding 1 has to cover this kernel too. I checked the other Triton launch grids, in `flex_gemm/kernels/triton/spconv/*.py`: their worst config packs 16 output elements per work-item (`B1=128,B2=32,num_warps=4`), so they reach 2^32 only at `N*Co >= 2^36` (about 128 GiB of fp16 output). They are not a practical concern and are not part of this finding.
+3. **The 078c4ab commit body states a false reason.** It says "torch adds its own MSVC flags to the hipcc command". In the default ninja path (`BuildExtension.win_wrap_ninja_compile`; torch 2.16 ROCm `cpp_extension.py:1246` and `1272`), a HIP build extends `common_cflags` with `COMMON_HIP_FLAGS` only, and that is what hipcc gets behind `-Xcompiler`. `COMMON_MSVC_FLAGS` reach hipcc only in the non-ninja `win_wrap_single_compile` fallback (`:1184`). The change itself is fine, because clang enables C++ exceptions by default and sets `__cplusplus` correctly, so hipcc needs none of `/EHsc`, `/permissive-` or `/Zc:__cplusplus`. Reword the body to give that reason instead.
+4. **The lesson's "fold the grid into 2D" advice would break CUDA without a caveat** (`## Lesson for cuda-to-rocm: HIP rejects a launch ...`). CUDA caps gridDim.y and gridDim.z at 65,535 blocks, so moving the large tile count onto axis 1 or 2 trades the HIP failure for a CUDA one. The lesson must say that the large count stays on axis 0, or that the program loops. I also measured the per-dimension claim on MI355X (gfx950, ROCm 10.2, `cudacheck/lim/lim.hip`), and it holds: `grid=(1,4194303)x(1,1024)` runs, `(1,4194304)x(1,1024)` gives `hipErrorInvalidConfiguration`; `grid=(1,1,67108864)x(1,1,64)` is rejected. HIP's y/z limit counts work-items, not blocks: `hipDeviceProp.maxGridSize` reports `(2147483647,65535,65535)`, but `grid=(1,65536)x(1,128)` and `grid=(1,33554432)x(128,1)` both run. Add these y/z measurements and the CUDA caveat before promotion.
+5. **The 06873dd Test Plan has no CUDA build, although the commit changes the CUDA flags.** This is the shared, unprefixed commit, and a CUDA maintainer will read it. Add the CUDA build from the compile check below, for example:
+   ```
+   BUILD_TARGET=cuda TORCH_CUDA_ARCH_LIST="8.0;9.0;12.0" python setup.py build_ext --inplace   # torch 2.14.1+cu126 and 2.11.0+cu128, nvcc 12.8
+   ```
+
+### Checked with no finding (for the porter's and Jeff's information, not findings)
+
+- **06873dd on CUDA Linux:** built with real nvcc (below). The nvcc and g++ flag lists are identical to upstream's except for the standard, which torch now supplies: c++17 on torch 2.11, c++20 on torch 2.14.
+- **06873dd on CUDA Windows**, checked by reading torch's code (no Windows nvcc host). In both torch 2.11 and 2.14, BuildExtension always gives Windows nvcc its own `-std=` (2.11 `cpp_extension.py:1014/1101` c++17; 2.14 `:1122/1211` c++20). On torch < 2.14, upstream sent nvcc that flag plus its own `-std=c++17`; the port sends torch's alone. On torch >= 2.14, upstream sent `-std=c++20` (torch), `-std=c++17` and `-Xcompiler=/std:c++17`; the port sends only `-std=c++20`, and nvcc forwards the matching `/std` to cl. For `cxx`, `append_std17_if_no_std_present` now adds `/std:c++20` (2.14) or `/std:c++17` (older), where upstream's explicit `/std:c++17` suppressed it. The port is correct there; a Windows CUDA build remains unexercised.
+- **bcf7c6f arithmetic:** the prune's expression, `cdiv(C,BK)*cdiv(M,BM)*V*num_warps*warp_size < 2**32`, matches the kernel's grid lambda (`:93`) times Triton's block (`num_warps*warpSize`). The strict `<` matches the measured boundary. `warp_size` comes from Triton's AMD driver `get_current_target()`, which reads the device's `warpSize` (32 on RDNA), so wave32 keeps twice the headroom. It is unreachable on CUDA: `get_platform_name()` returns `'cuda'` when `torch.version.hip` is None, and the function returns before touching the driver. `nargs` holds `M`, `C` and `V`, because they are positional kernel arguments. The prune runs only on a cache miss with more than one config. The shipped `autotune_cache.json` has no MI300X entry for this kernel (only an empty A100 one), so no cached config bypasses it.
+- **078c4ab Windows HIP flags**, checked by reading torch's code (no Windows host yet). With `GPU_ARCHS` unset on Windows, `cc_flag` is empty, so `_get_rocm_arch_flags` takes `PYTORCH_ROCM_ARCH`, or else the arch of every visible GPU. That matches both the README and the setup.py comment. With no GPU visible and no env var, torch itself would emit an empty `--offload-arch=`, which is torch's edge case and the reason the README says to set one. The `if arch` filter also fixes an empty or trailing-`;` `GPU_ARCHS` on Linux. `/openmp` stays in `cxx` (cl.exe), as the plan says. The Windows compile remains owed (`build:windows-rocm`).
+- Commit hygiene: titles are 43-67 characters, `[ROCm]` is on exactly the three ROCm-specific commits, there are no trailers, `utils/jargon.py --port FlexGEMM` reports clean, and the diff adds no non-ASCII.
+
+### Input on the porter's two questions (left open for Jeff)
+
+1. *examples/spconv.py*: my view is (a) for this PR: the bug is pure Python, has nothing to do with ROCm, and widens a ROCm PR. Option (c), a separate one-line upstream PR or issue, is the better home if it should be fixed. Either way, `surface.json`'s `example:spconv` item needs your ruling before `pr_ready` can pass.
+2. *prune vs kernel change*: given findings 1 and 2, I would prefer the kernel change. The prune leaves 2 to 4 GiB inputs failing on wave64, not "tens of GB", and it does not cover the forward kernel. One shape for the change: keep the M tiles on axis 0, move `(k, v)` to axis 1 (at most `cdiv(C,8)*V`, well under CUDA's 65,535), and keep a prune only for `BM` values whose axis-0 count reaches 2^32. Alternatively, a persistent grid-stride loop over a capped 1D grid removes the limit entirely. Both edit shared Triton kernels that upstream tunes, and both keep CUDA behaviour.
+
+## CUDA compile check (2026-11-20, mi355 fleet host: real nvcc, no NVIDIA GPU)
+
+Toolkit `/usr/local/cuda-12.8` (nvcc V12.8.93), host g++ 13.3.0, Python 3.11. Two job-local environments: the fleet guard allows pip only into the job's own venv, so they live at `$FLEET_VENV/cuda-new` and `$FLEET_VENV/cuda-old`. Neither touches the image's Python:
+
+```
+uv venv -p /opt/python-3.11-venv/bin/python3.11 $FLEET_VENV/cuda-new
+uv pip install -p $FLEET_VENV/cuda-new/bin/python --index-strategy unsafe-best-match --index-url https://download.pytorch.org/whl/cu126 torch==2.14.1+cu126 --extra-index-url https://pypi.org/simple setuptools wheel ninja numpy
+uv venv -p /opt/python-3.11-venv/bin/python3.11 $FLEET_VENV/cuda-old
+uv pip install -p $FLEET_VENV/cuda-old/bin/python --index-strategy unsafe-best-match --index-url https://download.pytorch.org/whl/cu128 torch==2.11.0+cu128 --extra-index-url https://pypi.org/simple setuptools wheel ninja numpy
+```
+
+(cu128 wheels stop at torch 2.11, so torch >= 2.14 comes from the cu126 build. torch warns about a minor version mismatch, 12.8 vs 12.6, and continues.) Each tree is a `git archive <rev>` export, built exactly as setup.py does:
+
+```
+export CUDA_HOME=/usr/local/cuda-12.8 PATH=$VENV/bin:$CUDA_HOME/bin:/usr/bin:/bin HOME=<job-local> BUILD_TARGET=cuda TORCH_CUDA_ARCH_LIST="8.0;9.0;12.0" MAX_JOBS=32
+python setup.py build_ext --inplace
+```
+
+| Tree | torch | Result |
+|---|---|---|
+| upstream 6dd94a8 | 2.14.1+cu126 | **fails**: `torch/csrc/api/include/torch/all.h:5:2: error: #error C++20 or later compatible compiler is required to use PyTorch.` (and the ATen.h twin), from the forced `-std=c++17`. This confirms the porter's reason. |
+| port bcf7c6f | 2.14.1+cu126 | **builds**: all 6 `.cu` through nvcc with `-O3 --use_fast_math -allow-unsupported-compiler -std=c++20` and `sm_80/sm_90/sm_120`, `ext.cpp` through g++ with `-std=c++20`, the `.so` links. Warnings come only from torch headers (`#3189-D "module" is parsed as an identifier`, 168x) and upstream's 3x `#177-D variable "b" declared but never referenced`. |
+| upstream 6dd94a8 | 2.11.0+cu128 | builds (`-std=c++17` from setup.py) |
+| port bcf7c6f | 2.11.0+cu128 | **builds**: torch appends `-std=c++17`, all other flags identical to upstream; same 3 upstream warnings |
+
+Both port builds' `.so` load with their torch (`importlib` on the built `cuda.cpython-311-x86_64-linux-gnu.so`: 18 exported functions). There is no NVIDIA GPU here, so nothing ran on CUDA. **The port causes no CUDA compile failure.**
