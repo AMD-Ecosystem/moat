@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "ccimport",
+  "upstream_url": "https://github.com/FindDefinition/ccimport",
+  "fork_url": null,
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-20T20:55:22Z",
+  "updated_at": "2026-11-20T20:55:22Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
