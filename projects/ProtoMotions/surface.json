@@ -1,0 +1,578 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "13de0cccd06f",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "deployment/native/src/gpc_top_p_plugin.cu"
+    ],
+    "markers": {
+      "kernel": 1,
+      "device_code": 2,
+      "launch": 1
+    },
+    "libraries": {}
+  },
+  "components": [
+    {
+      "id": "benchmark:gpc_tensorrt_native_benchmark",
+      "kind": "benchmark",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:mailbox_benchmark",
+      "kind": "benchmark",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:metatron_v1_inference_benchmark",
+      "kind": "benchmark",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:runtime_benchmark",
+      "kind": "benchmark",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "example:deployment_demo",
+      "kind": "example",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "example:pico_input_demo",
+      "kind": "example",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "executable:c_api_smoke",
+      "kind": "executable",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "executable:metatron_v1_deploy_cpp",
+      "kind": "executable",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "executable:metatron_v1_fk_parity",
+      "kind": "executable",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "executable:metatron_v1_parity",
+      "kind": "executable",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "executable:metatron_v1_rest_dump",
+      "kind": "executable",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "executable:metatron_v1_task_dump",
+      "kind": "executable",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "executable:mujoco_smoke",
+      "kind": "executable",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "executable:steering_style_dump",
+      "kind": "executable",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "executable:unitree_sensor_probe",
+      "kind": "executable",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "library:protomotions_deployment",
+      "kind": "library",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "library:protomotions_deployment_c",
+      "kind": "library",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "library:protomotions_evdev_input",
+      "kind": "library",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "library:protomotions_evdev_input_c",
+      "kind": "library",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "library:protomotions_gpc_policy",
+      "kind": "library",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "library:protomotions_metatron_v1_arm_ik",
+      "kind": "library",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "library:protomotions_metatron_v1_engine",
+      "kind": "library",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "library:protomotions_mujoco",
+      "kind": "library",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "library:protomotions_pico_input",
+      "kind": "library",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "library:protomotions_sdl2_input",
+      "kind": "library",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "library:protomotions_unitree_sdk2",
+      "kind": "library",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "option:PROTOMOTIONS_BUILD_EVDEV_INPUT",
+      "kind": "option",
+      "where": "deployment/native/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build the dependency-free Linux evdev Xbox controller adapter"
+    },
+    {
+      "id": "option:PROTOMOTIONS_BUILD_GPC_TENSORRT",
+      "kind": "option",
+      "where": "deployment/native/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build the native GPC TensorRT policy and timing benchmark"
+    },
+    {
+      "id": "option:PROTOMOTIONS_BUILD_GPC_TRT_PLUGIN",
+      "kind": "option",
+      "where": "deployment/native/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build the exact top-p TensorRT plugin for the GPC policy"
+    },
+    {
+      "id": "option:PROTOMOTIONS_BUILD_METATRON_NATIVE",
+      "kind": "option",
+      "where": "deployment/native/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build the 39-input Metatron TensorRT engine and benchmark"
+    },
+    {
+      "id": "option:PROTOMOTIONS_BUILD_MUJOCO",
+      "kind": "option",
+      "where": "deployment/native/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build the optional headless MuJoCo validation backend"
+    },
+    {
+      "id": "option:PROTOMOTIONS_BUILD_PICO_INPUT",
+      "kind": "option",
+      "where": "deployment/native/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build the optional native XRoboToolkit/Pico input adapter"
+    },
+    {
+      "id": "option:PROTOMOTIONS_BUILD_SDL2_INPUT",
+      "kind": "option",
+      "where": "deployment/native/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build the optional SDL2 Xbox controller input adapter"
+    },
+    {
+      "id": "option:PROTOMOTIONS_BUILD_UNITREE_SDK2",
+      "kind": "option",
+      "where": "deployment/native/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build the optional Unitree SDK2 G1 backend adapter"
+    },
+    {
+      "id": "test:c_api_smoke",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:deployment_contract_tests",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:dex3_trigger_control",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:dex3_trigger_control_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_mujoco_sensor",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_mujoco_sensor_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_action_map",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_action_map_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_arm_ik",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_arm_ik_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_command",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_command_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_contract",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_contract_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_controller",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_controller_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_goals",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_goals_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_manifest",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_manifest_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_recovery",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_recovery_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_sensor",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_sensor_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_teleop",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_teleop_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_tracking",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metatron_v1_tracking_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metrics_stream",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:metrics_stream_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:mode_voice_tests",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:motion_library",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:motion_library_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:motor_temperature_tests",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:mujoco_model_loader",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:mujoco_model_loader_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:mujoco_smoke",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:steering_style_contract",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:teleop_settings",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:teleop_settings_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:unitree_g1_sensor_contract",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:unitree_g1_sensor_contract_test",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "test:unitree_sdk2_compile",
+      "kind": "test",
+      "where": "deployment/native/CMakeLists.txt"
+    },
+    {
+      "id": "backend:newton",
+      "kind": "backend",
+      "where": "protomotions/simulator/newton/simulator.py",
+      "doc": "Newton simulator backend on Warp; the AMD target"
+    },
+    {
+      "id": "seam:warp-conditional-graph",
+      "kind": "code",
+      "where": "protomotions/simulator/newton/simulator.py:_setup_sim",
+      "doc": "MuJoCo Warp graph_conditional under capture; conditional graph nodes absent on HIP (plan seam 1)"
+    },
+    {
+      "id": "seam:warp-graph-capture-capability",
+      "kind": "code",
+      "where": "protomotions/simulator/newton/simulator.py:_create_simulation",
+      "doc": "capture gate for Warp builds without graph capture (plan seam 2)"
+    },
+    {
+      "id": "install:rocm-newton-recipe",
+      "kind": "install",
+      "where": "docs/source/getting_started/installation.rst, requirements_newton_rocm.txt",
+      "doc": "ROCm torch + AMD Warp + pinned Newton stack, documented"
+    },
+    {
+      "id": "test:newton-gpu",
+      "kind": "test",
+      "where": "protomotions/tests/test_newton_*.py",
+      "doc": "Newton test files incl. the captured cuda warm-start case"
+    },
+    {
+      "id": "test:torch-gpu-cases",
+      "kind": "test",
+      "where": "protomotions/tests/test_ppo_exploration.py, test_baked_fk.py, test_contact_matrix.py, test_self_contacts.py, test_cross_simulator_robot_friction.py",
+      "doc": "torch/GPU parametrizations"
+    },
+    {
+      "id": "test:cpu-suite",
+      "kind": "test",
+      "where": "protomotions/tests/ -m 'not needs_lfs'",
+      "doc": "upstream PR-CI selection; must not regress"
+    },
+    {
+      "id": "test:needs-lfs-pretrained",
+      "kind": "test",
+      "where": "protomotions/tests/ -m needs_lfs",
+      "doc": "reads NVIDIA Open Model License checkpoints; gated on question 3"
+    },
+    {
+      "id": "example:newton-training-smoke",
+      "kind": "example",
+      "where": "protomotions/train_agent.py --simulator newton",
+      "doc": "G1 mimic training smoke, headless"
+    },
+    {
+      "id": "cuda-no-regression:nvidia-runtime",
+      "kind": "validation",
+      "where": "NVIDIA host",
+      "doc": "Newton tests + smoke on moat-port vs base show capture still engages"
+    },
+    {
+      "id": "backend:mujoco",
+      "kind": "backend",
+      "where": "protomotions/simulator/mujoco/",
+      "doc": "CPU-only, vendor-neutral"
+    },
+    {
+      "id": "backend:isaacgym",
+      "kind": "backend",
+      "where": "protomotions/simulator/isaacgym/",
+      "doc": "NVIDIA closed IsaacGym binary"
+    },
+    {
+      "id": "backend:isaaclab-kit",
+      "kind": "backend",
+      "where": "protomotions/simulator/isaaclab/",
+      "doc": "Isaac Sim Kit launcher (isaacsim wheels)"
+    },
+    {
+      "id": "deployment:python-tensorrt-tools",
+      "kind": "tools",
+      "where": "deployment/native/tools/*tensorrt*.py, bench/gpc_tensorrt_benchmark.py, tools/prepare_gpc_policy.py, examples/gpc_policy_adapter.py",
+      "doc": "TensorRT / CUDA EP deployment tooling"
+    },
+    {
+      "id": "viewer:newton-gl",
+      "kind": "gui",
+      "where": "protomotions/simulator/newton/simulator.py (ViewerGL when not headless)",
+      "doc": "needs a GL context"
+    },
+    {
+      "id": "platform:wave64",
+      "kind": "platform",
+      "where": "linux-gfx942 first"
+    },
+    {
+      "id": "platform:wave32",
+      "kind": "platform",
+      "where": "linux-gfx1100/gfx1201"
+    },
+    {
+      "id": "platform:windows",
+      "kind": "platform",
+      "where": "windows-gfx1151"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [
+    {
+      "id": "backend:newton",
+      "reason": "in scope under plan.md's proposed scope (question 2 still unruled); not started -- planner, 2026-11-20"
+    },
+    {
+      "id": "seam:warp-conditional-graph",
+      "reason": "in scope under plan.md's proposed scope (question 2 still unruled); not started -- planner, 2026-11-20"
+    },
+    {
+      "id": "seam:warp-graph-capture-capability",
+      "reason": "in scope under plan.md's proposed scope (question 2 still unruled); not started -- planner, 2026-11-20"
+    },
+    {
+      "id": "install:rocm-newton-recipe",
+      "reason": "in scope under plan.md's proposed scope (question 2 still unruled); not started -- planner, 2026-11-20"
+    },
+    {
+      "id": "test:newton-gpu",
+      "reason": "in scope under plan.md's proposed scope (question 2 still unruled); not started -- planner, 2026-11-20"
+    },
+    {
+      "id": "test:torch-gpu-cases",
+      "reason": "in scope under plan.md's proposed scope (question 2 still unruled); not started -- planner, 2026-11-20"
+    },
+    {
+      "id": "test:cpu-suite",
+      "reason": "in scope under plan.md's proposed scope (question 2 still unruled); not started -- planner, 2026-11-20"
+    },
+    {
+      "id": "example:newton-training-smoke",
+      "reason": "in scope under plan.md's proposed scope (question 2 still unruled); not started -- planner, 2026-11-20"
+    },
+    {
+      "id": "cuda-no-regression:nvidia-runtime",
+      "reason": "runtime evidence on an NVIDIA host that capture still engages; owed after the port, as for IsaacLab"
+    },
+    {
+      "id": "platform:wave64",
+      "reason": "first platform; not started"
+    },
+    {
+      "id": "platform:wave32",
+      "reason": "needs a Warp line with wave-correct tile width (question 1); AMD Warp 1.13 hardcodes 64 and MuJoCo Warp tile reductions run at block_dim 64 for G1 (nv=35)"
+    },
+    {
+      "id": "platform:windows",
+      "reason": "no Windows HIP build of AMD Warp 1.13; warp-1.14 plans one; upstream documents Linux only (question 4: keep the gate or suggest a waiver)"
+    }
+  ],
+  "removed_from_floor": [],
+  "planner_note": "Left unaccounted on purpose until Jeff rules question 2 (notes.md, Planner 2026-11-20): the proposed scope cut -- backend:isaacgym, backend:isaaclab-kit, deployment:python-tensorrt-tools, the TensorRT CMake targets and options (PROTOMOTIONS_BUILD_GPC_TENSORRT, PROTOMOTIONS_BUILD_GPC_TRT_PLUGIN, PROTOMOTIONS_BUILD_METATRON_NATIVE, gpc_top_p_plugin.cu), and how the CPU-only deployment/native C++ targets, backend:mujoco, viewer:newton-gl and test:needs-lfs-pretrained are accounted. After the ruling the porter records each as scoped_out (with the ruling) or covered."
+}

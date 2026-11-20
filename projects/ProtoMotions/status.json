@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/ProtoMotions",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "python-warp",
+  "stage": "planned",
   "adopted_at": "2026-11-05T23:39:26Z",
-  "updated_at": "2026-11-20T21:53:28Z",
+  "updated_at": "2026-11-20T22:03:11Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-20T21:53:28Z",
-    "holder": "018462940ee6"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -48,7 +44,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:53:28Z",
+      "updated_at": "2026-11-20T22:03:11Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,5 +77,10 @@
     "viable": true,
     "summary": "NVlabs humanoid RL framework, Apache-2.0, no AMD effort; port = run its Newton backend on AMD Warp (1.13 >= pinned 1.12) + mujoco-warp pin skew, GPU tests, fork install docs; only .cu is an optional TensorRT plugin",
     "at": "2026-11-06T00:10:18Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-20T21:53:28Z",
+    "at": "2026-11-20T22:03:11Z"
   }
 }
