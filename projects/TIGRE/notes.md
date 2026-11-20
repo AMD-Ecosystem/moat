@@ -1862,3 +1862,33 @@ From my side the branch is ready for review and testing. I merged current master
 - **Owed before `fix-ready`:** the nvcc compile check at c015150 (mi355 host), the wave32 gate (gfx1100) and the windows gate at c015150. Windows needs `TIGRE_BACKEND=hip` now; `BUILD_WITH_HIP` is gone. Whether an isolated `pip install .` works on Windows is untested (the validated recipe pins `setuptools<72` and runs `setup.py build_ext`).
 - **Pre-existing items** from the first review: the upstream multi-GPU `accuracy>1` texture-mode bug in `CreateTextureInterp` (a candidate for a separate upstream issue), the HIP self-test clearing an earlier pending error on its first call, and host pinning being off on HIP. Details under "Review 2026-11-20".
 - The GPU gate scripts now live in `projects/TIGRE/probe/tigre_gates.py`, so the next round does not have to recreate them.
+
+## CUDA compile check (nvcc 12.8) at c015150
+
+Compile-only helper run (fleet job on the mi355 host: CUDA 12.8 toolkit, no NVIDIA GPU), requested by jeff. No platform state changed. Answers "the nvcc compile check at c015150 (mi355 host)" in the 2026-11-20 sync round and the linux-gfx90a validation's `cuda-not-validated` line. Result: **the CUDA build passes at c015150: rc 0, 8/8 extensions, 646 ptxas entry functions, the same as upstream master d21492f (the commit the round merged). nvcc and host warnings are identical per compile, and no warning or error is new.**
+
+Toolchain (same as the f779703 check): nvcc `release 12.8, V12.8.93`, gcc 13.3.0, Python 3.11.17, numpy 1.26.4, Cython 3.3.1 (pip-installed into the job venv), setuptools 79.0.1. 17 `-gencode` pairs per `.cu`.
+
+Commands (fresh clone of AMD-Ecosystem/TIGRE; `head` detached at c0151501c2a97922e9afea20007f3d049d0a815a, `base` a local clone detached at upstream d21492f, the second parent of the merge 2cb42aa; both built at the same time, not wrapped in `timeit.sh`). TIGRE_BACKEND was left unset: master's `select_backend()` tries cuda first, and both logs print `TIGRE: building the cuda backend (CUDA_HOME is set).`
+```
+export CUDA_HOME=/usr/local/cuda-12.8 PATH=/usr/local/cuda-12.8/bin:$PATH
+cd base && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16 > ../base.log 2>&1   # rc=0
+cd head && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16 > ../head.log 2>&1   # rc=0
+```
+
+| tree | rc | extensions built | nvcc compiles | `-std` on nvcc lines | ptxas entry functions | nvcc `error` |
+|---|---|---|---|---|---|---|
+| base d21492f | 0 | 8/8 | 20 (13 unique `.cu`) | 20x `-std=c++11` | 646 | 0 |
+| head c015150 | 0 | 8/8 | 21 (13 unique `.cu`) | 21x `-std=c++11` | 646 | 0 |
+
+- Extensions in both: `_Atb _AwminTV _Ax _RandomNumberGenerator _gpuUtils _minPICCS _minTV _tv_proximal`. The one extra nvcc compile is `gpuUtils.cu` (8x vs 7x), which the port adds to `_Ax`, as in every earlier check; the `_Ax` link line differs only by `gpuUtils.o`.
+- nvcc warnings, per compile identical: `#550-D` in gpuUtils.cu 238 vs 272 (34 per compile, 7 vs 8 compiles; the line numbers move from 37/58 to 149/170 because of the port's added code above them), `#177-D` in voxel_backprojection_parallel.cu 17 in both (line 201 vs 200). The deprecated-target driver warning (`architectures prior to ... _75`) appears once per compile, 20 vs 21. Master's change removed the earlier `#177-D` in the two other `*_parallel.cu` files in both trees.
+- Host g++ warnings identical: GpuIds.cpp `malloc` result ignored (7), TIGRE_common.cpp zero-length printf format (7), `_randomNumberGenerator.cpp` unused `__pyx_v_imgsize` (2), NumPy deprecated API (8). No `c++14`, `hipcc`, `USE_HIP` or "AMD GPU" string in either log, so none of the HIP-only flags, defines or messages reach the CUDA build.
+- After dropping ptxas resource lines, copy/create lines and parallel-build interleaving, the sorted logs differ only in the lines above (one Cython include line number, the warning line numbers, the `_Ax` link line).
+- Device code, per object (`cuobjdump -xelf all`, 17 cubins each, compared byte for byte and by ELF section; `nvdisasm` is not in this toolkit, so sections were compared instead of SASS):
+  - Byte-identical to master in 12 objects: GD_AwTV, GD_TV, RandomNumberGenerator, Siddon_projection, Siddon_projection_parallel, gpuUtils, ray_interpolated_projection_parallel, tv_proximal, voxel_backprojection, voxel_backprojection2, voxel_backprojection_parallel. (The port's `.cu` edits there are includes, `cuda_to_hip.h` names that are no-ops on CUDA, host-only code, and `tex3D_TIGRE`, which on CUDA is a single `tex3D<float>`.)
+  - PICCS: every `.text`, `.nv.info` and `.nv.constant0` section is identical. Only the anonymous-namespace hash in the mangled kernel name changes (`_GLOBAL__N__03ce607a` vs `__2d697aaa`), because nvcc derives it from the file contents and the port adds one `#include`.
+  - ray_interpolated_projection: `kernelPixelDetector<0/1>` differs on 14 of 17 targets (sm_50 to sm_90; on sm_100/101/120 the sections are identical). The cause is the port's kernel branch `if (geo.accuracy>1) tex3D<float>(...) else tex3D_TIGRE(...)`. On CUDA both arms are the same `tex3D<float>` fetch, so the behaviour is the same; older targets just keep two copies of the loop (sm_70 `.text` 7168 -> 9088 bytes). This is not new this round: compiling the same TU with the same nvcc command at the published f779703 gives `kernelPixelDetector` identical to c015150 on all 17 cubins. The only f779703 -> c015150 device-code change there is `vecAddInPlaceInterp`, which now matches master byte for byte (master's `size_t` index change, taken by the merge).
+  - GpuIds, TIGRE_common and projection have no device code.
+
+The CUDA compile gate is satisfied at c015150. No CUDA runtime behaviour is claimed (no NVIDIA GPU). For the fix review PR body's "Not yet run at this head" line: "nvcc 12.8: all 8 extensions build, with the same nvcc warnings per compile as master d21492f."
