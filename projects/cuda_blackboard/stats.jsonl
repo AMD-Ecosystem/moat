@@ -19,3 +19,7 @@
 {"kind":"phase","ts":"2026-11-20T22:16:52Z","phase":"compile","seconds":29.56,"exit":0,"cmd":"bash agent_space/build_cb.sh"}
 {"kind":"phase","ts":"2026-11-20T22:17:39Z","phase":"test","seconds":34.161,"exit":0,"cmd":"bash agent_space/test_cb.sh"}
 {"kind":"session","ts":"2026-11-20T22:19:32Z","epoch":1795213172.041982,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-20T22:10:49Z","epoch":1795212649.082286,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-20T22:20:08Z","phase":"compile","seconds":24.82,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261120-140705-val-cuda-blackboard-w32/cbb_build.sh"}
+{"kind":"phase","ts":"2026-11-20T22:20:41Z","phase":"test","seconds":18.152,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261120-140705-val-cuda-blackboard-w32/cbb_test.sh"}
+{"kind":"session","ts":"2026-11-20T22:23:21Z","epoch":1795213401.095349,"event":"end","platform":"linux-gfx1100"}

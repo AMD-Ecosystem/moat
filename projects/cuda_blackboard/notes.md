@@ -261,6 +261,15 @@ Result: **pass at 9e0fb865cd2e38dcc0db5e0e55497f40fb71f733** (`moat-port`), buil
 - Boost 1.83 headers (`./b2 install --with-headers`) and OpenCV 4.6.0 (`-DBUILD_LIST=core,imgproc,imgcodecs,highgui`, no GUI/video/OpenCL/IPP backends, bundled png/jpeg/zlib/tiff/webp/openjpeg) into `<job>/deps/prefix`.
 - ROS 2 Jazzy from source exactly as in the porter's section (same `vcs import`, vision_opencv `rolling` a56ad9a, negotiated eac198b, iceoryx `COLCON_IGNORE`, Fast-DDS asio/tinyxml2 submodules, the same `colcon build --merge-install --packages-up-to ...` command), with `CMAKE_PREFIX_PATH=<job>/deps/prefix`, `MAKEFLAGS=-j6 --parallel-workers 16`: 152 packages, rc 0, 3 min 26 s.
 - Run environment: `source <ros2_jazzy>/install/setup.bash`, `LD_LIBRARY_PATH=$ROCM_SDK/lib:<job>/deps/prefix/lib`, `ROS_LOCALHOST_ONLY=1`; every GPU run under `ulimit -c 0`.
+## Validation 2026-11-20 (validator agent, linux-gfx1100 fleet job; AMD Radeon Pro W7800 48GB, gfx1100, wave32, HIP_VISIBLE_DEVICES=2 pinned by the dispatcher)
+
+Result: **pass at 9e0fb865cd2e38dcc0db5e0e55497f40fb71f733** (fork clone checked out at that commit, tracked tree clean). The Agnocast variant was not built and its two `surface.json` entries were left as they are (still Jeff's open question). The CUDA compile check is already recorded at this head (Review section), so it was not repeated. `utils/jargon.py --port cuda_blackboard`: clean. The README documents the ROCm build.
+
+### Environment (all job-local; nothing shared on the host was modified)
+
+- ROCm: TheRock 10.2.0 wheels installed into the job venv (they shadow the base env's 10.1 links): `$FLEET_VENV/bin/pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple 'rocm[devel,device-gfx1100]==10.2.0'`, then `rocm-sdk init`. HIP 7.17.26434. `ldd` on the test binaries resolves `libamdhip64.so.7` to the job venv's 10.2 SDK. gcc 13.3, CMake 3.31.6, Python 3.11.17 (job venv).
+- ROS 2 Jazzy built from source in `<job>/ros2_jazzy` with the porter's recipe: `vcs import --shallow` of ros2/ros2 `jazzy` `ros2.repos`, `vision_opencv` `rolling` (a56ad9a), `osrf/negotiated@eac198b5`, `COLCON_IGNORE` in `eclipse-iceoryx`, Fast-DDS `thirdparty/asio` and `thirdparty/tinyxml2` submodules, and the same `colcon build --merge-install --packages-up-to ...` command and `--cmake-args` as in the Porter section (`MAKEFLAGS=-j2 --parallel-workers 5`, so the total stays at MAX_JOBS=10). 152 packages, 6 min 33 s, rc 0.
+- This host has the system Boost 1.83 headers but no OpenCV, so OpenCV 4.6.0 (core, imgproc, imgcodecs, highgui; no GUI, video, IPP or OpenCL) was built into `<job>/deps/prefix` and that prefix was put on `CMAKE_PREFIX_PATH`.
 
 ### Build
 
@@ -299,3 +308,28 @@ Extra checks from plan.md (throwaway packages in `agent_space/`, not committed; 
 - `python3 utils/jargon.py --port cuda_blackboard`: clean (needs local `main` and `moat-port` branches in the fork clone).
 - Documentation: the README carries the ROCm build paragraph next to the CUDA requirement.
 - `git -C projects/cuda_blackboard/src status --porcelain`: empty.
+source <job>/ros2_jazzy/install/setup.bash
+export ROCM_SDK=$($FLEET_VENV/bin/python -m rocm_sdk path --root) LD_LIBRARY_PATH=$ROCM_SDK/lib:<job>/deps/prefix/lib:$LD_LIBRARY_PATH ROS_LOCALHOST_ONLY=1
+MAKEFLAGS=-j$MAX_JOBS colcon build --event-handlers console_direct+ --packages-select cuda_blackboard --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON "-DCMAKE_PREFIX_PATH=$ROCM_SDK;<job>/deps/prefix" -DPython3_EXECUTABLE=$FLEET_VENV/bin/python
+```
+rc 0, 24 s. Configure prints `-- cuda was not found, building cuda_blackboard with HIP 7.17.26434`, and the "will not be built" warning does not fire. Built: `libcuda_blackboard.so` (NEEDED `libamdhip64.so.7`), both example component libraries, `test_publish_mailbox`, `test_cuda_blackboard_publisher` and `test_cuda_blackboard_async_publisher`. The only compiler warnings are the 11 known `-Wunused-result` (`hipError_t` nodiscard) sites, plus FindCUDA's CMP0146 dev warning.
+
+### GPU tests (`ulimit -c 0`)
+
+```
+colcon test --packages-select cuda_blackboard --event-handlers console_direct+ --ctest-args --repeat until-fail:20
+colcon test-result --verbose --test-result-base build/cuda_blackboard
+```
+- ctest reports `100% tests passed, 0 tests failed out of 3`. Each test ran 20 times: 60 `Passed` ctest lines and 60 gtest `[  PASSED  ]` blocks (20 x 4 test_publish_mailbox, 20 x 2 test_cuda_blackboard_publisher, 20 x 1 test_cuda_blackboard_async_publisher), with **0 skipped** and 0 failed. test-result: `Summary: 10 tests, 0 errors, 0 failures, 0 skipped`.
+- **The tests ran on the GPU, not on a fallback.** The package has no CPU path for these tests: without a device, the fixture skips them, and here none was skipped. `AMD_LOG_LEVEL=3 ./test_cuda_blackboard_publisher` (2/2 PASSED) shows `Enumerated GPU agents = 1` and `Gfx Major/Minor/Stepping: 11/0/0, Device ID: 0x7449`, with 3 `hipMallocFromPoolAsync`, 3 `hipMemsetAsync`, 4 `hipMemcpyAsync` (host to device, into device pool addresses), 3 `hipFreeAsync`, 8 `hipEventRecord` and 5 `hipStreamWaitEvent`. That is 62 calls returning `hipSuccess` and no call returning an error.
+- Non-GPU baseline: upstream `a4f330e` built in the same environment builds only `test_publish_mailbox`, because CUDA is not found. It passes 20/20, with 0 failures. The port passes it 20/20 too, so there is no regression. No ament lint test is registered, on the port or upstream.
+
+### Extra checks from plan.md's test plan (scripts in `agent_space/`, not committed)
+
+1. **Example pipeline:** `ros2 launch cuda_blackboard example.launch.py image_path:=in.png` with a generated 64x48 RGB PNG. An rclpy subscriber on `/output_image` got 3 of 3 messages, each `64x48 bgr8 step=192 bytes=9216` and byte-identical to the expected BGR of the input. The subscriber node logged `Received message with resolution: 48 x 64` 4 times, and the launch log shows no errors.
+2. **Probe** (`cbb_probe`, an ament package linked against the installed cuda_blackboard, built with `-Wall -Wextra -Wpedantic -Werror`). It prints `device: count=1 name='AMD Radeon Pro W7800 48GB' arch=gfx1100 warpSize=32`.
+   - (c) 1 MiB PointCloud2 ROS -> CUDA -> ROS, through both the constructor and the TypeAdapter: byte-identical both ways. `hipPointerGetAttributes` reports the payload as device memory.
+   - (a) Subscriber through the deprecated stream-less constructor (`cudaStreamLegacy`, the path the 9e0fb86 workaround covers): 1004 published, 1001 received after negotiation. Each payload is 64 KiB and seed-patterned. The callback copies it back with `hipMemcpy` on the null stream and compares it: 0 mismatches, every payload a device pointer, and `hipGetLastError` = hipSuccess at the end. The same run with a created non-blocking user stream (`hipMemcpyAsync` + `hipStreamSynchronize` in the callback): 1004/1001, 0 mismatches, hipSuccess.
+   - (b) Pool, cold process, default threshold: reads back 1073741824. 50 x 4 MiB held = used 200 MiB / reserved 256 MiB. After freeing everything plus a sync of `free_stream` and the device, reserved is 128 MiB. Second round: reserved 256 MiB after free. Mean `make_unique` was 247.3 us for the first 50 (cold) and 32.0 us for the second 50. With `CUDA_BLACKBOARD_MEM_POOL_RELEASE_THRESHOLD_MB=64` it reads back 67108864, reserved after free is 0 MiB in both rounds, and the means are 259.7 us and 34.9 us. In the warm run inside the full probe, the default threshold gave 256 then 128 MiB reserved after free, and 78.3 / 35.5 us. So the pool keeps one or two 128 MiB chunks rather than up to 1 GiB, the same performance-only behaviour the porter measured on gfx942 (`hip-vmheap-unmap-threshold-lost-or-overtrimmed`). Correctness is unaffected.
+   - (d) Every probe run exited 0 (no teardown crash).
+3. **Consumer check:** a consumer TU that includes `cuda_blackboard/cuda_adaptation.hpp`, calls `make_unique<std::uint8_t[]>(16)` and copies it back builds with `-Werror` and prints `consumer OK`. As on any ROCm install outside `/opt/rocm`, the consumer configure needs the ROCm prefix on `CMAKE_PREFIX_PATH`, because the installed hip extras run `find_package(hip CONFIG REQUIRED PATHS $ENV{ROCM_PATH} /opt/rocm)`. The README's prefix note covers that case. Exporting `ROCM_PATH` would also work.

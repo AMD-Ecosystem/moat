@@ -8,10 +8,9 @@
   "ext_type": "cmake",
   "stage": "review-passed",
   "adopted_at": "2026-11-11T18:09:27Z",
-  "updated_at": "2026-11-20T22:19:26Z",
+  "updated_at": "2026-11-20T22:23:13Z",
   "head_sha": "9e0fb865cd2e38dcc0db5e0e55497f40fb71f733",
   "depends_on": [],
-  "porting": null,
   "waivers": {
     "windows": {
       "reason": "Linux-only ROS 2 package (ament/colcon, rclcpp, Ubuntu-targeted Autoware stack); no ROS 2 Autoware toolchain on Windows. Same ground as the windows waiver Jeff Daily approved for autoware_universe, whose hard dependency this is.",
@@ -21,14 +20,14 @@
     }
   },
   "platforms": {
-    "windows-gfx1151": {
+    "linux-gfx1100": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
+      "validated_sha": "9e0fb865cd2e38dcc0db5e0e55497f40fb71f733",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-11-11T18:18:28Z",
+      "completed_at": "2026-11-20T22:23:13Z",
+      "updated_at": "2026-11-20T22:23:13Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -42,7 +41,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "intake"
+      "state": "completed"
     },
     "linux-gfx950": {
       "blocked": false,
@@ -90,6 +89,29 @@
       },
       "state": "completed",
       "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-11T18:18:28Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
     }
   },
   "license_spdx": "Apache-2.0",
