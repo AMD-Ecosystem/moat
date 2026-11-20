@@ -78,6 +78,7 @@ stateDiagram-v2
     state "awaiting-upstream" as awaitup
     state "porting (holds the work lock)" as porting
     state "ported" as ported
+    state "delta-ported" as delta
     state "reviewing (holds the work lock)" as reviewing
     state "changes-requested" as changes
     state "review-passed (every GPU validates, in parallel)" as passed
@@ -86,33 +87,55 @@ stateDiagram-v2
     state "not-portable" as notport
 
     [*] --> unclaimed: discovery
-    unclaimed --> screened: intake screens it
+    unclaimed --> screened: intake screens it, the fork exists
     unclaimed --> awaiting: intake recommends
     unclaimed --> declined: a person declines
     awaiting --> screened: a person creates the fork
+    awaiting --> planned: the fork appears, the plan is already written
+    awaiting --> porting: the fork appears, the port resumes
+    screened --> awaiting: no fork yet
     screened --> planning: a machine starts the plan
     planning --> planned: the plan is written
-    planning --> notport: a person records the verdict
+    planning --> screened: planning put down without a plan
     planned --> porting: a machine starts the port
     planned --> awaitup: the port waits on upstream
+    planned --> awaiting: the porter finds no fork
+    awaitup --> planned
     awaitup --> porting
+    awaitup --> unclaimed: screen it again
     porting --> ported: pushed to the fork
+    porting --> delta: a later fix, pushed to the fork
     ported --> reviewing: a machine starts the review
+    delta --> reviewing: a machine starts the review
     reviewing --> passed: reviewer approves
     reviewing --> changes: reviewer bounces
+    reviewing --> ported: review put down without a verdict
+    reviewing --> delta: review put down without a verdict
     changes --> porting
     passed --> porting: a GPU run fails, the fix is a new commit
+    passed --> reviewing: the branch moved past the reviewed commit
     passed --> done: gates satisfied, person approves
+    notport --> planned: a person revives it
+    notport --> porting: a person revives it
     done --> [*]
     declined --> [*]
     notport --> [*]
 ```
 
-A failed GPU run is not a project stage. It is one architecture's record
+The edges are the legal transitions (`STAGE_TRANSITIONS` in `utils/moatlib.py`). A
+failed GPU run is not a project stage. It is one architecture's record
 (`validation-failed`), and the project stays at `review-passed` while the porter
-fixes it. The porter leaves `porting` for `ported` (or `delta-ported`, a delta
-round), and either one is reviewed before anything validates. A person may record
-`not-portable` from any stage.
+fixes it. An architecture's own record has two states, `completed` and
+`validation-failed`, each reachable from the other and from nothing recorded;
+`port-ready` and `revalidate` are derived from the commits, never stored. The porter
+leaves `porting` for `ported` (or `delta-ported`, a delta round), and either one is
+reviewed before anything validates. A review names the commit it passed: when the
+branch moves past it by a change that could affect the compiled program, the
+project goes from `review-passed` back to `reviewing` before any GPU runs. A person
+may record `not-portable` from any stage (not drawn, to keep the picture readable),
+and only a person revives one. "Declined" and "upstream PR opened" are not stages
+in the status file: a decline is a disposition, and the pull request has its own
+state beside the stage.
 
 ---
 
@@ -167,7 +190,7 @@ when the GPU work cannot be reached without a graphics context, which no wave64 
 flowchart LR
     subgraph hosts["Machines (whatever shows up)"]
         h1["linux-gfx90a (CDNA, Instinct)"]
-        h2["windows-gfx1201 (RDNA, Radeon)"]
+        h2["windows-gfx1151 (RDNA, Radeon)"]
         h3["linux-gfx1100, extra evidence"]
     end
     subgraph gates["The three required gates"]
@@ -250,7 +273,7 @@ sequenceDiagram
     participant U as Upstream repo
 
     A->>R: open a review PR carrying the code, title and body
-    M->>R: approve it, bound to the exact commit
+    M->>R: approve it, naming the exact commit
     A->>R: snapshot who approved, which commit, which text
     A->>R: re-check just before publishing
     Note over A,R: a new commit, an edited text, or an objection refuses
@@ -295,7 +318,10 @@ files at once, the three stages that produce a shared artifact -- the plan,
 the port itself, and the review verdict -- are held by one machine at a time,
 under one shared lock: reviewing a branch a porter is rewriting is as broken
 as two porters writing it. The lock is taken and
-released as part of moving between stages, never edited by hand. A machine
+released as part of moving between stages, never edited by hand, and only the
+machine holding it can finish the stage. A second machine of the same kind that
+picks the stage up takes the lock over, and is told so, because a round another
+machine put down looks exactly like one still running. A machine
 can stop mid-stage (a session ends, a host goes away) and leave the lock
 held, and there is deliberately no timeout to recover it: from the outside, a
 machine grinding through an hours-long GPU build looks exactly like one that

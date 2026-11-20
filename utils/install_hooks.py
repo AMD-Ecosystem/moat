@@ -26,9 +26,15 @@ never what gates it.
 Run once per clone. Hooks are not tracked by git, so a fresh clone has none --
 orient.sh installs them, the same way it registers the status.json merge driver.
 
-To bypass in a genuine emergency: `git push --no-verify`. If you find yourself
-reaching for that routinely, the gate is wrong and should be fixed or removed, not
-routed around.
+Everything installed here runs under the interpreter that installed it. The name
+`python3` is not that interpreter on every host: on one it is an unrelated virtual
+environment with none of the gates' dependencies, and a push then failed closed with
+gate errors that named the wrong cause. So each script carries the installing
+`sys.executable`, and probes for a usable Python only if that one has gone.
+
+Bypassing the gates (`git push --no-verify`) is a person's call, never an agent's.
+If a person finds themselves reaching for it routinely, the gate is wrong and should
+be fixed or removed, not routed around.
 """
 
 import argparse
@@ -54,7 +60,15 @@ MARKER = "# moat-hook v2"
 # recognised here, as ours to upgrade.
 OLD_MARKERS = ("# moat-hook v1",)
 
-PRE_PUSH = f"""#!/usr/bin/env bash
+PYTHON_SLOT = "@MOAT_PYTHON@"
+
+
+def python_path():
+    """The running interpreter, spelled so both bash and cmd accept it."""
+    return pathlib.Path(sys.executable).as_posix()
+
+
+PRE_PUSH_TEMPLATE = f"""#!/usr/bin/env bash
 {MARKER}
 # Runs MOAT's gates before a push leaves this machine. Same check.py gates as CI;
 # CI additionally checks the PR title (utils/pr_intent.py), which does not exist
@@ -82,35 +96,98 @@ export MOAT_PUSH_REFS MOAT_PUSH_UPDATES
 # judge; running them all held a merged branch's deletion for minutes.
 [ "$only_deletes" = 1 ] && exit 0
 
-# --fast skips the fork-cleanliness gate: it walks every fork clone and would add
-# tens of seconds to every push. pr_ready enforces it where it matters.
+# The interpreter that installed this hook, because the gates need its packages. If it
+# has gone (a rebuilt virtual environment), find one that can run them; a Python that
+# cannot import them would fail every gate and blame the push.
+MOAT_PY="{PYTHON_SLOT}"
+if ! "$MOAT_PY" -c 'import jsonschema, tomllib' >/dev/null 2>&1; then
+  MOAT_PY=""
+  for c in python3 python; do
+    if "$c" -c 'import jsonschema, tomllib' >/dev/null 2>&1; then MOAT_PY=$c; break; fi
+  done
+  if [ -z "$MOAT_PY" ]; then
+    echo "moat: no Python that can run the pre-push gates (needs 3.11+ and jsonschema)." >&2
+    echo "moat: tried {PYTHON_SLOT}, python3 and python; re-run utils/install_hooks.py" >&2
+    echo "moat: under the interpreter MOAT uses on this host. The push is refused." >&2
+    exit 1
+  fi
+fi
+
+# --fast skips the two gates that walk every fork clone, forks and commits: they
+# would add tens of seconds to every push. pr_ready enforces fork cleanliness where
+# it matters; the commit rules are judged by a bare check.py, or by
+# `moatlib.py audit-commits`, on a host that has the clones.
 if git cat-file -e origin/main:utils/trunk.py 2>/dev/null; then
-  python3 -c "$(git show origin/main:utils/trunk.py)" run check.py --fast
+  "$MOAT_PY" -c "$(git show origin/main:utils/trunk.py)" run check.py --fast
 else
-  python3 utils/check.py --fast
+  "$MOAT_PY" utils/check.py --fast
 fi
 if [ $? -ne 0 ]; then
   echo >&2
-  echo "moat: pre-push gates failed -- fix, or 'git push --no-verify' if genuinely urgent" >&2
+  echo "moat: pre-push gates failed -- fix what they report and push again." >&2
+  echo "moat: (bypassing them with --no-verify is a person's call, never an agent's)" >&2
   exit 1
 fi
 """
+
+
+def pre_push_text(python=None):
+    """The pre-push hook as this interpreter would install it."""
+    return PRE_PUSH_TEMPLATE.replace(PYTHON_SLOT, python or python_path())
+
+
+def _same_script(installed, template):
+    """Is `installed` this template, whichever interpreter it was installed under?
+    Two checkouts that run different Pythons must not reinstall over each other on
+    every orient; an interpreter that no longer exists is another matter."""
+    head, _, tail = template.partition(PYTHON_SLOT)
+    if not installed.startswith(head):
+        return False
+    rest = installed[len(head):]
+    baked = rest.split('"', 1)[0].splitlines()[0] if rest else ""
+    if not baked or template.replace(PYTHON_SLOT, baked) != installed:
+        return False
+    return baked == python_path() or os.path.exists(baked)
 
 
 # The launcher is the only platform-specific piece, and it is one line of dispatch into
 # gh_guard.py. Everything it would otherwise have to decide -- is the working directory
 # inside a checkout, is this a write, where is the real gh -- is Python in that file,
 # so Windows and Linux cannot drift apart in what they permit.
-GH_LAUNCHERS = {
-    "posix": ("gh", """#!/usr/bin/env sh
+#
+# The guard itself needs nothing but the standard library, so the fallback when the
+# installing interpreter has gone is any Python at all.
+_SH = """#!/usr/bin/env sh
 # {marker}
-exec python3 "{guard}" --shim -- "$@"
-"""),
-    "nt": ("gh.cmd", """@echo off
+py="@MOAT_PYTHON@"
+[ -x "$py" ] || {{ py=python3; command -v "$py" >/dev/null 2>&1 || py=python; }}
+set -- "{guard}" {mode} "$@"
+exec "$py" "$@"
+"""
+_CMD = """@echo off
 rem {marker}
-python "{guard}" --shim -- %*
-"""),
+setlocal
+set "MOAT_PY=@MOAT_PYTHON@"
+if not exist "%MOAT_PY%" set "MOAT_PY=python"
+set MOAT_GUARD_ARGS="{guard}" {mode}
+"%MOAT_PY%" %MOAT_GUARD_ARGS% %*
+"""
+GH_LAUNCHERS = {
+    "posix": ("gh", _SH.replace("{mode}", "--shim --")),
+    "nt": ("gh.cmd", _CMD.replace("{mode}", "--shim --")),
 }
+# What a harness PreToolUse hook runs: the same guard, reading the tool event on
+# standard input and judging the command text (gh_guard.py --hook). A launcher of
+# its own so the settings file names one stable path instead of an interpreter.
+HOOK_LAUNCHERS = {
+    "posix": ("moat-gh-hook", _SH.replace("{mode}", "--hook").replace(' "$@"\nexec',
+                                                                    '\nexec')),
+    "nt": ("moat-gh-hook.cmd", _CMD.replace("{mode}", "--hook")),
+}
+
+
+def _render(body):
+    return body.format(marker=gh_guard.SHIM_MARKER, guard=guard_copy_path().as_posix())
 
 
 def gh_launcher_path():
@@ -122,13 +199,30 @@ def gh_launchers():
     """(path, text) for every launcher this host needs. Windows needs both: cmd and
     PowerShell find `gh.cmd` through PATHEXT, but Git Bash does not use PATHEXT, so
     with only `gh.cmd` installed `gh` in bash ran the real binary, unguarded."""
+    return _launchers(GH_LAUNCHERS)
+
+
+def hook_launchers():
+    """(path, text) for the PreToolUse hook launcher(s), on the same rule."""
+    return _launchers(HOOK_LAUNCHERS)
+
+
+def _launchers(table):
     kinds = ["nt", "posix"] if os.name == "nt" else ["posix"]
     out = []
     for k in kinds:
-        name, body = GH_LAUNCHERS[k]
+        name, body = table[k]
         out.append((pathlib.Path.home() / ".local" / "bin" / name,
-                    body.format(marker=gh_guard.SHIM_MARKER, guard=str(guard_copy_path()))))
+                    _render(body).replace(PYTHON_SLOT, python_path())))
     return out
+
+
+def _launcher_current(path, table_text):
+    """Is the launcher at `path` the one this code would write (see _same_script)?"""
+    try:
+        return _same_script(path.read_text(), table_text)
+    except OSError:
+        return False
 
 
 # The guard the launcher runs is a HOST copy of the trunk's gh_guard.py, not a file in
@@ -146,7 +240,7 @@ def guard_source_path():
     return guard_copy_path().with_suffix(".source")
 
 
-GUARD_IN_LAUNCHER = re.compile(r'"(.+?gh_guard\.py)"\s+--shim\s')
+GUARD_IN_LAUNCHER = re.compile(r'"([^"\n]+?gh_guard\.py)"\s+--shim\s')
 
 
 def gh_launcher_guard(text):
@@ -167,7 +261,8 @@ def launcher_case_problems():
     problems = []
     want = "/x/share/moat/gh_guard.py"
     for name, body in GH_LAUNCHERS.values():
-        text = body.format(marker=gh_guard.SHIM_MARKER, guard=want)
+        text = body.format(marker=gh_guard.SHIM_MARKER, guard=want).replace(
+            PYTHON_SLOT, "C:/Program Files/Python312/python.exe")
         got = gh_launcher_guard(text)
         if got != pathlib.Path(want):
             problems.append(f"gh_launcher_guard misreads the {name} launcher: {got}")
@@ -175,9 +270,19 @@ def launcher_case_problems():
             problems.append(f"the {name} launcher carries the v1 stamp, so installers "
                             f"from before v2 would overwrite it")
 
+        # Installers from before the interpreter was carried read the launcher with
+        # a looser pattern; they must still find the guard, or they would call this
+        # launcher foreign and put their own back over it.
+        old = re.search(r'"(.+?gh_guard\.py)"\s+--shim\s', text)
+        if not old or old.group(1) != want:
+            problems.append(f"an older installer would misread the {name} launcher")
+
     _, posix = GH_LAUNCHERS["posix"]
     if gh_launcher_guard(posix.format(marker="", guard=want)) is not None:
         problems.append("gh_launcher_guard accepts a launcher that is not ours")
+    for name, body in HOOK_LAUNCHERS.values():
+        if "--hook" not in body or "--shim" in body:
+            problems.append(f"the {name} launcher does not run the guard's hook mode")
 
     nl = chr(10)
     inert = "# " + gh_guard.SHIM_MARKER + nl + "exec gh $@" + nl
@@ -214,7 +319,7 @@ def gh_launcher_problem(shim=None):
     fetched at different times do not reinstall over each other.
     """
     shim = shim or gh_launcher_path()
-    hint = "(python3 utils/install_hooks.py)"
+    hint = "(run utils/install_hooks.py)"
     if not shim.exists():
         return f"gh guard is not installed at {shim} {hint}"
     text = shim.read_text()
@@ -231,6 +336,14 @@ def gh_launcher_problem(shim=None):
     for path, _ in gh_launchers():
         if not path.exists() or gh_launcher_guard(path.read_text()) != guard_copy_path():
             return f"gh launcher {path} is missing or does not run {guard_copy_path()} {hint}"
+    kinds = ["nt", "posix"] if os.name == "nt" else ["posix"]
+    for table in (GH_LAUNCHERS, HOOK_LAUNCHERS):
+        for k in kinds:
+            name, body = table[k]
+            path = shim.parent / name
+            if not _launcher_current(path, _render(body)):
+                return (f"launcher {path} is missing, or predates the installing "
+                        f"interpreter being carried in it {hint}")
     if guard.read_text() == (TOOLS_ROOT / "utils" / "gh_guard.py").read_text():
         return None
     src = guard_source_path()
@@ -244,7 +357,7 @@ def install_gh_guard(check=False, uninstall=False):
     shim = gh_launcher_path()
     if uninstall:
         removed = False
-        for path, _ in gh_launchers():
+        for path, _ in gh_launchers() + hook_launchers():
             if path.exists() and gh_guard.SHIM_STAMP in path.read_text(errors="ignore"):
                 path.unlink()
                 removed = True
@@ -252,7 +365,7 @@ def install_gh_guard(check=False, uninstall=False):
               else "install_hooks: no moat gh guard to remove")
         return 0
 
-    for path, _ in gh_launchers():
+    for path, _ in gh_launchers() + hook_launchers():
         if path.exists() and gh_guard.SHIM_STAMP not in path.read_text(errors="ignore"):
             print(f"install_hooks: {path} exists and is not ours -- refusing to overwrite",
                   file=sys.stderr)
@@ -268,13 +381,13 @@ def install_gh_guard(check=False, uninstall=False):
     if check:
         if problem is None:
             print("install_hooks: gh guard installed and current")
-            return 0
+            return path_problem(shim)
         print(f"install_hooks: {problem}", file=sys.stderr)
         return 1
     if problem is None:
         # A newer copy from another checkout stays; replacing it would be a downgrade.
         print("install_hooks: gh guard installed and current")
-        return 0
+        return path_problem(shim)
 
     copy = guard_copy_path()
     copy.parent.mkdir(parents=True, exist_ok=True)
@@ -282,7 +395,7 @@ def install_gh_guard(check=False, uninstall=False):
     tmp.write_text((TOOLS_ROOT / "utils" / "gh_guard.py").read_text())
     os.replace(str(tmp), str(copy))
     guard_source_path().write_text(tools_commit() + "\n")
-    for path, text in gh_launchers():
+    for path, text in gh_launchers() + hook_launchers():
         path.parent.mkdir(parents=True, exist_ok=True)
         # LF only: the sh launcher must not get CRLF line endings on Windows.
         with open(path, "w", newline="\n") as f:
@@ -290,13 +403,25 @@ def install_gh_guard(check=False, uninstall=False):
         path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         print(f"install_hooks: gh guard installed at {path} (runs {copy})")
 
-    # A launcher PATH never reaches is worse than none, because it reads as installed.
+    return path_problem(shim)
+
+
+def path_problem(shim=None):
+    """0 when `gh` on PATH is the launcher, else say so and return 1.
+
+    A launcher PATH never reaches is worse than none, because it reads as installed.
+    This used to be a warning printed once, at install time, into output orient
+    discarded; the guard then sat inert behind the real binary and only a push-time
+    gate ever said so."""
+    shim = shim or gh_launcher_path()
     resolved = shutil.which("gh")
-    if not resolved or pathlib.Path(resolved).resolve() != shim.resolve():
-        print(f"install_hooks: WARNING -- `gh` resolves to {resolved or 'nothing'}, not "
-              f"the guard. Put {shim.parent} ahead of it in PATH, or the guard is inert.",
-              file=sys.stderr)
-    return 0
+    if resolved and (gh_guard.is_shim(resolved)
+                     or pathlib.Path(resolved).resolve() == shim.resolve()):
+        return 0
+    print(f"install_hooks: `gh` resolves to {resolved or 'nothing'}, not the guard "
+          f"launcher, so the guard is INERT in this shell. Put its directory first:\n"
+          f"    export PATH=\"{shim.parent.as_posix()}:$PATH\"", file=sys.stderr)
+    return 1
 
 
 def hook_path(name="pre-push"):
@@ -335,7 +460,7 @@ def main():
             print("install_hooks: no moat pre-push hook to remove")
         return install_gh_guard(uninstall=True)
 
-    current = p.exists() and p.read_text() == PRE_PUSH
+    current = p.exists() and _same_script(p.read_text(), PRE_PUSH_TEMPLATE)
     if a.check:
         rc = 0
         if current:
@@ -357,7 +482,7 @@ def main():
     p.parent.mkdir(parents=True, exist_ok=True)
     # newline="\n": the default translates to CRLF on Windows, and the hook is a
     # shell script.
-    p.write_text(PRE_PUSH, newline="\n")
+    p.write_text(pre_push_text(), newline="\n")
     p.chmod(p.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     print(f"install_hooks: pre-push installed at {p}")
     return install_gh_guard()

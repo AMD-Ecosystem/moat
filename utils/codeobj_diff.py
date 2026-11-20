@@ -35,6 +35,15 @@ abstracting local symbol references under a consistent bijection) is a v2
 enhancement; until then a rename-only delta revalidates on real GPU. The source
 classifier (changeclass.py) is always the first gate, so this tool only ever runs
 to confirm an already source-classified delta, never to discover one.
+
+What it does NOT compare: host code, and data. A delta that changes only CPU-side
+C++ (launch dimensions, allocation sizes) or constant data leaves the exported
+symbols and the device instruction stream identical, and reads `identical` here.
+That is why the verdict alone carries nothing: `moatlib.py carry-forward` classifies
+the delta itself and refuses a `binary-equiv` claim over one the source classifier
+does not call inert unless the caller states that the host side was checked.
+
+ELF only. A Windows (PE/COFF) binary is answered `indeterminate`.
 """
 
 from __future__ import annotations
@@ -47,6 +56,10 @@ import sys
 import tempfile
 
 BIN_SUFFIXES = (".so", ".hsaco")
+# Windows output. Nothing here reads PE/COFF, so these are gathered only to be
+# answered `indeterminate` by name: a Windows build tree used to hold "no
+# binaries", which reads as a wrong path rather than an unsupported format.
+PE_SUFFIXES = (".dll", ".exe", ".pyd")
 # CMake's compiler-identification and feature-probe executables. They are real ELF
 # and identical across two builds, but they are not the project's output, and one
 # stray probe that could not be read used to decide the verdict for the whole tree.
@@ -102,7 +115,7 @@ def _tool(name):
 def _is_binary(path):
     if path.endswith(SKIP_SUFFIXES):
         return False
-    if path.endswith(BIN_SUFFIXES):
+    if path.endswith(BIN_SUFFIXES) or path.lower().endswith(PE_SUFFIXES):
         return True
     if os.path.basename(path).startswith("lib") and ".so" in path:
         return True
@@ -303,8 +316,20 @@ def _device_isa(binpath, workdir):
     return "\n".join(chunks)
 
 
+def _is_pe(path):
+    try:
+        with open(path, "rb") as f:
+            return f.read(2) == b"MZ"
+    except OSError:
+        return False
+
+
 def compare_binary(a, b):
     """Return (verdict, detail) for one pair of binaries."""
+    if _is_pe(a) or _is_pe(b):
+        return "indeterminate", ("PE/COFF binary: only ELF is compared here, so "
+                                 "binary equivalence cannot be shown on Windows; "
+                                 "revalidate on the GPU")
     if not _tool("llvm-nm") or not _tool("llvm-objdump"):
         return "indeterminate", ("llvm-nm/llvm-objdump not found; set ROCM_PATH to "
                                  "the ROCm install")

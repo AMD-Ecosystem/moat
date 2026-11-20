@@ -17,9 +17,17 @@
 # replacement just produces circumlocution, and the person editing at 11pm needs the
 # alternative more than the prohibition.
 #
-# Terms are regexes matched case-insensitively against prose. Fenced code blocks and
-# shell-command lines are skipped by the scanner, so documenting a command that
-# contains a term is fine.
+# Terms are regexes matched case-insensitively against prose; wrap one in `(?-i:...)`
+# where the capital letters are what makes it ours ("Strategy B", not "a strategy
+# based on"). Fenced code blocks and shell-command lines are not searched for these,
+# so documenting a command that contains one is fine. They ARE searched for the
+# smaller [fenced] table below: names that are wrong wherever they appear.
+#
+# A term must not fire on ordinary engineering English. Before adding a common word,
+# anchor it to the phrase that makes it in-house: `follower` alone flagged "path
+# follower" in a robotics port, and an unanchored `Strategy [AB]` flagged "strategy
+# based" and "strategy and". A false positive blocks a publish, and the usual fix
+# for one is to stop reading the tool's output.
 #
 # REMOVING A TERM
 #
@@ -33,16 +41,27 @@
 
 [terms]
 "lead platform"            = "name the GPU, e.g. 'MI210 (gfx90a)'"
-"follower platform"        = "name the GPU"
-'followers?\b(?!\s+of)'    = "name the GPUs"
-"Strategy [AB]"            = "describe the approach, e.g. 'a compatibility header'"
+'follower (platform|arch|architecture|host|GPU)s?\b' = "name the GPU"
+'\b(the|all|both|other|remaining) followers\b' = "name the GPUs"
+'(?-i:\bStrategy [AB]\b)' = "describe the approach, e.g. 'a compatibility header'"
 "colmap model"             = "describe the approach, not the project we named it after"
 "head_sha"                 = "'the branch head', or the sha itself"
 "validated_sha"            = "'the commit that was tested'"
+"published_sha"            = "'the commit the pull request shows', or the sha itself"
 'revalidat(e|ed|ion)'      = "'re-tested'"
 "curated commit"           = "just describe the commit"
 "moat-port"                = "name the branch plainly, or omit it"
-"MOAT"                     = "omit -- upstream does not know what MOAT is"
+'\bMOAT(_\w+)?\b'         = "omit -- upstream does not know what MOAT is"
+"cuda-not-validated"       = "'the CUDA build was not re-tested'"
+'\bcant-port\b'            = "say what cannot be ported and why"
+'advance[_-]head'          = "omit -- describe the push itself"
+'\b(the|our|whole|entire) fleet\b|\bfleet (host|job|worker)s?\b' = "name the GPUs or machines that were used"
+'\b(porter|validator|reviewer|planner|intake) (agent|subagent|role|stage)\b' = "omit -- say what was done, not which of our roles did it"
+'\bplan\.md\b'             = "omit -- upstream has no such file; state the reason inline"
+'\bstatus\.json\b'         = "omit -- upstream has no such file"
+'\bsurface\.json\b'        = "omit -- upstream has no such file"
+'\bdeferred\.(py|json)\b'  = "omit -- say what was left out and why"
+'config/(arches|jargon)\.toml' = "omit -- upstream has no such file"
 "port-ready"               = "'ready to test'"
 'delta-port(ed|ing)?'      = "'follow-up fix'"
 'awaiting-(port|fork|upstream|lead)' = "describe the actual wait"
@@ -51,15 +70,35 @@
 'fault[- ]class(es)?'      = "name the actual issue"
 "completeness gate"        = "omit"
 "pending-approval"         = "omit -- describe the actual blocker if it is relevant"
-"osrb"                     = "omit -- internal review process"
+'\bosrb\b'                 = "omit -- internal review process"
 'projects/[\w.+-]+/notes\.md' = "omit -- upstream has no such file; state the reason inline"
 '\(\S+ lesson\)'          = "state the technical reason; upstream does not know the other project"
 '\b(first|later|next) slice\b' = "'not ported yet' or 'not part of this change'"
 
+# Searched everywhere, INCLUDING fenced code blocks and command lines. A Test Plan is
+# a list of commands an outside maintainer is expected to be able to run, so the
+# name of one of our tools, one of our record files, or a path that exists only on
+# one of our machines is as wrong there as in prose -- and code blocks used to be
+# skipped entirely, so these passed. Keep this table to names that have no
+# legitimate use in an upstream command; prose-only terms stay in [terms]. A line
+# that is itself the vocabulary check (`grep -niE '\bmoat\b'`, `jargon.py ...`) is
+# exempt.
+[fenced]
+'\bmoat(_\w+)?\b(?!-port)'  = "omit -- upstream does not know what MOAT is"
+'moatlib|codeobj_diff'      = "omit -- our own tooling; give the command a maintainer can run"
+'\bagent_space\b'           = "omit -- a scratch directory that exists only on our hosts"
+'projects/[\w.+-]+/(src|notes\.md|status\.json|plan\.md)\b' = "use a path relative to the project's own checkout"
+'projects/<'                = "use a path relative to the project's own checkout"
+'utils/(moatlib|upstream|jargon|prose|timeit|session|orient|check|deferred|triage)\.(py|sh)\b' = "omit -- our own tooling; give the command a maintainer can run"
+'/var/lib/jenkins'          = "use a relative path -- this one exists only on our hosts"
+'/home/[A-Za-z0-9._-]+/'    = "use a relative path or ~ -- no home directory in upstream text"
+'[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s]+' = "use a relative path -- no home directory in upstream text"
+
 # Contexts where a term is legitimate. A URL containing the org or repo name is not
-# jargon, it is an address.
+# jargon, it is an address. A match is MASKED and the rest of its line is still
+# scanned; the whole line used to be skipped, which hid everything beside a link.
 [allow]
 patterns = [
-  'https?://\S*moat',
+  'https?://\S+',
   'github\.com/\S+',
 ]

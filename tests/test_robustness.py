@@ -7,7 +7,8 @@ import io
 import unittest
 from unittest import mock
 
-import merge_status  # utils/ is put on sys.path by tests/__init__.py
+import changeclass  # utils/ is put on sys.path by tests/__init__.py
+import merge_status
 import moatlib
 
 HEAD = "a" * 40
@@ -48,7 +49,10 @@ class CarryForwardGoesToTheHead(unittest.TestCase):
         with mock.patch.object(moatlib, "load_status", lambda name: obj), \
                 mock.patch.object(moatlib, "save_status",
                                   lambda name, o: saved.append(o)), \
-                mock.patch.object(moatlib, "full_sha", lambda sha, repo=None: sha):
+                mock.patch.object(moatlib, "full_sha", lambda sha, repo=None: sha), \
+                mock.patch.object(
+                    moatlib, "_classify_safe",
+                    lambda repo, a, b: changeclass.Verdict("comment-only", False, "d")):
             moatlib.carry_forward("proj", "linux-gfx90a", sha, "binary-equiv", "same")
         return obj, saved
 

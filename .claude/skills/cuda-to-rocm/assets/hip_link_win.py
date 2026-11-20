@@ -1,35 +1,37 @@
 #!/usr/bin/env python3
 """
-Windows HIP device-link helper.
+Link wrapper for CMake's HIP language on Windows, for ONE arrangement: the host
+code is compiled with clang-cl and the target uses relocatable device code
+(-fgpu-rdc).
 
-CMake's HIP link rule on Windows injects -fuse-ld=lld-link and uses
-MSVC-style flags (/subsystem:console etc.) that conflict with or are not
-understood by clang++ in --hip-link (device-link) mode. This script:
-  - Strips -fuse-ld=* (conflicts with --hip-link)
-  - Converts -Xlinker <flag> pairs and bare MSVC /flags to -Wl,<flag> form
-  - Converts -lXXX.lib (GCC-style lib refs that lld-link ignores) to
-    -Xlinker XXX.lib (so lld-link finds them via LIB env)
-  - Wraps bare .lib names with -Xlinker for the GCC driver -> lld-link path
+In that arrangement CMake composes the link line for an MSVC linker (bare flags
+such as /machine:x64 and /subsystem:console, import libraries spelled foo.lib),
+while -fgpu-rdc needs the GNU-style driver to do the device link. The GNU-style
+driver reads the bare flags and libraries as input files and the link fails. This
+wrapper rewrites the argument list and then runs the real link:
+  - turns bare MSVC /flags into -Wl,<flag>
+  - turns bare foo.lib into "-Xlinker foo.lib", which lld-link resolves through
+    the LIB environment variable
+  - drops -fuse-ld=* (CMake's -fuse-ld=lld-link is rejected by the -fgpu-rdc
+    device link; it is harmless without -fgpu-rdc)
+  - turns "-Xlinker <flag>" pairs into -Wl,<flag> and -lfoo.lib into
+    "-Xlinker foo.lib" (neither made a difference in any configuration tested)
 
-Usage (set as CMAKE_HIP_LINK_EXECUTABLE):
-  python3 <this_script> <clang_exe> [args...]
+A project that compiles everything with the GNU-style clang++ does not need this
+script: without -fgpu-rdc CMake's own link rule works, and with it one line,
+set(CMAKE_HIP_USING_LINKER_DEFAULT "-fuse-ld=lld"), is the whole fix.
 
-CANONICAL COPY. This file lives in the cuda-to-rocm skill so the vendored
-copies do not drift and the next Windows CMake-HIP port does not reinvent it.
-Each fork that needs it MUST vendor its own copy (conventionally
-cmake/hip_link_win.py): the project's CMake references it, and the work is
-meant to be upstreamed, so a pull request cannot depend on a file that lives
-only in this repository. Copy it in, do not symlink or download it.
+Limits:
+  - Response files are not read or rewritten. Once the link line is long enough
+    for the build tool to move it into @file.rsp, the libraries in that file are
+    not rewritten and the link fails.
+  - CMAKE_HIP_LINK_EXECUTABLE covers executables only; a shared library needs the
+    same treatment through CMAKE_HIP_CREATE_SHARED_LIBRARY.
 
-Fix bugs HERE first, then re-copy into the forks that carry it, so there is
-one source of truth. Known consumers: AMD-Ecosystem/alien (origin of this
-file). See references/strategy-a-cmake.md for when it is needed.
+Usage (as CMAKE_HIP_LINK_EXECUTABLE, on Windows only):
+  python <this_script> <clang_exe> [args...]
 
-This is NOT about -fgpu-rdc. alien happens to use RDC, but the wrapper exists
-because CMake's Windows HIP link rule hands MSVC-style flags and an MSVC-style
-response file to clang in --hip-link (GCC-driver) mode, which misreads them.
-A project with no RDC at all still needs it if it links HIP through CMake on
-Windows.
+Standard library only.
 """
 import subprocess
 import sys

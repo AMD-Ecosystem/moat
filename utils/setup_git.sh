@@ -5,10 +5,11 @@
 # Needed so .gitattributes 'merge=moat-status' takes effect on pull/merge.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+. utils/lib.sh
 # The driver command lives in moatlib (MERGE_DRIVER) so there is one copy of it. It
 # names no checkout path: this config is shared by every worktree of the clone.
-py=python3; command -v "$py" >/dev/null 2>&1 || py=python
-"$py" -c 'import sys; sys.path.insert(0, "utils"); import moatlib; moatlib.ensure_git_config()'
+moat_resolve_py || { moat_no_py setup_git; exit 1; }
+"$PY" -c 'import sys; sys.path.insert(0, "utils"); import moatlib; moatlib.ensure_git_config()'
 # Every port/<name> starts life with no upstream, and this clone creates them
 # routinely. Without this a plain `git push` on a new branch errors out instead of
 # publishing it -- and the branch existing on the remote IS a project's claim, so a
