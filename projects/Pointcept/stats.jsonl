@@ -144,3 +144,5 @@
 {"kind":"phase","ts":"2026-11-20T03:25:10Z","phase":"test","seconds":24.042,"exit":0,"cmd":"agent_space/e2e.sh head-warm1 3600 --steps 20"}
 {"kind":"phase","ts":"2026-11-20T03:25:35Z","phase":"test","seconds":24.077,"exit":0,"cmd":"agent_space/e2e.sh head-warm2 3600 --steps 20"}
 {"kind":"session","ts":"2026-11-20T03:26:47Z","epoch":1795145207.949812,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-20T18:52:04Z","phase":"compile","seconds":40.405,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261120-104706-pointcept-nvcc-prompt/cudachk/both.sh"}
+{"kind":"phase","ts":"2026-11-20T18:55:18Z","phase":"compile","seconds":179.544,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261120-104706-pointcept-nvcc-prompt/cudachk/both.sh"}

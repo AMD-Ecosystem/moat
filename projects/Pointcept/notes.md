@@ -1298,3 +1298,66 @@ Results, same as f33fdb6 unless stated:
 - CUDA gate: not run (Windows host); the delta has no compiled code.
 
 Result: windows-gfx1151 completed at 35af626.
+
+## CUDA-environment check at 35af626 (2026-11-20, mi355 fleet host, check job, no state changed)
+
+Why: every validator ran on AMD GPUs, which cannot see a CUDA-side break. jeff asked for the CUDA path to be compiled with real nvcc and for the Python changes to be exercised as a CUDA user meets them before the follow-up pull request is shown to him. This is a check job, not a pipeline role: no stage, lock or platform state changed, and no fork edits were made. Verdict: **no CUDA-side break found; nothing to fix.**
+
+Environment: nvcc `release 12.8, V12.8.93` (`/usr/local/cuda-12.8`), gcc 13.3.0, Python 3.11.17, torch `2.11.0+cu128` (`torch.version.cuda` 12.8, `torch.version.hip` None) from `https://download.pytorch.org/whl/cu128` in the job venv, torchvision `0.26.0+cu128`. No NVIDIA GPU on the host (`torch.cuda.is_available()` False), so nothing ran on a GPU. Sources were `git archive` exports of each commit into the job directory, not the fork clone.
+
+### 1. Delta under test
+Compared against upstream `master` = `77f87abe69bf098ebccf3e9b08400963954af6ac` (`git ls-remote upstream HEAD`, 2026-11-20; it contains #604, squash-merged as 2b97e6e). 77f87ab is an ancestor of 35af626 (`git merge-base --is-ancestor` true); commits on top: 2abd848, 87bc3e2, f33fdb6, 180f803, 35af626.
+
+```
+git diff --stat 77f87ab..35af626      # 12 files changed, 52 insertions(+), 10 deletions(-)
+git diff 77f87ab 35af626 -- libs | wc -l   # 0
+```
+- compiled sources (`.cu`/`.cpp`/`.h`): **none**
+- build files (`setup.py`, CMake, `environment.yml`): **none**; `libs/` is byte-identical between the two commits
+- Python (11 files): new `pointcept/models/utils/spconv.py` (+38); ten one-line import swaps `import spconv.pytorch as spconv` -> `from pointcept.models.utils.spconv import spconv` in `litept/litept_v1.py`, `modules.py`, `oacnns/oacnns_v1m1_base.py` (relative `from ..utils.spconv import spconv`, moved two lines down below the other `..utils` import), `point_transformer_v3/point_transformer_v3m{1_base,2_sonata,3_utonia}.py`, `sparse_unet/spconv_unet_v1m{1_base,2_bn_momentum,3_pdnorm}.py` (v1m2 inside its existing `try/except ImportError`), `utils/structure.py`
+- docs: `README.md` +4 (spconv-triton install comment lines for AMD GPUs, after the unchanged `pip install spconv-cu124`)
+
+### 2. Extension builds with nvcc 12.8, upstream 77f87ab vs 35af626
+The README gives CUDA users `cd libs/pointops; python setup.py install` (usual) or `TORCH_CUDA_ARCH_LIST="7.5 8.0" python setup.py install` (multi-arch). The delta touches no extension, so the README-named one (pointops) and, for completeness, every other `libs/` extension (pointops2, pointgroup_ops, pointrope, pointseg) were built from both trees, two trees in parallel at `MAX_JOBS=21` each (42 total, the exported cap):
+
+```
+export CUDA_HOME=/usr/local/cuda-12.8 PATH=/usr/local/cuda-12.8/bin:$PATH MAX_JOBS=21
+export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 9.0 10.0 12.0"
+cd libs/<lib> && python setup.py build --build-base build-cu        # pointgroup_ops adds --include_dirs=<job>/cudachk/deps/prefix/include
+```
+(sparsehash headers for pointgroup_ops: `github.com/sparsehash/sparsehash` 1dffea3, `./configure --prefix=<job prefix> && make install`.) nvcc emitted `-gencode arch=compute_{75,80,86,90,100,120},code=sm_*`.
+
+| lib | 77f87ab | 35af626 | warnings (both trees, diffed after stripping the tree path) |
+|---|---|---|---|
+| pointops | OK | OK | 0 / 0 |
+| pointops2 | OK | OK | 0 / 0 |
+| pointgroup_ops | OK | OK | 10 / 10, identical: `Tensor.data<T>() is deprecated` (`-Wdeprecated-declarations`, `src/bfs_cluster.cpp`) |
+| pointrope | OK | OK | 0 / 0 (102 `ptxas info` lines from upstream's own `--ptxas-options=-v`, not warnings) |
+| pointseg (CppExtension) | OK | OK | 11 / 11, identical: `-Wsign-compare` (`src/segmentor.cpp`) |
+
+No new warnings (the `diff` of the sorted warning lines is empty for every lib). The README's documented `TORCH_CUDA_ARCH_LIST="7.5 8.0" python setup.py build` for pointops: OK on both trees, 0 warnings. The README's "usual" form with no `TORCH_CUDA_ARCH_LIST` fails identically on both trees on this GPU-less host, inside torch: `cpp_extension.py:2600 _get_cuda_arch_flags: arch_list[-1] += '+PTX' IndexError: list index out of range` (no visible card to infer the arch from); environmental and unrelated to the delta, a CUDA user with a GPU does not hit it. pointrope's own `cuda.get_gencode_flags()` list is empty without a GPU, so its arch also came from `TORCH_CUDA_ARCH_LIST`. Then `python setup.py build --build-base build-cu ... install` (the README's install step) of the 35af626 tree into the venv: all five rc=0, only setuptools' `setup.py install is deprecated` notices.
+
+Imports, each tree from its own build dir with `python -I` and only that tree's `build-cu/lib.*` on `sys.path`: `pointops`, `pointops._C`, `pointops2`, `pointops2_cuda`, `pointgroup_ops`, `pointgroup_ops_cuda`, `pointrope`, `pointseg`, `pointseg._C` -- 9/9 OK on 77f87ab and 9/9 OK on 35af626.
+
+### 3. The backend selector on a CUDA PyTorch
+Probe `<job>/cudachk/probe.py <tree> selector|models` (job-local, outside the checkout): a `sys.meta_path` finder records every lookup of a `spconv*` / `spconv_triton*` module name, then it either executes `pointcept/models/utils/spconv.py` directly (`selector`) or does `import pointcept.models` (`models`), and reports the backend, any spconv warning, the error with its raising line and Pointcept frames, and which top-level packages ended up loaded. Package states were real installs and uninstalls in the job venv, not stand-ins: spconv `spconv-cu124 2.3.8` (the README's wheel; pulls cumm-cu124 0.7.11, imports fine on cu128 torch without a GPU) and `spconv-triton 1.0.0` (`--no-deps`). The rest of `pointcept.models`' imports were installed so the import goes to the end: timm 1.0.31, torch-geometric 2.8.1, torch_scatter 2.1.2+pt211cu128 and torch_cluster 1.6.3+pt211cu128 (data.pyg.org binary wheels), transformers 4.50.3, peft 0.22.0, addict, einops, termcolor, yapf, wandb, scipy, plyfile, h5py, sharedarray, tensorboardx, ftfy, regex; typing_extensions had to be upgraded in the venv (4.16.0) for pydantic_core, an environment fix that affects both trees identically.
+
+| installed | selector (35af626) | `import pointcept.models` 35af626 | `import pointcept.models` 77f87ab |
+|---|---|---|---|
+| spconv-cu124 only | runs `utils/spconv.py:16` `import spconv.pytorch as spconv`; backend `spconv.pytorch`; no warning; spconv_triton never looked up | OK, backend `spconv.pytorch`, no spconv warning | OK |
+| spconv-cu124 + spconv-triton | same: backend `spconv.pytorch`; `spconv_triton` **never looked up** (0 lookups) and not in `sys.modules` | OK, backend `spconv.pytorch`; spconv_triton not looked up, not loaded | OK |
+| spconv-triton only | `ModuleNotFoundError: No module named 'spconv'` at `utils/spconv.py:16`; only lookup is `spconv`; spconv_triton not loaded | `ModuleNotFoundError: No module named 'spconv'`, raised at `utils/spconv.py:16` <- `utils/structure.py:2` <- `default.py:9` <- `__init__.py:2`; no cause/context | `ModuleNotFoundError: No module named 'spconv'`, raised at `utils/structure.py:2` <- `default.py:9` <- `__init__.py:2` |
+| neither | same as the row above | same as the row above | same as the row above |
+
+So with spconv absent the error is upstream's original one: same type (`ModuleNotFoundError`, an ImportError), same message, no chained exception; the only difference is one extra traceback frame (the `import` line now sits in `utils/spconv.py:16` instead of `utils/structure.py:2`). A CUDA user is never steered to spconv-triton and never imports it, even when it is installed.
+
+`import pointcept.models` without a GPU completes on both trees (spconv-cu124 installed; the only warning is peft's unrelated `Support for Transformers < 5.6 is deprecated` FutureWarning). Further, `<job>/cudachk/build_probe.py <tree>` builds `configs/scannet/semseg-spunet-v1m1-0-base.py` on CPU: 39,157,844 parameters on both trees (the same count the ROCm runs recorded), with spconv-cu124 + spconv-triton installed; every Pointcept module that binds a `spconv` name binds `spconv.pytorch` (14 on 77f87ab; 35af626 adds the selector module itself and the `pointcept.models.utils` package attribute pointing at the new submodule), and `spconv_triton` is not loaded.
+
+### 4. Other Python hunks: can a CUDA user's behaviour differ?
+- The ten import swaps: no. Each binds the module the selector bound, which on a non-ROCm torch is the object `import spconv.pytorch as spconv` returns (`sys.modules['spconv.pytorch']`); shown by the binding census above and the identical SpUNet build. The v1m2 `try/except ImportError` still catches the absent-spconv case, since `ModuleNotFoundError` is what propagates (row 3/4).
+- oacnns import moved below `from ..utils import offset2batch`: no. `pointcept.models.utils` is already imported by then (via `default.py` -> `utils/structure.py`), and spconv has no import-order side effect on Pointcept; `import pointcept.models` and the backend are unchanged.
+- New submodule name `pointcept.models.utils.spconv`: no. `pointcept/models/utils/__init__.py` exports only `offset2batch`, `offset2bincount`, `bincount2offset`, `batch2offset`, `off_diagonal`, `checkpoint`, `encode`, `decode`, and nothing in `pointcept/` star-imports it or reads a `utils.spconv` attribute other than through the new import.
+- `utils/spconv.py` itself on CUDA: the non-ROCm branch is the single original statement; the only extra work is `import warnings` and `import torch` (torch is already imported).
+- `README.md`: docs only; the CUDA instructions (`pip install spconv-cu124`, `TORCH_CUDA_ARCH_LIST` builds) are unchanged.
+
+Fix to propose: none.
