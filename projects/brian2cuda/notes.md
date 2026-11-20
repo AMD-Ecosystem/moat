@@ -1277,3 +1277,7 @@ Run by an independent child reviewer with the pr-review checklist; both findings
 Everything else checked clean: port intent preserved line for line in the auto-merged files; every cuda*/curand* name is mapped; the CUDA makefile branch is byte-identical to upstream; hip_shims only on the HIP include path and shipped by setuptools-scm; the rand.h/curand_buffer.h HIP guards are correct; no new warp-width assumption (`props.warpSize` read at runtime). The reviewer agrees with the recorded out-of-scope items. One more observation, not a finding: hipcc may print a -Wswitch warning for curand_utils.h's switch with no `default:`.
 
 Recommendation: Request Changes.
+
+## Review 2026-11-20 (re-review at 1c9536f)
+
+Same child reviewer, fact-checked. Exactly one `run()` remains (device.py:1222). An AST scan of every Python file in 90d6d7c..HEAD and upstream/master..HEAD finds no other duplicated or shadowed function, class or preference registration. On CUDA and on non-Windows HIP, `run()` is upstream's: `_run_hip_windows` (device.py:1832) is the old Windows branch byte for byte after the dedent, with one caller. Commit message OK and covers the merge's test plan. No findings. Recommendation: Approve.
