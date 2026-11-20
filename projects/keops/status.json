@@ -6,12 +6,16 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "screened",
+  "stage": "planning",
   "adopted_at": "2026-11-12T18:32:39Z",
-  "updated_at": "2026-11-18T00:20:38Z",
+  "updated_at": "2026-11-20T21:18:34Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-20T21:18:34Z",
+    "holder": "1657d0830eae"
+  },
   "waivers": {
     "windows": {
       "reason": "upstream supports Linux and macOS only; POSIX .so build and 32-bit long indices on Windows; Windows PRs unmerged since 2020. Approved 2026-11-12 with the gap-matrix intake follow-ups.",
@@ -42,6 +46,29 @@
         "last_session_at": null
       },
       "last_agent": "intake"
+    },
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-20T21:18:34Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "planner"
     }
   },
   "license_spdx": "MIT",
