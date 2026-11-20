@@ -111,3 +111,10 @@
 {"kind":"phase","ts":"2026-11-20T22:14:52Z","phase":"test","seconds":1.538,"exit":0,"cmd":"bash agent_space/run_sphsim.sh"}
 {"kind":"phase","ts":"2026-11-20T22:15:48Z","phase":"test","seconds":55.899,"exit":0,"cmd":"bash agent_space/run_unittests.sh"}
 {"kind":"session","ts":"2026-11-20T22:16:20Z","epoch":1795212980.495931,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-20T22:05:01Z","epoch":1795212301.370246,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-20T22:17:05Z","phase":"compile","seconds":724.091,"exit":0,"cmd":"bash agent_space/build_hip.sh"}
+{"kind":"phase","ts":"2026-11-20T22:17:32Z","phase":"test","seconds":2.132,"exit":0,"cmd":"bash agent_space/run_tests.sh cuda"}
+{"kind":"phase","ts":"2026-11-20T22:17:33Z","phase":"test","seconds":0.993,"exit":0,"cmd":"bash agent_space/run_tests.sh sph"}
+{"kind":"phase","ts":"2026-11-20T22:19:23Z","phase":"test","seconds":103.825,"exit":0,"cmd":"bash agent_space/run_tests.sh unit"}
+{"kind":"phase","ts":"2026-11-20T22:20:02Z","phase":"cuda-compile","seconds":23.904,"exit":0,"cmd":"bash agent_space/build_cuda.sh"}
+{"kind":"session","ts":"2026-11-20T22:20:38Z","epoch":1795213238.987082,"event":"end","platform":"linux-gfx950"}

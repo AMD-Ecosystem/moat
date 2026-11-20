@@ -7,27 +7,26 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-11-20T22:16:15Z",
+  "updated_at": "2026-11-20T22:20:38Z",
   "head_sha": "aeb9540d6be87d4fcde76a00ded5f972b4615c35",
   "depends_on": [],
   "pr_url": "https://github.com/utilForever/CubbyFlow/pull/145",
   "pr_number": 145,
   "pr_opened_at": "2026-06-19T05:05:08Z",
-  "porting": null,
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "MIT",
   "upstream_repo_id": 132249264,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx90a": {
-      "state": "completed",
+    "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "29bac0b9b1e8981d9921446829f9c0df1b97f2fe",
-      "started_at": "2026-06-05T04:49:53Z",
-      "completed_at": "2026-08-20T23:23:08Z",
-      "updated_at": "2026-08-20T23:23:08Z",
+      "validated_sha": null,
+      "failed_sha": "29bac0b9b1e8981d9921446829f9c0df1b97f2fe",
+      "started_at": "2026-11-20T21:14:32Z",
+      "completed_at": null,
+      "updated_at": "2026-11-20T21:58:45Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -41,7 +40,8 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator:claude"
+      "state": "validation-failed",
+      "last_agent": "reviewer"
     },
     "linux-gfx1100": {
       "state": "completed",
@@ -68,6 +68,29 @@
       "validated_prior": [
         "29bac0b9b1e8981d9921446829f9c0df1b97f2fe"
       ]
+    },
+    "linux-gfx950": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "aeb9540d6be87d4fcde76a00ded5f972b4615c35",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-20T22:20:38Z",
+      "updated_at": "2026-11-20T22:20:38Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed"
     },
     "windows-gfx1101": {
       "state": "completed",
@@ -98,6 +121,29 @@
         "at": "2026-06-23T22:20:43Z"
       }
     },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "29bac0b9b1e8981d9921446829f9c0df1b97f2fe",
+      "started_at": "2026-06-05T04:49:53Z",
+      "completed_at": "2026-08-20T23:23:08Z",
+      "updated_at": "2026-08-20T23:23:08Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator:claude"
+    },
     "windows-gfx1201": {
       "state": "completed",
       "blocked": false,
@@ -126,30 +172,6 @@
         "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
         "at": "2026-06-23T22:20:44Z"
       }
-    },
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": "29bac0b9b1e8981d9921446829f9c0df1b97f2fe",
-      "started_at": "2026-11-20T21:14:32Z",
-      "completed_at": null,
-      "updated_at": "2026-11-20T21:58:45Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "validation-failed",
-      "last_agent": "reviewer"
     }
   },
   "published_sha": "62f4604c834e0c25ec8f5a829fc1670db23d3cb0",

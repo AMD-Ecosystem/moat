@@ -1437,6 +1437,22 @@ PASS at `aeb9540d6be87d4fcde76a00ded5f972b4615c35` (`moat-fix-145`), Radeon Pro 
 Toolchain: TheRock ROCm SDK `10.2.0a20261022` (AMD clang 24.0.0git, ROCm/llvm-project 2792f8ceeb), installed into the job's own venv with `pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ 'rocm[libraries,devel,device-gfx1100]==10.2.0a20261022'`. No 10.2 release wheel is published (repo.amd.com stops at 7.14.1); this is the newest 10.2 nightly on whl-next (10.3 nightlies follow). The host image itself carries 10.1.0; no system `/opt/rocm`. CMake 3.31.6, Ninja, g++ 13.3 for CXX. Fresh full vcpkg clone + `bootstrap-vcpkg.sh -disableMetrics` in the job directory.
 
 Fork clone: `git clone --branch moat-fix-145 --single-branch https://github.com/AMD-Ecosystem/CubbyFlow.git projects/CubbyFlow/src`, `HEAD` = head_sha, protect-fork hook installed, `git status --porcelain` empty after build and tests.
+## Validation 2026-11-20 (linux-gfx950, validator): fix round tip aeb9540d
+
+Full real-GPU validation at `aeb9540d6be87d4fcde76a00ded5f972b4615c35`
+(`moat-fix-145`), AMD Instinct MI355X (gfx950), HIP_VISIBLE_DEVICES=5 (the
+dispatcher's pin). First validation of this platform; `classify` not needed.
+
+Toolchain: TheRock ROCm 10.2.0 wheels (`rocm[devel,device-gfx950]==10.2.0`
+from `https://stable.repo.amd.com/rocm/core/whl-next/`) installed into the job
+venv, not a system ROCm; `rocm-sdk version` = 10.2.0, `AMD clang version
+24.0.0git (ROCm/llvm-project bdc35841c97f)`. CMake 3.31.6, Ninja, host gcc 13.3.
+Fresh full vcpkg clone + `bootstrap-vcpkg.sh -disableMetrics` in the job
+directory (configure incl. vcpkg deps: 707 s; ftp.gnu.org timed out for
+automake-1.17 once, vcpkg's retry got it). Fork clone fresh from
+`moat-fix-145`, `git rev-parse HEAD` = head_sha, protect-fork installed; no
+modified tracked files at completion (untracked `build/`, `build-cuda/`,
+`UnitTests.log`, `cuda_tests.log` only).
 
 ### Build
 
@@ -1475,5 +1491,79 @@ All counts match the 29bac0b9 evidence exactly.
 ### Jargon / documentation
 
 `python3 utils/jargon.py --port CubbyFlow`: clean. `Documents/Install.md` HIP/ROCm build section unchanged by this delta and still matches the build command.
+ROCM=$(<venv>/bin/rocm-sdk path --root); export VCPKG_ROOT=<job>/vcpkg
+cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx950 \
+  -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$ROCM -DBUILD_TESTS=ON -DBUILD_EXAMPLES=ON
+cmake --build build -j32
+```
+
+PASS: 417/417 steps, 0 warnings, 0 errors (under -Werror).
+
+### HipCxx23Shim on Linux (the delta since 29bac0b9): inert, as intended
+
+- `CMakeConfigureLog.yaml`: exactly one try_compile from
+  `Builds/CMake/HipCxx23Shim.cmake:24` (variable `PROBE_OK`, `exitCode: 0`;
+  probe compiled `-std=gnu++23 --offload-arch=gfx950` with the inherited
+  `-include cuda_to_hip.h`). No second (shim) try_compile.
+- No "Using reordered HIP runtime wrapper" message and no warning in the
+  configure output; `build/HipCxx23Shim/` does not exist.
+- `build.ninja`: 35 HIP objects (every `--offload-arch` FLAGS line), all at
+  `-std=c++23`; 367 other FLAGS lines at `-std=c++23`; no other `-std=`.
+  No `-I...HipCxx23Shim` anywhere; the only `HipCxx23Shim` mentions are the
+  module file in the RERUN_CMAKE dependency list. `CMAKE_HIP_FLAGS` cache
+  value empty.
+- Aside: ROCm 10.2's clang 24 already ships the fixed wrapper order
+  (`__clang_hip_runtime_wrapper.h:102` forward-declares, `:103` `<cmath>`), so
+  the probe would also pass on Windows with this ROCm.
+
+### GPU tests (`ulimit -c 0`)
+
+- `./build/bin/CUDATests`: 35/35 test cases, 3170/3170 assertions PASS.
+- `CUDASPHSim -f 5` (run from a scratch dir): 13824 particles, 5 frames
+  written, exit 0; 0 non-finite values in all frames; mean z per frame
+  0.25000, 0.23641, 0.21858, 0.20843, 0.20536 (final value matches the
+  windows-gfx1151 porter run); x,y = FLT_MAX as on every other platform.
+
+### CPU regression tests
+
+`./build/bin/UnitTests`: 814 tests from 168 suites, all PASS (matches the
+gfx90a/gfx1100/gfx1151 counts).
+
+### CUDA compile check at aeb9540d (nvcc, compile only, no NVIDIA GPU)
+
+```
+export VCPKG_ROOT=<job>/vcpkg; export PATH=/usr/local/cuda-12.8/bin:$PATH
+cmake -B build-cuda -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_CUDA=ON \
+  -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-12.8 \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
+  -DCMAKE_CUDA_ARCHITECTURES=80 -DBUILD_TESTS=ON -DBUILD_EXAMPLES=ON
+cmake --build build-cuda -j32 --target CubbyFlow CUDATests CUDASPHSim
+```
+
+nvcc 12.8 (V12.8.93), host gcc 13.3. PASS: 184/184 steps, 21 NVCC device
+objects, CubbyFlow, CUDATests and CUDASPHSim linked, 0 errors. As in the
+2026-08-20 runs, the project's FindCUDA path uses
+`-gencode;arch=compute_75,code=sm_75` regardless of the `-D` pin (a real
+modern arch, not the degraded-arch fingerprint). The HIP shim is not
+reached (no HipCxx23Shim try_compile in the CUDA configure log, no generated
+dir). Two gcc `-Wattributes` warnings ("declared with greater visibility than
+the type of its field") from the host pass of
+`CUDAParticleSystemData3Tests.cu` / `CUDAPointHashGridSearcher3Tests.cu`,
+instantiating `CUDAPointHashGridSearcher3::ForEachNearbyPointFunc` with a
+test-local anonymous-namespace callback; neither file nor that header is in
+the 29bac0b9..aeb9540d delta, so not a regression. Nothing was run.
+
+### jargon / documentation
+
+`python3 utils/jargon.py --port CubbyFlow`: clean. `Documents/Install.md`
+"Building with GPU Acceleration" documents `USE_HIP=ON`; the delta needs no
+doc change.
+
+Commands: `bash utils/timeit.sh CubbyFlow compile -- bash agent_space/build_hip.sh`,
+`bash utils/timeit.sh CubbyFlow test -- bash agent_space/run_tests.sh cuda|sph|unit`,
+`bash utils/timeit.sh CubbyFlow cuda-compile -- bash agent_space/build_cuda.sh`.
+All exit 0.
 
 ### Verdict: PASS -> completed at `aeb9540d6be87d4fcde76a00ded5f972b4615c35`
