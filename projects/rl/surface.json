@@ -79,10 +79,66 @@
       "kind": "platform",
       "where": "setup.py win32 branch",
       "note": "Upstream Windows wheels are CPU-only; a Windows ROCm torch from-source build of the CUDAExtension is in scope for the windows gate (TheRock ROCM_HOME, hipcc.exe/setuptools traps)."
+    },
+    {
+      "id": "triton:rnn_libdevice_tanh",
+      "kind": "kernel",
+      "where": "torchrl/modules/tensordict_module/_rnn_triton.py, torchrl/modules/models/_dreamer_v3_block_gru_triton.py",
+      "note": "Added by the porter: Triton kernels call tl.extra.cuda.libdevice.tanh, rejected by ROCm Triton; tl.extra.libdevice.tanh fixes 44 of 46 failing GPU tests; explicit tf32x3 unsupported on ROCm tl.dot."
     }
   ],
-  "covered": [],
+  "covered": [
+    {
+      "id": "extension:_torchrl_cuda_segment_tree",
+      "evidence": "linux-gfx942 porter at c76657b0 (notes.md, Porter round 2026-11-20): built by CUDAExtension/hipify for gfx942, Cuda{Sum,Min}SegmentTreeFp{32,64} bound; no kernel source change; CUDA path compiles with nvcc 13.0"
+    },
+    {
+      "id": "build:setup_rocm_gate",
+      "evidence": "linux-gfx942 porter at c76657b0 (notes.md, Porter round 2026-11-20): ROCm branch in _should_build_cuda, hip_version in stale-build info, -g instead of -G under HIP (DEBUG=1 build verified)"
+    },
+    {
+      "id": "test:rb_prioritized_gpu",
+      "evidence": "linux-gfx942 porter at c76657b0 (notes.md, Porter round 2026-11-20): 36 passed, 0 skipped"
+    },
+    {
+      "id": "test:rb_storages_cuda_sampler",
+      "evidence": "linux-gfx942 porter at c76657b0 (notes.md, Porter round 2026-11-20): test_prioritized_memmap_cuda_sampler_after_multiprocess_writes PASSED (8 passed with -k cuda)"
+    },
+    {
+      "id": "test:smoke",
+      "evidence": "linux-gfx942 porter at c76657b0 (notes.md, Porter round 2026-11-20): TORCHRL_SMOKE_REQUIRE_CUDA_EXT=1: 2 passed"
+    },
+    {
+      "id": "test:setup_gate",
+      "evidence": "linux-gfx942 porter at c76657b0 (notes.md, Porter round 2026-11-20): 3 new tests (9 cases) in test/test_setup.py; 13 passed"
+    },
+    {
+      "id": "test:rb_suite_regression",
+      "evidence": "linux-gfx942 porter at c76657b0 (notes.md, Porter round 2026-11-20): test/rb GPU 4554 passed/1008 skipped/0 failed; CPU-only 4500 passed/1062 skipped/0 failed"
+    },
+    {
+      "id": "benchmark:replaybuffer_cuda_tree",
+      "evidence": "linux-gfx942 porter at c76657b0 (notes.md, Porter round 2026-11-20): GPU tree 32x (1M) and 65x (10M) faster than CPU tree in sampler_sample_scale"
+    },
+    {
+      "id": "docs:build_from_source",
+      "evidence": "linux-gfx942 porter at c76657b0 (notes.md, Porter round 2026-11-20): CONTRIBUTING.md, docs/source/index.rst and README.md updated"
+    }
+  ],
   "scoped_out": [],
-  "owed": [],
+  "owed": [
+    {
+      "id": "ci:rocm_wheel_lane",
+      "reason": "Awaiting jeff's ruling (plan.md top, notes Porter round 2026-11-20 question 1); nothing under .github/ touched"
+    },
+    {
+      "id": "platform:windows",
+      "reason": "In scope for the windows gate; not yet built or run on a Windows ROCm torch (porter round 2026-11-20 ran linux-gfx942 only)"
+    },
+    {
+      "id": "triton:rnn_libdevice_tanh",
+      "reason": "Awaiting jeff's scope ruling (notes Porter round 2026-11-20, question 0): add to this port, separate PR, or leave"
+    }
+  ],
   "removed_from_floor": []
 }
