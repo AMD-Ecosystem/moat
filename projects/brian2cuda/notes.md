@@ -1169,3 +1169,88 @@ head_sha" rule, not re-run here.
 **REVALIDATED** at 90d6d7c. GPU pass 3/3 on gfx1100 (RDNA3, wave32).
 `validated_sha` now equals `head_sha` for this arch. State recorded via
 `moatlib.py set-state brian2cuda linux-gfx1100 completed`.
+
+## Fix round 2026-11-20 (porter, linux-gfx90a) -- absorb upstream master into moat-fix-327
+
+Why: PR #327 reported CONFLICTING / DIRTY against brian-team/brian2cuda master. No maintainer change request: the thread (read 2026-11-20 with `gh pr view 327 --json comments,reviews` and `gh api .../pulls/327/comments`) has mstimberg's 2026-06-18 question and LLM-policy note, jeff's two replies, and our 2026-08-17 Windows-staging note; no reviews, no line comments. PR head on GitHub = 90d6d7c = recorded `published_sha`.
+
+Setup: the folder was trunk-resident, so `port/brian2cuda` was cut with `moatlib.ensure_port_branch` (orient's "misplaced ... retire-branch" line for it is stale and must NOT be acted on while this round is open). Then `set-state brian2cuda linux-gfx90a porting --agent porter` and `fix-branch brian2cuda` (moat-fix-327, base 90d6d7c). The fork had no leftover moat-fix-327 branch.
+
+Upstream delta: merge-base 825c0c5 -> upstream master 1d7c251, 95 commits (#333 objects pimpl + DeviceBuffer, #338 B2C_LOG logging, #340, #342 compilation-only smoke test). New brianlib sources: curand_buffer.cu, curand_utils.h, device_buffer.{h,cu}, host_algorithms.h, logging.{h,cu}, thrust_algorithms.cu.
+
+### Commits on moat-fix-327 (90d6d7c..82a1097)
+
+1. `739212c` [ROCm] Merge upstream master into the HIP backend branch. 9 conflicted files. Resolution rule: upstream's file, port's HIP lines re-applied. device.py: upstream imports + glob + hip_backend; upstream main-template call with gpu_heap_size from the HIP pref under HIP; generate_makefile keeps the HIP branch, CUDA branch replaced by upstream's (B2C log flags + stamp). cuda_utils.h / curand_buffer.h: upstream's slimmed headers, with `cuda_runtime.h` and the forward-declared `curandGenerator_t` swapped for the compat header only under HIP (hipRAND's own generator typedef would clash with the forward declaration). Templates: compat header first, as before; common_group puts it in upstream's new `co_std_includes` macro; rand.h skips the `curandState` forward declaration under HIP. synapses_create_generator.cu is now exactly upstream's (the curand include our change replaced is gone upstream). Check: `git diff upstream/master` of device.py has the same 518 +/- lines as the port's original device.py delta; whole-tree delta vs upstream is 18 files (was 19: synapses_create_generator dropped out).
+2. `7aafb3d` [ROCm] Build upstream's new cuRAND and logging code with HIP. `brianlib/hip_shims/{curand,curand_kernel}.h` forward to cuda_to_hip.h, on the include path of the HIP makefile only (`-Ibrianlib/hip_shims`). That covers curand_utils.h, rand.cu (upstream's own `#include <curand_kernel.h>` is kept), and the `<curand.h>`/`<curand_kernel.h>` headers poisson/binomial inject into generated code. logging.h: `__CUDACC__ || __HIPCC__` for `B2C_HOST_DEVICE`, `__CUDA_ARCH__ || __HIP_DEVICE_COMPILE__` for the device printf path. HIP makefile also gets `-DB2C_LOG_LEVEL` + the log-flags stamp.
+3. `82a1097` [ROCm] Pass -Wl, linker flags to hipcc unchanged. Found on this host, and present at the published tip 90d6d7c too: the `-Wl,` -> `-Xlinker ` rewrite (for nvcc) ran before the HIP branch, and brian2's default `runtime_library_dirs` (sys.prefix/lib) gives `-Wl,-rpath,<dir>`, which clang passes to ld.lld as one arg "-rpath,<dir>" -> `ld.lld: error: unknown argument`. Earlier validations did not hit it, probably because of the older hipcc / linker in those environments (ROCm 7.2.1, not re-checked). The rewrite is now CUDA-only.
+
+### Environment (this host)
+
+- AMD Instinct MI250X / MI250 (gfx90a), HIP_VISIBLE_DEVICES=3 (dispatcher pin; GPUs 0-3 idle by `amd-smi metric --usage`).
+- ROCm 10.1.0 pip SDK (HIP 7.16.26385, hipcc `/opt/python-3.11-venv/bin/hipcc`, no /opt/rocm, no rocm-smi). Different from the 2026-08-14 run (ROCm/TheRock via /opt/conda py_3.12).
+- brian2 2.10.1 needs Python >= 3.12 and FLEET_VENV is 3.11, so a job-private 3.12 venv at `$FLEET_VENV/py312` (`/usr/bin/python3.12 -m venv`; `$FLEET_VENV/py312/bin/pip install brian2==2.10.1 pytest -e projects/brian2cuda/src`). numpy 2.5.5.
+
+### Tests
+
+Script: the recorded 3-case set, rebuilt as `agent_space/b2c/test_gfx90a.py` (gitignored), one process per case, plus a 4th case for `poisson()` with a per-neuron lambda. t1 now also checks the LIF trace of never-spiking neurons against the closed form.
+
+```
+ulimit -c 0
+USE_HIP=1 utils/timeit.sh brian2cuda test -- $FLEET_VENV/py312/bin/python agent_space/b2c/test_gfx90a.py /tmp/b2c_job_new
+```
+
+| case | published tip 90d6d7c (this host) | merged tip 82a1097 |
+|---|---|---|
+| t1 LIF 100 neurons, 20 ms | link FAIL as shipped; PASS with `runtime_library_dirs=[]` (63 spikes, max err 2.6e-15) | PASS, 63 spikes, max err 2.6e-15 |
+| t2 Poisson -> 50 targets, 1 ms delay (spike-queue lock) | link FAIL; PASS with workaround (987 syn, 50/50 active) | PASS, ~1000 syn, 2641-2839 target spikes, 50/50 active |
+| t3 200-neuron recurrent, random delays, ~12k syn | link FAIL; PASS with workaround (12060 syn, 3499 spikes) | PASS, 12114 syn, 3518 spikes, no deadlock |
+| t4 poisson(lambda_i) | (not run) | FAIL to compile, see below |
+
+Against the last gfx90a record (2026-08-14, 3/3 PASS at 90d6d7c): same 3/3 on the 3 recorded cases. The only differences are the link failure (now fixed by 82a1097) and synapse/spike counts, which vary run to run because each case draws new random connectivity and Poisson input.
+
+Upstream's new pytest files, HIP backend:
+
+```
+cd /tmp && USE_HIP=1 utils/timeit.sh brian2cuda test -- $FLEET_VENV/py312/bin/python -m pytest -v -p no:cacheprovider \
+  .../tests/test_logging.py::test_codegen_log_level_flags .../tests/test_logging.py::test_file_log_level \
+  .../tests/test_logging.py::test_log_level_gating .../tests/test_cuda_standalone.py::test_codegen_and_compile
+# 4 passed in 28.21s
+```
+
+`test_log_level_gating` builds and runs a GPU binary and checks the `[brian2cuda][LEVEL]` lines, which covers the logging.h change. Do NOT run `test_logging.py` as a whole: `from brian2 import *` imports `brian2.test`, pytest collects it as `test_logging.py::test`, and it runs all of Brian2's own tests (it ran more than 10 minutes before I killed it). Upstream test-file quirk, not the port.
+
+### For jeff: problems found that are outside this round
+
+- **TimedArray and `poisson()` with a per-neuron lambda do not compile with HIP, at the published tip 90d6d7c as well as now.** Generated code picks its device branch with `#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ > 0))` (cuda_generator.py: namespace pointers for TimedArray ~l.668/679, `_brian_<func>` ~l.849, `_poisson` ~l.982; binomial.py l.36/58/73/84). hipcc never defines `__CUDA_ARCH__`, so the device pass takes the host branch: `reference to __host__ variable '_namespace_timedarray_values' in __global__ function`, `reference to __host__ function '_host_poisson' in __host__ __device__ function`. Reproducers: `agent_space/b2c/t_timed.py`, test case t4. Likely fix: add `|| defined(__HIP_DEVICE_COMPILE__)` to those guards (generated-code text only; no change for nvcc). I did not make it because this round's scope is absorbing the base and nobody asked for it. It is a correctness gap in what the PR claims, so jeff should decide whether it goes into this round or the next one.
+- Upstream bug, CUDA too: binomial.py now returns a 3-tuple `(code, deps, compiler_kwds)`, but the pinned brian2==2.10.1 unpacks two values (`brian2/input/binomial.py:208`), so `BinomialFunction` fails on cuda_standalone with `ValueError: too many values to unpack`. Not ours; probably needs a newer brian2.
+- Compile-time note: upstream #333/#338 removed curand from objects.h and the code-object includes; the port's compat header (included first everywhere) still pulls `curand.h` + `curand_kernel.h` into those TUs on CUDA. No behavior change, but CUDA builds parse more headers than upstream intends. Making the compat header's CUDA branch include nothing would fix it, but that touches every include site, so not this round.
+- Windows: commits 2 and 3 touch the HIP makefile and the shared generate_makefile path that the Windows HIP build also uses (`-Ibrianlib/hip_shims` and the `-Wl,` rewrite). brian2 adds no rpath on win32 and clang accepts `-Wl,` there, so I expect no change, but no Windows host ran this round. windows-gfx1151 / gfx1201 / gfx1101 must revalidate at 82a1097.
+- CUDA compile gate: no nvcc on this host (no /opt/conda), and per the 2026-08-14 note the CUDA codegen needs `nvidia-smi` anyway. Not run here; it is owed by the mi355 host before this round goes to jeff.
+
+Pushed: `git push origin moat-fix-327` (new branch, 82a1097). `moat-port` stays 90d6d7c (checked with ls-remote). `advance-head brian2cuda 82a1097`. `jargon.py --port brian2cuda`: clean (local `master` fast-forwarded to upstream/master 1d7c251 first, so the scan covers only our commits plus the merge). `git -C projects/brian2cuda/src status --porcelain`: clean.
+
+## Fix review PR draft
+
+Title: `Merge upstream master into the HIP backend (fix round for #327)`
+
+Body:
+
+Upstream brian-team/brian2cuda#327 stopped merging into master (GitHub: CONFLICTING). The maintainer asked for nothing; this round only absorbs master (825c0c5 -> 1d7c251, 95 commits: #333 objects pimpl and DeviceBuffer, #338 B2C_LOG logging, #340, #342 compilation-only smoke test) and keeps the HIP backend working on top of it.
+
+Commits:
+
+1. `739212c` Merge upstream master. 9 files conflicted (device.py, brianlib/cuda_utils.h, brianlib/curand_buffer.h, templates common_group, main, objects, rand, synapses_classes, synapses_create_generator). Every conflict takes upstream's code and puts the HIP lines back: the compat header first in each generated file (in common_group, inside the new `co_std_includes` macro), the HIP makefile branch, and the HIP gpu_heap_size preference. In cuda_utils.h, curand_buffer.h and rand.h, upstream's new forward declarations / `cuda_runtime.h` are swapped for the compat header under HIP only. The CUDA path is upstream's in every hunk.
+2. `7aafb3d` HIP support for upstream's new code: `brianlib/hip_shims/curand.h` and `curand_kernel.h` (HIP include path only) so upstream's direct cuRAND includes resolve to hipRAND; logging.h recognizes hipcc's host/device passes; the HIP makefile gets the new `B2C_LOG_LEVEL` define and the rebuild-on-change stamp.
+3. `82a1097` Fix found while testing: the `-Wl,` to `-Xlinker` rewrite meant for nvcc was also applied to hipcc's link line, so Brian's default `-Wl,-rpath,<prefix>/lib` broke the link with ld.lld (HIP 7.16). This was already broken at the published tip on this toolchain.
+
+Retested at 82a1097 on MI250X (gfx90a), ROCm 10.1: LIF group (matches the closed form to 3e-15), Poisson input through 1 ms synaptic delays (spike-queue lock path, 50/50 targets driven), 200-neuron recurrent network with ~12k synapses and random delays (no deadlock): 3/3 pass, same as the last record. Upstream's new tests test_logging.py (3 tests) and test_cuda_standalone.py::test_codegen_and_compile: 4/4 pass with the HIP backend. The published tip fails to link on this toolchain without commit 3.
+
+Not covered: the Windows and wave32 platforms still have to be re-tested at this head; the CUDA compile check runs on a host with nvcc. TimedArray and `poisson()` with a per-neuron lambda do not compile with HIP (already true at the published tip): generated code tests `__CUDA_ARCH__`, which hipcc does not define. This round leaves that alone; it needs a decision.
+
+## Upstream reply
+
+I merged current master into the branch to resolve the conflicts. All of #333 and #338 is taken as is. The HIP side needed three small follow-ups: hipcc now finds the cuRAND headers that upstream code includes directly, the new logging header recognizes hipcc's device pass, and the nvcc-only `-Xlinker` rewrite no longer applies to hipcc's link line, where it broke linking with newer ROCm. Re-tested on an MI250X: the LIF, delayed-synapse and recurrent-network runs pass, and so do the new test_logging.py tests and the compilation-only smoke test with the HIP backend.
+
+## Notes for our eyes (fix round 2026-11-20)
+
+The upstream reply above names only the MI250X. Before the review PR opens, update it to list every platform that has completed validation at the round's final head, and drop anything that has not run.
