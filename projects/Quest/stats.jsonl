@@ -149,3 +149,8 @@
 {"kind":"phase","ts":"2026-11-19T23:44:51Z","phase":"compile","seconds":614.902,"exit":0,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/gfx1201-20261119-152826-quest-val-gfx1201-prompt/moat/projects/Quest/src"}
 {"kind":"phase","ts":"2026-11-19T23:45:26Z","phase":"test","seconds":20.064,"exit":0,"cmd":"bash agent_space/test.sh"}
 {"kind":"session","ts":"2026-11-19T23:46:26Z","epoch":1795131986.728425,"event":"end","platform":"linux-gfx1201"}
+{"kind":"session","ts":"2026-11-20T00:05:09Z","epoch":1795133109.466926,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-20T00:23:23Z","phase":"compile","seconds":1093.112,"exit":0,"cmd":"powershell -NoProfile -ExecutionPolicy Bypass -File D:\\Develop\\moat\\agent_space\\quest_porter\\val_2b938d8\\readme_build.ps1"}
+{"kind":"phase","ts":"2026-11-20T00:23:43Z","phase":"test","seconds":0.491,"exit":4,"cmd":"/d/Develop/moat/agent_space/torch312_venv/Scripts/python.exe -m pytest quest/tests -p no:cacheprovider -v -rs"}
+{"kind":"phase","ts":"2026-11-20T00:24:16Z","phase":"test","seconds":18.125,"exit":0,"cmd":"/d/Develop/moat/agent_space/torch312_venv/Scripts/python.exe -m pytest D:/Develop/moat/agent_space/wt-mark/Quest/projects/Quest/src/quest/tests --rootdir D:/Develop/moat/agent_space/wt-mark/Quest/projects/Quest/src -p no:cacheprovider -v -rs"}
+{"kind":"session","ts":"2026-11-20T00:25:35Z","epoch":1795134335.246976,"event":"end","platform":"windows-gfx1151"}

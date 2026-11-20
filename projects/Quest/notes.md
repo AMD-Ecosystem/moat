@@ -3395,3 +3395,62 @@ Not rerun: already recorded at this head (real nvcc 12.8 on the linux-gfx950 hos
 `jargon.py --port Quest` clean. `audit-commits Quest` reports only the known `6e7d8db` fenced-Test-Plan gap carried to PR preparation. ROCm build documented in `README.md` beside the CUDA build; the command above is that documentation verbatim apart from the architecture and the job cap. `git -C projects/Quest/src status --porcelain` empty (`build/` and the `_kernels` symlink are ignored). No fork edit, no push to the fork, no GitHub write.
 
 State: linux-gfx1201 `completed` at `2b938d8` (wave32 gate).
+
+## Validation 2026-11-19 (windows-gfx1151, at `2b938d8`)
+
+AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32, 20 CUs), Windows 11. `torch312_venv`: torch 2.12.0+rocm7.14.0a20260519 (`torch.version.hip` 7.13.26190), ROCm SDK 7.14 devel (`_rocm_sdk_devel`, HIP 7.13.26190-c2c4b25f, AMD clang 23.0.0), Python 3.12.10, transformers 4.37.2, tokenizers 0.15.2, pytest 9.1.1. CMake 3.31.0, Ninja 1.13.2, VS 2022 BuildTools 14.44 x64 environment loaded (LIB/INCLUDE/PATH). Fork at `2b938d8` == `origin/moat-port` == `head_sha` (review pass 5). Full revalidation, not a carry-forward (the delta `6e7d8db..2b938d8` is `mixed`, and Windows binaries have no binary-equivalence verdict). No fork edit, no push. Scripts and logs: `agent_space/quest_porter/val_2b938d8/`.
+
+### Build: the README's Windows command as written, in-tree
+
+The earlier Windows proof builds of this command used out-of-tree build directories or a shell that had the SDK `bin` on PATH; this run is the README's in-tree `quest\ops\build` from a shell with only the x64 build tools environment and the activated Python environment. Before it, the old `quest/ops/build` (the `a70f4d9` build) and the old `quest/_kernels.cp312-win_amd64.pyd` were moved out of the tree (`val_2b938d8/old/`), so the tests can only load the module built here. PowerShell (`powershell -NoProfile -File readme_build.ps1`, wrapped in `utils/timeit.sh Quest compile`); the script removes `CC`, `CXX`, `HIPCXX`, `PYTORCH_ROCM_ARCH`, `CMAKE_BUILD_TYPE` from the environment, runs the venv's `Activate.ps1`, and adds only `$LASTEXITCODE` checks to the README block. `HIP_PATH` and `ROCM_PATH` were also unset; neither the venv `Scripts` nor the SDK `bin` was on PATH before activation.
+
+```
+cd quest\ops
+mkdir build; cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 `
+  "-DCMAKE_PREFIX_PATH=$(python -c 'import torch;print(torch.utils.cmake_prefix_path)')" ..
+ninja
+copy _kernels*.pyd ..\..\
+```
+
+rc 0, 8 of 8, **1093 s** (18m13s) for configure plus build, nothing else building on the host (`6e7d8db`: 991 s at `-j 8` with hand-given flags; `a70f4d9`: 1520 s with a concurrent configure). Selected: C++ and HIP compilers both `<venv>/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe` (Clang 23.0.0, GNU-like command line), `CMAKE_BUILD_TYPE=Release` from the default (`-O3` on all 8 compile lines), Python `<venv>/Scripts/python.exe` 3.12.10, `_quest_hipconfig=<venv>/Scripts/hipconfig.exe`, "Building PyTorch for GPU arch: gfx1151", `--offload-arch=gfx1151` on all 8 compile lines. 0 errors; 18 nodiscard-`hipError_t` warnings (`-Wunused-value`, the Linux count) and 1629 `-Wpass-failed` "loop not unrolled" lines; the link prints only the known unused `--ld-path=...lld-link.exe` warning. No generated file edited.
+
+### GPU tests (`utils/timeit.sh Quest test`, `ulimit -c 0`)
+
+```
+PYTHONPATH=<fork> python -m pytest <fork>/quest/tests --rootdir <fork> -p no:cacheprovider -v -rs
+```
+
+**202 passed, 28 skipped, 0 failed** (16.5 s), one run; `quest._kernels` loaded from `quest/_kernels.cp312-win_amd64.pyd` copied by the README's last line (built 16:23 local, this build). Per suite, counted from that run's `-v` output, beside the earlier Windows runs:
+
+| suite | `2b938d8` | `6e7d8db` and `a70f4d9` (windows-gfx1151) |
+|---|---|---|
+| test_rope | 64 passed | 64 passed |
+| test_estimate | 9 passed | 9 passed |
+| test_decode_attention | 6 passed | 6 passed |
+| test_approx_attention | 42 passed | 42 passed |
+| test_decode_launch_shape | 3 passed | 3 passed |
+| test_topk | 49 passed, 15 skipped | 49 passed, 15 skipped |
+| test_prefill_attention | 29 passed, 13 skipped | 29 passed, 13 skipped |
+| total | 202 passed, 28 skipped | 202 passed, 28 skipped |
+
+(The `a70f4d9` porter round recorded only the total.) Skips are the tests' own (`test_prefill_attention.py:51` qo_len > kv_len, `test_topk.py:27` k >= kv_len). Identical to linux-gfx942 and linux-gfx1201 at `2b938d8`. The five ROCm runtime DLLs stay staged in `quest/` (this host's System32 `amdhip64_7.dll` problem; environment, untracked). A first `timeit.sh` test invocation used the relative path `quest/tests` and collected nothing (exit 4, 0.5 s, "file or directory not found": `timeit.sh` runs from the repository root); it is in `stats.jsonl` and is a harness slip, not a test result.
+
+The end-to-end model run was not repeated: no kernel or compiled source changed since `6e7d8db`, where it ran on this GPU; the delta is configure logic and README text.
+
+### Configure-only checks (separate scratch directories, no build; `cfg_checks.ps1`)
+
+Both start from a PowerShell with `CC`, `CXX`, `HIPCXX`, `PYTORCH_ROCM_ARCH`, `CMAKE_BUILD_TYPE`, `HIP_PATH`, `ROCM_PATH`, `VIRTUAL_ENV`, `CONDA_PREFIX` removed, source directory given by path.
+
+| case | rc | C++ / HIP compiler | build type | Python | architecture |
+|---|---|---|---|---|---|
+| README fallback: environment not activated (`python` on PATH is the system 3.12), `-DPython_EXECUTABLE=<venv>\Scripts\python.exe` and that same `python.exe` in the `CMAKE_PREFIX_PATH` command | 0 | both `_rocm_sdk_devel/lib/llvm/bin/clang++.exe` (GNU-like), hipconfig found at `<venv>/Scripts/hipconfig.exe` | Release (`-O3 -DNDEBUG`, 8 lines) | `<venv>\Scripts\python.exe` 3.12.10 | gfx1151 (8 lines) |
+| README command, environment activated, `$env:CMAKE_BUILD_TYPE='Debug'` | 0 | same two | **Debug** (`-O0 -g -D_DEBUG`, 8 lines, no `-O3`) | `<venv>/Scripts/python.exe` 3.12.10 | gfx1151 (8 lines) |
+
+So on Windows an environment `CMAKE_BUILD_TYPE` is kept (review pass 5 could only show this by proxy on Linux), and the fallback finds the SDK and ROCm from `Python_EXECUTABLE` with nothing else in the environment. The Debug case was configured only; whether a Debug build links here (`python312_d.lib`) was not tried and is the user's choice of build type, not the default.
+
+### CUDA gate, content checks, integrity
+
+CUDA gate: not rerun, recorded at this head (real nvcc on the linux-gfx950 host, PASS). `python utils/jargon.py --port Quest` clean. The README documents the Windows ROCm build beside the Linux one, and the command above is that block verbatim. `git -C projects/Quest/src status --porcelain`: only the five untracked runtime DLLs in `quest/` (`quest/ops/build` and the `.pyd` are ignored); no modified tracked file.
+
+State: windows-gfx1151 `completed` at `2b938d8` (windows gate).
