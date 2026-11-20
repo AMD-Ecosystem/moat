@@ -1,0 +1,106 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "074ca6dc9e80",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [],
+    "markers": {},
+    "libraries": {}
+  },
+  "components": [
+    {
+      "id": "inference:cli",
+      "kind": "python_package",
+      "where": "cosyvoice/cli/",
+      "note": "CosyVoice-300M/SFT/Instruct, CosyVoice2-0.5B, Fun-CosyVoice3-0.5B via example.py; fp32 and load_jit+fp16; stream and non-stream"
+    },
+    {
+      "id": "onnx:speech-tokenizer-provider",
+      "kind": "runtime_dependency",
+      "where": "cosyvoice/cli/frontend.py:46, cosyvoice/utils/onnx.py:15, cosyvoice/bin/export_onnx.py:93, tools/extract_speech_token.py:68",
+      "note": "onnxruntime CUDA EP -> MIGraphX EP when installed, else CPU"
+    },
+    {
+      "id": "guard:tensorrt",
+      "kind": "code_guard",
+      "where": "cosyvoice/cli/cosyvoice.py",
+      "note": "load_trt degrades with a warning on HIP torch"
+    },
+    {
+      "id": "install:requirements-rocm",
+      "kind": "install",
+      "where": "requirements-rocm.txt (new)",
+      "note": "ROCm requirements; torch/torchaudio from the ROCm index"
+    },
+    {
+      "id": "docs:readme-rocm",
+      "kind": "docs",
+      "where": "README.md Install",
+      "note": "Install with AMD ROCm, Linux and Windows"
+    },
+    {
+      "id": "app:webui",
+      "kind": "executable",
+      "where": "webui.py",
+      "note": "gradio app smoke"
+    },
+    {
+      "id": "server:fastapi",
+      "kind": "executable",
+      "where": "runtime/python/fastapi/server.py",
+      "note": "smoke"
+    },
+    {
+      "id": "server:grpc",
+      "kind": "executable",
+      "where": "runtime/python/grpc/server.py",
+      "note": "smoke"
+    },
+    {
+      "id": "vllm:llm-backend",
+      "kind": "optional_backend",
+      "where": "cosyvoice/vllm/, cosyvoice/cli/model.py load_vllm, vllm_example.py",
+      "note": "Linux only; pending Jeff (plan.md Q3)"
+    },
+    {
+      "id": "platform:windows",
+      "kind": "platform",
+      "where": "whole project",
+      "note": "windows gate kept; vLLM excluded there (no Windows vLLM)"
+    },
+    {
+      "id": "tensorrt:flow-estimator",
+      "kind": "optional_backend",
+      "where": "cosyvoice/utils/common.py TrtContextWrapper, cosyvoice/flow/flow_matching.py, cosyvoice/utils/file_utils.py convert_onnx_to_trt",
+      "note": "no ROCm TensorRT; proposed out, pending Jeff (plan.md Q2)"
+    },
+    {
+      "id": "runtime:triton-trtllm",
+      "kind": "serving_stack",
+      "where": "runtime/triton_trtllm/",
+      "note": "NVIDIA Triton + TensorRT-LLM; proposed out, pending Jeff (plan.md Q2)"
+    },
+    {
+      "id": "docker:nvidia-images",
+      "kind": "packaging",
+      "where": "docker/Dockerfile, runtime/python/Dockerfile",
+      "note": "nvidia/cuda bases; proposed out, pending Jeff (plan.md Q2)"
+    },
+    {
+      "id": "training:cosyvoice-recipes",
+      "kind": "training",
+      "where": "cosyvoice/bin/train.py, examples/libritts, examples/magicdata-read",
+      "note": "DDP/DeepSpeed; recommended single-GPU smoke, pending Jeff (plan.md Q1)"
+    },
+    {
+      "id": "training:grpo",
+      "kind": "training",
+      "where": "examples/grpo/cosyvoice2/",
+      "note": "verl RL recipe; proposed out, pending Jeff (plan.md Q1)"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}

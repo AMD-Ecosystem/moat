@@ -25,3 +25,23 @@ Validation project (lane `validate`, seed `amd-gap-matrix`), taken up per jeff's
 - **CUDA-only dependencies:** TensorRT (`load_trt`, `runtime/triton_trtllm`): no ROCm substitute in-tree; gap, keep it disabled on ROCm (MIGraphX would be new work, out of scope). `onnxruntime-gpu` (CUDA EP): substitute `onnxruntime-rocm` / MIGraphX EP or the CPU EP the code already falls back to; needs a provider-selection fix. `deepspeed` 0.15.1: ROCm DeepSpeed builds exist (training only). vLLM: ROCm vLLM exists; version window is 0.9.0 or 0.11+.
 - **Windows:** plausible. Requirements already special-case win32 (CPU onnxruntime, no deepspeed / tensorrt), so inference with ROCm torch wheels on Windows is in reach; vLLM and TensorRT paths are Linux-only and excluded. Recommend keeping the `windows` gate (no waiver); the 0.5B models fit gfx1151 easily.
 - **Risks:** stale pins (torch 2.3.1, numpy 1.26, onnxruntime 1.18) against current ROCm wheels; `torch.cuda.Stream` / AMP behaviour under HIP; `openai-whisper` and `pyworld` builds on Windows.
+
+## Planning (2026-11-20, linux-gfx942, planner)
+
+**Decisions needed from Jeff before a porter starts** (full options and reasoning in plan.md "Open questions"):
+
+- **Q1 Training layer** (`cosyvoice/bin/train.py`, `examples/libritts`, `examples/magicdata-read`, `examples/grpo`). (a) inference-only, training out of scope; (b) add a short single-GPU training smoke for `examples/libritts/cosyvoice2`, grpo out; (c) both recipes in. Recommended: (b).
+- **Q2 TensorRT layers** (`load_trt` flow estimator, `runtime/triton_trtllm`, NVIDIA Dockerfiles). (a) guard `load_trt` on HIP and document these as NVIDIA-only, PyTorch estimator is the ROCm path; (b) also build a MIGraphX-compiled estimator as the ROCm counterpart of `load_trt`; (c) also a ROCm serving stack replacing triton_trtllm. Recommended: (a), with (b) as a deferral if wanted.
+- **Q3 vLLM backend.** (a) in scope on Linux (wave64, and wave32 where ROCm vLLM supports it), Windows excluded since vLLM has no Windows build; (b) out. Recommended: (a).
+- **Q4 Delivery vehicle** (decided at PR time; the plan keeps both (a) and (b) open by reusing #1754's file layout). (a) our own upstream PR crediting #1754; (b) offer the validated change to alexhegit to refresh #1754; (c) fork as deliverable, nothing sent. Context: a maintainer wrote in issue #839 "we use pytorch and tensorrt, we don't do any hardware support"; #1754 has sat CONFLICTING since 2025-12-28, its only conflict being an obsolete `webui.py` hunk (upstream already changed that default to `CosyVoice2-0.5B`).
+
+Nothing is recorded `scoped_out` in surface.json yet; the proposed cuts carry "pending Jeff" notes. After the ruling, move them to `scoped_out` (reason = the ruling) or `owed`.
+
+Findings that resume intake's screen (not redone):
+
+- Upstream `main` at `074ca6dc9e80` (2026-05-26); fork `AMD-Ecosystem/CosyVoice` exists, default branch `main` at the same tip. No new AMD PRs or issues since intake (`gh pr list --state all --search "ROCm OR AMD OR HIP"`: #1754 open, #1280 closed).
+- `utils/surface.py generate` floor is empty (0 CUDA files, 0 build components); 15 components added by hand. `ext_type` recorded as `python-torch`.
+- On ROCm torch, `torch.cuda.is_available()` is True, so `cosyvoice/cli/frontend.py:46` asks onnxruntime for `CUDAExecutionProvider`; `cosyvoice/utils/onnx.py:15` and `tools/extract_speech_token.py:68` ask for it unconditionally. Fix: select from `onnxruntime.get_available_providers()` (CUDA, then MIGraphX, then CPU). The onnxruntime ROCm EP has been deleted upstream; MIGraphX EP (AMD's `onnxruntime-migraphx` wheel, or the newer `onnxruntime-ep-migraphx` plugin, which must be registered before querying providers) is the target. #1754 keeps `onnxruntime-gpu` (the CUDA wheel) on Linux, which is wrong for ROCm.
+- `load_trt=True` on ROCm dies at `import tensorrt` (`cosyvoice/cli/model.py:85`); `vllm_example.py` passes `load_trt=True`. Fix: extend the existing no-GPU downgrade in the three `cosyvoice/cli/cosyvoice.py` constructors with a `torch.version.hip` condition.
+- Current torchaudio (2.9+) routes `torchaudio.load/save` (27 call sites) through torchcodec and ignores `backend='soundfile'`; #1754 added `torchcodec==0.9.1` for that reason. Version must match torch.
+- No device code exists, so no wavefront, texture or memory-init fault class applies. Runtime risks to watch in validation: masked fp16 SDPA in the CosyVoice3 DiT (`cosyvoice/flow/DiT/modules.py:391,472`), and the LLM thread's side stream (`cosyvoice/cli/model.py:55`) versus the default-stream token2wav in `stream=True` mode.
