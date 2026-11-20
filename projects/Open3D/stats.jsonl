@@ -33,3 +33,17 @@
 {"kind":"phase","ts":"2026-07-02T19:30:47Z","phase":"compile-old","seconds":220.102,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Open3D/src/build -j16 --target tests"}
 {"kind": "tokens", "ts": "2026-07-02T19:33:42Z", "tokens": 108170, "source": "validator (gfx90a binary-equiv carry-forward at rebased head)"}
 {"kind": "tokens", "ts": "2026-07-02T19:21:07Z", "tokens": 51567, "source": "validator"}
+{"kind":"phase","ts":"2026-11-20T21:36:19Z","phase":"compile","seconds":29.555,"exit":0,"cmd":"bash agent_space/o3d_cfg.sh"}
+{"kind":"phase","ts":"2026-11-20T21:37:47Z","phase":"compile","seconds":79.761,"exit":1,"cmd":"/c/Program Files/CMake/bin/cmake.exe --build agent_space/b --target tests -j 12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-20T21:40:14Z","phase":"compile","seconds":73.594,"exit":1,"cmd":"/c/Program Files/CMake/bin/cmake.exe --build agent_space/b --target tests -j 12 -- -k 0"}
+{"kind":"session","ts":"2026-11-20T21:40:16Z","epoch":1795210816.268671,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-20T21:42:36Z","phase":"compile","seconds":64.238,"exit":1,"cmd":"/c/Program Files/CMake/bin/cmake.exe --build agent_space/b --target tests -j 12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-20T21:50:55Z","phase":"compile","seconds":431.102,"exit":1,"cmd":"/c/Program Files/CMake/bin/cmake.exe --build agent_space/b --target tests -j 12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-20T21:57:40Z","phase":"compile","seconds":371.841,"exit":0,"cmd":"/c/Program Files/CMake/bin/cmake.exe --build agent_space/b --target tests -j 12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-20T21:58:54Z","phase":"test","seconds":0.668,"exit":0,"cmd":"timeout 600 cmd.exe /c D:\\Develop\\moat\\agent_space\\wt-Open3D\\agent_space\\run_tests.bat --gtest_filter=*MemoryManager*"}
+{"kind":"phase","ts":"2026-11-20T21:59:43Z","phase":"test","seconds":29.973,"exit":0,"cmd":"timeout 1500 cmd.exe /c D:\\Develop\\moat\\agent_space\\wt-Open3D\\agent_space\\run_tests.bat --gtest_filter=*Tensor*:*Reduction*"}
+{"kind":"phase","ts":"2026-11-20T22:00:56Z","phase":"test","seconds":64.742,"exit":1,"cmd":"timeout 1500 cmd.exe /c D:\\Develop\\moat\\agent_space\\wt-Open3D\\agent_space\\run_tests.bat --gtest_filter=*NearestNeighbor*:*KnnIndex*:*FixedRadiusIndex*:*Knn*:*Hybrid*:*Registration*:*Feature*"}
+{"kind":"phase","ts":"2026-11-20T22:01:33Z","phase":"test","seconds":1.222,"exit":1,"cmd":"timeout 1500 cmd.exe /c D:\\Develop\\moat\\agent_space\\wt-Open3D\\agent_space\\run_tests.bat --gtest_filter=*HashMap*:*VoxelBlockGrid*"}
+{"kind":"phase","ts":"2026-11-20T22:01:55Z","phase":"test","seconds":4.516,"exit":0,"cmd":"timeout 1500 cmd.exe /c D:\\Develop\\moat\\agent_space\\wt-Open3D\\agent_space\\run_tests.bat --gtest_filter=*HashMap*:*VoxelBlockGrid*"}
+{"kind":"phase","ts":"2026-11-20T22:04:58Z","phase":"compile","seconds":43.809,"exit":0,"cmd":"/c/Program Files/CMake/bin/cmake.exe --build agent_space/b -j 12 -- -k 0"}
+{"kind":"session","ts":"2026-11-20T22:08:13Z","epoch":1795212493.397672,"event":"end","platform":"windows-gfx1151"}

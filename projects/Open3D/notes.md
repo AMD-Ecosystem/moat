@@ -1004,3 +1004,198 @@ round: forward the 4 CMAKE_HIP_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_*
 variables (WIN32/Clang-frontend-gated) into ExternalProject_CMAKE_ARGS_hidden
 in 3rdparty/find_dependencies.cmake, matching the existing WIN32/Clang guard
 style of the 5 committed Windows fixes; re-run this same recipe afterward.
+
+## Porter round 2026-11-20 (windows-gfx1151) -- Windows HIP build fixed, 499 GPU tests pass
+
+Answers the 2026-08-20 windows-gfx1151 validation-failed. PR #7509 is open, so
+moat-port stays frozen at 50bb2505b; the round is on the staging branch
+moat-fix-7509 (strict descendant of moat-port, pushed). New commits:
+
+- `c8713e747` `[ROCm] Fix the clang Windows build after the assimp/draco update`
+- `11c1d702e` `[ROCm] Document the Windows HIP build` (new head_sha)
+
+### The validator's two CMake errors are CMake defects fixed in CMake 4.3; no project workaround needed
+
+Both errors in the 2026-08-20 section ("MSVC compiler version not detected
+properly" in the HIP ABI try_compile, and "MSVC_RUNTIME_LIBRARY value
+'MultiThreadedDLL' not known for this HIP compiler") occur ONLY with clang-cl
+as the HIP compiler on CMake < 4.3. Bisected with a 4-line reproducer (below)
+and pip-installed CMake versions:
+
+| CMake  | clang-cl for C/CXX/HIP | GNU-driver clang/clang++ |
+|--------|------------------------|--------------------------|
+| 3.31.0 | FAIL (ABI detect; with the ABI step pre-cached, then the runtime-library table) | PASS |
+| 4.0.3  | FAIL (ABI detect)      | not tried |
+| 4.1.2  | FAIL (ABI detect)      | not tried |
+| 4.2.3  | FAIL (ABI detect)      | not tried |
+| 4.3.2  | PASS                   | not tried |
+
+CMake 4.3's Platform/Windows-MSVC.cmake gates the runtime-library flag table
+on `C OR CXX OR HIP` (3.31: `C OR CXX` only). The GNU-driver path
+(Windows-Clang.cmake `__windows_compiler_clang_gnu`) fills
+CMAKE_<lang>_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_* for every language, HIP
+included, already in 3.31 -- which is why the gfx1201 build (clang++ GNU
+driver, see "Windows build SOLVED via vcpkg") never hit it. Open3D's full
+configure with clang-cl on CMake 4.3.2 (TheRock venv's cmake) also succeeds
+with no workaround (configure only; not built).
+
+So the project change is NOT to bake the two command-line workarounds into
+the build files (one pre-caches CMAKE_HIP_ABI_COMPILED, skipping ABI
+detection). The documented Windows command uses the GNU-style clang/clang++
+driver, which works on CMake 3.31 as is; the docs say CMake < 4.3 cannot use
+clang-cl for HIP.
+
+### What did break, and the fixes (c8713e747; all behind WIN32 AND NOT MSVC)
+
+With the GNU-driver recipe and only user-level options (no -D flag defines),
+keep-going builds (`ninja -k 0`) surfaced gaps that are new since the gfx1201
+build, from the 2026-07-02 rebase onto upstream (#7505 added Draco to the
+bundled assimp 6.0.5), plus the defines the old recipe passed by hand:
+
+1. assimp configure: `set_target_properties Can not find target to add
+   properties to: draco`. assimp CMakeLists.txt uses `IF(MSVC OR WIN32)` ->
+   target `draco`, but draco names its static target `draco` only `if(MSVC)`
+   (else `draco_static`).
+2. draco `stdio_file_reader.cc:91: use of undeclared identifier 'ftello'`:
+   draco_build_definitions.cmake adds `_FILE_OFFSET_BITS=64` for every
+   `NOT MSVC` 64-bit build; the UCRT has no ftello (draco's `#elif _WIN64`
+   branch uses _ftelli64).
+   FIX for 1+2: new `3rdparty/assimp/0004-fix-draco-non-msvc-windows.patch`
+   (`IF(MSVC OR WIN32)` -> `IF(MSVC)`; the size-8 branch gains `AND NOT
+   WIN32`), added to PATCH_COMMAND only `if(WIN32 AND NOT MSVC)`.
+3. 51 Open3D TUs: windows.h min/max macros (`expected unqualified-id`,
+   numeric_limits<>::max seen as a function pointer), `M_PI` undeclared,
+   PoissonRecon `sys/time.h` not found (bare WIN32 undefined). Upstream
+   defines NOMINMAX/_USE_MATH_DEFINES only `if(MSVC)` in
+   open3d_set_global_properties, and MSVC gets /DWIN32 from CMake's default
+   flags. FIX: an `else()` branch there defines NOMINMAX _USE_MATH_DEFINES
+   WIN32 for non-MSVC Windows. This replaces the old recipe's
+   CMAKE_CXX_FLAGS/CMAKE_HIP_FLAGS defines (WIN32_LEAN_AND_MEAN turned out
+   unnecessary).
+
+CUDA/Linux untouched: every change is inside WIN32 AND NOT MSVC (Windows CUDA
+builds use MSVC; Linux is not WIN32); the assimp patch is not even added to
+the patch command there. No CUDA configure was run this round: the guards
+make it inert, and a Windows CUDA configure would need an MSVC/nvcc vcpkg
+setup, not cheap.
+
+Docs (11c1d702e): docs/compilation.rst HIP section gains a Windows paragraph
+and command block (bat style, as the file's Windows section); the note no
+longer says "ROCm support targets Linux".
+
+### Build recipe (this host)
+
+Environment (agent_space/o3d_env.sh in the worktree): VS 18 developer
+environment at toolset 14.50 to match the vcpkg binary cache
+(`vcvars64.bat -vcvars_ver=14.50`; INCLUDE/LIB/LIBPATH/VCToolsInstallDir
+captured and exported; VS 2022 PATH entries dropped). Scrubbing INCLUDE
+entirely (the CubbyFlow recipe) is NOT enough here: rc.exe then fails on the
+bundled zlib with `zlib1.rc(1) : fatal error RC1015: cannot open include file
+'winver.h'` -- a resource-compiler step needs the SDK include path.
+
+```
+ROCM=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel
+VCROOT=D:/Develop/vcpkg/installed/x64-windows
+export PKG_CONFIG=$VCROOT/tools/pkgconf/pkgconf.exe PKG_CONFIG_PATH=$VCROOT/lib/pkgconfig
+cmake -S projects/Open3D/src -B agent_space/b -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=$ROCM/lib/llvm/bin/clang.exe \
+  -DCMAKE_CXX_COMPILER=$ROCM/lib/llvm/bin/clang++.exe \
+  -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++.exe \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 "-DCMAKE_PREFIX_PATH=$ROCM;$VCROOT" \
+  -DSTATIC_WINDOWS_RUNTIME=OFF -DUSE_SYSTEM_TBB=ON -DUSE_SYSTEM_JPEG=ON \
+  -DUSE_SYSTEM_OPENSSL=ON -DUSE_SYSTEM_CURL=ON -DUSE_SYSTEM_EMBREE=ON -DUSE_SYSTEM_ZEROMQ=ON \
+  -DBUILD_UNIT_TESTS=ON -DBUILD_GUI=OFF -DBUILD_PYTHON_MODULE=OFF -DBUILD_EXAMPLES=ON \
+  -DBUILD_BENCHMARKS=OFF -DBUILD_WEBRTC=OFF -DBUILD_ISPC_MODULE=OFF -DWITH_IPP=OFF -DDEVELOPER_BUILD=ON
+cmake --build agent_space/b -j 12      # all targets: Open3D, tests.exe, 36 examples; 0 FAILED
+```
+
+CMake 3.31.0, TheRock ROCm 7.14 pip SDK (clang 23.0.0). No
+CMAKE_TLS_VERIFY=OFF and no -D flag defines needed. The documented command
+(docs: -DPKG_CONFIG_EXECUTABLE instead of the env vars) configured clean from
+a fresh build dir, and its BUILD_/USE_/WITH_/STATIC_ cache entries match the
+built configuration except BUILD_EXAMPLES (built ON). Without
+-DBUILD_WEBRTC=OFF configure stops with upstream's own "Pre-built WebRTC
+binaries are not available for ... STATIC_WINDOWS_RUNTIME=OFF". Compile wall
+about 17 min across the keep-going runs (Strawberry's ccache was picked up
+automatically).
+
+### GPU smoke (porter evidence; single runs, ulimit -c 0)
+
+TheRock _rocm_sdk_devel/bin amdhip64_7.dll, amd_comgr.dll, hiprtc*.dll,
+rocm_kpack.dll copied next to tests.exe; run through native cmd (batch file:
+ROCm bin + vcpkg bin on PATH, ROCBLAS_TENSILE_LIBPATH, OPEN3D_DATA_ROOT under
+agent_space -- without it the datasets download to %USERPROFILE%\open3d_data
+on C:; the one run that did so was moved to D:).
+
+| filter | result |
+|---|---|
+| `*MemoryManager*` | 21/21 pass |
+| `*Tensor*:*Reduction*` | 400 pass, 1 skip (TensorPermuteDevicesWithSYCL.TakeOwnership/1) |
+| `*NearestNeighbor*:*KnnIndex*:*FixedRadiusIndex*:*Knn*:*Hybrid*:*Registration*:*Feature*` | 44/45; 1 FAIL = RGBDOdometryMultiScaleHybrid/1 (CUDA:0) -> NppUnsupportedOnHIP, the known scope-out |
+| `*HashMap*:*VoxelBlockGrid*` | 34/34 pass |
+
+Total 499 pass = the gfx1100 baseline. Unlike gfx1201 (TheRock multi-arch
+kpack, #3531), Tensor.Cross, ICPDoppler and GetInformationMatrix all pass:
+the gfx1151 single-arch library package does not hit the kpack load bug. (One
+HashMap/VoxelBlockGrid attempt failed 10 tests on CPU and GPU alike because
+my batch file carried a mangled OPEN3D_DATA_ROOT and the dataset download
+failed; rerun with the fixed path: 34/34. Not a port result.)
+
+### Drafted upstream CMake report (NOT filed; already fixed in CMake 4.3)
+
+Recommend not filing: 4.3.2 works and CMake does not backport such fixes to
+older series. Kept in case someone wants it:
+
+> Title: HIP with clang-cl on Windows fails before CMake 4.3
+>
+> With clang-cl (ROCm SDK, clang 23) as CMAKE_C/CXX/HIP_COMPILER and the Ninja generator on Windows, `enable_language(HIP)` fails in CMake 3.31.0, 4.0.3, 4.1.2 and 4.2.3 with `Windows-MSVC.cmake: MSVC compiler version not detected properly` during "Detecting HIP compiler ABI info". Pre-setting `CMAKE_HIP_COMPILER_WORKS=1 CMAKE_HIP_ABI_COMPILED=1` gets past that on 3.31, and generation then fails with `MSVC_RUNTIME_LIBRARY value 'MultiThreadedDLL' not known for this HIP compiler`, because `__windows_compiler_msvc` fills `CMAKE_<LANG>_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_*` only for C and CXX. CMake 4.3.2 configures the same project cleanly. The GNU-style clang++ driver works in every version tested.
+>
+> ```cmake
+> cmake_minimum_required(VERSION 3.24)
+> project(repro LANGUAGES C CXX HIP)
+> set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+> add_library(k STATIC k.hip)   # k.hip: __global__ void k(int* p) { *p = 1; }
+> ```
+>
+> ```
+> cmake -S . -B b -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_HIP_COMPILER=clang-cl -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=<rocm>
+> ```
+
+### Pre-existing jargon finding (needs a person)
+
+`jargon.py --port Open3D` reports 2 hits, both in the already-published
+commit 73a209622 (the open PR's first commit): "fault-class" at body lines 25
+and 29. This round's two commits are clean. Fixing it means rewriting a
+published commit message in the open PR -- a person's call (e.g. at a
+squash).
+
+### State
+
+windows-gfx1151: porting -> ported at head 11c1d702e. Other platforms read
+revalidate against the new head; the delta is WIN32-AND-NOT-MSVC build files
+plus docs, so the Linux platforms are carry-forward candidates. Next: reviewer
+for the delta, then a windows-gfx1151 validator run of the same recipe.
+
+## Lesson for cuda-to-rocm: clang-cl as the HIP compiler needs CMake 4.3, not just 4.x
+
+For references/windows.md, "Keep one clang driver across every CMake
+language, and check the CMake version". It says "CMake 4.x: either works".
+Measured on a 4-line reproducer: clang-cl for C/CXX/HIP fails
+`enable_language(HIP)` ("MSVC compiler version not detected properly") on
+CMake 3.31.0, 4.0.3, 4.1.2 and 4.2.3, and works on 4.3.2; 4.3's
+Windows-MSVC.cmake is also the first to fill the MSVC_RUNTIME_LIBRARY flags
+for HIP. The GNU-style clang/clang++ driver works on 3.31. The bullet should
+read "CMake 4.3 or newer", and the pre-cache workaround credited to Open3D is
+unnecessary once the build uses the GNU driver. (Open3D)
+
+## Lesson for cuda-to-rocm: bundled Draco breaks the non-MSVC Windows build in two places
+
+For references/windows.md (all-clang Windows builds of bundled third-party
+code). Draco, as bundled by assimp 6.x for glTF Draco, names its static
+target `draco_static` unless `MSVC`, while assimp references `draco` on every
+WIN32 build (`IF(MSVC OR WIN32)`); and Draco adds `_FILE_OFFSET_BITS=64` for
+every non-MSVC 64-bit build, which selects `ftello`, absent from the UCRT.
+Both fire with the GNU-style clang driver on Windows. Patch assimp to key the
+target name on MSVC and skip the large-file defines on WIN32 (Draco then uses
+`_ftelli64`). More generally, grep a bundled dependency for `if(MSVC)` /
+`NOT MSVC` gates that really mean "Windows". (Open3D)
