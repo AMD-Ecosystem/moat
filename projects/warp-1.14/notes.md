@@ -8557,3 +8557,86 @@ CUDA confirmation (coordinator, V100, CUDA 12.9.86, driver 575.57.08; sources in
 - fp16 differs: upstream's `warp-lang==1.14.0` CUDA wheel passes `test_inverse_float16_cuda_0` with margin (53 checks, worst difference 0.0312 against tolerance 0.05; identical values with module option `fuse_fp` True and False). CUDA's `float_to_half` is inline asm `cvt.rn.f16.f32`, so a half product is always rounded before the add. On HIP the conversions are `_Float16` casts the optimizer can see through; hypothesis: that lets cross-statement contraction form a half fma, which is the one failure of Evidence 6.
 
 Consequence: the porter was asked (session 22) to switch to `fast-honor-pragmas` and keep fp16 arithmetic unfused on HIP with a guarded pragma instead of changing the test tolerance; the ROCm-gated tolerance bump jeff approved is the fallback only.
+
+## Porting session 22 (2026-11-20, linux-gfx950 MI355X, porter): -ffp-contract ruling
+
+Ruling (Jeff Daily, 2026-11-20, recorded above): hipRTC to `-ffp-contract=fast-honor-pragmas`, on the condition that it matches CUDA. Fork `release/1.14.0.amd0` `7059a340..e92f2611` (pushed, `advance-head` recorded); stage left at `porting`. Same job and environment as sessions 20-21 (`HIP_VISIBLE_DEVICES=1` = PCI 0000:05:00.0 = amd-smi GPU 0).
+
+### The fp16 difference: hypothesis confirmed
+
+`agent_space/f16/half_fma.py` (below): kernels `t = a[i] * b[i]; r[i] = t + c[i]` in float16, bfloat16 and float32 through Warp's operators, compiled with a private kernel cache, disassembled (`llvm-objdump -d --mcpu=gfx950`); fp16 results compared with "product rounded to half, then add" (CUDA's behaviour: `float_to_half` is `cvt.rn.f16.f32` inline asm) and with one fused fma, 100,000 inputs in [1,2) x [1,2) + [-4,4) (the two differ in 36,963):
+
+| tree | hipRTC option | fp16 kernel | fp16 results equal to product-rounded-then-added | bf16 kernel | fp32 kernel |
+|---|---|---|---|---|---|
+| `7059a340` (fork before) | `on` | `v_mul_f16` + `v_add_f16` | 100,000 | `v_mul_f32`, `v_add_f32` (software rounding) | `v_mul_f32` + `v_add_f32` (no fusion) |
+| `wff` scratch (`113e1e70` + option only) | `fast-honor-pragmas` | **`v_fma_f16`** | 63,037 (all equal to the fused fma) | unchanged | `v_fmac_f32` |
+| `e92f2611` (committed) | `fast-honor-pragmas` + builtin.h pragma | `v_mul_f16` + `v_add_f16` | **100,000** | unchanged | `v_fmac_f32` |
+
+So on HIP, LLVM narrows `float_to_half(half_to_float(a) * half_to_float(b))` (the `_Float16` casts of builtin.h's `__clang__` branch) to a native half multiply, which rounds exactly like CUDA's convert-after-multiply; with cross-statement contraction it then fuses that multiply and the following add into a half fma, which CUDA never does. That was Evidence 6's one failure. bfloat16 rounds with integer operations (`wp_float_to_bfloat16_bits_sw`) and has nothing to fuse.
+
+### The change: `e92f2611` [ROCm] Contract multiply-adds across statements in HIP kernels, as NVRTC (`builtin.h` +10, `warp.cu` +2/-2)
+
+- `wp_hip_compile_program`: `fuse_fp ? "-ffp-contract=fast-honor-pragmas" : "-ffp-contract=off"`, comment "NVRTC's default --fmad=true contracts across statements; Clang's HIP default does too and honors pragmas".
+- `builtin.h`: under `#if defined(__HIP_DEVICE_COMPILE__)`, `#pragma STDC FP_CONTRACT OFF` before `struct half;` and `#pragma STDC FP_CONTRACT DEFAULT` after the free half operators (`operator/(half, half)`); the region holds the half type and its compound operators, the bfloat16 type, the conversion functions and the free half operators (no fp multiply-add pairs other than the half operators'). A comment says why. Scoping tried and rejected, with evidence (`agent_space/f16/p_*.hip`, `q.hip`, device-only `-S -emit-llvm`, ROCm 10.2 clang): `#pragma float_control(push)/(pop)` is ignored on AMDGPU ("'#pragma float_control' is not supported on this target - ignored"), so the first version's `clang fp contract(off)` leaked to the end of the file and the fp32 kernel lost its fusion (caught by the disassembly table: fp32 back to `v_mul_f32` + `v_add_f32`); restoring with `#pragma clang fp contract(fast)` would re-enable fusion when the compile was given `-ffp-contract=off` (Warp's `fuse_fp=False`). `STDC FP_CONTRACT DEFAULT` restores whatever the command line said: measured, after `contract(off)`, functions after `DEFAULT` get `contract` flags under `-ffp-contract=fast-honor-pragmas` and none under `off` or `on`.
+- The precompiled library: its HIP compile commands carry no `-ffp-contract` (and no `-ffast-math`); a `-x hip` device compile with no option marks cross-statement fmul/fadd `contract` and honors `#pragma clang fp contract(off)` (`agent_space/f16/d.hip`), i.e. the library already uses `fast-honor-pragmas`; left as is. The builtin.h region applies to the library's device compiles too, so half arithmetic in precompiled kernels stops fusing as well (matching CUDA).
+- CUDA: `cuda_pp.sh` (nvcc 12.8) with the change vs `7059a340`: all 24 preprocessed units identical (device passes included, so NVRTC sees the same header text). CPU (warp-clang) never defines `__HIP_DEVICE_COMPILE__`: unchanged.
+
+### Tests (fork clone built for gfx950 at the change)
+
+- `test_mat -k test_inverse_float16`: OK 3/3 at upstream's tolerance, no test change (Evidence 6: failed 3/3 with the option alone).
+- test_mat 134 OK, test_fp16 6 OK, test_bf16 48 OK, test_math 16 OK, test_vec_scalar_ops 402 OK.
+- Full default suite from a fresh kernel cache (`agent_space/suite.sh`, cache directory deleted first): **Ran 7557 tests in 534.2 s, OK (skipped=81)**, the same counts as session 21 at `7059a340`; no test changed outcome; the `test_async` lost-writes failures did not appear.
+- `jargon.py --port` clean before the push.
+
+### Next step (head `e92f2611`)
+
+- The release wheel validated in session 21 (`<job>/wheel/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, sha256 `2100e06c...d5ea25`, built at `7059a340`) is **stale**: the head moved and the kernel compile options changed. It is rebuilt and revalidated after Jeff's remaining rulings.
+- Not moved to `ported`: more rulings from Jeff are pending (questions 1-4, 6, 8, 9 of sessions 20-21; question 5 is ruled here, 7 is the lost-writes runtime defect).
+- Validators revalidate at `e92f2611` (every HIP kernel's floating-point results change slightly where multiply-adds now fuse).
+- Release-notes draft: the fp-contract line ("multiply-adds are fused within an expression only") becomes "multiply-adds are fused across statements, as with NVRTC's default; fp16 arithmetic is rounded to half after each operation, as on CUDA".
+
+### Script from this session
+
+`agent_space/f16/half_fma.py`:
+```
+# usage: half_fma.py <cache dir>; one kernel computing a*b + c on wp.float16 through Warp's operators (wp::mul, wp::add),
+# and the same on wp.bfloat16 and float32 (kernels for the disassembly); prints the results for inputs where fusing changes the rounding
+import sys
+import numpy as np
+import warp as wp
+wp.config.quiet = True
+wp.config.kernel_cache_dir = sys.argv[1]
+wp.init()
+
+@wp.kernel
+def half_mad(a: wp.array(dtype=wp.float16), b: wp.array(dtype=wp.float16), c: wp.array(dtype=wp.float16), r: wp.array(dtype=wp.float16)):
+    i = wp.tid()
+    t = a[i] * b[i]
+    r[i] = t + c[i]
+
+@wp.kernel
+def bf16_mad(a: wp.array(dtype=wp.bfloat16), b: wp.array(dtype=wp.bfloat16), c: wp.array(dtype=wp.bfloat16), r: wp.array(dtype=wp.bfloat16)):
+    i = wp.tid()
+    t = a[i] * b[i]
+    r[i] = t + c[i]
+
+@wp.kernel
+def f32_mad(a: wp.array(dtype=float), b: wp.array(dtype=float), c: wp.array(dtype=float), r: wp.array(dtype=float)):
+    i = wp.tid()
+    t = a[i] * b[i]
+    r[i] = t + c[i]
+
+rng = np.random.default_rng(0)
+n = 100000
+A = rng.uniform(1, 2, n).astype(np.float16); B = rng.uniform(1, 2, n).astype(np.float16); C = rng.uniform(-4, 4, n).astype(np.float16)
+r = wp.zeros(n, dtype=wp.float16)
+wp.launch(half_mad, dim=n, inputs=[wp.array(A), wp.array(B), wp.array(C), r])
+unfused = ((A.astype(np.float32) * B.astype(np.float32)).astype(np.float16).astype(np.float32) + C.astype(np.float32)).astype(np.float16)
+fused = (A.astype(np.float64) * B.astype(np.float64) + C.astype(np.float64)).astype(np.float16)
+x = r.numpy()
+rf = wp.zeros(n, dtype=float)
+wp.launch(f32_mad, dim=n, inputs=[wp.array(A.astype(np.float32)), wp.array(B.astype(np.float32)), wp.array(C.astype(np.float32)), rf])
+rb = wp.zeros(n, dtype=wp.bfloat16)
+wp.launch(bf16_mad, dim=n, inputs=[wp.array(A.astype(np.float32), dtype=wp.bfloat16), wp.array(B.astype(np.float32), dtype=wp.bfloat16), wp.array(C.astype(np.float32), dtype=wp.bfloat16), rb])
+print(f"half: equal to unfused (product rounded to half, then add) {np.sum(x == unfused)} / {n}; equal to a fused fma {np.sum(x == fused)} / {n}; unfused != fused in {np.sum(unfused != fused)}")
+```
