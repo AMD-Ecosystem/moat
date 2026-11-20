@@ -1564,3 +1564,38 @@ solver" commits may change the wedge frame, or remove the wedge.
 
 `jargon.py --port GPU_IPC`: clean (after pointing the clone's local `main` at
 `upstream/main`).
+
+## Review 2026-11-20 (delta f9604bb..29e2494, upstream sync)
+
+Reviewed by an independent reviewer pass (pr-review skill, inline fact-check),
+then each finding re-checked by the session. Verdict: **review-passed**. No code
+defects. Two wording errors in the pushed merge message of 29e2494, which may
+not be amended (pushed, history is evidence); correct them in the upstream PR
+body (done in "## Upstream PR draft" below):
+
+1. Merge message paragraph 2 says "the bending Hessian projection is now `void`
+   upstream". The dropped `return tempMat;` was in
+   `__project_StabbleNHK_H_3D_makePD` (Stable Neo-Hookean Hessian projection),
+   femEnergy.cu; confirmed against `git diff 46594e0 f9604bb -- GPU_IPC/femEnergy.cu`.
+2. Merge message says `WARP_MASK_FROM_COUNT` "is capped at 32 lanes on HIP for
+   the same reason" (64-bit HIP masks). The actual reason: upstream's helper
+   tests `count >= warpSize`, so on a 64-lane wavefront the common full-group
+   call (`count == 32`, from `min(32, ...)` GIPC.cu:138/207, PCG_SOLVER.cu:55/247
+   and `__mm_min(BANKSIZE, ...)` in MASPreconditioner.cu) evaluates `1U << 32`,
+   undefined behaviour.
+
+Checked and clean, so nobody re-checks it: every caller discards values read
+from lanes outside its member mask (GIPC.cu:143/162/212-237, PCG_SOLVER.cu:59/74/
+254/280/306, MASPreconditioner.cu:850/1013); `WARP_MATCH_ANY` splits a 12/9/6-lane
+row straddling lane 31/32 exactly as two CUDA warps would; `full_cluster_mask` is
+balloted before divergence; HIP `__syncwarp()` is a wavefront fence plus
+wave_barrier, a superset of a 32-lane sync and deadlock-free under divergence;
+all launches use block sizes that are multiples of 32; HIP's `__syncwarp(MaskT)`
+and `__match_any_sync` do static_assert a 64-bit mask; no stray CUDA-only surface
+in the merged tree (only unmapped `cuda*` name is the local `cudaStatus`); hipCUB
+API matches for DeviceScan/DeviceRadixSort/DeviceReduce Sum/Max/Reduce and
+`BlockReduce<AABB,256>::Reduce(v, op, valid_items)`; rocPRIM never reports a
+zero-byte temp size, so `cub_workspace` never returns null for the second call;
+CUDA arms are upstream's text; per-file port patch equals f9604bb's except the
+intended edits; upstream main still 4fb6019 (`ls-remote`), both ancestry checks
+pass; jargon clean; title 61 chars, AI disclosure present, no Co-Authored-By.
