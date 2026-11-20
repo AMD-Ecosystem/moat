@@ -1221,3 +1221,22 @@ Scope: c8713e747 (assimp/draco patch + non-MSVC Windows defines) and 11c1d702e (
 - Documented Windows command vs "the build just works": STATIC_WINDOWS_RUNTIME=OFF follows from the vcpkg DLL-runtime libraries, and BUILD_WEBRTC=OFF is forced by upstream's own configure refusal ("Pre-built WebRTC binaries are not available ... STATIC_WINDOWS_RUNTIME=OFF"). BUILD_GUI, BUILD_PYTHON_MODULE, BUILD_ISPC_MODULE and WITH_IPP=OFF were never tried ON with this toolchain, and the docs present them as required without saying why; BUILD_PYTHON_MODULE=OFF in particular leaves most Open3D users without the ROCm Windows build they would want. The vcpkg dependency follows from earlier rounds' finding that the bundled curl/openssl/tbb/embree/zeromq/jpeg do not build with clang on Windows. Options: (a) accept as documented (narrower Windows ROCm feature set, worded as such); (b) have a porter try each OFF option ON and either fix or state in the docs which are unsupported; (c) move the Windows-HIP defaults (USE_SYSTEM_*, the OFF options) into CMake under `WIN32 AND USE_HIP` so the documented command shrinks. My view: (b) before presenting, at least for the Python module, since the docs otherwise imply the options are needed rather than untested.
 - CUDA nvcc compile: not owed for this delta (inert), but notes record no real-nvcc compile of the port at any head (2026-08-20 validator skipped it for lack of nvcc), and jeff's standing rule asks for one before any round is presented. Owed before the fix review PR unless a person rules otherwise.
 
+
+## Validation 2026-11-20 (linux-gfx1100 revalidate at 11c1d702e) -- carry-forward refused, not recorded
+
+Validator job on linux-gfx1100, asked to carry this platform's 50bb2505b validation forward across the fix-round delta if the tool's own classification allows it. Every GPU on the host was in use by other jobs, so the job had no GPU pin and was told not to build or use a GPU. Nothing was built or run on a GPU.
+
+Delta 50bb2505b..11c1d702e (fork clone at projects/Open3D/src, origin/moat-fix-7509 = 11c1d702e, 50bb2505b an ancestor): c8713e747 adds 3rdparty/assimp/0004-fix-draco-non-msvc-windows.patch, a PATCH_COMMAND entry in 3rdparty/assimp/assimp.cmake, and an `else()` with NOMINMAX/_USE_MATH_DEFINES/WIN32 in cmake/Open3DSetGlobalProperties.cmake, all under `WIN32 AND NOT MSVC`; 11c1d702e changes docs/compilation.rst only. Read: the guards are as described, so a Linux configure should not see them.
+
+The classifier does not agree that this is inert:
+
+```
+python3 -c "import changeclass; changeclass.classify('projects/Open3D/src', '50bb2505b...', '11c1d702e...')"
+Verdict(cls='mixed', arch_independent=False, detail='3rdparty/assimp/0004-fix-draco-non-msvc-windows.patch: A mixed; 3rdparty/assimp/assimp.cmake: mixed (token count differs); cmake/Open3DSetGlobalProperties.cmake: mixed (token count differs)')
+
+python3 utils/moatlib.py carry-forward Open3D linux-gfx1100 11c1d702e859245f4de56cae12ba1c7a403b63ea source-class "WIN32 AND NOT MSVC build files plus docs"
+moatlib: Open3D/linux-gfx1100: the source classifier calls 50bb2505b..11c1d702e859 `mixed`, not an arch-independent documentation or comment change, so it cannot be carried forward as source-class. Build both commits and compare them (utils/codeobj_diff.py, then `binary-equiv`), or revalidate on the GPU
+rc=1
+```
+
+`binary-equiv --host-checked` was not attempted: on a `mixed` delta it needs both commits built and compared with codeobj_diff (and the moat-porting skill says to rebuild instead of carrying a Windows-gated delta forward on reasoning alone), and this job may not build. linux-gfx1100 stays `revalidate` at 11c1d702e. Next: a linux-gfx1100 job with a GPU and permission to build. Either build 50bb2505b and 11c1d702e at the same source path and run `utils/codeobj_diff.py`, then `carry-forward ... binary-equiv --host-checked` (the host side is unchanged on Linux because every changed CMake line is under WIN32), or run a full GPU revalidation.
