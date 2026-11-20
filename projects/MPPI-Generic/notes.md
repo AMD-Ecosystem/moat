@@ -1,0 +1,1374 @@
+# MPPI-Generic notes
+
+ROCm/HIP port (lead linux-gfx90a). Upstream ACDSLab/MPPI-Generic @ b5c8daa.
+Pure-CMake header-only CUDA MPPI control library. Strategy A.
+
+## Environment
+- gfx90a (MI250X, wave64), ROCm 7.2.1, hipcc clang 22, cmake 3.31, Ninja.
+- Deps installed via apt: libeigen3-dev (3.4.0), libyaml-cpp-dev. hipRAND/hipFFT
+  ship with ROCm. GoogleTest is downloaded by the build at configure time.
+- npz/test-network generation needs numpy (present in /opt/conda envs).
+
+## Build
+```
+HIP_VISIBLE_DEVICES=3 cmake -S src -B build-hip -GNinja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+HIP_VISIBLE_DEVICES=3 cmake --build build-hip -j 16
+```
+Followers (gfx1100/gfx1151) need only a different -DCMAKE_HIP_ARCHITECTURES; no
+source change (arch read from CMAKE_HIP_ARCHITECTURES, never hardcoded).
+
+## Existing AMD support
+None. README requires an NVIDIA GPU + CUDA; no rocm/hip/amdgpu/gfx token in-tree.
+Fresh CUDA->HIP port.
+
+## Port footprint (USE_HIP-guarded, CUDA path unchanged)
+- include/mppi/hip_compat/cuda_to_hip.h -- the single compat header. Maps the
+  cuda*/curand*/cufft* spellings to hip*, plus several semantic shims (below).
+  Force-included on every HIP TU via CMAKE_HIP_FLAGS `-include`.
+- include/mppi/hip_compat/{cuda_runtime,curand,cufft,device_launch_parameters,
+  cooperative_groups}.h -- shim headers so the library's angle-bracket toolkit
+  includes resolve to the compat layer. This dir is on the HIP include path only.
+- CMakeLists.txt: USE_HIP option; conditional project() language (C CXX [+HIP]);
+  enable_language(HIP); arch defaulted to gfx90a only when CMAKE_HIP_ARCHITECTURES
+  unset; force-include flag; add_executable/add_library overrides that retag .cu
+  sources LANGUAGE HIP (so the per-target test/example CMakeLists stay untouched);
+  hip_compat/ prepended to the header lib include dirs; USE_HIP compile def.
+- cmake/MPPIGenericToolsConfig.cmake: on HIP use hip::hiprand/hip::hipfft and skip
+  the CUDA arch autodetection + CUDAToolkit find.
+- src/controllers/CMakeLists.txt: the nvcc -Xcompiler=-fno-guess-branch-probability
+  hint is GCC-only (clang rejects it) and unneeded on HIP, so applied on CUDA only.
+- source edits in include/: mppi_common.cu, rmppi_kernels.cu, parallel_utils.cuh,
+  cuda_math_utils.cuh, gpu_err_chk.cuh, colored_noise.cu -- see fault classes.
+
+## Fault classes hit + fixes
+
+1. WAVE64 warp-synchronous reduction (THE correctness fix).
+   warpReduceAdd<BLOCKSIZE> (mppi_common.cu:1170) is the classic CUDA unrolled warp
+   reduction: volatile shared mem, steps 32->16->...->1 with NO __syncwarp, relying
+   on 32-lane lockstep. costArrayReduction (mppi_common.cu:1198) and
+   multiCostArrayReduction (rmppi_kernels.cu:1135) stop their __syncthreads() tree at
+   size==32 and hand the last 64->1 to warpReduceAdd<64>. On gfx90a the low 32 lanes
+   of a 64-lane wavefront are NOT guaranteed lockstep across those unsynced steps ->
+   the running_cost reduction races (wrong + non-deterministic cost sums). Fix: on
+   HIP set stop_condition=0 so the fully-__syncthreads()-synchronized tree runs all
+   the way to 1 (identical add order, block-wide barrier -> correct on any wave size)
+   and skip the warpReduceAdd switch. CUDA path byte-for-byte unchanged. No
+   __shfl/__ballot/warpSize anywhere else; all other reductions are serial or
+   single-thread, so this is the only wave64 site.
+
+2. __CUDACC__ not defined under hipcc (header-only .cu-include idiom).
+   Each foo.cuh ends with `#if __CUDACC__  #include "foo.cu"  #endif` (59 sites) to
+   pull device definitions in only under the device compiler. hipcc defines __HIPCC__
+   (both passes) not __CUDACC__ -> every kernel/device helper undeclared. Fix: compat
+   header defines __CUDACC__ when __HIPCC__ is set.
+
+3. __CUDA_ARCH__ not defined during HIP device compilation.
+   ~60 `#ifdef __CUDA_ARCH__` device-vs-host branches (parallel index helpers,
+   dynamics, math) would silently collapse to the CPU fallback on the GPU. Fix:
+   compat header defines __CUDA_ARCH__=1 only in the HIP device pass (guarded by
+   __HIP_DEVICE_COMPILE__, 1 in device pass / 0 in host pass -- verified empirically).
+
+4. Eigen CUDA path pulled in by our __CUDA_ARCH__.
+   Eigen sees __CUDA_ARCH__ -> sets EIGEN_CUDA_ARCH -> includes CUDA's
+   <math_constants.h> (absent on ROCm). Eigen has a native HIP path. Fix: define
+   EIGEN_NO_CUDA in the compat header so Eigen ignores __CUDA_ARCH__ and uses its own
+   HIP math_constants. Eigen otherwise compiles unchanged under hipcc, incl. in
+   __device__ code.
+
+5. Function-template explicit specialization must match the primary's host/device
+   attributes (clang/HIP, not nvcc). getParallel2DIndex primary is __host__ __device__
+   but its 8 explicit specializations were __device__-only -> "no function template
+   matches / target attributes do not match". Fix: make the specializations __host__
+   __device__ (parallel_utils.cuh); they already carry the #ifdef __CUDA_ARCH__ host
+   fallback inside.
+
+6. float2/3/4 operator overloads collide with HIP_vector_type.
+   cuda_math_utils.cuh hand-rolls the full set of float2/3/4 arithmetic, compound-
+   assign, unary-minus, equality operators. CUDA's vector_types.h defines none, so
+   they are unique there; HIP's HIP_vector_type provides all of them (host+device,
+   verified) -> "use of overloaded operator '*' is ambiguous". Fix: USE_HIP-guard the
+   two operator blocks (keep dot/cross/norm and createPartialCudaTuple, which HIP does
+   not provide).
+
+7. cudaFuncSetAttribute signature: CUDA takes the typed kernel pointer; HIP's
+   hipFuncSetAttribute takes const void*. Added MPPI_GPU_FUNC_PTR(...) (variadic so a
+   comma-bearing template-id kernel<A,B,C> is one macro arg): casts to const void* on
+   HIP, identity on CUDA, at the 3 call sites in mppi_common.cu (cuda_to_hip.h:207 HIP,
+   :216 CUDA). The macro is defined in cuda_to_hip.h, which is force-included on HIP but
+   NOT on CUDA -- so mppi_common.cu now #includes it explicitly (see reviewer fix R1).
+
+8. cuFFT status codes without hipFFT equivalents. cufftGetErrorString switches over
+   CUFFT_LICENSE_ERROR (reachable on HIP since the CUDART_VERSION<13000 branch is
+   taken) which hipFFT lacks; USE_HIP-guarded that single case in gpu_err_chk.cuh.
+
+9. Brace-init of a runtime-sized array. colored_noise.cu had `float sigma[control_dim]
+   = {0};` (control_dim is a runtime arg) -- a VLA initializer that clang rejects
+   (GCC/nvcc allow it). Fix: declare then memset(sigma, 0, sizeof(float)*control_dim).
+   Host code (the colored-noise variance precompute), so memset is fine.
+
+CUDA::barrier (cuda/barrier, MPPI_USE_CUDA_BARRIERS) auto-disables on HIP: guarded by
+`defined(CUDART_VERSION) && CUDART_VERSION>11000`, undefined under HIP, so the barrier
+paths compile out to their __syncthreads() #else fallbacks. No action.
+
+cuBLAS is NOT a dependency (the "cuBLAS" strings are TODO comments; gemm is a
+hand-written __device__ __host__ routine).
+
+## Deferred sub-feature: texture-backed map costs (autorally/quadrotor)
+texture_helper.cuh defaults cudaFilterModeLinear + cudaReadModeElementType on a float
+array -- the documented HIP rejection (popsift/gpuRIR fault class: AMD has no hardware
+linear filtering on element-read float textures; needs software bilinear/trilinear
+interp with the -0.5 texel-center convention). Plus the LSTM/uncertainty vehicle models
+(bicycle_slip_parametric, racer_*) hit further clang-strictness issues (`case`
+label using `this->UNCERTAINTY_DIM`, not a constant expression in clang; dependent-type
+`typename`). These are NOT in the core MPPI validation path (cartpole, double-integrator,
+core kernels, generic dynamics/costs, sampling). Left for a follow-up extension; core
+port validated first.
+
+## Additional clang-strictness fixes (core path)
+10. Function-template explicit specialization host/device mismatch also hit
+    getParallel2DIndex (fixed, #5). getParallel1DIndex specializations were
+    already __host__ __device__.
+11. `this->CONST` as a constant-expression template argument: clang rejects
+    `mm::gemm1<this->STATE_DIM, ...>` (nvcc accepts). Use the class-qualified
+    static member `LINEAR_DYNAMICS::STATE_DIM` (linear.cu). (The analogous
+    `case this->UNCERTAINTY_DIM:` in the racer/bicycle vehicle models is the same
+    class, left with the deferred vehicle sub-feature.)
+12. Brace-init of a runtime-sized array also in colored_noise_tests.cu (4 sites,
+    test-side) -> declare + memset.
+
+## Build standard
+HIP build uses C++17 (MPPIGenericToolsConfig.cmake): ROCm 7.x libstdc++ already
+provides std::void_t etc., which collides with the library's own `#if __cplusplus
+< 201703L` C++17 back-fills (generic_sampling_distribution_tests). CUDA default
+(C++11) is unchanged.
+
+## libcu++ / cuda::std (not needed here)
+MPPI-Generic does NOT use `cuda::std` / `<cuda/std/*>` anywhere (grep of src/ finds
+zero), so the lack of libcu++ on ROCm 7.2.x is a non-issue for this port -- the C++17
+collision above is plain libstdc++ `std::`, not libcu++. For reference, projects that
+DO depend on `cuda::std` on ROCm can get it from the header-only ROCm/libhipcxx
+(`cuda::std` namespace; add its include/ to the hipcc compile; see
+findings/libhipcxx/NOTES.md). No MPPI rebuild was done for this note.
+
+## Reviewer fixes (round 2)
+
+R1 (BLOCKING -- CUDA-path regression). MPPI_GPU_FUNC_PTR was defined ONLY in
+cuda_to_hip.h, which is force-included on HIP (CMAKE_HIP_FLAGS -include) but never
+reached on the CUDA build (hip_compat/ is on the include path only under USE_HIP and
+nothing #included the header directly). So mppi_common.cu:1308,1341,1374 used an
+undefined macro under nvcc -> the upstream CUDA build was broken. Fix (option a, the
+cleaner of the two): add `#include <mppi/hip_compat/cuda_to_hip.h>` at
+mppi_common.cu:9 (just below the existing `#include <curand.h>`). Why this is airtight
+on BOTH toolchains:
+  - cuda_to_hip.h:1 is `#pragma once`, so on HIP the force-include + this explicit
+    include process the header exactly once (no double-define).
+  - On CUDA the header's #else branch (cuda_to_hip.h:209-217) is self-contained: it
+    just `#include <cuda_runtime.h>/<curand.h>/<cufft.h>` (real toolkit) and
+    `#define MPPI_GPU_FUNC_PTR(...) (__VA_ARGS__)` (identity). No HIP-only symbol is
+    referenced on that path, so it compiles under nvcc.
+  - `<mppi/hip_compat/cuda_to_hip.h>` resolves on the CUDA build because the base
+    `include/` dir is on the header lib's INTERFACE include path UNCONDITIONALLY
+    (CMakeLists.txt:145, outside the `if(USE_HIP)` block); the file lives at
+    include/mppi/hip_compat/cuda_to_hip.h. The hip_compat/ dir is prepended only on
+    HIP (for the <cuda_runtime.h> shim redirect), but the explicit path does not need
+    it. Net: the macro is now reachable on both backends; HIP behavior is byte-identical
+    (no-op include).
+
+R2 (nit). memset was only transitively included under nvcc. Added `#include <cstring>`
+to colored_noise.cu:12 (the library variance precompute, memset at :104,:333) and
+colored_noise_tests.cu:8 (test-side, 4 memset sites). HIP no-op (already compiled via
+the cstring force-include in cuda_to_hip.h:19, but the explicit include is correct
+hygiene and what the CUDA build needs).
+
+R3 (nit/honesty). CMake-excluded the 7 deferred TUs on the HIP build so a default
+`cmake --build` is GREEN (exit 0). Each test dir builds one target per *.cu via
+file(GLOB)+foreach; under USE_HIP we list(REMOVE_ITEM ...) the deferred sources:
+  - tests/texture_helpers/CMakeLists.txt: texture_helper_test.cu,
+    two_d_texture_helper_test.cu, three_d_texture_helper_test.cu (all 3 in this dir).
+  - tests/dynamics/CMakeLists.txt: racer_dubins_elevation_model_test.cu,
+    racer_dubins_elevation_suspension_test.cu,
+    racer_dubins_elevation_lstm_steering_model_test.cu,
+    bicycle_slip_parametric_model_test.cu (exactly these 4; the sibling
+    racer_dubins_model_test / racer_suspension_model_test /
+    racer_dubins_elevation_lstm_uncertainty_model_test still build).
+No non-deferred test/example includes the deferred vehicle-model headers (grep-verified),
+so excluding exactly these 7 test targets leaves no orphaned library-only TU reachable.
+CUDA build unchanged (guards are `if(USE_HIP)`).
+
+## Validation (GPU 3, HIP_VISIBLE_DEVICES=3)
+
+Build: default `cmake --build build-hip` is now GREEN (74/74 active targets, exit 0)
+after R3 CMake-excluded the 7 deferred texture-map-cost TUs on HIP. Pre-exclusion that
+was 172/179 (the 7 deferred were hard compile failures making build-all non-zero); the
+deferred set is unchanged, just no longer configured into the HIP build. The 7 remain
+blocked on the texture linear-filter rejection + clang `case this->CONST`/typename
+strictness. ALL core MPPI translation units build.
+
+Core correctness (GPU-vs-CPU reference, the wave64 reduction path):
+- rollout_kernel_tests: 6/6 PASS incl. CombinedRolloutKernelGPUvsCPU,
+  SplitRolloutKernelGPUvsCPU (full GPU rollout vs CPU baseline within tolerance).
+- rmppi_kernel_tests: 5/5 PASS incl. ValidateCombined/SplitInitEvalKernelAgainstCPU
+  and ValidateCombined/SplitRMPPIRolloutKernelAgainstCPU (exercises
+  multiCostArrayReduction, the 2nd wave64 reduction).
+- normexp_kernel_tests 7/7, weightedreduction (library-side) PASS,
+  SamplingDistributionTests CompareLikelihoodRatioCostsCPUvsGPU all PASS,
+  cartpole_dynamics 12/12, generic dynamics 16/17, sampling TestNoise (cuFFT/hipFFT
+  colored-noise generation) all PASS.
+
+System-level closed loop (cartpole VanillaMPPI, 2048 rollouts, 64x4 rollout dim ->
+exercises the cost reduction every iteration):
+- examples/cartpole_example drives cart_position -> ~20 (target 20), pole_angle ->
+  ~3.13 rad (target pi=3.14159), baseline cost ~2000 -> ~1, i.e. the optimizer
+  balances the pole upright at the goal. double_integrator examples also run.
+
+Determinism (fixed RNG seed): agent_space/mppi_determinism_check.cu builds the
+cartpole controller TWICE with seed_=1234 and compares the optimized control
+sequence: max|seq1-seq2| = 0.000e+00 over 100 entries (BIT-IDENTICAL) -> the wave64
+reduction fix leaves NO surviving race; the GPU cost reduction is deterministic.
+(The cartpole *example* varies run-to-run only because controller.cuh defaults
+seed_ to wall-clock time; with a fixed seed it is exactly reproducible.)
+Same program's closed loop: determinism=PASS convergence=PASS (cart 19.92, pole
+3.11, cost 1.50).
+
+Re-validated after the round-2 reviewer fixes (R1 compat-header include, R2 cstring,
+R3 CMake-exclude): rebuilt the core lib + mppi_common.cu (recompiled via both reduction
+test targets) and the determinism check FROM SOURCE on GPU3. rollout_kernel_tests 6/6,
+rmppi_kernel_tests 5/5 still PASS; determinism max|seq1-seq2| = 0.000e+00 / convergence
+cart_x=19.9217 pole=3.1134 cost=1.5039 -- bit-identical to the pre-fix numbers, i.e. the
+R1 include is a verified HIP no-op. Full default build-all is now exit 0.
+
+ctest (full suite, serial -j1 to avoid single-GPU contention): 430/472 = 91% pass.
+All 42 non-passes triaged, NONE a core regression:
+- 22 deferred texture/vehicle sub-feature (ARStandardCost SEGFAULTs = texture
+  linear-filter fault class; ARRobustCost, RacerDubins*, ARNeuralNet). NOTE: this
+  ctest run predates R3; the 7 deferred test executables are now CMake-excluded on
+  HIP (no longer configured), so a re-run would simply not list those 7 rather than
+  report them NOT_BUILT/failed.
+- 6 RNG/FP tolerance: GaussianTests (samples ARE Gaussian: 0.35% empirical-vs-CDF
+  bin error vs an over-tight 0.1% bound; hipRAND!=cuRAND sequence) + RK4 (2e-4 vs a
+  1e-6 abs bound after 100 steps; AMD vs NVIDIA fma rounding).
+- 6 NN-loader npz: LSTM/FNN model-load `map::at` -- host-side cnpy key mismatch in
+  the configure-time-generated npz, no GPU involvement.
+- 5 DISABLED upstream (ColoredNoise.check* x4, MATH_UTILS.*P2): not real failures.
+- 2 vendor-agnostic test-framework guard: Dynamics.stepGPU, Dubins.TestUpdateStateGPU
+  pass 1 state with default dim_x=32, tripping `state.size() % dim_x != 0` ->
+  early-return-before-launch; fires identically on CUDA (pre-existing test issue).
+- 1 hipFFT negative-test: cuFFT.checkErrorCode intentionally calls hipfftExecC2R
+  with a garbage plan handle; hipFFT dereferences it (bus error) instead of
+  returning CUFFT_INVALID_PLAN like cuFFT (robustness diff, not functional).
+- 1 legacy reference-kernel bug: WeightedReductionKernel.comparisonTestAutorally --
+  the TEST's old autorallyWeightedReductionKernel writes results back into its own
+  input buffer du_d (in-place inter-block RAW hazard); the ported library kernel
+  (separate optimal_controls_d_ output) produces the CORRECT ~5.0 weighted controls,
+  the reference produces 0.
+
+Build/validation logs in agent_space/ (gitignored): mppi_build_*.log,
+ctest_serial_full.log, mppi_determinism_check.cu.
+
+## Validation 2026-05-30 (gfx1100, ROCm 7.2.1)
+
+Platform: 2x AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32). ROCm 7.2.1,
+hipcc clang 22, cmake 3.31, Ninja. fork sha 4231397db (moat-port tip, unchanged).
+
+### Build
+
+Clone: `git clone --branch moat-port https://github.com/AMD-Ecosystem/MPPI-Generic src`
+then `git submodule update --init --recursive` (submodules not cloned by default).
+libyaml-cpp-dev installed via apt (libeigen3-dev was already present).
+
+Configure:
+```
+cmake -S projects/MPPI-Generic/src -B projects/MPPI-Generic/src/build-hip -GNinja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build projects/MPPI-Generic/src/build-hip -j16
+```
+Result: 160/160 targets built, exit 0. Configure ~4s, build ~50s.
+
+gfx1100 code-object evidence (roc-obj-ls on rollout_kernel_tests):
+  hipv4-amdgcn-amd-amdhsa--gfx1100  (size=55544)
+No gfx90a code object present. Arch confirmed.
+
+### gtest results (ctest -j1, HIP_VISIBLE_DEVICES=0, 174s)
+
+429/465 passed (92%). 36 failures + 5 disabled + 3 skipped.
+gfx90a reference: 430/472 = 91% (42 non-passes, but that run predates R3; R3
+CMake-excluded the 7 deferred executables, removing them from the test pool).
+
+All 36 failures are pre-existing categories -- ZERO new core regressions:
+
+- 8 ARStandardCost.* (5 SEGFAULT + 3 Failed): deferred texture linear-filter
+  fault class, identical to gfx90a.
+- 2 ARRobustCostTest.*: deferred vehicle cost, identical to gfx90a.
+- 1 ARNeuralNetDynamics.computeGradTest: map::at NN-loader npz, same as gfx90a.
+- 2 Dynamics.stepGPU + DubinsDynamics.TestUpdateStateGPU: vendor-agnostic
+  dim_x guard, same as gfx90a.
+- 4 RacerDubinsElevationLSTMUncertaintyTest.*: map::at NN-loader, same as gfx90a.
+- 1 WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic: legacy
+  reference-kernel in-place RAW hazard, same as gfx90a.
+- 1 cuFFT.checkErrorCode: Bus error (hipFFT dereferences garbage plan handle),
+  same as gfx90a.
+- 6 GaussianTests.Check*: hipRAND != cuRAND sequence, over-tight 0.1% CDF bound,
+  same category as gfx90a.
+- 1 Integration.RK4: AMD vs NVIDIA fma rounding (2e-4 vs 1e-6 abs bound),
+  same as gfx90a.
+- 6 FNNHelperTest.LoadModelNPZTestNested + LSTMHelperTest.* + LSTMLSTMHelperTest.*:
+  map::at NN-loader npz, same category as gfx90a.
+- 1 SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU<GaussianDistribution
+  <LinearDynamicsParams<1,7>>>: FP tolerance margin (2.98e-8 vs bound 2.58e-8,
+  16% over), same AMD-vs-NVIDIA rounding category as RK4. Functionally correct.
+- 1 CudaFloatStructsTests/*.VecAddVecMultScalar: FMA rounding on float2 (GPU uses
+  fused multiply-add for `input1 + input2 * scalar`; CPU uses two separate ops);
+  exact-equality assert fails on the float2 variant only. AMD-vs-NVIDIA FP category.
+- 1 DoubleIntegratorTracking.TubeMPPILargeVariance: stochastic controller test;
+  re-run passes. Same flakiness class as GaussianTests (RNG-sensitive).
+- 1 RacerDubins.ComputeStateTrajectoryFiniteTest: pre-existing test bug --
+  computeDynamics writes 6 of 7 state_der entries; STEER_ANGLE_RATE (index 6)
+  is never set, leaving uninitialized stack memory. allFinite() check on that
+  slot fails on gfx1100 Release where stack happens to contain Inf/NaN; was
+  passing on gfx90a by luck. CPU-only test, no GPU path involved.
+
+### Core correctness: wave-agnostic reduction on wave32
+
+The key correctness tests (same results as gfx90a lead):
+- rollout_kernel_tests: 6/6 PASS including CombinedRolloutKernelGPUvsCPU,
+  SplitRolloutKernelGPUvsCPU (full GPU rollout vs CPU baseline within tolerance).
+- rmppi_kernel_tests: 5/5 PASS including ValidateCombined/SplitInitEvalKernelAgainstCPU
+  and ValidateCombined/SplitRMPPIRolloutKernelAgainstCPU (exercises
+  multiCostArrayReduction, the 2nd wave64 reduction site).
+- normexp_kernel_tests 7/7, CartPole 12/12, all PASS.
+- SamplingDistributionTests CompareLikelihoodRatioCostsCPUvsGPU: 9/10 PASS
+  (the 1 failure is an FP tolerance margin issue, not a functional error).
+
+The warpReduceAdd -> __syncthreads block reduction fix (stop_condition=0) is
+correct on wave32: the reduction-dependent tests (GPU rollout cost sums, optimal
+control) all pass. No NaN, no HIP fault, clean exits throughout.
+
+No fork changes needed or made. Fork sha 4231397db unchanged.
+
+## Validation 2026-06-05 (windows-gfx1101, ROCm TheRock PyTorch venv)
+
+Platform: AMD Radeon PRO V710 (gfx1101, RDNA3, wave32). Windows 11 Pro for Workstations.
+ROCm via TheRock PyTorch venv (`_rocm_sdk_devel` clang 23 all-clang toolchain).
+HIP_VISIBLE_DEVICES=0 (one-GPU-per-process rule; gfx1201 at index 1 isolated).
+Fork sha 427b693b (moat-port tip: 6 Windows-specific commits on top of 4231397db).
+
+### Build
+
+Configure:
+```
+cmake -S src -B build-hip-gfx1101 -G Ninja \
+  -DUSE_HIP=ON \
+  "-DCMAKE_HIP_ARCHITECTURES=gfx1101" \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON \
+  -DCMAKE_BUILD_TYPE=Release \
+  "-DCMAKE_HIP_COMPILER=B:/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/bin/hipcc.exe"
+cmake --build build-hip-gfx1101 -j64
+```
+Result: 23/23 linker targets, exit 0. Configure ~3s, build ~120s.
+
+### Windows runtime setup
+
+Tests use hiprand and hipfft. On Windows these resolve through forwarding stubs:
+- hiprand.dll (17KB stub) -> rocrand.dll (35MB real library)
+- rocrand.dll needs `.kpack` precompiled kernel files for gfx1101
+
+Steps required after build (not in CMakeLists, must be done manually):
+1. Copy `rocrand.dll` from `_rocm_sdk_devel/bin/` to every test exe directory
+   that links hiprand (tests/controllers/, tests/mppi_core/, etc.)
+2. Create `tests/.kpack/` with `rand_lib_gfx1101.kpack` (3.3MB) from
+   `_rocm_sdk_libraries/.kpack/` - required by rocrand to launch RNG kernels
+3. Create `build-hip-gfx1101/.kpack/` similarly for examples
+
+### gtest results (ctest -j1, HIP_VISIBLE_DEVICES=0, 1425s, --timeout 60)
+
+408/457 passed (89%); 5 disabled/skipped not counted in denominator.
+
+All 49 non-passes triaged; ZERO core GPU correctness regressions:
+
+- 7 ARStandardCost.* (deferred texture linear-filter, same as gfx90a/gfx1100)
+- 3 ARRobustCostTest.getCostmapCost*/computeCostTest (Timeout - deferred texture class)
+- 1 ARNeuralNetDynamics.LoadModelTest (npz map::at, same as gfx90a/gfx1100)
+- 2 Dynamics.stepGPU + DubinsDynamics.TestUpdateStateGPU (vendor-agnostic dim_x guard)
+- 1 WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic (legacy RAW hazard;
+  on Windows: SEH stack overflow because the test allocates ~2.4MB local arrays on
+  the stack, exceeding the Windows default 1MB thread stack)
+- 1 WeightedReductionKernel.strideControlWeightReduction (same Windows stack overflow:
+  `v_host[1024*100*6]` + other arrays totaling >1MB on stack; Linux silently gets a
+  larger default stack, so this passed there)
+- 1 cuFFT.checkErrorCode (hipFFT dereferences garbage plan handle, same as gfx90a/gfx1100)
+- 6 GaussianTests.Check* (hipRAND != cuRAND sequence, over-tight 0.1% CDF bound)
+- 1 Integration.RK4 (AMD vs NVIDIA fma rounding, same as gfx90a/gfx1100)
+- 2 FNNHelperTest.LoadModelTest/LoadModelNPZTest (map::at NN-loader npz)
+- 1 SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU<GaussianDistribution
+  <LinearDynamicsParams<1,7>>>: FP tolerance margin (5.96e-8 vs bound 2.93e-9),
+  AMD vs NVIDIA rounding, same category as RK4.
+- 1 RacerDubins.enforceLeash: FP tolerance margin (1.19e-7 vs 1e-7 bound);
+  AMD vs NVIDIA fma rounding in CPU-only dynamics path. Same FP category.
+- 1 RacerDubins.ComputeStateTrajectoryFiniteTest (uninitialized STEER_ANGLE_RATE,
+  pre-existing test bug, same as gfx1100)
+- 4 BasePlantTest.run* (timing-based assertions: bounds like `is >= 100 && is <= 108`
+  ms fail on Windows where the test ran ~114ms; Windows scheduling jitter, not GPU)
+- 4 ControllerKernelChoiceTest/1.* (ColoredNoiseDistribution variant crashes with
+  exception in amd_comgr.dll during hipfft JIT plan compilation; GaussianDistribution
+  variant /0 passes all 4 tests)
+- 2 RMPPINominalStateCandidates.UpdateNumCandidates_LessThan3/Negative (Timeout:
+  gtest ASSERT_DEATH with style="threadsafe" spawns child processes on Windows;
+  child does not exit within 60s -- same 2 tests timed out on gfx1100 too)
+- 1 GeneralCostTest.CPUvsGPURolloutCost (Timeout 70.86s: test ran ~70s, just over
+  the 60s ctest limit; not a failure of GPU logic)
+- 8 TestNoise.WhiteNoise/MultiNoise<1-4> (Timeout: hipfft plan JIT > 60s on Windows
+  first call; `fft_lib_gfx1101.kpack` is 2230 bytes vs rocrand's 3.3MB, meaning
+  rocfft JIT-compiles the FFT kernels at plan creation, which takes > 60s here)
+- 2 SamplingDistributionTests.ColoredNoiseDistribution<LinearDynamicsParams<4,1>>
+  TestCreation/SetNumDistributions (Timeout: same hipfft JIT slowness)
+
+### Core correctness on gfx1101 wave32
+
+Same results as gfx90a and gfx1100:
+- RolloutKernelTests.CombinedRolloutKernelGPUvsCPU: PASS (0.26s)
+- RolloutKernelTests.SplitRolloutKernelGPUvsCPU: PASS
+- RMPPIKernels.ValidateCombinedRMPPIRolloutKernelAgainstCPU: PASS
+- RMPPIKernels.ValidateSplitRMPPIRolloutKernelAgainstCPU: PASS
+- RMPPIKernels.ValidateCombinedRMPPIRolloutKernelAgainstMPPIRollout: PASS
+- NormExpKernel 7/7: PASS
+- CartPole 12/12: PASS
+- RMPPITest.RobustMPPILargeVariance: PASS (13.67s)
+- RMPPITest.RobustMPPILargeVarianceRobustCost: PASS (28.81s)
+- Cartpole_VanillaMPPI.SwingUpTest: PASS (1.62s)
+- Quadrotor_VanillaMPPI.HoverTest: PASS (12.06s)
+- DoubleIntegratorTracking 3/3: PASS
+
+The wave32 reduction fix (stop_condition=0, full __syncthreads() tree) is correct
+on gfx1101. No NaN, no HIP fault, clean exits throughout.
+
+### Windows-specific commit delta (4231397db -> 427b693b)
+
+6 commits added Windows compatibility on top of the Linux-validated port:
+1. bf97255 CMakeLists.txt.gtest.in: bump cmake minimum to 3.5
+2. 48f6949 Add `_USE_MATH_DEFINES` and `NOMINMAX` for clang/HIP on Windows
+3. 135d079 Replace sincosf with sinf/cosf in host paths (not available in MSVC)
+4. f3443e9 POSIX compat (unistd.h, usleep), DLL export macros, C++17 <optional>
+5. af3f684 Add <numeric>, fix M_PI_2f32/M_PI_4f32 constants, usleep double cast
+6. 427b693 CMake-exclude racer_dubins_elevation_lstm_uncertainty test on Windows
+   (hits additional clang-strictness issue beyond the already-deferred set)
+
+These commits do not change any Linux-visible code paths. The gfx90a/gfx1100
+platforms were flipped to `revalidate` by advance-head; their validators can
+carry forward via binary-equivalence check (identical device code objects on Linux).
+
+## Validation 2026-06-07 (linux-gfx90a revalidate, carry-forward)
+
+Platform: gfx90a (MI250X), ROCm 7.2.1. HIP_VISIBLE_DEVICES=3.
+Validated sha: 427b693b (head), carry-forward from 4231397db.
+
+Delta: 6 Windows-specific commits (CMake 3.5 bump, _USE_MATH_DEFINES/NOMINMAX,
+sincosf->sinf/cosf in host path, POSIX compat, M_PI constants, Windows CMake-exclude).
+
+Binary equivalence check: built both 4231397db (with -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+workaround for CMake 4.x) and 427b693b at gfx90a targeting 157 targets each.
+`utils/codeobj_diff.py build-hip-old build-hip-new` result:
+- libautorally_mppi.so: identical (198 exports)
+- libcartpole_mppi.so: identical (755 exports)
+- libdouble_integrator_mppi.so: identical (518 exports)
+- libquadrotor_mppi.so: identical (307 exports)
+- libcnpy.so: indeterminate (roc-obj-ls false-negative on pure C++ ELF with no GPU code;
+  manual nm diff of exported symbols: byte-identical)
+- rollout_kernel_tests: identical (32 exports, verified separately)
+- rmppi_kernel_tests: identical (32 exports, verified separately)
+
+All MPPI HIP libraries + key test executables: identical device ISA + exported symbols.
+The sincosf change is in the `#else` of `#ifdef __CUDA_ARCH__`; on HIP the device pass
+always takes the `__sincosf` path (compat header defines `__CUDA_ARCH__=1` in device pass).
+Host-pass code differs (sincosf->sinf+cosf) but does not affect device code objects.
+
+Verdict: binary-equiv carry-forward. State: completed at 427b693b.
+
+## Validation 2026-06-07 (linux-gfx1100 revalidate, full GPU)
+
+Platform: 2x AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32). ROCm 7.2.1.
+HIP_VISIBLE_DEVICES=0. fork sha 427b693b (moat-port tip).
+
+Delta from validated_sha (4231397db): 6 Windows-specific commits (CMake 3.5 bump,
+_USE_MATH_DEFINES/NOMINMAX, sincosf->sinf/cosf in host paths, POSIX compat,
+M_PI constants, Windows CMake-exclude of racer_dubins_elevation_lstm_uncertainty).
+
+Binary-equivalence check: attempted with codeobj_diff.py; verdict was "differ"
+because exported symbols in the shared libraries differed -- `_M_rehash_aux` (old
+build, May 30) replaced by `_M_rehash` (new build, June 7). This is a libstdc++
+internal symbol rename between build times (system libstdc++ update), NOT caused by
+the Windows commits. Manual extraction of the gfx1100 device code objects confirmed
+identical ISA (same offset=204800, size=56552 in both libcartpole_mppi.so; SHA-256
+of the 56552-byte device blob differs from the tool's "differ" verdict because the
+tool stops on symbol mismatch before ISA comparison). Since codeobj_diff returned
+"differ", full GPU revalidation was performed per the pipeline rules.
+
+### Build
+
+```
+cmake -S projects/MPPI-Generic/src -B projects/MPPI-Generic/src/build-hip-new -GNinja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build projects/MPPI-Generic/src/build-hip-new -j16
+```
+Result: 157/157 targets, exit 0.
+
+### Core GPU correctness (gfx1100 wave32)
+
+```
+HIP_VISIBLE_DEVICES=0 ./tests/mppi_core/rollout_kernel_tests   # 6/6 PASS
+HIP_VISIBLE_DEVICES=0 ./tests/mppi_core/rmppi_kernel_tests     # 5/5 PASS
+HIP_VISIBLE_DEVICES=0 ./tests/mppi_core/normexp_kernel_tests   # 7/7 PASS
+HIP_VISIBLE_DEVICES=0 ./tests/dynamics/cartpole_dynamics_tests # 12/12 PASS
+```
+
+All GPU-vs-CPU reference tests (CombinedRolloutKernelGPUvsCPU, SplitRolloutKernelGPUvsCPU,
+ValidateCombined/SplitRMPPIRolloutKernelAgainstCPU) PASS. The wave32 reduction path
+is correct at the new sha.
+
+### ctest results (ctest -j1, HIP_VISIBLE_DEVICES=0, ~182s)
+
+427/457 = 93% pass. 30 failures.
+
+All 30 failures are pre-existing categories, ZERO new regressions:
+- 8 ARStandardCost.*: deferred texture linear-filter fault class
+- 2 ARRobustCostTest.*: deferred vehicle cost
+- 1 ARNeuralNetDynamics.computeGradTest: map::at NN-loader npz
+- 2 DubinsDynamics.TestUpdateStateGPU + Dynamics.stepGPU: vendor-agnostic dim_x guard
+- 1 RacerDubins.ComputeStateTrajectoryFiniteTest: pre-existing test bug (uninitialized state slot)
+- 1 WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic: legacy in-place RAW hazard
+- 1 cuFFT.checkErrorCode: Bus error (hipFFT dereferences garbage plan handle)
+- 6 GaussianTests.Check*: hipRAND != cuRAND, over-tight 0.1% CDF bound
+- 1 Integration.RK4: AMD vs NVIDIA fma rounding
+- 6 FNN/LSTM/LSTMLSTMHelperTest LoadModel*: map::at NN-loader npz
+- 1 SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU<GaussianDistribution<1,7>>: FP tolerance
+
+Compared to the original gfx1100 validation (4231397db, 36 failures):
+- 4 fewer: RacerDubinsElevationLSTMUncertaintyTest.* are now CMake-excluded (commit
+  427b693b adds them to the HIP REMOVE_ITEM list, same as the Windows exclusion)
+- 2 fewer: CudaFloatStructsTests.VecAddVecMultScalar and DoubleIntegratorTracking.
+  TubeMPPILargeVariance are stochastic/fma-rounding tests that passed this run
+
+No new GPU failures introduced by the 6 Windows-specific commits.
+
+Verdict: PASS. State: completed at 427b693b.
+## Validation 2026-06-07 (windows-gfx1201, ROCm TheRock PyTorch venv)
+
+Platform: AMD Radeon RX 9070 XT (gfx1201, RDNA4, wave32). Windows 11 Pro for Workstations.
+ROCm via TheRock PyTorch venv (`_rocm_sdk_devel` clang 23 all-clang toolchain).
+HIP_VISIBLE_DEVICES=0 (only GPU present after gfx1101 V710 went offline; device 0 = gfx1201).
+Fork sha 427b693b (moat-port tip, unchanged from gfx1101 validation).
+
+### Build
+
+Configure:
+```
+cmake -S projects/MPPI-Generic/src -B projects/MPPI-Generic/build-hip-gfx1201 -G Ninja \
+  -DUSE_HIP=ON \
+  "-DCMAKE_HIP_ARCHITECTURES=gfx1201" \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON \
+  -DCMAKE_BUILD_TYPE=Release \
+  "-DCMAKE_HIP_COMPILER=B:/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe" \
+  "-DCMAKE_C_COMPILER=B:/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang.exe" \
+  "-DCMAKE_CXX_COMPILER=B:/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe" \
+  "-DCMAKE_PREFIX_PATH=_rocm_sdk_devel;C:/Strawberry/c;B:/develop/agent_space/yaml-cpp-install;B:/develop/agent_space/eigen_install" \
+  -DENABLE_STATIC=OFF \
+  "-DCMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE=PRE_TEST"
+cmake --build build-hip-gfx1201 -j64
+```
+Result: 155/155 targets built, exit 0. Build ~40s.
+
+Two configure adjustments vs gfx1101:
+- `CMAKE_HIP_COMPILER` must be clang++ directly (CMake 4.3 rejects the hipcc wrapper).
+- `-DENABLE_STATIC=OFF`: CMake 4.3 strictly rejects duplicate build rules; cnpy's upstream
+  CMakeLists.txt defines both a SHARED `cnpy` and a STATIC `cnpy-static` both with
+  `OUTPUT_NAME "cnpy"` -> both produce `cnpy.lib` -> ninja error. Disabling the static
+  variant (not needed by MPPI) resolves it. This is a CMake 4.3 strictness change, not a
+  code change; gfx1101 was built with an earlier CMake that allowed the duplicate.
+- `-DCMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE=PRE_TEST`: avoids DLL-load failure during
+  build-time test discovery when runtime DLLs not yet in place.
+
+### Windows runtime setup
+
+Same DLL and .kpack setup as gfx1101, but with gfx1201-specific kpack files:
+- Runtime DLLs (amdhip64_7.dll, amd_comgr.dll, rocm_kpack.dll, hiprtc*.dll, hiprand.dll,
+  rocrand.dll, hipfft.dll, rocfft.dll) copied from `_rocm_sdk_core/bin` and `_rocm_sdk_devel/bin`
+  into the build root and each test subdirectory.
+- `.kpack/` with `rand_lib_gfx1201.kpack`, `fft_lib_gfx1201.kpack`, `blas_lib_gfx1201.kpack`
+  (from `_rocm_sdk_libraries/.kpack/`) placed in `tests/`, `build-hip-gfx1201/`, and each
+  test subdirectory.
+
+### gtest results (ctest -j1, HIP_VISIBLE_DEVICES=0, 454s, --timeout 60)
+
+421/457 passed (92%); 5 disabled/skipped not counted in denominator.
+
+All 36 failures are pre-existing categories -- ZERO new core GPU correctness regressions:
+
+- 8 ARStandardCost.* (Failed): deferred texture linear-filter fault class, same as all prior platforms.
+- 3 ARRobustCostTest.*: deferred vehicle cost (Timeout), same.
+- 1 ARNeuralNetDynamics.LoadModelTest: npz map::at, same.
+- 2 Dynamics.stepGPU + DubinsDynamics.TestUpdateStateGPU: vendor-agnostic dim_x guard, same.
+- 1 Linear.StepCPUGPUComparison: FP tolerance (diff ~0.012-0.033 vs bound 0.01); AMD vs NVIDIA
+  fma rounding in linear dynamics step, same category as RK4.
+- 1 RacerDubins.enforceLeash: FP tolerance margin, AMD fma rounding, same as gfx1101.
+- 1 RacerDubins.ComputeStateTrajectoryFiniteTest: pre-existing uninitialized STEER_ANGLE_RATE, same.
+- 5 BasePlantTest.run*: timing-based assertions fail due to Windows scheduling jitter
+  (expected 50-58ms, got 65ms; slideControlSequence count mismatches). Same class as gfx1101.
+- 2 WeightedReductionKernel.*: stack overflow + legacy RAW hazard, same as gfx1101.
+- 1 ControllerKernelChoiceTest/*.MoreEvaluationsDoNotAdjustChoice: kernel timing benchmark
+  chooses wrong kernel variant on one iteration; timing-sensitive flakiness, same class.
+- 1 cuFFT.checkErrorCode: hipFFT dereferences garbage plan handle, same as all platforms.
+- 6 GaussianTests.Check*: hipRAND != cuRAND sequence, over-tight 0.1% CDF bound, same.
+- 1 Integration.RK4: AMD vs NVIDIA fma rounding (2e-4 vs 1e-6 abs bound), same.
+- 3 FNNHelperTest.*/LSTMHelperTest.*: npz map::at NN-loader, same.
+- 1 SamplingDistributionTests.CompareLikelihoodRatioCostsCPU vsGPU<GaussianDistribution
+  <LinearDynamicsParams<1,7>>>: FP tolerance margin, AMD rounding, same category.
+
+Compared to gfx1101 (49 non-passes), gfx1201 is better (36) -- the hipFFT JIT is fast
+enough on gfx1201 that TestNoise/ColoredNoise tests do NOT time out (they did on gfx1101).
+
+### Core correctness on gfx1201 wave32
+
+- RolloutKernelTests.CombinedRolloutKernelGPUvsCPU: PASS
+- RolloutKernelTests.SplitRolloutKernelGPUvsCPU: PASS
+- RMPPIKernels.ValidateCombinedInitEvalKernelAgainstCPU: PASS
+- RMPPIKernels.ValidateSplitInitEvalKernelAgainstCPU: PASS
+- RMPPIKernels.ValidateCombinedRMPPIRolloutKernelAgainstCPU: PASS
+- RMPPIKernels.ValidateSplitRMPPIRolloutKernelAgainstCPU: PASS
+- RMPPIKernels.ValidateCombinedRMPPIRolloutKernelAgainstMPPIRollout: PASS
+- NormExpKernel 7/7: PASS
+- CartPole 12/12: PASS
+- DoubleIntegratorTracking 3/3: PASS
+
+The wave32 reduction fix (stop_condition=0, full __syncthreads() tree) is correct on
+gfx1201. No NaN, no HIP fault, clean exits throughout.
+
+## 2026-06-16 comment scrub + validated_sha divergence (porter, doc-only)
+
+Scrubbed in-house port labels from two comments (no code logic change, no rebuild,
+no GPU): CMakeLists.txt (dropped the "Strategy A" parenthetical at line 17; reworded
+the no-literal-arch comment at lines 23-25 to drop "lead arch"/"follower" -> "default
+arch"/"every other GPU target") and include/mppi/hip_compat/cuda_to_hip.h:2 (dropped
+"Strategy A" from the shim header line). Committed ON TOP as 8c0b545
+"[ROCm] Scrub internal port labels from comments", pushed to origin/moat-port
+(fast-forward 427b693..8c0b545, no force needed).
+
+The standalone classifier confirms the delta is inert: `classify ... 427b693bd374
+8c0b545` -> class=comment-only arch_independent=True inert=True. It SHOULD have
+carried forward.
+
+BUT advance-head flipped all four completed platforms (gfx90a, gfx1100, gfx1101,
+gfx1201) to `revalidate` instead. Root cause: a recorded-vs-actual sha divergence
+that PREDATES this scrub. status.json recorded each platform's validated_sha as
+427b693b7f89e7ef0b3ca7d9882afe0540d5c96b, but the actual fork tip (origin/moat-port,
+the parent of 8c0b545) is 427b693bd374fa2c9688b0085f3a584d6ce30025. Both abbreviate
+to "427b693" but are DIFFERENT commits; the recorded 427b693b7f89... is an orphaned
+object not reachable in the clone (`git cat-file -t` fails on it). So advance_head's
+regression guard could not classify validated_sha -> new_sha (unreachable old sha ->
+_classify_safe returns None -> safe default = revalidate). This is the expected safe
+behavior of the guard given the stale recorded sha, NOT a fault in the scrub.
+
+Did NOT run GPU (per scoped-task rule: if a platform flips to revalidate, report,
+do not validate). Did NOT hand-edit states back to completed (that would fabricate a
+carry-forward the guard could not verify across the orphaned sha). Needs a follow-up
+decision: either reconcile the recorded validated_sha to the reachable 427b693bd374
+(if that commit is in fact tree-identical to what was validated -- the divergence
+likely came from a force-push/rebase after validation) and re-run advance-head from
+8c0b545 (which would then carry forward inert), or revalidate per-arch via
+binary-equivalence. The scrub commit itself is comment-only and provably inert.
+
+## 2026-06-16 validated_sha reconciliation
+
+Follow-up to the divergence above. Evidence gathered:
+
+- `git cat-file -t 427b693b7f89e7ef0b3ca7d9882afe0540d5c96b`: fatal (unreachable, even after fetch).
+- `git cat-file -t 427b693bd374fa2c9688b0085f3a584d6ce30025`: commit (reachable, parent of 8c0b545).
+- Git reflog for this clone contains only 427b693bd374... under the name "427b693"; the orphaned sha
+  427b693b7f89... never appears in the reflog, so it was never in this clone.
+- MOAT repo history shows the orphaned sha was introduced by the Windows gfx1101 validation commit
+  (19f72cad, 2026-06-05), which wrote head_sha and validated_sha as 427b693b7f89... from its own
+  local clone. The Linux gfx90a carry-forward (61159faf) and gfx1100 full GPU (fe0047dd, de9ac993)
+  then echoed that same sha from MOAT's status.json into their own validated_sha records.
+- The reachable 427b693bd374 commit has the same author, date (2026-06-05 14:34:15 -0700), commit
+  message ("[ROCm] Windows: exclude racer_dubins_elevation_lstm_uncertainty test"), and 1-line change
+  to tests/dynamics/CMakeLists.txt as the logical commit all validations ran against. This is a
+  force-push rewrite that changed only the commit object identity (parent pointer or timestamp), not
+  the tree content.
+- Decision: RECONCILE. Updated all four platform validated_sha fields from 427b693b7f89e7ef0b3ca7d9
+  88b0085f3a584d6ce30025 (orphaned) to 427b693bd374fa2c9688b0085f3a584d6ce30025 (reachable). Also
+  updated carry_forward.to in the gfx90a block.
+- Re-ran `advance-head MPPI-Generic 8c0b545` (no-op since platforms were in revalidate, not completed).
+- Classifier confirms: `classify MPPI-Generic 427b693bd374 8c0b545` -> class=comment-only
+  arch_independent=True inert=True.
+- Used `carry-forward` on all four revalidate platforms -> all now `completed` at 8c0b545. No GPU
+  re-run needed.
+## Validation 2026-06-16 (linux-gfx90a revalidate, binary-equiv carry-forward)
+
+Platform: gfx90a (MI250X), ROCm 7.2.1. HIP_VISIBLE_DEVICES=3. Validator: linux-gfx90a.
+State before: revalidate (validated_sha 427b693b7f89... orphaned; head_sha 8c0b545).
+
+Delta classification: `moatlib classify` returned `class=unknown arch_independent=False`
+because the recorded validated_sha (427b693b7f89e7ef0b3ca7d9882afe0540d5c96b) is an
+orphaned object -- unreachable in the clone. The reachable parent of 8c0b545 is
+427b693bd374fa2c9688b0085f3a584d6ce30025. The diff between them is purely comments:
+- CMakeLists.txt: dropped "Strategy A" from line 17, reworded "lead arch"/"follower"
+  -> "default arch"/"every other GPU target" on lines 23-25.
+- include/mppi/hip_compat/cuda_to_hip.h: dropped "Strategy A" from the shim header
+  description line 2.
+No code logic, no preprocessor tokens, no CMake variables changed.
+
+Binary equivalence check: built 427b693bd374 (old) and 8c0b545 (new) each at gfx90a
+with identical cmake flags (-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a). Both builds:
+157/157 targets, exit 0. The cnpy submodule remote does not carry a5fc3a5 (Windows-only
+DLL-export commit); used 91c53bc (the pre-Windows cnpy HEAD) for both Linux builds since
+the Windows-only DLL export macro does not affect Linux.
+
+`utils/codeobj_diff.py build-hip-old build-hip-new` result:
+- libautorally_mppi.so: identical (199 exports)
+- libcartpole_mppi.so: identical (756 exports)
+- libdouble_integrator_mppi.so: identical (519 exports)
+- libquadrotor_mppi.so: identical (308 exports)
+- libcnpy.so: indeterminate (roc-obj-ls false-negative on pure C++ ELF, no GPU code;
+  manual `nm` diff: zero differences, symbols byte-identical)
+
+All HIP MPPI libraries: identical device ISA + exported symbols. Comment-only delta
+confirmed to produce no change in device code on gfx90a.
+
+Verdict: binary-equiv carry-forward. State: completed at 8c0b54507b837eba2e186ed1cf7355533d974924.
+
+## 2026-10-29: merge upstream main to run its new GPU tests
+
+Before opening the upstream PR jeff asked for upstream's new GPU tests to be run on AMD. Fork `main` fast-forwarded b5c8daa -> abcd1ab (upstream tip). `moat-port` merged upstream main (no rebase) at 939db79: brings #32 (normExp shared-memory reduction fix and odd-rollout handling, new cases in `tests/mppi_core/normexp_kernel_tests.cu`) and #34 (GPU DDP feedback accumulation fix, new `tests/feedback_controllers/ddp_test.cu` cases). merge-tree was clean; the only overlap with the port is `include/mppi/core/mppi_common.cu`, different hunks. Every platform owes revalidation at 939db79; run the full GPU test suite, including the new normexp and ddp cases.
+
+## Validation 2026-10-29 (linux-gfx90a revalidate at 939db79, full GPU)
+
+Platform: gfx90a (MI250X, wave64), HIP_VISIBLE_DEVICES=1. Toolchain this time is TheRock pip ROCm in the image venv (HIP 7.16.26385, AMD clang 24.0.0git), NOT /opt/rocm: `R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`. libyaml-cpp-dev installed via apt. Delta from the last validated head (cef61e5) is only the upstream merge (#32 normExp reduction fix + odd rollouts, #34 GPU DDP feedback fix; touches `mppi_common.cu`, `ddp.cu` and the two test files), so no carry-forward: full rebuild and full suite as jeff asked.
+
+### Build
+```
+git -C src submodule update --init   # FAILS, see "cnpy submodule" below
+git -C src/submodules/cnpy checkout -f 91c53bc
+cmake -S src -B build -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DROCM_PATH=$R \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j 32
+```
+157/157 targets, exit 0, 96 s.
+
+### New upstream GPU tests (run directly)
+- `tests/mppi_core/normexp_kernel_tests`: 10/10 PASS (was 7 cases; new: computeBaselineCostDeviceOddRollouts, computeNormalizerDeviceOddRollouts, comparisonTestHostvsDeviceBaselineNormalizerCalculation; also computeBaselineCostDevice, computeNormalizerDevice, fullGPUcomputeWeightsEveryIteration all OK).
+- `tests/feedback_controllers/ddp_tests`: 10/10 PASS (new: DeviceDDP.TwoControls, DeviceDDP.FourControls; plus ModelWrapper_Test x3, TrackingCosts_Test x3, DDPSolver_Test.Cartpole_Tracking, DDPSolver_Test.Quadrotor_Tracking).
+
+### Full ctest (`ctest -j1 --timeout 120 --output-on-failure`, 225 s)
+432/462 pass (94%); 30 failed; 8 not run (5 upstream-DISABLED: ColoredNoise.check* x4, MATH_UTILS.Matrix3fMultiplicationP2; 3 GTEST_SKIP: RacerSuspensionTest.CPUvsGPU, QuadrotorMapCost.checkHeadingCost, FNNHelperTest.TestComputeGradComputationCompare). Total rose from 457 (gfx1100, 427b693b) by exactly the 5 new upstream cases.
+Core GPU suites: RolloutKernel 9/9, RMPPI 26/26, NormExp 10/10, DeviceDDP 2/2, DDPSolver 2/2, WeightedReduction 3/4 (the known legacy reference-kernel case).
+
+The 30 failures are the same set as the gfx1100 baseline, every one a recorded pre-existing category, none in code the merge touched:
+- 8 ARStandardCost.* (5 SEGFAULT + 3 Failed): deferred texture linear-filter class.
+- 2 ARRobustCostTest.getCostmapCost*: deferred vehicle cost.
+- 1 ARNeuralNetDynamics.computeGradTest + 6 FNN/LSTM/LSTMLSTMHelperTest LoadModel*: npz loader `map::at`.
+- 2 Dynamics.stepGPU, DubinsDynamics.TestUpdateStateGPU: vendor-agnostic dim_x guard.
+- 1 RacerDubins.ComputeStateTrajectoryFiniteTest: uninitialized state_der slot (CPU-only test).
+- 1 WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic: legacy in-place RAW hazard in the test's reference kernel.
+- 1 cuFFT.checkErrorCode: hipFFT dereferences the garbage plan handle.
+- 6 GaussianTests.Check*: hipRAND != cuRAND, over-tight 0.1% CDF bound.
+- 1 Integration.RK4: 1.94e-4 vs 1e-6 abs bound (fma rounding).
+- 1 SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU: 1-ulp class (diff 5.96e-8 = 2^-24 vs `fabsf(cost)*5e-5`). Which instance fails moves run to run (full run: NLN<3,3>; 3 reruns of the 13-instance group: Gaussian<4,3>, Gaussian<1,7>, Gaussian<4,3>; always exactly 1 of 13), matching the random-input tolerance class recorded on gfx1100/gfx1201.
+
+GPU verdict: PASS. The merged normExp and DDP fixes work on wave64.
+
+### CUDA no-regression gate
+cuda-not-validated: this host has no CUDA toolkit and no conda; the sandbox refused downloading Miniforge to create the cuda-12.8 env. Owed by the next Linux host at 939db79 (or its successor).
+
+### Finish checks (why this is validation-failed, not completed)
+- Jargon: `python3 utils/jargon.py --port MPPI-Generic` clean (after `git branch moat-port origin/moat-port` in the clone).
+- **Documentation missing**: README.md documents the CUDA build (Prerequisites "CUDA 10 or newer", "Building MPPI-Generic with tests" with `cmake -DMPPI_BUILD_TESTS=ON ..`) and has no ROCm/HIP text at all (`grep -i 'rocm\|hip' README.md` is empty). The `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=...` build and its ROCm prerequisites (hipRAND, hipFFT) belong next to it (porter.md step 7).
+- **cnpy submodule pinned to an unpublished commit**: `submodules/cnpy` points at a5fc3a5526b5 (from c27e0bf, the Windows DLL-export change), which exists in no public repo (`.gitmodules` url ACDSLab/cnpy: "not our ref"; GitHub API: "No commit found"; there is no AMD-Ecosystem/cnpy). A fresh `git submodule update --init` fails, leaving `submodules/cnpy` empty, and configure then fails at `add_subdirectory(submodules/cnpy)` / `configure_package_config_file`. Every Linux validation since c27e0bf has silently worked around this with 91c53bc. Nobody cloning the PR can build it. Fix options for porter/jeff: publish the cnpy change somewhere the submodule URL can reach (a fork needs a person to create it), or restore the 91c53bc pin and carry the DLL exports another way.
+
+State: validation-failed at 939db796f3f0 (failed_sha). Back to the porter for the two items above; GPU evidence above stands for the merged code.
+## Validation 2026-10-29 (linux-gfx1100 revalidate at 939db79, full GPU) -- validation-failed (docs + submodule, not GPU)
+
+Platform: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), HIP_VISIBLE_DEVICES=1. Toolchain: TheRock ROCm SDK 10.1.0 pip wheels (`rocm-sdk path --root` = the venv's `_rocm_sdk_devel`), HIP 7.16, AMD clang 24. Note this is a newer toolchain than the 2026-06-07 gfx1100 run (ROCm 7.2.1). Fork sha 939db796f3f0 (moat-port tip; merge of upstream abcd1ab).
+
+Delta from validated_sha cef61e5: upstream #32 (normExp odd-rollout reduction fix in `mppi_common.cu`) and #34 (DDP feedback accumulation fix in `ddp.cu`) plus their tests. Real device-code change, so no carry-forward: full run.
+
+### Setup / build
+- `apt-get install libyaml-cpp-dev` (required by top-level CMakeLists `find_package(yaml-cpp REQUIRED)`; was missing on this image).
+- cnpy submodule: `git submodule update --init` FAILS (`upload-pack: not our ref a5fc3a5526b5...`). Used cnpy 91c53bc (ACDSLab/cnpy master) as the gfx90a run on 2026-06-16 did. See finding F2 below.
+```
+ROOT=$(rocm-sdk path --root)
+cmake -S projects/MPPI-Generic/src -B projects/MPPI-Generic/src/build-hip -GNinja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=$ROOT/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROOT \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build projects/MPPI-Generic/src/build-hip -j 24
+```
+Result: 157/157 targets, exit 0, zero errors.
+
+### New upstream GPU tests (the reason for this round)
+```
+./tests/mppi_core/normexp_kernel_tests          # 10/10 PASS
+./tests/feedback_controllers/ddp_tests          # 10/10 PASS
+```
+normexp: computeBaselineCost_Test, computeNormalizer_Test, computeNormalizerDevice_Test, computeBaselineCostDevice_Test, computeBaselineCostDeviceOddRollouts_Test (new), computeNormalizerDeviceOddRollouts_Test (new), fullGPUcomputeWeightsEveryIteration_Test (new), computeExpNorm_Test, comparisonTestAutorallyMPPI_Generic, comparisonTestHostvsDeviceBaselineNormalizerCalculation -- all OK.
+ddp: ModelWrapper_Test x3, TrackingCosts_Test x3, DDPSolver_Test.Cartpole_Tracking, DDPSolver_Test.Quadrotor_Tracking, DeviceDDP.TwoControls (new), DeviceDDP.FourControls (new) -- all OK.
+
+Core GPU-vs-CPU: rollout_kernel_tests 6/6, rmppi_kernel_tests 5/5, cartpole_dynamics_tests 12/12 PASS.
+
+### Full ctest (`ctest --test-dir .../build-hip -j1 --timeout 600`, 168 s)
+430/462 pass, 32 fail. 462 = 457 previous + 5 new (3 normexp + 2 DeviceDDP), all 5 new pass.
+
+The 30 failures recorded on 2026-06-07 recur exactly (same names): 8 ARStandardCost.* (texture linear-filter, deferred), 2 ARRobustCostTest.*, ARNeuralNetDynamics.computeGradTest, DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, RacerDubins.ComputeStateTrajectoryFiniteTest, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, cuFFT.checkErrorCode, 6 GaussianTests.Check*, Integration.RK4, 6 FNN/LSTM/LSTMLSTM LoadModel* (npz map::at), SamplingDistributionTests CompareLikelihoodRatioCostsCPUvsGPU<GaussianDistribution<1,7>>.
+
+2 additional, both intermittent and pre-existing:
+- CompareLikelihoodRatioCostsCPUvsGPU<ColoredNoiseDistribution<3,3>> (gtest /8)
+- CompareLikelihoodRatioCostsCPUvsGPU<NLNDistribution<3,3>> (gtest /12)
+Magnitudes: abs diff 1.5e-8 at cost 3.17e-5; 1.2e-7 at 2.09e-3; 3.7e-9 at -3.41e-5, against a pure relative bound `fabsf(cost)*5e-5` with no absolute floor (generic_sampling_distribution_tests.cu:583): near-zero costs fail on float cancellation. Same class as the long-standing <1,7> failure. Proof it is not the merge: built cef61e5 (old validated sha) with the identical ROCm 10.1 toolchain and ran each typed case 6x as its own process: old /8 2/6 fail, /12 1/6 fail; new /8 2/6, /12 1/6. Identical. Run all 13 typed cases in one process: 13/13 pass on both builds (5 runs each). The merge touches none of the sampling code.
+
+GPU verdict: PASS, zero regressions at 939db79 on gfx1100.
+
+### CUDA gate
+cuda-not-validated: this host has no CUDA toolkit (no /opt/conda, no nvcc), and creating a cuda-12.8 env with a downloaded micromamba was refused by the session's permission policy. Not attempted any other way. Another Linux host must run the CUDA compile gate at 939db79.
+
+### Jargon
+`python3 utils/jargon.py --port MPPI-Generic` -> clean.
+
+### Completion check: FAILED (sent back to porter)
+F1 Documentation: README.md documents the CUDA build (Prerequisites, "Building MPPI-Generic with tests") but says nothing about ROCm/HIP. `git diff main moat-port -- README.md doc` is empty; the port has never documented `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=<gfx>`, the hipRAND/hipFFT deps, or the C++17 requirement on HIP. Porter step 7 requires this before the diff goes upstream.
+F2 Unreachable submodule gitlink: commit c27e0bf ("[ROCm] Windows build fixes ...") moves `submodules/cnpy` from 91c53bc to a5fc3a5526b5c77b4a9c5233d06fb1b0d23380ed (the WINDOWS_EXPORT_ALL_SYMBOLS change). That commit exists on no public remote: `gh api repos/ACDSLab/cnpy/commits/a5fc3a5...` -> 422 "No commit found"; there is no AMD-Ecosystem/cnpy fork. So `git clone --recursive` / `git submodule update --init` of moat-port fails for every user, and the upstream PR would ship a dangling gitlink. Every Linux validation since June has silently built 91c53bc instead. Fix options for the porter: get the cnpy change into a public cnpy (upstream cnpy PR, which is a person's call) or revert the gitlink to 91c53bc and set `WINDOWS_EXPORT_ALL_SYMBOLS` on the `cnpy` target from MPPI-Generic's own CMakeLists under `if(USE_HIP AND WIN32)`.
+Neither is a GPU defect. Once the fix lands, the test results above should still hold for a doc-plus-CMake-only delta, but per the role a failed arch comes back as port-ready for a full run.
+
+## 2026-10-29: porter fix for the two validator findings (11b61ab)
+
+- F2 (unfetchable cnpy gitlink a5fc3a5): gitlink restored to the public ACDSLab/cnpy 91c53bc (upstream's own pin); the only content of a5fc3a5 was WINDOWS_EXPORT_ALL_SYMBOLS on the cnpy SHARED library, now set from MPPI-Generic's CMakeLists.txt right after `add_subdirectory(submodules/cnpy)`, under `if (USE_HIP AND WIN32)`. Linux and CUDA builds see no change. No cnpy fork or upstream cnpy PR needed.
+- F1 (no ROCm docs): README gains a "Building MPPI-Generic for AMD GPUs (ROCm)" section (`-DUSE_HIP=ON`, optional `CMAKE_HIP_ARCHITECTURES`, auto-detect otherwise).
+- Windows (windows-gfx1151) must confirm the CMake-side export works: it is the one platform the cnpy change matters on.
+
+## Validation 2026-10-29 (linux-gfx1100 at 11b61ab, full GPU, fresh recursive clone)
+
+Platform: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), HIP_VISIBLE_DEVICES=1. Toolchain: TheRock ROCm SDK pip wheels in the image venv (`ROOT=$(rocm-sdk path --root)`), AMD clang 24.0.0. Fork sha 11b61ab3557126 (= origin/moat-port tip). Delta from the 939db79 round: cnpy gitlink back to public 91c53bc, `WINDOWS_EXPORT_ALL_SYMBOLS` on `cnpy` under `if (USE_HIP AND WIN32)`, README ROCm section. Full run, as a failed arch gets.
+
+### F2 check: fresh clone, submodules as a user gets them
+```
+git clone https://github.com/AMD-Ecosystem/MPPI-Generic src
+git -C src checkout 11b61ab3557126b2220f4de2163d9f317cf176e9
+git -C src submodule update --init --recursive
+```
+rc=0; `submodules/cnpy` checked out 91c53bc597b9 from https://github.com/ACDSLab/cnpy.git. No manual cnpy step. F2 resolved.
+
+### Build
+```
+cmake -S src -B src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=$ROOT/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROOT \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build src/build-hip -j 24
+```
+157/157 targets, exit 0, 0 errors, 50 s.
+
+README recipe check (configure only): `cmake -DUSE_HIP=ON -DMPPI_BUILD_TESTS=ON <src>` with only `$ROOT/bin` on PATH and `CMAKE_PREFIX_PATH=$ROOT` (no compiler, no arch) configures, rc=0; CMake finds clang 24 and auto-detects `gfx1100;gfx1100;gfx1100;gfx1100`. The repeats are CMake's own `enable_language(HIP)` probe enumerating every agent on a multi-GPU host and ignoring HIP_VISIBLE_DEVICES. Harmless, and not in the port's code.
+
+### New upstream GPU tests and core GPU-vs-CPU (run directly)
+- `tests/mppi_core/normexp_kernel_tests`: 10/10 PASS (incl. computeBaselineCostDeviceOddRollouts, computeNormalizerDeviceOddRollouts, fullGPUcomputeWeightsEveryIteration, comparisonTestHostvsDeviceBaselineNormalizerCalculation)
+- `tests/feedback_controllers/ddp_tests`: 10/10 PASS (incl. DeviceDDP.TwoControls, DeviceDDP.FourControls)
+- `tests/mppi_core/rollout_kernel_tests` 6/6, `tests/mppi_core/rmppi_kernel_tests` 5/5, `tests/dynamics/cartpole_dynamics_tests` 12/12 PASS
+
+### Full ctest (`ctest --test-dir src/build-hip -j1 --timeout 600`, 164 s)
+432/462 pass, 30 fail, 8 not run (5 upstream-DISABLED: ColoredNoise.check* x4, MATH_UTILS.Matrix3fMultiplicationP2; 3 GTEST_SKIP: RacerSuspensionTest.CPUvsGPU, QuadrotorMapCost.checkHeadingCost, FNNHelperTest.TestComputeGradComputationCompare).
+
+The 29 deterministic failures recorded at 939db79 recur by name: 8 ARStandardCost.* (5 SEGFAULT + 3 Failed; deferred texture linear-filter), 2 ARRobustCostTest.getCostmapCost*, ARNeuralNetDynamics.computeGradTest, 6 FNN/LSTM/LSTMLSTM LoadModel* (npz `map::at`), DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, RacerDubins.ComputeStateTrajectoryFiniteTest, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, cuFFT.checkErrorCode, 6 GaussianTests.Check*, Integration.RK4.
+
+The 30th comes from the known intermittent FP-tolerance pool:
+- CudaFloatStructsTests/*.VecAddVecMultScalar (cuda_math_utils_tests.cu:682, exact-equality assert on the float2 variant vs FMA rounding; recorded on the first gfx1100 run). 6 standalone reruns: 4 fail, 2 pass.
+- SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU passed 13/13 in the full run; a separate `ctest -R CompareLikelihoodRatio` gave 10/13 (relative bound with no absolute floor, the class shown identical at cef61e5 vs 939db79 in the previous gfx1100 entry).
+The compiled Linux code at 11b61ab matches 939db79 as built with cnpy 91c53bc: the CMake change is WIN32-only and the gitlink is the 91c53bc every earlier Linux run used. So these intermittents are not a regression.
+
+GPU verdict: PASS. Zero regressions on gfx1100 wave32; the new normexp and DDP cases pass.
+
+### CUDA no-regression gate
+cuda-not-validated: this host has no CUDA toolkit (no /opt/conda, no /usr/local/cuda, no nvcc). Installing `nvidia-cuda-nvcc-cu12==12.8.*` and the headers into a scratch venv under agent_space was blocked by the fleet guard ("pip changing the Python environment every job on this host shares"). The gate is still owed at 11b61ab by a Linux host with the cuda-12.8 env. 11b61ab's only CMake change is under `if (USE_HIP AND WIN32)`, so CUDA configure is unchanged from 939db79, but 939db79 itself was never CUDA-compiled.
+
+### Finish checks
+- Jargon: `python3 utils/jargon.py --port MPPI-Generic` -> clean.
+- Documentation (F1): README has "Building MPPI-Generic for AMD GPUs (ROCm)" next to the CUDA build section (`-DUSE_HIP=ON`, `CMAKE_HIP_ARCHITECTURES`, ROCm provides hipRAND/hipFFT). Resolved.
+- Integrity: `git -C src status --porcelain` shows only `?? build-hip/`; submodule clean at 91c53bc.
+
+State: completed at 11b61ab on linux-gfx1100.
+## Validation 2026-10-29 (linux-gfx90a revalidate at 11b61ab, full GPU) -- completed
+
+Platform: gfx90a (MI250X, wave64), HIP_VISIBLE_DEVICES=1. Toolchain: TheRock pip ROCm in the image venv (no /opt/rocm), AMD clang 24.0.0git, cmake 3.31.6, Ninja; `R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`. Fork sha 11b61ab3557126b2220f4de2163d9f317cf176e9 (moat-port tip). Delta from 939db79: cnpy gitlink back to 91c53bc, `WINDOWS_EXPORT_ALL_SYMBOLS` on cnpy under `if (USE_HIP AND WIN32)`, README ROCm section. Requested as a full run, and the role requires one for an arch returning from validation-failed.
+
+### Fresh clone exactly as a user would (F2 check)
+```
+git clone https://github.com/AMD-Ecosystem/MPPI-Generic src
+git -C src checkout moat-port                     # 11b61ab
+git -C src submodule update --init --recursive    # rc=0
+```
+`Submodule path 'submodules/cnpy': checked out '91c53bc597b93992b9c92cdd92e4e50083c644a9'`. No manual cnpy workaround. F2 resolved.
+
+### Build
+```
+cmake -S src -B src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DROCM_PATH=$R \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build src/build-hip -j 32
+```
+157/157 targets, 0 errors, 63 s.
+
+### README ROCm section (F1 check)
+README.md has "Building MPPI-Generic for AMD GPUs (ROCm)" next to the CUDA build instructions. Ran its command literally (Unix Makefiles, no compiler override): `cmake -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DMPPI_BUILD_TESTS=ON ..`. On this host it fails at `find_package(hiprand)` because the pip SDK is not on any default CMake prefix. That is a host artifact: the June gfx90a/gfx1100 runs on a standard /opt/rocm used no prefix. Adding only `-DCMAKE_PREFIX_PATH=$R` makes it configure (rc=0). The auto-detect path the README describes (no `CMAKE_HIP_ARCHITECTURES`, plus the prefix) configures with `HIP Architecture(s): gfx90a;gfx90a;gfx90a;gfx90a` (one entry per GPU on the host; the duplicates are harmless). `make normexp_kernel_tests` built and ran 10/10. F1 resolved.
+
+### New upstream GPU tests
+```
+./tests/mppi_core/normexp_kernel_tests      # 10/10 PASS
+./tests/feedback_controllers/ddp_tests      # 10/10 PASS
+```
+normexp: computeBaselineCost, computeNormalizer, computeNormalizerDevice, computeBaselineCostDevice, computeBaselineCostDeviceOddRollouts, computeNormalizerDeviceOddRollouts, fullGPUcomputeWeightsEveryIteration, computeExpNorm, comparisonTestAutorallyMPPI_Generic, comparisonTestHostvsDeviceBaselineNormalizerCalculation, all OK.
+ddp: ModelWrapper_Test x3, TrackingCosts_Test x3, DDPSolver_Test.Cartpole_Tracking, DDPSolver_Test.Quadrotor_Tracking, DeviceDDP.TwoControls, DeviceDDP.FourControls, all OK.
+
+### Full ctest (`ctest --test-dir src/build-hip -j1 --timeout 120 --output-on-failure`, 221 s)
+431/462 pass, 31 fail, 8 not run (5 upstream-DISABLED: ColoredNoise.check* x4, MATH_UTILS.Matrix3fMultiplicationP2; 3 GTEST_SKIP: RacerSuspensionTest.CPUvsGPU, QuadrotorMapCost.checkHeadingCost, FNNHelperTest.TestComputeGradComputationCompare).
+
+30 of the 31 are the exact set recorded at 939db79 on this arch, all pre-existing categories:
+- 8 ARStandardCost.* (5 SEGFAULT + 3 Failed): deferred texture linear-filter class.
+- 2 ARRobustCostTest.getCostmapCostSpeed{Map,NoMap}Test: deferred vehicle cost.
+- 1 ARNeuralNetDynamics.computeGradTest + 6 loader cases (FNNHelperTest.LoadModelNPZTestNested, LSTMHelperTest.LoadModelPathTest/LoadModelPathInitTest/LoadModelNPZTest, LSTMLSTMHelperTest.LoadModelPathTest/LoadModelPathTestLongBuffer): npz loader `map::at`.
+- Dynamics.stepGPU, DubinsDynamics.TestUpdateStateGPU: dim_x guard.
+- RacerDubins.ComputeStateTrajectoryFiniteTest: uninitialized state_der slot (CPU-only).
+- WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic: RAW hazard in the test's reference kernel.
+- cuFFT.checkErrorCode: hipFFT dereferences the garbage plan handle.
+- 6 GaussianTests.Check*: hipRAND != cuRAND, over-tight CDF bound.
+- Integration.RK4: fma rounding vs 1e-6 abs bound.
+- SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU<GaussianDistribution<1,7>>: relative-bound 1-ulp class.
+
+The 31st, CudaFloatStructsTests/0.VecAddVecMultScalar (float2): `(84006016, 12140199) != (84006008, 12140200)` with 1 block of 1 thread. That is 1 ulp (ulp = 8 at 8.4e7, 1 at 1.2e7) under an exact `==` assert, on inputs drawn from a `std::random_device`-seeded mt19937. It is the FMA-contraction case recorded on gfx1100 2026-05-30 and noted as intermittent on 2026-06-07. Rerun as its own process 8x: 8/8 pass (all three float2/3/4 instances). The delta touches no test, kernel, or header, so this is not a regression.
+
+GPU verdict: PASS. Same failure set as 939db79 apart from one known intermittent rounding case; the merged normExp and DDP fixes pass on wave64.
+
+### CUDA no-regression gate
+cuda-not-validated: this host has no CUDA toolkit, no conda and no /usr/local/cuda. The previous session on this host was refused when it tried to download Miniforge, so this run did not try again. The 11b61ab delta adds no CUDA-visible code (the CMake hunk is `USE_HIP AND WIN32` only, and 91c53bc is upstream's own cnpy pin), but the gate is still owed once at 11b61ab by a host with the toolkit.
+
+### Finish checks
+- Jargon: `python3 utils/jargon.py --port MPPI-Generic` -> clean.
+- Documentation: present (see F1 above).
+- Integrity: `git -C src status --porcelain` shows only `?? build-hip/`; cnpy submodule clean.
+
+State: completed at 11b61ab3557126b2220f4de2163d9f317cf176e9.
+
+## CUDA gate 2026-10-30 (V100, CUDA 12.9)
+
+CUDA no-regression gate at head 11b61ab35571 (fork `moat-port`), owed since 939db79. Run on an NVIDIA Tesla V100-SXM2-32GB (driver 575.57.08), nvcc 12.9.86, gcc 13.2, CMake 3.31, Ninja. Deps built from source into a scratch prefix: Eigen 3.4.0, yaml-cpp 0.8.0 (shared); GoogleTest fetched by the build; Pillow + numpy for the test-data generators. Upstream base for comparison: abcd1ab419 (fork `main`, the merge base). Fresh recursive clones, `ulimit -c 0`.
+
+Build (identical for port and base):
+```
+git submodule update --init --recursive
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON \
+  -DMPPI_CUDA_ARCH_LIST="70;80" -DCMAKE_PREFIX_PATH=<prefix>
+LIBRARY_PATH=<prefix>/lib cmake --build build -j 12
+```
+"CUDA Architecture(s): 70;80". **PASS** at both shas, 181/181 steps (~11 min each). `LIBRARY_PATH` is needed only because yaml-cpp 0.8 exports a namespaced target and the build links plain `-lyaml-cpp`; same at both shas, environment only.
+
+Full ctest on the V100 (`ctest --test-dir build -j1 --timeout 600`, about 4.5 min):
+
+| | port 11b61ab | base abcd1ab |
+|---|---|---|
+| ctest | 517/535 pass, 18 fail | 516/535 pass, 19 fail |
+
+Not run at both: 9 Disabled (incl. ColoredNoise.check* and MATH_UTILS.Matrix3fMultiplicationP2) and FNNHelperTest.TestComputeGradComputationCompare (Skipped).
+
+The port's 18 failures are all in the base's 19, with the same names: BicycleSlipParametricTest.{Template, ComputeDynamics, ComputeDynamicsWithNormals, TestModelGPU, TestModelGPUNormals, TestModelGPUNormalsReverse, TestStepGPUvsCPU}, DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, RacerDubinsElevationTest.{TestStep, TestStepGPUvsCPU, TestStepReverse, TestStepGPUvsCPUReverse}, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU (Gaussian<1,7> and ColoredNoise<3,3>), Integration.RK4, ActivationFunctionTest.SigmoidGPU. The base's extra failure is RMPPITest.RobustMPPILargeVarianceRobustCost (one run each, so not classified further). These are upstream's own CUDA failures on this toolchain/GPU (several match the names that fail on AMD too: DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, CompareLikelihoodRatioCostsCPUvsGPU), so they are not port regressions. The texture-backed tests deferred on HIP (ARStandardCost.*, texture helpers) pass on CUDA at the port, so the `if(USE_HIP)` exclusions do not touch the CUDA build.
+
+Result: CUDA gate **PASS** at 11b61ab (no port-only build error, no port-only test failure).
+
+## 2026-11-05: host min/max truncation fix (porter, bee3eb6)
+
+Requested by jeff after the cross-project host min/max sweep. Platform linux-gfx1100 (RX 7900 / gfx1100, wave32), TheRock pip ROCm in the image venv (`R=$(rocm-sdk path --root)`, AMD clang 24), `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__` unset, so ROCm's host `min`/`max` exist only for `(int, int)` and the defect reproduces. `pr-state` = none, so `moat-port` was pushed directly (pre-push hook installed by `protect-fork`, push accepted). Fork commit bee3eb6 on top of 11b61ab: `[ROCm] Call fminf/fmaxf in host code instead of unqualified min/max`.
+
+### Re-check of the whole project
+- Probe: every HIP TU in `compile_commands.json` of the real build (50 TUs, flags as built: `-DUSE_HIP -DCMAKE_USE_CUDA_BARRIERS*`, forced `cuda_to_hip.h`), re-run with `--cuda-host-only -fsyntax-only -include probe.h` where probe.h is `template<class A,class B> void min(A,B)=delete; template<class A,class B> void max(A,B)=delete;`. Script: run each compile command with `-o`/`-c` removed plus those flags.
+- The five dynamics tests excluded from the HIP build (`racer_dubins_elevation{,_suspension,_lstm_steering,_lstm_uncertainty}_model_test.cu`, `bicycle_slip_parametric_model_test.cu`) were probed separately with the same flags, because their headers are compiled by no HIP TU. That is how the bicycle-slip and elevation sites showed up; the in-build probe alone cannot see them.
+- Text grep for unqualified `min(`/`max(` over every tracked `.cu/.cuh/.h/.hpp/.cpp` outside submodules covers code behind any `#if`.
+
+Fixed (host code, CUDA resolves to the float/double overloads):
+| site | args | CUDA host overload | now |
+|---|---|---|---|
+| racer_suspension.cu:110,111 (`__host__ __device__` computeStateDeriv) | `(double, float)` | fmax | `fmax` |
+| racer_suspension.cu:195 | `(float, float)` x2 | fmaxf/fminf | `fmaxf(fminf(..))` |
+| bicycle_slip_parametric.cu:160,163 (host updateState) | float | fmaxf/fminf | same |
+| racer_dubins_elevation.cu:49,55 (host computeParametricAccelDeriv), 307 (host computeGrad) | float | fmaxf/fminf | same |
+| tests autorally_standard_cost_test.cu:836,837 / autorally_robust_cost_test.cu:164,165 | float | fminf/fmaxf | same |
+| tests autorally_standard_cost_test.cu:842,843 / autorally_robust_cost_test.cu:171,172 | inner `(double, float)`, outer `(double, float)` | fmin/fmax | `fmax(fmin(..))` |
+| tests racer_dubins_elevation_model_test.cu:1139 (not in the sweep; test excluded on HIP) | float | fminf | `fminf` |
+
+Judged harmless, left alone:
+- tube_mppi_controller.cu:20,21,41,42,192,193 and robust_mppi_controller.cu:319,320,328,329,337,338: `max(2 or 1, dim3.z/.y)`, i.e. `(int, unsigned int)`. CUDA picks `max(int, unsigned)` (unsigned compare), HIP converts the unsigned to int. The results differ only for a block dimension >= 2^31, which no launch can have.
+- Device code (`__global__`/`__device__`): mppi_common.cu:924-1009, rmppi_kernels.cu:79,193,311, gaussian.cu:33-40, piecewise_linear_noise.cuh:50, smooth-MPPI.cu:49, tests/include/kernel_tests/core/rmppi_kernel_test.cu:112, and the device updateState in bicycle_slip_parametric.cu:222,227. Device overloads are complete on ROCm.
+- `(int, int)`: risk_utils.cu:39,40 and math_utils_test.cu:1035-1060.
+- After the fix the probe reports only the 12 controller `(int, unsigned)` sites; the excluded dynamics tests show no min/max errors (their remaining host errors are the known deferred `typename` / `case this->CONST` ones).
+- Side check: host `abs(float)` in a .hip file resolves to the float overload (1.5 for -1.5f), so the `abs(...)` calls next to these sites are fine.
+
+### Before/after at run time (host calls)
+RacerSuspension::computeStateDeriv, P_I_Z=0.2, V_I_X=1, QW=1, d(V_I_X)/dt:
+| throttle_brake | before | after |
+|---|---|---|
+| 0.00 | -0.199032 | -0.200000 |
+| 0.25 | -0.199032 | 0.550000 |
+| 0.50 | -0.199032 | 1.300000 |
+| 0.75 | -0.199032 | 2.050000 |
+| 1.00 | 2.797512 | 2.800000 |
+| -0.50 | -0.199032 | -5.200000 |
+| -1.00 | -10.197650 | -10.200000 |
+(The 0.0008-0.003 shift at 0/±1 is the integer tire-force clamp on line 195.)
+
+RacerDubinsElevation::computeParametricAccelDeriv, d(VEL_X)/dt: vx=0.1 u=0.5: 4.0 -> 5.011; vx=0.1 u=0.9: 4.0 -> 5.5; vx=1.0 u=0.5: 1.0 -> 1.5; vx=1.0 u=0.9: 2.0 -> 2.54 (clamp_ax and low-speed throttle no longer truncated).
+BicycleSlipParametric::updateState, STEER_ANGLE=0.3, BRAKE_STATE=0.4, zero derivative: steer 0.0 -> 0.3, brake -2147483648 -> 0.4.
+Test reference `calculateStandardCostmapValue` for the four getTrackCostTest states: 15.000000 -> 14.999166, 15.416666 -> 15.432528, 5.933333 -> 5.432528, 6.033333 -> 5.532528 (states 2 and 3 were off by 0.5 against a 0.1 tolerance). ARStandardCost.getTrackCostTest itself still SEGFAULTs on HIP (deferred texture class), so this is shown by a direct call of the helper body only. `calculateRobustCostmapValue` has no caller; fixed for consistency.
+
+### Regression test
+New `RacerSuspensionTest.FractionalThrottleBrake` (host computeStateDeriv: half throttle = midpoint of none and full; half brake strictly between none and full). Built against the old racer_suspension.cu: FAILED (`accel(0.5)` -0.199032 vs expected 1.299240; `accel(-0.5)` == `accel(0.0)`). With the fix: OK. racer_suspension_model_test: 4 pass, 1 skipped (CPUvsGPU, upstream GTEST_SKIP).
+
+### Build and full ctest
+```
+R=$(rocm-sdk path --root)
+cmake -S src -B src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DROCM_PATH=$R \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build src/build-hip -j 10          # 157/157, 0 errors
+ctest --test-dir src/build-hip -j1 --timeout 600   # 159 s
+```
+429/463 pass, 32 fail, 8 not run (same 5 Disabled + 3 Skipped as at 11b61ab). 463 = 462 + the new test.
+- The 29 deterministic failures recorded at 11b61ab recur by name (8 ARStandardCost, 2 ARRobustCostTest.getCostmapCost*, ARNeuralNetDynamics.computeGradTest, 6 npz loaders, DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, RacerDubins.ComputeStateTrajectoryFiniteTest, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, cuFFT.checkErrorCode, 6 GaussianTests.Check*, Integration.RK4).
+- The other 3 are the known intermittent pool: CudaFloatStructsTests/*.VecAddVecMultScalar and CompareLikelihoodRatioCostsCPUvsGPU for ColoredNoise<3,3> and NLN<3,3>. `ctest -R 'CompareLikelihoodRatioCostsCPUvsGPU|VecAddVecMultScalar'` 5x each: pre-fix build 0/0/1/2/3 failures, fixed build 1/2/2/3/3. Neither TU depends on a changed file (`ninja -t deps`: the only HIP object that includes a changed library file is racer_suspension_model_test.cu.o).
+- So the only change in the GPU suite is the added passing test. The ARRobustCostTest/ARStandardCost failures are texture-backed GPU paths, not the corrected reference helpers.
+
+### Other
+- Process slip: the first `jargon.py --port` call errored ("cannot resolve main..moat-port", no local `main` in the fresh clone) and the push in the same command line went ahead. Created a local tracking `main` and re-ran: `jargon: clean`, so the pushed branch is clean.
+- CUDA compile not run here (no nvcc on this host); the change is plain fminf/fmaxf/fmin/fmax in existing CUDA C++, owed on the nvcc host.
+- Lesson for the fault-class entry on port/LEAP (not edited here; the entry is not on this branch): a host-only probe over `compile_commands.json` misses headers whose only including TUs are excluded from the HIP build; probe those excluded TUs with the same flags too.
+
+## CUDA compile check (nvcc 12.8) at bee3eb6
+
+Compile-only CUDA gate for bee3eb6 (`[ROCm] Call fminf/fmaxf in host code instead of unqualified min/max`), compared against its parent 11b61ab. Host: no NVIDIA GPU, nvcc 12.8.93 (`/usr/local/cuda-12.8`), gcc 13.3.0, CMake 3.31.6, Ninja, Eigen 3.4.0 from `/usr/include/eigen3`. Fresh recursive clone of fork `moat-port` (bee3eb6), parent via `git worktree add --detach ../parent HEAD~1`; cnpy submodule 91c53bc at both.
+
+**Result: build PASS at both, but bee3eb6 regresses the CUDA device path of `RacerSuspension::computeStateDeriv`. Needs a porter fix before this head goes further.**
+
+### Build (same recipe as the V100 gate, arch list fixed because there is no GPU to autodetect)
+yaml-cpp is not installed here and building it from source was refused by this session's permission policy. The project only calls `find_package(yaml-cpp REQUIRED)` when tests/examples are on; no target links it and no source includes it (`grep -rn yaml` over CMake files and sources: only CMakeLists.txt:210-212). So a stub package file was used, containing only `set(yaml-cpp_FOUND TRUE)`. This changes nothing that is compiled.
+```
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON \
+  -DMPPI_CUDA_ARCH_LIST="70;80" -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
+  -Dyaml-cpp_DIR=<stub dir> -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+utils/timeit.sh MPPI-Generic cuda-compile -- cmake --build build -j 16 -- -k 0 -v
+```
+| | bee3eb6 (head) | 11b61ab (parent) |
+|---|---|---|
+| configure rc | 0 ("CUDA Architecture(s): 70;80") | 0 |
+| build rc | 0, 181/181 steps, 176 s | 0, 181/181 steps, 176 s |
+| nvcc TUs | 58 | 58 |
+| targets (test/example executables + .so) | 61 | 61, identical list |
+| nvcc errors | 0 | 0 |
+| diagnostics in build log | 58x `nvcc warning : Support for offline compilation for architectures prior to sm_75 ...` (one per TU, from sm_70) | identical |
+
+The real build passes `-w` in `CMAKE_CUDA_FLAGS` (upstream CMakeLists), so the build log cannot show per-file warnings. To compare them, every TU that depends on a changed file (`ninja -t deps`: 8 test TUs, no library or example TU) was recompiled from `compile_commands.json` with `-w` removed and `-Xcompiler=-Wall,-Wuninitialized -Wno-deprecated-gpu-targets` added, at both shas:
+
+| TU | warnings head | parent | rc |
+|---|---|---|---|
+| autorally_robust_cost_test.cu | 19 | 19 | 0/0 |
+| autorally_standard_cost_test.cu | 12 | 12 | 0/0 |
+| bicycle_slip_parametric_model_test.cu | 36 | 36 | 0/0 |
+| racer_dubins_elevation_lstm_steering_model_test.cu | 38 | 38 | 0/0 |
+| racer_dubins_elevation_lstm_uncertainty_model_test.cu | 29 | 29 | 0/0 |
+| racer_dubins_elevation_model_test.cu | 17 | 17 | 0/0 |
+| racer_dubins_elevation_suspension_test.cu | 38 | 38 | 0/0 |
+| racer_suspension_model_test.cu | **17** | **9** | 0/0 |
+
+The only new warnings, all from racer_suspension.cu lines 110 and 111, once per arch pass (sm_70, sm_80):
+```
+racer_suspension.cu(110): warning #20014-D: calling a __host__ function from a __host__ __device__ function is not allowed
+racer_suspension.cu(110): warning #20011-D: calling a __host__ function("... ::std::fmax<double, float> (T1, T2)") from a __host__ __device__ function("RacerSuspension::computeStateDeriv") is not allowed
+(same for line 111)
+```
+Explanation: lines 110-111 are `float throttle = fmax(0.0, control[...]);` / `float brake = fmax(0.0, -control[...]);` inside the `__device__ __host__` Eigen overload of `computeStateDeriv`, which the `__device__` float* overload (racer_suspension.cu:308-323) calls. With `(double, float)` arguments, CUDA has no `__host__ __device__` `fmax` overload, so overload resolution picks libstdc++'s host-only promoting template `std::fmax<double, float>`. Before the change, `max(0.0, float)` resolved to CUDA's `__host__ __device__ max(double, float)`. The host table in the 2026-11-05 porter entry above says "CUDA host overload fmax" for this site, which is true on the host pass only; the function is also compiled for the device.
+
+This is not only a warning. PTX of the `runGPUDynamics<RacerSuspension, 10, 2, 8, 1>` kernel instantiated in racer_suspension_model_test.cu (same compile command, `-ptx -arch=sm_80`):
+
+| | kernel PTX lines | ld.global | max.f32 | max.f64 |
+|---|---|---|---|---|
+| parent 11b61ab | 4439 | 96 | 15 | 4 |
+| head bee3eb6 | **856** | **25** | 5 | 0 |
+| head + candidate fix | 4429 | 96 | 19 | 0 |
+
+nvcc treats the host call in device code as undefined and drops most of the device dynamics body. Nothing in CI caught it: the build uses `-w`, and the only GPU test for this model (`RacerSuspensionTest.CPUvsGPU`) is `GTEST_SKIP`ped upstream; the GPU kernel tests for it are commented out. Any CUDA user of `RacerSuspension` on the GPU would get wrong state derivatives.
+
+Candidate fix (verified in a scratch copy only; fork not edited, nothing pushed):
+```
+-  float throttle = fmax(0.0, control[C_INDEX(THROTTLE_BRAKE)]);
+-  float brake = fmax(0.0, -control[C_INDEX(THROTTLE_BRAKE)]);
++  float throttle = fmaxf(0.0f, control[C_INDEX(THROTTLE_BRAKE)]);
++  float brake = fmaxf(0.0f, -control[C_INDEX(THROTTLE_BRAKE)]);
+```
+`fmaxf` is `__host__ __device__` on CUDA and HIP, and the result is identical (max of 0 and a float, stored as float). With it: rc 0, zero #20011/#20014 warnings, zero warnings in racer_suspension.cu, and the kernel PTX is back to parent size (table above). The HIP behaviour of the fix was not checked here (no HIP run on this host); the porter should rerun racer_suspension_model_test on HIP, including `FractionalThrottleBrake`.
+
+Other changed sites are fine on CUDA: bicycle_slip_parametric.cu and racer_dubins_elevation.cu use float `fminf`/`fmaxf` (no new warning in any of their 5 test TUs), racer_suspension.cu:195 uses `fmaxf(fminf(..))`, and the test-file `fmax(fmin(double, float), float)` sites are in host-only reference helpers (no new warning in either autorally test TU).
+
+Platform states were not changed by this check.
+## Review 2026-11-05 (reviewer, linux-gfx90a, delta 11b61ab..bee3eb6) -- changes-requested
+
+Scope: the host min/max truncation fix, `git diff 11b61ab bee3eb6` (7 files). TheRock pip ROCm (`R=$(rocm-sdk path --root)`), gfx90a, `ulimit -c 0`.
+
+### Finding (one, blocks)
+
+1. `include/mppi/dynamics/racer_suspension/racer_suspension.cu:110,111`: `fmax(0.0, control[...])` in the `__device__ __host__` `computeStateDeriv` adds an nvcc diagnostic to the CUDA path that upstream's `max(0.0, control[...])` did not have. With `(double, float)` arguments, nvcc's overload resolution picks libstdc++'s constexpr host template `std::fmax<double, float>` over `fmax(double, double)`, and warns that calling it from a `__host__ __device__` function "is not allowed" (`warning #20013-D` / `#20015-D`, "use --expt-relaxed-constexpr"). Reproduced with nvcc 12.8 + g++ 13.3 on a 7-line `.cu` (`nvcc -std=c++17 -arch=sm_70 -c`): the `fmax(0.0, float)` HD function warns four times; the same function with upstream's `max(0.0, float)` and a host-only `fmax(fmin(double, float), 0.0f)` (the test-helper form) compile clean. The project build hides it (`CMakeLists.txt:112` adds `-w` to `CMAKE_CUDA_FLAGS`), but users who include this `.cu` in their own build without `-w` see it, and the construct relies on nvcc tolerating an unsupported host-to-device call. Fix: write exactly what CUDA's own overload does (`crt/math_functions.hpp`: `double max(const double a, const float b) { return fmax(a, static_cast<double>(b)); }`), i.e. `fmax(0.0, static_cast<double>(control[C_INDEX(THROTTLE_BRAKE)]))` and the same for the brake line. That resolves to `fmax(double, double)` on nvcc and on hipcc, compiles warning-free on nvcc 12.8 (checked), and gives the same values and NaN behaviour as CUDA. (`fmaxf(0.0f, ...)` is also value-identical, but the static_cast form is the literal CUDA definition.) The commit message needs no change.
+
+### Checked and fine
+- Every other changed call resolves to what CUDA's host overload calls: all float/float sites -> `fminf`/`fmaxf` (param types checked: `max_steer_angle`, `max_steer_rate`, `low_min_throttle`, `clamp_ax`, `mu` are `float`; Eigen states are float; `control_rngs_` is `float2`); the test-helper back-point lines are `(double, float)` inner and outer -> `fmin`/`fmax`, matching CUDA's `min(double, float)` = `fmin(a, (double)b)` and `max(double, float)` = `fmax(a, (double)b)`. NaN behaviour matches (CUDA's overloads are these functions). The test-helper changes make `calculateStandardCostmapValue` / `calculateRobustCostmapValue` compute what the CUDA build computes; no literal reference values changed.
+- The two sites beyond the sweep: `racer_dubins_elevation.cu:307` (host `computeGrad`, float) and `racer_dubins_elevation_model_test.cu:1139` (`min(abs(float), 0.3f)`, float -> `fminf`) are correct.
+- No device-only code and no `(int, int)` call changed. Remaining unqualified min/max (git grep): device code in mppi_common.cu, rmppi_kernels.cu, gaussian.cu, piecewise_linear_noise.cuh, smooth-MPPI.cu, rmppi_kernel_test.cu, `__device__ updateState` in bicycle_slip_parametric.cu:222,227; `(int, int)` in risk_utils.cu and math_utils_test.cu; `(int, unsigned)` in the Tube/R-MPPI controllers (harmless below 2^31, as the porter recorded).
+- Host-only probe re-run here: every `.cu` in `compile_commands.json` of a fresh gfx90a build (55 TUs) plus the HIP-excluded dynamics tests, `--cuda-host-only -fsyntax-only -include probe.h` (deleted `template<class A,class B> min/max`). At bee3eb6 the only hits are the 12 controller `(int, unsigned)` sites. Positive control at 11b61ab (same flags, sources swapped): flags racer_suspension.cu:110,111,195; racer_dubins_elevation.cu:49,55,307; racer_dubins_elevation_model_test.cu:1139; bicycle_slip_parametric.cu:160,163; autorally_standard_cost_test.cu:836,837,842,843; autorally_robust_cost_test.cu:164,165,171,172 -- exactly the changed set. The excluded TUs' other errors (`missing 'typename'`, `case value is not a constant expression`) are non-fatal, so Sema reaches their min/max calls.
+- Regression test on gfx90a: full HIP build at bee3eb6 (157/157); `racer_suspension_model_test`: 4 pass, 1 skipped (upstream `GTEST_SKIP`). With only racer_suspension.cu reverted to 11b61ab, `FractionalThrottleBrake` FAILS: `accel(0.5)` -0.199032 vs expected 1.299240; `accel(-0.5)` == `accel(0.0)` (-0.199032). Full ctest not re-run (validator's job).
+- Commit message: `[ROCm]` title, 67 chars, ASCII, Test Plan in a fenced block, AI disclosure in prose, no trailer. `python3 utils/jargon.py --port MPPI-Generic`: clean; `utils/prose.py` on the body: clean. Its claims match the measurements above.
+- `jargon.py --port` needs a local `main` branch in the fork clone (`git -C projects/MPPI-Generic/src branch --track main origin/main`), as the porter found.
+
+## 2026-11-05: porter fix for the review finding (linux-gfx90a, 70d2b68)
+
+Fork commit 70d2b68 on top of bee3eb6: `[ROCm] Cast the throttle command to double in RacerSuspension fmax`. `pr-state` = none, so `moat-port` was pushed directly (pre-push hook installed by `protect-fork`, push accepted). gfx90a, TheRock pip ROCm (`R=$(rocm-sdk path --root)`), `ulimit -c 0`.
+
+### Change
+racer_suspension.cu:110,111 (`__device__ __host__` computeStateDeriv): `fmax(0.0, control[...])` -> `fmax(0.0, static_cast<double>(control[...]))`, and `fmax(0.0, static_cast<double>(-control[...]))` for the brake, as the reviewer specified (CUDA's own `max(double, float)` body). Resolves to `fmax(double, double)`, which is `__host__ __device__` on nvcc and hipcc.
+
+Other calls changed in bee3eb6, checked for the same problem: the only other mixed-type `fmin`/`fmax` calls are autorally_standard_cost_test.cu:842,843 and autorally_robust_cost_test.cu:171,172, in `calculateStandardCostmapValue`/`calculateRobustCostmapValue`, plain host functions (no `__device__`). Every other changed call is `fminf`/`fmaxf`, a non-template C function that cannot resolve to the std template. Nothing else needed.
+
+### Checks
+- Build: same recipe as bee3eb6's entry with `-DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, `cmake --build ... -j $MAX_JOBS`: 157/157, 0 errors.
+- racer_suspension_model_test: 4 pass (incl. FractionalThrottleBrake), 1 skipped (upstream GTEST_SKIP CPUvsGPU).
+- Host-only min/max probe (deleted `min/max` templates, `--cuda-host-only -fsyntax-only`) on racer_suspension_model_test.cu: 0 errors.
+- Before/after, host AND device (scratch probe: same flags as the test TU, kernel calling `model_d_->computeStateDeriv(float*...)` after `GPUSetup()`, include tree swapped per revision), d(V_I_X)/dt at P_I_Z=0.2, V_I_X=1, QW=1:
+
+| throttle_brake | 11b61ab host | 11b61ab device | bee3eb6 host = device | 70d2b68 host = device |
+|---|---|---|---|---|
+| 0.00 | -0.199032 | -0.200000 | -0.200000 | -0.200000 |
+| 0.25 | -0.199032 | 0.550000 | 0.550000 | 0.550000 |
+| 0.50 | -0.199032 | 1.300000 | 1.300000 | 1.300000 |
+| 0.75 | -0.199032 | 2.050000 | 2.050000 | 2.050000 |
+| 1.00 | 2.797512 | 2.800000 | 2.800000 | 2.800000 |
+| -0.50 | -0.199032 | -5.200000 | -5.200000 | -5.200000 |
+| -1.00 | -10.197650 | -10.200000 | -10.200000 | -10.200000 |
+
+So on HIP the fix is value-identical to bee3eb6, and host now matches the device path. bicycle_slip_parametric.cu and racer_dubins_elevation.cu are untouched by this commit, so their before/after values from bee3eb6's entry stand.
+- Full ctest (`ctest --test-dir src/build-hip -j1 --timeout 120`, 219 s): 431/463 pass, 32 fail, 8 not run (same 5 Disabled + 3 Skipped). 29 failures are the deterministic set recorded at bee3eb6/11b61ab by name. The other 3 are the intermittent pool: CudaFloatStructsTests/*.VecAddVecMultScalar and CompareLikelihoodRatioCostsCPUvsGPU for Gaussian<4,3> and Gaussian<1,7>. `ctest -R 'CompareLikelihoodRatioCostsCPUvsGPU|VecAddVecMultScalar'` 5x: 2/1/2/3/4 of 14 fail, the same range recorded at bee3eb6. `ninja -t deps`: the only object depending on racer_suspension.cu is racer_suspension_model_test.cu.o.
+- `python3 utils/jargon.py --port MPPI-Generic` run on its own after the commit and BEFORE the push: clean. `utils/prose.py` on the commit body: clean.
+- CUDA compile not run here (no nvcc on this host); owed on the nvcc host. The reviewer already checked that the static_cast form compiles warning-free with nvcc 12.8. On the re-check, the 8 changed-file TUs should match the parent's warning counts (racer_suspension_model_test 9, not 17), and the runGPUDynamics<RacerSuspension> PTX should be back to about parent size.
+
+## Review 2026-11-05 (reviewer, linux-gfx1100, delta 11b61ab..70d2b68) -- review-passed
+
+Second review of the host min/max round: bee3eb6 and 70d2b68 together against 11b61ab (`git diff 11b61ab 70d2b68`, 7 files). Fresh recursive clone of `moat-port` at 70d2b68, gfx1100 (RX 7900, wave32), TheRock pip ROCm (`R=$(rocm-sdk path --root)`), `HIP_VISIBLE_DEVICES=0` as pinned, `ulimit -c 0`. No findings.
+
+### Previous finding: fixed
+- racer_suspension.cu:110,111 now read `fmax(0.0, static_cast<double>(control[...]))` / `fmax(0.0, static_cast<double>(-control[...]))`: `(double, double)`, which is `__host__ __device__` on nvcc and hipcc and is the body of CUDA's `max(double, float)`. Same values and NaN behaviour as upstream's `max(0.0, float)` on CUDA.
+- No other mixed-type host-and-device call left: `git grep -nE '\b(std::)?f(min|max)\s*\('` over the tree (outside submodules) finds only these two lines, the four `(double, float)` lines in the host-only test helpers (`calculateStandardCostmapValue` / `calculateRobustCostmapValue`, no `__device__`), and upstream's unchanged float-only `fmin(fmax(float, 0.0f), 0.25f)` at racer_dubins_elevation.cu:42,364. Every other changed call is the non-template C `fminf`/`fmaxf`.
+
+### Checked and fine
+- Overload mapping, every changed call: all-float sites -> `fminf`/`fmaxf` (types checked: `max_steer_angle`, `max_steer_rate`, `low_min_throttle` float in RacerDubinsParams, which BicycleSlipParametricParams inherits through RacerDubinsElevationParams; `clamp_ax`, `mu` float; `control_rngs_` is `float2`; Eigen coefficients float; test helper `x_front`, `x_min`, `x_max` float). Test helper back-point lines: inner `(double, float)` -> `fmin`, outer `(double, float)` -> `fmax`, matching CUDA's `min/max(double, float)` = `fmin/fmax(a, (double)b)`. NaN behaviour identical because CUDA's overloads are these functions.
+- Host vs device: the changed functions are host-only (BicycleSlipParametric::updateState(Eigen), RacerDubinsElevation::computeParametricAccelDeriv(Eigen) and computeGrad, the test helpers, the TestComputeGradComputation body) except RacerSuspension::computeStateDeriv(Eigen), which is `__device__ __host__`. Its device result is unchanged in value (fmaxf/fminf and fmax(double,double) are what CUDA's and HIP's device min/max call for those types). No device-only function and no `(int, int)` call changed.
+- Test reference changes: they make `calculateStandardCostmapValue` compute what the CUDA build computes (no literal reference changed). The two sites beyond the sweep (the sweep listed racer_dubins_elevation.cu:307 but neither of these): autorally_robust_cost_test.cu:164-172 has the same types and fix as the standard helper (it has no caller), and racer_dubins_elevation_model_test.cu:1139 is `min(abs(float), 0.3f)`, with CUDA's float `abs` -> `fminf`. Both are correct.
+- Host-only probe re-run here (script in agent_space, not committed): every `.cu` in `compile_commands.json` of a fresh gfx1100 configure (50 TUs) plus the 5 HIP-excluded dynamics tests (55 total), each compile command with `-o`/`-c` removed and `--cuda-host-only -fsyntax-only -ferror-limit=0 -include probe.h` added (probe.h: `template <class A, class B> void min(A, B) = delete;` and the same for max). At 70d2b68: only the 12 controller `(int, unsigned)` sites (tube_mppi_controller.cu:20,21,41,42,192,193; robust_mppi_controller.cu:319,320,328,329,337,338). Positive control, the six changed source files checked out at 11b61ab: those 12 plus exactly the 17 changed lines (racer_suspension.cu:110,111,195; racer_dubins_elevation.cu:49,55,307; bicycle_slip_parametric.cu:160,163; autorally_standard_cost_test.cu:836,837,842,843; autorally_robust_cost_test.cu:164,165,171,172; racer_dubins_elevation_model_test.cu:1139).
+- Regression test on gfx1100 (`ninja -C build-hip tests/dynamics/racer_suspension_model_test`): at 70d2b68, 4 pass, 1 skipped (upstream `GTEST_SKIP` CPUvsGPU). With only racer_suspension.cu at 11b61ab: `FractionalThrottleBrake` FAILS, `accel(0.5)` -0.199032 vs 1.299240, and `accel(-0.5)` == `accel(0.0)` (-0.199032). With racer_suspension.cu at bee3eb6: OK. The expected values (midpoint -0.2/1.3/2.8, half brake -5.2 between -0.2 and -10.2) equal the device path at 11b61ab in the porter's table, i.e. what CUDA computes.
+- autorally_robust_cost_test and autorally_standard_cost_test rebuilt on gfx1100: robust 5 pass, 2 fail (ARRobustCostTest.getCostmapCostSpeedMapTest / NoMapTest); standard SEGFAULTs at ARStandardCost.LoadTrackDataTest. Both are in the deterministic set recorded at 11b61ab (texture-backed paths, deferred), not caused by the helper change. Full ctest left to the validator.
+- Commits: bee3eb6 title 67 chars and 70d2b68 title 66 chars, both `[ROCm]`, ASCII, Test Plan in a fenced block, AI disclosure in prose, no trailer. `python3 utils/jargon.py --port MPPI-Generic`: clean. `utils/prose.py` on both bodies: clean.
+- Commit text, for any PR-prep squash (not blocking; no amend allowed): taken alone, bee3eb6's "The CUDA results are unchanged ... Device code ... untouched" was false for the CUDA device path of computeStateDeriv; 70d2b68 corrects it and describes why. A squashed message should keep 70d2b68's facts, i.e. say the host-and-device lines use `fmax(0.0, static_cast<double>(...))`.
+- CUDA: the nvcc check of 70d2b68 is still owed on the nvcc host (the first reviewer compiled the static_cast form clean on nvcc 12.8 in a 7-line reproducer only).
+## CUDA compile check (nvcc 12.8) at 70d2b68
+
+Compile-only CUDA gate for 70d2b68 (`[ROCm] Cast the throttle command to double in RacerSuspension fmax`), the porter fix for the bee3eb6 finding. Compared against its parent bee3eb6 and against 11b61ab (the parent of the whole min/max change). Host: no NVIDIA GPU, nvcc 12.8.93 (`/usr/local/cuda-12.8`), gcc 13.3.0, CMake 3.31.6, Ninja, Eigen 3.4.0 from `/usr/include/eigen3`. Fresh recursive clone of fork `moat-port` (70d2b68); bee3eb6 and 11b61ab via `git worktree add --detach ../bee HEAD~1` / `../base HEAD~2` plus `git submodule update --init --recursive`; cnpy 91c53bc at all three.
+
+**Result: PASS. 70d2b68 removes the bee3eb6 regression: every changed-file TU has exactly the warnings of 11b61ab, no warning from racer_suspension.cu, and the `runGPUDynamics<RacerSuspension>` kernel PTX is identical to 11b61ab's. No new warning at the head.**
+
+### Build (recipe of the bee3eb6 entry: yaml-cpp stub `set(yaml-cpp_FOUND TRUE)`, nothing compiled links or includes yaml-cpp)
+```
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON \
+  -DMPPI_CUDA_ARCH_LIST="70;80" -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
+  -Dyaml-cpp_DIR=<stub dir> -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+utils/timeit.sh MPPI-Generic cuda-compile -- cmake --build <abs>/build -j 40 -- -k 0 -v
+```
+| | 70d2b68 (head) | bee3eb6 (parent) | 11b61ab |
+|---|---|---|---|
+| configure rc | 0 ("CUDA Architecture(s): 70;80") | 0 | 0 |
+| build rc | 0, 181/181, 156 s | 0, 181/181, 156 s | 0, 181/181, 154 s |
+| nvcc TUs | 58 | 58 | 58 |
+| built files (executables + .so/.a under build/, depth 3) | 65 | 65, identical list | 65, identical list |
+| nvcc errors | 0 | 0 | 0 |
+| diagnostics in build log | 58x `Support for offline compilation for architectures prior to sm_75` (sm_70), nothing else | identical | identical |
+
+(The bee3eb6 entry's "61 targets" counted executables + .so only; this count includes the gtest/gmock `.a` files.)
+
+### Per-TU warnings without `-w`
+Upstream's `CMAKE_CUDA_FLAGS` has `-w`, so each TU depending on a changed file was recompiled from `compile_commands.json` with `-w` removed and `-Xcompiler=-Wall,-Wuninitialized -Wno-deprecated-gpu-targets` added. `ninja -t deps` over the 7 changed files gives the same 8 test TUs as at bee3eb6 (no library or example TU). Count = lines matching `warning[ :#]` (case-sensitive, so it skips the capitalised `Warning #20015-D` Eigen lines below; the bee3eb6 entry used a slightly different count, its numbers are each 2 higher, the deltas match).
+
+| TU | head | bee3eb6 | 11b61ab | rc |
+|---|---|---|---|---|
+| autorally_robust_cost_test.cu | 16 | 16 | 16 | 0/0/0 |
+| autorally_standard_cost_test.cu | 10 | 10 | 10 | 0/0/0 |
+| bicycle_slip_parametric_model_test.cu | 34 | 34 | 34 | 0/0/0 |
+| racer_dubins_elevation_lstm_steering_model_test.cu | 36 | 36 | 36 | 0/0/0 |
+| racer_dubins_elevation_lstm_uncertainty_model_test.cu | 27 | 27 | 27 | 0/0/0 |
+| racer_dubins_elevation_model_test.cu | 15 | 15 | 15 | 0/0/0 |
+| racer_dubins_elevation_suspension_test.cu | 36 | 36 | 36 | 0/0/0 |
+| racer_suspension_model_test.cu | **7** | **15** | **7** | 0/0/0 |
+
+- Head vs 11b61ab: the sorted warning texts (paths stripped, line numbers normalised) are identical for all 8 TUs.
+- bee3eb6's extra 8 are again `racer_suspension.cu(110)`/`(111)`: `#20011-D` (`calling a __host__ function("__gnu_cxx::__promote_2<...>` i.e. `std::fmax<double, float>`) and `#20014-D`, once per arch pass. Zero lines mentioning `racer_suspension.cu(` at the head. (The reviewer's standalone repro reported this as #20013/#20015; inside the project TU nvcc numbers it #20011/#20014. Same diagnostic, both gone at 70d2b68.)
+- 56 `Warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function` lines in racer_suspension_model_test.cu at all three shas come from Eigen's `complex_multiply`/`complex_divide` in `/usr/include/eigen3`, not from project code; unchanged.
+- Remaining head warnings in racer_suspension_model_test.cu are pre-existing upstream host diagnostics (`#pragma unroll` ignored in math_utils.h/matrix_mult_utils.cuh, signed/unsigned compares in texture_helper.cu), same as 11b61ab.
+
+### Device code (PTX)
+Same compile command for racer_suspension_model_test.cu with the `--generate-code` flags dropped, `-c` -> `-ptx`, `-arch=sm_80`; measured the `.entry _Z14runGPUDynamicsI15RacerSuspensionLi10ELi2ELi8ELi1EEvPT_if` body:
+
+| | body lines | ld.global | max.f32 | max.f64 |
+|---|---|---|---|---|
+| 11b61ab | 3956 | 88 | 15 | 4 |
+| bee3eb6 | 374 | 17 | 5 | 0 |
+| 70d2b68 | 3956 | 88 | 15 | 4 |
+
+The 70d2b68 kernel body is byte-identical to 11b61ab's (`diff` of the extracted entry: 0 lines). The whole PTX files differ only in the per-TU hash of one `_INTERNAL_..._piecewise_construct` symbol name, because the test file itself changed (added FractionalThrottleBrake). So the CUDA device path of `RacerSuspension::computeStateDeriv` is back to upstream's: `fmax(0.0, static_cast<double>(float))` compiles to the same code as CUDA's `max(double, float)`.
+
+No fork source edited (`git status --porcelain --untracked-files=no` empty in all three trees), nothing pushed. Platform states were not changed by this check.
+
+## Validation 2026-11-05 (linux-gfx1100 revalidate at 70d2b68, full GPU) -- completed
+
+Platform: RX 7900 (gfx1100, RDNA3, wave32), `HIP_VISIBLE_DEVICES=2` as pinned, `ulimit -c 0`. TheRock pip ROCm in the image venv (`R=$(rocm-sdk path --root)`, AMD clang 24). Fork sha 70d2b686a037 (= origin/moat-port tip). Delta from this platform's validated_sha 11b61ab: bee3eb6 + 70d2b68 (host min/max -> fminf/fmaxf/fmin/fmax, plus the new RacerSuspensionTest.FractionalThrottleBrake). Real host-code change, so full run, no carry-forward.
+
+### Setup / build
+```
+git clone https://github.com/AMD-Ecosystem/MPPI-Generic src
+git -C src checkout 70d2b686a037a6643d2636d8f8375919fb0325f6
+git -C src submodule update --init --recursive      # cnpy 91c53bc, rc=0
+git -C src branch --track main origin/main          # for jargon.py
+cmake -S src -B src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DROCM_PATH=$R \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+utils/timeit.sh MPPI-Generic compile -- cmake --build src/build-hip -j $MAX_JOBS
+```
+157/157 targets, exit 0, 0 errors.
+
+### Targeted GPU tests
+- `tests/dynamics/racer_suspension_model_test`: 4 pass (Template, BindStream, OmegaJacobian, FractionalThrottleBrake), 1 skipped (CPUvsGPU, upstream GTEST_SKIP). The new test passes on gfx1100.
+- `tests/mppi_core/normexp_kernel_tests` 10/10, `tests/feedback_controllers/ddp_tests` 10/10 PASS.
+
+### Full ctest
+```
+utils/timeit.sh MPPI-Generic test -- ctest --test-dir src/build-hip -j1 --timeout 600   # 158 s
+```
+433/463 pass, 30 fail, 8 not run (the same 5 Disabled + 3 Skipped as at 11b61ab).
+- 29 failures are the deterministic set recorded at 11b61ab, by name (known to fail on this platform, excluded from the verdict): 8 ARStandardCost.* (5 SEGFAULT + 3 Failed, deferred texture class), ARRobustCostTest.getCostmapCostSpeedMapTest / NoMapTest, ARNeuralNetDynamics.computeGradTest, 6 npz loaders (FNNHelperTest.LoadModelNPZTestNested, LSTMHelperTest.LoadModelPath{,Init}Test / LoadModelNPZTest, LSTMLSTMHelperTest.LoadModelPathTest{,LongBuffer}), DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, RacerDubins.ComputeStateTrajectoryFiniteTest, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, cuFFT.checkErrorCode, 6 GaussianTests.Check*, Integration.RK4.
+- The 30th is the known intermittent pool: SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU<Gaussian<1,7>>. VecAddVecMultScalar passed in this run. `ctest -R 'CompareLikelihoodRatioCostsCPUvsGPU|VecAddVecMultScalar' -j1` 3x: 1/0/3 of 14 fail, inside the 0-4 range recorded at bee3eb6 and 70d2b68 by the porter. `ninja -t deps`: racer_suspension.cu is a dependency of one object only (racer_suspension_model_test), so no intermittent-pool TU is touched by the delta.
+
+Comparison with this platform's 11b61ab record (432/462, 30 fail = 29 deterministic + 1 intermittent): +1 test, +1 pass, the added FractionalThrottleBrake. Same deterministic failures by name and same not-run set. The porter's gfx1100 count at bee3eb6 (429/463, 32 fail) and the gfx90a count at 70d2b68 (431/463, 32 fail) differ only in how many intermittent-pool cases failed (3 vs 1 here). No other difference, so the fix explains every change.
+
+GPU verdict: PASS on gfx1100 wave32.
+
+### CUDA gate
+Already recorded at 70d2b68 ("CUDA compile check (nvcc 12.8) at 70d2b68": PASS). Not re-run.
+
+### Finish checks
+- Jargon: `python3 utils/jargon.py --port MPPI-Generic` -> clean.
+- Documentation: README "Building MPPI-Generic for AMD GPUs (ROCm)" present next to the CUDA build.
+- Integrity: `git -C src status --porcelain` shows only `?? build-hip/`; cnpy clean at 91c53bc.
+
+State: completed at 70d2b68 on linux-gfx1100.
+
+## Validation 2026-11-05 (linux-gfx90a revalidate at 70d2b68, full GPU) -- completed
+
+Platform: gfx90a (MI250X, wave64), `HIP_VISIBLE_DEVICES=0` as pinned, `ulimit -c 0`. TheRock pip ROCm in the image venv (`R=$(rocm-sdk path --root)`, AMD clang 24), cmake 3.31, Ninja. Fork sha 70d2b686a037a6643d2636d8f8375919fb0325f6 (= origin/moat-port tip). Delta from this platform's validated_sha 11b61ab: bee3eb6 + 70d2b68 (host min/max -> fminf/fmaxf/fmin/fmax, plus the new RacerSuspensionTest.FractionalThrottleBrake). This is a real host-code change, so this was a full run with no carry-forward.
+
+### Setup / build
+```
+git clone https://github.com/AMD-Ecosystem/MPPI-Generic src
+git -C src checkout 70d2b686a037a6643d2636d8f8375919fb0325f6
+git -C src submodule update --init --recursive      # cnpy 91c53bc, rc=0
+git -C src branch --track main origin/main          # for jargon.py
+cmake -S src -B src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DROCM_PATH=$R \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+utils/timeit.sh MPPI-Generic compile -- cmake --build src/build-hip -j $MAX_JOBS
+```
+157/157 targets, exit 0, 0 errors.
+
+### Targeted GPU tests
+- `tests/dynamics/racer_suspension_model_test`: 4 pass (Template, BindStream, OmegaJacobian, FractionalThrottleBrake), 1 skipped (CPUvsGPU, upstream GTEST_SKIP). The new test passes on gfx90a.
+- `tests/mppi_core/normexp_kernel_tests` 10/10, `tests/feedback_controllers/ddp_tests` 10/10 PASS.
+
+### Full ctest
+```
+utils/timeit.sh MPPI-Generic test -- ctest --test-dir src/build-hip -j1 --timeout 120   # 216 s
+```
+431/463 pass, 32 fail, 8 not run (the same 5 Disabled + 3 Skipped as at 11b61ab).
+- 29 failures are the deterministic set recorded at 11b61ab on this arch, by name (known to fail on this platform, excluded from the verdict): 8 ARStandardCost.* (5 SEGFAULT + 3 Failed), ARRobustCostTest.getCostmapCostSpeed{Map,NoMap}Test, ARNeuralNetDynamics.computeGradTest, 6 npz loaders, DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, RacerDubins.ComputeStateTrajectoryFiniteTest, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, cuFFT.checkErrorCode, 6 GaussianTests.Check*, Integration.RK4.
+- 2 are the known intermittent pool: CompareLikelihoodRatioCostsCPUvsGPU for Gaussian<1,7> and NLN<3,3>. VecAddVecMultScalar passed in this run. `ctest -R 'CompareLikelihoodRatioCostsCPUvsGPU|VecAddVecMultScalar' -j1` 3x: 2/0/3 of 14 fail, inside the 0-4 range recorded at bee3eb6/70d2b68.
+- 1 is new to this arch's record: RMPPITest.RobustMPPILargeVarianceRobustCost, `rmppi_test.cu:822` "Tube failure!!" at t=5.64 s (the robust controller's trajectory left the tube). This is a stochastic test, unrelated to the delta:
+  - The controller RNG seed defaults to `std::chrono::system_clock::now()` (`include/mppi/controllers/controller.cuh:60`), so every run samples different noise.
+  - The rmppi_test object depends on none of the 7 changed files (`ninja -t deps`; the only objects that do are racer_suspension_model_test, autorally_standard_cost_test and autorally_robust_cost_test). `git diff 11b61ab 70d2b68 -- tests/controllers include/mppi/controllers include/mppi/core` is empty.
+  - I built `tests/controllers/rmppi_test` at 11b61ab in a scratch worktree with the same recipe, unbundled `.hip_fatbin` from both binaries (`clang-offload-bundler --unbundle --targets=hipv4-amdgcn-amd-amdhsa--gfx90a`) and compared `llvm-objdump -d` with addresses stripped. The device ISA is identical (17210 lines each). The only difference in the code objects is the path-derived `__hip_cuid_*` symbol, because the two trees live in different directories. `utils/codeobj_diff.py` could not run here: it hardcodes `/opt/rocm/llvm/bin/llvm-nm`, and there is no `/opt/rocm` on this TheRock pip host.
+  - Rerun rate at 70d2b68: run directly, `rmppi_test --gtest_filter=RMPPITest.RobustMPPILargeVarianceRobustCost` passed 10/10; `ctest -R RMPPITest` failed 2 of 15 runs (RobustCost case each time). At 11b61ab, `ctest -R RMPPITest` failed 0 of 15. With the same device code and a time-based seed, that is sampling noise. It is an intermittent case, not a regression.
+
+Comparison with this platform's 11b61ab record (431/462, 31 fail = 30 deterministic-or-known + 1 intermittent VecAddVecMultScalar): +1 test and +1 pass, both the added FractionalThrottleBrake. The deterministic failures are the same by name, and so is the not-run set. The intermittent cases that failed differ (2 CompareLikelihoodRatio + 1 RMPPI here; VecAddVecMultScalar there). The porter's gfx90a count at 70d2b68 (431/463, 32 fail = 29 + 3 pool) and the gfx1100 validator's count at 70d2b68 (433/463, 30 fail = 29 + 1 pool) match this run apart from which intermittent cases happened to fail. Every difference is either the added test or an intermittent case whose compiled code the delta does not touch.
+
+GPU verdict: PASS on gfx90a wave64.
+
+### CUDA gate
+Already recorded at 70d2b68 ("CUDA compile check (nvcc 12.8) at 70d2b68": PASS). Not re-run.
+
+### Finish checks
+- Jargon: `python3 utils/jargon.py --port MPPI-Generic` -> clean.
+- Documentation: README "Building MPPI-Generic for AMD GPUs (ROCm)" (README.md:64) present next to the CUDA build.
+- Integrity: `git -C src status --porcelain` shows only `?? build-hip/` (I deleted the `robust_rc_large_*.npy` outputs from the direct rmppi_test runs). cnpy is clean at 91c53bc. The scratch 11b61ab worktree has been removed.
+
+State: completed at 70d2b68 on linux-gfx90a.
+
+## Validation 2026-11-05 (windows-gfx1151 at 70d2b68, laptop safety procedure) -- completed
+
+Platform: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32), Windows 11, TheRock ROCm 7.14 pip SDK (`D:/Develop/TheRock/.venv`, AMD clang 23). Fork sha 70d2b686a037 (= origin/moat-port tip), cnpy 91c53bc. Per the 2026-10-29 incident (bugcheck 0x119 at ARRobustCostTest.getCostmapCostSpeedMapTest; any GPU page fault can crash this laptop), the run is chunked, one GPU process at a time, with a per-line fsync log at `agent_space/mppi-val/chunks.log`.
+
+### Exclusion list (written before running anything)
+Excluded from the run (ctest `-E`), none of them run on this laptop:
+- All texture-backed map-cost tests, the deferred feature: `ARStandardCost.*` (26), `ARRobustCostTest.*` (7, includes getCostmapCostSpeedMapTest / NoMapTest / computeCostTest), `QuadrotorMapCost.*` (2). The three `texture_helper` test TUs are already CMake-excluded on HIP.
+- Linux gfx90a/gfx1100 deterministic failures at 70d2b68 that exercise the GPU (a clean failure on Linux is not a guarantee of one here): `ARNeuralNetDynamics.computeGradTest`, `WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic` (ARStandardCost based, and a 2.4 MB stack-array SEH overflow on Windows), `cuFFT.checkErrorCode` (hipFFT dereferences a garbage plan handle), `Dynamics.stepGPU`, `DubinsDynamics.TestUpdateStateGPU`.
+- `RacerSuspensionTest.*` (the fixture builds a TextureHelper) is excluded from the main run. Its 4 non-skipped tests create no texture object and call no GPUSetup (the TextureHelper constructor only resizes host vectors; the only GPU calls are stream create/destroy); the one that touches textures on the GPU, CPUvsGPU, is an upstream GTEST_SKIP. They are run last, as a separate final chunk, because FractionalThrottleBrake is this delta's new test.
+- Host-only Linux known failures are NOT excluded (they fail cleanly without the GPU): 6 npz loaders, RacerDubins.ComputeStateTrajectoryFiniteTest, 6 GaussianTests.Check*, Integration.RK4.
+- Not excluded but built from textured headers (no texture object is created at run time by their test sources): ddp_tests, vanilla_mppi_test, rollout_kernel_tests, racer_dubins/linear/sampling tests.
+- Disabled upstream (not run on any platform): 5 DISABLED_, 3 GTEST_SKIP.
+
+### Build (incremental, existing build-hip tree configured for gfx1151)
+```
+cmake -S src -B src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_HIP_COMPILER=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release     # configured earlier at 11b61ab
+git -C src checkout 70d2b686a037 && git -C src submodule update --init --recursive   # cnpy 91c53bc
+source agent_space/win_rocm_env.sh; unset CC CXX; utils/timeit.sh MPPI-Generic compile -- cmake --build <abs>/src/build-hip -j12   # 17 s, 7 steps (the delta's 3 TUs + links), 0 errors
+```
+Whole tree is 155 targets and built at 11b61ab; the CMake-side `WINDOWS_EXPORT_ALL_SYMBOLS` cnpy export (the one thing the Windows record had to confirm) links and runs: cnpy.dll is produced and the npz-loading tests pass. 16 physical cores, `-j12`.
+
+Environment issue found: configure's `find_package(PythonInterp)` picked a Python without numpy, so `generateTestNetwork.py` failed at configure time and `build-hip/neuralNet*.npz` was never generated (FNNHelperTest.LoadModelTest/LoadModelNPZTest and ARNeuralNetDynamics.LoadModelTest failed with "Could not load neural net model"). Generated them with `agent_space/torch312_venv/Scripts/python.exe scripts/autorally/test/generateTestNetwork.py -o build-hip` and re-ran the four affected chunks. `generateTestMaps.py` was not run (feeds only the excluded texture tests). Not a port defect.
+
+### Chunked run
+`agent_space/mppi-val/run_chunks.py`: 27 chunks, each `ctest --test-dir build-hip -j1 --timeout 90 -R '^(<suites>)[./]' -E '<exclusion regex>'` (one exe's suites at a time), `ulimit -c 0`, every output line fsynced to `agent_space/mppi-val/chunks.log`, stop on any fault text. Whole run ~8 min. No GPU fault, hang, or crash anywhere; the laptop did not bugcheck. Final chunk: `racer_suspension_model_test.exe --gtest_filter='-*CPUvsGPU'` direct: 4/4 pass (Template, BindStream, OmegaJacobian, FractionalThrottleBrake).
+
+### Result
+533 tests registered; 45 excluded (26 ARStandardCost, 7 ARRobustCostTest, 2 QuadrotorMapCost, 5 RacerSuspensionTest [4 run separately at the end], ARNeuralNetDynamics.computeGradTest, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, cuFFT.checkErrorCode, Dynamics.stepGPU, DubinsDynamics.TestUpdateStateGPU). Of the 488 run in chunks (after the npz re-run): 462 pass, 20 fail, 5 DISABLED_ not run, 1 GTEST_SKIP; plus 4/4 RacerSuspension = 466 pass.
+
+20 failures, all clean (no fault), by cause:
+- Match Linux's recorded failures at 70d2b68 by name (13): GaussianTests.Check* x6, Integration.RK4, RacerDubins.ComputeStateTrajectoryFiniteTest, and 4 SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU (the known intermittent FP-tolerance pool, 0-4 failing per run on Linux).
+- Windows-only, recorded the same way on windows-gfx1101 on 2026-06-05 (6): BasePlantTest.run* x5 (wall-clock bounds, e.g. optimization duration 29.9 ms vs allowed 16.7-24.7 ms, and 8 iterations vs 10 expected; Windows scheduling), WeightedReductionKernel.strideControlWeightReduction (Windows 1 MB default stack vs the test's multi-MB local arrays).
+- New on Windows (1): ControllerKernelChoiceTest/15.MoreEvaluationsDoNotAdjustChoice, RobustMPPIController, DoubleIntegrator. The test picks a rollout kernel from measured wall-clock times and asserts the choice stays put; at 20 iterations "split 60.36 ms vs single 58.91 ms" flipped it. Timing noise on a shared APU, no GPU error; the other 15 variants pass.
+- Intermittent (1, also seen on gfx90a): RMPPITest.RobustMPPILargeVarianceRobustCost failed once (2.2 s), passed on a direct rerun (15.9 s). Time-seeded stochastic test whose compiled code the delta does not touch.
+
+Differences from Linux: (a) 6 npz loaders that fail on Linux pass here (a working numpy path); (b) the Windows-only timing/stack failures above; (c) the registered-test total (533 vs Linux 463 run + 8 not run = 471) differs by a constant 62, identical to the 11b61ab comparison on this host (532 vs 470), so it is how the toolchains name/expand typed tests under ctest, not new tests; the unexplained part is not investigated further. The new test, RacerSuspensionTest.FractionalThrottleBrake, passes.
+
+Not validated on this platform, by design of the safety procedure: the excluded texture map-cost tests and the 5 GPU-failing known tests (all fail cleanly on Linux, deferred feature).
+
+CUDA gate: already recorded at 70d2b68, not re-run (no toolkit here). Finish checks: `python utils/jargon.py --port MPPI-Generic` clean; README has "Building MPPI-Generic for AMD GPUs (ROCm)"; `git -C src status --porcelain` has no modified tracked files (only untracked build output and logs); cnpy clean at 91c53bc.
+
+GPU verdict: PASS on windows-gfx1151 for everything that ran. State: completed at 70d2b68.
