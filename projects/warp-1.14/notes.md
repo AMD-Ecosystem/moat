@@ -8684,3 +8684,7 @@ So AMD's shipped 1.13 code does show late writes, in the alloc_on_s2 case, every
 ## Ruling on the library build's use of -j (jeff, 2026-11-20)
 
 "(a) Leave it". `build_lib.py` keeps upstream's half-of-`-j` split. All six session 20/21 questions are now ruled: fp-contract (b, `e92f2611`), free-ordering test (a, `e88cf857`), refit (b, session 24 in progress), ray traversal (a), Cholesky (a), build -j (a).
+
+## Ruling on a Warp workaround for the lost-writes defect (jeff, 2026-11-20)
+
+"(a)": no workaround in Warp; a known-issue entry in the release notes: "On MI300X and MI355X, arrays allocated with the memory pool disabled can lose kernel writes when other processes share the GPU (ROCm/rocm-systems#16355). Keep the memory pool enabled, which is the default." Validators on gfx942/gfx950 that see the `test_async` pool-off copy failures in a full run rerun those tests alone and record both results; no skip.
