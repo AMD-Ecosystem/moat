@@ -154,3 +154,7 @@
 {"kind":"phase","ts":"2026-11-20T00:23:43Z","phase":"test","seconds":0.491,"exit":4,"cmd":"/d/Develop/moat/agent_space/torch312_venv/Scripts/python.exe -m pytest quest/tests -p no:cacheprovider -v -rs"}
 {"kind":"phase","ts":"2026-11-20T00:24:16Z","phase":"test","seconds":18.125,"exit":0,"cmd":"/d/Develop/moat/agent_space/torch312_venv/Scripts/python.exe -m pytest D:/Develop/moat/agent_space/wt-mark/Quest/projects/Quest/src/quest/tests --rootdir D:/Develop/moat/agent_space/wt-mark/Quest/projects/Quest/src -p no:cacheprovider -v -rs"}
 {"kind":"session","ts":"2026-11-20T00:25:35Z","epoch":1795134335.246976,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-20T01:48:12Z","phase":"compile","seconds":28.531,"exit":0,"cmd":"bash agent_space/quest/build_readme.sh"}
+{"kind":"phase","ts":"2026-11-20T02:04:17Z","phase":"compile","seconds":555.225,"exit":0,"cmd":"bash agent_space/quest/build_readme.sh"}
+{"kind":"phase","ts":"2026-11-20T02:04:35Z","phase":"test","seconds":0.283,"exit":4,"cmd":"python -m pytest quest/tests -p no:cacheprovider -q -rs"}
+{"kind":"phase","ts":"2026-11-20T02:05:16Z","phase":"test","seconds":34.349,"exit":0,"cmd":"python -m pytest /var/lib/jenkins/fleet/jobs/mi300b-20261119-164318-quest-prefill-prompt/moat/projects/Quest/src/quest/tests -p no:cacheprovider -q -rs --rootdir=/var/lib/jenkins/fleet/jobs/mi300b-20261119-164318-quest-prefill-prompt/moat/projects/Quest/src"}

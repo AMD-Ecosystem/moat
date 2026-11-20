@@ -3458,3 +3458,91 @@ State: windows-gfx1151 `completed` at `2b938d8` (windows gate).
 ## Ruling 2026-11-20 (jeffdaily): prefill on the matrix cores before the upstream pull request
 
 jeffdaily ruled on 2026-11-20 that the deferral `quest-prefill-matrix-cores` is "now": the port's prefill attention must use AMD's matrix cores before the upstream pull request is sent. The pull request is held. The validated port is fork head `2b938d8`; commits go on top of `moat-port` as it is, plain pushes, never rewriting (a clean two-commit history of the same content exists on jeff's machine and will be rebuilt later). No upstream pull request is open. The design is in plan.md, "Plan 2026-11-20".
+
+## Porter round 2026-11-20 (linux-gfx942): prefill on the matrix cores -- fork `6c06912`
+
+One commit on `2b938d8`, plain push (`2b938d8..6c06912`), nothing rewritten: `6c06912` `[ROCm] Run prefill attention on AMD matrix instructions` (`kernels/include/prefill/prefill_matrix_core.cuh` new, 704 lines; `kernels/include/prefill/prefill.cuh` +104, all inside `#if defined(USE_HIP)` / `#if defined(QUEST_PREFILL_MMA)`; `kernels/include/hip_compat/README.md` +4). Design (a) of the plan, "Plan 2026-11-20". Host: whole MI300X (304 CUs, `gfx942:sramecc+:xnack-`), `HIP_VISIBLE_DEVICES=1`, PyTorch 2.16.0a0+git6c3af02 / HIP 7.16.26385 (pip ROCm SDK 10.1), Python 3.11.17 (`/opt/python-3.11-venv`), CMake 3.31.6.
+
+### What the kernel does now on a matrix-core GPU
+
+- `QUEST_PREFILL_MMA` is defined by the new header only in device passes: 1 for gfx90a/gfx94x/gfx950 (MFMA 16x16x16 f16 / bf16_1k), 11 for `__GFX11__` (WMMA `_w32`), 12 for `__GFX12__` (WMMA `_w32_gfx12`). Host pass and every other target (gfx908, gfx10xx, ...) keep the shuffle emulation in `hip_compat/flashinfer/mma.cuh` unchanged.
+- S^T = K Q^T, so the D layout (lane = query column l % 16) is the B layout of O^T = V^T P^T: P goes from registers into the second product with no shuffles on MFMA and gfx12, one xor-16 exchange per tile on gfx11. Softmax row state per lane, reduced across the column's lane groups (xor 16, and 32 on wave64); the denominator is kept as per-lane partial sums and reduced once at the end. A wave64 holds two of the kernel's 32-lane warps (contiguous rows), so it works on 2 * num_frags_x query tiles.
+- Q in registers when `num_q_tiles * num_frags_y * op_elems / 2 <= 64` (MFMA and gfx12; not gfx11, whose operands carry all 16 k per lane), output written straight from registers: shared memory then holds only K and V (32 KB at head_dim 128), two threadblocks per CU. The host reads `matrix_core::prefill_mma_shape`, a `static __device__` constant set per device pass, with `hipMemcpyFromSymbol` (cached per device) and sizes dynamic shared memory with the same `q_in_registers` function, so host and device cannot disagree and no arch list is duplicated on the host.
+- V stored transposed in LDS (`vt_offset`, 128-bit chunks XOR-permuted by `d % (2 * num_frags_z)`), so the V^T operand is one 8/16-byte read.
+- No `cp.async` on AMD: K/V tiles are loaded into registers one phase ahead (`page_load_kv` before the product, `page_store_kv` after the barrier). The paged pointers are always in bounds (`protective_get_*_ptr`), so loads are unconditional and only the LDS stores are predicated.
+- Softmax exponent through `__builtin_amdgcn_exp2f` (`v_exp_f32`, the counterpart of PTX `ex2.approx`).
+
+### How each step paid (standalone harness, 4096 x 4096 causal, 32 x 128, fp16)
+
+| step | ms |
+|---|---|
+| `2b938d8` emulation | 100.6 |
+| MFMA tile, S^T layout | 3.11 |
+| + batched loads (no change: not the bottleneck) | 3.10 |
+| + register prefetch (first try 3.66: HIP `uint4` kept the array in scratch, 128 B/lane; a native `ext_vector_type(4)` fixed it) | 2.44 |
+| + V transposed in LDS, `v_exp_f32` | 1.97 |
+| + Q in registers, LDS for K/V only (2 blocks/CU) | 1.06 |
+
+Ablation that found the V read: with the first MFMA version, dropping the PV product saved 1.15 ms, dropping QK 0.3 ms; the transposed V operand was 4 `ds_read_u16` per MFMA.
+
+Resource use (`-Rpass-analysis=kernel-resource-usage`): gfx942/gfx90a/gfx950 256 VGPR + 187-208 AGPR at num_frags_x=2, 0 scratch, all instantiations. gfx1100/gfx1151/gfx1201 (WMMA, wave32, 256 VGPR) spill 176-492 B/lane at num_frags_x=2 (twice the accumulator state per lane of wave64); gfx1201 num_frags_x=1 has none. Not measurable here; the Radeon validator should time it.
+
+### Correctness evidence
+
+Standalone harness (`agent_space/quest/harness/prefill_harness.cu`, not committed; builds one instantiation set in ~10 s with the extension's flags): fp64 CPU reference, shuffled pages, bottom-right causal rule, output and LSE checked. 100 cases: qo x kv in {1x17, 13x33, 16x16, 51x400, 63x700, 77x129, 128x129, 244x1110, 311x311, 502x1110} times {fp16 hd128 nfx1/nfx2 causal, fp16 hd128 non-causal, fp16 hd64, fp16 GQA group 4, bf16 hd128, bf16 hd64 group 4 non-causal, page size 1, page size 8, page size 32 group 8}. Tolerance 5e-3 + 5e-3 |ref| (fp16), 2e-2 + 3e-2 |ref| (bf16), LSE 2e-2 + 2e-3 |ref|. MFMA: 100/100. Emulated path at `2b938d8` with the same harness: 100/100 (validates the harness, LSE included). Max errors MFMA vs emulation: identical in 59 of the first 60 cases, smaller in one (output rounding dominates).
+
+WMMA layouts tested on this GPU: a test-only header renames the four `__builtin_amdgcn_wmma_*` builtins to a shuffle emulation of their documented semantics (each 32-lane half of the wave64 as one wave32), and the harness is built with `-Xarch_device -DQUEST_PREFILL_MMA=11` or `=12`: 100/100 each (the gfx11 run also covers the Q-in-LDS branch). Negative control: the same test with the gfx11 D rows deliberately wrong fails 100/100. This checks the port's index logic against the documented layouts, not the hardware; the Radeon run is still owed.
+
+Compile check, every target (`--cuda-device-only -S`): gfx90a emits `v_mfma_f32_16x16x16bf16_1k`/`_f16`, gfx942/gfx950 `v_mfma_f32_16x16x16_{bf16,f16}`, gfx1100/gfx1151/gfx1201 `v_wmma_f32_16x16x16_{bf16,f16}`, gfx908 and gfx1030 neither (emulation).
+
+### Build (README Linux command, fresh build directory)
+
+`agent_space/quest/build_readme.sh` = the README block verbatim with `-DCMAKE_HIP_ARCHITECTURES=gfx942` after `rm -rf build`, wrapped `utils/timeit.sh Quest compile`: rc 0, 8/8, 555 s wall (1160 s at `2b938d8`: the MFMA kernel bodies compile faster than the inlined-shuffle emulation), 0 errors, `CMAKE_BUILD_TYPE=Release` from the default.
+
+### GPU tests (transformers 4.37.2, tokenizers 0.15.2, pytest 7.3.2 in `<job>/pylib-test`), `ulimit -c 0`
+
+```
+PYTHONPATH=<fork>:<job>/pylib-test python -m pytest <fork>/quest/tests -p no:cacheprovider -q -rs
+```
+
+**202 passed, 28 skipped, 0 failed** (32.8 s). Per suite: rope 64, estimate 9, decode_attention 6, approx_attention 42, decode_launch_shape 3, topk 49 + 15 skipped, prefill_attention 29 + 13 skipped. Same as `2b938d8`.
+
+### Prefill time against SDPA, through the operator (`agent_space/quest/prefill_time.py`)
+
+`quest.utils.prefill_forward` (what the model calls; includes the operator's own host work per call: index tensors, a device-to-host copy and two async mallocs, about 70 us) vs `F.scaled_dot_product_attention` with the same causal alignment (`is_causal` where qo = kv, `causal_lower_right` where qo < kv). Causal, 32 heads x 128, fp16, page size 16, mean of 20 (5 for the large shapes) after warmup.
+
+| qo x kv | Quest prefill_forward | torch SDPA | ratio | max abs diff vs SDPA |
+|---|---|---|---|---|
+| 1 x 4096 | 0.459 ms | 0.177 ms | 2.60 | 6.1e-05 |
+| 128 x 4096 | 0.583 ms | 0.200 ms | 2.91 | 1.2e-04 |
+| 1024 x 1024 | 0.215 ms | 0.078 ms | 2.77 | 1.9e-03 |
+| 1024 x 4096 | 0.594 ms | 0.264 ms | 2.25 | 2.4e-04 |
+| 4096 x 4096 | 1.133 ms | 0.614 ms | 1.84 | 1.9e-03 |
+| 8192 x 8192 | 3.094 ms | 2.007 ms | 1.54 | 1.9e-03 |
+| 16384 x 16384 | 10.605 ms | 7.962 ms | 1.33 | 1.9e-03 |
+
+The plan's target (within 2x of SDPA at 4096 x 4096) is met: 1.84x through the operator, 1.77x for the kernel alone (harness 1.06 ms). Long prompts, Quest's use case, are closer still; short ones are dominated by the operator's fixed host cost and by one tile row of work per head. Kernel time from the harness for the same shapes: 0.378, 0.517, 0.148, 0.527, 1.056, 3.04 ms.
+
+### End-to-end (transformers 4.45.2, tokenizers 0.20.3, accelerate 1.0.1, sentencepiece 0.2.0 in `<job>/pylib-e2e`)
+
+`NousResearch/Llama-2-7b-chat-hf` at `351844e75ed0bcbbe3f10671b3c808d2b83894ee` (downloaded again into `<job>/models`; `do_sample` set to false in `generation_config.json`, original kept as `.orig`), `scripts/example_textgen.py` with only `MODEL_PATH` changed (`agent_space/quest/e2e/`): `--method hg`, `--method quest --token_budget 1024`, `--method quest --token_budget 128`, all rc 0. The generated text is byte-identical across the three, apart from Quest's two banner lines, and the same continuation as recorded 2026-11-19 ("Reason: The rabbit is the only one who is not working hard. ... can also mean \"lazy.\""). `rocprofv3 --kernel-trace` of the budget-128 run: `BatchPrefillWithPagedKVCacheKernel<1,16,true,kNone,2,8,4,4,...>` 32 calls at 32.6 us (942 us on 2026-11-19, on a 38-CU partition), `quest_radix_topk_one_block_kernel` 2130 calls, `MaxPossibleSampleWithPagedKVCacheKernel` 2130, `BatchDecodeWithPagedKVCacheKernel` 3072, `VariableLengthMergeStatesKernel` 3072, `AppendPagedKVCachePrefillKernel` 32.
+
+### CUDA path
+
+Not compiled with nvcc here (no CUDA toolkit on this host). How it is known to be unchanged: every added line in `prefill.cuh` is inside `#if defined(USE_HIP)` (the include of the new header and the host shared-memory sizing) or `#if defined(QUEST_PREFILL_MMA)` (defined only by that header, only in AMD device passes), and the new header is reached only through the `USE_HIP` include. Checked mechanically: `prefill.cuh` at `2b938d8` and at `6c06912`, with `#include` lines removed, run through `cpp -P -undef -nostdinc` without `USE_HIP`: byte-identical output. The real-nvcc compile on the gfx950 host is still owed.
+
+### Content checks
+
+`jargon.py --port Quest` clean (after `git fetch origin main:main` in the clone); `prose.py` on the commit message clean; title 55 chars, `[ROCm]`, fenced Test Plan, AI-assistance sentence, no trailer, ASCII. `audit-commits` reports only the known `6e7d8db` gap. Fork tree clean (`git status --porcelain` empty).
+
+### Owed next
+
+1. Review of `2b938d8..6c06912` (project is `delta-ported`).
+2. Validation on wave32 Radeon: linux-gfx1100 (RDNA3, WMMA gfx11 layout with the xor-16 P exchange and Q in LDS) and linux-gfx1201 (RDNA4, gfx12 layout, Q in registers); time prefill there with `prefill_time.py` too, since the WMMA paths spill (above).
+3. windows-gfx1151 (gfx11 WMMA, Windows build).
+4. linux-gfx90a (MFMA bf16_1k form) and the real-nvcc compile of `6c06912` on the gfx950 host.
+5. Possible later speedups, not needed for the target: gfx950's 16x16x32 MFMA and `ds_read_b64_tr_b16`, direct global-to-LDS loads (`global_load_lds`), and removing the operator's per-call host synchronisation (upstream code).
+
+## Lesson for cuda-to-rocm: a FlashAttention-style mma.sync kernel maps onto MFMA/WMMA by computing S^T
+
+For `references/no-hip-equivalent.md` (the matrix-instruction part of the mma.sync/ldmatrix entry). Emulating `mma.sync` with shuffles is correct but leaves 100x on the table; a direct MFMA/WMMA port of an FA2 prefill loop needs only the tile functions rewritten. Compute S^T = K Q^T instead of S = Q K^T: the 16x16x16 instructions give D with lane l holding column l % 16, which is exactly the B-operand layout (column l % 16, consecutive k) of O^T = V^T P^T, so the probabilities feed the second product from registers (no shuffles on MFMA and RDNA4; RDNA3's B wants all 16 k per lane, one xor-16 exchange). Each lane owns whole query columns, so the softmax row max/sum reduce only across the column's 2 (wave32) or 4 (wave64) lane groups, and the denominator can stay a per-lane partial sum until the end. Then three AMD-specific costs dominate, in this order on MI300X (4096^2 causal, 32x128 fp16: 3.1 ms -> 1.06 ms, SDPA 0.60 ms): (1) LDS occupancy -- Q + K + V tiles filled 64 KB, one 2-wave block per CU; keeping Q as register operands (64 VGPR) let two blocks share a CU; (2) the V operand is strided in a kv-major tile; store V transposed into LDS from the registers that staged the global load; (3) no `cp.async`: issue the next tile's global loads into registers before the product and store after the barrier. Two traps: HIP's `uint4` (union wrapper) kept a register-staging array in scratch -- use `ext_vector_type(4)`; and the host must size dynamic shared memory for the path the device code took, which a `static __device__` constant read with `hipMemcpyFromSymbol` answers per GPU without duplicating the arch list. The WMMA layouts can be tested on a CDNA GPU by macro-renaming the builtins to a shuffle emulation (each 32-lane half of a wave64 as one wave32) and forcing the layout selector in the device pass. (Quest)
