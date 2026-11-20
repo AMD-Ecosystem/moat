@@ -1,0 +1,127 @@
+{
+  "schema_version": 3,
+  "name": "LC-framework",
+  "upstream_url": "https://github.com/burtscher/LC-framework",
+  "fork_url": "https://github.com/AMD-Ecosystem/LC-framework",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-25T21:02:13Z",
+  "updated_at": "2026-11-13T01:38:11Z",
+  "head_sha": "d7d98677060e36cfa329db4229c8b3d14cf53b32",
+  "depends_on": [],
+  "waivers": {},
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 401500215,
+  "stage": "review-passed",
+  "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d7d98677060e36cfa329db4229c8b3d14cf53b32",
+      "failed_sha": "f0ce8cec27f130de90af3646e2c8776b54603db8",
+      "started_at": "2026-08-12T21:43:40Z",
+      "completed_at": "2026-08-13T18:53:57Z",
+      "updated_at": "2026-08-13T18:53:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d7d98677060e36cfa329db4229c8b3d14cf53b32",
+      "started_at": null,
+      "completed_at": "2026-08-19T05:31:36Z",
+      "updated_at": "2026-08-19T05:31:36Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d7d98677060e36cfa329db4229c8b3d14cf53b32",
+      "failed_sha": null,
+      "started_at": "2026-08-13T03:03:02Z",
+      "completed_at": "2026-08-13T09:18:32Z",
+      "updated_at": "2026-08-13T09:18:32Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "state": "completed"
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d7d98677060e36cfa329db4229c8b3d14cf53b32",
+      "started_at": "2026-06-25T22:11:48Z",
+      "completed_at": "2026-08-14T00:10:30Z",
+      "updated_at": "2026-08-14T00:10:30Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    }
+  },
+  "porting": null,
+  "review_pr": "https://github.com/AMD-Ecosystem/LC-framework/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-12T20:30:10Z",
+    "head_sha": "d7d98677060e36cfa329db4229c8b3d14cf53b32",
+    "content_sha256": "6ea4c84297495fbfe7f35285b7d2a931ac0ff0aa0185dc3aeab485fa620e4941",
+    "review_pr": "https://github.com/AMD-Ecosystem/LC-framework/pull/1"
+  },
+  "pr_url": "https://github.com/burtscher/LC-framework/pull/2",
+  "pr_number": 2,
+  "pr_opened_at": "2026-11-13T01:38:11Z",
+  "pr_state": "open",
+  "published_sha": "d7d98677060e36cfa329db4229c8b3d14cf53b32"
+}

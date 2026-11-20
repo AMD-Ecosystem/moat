@@ -1,0 +1,34 @@
+{
+  "schema_version": 3,
+  "name": "nvImageCodec",
+  "upstream_url": "https://github.com/NVIDIA/nvImageCodec",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T04:06:53Z",
+  "updated_at": "2026-11-06T04:20:31Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVIDIA/nvImageCodec/blob/main/LICENSE.txt",
+      "at": "2026-11-06T04:20:29Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "not-a-target",
+    "duplicate_effort": "rocJPEG (ROCm/rocm-systems) for JPEG decode, already being wired into consumers (TorchCodec #1554/#1642); rocAL for pipelines; none for GPU JPEG2000/TIFF/encode",
+    "viable": true,
+    "summary": "Codec framework whose GPU paths wrap closed nvJPEG/nvJPEG2k/nvTIFF; AMD port = new rocJPEG extension, rest CPU. Licence clean; jeff: want fork-only build?",
+    "at": "2026-11-06T04:20:31Z"
+  }
+}
