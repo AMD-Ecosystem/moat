@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:49Z",
-  "updated_at": "2026-11-04T06:48:20Z",
+  "updated_at": "2026-11-19T00:46:31Z",
   "head_sha": "65dd8979417a14745e736cb1675558e5bc6b467d",
   "depends_on": [],
   "porting": null,
@@ -135,6 +135,7 @@
   "pr_url": "https://github.com/zer011b/fdtd3d/pull/205",
   "pr_number": 205,
   "pr_opened_at": "2026-11-04T06:48:20Z",
-  "pr_state": "open",
-  "published_sha": "65dd8979417a14745e736cb1675558e5bc6b467d"
+  "pr_state": "merged",
+  "published_sha": "65dd8979417a14745e736cb1675558e5bc6b467d",
+  "pr_merged_at": "2026-11-19T00:46:31Z"
 }
