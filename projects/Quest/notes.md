@@ -3589,3 +3589,7 @@ One commit on `6c06912`, plain push, nothing rewritten: `9cb8bee` `[ROCm] Keep g
 - Tests, `ulimit -c 0`, `HIP_VISIBLE_DEVICES=1`: `env PYTHONPATH=<fork>:<job>/pylib-test python -m pytest <fork>/quest/tests -p no:cacheprovider -q -rs` -> 202 passed, 28 skipped (32.2 s).
 - fp64 reference sweep (100 cases) at the fix: MFMA 100/100.
 - `jargon.py --port Quest` clean; commit title 48 chars, `[ROCm]`, AI sentence, literal fenced Test Plan, no trailer, ASCII; fork tree clean.
+
+## Review 2026-11-20 pass 2 (linux-gfx942, delta 6c06912..9cb8bee, whole delta 2b938d8..9cb8bee) -- PASS
+
+Item 1 of the first pass is fixed by `9cb8bee`: the gfx12 WMMA branch names `__gfx1200__`, `__gfx1201__`, `__gfx12_generic__` (the RDNA4 macros `clang -dM` reports), so gfx1250 (`__GFX12__ __gfx1250__`) takes the emulation, and `__gfx9_4_generic__` joins the MFMA list. Checked independently of the porter's notes: the delta touches only the selector and the hip_compat README, `prefill.cuh` is unchanged from `6c06912` (whose CUDA view was verified identical to `2b938d8` in the first pass), and the per-target device compiles and the whole-extension gfx1250 build recorded in the porter round were run in this session (`agent_space/quest/build-gfx1250.log`, rc 0). `__GFX11__` still covers only targets with the gfx11 WMMA (gfx1100-1103, gfx1150-1153, gfx11-generic). Commit `9cb8bee`: `[ROCm]`, 48 chars, AI sentence, literal fenced Test Plan, no trailer, ASCII; `jargon.py --port Quest` and `prose.py` clean. No findings.
