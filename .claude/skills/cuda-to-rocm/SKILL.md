@@ -319,10 +319,12 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Use TheRock ROCm, not the Windows HIP SDK
 - TheRock's devel wheel can ship with hipCUB/rocThrust headers missing
 - A torch wheel needs the matching `[device-<gfx>]` extra
+- On Windows, Triton comes from the `triton-windows` package
 - A dev package neither TheRock nor vcpkg ships
 - An all-clang Windows HIP build hides three CMake/export faults that MSVC builds never hit
 - CMake's HIP language on Windows needs ONE clang driver for every language, and ROCm's ...
 - Keep one clang driver across every CMake language, and check the CMake version
+- `find_package(Torch)` in a CMake HIP project needs the architecture and the ROCm root
 - CRT flags, compiler-rt builtins and Git Bash flag mangling in a CMake HIP build
 - Bundled third-party libraries that break under the clang toolchain: take them from vcpkg
 - TheRock clang 23 can hang in x86 register allocation
