@@ -143,3 +143,4 @@
 {"kind":"phase","ts":"2026-11-04T07:25:40Z","phase":"compile","seconds":38.763,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261103-232159-faster-gaussian-splatting-gfx942/moat/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-04T07:27:39Z","phase":"test","seconds":37.725,"exit":0,"cmd":"bash agent_space/run_all.sh"}
 {"kind":"session","ts":"2026-11-04T07:28:46Z","epoch":1793777326.857997662,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-20T21:31:42Z","epoch":1795210302.528682,"event":"start","platform":"linux-gfx90a"}

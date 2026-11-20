@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:19:27Z",
-  "updated_at": "2026-11-20T21:31:42Z",
+  "updated_at": "2026-11-20T21:31:46Z",
   "head_sha": "00e803dec721a28e4f9d6e060fd50dcdcf2925b9",
   "depends_on": [],
   "waivers": {},
@@ -171,5 +171,11 @@
     "arch": "linux-gfx90a",
     "since": "2026-11-20T21:31:42Z",
     "holder": "7fda1b4cc027"
+  },
+  "fix": {
+    "branch": "moat-fix-14",
+    "base_sha": "00e803dec721a28e4f9d6e060fd50dcdcf2925b9",
+    "review_pr": null,
+    "opened_at": "2026-11-20T21:31:46Z"
   }
 }
