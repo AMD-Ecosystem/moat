@@ -8680,3 +8680,7 @@ So AMD's shipped 1.13 code does show late writes, in the alloc_on_s2 case, every
 
 - `mesh_query_ray`: "(a) Leave it reverted". The fork keeps upstream's traversal.
 - Tile Cholesky n=16: "(a) Leave upstream's code". No pivot change, no cooperative port.
+
+## Ruling on the library build's use of -j (jeff, 2026-11-20)
+
+"(a) Leave it". `build_lib.py` keeps upstream's half-of-`-j` split. All six session 20/21 questions are now ruled: fp-contract (b, `e92f2611`), free-ordering test (a, `e88cf857`), refit (b, session 24 in progress), ray traversal (a), Cholesky (a), build -j (a).
