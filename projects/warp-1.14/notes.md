@@ -8688,3 +8688,7 @@ So AMD's shipped 1.13 code does show late writes, in the alloc_on_s2 case, every
 ## Ruling on a Warp workaround for the lost-writes defect (jeff, 2026-11-20)
 
 "(a)": no workaround in Warp; a known-issue entry in the release notes: "On MI300X and MI355X, arrays allocated with the memory pool disabled can lose kernel writes when other processes share the GPU (ROCm/rocm-systems#16355). Keep the memory pool enabled, which is the default." Validators on gfx942/gfx950 that see the `test_async` pool-off copy failures in a full run rerun those tests alone and record both results; no skip.
+
+## Ruling on the AMD 1.13 defects (jeff, 2026-11-20)
+
+Defer: no issue on `AMD-Ecosystem/warp` for the 1.13 cross-stream free defect or the 1.13 tile-solve failures until after the 1.14 release is out. Registered as deferred items `amd-warp-113-cross-stream-free-late-writes` and `amd-warp-113-tile-solve-race`. Until then nothing GitHub-visible on that repository beyond the port branch itself, and the release notes do not call out 1.13's defects unless jeff asks for it.

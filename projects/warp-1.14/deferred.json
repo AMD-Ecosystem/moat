@@ -283,6 +283,40 @@
         "by": "jeff",
         "at": "2026-11-20T16:40:01Z"
       }
+    },
+    {
+      "id": "amd-warp-113-cross-stream-free-late-writes",
+      "kind": "other",
+      "component": null,
+      "summary": "AMD-Ecosystem/warp release/1.13.0.amd0 (5035c8ed): temporary free waits only for the allocation stream; an array allocated on stream A, written by a kernel on stream B and dropped with A current is reused while still being written (free_race.py alloc_on_s2 10/10 on gfx950, two runs). Fixed in 1.14 by dd41f3d2. Issue on AMD-Ecosystem/warp to be filed after the 1.14 release.",
+      "refs": [
+        "projects/warp-1.14/notes.md: Porting session 23"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-20T20:40:53Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-11-20T20:40:55Z"
+      }
+    },
+    {
+      "id": "amd-warp-113-tile-solve-race",
+      "kind": "other",
+      "component": null,
+      "summary": "AMD-Ecosystem/warp release/1.13.0.amd0: 21 of 128 tile cholesky_solve/upper_solve cells fail against NumPy at block_dim 128/256 (race inherited from upstream 1.13, fixed upstream in 1.14); reproduced on gfx942 and gfx950. Issue on AMD-Ecosystem/warp to be filed after the 1.14 release.",
+      "refs": [
+        "projects/warp-1.14/notes.md: Porting session 21"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-20T20:40:54Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-11-20T20:40:56Z"
+      }
     }
   ]
 }
