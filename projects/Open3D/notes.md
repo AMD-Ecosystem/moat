@@ -1240,3 +1240,33 @@ rc=1
 ```
 
 `binary-equiv --host-checked` was not attempted: on a `mixed` delta it needs both commits built and compared with codeobj_diff (and the moat-porting skill says to rebuild instead of carrying a Windows-gated delta forward on reasoning alone), and this job may not build. linux-gfx1100 stays `revalidate` at 11c1d702e. Next: a linux-gfx1100 job with a GPU and permission to build. Either build 50bb2505b and 11c1d702e at the same source path and run `utils/codeobj_diff.py`, then `carry-forward ... binary-equiv --host-checked` (the host side is unchanged on Linux because every changed CMake line is under WIN32), or run a full GPU revalidation.
+
+## CUDA compile check (nvcc) at 11c1d702e
+
+Validator-role CUDA compile check, asked for by the 2026-11-20 review (no real-nvcc compile recorded at any head). Host: linux-gfx950 fleet host with the CUDA toolkit and no NVIDIA GPU, so compile and link only; nothing was run. No state or platform record changed; nothing pushed to the fork.
+
+Result: PASS. The fork's CUDA path configures, compiles and links with real nvcc at 11c1d702e859245f4de56cae12ba1c7a403b63ea (`moat-fix-7509`), unit tests included. Upstream base (merge-base with isl-org/Open3D main) is fe3af4bb1 ("Github attestation for Open3D binaries (#7512)"); since the head passed, the base was not built.
+
+Toolchain: nvcc `Cuda compilation tools, release 12.8, V12.8.93` (/usr/local/cuda-12.8), host compiler GCC 13.3.0 (Ubuntu 24.04), CMake 3.31.6, Ninja.
+
+```
+git clone --filter=blob:none https://github.com/AMD-Ecosystem/Open3D.git src
+git -C src fetch origin moat-fix-7509
+git -C src checkout 11c1d702e859245f4de56cae12ba1c7a403b63ea
+export PATH=/usr/local/cuda-12.8/bin:$PATH
+cmake -S src -B build-head -G Ninja \
+  -DBUILD_CUDA_MODULE=ON -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
+  -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DBUILD_GUI=OFF -DBUILD_WEBRTC=OFF \
+  -DBUILD_PYTHON_MODULE=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF \
+  -DBUILD_UNIT_TESTS=ON -DBUILD_PYTORCH_OPS=OFF -DBUILD_TENSORFLOW_OPS=OFF \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build build-head -j 32 -- -k 0      # MAX_JOBS=32
+```
+
+- Configure: `CUDA compiler identification is NVIDIA 12.8.93 with host compiler GNU 13.3.0`, `CUDA Support ... ON`, `USE_HIP=OFF`, stdgpu external built with `STDGPU_BACKEND_CUDA`. Defaults left on: DEVELOPER_BUILD=ON, BUILD_ISPC_MODULE=ON, WITH_IPP=ON. `CMAKE_CUDA_ARCHITECTURES=80` is a single arch to keep the check cheap; there is no GPU for `native`.
+- Headless: `-DENABLE_HEADLESS_RENDERING=ON` was tried first and fails configure with `Could NOT find OSMesa (missing: OSMESA_LIBRARY OSMESA_INCLUDE_DIR)` (3rdparty/find_dependencies.cmake:1466): a missing system package (libosmesa6-dev), not a port issue, and installing it would change the shared image. Dropped the flag, matching the HIP validators' option set (headless OFF, GUI OFF). Headless rendering does not touch CUDA code.
+- Build: `[845/845] Linking CXX executable bin/tests`, rc=0, 228 s wall. No `FAILED:` edge and no compiler warning in any `cpp/open3d` or `cpp/tests` file (the only warnings are CMake warnings from the 3rdparty external projects).
+- Coverage: 27 CUDA objects compiled by nvcc, which is every `.cu` under `cpp/` outside `cpp/open3d/ml/` (26) plus the one CUDA test source. The 45 `.cu` files under `ml/` are the PyTorch/TensorFlow ops (BUILD_*_OPS=OFF); the port changes no file under `ml/`. The port-touched host sources NPPImage.cpp, CUDAUtils.cpp and CPUInfo.cpp were compiled in this CUDA configuration. `cuobjdump --list-elf bin/tests` lists 2885 sm_80 cubins; libOpen3D.a and bin/tests (863 MB) linked.
+
+This covers the CUDA side of every fork commit through 11c1d702e (the port as a whole against fe3af4bb1), not only the fix-round delta.
