@@ -5,17 +5,15 @@
   "fork_url": "https://github.com/AMD-Ecosystem/Wan2.2",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "python-pytorch",
+  "stage": "planned",
   "adopted_at": "2026-11-12T16:32:40Z",
-  "updated_at": "2026-11-20T21:53:33Z",
+  "updated_at": "2026-11-20T21:58:02Z",
   "head_sha": null,
-  "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-20T21:53:33Z",
-    "holder": "0a6316594d4d"
-  },
+  "depends_on": [
+    "flash-attention"
+  ],
+  "porting": null,
   "waivers": {
     "windows": {
       "reason": "no upstream Windows story (Linux, torchrun); the 14B models exceed what the only Windows host (gfx1151 laptop) can safely run. Approved 2026-11-12 with the gap-matrix intake follow-ups.",
@@ -54,7 +52,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:53:33Z",
+      "updated_at": "2026-11-20T21:58:02Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -87,5 +85,10 @@
     "viable": true,
     "summary": "Wan2.2 video gen (Apache-2.0, pure PyTorch + flash_attn, SDPA fallback): validation; gate tests/test.sh; back AMD PR #30",
     "at": "2026-11-12T17:03:25Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-20T21:53:33Z",
+    "at": "2026-11-20T21:58:02Z"
   }
 }

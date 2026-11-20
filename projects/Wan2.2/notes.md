@@ -16,3 +16,22 @@ Origin: Jeff Daily's 2026-11-12 ruling on a third-party "AMD AI software gap" li
 - CUDA-only dependencies: `flash_attn` (FA2) and `flash_attn_interface` (FA3, Hopper only). ROCm substitute: ROCm/flash-attention (CK backend on MI200/MI300/MI350; Triton AMD backend on RDNA). `wan/modules/attention.py` falls back to `torch.nn.functional.scaled_dot_product_attention` when neither is importable, but `requirements.txt` lists `flash_attn` unconditionally, so a plain install fails where no wheel exists (also upstream issue #108). FA3 path is irrelevant on AMD.
 - Windows: no upstream Windows story (Linux, torchrun, flash_attn). Community runs Wan2.2 on Windows Strix Halo through ComfyUI, so it is not impossible, but suggest a windows waiver for this repo; only Jeff approves one.
 - Existing AMD work to back: AMD PR #30 upstream (validation evidence and a comment there would be the natural channel, via Jeff).
+
+## Planning (2026-11-20, linux-gfx942, planner; no GPU used)
+
+**Jeff must rule before a porter starts.** Three questions; details and the recommended default for each are in `plan.md` under "Open questions".
+
+- **Q1, scope.** A (default): all five tasks (t2v-A14B, i2v-A14B, ti2v-5B, s2v-14B, animate-14B), Animate preprocessing on the GPU (pose2d.py gets an onnxruntime MIGraphX provider choice instead of the silent CPU fallback it gets today), CosyVoice TTS attempted, with a deferral against CosyVoice if it will not install. B: all five generation tasks, but Animate preprocessing stays on the CPU and TTS is scoped out (a partial port). C: only the three tasks `tests/test.sh` runs; S2V and Animate deferred (a partial port).
+- **Q2, wave32 gate.** A (default): TI2V-5B (with the offload options) plus whatever 14B tasks the Radeon card's memory allows; the 14B tasks are proven on wave64. B: every in-scope task must pass on wave32, which needs a 48 GB+ RDNA card.
+- **Q3, make flash_attn optional with an SDPA fallback?** A (default): no. ROCm flash-attention exists, and the change collides with third-party PR #390. B: yes, as an extra portability feature.
+- Q4 (after validation): comment on AMD PR #30 with evidence, and coordinate the install text with PR #390. Not blocking.
+
+Findings that correct the intake screen:
+- `flash_attn` is mandatory at runtime, not only in requirements. Every pipeline calls `flash_attention()`, which asserts `FLASH_ATTN_2_AVAILABLE`; the SDPA fallback is in `attention()`, which nothing calls (grep; PR #390's body says the same). S2V and Animate also call `flash_attn_func` directly.
+- `tests/test.sh` covers t2v-A14B, i2v-A14B and ti2v-5B only, all multi-GPU through torchrun with FSDP and Ulysses (its 1-GPU lines are commented out). S2V and Animate have no upstream test, so the README commands are their gate.
+- `import wan` needs a GPU: `t5.py:478` has `device=torch.cuda.current_device()` as a default argument. There is no CPU regression set.
+- Upstream PRs that touch the same area: #30 (AMD, a frame_num hint; do not compete with it) and #390 (third party, open, mergeable: moves flash_attn out of requirements.txt, makes s2v/animate imports lazy, turns the assert into a RuntimeError). Keep our install note out of the lines #390 changes.
+
+Classification: pure-Python PyTorch app, `ext_type` `python-pytorch`. No .cu, C++, CMake or extension, and the generated surface floor is empty, so I wrote all 14 surface.json components by hand. The only NVIDIA-specific code path in the repo is onnxruntime's `CUDAExecutionProvider` in `animate/preprocess/pose2d.py`. Everything else (autocast('cuda'), torch.cuda.*, the nccl backend) runs unchanged on ROCm PyTorch.
+
+Dependencies: `depends_on: [flash-attention]` (a hard runtime dependency). Dao-AILab/flash-attention is dispositioned `already-supported`, so this blocks nothing. Matrix-Game records the same dependency.

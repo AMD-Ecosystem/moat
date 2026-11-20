@@ -1,0 +1,96 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "1ea34ff48f87",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [],
+    "markers": {},
+    "libraries": {}
+  },
+  "components": [
+    {
+      "id": "pipeline:t2v-A14B",
+      "kind": "pipeline",
+      "where": "wan/text2video.py; generate.py --task t2v-A14B"
+    },
+    {
+      "id": "pipeline:i2v-A14B",
+      "kind": "pipeline",
+      "where": "wan/image2video.py; generate.py --task i2v-A14B"
+    },
+    {
+      "id": "pipeline:ti2v-5B",
+      "kind": "pipeline",
+      "where": "wan/textimage2video.py; generate.py --task ti2v-5B (t2v and i2v modes)"
+    },
+    {
+      "id": "pipeline:s2v-14B",
+      "kind": "pipeline",
+      "where": "wan/speech2video.py; generate.py --task s2v-14B; requirements_s2v.txt"
+    },
+    {
+      "id": "pipeline:animate-14B",
+      "kind": "pipeline",
+      "where": "wan/animate.py; generate.py --task animate-14B (animation and --replace_flag modes)"
+    },
+    {
+      "id": "tool:animate-preprocess",
+      "kind": "tool",
+      "where": "wan/modules/animate/preprocess/ (onnxruntime pose2d CUDAExecutionProvider, SAM-2, optional FLUX Kontext); requirements_animate.txt"
+    },
+    {
+      "id": "feature:s2v-tts-cosyvoice",
+      "kind": "optional",
+      "where": "wan/speech2video.py:682 (--enable_tts, external CosyVoice package)"
+    },
+    {
+      "id": "feature:multi-gpu-fsdp-ulysses",
+      "kind": "feature",
+      "where": "wan/distributed/*, generate.py torchrun path (nccl backend -> RCCL)"
+    },
+    {
+      "id": "feature:prompt-extend-local-qwen",
+      "kind": "feature",
+      "where": "wan/utils/prompt_extend.py (transformers flash_attention_2)"
+    },
+    {
+      "id": "feature:prompt-extend-dashscope",
+      "kind": "feature",
+      "where": "wan/utils/prompt_extend.py (DashScope remote API)"
+    },
+    {
+      "id": "backend:flash-attn-2",
+      "kind": "dependency",
+      "where": "wan/modules/attention.py:113, animate/face_blocks.py, s2v/auxi_blocks.py (mandatory; ROCm flash-attention CK/Triton)"
+    },
+    {
+      "id": "backend:flash-attn-3",
+      "kind": "dependency",
+      "where": "wan/modules/attention.py:96 (flash_attn_interface, Hopper FA3)"
+    },
+    {
+      "id": "test:tests/test.sh",
+      "kind": "test",
+      "where": "tests/test.sh (torchrun end-to-end: t2v-A14B, i2v-A14B, ti2v-5B, multi-GPU)"
+    },
+    {
+      "id": "docs:rocm-install",
+      "kind": "docs",
+      "where": "README.md Installation, INSTALL.md (ROCm torch + flash-attention ROCm build)"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "feature:prompt-extend-dashscope",
+      "reason": "remote DashScope API call with no local device code; needs a paid API key, and tests/test.sh itself skips it without DASH_API_KEY"
+    },
+    {
+      "id": "backend:flash-attn-3",
+      "reason": "Hopper-only FA3 kernels have no AMD target; on ROCm Wan uses the FA2 interface (flash-attention CK/Triton backends). Validator confirms FLASH_ATTN_3_AVAILABLE is False"
+    }
+  ],
+  "owed": [],
+  "removed_from_floor": [],
+  "planner_note": "Pure-Python PyTorch application: the generated floor is empty (no .cu, no CMake, no setup.py extension), so every component above was added by the planner from generate.py tasks, requirements files, wan/ and tests/. Scope of s2v-14B, animate-14B, tool:animate-preprocess and feature:s2v-tts-cosyvoice awaits Jeff's ruling Q1 in plan.md; do not mark any of them scoped_out without it."
+}
