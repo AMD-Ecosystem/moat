@@ -33,7 +33,7 @@ def retired_records(project=None):
     if not RETIRED.exists():
         return []
     out = []
-    for line in RETIRED.read_text().splitlines():
+    for line in RETIRED.read_text(encoding="utf-8", errors="replace").splitlines():
         if not line.strip():
             continue
         try:
@@ -50,7 +50,7 @@ def read_records(project):
     recs = []
     if not p.exists():
         return recs
-    for line in p.read_text().splitlines():
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
         line = line.strip()
         if not line:
             continue
