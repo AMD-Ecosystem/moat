@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-20T20:55:22Z",
-  "updated_at": "2026-11-20T20:55:22Z",
+  "updated_at": "2026-11-20T21:04:37Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "MIT AND Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT AND Apache-2.0",
+      "evidence": "https://github.com/FindDefinition/ccimport/blob/f5af43d/LICENSE",
+      "at": "2026-11-20T21:03:51Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "none (no upstream AMD PR/issue/branch; nothing to port)",
+    "viable": true,
+    "summary": "Pure-Python ninja-file writer used by pccm/cumm/spconv; no CUDA code, and its nvcc rule already takes hipcc via CUDACXX, so the spconv HIP port consumes it unmodified and needs no fork",
+    "at": "2026-11-20T21:04:37Z"
+  }
 }
