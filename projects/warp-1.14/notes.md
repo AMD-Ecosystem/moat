@@ -7806,3 +7806,107 @@ Question for Jeff (release blocker until understood): options: (a) dispatch the 
 - Validators: every platform revalidates at `7059a340` (compressed library, new `rocm_version`/`hip_version`, setup.py classifiers); the gate platforms should validate the wheel file that will be uploaded.
 - Flake (question 7) before the release.
 - Scripts: `notes-session21-scripts.md`.
+
+## Evidence session (2026-11-20, linux-gfx942, evidence only): test_async copy flake at `7059a340`
+
+Requested by Jeff Daily as an evidence-only fleet job (the porting lock stays with linux-gfx950; no lock taken, no state changed, nothing pushed to the fork). Question: does session 21's Evidence 5 (one XCD's share of the copy kernel's workgroups left unwritten, under a second process on the GPU) occur on an MI300X, which also has 8 XCDs, with the same mod-8 block pattern? **Answer: yes, readily, and with the same pattern.** Every one of the 47 diagnosed failing subset tests (plus the 2 the full suite itself hit) has exactly one mod-8 class of 256-element blocks persistently wrong (in whole blocks where the stale data is zero); it needs a second process on the same GPU (0/30 alone, 0/160 with the same load on another GPU); the standalone `copy_flake` program still does not reproduce it (0 in 27,000 iterations under the same load).
+
+### Host and build
+
+- GPU: AMD Instinct MI300X HF (gfx942:sramecc+:xnack-, 304 CUs, 192 GiB, device id 0x74a9), accelerator partition SPX, memory partition NPS1 (so one device = 8 XCDs, as on the MI355X); VBIOS version 00151101. Dispatcher pin `HIP_VISIBLE_DEVICES=4` kept; every GPU run under `ulimit -c 0`.
+- Kernel 6.8.0-110-generic, amdgpu driver 6.16.13 (`/sys/module/amdgpu/version`; amd-smi 27.1.0, whose host ROCm reports 10.1.0, not used by the runs).
+- Job venv (`$FLEET_VENV`, Python 3.11.17, numpy 1.26.4) had ROCm 10.1 wheels; `$FLEET_VENV/bin/pip install "rocm[devel]==10.2.*" --extra-index-url https://stable.repo.amd.com/rocm/whl-next/` -> rocm, rocm-sdk-core, rocm-sdk-devel 10.2.0 (`python -m rocm_sdk version` 10.2.0; the venv's 10.1 `rocm-sdk-libraries` and `rocm-sdk-device-*` packages stayed, Warp loads neither). Warp banner: "ROCm 10.2, HIP runtime 7.17"; `runtime.rocm_version` (10, 2), `hip_version` (7, 17).
+- Fork clone `git clone --branch release/1.14.0.amd0 https://github.com/AMD-Ecosystem/warp.git w; git -C w checkout 7059a340`; build `python build_lib.py --rocm-path "$(python -m rocm_sdk path --root)" --hip-arch gfx942 -j 112` (112 = physical cores = `MAX_JOBS`): "Warp build succeeded" in 43 s. Only tracked change in the clone: the scratch diagnostic (below), never committed.
+- `amd-smi process -g 4`: before the runs "No running processes detected" (unlike session 21's GPU 1 on the MI355X, no outside process shared the device, so "alone" here is truly alone); during the load runs only this job's 8 `copy_flake load` processes (2.2 GB each) and the subset; during the suite runs only the suite's workers and the subset. GPU 0 had another job's process throughout; GPU 5 (used for step 4) was idle before it.
+
+### Diagnostic
+
+Session 21's scratch diagnostic applied to `w/warp/tests/cuda/test_async.py`, extended (still scratch, never committed) to save every failing test's reads to an `.npz` (`dst` first read `x1`, second read `x2`, read after `wp.synchronize()` `x3`, the reference `src.numpy()` and, from load run 49 on, a second `src.numpy()`) and to analyse them against the expected values `arange(offset, offset + n)`. That matters: **in 10 of the 47 diagnosed subset failures (and 1 of the suite's own 2) the wrong array is the reference, not `dst`.** `src` is strided, so `src.numpy()` runs the same strided-to-contiguous copy kernel into a staging buffer and copies that to the host; the zeros are in that staging copy, and a second `src.numpy()` is correct every time (8/8 where it was taken, the suite's `fi2fi` included). So the fault is in the strided copy kernel's output wherever it runs (also `fi2fi` and an `s2s` grad copy in the full suite), not in the `dst` allocation.
+
+Scripts (adapted `flake_b.sh`, `flake_c.sh` = `flake_a.sh` that restarts the suite until N subset runs are done, `cf_load.sh`, the analysis scripts) and the diagnostic diff: `notes-evidence-gfx942-flake-scripts.md`.
+
+### Results (subset = `python -m warp.tests -s autodetect -p test_async.py -k s2f_d2d -k s2c_d2d`, 192 tests)
+
+| condition | command | failing runs | failing tests | mean subset time |
+|---|---|---|---|---|
+| alone | `flake_b.sh $PWD/w $PWD/logs/alone 0 30` | **0 / 30** | 0 | 8.0 s |
+| 8 `copy_flake load` (4 streams each) on the same GPU | `flake_b.sh $PWD/w $PWD/logs/load8 8 160` | **17 / 160** | 18 of 30,720 | 11.6 s |
+| beside the full default suite on the same GPU | `flake_c.sh $PWD/w $PWD/logs/suite 60` | **18 / 60** | 29 of 11,520 | 16.5 s |
+| 8 `copy_flake load` on GPU 5, subset on GPU 4 | `flake_b.sh $PWD/w $PWD/logs/load8_gpu5 8 160 5` | **0 / 160** | 0 | 10.8 s |
+| `copy_flake check` (no Warp) with 8 load processes on the same GPU | `cf_load.sh 2000`, `cf_load.sh 20000`, `cf_load.sh 5000 pool` | 0 wrong of 2,000 + 20,000 + 5,000 iterations | | |
+
+The full suite beside the subset (suite 1 of the suite condition, `HIP_VISIBLE_DEVICES=4`): **Ran 7557 tests in 858.5 s, FAILED (failures=2, skipped=113)**; the two failures are the same defect in the suite's own `test_async`: `test_copy_fi2fi_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_Graph_AccessSrcDst` (reference read-back, 124,928 wrong = class 3 mod 8, 488/488 whole blocks) and `test_copy_s2s_d2d_SrcPoolOn_DstPoolOff_NoStream_Grad_Graph_AccessDstSrc` (the grad comparison, 125,184 = 489 x 256 mismatched; not instrumented). (113 skips against 81 on gfx950 not examined; not this session's question.) The second suite instance was killed when the 60 subset runs were done.
+
+### Every failure
+
+"class r mod 8: a/b blocks" = wrong 256-element blocks with block index = r (mod 8), a of the b blocks in that class; "whole" = all 256 (or the 64 of the tail block 3906) elements wrong. The grid is 3907 blocks of 256 threads for n = 1,000,000. Where the stale data is non-zero (an earlier test's values at the same address), elements whose stale value happens to equal the expected one count as right, so blocks show as partial.
+
+**Load condition (8 `copy_flake load` on the same GPU), 17 failing runs, 18 failing tests:**
+
+| run | test (`test_copy_` omitted) | mismatched | wrong read, persistent mod-8 class, blocks |
+|---|---|---|---|
+| 6 | `s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_NoGraph_AccessBoth` | 236416 | (no dump yet; from the printed diagnostic) source read-back wrong (the wrong `dst` values equal the expected ones, the reference holds zeros); 489 whole blocks, i.e. one full class of 489 (0, 1 or 2; the class is not printed), plus 913 partial blocks in classes 0-4, 6 |
+| 7 | `s2c_d2d_SrcPoolOn_DstPoolOff_Stream0_NoGrad_Graph_AccessNone` | 86064 | (no dump yet) dst 86064 -> 59392 after re-read/sync; first read also partial blocks in classes 0, 7 (cleared on re-read); class 3 mod 8: 232/488 blocks, 232 whole, blocks 2051..3899 |
+| 15 | `s2c_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_NoGraph_AccessNone` | 247872 | (no dump yet) dst 247872 -> 124928 after re-read/sync; first read also partial blocks in all other classes (cleared on re-read); class 5 mod 8: 488/488 blocks, 488 whole |
+| 42 | `s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_Graph_AccessDstSrc` | 248896 | source read-back wrong (248896) class 6 mod 8: 488/488 blocks, 456 whole, blocks 6..3902; other classes partial: [0, 1, 2, 3, 4, 5, 7] |
+| 48 | `s2f_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_NoGraph_AccessSrcDst` | 207104 | source read-back wrong (207104) class 1 mod 8: 489/489 blocks, 489 whole, blocks 1..3905; other classes partial: [0, 2, 3, 4, 6] |
+| 67 | `s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_Graph_AccessDstSrc` | 210944 | source read-back wrong (210944); re-read ok class 6 mod 8: 488/488 blocks, 457 whole, blocks 6..3902; other classes partial: [0, 1, 2, 3, 4, 5, 7] |
+| 83 | `s2f_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_NoGraph_AccessSrcDst` | 124928 | source read-back wrong (124928); re-read ok class 4 mod 8: 488/488 blocks, 488 whole, blocks 4..3900 |
+| 94 | `s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_NoGraph_AccessDstSrc` | 240320 | source read-back wrong (240320); re-read ok class 4 mod 8: 488/488 blocks, 488 whole, blocks 4..3900; other classes partial: [1, 3, 5, 7] |
+| 103 | `s2f_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_NoGraph_AccessSrcDst` | 250368 | dst 250368 -> 125184 after re-read/sync; first read also class [1] (cleared on re-read); class 0 mod 8: 489/489 blocks, 489 whole, blocks 0..3904 |
+| 103 | `s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_Graph_AccessNone` | 247872 | source read-back wrong (247872); re-read ok class 3 mod 8: 488/488 blocks, 488 whole, blocks 3..3899; other classes partial: [1, 5, 6, 7] |
+| 111 | `s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_NoGraph_AccessDstSrc` | 250368 | dst 250368 -> 125184 after re-read/sync; first read also class [1] (cleared on re-read); class 0 mod 8: 489/489 blocks, 489 whole, blocks 0..3904 |
+| 116 | `s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_NoGraph_AccessBoth` | 226432 | source read-back wrong (226432); re-read ok class 4 mod 8: 488/488 blocks, 488 whole, blocks 4..3900; other classes partial: [1, 3, 5, 6, 7] |
+| 120 | `s2f_d2d_SrcPoolOn_DstPoolOff_Stream0_NoGrad_Graph_AccessNone` | 119040 | dst 119040 -> 59392 after re-read/sync; first read also class [1] (cleared on re-read); class 6 mod 8: 232/488 blocks, 232 whole, blocks 2054..3902 |
+| 130 | `s2f_d2d_SrcPoolOn_DstPoolOff_Stream0_NoGrad_Graph_AccessNone` | 124928 | dst 124928 -> 124928 after re-read/sync; class 6 mod 8: 488/488 blocks, 488 whole, blocks 6..3902 |
+| 137 | `s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_Graph_AccessDstSrc` | 248896 | source read-back wrong (248896); re-read ok class 6 mod 8: 488/488 blocks, 456 whole, blocks 6..3902; other classes partial: [0, 1, 2, 3, 4, 5, 7] |
+| 146 | `s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_NoGraph_AccessBoth` | 249920 | source read-back wrong (249920); re-read ok class 4 mod 8: 488/488 blocks, 488 whole, blocks 4..3900; other classes partial: [1, 3, 5, 6, 7] |
+| 149 | `s2c_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_Graph_AccessNone` | 212864 | dst 212864 -> 124928 after re-read/sync; first read also class [1, 5, 6, 7] (cleared on re-read); class 3 mod 8: 488/488 blocks, 488 whole, blocks 3..3899 |
+| 160 | `s2c_d2d_SrcPoolOn_DstPoolOff_Stream0_NoGrad_NoGraph_AccessBoth` | 249984 | dst 249984 -> 124992 after re-read/sync; first read also class [1, 3, 4, 5, 7] (cleared on re-read); class 2 mod 8: 489/489 blocks, 489 whole, blocks 2..3906 |
+
+**Beside the full default suite on the same GPU, 18 failing runs, 29 failing tests:**
+
+| run | test (`test_copy_` omitted) | mismatched | wrong read, persistent mod-8 class, blocks |
+|---|---|---|---|
+| 2 | `s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_Graph_AccessNone` | 125184 | dst 125184 -> 125184 after re-read/sync; class 0 mod 8: 489/489 blocks, 489 whole, blocks 0..3904 |
+| 4 | `s2f_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_Graph_AccessDstSrc` | 249856 | dst 249856 -> 124928 after re-read/sync; first read also class [6] (cleared on re-read); class 5 mod 8: 488/488 blocks, 488 whole, blocks 5..3901 |
+| 6 | `s2f_d2d_SrcPoolOn_DstPoolOff_Stream0_NoGrad_Graph_AccessBoth` | 250112 | dst 250112 -> 124928 after re-read/sync; first read also class [1] (cleared on re-read); class 6 mod 8: 488/488 blocks, 488 whole, blocks 6..3902 |
+| 7 | `s2f_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_NoGraph_AccessBoth` | 250368 | dst 250368 -> 125184 after re-read/sync; first read also class [1] (cleared on re-read); class 0 mod 8: 489/489 blocks, 489 whole, blocks 0..3904 |
+| 10 | `s2c_d2d_SrcPoolOn_DstPoolOff_Stream0_NoGrad_NoGraph_AccessSrcDst` | 125184 | dst 125184 -> 125184 after re-read/sync; class 0 mod 8: 489/489 blocks, 489 whole, blocks 0..3904 |
+| 10 | `s2f_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_NoGraph_AccessNone` | 250368 | dst 250368 -> 125184 after re-read/sync; first read also class [1] (cleared on re-read); class 0 mod 8: 489/489 blocks, 489 whole, blocks 0..3904 |
+| 16 | `s2c_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_NoGraph_AccessSrcDst` | 124992 | dst 124992 -> 124992 after re-read/sync; class 2 mod 8: 489/489 blocks, 489 whole, blocks 2..3906 |
+| 17 | `s2c_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_NoGraph_AccessSrcDst` | 124992 | dst 124992 -> 124992 after re-read/sync; class 2 mod 8: 489/489 blocks, 489 whole, blocks 2..3906 |
+| 17 | `s2f_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_NoGraph_AccessBoth` | 250368 | dst 250368 -> 125184 after re-read/sync; first read also class [1] (cleared on re-read); class 0 mod 8: 489/489 blocks, 489 whole, blocks 0..3904 |
+| 18 | `s2c_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_Graph_AccessDstSrc` | 125184 | dst 125184 -> 125184 after re-read/sync; class 0 mod 8: 489/489 blocks, 489 whole, blocks 0..3904 |
+| 18 | `s2c_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_Graph_AccessNone` | 125184 | dst 125184 -> 125184 after re-read/sync; class 0 mod 8: 489/489 blocks, 489 whole, blocks 0..3904 |
+| 19 | `s2f_d2d_SrcPoolOn_DstPoolOff_Stream0_NoGrad_NoGraph_AccessDstSrc` | 249920 | dst 249920 -> 124992 after re-read/sync; first read also class [3] (cleared on re-read); class 2 mod 8: 489/489 blocks, 489 whole, blocks 2..3906 |
+| 19 | `s2f_d2d_SrcPoolOn_DstPoolOff_Stream0_NoGrad_NoGraph_AccessNone` | 249920 | dst 249920 -> 124992 after re-read/sync; first read also class [3] (cleared on re-read); class 2 mod 8: 489/489 blocks, 489 whole, blocks 2..3906 |
+| 22 | `s2c_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_Graph_AccessSrcDst` | 124928 | dst 124928 -> 124928 after re-read/sync; class 3 mod 8: 488/488 blocks, 488 whole, blocks 3..3899 |
+| 24 | `s2c_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_Graph_AccessBoth` | 125184 | dst 125184 -> 125184 after re-read/sync; class 1 mod 8: 489/489 blocks, 489 whole, blocks 1..3905 |
+| 33 | `s2c_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_Graph_AccessSrcDst` | 1227 | dst 1227 -> 1227 after re-read/sync; class 0 mod 8: 15/489 blocks, 0 whole, blocks 0..344 (gaps) |
+| 33 | `s2c_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_NoGraph_AccessNone` | 4876 | dst 4876 -> 4876 after re-read/sync; class 0 mod 8: 36/489 blocks, 8 whole, blocks 0..688 (gaps) |
+| 33 | `s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_Graph_AccessNone` | 6656 | dst 6656 -> 6656 after re-read/sync; class 5 mod 8: 26/488 blocks, 26 whole, blocks 5..205 |
+| 34 | `s2c_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_Graph_AccessBoth` | 8192 | dst 8192 -> 8192 after re-read/sync; class 0 mod 8: 32/489 blocks, 32 whole, blocks 0..248 |
+| 34 | `s2c_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_NoGraph_AccessBoth` | 11008 | dst 11008 -> 11008 after re-read/sync; class 5 mod 8: 43/488 blocks, 43 whole, blocks 5..341 |
+| 34 | `s2c_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_NoGraph_AccessNone` | 124992 | dst 124992 -> 124992 after re-read/sync; class 2 mod 8: 489/489 blocks, 489 whole, blocks 2..3906 |
+| 34 | `s2f_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_NoGraph_AccessBoth` | 124928 | dst 124928 -> 124928 after re-read/sync; class 5 mod 8: 488/488 blocks, 488 whole, blocks 5..3901 |
+| 34 | `s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_NoGraph_AccessNone` | 124928 | dst 124928 -> 124928 after re-read/sync; class 5 mod 8: 488/488 blocks, 488 whole, blocks 5..3901 |
+| 35 | `s2f_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_NoGraph_AccessDstSrc` | 249856 | dst 249856 -> 124928 after re-read/sync; first read also class [6] (cleared on re-read); class 5 mod 8: 488/488 blocks, 488 whole, blocks 5..3901 |
+| 45 | `s2f_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_NoGraph_AccessNone` | 250368 | dst 250368 -> 125184 after re-read/sync; first read also class [1] (cleared on re-read); class 0 mod 8: 489/489 blocks, 489 whole, blocks 0..3904 |
+| 48 | `s2c_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_Graph_AccessBoth` | 124928 | dst 124928 -> 124928 after re-read/sync; class 4 mod 8: 488/488 blocks, 488 whole, blocks 4..3900 |
+| 50 | `s2c_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_NoGraph_AccessBoth` | 125184 | dst 125184 -> 125184 after re-read/sync; class 0 mod 8: 489/489 blocks, 489 whole, blocks 0..3904 |
+| 57 | `s2c_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_NoGraph_AccessBoth` | 124928 | dst 124928 -> 124928 after re-read/sync; class 5 mod 8: 488/488 blocks, 488 whole, blocks 5..3901 |
+| 57 | `s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_NoGraph_AccessBoth` | 250112 | dst 250112 -> 124928 after re-read/sync; first read also class [0] (cleared on re-read); class 7 mod 8: 488/488 blocks, 488 whole, blocks 7..3903 |
+
+### Reading
+
+- **Same defect, same pattern as gfx950.** In all 47 diagnosed failing subset tests exactly one block class mod 8 stays wrong after a re-read and a `wp.synchronize()`. In 40 it is that class's whole share of the copy (488 or 489 blocks, the 125,184 / 124,992 / 124,928 counts of session 21); in the rest it is a contiguous part of the class: blocks 2051..3899 and 2054..3902 (232 blocks each, i.e. exactly the class blocks after block 2048 = 2 MiB into the array), or the class's first 26, 32 or 43 blocks (blocks 5..205, 0..248, 5..341), or class-0 blocks with non-zero stale data (1,227 and 4,876 wrong). Nothing narrower fits: for the persistent reads the printed residues are one value mod 2, 4 and 8, two mod 16 and 38 mod 304 (one block per CU), i.e. exactly one mod-8 class. The class varies (0-7 all seen), as expected if the XCD varies.
+- **A second, transient class.** In 17 of the 37 `dst` failures the first read has a second class wrong too (whole blocks, or partial), which is correct on the second read without any synchronization in between: those workgroups' data reached memory late, after the host copy of the first read; the persistent class never arrives. When the reference read-back is the wrong array (read only once), the same shape appears: one class whole plus partial blocks in other classes.
+- **Same-device only.** 0/160 with the identical 8-process load on another GPU of the host versus 17/160 on the same GPU (and 0/30 alone), so it is contention on the device, not host load. The suite beside the subset gave the highest rate (18/60), unlike session 21's instrumented suite run on gfx950 (0/225).
+- `amd-smi process` snapshots during the loaded runs show non-zero `EVICTED_TIME` for some of the processes on GPU 4 (24 ms to 13 s), i.e. queue evictions happened while the copies ran; whether one coincides with a failure was not measured (the snapshots are every 10 or 25 runs). Together with the "class blocks after the 2 MiB boundary" and "first N class blocks" cases, it points at the per-XCD handling of one dispatch around a preemption, eviction or translation change, rather than at Warp's synchronization: a late or missing write-back of one XCD's L2 or a stale per-XCD translation would both give one XCD's share and keep the stale data across a device synchronize. This is a reading, not a finding.
+- **Not gfx950-specific**: it follows the 8-XCD hardware (gfx942 and gfx950). The single-XCD controls (gfx90a: one die per device; gfx1100) are still open, as is a Warp-free reproducer: `copy_flake` under the same load gave 0 in 27,000 iterations, so the difference is in what Warp does around the copy (its library kernel, staging buffers from its allocator, graphs and memory pools in neighbouring tests, more streams and events), not in the bare kernel-then-D2H sequence.
+
+### For Jeff (no decision taken here)
+
+- Option (a) of session 21's question 7 is answered for gfx942: same defect, so it is not an MI355X-only risk; the release-blocking wrong-result risk applies to MI300X as well. A run on gfx90a and gfx1100 would show whether single-XCD devices are immune.
+- Option (b) (API trace of a failing run for a Warp-free reproducer) is easier here than on gfx950: about one failing run in nine under 8 load processes, one in three beside the suite, ~10-17 s per run, and the device is otherwise idle.
