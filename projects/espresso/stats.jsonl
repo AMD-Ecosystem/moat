@@ -109,3 +109,4 @@
 {"kind":"phase","ts":"2026-11-19T22:07:37Z","phase":"test","seconds":220.45,"exit":0,"cmd":"bash -c ulimit -c 0; cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261119-133700-espresso-val2-prompt/work/build-max -j 48 --target check_unit_tests > /var/lib/jenkins/fleet/jobs/mi300-20261119-133700-espresso-val2-prompt/work/unit-max.log 2>&1"}
 {"kind":"phase","ts":"2026-11-19T22:13:00Z","phase":"test","seconds":314.67,"exit":8,"cmd":"bash -c ulimit -c 0; ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261119-133700-espresso-val2-prompt/work/build-hip -LE gpu --timeout 900 -j 16 > /var/lib/jenkins/fleet/jobs/mi300-20261119-133700-espresso-val2-prompt/work/nongpu-hip.log 2>&1"}
 {"kind":"session","ts":"2026-11-19T22:13:35Z","epoch":1795126415.509795,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-20T18:43:55Z","epoch":1795200235.689926,"event":"start","platform":"linux-gfx942"}

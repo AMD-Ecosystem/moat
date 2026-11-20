@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:43:45Z",
-  "updated_at": "2026-11-20T18:43:55Z",
+  "updated_at": "2026-11-20T18:59:22Z",
   "head_sha": "917d6f70715158d1b8be1a961595073dcc3c597c",
   "depends_on": [],
   "waivers": {
@@ -26,7 +26,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 1524644,
-  "stage": "reviewing",
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx1201": {
       "blocked": false,
@@ -134,7 +134,7 @@
       "failed_sha": null,
       "started_at": "2026-11-19T04:05:53Z",
       "completed_at": "2026-11-19T22:13:35Z",
-      "updated_at": "2026-11-20T18:43:55Z",
+      "updated_at": "2026-11-20T18:59:22Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -259,14 +259,10 @@
   },
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-11-20T00:34:13Z",
-    "at": "2026-11-20T02:31:20Z"
-  },
-  "reviewed_sha": "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
-  "review_pr": "https://github.com/AMD-Ecosystem/espresso/pull/1",
-  "porting": {
-    "arch": "linux-gfx942",
     "since": "2026-11-20T18:43:55Z",
-    "holder": "1c6ed0ab05ed"
-  }
+    "at": "2026-11-20T18:59:22Z"
+  },
+  "reviewed_sha": "917d6f70715158d1b8be1a961595073dcc3c597c",
+  "review_pr": "https://github.com/AMD-Ecosystem/espresso/pull/1",
+  "porting": null
 }
