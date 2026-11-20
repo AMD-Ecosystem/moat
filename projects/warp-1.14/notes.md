@@ -7795,7 +7795,7 @@ Question for Jeff (release blocker until understood): options: (a) dispatch the 
 ### Questions for Jeff (session 21; no decision taken; session 20's six are still open)
 
 7. The `test_async` flake (Evidence 5): (a) cross-arch dispatch of the instrumented subset under load; (b) API trace of a failing run to build a Warp-free reproducer, then a deferred `rocm-bug-report`; (c) both. Until then it is a known wrong-result risk on gfx950 under concurrent GPU work, not seen without a second process.
-8. Build parallelism: `build_lib.py` halves `-j` for the library because `warp-clang` builds alongside, but `warp-clang` finishes in about 5 s while the library's HIP compile takes ~480 s at the default -j 8, so half the budget is idle (4 threads busy on an 8-thread budget). Options: (a) leave it (upstream's logic, smallest diff); (b) give the library's HIP phase the full `-j` once `warp-clang` is done (more diff in upstream's `build_lib.py`). With (b) the default build would run 8 HIP files at once, about 2x faster at -j 8.
+8. Build parallelism: `build_lib.py` halves `-j` for the library because `warp-clang` builds alongside, but `warp-clang` finishes in about 5 s while the library's HIP compile takes ~480 s at the default -j 8, so half the budget is idle (4 threads busy on an 8-thread budget). Options: (a) leave it (upstream's logic, smallest diff); (b) give the library's HIP phase the full `-j` once `warp-clang` is done (more diff in upstream's `build_lib.py`). With (b) the default build would run 8 HIP files at once instead of 4 (not measured).
 9. Release-notes draft below: wording, the hardware-run list, and whether the fp-contract and compressed-bundle lines belong in it.
 
 ### Next step (head `7059a340`)
