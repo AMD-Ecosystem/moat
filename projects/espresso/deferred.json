@@ -13,9 +13,10 @@
       "upstream_issue": null,
       "created_at": "2026-06-07T19:04:23Z",
       "decided": {
-        "choice": "defer",
+        "choice": "now",
         "by": "jeffdaily",
-        "at": "2026-08-13T18:03:04Z"
+        "at": "2026-11-20T00:28:11Z",
+        "note": "Ruled in session 2026-11-20: ESPResSo's LB/EK solvers are to run on AMD GPUs; the upstream pull request is held and sent complete (core GPU code plus the waLBerla bridge), not as two pull requests. Supersedes the defer of 2026-08-13."
       }
     }
   ]
